@@ -1978,25 +1978,29 @@ pub struct DanceSceneEntry {
 ///
 /// PORT: FUN_801CEF54 (`0x801cef54..0x801cf46c`)
 ///
-/// NOT WIRED: no one step in the port does this entry's job, and the record
-/// has no reader. Its mode half is [`crate::world::World::enter_dance`]: the
-/// actor it spawns from the template at `0x801D42E4` is the beat clock
-/// (`FUN_801cf470` is that template's tick word), which is
-/// [`DanceGame`] + [`CountIn`] there, together with the song BGM and the
-/// pad-latch clear. Its venue half - the `other7` block at
-/// [`Self::scene_block_base`] - is loaded privately by the browser pages
-/// (`Scene::load` of `legaia_asset::dance_cast::DANCE_SCENE_NAME` in
-/// `web-viewer`'s `minigames_dance.rs`); the native window draws no hall.
-/// What nothing reads is the rest: [`Self::dancer_spawn`],
+/// NOT WIRED: the record's venue half has no reader, and the blocker is the
+/// **native window's scene draw**, not a missing loader. The mode half is
+/// [`crate::world::World::enter_dance`]: the actor this entry spawns from the
+/// template at `0x801D42E4` is the beat clock (`FUN_801cf470` is that
+/// template's tick word), which is [`DanceGame`] + [`CountIn`] there, together
+/// with the song BGM and the pad-latch clear. The venue half - the `other7`
+/// block at [`Self::scene_block_base`] - has exactly one loader in the port,
+/// `LegaiaMinigames::load_dance_bodies` in `web-viewer`, which both browser
+/// hosts draw through (the play page embeds that instance as its minigame
+/// art); it re-bases the hall on the overlay's own qualifier spawn table and
+/// frames it with the page's orbit camera, so [`Self::dancer_spawn`],
 /// [`Self::camera_pair`], [`Self::view_window`] and the five
-/// [`Self::face_stamps`] calls ([`dance_face_rig`]). The caller owed is a
-/// World-side dance venue load that every host would draw from - the one the
-/// browser pages each do on their own - and it does not exist because the
-/// port enters the dance by **suspending** the current scene mode instead of
-/// loading the venue bundle. That is also why the teardown
-/// ([`dance_scene_stage`]) is only partly wired. The fields that already have
-/// engine mirrors agree with them: [`Self::scene_block_base`] with
-/// [`DANCE_SCENE_BLOCK_BASE`] and [`Self::cleared_dancer_slots`] with the
+/// [`Self::face_stamps`] calls ([`dance_face_rig`]) have no consumer. The
+/// native window keeps drawing the scene the player walked in from, because
+/// its renderer draws `SceneHost`'s current scene and the port enters the
+/// dance by **suspending** the scene mode instead of loading the venue. The
+/// wiring retail's own shape implies is a scene swap: load `other7` as the
+/// current scene on entry (this record's spawn, camera pair and view window
+/// seated on it), restore the saved caller scene on exit - which is also the
+/// three fields the teardown ([`dance_scene_stage`]) still waits on - and
+/// retire the browser pages' private hall bake in its favour. The fields that
+/// already have engine mirrors agree with them: [`Self::scene_block_base`]
+/// with [`DANCE_SCENE_BLOCK_BASE`] and [`Self::cleared_dancer_slots`] with the
 /// qualifier floor's size.
 pub const fn dance_scene_entry() -> DanceSceneEntry {
     DanceSceneEntry {
