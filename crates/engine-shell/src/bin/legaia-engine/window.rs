@@ -298,25 +298,6 @@ pub(crate) fn write_capture_png(path: &Path, img: &CaptureImage) -> Result<()> {
     Ok(())
 }
 
-/// One assembled party member ready for the battle render:
-/// `(assembled character, texture uploads, idle clip, per-slot action clips,
-/// art-animation bank, per-slot face tracks, per-art-record face tracks)`.
-/// The action clips cover the record[0] slots plus the equipment-spliced
-/// weapon swings (runtime slots `0xC..0xF`); the bank and its face tracks
-/// are indexed by art record (staged id `- 0x10`) for the `FUN_8004AD80`
-/// commit. Produced by `PlayWindowApp::assembled_party_battle_mesh`.
-type AssembledPartyMesh = (
-    legaia_asset::battle_char_assembly::AssembledCharacter,
-    Vec<legaia_asset::battle_char_assembly::TextureUpload>,
-    legaia_asset::monster_archive::MonsterAnimation,
-    Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>,
-    Vec<Option<legaia_asset::monster_archive::MonsterAnimation>>,
-    Vec<Option<legaia_asset::face_anim::FaceTracks>>,
-    Vec<Option<legaia_asset::face_anim::FaceTracks>>,
-    // The art bank's records - the arts the queue-builder matches.
-    Vec<legaia_asset::battle_char_assembly::ArtAnimRecord>,
-);
-
 /// The uploaded mesh slots of one **posed** static-object placement: the
 /// frame-0 rest pose of a multi-object env prop baked into a textured and/or an
 /// untextured mesh. Either half can be absent (a prop with no textured prims,

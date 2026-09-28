@@ -1685,6 +1685,19 @@ A 4th party slot is not rendered: the runtime texture band + CLUT rows cover
 party slots 0..=2 only, so Terra (player file 866, idle stream 17 parts)
 has no relocation target.
 
+Both play hosts decode a member's form through one kernel,
+`engine-core::battle_party_form` (`PartyFormSources::load`, then
+`build_party_battle_form` per member, then `World::install_party_battle_form`
+for the idle, action clips, art bank and art records); a host adds only the
+GPU upload and its own posing. The kernel falls back to PROT 1204 when the
+player file carries no idle stream - an assembled mesh with no pose source
+draws every piece at its object origin - and overlays the battle palette on
+a fallback mesh's rows too. Monsters install their texture slot and idle
+clip through `World::install_monster_battle_form`, and the slot a mid-battle
+summon takes is one past the highest monster slot bound
+(`battle_party_form::monster_tex_slots_used`), since repeated species share
+a slot.
+
 #### The battle display list is the registration set, not `active`
 
 Retail's loader gives the fight its own actor set: `FUN_800513F0` registers
