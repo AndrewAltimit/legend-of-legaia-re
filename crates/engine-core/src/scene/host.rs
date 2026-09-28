@@ -23,8 +23,10 @@ pub enum SceneTickEvent {
 ///
 /// Sub-op semantics mirror retail field-VM op `0x35` - see
 /// [`docs/subsystems/script-vm.md`] for the full table. The hook only
-/// receives sub-ops that change playback state (1 and 9 = start, 2 = pause,
-/// 3 = resume, 4 = stop, 8 = re-attach, `0xA` = unhalt-pause swap-commit);
+/// receives sub-ops that change playback state (1 and 9 = start, 2 = stop
+/// and rewind, 3 = key-off pause - both routed to [`BgmDirector::pause`] -,
+/// 4 = re-attach from the top, 8 = re-attach, `0xA` = unhalt-pause
+/// swap-commit);
 /// other sub-ops are control words that the host can route without
 /// sequencer state.
 ///

@@ -181,9 +181,9 @@ Dispatch is a 22-entry jump table at `0x80010EE0` indexed by `(op & 0x7F) -
 
 | byte | case body  | name             | semantics                                |
 |------|------------|------------------|------------------------------------------|
-| 0x37 | 0x8003789C | TranslateY       | accumulate Y axis by per-frame speed     |
+| 0x37 | 0x8003789C | CompassWalkFast  | walk X/Z along a compass direction, rate `0x80` a tile count (see [the compass walk](#the-compass-walk-0x37--0x41)) |
 | 0x38 | 0x800379FC | RotateToAngle    | yaw ramps to a compass-LUT entry over a frame budget; shortest-path (`body0 & 0x80`) or forced-direction (`body1 & 0x80`), 12-bit fixed-point |
-| 0x41 | 0x8003789C | TranslateX       | accumulate X axis by per-frame speed     |
+| 0x41 | 0x8003789C | CompassWalkSlow  | the same arm at rate `0x40`              |
 | 0x43 | 0x80037FF0 | NoOp             | tick budget consumed, no actor mutation  |
 | 0x47 | 0x80037B84 | MoveTowardTarget | step actor XZ toward `(tx, tz)`, snapping facing to the compass once per leg / step-direction change |
 | 0x4C | 0x80037DE0 | FaceTarget       | yaw ramps to the target's live bearing over a frame budget; sub-mode bytes `0x85` / `0x8E` / `0x8F` are the three retail accepts, and `0x8F` alone forces the decreasing direction instead of the shortest arc |
@@ -193,6 +193,18 @@ The return value carries the outcome: the yield arm at `0x80037FF0` returns
 `0` (leg still running), the default arm at `0x80037FEC` increments the flag
 first and returns `1`, clearing the actor's HALT bit `0x400` and zeroing the
 `+0x54` progress cursor on the way out.
+
+## The compass walk (`0x37` / `0x41`)
+
+Both opcodes land on one case body, `0x8003789C..0x800379F8` in `FUN_8003774C` (see `ghidra/scripts/funcs/8003774c.txt`); the only difference between them is the rate picked at `0x80037904` - `0x80` for `0x37`, `0x40` for anything else. They move the actor along a compass direction on the X/Z plane; neither touches Y, and neither is a single-axis translate (an earlier reading named them `TranslateY` / `TranslateX`, which the arm's own axis table contradicts).
+
+| operand bits | meaning |
+|---|---|
+| `b0 & 7` | direction: index into the 8-byte axis-sign table at `0x80073F14` (`1` = `+Z`, `2` = `-Z`, `4` = `+X`, `8` = `-X`, combined for the diagonals) |
+| `b1 & 0x3F` | distance count: the leg moves `rate * count` world units in total (one tile per count for `0x37`, half a tile for `0x41`) |
+| `(b1 >> 6) \| ((b0 >> 5) & 4)` | duration selector `sel`: the leg's budget is `count * (4 << sel)` progress units |
+
+Each tick the arm spends `DAT_1F800393` progress units (clamped to what is left of the budget) and moves `rate * spent / (4 << sel)` along each axis bit set in the direction byte (X at actor `+0x14`, Z at `+0x18`). Progress accumulates in `+0x54`; the leg finishes when it reaches the budget. `B7 F8 00 81` is therefore one tile along `-Z` over 16 progress units. The port is `motion_vm::CompassWalkFast` / `CompassWalkSlow` with the table as `COMPASS_AXIS_SIGNS`.
 
 ## How an actor's facing changes
 
@@ -321,7 +333,7 @@ scripted `0x3E` interact get the same behaviour.
 
 ## From-scratch port
 
-[`legaia_engine_vm::motion_vm`](../../crates/engine-vm/src/motion_vm.rs) is the from-scratch port. All six opcodes are implemented: `0x37` `TranslateY`, `0x38` `RotateToAngle`, `0x41` `TranslateX`, `0x43` `NoOp`, `0x47` `MoveTowardTarget`, `0x4C` `FaceTarget`. Each step returns `StepResult::Yield` (budget consumed, resume next tick) or `StepResult::Done` (terminal op / default arm); there is no fallback path.
+[`legaia_engine_vm::motion_vm`](../../crates/engine-vm/src/motion_vm.rs) is the from-scratch port. All six opcodes are implemented: `0x37` `CompassWalkFast`, `0x38` `RotateToAngle`, `0x41` `CompassWalkSlow`, `0x43` `NoOp`, `0x47` `MoveTowardTarget`, `0x4C` `FaceTarget`. Each step returns `StepResult::Yield` (budget consumed, resume next tick) or `StepResult::Done` (terminal op / default arm); there is no fallback path.
 
 The facing law above is `heading_lut_engine` (the eight compass entries, carried in the engine's `0` = +Z space), `walk_facing_index` / `walk_facing_yaw` (the `0x47` sign-to-index table), and `rotate_step` (the shared ramp arithmetic, widened to 32-bit so a large speed cannot overflow the increment, raw wrapping write-back). `engine-core`'s `facing_index_to_engine_heading` delegates to the same LUT, so the spawn-prologue facings and the runtime ones cannot drift apart. `MotionState` carries the once-per-leg walk-facing latch (`walk_facing`) and a per-step `yaw_written` signal; engine hosts gate their render-heading mirror on the latter, so a heading another writer posed (the interact bearing) is not clobbered by an idle leg's stale VM yaw.
 

@@ -71,8 +71,12 @@ pub trait FieldHost {
     }
 
     /// Background music dispatch (op 0x35). `text_id` is the 16-bit operand
-    /// (LE). `sub_op` selects the action: 1 = start field BGM, 2 = pause,
-    /// 3 = resume, 4 = stop, 5 = volume, 6 = flag-set (`_DAT_8007b750 |= 4`),
+    /// (LE). `sub_op` selects the action (arm table `0x801CEE00` in PROT
+    /// 0897, indexed `sub_op - 1`): 1 = start field BGM, 2 = stop and rewind
+    /// (raise pause bit 1, `FUN_800266E0`: notes killed, cursor back to the
+    /// sequence start), 3 = key-off pause (raise bit 1, `FUN_80026740`:
+    /// cursor kept), 4 = re-attach (clear bit 1, `FUN_80026478`: replays
+    /// from the top), 5 = volume, 6 = flag-set (`_DAT_8007b750 |= 4`),
     /// 7 = target sound set (`_DAT_8007B880`), 8 = `func_0x80019898`,
     /// 9 = start behind a load barrier (`_DAT_8007bac8 = text_id`), 10 =
     /// unhalt-pause swap-commit (waits on `_DAT_8007B750` bit 3, releases

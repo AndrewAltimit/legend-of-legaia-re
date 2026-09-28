@@ -77,7 +77,7 @@
 
 <section class="doc-section" id="how-it-works">
   <h2>The pursue VM</h2>
-  <p>A motion script is a stream of small instructions - "walk along Y", "rotate to this angle", "move toward your target" - each addressed at an actor:</p>
+  <p>A motion script is a stream of small instructions - "walk one tile south", "rotate to this angle", "move toward your target" - each addressed at an actor:</p>
   <pre><code>+0  u8 op_byte         ; bits 0x7F = opcode, bit 0x80 = "select target"
 +1  u8 target_id       ; only present if bit 0x80 set
 +N  u8 operand[...]    ; opcode-specific</code></pre>
@@ -85,7 +85,7 @@
   <table>
     <thead><tr><th>Byte</th><th>Name</th><th>Semantics</th></tr></thead>
     <tbody>
-      <tr><td><code>0x37</code> / <code>0x41</code></td><td>TranslateY / TranslateX</td><td>Accumulate one axis by the per-frame speed.</td></tr>
+      <tr><td><code>0x37</code> / <code>0x41</code></td><td>CompassWalkFast / CompassWalkSlow</td><td>One arm: walk along one of eight compass directions on the X/Z plane (axis table at <code>0x80073F14</code>), a tile per count at rate <code>0x80</code> or half a tile at <code>0x40</code>, over a budget the operand scales.</td></tr>
       <tr><td><code>0x38</code></td><td>RotateToAngle</td><td>Yaw ramps toward an absolute compass angle over a frame budget; shortest-path or forced direction.</td></tr>
       <tr><td><code>0x43</code></td><td>NoOp</td><td>Budget consumed, no mutation.</td></tr>
       <tr><td><code>0x47</code></td><td>MoveTowardTarget</td><td>Step XZ toward the target, dominant axis first, snapping the facing to the compass every moving frame.</td></tr>
