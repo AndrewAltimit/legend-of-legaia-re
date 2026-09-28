@@ -148,7 +148,7 @@
     <tbody>
       <tr><td>0</td><td>Script-owned start pending (defer slot teardown)</td><td>Sub-op 9</td><td>Poller commit, scene entry</td></tr>
       <tr><td>1</td><td>BGM slot paused / detached</td><td>Sub-op 2, 3, the dance overlay</td><td>Sub-op 1, 4, <code>0xA</code>, scene entry, game over</td></tr>
-      <tr><td>2</td><td>Script flag (opaque to the sound side)</td><td>Sub-op 6</td><td>Field overlay</td></tr>
+      <tr><td>2</td><td>Keep the audio across the next scene load: the scene initializer skips its music level ramp and its sound-effect voice cut</td><td>Sub-op 6</td><td>Field overlay</td></tr>
       <tr><td>3</td><td>Load settled - payload staged and delay elapsed</td><td>The poller</td><td>Poller commit</td></tr>
       <tr><td>4</td><td>Release-ack - the script has released the old occupant</td><td>Sub-op <code>0xA</code></td><td>Poller commit</td></tr>
     </tbody>
