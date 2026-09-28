@@ -194,6 +194,8 @@ pub struct SubmodeScreen {
     pub op49_operand: [u8; 7],
     /// Slot `0x23`'s picker state ([`crate::field_submode_flag_window`]).
     pub flag_window: crate::field_submode_flag_window::FlagWindowState,
+    /// Slot `0x21`'s lock state ([`crate::field_submode_code_lock`]).
+    pub code_lock: legaia_engine_vm::code_lock_actor::CodeLockActor,
 }
 
 impl SubmodeScreen {
@@ -285,6 +287,7 @@ impl World {
         s.picker_result = 0;
         s.frame = HubFrame::default();
         s.flag_window = Default::default();
+        s.code_lock = Default::default();
     }
 
     /// Open the casino **coin counter** - buy coins with party gold at
@@ -429,6 +432,12 @@ impl World {
         // parked operand and the system flag bank; its writes land after the
         // dispatch, once the bank is no longer borrowed for the scan.
         let flag_desc = self.flag_window_descriptor();
+        // Slot 0x21 (the code lock) compares against the parked operand's
+        // five code bytes and reads the edge word as symbols.
+        let lock_code = self.code_lock_code();
+        let lock_edge = env.pad_edge;
+        let lock_blocked = env.input_blocked != 0;
+        let lock_delta = env.frame_delta;
         let flag_pad = legaia_engine_vm::world_map_panel::CursorPad {
             held: env.pad_edge,
             pressed: env.pad_repeat,
@@ -444,6 +453,7 @@ impl World {
             cursor,
             counter,
             flag_window,
+            code_lock,
             ..
         } = &mut screen;
         let flag_bank: &[u8] = &self.flags.system_flags;
@@ -464,6 +474,17 @@ impl World {
                     flag_desc,
                     flag_pad,
                     flag_test,
+                    &mut flag_writes,
+                )
+            } else if a.state == crate::field_submode_code_lock::CODE_LOCK_SLOT {
+                crate::field_submode_code_lock::code_lock_slot(
+                    a,
+                    g,
+                    code_lock,
+                    &lock_code,
+                    lock_edge,
+                    lock_blocked,
+                    lock_delta,
                     &mut flag_writes,
                 )
             } else {

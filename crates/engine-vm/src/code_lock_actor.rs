@@ -29,7 +29,7 @@
 //!
 //! | phase | body |
 //! |---|---|
-//! | `0` | open the prompt window, reset the entry index, advance |
+//! | `0` | install panel descriptor `0x801F32F4` (window record 12, painter `FUN_801F17D8`), reset the entry index, advance |
 //! | `1` | one symbol per pad edge into `ctx[+0x54 + index]`, cue `0x36`; advance after the fifth |
 //! | `2` | dwell `0x0C` frames |
 //! | `3` | compare the five entered symbols against the descriptor, cue `0x25` + `FUN_8003CE08(9)` on a match, `0x23` + `FUN_8003CE34(9)` otherwise |
@@ -38,6 +38,21 @@
 //! The target code is **not** in the actor: it is the five bytes at `+1..+5`
 //! of the field descriptor `_DAT_8007B450`, i.e. inline operand bytes of the
 //! scene's field-VM script.
+//!
+//! ## How a script reaches it
+//!
+//! Field-VM `49 02` parks the operand pointer, and the submode enter half
+//! maps sub-op `2` through `0x801F33A4` to handler slot `0x21`, which is this
+//! routine. The one shipped site is `doman`'s streamed MAN (extraction
+//! `0401`, partition 1 record 18): `49 02` followed by the five code bytes,
+//! then `70 09` - a system-flag test on flag `9`, the flag phase 3 sets
+//! (`FUN_8003CE08(9)`) or clears (`FUN_8003CE34(9)`).
+//!
+//! The two verdict cues go through different producers: the press and the
+//! success cue through `FUN_80035B50` (push), the failure cue through
+//! `FUN_80035BD0` (overwrite the last-written ring slot). The engine-core arm
+//! (`legaia_engine_core::field_submode_code_lock`) maps each to its own ring
+//! operation.
 //!
 //! `see ghidra/scripts/funcs/801eed58.txt`
 
@@ -135,10 +150,10 @@ impl CodeLockActor {
     ///
     /// PORT: FUN_801eed58
     ///
-    /// NOT WIRED: the engine has no field-VM binding that installs this
-    /// sub-handler yet - the scene descriptor byte that selects it is read by
-    /// the op-`0x49` handler table, which the port dispatches through
-    /// `crate::field` without a code-lock arm.
+    /// Hosted on the submode driver actor as handler slot `0x21` by
+    /// `legaia_engine_core::field_submode_code_lock::code_lock_slot`, which
+    /// `World::tick_submode_screen` dispatches when a field script's `49 02`
+    /// opens the slot.
     pub fn tick(
         &mut self,
         pressed: u16,

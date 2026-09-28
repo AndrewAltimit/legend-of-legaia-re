@@ -159,6 +159,8 @@ pub fn flag_window_slot(
 pub fn installed_windows(va: u32) -> Vec<usize> {
     if va == FLAG_WINDOW_SCRIPT {
         vec![FLAG_WINDOW_RECORD]
+    } else if va == crate::field_submode_code_lock::CODE_LOCK_PANEL {
+        vec![crate::field_submode_code_lock::CODE_LOCK_RECORD]
     } else {
         legaia_engine_vm::baka_hub_actors::panel_windows(va).to_vec()
     }
