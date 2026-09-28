@@ -211,7 +211,7 @@ end
 local function checkpoint(tag)
     local ok, err = pcall(function()
         local w = PCSX.createSaveState()
-        local fh = Support.File.open(OUT_DIR .. "/ckpt_" .. tag .. ".rawsstate", "CREATE")
+        local fh = Support.File.open(OUT_DIR .. "/ckpt_" .. tag .. ".rawsstate", "TRUNCATE")
         fh:writeMoveSlice(w); fh:close()
     end)
     log("checkpoint f=" .. f .. " " .. tostring(ok) .. " " .. tostring(err))

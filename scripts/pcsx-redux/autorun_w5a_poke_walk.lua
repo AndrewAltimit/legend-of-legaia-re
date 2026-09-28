@@ -152,7 +152,7 @@ local held = {}
 local function checkpoint()
     local ok, err = pcall(function()
         local w = PCSX.createSaveState()
-        local fh = Support.File.open(OUT_DIR .. "/" .. CKPT_LABEL .. ".rawsstate", "CREATE")
+        local fh = Support.File.open(OUT_DIR .. "/" .. CKPT_LABEL .. ".rawsstate", "TRUNCATE")
         fh:writeMoveSlice(w); fh:close()
     end)
     log("checkpoint " .. tostring(ok) .. " " .. tostring(err))

@@ -80,7 +80,7 @@ local COMPOSER_RA = { [0x801DA220] = true, [0x801DA31C] = true }
 local function write_state(label)
     local ok = pcall(function()
         local w = PCSX.createSaveState()
-        local fh = Support.File.open(probe.out_path(label .. ".rawsstate"), "CREATE")
+        local fh = Support.File.open(probe.out_path(label .. ".rawsstate"), "TRUNCATE")
         fh:writeMoveSlice(w)
         fh:close()
         PCSX.log("[w1d] state written: " .. label)

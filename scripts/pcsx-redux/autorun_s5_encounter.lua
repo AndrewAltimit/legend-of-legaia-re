@@ -97,7 +97,7 @@ local function tile_center(col, row) return col*TILE + TILE/2, row*TILE + TILE/2
 local function write_checkpoint(label)
     local ok=pcall(function()
         local w=PCSX.createSaveState()
-        local fh=Support.File.open(OUT_DIR.."/"..label..".rawsstate","CREATE"); fh:writeMoveSlice(w); fh:close()
+        local fh=Support.File.open(OUT_DIR.."/"..label..".rawsstate","TRUNCATE"); fh:writeMoveSlice(w); fh:close()
         log("checkpoint written: "..OUT_DIR.."/"..label..".rawsstate")
     end)
     if not ok then log("checkpoint FAILED") end

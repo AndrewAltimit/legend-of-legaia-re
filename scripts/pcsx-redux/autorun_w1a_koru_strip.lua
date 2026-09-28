@@ -57,7 +57,7 @@ local function checkpoint(tag)
     ckpts = ckpts + 1
     pcall(function()
         local w = PCSX.createSaveState()
-        local fh = Support.File.open(string.format("%s/k_%05d_%s.rawsstate", OUT_DIR, vsync, tag), "CREATE")
+        local fh = Support.File.open(string.format("%s/k_%05d_%s.rawsstate", OUT_DIR, vsync, tag), "TRUNCATE")
         fh:writeMoveSlice(w); fh:close()
     end)
 end

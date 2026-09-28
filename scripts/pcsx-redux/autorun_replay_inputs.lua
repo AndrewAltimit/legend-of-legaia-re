@@ -92,7 +92,7 @@ local function try_capture(clock)
         elseif clock-cap_since>=SETTLE then
             local ok=pcall(function()
                 local w=PCSX.createSaveState()
-                local fhh=Support.File.open(OUT_DIR.."/"..CKPT_LABEL..".rawsstate","CREATE"); fhh:writeMoveSlice(w); fhh:close()
+                local fhh=Support.File.open(OUT_DIR.."/"..CKPT_LABEL..".rawsstate","TRUNCATE"); fhh:writeMoveSlice(w); fhh:close()
             end)
             log(ok and ("checkpoint written: "..OUT_DIR.."/"..CKPT_LABEL..".rawsstate") or "checkpoint FAILED")
             done=true; if LOG then LOG:close() end; PCSX.quit(0)

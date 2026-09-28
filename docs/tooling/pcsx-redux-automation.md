@@ -451,12 +451,13 @@ typo'd symbol fails CI rather than the probe run.
 - **Unpatched PCSX-Redux caps every Lua listener session at ~32.7k vsync events.** The event dispatch in `src/core/eventslua.cc` pushes the `EVENT_LISTENERS` table + the listener-info table per event and never pops them - 2 leaked Lua stack slots per dispatch, hitting LuaJIT's ~65500-slot ceiling at almost exactly tick 32716 (the error dump is a wall of `N: (Table)` lines, then a fatal escaped exception; on a live display it takes the whole app down). Deterministic and content-independent - any long-running probe dies there.
   The local build carries a rebalance patch (`int base = L.gettop()` before dispatch, pop back to `base` after; verified alive past tick 33500 by a forced counter probe). Rebuilding PCSX-Redux from clean upstream REINTRODUCES the cap until the patch is upstreamed - re-apply it after any emulator update.
 - **Don't `readAt(2 MiB, 0)` inside a vsync callback.** A single 2 MiB `PCSX.getMemoryAsFile():readAt(...)` call permanently degrades subsequent `GPU::Vsync` event delivery in the same emulator launch - subsequent callbacks fire rarely or not at all. This is the listener-GC trap above wearing a different hat: the multi-MiB garbage burst triggers the collect that kills an unanchored listener. With the handle anchored, prefer small reads anyway (64 KiB at a time is safe) - full-RAM materialisation per vsync still stalls the frame.
-- **`Support.File.open(path, "CREATE")` does not truncate.** A checkpoint
-  written twice to one path keeps the longer earlier state's tail behind the
-  newer one; the file still parses on the host (`pcsxr-state info` reads its
-  RAM) but PCSX-Redux loads it as a zeroed machine. Write each checkpoint to a
-  fresh name and rename the one you keep, as `autorun_dialog_picker_open.lua`
-  does.
+- **`Support.File.open(path, "CREATE")` does not truncate.** `CREATE` opens
+  `O_RDWR | O_CREAT` and only `TRUNCATE` adds `O_TRUNC` (`src/support/uvfile.cc`
+  in the PCSX-Redux tree), so a checkpoint written over a longer earlier one
+  keeps that state's tail. The file still parses on the host (`pcsxr-state
+  info` reads its RAM), but PCSX-Redux loads it as a zeroed machine. Every
+  checkpoint writer here opens `"TRUNCATE"`, as `probe.sstate.save` always
+  did.
 - **A movie frame is a 24-bit screenshot.** Under the MDEC display mode
   `takeScreenShot` returns `width * height * 3` bytes while its `bpp` field
   still reads `16`; size the decode off the byte count, not the field.

@@ -152,7 +152,7 @@ end
 -- Write the full createSaveState slice to disk. PCSX.createSaveState() returns
 -- a wrapper `{_type="Slice", _wrapper=cdata}`; this build does NOT export the
 -- ffi slice accessors (getSliceSize/getSliceData), so it is written through the
--- Support.File API: `Support.File.open(path,"CREATE"):writeMoveSlice(slice)`,
+-- Support.File API: `Support.File.open(path,"TRUNCATE"):writeMoveSlice(slice)`,
 -- which emits the raw (uncompressed) protobuf. The host then gzips it into the
 -- GUI .sstate format (gzip(protobuf)) - byte-validated to round-trip + load.
 local function do_write_checkpoint()
@@ -160,7 +160,7 @@ local function do_write_checkpoint()
     if w == nil then log("createSaveState returned nil"); return false end
     if Support == nil or Support.File == nil then log("no Support.File API"); return false end
     local path = OUT_DIR .. "/" .. CKPT_LABEL .. ".rawsstate"
-    local fh = Support.File.open(path, "CREATE")
+    local fh = Support.File.open(path, "TRUNCATE")
     if fh == nil or (fh.failed and fh:failed()) then log("cannot open " .. path); return false end
     fh:writeMoveSlice(w)
     fh:close()

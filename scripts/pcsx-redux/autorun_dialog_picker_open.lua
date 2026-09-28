@@ -54,7 +54,7 @@ local ckpt_done, last19, prev_st = false, nil, nil
 local function checkpoint(path)
     local ok, err = pcall(function()
         local w = PCSX.createSaveState()
-        local fh = Support.File.open(path, "CREATE")
+        local fh = Support.File.open(path, "TRUNCATE")
         fh:writeMoveSlice(w); fh:close()
     end)
     PCSX.log(string.format("[picker] checkpoint %s ok=%s %s", path, tostring(ok), tostring(err or "")))
@@ -131,9 +131,10 @@ probe.run({
         -- like a page wait, so the choice commits and the talk goes on.
         local waiting = st == 0x19 or st == 0x12 or st == 0x14 or st == 0x16 or st == 0x18
         if CKPT > 0 and not ckpt_done then
-            -- A fresh file per checkpoint: Support.File "CREATE" does not
-            -- truncate, so rewriting one path leaves the longer earlier
-            -- state's tail behind the new one and the result will not load.
+            -- One file per checkpoint, the kept one renamed at the end. Each
+            -- is opened "TRUNCATE": "CREATE" is O_CREAT without O_TRUNC, so a
+            -- rewrite over a longer earlier state keeps its tail and the
+            -- result will not load.
             if st == 0x19 and prev_st ~= 0x19 then
                 if last19 then os.remove(last19) end
                 last19 = string.format("%s/wait19_%05d.rawsstate", OUT_DIR, v)
