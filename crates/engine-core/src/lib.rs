@@ -131,6 +131,7 @@ pub mod options;
 pub mod other_game_overlay;
 pub mod overlay_loader;
 pub mod overworld_curvature;
+pub mod overworld_draw_order;
 pub mod packet_color;
 pub mod pause_screens;
 pub mod place_name_banner;

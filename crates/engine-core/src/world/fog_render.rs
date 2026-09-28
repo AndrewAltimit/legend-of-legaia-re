@@ -126,7 +126,29 @@ impl World {
             tint,
             window: self.terrain.region_attributes.box_bytes,
         };
-        self.fog.render_step(&FogView::from_field_view(view), &env)
+        let proj = self.field_fx_view(view);
+        self.fog.render_step(&proj, &env)
+    }
+
+    /// The projection the field screen-space effects (fog sheets, drop
+    /// shadows) draw through for a frame whose field-frame pose is `view`,
+    /// with its depths scaled onto the mesh frame the hosts draw the scene
+    /// through.
+    ///
+    /// Both hosts hand these effects `FieldCameraFrame::field_view` of a
+    /// frame resolved with no cutscene view, so in [`SceneMode::WorldMap`]
+    /// that frame is the overworld walk frame, whose matrix composes the 6x
+    /// world scale (`camera_view::world_map_walk_vp`): its `clip.w` is six
+    /// times the field view's. Screen positions agree either way; a depth
+    /// taken at the field view's `w` would sit six times nearer than the
+    /// continent under it in the depth buffer, and pass every test.
+    pub fn field_fx_view(&self, view: &FieldCameraView) -> FogView {
+        let scale = if self.mode == SceneMode::WorldMap {
+            crate::camera_view::WORLD_MAP_WORLD_SCALE
+        } else {
+            1.0
+        };
+        FogView::from_field_view(view).with_depth_scale(scale)
     }
 
     /// Whether `mode` is one the fog pass runs in - retail's game mode `3`,

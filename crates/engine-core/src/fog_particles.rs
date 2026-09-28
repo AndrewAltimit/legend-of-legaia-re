@@ -88,9 +88,10 @@
 //! and adds the per-depth screen-Y table `*_DAT_8007BB04` (the curvature
 //! table `FUN_800271A8` builds, [`crate::overworld_curvature`]) to both
 //! corners. The overworld's mesh dispatch hands the same table to its prim
-//! leaves; the port applies it to the sheets only, so on the overworld the
-//! continent draws flatter than retail's while the sheets sit where retail's
-//! do.
+//! leaves, and both hosts' mesh shaders bend the continent by it per vertex.
+//! The link key puts the sheet in the one ordering table the continent's
+//! cells link into; [`crate::overworld_draw_order`] turns both keys into the
+//! flat depths the hosts draw with.
 
 use crate::action_effect_script::RotationLut;
 use legaia_engine_vm::psx_camera::FieldCameraView;
@@ -349,11 +350,15 @@ pub struct FogQuad {
     /// `SZ >> 5` of the particle (`SZ2`, the `RTPT`'s second point), with
     /// `SZ` retail's scaled view depth; `(SZ - 0x10) >> 5` on the overworld.
     pub ot_index: u32,
-    /// The sheet's scene depth for a depth-tested draw, in the frame
-    /// matrix's normalised depth (`legaia_engine_ui::screen_prim::CornerDepth`'s
-    /// convention): the particle's - the billboard's one depth and the one
-    /// the OT bucket is taken from, so the sheet is flat at the depth retail
-    /// sorts it at.
+    /// The particle's `SZ`, retail's scaled view depth - the one depth the
+    /// billboard has and the one [`Self::ot_index`] is taken from.
+    pub sz: f32,
+    /// The sheet's scene depth for a depth-tested draw, in the mesh frame's
+    /// normalised depth (`legaia_engine_ui::screen_prim::CornerDepth`'s
+    /// convention): its **bucket's**, flat across the sheet
+    /// ([`crate::overworld_draw_order::fog_flat_sz`]), so the continent -
+    /// which draws at its own cells' bucket depths - covers it exactly where
+    /// retail's ordering table draws a cell after it.
     /// Set on the overworld arm only ([`FogPool::overworld`]), where the
     /// sheets float over a continent whose ridges retail's ordering table
     /// draws in front of the fog behind them; `None` keeps the field's
@@ -369,6 +374,15 @@ pub struct FogView {
     vp: [f32; 16],
     /// GTE `H`, which scales the sheets' view-space extents onto the screen.
     h: f32,
+    /// The mesh frame's `clip.w` per unit of this view's `w`: `1` where the
+    /// hosts draw the meshes through this very matrix (the field follow and
+    /// cutscene poses), [`crate::camera_view::WORLD_MAP_WORLD_SCALE`] on the
+    /// overworld walk frame, which composes the 6x world scale into its
+    /// matrix (`camera_view::world_map_walk_vp`) while the fog projects
+    /// through the `1x` field view of the same pose. Screen positions are
+    /// the same either way; a depth handed to the meshes' depth buffer is
+    /// not.
+    depth_scale: f32,
 }
 
 /// PSX stage size the projection maps NDC back onto.
@@ -382,6 +396,16 @@ impl FogView {
         Self {
             vp: view.vp(4.0 / 3.0),
             h: view.h,
+            depth_scale: 1.0,
+        }
+    }
+
+    /// The same view, handing depths to a mesh frame whose `clip.w` is
+    /// `scale` times this view's (see [`Self::depth_scale`]).
+    pub fn with_depth_scale(self, scale: f32) -> Self {
+        Self {
+            depth_scale: scale,
+            ..self
         }
     }
 
@@ -392,17 +416,30 @@ impl FogView {
     /// the projection scales X by `H / 160` at the 4:3 aspect.
     pub fn from_vp(vp: [f32; 16]) -> Self {
         let h = 160.0 * (vp[0] * vp[0] + vp[4] * vp[4] + vp[8] * vp[8]).sqrt();
-        Self { vp, h }
+        Self {
+            vp,
+            h,
+            depth_scale: 1.0,
+        }
     }
 
-    /// A raw retail world point's normalised depth (`clip.z / clip.w`)
-    /// through the same matrix; `None` at or behind the eye.
+    /// A raw retail world point's normalised depth (`clip.z / clip.w`) in
+    /// the mesh frame - this matrix's depth row at the point's `w` times
+    /// [`Self::depth_scale`]; `None` at or behind the eye.
     pub fn ndc_depth(&self, p: [i32; 3]) -> Option<f32> {
         let m = &self.vp;
         let v = [p[0] as f32, -(p[1] as f32), p[2] as f32, 1.0];
-        let row = |r: usize| m[r] * v[0] + m[4 + r] * v[1] + m[8 + r] * v[2] + m[12 + r] * v[3];
-        let w = row(3);
-        (w.is_finite() && w > 0.5).then(|| row(2) / w)
+        let w = m[3] * v[0] + m[7] * v[1] + m[11] * v[2] + m[15] * v[3];
+        (w.is_finite() && w > 0.5)
+            .then(|| crate::overworld_draw_order::ndc_at_w(m, w * self.depth_scale))
+    }
+
+    /// The mesh frame's normalised depth of a point at retail view depth
+    /// `sz` (the base matrix's scaled space, `1x` eye depth times
+    /// [`crate::camera_view::CUTSCENE_WORLD_SCALE`]); `None` for `sz <= 0`.
+    pub fn ndc_at_sz(&self, sz: f32) -> Option<f32> {
+        let w = sz / crate::camera_view::CUTSCENE_WORLD_SCALE * self.depth_scale;
+        (w.is_finite() && w > 0.5).then(|| crate::overworld_draw_order::ndc_at_w(&self.vp, w))
     }
 
     /// Project a raw retail world point (Y-down). Returns `(sx, sy, sz)` in
@@ -855,7 +892,16 @@ fn emit_half(
             tpage: (words[1] >> 16) as u16,
             rgb,
             ot_index: (bucket_z.max(0.0) as u32) >> 5,
-            depth: if overworld { view.ndc_depth(p) } else { None },
+            sz,
+            // The bucket's flat depth, a quarter bucket behind the cells
+            // that link there (crate::overworld_draw_order).
+            depth: if overworld {
+                view.ndc_at_sz(crate::overworld_draw_order::fog_flat_sz(
+                    crate::overworld_draw_order::fog_ot_index(sz),
+                ))
+            } else {
+                None
+            },
         }),
     )
 }
