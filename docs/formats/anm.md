@@ -515,7 +515,9 @@ animated-object count.
   set, the playback advancer scales its per-tick step to
   `(rate * 2 + div - 1) / div` instead of using `rate` verbatim. Clear for
   records 0..8 of every field-form bundle, set to `0x01` for records 9+ and
-  for every record in the Baka Fighter bundle.
+  for every record in the Baka Fighter bundle; scene bundles set it per clip
+  with no index split (see [the frame blender](#the-frame-blender-two-entries-one-gate)).
+  The same bit gates the sub-frame blend.
 - `b` = **frame count** of this animation clip (3..60 across the corpus;
   longer clips like Vahn's run-loop have higher counts).
 - `flag` = the scaled step's **divisor** in its low byte (`0x02` / `0x04` in
@@ -602,33 +604,81 @@ record 17) pins the byte-exact decode and would have failed the moment anyone
 "corrected" `bytes[4] & 0x0F` to match the prose. That is the test doing its
 real job: containing a documentation error so it cannot reach the port.
 
-### The interpreter interpolates - the decoder does not
+### The frame blender: two entries, one gate
 
-`FUN_8001BE80` is not a pure per-entry decoder. It reads **two** entries and
-blends them: the sub-frame fraction is `*(u16*)(actor + 0x68) & 0xF` (a 4-bit
-weight, `s3` in the dump), and the blend runs only when the gate
-`*(u8*)(a2 + 1) & 1` is set - otherwise the current frame is emitted as-is.
-Translations lerp as `a + (((b - a) * frac) >> 4)`; the three angles go through
-the dedicated angle interpolator `FUN_8001D088` (which handles wraparound, so
-it is not a plain lerp). Results are written to scratchpad `0x1F8002C0`
-(`T` at `+0x0..0x6`, angles at `+0x8..0xE`) before the GTE load.
+`FUN_8001BE80` is not a pure per-entry decoder. Called once per part from
+`FUN_8001B964`'s loop (`a0` = actor, `a1` = the part's entry at the current
+frame, `a2` = the bound clip `actor+0x4C`, `a3` = the part index), it reads
+**two** entries and blends them (see `ghidra/scripts/funcs/8001be80.txt`):
 
-`BoneTransform::decode` models only the **un-interpolated** arm - it decodes one
-`(bone, frame)` entry and does no blending. That is the right shape for a
-format decoder and matches what the asset tooling and the site's character
-viewer need, but a consumer chasing frame-exact runtime parity has to add the
-sub-frame blend itself.
+- **The gate** is clip byte `+1` bit 0 - the high byte of `a` - tested at
+  `0x8001BF70` for the translations and again at `0x8001C0EC` for the angles.
+  Clear, the current entry is emitted as decoded. It is the **same bit** the
+  clip tick `FUN_800204F8` tests to select its scaled step (`lbu v0,0x1(a1)` at
+  `0x800205B4`, `a1` = `actor+0x4C` there too), so a clip either both scales
+  its step and blends, or does neither.
+- **The fraction** is the cursor's low nibble, `actor+0x68 & 0xF`
+  (`0x8001BFFC`).
+- **The next entry** (`0x8001BEAC..0x8001BF00`): while
+  `(i16)actor+0x68 >> 4 < frame_count - 1` it is `entry + a2[0]*8`, the same
+  part one frame later. On the last frame it is the entry itself when the
+  clamp bit `actor+0x62 & 8` is set, and otherwise `*(actor+0x4C) + part*8 + 8`,
+  the part's frame-0 entry past the 8-byte header, i.e. the loop wrap. The
+  blend always runs toward frame + 1, including while the cursor counts down
+  in reverse.
+- **Translations** lerp as `cur + (((next - cur) * frac) >> 4)` on the
+  sign-extended 16-bit values (`0x8001BFF0..0x8001C06C`; `sra`, so a negative
+  delta floors), stored with `sh`.
+- **Angles** go through the angle interpolator `FUN_8001D088` with `from` =
+  the next entry's angle and `to` = the current one (`0x8001C100..0x8001C154`).
+  The interpolator returns `(to + ((from - to) * frac >> 4)) & 0xFFF` after
+  bringing the pair onto the short arc by two **sequential** guards
+  (`0x8001D090..0x8001D0B8`): add a turn to `to` when `from - to >= 0x800`,
+  then add a turn to `from` when the *updated* `to - from >= 0x800`. Because
+  the second guard re-reads the bumped `to`, an input exactly half a turn apart
+  fires both and they cancel, so that one case resolves forward.
+- **The Euler-flip retry.** Before the three angle calls the blender zeroes
+  `_DAT_8007BD28` (`0x8001C11C`); each call adds its unwrapped `|from - to|`
+  to it and journals its unwrapped `(from, to)` pair into the 8-byte-stride
+  slot table at `0x800891A8` (slot = axis). If the sum exceeds `0xC00`
+  (`slti v1,v1,0xc01` at `0x8001C164`) the three angles are blended **again**
+  from the journal, against the next frame's equivalent Euler triple
+  `(x + 0x800, -(y + 0x800), z + 0x800)` (`0x8001C170..0x8001C1CC`) - the
+  same Z-Y-X orientation, reached by a shorter total path when the three
+  short arcs together run long. The counter and the journal are therefore
+  part of the transform, not bookkeeping.
 
-The angle half of that blend is available: `legaia_asset::player_anm::lerp_angle_12`
-is the port of `FUN_8001D088`. The result is
-`(to + ((from - to) * frac >> 4)) & 0xFFF`, with the pair first brought onto the
-short arc by two **sequential** guards (`0x8001D090..0x8001D0B8`) - add a turn to
-`to` when `from - to >= 0x800`, then add a turn to `from` when the *updated*
-`to - from >= 0x800`. Because the second guard re-reads the bumped `to`, an
-input exactly half a turn apart fires both and they cancel, so that one case
-resolves forward. Retail additionally accumulates `|from - to|` into
-`_DAT_8007BD28` and journals the unwrapped pair into the 8-byte-stride slot
-table at `0x800891A8`; neither is part of the transform, and the port omits both.
+Results are written to scratchpad `0x1F8002C0` (`T` at `+0x0..0x6`, angles at
+`+0x8..0xE`) before the GTE load. At `frac == 0` every lane returns the current
+entry exactly - the flip retry included, since the interpolator's `to` term
+survives it - so a whole-frame cursor poses exactly as the single-entry decode.
+
+On the disc the gate is the common case: 2243 of the 3634 records the ANM
+detector finds across every PROT entry carry it, spread over 78 entries, and
+1560 of those use step divisor `4`. It is set per clip, not by record index -
+327 of the 755 records at index `0..=8` carry it and 963 of those at `9+` do
+not. `crates/asset/tests/player_anm_sampler_real.rs` prints the census and
+checks every keyframe of every record against the single-entry decode.
+
+**Port.** `legaia_asset::player_anm::BoneTransform::decode` is the entry-decode
+half. `PlayerAnmBundle::sample_bone` / `sample_pose` is the two-frame sampler
+(next-entry rule, gate, fraction), `blend_bone_transform` the blend including
+the flip retry, and `lerp_angle_12` / `lerp_angle_12_journaled` the angle
+interpolator, the latter returning the journal and counter outputs as values.
+`PlayerAnmRecord::blends` reads the gate. Both hosts pose a placed prop through
+one engine kernel, `legaia_engine_core::field_env::prop_bone_offsets`, keyed on
+`PropAnim::pose_key` (the live cursor plus the clamp bit), and the NPC / player
+clip player `FieldClipPlayer` blends a gated clip on the ticks that fall inside
+a frame; both hosts memoise a posed mesh on `FieldClipPlayer::pose_key` rather
+than on the frame index.
+
+**Known port gap: gated-clip cadence.** `FieldClipPlayer` plays every clip at
+a fixed two engine ticks per frame. Retail's step for a gated clip is
+`(rate * 2 + div - 1) / div` (`0x800205C8..0x800205E0`), which at the
+template rate `8` is `8` for divisor `2` but `4` for divisor `4` - half the
+speed, with the half-frame poses the blender then fills in. The prop path
+(`PropAnim::tick`) models the scaled step; the clip player does not, so a
+gated divisor-4 NPC clip plays faster in the port than the step rule implies.
 
 The decoder helper `legaia_asset::player_anm::BoneTransform::decode`
 returns `(t_x, t_y, t_z, r_x, r_y, r_z)` directly; the WASM
