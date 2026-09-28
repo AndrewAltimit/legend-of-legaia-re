@@ -22,6 +22,13 @@ pub struct BattleSpoilsBanner {
     pub subject: vm::battle_party_panel::ResultSubject,
 }
 
+/// The loss window's content ([`World::battle_defeat_banner`]).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct BattleDefeatBanner {
+    /// The one line the window shows, or `None` without the disc pool.
+    pub line: Option<String>,
+}
+
 impl World {
     /// How long the post-battle spoils panel stays up, in sim ticks
     /// (~3 s at the 100 Hz sim clock).
@@ -42,8 +49,16 @@ impl World {
             return None;
         }
         // A special battle opens no result window (`FUN_8004E568` skips
-        // `FUN_801D8DE8(0x41)` at `0x8004F614` while `_DAT_8007BAC0 != 0`).
-        if self.battle.victory.is_some_and(|v| !v.window_opened) {
+        // `FUN_801D8DE8(0x41)` at `0x8004F614` while `_DAT_8007BAC0 != 0`),
+        // and a wipe opens the loss window instead
+        // ([`Self::battle_defeat_banner`]) - `last_rewards` is never cleared,
+        // so without the cause test a wipe after a win re-showed that win's
+        // spoils over the loss.
+        if self
+            .battle
+            .victory
+            .is_some_and(|v| !v.window_opened || v.cause != BattleEndCause::MonsterWipe)
+        {
             return None;
         }
         let r = self.battle.last_rewards.as_ref()?;
@@ -74,8 +89,19 @@ impl World {
                 format!("{name}\'s level increased!")
             })
             .collect();
-        // Participant ids in panel order, `0` for an empty seat - the
-        // shape of retail's `0x8007BD10` list the build arms key on.
+        Some(BattleSpoilsBanner {
+            xp: r.xp,
+            gold: r.gold,
+            drops,
+            level_ups,
+            subject: self.battle_result_subject(),
+        })
+    }
+
+    /// Who the battle-result messages name: participant ids in panel order,
+    /// `0` for an empty seat - the shape of retail's `0x8007BD10` list the
+    /// two build arms of `FUN_801D84C0` key on.
+    fn battle_result_subject(&self) -> vm::battle_party_panel::ResultSubject {
         let seats: [u8; 3] = std::array::from_fn(|i| {
             if i < usize::from(self.party.party_count) {
                 (self.party_roster_slot(i) as u8).wrapping_add(1)
@@ -83,13 +109,42 @@ impl World {
                 0
             }
         });
-        Some(BattleSpoilsBanner {
-            xp: r.xp,
-            gold: r.gold,
-            drops,
-            level_ups,
-            subject: vm::battle_party_panel::result_subject(seats),
-        })
+        vm::battle_party_panel::result_subject(seats)
+    }
+
+    /// The loss window a host should be drawing this frame, or `None`.
+    ///
+    /// Retail's wipe arm of the results frame opens screen element `0x42`
+    /// (`FUN_801D8DE8(0x42, 0)` at `0x8004F900`) unless the special-battle
+    /// word is set (`0x8004F8F0`) - the same gate as the win arm's result
+    /// window, carried by `VictorySequence::window_opened`. The element's
+    /// placement record is the win window's twin (same frame, same seat), and
+    /// its string is the defeat buffer `FUN_801D84C0` built at battle start:
+    /// the lead's name plus the solo suffix, or the lead's team line.
+    ///
+    /// Up from the results frame through the exit, like the win window. The
+    /// line is `None` on a disc-free host (no PROT 0898 pool), where the
+    /// window opens empty.
+    pub fn battle_defeat_banner(&self) -> Option<BattleDefeatBanner> {
+        let v = self.battle.victory?;
+        if v.cause != BattleEndCause::PartyWipe || !v.window_opened || !v.results_shown() {
+            return None;
+        }
+        let subject = self.battle_result_subject();
+        let lead = self
+            .party
+            .roster
+            .members
+            .get(self.party_roster_slot(0))
+            .map(|m| m.name())
+            .filter(|n| !n.trim().is_empty());
+        let line = self
+            .tables
+            .defeat_text
+            .as_ref()
+            .zip(lead)
+            .map(|(t, lead)| t.compose(subject, &lead));
+        Some(BattleDefeatBanner { line })
     }
     /// Resolve a finished battle and return to the field.
     ///

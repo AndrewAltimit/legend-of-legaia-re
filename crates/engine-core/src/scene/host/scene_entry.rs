@@ -175,6 +175,10 @@ impl SceneHost {
                 // The Seru-absorb banner's caption pieces (0x801F4DFC /
                 // 0x801F4C28) are sibling rodata in the same overlay.
                 self.world.tables.absorb_caption = legaia_asset::absorb_caption::parse(&bytes);
+                // The loss window's text (0x801F4C78 / 0x801F4C94) is sibling
+                // rodata in the same overlay.
+                self.world.tables.defeat_text =
+                    legaia_engine_vm::battle_party_panel::DefeatText::parse(&bytes);
                 // The Seru side-effect table (0x801F6870) is sibling static
                 // data in the same overlay. A failure leaves the stager off,
                 // so levelled Seru casts carry no secondary debuff.

@@ -288,6 +288,7 @@ mod battle_clip_ladder;
 mod battle_effects_ai2;
 mod battle_items_magic;
 mod battle_loot_use_item;
+mod battle_loss_window;
 mod battle_queue_gates;
 mod battle_special_ai;
 mod battle_special_word;
