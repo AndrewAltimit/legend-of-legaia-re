@@ -286,8 +286,8 @@ pub const FOLLOW_PIVOT_LIFT: f32 = 64.0;
 /// The **op-`0x45` cutscene shot**'s inputs, decoded from the camera state the
 /// field VM staged.
 ///
-/// Slot map (`FUN_801DE084` writes the globals, `FUN_8001CF50` builds the
-/// rotation): `0` pitch, `1` yaw, `2` roll, `3/4/5` the eye-space translation
+/// Slot map (`FUN_801DE084` writes the globals, `FUN_800172C0` builds the
+/// rotation through `FUN_80026988`): `0` pitch, `1` yaw, `2` roll, `3/4/5` the eye-space translation
 /// trio, `6/7/8` the focus (X and Z stored **negated**), `9` GTE `H`. Angles
 /// are 12-bit (`4096` = full turn). A beat that omits a slot keeps the prior
 /// value, which is what the per-slot fallbacks below encode:

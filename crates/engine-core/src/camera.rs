@@ -257,9 +257,9 @@ pub struct Camera {
     pub yaw: f32,
     /// Pitch in radians.
     pub pitch: f32,
-    /// Roll in radians - op-`0x45` slot `2` (`_DAT_8007B794`, the
-    /// `RotMatrixZ` angle `FUN_8001CF50` composes third, after pitch and
-    /// yaw).
+    /// Roll in radians - op-`0x45` slot `2` (`_DAT_8007B794`, the Z angle
+    /// the camera's Euler kernel `FUN_80026988` composes third, after pitch
+    /// and yaw, when `FUN_800172C0` builds the view).
     ///
     /// Retail authors this. An executing census of every MAN record on the
     /// disc (`crates/engine-core/tests/thread_camera_roll_execution.rs`)
@@ -269,7 +269,7 @@ pub struct Camera {
     /// one shot the way an authored Dutch angle is. A camera that composes
     /// pitch and yaw only frames those shots wrong.
     ///
-    /// REF: FUN_8001CF50
+    /// REF: FUN_800172C0, FUN_80026988
     pub roll: f32,
     /// User-controlled orbit around the follow target (radians), in the
     /// **compass sense**: positive swings "screen up" from world `+Z`
@@ -536,7 +536,8 @@ impl Camera {
     /// Returns the number of camera events applied this frame.
     ///
     /// The op-`0x45` Configure slot→camera mapping mirrors the retail apply
-    /// handler; the GTE rotation build it feeds is `FUN_8001CF50`.
+    /// handler; the view build it feeds is `FUN_800172C0` (Euler kernel
+    /// `FUN_80026988`).
     ///
     /// Take this frame's `apply_trigger == 0` Configure beats as packed
     /// component snaps, ready for
@@ -598,8 +599,8 @@ impl Camera {
                     }
                     // Op-0x45 slot layout, pinned from the Camera Configure
                     // apply handler `FUN_801DE084` (writes the camera globals)
-                    // + the GTE rotation build `FUN_8001CF50` (RotMatrixX/Y/Z
-                    // at 0x800461A4/629C/638C). The 10 slots are three Euler
+                    // + the view build `FUN_800172C0` (Euler kernel
+                    // FUN_80026988). The 10 slots are three Euler
                     // angles, an offset trio, a focus trio, and H:
                     //   0 = pitch  (`_DAT_8007B790`, RotX)   1 = yaw (RotY)
                     //   2 = roll   (`_DAT_8007B794`, RotZ)   3,4,5 = offset
