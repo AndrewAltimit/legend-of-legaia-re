@@ -11,6 +11,7 @@ mod battle_intro_emitter;
 mod blend;
 mod color_space;
 mod menu_overlays;
+mod overworld_flat_depth_gpu;
 mod screen_overlay_gpu;
 mod sprite_blend;
 mod text_overlay;

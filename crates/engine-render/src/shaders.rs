@@ -821,6 +821,48 @@ fn psx_snap_clip(clip: vec4<f32>, vp_w: f32, vp_h: f32) -> vec4<f32> {
     return vec4<f32>(nx * clip.w, ny * clip.w, clip.z, clip.w);
 }
 
+// `z = a * w + b` of `m`'s depth row over its `w` row, read the way
+// `legaia_engine_core::overworld_draw_order::depth_affine` reads it: the
+// column with the largest `w` weight gives `a`, the translation column `b`.
+fn depth_affine(m: mat4x4<f32>) -> vec2<f32> {
+    var col = m[2];
+    if (abs(m[0].w) > abs(col.w) && abs(m[0].w) >= abs(m[1].w)) {
+        col = m[0];
+    } else if (abs(m[1].w) > abs(col.w)) {
+        col = m[1];
+    }
+    var a = 0.0;
+    if (abs(col.w) > 1.0e-7) {
+        a = col.z / col.w;
+    }
+    return vec2<f32>(a, m[3].z - a * m[3].w);
+}
+
+// The overworld continent's flat bucket depth
+// (`legaia_engine_core::overworld_draw_order`): retail links each ground
+// cell (`FUN_801F89B8`) at `(max corner SZ >> 5) + 14` of the one ordering
+// table the fog sheets link into, so the whole cell draws at that bucket's
+// depth. `fa` / `fb` are the cell's `[x0, z0, x1, z1]` / `[y00, y10, y01,
+// y11]` (zero on every other mesh, which keeps its per-pixel depth); the
+// bucket's representative `SZ` is `32 k + 32`, taken back to this matrix's
+// `w` through the frame's `clip.w`-to-`SZ` factor and to normalised depth
+// through its depth row. Off the overworld (`sz_scale == 0`) nothing moves.
+fn overworld_flat_depth(clip: vec4<f32>, fa: vec4<f32>, fb: vec4<f32>, sz_scale: f32) -> vec4<f32> {
+    if (sz_scale <= 0.0 || fa.z <= fa.x || clip.w <= 0.0) {
+        return clip;
+    }
+    let w0 = (u.mvp * vec4<f32>(fa.x, fb.x, fa.y, 1.0)).w;
+    let w1 = (u.mvp * vec4<f32>(fa.z, fb.y, fa.y, 1.0)).w;
+    let w2 = (u.mvp * vec4<f32>(fa.x, fb.z, fa.w, 1.0)).w;
+    let w3 = (u.mvp * vec4<f32>(fa.z, fb.w, fa.w, 1.0)).w;
+    let sz = clamp(i32(round(max(max(w0, w1), max(w2, w3)) * sz_scale)), 0, 0xFFFF);
+    let bucket = (sz >> 5u) + 14;
+    let rep_w = (f32(bucket) * 32.0 + 32.0) / sz_scale;
+    let ab = depth_affine(u.mvp);
+    let ndc = ab.x + ab.y / rep_w;
+    return vec4<f32>(clip.x, clip.y, ndc * clip.w, clip.w);
+}
+
 @vertex
 fn vs_main(
     @location(0) position: vec3<f32>,
@@ -828,11 +870,14 @@ fn vs_main(
     @location(2) cba_tsb_in: vec2<u32>,
     @location(3) normal_in: vec3<f32>,
     @location(4) color_in: vec4<u32>,
+    @location(5) flat_a: vec4<f32>,
+    @location(6) flat_b: vec4<f32>,
 ) -> VsOut {
     var out: VsOut;
     // The overworld's per-vertex screen-Y bend (see OVERWORLD_CURVE_WGSL),
     // ahead of the pixel snap - retail bends SY before the packet is written.
     var clip = overworld_curve_clip(u.mvp * vec4<f32>(position, 1.0), u.flags.w);
+    clip = overworld_flat_depth(clip, flat_a, flat_b, u.flags.w);
     if u.psx_params.z >= 0.5 {
         clip = psx_snap_clip(clip, u.psx_params.x, u.psx_params.y);
     }

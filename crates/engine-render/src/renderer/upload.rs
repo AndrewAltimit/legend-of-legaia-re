@@ -152,7 +152,9 @@ impl Renderer {
     /// Upload a VRAM mesh: position + per-vertex `(u, v)` (each 0..255) +
     /// per-vertex `(cba, tsb)` PSX VRAM addresses + per-vertex baked prim
     /// colour, plus triangle indices. Vertex layout matches the VRAM-mesh
-    /// pipeline's 36-byte stride.
+    /// pipeline's [`crate::renderer::VRAM_VERTEX_STRIDE`], with the flat
+    /// bucket-depth reference zeroed (see
+    /// [`Self::upload_vram_mesh_with_flat_refs`]).
     ///
     /// `colors` is the TMD prim's colour word (`legaia_tmd::mesh::VramMesh`'s
     /// `colors`), uploaded as raw bytes. The fragment shader modulates the
@@ -168,6 +170,35 @@ impl Renderer {
         colors: &[[u8; 3]],
         indices: &[u32],
     ) -> Result<UploadedVramMesh> {
+        self.upload_vram_mesh_with_flat_refs(positions, uvs, cba_tsb, normals, colors, indices, &[])
+    }
+
+    /// [`Self::upload_vram_mesh`] for the continent ground: each vertex also
+    /// carries its cell's `[x0, z0, x1, z1, y00, y10, y01, y11]`
+    /// (`legaia_engine_core::overworld_draw_order::ground_flat_refs`), from
+    /// which the vertex shader re-projects the cell's four corners and, on
+    /// the overworld (a non-zero curvature scale), draws the whole cell at
+    /// its ordering-table bucket's depth instead of its own per-pixel depth.
+    /// An empty `flat_refs` uploads zeros, which the shader reads as "no
+    /// flat depth".
+    #[allow(clippy::too_many_arguments)]
+    pub fn upload_vram_mesh_with_flat_refs(
+        &self,
+        positions: &[[f32; 3]],
+        uvs: &[[u8; 2]],
+        cba_tsb: &[[u16; 2]],
+        normals: &[[f32; 3]],
+        colors: &[[u8; 3]],
+        indices: &[u32],
+        flat_refs: &[[f32; 8]],
+    ) -> Result<UploadedVramMesh> {
+        if !flat_refs.is_empty() && flat_refs.len() != positions.len() {
+            anyhow::bail!(
+                "vram mesh flat refs: {} for {} vertices",
+                flat_refs.len(),
+                positions.len()
+            );
+        }
         if positions.len() != uvs.len()
             || positions.len() != cba_tsb.len()
             || positions.len() != normals.len()
@@ -197,13 +228,15 @@ impl Renderer {
                 positions.len()
             );
         }
-        let mut bytes = Vec::with_capacity(positions.len() * 36);
-        for ((((pos, uv), ct), n), c) in positions
+        let mut bytes =
+            Vec::with_capacity(positions.len() * crate::renderer::VRAM_VERTEX_STRIDE as usize);
+        for (i, ((((pos, uv), ct), n), c)) in positions
             .iter()
             .zip(uvs.iter())
             .zip(cba_tsb.iter())
             .zip(normals.iter())
             .zip(colors.iter())
+            .enumerate()
         {
             bytes.extend_from_slice(bytemuck::cast_slice(pos));
             // UV padded to 4 bytes (Uint8x4 - extra bytes ignored by shader).
@@ -219,6 +252,8 @@ impl Renderer {
             bytes.push(c[1]);
             bytes.push(c[2]);
             bytes.push(0);
+            let flat = flat_refs.get(i).copied().unwrap_or([0.0; 8]);
+            bytes.extend_from_slice(bytemuck::cast_slice(&flat));
         }
         let vertex_buf = self
             .device
