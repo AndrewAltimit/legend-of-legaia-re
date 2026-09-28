@@ -291,16 +291,80 @@ satisfied on arrival (the same reasoning as sub-op 9's barrier) and
 still set, then clear the latch unconditionally. `see
 ghidra/scripts/funcs/800243f0.txt`, `800266e0.txt`, `80026520.txt`.
 
-**A pause is a key-off, not a freeze.** The sub-op 2 arm reaches
-`FUN_800628F0` in mode `0`, which only raises the slot's flag `0x2`; the next
-per-tick service `FUN_80062F98` routes a flagged slot through `FUN_800638D8`,
-which kills the channel's sounding notes and clears the flag, while the
-sequence cursor stays where it was for the resume. `AudioOut::set_sequencer_paused(true)`
-(and its browser twin) keys off the attached sequencer's active notes as it
-closes the gate. A gate that only stopped the clock held whatever was sounding
-for as long as it stayed shut - the title theme's last note sustaining under
-the whole attract movie, on both hosts. `see ghidra/scripts/funcs/800628f0.txt`,
-`80062f98.txt`, `800638d8.txt`.
+### The control words: stop, pause, replay
+
+The op's arm table is `0x801CEE00` in the field overlay, indexed `sub - 1`
+behind `sltiu 0xB`. The three control arms each set or clear pause bit 1 and
+hand the BGM slot `0x8007052C` to one sound-source primitive, and what each
+does to the sequence is read off the libsnd call under it:
+
+| Sub-op | Arm | Primitive -> libsnd | What the sequence does |
+|---|---|---|---|
+| `2` | `0x801E0138`, sets bit 1 | `FUN_800266E0` -> `FUN_80064370` -> `FUN_800641EC` | **stop**: the channel's notes are killed now (`FUN_800684CC`), the read cursor goes back to the sequence start (`+0x4`), flag `0x4` is raised |
+| `3` | `0x801E015C`, sets bit 1 | `FUN_80026740` -> `FUN_8006282C` -> `FUN_8006275C` | **pause**: flags `0x1` / `0x8` clear and `0x2` raised; the next calc (`FUN_80062F98`) keys the notes off through `FUN_800638D8`, and the cursor is left alone |
+| `4` | `0x801E0180`, clears bit 1 | `FUN_80026478` -> `FUN_80062880(id, 1, 1)` -> `FUN_800628F0` | **replay**: `FUN_800628F0` resets the read cursor to the sequence start for every mode, then mode `1` raises the play flag |
+
+So no script word resumes a track mid-phrase: the re-attach plays it again
+from its first event. The engine's `BgmDirector::pause` (sub-ops `2` and `3`)
+closes the sequencer gate, which keys off the attached sequencer's notes and
+holds the playhead, and `BgmDirector::resume` (sub-op `4`) rewinds before it
+reopens (`AudioOut::rewind_sequencer`, and the browser twin). The held
+playhead is never heard through a script word - every way out of the pause
+either replays from the top or replaces the track. A gate that only stopped
+the clock held whatever was sounding for as long as it stayed shut - the
+title theme's last note sustaining under the whole attract movie. `see
+ghidra/scripts/funcs/800266e0.txt`, `80064370.txt`, `800641ec.txt`,
+`8006282c.txt`, `8006275c.txt`, `80062880.txt`, `800628f0.txt`,
+`80062f98.txt`.
+
+The engine's router once read sub-op `3` as a resume and `4` as a stop -
+the legacy labels - so the census's most common control word after the
+start / commit pair silenced the score where retail brings it back. The
+battle and minigame restores that stop the score when no field track was
+playing raise the engine's own word, `BGM_SUB_OP_ENGINE_STOP`, which retail's
+bounds test would dispatch nowhere.
+
+### Movies and the score
+
+Retail's movie path never touches the sequencer. Master mode `0x1A`'s entry
+`FUN_80025FB4`, the dispatch `FUN_801CEA3C`, the play loop `FUN_801CF098` and
+the main loop's mode-change arm (`FUN_80015E90` at `0x800161B8..0x80016200`,
+with the pass `FUN_80016230` it calls) issue no BGM-slot call and no `SsSeq*`
+call; the play loop's only sound calls open and close the SPU CD input
+(`FUN_800643C4`, `FUN_80062A0C`). The sequencer is clocked from the
+root-counter callback (the word at `0x8007A910` names `FUN_80062F98`), not
+from the main loop. So a mid-game movie inherits whatever state the script
+left: the nine `0x4C 0xE2` triggers are preceded by their own op-`0x35`
+words - a pause, a commit, a flag set, nothing - scene by scene. Whether a
+track the script left running is audible under the movie's XA has not been
+captured.
+
+The title attract is the exception. The attract underflow arm of the title
+tick releases the slot - `FUN_800266E0` + `FUN_80026520` at `0x801DDD7C` /
+`0x801DDD84`, behind the entry word `_DAT_8007BB00 != 0`, which the boot image
+always raises - and the return runs `CARD INIT` (`FUN_8002574C`), which streams
+the title theme again (raw TOC `0x41F` into category 1,
+`0x800258CC..0x80025934`) and re-attaches the slot (`0x80025948`). The theme
+restarts from its first beat. The load route's `LaunchFade` arm releases the
+slot the same way (`0x801DFB74`) before master mode 2 brings the field up.
+
+Both hosts decode a movie's XA onto the mixer the BGM plays through, so the
+port decides the layering itself, in one engine-side policy
+(`legaia_engine_core::movie_audio::MovieScore`) the native window and the
+browser page both consult:
+
+- The attract stops the score when it is armed and restarts the title theme
+  when it ends, played or not - the retail release and `CARD INIT` pair.
+- A movie that stages an XA track ducks the score by closing the sequencer
+  gate, but only if the gate is open. A track the script already paused is
+  not claimed, so the movie's end does not reopen it.
+- A movie with no audio track (an extracted-root boot, a cut slot, a page
+  that never installed it) touches nothing.
+- Every way a movie ends - played out, skipped, never installed, dropped -
+  runs the same end, which reopens the gate only if this movie closed it.
+
+The gate is the directors' only pause latch on both hosts, so the duck and
+the op-`0x35` pause arms read and write one bit.
 
 ### Entry-script pauses and free-roam picker staging
 
@@ -363,7 +427,7 @@ arm is `FUN_800266E0`'s body inline - behind the same `_DAT_8007B868` gate,
 `FUN_8002657C(0, slot)`, `FUN_80064370(slot[+0xA])`, then
 `DAT_8007B708 = 0` (`0x80026834..0x8002686C`; see
 `ghidra/scripts/funcs/800267fc.txt`). `FUN_800266E0` is sub-op `2`'s primitive,
-so the expiry is a pause the script scheduled in advance. The port surfaces it
+so the expiry is the stop sub-op `2` issues, scheduled in advance. The port surfaces it
 as exactly that: `World::tick` pushes a sub-op `2` BGM event on the expiry
 frame, and `SceneHost::route_bgm_events` hands it to either host's director.
 The raw expiry flag (`World::take_pending_sound_release`) stays for the mode
@@ -502,11 +566,11 @@ Legaia statically links Sony's PsyQ **libsnd / SsAPI** sequencer for `.SEQ`-driv
 | `FUN_80062340(seq_data, slot_hint)` | `SsSeqOpen` - walks the slot bitmap, marks the first free slot, calls `FUN_80062410`. Returns slot ID or `-1`. |
 | `FUN_80061D18(slot)` | `SsSeqClose` - calls `FUN_80067E9C(slot,0,0,1)` + `FUN_800684CC`, clears bitmap bit, memsets all 16 channel records (size `0xB0`) to defaults (vol=`0x7F`, pan=`0x7F`). |
 | `FUN_80061E94(seq_id)` | `SsSeqClose` short-arg shim - sign-extends, tail-calls `FUN_80061D18`. |
-| `FUN_8006275C(slot,0)` | `SsSeqPlay` - clears flags 0/3 in `+0x98`, sets bit 1. Start-from-beginning. |
-| `FUN_8006282C(slot)` | `SsSeqPlay` 1-arg shim - tail-calls `FUN_8006275C(slot,0)`. |
-| `FUN_80062880(slot, mode, arg)` | Pause/Resume shim - tail-calls `FUN_800628F0(slot,0,mode,arg)`. |
-| `FUN_800628F0(slot,_,mode,_)` | `_SsSeqCtrl` - `mode==1` resets read pointer, sets flag `0x1`, calls `FUN_80067E9C`; `mode==0` sets flag `0x2`; otherwise clears both. The Stop / Pause / Resume state core. |
-| `FUN_800641EC(slot, channel)` | `SsSeqRewind` / `SsSeqReplay` - clears flags `0x1/0x2/0x8/0x400`, sets `0x4`, full slot reset to start. |
+| `FUN_8006275C(slot,0)` | Pause - clears flags `0x1` / `0x8` in `+0x98`, raises `0x2` (the next calc keys the notes off); the read cursor is untouched. |
+| `FUN_8006282C(slot)` | The pause's 1-arg shim - tail-calls `FUN_8006275C(slot,0)`. BGM sub-op `3`'s primitive under `FUN_80026740`. |
+| `FUN_80062880(slot, mode, arg)` | Play shim - tail-calls `FUN_800628F0(slot,0,mode,arg)`. |
+| `FUN_800628F0(slot,_,mode,_)` | Play core - resets the read cursor (`+0x0` / `+0x8` / `+0xC`) to the sequence start `+0x4` for **every** mode, then `mode==1` sets flag `0x1` and calls `FUN_80067E9C`, `mode==0` sets flag `0x2`. BGM sub-op `4` reaches it in mode `1` - a replay from the top. |
+| `FUN_800641EC(slot, channel)` | Stop - clears flags `0x1/0x2/0x8/0x400`, sets `0x4`, kills the channel's notes (`FUN_800684CC`), full slot reset to start. BGM sub-op `2`'s primitive, under `FUN_800266E0` -> `FUN_80064370`. |
 
 ### SEQ internals
 
