@@ -985,7 +985,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "off their world's pad pump, and three pieces are each a silent "
         "cross-wire if one host drops them: the raw-to-packed pad conversion "
         "(`retail_packed` - without it Up arrives as PACK_TRIANGLE and Cross "
-        "as PACK_DOWN), the EQUIP row's bag commit (`commit_equip_row` - "
+        "as PACK_DOWN), the EQUIP row's bag commit (inside `tick_host` - "
         "without it the row steps an id and never equips), and the Square "
         "records-page swap (`RECORDS_TOGGLE`)",
         "sites": {
@@ -993,7 +993,7 @@ SIM_PAIRS: list[dict[str, object]] = [
             "web": (WEB_PLAY_DEV_MENU, "tick_dev_menu"),
         },
         "mode": "symbols_all",
-        "symbols": ["retail_packed", "commit_equip_row", "RECORDS_TOGGLE"],
+        "symbols": ["retail_packed", "tick_host", "RECORDS_TOGGLE"],
     },
     {
         "what": "dev-records model - both hosts assemble the records page "

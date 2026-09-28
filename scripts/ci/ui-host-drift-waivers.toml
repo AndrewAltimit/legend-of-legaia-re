@@ -424,6 +424,40 @@ skips = [
     "tick_world_effects",
 ]
 
+[[frame_arm]]
+host = "native"
+arm = "if field_suspended"
+reason = """
+A shop or the casino prize exchange is up. Retail runs both at game mode
+`0x17` with the field overlay swapped out for the menu overlay, so no field
+code is resident under the screen: the world tick and its whole tail stand
+still, which is the page's shape (its guard below skips all of `tick_frame`
+under `shopOpen`). The arm runs only the menu session on the tick's edges, the
+unpark on close, and the SFX scheduler step the pause-menu arm also runs.
+`drain_and_log_battle_events` carries that step on the fall-through path; here
+the world raised nothing this tick, so the drain half has nothing to take.
+"""
+skips = [
+    "advance_ocean_animation",
+    "apply_world_clut_fx",
+    "check_battle_vram_residency",
+    "drain_and_log_battle_events",
+    "drain_and_route_field_events",
+    "drain_anim_cues",
+    "drain_baka_sfx_cues",
+    "maybe_install_demo_tile_board",
+    "rebind_live_npc_models",
+    "sync_battle_render",
+    "sync_dialog_panel",
+    "sync_text_balloon",
+    "tick_dev_menu",
+    "tick_field_party_hud",
+    "tick_fishing_banners",
+    "tick_minigame_extras",
+    "tick_muscle_time_meter",
+    "tick_play_clock",
+]
+
 # --- page: the browser's OTHER frame path, in JavaScript --------------------
 
 [[frame_arm]]
