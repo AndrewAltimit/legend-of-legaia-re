@@ -2700,6 +2700,18 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     fn party_count(&self) -> u8 {
         self.world.party.party_count
     }
+    /// The arena session's word ORed with the battle's own
+    /// ([`World::special_battle_word`]) - what the special-battle wipe rule
+    /// reads.
+    fn special_battle_word(&self) -> u32 {
+        self.world.special_battle_word()
+    }
+    /// The raw `+0x16E` word plus the typed tracker's packed bits
+    /// ([`World::raw_status_word`]), so a Rot the tracker holds reaches the
+    /// wipe rule's `& 0x38` test.
+    fn status_word(&self, slot: u8) -> u16 {
+        self.world.raw_status_word(slot)
+    }
     /// Retail's wipe scan iterates the seated-count byte's worth of actor
     /// pointers (`*(0x8007BD24)+0` over `0x801C9370`, `0x801E6510..`), and
     /// that count is derived from the present-party list at battle load - a
