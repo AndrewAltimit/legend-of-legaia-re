@@ -12,6 +12,12 @@
 //! reads (`XA<slot + 1>.XA`; the disc ships `XA1.XA` to `XA34.XA`, slots `0..=33`), and every channel must be one of
 //! the eight a sector interleaves. A scene with no MAN lists nothing.
 //!
+//! The one exception to the channel rule is a scene with a Muscle Dome door
+//! (koin1): it also lists the dome hub's two announcer lines
+//! (`field_xa::scene_minigame_door_xa_prestage`), which the hub starts
+//! through `FUN_8003D53C` with its own channels rather than an op `0x36`'s
+//! `arg & 7`.
+//!
 //! Skips (and passes) without `extracted/` or `LEGAIA_DISC_BIN`.
 
 use std::path::PathBuf;
@@ -44,6 +50,11 @@ fn every_scene_lists_its_field_xa_one_shots_at_load() {
     names.sort();
     names.dedup();
 
+    let hub: Vec<legaia_engine_core::sfx_cue::XaVoiceClip> =
+        legaia_engine_core::muscle_ringside::hub_xa_prestage()
+            .into_iter()
+            .map(Into::into)
+            .collect();
     let mut scenes_with = 0usize;
     let mut clips = 0usize;
     let mut loaded = 0usize;
@@ -60,7 +71,11 @@ fn every_scene_lists_its_field_xa_one_shots_at_load() {
         clips += list.len();
         for c in &list {
             assert!(c.clip < 34, "{name}: clip slot {} names no XA file", c.clip);
-            assert!(c.channel < 8, "{name}: channel {} out of range", c.channel);
+            assert!(
+                c.channel < 8 || hub.contains(c),
+                "{name}: channel {} out of range",
+                c.channel
+            );
             assert!(
                 c.duration_sectors > 0,
                 "{name}: a zero selector is the seek-ahead"
