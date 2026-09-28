@@ -26,7 +26,14 @@
 --     seat words. A row is written only when a field changes.
 --
 -- Output: <LEGAIA_OUT_DIR>/ambush.log.
--- Env: LEGAIA_SSTATE / LEGAIA_FRAMES / LEGAIA_OUT_DIR (run_probe.sh).
+-- Env: LEGAIA_SSTATE / LEGAIA_FRAMES / LEGAIA_OUT_DIR (run_probe.sh), plus
+--   LEGAIA_HOLD         pad button held from the load (e.g. RIGHT, to walk
+--                       into a random encounter from karisto_sol_pre_encounter)
+--   LEGAIA_FIRST_MONSTER  hex id written to the formation's first byte
+--                       0x8007BD0C at battle init's entry - a SYNTHETIC first
+--                       monster, for the battle-init arm that tests it
+--                       (0x800519DC..0x80051A04: 0xAF raises 0x200 in
+--                       _DAT_8007BAC0). Say so wherever a result rests on it.
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
 local probe = require("probe")
 local bp = require("probe.bp")
@@ -49,6 +56,9 @@ local function s32(x)
 end
 
 local vs = 0
+local pad = require("probe.pad")
+local HOLD = pad.BTN[probe.getenv("LEGAIA_HOLD", "")]
+local FIRST = tonumber(probe.getenv("LEGAIA_FIRST_MONSTER", ""), 16)
 
 local function words()
     return string.format("mode=%02X map=%X bac0=%08X bd60=%08X form=%s",
@@ -87,6 +97,10 @@ probe.run({
     on_arm = function()
         bp.arm(0x800513F0, "Exec", 4, "battle_init", function()
             local r = PCSX.getRegisters()
+            if FIRST then
+                probe.write_u8(0x8007BD0C, FIRST)
+                log(string.format("v=%d SYNTHETIC first monster %02X", vs, FIRST))
+            end
             log(string.format("v=%d FUN_800513F0 ra=%08X %s", vs, u32(r.GPR.n.ra), words()))
         end)
         bp.arm(0x80051D84, "Exec", 4, "formation_roll", function()
@@ -118,6 +132,9 @@ probe.run({
 
     on_capture = function(_ctx, tick)
         vs = tick
+        if HOLD then
+            if (probe.read_u8(0x8007B83C) or 0) == 0x03 then pad.force(HOLD) else pad.release(HOLD) end
+        end
         sample()
     end,
 
