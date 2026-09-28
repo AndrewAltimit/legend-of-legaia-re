@@ -863,6 +863,27 @@ fn overworld_flat_depth(clip: vec4<f32>, fa: vec4<f32>, fb: vec4<f32>, sz_scale:
     return vec4<f32>(clip.x, clip.y, ndc * clip.w, clip.w);
 }
 
+// The overworld continent's depth cue
+// (`legaia_engine_core::overworld_ground_cue`): retail's ground emitter
+// (`FUN_801F89B8`) runs each cell's packet colour through `DPCS` with
+// `IR0 = max(SZ1 - 0x5000, 0) >> 3`, `SZ1` the depth of the cell's corner
+// `(x1, z0)`, toward the far colour `0x1000` its caller sets with the literal
+// `SetFarColor(0x100, 0x100, 0x100)` - one value per cell, since every
+// vertex carries the same corners. Same gate as `overworld_flat_depth`.
+fn overworld_ground_cue(color: vec3<f32>, fa: vec4<f32>, fb: vec4<f32>, sz_scale: f32) -> vec3<f32> {
+    if (sz_scale <= 0.0 || fa.z <= fa.x) {
+        return color;
+    }
+    let w1 = (u.mvp * vec4<f32>(fa.z, fb.y, fa.y, 1.0)).w;
+    let sz1 = clamp(i32(round(w1 * sz_scale)), 0, 0xFFFF);
+    let ir0 = max(sz1 - 0x5000, 0) >> 3u;
+    let base = vec3<i32>(color) << vec3<u32>(16u);
+    let far = vec3<i32>(0x1000 << 12u);
+    let ir = clamp((far - base) >> vec3<u32>(12u), vec3<i32>(-0x8000), vec3<i32>(0x7FFF));
+    let mac = (base + ir * ir0) >> vec3<u32>(12u);
+    return vec3<f32>(clamp(mac >> vec3<u32>(4u), vec3<i32>(0), vec3<i32>(255)));
+}
+
 @vertex
 fn vs_main(
     @location(0) position: vec3<f32>,
@@ -886,7 +907,12 @@ fn vs_main(
     out.uv_affine = vec2<f32>(f32(uv_in.x), f32(uv_in.y));
     out.cba_tsb = cba_tsb_in;
     out.normal = normal_in;
-    out.prim_color = vec3<f32>(f32(color_in.x), f32(color_in.y), f32(color_in.z));
+    out.prim_color = overworld_ground_cue(
+        vec3<f32>(f32(color_in.x), f32(color_in.y), f32(color_in.z)),
+        flat_a,
+        flat_b,
+        u.flags.w,
+    );
     let p4 = vec4<f32>(position, 1.0);
     out.world_w = vec3<f32>(dot(u.model_r0, p4), dot(u.model_r1, p4), dot(u.model_r2, p4));
     return out;

@@ -33,6 +33,18 @@ fn mvp() -> [f32; 16] {
 /// the frame's `clip.w`-to-`SZ` factor (`MeshUniforms.flags.w`), `refs`
 /// whether the vertices carry the cell's corners.
 fn draw_cell(device: &wgpu::Device, queue: &wgpu::Queue, sz_scale: f32, refs: bool) -> Vec<f32> {
+    render_cell(device, queue, sz_scale, refs, 0x7FFF).0
+}
+
+/// [`draw_cell`] over a VRAM filled with the 15bpp `texel`, returning the
+/// depth attachment and the colour target (`RGBA8`, row-major).
+fn render_cell(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    sz_scale: f32,
+    refs: bool,
+    texel: u16,
+) -> (Vec<f32>, Vec<[u8; 4]>) {
     // The cell: x in -100..100, z in 400..600, rising from y -80 at the near
     // edge to +80 at the far one, so it faces the eye.
     let (x0, z0, x1, z1) = (-100.0f32, 400.0f32, 100.0f32, 600.0f32);
@@ -183,7 +195,7 @@ fn draw_cell(device: &wgpu::Device, queue: &wgpu::Queue, sz_scale: f32, refs: bo
             origin: wgpu::Origin3d::ZERO,
             aspect: wgpu::TextureAspect::All,
         },
-        &[0xFFu8, 0x7F].repeat(1024 * 512),
+        &texel.to_le_bytes().repeat(1024 * 512),
         wgpu::TexelCopyBufferLayout {
             offset: 0,
             bytes_per_row: Some(2048),
@@ -234,7 +246,7 @@ fn draw_cell(device: &wgpu::Device, queue: &wgpu::Queue, sz_scale: f32, refs: bo
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Rgba8Unorm,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     });
     let depth = device.create_texture(&wgpu::TextureDescriptor {
@@ -304,20 +316,54 @@ fn draw_cell(device: &wgpu::Device, queue: &wgpu::Queue, sz_scale: f32, refs: bo
         },
         extent,
     );
+    let crb = device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
+        size: u64::from(row * SIDE),
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    enc.copy_texture_to_buffer(
+        wgpu::TexelCopyTextureInfo {
+            texture: &color,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::TexelCopyBufferInfo {
+            buffer: &crb,
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(row),
+                rows_per_image: Some(SIDE),
+            },
+        },
+        extent,
+    );
     queue.submit(std::iter::once(enc.finish()));
     let (tx, rx) = std::sync::mpsc::channel();
     rb.slice(..).map_async(wgpu::MapMode::Read, move |r| {
         let _ = tx.send(r);
     });
+    let (ctx, crx) = std::sync::mpsc::channel();
+    crb.slice(..).map_async(wgpu::MapMode::Read, move |r| {
+        let _ = ctx.send(r);
+    });
     device.poll(wgpu::PollType::wait()).unwrap();
     rx.recv().unwrap().unwrap();
+    crx.recv().unwrap().unwrap();
     let data = rb.slice(..).get_mapped_range();
     let mut out = Vec::new();
     for y in 0..SIDE as usize {
         let r = &data[y * row as usize..y * row as usize + SIDE as usize * 4];
         out.extend(bytemuck::cast_slice::<u8, f32>(r).iter().copied());
     }
-    out
+    let cdata = crb.slice(..).get_mapped_range();
+    let mut rgba = Vec::new();
+    for y in 0..SIDE as usize {
+        let r = &cdata[y * row as usize..y * row as usize + SIDE as usize * 4];
+        rgba.extend(r.as_chunks::<4>().0.iter().copied());
+    }
+    (out, rgba)
 }
 
 #[test]
@@ -362,4 +408,48 @@ fn a_continent_cell_draws_flat_at_its_bucket_depth() {
         assert!(hi - lo > 1e-5, "per-pixel depth varies across the slope");
         assert!(hi < want, "and sits in front of the bucket depth");
     }
+}
+
+/// The overworld ground's depth cue (`legaia_engine_core::overworld_ground_cue`,
+/// retail `FUN_801F89B8`'s `DPCS`): with the corners carried on an overworld
+/// frame the cell's packet colour is pushed toward the far colour `0x1000` by
+/// `IR0 = max(SZ1 - 0x5000, 0) >> 3`, `SZ1` the depth of corner `(x1, z0)`;
+/// the modulated texel brightens by the same ratio. A mid-grey texel keeps
+/// the product below saturation.
+#[test]
+fn a_distant_continent_cell_is_depth_cued_toward_white() {
+    let Some((device, queue)) = headless_device() else {
+        eprintln!("[skip] no GPU adapter");
+        return;
+    };
+    // BGR555 (12, 12, 12): texel * packet / 128 stays under 255 up to 0xFF.
+    let grey = 12 | (12 << 5) | (12 << 10);
+    let red = |px: &[[u8; 4]]| {
+        px.iter()
+            .filter(|p| p[3] != 0 && p[0] != 0)
+            .map(|p| p[0])
+            .collect::<Vec<_>>()
+    };
+    // Corner (x1, z0) sits 400 deep: at 64 SZ per clip w, SZ1 = 25600,
+    // IR0 = (25600 - 0x5000) >> 3 = 640, packet 128 + 640 / 32 = 148.
+    let cued = red(&render_cell(&device, &queue, 64.0, true, grey).1);
+    let plain = red(&render_cell(&device, &queue, 64.0, false, grey).1);
+    assert!(
+        cued.len() > 20 && plain.len() > 20,
+        "the cell covers the target"
+    );
+    let (c, p) = (f32::from(cued[0]), f32::from(plain[0]));
+    assert!(
+        cued.iter().all(|&v| v == cued[0]),
+        "one colour per cell: {cued:?}"
+    );
+    let want = 148.0 / 128.0;
+    assert!(
+        ((c / p) - want).abs() < 0.02,
+        "cued {c} / plain {p} = {}, want {want}",
+        c / p
+    );
+    // Nearer than SZ 0x5000 the cue is the identity.
+    let near = red(&render_cell(&device, &queue, 32.0, true, grey).1);
+    assert!(near.iter().all(|&v| v == plain[0]), "near cell unchanged");
 }

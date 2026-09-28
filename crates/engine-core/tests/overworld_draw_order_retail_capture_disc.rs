@@ -286,6 +286,9 @@ fn overworld_fog_and_continent_draw_in_retail_bucket_order() {
         xy_f: [(f32, f32); 4],
         ndc: [f32; 4],
         key: u32,
+        /// The depth-cued packet colour the port draws the cell with
+        /// (`overworld_ground_cue`, keyed on corner `(x1, z0)`).
+        cue: u8,
     }
     let mut cells = Vec::new();
     for c in hf.positions.as_chunks::<4>().0 {
@@ -318,6 +321,10 @@ fn overworld_fog_and_continent_draw_in_retail_bucket_order() {
                 xy_f,
                 ndc,
                 key: order::ground_ot_index(sz),
+                cue: legaia_engine_core::overworld_ground_cue::ground_cue_color(
+                    legaia_asset::field_objects::GROUND_PRIM_COLOR,
+                    sz[1],
+                )[0],
             });
         }
     }
@@ -349,6 +356,8 @@ fn overworld_fog_and_continent_draw_in_retail_bucket_order() {
     let mut retail_ground = Vec::new();
     let mut retail_opaque = Vec::new();
     let mut ground_candidates = 0usize;
+    // Retail packet colour minus the port's cue, per matched cell.
+    let mut cue_delta: BTreeMap<i32, usize> = BTreeMap::new();
     let mut tie_buckets: BTreeMap<u32, (Option<usize>, Option<usize>)> = BTreeMap::new();
     for c in &chain {
         let Some(&(ord, bucket)) = buckets.get(&c.offset) else {
@@ -377,7 +386,9 @@ fn overworld_fog_and_continent_draw_in_retail_bucket_order() {
                     e.0 = Some(e.0.map_or(ord, |o: usize| o.max(ord)));
                 }
             }
-            Prim::PolyFt4 { cmd, verts, .. } if cmd & 2 == 0 => {
+            Prim::PolyFt4 {
+                cmd, verts, color, ..
+            } if cmd & 2 == 0 => {
                 ground_candidates += 1;
                 retail_opaque.push((ord, verts.to_vec()));
                 // The nearest cell by summed corner error: far cells near the
@@ -391,6 +402,9 @@ fn overworld_fog_and_continent_draw_in_retail_bucket_order() {
                 if let Some((i, cl)) = hit {
                     cell_used[i] = true;
                     retail_ground.push((ord, verts));
+                    *cue_delta
+                        .entry(i32::from(color[0]) - i32::from(cl.cue))
+                        .or_default() += 1;
                     *ground_delta
                         .entry(i64::from(bucket) - i64::from(cl.key))
                         .or_default() += 1;
@@ -449,6 +463,29 @@ fn overworld_fog_and_continent_draw_in_retail_bucket_order() {
     assert!(
         exact * 100 >= retail_ground.len() * 85 && within_one * 100 >= retail_ground.len() * 95,
         "continent cells at (max SZ >> 5) + 14: {exact} exact, {within_one} within one, of {}",
+        retail_ground.len()
+    );
+
+    // 1b. The depth cue: every matched cell's packet colour is `DPCS` of the
+    //     neutral base toward the far colour `0x1000`, keyed on the depth of
+    //     corner `(x1, z0)` (`FUN_801F89B8`, `legaia_engine_core::
+    //     overworld_ground_cue`). The residue is the few cells whose bucket
+    //     key also misses (a far horizon cell matched to its neighbour).
+    let cue_exact = cue_delta.get(&0).copied().unwrap_or(0);
+    let cue_near: usize = (-3..=3).filter_map(|d| cue_delta.get(&d)).sum();
+    let cued = cells
+        .iter()
+        .zip(&cell_used)
+        .filter(|(c, u)| **u && c.cue > 0x80)
+        .count();
+    eprintln!(
+        "[ok] ground cue: retail colour - port cue {cue_delta:?} over {} cells ({cued} cued past 0x80)",
+        retail_ground.len()
+    );
+    assert!(cued >= 50, "the frame reaches past SZ 0x5000");
+    assert!(
+        cue_exact * 100 >= retail_ground.len() * 95 && cue_near * 100 >= retail_ground.len() * 99,
+        "ground packet colour is the cue: {cue_exact} exact, {cue_near} within three, of {}",
         retail_ground.len()
     );
 

@@ -136,6 +136,7 @@ pub mod other_game_overlay;
 pub mod overlay_loader;
 pub mod overworld_curvature;
 pub mod overworld_draw_order;
+pub mod overworld_ground_cue;
 pub mod packet_color;
 pub mod part_motion;
 pub mod pause_screens;
