@@ -23,6 +23,7 @@
 //! | 2 | every trigger tile within `DUNGEON_TRAVERSE_TILES`, seat included |
 //! | 3 | the same, minus the seat tile |
 //! | 4 | the arrival record's whole band, and only that |
+//! | 5 | the arrival band plus every beat record's band (the pushback bands) |
 //!
 //! Run: `cargo run -p legaia-engine-shell --example keikoku_reach_probe`
 //! (needs `extracted/` beside the workspace root).
@@ -301,6 +302,36 @@ fn report(host: &mut SceneHost, mouth: (i16, i16), entry: (u8, u8)) {
             "    [4] arrival record {rec} only: {:>5} tiles; other doors reachable \
              (record, tile, tiles away): {reachable:?}",
             walk.len(),
+        );
+        // 5. The arrival band plus every beat record's band. A beat band is
+        //    not a door but it can still turn the player round: record 7's
+        //    inner-doorway band ends every one of its arms in a compass walk
+        //    back out (`B7 F8 00 C1` / `B7 F8 00 81` / `C1 F8 00 02`), so a
+        //    route that enters one does not get through. What is left is
+        //    what a pad walk at any story state this MAN covers can reach.
+        let mut walls = band.clone();
+        for tiles in beats.values() {
+            walls.extend(tiles.iter().copied());
+        }
+        // The seat is an arrival beat's own tile; the player already stands
+        // on it, and entering is what fires a band (flood 2 -> 3 above).
+        walls.remove(&seat);
+        let walk5 = tiles_of(&flood(host, from, &walls));
+        let reachable5: Vec<(u8, (i16, i16), i32)> = doors
+            .iter()
+            .filter(|(r, _)| **r != rec)
+            .filter_map(|(r, door)| {
+                door.tiles
+                    .iter()
+                    .filter(|t| walk5.contains(t))
+                    .min_by_key(|&&t| dist(t, seat))
+                    .map(|&t| (*r, t, dist(t, seat)))
+            })
+            .collect();
+        println!(
+            "    [5] arrival band + every beat band: {:>5} tiles; other doors reachable: \
+             {reachable5:?}",
+            walk5.len(),
         );
     }
     println!();

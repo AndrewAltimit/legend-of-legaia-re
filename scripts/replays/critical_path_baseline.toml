@@ -146,9 +146,26 @@
 # (`CutsceneTimeline::player_glide`), the run is shoved back one tile at the
 # band on every approach and stalls at (56, 28), which is what a player at this
 # story state gets. The earlier baseline of 5 was a missing-pushback
-# artifact, not a pad-walk score. Re-opening rung 5 means a
-# route that does not cross an inner doorway, or seeding the flag that opens
-# them, with the reason written here like `GATE_OPEN_FLAGS`'.
+# artifact, not a pad-walk score.
+#
+# Neither way of re-opening it exists on this MAN:
+#
+# - No route avoids the band. `keikoku_reach_probe`'s fifth flood avoids the
+#   arrival band plus every beat band (record 7's 27 doorway tiles and the four
+#   single-tile arrival beats, the seat itself excepted). From each of the four
+#   mouths it covers 82-110 tiles - the arrival chamber - and reaches no other
+#   door record; with only the arrival band avoided the same floods reach every
+#   other door.
+# - No flag opens the doorways. Every arm of record 7 ends in a compass walk
+#   back out: the first visit (`0x2BB` clear) and the repeat (`+0x13B`) with
+#   `B7 F8 00 C1`, the third (`0x2BC` set, `+0x344`) with `C1 F8 00 02`, and all
+#   three post-`0x142` arms (`+0x4B7`, `+0x62C`, `+0x72D`) with `B7 F8 00 81`.
+#   The companion's line on the first visit says why: the Mist is ahead, and
+#   the goal is Mt. Rikuroa.
+#
+# So rung 5 as written - leave the Ravine by a different door - has no pad-only
+# answer at any story state this MAN covers. Whether a later variant MAN
+# replaces keikoku's record 7 was not checked.
 #
 # ---------------------------------------------------------------------------
 # What rung 1 does and does not say
