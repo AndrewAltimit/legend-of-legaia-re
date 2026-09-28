@@ -1628,6 +1628,19 @@ impl PlayWindowApp {
         // screen is open on the coin slot. Not a menu-runtime state - the
         // field VM owns the park.
         stage.extend(self.coin_counter_window_draws());
+        // The field floor window (op-0x49 sub-op 4, handler slot 0x23 - the Uru Mais
+        // warp pads): laid out by the engine off the live picker state, the
+        // legend read off the field overlay, drawn through the shared line
+        // composition the browser play page uses.
+        let floor = self.session.host.flag_window_lines();
+        stage.extend(legaia_engine_render::ui_text_lines::text_line_draws_for(
+            &self.font,
+            floor
+                .iter()
+                .map(|l| (&l.text[..], i32::from(l.x), i32::from(l.y), l.marked)),
+            white,
+            legaia_engine_render::ui_text_lines::FLOOR_WINDOW_MARKED_INK,
+        ));
         // Shop / inn overlay: rendered at the bottom of the screen when the menu
         // runtime is in any shop, inn, or confirmation state.
         if self.menu_runtime.is_open() {

@@ -188,6 +188,12 @@ pub struct SubmodeScreen {
     /// [`World::install_hub_equip_restrictions`]). Empty until a host installs
     /// them, which also holds [`Self::equip_mode`] at the no-candidate arm.
     pub equip_restrictions: std::collections::BTreeMap<u8, (u8, u8)>,
+    /// `_DAT_8007B450[0..7]` - the parked op-`0x49` operand from the sub-op
+    /// byte on, for the slots that read past [`Self::board_entries`] (slot
+    /// `0x23` reads its base flag at `+4..+6`).
+    pub op49_operand: [u8; 7],
+    /// Slot `0x23`'s picker state ([`crate::field_submode_flag_window`]).
+    pub flag_window: crate::field_submode_flag_window::FlagWindowState,
 }
 
 impl SubmodeScreen {
@@ -278,6 +284,7 @@ impl World {
         s.done = false;
         s.picker_result = 0;
         s.frame = HubFrame::default();
+        s.flag_window = Default::default();
     }
 
     /// Open the casino **coin counter** - buy coins with party gold at
@@ -339,6 +346,11 @@ impl World {
             *slot = instr.get(2 + i).copied().unwrap_or(0);
         }
         self.field_vm.submode_screen.board_entries = out;
+        let mut op = [0u8; 7];
+        for (i, b) in op.iter_mut().enumerate() {
+            *b = instr.get(1 + i).copied().unwrap_or(0);
+        }
+        self.field_vm.submode_screen.op49_operand = op;
     }
 
     /// Clear the park on resume - retail's `sw zero,-0x4bb0(s0)` at
@@ -413,6 +425,17 @@ impl World {
         // The latch is one-shot: a pass that ran has consumed every edge that
         // reached it, exactly as retail's per-game-tick pad sample is.
         self.field_vm.submode_screen.pad_edge_latch = 0;
+        // Slot 0x23 (the flag-window picker) reads its descriptor off the
+        // parked operand and the system flag bank; its writes land after the
+        // dispatch, once the bank is no longer borrowed for the scan.
+        let flag_desc = self.flag_window_descriptor();
+        let flag_pad = legaia_engine_vm::world_map_panel::CursorPad {
+            held: env.pad_edge,
+            pressed: env.pad_repeat,
+            action_a_mask: SUBMODE_ACCEPT_MASK,
+            action_b_mask: SUBMODE_BACK_MASK,
+        };
+        let mut flag_writes = Vec::new();
         let mut screen = std::mem::take(&mut self.field_vm.submode_screen);
         let window = screen.window;
         let mut installed = std::mem::take(&mut screen.installed_windows);
@@ -420,11 +443,32 @@ impl World {
             actor,
             cursor,
             counter,
+            flag_window,
             ..
         } = &mut screen;
+        let flag_bank: &[u8] = &self.flags.system_flags;
+        let flag_test = |id: i32| {
+            u16::try_from(id).is_ok_and(|i| {
+                flag_bank
+                    .get(usize::from(i >> 3))
+                    .is_some_and(|b| b & (0x80u8 >> (i & 7)) != 0)
+            })
+        };
 
         let frame = hub::hub_dispatch(actor, &env, cursor, |a, g| {
-            let mut f = run_slot(a, &env, g, counter);
+            let mut f = if a.state == crate::field_submode_flag_window::FLAG_WINDOW_SLOT {
+                crate::field_submode_flag_window::flag_window_slot(
+                    a,
+                    g,
+                    flag_window,
+                    flag_desc,
+                    flag_pad,
+                    flag_test,
+                    &mut flag_writes,
+                )
+            } else {
+                run_slot(a, &env, g, counter)
+            };
             // An install replaces whatever panel was up, and takes effect on
             // the frame that issued it: retail's window walk runs after the
             // handler in the same frame.
@@ -432,7 +476,7 @@ impl World {
                 HubAction::InstallPanel(va) => Some(*va),
                 _ => None,
             }) {
-                installed = hub::panel_windows(desc).to_vec();
+                installed = crate::field_submode_flag_window::installed_windows(desc);
             }
             // The host-pinned window (if any) draws alongside the installed
             // one; retail has no such override, so it is additive rather than
@@ -459,6 +503,7 @@ impl World {
         let retired = screen.actor.flags & ACTOR_RETIRE != 0;
         screen.frame = frame;
         self.field_vm.submode_screen = screen;
+        self.apply_flag_window_writes(&flag_writes);
         // The picker return is one-shot: the pass that ran has consumed it
         // (retail's `FUN_801E9DC8` returns a fresh value per call).
         self.field_vm.submode_screen.picker_result = 0;

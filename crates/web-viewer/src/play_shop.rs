@@ -1345,6 +1345,20 @@ impl LegaiaRuntime {
         // digit entry, both shared engine-ui compositions.
         windows.extend(self.prize_window_draws(font));
         windows.extend(self.coin_counter_window_draws(font));
+        // The field floor window (op-0x49 sub-op 4, the Uru Mais warp pads), through
+        // the engine layout + shared line composition the native window
+        // draws (`SceneHost::flag_window_lines`).
+        if let Some(host) = self.scene_host.as_ref() {
+            let floor = host.flag_window_lines();
+            windows.extend(legaia_engine_ui::ui_text_lines::text_line_draws_for(
+                font,
+                floor
+                    .iter()
+                    .map(|l| (&l.text[..], i32::from(l.x), i32::from(l.y), l.marked)),
+                [1.0, 1.0, 1.0, 1.0],
+                legaia_engine_ui::ui_text_lines::FLOOR_WINDOW_MARKED_INK,
+            ));
+        }
         let banners = self.banner_stage_draws(font);
         // In-battle overlay (HUD rows / encounter banner / command menus),
         // already in surface pixels - appended after the stage-space scale

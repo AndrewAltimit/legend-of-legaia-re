@@ -200,6 +200,7 @@ pub mod field_actor_clone;
 pub mod field_actor_kernels;
 pub mod field_actor_program;
 pub mod field_submode;
+pub mod field_submode_flag_window;
 pub mod mode_entry_init;
 
 pub mod field_submode_screen;
