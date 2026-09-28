@@ -1972,7 +1972,7 @@ The length is the VM's own bound (op `0x49` rejects `sub_op > 0xD`,
 | sub-op | slot | routine |
 |---|---|---|
 | `0`, `1`, `7`, `0xD` | `-1` | no screen; `+0x50` stays at the spawn value (slot `0`) |
-| `2` | `0x21` | `FUN_801EED58` (the code-lock actor) |
+| `2` | `0x21` | `FUN_801EED58` - the **code lock** (below) |
 | `3` | `0x22` | `FUN_801F03F0` - the **name-entry** screen above |
 | `4` | `0x23` | `FUN_801EF014` |
 | `5` | `0x24` | `FUN_801EF2B0` - the **tile-board** walk SM |
@@ -1997,6 +1997,36 @@ tick the Incense window reaches zero, so the enter half's table read lands on
 this row ([field-menu.md](field-menu.md#command-sub-flows-use--throw-out--arrange)). The "sub-menu"
 name described the state machine's shape, not what it draws. Port: `legaia_engine_vm::baka_hub_actors::OP49_SUBOP_SLOTS`, with
 the disc pin in `crates/engine-core/tests/w1b_hub_tables_disc.rs`.
+
+#### Sub-op `2`: the code lock
+
+`49 02` carries its five-symbol code as the operand bytes after the sub-op,
+and `FUN_801EED58` compares the player's entry against `_DAT_8007B450 +
+1..+5` (`0x801EEF0C..0x801EEF5C`). The disc has one such site, in `doman`'s
+streamed MAN (extraction `0401`, partition 1 record 18, `pc 0x0768`): a line
+of dialogue, then `49 02` and its code, then `70 09` - a system-flag test on
+flag `9`, which is exactly the flag the lock's verdict writes
+(`FUN_8003CE08(9)` on a match at `0x801EEF74`, `FUN_8003CE34(9)` otherwise
+at `0x801EEF8C`). The test jumps to the success path when the flag is set and
+falls through to a jump away otherwise.
+
+Symbols are entered with the face buttons, not the d-pad: bits `0x20` /
+`0x40` / `0x80` / `0x10` of the packed edge word `_DAT_8007B874` store
+symbols `1` / `0` / `2` / `3` (Circle / Cross / Square / Triangle), one per
+edge while the busy gate `_DAT_8007BB80` is clear, with cue `0x36` each.
+After the fifth the actor waits `0x0C` frame-step units, compares (success
+cue `0x25` pushed through `FUN_80035B50`, failure cue `0x23` overwriting the
+last ring slot through `FUN_80035BD0`), waits `0x14` more and hands back to
+the draw tick. Phase 0 installs descriptor `0x801F32F4`, window record `12`
+at `(0x40, 0x90)`, whose painter `FUN_801F17D8` prints the prompt string
+`0x801CF09C` and one system-UI cell `0x37 + symbol` per entered symbol, `0x20`
+apart, `0x10` below and right of the window origin.
+
+Port: `legaia_engine_vm::code_lock_actor` (the state machine),
+`legaia_engine_core::field_submode_code_lock` (the slot on the submode
+driver, the flag write, the window's lines), drawn on both play hosts through
+`SceneHost::code_lock_lines`; the disc-gated `code_lock_doman_disc` runs
+`doman`'s own bytes through the field VM with the right code and a wrong one.
 
 #### The panel-window records and the descriptors that install them
 
