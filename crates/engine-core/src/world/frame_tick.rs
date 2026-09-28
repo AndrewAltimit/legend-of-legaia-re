@@ -3423,6 +3423,36 @@ impl World {
         crate::muscle_dome::contest_entry_word(&self.muscle_contest_flags())
     }
 
+    /// The special-battle word `_DAT_8007BAC0` as the battle's `!= 0` readers
+    /// see it: the open arena leg's word ORed with the regular battle's half
+    /// ([`crate::world::BattleState::special_word`], whose `0x200` battle init
+    /// and the formation roll raise for monster `0xAF` and the Rim Elm
+    /// ambush). Retail has one word; the port keeps the two halves apart
+    /// because the arena session owns its own.
+    ///
+    /// Every reader that tests the whole word reads this, and each is a
+    /// "no spoils / no escape hatch" gate - the arena restriction bits and the
+    /// Ra-Seru bit suppress the same things:
+    ///
+    /// | Reader | Site | Suppresses |
+    /// |---|---|---|
+    /// | `FUN_8004E568` | `0x8004F0AC` | the gold award (zeroed after the Golden Book bonus) |
+    /// | `FUN_8004E568` | `0x8004F274` | the per-member EXP (`s6 = 0`) |
+    /// | `FUN_8004E568` | `0x8004F480` | the victory drop roll's seat loop |
+    /// | `FUN_8004AD80` | `0x8004B48C` | the steal attack |
+    /// | `FUN_801E91E8` | `0x801E9224` | the Seru absorb (reports "already known") |
+    /// | `FUN_801DDB30` | `0x801DE450` | the summon spell-XP accrual |
+    /// | `FUN_801E9FD4` | `0x801EA994` | a monster flee the roll granted |
+    ///
+    /// REF: FUN_8004E568, FUN_8004AD80, FUN_801E91E8, FUN_801DDB30, FUN_801E9FD4
+    pub fn special_battle_word(&self) -> u32 {
+        self.minigames
+            .muscle_dome
+            .as_ref()
+            .map_or(0, |s| s.special_word())
+            | self.battle.special_word
+    }
+
     /// Settle the open contest: pay the tally into the casino coin bank,
     /// apply the flags the settlement names, and hand over the one-shot
     /// Master-course prize when it is due.

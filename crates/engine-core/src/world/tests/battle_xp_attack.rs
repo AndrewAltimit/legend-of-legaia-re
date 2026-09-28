@@ -159,6 +159,46 @@ fn apply_battle_loot_drops_item_when_chance_is_100() {
 }
 
 #[test]
+fn a_raseru_forbidden_fight_pays_no_gold_exp_or_drop() {
+    // `_DAT_8007BAC0 != 0` zeroes the gold (`0x8004F0AC`), each member's EXP
+    // share (`0x8004F274`) and skips the drop walk (`0x8004F480`) - the
+    // `0x200` of the Rim Elm ambush included, not only an arena leg's word.
+    use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog, MonsterDef};
+    let mut cat = MonsterCatalog::new();
+    let mut def = MonsterDef::new(7, "Slime", 10, 5);
+    def.gold = 60;
+    def.exp = 40;
+    def.drop_item = Some(0x42);
+    def.drop_chance_pct = 100;
+    cat.insert(def);
+    let formation = FormationDef::new(1000, vec![FormationSlot::new(7)]);
+    let run = |word: u32| {
+        let mut world = World {
+            party: crate::world::PartyState {
+                party_count: 1,
+                ..Default::default()
+            },
+            ..World::default()
+        };
+        world.actors[0].battle.hp = 100;
+        world.battle.special_word = word;
+        let money = world.party.money;
+        let r = world.apply_battle_loot(&formation, &cat);
+        (r.gold, r.xp, r.drops, world.party.money - money)
+    };
+    let (gold, xp, drops, paid) = run(0);
+    assert_eq!(
+        (gold, xp, drops, paid),
+        (15, 40, vec![0x42], 15),
+        "baseline"
+    );
+    let forbidden = legaia_engine_vm::battle_formulas::SPECIAL_RASERU_FORBIDDEN;
+    let (gold, xp, drops, paid) = run(forbidden);
+    assert_eq!((gold, xp, paid), (0, 0, 0));
+    assert!(drops.is_empty());
+}
+
+#[test]
 fn apply_basic_attack_queues_hit_fx_for_damaged_monster() {
     let mut world = World {
         party: crate::world::PartyState {

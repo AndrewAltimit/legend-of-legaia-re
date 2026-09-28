@@ -825,11 +825,16 @@ impl World {
         }
         log::info!("field: op-0x3E scripted battle entry -> formation row {row}");
         self.carriers.pending_battle = Some(formation_id);
-        // Scripted rows carry a non-zero first header byte the retail reader
-        // ORs `0x80` into a battle-setup flag for; the staged fight refuses
-        // the Run command (the `ctx+0x287` no-escape input of the escape
-        // roll `FUN_801E791C`). Cleared by `finish_battle`.
-        self.battle.no_escape = true;
+        // No no-escape latch here. The arm (`0x801E070C..0x801E0788`) writes
+        // the entity's `+0x8A` / `+0x94`, the step counter and the mode
+        // request, nothing else: whether the fight refuses Run is the row's
+        // own `record[+0]` header byte, which the entity SM's confirm state
+        // turns into `DAT_8007BD60 | 0x80` (`FUN_801DA51C`, `0x801DA5F8..
+        // 0x801DA61C`) and battle init into `ctx+0x287`. Most `3E FF` rows
+        // carry a non-zero byte; the Rim Elm ambush (town0b / town0c row 3),
+        // town01 row 4 and deene row 11 carry zero, and retail lets the
+        // party run from them. `World::enter_battle_from_formation` derives
+        // the flag from the row.
         true
     }
 

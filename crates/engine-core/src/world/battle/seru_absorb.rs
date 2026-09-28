@@ -112,11 +112,7 @@ impl World {
         let acting = self.battle_ctx.active_actor;
         let armed = acting < self.party.party_count
             && self.miracle_marker_armed_for(self.party_roster_slot(usize::from(acting)) as u8);
-        let no_reward = self
-            .minigames
-            .muscle_dome
-            .as_ref()
-            .is_some_and(|s| s.special_word() != 0);
+        let no_reward = self.special_battle_word() != 0;
         let known = self
             .party
             .roster

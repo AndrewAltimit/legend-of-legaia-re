@@ -254,15 +254,20 @@ impl World {
         // The scripted-fight flag `ctx[+0x287]`, derived the way retail's
         // battle init does: `FUN_800513F0` stores `(DAT_8007BD60 >> 5) & 4`,
         // i.e. "the formation's `record[+0]` header byte is non-zero"
-        // (`FUN_801DA51C` ORs `0x80` in for exactly those rows). The port's
-        // older `no_escape` latch is the same retail byte reached from the
-        // field VM's scripted-battle op, so a boss fight entered that way
-        // counts even where the formation table carries no header byte.
+        // (`FUN_801DA51C` ORs `0x80` in for exactly those rows). The field
+        // VM's scripted-battle op writes no flag of its own, so a `3E FF`
+        // row with a zero header byte (the Rim Elm ambush) is an ordinary,
+        // escapable fight. A `no_escape` a host or test raised before entry
+        // still counts - it is the same byte set from outside.
         //
         // It has to be settled here, before the monster seed below: the
         // battle loader's stat boost profile is picked by this flag.
         self.battle.scripted_fight = formation.per_battle_flags() != 0 || self.battle.no_escape;
         let scripted = self.battle.scripted_fight;
+        // One retail byte, so one value: the escape roll (`FUN_801E791C`),
+        // the monster flee roll (`FUN_801EC0DC`) and the formation roll
+        // (`FUN_80051D84`) all read `ctx+0x287` itself.
+        self.battle.no_escape = scripted;
         // The same byte inside the action context, `ctx[+0x287]`. All three
         // of `FUN_801E295C`'s reads of it (`0x801E4F94`, `0x801E5058`,
         // `0x801E5554`) are gates on this flag - the counter-attack byte is
@@ -387,9 +392,13 @@ impl World {
         self.roll_shiny_enemy(first_monster);
 
         // Roll this battle's formation advantage (`FUN_80051D84` -> `ctx+0x290`)
-        // now that both sides' SPD is final. Retail skips the roll entirely for
-        // a scripted no-escape battle, so the boss fights never open on a back
-        // attack or a pre-emptive strike.
+        // now that both sides' SPD is final. Retail skips the roll entirely
+        // when `ctx+0x287` is set (`0x80051DA4`) or the battle-stage id
+        // `DAT_8007B64A` is (`0x80051DB8`), so the flagged boss fights and
+        // the sparring tutorial (stage 1, a zero-header `3E FF` row) never
+        // open on a back attack or a pre-emptive strike. The Rim Elm ambush
+        // is neither, so it rolls, and its map-gated force is what raises
+        // the Ra-Seru bit.
         // `enter_battle` above installs a fresh `battle_ctx`, so `+0x290` /
         // `+0x291` (and the arm's one-shot flag) are already zero - there is
         // one copy of each and it lives there.
@@ -403,7 +412,12 @@ impl World {
             .unwrap_or(0);
         self.battle.special_word =
             vm::battle_formulas::battle_init_special_word(self.battle.special_word, lead_monster);
-        if !self.battle.no_escape {
+        // The stage id as battle init leaves it: the tutorial arm
+        // `enter_battle` consumed, or the `0xB5` override. (`battle_stage_id`
+        // reads `active_formation`, which the caller sets after this.)
+        let stage_set = self.battle.tutorial.is_some()
+            || crate::overlay_loader::battle_init_stage_override(lead_monster).is_some();
+        if !scripted && !stage_set {
             self.roll_battle_formation(formation);
         }
 

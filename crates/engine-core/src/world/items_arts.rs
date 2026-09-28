@@ -1197,8 +1197,8 @@ impl World {
         // The drop roll (`0x8004F3D8..0x8004F5A0`). The Items Up bonus reads
         // the living members' second ability word (`+0xF8 & 0x20000`, the
         // bit the steal attack's doubling also reads); the no-reward gate is
-        // `_DAT_8007BAC0`, which the engine carries as the arena's special
-        // word.
+        // the whole special-battle word `_DAT_8007BAC0` (`0x8004F480`), so an
+        // arena leg and a Ra-Seru-forbidden fight both skip the seat loop.
         let party_n = self.party.party_count as usize;
         let items_up = (0..party_n).any(|i| {
             self.actors.get(i).is_some_and(|a| a.battle.hp > 0)
@@ -1214,11 +1214,7 @@ impl World {
                             != 0
                     })
         });
-        let no_reward = self
-            .minigames
-            .muscle_dome
-            .as_ref()
-            .is_some_and(|s| s.special_word() != 0);
+        let no_reward = self.special_battle_word() != 0;
         let item = vm::battle_formulas::victory_drop_roll(&drop_seats, items_up, no_reward, || {
             self.next_rand()
         });
@@ -1249,7 +1245,19 @@ impl World {
                     .get(self.party_roster_slot(i))
                     .is_some_and(|rec| rec.ability_bits()[6] & 0x01 != 0)
         });
-        let gold_credited = vm::battle_formulas::victory_gold_finalize(gold_acc, more_gold);
+        // The same word zeroes the gold after the Golden Book bonus and before
+        // the halve (`0x8004F0AC..0x8004F0BC`, `sw zero, 0xA3C(gp)`), and
+        // each member's EXP share (`0x8004F274..0x8004F284`, `s6 = 0`, so the
+        // doubled-EXP bit adds nothing either). The per-member level check
+        // `FUN_801E9504` still runs, on an unchanged total.
+        let gold_credited = if no_reward {
+            0
+        } else {
+            vm::battle_formulas::victory_gold_finalize(gold_acc, more_gold)
+        };
+        if no_reward {
+            xp_total = 0;
+        }
 
         let level_ups = if xp_total > 0 {
             self.apply_battle_xp(xp_total)

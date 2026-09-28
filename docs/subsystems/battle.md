@@ -2096,6 +2096,10 @@ Nothing walks a combatant home after an action (`World::tick_battle_locomotion`)
 
 The engine counts both addends (`World::seat_monster_family`): one selects the alternate family, both select rows `9..12`, which the disc leaves zero-filled.
 
+The Rim Elm ambush reaches row 8 by the map arm alone. Its row (`town0b` / `town0c` formation row 3, `[0x3F, 0x3E, 0x3E, 0x3E]`) carries header byte `0`, and the field VM's `3E FF 03` arm (`0x801E070C..0x801E0788`) writes only the system entity's `+0x8A` / `+0x94`, the step counter and the mode request - so `DAT_8007BD60` bit 7 stays clear and `ctx+0x287` is `0`. A capture of the `rim_elm_queen_bee_battle` state reads exactly that (`DAT_8007BD60 = 0x00100003`), the seat loop fetching row index 8 (`(0,1000) (-600,800) (600,800) (0,600)`), and the formation roll raising `_DAT_8007BAC0` to `0x200`. The ambush is therefore escapable, draws the random-encounter boost profile, and runs the formation roll. No retail fight is known to select rows `9..12`.
+
+Of the disc's `3E FF` sites whose row the bundle MAN carries, two more rows carry header byte `0`: `town01` row 4 (`0x4F`, the Tetsu spar) and `deene` row 11 (`0xA7`). The spar still skips the formation roll, through its other gate: the tutorial arm sets the battle-stage id `DAT_8007B64A` (`0x80051DB8`). The engine derives `ctx+0x287` from the row alone (`World::enter_battle_from_formation`); `World::trigger_scripted_battle` sets no flag. Disc-gated check: `crates/engine-core/tests/rim_elm_ambush_disc.rs`.
+
 The map id is `_DAT_80084540`, the loaded scene's **raw CDNAME define** (`town01` = `3`, `town0b` = `0x0C`, `town0c` = `0x15`, `map01` = `0x55`; every catalogued save state reads the define of the scene named at `0x80084548`), carried as `BattleState::map_id` and also read by the formation roll's scripted-ambush arm and the intro style picker. It is two above the extraction index `Scene::start` holds, which the intro picker had been reading - so its `0x3E` / `0x3F` arm on `3` / `0x0C` / `0x15` could never match.
 
 Engine mirror: [`engine-core::battle_seats`](../../crates/engine-core/src/battle_seats.rs) (consumed by `World::enter_battle`).

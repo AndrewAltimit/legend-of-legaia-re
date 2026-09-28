@@ -885,8 +885,10 @@ else                          gain = single ? 12 : 4;          // killing hit: f
 xp[spell_slot] += gain;
 ```
 
-Gates: the per-battle no-reward flag `_DAT_8007BAC0` (the same scripted-fight
-flag as the gold gate above) and an unidentified skip `_DAT_8007BDB8`. The
+Gates: the special-battle word `_DAT_8007BAC0` (any bit skips the accrual at
+`0x801DE450`; the same word as the gold gate below) and an unidentified skip
+`_DAT_8007BDB8`. The word is not the scripted-fight flag - see
+[the special-battle word's readers](#the-special-battle-words-readers). The
 heal-spell arms of `FUN_800402F4` (case-0 tiers 3/4/5: spell ids `0x83`/`0x89`)
 accrue into the same array inline.
 
@@ -1655,9 +1657,43 @@ The gold/EXP scaling ports to pure kernels (`battle_formulas::victory_gold_per_m
 / `victory_gold_finalize` / `victory_exp_per_member`) the engine's
 `World::apply_battle_loot` / `apply_battle_xp` call - so the credited reward is
 the scaled amount, not the raw record sum. The +25% gold bonus reads the living
-party members' `+0xF4` ability bit `0x10000`; the per-battle no-gold flag
-(`_DAT_8007BAC0`, certain scripted fights) is the one remaining unmodelled gold
-gate.
+party members' `+0xF4` ability bit `0x10000`.
+
+#### The special-battle word's readers
+
+`_DAT_8007BAC0` is the **special-battle word**, not the scripted-fight flag: a
+boss row's header byte sets `ctx+0x287` and leaves this word alone. It is
+non-zero in an arena leg (the Muscle Dome's course word) and in the two
+Ra-Seru-forbidden fights, whose `0x200` battle init raises for first monster
+`0xAF` and the formation roll raises for the Rim Elm ambush (see
+[battle.md](battle.md#the-ra-seru-forbidden-bit-of-the-special-battle-word)).
+
+A sweep for every `lui`+`lw` of the word across SCUS and PROT 0898 finds
+these `!= 0` tests, each read off the instruction at the site:
+
+| Routine | Site | Word non-zero means |
+|---|---|---|
+| `FUN_8004E568` | `0x8004F0AC` | gold `gp+0xA3C` zeroed, after the Golden Book bonus and before the halve |
+| `FUN_8004E568` | `0x8004F274` | each member's EXP share `s6 = 0` (the doubled-EXP bit then adds `0` too) |
+| `FUN_8004E568` | `0x8004F480` | the drop roll's seat walk is skipped (the trailing draw still runs) |
+| `FUN_8004E568` | `0x8004F614` / `0x8004F8F0` | two `FUN_801D8DE8` presentation calls are skipped |
+| `FUN_8004AD80` | `0x8004B48C` | the steal attack is not rolled |
+| `FUN_801DDB30` | `0x801DE450` | the summon spell-XP accrual is skipped |
+| `FUN_801E91E8` | `0x801E9224` | the Seru absorb answers "known" |
+| `FUN_801E9FD4` | `0x801EA994` | a flee the roll granted is dropped (the roll's draws are still taken) |
+| `FUN_801E295C` | `0x801E6578` | the wipe check counts the whole party down when the leader carries `+0x16E & 0x38 == 0x38` |
+| `FUN_801D0748` | `0x801D322C` | with the leader's category `5`, clears `ctx+0x274` and sets `0x80084448 = 4`, except for first monster `0xAF` / `0x3D..=0x3F` |
+
+The remaining readers test a bit: `0x100` at `0x80046DF0` / `0x80046E38` /
+`0x80046E90` and in the escape roll `FUN_801E791C` (`0x801E7978` /
+`0x801E7B40`), and `0x200` in `FUN_801D0748`'s Ra-Seru chip arm. So a
+Ra-Seru-forbidden fight pays no gold, no EXP, no drop and no steal, cannot
+absorb or train a Seru, and its monsters cannot flee.
+
+The engine reads the word through `World::special_battle_word` (the arena
+session's word ORed with `BattleState::special_word`) at the gold, EXP, drop,
+steal, absorb, spell-XP and monster-flee sites. The presentation calls, the
+wipe rule and the `0x801D322C` arm are not ported.
 
 #### The victory drop roll
 

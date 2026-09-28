@@ -14,14 +14,11 @@ impl World {
     /// retail `ctx[+0x13]`), which is the same seat that is still playing its
     /// swing out when its victim's fall ends.
     ///
-    /// Two retail inputs are narrower here than on the disc. The special
-    /// battle word `_DAT_8007BAC0` is read as the dome session's word; the
-    /// two battle-init raisers in `SCUS_942.54` (first enemy `0xAF`, or
-    /// `0x3D..=0x3F` under mode `0xC` / `0x15`, see
-    /// `docs/subsystems/minigame-muscle-dome.md`) are not modelled, so those
-    /// fights roll a steal retail refuses. And the debug-mode bypass
-    /// (`_DAT_8007B98C` with `_DAT_8007BA58`, `0x8004B58C..0x8004B5B0`) is
-    /// never taken.
+    /// The special-battle word `_DAT_8007BAC0` (`0x8004B48C`, any bit) is
+    /// [`Self::special_battle_word`], so an arena leg, a fight against `0xAF`
+    /// and the Rim Elm ambush all refuse the steal. One retail input is
+    /// narrower here than on the disc: the debug-mode bypass (`_DAT_8007B98C`
+    /// with `_DAT_8007BA58`, `0x8004B58C..0x8004B5B0`) is never taken.
     ///
     /// REF: FUN_8004AD80 (the arm; kernel + `// PORT:` tag in
     /// `crate::battle_steal::resolve_death_spoils`)
@@ -63,11 +60,7 @@ impl World {
             .and_then(|id| self.tables.steal_table.as_ref()?.entry(id));
         let inputs = StealAttackInputs {
             acting_party,
-            special_battle: self
-                .minigames
-                .muscle_dome
-                .as_ref()
-                .is_some_and(|s| s.special_word() != 0),
+            special_battle: self.special_battle_word() != 0,
             killer_attack: self
                 .actors
                 .get(acting)
