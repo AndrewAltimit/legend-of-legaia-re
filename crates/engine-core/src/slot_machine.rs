@@ -1070,11 +1070,11 @@ impl CoinQuote {
 ///
 /// The field is [`COIN_ENTRY_DIGITS`] single-digit cells stored
 /// **least-significant first** (the accumulator starts at 1 and multiplies by
-/// ten each cell), so `digits[0]` is the units place.
-/// Wired through [`coin_exchange_quote`], which the play-window casino entry
-/// point calls to buy coins before seating the player at a machine.
-// PORT: FUN_801e6f70 entry-field half (digit accumulation). The gate half of
-// the same function is `coin_exchange_quote`; the two together cover it.
+/// ten each cell), so `digits[0]` is the units place. Reached through
+/// [`coin_exchange_quote`].
+// PORT: FUN_801e6f70 NOT WIRED: entry-field half (digit accumulation) of the
+// casino coin-exchange counter, a field-overlay screen neither play host
+// implements; the gate half of the same function is `coin_exchange_quote`.
 pub fn coin_entry_value(digits: &[u8]) -> i32 {
     let mut place = 1i32;
     let mut total = 0i32;
@@ -1097,12 +1097,11 @@ pub fn coin_entry_value(digits: &[u8]) -> i32 {
 ///
 /// This function is the quote/validation half only; retail commits the sale on
 /// the counter's confirm path, not in the screen routine.
-/// Wired: the play-window casino entry point runs a coin purchase through
-/// this quote before seating the player at a machine, committing the gold
-/// debit and the coin credit only when both gates pass. What is still
-/// unreached is the *screen* around it - retail's per-frame quote refresh
-/// with the digit-entry cursor and the alert-ink recolour on a failed gate.
-// PORT: FUN_801e6f70 (coin-exchange counter: total cost + gold/stock gates)
+// PORT: FUN_801e6f70 NOT WIRED: the casino coin-exchange counter screen should
+// call this (total cost + gold/stock gates) on each quote refresh; neither
+// play host implements that field-overlay screen. The native `O` slot
+// launcher used to buy a thin bank's coins through it; it arms the door warp
+// now, as every other minigame launcher does.
 pub fn coin_exchange_quote(digits: &[u8], gold: i32, stock: i32) -> CoinQuote {
     let coins = coin_entry_value(digits);
     let cost = coins * COIN_PRICE_GOLD;

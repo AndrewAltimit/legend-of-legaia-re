@@ -235,11 +235,10 @@ fn the_beat_track_notes_scroll_one_cell_per_beat() {
     );
 }
 
-// --- casino: the coin-exchange counter the slot entry point buys through ---
+// --- casino: the coin-exchange counter ---
 
-/// The play window tops a thin coin bank up by running a purchase through the
-/// ported counter (`coin_exchange_quote`, `FUN_801E6F70`) instead of conjuring
-/// a stake, so this pins the contract that host encodes: the entry field is
+/// The ported counter (`coin_exchange_quote`, `FUN_801E6F70`) a purchase runs
+/// through, pinned on its own terms: the entry field is
 /// eight single-digit cells stored **units first**, coins are a flat
 /// `COIN_PRICE_GOLD` each, and the sale is refused - with nothing debited -
 /// when either the gold or the stock gate fails.

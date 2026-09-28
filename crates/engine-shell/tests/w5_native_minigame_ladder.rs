@@ -447,15 +447,18 @@ fn rung5_baka_fighter_duel_is_won_and_shows_its_tally() {
     );
 }
 
-/// The casino slot machine, whose entry also runs the coin-exchange counter
-/// (the bank starts empty, so the entry buys the dev stake through it).
+/// The casino slot machine, entered through the mode-24 door warp the
+/// cabinet takes (`O` arms it, as `B` / `M` arm theirs). The balance is the
+/// coin bank's; on a fresh game that is empty, so the Cross presses meet the
+/// machine's own state-1 gate and the rung pins the entry and the drawn
+/// cabinet rather than a spin.
 #[test]
-fn rung6_slot_machine_opens_and_spins() {
+fn rung6_slot_machine_opens() {
     rung(
         "slots",
         "40:O",
         Some("100:Cross,160:Cross,220:Cross"),
-        "slots: started",
+        "minigame warp: entered slot_machine",
         0.001,
         SHOT_TICK,
     );

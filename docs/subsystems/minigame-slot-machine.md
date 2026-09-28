@@ -460,7 +460,9 @@ over-read tail - mode 0 actually loads the debug-menu overlay PROT 971. See [`sc
 
 The engine-side reconstructions (each marked at its site): the spin-up pacing constants, the BIOS-`rand` stream substituted with a deterministic LCG, and feature modes 3/5 folded to the normal landing plan.
 
-Runtime wiring: a suspending scene mode (`SceneMode::SlotMachine`; `World::enter_slot_machine` / `tick_slot_machine` / `exit_slot_machine`, which performs the state-100 bank commit into `World::minigames.casino_coins` = `_DAT_800845A4`). The `play-window` viewer starts it from the `O` key (loads PROT 0975, `slot_payout::parse`); Cross spins / stops / collects. A bank too thin for a spin is topped up through the ported coin-exchange counter (`coin_exchange_quote`, `FUN_801E6F70`): the host quotes the purchase against party gold, and commits the gold debit and the coin credit only when both retail gates pass. Disc-gated `slot_minigame_real` drives real-table spins through the World pad path.
+Runtime wiring: a suspending scene mode (`SceneMode::SlotMachine`; `World::enter_slot_machine` / `tick_slot_machine` / `exit_slot_machine`, which performs the state-100 bank commit into `World::minigames.casino_coins` = `_DAT_800845A4`). The `play-window` viewer's `O` key arms the mode-24 door warp with sub-id 3 (`World::request_minigame_warp`, the call the browser page's `play_mg_debug_warp` makes), so the session is the one a cabinet installs, its balance assigned from the coin bank; Cross spins / stops / collects.
+
+A launcher is the `0x3E` arm, not the cabinet record around it: the coin-bank compare that refuses an empty bank at the door is that record's script, which the field VM runs on a walked door on both hosts, and a bank below three coins that does reach the machine meets its own state-1 gate. The ported coin-exchange counter (`coin_exchange_quote`, `FUN_801E6F70`) is not an entry path. Disc-gated `slot_minigame_real` drives real-table spins through the World pad path.
 
 ## Rendering - a 3D scene
 
