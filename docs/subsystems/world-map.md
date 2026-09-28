@@ -2342,7 +2342,15 @@ Off by default.
 The walk-view continent ground is drawn as a field of **`POLY_FT4` (cmd `0x2C`)
 textured quads, one `32×32`-texel quad per visible cell** in a window around the
 player, emitted in a **row-major world-cell sweep** (the quads sit in contiguous
-runs in the prim pool, screen-X stepping along each swept row). Each cell's
+runs in the prim pool, screen-X stepping along each swept row). The emitter is
+`FUN_801F89B8` (PROT 0901), `jal`'d from `0x801F733C` at the end of the
+decoration sweep `FUN_801F69D8`. It links each cell at ordering-table bucket
+`(max corner SZ >> 5) + 14` of `*0x1F8003F4` (`0x801F8DC8..0x801F8E20`) - the
+table the fog sheets link into, which is what decides where the continent
+covers the fog ([`field-ambient-fx.md`](field-ambient-fx.md#closing-the-draw-order-flat-per-primitive-terrain-depth)).
+Unlike PROT 0900's field pair it tests no `0x1000` cell bit: every cell of the
+window draws, its record taken from `cell & 0x1FF`. On `map01` the difference
+is 133 of the 16384 cells, 129 of them the zero word. Each cell's
 texture is selected **per cell** from a **terrain-type-keyed multi-page atlas** -
 grass, mountain, water, and forest cells each sample a different VRAM page.
 
@@ -3048,11 +3056,26 @@ table at `DAT_8007326C`, not built with `lui/li` immediates. That is
 why the landmark TMD emitter eluded static analysis: the addprim scan
 flags every direct emitter (the horizon, the HUD sprite batch
 `FUN_8002C69C`, the screen-tint, etc.) but skips the TMD renderer
-where the landmark prims actually originate. The bulk continent
-ground terrain follows the same dispatch-table pattern - via
-`FUN_80043390`'s overlay-mode jump table at `0x801F8968` and its eight
-overlay-resident high-mode renderers - documented earlier in this
-section.
+where the landmark prims actually originate. The per-cell meshes (the
+decoration sweep, and the top view's bulk terrain) follow the same
+dispatch-table pattern - via `FUN_80043390`'s overlay-mode jump table at
+`0x801F8968` and its eight overlay-resident high-mode renderers -
+documented earlier in this section. The walk view's continent **ground**
+does not: it is the direct emitter `FUN_801F89B8`
+([ground texturing](#ground-texturing)).
+
+**Case 4 draws on the overworld.** The draw-kind-4 arm
+(`0x8001B060..0x8001B160`: the sprite-arm builder `FUN_8002A5A4` on node
+`+0x9E` bit `0x4000`, the ribbon at `0x2000`, the default `FUN_80028158`
+otherwise, then the ordinary model draw) makes no mode or overworld-bit test -
+the only skips in the dispatcher are node flags `& 0xA` and the draw-kind
+range. The `map01` state `keikoku_chest_preload` holds seven live kind-4
+nodes on list `_DAT_8007C350`, all move-VM ticked (`FUN_80021DF4`) with bit
+`0x4000` set, in a column at `x = 9152`. Both hosts therefore draw the
+kind-4 list (`World::active_effect_kind4_draws`) on the overworld too; the
+rest of their FX passes (effect-pool billboards, effect models, summon and
+stager parts) stay off there - a port gate with no retail counterpart in this
+dispatcher, kept until an overworld state carrying one of them is measured.
 
 ### Gate-arm chain - `FUN_801D1344` -> `FUN_801D8258`
 
