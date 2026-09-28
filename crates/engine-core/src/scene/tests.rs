@@ -551,18 +551,24 @@ fn route_bgm_handles_control_subops_without_scene() {
         text_id: 0,
         sub_op: 4,
     };
-    // Mimic the route_bgm_events branches directly.
-    for ev in [ev2, ev3, ev4] {
+    let ev_stop = crate::field_events::FieldEvent::Bgm {
+        text_id: 0,
+        sub_op: BGM_SUB_OP_ENGINE_STOP,
+    };
+    // Mimic the route_bgm_events branches directly: the field overlay's arm
+    // table (`0x801CEE00`, indexed `sub - 1`) sets pause bit 1 for 2 and 3
+    // and clears it with a re-attach for 4; only the engine's own word stops.
+    for ev in [ev2, ev3, ev4, ev_stop] {
         if let crate::field_events::FieldEvent::Bgm { sub_op, .. } = ev {
             match sub_op {
-                2 => d.pause(),
-                3 => d.resume(),
-                4 => d.stop(),
+                2 | 3 => d.pause(),
+                4 => d.resume(),
+                BGM_SUB_OP_ENGINE_STOP => d.stop(),
                 _ => {}
             }
         }
     }
-    assert_eq!(d.log, vec!["pause", "resume", "stop"]);
+    assert_eq!(d.log, vec!["pause", "pause", "resume", "stop"]);
 }
 
 /// A director with the pause-latch contract real directors carry (the

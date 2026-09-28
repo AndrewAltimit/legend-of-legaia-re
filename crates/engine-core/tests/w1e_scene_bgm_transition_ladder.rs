@@ -264,10 +264,12 @@ fn a_scene_transition_pauses_and_resumes_the_same_source() {
          back - the resume below would then be resuming nothing"
     );
 
-    // Resume, on the far side of the transition.
+    // Resume, on the far side of the transition: sub-op 4, whose arm
+    // (`0x801E0180`) clears pause bit 1 and re-attaches the slot. Sub-op 3
+    // is the second pause arm (`0x801E015C`), not a resume.
     host.world.pending_field_events.push(FieldEvent::Bgm {
         text_id: 0,
-        sub_op: 3,
+        sub_op: 4,
     });
     host.route_bgm_events(&mut d).expect("route resume");
     assert_eq!(d.resumes, 1, "resume did not reach the director");

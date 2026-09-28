@@ -150,8 +150,9 @@ impl World {
 
     /// Restore the field track stashed by [`World::swap_to_battle_bgm`] when
     /// a battle ends. No-op unless a battle swap is active. Queues a
-    /// `FieldEvent::Bgm` start for the stashed track, or a stop (sub-op 4)
-    /// when no field track was playing at encounter start.
+    /// `FieldEvent::Bgm` start for the stashed track, or a stop
+    /// ([`crate::scene::BGM_SUB_OP_ENGINE_STOP`]) when no field track was
+    /// playing at encounter start.
     pub(crate) fn restore_field_bgm(&mut self) {
         if !self.audio.battle_bgm_active {
             return;
@@ -169,7 +170,7 @@ impl World {
                 self.audio.current_bgm = None;
                 self.pending_field_events.push(FieldEvent::Bgm {
                     text_id: 0,
-                    sub_op: 4,
+                    sub_op: crate::scene::BGM_SUB_OP_ENGINE_STOP,
                 });
             }
         }
@@ -205,8 +206,8 @@ impl World {
 
     /// Resume the field track a minigame's own music displaced, on the
     /// mode-24 return warp. No-op unless [`Self::swap_to_minigame_bgm`] armed
-    /// the swap. A scene that had no track at entry gets a stop (sub-op 4)
-    /// rather than being left with the minigame's music running under the
+    /// the swap. A scene that had no track at entry gets a stop
+    /// ([`crate::scene::BGM_SUB_OP_ENGINE_STOP`]) rather than being left with the minigame's music running under the
     /// field.
     pub(crate) fn restore_minigame_bgm(&mut self) {
         if !self.audio.minigame_bgm_active {
@@ -225,7 +226,7 @@ impl World {
                 self.audio.current_bgm = None;
                 self.pending_field_events.push(FieldEvent::Bgm {
                     text_id: 0,
-                    sub_op: 4,
+                    sub_op: crate::scene::BGM_SUB_OP_ENGINE_STOP,
                 });
             }
         }

@@ -94,10 +94,11 @@ fn route_bgm_events_dispatches_global_start_through_owned_vab() {
         .unwrap();
     assert!(len > 1000, "owned entry is the full bank record, got {len}");
 
-    // A control sub-op still routes normally.
+    // A control word still routes normally: the engine's own stop (retail's
+    // sub-op 4 is a re-attach, routed as a resume).
     host.world.pending_field_events.push(FieldEvent::Bgm {
         text_id: 2016,
-        sub_op: 4,
+        sub_op: legaia_engine_core::scene::BGM_SUB_OP_ENGINE_STOP,
     });
     let mut rec2 = RecordingBgm::default();
     host.route_bgm_events(&mut rec2).expect("route stop");
