@@ -484,6 +484,8 @@ The PSX has 1 KB of fast scratchpad RAM mapped here. Legaia uses the high end:
 | `0x8007B7B0` | u32 | Ambient base colour: `0x808080` on every overworld state; field-VM `4C 10` writes it, and `FUN_80026CE4` copies it into `0x1F800398`. |
 | `0x8007BB48` | u8[3] | `gp+0x830`: `0xF0F0F0` on the overworld; `FUN_80026CE4` stores it when `_DAT_8007BA90` is set and passes it to `SetFarColor`. The overworld ground's own far colour is the later literal `0x100` per channel. |
 | `0x8007B648` | u8 | `gp+0x330`, the battle-load stage: below `0x80` the loader `FUN_80052770` runs; `0xFF` while the battle runs (`0x80046EEC`). The ghost pass's `lb` at `0x800470EC` reads it negative on every battle state. |
+| `0x801C9060` | i16[6] | `FUN_8004998C`'s per-part unwrap journal (`next` / `cur` pairs at `+0/+2`, `+4/+6`, `+8/+A`), where the re-blend retry rewrites the next frame's triple. |
+| `0x1F800038` | u32 | The `IR0` the 0901 overworld decoration handlers load before `DPCS` - each object's own depth cue toward `0xD0`. |
 | `0x80084448` | u32 | Arena leg outcome; `4` = the party ran (flow `0xFE`'s tail, `0x801D328C`). |
 | `0x1F8003F4` | u32 | Ordering-table base pointer the overworld ground emitter `FUN_801F89B8` (`(max corner SZ >> 5) + 14`) and the fog emitter (`(SZ - 0x10) >> 5`) both index. |
 | `0x1F8003F8` / `0x1F8003FA` | i16 | Camera-scroll values used by op 0x23 player path. |
