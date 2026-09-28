@@ -936,6 +936,59 @@ it writes three different values, not zero: `0x800840B8 = 0`,
 `(0x1B8, 0x64, 0)`. Reading only its first store (`sw zero` at `0x80025C28`)
 misses the `addiu v0, v0, 0x40b8` that re-bases the next two.
 
+### The rotation's precision: q3.12 against the port's `f32`
+
+`FUN_80026988` forms the camera rotation in q3.12 from the truncating sin
+LUT, with every product shifted down on its own; the port's retail-exact
+rendition is `engine-ui::battle_intro::euler_rot_psx`. Both play hosts build
+the camera from the shared `engine-vm::psx_camera::camera_rotation` instead,
+the same `Rx * Ry * Rz` product in `f32`. The two differ by at most about
+2.4/4096 in any element over the camera angle trios of the 98 catalogued
+mednafen states.
+
+What that does to the frame was measured by projecting points through both
+rotations with each state's own `H` and eye trio: 4000 points per state,
+uniform over the 320x240 screen and over eye depths 1000 to 20000, 392,000 in
+all. 3,037 of them (0.8%) move by half a pixel or more; the median of the
+per-state worst case is 0.18 px; the worst is 3.0 px, on
+`ending_vignette_fullscreen`, a shot with its eye trio 25,888 units back, where
+geometry close to the lens sits far from the focus and the element error is
+multiplied by that distance. The points are a uniform sample of the view
+volume, not scene geometry, so the figures bound the effect rather than count
+changed pixels on a frame. The port keeps the `f32` product: the retail
+quantisation is a sub-pixel property of the GTE path, like the SXY snap the
+rasteriser applies only in PSX mode, and neither host projects through the
+integer GTE anyway.
+
+### Camera-relative nodes: `FUN_8001CF50`
+
+A render node whose `+0x52` carries a bit of `0x780` is not drawn under the
+camera matrix at all. The render dispatcher `FUN_8001ADA4` (`andi
+v0,v0,0x780` at `0x8001B374`, `jal` at `0x8001B3A0`) and the animated mesh
+renderer `FUN_8001B964` (`0x8001BA0C` / `0x8001BA24`) send such a node through
+`FUN_8001CF50`, which rebuilds the camera rotation from the same angle trio
+with the flagged axes left out - `0x80` pitch, `0x100` yaw, `0x200` roll - and
+multiplies the node's own matrix, scaled six-fold, onto it. Bit `0x400`
+replaces the rotation with the base matrix and MVMVAs the node's position
+through it, so the node is placed in view space, locked to the camera. Every
+other node takes the default arm, `FUN_8005B3A8` against the camera matrix at
+`0x1F8003C8`.
+
+The routine was long read as the camera build itself. It is not: the camera
+matrix is the chain above, and `FUN_8001CF50` is its per-node variant. The
+flags are real and common: across the 98 mednafen states, 334 of the 3956
+nodes on the actor lists carry one, nearly all of them move-VM parts
+(`FUN_80021DF4`, written by move-VM op `0x15`): `0x380` - a screen-aligned
+billboard - on battle-effect parts, `0x100` / `0x180` on field and overworld
+parts, and the `0x400` arm on summon casts. The port ports the composition
+(`engine-ui::gte::camera_view_rotation`) but draws every part under the full
+camera, so a billboard part turns with the world instead of facing the
+screen; the part state carries the word (`move_vm::ActorState::field_52`) and
+no draw record does. The Baka Fighter cameo is the one camera-relative draw
+the port makes, as its own placement ([`minigame-baka-fighter.md`](minigame-baka-fighter.md)).
+On the overworld walk the camera yaw is `0`, so map01's `0x100` kind-4
+column draws the same either way.
+
 ## Frame setup + present
 
 - **`FUN_800271A8`** - the overworld's scratch init and **screen-Y curvature

@@ -1092,7 +1092,7 @@ whichever build's matrix was live when they were emitted
   frames is not that routine - the per-prim path, not the mesh path. And links
   that land before a vsync's first build still inherit the previous vsync's
   matrix; those are bucketed apart and are 2D in every run but one.
-  The camera-rotation build is pinned: `FUN_8001CF50` composes `R` by rotating about each axis with the angle globals - `RotMatrixX(pitch=_DAT_8007B790)` at `0x800461A4`, `RotMatrixY(yaw=_DAT_8007B792)` at `0x8004629C`, `RotMatrixZ(roll=_DAT_8007B794)` at `0x8004638C` (each masks the angle to 12 bits and indexes the shared sin/cos LUT at `0x80070A2C`, `4096 = 360°`, `+0x800` = the quarter-wave cosine offset; composed via GTE `mvmva`).
+  The camera-rotation build is pinned: the view build `FUN_800172C0` passes the angle globals `0x8007B790` (pitch, yaw, roll) to the Euler kernel `FUN_80026988`, which forms `R = Rx(pitch) * Ry(yaw) * Rz(roll)` inline from the sin LUT at `0x80070A2C` (each angle masked to 12 bits, `4096 = 360°`), and folds the base matrix `_DAT_8007BF10` onto it ([`renderer.md`](renderer.md#the-field-view-matrix-where-tr-comes-from)). An earlier reading gave this job to `FUN_8001CF50`, which calls `RotMatrixX` / `RotMatrixY` / `RotMatrixZ` (`0x800461A4` / `0x8004629C` / `0x8004638C`) over the same globals; that routine is the per-node camera-relative variant, reached only for a node whose `+0x52` carries a bit of `0x780` ([`renderer.md`](renderer.md#camera-relative-nodes-fun_8001cf50)).
   **So param 0 is the camera PITCH, not a "rot/zoom" word** - the zoom is H (a separate projection register). The eye sits *behind* the focus by `tr_eye` (in the 6×-scaled space); it is NOT at the focus.
   The commit's second argument decides between two behaviours, and the third selects the ease curve: the field VM calls `FUN_801DE084(0x801C6EA8, apply, op0 >> 2 & 0xF)`, reading `apply` as the u16 at operand `+2` (`overlay_0897_801de840.txt`, case `0x45` sub-`0x00`).
 
@@ -1136,10 +1136,11 @@ whichever build's matrix was live when they were emitted
 
 #### Camera roll (slot 2)
 
-Retail authors it, and the engine composes it. Slot `2` is the argument
-`FUN_8001CF50` hands to `RotMatrixZ` at `0x8004638C` - the third factor of
-`Rx * Ry * Rz`, applied unless the render node's `+0x52` bit `0x200` is set
-(`0x8001CFD0..0x8001CFE8`). Nothing in the field-camera build path zeroes it:
+Retail authors it, and the engine composes it. Slot `2` is the third angle
+`FUN_80026988` reads when `FUN_800172C0` builds the camera matrix - the third
+factor of `Rx * Ry * Rz`. (The per-node variant `FUN_8001CF50` hands the same
+global to `RotMatrixZ` at `0x8004638C` unless the node's `+0x52` bit `0x200`
+is set, `0x8001CFD0..0x8001CFE8`.) Nothing in the field-camera build path zeroes it:
 `FUN_801DAB90`, `FUN_801DB8EC` and `FUN_801DBE9C` never touch `_DAT_8007B794`,
 and the only write that clears it is the scene-entry reset `FUN_80025C24`.
 (On the world map the same global is the top-view **azimuth**, which is the
