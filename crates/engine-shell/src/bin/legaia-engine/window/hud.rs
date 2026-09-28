@@ -1919,6 +1919,8 @@ impl PlayWindowApp {
                 box_rows: panel.box_rows(),
                 options,
                 cursor,
+                picker_rect: panel.picker_rect(),
+                picker_hand: panel.picker_hand_drawn(),
                 // The advance hand shows at a page break AND on the final
                 // fully-typed page (retail waits for a confirm on both).
                 waiting: panel.is_waiting_for_input() || panel.is_done(),
@@ -1958,9 +1960,12 @@ impl PlayWindowApp {
     ///   `x 30..289, y 8..65` = this rect inflated by the skin border).
     ///   Retail anchors the reading box at the TOP of the stage - with
     ///   or without an option picker.
-    /// - Picker box: `x = 0x26`, `y = 0x94 + ((4-n)*0xF)/2`,
-    ///   `w = 0xF4`, `h = 0x38 - (4-n)*0xF` (the picker-init arms'
-    ///   literal geometry writes).
+    /// - Picker box: the engine's slide rect
+    ///   ([`legaia_engine_core::dialog::OwnedDialogPanel::picker_rect`]) -
+    ///   the box on its way in from off screen, then at rest: `0x2A` at the
+    ///   top right `(0xD8, 0x4A, 0x58, 0x1A)`, the N-option lists at
+    ///   `(0x26, 0x94 + ((4-n)*0xF)/2, 0xF4, 0x38 - (4-n)*0xF)`. `None`
+    ///   (no box) on the press's sentinel call.
     ///
     /// Rects are the retail centre rects; the border skin the chrome
     /// pass draws extends ~8 px beyond them on every side
@@ -1976,8 +1981,7 @@ impl PlayWindowApp {
         let picker = if snap.options.is_empty() {
             None
         } else {
-            let n = snap.options.len().clamp(2, 4) as i32;
-            Some((0x26, 0x94 + ((4 - n) * 0xF) / 2, 0xF4, 0x38 - (4 - n) * 0xF))
+            snap.picker_rect
         };
         DialogStageLayout {
             main: (0x26, 0x10, main_w, main_h),
@@ -2116,14 +2120,17 @@ impl PlayWindowApp {
                 stage_scale,
             ));
             // Pointing-hand cursor on the selected option row
-            // (FUN_8002B994 kind 0 at box_x-6, box_y + cursor*0xF).
-            out.push(legaia_engine_render::dialog_option_hand_sprite(
-                &assets.rects,
-                (prect.0, prect.1),
-                snap.cursor,
-                stage_origin,
-                stage_scale,
-            ));
+            // (FUN_8002B994 kind 0 at box_x-6, box_y + cursor*0xF), drawn
+            // only once the slide rests (count 0).
+            if snap.picker_hand {
+                out.push(legaia_engine_render::dialog_option_hand_sprite(
+                    &assets.rects,
+                    (prect.0, prect.1),
+                    snap.cursor,
+                    stage_origin,
+                    stage_scale,
+                ));
+            }
         } else if snap.waiting {
             // Page-advance hand at the lower-right rim while the pager
             // waits for confirm (FUN_8002B994 kind 1).
@@ -2285,6 +2292,11 @@ pub(super) struct DialogSnapshot {
     pub options: Vec<String>,
     /// Selected option row.
     pub cursor: usize,
+    /// The picker box's rect this frame, from the engine's slide
+    /// (`OwnedDialogPanel::picker_rect`); `None` before it starts.
+    pub picker_rect: Option<(i32, i32, i32, i32)>,
+    /// The option hand is drawn (the slide rests).
+    pub picker_hand: bool,
     /// The panel is waiting for a confirm press (page fully typed).
     pub waiting: bool,
 }

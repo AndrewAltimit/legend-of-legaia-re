@@ -18,13 +18,18 @@
 //!   always 3 rows tall (`_DAT_801F2740 = 3`), only over-long simplified
 //!   pages grow it to a 4th row. The drawn skin extends 8 px beyond the
 //!   centre rect on every side (the chrome builder's inflation).
-//! - Picker box `x = 0x26`, `y = 0x94 + ((4-n)*0xF)/2`, `w = 0xF4`,
-//!   `h = 0x38 - (4-n)*0xF` (the picker-init arms' literal geometry).
+//! - Picker box: the engine's slide rect
+//!   ([`legaia_engine_core::dialog::OwnedDialogPanel::picker_rect`]), the
+//!   same one the native window reads - the box slides in from off screen
+//!   and rests at `(0xD8, 0x4A, 0x58, 0x1A)` for a `0x2A` menu, or at
+//!   `(0x26, 0x94 + ((4-n)*0xF)/2, 0xF4, 0x38 - (4-n)*0xF)` for the N-option
+//!   lists ([`legaia_engine_core::dialog_picker_slide`]).
 //! - Text pen = box origin exactly (`FUN_80036888(line, 0, 0, ctx+0x12,
 //!   ctx+0x14 + i*0xF)`), 15-px row pitch, body ink the staged CLUT-7
 //!   (206,206,206) menu white; picker labels at `box_x + 0x10`.
 //! - Advance hand at `x + w - 0x10`, `0x10` above the centre-rect bottom
-//!   (`FUN_8002B994` kind 1); option hand on the selected row (kind 0).
+//!   (`FUN_8002B994` kind 1); option hand on the selected row (kind 0), once
+//!   the slide rests.
 //!
 //! REF: FUN_801D84D0, FUN_8002C69C, FUN_8002B994
 
@@ -46,6 +51,11 @@ struct DialogSnapshot {
     box_rows: Option<usize>,
     options: Vec<String>,
     cursor: usize,
+    /// The picker box's rect this frame, from the engine's slide; `None`
+    /// before it starts.
+    picker_rect: Option<StageRect>,
+    /// The option hand is drawn (the slide rests).
+    picker_hand: bool,
     waiting: bool,
 }
 
@@ -97,42 +107,35 @@ fn from_panel(
         box_rows: panel.box_rows(),
         options,
         cursor,
+        picker_rect: panel.picker_rect(),
+        picker_hand: panel.picker_hand_drawn(),
         // The advance hand shows at a page break AND on the final fully-typed
         // page (retail waits for a confirm on both).
         waiting: panel.is_waiting_for_input() || panel.is_done(),
     })
 }
 
-/// Retail reading-box + picker centre rects for a box of `page_lines` rows
-/// ([`ui::dialog_reading_box_lines`]) and `options` picker entries (`0` = no
-/// picker) - the same literal geometry as the native window's
-/// `dialog_stage_layout`:
-///
-/// - main box `(0x26, 0x10, 0xF4, lines*0xF - 3)`, `lines` clamped 3..=4
-///   (retail's standard box is always 3 rows, `_DAT_801F2740 = 3`);
-/// - picker `(0x26, 0x94 + ((4-n)*0xF)/2, 0xF4, 0x38 - (4-n)*0xF)`,
-///   `n` clamped 2..=4.
+/// Retail reading-box centre rect for a box of `page_lines` rows
+/// ([`ui::dialog_reading_box_lines`]) - the same literal geometry as the
+/// native window's `dialog_stage_layout`: `(0x26, 0x10, 0xF4, lines*0xF -
+/// 3)`, `lines` clamped 3..=4 (retail's standard box is always 3 rows,
+/// `_DAT_801F2740 = 3`). The picker rect is not computed here: both hosts
+/// read the engine's slide rect.
 ///
 /// REF: FUN_801D84D0
-pub fn dialog_reading_box_layout(
-    page_lines: usize,
-    options: usize,
-) -> (StageRect, Option<StageRect>) {
+pub fn dialog_reading_box_layout(page_lines: usize) -> StageRect {
     let lines = page_lines.clamp(3, 4) as i32;
-    let picker = if options == 0 {
-        None
-    } else {
-        let n = options.clamp(2, 4) as i32;
-        Some((0x26, 0x94 + ((4 - n) * 0xF) / 2, 0xF4, 0x38 - (4 - n) * 0xF))
-    };
-    ((0x26, 0x10, 0xF4, lines * 0xF - 3), picker)
+    (0x26, 0x10, 0xF4, lines * 0xF - 3)
 }
 
 fn dialog_stage_layout(snap: &DialogSnapshot) -> DialogStageLayout {
-    let (main, picker) = dialog_reading_box_layout(
-        ui::dialog_reading_box_lines(&snap.page, snap.box_rows) as usize,
-        snap.options.len(),
-    );
+    let main =
+        dialog_reading_box_layout(ui::dialog_reading_box_lines(&snap.page, snap.box_rows) as usize);
+    let picker = if snap.options.is_empty() {
+        None
+    } else {
+        snap.picker_rect
+    };
     DialogStageLayout { main, picker }
 }
 
@@ -299,14 +302,17 @@ impl LegaiaRuntime {
                     rects, prect, origin, scale,
                 ));
                 // Pointing-hand cursor on the selected option row
-                // (FUN_8002B994 kind 0 at box_x-6, box_y + cursor*0xF).
-                sprites.push(ui::dialog_option_hand_sprite(
-                    rects,
-                    (prect.0, prect.1),
-                    snap.cursor,
-                    origin,
-                    scale,
-                ));
+                // (FUN_8002B994 kind 0 at box_x-6, box_y + cursor*0xF),
+                // drawn only once the slide rests (count 0).
+                if snap.picker_hand {
+                    sprites.push(ui::dialog_option_hand_sprite(
+                        rects,
+                        (prect.0, prect.1),
+                        snap.cursor,
+                        origin,
+                        scale,
+                    ));
+                }
             } else if snap.waiting {
                 // Page-advance hand at the lower-right rim while the pager
                 // waits for confirm (FUN_8002B994 kind 1).
@@ -367,22 +373,15 @@ mod tests {
     #[test]
     fn standard_reading_box_is_three_rows_at_the_top() {
         for lines in [1, 2, 3] {
-            let (main, picker) = dialog_reading_box_layout(lines, 0);
-            assert_eq!(main, (0x26, 0x10, 0xF4, 3 * 0xF - 3));
-            assert!(picker.is_none());
+            assert_eq!(
+                dialog_reading_box_layout(lines),
+                (0x26, 0x10, 0xF4, 3 * 0xF - 3)
+            );
         }
-        let (tall, _) = dialog_reading_box_layout(4, 0);
-        assert_eq!(tall, (0x26, 0x10, 0xF4, 4 * 0xF - 3));
-    }
-
-    /// Picker rects follow the picker-init arms' literal geometry: a 2-row
-    /// picker sits at `y = 0x94 + 0xF`, height `0x38 - 2*0xF`.
-    #[test]
-    fn picker_rect_matches_the_init_arm_literals() {
-        let (_, picker) = dialog_reading_box_layout(3, 2);
-        assert_eq!(picker, Some((0x26, 0x94 + 0xF, 0xF4, 0x38 - 2 * 0xF)));
-        let (_, four) = dialog_reading_box_layout(3, 4);
-        assert_eq!(four, Some((0x26, 0x94, 0xF4, 0x38)));
+        assert_eq!(
+            dialog_reading_box_layout(4),
+            (0x26, 0x10, 0xF4, 4 * 0xF - 3)
+        );
     }
 
     /// The `4C E1` balloon reaches the page's draw channel, is centred from a
