@@ -83,6 +83,27 @@ pub fn starting_record(c: &StartingChar) -> CharacterRecord {
 }
 
 impl World {
+    /// The whole New Game slate in one call: [`World::begin_new_game`], then
+    /// the SCUS starting party and starting bag when the host has them.
+    ///
+    /// Both hosts' New Game entries run exactly this before entering the
+    /// opening scene ([`crate::resume::enter_new_game`]); each used to spell
+    /// the three steps out for itself. `None` for either seed leaves the
+    /// default scaffold (party) or an empty bag (inventory).
+    pub fn begin_new_game_seeded(
+        &mut self,
+        party: Option<&StartingParty>,
+        inventory: Option<&StartingInventory>,
+    ) {
+        self.begin_new_game();
+        if let Some(starting) = party {
+            self.seed_starting_party(starting);
+        }
+        if let Some(inv) = inventory {
+            self.seed_starting_inventory(inv);
+        }
+    }
+
     /// Seed the starting party for a New Game from the SCUS starting-party
     /// template. Loads Vahn (template slot 0) into party slot 0 - the only
     /// member who has joined at a true New Game - and folds his equipment-free
@@ -525,6 +546,26 @@ mod tests {
         // Retail's carrier is the record, so the committed name has to land
         // there too or it is lost across a save/load round trip.
         assert_eq!(world.party.roster.members[0].name(), "Noa");
+    }
+
+    #[test]
+    fn begin_new_game_seeded_resets_then_seeds_both() {
+        let mut world = World::new();
+        world.party.money = 9999;
+        world.party.inventory.insert(0x10, 3);
+        world.begin_new_game_seeded(
+            Some(&StartingParty::from_members(vec![vahn()])),
+            Some(&StartingInventory::from_items(vec![(0x77, 5)])),
+        );
+        assert_eq!(world.party.party_count, 1);
+        assert_eq!(world.party.inventory.get(&0x10), None, "old bag cleared");
+        assert_eq!(world.party.inventory.get(&0x77).copied(), Some(5));
+        assert_ne!(world.party.money, 9999, "purse reset to the New Game gold");
+        // No seeds: the reset alone.
+        let mut bare = World::new();
+        bare.party.inventory.insert(0x10, 3);
+        bare.begin_new_game_seeded(None, None);
+        assert!(bare.party.inventory.is_empty());
     }
 
     #[test]

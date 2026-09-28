@@ -137,6 +137,7 @@ pub mod publisher_logos;
 pub mod ram_map;
 pub mod region_encounter;
 pub mod register_ramp;
+pub mod resume;
 pub mod retail_magic;
 pub mod retail_pad;
 pub mod save_menu_atlas;
