@@ -55,6 +55,7 @@ pub mod play_world_map_markers;
 pub mod play_xa;
 pub mod player_anm;
 mod prot_locate;
+pub mod resume;
 pub mod rom_patcher;
 pub mod runtime;
 mod scene_export;

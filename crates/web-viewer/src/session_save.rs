@@ -273,7 +273,7 @@ pub fn disc_portrait_rgba(bytes: Vec<u8>, char_id: usize) -> Vec<u8> {
 
 impl LegaiaRuntime {
     /// JsValue-free core of [`Self::import_save`].
-    fn import_save_core(&mut self, bytes: &[u8]) -> Result<String, String> {
+    pub(crate) fn import_save_core(&mut self, bytes: &[u8]) -> Result<String, String> {
         if !bytes.starts_with(b"LGSF") {
             return Err(
                 "import_save: not an LGSF save (missing magic) - retail memory-card saves go \
@@ -289,19 +289,12 @@ impl LegaiaRuntime {
         Ok(summary.to_string())
     }
 
-    /// Land an imported save the way the in-canvas card Load does: now (so
-    /// the next frame reads the party), and - when the save names the scene
-    /// it was written in, which the page then enters - parked for that entry,
-    /// which skips the picker's story baseline and re-applies the save after
-    /// the scene swap. Loading first and entering after, with nothing parked,
-    /// let the baseline clear system flags `0x141` / `0x147` in every
-    /// imported save; `BootSession::enter_field_live_from_save` is the native
-    /// order this matches.
+    /// Land an imported save the way the in-canvas card Load does: in the
+    /// world now, and parked for the page's [`Self::play_resume_save`], which
+    /// enters the save's scene and re-applies it after the swap (the native
+    /// `BootSession::resume_save` order). See [`crate::resume`].
     fn land_imported_save(&mut self, sf: SaveFile, scene: &str) {
-        if !scene.is_empty() {
-            self.pending_card_resume = Some(sf.clone());
-        }
-        self.world_mut().load_full(sf);
+        self.park_loaded_save(sf, scene);
     }
 
     /// JsValue-free core of [`Self::import_card_save`].
@@ -414,17 +407,20 @@ mod tests {
         );
         assert_eq!(rt2.world_mut().party.money, 55, "and lands now as well");
 
-        // A trailer-less file names no scene and parks nothing.
+        // A trailer-less file names no scene; it still parks, and its
+        // landing is the running scene (`resume::land_save`), never a drop.
         let plain = rt.world_mut().save_full().write();
         let mut rt3 = roundtrip_runtime();
         let summary = rt3.import_save_core(&plain).expect("import");
         assert!(summary.contains("\"scene\":\"\""), "{summary}");
-        assert!(rt3.pending_card_resume.is_none());
+        assert_eq!(
+            rt3.pending_card_resume.as_ref().map(|p| p.scene.as_str()),
+            Some("")
+        );
     }
 
-    /// A parked resume the page never entered does not survive the next
-    /// frame: the page skips the entry when the save's scene is already open,
-    /// and the park used to wait for the next picker entry to re-apply the
+    /// A parked resume the page never landed does not survive the next
+    /// frame: a park used to wait for the next picker entry to re-apply the
     /// old save over the live party.
     #[test]
     fn an_unconsumed_resume_park_expires_on_the_next_tick() {

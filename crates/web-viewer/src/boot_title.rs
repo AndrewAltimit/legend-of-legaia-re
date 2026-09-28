@@ -22,16 +22,14 @@
 //! with the native window. What the page still lacks is a session object, which
 //! is what its BGM director and its save flow wait on - not the seat.
 //!
-//! **All three rows are live.** Continue is enabled off a save scan (the
-//! memory-card rack, this host's save store) exactly as the native window
-//! picks `TitleSession::new()` vs `::without_save_data()` off `scan_save_dir`,
-//! and Continue / Options route to the retail save-select and options
-//! screens through the pause menu's own rows
+//! **All three rows are live.** Every title opens through
+//! `TitleSession::for_front_end` with a fresh scan of the memory-card rack
+//! (this host's save store) - the constructor and the rescan-per-open rule
+//! the native window shares - and Continue / Options route to the retail
+//! save-select and options screens through the pause menu's own rows
 //! ([`LegaiaRuntime::play_menu_open_row`]) rather than through a second copy
-//! of either screen. The page used to call `without_save_data()`
-//! unconditionally and then discard the outcome, so both rows were dead on a
-//! host that could already load and persist saves. Publisher logos are still
-//! not wired.
+//! of either screen. A confirmed Continue resumes through `play_resume_save`
+//! and New Game through `play_new_game` ([`crate::resume`]).
 //!
 //! **The attract plays the movie.** Retail's `AttractIdle` arm hands the
 //! screen to `fmv_id 0` (`MV1.STR`) and re-enters the front end afterwards;
@@ -166,13 +164,7 @@ impl LegaiaRuntime {
         crate::console_log(&format!(
             "boot title: the {row} row would not open on this world; returning to the title"
         ));
-        let mut session = if self.boot_title_has_save_data() {
-            TitleSession::new()
-        } else {
-            TitleSession::without_save_data()
-        };
-        session.attract_enabled = true;
-        self.boot_title = Some(session);
+        self.boot_title = Some(TitleSession::for_front_end(self.boot_title_has_save_data()));
         String::new()
     }
 }
@@ -182,14 +174,12 @@ impl LegaiaRuntime {
     /// Start the boot title screen. No-op with no disc loaded. The fade-in is
     /// skipped so the card shows immediately.
     ///
-    /// **Continue is enabled off a live save scan**, the way the native
-    /// window picks `TitleSession::new()` vs `::without_save_data()` from
-    /// `scan_save_dir`. The browser's save store is the memory-card rack
+    /// **Continue is enabled off a live save scan**, through the
+    /// `TitleSession::for_front_end` constructor the native window opens its
+    /// titles with. The browser's save store is the memory-card rack
     /// ([`crate::cards`]) - the same rack the pause menu's Load / Save rows
     /// write through - so the scan is "does any inserted card hold a readable
-    /// block". The page used to call `without_save_data()` unconditionally and
-    /// then discard the outcome, which left both non-New-Game rows dead on a
-    /// host that could already load and persist saves.
+    /// block".
     pub fn boot_title_start(&mut self) {
         if self.scene_host.is_none() {
             return;
@@ -198,16 +188,10 @@ impl LegaiaRuntime {
         let _ = self.ensure_menu_assets();
         self.ensure_title_atlas();
         self.ensure_menu_glyph_atlas();
-        let mut session = if self.boot_title_has_save_data() {
-            TitleSession::new()
-        } else {
-            TitleSession::without_save_data()
-        };
-        // The attract hand-off is armed on this host too, so the idle
-        // countdown reaches the same state the native window reaches; the
-        // movie itself plays through the FMV lane - see `boot_title_step`.
-        session.attract_enabled = true;
-        self.boot_title = Some(session);
+        // The front-end constructor both hosts open every title through
+        // (fresh rack scan, attract armed - the movie plays through the FMV
+        // lane, see `boot_title_step`).
+        self.boot_title = Some(TitleSession::for_front_end(self.boot_title_has_save_data()));
         self.boot_title_attract_skips = 0;
     }
 
