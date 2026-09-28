@@ -29,7 +29,7 @@
 
 use super::*;
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_core::field_env::{self, EnvDraw};
+use legaia_engine_core::field_env::{self, EnvDraw, PropPoseKey};
 use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::scene_resources::SceneResources;
 
@@ -312,19 +312,22 @@ impl LegaiaRuntime {
         anim_id: u8,
         res_idx: usize,
     ) -> Option<Vec<([i16; 3], [i16; 3])>> {
-        self.frame_bone_offsets(anim_id, res_idx, 0)
+        self.frame_bone_offsets(anim_id, res_idx, PropPoseKey::REST)
     }
 
-    /// Bone transforms of scene ANM record `anim_id - 1` at clip frame `frame`,
-    /// under retail's count-equality contract (see [`Self::frame0_bone_offsets`]).
-    /// Frame `0` is the rest pose; a live prop's cursor (`PropAnim::frame`)
-    /// advances it, which is what makes the Rim Elm windmill's sails turn.
+    /// Bone transforms of scene ANM record `anim_id - 1` posed at `key`, under
+    /// retail's count-equality contract (see [`Self::frame0_bone_offsets`]).
+    /// [`PropPoseKey::REST`] is the rest pose; a live prop's cursor
+    /// (`PropAnim::pose_key`) advances it, which is what makes the Rim Elm
+    /// windmill's sails turn. The transforms come from the engine's shared
+    /// kernel `field_env::prop_bone_offsets` - the frame blender's port, the
+    /// same call the native play-window's prop re-pose makes.
     /// `None` = the clip / mesh disagree on the part count, so pose nothing.
     fn frame_bone_offsets(
         &self,
         anim_id: u8,
         res_idx: usize,
-        frame: usize,
+        key: PropPoseKey,
     ) -> Option<Vec<([i16; 3], [i16; 3])>> {
         let bundle = self.scene_anm.as_ref()?;
         let rec_idx = (anim_id as usize).checked_sub(1)?;
@@ -338,18 +341,7 @@ impl LegaiaRuntime {
             ));
             return None;
         }
-        let f = frame.min((rec.frame_count as usize).saturating_sub(1));
-        Some(
-            (0..bones)
-                .map(|b| match bundle.bone_transform(rec_idx, f, b) {
-                    Some(t) => (
-                        [t.t_x as i16, t.t_y as i16, t.t_z as i16],
-                        [t.r_x as i16, t.r_y as i16, t.r_z as i16],
-                    ),
-                    None => ([0; 3], [0; 3]),
-                })
-                .collect(),
-        )
+        field_env::prop_bone_offsets(bundle, anim_id, key, bones)
     }
 }
 
@@ -593,14 +585,16 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
-    /// Live clip frame of each placement (parallel to
+    /// Live pose key of each placement (parallel to
     /// [`Self::field_placement_slots`]): `-1` for a static prop (no anim, or
-    /// no live prop-bank entry), else the prop's current cursor frame
-    /// (`PropAnimBank::frame`, the `actor+0x68 >> 4` the draw walker poses
-    /// from). The world advances every prop's cursor each field tick
+    /// no live prop-bank entry), else the prop's
+    /// [`PropPoseKey::to_i32`] (`PropAnimBank::pose_key` - the `actor+0x68`
+    /// cursor the frame blender poses from, plus the clamp bit; `0` is the
+    /// rest pose). The world advances every prop's cursor each field tick
     /// (`tick_prop_interactions` -> `PropAnimBank::tick_anims`, retail's
     /// `FUN_800204F8`), so an animated prop - the windmill sails, a swinging
-    /// door mid-swing - reports a changing frame, and the page re-poses it.
+    /// door mid-swing - reports a changing key, and the page re-poses it by
+    /// handing the key back to [`Self::field_mesh_posed_frame_positions`].
     pub fn field_placement_frames(&self) -> Vec<i32> {
         let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.as_ref()) else {
             return Vec::new();
@@ -614,16 +608,17 @@ impl LegaiaRuntime {
                 h.world
                     .props
                     .bank
-                    .frame(d.anchor)
-                    .map(|fr| fr as i32)
+                    .pose_key(d.anchor)
+                    .map(PropPoseKey::to_i32)
                     .unwrap_or(-1)
             })
             .collect()
     }
 
-    /// Positions of environment-pack slot `slot` **posed at clip frame
-    /// `frame`** of scene ANM record `anim_id - 1` - the per-frame re-pose the
-    /// draw walker (`FUN_8001B964`) does off a placed prop's live cursor.
+    /// Positions of environment-pack slot `slot` **posed at pose key
+    /// `frame`** ([`Self::field_placement_frames`]' value) of scene ANM record
+    /// `anim_id - 1` - the per-frame re-pose the draw walker (`FUN_8001B964`)
+    /// does off a placed prop's live cursor.
     /// Same vertex order as [`Self::field_mesh_posed`]'s frame-0 build (the two
     /// differ only in the per-object transform), so the page can upload the
     /// mesh once and rewrite just its positions each frame. Empty when the pose
@@ -643,7 +638,8 @@ impl LegaiaRuntime {
         let Some(&res_idx) = f.env_tmds.get(s) else {
             return Vec::new();
         };
-        let Some(offsets) = self.frame_bone_offsets(anim, res_idx, frame as usize) else {
+        let key = PropPoseKey::from_i32(frame as i32);
+        let Some(offsets) = self.frame_bone_offsets(anim, res_idx, key) else {
             return Vec::new();
         };
         let Some(res) = self.res() else {
@@ -1119,12 +1115,14 @@ impl LegaiaRuntime {
     }
 
     /// Live clip-playback state of every catalogued NPC, flattened
-    /// `[frame, generation, ...]` pairs in catalog order; `[-1, -1]` for an
-    /// entry with no live clip player. `frame` is the clip frame this render
-    /// should show ([`legaia_engine_core::field_anim::FieldClipPlayer::frame`],
+    /// `[pose, generation, ...]` pairs in catalog order; `[-1, -1]` for an
+    /// entry with no live clip player. `pose` is the pose key this render
+    /// should show ([`legaia_engine_core::field_anim::FieldClipPlayer::pose_key`]:
+    /// `frame * 16` plus the sub-frame a blend-gated clip poses in between,
     /// advanced once per drained sim tick - the native window's sim-tick anim
-    /// contract); `generation` bumps when an ANIMATE cue re-targets the clip,
-    /// telling the page to re-read the pose behind the index.
+    /// contract and its pose-cache key); `generation` bumps when an ANIMATE
+    /// cue re-targets the clip, telling the page to re-read the pose behind
+    /// the key.
     pub fn play_npc_clip_states(&self) -> Vec<i32> {
         let Some(n) = self.npcs.as_ref() else {
             return Vec::new();
@@ -1133,7 +1131,7 @@ impl LegaiaRuntime {
         for e in &n.pack.entries {
             match self.npc_clips.get(&(e.placement.index as u8)) {
                 Some(c) => {
-                    out.push(c.player.frame() as i32);
+                    out.push(c.player.pose_key() as i32);
                     out.push(c.generation as i32);
                 }
                 None => {

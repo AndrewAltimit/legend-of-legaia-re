@@ -132,10 +132,13 @@ fn npc_clip_frames_advance_on_sim_ticks_only() {
     for _ in 0..8 {
         rt.tick_frame().expect("tick");
     }
+    // The state carries the pose key (`frame * 16` + sub-frame); after a
+    // whole number of frames the sub-frame is back where it started.
     let s2 = rt.play_npc_clip_states();
+    assert_eq!(s2[i * 2] & 0xF, f0 & 0xF);
     assert_eq!(
-        s2[i * 2],
-        (f0 + 4).rem_euclid(frames),
+        s2[i * 2] >> 4,
+        ((f0 >> 4) + 4).rem_euclid(frames),
         "8 sim ticks must advance the clip by exactly 4 frames (ticks_per_frame = 2)"
     );
 }
