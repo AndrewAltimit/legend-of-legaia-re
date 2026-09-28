@@ -239,7 +239,16 @@ A PCSX-Redux capture from `retock_inn_stay_prompt` - the retock innkeeper's stay
 | 2 .. 12 | `0x11` | 22, 20, .. 2 | `(326, 74)`, `(316, 74)`, .. `(226, 74)` - 10 px a call |
 | 13 | `0x12` | 0 | `(216, 74)`, hand drawn, input taken |
 
-So the menu takes input thirteen pager calls - 26 vsyncs - after the press, and screenshots taken alongside the rows show the box entering from the right. The same capture from `retock_innkeeper_talk_open` (a re-talk after the stay) repeats the sequence call for call. The `0x27` / `0x28` / `0x29` slide has the same count sequence by the shared tail; no library state sits at one of those prompts, so its rise from `y = 0xF0` rests on the disassembly alone.
+So the menu takes input thirteen pager calls - 26 vsyncs - after the press, and screenshots taken alongside the rows show the box entering from the right. The same capture from `retock_innkeeper_talk_open` (a re-talk after the stay) repeats the sequence call for call. The `0x27` / `0x28` / `0x29` slide has the same count sequence, and a capture of the 4-option case confirms the rise. `town01_tetsu_topic_prompt` parks on the page wait before Tetsu's `0x29` topic list; one press gives:
+
+| Pager call | State | Count | Box origin |
+|---|---|---|---|
+| the press | `0x19` -> `0x17` | `0x309` | not drawn |
+| 1 | `0x17` | 24 | `(38, 240)` - below the bottom edge |
+| 2 .. 12 | `0x17` | 22, 20, .. 2 | y `232, 224, 217, 209, 201, 194, 186, 178, 171, 163, 155` at x 38 |
+| 13 | `0x18` | 0 | `(38, 148)`, hand drawn, input taken |
+
+The box is the full 244 x 56 four-row rect from the first drawn call, with its labels moving inside it; y falls by 92 x 2/24 a call, truncated, so the steps run 8, 8, 7 px and repeat. The state changes one vsync after the press, the slide's first call follows on the next pager call, and input opens 26 vsyncs after the state change - the same timing as the `0x2A` slide. The 2- and 3-option lists share the start `(0x26, 0xF0)` and the count sequence; only the target rect differs (the formula above), so each rises `0xF0 - y_target` pixels over the same twelve calls. The same run from the re-loaded state repeats the sequence call for call.
 
 The port opens every picker at its final rect on the press, with input live at once, and draws the `0x2A` menu in the N-option bottom box instead of the top-right one.
 
