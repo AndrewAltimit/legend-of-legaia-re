@@ -431,13 +431,20 @@ impl PlayWindowApp {
                 && !hf.indices.is_empty()
             {
                 let vmesh = heightfield_to_vram_mesh(&hf);
-                match r.upload_vram_mesh(
+                // Each vertex also carries its cell's four corners, so the
+                // overworld draws the cell at its ordering-table bucket's
+                // depth (`overworld_draw_order`; the browser play page
+                // uploads the same refs through `field_ground_flat_refs`).
+                let flat_refs =
+                    legaia_engine_core::overworld_draw_order::ground_flat_refs(&vmesh.positions);
+                match r.upload_vram_mesh_with_flat_refs(
                     &vmesh.positions,
                     &vmesh.uvs,
                     &vmesh.cba_tsb,
                     &vmesh.normals,
                     &vmesh.colors,
                     &vmesh.indices,
+                    &flat_refs,
                 ) {
                     Ok(m) => {
                         log::info!(
