@@ -812,8 +812,15 @@ differ in:
   player's own card images (`.mcr` / `.mcd` / `.gme` / `.mcs`), so cell `i` of
   the grid is card block `i + 1` - block 0 is the directory.
 - The native shell mounts its save directory as the card in port 1
-  (`disk_save_rack`), where cell `i` is `slot_{i}` - a plain index, no
-  directory block. Port 2 is the empty port.
+  (`disk_save_rack_with_card`), where cell `i` is `slot_{i}` - a plain
+  index, no directory block. Port 2 is the memory-card image `--card`
+  mounted (cell `i` = block `i + 1`, as on the page), or the empty port.
+
+The browser has no save directory: its engine-format (`.lgsf`) sessions live
+in the page's save bar and reach the world through an import, not through a
+rack port. Both hosts read a card block through one reader,
+`MountedCard::save_at`, which refuses a block that does not open a save
+chain.
 
 ### The third id space: the save **number** in the filename
 
@@ -855,6 +862,35 @@ Everything between the session and the bytes is
 A host supplies only the bytes: the fifteen snapshots behind a port, and the
 load / write against them. `scripts/ci/check-ui-host-drift.py` pins the rack
 kind each host declares.
+
+### Where a Load lands, and when Continue is live
+
+Retail resumes a save in the scene it was written in - the save carries the
+scene label and banner name (`SaveResume`, SC block `+0x208`). The port
+decides the landing once, in `engine-core::resume::land_save`, and both hosts
+resume through it (native `BootSession::resume_save`, page
+`play_resume_save`):
+
+1. the save's own scene, when it names one and the host can enter it - even
+   when it is the scene already running, because the entry is what lands the
+   save over fresh per-scene state;
+2. otherwise the scene already running, with the save loaded over it;
+3. otherwise, with no scene running, the opening town.
+
+A resume never becomes a New Game, and "can the host enter this label" is
+answered by entering it, not by a host's scene-picker list. The save is
+applied after the entry, whatever the landing. A New Game is the sibling
+entry (`resume::enter_new_game`: the seeded slate, then `opdeene`, else
+`town01`; native `BootSession::start_new_game`, page `play_new_game`), and it
+is the only thing the title's New Game row - from the cold boot or after a
+party wipe - reaches on either host.
+
+Continue's enablement is a port guard with no retail counterpart (retail
+always lets the row be picked and lets the save screen say "No data"). Both
+hosts open every title - cold boot, a return from Options or a backed-out
+Continue, the post-wipe title - through `TitleSession::for_front_end` with a
+fresh scan of their rack, so the row is live exactly when some port holds a
+save.
 
 ### Where the Save row's pad route is
 
