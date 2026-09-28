@@ -132,13 +132,14 @@
       <tr><td><code>0x48</code></td><td><code>9 &rarr; 0xA</code></td><td>Box reset, open animation - a fresh box</td></tr>
       <tr><td><code>0x25</code></td><td><code>0 &rarr; 1</code></td><td>Box reset, row buffer cleared (teardown)</td></tr>
       <tr><td><code>0x4C 0xFF</code></td><td><code>6 &rarr; 7</code></td><td>Box reset, row buffer cleared (teardown)</td></tr>
-      <tr><td><code>0x2A</code></td><td><code>0x11 &rarr; 0x12</code></td><td>2-option menu, box resized first</td></tr>
-      <tr><td><code>0x27</code></td><td><code>0x13 &rarr; 0x14</code></td><td>2-option Yes / No menu</td></tr>
-      <tr><td><code>0x28</code></td><td><code>0x15 &rarr; 0x16</code></td><td>3-option menu</td></tr>
-      <tr><td><code>0x29</code></td><td><code>0x17 &rarr; 0x18</code></td><td>4-option menu</td></tr>
+      <tr><td><code>0x2A</code></td><td><code>0x11 &rarr; 0x12</code></td><td>2-option menu in a small top-right box that slides in from the right edge</td></tr>
+      <tr><td><code>0x27</code></td><td><code>0x13 &rarr; 0x14</code></td><td>2-option Yes / No menu; the box slides up from the bottom edge</td></tr>
+      <tr><td><code>0x28</code></td><td><code>0x15 &rarr; 0x16</code></td><td>3-option menu, same slide</td></tr>
+      <tr><td><code>0x29</code></td><td><code>0x17 &rarr; 0x18</code></td><td>4-option menu, same slide</td></tr>
     </tbody>
   </table>
   <p>The pager decides the box, not the conversation: teardown clears rows and stops. Whether the dialogue session ends is decided by the actor dialog SM and the field VM.</p>
+  <p>No menu takes input on the press that opens it. The box slides from off screen to its place over a span of 24 frame-step units - twelve pager calls at the field's 30 fps, 10 px a call for the inn's top-right box - and the option hand appears, and input starts, on the call where it lands. A capture of an inn's stay offer measures 26 vsyncs from the press to a usable menu.</p>
   <h3 id="pickers">Choice menus (pickers)</h3>
   <p>Four open bytes - <code>0x27</code>, <code>0x28</code>, <code>0x29</code> and <code>0x2A</code> - open a menu. Relative to the open byte at index <code>O</code>:</p>
 <pre><code>[ .. 0x1F prompt segment .. 0x00 ]   the box text shown above the menu

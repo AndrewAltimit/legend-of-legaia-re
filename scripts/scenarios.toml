@@ -2904,3 +2904,13 @@ expected_game_mode = 0x03
 expected_active_scene = "retock"
 description = "retock inn interior with the innkeeper's (P1[26], actor +0x90 0x800E9688, MAN base 0x800E7494) conversation open, 5 vsyncs after the box appears. Retail SCUS: from retock_field_card_boot, a tile poke onto the kind-0 door (54,71) warps into the inn at (15168, 1280); autorun_talk_to_npc.lua with LEGAIA_POKE_POS=14816,1728 opens the talk (approached from the west - from the south the adjacent P1[29] answers instead). A Cross cadence runs one full stay (240 G) and parks the record's cursor on its 26 loop-back at +0x18A; the next talk executes the loop-back and the CC F8 85 acquire at +0x30 (arm 0x801E2148, s7 = 5)."
 topics = ["field", "retock", "inn", "dialogue", "halt-acquire", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "retock_inn_stay_prompt"
+backup_fingerprint = "a4ac1ccbeddb32f399a58d2f9b73c55b1b1e81541e93a4005ff4f135a510ea6d"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "retock"
+description = "retock inn, the innkeeper's stay offer on screen and waiting: the pager (FUN_801D84D0) has just entered page wait 0x19 on the page that ends on the 0x2A picker open byte, so one confirm press opens the Yes / No menu. Retail SCUS: from retock_innkeeper_talk_open, autorun_dialog_picker_open.lua (LEGAIA_PICKER_WAIT=20, LEGAIA_PICKER_RETALK=400, LEGAIA_PICKER_CKPT=1) runs the first talk's two pages, talks again after the stay, and checkpoints the 0x19 entry that precedes state 0x11. The press drives 0x11 -> 0x12: the 88 x 26 box slides in from x 336 to 216 at y 74 over twelve pager calls (frame step 2)."
+topics = ["field", "retock", "inn", "dialogue", "picker", "probe state"]
