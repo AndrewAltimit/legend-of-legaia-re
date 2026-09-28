@@ -400,10 +400,20 @@ fn tile_of(x: i16, z: i16) -> (i16, i16) {
     ((x - 0x40) >> 7, (z - 0x40) >> 7)
 }
 
-/// The live field VM's `(pc, opcode)` - where a parked script came to rest.
+/// Where the context holding the pad came to rest, as `(pc, opcode)`: the
+/// modal timeline's, else the first live spawned record's, else the scene's
+/// own entry script's. Reporting the entry script's `field_pc` for a record
+/// that holds the pad read as a stall where there was none - `edlast`'s
+/// "jump-to-self" was its entry script idling while the credits record ran.
 fn park_site(host: &SceneHost) -> Option<(usize, u8)> {
-    let pc = host.world.field_pc;
-    host.world.field_bytecode.get(pc).map(|op| (pc, *op))
+    let at = |bc: &[u8], pc: usize| bc.get(pc).map(|op| (pc, *op));
+    if let Some(tl) = host.world.cutscene.timeline.as_ref() {
+        return at(&tl.bytecode, tl.pc);
+    }
+    if let Some(h) = host.world.field_vm.helper_contexts.first() {
+        return at(&h.bytecode, h.pc);
+    }
+    at(&host.world.field_bytecode, host.world.field_pc)
 }
 
 /// The flag state every entry of a scene starts from.

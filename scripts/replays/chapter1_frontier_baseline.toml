@@ -83,11 +83,9 @@
 #
 # - The rung-5 shortfall is the ending scenes whose vignette record holds the
 #   pad (below). `izumi` clears it now that the settle waits out its
-#   first-visit record. `korb3` stops a rung earlier, at rung 4: a modal
-#   timeline parked at `pc=0x0144` (`0xCD`) outlasts the settle budget. It had
-#   scored rung 4 only because the settle returned before the timeline
-#   started. Its seat, the region centroid the object-grid seat fix resolves
-#   to since it has no `0x1000` cell, is a separate question.
+#   first-visit record. `korb3` stops a rung earlier, at rung 4: its seat
+#   fires a sign-text record that waits on a press (below). It had scored
+#   rung 4 only because the settle returned before the record started.
 #
 # - All five of the late Uru Mais / Drake scenes now leave, and Parts D/E/E2
 #   say exactly how: `uru` -> `map03`, `urudre1` / `urudre3` -> `uru`,
@@ -119,10 +117,23 @@
 #   returned at once and the walk probe ran under the record. It now ticks
 #   twice first and also waits for the spawn queue. `korout` then scores its
 #   walk (its first-visit record walks the player eight tiles and ends);
-#   `korb3` (4 -> 3) and `edlast` (5 -> 3) show what they had hidden - a
-#   modal timeline parked at `pc=0x0144` (`0xCD`) in `korb3` and a helper
-#   spinning on a `0x26` jump-to-self in `edlast`, neither ending in the
-#   settle budget.
+#   `korb3` (4 -> 3) and `edlast` (5 -> 3) show what they had hidden. The
+#   `pc=` in their notes is the scene's OWN entry script (the field VM's
+#   `field_pc`), not the record that holds the pad, so it read as two
+#   stalls. Neither is one, and neither is expected to come back:
+#   - `korb3`: the picker seat lands on tile (37,27), a gate-1 walk-on band
+#     whose `P2[15]` is three pages of sign text; the timeline waits on the
+#     press to dismiss them, as retail's text box does. Seated where retail
+#     arrives from `korb2` (tile (37,39)), the first-visit `P2[1]` fires
+#     instead and waits on its own dialogue. A released-pad settle passes
+#     neither.
+#   - `edlast`: `P2[1]` is the end-credits vignette, about 14100 vsyncs long,
+#     and it closes on a held-pad poll (`4A 08 00` / `42 01 08` / `42 01 09` /
+#     `26` back) that waits for Circle or Cross. Retail holds the pad the
+#     whole time (the ending states hold the engaged bit), so rung 4 never
+#     clears under a released pad. The port used to read that poll loop as a
+#     wrapped choreography and drop the record, which would have released
+#     the pad at about 14113 ticks; it now waits.
 
 scenes = 74
 rung_total = 415
