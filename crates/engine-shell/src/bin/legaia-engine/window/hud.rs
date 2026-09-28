@@ -1632,7 +1632,11 @@ impl PlayWindowApp {
         // warp pads): laid out by the engine off the live picker state, the
         // legend read off the field overlay, drawn through the shared line
         // composition the browser play page uses.
-        let floor = self.session.host.flag_window_lines();
+        let mut floor = self.session.host.flag_window_lines();
+        // The code lock (op-0x49 sub-op 2, handler slot 0x21 - doman's
+        // password door): header off the field overlay, one letter per
+        // entered symbol, through the same line composition.
+        floor.extend(self.session.host.code_lock_lines());
         stage.extend(legaia_engine_render::ui_text_lines::text_line_draws_for(
             &self.font,
             floor
