@@ -1985,9 +1985,12 @@ The ground's depth cue joins the same pair (`overworld_ground_cue` /
 `overworldGroundCue`, [`overworld_ground_cue`](../../crates/engine-core/src/overworld_ground_cue.rs)):
 each re-projects the cell's `(x1, z0)` corner from the flat-depth references
 and runs retail's `DPCS` arithmetic toward the literal far colour on the packet
-colour. The WGSL cue is GPU-tested in the same file; the GLSL twin is checked
-by hand in headless Chromium, with a throwaway page that links the page's
-vertex shader to a pass-through fragment - no committed test runs it.
+colour. The WGSL cue is GPU-tested in the same file. The GLSL twin has a
+host-free check, `web-viewer`'s `overworld_ground_cue_glsl`: it reads the
+function out of `site/js/webgl-shaders.js`, requires the same corner, lifts the
+literals from each statement of a fixed shape and evaluates that arithmetic
+against `ground_cue_color` over every 16-bit `SZ1`. It does not execute GLSL,
+so a new term fails the shape match rather than being evaluated.
 
 ### What the textured half needed, and why it was not a one-line removal
 
