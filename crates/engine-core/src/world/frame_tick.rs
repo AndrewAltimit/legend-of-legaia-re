@@ -2825,6 +2825,12 @@ impl World {
             self.mode = self.minigames.fishing_return_mode;
             return;
         }
+        // The venue's hub menu (Triangle / Select on the idle shore) owns the
+        // frame while it is up, the exchange list it opens included.
+        if self.tick_fishing_hub() {
+            self.minigames.fishing_events.clear();
+            return;
+        }
         // The point-exchange sub-screen owns the pad while it is open, as
         // retail's shop branch owns the mode switch.
         if self.minigames.fishing_exchange.is_some() {
