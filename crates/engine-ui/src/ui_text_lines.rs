@@ -1,6 +1,7 @@
 //! Positioned text lines -> [`TextDraw`]s: the last step of every screen whose
 //! layout the engine resolves to `(bytes, x, y, marked)` lines in retail
-//! 320x240 space (the fishing venue hub, the field floor window).
+//! 320x240 space (the fishing venue hub, the field floor window), or to
+//! `(bytes, x, y, pen)` lines (the casino coin counter).
 //!
 //! The bytes are dialog-font text, usually the user's disc;
 //! [`legaia_font::Font::layout`] consumes the `0xCE` / `0xCF` escapes without a
@@ -26,6 +27,26 @@ pub fn text_line_draws_for<'a>(
     out
 }
 
+/// Compose positioned lines that each carry their own retail **pen** - the
+/// `_DAT_8007B454` staging id the field overlay's panel painters select before
+/// a string or number. Pens resolve through [`crate::records_ink`], whose
+/// `{5, 6, 7, 9}` rows are pinned against the string CLUT; the field-overlay
+/// coin counter stages exactly those four.
+pub fn pen_line_draws_for<'a>(
+    font: &legaia_font::Font,
+    lines: impl IntoIterator<Item = (&'a [u8], i32, i32, u8)>,
+) -> Vec<TextDraw> {
+    let mut out = Vec::new();
+    for (text, x, y, pen) in lines {
+        out.extend(text_draws_for(
+            &font.layout(text),
+            (x, y),
+            crate::records_ink(pen),
+        ));
+    }
+    out
+}
+
 /// The field floor window's marked ink (the plate set `0x58..=0x60`, the
 /// current floor).
 pub const FLOOR_WINDOW_MARKED_INK: [f32; 4] = [1.0, 0.92, 0.25, 1.0];
@@ -33,6 +54,15 @@ pub const FLOOR_WINDOW_MARKED_INK: [f32; 4] = [1.0, 0.92, 0.25, 1.0];
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn each_pen_line_takes_its_pens_ink() {
+        let font = legaia_font::synthetic_for_tests();
+        let out = pen_line_draws_for(&font, [(&b"A"[..], 10, 20, 6), (&b"B"[..], 30, 40, 9)]);
+        assert_eq!(out.len(), 2);
+        assert_eq!((out[0].dst.0, out[0].color), (10, crate::MENU_TEXT_GOLD));
+        assert_eq!((out[1].dst.1, out[1].color), (40, crate::MENU_TEXT_ORANGE));
+    }
 
     #[test]
     fn each_line_lands_at_its_pen_in_its_ink() {

@@ -605,39 +605,22 @@ impl LegaiaRuntime {
         out
     }
 
-    /// The casino **coin counter** (op-0x49 sub-6) off the live submode
-    /// screen's cells, in stage pixels - the digit-entry UI whose frame
-    /// previously ran headless on this host too.
+    /// The casino **coin counter** (op-0x49 sub-6): the field overlay's entry
+    /// panel (record 10, `FUN_801E6F70`) and the confirm's three-line panel
+    /// over it (record 11), laid out by the engine
+    /// (`SceneHost::coin_counter_lines`) and drawn through the pen
+    /// composition the native window shares. Stage pixels.
     fn coin_counter_window_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
-        let Some(table) = self.menu_assets.as_ref().and_then(|a| a.window_table()) else {
+        let Some(host) = self.scene_host.as_ref() else {
             return Vec::new();
         };
-        let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
-            return Vec::new();
-        };
-        let screen = &world.field_vm.submode_screen;
-        if !screen.is_open()
-            || screen.actor.state != legaia_engine_vm::baka_hub_actors::slot::COIN_COUNTER
-        {
-            return Vec::new();
-        }
-        use legaia_engine_ui::ui_prize_exchange as px;
-        let view = px::CoinCounterView {
-            digits: screen.counter.digits.to_vec(),
-            cursor: screen.counter.cursor,
-            ceiling: screen.counter.ceiling,
-            gold: world.party.money,
-            coins: world.minigames.casino_coins,
-            confirm_cursor: (screen.actor.sub == 2).then_some((screen.counter.yes_no & 1) as u8),
-        };
-        let (mut out, sprites, pict) = px::coin_counter_draws_for(font, table, &view);
-        for s in sprites {
-            out.extend(self.painter_glyph_stand_in(font, ">", (s.x, s.y)));
-        }
-        if let Some(p) = pict {
-            out.extend(self.painter_glyph_stand_in(font, "C", (p.x, p.y)));
-        }
-        out
+        let lines = host.coin_counter_lines();
+        legaia_engine_ui::ui_text_lines::pen_line_draws_for(
+            font,
+            lines
+                .iter()
+                .map(|l| (&l.text[..], i32::from(l.x), i32::from(l.y), l.pen)),
+        )
     }
 
     /// The shop's four **retail descriptor windows** for the current phase, in
