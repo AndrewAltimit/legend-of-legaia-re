@@ -1935,6 +1935,16 @@ Both paths are now the retail law. Neither host applies a light source, and
 the browser has no light uniform left to apply one with - `u_light`,
 `u_normal_sign` and the world-position varying they needed are gone.
 
+The overworld's **vertex** stage is the same shape of pair: the per-vertex
+curvature (`overworld_curve_clip` / `overworldCurve`) and the continent's flat
+bucket depth (`overworld_flat_depth` / `overworldFlatDepth`) are each written
+once in WGSL and once in GLSL, both reading the frame's `clip.w`-to-`SZ`
+factor. The CPU kernels they mirror are pinned against retail
+(`overworld_curvature`, `overworld_draw_order`), and the WGSL flat depth
+against its kernel on a GPU (`engine-render`'s `overworld_flat_depth_gpu`);
+the GLSL twin is compiled but not run by any test, so an edit to one shader
+has to be carried to the other by hand.
+
 ### What the textured half needed, and why it was not a one-line removal
 
 The Lambert was standing in for something the page did not upload. Retail
@@ -2122,9 +2132,15 @@ attachment bound, and maps the depth through the scene's reversed-Z remap
 (`1 - z`); the page's pass draws into the default framebuffer the 3D pass
 just filled and puts the depth straight into `gl_Position.z`, the value its
 3D shader produces from the same matrix. The overworld fog sheets take the
-same channel (`fog_puff_prim`'s depth, flat at the bottom-right point retail
-sorts the sheet by), since retail links them into the ordering table with the
-continent. Every other primitive keeps the flag clear and sits on the near
+same channel (`fog_puff_prim`'s depth, flat at the sheet's ordering-table
+bucket), since retail links them into the ordering table with the continent;
+the continent's cells draw at their own buckets' depths on both hosts, from
+one kernel (`legaia_engine_core::overworld_draw_order`, see
+[`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#closing-the-draw-order-flat-per-primitive-terrain-depth)).
+A screen-prim depth is only comparable with the mesh pass when both are taken
+at the matrix the meshes draw with: the overworld walk frame composes a 6x
+world scale the field view the fog projects through does not, and the sheets'
+depth sat six times too near until `World::field_fx_view` scaled it. Every other primitive keeps the flag clear and sits on the near
 plane, so it passes against any scene depth as before. Pinned by
 `screen_prim`'s `only_a_depth_carrying_quad_is_depth_tested`,
 `world_map_markers`' `walk_camera_quads_carry_scene_depth` and
