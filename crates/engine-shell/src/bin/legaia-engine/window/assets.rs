@@ -743,6 +743,7 @@ impl PlayWindowApp {
                             plate_cap_r: atlas_data.band_battle_plate_cap_r(),
                             separator: atlas_data.band_battle_separator(),
                             digits: atlas_data.band_hud_digits(),
+                            cross_out: atlas_data.band_cross_out(),
                         }),
                     };
                     // The battle HUD's badge cells: which ones actually

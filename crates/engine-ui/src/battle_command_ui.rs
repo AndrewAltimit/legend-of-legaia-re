@@ -471,6 +471,43 @@ pub fn battle_command_chip_sprites(
     out
 }
 
+/// Seat of the red cross-out X over the command ring's Ra-Seru chip: the
+/// anchor retail's phase-`0x28` arm passes `FUN_801DBC30` (`0xF8`, `0x42`
+/// at `0x801D12D4` / `0x801D12F0`) - the right arm's placement record, so
+/// `plate + (8, 6)` of [`MENU_SEATS`]`[2]`.
+pub const RASERU_MARK_ANCHOR: (i16, i16) = (0xF8, 0x42);
+
+/// The red cross-out X at chip anchor `anchor`, as one sprite out of the
+/// host's chrome atlas (`src` = [`crate::BattleChromeRects::cross_out`]).
+///
+/// The quad's screen and texel spans are
+/// `legaia_engine_vm::battle_party_panel::cross_out_mark`'s - the port of
+/// `FUN_801DBC30` - so the mark is drawn 1:1 over `x-8 ..= x+0x37`,
+/// `y-4 ..= y+0xB`. It rides the chip sprites' list and draws after them, so
+/// it lands on top of the plate on both hosts.
+pub fn cross_out_mark_sprite(
+    src: (u32, u32, u32, u32),
+    anchor: (i16, i16),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> SpriteDraw {
+    let scale = stage_scale.max(1);
+    let q = legaia_engine_vm::battle_party_panel::cross_out_mark(anchor.0, anchor.1);
+    let (x0, y0) = (i32::from(q.xy[0].0), i32::from(q.xy[0].1));
+    let w = (i32::from(q.xy[1].0) - x0 + 1) as u32;
+    let h = (i32::from(q.xy[2].1) - y0 + 1) as u32;
+    SpriteDraw {
+        dst: (
+            stage_origin.0 + x0 * scale as i32,
+            stage_origin.1 + y0 * scale as i32,
+            w * scale,
+            h * scale,
+        ),
+        src: (src.0, src.1, w.min(src.2), h.min(src.3)),
+        color: CHIP_TINT_SELECTED,
+    }
+}
+
 /// The command cluster's text half: each chip's label left-aligned in its
 /// interior, or a single `-` when the command cannot be chosen.
 pub fn battle_command_chip_text(
@@ -543,6 +580,21 @@ mod tests {
         assert_eq!(c.label_seat(ChipSeat::Down), (204, 96));
         assert_eq!(c.dpad_rect(), (220, 62, 15, 15));
         assert_eq!(c.plate_width(), 64);
+    }
+
+    #[test]
+    fn the_raseru_mark_sits_on_the_right_arm_record() {
+        let (px, py) = MENU_SEATS[2].plate_origin();
+        assert_eq!(
+            (px + 8, py + 6),
+            (
+                i32::from(RASERU_MARK_ANCHOR.0),
+                i32::from(RASERU_MARK_ANCHOR.1)
+            )
+        );
+        let s = cross_out_mark_sprite((0, 48, 64, 16), RASERU_MARK_ANCHOR, (0, 0), 1);
+        assert_eq!(s.dst, (240, 62, 64, 16), "x-8..=x+0x37, y-4..=y+0xB");
+        assert_eq!(s.src, (0, 48, 64, 16));
     }
 
     #[test]

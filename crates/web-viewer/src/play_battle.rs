@@ -792,6 +792,21 @@ impl LegaiaRuntime {
                 origin,
                 scale,
             ));
+            // The Rim Elm ambush / monster `0xAF`: the red cross-out over the
+            // Ra-Seru chip, after the plates so it lands on top. The native
+            // window appends the same sprite off the same engine read.
+            if let Some(src) = rects.cross_out
+                && self.scene_host.as_ref().is_some_and(|h| {
+                    legaia_engine_core::battle_hud::battle_raseru_cross_out(&h.world)
+                })
+            {
+                out.push(bcu::cross_out_mark_sprite(
+                    src,
+                    bcu::RASERU_MARK_ANCHOR,
+                    origin,
+                    scale,
+                ));
+            }
         }
         out
     }

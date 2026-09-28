@@ -153,6 +153,7 @@ fn chrome_rects() -> SaveMenuAtlasRects {
             plate_cap_r: PLATE_CAP_R,
             separator: SEPARATOR_SRC,
             digits: Some(DIGIT_STRIP),
+            cross_out: None,
         }),
         ..Default::default()
     }

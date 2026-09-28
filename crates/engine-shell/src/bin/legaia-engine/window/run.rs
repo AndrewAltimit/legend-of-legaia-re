@@ -1082,7 +1082,15 @@ pub(super) fn cmd_play_window_with_record(
                 &pill_bytes,
                 menu_glyph_tim_bytes.as_deref(),
             ) {
-                Ok(a) => {
+                Ok(mut a) => {
+                    // The red cross-out X lives on the battle effect page, not
+                    // the system-UI sheet; bake it into the same atlas so it
+                    // draws in the chip list (the browser page bakes it too).
+                    if let Ok(flame) = session.host.index.entry_bytes_extended(
+                        legaia_engine_core::save_menu_atlas::FLAME_ATLAS_PROT_ENTRY,
+                    ) {
+                        legaia_engine_core::save_menu_atlas::add_cross_out_mark(&mut a, &flame);
+                    }
                     log::info!(
                         "play-window: save-menu atlas built ({}x{}) - 9-slice from PROT.DAT[0x018E0] + pills from PROT 0899",
                         a.width,

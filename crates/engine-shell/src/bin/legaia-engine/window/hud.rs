@@ -2550,6 +2550,19 @@ impl PlayWindowApp {
                 origin,
                 scale,
             ));
+            // The Rim Elm ambush / monster `0xAF`: the red cross-out over the
+            // Ra-Seru chip, after the plates so it lands on top. The browser
+            // page appends the same sprite off the same engine read.
+            if let Some(src) = rects.cross_out
+                && legaia_engine_core::battle_hud::battle_raseru_cross_out(&self.session.host.world)
+            {
+                out.push(bcu::cross_out_mark_sprite(
+                    src,
+                    bcu::RASERU_MARK_ANCHOR,
+                    origin,
+                    scale,
+                ));
+            }
         }
         out
     }
@@ -2716,6 +2729,7 @@ mod battle_hud_wiring_tests {
                 plate_cap_r: (216, 0, 8, 20),
                 separator: (96, 64, 8, 16),
                 digits: Some(BATTLE_MIRROR_DIGITS),
+                cross_out: None,
             }),
             ..blank_rects()
         };

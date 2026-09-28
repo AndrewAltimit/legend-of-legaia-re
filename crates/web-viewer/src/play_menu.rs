@@ -453,7 +453,17 @@ impl LegaiaRuntime {
                 let chrome = match (panel, pill) {
                     (Ok(panel_bytes), Ok(pill_bytes)) => {
                         match build_atlas(&panel_bytes, &pill_bytes, glyph_tim.as_deref()) {
-                            Ok(a) => {
+                            Ok(mut a) => {
+                                // The red cross-out X off the battle effect
+                                // page, baked into the same atlas the chips
+                                // draw from (the native window bakes it too).
+                                if let Ok(flame) = idx.entry_bytes_extended(
+                                    legaia_engine_core::save_menu_atlas::FLAME_ATLAS_PROT_ENTRY,
+                                ) {
+                                    legaia_engine_core::save_menu_atlas::add_cross_out_mark(
+                                        &mut a, &flame,
+                                    );
+                                }
                                 let rects = save_menu_rects(&a);
                                 Some((a, rects))
                             }
@@ -2234,6 +2244,7 @@ fn save_menu_rects(a: &SaveMenuAtlas) -> SaveMenuAtlasRects {
             plate_cap_r: a.band_battle_plate_cap_r(),
             separator: a.band_battle_separator(),
             digits: a.band_hud_digits(),
+            cross_out: a.band_cross_out(),
         }),
     }
 }

@@ -353,6 +353,10 @@ pub struct SaveMenuAtlas {
     /// Bit `i` set = plain element badge `i` carries its cell. Clear for
     /// every badge when the caller's slice cannot reach the extension strip.
     pub element_badges_baked: u8,
+    /// Whether [`ATLAS_RECT_CROSS_OUT`] carries the red cross-out X. Set by
+    /// [`add_cross_out_mark`]; [`SaveMenuAtlas::band_cross_out`] answers
+    /// `None` until then.
+    pub has_cross_out: bool,
 }
 
 impl SaveMenuAtlas {
@@ -525,6 +529,10 @@ impl SaveMenuAtlas {
     /// so consumers can fall back rather than blit ten blank cells.
     pub fn band_hud_digits(&self) -> Option<(u32, u32, u32, u32)> {
         self.has_hud_digits.then_some(ATLAS_RECT_HUD_DIGITS)
+    }
+    /// The red cross-out X ([`add_cross_out_mark`]), when baked.
+    pub fn band_cross_out(&self) -> Option<(u32, u32, u32, u32)> {
+        self.has_cross_out.then_some(ATLAS_RECT_CROSS_OUT)
     }
     /// Battle roster-panel background (102x48, sub-palette 0).
     pub fn band_battle_panel_bg(&self) -> (u32, u32, u32, u32) {
@@ -972,7 +980,80 @@ pub fn build_atlas(
         has_hud_digits,
         status_badges_baked,
         element_badges_baked,
+        has_cross_out: false,
     })
+}
+
+/// Atlas cell of the red **cross-out X** retail lays over a forbidden
+/// command chip (`FUN_801DBC30`): 64x16, re-seated from the battle effect
+/// page into a block of the atlas the other sources leave transparent.
+pub const ATLAS_RECT_CROSS_OUT: (u32, u32, u32, u32) = (0, 48, 64, 16);
+
+/// PROT entry of the battle effect atlas ([`add_cross_out_mark`]'s source;
+/// read it with the extended footprint, as the battle-entry upload does).
+pub const FLAME_ATLAS_PROT_ENTRY: u32 = 870;
+
+/// VRAM page of the battle effect atlas the X sits on (`tpage 7`, 4bpp).
+const CROSS_OUT_PAGE: (u16, u16) = (448, 0);
+/// Texel rect of the X on that page (`FUN_801DBC30`'s `u 0..=0x3F`,
+/// `v 0x60..=0x6F`).
+const CROSS_OUT_TEXELS: (u32, u32, u32, u32) = (0, 0x60, 64, 16);
+/// CLUT the X samples (`0x7704` = VRAM `(64, 476)`).
+const CROSS_OUT_CLUT: (u16, u16) = (64, 476);
+
+/// Bake the red cross-out X into `atlas` from the battle effect atlas
+/// (PROT 870, the entry `crate::scene::host::upload_flame_atlas_into_vram`
+/// uploads on battle entry): the TIM whose image lands on page `(448, 0)`,
+/// decoded through the 16-colour palette at VRAM `(64, 476)`, texels
+/// `(0, 96)`..`(63, 111)` - the quad
+/// `legaia_engine_vm::battle_party_panel::cross_out_mark` samples.
+///
+/// The X lives on an effect page, not on the system-UI sheet the rest of
+/// the atlas comes from, which is why it is a separate step: both play
+/// hosts draw the command chips out of this atlas, and the mark has to sit
+/// in the same texture to draw over them. Returns whether the cell baked;
+/// a source without that TIM leaves the atlas untouched.
+pub fn add_cross_out_mark(atlas: &mut SaveMenuAtlas, flame_atlas_entry: &[u8]) -> bool {
+    for target in legaia_asset::befect_cluster::scan_tims(flame_atlas_entry) {
+        let Ok(tim) = legaia_tim::parse(&flame_atlas_entry[target.offset..]) else {
+            continue;
+        };
+        if (tim.image.fb_x, tim.image.fb_y) != CROSS_OUT_PAGE
+            || tim.mode != legaia_tim::PixelMode::Bpp4
+        {
+            continue;
+        }
+        let Some(clut) = tim.clut.as_ref() else {
+            continue;
+        };
+        let (cx, cy) = CROSS_OUT_CLUT;
+        if cy < clut.fb_y || cx < clut.fb_x {
+            continue;
+        }
+        let entry = usize::from(cy - clut.fb_y) * usize::from(clut.w) + usize::from(cx - clut.fb_x);
+        if entry % 16 != 0 {
+            continue;
+        }
+        let Ok(rgba) = legaia_tim::decode_rgba8(&tim, entry / 16) else {
+            continue;
+        };
+        let src_w = tim.pixel_width() as u32;
+        let (u, v, w, h) = CROSS_OUT_TEXELS;
+        if src_w < u + w || (tim.pixel_height() as u32) < v + h {
+            continue;
+        }
+        copy_rect(
+            &mut atlas.rgba,
+            atlas.width,
+            &rgba,
+            src_w,
+            CROSS_OUT_TEXELS,
+            ATLAS_RECT_CROSS_OUT,
+        );
+        atlas.has_cross_out = true;
+        return true;
+    }
+    false
 }
 
 /// Split a leading row-511 CLUT-extension TIM off the caller's PROT.DAT
