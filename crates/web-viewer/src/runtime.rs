@@ -93,11 +93,15 @@ pub struct LegaiaRuntime {
     /// the retail globals, or reset them on scene entry; the page framed a
     /// separate orbit camera beside a world whose camera state never moved.
     pub(crate) camera: legaia_engine_core::camera::Camera,
-    /// The between-beat cutscene glide, the native window's twin. Without it
-    /// every `apply > 0` Camera Configure beat snapped on this host.
-    pub(crate) cutscene_cam: legaia_engine_vm::psx_camera::CutsceneCameraInterp,
-    /// Display-frame high-water mark the glide was last advanced to.
-    pub(crate) cutscene_cam_frames: u64,
+    /// The between-beat cutscene glide and its display-frame clock - the
+    /// shared kernel (`frame_step::CutsceneGlide`) the native window owns
+    /// one of too. Without it every `apply > 0` Camera Configure beat snapped
+    /// on this host.
+    pub(crate) cutscene_glide: legaia_engine_core::frame_step::CutsceneGlide,
+    /// Wall-clock to sim-tick accumulator (`frame_step::SimStepper`), the
+    /// native window's frame-step rule. The page's animation loop asks it
+    /// how many ticks each display frame runs ([`Self::play_drain_sim_steps`]).
+    pub(crate) sim_stepper: legaia_engine_core::frame_step::SimStepper,
     /// This tick's explicit camera-azimuth override (the VR first-person
     /// gaze), drained by the camera tick. `None` = the engine camera's own
     /// compass azimuth drives the d-pad remap, exactly as it does natively.
@@ -408,8 +412,8 @@ impl LegaiaRuntime {
                 c.distance = options_state.camera_distance;
                 c
             },
-            cutscene_cam: Default::default(),
-            cutscene_cam_frames: 0,
+            cutscene_glide: Default::default(),
+            sim_stepper: Default::default(),
             camera_azimuth_override: None,
             scene_aabb: None,
             fmv: Default::default(),
@@ -798,7 +802,7 @@ impl LegaiaRuntime {
         // `BootSession::enter_field_live` is the paired site; the glide
         // interpolator is this host's own and goes with it.
         self.camera.reset_for_scene_entry();
-        self.cutscene_cam.reset();
+        self.cutscene_glide.reset();
         if !world_map {
             // Retail reaches the field through the mode table, not through a
             // call: whoever wants the field stores `MAIN INIT` (2) and mode
@@ -1033,6 +1037,16 @@ impl LegaiaRuntime {
         let event = if movie_held {
             SceneTickEvent::Stepped
         } else {
+            // The camera's half before the world tick, in the native
+            // session's order (`frame_step::camera_before_world_tick`): the
+            // azimuth this tick's locomotion reads is published before it
+            // runs. This host used to publish it after the tick, so the d-pad
+            // remap ran one tick behind the camera.
+            legaia_engine_core::frame_step::camera_before_world_tick(
+                &mut self.camera,
+                &mut host.world,
+                self.camera_azimuth_override.take(),
+            );
             host.tick()
                 .map_err(|e| JsValue::from_str(&format!("tick: {e:#}")))?
         };
@@ -1068,10 +1082,9 @@ impl LegaiaRuntime {
         // delta-against-a-high-water-mark the native window runs. The `host`
         // borrow is dead from here, so this can re-borrow.
         self.tick_play_clock();
-        // The engine camera, ticked in the native session's order
-        // (`BootSession::tick`): free-roam reset, compass azimuth into the
-        // world, op-`0x45` event routing, then the per-frame globals advance.
-        // The post-FMV hand-off swaps the scene outside the field VM's
+        // The engine camera's half after the tick, in the native session's
+        // order (`BootSession::tick`): op-`0x45` event routing, then the
+        // per-frame globals advance. The post-FMV hand-off swaps the scene outside the field VM's
         // transition op (no `SceneEntered`), and is a scene entry all the
         // same: the camera globals reset on it too, as on a door.
         self.tick_camera(
@@ -1148,28 +1161,31 @@ impl LegaiaRuntime {
         // The FMV hand-off loaded a scene without going through the field
         // VM's transition op, so it produces no `SceneEntered` event - the
         // page still has to rebuild, or it draws the old scene's meshes over
-        // the new world.
-        if !fmv_handoff_scene.is_empty() {
-            // The SFX queue was already dropped above, before this tick's
-            // ring ops were replayed.
+        // the new world. (Its SFX queue was already dropped above, before
+        // this tick's ring ops were replayed.)
+        //
+        // A door (`SceneEntered`) rebuilds the same way. `town01` keeps its
+        // establishing-sweep timeline: the page draws the name-entry overlay
+        // its pinned op-0x49 opens (`crate::play_name_entry`), so the
+        // suspended script has a surface to resume from. No bank is staged
+        // and the dedupe latch is kept, so a track that carries across the
+        // transition keeps its playhead and its samples (the native
+        // `after_scene_swap` does the same).
+        let entered = if !fmv_handoff_scene.is_empty() {
+            fmv_handoff_scene
+        } else if let SceneTickEvent::SceneEntered { name } = event {
+            name
+        } else {
+            String::new()
+        };
+        if !entered.is_empty() {
             self.rebuild_render_state()?;
-            return Ok(fmv_handoff_scene);
         }
-        if let SceneTickEvent::SceneEntered { name } = event {
-            // `town01` keeps its establishing-sweep timeline: the page now
-            // draws the name-entry overlay its pinned op-0x49 opens
-            // (`crate::play_name_entry`), so the suspended script has a
-            // surface to resume from. The screen and the state that closes it
-            // land together - the pairing the field shop's op-0x49 gate
-            // taught (a screen armed with nothing to finish it parks the
-            // script dead).
-            self.rebuild_render_state()?;
-            // A door swapped the scene; its SFX queue was dropped above. No
-            // bank is staged and the dedupe latch is kept, so a track that
-            // carries across the transition keeps its playhead and its
-            // samples (the native `after_scene_swap` does the same).
-            return Ok(name);
-        }
+        // The rest of the tick's tail runs on an entry tick too, as it does
+        // in the native window's loop, which rebuilds and carries on. This
+        // host used to return straight after the rebuild, so the entry
+        // tick's rig change, merchant arm and NPC clip step were skipped.
+        //
         // A `CC F8 50` re-staged the player's model this tick: rebuild the
         // rig from the new mesh, the native window's twin
         // (`rebind_live_npc_models` there drains the same signal).
@@ -1186,7 +1202,7 @@ impl LegaiaRuntime {
         // end and calls `finish_field_shop`.
         self.poll_field_shop();
         self.drive_npc_clips();
-        Ok(String::new())
+        Ok(entered)
     }
 
     /// One-line engine state for the HUD:
