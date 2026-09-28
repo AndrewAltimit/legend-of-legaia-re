@@ -712,6 +712,30 @@ impl PropAnim {
         (self.cursor >> 4).max(0) as usize
     }
 
+    /// What the draw poses this prop with: the cursor the frame blender reads
+    /// plus the clamp bit its last-frame rule reads, normalised so two states
+    /// that pose identically compare equal. [`PropPoseKey::REST`] is frame 0
+    /// exactly - the baked rest mesh.
+    ///
+    /// `scaled_step` is the record's blend gate as well as its step selector
+    /// (both read clip byte `+1` bit 0; see
+    /// [`legaia_asset::player_anm::PlayerAnmRecord::blends`]), so a clip that
+    /// does not blend drops the sub-frame fraction here, and the clamp bit is
+    /// kept only where it can matter - a fraction on the last frame.
+    pub fn pose_key(&self) -> PropPoseKey {
+        let frames = i32::from(self.frames.max(1));
+        let frame = i32::from(self.cursor >> 4).clamp(0, frames - 1);
+        let frac = if self.scaled_step {
+            i32::from(self.cursor as u16 & 0xF)
+        } else {
+            0
+        };
+        PropPoseKey {
+            cursor: (frame * 16 + frac) as i16,
+            hold_at_end: frac != 0 && frame == frames - 1 && self.flags & ANIM_CLAMP != 0,
+        }
+    }
+
     /// True once the cursor has reached an end of the clip and latched
     /// [`ANIM_END`] - what a script's "wait for the animation" spin tests.
     pub fn at_end(&self) -> bool {
@@ -729,7 +753,10 @@ impl PropAnim {
         }
         let span = (self.frames as i32) * 16;
         // The clip's own per-frame step scaling (`clip[1] & 1` selects it,
-        // `clip[6]` divides). Every field door / prop clip takes the plain arm.
+        // `clip[6]` divides). The same bit is the frame blender's gate, so a
+        // prop on this arm is also posed between keyframes. A minority of the
+        // disc's posed props take it (`tests/field_prop_pose_sampler_disc.rs`
+        // counts them).
         let step = if self.scaled_step && self.step_div != 0 {
             let d = self.step_div as i32;
             ((self.rate as i32 * 2 + d - 1) / d) as i16
@@ -773,6 +800,79 @@ impl PropAnim {
             self.flags |= ANIM_END;
         }
     }
+}
+
+/// The two inputs of the frame blender `FUN_8001BE80` a posed prop's draw
+/// depends on, the cursor (`actor+0x68`) and the clamp bit (`actor+0x62 & 8`),
+/// normalised by [`PropAnim::pose_key`]. Equal keys pose identically, which
+/// is what lets a host skip a re-pose (and the page carry the key across the
+/// wasm boundary as one `i32`, [`Self::to_i32`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct PropPoseKey {
+    /// Frame cursor in 1/16-frame units.
+    pub cursor: i16,
+    /// The clamp bit: on the last frame, blend toward the frame itself rather
+    /// than wrapping to frame 0.
+    pub hold_at_end: bool,
+}
+
+impl PropPoseKey {
+    /// Frame 0, no fraction - the rest pose every prop is baked in.
+    pub const REST: Self = Self {
+        cursor: 0,
+        hold_at_end: false,
+    };
+
+    /// Whether this is [`Self::REST`].
+    pub fn is_rest(self) -> bool {
+        self == Self::REST
+    }
+
+    /// Pack into a non-negative `i32`: the cursor's 16 bits, the clamp bit at
+    /// bit 16.
+    pub fn to_i32(self) -> i32 {
+        i32::from(self.cursor as u16) | (i32::from(self.hold_at_end) << 16)
+    }
+
+    /// Inverse of [`Self::to_i32`].
+    pub fn from_i32(v: i32) -> Self {
+        Self {
+            cursor: (v & 0xFFFF) as u16 as i16,
+            hold_at_end: v & 0x1_0000 != 0,
+        }
+    }
+}
+
+/// Per-bone `(translation, rotation)` offsets of scene ANM record
+/// `anim_id - 1` posed at `key` - the transform list both hosts' posed-prop
+/// rebuilds (`tmd_to_*_mesh_posed_rot` on native, the page's hybrid env mesh)
+/// feed their mesh builders. One kernel so the two hosts cannot pose a prop
+/// differently. A bone that does not resolve poses at the origin, as the
+/// hosts' single-frame decode did. `None` when `anim_id` is `0`.
+///
+/// REF: FUN_8001B964 (the per-part loop: one blender call per part)
+/// REF: FUN_8001BE80 (the two-frame sampler, ported at
+/// `PlayerAnmBundle::sample_bone`)
+pub fn prop_bone_offsets(
+    bundle: &legaia_asset::player_anm::PlayerAnmBundle,
+    anim_id: u8,
+    key: PropPoseKey,
+    bones: usize,
+) -> Option<Vec<([i16; 3], [i16; 3])>> {
+    let rec = (anim_id as usize).checked_sub(1)?;
+    Some(
+        (0..bones)
+            .map(
+                |b| match bundle.sample_bone(rec, key.cursor, key.hold_at_end, b) {
+                    Some(t) => (
+                        [t.t_x as i16, t.t_y as i16, t.t_z as i16],
+                        [t.r_x as i16, t.r_y as i16, t.r_z as i16],
+                    ),
+                    None => ([0; 3], [0; 3]),
+                },
+            )
+            .collect(),
+    )
 }
 
 /// One animation command a placed prop's bind script issues against `+0x62` /
@@ -1228,6 +1328,12 @@ impl PropAnimBank {
         self.props.get(&anchor).map(|p| p.anim.frame())
     }
 
+    /// The pose key prop `anchor` draws with ([`PropAnim::pose_key`]), if it
+    /// has a clip.
+    pub fn pose_key(&self, anchor: (u8, u8)) -> Option<PropPoseKey> {
+        self.props.get(&anchor).map(|p| p.anim.pose_key())
+    }
+
     /// Advance every prop's clip one frame (the per-actor anim tick
     /// `FUN_800204F8`, which runs unconditionally - the windmill turns whether
     /// or not anyone is near). Touch / interact dispatch is the world's job
@@ -1650,6 +1756,31 @@ mod anim_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prop_pose_key_drops_what_cannot_change_the_pose() {
+        let mut a = PropAnim::spawned(3, 4, false, 0);
+        a.cursor = 16 + 8;
+        // Ungated clip: the fraction never reaches the blender.
+        assert_eq!(a.pose_key().cursor, 16);
+        a.scaled_step = true;
+        assert_eq!(a.pose_key().cursor, 24);
+        assert!(
+            !a.pose_key().hold_at_end,
+            "clamp only matters on the last frame"
+        );
+        a.cursor = 3 * 16 + 15;
+        a.flags |= ANIM_CLAMP;
+        assert!(a.pose_key().hold_at_end);
+        a.cursor = 0;
+        assert!(a.pose_key().is_rest());
+        let k = PropPoseKey {
+            cursor: 63,
+            hold_at_end: true,
+        };
+        assert_eq!(PropPoseKey::from_i32(k.to_i32()), k);
+        assert!(k.to_i32() >= 0);
+    }
 
     fn placement(pack_index: Option<u16>, nibble: Option<u8>, y_off: i16) -> Placement {
         Placement {

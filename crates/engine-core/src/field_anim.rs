@@ -16,10 +16,14 @@
 //! (`FUN_8001BE80`). This module owns the playhead: it pre-decodes every
 //! frame of a clip and emits one [`PoseFrame`] per engine tick, which the
 //! host's posed-mesh rebuild consumes exactly like the battle
-//! [`crate::battle_anim::MonsterAnimPlayer`] output.
+//! [`crate::battle_anim::MonsterAnimPlayer`] output. A clip whose record
+//! carries the blend gate is posed between two keyframes on the ticks that
+//! fall inside a frame, through the same blender
+//! ([`legaia_asset::player_anm::blend_bone_transform`]) the prop path samples
+//! through.
 
 use legaia_anm::PoseFrame;
-use legaia_asset::player_anm::PlayerAnmBundle;
+use legaia_asset::player_anm::{BoneTransform, PlayerAnmBundle, blend_bone_transform};
 
 /// Engine ticks per clip frame. The clip streams carry no rate byte of their
 /// own (unlike the monster-archive `+0x78` rate); retail advances the field
@@ -39,6 +43,9 @@ pub struct FieldClipPlayer {
     counter: u32,
     /// Engine ticks between frame advances (min 1).
     pub ticks_per_frame: u32,
+    /// The record's blend gate ([`legaia_asset::player_anm::PlayerAnmRecord::blends`]):
+    /// set, a tick that falls inside a frame poses between it and the next.
+    blend: bool,
 }
 
 impl FieldClipPlayer {
@@ -67,6 +74,7 @@ impl FieldClipPlayer {
             frame: 0,
             counter: 0,
             ticks_per_frame: DEFAULT_TICKS_PER_FRAME,
+            blend: rec.blends(),
         })
     }
 
@@ -89,6 +97,26 @@ impl FieldClipPlayer {
         self.frame
     }
 
+    /// The sub-frame fraction the playhead sits at, in the blender's 1/16
+    /// units: the ticks spent inside the current frame over
+    /// [`Self::ticks_per_frame`] (`0` or `8` at the default two ticks a
+    /// frame). `0` when the clip's record does not blend - retail's gate
+    /// discards the cursor's low nibble then.
+    pub fn sub_frame(&self) -> u32 {
+        if !self.blend {
+            return 0;
+        }
+        self.counter * 16 / self.ticks_per_frame.max(1)
+    }
+
+    /// A key that changes exactly when [`Self::current_pose`] can: the frame
+    /// times 16 plus [`Self::sub_frame`]. What a host memoises a posed mesh
+    /// on, since [`Self::frame`] alone would alias the blended in-between
+    /// poses onto their keyframe.
+    pub fn pose_key(&self) -> usize {
+        self.frame * 16 + self.sub_frame() as usize
+    }
+
     /// Restart the clip at frame 0 (called on an idle↔walk switch so the
     /// incoming loop starts at its first keyframe).
     pub fn rewind(&mut self) {
@@ -108,9 +136,32 @@ impl FieldClipPlayer {
     /// render rate is decoupled from the sim rate read the pose here every
     /// redraw and call [`Self::advance`] once per *sim tick*, so the clip
     /// plays at the retail cadence regardless of display refresh rate.
+    ///
+    /// A blend-gated clip between keyframes is posed by retail's frame
+    /// blender: toward the next frame, wrapping to frame 0 after the last (the
+    /// loop arm of the next-entry rule - these clips loop).
+    ///
+    /// REF: FUN_8001BE80
     pub fn current_pose(&self) -> PoseFrame {
+        let frac = self.sub_frame();
+        let bone_outputs = if frac == 0 {
+            self.frames[self.frame].clone()
+        } else {
+            let next = &self.frames[(self.frame + 1) % self.frames.len()];
+            self.frames[self.frame]
+                .iter()
+                .zip(next)
+                .map(|(c, n)| {
+                    let t = blend_bone_transform(row_bone(c), row_bone(n), frac as i32);
+                    (
+                        [t.t_x as i16, t.t_y as i16, t.t_z as i16],
+                        [t.r_x as i16, t.r_y as i16, t.r_z as i16],
+                    )
+                })
+                .collect()
+        };
         PoseFrame {
-            bone_outputs: self.frames[self.frame].clone(),
+            bone_outputs,
             factor: 0,
             finished: false,
         }
@@ -126,6 +177,19 @@ impl FieldClipPlayer {
         let total = self.counter + n;
         self.counter = total % tpf;
         self.frame = (self.frame + (total / tpf) as usize) % self.frames.len();
+    }
+}
+
+/// A pre-decoded `(translation, rotation)` row back as the decoder's type.
+/// Lossless: the row holds the decode's 16-bit values verbatim.
+fn row_bone(r: &([i16; 3], [i16; 3])) -> BoneTransform {
+    BoneTransform {
+        t_x: r.0[0].into(),
+        t_y: r.0[1].into(),
+        t_z: r.0[2].into(),
+        r_x: r.1[0].into(),
+        r_y: r.1[1].into(),
+        r_z: r.1[2].into(),
     }
 }
 
@@ -526,6 +590,31 @@ mod tests {
         assert_eq!(p.tick().bone_outputs[0].0[0], 0);
         assert_eq!(p.tick().bone_outputs[0].0[0], 0);
         assert_eq!(p.tick().bone_outputs[0].0[0], 10);
+    }
+
+    #[test]
+    fn a_blend_gated_clip_poses_the_in_between_tick() {
+        let mut bundle = synth_bundle();
+        // Raise record 0's blend gate (clip byte +1 bit 0).
+        bundle.decoded[bundle.record_offsets[0] as usize + 1] |= 1;
+        let mut p = FieldClipPlayer::from_record(&bundle, 0).unwrap();
+        p.ticks_per_frame = 2;
+        let mut seen = Vec::new();
+        let mut keys = Vec::new();
+        for _ in 0..6 {
+            keys.push(p.pose_key());
+            seen.push(p.tick().bone_outputs[0].0[0]);
+        }
+        // Keyframes 0 / 10 / 20 exact on the even ticks; half-way between on
+        // the odd ones, the last one wrapping toward frame 0.
+        assert_eq!(seen, vec![0, 5, 10, 15, 20, 10]);
+        assert_eq!(keys, vec![0, 8, 16, 24, 32, 40]);
+        // The ungated record keeps whole frames and frame-only keys.
+        let mut q = FieldClipPlayer::from_record(&bundle, 1).unwrap();
+        q.ticks_per_frame = 2;
+        q.advance(1);
+        assert_eq!(q.pose_key(), 0);
+        assert_eq!(q.current_pose().bone_outputs[0].0[0], 100);
     }
 
     #[test]
