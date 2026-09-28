@@ -993,8 +993,11 @@ disclosures can be right about the wiring and wrong about the bytes.
 
 ### `card_message_rows` named a string table that is a sprite table
 
-`engine-ui`'s `card_message_rows` (`801e0418`) is still `DISCLOSE`, but one
-of its two stated prerequisites was wrong about the mechanism. It read
+This row is closed: the strips are the title TIM's (PROT 0890), and the port
+is live as `engine-ui::title_strip_rows`
+([`save-screen.md`](../subsystems/save-screen.md#the-title-strips-behind-the-load-window)).
+The history below is kept for the mechanism error it records. The disclosure
+was wrong about one of its two stated prerequisites. It read
 "`msg_slot` indexes the slot argument retail's drawer (`FUN_801E2EE4`)
 resolves against the menu overlay's message pointers ... even a wired host
 would have five rows and no text."
