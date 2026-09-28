@@ -2436,6 +2436,27 @@ the overworld from the flat-depth corner references
 (`overworld_ground_cue` in `engine-render`'s VRAM-mesh WGSL, `overworldGroundCue`
 in the play page's GLSL), each vertex of a cell computing the same colour.
 
+The **decoration cells** carry a cue of their own, per object rather than per
+cell, and the port does not draw it. Before each `jal 0x80043390`
+(`0x801F7254`) the sweep loads the object's composed translation into `TR`
+(`0x801F71E0..0x801F71F4`, three `ctc2` from the local matrix's `t`) and forms
+the dispatcher's third argument from its `TRZ` (`s1 + 0x40`):
+`IR0 = min(max(TRZ - 0x5000, 0) >> 3, 0x1000)` (`0x801F7200..0x801F7220`) - the
+ground's law, keyed on the object origin's depth instead of a corner's. The
+second argument is `0x00D0D0D0`, raised to `0x40D0D0D0` when the record's
+`+0x1E` byte is set and OR-ed with `0x10000000` when its `+0x12` carries
+`0x800` (`0x801F7224..0x801F7250`). `FUN_80043390` turns a non-zero third
+argument into the far colour (the low three bytes `<< 4`, `& 0xFFFE`, into
+`RFC/GFC/BFC` at `0x800434B0..0x800434D0`) and parks the argument at scratch
+`0x1F800038`; on the overworld path it indexes the PROT 0901 table
+`0x801F8968` by kind alone, never adding the bank (`0x800435E8..0x80043600`),
+and the 0901 handlers load that word into `IR0` right before their `DPCS`
+(kind 13, `lwc2 IR0, -0x2dc(t2)` at `0x801F7A44`, `dpcs` at `0x801F7A50`). So
+every prim of a landmark hazes toward `0xD0` by one `IR0` taken from its origin,
+while the ground under it hazes toward one past white by its own corner. A near
+landmark (`TRZ <= 0x5007`) passes `IR0 = 0` and the dispatcher skips the far
+colour setup entirely, which draws the same.
+
 The selector is the cell's object-record `+0x14..+0x18` run (the record reached
 through `cell & 0x1ff` → `×0x20`), byte-verified against the retail prim pool:
 
