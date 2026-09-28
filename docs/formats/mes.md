@@ -250,7 +250,9 @@ So the menu takes input thirteen pager calls - 26 vsyncs - after the press, and 
 
 The box is the full 244 x 56 four-row rect from the first drawn call, with its labels moving inside it; y falls by 92 x 2/24 a call, truncated, so the steps run 8, 8, 7 px and repeat. The state changes one vsync after the press, the slide's first call follows on the next pager call, and input opens 26 vsyncs after the state change - the same timing as the `0x2A` slide. The 2- and 3-option lists share the start `(0x26, 0xF0)` and the count sequence; only the target rect differs (the formula above), so each rises `0xF0 - y_target` pixels over the same twelve calls. The same run from the re-loaded state repeats the sequence call for call.
 
-The port opens every picker at its final rect on the press, with input live at once, and draws the `0x2A` menu in the N-option bottom box instead of the top-right one.
+The call that takes the count to zero steps to the even state and branches straight to the draw (`j 0x801D95AC` at `0x801D9414`), past the cursor handler, so the first call that can read Up / Down or confirm is the one after it. The option hand is already up on the zeroing call.
+
+The engine runs the slide once, in `engine-core::dialog_picker_slide`: the panel's press stores the sentinel, each pager call it runs while the menu is open advances the count at the frame step, and `OwnedDialogPanel::picker_rect` / `picker_hand_drawn` / `picker_takes_input` expose the box, the hand and the input gate. Both hosts (the native window's `dialog_stage_layout` and the play page's `play_dialog`) draw the box and its labels at that rect and the hand only at rest; the panel ignores Up / Down and confirm until the slide rests, and a `0x2A` cursor clamps. The resting rects come from `legaia_mes::picker_box_rect` and the starts from `picker_slide_start`. The simplified `--simple-dialogue` panel, which opens its menu without a press, opens it at rest.
 
 ### Picker control-region layout
 
