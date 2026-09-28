@@ -1241,27 +1241,29 @@ about these is contested.
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
 | derived scene lights | An enhancement the browser renderer cannot express. See [below](#derived-scene-point-lights-are-native-only). |
 | battle body blend modes | Both hosts draw a whole battle body's semi-transparency; three residues differ in scope and ordering. See [below](#a-battle-bodys-blend-mode-reaches-both-hosts-with-three-residues). |
-| page resume and New Game flow | The page's scene-level Load / New Game choreography lives in `site/_content/play.html` callbacks, not the engine. See [below](#the-page-owns-its-resume-and-new-game-choreography). |
+| save rack port 1 | The native rack's first port is an engine-format save directory; the page's two ports are both memory-card images. See [below](#the-save-racks-first-port-differs-per-host). |
 | movie audio policy | Which movies pause the BGM, and what a finished movie resumes, is decided per host. See [below](#movie-audio-is-a-per-host-policy). |
 | Ra-Seru chip cross-out | The regular ring's red X over a forbidden Ra-Seru chip, on neither host. See [below](#the-ra-seru-chips-cross-out-reaches-neither-host). |
 
-### The page owns its resume and New Game choreography
+### The save rack's first port differs per host
 
-The native window resumes a save in one engine call
-(`BootSession::enter_field_live_from_save`: enter the save's scene, then load
-over it) and starts a New Game through `BootSession::begin_new_game`. The page
-splits both across `play.html` callbacks. A card Load re-enters its scene
-even when it is the one already open, and the party-wipe path's New Game
-takes the same `begin_new_game` reset as the boot title; one path still
-differs: a title Continue naming a scene the page does not list falls
-through to New Game over the loaded save (a card import in the same case
-stays in the running scene).
+Where a Load lands and how a New Game starts are one engine entry per host
+(`engine-core::resume`, reached by native `BootSession::resume_save` /
+`start_new_game` and the page's `play_resume_save` / `play_new_game`; the
+two `check-ui-host-drift.py` pairs on `land_save` and `enter_new_game` pin
+it), and both hosts open every title through `TitleSession::for_front_end`
+with a fresh rack scan - see
+[`save-screen.md`](../subsystems/save-screen.md#where-a-load-lands-and-when-continue-is-live).
 
-A parked resume the page declines to enter no longer survives the next tick
-(`tick_frame` drops it), which was the part that silently re-applied an old
-save at a later scene pick. Blocking capability: an engine-side resume and
-New Game entry (enter + load, or seed + stop, in one call) that the page's
-callbacks invoke instead of choreographing it.
+What still differs is what backs the rack's ports. The native window mounts
+its `.lgsf` save directory as port 1 and the `--card` image as port 2; the
+page mounts two memory-card images and keeps its `.lgsf` sessions in the save
+bar, where they resume through an import rather than through the Load
+screen. So a native player can Load an engine-format save from the retail
+save-select and a page player cannot, and the page's title Continue is live
+only when a card is inserted. Closing it means giving the page a port backed
+by its stored sessions (the rack snapshot, the block read, the Save write and
+the export path), which is storage work rather than wiring.
 
 ### Movie audio is a per-host policy
 
@@ -3092,7 +3094,7 @@ The audio rows of the same pass are closed or settled in
   whose picker story baseline cleared system flags `0x141` / `0x147` in every
   resumed save. The runtime now parks the loaded save, skips the baseline for
   that entry and re-applies the save after the swap - the native
-  `enter_field_live_from_save` order
+  `BootSession::resume_save` order
   (`cards.rs`, `a_card_load_keeps_the_saves_story_flags_across_the_scene_entry`).
 - **The op-`0x35` timed release.** Its expiry set a flag no host read. The
   expiry arm is `FUN_800266E0`'s body on the field-BGM slot - sub-op `2`'s
