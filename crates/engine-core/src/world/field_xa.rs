@@ -26,7 +26,66 @@
 
 use super::*;
 
+/// Every CD-XA one-shot the field scripts in `man` can start: each op `0x36`
+/// whose first operand has bit 15 clear and a non-zero selector - the arm
+/// that calls `FUN_8003D53C(arg >> 3, arg & 7, sel)` (`0x801E0420`) - over
+/// every record of every partition, deduplicated, in script order.
+///
+/// A linear decode of each record from its first opcode; it stops at a
+/// record's first decode error, so an op past message text the walk cannot
+/// resync over is missed (the clip then stages on first use, as before), and
+/// a hit is a lead rather than a proof - which is all an advisory prestage
+/// list needs. Empty when `man` does not parse.
+pub fn scene_xa_prestage(man: &[u8]) -> Vec<crate::sfx_cue::XaVoiceClip> {
+    use legaia_asset::field_disasm::{DisasmError, InsnInfo, LinearWalker, man_script_spans};
+    let Ok(man_file) = legaia_asset::man_section::parse(man) else {
+        return Vec::new();
+    };
+    let mut out: Vec<crate::sfx_cue::XaVoiceClip> = Vec::new();
+    for (_, _, start, pc0, len) in man_script_spans(&man_file, man) {
+        let Some(body) = man.get(start..start + len) else {
+            continue;
+        };
+        for step in LinearWalker::new(body, pc0) {
+            match step {
+                Ok(insn) => {
+                    let InsnInfo::SceneFade { word0, word1 } = insn.info else {
+                        continue;
+                    };
+                    if word0 & 0x8000 != 0 || word0 == 0 {
+                        continue;
+                    }
+                    let arg = word1 as i16;
+                    let clip = crate::sfx_cue::XaVoiceClip {
+                        clip: u32::from((arg >> 3) as u8),
+                        channel: u32::from((arg & 7) as u8),
+                        duration_sectors: u32::from(word0),
+                    };
+                    if !out.contains(&clip) {
+                        out.push(clip);
+                    }
+                }
+                Err((_, err)) => {
+                    if !matches!(err, DisasmError::EndOfStream { .. }) {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
 impl World {
+    /// Take the loaded scene's field CD-XA prestage list
+    /// ([`crate::world::AudioState::field_xa_prestage`]). A host that decodes
+    /// clips asynchronously (the browser page) stages each ahead of its op;
+    /// one that reads the disc synchronously (the native window) drains and
+    /// drops it.
+    pub fn drain_field_xa_prestage(&mut self) -> Vec<crate::sfx_cue::XaVoiceClip> {
+        std::mem::take(&mut self.audio.field_xa_prestage)
+    }
+
     /// Queue one field CD-XA clip start and hold the modelled drive busy for
     /// its read span (`dur` vsyncs, the battle leg's convention - see
     /// [`crate::world::AudioState::battle_xa_busy_frames`]).

@@ -115,6 +115,26 @@ pub struct NameEntryInput {
     pub cancel: bool,
 }
 
+impl NameEntryInput {
+    /// Decode one frame's **raw** just-pressed pad word (the
+    /// [`crate::input::PadButton`] layout both hosts feed `World::set_pad`)
+    /// into the overlay's semantic edges: the d-pad, Cross to confirm and
+    /// Triangle to cancel. Both hosts route their naming-prompt edges through
+    /// this one decode; each used to spell the six masks out locally.
+    pub fn from_pad_edge(edge: u16) -> Self {
+        use crate::input::PadButton;
+        let pressed = |b: PadButton| edge & b.mask() != 0;
+        Self {
+            up: pressed(PadButton::Up),
+            down: pressed(PadButton::Down),
+            left: pressed(PadButton::Left),
+            right: pressed(PadButton::Right),
+            confirm: pressed(PadButton::Cross),
+            cancel: pressed(PadButton::Triangle),
+        }
+    }
+}
+
 /// Mutable name-entry session. Install on the world via
 /// [`crate::world::World::open_name_entry`]; step it each frame with a
 /// [`NameEntryInput`]; read [`NameEntry::state`] for `Done` to commit + close.
@@ -334,6 +354,20 @@ impl NameEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The shared decode reads the raw layout: the masks the two hosts used
+    /// to spell out (`0x0010` up, `0x0040` down, `0x0080` left, `0x0020`
+    /// right, `0x4000` Cross, `0x1000` Triangle), and nothing else.
+    #[test]
+    fn pad_edge_decode_matches_the_raw_masks() {
+        let i = NameEntryInput::from_pad_edge(0x0010 | 0x4000);
+        assert!(i.up && i.confirm && !i.down && !i.cancel && !i.left && !i.right);
+        let i = NameEntryInput::from_pad_edge(0x0040 | 0x0080 | 0x0020 | 0x1000);
+        assert!(i.down && i.left && i.right && i.cancel && !i.up && !i.confirm);
+        // Circle and Start are not naming edges.
+        let i = NameEntryInput::from_pad_edge(0x2000 | 0x0008);
+        assert!(!(i.up || i.down || i.left || i.right || i.confirm || i.cancel));
+    }
 
     #[test]
     fn grid_is_six_by_seventeen() {

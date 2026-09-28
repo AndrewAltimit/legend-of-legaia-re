@@ -198,6 +198,13 @@ impl SceneHost {
             .as_ref()
             .map(|man| legaia_asset::inn_costs::scan(man))
             .unwrap_or_default();
+        // The scene's CD-XA one-shots, for a host that stages clips
+        // asynchronously to have them resident before the op fires.
+        self.world.audio.field_xa_prestage = self
+            .field_man_cache
+            .as_ref()
+            .map(|man| crate::world::field_xa::scene_xa_prestage(man))
+            .unwrap_or_default();
         self.last_trigger_tile = None;
         Ok(self.scene.as_ref().unwrap())
     }

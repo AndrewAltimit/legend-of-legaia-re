@@ -304,6 +304,21 @@ impl MenuRuntime {
         self.art_learned_notice = Some(notice);
     }
 
+    /// Arm whichever of the window-7 / window-8 notices a finished pause-menu
+    /// sub-session surfaced ([`crate::field_menu_dispatch::finish_subsession`]),
+    /// taking them out of `finished`.
+    pub fn arm_finished_notices(
+        &mut self,
+        finished: &mut crate::field_menu_dispatch::FinishedSubsession,
+    ) {
+        if let Some(n) = finished.spell_level_notice.take() {
+            self.arm_spell_level_notice(n);
+        }
+        if let Some(n) = finished.art_learned_notice.take() {
+            self.arm_art_learned_notice(n);
+        }
+    }
+
     /// One frame of the window-8 hold: the confirm or cancel mask closes it.
     /// Returns `true` while the notice owns the pad.
     pub fn dismiss_art_learned_notice(

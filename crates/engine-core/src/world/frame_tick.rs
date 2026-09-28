@@ -2172,6 +2172,47 @@ impl World {
         self.despawn_tile_actors();
     }
 
+    /// Install the **demo** tile board: a 7x7 board centred on the player's
+    /// tile, through the same op-`0x49` sub-op-5 bytecode a script would hand
+    /// [`Self::try_install_tile_board`]. No retail scene installs a board, so
+    /// this developer trigger is the only way a host reaches the per-cell draw
+    /// pass. Both hosts call it (native under `LEGAIA_TILE_BOARD_DEMO=1`, the
+    /// page from `play_install_demo_tile_board`); they decide only *when*.
+    ///
+    /// Returns `false` off the field, with a board already up or armed, with
+    /// no player actor, or when the install is refused.
+    pub fn install_demo_tile_board(&mut self) -> bool {
+        if self.mode != crate::world::SceneMode::Field
+            || self.board.grid.is_some()
+            || self.board.armed
+        {
+            return false;
+        }
+        let Some(pslot) = self.player_actor_slot else {
+            return false;
+        };
+        let Some(actor) = self.actors.get(pslot as usize) else {
+            return false;
+        };
+        let (px, pz) = (
+            i32::from(actor.move_state.world_x),
+            i32::from(actor.move_state.world_z),
+        );
+        let origin_x = ((px >> 7) - 3).clamp(0, 255) as u8;
+        let origin_z = ((pz >> 7) - 3).clamp(0, 255) as u8;
+        let instr: [u8; 14] = [
+            0x49, 0x05, // op, sub-op
+            origin_x, origin_z, // +1/+2 tile origin
+            7, 7, // +3/+4 width x height
+            5, // +5 draw radius
+            0, // +6 mode flag (full-board draw)
+            0, 0, 0, 0, // +7/+9 event-flag bases (unused by the demo)
+            0, // +0xb player template (character-mesh head)
+            3, // +0xc tile template base (effect-model library)
+        ];
+        self.try_install_tile_board(&instr)
+    }
+
     /// Install a tile board from a field-VM op-0x49 **sub-op 5** instruction
     /// (`instr` = the bytes from the opcode onward, as handed to
     /// `FieldHost::op49_menu_request`). Parses the 13-byte inline header
@@ -2956,6 +2997,18 @@ impl World {
     pub fn arm_minigame_warp(&mut self) {
         self.minigames.scene_backup = Some(self.active_scene_label.clone());
         self.minigames.winnings = 0;
+    }
+
+    /// Request the mode-24 door-warp into `sub_id` from outside a script -
+    /// the developer launchers (the native window's minigame hotkeys, the
+    /// browser page's `play_mg_debug_warp`). Arms the round trip exactly as
+    /// the op-`0x3E` arm does and leaves the `sub_id` for the scene host's
+    /// next tick to drain (`SceneHost::drain_minigame_warp`), so a launcher
+    /// enters the same session, with the same BGM swap and the same return
+    /// warp, as walking through the casino door.
+    pub fn request_minigame_warp(&mut self, sub_id: u8) {
+        self.arm_minigame_warp();
+        self.minigames.pending_warp = Some(sub_id);
     }
 
     /// Mode-24 minigame exit / return-warp: restore the backed-up scene name

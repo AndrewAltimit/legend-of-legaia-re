@@ -43,6 +43,14 @@ pub struct AudioState {
     /// ([`crate::world::World::drain_field_xa_cues`]); see
     /// [`crate::world::World::push_field_xa_cue`].
     pub field_xa_cues: Vec<crate::sfx_cue::XaVoiceClip>,
+    /// Every CD-XA one-shot the loaded scene's field scripts can start,
+    /// listed at scene load so a host whose clip decode is asynchronous can
+    /// have them resident before the op fires
+    /// ([`crate::world::World::drain_field_xa_prestage`], filled by
+    /// [`crate::world::field_xa::scene_xa_prestage`]). Advisory, like
+    /// [`Self::battle_xa_prestage`]: the op still raises its clip on
+    /// [`Self::field_xa_cues`].
+    pub field_xa_prestage: Vec<crate::sfx_cue::XaVoiceClip>,
     /// Vsyncs the modelled drive stays busy after a field clip start - the
     /// field's reading of `_DAT_8007BC20 != 0`, which a one-shot holds at `2`
     /// until the callback ring's end-of-clip teardown. Same `dur`-vsyncs span
@@ -168,6 +176,7 @@ impl AudioState {
             battle_xa_prestage: Vec::new(),
             battle_xa_busy_frames: 0,
             field_xa_cues: Vec::new(),
+            field_xa_prestage: Vec::new(),
             field_xa_busy_frames: 0,
             xa_cue_durations: None,
             battle_shout_cues: Vec::new(),

@@ -260,6 +260,25 @@ pub struct FieldMenuInput {
     pub start: bool,
 }
 
+impl FieldMenuInput {
+    /// Decode one frame's **raw** just-pressed pad word
+    /// ([`crate::input::PadButton`] layout) into the root picker's edges.
+    /// Every host drives the root list through this decode.
+    pub fn from_pad_edge(edge: u16) -> Self {
+        use crate::input::PadButton;
+        let pressed = |b: PadButton| edge & b.mask() != 0;
+        Self {
+            up: pressed(PadButton::Up),
+            down: pressed(PadButton::Down),
+            left: pressed(PadButton::Left),
+            right: pressed(PadButton::Right),
+            cross: pressed(PadButton::Cross),
+            circle: pressed(PadButton::Circle),
+            start: pressed(PadButton::Start),
+        }
+    }
+}
+
 /// Events emitted on `tick`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldMenuEvent {

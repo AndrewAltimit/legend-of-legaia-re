@@ -182,7 +182,7 @@ mod field_frame_tail;
 pub use field_frame_tail::{EFFECT_SCENE_GRAPH_STEP, NpcClipRetarget};
 pub mod field_elevation;
 mod field_hud;
-mod field_xa;
+pub(crate) mod field_xa;
 pub use field_elevation::{CELL_ELEVATION_OVERRIDE, ElevationOverride};
 pub use field_hud::PassiveHudPoints;
 mod field_loop;
