@@ -455,7 +455,7 @@ arm = "advance && !menuOpen && !shopOpen && !namingOpen"
 reason = """
 `site/js/play-app.js::_frame` calls `rt.tick_frame()` inside this guard and
 `this._drawOverlay()` outside it, so on a guarded frame the page draws with
-NO kernel having run - all nineteen at once, from whatever answer they last
+NO kernel having run - all twenty at once, from whatever answer they last
 held. Three of the four terms are panels that suspend the field on the engine
 side as well (the pause menu, a field merchant's op-`0x49`, the naming
 prompt); the fourth is the page's own pause / step-one-frame control.
@@ -475,6 +475,7 @@ skips = [
     "poll_field_shop",
     "poll_game_over",
     "route_bgm_wasm",
+    "run_pending_bgm_handoff",
     "service_cutscene_fmv",
     "step_field_vram_fx",
     "tick_battle_intro",
@@ -573,6 +574,12 @@ host = "native"
 kernel = "tick_muscle_time_meter"
 host_only = true
 reason = "The Muscle Dome round timer. The page runs the same `DomeContest::tick_time_meter` from inside `tick_minigame_ui`."
+
+[[frame_kernel]]
+host = "web"
+kernel = "run_pending_bgm_handoff"
+host_only = true
+reason = "The page's title -> load score hand-off is armed by the card-Load poll and run by the scene entry that follows it; this per-tick call only catches an entry the page declined, and is a no-op on every other frame. The native window has no gap to catch: `apply_save_commit` enters, loads and hands the score over in one call."
 
 [[frame_kernel]]
 host = "web"

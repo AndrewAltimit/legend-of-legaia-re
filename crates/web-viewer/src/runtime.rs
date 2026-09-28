@@ -358,6 +358,11 @@ pub struct LegaiaRuntime {
     /// same latch this module's starts do.
     #[cfg(target_arch = "wasm32")]
     pub(crate) bgm_last_started: Option<u16>,
+    /// A title -> load score hand-off the page asked for before entering the
+    /// save's scene ([`crate::play_bgm`]'s `play_bgm_title_handoff`): run by
+    /// the scene entry once the save has landed, or by the next tick when
+    /// the page declined the entry.
+    pub(crate) bgm_handoff_pending: bool,
 }
 
 /// Sentinel [`LegaiaRuntime::set_field_player_screen_y`] reads as "the lead
@@ -463,6 +468,7 @@ impl LegaiaRuntime {
             bgm_bank: None,
             #[cfg(target_arch = "wasm32")]
             bgm_last_started: None,
+            bgm_handoff_pending: false,
         }
     }
 
@@ -845,6 +851,10 @@ impl LegaiaRuntime {
         {
             self.bgm_last_started = None;
         }
+        // A card Load's score hand-off lands here, after the save: the native
+        // order is enter + load, then stop + restore the save's track, so the
+        // scene's own start of that track finds it already sounding.
+        self.run_pending_bgm_handoff();
         Ok(self.state_json())
     }
 }
@@ -1005,6 +1015,9 @@ impl LegaiaRuntime {
         // lands and loads in one call (`BootSession::resume_save`) and parks
         // nothing.
         self.pending_card_resume = None;
+        // The same for a score hand-off armed alongside it: with no entry to
+        // run it, it runs now, over the scene still open.
+        self.run_pending_bgm_handoff();
         let Some(host) = self.scene_host.as_mut() else {
             self.world.tick();
             return Ok(String::new());
@@ -1036,6 +1049,20 @@ impl LegaiaRuntime {
         // the window counts its ticks).
         if movie_held && fmv_handoff_scene.is_empty() && self.fmv.armed_for().is_some() {
             return Ok(String::new());
+        }
+        // Audio in the native session's order (`BootSession::tick`): the
+        // tick's BGM events first, then - on a scene swap, a door or the
+        // post-movie hand-off - the SFX queue dropped, and only then this
+        // tick's ring ops replayed ([`Self::tick_sfx`], below). Clearing
+        // after the replay instead fired the new scene's zero-delay entry
+        // cues and dropped its delayed ones, and routing the BGM last placed
+        // a bank the SFX pass staged against the outgoing track.
+        let scene_swapped =
+            matches!(event, SceneTickEvent::SceneEntered { .. }) || !fmv_handoff_scene.is_empty();
+        #[cfg(target_arch = "wasm32")]
+        self.route_bgm_wasm();
+        if scene_swapped {
+            self.on_scene_change_audio();
         }
         // Advance the world's play clock off the page's wall clock, the same
         // delta-against-a-high-water-mark the native window runs. The `host`
@@ -1105,10 +1132,10 @@ impl LegaiaRuntime {
         // where the native window's redraw loop ticks its own, off the same
         // world pad words. A no-op while the opt-in is off.
         self.tick_dev_menu();
-        // Route this tick's field-VM BGM events (op `0x35`) into WebAudioOut -
-        // the scene's music, started/queued/paused/stopped by the same events
-        // the native `AudioBgmDirector` consumes. The `host` borrow above is
-        // dead here (not used past `finish_cutscene`), so this can re-borrow.
+        // Route any BGM event the frame's own steps raised since the routing
+        // pass above (a battle-presentation or minigame swap) - the scene
+        // tick's own events went there. The drain below drops whatever is
+        // left, so a late event routes here rather than being lost.
         #[cfg(target_arch = "wasm32")]
         self.route_bgm_wasm();
         // Drain every field-VM event the BGM router handed back (and, with
@@ -1123,8 +1150,9 @@ impl LegaiaRuntime {
         // page still has to rebuild, or it draws the old scene's meshes over
         // the new world.
         if !fmv_handoff_scene.is_empty() {
+            // The SFX queue was already dropped above, before this tick's
+            // ring ops were replayed.
             self.rebuild_render_state()?;
-            self.on_scene_change_audio();
             return Ok(fmv_handoff_scene);
         }
         if let SceneTickEvent::SceneEntered { name } = event {
@@ -1136,11 +1164,10 @@ impl LegaiaRuntime {
             // taught (a screen armed with nothing to finish it parks the
             // script dead).
             self.rebuild_render_state()?;
-            // A door swapped the scene. No bank is staged and the dedupe
-            // latch is kept, so a track that carries across the transition
-            // keeps its playhead and its samples (the native
-            // `after_scene_swap` does the same).
-            self.on_scene_change_audio();
+            // A door swapped the scene; its SFX queue was dropped above. No
+            // bank is staged and the dedupe latch is kept, so a track that
+            // carries across the transition keeps its playhead and its
+            // samples (the native `after_scene_swap` does the same).
             return Ok(name);
         }
         // A `CC F8 50` re-staged the player's model this tick: rebuild the
@@ -1304,12 +1331,13 @@ impl LegaiaRuntime {
     ///
     /// Once up, the scene's BGM plays automatically: every [`Self::tick_frame`]
     /// routes the field VM's op-`0x35` music events through the same port-side
-    /// VAB + SEQ + SPU path the audio audition page uses. This call also stages
-    /// the current scene's VAB bank (so a scene-local track has a bank) and
-    /// parks the default level ([`BGM_DEFAULT_GAIN`] slider units) on the
-    /// output node so the level matches the page's slider. Browsers often open the `AudioContext`
-    /// suspended even inside a
-    /// gesture - call [`Self::audio_resume`] right after this to make it audible.
+    /// VAB + SEQ + SPU path the audio audition page uses. This call also
+    /// starts the track the scene's script last started - that start was
+    /// routed before the output existed and so was dropped - and parks the
+    /// default level ([`BGM_DEFAULT_GAIN`] slider units) on the output node
+    /// so the level matches the page's slider. Browsers often open the
+    /// `AudioContext` suspended even inside a gesture - call
+    /// [`Self::audio_resume`] right after this to make it audible.
     pub fn audio_init(&mut self) -> bool {
         #[cfg(target_arch = "wasm32")]
         {
@@ -1317,6 +1345,9 @@ impl LegaiaRuntime {
                 Ok(out) => {
                     out.set_gain(BGM_DEFAULT_GAIN);
                     self.audio_out = Some(out);
+                    // Every start routed before this was dropped with no
+                    // director to hear it: bring the scene's track up now.
+                    self.start_current_bgm_on_late_audio();
                     true
                 }
                 Err(e) => {
