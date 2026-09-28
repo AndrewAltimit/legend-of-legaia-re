@@ -606,7 +606,7 @@ impl PlayWindowApp {
                     rebound_in_menu = tick_open_subsession(
                         active_sub,
                         pressed,
-                        pending_key.as_deref(),
+                        pending_key,
                         &self.session.host.world,
                     );
                     if active_sub.is_done() {
