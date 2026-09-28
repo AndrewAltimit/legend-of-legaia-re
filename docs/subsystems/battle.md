@@ -5040,6 +5040,23 @@ The `legaia-engine play-window` host ships the loop **on**, matching the browser
 - **Party HP / MP persists.** The battle mutates the `BattleActor` mirrors; `finish_battle` writes them into the roster records (via `World::save_party`) *before* restoring the field actor snapshot, then pushes them back onto the restored party actors (`World::resync_party_actors_from_roster`). Without that step every fight ended at the HP it started with, and losing was indistinguishable from winning.
 - **A wipe raises `World::game_over`**, which both hosts read and route to the **title screen** - retail's destination, pinned to the `game_mode = 0x16` / `_DAT_8007BB00 = 1` store pair (see [§ party wipe](#party-wipe--the-game-over-overlay)). Native pushes `BootUiState::GameOver`, the browser arms the same `GameOverSession`; neither draws anything and neither reads a button, because retail asks the player nothing here.
 - **A victory raises the result screen in battle** (`World::battle_spoils_banner`, up from the results frame of the sequence below through the exit) - retail's two framed windows, described by `engine-ui::battle_spoils_windows` and filled by `battle_spoils_draws_for` on both hosts. Rects and columns are measured off a retail framebuffer; see [level-up](level-up.md#what-the-port-draws-between-the-last-enemy-dying-and-the-field-returning). A direct `finish_battle` (the runner path) still arms the aging `World::SPOILS_BANNER_FRAMES` window instead.
+- **A wipe raises the loss window** (`World::battle_defeat_banner`, same span) - the win window's twin, drawn on the report frame by `engine-ui::battle_defeat_windows` on both hosts; see [below](#the-loss-window-is-the-result-windows-twin). The spoils panel answers only a win: `last_rewards` outlives its battle, and a wipe after a win used to re-show that win's spoils.
+- **The exit's party loop runs on every exit** (`battle_formulas::battle_exit_party_reset`): statuses clear unless the special-battle word carries the arena bit, and a member at 0 HP stands up at 1 - see [battle-formulas.md](battle-formulas.md#the-flow-readers).
+
+### The loss window is the result window's twin
+
+The results frame opens one framed window per outcome through the battle HUD's element spawner `FUN_801D8DE8`: element `0x41` on a win (`0x8004F65C`), `0x42` on a wipe (`0x8004F900`), both skipped while the special-battle word is set. An element id is an index into the SCUS **screen-element placement table** (`0x80076C10 + id * 0x18`, `legaia_asset::screen_elements`), not into the pause menu's window descriptor table. Neither id has a labelled arm in the spawner's jump table (`0x801CEB68`, indexed by `id - 0xA`); both take the default post-switch tail (`0x801D91D4..0x801D93DC`), which registers the record's box through `FUN_8003541C` and slides it with `FUN_801DB7B0`.
+
+Records `0x41` and `0x42` are byte-identical on the disc: widget pair `(3, 3)` (the corner-framed window), content box `288 x 42`, node kind `0x0D` (a kind the layout dispatcher `FUN_80030628` fills with nothing), sliding from `(16, 236)` to `(16, 160)`. Outset by the frame's six pixels that box is the band the report window was measured at off a retail framebuffer, so the two sources agree. What differs is the string word `FUN_801D84C0` publishes into each at battle start (`sw` at `0x801D8500` / `0x801D84F0`):
+
+| Element | Buffer | Solo party | Party of two or more |
+|---|---|---|---|
+| `0x41` | `ctx+0xA9` | lead's name + the victory tail (`0x801F4C38`) | team string (`0x801F4C2C`) + the victory tail |
+| `0x42` | `ctx+0x129` | lead's name + the defeat suffix (`0x801F4C94`) | the defeat team string (`0x801F4C78`) |
+
+A team string opens with the text engine's name escape `0xC1`, whose operand `FUN_801D84C0` patches to the lead's index. On a win the results frame re-patches the victory buffer's operand (`ctx+0xAA`, `0x8004F658`) to the pose actor's index when the party has two or more members; the pose actor is the lead, so the store names the same character. The loss arm stores nothing there.
+
+The port reads the two defeat pieces off PROT 0898 (`battle_party_panel::DefeatText`, installed with the move-power table) and composes the line in `World::battle_defeat_banner`; without the disc pool the window opens empty. The win window's sentence is still built from typed state.
 
 ### Battle end, retail's way - the results sequencer
 

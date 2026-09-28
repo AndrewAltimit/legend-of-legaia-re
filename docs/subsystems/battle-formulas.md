@@ -1726,8 +1726,12 @@ the details of the four flow readers follow.
   party has two or more members); on a wipe the annihilated arm opens the
   loss window `FUN_801D8DE8(0x42, 0)` (`0x8004F8F0..0x8004F904`). A non-zero
   word skips both, so a special battle ends on the bare scene. Port
-  `VictorySequence::window_opened`, which gates the spoils panel both hosts
-  draw (`World::battle_spoils_banner`). Neither host draws a loss window.
+  `VictorySequence::window_opened`, which gates both windows the hosts draw:
+  the spoils panel (`World::battle_spoils_banner`) and the loss window
+  (`World::battle_defeat_banner`). The two elements index the screen-element
+  placement table, not a menu window table, and their records are
+  byte-identical - see
+  [`battle.md`](battle.md#the-loss-window-is-the-result-windows-twin).
 - **The `0x100` bit at battle exit** (`FUN_80046A20`, once the results phase
   reaches `0x43` with `ctx+0xB` clear). `0x80046DF0` / `0x80046E38` pick the
   next game mode `_DAT_8007B83C`: `0x18` (the arena) with the bit, else `2`
@@ -1737,9 +1741,20 @@ the details of the four flow readers follow.
   (`0x80046EA0..0x80046EDC`; the loop's 1-HP floor is unconditional). Battle
   init reloads each party actor's `+0x16E` from the character record's
   `+0x12E` (`0x80051718..0x80051720`), and the per-frame `FUN_80047430`
-  copies the actor word back (`0x80048040`), so whether a status outlives
-  its battle depends on which of the two writes runs last - not traced. The
-  engine's battle status tracker is never cleared between battles.
+  copies the actor word back (`0x80048040`, and `0x80047680` on the
+  Sleep / Stone early-out). The clear runs first in the exit frame: the
+  controller node `FUN_80046A20` is spawned by `FUN_80055B6C`
+  (`0x80055FC0`) and the actor nodes are appended behind it by battle init,
+  which the controller itself calls (`0x80046F74`); `FUN_80020454` links at
+  the tail and `FUN_8002519C` walks from the head. Every party tick of that
+  frame reaches one of the two copies (its only early exits come after the
+  `0x80047680` copy or are monster-seat arms), so the cleared word reaches
+  the record - an ordinary battle's statuses end with it, an arena leg's
+  (`0x100`) carry into the next leg. That the walk finishes the frame after
+  the controller writes the next game mode is inference: nothing in the
+  walk reads the mode word. Port
+  `battle_formulas::battle_exit_party_reset`, run by `World::finish_battle`
+  on the party's tracker slots and HP before they persist.
 - **The escape roll's `0x100`**: `0x801E7978` folds the bit per living party
   member into the forced arm (`s1 = 2`, `0x801E7A14`), which wins the roll
   past even the no-escape flag `ctx+0x287`; `0x801E7B40` skips the lifetime

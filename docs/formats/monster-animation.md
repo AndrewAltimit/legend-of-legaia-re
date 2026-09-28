@@ -371,11 +371,72 @@ frame 0 spreads the collapsed model into its full silhouette.
 
 The renderer (`FUN_80048a08`) keeps a 12.4 fixed-point phase in the per-actor
 draw struct (`+0x68`): integer frame index = `phase >> 4`, sub-frame fraction =
-`phase & 0xf`. The decoder (`FUN_8004998c`) interpolates between frame `i` and
-`i+1`: **linear** for translation, **shortest-path angle-wrap** for rotation
-(`& 0xfff`, treating a `> 0x800` gap as a wrap). The result is written to a pose
-buffer (6 shorts per object) and applied per object via the GTE in the draw
-loop, then `FUN_800495c8` / `FUN_8005b038` blend it onto the object vertices.
+`phase & 0xf`. The decoder (`FUN_8004998c`) interpolates between the cursor's
+frame and the entry the next-entry rule picks: **linear** for translation,
+**shortest-path angle-wrap** for rotation, with an Euler-flip retry when a
+part's three angle steps run long (see
+[the blend](#the-blend-short-arcs-a-per-part-step-sum-and-the-euler-flip-retry)).
+The result is written to a pose buffer (6 shorts per object) and applied per
+object via the GTE in the draw loop, then `FUN_800495c8` / `FUN_8005b038`
+blend it onto the object vertices.
+
+### The blend: short arcs, a per-part step sum, and the Euler-flip retry
+
+A zero fraction skips the blend and decodes the cursor's frame alone
+(`beq v0,zero,0x8004A284` at `0x80049A1C`), so whole-frame samples are the
+plain decode. Otherwise one pass per part (`0x80049C18..0x8004A21C`):
+
+- **Translations** are sign-extended 12-bit values lerped as
+  `cur + (((next - cur) * frac) >> 4)` - an arithmetic shift, stored with
+  `sh`. The Z delta carries one extra term before the multiply
+  (`addu v1,v1,s7` at `0x80049D64`): the committed entry's `+0xE` halfword
+  when the next entry is the queued clip's frame 0 and the actor's `+0x228`
+  byte is clear (`0x80049BA8..0x80049BC8`), zero otherwise.
+- **Angles** are unsigned 12-bit values. Two sequential guards bring the pair
+  onto the short arc: if `next - cur > 0x800` add a turn to `cur`, then (on
+  the bumped `cur`) if `cur - next > 0x800` add a turn to `next`, each a
+  signed `slti 0x801`. The blend is
+  `(cur + (((next - cur) * frac) >> 4)) & 0xFFF`. The field's angle helper
+  `FUN_8001D088` runs the same two guards on `>= 0x800`, so the two decoders
+  part at exactly half a turn: a `-0x800` step runs backward here and forward
+  in the field ([`anm.md`](anm.md)).
+- **The step sum.** Each axis's `|next - cur|` after the unwrap goes into
+  `gp+0xA10` (`_DAT_8007BD28`, the field blender's counter too). The
+  part's Z-translation arm zeroes it (`sw zero,0xa10(gp)` at `0x80049D6C`)
+  and X stores rather than adds, so the sum is **per part**. The unwrapped
+  pairs are journaled at `0x801C9060` (`next` at `+0/+4/+8`, `cur` at
+  `+2/+6/+A`), a scratch block the next part overwrites.
+- **The retry.** `slti v0,s1,0xc01` at `0x80049FD8`: when the three steps
+  total more than `0xC00`, the three angles are blended again against the
+  **next** frame's equivalent Euler triple - `(x + 0x800, -(y + 0x800),
+  z + 0x800)`, masked to 12 bits and built from the journaled unwrapped
+  `next` (`0x80049FE4`, `0x8004A094..0x8004A0A4`, `0x8004A15C`) - with the
+  journaled `cur` masked back to 12 bits as the other operand. The rewrite
+  goes to the journal only; the keyframe stream is never written. There is no
+  second gate. For a Z-Y-X composition the triple is the same orientation, so
+  the retry takes the shorter path when three individually short arcs
+  together turn a long way (a pose passing near gimbal lock).
+
+**The next-entry rule.** The next entry is the cursor frame plus one, with
+two exceptions tested in order:
+
+1. On frame `+0x86 - 1` of the committed entry while the loop counter
+   `actor+0x21B` is non-zero, the next entry is frame `+0x85` - the loop
+   window's start (`0x80049A28..0x80049A78`).
+2. On the stream's last frame, the next entry is frame 0 of the **queued**
+   clip when the actor's HP (`+0x14C`) is non-zero and its queued id
+   (`+0x1DA`) is below `0x10`: entry 0 when `+0x1DC` bit 2 (stage idle at the
+   end) is set, else entry `+0x1DA`, looked up through the party table
+   `0x801C9360` or the monster record table `0x801C9348` by seat. A monster
+   whose queued stream has a different part count, and every other case,
+   blends the last frame toward itself (`0x80049A7C..0x80049BD0`).
+
+Census over the monster archive (PROT 867, every decodable action clip,
+every in-clip frame pair, every non-zero fraction, every part): 103650 of
+9448740 blended part samples take the retry, in 832 of 1811 clips, and the
+retry changes every one of them; the 653436 whole-frame part samples are the
+plain decode. Disc-gated test
+`engine-core/tests/battle_anim_real.rs::monster_archive_pose_blend_retry_census`.
 
 The per-frame cursor advance lives in the anim-node tick `FUN_80047430`:
 `phase += (frame_dt * actor[+0x21D] * record[+0x78]) >> 1`, where `+0x21D`
@@ -503,8 +564,9 @@ Two properties of the map are **not observable on the retail disc**, so no disc-
 The from-scratch engine plays this stream for battle actors. At battle entry the
 shell decodes each monster's idle clip (`idle_animation`, action 0) into a
 `legaia_engine_core::battle_anim::MonsterAnimPlayer` - an 8.8 fixed-point loop
-cursor whose `tick()` interpolates the keyframes (translation linear, rotation
-shortest-path 12-bit step, matching `FUN_8004998C`) into a
+cursor whose `tick()` blends the keyframes on the cursor's 1/16 nibble through
+`legaia_engine_vm::battle_pose_blend::blend_part_pose` (the blend arm above,
+retry included, with the loop-window arm of the next-entry rule) into a
 `legaia_anm::PoseFrame` (one `(translation, rotation)` per object, the same
 shape the field ANM player produces). `World::tick_battle_animations` advances
 every battle actor's player each frame, and the renderer deforms the mesh with
@@ -515,11 +577,13 @@ test drives the whole decode → player → deform path on a real monster and
 asserts the posed mesh moves frame-to-frame. The per-tick phase advance is
 retail-pinned through the entry's rate byte
 (`battle_anim::step_for_rate`, the `FUN_80047430` formula reduced to the
-normal `frame_dt = 1`, `+0x21D = 4` case); the engine also plays the
+normal `frame_dt = 1`, `+0x21D = 8` case); the engine also plays the
 hit-reaction family - `World::queue_battle_reaction` mirrors the
 `FUN_800402F4` staging and `tick_battle_animations` the knockdown → get-up
-chain. The decoder's cross-blend into the queued clip is a known engine
-simplification (transitions restart at frame 0 without the tween). The player
+chain. The decoder's cross-blend into the queued clip, and its `+0xE` Z
+term, are a known engine simplification: a looping clip blends its last frame
+toward its own frame 0 (what a re-queued idle does in retail), and a one-shot
+clamps on its last frame without the tween. The player
 also carries the entry head the tick and the damage kernel read off the
 committed entry: the `+0x84..+0x86` loop window (`apply_loop_window`, run
 before the natural-end test as the tick does), the signed `+0x0C` root speed
