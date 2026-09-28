@@ -517,15 +517,20 @@ const WALK_FIELD_MAP_LEN: usize = 0x12000;
 ///   bundle's MAN slot (slot 2), the same bytes `Scene::field_floor_height_lut`
 ///   reads.
 ///
-/// Reuses [`legaia_asset::field_objects::build_walk_heightfield`] for the grid
-/// math. Returns `None` when either source can't be resolved.
+/// Reuses [`legaia_asset::field_objects::build_ground_heightfield`] for the grid
+/// math, with the overworld's cell gate. Returns `None` when either source can't be resolved.
 pub fn build_walk_ground(
     disc: &[u8],
     entries: &[EntryMeta],
     prot_base: u32,
 ) -> Option<legaia_asset::field_objects::WalkHeightfield> {
     let (map_bytes, lut) = resolve_walk_map_and_lut(disc, entries, prot_base)?;
-    let hf = legaia_asset::field_objects::build_walk_heightfield(map_bytes, &lut);
+    // A kingdom's ground is `FUN_801F89B8`'s, which tests no `0x1000` bit.
+    let hf = legaia_asset::field_objects::build_ground_heightfield(
+        map_bytes,
+        &lut,
+        legaia_asset::field_objects::GroundCellGate::TerrainRecord,
+    );
     (!hf.indices.is_empty()).then_some(hf)
 }
 

@@ -793,6 +793,37 @@ impl WalkHeightfield {
 /// `FUN_80019278` literally does) is not currently needed - entities walking
 /// on the heightfield get implicit interpolation from the rasteriser.
 pub fn build_walk_heightfield(field_map: &[u8], lut: &[i16; 16]) -> WalkHeightfield {
+    build_ground_heightfield(field_map, lut, GroundCellGate::WalkVisible)
+}
+
+/// Which cells of the object grid a ground builder draws.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GroundCellGate {
+    /// Cells carrying the `0x1000` visible bit - the ordinary field's ground
+    /// pair in PROT 0900, and [`build_walk_heightfield`]'s gate.
+    WalkVisible,
+    /// The kingdom overworld's ground emitter `FUN_801F89B8` (PROT 0901),
+    /// which tests no cell bit: the cell word is only masked `& 0x1FF`
+    /// (`0x801F8BA0`) to reach the record whose `+0x14..+0x18` run textures
+    /// the quad. Every cell draws - including a cell without the `0x1000`
+    /// bit whose record carries a real terrain page (one or two per kingdom,
+    /// holes under the field gate). A record with no terrain page (tpage
+    /// `0`) would texture from VRAM page `(0, 0)`, the display area, which
+    /// the port does not hold; those cells are skipped rather than given the
+    /// grass fallback. On the three kingdoms that is `map01`'s zero-word
+    /// border row plus a handful of decoration cells.
+    TerrainRecord,
+}
+
+/// [`build_walk_heightfield`] with the cell gate chosen by the caller: the
+/// kingdom overworld builds with [`GroundCellGate::TerrainRecord`].
+///
+/// REF: FUN_801F89B8
+pub fn build_ground_heightfield(
+    field_map: &[u8],
+    lut: &[i16; 16],
+    gate: GroundCellGate,
+) -> WalkHeightfield {
     let mut hf = WalkHeightfield::default();
     let Some(obj_grid) = field_map.get(OBJECT_GRID_OFFSET..) else {
         return hf;
@@ -815,7 +846,7 @@ pub fn build_walk_heightfield(field_map: &[u8], lut: &[i16; 16]) -> WalkHeightfi
                 continue;
             };
             let cell = u16::from_le_bytes([cell_bytes[0], cell_bytes[1]]);
-            if cell & CELL_WALK_VISIBLE == 0 {
+            if gate == GroundCellGate::WalkVisible && cell & CELL_WALK_VISIBLE == 0 {
                 continue;
             }
             // This cell's terrain texture comes from its object record's
@@ -828,6 +859,7 @@ pub fn build_walk_heightfield(field_map: &[u8], lut: &[i16; 16]) -> WalkHeightfi
             let tile_id = rec.map(|r| r.terrain_tile).unwrap_or(0);
             let (tpage, clut) = match rec {
                 Some(r) if r.terrain_tpage != 0 => (r.terrain_tpage, r.terrain_clut),
+                _ if gate == GroundCellGate::TerrainRecord => continue,
                 _ => (GROUND_ATLAS_TPAGE, GROUND_ATLAS_CLUT),
             };
             let x0 = (col as i32 * TILE) as f32;
@@ -1168,6 +1200,34 @@ mod tests {
         assert_eq!(hf.uvs[3], [95, 160]); // (col+1, row+1)
         // Every vertex carries the cell's [clut, tpage] from +0x15 / +0x16..+0x18.
         assert!(hf.cba_tsb.iter().all(|&ct| ct == [0x7EC0, 0x000C]));
+    }
+
+    #[test]
+    fn overworld_gate_draws_every_textured_cell_and_skips_untextured_ones() {
+        let lut = [0i16; 16];
+        let mut map = vec![0u8; 0x12000];
+        // Record 1 carries a terrain page, record 2 does not.
+        map[OBJECT_RECORD_STRIDE + 0x15] = 0x1A;
+        let set = |map: &mut Vec<u8>, col: usize, row: usize, word: u16| {
+            let c = OBJECT_GRID_OFFSET + (row * GRID_DIM + col) * 2;
+            map[c..c + 2].copy_from_slice(&word.to_le_bytes());
+        };
+        set(&mut map, 3, 3, CELL_WALK_VISIBLE | 1); // visible, textured
+        set(&mut map, 4, 3, 0x2000 | 1); // no 0x1000, textured
+        set(&mut map, 5, 3, 0x2000 | 2); // no 0x1000, no terrain page
+        let field = build_walk_heightfield(&map, &lut);
+        let overworld = build_ground_heightfield(&map, &lut, GroundCellGate::TerrainRecord);
+        let xs = |hf: &WalkHeightfield| {
+            hf.positions
+                .chunks(4)
+                .map(|c| c[0][0] as i32 / TILE)
+                .collect::<Vec<_>>()
+        };
+        // The field gate keeps the one visible cell (record 2's cell 5 is
+        // absent too, and every zero word falls to record 0, untextured).
+        assert_eq!(xs(&field), vec![3]);
+        // The overworld draws cell 4 as well, and still not the untextured 5.
+        assert_eq!(xs(&overworld), vec![3, 4]);
     }
 
     #[test]
