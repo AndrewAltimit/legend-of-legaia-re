@@ -1655,7 +1655,11 @@ mod tests {
         let queued_before = rt.sfx.queued;
         let _ = rt.play_sfx(u32::from(RETAIL_MENU_CURSOR_CUE));
         assert_eq!(rt.sfx.queued, queued_before + 1, "the request is counted");
-        assert_eq!(rt.sfx.sched.pending_count(), 1, "only the delayed cue waits");
+        assert_eq!(
+            rt.sfx.sched.pending_count(),
+            1,
+            "only the delayed cue waits"
+        );
         // 2 -> 1 -> 0 -> fire: three ticks, none of them spent by the blip.
         assert!(rt.sfx.sched.tick_frame().fired.is_empty());
         assert!(rt.sfx.sched.tick_frame().fired.is_empty());

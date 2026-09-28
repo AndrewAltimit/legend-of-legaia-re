@@ -339,7 +339,10 @@ mod tests {
         // Past the note-off at +2400 and the end of the track (2.5 s).
         let _ = sink.render_frames(crate::SPU_INTERNAL_RATE as usize * 3);
         let played = sink.sequencer_progress().expect("attached");
-        assert!(played.tick > 0 && played.finished, "the fixture ran out: {played:?}");
+        assert!(
+            played.tick > 0 && played.finished,
+            "the fixture ran out: {played:?}"
+        );
         sink.set_sequencer_paused(true);
         sink.rewind_sequencer();
         let p = sink.sequencer_progress().expect("still attached");
