@@ -539,6 +539,15 @@ impl StreamResampler {
         self.sequencer_paused = paused;
     }
 
+    /// Put the attached sequencer back on its first event, keying off what
+    /// it had sounding - retail's re-attach, whose `FUN_800628F0` resets the
+    /// sequence's read cursor to its start before it sets the play flag.
+    fn rewind_sequencer(&mut self) {
+        if let Some(seq) = self.sequencer.as_mut() {
+            seq.rewind_to(0, &mut self.spu);
+        }
+    }
+
     /// Drop the active sequencer and key-off its notes.
     fn detach_sequencer(&mut self) {
         if let Some(mut seq) = self.sequencer.take() {
@@ -1019,6 +1028,25 @@ impl AudioOut {
     /// call with `false` to resume from where the sequencer left off.
     pub fn set_sequencer_paused(&self, paused: bool) {
         self.lock().set_sequencer_paused(paused);
+    }
+
+    /// Rewind the attached sequencer to its first event (no-op with none
+    /// attached). Op-`0x35` sub-op `4` replays the slot's sequence from its
+    /// start - `FUN_80026478` -> `FUN_80062880(id, 1, 1)` ->
+    /// `FUN_800628F0`, which resets the read cursor before it plays - so a
+    /// director's resume rewinds before it reopens the gate.
+    pub fn rewind_sequencer(&self) {
+        self.lock().rewind_sequencer();
+    }
+
+    /// Whether the sequencer gate is currently closed
+    /// ([`Self::set_sequencer_paused`]). Both BGM directors key their pause
+    /// state on this one bit - the native `AudioBgmDirector` and the browser
+    /// twin over `WebAudioOut::sequencer_paused` - so a
+    /// movie that ducks the score and the op-`0x35` pause arms read and
+    /// write the same latch.
+    pub fn sequencer_paused(&self) -> bool {
+        self.lock().sequencer_paused
     }
 
     /// Set the attached sequencer's master volume (`SsSeqSetVol`-shaped,

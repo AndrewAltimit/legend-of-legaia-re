@@ -208,6 +208,12 @@ impl WebAudioOut {
         s.sequencer = Some(seq);
     }
 
+    /// Rewind the attached sequencer to its first event - the twin of
+    /// [`crate::AudioOut::rewind_sequencer`].
+    pub fn rewind_sequencer(&self) {
+        self.state.borrow_mut().rewind_sequencer();
+    }
+
     /// Detach the active sequencer (if any) and key-off any sounding notes.
     pub fn detach_sequencer(&self) {
         let mut s = self.state.borrow_mut();
@@ -230,9 +236,9 @@ impl WebAudioOut {
 
     /// Whether the sequencer gate is currently closed
     /// ([`Self::set_sequencer_paused`]). The browser BGM director keys the
-    /// op-`0x35` sub-`0xA` unhalt-pause commit on this - the native
-    /// director keeps its own latch, but here the gate is the only pause
-    /// state there is.
+    /// op-`0x35` sub-`0xA` unhalt-pause commit on this, and so does the
+    /// native one through `AudioOut::sequencer_paused`: on both hosts the
+    /// gate is the only pause state there is.
     pub fn sequencer_paused(&self) -> bool {
         self.state.borrow().sequencer_paused
     }
