@@ -563,10 +563,10 @@ impl PlayWindowApp {
                 true
             }
             BootUiState::FieldMenu { sub } => {
-                use legaia_engine_core::field_menu::{FieldMenuInput, FieldMenuOutcome};
+                use legaia_engine_core::field_menu::FieldMenuOutcome;
                 use legaia_engine_core::field_menu_dispatch::{
-                    FieldMenuSubsession, apply_arts_outcome, apply_equip_outcome,
-                    apply_list_order_outcome, apply_pause_items_outcome, apply_spell_outcome,
+                    FieldMenuSubsession, SubsessionHandoff, finish_subsession,
+                    tick_open_subsession, tick_root_list,
                 };
                 // The menu session is hosted by the BootSession (so headless
                 // drivers share it); if it vanished out from under the UI
@@ -600,73 +600,30 @@ impl PlayWindowApp {
                 // `self.boot_ui`.
                 let rebound_in_menu;
                 if let Some(active_sub) = sub.as_mut() {
-                    // Engine extension: Triangle on the Status screen swaps
-                    // it for the Tactical Arts chain editor (retail's seven
-                    // rows carry no Arts row). Consume the edge so the same
-                    // press does not also drive the screen it replaced.
-                    let opened_arts = legaia_engine_core::field_menu_dispatch::try_open_arts_editor(
+                    // A sub-session is open: the shared step (with the
+                    // Status screen's Triangle -> Arts editor extension)
+                    // routes the edge and hands back a committed rebind.
+                    rebound_in_menu = tick_open_subsession(
                         active_sub,
                         pressed,
+                        pending_key.as_deref(),
                         &self.session.host.world,
                     );
-                    // A sub-session is open - route input + check for done.
-                    if !opened_arts {
-                        active_sub.tick_pad_edge_with_key(pressed, pending_key);
-                    }
-                    rebound_in_menu = active_sub.take_rebound_mapping();
                     if active_sub.is_done() {
-                        // Drain into world side-effects + handle save.
+                        // Fold the outcome into the world through the one
+                        // router every host shares; only the save rack and
+                        // the options file are this host's.
                         let finished = sub.take().expect("sub was Some");
-                        match finished {
-                            FieldMenuSubsession::Items(s) => {
-                                let _ = apply_pause_items_outcome(&s, &mut self.session.host.world);
-                                // A Hyper-Art book taught an art: window 8.
-                                if let Some(notice) =
-                                    self.session.host.world.menu.pending_art_notice.take()
-                                {
-                                    self.menu_runtime.arm_art_learned_notice(notice);
-                                }
-                            }
-                            FieldMenuSubsession::Equip { session, char_slot } => {
-                                let _ = apply_equip_outcome(
-                                    &session,
-                                    char_slot,
-                                    &mut self.session.host.world,
-                                );
-                            }
-                            FieldMenuSubsession::Spells(s) => {
-                                // A leveled menu cast returns the window-7
-                                // pair; the runtime holds the beat and this
-                                // arm's pre-empt above holds the pad.
-                                if let Some(notice) =
-                                    apply_spell_outcome(&s, &mut self.session.host.world)
-                                {
-                                    self.menu_runtime.arm_spell_level_notice(notice);
-                                }
-                            }
-                            FieldMenuSubsession::Arts(editor) => {
-                                // Persist the edit back into the world's saved
-                                // chains so the next battle's Arts rows reflect
-                                // it: lift the live library, apply the editor
-                                // outcome, store it back (World::chain_library
-                                // <-> store_chain_library bridge over
-                                // World::saved_chains).
-                                let mut library = self.session.host.world.chain_library();
-                                if apply_arts_outcome(editor, &mut library).is_ok() {
-                                    self.session.host.world.store_chain_library(&library);
-                                }
-                            }
-                            FieldMenuSubsession::ListOrder(s) => {
-                                // Replay the page's exchanges onto the live
-                                // record through the ported swap; the page
-                                // itself permuted only its own copy.
-                                let _ = apply_list_order_outcome(&s, &mut self.session.host.world);
-                            }
-                            FieldMenuSubsession::Status(_) => {}
+                        let mut done = finish_subsession(finished, &mut self.session.host.world);
+                        // Windows 7 / 8: the runtime holds the beat and this
+                        // arm's pre-empts above hold the pad.
+                        self.menu_runtime.arm_finished_notices(&mut done);
+                        match done.handoff {
+                            SubsessionHandoff::Applied => {}
                             // The retail Load / Save rows, committed through
                             // the shared flow: the outcome names the card
                             // port, the grid names the block.
-                            FieldMenuSubsession::Save(s) => {
+                            SubsessionHandoff::Save(s) => {
                                 if let Some(c) = save_flow.commit(&s)
                                     && self.apply_save_commit(c)
                                 {
@@ -683,10 +640,8 @@ impl PlayWindowApp {
                                     return true;
                                 }
                             }
-                            FieldMenuSubsession::Config(o) => {
-                                // Edits committed inside the session's value
-                                // popup (retail semantics); lift + persist.
-                                self.options_state = o.state().clone();
+                            SubsessionHandoff::Options(state) => {
+                                self.options_state = state;
                                 self.persist_and_apply_options();
                             }
                         }
@@ -706,31 +661,13 @@ impl PlayWindowApp {
                     }
                     return true;
                 }
-                let input = FieldMenuInput {
-                    up,
-                    down,
-                    // The kind-0x0D ready check is a horizontal two-row
-                    // choice, so the picker needs left / right too.
-                    left,
-                    right,
-                    cross,
-                    circle,
-                    start,
-                };
                 // After Cross on a row the menu phase becomes Suspended.
                 // Build the matching sub-session and route control there.
-                let suspended_row = match self.session.field_menu.as_mut() {
-                    Some(menu) => {
-                        let _ = menu.tick(input);
-                        match menu.phase() {
-                            legaia_engine_core::field_menu::FieldMenuPhase::Suspended { row } => {
-                                Some(row)
-                            }
-                            _ => None,
-                        }
-                    }
-                    None => None,
-                };
+                let suspended_row = self
+                    .session
+                    .field_menu
+                    .as_mut()
+                    .and_then(|menu| tick_root_list(menu, pressed));
                 if let Some(row) = suspended_row {
                     // The shell's save rack: retail's two card ports, port 1
                     // mounted with `save_dir`. Its kind is what puts a Load /

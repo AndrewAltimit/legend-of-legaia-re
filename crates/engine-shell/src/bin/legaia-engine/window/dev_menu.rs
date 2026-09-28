@@ -31,7 +31,7 @@
 
 use super::*;
 use legaia_engine_core::dev_menu::retail_packed;
-use legaia_engine_core::dev_menu_host::{DevMenuRow, DevMenuSession, DevPage, WorldEquipHost};
+use legaia_engine_core::dev_menu_host::{DevMenuRow, DevMenuSession, DevPage};
 use legaia_engine_render::RecordsLabels;
 
 /// Pen the dev-menu list draws from - clear of the field HUD's own rows.
@@ -90,40 +90,22 @@ impl PlayWindowApp {
             (now & !prev, now)
         };
 
-        // The shared tick: party records, plus the CAMERA row's follow switch
-        // on this host's camera.
-        session.tick_host(world, &mut self.session.camera, edge, held);
-
-        // The EQUIP row's confirm commits against the engine's own bag.
-        if session.current_row() == DevMenuRow::Equip
-            && edge & legaia_engine_core::dev_menu::PACK_CROSS != 0
-        {
-            let character = session.chars.character as usize;
-            let weapon_slots: Vec<i16> = vec![2; world.party.roster.members.len().max(4)];
-            if let Some(member) = world.party.roster.members.get_mut(character) {
-                let mut raw = std::mem::take(&mut member.raw);
-                let mut host = WorldEquipHost {
-                    inventory: &mut world.party.inventory,
-                    sfx: Vec::new(),
-                };
-                let committed = session.commit_equip_row(&mut host, &mut raw, &weapon_slots);
-                let cues = std::mem::take(&mut host.sfx);
-                world.party.roster.members[character].raw = raw;
-                session.pending_sfx.extend(cues);
-                match committed {
-                    Some(c) => log::info!(
-                        "dev-menu: equipped item {} into slot {} on character {character} \
-                         (refunded {:?})",
-                        session.equip_item,
-                        c.slot,
-                        c.refunded
-                    ),
-                    None => log::info!(
-                        "dev-menu: item {} is not in the bag - nothing committed",
-                        session.equip_item
-                    ),
-                }
-            }
+        // The shared tick: party records, the CAMERA row's follow switch on
+        // this host's camera, and the EQUIP row's confirm against the
+        // engine's own bag.
+        match session.tick_host(world, &mut self.session.camera, edge, held) {
+            Some(Some(c)) => log::info!(
+                "dev-menu: equipped item {} into slot {} on character {} (refunded {:?})",
+                session.equip_item,
+                c.slot,
+                session.chars.character,
+                c.refunded
+            ),
+            Some(None) => log::info!(
+                "dev-menu: item {} is not in the bag - nothing committed",
+                session.equip_item
+            ),
+            None => {}
         }
 
         // The screen's cues ride the world's SFX ring (retail

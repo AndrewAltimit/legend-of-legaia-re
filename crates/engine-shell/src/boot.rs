@@ -21,10 +21,9 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use legaia_engine_audio::AudioOut;
 use legaia_engine_core::camera::Camera;
-use legaia_engine_core::field_menu::{FieldMenuGate, FieldMenuInput, FieldMenuSession};
+use legaia_engine_core::field_menu::{FieldMenuGate, FieldMenuSession};
 use legaia_engine_core::field_menu_dispatch::{
-    FieldMenuSubsession, apply_arts_outcome, apply_equip_outcome, apply_pause_items_outcome,
-    apply_spell_outcome, try_open_arts_editor,
+    FieldMenuSubsession, SubsessionHandoff, finish_subsession, tick_open_subsession, tick_root_list,
 };
 use legaia_engine_core::input::PadButton;
 use legaia_engine_core::magic_xp::SpellLevelNotice;
@@ -251,6 +250,9 @@ pub struct BootSession {
     /// pad until dismissed; headless drivers that don't render it just read
     /// and clear this.
     pub spell_level_notice: Option<SpellLevelNotice>,
+    /// Art-learned notice a Hyper-Art book produced from the Items screen
+    /// (retail's window 8); latched the same way.
+    pub art_learned_notice: Option<legaia_engine_core::pause_screens::ArtLearnedNotice>,
     /// Scene mode the world ran before the pause menu opened, restored by
     /// [`BootSession::close_field_menu`].
     field_menu_resume: SceneMode,
@@ -821,6 +823,7 @@ impl BootSession {
             save_flow: SaveScreenFlow::new(),
             last_save_commit: None,
             spell_level_notice: None,
+            art_learned_notice: None,
             field_menu_resume: SceneMode::Field,
             mode_seat: legaia_engine_core::mode::ModeSeat::new_at_boot(),
         })
@@ -1019,30 +1022,14 @@ impl BootSession {
         // The edge word every menu surface in this subsystem reads. A held
         // mask is one event: `just_pressed` is `pad & !pad_prev`.
         let pressed = pad.pad() & !pad.pad_prev();
-        let input = FieldMenuInput {
-            up: pad.just_pressed(PadButton::Up),
-            down: pad.just_pressed(PadButton::Down),
-            left: pad.just_pressed(PadButton::Left),
-            right: pad.just_pressed(PadButton::Right),
-            cross: pad.just_pressed(PadButton::Cross),
-            circle: pad.just_pressed(PadButton::Circle),
-            start: pad.just_pressed(PadButton::Start),
-        };
 
         if self.field_menu_sub.is_some() {
             self.tick_field_menu_sub(pressed);
         } else {
             // Root list. A confirm suspends it on the routed row; build that
             // row's sub-session and control moves there next frame.
-            let suspended_row = {
-                let menu = self.field_menu.as_mut().expect("field_menu is Some");
-                let _ = menu.tick(input);
-                match menu.phase() {
-                    legaia_engine_core::field_menu::FieldMenuPhase::Suspended { row } => Some(row),
-                    _ => None,
-                }
-            };
-            if let Some(row) = suspended_row {
+            let menu = self.field_menu.as_mut().expect("field_menu is Some");
+            if let Some(row) = tick_root_list(menu, pressed) {
                 self.save_flow.reset();
                 let world = &self.host.world;
                 let chain_library = world.chain_library();
@@ -1062,36 +1049,29 @@ impl BootSession {
     }
 
     /// Route one pad edge into the open sub-session and, when it finishes,
-    /// drain its outcome into the world before resuming the root list.
+    /// drain its outcome into the world before resuming the root list -
+    /// through the same engine steps both shipped hosts call
+    /// ([`tick_open_subsession`], [`finish_subsession`]).
     fn tick_field_menu_sub(&mut self, pressed: u16) {
         let Some(active) = self.field_menu_sub.as_mut() else {
             return;
         };
-        // Engine extension: Triangle on the Status screen swaps it for the
-        // Tactical Arts chain editor (retail's seven rows carry no Arts row).
-        // The edge is consumed so the same press doesn't also drive the
-        // screen it replaced.
-        let opened_arts = try_open_arts_editor(active, pressed, &self.host.world);
-        if !opened_arts {
-            // The Save / Load rows run under the two-stage card flow: it
-            // pre-empts the grid edges and resolves the card-read beat.
-            if let FieldMenuSubsession::Save(s) = active {
-                if let Some(port) = self.save_flow.pending_read(s) {
-                    let blocks = self
-                        .save_port_blocks
-                        .get(port as usize)
-                        .cloned()
-                        .unwrap_or_default();
-                    self.save_flow.install_blocks(port, blocks);
-                }
-                let edge = self.save_flow.before_tick(s, pressed);
-                s.tick(legaia_engine_core::save_select::SelectInput::from_pad_edge(
-                    edge,
-                ));
-            } else {
-                active.tick_pad_edge(pressed);
+        // The Save / Load rows run under the two-stage card flow: it
+        // pre-empts the grid edges and resolves the card-read beat.
+        let mut edge = pressed;
+        if let FieldMenuSubsession::Save(s) = active {
+            if let Some(port) = self.save_flow.pending_read(s) {
+                let blocks = self
+                    .save_port_blocks
+                    .get(port as usize)
+                    .cloned()
+                    .unwrap_or_default();
+                self.save_flow.install_blocks(port, blocks);
             }
+            edge = self.save_flow.before_tick(s, pressed);
         }
+        // No key table here: a headless driver has no bindings to rebind.
+        let _ = tick_open_subsession(active, edge, None, &self.host.world);
         if !self
             .field_menu_sub
             .as_ref()
@@ -1100,40 +1080,21 @@ impl BootSession {
             return;
         }
         let finished = self.field_menu_sub.take().expect("sub was Some");
-        match finished {
-            FieldMenuSubsession::Items(s) => {
-                let _ = apply_pause_items_outcome(&s, &mut self.host.world);
-            }
-            FieldMenuSubsession::Equip { session, char_slot } => {
-                let _ = apply_equip_outcome(&session, char_slot, &mut self.host.world);
-            }
-            FieldMenuSubsession::Spells(s) => {
-                // A leveled menu cast returns the window-7 notice pair; a
-                // renderer-less driver just latches it.
-                self.spell_level_notice = apply_spell_outcome(&s, &mut self.host.world);
-            }
-            FieldMenuSubsession::Arts(editor) => {
-                let mut library = self.host.world.chain_library();
-                if apply_arts_outcome(editor, &mut library).is_ok() {
-                    self.host.world.store_chain_library(&library);
-                }
-            }
-            FieldMenuSubsession::ListOrder(s) => {
-                let _ = legaia_engine_core::field_menu_dispatch::apply_list_order_outcome(
-                    &s,
-                    &mut self.host.world,
-                );
-            }
-            FieldMenuSubsession::Status(_) => {}
-            FieldMenuSubsession::Save(s) => {
-                // The outcome names the card port, the grid names the block.
-                // Persisting it is the host's: `BootSession` has no save
-                // backend, so the pick is latched for the caller.
-                self.last_save_commit = self.save_flow.commit(&s);
-            }
-            FieldMenuSubsession::Config(o) => {
-                self.options_state = o.state().clone();
-            }
+        let done = finish_subsession(finished, &mut self.host.world);
+        // A renderer-less driver just latches the notices.
+        if done.spell_level_notice.is_some() {
+            self.spell_level_notice = done.spell_level_notice;
+        }
+        if done.art_learned_notice.is_some() {
+            self.art_learned_notice = done.art_learned_notice;
+        }
+        match done.handoff {
+            SubsessionHandoff::Applied => {}
+            // The outcome names the card port, the grid names the block.
+            // Persisting it is the host's: `BootSession` has no save
+            // backend, so the pick is latched for the caller.
+            SubsessionHandoff::Save(s) => self.last_save_commit = self.save_flow.commit(&s),
+            SubsessionHandoff::Options(state) => self.options_state = state,
         }
         if let Some(menu) = self.field_menu.as_mut() {
             let _ = menu.resume(false);
@@ -1187,6 +1148,10 @@ impl BootSession {
         // The field's CD-XA one-shots (op `0x36`'s XA arm, the scripted-scene
         // voice leg) - drained every tick so none outlives its frame.
         let field_xa = self.host.world.drain_field_xa_cues();
+        // The scene's CD-XA prestage list is for a host that decodes clips
+        // asynchronously (the browser page stages it); this director reads a
+        // clip's span synchronously on first use, so the list is dropped.
+        let _ = self.host.world.drain_field_xa_prestage();
         let Some(bgm) = self.bgm.as_mut() else {
             return;
         };

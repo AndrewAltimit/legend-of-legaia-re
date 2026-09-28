@@ -66,6 +66,12 @@ impl PlayWindowApp {
         let held_pad = self.pad;
         let first_tick_pad = self.pad_taps.take_frame_word(held_pad);
         let mut first_tick = true;
+        // Ticks this frame that ran the field's whole tail. The NPC clip
+        // playheads in the draw pass advance by this, not by `run_ticks`, so
+        // a tick the field sat frozen under (a shop, the naming prompt, the
+        // pause menu) moves no clip - the browser page, which skips its whole
+        // `tick_frame` on those frames, freezes them the same way.
+        let mut field_tail_ticks = 0;
         for _ in 0..run_ticks {
             self.pad = if std::mem::take(&mut first_tick) {
                 first_tick_pad
@@ -154,15 +160,8 @@ impl PlayWindowApp {
             // cell / glyph per press). Mirrors the opening `town01`
             // naming prompt, which suspends the field VM.
             if self.session.host.world.name_entry_active() {
-                let p = pressed_edge;
-                let input = legaia_engine_core::name_entry::NameEntryInput {
-                    up: p & 0x0010 != 0,
-                    down: p & 0x0040 != 0,
-                    left: p & 0x0080 != 0,
-                    right: p & 0x0020 != 0,
-                    confirm: p & 0x4000 != 0, // Cross
-                    cancel: p & 0x1000 != 0,  // Triangle
-                };
+                let input =
+                    legaia_engine_core::name_entry::NameEntryInput::from_pad_edge(pressed_edge);
                 self.session.host.world.step_name_entry(input);
                 // Keep the frame counter advancing so the caret blinks.
                 self.session.host.world.frame = self.session.host.world.frame.wrapping_add(1);
@@ -288,33 +287,42 @@ impl PlayWindowApp {
             // (the field overlay is swapped out under it), so the world does
             // not tick at all while one is up - the browser page's freeze.
             let field_suspended = self.menu_runtime.suspends_field();
-            // Re-assert the precise-movement toggle each tick: scene / New
-            // Game transitions can reseed world state, and the toggle is
-            // host policy (options file + `R` key), not world state.
-            self.session.host.world.locomotion.precise_movement =
-                self.options_state.precise_movement;
-            // Field Move default (pause-menu Walk / Run) + the run button
-            // that inverts it. Re-asserted per tick for the same reason as
-            // precise movement: it is host policy over reseeded world state.
-            self.session.host.world.locomotion.run_default =
-                self.options_state.field_move == legaia_engine_core::options::FieldMoveOpt::Run;
-            // Photosensitivity guard over the ambient palette cyclers -
-            // host policy like the two above (default ON; see
-            // `OptionsState::reduce_flashing`).
-            self.session.host.world.toggles.reduce_flashing = self.options_state.reduce_flashing;
-            // Battle "Select Attack" (config word `0x800846C4`): whether the
-            // ring's Attack arm shows the Auto | Command prompt, goes
-            // straight to the target cursor, or straight to the arts entry.
-            // Host policy like the rows above.
-            self.session.host.world.toggles.select_attack = self.options_state.battle_select_attack;
+            // Re-assert the options' simulation knobs each tick (precise
+            // movement, the Field Move default, the reduce-flashing guard,
+            // battle Select Attack): scene / New Game transitions can reseed
+            // world state, and the knobs are host policy (options file + `R`
+            // key), not world state. The browser page pushes the same set
+            // through the same call.
+            self.options_state
+                .apply_to_world(&mut self.session.host.world);
             // `set_pad` also latches the run button off the same word, so
             // there is nothing host-side to keep in sync.
             self.session.host.world.set_pad(field_pad);
-            match if field_suspended {
-                Ok(legaia_engine_core::scene::SceneTickEvent::Stepped)
-            } else {
-                self.session.tick()
-            } {
+            if field_suspended {
+                // A shop / prize exchange: the field is frozen, tail included -
+                // the world tick, the effect scene-graphs, the ocean and CLUT
+                // cyclers, the event drains, the NPC clips and the party
+                // readout's kernel. Retail runs the counter at game mode 0x17
+                // with the field overlay swapped out for the menu overlay, so
+                // none of that code is resident; the browser page skips its
+                // whole `tick_frame` under a shop for the same reason. What
+                // still runs is what the page runs: the menu session on this
+                // tick's edges, the unpark on close, and (like the pause-menu
+                // arm above) the SFX scheduler step.
+                tick_menu_runtime_session(
+                    &mut self.menu_runtime,
+                    &mut self.session.host.world,
+                    pressed_edge,
+                );
+                self.tick_menu_sfx();
+                self.prev_pad = self.pad;
+                if let Some(log) = self.record_log.as_mut() {
+                    log.observe_frame(self.session.frames);
+                }
+                continue;
+            }
+            field_tail_ticks += 1;
+            match self.session.tick() {
                 // Door transition: the host loaded a new scene under
                 // the window (field-VM op 0x3E/0x3F or a walk-touch
                 // door). Rebuild the render-side scene state so the
@@ -496,28 +504,13 @@ impl PlayWindowApp {
             // Catch any path that re-uploaded VRAM over the battle
             // texture this frame (and restore it).
             self.check_battle_vram_residency();
-            if self.menu_runtime.is_open() {
-                // Edges, not the held word: the runtime filters no repeats,
-                // so a held key used to step the shop cursor / commit a
-                // screen every tick it stayed down. The browser page sends
-                // one edge per press through the same decode.
-                let input =
-                    legaia_engine_core::menu_runtime::menu_input_from_pad_edges(pressed_edge);
-                self.menu_runtime.tick(&mut self.session.host.world, input);
-            }
-            // A field-VM-triggered shop the player has now closed: tell
-            // the world so the suspended op-0x49 resumes (Armed -> Done)
-            // and the field VM advances past the merchant op next tick.
-            if self.session.host.world.shops.shop_open && !self.menu_runtime.is_open() {
-                self.session.host.world.finish_field_shop();
-            }
-            // Safety net for the prize exchange (its own Exit already calls
-            // `finish_prize_exchange` through the runtime tick): if the menu
-            // closed by any other path, unpark the suspended counter script
-            // rather than wedge it.
-            if self.session.host.world.shops.prize_exchange_open && !self.menu_runtime.is_open() {
-                self.session.host.world.finish_prize_exchange();
-            }
+            // A shop or prize counter opened on this tick (the take above)
+            // gets its first edge now; an inn session runs here every tick.
+            tick_menu_runtime_session(
+                &mut self.menu_runtime,
+                &mut self.session.host.world,
+                pressed_edge,
+            );
             self.prev_pad = self.pad;
             // Record-mode: advance the log's frame counter so
             // `meta.frames` reflects the recorded duration even
@@ -1175,7 +1168,7 @@ impl PlayWindowApp {
                     // for the same wall-clock time a 60 Hz one does).
                     let key = (*slot, player.frame());
                     let pose = player.current_pose();
-                    player.advance(run_ticks);
+                    player.advance(field_tail_ticks);
                     npc_frames.push(key);
                     if cache.contains_key(&key) {
                         // `LEGAIA_POSE_CACHE_VERIFY=1`: the pose behind a hit
@@ -2993,5 +2986,36 @@ impl PlayWindowApp {
             ));
         }
         Some((cluster, runs))
+    }
+}
+
+/// Drive an open menu-runtime session (shop, prize exchange, inn) one tick on
+/// this tick's pad edges, then unpark the field script a closed shop or
+/// counter left suspended. A free function over the two fields it touches, so
+/// the frozen-field arm and the frame tail share it.
+fn tick_menu_runtime_session(
+    menu: &mut legaia_engine_core::menu_runtime::MenuRuntime,
+    world: &mut legaia_engine_core::world::World,
+    pressed_edge: u16,
+) {
+    if menu.is_open() {
+        // Edges, not the held word: the runtime filters no repeats, so a held
+        // key used to step the shop cursor / commit a screen every tick it
+        // stayed down. The browser page sends one edge per press through the
+        // same decode.
+        let input = legaia_engine_core::menu_runtime::menu_input_from_pad_edges(pressed_edge);
+        menu.tick(world, input);
+    }
+    // A field-VM-triggered shop the player has now closed: tell the world so
+    // the suspended op-0x49 resumes (Armed -> Done) and the field VM advances
+    // past the merchant op next tick.
+    if world.shops.shop_open && !menu.is_open() {
+        world.finish_field_shop();
+    }
+    // Safety net for the prize exchange (its own Exit already calls
+    // `finish_prize_exchange` through the runtime tick): if the menu closed by
+    // any other path, unpark the suspended counter script rather than wedge it.
+    if world.shops.prize_exchange_open && !menu.is_open() {
+        world.finish_prize_exchange();
     }
 }
