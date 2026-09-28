@@ -66,9 +66,11 @@ fn world_tick_runs_the_submode_dispatcher() {
 
 /// The painter follows the **descriptor the state machine installs**, not a
 /// window the caller pinned. The counter's entry arm installs
-/// `PANEL_COIN_IDLE`, whose record `10` painter (`FUN_801E6F70`) lives outside
-/// this module, so nothing draws until the accept installs
-/// `PANEL_COIN_CONFIRM` - record `11`, the three-line panel.
+/// `PANEL_COIN_IDLE`, whose record `10` painter is the entry panel
+/// (`FUN_801E6F70`, `slot_machine::coin_entry_panel`); the accept installs
+/// `PANEL_COIN_CONFIRM` - record `11`, the three-line panel - which **adds**
+/// to what is up: its program has no close-all sub-op, so the entry panel
+/// stays drawn under the Yes/No.
 #[test]
 fn the_coin_counter_draws_the_panel_its_own_descriptor_installs() {
     let mut w = field_world();
@@ -85,6 +87,10 @@ fn the_coin_counter_draws_the_panel_its_own_descriptor_installs() {
         vec![0, 10, 10],
         "the entry arm installs the coin counter's own idle record"
     );
+    assert!(
+        !w.field_vm.submode_screen.coin_panel.is_empty(),
+        "record 10's painter draws the entry panel in a live frame loop"
+    );
 
     w.field_vm.submode_screen.counter.set_entered(3);
     w.input.set_pad(raw(SUBMODE_ACCEPT_MASK as u16));
@@ -96,7 +102,17 @@ fn the_coin_counter_draws_the_panel_its_own_descriptor_installs() {
         == 2));
     assert_eq!(
         w.field_vm.submode_screen.installed_windows,
-        vec![legaia_engine_vm::baka_hub_actors::window::THREE_LINE]
+        vec![
+            0,
+            10,
+            10,
+            legaia_engine_vm::baka_hub_actors::window::THREE_LINE
+        ],
+        "the confirm program opens record 11 over the entry panel"
+    );
+    assert!(
+        !w.field_vm.submode_screen.coin_panel.is_empty(),
+        "the entry panel stays up under the confirm"
     );
     assert!(
         !w.field_vm.submode_screen.draws().is_empty(),

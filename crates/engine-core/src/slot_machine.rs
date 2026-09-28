@@ -1070,47 +1070,189 @@ impl CoinQuote {
 ///
 /// The field is [`COIN_ENTRY_DIGITS`] single-digit cells stored
 /// **least-significant first** (the accumulator starts at 1 and multiplies by
-/// ten each cell), so `digits[0]` is the units place. Reached through
-/// [`coin_exchange_quote`].
-// PORT: FUN_801e6f70 NOT WIRED: entry-field half (digit accumulation) of the
-// casino coin-exchange counter, a field-overlay screen neither play host
-// implements; the gate half of the same function is `coin_exchange_quote`.
-pub fn coin_entry_value(digits: &[u8]) -> i32 {
+/// ten each cell), so `digits[0]` is the units place. The cells are signed
+/// bytes: retail loads them with `lb` (`0x801E6FBC`).
+// PORT: FUN_801e6f70 (`0x801E6FB8..0x801E6FE4`, the entry field's accumulator)
+pub fn coin_entry_value(digits: &[i8]) -> i32 {
     let mut place = 1i32;
     let mut total = 0i32;
     for &d in digits.iter().take(COIN_ENTRY_DIGITS) {
-        total += place * i32::from(d);
-        place *= 10;
+        total = total.wrapping_add(place.wrapping_mul(i32::from(d)));
+        place = place.wrapping_mul(10);
     }
     total
 }
 
 /// Quote the coin-exchange counter for the entered `digits`, against the
-/// party's `gold` and the counter's remaining coin `stock`.
+/// party's `gold` and the counter's buyable ceiling `stock`.
 ///
 /// Coins cost a flat [`COIN_PRICE_GOLD`] each. Retail gates the sale twice -
 /// on the party's gold (`_DAT_8008459C`) against the total, and on the
-/// counter's stock (`_DAT_8007BB90`) against the coin count - and recolours
-/// the total to the alert ink when *either* fails. The bank word this feeds
-/// (`_DAT_800845A4`) is the same one [`SlotMachine::cash_out`] assigns back,
-/// so buying coins here and cashing out of a machine write the same global.
+/// ceiling the counter's state machine publishes every frame
+/// (`_DAT_8007BB90`, `min(gold / 100, bank headroom)`) against the coin
+/// count - and recolours the total to the alert ink when *either* fails. The
+/// bank word this feeds (`_DAT_800845A4`) is the same one
+/// [`SlotMachine::cash_out`] assigns back.
 ///
-/// This function is the quote/validation half only; retail commits the sale on
-/// the counter's confirm path, not in the screen routine.
-// PORT: FUN_801e6f70 NOT WIRED: the casino coin-exchange counter screen should
-// call this (total cost + gold/stock gates) on each quote refresh; neither
-// play host implements that field-overlay screen. The native `O` slot
-// launcher used to buy a thin bank's coins through it; it arms the door warp
-// now, as every other minigame launcher does.
-pub fn coin_exchange_quote(digits: &[u8], gold: i32, stock: i32) -> CoinQuote {
+/// This is the quote half of the counter's entry panel
+/// ([`coin_entry_panel`]); the sale itself commits in the state machine
+/// (`legaia_engine_vm::baka_hub_actors::coin_exchange`, state 3).
+// PORT: FUN_801e6f70 (`0x801E7138..0x801E7174`, the cost and its two gates)
+pub fn coin_exchange_quote(digits: &[i8], gold: i32, stock: i32) -> CoinQuote {
     let coins = coin_entry_value(digits);
-    let cost = coins * COIN_PRICE_GOLD;
+    let cost = coins.wrapping_mul(COIN_PRICE_GOLD);
     CoinQuote {
         coins,
         cost,
         affordable: gold >= cost,
         in_stock: stock >= coins,
     }
+}
+
+/// Record of the field overlay's panel-window table (`0x801F2B98`) whose
+/// painter is [`coin_entry_panel`]: the coin counter's idle descriptor
+/// (`0x801F3340`) opens it.
+pub const COIN_ENTRY_WINDOW: usize = 10;
+
+/// Rodata VAs of the entry panel's four labels, in draw order (bank, entry,
+/// gold, total). The bytes are the user's disc's; hosts read them off the
+/// field overlay (PROT 0897).
+pub const COIN_ENTRY_LABEL_VAS: [u32; 4] = [0x801C_F0D4, 0x801C_F0E0, 0x801C_F0F0, 0x801C_F0FC];
+
+/// System-UI sprite cell the panel draws under the edited digit
+/// (`FUN_8002C488(x, y, 0x67)`).
+pub const COIN_ENTRY_CARET_CELL: i32 = 0x67;
+
+/// Text pens (`_DAT_8007B454`) the panel stages: the default white, the
+/// accent the entry row takes, the normal total and the refused total.
+pub const COIN_PEN_DEFAULT: u8 = 7;
+pub const COIN_PEN_ENTRY: u8 = 6;
+pub const COIN_PEN_TOTAL: u8 = 5;
+pub const COIN_PEN_REFUSED: u8 = 9;
+
+/// One draw of the coin counter's entry panel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CoinPanelDraw {
+    /// `FUN_8003CD00(label, x, y)` in pen `pen`.
+    Label { va: u32, x: i16, y: i16, pen: u8 },
+    /// `FUN_80034B78(value, digits, x, y)` - a blank-padded, right-aligned
+    /// decimal field of 8-pixel cells, in pen `pen`.
+    Number {
+        value: i32,
+        digits: u8,
+        x: i16,
+        y: i16,
+        pen: u8,
+    },
+    /// `FUN_8002C488(x, y, cell)` - the caret under the edited digit.
+    Cell { x: i16, y: i16, cell: i32 },
+}
+
+/// What the entry panel reads: its window's origin and the counter's live
+/// globals.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CoinPanelInput<'a> {
+    /// The window actor's `+0x0A` / `+0x0C` - where the descriptor's open
+    /// placed it ([`COIN_ENTRY_ORIGIN`] for the retail record).
+    pub origin: (i16, i16),
+    /// `DAT_801F35F0..+7`, least significant first.
+    pub digits: &'a [i8],
+    /// `_DAT_8007BB9C` - the edited cell.
+    pub cursor: i32,
+    /// `_DAT_800845A4` - the coin bank.
+    pub bank: i32,
+    /// `_DAT_8008459C` - party gold.
+    pub gold: i32,
+    /// `_DAT_8007BB90` - the buyable ceiling.
+    pub stock: i32,
+    /// `_DAT_80084570` - the play clock; bits `0xC` blink the caret.
+    pub clock: u32,
+}
+
+/// Where record [`COIN_ENTRY_WINDOW`]'s open places its window: the record's
+/// geometry words at `+8` / `+0xA` (`(0x40, 0x26)`), which the installer's
+/// open sub-op hands to `FUN_800357FC` as the window actor's target.
+pub const COIN_ENTRY_ORIGIN: (i16, i16) = (0x40, 0x26);
+
+/// The coin counter's **entry panel**: the painter of panel-window record
+/// [`COIN_ENTRY_WINDOW`], drawn every frame the counter's idle descriptor
+/// has the window open - the digit entry and the confirm both.
+///
+/// Four rows from the window origin `(x, y)`:
+///
+/// | Row | Label | Value |
+/// |---|---|---|
+/// | `y + 2` | label 0, pen 7 | the coin bank, 8 digits at `x + 0x78` |
+/// | `y + 0x12` | label 1, pen 6 | cells `5..=0`, one digit each from `x + 0x88`, 8 px apart |
+/// | `y + 0x30` | label 2, pen 7 | party gold, 8 digits at `x + 0x78` |
+/// | `y + 0x40` | label 3, pen 7 | the total cost, 8 digits at `x + 0x78`, pen 5 or 9 |
+///
+/// The caret cell sits at `(x + 0xB0 - 8 * cursor, y + 0x1D)` - under the
+/// edited digit, the units cell rightmost - and draws only while the cursor
+/// is below ten and the play clock's `0xC` bits are non-zero, a blink three
+/// frames in four. The total takes the refused pen whenever
+/// [`coin_exchange_quote`] fails either gate. Only cells `0..=5` are drawn;
+/// the two top cells are summed into the total but never shown.
+///
+/// Read from the field overlay's bytes (PROT 0897, base `0x801CE818`,
+/// `see ghidra/scripts/funcs/801e6f70.txt`). The epilogue restores pen 7.
+// PORT: FUN_801e6f70
+pub fn coin_entry_panel(input: &CoinPanelInput<'_>) -> Vec<CoinPanelDraw> {
+    let (x, y) = input.origin;
+    let at = |dx: i32, dy: i32| ((i32::from(x) + dx) as i16, (i32::from(y) + dy) as i16);
+    let quote = coin_exchange_quote(input.digits, input.gold, input.stock);
+    let mut out = Vec::new();
+    let label = |va: u32, (x, y): (i16, i16), pen: u8| CoinPanelDraw::Label { va, x, y, pen };
+    let number = |value: i32, digits: u8, (x, y): (i16, i16), pen: u8| CoinPanelDraw::Number {
+        value,
+        digits,
+        x,
+        y,
+        pen,
+    };
+
+    out.push(label(COIN_ENTRY_LABEL_VAS[0], at(0, 2), COIN_PEN_DEFAULT));
+    out.push(number(input.bank, 8, at(0x78, 2), COIN_PEN_DEFAULT));
+
+    out.push(label(COIN_ENTRY_LABEL_VAS[1], at(0, 0x12), COIN_PEN_ENTRY));
+    for (col, cell) in (0..=5usize).rev().enumerate() {
+        let d = input.digits.get(cell).copied().unwrap_or(0);
+        out.push(number(
+            i32::from(d),
+            1,
+            at(0x88 + 8 * col as i32, 0x12),
+            COIN_PEN_ENTRY,
+        ));
+    }
+    // `slti v0,a0,0xa` is a signed compare, and the blink tests the clock.
+    if input.cursor < 10 && input.clock & 0xC != 0 {
+        let (cx, cy) = at(0xB0 - 8 * input.cursor, 0x1D);
+        out.push(CoinPanelDraw::Cell {
+            x: cx,
+            y: cy,
+            cell: COIN_ENTRY_CARET_CELL,
+        });
+    }
+
+    out.push(label(
+        COIN_ENTRY_LABEL_VAS[2],
+        at(0, 0x30),
+        COIN_PEN_DEFAULT,
+    ));
+    out.push(number(input.gold, 8, at(0x78, 0x30), COIN_PEN_DEFAULT));
+
+    out.push(label(
+        COIN_ENTRY_LABEL_VAS[3],
+        at(0, 0x40),
+        COIN_PEN_DEFAULT,
+    ));
+    let pen = if quote.is_valid() {
+        COIN_PEN_TOTAL
+    } else {
+        COIN_PEN_REFUSED
+    };
+    out.push(number(quote.cost, 8, at(0x78, 0x40), pen));
+    out
 }
 
 // --- payline draw list -----------------------------------------------------
@@ -1324,6 +1466,108 @@ mod tests {
         assert!(!q.affordable);
         assert!(q.in_stock);
         assert!(!q.is_valid());
+    }
+
+    fn panel(digits: &[i8], cursor: i32, gold: i32, stock: i32, clock: u32) -> Vec<CoinPanelDraw> {
+        coin_entry_panel(&CoinPanelInput {
+            origin: COIN_ENTRY_ORIGIN,
+            digits,
+            cursor,
+            bank: 42,
+            gold,
+            stock,
+            clock,
+        })
+    }
+
+    #[test]
+    fn the_entry_panel_lays_out_four_rows_off_the_window_origin() {
+        let (x, y) = COIN_ENTRY_ORIGIN;
+        let d = panel(&[4, 3, 2, 1, 0, 0, 0, 0], 0, 5_000, 50, 4);
+        let labels: Vec<_> = d
+            .iter()
+            .filter_map(|e| match *e {
+                CoinPanelDraw::Label { va, x, y, pen } => Some((va, x, y, pen)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            labels,
+            vec![
+                (COIN_ENTRY_LABEL_VAS[0], x, y + 2, 7),
+                (COIN_ENTRY_LABEL_VAS[1], x, y + 0x12, 6),
+                (COIN_ENTRY_LABEL_VAS[2], x, y + 0x30, 7),
+                (COIN_ENTRY_LABEL_VAS[3], x, y + 0x40, 7),
+            ]
+        );
+        let numbers: Vec<_> = d
+            .iter()
+            .filter_map(|e| match *e {
+                CoinPanelDraw::Number {
+                    value,
+                    digits,
+                    x,
+                    y,
+                    pen,
+                } => Some((value, digits, x, y, pen)),
+                _ => None,
+            })
+            .collect();
+        // Bank, six single cells (cell 5 leftmost), gold, total.
+        assert_eq!(numbers[0], (42, 8, x + 0x78, y + 2, 7));
+        let cells: Vec<_> = numbers[1..7].iter().map(|n| (n.0, n.2)).collect();
+        assert_eq!(
+            cells,
+            vec![
+                (0, x + 0x88),
+                (0, x + 0x90),
+                (1, x + 0x98),
+                (2, x + 0xA0),
+                (3, x + 0xA8),
+                (4, x + 0xB0),
+            ]
+        );
+        assert_eq!(numbers[7], (5_000, 8, x + 0x78, y + 0x30, 7));
+        assert_eq!(
+            numbers[8],
+            (123_400, 8, x + 0x78, y + 0x40, COIN_PEN_REFUSED)
+        );
+    }
+
+    #[test]
+    fn the_caret_sits_under_the_edited_cell_and_blinks_on_the_clock() {
+        let (x, y) = COIN_ENTRY_ORIGIN;
+        let caret = |d: &[CoinPanelDraw]| {
+            d.iter().find_map(|e| match *e {
+                CoinPanelDraw::Cell { x, y, cell } => Some((x, y, cell)),
+                _ => None,
+            })
+        };
+        let d = panel(&[0; 8], 2, 0, 0, 4);
+        assert_eq!(caret(&d), Some((x + 0xA0, y + 0x1D, COIN_ENTRY_CARET_CELL)));
+        // The clock's 0xC bits clear: the caret is off this frame.
+        assert_eq!(caret(&panel(&[0; 8], 2, 0, 0, 0x10)), None);
+        assert_eq!(caret(&panel(&[0; 8], 2, 0, 0, 3)), None);
+    }
+
+    #[test]
+    fn the_total_takes_the_normal_pen_only_when_both_gates_pass() {
+        let pen_of = |d: Vec<CoinPanelDraw>| match d.last() {
+            Some(CoinPanelDraw::Number { pen, value, .. }) => (*pen, *value),
+            _ => panic!("the total is the last draw"),
+        };
+        assert_eq!(
+            pen_of(panel(&[5, 0, 0, 0, 0, 0, 0, 0], 0, 500, 5, 4)),
+            (COIN_PEN_TOTAL, 500)
+        );
+        assert_eq!(
+            pen_of(panel(&[5, 0, 0, 0, 0, 0, 0, 0], 0, 499, 5, 4)).0,
+            COIN_PEN_REFUSED
+        );
+        assert_eq!(
+            pen_of(panel(&[5, 0, 0, 0, 0, 0, 0, 0], 0, 500, 4, 4)).0,
+            COIN_PEN_REFUSED
+        );
     }
 
     #[test]
