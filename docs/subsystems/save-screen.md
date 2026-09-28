@@ -1106,7 +1106,7 @@ N blue SLOT pills on top of the dimmed title art. Asset sources:
 
 | Visible element | Confirmed source | Notes |
 |---|---|---|
-| Title art behind (wordmark, NEW GAME / CONTINUE, copyright) | `PROT 0888` title TIM | Same atlas the title menu samples; rendered dimmed during SaveSelect. |
+| Title art behind (wordmark, NEW GAME / CONTINUE, copyright) | `PROT 0890` title TIM (`0x14228`), VRAM `(512, 256)` 8bpp, CLUT `(0, 491)` | Same atlas the title menu samples, but laid out by the menu overlay's own drawer `FUN_801E0418`, not by the title card. See [the title strips behind the Load window](#the-title-strips-behind-the-load-window). |
 | **`Load` panel TIM + CLUT** | **`PROT.DAT[0x018E0]` system-UI sprite sheet, CLUT row 2** | 4bpp 256x192 TIM in the unindexed pre-`init_data` PROT.DAT gap. CLUT block uploads to VRAM `(fb_x=0, fb_y=511)`; the panel-specific row (row 2 of the 16x16 CLUT block) uploads to VRAM `(32, 511)`. Byte-confirmed: the 32-byte CLUT signature appears at exactly one place in the disc corpus (PROT.DAT offset 0x1934). Constants exported by `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_*`. |
 | `Load` panel **9-slice tile geometry** | **PINNED - engine renders byte-perfect** | Retail composes the 81x29 panel at dst `(6, 4)` from 14 textured-sprite primitives (GP0 cmd `0x64`) sampling the system-UI sheet with CLUT `(32, 511)`. Per-tile rects below; all exported as `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_PANEL_*` and rendered by `legaia_engine_render::save_select_chrome_draws_for`. |
 | `Load` panel **interior fill** | **PINNED** | Retail fills the 9-slice interior with 3 gouraud-shaded textured quads (GP0 cmd `0x3C`) sampling the same TIM's 32x29 marbled region at `(128, 0)` with a vertical gray gradient `rgb(64,64,64) -> rgb(136,136,136)` (2 full 32-wide copies + 1 17-wide remainder). Constants `OVERLAY_SYSTEM_UI_PANEL_INTERIOR` / `_TOP_RGB` / `_BOT_RGB`; the engine bakes the gradient into the composed atlas (`save_menu_atlas::bake_panel_interior_gradient`). |
@@ -1195,11 +1195,12 @@ rects the GPU actually receives) pin the remaining layout:
   done as RGB modulation rather than as an alpha), `FUN_801E3FF0` stamps one record of the
   12-byte sprite-record table at `0x801E5048` as a `0x2C` quad at a pen
   with an RGB word (port `save_ui_record_quad`), and `FUN_801E0418`
-  draws the five-row card-message / two-choice text stack (prompt at
-  y = 0x50, choices at 0xA0/0xAE - the unselected choice at half
-  brightness off the selector `_DAT_8007B820` - trailing rows at
-  0xBE/0xCC; port `card_message_rows`, which also documents the
-  function's dead triangle-wave pulse computation). The focused cell draws at full `0x80` modulation, every other
+  draws the title's own strips over the dimmed art - wordmark at
+  y = 0x50, NEW GAME / CONTINUE at 0xA0/0xAE (the row off the title
+  cursor `_DAT_8007B820` at half brightness), the TM and copyright
+  lines at 0xBE/0xCC ([details](#the-title-strips-behind-the-load-window);
+  port `title_strip_rows`, which also documents the function's dead
+  triangle-wave pulse computation). The focused cell draws at full `0x80` modulation, every other
   cell dimmed to `0x60` (75%); portraits are 16x16 quads at cell `+8, +8`;
   the pointing-finger cursor sits at cell quad `+(-10, +4)`.
 - **The bottom info panel** footprint lands at `(8, 136, 300, 80)`
@@ -1260,6 +1261,52 @@ TIM (`legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET` /
 byte-equal to retail. The title word is mode-derived
 (`Load` / `Save` from `SaveSelectMode`, mirroring the retail
 `_DAT_801f0200` string toggle), never hardcoded per host screen.
+
+### The title strips behind the Load window
+
+When the Load window is opened from the title, the menu overlay redraws the
+title's text itself. `FUN_801DD35C` calls `FUN_801E0418(b)` at `0x801E0260`
+and then the dimmed art `FUN_801E02A4(b)` with the same brightness byte, but
+only while `_DAT_8007BB00` is set. `FUN_801E0418` makes five
+`FUN_801E2EE4(2, 0xA0, y, record, b', 0x1000)` calls. Each one draws record
+`record` of the sprite-descriptor table at `0x801E50A8` (PROT 0899 file
+`0x16890`, 20-byte stride) as one gouraud textured quad (`0x3C`), centred on
+`(0xA0, y)` by half its own extent:
+
+| Row | Centre y | Record | Texel rect `(u, v, w, h)` | Strip |
+|---|---|---|---|---|
+| 1 | `0x50` | 0 | `(0, 0, 254, 148)` | wordmark |
+| 2 | `0xA0` | 3 | `(0, 224, 64, 16)` | NEW GAME |
+| 3 | `0xAE` | 4 | `(64, 224, 64, 16)` | CONTINUE |
+| 4 | `0xBE` | 2 | `(0, 192, 254, 16)` | TM line |
+| 5 | `0xCC` | 5 | `(0, 208, 254, 16)` | copyright line |
+
+Record 1, `(0, 176, 254, 16)`, is PRESS START BUTTON; the table carries it,
+but this routine does not draw it. The row the title cursor `_DAT_8007B820`
+is not on gets `b >> 1`. The vertex colour is `(0xFF * b') >> 8`.
+
+All six records read tpage `0x0098` and CLUT `0x7AC0`: an 8bpp page at VRAM
+`(512, 256)` with its palette at `(0, 491)`. That is where the title TIM (PROT
+0890 at `0x14228`, `legaia_asset::title_pak`) uploads its pixel and CLUT
+blocks. In the `save_select_idle` state all 256 rows of that page and the
+256-entry CLUT row are byte-equal to the TIM. The same state's displayed
+framebuffer shows the five rows at those centres, with NEW GAME at about half
+the brightness of CONTINUE. Both states catalogued on this screen
+(`title_menu_idle`, `save_select_idle`) hold `_DAT_8007B820 = 1` and
+`_DAT_8007BB00 = 1`.
+
+This routine was once read as a memory-card message screen, and the page it
+samples as a card-message page whose uploader was unknown. Both readings were
+wrong. The strips are the title's, and so is the page.
+
+The layout is not the title card's. The card places each band at the
+TIM's own offset from the wordmark's `(33, 6)`. This routine centres each
+strip independently, so its NEW GAME / CONTINUE rows sit 5 px higher, and its
+TM and copyright lines 16 px higher, than the card draws them. The engine's
+backdrop (`TitleBandState::backdrop`, drawn by both the native window and
+the browser play page through `title_band_sprites`) composes through
+`engine-ui::title_strip_rows` / `title_strip_sprites` with these records. It
+lights CONTINUE, as the capture does, rather than drawing both rows dim.
 
 ## Slide-in UI primitive (`FUN_801E1C1C`)
 
