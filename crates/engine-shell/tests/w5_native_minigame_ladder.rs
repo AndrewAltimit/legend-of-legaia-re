@@ -422,7 +422,7 @@ fn rung5_baka_fighter_duel_is_won_and_shows_its_tally() {
         "baka: no capture written\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(
-        stderr.contains("baka: started"),
+        stderr.contains("minigame warp: entered baka_fighter"),
         "baka: the duel never opened\nstderr:\n{stderr}"
     );
     let delta = pixel_delta(&base, &shot);
@@ -468,7 +468,7 @@ fn rung7_muscle_dome_leg_opens() {
         "muscle",
         "40:M",
         Some("100:Left,140:Right,180:Cross"),
-        "muscle: started",
+        "minigame warp: entered muscle_dome",
         0.001,
         SHOT_TICK,
     );

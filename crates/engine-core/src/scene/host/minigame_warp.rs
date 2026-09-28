@@ -96,6 +96,7 @@ impl SceneHost {
             if let Some(bgm) = slot.bgm_id() {
                 self.world.swap_to_minigame_bgm(bgm);
             }
+            log::info!("minigame warp: entered {}", slot.label());
             Some(MinigameWarpOutcome::Entered(slot))
         } else {
             self.world.minigame_return_warp();
