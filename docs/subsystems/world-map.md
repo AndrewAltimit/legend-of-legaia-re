@@ -855,7 +855,9 @@ world-map overlay data region (`0x801F28F0..0x801F2Fxx`) and the dev context
   and runs the list picker `FUN_801E9DC8` over the rows - a numbered
   choice list, used by the `kor` / `kor3` / `kor4` scripts only
   (`asset field-op-census --only "49 04"`). Layout ported as
-  `legaia_engine_core::field_submode::submode_panel_rows`; the handler is not.
+  `legaia_engine_core::field_submode::submode_panel_rows`, and the handler as
+  `flag_window_tick`, hosted on the field path by
+  `engine-core::field_submode_flag_window` and drawn on both hosts.
 - **`FUN_801E6B34`** (1084 bytes, `overlay_world_map_top_801e6b34.txt`) - the
   top-view MAP_CHANGE **grid** + coordinate readout. Lays the map dots out in a
   102-wide grid (`idx % 0x66`), draws the cursor when `_DAT_8007BB94 != 4`, a
