@@ -1243,6 +1243,25 @@ about these is contested.
 | battle body blend modes | Both hosts draw a whole battle body's semi-transparency; three residues differ in scope and ordering. See [below](#a-battle-bodys-blend-mode-reaches-both-hosts-with-three-residues). |
 | save rack port 1 | The native rack's first port is an engine-format save directory; the page's two ports are both memory-card images. See [below](#the-save-racks-first-port-differs-per-host). |
 | Ra-Seru chip cross-out | The regular ring's red X over a forbidden Ra-Seru chip, on neither host. See [below](#the-ra-seru-chips-cross-out-reaches-neither-host). |
+| frame loop under a shop | The ticks-per-frame, camera-order, glide-clock and strip rules are engine kernels; what a shop and the party readout do to a frame's tail still differs. See [below](#the-frame-loop-rules-are-engine-side-two-residues-are-not). |
+
+### The frame loop rules are engine-side; two residues are not
+
+Each host owns its display loop (winit's redraw natively, `requestAnimationFrame` on the page), and each used to spell out the rules that turn display frames into ticks. Four of those rules are kernels in `engine-core::frame_step` now, called by both hosts - the frame model is in [`engine.md`](../subsystems/engine.md#the-frame-model):
+
+| Rule | Was | Kernel |
+|---|---|---|
+| Ticks per display frame | Native carried any backlog past its four-tick cap into the next frame, so sustained slow frames kept running four ticks a frame with the accumulator growing; the page dropped it. | `SimStepper` (the page through `play_drain_sim_steps`). |
+| Camera around the world tick | The page published the compass azimuth after the scene tick, so its d-pad remap read the camera one tick late. | `camera_before_world_tick` / `camera_after_world_tick`. |
+| Cutscene glide clock | Both hosts floored the glide's step count at 1, so every idle redraw advanced it and a glide ran twice as fast at 120 Hz. Native also kept the glide across a door whose destination opened on a timeline; the page reset it. | `CutsceneGlide` (reset on every entry; retail's `FUN_80025C24` kills the mover). |
+| Move-VM strips | Native drained them per redraw (blinking off on idle redraws above 60 Hz, stacking below it); the page cached the last tick's drain (losing the earlier ticks of a catch-up frame). | `MoveVmGlobals::strip_frame`. |
+
+The page also ran its tick tail short on a scene-entry tick (no rig rebuild, merchant poll or NPC clip step) and dropped the frame's remaining ticks after a door; it now runs the tail and keeps ticking, as the native loop does.
+
+Two residues remain host-local:
+
+- **Under a shop** the page skips the whole tick, tail included; the native window skips the world tick but still runs its tail (ocean shimmer, the effect scene-graphs, CLUT effects, the field-event drain, NPC anim cues, the party readout). Retail swaps the field overlay out for the menu overlay, so the page's freeze is the faithful shape; the native tail also carries the SFX scheduler step the shop's own cues ride, which is why it cannot simply be skipped.
+- **The field party readout's kernel** is stepped under modal overlays natively (so its suppression predicate sees the overlay) and not on the page, which has no early-out to skip it from.
 
 ### The save rack's first port differs per host
 
