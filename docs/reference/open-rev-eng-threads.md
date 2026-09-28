@@ -401,8 +401,9 @@ process-matching helpers in
 
 | Thread | Status | What would close it |
 |---|---|---|
+| Is the overworld ground depth-cued, and from which far colour? | open - measured in retail; not in the port | `FUN_801F89B8` loads `RGBC` from scratch `0x1F800398` and depth-cues each cell with `IR0 = max(SZ1 - 0x5000, 0) >> 3` (`DPCS` at `0x801F8DB0`); on keikoku's walked ordering table the ground climbs from `0x808080` at bucket 676 to about `0x9F9F9F` by bucket 950 (far colour about `0xEF`). It writes no far colour of its own, so the cue uses whatever the renderer loaded last - that writer is unpinned. The port bakes every cell at `0x808080` with no cue, and keeps the field view's `0x1000` gate the emitter lacks (133 of 16384 map01 cells). Pinning the far-colour writer closes it ([`world-map.md`](../subsystems/world-map.md)). |
 | Why do the overworld fog sheets read denser and brighter than retail's? | open (narrowed) - draw order closed; the density gap is not order | Draw order is matched: the port keys the continent at retail's ordering-table bucket (`FUN_801F89B8`, `(max corner SZ >> 5) + 14`) and on `keikoku_chest_preload` covers 1.1% of the fog's light against retail's 1.0% ([`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#closing-the-draw-order-flat-per-primitive-terrain-depth)). The earlier "terrain hides about a fifth" was two screen-space sprite families, not terrain ([falsified](re-do-not-re-walk.md#rendering--camera)). The denser haze is unexplained; candidates: the camera section, and the port drawing the whole continent, not the tile window. |
-| Do the map-gated alternate monster seats and the Ra-Seru bit match retail in the Rim Elm ambush? | partial - the ambush is captured; Tetsu's fight is not | `rim_elm_queen_bee_battle` (town0c, map `0x15`) holds the ambush: `DAT_8007BD60` bit 7 is clear, so the seat loop takes the alternate family's row 8 from the map arm alone (not the origin); the formation roll raises `_DAT_8007BAC0` to `0x200`, and `ctx+0x287` is 0, so Run is allowed. Monster `0xAF` is Tetsu (9999 HP), whose only formation row is `town0d` row 4 (header byte 1, scripted); a synthetic poke confirms the `0x200` raise, but no state or card block reaches `town0d`, so his seats are unmeasured ([battle.md](../subsystems/battle.md#the-ra-seru-forbidden-bit-of-the-special-battle-word)). |
+| Does the fight against monster `0xAF` (Tetsu) seat and flag as retail does? | open - disassembly and a synthetic poke only | The Rim Elm ambush is closed: its row carries header byte 0, so `ctx+0x287 = 0`, the map arm seats row 8, the word reads `0x200` and Run is allowed, in retail and in the engine (`rim_elm_ambush_disc`; [settled](re-settled-threads.md#battle--arts--level-up)). Tetsu's only formation row is `town0d` row 4 (header byte 1, scripted); a synthetic first-monster poke confirms the `0x200` raise, but no state or card block reaches `town0d`. A state inside that fight, read for the seats and the word, closes it. |
 
 **Which fights forbid the Ra-Seru chip** closed by disassembly: bit `0x200` of
 `_DAT_8007BAC0` has two raisers - battle init against first monster `0xAF`
@@ -835,7 +836,7 @@ a coincidence of the pad byte plus the mask table's first three entries
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Which live ports cover only part of their routine, and which of those differ from retail? | open (narrowed) - listed, not ported | Of the 43 partial ports a tag audit found, the ones that still change behaviour are Baka Fighter's attack-clip tail, a battle residue (the ground shadow's default-arm geometry, the Ra-Seru word's other readers, two inferred ghost-pass inputs), the dialog pager's picker open animation and the anim barrier - each named with its blocker [details ↓](#which-live-ports-cover-only-part-of-their-routine). Each residue ported, or disclosed where it is blocked, closes it. |
+| Which live ports cover only part of their routine, and which of those differ from retail? | open (narrowed) - listed, not ported | Of the 43 partial ports a tag audit found, the ones that still change behaviour are Baka Fighter's attack-clip tail, a battle residue (the special-battle word's three unported readers, the shadow's skip flag, two inferred ghost-pass inputs), the dialog pager's picker open animation and the anim barrier - each named with its blocker [details ↓](#which-live-ports-cover-only-part-of-their-routine). Each residue ported, or disclosed where it is blocked, closes it. |
 | Which save-state library entries still hold a patched executable? | open (narrowed) - audited and tagged; the rest need human play | A state made on a patched disc keeps that build's `SCUS_942.54` in RAM on every later load. `patch_taint_audit.py states` tags each library state's `resident_patch`; the S1..S5 anchors, `first_town_interactive` and `teien_field_run` are re-shot retail, and every capture-graded claim re-checked against its family stands ([`pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md#patched-disc-taint)). The `rikuroa_*`, `dolk2_market_noa`, `cort_evolved_*`, `minigame_*_pcsx`, `battle_gaza2_*` states and the mednafen `overworld_battle_bg_angle_*` states re-shot on an unpatched image close it. |
 | Which engine draws hand a raw LCG state where retail calls BIOS `rand`? | mostly resolved - every battle draw is shaped | `FUN_80056798` (BIOS `A(2Fh)`) returns `(seed >> 16) & 0x7FFF` and nothing reseeds it ([settled](re-settled-threads.md#measurement--corpus)). Every battle-side port draws through `World::next_rand`, the battle-action and effect-pool hosts included; every routine they port calls `jal 0x80056798`; neither PROT 0898 nor SCUS carries an inline LCG ([`battle-formulas.md`](../subsystems/battle-formulas.md#how-the-port-draws-it)). Left: the field move-VM extension `FUN_801D362C` (sub-ops `0x05` / `0x30`) draws the raw state, and the battle camera script, the camera shake and the Muscle Dome session keep private seeds. Moving those onto the world stream closes it. |
 
@@ -887,14 +888,12 @@ What remains, each with where it is recorded:
 - **Baka Fighter's duel**: an attack clip stops at the booked exchange instead
   of playing out its tail
   ([`minigame-baka-fighter.md`](../subsystems/minigame-baka-fighter.md#impact-cue-and-afterimage)).
-- **Battle**: `FUN_80048A08`'s ground shadow, which needs `FUN_80028158`'s
-  case-1 disc geometry - that default render-mode-4 arm, eight shapes switched
-  on `(flags >> 3) & 0xF` through `0x80010BC0`, is unported and undrawn on both
-  hosts ([`effect-vm.md`](../subsystems/effect-vm.md#the-sprite-arms-draw));
-  the special-battle word's other `!= 0` readers (the drop, steal and capture
-  gates, spell XP, the monster flee roll), which still read only the dome's
-  word, so the Rim Elm ambush and fights against `0xAF` pay drops the retail
-  gates withhold ([`battle.md`](../subsystems/battle.md#the-ra-seru-forbidden-bit-of-the-special-battle-word));
+- **Battle**: the special-battle word's unported readers - the party-wipe
+  rule (`0x801E6578`), the round driver's `0x801D322C` arm and two
+  presentation calls in `FUN_8004E568` - each needing the battle flow traced
+  ([`battle-formulas.md`](../subsystems/battle-formulas.md)); the ground
+  shadow's `+0x6A` skip flag, with the disc lifted 2.5 units for the depth
+  test ([`effect-vm.md`](../subsystems/effect-vm.md#the-default-arms-draw));
   and two ghost-pass inputs - the command-flow byte `ctx[+6]` and
   `ctx[+0x26B]` - taken from the engine's own state rather than mirrored, with
   the driver's `gp+0x330` gate unmodelled
