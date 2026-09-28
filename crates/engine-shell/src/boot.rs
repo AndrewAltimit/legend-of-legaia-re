@@ -838,12 +838,47 @@ impl BootSession {
     /// seeds the world state. When the SCUS template isn't available the world
     /// keeps its default scaffold party so the slice stays runnable.
     pub fn begin_new_game(&mut self) {
-        self.host.world.begin_new_game();
-        if let Some(starting) = &self.starting_party {
-            self.host.world.seed_starting_party(starting);
+        self.host.world.begin_new_game_seeded(
+            self.starting_party.as_ref(),
+            self.starting_inventory.as_ref(),
+        );
+    }
+
+    /// Start a New Game end to end: the seeded slate
+    /// ([`Self::begin_new_game`]), the title theme stopped so the prologue's
+    /// own BGM (or its scripted silence) owns the audio, then the opening
+    /// scene through the shared order
+    /// ([`legaia_engine_core::resume::enter_new_game`]: the prologue cutscene
+    /// `opdeene`, else `town01`). Returns the scene entered, or `None` when
+    /// neither would enter (the world keeps its seeded slate on whatever
+    /// scene was running).
+    ///
+    /// The browser play page's `play_new_game` is the paired entry: both
+    /// hosts' title New Game and post-wipe New Game go through one of the two.
+    pub fn start_new_game(&mut self, opts: &FieldLiveOpts) -> Option<&'static str> {
+        self.begin_new_game();
+        if let Some(bgm) = self.bgm.as_mut() {
+            bgm.stop();
         }
-        if let Some(inv) = &self.starting_inventory {
-            self.host.world.seed_starting_inventory(inv);
+        legaia_engine_core::resume::enter_new_game(|scene| {
+            self.enter_field_live(scene, opts)?;
+            self.confirm_scene_landed(scene)
+        })
+    }
+
+    /// `Ok` when the host's loaded scene is `scene`. [`Self::enter_field_live`]
+    /// logs a failed scene entry and returns `Ok` anyway (its oracle and
+    /// headless callers keep running on the old scene by design), so the
+    /// resume / New Game fallbacks test the landing itself - without this a
+    /// save naming a scene that would not load "entered" it and skipped the
+    /// fallback to the running scene.
+    fn confirm_scene_landed(&self, scene: &str) -> Result<()> {
+        match self.host.scene.as_ref() {
+            Some(s) if s.name == scene => Ok(()),
+            other => anyhow::bail!(
+                "scene '{scene}' did not load (still on {:?})",
+                other.map(|s| s.name.as_str())
+            ),
         }
     }
 
@@ -1538,6 +1573,40 @@ impl BootSession {
             self.host.world.party.party_count
         });
         Ok(self.host.world.mode)
+    }
+
+    /// Resume a loaded save the way both hosts resume one: land it through
+    /// [`legaia_engine_core::resume::land_save`] (the save's own scene, else
+    /// the scene already running, else the opening town - never a New Game),
+    /// entering scenes through [`Self::enter_scene_live`], then hydrate the
+    /// world from `save` over the landing.
+    ///
+    /// `save_scene` is the save's resume label ([`legaia_save::SaveResume::scene`],
+    /// empty for a file that carries none). The caller rebuilds its
+    /// render-side scene state when [`ResumeLanding::entered_scene`] is set.
+    /// The browser play page's `play_resume_save` is the paired entry.
+    ///
+    /// [`ResumeLanding::entered_scene`]: legaia_engine_core::resume::ResumeLanding::entered_scene
+    pub fn resume_save(
+        &mut self,
+        save: legaia_save::SaveFile,
+        save_scene: &str,
+        opts: &FieldLiveOpts,
+    ) -> legaia_engine_core::resume::ResumeLanding {
+        let current = self.host.scene.as_ref().map(|s| s.name.clone());
+        let landing =
+            legaia_engine_core::resume::land_save(save_scene, current.as_deref(), |scene| {
+                self.enter_scene_live(scene, opts)?;
+                self.confirm_scene_landed(scene)
+            });
+        self.host.world.load_full(save);
+        log::info!(
+            "resume: landed {} ({:?}); seeded world from save ({} party records)",
+            landing.kind(),
+            landing.scene(),
+            self.host.world.party.party_count
+        );
+        landing
     }
 
     /// Where a save written now would resume: the loaded scene's CDNAME

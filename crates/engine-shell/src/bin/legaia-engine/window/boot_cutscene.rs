@@ -22,20 +22,28 @@ enum TitleAttractAction {
     Aborted,
 }
 
-/// Build the window's title session with the attract hand-off armed.
-///
-/// `attract_enabled` is a per-host opt-in because a host with no movie
-/// destination would freeze input for the last sixteen frames of every idle
-/// period and then do nothing. This host has one: the windowed MDEC path
-/// below plays retail's `fmv_id 0` and returns to the menu.
+/// Build the window's title session: [`legaia_engine_core::title::TitleSession::for_front_end`],
+/// the constructor the browser page's title uses too. Continue follows
+/// `continue_enabled`; the attract hand-off is armed (this host plays
+/// retail's `fmv_id 0` through its windowed MDEC path).
 pub(super) fn title_session(continue_enabled: bool) -> legaia_engine_core::title::TitleSession {
-    let mut session = if continue_enabled {
-        legaia_engine_core::title::TitleSession::new()
-    } else {
-        legaia_engine_core::title::TitleSession::without_save_data()
-    };
-    session.attract_enabled = true;
-    session
+    legaia_engine_core::title::TitleSession::for_front_end(continue_enabled)
+}
+
+/// Does any port of this host's save rack hold a save? Port 1 is the save
+/// directory, port 2 the mounted `--card` image. Scanning the directory
+/// alone greys Continue out for a player whose only save is on the card they
+/// mounted, which is the one thing `--card` exists for.
+pub(super) fn rack_has_save(
+    save_dir: &std::path::Path,
+    card: Option<&legaia_save::emu::MountedCard>,
+) -> bool {
+    scan_save_dir(save_dir).iter().any(|s| s.present)
+        || card.is_some_and(|c| {
+            legaia_engine_core::save_select::card_block_snapshots(c)
+                .iter()
+                .any(|s| s.present)
+        })
 }
 
 impl PlayWindowApp {
@@ -91,14 +99,14 @@ impl PlayWindowApp {
     ///
     /// A **Save** records the loaded scene as the file's resume point
     /// ([`legaia_engine_shell::boot::BootSession::current_resume`]). A
-    /// **Load** re-enters that scene - retail resumes a save in the scene it
-    /// was written in, and the browser page does the same through its
-    /// `pending_load_scene` - and only then hydrates the world from the file,
-    /// so the field VM's first tick sees the saved story state in the saved
-    /// scene rather than in whatever `--scene` pre-booted. Returns `true`
-    /// when a scene was re-entered (the caller's screen state is stale then);
-    /// a file with no resume point, or a scene that fails to enter, loads
-    /// onto the current scene as before.
+    /// **Load** resumes through [`legaia_engine_shell::boot::BootSession::resume_save`],
+    /// the landing order the browser page's `play_resume_save` shares
+    /// (`legaia_engine_core::resume::land_save`): the save's own scene - retail
+    /// resumes a save where it was written - else the scene already running,
+    /// never a New Game. The world is hydrated after the entry, so the field
+    /// VM's first tick sees the saved story state in the saved scene. Returns
+    /// `true` when a scene was entered (the caller's screen state is stale
+    /// then).
     fn apply_save_commit(&mut self, commit: legaia_engine_core::save_screen::SaveCommit) -> bool {
         use legaia_engine_core::save_screen::SaveCommitKind;
         // Port 2 is a mounted memory-card image: its Load reads the block's
@@ -117,33 +125,21 @@ impl PlayWindowApp {
         match commit.kind {
             SaveCommitKind::Load => match read_slot_save(&self.save_dir, slot) {
                 Ok((sf, resume)) => {
-                    if !resume.scene.is_empty() {
-                        match self.session.enter_field_live_from_save(
-                            &resume.scene,
-                            &self.field_live_opts,
-                            sf.clone(),
-                        ) {
-                            Ok(mode) => {
-                                log::info!(
-                                    "save screen: loaded slot {slot}, resumed in '{}' (mode={mode:?})",
-                                    resume.scene
-                                );
-                                // The host swapped scenes under the renderer:
-                                // rebuild the render-side scene state so the
-                                // saved scene's geometry replaces the boot
-                                // scene's.
-                                self.rebuild_scene_render_state();
-                                return true;
-                            }
-                            Err(e) => log::warn!(
-                                "save screen: slot {slot} names scene '{}' but entering it failed \
-                                 ({e:#}); loading onto the current scene",
-                                resume.scene
-                            ),
-                        }
+                    let landing =
+                        self.session
+                            .resume_save(sf, &resume.scene, &self.field_live_opts);
+                    log::info!(
+                        "save screen: loaded slot {slot}, landed {} ({:?})",
+                        landing.kind(),
+                        landing.scene()
+                    );
+                    if landing.entered_scene() {
+                        // The host swapped scenes under the renderer: rebuild
+                        // the render-side scene state so the landed scene's
+                        // geometry replaces the old one.
+                        self.rebuild_scene_render_state();
+                        return true;
                     }
-                    self.session.host.world.load_full(sf);
-                    log::info!("save screen: loaded slot {slot} onto the current scene");
                 }
                 Err(e) => log::warn!("save screen: load slot {slot} failed: {e:#}"),
             },
@@ -229,26 +225,19 @@ impl PlayWindowApp {
             self.save_flow.refuse(SaveRefusal::CardReadFailed);
             return false;
         };
-        if !resume.scene.is_empty()
-            && let Ok(mode) = self.session.enter_field_live_from_save(
-                &resume.scene,
-                &self.field_live_opts,
-                sf.clone(),
-            )
-        {
-            log::info!(
-                "save screen: loaded card block {}, resumed in '{}' (mode={mode:?})",
-                cell + 1,
-                resume.scene
-            );
+        let landing = self
+            .session
+            .resume_save(sf, &resume.scene, &self.field_live_opts);
+        log::info!(
+            "save screen: loaded card block {}, landed {} ({:?})",
+            cell + 1,
+            landing.kind(),
+            landing.scene()
+        );
+        if landing.entered_scene() {
             self.rebuild_scene_render_state();
             return true;
         }
-        self.session.host.world.load_full(sf);
-        log::info!(
-            "save screen: loaded card block {} onto the current scene",
-            cell + 1
-        );
         false
     }
 
@@ -380,18 +369,7 @@ impl PlayWindowApp {
                     let next = self.session.mode_seat.boot_handoff();
                     match next {
                         GameMode::CardInit => {
-                            // Continue-enabled per save scan - over **both**
-                            // ports. Scanning the save directory alone greys
-                            // the row out for a player whose only save is on
-                            // the memory-card image they mounted, which is
-                            // the one thing `--card` exists for.
-                            let snapshots = scan_save_dir(&self.save_dir);
-                            let any_present = snapshots.iter().any(|s| s.present)
-                                || self.card.as_ref().is_some_and(|c| {
-                                    legaia_engine_core::save_select::card_block_snapshots(c)
-                                        .iter()
-                                        .any(|s| s.present)
-                                });
+                            let any_present = rack_has_save(&self.save_dir, self.card.as_ref());
                             self.boot_ui = BootUiState::Title(title_session(any_present));
                             self.start_title_bgm();
                         }
@@ -480,29 +458,19 @@ impl PlayWindowApp {
                             // scene id, verified live), which hands off to the
                             // interactive `town01`. See docs/subsystems/boot.md
                             // "New Game boot chain".
-                            self.session.begin_new_game();
-                            // The title theme hands the score to the field:
-                            // stop it so the prologue's own BGM (or its
-                            // scripted silence) owns the audio from frame 1.
-                            if let Some(bgm) = self.session.bgm.as_mut() {
-                                bgm.stop();
-                            }
-                            let cutscene = legaia_asset::new_game::OPENING_CUTSCENE_SCENE;
-                            match self
-                                .session
-                                .enter_field_live(cutscene, &self.field_live_opts)
-                            {
-                                Ok(mode) => {
-                                    // The cutscene -> Rim Elm handoff is now armed
-                                    // inside `enter_field_scene` by walking opdeene's
-                                    // MAN cutscene-timeline for the real `GFLAG_SET 26`
-                                    // write (World::arm_prologue_handoff_from_man), so
-                                    // no blind arm is needed here. The confirm-gated
-                                    // transition still fires in the field tick below
-                                    // (World::take_prologue_handoff).
+                            // One call on both hosts: the seeded slate, the
+                            // title theme stopped, and the shared opening
+                            // order (`resume::enter_new_game`: `opdeene`,
+                            // else `town01`). The page's twin is
+                            // `play_new_game`.
+                            match self.session.start_new_game(&self.field_live_opts) {
+                                Some(scene) => {
+                                    // The cutscene -> Rim Elm handoff is armed
+                                    // inside `enter_field_scene` off opdeene's
+                                    // MAN timeline
+                                    // (World::arm_prologue_handoff_from_man).
                                     log::info!(
-                                        "new game: seeded party_count={}, entered opening cutscene \
-                                         '{cutscene}' (mode={mode:?})",
+                                        "new game: seeded party_count={}, entered '{scene}'",
                                         self.session.host.world.party.party_count,
                                     );
                                     // The host swapped to the prologue scene:
@@ -510,9 +478,9 @@ impl PlayWindowApp {
                                     // geometry replaces the boot scene's.
                                     self.rebuild_scene_render_state();
                                 }
-                                Err(e) => log::warn!(
-                                    "new game: enter opening cutscene '{cutscene}' failed ({e:#}); \
-                                     staying on the pre-booted scene"
+                                None => log::warn!(
+                                    "new game: no opening scene would enter; staying on the \
+                                     pre-booted scene"
                                 ),
                             }
                             self.boot_ui = BootUiState::Inactive;
@@ -541,7 +509,10 @@ impl PlayWindowApp {
                             if !self.open_menu_row_from_title(
                                 legaia_engine_core::field_menu::FieldMenuRow::Options,
                             ) {
-                                self.boot_ui = BootUiState::Title(title_session(true));
+                                self.boot_ui = BootUiState::Title(title_session(rack_has_save(
+                                    &self.save_dir,
+                                    self.card.as_ref(),
+                                )));
                                 self.start_title_bgm();
                             }
                         }
@@ -570,7 +541,10 @@ impl PlayWindowApp {
                         SelectOutcome::Cancelled => {
                             // Back to title (the theme is already up; the
                             // director suppresses the same-id restart).
-                            self.boot_ui = BootUiState::Title(title_session(true));
+                            self.boot_ui = BootUiState::Title(title_session(rack_has_save(
+                                &self.save_dir,
+                                self.card.as_ref(),
+                            )));
                             self.start_title_bgm();
                         }
                         _ => {
@@ -802,7 +776,10 @@ impl PlayWindowApp {
                             self.session.close_field_menu();
                             self.boot_ui = BootUiState::Inactive;
                             if std::mem::take(&mut self.menu_from_title) {
-                                self.boot_ui = BootUiState::Title(title_session(true));
+                                self.boot_ui = BootUiState::Title(title_session(rack_has_save(
+                                    &self.save_dir,
+                                    self.card.as_ref(),
+                                )));
                                 self.start_title_bgm();
                             }
                         }
@@ -832,7 +809,10 @@ impl PlayWindowApp {
                     if let Some(bgm) = self.session.bgm.as_mut() {
                         bgm.stop();
                     }
-                    self.boot_ui = BootUiState::Title(title_session(true));
+                    self.boot_ui = BootUiState::Title(title_session(rack_has_save(
+                        &self.save_dir,
+                        self.card.as_ref(),
+                    )));
                     self.start_title_bgm();
                 }
                 true
