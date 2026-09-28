@@ -552,8 +552,13 @@ impl LegaiaRuntime {
         // `0x4000` sprite-arm quads (op `0x23`): the emitter's per-frame
         // mesh, composed like a part (the native redraw pushes the same list
         // after its part draws) and baked into the billboard stream, whose
-        // positions are already in the page's 4x-scaled world space.
-        for rb in world.active_effect_kind4_draws() {
+        // positions are already in the page's 4x-scaled world space. The
+        // battle ground shadows (`FUN_80048A08`'s disc, the same default-arm
+        // builder `FUN_80028158`) ride the same stream, one per drawn body
+        // under the plan the page's actor pass draws with - the native
+        // window's part pass draws the same list.
+        let shadows = world.battle_ground_shadows(|i| self.battle_draw_plan(i));
+        for rb in world.active_effect_kind4_draws().into_iter().chain(shadows) {
             let model = mat_mul(
                 &world_scale,
                 &mat_mul(
