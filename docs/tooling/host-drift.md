@@ -2528,6 +2528,27 @@ three, `fishing_actors::bite_pad_nudge`: `World::tick_fishing` counts it off
 the engine pad and the minigames page's `fishing_pond_tick` off the packed
 pressed word its script assembles.
 
+### The venue hub: one session kernel, three hosts
+
+The venue's five-row menu, its two help pages and the tackle list open from
+the idle shore on Triangle / Select, as retail's state `0x0C` does, and they
+live on the session itself (`PondSession::hub_step`,
+`engine-core::fishing_hub`), so all three hosts reach the same screens by
+stepping the one session they already share. The layout is one kernel
+(`FishingHub::lines`, disc text off the overlay through
+`FishingHubText::from_overlay`) and the draw is one composition
+(`engine-ui::ui_fishing_hub`, over `ui_text_lines`).
+
+What stays per host is what each host owns. The two play hosts run the hub
+through `World::tick_fishing_hub`: the tackle screen counts the live bag,
+row 3 opens the world's exchange sub-screen, row 4 leaves the venue as each
+host's quit key does. The minigames page has no bag and no world exchange: its
+tackle screen sees every tackle item as held (the stand-in its HUD's lure
+count already uses), row 3 hands back to the menu and scrolls the page's own
+prize panel into view, and it draws the `fishing_hub_json` lines with the
+browser's font. On every host the help footers' `0xCE` button escapes draw
+no glyph, and the cursor icon is the `>` stand-in.
+
 ## The Baka cabinet's ladder: one on the field hosts, another on the standalone page
 
 The native window and the browser play page run the retail ladder: the
