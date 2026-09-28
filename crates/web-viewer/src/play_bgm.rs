@@ -195,7 +195,10 @@ impl legaia_engine_core::scene::BgmDirector for WebBgmDirector<'_> {
         self.out.set_sequencer_paused(true);
     }
 
+    /// Sub-op `4`, the re-attach: rewind, then open the gate - the native
+    /// `AudioBgmDirector::resume`, call for call.
     fn resume(&mut self) {
+        self.out.rewind_sequencer();
         self.out.set_sequencer_paused(false);
     }
 
@@ -225,31 +228,70 @@ impl legaia_engine_core::scene::BgmDirector for WebBgmDirector<'_> {
     }
 }
 
-/// The title -> load hand-off, as one call.
+/// The title -> load hand-off.
 ///
 /// The native window runs `bgm.stop()` followed by
-/// `BootSession::restore_field_bgm()` the moment a title-screen save-select
-/// commits: the title theme has to let go of the score, and the loaded save's
-/// own op-`0x35` track (`World::audio.current_bgm`) has to come back, because
-/// the field VM will not re-emit a start for music that was already playing
-/// when the save was written.
+/// `BootSession::restore_field_bgm()` once a save-select Load commits -
+/// **after** it has entered the save's scene and loaded the save over it
+/// (`enter_field_live_from_save`). The title theme has to let go of the
+/// score, and the loaded save's own op-`0x35` track
+/// (`World::audio.current_bgm`) has to come back, because the field VM will
+/// not re-emit a start for music that was already playing when the save was
+/// written. Retail's load route releases the theme the same way
+/// (`FUN_800266E0` + `FUN_80026520` on the BGM slot at `0x801DFB74` in the
+/// title tick's `LaunchFade` arm) before master mode 2 brings the field up.
 ///
-/// The browser play page did neither, so a load from the title left the title
-/// theme running underneath the loaded scene - for as long as that scene's
-/// script went without a music event, which in a town is the whole visit.
+/// The page asks for the hand-off *before* it enters the scene (it learns the
+/// scene from the same poll), and running it there read the pre-load world's
+/// track, then had the scene entry clear the dedupe latch under it - so the
+/// scene's own start of the same track restarted it from the top. The call
+/// therefore only arms the hand-off; the page's scene entry performs it after
+/// the save lands (`run_pending_bgm_handoff`), and a tick that finds it still
+/// armed - the page declined the entry - performs it there.
 ///
-/// Returns whether a track is sounding afterwards; `false` covers both "audio
-/// is down" and "the save carried no global-pool track", and in the second
-/// case the stop still ran, which is the native behaviour too (silence, not a
-/// stale theme).
+/// Returns whether the hand-off is armed (audio is up).
 #[wasm_bindgen]
 impl LegaiaRuntime {
     pub fn play_bgm_title_handoff(&mut self) -> bool {
         #[cfg(target_arch = "wasm32")]
         {
+            self.bgm_handoff_pending = self.audio_out.is_some();
+            self.bgm_handoff_pending
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            false
+        }
+    }
+}
+
+/// The `music_01` entry a track id loads: its own for a global id, retail's
+/// fallback entry for a scene-local one - the rule
+/// `SceneHost::route_bgm_events` applies to every routed start.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+fn owned_bank_id(id: u16) -> u16 {
+    if id < legaia_engine_core::scene::GLOBAL_BGM_BASE {
+        legaia_engine_core::scene::SCENE_LOCAL_BGM_FALLBACK_ID
+    } else {
+        id
+    }
+}
+
+impl LegaiaRuntime {
+    /// Perform an armed title -> load hand-off ([`Self::play_bgm_title_handoff`]):
+    /// stop the running score, then start the loaded world's own track through
+    /// the page's director. A no-op when nothing is armed. With no track in
+    /// the save the stop still ran - silence, not a stale theme, which is the
+    /// native behaviour too.
+    pub(crate) fn run_pending_bgm_handoff(&mut self) {
+        if !std::mem::take(&mut self.bgm_handoff_pending) {
+            return;
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
             use legaia_engine_core::scene::BgmDirector;
             let Some(out) = self.audio_out.as_ref() else {
-                return false;
+                return;
             };
             let mut director = WebBgmDirector {
                 out,
@@ -258,20 +300,55 @@ impl LegaiaRuntime {
             };
             director.stop();
             let Some(host) = self.scene_host.as_ref() else {
-                return false;
+                return;
             };
             let Some(id) = host.world.audio.current_bgm else {
-                return false;
+                return;
             };
-            let Ok(Some(entry)) = host.music_bank_entry_bytes(id) else {
-                return false;
-            };
-            director.start_owned_vab(id, &entry);
-            self.bgm_last_started == Some(id)
+            if let Ok(Some(entry)) = host.music_bank_entry_bytes(owned_bank_id(id)) {
+                director.start_owned_vab(id, &entry);
+            }
         }
-        #[cfg(not(target_arch = "wasm32"))]
+    }
+
+    /// Bring the scene's own track up on an audio output that arrived late.
+    ///
+    /// The page's `WebAudioOut` exists only after a user gesture, and every
+    /// op-`0x35` start routed before it was drained and dropped with no
+    /// director to hear it - so the scene played silent until its script
+    /// happened to start music again, a whole town visit. The native window
+    /// opens its device with the session and never has the gap. Starts
+    /// `World::audio.current_bgm` (the last start the field VM routed) when
+    /// no track is sounding yet; the title screen scores itself
+    /// (`play_title_bgm`), so a session still on it is left alone.
+    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+    pub(crate) fn start_current_bgm_on_late_audio(&mut self) {
+        #[cfg(target_arch = "wasm32")]
         {
-            false
+            use legaia_engine_core::scene::BgmDirector;
+            if self.boot_title.is_some() {
+                return;
+            }
+            let Some(out) = self.audio_out.as_ref() else {
+                return;
+            };
+            if out.sequencer_progress().is_some() {
+                return;
+            }
+            let Some(host) = self.scene_host.as_ref() else {
+                return;
+            };
+            let Some(id) = host.world.audio.current_bgm else {
+                return;
+            };
+            if let Ok(Some(entry)) = host.music_bank_entry_bytes(owned_bank_id(id)) {
+                let mut director = WebBgmDirector {
+                    out,
+                    bank: &mut self.bgm_bank,
+                    last_started: &mut self.bgm_last_started,
+                };
+                director.start_owned_vab(id, &entry);
+            }
         }
     }
 }

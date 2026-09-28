@@ -279,15 +279,14 @@ impl LegaiaRuntime {
             match self.fmv.poll() {
                 crate::play_fmv::FmvPoll::Hold => return String::new(),
                 crate::play_fmv::FmvPoll::Finished { played } => {
-                    self.fmv_audio_stop();
                     if let Some(session) = self.boot_title.as_mut() {
                         session.finish_attract();
                     }
-                    if played {
-                        // Retail re-enters the front end through `Init`,
-                        // theme and all; the movie paused the sequencer.
-                        self.fmv_resume_sequencer();
-                    } else {
+                    // Retail re-enters the front end through `CARD INIT`,
+                    // which streams the title theme again from its first
+                    // beat - played or not, the attract released it.
+                    self.fmv_end_audio();
+                    if !played {
                         self.boot_title_attract_skips =
                             self.boot_title_attract_skips.saturating_add(1);
                         crate::console_log(&format!(

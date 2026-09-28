@@ -112,17 +112,19 @@ pub(crate) const TRANSIENT_REWARD_SLOT: u8 = 11;
 /// overlay's own ring write and stays a separate constant deliberately: the two
 /// pages reach the same id through different code, and retracing one page's
 /// cues must not silently move the other's. Same set in
-/// `docs/subsystems/field-menu.md`.
-pub(crate) const RETAIL_MENU_CURSOR_CUE: u8 = 0x21;
+/// `docs/subsystems/field-menu.md`. The value is the engine's one table
+/// ([`legaia_engine_core::menu_cues`]), which the native window fires from
+/// too.
+pub(crate) const RETAIL_MENU_CURSOR_CUE: u8 = legaia_engine_core::menu_cues::MENU_CURSOR_CUE;
 /// Cue id retail's pause menu fires confirming an **enabled** row: `li a1,0x20`
 /// at `0x80032d24` in `FUN_80032A44`, stored through the shared
 /// `sh a1,0x0(v0)` at `0x80032d40` alongside the `mode = 2` write. A
 /// *disabled* row takes the sibling branch and buzzes `0x23` instead
 /// (`li a1,0x23` at `0x80032d0c`) - a distinction this host has no path for.
-pub(crate) const RETAIL_MENU_CONFIRM_CUE: u8 = 0x20;
+pub(crate) const RETAIL_MENU_CONFIRM_CUE: u8 = legaia_engine_core::menu_cues::MENU_CONFIRM_CUE;
 /// Cue id retail's pause menu fires on cancel: `li a2,0x37` at `0x80032d74` in
 /// `FUN_80032A44`, stored at `0x80032d94`, with `mode = 3`.
-pub(crate) const RETAIL_MENU_CANCEL_CUE: u8 = 0x37;
+pub(crate) const RETAIL_MENU_CANCEL_CUE: u8 = legaia_engine_core::menu_cues::MENU_CANCEL_CUE;
 
 /// What this host enqueues for a cursor move: [`RETAIL_MENU_CURSOR_CUE`], the
 /// same id retail writes into the ring.
@@ -1112,13 +1114,20 @@ impl LegaiaRuntime {
         }
     }
 
-    /// Fire this frame's matured cues into the live SPU. Split out of
-    /// [`Self::tick_sfx`] so the direct-play entry point can use it too.
+    /// Fire this frame's matured cues into the live SPU: one scheduler tick,
+    /// then [`Self::fire_sfx_batch`].
     fn fire_matured_sfx(&mut self) {
         // Off wasm there is no live SPU to key into (`WebAudioOut` is the only
         // audio device this crate has), so the scheduler still advances - which
         // is what the disc-gated tests exercise - but nothing sounds.
         let batch = self.sfx.sched.tick_frame();
+        self.fire_sfx_batch(batch);
+    }
+
+    /// Key one batch of cues into the live SPU. Shared by the per-tick
+    /// scheduler drain and the direct-play entry point
+    /// ([`Self::play_sfx`]), whose batch never went through the scheduler.
+    fn fire_sfx_batch(&mut self, batch: legaia_engine_audio::SfxFireBatch) {
         if batch.is_empty() {
             return;
         }
@@ -1385,8 +1394,11 @@ impl LegaiaRuntime {
             return false;
         };
         let before = self.sfx.fired;
-        self.enqueue_sfx(id, 0);
-        self.fire_matured_sfx();
+        // Fire this one cue now, without ticking the scheduler: a tick here
+        // aged every other queued cue a frame per blip, where the native
+        // window's menu cues wait for its single per-frame tick.
+        self.sfx.queued += 1;
+        self.fire_sfx_batch(legaia_engine_audio::SfxFireBatch::immediate(id));
         self.sfx.fired > before
     }
 
@@ -1560,6 +1572,27 @@ impl LegaiaRuntime {
         };
         self.play_sfx(cue as u32)
     }
+
+    /// Fire the pause menu's blip for this frame's just-pressed `edge` (the
+    /// PSX pad word the page feeds `set_pad`). Which blip, if any, is the
+    /// engine's one rule ([`legaia_engine_core::menu_cues::menu_edge_blip`]),
+    /// the same call the native window makes: `start_closes_menu` is whether
+    /// this frame's Start closes the whole menu (the root row list) rather
+    /// than reaching a sub-screen. Returns whether a cue sounded; a request
+    /// is counted in `menu_cue_requests` either way, as
+    /// [`Self::play_sfx_event`] counts it.
+    pub fn play_menu_edge_blip(&mut self, edge: u16, start_closes_menu: bool) -> bool {
+        let Some(blip) = legaia_engine_core::menu_cues::menu_edge_blip(edge, start_closes_menu)
+        else {
+            return false;
+        };
+        let event = match blip {
+            legaia_engine_core::menu_cues::MenuBlip::Cursor => "menu_cursor",
+            legaia_engine_core::menu_cues::MenuBlip::Confirm => "menu_confirm",
+            legaia_engine_core::menu_cues::MenuBlip::Cancel => "menu_cancel",
+        };
+        self.play_sfx_event(event)
+    }
 }
 
 #[cfg(test)]
@@ -1609,6 +1642,43 @@ mod tests {
         assert_eq!(crate::sfx_view::CUE_CONFIRM, RETAIL_MENU_CONFIRM_CUE);
         assert_eq!(crate::sfx_view::CUE_CURSOR, RETAIL_MENU_CURSOR_CUE);
         assert_eq!(crate::sfx_view::CUE_CANCEL, RETAIL_MENU_CANCEL_CUE);
+    }
+
+    /// A direct-play blip fires its one cue without ticking the scheduler:
+    /// a delayed cue already queued still needs its whole count of ticks.
+    /// The page used to enqueue the blip and tick the queue, which aged every
+    /// other cue a frame per blip.
+    #[test]
+    fn a_direct_blip_does_not_age_the_queue() {
+        let mut rt = LegaiaRuntime::new();
+        rt.enqueue_sfx(0x2Eu16, 2);
+        let queued_before = rt.sfx.queued;
+        let _ = rt.play_sfx(u32::from(RETAIL_MENU_CURSOR_CUE));
+        assert_eq!(rt.sfx.queued, queued_before + 1, "the request is counted");
+        assert_eq!(rt.sfx.sched.pending_count(), 1, "only the delayed cue waits");
+        // 2 -> 1 -> 0 -> fire: three ticks, none of them spent by the blip.
+        assert!(rt.sfx.sched.tick_frame().fired.is_empty());
+        assert!(rt.sfx.sched.tick_frame().fired.is_empty());
+        assert_eq!(rt.sfx.sched.tick_frame().fired.len(), 1);
+    }
+
+    /// The page's menu-edge export asks the engine's rule: Start fires a
+    /// cancel only where it closes the menu, and every blip is a counted
+    /// request.
+    #[test]
+    fn the_menu_edge_export_follows_the_engine_rule() {
+        let mut rt = LegaiaRuntime::new();
+        let requests = |rt: &LegaiaRuntime| rt.sfx.menu_cue_requests;
+        let start = legaia_engine_core::input::PadButton::Start as u16;
+        let cross = legaia_engine_core::input::PadButton::Cross as u16;
+        let _ = rt.play_menu_edge_blip(start, true);
+        assert_eq!(requests(&rt), 1, "a closing Start blips");
+        let _ = rt.play_menu_edge_blip(start, false);
+        assert_eq!(requests(&rt), 1, "Start in a sub-screen blips nothing");
+        let _ = rt.play_menu_edge_blip(start | cross, false);
+        assert_eq!(requests(&rt), 2, "the frame's Cross still confirms");
+        let _ = rt.play_menu_edge_blip(0, true);
+        assert_eq!(requests(&rt), 2, "no edge, no request");
     }
 
     /// Every menu row fires retail's own id. The withheld form these rows used
