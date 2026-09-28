@@ -2222,11 +2222,14 @@ pub trait FieldHost {
     /// [`field_helpers::load_u24_le`] + [`field_helpers::sign_extend_24`],
     /// adds it to `_DAT_800845A4` (the casino coin bank -
     /// `docs/reference/memory-map.md`; the earlier "party-XP global" label
-    /// was wrong), clamps to `[0, 9999999]`, and calls `func_0x8003CE08(8)`
-    /// (SysFlag.Set idx 8).
+    /// was wrong), caps it at `9999999` (`0x801E32C8`), and calls
+    /// `FUN_8003CE08(8)` (system flag 8 set). There is **no lower clamp** -
+    /// the gold delta beside it floors at zero and this arm does not
+    /// (`0x801E328C..0x801E32E4`).
     ///
     /// `coin_delta` is the sign-extended 24-bit value already prepared by
-    /// the dispatcher. Hosts apply the clamp + flag set; default no-op.
+    /// the dispatcher. Hosts apply the cap + flag set; default no-op (the
+    /// world's host: `legaia_engine_core::casino_coin_bank`).
     ///
     /// [`field_helpers::load_u24_le`]: crate::field_helpers::load_u24_le
     /// [`field_helpers::sign_extend_24`]: crate::field_helpers::sign_extend_24

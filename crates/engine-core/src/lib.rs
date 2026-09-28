@@ -194,6 +194,7 @@ pub mod float_tween;
 pub mod action_effect_script;
 pub mod baka_cabinet;
 pub mod camera_ease;
+pub mod casino_coin_bank;
 pub mod effect_default_arm;
 pub mod effect_ribbon;
 pub mod effect_sprite_arm;
