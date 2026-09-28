@@ -491,6 +491,29 @@ impl PlayWindowApp {
                     Err(e) => log::warn!("draw-kind-4 mesh upload: {e:#}"),
                 }
             }
+            // Battle ground shadows (`FUN_80048A08`'s disc, built by the same
+            // default-arm builder `FUN_80028158`): one per drawn body, judged
+            // by the plan the battle actor pass draws with. The browser play
+            // page draws the same list (`play_battle_fx.rs`).
+            let world = &self.session.host.world;
+            for rb in world.battle_ground_shadows(|i| self.body_draw_plan(i)) {
+                let v = &rb.mesh;
+                match r.upload_vram_mesh(
+                    &v.positions,
+                    &v.uvs,
+                    &v.cba_tsb,
+                    &v.normals,
+                    &v.colors,
+                    &v.indices,
+                ) {
+                    Ok(m) => {
+                        let model =
+                            Mat4::from_translation(Vec3::from(rb.world_pos)) * fx_model_flip;
+                        summon_part_draws.push((m, model));
+                    }
+                    Err(e) => log::warn!("battle ground shadow upload: {e:#}"),
+                }
+            }
         }
         summon_part_draws
     }
