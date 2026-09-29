@@ -1829,6 +1829,7 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
     // a conversation branches on), so both passes repeat while a round still
     // gains flags. Each beat plays at most once per scene visit.
     let mut walked: BTreeSet<u8> = BTreeSet::new();
+    let mut touched: BTreeSet<u8> = BTreeSet::new();
     let overreach = overreaching_records(&mf, &man, 2);
     for _round in 0..BEAT_ROUNDS {
         let round_start = flags_of_world(session);
@@ -1883,12 +1884,118 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
                 Run::Released | Run::Parked(_) => {}
             }
         }
+        // Object doors whose live arm spawns a story beat: a `.MAP`-bound
+        // partition-0 door record branches on the story flags, and one arm
+        // runs op `0x44` instead of the teleport (`town01` P0[29], Vahn's
+        // front door, spawns the P2[5] night beat that sets `0x227` once
+        // `0x226` is up and `0x227` is not).
+        for (slot, contact) in object_door_beats(session, &mf, &man) {
+            if !touched.insert(slot) || ran >= MAX_BEATS {
+                continue;
+            }
+            ran += 1;
+            let (tx, tz) = tile_of(contact.0, contact.1);
+            session.host.world.set_pad(0);
+            session.host.world.props.active_walk_touch = None;
+            session
+                .host
+                .world
+                .seat_player_at_tile(tx.clamp(0, 127) as u8, tz.clamp(0, 127) as u8);
+            let f0 = flags_of_world(session);
+            // The touch dispatch runs from the locomotion step, so a seat
+            // alone posts nothing: nudge the pad until the contact posts
+            // (the stand-inside probe fires on the first stepped frame).
+            let mut entered = None;
+            for dir in [
+                PadButton::Up,
+                PadButton::Down,
+                PadButton::Left,
+                PadButton::Right,
+            ] {
+                if session.host.world.props.active_walk_touch == Some(slot) {
+                    break;
+                }
+                session.host.world.set_pad(dir.mask());
+                if let Ok(SceneTickEvent::SceneEntered { name }) = session.tick() {
+                    entered = Some(name);
+                    break;
+                }
+            }
+            session.host.world.set_pad(0);
+            let r = match entered {
+                Some(s) => Run::Entered(s),
+                None => run_while_moving(session, DEEP_EXIT_TICKS),
+            };
+            trace_beat(session, &f0, || {
+                format!("{name} door object {slot} -> {r:?}")
+            });
+            match r {
+                Run::Entered(s) => {
+                    finish(session, log, ran);
+                    return Ok(Some(s));
+                }
+                Run::Battle(b) => return Err(format!("door object {slot}: {b}")),
+                Run::Error(e) => return Err(e),
+                Run::Released | Run::Parked(_) => {}
+            }
+        }
         if flags_of_world(session) == round_start {
             break;
         }
     }
     finish(session, log, ran);
     Ok(None)
+}
+
+/// The `.MAP` object doors of the loaded field scene (walk-touch slot and
+/// contact centre) whose record, resolved against the live flags, spawns a
+/// partition-2 record that - itself or through what it spawns - cleanly
+/// SETs a still-clear flag the next anchor carries.
+fn object_door_beats(
+    session: &BootSession,
+    mf: &legaia_asset::man_section::ManFile,
+    man: &[u8],
+) -> Vec<(u8, (i16, i16))> {
+    use legaia_engine_core::man_field_scripts::{
+        FlagBank, WalkTouchEvent, resolve_walk_touch_event, walk_partition_gflag_sites,
+    };
+    let w = &session.host.world;
+    let setters2: BTreeSet<usize> = walk_partition_gflag_sites(mf, man, 2)
+        .iter()
+        .filter(|s| {
+            s.bank == FlagBank::System
+                && s.kind == FlagKind::Set
+                && s.clean
+                && !s.text_alias
+                && !s.debug_menu
+                && !w.system_flag_test(s.flag)
+                && next_anchor_has(s.flag)
+        })
+        .map(|s| s.record)
+        .collect();
+    let n0 = mf.partitions.first().map_or(0, Vec::len);
+    let n1 = mf.partitions.get(1).map_or(0, Vec::len);
+    let mut out = Vec::new();
+    for (&slot, &flat) in &w.props.walk_touch_records {
+        let Some(&(contact, _)) = w.props.walk_touch.get(&slot) else {
+            continue;
+        };
+        let live = resolve_walk_touch_event(mf, man, flat, &|f| w.system_flag_test(f));
+        let Some(WalkTouchEvent::SpawnRecord { flat_index }) = live else {
+            continue;
+        };
+        let Some(r2) = flat_index.checked_sub(n0 + n1) else {
+            continue;
+        };
+        if setters2.contains(&r2)
+            || spawned_p2(mf, man, 2, r2, n0 + n1, 3)
+                .iter()
+                .any(|r| setters2.contains(r))
+        {
+            out.push((slot, contact));
+        }
+    }
+    out
 }
 
 /// With `LEGAIA_FGL_TRACE` set, print one line per played beat: what ran,

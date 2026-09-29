@@ -111,8 +111,8 @@ followed. The engine does the scene change; the ladder only places the player.
 The **beats pass** runs once per scene, when the scene is the target and its
 reach flags are unset, at a waypoint, or when a hop's door does not fire. It
 approaches every boss stager whose park gate is clear (the touch dispatch runs
-its placement record), then plays two kinds of beat in rounds, repeating while
-a round still gains flags, since each unlocks the other:
+its placement record), then plays three kinds of beat in rounds, repeating
+while a round still gains flags, since each unlocks the other:
 
 - **Talks.** A talk NPC is spoken to when its own partition-1 record, or a
   partition-2 record it spawns (op `0x44`, followed three levels), cleanly
@@ -127,6 +127,14 @@ a round still gains flags, since each unlocks the other:
   primary-then-fallback entry on a tile - and the approach tile must carry no
   trigger of either kind, or a kind-0 teleport there arms a warp that carries
   the player off the tile under test.
+- **Object doors.** A `.MAP`-bound partition-0 door record branches on the
+  story flags, and one arm may run op `0x44` in place of its teleport. When
+  that arm, resolved against the live flags, spawns a partition-2 record that
+  (itself or through what it spawns) sets a wanted flag, the hand is seated on
+  the door and nudges the pad, so the locomotion's own touch dispatch posts
+  the contact. `town01` P0[29], Vahn's front door, spawns the P2[5] night beat
+  that sets `0x227` once `0x226` is up - the flag the spar's post-fight branch
+  in P1[10] tests.
 
 A beat is skipped when its record sets a **latch** - a flag some partition-2
 C1 gate of the scene reads - that the next anchor does not carry: retail had
