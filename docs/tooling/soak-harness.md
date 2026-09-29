@@ -70,7 +70,7 @@ on one frame and neutral on the next.
 | `tick_error` | `tick()` returns an error |
 | `hang` | one tick runs past `LEGAIA_SOAK_HANG_SECS` of wall time; the watchdog writes `HANG.txt` and exits, since a hung tick cannot be interrupted |
 | `softlock` | the progress digest is unchanged for a whole window while the pad took at least three distinct masks |
-| `script_stall` | the modal timeline (or first helper context) sits at one PC for a whole window of field frames, even while something else moves |
+| `script_stall` | the modal timeline (or first helper context) sits at one PC for a whole window of field frames, even while something else moves - except that a `0xC7` walk whose walked bodies are still stepping is the op progressing |
 | `battle_loop` | three battles open from one parked timeline PC |
 | `menu_stuck` | the pause menu stays open through the Circle back-out |
 | `battle_endless` | one battle outlasts `LEGAIA_SOAK_BATTLE_FRAMES` |
@@ -179,7 +179,8 @@ prints a state line every `N` frames - mode, scene, holder, player position,
 the bytes at every live script context's PC, scripted NPC glides with their
 targets, and in battle the action state, frame timer and every actor's HP /
 display / accumulator - plus each distinct script body a timeline or helper
-runs, once, as hex. The trace goes to the terminal only; it is never written
+runs, once, as hex (the first `LEGAIA_SOAK_TRACE_BYTES` bytes, `0x400` by
+default). The trace goes to the terminal only; it is never written
 into a report.
 
 A useful first question for any `softlock` or `script_stall` is whether the
@@ -193,6 +194,10 @@ of open findings - pad input only. `soak_fixtures` parses every one without a
 disc and, with one, replays each and reports whether it **still reproduces**.
 It never fails on a fixture that stopped reproducing: that is the signal a fix
 landed, and the fixture then moves to `fixed/`.
+
+| open replay | finding | status |
+|---|---|---|
+| `ropeway_player_parked_on_gondola` | a New Game party entering `ropeway` cold plays the scene's timeline through, then free roam resumes with the player on the gondola deck (`y = -320`) and no direction moves them | open: a cold entry past the story gate this timeline assumes is the likely cause, not yet told apart from a missing hand-off at the timeline's end |
 
 [`scripts/replays/soak/fixed/`](../../scripts/replays/soak/fixed/) holds the
 closed findings as regressions. `soak_fixed_fixtures` replays each and fails
@@ -217,6 +222,7 @@ regression.
 | `town0d_tetsu_picker_loop` | a conversation looping on its first picker option read as parked | harness: the digest counts timeline slices and the panel position |
 | `vell_attack_short_step_park` | an attack approach parked a short step from its target | `+0x3C` is the per-frame body pair |
 | `taiku2_hp_bar_absorbing_park` | the `0x51` bar-drain gate parked on an absorbing HP-bar pair | the restaged action clip replays |
+| `jouinb_long_scripted_walk` | a scripted player walk across most of the map outlasted the stall window | harness: a walk op still stepping is progress |
 | `balden_fishing_exchange_pad_dead` | the prize list opened from the pond's hub menu answered no pad input | the engine steps the list off the pad edge (state `0x78`'s keys) |
 
 The field-side fixes are described with their retail evidence in

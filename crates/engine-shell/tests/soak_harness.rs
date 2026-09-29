@@ -1187,7 +1187,7 @@ fn run_one(
     let mut last_change = 0u64;
     // Script stall: the modal timeline (or first helper) parked at one PC for
     // a whole window, even while something else moves.
-    let mut park: Option<(String, u32, u64)> = None;
+    let mut park: Option<(String, u64, u64)> = None;
     let mut menu_open_since: Option<u64> = None;
     let mut battle_since: Option<u64> = None;
     let mut prev_mode = session.host.world.mode;
@@ -1429,17 +1429,25 @@ fn run_one(
                 .map(|tl| ("timeline", tl))
                 .or_else(|| w.field_vm.helper_contexts.first().map(|h| ("helper", h)))
                 .map(|(k, c)| {
+                    let op = c.bytecode.get(c.pc).copied().unwrap_or(0xFF);
                     // The slice count rides along: a conversation a picker
                     // loops back to its own segment re-enters the same PC
-                    // every pass, and each pass is a slice.
-                    (
-                        format!(
-                            "{k}@{:#06x}:op{:02x}",
-                            c.pc,
-                            c.bytecode.get(c.pc).copied().unwrap_or(0xFF)
-                        ),
-                        c.frames,
-                    )
+                    // every pass, and each pass is a slice. A `0xC7` walk
+                    // parks its PC for as long as the walk runs, so for it
+                    // the walked bodies' positions ride along too: a long
+                    // walk still stepping is the op progressing, not a stall.
+                    let mut h = HashWriter(std::collections::hash_map::DefaultHasher::new());
+                    let _ = write!(h, "{}|", c.frames);
+                    if op == 0xC7 {
+                        if let Some(a) = w.actors.get(player_slot(&session)) {
+                            let m = &a.move_state;
+                            let _ = write!(h, "p{},{}|", m.world_x, m.world_z);
+                        }
+                        for slot in w.npcs.motions.keys() {
+                            let _ = write!(h, "{slot}{:?}|", w.npcs.positions.get(slot));
+                        }
+                    }
+                    (format!("{k}@{:#06x}:op{op:02x}", c.pc), h.0.finish())
                 });
             match (site, park.as_ref()) {
                 (Some((site, slices)), Some((cur, cur_slices, since)))
@@ -1504,8 +1512,11 @@ fn run_one(
                 let mut h = std::collections::hash_map::DefaultHasher::new();
                 h.write(bc);
                 if traced_scripts.insert(h.finish()) {
-                    let hex: Vec<String> =
-                        bc.iter().take(0x400).map(|b| format!("{b:02x}")).collect();
+                    let hex: Vec<String> = bc
+                        .iter()
+                        .take(env_u64("LEGAIA_SOAK_TRACE_BYTES").unwrap_or(0x400) as usize)
+                        .map(|b| format!("{b:02x}"))
+                        .collect();
                     eprintln!(
                         "[trace {frame:>6}] script body ({} bytes): {}",
                         bc.len(),
