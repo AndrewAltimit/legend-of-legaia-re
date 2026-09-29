@@ -869,8 +869,13 @@ fn run_one(opts: &RunOptions<'_>, entry: &CorpusEntry, scus: &[u8]) -> StateRepo
             return report;
         }
     };
-    let image = match (opts.engine_exe, &retail.frame, retail.player) {
-        (Some(_), Some(rf), _)
+    let image = match (
+        opts.engine_exe,
+        &retail.frame,
+        retail.player,
+        retail.save.as_ref(),
+    ) {
+        (Some(_), Some(rf), _, _)
             if crate::retail_compare_image::luma(rf) < crate::retail_compare_image::DARK_LUMA =>
         {
             report.detail.insert(
@@ -879,12 +884,7 @@ fn run_one(opts: &RunOptions<'_>, entry: &CorpusEntry, scus: &[u8]) -> StateRepo
             );
             None
         }
-        (Some(exe), Some(rf), Some([x, _, z])) => {
-            let flags = retail
-                .save
-                .as_ref()
-                .map(system_flag_ids)
-                .unwrap_or_default();
+        (Some(exe), Some(rf), Some([x, _, z]), Some(save)) => {
             match crate::retail_compare_image::engine_frame(
                 exe,
                 opts.extracted,
@@ -893,7 +893,7 @@ fn run_one(opts: &RunOptions<'_>, entry: &CorpusEntry, scus: &[u8]) -> StateRepo
                 z,
                 opts.out_dir,
                 &entry.label,
-                &flags,
+                save,
             ) {
                 Ok(ef) => {
                     let score = crate::retail_compare_image::score(rf, &ef);
@@ -1008,7 +1008,7 @@ fn battle_image(
         crate::retail_compare_battle::BATTLE_CAPTURE_TICK,
         opts.out_dir,
         &entry.label,
-        &flags,
+        crate::retail_compare_image::FrameEntry::Door(&flags),
     ) {
         Ok(ef) => {
             if let Some(dir) = opts.out_dir {

@@ -1098,6 +1098,17 @@ pub(crate) enum Cmd {
         /// `0x321` and crosses the Ra-Seru chip out of the command ring.
         #[arg(long, value_name = "N")]
         set_flag: Vec<String>,
+        /// Start from an LGSF save file (the `save` / save-screen shape,
+        /// resume trailer included) instead of a door entry into `--scene`:
+        /// the save lands the way a card Load does
+        /// (`BootSession::resume_save` - the save's own scene entered with the
+        /// save's position as the entry operand and no free-roam picker
+        /// staging, then the world hydrated from the save). `--scene` is the
+        /// fallback when the file carries no resume scene. The retail comparison corpus's
+        /// image channel enters every field state this way, so the window's
+        /// frame is taken from the same seeding the headless channels use.
+        #[arg(long, value_name = "PATH")]
+        resume_save: Option<PathBuf>,
         /// Disable the camera-occlusion fade ENHANCEMENT (see-through
         /// walls). By default, field scene geometry between the camera and
         /// the player dissolves to a screen-door dither in a circle around

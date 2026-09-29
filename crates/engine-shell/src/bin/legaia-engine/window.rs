@@ -83,11 +83,19 @@ pub(crate) struct DebugSeeds {
     /// `--set-flag <N>`, repeatable: system/story-flag indices raised in the
     /// shared bank `DAT_80085758`.
     pub story_flags: Vec<u16>,
+    /// `--resume-save <PATH>`: an LGSF file to land the way a card Load
+    /// does ([`legaia_engine_shell::boot::BootSession::resume_save`]) in
+    /// place of the `--scene` door entry.
+    pub resume_save: Option<std::path::PathBuf>,
 }
 
 impl DebugSeeds {
     /// Parse the two repeatable operands. Each accepts decimal or `0x` hex.
-    pub(crate) fn from_args(learn_spell: &[String], set_flag: &[String]) -> Result<Self> {
+    pub(crate) fn from_args(
+        learn_spell: &[String],
+        set_flag: &[String],
+        resume_save: Option<std::path::PathBuf>,
+    ) -> Result<Self> {
         fn num(s: &str) -> Option<u32> {
             let s = s.trim();
             s.strip_prefix("0x")
@@ -97,7 +105,10 @@ impl DebugSeeds {
                     |h| u32::from_str_radix(h, 16).ok(),
                 )
         }
-        let mut seeds = Self::default();
+        let mut seeds = Self {
+            resume_save,
+            ..Self::default()
+        };
         for s in learn_spell {
             let v = num(s)
                 .filter(|v| *v <= u32::from(u8::MAX))

@@ -107,10 +107,24 @@ session ticks a fixed settle window with no input. BGM starts are recorded by
 a director on the scene host's event route.
 
 **The image channel** comes from `play-window`, the real renderer, run as a
-child process from a scratch directory under the report: `--scene`,
-`LEGAIA_SEAT=X,Z`, one `--set-flag` per raised bit of the retail system-flag
-bank (`0x80085758`, raised before the scene entry, so the entry scripts
-branch on retail's flags), and `--screenshot` at a fixed world tick.
+child process from a scratch directory under the report, and seeded the same
+way: the lifted save is written as a scratch LGSF file whose resume point is
+the state's scene, and `play-window --resume-save` lands it through the same
+`BootSession::resume_save` the headless side calls. `LEGAIA_SEAT=X,Z` then
+seats the player on retail's position, and `--screenshot` captures at a
+fixed world tick. The child also runs `--no-live-npcs`, because the headless
+session leaves the free-roam liveliness approximation
+(`FieldNpcState::animate`) off: with it on, every placement script
+free-steps from the first tick, and a talk body among them can walk the
+player off the seat (`vell`) or pull it to another placement and open its
+dialogue (`koin1`).
+
+A `--scene` door entry is **not** an equivalent seed. It stages the scene
+for the free-roam picker (story-twin event flags, the entry BGM pause
+dropped) and runs its arrival from the picker's seat, so an entry script
+moves the player or points a dialogue shot before the seat applies - a
+frame whose headless camera channel is exact would score the arrival
+instead of the scene.
 
 What the seeding does **not** carry - each is an instrument limit, not an
 engine verdict:
@@ -120,8 +134,6 @@ engine verdict:
   fresh, so it runs the entry prologue instead of resuming the retail
   script: a scripted camera, an open dialogue box, a banner or an event
   track is not reproduced.
-- **Party and bag in the frame.** `play-window` shows its default party, so
-  the idle status panel draws the default roster rather than retail's.
 - **Actor state.** NPC positions, animation phases, open doors and live
   effects are whatever the engine's own entry produces.
 - **Timing.** Retail's frame is one instant; the engine's is a fixed tick

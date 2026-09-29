@@ -332,6 +332,7 @@ fn main() -> Result<()> {
             no_occlusion_fade,
             learn_spell,
             set_flag,
+            resume_save,
         } => cmd_play_window(
             &scene,
             &extracted_root,
@@ -370,7 +371,7 @@ fn main() -> Result<()> {
             !no_dyn_shadows,
             !no_entry_pulse,
             !no_occlusion_fade,
-            window::DebugSeeds::from_args(&learn_spell, &set_flag)?,
+            window::DebugSeeds::from_args(&learn_spell, &set_flag, resume_save)?,
         ),
         Cmd::Save {
             extracted_root,

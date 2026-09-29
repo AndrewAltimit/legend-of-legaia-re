@@ -208,13 +208,32 @@ fn read_png_rgba(path: &Path) -> Result<(Vec<u8>, usize, usize)> {
     Ok((rgba, w, h))
 }
 
-/// Render the engine's frame for a seated scene through `play-window`.
+/// How the `play-window` child enters the scene.
+#[derive(Clone, Copy)]
+pub enum FrameEntry<'a> {
+    /// A card-load resume of the retail save (`--resume-save`), the order
+    /// the headless channels seed with ([`crate::boot::BootSession::resume_save`]):
+    /// the save's scene entered at the save's position with no free-roam
+    /// picker staging, then the world hydrated from the save. The child
+    /// also runs `--no-live-npcs`: the headless session leaves the free-roam
+    /// liveliness approximation (`FieldNpcState::animate`) off, and with it
+    /// on every placement script free-steps from tick 0 - a talk body among
+    /// them can walk the player off the seat or open a dialogue shot.
+    Resume(&'a legaia_save::SaveFile),
+    /// The `--scene` door entry, with these system-flag bits raised before
+    /// it (`--set-flag`) so the entry scripts branch on retail's flags. The
+    /// battle half enters this way: `--battle` forces the fight off it.
+    Door(&'a [u16]),
+}
+
+/// Render the engine's frame for a seated field state through `play-window`.
 ///
 /// The child runs from a scratch directory under `out_dir` (the window
-/// resolves its options file and save directory against its cwd), seated
-/// through `LEGAIA_SEAT`, handed the retail system-flag bank bit by bit
-/// through `--set-flag` (raised before the scene entry, so the entry scripts
-/// branch on retail's flags), and captures at [`CAPTURE_TICK`].
+/// resolves its options file and save directory against its cwd), resumes
+/// the retail save through `--resume-save` (a scratch LGSF file carrying
+/// `scene` as its resume point), is seated on retail's `(x, z)` through
+/// `LEGAIA_SEAT` - the same seat the headless channels take after their
+/// resume - and captures at [`CAPTURE_TICK`].
 #[allow(clippy::too_many_arguments)]
 pub fn engine_frame(
     exe: &Path,
@@ -224,7 +243,7 @@ pub fn engine_frame(
     z: i16,
     out_dir: Option<&Path>,
     label: &str,
-    system_flags: &[u16],
+    save: &legaia_save::SaveFile,
 ) -> Result<Frame> {
     engine_frame_with(
         exe,
@@ -235,13 +254,13 @@ pub fn engine_frame(
         CAPTURE_TICK,
         out_dir,
         label,
-        system_flags,
+        FrameEntry::Resume(save),
     )
 }
 
 /// [`engine_frame`] with the seat optional, extra `play-window` arguments
 /// (the battle half passes `--battle <row>` / `--party`), and the capture
-/// tick chosen by the caller.
+/// tick and the entry chosen by the caller.
 #[allow(clippy::too_many_arguments)]
 pub fn engine_frame_with(
     exe: &Path,
@@ -252,7 +271,7 @@ pub fn engine_frame_with(
     tick: u64,
     out_dir: Option<&Path>,
     label: &str,
-    system_flags: &[u16],
+    entry: FrameEntry<'_>,
 ) -> Result<Frame> {
     let base: PathBuf = out_dir
         .map(Path::to_path_buf)
@@ -274,21 +293,33 @@ pub fn engine_frame_with(
     if let Some((x, z)) = seat {
         cmd.env("LEGAIA_SEAT", format!("{x},{z}"));
     }
-    let out = cmd
-        .args(["play-window", "--no-audio", "--scene", scene])
+    cmd.args(["play-window", "--no-audio", "--scene", scene])
         .args(extra)
         .arg("--extracted-root")
         .arg(&extracted)
         .arg("--screenshot")
         .arg(&shot)
-        .args(["--screenshot-tick", &tick.to_string()])
-        .args(
-            system_flags
-                .iter()
-                .flat_map(|f| ["--set-flag".to_string(), f.to_string()]),
-        )
-        .output()
-        .context("spawn play-window")?;
+        .args(["--screenshot-tick", &tick.to_string()]);
+    match entry {
+        FrameEntry::Resume(save) => {
+            let file = work.join(format!("{label}.lgsf"));
+            let resume = legaia_save::SaveResume {
+                scene: scene.to_string(),
+                location: String::new(),
+            };
+            std::fs::write(&file, save.write_with_resume(&resume))
+                .with_context(|| format!("write {}", file.display()))?;
+            cmd.arg("--resume-save").arg(&file).arg("--no-live-npcs");
+        }
+        FrameEntry::Door(flags) => {
+            cmd.args(
+                flags
+                    .iter()
+                    .flat_map(|f| ["--set-flag".to_string(), f.to_string()]),
+            );
+        }
+    }
+    let out = cmd.output().context("spawn play-window")?;
     if !shot.exists() {
         let tail: String = String::from_utf8_lossy(&out.stderr)
             .lines()
