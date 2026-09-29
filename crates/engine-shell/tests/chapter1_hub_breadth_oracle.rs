@@ -109,9 +109,28 @@ fn open_host() -> Option<SceneHost> {
 /// Rim Elm's south-gate exit tile (shared with the spine + hub oracles).
 const TOWN01_SOUTH_GATE: (u8, u8) = (25, 46);
 
-fn drive_town01_to_map01() -> Option<SceneHost> {
+/// `map01`'s Drake Castle entrance (partition-2 record 37) tests story flag
+/// `0x3BA` and, while it is clear, jumps past its `0x3F` into the records'
+/// idle spin: the castle is shut on the first overworld visit, and retail's
+/// route reaches it much later. A leg that drives to `jou` raises the flag
+/// before the overworld entry seeds its portals from the live bank.
+const JOU_ENTRANCE_FLAG: u16 = 0x3BA;
+
+/// Story flags a hub leg needs raised before `map01` installs its entrance.
+fn gate_flags_for(dest: &str) -> &'static [u16] {
+    if dest == "jou" {
+        &[JOU_ENTRANCE_FLAG]
+    } else {
+        &[]
+    }
+}
+
+fn drive_town01_to_map01(gate_flags: &[u16]) -> Option<SceneHost> {
     let mut host = open_host()?;
     host.enter_field_scene("town01", 0).expect("enter town01");
+    for &flag in gate_flags {
+        host.world.system_flag_set(flag);
+    }
     assert_eq!(host.world.mode, SceneMode::Field, "town01 is a field scene");
     for _ in 0..3 {
         if let SceneTickEvent::SceneEntered { name } = host.tick().expect("tick") {
@@ -149,7 +168,7 @@ fn find_portal_tile(host: &SceneHost, dest: &str) -> Option<(u8, u8)> {
 
 /// Drive `town01 -> map01 -> <dest>` through the overworld portal.
 fn drive_to_leg(dest: &str) -> Option<SceneHost> {
-    let mut host = drive_town01_to_map01()?;
+    let mut host = drive_town01_to_map01(gate_flags_for(dest))?;
     let tile = find_portal_tile(&host, dest)
         .unwrap_or_else(|| panic!("map01 installs a {dest} overworld portal"));
     host.world.seat_player_at_tile(tile.0, tile.1);

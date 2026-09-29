@@ -486,7 +486,8 @@ enum Settle {
     },
 }
 
-/// Tick with a released pad until the scene hands control back.
+/// Tick until the scene hands control back, with the pad released except
+/// for Confirm pulses that page any dialogue the entry script opens.
 ///
 /// "Control back" is three things, not one: no cutscene timeline, no dialogue
 /// owning input, **and** no spawned record still running. The third is not
@@ -512,7 +513,16 @@ fn settle(host: &mut SceneHost) -> Settle {
         {
             return Settle::Released;
         }
-        host.world.set_pad(0);
+        // A dialogue page waits for Confirm, as it does for a player: pulse
+        // Cross (press on one tick, release on the next, so every page sees
+        // a fresh edge) while a dialogue owns input, and leave the pad
+        // released otherwise so nothing else the script runs is steered.
+        let pad = if host.world.dialogue_owns_input() && i % 2 == 0 {
+            PadButton::Cross.mask()
+        } else {
+            0
+        };
+        host.world.set_pad(pad);
         match host.tick() {
             Ok(SceneTickEvent::SceneEntered { name }) => return Settle::Departed(name),
             Ok(_) => {}

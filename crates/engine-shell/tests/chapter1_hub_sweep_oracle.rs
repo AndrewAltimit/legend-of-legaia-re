@@ -82,11 +82,30 @@ fn open_host() -> Option<SceneHost> {
 /// oracles).
 const TOWN01_SOUTH_GATE: (u8, u8) = (25, 46);
 
+/// `map01`'s Drake Castle entrance (partition-2 record 37) tests story flag
+/// `0x3BA` and, while it is clear, jumps past its `0x3F` into the records'
+/// idle spin: the castle is shut on the first overworld visit, and retail's
+/// route reaches it much later. A leg that drives to `jou` raises the flag
+/// before the overworld entry seeds its portals from the live bank.
+const JOU_ENTRANCE_FLAG: u16 = 0x3BA;
+
+/// Story flags a hub leg needs raised before `map01` installs its entrance.
+fn gate_flags_for(dest: &str) -> &'static [u16] {
+    if dest == "jou" {
+        &[JOU_ENTRANCE_FLAG]
+    } else {
+        &[]
+    }
+}
+
 /// Drive `town01` free-roam onto the Drake overworld (`map01`, WorldMap) via the
 /// south-gate walk-on trigger. `None` when the disc gate skips.
-fn drive_town01_to_map01() -> Option<SceneHost> {
+fn drive_town01_to_map01(gate_flags: &[u16]) -> Option<SceneHost> {
     let mut host = open_host()?;
     host.enter_field_scene("town01", 0).expect("enter town01");
+    for &flag in gate_flags {
+        host.world.system_flag_set(flag);
+    }
     assert_eq!(host.world.mode, SceneMode::Field, "town01 is a field scene");
     for _ in 0..3 {
         if let SceneTickEvent::SceneEntered { name } = host.tick().expect("tick") {
@@ -204,22 +223,39 @@ fn part_a_dolk2_onward_destinations_are_map01_and_dream() {
 
 #[test]
 fn part_b_map01_installs_a_portal_for_every_hub_leg() {
-    let Some(host) = drive_town01_to_map01() else {
+    let Some(host) = drive_town01_to_map01(&[]) else {
         return;
     };
     for (dest, _) in HUB_LEGS {
-        assert!(
-            find_portal_tile(&host, dest).is_some(),
-            "map01 installs an overworld portal for {dest}"
-        );
+        if gate_flags_for(dest).is_empty() {
+            assert!(
+                find_portal_tile(&host, dest).is_some(),
+                "map01 installs an overworld portal for {dest}"
+            );
+        } else {
+            assert!(
+                find_portal_tile(&host, dest).is_none(),
+                "map01 installs no {dest} portal while its entrance flag is clear"
+            );
+        }
     }
-    eprintln!("[ok] Part B: map01 installs portals for cave01/vell/vozz/suimon/jou");
+    // The gated leg opens once its story flag is up.
+    let Some(gated) = drive_town01_to_map01(gate_flags_for("jou")) else {
+        return;
+    };
+    assert!(
+        find_portal_tile(&gated, "jou").is_some(),
+        "map01 installs the jou portal once flag {JOU_ENTRANCE_FLAG:#x} is set"
+    );
+    eprintln!(
+        "[ok] Part B: map01 installs portals for cave01/vell/vozz/suimon, and for jou once 0x3BA is set"
+    );
 }
 
 /// Drive `map01 -> <dest>` through the overworld portal; assert the leg loads in
 /// Field mode with its MAN present + the pinned partition shape.
 fn drive_and_assert_leg(dest: &str, want_counts: [i16; 3]) {
-    let Some(mut host) = drive_town01_to_map01() else {
+    let Some(mut host) = drive_town01_to_map01(gate_flags_for(dest)) else {
         return;
     };
     let tile = find_portal_tile(&host, dest)
