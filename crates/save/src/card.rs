@@ -902,6 +902,66 @@ pub fn write_retail_field_position(sc_block: &mut [u8], pos: (i16, i16)) -> Resu
     Ok(())
 }
 
+/// Byte offset of the **configured audio level** (i32 LE), live RAM
+/// `0x8008457C`: the reference the live level `_DAT_8007B910` is reset to.
+///
+/// The cold reset `FUN_8001FFA4` seeds it `0xD7`; the MAN loader
+/// `FUN_8003AEB0` copies it into the live level on every non-skip scene load
+/// (`_DAT_8007B910 = _DAT_8008457C`), so a card load re-applies the saved
+/// value at the first scene it enters; and the battle duck targets a
+/// percentage of it. Linear map: `0x200 + (0x8008457C - 0x80084340) = 0x43C`.
+pub const RETAIL_AUDIO_LEVEL_OFFSET: usize = 0x43C;
+/// Byte offset of the **voice / SFX volume** word (i32 LE), live RAM
+/// `0x80084580`, cold-reset `200`. Every voice-attr key-on halves it into its
+/// `vol_l` / `vol_r` pair (`(word << 15) >> 16`) - the SCUS cue drainer
+/// `FUN_80016B6C` and the minigame overlays alike.
+pub const RETAIL_VOICE_VOLUME_OFFSET: usize = 0x440;
+
+/// The two audio-level words a retail save block carries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RetailAudioLevels {
+    /// `_DAT_8008457C` - the configured (reference) audio level.
+    pub configured_level: i32,
+    /// `_DAT_80084580` - the voice / SFX volume word.
+    pub voice_volume: i32,
+}
+
+impl RetailAudioLevels {
+    /// The values the cold reset `FUN_8001FFA4` stores.
+    pub const COLD_RESET: Self = Self {
+        configured_level: 0xD7,
+        voice_volume: 200,
+    };
+}
+
+/// Read both audio-level words. `None` when the block is too small, or when
+/// both words are zero - a free block, or a live-state window the cold reset
+/// never ran over; no retail save loads that pair, so reading it as a real
+/// setting would import silence.
+pub fn read_retail_audio_levels(sc_block: &[u8]) -> Option<RetailAudioLevels> {
+    let word = |o: usize| -> Option<i32> {
+        Some(i32::from_le_bytes(sc_block.get(o..o + 4)?.try_into().ok()?))
+    };
+    let levels = RetailAudioLevels {
+        configured_level: word(RETAIL_AUDIO_LEVEL_OFFSET)?,
+        voice_volume: word(RETAIL_VOICE_VOLUME_OFFSET)?,
+    };
+    (levels.configured_level != 0 || levels.voice_volume != 0).then_some(levels)
+}
+
+/// Write both audio-level words, restamping the block checksum.
+pub fn write_retail_audio_levels(sc_block: &mut [u8], levels: RetailAudioLevels) -> Result<()> {
+    let end = RETAIL_VOICE_VOLUME_OFFSET + 4;
+    if sc_block.len() < end {
+        bail!("sc_block too small for the audio-level words (need >= {end})");
+    }
+    sc_block[RETAIL_AUDIO_LEVEL_OFFSET..RETAIL_AUDIO_LEVEL_OFFSET + 4]
+        .copy_from_slice(&levels.configured_level.to_le_bytes());
+    sc_block[RETAIL_VOICE_VOLUME_OFFSET..end].copy_from_slice(&levels.voice_volume.to_le_bytes());
+    restamp_sc_block_checksum(sc_block);
+    Ok(())
+}
+
 /// The present-party member list (roster ids, count taken from
 /// [`RETAIL_PARTY_COUNT_OFFSET`]). `None` when the block is too small or the
 /// count is `0` or past [`RETAIL_PARTY_MEMBERS_MAX`] - a free block, not a

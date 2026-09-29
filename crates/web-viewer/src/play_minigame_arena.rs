@@ -160,7 +160,9 @@ impl LegaiaRuntime {
             return;
         };
         let pad = host.world.input.retail_pad().pressed as u16;
-        let volume_word = legaia_engine_core::new_game::GAME_STATE_COLD_RESET.voice_volume as u32;
+        // `_DAT_80084580` off the world - a loaded save's word or the cold
+        // reset - as the native window reads it.
+        let volume_word = host.world.audio.levels.voice_volume as u32;
         let frame = self
             .minigame_ui
             .muscle

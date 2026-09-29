@@ -312,6 +312,9 @@ impl World {
                 per_char,
                 saved_chains: self.party.saved_chains.clone(),
                 field_position,
+                // Always the live pair: a block composed from scratch must not
+                // read back as the all-zero pair (silence) on retail's load.
+                audio_levels: Some(self.audio.levels),
             },
         }
     }
@@ -365,6 +368,13 @@ impl World {
             self.flags.system_flags = window;
         }
         self.party.money = sf.ext.money;
+        // The configured audio level and the voice volume ride in the same
+        // live-state window as the gold; retail's card load restores them with
+        // it and the next MAN load re-applies the level. A save naming no
+        // pair keeps the current one.
+        if let Some(levels) = sf.ext_v2.audio_levels {
+            self.audio.levels = levels;
+        }
         // The minigame purses and records - retail keeps all of them in the
         // live-state window a save block mirrors (`legaia_save::minigame_save`).
         let m = sf.ext.minigames;

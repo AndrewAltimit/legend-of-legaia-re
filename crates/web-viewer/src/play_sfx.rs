@@ -366,6 +366,11 @@ pub struct PlaySfx {
     /// the arm's clamp. The browser twin of the native director's pair.
     pub duck_level: u8,
     pub duck_target: u8,
+    /// The configured level the duck is a percentage of and rests on, and
+    /// the percentage last asked for - the native director's pair
+    /// ([`PlaySfx::set_duck_reference`]).
+    pub duck_ref: u8,
+    pub duck_pct: u8,
     /// The banks borrowing the BGM region's free tail - the transient reward
     /// bank (slot 11) and the side-band bank (op-`0x36` sub-`1`'s request,
     /// VAB slot `3`) - their residency and the side-band retry memo. The
@@ -418,6 +423,8 @@ impl Default for PlaySfx {
             bank_bytes_loaded: false,
             duck_level: DUCK_LEVEL_REF,
             duck_target: DUCK_LEVEL_REF,
+            duck_ref: DUCK_LEVEL_REF,
+            duck_pct: 100,
             tail: BgmTail::default(),
             voice_cues_dropped: 0,
             xa: Default::default(),
@@ -477,7 +484,19 @@ impl PlaySfx {
     /// magic capture, `100` when the Done band ramps it back. The ramp itself
     /// runs in [`Self::tick_duck`].
     pub fn set_duck_pct(&mut self, pct: u8) {
-        self.duck_target = legaia_engine_audio::duck::duck_target_for_pct(pct);
+        self.duck_pct = pct;
+        self.duck_target = legaia_engine_audio::duck::duck_target_for_pct_of(self.duck_ref, pct);
+    }
+
+    /// Install the configured audio level (a loaded save's `_DAT_8008457C`)
+    /// the duck takes its percentage of and rests on - the twin of the native
+    /// director's `set_duck_reference`. A change re-targets the ramp.
+    pub fn set_duck_reference(&mut self, configured_level: i32) {
+        let reference = legaia_engine_audio::duck::reference_level(configured_level);
+        if reference != self.duck_ref {
+            self.duck_ref = reference;
+            self.set_duck_pct(self.duck_pct);
+        }
     }
 
     /// One frame of the duck ramp: step the live level one unit toward the
@@ -944,7 +963,12 @@ impl LegaiaRuntime {
             }
         }
         // The battle audio duck ramps one retail unit per vsync, whatever
-        // mode the scene is in (the ramp back to full outlives the battle).
+        // mode the scene is in (the ramp back to full outlives the battle),
+        // resting on the world's configured level - a loaded save's own.
+        if let Some(h) = self.scene_host.as_ref() {
+            self.sfx
+                .set_duck_reference(h.world.audio.levels.configured_level);
+        }
         self.tick_duck();
         self.route_field_sfx();
         self.fire_matured_sfx();

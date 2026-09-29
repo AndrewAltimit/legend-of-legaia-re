@@ -25,8 +25,25 @@ pub const DUCK_LEVEL_REF: u8 = 0xD7;
 /// The duck target for `pct` percent of the reference level, retail's floor
 /// (`0xD7 * 75 / 100 = 161`). Percentages above 100 clamp.
 pub fn duck_target_for_pct(pct: u8) -> u8 {
+    duck_target_for_pct_of(DUCK_LEVEL_REF, pct)
+}
+
+/// The duck target for `pct` percent of `reference` - the player's
+/// **configured** level `_DAT_8008457C`, which a save carries and the cold
+/// reset seeds [`DUCK_LEVEL_REF`]. Retail's arms take their percentage of
+/// that word, not of the constant, and the MAN loader rests the live level
+/// on it (`_DAT_8007B910 = _DAT_8008457C` in `FUN_8003AEB0`), so a host
+/// holding a loaded save's level ducks from - and returns to - that level.
+pub fn duck_target_for_pct_of(reference: u8, pct: u8) -> u8 {
     let pct = u32::from(pct.min(100));
-    (u32::from(DUCK_LEVEL_REF) * pct / 100) as u8
+    (u32::from(reference) * pct / 100) as u8
+}
+
+/// A configured-level word (`i32` in the save window) as the `u8` level the
+/// duck ramps in: retail's cell is a byte-range value (`0xD7` at boot), so a
+/// word outside `0..=255` clamps.
+pub fn reference_level(word: i32) -> u8 {
+    word.clamp(0, 255) as u8
 }
 
 /// One vsync of the ramp: step `level` one unit toward `target`. Returns
@@ -84,5 +101,22 @@ mod tests {
         assert_eq!(duck_target_for_pct(75), 161);
         assert_eq!(duck_target_for_pct(250), DUCK_LEVEL_REF);
         assert_eq!(ducked_master_vol(100, 161), 74);
+    }
+
+    #[test]
+    fn a_configured_reference_scales_the_target_and_the_resting_volume() {
+        // The cold-reset reference reproduces the constant path exactly.
+        assert_eq!(
+            duck_target_for_pct_of(DUCK_LEVEL_REF, 75),
+            duck_target_for_pct(75)
+        );
+        // A save carrying a lower configured level rests the BGM below the
+        // unity master and ducks from there.
+        let r = reference_level(0x6B);
+        assert_eq!(duck_target_for_pct_of(r, 100), 0x6B);
+        assert_eq!(duck_target_for_pct_of(r, 75), 0x50);
+        assert_eq!(ducked_master_vol(100, r), 49);
+        assert_eq!(reference_level(-4), 0);
+        assert_eq!(reference_level(0x1FF), 255);
     }
 }

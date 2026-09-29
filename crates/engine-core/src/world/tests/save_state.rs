@@ -268,3 +268,64 @@ fn step_name_entry_frame_owns_the_frame_only_while_the_prompt_is_open() {
     assert_eq!(world.frame, f0 + 1, "the caret clock advances");
     assert!(world.name_entry_active());
 }
+
+/// The audio-level pair a retail block carries (`0x8008457C` configured
+/// level, `0x80084580` voice volume) reaches the world on import, drives the
+/// consumers that key off it, and goes back out on a save - into an LGSF
+/// file and into a freshly composed retail block alike.
+#[test]
+fn a_retail_saves_audio_levels_are_honoured_on_import() {
+    use legaia_save::card::{self, RetailAudioLevels};
+    let cold = RetailAudioLevels::COLD_RESET;
+    assert_eq!(
+        (cold.configured_level, cold.voice_volume),
+        (
+            crate::new_game::GAME_STATE_COLD_RESET.brightness_ref,
+            crate::new_game::GAME_STATE_COLD_RESET.voice_volume
+        ),
+        "the save crate's cold-reset pair is FUN_8001FFA4's"
+    );
+    let mut world = World::new();
+    assert_eq!(world.audio.levels, cold, "a cold boot holds the reset pair");
+
+    // A block written by retail with a player-lowered pair.
+    let mut block = vec![0u8; card::BLOCK_SIZE];
+    World::new()
+        .save_full()
+        .write_into_retail_sc_block(&mut block)
+        .unwrap();
+    let set = RetailAudioLevels {
+        configured_level: 0x6B,
+        voice_volume: 90,
+    };
+    card::write_retail_audio_levels(&mut block, set).unwrap();
+    let sf = legaia_save::SaveFile::from_retail_sc_block(&block, 4).unwrap();
+    assert_eq!(sf.ext_v2.audio_levels, Some(set));
+    world.load_full(sf);
+    assert_eq!(world.audio.levels, set, "the import installs the pair");
+
+    // Consumers: the sound-release arm latches the level the MAN loader
+    // rests the live cell on.
+    world.arm_sound_release(30);
+    let arm = world.audio.sound_arm.expect("armed");
+    assert_eq!(
+        arm,
+        crate::scus_leaf_kernels::TimedSoundArm::arm(0, 30, 0x6B)
+    );
+
+    // And it goes back out: LGSF and a fresh retail block.
+    let out = world.save_full();
+    assert_eq!(out.ext_v2.audio_levels, Some(set));
+    let lgsf = legaia_save::SaveFile::parse(&out.write()).unwrap();
+    assert_eq!(lgsf.ext_v2.audio_levels, Some(set));
+    let mut fresh = vec![0u8; card::BLOCK_SIZE];
+    out.write_into_retail_sc_block(&mut fresh).unwrap();
+    assert_eq!(card::read_retail_audio_levels(&fresh), Some(set));
+
+    // A save naming no pair keeps the live one.
+    let mut none = out.clone();
+    none.ext_v2.audio_levels = None;
+    world.audio.levels = cold;
+    world.load_full(none);
+    assert_eq!(world.audio.levels, cold);
+}

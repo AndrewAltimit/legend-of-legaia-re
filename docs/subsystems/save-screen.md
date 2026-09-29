@@ -897,7 +897,7 @@ save.
 The load arm of `FUN_801DD35C` copies the whole live-state window back in one
 call - `FUN_8001A8B0(0x80084140, 0x801E5120, 0x1A18)` at `0x801DFA98..0x801DFAAC`,
 `a0` the destination - so everything the composer saved comes back, not a
-chosen subset. Three words in it decide what the resumed game looks like, and
+chosen subset. Four words in it decide what the resumed game looks like, and
 a lift that reads only the records, the flags page and the bag loses them:
 
 - **The whole system-flag bank.** The bank at `0x80085758` is `0x200` bytes
@@ -929,6 +929,18 @@ a lift that reads only the records, the flags page and the bag loses them:
   (`SceneHost::arm_resume_seat`, from both hosts' resume closures) and never
   for a fallback landing. A `(0, 0)` snapshot - a window no mode change has
   written - reads as no position and the entry takes the scene's own seat.
+- **The audio levels.** The configured level `0x8008457C` (SC `+0x43C`, cold
+  reset `0xD7`) and the voice / SFX volume `0x80084580` (`+0x440`, cold reset
+  `200`). The copy restores both; the next MAN load then rests the live level
+  on the configured one (`_DAT_8007B910 = _DAT_8008457C` in `FUN_8003AEB0`'s
+  non-skip arm), the battle duck takes its percentage of it, and every
+  voice-attr key-on halves the volume word into its `vol_l` / `vol_r` pair. The
+  US build has no screen that edits either word, so a retail save carries the
+  cold-reset pair; the lift still reads it into `SaveExtV2::audio_levels`, the
+  engine holds it on `AudioState::levels` (the duck reference on both play
+  hosts, the sound-release arm, the Muscle Dome tally cue) and the composer
+  writes it back - a block composed from scratch must not load the all-zero
+  pair, which is silence.
 
 ### Where the Save row's pad route is
 
@@ -1157,6 +1169,7 @@ located via `block_offset = 0x200 + (ram_addr - 0x80084340)`.
 | `+0x208` | 0x10 | CDNAME label of most-recently-visited scene (e.g. `town0b`), NUL-padded - the scene the loader resumes into. Absolute offset in the block: `0x408`, which is what a card-reading script measures when it looks for "which scene is this save in" without going through the header base |
 | `+0x218` | 0x10 | CDNAME label of previous scene (e.g. `town01`); absolute `0x418` |
 | `+0x228` | 8 | Field position snapshot `(x, z)`, two sign-extended words (RAM `0x80084568` / `0x8008456C`); absolute `0x428` - see [what a card load restores](#what-a-card-load-restores) |
+| `+0x23C` | 8 | Configured audio level + voice / SFX volume, two words (RAM `0x8008457C` / `0x80084580`); absolute `0x43C` - see [what a card load restores](#what-a-card-load-restores) |
 | `+0x254` | 1 | Present-party member count (RAM `0x80084594`); absolute `0x454` |
 | `+0x257` | 1 | Party leader id (RAM `0x80084597`); absolute `0x457` |
 | `+0x258` | 4 | Present-party member list, roster ids (RAM `0x80084598`); absolute `0x458` |

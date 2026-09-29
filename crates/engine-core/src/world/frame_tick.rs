@@ -786,9 +786,10 @@ impl World {
     /// `FUN_80062004(*(i16*)0x80070536, (level << 15) >> 16, deadline | 1)`
     /// (`0x800267E4`). Those two extra cells land in [`crate::world::AudioState::sound_arm`] so a
     /// host driving the shim has the exact arguments; the engine has no live
-    /// volume ramp of its own, so the latched level is the cold-reset value
-    /// retail boots `_DAT_8007B910` to - `0xD7`, carried on
-    /// [`crate::new_game::GameStateColdReset::audio_level`].
+    /// field-mode volume ramp of its own, so the latched level is the value
+    /// retail's MAN loader rests `_DAT_8007B910` on at every scene load - the
+    /// configured level `_DAT_8008457C` ([`crate::world::AudioState::levels`]),
+    /// `0xD7` from a cold boot and a loaded save's own word after a load.
     ///
     /// PORT: FUN_800267A8
     /// REF: FUN_800267FC, FUN_80062004
@@ -798,7 +799,7 @@ impl World {
         self.audio.sound_arm = Some(crate::scus_leaf_kernels::TimedSoundArm::arm(
             0,
             deadline_vsyncs.max(0) as u32,
-            crate::new_game::GAME_STATE_COLD_RESET.audio_level,
+            self.audio.levels.configured_level,
         ));
     }
 

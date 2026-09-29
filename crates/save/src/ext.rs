@@ -176,6 +176,10 @@ pub const SAVE_FILE_EXT7_MAGIC: [u8; 4] = *b"LGX7";
 /// Optional field-position block ([`SaveExtV2::field_position`]): `i16 x`,
 /// `i16 z`. Emitted only when the save carries a position, like `LGX6`.
 pub const SAVE_FILE_EXT8_MAGIC: [u8; 4] = *b"LGX8";
+/// Optional audio-level block ([`SaveExtV2::audio_levels`]): `i32
+/// configured_level`, `i32 voice_volume`. Emitted only when the save carries
+/// the pair, like `LGX8`.
+pub const SAVE_FILE_EXT9_MAGIC: [u8; 4] = *b"LGX9";
 /// Byte offset of the engine-ext blob inside a retail SC block: the first
 /// byte past the `0x1A18`-byte live-state copy retail composes and loads.
 pub const RETAIL_ENGINE_EXT_OFFSET: usize = crate::card::RETAIL_LIVE_STATE_SIZE;
@@ -303,6 +307,13 @@ pub struct SaveExtV2 {
     /// an `LGSF` file carries it in the optional `LGX8` block. `None` = the
     /// save names no position, and a resume enters at the scene's own seat.
     pub field_position: Option<(i16, i16)>,
+    /// The two audio-level words retail keeps in its live-state window - the
+    /// configured level `0x8008457C` and the voice / SFX volume `0x80084580`
+    /// ([`crate::card::RetailAudioLevels`]). A retail block carries them at
+    /// their own offsets; an `LGSF` file carries them in the optional `LGX9`
+    /// block. `None` = the save names none, and a load keeps the cold-reset
+    /// pair.
+    pub audio_levels: Option<crate::card::RetailAudioLevels>,
 }
 
 /// Where a save was written: the scene to resume into and the name the
@@ -590,6 +601,15 @@ impl SaveFile {
             out.extend_from_slice(&z.to_le_bytes());
         }
 
+        // Optional LGX9 block: the two audio-level words. Emitted only when
+        // the save carries them.
+        if let Some(levels) = self.ext_v2.audio_levels {
+            out.extend_from_slice(&SAVE_FILE_EXT9_MAGIC);
+            out.extend_from_slice(&8u32.to_le_bytes());
+            out.extend_from_slice(&levels.configured_level.to_le_bytes());
+            out.extend_from_slice(&levels.voice_volume.to_le_bytes());
+        }
+
         out
     }
 
@@ -800,6 +820,24 @@ impl SaveFile {
             cursor = ext8_end;
         }
 
+        // Optional LGX9 audio-level block.
+        if cursor + 8 <= buf.len() && buf[cursor..cursor + 4] == SAVE_FILE_EXT9_MAGIC {
+            cursor += 4;
+            let ext9_total_size =
+                u32::from_le_bytes(buf[cursor..cursor + 4].try_into().unwrap()) as usize;
+            cursor += 4;
+            let ext9_end = cursor
+                .checked_add(ext9_total_size)
+                .filter(|&e| e <= buf.len() && ext9_total_size >= 8)
+                .ok_or_else(|| anyhow::anyhow!("LGSF: LGX9 audio-level block truncated"))?;
+            let b = &buf[cursor..ext9_end];
+            ext_v2.audio_levels = Some(crate::card::RetailAudioLevels {
+                configured_level: i32::from_le_bytes(b[0..4].try_into().unwrap()),
+                voice_volume: i32::from_le_bytes(b[4..8].try_into().unwrap()),
+            });
+            cursor = ext9_end;
+        }
+
         // Optional LGX5 resume trailer: present only when the writer had a
         // scene / location to record. Absent = empty, never an error, so a
         // pre-trailer v4 file and a trailer-less v4 file read the same.
@@ -884,6 +922,11 @@ impl SaveFile {
         // Where the player stood - what retail's MAN loader seats the party
         // at after a card load.
         ext_v2.field_position = crate::card::read_retail_field_position(sc_block);
+        // The configured audio level and the voice volume - live-state words
+        // retail's card load restores with the rest of the window, and which
+        // the next scene load re-applies (`FUN_8003AEB0` copies the level
+        // into the live `_DAT_8007B910`).
+        ext_v2.audio_levels = crate::card::read_retail_audio_levels(sc_block);
         Ok(Self {
             party,
             ext: SaveExt {
@@ -1010,6 +1053,9 @@ impl SaveFile {
         }
         if let Some(pos) = self.ext_v2.field_position {
             crate::card::write_retail_field_position(sc_block, pos)?;
+        }
+        if let Some(levels) = self.ext_v2.audio_levels {
+            crate::card::write_retail_audio_levels(sc_block, levels)?;
         }
         Ok(())
     }
@@ -1246,6 +1292,7 @@ fn parse_ext_v2(buf: &[u8]) -> Result<SaveExtV2> {
     Ok(SaveExtV2 {
         play_time_seconds,
         field_position: None,
+        audio_levels: None,
         active_party,
         per_char,
         saved_chains,
@@ -1347,6 +1394,7 @@ mod tests {
             ext_v2: SaveExtV2 {
                 play_time_seconds: 7200,
                 field_position: None,
+                audio_levels: None,
                 active_party: vec![0, 1, 2],
                 per_char: vec![
                     (
@@ -1605,6 +1653,7 @@ mod tests {
             ext_v2: SaveExtV2 {
                 play_time_seconds: 42,
                 field_position: None,
+                audio_levels: None,
                 active_party: vec![0, 1],
                 per_char: vec![(
                     0,

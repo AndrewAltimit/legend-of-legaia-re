@@ -813,10 +813,9 @@ impl PlayWindowApp {
         // The pad edges the skippable holds read (retail's `DAT_801D1A9C`
         // snapshot of `_DAT_8007B874 | _DAT_8007B938`).
         let pad = self.session.host.world.input.retail_pad().pressed as u16;
-        // `_DAT_80084580`, the voice/SFX volume setting each tally cue halves.
-        // The engine holds no live mirror of that word, so this is its cold
-        // reset - the value a freshly booted game keys the cue at.
-        let volume_word = legaia_engine_core::new_game::GAME_STATE_COLD_RESET.voice_volume as u32;
+        // `_DAT_80084580`, the voice/SFX volume setting each tally cue halves:
+        // the world's mirror, a loaded save's own word or the cold reset.
+        let volume_word = self.session.host.world.audio.levels.voice_volume as u32;
         // The screen timers are one engine kernel on both play hosts; this
         // window only sounds what they fired.
         let frame = self

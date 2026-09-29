@@ -1375,9 +1375,11 @@ impl World {
             // id, and the phase-0 tick passes the sentinel (above).
             bgm_voice_id: 0,
             // `_DAT_8007B910` - the live audio level. The engine models no
-            // field-mode duck, so the level sits at retail's cold-reset value
-            // (`0xD7`; `docs/subsystems/battle-action.md` § audio duck).
-            audio_level: crate::new_game::GAME_STATE_COLD_RESET.audio_level,
+            // field-mode duck, so the level sits where the MAN loader rests
+            // it: the configured level `_DAT_8008457C` (`0xD7` from a cold
+            // boot, a loaded save's own word after a load;
+            // `docs/subsystems/battle-action.md` § audio duck).
+            audio_level: self.audio.levels.configured_level,
             ..Default::default()
         };
         let tick = tick_transition(&mut entity, &globals, &TransitionResponses::default());

@@ -169,6 +169,12 @@ fn composition_is_an_in_place_patch_over_a_named_region_list() {
                         .contains(&i)
                     || (RETAIL_FIELD_POS_X_OFFSET..RETAIL_FIELD_POS_Z_OFFSET + 4).contains(&i)
             }
+            // The configured audio level and the voice volume
+            // (`0x8008457C` / `0x80084580`) - live-state words a save
+            // carries and the engine writes back from its own pair.
+            || (legaia_save::card::RETAIL_AUDIO_LEVEL_OFFSET
+                ..legaia_save::card::RETAIL_VOICE_VOLUME_OFFSET + 4)
+                .contains(&i)
             // The nine minigame words (coins, Point Card, fishing record) -
             // live-state window words retail saves like the gold.
             || {

@@ -77,7 +77,10 @@ number of populated records - the New Game template populates all four - and
 the field position into `SaveExtV2::field_position`
 (`read_retail_field_position`; a never-written `(0, 0)` reads as `None`). The
 composer writes both back. In an LGSF file the position is the optional
-`LGX8` block, emitted only when present. Why these three words matter on a
+`LGX8` block, emitted only when present. The two audio-level words
+(configured level `+0x43C`, voice volume `+0x440`) lift into
+`SaveExtV2::audio_levels` (`read_retail_audio_levels`; an all-zero pair reads
+as `None`) and ride in the optional `LGX9` block. Why these words matter on a
 card load is in
 [`save-screen.md`](../../docs/subsystems/save-screen.md#what-a-card-load-restores).
 

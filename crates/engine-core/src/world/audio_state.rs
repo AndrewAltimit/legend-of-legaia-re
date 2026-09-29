@@ -177,6 +177,14 @@ pub struct AudioState {
     /// side-band teardown's `FUN_800653C8(0x17)` / `(0x16)`), drained by
     /// [`crate::world::World::take_sfx_voice_stops`].
     pub sfx_voice_stops: Vec<u8>,
+    /// The two audio-level words the live-state window (and so every save)
+    /// carries: the configured level `_DAT_8008457C` - the reference the MAN
+    /// loader resets the live level `_DAT_8007B910` to on every scene load
+    /// and the battle duck takes its percentage of - and the voice / SFX
+    /// volume `_DAT_80084580` each voice-attr key-on halves. Cold reset
+    /// `(0xD7, 200)`; [`crate::world::World::load_full`] installs a save's
+    /// pair and [`crate::world::World::save_full`] writes it back.
+    pub levels: legaia_save::card::RetailAudioLevels,
 }
 
 impl AudioState {
@@ -202,6 +210,7 @@ impl AudioState {
             sound_release: crate::sound_state::SoundReleaseTimer::default(),
             pending_sound_release: false,
             sound_arm: None,
+            levels: legaia_save::card::RetailAudioLevels::COLD_RESET,
             sfx_cue_delays: crate::scus_leaf_kernels::SfxCueDelays::new(
                 crate::scus_leaf_kernels::SFX_CUE_SLOTS,
             ),

@@ -142,7 +142,11 @@ impl PlayWindowApp {
                 Err(e) => log::warn!("level-up jingle bank (PROT 0889) read: {e:#}"),
             }
         }
+        let duck_ref = self.session.host.world.audio.levels.configured_level;
         if let Some(bgm) = self.session.bgm.as_mut() {
+            // The duck rests on the world's configured level - a loaded
+            // save's `_DAT_8008457C` - and takes its percentage of it.
+            bgm.set_duck_reference(duck_ref);
             bgm.tick_duck();
             for xa in &xa_cues {
                 let fired = bgm.play_xa_clip(xa.clip, xa.channel, xa.duration_sectors);

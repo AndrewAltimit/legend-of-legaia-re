@@ -79,6 +79,10 @@ fn build_synthetic_save() -> SaveFile {
         ext_v2: SaveExtV2 {
             play_time_seconds: 7200,
             field_position: Some((0x0E40, 0x2DC0)),
+            audio_levels: Some(legaia_save::card::RetailAudioLevels {
+                configured_level: 0x6B,
+                voice_volume: 90,
+            }),
             active_party: vec![0, 1, 2],
             per_char: vec![(
                 0,
@@ -277,6 +281,7 @@ fn retail_sc_round_trips_only_representable_fields() {
         SaveExtV2 {
             active_party: save.ext_v2.active_party.clone(),
             field_position: save.ext_v2.field_position,
+            audio_levels: save.ext_v2.audio_levels,
             ..SaveExtV2::default()
         },
         "only the present party and the field position have SC slots"

@@ -169,8 +169,9 @@ pub struct VoiceAttrCue {
 /// PORT: FUN_801d1288 (volume decode)
 // Reached through [`arena_voice_cue`], which [`ScoreTallyRamp::tick`] calls on
 // every counted step. The word it halves is the game state's voice-volume
-// setting; with no live mirror of that global the hosts pass its cold reset,
-// so the value is retail's boot value rather than a player-set one.
+// setting; the play hosts pass the world's mirror of it
+// (`AudioState::levels.voice_volume`), which a loaded save sets and a cold
+// boot seeds with the reset value.
 #[inline]
 pub fn cue_volume(word: u32) -> i32 {
     ((word << 15) as i32) >> 16
