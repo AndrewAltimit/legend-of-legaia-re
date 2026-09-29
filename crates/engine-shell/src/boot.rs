@@ -1567,8 +1567,16 @@ impl BootSession {
         let current = self.host.scene.as_ref().map(|s| s.name.clone());
         let landing =
             legaia_engine_core::resume::land_save(save_scene, current.as_deref(), |scene| {
-                self.enter_scene_live(scene, opts)?;
-                self.confirm_scene_landed(scene)
+                // The saved scene is entered at the save's own position, as
+                // retail's card load seats it (`SceneHost::arm_resume_seat`).
+                let armed = self.host.arm_resume_seat(&save, save_scene, scene);
+                let entered = self
+                    .enter_scene_live(scene, opts)
+                    .and_then(|_| self.confirm_scene_landed(scene));
+                if entered.is_err() && armed {
+                    self.host.disarm_entry_seat();
+                }
+                entered
             });
         self.host.world.load_full(save);
         log::info!(

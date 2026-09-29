@@ -163,3 +163,96 @@ fn load_full_clears_old_inventory() {
     assert!(!world.party.inventory.contains_key(&2));
     assert_eq!(world.party.inventory.get(&5), Some(&3));
 }
+
+// --- Retail card-load fidelity ---------------------------------------
+
+/// A retail-shaped SC block: the New Game template's four populated
+/// records, a one-member present party, flags either side of the old
+/// `0x540` cut, a field position.
+fn vahn_alone_sc_block() -> Vec<u8> {
+    use legaia_save::card::*;
+    let mut block = vec![0u8; legaia_save::BLOCK_SIZE];
+    block[..legaia_save::SAVE_BLOCK_HEADER.len()].copy_from_slice(&legaia_save::SAVE_BLOCK_HEADER);
+    let records: Vec<Vec<u8>> = (0..4u8)
+        .map(|i| {
+            let mut r = legaia_save::CharacterRecord::zeroed();
+            r.raw[0] = i + 1;
+            r.raw.to_vec()
+        })
+        .collect();
+    write_retail_char_records(&mut block, &records).unwrap();
+    for f in [0x0010u16, 0x053F, 0x0540, 0x05B3, 0x06C4, 0x0FFF] {
+        block[0x1618 + usize::from(f >> 3)] |= 0x80 >> (f & 7);
+    }
+    write_retail_present_party(&mut block, &[0]).unwrap();
+    write_retail_field_position(&mut block, (0x0E40, 0x2DC0)).unwrap();
+    block
+}
+
+#[test]
+fn a_card_load_seeds_the_whole_system_flag_bank() {
+    let sf = legaia_save::SaveFile::from_retail_sc_block(
+        &vahn_alone_sc_block(),
+        legaia_save::RETAIL_SC_PARTY_RECORDS,
+    )
+    .unwrap();
+    let mut world = World::new();
+    world.load_full(sf);
+    for f in [0x0010u16, 0x053F, 0x0540, 0x05B3, 0x06C4, 0x0FFF] {
+        assert!(world.system_flag_test(f), "flag {f:#05X} lost on load");
+    }
+    assert!(!world.system_flag_test(0x0541));
+}
+
+#[test]
+fn a_card_load_seats_the_saved_present_party_not_every_record() {
+    let sf = legaia_save::SaveFile::from_retail_sc_block(
+        &vahn_alone_sc_block(),
+        legaia_save::RETAIL_SC_PARTY_RECORDS,
+    )
+    .unwrap();
+    let mut world = World::new();
+    world.load_full(sf);
+    assert_eq!(world.party.roster.members.len(), 4);
+    assert_eq!(world.party.party_count, 1, "Vahn alone");
+    assert_eq!(world.party.active_party, vec![0]);
+    assert_eq!(world.party.party_actor_slots, vec![Some(0)]);
+    assert_eq!(world.party.party_leader_slot, Some(0));
+}
+
+#[test]
+fn save_full_keeps_the_party_count_and_a_cleared_flag_stays_cleared() {
+    let sf = legaia_save::SaveFile::from_retail_sc_block(
+        &vahn_alone_sc_block(),
+        legaia_save::RETAIL_SC_PARTY_RECORDS,
+    )
+    .unwrap();
+    let mut world = World::new();
+    world.load_full(sf);
+    // The game clears a loaded flag; the next save must not resurrect it
+    // from the bytes the load came from.
+    world.system_flag_clear(0x06C4);
+    world.system_flag_set(0x0700);
+    let saved = world.save_full();
+    let mut again = World::new();
+    again.load_full(saved);
+    assert!(!again.system_flag_test(0x06C4), "cleared flag resurrected");
+    assert!(again.system_flag_test(0x0700));
+    assert!(again.system_flag_test(0x0FFF));
+    assert_eq!(again.party.party_count, 1);
+}
+
+#[test]
+fn an_identity_party_below_the_roster_saves_as_a_prefix() {
+    let mut world = World::new();
+    world.load_party(legaia_save::Party::zeroed(4));
+    world.party.party_count = 2;
+    let saved = world.save_full();
+    assert_eq!(saved.ext_v2.active_party, vec![0, 1]);
+    let mut again = World::new();
+    again.load_full(saved);
+    assert_eq!(again.party.party_count, 2);
+    // Every record in the party is still the historical identity encoding.
+    world.party.party_count = 4;
+    assert_eq!(world.save_full().ext_v2.active_party, vec![0, 1, 2, 3]);
+}

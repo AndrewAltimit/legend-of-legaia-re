@@ -153,6 +153,22 @@ fn composition_is_an_in_place_patch_over_a_named_region_list() {
             || (RETAIL_INVENTORY_OFFSET..RETAIL_INVENTORY_OFFSET + RETAIL_ITEM_WINDOW_SIZE)
                 .contains(&i)
             || (RETAIL_GOLD_OFFSET..RETAIL_GOLD_OFFSET + 4).contains(&i)
+            // The present party (count, leader, member list) and the field
+            // position snapshot - the live-state words retail's card load
+            // seats the party from, written when the save names them.
+            || {
+                use legaia_save::card::{
+                    RETAIL_FIELD_POS_X_OFFSET, RETAIL_FIELD_POS_Z_OFFSET,
+                    RETAIL_PARTY_COUNT_OFFSET, RETAIL_PARTY_LEADER_OFFSET,
+                    RETAIL_PARTY_MEMBERS_MAX, RETAIL_PARTY_MEMBERS_OFFSET,
+                };
+                i == RETAIL_PARTY_COUNT_OFFSET
+                    || i == RETAIL_PARTY_LEADER_OFFSET
+                    || (RETAIL_PARTY_MEMBERS_OFFSET
+                        ..RETAIL_PARTY_MEMBERS_OFFSET + RETAIL_PARTY_MEMBERS_MAX)
+                        .contains(&i)
+                    || (RETAIL_FIELD_POS_X_OFFSET..RETAIL_FIELD_POS_Z_OFFSET + 4).contains(&i)
+            }
             // The nine minigame words (coins, Point Card, fishing record) -
             // live-state window words retail saves like the gold.
             || {

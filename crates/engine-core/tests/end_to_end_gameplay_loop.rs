@@ -102,7 +102,7 @@ fn synthetic_party() -> Party {
 
 /// Build a populated [`SaveFile`] from a synthetic party.
 fn synthetic_save_file() -> SaveFile {
-    // Retail-shaped 512-byte story-flag bitmap with a sentinel pattern -
+    // Retail-shaped story-flag window with a sentinel pattern -
     // verifies that the bigger-than-u32 region round-trips through the
     // full save cycle.
     let mut story_flag_bits = vec![0u8; legaia_save::RETAIL_STORY_FLAGS_SIZE];
@@ -120,6 +120,7 @@ fn synthetic_save_file() -> SaveFile {
         },
         ext_v2: SaveExtV2 {
             play_time_seconds: 4500,
+            field_position: None,
             active_party: vec![0, 1, 2],
             per_char: vec![],
             saved_chains: vec![],
@@ -586,7 +587,7 @@ fn synthetic_party_loop_round_trips_via_retail_sc_block() {
     }
     assert_eq!(
         parsed.ext.story_flag_bits, expected_bits,
-        "512-byte story-flag bitmap round-trips through retail SC"
+        "story-flag window round-trips through retail SC"
     );
     // The scratchpad u32 is derived from the first 4 bitmap bytes on
     // the read path, so the engine save's `story_flags` must agree.
@@ -607,16 +608,21 @@ fn synthetic_party_loop_round_trips_via_retail_sc_block() {
 
     // Gold round-trips through the pinned retail slot (`game_data+0x25C`,
     // RAM 0x8008459C). Engine-only fields drop to defaults: play_time,
-    // active_party, per_char, saved_chains. See the K2 schema fixture
-    // for the documented field map.
+    // per_char, saved_chains. The present party and the field position have
+    // retail slots (`0x80084594` / `0x80084598`, `0x80084568` / `0x8008456C`)
+    // and survive. See the K2 schema fixture for the documented field map.
     assert_eq!(
         parsed.ext.money, post_loop.ext.money,
         "gold round-trips through the retail SC slot"
     );
     assert_eq!(
         parsed.ext_v2,
-        SaveExtV2::default(),
-        "v2 ext block is engine-only - drops to defaults"
+        SaveExtV2 {
+            active_party: post_loop.ext_v2.active_party.clone(),
+            field_position: post_loop.ext_v2.field_position,
+            ..SaveExtV2::default()
+        },
+        "only the retail-carried v2 fields survive the SC round-trip"
     );
     assert!(
         post_loop.ext_v2 != SaveExtV2::default(),
@@ -1145,6 +1151,7 @@ fn real_psx_memory_card_save_drives_full_loop() {
         },
         ext_v2: SaveExtV2 {
             play_time_seconds: 7200,
+            field_position: None,
             active_party: vec![0, 1, 2],
             per_char: vec![],
             saved_chains: vec![],

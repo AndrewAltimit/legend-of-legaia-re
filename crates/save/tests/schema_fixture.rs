@@ -53,7 +53,7 @@ fn build_synthetic_save() -> SaveFile {
         party.members.push(rec);
     }
 
-    // Retail-shaped 512-byte story-flag bitmap with a deterministic
+    // Retail-shaped story-flag window with a deterministic
     // sweep pattern, so any off-by-one in the SC writer surfaces in the
     // diff between the golden bytes and the regenerated output.
     let mut story_flag_bits = vec![0u8; RETAIL_STORY_FLAGS_SIZE];
@@ -78,6 +78,7 @@ fn build_synthetic_save() -> SaveFile {
         },
         ext_v2: SaveExtV2 {
             play_time_seconds: 7200,
+            field_position: Some((0x0E40, 0x2DC0)),
             active_party: vec![0, 1, 2],
             per_char: vec![(
                 0,
@@ -217,11 +218,12 @@ fn lgsf_v2_round_trips_struct_identical() {
 
 #[test]
 fn retail_sc_round_trips_only_representable_fields() {
-    // The retail SC block has no slot for play_time, active_party,
-    // per_char ext, or saved_chains, so a round-trip through
-    // write_into_retail_sc_block + from_retail_sc_block drops those
-    // fields to their defaults. The party records, full story-flag
-    // bitmap, inventory, and gold (the pinned `game_data+0x25C` slot)
+    // The retail SC block has no slot for play_time, per_char ext, or
+    // saved_chains, so a round-trip through write_into_retail_sc_block +
+    // from_retail_sc_block drops those fields to their defaults. The party
+    // records, full story-flag window, inventory, gold (the pinned
+    // `game_data+0x25C` slot), the present party (`0x80084594` /
+    // `0x80084598`) and the field position (`0x80084568` / `0x8008456C`)
     // survive byte-exact.
     let save = build_synthetic_save();
     let mut sc_block = vec![0u8; BLOCK_SIZE];
@@ -247,7 +249,7 @@ fn retail_sc_round_trips_only_representable_fields() {
         assert_eq!(a.raw, b.raw, "char record {i} round-trips byte-exact");
     }
 
-    // Story-flag bitmap: byte-equal full 512 bytes.
+    // Story-flag window: byte-equal, the whole system-flag bank included.
     assert_eq!(
         parsed.ext.story_flag_bits, save.ext.story_flag_bits,
         "story flag bitmap byte-equal"
@@ -268,6 +270,15 @@ fn retail_sc_round_trips_only_representable_fields() {
 
     // Gold round-trips through the pinned retail slot (RAM 0x8008459C).
     assert_eq!(parsed.ext.money, save.ext.money, "gold round-trips");
-    // Engine-only fields drop to defaults through the SC layout.
-    assert_eq!(parsed.ext_v2, SaveExtV2::default(), "v2 ext is engine-only");
+    // Engine-only fields drop to defaults through the SC layout; the two
+    // retail carries survive.
+    assert_eq!(
+        parsed.ext_v2,
+        SaveExtV2 {
+            active_party: save.ext_v2.active_party.clone(),
+            field_position: save.ext_v2.field_position,
+            ..SaveExtV2::default()
+        },
+        "only the present party and the field position have SC slots"
+    );
 }

@@ -56,8 +56,10 @@
 //!
 //! ## Binary layout (`LGSF v3` - extends v2)
 //!
-//! v3 appends a retail-faithful story-flag bitmap (mirroring the 512-byte
-//! region at retail SC offset `0x14C0` / live RAM `0x80085600..0x80085800`)
+//! v3 appends a retail-faithful story-flag bitmap (mirroring the
+//! [`crate::card::RETAIL_STORY_FLAGS_SIZE`]-byte region at retail SC offset
+//! `0x14C0` / live RAM `0x80085600..0x80085958`; the `u16` length carries any
+//! size)
 //! after the v2 ext block. Writers always emit v3 once any byte of
 //! [`SaveExt::story_flag_bits`] is non-empty; readers accept v1, v2, and v3.
 //!
@@ -171,6 +173,9 @@ pub const RETAIL_ENGINE_EXT_MAGIC: [u8; 4] = *b"LGXE";
 /// bank, the Point Card bank and the fishing point record. Emitted only when
 /// one of them is non-zero, like `LGX6`.
 pub const SAVE_FILE_EXT7_MAGIC: [u8; 4] = *b"LGX7";
+/// Optional field-position block ([`SaveExtV2::field_position`]): `i16 x`,
+/// `i16 z`. Emitted only when the save carries a position, like `LGX6`.
+pub const SAVE_FILE_EXT8_MAGIC: [u8; 4] = *b"LGX8";
 /// Byte offset of the engine-ext blob inside a retail SC block: the first
 /// byte past the `0x1A18`-byte live-state copy retail composes and loads.
 pub const RETAIL_ENGINE_EXT_OFFSET: usize = crate::card::RETAIL_LIVE_STATE_SIZE;
@@ -190,8 +195,8 @@ pub const RESUME_LOCATION_MAX_LEN: usize = crate::card::RETAIL_LOCATION_NAME_LEN
 ///
 /// Retail SC blocks store these alongside the character records at fixed
 /// offsets:
-/// - `story_flag_bits` mirrors the 512-byte bitmap at `0x14C0` (RAM
-///   `0x80085600..0x80085800`).
+/// - `story_flag_bits` mirrors the story-flag window at `0x14C0` (RAM
+///   `0x80085600..0x80085958`, the system-flag bank at its `+0x158`).
 /// - `inventory` mirrors the 144-byte 72-slot pair array at `0x1818`
 ///   (RAM `0x80085958..0x800859E8`).
 ///
@@ -210,8 +215,9 @@ pub struct SaveExt {
     /// Seeded on mode init from `mode_table[mode_idx].param` low 16
     /// bits; not synced to or from [`legaia_engine_core::world::StoryFlagState::story_flag_bits`].
     pub story_flags: u32,
-    /// Full 512-byte story-flag bitmap from retail SC offset `0x14C0`,
-    /// mirroring live RAM `0x80085600..0x80085800`. Empty (`vec![]`) means
+    /// Full story-flag window from retail SC offset `0x14C0`, mirroring live
+    /// RAM `0x80085600..0x80085958` ([`crate::card::RETAIL_STORY_FLAGS_SIZE`]
+    /// bytes; the system-flag bank is its `+0x158..`). Empty (`vec![]`) means
     /// "no retail-shaped data captured"; engines that don't track the wide
     /// bitmap can leave this default. Reads/writes of the bitmap go through
     /// [`crate::card::read_retail_story_flags`] /
@@ -291,6 +297,12 @@ pub struct SaveExtV2 {
     pub per_char: Vec<(u8, CharSaveExt)>,
     /// Cross-character saved chain library.
     pub saved_chains: Vec<SavedChainRecord>,
+    /// Where the player stood in the field when the save was written - the
+    /// `(x, z)` a resume seats the party at. Retail's carrier is the SC
+    /// block's position snapshot ([`crate::card::RETAIL_FIELD_POS_X_OFFSET`]);
+    /// an `LGSF` file carries it in the optional `LGX8` block. `None` = the
+    /// save names no position, and a resume enters at the scene's own seat.
+    pub field_position: Option<(i16, i16)>,
 }
 
 /// Where a save was written: the scene to resume into and the name the
@@ -522,7 +534,7 @@ impl SaveFile {
         out.extend_from_slice(&ext_total_size.to_le_bytes());
         out.extend_from_slice(&ext_block);
 
-        // V3 extension block: retail-faithful 512-byte story-flag bitmap.
+        // V3 extension block: retail-faithful story-flag window.
         // Emit unconditionally so the magic byte is a stable parse marker -
         // an empty bitmap encodes as `len=0` and costs 10 bytes.
         let mut ext3_block = Vec::new();
@@ -566,6 +578,16 @@ impl SaveFile {
             out.extend_from_slice(&SAVE_FILE_EXT7_MAGIC);
             out.extend_from_slice(&(body.len() as u32).to_le_bytes());
             out.extend_from_slice(&body);
+        }
+
+        // Optional LGX8 block: the field position the save was written at.
+        // Emitted only when there is one, so a save without it is
+        // byte-identical to a pre-block file.
+        if let Some((x, z)) = self.ext_v2.field_position {
+            out.extend_from_slice(&SAVE_FILE_EXT8_MAGIC);
+            out.extend_from_slice(&4u32.to_le_bytes());
+            out.extend_from_slice(&x.to_le_bytes());
+            out.extend_from_slice(&z.to_le_bytes());
         }
 
         out
@@ -687,7 +709,7 @@ impl SaveFile {
         let mut ext_v2 = parse_ext_v2(ext_buf).context("parse LGSF v2 ext block")?;
         cursor = ext_end;
 
-        // V3 LGX3 ext block carries the 512-byte retail story-flag bitmap.
+        // V3 LGX3 ext block carries the retail story-flag window.
         if version >= SAVE_FILE_VERSION_V3 {
             if cursor + 8 > buf.len() {
                 bail!("LGSF v3: LGX3 ext header missing (cursor {cursor:#x})");
@@ -760,6 +782,24 @@ impl SaveFile {
             cursor = ext7_end;
         }
 
+        // Optional LGX8 field-position block.
+        if cursor + 8 <= buf.len() && buf[cursor..cursor + 4] == SAVE_FILE_EXT8_MAGIC {
+            cursor += 4;
+            let ext8_total_size =
+                u32::from_le_bytes(buf[cursor..cursor + 4].try_into().unwrap()) as usize;
+            cursor += 4;
+            let ext8_end = cursor
+                .checked_add(ext8_total_size)
+                .filter(|&e| e <= buf.len() && ext8_total_size >= 4)
+                .ok_or_else(|| anyhow::anyhow!("LGSF: LGX8 field-position block truncated"))?;
+            let b = &buf[cursor..ext8_end];
+            ext_v2.field_position = Some((
+                i16::from_le_bytes([b[0], b[1]]),
+                i16::from_le_bytes([b[2], b[3]]),
+            ));
+            cursor = ext8_end;
+        }
+
         // Optional LGX5 resume trailer: present only when the writer had a
         // scene / location to record. Absent = empty, never an error, so a
         // pre-trailer v4 file and a trailer-less v4 file read the same.
@@ -783,7 +823,7 @@ impl SaveFile {
     /// Build a [`SaveFile`] from a retail SC save block (8 KiB block whose
     /// first two bytes are [`crate::SAVE_BLOCK_MAGIC`]).
     ///
-    /// Reads party records, the 512-byte story-flag bitmap, the **whole
+    /// Reads party records, the story-flag window, the **whole
     /// 256-slot** item array, and the party gold
     /// ([`crate::card::RETAIL_GOLD_OFFSET`], mirrors RAM `0x8008459C`) at
     /// their pinned offsets. [`SaveExt::item_slots`] keeps the array verbatim,
@@ -828,7 +868,22 @@ impl SaveFile {
         let minigames = crate::MinigameSave::from_retail_sc_block(sc_block).unwrap_or_default();
         // The engine-ext blob in the block's unread tail. A retail block is
         // zero there (no magic) and reads as the default, exactly as before.
-        let ext_v2 = Self::read_engine_ext_from_retail_sc_block(sc_block).unwrap_or_default();
+        let engine_ext = Self::read_engine_ext_from_retail_sc_block(sc_block);
+        let authored_by_engine = engine_ext.is_some();
+        let mut ext_v2 = engine_ext.unwrap_or_default();
+        // The present party is the block's own count + member list
+        // (`0x80084594` / `0x80084598`), never the number of populated
+        // records: the New Game template seeds all four records, so a
+        // record count makes a Vahn-alone save a four-member party. An
+        // engine-authored block keeps the composition its `LGXE` blob names.
+        if !authored_by_engine
+            && let Some(members) = crate::card::read_retail_present_party(sc_block)
+        {
+            ext_v2.active_party = members;
+        }
+        // Where the player stood - what retail's MAN loader seats the party
+        // at after a card load.
+        ext_v2.field_position = crate::card::read_retail_field_position(sc_block);
         Ok(Self {
             party,
             ext: SaveExt {
@@ -906,7 +961,7 @@ impl SaveFile {
     /// Stamps the SC magic at offset 0, then dispatches each region through
     /// the corresponding `write_retail_*` helper. The SC block must be at
     /// least the size of the largest region's end (handled by the underlying
-    /// helpers). `ext.story_flag_bits` shorter than 512 bytes is right-padded
+    /// helpers). `ext.story_flag_bits` shorter than the window is right-padded
     /// with zeros; longer is truncated. Inventory slots past the 72-slot
     /// retail cap are dropped.
     ///
@@ -946,6 +1001,16 @@ impl SaveFile {
         crate::card::write_retail_gold(sc_block, self.ext.money)?;
         // The minigame purses sit in the same live-state window as the gold.
         self.ext.minigames.write_into_retail_sc_block(sc_block)?;
+        // The present party and the field position: the two words retail's
+        // loader reads back that a lift fills from the block, so a block
+        // written here resumes with the party and at the place it names.
+        // A save without either leaves the block's bytes as found.
+        if (1..=crate::card::RETAIL_PARTY_MEMBERS_MAX).contains(&self.ext_v2.active_party.len()) {
+            crate::card::write_retail_present_party(sc_block, &self.ext_v2.active_party)?;
+        }
+        if let Some(pos) = self.ext_v2.field_position {
+            crate::card::write_retail_field_position(sc_block, pos)?;
+        }
         Ok(())
     }
 }
@@ -1180,6 +1245,7 @@ fn parse_ext_v2(buf: &[u8]) -> Result<SaveExtV2> {
     }
     Ok(SaveExtV2 {
         play_time_seconds,
+        field_position: None,
         active_party,
         per_char,
         saved_chains,
@@ -1280,6 +1346,7 @@ mod tests {
             ext: SaveExt::default(),
             ext_v2: SaveExtV2 {
                 play_time_seconds: 7200,
+                field_position: None,
                 active_party: vec![0, 1, 2],
                 per_char: vec![
                     (
@@ -1537,6 +1604,7 @@ mod tests {
             },
             ext_v2: SaveExtV2 {
                 play_time_seconds: 42,
+                field_position: None,
                 active_party: vec![0, 1],
                 per_char: vec![(
                     0,

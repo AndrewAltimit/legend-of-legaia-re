@@ -414,6 +414,50 @@ impl SceneHost {
         self.pending_entry_seat = Some((x, z));
     }
 
+    /// `true` while an entry operand is armed and no scene entry has
+    /// consumed it yet.
+    pub fn entry_seat_armed(&self) -> bool {
+        self.pending_entry_seat.is_some()
+    }
+
+    /// Drop an armed entry operand no entry consumed (a failed entry must not
+    /// hand its seat to whatever scene is entered next).
+    pub fn disarm_entry_seat(&mut self) {
+        self.pending_entry_seat = None;
+    }
+
+    /// Arm the seat a **card load** resumes at, before entering `scene`:
+    /// the save's field position ([`legaia_save::SaveExtV2::field_position`]),
+    /// and only when `scene` is the one the save was written in
+    /// ([`crate::resume::saved_entry_seat`]). An operand the caller already
+    /// armed wins - a driver that knows a better seat (a live capture's own
+    /// position) keeps it. Returns `true` when this call armed one, so the
+    /// caller can [`Self::disarm_entry_seat`] if the entry then fails.
+    ///
+    /// This is retail's card-load arm of the MAN loader: `FUN_801DD35C`
+    /// raises `_DAT_8007B8C0` after the load copy, and `FUN_8003AEB0` on that
+    /// flag copies the save's `0x80084568` / `0x8008456C` into the entry
+    /// operand `_DAT_80073EF4` / `_DAT_80073EF8` (`0x8003B764..0x8003B798`).
+    ///
+    /// REF: FUN_8003AEB0 (`0x8003B764..0x8003B798`, the card-load seat)
+    pub fn arm_resume_seat(
+        &mut self,
+        save: &legaia_save::SaveFile,
+        save_scene: &str,
+        scene: &str,
+    ) -> bool {
+        if self.pending_entry_seat.is_some() {
+            return false;
+        }
+        match crate::resume::saved_entry_seat(save, save_scene, scene) {
+            Some((x, z)) => {
+                self.set_entry_seat(x, z);
+                true
+            }
+            None => false,
+        }
+    }
+
     /// Arm the entry operand from a **tile** pair, the form the field VM's
     /// `0x3F` and the world-map arrival kernel carry: `(tile << 7) + 0x40`,
     /// retail's tile-centre conversion.

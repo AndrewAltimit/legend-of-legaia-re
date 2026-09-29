@@ -53,6 +53,7 @@ fn a_save() -> SaveFile {
         },
         ext_v2: SaveExtV2 {
             play_time_seconds: 3661,
+            field_position: None,
             active_party: vec![1, 0],
             per_char: vec![
                 (
@@ -226,7 +227,16 @@ fn engine_ext_round_trips_through_a_retail_block_and_keeps_it_valid() {
     assert!(sc_block_checksum_valid(&block));
 
     let back = SaveFile::from_retail_sc_block(&block, 4).unwrap();
-    assert_eq!(back.ext_v2, sf.ext_v2);
+    // The blob carries the engine-only fields; the field position is retail
+    // state and lifts off the block's own snapshot words (here the fixture's
+    // live-state pattern, which the save - naming no position - left alone).
+    assert_eq!(
+        back.ext_v2,
+        SaveExtV2 {
+            field_position: retail_field_position(&block),
+            ..sf.ext_v2.clone()
+        }
+    );
     assert_eq!(back.ext_v2.play_time_seconds, 3661);
     // The fixture's live-state pattern makes slots 2..3 non-zero, so the
     // retail record walk reads four; the two composed ones are what matter.
@@ -259,13 +269,30 @@ fn engine_ext_writer_touches_only_the_tail_and_the_checksum() {
 }
 
 /// A block retail wrote has a zero tail, so the reader sees no magic and the
-/// save reads exactly as it did before the blob existed.
+/// engine-only fields read as the default. The two fields retail itself
+/// carries - the present party (`0x80084594` / `0x80084598`, which the
+/// composer writes from the save's composition) and the field position
+/// snapshot - lift off the block's own bytes; this test once asserted the
+/// whole ext default, which was the lift dropping them.
+fn retail_only_ext(block: &[u8]) -> SaveExtV2 {
+    SaveExtV2 {
+        active_party: legaia_save::card::read_retail_present_party(block).unwrap_or_default(),
+        field_position: retail_field_position(block),
+        ..SaveExtV2::default()
+    }
+}
+
+fn retail_field_position(block: &[u8]) -> Option<(i16, i16)> {
+    legaia_save::card::read_retail_field_position(block)
+}
+
 #[test]
 fn a_retail_block_without_the_blob_reads_the_default_ext() {
     let mut block = retail_shaped_block();
     a_save().write_into_retail_sc_block(&mut block).unwrap();
     let back = SaveFile::from_retail_sc_block(&block, 4).unwrap();
-    assert_eq!(back.ext_v2, SaveExtV2::default());
+    assert_eq!(back.ext_v2, retail_only_ext(&block));
+    assert_eq!(back.ext_v2.active_party, vec![1, 0], "the composed party");
     assert!(SaveFile::read_engine_ext_from_retail_sc_block(&block).is_none());
 }
 
@@ -294,7 +321,7 @@ fn an_oversized_blob_is_withheld_and_the_block_stays_loadable() {
     );
     assert!(sc_block_checksum_valid(&block));
     let back = SaveFile::from_retail_sc_block(&block, 4).unwrap();
-    assert_eq!(back.ext_v2, SaveExtV2::default());
+    assert_eq!(back.ext_v2, retail_only_ext(&block));
     assert_eq!(back.party.members[1].name(), "Noa");
 }
 
@@ -310,7 +337,7 @@ fn a_corrupt_blob_falls_back_to_the_default_ext() {
     block[RETAIL_ENGINE_EXT_OFFSET + 4] = 0xFF;
     block[RETAIL_ENGINE_EXT_OFFSET + 5] = 0xFF;
     let back = SaveFile::from_retail_sc_block(&block, 4).unwrap();
-    assert_eq!(back.ext_v2, SaveExtV2::default());
+    assert_eq!(back.ext_v2, retail_only_ext(&block));
 }
 
 /// Re-writing a smaller blob over a larger one leaves no stale bytes.
