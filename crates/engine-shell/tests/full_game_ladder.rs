@@ -1321,7 +1321,11 @@ fn drain_battle(session: &mut BootSession) -> Option<Run> {
     NO_ITEM.with(|n| n.borrow_mut().clear());
     NO_MAGIC.with(|n| n.borrow_mut().clear());
     let mut prev = 0u16;
-    for _ in 0..BATTLE_TICKS {
+    let trace = std::env::var_os("LEGAIA_FGL_TRACE").is_some();
+    if trace {
+        eprintln!("    [battle] start: {}", battle_snapshot(session));
+    }
+    for t in 0..BATTLE_TICKS {
         // A press is an edge: alternate the wanted mask with neutral.
         let want = fight_pad(session);
         let pad = if prev == 0 { want } else { 0 };
@@ -1330,14 +1334,26 @@ fn drain_battle(session: &mut BootSession) -> Option<Run> {
         if let Err(e) = session.tick() {
             return Some(Run::Error(format!("{e:#}")));
         }
+        if trace && std::env::var_os("LEGAIA_FGL_TRACE_BATTLE").is_some() && t % 1000 == 0 {
+            eprintln!("    [battle] t={t}: {}", battle_snapshot(session));
+        }
         let w = &session.host.world;
         if w.game_over_hold || w.game_over {
+            if trace {
+                eprintln!("    [battle] wiped after {t} ticks");
+            }
             return Some(Run::Battle(format!(
                 "party wiped: {}",
                 battle_snapshot(session)
             )));
         }
         if w.mode != SceneMode::Battle {
+            if trace {
+                eprintln!(
+                    "    [battle] ended after {t} ticks: {}",
+                    battle_snapshot(session)
+                );
+            }
             return None;
         }
     }
@@ -2749,6 +2765,13 @@ fn traverse(
                     trail.push(format!("[via {here}: arrival script]"));
                 }
                 trail.push(format!("{s}(scripted)"));
+                // A milestone scene a scripted chain passes through is
+                // reached: the ending's `edteien` is one link of the credits
+                // chain (`edteien > edbylon > ... > edlast`), and its anchor
+                // is a state taken mid-cutscene there, not a walkable stop.
+                if via >= vias.len() && reached(session, target) {
+                    return Ok(());
+                }
                 continue;
             }
             Run::Released => {}

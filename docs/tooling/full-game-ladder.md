@@ -78,6 +78,9 @@ What "reached" means is per milestone: `scene` (in the scene, walking),
 the anchor gained over its predecessor that a clean **partition-2** SET site in
 that scene writes, per the disc-wide system-flag census; entry-script writes
 are excluded because they fire on every visit. Part A prints the candidates.
+A `scene` milestone a scripted chain only passes through is reached on the
+landing: the ending's `edteien` is one link of the credits chain that runs on
+to `edlast`, and its anchor is a state taken mid-cutscene there.
 
 A milestone may also name `via` scenes: story waypoints the anchors show the
 retail run passed through between the previous milestone and this one, and
@@ -217,7 +220,9 @@ clips and matches the same arts a windowed one does. Beyond that:
 
 `LEGAIA_FGL_TRACE=1` prints one line per played beat: what ran, how it ended
 and the flags it set - and, as `[hop]`, the hop failure that sent the pass to
-the beats, which the final stall would otherwise hide.
+the beats, which the final stall would otherwise hide. Each fought battle
+prints a `[battle]` line at its start and end (formation, both sides' HP, the
+action-SM state); `LEGAIA_FGL_TRACE_BATTLE=1` adds one every 1000 ticks.
 
 The **headline** is how many milestones a cold New Game reaches contiguously
 at `progresses` and at `pad` - the count of leading segments that each cleared
