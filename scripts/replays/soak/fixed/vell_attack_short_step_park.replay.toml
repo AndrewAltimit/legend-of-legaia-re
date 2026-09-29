@@ -3,6 +3,7 @@
 # soak-seed = 109
 # soak-signature = "softlock|vell|battle:state:25"
 # detail: no progress for 1800 frames under 9 distinct pad masks
+# fixed: +0x3C is the per-frame body pair, so the attack approach no longer parks a short step from its target
 # soak-min-distinct = 1
 # reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell --profile release-test --test soak_harness soak_replay -- --nocapture
 [meta]

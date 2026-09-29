@@ -240,6 +240,58 @@ that long cutscenes need catching up:
   different rate has to pace the VM off a display-frame sub-clock, not its own
   tick (see [`cutscene.md`](cutscene.md#record-pacing---the-60-hz-sub-clock)).
 
+### Engagement and the system script
+
+A context runs only while its `+0x10 & 0x100` (engaged) bit is up: the
+per-actor tick `FUN_8003BC08` hands it to the runner `FUN_80039B7C`, which
+steps opcodes until one of the three slice stops above. The runner is also
+what ends an engagement. When the op it just executed is a raw `0x21`
+(`0x80039E20`), it clears `0x100` and drops the frame count at
+`*(0x801C6EA4)+0xA` (`0x80039E68..0x80039EE4`); when that count reaches zero
+it clears the player's `+0x10 & 0x80000` again. On every frame it steps a
+context it raises that player bit (`0x80039DB8..0x80039DD4`), which is what
+stops the pad while a script runs.
+
+So a placement's script is a sequence of **interactions**, each running
+from where the last one's `0x21` left the PC to the next executed `0x21`. A
+spawned placement starts disengaged: the spawn pre-run clears `0x100` before
+it runs the `0x24`/`0x25` spawn section (`FUN_801D3F24`), and the talk body
+after that section's `0x21` waits for a touch. The Rim Elm bee beat
+(`town0c` / `town0b` `P1[21]`) shows why the boundary matters: its body ends
+`50 00` (the scripted-loss latch), `3E FF 03`, `21`, then jumps back to its
+flag dispatch. The `21` ends the interaction in the fight's own frame, so
+the fight does not fire again until the player touches Nene again.
+
+The **scene system script** (ctx `0xFB`, MAN `P1[0]`) is an ordinary context
+too. `FUN_8003AB2C` binds it to an actor whose tick is the SYSTEM entity SM
+`FUN_801DA51C` (actor descriptor `0x80073EA0`), and that SM's tail
+(`0x801DA750..0x801DA7C4`) is the script's driver:
+
+- nothing runs while the entity state `+0x8A` is non-zero - a committed
+  encounter or scripted battle;
+- a pass already open (`0x100` up) continues (`0x801DA78C`);
+- a new pass starts only while the player's `+0x10 & 0x80000` is down
+  (`0x801DA794..0x801DA7AC`), i.e. while no other context holds the player.
+
+A scene's system loop therefore sits out an NPC beat, a spawned record or a
+cutscene. In `town0c`, `P1[0]`'s loop tests `0x5C0` and spawns the bee
+fight's outcome record `P2[29]` (a flag-1 test at its head); `P1[21]` sets
+`0x5C0` eight frames before its `3E`, and the loop sees it only on the
+post-battle pass, where flag 1 holds that fight's outcome.
+
+The battle intro between the commit and the fight is its own slot-A overlay
+(PROT 0979, own content `0x4000`), loaded over the field overlay's head -
+the field frame pump `FUN_801D1344` included - so no field context runs
+during it.
+
+Port: `World::step_field_frame_slice` (the system-script gate,
+`FieldVmState::system_pass_open`), `World::field_scripts_held_for_battle`,
+`CutsceneTimeline::interaction_slot` (a boss-stager touch resumes the
+placement's own context and ends at its `0x21`), and
+`CutsceneTimeline::addressed_channels` - the engine's stand-in for the
+engaged set while a timeline plays: a placement's own script steps only once
+a playing context has addressed it with a cross-context op.
+
 ## Top-level dispatch
 
 ```c

@@ -199,7 +199,21 @@ header also bounds the battles the replay may open, since a loop that stops
 signing as `battle_loop` could still fight twice. A fixed replay's `frames`
 may run past the finding frame, so the check covers what happens after it -
 the town0c bee beat's replay runs through the lost fight and the field
-return.
+return. Only the recorded signature is asserted: a replay reduced under the
+neutral-pad control (`# soak-min-distinct = 1`) that now idles somewhere
+new still reads as a softlock there, which is the control working, not a
+regression.
+
+| fixed replay | finding | what closed it |
+|---|---|---|
+| `town0c_scripted_battle_loop` | the Rim Elm bee fight re-fired on every return | the touch-resumed beat ends at its `0x21`; the system script sits out a held player and the battle intro |
+| `town0d_dual_player_walk` | two first-talk records walked the player at once | a playing timeline steps only the placements it addresses |
+| `rugi_npc_walk_from_hide_box` | a placed NPC walked in from the off-map hide box | a spawned record's `4C 51` seat is published before a same-slice `C7` walk |
+| `vell_attack_short_step_park` | an attack approach parked a short step from its target | `+0x3C` is the per-frame body pair |
+| `taiku2_hp_bar_absorbing_park` | the `0x51` bar-drain gate parked on an absorbing HP-bar pair | the restaged action clip replays |
+
+The field-side fixes are described with their retail evidence in
+[`script-vm.md`](../subsystems/script-vm.md#engagement-and-the-system-script).
 
 ## What it cannot detect
 

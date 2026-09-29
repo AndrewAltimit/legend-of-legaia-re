@@ -3,6 +3,7 @@
 # soak-seed = 12
 # soak-signature = "softlock|taiku2|battle:state:81:hp-bar-absorbing"
 # detail: no progress for 1800 frames under 9 distinct pad masks
+# fixed: the restaged action clip replays, so the 0x51 bar-drain gate no longer parks on an absorbing HP-bar pair
 # soak-min-distinct = 1
 # reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell --profile release-test --test soak_harness soak_replay -- --nocapture
 [meta]
