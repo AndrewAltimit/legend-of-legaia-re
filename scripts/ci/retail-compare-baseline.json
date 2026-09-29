@@ -141,7 +141,7 @@
       "inventory": 1.0,
       "mode": 1.0,
       "party": 1.0,
-      "position": 1.0,
+      "position": 0.0,
       "scene": 1.0
     },
     "dolk2_market_noa": {
@@ -281,7 +281,7 @@
       "inventory": 1.0,
       "mode": 1.0,
       "party": 1.0,
-      "position": 0.556,
+      "position": 0.095,
       "scene": 1.0
     },
     "field_walled_collision_pin": {
@@ -547,7 +547,7 @@
       "inventory": 1.0,
       "mode": 1.0,
       "party": 1.0,
-      "position": 1.0,
+      "position": 0.0,
       "scene": 1.0
     },
     "nivora_cutscene_delilas_intro": {
