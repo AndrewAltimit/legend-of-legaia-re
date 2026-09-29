@@ -106,7 +106,8 @@ pub fn build_npc_catalog_res(
 ///
 /// - **global-pool specials are included**: a `model_index >= 0xF0` placement
 ///   (save point / party head) resolves against `global_pool[model - 0xF0]` -
-///   the world's PROT 0874 §0 pool that `enter_field_scene` seeds - and its
+///   the world's PROT 0874 §0 player bank (`World::field_head_pool`) that
+///   `enter_field_scene` seeds - and its
 ///   clip against the locomotion bundle. Skipping them left the save crystal
 ///   (and story party members) missing from the browser scene.
 /// - **clipless multi-object actors are included**: retail draw kind 5 draws

@@ -113,7 +113,7 @@ fn play_render_state_matches_native_field_pipeline() {
         );
 
         // ------------------------------------------------------- NPC layer
-        let npcs = build_npc_catalog_play(&host.index, name, res, &host.world.global_tmd_pool)
+        let npcs = build_npc_catalog_play(&host.index, name, res, &host.world.field_head_pool)
             .unwrap_or_else(|e| panic!("{name}: NPC catalog: {e}"));
 
         // Native reference: every classified placement draws unless parked at

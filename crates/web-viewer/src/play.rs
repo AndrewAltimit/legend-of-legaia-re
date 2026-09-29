@@ -1028,7 +1028,7 @@ impl LegaiaRuntime {
                 let g = self
                     .scene_host
                     .as_ref()
-                    .and_then(|h| h.world.global_tmd_pool.get(slot))
+                    .and_then(|h| h.world.field_head_pool.get(slot))
                     .and_then(|s| s.as_ref())
                     .ok_or_else(|| JsValue::from_str("play_npc_mesh: no global-pool mesh"))?;
                 (g.tmd.clone(), g.raw.clone())

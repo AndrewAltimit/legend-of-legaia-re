@@ -1094,8 +1094,10 @@ impl PlayWindowApp {
                 let src = if live_src.is_some() {
                     live_src
                 } else if p.special_model {
+                    // The player bank (PROT 0874 §0), not the shared pool the
+                    // effect-model library overlays - `World::field_head_pool`.
                     world
-                        .global_tmd_pool
+                        .field_head_pool
                         .get((p.model_index - 0xF0) as usize)
                         .and_then(|s| s.as_ref())
                         .map(|g| (g.tmd.clone(), g.raw.clone()))
@@ -1129,7 +1131,11 @@ impl PlayWindowApp {
                 // Rest pose: frame 0 of the record the placement's anim byte
                 // names; the object table truncates to the clip's bone count
                 // (the retail count-equality contract).
-                let pose: Option<Vec<([i16; 3], [i16; 3])>> = match (p.anim_id, bundle) {
+                // The live clip id (actor `+0x5C` after the spawn prologue)
+                // wins over the header byte: a save crystal ships header anim
+                // 0 and its prologue sets the savepoint clip.
+                let anim_id = world.field_npc_live_anim(p.index).unwrap_or(p.anim_id);
+                let pose: Option<Vec<([i16; 3], [i16; 3])>> = match (anim_id, bundle) {
                     (0, _) | (_, None) => None,
                     (id, Some(b)) => {
                         let rec_idx = (id - 1) as usize;

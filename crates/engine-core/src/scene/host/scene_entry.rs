@@ -1210,7 +1210,9 @@ impl SceneHost {
         // first call (subsequent calls early-return when the head is
         // already populated).
         let head_populated = self.world.global_tmd_pool.len() >= 5
-            && self.world.global_tmd_pool[..5].iter().all(|s| s.is_some());
+            && self.world.global_tmd_pool[..5].iter().all(|s| s.is_some())
+            && self.world.field_head_pool.len() >= 5
+            && self.world.field_head_pool[..5].iter().all(|s| s.is_some());
         if !head_populated
             && let Err(err) = seed_global_tmd_pool_from_befect_data(&self.index, &mut self.world)
         {

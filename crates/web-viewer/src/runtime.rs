@@ -1735,9 +1735,20 @@ impl LegaiaRuntime {
             &host.index,
             &name,
             res,
-            &host.world.global_tmd_pool,
+            &host.world.field_head_pool,
         ) {
-            Ok(pack) => self.npcs = Some(NpcRender { pack }),
+            Ok(mut pack) => {
+                // The live clip id (actor `+0x5C` after the spawn prologue)
+                // wins over the header byte, as in the native window: a save
+                // crystal ships header anim 0 and its prologue sets the
+                // savepoint clip.
+                for e in &mut pack.entries {
+                    if let Some(a) = host.world.field_npc_live_anim(e.placement.index) {
+                        e.placement.anim_id = a;
+                    }
+                }
+                self.npcs = Some(NpcRender { pack });
+            }
             Err(e) => crate::console_log(&format!("play: NPC catalog for {name}: {e}")),
         }
         self.build_npc_clips();
