@@ -241,3 +241,155 @@ fn the_sparring_exit_leaves_the_flag_bank_as_retail_does() {
     );
     assert_eq!(got, post, "flag bank 0x80085758..5B after the fight");
 }
+
+/// The pad a player presses in the sparring fight: acknowledge a box, take
+/// the command each lesson teaches, confirm. Item for the Items lesson (the
+/// ring's up arm, then the first item on the first target), Spirit (the down
+/// arm) for Spirit, Attack for Attacks and Hyper Arts.
+fn lesson_pad(w: &World) -> u16 {
+    use legaia_engine_core::battle_input::CommandPhase;
+    use legaia_engine_core::battle_tutorial::TutorialLesson;
+    let cross = InputState::mask_of([PadButton::Cross]);
+    if !w.battle.tutorial_boxes.is_empty() || w.battle.item_menu.is_some() {
+        return cross;
+    }
+    let lesson = w.battle.tutorial.as_ref().map(|t| t.lesson());
+    match w.battle.command.as_ref().map(|c| &c.phase) {
+        Some(CommandPhase::Menu { .. }) => match lesson {
+            Some(TutorialLesson::Items) => InputState::mask_of([PadButton::Up]),
+            Some(TutorialLesson::Spirit) => InputState::mask_of([PadButton::Down]),
+            _ => InputState::mask_of([PadButton::Left]),
+        },
+        Some(
+            CommandPhase::RoundPrompt { .. }
+            | CommandPhase::AttackMode { .. }
+            | CommandPhase::CommitConfirm { .. },
+        ) => InputState::mask_of([PadButton::Left]),
+        Some(CommandPhase::Targeting { .. }) | None => cross,
+        _ => 0,
+    }
+}
+
+/// Play the whole sparring fight with the pad, lesson by lesson, until the
+/// world leaves battle. Returns the lesson counter's values in the order the
+/// fight reached them.
+fn play_every_lesson(w: &mut World) -> Vec<u8> {
+    walk_into_battle(w);
+    assert!(
+        w.battle.tutorial.is_some(),
+        "the primed fight arms the machine"
+    );
+    // The stand-in formation's monster is no Tetsu: give it the spar's
+    // staying power so the lessons, not a knockout, end the fight.
+    for a in w.actors.iter_mut().skip(3) {
+        if a.battle.max_hp > 0 {
+            a.battle.max_hp = 9999;
+            a.battle.hp = 9999;
+        }
+    }
+    // A wounded lead, so the leaf has a target to benefit.
+    w.actors[0].battle.hp = w.actors[0].battle.max_hp / 2;
+    let mut seen = vec![0u8];
+    let mut prev = 0u16;
+    for _ in 0..40_000u32 {
+        let want = lesson_pad(w);
+        let pad = if prev == 0 { want } else { 0 };
+        prev = pad;
+        w.set_pad(pad);
+        let _ = w.tick();
+        if let Some(t) = w.battle.tutorial.as_ref()
+            && seen.last() != Some(&t.lesson)
+        {
+            seen.push(t.lesson);
+        }
+        if w.mode != SceneMode::Battle {
+            return seen;
+        }
+    }
+    panic!(
+        "the sparring fight never ended by play: lesson counter walked {seen:?}, flow {:?}, item window {:?}, bag {:?}, lead hp {}/{}",
+        w.battle.flow,
+        w.battle
+            .item_menu
+            .as_ref()
+            .map(|m| (&m.state, &m.filtered_items)),
+        w.party.inventory.get(&0x77),
+        w.actors[0].battle.hp,
+        w.actors[0].battle.max_hp,
+    );
+}
+
+/// A leaf to heal with: the item window offers only an item some target
+/// benefits from, and [`play_every_lesson`] wounds the lead once the fight
+/// has seated its stats.
+fn stock_the_items_lesson(w: &mut World) {
+    w.set_item_catalog(legaia_engine_core::items::ItemCatalog::vanilla());
+    w.party.inventory.add(0x77, 3); // Healing Leaf
+}
+
+/// The whole spar, played: each lesson commits the category it teaches, so
+/// the counter walks `0 -> 1 -> 2 -> 3` and on past the last lesson, and
+/// the fight ends.
+///
+/// The Items lesson is the regression. Retail's commit validator (overlay
+/// 967, flow state `110`, `0x801F7088..0x801F7190`) reads the committed
+/// category off the active actor (`lbu v1,0x1de(v0)`), and an item commit
+/// writes `1` there. The engine once validated only Attack (`3`) and Spirit
+/// (`4`), so an item use never met the validator, the lesson was never
+/// accepted, and the counter sat at `1` for the rest of the fight.
+#[test]
+fn the_sparring_fight_is_won_by_playing_all_four_lessons() {
+    let mut w = primed_world(None);
+    stock_the_items_lesson(&mut w);
+    let seen = play_every_lesson(&mut w);
+    println!("sparring fight played lesson by lesson: counter walked {seen:?}");
+    assert_eq!(&seen[..4], &[0, 1, 2, 3], "each lesson taught in turn");
+    assert!(
+        seen.last().is_some_and(|&l| l >= 4),
+        "the fourth lesson completed the drill"
+    );
+    assert_eq!(w.mode, SceneMode::Field);
+    assert!(w.system_flag_test(1), "story flag 1 = the survived outcome");
+    // Each seated member takes the Items lesson's command in its turn.
+    assert!(
+        w.party.inventory.get(&0x77).copied().unwrap_or(0) < 3,
+        "the Items lesson used a leaf"
+    );
+}
+
+/// The same played spar seeded from the retail in-fight flag bank ends with
+/// the retail post-fight bank.
+#[test]
+fn a_played_spar_leaves_the_flag_bank_as_retail_does() {
+    let Some(lib) = library() else {
+        eprintln!("[skip] saves/library/mednafen missing (set LEGAIA_SAVES_LIBRARY)");
+        return;
+    };
+    let (Some(pre), Some(post)) = (
+        state_bytes(&lib, IN_FIGHT, FLAG_BANK, 4),
+        state_bytes(&lib, POST_FIGHT, FLAG_BANK, 4),
+    ) else {
+        eprintln!("[skip] the two Tetsu anchors are not in {}", lib.display());
+        return;
+    };
+    let pre: [u8; 4] = pre.try_into().unwrap();
+    let mut w = primed_world(Some(pre));
+    stock_the_items_lesson(&mut w);
+    let seen = play_every_lesson(&mut w);
+    let got: Vec<u8> = (0..4u16)
+        .map(|byte| {
+            (0..8u16).fold(0u8, |acc, bit| {
+                if w.system_flag_test(byte * 8 + bit) {
+                    acc | (0x80 >> bit)
+                } else {
+                    acc
+                }
+            })
+        })
+        .collect();
+    println!(
+        "played spar (counter {seen:?}): retail flag bank {pre:02x?} -> {post:02x?}; port {got:02x?}"
+    );
+    assert_eq!(&seen[..4], &[0, 1, 2, 3]);
+    assert_eq!(got, post, "flag bank 0x80085758..5B after the played fight");
+}

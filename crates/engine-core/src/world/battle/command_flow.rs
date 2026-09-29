@@ -1537,6 +1537,23 @@ impl World {
             // `FUN_801E295C`'s item arm (`item_seed_band`) into the
             // `0x3C..0x40` cast states (`dispatch_pending_party_action`).
             let actor = self.battle_ctx.active_actor;
+            // Sparring tutorial: the item commit is category 1, and it meets
+            // the same `0x6E` validator an Attack or Spirit commit does. The
+            // hook reads the committed byte off the active actor
+            // (`lw v0,-0x6c90(0x801d)` / `lbu v1,0x1de(v0)`, `0x801F70D4..`
+            // in overlay 967), so an item commit must reach it with `1` in
+            // `+0x1DE` - which is what lets the Items lesson ever advance.
+            // A rejection (the wrong lesson) discards the pick before the
+            // copy is consumed and reopens the ring, as the attack path does.
+            //
+            // REF: FUN_801F6B70 (state 110, `0x801F7088..0x801F7190`)
+            if item_before.is_some()
+                && self.battle.tutorial.is_some()
+                && self.battle_tutorial_commit(vm::battle_action::ActionCategory::Item.as_byte())
+            {
+                self.open_battle_command(actor);
+                return;
+            }
             match item_before {
                 Some(item_id) => {
                     self.consume_item(item_id);

@@ -890,6 +890,13 @@ differ from retail and are deliberate:
 - **Target confirm.** `CommandPhase::Confirmed` is the Attack path, which retail
   routes `0x5A → 0x28` for the next member or `0x5A → 0x6E` after the last; state `100` is the item window's own target step and has
   no engine hook point yet.
+- **Every commit meets the `110` validator.** The handler reads the category
+  off the active actor (`lbu v1,0x1de(v0)` at `0x801F70E0`), so each of the
+  three committing surfaces reaches it with its own byte: the Attack target
+  confirm with `3`, Spirit with `4`, and the item window's use with `1`
+  (`World::tick_battle_item_menu`, checked before the copy is consumed). An
+  item commit that skipped the validator left the Items lesson unaccepted
+  forever, and the spar never ended.
 - **Lesson counter.** Retail shares `ctx[+0x28A]` with the action SM, where the
   sparring fight's scripted `case 0xFF` bumps it. The engine has no script driver
   for that fight, so `BattleTutorial::pending_advance` bumps the lesson when the
