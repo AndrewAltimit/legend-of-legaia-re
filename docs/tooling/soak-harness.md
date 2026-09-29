@@ -209,6 +209,10 @@ regression.
 | `town0c_scripted_battle_loop` | the Rim Elm bee fight re-fired on every return | the touch-resumed beat ends at its `0x21`; the system script sits out a held player and the battle intro |
 | `town0d_dual_player_walk` | two first-talk records walked the player at once | a playing timeline steps only the placements it addresses |
 | `rugi_npc_walk_from_hide_box` | a placed NPC walked in from the off-map hide box | a spawned record's `4C 51` seat is published before a same-slice `C7` walk |
+| `urudre3_npc_walk_from_hide_box` | the same, for a seat poked in an earlier op of the slice | any cross-context poke that moves an actor is published at once |
+| `bylon_party_actor_from_hide_box` | a party actor walked in from the hide box | `4C 37` copies the player onto the actor (the host hook answered "no player") |
+| `urudre1_player_seat_dropped` | a scripted player walk ran 8000 units, then free roam resumed on a camera spot | a record's `A3 F8` / `CC F8 51` seat takes the player arm |
+| `town0d_tetsu_picker_loop` | a conversation looping on its first picker option read as parked | harness: the digest counts timeline slices and the panel position |
 | `vell_attack_short_step_park` | an attack approach parked a short step from its target | `+0x3C` is the per-frame body pair |
 | `taiku2_hp_bar_absorbing_park` | the `0x51` bar-drain gate parked on an absorbing HP-bar pair | the restaged action clip replays |
 

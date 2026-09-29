@@ -1720,6 +1720,7 @@ impl World {
                     // caller on its own frozen actor and the camera beats
                     // after the sweep never play.
                     channels[ci].ctx.flags &= !0x400;
+                    let before = (channels[ci].ctx.world_x, channels[ci].ctx.world_z);
                     let r = vm::field::step_with_caller(
                         &mut host,
                         &mut channels[ci].ctx,
@@ -1729,6 +1730,22 @@ impl World {
                         pc,
                     );
                     host.world.field_vm.executing_channel = None;
+                    // A poke that moved the actor (`A3 <id>` seat, `CC <id> 37`
+                    // copy-from-player, ...) lands on retail's `+0x14`/`+0x18`
+                    // at once; surface it now rather than at the slice's end,
+                    // so a walk later in the same slice starts from it.
+                    let c = &channels[ci];
+                    let after = (c.ctx.world_x, c.ctx.world_z);
+                    if !c.object_bind
+                        && after != before
+                        && let Ok(slot) = u8::try_from(c.placement_index)
+                    {
+                        host.world
+                            .npcs
+                            .positions
+                            .insert(slot, (after.0 as i16, after.1 as i16));
+                        host.world.npcs.motions.remove(&slot);
+                    }
                     r
                 } else {
                     vm::field::step(&mut host, &mut tl.ctx, &tl.bytecode, pc)
@@ -4245,5 +4262,47 @@ mod tests {
             "retail resolves 0xF8 to the player and takes the player arm"
         );
         assert_eq!(w.cutscene.timeline.as_ref().unwrap().pc, 4);
+    }
+
+    #[test]
+    fn a_copy_from_player_then_walk_starts_at_the_player() {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        use crate::field_channels::FieldChannel;
+        use legaia_engine_vm::field::FieldCtx;
+        // `CC 40 37` (4C nibble-3 sub-7: copy the player's position onto
+        // channel 0x40), then `C7 40 12 10 33` walks it off. The channel
+        // carries the party-bank bit a `4C 50 F1` model select raises, which
+        // must not read as "this is the player".
+        let bc = vec![
+            0xCC, 0x40, 0x37, 0xC7, 0x40, 0x12, 0x10, 0x33, 0x4A, 0x40, 0x00,
+        ];
+        let mut w = World::new();
+        w.install_field_player(0);
+        w.actors[0].move_state.world_x = 0x900;
+        w.actors[0].move_state.world_z = 0x700;
+        w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
+        let hide = crate::world::FIELD_OFFMAP_HIDE_XZ;
+        w.field_vm.channels = vec![FieldChannel {
+            placement_index: 4,
+            ctx: FieldCtx {
+                script_id: 0x40,
+                world_x: hide as u16,
+                world_z: hide as u16,
+                flags: 0x0100_0000,
+                ..FieldCtx::default()
+            },
+            record_offset: 0,
+            pc: 0,
+            done: false,
+            object_bind: false,
+        }];
+        w.npcs.positions.insert(4, (hide, hide));
+        w.step_cutscene_timeline();
+        let leg = w.npcs.motions.get(&4).expect("the walk leg started");
+        assert_eq!(
+            (leg.state.world_x, leg.state.world_z),
+            (0x900, 0x700),
+            "the walk starts at the player the actor was copied onto"
+        );
     }
 }
