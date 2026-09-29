@@ -1,0 +1,1899 @@
+//! Soak / softlock harness: seeded, game-shaped pseudo-random pad input over
+//! every playable scene, with automatic failure detectors.
+//!
+//! Every other progression instrument in this crate walks a route someone
+//! chose (`critical_path_replay`, `menu_replay`, `minigame_replay`) or scores
+//! one rung per scene (`chapter1_frontier_ladder`). A scripted ladder never
+//! steps on the input a player produces by accident - the confirm pressed
+//! during a door fade, the menu opened on the frame a battle starts, the
+//! direction held into a shop picker. This harness produces that input on
+//! purpose and watches for the engine falling over.
+//!
+//! See `docs/tooling/soak-harness.md` for the policies, the detectors, how to
+//! run a long soak, and how to reproduce a finding. In short:
+//!
+//! - **Driver.** One fresh [`BootSession`] per run (scene, seed): new-game
+//!   party, live loop and player-driven battles armed, an empty card rack
+//!   mounted, then `frames` ticks of pad input from a seeded [`Policy`]. The
+//!   only actuator is `World::set_pad`; FMVs are skipped through the shared
+//!   hand-off kernel, as the headless `play` subcommand does.
+//! - **Detectors.** Panic (per-tick `catch_unwind`), `tick()` error, unknown
+//!   scene id, softlock (the progress digest frozen for a window while input
+//!   varies), a pause menu that will not close, a battle that never ends, a
+//!   drop to `Title`, non-finite camera floats, absurd values (HP / MP over
+//!   max, money, bag invariants), unbounded queue growth, and a hung tick
+//!   (wall-clock watchdog).
+//! - **Output.** `target/soak/<tag>/report.md` plus one `j-replay-v1` file per
+//!   distinct finding signature (pad stream only), truncated to the finding
+//!   frame and confirmed to reproduce.
+//!
+//! Tests:
+//!
+//! - `soak_smoke_no_panics` - a small fixed budget (a few scenes x one seed x
+//!   a few hundred frames) that asserts no panic, tick error or hang. The
+//!   CI-shaped gate.
+//! - `soak_long` - opt-in, runs only when `LEGAIA_SOAK_SEEDS` or
+//!   `LEGAIA_SOAK_FRAMES` is set. Report-only unless `LEGAIA_SOAK_STRICT=1`.
+//! - `soak_replay` - opt-in, runs only when `LEGAIA_SOAK_REPLAY=<file>` is set:
+//!   replays one saved finding and prints what the detectors see.
+//! - `soak_fixtures` - replays every committed fixture under
+//!   `scripts/replays/soak/` and reports whether each still reproduces.
+//!
+//! Skip-pass (CLAUDE.md disc-gated convention): `LEGAIA_DISC_BIN` unset. The
+//! assets come from `LEGAIA_EXTRACTED_DIR`, else `<repo>/extracted`, else
+//! straight from the disc image.
+
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fmt::Write as _;
+use std::hash::Hasher;
+use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, Once};
+use std::time::{Duration, Instant};
+
+use legaia_engine_core::input::PadButton;
+use legaia_engine_core::save_screen::card_port_snapshot;
+use legaia_engine_core::save_select::{SaveRack, SlotSnapshot};
+use legaia_engine_core::scene::{Scene, SceneTickEvent, is_world_map_scene};
+use legaia_engine_core::world::SceneMode;
+use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
+use legaia_engine_shell::replay::{ReplayFile, ReplayMeta};
+
+// ---------------------------------------------------------------------------
+// Environment
+// ---------------------------------------------------------------------------
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|p| p.parent())
+        .expect("workspace root")
+        .to_path_buf()
+}
+
+fn env_u64(key: &str) -> Option<u64> {
+    let v = std::env::var(key).ok()?;
+    let v = v.trim();
+    if let Some(hex) = v.strip_prefix("0x") {
+        u64::from_str_radix(hex, 16).ok()
+    } else {
+        v.parse().ok()
+    }
+}
+
+fn env_flag(key: &str) -> bool {
+    std::env::var(key).is_ok_and(|v| !v.is_empty() && v != "0")
+}
+
+/// Where the session reads its assets from.
+#[derive(Clone, Debug)]
+enum Source {
+    Extracted(PathBuf),
+    Disc(PathBuf),
+}
+
+fn source() -> Option<Source> {
+    let disc = std::env::var_os("LEGAIA_DISC_BIN").map(PathBuf::from);
+    let Some(disc) = disc.filter(|p| p.exists()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or missing (disc-gated convention)");
+        return None;
+    };
+    let mut candidates = Vec::new();
+    if let Some(d) = std::env::var_os("LEGAIA_EXTRACTED_DIR") {
+        candidates.push(PathBuf::from(d));
+    }
+    candidates.push(repo_root().join("extracted"));
+    for d in candidates {
+        if d.join("PROT.DAT").exists() && d.join("CDNAME.TXT").exists() {
+            return Some(Source::Extracted(d));
+        }
+    }
+    Some(Source::Disc(disc))
+}
+
+fn open_session(src: &Source) -> BootSession {
+    let cfg = BootConfig {
+        scene: legaia_engine_shell::boot::DEFAULT_BOOT_SCENE.to_string(),
+        enable_audio: false,
+    };
+    match src {
+        Source::Extracted(d) => BootSession::open(d, &cfg).expect("open BootSession (extracted)"),
+        Source::Disc(p) => BootSession::open_disc(p, &cfg).expect("open BootSession (disc)"),
+    }
+}
+
+fn out_dir(tag: &str) -> PathBuf {
+    let base = std::env::var_os("LEGAIA_SOAK_OUT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| repo_root().join("target").join("soak"));
+    base.join(tag)
+}
+
+// ---------------------------------------------------------------------------
+// Scene set
+// ---------------------------------------------------------------------------
+
+/// Every CDNAME label that resolves to a playable scene (a kingdom overworld,
+/// or a scene whose field MAN resolves), unioned with the decoded `0x3F`
+/// destinations of those scenes that also resolve.
+fn scene_set(session: &BootSession) -> Vec<String> {
+    use legaia_engine_core::man_field_scripts::scene_destinations;
+    let index = &session.host.index;
+    let playable = |name: &str| -> bool {
+        if is_world_map_scene(name) {
+            return Scene::load(index, name).is_ok();
+        }
+        Scene::load(index, name)
+            .ok()
+            .and_then(|s| s.field_man_payload(index).ok().flatten())
+            .is_some()
+    };
+    let mut set: BTreeSet<String> = BTreeSet::new();
+    for name in index.cdname_scene_names() {
+        if playable(&name) {
+            set.insert(name);
+        }
+    }
+    let mut extra = BTreeSet::new();
+    for name in &set {
+        let Some(man) = Scene::load(index, name)
+            .ok()
+            .and_then(|s| s.field_man_payload(index).ok().flatten())
+        else {
+            continue;
+        };
+        let Ok(mf) = legaia_asset::man_section::parse(&man) else {
+            continue;
+        };
+        for d in scene_destinations(&mf, &man) {
+            if !set.contains(&d.scene_name) && playable(&d.scene_name) {
+                extra.insert(d.scene_name);
+            }
+        }
+    }
+    set.extend(extra);
+    set.into_iter().collect()
+}
+
+// ---------------------------------------------------------------------------
+// RNG
+// ---------------------------------------------------------------------------
+
+/// SplitMix64 - tiny, seedable, and stable across platforms.
+#[derive(Clone)]
+struct Rng(u64);
+
+impl Rng {
+    fn new(seed: u64) -> Self {
+        Self(seed ^ 0x9E37_79B9_7F4A_7C15)
+    }
+    fn next_u64(&mut self) -> u64 {
+        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    }
+    fn below(&mut self, n: u32) -> u32 {
+        (self.next_u64() % u64::from(n.max(1))) as u32
+    }
+    fn range(&mut self, lo: u32, hi: u32) -> u32 {
+        lo + self.below(hi - lo + 1)
+    }
+    fn chance(&mut self, pct: u32) -> bool {
+        self.below(100) < pct
+    }
+}
+
+/// Per-(scene, seed) policy seed, so one scene's run does not depend on the
+/// order the scene list happens to be in.
+fn run_seed(scene: &str, seed: u64) -> u64 {
+    let mut h: u64 = 0xCBF2_9CE4_8422_2325;
+    for b in scene.bytes() {
+        h ^= u64::from(b);
+        h = h.wrapping_mul(0x0100_0000_01B3);
+    }
+    h ^ seed.wrapping_mul(0x9E37_79B9_7F4A_7C15)
+}
+
+// ---------------------------------------------------------------------------
+// Pad
+// ---------------------------------------------------------------------------
+
+const UP: u16 = 0x0010;
+const RIGHT: u16 = 0x0020;
+const DOWN: u16 = 0x0040;
+const LEFT: u16 = 0x0080;
+const DIRS: [u16; 4] = [UP, RIGHT, DOWN, LEFT];
+
+fn b(p: PadButton) -> u16 {
+    p.mask()
+}
+
+// ---------------------------------------------------------------------------
+// Policy
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Segment {
+    /// Hold one or two directions; occasionally tap Cross.
+    Walk { dirs: u16, confirm_every: u32 },
+    /// Alternate Cross / Circle taps.
+    Mash,
+    /// Press Start once; the menu arm below takes over while it is open.
+    OpenMenu,
+    /// Neutral pad.
+    Idle,
+    /// A fresh random mask every few frames, every button but Start.
+    Chaos,
+}
+
+/// The seeded input source. A pure function of its seed and the observed
+/// session, so `(scene, seed, frames)` alone regenerates a run; the recorded
+/// pad stream is what the replay file carries.
+struct Policy {
+    rng: Rng,
+    seg: Segment,
+    seg_left: u32,
+    /// Frames the pause menu has been open this visit.
+    menu_frames: u32,
+    /// How long this menu visit browses before it starts backing out.
+    menu_budget: u32,
+    /// Chaos mask currently held and for how long.
+    chaos_mask: u16,
+    chaos_left: u32,
+    /// Tap duty cycle: the last frame's mask.
+    last: u16,
+}
+
+impl Policy {
+    fn new(seed: u64) -> Self {
+        Self {
+            rng: Rng::new(seed),
+            seg: Segment::Idle,
+            seg_left: 0,
+            menu_frames: 0,
+            menu_budget: 0,
+            chaos_mask: 0,
+            chaos_left: 0,
+            last: 0,
+        }
+    }
+
+    /// A tap: the wanted mask on one frame, neutral on the next. Every UI
+    /// surface reads `just_pressed`, so a held mask is one event.
+    fn tap(&mut self, want: u16) -> u16 {
+        if self.last != 0 { 0 } else { want }
+    }
+
+    fn random_face(&mut self) -> u16 {
+        match self.rng.below(10) {
+            0..=4 => b(PadButton::Cross),
+            5..=7 => b(PadButton::Circle),
+            8 => b(PadButton::Triangle),
+            _ => b(PadButton::Square),
+        }
+    }
+
+    fn random_dir(&mut self) -> u16 {
+        DIRS[self.rng.below(4) as usize]
+    }
+
+    fn next_segment(&mut self) {
+        let r = self.rng.below(100);
+        let (seg, len) = if r < 42 {
+            let d0 = self.random_dir();
+            let dirs = if self.rng.chance(25) {
+                // A diagonal: two adjacent directions.
+                let i = DIRS.iter().position(|&d| d == d0).unwrap_or(0);
+                d0 | DIRS[(i + 1) % 4]
+            } else {
+                d0
+            };
+            let confirm_every = if self.rng.chance(35) {
+                self.rng.range(8, 40)
+            } else {
+                0
+            };
+            (
+                Segment::Walk {
+                    dirs,
+                    confirm_every,
+                },
+                self.rng.range(15, 160),
+            )
+        } else if r < 67 {
+            (Segment::Mash, self.rng.range(20, 140))
+        } else if r < 77 {
+            (Segment::OpenMenu, 2)
+        } else if r < 87 {
+            (Segment::Idle, self.rng.range(5, 60))
+        } else {
+            (Segment::Chaos, self.rng.range(20, 120))
+        };
+        self.seg = seg;
+        self.seg_left = len;
+    }
+
+    fn pad(&mut self, s: &BootSession, frame: u64) -> u16 {
+        let pad = self.pad_inner(s, frame);
+        self.last = pad;
+        pad
+    }
+
+    fn pad_inner(&mut self, s: &BootSession, frame: u64) -> u16 {
+        let w = &s.host.world;
+        // Pause menu open: browse at random, then back out with Circle.
+        if s.field_menu.is_some() {
+            if self.menu_frames == 0 {
+                self.menu_budget = self.rng.range(30, 420);
+            }
+            self.menu_frames += 1;
+            if self.menu_frames > self.menu_budget {
+                return self.tap(b(PadButton::Circle));
+            }
+            let want = match self.rng.below(10) {
+                0..=4 => self.random_dir(),
+                5..=6 => b(PadButton::Cross),
+                7..=8 => b(PadButton::Circle),
+                _ => b(PadButton::Triangle),
+            };
+            return self.tap(want);
+        }
+        self.menu_frames = 0;
+
+        match w.mode {
+            SceneMode::Battle => {
+                if self.rng.chance(75) {
+                    let want = fight_pad(s);
+                    if want != 0 {
+                        return self.tap(want);
+                    }
+                }
+                let want = if self.rng.chance(50) {
+                    self.random_dir()
+                } else {
+                    self.random_face()
+                };
+                self.tap(want)
+            }
+            SceneMode::Field | SceneMode::WorldMap => {
+                // A dialogue or a picker owns the pad: mostly confirm, some
+                // directions (pickers), some cancel.
+                if w.dialogue_owns_input() && self.rng.chance(70) {
+                    let want = match self.rng.below(10) {
+                        0..=5 => b(PadButton::Cross),
+                        6..=7 => self.random_dir(),
+                        _ => b(PadButton::Circle),
+                    };
+                    return self.tap(want);
+                }
+                self.field_pad(frame)
+            }
+            // Minigames, cutscenes, the title: every button but Start, with
+            // held directions mixed in.
+            _ => {
+                if self.chaos_left == 0 {
+                    self.chaos_left = self.rng.range(2, 12);
+                    self.chaos_mask = match self.rng.below(4) {
+                        0 => self.random_dir(),
+                        1 => self.random_face(),
+                        2 => 0,
+                        _ => self.random_dir() | self.random_face(),
+                    };
+                }
+                self.chaos_left -= 1;
+                if self.chaos_mask & 0xF000 != 0 {
+                    self.tap(self.chaos_mask)
+                } else {
+                    self.chaos_mask
+                }
+            }
+        }
+    }
+
+    fn field_pad(&mut self, frame: u64) -> u16 {
+        if self.seg_left == 0 {
+            self.next_segment();
+        }
+        self.seg_left -= 1;
+        match self.seg {
+            Segment::Walk {
+                dirs,
+                confirm_every,
+            } => {
+                if confirm_every != 0 && frame.is_multiple_of(u64::from(confirm_every)) {
+                    dirs | b(PadButton::Cross)
+                } else {
+                    dirs
+                }
+            }
+            Segment::Mash => {
+                let want = if self.rng.chance(70) {
+                    b(PadButton::Cross)
+                } else {
+                    b(PadButton::Circle)
+                };
+                self.tap(want)
+            }
+            Segment::OpenMenu => self.tap(b(PadButton::Start)),
+            Segment::Idle => 0,
+            Segment::Chaos => {
+                if self.chaos_left == 0 {
+                    self.chaos_left = self.rng.range(2, 8);
+                    let mut m = 0u16;
+                    for bit in 0..16u16 {
+                        let mask = 1u16 << bit;
+                        if mask == b(PadButton::Start) {
+                            continue;
+                        }
+                        if self.rng.chance(12) {
+                            m |= mask;
+                        }
+                    }
+                    self.chaos_mask = m;
+                }
+                self.chaos_left -= 1;
+                self.chaos_mask
+            }
+        }
+    }
+}
+
+/// The battle fighter's wanted press this frame (see `critical_path_replay`'s
+/// `FightPolicy`): Begin, Attack, Auto, confirm the target, Cross any message
+/// box. `0` when nothing obvious is wanted.
+fn fight_pad(s: &BootSession) -> u16 {
+    use legaia_engine_core::battle_input::CommandPhase;
+    use legaia_engine_core::inventory_use::InventoryUseState;
+    let w = &s.host.world;
+    if !w.battle.tutorial_boxes.is_empty() {
+        return b(PadButton::Cross);
+    }
+    if let Some(menu) = w.battle.item_menu.as_ref() {
+        return match menu.state {
+            InventoryUseState::Browsing { .. } => b(PadButton::Circle),
+            InventoryUseState::TargetSelect { .. } => b(PadButton::Cross),
+            _ => 0,
+        };
+    }
+    if let Some(session) = w.battle.command.as_ref() {
+        return match &session.phase {
+            CommandPhase::RoundPrompt { .. } => LEFT,
+            CommandPhase::Menu { .. } => LEFT,
+            CommandPhase::AttackMode { .. } => LEFT,
+            CommandPhase::Targeting { .. } => b(PadButton::Cross),
+            CommandPhase::CommitConfirm { .. } => LEFT,
+            _ => 0,
+        };
+    }
+    b(PadButton::Cross)
+}
+
+// ---------------------------------------------------------------------------
+// Progress digest
+// ---------------------------------------------------------------------------
+
+/// `fmt::Write` straight into a hasher, so a `Debug` rendering is hashed
+/// without being allocated.
+struct HashWriter(std::collections::hash_map::DefaultHasher);
+
+impl std::fmt::Write for HashWriter {
+    fn write_str(&mut self, s: &str) -> std::fmt::Result {
+        self.0.write(s.as_bytes());
+        Ok(())
+    }
+}
+
+fn player_slot(s: &BootSession) -> usize {
+    s.host.world.player_actor_slot.unwrap_or(0) as usize
+}
+
+/// Everything a player could see move. Softlock = this frozen for a whole
+/// window while the pad varies. Deliberately broad: a false "frozen" costs a
+/// triage, a false "moving" only a missed finding.
+fn progress_digest(s: &BootSession) -> u64 {
+    let w = &s.host.world;
+    // `DefaultHasher::new()` is keyed with fixed zeros, so the digest is
+    // stable across runs and processes.
+    let mut h = HashWriter(std::collections::hash_map::DefaultHasher::new());
+    let _ = write!(h, "{:?}|{}|", w.mode, w.active_scene_label);
+    if let Some(a) = w.actors.get(player_slot(s)) {
+        let m = &a.move_state;
+        let _ = write!(h, "p{},{},{},{}|", m.world_x, m.world_y, m.world_z, m.y_rot);
+    }
+    let _ = write!(h, "pc{}|", w.field_pc);
+    if let Some(tl) = w.cutscene.timeline.as_ref() {
+        let _ = write!(h, "tl{}|", tl.pc);
+    }
+    for hc in &w.field_vm.helper_contexts {
+        let _ = write!(h, "hc{}|", hc.pc);
+    }
+    let _ = write!(h, "{:?}|{:?}|", w.dialog.current, w.dialog.inline.is_some());
+    if let Some(inline) = w.dialog.inline.as_ref() {
+        let _ = write!(h, "{inline:?}|");
+    }
+    if let Some(m) = s.field_menu.as_ref() {
+        let _ = write!(h, "menu{m:?}|");
+    }
+    if let Some(sub) = s.field_menu_sub.as_ref() {
+        let _ = write!(h, "sub{}|", sub.row().index());
+    }
+    let _ = write!(h, "{:?}|{}|", w.shops.pending_shop, w.shops.shop_open);
+    let _ = write!(h, "{:?}|", w.party.name_entry);
+    let _ = write!(h, "{:?}|", w.cutscene.active_fmv);
+    match w.mode {
+        SceneMode::Battle => {
+            let _ = write!(
+                h,
+                "{:?}|{:?}|{}|",
+                w.battle.command,
+                w.battle.item_menu,
+                w.battle.tutorial_boxes.len()
+            );
+            let _ = write!(h, "{:?}|", w.battle_ctx);
+            for a in w.actors.iter().take(8) {
+                let _ = write!(h, "{},{},{}|", a.battle.hp, a.battle.mp, a.battle.liveness);
+            }
+        }
+        SceneMode::Dance => {
+            let _ = write!(h, "{:?}", w.minigames.dance);
+        }
+        SceneMode::Fishing => {
+            let _ = write!(h, "{:?}", w.minigames.fishing);
+        }
+        SceneMode::SlotMachine => {
+            let _ = write!(h, "{:?}", w.minigames.slot_machine);
+        }
+        SceneMode::BakaFighter => {
+            let _ = write!(h, "{:?}", w.minigames.baka_fighter);
+        }
+        _ => {
+            let _ = write!(
+                h,
+                "{:?}{:?}",
+                w.minigames.muscle_dome.is_some(),
+                w.minigames.muscle_contest.is_some()
+            );
+        }
+    }
+    let _ = write!(h, "${}|bag{}", w.party.money, w.party.inventory.len());
+    h.0.finish()
+}
+
+/// What holds the frame, as a short signature fragment.
+fn held_by(s: &BootSession) -> String {
+    let w = &s.host.world;
+    let op_at = |bc: &[u8], pc: usize| bc.get(pc).copied().unwrap_or(0xFF);
+    if let Some(m) = s.field_menu.as_ref() {
+        let sub = s
+            .field_menu_sub
+            .as_ref()
+            .map(|x| format!("{:?}", x.row()))
+            .unwrap_or_else(|| "root".into());
+        return format!("pause-menu:{sub}:{}", variant(&format!("{:?}", m.phase())));
+    }
+    match w.mode {
+        SceneMode::Battle => {
+            if !w.battle.tutorial_boxes.is_empty() {
+                return "battle:message-box".into();
+            }
+            if let Some(m) = w.battle.item_menu.as_ref() {
+                return format!("battle:item-menu:{}", variant(&format!("{:?}", m.state)));
+            }
+            if let Some(c) = w.battle.command.as_ref() {
+                return format!("battle:command:{}", variant(&format!("{:?}", c.phase)));
+            }
+            return format!(
+                "battle:state:{}",
+                variant(&format!("{:?}", w.battle_ctx.action_state))
+            );
+        }
+        SceneMode::Field | SceneMode::WorldMap => {}
+        other => return format!("mode:{other:?}"),
+    }
+    if w.party.name_entry.is_some() {
+        return "name-entry".into();
+    }
+    if w.shops.shop_open || w.shops.pending_shop.is_some() {
+        return "shop".into();
+    }
+    if let Some(tl) = w.cutscene.timeline.as_ref() {
+        return format!(
+            "timeline@{:#06x}:op{:02x}",
+            tl.pc,
+            op_at(&tl.bytecode, tl.pc)
+        );
+    }
+    if w.dialog.current.is_some() || w.dialog.inline.is_some() {
+        return "dialogue".into();
+    }
+    if let Some(hc) = w.field_vm.helper_contexts.first() {
+        return format!("helper@{:#06x}:op{:02x}", hc.pc, op_at(&hc.bytecode, hc.pc));
+    }
+    let m = &w.actors[player_slot(s).min(w.actors.len().saturating_sub(1))].move_state;
+    format!(
+        "free-roam:immobile@tile({},{})",
+        (m.world_x - 0x40) >> 7,
+        (m.world_z - 0x40) >> 7
+    )
+}
+
+/// `Foo { .. }` / `Foo(..)` / `Foo` -> `Foo`.
+fn variant(debug: &str) -> String {
+    debug
+        .split([' ', '{', '(', ','])
+        .next()
+        .unwrap_or("")
+        .to_string()
+}
+
+// ---------------------------------------------------------------------------
+// Findings
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+struct Finding {
+    detector: &'static str,
+    /// The scene the run started in.
+    start_scene: String,
+    /// The scene the world was in when the detector fired.
+    scene: String,
+    mode: String,
+    frame: u64,
+    /// Detector-specific location: a panic's `file:line`, a softlock's
+    /// holder, a value check's field.
+    location: String,
+    detail: String,
+}
+
+impl Finding {
+    fn signature(&self) -> String {
+        format!("{}|{}|{}", self.detector, self.scene, self.location)
+    }
+    /// Rank bucket: lower is worse.
+    fn rank(&self) -> u8 {
+        match self.detector {
+            "panic" | "hang" | "tick_error" => 0,
+            "softlock" | "menu_stuck" | "battle_endless" | "dropped_to_title" => {
+                if self.location.starts_with("free-roam") {
+                    2
+                } else {
+                    1
+                }
+            }
+            "unknown_scene" => 1,
+            _ => 3,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Panic capture
+// ---------------------------------------------------------------------------
+
+thread_local! {
+    static LAST_PANIC: std::cell::RefCell<Option<(String, String, String)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+static HOOK: Once = Once::new();
+
+fn install_panic_hook() {
+    HOOK.call_once(|| {
+        let default = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let in_soak = std::thread::current()
+                .name()
+                .is_some_and(|n| n.starts_with("soak-"));
+            if !in_soak {
+                default(info);
+                return;
+            }
+            let loc = info
+                .location()
+                .map(|l| format!("{}:{}", l.file(), l.line()))
+                .unwrap_or_else(|| "?".into());
+            let msg = if let Some(s) = info.payload().downcast_ref::<&str>() {
+                (*s).to_string()
+            } else if let Some(s) = info.payload().downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "<non-string payload>".into()
+            };
+            let bt = std::backtrace::Backtrace::force_capture().to_string();
+            let frames: Vec<&str> = bt
+                .lines()
+                .map(str::trim)
+                .filter(|l| l.contains("legaia_") && !l.contains("soak_harness"))
+                .take(6)
+                .collect();
+            LAST_PANIC.with(|p| {
+                *p.borrow_mut() = Some((loc, msg, frames.join(" <- ")));
+            });
+        }));
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Run
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+struct RunSpec {
+    scene: String,
+    seed: u64,
+    frames: u64,
+}
+
+#[derive(Default, Clone, Debug)]
+struct RunStats {
+    frames_run: u64,
+    battles: u32,
+    battles_won: u32,
+    wiped: bool,
+    scenes_entered: BTreeSet<String>,
+    modes: BTreeSet<String>,
+    menu_opens: u32,
+    fmvs: u32,
+}
+
+struct RunOutcome {
+    spec: RunSpec,
+    findings: Vec<Finding>,
+    pads: Vec<u16>,
+    stats: RunStats,
+    enter_ok: bool,
+}
+
+struct Tunables {
+    softlock_frames: u64,
+    digest_every: u64,
+    menu_close_frames: u64,
+    battle_frames: u64,
+    queue_cap: usize,
+}
+
+impl Tunables {
+    fn from_env() -> Self {
+        Self {
+            softlock_frames: env_u64("LEGAIA_SOAK_SOFTLOCK_FRAMES").unwrap_or(1800),
+            digest_every: 15,
+            menu_close_frames: 900,
+            battle_frames: env_u64("LEGAIA_SOAK_BATTLE_FRAMES").unwrap_or(18_000),
+            queue_cap: 4096,
+        }
+    }
+}
+
+/// Shared with the watchdog: what each worker is doing right now.
+#[derive(Clone, Debug, Default)]
+struct WorkerStatus {
+    tick_started: Option<Instant>,
+    scene: String,
+    seed: u64,
+    frame: u64,
+}
+
+type StatusBoard = Arc<Mutex<Vec<WorkerStatus>>>;
+
+fn value_checks(s: &BootSession, t: &Tunables, out: &mut Vec<(&'static str, String, String)>) {
+    let w = &s.host.world;
+    let cam = &s.camera;
+    let floats = [
+        ("camera.eye", cam.eye.iter().all(|v| v.is_finite())),
+        ("camera.look_at", cam.look_at.iter().all(|v| v.is_finite())),
+        (
+            "camera.angles",
+            cam.yaw.is_finite() && cam.pitch.is_finite() && cam.roll.is_finite(),
+        ),
+        (
+            "camera.follow",
+            cam.follow_distance.is_finite() && cam.follow_height.is_finite(),
+        ),
+        (
+            "cutscene.caption_alpha",
+            w.cutscene.caption_alpha.is_finite(),
+        ),
+    ];
+    for (field, ok) in floats {
+        if !ok {
+            out.push(("non_finite", field.to_string(), format!("{cam:?}")));
+        }
+    }
+    for (i, m) in w.party.roster.members.iter().enumerate() {
+        let hms = m.hp_mp_sp();
+        if hms.hp_max > 0 && hms.hp_cur > hms.hp_max {
+            out.push((
+                "value",
+                format!("roster.hp>max(slot{i})"),
+                format!("{}/{}", hms.hp_cur, hms.hp_max),
+            ));
+        }
+        if hms.mp_max > 0 && hms.mp_cur > hms.mp_max {
+            out.push((
+                "value",
+                format!("roster.mp>max(slot{i})"),
+                format!("{}/{}", hms.mp_cur, hms.mp_max),
+            ));
+        }
+        // `+0x130` is the retail displayed level (`CharacterRecord::level`'s
+        // `+0x100` is an engine-internal cell that retail leaves zero).
+        let lv = m.magic_rank();
+        if lv == 0 || lv > 99 {
+            out.push(("value", format!("roster.level(slot{i})"), format!("{lv}")));
+        }
+    }
+    if w.mode == SceneMode::Battle {
+        for (i, a) in w.actors.iter().take(8).enumerate() {
+            if a.battle.max_hp > 0 && a.battle.hp > a.battle.max_hp {
+                out.push((
+                    "value",
+                    format!("battle.hp>max(actor{i})"),
+                    format!("{}/{}", a.battle.hp, a.battle.max_hp),
+                ));
+            }
+        }
+    }
+    if w.party.money < 0 || w.party.money > 99_999_999 {
+        out.push(("value", "party.money".into(), format!("{}", w.party.money)));
+    }
+    let slots = w.party.inventory.slots();
+    let (lo, hi) = w.party.inventory.window_bounds();
+    let mut seen: HashMap<u8, usize> = HashMap::new();
+    for (i, &(id, count)) in slots.iter().enumerate() {
+        if count > 99 {
+            out.push((
+                "value",
+                "bag.count>99".into(),
+                format!("slot{i} id{id} x{count}"),
+            ));
+        }
+        if id == 0 && count != 0 {
+            out.push((
+                "value",
+                "bag.free-slot-count".into(),
+                format!("slot{i} x{count}"),
+            ));
+        }
+        if id != 0
+            && (lo..hi).contains(&i)
+            && let Some(prev) = seen.insert(id, i)
+        {
+            out.push((
+                "value",
+                "bag.duplicate-stack".into(),
+                format!("id{id} slots {prev},{i}"),
+            ));
+        }
+    }
+    let queues = [
+        ("pending_field_events", w.pending_field_events.len()),
+        ("pending_battle_events", w.pending_battle_events.len()),
+        ("pending_actor_spawns", w.pending_actor_spawns.len()),
+        ("helper_contexts", w.field_vm.helper_contexts.len()),
+        (
+            "pending_record_spawns",
+            w.field_vm.pending_record_spawns.len(),
+        ),
+        ("battle.hit_fx", w.battle.hit_fx.len()),
+        ("battle.effect_spawns", w.battle.effect_spawns.len()),
+        ("debug_effects", w.debug_effects.len()),
+        ("actors", w.actors.len()),
+    ];
+    for (q, n) in queues {
+        if n > t.queue_cap {
+            let detail = if q == "pending_field_events" {
+                let mut kinds: BTreeMap<String, usize> = BTreeMap::new();
+                for ev in &w.pending_field_events {
+                    *kinds.entry(variant(&format!("{ev:?}"))).or_default() += 1;
+                }
+                format!("len {n}: {kinds:?}")
+            } else {
+                format!("len {n}")
+            };
+            out.push(("unbounded_growth", q.to_string(), detail));
+        }
+    }
+}
+
+fn run_one(
+    src: &Source,
+    known_scenes: &BTreeSet<String>,
+    spec: &RunSpec,
+    pads_override: Option<&[u16]>,
+    t: &Tunables,
+    status: Option<(&StatusBoard, usize)>,
+) -> RunOutcome {
+    let mut session = open_session(src);
+    session.begin_new_game();
+    session.set_save_rack(
+        SaveRack::CardPorts(vec![
+            card_port_snapshot(0, Some("MEMORY CARD")),
+            card_port_snapshot(1, None),
+        ]),
+        vec![(0..15).map(SlotSnapshot::empty).collect(), Vec::new()],
+    );
+    session.host.world.rng_state = (run_seed(&spec.scene, spec.seed) >> 16) as u32;
+    let opts = FieldLiveOpts {
+        live_loop: true,
+        player_battle: true,
+        battle_bgm: None,
+    };
+    let mut findings: Vec<Finding> = Vec::new();
+    let mut stats = RunStats::default();
+    let mut pads = Vec::with_capacity(spec.frames as usize);
+
+    let mk = |session: &BootSession,
+              detector: &'static str,
+              frame: u64,
+              location: String,
+              detail: String| Finding {
+        detector,
+        start_scene: spec.scene.clone(),
+        scene: session.host.world.active_scene_label.clone(),
+        mode: format!("{:?}", session.host.world.mode),
+        frame,
+        location,
+        detail,
+    };
+
+    let entered = catch_unwind(AssertUnwindSafe(|| {
+        session.enter_scene_live(&spec.scene, &opts)
+    }));
+    let enter_ok = match entered {
+        Ok(Ok(_)) => true,
+        Ok(Err(e)) => {
+            findings.push(mk(
+                &session,
+                "tick_error",
+                0,
+                "enter_scene_live".into(),
+                format!("{e:#}"),
+            ));
+            false
+        }
+        Err(_) => {
+            let (loc, msg, frames) = LAST_PANIC
+                .with(|p| p.borrow_mut().take())
+                .unwrap_or_default();
+            findings.push(mk(
+                &session,
+                "panic",
+                0,
+                loc,
+                format!("[enter] {msg} | {frames}"),
+            ));
+            false
+        }
+    };
+    if !enter_ok {
+        return RunOutcome {
+            spec: spec.clone(),
+            findings,
+            pads,
+            stats,
+            enter_ok,
+        };
+    }
+
+    let mut policy = Policy::new(run_seed(&spec.scene, spec.seed));
+    let mut last_digest = progress_digest(&session);
+    let mut last_change = 0u64;
+    let mut menu_open_since: Option<u64> = None;
+    let mut battle_since: Option<u64> = None;
+    let mut prev_mode = session.host.world.mode;
+    let mut reported: BTreeSet<String> = BTreeSet::new();
+
+    for frame in 0..spec.frames {
+        let pad = match pads_override {
+            Some(p) => p.get(frame as usize).copied().unwrap_or(0),
+            None => policy.pad(&session, frame),
+        };
+        pads.push(pad);
+        let was_menu_open = session.field_menu.is_some();
+        session.host.world.set_pad(pad);
+        if let Some((board, i)) = status {
+            let mut b = board.lock().unwrap();
+            b[i].tick_started = Some(Instant::now());
+            b[i].frame = frame;
+        }
+        let r = catch_unwind(AssertUnwindSafe(|| session.tick()));
+        if let Some((board, i)) = status {
+            board.lock().unwrap()[i].tick_started = None;
+        }
+        stats.frames_run = frame + 1;
+        let event = match r {
+            Ok(Ok(ev)) => ev,
+            Ok(Err(e)) => {
+                findings.push(mk(
+                    &session,
+                    "tick_error",
+                    frame,
+                    variant(&format!("{e}")),
+                    format!("{e:#}"),
+                ));
+                break;
+            }
+            Err(_) => {
+                let (loc, msg, frames) = LAST_PANIC
+                    .with(|p| p.borrow_mut().take())
+                    .unwrap_or_default();
+                findings.push(mk(
+                    &session,
+                    "panic",
+                    frame,
+                    loc,
+                    format!("{msg} | {frames}"),
+                ));
+                break;
+            }
+        };
+        // Both play hosts drain the field-event queue after the tick (the
+        // window's `drain_and_route_field_events`, the browser runtime's
+        // drain); `BootSession::tick` routes only the BGM events and restores
+        // the rest, so a headless driver that skipped this would measure its
+        // own leak. Checked before the drain, then drained.
+        if session.host.world.pending_field_events.len() > t.queue_cap {
+            let mut v = Vec::new();
+            value_checks(&session, t, &mut v);
+            for (det, loc, detail) in v {
+                if det == "unbounded_growth" && reported.insert(format!("{det}|{loc}")) {
+                    findings.push(mk(&session, det, frame, loc, detail));
+                }
+            }
+        }
+        let _ = session.host.world.drain_field_events();
+        match &event {
+            SceneTickEvent::SceneEntered { name } => {
+                stats.scenes_entered.insert(name.clone());
+                if !known_scenes.contains(name) {
+                    findings.push(mk(
+                        &session,
+                        "unknown_scene",
+                        frame,
+                        format!("label:{name}"),
+                        "entered a label outside the playable scene set".into(),
+                    ));
+                }
+            }
+            SceneTickEvent::UnknownMapId { map_id } => {
+                findings.push(mk(
+                    &session,
+                    "unknown_scene",
+                    frame,
+                    format!("map_id:{map_id}"),
+                    "scene transition to a map id with no scene".into(),
+                ));
+            }
+            SceneTickEvent::Stepped => {}
+        }
+        if !was_menu_open && session.field_menu.is_some() {
+            stats.menu_opens += 1;
+        }
+        // FMV: skip the movie, then run the shared post-play hand-off - the
+        // headless `play` subcommand's order.
+        let fmv = catch_unwind(AssertUnwindSafe(|| {
+            if session.host.world.active_fmv().is_some() {
+                session.host.world.finish_cutscene();
+                let _ = session.apply_pending_fmv_handoff();
+                true
+            } else {
+                false
+            }
+        }));
+        match fmv {
+            Ok(true) => stats.fmvs += 1,
+            Ok(false) => {}
+            Err(_) => {
+                let (loc, msg, frames) = LAST_PANIC
+                    .with(|p| p.borrow_mut().take())
+                    .unwrap_or_default();
+                findings.push(mk(
+                    &session,
+                    "panic",
+                    frame,
+                    loc,
+                    format!("[fmv hand-off] {msg} | {frames}"),
+                ));
+                break;
+            }
+        }
+
+        let w = &session.host.world;
+        stats.modes.insert(format!("{:?}", w.mode));
+        if w.game_over || w.game_over_hold {
+            stats.wiped = true;
+            break;
+        }
+        // Mode edges.
+        if w.mode != prev_mode {
+            if w.mode == SceneMode::Battle {
+                stats.battles += 1;
+            }
+            if prev_mode == SceneMode::Battle
+                && matches!(w.mode, SceneMode::Field | SceneMode::WorldMap)
+            {
+                stats.battles_won += 1;
+            }
+            if w.mode == SceneMode::Title {
+                findings.push(mk(
+                    &session,
+                    "dropped_to_title",
+                    frame,
+                    format!("from:{prev_mode:?}"),
+                    "world mode became Title with no game over".into(),
+                ));
+                break;
+            }
+            prev_mode = w.mode;
+        }
+        // Battle that never ends.
+        if w.mode == SceneMode::Battle {
+            let since = *battle_since.get_or_insert(frame);
+            if frame - since > t.battle_frames {
+                findings.push(mk(
+                    &session,
+                    "battle_endless",
+                    frame,
+                    held_by(&session),
+                    format!("in Battle for {} frames", frame - since),
+                ));
+                break;
+            }
+        } else {
+            battle_since = None;
+        }
+        // Pause menu that cannot be closed: the policy starts backing out
+        // after at most 420 frames, so a menu open past the close budget
+        // refused every Circle in between.
+        if session.field_menu.is_some() {
+            let since = *menu_open_since.get_or_insert(frame);
+            if frame - since > 420 + t.menu_close_frames {
+                findings.push(mk(
+                    &session,
+                    "menu_stuck",
+                    frame,
+                    held_by(&session),
+                    format!("pause menu open {} frames under Circle", frame - since),
+                ));
+                break;
+            }
+        } else {
+            menu_open_since = None;
+        }
+        // Softlock.
+        if frame % t.digest_every == 0 {
+            let d = progress_digest(&session);
+            if d != last_digest {
+                last_digest = d;
+                last_change = frame;
+            } else if frame - last_change >= t.softlock_frames {
+                let window = &pads[last_change as usize..];
+                let distinct: BTreeSet<u16> = window.iter().copied().collect();
+                if distinct.len() >= 3 {
+                    findings.push(mk(
+                        &session,
+                        "softlock",
+                        frame,
+                        held_by(&session),
+                        format!(
+                            "no progress for {} frames under {} distinct pad masks",
+                            frame - last_change,
+                            distinct.len()
+                        ),
+                    ));
+                    break;
+                }
+            }
+        }
+        // Value checks.
+        if frame % 8 == 0 {
+            let mut v = Vec::new();
+            value_checks(&session, t, &mut v);
+            for (det, loc, detail) in v {
+                let sig = format!("{det}|{loc}");
+                if reported.insert(sig) {
+                    findings.push(mk(&session, det, frame, loc, detail));
+                }
+            }
+        }
+    }
+    RunOutcome {
+        spec: spec.clone(),
+        findings,
+        pads,
+        stats,
+        enter_ok,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Replay files
+// ---------------------------------------------------------------------------
+
+/// The start scene rides in a header comment (`j-replay-v1` has no scene
+/// field; `meta.scenario` names a `scripts/scenarios.toml` label and is left
+/// unset).
+const SCENE_TAG: &str = "# soak-scene = ";
+const SEED_TAG: &str = "# soak-seed = ";
+const SIG_TAG: &str = "# soak-signature = ";
+
+fn replay_text(spec: &RunSpec, pads: &[u16], finding: Option<&Finding>) -> String {
+    let mut rf = ReplayFile::new(
+        ReplayMeta::new(pads.len() as u64)
+            .with_rng_seed((run_seed(&spec.scene, spec.seed) >> 16) as u32),
+    );
+    let mut prev = 0u16;
+    for (f, &p) in pads.iter().enumerate() {
+        if f == 0 || p != prev {
+            rf.push_event(f as u64, p);
+            prev = p;
+        }
+    }
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "# Soak-harness finding (pad input only - no disc bytes)."
+    );
+    let _ = writeln!(out, "{SCENE_TAG}{:?}", spec.scene);
+    let _ = writeln!(out, "{SEED_TAG}{}", spec.seed);
+    if let Some(f) = finding {
+        let _ = writeln!(out, "{SIG_TAG}{:?}", f.signature());
+        let _ = writeln!(out, "# detail: {}", f.detail.replace('\n', " "));
+    }
+    let _ = writeln!(
+        out,
+        "# reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell \
+         --profile release-test --test soak_harness soak_replay -- --nocapture"
+    );
+    out.push_str(&rf.to_toml_string().expect("serialise replay"));
+    out
+}
+
+struct LoadedReplay {
+    spec: RunSpec,
+    pads: Vec<u16>,
+    signature: Option<String>,
+}
+
+fn parse_tag(text: &str, tag: &str) -> Option<String> {
+    text.lines().find_map(|l| {
+        let v = l.strip_prefix(tag)?.trim();
+        Some(v.trim_matches('"').to_string())
+    })
+}
+
+fn load_replay(path: &Path) -> LoadedReplay {
+    let text = std::fs::read_to_string(path).expect("read replay");
+    let rf = ReplayFile::from_toml_str(&text).expect("parse j-replay-v1");
+    let scene = parse_tag(&text, SCENE_TAG).expect("replay carries a soak-scene header");
+    let seed = parse_tag(&text, SEED_TAG)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let mut pads = rf.expand_pad_stream();
+    pads.truncate(rf.meta.frames as usize);
+    LoadedReplay {
+        spec: RunSpec {
+            scene,
+            seed,
+            frames: rf.meta.frames,
+        },
+        pads,
+        signature: parse_tag(&text, SIG_TAG),
+    }
+}
+
+fn slug(s: &str) -> String {
+    let mut out: String = s
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect();
+    out.truncate(96);
+    out
+}
+
+// ---------------------------------------------------------------------------
+// Soak driver
+// ---------------------------------------------------------------------------
+
+struct SoakConfig {
+    tag: String,
+    scenes: Vec<String>,
+    seeds: Vec<u64>,
+    frames: u64,
+    jobs: usize,
+    confirm: bool,
+}
+
+struct SoakResult {
+    outcomes: Vec<RunOutcome>,
+    hangs: Vec<Finding>,
+    wall: Duration,
+}
+
+fn soak(src: &Source, known: &BTreeSet<String>, cfg: &SoakConfig) -> SoakResult {
+    install_panic_hook();
+    let t0 = Instant::now();
+    let mut jobs: Vec<RunSpec> = Vec::new();
+    for &seed in &cfg.seeds {
+        for scene in &cfg.scenes {
+            jobs.push(RunSpec {
+                scene: scene.clone(),
+                seed,
+                frames: cfg.frames,
+            });
+        }
+    }
+    let jobs = Arc::new(jobs);
+    let next = Arc::new(AtomicUsize::new(0));
+    let done = Arc::new(AtomicBool::new(false));
+    let board: StatusBoard = Arc::new(Mutex::new(vec![WorkerStatus::default(); cfg.jobs]));
+    let results: Arc<Mutex<Vec<RunOutcome>>> = Arc::new(Mutex::new(Vec::new()));
+    let hangs: Arc<Mutex<Vec<Finding>>> = Arc::new(Mutex::new(Vec::new()));
+    let hang_secs = env_u64("LEGAIA_SOAK_HANG_SECS").unwrap_or(60);
+    let out = out_dir(&cfg.tag);
+    let _ = std::fs::create_dir_all(&out);
+
+    // Watchdog: a single tick running past `hang_secs` cannot be interrupted,
+    // so it is reported (with the spec that regenerates it) and the process
+    // exits - a hung worker would otherwise hold the whole soak.
+    let wd = {
+        let board = board.clone();
+        let done = done.clone();
+        let out = out.clone();
+        std::thread::spawn(move || {
+            while !done.load(Ordering::Relaxed) {
+                std::thread::sleep(Duration::from_millis(500));
+                let b = board.lock().unwrap();
+                for w in b.iter() {
+                    if let Some(st) = w.tick_started
+                        && st.elapsed() > Duration::from_secs(hang_secs)
+                    {
+                        let msg = format!(
+                            "HANG: scene {} seed {} frame {}: one tick ran > {hang_secs}s\n\
+                             reproduce: LEGAIA_SOAK_SCENES={} LEGAIA_SOAK_SEEDS={} \
+                             LEGAIA_SOAK_FRAMES={}\n",
+                            w.scene,
+                            w.seed,
+                            w.frame,
+                            w.scene,
+                            w.seed,
+                            w.frame + 1
+                        );
+                        eprintln!("{msg}");
+                        let _ = std::fs::write(out.join("HANG.txt"), &msg);
+                        std::process::exit(3);
+                    }
+                }
+            }
+        })
+    };
+
+    let total = jobs.len();
+    let mut handles = Vec::new();
+    for wi in 0..cfg.jobs {
+        let jobs = jobs.clone();
+        let next = next.clone();
+        let board = board.clone();
+        let results = results.clone();
+        let src = src.clone();
+        let known = known.clone();
+        let h = std::thread::Builder::new()
+            .name(format!("soak-{wi}"))
+            .stack_size(64 << 20)
+            .spawn(move || {
+                let t = Tunables::from_env();
+                loop {
+                    let i = next.fetch_add(1, Ordering::Relaxed);
+                    let Some(spec) = jobs.get(i) else { break };
+                    {
+                        let mut b = board.lock().unwrap();
+                        b[wi] = WorkerStatus {
+                            tick_started: None,
+                            scene: spec.scene.clone(),
+                            seed: spec.seed,
+                            frame: 0,
+                        };
+                    }
+                    let st = Instant::now();
+                    let o = run_one(&src, &known, spec, None, &t, Some((&board, wi)));
+                    eprintln!(
+                        "[soak {}/{}] {:>10} seed {:<4} {:>6} fr {:>5.1}s {}{}",
+                        i + 1,
+                        total,
+                        spec.scene,
+                        spec.seed,
+                        o.stats.frames_run,
+                        st.elapsed().as_secs_f32(),
+                        if o.findings.is_empty() { "ok" } else { "FIND" },
+                        o.findings
+                            .iter()
+                            .map(|f| format!(" [{}]", f.signature()))
+                            .collect::<String>()
+                    );
+                    results.lock().unwrap().push(o);
+                }
+            })
+            .expect("spawn soak worker");
+        handles.push(h);
+    }
+    for h in handles {
+        let _ = h.join();
+    }
+    done.store(true, Ordering::Relaxed);
+    let _ = wd.join();
+    let mut outcomes = std::mem::take(&mut *results.lock().unwrap());
+    outcomes.sort_by(|a, b| (a.spec.seed, &a.spec.scene).cmp(&(b.spec.seed, &b.spec.scene)));
+    let hangs = std::mem::take(&mut *hangs.lock().unwrap());
+    let r = SoakResult {
+        outcomes,
+        hangs,
+        wall: t0.elapsed(),
+    };
+    write_report(src, known, cfg, &r);
+    r
+}
+
+/// Confirm + minimise one finding: replay the recorded pads truncated to the
+/// finding frame, and report whether the same signature fires.
+fn confirm(
+    src: &Source,
+    known: &BTreeSet<String>,
+    o: &RunOutcome,
+    f: &Finding,
+) -> (bool, Vec<u16>) {
+    let t = Tunables::from_env();
+    let n = (f.frame + 1) as usize;
+    let pads: Vec<u16> = o.pads[..n.min(o.pads.len())].to_vec();
+    let spec = RunSpec {
+        scene: o.spec.scene.clone(),
+        seed: o.spec.seed,
+        frames: pads.len() as u64,
+    };
+    let r = run_one(src, known, &spec, Some(&pads), &t, None);
+    let hit = r.findings.iter().any(|g| g.signature() == f.signature());
+    (hit, pads)
+}
+
+/// `(rank, signature, [(outcome index, finding index)])`.
+type SigRow = (u8, String, Vec<(usize, usize)>);
+
+fn write_report(src: &Source, known: &BTreeSet<String>, cfg: &SoakConfig, r: &SoakResult) {
+    let out = out_dir(&cfg.tag);
+    let _ = std::fs::create_dir_all(out.join("replays"));
+    // Group by signature.
+    let mut groups: BTreeMap<String, Vec<(usize, usize)>> = BTreeMap::new();
+    for (oi, o) in r.outcomes.iter().enumerate() {
+        for (fi, f) in o.findings.iter().enumerate() {
+            groups.entry(f.signature()).or_default().push((oi, fi));
+        }
+    }
+    let mut rows: Vec<SigRow> = groups
+        .into_iter()
+        .map(|(sig, v)| {
+            let f = &r.outcomes[v[0].0].findings[v[0].1];
+            (f.rank(), sig, v)
+        })
+        .collect();
+    rows.sort_by(|a, b| {
+        (a.0, std::cmp::Reverse(a.2.len())).cmp(&(b.0, std::cmp::Reverse(b.2.len())))
+    });
+
+    let frames_total: u64 = r.outcomes.iter().map(|o| o.stats.frames_run).sum();
+    let battles: u32 = r.outcomes.iter().map(|o| o.stats.battles).sum();
+    let wins: u32 = r.outcomes.iter().map(|o| o.stats.battles_won).sum();
+    let wipes = r.outcomes.iter().filter(|o| o.stats.wiped).count();
+    let menus: u32 = r.outcomes.iter().map(|o| o.stats.menu_opens).sum();
+    let fmvs: u32 = r.outcomes.iter().map(|o| o.stats.fmvs).sum();
+    let enter_fail = r.outcomes.iter().filter(|o| !o.enter_ok).count();
+    let mut modes: BTreeMap<String, usize> = BTreeMap::new();
+    for o in &r.outcomes {
+        for m in &o.stats.modes {
+            *modes.entry(m.clone()).or_default() += 1;
+        }
+    }
+
+    let mut md = String::new();
+    let _ = writeln!(md, "# Soak report `{}`\n", cfg.tag);
+    let _ = writeln!(
+        md,
+        "- runs: {} ({} scenes x {} seeds x {} frames), {} frames ticked, wall {:.0}s, {} jobs",
+        r.outcomes.len(),
+        cfg.scenes.len(),
+        cfg.seeds.len(),
+        cfg.frames,
+        frames_total,
+        r.wall.as_secs_f32(),
+        cfg.jobs
+    );
+    let _ = writeln!(
+        md,
+        "- battles entered {battles}, left to field {wins}, party wipes {wipes}, menu opens {menus}, FMVs skipped {fmvs}, entry failures {enter_fail}"
+    );
+    let _ = writeln!(md, "- runs that reached each mode: {modes:?}");
+    let _ = writeln!(md, "- distinct finding signatures: {}\n", rows.len());
+    let _ = writeln!(
+        md,
+        "| rank | detector | scene | location | hits | repro | first (start scene / seed / frame) | detail |"
+    );
+    let _ = writeln!(md, "|---|---|---|---|---|---|---|---|");
+    let max_confirm = env_u64("LEGAIA_SOAK_CONFIRM_MAX").unwrap_or(40) as usize;
+    let mut confirmed = 0usize;
+    let mut json = String::from("[\n");
+    for (rank, sig, hits) in &rows {
+        let (oi, fi) = hits[0];
+        let o = &r.outcomes[oi];
+        let f = &o.findings[fi];
+        let (repro, pads) = if cfg.confirm && confirmed < max_confirm {
+            confirmed += 1;
+            let (hit, pads) = confirm(src, known, o, f);
+            (if hit { "yes" } else { "NO" }.to_string(), pads)
+        } else {
+            (
+                "-".to_string(),
+                o.pads[..((f.frame + 1) as usize).min(o.pads.len())].to_vec(),
+            )
+        };
+        let file = out
+            .join("replays")
+            .join(format!("{}.replay.toml", slug(sig)));
+        let _ = std::fs::write(&file, replay_text(&o.spec, &pads, Some(f)));
+        let detail: String = f.detail.chars().take(220).collect();
+        let _ = writeln!(
+            md,
+            "| {} | {} | {} | `{}` | {} | {} | {} / {} / {} | {} |",
+            rank,
+            f.detector,
+            f.scene,
+            f.location.replace('|', "/"),
+            hits.len(),
+            repro,
+            o.spec.scene,
+            o.spec.seed,
+            f.frame,
+            detail.replace('|', "/")
+        );
+        let starts: BTreeSet<&str> = hits
+            .iter()
+            .map(|&(oi, _)| r.outcomes[oi].spec.scene.as_str())
+            .collect();
+        let _ = writeln!(
+            json,
+            "  {{\"signature\": {:?}, \"rank\": {}, \"hits\": {}, \"repro\": {:?}, \"start_scenes\": {:?}, \"first\": {{\"scene\": {:?}, \"seed\": {}, \"frame\": {}}}, \"mode\": {:?}, \"detail\": {:?}, \"replay\": {:?}}},",
+            sig,
+            rank,
+            hits.len(),
+            repro,
+            starts,
+            o.spec.scene,
+            o.spec.seed,
+            f.frame,
+            f.mode,
+            f.detail,
+            file.display().to_string()
+        );
+    }
+    if json.ends_with(",\n") {
+        json.truncate(json.len() - 2);
+        json.push('\n');
+    }
+    json.push_str("]\n");
+    let _ = writeln!(md, "\nReplays: `{}`", out.join("replays").display());
+    let _ = std::fs::write(out.join("report.md"), &md);
+    let _ = std::fs::write(out.join("findings.json"), &json);
+    eprintln!("{md}");
+    eprintln!(
+        "[soak] report written to {}",
+        out.join("report.md").display()
+    );
+}
+
+fn default_jobs() -> usize {
+    env_u64("LEGAIA_SOAK_JOBS")
+        .map(|n| n as usize)
+        .unwrap_or(4)
+        .max(1)
+}
+
+fn filter_scenes(all: &[String]) -> Vec<String> {
+    let mut scenes: Vec<String> = match std::env::var("LEGAIA_SOAK_SCENES") {
+        Ok(list) if !list.trim().is_empty() => list
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect(),
+        _ => all.to_vec(),
+    };
+    // `LEGAIA_SOAK_SHARD=i/n` splits the scene set so a long soak can be
+    // chunked across invocations.
+    if let Ok(sh) = std::env::var("LEGAIA_SOAK_SHARD")
+        && let Some((i, n)) = sh.split_once('/')
+        && let (Ok(i), Ok(n)) = (i.parse::<usize>(), n.parse::<usize>())
+        && n > 0
+    {
+        scenes = scenes
+            .into_iter()
+            .enumerate()
+            .filter(|(k, _)| k % n == i)
+            .map(|(_, s)| s)
+            .collect();
+    }
+    scenes
+}
+
+fn seed_list(default_count: u64) -> Vec<u64> {
+    let base = env_u64("LEGAIA_SOAK_SEED_BASE").unwrap_or(1);
+    let n = env_u64("LEGAIA_SOAK_SEEDS").unwrap_or(default_count);
+    (base..base + n).collect()
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+/// Scenes the fixed-budget smoke run covers: the cold-boot town, the
+/// chapter-1 overworld, a dungeon, the casino floor (minigame doors) and a
+/// late-game dungeon.
+const SMOKE_SCENES: [&str; 5] = ["town01", "map01", "keikoku", "koin1", "jou"];
+const SMOKE_FRAMES: u64 = 900;
+
+#[test]
+fn soak_smoke_no_panics() {
+    let Some(src) = source() else { return };
+    let probe = open_session(&src);
+    let all = scene_set(&probe);
+    drop(probe);
+    let known: BTreeSet<String> = all.iter().cloned().collect();
+    let scenes: Vec<String> = SMOKE_SCENES
+        .iter()
+        .filter(|s| known.contains(**s))
+        .map(|s| s.to_string())
+        .collect();
+    assert!(
+        !scenes.is_empty(),
+        "no smoke scene resolves - scene_set broken"
+    );
+    let cfg = SoakConfig {
+        tag: "smoke".into(),
+        scenes,
+        seeds: vec![1],
+        frames: SMOKE_FRAMES,
+        jobs: default_jobs(),
+        confirm: false,
+    };
+    eprintln!("[soak-smoke] scenes: {}", all.join(" "));
+    eprintln!(
+        "[soak-smoke] playable scene set = {} scenes; running {:?} x seed 1 x {} frames from {:?}",
+        all.len(),
+        cfg.scenes,
+        cfg.frames,
+        src
+    );
+    let r = soak(&src, &known, &cfg);
+    let fatal: Vec<String> = r
+        .outcomes
+        .iter()
+        .flat_map(|o| o.findings.iter())
+        .filter(|f| matches!(f.detector, "panic" | "tick_error"))
+        .map(|f| {
+            format!(
+                "{} (start {}, frame {}): {}",
+                f.signature(),
+                f.start_scene,
+                f.frame,
+                f.detail
+            )
+        })
+        .collect();
+    assert!(r.hangs.is_empty(), "hung ticks: {:?}", r.hangs);
+    assert!(
+        fatal.is_empty(),
+        "soak smoke hit panics:\n{}",
+        fatal.join("\n")
+    );
+}
+
+#[test]
+fn soak_long() {
+    if std::env::var_os("LEGAIA_SOAK_SEEDS").is_none()
+        && std::env::var_os("LEGAIA_SOAK_FRAMES").is_none()
+    {
+        eprintln!("[skip] soak_long: set LEGAIA_SOAK_SEEDS / LEGAIA_SOAK_FRAMES to run");
+        return;
+    }
+    let Some(src) = source() else { return };
+    let probe = open_session(&src);
+    let all = scene_set(&probe);
+    drop(probe);
+    let known: BTreeSet<String> = all.iter().cloned().collect();
+    let scenes = filter_scenes(&all);
+    let cfg = SoakConfig {
+        tag: std::env::var("LEGAIA_SOAK_TAG").unwrap_or_else(|_| "long".into()),
+        scenes,
+        seeds: seed_list(1),
+        frames: env_u64("LEGAIA_SOAK_FRAMES").unwrap_or(3600),
+        jobs: default_jobs(),
+        confirm: !env_flag("LEGAIA_SOAK_NO_CONFIRM"),
+    };
+    eprintln!(
+        "[soak-long] {} scenes x {} seeds x {} frames, {} jobs, source {:?}",
+        cfg.scenes.len(),
+        cfg.seeds.len(),
+        cfg.frames,
+        cfg.jobs,
+        src
+    );
+    let r = soak(&src, &known, &cfg);
+    if env_flag("LEGAIA_SOAK_STRICT") {
+        let fatal = r
+            .outcomes
+            .iter()
+            .flat_map(|o| o.findings.iter())
+            .filter(|f| f.rank() == 0)
+            .count();
+        assert_eq!(fatal, 0, "strict soak: {fatal} rank-0 findings");
+    }
+}
+
+#[test]
+fn soak_replay() {
+    let Some(path) = std::env::var_os("LEGAIA_SOAK_REPLAY") else {
+        eprintln!("[skip] soak_replay: set LEGAIA_SOAK_REPLAY=<file>");
+        return;
+    };
+    let Some(src) = source() else { return };
+    install_panic_hook();
+    let probe = open_session(&src);
+    let known: BTreeSet<String> = scene_set(&probe).into_iter().collect();
+    drop(probe);
+    let lr = load_replay(Path::new(&path));
+    let t = Tunables::from_env();
+    let (spec, pads) = (lr.spec, lr.pads);
+    let h = std::thread::Builder::new()
+        .name("soak-replay".into())
+        .stack_size(64 << 20)
+        .spawn(move || {
+            let r = run_one(&src, &known, &spec, Some(&pads), &t, None);
+            (r.findings, r.stats)
+        })
+        .unwrap();
+    let (findings, stats) = h.join().expect("replay thread");
+    eprintln!("[soak-replay] stats: {stats:?}");
+    for f in &findings {
+        eprintln!(
+            "[soak-replay] finding {} at frame {}: {}",
+            f.signature(),
+            f.frame,
+            f.detail
+        );
+    }
+    if let Some(sig) = lr.signature {
+        let hit = findings.iter().any(|f| f.signature() == sig);
+        eprintln!("[soak-replay] recorded signature {sig:?} reproduced: {hit}");
+    }
+}
+
+#[test]
+fn soak_fixtures() {
+    let dir = repo_root().join("scripts/replays/soak");
+    let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .map(|rd| {
+            rd.filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|p| p.to_string_lossy().ends_with(".replay.toml"))
+                .collect()
+        })
+        .unwrap_or_default();
+    files.sort();
+    // Disc-free half: every committed fixture parses and carries a scene.
+    for f in &files {
+        let lr = load_replay(f);
+        assert!(
+            !lr.spec.scene.is_empty(),
+            "{} has no soak-scene",
+            f.display()
+        );
+        assert_eq!(lr.pads.len() as u64, lr.spec.frames, "{}", f.display());
+    }
+    let Some(src) = source() else { return };
+    install_panic_hook();
+    let probe = open_session(&src);
+    let known: BTreeSet<String> = scene_set(&probe).into_iter().collect();
+    drop(probe);
+    for f in files {
+        let lr = load_replay(&f);
+        let t = Tunables::from_env();
+        let (src, known) = (src.clone(), known.clone());
+        let (spec, pads) = (lr.spec, lr.pads);
+        let findings = std::thread::Builder::new()
+            .name("soak-fixture".into())
+            .stack_size(64 << 20)
+            .spawn(move || run_one(&src, &known, &spec, Some(&pads), &t, None).findings)
+            .unwrap()
+            .join()
+            .expect("fixture thread");
+        let hit = lr
+            .signature
+            .as_ref()
+            .is_some_and(|sig| findings.iter().any(|g| &g.signature() == sig));
+        eprintln!(
+            "[soak-fixture] {} -> {}",
+            f.file_name().unwrap().to_string_lossy(),
+            if hit {
+                "still reproduces"
+            } else {
+                "NO LONGER REPRODUCES (fixed? delete the fixture)"
+            }
+        );
+    }
+}
+
+// Disc-free unit tests.
+
+#[test]
+fn replay_header_round_trips() {
+    let spec = RunSpec {
+        scene: "town01".into(),
+        seed: 7,
+        frames: 5,
+    };
+    let pads = [0u16, 0x4000, 0x4000, 0, 0x0010];
+    let f = Finding {
+        detector: "softlock",
+        start_scene: "town01".into(),
+        scene: "town01".into(),
+        mode: "Field".into(),
+        frame: 4,
+        location: "dialogue".into(),
+        detail: "x".into(),
+    };
+    let text = replay_text(&spec, &pads, Some(&f));
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("a.replay.toml");
+    std::fs::write(&p, text).unwrap();
+    let lr = load_replay(&p);
+    assert_eq!(lr.spec.scene, "town01");
+    assert_eq!(lr.spec.seed, 7);
+    assert_eq!(lr.pads, pads);
+    assert_eq!(lr.signature.as_deref(), Some("softlock|town01|dialogue"));
+}
+
+#[test]
+fn run_seed_is_order_independent_and_distinct() {
+    assert_eq!(run_seed("town01", 1), run_seed("town01", 1));
+    assert_ne!(run_seed("town01", 1), run_seed("town01", 2));
+    assert_ne!(run_seed("town01", 1), run_seed("town02", 1));
+    let mut a = Rng::new(3);
+    let mut b = Rng::new(3);
+    for _ in 0..64 {
+        assert_eq!(a.next_u64(), b.next_u64());
+    }
+}
+
+#[test]
+fn variant_strips_payload() {
+    assert_eq!(variant("Menu { cursor: 2 }"), "Menu");
+    assert_eq!(variant("Some(3)"), "Some");
+    assert_eq!(variant("Idle"), "Idle");
+}
