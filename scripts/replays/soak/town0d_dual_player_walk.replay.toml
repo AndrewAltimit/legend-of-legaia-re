@@ -1,0 +1,31 @@
+# Soak-harness finding (pad input only - no disc bytes).
+# soak-scene = "town0d"
+# soak-seed = 1
+# soak-signature = "softlock|town0d|helper@0x0050:opc7"
+# detail: no progress for 1800 frames under 63 distinct pad masks
+# soak-min-distinct = 1
+# reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell --profile release-test --test soak_harness soak_replay -- --nocapture
+[meta]
+schema = "j-replay-v1"
+rng_seed = 2863381809
+frames = 2761
+
+[[event]]
+frame = 0
+pad = 0
+
+[[event]]
+frame = 231
+pad = 32
+
+[[event]]
+frame = 372
+pad = 0
+
+[[event]]
+frame = 506
+pad = 64
+
+[[event]]
+frame = 519
+pad = 0

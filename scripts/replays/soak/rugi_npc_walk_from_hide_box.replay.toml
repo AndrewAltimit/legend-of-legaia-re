@@ -1,0 +1,22 @@
+# Soak-harness finding (pad input only - no disc bytes).
+# soak-scene = "rugi"
+# soak-seed = 1
+# soak-signature = "script_stall|rugi|timeline@0x00a7:opc7"
+# detail: script parked at one PC for 1800 frames
+# reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell --profile release-test --test soak_harness soak_replay -- --nocapture
+[meta]
+schema = "j-replay-v1"
+rng_seed = 3014004745
+frames = 1981
+
+[[event]]
+frame = 0
+pad = 0
+
+[[event]]
+frame = 93
+pad = 128
+
+[[event]]
+frame = 110
+pad = 0
