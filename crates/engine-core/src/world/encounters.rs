@@ -1052,6 +1052,32 @@ impl World {
         let installed =
             self.install_cutscene_timeline_record(&man_file, &man, 1, record as usize, false);
         if installed {
+            // The touch resumes the placement's own parked context: start at
+            // its PC (past the spawn section the entry pre-run executed) and
+            // mark the timeline as that context, so it ends at the next
+            // executed `0x21` and the channel never runs a second copy of the
+            // same bytes (`CutsceneTimeline::interaction_slot`).
+            let span = crate::man_field_scripts::partition_record_span(
+                &man_file,
+                &man,
+                1,
+                record as usize,
+            );
+            let channel_pc = self
+                .field_vm
+                .channels
+                .iter()
+                .find(|c| !c.object_bind && c.placement_index == record as usize && !c.done)
+                .zip(span)
+                .and_then(|(c, (start, _, len))| {
+                    (c.record_offset == start && c.pc < len).then_some(c.pc)
+                });
+            if let Some(tl) = self.cutscene.timeline.as_mut() {
+                tl.interaction_slot = Some(record);
+                if let Some(pc) = channel_pc {
+                    tl.pc = pc;
+                }
+            }
             self.props.boss_stagers.remove(&slot);
             self.props.walk_touch.remove(&slot);
             log::info!("field: boss stager P1[{record}] launched as the beat timeline");
@@ -1386,6 +1412,29 @@ impl World {
             self.encounters.session.as_ref().map(|s| s.phase()),
             Some(crate::encounter::EncounterPhase::Transition { .. })
         ) && !self.battle.intro_mode_handoff
+    }
+
+    /// `true` from the frame a battle is committed (a latched scripted fight,
+    /// or the encounter session's intro transition) until it opens: the
+    /// window in which no field script context may step.
+    ///
+    /// Retail's battle intro is its own slot-A overlay (PROT 0979,
+    /// `field_battle_intro`, base `0x801CE818`, own content `0x4000`), loaded
+    /// over the field overlay's head - which holds the field frame pump
+    /// `FUN_801D1344` that drives the script contexts. So between the
+    /// commit and the battle nothing field-side runs, and a scene's
+    /// post-battle beat only starts on the return. The Rim Elm bee beat
+    /// depends on it: `P1[21]` raises `0x5C0` and fires `3E FF 03`, and the
+    /// scene system script `P1[0]`, whose loop tests `0x5C0`, spawns the
+    /// outcome record `P2[29]` (a flag-1 test at its head) - on the
+    /// post-battle pass, where flag 1 holds this fight's outcome.
+    // REF: FUN_801D1344, FUN_801CF5BC
+    pub fn field_scripts_held_for_battle(&self) -> bool {
+        self.carriers.pending_battle.is_some()
+            || matches!(
+                self.encounters.session.as_ref().map(|s| s.phase()),
+                Some(crate::encounter::EncounterPhase::Transition { .. })
+            )
     }
 
     /// Return the resolved [`crate::monster_catalog::FormationDef`] for the

@@ -1583,8 +1583,13 @@ impl World {
                 // Per-tick: one Cross/Circle edge feeds at most one of the
                 // script's 0x4C dialog poll or the interaction probe.
                 self.dialog.input_consumed = false;
+                // A committed battle suspends every field script context
+                // until the fight returns (`Self::field_scripts_held_for_battle`).
+                let scripts_held = self.field_scripts_held_for_battle();
                 // Retail-frame paced (see `step_spawned_record_contexts`).
-                self.step_spawned_record_contexts();
+                if !scripts_held {
+                    self.step_spawned_record_contexts();
+                }
                 // Per-actor script channels (spawned with a cutscene
                 // timeline): each vignette actor's own placement script runs
                 // its frame slice - animate cues, scripted moves, flag
@@ -1600,12 +1605,20 @@ impl World {
                 // Since a sim tick IS a vsync, calling it every tick is
                 // retail-frame paced already; a `field_frame_step` gate would
                 // be a tautology here, not a correction.
-                self.step_field_channels();
+                // Re-read: a context stepped above may have just committed a
+                // fight (`3E FF <row>`), and nothing after it runs this frame.
+                let scripts_held = scripts_held || self.field_scripts_held_for_battle();
+                if !scripts_held {
+                    self.step_field_channels();
+                }
+                let scripts_held = scripts_held || self.field_scripts_held_for_battle();
                 // The scene system script (ctx `0xFB`) gets a whole retail
                 // frame slice, not one instruction: see
                 // [`Self::step_field_frame_slice`] for the three stop
                 // conditions and what one-op-per-tick cost.
-                self.step_field_frame_slice();
+                if !scripts_held {
+                    self.step_field_frame_slice();
+                }
                 // Field script actors the VM just spawned or is running: the
                 // op-0x43 scripted arcs (arc helper `FUN_801D5C08` + release
                 // watcher `FUN_801D5D60`) and the op-0x34 sub-1 attached

@@ -2251,6 +2251,77 @@ fn soak_fixtures() {
     }
 }
 
+/// Upper bound on the battles a fixed-finding replay may open
+/// (`# soak-expect-max-battles = N`): a loop that stops *signing* as a
+/// `battle_loop` could still fight twice.
+const MAX_BATTLES_TAG: &str = "# soak-expect-max-battles = ";
+
+/// The regression half of the fixture set: `scripts/replays/soak/fixed/`
+/// holds replays of findings a fix closed. Each must replay WITHOUT its
+/// recorded signature (and within its battle bound) - a hard failure, unlike
+/// [`soak_fixtures`], which only reports.
+#[test]
+fn soak_fixed_fixtures() {
+    let dir = repo_root().join("scripts/replays/soak/fixed");
+    let files = if dir.is_dir() {
+        replay_files(&dir)
+    } else {
+        Vec::new()
+    };
+    for f in &files {
+        let lr = load_replay(f);
+        assert!(
+            lr.signature.is_some(),
+            "{} has no soak-signature",
+            f.display()
+        );
+        assert_eq!(lr.pads.len() as u64, lr.spec.frames, "{}", f.display());
+    }
+    let Some(src) = source() else { return };
+    install_panic_hook();
+    let probe = open_session(&src);
+    let known: BTreeSet<String> = scene_set(&probe).into_iter().collect();
+    drop(probe);
+    for f in files {
+        let text = std::fs::read_to_string(&f).expect("read replay");
+        let max_battles: Option<u32> =
+            parse_tag(&text, MAX_BATTLES_TAG).and_then(|s| s.parse().ok());
+        let lr = load_replay(&f);
+        let t = lr.tunables();
+        let (src, known) = (src.clone(), known.clone());
+        let (spec, pads) = (lr.spec, lr.pads);
+        let out = std::thread::Builder::new()
+            .name("soak-fixed".into())
+            .stack_size(64 << 20)
+            .spawn(move || run_one(&src, &known, &spec, Some(&pads), &t, None))
+            .unwrap()
+            .join()
+            .expect("fixed-fixture thread");
+        let name = f.file_name().unwrap().to_string_lossy().into_owned();
+        let sig = lr.signature.expect("checked above");
+        eprintln!(
+            "[soak-fixed] {name}: {} frames, {} battles, findings {:?}",
+            out.stats.frames_run,
+            out.stats.battles,
+            out.findings
+                .iter()
+                .map(|g| g.signature())
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            !out.findings.iter().any(|g| g.signature() == sig),
+            "{name}: the fixed finding `{sig}` reproduces again"
+        );
+        if let Some(max) = max_battles {
+            assert!(
+                out.stats.battles <= max,
+                "{name}: {} battles opened, at most {max} expected",
+                out.stats.battles
+            );
+        }
+    }
+}
+
 // Disc-free unit tests.
 
 #[test]

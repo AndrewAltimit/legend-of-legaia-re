@@ -64,6 +64,7 @@ impl World {
         self.field_bytecode = bytecode;
         self.field_pc = 0;
         self.field_ctx = FieldCtx::default();
+        self.field_vm.system_pass_open = true;
     }
 
     /// Load a field-VM bytecode buffer and begin interpretation at `pc`
@@ -83,6 +84,7 @@ impl World {
         self.field_bytecode = bytecode;
         self.field_pc = pc;
         self.field_ctx = FieldCtx::default();
+        self.field_vm.system_pass_open = true;
     }
 
     /// Load one event-script record into the field VM, skipping the leading
@@ -105,6 +107,7 @@ impl World {
         self.field_bytecode = record_bytes.to_vec();
         self.field_pc = pc;
         self.field_ctx = FieldCtx::default();
+        self.field_vm.system_pass_open = true;
     }
 
     /// Activate a slot and return a mutable reference to the actor, keeping

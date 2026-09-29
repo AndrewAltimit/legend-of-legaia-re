@@ -3,11 +3,13 @@
 # soak-seed = 1
 # soak-signature = "battle_loop|town0c|timeline@0x007c"
 # detail: three battles opened from one parked timeline PC
+# fixed: the touch-resumed beat ends at its `21`, and the system script sits out the beat and the battle intro
+# soak-expect-max-battles = 1
 # reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell --profile release-test --test soak_harness soak_replay -- --nocapture
 [meta]
 schema = "j-replay-v1"
 rng_seed = 2913713457
-frames = 1176
+frames = 6000
 
 [[event]]
 frame = 0

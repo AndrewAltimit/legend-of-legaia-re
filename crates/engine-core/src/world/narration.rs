@@ -909,6 +909,7 @@ impl World {
             }
             if tl.done {
                 let restore = tl.restore_hidden_on_complete;
+                self.release_interaction_context(&tl);
                 self.cutscene.timeline = None;
                 if restore {
                     self.restore_hidden_field_npcs();
@@ -1822,6 +1823,20 @@ impl World {
                     tl.done = true;
                     stop = true;
                 }
+                // A touch-resumed placement context ends its interaction at
+                // the first raw `0x21` it executes (`FUN_80039B7C`: the loop
+                // exits on `0x21` at `0x80039E20` and `0x80039E68..0x80039E7C`
+                // clears the engaged bit). The Rim Elm bee beat (`town0c` /
+                // `town0b` `P1[21]`) is `50 00` (the scripted-loss latch),
+                // `3E FF 03`, `21`, then a jump back to its flag dispatch: the
+                // `21` is what stops the fight re-firing until the next touch.
+                if tl.interaction_slot.is_some()
+                    && opcode_byte == 0x21
+                    && matches!(kind, crate::cutscene_timeline::TraceResult::Advance)
+                {
+                    tl.done = true;
+                    stop = true;
+                }
                 if tl.trace_enabled {
                     if std::env::var_os("LEGAIA_DIAG_TIMELINE").is_some()
                         && !(matches!(kind, crate::cutscene_timeline::TraceResult::Halt)
@@ -1956,6 +1971,7 @@ impl World {
             // Timeline finished (or capped): drop it so the view reverts
             // from the cutscene camera to normal field gameplay.
             let restore = tl.restore_hidden_on_complete;
+            self.release_interaction_context(&tl);
             self.cutscene.timeline = None;
             // The town01 OPENING choreography `MoveTo`s the townsfolk to the
             // off-map hide box to clear the establishing shot. Nothing
@@ -1971,6 +1987,25 @@ impl World {
             }
         } else {
             self.cutscene.timeline = Some(tl);
+        }
+    }
+
+    /// Hand a finished touch-resumed timeline's PC back to its placement
+    /// channel ([`crate::cutscene_timeline::CutsceneTimeline::interaction_slot`]):
+    /// the two are one retail context, so the next touch resumes where this
+    /// interaction's `0x21` left it. No-op for a spawned-record timeline.
+    // REF: FUN_80039B7C
+    fn release_interaction_context(&mut self, tl: &crate::cutscene_timeline::CutsceneTimeline) {
+        let Some(slot) = tl.interaction_slot else {
+            return;
+        };
+        if let Some(c) = self
+            .field_vm
+            .channels
+            .iter_mut()
+            .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
+        {
+            c.pc = tl.pc;
         }
     }
 
@@ -2245,6 +2280,13 @@ impl World {
         let Some(man) = self.field_vm.channels_man.clone() else {
             return;
         };
+        let interaction_slot = self
+            .cutscene
+            .timeline
+            .as_ref()
+            .filter(|tl| !tl.done)
+            .and_then(|tl| tl.interaction_slot)
+            .map(usize::from);
         let mut channels = std::mem::take(&mut self.field_vm.channels);
         // Host hooks resolve cross-context ids against the channel set while
         // one of these is executing; the live vector is moved out for the
@@ -2264,6 +2306,13 @@ impl World {
             // bind-time `0x24`/`0x25` prologue already ran at install,
             // mirroring `FUN_8003A55C`).
             if channels[i].object_bind {
+                continue;
+            }
+            // The placement whose parked context a touch resumed as the
+            // modal timeline: that timeline IS this context
+            // ([`crate::cutscene_timeline::CutsceneTimeline::interaction_slot`]),
+            // so stepping the channel too would run the same bytes twice.
+            if interaction_slot == Some(channels[i].placement_index) {
                 continue;
             }
             if man.len() <= channels[i].record_offset {
@@ -3914,5 +3963,118 @@ mod tests {
         let tl = w.cutscene.timeline.as_ref().expect("installed");
         assert!(tl.player_clip_wait.is_none());
         assert_eq!(tl.pc, 6, "stepped past onto the wait");
+    }
+
+    /// A timeline that is a placement's own touch-resumed context
+    /// (`interaction_slot`) over `bc`, with that placement's channel sharing
+    /// the bytes at PC 0.
+    fn interaction_timeline(bc: Vec<u8>, slot: u8) -> World {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        use crate::field_channels::FieldChannel;
+        use legaia_engine_vm::field::FieldCtx;
+
+        let mut w = World::new();
+        let mut tl = CutsceneTimeline::new(bc.clone(), 0);
+        tl.interaction_slot = Some(slot);
+        w.cutscene.timeline = Some(tl);
+        w.field_vm.channels_man = Some(std::sync::Arc::new(bc));
+        w.field_vm.channels = vec![FieldChannel {
+            placement_index: usize::from(slot),
+            ctx: FieldCtx {
+                script_id: 0x40,
+                ..FieldCtx::default()
+            },
+            record_offset: 0,
+            pc: 0,
+            done: false,
+            object_bind: false,
+        }];
+        w
+    }
+
+    #[test]
+    fn a_touch_resumed_context_ends_at_its_nop_and_hands_the_pc_back() {
+        // `SET 5`, `21`, `SET 6`, `21`: the interaction ends on the first
+        // executed `0x21` (`FUN_80039B7C` `0x80039E20` / `0x80039E68`), so
+        // flag 6 - the bytes the NEXT touch runs - must not execute, and the
+        // placement channel resumes after the `21`.
+        let mut w = interaction_timeline(vec![0x50, 0x05, 0x21, 0x50, 0x06, 0x21], 3);
+        w.step_cutscene_timeline();
+        assert!(w.cutscene.timeline.is_none(), "the interaction ended");
+        assert!(w.system_flag_test(5));
+        assert!(!w.system_flag_test(6), "nothing past the `21` ran");
+        assert_eq!(
+            w.field_vm.channels[0].pc, 3,
+            "the channel resumes past the `21`"
+        );
+    }
+
+    #[test]
+    fn the_channel_a_touch_resumed_timeline_holds_does_not_step_itself() {
+        // `SET 5`, a long `WaitFrames`, `21`. While the timeline parks on the
+        // wait, the channel stepper must not run the same bytes a second time
+        // - two copies of one context is how the Rim Elm bee beat fired its
+        // scripted fight from the channel while the timeline sat on the text.
+        let mut w = interaction_timeline(vec![0x50, 0x05, 0x4A, 0x40, 0x00, 0x21], 3);
+        w.step_cutscene_timeline();
+        assert!(w.cutscene.timeline.is_some(), "parked on the wait");
+        w.step_field_channels();
+        assert_eq!(
+            w.field_vm.channels[0].pc, 0,
+            "the held channel did not step"
+        );
+    }
+
+    #[test]
+    fn the_system_script_starts_no_pass_while_another_context_holds_the_player() {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        // Two passes: `SET 7`, `21`, then `SET 8`, `21`.
+        let mut w = World::new();
+        w.load_field_script(vec![0x50, 0x07, 0x21, 0x50, 0x08, 0x21]);
+        w.step_field_frame_slice();
+        assert!(w.system_flag_test(7), "the install pass runs");
+        assert!(!w.field_vm.system_pass_open, "the `21` closed the pass");
+        // A stepped helper context holds the player (`+0x10 & 0x80000`):
+        // `FUN_801DA51C` starts no new pass (`0x801DA794..0x801DA7AC`).
+        let mut helper = CutsceneTimeline::new(vec![0x4A, 0x40, 0x00], 0);
+        helper.stepped = true;
+        w.field_vm.helper_contexts.push(helper);
+        assert!(w.step_field_frame_slice().is_none());
+        assert!(!w.system_flag_test(8), "no pass while the player is held");
+        // Released: the next pass runs.
+        w.field_vm.helper_contexts.clear();
+        w.step_field_frame_slice();
+        assert!(w.system_flag_test(8));
+    }
+
+    #[test]
+    fn an_open_system_pass_continues_under_a_held_player() {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        // `WaitFrames 2` inside the pass, then `SET 9`, `21`: a pass already
+        // open when the player gets held runs on (`0x801DA78C`).
+        let mut w = World::new();
+        w.load_field_script(vec![0x4A, 0x02, 0x00, 0x50, 0x09, 0x21]);
+        w.step_field_frame_slice();
+        assert!(w.field_vm.system_pass_open, "parked inside the pass");
+        let mut helper = CutsceneTimeline::new(vec![0x4A, 0x40, 0x00], 0);
+        helper.stepped = true;
+        w.field_vm.helper_contexts.push(helper);
+        for _ in 0..4 {
+            w.step_field_frame_slice();
+        }
+        assert!(w.system_flag_test(9), "the open pass ran to its `21`");
+    }
+
+    #[test]
+    fn a_committed_battle_holds_the_system_script() {
+        // The entity SM runs the system script only at state 0
+        // (`FUN_801DA51C` `0x801DA750`); a latched scripted fight holds it
+        // even inside an open pass.
+        let mut w = World::new();
+        w.load_field_script(vec![0x50, 0x0A, 0x21]);
+        w.carriers.pending_battle = Some(1);
+        assert!(w.field_scripts_held_for_battle());
+        assert!(w.step_field_frame_slice().is_none());
+        assert!(!w.system_flag_test(0x0A));
     }
 }

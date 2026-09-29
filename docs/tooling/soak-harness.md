@@ -190,7 +190,16 @@ is the control.
 of open findings - pad input only. `soak_fixtures` parses every one without a
 disc and, with one, replays each and reports whether it **still reproduces**.
 It never fails on a fixture that stopped reproducing: that is the signal a fix
-landed, and the fixture is then deleted.
+landed, and the fixture then moves to `fixed/`.
+
+[`scripts/replays/soak/fixed/`](../../scripts/replays/soak/fixed/) holds the
+closed findings as regressions. `soak_fixed_fixtures` replays each and fails
+if its recorded signature fires again; a `# soak-expect-max-battles = N`
+header also bounds the battles the replay may open, since a loop that stops
+signing as `battle_loop` could still fight twice. A fixed replay's `frames`
+may run past the finding frame, so the check covers what happens after it -
+the town0c bee beat's replay runs through the lost fight and the field
+return.
 
 ## What it cannot detect
 

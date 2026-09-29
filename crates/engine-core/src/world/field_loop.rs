@@ -627,6 +627,26 @@ impl World {
         if self.field_bytecode.get(self.field_pc)? & 0x7F < 0x20 {
             return None;
         }
+        // The system script is driven by the SYSTEM entity's tick
+        // `FUN_801DA51C`, which runs it through the interaction runner
+        // `FUN_80039B7C` only while the entity state `+0x8A` is 0 (not mid
+        // encounter, `0x801DA750`) - and which starts a NEW pass only while
+        // the player's `+0x10 & 0x80000` is down (`0x801DA794..0x801DA7AC`);
+        // a pass already open continues regardless (`0x801DA78C`). Every
+        // engaged interaction context raises that player bit on each frame
+        // it runs (`0x80039DB8..0x80039DD4`), so a scene's system loop sits
+        // out an NPC beat, a spawned record or a cutscene and resumes when
+        // they release the player. The Rim Elm bee beat depends on it: its
+        // `SET 0x5C0` precedes `3E FF 03` by an eight-frame wait, and the
+        // system loop's `0x5C0` test spawns the fight's outcome record - it
+        // must see the flag only on the post-battle pass.
+        if self.field_scripts_held_for_battle()
+            || (!self.field_vm.system_pass_open
+                && (self.script_context_engages_player() || self.dialogue_owns_input()))
+        {
+            return None;
+        }
+        self.field_vm.system_pass_open = true;
         let mode = self.mode;
         // Re-seat the system context's position anchor on the live player
         // before the slice runs. See [`Self::sync_field_ctx_player_anchor`].
@@ -672,7 +692,13 @@ impl World {
             // (1) the `0x21` NOP is the authored frame boundary; (2) a PC that
             // did not move is a park (wait, halt, unimplemented op); (3) the
             // next byte being a text segment ends the slice.
-            if opcode_byte == 0x21 || next == pc {
+            if opcode_byte == 0x21 {
+                // The pass ends: the runner clears the context's engaged bit
+                // on the executed `0x21` (`0x80039E68..0x80039E7C`).
+                self.field_vm.system_pass_open = false;
+                break;
+            }
+            if next == pc {
                 break;
             }
             match self.field_bytecode.get(next) {

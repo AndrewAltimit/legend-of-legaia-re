@@ -312,6 +312,18 @@ pub struct CutsceneTimeline {
     /// the script runner's step, not by the spawn); see
     /// `World::script_context_engages_player`.
     pub stepped: bool,
+    /// `Some(slot)` when this timeline is placement `slot`'s OWN parked
+    /// context resumed by a touch (the boss-stager dispatch), not a spawned
+    /// record. Retail has one context per placement: the touch raises its
+    /// engaged bit (`+0x10 & 0x100`) and the script runner `FUN_80039B7C`
+    /// steps it from its parked PC until it executes a raw `0x21`, where the
+    /// interaction ends (`0x80039E20` exits the loop on `0x21`,
+    /// `0x80039E68..0x80039E7C` clears `0x100`). So such a timeline starts at
+    /// the placement channel's PC, completes at its first executed `0x21`,
+    /// hands its PC back to the channel, and the channel does not step on
+    /// its own while the timeline holds it.
+    // REF: FUN_80039B7C
+    pub interaction_slot: Option<u8>,
 }
 
 /// State of a parked player compass walk (see
@@ -407,6 +419,7 @@ impl CutsceneTimeline {
             player_clip_ticks: 0,
             player_clip_wait: None,
             stepped: false,
+            interaction_slot: None,
         }
     }
 
