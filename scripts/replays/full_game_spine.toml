@@ -179,6 +179,10 @@ anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-
 id = "sol_tower"
 scene = "kor5"
 reach = "scene"
+# The anchor gained 0x1D4 (dohaty P2[13], the castle's closing beat); every
+# station placement - the ticket seller P1[17] among them - is parked
+# off-map until it is set.
+via = ["dohaty"]
 anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-09" }
 
 [[milestone]]

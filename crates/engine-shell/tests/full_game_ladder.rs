@@ -2214,7 +2214,17 @@ fn talk_to(session: &mut BootSession, slot: u8) -> Run {
         if !ended {
             return Run::Parked(format!("{} at {}", holder(session), park_site(session)));
         }
-        if walking(session) {
+        // A talk that hands the frame to a scripted beat - a record it
+        // spawned, queued or already running - leaves the player to that
+        // beat: `station`'s ticket seller spawns P2[19], whose first act is
+        // to walk the player from the counter (`C7 F8`) to the cart.
+        // Teleporting the player back to where it stood before the talk
+        // strands that walk across the map.
+        let w = &session.host.world;
+        let beat_follows = !w.field_vm.pending_record_spawns.is_empty()
+            || !w.field_vm.helper_contexts.is_empty()
+            || w.cutscene.timeline.is_some();
+        if walking(session) && !beat_follows {
             let tile = tile_of(bx, bz);
             session
                 .host
