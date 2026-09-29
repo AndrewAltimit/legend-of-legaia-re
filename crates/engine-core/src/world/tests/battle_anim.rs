@@ -384,6 +384,54 @@ fn staged_swing_finish_clears_gate_and_resumes_idle() {
 }
 
 #[test]
+fn a_byte_restaged_behind_its_own_clip_replays_it_at_the_natural_end() {
+    // The taiku2 park: a monster stream `[5, 5, 0]` stages the same entry
+    // twice. The second stage lands while the first swing plays, so the id
+    // pair already agrees; only the stage latch says a byte is waiting.
+    // Retail's natural-end path re-commits it (`FUN_80047430`
+    // `0x80047B30..0x80047B58` -> `FUN_8004AD80`): the clip replays. The
+    // engine used to converge the pair to idle there, dropping the second
+    // swing and the hit that lands the combo total on live HP.
+    use vm::battle_action::ActorFlags;
+    let mut world = staged_anim_test_world();
+    world.actors[0].battle.queued_anim = 0x0C;
+    world.commit_staged_battle_anim(0);
+    // The strike loop stages the same byte again behind the playing clip.
+    world.actors[0].battle.queued_anim = 0x0C;
+    world.actors[0]
+        .battle
+        .flag_bits
+        .set(ActorFlags::ADVANCE_DONE);
+    world.actors[0].battle_animation.as_mut().unwrap().step = 2048;
+    world.tick_battle_animations(); // clip reaches its last keyframe
+    // A slow step for the replay's first tick, so it is still in flight.
+    world.actors[0].battle_animation.as_mut().unwrap().step = 1;
+    world.tick_battle_animations(); // natural end observed -> re-commit
+    let a = &world.actors[0];
+    assert!(
+        !a.battle.flag_bits.has(ActorFlags::ADVANCE_DONE),
+        "the re-commit releases the stage latch"
+    );
+    assert_eq!(a.battle.current_anim, 0x0C, "the swing replays, not idle");
+    assert_eq!(a.battle_staged_anim, Some(0x0C));
+    assert_eq!(a.battle.input_cursor, 0, "hit index zeroed for the replay");
+    assert!(
+        !a.battle_animation.as_ref().unwrap().finished(),
+        "the replay runs from its first keyframe"
+    );
+    assert_ne!(a.battle_pose, Some(vm::battle_action::Pose::Idle as u8));
+    // Nothing staged behind the replay (the SM left the loop with
+    // `+0x1DA = 0`): its end converges to idle as before.
+    world.actors[0].battle.queued_anim = 0;
+    world.actors[0].battle_animation.as_mut().unwrap().step = 2048;
+    world.tick_battle_animations();
+    world.tick_battle_animations();
+    let a = &world.actors[0];
+    assert!(a.battle_staged_anim.is_none());
+    assert_eq!(a.battle.current_anim, 0);
+}
+
+#[test]
 fn attack_chain_paces_strikes_by_staged_clip_completion() {
     use vm::battle_action::{ActionState, ActorFlags, StepOutcome};
     // Full SM-driven check: a two-swing strike script holds in AttackChain

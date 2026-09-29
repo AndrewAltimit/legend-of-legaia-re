@@ -213,7 +213,26 @@ impl World {
                     _ => None,
                 }
             };
-            if let Some(id) = staged_done {
+            // The same id staged again behind itself - a monster stream that
+            // repeats a byte (`[5, 5, 0]`) - reads as "nothing new" on the id
+            // pair alone; the stage latch is what says a byte is waiting.
+            // Retail's natural-end path calls `FUN_8004AD80` unconditionally
+            // (`0x80047B30..0x80047B58`), and with `+0x1DA == +0x1D9` that is
+            // the re-commit: the clip replays from its first keyframe with
+            // its hit index zeroed. Converging to idle instead dropped the
+            // second swing - and with it the parked-cursor hit that lands the
+            // accumulated total on live HP, leaving the bar drained and the
+            // SM parked in `0x51` for good.
+            // PORT: FUN_80047430 (`0x80047B30..0x80047B58`, the natural-end commit)
+            let restaged = staged_done.is_some_and(|id| {
+                let b = &self.actors[i].battle;
+                b.queued_anim == id
+                    && b.current_anim == id
+                    && b.flag_bits.has(vm::battle_action::ActorFlags::ADVANCE_DONE)
+            });
+            if restaged {
+                self.commit_staged_battle_anim_at_boundary(i);
+            } else if let Some(id) = staged_done {
                 let a = &mut self.actors[i];
                 a.battle_staged_anim = None;
                 a.battle
