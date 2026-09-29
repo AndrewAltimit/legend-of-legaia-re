@@ -1419,29 +1419,36 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn party_add(&mut self, char_id: u8) -> bool {
-        // The retail engine maintains a sorted insertion in
-        // `_DAT_80084598..` (cap 4) and writes the leader slot when the
-        // party transitions from empty. We mirror that with
-        // `party_actor_slots` + `party_leader_slot`.
-        let already_present = self
-            .world
-            .party
-            .party_actor_slots
-            .iter()
-            .any(|s| matches!(s, Some(id) if *id == char_id));
-        let accepted = if already_present {
+        // Retail (`FUN_801DE840` op `0x3C`): a linear search of the
+        // present-party list `0x80084598` for `count = DAT_80084594`
+        // entries; when absent and `count < 4`, append, `count += 1`, and
+        // bubble the new id down while its left neighbour is larger (the
+        // list stays sorted by character id). A count of 1 afterwards makes
+        // the new member the leader (`0x80084597` / `_DAT_8007B8F8`).
+        //
+        // That list is the one battle setup reads, so the engine's battle
+        // composition (`party_count` / `active_party`) follows it here.
+        // Without that, a mid-scene join - Noa's "Let me help you!" beat on
+        // Mt. Rikuroa, one op before the Caruban fight - reached the battle
+        // with the pre-join count and Vahn fought alone.
+        let mut list = self.world.present_party_list();
+        let accepted = if list.contains(&char_id) || list.len() >= 4 {
             false
-        } else if self.world.party.party_actor_slots.len() < 4 {
-            self.world.party.party_actor_slots.push(Some(char_id));
-            // First member also becomes the leader (matches retail's
-            // `count == 0` arm).
-            if self.world.party.party_leader_slot.is_none() {
-                self.world.party.party_leader_slot = Some(char_id);
+        } else {
+            list.push(char_id);
+            let mut i = list.len() - 1;
+            while i > 0 && list[i - 1] > list[i] {
+                list.swap(i - 1, i);
+                i -= 1;
             }
             true
-        } else {
-            false
         };
+        if accepted {
+            if list.len() == 1 {
+                self.world.party.party_leader_slot = list.first().copied();
+            }
+            self.world.install_present_party_list(list);
+        }
         self.world
             .pending_field_events
             .push(FieldEvent::PartyAdd { char_id, accepted });
@@ -1449,19 +1456,18 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn party_remove(&mut self, char_id: u8) {
-        self.world
-            .party
-            .party_actor_slots
-            .retain(|s| !matches!(s, Some(id) if *id == char_id));
-        if matches!(self.world.party.party_leader_slot, Some(id) if id == char_id) {
-            // Promote next member or clear.
-            self.world.party.party_leader_slot = self
-                .world
-                .party
-                .party_actor_slots
-                .first()
-                .copied()
-                .flatten();
+        // Retail op `0x3D`: find the id, shift the tail down, `count -= 1`;
+        // the leader re-points at the new head when the count drops to 1
+        // or the removed id was the leader.
+        let mut list = self.world.present_party_list();
+        if let Some(pos) = list.iter().position(|&id| id == char_id) {
+            list.remove(pos);
+            let leader_gone =
+                matches!(self.world.party.party_leader_slot, Some(id) if id == char_id);
+            if list.len() == 1 || leader_gone {
+                self.world.party.party_leader_slot = list.first().copied();
+            }
+            self.world.install_present_party_list(list);
         }
         self.world
             .pending_field_events

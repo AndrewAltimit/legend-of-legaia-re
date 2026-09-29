@@ -1534,6 +1534,41 @@ impl World {
             .unwrap_or(member)
     }
 
+    /// The field party list - retail's `0x80084598` member ids for
+    /// `DAT_80084594` entries - as the field VM's party ops see it.
+    ///
+    /// [`crate::world::PartyState::party_actor_slots`] carries it once a
+    /// save or a party op has installed it. Before that (a New Game, or a
+    /// save whose composition is the roster's identity order) the list is
+    /// the installed battle composition: `active_party` when set, else the
+    /// identity `0..party_count`.
+    pub fn present_party_list(&self) -> Vec<u8> {
+        if !self.party.party_actor_slots.is_empty() {
+            return self
+                .party
+                .party_actor_slots
+                .iter()
+                .flatten()
+                .copied()
+                .collect();
+        }
+        if !self.party.active_party.is_empty() {
+            return self.party.active_party.clone();
+        }
+        (0..self.party.party_count.min(4)).collect()
+    }
+
+    /// Install `list` as the field party list and the battle composition
+    /// together, as retail's party ops write the one list both read.
+    /// An empty list clears the field list and leaves the battle
+    /// composition as it was (no party of zero is ever fought with).
+    pub fn install_present_party_list(&mut self, list: Vec<u8>) {
+        self.party.party_actor_slots = list.iter().take(4).map(|&id| Some(id)).collect();
+        if !list.is_empty() {
+            self.set_active_party(list);
+        }
+    }
+
     /// Install a present-party composition: `slots[i]` = roster slot for
     /// battle ordinal `i` (the engine mirror of retail's present-party
     /// list at `0x8007BD10`). The list caps at the 3 on-screen party

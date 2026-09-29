@@ -647,6 +647,11 @@ impl World {
             self.party.party_leader_slot = talk
                 .saved_leader
                 .or_else(|| self.party.party_actor_slots.first().copied().flatten());
+            // A party op inside the talk re-installed the battle
+            // composition from the collapsed list; the restored list is the
+            // one the next battle reads.
+            let list = self.present_party_list();
+            self.install_present_party_list(list);
         }
     }
 

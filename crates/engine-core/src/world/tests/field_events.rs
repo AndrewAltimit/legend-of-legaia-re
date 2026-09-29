@@ -103,6 +103,8 @@ fn field_op_3a_clamps_and_emits_add_money() {
 fn field_op_3c_party_add_first_member_becomes_leader() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
+    // An empty party (`World::new` defaults to the three-member identity).
+    world.party.party_count = 0;
     // 0x3C + char_id (op0).
     let bytecode = vec![0x3C, 0x07];
     world.load_field_script(bytecode);
@@ -607,4 +609,61 @@ fn field_inn_stay_gate_debits_gold_then_restores_the_party() {
         assert_eq!(hms.hp_cur, 250, "slot {slot} leaves the inn at full HP");
         assert_eq!(hms.mp_cur, 60, "slot {slot} leaves the inn at full MP");
     }
+}
+
+/// Op 0x3C writes the one list battle setup reads: a member who joins
+/// mid-scene fights in the next battle. Mt. Rikuroa's Caruban stager
+/// (`rikuroa` P1[3]) runs `3C 01` (Noa, "Let me help you!") a few ops
+/// before `3E FF 11`; the join has to reach the battle composition, sorted
+/// by character id, with the leader kept.
+#[test]
+fn field_op_3c_party_add_reaches_battle_composition() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.set_active_party(vec![0]);
+    world.party.party_actor_slots = vec![Some(0)];
+    world.party.party_leader_slot = Some(0);
+    world.load_field_script(vec![0x3C, 0x01]);
+    let _ = world.tick();
+    assert_eq!(world.party.party_actor_slots, vec![Some(0), Some(1)]);
+    assert_eq!(world.party.party_count, 2);
+    assert_eq!(world.party.active_party, vec![0, 1]);
+    assert_eq!(world.party.party_leader_slot, Some(0));
+}
+
+/// Retail keeps the list sorted (op 0x3C bubbles the new id down), and a
+/// New Game world - whose field list was never installed - joins onto the
+/// identity composition rather than onto an empty list.
+#[test]
+fn field_op_3c_party_add_sorts_onto_the_identity_party() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.party.party_count = 1;
+    world.party.party_leader_slot = Some(0);
+    world.load_field_script(vec![0x3C, 0x02]);
+    let _ = world.tick();
+    assert_eq!(world.party.party_actor_slots, vec![Some(0), Some(2)]);
+    assert_eq!(world.party.party_count, 2);
+
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.install_present_party_list(vec![2]);
+    world.load_field_script(vec![0x3C, 0x00]);
+    let _ = world.tick();
+    assert_eq!(world.party.active_party, vec![0, 2]);
+}
+
+/// Op 0x3D shrinks the battle composition with the field list.
+#[test]
+fn field_op_3d_party_remove_reaches_battle_composition() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.install_present_party_list(vec![0, 1, 2]);
+    world.party.party_leader_slot = Some(0);
+    world.load_field_script(vec![0x3D, 0x01]);
+    let _ = world.tick();
+    assert_eq!(world.party.party_actor_slots, vec![Some(0), Some(2)]);
+    assert_eq!(world.party.party_count, 2);
+    assert_eq!(world.party.active_party, vec![0, 2]);
+    assert_eq!(world.party.party_leader_slot, Some(0));
 }
