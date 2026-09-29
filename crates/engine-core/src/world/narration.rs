@@ -765,7 +765,32 @@ impl World {
     ///
     /// REF: FUN_801D01B0 (`0x801D01F0`, the engaged-bit branch), FUN_801D5B5C
     pub fn dialogue_owns_input(&self) -> bool {
-        self.dialog.current.is_some() || self.dialog.inline.is_some()
+        self.dialog.current.is_some()
+            || self.dialog.inline.is_some()
+            // A spawned helper record parked on its text segment shows the
+            // one shared box ([`Self::script_dialog_panel`]).
+            || self
+                .field_vm
+                .helper_contexts
+                .iter()
+                .any(|tl| tl.dialog.is_some())
+    }
+
+    /// The dialog box a script context is showing: the modal timeline's when
+    /// it has one, else the first concurrent helper's. Retail has one shared
+    /// box, so hosts draw exactly this one
+    /// ([`Self::drive_script_dialog`] routes the pad the same way).
+    pub fn script_dialog_panel(&self) -> Option<&crate::dialog::OwnedDialogPanel> {
+        self.cutscene
+            .timeline
+            .as_ref()
+            .and_then(|tl| tl.dialog.as_ref())
+            .or_else(|| {
+                self.field_vm
+                    .helper_contexts
+                    .iter()
+                    .find_map(|tl| tl.dialog.as_ref())
+            })
     }
 
     /// Step the opening-cutscene timeline one frame.
@@ -848,61 +873,8 @@ impl World {
         // cursor, confirm commits a choice (applying its relative jump) or
         // dismisses a finished box, resuming the timeline past the segment.
         // The park freezes the frame cap - a dialog waits on the player.
-        if let Some(panel) = tl.dialog.as_mut() {
-            let confirm = self.input.just_pressed(crate::input::PadButton::Cross)
-                || self.input.just_pressed(crate::input::PadButton::Circle);
-            if panel.menu_active() {
-                if self.input.just_pressed(crate::input::PadButton::Up) {
-                    panel.move_picker_cursor(-1);
-                }
-                if self.input.just_pressed(crate::input::PadButton::Down) {
-                    panel.move_picker_cursor(1);
-                }
-            }
-            // One-frame rule (see `step_inline_dialogue`): a menu that opened
-            // on this tick is shown before any confirm can commit it.
-            let menu_was_open = panel.menu_active();
-            panel.tick_at_auto(self.clock.frame_step, &mut self.dialog.auto_press);
-            // The pager's automatic press (`_DAT_80073F00`, op `4C 89`) is a
-            // confirm the player did not make.
-            let confirm = confirm || panel.take_auto_press();
-            if confirm {
-                if panel.menu_active() && (!menu_was_open || !panel.picker_takes_input()) {
-                    // Opened this frame, or still sliding in (the pager reads the
-                    // choice only once the slide rests): nothing to commit yet.
-                } else if panel.menu_active() {
-                    // NB: unlike the inline runner's picker commit, the wrap
-                    // map is NOT cleared here. A cutscene record's picker
-                    // picks a branch of one linear scene (the Mei beat's
-                    // mid-conversation choice); clearing the map let the
-                    // record replay already-played choreography before
-                    // re-wrapping. Re-emission menus live in interaction
-                    // records (the inline runner), not timeline records.
-                    let choice = panel.picker_cursor();
-                    let target = panel.picker().and_then(|pk| pk.jump_target(choice));
-                    match target {
-                        Some(t) => tl.pc = t,
-                        None => tl.done = true,
-                    }
-                    tl.dialog = None;
-                } else if panel.is_done() {
-                    tl.pc = panel.pc;
-                    tl.dialog = None;
-                } else if panel.is_waiting_for_input() {
-                    // Multi-page conversation: turn the page in place (the
-                    // timeline stays parked on the segment until the last
-                    // page is dismissed).
-                    panel.advance_page();
-                    if panel.is_done() {
-                        tl.pc = panel.pc;
-                        tl.dialog = None;
-                    }
-                } else {
-                    // Still typing or scrolling: the pager's skip latch
-                    // completes the page (`crate::dialog_window`).
-                    panel.confirm_while_typing();
-                }
-            }
+        if tl.dialog.is_some() {
+            self.drive_script_dialog(&mut tl, true);
             if tl.dialog.is_some() && !tl.done {
                 self.cutscene.timeline = Some(tl);
                 return;
@@ -938,6 +910,80 @@ impl World {
             // Still parked on the channel-completion handshake: keep the
             // timeline installed and re-test next tick.
             self.cutscene.timeline = Some(tl);
+        }
+    }
+
+    /// Tick a script context's owned dialog panel one frame and, when
+    /// `routed`, hand it the pad: Up/Down move a picker cursor, confirm
+    /// commits a choice (applying its relative jump), turns a page or
+    /// dismisses a finished box, resuming the context past the segment.
+    /// Shared by the modal timeline and the concurrent helper contexts:
+    /// retail's runner `FUN_80039B7C` hands any engaged context's text
+    /// segment to the one shared dialog box and parks the context on it
+    /// (its `+0x9C == 2` arm) until the box closes.
+    // REF: FUN_80039B7C
+    fn drive_script_dialog(
+        &mut self,
+        tl: &mut crate::cutscene_timeline::CutsceneTimeline,
+        routed: bool,
+    ) {
+        let Some(panel) = tl.dialog.as_mut() else {
+            return;
+        };
+        let pressed = |w: &Self, b: crate::input::PadButton| routed && w.input.just_pressed(b);
+        let confirm = pressed(self, crate::input::PadButton::Cross)
+            || pressed(self, crate::input::PadButton::Circle);
+        if panel.menu_active() {
+            if pressed(self, crate::input::PadButton::Up) {
+                panel.move_picker_cursor(-1);
+            }
+            if pressed(self, crate::input::PadButton::Down) {
+                panel.move_picker_cursor(1);
+            }
+        }
+        // One-frame rule (see `step_inline_dialogue`): a menu that opened
+        // on this tick is shown before any confirm can commit it.
+        let menu_was_open = panel.menu_active();
+        panel.tick_at_auto(self.clock.frame_step, &mut self.dialog.auto_press);
+        // The pager's automatic press (`_DAT_80073F00`, op `4C 89`) is a
+        // confirm the player did not make.
+        let confirm = confirm || panel.take_auto_press();
+        if confirm {
+            if panel.menu_active() && (!menu_was_open || !panel.picker_takes_input()) {
+                // Opened this frame, or still sliding in (the pager reads the
+                // choice only once the slide rests): nothing to commit yet.
+            } else if panel.menu_active() {
+                // NB: unlike the inline runner's picker commit, the wrap
+                // map is NOT cleared here. A cutscene record's picker
+                // picks a branch of one linear scene (the Mei beat's
+                // mid-conversation choice); clearing the map let the
+                // record replay already-played choreography before
+                // re-wrapping. Re-emission menus live in interaction
+                // records (the inline runner), not timeline records.
+                let choice = panel.picker_cursor();
+                let target = panel.picker().and_then(|pk| pk.jump_target(choice));
+                match target {
+                    Some(t) => tl.pc = t,
+                    None => tl.done = true,
+                }
+                tl.dialog = None;
+            } else if panel.is_done() {
+                tl.pc = panel.pc;
+                tl.dialog = None;
+            } else if panel.is_waiting_for_input() {
+                // Multi-page conversation: turn the page in place (the
+                // timeline stays parked on the segment until the last
+                // page is dismissed).
+                panel.advance_page();
+                if panel.is_done() {
+                    tl.pc = panel.pc;
+                    tl.dialog = None;
+                }
+            } else {
+                // Still typing or scrolling: the pager's skip latch
+                // completes the page (`crate::dialog_window`).
+                panel.confirm_while_typing();
+            }
         }
     }
 
@@ -1302,25 +1348,25 @@ impl World {
                     && text_byte & 0x7F < 0x20
                 {
                     if text_byte == 0x1F {
-                        if modal {
-                            // Resolve the record's `0xC1`/`0xC2`/`0xC4` name
-                            // escapes, exactly as the prop-interaction panel
-                            // does. Without this a cutscene renders an empty
-                            // string wherever a character name belongs - and
-                            // this is the cutscene path.
-                            let mut panel = crate::dialog::OwnedDialogPanel::at_segment(
-                                std::sync::Arc::clone(&tl.bytecode),
-                                pc,
-                            );
-                            panel.substitutions = host.world.dialog_substitutions(&tl.bytecode);
-                            tl.dialog = Some(panel);
-                        } else {
-                            // A concurrent helper context has no modal input
-                            // routing to page an inline dialog; complete the
-                            // context at the segment instead of parking on it
-                            // forever.
-                            tl.done = true;
-                        }
+                        // Modal timeline or concurrent helper alike: the
+                        // runner `FUN_80039B7C` parks ANY engaged context on
+                        // its text segment and hands it to the shared dialog
+                        // box (`+0x9C = 2`). A helper used to complete at its
+                        // first segment instead, which dropped the rest of
+                        // every op-`0x44` record with a line of text in it -
+                        // town01 `P2[25]` (the FMV hand-off to town0b) and
+                        // town0e `P2[5]` (the ending's hop to edteien).
+                        //
+                        // Resolve the record's `0xC1`/`0xC2`/`0xC4` name
+                        // escapes, exactly as the prop-interaction panel
+                        // does, or a name renders as an empty string.
+                        let _ = modal;
+                        let mut panel = crate::dialog::OwnedDialogPanel::at_segment(
+                            std::sync::Arc::clone(&tl.bytecode),
+                            pc,
+                        );
+                        panel.substitutions = host.world.dialog_substitutions(&tl.bytecode);
+                        tl.dialog = Some(panel);
                         break;
                     }
                     tl.pc = pc + 1;
@@ -2086,9 +2132,25 @@ impl World {
             return;
         }
         let mut contexts = std::mem::take(&mut self.field_vm.helper_contexts);
+        // One dialog box: the pad goes to the modal timeline's box when it
+        // shows one, else to the first helper holding a box.
+        let mut pad_free = self
+            .cutscene
+            .timeline
+            .as_ref()
+            .is_none_or(|t| t.dialog.is_none());
         for tl in contexts.iter_mut() {
             if tl.done {
                 continue;
+            }
+            // Parked on its text segment: the box, not the slice, advances
+            // it; the park holds the frame cap like the modal timeline's.
+            if tl.dialog.is_some() {
+                self.drive_script_dialog(tl, pad_free);
+                pad_free = false;
+                if tl.dialog.is_some() || tl.done {
+                    continue;
+                }
             }
             if self.run_spawned_record_slice(tl, false) && tl.frames >= CUTSCENE_TIMELINE_MAX_FRAMES
             {
@@ -4304,5 +4366,42 @@ mod tests {
             (0x900, 0x700),
             "the walk starts at the player the actor was copied onto"
         );
+    }
+
+    #[test]
+    fn a_helper_context_parks_on_its_text_and_runs_on_after_the_box() {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        // `1F 'H' 'i' 00` (one text segment), `SET 0x0C`, then a long wait.
+        // Retail's runner parks any engaged context on its text segment and
+        // hands it to the shared box; a helper used to complete there and
+        // drop the rest of the record.
+        let bc = vec![0x1F, b'H', b'i', 0x00, 0x50, 0x0C, 0x4A, 0x40, 0x00];
+        let mut w = World::new();
+        w.field_vm
+            .helper_contexts
+            .push(CutsceneTimeline::new(bc, 0));
+        w.step_helper_contexts();
+        assert_eq!(w.field_vm.helper_contexts.len(), 1, "parked, not dropped");
+        assert!(
+            w.script_dialog_panel().is_some(),
+            "the helper shows its box"
+        );
+        assert!(!w.system_flag_test(0x0C));
+        for i in 0..200 {
+            w.set_pad(if i % 2 == 0 {
+                crate::input::PadButton::Cross.mask()
+            } else {
+                0
+            });
+            w.step_helper_contexts();
+            if w.system_flag_test(0x0C) {
+                break;
+            }
+        }
+        assert!(
+            w.system_flag_test(0x0C),
+            "dismissing the box resumes the helper past the segment"
+        );
+        assert!(w.script_dialog_panel().is_none());
     }
 }

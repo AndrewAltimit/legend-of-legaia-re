@@ -1971,14 +1971,7 @@ impl PlayWindowApp {
         if let Some(panel) = self.active_dialog.as_ref() {
             return from_panel(panel, false);
         }
-        if let Some(panel) = self
-            .session
-            .host
-            .world
-            .cutscene
-            .timeline
-            .as_ref()
-            .and_then(|tl| tl.dialog.as_ref())
+        if let Some(panel) = self.session.host.world.script_dialog_panel()
             && let Some(snap) = from_panel(panel, true)
         {
             return Some(snap);
