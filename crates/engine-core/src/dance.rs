@@ -427,6 +427,10 @@ pub struct DanceGame {
     /// than one per cell and a marker draw asks its class.
     markers: [legaia_engine_vm::dance_marker::MarkerActor;
         legaia_engine_vm::dance_marker::MARKER_SCRIPT_ROWS],
+    /// The tick's camera keyframe track (`FUN_801CF470` at
+    /// `0x801CF51C..0x801CF7D8`), when the run was started from a real
+    /// overlay image.
+    camera: Option<crate::dance_venue::DanceCameraTrack>,
 }
 
 impl DanceGame {
@@ -469,6 +473,7 @@ impl DanceGame {
             parts: crate::minigame_actor::MinigameActorPool::new(),
             marker_script: Default::default(),
             markers: Default::default(),
+            camera: None,
         };
         // A chart-only run still spawns its floor - the actors just stand at
         // the origin and bind no clip, because both of those come off the
@@ -545,6 +550,7 @@ impl DanceGame {
         for (class, m) in game.markers.iter_mut().enumerate() {
             m.class = class as u16;
         }
+        game.camera = crate::dance_venue::DanceCameraTrack::from_overlay(overlay);
         game.spawn_dancer_actors(&spawns);
         Some(game)
     }
@@ -677,6 +683,28 @@ impl DanceGame {
     /// This run's mode (`DAT_801d514c`).
     pub fn mode(&self) -> DanceMode {
         self.mode
+    }
+
+    /// Advance the camera keyframe track one tick
+    /// ([`crate::dance_venue::DanceCameraTrack::tick`]) and return the pose
+    /// it wrote. `None` with no track (a chart-only run) or while the gate
+    /// holds the camera (the how-to demo).
+    pub fn advance_camera(
+        &mut self,
+        frame_delta: u8,
+    ) -> Option<crate::dance_venue::DanceCameraPose> {
+        let mode = self.mode;
+        self.camera.as_mut()?.tick(mode, frame_delta)
+    }
+
+    /// The camera track's current pose without advancing it.
+    pub fn camera_pose(&self) -> Option<crate::dance_venue::DanceCameraPose> {
+        self.camera.as_ref()?.pose(self.mode)
+    }
+
+    /// The camera keyframe track, when the run carries one.
+    pub fn camera_track(&self) -> Option<&crate::dance_venue::DanceCameraTrack> {
+        self.camera.as_ref()
     }
 
     /// Wired: the play window's dance block (`window/hud.rs`) lays the HUD out
