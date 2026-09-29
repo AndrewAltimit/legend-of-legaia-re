@@ -1196,7 +1196,7 @@ fn claimed_tiles(session: &BootSession) -> HashSet<(u8, u8)> {
 fn seated_hop(session: &mut BootSession, graph: &DiscGraph, dest: &str) -> Result<String, String> {
     let doors = match doors_to(session, graph, dest) {
         Ok(d) => d,
-        Err(why) => return talk_hop(session, dest).ok_or(why)?,
+        Err(why) => return talk_hop(session, graph, dest).ok_or(why)?,
     };
     HOP_DEST.with(|d| *d.borrow_mut() = Some(dest.to_string()));
     let mut tried = Vec::new();
@@ -1221,16 +1221,25 @@ fn seated_hop(session: &mut BootSession, graph: &DiscGraph, dest: &str) -> Resul
 
 /// A hop no walk-on band carries, taken by talking: the talk-NPC placements
 /// whose own partition-1 record names `dest` in a `0x3F`, directly or through
-/// the partition-2 records it spawns (`0x44`, followed a few levels: `son`'s
-/// ferryman spawns P2[8], whose confirm spawns the P2[10] crossing to
-/// `taiku`). `None` when no such talk exists; `Some(Err)` when talks ran and
-/// none left the scene.
-fn talk_hop(session: &mut BootSession, dest: &str) -> Option<Result<String, String>> {
+/// the partition-2 records it spawns (`0x44`, followed a few levels), or
+/// spawns the record whose FMV hands off to `dest` (`town01`'s P1[40] spawns
+/// P2[25], the mist-night movie). `None` when no such talk exists;
+/// `Some(Err)` when talks ran and none left the scene.
+fn talk_hop(
+    session: &mut BootSession,
+    graph: &DiscGraph,
+    dest: &str,
+) -> Option<Result<String, String>> {
     use legaia_asset::field_disasm::{InsnInfo, LinearWalker, scene_change_name};
     use legaia_engine_core::man_field_scripts::partition_record_span;
     let (mf, man, _) = scene_man_and_triggers(session)?;
     let n0 = mf.partitions.first().map_or(0, Vec::len);
     let n1 = mf.partitions.get(1).map_or(0, Vec::len);
+    let fmv: BTreeSet<usize> = graph
+        .fmv
+        .get(&(scene_name(session), dest.to_string()))
+        .map(|r| r.iter().filter(|(p, _)| *p == 2).map(|&(_, r)| r).collect())
+        .unwrap_or_default();
     // Does the record (partition, index) reach `dest` within `depth` spawns?
     fn reaches(
         mf: &legaia_asset::man_section::ManFile,
@@ -1272,7 +1281,12 @@ fn talk_hop(session: &mut BootSession, dest: &str) -> Option<Result<String, Stri
         .keys()
         .copied()
         .filter(|s| w.npcs.dialog.contains_key(s) || w.npcs.dialog_prologue.contains_key(s))
-        .filter(|&s| reaches(&mf, &man, 1, usize::from(s), dest, n0 + n1, 3))
+        .filter(|&s| {
+            reaches(&mf, &man, 1, usize::from(s), dest, n0 + n1, 3)
+                || spawned_p2(&mf, &man, 1, usize::from(s), n0 + n1, 3)
+                    .iter()
+                    .any(|r| fmv.contains(r))
+        })
         .collect();
     if slots.is_empty() {
         return None;
@@ -2019,11 +2033,48 @@ fn talk_to(session: &mut BootSession, slot: u8) -> Run {
         };
         let before = flags_of_world(session);
         session.host.world.set_pad(PadButton::Cross.mask());
-        let r = match session.tick() {
+        match session.tick() {
             Ok(SceneTickEvent::SceneEntered { name }) => return Run::Entered(name),
-            Ok(_) => run_while_moving(session, DEEP_EXIT_TICKS),
+            Ok(_) => {}
             Err(e) => return Run::Error(format!("{e:#}")),
-        };
+        }
+        // Page the conversation to its end, then step back off the NPC
+        // before anything else runs: a player facing the NPC with the
+        // confirm button pulsing re-opens the same talk the frame it ends,
+        // and that restart is not what retail runs next - a record the
+        // talk spawned is (`town01` P1[40] spawns the P2[25] mist night).
+        let mut ended = false;
+        for f in 0..DEEP_EXIT_TICKS {
+            if session.host.world.mode == SceneMode::Battle {
+                if let Some(r) = drain_battle(session) {
+                    return r;
+                }
+                continue;
+            }
+            let w = &session.host.world;
+            if f >= 2 && w.dialog.inline.is_none() && !w.dialogue_owns_input() {
+                ended = true;
+                break;
+            }
+            let pad = script_pad(session, f);
+            session.host.world.set_pad(pad);
+            match session.tick() {
+                Ok(SceneTickEvent::SceneEntered { name }) => return Run::Entered(name),
+                Ok(_) => {}
+                Err(e) => return Run::Error(format!("{e:#}")),
+            }
+        }
+        if !ended {
+            return Run::Parked(format!("{} at {}", holder(session), park_site(session)));
+        }
+        if walking(session) {
+            let tile = tile_of(bx, bz);
+            session
+                .host
+                .world
+                .seat_player_at_tile(tile.0.clamp(0, 127) as u8, tile.1.clamp(0, 127) as u8);
+        }
+        let r = run_while_moving(session, DEEP_EXIT_TICKS);
         if !matches!(r, Run::Released) || !walking(session) {
             return r;
         }
