@@ -31,6 +31,7 @@ omissions. The harness does what the hosts do:
 | presentation queues | drains the field-event, battle-event, hit, SFX, shout, XA, CLUT-stage and minigame-cue queues and routes battle effect spawns after every tick |
 | FMV playback | skips the movie (`finish_cutscene`) and runs the shared post-play hand-off, as the headless `play` subcommand does |
 | name entry | while the overlay is up, routes the pad edge into `step_name_entry` and skips the field tick, as both hosts' modal arms do |
+| save screen | a Save pick writes `save_full` into an in-memory card and refreshes the grid's snapshot; a Load pick resumes that block's file through `resume_save` - the play window's `apply_save_commit`, with the card held in memory |
 
 A minigame run is a pseudo-scene `<venue>+mg<sub_id>`: the venue is entered,
 then `World::request_minigame_warp` arms the same mode-24 door warp the
@@ -38,12 +39,21 @@ cabinet's op-`0x3E` makes, so the next tick loads the minigame overlay
 through the retail path. The venue's coin compare is satisfied by giving the
 party casino coins first - the one non-pad precondition the harness sets.
 
+A round-trip run is a pseudo-scene `<scene>+rt`. Every `ROUND_TRIP_EVERY`
+frames, on a frame a player could save on (free field roam: no menu,
+timeline, dialogue, name entry, shop or FMV), it takes `save_full`, resumes
+that file through `resume_save` exactly as a Load does, and takes `save_full`
+again; the two must agree field for field. The run also starts with one save
+on the card, so the pause menu's Load row - open in every scene, where Save
+is per-scene - has a file to resume, and random menu browsing reaches the
+card flow end to end.
+
 ### The scene set
 
 Every CDNAME label that resolves to a playable scene (a kingdom overworld, or
 a scene whose field MAN resolves), unioned with the decoded `0x3F`
-destinations of those scenes, plus the five minigame pseudo-scenes. Nothing
-is hand-listed.
+destinations of those scenes, plus the five minigame pseudo-scenes, plus a
+`+rt` round-trip twin of every scene. Nothing is hand-listed.
 
 ## Policies
 
@@ -79,6 +89,7 @@ on one frame and neutral on the next.
 | `non_finite` | a camera float or the caption alpha is NaN or infinite |
 | `value` | roster HP / MP over max, a level outside `1..=99`, battle HP over max, money out of range, a bag stack over 99, a count on a free slot, or two stacks of one id inside the active window |
 | `unbounded_growth` | an engine queue grows past a cap |
+| `save_roundtrip` | in a `+rt` run, the save taken after a resume disagrees with the save it resumed; the location names the first differing field (`party[i]+offset`, `ext.money`, `ext_v2.field_position`, ...) |
 
 The **progress digest** hashes everything a player could see move: mode and
 scene, the player's position and heading, every script context's PC, the

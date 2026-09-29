@@ -898,6 +898,8 @@ struct RunStats {
     modes: BTreeSet<String>,
     menu_opens: u32,
     fmvs: u32,
+    save_commits: u32,
+    round_trips: u32,
 }
 
 struct RunOutcome {
@@ -1105,6 +1107,7 @@ fn run_one(
         ]),
         vec![(0..15).map(SlotSnapshot::empty).collect(), Vec::new()],
     );
+    let mut card = SoakCard::new();
     session.host.world.rng_state = (run_seed(&spec.scene, spec.seed) >> 16) as u32;
     let opts = FieldLiveOpts {
         // `LEGAIA_SOAK_NO_ENCOUNTERS=1` disarms the random-encounter roll - a
@@ -1134,7 +1137,8 @@ fn run_one(
     // `<venue>+mg<sub_id>`: enter the venue, then request the mode-24 door
     // warp the op-`0x3E` arm makes (`World::request_minigame_warp`), so the
     // host's next tick loads the minigame overlay through the retail path.
-    let (scene, minigame) = split_minigame(&spec.scene);
+    let (label, round_trip) = split_round_trip(&spec.scene);
+    let (scene, minigame) = split_minigame(label);
     let entered = catch_unwind(AssertUnwindSafe(|| {
         let r = session.enter_scene_live(scene, &opts);
         if let Some(id) = minigame {
@@ -1182,6 +1186,15 @@ fn run_one(
         };
     }
 
+    // A round-trip run starts with one save on the card, so the pause
+    // menu's Load row (open in every scene; Save is per-scene) has a file
+    // to resume - an empty card refuses before any commit.
+    if round_trip {
+        let sf = session.host.world.save_full();
+        let resume = session.current_resume();
+        card.insert((0, 0), (sf, resume));
+        refresh_rack(&mut session, &card);
+    }
     let mut policy = Policy::new(run_seed(&spec.scene, spec.seed));
     let mut last_digest = progress_digest(&session);
     let mut last_change = 0u64;
@@ -1297,6 +1310,68 @@ fn run_one(
         }
         if !was_menu_open && session.field_menu.is_some() {
             stats.menu_opens += 1;
+        }
+        // Save screen: both play hosts persist a Save pick and resume a Load
+        // pick (`apply_save_commit`); `BootSession` only latches the pick.
+        // The harness keeps the card in memory, so a later Load in the same
+        // run reads back what an earlier Save wrote.
+        if let Some(commit) = session.last_save_commit.take() {
+            stats.save_commits += 1;
+            let r = catch_unwind(AssertUnwindSafe(|| {
+                apply_save_commit(&mut session, &mut card, commit, &opts)
+            }));
+            if r.is_err() {
+                let (loc, msg, frames) = LAST_PANIC
+                    .with(|p| p.borrow_mut().take())
+                    .unwrap_or_default();
+                findings.push(mk(
+                    &session,
+                    "panic",
+                    frame,
+                    loc,
+                    format!("[save commit] {msg} | {frames}"),
+                ));
+                break;
+            }
+        }
+        // `<scene>+rt`: a save / load round trip at a free field frame every
+        // `ROUND_TRIP_EVERY` frames - `save_full`, then `resume_save` of that
+        // file the way a Load resumes it, then `save_full` again. What the
+        // second save says that the first did not is state the file does not
+        // carry, or a resume that does not restore what it read.
+        if round_trip
+            && frame % ROUND_TRIP_EVERY == ROUND_TRIP_EVERY - 1
+            && round_trip_ready(&session)
+        {
+            stats.round_trips += 1;
+            let r = catch_unwind(AssertUnwindSafe(|| {
+                let before = session.host.world.save_full();
+                let resume = session.current_resume();
+                let _ = session.resume_save(before.clone(), &resume.scene, &opts);
+                let after = session.host.world.save_full();
+                save_diff(&before, &after)
+            }));
+            match r {
+                Ok(Some((field, detail))) => {
+                    if reported.insert(format!("save_roundtrip|{field}")) {
+                        findings.push(mk(&session, "save_roundtrip", frame, field, detail));
+                    }
+                }
+                Ok(None) => {}
+                Err(_) => {
+                    let (loc, msg, frames) = LAST_PANIC
+                        .with(|p| p.borrow_mut().take())
+                        .unwrap_or_default();
+                    findings.push(mk(
+                        &session,
+                        "panic",
+                        frame,
+                        loc,
+                        format!("[round trip] {msg} | {frames}"),
+                    ));
+                    break;
+                }
+            }
         }
         // FMV: skip the movie, then run the shared post-play hand-off - the
         // headless `play` subcommand's order.
@@ -1909,6 +1984,8 @@ fn write_report(src: &Source, known: &BTreeSet<String>, cfg: &SoakConfig, r: &So
     let menus: u32 = r.outcomes.iter().map(|o| o.stats.menu_opens).sum();
     let fmvs: u32 = r.outcomes.iter().map(|o| o.stats.fmvs).sum();
     let enter_fail = r.outcomes.iter().filter(|o| !o.enter_ok).count();
+    let saves: u32 = r.outcomes.iter().map(|o| o.stats.save_commits).sum();
+    let trips: u32 = r.outcomes.iter().map(|o| o.stats.round_trips).sum();
     let mut modes: BTreeMap<String, usize> = BTreeMap::new();
     for o in &r.outcomes {
         for m in &o.stats.modes {
@@ -1932,6 +2009,10 @@ fn write_report(src: &Source, known: &BTreeSet<String>, cfg: &SoakConfig, r: &So
     let _ = writeln!(
         md,
         "- battles entered {battles}, left to field {wins}, party wipes {wipes}, menu opens {menus}, FMVs skipped {fmvs}, entry failures {enter_fail}"
+    );
+    let _ = writeln!(
+        md,
+        "- save-screen commits {saves}, save / load round trips {trips}"
     );
     let _ = writeln!(md, "- runs that reached each mode: {modes:?}");
     let moved = r
@@ -2045,6 +2126,135 @@ const MINIGAME_RUNS: [&str; 5] = [
     "koin1+mg6",
 ];
 
+/// `"town01+rt"` -> `("town01", true)`: the run round-trips a save every
+/// [`ROUND_TRIP_EVERY`] frames. A plain label passes through.
+fn split_round_trip(label: &str) -> (&str, bool) {
+    match label.strip_suffix("+rt") {
+        Some(scene) => (scene, true),
+        None => (label, false),
+    }
+}
+
+/// Frames between two round trips in a `+rt` run.
+const ROUND_TRIP_EVERY: u64 = 600;
+
+/// A frame a player could open the pause menu on and save: free field
+/// roam, no modal, no timeline, no dialogue.
+fn round_trip_ready(s: &BootSession) -> bool {
+    let w = &s.host.world;
+    matches!(w.mode, SceneMode::Field | SceneMode::WorldMap)
+        && s.field_menu.is_none()
+        && w.cutscene.timeline.is_none()
+        && w.dialog.current.is_none()
+        && w.dialog.inline.is_none()
+        && !w.name_entry_active()
+        && !w.shops.shop_open
+        && w.active_fmv().is_none()
+}
+
+/// The first field two saves disagree on, named, with a short detail.
+fn save_diff(a: &legaia_save::SaveFile, b: &legaia_save::SaveFile) -> Option<(String, String)> {
+    if a.party.members.len() != b.party.members.len() {
+        return Some((
+            "party.len".into(),
+            format!("{} -> {}", a.party.members.len(), b.party.members.len()),
+        ));
+    }
+    for (i, (x, y)) in a.party.members.iter().zip(&b.party.members).enumerate() {
+        if let Some(off) = x.raw.iter().zip(&y.raw).position(|(p, q)| p != q) {
+            return Some((
+                format!("party[{i}]+{off:#05x}"),
+                format!("{:#04x} -> {:#04x}", x.raw[off], y.raw[off]),
+            ));
+        }
+    }
+    macro_rules! field {
+        ($name:literal, $x:expr, $y:expr) => {
+            if $x != $y {
+                let (dx, dy) = (format!("{:?}", $x), format!("{:?}", $y));
+                let cut = |s: &str| s.chars().take(160).collect::<String>();
+                return Some(($name.into(), format!("{} -> {}", cut(&dx), cut(&dy))));
+            }
+        };
+    }
+    field!("ext.story_flags", a.ext.story_flags, b.ext.story_flags);
+    field!(
+        "ext.story_flag_bits",
+        a.ext.story_flag_bits,
+        b.ext.story_flag_bits
+    );
+    field!("ext.money", a.ext.money, b.ext.money);
+    field!("ext.inventory", a.ext.inventory, b.ext.inventory);
+    field!("ext.item_slots", a.ext.item_slots, b.ext.item_slots);
+    field!("ext.minigames", a.ext.minigames, b.ext.minigames);
+    field!(
+        "ext_v2.active_party",
+        a.ext_v2.active_party,
+        b.ext_v2.active_party
+    );
+    field!("ext_v2.per_char", a.ext_v2.per_char, b.ext_v2.per_char);
+    field!(
+        "ext_v2.saved_chains",
+        a.ext_v2.saved_chains,
+        b.ext_v2.saved_chains
+    );
+    field!(
+        "ext_v2.field_position",
+        a.ext_v2.field_position,
+        b.ext_v2.field_position
+    );
+    field!("ext_v2", a.ext_v2, b.ext_v2);
+    field!("ext", a.ext, b.ext);
+    None
+}
+
+/// The host half of a save-screen pick (the play window's
+/// `apply_save_commit`): a Save writes the file into the in-memory card and
+/// refreshes the grid's snapshot for that block; a Load resumes the file the
+/// block holds, or does nothing for an empty block (the flow refuses those
+/// before committing, so that arm is defensive).
+fn apply_save_commit(
+    session: &mut BootSession,
+    card: &mut SoakCard,
+    commit: legaia_engine_core::save_screen::SaveCommit,
+    opts: &FieldLiveOpts,
+) {
+    use legaia_engine_core::save_screen::SaveCommitKind;
+    let key = (commit.port, commit.cell);
+    match commit.kind {
+        SaveCommitKind::Save => {
+            let sf = session.host.world.save_full();
+            let resume = session.current_resume();
+            card.insert(key, (sf, resume));
+            refresh_rack(session, card);
+        }
+        SaveCommitKind::Load => {
+            if let Some((sf, resume)) = card.get(&key).cloned() {
+                let _ = session.resume_save(sf, &resume.scene, opts);
+            }
+        }
+    }
+}
+
+/// Re-derive the save grid's port-0 snapshots from the in-memory card.
+fn refresh_rack(session: &mut BootSession, card: &SoakCard) {
+    let mut ports: Vec<Vec<SlotSnapshot>> =
+        vec![(0..15).map(SlotSnapshot::empty).collect(), Vec::new()];
+    for (&(port, cell), (sf, resume)) in card.iter() {
+        if let Some(slot) = ports
+            .get_mut(port as usize)
+            .and_then(|p| p.get_mut(cell as usize))
+        {
+            *slot = legaia_engine_core::save_select::snapshot_for_save(cell, sf, resume);
+        }
+    }
+    let rack = session.save_rack().clone();
+    session.set_save_rack(rack, ports);
+}
+
+/// The harness's memory card: `(port, cell)` -> the file a Save wrote.
+type SoakCard = BTreeMap<(u8, u8), (legaia_save::SaveFile, legaia_save::SaveResume)>;
+
 /// `"koin1+mg3"` -> `("koin1", Some(3))`; a plain label passes through.
 fn split_minigame(label: &str) -> (&str, Option<u8>) {
     match label.split_once("+mg") {
@@ -2064,6 +2274,8 @@ fn filter_scenes(all: &[String]) -> Vec<String> {
             .iter()
             .cloned()
             .chain(MINIGAME_RUNS.iter().map(|s| s.to_string()))
+            // Every scene again as a save / load round-trip run.
+            .chain(all.iter().map(|s| format!("{s}+rt")))
             .collect(),
     };
     // `LEGAIA_SOAK_SHARD=i/n` splits the scene set so a long soak can be
@@ -2095,8 +2307,8 @@ fn seed_list(default_count: u64) -> Vec<u64> {
 
 /// Scenes the fixed-budget smoke run covers: the cold-boot town, the
 /// chapter-1 overworld, a dungeon, the casino floor (minigame doors) and a
-/// late-game dungeon.
-const SMOKE_SCENES: [&str; 5] = ["town01", "map01", "keikoku", "koin1", "jou"];
+/// late-game dungeon, plus one save / load round-trip run.
+const SMOKE_SCENES: [&str; 6] = ["town01", "map01", "keikoku", "koin1", "jou", "town01+rt"];
 const SMOKE_FRAMES: u64 = 900;
 
 #[test]
@@ -2109,7 +2321,7 @@ fn soak_smoke_no_panics() {
     let scenes: Vec<String> = SMOKE_SCENES
         .iter()
         .chain(MINIGAME_RUNS.iter())
-        .filter(|s| known.contains(split_minigame(s).0))
+        .filter(|s| known.contains(split_minigame(split_round_trip(s).0).0))
         .map(|s| s.to_string())
         .collect();
     assert!(
