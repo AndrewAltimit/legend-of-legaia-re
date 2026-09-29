@@ -518,7 +518,14 @@ fn open_session(extracted: &Path) -> BootSession {
         scene: "town01".into(),
         enable_audio: false,
     };
-    BootSession::open(extracted, &cfg).expect("open boot session")
+    let mut session = BootSession::open(extracted, &cfg).expect("open boot session");
+    // Both play hosts run field dialogue through the inline-script field-VM
+    // runner by default (`play-window`'s `--simple-dialogue` and the browser
+    // play page's runtime both key on this toggle), so a talk executes its
+    // record's flag writes, branches and scene changes. `BootSession` leaves
+    // it off; without it a conversation only types its first text segment.
+    session.host.world.toggles.use_vm_dialogue = true;
+    session
 }
 
 /// Live-loop options per tier. Both tiers make battles player-driven and
@@ -605,6 +612,9 @@ fn park_site(session: &BootSession) -> String {
     if let Some(tl) = w.cutscene.timeline.as_ref() {
         return at("timeline", &tl.bytecode, tl.pc);
     }
+    if let Some(id) = w.dialog.inline.as_ref() {
+        return at("talk", &id.bytecode, id.pc);
+    }
     if let Some(h) = w.field_vm.helper_contexts.first() {
         return at("helper", &h.bytecode, h.pc);
     }
@@ -681,6 +691,9 @@ fn script_pad(session: &BootSession, f: usize) -> u16 {
     if f % 16 >= 2 {
         return 0;
     }
+    if let Some(pad) = picker_pad(session) {
+        return pad;
+    }
     if let Some(ne) = session.host.world.party.name_entry.as_ref()
         && ne.state == NameEntryState::Confirm
         && !ne.confirm_yes
@@ -688,6 +701,58 @@ fn script_pad(session: &BootSession, f: usize) -> u16 {
         return PadButton::Up.mask();
     }
     PadButton::Cross.mask()
+}
+
+/// A conversation picker: the talk record's address and the picker's offset
+/// in it.
+type PickerKey = (usize, usize);
+
+thread_local! {
+    /// Visits per conversation picker, keyed by the talk record and the
+    /// picker's offset in it, and the picker open on the last pad read.
+    static PICKS: std::cell::RefCell<(HashMap<PickerKey, usize>, Option<PickerKey>)> =
+        std::cell::RefCell::new((HashMap::new(), None));
+}
+
+/// The pad on a conversation picker (the inline runner's option menu).
+/// Option 0 is often "tell me again" - a branch that jumps back to the same
+/// speech - so a hand that always confirms the default loops forever. The
+/// hand instead takes option `k` on the picker's `k`-th opening (0, then 1,
+/// ...), which walks a menu to its story branch or its exit.
+fn picker_pad(session: &BootSession) -> Option<u16> {
+    let open = session.host.world.dialog.inline.as_ref().and_then(|id| {
+        let panel = id.panel.as_ref()?;
+        let pk = panel.picker()?;
+        panel.menu_active().then_some((
+            (std::sync::Arc::as_ptr(&id.bytecode) as usize, pk.open),
+            pk.n.max(1),
+            panel.picker_cursor(),
+            panel.picker_takes_input(),
+        ))
+    });
+    let Some((key, n, cursor, takes)) = open else {
+        PICKS.with(|p| p.borrow_mut().1 = None);
+        return None;
+    };
+    let visit = PICKS.with(|p| {
+        let mut p = p.borrow_mut();
+        if p.1 != Some(key) {
+            p.1 = Some(key);
+            *p.0.entry(key).or_insert(0) += 1;
+        }
+        p.0[&key]
+    });
+    if !takes {
+        return Some(0);
+    }
+    let want = (visit - 1) % n;
+    Some(if cursor < want {
+        PadButton::Down.mask()
+    } else if cursor > want {
+        PadButton::Up.mask()
+    } else {
+        PadButton::Cross.mask()
+    })
 }
 
 /// Tick with Cross pulsed on a human duty cycle (edge-triggered pages advance
@@ -768,15 +833,39 @@ fn run_while_moving(session: &mut BootSession, ceiling: usize) -> Run {
 /// healing policy - every one a pad press, no engine call.
 fn fight_pad(session: &BootSession) -> u16 {
     use legaia_engine_core::battle_input::CommandPhase;
+    use legaia_engine_core::battle_tutorial::TutorialLesson;
+    use legaia_engine_core::inventory_use::InventoryUseState;
     let w = &session.host.world;
     if !w.battle.tutorial_boxes.is_empty() {
         return PadButton::Cross.mask();
     }
-    if w.battle.item_menu.is_some() {
-        return PadButton::Circle.mask();
+    // A tutorial battle (Tetsu's spar) validates each commit against the
+    // lesson it is teaching and rewinds any other command to the ring, so
+    // the hand picks the command the lesson names: the ring's up arm for
+    // Items (and uses the first item on the first target), its down arm for
+    // Spirit. Attacks and Hyper Arts both commit through Attack.
+    let lesson = w.battle.tutorial.as_ref().map(|t| t.lesson());
+    if let Some(menu) = w.battle.item_menu.as_ref() {
+        return match (lesson, &menu.state) {
+            (Some(TutorialLesson::Items), InventoryUseState::Browsing { .. })
+                if !menu.filtered_items.is_empty() =>
+            {
+                PadButton::Cross.mask()
+            }
+            (Some(TutorialLesson::Items), InventoryUseState::TargetSelect { .. }) => {
+                PadButton::Cross.mask()
+            }
+            _ => PadButton::Circle.mask(),
+        };
     }
     if let Some(cmd) = w.battle.command.as_ref() {
         return match &cmd.phase {
+            CommandPhase::Menu { .. } if lesson == Some(TutorialLesson::Items) => {
+                PadButton::Up.mask()
+            }
+            CommandPhase::Menu { .. } if lesson == Some(TutorialLesson::Spirit) => {
+                PadButton::Down.mask()
+            }
             CommandPhase::RoundPrompt { .. }
             | CommandPhase::Menu { .. }
             | CommandPhase::AttackMode { .. }
@@ -974,10 +1063,45 @@ fn doors_to(session: &BootSession, graph: &DiscGraph, dest: &str) -> Result<Vec<
 /// genuine tile change.
 fn step_onto(session: &mut BootSession, tile: (u8, u8)) {
     session.host.world.set_pad(0);
-    let off = if tile.0 > 0 { tile.0 - 1 } else { tile.0 + 1 };
-    session.host.world.seat_player_at_tile(off, tile.1);
+    // The approach tile must itself be inert: a kind-1 band there spawns its
+    // own record, and a kind-0 teleport there arms a warp whose landing, a
+    // few dozen frames later, carries the player off the tile under test
+    // (the warp in flight also owns the dispatcher, so the step never fires).
+    let claimed = claimed_tiles(session);
+    let off = [(-1i16, 0i16), (1, 0), (0, -1), (0, 1)]
+        .iter()
+        .map(|&(dx, dz)| (i16::from(tile.0) + dx, i16::from(tile.1) + dz))
+        .filter(|&(x, z)| (0..128).contains(&x) && (0..128).contains(&z))
+        .map(|(x, z)| (x as u8, z as u8))
+        .find(|t| !claimed.contains(t))
+        .unwrap_or(if tile.0 > 0 {
+            (tile.0 - 1, tile.1)
+        } else {
+            (tile.0 + 1, tile.1)
+        });
+    session.host.world.seat_player_at_tile(off.0, off.1);
     let _ = session.tick();
     session.host.world.seat_player_at_tile(tile.0, tile.1);
+}
+
+/// Tiles of the loaded field scene that carry a `.MAP` trigger of either
+/// kind (kind-1 record bands, kind-0 intra-scene teleports).
+fn claimed_tiles(session: &BootSession) -> HashSet<(u8, u8)> {
+    let mut out = HashSet::new();
+    if session.host.world.mode != SceneMode::Field {
+        return out;
+    }
+    let index = &session.host.index;
+    let Ok(scene) = Scene::load(index, &scene_name(session)) else {
+        return out;
+    };
+    if let Ok((p, f)) = scene.field_tile_triggers(index) {
+        out.extend(p.iter().chain(f.iter()).map(|t| (t.tile_x, t.tile_z)));
+    }
+    if let Ok((p, f)) = scene.field_intra_scene_teleports(index) {
+        out.extend(p.iter().chain(f.iter()).map(|t| (t.tile_x, t.tile_z)));
+    }
+    out
 }
 
 /// Try `doors` by seating; `Ok(entered)` for the first that changed scene.
@@ -1415,7 +1539,7 @@ fn reached(session: &BootSession, target: &Milestone) -> bool {
 }
 
 /// Walk-on beat records tried per scene visit.
-const MAX_BEATS: usize = 40;
+const MAX_BEATS: usize = 120;
 
 /// The **beats** pass of the seated tier: in the loaded field scene, approach
 /// every boss stager whose park gate is clear (the touch dispatch runs its
@@ -1470,33 +1594,188 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
         .iter()
         .map(|s| s.record)
         .collect();
+    // A tile reaches a record only when no earlier entry claims it: the
+    // dispatch takes the first primary-then-fallback match
+    // (`FUN_801D5630`), so a fallback band shadowed by a primary entry on
+    // the same tile never fires its own record.
     let mut first_tile: BTreeMap<u8, (u8, u8)> = BTreeMap::new();
     for t in triggers.iter().filter(|t| t.gate == 1) {
-        first_tile.entry(t.record).or_insert((t.tile_x, t.tile_z));
+        let owner = triggers
+            .iter()
+            .find(|u| (u.tile_x, u.tile_z) == (t.tile_x, t.tile_z));
+        if owner.is_some_and(|u| u.record == t.record && u.gate == 1) {
+            first_tile.entry(t.record).or_insert((t.tile_x, t.tile_z));
+        }
     }
-    for (rec, tile) in first_tile.into_iter().take(MAX_BEATS) {
-        if doors.contains(&rec) {
-            continue;
-        }
-        let pass = partition2_record_gates(&mf, &man, usize::from(rec))
-            .is_some_and(|(c1, c2)| session.host.world.p2_record_gates_pass(&c1, &c2));
-        if !pass {
-            continue;
-        }
-        step_onto(session, tile);
-        ran += 1;
-        match run_while_moving(session, DEEP_EXIT_TICKS) {
-            Run::Entered(s) => {
-                finish(session, log, ran);
-                return Ok(Some(s));
+    // Talk and walk-on beats unlock each other (a conversation sets the flag
+    // a walk-on record's C2 gate needs, and a walk-on cutscene sets the flag
+    // a conversation branches on), so both passes repeat while a round still
+    // gains flags. Each beat plays at most once per scene visit.
+    let mut walked: BTreeSet<u8> = BTreeSet::new();
+    for _round in 0..BEAT_ROUNDS {
+        let round_start = flags_of_world(session);
+        // A talk is re-tried each round while its flag stays clear: its
+        // record may branch on a flag the previous round's beats set.
+        for slot in talk_beats(session, &mf, &man) {
+            if ran >= MAX_BEATS {
+                continue;
             }
-            Run::Battle(b) => return Err(format!("beat P2[{rec}]: {b}")),
-            Run::Error(e) => return Err(e),
-            Run::Released | Run::Parked(_) => {}
+            ran += 1;
+            let f0 = flags_of_world(session);
+            let r = talk_to(session, slot);
+            trace_beat(session, &f0, || format!("{name} talk P1[{slot}] -> {r:?}"));
+            match r {
+                Run::Entered(s) => {
+                    finish(session, log, ran);
+                    return Ok(Some(s));
+                }
+                Run::Battle(b) => return Err(format!("talk P1[{slot}]: {b}")),
+                Run::Error(e) => return Err(e),
+                Run::Released | Run::Parked(_) => {}
+            }
+        }
+        for (&rec, &tile) in &first_tile {
+            if doors.contains(&rec) || walked.contains(&rec) || ran >= MAX_BEATS {
+                continue;
+            }
+            let pass = partition2_record_gates(&mf, &man, usize::from(rec))
+                .is_some_and(|(c1, c2)| session.host.world.p2_record_gates_pass(&c1, &c2));
+            if !pass {
+                continue;
+            }
+            walked.insert(rec);
+            step_onto(session, tile);
+            ran += 1;
+            let f0 = flags_of_world(session);
+            let r = run_while_moving(session, DEEP_EXIT_TICKS);
+            trace_beat(session, &f0, || {
+                format!("{name} walk P2[{rec}] at {tile:?} -> {r:?}")
+            });
+            match r {
+                Run::Entered(s) => {
+                    finish(session, log, ran);
+                    return Ok(Some(s));
+                }
+                Run::Battle(b) => return Err(format!("beat P2[{rec}]: {b}")),
+                Run::Error(e) => return Err(e),
+                Run::Released | Run::Parked(_) => {}
+            }
+        }
+        if flags_of_world(session) == round_start {
+            break;
         }
     }
     finish(session, log, ran);
     Ok(None)
+}
+
+/// With `LEGAIA_FGL_TRACE` set, print one line per played beat: what ran,
+/// how it ended, and the flags it set.
+fn trace_beat(session: &BootSession, before: &BTreeSet<u16>, what: impl FnOnce() -> String) {
+    if std::env::var_os("LEGAIA_FGL_TRACE").is_none() {
+        return;
+    }
+    let gained: Vec<String> = flags_of_world(session)
+        .difference(before)
+        .map(|f| format!("0x{f:03X}"))
+        .collect();
+    eprintln!("    [beat] {} +{gained:?}", what());
+}
+
+/// Rounds of the talk + walk-on beat passes per scene visit.
+const BEAT_ROUNDS: usize = 3;
+
+/// The **story talks** of the loaded field scene: the talk-NPC placements
+/// (partition-1 record index = the slot the interact probe addresses) whose
+/// own record carries a clean, non-debug SET of a system flag the live bank
+/// still has clear. A conversation that writes no story flag is scenery and
+/// is not played.
+fn talk_beats(
+    session: &BootSession,
+    mf: &legaia_asset::man_section::ManFile,
+    man: &[u8],
+) -> Vec<u8> {
+    use legaia_engine_core::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
+    let w = &session.host.world;
+    let mut setters: BTreeSet<u8> = BTreeSet::new();
+    for s in walk_partition_gflag_sites(mf, man, 1) {
+        if s.bank == FlagBank::System
+            && s.kind == FlagKind::Set
+            && s.clean
+            && !s.text_alias
+            && !s.debug_menu
+            && !w.system_flag_test(s.flag)
+            && let Ok(slot) = u8::try_from(s.record)
+        {
+            setters.insert(slot);
+        }
+    }
+    setters
+        .into_iter()
+        .filter(|slot| {
+            w.npcs.positions.contains_key(slot)
+                && (w.npcs.dialog.contains_key(slot) || w.npcs.dialog_prologue.contains_key(slot))
+        })
+        .collect()
+}
+
+/// Talk to the NPC in placement `slot` as a player does: stand on a tile
+/// next to it, face it so the retail interact probe (64 units ahead, the
+/// NPC's 72-unit box) lands on it, press Cross, and page the conversation.
+/// A talk record often branches on where the player stands (a `0x4D`
+/// box test on the player), so each side is tried in turn until one gains a
+/// flag. The player goes back where it stood afterwards, so the next press
+/// does not re-open the same talk.
+fn talk_to(session: &mut BootSession, slot: u8) -> Run {
+    let Some(&(nx, nz)) = session.host.world.npcs.positions.get(&slot) else {
+        return Run::Released;
+    };
+    let (bx, bz) = player_xz(session);
+    let (tx, tz) = tile_of(nx, nz);
+    let claimed = claimed_tiles(session);
+    let mut last = Run::Released;
+    for (dx, dz) in [(-1i16, 0i16), (1, 0), (0, -1), (0, 1)] {
+        let (sx, sz) = (tx + dx, tz + dz);
+        if !(0..128).contains(&sx)
+            || !(0..128).contains(&sz)
+            || claimed.contains(&(sx as u8, sz as u8))
+        {
+            continue;
+        }
+        session.host.world.set_pad(0);
+        session.host.world.seat_player_at_tile(sx as u8, sz as u8);
+        // The one compass sector whose probe point lands in the NPC's box.
+        let facing = (0..8u8).find(|&d| {
+            session.host.world.face_player_sector(d);
+            session.host.world.field_interact_probe_slot() == Some(slot)
+        });
+        let Some(_) = facing else {
+            continue;
+        };
+        let before = flags_of_world(session);
+        session.host.world.set_pad(PadButton::Cross.mask());
+        let r = match session.tick() {
+            Ok(SceneTickEvent::SceneEntered { name }) => return Run::Entered(name),
+            Ok(_) => run_while_moving(session, DEEP_EXIT_TICKS),
+            Err(e) => return Run::Error(format!("{e:#}")),
+        };
+        if !matches!(r, Run::Released) || !walking(session) {
+            return r;
+        }
+        let gained = flags_of_world(session) != before;
+        last = r;
+        if gained {
+            break;
+        }
+    }
+    if walking(session) {
+        let tile = tile_of(bx, bz);
+        session
+            .host
+            .world
+            .seat_player_at_tile(tile.0.clamp(0, 127) as u8, tile.1.clamp(0, 127) as u8);
+    }
+    last
 }
 
 fn flags_of_world(session: &BootSession) -> BTreeSet<u16> {

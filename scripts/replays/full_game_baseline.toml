@@ -21,7 +21,7 @@
 [headline]
 contiguous_progresses = 1
 contiguous_pad = 1
-tier_sum = 93
+tier_sum = 94
 
 [segments]
 rim_elm = 4
@@ -40,7 +40,7 @@ voz_forest = 3
 zeto_dungeon = 2
 zeto_dungeon_late = 3
 sky_gardens = 3
-fire_path = 2
+fire_path = 3
 mt_letona = 3
 ratayu = 3
 dohati_castle = 3
