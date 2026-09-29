@@ -3022,13 +3022,16 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       else if (b === 'Up' || b === 'Down') {
         e.preventDefault();
         if (!e.repeat) fishPressed |= (b === 'Up') ? 0x1000 : 0x4000;
+        /* held D-pad down lifts the rod (the rod actor reads the held word) */
+        if (b === 'Down') fishHold |= 0x4000;
       }
       else if (b === 'Cross') { e.preventDefault(); if (!e.repeat) { fishHold |= 0x40; fishPressed |= 0x40; } }
       else if (b === 'Square') { e.preventDefault(); if (!e.repeat) { fishHold |= 0x80; fishPressed |= 0x80; } }
       else if (b === 'Left' || b === 'Right') {
         e.preventDefault();
-        /* bait twitch: a fresh D-pad edge */
+        /* bait twitch: a fresh D-pad edge; held, the side rolls the rod */
         if (!e.repeat) fishPressed |= (b === 'Left') ? 0x8000 : 0x2000;
+        fishHold |= (b === 'Left') ? 0x8000 : 0x2000;
       }
     } else if (active === 'muscle') {
       /* Retail pad map: D-pad drives the command menu (Left=Attack,
@@ -3050,6 +3053,9 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     const b = btnOf(e);
     if (b === 'Cross') fishHold &= ~0x40;
     else if (b === 'Square') fishHold &= ~0x80;
+    else if (b === 'Left') fishHold &= ~0x8000;
+    else if (b === 'Right') fishHold &= ~0x2000;
+    else if (b === 'Down') fishHold &= ~0x4000;
   });
 
   /* Rewrite every printed control hint from the engine's binding table, so
@@ -3089,7 +3095,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
    * MgFishing). This block is glue: it ticks the session, routes input,
    * runs the prize counter, and bridges the save bar's fishing record. */
   let fishR = null;          /* MgFishing renderer (null = flat fallback) */
-  let fishHold = 0;          /* held reel mask: 0x40 Cross (J), 0x80 Square (K) */
+  let fishHold = 0;          /* held packed pad: 0x40 Cross (J), 0x80 Square (K), D-pad 0x2000/0x4000/0x8000 */
   let fishPressed = 0;       /* packed newly-pressed word since the last frame */
   let fishCastEdge = false;  /* one-shot cast / confirm press */
   let fishSave = null;       /* fishing record read from the loaded save */

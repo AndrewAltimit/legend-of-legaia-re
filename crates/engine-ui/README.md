@@ -57,6 +57,10 @@ navigation logic depends on the GPU backend.
 - `ui_fishing` - fishing-minigame HUD: the ported persistent / catch HUD
   layout, gauge bars, digit field and banner animators, plus
   `fishing_hud_draws_for`, the consumer that renders that draw list.
+- `ui_fishing_line` - the fishing line (retail's `LINE_G2` packet, built and
+  clipped by `legaia_engine_core::fishing::PondSession::line_frame`) as the
+  prim set's line kind with its two Gouraud end colours; both play hosts wrap
+  the packet through it.
 - `ui_menu_window_painters` (+ `_large`) - content painters for the
   menu-overlay **window-descriptor table**: title tabs, prompt / counter /
   choice windows, the shop's item-info and sell-quantity panels, and the two

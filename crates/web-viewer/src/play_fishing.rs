@@ -122,6 +122,37 @@ impl LegaiaRuntime {
         writes.apply(&mut self.camera);
     }
 
+    /// The fishing line as a screen primitive for this tick - the native
+    /// window's `fishing_line_screen_prims` twin: the session's line
+    /// (`legaia_engine_core::fishing_venue::fishing_line_frame`, the fish end
+    /// through the follow camera the page draws the venue with) wrapped by the
+    /// shared `ui_fishing_line` builder, into the page's screen-prim pass.
+    pub(crate) fn fishing_line_prims(&mut self) -> Vec<legaia_engine_ui::screen_prim::ScreenPrim> {
+        let centre = self.field_camera_centre();
+        let Some(host) = self.scene_host.as_mut() else {
+            return Vec::new();
+        };
+        let world = &mut host.world;
+        if world.mode != legaia_engine_core::world::SceneMode::Fishing {
+            return Vec::new();
+        }
+        let view = legaia_engine_core::camera_view::resolve_field_camera(
+            world,
+            &self.camera,
+            None,
+            centre,
+        )
+        .field_view();
+        legaia_engine_core::fishing_venue::fishing_line_frame(&mut world.minigames, view.as_ref())
+            .and_then(|l| {
+                legaia_engine_ui::ui_fishing_line::fishing_line_prim(
+                    l.fish, l.rod, l.fish_rgb, l.rod_rgb, l.ot,
+                )
+            })
+            .into_iter()
+            .collect()
+    }
+
     /// The live fishing session, when one is installed on the scene host's
     /// world.
     fn fishing_session(&self) -> Option<&PondSession> {

@@ -703,6 +703,10 @@ impl PlayWindowApp {
         let field_fog_prims = self.take_field_fog_prims();
         // Move-VM strip spans (`FUN_801D31B0`), through the same camera.
         let move_strip_prims = self.take_move_strip_prims();
+        // The fishing line (`FUN_801D26CC`'s packet, clipped by
+        // `FUN_801D56E4`): latched here, outside the renderer borrow, through
+        // the same follow camera - the session's yaw feedback is a write.
+        let fishing_line_prims = self.fishing_line_screen_prims();
         // The Baka duel's 3D surface: posed and uploaded here, outside the
         // renderer borrow (`window::minigames`).
         self.refresh_baka_duel_gpu();
@@ -2593,6 +2597,9 @@ impl PlayWindowApp {
             // The slot machine's paylines, off the machine's own ported pass
             // and projection - the segments both browser pages stroke.
             screen_prims.extend(self.slot_payline_screen_prims());
+            // The fishing line, latched above: the same kernel and builder
+            // the browser play page uses.
+            screen_prims.extend(fishing_line_prims);
             // The overworld's entity + player markers: the shared
             // `world_map_markers` kernel's quads, the browser play page's
             // twin (`crate::play_world_map_markers` there).

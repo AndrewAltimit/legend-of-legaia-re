@@ -39,7 +39,7 @@ impl LegaiaRuntime {
     /// of these passes borrow `&self`: the page's per-frame camera resolve
     /// fills the cache before any draw pass runs, and before the first
     /// resolve there is no scene camera to fall back from.
-    fn field_camera_centre(&self) -> [f32; 2] {
+    pub(crate) fn field_camera_centre(&self) -> [f32; 2] {
         self.scene_aabb
             .map(|(lo, hi)| [(lo[0] + hi[0]) * 0.5, (lo[2] + hi[2]) * 0.5])
             .unwrap_or([0.0, 0.0])

@@ -1713,7 +1713,6 @@
 # SCOPE claims, like the section above.
 [mesh_submit]
 "801d6bb8" = "Baka Fighter ground marker at a world point: matrix push, RotTrans of the point, a texture-window record on the stack (0x00808080 or 0x0080A0C0 tint by the flag argument, 0x0707 mask, 0x100 or 0x400 size) staged through 80028158, then two submits at *(0x8007B85C)+0x62400 / +0x6240C. Called with each fighter position (0x801D40B4, 0x801D47F4) and with flag 1 at the focus point from the epilogue (0x801D20AC). see ghidra/scripts/funcs/overlay_baka_fighter_801d6bb8.txt"
-"801d1c5c" = "Fishing scene-object draw: matrix load/pop through 8003D1A4 / 8003D254, RotTrans (8003D344) plus the 8003D368 project, CLUT / tpage / texture binds through 800461A4 / 8004629C / 8004638C, then one submit into the shared mesh renderer 0x80043390. see ghidra/scripts/funcs/overlay_fishing_801d1c5c.txt"
 "801d67bc" = "Fishing actor draw callback: gates on the actor's `+0x72` size word, biases the OT head by -0x14 when the actor's `+0x10` carries bit 0x80800000, loads the matrix at 0x8007BF10 (8003D1A4), binds texture / CLUT / tpage from the actor's `+0x24/+0x26/+0x28` (8004629C / 800461A4 / 8004638C), then transforms and submits through 8003D20C / 8003D368 / 0x80043390. Transform-and-submit only. see ghidra/scripts/funcs/overlay_fishing_801d67bc.txt"
 
 # The `worklist_minigame_structural` section is gone. It mixed the two claim

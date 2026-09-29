@@ -1995,6 +1995,10 @@ impl LegaiaRuntime {
         // and subtractive darkness masks, the native window's
         // `field_light_screen_prims` twin ([`crate::play_field_fx`]).
         prims.extend(self.field_light_prims());
+        // The fishing line (`FUN_801D26CC`'s packet, clipped by
+        // `FUN_801D56E4`), the native window's `fishing_line_screen_prims`
+        // twin ([`crate::play_fishing`]).
+        prims.extend(self.fishing_line_prims());
         // The battle value readout - retail's 24x24 numeral cells and the
         // `N HIT` / `TOTAL` counter cluster - off the resident effect atlas,
         // through the same `battle_numerals` builder the native window emits.

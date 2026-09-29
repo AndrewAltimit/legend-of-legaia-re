@@ -2369,7 +2369,9 @@ hit-detection, animation re-targeting, offline regression checks.
 `OFX + (H * IR1) / SZ3`. The GTE approximates `1 / SZ3` with an Unsigned
 Newton-Raphson step seeded from a 257-entry table, then applies it as
 `OFX + (IR1 * (H / SZ3)) >> 16` with an arithmetic (floor) shift. Two hardware
-quirks follow and are reproduced by `gte::math::gte_divide`, used by the GTE
+quirks follow and are reproduced by `gte_divide` (`legaia_engine_vm::gte_divide`,
+re-exported as `engine-ui`'s `gte::gte_divide` so the simulation's own screen
+points - the fishing rod tip - divide the same way), used by the GTE
 emulation sites `Gte::rtps` (the register-level cop2 oracle) and its
 `Camera::transform` RTPT shim: near or behind the camera (`2 * SZ3 <= H`,
 including `SZ3 == 0`) the quotient saturates to `0x1FFFF` and the divide-overflow

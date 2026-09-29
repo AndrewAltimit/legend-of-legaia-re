@@ -97,6 +97,16 @@ pub const REEL_A_PAD_BIT: u32 = 0x40;
 /// **Not** Circle - `0x20` is the cast/hook input.
 pub const REEL_B_PAD_BIT: u32 = 0x80;
 
+/// Packed-pad bit of D-pad right in the retail held word: rolls the rod
+/// right (`andi v0,a0,0x2000` at `0x801D38B0`).
+pub const ROD_PAD_RIGHT: u32 = 0x2000;
+/// Packed-pad bit of D-pad down: lifts the rod (`andi v0,v0,0x4000` at
+/// `0x801D2AC0`).
+pub const ROD_PAD_DOWN: u32 = 0x4000;
+/// Packed-pad bit of D-pad left: rolls the rod left (`andi v0,a0,0x8000` at
+/// `0x801D38C4`).
+pub const ROD_PAD_LEFT: u32 = 0x8000;
+
 /// The reel-input state this frame. The retail held mask is `_DAT_8007b850`
 /// bits `0x40` / `0x80`, which are now pinned to physical buttons via the pad
 /// packer `FUN_8001822C`: `0x40` = Cross, `0x80` = Square (reel B is Square,
@@ -1346,8 +1356,10 @@ pub enum PondPhase {
 /// One frame of player input to [`PondSession::tick`].
 #[derive(Debug, Clone, Copy, Default)]
 pub struct PondInput {
-    /// Held pad mask bits `0x40` (Cross / reel A) and `0x80` (Square /
-    /// reel B) - the `_DAT_8007b850` bits the reel decoder reads.
+    /// The held packed pad word (`_DAT_8007b850`) the pond reads: bits
+    /// `0x40` (Cross / reel A) and `0x80` (Square / reel B) for the reel
+    /// decoder, and the D-pad (`0x2000` right, `0x4000` down, `0x8000` left)
+    /// the rod actor's lift and roll read ([`crate::fishing_actors::RodActor::drive`]).
     pub reel_mask: u32,
     /// The cast / confirm edge (Circle `0x20` in retail; `X` on both browser pages, and Space as well
     /// on the minigames page).
@@ -1376,6 +1388,16 @@ impl PondInput {
         }
         if pad & B::Square.mask() != 0 {
             reel_mask |= REEL_B_PAD_BIT;
+        }
+        // The rod's D-pad bits, in the packed layout (`_DAT_8007B850`).
+        for (b, bit) in [
+            (B::Right, ROD_PAD_RIGHT),
+            (B::Down, ROD_PAD_DOWN),
+            (B::Left, ROD_PAD_LEFT),
+        ] {
+            if pad & b.mask() != 0 {
+                reel_mask |= bit;
+            }
         }
         let pressed = pad & !pad_prev;
         PondInput {
@@ -1461,6 +1483,17 @@ pub struct PondSession {
     lure_probe: crate::fishing_actors::LureProbe,
     /// The venue's hub menu, while it is up ([`crate::fishing_hub`]).
     pub(crate) hub: Option<crate::fishing_hub::FishingHub>,
+    /// The rod actor (`FUN_801D1C5C`), from the cast lock until its recover
+    /// swing retires it.
+    rod_actor: Option<crate::fishing_actors::RodActor>,
+    /// This frame's line, once a host has projected the fish end
+    /// ([`Self::line_frame`]); cleared by every [`Self::tick`].
+    line: Option<crate::fishing_actors::FishingLine>,
+    /// Whether [`Self::line_frame`] has run since the last tick.
+    line_latched: bool,
+    /// The fish end's last unclipped screen point (`0x801D9198`), which the
+    /// next frame's rod yaw is measured against.
+    line_fish_prev: Option<(i16, i16)>,
 }
 
 /// The venue bytes a host attaches so the cast lure has a world to land in.
@@ -1481,6 +1514,9 @@ pub struct PondVenue {
     pub anchor_z: i16,
     /// The angler's facing (`actor[+0x26]`), the polar offset's angle.
     pub facing: i16,
+    /// The venue scene's three rods and their bend - the geometry the
+    /// line's rod end is a vertex of ([`crate::fishing_actors::RodMesh`]).
+    pub rod_mesh: Option<crate::fishing_actors::RodMesh>,
 }
 
 /// Wind-up frames before the power meter opens (state `0xd`: ~12 frames).
@@ -1535,6 +1571,10 @@ impl PondSession {
             lure_actor: None,
             lure_probe: Default::default(),
             hub: None,
+            rod_actor: None,
+            line: None,
+            line_latched: false,
+            line_fish_prev: None,
         }
     }
 
@@ -1624,6 +1664,65 @@ impl PondSession {
         std::mem::take(&mut self.events)
     }
 
+    /// The rod actor, from the cast lock until its recover swing retires it.
+    pub fn rod_actor(&self) -> Option<&crate::fishing_actors::RodActor> {
+        self.rod_actor.as_ref()
+    }
+
+    /// The lure tick's rod writes for one in-water frame, off the held pad.
+    fn drive_rod(&mut self, input: PondInput, hooked: bool, fs: i32) {
+        if let Some(rod) = self.rod_actor.as_mut() {
+            rod.drive(
+                crate::fishing_actors::RodDrive {
+                    hooked,
+                    held: input.reel_mask,
+                },
+                fs,
+            );
+        }
+    }
+
+    /// This frame's fishing line - the tail of retail's lure tick
+    /// `FUN_801D26CC`, which every host calls once per frame after
+    /// [`Self::tick`].
+    ///
+    /// The line runs from the fish to the rod tip. The fish end is the lure's
+    /// world point with its height zeroed (`sh zero,0x3a(sp)` at
+    /// `0x801D3A90`) pushed through the **scene** camera - which is the
+    /// host's, so the host supplies `project` (world `[x, y, z]` to a retail
+    /// 320x240 screen point, `None` when it does not project). The rod end is
+    /// the rod actor's own projected tip. The first call after a tick
+    /// measures the rod's yaw toward the fish off the previous frame's fish
+    /// point (`0x801D2A90..0x801D2AA8`, `3 * (tip.x - fish.x)`), latches this
+    /// frame's, and builds the clipped packet
+    /// ([`crate::fishing_actors::fishing_line`]); later calls in the same
+    /// frame return the same line.
+    ///
+    /// `None` outside the in-water phases, with no lure or no rod tip.
+    /// Retail also draws the line while the lure flies out; the port's lure
+    /// exists only from the landing, so the line does too.
+    pub fn line_frame(
+        &mut self,
+        project: impl FnOnce([i32; 3]) -> Option<(i16, i16)>,
+    ) -> Option<crate::fishing_actors::FishingLine> {
+        if self.line_latched {
+            return self.line;
+        }
+        self.line_latched = true;
+        if !matches!(self.phase, PondPhase::Waiting | PondPhase::Hooked) {
+            return None;
+        }
+        let lure = self.lure_actor?;
+        let rod = self.rod_actor.as_mut()?;
+        let tip = rod.tip?;
+        let fish = project([lure.x() as i32, 0, lure.z as i32])?;
+        let prev = self.line_fish_prev.unwrap_or(fish);
+        rod.yaw = (tip.sxy.0 as i32 - prev.0 as i32) * 3;
+        self.line_fish_prev = Some(fish);
+        self.line = Some(crate::fishing_actors::fishing_line(fish, tip));
+        self.line
+    }
+
     /// Line-record seed for a locked cast power: the deep-cast readout is
     /// ~1000 (`denom` context in the doc), so full power maps to
     /// `300 + 1000` and the floor stays above the `500` band-check gate.
@@ -1642,6 +1741,17 @@ impl PondSession {
             return;
         }
         let fs = frame_step.max(1);
+        // The rod actor runs ahead of the lure tick in the actor pool, so it
+        // poses off the rod globals the lure tick wrote last frame.
+        self.line = None;
+        self.line_latched = false;
+        if let Some(rod) = self.rod_actor.as_mut() {
+            let mesh = self.venue_map.as_ref().and_then(|v| v.rod_mesh.as_ref());
+            rod.tick(mesh, self.rod.clamp(0, 2) as usize, fs);
+            if rod.retired() {
+                self.rod_actor = None;
+            }
+        }
         match self.phase {
             PondPhase::Idle => {
                 if input.cast_edge {
@@ -1661,6 +1771,10 @@ impl PondSession {
                 if input.cast_edge {
                     let power = self.cast.lock();
                     self.line_record = Self::record_for_power(power);
+                    // The cast lock spawns the rod actor (`jal FUN_80020DE0`
+                    // at `0x801CFC48`) and seeds its bend.
+                    self.rod_actor = Some(crate::fishing_actors::RodActor::cast());
+                    self.line_fish_prev = None;
                     self.depth = 0;
                     self.timer = 0;
                     self.phase = PondPhase::Flight;
@@ -1683,6 +1797,7 @@ impl PondSession {
                 }
             }
             PondPhase::Waiting => {
+                self.drive_rod(input, false, fs);
                 let button = match ReelInput::from_pad_mask(input.reel_mask) {
                     ReelInput::ReelA => 1,
                     ReelInput::ReelB => 2,
@@ -1747,6 +1862,7 @@ impl PondSession {
                     if self.line_record <= RECORD_STRIKE_BASE {
                         self.line_record = 0;
                         self.lure_actor = None;
+                        self.rod_actor = None;
                         self.events.push(PondEvent::Recast);
                         self.phase = PondPhase::Idle;
                     }
@@ -1761,6 +1877,7 @@ impl PondSession {
                     self.phase = PondPhase::Idle;
                     return;
                 };
+                self.drive_rod(input, true, fs);
                 let reel = ReelInput::from_pad_mask(input.reel_mask);
                 let frame = self.fish.tick(&sp, self.depth, &mut self.rng, fs);
                 // The per-frame pull accumulates into the fight strength
@@ -1790,6 +1907,11 @@ impl PondSession {
                     // line (doc Open list).
                     self.events.push(PondEvent::Snapped);
                     self.phase = PondPhase::Snapped;
+                    // The snap arm starts the rod's recover swing
+                    // (`DAT_801d91ac = 10` at `0x801D3C44`).
+                    if let Some(rod) = self.rod_actor.as_mut() {
+                        rod.recover();
+                    }
                 } else if self.line_record < LAND_RECORD {
                     // Reel-in complete (`record < 0x136`): score the catch.
                     let award = sp.score_for(self.strength);
@@ -1797,6 +1919,10 @@ impl PondSession {
                     self.last_award = award;
                     self.events.push(PondEvent::Landed(award));
                     self.phase = PondPhase::Landed;
+                    // So does the reel-in arm (`0x801D3CB4`).
+                    if let Some(rod) = self.rod_actor.as_mut() {
+                        rod.recover();
+                    }
                 }
             }
             PondPhase::Landed | PondPhase::Snapped => {
@@ -1805,6 +1931,7 @@ impl PondSession {
                     self.line_record = 0;
                     self.depth = 0;
                     self.lure_actor = None;
+                    self.rod_actor = None;
                     self.events.push(PondEvent::Recast);
                     self.phase = PondPhase::Idle;
                 }
@@ -2050,7 +2177,9 @@ mod tests {
         let held = m(&[B::Left, B::Cross]);
         let i = PondInput::from_engine_pad(held, held);
         assert_eq!(i.edge_bonus, 0);
-        assert_eq!(i.reel_mask, REEL_A_PAD_BIT);
+        // The held word carries the held D-pad side too - the rod's roll
+        // reads it - in the packed layout.
+        assert_eq!(i.reel_mask, REEL_A_PAD_BIT | ROD_PAD_LEFT);
     }
 
     #[test]

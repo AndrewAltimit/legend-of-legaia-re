@@ -25,10 +25,11 @@
  * Approximated (the page's note says so): the fishing sprite page (the HUD
  * glyph atlas) is undecoded, so glyph ids draw as labelled text; the retail
  * camera framing and the angler's shore anchor are fitted against the
- * scene's own bounds; the line/lure/ripple overlay is drawn as projected
- * 2D geometry (retail draws the line as projected segments too - the
- * overlay's own 3-D clip helpers - but its exact anchor points are not
- * pinned).
+ * scene's own bounds; the lure/ripple overlay is drawn as projected 2D
+ * geometry. The LINE is the engine's: `fishing_line_json` hands back
+ * retail's packet (the rod end is the rod actor's projected tip, the pair is
+ * clipped by the ported FUN_801D56E4, the Gouraud end colours are the
+ * packet's) given this page's projection of the lure as the fish end.
  */
 window.MgFishing = (function () {
   'use strict';
@@ -276,14 +277,6 @@ window.MgFishing = (function () {
       ];
     }
 
-    /* Rod-tip world position (over the angler's shoulder). */
-    function rodTip() {
-      const b = scene;
-      if (!b) return null;
-      const [fx, fz] = facingOf(b.anchor);
-      return [b.anchor.x + fx * 70, b.anchor.y - 430, b.anchor.z + fz * 70];
-    }
-
     /* ------------- events from the session ------------- */
 
     function onEvents(events, st) {
@@ -375,7 +368,6 @@ window.MgFishing = (function () {
         || st.phase === 'hooked';
       const lw = active ? lureWorld(st) : null;
       const lp = lw ? project(lw) : null;
-      const tip = project(rodTip());
 
       /* Ripples (splash + wander) expand and fade in world space. */
       ripples = ripples.filter(r => r.t < 46);
@@ -392,17 +384,37 @@ window.MgFishing = (function () {
         g.restore();
       }
 
-      if (lp && tip) {
-        /* The line: rod tip -> a sagging midpoint -> the lure (retail draws
-         * it as projected segments through the overlay's own clip helpers). */
+      /* The line: retail's LINE_G2 packet from the engine, in 320x240
+       * screen space - fish end = this page's lure projection, rod end = the
+       * rod actor's projected tip, clipped by the ported clipper. One call a
+       * frame (the engine latches the rod's yaw toward the fish off it). */
+      if (api.fishing_line_json) {
+        const sx = canvas.width / 320, sy = canvas.height / 240;
+        let line = null;
+        try {
+          line = JSON.parse(api.fishing_line_json(
+            lp ? Math.floor(lp[0] / sx) : 0, lp ? Math.floor(lp[1] / sy) : 0, !!lp));
+        } catch (_) { line = null; }
+        if (line) {
+          const rgb = (c) => 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
+          const ax = (line.fish[0] + 0.5) * sx, ay = (line.fish[1] + 0.5) * sy;
+          const bx = (line.rod[0] + 0.5) * sx, by = (line.rod[1] + 0.5) * sy;
+          const grad = g.createLinearGradient(ax, ay, bx, by);
+          grad.addColorStop(0, rgb(line.fish_rgb));
+          grad.addColorStop(1, rgb(line.rod_rgb));
+          g.save();
+          g.strokeStyle = grad;
+          g.lineWidth = sx;
+          g.beginPath();
+          g.moveTo(ax, ay);
+          g.lineTo(bx, by);
+          g.stroke();
+          g.restore();
+        }
+      }
+
+      if (lp) {
         g.save();
-        g.strokeStyle = 'rgba(235,235,245,0.85)';
-        g.lineWidth = 1;
-        g.beginPath();
-        g.moveTo(tip[0], tip[1]);
-        const mx = (tip[0] + lp[0]) / 2, my = Math.max(tip[1], lp[1]) + 14;
-        g.quadraticCurveTo(mx, my, lp[0], lp[1]);
-        g.stroke();
 
         /* The bobber. */
         const bob = Math.sin(performance.now() / 300) * 2;

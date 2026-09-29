@@ -222,6 +222,7 @@ fn a_session_with_a_venue_carries_a_probed_lure_while_the_line_is_out() {
         anchor_x,
         anchor_z,
         facing: 0,
+        rod_mesh: None,
     }));
     cast(&mut p);
     assert!(

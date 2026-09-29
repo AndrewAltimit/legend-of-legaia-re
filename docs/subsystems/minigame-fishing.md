@@ -321,12 +321,80 @@ it inside `fishing::PondSession`, the one session all three hosts run; the play
 window additionally reads the session's lure as the origin its celebration
 bursts spawn at.
 
+### The fishing line
+
+Retail draws the line as **one** GPU packet a frame, built at the tail of the
+lure tick `FUN_801D26CC` (`0x801D3A28..0x801D3D34`): a `LINE_G2` (`0x50`,
+Gouraud, opaque) whose `+0x08` end is the fish and whose `+0x10` end is the
+rod tip. The fish end is colour `0x303030`, the rod end `0x808080`. Both ends
+are clipped by the overlay's own 2-D clipper `FUN_801D56E4` (the one `jal`,
+at `0x801D3D00`) against the draw-window halfwords `0x1F800388..0x1F80038E`,
+which the `minigame_fishing` save state holds as `(0, 4, 320, 228)` - retail's
+320x224 drawing area. The packet links at the rod tip's depth
+`>> (0x1F8003A4 + 2)`, the scratchpad byte being `3`.
+
+**The fish end** is the lure actor's own `+0x14 / +0x18` with its height
+zeroed (`sh zero,0x3a(sp)` at `0x801D3A90`), projected by `RTPS`
+(`FUN_8003D368`) through the scene camera the field view build leaves in the
+GTE. The polar helper `FUN_801D7BB8` called just before it (`0x801D3AA0`,
+radius `0x100`) writes two stack words nothing reads afterwards - it does
+not offset the point. The unclipped projection is kept at `0x801D9198`.
+
+**The rod end is a vertex of the rod model, not a point on the angler.**
+`0x801D9194` is written by the rod actor `FUN_801D1C5C` (`0x801D1FB4`),
+which projects `+0x128` into the staged vertex array of its model's object 0:
+vertex 37. The rod actor is spawned by the cast lock from the template at
+`0x801D8FDC`, its model word set to `_DAT_8007B6F8 + _DAT_80084454 + 0x19`
+(`0x801CFC34..0x801CFC4C`) - scene models `0x19..0x1B` of the venue bundle
+`other1`, one per rod. All three are the same 42-vertex shaft, and vertex 37
+is the centre of its last ring, on the shaft's axis at its far end. The
+actor is posed in **view space**:
+
+- the matrix is the per-mode base `0x8007BF10` (`0x6000 * I` in the fishing
+  mode) with its diagonal forced to `0x6000`; the translation is the actor's
+  `(0, 0x46, 0x64)` pushed through it, `(0, 420, 600)`;
+- the rotation is `RotMatrixX(pitch)`, `RotMatrixY(0)`, `RotMatrixZ(2 *
+  roll)`, `RotMatrixY(-yaw)`, each post-multiplied (`FUN_800461A4` /
+  `FUN_8004629C` / `FUN_8004638C`);
+- `pitch = swing + (lift + bend / 2) / 16`, both divisions truncating
+  (`DAT_801d9134`, `DAT_801d914C`, `DAT_801d9150`); `roll` is `DAT_801d9140`;
+  `yaw` is `DAT_801d911C = 3 * (tip.x - fish.x)` off the previous frame's
+  pair (`0x801D2A90`), which turns the rod toward the fish;
+- the tip vertex is staged by the morph stager `FUN_8001C604` over group 0 at
+  the actor's one morph slot: VDF sub-entry `0`, weight = the bend's low
+  halfword. The venue's sub-entry 0 moves vertices `8..41` of group 0 - the
+  rod bending;
+- `RTPS` runs under `H = 0xDC` (`FUN_8003D254`), and the scene `H` is
+  restored after the draw.
+
+The lure tick feeds the rod in water (its state `2`): D-pad down lifts it
+(`+0x60` a frame delta, capped `0x1000`); a held reel or a fish on bends it
+(`+0x100`, `+0x80` more on Square, capped `0x1000`, or `0x1800` with a fish
+on); the D-pad sides set a roll target of `+/-0x100` that bleeds back at `4`
+and the roll follows at `0x10`. The rod actor bleeds the lift at `0x20` and
+the bend at `0x60` a frame delta. A landed catch or a snapped line starts the
+recover swing, which retires the actor.
+
+Port: `engine-core::fishing_actors` - `RodMesh` (the three rods and the bend,
+lifted off the venue scene's bank), `RodActor` (`tick` = `FUN_801D1C5C`,
+`drive` = the lure tick's rod writes), `rod_tip_screen` (the integer matrix
+chain and `RTPS` with the UNR divide, `legaia_engine_vm::gte_divide`) and
+`fishing_line` (the clip and the packet). `PondSession` spawns the rod at the
+cast lock and exposes `line_frame`, which every host calls once a frame with
+its own projection of the fish end. The native window and the browser play
+page project through the follow camera their scene draws with
+(`fishing_venue::fishing_line_frame`) and wrap the packet with
+`engine-ui::ui_fishing_line`; the minigames page projects its own lure and
+strokes the endpoints `fishing_line_json` returns. The port's lure exists
+from the landing, so the line is out while waiting and hooked, not during the
+flight. No host draws the rod mesh itself.
+
 ## Fishing actors and scene render
 
 The run loop drives a small pool of per-frame actor handlers reached through the actor table (each takes the actor-struct pointer), plus the select screen and the scene render pass:
 
 - `FUN_801d0f5c` (`overlay_fishing_801d0f5c.txt`) - the **rod / lure select screen**: input *and* render. It counts owned rods (item ids `0xa0`..`0xa2`), moves the select cursor `DAT_801d90dc` on the D-pad edge (`0x1000` / `0x4000`), wraps it against `owned+2`, and on the accept edge (`0x44`) equips the highlighted entry - a lure (`DAT_801d90dc < 3`, item `0x9d`+cursor) writes the persistent lure index `_DAT_80084450`, a rod (cursor `>= 3`, item `0xa0`+) writes the persistent rod stat `_DAT_80084454` (the value that scales the [tension change](#tension--reeling-mechanic)). Cancel / confirm (`0x21`) sets the leave SFX and jumps `DAT_801d926c` to `100`. The tail renders each rod / lure row with its owned count and a highlight (`_DAT_8007b454 = 7`).
-- `FUN_801d1c5c` (`overlay_fishing_801d1c5c.txt`) - the **cast-line / bobber actor**: a small animation SM on `DAT_801d91ac` (state `1` sinks the bob `DAT_801d9134` at `-0x40 * step` down to `-700`, state `10` raises it at `+0x40 * step` up to `0x400` then latches `0x14`), then a GTE transform + draw of the lure at the computed position / spin (`DAT_801d9140`).
+- `FUN_801d1c5c` (`overlay_fishing_801d1c5c.txt`) - the **rod actor**: the first-person rod model, posed in view space, bent by a VDF morph, and the source of the fishing line's rod end. A swing SM on `DAT_801d91ac` (state `1` dips the pitch term `DAT_801d9134` at `-0x40 * step` down to `-700`, state `10` raises it at `+0x40 * step` up to `0x400`, then latches `0x14` and retires), then the pose and the tip projection described in [The fishing line](#the-fishing-line).
 - `FUN_801d2050` (`overlay_fishing_801d2050.txt`) - the **pre-hook swimming-fish tick + fish-sprite spawn**: an init-once latch installs the per-frame callback `FUN_801d7c30` into `_DAT_8007ba2c` and records the actor pointer in `DAT_801d928c`; when `DAT_801d9294` steps it spawns the fish sprite keyed on species `DAT_801d91cc` (special-casing id `8`). It delegates motion to `FUN_801d2278` and `FUN_801d6028`.
 - `FUN_801d2278` (`overlay_fishing_801d2278.txt`) - the **free-swim wander**: decrements the re-target timer `DAT_801d9060`, and on expiry re-rolls a random destination / duration (BIOS `rand`) and spawns a ripple effect; in the idle / cast state (`DAT_801d926c == 0xc`) it also reads the D-pad (`0x8000` / `0x2000`) to nudge the fish-facing angle clamped `0x700`..`0x900`.
 - `FUN_801d70ec` (`overlay_fishing_801d70ec.txt`) - a **minimal swimming-fish idle tick** (the reduced sibling of `FUN_801d2050`'s non-spawn path: refresh `+0x16` from `FUN_801d6028`, clear the draw-skip bit, submit).
@@ -567,7 +635,8 @@ disassembly of the extracted 0972 image).
 What the 2-D clipper draws is now **Confirmed** too: its single retail caller
 sits at `0x801D3D00`, inside the per-frame tick `FUN_801d26cc`, and clips the
 two endpoint pairs of a GPU line packet in place before linking it into the
-ordering table - the fishing line.
+ordering table - the fishing line, whose two ends and port are in
+[The fishing line](#the-fishing-line).
 
 **`FUN_801d5c2c` has no caller at all.** A five-form reference sweep - literal
 LE word at every alignment, `lui`+`addiu` / `ori` materialisation, `jal`, `j`,
@@ -576,9 +645,9 @@ every raw PROT entry finds zero references to `0x801D5C2C`, and the fishing
 overlay holds exactly one literal pointer anywhere in the surrounding
 `0x801D5000..0x801D63FF` band, so it is not reached as `table_base + index`
 either. It is a genuine prologue entry point that retail never executes: dead
-code the linker kept. That matters for the port's wiring worklist - the routine
-is not waiting on a line primitive the way its 2-D sibling is, because no call
-site can exist for it.
+code the linker kept. That matters for the port's wiring worklist - unlike its
+2-D sibling, which draws the fishing line every frame, it has no call site to
+wire.
 
 ### The shared polar-offset helper (`FUN_801d7bb8`)
 
@@ -719,6 +788,13 @@ Fishing-specific globals (overlay-resident unless noted; `_DAT_8008xxxx` live in
 | `0x801d9294` | `u32` | Fish-sprite spawn step latch (`FUN_801d2050`). |
 | `0x801d928c` | `u32` | Hooked-fish actor pointer, saved by `FUN_801d2050`, read by `FUN_801d4948`. |
 | `0x801d91c8` | `u32` | Reeling-line actor sub-state (`FUN_801d4948`, `0`/`1`/`2`). |
+| `0x801d91ac` | `u32` | Rod actor swing state (`FUN_801d1c5c`): `1` cast, `2` hold, `10` recover, `0x14` done. |
+| `0x801d9134` | `s16` | Rod swing pitch term, `-700` .. `0x400`. |
+| `0x801d9150` | `s32` | Rod bend: a pitch term and the rod's morph weight. |
+| `0x801d914c` | `s32` | Rod lift (D-pad down). |
+| `0x801d9140` / `0x801d9144` | `s32` | Rod roll and its target (D-pad sides). |
+| `0x801d911c` | `s32` | Rod yaw toward the fish, `3 * (tip.x - fish.x)`. |
+| `0x801d9194` / `0x801d9198` | `i16[2]` | Projected rod tip / fish point - the line's two ends before the clip. |
 | `0x801d90e8` | `u32` | **Cast band** (0..4): spawn-table column for the species lookup. See [Species selection](#species-selection-and-the-band-4-gate). |
 | `0x801d90ec` | `s32` | Band-check countdown: parks at `0` (roll + cadence check run per frame); armed `0x40` by a cadence match, during which the band holds and the strike credit (`timer + 2`) stays boosted. |
 | `0x8008444c` | `s32` | **Persistent fishing-point score** (save block), capped at `999999`. |

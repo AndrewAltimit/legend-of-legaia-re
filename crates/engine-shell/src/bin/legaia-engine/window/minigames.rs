@@ -421,6 +421,34 @@ impl PlayWindowApp {
         usp::payline_screen_prims(&segments)
     }
 
+    /// The fishing line as a screen primitive: the session's line for this
+    /// frame (`legaia_engine_core::fishing_venue::fishing_line_frame`, the
+    /// fish end projected through the follow camera the scene draws with),
+    /// wrapped by the shared `ui_fishing_line` builder. The browser play page
+    /// makes the same two calls. Empty outside a live line.
+    pub(super) fn fishing_line_screen_prims(
+        &mut self,
+    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+        use legaia_engine_core::camera_view::resolve_field_camera;
+        if self.session.host.world.mode != SceneMode::Fishing {
+            return Vec::new();
+        }
+        let center = [
+            (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
+            (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
+        ];
+        let world = &mut self.session.host.world;
+        let view = resolve_field_camera(world, &self.session.camera, None, center).field_view();
+        legaia_engine_core::fishing_venue::fishing_line_frame(&mut world.minigames, view.as_ref())
+            .and_then(|l| {
+                legaia_engine_render::ui_fishing_line::fishing_line_prim(
+                    l.fish, l.rod, l.fish_rgb, l.rod_rgb, l.ot,
+                )
+            })
+            .into_iter()
+            .collect()
+    }
+
     /// Pose the Baka duel's 3D surface for this frame and put it on the GPU.
     ///
     /// The pose, the arena camera and the buffers are the engine's
