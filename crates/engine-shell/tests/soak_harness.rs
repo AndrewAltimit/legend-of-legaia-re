@@ -543,6 +543,15 @@ fn progress_digest(s: &BootSession) -> u64 {
     let _ = write!(h, "{:?}|{}|", w.shops.pending_shop, w.shops.shop_open);
     let _ = write!(h, "{:?}|", w.party.name_entry);
     let _ = write!(h, "{:?}|", w.cutscene.active_fmv);
+    // Scripted NPC glides: an actor walking off-screen is still progress.
+    for (slot, m) in &w.npcs.motions {
+        let _ = write!(
+            h,
+            "npc{slot}{:?}{:?}|",
+            w.npcs.positions.get(slot),
+            m.target
+        );
+    }
     match w.mode {
         SceneMode::Battle => {
             let _ = write!(
@@ -640,6 +649,52 @@ fn held_by(s: &BootSession) -> String {
     )
 }
 
+/// One triage line: mode, scene, holder, player, and the bytes at every live
+/// script context's PC.
+fn trace_line(s: &BootSession, pad: u16) -> String {
+    let w = &s.host.world;
+    let bytes = |bc: &[u8], pc: usize| -> String {
+        bc.get(pc..(pc + 6).min(bc.len()))
+            .map(|b| {
+                b.iter()
+                    .map(|x| format!("{x:02x}"))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
+            .unwrap_or_default()
+    };
+    let m = &w.actors[player_slot(s).min(w.actors.len().saturating_sub(1))].move_state;
+    let mut out = format!(
+        "pad {pad:04x} {:?} {} held={} player=({},{},{}) field_pc={:#x}",
+        w.mode,
+        w.active_scene_label,
+        held_by(s),
+        m.world_x,
+        m.world_y,
+        m.world_z,
+        w.field_pc
+    );
+    if let Some(tl) = w.cutscene.timeline.as_ref() {
+        let _ = write!(out, " tl@{:#x}[{}]", tl.pc, bytes(&tl.bytecode, tl.pc));
+    }
+    for hc in &w.field_vm.helper_contexts {
+        let _ = write!(out, " hc@{:#x}[{}]", hc.pc, bytes(&hc.bytecode, hc.pc));
+    }
+    if w.dialog.current.is_some() || w.dialog.inline.is_some() {
+        out.push_str(" dialog");
+    }
+    for (slot, m) in &w.npcs.motions {
+        let _ = write!(
+            out,
+            " npc{slot}@{:?}->({},{})",
+            w.npcs.positions.get(slot),
+            m.target.0,
+            m.target.1
+        );
+    }
+    out
+}
+
 /// `Foo { .. }` / `Foo(..)` / `Foo` -> `Foo`.
 fn variant(debug: &str) -> String {
     debug
@@ -684,6 +739,8 @@ impl Finding {
                 }
             }
             "unknown_scene" => 1,
+            "script_stall" => 2,
+            "battle_loop" => 1,
             _ => 3,
         }
     }
@@ -773,6 +830,12 @@ struct Tunables {
     menu_close_frames: u64,
     battle_frames: u64,
     queue_cap: usize,
+    /// `LEGAIA_SOAK_TRACE=N`: print a state line every N frames (replay
+    /// triage; 0 = off).
+    trace_every: u64,
+    /// Distinct pad masks the softlock window must contain. `1` turns the
+    /// detector into a neutral-pad control (`LEGAIA_SOAK_MIN_DISTINCT=1`).
+    min_distinct: usize,
 }
 
 impl Tunables {
@@ -783,6 +846,8 @@ impl Tunables {
             menu_close_frames: 900,
             battle_frames: env_u64("LEGAIA_SOAK_BATTLE_FRAMES").unwrap_or(18_000),
             queue_cap: 4096,
+            trace_every: env_u64("LEGAIA_SOAK_TRACE").unwrap_or(0),
+            min_distinct: env_u64("LEGAIA_SOAK_MIN_DISTINCT").unwrap_or(3) as usize,
         }
     }
 }
@@ -918,6 +983,27 @@ fn value_checks(s: &BootSession, t: &Tunables, out: &mut Vec<(&'static str, Stri
     }
 }
 
+/// The presentation queues both play hosts drain after every tick (the
+/// window's `drain_and_route_field_events` / `drain_and_log_battle_events` /
+/// CLUT-stage and effect-spawn routing, the browser runtime's twins).
+/// `BootSession::tick` routes only BGM events off the field queue and drains
+/// none of the rest, so a headless driver that skipped this would measure its
+/// own leak rather than the engine.
+fn host_drains(session: &mut BootSession) {
+    let w = &mut session.host.world;
+    let _ = w.drain_field_events();
+    let _ = w.drain_battle_events();
+    let _ = w.drain_battle_hit_fx();
+    let _ = w.drain_battle_hit_events();
+    let _ = w.drain_battle_sfx_cues();
+    let _ = w.drain_battle_shout_cues();
+    let _ = w.drain_battle_xa_cues();
+    let _ = w.drain_battle_xa_prestage();
+    let _ = w.route_battle_effect_spawns();
+    let _ = w.drain_battle_clut_stages();
+    let _ = w.drain_minigame_sfx_cues();
+}
+
 fn run_one(
     src: &Source,
     known_scenes: &BTreeSet<String>,
@@ -937,7 +1023,9 @@ fn run_one(
     );
     session.host.world.rng_state = (run_seed(&spec.scene, spec.seed) >> 16) as u32;
     let opts = FieldLiveOpts {
-        live_loop: true,
+        // `LEGAIA_SOAK_NO_ENCOUNTERS=1` disarms the random-encounter roll - a
+        // triage control that separates a scripted battle from a random one.
+        live_loop: !env_flag("LEGAIA_SOAK_NO_ENCOUNTERS"),
         player_battle: true,
         battle_bgm: None,
     };
@@ -1001,10 +1089,15 @@ fn run_one(
     let mut policy = Policy::new(run_seed(&spec.scene, spec.seed));
     let mut last_digest = progress_digest(&session);
     let mut last_change = 0u64;
+    // Script stall: the modal timeline (or first helper) parked at one PC for
+    // a whole window, even while something else moves.
+    let mut park: Option<(String, u64)> = None;
     let mut menu_open_since: Option<u64> = None;
     let mut battle_since: Option<u64> = None;
     let mut prev_mode = session.host.world.mode;
     let mut reported: BTreeSet<String> = BTreeSet::new();
+    let mut traced_scripts: BTreeSet<u64> = BTreeSet::new();
+    let mut battle_sites: BTreeMap<String, u32> = BTreeMap::new();
 
     for frame in 0..spec.frames {
         let pad = match pads_override {
@@ -1064,7 +1157,7 @@ fn run_one(
                 }
             }
         }
-        let _ = session.host.world.drain_field_events();
+        host_drains(&mut session);
         match &event {
             SceneTickEvent::SceneEntered { name } => {
                 stats.scenes_entered.insert(name.clone());
@@ -1131,6 +1224,24 @@ fn run_one(
         if w.mode != prev_mode {
             if w.mode == SceneMode::Battle {
                 stats.battles += 1;
+                // Battle loop: the same parked timeline PC opening battle
+                // after battle. A scripted fight fires once per beat; a
+                // record that re-arms it on every return never lets the
+                // beat finish.
+                if let Some(tl) = w.cutscene.timeline.as_ref() {
+                    let site = format!("timeline@{:#06x}", tl.pc);
+                    let n = battle_sites.entry(site.clone()).or_insert(0u32);
+                    *n += 1;
+                    if *n == 3 {
+                        findings.push(mk(
+                            &session,
+                            "battle_loop",
+                            frame,
+                            site,
+                            "three battles opened from one parked timeline PC".into(),
+                        ));
+                    }
+                }
             }
             if prev_mode == SceneMode::Battle
                 && matches!(w.mode, SceneMode::Field | SceneMode::WorldMap)
@@ -1183,6 +1294,48 @@ fn run_one(
         } else {
             menu_open_since = None;
         }
+        // Script stall. Only field frames count: a battle, the pause menu or
+        // a minigame suspends the field VM by design, so the clock pauses
+        // (it restarts from zero on the next field frame).
+        let field_frame = matches!(
+            session.host.world.mode,
+            SceneMode::Field | SceneMode::WorldMap
+        ) && session.field_menu.is_none();
+        if !field_frame {
+            park = None;
+        } else if frame % t.digest_every == 0 {
+            let w = &session.host.world;
+            let site = w
+                .cutscene
+                .timeline
+                .as_ref()
+                .map(|tl| ("timeline", tl))
+                .or_else(|| w.field_vm.helper_contexts.first().map(|h| ("helper", h)))
+                .map(|(k, c)| {
+                    format!(
+                        "{k}@{:#06x}:op{:02x}",
+                        c.pc,
+                        c.bytecode.get(c.pc).copied().unwrap_or(0xFF)
+                    )
+                });
+            match (site, park.as_ref()) {
+                (Some(site), Some((cur, since))) if *cur == site => {
+                    if frame - since >= t.softlock_frames
+                        && reported.insert(format!("script_stall|{site}"))
+                    {
+                        findings.push(mk(
+                            &session,
+                            "script_stall",
+                            frame,
+                            site,
+                            format!("script parked at one PC for {} frames", frame - since),
+                        ));
+                    }
+                }
+                (Some(site), _) => park = Some((site, frame)),
+                (None, _) => park = None,
+            }
+        }
         // Softlock.
         if frame % t.digest_every == 0 {
             let d = progress_digest(&session);
@@ -1192,7 +1345,7 @@ fn run_one(
             } else if frame - last_change >= t.softlock_frames {
                 let window = &pads[last_change as usize..];
                 let distinct: BTreeSet<u16> = window.iter().copied().collect();
-                if distinct.len() >= 3 {
+                if distinct.len() >= t.min_distinct {
                     findings.push(mk(
                         &session,
                         "softlock",
@@ -1205,6 +1358,34 @@ fn run_one(
                         ),
                     ));
                     break;
+                }
+            }
+        }
+        if t.trace_every != 0 {
+            if frame % t.trace_every == 0 {
+                eprintln!("[trace {frame:>6}] {}", trace_line(&session, pad));
+            }
+            // Each distinct script body a timeline / helper runs, once, as
+            // hex - the bytes a triage needs to read the park in context.
+            // Printed to the terminal only; never written to the report.
+            let w = &session.host.world;
+            let bodies = w
+                .cutscene
+                .timeline
+                .iter()
+                .chain(w.field_vm.helper_contexts.iter())
+                .map(|c| &c.bytecode);
+            for bc in bodies {
+                let mut h = std::collections::hash_map::DefaultHasher::new();
+                h.write(bc);
+                if traced_scripts.insert(h.finish()) {
+                    let hex: Vec<String> =
+                        bc.iter().take(0x400).map(|b| format!("{b:02x}")).collect();
+                    eprintln!(
+                        "[trace {frame:>6}] script body ({} bytes): {}",
+                        bc.len(),
+                        hex.join(" ")
+                    );
                 }
             }
         }
@@ -1457,24 +1638,81 @@ fn soak(src: &Source, known: &BTreeSet<String>, cfg: &SoakConfig) -> SoakResult 
 }
 
 /// Confirm + minimise one finding: replay the recorded pads truncated to the
-/// finding frame, and report whether the same signature fires.
+/// finding frame, report whether the same signature fires, and then zero out
+/// chunks of the pad stream (a bounded delta-debugging pass) while it still
+/// does. A softlock's reduction runs with the neutral-pad control
+/// (`min_distinct = 1`), so pads that only fed the frozen window drop out and
+/// what is left is the input that *caused* the park.
 fn confirm(
     src: &Source,
     known: &BTreeSet<String>,
     o: &RunOutcome,
     f: &Finding,
 ) -> (bool, Vec<u16>) {
-    let t = Tunables::from_env();
     let n = (f.frame + 1) as usize;
     let pads: Vec<u16> = o.pads[..n.min(o.pads.len())].to_vec();
-    let spec = RunSpec {
-        scene: o.spec.scene.clone(),
-        seed: o.spec.seed,
-        frames: pads.len() as u64,
-    };
-    let r = run_one(src, known, &spec, Some(&pads), &t, None);
-    let hit = r.findings.iter().any(|g| g.signature() == f.signature());
-    (hit, pads)
+    let (src, known, scene, seed, sig) = (
+        src.clone(),
+        known.clone(),
+        o.spec.scene.clone(),
+        o.spec.seed,
+        f.signature(),
+    );
+    let softlock = matches!(f.detector, "softlock");
+    let budget = env_u64("LEGAIA_SOAK_MINIMIZE").unwrap_or(24) as usize;
+    std::thread::Builder::new()
+        .name("soak-confirm".into())
+        .stack_size(64 << 20)
+        .spawn(move || {
+            let reproduces = |pads: &[u16], relaxed: bool| -> bool {
+                let mut t = Tunables::from_env();
+                if relaxed {
+                    t.min_distinct = 1;
+                }
+                let spec = RunSpec {
+                    scene: scene.clone(),
+                    seed,
+                    frames: pads.len() as u64,
+                };
+                run_one(&src, &known, &spec, Some(pads), &t, None)
+                    .findings
+                    .iter()
+                    .any(|g| g.signature() == sig)
+            };
+            if !reproduces(&pads, false) {
+                return (false, pads);
+            }
+            let mut best = pads.clone();
+            let mut tries = 0usize;
+            let mut chunks = 2usize;
+            while tries < budget && chunks <= best.len() {
+                let size = best.len().div_ceil(chunks);
+                let mut changed = false;
+                for c in 0..chunks {
+                    if tries >= budget {
+                        break;
+                    }
+                    let (a, b) = (c * size, ((c + 1) * size).min(best.len()));
+                    if a >= b || best[a..b].iter().all(|&p| p == 0) {
+                        continue;
+                    }
+                    let mut cand = best.clone();
+                    cand[a..b].iter_mut().for_each(|p| *p = 0);
+                    tries += 1;
+                    if reproduces(&cand, softlock) {
+                        best = cand;
+                        changed = true;
+                    }
+                }
+                if !changed {
+                    chunks *= 2;
+                }
+            }
+            (true, best)
+        })
+        .expect("spawn confirm")
+        .join()
+        .unwrap_or((false, Vec::new()))
 }
 
 /// `(rank, signature, [(outcome index, finding index)])`.
@@ -1533,6 +1771,21 @@ fn write_report(src: &Source, known: &BTreeSet<String>, cfg: &SoakConfig, r: &So
         "- battles entered {battles}, left to field {wins}, party wipes {wipes}, menu opens {menus}, FMVs skipped {fmvs}, entry failures {enter_fail}"
     );
     let _ = writeln!(md, "- runs that reached each mode: {modes:?}");
+    let moved = r
+        .outcomes
+        .iter()
+        .filter(|o| !o.stats.scenes_entered.is_empty())
+        .count();
+    let reached: BTreeSet<&String> = r
+        .outcomes
+        .iter()
+        .flat_map(|o| o.stats.scenes_entered.iter())
+        .collect();
+    let _ = writeln!(
+        md,
+        "- runs that changed scene {moved}; distinct scenes entered by transition {}",
+        reached.len()
+    );
     let _ = writeln!(md, "- distinct finding signatures: {}\n", rows.len());
     let _ = writeln!(
         md,
@@ -1760,7 +2013,7 @@ fn soak_long() {
 #[test]
 fn soak_replay() {
     let Some(path) = std::env::var_os("LEGAIA_SOAK_REPLAY") else {
-        eprintln!("[skip] soak_replay: set LEGAIA_SOAK_REPLAY=<file>");
+        eprintln!("[skip] soak_replay: set LEGAIA_SOAK_REPLAY=<file or dir>");
         return;
     };
     let Some(src) = source() else { return };
@@ -1768,37 +2021,48 @@ fn soak_replay() {
     let probe = open_session(&src);
     let known: BTreeSet<String> = scene_set(&probe).into_iter().collect();
     drop(probe);
-    let lr = load_replay(Path::new(&path));
-    let t = Tunables::from_env();
-    let (spec, pads) = (lr.spec, lr.pads);
-    let h = std::thread::Builder::new()
-        .name("soak-replay".into())
-        .stack_size(64 << 20)
-        .spawn(move || {
-            let r = run_one(&src, &known, &spec, Some(&pads), &t, None);
-            (r.findings, r.stats)
-        })
-        .unwrap();
-    let (findings, stats) = h.join().expect("replay thread");
-    eprintln!("[soak-replay] stats: {stats:?}");
-    for f in &findings {
+    for file in replay_files(Path::new(&path)) {
+        let lr = load_replay(&file);
         eprintln!(
-            "[soak-replay] finding {} at frame {}: {}",
-            f.signature(),
-            f.frame,
-            f.detail
+            "[soak-replay] {} ({} frames, scene {})",
+            file.display(),
+            lr.spec.frames,
+            lr.spec.scene
         );
-    }
-    if let Some(sig) = lr.signature {
-        let hit = findings.iter().any(|f| f.signature() == sig);
-        eprintln!("[soak-replay] recorded signature {sig:?} reproduced: {hit}");
+        let t = Tunables::from_env();
+        let (spec, pads) = (lr.spec, lr.pads);
+        let (src, known) = (src.clone(), known.clone());
+        let h = std::thread::Builder::new()
+            .name("soak-replay".into())
+            .stack_size(64 << 20)
+            .spawn(move || {
+                let r = run_one(&src, &known, &spec, Some(&pads), &t, None);
+                (r.findings, r.stats)
+            })
+            .unwrap();
+        let (findings, stats) = h.join().expect("replay thread");
+        eprintln!("[soak-replay] stats: {stats:?}");
+        for f in &findings {
+            eprintln!(
+                "[soak-replay] finding {} at frame {}: {}",
+                f.signature(),
+                f.frame,
+                f.detail
+            );
+        }
+        if let Some(sig) = lr.signature {
+            let hit = findings.iter().any(|f| f.signature() == sig);
+            eprintln!("[soak-replay] recorded signature {sig:?} reproduced: {hit}");
+        }
     }
 }
 
-#[test]
-fn soak_fixtures() {
-    let dir = repo_root().join("scripts/replays/soak");
-    let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)
+/// A replay path, or every `*.replay.toml` directly inside a directory.
+fn replay_files(path: &Path) -> Vec<PathBuf> {
+    if !path.is_dir() {
+        return vec![path.to_path_buf()];
+    }
+    let mut files: Vec<PathBuf> = std::fs::read_dir(path)
         .map(|rd| {
             rd.filter_map(|e| e.ok().map(|e| e.path()))
                 .filter(|p| p.to_string_lossy().ends_with(".replay.toml"))
@@ -1806,6 +2070,17 @@ fn soak_fixtures() {
         })
         .unwrap_or_default();
     files.sort();
+    files
+}
+
+#[test]
+fn soak_fixtures() {
+    let dir = repo_root().join("scripts/replays/soak");
+    let files = if dir.is_dir() {
+        replay_files(&dir)
+    } else {
+        Vec::new()
+    };
     // Disc-free half: every committed fixture parses and carries a scene.
     for f in &files {
         let lr = load_replay(f);
