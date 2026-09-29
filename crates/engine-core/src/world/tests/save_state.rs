@@ -329,3 +329,33 @@ fn a_retail_saves_audio_levels_are_honoured_on_import() {
     world.load_full(none);
     assert_eq!(world.audio.levels, cold);
 }
+
+/// A loaded save's accessory passives are live in the field at once: the
+/// derived ability mask is rebuilt from the loaded equipment rather than
+/// left empty until the first battle entry re-derives it.
+#[test]
+fn a_loaded_save_rebuilds_the_accessory_passive_mask() {
+    use crate::accessory_passives::AccessoryPassives;
+    use legaia_engine_vm::field_passive_hud::ability_bit;
+    let mut src = World::new();
+    let mut party = legaia_save::Party::zeroed(1);
+    let mut eq = party.members[0].equipment();
+    eq.slots[7] = 0x50;
+    party.members[0].set_equipment(eq);
+    src.load_party(party);
+    let sf = src.save_full();
+
+    let mut world = World::new();
+    world.set_accessory_passives(AccessoryPassives::from_entries(
+        [(0x50, ability_bit::ENCOUNTER_LOW)],
+        [],
+    ));
+    assert!(!world.party_has_ability(ability_bit::ENCOUNTER_LOW));
+    world.load_full(sf);
+    assert!(
+        world.party_has_ability(ability_bit::ENCOUNTER_LOW),
+        "the equipped accessory's passive is live after the load"
+    );
+    assert!(world.encounter_rate_modifiers().low_encounter);
+    assert!(world.passive_hud_active(), "the badge column anchors");
+}

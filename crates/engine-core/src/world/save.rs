@@ -448,6 +448,13 @@ impl World {
                 self.seru.log.mark_shiny(*slot, spell_id);
             }
         }
+        // The accessory passive mask (`DAT_80074358`) is derived state, not
+        // part of the saved live-state window: re-derive it from the loaded
+        // equipment now, so the field's own readers - the encounter-rate
+        // modifiers and the passive-ability badge column - see the loaded
+        // party's accessories before the first battle entry would have
+        // rebuilt it. A no-op without the disc's passive table.
+        self.refresh_party_ability_bits();
     }
 }
 
