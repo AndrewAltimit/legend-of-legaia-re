@@ -85,8 +85,9 @@ that the cheapest route skips. They are visited in order, each with its beats
 pass played, before the route heads for the milestone's own scene. Each
 carries a comment naming the flags that put it there - Rogue Tower goes
 through `conc3` (whose P2[10] sets the `0x3E5` the `juui1` hand-off in `conc2`
-waits on), Zora Castle through `son`, Noaru Valley through `concend` and `jou`,
-Sol Tower back through its own start scene `dohaty` (whose P2[13] sets the
+waits on), Zora Castle through `son`, Noaru Valley back through its own start
+scene `chitei2` (whose chain ends on the `0x4C8` that opens the `map03` portal
+to `concend`), then `concend` and `jou`, Sol Tower back through its own start scene `dohaty` (whose P2[13] sets the
 `0x1D4` every `station` placement, the ticket seller among them, waits on).
 Part A checks every waypoint is a disc scene.
 
@@ -153,6 +154,15 @@ next anchor does not carry: retail had not played it, and its latch shuts the
 record the story takes (`conc2` P2[12] latches `0x3E1`, the C1 gate of the
 `juui1` hand-off P2[20], and the walk-on P2[11] spawns P2[12] as its
 epilogue).
+
+A talk or walk-on beat whose record ends on `3E FF` has committed a fight
+that starts only after the record is gone, so the beat is fought before the
+next one runs: what the story does next often hangs on the post-battle
+return, where the scene system script re-runs and spawns the next record
+(`chitei2` P2[13] stages the Jette fight; the return spawns P2[14], which
+raises the `0x6D1` behind the `map03` hand-off setting `0x4C8`). A beat that
+has already reached the milestone it is played for stops short of its fight
+(`chitei2` P2[11] sets `0x470`, then stages a battle).
 
 A hop no walk-on band carries is tried by talking to an NPC whose record, or
 a record it spawns, names the destination in a `0x3F` or spawns the record

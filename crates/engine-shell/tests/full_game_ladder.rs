@@ -654,6 +654,42 @@ fn released(session: &BootSession) -> bool {
         && w.active_fmv().is_none()
 }
 
+/// Fight what a beat committed. A record that ends on `3E FF` (`chitei2`
+/// P2[13], the Jette fight) is gone before its battle's intro runs, so the
+/// beat reads as released while the fight is still to come - and what the
+/// story does next hangs on the post-battle return (the scene system script
+/// re-runs and spawns the next record). Anything but a released run, or a
+/// release with no fight committed, passes through.
+///
+/// A beat that reaches the milestone it is played for stops there, fight or
+/// no fight: `chitei2` P2[11] sets the `0x470` its milestone waits on, then
+/// stages a battle that belongs to the next stretch.
+fn fight_committed(session: &mut BootSession, r: Run) -> Run {
+    if !matches!(r, Run::Released) || !session.host.world.field_scripts_held_for_battle() {
+        return r;
+    }
+    let reached_here =
+        BEAT_TARGET.with(|t| t.borrow().as_ref().is_some_and(|m| reached(session, m)));
+    if reached_here {
+        return r;
+    }
+    for _ in 0..SETTLE_TICKS {
+        if session.host.world.mode == SceneMode::Battle {
+            if let Some(r) = drain_battle(session) {
+                return r;
+            }
+            return run_while_moving(session, DEEP_EXIT_TICKS);
+        }
+        session.host.world.set_pad(0);
+        match session.tick() {
+            Ok(SceneTickEvent::SceneEntered { name }) => return Run::Entered(name),
+            Ok(_) => {}
+            Err(e) => return Run::Error(format!("{e:#}")),
+        }
+    }
+    r
+}
+
 // ---------------------------------------------------------------------------
 // Tick drivers
 // ---------------------------------------------------------------------------
@@ -2064,6 +2100,7 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
             ran += 1;
             let f0 = flags_of_world(session);
             let r = talk_to(session, slot);
+            let r = fight_committed(session, r);
             trace_beat(session, &f0, || format!("{name} talk P1[{slot}] -> {r:?}"));
             match r {
                 Run::Entered(s) => {
@@ -2093,6 +2130,7 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
             ran += 1;
             let f0 = flags_of_world(session);
             let r = run_while_moving(session, DEEP_EXIT_TICKS);
+            let r = fight_committed(session, r);
             trace_beat(session, &f0, || {
                 format!("{name} walk P2[{rec}] at {tile:?} -> {r:?}")
             });
@@ -2300,6 +2338,13 @@ fn trace_beat(session: &BootSession, before: &BTreeSet<u16>, what: impl FnOnce()
         .map(|f| format!("0x{f:03X}"))
         .collect();
     eprintln!("    [beat] {} +{gained:?}", what());
+}
+
+thread_local! {
+    /// The milestone a beats pass is played for, while that pass runs in
+    /// the milestone's own scene with every waypoint behind it.
+    static BEAT_TARGET: std::cell::RefCell<Option<Milestone>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 thread_local! {
@@ -2675,8 +2720,13 @@ fn traverse(
             Err(e) => {
                 if !pad && beaten.insert(cur.clone()) {
                     let mut log = Vec::new();
-                    let left = play_beats(session, &mut log)
-                        .map_err(|b| format!("in {cur}, playing beats: {b}"))?;
+                    // Only the milestone's own beats pass may stop short of
+                    // a fight it committed (see [`fight_committed`]).
+                    let aim = (via >= vias.len()).then(|| target.clone());
+                    BEAT_TARGET.with(|t| *t.borrow_mut() = aim);
+                    let left = play_beats(session, &mut log);
+                    BEAT_TARGET.with(|t| *t.borrow_mut() = None);
+                    let left = left.map_err(|b| format!("in {cur}, playing beats: {b}"))?;
                     trail.push(format!("[{}]", log.join("; ")));
                     if let Some(s) = left {
                         trail.push(format!("{s}(beat)"));

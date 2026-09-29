@@ -253,8 +253,11 @@ scene = "noaru"
 reach = "scene"
 # The anchor gained 0x3E7 (jou P2[2]), the C2 gate of uru2 P2[10], whose
 # 0x3E8 opens the juui1 door P2[11]; jou is in Drake, which the anchor
-# reached through concend -> town0d (it gained both scenes' flags).
-via = ["concend", "jou"]
+# reached through concend -> town0d (it gained both scenes' flags). The
+# concend portal (map03 P2[7]) opens on 0x4C8, the end of the chitei2 chain
+# the anchor also gained (0x4C4..0x4C9): the P2[13] Jette fight, then the
+# system script's post-battle spawns - so chitei2's beats come first.
+via = ["chitei2", "concend", "jou"]
 anchor = { kind = "card", card = "playthrough-endgame-7saves.mcr", save = "PRO-04" }
 
 [[milestone]]
