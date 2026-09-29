@@ -88,3 +88,64 @@ fn the_redirect_stays_on_the_dead_targets_side_and_lands_alive() {
     // Not a category the redirect covers (Spirit): left alone.
     assert_eq!(world.redirect_dead_battle_target(2, 4, 0), 2);
 }
+
+/// The whole monster side down mid-round: the next idle is not a dispatch
+/// at a corpse but the wipe scan, and the fight resolves as a victory. The
+/// round still owes the party member its strike (committed before the
+/// kill), which is exactly the shape that used to walk at the dead monster.
+#[test]
+fn a_monster_side_wiped_mid_round_ends_in_victory() {
+    let mut world = world_one_vs_three();
+    for slot in 1..=3 {
+        kill(&mut world, slot);
+    }
+    arm_turn(&mut world, 0, PendingPartyAction::Attack { target: 1 });
+    let mut won = false;
+    for _ in 0..2_000 {
+        world.live_battle_tick();
+        assert_ne!(
+            world.battle_ctx.action_state,
+            ActionState::AttackShortStep.as_byte(),
+            "the member walked at a corpse"
+        );
+        if world.battle.victory.is_some() || world.battle.end.is_some() {
+            won = true;
+            break;
+        }
+    }
+    assert!(won, "the wiped monster side never resolved the fight");
+    assert!(
+        world.battle.round_flow.pending[0].is_some(),
+        "the strike committed before the wipe was never dispatched"
+    );
+}
+
+/// A revive stands its target back up. Retail's `+0x14C` is HP and liveness
+/// at once; the port keeps two fields, and a revive item that raised HP alone
+/// left the member alive to the monster AI but down to every liveness scan,
+/// still kneeling in its downed chain - whose pose puts the body pair the
+/// range law measures out of an attacker's reach, so the monster's attack
+/// short step `0x19` (no timeout) held the round forever (the full-game
+/// ladder's taiku formation-169 stall).
+#[test]
+fn a_revive_item_stands_the_downed_member_back_up() {
+    // The tag-8 kneel's entry and the root latch its commit raises.
+    const PARTY_DOWNED_LOOP_ENTRY: u8 = 8;
+    const ANIM_FLAG_ROOT_LATCH: u8 = vm::battle_action::ActorFlags::FX_SUPPRESSED;
+    let mut world = world_one_vs_three();
+    world.tables.item_catalog = crate::items::ItemCatalog::vanilla();
+    kill(&mut world, 0);
+    world.actors[0].battle_reaction = Some(PARTY_DOWNED_LOOP_ENTRY);
+    world.actors[0].battle.flag_bits.set(ANIM_FLAG_ROOT_LATCH);
+    let outcome = world.apply_battle_item(0x80, 0);
+    assert!(
+        matches!(outcome, crate::items::ItemOutcome::Revived { .. }),
+        "{outcome:?}"
+    );
+    let a = &world.actors[0];
+    assert!(a.battle.hp > 0);
+    assert_ne!(a.battle.liveness, 0, "revived HP without liveness");
+    assert_eq!(a.battle_reaction, None, "still kneeling after the revive");
+    assert!(!a.battle.flag_bits.has(ANIM_FLAG_ROOT_LATCH));
+    assert!(!world.actor_effectively_defeated(0));
+}

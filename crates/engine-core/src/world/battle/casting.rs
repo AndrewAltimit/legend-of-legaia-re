@@ -1147,6 +1147,9 @@ impl World {
                             delta.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16,
                         );
                     }
+                    if before == 0 {
+                        self.stand_revived_party_member(target as usize);
+                    }
                 }
                 self.battle.hit_fx.push(BattleHitFx {
                     target_slot: target,
