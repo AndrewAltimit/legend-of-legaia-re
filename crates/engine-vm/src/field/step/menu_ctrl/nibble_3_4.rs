@@ -164,9 +164,7 @@ pub(super) fn op_4c_n4<H: FieldHost>(
         // FUN_801DE840 reads: target = signed_16(op+1..3),
         // ticks = signed_16(op+3..5), then dispatches on
         // `op0 & 0x0F`. PC advance = 6 (= header_size + 5)
-        // for the immediate/ramp sub-ops; sub-3 / sub-4 reuse the
-        // same 6-byte encoding as an absolute jump (their `target`
-        // becomes the new PC) on the branch noted at each arm.
+        // for every sub-op that returns (the error arms E / F halt).
         if operand + 5 > bytecode.len() {
             return StepResult::Unknown { opcode, pc };
         }
@@ -219,33 +217,28 @@ pub(super) fn op_4c_n4<H: FieldHost>(
                 }
                 advance
             }
-            3 => {
-                // sub-3: ticks!=0 ramps `ctx.field_24`; ticks==0
-                // reuses the same 6-byte encoding as an absolute
-                // jump - the original at FUN_801DE840 line ~5961
-                // returns `iVar18 = signed_16(operand[0..2])`,
-                // which propagates back through the dispatcher
-                // as the new PC offset.
+            3 | 4 => {
+                // sub-3 `+0x24` / sub-4 `+0x28`: write or ramp, like every
+                // other ctx slot. Both arms (`0x801E1234` / `0x801E126C` in
+                // PROT 0897) test the ticks word, then either `jal
+                // 0x8003CE9C` and `j 0x801E3624` with the `sh v0,0x24(s5)` /
+                // `sh v0,0x28(s5)` in its delay slot - the shared advancing
+                // exit, `v0 = s8` already `+6` - or tail into the ramp
+                // scheduler `0x801E205C`. Neither returns the operand as a
+                // PC: that "absolute jump" was the decompiler's rendering of
+                // the `j 0x801E3624` exit. Read as a jump, `taiku` P2[16]'s
+                // `CC 25 43 00 00 00 00` sent Zora Castle's post-boss
+                // cutscene back to its own first byte every pass.
                 if ticks == 0 {
-                    StepResult::Advance {
-                        next_pc: target as i32 as usize,
+                    if sub == 3 {
+                        ctx.field_24 = target;
+                    } else {
+                        ctx.field_28 = target;
                     }
                 } else {
                     host.op4c_nibble4_ctx_ramp(ctx, sub, target, ticks);
-                    advance
                 }
-            }
-            4 => {
-                // sub-4: mirror of sub-3 - ticks==0 writes
-                // `ctx.field_28`; ticks!=0 is the absolute jump.
-                if ticks == 0 {
-                    ctx.field_28 = target;
-                    advance
-                } else {
-                    StepResult::Advance {
-                        next_pc: target as i32 as usize,
-                    }
-                }
+                advance
             }
             6 | 7 => {
                 // sub-6 (`_DAT_8007B92C`) / sub-7 (`_DAT_8007B930`)

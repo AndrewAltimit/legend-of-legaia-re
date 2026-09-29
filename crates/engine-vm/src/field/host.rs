@@ -1058,8 +1058,8 @@ pub trait FieldHost {
     /// | 0 | `+0x72` | `ctx.field_72` | plain s16 write or ramp |
     /// | 1 | `+0x6A` | `ctx.field_6a` | input is `(target >> 1).max(1)` (signed halve, floor 1) |
     /// | 2 | `+0x8E` | `ctx.field_8e` | when ramp == 0 and `flags & 0x20000000`, also writes `world_y = -value` |
-    /// | 3 | `+0x24` | `ctx.field_24` | **ramp path only**; ticks==0 reuses the encoding as an absolute PC jump (`pc = target`) and does not touch the slot |
-    /// | 4 | `+0x28` | `ctx.field_28` | **immediate path only**; ticks!=0 reuses the encoding as an absolute PC jump and does not touch the slot |
+    /// | 3 | `+0x24` | `ctx.field_24` | plain s16 write or ramp |
+    /// | 4 | `+0x28` | `ctx.field_28` | plain s16 write or ramp |
     /// | 8 | `+0x26` | `ctx.field_26` | plain s16 write or ramp |
     ///
     /// When `ticks == 0`, the VM writes the value directly to the ctx field

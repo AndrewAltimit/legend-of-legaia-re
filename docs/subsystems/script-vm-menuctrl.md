@@ -748,8 +748,8 @@ When `ticks == 0` the value is written directly to the slot; when `ticks != 0` t
 | 0 | `ctx[+0x72]` | Plain s16 write or ramp. |
 | 1 | `ctx[+0x6A]` | Input is `(value >> 1).max(1)` (signed halve, floor 1). |
 | 2 | `ctx[+0x8E]` | When ramp == 0 and `flags & 0x20000000`, also writes `world_y = -value`. |
-| 3 | `ctx[+0x24]` *or* abs-jump | If `ticks == 0`, returns absolute PC = `s16(operand+1..3)`. Otherwise ramps `+0x24`. |
-| 4 | `ctx[+0x28]` *or* abs-jump | Mirror of sub-3. If `ticks != 0`, returns abs PC. Otherwise immediate write. |
+| 3 | `ctx[+0x24]` | Plain s16 write or ramp (`0x801E1234`). No jump - see below. |
+| 4 | `ctx[+0x28]` | Plain s16 write or ramp (`0x801E126C`). |
 | 5 | `actor[+0x44].{0x9A,0x94,0x96,0x98}` | 11-byte instruction (overrides the 6-byte default). |
 | 6 | `_DAT_8007B92C` | Gated by `_DAT_800845A8 == 0`; when set, the gate clears both 6 and 7. |
 | 7 | `_DAT_8007B930` | Sister of sub-6. |
@@ -760,6 +760,16 @@ When `ticks == 0` the value is written directly to the slot; when `ticks != 0` t
 | C | `_DAT_8007BCD8` | Sister of A. |
 | D | `_DAT_8007B910` | Same shape, value `(input * _DAT_8008457C) >> 12` - a fixed-point fraction of the configured **audio** level, so `0x1000` means 100% ([battle-action.md](battle-action.md#the-_dat_8007b910-ramps-are-an-audio-duck)). |
 | E / F | - | Inner switch's `default:` arm prints `"SUB_40_ERROR"` and routes via `switchD_801e00f4::default()` - halts at PC. |
+
+**Sub-3 and sub-4 do not jump.** Each arm tests the ticks word and either
+calls `FUN_8003CE9C` and leaves through `j 0x801E3624` with the slot store
+(`sh v0,0x24(s5)` / `sh v0,0x28(s5)`) in the delay slot, or tails into the
+ramp scheduler `0x801E205C`; `0x801E3624` is `move v0,s8`, the shared exit
+with the PC already `+6`. The decompiled C renders that exit as a `return` of
+the operand, which once read as an absolute jump (sub-3 on a zero tick word,
+sub-4 on a non-zero one). On the disc it would restart `taiku` P2[16] - Zora
+Castle's post-boss cutscene, whose `CC 25 43 00 00 00 00` zeroes channel
+`0x25`'s `+0x24` - at its first byte on every pass.
 
 Sub-9's tristate dispatch:
 
