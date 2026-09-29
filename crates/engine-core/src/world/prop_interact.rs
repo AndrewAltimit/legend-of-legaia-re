@@ -264,7 +264,31 @@ impl World {
                 if id.pc < id.visited.len() {
                     id.visited[id.pc] = true;
                 }
-                match vm::field::step(&mut host, &mut id.ctx, &id.bytecode, id.pc) {
+                // A `0x80`-prefix op aimed at the player (`0xF8`) runs with the
+                // PLAYER as its context: `FUN_8003C83C` resolves `0xF8` to
+                // `_DAT_8007C364` and the dispatcher applies the op to that
+                // record's words. Stepping it on the prop's own context put
+                // the player's halt-acquire on the prop - rayman's gondola
+                // (P0[4]) walks the player aboard with `B7 F8 04 81`, a YIELD
+                // whose halt bit (`+0x10 & 0x400`) then made the dispatcher's
+                // halted-target early-out (`0x801DE90C..0x801DE940`) refuse
+                // the prop's own next op, `AB 04 07`, for good.
+                //
+                // REF: FUN_8003C83C, FUN_801DE840 (the halted-target early-out)
+                let player_target = b & 0x80 != 0
+                    && vm::field::peek_extended(&id.bytecode, id.pc)
+                        == Some(crate::field_env::PLAYER_ANCHOR_TARGET);
+                let mut player_ctx = legaia_engine_vm::field::FieldCtx {
+                    script_id: u16::from(crate::field_env::PLAYER_ANCHOR_TARGET),
+                    flags: 0x0100_0000,
+                    ..Default::default()
+                };
+                let ctx = if player_target {
+                    &mut player_ctx
+                } else {
+                    &mut id.ctx
+                };
+                match vm::field::step(&mut host, ctx, &id.bytecode, id.pc) {
                     FieldStepResult::Advance { next_pc }
                         if next_pc <= id.pc
                             && id.visited.get(next_pc).copied().unwrap_or(false) =>
