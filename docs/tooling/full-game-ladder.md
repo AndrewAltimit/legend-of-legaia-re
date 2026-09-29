@@ -147,10 +147,12 @@ while a round still gains flags, since each unlocks the other:
   `chitei2` P0[33], a transport switch, raises the `0x4F0` that the P2[11]
   walk-on setting `0x470` waits on.
 
-A beat is skipped when its record sets a **latch** - a flag some partition-2
-C1 gate of the scene reads - that the next anchor does not carry: retail had
-not played it, and its latch shuts the record the story takes (`conc2` P2[12]
-latches `0x3E1`, the C1 gate of the `juui1` hand-off P2[20]).
+A beat is skipped when its record, itself or through a record it spawns, sets
+a **latch** - a flag some partition-2 C1 gate of the scene reads - that the
+next anchor does not carry: retail had not played it, and its latch shuts the
+record the story takes (`conc2` P2[12] latches `0x3E1`, the C1 gate of the
+`juui1` hand-off P2[20], and the walk-on P2[11] spawns P2[12] as its
+epilogue).
 
 A hop no walk-on band carries is tried by talking to an NPC whose record, or
 a record it spawns, names the destination in a `0x3F` or spawns the record

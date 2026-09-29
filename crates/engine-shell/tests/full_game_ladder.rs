@@ -2335,19 +2335,41 @@ fn overreaching_records(
         .filter_map(|r| partition2_record_gates(mf, man, r))
         .flat_map(|(c1, _)| c1)
         .collect();
-    walk_partition_gflag_sites(mf, man, partition)
-        .into_iter()
-        .filter(|s| {
-            s.bank == FlagBank::System
-                && s.kind == FlagKind::Set
-                && s.clean
-                && !s.text_alias
-                && !s.debug_menu
-                && latches.contains(&s.flag)
-                && !next_anchor_has(s.flag)
-        })
-        .map(|s| s.record)
-        .collect()
+    let latching = |part: usize| -> BTreeSet<usize> {
+        walk_partition_gflag_sites(mf, man, part)
+            .into_iter()
+            .filter(|s| {
+                s.bank == FlagBank::System
+                    && s.kind == FlagKind::Set
+                    && s.clean
+                    && !s.text_alias
+                    && !s.debug_menu
+                    && latches.contains(&s.flag)
+                    && !next_anchor_has(s.flag)
+            })
+            .map(|s| s.record)
+            .collect()
+    };
+    let mut out = latching(partition);
+    // A record also overreaches through what it spawns: `conc2` P2[11], the
+    // King's audience, spawns that P2[12] as its epilogue.
+    let latching2 = if partition == 2 {
+        out.clone()
+    } else {
+        latching(2)
+    };
+    let n0 = mf.partitions.first().map_or(0, Vec::len);
+    let n1 = mf.partitions.get(1).map_or(0, Vec::len);
+    let n_part = mf.partitions.get(partition).map_or(0, Vec::len);
+    for r in 0..n_part {
+        if spawned_p2(mf, man, partition, r, n0 + n1, 3)
+            .iter()
+            .any(|s| latching2.contains(s))
+        {
+            out.insert(r);
+        }
+    }
+    out
 }
 
 /// Rounds of the talk + walk-on beat passes per scene visit.
