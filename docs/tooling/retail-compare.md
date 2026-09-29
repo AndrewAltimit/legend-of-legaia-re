@@ -210,7 +210,18 @@ fight: every catalogued battle state holds a field or overworld id there, never
 the battle theme, which is started without the op-`0x35` store. The engine
 routes its battle swap through the same start event its field scripts use,
 so its copy of the word reads the battle theme; the comparand is the track the
-engine stashed to resume (`World::audio.field_bgm_resume`).
+engine stashed to resume (`World::audio.field_bgm_resume`), or its word itself
+when the fight took no swap (a battle sound set of `-1`).
+
+The word is **script progress**, so a forced fight often cannot match it. A
+scripted boss's event starts its theme with op `0x35` sub-op `9` just before
+the fight (`korb3`'s Gaza event starts `2028`, then selects sound set `-1`;
+`jouine`'s Cort event starts `2071`), and the retail word holds that theme.
+The seed enters the scene fresh and forces the formation without running the
+event, so the engine's word is the scene *entry*'s choice - `korb3` parks at
+`0x1000`, `nilboa` picks `4096` or `2028` by which duel flags are up. Those
+`bgm` misses are this limit, not a stash defect; see
+[audio](../subsystems/audio.md#the-battle-sound-set-picks-the-fights-track).
 
 ## Channels
 

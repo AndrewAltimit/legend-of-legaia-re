@@ -84,6 +84,16 @@ pub struct AudioState {
     /// BGM director resolves the SEQ and cross-fades exactly like a field
     /// op-`0x35` start.
     pub battle_bgm: Option<u16>,
+    /// `_DAT_8007B880` - the **battle sound set** the field script selects
+    /// for the next fight: op-`0x35` sub-op `7` stores its operand, or `-1`
+    /// for an operand byte of `0xFF` (`0x801E01DC..0x801E0208`); the scene
+    /// map-init `FUN_8003AEB0` zeroes it on every scene entry
+    /// (`0x8003B4F8`). The battle intro reads it: `-1` loads no battle
+    /// track and the field score plays through the fight (a scripted boss
+    /// whose theme the event already started), `0` the configured default
+    /// theme, `N > 0` battle bundle `0x36F + N`
+    /// ([`crate::music_labels::battle_bank_bgm_id`]).
+    pub battle_sound_set: i32,
     /// Field track stashed at battle entry so `World::restore_field_bgm`
     /// can resume it after the encounter. Managed by the swap helpers; not
     /// meant to be set directly.
@@ -184,6 +194,7 @@ impl AudioState {
             battle_shout_cues: Vec::new(),
             current_bgm: None,
             battle_bgm: None,
+            battle_sound_set: 0,
             field_bgm_resume: None,
             battle_bgm_active: false,
             minigame_bgm_resume: None,

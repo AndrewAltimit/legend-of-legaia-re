@@ -132,9 +132,38 @@ impl World {
     /// [`crate::world::AudioState::battle_bgm`] is `None` or the swap is already active. Stashes
     /// the current field track for [`World::restore_field_bgm`] and queues a
     /// `FieldEvent::Bgm` start so the host's BGM director cross-fades to it.
+    ///
+    /// Which track follows the battle sound set `_DAT_8007B880` the field
+    /// script left ([`crate::world::AudioState::battle_sound_set`]), as the
+    /// intro `FUN_801CF5BC` does: `-1` loads nothing (phase 2's `bltz` at
+    /// `0x801CF6EC`) and skips the completion arm's field stop and battle
+    /// start (`0x801CF8FC..`), so the field score - a boss theme the event
+    /// started - plays through the fight and nothing is stashed; `0` loads
+    /// the default bundle (`0x370` instead of `0x36F` when `DAT_8007B64B` is
+    /// set, `0x801CF6FC..0x801CF724`), which the port answers with the
+    /// configured track; `N > 0` loads bundle `0x36F + N`
+    /// ([`crate::music_labels::battle_bank_bgm_id`]).
     pub(crate) fn swap_to_battle_bgm(&mut self) {
-        let Some(battle) = self.audio.battle_bgm else {
+        let Some(configured) = self.audio.battle_bgm else {
             return;
+        };
+        let set = self.audio.battle_sound_set;
+        if set < 0 {
+            return;
+        }
+        let battle = if set == 0 {
+            let alt = self
+                .encounters
+                .region_setup
+                .and_then(|s| s.keep_backdrop_object_1)
+                .unwrap_or(false);
+            if alt && configured == crate::music_labels::BATTLE_THEME_1_BGM_ID {
+                crate::music_labels::BATTLE_THEME_2_BGM_ID
+            } else {
+                configured
+            }
+        } else {
+            crate::music_labels::battle_bank_bgm_id(set).unwrap_or(configured)
         };
         if self.audio.battle_bgm_active || self.audio.current_bgm == Some(battle) {
             return;

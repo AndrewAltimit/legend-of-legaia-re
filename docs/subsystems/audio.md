@@ -470,6 +470,27 @@ The engine port reuses this same dispatch for the **Battle↔Field music swap**:
 
 The battle id resolves like any op-`0x35` id: scene-local (`< 2000`) through the scene's own BGM table, global-pool (`>= 2000`) through the `music_01` bank arm (`music_bank_entry_bytes` → `start_owned_vab`). The shipped default is the global id `2026` (`music_labels::BATTLE_THEME_1_BGM_ID`, retail's `battle_id == 0` bundle `0x36F` = extraction 877 = sound-test #26), installed by `LiveLoopOpts::playable()` so both hosts swap without per-scene configuration.
 
+#### The battle sound set picks the fight's track
+
+Which track a fight plays is the field script's choice, not the formation's.
+Op `0x35` sub-op `7` stores `_DAT_8007B880` - its operand, or `-1` for an
+operand byte of `0xFF` (`0x801E01DC..0x801E0208`) - and the scene map-init
+`FUN_8003AEB0` zeroes it on every entry (`0x8003B4F8`). The battle intro
+`FUN_801CF5BC` reads it: phase 2 loads battle bundle `0x36F + N` for `N >= 0`
+(`0x370` for `N = 0` when `DAT_8007B64B` is set) and nothing for `-1`, and the
+completion arm stops the field voice and starts the battle sequence only for
+`N >= 0`. So a `-1` fight - Gaza on `korb3`, the first Nivora duel - plays
+through on the boss theme the event started with sub-op `9` just before, and
+the track word `0x8007BAC8` names that theme for the whole fight. The arm also
+zeroes the set after the fight whose first monster is `0xA6`.
+
+Each bundle of the battle bank (extraction `877 + N`) carries a byte-identical
+copy of one `music_01` score: `0..9` = `2026`, `2027`, `2028`, `2030`, `2032`,
+`2031`, `2051`, `2067`, `2061`, `2073` (`music_labels::BATTLE_BANK_BGM_IDS`,
+pinned by `engine-core/tests/battle_bank_bgm_disc.rs`); the evolved-Cort fight
+selects `8`. `World::swap_to_battle_bgm` follows the set: no swap and no stash
+for `-1`, the bank's track for `N > 0`, the configured theme for `0`.
+
 Retail BGM changes are **hard cuts** (or short `SsSeqSetVol` ramps), so
 `start_inner` swaps tracks the faithful way: when a track is already playing it
 calls `AudioOut::swap_bgm`, which key-offs the outgoing sequencer (its notes

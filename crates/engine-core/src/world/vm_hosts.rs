@@ -1196,6 +1196,16 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // alone, so none of them clears `current_bgm` either.
         if sub_op == 1 || sub_op == 9 {
             self.world.audio.current_bgm = Some(text_id);
+        } else if sub_op == 7 {
+            // Sub-7 stores the next fight's battle sound set `_DAT_8007B880`
+            // and makes no sequencer call: `lbu v1,0x1(s6)` tests the
+            // operand's low byte against `0xFF` (store `-1`), else the u16
+            // operand is stored (`0x801E01DC..0x801E0208`).
+            self.world.audio.battle_sound_set = if text_id & 0xFF == 0xFF {
+                -1
+            } else {
+                i32::from(text_id)
+            };
         } else if sub_op == 5 {
             // Sub-5 is the timed release: retail's handler is
             // `FUN_800267A8(0, s16_operand)` at `0x801E01B4` (the operand is

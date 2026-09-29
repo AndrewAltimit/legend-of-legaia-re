@@ -843,7 +843,9 @@ fn the_battle_intro_sm_runs_through_the_transition_phase() {
             .battle
             .intro_effects
             .iter()
-            .any(|e| matches!(e, TransitionEffect::LoadBattleBgm { battle_id: 3 })),
+            // The id is the field script's battle sound set (`0` after a
+            // scene entry), never the formation id.
+            .any(|e| matches!(e, TransitionEffect::LoadBattleBgm { battle_id: 0 })),
         "phase 2 loads the battle BGM: {:?}",
         world.battle.intro_effects
     );
@@ -897,9 +899,11 @@ fn the_battle_intro_phase_zero_enqueues_the_battle_start_cue() {
     );
 
     // Flagged row (record[+0] non-zero raises bit 0x80 in the per-battle
-    // flags): the flagged store overwrites the plain one in ring slot 0, so
-    // exactly one cue - 0x4D - reaches the queue.
+    // flags) under a script's "no battle track" sound set `-1` - the only
+    // arm that reads the flags byte: the flagged store overwrites the plain
+    // one in ring slot 0, so exactly one cue - 0x4D - reaches the queue.
     let mut world = World::new();
+    world.audio.battle_sound_set = -1;
     world
         .tables
         .formation_table
@@ -921,6 +925,56 @@ fn the_battle_intro_phase_zero_enqueues_the_battle_start_cue() {
         "slot-0 overwrite: one cue, not two: {cues:?}"
     );
     assert_eq!(cues[0].kind, AUDIO_CUE_FLAGGED);
+}
+
+/// The battle track follows the field script's battle sound set
+/// (`_DAT_8007B880`, op-`0x35` sub-op `7`): `-1` keeps the field score
+/// through the fight with nothing stashed, `N > 0` plays battle bundle
+/// `0x36F + N`'s track, and `0` the configured default.
+#[test]
+fn the_battle_sound_set_picks_the_battle_track() {
+    use crate::encounter::EncounterRoll;
+    let run = |set: i32| {
+        let mut world = World::new();
+        world.audio.current_bgm = Some(2028);
+        world.audio.battle_sound_set = set;
+        world.set_battle_bgm(Some(crate::music_labels::BATTLE_THEME_1_BGM_ID));
+        let mut session = crate::encounter::EncounterSession::new(
+            crate::encounter::EncounterTracker::new(crate::encounter::EncounterTable::default()),
+        );
+        session.trigger_with(EncounterRoll {
+            formation_id: 3,
+            row_index: 0,
+            roll_q8: 0,
+        });
+        world.set_encounter_session(Some(session));
+        for _ in 0..3 {
+            world.tick_encounter();
+        }
+        (
+            world.audio.current_bgm,
+            world.audio.battle_bgm_active,
+            world.audio.field_bgm_resume,
+        )
+    };
+    assert_eq!(run(0), (Some(2026), true, Some(2028)));
+    assert_eq!(run(8), (Some(2061), true, Some(2028)), "Cort's bundle");
+    assert_eq!(
+        run(-1),
+        (Some(2028), false, None),
+        "the boss theme plays on"
+    );
+}
+
+#[test]
+fn op_35_sub_7_stores_the_battle_sound_set() {
+    let mut world = World::new();
+    {
+        use legaia_engine_vm::field::FieldHost;
+        let mut host = FieldHostImpl { world: &mut world };
+        host.bgm(0xFFFF, 7);
+    }
+    assert_eq!(world.audio.battle_sound_set, -1);
 }
 
 #[test]

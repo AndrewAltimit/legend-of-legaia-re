@@ -63,6 +63,10 @@ impl World {
         man_file: &legaia_asset::man_section::ManFile,
         man: &[u8],
     ) -> Option<usize> {
+        // The MAN loader `FUN_8003AEB0` zeroes the battle sound set on every
+        // scene entry (`sw zero,-0x4780(v0)` at `0x8003B4F8`), before the
+        // scene's scripts can select one with op-`0x35` sub-op `7`.
+        self.audio.battle_sound_set = 0;
         let derived = crate::man_field_scripts::derive_field_carriers(man_file, man);
         let sparring_idx = derived
             .iter()

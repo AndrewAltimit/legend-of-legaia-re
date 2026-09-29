@@ -1305,20 +1305,28 @@ impl World {
         // own countdown is the same clock read the other way round.
         entity.elapsed = total.saturating_sub(frames_remaining) as i16;
         let globals = TransitionGlobals {
-            // `_DAT_8007B880`. On the spin's first frame of an
-            // encounter-rolled battle retail still holds the `-1` "no id yet"
-            // sentinel - the id is written when the formation resolve lands,
-            // between phases 0 and 2 - which is why phase 0 selects the cue
-            // from the flags byte rather than from the id, and why the
-            // engine (which resolves the roll synchronously) re-creates the
-            // phase-0 view by passing the sentinel on that tick. From phase 1
-            // on, the resolved id feeds the BGM / bundle loads as retail's
-            // filled-in global does.
-            battle_id: if entity.phase == 0 {
-                -1
-            } else {
-                i32::from(roll.formation_id)
-            },
+            // `_DAT_8007B880` - the battle sound set the field script left
+            // (op-`0x35` sub-op `7`; zeroed on every scene entry), not the
+            // formation: nothing on the encounter path writes the word. `-1`
+            // is a script's "no battle track" choice, and the only arm that
+            // reads the flags byte for the cue.
+            battle_id: self.audio.battle_sound_set,
+            // `DAT_8007B64B`: the region record's alternate-default-bundle
+            // bit, read by phase 2 only for sound set `0`.
+            alt_default_bundle: u8::from(
+                self.encounters
+                    .region_setup
+                    .and_then(|s| s.keep_backdrop_object_1)
+                    .unwrap_or(false),
+            ),
+            // `DAT_8007BD0C` - the formation cell's slot 0, which the
+            // completion arm compares against `0xA6`.
+            formation_slot0: self
+                .tables
+                .formation_table
+                .formation(roll.formation_id)
+                .and_then(|d| d.slots.first())
+                .map_or(0, |s| s.monster_id as u8),
             total_duration: i32::from(total),
             // `DAT_8007BD60`. Bit `0x80` is the only bit this kernel reads,
             // and it is a property of the rolled formation row: the entity
@@ -1385,6 +1393,13 @@ impl World {
                     actor_slot: 0,
                     target_slot: 0,
                 });
+        }
+        // The completion arm zeroes the sound set after the fight whose
+        // first monster is `0xA6` (`0x801CF934..0x801CF94C`): the Gaza fight
+        // selects `-1` for its own score, and the next fight must not
+        // inherit it.
+        if tick.cleared_battle_id {
+            self.audio.battle_sound_set = 0;
         }
         self.battle.intro_effects = tick.effects;
         // The master mode hand-off (`_DAT_8007B83C = 0x14` at `0x801CF8F8`).
