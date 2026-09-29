@@ -109,7 +109,7 @@ impl World {
         self.party.roster.clone()
     }
 
-    /// Write the **battle party's** live HP / MP into their roster records.
+    /// Write the **battle party's** live HP / MP / AP into their roster records.
     ///
     /// The narrow sibling of [`Self::save_party`], for
     /// [`Self::finish_battle`]. Two differences, both deliberate:
@@ -118,21 +118,26 @@ impl World {
     ///   the party band hold *monsters*, and `save_party`'s identity default
     ///   walks the whole roster - so running it verbatim at battle end would
     ///   copy a monster's HP into the fourth character's record.
-    /// - It writes `hp_cur` / `mp_cur` only, never `hp_max`. Max HP does not
+    /// - It writes `hp_cur` / `mp_cur` / `sp_cur` only, never `hp_max`. Max HP does not
     ///   move during a fight, and the level-up applier has already written
     ///   the post-victory maxima into the records by the time this runs.
     pub(in crate::world) fn persist_battle_party_hp(&mut self) {
         let n = (self.party.party_count as usize).min(self.actors.len());
         for member in 0..n {
             let rslot = self.party_roster_slot(member);
-            let (hp, mp) = {
+            let (hp, mp, ap) = {
                 let a = &self.actors[member].battle;
-                (a.hp, a.mp)
+                (a.hp, a.mp, a.spirit_gauge)
             };
             if let Some(rec) = self.party.roster.members.get_mut(rslot) {
                 let mut hms = rec.hp_mp_sp();
                 hms.hp_cur = hp;
                 hms.mp_cur = mp;
+                // The Spirit (AP) gauge goes back to the record's `+0x10E`
+                // with MP: both results arms of `FUN_8004E568` store
+                // `+0x150 -> +0x10A` and `+0x170 -> +0x10E` per member
+                // (`0x8004F1E8..0x8004F220`, `0x8004FBE8..0x8004FC20`).
+                hms.sp_cur = ap;
                 rec.set_hp_mp_sp(hms);
             }
         }

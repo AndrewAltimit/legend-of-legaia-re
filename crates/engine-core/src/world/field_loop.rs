@@ -283,7 +283,22 @@ impl World {
         self.seat_monster_family(monster_count, u8::from(scripted) + u8::from(map_arm));
         let first_monster = party_count;
         for slot in 0..party_count as usize {
+            // The Spirit (AP) gauge `+0x170` opens at the character record's
+            // saved AP `+0x10E`: the party loader's last store
+            // (`FUN_80053CB8`, `lhu v0,0x6d6(record)` / `sh v0,0x170(actor)`
+            // at `0x800542BC..0x800542C4`). The results arms write it back
+            // ([`World::persist_battle_party_hp`]), so the gauge carries from
+            // fight to fight rather than restarting empty.
+            let saved_ap = self
+                .party
+                .roster
+                .members
+                .get(self.party_roster_slot(slot))
+                .map(|r| r.hp_mp_sp().sp_cur);
             let a = &mut self.actors[slot];
+            if let Some(ap) = saved_ap {
+                a.battle.spirit_gauge = ap;
+            }
             a.battle.liveness = 1;
             a.battle.action_category = 3; // Attack
             a.battle.active_target = first_monster;

@@ -441,6 +441,16 @@ for out of the caster's Spirit gauge `actor[+0x170]` - the same gauge the Spirit
 command charges (see [`randomizer.md` § spirit AP](../tooling/randomizer.md)).
 Conflating the two is the standing trap in this area.
 
+The Spirit gauge **carries from fight to fight** through the character
+record's AP cell `+0x10E`. The party loader `FUN_80053CB8` seeds `+0x170`
+from it as its last store (`lhu v0,0x6d6(record)` / `sh v0,0x170(actor)` at
+`0x800542BC..0x800542C4`), and both results arms of `FUN_8004E568` - the
+victory arm and the wipe arm - store the gauge back beside MP
+(`0x8004F218..0x8004F220`, `0x8004FC18..0x8004FC20`). A party that ends a
+fight on a full gauge therefore opens the next one able to pay for its arts.
+The engine seeds at `World::enter_battle_from_formation` and writes back in
+`World::persist_battle_party_hp`.
+
 **Retail stores no per-art AP cost.** The party arts queue-builder
 `FUN_801EED1C` (PROT 0898, base `0x801CE818`, file `+0x20504`;
 `see ghidra/scripts/funcs/overlay_battle_action_801eed1c.txt`) computes it. It

@@ -281,6 +281,7 @@ mod actor_alloc_init;
 mod actor_cadence;
 mod ambient_collision_exempt;
 mod battle_anim;
+mod battle_ap_carry;
 mod battle_auto_command;
 mod battle_capture_bgm;
 mod battle_capture_class_disc;
