@@ -284,10 +284,19 @@ The battle intro between the commit and the fight is its own slot-A overlay
 the field frame pump `FUN_801D1344` included - so no field context runs
 during it.
 
+Text is part of the same runner and is not reserved for cutscenes: when the
+next byte is a text segment, the loop stops and the context parks on the one
+shared dialog box (`+0x9C = 2`) until it closes, whichever context reached
+it. A record spawned by op `0x44` in free roam (`town01` `P2[25]`, the FMV
+hand-off to `town0b`; `town0e` `P2[5]`, the ending's hop to `edteien`) shows
+its lines and runs on past them.
+
 Port: `World::step_field_frame_slice` (the system-script gate,
 `FieldVmState::system_pass_open`), `World::field_scripts_held_for_battle`,
 `CutsceneTimeline::interaction_slot` (a boss-stager touch resumes the
-placement's own context and ends at its `0x21`), and
+placement's own context and ends at its `0x21`), `World::drive_script_dialog`
+and `World::script_dialog_panel` (one box for the timeline and the helper
+contexts), and
 `CutsceneTimeline::addressed_channels` - the engine's stand-in for the
 engaged set while a timeline plays: a placement's own script steps only once
 a playing context has addressed it with a cross-context op.
