@@ -216,7 +216,7 @@ landed, and the fixture then moves to `fixed/`.
 
 | open replay | finding | status |
 |---|---|---|
-| `ropeway_player_parked_on_gondola` | a New Game party entering `ropeway` cold plays the scene's timeline through, then free roam resumes with the player on the gondola deck (`y = -320`) and no direction moves them | open: a cold entry past the story gate this timeline assumes is the likely cause, not yet told apart from a missing hand-off at the timeline's end |
+| `ropeway_player_parked_on_gondola` | a New Game party entering `ropeway` cold plays the scene's timeline until its `B8 26 84 14` (a targeted `0x38` hold of `0x14` frames); when the hold expires the timeline ends instead of resuming at the next op, and free roam resumes with the player on the gondola deck (`y = -320`) where no direction moves them | open: the hold's resume in the timeline runner, or a cold entry past the story gate the timeline assumes |
 
 [`scripts/replays/soak/fixed/`](../../scripts/replays/soak/fixed/) holds the
 closed findings as regressions. `soak_fixed_fixtures` replays each and fails
