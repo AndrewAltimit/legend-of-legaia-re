@@ -361,6 +361,11 @@ impl World {
             .tutorial_boxes
             .retain(|b| !b.any_press_dismisses);
         self.begin_battle_round();
+        // The press that ended the caption is spent on it. The side-band runs
+        // ahead of the tutorial-box ticker in the same frame, so without this
+        // the one edge would also confirm the lesson box the round start just
+        // queued, and it would close before it was ever drawn.
+        self.input.clear_edges();
     }
 }
 
