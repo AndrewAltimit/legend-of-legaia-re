@@ -383,3 +383,4 @@ the live `uru` pin:
 
 - [`docs/subsystems/engine.md`](../subsystems/engine.md) - the from-scratch engine the record/replay loop drives.
 - [`docs/subsystems/script-vm.md`](../subsystems/script-vm.md) - the field/event VM whose pad-driven state the trace captures.
+- [`full-game-ladder.md`](full-game-ladder.md) - the segmented New Game to credits ladder, seeded from retail card saves and states along the story spine.

@@ -243,6 +243,11 @@ report **zero** executed regions - which is a fact about the harness, not the
 port, and it is what kept the largest NO-LADDER cluster on this page invisible
 to the reach report.
 
+`BootSession::tick` also routes no naming-prompt input - both hosts do that
+themselves - so a headless run that only ticks parks on the opening's op
+`0x49`; the [full-game ladder](full-game-ladder.md#seeding-and-what-it-corrects-for)
+mirrors the hosts' arm.
+
 The union now carries a rendering host: `play_compose_ladder`
 (`crates/web-viewer/tests/`) drives the browser play page's `LegaiaRuntime` by
 pad and composes the page's whole per-frame read surface, so the draw-list
