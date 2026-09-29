@@ -125,12 +125,17 @@ def build(scus, data, cat):
         tracks.append({
             "key": "formats",
             "label": "Asset formats",
-            "pct": round(data["pct_parsed"], 1),
-            "headline": "%.1f%% of PROT.DAT" % data["pct_parsed"],
+            "pct": round(data["pct_content_parsed"], 1),
+            "headline": "%.1f%% of PROT.DAT content" % data["pct_content_parsed"],
             "detail": "Share of disc asset bytes whose container resolves to a "
                       "documented format. This is format *recognition*, not a "
                       "byte-for-byte parse, so read it as an upper bound. "
-                      "%.1f%% remains unexplained." % data["pct_unexplained"],
+                      "%.1f%% remains unexplained. %d entries (%s bytes) of "
+                      "reserved dev filler are excluded from the denominator: "
+                      "each is a documented one-sector placeholder with nothing "
+                      "in it to parse."
+                      % (data["pct_unexplained"], data["filler_entries"],
+                         "{:,}".format(data["filler"])),
             "denominator": "disc bytes",
             "href": "formats/index.html",
         })

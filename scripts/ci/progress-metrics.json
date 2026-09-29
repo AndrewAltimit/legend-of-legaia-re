@@ -13,9 +13,9 @@
     {
       "key": "formats",
       "label": "Asset formats",
-      "pct": 99.5,
-      "headline": "99.5% of PROT.DAT",
-      "detail": "Share of disc asset bytes whose container resolves to a documented format. This is format *recognition*, not a byte-for-byte parse, so read it as an upper bound. 0.0% remains unexplained.",
+      "pct": 100.0,
+      "headline": "100.0% of PROT.DAT content",
+      "detail": "Share of disc asset bytes whose container resolves to a documented format. This is format *recognition*, not a byte-for-byte parse, so read it as an upper bound. 0.0% remains unexplained. 266 entries (544,768 bytes) of reserved dev filler are excluded from the denominator: each is a documented one-sector placeholder with nothing in it to parse.",
       "denominator": "disc bytes",
       "href": "formats/index.html"
     },

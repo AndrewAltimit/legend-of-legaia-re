@@ -180,6 +180,7 @@
     "world_map_render": 100.0
   },
   "data": {
-    "pct_parsed": 99.55
+    "pct_parsed": 99.55,
+    "pct_content_parsed": 100.0
   }
 }
