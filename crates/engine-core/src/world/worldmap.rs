@@ -339,6 +339,11 @@ impl World {
     /// player position (`play-window`'s `LEGAIA_SEAT`, the play page's
     /// `play_debug_seat`). The caller re-arms its camera's arrival snap
     /// (`Camera::zone.arm_arrival()`), which the world does not own.
+    ///
+    /// On a field scene the seat is a warp landing, so it also re-centres the
+    /// camera window on the new tile as retail's kind-0 warp landing does
+    /// (`FUN_80017EC8`): the region box and the windowed static-object list
+    /// follow the player instead of staying planned for the entry spawn.
     pub fn debug_seat_player(&mut self, x: i16, z: i16) -> bool {
         let Some(slot) = self.player_actor_slot else {
             return false;
@@ -351,6 +356,9 @@ impl World {
         a.move_state.world_y = y;
         a.move_state.world_z = z;
         self.refresh_field_regions();
+        if self.mode == SceneMode::Field {
+            self.recentre_field_window_on_player();
+        }
         true
     }
 

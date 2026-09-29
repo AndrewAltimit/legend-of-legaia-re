@@ -99,7 +99,8 @@ state's scene and seeded through its own card-load path,
 `BootSession::resume_save` over the lifted save (enter the scene, then
 hydrate party, flags, bag, gold). The player is then seated on retail's
 `(X, Z)` with the floor-sampled `Y` (`World::debug_seat_player`, the kernel
-behind `LEGAIA_SEAT`), the zone camera's arrival snap is re-armed, and the
+behind `LEGAIA_SEAT`; on a field scene it is a warp landing and re-centres the
+region box and the windowed static-object list on the seat), the zone camera's arrival snap is re-armed, and the
 session ticks a fixed settle window with no input. BGM starts are recorded by
 a director on the scene host's event route.
 

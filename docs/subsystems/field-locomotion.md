@@ -1311,11 +1311,24 @@ floor ladder installs, the warp landing, the `0x23` / `4C 51` player arms and th
 leader swap. Both play hosts ask one kernel per placed draw,
 `field_env::placed_draw_live`: a bound draw is always live, and a window-owned
 one is live unless the `retail_static_window` option is on, in which case it
-draws only while the list holds a drawn actor for it. The default keeps the
-whole map, because retail's windowing is sub-area pop-in: at `town01`'s seat it
-hides 7 of the 46 placed draws, at `vell`'s 62 of 105. Disc-gated coverage:
-`crates/engine-core/tests/field_static_window_disc.rs`, which also checks that the
-two sweeps partition every drawn placement.
+draws only while the list holds a drawn actor for it. At `town01`'s seat that
+hides 7 of the 46 placed draws, at `vell`'s 62 of 105. The option **defaults on**
+in both play hosts: the window-owned props are other sub-areas' scenery, authored
+to be seen from their own region, and drawing them from outside it is not an
+enhancement - `retona`'s cloud bowl (env pack 37, a `5550 x 2971 x 5754` shell)
+covers the cave the `retona_field_card_boot` player stands in, which retail's
+box leaves out. The cost is retail's own pop-in on a region change without a
+re-centre; off keeps the whole map. A host debug seat (`LEGAIA_SEAT`,
+`play_debug_seat`) is a warp landing and re-centres too, so a seated frame plans
+the list for the room it stands in rather than the entry spawn's. Disc-gated
+coverage: `crates/engine-core/tests/field_static_window_disc.rs`, which also
+checks that the two sweeps partition every drawn placement.
+
+The per-cell ground and decoration passes read a second window, the camera's
+visible tile window at `0x1F8003E8..EB` ([`encounter.md`](../formats/encounter.md#the-scratchpad-window-0x1f8003e8eb)),
+which the port tracks (`Camera::zone.view_window`) but does not yet crop the
+terrain / heightfield draws by: the ground beyond the window still draws, where
+retail's frame is black (`conc_field_card_boot`'s neighbouring room).
 
 - **The bind carries the object's animation id.** A partition-0 record's header
   is `[u8 n][n*2 name bytes][u8 anim_id]` (its own shape - the partition-1
