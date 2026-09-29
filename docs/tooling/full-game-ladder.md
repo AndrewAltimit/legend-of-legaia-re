@@ -169,12 +169,11 @@ queue builder's call, out of the Spirit gauge). A random encounter that
 interrupts a pad-tier walk is fled instead (the round prompt's Run), unless
 the fight forbids running.
 
-A headless session renders nothing, so at battle entry the fighter installs
-each member's battle form the way both play hosts do
-(`engine-core::battle_party_form`, into a scratch VRAM): the action clips the
-hit events are paced by and the art records the arts input tokenizes. Without
-it a headless fight swings zero-length clips and matches no art. Beyond
-that:
+The party's battle forms - the action clips the hit events are paced by and
+the art records the arts input tokenizes - are the engine's to install at
+battle entry (`SceneHost::ensure_battle_party_forms`, see
+[`battle.md`](../subsystems/battle.md)), so a headless fight swings the same
+clips and matches the same arts a windowed one does. Beyond that:
 
 - Field dialogue runs through the inline-script field-VM runner, as it does
   in both play hosts (`World::toggles.use_vm_dialogue`); `BootSession` leaves

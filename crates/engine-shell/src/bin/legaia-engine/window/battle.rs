@@ -427,6 +427,10 @@ impl PlayWindowApp {
         // renderer borrow below (both take `&mut self`).
         self.battle_faces.clear();
         self.load_face_tables();
+        // The party's forms are the engine's to build (normally already done
+        // by the tick that entered the battle); this covers a battle entered
+        // outside a tick.
+        self.session.host.ensure_battle_party_forms();
         // Build the battle-stage backdrop (the scene's scene_tmd_stream
         // half-dome). Its VRAM (scene + stage-dome textures resident) becomes
         // the battle base, so the dome renders textured behind the actors;
@@ -661,28 +665,16 @@ impl PlayWindowApp {
         // decode fails. Each character's decoded battle palette overlays the
         // rows its mesh CBA samples (= 481 + slot after relocation).
         let mut party_bound = 0usize;
-        let party_count = self.session.host.world.party.party_count as usize;
-        // The whole decode - assembly or PROT 1204 fallback, band pixels,
-        // palette, clips, art bank, face tracks - is the engine kernel the
-        // browser play page builds through too
-        // (`engine-core::battle_party_form`); this window adds only the GPU
-        // upload and the rest-pose bake of its static mesh.
-        if party_count > 0
-            && let Some(sources) = legaia_engine_core::battle_party_form::PartyFormSources::load(
-                &self.session.host.index,
-                &mut vram,
-            )
-        {
-            for member in 0..party_count.min(3) {
-                let Some(mut form) = legaia_engine_core::battle_party_form::build_party_battle_form(
-                    &self.session.host.index,
-                    &self.session.host.world,
-                    &sources,
-                    &mut vram,
-                    member,
-                ) else {
-                    continue;
-                };
+        // The engine built and installed each member's form at battle entry
+        // (`SceneHost::ensure_battle_party_forms`, run by `SceneHost::tick`
+        // for every session, headless included): the decode, the clips, the
+        // art bank and records. This window adds only what is a renderer's -
+        // the band pixels replayed into its battle VRAM, the GPU upload with
+        // the rest-pose bake, and the facial animator's registration.
+        let party = self.session.host.battle_party_forms().cloned();
+        if let Some(party) = party {
+            party.vram_writes.replay(&mut vram);
+            for form in party.forms {
                 // Rest pose: frame 0 of the assembled mesh's own idle stream
                 // (the combat stance retail holds at battle start), or the
                 // PROT 1203 bank's idle record for a fallback.
@@ -709,9 +701,7 @@ impl PlayWindowApp {
                     Ok(m) => {
                         let idx = self.meshes.len();
                         self.meshes.push(m);
-                        // Idle + action clips + art bank + art records, the
-                        // install the browser page runs off the same form.
-                        self.session.host.world.install_party_battle_form(&mut form);
+                        let member = form.member;
                         self.session.host.world.actors[member].tmd_binding = Some(idx);
                         registered.push(member);
                         // Facial animation (FUN_8004C7B4): the per-tick stamp
@@ -719,12 +709,12 @@ impl PlayWindowApp {
                         // current eye/mouth frame onto the band's live face
                         // rows; the form only carries tracks when the band
                         // holds the real face-frame strip.
-                        if let Some(tracks) = form.face_tracks.take() {
+                        if let Some(tracks) = form.face_tracks {
                             self.battle_faces.push(BattleMemberFace {
                                 actor_slot: member,
                                 char_index: form.cslot,
                                 tracks,
-                                art_tracks: std::mem::take(&mut form.art_face_tracks),
+                                art_tracks: form.art_face_tracks,
                                 last_stamps: None,
                                 art_counter: None,
                             });

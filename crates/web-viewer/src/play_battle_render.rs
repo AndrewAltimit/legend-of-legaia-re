@@ -281,16 +281,13 @@ struct WebBattleStage {
     outdoor: bool,
 }
 
-/// What the mutate phase installs on the world once the build borrow ends.
-enum PendingInstall {
-    /// A party member's decoded battle form (`engine-core::battle_party_form`).
-    Party(Box<legaia_engine_core::battle_party_form::PartyBattleForm>),
-    /// A monster's texture slot and archive idle clip.
-    Monster {
-        actor_idx: usize,
-        tex_slot: u8,
-        idle: Option<legaia_asset::monster_archive::MonsterAnimation>,
-    },
+/// What the mutate phase installs on a monster once the build borrow ends:
+/// its texture slot and archive idle clip. (The party's forms are the
+/// engine's to install - `SceneHost::ensure_battle_party_forms`.)
+struct PendingMonsterInstall {
+    actor_idx: usize,
+    tex_slot: u8,
+    idle: Option<legaia_asset::monster_archive::MonsterAnimation>,
 }
 
 /// Flatten one animation frame to the `[tx, ty, tz, rx, ry, rz] x parts`
@@ -391,6 +388,12 @@ impl LegaiaRuntime {
     /// the page had before).
     pub(crate) fn enter_battle_render(&mut self) {
         self.battle_render = None;
+        // The party's forms are the engine's to build (normally already done
+        // by the tick that entered the battle); this covers a battle entered
+        // outside a tick.
+        if let Some(host) = self.scene_host.as_mut() {
+            host.ensure_battle_party_forms();
+        }
         let Some(host) = self.scene_host.as_ref() else {
             return;
         };
@@ -471,7 +474,7 @@ impl LegaiaRuntime {
         // Monster meshes: per-slot texture injection into the battle VRAM +
         // idle / action clips for the shared SM pose hook.
         let mut actors: Vec<BattleActorRender> = Vec::new();
-        let mut pending: Vec<PendingInstall> = Vec::new();
+        let mut pending: Vec<PendingMonsterInstall> = Vec::new();
         // The texture slots the monster binds consumed; a mid-battle summon
         // injects its creature texture into the next one.
         let mut bound_slots: Vec<u8> = Vec::new();
@@ -517,7 +520,7 @@ impl LegaiaRuntime {
                 object_ids,
                 rest_pose,
             });
-            pending.push(PendingInstall::Monster {
+            pending.push(PendingMonsterInstall {
                 actor_idx,
                 tex_slot: slot,
                 idle,
@@ -528,31 +531,32 @@ impl LegaiaRuntime {
 
         // Party battle forms per present-party ordinal: the CHARACTER picks
         // the content (player file 863 + cslot), the ORDINAL picks the
-        // runtime texture band - the live-verified retail rule the native
-        // window applies.
-        let party_count = host.world.party.party_count as usize;
-        // The decode is the engine kernel the native window builds through
-        // too (`engine-core::battle_party_form`): assembly or the PROT 1204
-        // fallback, band pixels, palette, clips, art bank, face tracks.
-        if party_count > 0
-            && let Some(sources) = legaia_engine_core::battle_party_form::PartyFormSources::load(
-                &host.index,
-                &mut vram,
-            )
-        {
-            for member in 0..party_count.min(3) {
-                let Some(form) = legaia_engine_core::battle_party_form::build_party_battle_form(
-                    &host.index,
-                    &host.world,
-                    &sources,
-                    &mut vram,
-                    member,
-                ) else {
-                    continue;
-                };
-                if let Some(render) = party_actor_render(&form) {
+        // runtime texture band - the live-verified retail rule. The engine
+        // built and installed them at battle entry
+        // (`SceneHost::ensure_battle_party_forms`, run by `SceneHost::tick`
+        // for every session): clips, art bank and art records are already on
+        // the actors. This page replays the band pixels into its battle VRAM
+        // and takes the meshes and face tracks.
+        let mut party_faces: Vec<crate::play_battle_vram::BattleMemberFace> = Vec::new();
+        if let Some(party) = host.battle_party_forms() {
+            party.vram_writes.replay(&mut vram);
+            for form in &party.forms {
+                if let Some(render) = party_actor_render(form) {
                     actors.push(render);
-                    pending.push(PendingInstall::Party(Box::new(form)));
+                    // Facial animation (FUN_8004C7B4): register the member's
+                    // per-action face tracks so the per-tick stamp pass
+                    // (`tick_battle_vram_channel`) re-stamps the current
+                    // eye/mouth frame onto the band's live face rows.
+                    if let Some(tracks) = form.face_tracks.clone() {
+                        party_faces.push(crate::play_battle_vram::BattleMemberFace {
+                            actor_slot: form.member,
+                            char_index: form.cslot,
+                            tracks,
+                            art_tracks: form.art_face_tracks.clone(),
+                            last_stamps: None,
+                            art_counter: None,
+                        });
+                    }
                 }
             }
         }
@@ -561,11 +565,11 @@ impl LegaiaRuntime {
             return;
         }
 
-        // Mutate phase: install each actor's clips on the world so the
-        // engine's own `tick_battle_animations` (already running in the
-        // browser tick) maintains `pose_frame` / reaction clips exactly as
-        // it does under the native window.
-        let mut faces: Vec<crate::play_battle_vram::BattleMemberFace> = Vec::new();
+        // Mutate phase: install each monster's texture slot and idle clip
+        // so the engine's own `tick_battle_animations` (already running in
+        // the browser tick) poses it exactly as it does under the native
+        // window.
+        let faces = party_faces;
         // The battle boundary: retail rebuilds the battle context (the
         // `+0x220` Stone latches and the per-slot palette copies) per
         // fight, and the bands are re-assigned per fight here too - a
@@ -574,33 +578,8 @@ impl LegaiaRuntime {
         self.battle_hud.status_clut.reset();
         if let Some(host) = self.scene_host.as_mut() {
             for p in pending {
-                match p {
-                    PendingInstall::Party(mut form) => {
-                        // Facial animation (FUN_8004C7B4): register the
-                        // member's per-action face tracks so the per-tick
-                        // stamp pass (`tick_battle_vram_channel`) re-stamps
-                        // the current eye/mouth frame onto the band's live
-                        // face rows.
-                        if let Some(tracks) = form.face_tracks.take() {
-                            faces.push(crate::play_battle_vram::BattleMemberFace {
-                                actor_slot: form.member,
-                                char_index: form.cslot,
-                                tracks,
-                                art_tracks: std::mem::take(&mut form.art_face_tracks),
-                                last_stamps: None,
-                                art_counter: None,
-                            });
-                        }
-                        host.world.install_party_battle_form(&mut form);
-                    }
-                    PendingInstall::Monster {
-                        actor_idx,
-                        tex_slot,
-                        idle,
-                    } => host
-                        .world
-                        .install_monster_battle_form(actor_idx, tex_slot, idle.as_ref()),
-                }
+                host.world
+                    .install_monster_battle_form(p.actor_idx, p.tex_slot, p.idle.as_ref());
             }
         }
 

@@ -326,6 +326,47 @@ impl SceneHost {
         }
     }
 
+    /// Build and install the party's battle forms for the fight in progress,
+    /// once per [`crate::world::BattleState::entry_serial`]: each member's
+    /// idle and action clips (the swings the hit events are paced by), art
+    /// bank and art records (what the arts input tokenizes) - see
+    /// [`crate::battle_party_form::install_party_battle_forms`].
+    ///
+    /// Retail's battle loader assembles the party with the fight, whether or
+    /// not anything draws it. [`Self::tick`] runs this the tick a battle is
+    /// up, so every session gets it - the play hosts and headless drivers
+    /// alike; a host that enters a battle outside a tick (a debug
+    /// `World::enter_battle`) calls it before it builds its render. A no-op
+    /// outside battle and on a repeat call within the same fight.
+    ///
+    /// REF: FUN_800513F0
+    pub fn ensure_battle_party_forms(&mut self) {
+        if !matches!(self.world.mode, crate::world::SceneMode::Battle) {
+            return;
+        }
+        let serial = self.world.battle.entry_serial;
+        if self
+            .battle_party_forms
+            .as_ref()
+            .is_some_and(|f| f.battle_serial == serial)
+        {
+            return;
+        }
+        let forms =
+            crate::battle_party_form::install_party_battle_forms(&self.index, &mut self.world);
+        self.battle_party_forms = Some(forms);
+    }
+
+    /// The fight in progress's party battle forms, for a renderer: meshes,
+    /// rest poses, face tracks and the VRAM writes to replay into its battle
+    /// VRAM. `None` outside battle or before
+    /// [`Self::ensure_battle_party_forms`] ran for this fight.
+    pub fn battle_party_forms(&self) -> Option<&crate::battle_party_form::BattlePartyForms> {
+        self.battle_party_forms
+            .as_ref()
+            .filter(|f| f.battle_serial == self.world.battle.entry_serial)
+    }
+
     /// Refresh the **Auto** attack's disc inputs
     /// ([`crate::world::AutoComboState`]): per roster character, the four
     /// direction commands' leading entry bytes (the pool arm's weight input)
@@ -2067,6 +2108,9 @@ impl SceneHost {
         let _ = self.world.tick();
         if matches!(self.world.mode, crate::world::SceneMode::Battle) {
             self.install_battle_monster_action_clips();
+            self.ensure_battle_party_forms();
+        } else {
+            self.battle_party_forms = None;
         }
         // Post-battle field return: retail re-enters the field scene after a
         // battle (game-mode battle -> field reload), which re-runs the

@@ -330,8 +330,11 @@ one),
 **monster meshes** (`monster_archive::battle_render_mesh`) and the
 **assembled party battle forms** (`legaia_asset::battle_char_assembly`, real
 texture pools + battle palette; PROT 1204 mesh + PROT 1203 rest pose as the
-fallback ladder). Idle / action / swing / art-bank clips are installed on
-the world so the engine's own battle SM poses every actor; the page reads
+fallback ladder). The engine builds and installs the party forms' idle /
+action / swing / art-bank clips at battle entry
+(`SceneHost::ensure_battle_party_forms`); the page replays the forms' VRAM
+writes into its battle VRAM and installs only each monster's texture slot and
+idle, so the engine's own battle SM poses every actor; the page reads
 `play_battle_actor_pose` per frame and re-poses positions in place. The
 camera runs the **shared** phase script (`engine-vm::battle_cam_script`) that
 the native window runs - dialogue / menu-with-orbit / submenu close-up /

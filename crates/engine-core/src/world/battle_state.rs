@@ -518,6 +518,13 @@ pub struct BattleState {
     /// and `0x65` (magic level increased) carry, from the raise to the
     /// matching unload - see `world::battle::message_banner`.
     pub message_banner: Option<crate::world::BattleMessageBanner>,
+    /// Bumped by every [`crate::world::World::enter_battle`]: the identity of
+    /// the fight in progress. Per-battle work that lives outside the world -
+    /// the scene host's party battle-form install
+    /// ([`crate::scene::SceneHost::ensure_battle_party_forms`]) - keys on it,
+    /// so two fights with no field tick between them still install twice.
+    /// Not a retail word.
+    pub entry_serial: u32,
 }
 
 /// One frame's tag-`0x67` ribbon source: the `8`-byte seat vector the
@@ -610,6 +617,7 @@ impl BattleState {
             return_mode: SceneMode::Field,
             clip_ribbon: None,
             message_banner: None,
+            entry_serial: 0,
         }
     }
 }

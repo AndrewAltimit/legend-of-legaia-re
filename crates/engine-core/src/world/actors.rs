@@ -1591,6 +1591,7 @@ impl World {
     // PORT: FUN_800513F0 (battle setup: seat stamping from the SCUS tables)
     pub fn enter_battle(&mut self, party_count: u8, monster_count: u8) {
         self.mode = SceneMode::Battle;
+        self.battle.entry_serial = self.battle.entry_serial.wrapping_add(1);
         self.battle.monster_flee_attempted = false;
         // The magic-level-up queue is a per-battle oracle record, not a host
         // hand-off: the banner the level-up raises is the battle message

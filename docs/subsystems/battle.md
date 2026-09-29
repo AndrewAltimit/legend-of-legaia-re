@@ -1782,11 +1782,23 @@ A 4th party slot is not rendered: the runtime texture band + CLUT rows cover
 party slots 0..=2 only, so Terra (player file 866, idle stream 17 parts)
 has no relocation target.
 
-Both play hosts decode a member's form through one kernel,
-`engine-core::battle_party_form` (`PartyFormSources::load`, then
-`build_party_battle_form` per member, then `World::install_party_battle_form`
-for the idle, action clips, art bank and art records); a host adds only the
-GPU upload and its own posing. The kernel falls back to PROT 1204 when the
+The party's forms are an engine duty, not a host one: retail's loader
+assembles the party with the fight whether or not anything draws it, so
+`SceneHost::tick` runs `SceneHost::ensure_battle_party_forms` the tick a
+battle is up, once per fight (`BattleState::entry_serial`, bumped by
+`World::enter_battle`). Every session gets the idle, action clips, art bank
+and art records - the play hosts and headless drivers (the ladders, the soak
+harness) alike; without them a fight swings zero-length clips and matches no
+art. The kernel is `engine-core::battle_party_form`
+(`install_party_battle_forms`: `PartyFormSources::load`, then
+`build_party_battle_form` per member, then `World::install_party_battle_form`).
+Its VRAM writes go to a `VramWriteLog` rather than a live VRAM; a renderer
+reads `SceneHost::battle_party_forms`, replays the log into the battle VRAM
+it composes, and adds only the GPU upload, its own posing and the facial
+animator's registration. A session that drives a bare `World` with no
+`SceneHost` has no disc index, and is the one explicit injection point: it
+calls `install_party_battle_forms` itself after `World::enter_battle`. The
+kernel falls back to PROT 1204 when the
 player file carries no idle stream - an assembled mesh with no pose source
 draws every piece at its object origin - and overlays the battle palette on
 a fallback mesh's rows too. Monsters install their texture slot and idle

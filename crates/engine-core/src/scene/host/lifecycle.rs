@@ -27,6 +27,7 @@ impl SceneHost {
             move_power_loaded: false,
             battle_tutorial_loaded: false,
             cast_effect_pool_loaded: false,
+            battle_party_forms: None,
             last_minigame_warp: None,
             pending_entry_seat: None,
             scene_destinations: Vec::new(),

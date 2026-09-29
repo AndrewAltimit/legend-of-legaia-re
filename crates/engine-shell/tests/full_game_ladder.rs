@@ -1222,29 +1222,6 @@ fn fight_pad(session: &BootSession) -> u16 {
     PadButton::Cross.mask()
 }
 
-/// Install each party member's battle form, as both play hosts do at battle
-/// entry (`engine-core::battle_party_form`): the idle and action clips the
-/// hit events are paced by, and the art records the arts input tokenizes.
-/// A headless session renders nothing, so the band pixels go to a scratch
-/// VRAM; without this step a headless fight swings zero-length clips and
-/// matches no art.
-fn install_party_battle_forms(session: &mut BootSession) {
-    use legaia_engine_core::battle_party_form as bpf;
-    let mut vram = legaia_tim::Vram::new();
-    let index = session.host.index.clone();
-    let Some(sources) = bpf::PartyFormSources::load(&index, &mut vram) else {
-        return;
-    };
-    let n = session.host.world.party.party_count.min(3) as usize;
-    for member in 0..n {
-        if let Some(mut form) =
-            bpf::build_party_battle_form(&index, &session.host.world, &sources, &mut vram, member)
-        {
-            session.host.world.install_party_battle_form(&mut form);
-        }
-    }
-}
-
 /// One line of battle state for a stall report.
 fn battle_snapshot(session: &BootSession) -> String {
     let w = &session.host.world;
@@ -1288,7 +1265,6 @@ fn battle_snapshot(session: &BootSession) -> String {
 /// Fight a battle with the pad ([`fight_pad`]). `None` when it ended and a
 /// walking mode came back.
 fn drain_battle(session: &mut BootSession) -> Option<Run> {
-    install_party_battle_forms(session);
     NO_ITEM.with(|n| n.borrow_mut().clear());
     NO_MAGIC.with(|n| n.borrow_mut().clear());
     let mut prev = 0u16;

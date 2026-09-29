@@ -207,6 +207,11 @@ pub struct SceneHost {
     /// Tracks whether the cast-effect pool install was attempted, so the 64
     /// band reads (PROT 0903..0966) only happen once per host.
     cast_effect_pool_loaded: bool,
+    /// The fight in progress's party battle forms, built and installed on
+    /// the actors by [`SceneHost::ensure_battle_party_forms`] once per
+    /// [`crate::world::BattleState::entry_serial`]; kept for the renderers
+    /// until the battle ends. `None` outside battle.
+    battle_party_forms: Option<crate::battle_party_form::BattlePartyForms>,
     /// What the last **mode-24 minigame door-warp** drain did, if one has run.
     ///
     /// Deliberately a host field rather than a [`SceneTickEvent`] variant: the
