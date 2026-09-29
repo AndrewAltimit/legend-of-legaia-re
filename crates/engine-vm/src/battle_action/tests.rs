@@ -1152,6 +1152,26 @@ fn attack_return_without_counter_attack_routes_to_done_cleanup() {
     ));
 }
 
+/// State `0x20` holds while the attacker's committed id is non-zero - the
+/// last swing still playing, with its hit events (and the parked-cursor hit
+/// that lands the combo total on live HP) still to fire. Leaving at once let
+/// a long art's killing blow land during the next actor's action.
+#[test]
+fn attack_return_holds_until_the_last_swing_has_finished() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    ctx.action_state = ActionState::AttackReturn.as_byte();
+    host.actors[1].current_anim = 0x11;
+    for _ in 0..8 {
+        let out = step(&mut host, &mut ctx);
+        assert!(matches!(out, StepOutcome::Stay));
+        assert_eq!(ctx.action_state, ActionState::AttackReturn.as_byte());
+    }
+    // The anim tick commits the idle `0x1F` staged: the band moves on.
+    host.actors[1].current_anim = 0;
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.action_state, ActionState::DoneCleanup.as_byte());
+}
+
 #[test]
 fn magic_cast_begin_capture_spell_routes_to_capture_branch() {
     let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);

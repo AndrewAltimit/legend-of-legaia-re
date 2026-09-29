@@ -536,6 +536,22 @@ pub(super) fn attack_return<H: BattleActionHost + ?Sized>(
 ) -> StepOutcome {
     let slot = ctx.active_actor;
     host.pose(slot, Pose::Recover);
+    // State `0x20` opens on the attacker's **committed** id (`lbu v0,0x1d9(s3)`
+    // / `bne v0,zero,0x801E5660` at `0x801E54EC..0x801E54F4`): while it is
+    // non-zero the arm only re-poses and holds. `0x1F` staged idle over the
+    // last strike byte, and the anim tick commits that idle at the playing
+    // clip's own end - so this is the wait for the **last swing to finish**.
+    // `0x1F`'s own gate (`+0x1DC` bit 1) opens when that last clip
+    // *commits*, which is its first frame, not its last: its hit events -
+    // and the parked-cursor hit that subtracts the accumulated total from
+    // live HP - all land after it. Leaving here at once let an art whose
+    // clip outlasts the Done band's countdown land its killing blow during
+    // the *next* actor's action, which then walked at a corpse whose body
+    // pair the death clip drags out of reach, and the round never ended.
+    // PORT: FUN_801E295C (`0x801E54EC..0x801E54F4`, the state-0x20 head)
+    if host.actor(slot).is_some_and(|a| a.current_anim != 0) {
+        return stay(ctx);
+    }
     // The counter window's gate, retail's order (`0x801E5554..0x801E557C`):
     // the scripted-fight flag `+0x287` first, then the counter byte `+0x288`.
     // (Retail's middle term, `DAT_8007BD0D`, has no port field.)
