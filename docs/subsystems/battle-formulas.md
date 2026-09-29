@@ -626,9 +626,8 @@ belongs to neither branch: it runs the melee kernel `FUN_801EC3E4`
 [above](#the-melee-roll-pair-and-the-underdog-rewrite).)
 
 **The summon branch is wired the same way for player Seru-magic casts**
-(`World::player_summon_predamage`): when the monster catalog resolves the
-spell's namesake summon creature, `cast_spell_on_slots` replaces the MP-scaled
-placeholder with `summon_predamage_lazy` seeded faithfully - summon-body
+(`World::player_summon_predamage`): when the spell's namesake summon creature
+resolves, `cast_spell_on_slots` replaces the MP-scaled placeholder with `summon_predamage_lazy` seeded faithfully - summon-body
 HP/INT from the creature's `battle_data` record (the stats the loader installs
 on the freshly-spawned slot-7 actor; INT = record `+0x18`), the caster's `battle_accuracy` (`+0x168`)
 doubled, the affinity percent inside the roll, and the caster's per-spell
@@ -641,7 +640,12 @@ the lazily-drawn `rand()%9+8` floor, the per-caster summon power-percent
 attacker + defender eager, the bonus arm and the floor lazy, so the cursor
 advances by two to four draws exactly as `FUN_801dd0ac`/`FUN_801ddb30` do.
 Gating mirrors the arts path: an unresolved creature (disc-free / synthetic
-battles) keeps the placeholder magnitude and an untouched RNG stream.
+battles) keeps the placeholder magnitude and an untouched RNG stream. The
+creature is read from `DiscTables::summon_creatures`, which the scene entry
+fills from the monster archive for every summon, not from the scene's monster
+catalog: the catalog holds only the scene's own monsters, and a lookup there
+resolved a summon only where its creature also fought as an enemy - every other
+cast took the placeholder, which a boss's defence floors at 1.
 
 #### Element-affinity matrix (`FUN_801dd864`, `0x801F53E8`)
 
