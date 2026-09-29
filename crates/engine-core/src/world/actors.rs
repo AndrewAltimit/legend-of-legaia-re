@@ -1635,7 +1635,11 @@ impl World {
         self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
         self.battle.end = None;
         // Effect pool is reused across scenes - reset to a fresh instance
-        // (per-battle the head/free-list rebuilds from scratch).
+        // (per-battle the head/free-list rebuilds from scratch). This is
+        // retail's battle-loader init call (stage `0xE`, `0x80052670`): a
+        // fresh pool is exactly the state `FUN_801DE914(0x1000, 0xA00)`
+        // leaves, so `Pool::init_head` carries `REPLACED-BY` naming this line.
+        // REF: FUN_801DE914
         self.effect_pool = vm::effect_vm::Pool::new();
         // Sparring fight: resolve the battle-stage id exactly as retail's
         // battle-entry tail does - default 0, and raise it to the tutorial

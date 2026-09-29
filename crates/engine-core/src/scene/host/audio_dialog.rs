@@ -13,9 +13,9 @@ impl SceneHost {
     /// [`Self::route_bgm_events`] plays that. Kept for the audio-trace
     /// oracle's scene-local sweep. Returns `None` when no scene is loaded or
     /// no SEQ-bearing entry maps to the id.
-    // PORT: FUN_800243F0 (the BGM-id -> PROT-slot resolution; the retail
-    // double-buffered async load poller around it is host-replaced by the
-    // engine-audio Sequencer + this synchronous byte access)
+    ///
+    /// REF: FUN_800243F0 (the change-detection index only; the resolver's
+    /// port is [`Self::music_bank_entry_bytes`])
     pub fn bgm_seq_bytes(&self, bgm_id: u16) -> Result<Option<Arc<Vec<u8>>>> {
         let Some(assets) = self.assets.as_ref() else {
             return Ok(None);
@@ -55,6 +55,16 @@ impl SceneHost {
     /// here are that pair composed into one stream
     /// ([`crate::mode_entry_init::two_part_bgm_stream`]), so both play hosts
     /// stage it through the same owned-VAB path as every other track.
+    ///
+    /// This is the half of `FUN_800243F0` that runs in play: the op-`0x35`
+    /// start arm of [`Self::route_bgm_events`] asks it for every track, after
+    /// applying the scene-local overwrite
+    /// ([`super::SCENE_LOCAL_BGM_FALLBACK_ID`], the `0x800245A4..0x800245BC`
+    /// arm), and the hosts' battle / minigame BGM restores ask it directly.
+    ///
+    /// PORT: FUN_800243F0 (the BGM-id -> PROT-slot resolution; the retail
+    /// double-buffered async load poller around it is host-replaced by the
+    /// engine-audio Sequencer + this synchronous byte access)
     pub fn music_bank_entry_bytes(&self, bgm_id: u16) -> Result<Option<Arc<Vec<u8>>>> {
         use crate::mode_entry_init::{field_bgm_plan, two_part_bgm_stream};
         // No latch and no playing slot: re-starts are the director's to

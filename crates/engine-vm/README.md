@@ -97,7 +97,7 @@ Effect VM with a 32-master + 128-child slot pool. Both retail entries sit two
 words ahead of their prologues (`0x801DFDF8`, `0x801E0088`), where the
 pool-ready byte `0x8007BD58` is loaded; the walker is called once per battle
 frame from the draw tick `FUN_800480D8`.
-`Pool::init` / `Pool::spawn` / `Pool::tick_retail` are the three API entries
+`Pool::init_head` / `Pool::spawn` / `Pool::tick_retail` are the three API entries
 (`Pool::child_billboards` is the pass-2 render snapshot); the lifecycle is
 pure data (the catalog's spawn records + animation frames), so `EffectHost`
 only supplies the RNG and the summon routing.

@@ -51,7 +51,7 @@ fn init_zeros_all_slots() {
     pool.master_slots[0].child_count = 1;
     pool.children[5].pos[0] = 0xDEAD_BEEFu32 as i32;
 
-    pool.init(PoolHead {
+    pool.init_head(PoolHead {
         motion_scale: 0x1000,
         sprite_scale: 0x0A00,
         atlas_base: 0x1234_0000,
@@ -64,6 +64,26 @@ fn init_zeros_all_slots() {
     assert_eq!(pool.head.motion_scale, 0x1000);
     assert_eq!(pool.head.sprite_scale, 0x0A00);
     assert_eq!(pool.head.atlas_base, 0x1234_0000);
+}
+
+/// The `REPLACED-BY` claim on `Pool::init_head`: the per-battle `Pool::new()`
+/// `World::enter_battle` assigns is the state retail's init call
+/// (`FUN_801DE914(0x1000, 0xA00)`) leaves, whatever the pool held before.
+#[test]
+fn a_fresh_pool_is_what_the_retail_init_leaves() {
+    let mut used = Pool::new();
+    used.master_slots[3].child_count = 2;
+    used.master_slots[3].pos_x = 77;
+    used.children[100].pos[2] = -5;
+    used.head.sprite_scale = 1;
+    used.init_head(PoolHead {
+        motion_scale: 0x1000,
+        sprite_scale: 0x0A00,
+        ..PoolHead::default()
+    });
+    assert_eq!(PoolHead::default().motion_scale, 0x1000);
+    assert_eq!(PoolHead::default().sprite_scale, 0x0A00);
+    assert_eq!(format!("{used:?}"), format!("{:?}", Pool::new()));
 }
 
 #[test]

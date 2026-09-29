@@ -207,9 +207,9 @@ other kind:
   proof the carriers exist, not a host running them;
 - `stream_file_real` drives the test-only `StreamFileHost`, the disclosed
   shim whose missing production owner is the reason its row is filed at all;
-- `scene_chain_e2e` calls `SceneHost::bgm_seq_bytes` itself, and that call is
-  the whole of what the row asks about (see
-  [its verdict](#rows-no-ladder-converts-and-why)).
+- `scene_chain_e2e` calls `SceneHost::bgm_seq_bytes` itself - the
+  change-detection index an oracle reads, not the resolver play runs, which
+  is why `FUN_800243F0`'s tag sits on `SceneHost::music_bank_entry_bytes`.
 
 ### A tag between two functions is scored by the next function that has regions
 
@@ -1141,8 +1141,7 @@ gap as still owed.
 
 Five rows left this table through the scene-session ladder
 (`crates/engine-core/tests/w1e_scene_bgm_transition_ladder.rs`): the four BGM
-plumbing addresses (`80019898` `800266e0` `80026520`, and `800243f0`, which the
-current union does not enter - [its verdict](#rows-no-ladder-converts-and-why)) and the
+plumbing addresses (`80019898` `800266e0` `80026520` `800243f0`) and the
 scripted CLUT-cell cross-fade arm (`801e4c58`). The BGM four needed a
 `BgmDirector` more than they needed a scene - see the structural exclusion
 above - and driving the sub-ops the scenes' own MANs carry, in the order a
@@ -1324,14 +1323,12 @@ blocks a (b) row, or the disclosure state of a (c) row.
 
 | module | n | bucket | reach | addresses |
 |---|---|---|---|---|
-| `actor_alloc.rs` | 3 | anchor | the tags sit on the trait, whose only in-file body is an overridden default - see [the note](#rows-no-ladder-converts-and-why) | `80024c88` `80024d78` `80024dfc` |
 | `battle_action.rs` | 1 | - | a `//!` module anchor, not a routine verdict - see [the added rows' note](#two-of-the-added-rows-were-the-anchor-mechanism-not-a-gap) | `801d5854` |
 | `battle_action/overlay_rng.rs` | 1 | (c) | disclosed | `801d0290` |
 | `battle_burst.rs` | 1 | (c) | disclosed | `801f30c4` |
 | `battle_cursor_pose.rs` | 1 | (a) | wired since the note below was written: `battle_commit_log::stage_commit_row` copies the placement on a commit whose target is a whole row (`AllEnemies` / `AllAllies`), and the commit log is drawn on both battle HUDs. No member commits an all-target command; the rest of the module is entered (`801d32bc` through `battle_member_step_back`, `801d5778` through the fights) or `REPLACED-BY` (`801d9ae8`) | `801d57e8` |
 | `battle_helpers.rs` | 1 | (c) | disclosed | `80046870` |
 | `battle_stream_slot.rs` | 2 | (c) | disclosed | `80055b4c` `801f17f8` |
-| `effect_vm/pool.rs` | 1 | (c) | `Pool::init`'s only caller is a unit test; production pools are built by `Pool::new()` in the post-init state - see [the note](#rows-no-ladder-converts-and-why) | `801de914` |
 | `field_actor_timers.rs` | 2 | (a) | a scene script issuing the field-VM op that **spawns** the timer - `0x43 0C` for the cinematic wipe (`op43_alloc_scripted_actor`) and `0x43 09` for the three-axis tween (`op43_sub9_tween`). Both `step` bodies already run from the production world tick (`world/frame_tick.rs`), and the in-crate oracle that drives them (`world/tests/field_timer_actors.rs`) can never be a union member. The [op census](#the-op-census-names-both-carriers) finds **no coherent carrier for either op**, so this row is close to `(d)` - see the note under that section | `801dd4c4` `801dd784` |
 | `field_party_cursor.rs` | 1 | (c) | disclosed | `801f1278` |
 | `field_passive_hud.rs` | 1 | (b) | a party member holding one of the six HUD-badge ability bits. `hud_anchor_offsets` is reached only through `World::passive_hud_points`, itself behind `World::passive_hud_active()`, and a cold-start party holds none of the six - so the badge column never anchors and the offsets never resolve | `801d095c` |
@@ -1750,7 +1747,7 @@ remaining proposal would still move:
 | boot chain | *built* | `w3c_boot_logos_ladder` opens the publisher-logo phase - the one stage every other member starts after |
 | field fog | *built* | `w1h_fog_page_prims` composes the page's screen-prim pass over a scene whose entry script raises the gate; the `fog_particles.rs` trio is the one cluster no *headless* member could have taken |
 | composed overworld | *withdrawn* | the three rows it named have no constructor on any host, so a drawing host parked on the overworld enters none of them - see [the trio](#the-composed-overworld-trio-has-no-constructor-on-any-host) |
-| field actors | *withdrawn* | the allocator rows are the trait anchor's mechanism and the pool's `init` has no production caller, so a fixture moves none of them - see [the note](#rows-no-ladder-converts-and-why) |
+| field actors | *withdrawn* | the allocator rows and the pool's `init` had no production caller, so no fixture could move them; they carry `REPLACED-BY` now, naming the per-site allocation and the per-battle `Pool::new()` that do their jobs |
 
 Quote that table's *rows* column against a fresh
 `replay-port-coverage.py` run rather than as a standing figure: it is the count
@@ -2217,7 +2214,6 @@ one that does was declined for the reason given.
 
 | address | bucket | why |
 |---|---|---|
-| `800243f0` | (d) | `SceneHost::bgm_seq_bytes`, the SEQ bytes at a scene-local id. Its one production caller is the `audio-trace` oracle's scene-local sweep (`engine-shell::audio_trace_oracle`); the playback route resolves through the fallback resolver beside it and never calls it. It was credited here to the scene-BGM ladder, which drives the route rather than this function. The tag sits on the oracle-only half, so the address follows it - a tag move, not a fixture |
 | `80035bd0` | (a) | the SFX ring's replace-last op. `World::replace_last_sfx_cue` produces it (world-map sub-list and text box, the tile-board bonk, the Baka hub's confirm stings, the Incense notice), and only the hosts' SFX schedulers consume it - `AudioBgmDirector::apply_sfx_ring_ops` and the page's `play_sfx`. No headless member holds a scheduler (`enable_audio: false`), and no page member reaches one of those producers |
 | `8004c650` | (c) | `find_arts_record` carries `REPLACED-BY` (the typed arts catalog) and is live only through the permissive graph; no host is owed a call |
 | `801d31b0` | (a), render pass | `emit_strip`, reached through `engine-ui::move_strip::move_strip_prims` from both hosts' render passes, on the move-VM extension's sub-op `0x2C` strip requests. A composing member parked where a shipped move program issues `2F 2C` converts it; a headless one cannot |
@@ -2228,15 +2224,6 @@ one that does was declined for the reason given.
 | `801dbc30` | (b) | see [the gate table](#gates-behind-the-b-rows). Also a host asymmetry: only the native window's battle HUD draws the cross-out (`window/hud.rs`); the browser play page never calls `cross_out_mark_sprite` |
 | `801e0418` | (c), undisclosed | `title_strip_rows` is reached only from `title_strip_sprites`, which nothing in the workspace calls. Retail's one caller is `FUN_801DD35C` at `0x801E0260`, running it while `_DAT_8007BB00` is set with the dimmed title backdrop beside it - the title art behind the boot save-select. A wiring gap on both hosts, and the tag carries no disclosure |
 | `801e45bc` | (a) | the move-VM extension's Bezier evaluator, run by sub-ops `0x0E` and `0x12`. The move-VM census tests find shipped carriers but step them under a `NullHost`; a member that runs one of those programs in a `World` converts it |
-
-`801de914` (the effect pool's `init`) is filed `(a) field-actors` in the
-[`engine-vm` table](#engine-vm) and is `(c)` on a caller scan: `Pool::init`'s
-only caller is a unit test, and every production pool is built by
-`Pool::new()` in the post-init state. `80024c88` / `80024d78` / `80024dfc` are
-the anchor mechanism rather than a gap: the three tags sit on the
-`ActorAllocatorHost` trait, whose only body in its own file is the
-`on_actor_cleanup` default that `World`'s implementation overrides, so the
-anchor can never be entered, whatever runs `World`'s implementation.
 
 ## Gates behind the (b) rows
 

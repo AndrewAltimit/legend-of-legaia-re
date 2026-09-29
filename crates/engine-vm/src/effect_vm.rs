@@ -1,6 +1,6 @@
 //! Battle-effect VM, ported from the `0898_xxx_dat` battle overlay.
 //!
-//! PORT: FUN_801DE914, FUN_801DFDF0, FUN_801E0080
+//! PORT: FUN_801DFDF0, FUN_801E0080
 //!
 //! The spawn API's entry is `0x801DFDF0`: its first two words load the
 //! pool-ready byte `0x8007BD58` ahead of the `addiu sp,sp,-0x30` at
@@ -43,7 +43,7 @@
 //!
 //! | Function | Role | Status |
 //! |---|---|---|
-//! | `0x801DE914` | Init / pack-fixup | Ported as [`Pool::init`] |
+//! | `0x801DE914` | Init / pack-fixup | Ported as [`Pool::init_head`]; replaced in play by the per-battle [`Pool::new`] |
 //! | `0x801DFDF0` | Public spawn API: `(byte effect_id, short* world_pos, ushort angle)` | Ported as [`Pool::spawn`] |
 //! | `0x801E0080` | Per-frame walker (prologue at `0x801E0088`) | [`Pool::tick_retail`] (pass 1) + [`Pool::child_billboards`] (pass 2) |
 //!
