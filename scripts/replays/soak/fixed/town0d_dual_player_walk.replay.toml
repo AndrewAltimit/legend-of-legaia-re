@@ -3,6 +3,7 @@
 # soak-seed = 1
 # soak-signature = "softlock|town0d|helper@0x0050:opc7"
 # detail: no progress for 1800 frames under 63 distinct pad masks
+# fixed: a playing timeline steps only the placements it addresses, so Noa's and Gala's talk bodies stay asleep
 # soak-min-distinct = 1
 # reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell --profile release-test --test soak_harness soak_replay -- --nocapture
 [meta]

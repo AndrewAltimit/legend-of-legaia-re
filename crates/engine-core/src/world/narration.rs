@@ -1660,6 +1660,14 @@ impl World {
                         break;
                     }
                 }
+                if let Some((_, ci)) = target
+                    && !channels[ci].object_bind
+                    && !tl
+                        .addressed_channels
+                        .contains(&channels[ci].placement_index)
+                {
+                    tl.addressed_channels.push(channels[ci].placement_index);
+                }
                 let result = if let Some((_, ci)) = target {
                     // Object-bind channels are poke targets, but their
                     // `placement_index` is a flat record index - never
@@ -2216,9 +2224,10 @@ impl World {
         // in free-roam - its post-prologue body is the talked-to
         // conversation (and town01 `P1[40]`'s opens with a `52 34` flag SET
         // plus an op-`0x45` camera configure that must never fire
-        // ambiently). The engine's engaged windows: an active cutscene
-        // timeline (whose choreography drives the channels), plus the
-        // opt-in `animate_field_npcs` liveliness approximation.
+        // ambiently). The engine's engaged windows: the placements an active
+        // cutscene timeline (or helper) has addressed - its choreography
+        // drives them - plus the opt-in `animate_field_npcs` liveliness
+        // approximation.
         // REF: FUN_8003BC08 (the `+0x10 & 0x100` dispatch gate)
         if !self.cutscene_timeline_active() && !self.npcs.animate {
             return;
@@ -2287,6 +2296,23 @@ impl World {
             .filter(|tl| !tl.done)
             .and_then(|tl| tl.interaction_slot)
             .map(usize::from);
+        // Outside the entry pre-run and the opt-in liveliness mode, the
+        // engaged window is the timeline's: a placement steps only once a
+        // playing context has addressed it
+        // ([`crate::cutscene_timeline::CutsceneTimeline::addressed_channels`]).
+        // Stepping every placement instead woke each one's talk body - in
+        // `town0d` one walk-on beat ran Noa's (`P1[2]`) and Gala's (`P1[3]`)
+        // first-talk arms at once, and both spawned records walked the player
+        // toward different tiles.
+        let engaged: Option<std::collections::HashSet<usize>> =
+            (!entry_prerun && !self.npcs.animate).then(|| {
+                self.cutscene
+                    .timeline
+                    .iter()
+                    .chain(self.field_vm.helper_contexts.iter())
+                    .flat_map(|tl| tl.addressed_channels.iter().copied())
+                    .collect()
+            });
         let mut channels = std::mem::take(&mut self.field_vm.channels);
         // Host hooks resolve cross-context ids against the channel set while
         // one of these is executing; the live vector is moved out for the
@@ -2313,6 +2339,12 @@ impl World {
             // ([`crate::cutscene_timeline::CutsceneTimeline::interaction_slot`]),
             // so stepping the channel too would run the same bytes twice.
             if interaction_slot == Some(channels[i].placement_index) {
+                continue;
+            }
+            if engaged
+                .as_ref()
+                .is_some_and(|set| !set.contains(&channels[i].placement_index))
+            {
                 continue;
             }
             if man.len() <= channels[i].record_offset {
@@ -4116,5 +4148,44 @@ mod tests {
             "the walk starts at the seat, not the hide box"
         );
         assert_eq!(leg.target, (0x940, 0x840));
+    }
+
+    #[test]
+    fn a_timeline_wakes_only_the_placements_it_addresses() {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        use crate::field_channels::FieldChannel;
+        use legaia_engine_vm::field::FieldCtx;
+        // Two placements whose talk bodies are `SET 0x20` / `SET 0x21`. The
+        // timeline addresses only the first (`B1 40 01`, a cross-context
+        // CFLAG_SET), then waits.
+        let man = vec![0x50, 0x20, 0x21, 0x50, 0x21, 0x21];
+        let mut w = World::new();
+        w.cutscene.timeline = Some(CutsceneTimeline::new(
+            vec![0xB1, 0x40, 0x01, 0x4A, 0x40, 0x00],
+            0,
+        ));
+        w.field_vm.channels_man = Some(std::sync::Arc::new(man));
+        let chan = |placement_index, script_id, record_offset| FieldChannel {
+            placement_index,
+            ctx: FieldCtx {
+                script_id,
+                ..FieldCtx::default()
+            },
+            record_offset,
+            pc: 0,
+            done: false,
+            object_bind: false,
+        };
+        w.field_vm.channels = vec![chan(1, 0x40, 0), chan(2, 0x41, 3)];
+        // Before the timeline addresses anyone, no talk body runs.
+        w.step_field_channels();
+        assert!(!w.system_flag_test(0x20) && !w.system_flag_test(0x21));
+        w.step_cutscene_timeline();
+        w.step_field_channels();
+        assert!(w.system_flag_test(0x20), "the addressed placement steps");
+        assert!(
+            !w.system_flag_test(0x21),
+            "an unaddressed placement's talk body stays asleep"
+        );
     }
 }
