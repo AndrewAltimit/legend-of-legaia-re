@@ -66,6 +66,7 @@ fn rod_mesh() -> RodMesh {
     RodMesh {
         rods: [Some(rest.clone()), Some(rest.clone()), Some(rest)],
         bend: Some(bend),
+        ..Default::default()
     }
 }
 
@@ -273,5 +274,100 @@ fn the_venue_rods_are_scene_models_0x19_to_0x1b_with_a_tip_the_bend_moves() {
         );
         // The bend moves it.
         assert_ne!(mesh.tip(r, 0x1000).unwrap(), tip, "rod {r} does not bend");
+    }
+}
+
+#[test]
+fn the_session_draws_no_rod_before_the_cast_and_asks_for_one_after_it() {
+    // Disc-free: the synthetic rod carries no primitives, so the face list
+    // stays empty either way - the non-empty case is the disc test below.
+    let mut p = pond();
+    assert!(p.rod_faces().is_empty(), "no rod before the cast");
+    cast(&mut p);
+    assert!(p.rod_actor().and_then(|r| r.pose).is_some());
+    assert!(
+        p.rod_faces().is_empty(),
+        "a primitive-less rod draws nothing"
+    );
+}
+
+/// The real rods drawn: every rod is untextured flat / Gouraud geometry,
+/// and the cast pose puts the rod on screen with the line's rod end on it.
+#[test]
+fn the_venue_rods_draw_in_the_cast_pose_around_the_line_tip() {
+    use legaia_engine_core::fishing_actors::{RodActor, rod_faces, rod_tip_screen};
+    let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let host = match legaia_engine_core::scene::SceneHost::open_disc(&disc) {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("[skip] open_disc failed: {e:#}");
+            return;
+        }
+    };
+    let scene = legaia_engine_core::scene::Scene::load(&host.index, "other1").expect("other1");
+    let mesh = RodMesh::from_scene(&scene).expect("the venue carries its rods");
+    for r in 0..3 {
+        let prims = &mesh.prims[r];
+        let n_verts = mesh.rods[r].as_ref().unwrap().len() / 8;
+        // Rods 0 / 1: 8 F3 + 18 F4 + 18 G4; rod 2: 7 F4 + 8 G3 + 29 G4.
+        assert_eq!(prims.len(), 44, "rod {r}: every primitive is untextured");
+        assert!(
+            prims
+                .iter()
+                .all(|p| p.verts.iter().all(|&v| usize::from(v) < n_verts)),
+            "rod {r}: an index runs past object 0's vertices"
+        );
+        // Swing into the cast pose.
+        let mut rod = RodActor::cast();
+        while rod.swing == RodSwing::Cast {
+            rod.tick(Some(&mesh), r, 1);
+        }
+        let pose = rod.pose.unwrap();
+        let faces = rod_faces(&mesh, r, pose);
+        let ots: Vec<u32> = faces.iter().map(|f| f.ot).collect();
+        eprintln!(
+            "rod {r}: {} of {} faces drawn, ot {:?}..{:?}",
+            faces.len(),
+            prims.len(),
+            ots.iter().min(),
+            ots.iter().max()
+        );
+        // A closed shaft shows roughly its camera-facing half.
+        assert!(
+            faces.len() > prims.len() / 4 && faces.len() < prims.len(),
+            "rod {r}: {} faces",
+            faces.len()
+        );
+        // The tip is a corner of the rod's far end, and the far end links in
+        // the line's bucket (`IR3 >> 5`) or next to it.
+        let tip = rod_tip_screen(
+            mesh.tip(r, pose.weight).unwrap(),
+            pose.rot_x,
+            pose.rot_z,
+            pose.yaw,
+        );
+        assert_eq!(rod.tip, Some(tip));
+        let near_tip: Vec<u32> = faces
+            .iter()
+            .filter(|f| f.xy.contains(&tip.sxy))
+            .map(|f| f.ot)
+            .collect();
+        assert!(!near_tip.is_empty(), "rod {r}: no face touches the tip");
+        let line_ot = (tip.depth.max(0) as u32) >> 5;
+        assert!(
+            near_tip.iter().all(|&o| o.abs_diff(line_ot) <= 1),
+            "rod {r}: tip faces {near_tip:?} vs line {line_ot}"
+        );
+        // The butt sits nearer the eye than the tip.
+        assert!(*ots.iter().min().unwrap() < line_ot);
+        // Every face lies around the drawing area.
+        for f in &faces {
+            for &(x, y) in &f.xy {
+                assert!((-64..384).contains(&x) && (-64..304).contains(&y), "{f:?}");
+            }
+        }
     }
 }

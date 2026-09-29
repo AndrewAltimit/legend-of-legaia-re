@@ -1669,6 +1669,22 @@ impl PondSession {
         self.rod_actor.as_ref()
     }
 
+    /// This frame's rod model as retail links it: the rod actor's last pose
+    /// through [`crate::fishing_actors::rod_faces`], in packet order, in
+    /// retail 320x240 screen space. Every host draws these ahead of the line
+    /// (the rod actor runs before the lure tick, so in a shared bucket its
+    /// packets are the earlier `AddPrim`s). Empty with no rod out or no rod
+    /// geometry.
+    pub fn rod_faces(&self) -> Vec<crate::fishing_actors::RodFace> {
+        let Some(pose) = self.rod_actor.as_ref().and_then(|r| r.pose) else {
+            return Vec::new();
+        };
+        let Some(mesh) = self.venue_map.as_ref().and_then(|v| v.rod_mesh.as_ref()) else {
+            return Vec::new();
+        };
+        crate::fishing_actors::rod_faces(mesh, self.rod.clamp(0, 2) as usize, pose)
+    }
+
     /// The lure tick's rod writes for one in-water frame, off the held pad.
     fn drive_rod(&mut self, input: PondInput, hooked: bool, fs: i32) {
         if let Some(rod) = self.rod_actor.as_mut() {
