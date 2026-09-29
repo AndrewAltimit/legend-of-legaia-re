@@ -1899,12 +1899,20 @@ impl PlayWindowApp {
                     let Some(tmd_idx) = actor.tmd_binding else {
                         continue;
                     };
-                    // In a stage-dome battle, draw only the ACTIVE battle
-                    // actors (party + monsters). The scene-init actors
-                    // (bound but inactive, parked at the origin) would
-                    // otherwise pile their meshes at world (0,0,0) - the
-                    // "duplicate Vahn" + scattered scene geometry.
-                    if in_battle && self.battle_stage_mesh.is_some() && !actor.active {
+                    // Draw only ACTIVE (spawned) actors -
+                    // `World::actor_slot_drawn`. The never-spawned slots
+                    // `init_scene_animations` pre-binds would otherwise draw
+                    // every scene-pack mesh at world (0,0,0): in a stage-dome
+                    // battle the "duplicate Vahn", in the field uru's sky /
+                    // cliff pack smeared across the whole frame. The browser
+                    // play page never drew them (it draws the player and the
+                    // NPC catalog, not `world.actors`).
+                    if !self
+                        .session
+                        .host
+                        .world
+                        .actor_slot_drawn(i, in_battle && self.battle_stage_mesh.is_none())
+                    {
                         continue;
                     }
                     // The summon band's hide (`+0x21C = 0xFF` with the prim

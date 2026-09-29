@@ -1307,6 +1307,25 @@ impl World {
         }
     }
 
+    /// Whether a host's per-actor mesh pass draws actor `slot`: it must carry
+    /// a TMD binding **and** be active (spawned). [`Self::init_scene_animations`]
+    /// pre-binds every slot `K` to scene TMD `K` so a later spawn finds its
+    /// mesh, which leaves the never-spawned slots bound, inactive and parked
+    /// at the origin. Retail has no such actors - `FUN_8001E890` registers the
+    /// scene TMDs in the pointer table without allocating any, and the render
+    /// dispatcher walks only the allocated list - so drawing them paints every
+    /// scene-pack mesh at world `(0, 0, 0)`.
+    ///
+    /// `synthetic_battle_camera` is the one exception the native window keeps:
+    /// a battle with no stage dome frames every bound body round the origin.
+    // REF: FUN_8001E890 (scene TMD registration - no actor allocation)
+    // REF: FUN_8001D140 (the render dispatcher's allocated-list walk)
+    pub fn actor_slot_drawn(&self, slot: usize, synthetic_battle_camera: bool) -> bool {
+        self.actors
+            .get(slot)
+            .is_some_and(|a| a.tmd_binding.is_some() && (a.active || synthetic_battle_camera))
+    }
+
     /// Bind actor `slot` to TMD index `tmd_idx` in `SceneResources::tmds`.
     /// Renderers use this binding to look up the right mesh when applying
     /// the actor's `pose_frame`. No-ops for out-of-range slots.

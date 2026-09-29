@@ -1787,6 +1787,18 @@ corners must project inside the depth range even though the camera frames only
 a small player-sized box, and the near plane must stay within a few units of
 the lens at every framing distance the engine uses.
 
+"Every loaded body" means every body retail would draw, and an actor slot is
+not one until something spawns it. `World::init_scene_animations` binds every
+actor slot `K` to scene TMD `K` ahead of time so a field-VM spawn finds its
+mesh; the slots nothing spawns stay bound, inactive and at the origin. Retail
+has no counterpart - its scene load (`FUN_8001E890`) registers the TMDs in the
+pointer table and allocates no actor for them - so the per-actor pass draws a
+slot only through `World::actor_slot_drawn` (bound **and** active). Drawing
+the rest put the whole scene pack at world `(0, 0, 0)`: in uru that pack's
+sky and cliff geometry wraps the origin, and the frame filled with stretched
+texture while the camera matched retail exactly. Pinned by
+`crates/engine-core/tests/field_unspawned_actor_draw_disc.rs`.
+
 The **site play page** (`site/js/play-app.js`) draws the whole scene every
 frame, unconditionally, matching this renderer - `OCCLUDER_CULL = false`. It
 once ran a per-frame occlusion cull (drop a body the eye-to-player segment
