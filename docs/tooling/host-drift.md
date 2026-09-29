@@ -3140,7 +3140,11 @@ The audio rows of the same pass are closed or settled in
   also carried a defect of its own: it skipped every call while four effect
   lists were empty, a test that left out the `4C DB` blend fades (a lone
   blend fade never stepped natively) and that left each list's tick backlog
-  banked for the next effect to consume at once.
+  banked for the next effect to consume at once. The headless session is a
+  third driver of the same tail: `BootSession::tick` runs its world side
+  through `World::step_world_frame_tail` whenever the caller does not drain
+  the queues itself, so replays and ladders execute what the hosts do
+  ([`reach-triage.md`](reach-triage.md#what-a-pad-only-ladder-structurally-cannot-execute)).
 - **The page's screen-prim camera centre.** Fog, drop shadows, move strips and
   light pools resolved the follow camera with a pinned `[0, 0]` fallback focus
   on the page and the scene AABB centre natively; the page passes the AABB

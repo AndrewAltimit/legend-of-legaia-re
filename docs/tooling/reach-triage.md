@@ -28,8 +28,8 @@ can and cannot execute at all.
 The report opens with three counts over the canonical union: the `// PORT:`
 anchors the static graph calls **live**, how many of those some run
 **entered**, and how many **no run entered** - the third being the set this
-page verdicts. Over the current union they are **863 live / 783 entered / 48
-never entered, across 80 ladders**, with both defect lists empty (and 39
+page verdicts. Over the current union they are **859 live / 789 entered / 38
+never entered, across 83 ladders**, with both defect lists empty (and 39
 addresses in the *not observable* bucket plus 2 const anchors, outside all
 three).
 
@@ -299,6 +299,22 @@ to the reach report.
 `BootSession::tick` routes the naming prompt's pad edges as both hosts do
 (`World::step_name_entry_frame`), so a headless run that only ticks crosses
 the opening's op `0x49` (see the [full-game ladder](full-game-ladder.md#seeding)).
+
+It also runs the **world side of the hosts' frame tail**. Both play hosts
+follow the scene tick with a tail of world-side steps - seat the pending
+move-FX, advance the three effect scene-graphs, route the battle effect-script
+spawns, drain the ANIMATE cues, drain the scripted VRAM effects - and for as
+long as only they ran it, a headless session dropped those queues and executed
+none of the code behind them: an effect a fight seated was never retired, a
+stager a scene spawned never advanced, a `4B` cue never latched its clip. The
+steps are one engine kernel now, `World::step_world_frame_tail`, which
+`BootSession::tick` calls for every caller that does not drain the queues
+itself (the play window does, and keeps its own interleaving of render work
+between the same steps), together with `World::step_field_vram_effects` over
+the scene's own VRAM image. What the tail hands back for drawing is dropped;
+the spawned move's sound cue reaches a director when one is attached. The
+summon-spawn request is deliberately not taken - its only consumer is a host's
+mesh seat - so a headless caller still reads it off the world.
 
 The union now carries a rendering host: `play_compose_ladder`
 (`crates/web-viewer/tests/`) drives the browser play page's `LegaiaRuntime` by
@@ -919,7 +935,7 @@ all of it executes under one ladder now.
 | group | n | addresses | what runs it |
 |---|---|---|---|
 | `dance.rs` (HUD + banner) | 7 | `801d231c` `801d3e28` `801d32f8` `801d2524` `801d2d98` `801d2f38` `801d387c` | `40:K`, then judged face-button presses |
-| `fishing_chrome.rs` | 5 | `801d03b0` `801d78c0` `801d74b0` `801d70ec` `801d7c30` | `40:L` + a cast; the venue panel needs `P`. A sixth address, `801d7a5c`, was credited here and is not entered - see [its verdict](#rows-no-ladder-converts-and-why) |
+| `fishing_chrome.rs` | 5 | `801d03b0` `801d78c0` `801d74b0` `801d70ec` `801d7c30` | `40:L` + a cast; the venue panel needs `P`. A sixth address, `801d7a5c`, was credited here and this rung does not enter it; `w8_world_tail_ladder` does - see [its route](#rows-no-ladder-converts-and-why) |
 | `fishing_actors.rs` | 3 | `801d2050` `801d2278` `801d4948` | the same run's wander / line / celebration actors. A fourth address was credited here and is not converted - see the note below |
 | `minigame_floor.rs` | 2 | `801d2a10` `801d6028` | the fishing venue's floor solve |
 | `baka_fighter.rs` (digit strips) | 3 | `801d6a18` `801d6f44` `801d69e4` | a duel played to a **player win** - a lost match installs no tally and two of the three stay dark |
@@ -1334,7 +1350,6 @@ blocks a (b) row, or the disclosure state of a (c) row.
 | `field_passive_hud.rs` | 1 | (b) | a party member holding one of the six HUD-badge ability bits. `hud_anchor_offsets` is reached only through `World::passive_hud_points`, itself behind `World::passive_hud_active()`, and a cold-start party holds none of the six - so the badge column never anchors and the offsets never resolve | `801d095c` |
 | `scus_battle_helpers.rs` | 2 | (c) | disclosed | `80046978` `80055854` |
 | `scus_core_helpers.rs` | 4 | (c) | disclosed. Read with the note below: whether these are measured at all moves with the ladder set, so the verdict rests on the caller scan | `800203ec` `80020424` `80020454` `800204a4` |
-| `vram_rect_copy.rs` | 1 | (a) | a scene script issuing op `0x43` sub-`0x12`. `build_packet` is reached from `enqueue`, which `FieldHost::op43_vram_rect_copy` drives on both hosts; the [op census](field-op-census.md) puts a dozen clean carriers across nine scenes, every one of them in the ending band (`edteien`, `edbylon`, `edbalden`, `edretoin`, `edkorout`, `edbubu`, `eddoman`, `edson`, `edstati3`), which no ladder enters | `80057914` |
 | `world_map_clut_fade.rs` | 1 | (c) | undisclosed, same trio - and the coverage side cannot corroborate it, because no binary in the union carries the file (the report's *not observable* set) | `801e4d8c` |
 
 Seven module rows this table used to carry are closed by ladders that are now
@@ -2106,7 +2121,7 @@ part worth keeping rather than the fact that it emptied:
 | addresses | verdict | where it went |
 |---|---|---|
 | `8003f348` `8003f3fc` `8003f86c` | (a) | [content not driven](#no-ladder-content-not-driven) - the fog emitter, which only a **composing** ladder can enter |
-| `80057914` | (a) | the [`engine-vm` table](#engine-vm), on the op-`0x43` sub-`0x12` carriers the census names |
+| `80057914` | (a), since **converted** | the op-`0x43` sub-`0x12` carriers the census names, drained by the headless frame tail - see [the rows no ladder converts](#rows-no-ladder-converts-and-why) |
 | `801d095c` | (b) | the [`engine-vm` table](#engine-vm), on a party that holds a HUD-badge ability |
 | `8003c7ec` `800430ac` `801cefd4` | (a) | [content not driven](#no-ladder-content-not-driven) - two field-VM op carriers and the boot chain |
 | `801d1288` `80065034` | (a) | [harness-blind](#no-ladder-harness-blind), as **one** gate - the producer and its consumer |
@@ -2219,9 +2234,25 @@ one that does was declined for the reason given.
 | `801d31b0` | (a), render pass | `emit_strip`, reached through `engine-ui::move_strip::move_strip_prims` from both hosts' render passes, on the move-VM extension's sub-op `0x2C` strip requests. A composing member parked where a shipped move program issues `2F 2C` converts it; a headless one cannot |
 | `801d57e8` | (a) | see the [`engine-vm` table](#engine-vm): a commit whose target is a whole row |
 | `801d65f8` | (a), minigame | the Baka duel cameo's eye blit (`BakaDuelAssets::apply_wink`), run when a host builds the duel VRAM while the cameo's pose names a blit row. No member reaches a cameo frame |
-| `801d7a5c` | (a), minigame | the splash burst, spawned on `World::tick_fishing`'s `Casting -> Fighting` edge. `w1f1_fishing_pond_ladder` drives `PondSession` without the world tick, and the native fishing rung captures before a bite. It was credited to `w5_native_minigame_ladder` and is not entered by it |
 | `801db9c4` | (b) | see [the gate table](#gates-behind-the-b-rows) - disassembly-grounded |
-| `801e45bc` | (a) | the move-VM extension's Bezier evaluator, run by sub-ops `0x0E` and `0x12`. The move-VM census tests find shipped carriers but step them under a `NullHost`; a member that runs one of those programs in a `World` converts it |
+
+Three rows left through the headless frame tail and the ladder written on it,
+`w8_world_tail_ladder`. The two corpus rows did not need the ladder to be
+reachable - they needed a headless run to execute the world side of the
+frame tail at all (see
+[the structural note](#what-a-pad-only-ladder-structurally-cannot-execute)).
+Once `BootSession::tick` ran it, the full-game ladder's own segments entered
+both: `801e45bc` through a shipped field stager whose move program issues
+`2F 0E` / `2F 12`, and `80057914` through the ending band's op-`0x43`
+sub-`0x12` carriers, whose queued copies nothing had ever drained. The ladder
+drives each through a named shipped carrier as well, so neither verdict rests
+on how far the full-game ladder happens to get:
+
+| address | was | route |
+|---|---|---|
+| `80057914` | (a), no ladder enters the ending band | a shipped `43 12` stepped by the field VM, drained by `World::step_field_vram_effects` |
+| `801e45bc` | (a), census under a `NullHost` only | a shipped Bezier stager seated with `World::spawn_field_stager` and advanced by `World::step_world_frame_tail` |
+| `801d7a5c` | (a), minigame | a reel gesture matching a cadence template in the **world's** fishing tick - the Splash event is a cadence match while the lure waits, not the `Casting -> Fighting` edge the old verdict named |
 
 Two rows left the table above through page ladders, and both were closer
 than their verdicts said. `801e0418` was already drawn on both hosts - the
