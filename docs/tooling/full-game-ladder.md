@@ -113,7 +113,7 @@ followed. The engine does the scene change; the ladder only places the player.
 The **beats pass** runs once per scene, when the scene is the target and its
 reach flags are unset, at a waypoint, or when a hop's door does not fire. It
 approaches every boss stager whose park gate is clear (the touch dispatch runs
-its placement record), then plays three kinds of beat in rounds, repeating
+its placement record), then plays four kinds of beat in rounds, repeating
 while a round still gains flags, since each unlocks the other:
 
 - **Talks.** A talk NPC is spoken to when its own partition-1 record, or a
@@ -140,6 +140,12 @@ while a round still gains flags, since each unlocks the other:
   the contact. `town01` P0[29], Vahn's front door, spawns the P2[5] night beat
   that sets `0x227` once `0x226` is up - the flag the spar's post-fight branch
   in P1[10] tests.
+- **Examined props.** An interact-gated prop (the cupboard class, contact
+  result bit `1`) whose own bind record cleanly SETs a wanted flag is
+  examined the way a talk is: stand beside it, face it so the prop arm of
+  the facing probe lands on its box, press Cross and page what opens.
+  `chitei2` P0[33], a transport switch, raises the `0x4F0` that the P2[11]
+  walk-on setting `0x470` waits on.
 
 A beat is skipped when its record sets a **latch** - a flag some partition-2
 C1 gate of the scene reads - that the next anchor does not carry: retail had

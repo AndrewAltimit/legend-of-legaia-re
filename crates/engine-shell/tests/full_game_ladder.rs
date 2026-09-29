@@ -2051,6 +2051,7 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
     // gains flags. Each beat plays at most once per scene visit.
     let mut walked: BTreeSet<u8> = BTreeSet::new();
     let mut touched: BTreeSet<u8> = BTreeSet::new();
+    let mut examined: BTreeSet<(u8, u8)> = BTreeSet::new();
     let overreach = overreaching_records(&mf, &man, 2);
     for _round in 0..BEAT_ROUNDS {
         let round_start = flags_of_world(session);
@@ -2115,6 +2116,13 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
                 continue;
             }
             ran += 1;
+            let flat = session
+                .host
+                .world
+                .props
+                .walk_touch_records
+                .get(&slot)
+                .copied();
             let (tx, tz) = tile_of(contact.0, contact.1);
             session.host.world.set_pad(0);
             session.host.world.props.active_walk_touch = None;
@@ -2148,7 +2156,7 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
                 None => run_while_moving(session, DEEP_EXIT_TICKS),
             };
             trace_beat(session, &f0, || {
-                format!("{name} door object {slot} -> {r:?}")
+                format!("{name} door object {slot} (flat record {flat:?}) at {contact:?} -> {r:?}")
             });
             match r {
                 Run::Entered(s) => {
@@ -2156,6 +2164,29 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
                     return Ok(Some(s));
                 }
                 Run::Battle(b) => return Err(format!("door object {slot}: {b}")),
+                Run::Error(e) => return Err(e),
+                Run::Released | Run::Parked(_) => {}
+            }
+        }
+        // Interact-gated props whose own script writes a wanted flag: a
+        // switch is examined with Cross, never by contact (`chitei2` P0[33]
+        // raises the `0x4F0` that opens the P2[11] walk-on setting `0x470`).
+        for (anchor, at) in prop_beats(session, &mf, &man) {
+            if !examined.insert(anchor) || ran >= MAX_BEATS {
+                continue;
+            }
+            ran += 1;
+            let f0 = flags_of_world(session);
+            let r = examine_prop(session, anchor, at);
+            trace_beat(session, &f0, || {
+                format!("{name} examine prop {anchor:?} -> {r:?}")
+            });
+            match r {
+                Run::Entered(s) => {
+                    finish(session, log, ran);
+                    return Ok(Some(s));
+                }
+                Run::Battle(b) => return Err(format!("prop {anchor:?}: {b}")),
                 Run::Error(e) => return Err(e),
                 Run::Released | Run::Parked(_) => {}
             }
@@ -2181,19 +2212,22 @@ fn object_door_beats(
         FlagBank, WalkTouchEvent, resolve_walk_touch_event, walk_partition_gflag_sites,
     };
     let w = &session.host.world;
-    let setters2: BTreeSet<usize> = walk_partition_gflag_sites(mf, man, 2)
-        .iter()
-        .filter(|s| {
-            s.bank == FlagBank::System
-                && s.kind == FlagKind::Set
-                && s.clean
-                && !s.text_alias
-                && !s.debug_menu
-                && !w.system_flag_test(s.flag)
-                && next_anchor_has(s.flag)
-        })
-        .map(|s| s.record)
-        .collect();
+    let wanted = |part: usize| -> BTreeSet<usize> {
+        walk_partition_gflag_sites(mf, man, part)
+            .iter()
+            .filter(|s| {
+                s.bank == FlagBank::System
+                    && s.kind == FlagKind::Set
+                    && s.clean
+                    && !s.text_alias
+                    && !s.debug_menu
+                    && !w.system_flag_test(s.flag)
+                    && next_anchor_has(s.flag)
+            })
+            .map(|s| s.record)
+            .collect()
+    };
+    let setters2 = wanted(2);
     let n0 = mf.partitions.first().map_or(0, Vec::len);
     let n1 = mf.partitions.get(1).map_or(0, Vec::len);
     let mut out = Vec::new();
@@ -2217,6 +2251,42 @@ fn object_door_beats(
         }
     }
     out
+}
+
+/// The interact-gated props of the loaded field scene (anchor and contact
+/// centre) whose own bind record cleanly SETs a still-clear flag the next
+/// anchor carries.
+fn prop_beats(
+    session: &BootSession,
+    mf: &legaia_asset::man_section::ManFile,
+    man: &[u8],
+) -> Vec<((u8, u8), (i32, i32))> {
+    use legaia_engine_core::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
+    let w = &session.host.world;
+    let setters0: BTreeSet<usize> = walk_partition_gflag_sites(mf, man, 0)
+        .iter()
+        .filter(|s| {
+            s.bank == FlagBank::System
+                && s.kind == FlagKind::Set
+                && s.clean
+                && !s.text_alias
+                && !s.debug_menu
+                && !w.system_flag_test(s.flag)
+                && next_anchor_has(s.flag)
+        })
+        .map(|s| s.record)
+        .collect();
+    w.props
+        .bank
+        .props
+        .iter()
+        .filter(|(_, p)| p.interact_gated() && !p.collision_exempt())
+        .filter(|(_, p)| setters0.contains(&p.record))
+        .map(|(&a, p)| {
+            let at = if p.moving_box() { p.world } else { p.collider };
+            (a, at)
+        })
+        .collect()
 }
 
 /// With `LEGAIA_FGL_TRACE` set, print one line per played beat: what ran,
@@ -2377,6 +2447,32 @@ fn talk_to(session: &mut BootSession, slot: u8) -> Run {
     let Some(&(nx, nz)) = session.host.world.npcs.positions.get(&slot) else {
         return Run::Released;
     };
+    interact_at(
+        session,
+        (nx, nz),
+        &|w: &legaia_engine_core::world::World| w.field_interact_probe_slot() == Some(slot),
+    )
+}
+
+/// Examine the interact-gated prop anchored at `anchor` (the cupboard class,
+/// retail `FUN_801CFC40` result bit `1`): the same stand-beside, face and
+/// press-Cross approach as a talk, aimed so the prop arm of the facing probe
+/// (`FUN_801CF9F4`) lands on its contact box.
+fn examine_prop(session: &mut BootSession, anchor: (u8, u8), at: (i32, i32)) -> Run {
+    let pos = (at.0 as i16, at.1 as i16);
+    interact_at(session, pos, &|w: &legaia_engine_core::world::World| {
+        w.field_interact_probe_slot().is_none() && w.field_interact_prop_anchor() == Some(anchor)
+    })
+}
+
+/// The approach [`talk_to`] and [`examine_prop`] share: from each tile
+/// beside `(nx, nz)`, face the sector where `hits` holds, press Cross and
+/// page what opens.
+fn interact_at(
+    session: &mut BootSession,
+    (nx, nz): (i16, i16),
+    hits: &dyn Fn(&legaia_engine_core::world::World) -> bool,
+) -> Run {
     let (bx, bz) = player_xz(session);
     let (tx, tz) = tile_of(nx, nz);
     let claimed = claimed_tiles(session);
@@ -2394,7 +2490,7 @@ fn talk_to(session: &mut BootSession, slot: u8) -> Run {
         // The one compass sector whose probe point lands in the NPC's box.
         let facing = (0..8u8).find(|&d| {
             session.host.world.face_player_sector(d);
-            session.host.world.field_interact_probe_slot() == Some(slot)
+            hits(&session.host.world)
         });
         let Some(_) = facing else {
             continue;

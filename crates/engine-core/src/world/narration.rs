@@ -3024,16 +3024,14 @@ impl World {
                 && let Some(target) = ext_target
                 && let Some(&move_id) = id.bytecode.get(id.pc + 2)
             {
-                let fallback = host.world.player_clip_frames_hint();
-                host.world
-                    .props
-                    .bank
-                    .bind_actor_clip(target, move_id, fallback);
                 if target == crate::field_env::PLAYER_ANCHOR_TARGET {
-                    host.world.field_player_script_clip(move_id);
-                    if move_id > 2 {
-                        host.world.locomotion.player_move_cues.push(move_id);
-                    }
+                    host.world.bind_player_script_clip(move_id);
+                } else {
+                    let fallback = host.world.player_clip_frames_hint();
+                    host.world
+                        .props
+                        .bank
+                        .bind_actor_clip(target, move_id, fallback);
                 }
             }
             // Bind the poked actor's `+0x62` into the executing context for the
