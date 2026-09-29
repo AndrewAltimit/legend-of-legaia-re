@@ -17,6 +17,7 @@ way `mednafen-state vram-dump --display-crop` reads it.
 | Piece | Lives in | Role |
 |---|---|---|
 | corpus + channels + ratchet | [`retail_compare.rs`](../../crates/engine-shell/src/retail_compare.rs) | Enumerate the library, read retail, seed the engine, score |
+| battle half | [`retail_compare_battle.rs`](../../crates/engine-shell/src/retail_compare_battle.rs) | Read the encounter out of a battle state, enter it, score the battle channels |
 | frame channel | [`retail_compare_image.rs`](../../crates/engine-shell/src/retail_compare_image.rs) | Crop retail's frame, render the engine's, the metric |
 | `legaia-engine retail-compare` | [`retail_compare_cli.rs`](../../crates/engine-shell/src/retail_compare_cli.rs) | Human report (markdown + JSON + side-by-side PNGs) |
 | PCSX-Redux GPU reader | [`legaia_pcsxr::gpu`](../../crates/pcsxr/src/gpu.rs) | VRAM + GP1 control log out of a `.sstate` |
@@ -29,6 +30,7 @@ way `mednafen-state vram-dump --display-crop` reads it.
 - [The corpus](#the-corpus)
 - [Retail observables](#retail-observables)
 - [The seeding model](#the-seeding-model)
+- [Battle states](#battle-states)
 - [Channels](#channels)
 - [The image channel](#the-image-channel)
 - [The ratchet](#the-ratchet)
@@ -50,7 +52,7 @@ by the game-mode word and the scene label:
 | `field` | mode `0x03`, a non-overworld scene, a plausible player pointer | yes |
 | `world_map` | mode `0x03` on a kingdom overworld (`mapNN`) | yes |
 | `field_init` | mode `0x02`, the scene mid-load | no |
-| `battle` | mode `0x14` / `0x15` | no |
+| `battle` | mode `0x14` / `0x15` | yes ([below](#battle-states)) |
 | `menu` | mode `0x17` (title, save screens, the pause menu) | no |
 | `minigame` | mode `0x19` | no |
 | `cutscene` | mode `0x1A` / `0x1B` (STR playback) | no |
@@ -131,6 +133,73 @@ hydrate again, so the entry scripts see retail's flags. Comparing its report
 with the default shows how much of a channel's divergence the card-load
 ordering explains.
 
+## Battle states
+
+A battle capture carries its encounter in RAM, all of it resident while the
+fight runs ([battle](../subsystems/battle.md)):
+
+| Observable | Address |
+|---|---|
+| party / monster count | battle context `*0x8007BD24`, `+0x00` / `+0x01` |
+| command-flow byte, action-state cursor | context `+0x06` / `+0x07` |
+| monster ids | formation cell `0x8007BD0C[0..4]` |
+| scripted-fight bit | `0x8007BD60 & 0x80` |
+| present party | `0x8007BD10` (1-based roster ids) |
+| combatant HP / max / MP / max | actor table `0x801C9370[slot]`, `+0x14C` / `+0x14E` / `+0x150` / `+0x152` |
+| camera | the field's rotation / translation globals; `H` is `256` |
+
+**Seeding.** The scene is entered through the card-load path and the field
+settles the same window a field state does - the fight is entered from a
+running field, as retail's was, so the scene's track has started. The
+formation cell is matched against the scene's registered MAN rows; a cell
+no row carries (a fight installed from another table) is registered as a
+formation of its own, carrying the scripted bit, with the monster archive's
+stats for its ids. `World::force_encounter` then arms the row through the
+ordinary transition - the path `play-window --battle` takes, including the
+scripted carrier's replayed tutorial arm. When the mode flips, the retail
+combatants' live HP / MP are written over the engine's, the opening runs to
+the first round prompt, and the session settles with no input.
+
+A battle state whose RAM does not describe a seedable fight (the context
+pointer not yet resident, counts out of range, an empty cell) is kept with a
+`battle not seedable:` reason and counted as a classified limit, not as a
+seed failure.
+
+**Battle channels.**
+
+| Channel | Score |
+|---|---|
+| `enemies` | fraction of retail monster seats whose id the engine seated in the same order |
+| `enemy_hp` / `battle_party` | fraction of equal HP, max HP, MP and max MP fields over the retail combatants (max MP left out where the engine carries none) |
+| `phase` | 1 when the engine's command-flow state equals retail's `ctx[+0x06]` decoded to the engine's band |
+| `bgm` | retail's track word against the field track the engine will resume ([below](#the-track-word-in-battle)) |
+
+`scene`, `mode` (engine `Battle`), `camera`, `flags`, `inventory` and `image`
+keep their field meaning. HP / MP current values are seeded, so their misses
+are what the settle window changed; the max values are the real check
+(record-derived on the party, archive-derived on the monsters).
+
+**What the seed cannot carry.** An action in flight: most battle captures are
+mid-strike or mid-cast (flow `0xFF`), and the engine is compared parked on its
+round prompt, so their `phase` channel reads capture timing. The idle orbit's
+yaw is a clock (`-4` per camera step), so on a prompt state the yaw part of
+`camera` - and most of the frame - reads the capture instant. A party whose
+present list names a seat the save window's roster does not seat (a guest
+combatant) reads as a short engine party in `battle_party`.
+
+**The image** comes from `play-window --battle <row> --party <ids>` with the
+retail system flags, captured at a fixed tick past the opening. A fight with
+no MAN row to name is not imaged; its reason is in the report.
+
+### The track word in battle
+
+Retail's track-select word `0x8007BAC8` keeps the **field** track through a
+fight: every catalogued battle state holds a field or overworld id there, never
+the battle theme, which is started without the op-`0x35` store. The engine
+routes its battle swap through the same start event its field scripts use,
+so its copy of the word reads the battle theme; the comparand is the track the
+engine stashed to resume (`World::audio.field_bgm_resume`).
+
 ## Channels
 
 Each channel scores in `[0, 1]`; a state's score is the mean of its
@@ -139,7 +208,7 @@ measured channels.
 | Channel | Score |
 |---|---|
 | `scene` | 1 when the engine landed in retail's scene |
-| `mode` | 1 when the engine's mode is `Field` (field class) / `WorldMap` (overworld class) |
+| `mode` | 1 when the engine's mode is `Field` (field class) / `WorldMap` (overworld class) / `Battle` (battle class) |
 | `position` | player `(X, Z)` after settling: 1 within 4 units, linear to 0 at 256 |
 | `footing` | engine floor sample at retail's `(X, Z)` vs retail's footing: 1 within 2, 0 at 128 (field class only) |
 | `camera` | mean of six parts: pitch and yaw (1 within 16, 0 at 256, wrapped), `H` (1 within 4, 0 at 128), each eye word (1 within 16, 0 at 1024) |
@@ -148,6 +217,7 @@ measured channels.
 | `party` | fraction of equal fields over retail's roster: HP / MP current and max, level, the eight equipment bytes |
 | `flags` | 1 - differing bits / bits set on either side, over the whole story-flag bitmap |
 | `inventory` | fraction of non-empty bag slots equal, slot for slot, plus gold |
+| `enemies` / `enemy_hp` / `battle_party` / `phase` | battle states only ([above](#battle-states)) |
 | `image` | fraction of `8 x 8` blocks within tolerance ([below](#the-image-channel)) |
 
 `party` and `inventory` are seeded straight from the retail window, so on

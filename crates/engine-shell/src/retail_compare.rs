@@ -28,10 +28,12 @@
 //! [`SETTLE_TICKS`] frames with no input. The seeding model and its gaps are
 //! documented in `docs/tooling/retail-compare.md`.
 //!
-//! Only walkable states (field-run in a field scene or on a kingdom
-//! overworld) are seedable today. Every other class is catalogued with its
-//! retail observables and a reason, so the corpus summary counts what the
-//! instrument cannot reach instead of hiding it.
+//! Walkable states (field-run in a field scene or on a kingdom overworld)
+//! and battle states are seedable; the battle half - reading the encounter
+//! out of RAM and entering it through the engine's own encounter path - is
+//! [`crate::retail_compare_battle`]. Every other class is catalogued with
+//! its retail observables and a reason, so the corpus summary counts what
+//! the instrument cannot reach instead of hiding it.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -91,15 +93,17 @@ pub enum StateClass {
 impl StateClass {
     /// Whether the engine can currently be seeded into this class.
     pub fn seedable(self) -> bool {
-        matches!(self, StateClass::Field | StateClass::WorldMap)
+        matches!(
+            self,
+            StateClass::Field | StateClass::WorldMap | StateClass::Battle
+        )
     }
 
     /// The reason a non-seedable class is not seeded.
     pub fn unseeded_reason(self) -> &'static str {
         match self {
-            StateClass::Field | StateClass::WorldMap => "",
+            StateClass::Field | StateClass::WorldMap | StateClass::Battle => "",
             StateClass::FieldInit => "scene mid-load; no settled frame to reproduce",
-            StateClass::Battle => "no battle seeding path (formation + actor table from RAM)",
             StateClass::Menu => "no pause-menu / title seeding path",
             StateClass::Cutscene => "STR playback is not a seeded state",
             StateClass::Minigame => "no minigame session seeding path",
@@ -185,6 +189,9 @@ pub struct RetailObs {
     pub save: Option<legaia_save::SaveFile>,
     /// The displayed frame, when the state carries VRAM + display registers.
     pub frame: Option<Frame>,
+    /// Battle observables for a battle-class state; `Err` names why the
+    /// state cannot seed a battle.
+    pub battle: Option<std::result::Result<crate::retail_compare_battle::RetailBattle, String>>,
 }
 
 fn rd16(ram: &[u8], va: u32) -> i16 {
@@ -239,6 +246,8 @@ impl RetailObs {
             fog_gate,
             save,
             frame,
+            battle: (class == StateClass::Battle)
+                .then(|| crate::retail_compare_battle::RetailBattle::from_ram(ram)),
         }
     }
 }
@@ -285,8 +294,8 @@ pub struct EngineObs {
 
 /// Records which track the field VM starts.
 #[derive(Default)]
-struct RecordingDirector {
-    last: Option<u16>,
+pub(crate) struct RecordingDirector {
+    pub(crate) last: Option<u16>,
 }
 
 impl BgmDirector for RecordingDirector {
@@ -457,6 +466,10 @@ pub const CHANNELS: &[&str] = &[
     "party",
     "flags",
     "inventory",
+    "enemies",
+    "enemy_hp",
+    "battle_party",
+    "phase",
     "image",
 ];
 
@@ -481,7 +494,7 @@ pub struct StateReport {
     pub image: Option<ImageScore>,
 }
 
-fn round3(v: f64) -> f64 {
+pub(crate) fn round3(v: f64) -> f64 {
     (v * 1000.0).round() / 1000.0
 }
 
@@ -557,7 +570,7 @@ fn pad8(s: &[u8]) -> [u8; 8] {
     o
 }
 
-fn flags_score(retail: &[u8], engine: &[u8]) -> (f64, String) {
+pub(crate) fn flags_score(retail: &[u8], engine: &[u8]) -> (f64, String) {
     let n = retail.len().max(engine.len());
     let mut differ = 0u32;
     let mut union = 0u32;
@@ -575,7 +588,7 @@ fn flags_score(retail: &[u8], engine: &[u8]) -> (f64, String) {
     (score, format!("{differ} differing bit(s) of {union} set"))
 }
 
-fn inventory_score(
+pub(crate) fn inventory_score(
     retail: &legaia_save::SaveFile,
     engine: &legaia_save::SaveFile,
 ) -> (f64, String) {
@@ -601,6 +614,26 @@ fn inventory_score(
         format!(
             "{equal}/{total} (slots + gold); gold retail={} engine={}",
             retail.ext.money, engine.ext.money
+        ),
+    )
+}
+
+/// The camera channel: mean of pitch, yaw (wrapped), `H` and the three eye
+/// words, each on its own falloff.
+pub(crate) fn camera_score(r: &CameraObs, e: &CameraObs) -> (f64, String) {
+    let parts = [
+        falloff(angle_delta(r.pitch, e.pitch), 16.0, 256.0),
+        falloff(angle_delta(r.yaw, e.yaw), 16.0, 256.0),
+        falloff(f64::from(i32::from(r.h) - i32::from(e.h)), 4.0, 128.0),
+        falloff(f64::from(r.eye[0] - e.eye[0]), 16.0, 1024.0),
+        falloff(f64::from(r.eye[1] - e.eye[1]), 16.0, 1024.0),
+        falloff(f64::from(r.eye[2] - e.eye[2]), 16.0, 1024.0),
+    ];
+    (
+        parts.iter().sum::<f64>() / parts.len() as f64,
+        format!(
+            "retail pitch/yaw/H={}/{}/{} eye={:?}; engine {}/{}/{} eye={:?}",
+            r.pitch, r.yaw, r.h, r.eye, e.pitch, e.yaw, e.h, e.eye
         ),
     )
 }
@@ -659,25 +692,8 @@ pub fn compare(
             format!("retail footing={} engine floor={floor}", r[1]),
         );
     }
-    {
-        let (r, e) = (retail.camera, engine.camera);
-        let parts = [
-            falloff(angle_delta(r.pitch, e.pitch), 16.0, 256.0),
-            falloff(angle_delta(r.yaw, e.yaw), 16.0, 256.0),
-            falloff(f64::from(i32::from(r.h) - i32::from(e.h)), 4.0, 128.0),
-            falloff(f64::from(r.eye[0] - e.eye[0]), 16.0, 1024.0),
-            falloff(f64::from(r.eye[1] - e.eye[1]), 16.0, 1024.0),
-            falloff(f64::from(r.eye[2] - e.eye[2]), 16.0, 1024.0),
-        ];
-        put(
-            "camera",
-            parts.iter().sum::<f64>() / parts.len() as f64,
-            format!(
-                "retail pitch/yaw/H={}/{}/{} eye={:?}; engine {}/{}/{} eye={:?}",
-                r.pitch, r.yaw, r.h, r.eye, e.pitch, e.yaw, e.h, e.eye
-            ),
-        );
-    }
+    let (s, d) = camera_score(&retail.camera, &engine.camera);
+    put("camera", s, d);
     put(
         "bgm",
         f64::from(u8::from(engine.bgm_id == Some(retail.bgm_id))),
@@ -752,6 +768,10 @@ pub fn summarise(reports: &[StateReport]) -> CorpusSummary {
         if r.class.seedable() {
             if r.unseeded.is_empty() {
                 s.seeded += 1;
+            } else if r.unseeded.starts_with(BATTLE_NOT_SEEDABLE) {
+                // A battle capture whose RAM names why it cannot be seeded
+                // (the fight still loading, an empty cell) is a classified
+                // instrument limit, not a failure of the seeding path.
             } else {
                 s.seed_failed += 1;
             }
@@ -838,6 +858,10 @@ fn run_one(opts: &RunOptions<'_>, entry: &CorpusEntry, scus: &[u8]) -> StateRepo
         report.unseeded = retail.class.unseeded_reason().to_string();
         return report;
     }
+    if retail.class == StateClass::Battle {
+        run_battle(opts, entry, &retail, &mut report);
+        return report;
+    }
     let engine = match run_engine_with(opts.extracted, &retail, opts.order) {
         Ok(e) => e,
         Err(e) => {
@@ -898,6 +922,111 @@ fn run_one(opts: &RunOptions<'_>, entry: &CorpusEntry, scus: &[u8]) -> StateRepo
     report.channels = ch;
     report.image = image;
     report
+}
+
+/// Prefix of the reason a battle-class state carries when its RAM does not
+/// describe a seedable fight.
+pub const BATTLE_NOT_SEEDABLE: &str = "battle not seedable: ";
+
+fn run_battle(
+    opts: &RunOptions<'_>,
+    entry: &CorpusEntry,
+    retail: &RetailObs,
+    report: &mut StateReport,
+) {
+    let battle = match &retail.battle {
+        Some(Ok(b)) => b,
+        Some(Err(why)) => {
+            report.unseeded = format!("{BATTLE_NOT_SEEDABLE}{why}");
+            return;
+        }
+        None => {
+            report.unseeded = "battle observables not read".into();
+            return;
+        }
+    };
+    let engine =
+        match crate::retail_compare_battle::run_engine_battle(opts.extracted, retail, battle) {
+            Ok(e) => e,
+            Err(e) => {
+                report.unseeded = format!("seeding failed: {e:#}");
+                return;
+            }
+        };
+    let image = battle_image(opts, entry, retail, battle, &engine, report);
+    let (mut ch, mut det) = crate::retail_compare_battle::compare_battle(retail, battle, &engine);
+    if let Some(img) = &image {
+        ch.insert("image".into(), round3(img.within));
+        det.insert(
+            "image".into(),
+            format!("mae={:.1} within={:.3} ({})", img.mae, img.within, img.note),
+        );
+    }
+    report.image = image;
+    report.detail.extend(det);
+    report.score = state_score(&ch);
+    report.channels = ch;
+}
+
+/// The battle frame through `play-window --battle`, when the fight has a MAN
+/// row to name and the retail frame is not a fade.
+fn battle_image(
+    opts: &RunOptions<'_>,
+    entry: &CorpusEntry,
+    retail: &RetailObs,
+    battle: &crate::retail_compare_battle::RetailBattle,
+    engine: &crate::retail_compare_battle::EngineBattle,
+    report: &mut StateReport,
+) -> Option<ImageScore> {
+    let (exe, rf) = (opts.engine_exe?, retail.frame.as_ref()?);
+    if crate::retail_compare_image::luma(rf) < crate::retail_compare_image::DARK_LUMA {
+        report.detail.insert(
+            "image".into(),
+            "not scored: retail frame is a fade (near-black)".into(),
+        );
+        return None;
+    }
+    let Some(row) = engine.man_row else {
+        report.detail.insert(
+            "image".into(),
+            "not scored: formation has no MAN row for `play-window --battle`".into(),
+        );
+        return None;
+    };
+    let flags = retail
+        .save
+        .as_ref()
+        .map(system_flag_ids)
+        .unwrap_or_default();
+    let extra = crate::retail_compare_battle::play_window_args(battle, row);
+    match crate::retail_compare_image::engine_frame_with(
+        exe,
+        opts.extracted,
+        &retail.scene,
+        None,
+        &extra,
+        crate::retail_compare_battle::BATTLE_CAPTURE_TICK,
+        opts.out_dir,
+        &entry.label,
+        &flags,
+    ) {
+        Ok(ef) => {
+            if let Some(dir) = opts.out_dir {
+                let _ = crate::retail_compare_image::write_side_by_side(
+                    &dir.join(format!("{}.png", entry.label)),
+                    rf,
+                    &ef,
+                );
+            }
+            Some(crate::retail_compare_image::score(rf, &ef))
+        }
+        Err(e) => {
+            report
+                .detail
+                .insert("image".into(), format!("engine frame failed: {e:#}"));
+            None
+        }
+    }
 }
 
 /// The committed ratchet: per-state, per-channel scores. No pixels, no RAM.

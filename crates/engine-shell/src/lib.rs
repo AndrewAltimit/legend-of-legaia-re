@@ -12,6 +12,7 @@ pub mod mode_trace_oracle;
 pub mod pcm_oracle;
 pub mod replay;
 pub mod retail_compare;
+pub mod retail_compare_battle;
 pub mod retail_compare_cli;
 pub mod retail_compare_image;
 pub mod scenarios;

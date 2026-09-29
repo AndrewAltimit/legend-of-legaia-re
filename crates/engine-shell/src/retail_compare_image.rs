@@ -226,6 +226,34 @@ pub fn engine_frame(
     label: &str,
     system_flags: &[u16],
 ) -> Result<Frame> {
+    engine_frame_with(
+        exe,
+        extracted,
+        scene,
+        Some((x, z)),
+        &[],
+        CAPTURE_TICK,
+        out_dir,
+        label,
+        system_flags,
+    )
+}
+
+/// [`engine_frame`] with the seat optional, extra `play-window` arguments
+/// (the battle half passes `--battle <row>` / `--party`), and the capture
+/// tick chosen by the caller.
+#[allow(clippy::too_many_arguments)]
+pub fn engine_frame_with(
+    exe: &Path,
+    extracted: &Path,
+    scene: &str,
+    seat: Option<(i16, i16)>,
+    extra: &[String],
+    tick: u64,
+    out_dir: Option<&Path>,
+    label: &str,
+    system_flags: &[u16],
+) -> Result<Frame> {
     let base: PathBuf = out_dir
         .map(Path::to_path_buf)
         .unwrap_or_else(|| std::env::temp_dir().join("legaia-retail-compare"));
@@ -241,15 +269,19 @@ pub fn engine_frame(
     let shot = work.join(format!("{label}.png"));
     let _ = std::fs::remove_file(&shot);
     let extracted = std::fs::canonicalize(extracted)?;
-    let out = Command::new(exe)
-        .current_dir(&work)
-        .env("LEGAIA_SEAT", format!("{x},{z}"))
+    let mut cmd = Command::new(exe);
+    cmd.current_dir(&work);
+    if let Some((x, z)) = seat {
+        cmd.env("LEGAIA_SEAT", format!("{x},{z}"));
+    }
+    let out = cmd
         .args(["play-window", "--no-audio", "--scene", scene])
+        .args(extra)
         .arg("--extracted-root")
         .arg(&extracted)
         .arg("--screenshot")
         .arg(&shot)
-        .args(["--screenshot-tick", &CAPTURE_TICK.to_string()])
+        .args(["--screenshot-tick", &tick.to_string()])
         .args(
             system_flags
                 .iter()
