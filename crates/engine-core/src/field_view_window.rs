@@ -225,13 +225,36 @@ pub fn framing_is_retail(camera: &Camera) -> bool {
 /// - the world is not in [`SceneMode::Field`]: the kingdom overworld is drawn
 ///   by the PROT 0901 library, not by the pair this module ports, and the
 ///   other modes draw no `.MAP` cells;
+/// - a cutscene timeline owns the camera: the published view is the zone
+///   follow camera's focus, while the scripted shot the hosts draw composes
+///   from the op-`0x45` parameters, so a crop against the follow focus would
+///   cut scenery out of the shot on screen;
 /// - no camera view is published yet ([`crate::world::FieldNpcState::cull_view`]
-///   is `None` until the zone follow camera composes).
+///   is `None` until the zone follow camera composes);
+/// - the focus tile lies outside the region box. Retail latches the box at
+///   the camera's own re-centre tile (`FUN_80017DD4`), so the two agree by
+///   construction; the port latches it from the player actor's tile, and a
+///   scene entered without a seat can leave the follow focus somewhere the
+///   actor is not. Cropping then would clamp the whole window away and draw
+///   no ground at all, so the host draws the map whole instead.
 pub fn field_view_cells(world: &World, retail_framing: bool) -> Option<ViewCells> {
-    if !world.toggles.view_window_crop || !retail_framing || world.mode != SceneMode::Field {
+    if !world.toggles.view_window_crop
+        || !retail_framing
+        || world.mode != SceneMode::Field
+        || world.cutscene_timeline_active()
+    {
         return None;
     }
-    world.npcs.cull_view.as_ref().map(view_cells)
+    let view = world.npcs.cull_view.as_ref()?;
+    let [r0, r1, r2, r3] = view.attr_box.map(i32::from);
+    let (tx, tz) = (
+        view.focus_stored[0].wrapping_neg() >> 7,
+        view.focus_stored[1].wrapping_neg() >> 7,
+    );
+    if tx < r0 || tx >= r2 || tz < r1 || tz >= r3 {
+        return None;
+    }
+    Some(view_cells(view))
 }
 
 /// What the decoration gate needs to know about one terrain draw: its grid
@@ -457,6 +480,13 @@ mod tests {
         world.mode = SceneMode::WorldMap;
         assert!(field_view_cells(&world, true).is_none());
         world.mode = SceneMode::Field;
+        // A focus the latched region box does not hold: no crop.
+        world.npcs.cull_view = Some(FieldCullView {
+            focus_stored: [-(20 * 128), -(20 * 128)],
+            ..town01()
+        });
+        assert!(field_view_cells(&world, true).is_none());
+        world.npcs.cull_view = Some(town01());
         world.toggles.view_window_crop = false;
         assert!(field_view_cells(&world, true).is_none());
     }

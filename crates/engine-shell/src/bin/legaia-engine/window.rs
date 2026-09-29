@@ -309,6 +309,13 @@ pub(crate) fn write_capture_png(path: &Path, img: &CaptureImage) -> Result<()> {
     Ok(())
 }
 
+/// The field ground's CPU mesh + per-vertex cell refs, as uploaded: the
+/// source the visible-tile crop re-uploads a cropped index list from.
+pub(crate) struct GroundSource {
+    pub(crate) vmesh: legaia_tmd::mesh::VramMesh,
+    pub(crate) flat_refs: Vec<[f32; 8]>,
+}
+
 /// The uploaded mesh slots of one **posed** static-object placement: the
 /// frame-0 rest pose of a multi-object env prop baked into a textured and/or an
 /// untextured mesh. Either half can be absent (a prop with no textured prims,
@@ -728,6 +735,17 @@ struct PlayWindowApp {
     /// Kept out of `meshes` (it has no `Tmd` / actor binding); drawn directly
     /// with a constant Y-flip model.
     ground_heightfield: Option<UploadedVramMesh>,
+    /// The ground's CPU mesh, kept so the visible-tile crop can re-upload a
+    /// cropped index list without rebuilding the heightfield.
+    ground_src: Option<GroundSource>,
+    /// The cropped ground for the current cell rectangle, keyed by
+    /// `field_view_window::ViewCells::stamp`; rebuilt only when it moves.
+    ground_crop: Option<(u32, Option<UploadedVramMesh>)>,
+    /// Grid cell + cull radius per `field_terrain_draws` entry, for the
+    /// visible-tile crop (`field_view_window::terrain_draw_visible`).
+    field_terrain_cell_keys: Vec<legaia_engine_core::field_view_window::CellKey>,
+    /// The same, per `field_terrain_color_draws` entry.
+    field_terrain_color_cell_keys: Vec<legaia_engine_core::field_view_window::CellKey>,
     /// `C`-key toggle: when `true`, the field render uses the wide debug
     /// orbit vantage (`camera_mvp`) instead of the retail follow camera
     /// (`camera_view::field_follow_view`). Defaults to the retail view.

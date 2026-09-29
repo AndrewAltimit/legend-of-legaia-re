@@ -658,6 +658,80 @@ impl LegaiaRuntime {
         self.options_state.retail_static_window
     }
 
+    /// This frame's visible-tile cell rectangle through the shared
+    /// `field_view_window::field_view_cells` kernel the native play-window
+    /// asks: `None` = draw the map whole. `debug_camera` is the page's `F3`
+    /// vantage, which (like the native window's) lifts the crop.
+    fn field_view_cells_now(
+        &self,
+        debug_camera: bool,
+    ) -> Option<legaia_engine_core::field_view_window::ViewCells> {
+        let h = self.scene_host.as_ref()?;
+        legaia_engine_core::field_view_window::field_view_cells(
+            &h.world,
+            legaia_engine_core::field_view_window::framing_is_retail(&self.camera) && !debug_camera,
+        )
+    }
+
+    /// A stamp that moves whenever the visible-tile crop can change what
+    /// [`Self::field_terrain_live`] and [`Self::field_ground_indices_cropped`]
+    /// return; `0` while no crop applies. The page re-reads both only when it
+    /// moves - the native window re-uploads its ground on the same stamp.
+    pub fn field_view_window_stamp(&self, debug_camera: bool) -> u32 {
+        self.field_view_cells_now(debug_camera)
+            .map_or(0, |c| c.stamp())
+    }
+
+    /// Per-terrain-draw **live** mask (parallel to [`Self::field_terrain_slots`]):
+    /// `1` = inside this frame's visible-tile crop
+    /// (`field_view_window::terrain_draw_visible`, the gate the native
+    /// window's terrain pass asks per draw). All `1` while no crop applies.
+    pub fn field_terrain_live(&self, debug_camera: bool) -> Vec<u8> {
+        let Some(f) = self.field.as_ref() else {
+            return Vec::new();
+        };
+        let cells = self.field_view_cells_now(debug_camera);
+        f.terrain
+            .iter()
+            .map(|d| {
+                u8::from(legaia_engine_core::field_view_window::terrain_draw_visible(
+                    cells.as_ref(),
+                    legaia_engine_core::field_view_window::CellKey::of_draw(d),
+                ))
+            })
+            .collect()
+    }
+
+    /// [`Self::field_ground_indices`] cropped to this frame's visible cells
+    /// (`field_ground::crop_indices`, the kernel the native window re-uploads
+    /// its ground through). The whole list while no crop applies.
+    pub fn field_ground_indices_cropped(&self, debug_camera: bool) -> Vec<u32> {
+        let Some(hf) = self.field.as_ref().and_then(|f| f.ground.as_ref()) else {
+            return Vec::new();
+        };
+        let cells = self.field_view_cells_now(debug_camera);
+        legaia_engine_core::field_ground::crop_indices(
+            &hf.positions,
+            &legaia_engine_core::field_ground::render_indices(hf),
+            cells.as_ref(),
+        )
+    }
+
+    /// Turn retail's visible-tile crop on / off (the `retail_view_window`
+    /// option, persisted like the native config). It only applies at retail
+    /// framing either way.
+    pub fn set_retail_view_window(&mut self, on: bool) {
+        if self.options_state.retail_view_window != on {
+            self.options_state.retail_view_window = on;
+            self.persist_and_apply_options();
+        }
+    }
+
+    /// Whether retail's visible-tile crop is on.
+    pub fn retail_view_window(&self) -> bool {
+        self.options_state.retail_view_window
+    }
+
     /// Live pose key of each placement (parallel to
     /// [`Self::field_placement_slots`]): `-1` for a static prop (no anim, or
     /// no live prop-bank entry), else the prop's

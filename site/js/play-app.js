@@ -891,6 +891,7 @@ void main() {
       this.renderer.clearScene();
       this.staticDraws = [];
       this._staticWindowStamp = undefined;
+      this._viewWindowStamp = undefined;
       this.player = null;
       this.npcs = [];
       this.tileMeshSlots = [];   /* board-owned actor slots with an uploaded mesh */
@@ -1015,6 +1016,9 @@ void main() {
           /* Placed layer only: the index into the engine's per-placement
            * live mask (`_syncStaticWindow`). */
           if (placed) draw.placeIdx = i;
+          /* Terrain layer only: the index into the engine's visible-tile
+           * crop mask (`_syncViewWindow`). */
+          else draw.terrainIdx = i;
           this.staticDraws.push(draw);
           if (animRec) this.animProps.push(animRec);
         }
@@ -2009,6 +2013,29 @@ void main() {
       }
     }
 
+    /* Retail's visible-tile crop (FUN_801F7088 and the ground emitters it
+     * calls): only the cells the camera's tile window reaches are drawn. The
+     * engine answers through the same `field_view_window` kernel the native
+     * window asks - a per-terrain-draw mask plus a cropped ground index list -
+     * and the page re-reads both only when the rectangle's stamp moves. It
+     * applies at retail framing only (the camera-distance preset at Retail, no
+     * drag / zoom, and never under `F3`), so the default page draws the map
+     * whole. */
+    _syncViewWindow(rt) {
+      if (typeof rt.field_view_window_stamp !== 'function') return;
+      const stamp = rt.field_view_window_stamp(this.debugCamera);
+      if (stamp === this._viewWindowStamp) return;
+      this._viewWindowStamp = stamp;
+      const live = rt.field_terrain_live(this.debugCamera);
+      for (const d of this.staticDraws) {
+        if (d.terrainIdx === undefined) continue;
+        d.hidden = d.terrainIdx < live.length && live[d.terrainIdx] === 0;
+      }
+      if (this.renderer.setGroundIndices && rt.field_ground_quad_count() > 0) {
+        this.renderer.setGroundIndices(rt.field_ground_indices_cropped(this.debugCamera));
+      }
+    }
+
     _applyFloorWave(rt) {
       if (!rt.field_floor_wave_offsets) return;
       const wave = rt.field_floor_wave_offsets();
@@ -2287,6 +2314,9 @@ void main() {
       /* A camera re-centre this frame may have re-planned the windowed
        * static-object list. */
       this._syncStaticWindow(rt);
+
+      /* Retail's visible-tile crop may have moved with the camera. */
+      this._syncViewWindow(rt);
 
       /* A script may have re-bound an NPC's mesh this frame. */
       this._rebindLiveNpcModels(rt);

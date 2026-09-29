@@ -579,6 +579,17 @@ impl PlayWindowApp {
                 ],
             );
         }
+        // Retail's visible-tile crop: the cell rectangle the field render
+        // library walks this frame (`field_view_window`, the shared kernel the
+        // browser play page asks too). The terrain draws are gated per draw
+        // below; the ground re-uploads a cropped index list whenever the
+        // rectangle moves.
+        let view_cells = legaia_engine_core::field_view_window::field_view_cells(
+            &self.session.host.world,
+            legaia_engine_core::field_view_window::framing_is_retail(&self.session.camera)
+                && !self.field_debug_camera,
+        );
+        self.sync_ground_crop(view_cells.as_ref());
         // A tick this frame may have flipped the world into
         // SceneMode::Cutscene (field-VM FMV-trigger op). Start
         // windowed STR playback if so; a cut/missing slot drains the
@@ -1522,8 +1533,14 @@ impl PlayWindowApp {
                     // cliff-top town core) render ABOVE sea-level
                     // tier-0 cells, matching retail. Pipelines don't
                     // cull, so winding is immaterial.
+                    // Under the visible-tile crop the cropped copy draws
+                    // instead (`sync_ground_crop`).
+                    let ground = match (&view_cells, &self.ground_crop) {
+                        (Some(_), Some((_, m))) => m.as_ref(),
+                        _ => self.ground_heightfield.as_ref(),
+                    };
                     if layer_on("hf")
-                        && let Some(hf_mesh) = self.ground_heightfield.as_ref()
+                        && let Some(hf_mesh) = ground
                     {
                         draws.push(SceneDraw {
                             mesh: hf_mesh,
@@ -1535,7 +1552,16 @@ impl PlayWindowApp {
                     // the buildings): the `CELL_VISIBLE` field-map tiles
                     // (stone plaza, paths, riverbank).
                     if layer_on("tiles") {
-                        for (mesh_idx, model) in &self.field_terrain_draws {
+                        for (di, (mesh_idx, model)) in self.field_terrain_draws.iter().enumerate() {
+                            if !legaia_engine_core::field_view_window::terrain_draw_visible(
+                                view_cells.as_ref(),
+                                self.field_terrain_cell_keys
+                                    .get(di)
+                                    .copied()
+                                    .unwrap_or_default(),
+                            ) {
+                                continue;
+                            }
                             let mesh = self
                                 .field_morph_live
                                 .get(mesh_idx)
@@ -1554,7 +1580,18 @@ impl PlayWindowApp {
                     // the floor shows holes where a tile's mesh carries
                     // no textured prims.
                     if layer_on("ctiles") {
-                        for (mesh_idx, model) in &self.field_terrain_color_draws {
+                        for (di, (mesh_idx, model)) in
+                            self.field_terrain_color_draws.iter().enumerate()
+                        {
+                            if !legaia_engine_core::field_view_window::terrain_draw_visible(
+                                view_cells.as_ref(),
+                                self.field_terrain_color_cell_keys
+                                    .get(di)
+                                    .copied()
+                                    .unwrap_or_default(),
+                            ) {
+                                continue;
+                            }
                             if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
                                 color_draws.push(ColorSceneDraw {
                                     mesh,

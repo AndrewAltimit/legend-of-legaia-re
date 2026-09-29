@@ -1072,6 +1072,20 @@ class TmdRenderer {
     gl.bindVertexArray(null);
   }
 
+  /* Replace the ground's index list without re-uploading its vertices - the
+   * visible-tile crop (`field_ground_indices_cropped`) re-issues it whenever
+   * the camera's cell rectangle moves. An empty list draws no ground. */
+  setGroundIndices(indices) {
+    const g = this.ground;
+    if (!g) return;
+    const gl = this.gl;
+    gl.bindVertexArray(g.vao);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, g.idxBuf);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.DYNAMIC_DRAW);
+    gl.bindVertexArray(null);
+    g.indexCount = indices.length;
+  }
+
   /* Return the ground heightfield AABB (null until uploadGround has run). */
   getGroundAabb() {
     return this.ground ? this.ground.aabb : null;

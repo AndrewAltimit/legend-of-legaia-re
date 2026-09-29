@@ -1002,27 +1002,47 @@ The consumers, all disassembly-traced:
 **How the decoration pass turns the window into cells** (`FUN_801F7088`, the disassembly in
 `overlay_dance_801f7088.txt`):
 
-1. The first cell is the focus tile plus the near offset: column `(fx + (E8 << 7)) / 128` from
-   `_DAT_80089118` (`0x801F722C..0x801F72D8`), row `(fz + (E9 << 7)) / 128` from
-   `_DAT_80089120`, each divided with a round-toward-zero fix-up, into scratchpad
+1. The first cell is the focus tile plus the near offset. With `s = fx - (E8 << 7)`, `fx`
+   the stored (negated) focus `_DAT_80089118`, the column is `(0x7F - s) >> 7` - the
+   world focus plus `E8` tiles, rounded **up** on either sign (`0x801F722C..0x801F72D8`);
+   the row is the same over `_DAT_80089120` and `E9`. They land in scratchpad
    `0x1F8002BC` / `0x1F8002C0`. The focus's sub-tile remainders `& 0x7F` go to
    `0x1F80030C` / `0x1F800310`.
 2. The window is clamped against the walk-region box **and written back**
    (`0x801F7304..0x801F7408`): a first column left of `0x384` moves right to it and `E8`
    grows by the same amount; a last column past `0x386` shrinks `EA`; in Z the bounds are
-   `0x385 + 2` and `0x387 + 1`, each capped at `0x7E`, adjusting `E9` / `EB`. So the four
-   scratchpad bytes a later reader sees are already clipped to the current room.
+   `0x385 + 2` and `0x387 + 1`, each capped at `0x7E`, adjusting `E9` / `EB`. The
+   write-back is **scoped to the pass**: the prologue saves `0x384`, `0x385` and `E8..EB`
+   to `0x801F9064..0x801F9078` (`0x801F7178..0x801F71A4`) and the epilogue stores them
+   back (`0x801F7A00..0x801F7A5C`). So the clipped window is what the ground emitter the
+   pass calls at its end reads, and every later reader - the actor cull, the ambient
+   emitter, the next frame's prologue - sees the window the region record or op `0x46`
+   wrote.
 3. The emit origin is the sub-tile remainder plus `(E8 << 7) - 0x40` in X and
    `(E9 << 7) - 0x140` in Z (`0x801F7434..0x801F746C`); the start cell steps back one
-   column and three rows, and the pass walks `(EA - E8) + 1` columns by `(EB - E9) + 1`
-   rows, skipping any cell outside the region box.
+   column and three rows, and the pass walks the **pre-clamp** `(EA - E8) + 10` columns by
+   `(EB - E9) + 10` rows (`sp+0x18` / `sp+0x20`, `0x801F78D4..0x801F7900`), skipping any
+   cell outside the region box (`[0x384, 0x386)` in X, `[0x385 - 1, 0x387)` in Z). A
+   drawn cell must also sit inside the clipped window widened by its record's `+0x1E`
+   cull radius `r`: with `i`, `j` the column and row counters,
+   `1 - r < i < (EA - E8) + 1 + r` and `-r < j < (EB - E9) + 2 + r`
+   (`0x801F7594..0x801F75D8`).
+4. At the end the pass calls the **ground emitter** - `FUN_801F6D48`, or its twin
+   `FUN_801F69EC` when `_DAT_8007BB4C` is non-zero - with the clipped first column and the
+   clipped first row minus one. It draws the `0x1000` ground quads over `EA - E8` columns by
+   `EB - E9` rows of the clipped window, both loops `do`-`while` (a non-positive count still
+   runs once), the row wrapping `& 0x7F`, with no region test of its own.
 
-The port has the bytes (`ZoneFollow::view_window`, fed by the region records and op
-`0x46`) and the focus, but no kernel that turns them into this cell rectangle, and neither
-play host filters its per-cell ground / decoration draws by one: both draw the whole map,
-where retail's frame is black beyond the rectangle. Closing it is one shared kernel
-(focus + window + region box to a cell rectangle, with the step-2 write-back) plus a
-per-frame filter over each host's terrain draw list by cell.
+The engine port is `legaia_engine_core::field_view_window`: `view_cells` is steps 1-2,
+`ViewCells::decoration_visible` step 3's gate over the terrain draw list (each
+`EnvDraw` carries its grid cell and cull radius), `ViewCells::ground_visible` step 4's
+loop, and `field_ground::crop_indices` applies that loop to the heightfield's index list.
+Both play hosts ask the one policy entry `field_view_cells` per frame and gate the same
+two layers through it ([host-drift](../tooling/host-drift.md)). The crop holds at retail
+framing only - the [fidelity section](../subsystems/engine.md#fidelity-and-enhancements)
+has the knob - and is lifted under a cutscene timeline (the published view is the follow
+camera's, not the scripted shot's) and whenever the focus tile falls outside the latched
+region box, which retail's re-centre latch never allows but a seatless port entry can.
 
 The walk-region AABB those clamps read, `0x1F800384..87`, is a different box with a
 different writer: `FUN_800180EC` latches it from the `.MAP` region table, and the

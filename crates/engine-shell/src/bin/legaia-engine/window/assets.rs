@@ -86,6 +86,7 @@ impl PlayWindowApp {
             posed_placement_meshes,
             posed_tmds,
             world_map_hf,
+            ground_src,
             tmd_vram_emitters,
             tmd_color_emitters,
         ) = {
@@ -426,6 +427,9 @@ impl PlayWindowApp {
             // pages resident. Without this surface the town floor renders
             // as holes wherever no `0x2000` tile covers a cell.
             let mut world_map_hf: Option<UploadedVramMesh> = None;
+            // The CPU copy the visible-tile crop re-uploads a cropped index
+            // list from (`ground_crop` in `handle_redraw`).
+            let mut ground_src: Option<GroundSource> = None;
             if let Some(scene) = self.session.host.scene.as_ref()
                 && let Ok(Some(hf)) = scene.walk_heightfield(&self.session.host.index)
                 && !hf.indices.is_empty()
@@ -453,6 +457,7 @@ impl PlayWindowApp {
                             hf.positions.len()
                         );
                         world_map_hf = Some(m);
+                        ground_src = Some(GroundSource { vmesh, flat_refs });
                     }
                     Err(e) => log::warn!("heightfield upload skipped: {e:#}"),
                 }
@@ -468,6 +473,7 @@ impl PlayWindowApp {
                 posed_placement_meshes,
                 posed_tmds,
                 world_map_hf,
+                ground_src,
                 tmd_vram_emitters,
                 tmd_color_emitters,
             )
@@ -517,22 +523,22 @@ impl PlayWindowApp {
         // came from, parallel to the draw list, so the live ladder can be
         // folded back in per frame (`FieldFloorWave` - the op-`0x4C` nibble-9
         // floor wave).
-        let (field_placement_draws, floor_placement, placement_window_keys) =
+        let (field_placement_draws, floor_placement, placement_window_keys, _) =
             self.resolve_field_placement_draws(&res, &tmd_src_index, &posed_placement_meshes, true);
         // Same resolver, but bridged through the colour-mesh list: the untextured
         // props' placement transforms map to `color_meshes` indices.
-        let (field_placement_color_draws, floor_placement_color, placement_color_window_keys) =
+        let (field_placement_color_draws, floor_placement_color, placement_color_window_keys, _) =
             self.resolve_field_placement_draws(
                 &res,
                 &color_tmd_src_index,
                 &posed_placement_meshes,
                 false,
             );
-        let (field_terrain_draws, floor_terrain) =
+        let (field_terrain_draws, floor_terrain, terrain_cell_keys) =
             self.resolve_field_terrain_draws(&res, &tmd_src_index);
         // Untextured ground tiles resolve through the colour-mesh bridge (the
         // textured bridge has no entry for them - they'd render as floor holes).
-        let (field_terrain_color_draws, floor_terrain_color) =
+        let (field_terrain_color_draws, floor_terrain_color, terrain_color_cell_keys) =
             self.resolve_field_terrain_draws(&res, &color_tmd_src_index);
         log::info!(
             "play-window: {} field terrain draws (ground layer, +{} colour tiles)",
@@ -779,6 +785,8 @@ impl PlayWindowApp {
         self.scene_tmd_data = tmd_data;
         self.field_terrain_draws = field_terrain_draws;
         self.field_terrain_color_draws = field_terrain_color_draws;
+        self.field_terrain_cell_keys = terrain_cell_keys;
+        self.field_terrain_color_cell_keys = terrain_color_cell_keys;
         self.field_placement_draws = field_placement_draws;
         self.color_meshes = color_meshes;
         self.field_placement_color_draws = field_placement_color_draws;
@@ -805,6 +813,8 @@ impl PlayWindowApp {
         self.world_map_terrain_draws = world_map_terrain_draws;
         self.world_map_terrain_color_draws = world_map_terrain_color_draws;
         self.ground_heightfield = world_map_hf;
+        self.ground_src = ground_src;
+        self.ground_crop = None;
         self.world_map_slot4_lines = world_map_slot4_lines;
         // World-map ocean: recover the 13-frame CLUT animation for the kingdom
         // (the ocean texture + base CLUT are already uploaded by the slot-0 TIM
