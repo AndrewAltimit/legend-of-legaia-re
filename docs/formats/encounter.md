@@ -999,6 +999,31 @@ The consumers, all disassembly-traced:
 | `FUN_801D6058`, the ambient particle emitter | Samples spawn points across `(EA − E8) − 1` by `(EB − E9) − 1` tiles, i.e. only inside the drawn window. |
 | `FUN_801EAD98` dev-menu rows `0x12..0x15` | Prints all four as signed decimals; `FUN_801E9F64` is the `±1` editor behind those rows. |
 
+**How the decoration pass turns the window into cells** (`FUN_801F7088`, the disassembly in
+`overlay_dance_801f7088.txt`):
+
+1. The first cell is the focus tile plus the near offset: column `(fx + (E8 << 7)) / 128` from
+   `_DAT_80089118` (`0x801F722C..0x801F72D8`), row `(fz + (E9 << 7)) / 128` from
+   `_DAT_80089120`, each divided with a round-toward-zero fix-up, into scratchpad
+   `0x1F8002BC` / `0x1F8002C0`. The focus's sub-tile remainders `& 0x7F` go to
+   `0x1F80030C` / `0x1F800310`.
+2. The window is clamped against the walk-region box **and written back**
+   (`0x801F7304..0x801F7408`): a first column left of `0x384` moves right to it and `E8`
+   grows by the same amount; a last column past `0x386` shrinks `EA`; in Z the bounds are
+   `0x385 + 2` and `0x387 + 1`, each capped at `0x7E`, adjusting `E9` / `EB`. So the four
+   scratchpad bytes a later reader sees are already clipped to the current room.
+3. The emit origin is the sub-tile remainder plus `(E8 << 7) - 0x40` in X and
+   `(E9 << 7) - 0x140` in Z (`0x801F7434..0x801F746C`); the start cell steps back one
+   column and three rows, and the pass walks `(EA - E8) + 1` columns by `(EB - E9) + 1`
+   rows, skipping any cell outside the region box.
+
+The port has the bytes (`ZoneFollow::view_window`, fed by the region records and op
+`0x46`) and the focus, but no kernel that turns them into this cell rectangle, and neither
+play host filters its per-cell ground / decoration draws by one: both draw the whole map,
+where retail's frame is black beyond the rectangle. Closing it is one shared kernel
+(focus + window + region box to a cell rectangle, with the step-2 write-back) plus a
+per-frame filter over each host's terrain draw list by cell.
+
 The walk-region AABB those clamps read, `0x1F800384..87`, is a different box with a
 different writer: `FUN_800180EC` latches it from the `.MAP` region table, and the
 camera re-centre pair `FUN_80017DD4` / `FUN_80017EC8` runs that latch at the re-centre
