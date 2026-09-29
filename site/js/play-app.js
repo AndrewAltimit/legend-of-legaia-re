@@ -3005,9 +3005,9 @@ void main() {
       return true;
     }
 
-    /* The clear colour is part of what a battle looks like, not a renderer
-     * preference: the stage dome is a FRONT HALF, so the band it leaves open
-     * above the horizon is what the player reads as sky. The engine picks it
+    /* The clear colour is part of what a frame looks like, not a renderer
+     * preference: retail black, battle included - a roofless stage shell
+     * shows black above it. The engine picks it
      * (`battle_stage_clear::scene_clear`, the same selector the native window
      * renders with) and this page only applies it.
      *

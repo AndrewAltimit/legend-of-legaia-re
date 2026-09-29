@@ -2309,10 +2309,10 @@ impl PlayWindowApp {
                 });
 
             // The clear colour is the shared engine-ui selector on every
-            // frame, the one the browser play page reads too: black for the
-            // boot UI and for field / cutscene frames (retail's background),
-            // sky blue in a stage-dome battle so the gaps the front-half dome
-            // leaves open read as sky. Passing it only for the boot UI and a
+            // frame, the one the browser play page reads too: retail black for
+            // the boot UI, field / cutscene frames and stage battles alike
+            // (a roofless stage shell shows black above it, as retail's
+            // does). Passing it only for the boot UI and a
             // stage battle left every other frame on the renderer's own
             // fallback navy, a colour neither retail nor the page draws.
             let boot_ui_clear = self.boot_ui.is_active() && !game_over_hold;

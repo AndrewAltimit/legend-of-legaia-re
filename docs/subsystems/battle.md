@@ -1301,8 +1301,11 @@ this way and label them from the resolved transform.
 
 The rest of the stage scene in `legaia-engine play-window`: the phase-scripted
 camera (below), the flat tiled ground grid under the actors (the
-`func_0x801d02c0` grid + constant texture address above), a sky-blue clear so
-open horizon reads as sky, the real **assembled** battle party (see below),
+`func_0x801d02c0` grid + constant texture address above), a black clear -
+the draw environments' background colour is `(0, 0, 0)` in every battle
+capture, so a stage shell with no sky panel (a cave, a castle hall) shows black
+above it, never a sky (`engine-ui::battle_stage_clear`) - the real
+**assembled** battle party (see below),
 and animated monsters. Monster actors compose a half-turn so they face the
 party (`-Z` from the `+Z` seats - the retail Tetsu dialogue close-up shows the
 monster's face while the archive meshes rest facing `+Z`). The actors draw

@@ -1782,10 +1782,17 @@ pub fn battle_command_chips(world: &crate::world::World) -> Option<BattleCommand
     let no_escape = world.battle.no_escape;
     let chip = |label: &str, enabled: bool| (label.to_string(), enabled);
     match cmd.phase {
+        // Both round-prompt chips always carry their word. The records are
+        // static SCUS labels (`0x8007B688` / `0x8007B684`) and the flow SM
+        // `FUN_801D0748` never reads the no-escape byte `ctx[+0x287]` - its
+        // only readers are the escape roll, the monster flee roll and the
+        // action SM - so a boss fight's prompt reads `Begin | Run` exactly
+        // as a random encounter's does (the Gaza fight's capture, whose
+        // `ctx[+0x287]` is `4`). The refusal is the roll's, not the chip's.
         CommandPhase::RoundPrompt { cursor } => Some(BattleCommandChips {
             chips: RoundChoice::PROMPT
                 .iter()
-                .map(|c| chip(c.label(), !matches!(c, RoundChoice::Run) || !no_escape))
+                .map(|c| chip(c.label(), true))
                 .collect(),
             cursor: cursor as usize,
             phase: CommandChipPhase::RoundPrompt,
@@ -2928,6 +2935,21 @@ mod tests {
         let chips = battle_command_chips(&w).expect("prompt chips");
         assert_eq!(chips.phase, CommandChipPhase::RoundPrompt);
         assert_eq!(chips.chips.len(), 2);
+    }
+
+    /// A no-escape fight still labels the prompt's right chip `Run`: the
+    /// flow SM draws the static SCUS word and never reads `ctx[+0x287]`.
+    #[test]
+    fn a_no_escape_round_prompt_still_reads_run() {
+        use crate::battle_input::BattleCommandSession;
+        let mut w = battle_world(1);
+        w.battle.no_escape = true;
+        w.battle.command = Some(BattleCommandSession::new_round_open(0, 0, true));
+        let chips = battle_command_chips(&w).expect("prompt chips");
+        assert_eq!(
+            chips.chips,
+            vec![("Begin".to_string(), true), ("Run".to_string(), true)]
+        );
     }
 
     #[test]
