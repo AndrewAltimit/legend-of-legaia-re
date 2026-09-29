@@ -1675,14 +1675,27 @@ impl SceneHost {
                     i16::from(site.overworld_x) * 128 + 0x40,
                     i16::from(site.overworld_z) * 128 + 0x40,
                 );
-                // Story-conditional entrance: when the record selects its
-                // destination by an op-0x70 flag branch (retail's post-beat
+                // Story-conditional entrance: the record selects its
+                // destination by op-0x70 flag branches (retail's post-beat
                 // dungeon-variant entrance, e.g. `map01`'s dolk -> dolk2 on flag
-                // `0x142`), resolve to the flag-SET alternative once that story
-                // flag latches; otherwise the primary (flag-CLEAR) destination
-                // stands. Mirrors the op-0x70 semantics in the field VM.
-                let (scene_name, index, entry_x, entry_z, dir) = match site.conditional {
-                    Some(cd) if self.world.system_flag_test(cd.flag) => {
+                // `0x142`, or `map03`'s nested CONCNOW / CONCEND / closed
+                // tests). Run the record's branches against the live bank, as
+                // the field VM does on the crossing; a path that parks leaves
+                // the entrance shut, so no portal is installed. A record the
+                // walk cannot decide keeps the static primary / flag-SET pair.
+                use crate::man_field_scripts::{
+                    RecordPathEnd, partition2_record_path_scene_change,
+                };
+                let live =
+                    partition2_record_path_scene_change(&mf, man, usize::from(site.record), &|f| {
+                        self.world.system_flag_test(f)
+                    });
+                let (scene_name, index, entry_x, entry_z, dir) = match (live, site.conditional) {
+                    (Some(RecordPathEnd::SceneChange((index, name, ex, ez, dir))), _) => {
+                        (name, index, ex, ez, dir)
+                    }
+                    (Some(RecordPathEnd::Closed), _) => continue,
+                    (_, Some(cd)) if self.world.system_flag_test(cd.flag) => {
                         (cd.scene_name, cd.index, cd.entry_x, cd.entry_z, cd.dir)
                     }
                     _ => (
