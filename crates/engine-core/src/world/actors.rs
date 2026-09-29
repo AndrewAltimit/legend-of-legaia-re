@@ -1617,9 +1617,18 @@ impl World {
         self.battle.auto_combo.flags = [false; 3];
         self.battle.auto_combo.pending = false;
         self.battle.auto_combo.queues = Default::default();
-        // `ctx[+0x289]`: the side-band's stage-1 phase starts at 0 with the
-        // rest of the battle context.
-        self.battle.sparring_phase = 0;
+        // `ctx[+0x289]` and the rest of the side-band state start at zero with
+        // the rest of the battle context, as do the stage modules' own words.
+        self.battle.sideband = Default::default();
+        self.battle.arrival = Default::default();
+        self.battle.form_transition = Default::default();
+        self.battle.stage_camera = None;
+        self.battle.stage_banner = None;
+        // The entity SM's battle-entry tail writes the stage id: `0` in the
+        // delay slot, raised to the tutorial stage by `arm_battle_tutorial`
+        // when its arm fired (`0x801DA698..0x801DA6B0`). Battle init's
+        // per-formation override is `enter_battle_from_formation`'s.
+        self.battle.stage_id = 0;
         let armed_by_disc = self.take_battle_tutorial_arm();
         if self.battle.tutorial_pending || armed_by_disc {
             self.arm_battle_tutorial();

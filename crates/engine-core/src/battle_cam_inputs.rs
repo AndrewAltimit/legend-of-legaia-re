@@ -36,8 +36,14 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
     // The **input** pickers own the close-up; the top-level command chooser
     // keeps the far framing (`script::phase_for_state` carries the two retail
     // framebuffers that separate them).
+    // The sparring caption is a dialogue close-up too: the side-band's
+    // stage-1 arm aims the camera at the first monster seat through
+    // `FUN_801D829C` with `TR (0, 0x500, 0x400)` (`0x80056324..0x80056364`) -
+    // the Dialogue framing - for exactly the span its hold `ctx[+0x6B0]` is up.
+    let caption_up = world.battle.stage_id == crate::battle_sideband::STAGE_SPARRING
+        && world.battle.sideband.hold != 0;
     let phase = script::phase_for_state(
-        world.dialog.current.is_some() || world.dialog.inline.is_some(),
+        world.dialog.current.is_some() || world.dialog.inline.is_some() || caption_up,
         world.battle.arts_menu.is_some()
             || world.battle.spell_menu.is_some()
             || world.battle.item_menu.is_some(),
@@ -246,8 +252,19 @@ impl World {
     }
 
     /// The battle camera's current pose, or the shared boot pose before the
-    /// first tick armed it.
+    /// first tick armed it. While a battle-stage module owns the camera
+    /// globals (the Cort arrival / form transition,
+    /// [`crate::battle_stage_module`]) this is the module's camera instead,
+    /// so both hosts draw what it frames.
     pub fn battle_cam_pose(&self) -> script::BattleCamPose {
+        if let Some(c) = self.battle.stage_camera.as_ref() {
+            return script::BattleCamPose {
+                pitch: c.pitch as f32,
+                yaw: c.yaw as f32,
+                tr: c.tr.map(|v| v as f32),
+                focus: c.focus.map(|v| v as f32),
+            };
+        }
         self.battle
             .camera
             .as_ref()

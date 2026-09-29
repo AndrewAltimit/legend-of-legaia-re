@@ -29,6 +29,7 @@ mod message_banner;
 mod monster_ai;
 mod selectable;
 mod seru_absorb;
+mod sideband;
 mod stage;
 mod stats;
 mod steal_attack;

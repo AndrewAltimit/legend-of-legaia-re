@@ -16,13 +16,13 @@
 //! `OverlayLoaderHost for ProtCdDmaHost` lives in [`crate::cd_dma`] - and
 //! stays as the decoded spec of the caching rule.
 //!
-//! [`battle_stage_overlay_entry`] and [`boss_transition_stage_id`] are
-//! replaced by the same substitution one layer up: nothing produces the
-//! `_DAT_8007B64A` stage id because nothing pages a stage overlay. The one
-//! battle that does is primed by the host directly, through
-//! `World::prime_battle_tutorial`, and the stage *geometry* the player sees
-//! comes from the resident scene bundle
-//! (`ProtIndex::battle_stage_entry_for_scene`), not from these ids.
+//! [`battle_stage_overlay_entry`] is replaced by the same substitution one
+//! layer up: the stage id `_DAT_8007B64A` is produced (its writers live with
+//! the stage modules, [`crate::battle_stage_module`]), but the engine runs
+//! the three stage overlays' code natively - the sparring prompt machine and
+//! the two Cort modules - so no stage overlay is paged and no PROT entry is
+//! resolved from the id. The stage *geometry* the player sees comes from the
+//! resident scene bundle (`ProtIndex::battle_stage_entry_for_scene`).
 //!
 //! Two SCUS-resident wrappers around [`crate::cd_dma::CdDmaHost::prot_one_shot_load`]
 //! that the mode-table dispatcher uses to stream the active scene's pair of
@@ -160,88 +160,6 @@ pub fn battle_stage_overlay_entry(stage_id: u8) -> Option<u32> {
         return None;
     }
     Some(stage_id as u32 + BATTLE_STAGE_PARAM_BASE as u32 + OVERLAY_PROT_BASE as u32)
-}
-
-/// Stage id the **battle-init** override selects for a formation, or `None`
-/// when the initializer leaves the byte alone.
-///
-/// `FUN_80055B6C` compares the formation cell's first monster id
-/// (`_DAT_8007BD0C`) against
-/// [`crate::encounter_record::BOSS_TRANSITION_MONSTER_ID`] and writes stage
-/// id `2` (extraction entry 968) on a match - `0x80055D2C..0x80055D44`:
-/// `lbu v1,-0x42f4(v1); li v0,0xb5; bne v1,v0; li v0,0x2;
-/// sb v0,-0x49b6(at)`. No other condition: the override is a property of the
-/// formation alone, applied while the phase-1 monster is still alive.
-///
-/// Tagged `REF`, not `PORT`: this mirrors one arm of the battle-scene
-/// initializer, whose body (pool clears, party-slot composition, arena
-/// allocation, disp/draw setup) is ported piecemeal elsewhere - a `PORT` tag
-/// here would mark the whole routine ported on the strength of five
-/// instructions.
-///
-/// REF: FUN_80055B6C (the `0xB5 -> 2` stage-override arm at `0x80055D2C`)
-pub fn battle_init_stage_override(formation_slot0_monster_id: u8) -> Option<u8> {
-    (formation_slot0_monster_id == crate::encounter_record::BOSS_TRANSITION_MONSTER_ID).then_some(2)
-}
-
-/// Stage id the **mid-battle** boss-transition writer selects, or `None`
-/// while its guard holds off. This is the second `_DAT_8007B64A` writer for
-/// the same monster id, resident in the battle overlay (PROT 0898), not in
-/// `SCUS_942.54` - which is why the SCUS-only census sees three sites and
-/// misses it.
-///
-/// The writer is the **tail arm of the Lost Grail "Final Heal" sweep**
-/// `FUN_801E6968` (whose revive body is ported as
-/// `World::apply_final_heal_revives`), run by cleanup state `0x50` of the
-/// battle SM `FUN_801E295C`. The arm (`0x801E6CE4..0x801E6D64`,
-/// `overlay_battle_action_801e6968.txt`) fires when **both** hold:
-///
-/// * `actor_table[3]` - the first monster seat - has HP `+0x14C == 0`
-///   (`lw v0,0xc(s0); lhu v0,0x14c(v0); bne v0,zero,skip` at
-///   `0x801E6CEC..0x801E6D00`), i.e. the phase-1 form is dead;
-/// * the formation cell `_DAT_8007BD0C` still reads `0xB5`
-///   (`lbu v1,-0x42f4(v0); li v0,0xb5; bne v1,v0,skip` at `0x801E6D04..`).
-///
-/// It then issues the loader-B call itself (`jal 0x8003EC70` at
-/// `0x801E6D14` with `a0 = 0x4A` `= 3 + 0x47`, paging extraction entry 969
-/// immediately rather than waiting for the dispatch reader), writes stage id
-/// `3` (`sb v0,-0x49b6(a0)` at `0x801E6D2C`), **increments** `ctx[+0x26]`,
-/// forces the flow-state byte `ctx[+0x7] = 0xFD`, and zeroes the dead seat's
-/// `+0x21C` / `+0x225` bytes.
-///
-/// `ctx[+0x26]` is **not** a phase counter, which is how this arm's increment
-/// used to read it. Its three readers all sit in the action machine's Done
-/// band and the last of them, `0x801E61B4`, passes the byte as the element-id
-/// argument of `FUN_801D8DE8(id, 1)` alongside sibling unloads that pass
-/// literal ids - so it is a UI element id, and `0x65` (the "magic level
-/// increased" banner, stored at `0x801E723C`) is the only value anything
-/// assigns. See `docs/subsystems/battle-action.md`. What this increment is
-/// *for* is unsettled; to every reader it only reads as non-zero.
-///
-/// Monster id `0xB5` is **Cort** (archive id 181; the spell-id collision
-/// with Lapis Wave is settled in `docs/reference/re-settled-threads.md`), so
-/// the evolved-Cort fight walks two stage overlays: 968 from setup (the init
-/// override above, phase 1 alive), then 969 - Cort's form-transition module,
-/// an entry that doubles as the STR-path table - once the form dies. The
-/// guard separating the two arms is the seat's liveness, nothing else.
-///
-/// A print-integrity note: this arm was first sighted at `0x801FD514` in a
-/// base-tag-less `overlay_0897`-program dump. That coordinate is a phantom
-/// printing (`+0x167E8` high); the store's byte pattern
-/// (`24020003 a082b64a`) occurs in **no** PROT entry but 0898, at file
-/// `0x18510` = VA `0x801E6D28` under the tagged base `0x801CE818` - and only
-/// at the real base do the arm's `j 0x801E6***` exits land inside their own
-/// function.
-///
-/// PORT: FUN_801E6968 (the boss-transition tail arm `0x801E6CE4..0x801E6D64`
-/// only; the revive body is `World::apply_final_heal_revives`)
-pub fn boss_transition_stage_id(
-    formation_slot0_monster_id: u8,
-    first_monster_seat_liveness: u16,
-) -> Option<u8> {
-    (formation_slot0_monster_id == crate::encounter_record::BOSS_TRANSITION_MONSTER_ID
-        && first_monster_seat_liveness == 0)
-        .then_some(3)
 }
 
 /// Host hooks for the parallel overlay loaders. Composes the existing

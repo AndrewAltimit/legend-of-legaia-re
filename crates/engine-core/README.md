@@ -282,6 +282,17 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   consumes, raised by town01's Tetsu record two ops before its battle-entry
   op. `World::prime_battle_tutorial` is a debug force, not the port. See
   `docs/subsystems/battle.md#the-sparring-tutorial-prompt-machine-overlay-967`.
+- `battle_sideband` - the battle side-band pass `FUN_80056208`, keyed on
+  the stage id `_DAT_8007B64A`: the sparring caption's hold (stage 1) and
+  the host side of the two Cort stage modules (stages 2 / 3). A pure
+  transition kernel; `World::tick_battle_sideband` runs it once per live
+  battle frame for both play hosts.
+- `battle_stage_module` - the two boss-stage modules the side-band drives
+  for formation monster `0xB5`: PROT 0968's arrival (camera walk, the boss
+  dropping in, the name banner, the hand-back to round one) and PROT 0969's
+  form transition (the 1-HP beat, the shake, the blanked field, the exit to
+  the field). See
+  `docs/subsystems/battle.md#what-the-two-boss-stage-modules-do-overlays-968--969`.
 - `battle_hud` - renderer-agnostic UI model. Holds per-slot HP / MP /
   AP / status icons, a queue of `DamagePopup`s with fade timers, and a
   ringed log column. Engines feed it from `BattleEvent::ApplyArtStrike`

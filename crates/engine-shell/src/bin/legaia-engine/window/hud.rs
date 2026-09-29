@@ -2416,6 +2416,9 @@ impl PlayWindowApp {
         // The battle-intro enemy-name banner (retail flow `0x0A`), laid out
         // with this window's font - the same builder the browser page calls.
         let intro_names = bh::battle_intro_names(w_ref, &self.font);
+        // A battle-stage module's boss-name banner (the Cort arrival), the
+        // same builder the browser page calls.
+        let stage_banner = bh::battle_stage_banner(w_ref, &self.font);
         let badges = self.battle_badge_rects();
         let banner = self.battle_banner_message();
         battle_hud_draws_for(
@@ -2468,6 +2471,7 @@ impl PlayWindowApp {
                 ap_plate_value: bh::battle_ring_ap_plate_value(w_ref),
                 commit_log: &commit_log,
                 intro_names: &intro_names,
+                stage_banner: stage_banner.as_ref().map(|(l, x, y)| (l.as_str(), *x, *y)),
                 diag: legaia_engine_render::diag_hud_enabled(),
             },
             BATTLE_HUD_PEN,

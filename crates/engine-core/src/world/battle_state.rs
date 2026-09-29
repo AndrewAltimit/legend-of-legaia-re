@@ -351,12 +351,32 @@ pub struct BattleState {
     /// ([`legaia_engine_vm::battle_commit_log::LogLaunch`]). `None` while the
     /// log rests; cleared by a commit (the next member's row lands fresh).
     pub commit_log_launch: Option<legaia_engine_vm::battle_commit_log::LogLaunch>,
-    /// The sparring fight's side-band phase byte - retail `ctx[+0x289]`,
-    /// the SCUS tick `FUN_80056208`'s stage-1 cursor: `0` waiting for the
-    /// round start, `1` the opening caption up (the flow SM held back),
-    /// `2` the prompt machine live. See
-    /// [`crate::world::World::raise_sparring_caption_if_due`]. Reset at battle entry.
-    pub sparring_phase: u8,
+    /// The battle side-band's state ([`crate::battle_sideband`], retail
+    /// `FUN_80056208`): the stage phase cursor `ctx[+0x289]` (the sparring
+    /// intro's `0` waiting / `1` caption up / `2` prompt machine live, and
+    /// the arrival / form-transition modules' own phases), the caption timer,
+    /// the hold flag. Ticked by `World::tick_battle_sideband`; reset at
+    /// battle entry.
+    pub sideband: crate::battle_sideband::BattleSidebandState,
+    /// The battle stage id `_DAT_8007B64A` - `0` for every fight but three:
+    /// `1` the sparring tutorial (PROT 0967), `2` the Cort formation while its
+    /// arrival runs (PROT 0968), `3` once its first form has fallen (PROT
+    /// 0969). Written by the four retail writers' ports and read by
+    /// [`crate::world::World::battle_stage_id`].
+    pub stage_id: u8,
+    /// PROT 0968's own data words while it runs.
+    pub arrival: crate::battle_stage_module::ArrivalState,
+    /// PROT 0969's own data words while it runs.
+    pub form_transition: crate::battle_stage_module::FormTransitionState,
+    /// The camera globals a stage module owns while it runs; `None` when the
+    /// phase-scripted battle camera owns them. `World::battle_cam_pose`
+    /// reads this first, so both hosts draw the module's camera.
+    pub stage_camera: Option<crate::battle_stage_module::StageCamera>,
+    /// The arrival's boss-name banner, `(text, pen x, pen y)` - up from its
+    /// phase 5 until the round opens (retail's text actor, swept by flow
+    /// state `0x0B`'s `FUN_800355F0`). Measured by the host's font, so the
+    /// pen x is filled in by `battle_hud::battle_stage_banner`.
+    pub stage_banner: Option<String>,
     /// Frames the battle-**intro** enemy-name banner has left - retail's
     /// `ctx[+0x6D6]` intro timer, which flow state `0x0A` seeds at `0x5A`
     /// (`0x78` with a formation advantage, `0x801D0E14..0x801D0E38`) and which
@@ -567,7 +587,12 @@ impl BattleState {
             flow: crate::battle_flow::BattleFlowState::Idle,
             round_flow: crate::battle_round::RoundFlow::default(),
             commit_log_launch: None,
-            sparring_phase: 0,
+            sideband: Default::default(),
+            stage_id: 0,
+            arrival: Default::default(),
+            form_transition: Default::default(),
+            stage_camera: None,
+            stage_banner: None,
             intro_names_frames: 0,
             auto_combo: Default::default(),
             camera: None,

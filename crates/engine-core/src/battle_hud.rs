@@ -1022,6 +1022,29 @@ pub fn battle_intro_names(
         .collect()
 }
 
+/// The boss-name banner a battle-stage module has up this frame, as
+/// `(label, pen x, pen y)` - the Cort arrival's phase 5 (PROT 0968,
+/// `0x801F7054..0x801F709C`), which measures the first monster's name with
+/// `FUN_80035F04` and spawns it as a frameless text actor at
+/// `(0xA0 - (width >> 1), 0x96)`. `font` is that width measure. Up until the
+/// module hands the round back.
+pub fn battle_stage_banner(
+    world: &crate::world::World,
+    font: &legaia_font::Font,
+) -> Option<(String, i32, i32)> {
+    use crate::battle_stage_module::{ARRIVAL_BANNER_CENTRE_X, ARRIVAL_BANNER_Y};
+    if world.mode != crate::world::SceneMode::Battle {
+        return None;
+    }
+    let label = world.battle.stage_banner.as_ref()?;
+    let width = font.layout_ascii(label).advance_x as i32;
+    Some((
+        label.clone(),
+        ARRIVAL_BANNER_CENTRE_X - (width >> 1),
+        ARRIVAL_BANNER_Y,
+    ))
+}
+
 /// Which of retail's HUD phases the frame is in.
 ///
 /// Retail's battle HUD is not drawn per frame - it is a list of retained

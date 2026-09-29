@@ -629,6 +629,9 @@ impl LegaiaRuntime {
         let intro_names = world
             .map(|w| bh::battle_intro_names(w, font))
             .unwrap_or_default();
+        // A battle-stage module's boss-name banner (the Cort arrival), the
+        // same builder the native window calls.
+        let stage_banner = world.and_then(|w| bh::battle_stage_banner(w, font));
         ui::battle_hud_draws_for(
             font,
             &ui::BattleHudFrame {
@@ -679,6 +682,7 @@ impl LegaiaRuntime {
                 ap_plate_value: world.and_then(bh::battle_ring_ap_plate_value),
                 commit_log: &commit_log,
                 intro_names: &intro_names,
+                stage_banner: stage_banner.as_ref().map(|(l, x, y)| (l.as_str(), *x, *y)),
                 diag: ui::diag_hud_enabled(),
             },
             BATTLE_HUD_PEN,
