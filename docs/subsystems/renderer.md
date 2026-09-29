@@ -1584,6 +1584,25 @@ render-node allocation and the mesh-chain follow-through - is written up under
 `legaia_engine_render::actor_bind`, which carries the index rule as a unit test
 against the obj-114 case above.
 
+**A placed object draws at its actor's render scale.** A bound placement is an
+actor, and the per-actor draw composes `actor[+0x72]` into the model matrix
+whenever it is not `0x1000`: `FUN_8001ADA4` case 5 reads it at `0x8001B240`
+(`lhu v1,0x72(s0)` / `li v0,0x1000` / `beq v1,v0`) and otherwise stores it three
+times into the scale vector at `0x1F800348` and calls `ScaleMatrix`
+(`jal 0x8005B4E8` at `0x8001B288`) on the actor's rotation. The bind record's
+spawn prologue sets the word, so the `.MAP` record alone does not say how big an
+object draws. town01's horizon backdrop is the case that shows it: pack 85, a
+`17920 x 9600` plane placed at `(3264, 6744)` behind partition-0 record 26,
+draws at `0x400`, a quarter - the value the actor at that position holds in a
+retail `first_town_interactive` capture. At unit scale the plane stands between
+the plaza camera and the player and fills the frame with its sky texture. The
+port reads the scale off the object-bind channels once the prologues have run
+(`World::object_render_scales`) and both hosts fold it in after the rotation
+through one kernel, `field_env::placed_render_scales`; a zero scale stays the
+story-hidden gate's business. Like the hidden gate, the scale is baked with the
+scene's draw lists, so a script that ramps it mid-scene is not followed. Pinned
+by `crates/engine-core/tests/field_object_render_scale_disc.rs`.
+
 #### CLUT-trace + VRAM-oracle diagnostics
 
 Two `legaia-engine` subcommands surface where the engine's loader still has gaps against a captured runtime VRAM:

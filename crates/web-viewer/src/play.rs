@@ -81,6 +81,11 @@ pub struct FieldRender {
     /// world plane (a floor slab against its room's wall-strip aprons)
     /// z-fights view-angle-dependently on this page alone.
     pub coplanar_offsets: std::collections::HashMap<EnvDraw, [f32; 3]>,
+    /// Per-placement uniform render scale (parallel to [`Self::placements`]):
+    /// the bind record's `actor[+0x72]` as a factor, `1.0` for the ordinary
+    /// unit-scale object - [`field_env::placed_render_scales`], the kernel the
+    /// native play-window folds into the same draws' model matrices.
+    pub placement_scales: Vec<f32>,
 }
 
 /// The lead party member's field-form actor: the object-local mesh, its
@@ -189,6 +194,7 @@ pub fn build_field_render(
     res: &SceneResources,
     is_world_map: bool,
     hidden_records: &std::collections::HashSet<usize>,
+    render_scales: &std::collections::HashMap<usize, u16>,
 ) -> FieldRender {
     let env_tmds = field_env::env_pack_tmd_indices(scene, res);
     let floor_lut = scene.field_floor_height_lut(index).ok().flatten();
@@ -236,6 +242,8 @@ pub fn build_field_render(
     if let Some(binds) = binds.as_ref() {
         field_env::retain_visible_placed_draws(&mut placements, binds, hidden_records);
     }
+    let placement_scales =
+        field_env::placed_render_scales(&placements, binds.as_ref(), render_scales);
     let window_keys = placements
         .iter()
         .map(|d| field_env::placed_window_key(d, binds.as_ref()))
@@ -267,6 +275,7 @@ pub fn build_field_render(
         cur: None,
         occluders,
         coplanar_offsets,
+        placement_scales,
     }
 }
 
@@ -563,6 +572,17 @@ impl LegaiaRuntime {
         self.field
             .as_ref()
             .map(|f| f.placements.iter().map(|d| d.rot_y).collect())
+            .unwrap_or_default()
+    }
+
+    /// Per-placement uniform render scale (parallel to
+    /// [`Self::field_placement_slots`]): the bind record's `actor[+0x72]` as a
+    /// factor, applied after the rotation (`T * R * S`). `1.0` for nearly
+    /// every placement; town01's horizon backdrop draws at `0.25`.
+    pub fn field_placement_scales(&self) -> Vec<f32> {
+        self.field
+            .as_ref()
+            .map(|f| f.placement_scales.clone())
             .unwrap_or_default()
     }
 

@@ -532,6 +532,33 @@ pub fn retain_visible_placed_draws(
     });
 }
 
+/// Per-draw uniform render scale of a placed-object list (parallel to
+/// `draws`): the bind record's `actor[+0x72]` as a factor (`0x1000` = `1.0`),
+/// `1.0` for a draw with no bind or no listed scale.
+///
+/// `record_scales` is [`World::object_render_scales`]. Both hosts fold the
+/// factor into the draw's model matrix after the rotation (`T * R * S`), which
+/// is where retail's `ScaleMatrix` lands it: the scale multiplies the actor's
+/// rotation matrix, never its translation.
+///
+/// [`World::object_render_scales`]: crate::world::World::object_render_scales
+// REF: FUN_8001ADA4 (case 5 scale compose, `0x8001B240..0x8001B28C`)
+pub fn placed_render_scales(
+    draws: &[EnvDraw],
+    binds: Option<&HashMap<(u8, u8), ObjectBind>>,
+    record_scales: &HashMap<usize, u16>,
+) -> Vec<f32> {
+    draws
+        .iter()
+        .map(|d| {
+            binds
+                .and_then(|b| b.get(&d.anchor))
+                .and_then(|b| record_scales.get(&(b.record as usize)))
+                .map_or(1.0, |&s| f32::from(s) / 4096.0)
+        })
+        .collect()
+}
+
 /// The identity a window-owned placed draw shares with the actor the sub-area
 /// window sweep spawns for it: the footprint-anchor tile plus the X/Z the
 /// sweep computes (`tile * 0x80 + 0x40 + desc[+0]`, `tile * 0x80 - (desc[+4] -

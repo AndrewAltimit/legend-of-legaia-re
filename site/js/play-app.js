@@ -958,7 +958,7 @@ void main() {
        * floor-wave offset array (`rt.field_floor_wave_offsets()`, terrain then
        * placements), so a draw the loop below SKIPS - a mesh with
        * no renderable prims - does not shift every later draw's rung. */
-      const push = (slots, pos, rots, anims, rotsX, rotsZ, floorBase, placed) => {
+      const push = (slots, pos, rots, anims, rotsX, rotsZ, floorBase, placed, scales) => {
         for (let i = 0; i < slots.length; i++) {
           const anim = anims ? anims[i] : 0;
           let meshId, animRec = null;
@@ -983,7 +983,9 @@ void main() {
             meshId,
             x: pos[i * 3], y: -pos[i * 3 + 1], z: pos[i * 3 + 2],
             rotY: -(rots[i] & 0xFFF) * A2R,
-            scale: 1.0,
+            /* The bind record's render scale (`actor[+0x72]`, retail's
+             * case-5 `ScaleMatrix`) - 1.0 for nearly every placement. */
+            scale: (scales && scales.length > i) ? scales[i] : 1.0,
           };
           /* A placement with an authored X/Z tilt cannot go through the
            * yaw-only path: that builder's negated-yaw convention is a
@@ -997,7 +999,7 @@ void main() {
           if (rx || rz) {
             draw.model = placementModelEuler(
               draw.x, draw.y, draw.z,
-              rx * A2R, (rots[i] & 0xFFF) * A2R, rz * A2R, 1.0);
+              rx * A2R, (rots[i] & 0xFFF) * A2R, rz * A2R, draw.scale);
           }
           /* World box for the occluder test, baked once (see `_frame`). */
           draw.box = placementWorldBox(aabb, draw);
@@ -1024,7 +1026,8 @@ void main() {
         rt.field_placement_anim_ids(),
         rt.field_placement_rot_x ? rt.field_placement_rot_x() : null,
         rt.field_placement_rot_z ? rt.field_placement_rot_z() : null,
-        terrainSlots.length, true);
+        terrainSlots.length, true,
+        rt.field_placement_scales ? rt.field_placement_scales() : null);
       this._floorWaveLive = false;
 
       /* Player: geometry once, positions re-uploaded per frame from the pose. */

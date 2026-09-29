@@ -2146,6 +2146,28 @@ impl World {
             .collect()
     }
 
+    /// Flat partition-0 record index -> render scale for every **object-bind
+    /// channel** whose spawn prologue left `actor[+0x72]` at a non-zero,
+    /// non-unit value. Retail's per-actor render dispatcher composes that word
+    /// into the model matrix for every placed object it draws
+    /// (`FUN_8001ADA4` case 5: `lhu v1,0x72(s0)` / `li v0,0x1000` /
+    /// `beq v1,v0` at `0x8001B240`, else `ScaleMatrix` over `(s, s, s)` at
+    /// `0x8001B288`), so a prop the prologue shrinks draws shrunk. town01's
+    /// horizon backdrop (partition-0 record 26, a `17920 x 9600` plane at
+    /// `(3264, 6744)`) is the case that needs it: its actor carries `0x400`
+    /// in a retail capture, and at unit scale the plane stands between the
+    /// plaza camera and the player. Zero-scale objects are
+    /// [`Self::hidden_object_records`]' business and are not listed here.
+    // REF: FUN_8001ADA4 (scale-vector compose, disasm 8001b240..8001b28c)
+    pub fn object_render_scales(&self) -> std::collections::HashMap<usize, u16> {
+        self.field_vm
+            .channels
+            .iter()
+            .filter(|c| c.object_bind && c.ctx.field_72 != 0 && c.ctx.field_72 != 0x1000)
+            .map(|c| (c.placement_index, c.ctx.field_72))
+            .collect()
+    }
+
     // PORT: FUN_80039B7C (per-actor frame-slice loop; NOP break + halt park)
     // REF: FUN_8003C83C (cross-context target resolve)
     pub fn step_field_channels(&mut self) {

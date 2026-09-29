@@ -201,9 +201,14 @@ impl PlayWindowApp {
             &self.session.host.world.hidden_object_records(),
         );
 
+        let scales = field_env::placed_render_scales(
+            &draws,
+            Some(&binds),
+            &self.session.host.world.object_render_scales(),
+        );
         let bank = &self.session.host.world.props.bank;
         let mut props = Vec::new();
-        for d in &draws {
+        for (d, &scale) in draws.iter().zip(&scales) {
             if d.anim_id == 0 || !bank.props.contains_key(&d.anchor) {
                 continue;
             }
@@ -224,7 +229,8 @@ impl PlayWindowApp {
                 d.world_z as f32 + off[2],
             ));
             let rot =
-                legaia_engine_render::battle_intro::placement_rotation(d.rot_x, d.rot_y, d.rot_z);
+                legaia_engine_render::battle_intro::placement_rotation(d.rot_x, d.rot_y, d.rot_z)
+                    * Mat4::from_scale(Vec3::splat(scale));
             props.push(PosedPropDraw {
                 anchor: d.anchor,
                 anim_id: d.anim_id,
@@ -1019,6 +1025,14 @@ impl PlayWindowApp {
                 &self.session.host.world.hidden_object_records(),
             );
         }
+        // Render scale: a bind record's prologue can leave the actor's
+        // `+0x72` at a non-unit value (town01's horizon backdrop draws at a
+        // quarter), and retail's case-5 draw folds it into the model matrix.
+        let scales = legaia_engine_core::field_env::placed_render_scales(
+            &env_draws,
+            binds,
+            &self.session.host.world.object_render_scales(),
+        );
         let diag = std::env::var_os("LEGAIA_DIAG_PLACE").is_some();
         if diag {
             for d in &dropped {
@@ -1072,7 +1086,7 @@ impl PlayWindowApp {
         // (`Some` = the sub-area window sweep's, gated per frame on the
         // world's windowed static-object list by `field_env::placed_draw_live`).
         let mut window_keys = Vec::new();
-        for d in &env_draws {
+        for (d, &scale) in env_draws.iter().zip(&scales) {
             // A bind with an anim id means the prop's TMD objects are that
             // clip's bones, and the clip is live (a house door swings open on
             // contact). Those props are drawn from `field_posed_props`, which
@@ -1139,7 +1153,8 @@ impl PlayWindowApp {
             // world-map pairing applies the per-model flip on the left of
             // `rot`. So the same matrix is correct for both.
             let rot =
-                legaia_engine_render::battle_intro::placement_rotation(d.rot_x, d.rot_y, d.rot_z);
+                legaia_engine_render::battle_intro::placement_rotation(d.rot_x, d.rot_y, d.rot_z)
+                    * Mat4::from_scale(Vec3::splat(scale));
             let model = if flip_y {
                 t * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0)) * rot
             } else {
