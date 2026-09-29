@@ -410,6 +410,11 @@ pub struct Placement {
     /// World Z of the static collision-box centre; pairs with
     /// [`Self::collider_x`].
     pub collider_z: i32,
+    /// The record's `+0x1E` byte ([`ObjectRecord::cull_radius`]). The field
+    /// decoration pass `FUN_801F7088` widens its per-cell window test by it
+    /// (`0x801F7594..0x801F75D8`), so a large cell mesh is drawn from further
+    /// outside the camera's visible-tile window than a small one.
+    pub cull_radius: u8,
 }
 
 impl Placement {
@@ -524,6 +529,7 @@ pub fn parse_placements(field_map: &[u8]) -> Vec<Placement> {
                 rot_z: rec.rot_z,
                 collider_x: world_x(col as u8, rec.x_off) + collision_footprint_offset(&rec).0,
                 collider_z: world_z(row as u8, rec.z_off) + collision_footprint_offset(&rec).1,
+                cull_radius: rec.cull_radius,
             });
         }
     }
@@ -632,6 +638,7 @@ pub fn parse_terrain_tiles_gated(field_map: &[u8], gate: u16, walk_mesh: bool) -
                 rot_z: rec.rot_z,
                 collider_x: world_x(col as u8, rec.x_off) + collision_footprint_offset(&rec).0,
                 collider_z: world_z(row as u8, rec.z_off) + collision_footprint_offset(&rec).1,
+                cull_radius: rec.cull_radius,
             });
         }
     }
@@ -1112,6 +1119,7 @@ mod tests {
             rot_z: 0,
             collider_x: 0,
             collider_z: 0,
+            cull_radius: 0,
         };
         // Placed object: single nibble.
         assert_eq!(p.world_y(&lut), -192 + 10);

@@ -106,6 +106,14 @@ pub struct EnvDraw {
     /// resolved from, so a host can re-resolve it when the ladder **moves**
     /// under a baked draw list - see [`FloorAnchor`] and [`FloorWave`].
     pub floor: FloorAnchor,
+    /// The object-grid cell `(col, row)` whose word selected this draw's
+    /// record - the cell retail's per-cell decoration pass (`FUN_801F7088`)
+    /// walks, and so the key the camera's visible-tile crop
+    /// ([`crate::field_view_window`]) tests.
+    pub cell: (u8, u8),
+    /// The record's `+0x1E` cull radius ([`Placement::cull_radius`]), which
+    /// widens that per-cell window test.
+    pub cull_radius: u8,
 }
 
 /// The rung(s) of the scene floor-height ladder one [`EnvDraw`]'s world Y was
@@ -494,6 +502,8 @@ pub fn resolve_placed_env_draws(
                 corners: p.floor_corner_nibbles,
                 nibble: p.floor_nibble,
             },
+            cell: (p.col, p.row),
+            cull_radius: p.cull_radius,
         });
     }
     (draws, drops)
@@ -1896,6 +1906,7 @@ mod tests {
             rot_z: 0,
             collider_x: 0,
             collider_z: 0,
+            cull_radius: 0,
         }
     }
 
@@ -1926,6 +1937,8 @@ mod tests {
                     corners: None,
                     nibble: Some(6),
                 },
+                cell: (2, 3),
+                cull_radius: 0,
             }]
         );
     }

@@ -213,6 +213,15 @@ pub struct OptionsState {
     /// placement for the whole map, so a sub-area's unbound props do not pop
     /// in on a door. The list is re-planned on every re-centre either way.
     pub retail_static_window: bool,
+    /// Retail's visible-tile crop: draw only the ground and decoration cells
+    /// the camera's visible tile window (`0x1F8003E8..EB`, clipped to the walk
+    /// region) reaches, as the field render library (`FUN_801F7088`) does.
+    /// Mirrors into [`crate::world::WorldToggles::view_window_crop`].
+    /// **Default on**, and only effective at retail framing
+    /// ([`crate::field_view_window::framing_is_retail`]): the window is sized
+    /// for retail's frustum, so a farther or re-aimed camera draws the whole
+    /// map instead of opening black edges. Off draws the whole map always.
+    pub retail_view_window: bool,
 }
 
 impl Default for OptionsState {
@@ -235,6 +244,7 @@ impl Default for OptionsState {
             precise_movement: false,
             reduce_flashing: true,
             retail_static_window: true,
+            retail_view_window: true,
         }
     }
 }
@@ -255,6 +265,7 @@ impl OptionsState {
         world.toggles.reduce_flashing = self.reduce_flashing;
         world.toggles.select_attack = self.battle_select_attack;
         world.terrain.static_window.retail_windowing = self.retail_static_window;
+        world.toggles.view_window_crop = self.retail_view_window;
     }
 
     /// Load from a TOML file, falling back to [`Default`] if the file is

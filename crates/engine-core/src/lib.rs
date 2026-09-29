@@ -86,6 +86,7 @@ pub mod field_menu;
 pub mod field_menu_dispatch;
 pub mod field_occlusion;
 pub mod field_regions;
+pub mod field_view_window;
 pub mod fishing;
 pub mod fishing_actors;
 pub mod fishing_chrome;

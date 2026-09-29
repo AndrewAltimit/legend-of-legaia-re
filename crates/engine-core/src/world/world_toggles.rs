@@ -22,6 +22,11 @@ pub struct WorldToggles {
     /// through untouched. The move-VM state itself always advances
     /// retail-exact - this only shapes the VRAM presentation.
     pub reduce_flashing: bool,
+    /// Retail's **visible-tile crop** on the field ground + decoration layers
+    /// ([`crate::field_view_window::field_view_cells`]), from
+    /// [`crate::options::OptionsState::retail_view_window`]. Default on; it
+    /// only takes effect at retail framing.
+    pub view_window_crop: bool,
     // --- live gameplay loop (Field <-> Battle round trip) -----------------
     /// Master opt-in for the **field side** of the in-`tick` Field <-> Battle
     /// round trip: the step-driven random-encounter roll.
@@ -86,6 +91,7 @@ impl WorldToggles {
         Self {
             entry_pulse_enabled: true,
             reduce_flashing: true,
+            view_window_crop: true,
             live_gameplay_loop: false,
             smarter_monster_targeting: false,
             use_vm_dialogue: false,
