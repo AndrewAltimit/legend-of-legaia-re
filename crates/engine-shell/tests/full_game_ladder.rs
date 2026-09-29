@@ -693,6 +693,9 @@ enum Run {
 /// Up to Yes first, or the prompt drops back to editing forever.
 fn script_pad(session: &BootSession, f: usize) -> u16 {
     use legaia_engine_core::name_entry::NameEntryState;
+    if let Some(pad) = held_pad_poll(session) {
+        return pad;
+    }
     if f % 16 >= 2 {
         return 0;
     }
@@ -709,6 +712,42 @@ fn script_pad(session: &BootSession, f: usize) -> u16 {
         return PadButton::Up.mask();
     }
     PadButton::Cross.mask()
+}
+
+/// The d-pad a record is polling for: a cutscene timeline (or spawned
+/// record) sitting on op `42 01 <i>`, the held-pad compare against the
+/// compass table (`0x801F28D0`: Down, Down+Left, Left, Left+Up, Up,
+/// Up+Right, Right, Right+Down). Rim Elm's "stand here and press" beats
+/// (`town01` P2[12..14], `town0e` P2[0..4]) re-run every tick the player
+/// stands on the tile (the `2E 13` re-poll bit) and take their action only
+/// while the direction is held.
+fn held_pad_poll(session: &BootSession) -> Option<u16> {
+    let w = &session.host.world;
+    let (bc, pc) = if let Some(tl) = w.cutscene.timeline.as_ref() {
+        (&tl.bytecode, tl.pc)
+    } else {
+        let h = w.field_vm.helper_contexts.first()?;
+        (&h.bytecode, h.pc)
+    };
+    // The record re-spawns every tick, so between ticks it usually sits on
+    // the `2E 13` that raises the re-poll bit, one op ahead of the poll.
+    let pc = if bc.get(pc..pc + 2) == Some(&[0x2E, 0x13]) {
+        pc + 2
+    } else {
+        pc
+    };
+    if bc.get(pc) != Some(&0x42) || bc.get(pc + 1) != Some(&0x01) {
+        return None;
+    }
+    let (d, l, u, r) = (
+        PadButton::Down.mask(),
+        PadButton::Left.mask(),
+        PadButton::Up.mask(),
+        PadButton::Right.mask(),
+    );
+    [d, d | l, l, l | u, u, u | r, r, r | d]
+        .get(usize::from(*bc.get(pc + 2)?))
+        .copied()
 }
 
 /// A conversation picker: the talk record's address and the picker's offset
