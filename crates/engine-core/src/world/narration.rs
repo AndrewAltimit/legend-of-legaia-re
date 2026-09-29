@@ -1542,6 +1542,43 @@ impl World {
                 }
                 if vm::field::peek_extended(&tl.bytecode, pc) == Some(0xF8) {
                     let op = opcode_byte & 0x7F;
+                    // Player seats (`A3 F8 x z` MOVE_TO, `CC F8 51 x z ..`
+                    // NPC-run): `FUN_8003C83C` resolves `0xF8` to the player
+                    // object, so the op runs with the PLAYER as its context
+                    // and takes the player arm (`0x801DEC7C` compares the
+                    // context pointer against `_DAT_8007C364`). Stepping
+                    // them on the record's own context instead dropped the
+                    // seat: `urudre1` `P2[1]` walks the player to (97,8) for
+                    // the shot and closes with `A3 F8 60 0D`, and without it
+                    // free roam resumed on a tile no direction leaves.
+                    // REF: FUN_8003C83C, FUN_801DE840 (0x23 / 4C 51 arms)
+                    if op == 0x23 || (op == 0x4C && tl.bytecode.get(pc + 2) == Some(&0x51)) {
+                        let mut player_ctx = legaia_engine_vm::field::FieldCtx {
+                            script_id: 0xF8,
+                            flags: 0x0100_0000,
+                            ..Default::default()
+                        };
+                        let r = vm::field::step(&mut host, &mut player_ctx, &tl.bytecode, pc);
+                        if let FieldStepResult::Advance { next_pc } = r {
+                            if let Some(slot) = host.world.player_actor_slot
+                                && let Some(actor) = host.world.actors.get(slot as usize)
+                            {
+                                let (x, z) = (actor.move_state.world_x, actor.move_state.world_z);
+                                let y = host
+                                    .world
+                                    .sample_field_floor_height(i32::from(x), i32::from(z))
+                                    as i16;
+                                if let Some(a) = host.world.actors.get_mut(slot as usize) {
+                                    a.move_state.world_y = y;
+                                }
+                            }
+                            if pc < tl.visited.len() {
+                                tl.visited[pc] = true;
+                            }
+                            tl.pc = next_pc;
+                            continue;
+                        }
+                    }
                     if op == 0x22
                         && let Some(&move_id) = tl.bytecode.get(pc + 2)
                     {
@@ -4187,5 +4224,26 @@ mod tests {
             !w.system_flag_test(0x21),
             "an unaddressed placement's talk body stays asleep"
         );
+    }
+
+    #[test]
+    fn a_player_targeted_move_to_in_a_timeline_seats_the_player() {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        // `A3 F8 60 0D` (MOVE_TO against the player anchor), then a wait.
+        let mut w = World::new();
+        w.install_field_player(0);
+        let slot = 0u8;
+        w.cutscene.timeline = Some(CutsceneTimeline::new(
+            vec![0xA3, 0xF8, 0x60, 0x0D, 0x4A, 0x40, 0x00],
+            0,
+        ));
+        w.step_cutscene_timeline();
+        let ms = &w.actors[slot as usize].move_state;
+        assert_eq!(
+            (ms.world_x, ms.world_z),
+            (0x60 * 0x80 + 0x40, 0x0D * 0x80 + 0x40),
+            "retail resolves 0xF8 to the player and takes the player arm"
+        );
+        assert_eq!(w.cutscene.timeline.as_ref().unwrap().pc, 4);
     }
 }
