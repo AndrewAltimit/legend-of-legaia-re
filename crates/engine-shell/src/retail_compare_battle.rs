@@ -67,8 +67,13 @@ const ACTOR_TABLE: u32 = 0x801C_9370;
 const ENTRY_TICKS: u32 = 400;
 /// Engine ticks run between the battle-mode flip and sampling.
 pub const BATTLE_SETTLE_TICKS: u64 = 60;
-/// Frames the battle opening may take to reach the first round prompt.
-const OPENING_TICKS: u32 = 900;
+/// Frames the battle opening may take to reach the first round prompt. The
+/// bound is the longest retail opening, not a typical one: the evolved-Cort
+/// arrival (PROT 0968) parks the flow byte at `0x0C` for about 3200 vsyncs
+/// before it hands round one back (`docs/subsystems/battle.md`, flow `0x0C`
+/// is the boss stage module's baton). Every other fight leaves the loop on
+/// its first prompt, so the bound costs nothing there.
+const OPENING_TICKS: u32 = 4800;
 /// The battle projection's `H` (`FUN_8003D254`; `battle_cam_script::GTE_H`).
 const BATTLE_H: i16 = 256;
 
@@ -286,6 +291,16 @@ pub fn run_engine_battle(
             session.host.world.tables.monster_catalog.insert(def);
         }
     }
+    // The fight's own composition: retail's present list `0x8007BD10` is
+    // the battle's seat table, not the save window's field party. They
+    // differ on a guest seat (id `4`) and on a battle-id fight, whose init
+    // (`FUN_80055B6C` with `DAT_8007B7FC != 0`) re-seeds the fallback trio
+    // `{1, 2, 3}` through `FUN_80055B20` whatever the field party was. The
+    // image side passes the same list as `play-window --party`.
+    let seats = retail_roster_slots(battle);
+    if !seats.is_empty() && seats != session.host.world.party.active_party {
+        session.host.world.set_active_party(seats);
+    }
     // The field's own track word and the world's current track, as the
     // battle swap will find them.
     let field_word = session.host.bgm_track_word.or(director.last);
@@ -347,14 +362,20 @@ pub fn run_engine_battle(
     }
     let world = &mut session.host.world;
     let pc = world.party.party_count.clamp(1, 3) as usize;
-    let party_maxes: Vec<(u16, u16)> = world
-        .save_full()
-        .party
-        .members
-        .iter()
-        .map(|m| {
-            let v = m.hp_mp_sp();
-            (v.hp_max, v.mp_max)
+    // Battle ordinal `s` holds roster record `party_roster_slot(s)` (the
+    // present-party list): a solo duel's Gala is ordinal 0 but record 2, and
+    // retail's battle init copies the max from *that* record (`+0x108`,
+    // `FUN_80053CB8` at `0x80053E50`).
+    let roster = world.save_full().party;
+    let party_maxes: Vec<(u16, u16)> = (0..pc)
+        .map(|s| {
+            roster
+                .members
+                .get(world.party_roster_slot(s))
+                .map_or((0, 0), |m| {
+                    let v = m.hp_mp_sp();
+                    (v.hp_max, v.mp_max)
+                })
         })
         .collect();
     let comb = |a: &legaia_engine_core::world::Actor, mp_max: u16| Combatant {
@@ -557,13 +578,22 @@ pub const BATTLE_CAPTURE_TICK: u64 = 320;
 
 /// The `play-window` arguments that reproduce this fight: the MAN row and
 /// the retail party composition (`0x8007BD10` ids are 1-based roster ids).
-pub fn play_window_args(battle: &RetailBattle, row: u16) -> Vec<String> {
-    let mut args = vec!["--battle".to_string(), row.to_string()];
-    let party: Vec<String> = battle
+/// Retail's present list as 0-based roster slots (`0x8007BD10` holds 1-based
+/// roster ids; `4` is the guest / AI-companion record).
+fn retail_roster_slots(battle: &RetailBattle) -> Vec<u8> {
+    battle
         .seat_chars
         .iter()
         .filter(|&&c| (1..=4).contains(&c))
-        .map(|&c| (c - 1).to_string())
+        .map(|&c| c - 1)
+        .collect()
+}
+
+pub fn play_window_args(battle: &RetailBattle, row: u16) -> Vec<String> {
+    let mut args = vec!["--battle".to_string(), row.to_string()];
+    let party: Vec<String> = retail_roster_slots(battle)
+        .iter()
+        .map(|c| c.to_string())
         .collect();
     if !party.is_empty() {
         args.push("--party".into());
