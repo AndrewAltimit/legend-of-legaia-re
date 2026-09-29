@@ -895,6 +895,23 @@ mode)` - the identical call the CONFIGURE arm makes with its own `s16` at
 `operand + 2`, i.e. the apply trigger. `mode` is `(op0 >> 2) & 0xF` on both
 arms.
 
+What the APPLY arm commits is the **follow shot**. Before the call it composes
+the zone camera for the player into the staging block (`jal 0x801DAB90` at
+`0x801DF228`, player `*0x8007C364`, staging `0x801C6EA8`), swaps the staged
+focus X / Z into the focus globals around the edge clamp (`jal 0x801DAA50` at
+`0x801DF24C`) and stores the clamped pair back into staging. `FUN_801DE084`
+then clears focus Y and either spawns the camera mover (`jal 0x801DD310`, a
+non-zero trigger: a glide of that many frames on curve `mode`) or cancels the
+live movers and copies all ten staged axes into the camera globals, `H`
+through `FUN_8003D254`. No camera mode changes and nothing latches: the follow
+ease keeps running from the player's handler afterwards. APPLY is therefore how
+a script releases a shot it staged, and scenes such as `rugi` run it from a
+looping record every frame, which pins the camera on the composed follow pose.
+The engine ports it as `Camera::apply_follow_shot`. Reading APPLY as "commit
+the staged shot and go cinematic" freezes such a scene's camera on the
+terrain-less fallback pose (`H = 512`, the zone-miss depth) instead of the
+region's own shot.
+
 Reading that `s16` as an absolute jump target is what kept `urudre2` one-way in
 the port: the room's only door record carries `45 C0 00 00` about `0x670` bytes
 before its `0x3F` -> `map01` tail, and a target of zero restarted the record.
@@ -979,9 +996,7 @@ of a sub-`1` / `0xB` player arc, cutscene or not. The engine does the same:
 `World::script_arc_follow_camera` is true while such an arc flies, and the
 camera's tick runs its follow writeback and zone step through a cutscene for
 those frames, without the snap a cutscene hand-back takes (the watcher never
-calls `FUN_801DB8EC`). A glide in flight keeps the frame. Under the
-`Cinematic` camera mode an op-`0x45` apply selects, the port's view does not
-read the follow globals, so the arc's follow reaches only the `Follow` mode.
+calls `FUN_801DB8EC`). A glide in flight keeps the frame.
 
 **The acquire refuses an actor already mid arc.** The arm's acquire
 (`0x801DF384..0x801DF40C`) fails when the target carries the halt bit `0x400`

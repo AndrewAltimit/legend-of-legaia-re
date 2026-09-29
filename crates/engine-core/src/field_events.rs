@@ -71,8 +71,10 @@ pub enum FieldEvent {
     CameraLoad { payload: Vec<u8> },
     /// Field-VM op 0x45 sub-SAVE (snapshot camera scratch).
     CameraSave,
-    /// Field-VM op 0x45 sub-APPLY (apply + read-back).
-    CameraApply,
+    /// Field-VM op 0x45 sub-APPLY: compose the follow shot for the player
+    /// and commit it - a snap for a zero `apply_trigger`, else a glide over
+    /// that many frames with `mode` as the curve (`FUN_801DE084`).
+    CameraApply { apply_trigger: i16, mode: u8 },
     /// Field-VM op 0x4B (multi-keyframe animation setup).
     SetupAnimation {
         count: u8,
@@ -245,7 +247,7 @@ impl FieldEvent {
                 format!("CameraLoad({}B)", payload.len())
             }
             FieldEvent::CameraSave => "CameraSave".into(),
-            FieldEvent::CameraApply => "CameraApply".into(),
+            FieldEvent::CameraApply { .. } => "CameraApply".into(),
             FieldEvent::SetupAnimation {
                 count,
                 base_id,
@@ -355,7 +357,10 @@ mod tests {
             },
             FieldEvent::CameraLoad { payload: vec![] },
             FieldEvent::CameraSave,
-            FieldEvent::CameraApply,
+            FieldEvent::CameraApply {
+                apply_trigger: 0,
+                mode: 0,
+            },
             FieldEvent::SetupAnimation {
                 count: 0,
                 base_id: 0,

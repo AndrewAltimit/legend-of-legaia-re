@@ -327,7 +327,10 @@ pub trait FieldHost {
     /// the `0x8007B628` / `0x8007B62A` overrides), then hands the unaligned `s16` at
     /// `operand + 1` to `FUN_801de084` as the apply trigger and advances the
     /// PC by four. It is NOT a jump: the `s16` is a trigger, not a target.
-    fn camera_apply(&mut self) {}
+    /// `mode` is `(op0 >> 2) & 0xF`, the same curve argument CONFIGURE passes.
+    fn camera_apply(&mut self, apply_trigger: i16, mode: u8) {
+        let _ = (apply_trigger, mode);
+    }
 
     /// Scene fade (op 0x36). The VM passes the two 16-bit operands raw and
     /// the host decides whether the fade applies immediately (PC += 5) or

@@ -1760,10 +1760,13 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.pending_field_events.push(FieldEvent::CameraSave);
     }
 
-    fn camera_apply(&mut self) {
+    fn camera_apply(&mut self, apply_trigger: i16, mode: u8) {
         self.world
             .pending_field_events
-            .push(FieldEvent::CameraApply);
+            .push(FieldEvent::CameraApply {
+                apply_trigger,
+                mode,
+            });
     }
 
     fn scene_fade(&mut self, op0_word: u16, op1_word: u16) -> SceneFadeResult {

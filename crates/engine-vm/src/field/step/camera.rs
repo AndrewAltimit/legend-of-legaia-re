@@ -57,8 +57,8 @@ pub(super) fn op_45<H: FieldHost>(
             let Some(&hi) = bytecode.get(operand + 2) else {
                 return StepResult::Unknown { opcode, pc };
             };
-            let _apply_trigger = i16::from_le_bytes([lo, hi]);
-            host.camera_apply();
+            let apply_trigger = i16::from_le_bytes([lo, hi]);
+            host.camera_apply(apply_trigger, (op0 >> 2) & 0x0F);
             StepResult::Advance {
                 next_pc: pc + header_size + 3,
             }

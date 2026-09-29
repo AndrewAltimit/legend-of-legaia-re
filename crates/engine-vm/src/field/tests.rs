@@ -45,6 +45,7 @@ struct TestHost {
     camera_configs: Vec<(Vec<CameraParam>, u16, u8)>,
     camera_loads: Vec<Vec<u8>>,
     camera_saves: u32,
+    camera_apply_args: Vec<(i16, u8)>,
     camera_applies: u32,
     scene_fade_calls: Vec<(u16, u16)>,
     scene_fade_busy: bool,
@@ -324,8 +325,9 @@ impl FieldHost for TestHost {
     fn camera_save(&mut self) {
         self.camera_saves += 1;
     }
-    fn camera_apply(&mut self) {
+    fn camera_apply(&mut self, apply_trigger: i16, mode: u8) {
         self.camera_applies += 1;
+        self.camera_apply_args.push((apply_trigger, mode));
     }
     fn scene_fade(&mut self, op0: u16, op1: u16) -> SceneFadeResult {
         self.scene_fade_calls.push((op0, op1));
