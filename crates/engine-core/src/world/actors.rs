@@ -1629,6 +1629,17 @@ impl World {
             // Monsters face the party row (-Z = heading 0x800).
             actor.battle.facing_angle = 0x800;
         }
+        // Every battle row past this fight's layout starts empty. The target
+        // rows, the validator and the round walk all read slots
+        // `party_count..party_count + 5` and count one as present by its
+        // battle stats, so a slot the last fight (or the field) left carrying
+        // stats seated a ghost enemy: a one-member party after a larger
+        // layout faced its real monster plus stale rows that never die.
+        // Retail's battle loader builds the actor table fresh per fight.
+        for actor in self.actors.iter_mut().take(8).skip(actor_count) {
+            actor.battle = Default::default();
+            actor.battle_monster_id = None;
+        }
         // Reset the battle ctx and seed at Begin via the public byte API to
         // avoid pulling battle_action::ActionState into world.rs imports.
         self.battle_ctx = vm::battle_action::BattleActionCtx::new();

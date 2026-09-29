@@ -30,6 +30,29 @@ fn enter_battle_populates_party_and_monsters() {
     );
 }
 
+/// A smaller layout after a larger one leaves no ghost rows: the slots past
+/// this fight's party + monsters start empty, so the target rows (and the
+/// validator behind them) see exactly the fight's monsters. A lone Vahn after
+/// a three-row fight once faced his Gimard plus two stale rows that never
+/// died, and the fight ended in a wipe.
+#[test]
+fn enter_battle_clears_rows_past_its_layout() {
+    let mut world = World::default();
+    world.enter_battle(3, 5);
+    for a in world.actors.iter_mut().take(8) {
+        a.battle.hp = 400;
+        a.battle.max_hp = 400;
+    }
+    world.enter_battle(1, 1);
+    for i in 2..8 {
+        assert_eq!(world.actors[i].battle.max_hp, 0, "slot {i} starts empty");
+        assert_eq!(world.actors[i].battle.liveness, 0, "slot {i} is not alive");
+    }
+    let (_, monsters) = world.battle_target_rows();
+    let present = monsters.iter().filter(|m| m.present).count();
+    assert_eq!(present, 1, "one monster row, not stale ghosts");
+}
+
 #[test]
 fn enter_battle_caps_party_at_three() {
     let mut world = World::default();
