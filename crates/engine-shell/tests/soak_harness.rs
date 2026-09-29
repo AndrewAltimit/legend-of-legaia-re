@@ -391,9 +391,14 @@ impl Policy {
                 }
                 self.field_pad(frame)
             }
-            // Minigames, cutscenes, the title: every button but Start, with
-            // held directions mixed in.
+            // Minigames, cutscenes, the title: every face button and held
+            // directions, and now and then Start - the minigames' escape
+            // (`World::poll_minigame_escape`), so the exit paths are soaked
+            // too without cutting every session short.
             _ => {
+                if self.rng.below(1500) == 0 {
+                    return self.tap(b(PadButton::Start));
+                }
                 if self.chaos_left == 0 {
                     self.chaos_left = self.rng.range(2, 12);
                     self.chaos_mask = match self.rng.below(4) {
@@ -614,9 +619,18 @@ fn held_by(s: &BootSession) -> String {
             if let Some(c) = w.battle.command.as_ref() {
                 return format!("battle:command:{}", variant(&format!("{:?}", c.phase)));
             }
+            // The absorbing HP-bar pair (`hp != hp_display` with a zero
+            // accumulator) is what parks the `0x51` bar-drain gate for good;
+            // name it so every such park groups under one signature.
+            let absorbing = w.actors.iter().take(8).any(|a| {
+                a.battle
+                    .hp_display
+                    .is_some_and(|d| d != a.battle.hp && a.battle.hp_bar_pending == 0)
+            });
             return format!(
-                "battle:state:{}",
-                variant(&format!("{:?}", w.battle_ctx.action_state))
+                "battle:state:{}{}",
+                variant(&format!("{:?}", w.battle_ctx.action_state)),
+                if absorbing { ":hp-bar-absorbing" } else { "" }
             );
         }
         SceneMode::Field | SceneMode::WorldMap => {}
@@ -682,6 +696,34 @@ fn trace_line(s: &BootSession, pad: u16) -> String {
     }
     if w.dialog.current.is_some() || w.dialog.inline.is_some() {
         out.push_str(" dialog");
+    }
+    if w.mode == SceneMode::Battle {
+        let _ = write!(
+            out,
+            " ctx(state {:?} active {} timer {} menu_open {} end {:?} game_over {}/{})",
+            w.battle_ctx.action_state,
+            w.battle_ctx.active_actor,
+            w.battle_ctx.frame_timer,
+            w.battle_ctx.menu_open,
+            w.battle.end,
+            w.game_over,
+            w.game_over_hold
+        );
+        for (i, a) in w.actors.iter().take(8).enumerate() {
+            if a.battle.max_hp > 0 || a.battle.liveness != 0 {
+                let _ = write!(
+                    out,
+                    " a{i}:{}/{}L{}D{:?}P{}A{}T{}",
+                    a.battle.hp,
+                    a.battle.max_hp,
+                    a.battle.liveness,
+                    a.battle.hp_display,
+                    a.battle.hp_bar_pending,
+                    a.battle.damage_accum,
+                    a.battle.active_target
+                );
+            }
+        }
     }
     for (slot, m) in &w.npcs.motions {
         let _ = write!(
@@ -1047,8 +1089,20 @@ fn run_one(
         detail,
     };
 
+    // `<venue>+mg<sub_id>`: enter the venue, then request the mode-24 door
+    // warp the op-`0x3E` arm makes (`World::request_minigame_warp`), so the
+    // host's next tick loads the minigame overlay through the retail path.
+    let (scene, minigame) = split_minigame(&spec.scene);
     let entered = catch_unwind(AssertUnwindSafe(|| {
-        session.enter_scene_live(&spec.scene, &opts)
+        let r = session.enter_scene_live(scene, &opts);
+        if let Some(id) = minigame {
+            // The casino doors refuse a player with no coins (the cabinet
+            // record's coin compare), so a run arriving through the door
+            // arrives with some: the one non-pad precondition these runs set.
+            session.host.world.minigames.casino_coins = 500;
+            session.host.world.request_minigame_warp(id);
+        }
+        r
     }));
     let enter_ok = match entered {
         Ok(Ok(_)) => true,
@@ -1870,6 +1924,25 @@ fn default_jobs() -> usize {
         .max(1)
 }
 
+/// Minigame pseudo-scenes soaked alongside the scene set: each venue plus the
+/// door-warp `sub_id` it requests (fishing 0, slot 3, Baka Fighter 4, Muscle
+/// Dome 5, dance 6 - `legaia_engine_core::minigame_entry::MinigameSubId`).
+const MINIGAME_RUNS: [&str; 5] = [
+    "balden+mg0",
+    "koin1+mg3",
+    "koin3+mg4",
+    "koin3+mg5",
+    "koin1+mg6",
+];
+
+/// `"koin1+mg3"` -> `("koin1", Some(3))`; a plain label passes through.
+fn split_minigame(label: &str) -> (&str, Option<u8>) {
+    match label.split_once("+mg") {
+        Some((scene, id)) => (scene, id.parse().ok()),
+        None => (label, None),
+    }
+}
+
 fn filter_scenes(all: &[String]) -> Vec<String> {
     let mut scenes: Vec<String> = match std::env::var("LEGAIA_SOAK_SCENES") {
         Ok(list) if !list.trim().is_empty() => list
@@ -1877,7 +1950,11 @@ fn filter_scenes(all: &[String]) -> Vec<String> {
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .collect(),
-        _ => all.to_vec(),
+        _ => all
+            .iter()
+            .cloned()
+            .chain(MINIGAME_RUNS.iter().map(|s| s.to_string()))
+            .collect(),
     };
     // `LEGAIA_SOAK_SHARD=i/n` splits the scene set so a long soak can be
     // chunked across invocations.
@@ -1921,7 +1998,8 @@ fn soak_smoke_no_panics() {
     let known: BTreeSet<String> = all.iter().cloned().collect();
     let scenes: Vec<String> = SMOKE_SCENES
         .iter()
-        .filter(|s| known.contains(**s))
+        .chain(MINIGAME_RUNS.iter())
+        .filter(|s| known.contains(split_minigame(s).0))
         .map(|s| s.to_string())
         .collect();
     assert!(
