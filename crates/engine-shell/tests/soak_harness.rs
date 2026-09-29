@@ -53,6 +53,7 @@ use std::sync::{Arc, Mutex, Once};
 use std::time::{Duration, Instant};
 
 use legaia_engine_core::input::PadButton;
+use legaia_engine_core::menu_runtime::MenuRuntime;
 use legaia_engine_core::save_screen::card_port_snapshot;
 use legaia_engine_core::save_select::{SaveRack, SlotSnapshot};
 use legaia_engine_core::scene::{Scene, SceneTickEvent, is_world_map_scene};
@@ -610,6 +611,41 @@ fn progress_digest(s: &BootSession) -> u64 {
     h.0.finish()
 }
 
+/// The shop / prize-counter session's share of the progress digest: its
+/// menu context and whatever sub-session it holds.
+fn menu_digest(m: &MenuRuntime) -> u64 {
+    if !m.is_open() {
+        return 0;
+    }
+    let mut h = HashWriter(std::collections::hash_map::DefaultHasher::new());
+    let _ = write!(
+        h,
+        "{:?}|{:?}|{:?}",
+        m.ctx, m.shop_session, m.recipient_session
+    );
+    h.0.finish()
+}
+
+/// Step an open shop / prize-counter / inn session on this frame's edges,
+/// then unpark the field script a closed one left suspended - the play
+/// window's `tick_menu_runtime_session`.
+fn tick_menu_session(
+    menu: &mut MenuRuntime,
+    world: &mut legaia_engine_core::world::World,
+    edge: u16,
+) {
+    if menu.is_open() {
+        let input = legaia_engine_core::menu_runtime::menu_input_from_pad_edges(edge);
+        menu.tick(world, input);
+    }
+    if world.shops.shop_open && !menu.is_open() {
+        world.finish_field_shop();
+    }
+    if world.shops.prize_exchange_open && !menu.is_open() {
+        world.finish_prize_exchange();
+    }
+}
+
 /// What holds the frame, as a short signature fragment.
 fn held_by(s: &BootSession) -> String {
     let w = &s.host.world;
@@ -755,6 +791,13 @@ fn trace_line(s: &BootSession, pad: u16) -> String {
             }
         }
     }
+    if let Some(ps) = w.menu.pause_session.as_ref() {
+        let _ = write!(
+            out,
+            " travel({} @ ({},{}) handler {:#04x})",
+            ps.target.scene, ps.target.tile_x, ps.target.tile_z, ps.handler_id
+        );
+    }
     if let Some(f) = w.minigames.fishing.as_ref() {
         let _ = write!(
             out,
@@ -899,6 +942,10 @@ struct RunStats {
     menu_opens: u32,
     fmvs: u32,
     save_commits: u32,
+    /// Pause-menu sub-screens entered and shops opened - what the random
+    /// browse actually reached.
+    menu_rows: BTreeSet<String>,
+    shop_opens: u32,
     round_trips: u32,
 }
 
@@ -1137,7 +1184,8 @@ fn run_one(
     // `<venue>+mg<sub_id>`: enter the venue, then request the mode-24 door
     // warp the op-`0x3E` arm makes (`World::request_minigame_warp`), so the
     // host's next tick loads the minigame overlay through the retail path.
-    let (label, round_trip) = split_round_trip(&spec.scene);
+    let (label, shop_visits) = split_shop(&spec.scene);
+    let (label, round_trip) = split_round_trip(label);
     let (scene, minigame) = split_minigame(label);
     let entered = catch_unwind(AssertUnwindSafe(|| {
         let r = session.enter_scene_live(scene, &opts);
@@ -1196,7 +1244,8 @@ fn run_one(
         refresh_rack(&mut session, &card);
     }
     let mut policy = Policy::new(run_seed(&spec.scene, spec.seed));
-    let mut last_digest = progress_digest(&session);
+    let mut menu_rt = MenuRuntime::new(std::env::temp_dir().join("legaia-soak-menu"));
+    let mut last_digest = progress_digest(&session) ^ menu_digest(&menu_rt);
     let mut last_change = 0u64;
     // Script stall: the modal timeline (or first helper) parked at one PC for
     // a whole window, even while something else moves.
@@ -1216,7 +1265,14 @@ fn run_one(
         };
         pads.push(pad);
         let was_menu_open = session.field_menu.is_some();
-        session.host.world.set_pad(pad);
+        let was_shop_open = session.host.world.shops.shop_open;
+        // While a shop / prize counter is up the pad drives it, not the
+        // field (the play window's `field_pad`).
+        session
+            .host
+            .world
+            .set_pad(if menu_rt.is_open() { 0 } else { pad });
+        let menu_suspended = menu_rt.suspends_field();
         if let Some((board, i)) = status {
             let mut b = board.lock().unwrap();
             b[i].tick_started = Some(Instant::now());
@@ -1230,7 +1286,12 @@ fn run_one(
         let edge = pad & !prev_pad;
         prev_pad = pad;
         let r = catch_unwind(AssertUnwindSafe(|| {
-            if session.host.world.name_entry_active() {
+            if menu_suspended {
+                // A shop / prize exchange freezes the field whole; only the
+                // menu session steps (the play window's suspended arm).
+                tick_menu_session(&mut menu_rt, &mut session.host.world, edge);
+                Ok(SceneTickEvent::Stepped)
+            } else if session.host.world.name_entry_active() {
                 let input = legaia_engine_core::name_entry::NameEntryInput::from_pad_edge(edge);
                 session.host.world.step_name_entry(input);
                 session.host.world.frame = session.host.world.frame.wrapping_add(1);
@@ -1284,6 +1345,34 @@ fn run_one(
             }
         }
         host_drains(&mut session);
+        // A shop or prize counter the tick opened goes to the menu runtime
+        // and gets this frame's edge; an open session steps here every
+        // unsuspended frame (the play window's frame tail).
+        if !menu_suspended {
+            let r = catch_unwind(AssertUnwindSafe(|| {
+                let w = &mut session.host.world;
+                if let Some(shop) = w.take_pending_field_shop() {
+                    menu_rt.open_shop_menu(shop);
+                }
+                if let Some(ex) = w.take_pending_prize_exchange() {
+                    menu_rt.open_prize_exchange(ex);
+                }
+                tick_menu_session(&mut menu_rt, w, edge);
+            }));
+            if r.is_err() {
+                let (loc, msg, frames) = LAST_PANIC
+                    .with(|p| p.borrow_mut().take())
+                    .unwrap_or_default();
+                findings.push(mk(
+                    &session,
+                    "panic",
+                    frame,
+                    loc,
+                    format!("[menu runtime] {msg} | {frames}"),
+                ));
+                break;
+            }
+        }
         match &event {
             SceneTickEvent::SceneEntered { name } => {
                 stats.scenes_entered.insert(name.clone());
@@ -1311,6 +1400,12 @@ fn run_one(
         if !was_menu_open && session.field_menu.is_some() {
             stats.menu_opens += 1;
         }
+        if let Some(sub) = session.field_menu_sub.as_ref() {
+            stats.menu_rows.insert(format!("{:?}", sub.row()));
+        }
+        if session.host.world.shops.shop_open && !was_shop_open {
+            stats.shop_opens += 1;
+        }
         // Save screen: both play hosts persist a Save pick and resume a Load
         // pick (`apply_save_commit`); `BootSession` only latches the pick.
         // The harness keeps the card in memory, so a later Load in the same
@@ -1332,6 +1427,26 @@ fn run_one(
                     format!("[save commit] {msg} | {frames}"),
                 ));
                 break;
+            }
+        }
+        // `<scene>+shop`: walk up to one of the scene's merchants every
+        // `SHOP_VISIT_EVERY` free field frames - the priced session the
+        // field VM's op `0x49` stages, handed to the menu runtime as the play
+        // window hands it. Random walking almost never reaches a merchant and
+        // picks Buy, so without this the shop UI is never soaked.
+        if shop_visits
+            && !menu_rt.is_open()
+            && frame % SHOP_VISIT_EVERY == SHOP_VISIT_EVERY - 1
+            && round_trip_ready(&session)
+        {
+            let w = &mut session.host.world;
+            let n = w.shops.scene_shops.len();
+            if n > 0
+                && let Some(shop) = w.scene_shop_session(stats.shop_opens as usize % n)
+            {
+                w.shops.shop_open = true;
+                menu_rt.open_shop_menu(shop);
+                stats.shop_opens += 1;
             }
         }
         // `<scene>+rt`: a save / load round trip at a free field frame every
@@ -1546,7 +1661,7 @@ fn run_one(
         }
         // Softlock.
         if frame % t.digest_every == 0 {
-            let d = progress_digest(&session);
+            let d = progress_digest(&session) ^ menu_digest(&menu_rt);
             if d != last_digest {
                 last_digest = d;
                 last_change = frame;
@@ -1986,6 +2101,12 @@ fn write_report(src: &Source, known: &BTreeSet<String>, cfg: &SoakConfig, r: &So
     let enter_fail = r.outcomes.iter().filter(|o| !o.enter_ok).count();
     let saves: u32 = r.outcomes.iter().map(|o| o.stats.save_commits).sum();
     let trips: u32 = r.outcomes.iter().map(|o| o.stats.round_trips).sum();
+    let shops: u32 = r.outcomes.iter().map(|o| o.stats.shop_opens).sum();
+    let menu_rows: BTreeSet<&String> = r
+        .outcomes
+        .iter()
+        .flat_map(|o| o.stats.menu_rows.iter())
+        .collect();
     let mut modes: BTreeMap<String, usize> = BTreeMap::new();
     for o in &r.outcomes {
         for m in &o.stats.modes {
@@ -2012,8 +2133,9 @@ fn write_report(src: &Source, known: &BTreeSet<String>, cfg: &SoakConfig, r: &So
     );
     let _ = writeln!(
         md,
-        "- save-screen commits {saves}, save / load round trips {trips}"
+        "- save-screen commits {saves}, save / load round trips {trips}, shops opened {shops}"
     );
+    let _ = writeln!(md, "- pause-menu sub-screens entered: {menu_rows:?}");
     let _ = writeln!(md, "- runs that reached each mode: {modes:?}");
     let moved = r
         .outcomes
@@ -2133,6 +2255,41 @@ fn split_round_trip(label: &str) -> (&str, bool) {
         Some(scene) => (scene, true),
         None => (label, false),
     }
+}
+
+/// `"town01+shop"` -> `("town01", true)`: the run opens one of the scene's
+/// shops every [`SHOP_VISIT_EVERY`] free field frames.
+fn split_shop(label: &str) -> (&str, bool) {
+    match label.strip_suffix("+shop") {
+        Some(scene) => (scene, true),
+        None => (label, false),
+    }
+}
+
+/// Frames between two shop visits in a `+shop` run.
+const SHOP_VISIT_EVERY: u64 = 900;
+
+/// The scenes whose field MAN carries at least one priced gold shop (the
+/// list scene entry decodes into `ShopState::scene_shops`), as `+shop`
+/// pseudo-scenes. Entered once each in a probe session.
+fn shop_scenes(src: &Source, all: &[String]) -> Vec<String> {
+    let mut probe = open_session(src);
+    let opts = FieldLiveOpts {
+        live_loop: false,
+        player_battle: false,
+        battle_bgm: None,
+    };
+    let mut out = Vec::new();
+    for name in all {
+        if is_world_map_scene(name) {
+            continue;
+        }
+        let entered = catch_unwind(AssertUnwindSafe(|| probe.enter_scene_live(name, &opts)));
+        if matches!(entered, Ok(Ok(_))) && !probe.host.world.shops.scene_shops.is_empty() {
+            out.push(format!("{name}+shop"));
+        }
+    }
+    out
 }
 
 /// Frames between two round trips in a `+rt` run.
@@ -2263,7 +2420,7 @@ fn split_minigame(label: &str) -> (&str, Option<u8>) {
     }
 }
 
-fn filter_scenes(all: &[String]) -> Vec<String> {
+fn filter_scenes(all: &[String], extra: &[String]) -> Vec<String> {
     let mut scenes: Vec<String> = match std::env::var("LEGAIA_SOAK_SCENES") {
         Ok(list) if !list.trim().is_empty() => list
             .split(',')
@@ -2276,6 +2433,7 @@ fn filter_scenes(all: &[String]) -> Vec<String> {
             .chain(MINIGAME_RUNS.iter().map(|s| s.to_string()))
             // Every scene again as a save / load round-trip run.
             .chain(all.iter().map(|s| format!("{s}+rt")))
+            .chain(extra.iter().cloned())
             .collect(),
     };
     // `LEGAIA_SOAK_SHARD=i/n` splits the scene set so a long soak can be
@@ -2381,7 +2539,12 @@ fn soak_long() {
     let all = scene_set(&probe);
     drop(probe);
     let known: BTreeSet<String> = all.iter().cloned().collect();
-    let scenes = filter_scenes(&all);
+    let shops = if std::env::var_os("LEGAIA_SOAK_SCENES").is_some() {
+        Vec::new()
+    } else {
+        shop_scenes(&src, &all)
+    };
+    let scenes = filter_scenes(&all, &shops);
     let cfg = SoakConfig {
         tag: std::env::var("LEGAIA_SOAK_TAG").unwrap_or_else(|_| "long".into()),
         scenes,

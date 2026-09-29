@@ -142,6 +142,28 @@ fn an_unresolvable_scene_word_is_dropped_not_invented() {
     );
 }
 
+/// A zero word names `init_data`, the head define - not a scene. The soak
+/// harness found a Door of Light in station3 (whose region record stores an
+/// all-zero return triple) warping there and failing the scene entry.
+#[test]
+fn a_head_define_word_is_a_miss() {
+    let mut map = toc_map();
+    map.insert(0, "init_data".to_string());
+    map.insert(1, "gameover_data".to_string());
+    for word in [0u16, 1] {
+        let mut w = world_with_player();
+        w.install_scene_toc_names(map.clone());
+        w.menu.pending_warp = Some(StagedWarp {
+            scene_id: word,
+            menu_x: 0,
+            menu_y: 0,
+        });
+        let _ = w.tick();
+        assert!(!w.pause_session_active(), "word {word} installs no art");
+        assert_eq!(run_until_transition(&mut w, 120), None);
+    }
+}
+
 #[test]
 fn a_staged_escape_runs_riremito_back_to_the_visited_kingdom_tile() {
     use legaia_engine_core::world::pause_session::PauseSessionStage;

@@ -31,6 +31,7 @@ omissions. The harness does what the hosts do:
 | presentation queues | drains the field-event, battle-event, hit, SFX, shout, XA, CLUT-stage and minigame-cue queues and routes battle effect spawns after every tick |
 | FMV playback | skips the movie (`finish_cutscene`) and runs the shared post-play hand-off, as the headless `play` subcommand does |
 | name entry | while the overlay is up, routes the pad edge into `step_name_entry` and skips the field tick, as both hosts' modal arms do |
+| shop / prize counter | a shop or prize counter the tick staged opens in a `MenuRuntime`; while it is up the field gets a neutral pad (or is frozen whole, for a session that suspends it), the session steps on the frame's edges, and a closed one unparks the field script (`finish_field_shop` / `finish_prize_exchange`) - the play window's `tick_menu_runtime_session` |
 | save screen | a Save pick writes `save_full` into an in-memory card and refreshes the grid's snapshot; a Load pick resumes that block's file through `resume_save` - the play window's `apply_save_commit`, with the card held in memory |
 
 A minigame run is a pseudo-scene `<venue>+mg<sub_id>`: the venue is entered,
@@ -48,12 +49,19 @@ on the card, so the pause menu's Load row - open in every scene, where Save
 is per-scene - has a file to resume, and random menu browsing reaches the
 card flow end to end.
 
+A shop run is a pseudo-scene `<scene>+shop`, one per scene whose MAN carries
+a priced gold shop. Every `SHOP_VISIT_EVERY` free field frames it hands one of
+the scene's shops (`World::scene_shop_session`) to the menu runtime, as the
+merchant's op `0x49` would. Random walking almost never reaches a merchant
+and picks Buy, so without it the buy / sell / quantity screens go unsoaked.
+
 ### The scene set
 
 Every CDNAME label that resolves to a playable scene (a kingdom overworld, or
 a scene whose field MAN resolves), unioned with the decoded `0x3F`
-destinations of those scenes, plus the five minigame pseudo-scenes, plus a
-`+rt` round-trip twin of every scene. Nothing is hand-listed.
+destinations of those scenes, plus the five minigame pseudo-scenes, a `+rt`
+round-trip twin of every scene, and a `+shop` twin of every scene with a
+shop. Nothing is hand-listed.
 
 ## Policies
 
@@ -233,6 +241,7 @@ regression.
 | `town0d_tetsu_picker_loop` | a conversation looping on its first picker option read as parked | harness: the digest counts timeline slices and the panel position |
 | `vell_attack_short_step_park` | an attack approach parked a short step from its target | `+0x3C` is the per-frame body pair |
 | `taiku2_hp_bar_absorbing_park` | the `0x51` bar-drain gate parked on an absorbing HP-bar pair | the restaged action clip replays |
+| `station3_door_of_light_head_define` / `conc3_door_of_light_head_define` | a Door of Light used where the region record stores an all-zero return triple warped to `init_data` and failed the scene entry | a travel word inside the TOC header rows is a miss (`World::drain_staged_menu_warp`) |
 | `jouinb_long_scripted_walk` | a scripted player walk across most of the map outlasted the stall window | harness: a walk op still stepping is progress |
 | `balden_fishing_exchange_pad_dead` | the prize list opened from the pond's hub menu answered no pad input | the engine steps the list off the pad edge (state `0x78`'s keys) |
 

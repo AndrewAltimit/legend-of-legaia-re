@@ -10,6 +10,21 @@
 
 use super::*;
 
+/// The scene a travel art's destination word names, or `None` for a miss.
+///
+/// A word inside the TOC's header rows (`< RAW_TOC_INDEX_OFFSET`) names a
+/// head define - `init_data 0`, `gameover_data 1` - not a scene. Retail's
+/// resolve scan would match it, but there is no field to load there, and the
+/// scene host's entry fails half-way through its reset. It is the word a
+/// region record with an all-zero return triple stores (station3's), so a
+/// Door of Light used there drops like any other unresolved word.
+fn travel_scene(names: &legaia_prot::cdname::IndexMap, word: u32) -> Option<String> {
+    if word < legaia_prot::cdname::RAW_TOC_INDEX_OFFSET {
+        return None;
+    }
+    names.get(&word).cloned()
+}
+
 impl World {
     /// Advance the wall-clock play-time counter by `delta_seconds`. Engines
     /// drive this from the frame loop's wall-clock delta. Mirrors the
@@ -670,10 +685,10 @@ impl World {
         use crate::pause_screens::{MENU_EXIT_CODE_FIELD_ESCAPE, MENU_EXIT_CODE_WORLD_MAP_WARP};
         use crate::world::pause_session::PauseTravelTarget;
         if let Some(warp) = self.menu.pending_warp.take() {
-            match self.tables.scene_toc_names.get(&u32::from(warp.scene_id)) {
+            match travel_scene(&self.tables.scene_toc_names, u32::from(warp.scene_id)) {
                 Some(name) => {
                     let target = PauseTravelTarget {
-                        scene: name.clone(),
+                        scene: name,
                         tile_x: warp.menu_x,
                         tile_z: warp.menu_y,
                     };
@@ -702,10 +717,10 @@ impl World {
                 .region_setup
                 .and_then(|s| s.world_map_return)
             {
-                match self.tables.scene_toc_names.get(&u32::from(ret.map_word)) {
+                match travel_scene(&self.tables.scene_toc_names, u32::from(ret.map_word)) {
                     Some(name) => {
                         let target = PauseTravelTarget {
-                            scene: name.clone(),
+                            scene: name,
                             tile_x: ret.tile_x,
                             tile_z: ret.tile_z,
                         };
