@@ -530,7 +530,17 @@ fn progress_digest(s: &BootSession) -> u64 {
     }
     let _ = write!(h, "pc{}|", w.field_pc);
     if let Some(tl) = w.cutscene.timeline.as_ref() {
-        let _ = write!(h, "tl{}|", tl.pc);
+        // A timeline-owned dialog panel pages through a conversation - and a
+        // picker loops it back to its own segment - while `tl.pc` stays on
+        // the segment's lead byte; the slice counter and the panel's cursor
+        // are what move.
+        let _ = write!(
+            h,
+            "tl{}|{}|{:?}|",
+            tl.pc,
+            tl.frames,
+            tl.dialog.as_ref().map(|d| d.pc)
+        );
     }
     for hc in &w.field_vm.helper_contexts {
         let _ = write!(h, "hc{}|", hc.pc);
@@ -1145,7 +1155,7 @@ fn run_one(
     let mut last_change = 0u64;
     // Script stall: the modal timeline (or first helper) parked at one PC for
     // a whole window, even while something else moves.
-    let mut park: Option<(String, u64)> = None;
+    let mut park: Option<(String, u32, u64)> = None;
     let mut menu_open_since: Option<u64> = None;
     let mut battle_since: Option<u64> = None;
     let mut prev_mode = session.host.world.mode;
@@ -1387,14 +1397,22 @@ fn run_one(
                 .map(|tl| ("timeline", tl))
                 .or_else(|| w.field_vm.helper_contexts.first().map(|h| ("helper", h)))
                 .map(|(k, c)| {
-                    format!(
-                        "{k}@{:#06x}:op{:02x}",
-                        c.pc,
-                        c.bytecode.get(c.pc).copied().unwrap_or(0xFF)
+                    // The slice count rides along: a conversation a picker
+                    // loops back to its own segment re-enters the same PC
+                    // every pass, and each pass is a slice.
+                    (
+                        format!(
+                            "{k}@{:#06x}:op{:02x}",
+                            c.pc,
+                            c.bytecode.get(c.pc).copied().unwrap_or(0xFF)
+                        ),
+                        c.frames,
                     )
                 });
             match (site, park.as_ref()) {
-                (Some(site), Some((cur, since))) if *cur == site => {
+                (Some((site, slices)), Some((cur, cur_slices, since)))
+                    if *cur == site && *cur_slices == slices =>
+                {
                     if frame - since >= t.softlock_frames
                         && reported.insert(format!("script_stall|{site}"))
                     {
@@ -1407,7 +1425,7 @@ fn run_one(
                         ));
                     }
                 }
-                (Some(site), _) => park = Some((site, frame)),
+                (Some((site, slices)), _) => park = Some((site, slices, frame)),
                 (None, _) => park = None,
             }
         }
