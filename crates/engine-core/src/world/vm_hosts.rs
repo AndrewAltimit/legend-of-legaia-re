@@ -1139,6 +1139,22 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         });
     }
 
+    // Field-VM op `4C EB`: "run the next op only if this actor exists".
+    // Retail resolves the id through `FUN_8003C83C`, the actor-list walk:
+    // `0xF8` short-circuits to the player object, any other id matches a
+    // live context's `+0x50` script id - the scene's channels here. The
+    // trait default (always a miss) skipped every guarded op, so koin3's
+    // entry script never raised the bit-3 flag on the dance hall's props.
+    // REF: FUN_8003C83C
+    fn op4c_n_e_sub_b_actor_jump(&mut self, actor_id: u8) -> Option<()> {
+        let found = if actor_id == 0xF8 {
+            self.world.player_actor_slot.is_some()
+        } else {
+            crate::field_channels::resolve_target(self.world.channel_view(), actor_id).is_some()
+        };
+        found.then_some(())
+    }
+
     // Field-VM op `4C EC`: `_DAT_8007B5FC = FUN_801DDF48()` (`0x801E34F8`
     // `jal`, store in the `j` delay slot at `0x801E3508`) - reroll the
     // encounter step counter. No shipped script issues a clean `4C EC`

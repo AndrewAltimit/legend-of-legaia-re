@@ -2237,23 +2237,22 @@ pub trait FieldHost {
         let _ = coin_delta;
     }
 
-    /// Op 0x4C outer-nibble-E sub-B - conditional actor lookup with
-    /// embedded jump target.
+    /// Op 0x4C outer-nibble-E sub-B - conditional actor lookup with an
+    /// embedded relative skip.
     ///
-    /// 5-byte instruction `[4C, 0xEB, actor_id, target_lo, target_hi]`.
-    /// The original (dispatcher dump 7370-7376) calls `func_0x8003C83C(b1)`
-    /// (the actor-table walker - see also [`docs/subsystems/script-vm.md`]'s
-    /// "intra-function label catalogue" for the F8/FB system-channel idiom).
+    /// 5-byte instruction `[4C, 0xEB, actor_id, skip_lo, skip_hi]`.
+    /// Retail (`0x801E34DC..0x801E34F4`) calls `FUN_8003C83C(actor_id)`, the
+    /// actor-list walk (`0xF8` = the player object).
     ///
     /// Two outcomes:
-    /// - **actor resolved** → return `pc + 5` (PC advances 5),
-    /// - **actor not resolved** → return absolute jump to
-    ///   `LE_u16(operand+2..=operand+3)`.
+    /// - **actor resolved** → PC advances 5,
+    /// - **actor not resolved** → relative skip to `pc + 5 + i16 - 2`
+    ///   (signed LE16 at `operand+2..=operand+3`, the shared
+    ///   `0x801E360C` skip exit).
     ///
-    /// The host returns `Some(new_pc)` to take the resolved-actor "pc + 5"
-    /// path (the host has confirmed the actor exists), or `None` to take the
-    /// embedded-jump path (actor lookup missed). Default impl returns `None`
-    /// - engines without an actor pool always take the jump.
+    /// The host returns `Some(())` when the actor exists, `None` on a miss.
+    /// Default impl returns `None` - engines without an actor pool always
+    /// take the skip.
     fn op4c_n_e_sub_b_actor_jump(&mut self, actor_id: u8) -> Option<()> {
         let _ = actor_id;
         None

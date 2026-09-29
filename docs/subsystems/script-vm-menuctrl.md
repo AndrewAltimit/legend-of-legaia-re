@@ -338,7 +338,7 @@ Misc scene writes + emitter helpers. Ported sub-ops:
 - **8** (round 18, 10-byte camera zoom: four 16-bit LE values for `zoom_x`/`zoom_y`/`zoom_z`/`mode`, dispatching to the camera struct's default zoom triplet (`+0x4C/+0x4E/+0x50`) for `mode=0`, or per-mode actor flag writes for `mode=1/2/3`)
 - **9** (clear `_DAT_8007B9C4` then PC += 2 via `caseD_4`)
 - **0xA** (call `func_0x8003C7EC` then halt)
-- **0xB** (5-byte conditional actor lookup with embedded jump target - host returns `Some(())` to take the resolved-actor "pc + 5" path or `None` to jump to the absolute u16 at `operand+2..=3`; jump target read via [`load_u16_le`](script-vm.md#helper-functions))
+- **0xB** (5-byte guard `[4C EB actor lo hi]`, `0x801E34DC..0x801E34F4`: resolve `actor` through `FUN_8003C83C` - `0xF8` is the player, anything else a live context's `+0x50` id - with `s8 += 5` in the call's delay slot; a hit returns `pc + 5`, a miss takes the shared `0x801E360C` exit, `FUN_8003CE9C` (signed LE16) then `addiu v0,v0,-2; addu s8,s8,v0`, i.e. a **relative** skip to `pc + 3 + i16`. The shipped uses guard the one op that follows - koin3's entry script pairs `4C EB 39 05 00` with the 3-byte `B1 39 03` flag write. An earlier reading here took the operand as an absolute target, which sent every missed lookup to a record-header byte and parked the script there)
 - **0xC** (2-byte encounter step-counter reroll: `_DAT_8007B5FC = FUN_801DDF48()`, see [Encounter step-counter reroll](#encounter-step-counter-reroll-fun_801ddf48); no shipped script issues a clean `4C EC`)
 - **0xD** (set `_DAT_8007BA66`, 3-byte)
 - **0xE** (snapshot `_DAT_80084570 → _DAT_800845DC`, 2-byte).
