@@ -803,25 +803,19 @@ impl PlayWindowApp {
                 }
                 None => r.clear_depth_cue_ramp(),
             }
-            // Retail GTE NCLIP winding rejection, scoped to the in-engine
-            // cutscene camera: the opdeene prologue's crater-rim tableau shot
-            // sits INSIDE the scene's closed cave-wall backdrop mesh, and
-            // retail's per-prim NCLIP is what discards the shell's near wall
-            // (otherwise it renders over the whole tableau - the "wall of
-            // gold burying the camera" report). The field frame draws raw
-            // retail vertices under a camera-side Y-flip, which mirrors the
-            // projected winding, so retail's front faces arrive CW - mode 2
-            // (discard front-facing = discard CCW under the pipelines'
-            // default Ccw front-face) keeps them. Off outside the cutscene
-            // camera (free-roam field / battle / world map keep both-sided
-            // draws; their per-pass winding parities differ). The world-map
-            // fly-in leg keeps both-sided draws too - the continent terrain's
-            // winding parity is the world-map pass's, not the field pass's,
-            // so the field-tuned cull would eat the ground tiles.
-            let in_world_map_now = self.session.host.world.mode == SceneMode::WorldMap;
+            // Retail GTE NCLIP winding rejection over the whole field pass
+            // (`camera_view::nclip_cull_mode`): retail culls the back faces
+            // of every field mesh, which is what hides a sky dome's outer
+            // shell (korout, retona) and the opdeene prologue shot's near
+            // cave wall. The field frame draws raw retail vertices under a
+            // camera-side Y-flip, which mirrors the projected winding, so
+            // retail's front faces arrive CW - mode 2 (discard front-facing
+            // = discard CCW under the pipelines' default Ccw front-face)
+            // keeps them. The world map, battle and the minigame venues keep
+            // both-sided draws (their per-pass winding parities differ).
             let nclip_mode = legaia_engine_core::camera_view::nclip_cull_mode(
                 cutscene_cam.is_some(),
-                in_world_map_now,
+                self.session.host.world.mode,
             );
             r.set_backface_cull(nclip_mode);
             // The overworld's per-vertex screen-Y bend (`FUN_800271A8`'s

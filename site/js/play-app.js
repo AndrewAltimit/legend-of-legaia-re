@@ -2680,10 +2680,10 @@ void main() {
       }
       /* Retail GTE NCLIP winding rejection, from the shared engine kernel
        * (`camera_view::nclip_cull_mode`) the native window's
-       * `set_backface_cull` also reads: armed only while the in-engine
-       * cutscene camera owns a non-overworld frame. The opdeene prologue's
-       * tableau shot sits INSIDE the scene's closed cave-wall backdrop mesh
-       * and NCLIP is what discards its near wall. */
+       * `set_backface_cull` also reads: armed for the whole field pass
+       * (retail culls every field mesh's back faces - a sky dome's outer
+       * shell, the opdeene prologue shot's near cave wall) and for a
+       * cutscene camera on any other non-overworld mode. */
       if (this.renderer.setNclipCull && typeof rt.play_render_nclip_mode === 'function') {
         let mode = 0;
         try { mode = rt.play_render_nclip_mode(); } catch (_) { mode = 0; }

@@ -393,10 +393,10 @@ uniform int u_pair_front;
  * whose gl_FrontFacing matches the parity that carries retail's BACK faces on
  * this page's assembled view chain - the same u_pair_front = 0 parity the
  * double-sided-pair rule above encodes, and the same predicate the native
- * renderer's set_backface_cull(2) applies. Staged only while the in-engine
- * cutscene camera owns the frame (camera_view::nclip_cull_mode): the
- * opdeene prologue's tableau shot sits INSIDE the scene's closed cave-wall
- * backdrop mesh and NCLIP is what discards its near wall. */
+ * renderer's set_backface_cull(2) applies. Staged for the whole field pass
+ * (camera_view::nclip_cull_mode): retail culls every field mesh's back faces,
+ * which hides a sky dome's outer shell and the opdeene prologue shot's near
+ * cave wall. */
 uniform int u_nclip_cull;
 /* Camera-occlusion fade (see-through walls enhancement, NON-RETAIL - the
  * GLSL twin of the native scene shaders' occl_keep/occl_bayer, see

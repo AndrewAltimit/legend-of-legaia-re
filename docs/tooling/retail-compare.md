@@ -238,7 +238,7 @@ Shapes the corpus separates, each with what it indicates:
 
 | Shape | Indicates |
 |---|---|
-| camera exact, frame smeared by stretched texture planes | primitives near or behind the eye rasterised by the port; retail's field cell emitter near-clips on `OTZ < 0x40` ([renderer](../subsystems/renderer.md#the-field-ground-pass-two-emitters-one-gate)) |
+| camera exact, frame smeared by stretched texture planes or one flat colour | a mesh retail does not draw there: a sky dome's back faces ([NCLIP](../subsystems/renderer.md#the-field-pass-culls-back-faces)), a never-spawned actor slot at the origin, a prop at the wrong [render scale](../subsystems/renderer.md#field-static-object-placement-town01), or a window-owned prop outside the region box |
 | retail frame black beyond a rectangle, the engine's filled | the visible-tile window (op `0x46`); the port draws the whole scene |
 | an idle status panel in the engine frame only | the engine's panel timing / placement against retail's |
 | effect missing in the engine frame (save-point crystals, spell glows) | an actor or effect the fresh entry does not spawn, or one the port does not draw |

@@ -1814,6 +1814,31 @@ instead - the
 which dissolves pixels rather than culling bodies and so has no
 neighbour-blink failure mode.
 
+### The field pass culls back faces
+
+Retail rejects the back faces of every field mesh. Each per-prim handler
+behind `FUN_80043390` runs `NCLIP` after the `RTPT` and ANDs the signed area
+with a mask before the sign test - in the quad handler `FUN_80043768`,
+`mfc2 s2,$24` / `and s2,s2,s3` / `blez s2` at `0x80043808..0x80043818`, and
+a quad is kept when either of its two triangles faces the eye. The
+dispatcher loads the mask as `0xFFFFFFFF` and lowers it to `0x7FFFFFFF` -
+every area non-negative, so both sides draw - only when its colour argument
+carries bit `0x08000000` (`0x80043520..0x80043540`). A field actor's colour
+word `actor[+0x74]` is born `0x00808080` (`FUN_80020DE0` at `0x80020F3C`) and
+both placed-object spawners only OR in `0x40000000` or `0x10000000`
+(`FUN_8003A55C` at `0x8003A730..0x8003A76C`, the window sweep `FUN_801D7B50`
+at `0x801D7D78..0x801D7DB4`), so no placed object is double-sided. A retail
+`first_town_interactive` capture agrees: no drawn actor carries the bit.
+
+The port arms the same rejection for the whole field pass through one kernel
+both hosts read, `camera_view::nclip_cull_mode` (`2` for `SceneMode::Field`
+and for a cutscene camera on any other non-overworld mode). Drawn both-sided,
+a sky dome the camera looks at from outside paints its outer shell over the
+scene - korout's and retona's did, and so did the flag-seeded frames of
+several other scenes. The world map keeps both-sided draws (its continent
+terrain's winding parity is the world-map pass's, not the field pass's), as
+do battle and the minigame venues.
+
 ## Coplanar surfaces: retail's ordering model, the port's depth policy
 
 Retail has **no depth buffer**. Every primitive is inserted into the ordering
@@ -1846,9 +1871,11 @@ renderer and the site's WebGL viewers:
   opt-in post-pass the scene-assembly consumers run; preservation/export
   builders stay byte-faithful) flags both copies via bit 15 of the per-vertex
   CBA attribute (unused by the PSX CBA encoding). The fragment shaders then
-  discard the away-facing copy of *flagged* prims only - retail's per-prim
-  NCLIP, without the unsafe global cull (winding is not globally consistent
-  across the corpus). Which facing is "away" depends on the view chain's
+  discard the away-facing copy of *flagged* prims only. Outside the field
+  pass (the world map, battle, the minigame venues and the site's static
+  viewers) this is the only NCLIP the port applies; the field pass also
+  runs the [global back-face cull](#the-field-pass-culls-back-faces).
+  Which facing is "away" depends on the view chain's
   reflection parity: the native field frame and the site's `buildMvp` carry
   one net reflection, the site's assembled views add the retail screen-X
   mirror on top; the WebGL shader takes the parity as the `u_pair_front`
