@@ -585,7 +585,11 @@ fn progress_digest(s: &BootSession) -> u64 {
             let _ = write!(h, "{:?}", w.minigames.dance);
         }
         SceneMode::Fishing => {
-            let _ = write!(h, "{:?}", w.minigames.fishing);
+            let _ = write!(
+                h,
+                "{:?}|{:?}",
+                w.minigames.fishing, w.minigames.fishing_exchange
+            );
         }
         SceneMode::SlotMachine => {
             let _ = write!(h, "{:?}", w.minigames.slot_machine);
@@ -644,6 +648,22 @@ fn held_by(s: &BootSession) -> String {
             );
         }
         SceneMode::Field | SceneMode::WorldMap => {}
+        // The pond names its sub-screen: an idle shore waiting for a cast
+        // and a prize list that will not close are different parks, and a
+        // reduction must not trade one for the other.
+        SceneMode::Fishing => {
+            let Some(f) = w.minigames.fishing.as_ref() else {
+                return "mode:Fishing".into();
+            };
+            let screen = if w.minigames.fishing_exchange.is_some() {
+                "exchange".to_string()
+            } else if let Some(hub) = f.hub() {
+                format!("hub-{}", variant(&format!("{:?}", hub.screen)))
+            } else {
+                variant(&format!("{:?}", f.phase()))
+            };
+            return format!("mode:Fishing:{screen}");
+        }
         other => return format!("mode:{other:?}"),
     }
     if w.party.name_entry.is_some() {
@@ -734,6 +754,18 @@ fn trace_line(s: &BootSession, pad: u16) -> String {
                 );
             }
         }
+    }
+    if let Some(f) = w.minigames.fishing.as_ref() {
+        let _ = write!(
+            out,
+            " pond(phase {:?} hub {:?} exchange {} power {} depth {} tension {})",
+            f.phase(),
+            f.hub(),
+            w.minigames.fishing_exchange.is_some(),
+            f.cast_power(),
+            f.depth(),
+            f.tension()
+        );
     }
     for (slot, m) in &w.npcs.motions {
         let _ = write!(

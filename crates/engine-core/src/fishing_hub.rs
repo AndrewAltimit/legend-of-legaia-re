@@ -495,7 +495,9 @@ impl crate::world::World {
             session.hub_exchange_closed();
         }
         if exchange_open {
-            return session.hub().is_some();
+            let hub_up = session.hub().is_some();
+            self.fishing_exchange_pad(edge);
+            return hub_up;
         }
         let step = session.hub_step(edge, |id| {
             i32::from(bag.get(&(id as u8)).copied().unwrap_or(0))
@@ -526,6 +528,66 @@ impl crate::world::World {
             _ => {}
         }
         open || step.exit.is_some()
+    }
+
+    /// The prize list's own pad step (state `0x78`, `FUN_801D0C3C(1)`), fed
+    /// the packed pad edge. Without it the list opened from the hub's row 3
+    /// answered only host keys (the native window's `P` family, the browser
+    /// page's panel buttons), so a pad-only player - a gamepad, the play page
+    /// - was left on a screen nothing could close.
+    ///
+    /// Read off the disassembly (`0x801D0CB8..0x801D0DB0`): Up (`0x1000`) and
+    /// Down (`0x4000`) move the cursor with SFX `0x21`, clamped to the list
+    /// floor; `& 0x44` (Cross / L1) buys at the cursor through the
+    /// availability test `FUN_801D6F90` - SFX `0x20` when it passes, `0x22`
+    /// when refused; `& 0x21` (Circle / L2) cancels with SFX `0x37` back to
+    /// the hub menu (state `0x64`). Retail reads the cursor keys off the
+    /// auto-repeat word; this reads the edge. Left / Right switch the venue
+    /// page - a port affordance retail has no key for (each pond shows its
+    /// own page).
+    ///
+    /// The buy is one unit: retail's quantity picker (`0x7A`) and confirm
+    /// (`0x79`) screens are not modelled; the grant, the spend and the
+    /// one-time latch are [`crate::world::World::fishing_exchange_buy`]'s.
+    pub(crate) fn fishing_exchange_pad(&mut self, edge: u32) {
+        use crate::fishing_exchange_input::{ExchangeInput, ExchangeOutcome};
+        const UP: u32 = 0x1000;
+        const RIGHT: u32 = 0x2000;
+        const DOWN: u32 = 0x4000;
+        const LEFT: u32 = 0x8000;
+        const CONFIRM: u32 = 0x44;
+        const CANCEL: u32 = 0x21;
+        let Some(venues) = self.minigames.fishing_prize_venues.clone() else {
+            // No pages decoded: nothing the list could show, so any cancel
+            // or confirm closes it rather than holding the pad.
+            if edge & (CONFIRM | CANCEL) != 0 {
+                self.close_fishing_exchange();
+            }
+            return;
+        };
+        let mut sfx = Vec::new();
+        for (mask, input) in [
+            (UP, ExchangeInput::Up),
+            (DOWN, ExchangeInput::Down),
+            (LEFT | RIGHT, ExchangeInput::SwitchVenue),
+        ] {
+            if edge & mask != 0
+                && self.fishing_exchange_input(&venues, input) != ExchangeOutcome::Refused
+            {
+                sfx.push(0x21);
+            }
+        }
+        if edge & CONFIRM != 0 {
+            match self.fishing_exchange_input(&venues, ExchangeInput::Buy) {
+                ExchangeOutcome::Bought(_) => sfx.push(0x20),
+                _ => sfx.push(0x22),
+            }
+        }
+        if edge & CANCEL != 0 && self.minigames.fishing_exchange.is_some() {
+            self.fishing_exchange_input(&venues, ExchangeInput::Toggle);
+            sfx.push(0x37);
+        }
+        self.minigames.pending_sfx.extend(sfx);
     }
 
     /// The hub's draw lines on the world: the session's layout with the

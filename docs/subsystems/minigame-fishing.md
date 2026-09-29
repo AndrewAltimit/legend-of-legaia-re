@@ -938,9 +938,11 @@ binding: retail casts on Cross / Square (see [the reeling
 mechanic](#tension--reeling-mechanic)) - Cross reels
 (reel A, `0x40`), Square reels harder (reel B, `0x80`); each frame's session
 events (`World::minigames.fishing_events`) seed both hosts' banner one-shots
-and queue the hook / celebration cues. `P` opens the [point
-exchange](#point-exchange-prize-shop) (Up/Down move, Left/Right switch venue,
-Enter trades), which owns the pad while open.
+and queue the hook / celebration cues. The [point exchange](#point-exchange-prize-shop) opens from the hub's row 3
+(or the native window's `P`) and owns the pad while open: the engine steps it
+off the pad edge itself (`World::tick_fishing_hub`), as retail's state `0x78`
+does - Up / Down move, Cross or L1 trades one, Circle or L2 closes back to
+the hub menu, and Left / Right switch the venue page (a port affordance).
 
 Both play hosts also run the overlay's **actor-side frame**, through one
 engine kernel (`engine-core::fishing_venue::tick_fishing_venue_on_host`, its

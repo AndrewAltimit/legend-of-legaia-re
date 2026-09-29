@@ -90,7 +90,9 @@ triage, a false "moving" only a missed finding.
 A softlock is **located** by what holds the frame: `pause-menu:<row>:<phase>`,
 `battle:command:<phase>`, `battle:state:<action state>`, `timeline@pc:op`,
 `helper@pc:op`, `dialogue`, `shop`, `name-entry`, `mode:<minigame>`, or
-`free-roam:immobile@tile(x,z)`. A battle park whose HP-bar pair is absorbing
+`free-roam:immobile@tile(x,z)`. The pond names its sub-screen
+(`mode:Fishing:<phase>`, `:hub-<screen>`, `:exchange`), so a reduction cannot
+trade a park on one screen for an idle shore that merely waits for a cast. A battle park whose HP-bar pair is absorbing
 (`hp != hp_display` with a zero accumulator - the shape that holds the
 `0x51` bar-drain gate for good, see `BattleActor::set_hp_synced`) carries a
 `:hp-bar-absorbing` suffix.
@@ -215,6 +217,7 @@ regression.
 | `town0d_tetsu_picker_loop` | a conversation looping on its first picker option read as parked | harness: the digest counts timeline slices and the panel position |
 | `vell_attack_short_step_park` | an attack approach parked a short step from its target | `+0x3C` is the per-frame body pair |
 | `taiku2_hp_bar_absorbing_park` | the `0x51` bar-drain gate parked on an absorbing HP-bar pair | the restaged action clip replays |
+| `balden_fishing_exchange_pad_dead` | the prize list opened from the pond's hub menu answered no pad input | the engine steps the list off the pad edge (state `0x78`'s keys) |
 
 The field-side fixes are described with their retail evidence in
 [`script-vm.md`](../subsystems/script-vm.md#engagement-and-the-system-script).

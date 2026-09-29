@@ -211,6 +211,30 @@ mod tests {
         );
     }
 
+    /// The list a pad opened must close on the pad: the soak harness found a
+    /// fishing run parked on it for good, since only host keys drove it.
+    #[test]
+    fn the_pad_moves_buys_and_closes_the_list() {
+        let mut w = World::new();
+        w.minigames.fishing_prize_venues = Some([venue(0), venue(1)]);
+        w.minigames.fishing_points = 1000;
+        let venues = [venue(0), venue(1)];
+        w.fishing_exchange_input(&venues, ExchangeInput::Toggle);
+        let cursor = |w: &World| w.minigames.fishing_exchange.as_ref().map(|e| e.cursor);
+        let start = cursor(&w).unwrap();
+        w.fishing_exchange_pad(0x4000); // Down
+        assert_eq!(cursor(&w), Some(start + 1));
+        w.fishing_exchange_pad(0x1000); // Up
+        assert_eq!(cursor(&w), Some(start));
+        let before = w.minigames.fishing_points;
+        w.fishing_exchange_pad(0x40); // Cross
+        assert!(w.minigames.fishing_points < before, "Cross buys");
+        assert!(w.minigames.fishing_exchange.is_some());
+        w.fishing_exchange_pad(0x20); // Circle
+        assert!(w.minigames.fishing_exchange.is_none(), "Circle closes");
+        assert!(w.minigames.pending_sfx.contains(&0x37));
+    }
+
     #[test]
     fn wasm_codes_round_trip() {
         for (code, want) in [
