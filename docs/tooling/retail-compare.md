@@ -112,12 +112,10 @@ way: the lifted save is written as a scratch LGSF file whose resume point is
 the state's scene, and `play-window --resume-save` lands it through the same
 `BootSession::resume_save` the headless side calls. `LEGAIA_SEAT=X,Z` then
 seats the player on retail's position, and `--screenshot` captures at a
-fixed world tick. The child also runs `--no-live-npcs`, because the headless
-session leaves the free-roam liveliness approximation
-(`FieldNpcState::animate`) off: with it on, every placement script
-free-steps from the first tick, and a talk body among them can walk the
-player off the seat (`vell`) or pull it to another placement and open its
-dialogue (`koin1`).
+fixed world tick. Live NPCs are on in both the child and the headless
+session: a placement's script runs only while its actor carries the engaged
+bit (`+0x10 & 0x100`, raised by a touch), so an idle resume holds the seat
+instead of letting a talk body walk the player off it.
 
 A `--scene` door entry is **not** an equivalent seed. It stages the scene
 for the free-roam picker (story-twin event flags, the entry BGM pause

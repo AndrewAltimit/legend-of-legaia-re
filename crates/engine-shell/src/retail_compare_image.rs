@@ -214,11 +214,9 @@ pub enum FrameEntry<'a> {
     /// A card-load resume of the retail save (`--resume-save`), the order
     /// the headless channels seed with ([`crate::boot::BootSession::resume_save`]):
     /// the save's scene entered at the save's position with no free-roam
-    /// picker staging, then the world hydrated from the save. The child
-    /// also runs `--no-live-npcs`: the headless session leaves the free-roam
-    /// liveliness approximation (`FieldNpcState::animate`) off, and with it
-    /// on every placement script free-steps from tick 0 - a talk body among
-    /// them can walk the player off the seat or open a dialogue shot.
+    /// picker staging, then the world hydrated from the save. Live NPCs
+    /// stay on, as in the headless session: a placement's script runs only
+    /// while its actor is engaged, so an idle resume holds the seat.
     Resume(&'a legaia_save::SaveFile),
     /// The `--scene` door entry, with these system-flag bits raised before
     /// it (`--set-flag`) so the entry scripts branch on retail's flags. The
@@ -315,7 +313,7 @@ pub fn engine_frame_with(
             };
             std::fs::write(&file, save.write_with_resume(&resume))
                 .with_context(|| format!("write {}", file.display()))?;
-            cmd.arg("--resume-save").arg(&file).arg("--no-live-npcs");
+            cmd.arg("--resume-save").arg(&file);
         }
         FrameEntry::Door(flags) => {
             cmd.args(
