@@ -534,6 +534,22 @@ impl World {
         if self.dialog.input_consumed || !confirm {
             return;
         }
+        // A script context that engages the player refuses the talk as well
+        // as the walk. The probe lives inside the pad controller
+        // `FUN_801D01B0` (`jal 0x801CF9F4` at `0x801D0854`), and the field
+        // tick skips that whole controller while the player's `+0x10 &
+        // 0x80000` is up (`lw v0,0x10(s2)` / `and` / `bne` at
+        // `0x801D1694..0x801D16A0`, around the `jal 0x801D01B0` at
+        // `0x801D16F4`) - the same bit the script runner raises for every
+        // context it steps. Locomotion already honours it
+        // ([`Self::script_context_engages_player`]); without it here a Cross
+        // press under a spawned beat re-opened the talk that spawned it
+        // (`station`'s ticket seller, over its own P2[19] departure).
+        //
+        // REF: FUN_801D1344 (`0x801D1694`), FUN_801D01B0 (`0x801D0854`)
+        if self.script_context_engages_player() {
+            return;
+        }
         // Retail geometry: a single facing-indexed compass probe 64 units
         // ahead, box-tested at ±72 against each NPC
         // ([`Self::field_interact_probe_slot`]). A hit posts the touch event
