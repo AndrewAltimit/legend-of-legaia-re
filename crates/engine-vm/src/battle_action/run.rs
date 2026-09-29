@@ -70,8 +70,10 @@ pub(super) fn run_escape<H: BattleActionHost + ?Sized>(
     StepOutcome::BattleComplete
 }
 
-/// Captured-monster takedown - PORT: FUN_801E7824 (battle overlay 0898,
+/// Captured-monster takedown (battle overlay 0898,
 /// `ghidra/scripts/funcs/overlay_battle_action_801e7824.txt`).
+///
+/// PORT: FUN_801E7824
 ///
 /// Applied to the captured monster's slot (the state-0x68 arm calls it with
 /// `ctx[+0x13]`, the active actor). Per the dump:
