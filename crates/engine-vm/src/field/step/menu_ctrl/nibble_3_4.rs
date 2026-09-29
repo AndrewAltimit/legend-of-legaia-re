@@ -309,36 +309,37 @@ pub(super) fn op_4c_n4<H: FieldHost>(
             9 => {
                 // sub-9: dispatch on two bits of the global story
                 // flag word. See `FieldHost::op4c_n4_sub9_state`.
+                //
+                // Every arm advances the 6 bytes, the ramp arms included:
+                // the nibble-4 head advances first (`addiu s8,s8,6` at
+                // 0x801E1138, before the `jr` into the sub table) and the
+                // sub-9 ramp arms tail into the shared scheduler exit
+                // 0x801E205C (`jal 0x8003C5F0` then `j 0x801E3628` with
+                // `v0 = s8`) - the same exit sub-8's ramp takes. The ramp
+                // is a scheduled actor, not a park. Yielding at the op
+                // instead re-ran it forever (conc3 `P2[10]` never reached
+                // its `SET 0x3E5`).
+                // REF: FUN_801DE840 (0x801E1480..0x801E1628)
                 match host.op4c_n4_sub9_state() {
                     Sub9State::PlayerRelative => {
                         // Player-relative write: `+0x4A = target +
                         // player_anchor[+0x16]` (ramped when ticks != 0).
-                        // Same advance/yield shape as the default path -
-                        // this arm NEVER jumps (cutscene-dialogue overlay
+                        // This arm never jumps (cutscene-dialogue overlay
                         // `case 9`, live-probe-pinned over the opening).
                         host.op4c_n4_sub9_player_relative_write(target, ticks);
-                        if ticks == 0 {
-                            advance
-                        } else {
-                            StepResult::Yield { resume_pc: pc }
-                        }
+                        advance
                     }
                     Sub9State::Default => {
                         if ticks == 0 {
                             host.op4c_n4_sub9_default_write(target);
-                            advance
                         } else {
                             host.op4c_n4_sub9_default_ramp(target, ticks);
-                            StepResult::Yield { resume_pc: pc }
                         }
+                        advance
                     }
                     Sub9State::Delta => {
                         host.op4c_n4_sub9_delta_write_or_ramp(target, ticks);
-                        if ticks == 0 {
-                            advance
-                        } else {
-                            StepResult::Yield { resume_pc: pc }
-                        }
+                        advance
                     }
                 }
             }

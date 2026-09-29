@@ -771,6 +771,14 @@ Sub-9's tristate dispatch:
 
 **Sub-9 never jumps in the cutscene-dialogue overlay.** Its case 9 (`overlay_cutscene_dialogue_801de840.txt`, around the `_DAT_1f800394 & 0x1000000` test) selects a **write variant** and always advances 6 bytes; the bit-24 arm is the player-relative write above. The absolute-jump arm read from the field-overlay-0897 dump does not apply to the New-Game opening path (live probe: `opurud`'s entry script reaches its op-`0x44` at `+0x7A` with bit 24 set, unreachable under a jump arm). Engine: `legaia_engine_vm::field::Sub9State::PlayerRelative` replaces the earlier `AbsJump`.
 
+The ramp arms advance too. The nibble-4 head adds the 6 bytes before it
+dispatches (`addiu s8,s8,6` at `0x801E1138`), and a sub-9 ramp tails into
+the shared scheduler exit `0x801E205C` - `jal 0x8003C5F0`, then
+`j 0x801E3628` with `v0 = s8` - the exit every ramping sub takes. The ramp
+is a scheduled actor; the script does not wait on it. An engine that parks
+at the op re-runs it every frame, which is how `conc3` `P2[10]` sat on a
+`4C 49` until its timeline's safety cap and never set `0x3E5`.
+
 ### 0x4C nibble-D sub-4 / sub-5 - VRAM STP-bit set/clear
 
 6-byte `[4C, 0xD4|0xD5, x_lo, x_hi, y_lo, y_hi]`. The operand is a `(vram_x, vram_y)` pair; the rect is hard-coded to `w = 0x10, h = 1`. The original (overlay dump lines 7621-7666) runs the PsyQ libgs sequence

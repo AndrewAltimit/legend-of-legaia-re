@@ -522,17 +522,20 @@ fn op_4c_n4_sub_9_default_immediate_calls_default_write() {
 }
 
 #[test]
-fn op_4c_n4_sub_9_default_ramp_yields_at_pc() {
+fn op_4c_n4_sub_9_default_ramp_schedules_and_advances() {
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
-    // ticks = 60 → ramp path; VM yields at the same PC.
+    // ticks = 60 → ramp path. This test used to assert a yield at the same
+    // PC, which re-ran the op forever; the retail arm schedules the ramp and
+    // advances 6 through the shared scheduler exit (0x801E205C -> 0x801E3628
+    // with `v0 = s8`, s8 already +6 at 0x801E1138).
     let r = step(
         &mut host,
         &mut ctx,
         &[0x4C, 0x49, 0x42, 0x00, 0x3C, 0x00],
         0,
     );
-    assert_eq!(r, StepResult::Yield { resume_pc: 0 });
+    assert_eq!(r, StepResult::Advance { next_pc: 6 });
     assert_eq!(host.n4_sub9_default_ramps, vec![(0x0042i16, 60u16)]);
     assert!(host.n4_sub9_default_writes.is_empty());
 }
@@ -578,7 +581,7 @@ fn op_4c_n4_sub_9_delta_immediate_advances() {
 }
 
 #[test]
-fn op_4c_n4_sub_9_delta_ramp_yields() {
+fn op_4c_n4_sub_9_delta_ramp_advances() {
     let mut host = TestHost {
         n4_sub9_state: Sub9State::Delta,
         ..TestHost::default()
@@ -590,7 +593,8 @@ fn op_4c_n4_sub_9_delta_ramp_yields() {
         &[0x4C, 0x49, 0x55, 0x00, 0x14, 0x00],
         0,
     );
-    assert_eq!(r, StepResult::Yield { resume_pc: 0 });
+    // Same exit as the default ramp (it used to yield at PC and never move).
+    assert_eq!(r, StepResult::Advance { next_pc: 6 });
     assert_eq!(host.n4_sub9_delta_calls, vec![(0x55i16, 20u16)]);
 }
 
