@@ -1807,8 +1807,95 @@ fn pad_for_step(session: &BootSession, dwx: i16, dwz: i16) -> u16 {
     pad
 }
 
+/// Kind-0 teleport trigger dispatch tile -> landing cell.
+type WarpMap = HashMap<(i32, i32), Cell>;
+
+thread_local! {
+    /// The loaded field scene's kind-0 intra-scene teleports, keyed by the
+    /// scene they were read from: trigger dispatch tile -> landing cell.
+    static TELEPORTS: std::cell::RefCell<(String, WarpMap)> =
+        std::cell::RefCell::new((String::new(), HashMap::new()));
+}
+
+/// The loaded field scene's kind-0 intra-scene teleports (`.MAP` trigger
+/// block, [`legaia_engine_core::field_regions::IntraSceneTeleport`]): the
+/// tile that repositions the player outright, and the cell it lands in.
+/// House interiors and dungeon rooms are laid out in the same field map as
+/// the street outside, joined only by these, so a planner that does not
+/// model them sees each room as a separate walk component.
+fn teleports(session: &BootSession) -> WarpMap {
+    if session.host.world.mode != SceneMode::Field {
+        return HashMap::new();
+    }
+    let name = scene_name(session);
+    TELEPORTS.with(|t| {
+        let mut t = t.borrow_mut();
+        if t.0 != name {
+            let index = &session.host.index;
+            let mut map = HashMap::new();
+            if let Ok(scene) = Scene::load(index, &name)
+                && let Ok((p, f)) = scene.field_intra_scene_teleports(index)
+            {
+                // The dispatch takes the first primary-then-fallback match.
+                for tp in p.iter().chain(f.iter()) {
+                    let (x, z) = tp.dest_world();
+                    map.entry((i32::from(tp.tile_x), i32::from(tp.tile_z)))
+                        .or_insert(cell_of(x, z));
+                }
+            }
+            *t = (name, map);
+        }
+        t.1.clone()
+    })
+}
+
+/// Retail's walk-touch contact box half-extent (`FIELD_PROP_BOX_HALF`,
+/// engine-core `world::config`): a movement probe point inside it posts the
+/// placement's touch.
+const TOUCH_BOX_HALF: i32 = 0x50;
+
+/// The loaded field scene's **object doors** under the live flags: each
+/// `.MAP`-object walk-touch placement whose record, resolved against the
+/// story flags as the contact dispatch resolves it, teleports the player
+/// (`WalkTouchEvent::PlayerMoveTo`) - contact centre and landing cell.
+/// Vahn's front door and every house door of a town are this class.
+fn object_doors(session: &BootSession) -> Vec<((i16, i16), Cell)> {
+    use legaia_engine_core::man_field_scripts::{WalkTouchEvent, resolve_walk_touch_event};
+    let w = &session.host.world;
+    if w.mode != SceneMode::Field || w.props.walk_touch.is_empty() {
+        return Vec::new();
+    }
+    let parsed = w
+        .field_vm
+        .channels_man
+        .as_ref()
+        .and_then(|man| Some((legaia_asset::man_section::parse(man).ok()?, man.clone())));
+    let mut out = Vec::new();
+    for (&slot, &(contact, event)) in &w.props.walk_touch {
+        let live = w
+            .props
+            .walk_touch_records
+            .get(&slot)
+            .and_then(|&flat| {
+                let (mf, man) = parsed.as_ref()?;
+                resolve_walk_touch_event(mf, man, flat, &|f| w.system_flag_test(f))
+            })
+            .unwrap_or(event);
+        if let WalkTouchEvent::PlayerMoveTo {
+            world_x, world_z, ..
+        } = live
+        {
+            out.push((contact, cell_of(world_x, world_z)));
+        }
+    }
+    out
+}
+
 /// BFS over the collision lattice toward `goal`, never entering an `avoid`
 /// dispatch tile (retail fires on a tile change, so occupying one is safe).
+/// A step into a kind-0 teleport tile, or against an object door's contact
+/// box, continues from its landing cell, so a route may pass through a door
+/// into a room laid out elsewhere in the map.
 fn plan_path(
     session: &BootSession,
     from: Cell,
@@ -1818,6 +1905,9 @@ fn plan_path(
     let w = &session.host.world;
     let gw = tile_center(goal);
     let gc = cell_of(gw.0, gw.1);
+    let goal_tile = (i32::from(goal.0), i32::from(goal.1));
+    let warps = teleports(session);
+    let doors = object_doors(session);
     let score = |c: Cell| (c.0 - gc.0).abs() + (c.1 - gc.1).abs();
     let mut seen: HashMap<Cell, Cell> = HashMap::new();
     let mut q = VecDeque::from([from]);
@@ -1839,11 +1929,42 @@ fn plan_path(
             if next.0 < 0 || next.1 < 0 || seen.contains_key(&next) {
                 continue;
             }
+            let (nx, nz) = cell_center(next);
+            // Leaning into an object door's contact box posts its touch,
+            // whose record teleports the player: solid or not, the step
+            // continues from the landing (the door cell is the waypoint the
+            // follower presses toward).
+            if !w.field_dir_blocked(cx, cz, dir)
+                && let Some(&(_, land)) = doors.iter().find(|((dx, dz), _)| {
+                    (i32::from(nx) - i32::from(*dx)).abs() < TOUCH_BOX_HALF
+                        && (i32::from(nz) - i32::from(*dz)).abs() < TOUCH_BOX_HALF
+                })
+            {
+                if !seen.contains_key(&land) && land != next {
+                    seen.insert(next, cur);
+                    seen.insert(land, next);
+                    q.push_back(land);
+                }
+                continue;
+            }
             if w.field_dir_blocked(cx, cz, dir) || w.field_actor_dir_blocked(cx, cz, dir) {
                 continue;
             }
-            let (nx, nz) = cell_center(next);
             let (nt, ct) = (dispatch_tile(nx, nz), dispatch_tile(cx, cz));
+            if nt != ct
+                && nt != goal_tile
+                && let Some(&land) = warps.get(&nt)
+            {
+                // Entering the teleport tile lands the player elsewhere; the
+                // tile itself is a waypoint the follower steps into, never a
+                // cell the walk continues from.
+                if !seen.contains_key(&land) && land != next {
+                    seen.insert(next, cur);
+                    seen.insert(land, next);
+                    q.push_back(land);
+                }
+                continue;
+            }
             if nt != ct && avoid.contains(&nt) {
                 continue;
             }
@@ -1906,7 +2027,12 @@ fn hazards(session: &BootSession, dest: &str) -> HashSet<(i32, i32)> {
 /// Walk to a door toward `dest` with the pad only. `Ok(entered)` on a scene
 /// change (which may not be `dest`; the caller checks).
 fn pad_hop(session: &mut BootSession, graph: &DiscGraph, dest: &str) -> Result<String, String> {
-    let doors = doors_to(session, graph, dest)?;
+    let doors = match doors_to(session, graph, dest) {
+        Ok(d) => d,
+        // A hop no walk-on band carries is taken by talking, as a player does.
+        Err(why) => return talk_hop(session, graph, dest).ok_or(why)?,
+    };
+    HOP_DEST.with(|d| *d.borrow_mut() = Some(dest.to_string()));
     let avoid = hazards(session, dest);
     let (sx, sz) = player_xz(session);
     let start = cell_of(sx, sz);
@@ -1941,6 +2067,7 @@ fn pad_hop(session: &mut BootSession, graph: &DiscGraph, dest: &str) -> Result<S
         }
     }
     let mut best = dist(tile_of(sx, sz));
+    let mut visited: HashSet<Cell> = HashSet::from([start]);
     let mut since = 0u32;
     let mut planned_from = start;
     let mut path = plan_path(session, start, goal, &avoid).unwrap_or_default();
@@ -1989,8 +2116,10 @@ fn pad_hop(session: &mut BootSession, graph: &DiscGraph, dest: &str) -> Result<S
         }
         let (px, pz) = player_xz(session);
         let d = dist(tile_of(px, pz));
-        if d < best {
-            best = d;
+        // Progress is a nearer tile or a cell never stood in: a route through
+        // a teleport walks away from the door before it lands nearer.
+        if d < best || visited.insert(cell_of(px, pz)) {
+            best = best.min(d);
             since = 0;
         } else {
             since += 1;
@@ -2003,6 +2132,285 @@ fn pad_hop(session: &mut BootSession, graph: &DiscGraph, dest: &str) -> Result<S
         }
     }
     Err(format!("pad walk to {goal:?} ran out of frames"))
+}
+
+thread_local! {
+    /// Set while the pad tier drives: every beat is then played with pad
+    /// input only - walked to, faced and pressed - instead of seated.
+    static PAD_HAND: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+fn pad_hand() -> bool {
+    PAD_HAND.with(std::cell::Cell::get)
+}
+
+/// Where a [`pad_walk`] ended.
+#[derive(Debug)]
+enum Walk {
+    /// The player stands within `within` tiles of the goal.
+    Arrived,
+    /// A scene change landed on the way (the goal tile's own record, or a
+    /// scripted sequence the walk set off).
+    Entered(String),
+}
+
+/// Every tile of the loaded scene a pad walk should not **enter** on its way
+/// somewhere else: the walk-on door bands, the kind-0 intra-scene
+/// teleports, and every gate-1 walk-on band whose partition-2 record the
+/// live flags let spawn - stepping onto one runs its record (or arms a
+/// warp) instead of the beat under test. A band whose record's story gates
+/// shut it is inert and stays walkable: town gates and bridges are often
+/// lined with them. `keep` is exempt - it is the goal.
+fn pad_avoid(session: &BootSession, keep: Option<(i16, i16)>) -> HashSet<(i32, i32)> {
+    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    let mut out = hazards(session, "");
+    if session.host.world.mode == SceneMode::Field
+        && let Some((mf, man, triggers)) = scene_man_and_triggers(session)
+    {
+        let w = &session.host.world;
+        for t in triggers.iter().filter(|t| t.gate == 1) {
+            let live = partition2_record_gates(&mf, &man, usize::from(t.record))
+                .is_none_or(|(c1, c2)| w.p2_record_gates_pass(&c1, &c2));
+            if live {
+                out.insert((i32::from(t.tile_x), i32::from(t.tile_z)));
+            }
+        }
+        let index = &session.host.index;
+        if let Ok(scene) = Scene::load(index, &scene_name(session))
+            && let Ok((p, f)) = scene.field_intra_scene_teleports(index)
+        {
+            out.extend(
+                p.iter()
+                    .chain(f.iter())
+                    .map(|t| (i32::from(t.tile_x), i32::from(t.tile_z))),
+            );
+        }
+    }
+    if let Some(k) = keep {
+        out.remove(&(i32::from(k.0), i32::from(k.1)));
+    }
+    out
+}
+
+/// [`plan_path`] around `avoid`; when that cannot reach `goal`, around the
+/// door bands alone (a live walk-on band then gets crossed, as a player
+/// crosses one that stands in the only way through).
+fn plan_around(
+    session: &BootSession,
+    from: Cell,
+    goal: (i16, i16),
+    avoid: &HashSet<(i32, i32)>,
+    doors: &HashSet<(i32, i32)>,
+) -> Vec<Cell> {
+    let gc = {
+        let g = tile_center(goal);
+        cell_of(g.0, g.1)
+    };
+    let miss = |p: &[Cell]| {
+        p.last().map_or(i32::MAX, |c| {
+            i32::from((c.0 - gc.0).abs() + (c.1 - gc.1).abs())
+        })
+    };
+    let strict = plan_path(session, from, goal, avoid).unwrap_or_default();
+    if miss(&strict) <= i32::from(TILE / SUBCELL) {
+        return strict;
+    }
+    let loose = plan_path(session, from, goal, doors).unwrap_or_default();
+    if miss(&loose) < miss(&strict) {
+        loose
+    } else {
+        strict
+    }
+}
+
+/// Walk with the pad until the player's dispatch tile is within `within`
+/// tiles of `goal`. Random encounters on the way are fled; a scripted
+/// sequence the walk sets off (a band's record, a talk) is paged through.
+fn pad_walk(
+    session: &mut BootSession,
+    goal: (i16, i16),
+    avoid: &HashSet<(i32, i32)>,
+    within: i32,
+) -> Result<Walk, String> {
+    let dist = |t: (i32, i32)| (t.0 - i32::from(goal.0)).abs() + (t.1 - i32::from(goal.1)).abs();
+    let here = |s: &BootSession| {
+        let (x, z) = player_xz(s);
+        dispatch_tile(x, z)
+    };
+    if dist(here(session)) <= within {
+        return Ok(Walk::Arrived);
+    }
+    if std::env::var_os("LEGAIA_FGL_WALK_DEBUG").is_some() {
+        let w = &session.host.world;
+        eprintln!(
+            "      [walk] {} from {:?} to {goal:?}: teleports {:?}; object doors {:?}; walk-touch {:?}",
+            scene_name(session),
+            here(session),
+            teleports(session),
+            object_doors(session),
+            w.props
+                .walk_touch
+                .iter()
+                .map(|(s, (c, e))| format!("{s}@{c:?}:{e:?}"))
+                .collect::<Vec<_>>()
+        );
+    }
+    let walking_mode = session.host.world.mode;
+    let mut doors = hazards(session, "");
+    doors.remove(&(i32::from(goal.0), i32::from(goal.1)));
+    // A goal the lattice cannot get near is not walked at all: wandering
+    // toward it only rolls encounters (a placement parked off the map, a
+    // room behind a door the flags keep shut).
+    {
+        let (x, z) = player_xz(session);
+        let plan = plan_around(session, cell_of(x, z), goal, avoid, &doors);
+        if let Some(&end) = plan.last() {
+            let (ex, ez) = cell_center(end);
+            let miss = dist(dispatch_tile(ex, ez));
+            if miss > within + DOOR_APPROACH_SLACK {
+                return Err(format!(
+                    "no walkable path: the walk component ends {miss} tiles short of {goal:?}"
+                ));
+            }
+        }
+    }
+    let mut best = dist(here(session));
+    let mut visited: HashSet<Cell> = HashSet::new();
+    let mut since = 0u32;
+    let mut planned_from = None;
+    let mut path = Vec::new();
+    for _ in 0..PAD_LEG_FRAMES {
+        if session.host.world.mode == SceneMode::Battle {
+            FLEE_ENCOUNTERS.with(|f| f.set(true));
+            let r = drain_battle(session);
+            FLEE_ENCOUNTERS.with(|f| f.set(false));
+            if let Some(r) = r {
+                return Err(format!("battle on the walk to {goal:?}: {r:?}"));
+            }
+            since = 0;
+            continue;
+        }
+        if session.host.world.mode != walking_mode {
+            return Err(format!("mode changed to {:?}", session.host.world.mode));
+        }
+        let (wx, wz) = player_xz(session);
+        let cell = cell_of(wx, wz);
+        if planned_from != Some(cell) {
+            path = plan_around(session, cell, goal, avoid, &doors);
+            planned_from = Some(cell);
+        }
+        let (tx, tz) = match path.first() {
+            Some(&c) => cell_center(c),
+            None => tile_center(goal),
+        };
+        let pad = pad_for_step(session, (tx - wx).signum(), (tz - wz).signum());
+        session.host.world.set_pad(pad);
+        match session.tick() {
+            Ok(SceneTickEvent::SceneEntered { name }) => return Ok(Walk::Entered(name)),
+            Ok(_) => {}
+            Err(e) => return Err(format!("tick: {e:#}")),
+        }
+        if session.host.world.mode == SceneMode::Battle {
+            continue;
+        }
+        let w = &session.host.world;
+        if w.cutscene_timeline_active() || w.dialogue_owns_input() || w.active_fmv().is_some() {
+            match run_while_moving(session, DEEP_EXIT_TICKS) {
+                Run::Entered(s) => return Ok(Walk::Entered(s)),
+                Run::Released => {}
+                other => return Err(format!("scripted sequence on the walk: {other:?}")),
+            }
+            planned_from = None;
+        }
+        let d = dist(here(session));
+        if d <= within {
+            session.host.world.set_pad(0);
+            return Ok(Walk::Arrived);
+        }
+        let (px, pz) = player_xz(session);
+        if d < best || visited.insert(cell_of(px, pz)) {
+            best = best.min(d);
+            since = 0;
+        } else {
+            since += 1;
+            if since >= PAD_STALL_FRAMES {
+                session.host.world.set_pad(0);
+                let (px, pz) = player_xz(session);
+                return Err(format!(
+                    "pad walk stalled at tile {:?} (world ({px},{pz})), {d} tiles short of {goal:?}",
+                    here(session)
+                ));
+            }
+        }
+    }
+    session.host.world.set_pad(0);
+    Err(format!("pad walk to {goal:?} ran out of frames"))
+}
+
+/// Hold the d-pad toward world point `at` until `done` holds, for at most
+/// `frames` ticks. A press toward a solid body turns the player to face it
+/// and the collision stops the step, which is how a player lines up a talk
+/// or leans on a door. `Some(scene)` if a scene change landed.
+fn pad_lean(
+    session: &mut BootSession,
+    at: impl Fn(&BootSession) -> Option<(i16, i16)>,
+    frames: usize,
+    done: impl Fn(&BootSession) -> bool,
+) -> Option<String> {
+    for _ in 0..frames {
+        if done(session) || !walking(session) {
+            break;
+        }
+        let Some((ax, az)) = at(session) else { break };
+        let (px, pz) = player_xz(session);
+        let axis = |d: i16| if d.abs() > 16 { d.signum() } else { 0 };
+        let pad = pad_for_step(session, axis(ax - px), axis(az - pz));
+        session.host.world.set_pad(pad);
+        if let Ok(SceneTickEvent::SceneEntered { name }) = session.tick() {
+            session.host.world.set_pad(0);
+            return Some(name);
+        }
+    }
+    session.host.world.set_pad(0);
+    None
+}
+
+/// The four tiles beside `tile`, nearest to the player first, skipping any
+/// that carry a `.MAP` trigger (standing there would run its record).
+fn beside(session: &BootSession, tile: (i16, i16)) -> Vec<(i16, i16)> {
+    let claimed = claimed_tiles(session);
+    let (px, pz) = player_xz(session);
+    let me = dispatch_tile(px, pz);
+    let mut out: Vec<(i16, i16)> = [(-1i16, 0i16), (1, 0), (0, -1), (0, 1)]
+        .iter()
+        .map(|&(dx, dz)| (tile.0 + dx, tile.1 + dz))
+        .filter(|&(x, z)| {
+            (0..128).contains(&x) && (0..128).contains(&z) && !claimed.contains(&(x as u8, z as u8))
+        })
+        .collect();
+    out.sort_by_key(|t| (i32::from(t.0) - me.0).abs() + (i32::from(t.1) - me.1).abs());
+    out
+}
+
+/// Step onto walk-on `tile` with the pad: walk to an inert tile beside it,
+/// then onto it, so the dispatch sees a genuine tile change.
+fn pad_step_onto(session: &mut BootSession, tile: (u8, u8)) -> Result<Walk, String> {
+    let goal = (i16::from(tile.0), i16::from(tile.1));
+    let avoid = pad_avoid(session, None);
+    let mut last = String::from("no inert tile beside it");
+    for side in beside(session, goal) {
+        match pad_walk(session, side, &avoid, 0) {
+            Ok(Walk::Entered(s)) => return Ok(Walk::Entered(s)),
+            Ok(Walk::Arrived) => {}
+            Err(e) => {
+                last = e;
+                continue;
+            }
+        }
+        let onto = pad_avoid(session, Some(goal));
+        return pad_walk(session, goal, &onto, 0);
+    }
+    Err(format!("pad step onto {tile:?}: {last}"))
 }
 
 // ---------------------------------------------------------------------------
@@ -2058,6 +2466,13 @@ fn reached(session: &BootSession, target: &Milestone) -> bool {
     }
 }
 
+/// A party wipe on a pad walk leaves the game-over screen up; nothing after
+/// it is play.
+fn wiped(session: &BootSession) -> Option<String> {
+    let w = &session.host.world;
+    (w.game_over_hold || w.game_over).then(|| format!("party wiped: {}", battle_snapshot(session)))
+}
+
 /// Walk-on beat records tried per scene visit.
 const MAX_BEATS: usize = 120;
 
@@ -2095,11 +2510,27 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
             (None, true) => continue,
         };
         let (tx, tz) = tile_of(at.0, at.1);
-        session
-            .host
-            .world
-            .seat_player_at_tile(tx.clamp(0, 127) as u8, tz.clamp(0, 127) as u8);
         ran += 1;
+        if pad_hand() {
+            // Walk up to the stager; its touch dispatch runs off the
+            // locomotion step, as it does for a player.
+            let avoid = pad_avoid(session, None);
+            match pad_walk(session, (tx, tz), &avoid, 1) {
+                Ok(Walk::Entered(s)) => {
+                    finish(session, log, ran);
+                    return Ok(Some(s));
+                }
+                Ok(Walk::Arrived) => {
+                    let _ = pad_lean(session, move |_| Some(at), 24, |s| !released(s));
+                }
+                Err(_) => continue,
+            }
+        } else {
+            session
+                .host
+                .world
+                .seat_player_at_tile(tx.clamp(0, 127) as u8, tz.clamp(0, 127) as u8);
+        }
         match run_while_moving(session, DEEP_EXIT_TICKS) {
             Run::Entered(s) => {
                 finish(session, log, ran);
@@ -2140,6 +2571,9 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
         // A talk is re-tried each round while its flag stays clear: its
         // record may branch on a flag the previous round's beats set.
         for slot in talk_beats(session, &mf, &man) {
+            if let Some(w) = wiped(session) {
+                return Err(w);
+            }
             if ran >= MAX_BEATS {
                 continue;
             }
@@ -2159,6 +2593,9 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
             }
         }
         for (&rec, &tile) in &first_tile {
+            if let Some(w) = wiped(session) {
+                return Err(w);
+            }
             if doors.contains(&rec)
                 || walked.contains(&rec)
                 || overreach.contains(&usize::from(rec))
@@ -2172,10 +2609,18 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
                 continue;
             }
             walked.insert(rec);
-            step_onto(session, tile);
-            ran += 1;
             let f0 = flags_of_world(session);
-            let r = run_while_moving(session, DEEP_EXIT_TICKS);
+            ran += 1;
+            let r = if pad_hand() {
+                match pad_step_onto(session, tile) {
+                    Ok(Walk::Entered(s)) => Run::Entered(s),
+                    Ok(Walk::Arrived) => run_while_moving(session, DEEP_EXIT_TICKS),
+                    Err(e) => Run::Parked(e),
+                }
+            } else {
+                step_onto(session, tile);
+                run_while_moving(session, DEEP_EXIT_TICKS)
+            };
             let r = fight_committed(session, r);
             trace_beat(session, &f0, || {
                 format!("{name} walk P2[{rec}] at {tile:?} -> {r:?}")
@@ -2196,6 +2641,9 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
         // front door, spawns the P2[5] night beat that sets `0x227` once
         // `0x226` is up and `0x227` is not).
         for (slot, contact) in object_door_beats(session, &mf, &man) {
+            if let Some(w) = wiped(session) {
+                return Err(w);
+            }
             if !touched.insert(slot) || ran >= MAX_BEATS {
                 continue;
             }
@@ -2209,6 +2657,56 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
                 .copied();
             let (tx, tz) = tile_of(contact.0, contact.1);
             session.host.world.set_pad(0);
+            if pad_hand() {
+                // Walk up to the door and lean on it: the locomotion's own
+                // contact probe posts the touch.
+                let f0 = flags_of_world(session);
+                let avoid = pad_avoid(session, None);
+                let mut r = Run::Parked(format!("no approach to door object {slot}"));
+                // Up to the door tile itself first (its box may leave the
+                // tile only partly solid), then from each side.
+                let approaches: Vec<((i16, i16), i32)> = std::iter::once(((tx, tz), 1))
+                    .chain(beside(session, (tx, tz)).into_iter().map(|t| (t, 0)))
+                    .collect();
+                for (side, within) in approaches {
+                    match pad_walk(session, side, &avoid, within) {
+                        Ok(Walk::Entered(s)) => {
+                            r = Run::Entered(s);
+                            break;
+                        }
+                        Ok(Walk::Arrived) => {}
+                        Err(e) => {
+                            r = Run::Parked(e);
+                            continue;
+                        }
+                    }
+                    let started = |s: &BootSession| {
+                        s.host.world.props.active_walk_touch == Some(slot) || !released(s)
+                    };
+                    if let Some(s) = pad_lean(session, move |_| Some(contact), 32, started) {
+                        r = Run::Entered(s);
+                        break;
+                    }
+                    if started(session) {
+                        r = run_while_moving(session, DEEP_EXIT_TICKS);
+                        break;
+                    }
+                    r = Run::Parked(format!("door object {slot} posted no touch"));
+                }
+                trace_beat(session, &f0, || {
+                    format!("{name} door object {slot} (pad) -> {r:?}")
+                });
+                match r {
+                    Run::Entered(s) => {
+                        finish(session, log, ran);
+                        return Ok(Some(s));
+                    }
+                    Run::Battle(b) => return Err(format!("door object {slot}: {b}")),
+                    Run::Error(e) => return Err(e),
+                    Run::Released | Run::Parked(_) => {}
+                }
+                continue;
+            }
             session.host.world.props.active_walk_touch = None;
             session
                 .host
@@ -2616,6 +3114,9 @@ fn spawned_p2(
 /// flag. The player goes back where it stood afterwards, so the next press
 /// does not re-open the same talk.
 fn talk_to(session: &mut BootSession, slot: u8) -> Run {
+    if pad_hand() {
+        return pad_talk_to(session, slot);
+    }
     let Some(&(nx, nz)) = session.host.world.npcs.positions.get(&slot) else {
         return Run::Released;
     };
@@ -2740,6 +3241,120 @@ fn interact_at(
     last
 }
 
+/// Page an open conversation to its end with [`script_pad`]. `None` when it
+/// ended with the frame back on the field; `Some(run)` for anything else.
+fn page_talk(session: &mut BootSession) -> Option<Run> {
+    for f in 0..DEEP_EXIT_TICKS {
+        if session.host.world.mode == SceneMode::Battle {
+            if let Some(r) = drain_battle(session) {
+                return Some(r);
+            }
+            continue;
+        }
+        let w = &session.host.world;
+        if f >= 2 && w.dialog.inline.is_none() && !w.dialogue_owns_input() {
+            return None;
+        }
+        let pad = script_pad(session, f);
+        session.host.world.set_pad(pad);
+        match session.tick() {
+            Ok(SceneTickEvent::SceneEntered { name }) => return Some(Run::Entered(name)),
+            Ok(_) => {}
+            Err(e) => return Some(Run::Error(format!("{e:#}"))),
+        }
+    }
+    Some(Run::Parked(format!(
+        "{} at {}",
+        holder(session),
+        park_site(session)
+    )))
+}
+
+/// [`talk_to`] with the pad only: walk to a free tile beside the NPC, lean
+/// toward it until the retail interact probe lands on it (the press turns
+/// the player; the NPC's body stops the step), release, press Cross, page
+/// the conversation, then turn and step away so the confirm cannot re-open
+/// the same talk. Each side is tried until one gains a flag, as the seated
+/// hand does.
+fn pad_talk_to(session: &mut BootSession, slot: u8) -> Run {
+    let Some(&(nx, nz)) = session.host.world.npcs.positions.get(&slot) else {
+        return Run::Released;
+    };
+    let npc_tile = {
+        let t = dispatch_tile(nx, nz);
+        (t.0 as i16, t.1 as i16)
+    };
+    let avoid = pad_avoid(session, None);
+    let mut last = Run::Released;
+    let mut talked = false;
+    for side in beside(session, npc_tile) {
+        match pad_walk(session, side, &avoid, 0) {
+            Ok(Walk::Entered(s)) => return Run::Entered(s),
+            Ok(Walk::Arrived) => {}
+            Err(e) => {
+                if !talked {
+                    last = Run::Parked(format!("pad walk to talk P1[{slot}]: {e}"));
+                }
+                continue;
+            }
+        }
+        let npc = move |s: &BootSession| s.host.world.npcs.positions.get(&slot).copied();
+        let facing = |s: &BootSession| s.host.world.field_interact_probe_slot() == Some(slot);
+        if let Some(scene) = pad_lean(session, npc, 48, facing) {
+            return Run::Entered(scene);
+        }
+        if !facing(session) {
+            if !talked {
+                last = Run::Parked(format!("could not face P1[{slot}] from {side:?}"));
+            }
+            continue;
+        }
+        let before = flags_of_world(session);
+        // Release, then press: the interact is edge-triggered.
+        session.host.world.set_pad(0);
+        if let Ok(SceneTickEvent::SceneEntered { name }) = session.tick() {
+            return Run::Entered(name);
+        }
+        session.host.world.set_pad(PadButton::Cross.mask());
+        match session.tick() {
+            Ok(SceneTickEvent::SceneEntered { name }) => return Run::Entered(name),
+            Ok(_) => {}
+            Err(e) => return Run::Error(format!("{e:#}")),
+        }
+        talked = true;
+        if let Some(r) = page_talk(session) {
+            return r;
+        }
+        let w = &session.host.world;
+        let beat_follows = !w.field_vm.pending_record_spawns.is_empty()
+            || !w.field_vm.helper_contexts.is_empty()
+            || w.cutscene.timeline.is_some();
+        if walking(session) && !beat_follows {
+            // Turn away and step off, as a player does before pressing on.
+            let (px, pz) = player_xz(session);
+            let away = move |_: &BootSession| {
+                Some((
+                    px.saturating_add(px.saturating_sub(nx).signum() * 256),
+                    pz.saturating_add(pz.saturating_sub(nz).signum() * 256),
+                ))
+            };
+            if let Some(scene) = pad_lean(session, away, 12, |_| false) {
+                return Run::Entered(scene);
+            }
+        }
+        let r = run_while_moving(session, DEEP_EXIT_TICKS);
+        if !matches!(r, Run::Released) || !walking(session) {
+            return r;
+        }
+        let gained = flags_of_world(session) != before;
+        last = r;
+        if gained {
+            break;
+        }
+    }
+    last
+}
+
 fn flags_of_world(session: &BootSession) -> BTreeSet<u16> {
     let mut out = BTreeSet::new();
     for (i, b) in session.host.world.flags.system_flags.iter().enumerate() {
@@ -2762,11 +3377,13 @@ fn traverse(
     trail: &mut Vec<String>,
 ) -> Result<(), String> {
     let mut beaten: BTreeSet<String> = BTreeSet::new();
-    // Waypoints only steer the seated tier: the pad tier plays no beats.
+    // Both tiers play the same beats and waypoints; the pad tier plays them
+    // with pad input only ([`PAD_HAND`]).
+    PAD_HAND.with(|h| h.set(pad));
     let mut via = 0usize;
-    let vias: &[String] = if pad { &[] } else { &target.via };
-    // Edges whose hop failed even after the scene's beats ran: the seated
-    // tier routes around them (see the `dead` arm below).
+    let vias: &[String] = &target.via;
+    // Edges whose hop failed even after the scene's beats ran: the ladder
+    // routes around them (see the `dead` arm below).
     let mut dead: BTreeSet<(String, String)> = BTreeSet::new();
     let mut steps = 0usize;
     while steps < MAX_HOPS + vias.len() * 4 + dead.len() * 4 {
@@ -2844,7 +3461,7 @@ fn traverse(
         match hop {
             Ok(entered) => trail.push(entered),
             Err(e) => {
-                if !pad && beaten.insert(cur.clone()) {
+                if beaten.insert(cur.clone()) {
                     // The hop that sent the pass to the beats: with the
                     // pass's own failure it would otherwise go unreported.
                     if std::env::var_os("LEGAIA_FGL_TRACE").is_some() && !e.is_empty() {
@@ -2870,8 +3487,7 @@ fn traverse(
                 // while `0x36C` is clear), or one it has not opened yet (the
                 // `rikuroa` P2[57] warp to `uru` waits on `0x3BC`). Route
                 // around it when another way exists.
-                if !pad
-                    && !stuck_here
+                if !stuck_here
                     && dead.insert((cur.clone(), next.clone()))
                     && graph.route_avoiding(&cur, &goal, &dead).is_some()
                 {
