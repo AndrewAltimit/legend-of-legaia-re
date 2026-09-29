@@ -191,11 +191,31 @@ pub fn record_path_scene_change(
     pc: usize,
     flag_set: &dyn Fn(u16) -> bool,
 ) -> RecordPathEnd {
+    record_path_walk(body, pc, flag_set).0
+}
+
+/// [`record_path_scene_change`] plus the system-flag writes (`0x5x` SET as
+/// `(true, flag)`, `0x6x` CLEAR as `(false, flag)`, in order) the path makes
+/// before it ends. A later test on a flag the path already wrote reads the
+/// write, as the live bank would.
+///
+/// The crossing replays these so the bank ends as the field VM would leave
+/// it at the `0x3F`: an object-bound overworld entrance (`map01` P0[6], the
+/// Garmel mouth) raises the place-name flag `2` only after its opening
+/// tests and jumps, where a leading-writes walk stops at the first non-flag
+/// op.
+// REF: FUN_801DE840 (op 0x50 SET, op 0x60 CLEAR, op 0x70 TEST, op 0x26 JMP_REL)
+pub fn record_path_walk(
+    body: &[u8],
+    pc: usize,
+    flag_set: &dyn Fn(u16) -> bool,
+) -> (RecordPathEnd, Vec<(bool, u16)>) {
     use legaia_engine_vm::field_disasm::decode;
+    let mut writes: Vec<(bool, u16)> = Vec::new();
     let mut pc = pc;
     for _ in 0..4096 {
         if pc >= body.len() {
-            return RecordPathEnd::Closed;
+            return (RecordPathEnd::Closed, writes);
         }
         let Ok(insn) = decode(body, pc) else {
             pc += 1;
@@ -211,7 +231,10 @@ pub fn record_path_scene_change(
                 ..
             } => {
                 if let Some(name) = scene_change_name(body, &insn) {
-                    return RecordPathEnd::SceneChange((index, name, entry_x, entry_z, dir));
+                    return (
+                        RecordPathEnd::SceneChange((index, name, entry_x, entry_z, dir)),
+                        writes,
+                    );
                 }
                 pc = next;
             }
@@ -221,22 +244,57 @@ pub fn record_path_scene_change(
                 target: Some(target),
                 ..
             } => {
-                pc = if flag_set(idx) { target } else { next };
+                let set = writes
+                    .iter()
+                    .rev()
+                    .find(|&&(_, f)| f == idx)
+                    .map_or_else(|| flag_set(idx), |&(s, _)| s);
+                pc = if set { target } else { next };
+            }
+            InsnInfo::SystemFlag {
+                kind: FlagKind::Set,
+                idx,
+                ..
+            } => {
+                writes.push((true, idx));
+                pc = next;
+            }
+            InsnInfo::SystemFlag {
+                kind: FlagKind::Clear,
+                idx,
+                ..
+            } => {
+                writes.push((false, idx));
+                pc = next;
             }
             InsnInfo::JmpRel { target, .. } => {
                 if target <= pc {
-                    return RecordPathEnd::Closed;
+                    return (RecordPathEnd::Closed, writes);
                 }
                 pc = target;
             }
             InsnInfo::CondJmp { .. }
             | InsnInfo::BBoxTest { .. }
             | InsnInfo::InventoryCmp { .. }
-            | InsnInfo::Picker { .. } => return RecordPathEnd::Undecided,
+            | InsnInfo::Picker { .. } => return (RecordPathEnd::Undecided, writes),
             _ => pc = next,
         }
     }
-    RecordPathEnd::Undecided
+    (RecordPathEnd::Undecided, writes)
+}
+
+/// [`record_path_walk`] over the MAN record at **flat** index `flat` (the
+/// `[P0..P1..P2]` index space a `.MAP` object bind names - retail's
+/// `FUN_8003C8F0` with partition base 0), from its first opcode. `None` when
+/// the record span does not resolve.
+pub fn flat_record_path_walk(
+    man_file: &ManFile,
+    man: &[u8],
+    flat: usize,
+    flag_set: &dyn Fn(u16) -> bool,
+) -> Option<(RecordPathEnd, Vec<(bool, u16)>)> {
+    let (start, pc0, len) = flat_record_span(man_file, man, flat)?;
+    Some(record_path_walk(&man[start..start + len], pc0, flag_set))
 }
 
 /// [`record_path_scene_change`] over partition-2 record `record` of a MAN,

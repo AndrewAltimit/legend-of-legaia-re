@@ -1111,6 +1111,20 @@ dungeon interior" reading - no interior scene lists `dolk2`; it is the same hub
 entrance as `dolk`, chosen by flag `0x142`. Where retail *sets* `0x142` - the
 dolk-dungeon-clear writer - is unrecovered, like the Zeto battle-id writer.)
 
+**Object-bound entrances.** A few hub entrances are no walk-on band at all but
+a `.MAP` **object** whose key tile binds a MAN record through a gate-0
+trigger (the scene-init spawner `FUN_8003A55C`; see
+[field-locomotion.md](field-locomotion.md)). The record runs on contact, and
+its path to a `0x3F` branches on story flags like any door. `map01`'s Garmel
+mouth is `P0[6]`: it tests `0x2C5` and `0x19A` (the latter parks it shut), and
+otherwise raises the place-name flag `2` and changes to GARMEL; `P0[10]`, the
+Drake castle door, runs the same `0x142` `dolk` / `dolk2` choice as the walk-on
+records. `SceneHost::enter_world_map_scene` walks every object bind's flat
+record against the live flags (`man_field_scripts::flat_record_path_walk`) and
+installs an `OverworldPortal` with `object: true` at the object's contact
+centre for each path that ends in a `0x3F`; the crossing replays the flag
+writes along that path, since the record's opening ops are not all flag ops.
+
 Overworld walk-on **beat** records are the other half. Not every gate-1 kind-1
 tile trigger on a hub is a portal: the Drake mist-wall force-walk bands (`map01`
 partition-2 records `P2[34..36]`, `C1=[0x482]`) carry no `0x3F` - they shove the

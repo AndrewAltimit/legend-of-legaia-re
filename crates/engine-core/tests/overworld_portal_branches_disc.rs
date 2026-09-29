@@ -126,3 +126,61 @@ fn map03_installs_the_portal_its_flags_select() {
     );
     eprintln!("[ran] map03 portals: fresh {fresh:?}; later {later:?}");
 }
+
+/// The object-bound overworld entrances a kingdom installs, as
+/// `(destination, flat record, contact tile)`.
+fn object_portals(
+    extracted: &std::path::Path,
+    scene: &str,
+    flags: &[u16],
+) -> Vec<(String, u8, (i16, i16))> {
+    let mut host = SceneHost::open_extracted(extracted).expect("open SceneHost");
+    for &f in flags {
+        host.world.system_flag_set(f);
+    }
+    host.enter_world_map_scene(scene).expect("enter world map");
+    host.world
+        .world_map
+        .entity_configs
+        .iter()
+        .zip(host.world.world_map.entity_positions.iter())
+        .filter_map(|(c, &(x, z))| match c {
+            WorldMapEntityConfig::OverworldPortal {
+                scene_name,
+                record,
+                object: true,
+                ..
+            } => Some((scene_name.clone(), *record, (x >> 7, z >> 7))),
+            _ => None,
+        })
+        .collect()
+}
+
+/// `map01`'s Garmel mouth is no walk-on band: it is a `.MAP` object whose
+/// key tile binds `P0[6]` (gate 0, `FUN_8003A55C`), and the object's record
+/// runs to `3F .. GARMEL` on contact unless `0x19A` parks it. With only the
+/// walk-on entrances installed, a Voz Forest save had no way into the Zeto
+/// dungeon.
+#[test]
+fn map01_installs_the_object_bound_garmel_mouth() {
+    let Some(extracted) = extracted_dir() else {
+        return;
+    };
+    let open = object_portals(&extracted, "map01", &[]);
+    assert!(
+        open.iter().any(|(s, r, _)| s == "garmel" && *r == 6),
+        "object portals: {open:?}"
+    );
+    let shut = object_portals(&extracted, "map01", &[0x19A]);
+    assert!(
+        !shut.iter().any(|(s, ..)| s == "garmel"),
+        "0x19A parks P0[6]: {shut:?}"
+    );
+    for scene in ["map02", "map03"] {
+        eprintln!(
+            "[ran] {scene} object portals: {:?}",
+            object_portals(&extracted, scene, &[])
+        );
+    }
+    eprintln!("[ran] map01 object portals: open {open:?}; 0x19A {shut:?}");
+}

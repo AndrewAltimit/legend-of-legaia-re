@@ -1770,9 +1770,60 @@ impl SceneHost {
                         entry_z,
                         dir,
                         record: site.record,
+                        object: false,
                     },
                     world,
                 ));
+            }
+            // Object-bound entrances: a `.MAP` object whose key tile binds
+            // (gate 0, `FUN_8003A55C`) a record that runs to a `0x3F` on
+            // contact. The world map's entrances are mostly the gate-1
+            // walk-ons above, but `map01`'s Garmel mouth is object `P0[6]`:
+            // its record tests `0x2C5` / `0x19A` (the latter parks it shut)
+            // and otherwise raises flag 2 and changes to GARMEL. The record
+            // is walked against the live flags, so a closed path installs
+            // nothing; the portal sits at the object's contact centre.
+            // REF: FUN_8003A55C, FUN_801CFC40
+            let map_bytes = scene
+                .field_map_index(&self.index)
+                .and_then(|idx| self.index.entry_bytes_extended(idx).ok());
+            if let Some(map) = map_bytes.as_deref() {
+                use crate::man_field_scripts::{RecordPathEnd, flat_record_path_walk};
+                for (flat, contact) in crate::man_field_scripts::object_script_binds(map, &triggers)
+                {
+                    let Ok(record) = u8::try_from(flat) else {
+                        continue;
+                    };
+                    let Some((
+                        RecordPathEnd::SceneChange((index, scene_name, entry_x, entry_z, dir)),
+                        _,
+                    )) = flat_record_path_walk(&mf, man, flat, &|f| self.world.system_flag_test(f))
+                    else {
+                        continue;
+                    };
+                    let tile = (contact.0 >> 7, contact.1 >> 7);
+                    let dup = entities.iter().any(|(cfg, pos)| {
+                        matches!(cfg, crate::world::WorldMapEntityConfig::OverworldPortal {
+                            scene_name: s, ..
+                        } if *s == scene_name)
+                            && (pos.0 >> 7, pos.1 >> 7) == tile
+                    });
+                    if dup {
+                        continue;
+                    }
+                    entities.push((
+                        crate::world::WorldMapEntityConfig::OverworldPortal {
+                            scene_name,
+                            index,
+                            entry_x,
+                            entry_z,
+                            dir,
+                            record,
+                            object: true,
+                        },
+                        contact,
+                    ));
+                }
             }
         }
         if let Some(table) = table {
@@ -2250,11 +2301,13 @@ impl SceneHost {
                 entry_z,
                 dir,
                 record,
+                object,
                 ..
             }) = self.world.world_map.entity_configs.get(slot as usize)
             {
                 let name = scene_name.clone();
-                let (entry_x, entry_z, dir, record) = (*entry_x, *entry_z, *dir, *record);
+                let (entry_x, entry_z, dir, record, object) =
+                    (*entry_x, *entry_z, *dir, *record, *object);
                 // Retail runs the entrance's partition-2 record on the
                 // crossing; the entity SM here keeps only its `0x3F`
                 // destination. The flag operations that open the record run
@@ -2265,12 +2318,23 @@ impl SceneHost {
                 if let Some(man) = self.field_man_cache.clone()
                     && let Ok(mf) = legaia_asset::man_section::parse(&man)
                 {
-                    let writes = crate::place_name_banner::record_leading_flag_writes(
-                        &mf,
-                        &man,
-                        usize::from(record),
-                        |idx| self.world.system_flag_test(idx),
-                    );
+                    let writes = if object {
+                        crate::man_field_scripts::flat_record_path_walk(
+                            &mf,
+                            &man,
+                            usize::from(record),
+                            &|idx| self.world.system_flag_test(idx),
+                        )
+                        .map(|(_, w)| w)
+                        .unwrap_or_default()
+                    } else {
+                        crate::place_name_banner::record_leading_flag_writes(
+                            &mf,
+                            &man,
+                            usize::from(record),
+                            |idx| self.world.system_flag_test(idx),
+                        )
+                    };
                     for (set, idx) in writes {
                         if set {
                             self.world.system_flag_set(idx);
