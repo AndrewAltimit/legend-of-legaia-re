@@ -1174,6 +1174,35 @@ pub fn field_hud_suppressed(world: &crate::world::World, host_panel_owns_frame: 
         || world.name_entry_active()
 }
 
+/// The player-engaged term of the field party HUD's **rearm** arm: while it
+/// holds, the idle countdown restarts every frame, so the readout never
+/// comes up.
+///
+/// `FUN_801D0D38` loads the player object out of `_DAT_8007C364`
+/// (`lw a1,0x1c(s0)` off `s0 = 0x8007C348`, `0x801D0DC4`) and takes the rearm
+/// arm when its `+0x10 & 0x80000` is set (`0x801D0DCC..0x801D0DD8`), ahead of
+/// the scratchpad and staged-load terms. That bit is the engaged bit the
+/// script runner `FUN_80039B7C` raises on every frame it steps a spawned
+/// context and the touch post raises for a conversation, so a scene whose
+/// script holds the player for its whole run - every ending scene, whose
+/// entry script spawns the credits record and never releases it - shows no
+/// readout at all. The engine answers the same question with
+/// [`crate::world::World::script_context_engages_player`] and
+/// [`crate::world::World::dialogue_owns_input`], plus the bit itself where
+/// an engine path sets it on the player's `move_state`.
+///
+/// Hosts call [`FieldPartyHud::rearm`] on a frame this returns `true`, before
+/// the tick.
+///
+/// PORT: FUN_801d0d38 (`0x801D0DC0..0x801D0DD8`, the player-bit rearm term)
+pub fn field_hud_rearm_held(world: &crate::world::World) -> bool {
+    let player_bit = world
+        .player_actor_slot
+        .and_then(|s| world.actors.get(usize::from(s)))
+        .is_some_and(|a| a.move_state.flags & 0x0008_0000 != 0);
+    player_bit || world.script_context_engages_player() || world.dialogue_owns_input()
+}
+
 /// Project the **present party** onto the field HUD's rows.
 ///
 /// Retail's draw loop walks the present-party list at `0x80084598` for
@@ -1348,6 +1377,50 @@ mod tests {
                 skipped.tick(false, 0, 0, Some((100, 200)), 1, None)
             );
         }
+    }
+
+    /// The player's engaged bit holds the HUD in its rearm arm: a host that
+    /// rearms on every held frame never reaches `Draw`, and once the bit
+    /// drops the readout waits out a full idle countdown before it returns.
+    #[test]
+    fn an_engaged_player_keeps_the_hud_rearming() {
+        let mut w = crate::world::World {
+            player_actor_slot: Some(0),
+            ..Default::default()
+        };
+        assert!(!field_hud_rearm_held(&w));
+        w.actors[0].move_state.flags |= 0x0008_0000;
+        assert!(field_hud_rearm_held(&w));
+
+        let mut hud = FieldPartyHud::new();
+        for _ in 0..200 {
+            if field_hud_rearm_held(&w) {
+                hud.rearm();
+            }
+            let d = hud.tick(false, 0, 0, Some((100, 200)), 1, None);
+            assert!(!matches!(d, HudDecision::Draw { .. }), "held: {d:?}");
+        }
+        w.actors[0].move_state.flags &= !0x0008_0000;
+        let mut first_draw = None;
+        for frame in 0..200 {
+            if field_hud_rearm_held(&w) {
+                hud.rearm();
+            }
+            if let HudDecision::Draw { .. } = hud.tick(false, 0, 0, Some((100, 200)), 1, None) {
+                first_draw = Some(frame);
+                break;
+            }
+        }
+        // The last held frame armed the full countdown; the released frames
+        // spend it, and the one that takes it to zero draws.
+        let idle = i32::from(legaia_engine_vm::world_map_panel_actors::hud_idle_frames(
+            0, false,
+        ));
+        assert_eq!(
+            first_draw,
+            Some(idle - 1),
+            "released: the near-camera idle countdown runs in full first"
+        );
     }
 
     /// The raw-to-packed conversion, on the two fixed points both layouts

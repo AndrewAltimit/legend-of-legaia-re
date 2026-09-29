@@ -579,7 +579,17 @@ load at `0x801D0EF8` is `lbu v1,0x7f(t1)` against the scratchpad base
 `0x801EE02C`. A `_DAT_1F80038F` reading is four bytes short. The
 panel is built once it reaches zero. The scene-entry path arms the same
 countdown but consults `_DAT_8007B5F4` as well, shortening it to `0` in view
-mode 0 and to `0x50` in view mode 1.
+mode 0 and to `0x50` in view mode 1. That entry arm is taken on any of four
+terms (`0x801D0DC0..0x801D0E0C`), the first being the player object's
+engaged bit `+0x10 & 0x80000` (`lw a1,0x1c(s0)` off `0x8007C348` is
+`_DAT_8007C364`); the others are `_DAT_1F800394 & 0x400`,
+`_DAT_8007B6B4 != 0` and `_DAT_8007B6B0 == 0`. The script runner
+`FUN_80039B7C` raises the engaged bit on every frame it steps a spawned
+context, so a script that holds the player keeps the countdown rearming and
+the HUD never comes up - which is why no ending scene, whose entry script
+spawns the credits record and never lets it end, shows a party readout. The
+port's `world_map_panel_host::field_hud_rearm_held` answers that term for
+both hosts.
 
 The panel's top edge is `12`, except that the player's own position is
 projected through `FUN_800195A8` first and the panel drops to `0xAA` when the

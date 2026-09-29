@@ -169,6 +169,12 @@ impl PlayWindowApp {
             self.field_party_hud_scene = scene;
             self.field_party_hud.rearm();
         }
+        // Retail's player-engaged rearm term: a script or conversation that
+        // holds the player restarts the idle countdown every frame.
+        if legaia_engine_core::world_map_panel_host::field_hud_rearm_held(&self.session.host.world)
+        {
+            self.field_party_hud.rearm();
+        }
         let suppressed = self.field_party_hud_suppressed();
         let projected_y = if suppressed {
             None

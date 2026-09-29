@@ -58,6 +58,14 @@ impl LegaiaRuntime {
             self.field_party_hud_scene = scene;
             self.field_party_hud.rearm();
         }
+        // Retail's player-engaged rearm term, the one the native window asks
+        // too: a script or conversation that holds the player restarts the
+        // idle countdown every frame.
+        if self.scene_host.as_ref().is_some_and(|h| {
+            legaia_engine_core::world_map_panel_host::field_hud_rearm_held(&h.world)
+        }) {
+            self.field_party_hud.rearm();
+        }
         let suppressed = self.field_party_hud_suppressed();
         let (view_mode, pad, player_pos) = match self.scene_host.as_ref() {
             Some(h) => {
