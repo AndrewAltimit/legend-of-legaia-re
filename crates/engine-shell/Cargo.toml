@@ -30,6 +30,8 @@ legaia-tmd = { path = "../tmd" }
 legaia-font = { path = "../font" }
 legaia-mdec = { path = "../mdec" }
 legaia-mednafen = { path = "../mednafen" }
+# retail-compare reads PCSX-Redux library states (RAM + VRAM) as well as mednafen ones.
+legaia-pcsxr = { path = "../pcsxr" }
 legaia-iso = { path = "../iso" }
 legaia-xa = { path = "../xa" }
 glam.workspace = true

@@ -1334,6 +1334,9 @@ pub(crate) enum Cmd {
         #[arg(long, default_value_t = false)]
         bless: bool,
     },
+    /// Retail comparison corpus (`docs/tooling/retail-compare.md`).
+    #[command(display_order = 29)]
+    RetailCompare(legaia_engine_shell::retail_compare_cli::RetailCompareArgs),
 }
 
 #[derive(Subcommand, Debug)]
