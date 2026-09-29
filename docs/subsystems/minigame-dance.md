@@ -382,7 +382,7 @@ The "dance points" cheat anchor at `0x801d53cc` (see [`../reference/cheats.md`](
 | `FUN_801d40dc` | Sequence-clear ("Good!") banner + two flanking stars carrying the accuracy weight (`+0x72`). `overlay_dance_801d40dc.txt` |
 | `FUN_801d4098` | Actor clip-driver gate: runs the shared clip driver `FUN_800204f8` only when the actor's bound clip id `+0x5c > 0` or its flag word `+0x10` has bit `0x1000`. Predicate ported as [`dance_clip_driver_gate`]; see [The dancer actor record](#the-dancer-actor-record). `overlay_dance_801d4098.txt` |
 | `FUN_801d387c` | Sprite-part / shadow emit dispatch: fade weight off the part's `+0x78`, then a five-arm draw-mode jump table. See [The sprite-part emit dispatch](#the-sprite-part-emit-dispatch). `overlay_dance_801d387c.txt` |
-| `FUN_801d414c` | Dance **teardown** (the only caller is the results-state fade tail): restores the caller's scene name + PROT block base and arms the BGM reload. Ported as `dance::dance_scene_stage`; see [Entering and leaving the hall](#entering-and-leaving-the-hall). `overlay_dance_801d414c.txt` |
+| `FUN_801d414c` | Dance **teardown** (the only caller is the results-state fade tail): restores the caller's scene name + PROT block base and arms the BGM reload. Ported as `dance::dance_scene_stage`, applied by `dance_venue::sync_dance_venue`; see [Entering and leaving the hall](#entering-and-leaving-the-hall). `overlay_dance_801d414c.txt` |
 
 **The three "render-track" rows above are not dance code.** PROT 0980 loads at
 `0x801CE818` and is `0x8000` bytes, so the image ends at `0x801D6818` -
@@ -516,6 +516,51 @@ dance's own pad word is `_DAT_8007B874`, and no input or judging code reads
 `0x8007B880` at all. The dance writes `0`, the same value `baka_fighter` and
 `arena_init` write. The port's `InputState::clear_edges` on the dance edges is
 therefore a port affordance, not this store.
+
+**How the port runs the entry.** `dance::dance_scene_entry` carries every
+store and fixed-argument call of `FUN_801CEF54`, and `engine-core::dance_venue`
+consumes it in two halves. The port keeps the walked-in scene loaded under the
+dance (its actors, script VM and field state are suspended, not torn down), so
+the scene-name save / restore has nothing to copy; everything else is real:
+
+- `sync_dance_venue` runs once a host frame on the native play-window and the
+  browser play page. On the first dance frame it saves and replaces the
+  `_DAT_80084540` mirror (`World::battle.map_id`) with the record's block base,
+  the camera's visible-tile window with the record's symmetric
+  `(-8, -10, 8, 10)`, and publishes the venue camera; on the first frame after
+  it, it restores both. While staged, `camera_view::resolve_field_camera`
+  returns `FieldCameraFrame::Venue`.
+- The venue camera is the entry's stores: angles `(0x3C, 0, 0)` at
+  `0x8007B790` (`0x801CF29C..0x801CF2AC`), `H = 0x200` at `0x8007B6F4`
+  (`0x801CF294`), eye-space trio `(0, 0x62C, 0xFF0)` at `0x800840B8`, reduced by
+  the 6x world scale the mode initialiser `FUN_8001DCF8` loads for game mode
+  `0x18` as for mode `2` (`0x8001DF4C..0x8001DF70`). The focus is the spawned
+  beat-clock actor: its tick writes `-(+0x14)` / `-(+0x18)` into the focus trio
+  every frame (`0x801CFF84..0x801CFFA4`), and the focus Y keeps the `0` the mode
+  initialiser cleared (`0x8001E154`). So the record's `(0x1800, -0x64, 0x3300)`
+  is the camera's anchor, not a drawn dancer.
+- The five face-stamp calls are `(dancer, pose)` pairs. The entry raises the
+  mode global `DAT_801D514C` to `1` for the first three (no slot remap) and
+  drops it to `0` for the last two (qualifier remap), clearing the three-word
+  pose latch at `0x801D56CC` before each batch, so the calls stamp rigs `0`,
+  `1`, `2`, `2`, `3` - every face the floor can show, before the first frame.
+  `dance_venue::entry_face_stamps` replays them through `dance_face_rig` and
+  the latch; `stamp_face` is the selector's two `MoveImage` blits.
+- `DanceVenue::build` loads the block the record's stream id names (the
+  CDNAME define at raw `0x4CC`, `other7`), with Noa's field atlas, the HUD page
+  and the face stamps in its VRAM, and resolves its terrain + placement draw
+  list with coplanar lifts. The native window draws it, under the venue camera,
+  in place of the walked-in scene for exactly the staged frames, with its own
+  VRAM upload - the field VRAM is never touched. Both browser pages build their
+  hall through the same call (framed by a two-define CDNAME map the record's
+  block base and audio-bank id bound, `venue_cdname_stub`), read the dance SFX
+  VAB off the record's second stream id, and frame the hall through the same
+  camera (`dance_venue_vp`) until the visitor drags the view.
+
+Still open: the tick's own camera keyframe track (`FUN_801cf470` interpolates
+the `0x8007B790` triple from a table around `0x801CF704..0x801CF7B8`) is not
+ported, so the port holds the entry's pose for the whole run; and the native
+window draws no dancer bodies over the hall.
 
 `DanceGame::press` returns the full event (Miss / Hit / Sequence with its
 points / **Groovy** with its landed flag, lock frames and remaining stock /
@@ -692,8 +737,9 @@ bakes that map once at disc load into a single static mesh re-based on the
 human dancer's spawn (`dance_env_*` in
 `crates/web-viewer/src/minigames_dance.rs`: the same `field_env` placement /
 terrain resolution the play page runs, bound props posed at frame 0 of their
-clip) and draws it behind the posed cast, with the retail composition - the
-camera on the audience half of the hall, backface culling standing in for
+clip) and draws it behind the posed cast, framed by the dance entry's own
+camera ([Entering and leaving the hall](#entering-and-leaving-the-hall)) until
+the visitor orbits, with backface culling standing in for
 retail's NCLIP pass (the audience billboard sits right behind the camera
 spot), and the hall's ABE prims (spotlight glows, smoke) drawn on an
 additive second pass.

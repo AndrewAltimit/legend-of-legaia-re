@@ -856,6 +856,12 @@ struct PlayWindowApp {
     /// This frame's GPU copy of that surface (see
     /// `PlayWindowApp::refresh_baka_duel_gpu`).
     baka_gpu: Option<minigames::BakaDuelGpu>,
+    /// The dance venue on the GPU while the dance entry's globals are staged
+    /// (see `PlayWindowApp::sync_dance_venue`).
+    dance_venue_gpu: Option<minigames::DanceVenueGpu>,
+    /// The staging generation whose venue build failed, so a disc without
+    /// the venue is not re-read every frame.
+    dance_venue_failed: Option<u32>,
     /// Muscle Dome hub-screen atlas + sprite table (see [`MuscleHubAssets`]).
     muscle_hub: Option<MuscleHubAssets>,
     /// The dome hub's screen timers - first visit, ROUND card, INTERVAL +

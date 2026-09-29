@@ -58,6 +58,7 @@ pub mod cutscene_script_elements;
 pub mod cutscene_timeline;
 pub mod dance;
 pub mod dance_tutorial;
+pub mod dance_venue;
 pub mod debug_char_editor;
 pub mod dev_menu;
 pub mod dev_menu_host;

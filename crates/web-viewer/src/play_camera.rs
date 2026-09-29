@@ -189,6 +189,7 @@ impl LegaiaRuntime {
         let (arm, view) = match &frame {
             FieldCameraFrame::Cutscene(v) => ("cutscene", Some(*v)),
             FieldCameraFrame::Follow(v) => ("follow", Some(*v)),
+            FieldCameraFrame::Venue(v) => ("venue", Some(*v)),
             FieldCameraFrame::WorldMapWalk { view, .. } => ("worldmap_walk", Some(*view)),
             FieldCameraFrame::WorldMapTopView { .. } => ("worldmap_topview", None),
             FieldCameraFrame::HostDebugOrbit => ("host_debug_orbit", None),

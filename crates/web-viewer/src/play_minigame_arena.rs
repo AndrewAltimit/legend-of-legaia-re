@@ -1342,6 +1342,15 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
+    /// The dance entry's camera over the baked hall's frame
+    /// (`LegaiaMinigames::dance_venue_vp`). Empty when the cast did not
+    /// decode.
+    pub fn play_mg_dance_venue_vp(&self, aspect: f32) -> Vec<f32> {
+        self.minigame_art()
+            .map(|a| a.dance_venue_vp(aspect))
+            .unwrap_or_default()
+    }
+
     pub fn play_mg_dance_body_vram(&self) -> Vec<u8> {
         self.minigame_art()
             .map(|a| a.dance_body_vram())

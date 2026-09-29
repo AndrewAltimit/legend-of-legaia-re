@@ -213,7 +213,16 @@
     const r = view.renderer;
     if (!r) return;
     r.updatePositions(sc.out);
+    /* A scene carrying an engine view-projection (the dance hall's entry
+     * camera) draws through it instead of the orbit framing. */
+    r.mvpOverride = sc.vp && sc.vp.length === 16 ? Float32Array.from(sc.vp) : null;
+    /* The engine projection carries the retail screen-X mirror the orbit
+     * framing does not, so its front faces wind the other way. */
+    const front = r.cullFrontFace;
+    if (r.mvpOverride) r.cullFrontFace = front === 'ccw' ? 'cw' : 'ccw';
     r.render(sc.cam.yaw, sc.cam.pitch, sc.cam.distance, 0, 0, sc.center, sc.radius, sc.fov);
+    r.cullFrontFace = front;
+    r.mvpOverride = null;
   }
 
   /* ================================================================== */
@@ -1098,6 +1107,12 @@
       }
     }
     if (skipDraw) return;
+    /* The hall frames through the dance entry's own camera (FUN_801CEF54's
+     * staged pose, from the engine kernel the native window draws with). */
+    if (sc && typeof rt.play_mg_dance_venue_vp === 'function' && view.renderer) {
+      const c = view.renderer.canvas;
+      sc.vp = rt.play_mg_dance_venue_vp(c.width / Math.max(c.height, 1));
+    }
     if (sc) renderScene(view, sc); else clearGl(view);
   }
 

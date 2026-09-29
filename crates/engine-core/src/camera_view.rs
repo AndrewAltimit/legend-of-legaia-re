@@ -434,6 +434,10 @@ pub enum FieldCameraFrame {
     },
     /// Field free-roam: the retail follow camera.
     Follow(FieldCameraView),
+    /// A minigame venue's own staged camera - the dance floor's, from the
+    /// overlay entry's record ([`crate::dance_venue::venue_camera`]). A fixed
+    /// retail pose in the field frame; no follow knob reaches it.
+    Venue(FieldCameraView),
     /// No player actor to follow and no scripted shot - the host frames the
     /// scene with its own debug vantage.
     HostDebugOrbit,
@@ -450,7 +454,9 @@ impl FieldCameraFrame {
     /// the host's orbit).
     pub fn field_view(&self) -> Option<FieldCameraView> {
         match *self {
-            FieldCameraFrame::Cutscene(v) | FieldCameraFrame::Follow(v) => Some(v),
+            FieldCameraFrame::Cutscene(v)
+            | FieldCameraFrame::Follow(v)
+            | FieldCameraFrame::Venue(v) => Some(v),
             FieldCameraFrame::WorldMapWalk { view, player } => Some(FieldCameraView {
                 focus: player,
                 tr_eye: view.tr_eye.map(|c| c / WORLD_MAP_WORLD_SCALE),
@@ -500,6 +506,13 @@ pub fn resolve_field_camera(
 ) -> FieldCameraFrame {
     if let Some(v) = cutscene {
         return FieldCameraFrame::Cutscene(v);
+    }
+    // The dance floor frames through the pose its overlay entry staged, not
+    // the follow camera over the walked-in scene's player.
+    if world.mode == SceneMode::Dance
+        && let Some(stage) = world.minigames.dance_venue.as_ref()
+    {
+        return FieldCameraFrame::Venue(stage.camera);
     }
     if world.mode == SceneMode::WorldMap {
         let (az, zoom, px, pz, top_view) = world
@@ -559,7 +572,9 @@ pub fn frame_vp(
     aspect: f32,
 ) -> Option<[f32; 16]> {
     match frame {
-        FieldCameraFrame::Cutscene(v) | FieldCameraFrame::Follow(v) => Some(v.vp(aspect)),
+        FieldCameraFrame::Cutscene(v)
+        | FieldCameraFrame::Follow(v)
+        | FieldCameraFrame::Venue(v) => Some(v.vp(aspect)),
         FieldCameraFrame::WorldMapWalk { view, player } => {
             Some(world_map_walk_vp(view, *player, aspect))
         }
@@ -584,7 +599,9 @@ pub fn frame_vp(
 /// camera and the host's own orbit).
 pub fn frame_eye(frame: &FieldCameraFrame) -> Option<[f32; 3]> {
     match frame {
-        FieldCameraFrame::Cutscene(v) | FieldCameraFrame::Follow(v) => Some(v.eye()),
+        FieldCameraFrame::Cutscene(v)
+        | FieldCameraFrame::Follow(v)
+        | FieldCameraFrame::Venue(v) => Some(v.eye()),
         FieldCameraFrame::WorldMapWalk { view, player } => {
             // The walk camera orbits the player through the 6x world scale,
             // so its eye divides back out of that frame.

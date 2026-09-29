@@ -1263,7 +1263,7 @@ worth looking for in the rest.
 | `bite_interval` (`801d26cc`) | `WIRE` | `BandCheck::tick` was approximating the strike modulus with the length readout; the ladder is the real one. |
 | `bite_interval_bias` (`801d26cc`) | `WIRE` | Same call site, after correcting the kernel - see below. |
 | `clear_catch_slots` (`801d746c`, `fishing_chrome.rs`) | `DELETE` | Same table as `fishing::ReelCadence`'s ring; `reset` now calls it. |
-| `dance_scene_stage` (`801d414c`, `dance.rs`) | `WIRE` (partial) | Its `clear_pad_latch` field has an engine equivalent; `World::enter_dance` / `exit_dance` apply it. |
+| `dance_scene_stage` (`801d414c`, `dance.rs`) | `WIRE` (partial) | `clear_pad_latch` is applied by `World::enter_dance` / `exit_dance` and the block-base restore by `dance_venue::sync_dance_venue`; the scene-name restore is structural (the walked-in scene stays loaded) and `bgm_force_reload` has no consumer. |
 
 **`bite_interval_bias` was wrong, not just unwired.** It modelled retail's
 `li s1, -0x64` as a bias added to the strike credit. The instruction is an
@@ -1490,9 +1490,10 @@ that satisfies the audit without them is worse than the honest disclosure:
 `dance_face_rig` has a second twist worth keeping: the browser resolves the rig
 from the disc **cast table**'s per-dancer kind, which on the qualifier floor is
 already `0/2/3` - the exact output of the overlay's hard-coded slot -> rig
-remap. The two agree, so the selector is redundant rather than missing. A
-disclosure that says "no host" reads as work; "the host arrives at the same
-answer from disc data" reads as a closed question.
+remap. The two agree, so the per-frame draw never needed the selector. The
+selector is live all the same: the dance entry's five face-stamp calls address
+dancers by **slot**, not by kind, and `dance_venue::entry_face_stamps` resolves
+them through it before `DanceVenue::build` blits them into the venue VRAM.
 
 ### Three reasons were wrong about the *arithmetic*, not just the caller
 
@@ -2322,7 +2323,7 @@ structure they blamed and are rewritten; every row stays held.
 | `80017bec` `refresh_object_grid_marks` | wired | retail runs it once at field init (`0x801D6BF8`) over the fresh `.MAP`, which is where the engine's field entry now runs it; the `retona` capture holds a refreshed cell the disc lacks |
 | `801d7b50` `window_rebuild_spawns_resident` | wired | retail's callers are the camera re-centre pair `FUN_80017DD4` / `FUN_80017EC8` (`0x80017E14` / `0x80017F08`), each after `FUN_800180EC` latches the box at the re-centre tile. `World::recentre_field_window` is that pair, called from the field entry's window install and the warp landing, `0x23` / `4C 51` player and leader-swap re-centres; the descriptor region stays resident on `FieldTerrain::static_window`, and both play hosts gate the sweep's placements on the list through `field_env::placed_draw_live`. The descriptor bits were checked in `FUN_8001ADA4` / `FUN_80043390`: draw kind `0` never draws, the `+0x74` bits stage an `IR0 = 0` depth cue (the identity) and `+0x10 \| 4` only culls off-screen |
 | `801d0748` `battle_magic_chip_mark` | held | the ring greys the Ra-Seru chip and refuses its arm on both hosts; the red cross-out `FUN_801DBC30(0xF8, 0x42)` (`0x801D12DC..0x801D12F4`) needs an `etim` quad placed over the chip, which neither battle chip pass draws yet |
-| `801cef54` `dance_scene_entry` | held | the actor it spawns from `0x801D42E4` is the beat clock `World::enter_dance` already covers. The venue half has one loader, `LegaiaMinigames::load_dance_bodies`, which both browser hosts draw through and which frames the hall off the overlay's spawn table and an orbit camera; the native window draws the walk-in scene because the dance suspends the scene mode. What the record's spawn, camera pair, view window and face stamps wait on is a scene swap to `other7` with a restore on exit, which the teardown's three unread fields wait on too |
+| `801cef54` `dance_scene_entry` | wired | the mode half is `World::enter_dance` (the spawned actor is the beat clock); the venue half is `dance_venue`: `sync_dance_venue` stages the block base, view window and venue camera over the walked-in scene and restores them after, on the native window and the browser play page, and `DanceVenue::build` loads the `other7` block the stream id names with the five face stamps applied - drawn by the native window in place of the walked-in scene and baked by both browser pages, which frame it through the same camera |
 | `801d6e5c` `keyframe_in_range` | wired | the `+0x26` column is parsed, and the combat tick's call at `0x801D4334` is ported as `baka_fighter::StrikeClock`, which books each exchange on the winner's strike keyframe on all three hosts |
 | `8003c9ac` `motion_pause_kick` | wired | the requested-move target is the ambient channel's clip request, which the ambient tick now consumes per tick with a `+0x5E` latch; the kick copies the standing move, so it holds nothing |
 | `801d25ec` `spawn_arc_with_emitter` | held | op `0x43` sub-`0`/`1`/`0xA`/`0xB` reaches it at `0x801DF5AC`; the engine's arc channel is the player's alone |

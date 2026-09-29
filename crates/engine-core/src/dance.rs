@@ -1861,27 +1861,13 @@ pub fn dance_clip_driver_gate(clip_id: i16, flags: u32) -> bool {
     clip_id > 0 || (flags & crate::minigame_actor::FLAG_DRIVE_CLIP) != 0
 }
 
-// REPLACED-BY: the browser dance page's cast-kind rig resolution - `castRigs()`
-// in `site/js/minigame-dance.js` maps the mode's spawn records to their
-// `dance_cast` kinds and hands those to `drawFace`, i.e.
-// `LegaiaMinigames::dance_face_rgba(rig, pose)`.
-//
-// No host is owed the *selector*, because every host that stamps a face
-// already holds a rig id and never holds a slot index. On the qualifier floor
-// the disc's cast kinds are already `0/2/3` - the exact output of the
-// overlay's hard-coded slot -> rig remap - so the two mechanisms arrive at the
-// same rig from different data. A caller appears only if a host ever drives
-// the floor by slot index instead of by cast kind. Nothing does, and the disc
-// table is the better source either way: it carries every mode, where the
-// remap is hard-coded for one.
-//
-// (The blockers an *earlier* reason named here - "no face pages resident, no
-// blit pass" - are indeed long gone: `legaia_asset::dance_art::FACE_RIGS`
-// carries the four rigs' strips and frame tables and `dance_art::face_window_rgba`
-// performs the two `MoveImage` blits, per frame on the browser page. That
-// correction is history, not an invitation: it is the paragraph above that
-// says why the row is still open, and a wire placed on the strength of the
-// correction alone would be a call site with nothing behind it.)
+// Wired: the dance entry's five face-stamp calls resolve their dancer slots
+// through it (`crate::dance_venue::entry_face_stamps`, applied to the venue
+// VRAM by `DanceVenue::build` on the native window and both browser pages).
+// The per-frame face draw on the browser page still resolves its rig from the
+// disc cast table's per-dancer kind (`castRigs()` in
+// `site/js/minigame-dance.js`); on the qualifier floor those kinds are already
+// `0/2/3`, the exact output of this remap, so the two agree.
 /// PORT: FUN_801d03c4 - the dancer face-stamp's rig selector. The face blit picks
 /// a per-dancer VRAM strip + eye/mouth frame table by rig index; in the qualifier
 /// (mode 0) the overlay remaps dancer `2 -> 3` and `1 -> 2`, so the rig id equals
@@ -1945,13 +1931,25 @@ pub struct DanceSceneEntry {
     /// Bytes the GPU primitive-packet buffer is allocated at
     /// (`FUN_8001E3B8`).
     pub prim_buffer_bytes: u32,
-    /// The dancer actor's spawn position, `(+0x14, +0x16, +0x18)` of the
-    /// actor `FUN_80020DE0` materialises from the template at `0x801D42E4`.
-    /// The middle component is negative: the floor is above the origin.
+    /// The spawned actor's position, `(+0x14, +0x16, +0x18)` of the actor
+    /// `FUN_80020DE0` materialises from the template at `0x801D42E4`
+    /// (`0x801CF23C..0x801CF250`). That actor is the **beat clock**, not a
+    /// drawn dancer - its tick word is `FUN_801cf470` - and the position is
+    /// the dance camera's anchor: the tick writes `-(+0x14)` and `-(+0x18)`
+    /// into the focus trio `0x80089118` / `0x80089120` every frame
+    /// (`0x801CFF84..0x801CFFA4`). The middle component is negative: the
+    /// floor is above the origin.
     pub dancer_spawn: (i16, i16, i16),
-    /// `+0x4` / `+0x8` of the camera-target block at `0x800840B8`, the same
-    /// pair the field-camera reset writes on field entry.
+    /// `+0x4` / `+0x8` of the camera-target block at `0x800840B8`
+    /// (`0x801CF2B4..0x801CF2C8`, `+0x0` cleared) - the eye-space
+    /// translation's `Y` and eye-back depth, the same pair the field-camera
+    /// reset writes on field entry.
     pub camera_pair: (u32, u32),
+    /// The camera angle triple at `0x8007B790` (pitch / yaw / roll, 12-bit),
+    /// written `0x3C, 0, 0` at `0x801CF29C..0x801CF2AC`.
+    pub camera_angles: (u16, u16, u16),
+    /// GTE `H` (`_DAT_8007B6F4`), written `0x200` at `0x801CF294`.
+    pub gte_h: u16,
     /// Scratchpad bytes `0x1F8003E8..EB` - the camera's visible tile window,
     /// as `(min_x, min_z, max_x, max_z)` signed tiles. **Symmetric** about the
     /// camera on both axes, where the field's default
@@ -1964,13 +1962,23 @@ pub struct DanceSceneEntry {
     /// `0x801D57CC`. Three - the qualifier floor's size, which is the floor
     /// the overlay's own init stages regardless of which mode runs later.
     pub cleared_dancer_slots: usize,
-    /// Arguments of the five `FUN_801D03C4` face-stamp calls, in order. The
-    /// second argument is the mode global `DAT_801D514C`, which the entry
-    /// raises to `1` for the first call and drops to `0` for the rest.
+    /// Arguments of the five `FUN_801D03C4` face-stamp calls, in order, as
+    /// `(dancer, pose)`: `a0` is the dancer slot and `a1` the pose, the
+    /// value the selector compares against its per-dancer latch at
+    /// `0x801D56CC` and then indexes the rig's frame table with.
     pub face_stamps: [(u8, u8); 5],
-    /// Streaming asset ids the entry loads: the venue's field file
-    /// (`FUN_8001F7C0`, also [`Self::scene_block_base`]) and the audio bank
-    /// (`FUN_8001FC00` then `FUN_8001E54C`).
+    /// The mode global `DAT_801D514C` in force at each face-stamp call. The
+    /// entry raises it to `1` (finals: no slot remap) at `0x801CF35C` for the
+    /// first three calls and drops it to `0` (qualifier: `1 -> 2`, `2 -> 3`)
+    /// at `0x801CF398` for the last two, clearing the three-word pose latch
+    /// before each batch (`0x801CF360` / `0x801CF3B0` loops) - so the five
+    /// calls preload rigs `0`, `1`, `2`, `2`, `3`.
+    pub face_stamp_mode: [u32; 5],
+    /// Streaming asset ids the entry loads, both **raw TOC** indices: the
+    /// venue's field file (`FUN_8001F7C0`, also [`Self::scene_block_base`])
+    /// and the audio bank (`FUN_8001FC00` then `FUN_8001E54C`) - raw `0x4D1`
+    /// is extraction `1231`, the dance SFX VAB, and the first entry past the
+    /// venue's scene data.
     pub stream_ids: (u32, u32),
 }
 
@@ -1978,30 +1986,28 @@ pub struct DanceSceneEntry {
 ///
 /// PORT: FUN_801CEF54 (`0x801cef54..0x801cf46c`)
 ///
-/// NOT WIRED: the record's venue half has no reader, and the blocker is the
-/// **native window's scene draw**, not a missing loader. The mode half is
+/// WIRED on all three hosts, in two halves. The **mode** half is
 /// [`crate::world::World::enter_dance`]: the actor this entry spawns from the
 /// template at `0x801D42E4` is the beat clock (`FUN_801cf470` is that
-/// template's tick word), which is [`DanceGame`] + [`CountIn`] there, together
-/// with the song BGM and the pad-latch clear. The venue half - the `other7`
-/// block at [`Self::scene_block_base`] - has exactly one loader in the port,
-/// `LegaiaMinigames::load_dance_bodies` in `web-viewer`, which both browser
-/// hosts draw through (the play page embeds that instance as its minigame
-/// art); it re-bases the hall on the overlay's own qualifier spawn table and
-/// frames it with the page's orbit camera, so [`Self::dancer_spawn`],
-/// [`Self::camera_pair`], [`Self::view_window`] and the five
-/// [`Self::face_stamps`] calls ([`dance_face_rig`]) have no consumer. The
-/// native window keeps drawing the scene the player walked in from, because
-/// its renderer draws `SceneHost`'s current scene and the port enters the
-/// dance by **suspending** the scene mode instead of loading the venue. The
-/// wiring retail's own shape implies is a scene swap: load `other7` as the
-/// current scene on entry (this record's spawn, camera pair and view window
-/// seated on it), restore the saved caller scene on exit - which is also the
-/// three fields the teardown ([`dance_scene_stage`]) still waits on - and
-/// retire the browser pages' private hall bake in its favour. The fields that
-/// already have engine mirrors agree with them: [`Self::scene_block_base`]
-/// with [`DANCE_SCENE_BLOCK_BASE`] and [`Self::cleared_dancer_slots`] with the
-/// qualifier floor's size.
+/// template's tick word), which is [`DanceGame`] + [`CountIn`] there. The
+/// **venue** half is [`crate::dance_venue`]: `sync_dance_venue` stages the
+/// record's globals over the walked-in scene on the first dance frame -
+/// [`DanceSceneEntry::scene_block_base`] into the `_DAT_80084540` mirror,
+/// [`DanceSceneEntry::view_window`] into the camera's visible-tile window, and
+/// the camera [`crate::dance_venue::venue_camera`] builds from
+/// [`DanceSceneEntry::dancer_spawn`] / [`DanceSceneEntry::camera_pair`] /
+/// [`DanceSceneEntry::camera_angles`] / [`DanceSceneEntry::gte_h`], which the
+/// frame resolver's `FieldCameraFrame::Venue` arm frames through - and
+/// restores them on the first frame after it. `DanceVenue::build` loads the
+/// block [`DanceSceneEntry::stream_ids`] names and applies the five
+/// [`DanceSceneEntry::face_stamps`] to its VRAM. The native play-window runs
+/// both once a frame and draws the venue in place of the walked-in scene; the
+/// browser play page runs the same sync, and both browser pages build their
+/// hall through the same `DanceVenue::build` and frame it through the same
+/// camera. The walked-in scene is never unloaded, so the teardown's scene-name
+/// restore is structural. [`DanceSceneEntry::screen_width`],
+/// [`DanceSceneEntry::ot_depth`] and the two buffer sizes size libgpu display
+/// and heap state the renderer replaces.
 pub const fn dance_scene_entry() -> DanceSceneEntry {
     DanceSceneEntry {
         screen_width: 0x140,
@@ -2011,9 +2017,12 @@ pub const fn dance_scene_entry() -> DanceSceneEntry {
         prim_buffer_bytes: 0x1_9000,
         dancer_spawn: (0x1800, -0x64, 0x3300),
         camera_pair: (0x62c, 0xff0),
+        camera_angles: (0x3c, 0, 0),
+        gte_h: 0x200,
         view_window: (-8, -0x0a, 8, 0x0a),
         cleared_dancer_slots: 3,
         face_stamps: [(0, 1), (1, 0), (2, 0), (1, 0), (2, 0)],
+        face_stamp_mode: [1, 1, 1, 0, 0],
         stream_ids: (0x4cc, 0x4d1),
     }
 }
@@ -2048,12 +2057,13 @@ pub struct DanceSceneStage {
 }
 
 // PARTIALLY WIRED: `World::enter_dance` / `World::exit_dance` apply the record's
-// `clear_pad_latch` through `InputState::clear_edges`, which is the half of the
-// teardown the port has an equivalent for. The other three fields still have no
-// consumer: the port enters the dance by suspending the current scene mode
-// rather than loading the venue's own bundle, so there is no scene-name buffer
-// to restore, no block base to put back and no BGM force-reload latch to write.
-// Those wait on the dance becoming a real scene load.
+// `clear_pad_latch` through `InputState::clear_edges`, and
+// `crate::dance_venue::sync_dance_venue` runs the block-base restore
+// (`restores_scene_block_base`) on the first frame after the dance, together
+// with the view-window restore. `restores_caller_scene` needs no write: the
+// port never unloads the walked-in scene, so there is no name to copy back.
+// `bgm_force_reload` has no consumer - `World::restore_minigame_bgm` re-queues
+// the hall track directly instead of arming the swap machine's reload latch.
 /// PORT: FUN_801d414c - the dance teardown, the inverse of the overlay's own
 /// init `FUN_801CEF54`.
 ///
@@ -3287,9 +3297,12 @@ mod tests {
         // size - the overlay stages one floor whichever mode runs later.
         assert_eq!(e.cleared_dancer_slots, QUALIFIER_KINDS.len());
         assert_eq!(e.cleared_dancer_slots, 3);
-        // The face-stamp calls raise the mode global for the first slot only.
+        // Slot 0 is stamped at pose 1, every later call at pose 0; the mode
+        // global is up (finals, no remap) for the first batch of three and
+        // down (qualifier) for the second.
         assert_eq!(e.face_stamps[0], (0, 1));
-        assert!(e.face_stamps[1..].iter().all(|&(_, mode)| mode == 0));
+        assert!(e.face_stamps[1..].iter().all(|&(_, pose)| pose == 0));
+        assert_eq!(e.face_stamp_mode, [1, 1, 1, 0, 0]);
         // Slots 1 and 2 are stamped twice, slot 0 once - five calls, three
         // slots, and the repeat is what makes the count odd.
         assert_eq!(e.face_stamps.len(), 5);

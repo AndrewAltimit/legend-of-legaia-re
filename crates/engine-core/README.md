@@ -440,6 +440,10 @@ presentation left to the host:
   also owns the two `minigame_actor` pools the overlay's draw kernels read: the
   floor cast (spawn positions + bound clip ids off the disc's own spawn and
   kind tables) and the sprite parts a scoring judge spawns.
+- `dance_venue` - what the dance overlay's entry stages around the run: the
+  globals it saves and replaces over the walked-in scene (block base, view
+  window, venue camera; restored on the way out) and the `other7` venue itself
+  with the entry's face stamps in its VRAM, built once for every host.
 - `minigame_actor` - the per-entity record the hub-band overlays spawn through
   the shared part-spawn API and read every frame, named by retail byte offset.
   Not the field actor; see the module docs for why they stay apart.

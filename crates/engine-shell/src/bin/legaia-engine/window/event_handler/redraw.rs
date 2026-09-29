@@ -722,7 +722,13 @@ impl PlayWindowApp {
             let (scene_viewport, aspect) = scene_viewport_for(w, h);
             r.set_scene_viewport(scene_viewport);
             // A live Baka duel draws against its own VRAM.
-            let vram = self.baka_gpu.as_ref().map_or(vram, |g| &g.vram);
+            // So does the dance venue - the hall's own upload, never the
+            // walked-in scene's.
+            let vram = match (self.baka_gpu.as_ref(), self.dance_venue_gpu.as_ref()) {
+                (Some(g), _) => &g.vram,
+                (None, Some(d)) => &d.vram,
+                (None, None) => vram,
+            };
             // Upload (or drop) the opdeene "It was the Seru." caption sprite
             // atlas to track World state. The caption image is present only
             // while opdeene is loaded and never changes, so upload it once on
@@ -1276,6 +1282,36 @@ impl PlayWindowApp {
                         mesh: m,
                         mvp: g.mvp,
                     });
+                }
+            } else if let Some(g) = self.dance_venue_gpu.as_ref() {
+                // The dance venue owns the 3D frame: the `other7` hall the
+                // dance entry loads, under the venue camera the frame
+                // resolves through (`FieldCameraFrame::Venue`). The walked-in
+                // scene's actors and geometry are not drawn - retail's dance
+                // is a scene of its own.
+                if let Some(hf) = g.ground.as_ref() {
+                    draws.push(SceneDraw {
+                        mesh: hf,
+                        mvp: cam,
+                        cue: None,
+                    });
+                }
+                for (mi, model) in &g.draws {
+                    if let Some(mesh) = g.meshes.get(*mi) {
+                        draws.push(SceneDraw {
+                            mesh,
+                            mvp: cam * *model,
+                            cue: None,
+                        });
+                    }
+                }
+                for (ci, model) in &g.color_draws {
+                    if let Some(mesh) = g.color_meshes.get(*ci) {
+                        color_draws.push(ColorSceneDraw {
+                            mesh,
+                            mvp: cam * *model,
+                        });
+                    }
                 }
             } else if in_world_map {
                 // World-map continent = two layers, both in the shared
