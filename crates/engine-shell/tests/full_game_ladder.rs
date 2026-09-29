@@ -180,6 +180,11 @@ struct Milestone {
     reach: String,
     #[serde(default)]
     reach_flags: Vec<u16>,
+    /// Story waypoints between the previous milestone and this one: scenes
+    /// the retail run passed through to play a beat the route's shortest
+    /// path skips. Visited in order, each with its beats pass played.
+    #[serde(default)]
+    via: Vec<String>,
     #[serde(default)]
     anchor: Option<AnchorRef>,
     /// `false` for an anchor from outside the main playthrough (a debug
@@ -694,6 +699,9 @@ fn script_pad(session: &BootSession, f: usize) -> u16 {
     if let Some(pad) = picker_pad(session) {
         return pad;
     }
+    if let Some(pad) = flag_window_pad(session) {
+        return pad;
+    }
     if let Some(ne) = session.host.world.party.name_entry.as_ref()
         && ne.state == NameEntryState::Confirm
         && !ne.confirm_yes
@@ -750,6 +758,86 @@ fn picker_pad(session: &BootSession) -> Option<u16> {
         PadButton::Down.mask()
     } else if cursor > want {
         PadButton::Up.mask()
+    } else {
+        PadButton::Cross.mask()
+    })
+}
+
+thread_local! {
+    /// The scene the current hop is heading for, read by
+    /// [`flag_window_pad`].
+    static HOP_DEST: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+/// The pad on an op-`49 04` flag-window picker (slot `0x23`, the Uru Mais
+/// warp pads of `kor` / `kor3` / `kor4`). The picker opens on the pad the
+/// party stands on and commits the highlighted row as the one set flag of
+/// `base..base+count`; the record then branches on that flag to one scene
+/// change per row. Confirming the default re-enters the pad's own floor, so
+/// the hand reads the record's branch table, finds the row whose branch
+/// names the hop's destination, moves the highlight there and confirms.
+/// `None` when no flag window is up (or no row leads to the destination).
+fn flag_window_pad(session: &BootSession) -> Option<u16> {
+    use legaia_asset::field_disasm::{InsnInfo, decode, scene_change_name};
+    use legaia_engine_core::field_submode_flag_window::{
+        FLAG_WINDOW_SLOT, descriptor_from_operand,
+    };
+    let w = &session.host.world;
+    let screen = &w.field_vm.submode_screen;
+    if !screen.open || screen.actor.state != FLAG_WINDOW_SLOT {
+        return None;
+    }
+    let dest = HOP_DEST.with(|d| d.borrow().clone())?;
+    let desc = descriptor_from_operand(&screen.op49_operand);
+    let base = desc.base_flag;
+    let count = i32::from(desc.count);
+    let bc = &w.cutscene.timeline.as_ref()?.bytecode;
+    // Each row's branch: the TEST of `base + row`, then the first scene
+    // change its target reaches.
+    let mut want = None;
+    let mut pc = 0usize;
+    while pc < bc.len() && want.is_none() {
+        let Ok(insn) = decode(bc, pc) else {
+            pc += 1;
+            continue;
+        };
+        if let InsnInfo::SystemFlag {
+            idx,
+            target: Some(t),
+            ..
+        } = insn.info
+            && (base..base + count).contains(&i32::from(idx))
+        {
+            let mut q = t;
+            for _ in 0..64 {
+                let Ok(i) = decode(bc, q) else { break };
+                if let Some(name) = scene_change_name(bc, &i) {
+                    if name == dest {
+                        want = Some(i32::from(idx) - base);
+                    }
+                    break;
+                }
+                if i.size == 0 {
+                    break;
+                }
+                q += i.size;
+            }
+        }
+        pc += insn.size.max(1);
+    }
+    let want = want?;
+    // The rows are drawn flipped (`flag_window_row_flip`): the highest flag
+    // sits on the top row, so Up raises the selection. A row outside the
+    // window's visible band cannot be reached from this pad.
+    let sel = screen.flag_window.selection;
+    let first = i32::from(desc.first_visible);
+    if !(first..first + i32::from(desc.rows)).contains(&want) {
+        return None;
+    }
+    Some(if sel < want {
+        PadButton::Up.mask()
+    } else if sel > want {
+        PadButton::Down.mask()
     } else {
         PadButton::Cross.mask()
     })
@@ -1106,7 +1194,11 @@ fn claimed_tiles(session: &BootSession) -> HashSet<(u8, u8)> {
 
 /// Try `doors` by seating; `Ok(entered)` for the first that changed scene.
 fn seated_hop(session: &mut BootSession, graph: &DiscGraph, dest: &str) -> Result<String, String> {
-    let doors = doors_to(session, graph, dest)?;
+    let doors = match doors_to(session, graph, dest) {
+        Ok(d) => d,
+        Err(why) => return talk_hop(session, dest).ok_or(why)?,
+    };
+    HOP_DEST.with(|d| *d.borrow_mut() = Some(dest.to_string()));
     let mut tried = Vec::new();
     for d in doors.iter().take(MAX_SITES) {
         step_onto(session, d.tile);
@@ -1125,6 +1217,77 @@ fn seated_hop(session: &mut BootSession, graph: &DiscGraph, dest: &str) -> Resul
         tried.join("; "),
         site_gate_report(session, dest)
     ))
+}
+
+/// A hop no walk-on band carries, taken by talking: the talk-NPC placements
+/// whose own partition-1 record names `dest` in a `0x3F`, directly or through
+/// the partition-2 records it spawns (`0x44`, followed a few levels: `son`'s
+/// ferryman spawns P2[8], whose confirm spawns the P2[10] crossing to
+/// `taiku`). `None` when no such talk exists; `Some(Err)` when talks ran and
+/// none left the scene.
+fn talk_hop(session: &mut BootSession, dest: &str) -> Option<Result<String, String>> {
+    use legaia_asset::field_disasm::{InsnInfo, LinearWalker, scene_change_name};
+    use legaia_engine_core::man_field_scripts::partition_record_span;
+    let (mf, man, _) = scene_man_and_triggers(session)?;
+    let n0 = mf.partitions.first().map_or(0, Vec::len);
+    let n1 = mf.partitions.get(1).map_or(0, Vec::len);
+    // Does the record (partition, index) reach `dest` within `depth` spawns?
+    fn reaches(
+        mf: &legaia_asset::man_section::ManFile,
+        man: &[u8],
+        part: usize,
+        rec: usize,
+        dest: &str,
+        base: usize,
+        depth: usize,
+    ) -> bool {
+        let Some((start, pc0, len)) = partition_record_span(mf, man, part, rec) else {
+            return false;
+        };
+        let body = &man[start..start + len];
+        for insn in LinearWalker::new(body, pc0).flatten() {
+            match insn.info {
+                InsnInfo::SceneChange { .. }
+                    if scene_change_name(body, &insn).as_deref() == Some(dest) =>
+                {
+                    return true;
+                }
+                InsnInfo::SpawnRecord { global_index } if depth > 0 => {
+                    if let Some(r2) = usize::from(global_index).checked_sub(base)
+                        && (r2 != rec || part != 2)
+                        && reaches(mf, man, 2, r2, dest, base, depth - 1)
+                    {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+    let w = &session.host.world;
+    let slots: Vec<u8> = w
+        .npcs
+        .positions
+        .keys()
+        .copied()
+        .filter(|s| w.npcs.dialog.contains_key(s) || w.npcs.dialog_prologue.contains_key(s))
+        .filter(|&s| reaches(&mf, &man, 1, usize::from(s), dest, n0 + n1, 3))
+        .collect();
+    if slots.is_empty() {
+        return None;
+    }
+    let mut tried = Vec::new();
+    for slot in slots {
+        match talk_to(session, slot) {
+            Run::Entered(s) => return Some(Ok(s)),
+            other => tried.push(format!("talk P1[{slot}]: {other:?}")),
+        }
+    }
+    Some(Err(format!(
+        "no walk-on door to {dest}; talks that lead there did not leave: {}",
+        tried.join("; ")
+    )))
 }
 
 /// The loaded scene's MAN, parsed, and its `.MAP` triggers.
@@ -1612,6 +1775,7 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
     // a conversation branches on), so both passes repeat while a round still
     // gains flags. Each beat plays at most once per scene visit.
     let mut walked: BTreeSet<u8> = BTreeSet::new();
+    let overreach = overreaching_records(&mf, &man, 2);
     for _round in 0..BEAT_ROUNDS {
         let round_start = flags_of_world(session);
         // A talk is re-tried each round while its flag stays clear: its
@@ -1635,7 +1799,11 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
             }
         }
         for (&rec, &tile) in &first_tile {
-            if doors.contains(&rec) || walked.contains(&rec) || ran >= MAX_BEATS {
+            if doors.contains(&rec)
+                || walked.contains(&rec)
+                || overreach.contains(&usize::from(rec))
+                || ran >= MAX_BEATS
+            {
                 continue;
             }
             let pass = partition2_record_gates(&mf, &man, usize::from(rec))
@@ -1682,6 +1850,54 @@ fn trace_beat(session: &BootSession, before: &BTreeSet<u16>, what: impl FnOnce()
     eprintln!("    [beat] {} +{gained:?}", what());
 }
 
+thread_local! {
+    /// The system flags the segment's next anchor carries, when it has one:
+    /// what the retail run had set by the time it got there.
+    static NEXT_ANCHOR_FLAGS: std::cell::RefCell<Option<BTreeSet<u16>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Does the next anchor carry `flag`? `true` when there is no anchor to ask.
+fn next_anchor_has(flag: u16) -> bool {
+    NEXT_ANCHOR_FLAGS.with(|a| a.borrow().as_ref().is_none_or(|f| f.contains(&flag)))
+}
+
+/// The records of `partition` that SET (cleanly, outside a debug picker) a
+/// **latch** the next anchor does not carry - a flag some partition-2
+/// record of this scene lists in its C1 gate, so setting it shuts that
+/// record. The retail run had not played such a beat by the next milestone,
+/// and playing it overreaches: `conc2` P2[12] latches `0x3E1`, the C1 gate
+/// of the `juui1` hand-off P2[20] the story takes. Flags no gate reads are
+/// left alone - a long cutscene sets and clears many a scratch flag the
+/// anchor never shows.
+fn overreaching_records(
+    mf: &legaia_asset::man_section::ManFile,
+    man: &[u8],
+    partition: usize,
+) -> BTreeSet<usize> {
+    use legaia_engine_core::man_field_scripts::{
+        FlagBank, partition2_record_gates, walk_partition_gflag_sites,
+    };
+    let n2 = mf.partitions.get(2).map_or(0, Vec::len);
+    let latches: BTreeSet<u16> = (0..n2)
+        .filter_map(|r| partition2_record_gates(mf, man, r))
+        .flat_map(|(c1, _)| c1)
+        .collect();
+    walk_partition_gflag_sites(mf, man, partition)
+        .into_iter()
+        .filter(|s| {
+            s.bank == FlagBank::System
+                && s.kind == FlagKind::Set
+                && s.clean
+                && !s.text_alias
+                && !s.debug_menu
+                && latches.contains(&s.flag)
+                && !next_anchor_has(s.flag)
+        })
+        .map(|s| s.record)
+        .collect()
+}
+
 /// Rounds of the talk + walk-on beat passes per scene visit.
 const BEAT_ROUNDS: usize = 3;
 
@@ -1697,26 +1913,75 @@ fn talk_beats(
 ) -> Vec<u8> {
     use legaia_engine_core::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
     let w = &session.host.world;
-    let mut setters: BTreeSet<u8> = BTreeSet::new();
-    for s in walk_partition_gflag_sites(mf, man, 1) {
-        if s.bank == FlagBank::System
+    let wanted = |s: &legaia_engine_core::man_field_scripts::GFlagSite| {
+        s.bank == FlagBank::System
             && s.kind == FlagKind::Set
             && s.clean
             && !s.text_alias
             && !s.debug_menu
             && !w.system_flag_test(s.flag)
-            && let Ok(slot) = u8::try_from(s.record)
+            && next_anchor_has(s.flag)
+    };
+    let setters1: BTreeSet<usize> = walk_partition_gflag_sites(mf, man, 1)
+        .iter()
+        .filter(|s| wanted(s))
+        .map(|s| s.record)
+        .collect();
+    let setters2: BTreeSet<usize> = walk_partition_gflag_sites(mf, man, 2)
+        .iter()
+        .filter(|s| wanted(s))
+        .map(|s| s.record)
+        .collect();
+    let n0 = mf.partitions.first().map_or(0, Vec::len);
+    let n1 = mf.partitions.get(1).map_or(0, Vec::len);
+    let mut slots: Vec<u8> = w
+        .npcs
+        .positions
+        .keys()
+        .copied()
+        .filter(|s| w.npcs.dialog.contains_key(s) || w.npcs.dialog_prologue.contains_key(s))
+        .filter(|&s| {
+            // The talk's own record writes a wanted flag, or a partition-2
+            // record it spawns does (`station`'s ticket seller spawns the
+            // P2[19] departure that latches `0x36B`).
+            setters1.contains(&usize::from(s))
+                || spawned_p2(mf, man, 1, usize::from(s), n0 + n1, 3)
+                    .iter()
+                    .any(|r| setters2.contains(r))
+        })
+        .collect();
+    slots.sort_unstable();
+    slots
+}
+
+/// The partition-2 records `(part, rec)` spawns through op `0x44`
+/// (`SPAWN_RECORD`, global index `base + r`), followed `depth` levels.
+fn spawned_p2(
+    mf: &legaia_asset::man_section::ManFile,
+    man: &[u8],
+    part: usize,
+    rec: usize,
+    base: usize,
+    depth: usize,
+) -> BTreeSet<usize> {
+    use legaia_asset::field_disasm::{InsnInfo, LinearWalker};
+    use legaia_engine_core::man_field_scripts::partition_record_span;
+    let mut out = BTreeSet::new();
+    let Some((start, pc0, len)) = partition_record_span(mf, man, part, rec) else {
+        return out;
+    };
+    let body = &man[start..start + len];
+    for insn in LinearWalker::new(body, pc0).flatten() {
+        if let InsnInfo::SpawnRecord { global_index } = insn.info
+            && let Some(r2) = usize::from(global_index).checked_sub(base)
+            && r2 < mf.partitions.get(2).map_or(0, Vec::len)
+            && out.insert(r2)
+            && depth > 1
         {
-            setters.insert(slot);
+            out.extend(spawned_p2(mf, man, 2, r2, base, depth - 1));
         }
     }
-    setters
-        .into_iter()
-        .filter(|slot| {
-            w.npcs.positions.contains_key(slot)
-                && (w.npcs.dialog.contains_key(slot) || w.npcs.dialog_prologue.contains_key(slot))
-        })
-        .collect()
+    out
 }
 
 /// Talk to the NPC in placement `slot` as a player does: stand on a tile
@@ -1800,7 +2065,10 @@ fn traverse(
     trail: &mut Vec<String>,
 ) -> Result<(), String> {
     let mut beaten: BTreeSet<String> = BTreeSet::new();
-    for _ in 0..MAX_HOPS {
+    // Waypoints only steer the seated tier: the pad tier plays no beats.
+    let mut via = 0usize;
+    let vias: &[String] = if pad { &[] } else { &target.via };
+    for _ in 0..MAX_HOPS + vias.len() * 4 {
         // Let whatever the last landing started finish first.
         match run_while_moving(session, SCRIPT_CEILING) {
             Run::Entered(s) => {
@@ -1809,25 +2077,40 @@ fn traverse(
             }
             Run::Released => {}
             Run::Parked(p) => {
-                if reached(session, target) {
+                if via >= vias.len() && reached(session, target) {
                     return Ok(());
                 }
                 return Err(format!("in {}: parked - {p}", scene_name(session)));
             }
             other => return Err(format!("in {}: {other:?}", scene_name(session))),
         }
-        if reached(session, target) {
+        if via >= vias.len() && reached(session, target) {
             return Ok(());
         }
         let cur = scene_name(session);
+        // A waypoint reached: play its beats once, then head for the next.
+        if let Some(w) = vias.get(via)
+            && *w == cur
+        {
+            via += 1;
+            let mut log = Vec::new();
+            let left = play_beats(session, &mut log)
+                .map_err(|b| format!("in {cur} (via), playing beats: {b}"))?;
+            trail.push(format!("[via {}]", log.join("; ")));
+            if let Some(s) = left {
+                trail.push(format!("{s}(beat)"));
+            }
+            continue;
+        }
+        let goal = vias.get(via).unwrap_or(&target.scene).clone();
         // In the target scene with its beat unplayed, or stuck on a door:
         // play the scene's walkable beats once, then look again.
-        let stuck_here = cur == target.scene;
+        let stuck_here = cur == target.scene && via >= vias.len();
         let hop = if stuck_here {
             Err(String::new())
         } else {
-            let Some(route) = graph.route(&cur, &target.scene) else {
-                return Err(format!("no scene route from {cur} to {}", target.scene));
+            let Some(route) = graph.route(&cur, &goal) else {
+                return Err(format!("no scene route from {cur} to {goal}"));
             };
             let next = route[1].clone();
             let hop = if pad {
@@ -1905,6 +2188,7 @@ fn run_segment(
         missing_flags: Vec::new(),
     };
 
+    NEXT_ANCHOR_FLAGS.with(|a| *a.borrow_mut() = to_anchor.map(|a| a.flags.clone()));
     // -- seated pass: loads, enters, progresses -----------------------------
     let seated = catch_unwind(AssertUnwindSafe(|| {
         let mut session = open_session(&inp.extracted);
@@ -2048,6 +2332,12 @@ fn part_a_spine_is_anchored_ordered_and_routed() {
 
     let mut anchors: Vec<Option<Anchor>> = Vec::new();
     let mut bad = Vec::new();
+    // A waypoint must be a scene the disc graph knows.
+    for m in &spine {
+        for v in m.via.iter().filter(|v| !graph.edges.contains_key(*v)) {
+            bad.push(format!("{}: via scene {v} is not in the disc graph", m.id));
+        }
+    }
     for m in &spine {
         let a = m.anchor.as_ref().map(|r| (r, load_anchor(&inp.library, r)));
         match a {

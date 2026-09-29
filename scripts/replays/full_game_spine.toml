@@ -210,6 +210,9 @@ anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-
 id = "zora_castle"
 scene = "taiku"
 reach = "scene"
+# The anchor gained son P1[0]'s 0x034 and son's beat flags; only son and the
+# map03 P2[9] cruise (gated on 0x501, set later in taiku) name taiku.
+via = ["son"]
 anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-14" }
 
 [[milestone]]
@@ -222,6 +225,9 @@ anchor = { kind = "card", card = "playthrough-endgame-7saves.mcr", save = "PRO-0
 id = "rogue_tower"
 scene = "rugi"
 reach = "scene"
+# The anchor gained 0x3E5 (conc3 P2[10]) and 0x425 (conc2 P2[10]); conc2
+# P2[20] (C2 0x3E5) is the juui1 hand-off. The shortest route skips conc3.
+via = ["conc3", "conc2"]
 anchor = { kind = "card", card = "playthrough-endgame-7saves.mcr", save = "PRO-01" }
 
 [[milestone]]
@@ -241,6 +247,10 @@ anchor = { kind = "card", card = "playthrough-endgame-7saves.mcr", save = "PRO-0
 id = "noaru_valley"
 scene = "noaru"
 reach = "scene"
+# The anchor gained 0x3E7 (jou P2[2]), the C2 gate of uru2 P2[10], whose
+# 0x3E8 opens the juui1 door P2[11]; jou is in Drake, which the anchor
+# reached through concend -> town0d (it gained both scenes' flags).
+via = ["concend", "jou"]
 anchor = { kind = "card", card = "playthrough-endgame-7saves.mcr", save = "PRO-04" }
 
 [[milestone]]
