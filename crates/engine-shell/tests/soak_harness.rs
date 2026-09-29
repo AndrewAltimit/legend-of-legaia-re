@@ -1152,6 +1152,7 @@ fn run_one(
     let mut reported: BTreeSet<String> = BTreeSet::new();
     let mut traced_scripts: BTreeSet<u64> = BTreeSet::new();
     let mut battle_sites: BTreeMap<String, u32> = BTreeMap::new();
+    let mut prev_pad = 0u16;
 
     for frame in 0..spec.frames {
         let pad = match pads_override {
@@ -1166,7 +1167,23 @@ fn run_one(
             b[i].tick_started = Some(Instant::now());
             b[i].frame = frame;
         }
-        let r = catch_unwind(AssertUnwindSafe(|| session.tick()));
+        // The name-entry overlay is host-modal on both play hosts: while it
+        // is up the field tick is skipped, every pad edge routes into the
+        // entry SM, and the frame counter keeps advancing (the window's
+        // redraw arm, the browser's `name_entry_input`). `BootSession::tick`
+        // does not do this, so the harness does it for it.
+        let edge = pad & !prev_pad;
+        prev_pad = pad;
+        let r = catch_unwind(AssertUnwindSafe(|| {
+            if session.host.world.name_entry_active() {
+                let input = legaia_engine_core::name_entry::NameEntryInput::from_pad_edge(edge);
+                session.host.world.step_name_entry(input);
+                session.host.world.frame = session.host.world.frame.wrapping_add(1);
+                Ok(SceneTickEvent::Stepped)
+            } else {
+                session.tick()
+            }
+        }));
         if let Some((board, i)) = status {
             board.lock().unwrap()[i].tick_started = None;
         }
@@ -1354,7 +1371,11 @@ fn run_one(
         let field_frame = matches!(
             session.host.world.mode,
             SceneMode::Field | SceneMode::WorldMap
-        ) && session.field_menu.is_none();
+        ) && session.field_menu.is_none()
+            // A script parked on a player-owned modal (the name-entry grid, a
+            // shop) is waiting for the player, not stalled.
+            && !session.host.world.name_entry_active()
+            && !session.host.world.shops.shop_open;
         if !field_frame {
             park = None;
         } else if frame % t.digest_every == 0 {
@@ -1474,8 +1495,14 @@ fn run_one(
 const SCENE_TAG: &str = "# soak-scene = ";
 const SEED_TAG: &str = "# soak-seed = ";
 const SIG_TAG: &str = "# soak-signature = ";
+const MIN_DISTINCT_TAG: &str = "# soak-min-distinct = ";
 
-fn replay_text(spec: &RunSpec, pads: &[u16], finding: Option<&Finding>) -> String {
+fn replay_text(
+    spec: &RunSpec,
+    pads: &[u16],
+    finding: Option<&Finding>,
+    min_distinct: Option<usize>,
+) -> String {
     let mut rf = ReplayFile::new(
         ReplayMeta::new(pads.len() as u64)
             .with_rng_seed((run_seed(&spec.scene, spec.seed) >> 16) as u32),
@@ -1498,6 +1525,11 @@ fn replay_text(spec: &RunSpec, pads: &[u16], finding: Option<&Finding>) -> Strin
         let _ = writeln!(out, "{SIG_TAG}{:?}", f.signature());
         let _ = writeln!(out, "# detail: {}", f.detail.replace('\n', " "));
     }
+    if let Some(n) = min_distinct {
+        // Minimised under the neutral-pad control: the input that fed the
+        // frozen window was dropped, so the detector must not ask for it.
+        let _ = writeln!(out, "{MIN_DISTINCT_TAG}{n}");
+    }
     let _ = writeln!(
         out,
         "# reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell \
@@ -1511,6 +1543,18 @@ struct LoadedReplay {
     spec: RunSpec,
     pads: Vec<u16>,
     signature: Option<String>,
+    min_distinct: Option<usize>,
+}
+
+impl LoadedReplay {
+    /// The detector settings this replay was recorded under.
+    fn tunables(&self) -> Tunables {
+        let mut t = Tunables::from_env();
+        if let Some(n) = self.min_distinct {
+            t.min_distinct = n;
+        }
+        t
+    }
 }
 
 fn parse_tag(text: &str, tag: &str) -> Option<String> {
@@ -1537,6 +1581,7 @@ fn load_replay(path: &Path) -> LoadedReplay {
         },
         pads,
         signature: parse_tag(&text, SIG_TAG),
+        min_distinct: parse_tag(&text, MIN_DISTINCT_TAG).and_then(|s| s.parse().ok()),
     }
 }
 
@@ -1702,7 +1747,7 @@ fn confirm(
     known: &BTreeSet<String>,
     o: &RunOutcome,
     f: &Finding,
-) -> (bool, Vec<u16>) {
+) -> (bool, Vec<u16>, Option<usize>) {
     let n = (f.frame + 1) as usize;
     let pads: Vec<u16> = o.pads[..n.min(o.pads.len())].to_vec();
     let (src, known, scene, seed, sig) = (
@@ -1734,7 +1779,7 @@ fn confirm(
                     .any(|g| g.signature() == sig)
             };
             if !reproduces(&pads, false) {
-                return (false, pads);
+                return (false, pads, None);
             }
             let mut best = pads.clone();
             let mut tries = 0usize;
@@ -1762,11 +1807,14 @@ fn confirm(
                     chunks *= 2;
                 }
             }
-            (true, best)
+            // A softlock whose pads were reduced replays under the relaxed
+            // control it was reduced under.
+            let relaxed = (softlock && best != pads).then_some(1);
+            (true, best, relaxed)
         })
         .expect("spawn confirm")
         .join()
-        .unwrap_or((false, Vec::new()))
+        .unwrap_or((false, Vec::new(), None))
 }
 
 /// `(rank, signature, [(outcome index, finding index)])`.
@@ -1853,20 +1901,21 @@ fn write_report(src: &Source, known: &BTreeSet<String>, cfg: &SoakConfig, r: &So
         let (oi, fi) = hits[0];
         let o = &r.outcomes[oi];
         let f = &o.findings[fi];
-        let (repro, pads) = if cfg.confirm && confirmed < max_confirm {
+        let (repro, pads, relaxed) = if cfg.confirm && confirmed < max_confirm {
             confirmed += 1;
-            let (hit, pads) = confirm(src, known, o, f);
-            (if hit { "yes" } else { "NO" }.to_string(), pads)
+            let (hit, pads, relaxed) = confirm(src, known, o, f);
+            (if hit { "yes" } else { "NO" }.to_string(), pads, relaxed)
         } else {
             (
                 "-".to_string(),
                 o.pads[..((f.frame + 1) as usize).min(o.pads.len())].to_vec(),
+                None,
             )
         };
         let file = out
             .join("replays")
             .join(format!("{}.replay.toml", slug(sig)));
-        let _ = std::fs::write(&file, replay_text(&o.spec, &pads, Some(f)));
+        let _ = std::fs::write(&file, replay_text(&o.spec, &pads, Some(f), relaxed));
         let detail: String = f.detail.chars().take(220).collect();
         let _ = writeln!(
             md,
@@ -2107,7 +2156,7 @@ fn soak_replay() {
             lr.spec.frames,
             lr.spec.scene
         );
-        let t = Tunables::from_env();
+        let t = lr.tunables();
         let (spec, pads) = (lr.spec, lr.pads);
         let (src, known) = (src.clone(), known.clone());
         let h = std::thread::Builder::new()
@@ -2176,7 +2225,7 @@ fn soak_fixtures() {
     drop(probe);
     for f in files {
         let lr = load_replay(&f);
-        let t = Tunables::from_env();
+        let t = lr.tunables();
         let (src, known) = (src.clone(), known.clone());
         let (spec, pads) = (lr.spec, lr.pads);
         let findings = std::thread::Builder::new()
@@ -2221,7 +2270,7 @@ fn replay_header_round_trips() {
         location: "dialogue".into(),
         detail: "x".into(),
     };
-    let text = replay_text(&spec, &pads, Some(&f));
+    let text = replay_text(&spec, &pads, Some(&f), Some(1));
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("a.replay.toml");
     std::fs::write(&p, text).unwrap();
@@ -2230,6 +2279,7 @@ fn replay_header_round_trips() {
     assert_eq!(lr.spec.seed, 7);
     assert_eq!(lr.pads, pads);
     assert_eq!(lr.signature.as_deref(), Some("softlock|town01|dialogue"));
+    assert_eq!(lr.min_distinct, Some(1));
 }
 
 #[test]
