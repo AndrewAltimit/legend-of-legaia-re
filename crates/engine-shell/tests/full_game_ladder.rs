@@ -807,16 +807,33 @@ thread_local! {
 /// hand instead takes option `k` on the picker's `k`-th opening (0, then 1,
 /// ...), which walks a menu to its story branch or its exit.
 fn picker_pad(session: &BootSession) -> Option<u16> {
-    let open = session.host.world.dialog.inline.as_ref().and_then(|id| {
-        let panel = id.panel.as_ref()?;
+    let w = &session.host.world;
+    let menu = |bytecode: &std::sync::Arc<Vec<u8>>,
+                panel: &legaia_engine_core::dialog::OwnedDialogPanel| {
         let pk = panel.picker()?;
         panel.menu_active().then_some((
-            (std::sync::Arc::as_ptr(&id.bytecode) as usize, pk.open),
+            (std::sync::Arc::as_ptr(bytecode) as usize, pk.open),
             pk.n.max(1),
             panel.picker_cursor(),
             panel.picker_takes_input(),
         ))
-    });
+    };
+    // A talk's box, else a script's: the modal timeline's, else the first
+    // spawned record holding one (the pad goes to the same box the engine
+    // routes it to). A cutscene picker that always takes its default can
+    // loop a record forever (`town0d` P2[31], the song rehearsal).
+    let open = w
+        .dialog
+        .inline
+        .as_ref()
+        .and_then(|id| menu(&id.bytecode, id.panel.as_ref()?))
+        .or_else(|| {
+            w.cutscene
+                .timeline
+                .iter()
+                .chain(w.field_vm.helper_contexts.iter())
+                .find_map(|tl| menu(&tl.bytecode, tl.dialog.as_ref()?))
+        });
     let Some((key, n, cursor, takes)) = open else {
         PICKS.with(|p| p.borrow_mut().1 = None);
         return None;
@@ -2206,19 +2223,23 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
                 Run::Released | Run::Parked(_) => {}
             }
         }
-        // Interact-gated props whose own script writes a wanted flag: a
-        // switch is examined with Cross, never by contact (`chitei2` P0[33]
-        // raises the `0x4F0` that opens the P2[11] walk-on setting `0x470`).
-        for (anchor, at) in prop_beats(session, &mf, &man) {
+        // Props whose own script writes a wanted flag. An interact-gated
+        // one (a switch) is examined with Cross, never by contact (`chitei2`
+        // P0[33] raises the `0x4F0` that opens the P2[11] walk-on setting
+        // `0x470`); a touch-class one (a door) is walked into.
+        for (anchor, at, gated) in prop_beats(session, &mf, &man) {
             if !examined.insert(anchor) || ran >= MAX_BEATS {
                 continue;
             }
             ran += 1;
             let f0 = flags_of_world(session);
-            let r = examine_prop(session, anchor, at);
-            trace_beat(session, &f0, || {
-                format!("{name} examine prop {anchor:?} -> {r:?}")
-            });
+            let r = if gated {
+                examine_prop(session, anchor, at)
+            } else {
+                touch_prop(session, anchor, at)
+            };
+            let r = fight_committed(session, r);
+            trace_beat(session, &f0, || format!("{name} prop {anchor:?} -> {r:?}"));
             match r {
                 Run::Entered(s) => {
                     finish(session, log, ran);
@@ -2265,6 +2286,7 @@ fn object_door_beats(
             .map(|s| s.record)
             .collect()
     };
+    let setters0 = wanted(0);
     let setters2 = wanted(2);
     let n0 = mf.partitions.first().map_or(0, Vec::len);
     let n1 = mf.partitions.get(1).map_or(0, Vec::len);
@@ -2280,7 +2302,11 @@ fn object_door_beats(
         let Some(r2) = flat_index.checked_sub(n0 + n1) else {
             continue;
         };
-        if setters2.contains(&r2)
+        // The door's own record may latch the beat as it spawns it
+        // (`town0d` P0[1] sets `0x3B9` and spawns the P2[28] song-night
+        // chain, whose own writes are all inside its dialogue).
+        if (flat < n0 && setters0.contains(&flat))
+            || setters2.contains(&r2)
             || spawned_p2(mf, man, 2, r2, n0 + n1, 3)
                 .iter()
                 .any(|r| setters2.contains(r))
@@ -2291,14 +2317,17 @@ fn object_door_beats(
     out
 }
 
-/// The interact-gated props of the loaded field scene (anchor and contact
-/// centre) whose own bind record cleanly SETs a still-clear flag the next
-/// anchor carries.
+/// A prop beat: anchor tile, contact centre, and whether it is the
+/// interact-gated (examine) class rather than the touch (door) class.
+type PropBeat = ((u8, u8), (i32, i32), bool);
+
+/// The props of the loaded field scene whose own bind record cleanly SETs a
+/// still-clear flag the next anchor carries.
 fn prop_beats(
     session: &BootSession,
     mf: &legaia_asset::man_section::ManFile,
     man: &[u8],
-) -> Vec<((u8, u8), (i32, i32))> {
+) -> Vec<PropBeat> {
     use legaia_engine_core::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
     let w = &session.host.world;
     let setters0: BTreeSet<usize> = walk_partition_gflag_sites(mf, man, 0)
@@ -2318,13 +2347,60 @@ fn prop_beats(
         .bank
         .props
         .iter()
-        .filter(|(_, p)| p.interact_gated() && !p.collision_exempt())
+        .filter(|(_, p)| !p.collision_exempt())
         .filter(|(_, p)| setters0.contains(&p.record))
         .map(|(&a, p)| {
             let at = if p.moving_box() { p.world } else { p.collider };
-            (a, at)
+            (a, at, p.interact_gated())
         })
         .collect()
+}
+
+/// Walk into the touch-class prop anchored at `anchor` (a door: contact
+/// result bit `4`, posted by the movement probe with no button): from each
+/// tile beside it, hold the pad toward it until its record starts, then let
+/// the run play out. `town0d` P0[1], the house door, sets `0x3B9` and spawns
+/// the P2[28] song-night chain the first time it is opened.
+fn touch_prop(session: &mut BootSession, anchor: (u8, u8), at: (i32, i32)) -> Run {
+    let (tx, tz) = tile_of(at.0 as i16, at.1 as i16);
+    let prop_run = |s: &BootSession| {
+        s.host
+            .world
+            .dialog
+            .inline
+            .as_ref()
+            .is_some_and(|id| id.prop_anchor == Some(anchor))
+    };
+    for (dx, dz) in [(-1i16, 0i16), (1, 0), (0, -1), (0, 1)] {
+        let (sx, sz) = (tx + dx, tz + dz);
+        if !(0..128).contains(&sx) || !(0..128).contains(&sz) {
+            continue;
+        }
+        session.host.world.set_pad(0);
+        session.host.world.seat_player_at_tile(sx as u8, sz as u8);
+        let mut started = false;
+        for _ in 0..40 {
+            let pad = pad_for_step(session, -dx, -dz);
+            session.host.world.set_pad(pad);
+            match session.tick() {
+                Ok(SceneTickEvent::SceneEntered { name }) => {
+                    session.host.world.set_pad(0);
+                    return Run::Entered(name);
+                }
+                Ok(_) => {}
+                Err(e) => return Run::Error(format!("{e:#}")),
+            }
+            if prop_run(session) {
+                started = true;
+                break;
+            }
+        }
+        session.host.world.set_pad(0);
+        if started {
+            return run_while_moving(session, DEEP_EXIT_TICKS);
+        }
+    }
+    Run::Released
 }
 
 /// With `LEGAIA_FGL_TRACE` set, print one line per played beat: what ran,
@@ -2662,8 +2738,16 @@ fn traverse(
     let vias: &[String] = if pad { &[] } else { &target.via };
     for _ in 0..MAX_HOPS + vias.len() * 4 {
         // Let whatever the last landing started finish first.
+        let here = scene_name(session);
         match run_while_moving(session, SCRIPT_CEILING) {
             Run::Entered(s) => {
+                // A waypoint whose own arrival script carries the party on
+                // (`concend`'s P2[0] ends in the hop to `town0d`) was
+                // visited: its beat is that script.
+                if vias.get(via).is_some_and(|w| *w == here) {
+                    via += 1;
+                    trail.push(format!("[via {here}: arrival script]"));
+                }
                 trail.push(format!("{s}(scripted)"));
                 continue;
             }
@@ -2719,6 +2803,11 @@ fn traverse(
             Ok(entered) => trail.push(entered),
             Err(e) => {
                 if !pad && beaten.insert(cur.clone()) {
+                    // The hop that sent the pass to the beats: with the
+                    // pass's own failure it would otherwise go unreported.
+                    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() && !e.is_empty() {
+                        eprintln!("    [hop] {e}");
+                    }
                     let mut log = Vec::new();
                     // Only the milestone's own beats pass may stop short of
                     // a fight it committed (see [`fight_committed`]).

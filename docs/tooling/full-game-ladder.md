@@ -87,9 +87,12 @@ carries a comment naming the flags that put it there - Rogue Tower goes
 through `conc3` (whose P2[10] sets the `0x3E5` the `juui1` hand-off in `conc2`
 waits on), Zora Castle through `son`, Noaru Valley back through its own start
 scene `chitei2` (whose chain ends on the `0x4C8` that opens the `map03` portal
-to `concend`), then `concend` and `jou`, Sol Tower back through its own start scene `dohaty` (whose P2[13] sets the
-`0x1D4` every `station` placement, the ticket seller among them, waits on).
-Part A checks every waypoint is a disc scene.
+to `concend`), then `concend` and `jou`, and Sol Tower back through its own
+start scene `dohaty` (whose P2[13] sets the `0x1D4` every `station`
+placement, the ticket seller among them, waits on). A waypoint whose own
+arrival script carries the party on counts as visited: `concend`'s P2[0] is
+its beat, and it ends in the hop to `town0d`. Part A checks every waypoint is
+a disc scene.
 
 ## Segments and tiers
 
@@ -135,18 +138,20 @@ while a round still gains flags, since each unlocks the other:
   the player off the tile under test.
 - **Object doors.** A `.MAP`-bound partition-0 door record branches on the
   story flags, and one arm may run op `0x44` in place of its teleport. When
-  that arm, resolved against the live flags, spawns a partition-2 record that
-  (itself or through what it spawns) sets a wanted flag, the hand is seated on
-  the door and nudges the pad, so the locomotion's own touch dispatch posts
-  the contact. `town01` P0[29], Vahn's front door, spawns the P2[5] night beat
-  that sets `0x227` once `0x226` is up - the flag the spar's post-fight branch
-  in P1[10] tests.
-- **Examined props.** An interact-gated prop (the cupboard class, contact
-  result bit `1`) whose own bind record cleanly SETs a wanted flag is
-  examined the way a talk is: stand beside it, face it so the prop arm of
-  the facing probe lands on its box, press Cross and page what opens.
-  `chitei2` P0[33], a transport switch, raises the `0x4F0` that the P2[11]
-  walk-on setting `0x470` waits on.
+  that arm, resolved against the live flags, spawns a partition-2 record, and
+  the door's own record or the spawned one (itself or through what it
+  spawns) sets a wanted flag, the hand is seated on the door and nudges the
+  pad, so the locomotion's own touch dispatch posts the contact. `town01`
+  P0[29], Vahn's front door, spawns the P2[5] night beat that sets `0x227`
+  once `0x226` is up - the flag the spar's post-fight branch in P1[10] tests.
+- **Props.** A placed prop whose own bind record cleanly SETs a wanted flag.
+  An interact-gated one (the cupboard class, contact result bit `1`) is
+  examined the way a talk is: stand beside it, face it so the prop arm of the
+  facing probe lands on its box, press Cross and page what opens - `chitei2`
+  P0[33], a transport switch, raises the `0x4F0` that the P2[11] walk-on
+  setting `0x470` waits on. A touch-class one (a door, bit `4`) is walked
+  into from a tile beside it - `town0d` P0[1], the house door, sets `0x3B9`
+  and spawns the P2[28] night scene.
 
 A beat is skipped when its record, itself or through a record it spawns, sets
 a **latch** - a flag some partition-2 C1 gate of the scene reads - that the
@@ -196,9 +201,11 @@ clips and matches the same arts a windowed one does. Beyond that:
 - Field dialogue runs through the inline-script field-VM runner, as it does
   in both play hosts (`World::toggles.use_vm_dialogue`); `BootSession` leaves
   it off, and without it a talk only types its first segment.
-- A conversation picker takes option `k` on its `k`-th opening. Option 0 is
-  often "tell me again", a branch back to the same speech, so always
-  confirming the default loops a talk forever.
+- A picker takes option `k` on its `k`-th opening, in a conversation and in
+  a script's own box alike (the modal timeline's, else the first spawned
+  record holding one). Option 0 is often "tell me again", a branch back to
+  the same speech, so always confirming the default loops a talk forever
+  (`town0d` P1[5], Tetsu's sparring offer).
 - A record polling the held pad (`42 01 <i>`, the compass table - Rim Elm's
   "stand here and press Down" doors) gets that direction held.
 - An op-`49 04` flag-window picker (the Uru Mais warp pads) gets the row
@@ -209,7 +216,8 @@ clips and matches the same arts a windowed one does. Beyond that:
   lesson and its down arm for Spirit.
 
 `LEGAIA_FGL_TRACE=1` prints one line per played beat: what ran, how it ended
-and the flags it set.
+and the flags it set - and, as `[hop]`, the hop failure that sent the pass to
+the beats, which the final stall would otherwise hide.
 
 The **headline** is how many milestones a cold New Game reaches contiguously
 at `progresses` and at `pad` - the count of leading segments that each cleared

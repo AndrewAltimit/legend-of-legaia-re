@@ -505,11 +505,18 @@ fn settle(host: &mut SceneHost) -> Settle {
         // Not before two ticks: the entry script's op-`0x44` spawns queue on
         // the first and their helpers take their first slice on the second,
         // so a check on the entry frame sees none of them.
+        // A record that ended on `3E FF` has committed a fight whose intro
+        // runs after the record is gone; retail's field frame (tile compare
+        // included) is held until it is fought, and the fight itself is not
+        // the field either, so the scene has not settled. `jouine` P2[5]
+        // stages the Cort fight that way.
         if i >= 2
             && !host.world.cutscene_timeline_active()
             && !host.world.dialogue_owns_input()
             && host.world.field_vm.helper_contexts.is_empty()
             && host.world.field_vm.pending_record_spawns.is_empty()
+            && !host.world.field_scripts_held_for_battle()
+            && host.world.mode != legaia_engine_core::world::SceneMode::Battle
         {
             return Settle::Released;
         }
@@ -531,6 +538,10 @@ fn settle(host: &mut SceneHost) -> Settle {
     }
     let held_by = if host.world.cutscene_timeline_active() {
         "cutscene timeline"
+    } else if host.world.field_scripts_held_for_battle()
+        || host.world.mode == legaia_engine_core::world::SceneMode::Battle
+    {
+        "a committed battle"
     } else if host.world.dialogue_owns_input() {
         "dialogue"
     } else {
@@ -609,10 +620,31 @@ const CARDINALS: [PadButton; 4] = [
 /// Seat the player one tile off `(tx, tz)` then onto it, ticking between, so
 /// the walk-on dispatch sees a genuine tile crossing (retail's dispatcher
 /// fires on a tile *change*).
+///
+/// The approach tile is one that carries no walk-on trigger of its own when
+/// there is one: a record the approach fires holds the player, and retail's
+/// dispatcher consumes a crossing made under that hold rather than deferring
+/// it (`jouine`'s P2[16] band at `(17, 17)` sits beside another band).
 fn step_onto_tile(host: &mut SceneHost, tx: u8, tz: u8) {
     host.world.set_pad(0);
-    let off = if tx > 0 { tx - 1 } else { tx + 1 };
-    host.world.seat_player_at_tile(off, tz);
+    let world = |t: u8| i16::from(t) * 128 + 0x40;
+    let near = [
+        (tx.checked_sub(1), Some(tz)),
+        (tx.checked_add(1).filter(|&x| x < 128), Some(tz)),
+        (Some(tx), tz.checked_sub(1)),
+        (Some(tx), tz.checked_add(1).filter(|&z| z < 128)),
+    ];
+    let candidates: Vec<(u8, u8)> = near
+        .into_iter()
+        .filter_map(|(x, z)| Some((x?, z?)))
+        .collect();
+    let (ox, oz) = candidates
+        .iter()
+        .copied()
+        .find(|&(x, z)| !host.tile_has_walk_on_trigger(world(x), world(z)))
+        .or_else(|| candidates.first().copied())
+        .unwrap_or((tx, tz));
+    host.world.seat_player_at_tile(ox, oz);
     let _ = host.tick();
     host.world.seat_player_at_tile(tx, tz);
 }
