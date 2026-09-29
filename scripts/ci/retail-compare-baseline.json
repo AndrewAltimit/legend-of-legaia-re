@@ -4,7 +4,7 @@
     "baka_fighter_entry_pretransition": {
       "bgm": 1.0,
       "camera": 1.0,
-      "flags": 1.0,
+      "flags": 0.999,
       "fog_gate": 1.0,
       "footing": 1.0,
       "image": 0.171,
@@ -69,7 +69,7 @@
     "chapter2_garmel_pre_zeto": {
       "bgm": 0.0,
       "camera": 0.463,
-      "flags": 1.0,
+      "flags": 0.992,
       "fog_gate": 1.0,
       "footing": 1.0,
       "image": 0.21,
@@ -108,7 +108,7 @@
     "conc_field_card_boot": {
       "bgm": 1.0,
       "camera": 1.0,
-      "flags": 0.999,
+      "flags": 1.0,
       "fog_gate": 1.0,
       "footing": 1.0,
       "image": 0.035,
@@ -121,7 +121,7 @@
     "cort_evolved_approach_cutscene": {
       "bgm": 1.0,
       "camera": 0.136,
-      "flags": 0.999,
+      "flags": 0.998,
       "fog_gate": 1.0,
       "footing": 0.0,
       "image": 0.488,
@@ -134,7 +134,7 @@
     "cort_evolved_pre_battle": {
       "bgm": 0.0,
       "camera": 0.113,
-      "flags": 0.997,
+      "flags": 0.999,
       "fog_gate": 1.0,
       "footing": 1.0,
       "image": 0.0,
@@ -160,7 +160,7 @@
     "doman_arrival_from_korb2": {
       "bgm": 0.0,
       "camera": 0.559,
-      "flags": 0.996,
+      "flags": 0.995,
       "fog_gate": 1.0,
       "footing": 0.381,
       "inventory": 1.0,
@@ -172,7 +172,7 @@
     "doman_field_card_boot": {
       "bgm": 1.0,
       "camera": 1.0,
-      "flags": 0.998,
+      "flags": 1.0,
       "fog_gate": 1.0,
       "footing": 1.0,
       "image": 0.661,
@@ -249,7 +249,7 @@
     "ending_vignette_biron": {
       "bgm": 0.0,
       "camera": 0.998,
-      "flags": 0.889,
+      "flags": 0.955,
       "fog_gate": 1.0,
       "footing": 1.0,
       "image": 0.403,
@@ -275,13 +275,13 @@
     "ending_vignette_rimelm_walkaway": {
       "bgm": 0.0,
       "camera": 0.772,
-      "flags": 0.9,
+      "flags": 0.957,
       "fog_gate": 1.0,
       "image": 0.486,
       "inventory": 1.0,
       "mode": 1.0,
       "party": 1.0,
-      "position": 1.0,
+      "position": 0.556,
       "scene": 1.0
     },
     "field_walled_collision_pin": {
@@ -400,7 +400,7 @@
     "kor5_post_43a_checkpoint": {
       "bgm": 0.0,
       "camera": 0.325,
-      "flags": 1.0,
+      "flags": 0.998,
       "fog_gate": 1.0,
       "footing": 1.0,
       "image": 0.096,
@@ -439,7 +439,7 @@
     "mei_house_inside": {
       "bgm": 1.0,
       "camera": 1.0,
-      "flags": 0.984,
+      "flags": 1.0,
       "fog_gate": 1.0,
       "footing": 1.0,
       "image": 0.721,
@@ -452,7 +452,7 @@
     "mei_house_inside_pcsx": {
       "bgm": 1.0,
       "camera": 1.0,
-      "flags": 0.909,
+      "flags": 1.0,
       "fog_gate": 1.0,
       "footing": 1.0,
       "image": 0.715,
@@ -465,7 +465,7 @@
     "minigame_baka_pcsx": {
       "bgm": 1.0,
       "camera": 1.0,
-      "flags": 1.0,
+      "flags": 0.999,
       "fog_gate": 1.0,
       "footing": 1.0,
       "image": 0.154,
@@ -502,7 +502,7 @@
     "minigame_muscle_dome_pcsx": {
       "bgm": 1.0,
       "camera": 1.0,
-      "flags": 1.0,
+      "flags": 0.999,
       "fog_gate": 1.0,
       "footing": 1.0,
       "inventory": 1.0,
@@ -514,7 +514,7 @@
     "minigame_slot_machine_pcsx": {
       "bgm": 1.0,
       "camera": 1.0,
-      "flags": 1.0,
+      "flags": 0.999,
       "fog_gate": 1.0,
       "footing": 1.0,
       "image": 0.081,
@@ -527,7 +527,7 @@
     "name_input_ui": {
       "bgm": 1.0,
       "camera": 0.264,
-      "flags": 0.8,
+      "flags": 0.833,
       "fog_gate": 1.0,
       "footing": 1.0,
       "image": 0.421,
@@ -553,14 +553,14 @@
     "nivora_cutscene_delilas_intro": {
       "bgm": 1.0,
       "camera": 0.153,
-      "flags": 1.0,
+      "flags": 0.998,
       "fog_gate": 0.0,
       "footing": 1.0,
       "image": 0.363,
       "inventory": 1.0,
       "mode": 1.0,
       "party": 1.0,
-      "position": 0.0,
+      "position": 1.0,
       "scene": 1.0
     },
     "noa_levelup_field_post": {
@@ -719,7 +719,7 @@
     "rim_elm_zoom_intro": {
       "bgm": 1.0,
       "camera": 0.295,
-      "flags": 0.8,
+      "flags": 0.833,
       "fog_gate": 1.0,
       "footing": 1.0,
       "image": 0.242,
@@ -796,7 +796,7 @@
     "s2_rimelm_town01": {
       "bgm": 0.0,
       "camera": 0.293,
-      "flags": 0.6,
+      "flags": 0.5,
       "fog_gate": 0.0,
       "footing": 1.0,
       "inventory": 1.0,
@@ -846,7 +846,7 @@
     "son_arrival_from_doman": {
       "bgm": 0.0,
       "camera": 0.181,
-      "flags": 0.996,
+      "flags": 0.997,
       "fog_gate": 0.0,
       "footing": 0.254,
       "inventory": 1.0,
@@ -936,7 +936,7 @@
     "v0_1_post_battle_tetsu_town": {
       "bgm": 1.0,
       "camera": 1.0,
-      "flags": 0.941,
+      "flags": 0.944,
       "fog_gate": 1.0,
       "footing": 1.0,
       "image": 0.609,
@@ -975,7 +975,7 @@
     "vahn_walks_out": {
       "bgm": 1.0,
       "camera": 0.333,
-      "flags": 0.8,
+      "flags": 0.833,
       "fog_gate": 1.0,
       "footing": 1.0,
       "image": 0.099,

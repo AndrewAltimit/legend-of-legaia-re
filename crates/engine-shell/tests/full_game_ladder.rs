@@ -224,23 +224,22 @@ const SC_RAM_BASE: u32 = 0x8008_4140;
 const SC_LEN: usize = 0x2000;
 /// SC offset of the play-time counter (`0x80084570`).
 const SC_PLAY_TIME: usize = 0x430;
-/// SC offsets of the field position snapshot (`0x80084568` / `0x8008456C`),
-/// the XZ the mode-entry prologue parks and a save carries.
-const SC_SAVED_X: usize = 0x428;
-const SC_SAVED_Z: usize = 0x42C;
 /// SC offset of the system-flag bank (`0x80085758`) and its full extent up
 /// to the item window at `0x80085958`.
 const SC_SYSTEM_FLAGS: usize = 0x1618;
 const SC_SYSTEM_FLAGS_LEN: usize = 0x200;
-/// How much of that bank `legaia_save`'s story-flag window reaches
-/// (`RETAIL_STORY_FLAGS_OFFSET + RETAIL_STORY_FLAGS_SIZE - 0x1618`).
-const SAVE_WINDOW_SYSTEM_BYTES: usize = 0xA8;
+/// How much of that bank `legaia_save`'s story window reaches - the whole
+/// bank; part A fails on an anchor flag past it.
+const SAVE_WINDOW_SYSTEM_BYTES: usize = legaia_save::card::RETAIL_STORY_FLAGS_OFFSET
+    + legaia_save::card::RETAIL_STORY_FLAGS_SIZE
+    - SC_SYSTEM_FLAGS;
 
 struct Anchor {
     sc: Vec<u8>,
     scene: String,
-    /// Where to seat the player: the live position for a field-run state,
-    /// the SC position snapshot otherwise.
+    /// Where to seat the player when the save's own position snapshot is not
+    /// it: the live position of a field-run state. `None` lets the resume
+    /// path seat the party from the snapshot, as a card load does.
     seat: Option<(i16, i16)>,
     play_time: u32,
     flags: BTreeSet<u16>,
@@ -291,11 +290,9 @@ fn load_anchor(lib: &Path, a: &AnchorRef) -> Result<Anchor, String> {
                     continue;
                 };
                 let sc = sc.to_vec();
-                let x = i32_at(&sc, SC_SAVED_X) as i16;
-                let z = i32_at(&sc, SC_SAVED_Z) as i16;
                 return Ok(Anchor {
                     scene: ascii(&sc[0x408..0x410]),
-                    seat: Some((x, z)),
+                    seat: None,
                     play_time: i32_at(&sc, SC_PLAY_TIME) as u32,
                     flags: flags_of(&sc),
                     sc,
@@ -325,10 +322,7 @@ fn load_anchor(lib: &Path, a: &AnchorRef) -> Result<Anchor, String> {
             let seat = if mode == 0x03 {
                 legaia_mednafen::game_anchors::player_pos(&ram)
             } else {
-                Some((
-                    i32_at(&sc, SC_SAVED_X) as i16,
-                    i32_at(&sc, SC_SAVED_Z) as i16,
-                ))
+                None
             };
             Ok(Anchor {
                 scene,
@@ -559,49 +553,17 @@ fn seed(
             .map_err(|e| format!("lift SC block: {e:#}"))?;
     // Flags go in before the entry so the entry script's first slice and the
     // scene's gated spawns see the saved story state, then the host's own
-    // resume path runs (which applies the save again over the landing).
+    // resume path runs (which applies the save again over the landing, and
+    // seats the party at the save's position unless a live one is armed).
     session.host.world.load_full(sf.clone());
-    seed_full_system_bank(session, &a.sc);
     if let Some((x, z)) = a.seat {
         session.host.set_entry_seat(x, z);
     }
     let landing = session.resume_save(sf, &m.scene, opts);
-    // `load_full` only reaches the first 0xA8 bytes of the bank, and seats
-    // every non-empty record as a party member (see the ladder doc's bug
-    // list); restore the tail and the saved present party.
-    seed_full_system_bank(session, &a.sc);
-    seed_present_party(session, &a.sc);
     if !landing.entered_scene() {
         return Err(format!("resume landed {landing:?}"));
     }
     Ok(landing.scene().unwrap_or_default().to_string())
-}
-
-/// Write the whole retail system-flag bank (`0x80085758..0x80085958`) into the
-/// world. `load_full` seeds only the part `legaia_save`'s story window covers.
-fn seed_full_system_bank(session: &mut BootSession, sc: &[u8]) {
-    let bank = &sc[SC_SYSTEM_FLAGS..SC_SYSTEM_FLAGS + SC_SYSTEM_FLAGS_LEN];
-    let flags = &mut session.host.world.flags.system_flags;
-    if flags.len() < bank.len() {
-        flags.resize(bank.len(), 0);
-    }
-    flags[..bank.len()].copy_from_slice(bank);
-}
-
-/// SC offsets of the party count (`0x80084594`) and the present-party
-/// roster list (`0x80084598`).
-const SC_PARTY_COUNT: usize = 0x454;
-const SC_PARTY_IDS: usize = 0x458;
-
-/// Seat the save's present party. The SC block always carries four
-/// populated records (the New Game template seeds all of them), so a
-/// record-count reading makes a Vahn-alone save a three-member party.
-fn seed_present_party(session: &mut BootSession, sc: &[u8]) {
-    let n = usize::from(sc[SC_PARTY_COUNT]);
-    if (1..=4).contains(&n) {
-        let ids = sc[SC_PARTY_IDS..SC_PARTY_IDS + n].to_vec();
-        session.host.world.set_active_party(ids);
-    }
 }
 
 fn scene_name(session: &BootSession) -> String {
@@ -736,7 +698,6 @@ fn script_pad(session: &BootSession, f: usize) -> u16 {
 /// `EXIT_IDLE_TICKS` idle ticks); otherwise only a scene change ends it.
 fn run(session: &mut BootSession, budget: usize, stop_on_release: bool) -> Run {
     let mut idle = 0usize;
-    let mut prev_pad = 0u16;
     for f in 0..budget {
         if session.host.world.mode == SceneMode::Battle {
             if let Some(r) = drain_battle(session) {
@@ -745,21 +706,8 @@ fn run(session: &mut BootSession, budget: usize, stop_on_release: bool) -> Run {
             continue;
         }
         let pad = script_pad(session, f);
-        // The naming prompt is modal and its pad routing is the HOST's, not
-        // `BootSession::tick`'s: both play hosts feed each pad edge to
-        // `World::step_name_entry` and skip the world tick while it is open
-        // (`window/event_handler/redraw.rs`, `web-viewer::play_name_entry`).
-        // Mirror that, or the opening parks on its op-0x49 forever.
-        if session.host.world.name_entry_active() {
-            let edge = pad & !prev_pad;
-            prev_pad = pad;
-            session.host.world.step_name_entry(
-                legaia_engine_core::name_entry::NameEntryInput::from_pad_edge(edge),
-            );
-            session.host.world.frame = session.host.world.frame.wrapping_add(1);
-            continue;
-        }
-        prev_pad = pad;
+        // The naming prompt (the opening's op-0x49) takes this pad's edge
+        // inside `BootSession::tick`, as it does in both play hosts.
         session.host.world.set_pad(pad);
         match session.tick() {
             Ok(SceneTickEvent::SceneEntered { name }) => return Run::Entered(name),
@@ -1830,6 +1778,12 @@ fn part_a_spine_is_anchored_ordered_and_routed() {
                     .iter()
                     .filter(|&&f| usize::from(f >> 3) >= SAVE_WINDOW_SYSTEM_BYTES)
                     .count();
+                if tail > 0 {
+                    bad.push(format!(
+                        "{}: {tail} flag(s) lie past the save lift's story window",
+                        m.id
+                    ));
+                }
                 eprintln!(
                     "[anchor] {:24} {:8} {:44} scene={:8} t={:>8} flags={:4} past-window={tail}",
                     m.id,
