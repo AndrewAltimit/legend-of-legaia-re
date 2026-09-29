@@ -54,13 +54,14 @@
 //! ## What it cannot measure
 //!
 //! The seated tier places the player; it proves the doors, scripts and
-//! scene graph, not locomotion. The pad tier's fighter is the engine's own
-//! auto-resolve (`player_battle` off), not a command-menu player. Neither
-//! tier talks to NPCs, opens menus or buys anything, so a story beat that
-//! waits on a conversation reads as a stall at that beat - which is the
-//! finding, not a ladder defect. The route follows `0x3F` named scene
-//! changes only; a `0x3E` door warp or an FMV hand-off between two
-//! milestones is a missing edge.
+//! scene graph, not locomotion. Both tiers fight through the command ring
+//! with the pad (Attack / Auto; a sparring tutorial's lesson command). The
+//! seated tier talks to the NPCs whose records reach a flag the next anchor
+//! carries or a destination the route needs; neither tier opens menus or
+//! buys anything, so a story beat that waits on one reads as a stall at that
+//! beat. The route follows `0x3F` scene changes and FMV hand-offs; a
+//! transport an entry script spawns on arrival is a missing edge (see
+//! `docs/tooling/full-game-ladder.md`).
 //!
 //! ## Ratchet
 //!

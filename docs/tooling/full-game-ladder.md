@@ -15,7 +15,7 @@ game - to the ending credits - does the port get, and where does it stop.**
 - [Segments and tiers](#segments-and-tiers)
 - [How to run](#how-to-run)
 - [How to read a stall](#how-to-read-a-stall)
-- [Seeding, and what it corrects for](#seeding-and-what-it-corrects-for)
+- [Seeding](#seeding)
 - [What it cannot measure](#what-it-cannot-measure)
 
 ## How it relates to the other ladders
@@ -79,6 +79,15 @@ the anchor gained over its predecessor that a clean **partition-2** SET site in
 that scene writes, per the disc-wide system-flag census; entry-script writes
 are excluded because they fire on every visit. Part A prints the candidates.
 
+A milestone may also name `via` scenes: story waypoints the anchors show the
+retail run passed through between the previous milestone and this one, and
+that the cheapest route skips. They are visited in order, each with its beats
+pass played, before the route heads for the milestone's own scene. Each
+carries a comment naming the flags that put it there - Rogue Tower goes
+through `conc3` (whose P2[10] sets the `0x3E5` the `juui1` hand-off in `conc2`
+waits on), Zora Castle through `son`, Noaru Valley through `concend` and `jou`.
+Part A checks every waypoint is a disc scene.
+
 ## Segments and tiers
 
 One pad run cannot cross the game, so the ladder is **segmented**: segment `i`
@@ -100,11 +109,34 @@ player on the installed portal. Scripted departures along the way are
 followed. The engine does the scene change; the ladder only places the player.
 
 The **beats pass** runs once per scene, when the scene is the target and its
-reach flags are unset, or when a hop's door does not fire. It approaches every
-boss stager whose park gate is clear (the touch dispatch runs its placement
-record) and steps onto every gate-1 walk-on tile whose partition-2 record the
-live flags let spawn and that is not a door. Battles are fought with the pad
-(below).
+reach flags are unset, at a waypoint, or when a hop's door does not fire. It
+approaches every boss stager whose park gate is clear (the touch dispatch runs
+its placement record), then plays two kinds of beat in rounds, repeating while
+a round still gains flags, since each unlocks the other:
+
+- **Talks.** A talk NPC is spoken to when its own partition-1 record, or a
+  partition-2 record it spawns (op `0x44`, followed three levels), cleanly
+  SETs a still-clear flag the next anchor carries. The hand stands on a tile
+  beside the NPC, faces it so the retail interact probe (64 units ahead, the
+  72-unit box) lands on it, presses Cross, pages the conversation to its end
+  and steps back off, so the pulsing confirm cannot re-open the same talk.
+  A record that branches on where the player stands is tried from each side.
+- **Walk-ons.** The ladder steps onto every gate-1 walk-on tile whose
+  partition-2 record the live flags let spawn and that is not a door. The
+  tile must be the record's own - the dispatch takes the first
+  primary-then-fallback entry on a tile - and the approach tile must carry no
+  trigger of either kind, or a kind-0 teleport there arms a warp that carries
+  the player off the tile under test.
+
+A beat is skipped when its record sets a **latch** - a flag some partition-2
+C1 gate of the scene reads - that the next anchor does not carry: retail had
+not played it, and its latch shuts the record the story takes (`conc2` P2[12]
+latches `0x3E1`, the C1 gate of the `juui1` hand-off P2[20]).
+
+A hop no walk-on band carries is tried by talking to an NPC whose record, or
+a record it spawns, names the destination in a `0x3F` or spawns the record
+whose FMV hands off to it (`town01` P1[40] spawns P2[25], the mist-night
+movie). Battles are fought with the pad (below).
 
 The **pad tier** repeats the route from a fresh seed with the random-encounter
 roll armed. It walks to each door with a BFS over the collision lattice
@@ -115,7 +147,25 @@ beats.
 In both passes a scripted sequence gets Cross on a press-2-release-14 duty
 cycle, the naming prompt's Yes/No confirm gets Up first (it opens on No), and a
 battle gets `critical_path_replay`'s command-ring presses: Begin, Attack, Auto,
-confirm the target. Every one is a pad edge.
+confirm the target. Every one is a pad edge. Beyond that:
+
+- Field dialogue runs through the inline-script field-VM runner, as it does
+  in both play hosts (`World::toggles.use_vm_dialogue`); `BootSession` leaves
+  it off, and without it a talk only types its first segment.
+- A conversation picker takes option `k` on its `k`-th opening. Option 0 is
+  often "tell me again", a branch back to the same speech, so always
+  confirming the default loops a talk forever.
+- A record polling the held pad (`42 01 <i>`, the compass table - Rim Elm's
+  "stand here and press Down" doors) gets that direction held.
+- An op-`49 04` flag-window picker (the Uru Mais warp pads) gets the row
+  whose branch in the record names the hop's destination; the rows are drawn
+  flipped, so Up raises the selection.
+- A sparring tutorial validates each commit against its lesson, so the
+  fighter takes the ring's up arm (Item, using the first item) for the Items
+  lesson and its down arm for Spirit.
+
+`LEGAIA_FGL_TRACE=1` prints one line per played beat: what ran, how it ended
+and the flags it set.
 
 The **headline** is how many milestones a cold New Game reaches contiguously
 at `progresses` and at `pad` - the count of leading segments that each cleared
@@ -150,7 +200,8 @@ one level down from the tier that failed:
 | Line shape | Meaning |
 |---|---|
 | `entry script never released: <holder> at <ctx> pc=.. op=..` | The pad holder - cutscene timeline, dialogue, spawned record - parked on that instruction for a whole window. |
-| `hop A -> B: no walk-on door to B (...)` | Scene A's `0x3F` to B is carried by a talk, touch or scripted record; seating cannot trigger it. |
+| `hop A -> B: no walk-on door to B (...)` | Scene A's `0x3F` to B is carried by a talk, touch or scripted record; seating cannot trigger it, and no talk the ladder can find leads there. |
+| `no walk-on door to B; talks that lead there did not leave: ...` | A talk whose record (or a record it spawns) names B ran, and the scene stayed. |
 | `hop A -> B: no overworld portal to B installed (...)` | The overworld seeder installed no portal to B under the live flags; the portal set is printed. |
 | `N door(s) to B, none fired: ...; sites: P2[r] gates FAIL: 0x.. clear` | The door record's C1 / C2 story gates (retail `FUN_8003BDE0`) refuse it; the failing flags are named. |
 | `B is reached by an FMV hand-off from record(s) {(p, r)}` | The hop is a movie whose trigger record is not on a walk-on band. |
@@ -166,48 +217,47 @@ has that the engine never set, each with the disc sites that SET it
 (scene, partition, record) from the system-flag census. That is the "which
 flag was never set" answer, and usually names the record to look at next.
 
-## Seeding, and what it corrects for
+## Seeding
 
 The seed goes through the host's own resume path,
-`BootSession::resume_save`, so a segment is a load of a real save. Around it,
-the ladder applies three things that path does not, and each is a finding
-about the port rather than a feature of the ladder:
+`BootSession::resume_save`, so a segment is a load of a real save. The save
+import carries everything the SC block holds that a segment depends on: the
+whole system-flag bank up to the item array at `0x80085958`, the party count
+at `0x80084594` and the roster at `0x80084598`, and the field position
+snapshot at `0x80084568` / `0x8008456C`, where the resume seats the party.
 
-- **The whole system-flag bank.** `legaia_save`'s story window covers the SC
-  block at `0x14C0..0x16C0`, which reaches only the first `0xA8` bytes of the
-  bank at `0x80085758` (flags `0x000..0x53F`). The bank runs to `0x80085958`,
-  so every flag from `0x540` up is dropped by `World::load_full` - dozens per
-  late-game save. The ladder copies the full `0x200`-byte bank.
-- **The present party.** `Party::from_retail_sc_block` stops at the first
-  all-zero record, and the New Game template populates all four, so a save
-  made with Vahn alone loads as a multi-member party. The ladder seats the
-  party from the count at `0x80084594` and the roster list at `0x80084598`.
-- **The saved position.** A save carries the field position at `0x80084568` /
-  `0x8008456C` (the card-boot states' live positions match it exactly); the
-  resume path enters at the scene's own seat instead. The ladder arms
-  `SceneHost::set_entry_seat` with it.
+The one thing the ladder adds is for a **state** anchor taken mid-field: its
+live position is not the snapshot, so the ladder arms
+`SceneHost::set_entry_seat` with the live one. A card save seats from its own
+snapshot, as a card load does.
 
-The naming prompt's pad routing lives in the hosts, not in
-`BootSession::tick`: both play hosts feed each pad edge to
-`World::step_name_entry` and skip the world tick while the prompt is open. A
-headless driver that only ticks parks on the opening's op `0x49` forever, so
-the ladder mirrors the hosts' arm.
+`BootSession::tick` routes the naming prompt's pad edges to
+`World::step_name_entry_frame` and drains the per-tick queues, as both play hosts
+do, so a headless driver that only ticks crosses the opening's op `0x49`.
 
 ## What it cannot measure
 
 - The seated tier places the player. It proves doors, scripts, gates and the
   scene graph, not locomotion; the pad tier is the locomotion claim.
-- Neither tier talks to an NPC, opens a menu, buys, equips or uses an item. A
-  beat that waits on a conversation reads as a stall at that beat - a finding
-  about what drives the story, not a ladder defect. Tetsu's sparring match and
-  the mist-night FMV record are both of this kind.
+- The seated tier talks only to NPCs whose record reaches a flag the next
+  anchor carries or a destination the route needs, and picks conversation
+  options by rotation, not by reading them. Neither tier opens a menu, buys,
+  equips or uses an item outside a tutorial battle; a beat that waits on one
+  reads as a stall at that beat.
 - The pad fighter only swings. Boss fights a player wins with arts, magic and
   healing read as wipes.
 - The pad planner does not route through a crossing scene, so a door on the
   far side of a split walk component reads as `no walkable path`.
   `critical_path_replay` carries the `map01` / `suimon` crossing by hand.
-- Routes follow `0x3F` names and FMV hand-offs. A `0x3E` door warp carries a
-  scene-type selector, not a name, so its edges are absent.
+- Routes follow `0x3F` names and FMV hand-offs, and prefer walk-on bands. A
+  transport an entry script spawns on a story flag (`map01`'s P1[0] spawns
+  the P2[31] / P2[32] flights on `0x2C3` / `0x2C5`; `station`'s spawns the
+  P2[23] crossing to `map03` on `0x36B`) is an edge of the scene it leaves
+  **to**, taken on arrival, which the graph does not model. Op `0x3E` with
+  `op0 >= 100` is the minigame door-warp, not a transport, so no story edge is
+  lost with it.
+- Waypoints are hand-set in the spine from the anchors' flag differences; a
+  stretch whose retail path left no flag the census can place has none.
 - Chapter-1 anchors come from several sessions, some with cheat-seeded
   parties; they seed a segment faithfully to that session, not to one
   canonical playthrough.
