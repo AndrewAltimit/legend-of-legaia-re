@@ -257,7 +257,12 @@ reach = "scene"
 # concend portal (map03 P2[7]) opens on 0x4C8, the end of the chitei2 chain
 # the anchor also gained (0x4C4..0x4C9): the P2[13] Jette fight, then the
 # system script's post-battle spawns - so chitei2's beats come first.
-via = ["chitei2", "concend", "jou"]
+# Back from Drake the anchor went by land and cart, not by the Uru Mais warp:
+# it carries none of the warp's flags (the rikuroa P2[57] hop to uru spawns
+# only on 0x3BC, from urudre2 P2[9] then map01 P2[33]) and it gained
+# retockin P1[29]'s 0x64E, in Karisto - jiji, map02, then the station cart
+# (P1[15] spawns the P2[24] hop to station3, on map03).
+via = ["chitei2", "concend", "jou", "retockin"]
 anchor = { kind = "card", card = "playthrough-endgame-7saves.mcr", save = "PRO-04" }
 
 [[milestone]]

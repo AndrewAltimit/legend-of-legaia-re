@@ -480,6 +480,16 @@ impl DiscGraph {
     /// Cheapest scene route `from -> to` (walk-on edges first), both ends
     /// included.
     fn route(&self, from: &str, to: &str) -> Option<Vec<String>> {
+        self.route_avoiding(from, to, &BTreeSet::new())
+    }
+
+    /// [`Self::route`] without the `dead` edges.
+    fn route_avoiding(
+        &self,
+        from: &str,
+        to: &str,
+        dead: &BTreeSet<(String, String)>,
+    ) -> Option<Vec<String>> {
         use std::cmp::Reverse;
         use std::collections::BinaryHeap;
         if from == to {
@@ -505,6 +515,9 @@ impl DiscGraph {
                 continue;
             }
             for n in self.edges.get(&cur).into_iter().flatten() {
+                if dead.contains(&(cur.clone(), n.clone())) {
+                    continue;
+                }
                 let nd = d + self.cost(&cur, n);
                 if dist.get(n).is_none_or(|&best| nd < best) {
                     dist.insert(n.clone(), nd);
@@ -2752,7 +2765,12 @@ fn traverse(
     // Waypoints only steer the seated tier: the pad tier plays no beats.
     let mut via = 0usize;
     let vias: &[String] = if pad { &[] } else { &target.via };
-    for _ in 0..MAX_HOPS + vias.len() * 4 {
+    // Edges whose hop failed even after the scene's beats ran: the seated
+    // tier routes around them (see the `dead` arm below).
+    let mut dead: BTreeSet<(String, String)> = BTreeSet::new();
+    let mut steps = 0usize;
+    while steps < MAX_HOPS + vias.len() * 4 + dead.len() * 4 {
+        steps += 1;
         // Let whatever the last landing started finish first.
         let here = scene_name(session);
         match run_while_moving(session, SCRIPT_CEILING) {
@@ -2805,13 +2823,14 @@ fn traverse(
         // In the target scene with its beat unplayed, or stuck on a door:
         // play the scene's walkable beats once, then look again.
         let stuck_here = cur == target.scene && via >= vias.len();
+        let mut next = String::new();
         let hop = if stuck_here {
             Err(String::new())
         } else {
-            let Some(route) = graph.route(&cur, &goal) else {
+            let Some(route) = graph.route_avoiding(&cur, &goal, &dead) else {
                 return Err(format!("no scene route from {cur} to {goal}"));
             };
-            let next = route[1].clone();
+            next = route[1].clone();
             let hop = if pad {
                 pad_hop(session, graph, &next)
             } else {
@@ -2843,6 +2862,23 @@ fn traverse(
                     if let Some(s) = left {
                         trail.push(format!("{s}(beat)"));
                     }
+                    continue;
+                }
+                // The beats did not open the hop either: the edge is one
+                // the story no longer takes (a one-shot transport - `station`
+                // P2[23], the chapter-3 cart crash into `map03`, spawns only
+                // while `0x36C` is clear), or one it has not opened yet (the
+                // `rikuroa` P2[57] warp to `uru` waits on `0x3BC`). Route
+                // around it when another way exists.
+                if !pad
+                    && !stuck_here
+                    && dead.insert((cur.clone(), next.clone()))
+                    && graph.route_avoiding(&cur, &goal, &dead).is_some()
+                {
+                    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                        eprintln!("    [hop] {cur} -> {next} is dead; rerouting: {e}");
+                    }
+                    trail.push(format!("[{cur}->{next} dead]"));
                     continue;
                 }
                 if stuck_here {
@@ -3038,6 +3074,28 @@ fn part_a_spine_is_anchored_ordered_and_routed() {
         graph.edges.len(),
         graph.edges.values().map(BTreeSet::len).sum::<usize>()
     );
+    // `LEGAIA_FGL_EDGES=<scene>,...`: each scene's out- and in-edges.
+    if let Ok(names) = std::env::var("LEGAIA_FGL_EDGES") {
+        for n in names.split(',').map(str::trim) {
+            let out: Vec<String> = graph
+                .edges
+                .get(n)
+                .into_iter()
+                .flatten()
+                .map(|d| {
+                    let walk = graph.walk_on.contains(&(n.to_string(), d.clone()));
+                    format!("{d}{}", if walk { "" } else { "*" })
+                })
+                .collect();
+            let inn: Vec<&String> = graph
+                .edges
+                .iter()
+                .filter(|(_, ds)| ds.contains(n))
+                .map(|(s, _)| s)
+                .collect();
+            eprintln!("[edges] {n} -> {out:?} (* = scripted); <- {inn:?}");
+        }
+    }
 
     let mut anchors: Vec<Option<Anchor>> = Vec::new();
     let mut bad = Vec::new();
@@ -3165,6 +3223,46 @@ fn part_a_spine_is_anchored_ordered_and_routed() {
         }
     }
 
+    // `LEGAIA_FGL_GAINED=<id>,...`: every flag the milestone's anchor gained
+    // over its predecessor (and lost), with every disc SET site - the
+    // evidence a waypoint is chosen from.
+    if let Ok(ids) = std::env::var("LEGAIA_FGL_GAINED") {
+        let ids: BTreeSet<&str> = ids.split(',').map(str::trim).collect();
+        for (i, m) in spine.iter().enumerate() {
+            if i == 0 || !ids.contains(m.id.as_str()) {
+                continue;
+            }
+            let (Some(prev), Some(cur)) = (&anchors[i - 1], &anchors[i]) else {
+                continue;
+            };
+            let show = |f: &u16| {
+                let sites: Vec<String> = census
+                    .get(f)
+                    .into_iter()
+                    .flatten()
+                    .filter(|s| s.kind == FlagKind::Set)
+                    .map(|s| {
+                        format!(
+                            "{} P{}[{}]{}",
+                            s.scene_name,
+                            s.partition,
+                            s.record,
+                            if s.clean { "" } else { "?" }
+                        )
+                    })
+                    .collect();
+                format!("0x{f:03X} <- {}", sites.join(" / "))
+            };
+            eprintln!("[gained] {}:", m.id);
+            for f in cur.flags.difference(&prev.flags) {
+                eprintln!("    + {}", show(f));
+            }
+            for f in prev.flags.difference(&cur.flags) {
+                eprintln!("    - {}", show(f));
+            }
+        }
+    }
+
     // Routes for the pairs the order check skipped (an off-order anchor).
     for w in spine.windows(2) {
         if w[0].order_check && w[1].order_check {
@@ -3267,7 +3365,11 @@ fn part_b_full_game_ladder() {
             let shown: Vec<String> = r
                 .missing_flags
                 .iter()
-                .take(6)
+                .take(if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    usize::MAX
+                } else {
+                    6
+                })
                 .map(|f| {
                     let setters: Vec<String> = census
                         .get(f)

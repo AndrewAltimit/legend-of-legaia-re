@@ -90,7 +90,8 @@ carries a comment naming the flags that put it there - Rogue Tower goes
 through `conc3` (whose P2[10] sets the `0x3E5` the `juui1` hand-off in `conc2`
 waits on), Zora Castle through `son`, Noaru Valley back through its own start
 scene `chitei2` (whose chain ends on the `0x4C8` that opens the `map03` portal
-to `concend`), then `concend` and `jou`, and Sol Tower back through its own
+to `concend`), then `concend`, `jou` and `retockin` (the way back from Drake
+was by land and cart, not the Uru Mais warp), and Sol Tower back through its own
 start scene `dohaty` (whose P2[13] sets the `0x1D4` every `station`
 placement, the ticket seller among them, waits on). A waypoint whose own
 arrival script carries the party on counts as visited: `concend`'s P2[0] is
@@ -116,6 +117,11 @@ the player one tile off a walk-on door and then onto it, so the engine's own
 tile-change dispatch fires the door record; on an overworld it seats the
 player on the installed portal. Scripted departures along the way are
 followed. The engine does the scene change; the ladder only places the player.
+A hop that still fails after the scene's beats have run marks its edge dead,
+and the route is recomputed around it when another way exists: `station`'s
+only `0x3F` to `map03` is P2[23], the chapter-3 cart crash, which the entry
+script spawns only while `0x36C` is clear, so later crossings go through the
+ticket talk's hop to `station3`.
 
 The **beats pass** runs once per scene, when the scene is the target and its
 reach flags are unset, at a waypoint, or when a hop's door does not fire. It
