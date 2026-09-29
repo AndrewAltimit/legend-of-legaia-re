@@ -938,6 +938,21 @@ impl SceneHost {
                 // catalog above is the scene's own monsters, so a summon
                 // creature is not in it; the side-effect stager needs that
                 // one byte and nothing else off the creature.
+                if self.world.tables.summon_creatures.is_empty() {
+                    for spell_id in crate::summon::SERU_SUMMON_IDS {
+                        let Some(cid) = crate::summon::summon_creature_id(spell_id, &archive)
+                        else {
+                            continue;
+                        };
+                        if let Ok(Some(rec)) = legaia_asset::monster_archive::record(&archive, cid)
+                        {
+                            self.world.tables.summon_creatures.insert(
+                                spell_id,
+                                crate::monster_catalog::monster_def_from_record(&rec),
+                            );
+                        }
+                    }
+                }
                 if self.world.tables.summon_elements.is_empty() {
                     for spell_id in crate::summon::SERU_SUMMON_IDS {
                         let Some(cid) = crate::summon::summon_creature_id(spell_id, &archive)

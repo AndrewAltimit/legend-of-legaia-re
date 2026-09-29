@@ -1012,6 +1012,59 @@ fn player_summon_cast_matches_the_summon_kernel_composition() {
     );
 }
 
+/// The summon body resolves from the archive-backed
+/// `DiscTables::summon_creatures` when the scene catalog does not field the
+/// creature - which is almost every fight: the catalog holds only the scene's
+/// own monsters. Without it the cast fell back to the MP-scaled placeholder,
+/// which a boss's defence floors at 1 (the Dohati fight's Viguro casts).
+#[test]
+fn a_summon_rolls_from_its_archive_body_when_the_scene_lacks_the_creature() {
+    use crate::monster_catalog::{MonsterCatalog, MonsterDef};
+
+    fn build_world(archive_body: bool) -> World {
+        let mut world = World {
+            party: crate::world::PartyState {
+                party_count: 1,
+                ..Default::default()
+            },
+            ..World::default()
+        };
+        world.mode = SceneMode::Battle;
+        // The scene's catalog: its own enemy, and no Gimard.
+        let mut catalog = MonsterCatalog::new();
+        catalog.insert(MonsterDef::new(5, "Goblin", 120, 8));
+        world.tables.monster_catalog = catalog;
+        if archive_body {
+            let mut creature = MonsterDef::new(10, "Gimard", 100, 10);
+            creature.intel = 36;
+            creature.element = 2;
+            world.tables.summon_creatures.insert(0x81, creature);
+        }
+        world.actors[0].battle.max_hp = 400;
+        world.actors[0].battle.hp = 400;
+        world.actors[0].battle.liveness = 1;
+        world.battle.accuracy[0] = 25;
+        world.actors[1].battle.max_hp = 4000;
+        world.actors[1].battle.hp = 4000;
+        world.actors[1].battle.liveness = 1;
+        world.actors[1].battle_monster_id = Some(5);
+        world.battle.accuracy[1] = 12;
+        world.battle.defense[1] = 30;
+        world
+    }
+
+    assert_eq!(
+        build_world(false).player_summon_predamage(0, 1, 0x81),
+        None,
+        "no body anywhere: the placeholder path"
+    );
+    let rolled = build_world(true).player_summon_predamage(0, 1, 0x81);
+    assert!(
+        rolled.is_some_and(|d| d > 1),
+        "the archive body rolls the summon branch: {rolled:?}"
+    );
+}
+
 /// A monster with no castable spells always picks a physical strike: the
 /// action picker rolls `rand % (1 + 0) == 0`, so the magic branch is never
 /// taken regardless of the seed. It still targets a (single living) party

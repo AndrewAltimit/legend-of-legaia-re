@@ -114,10 +114,20 @@ pub struct DiscTables {
     /// [`crate::summon::summon_creature_id`]. It is a separate table from the
     /// monster catalog on purpose: the catalog only ever holds the *scene's*
     /// own monsters, so a summon creature is absent from it in almost every
-    /// fight, and the catalog-by-name lookup
-    /// (`World::summon_attacker_element`) answers `None` there. Empty on a
+    /// fight, and a catalog-by-name lookup answers `None` there. Empty on a
     /// disc-free host.
     pub summon_elements: std::collections::HashMap<u8, u8>,
+    /// Player Seru spell id (`0x81..=0x8B`) -> the **summon creature's** whole
+    /// record, as the catalog would hold it: the summon body the damage roll
+    /// reads its HP / INT / element from (`World::summon_creature_def`).
+    ///
+    /// Resolved alongside [`Self::summon_elements`] and kept apart from the
+    /// monster catalog for the same reason: the catalog holds only the
+    /// scene's own monsters, so a catalog-only lookup resolved a summon's
+    /// body only in the few scenes that also field that creature as an
+    /// enemy, and every other cast fell back to a placeholder roll. Empty on
+    /// a disc-free host.
+    pub summon_creatures: std::collections::HashMap<u8, crate::monster_catalog::MonsterDef>,
     /// Static `SCUS_942.54` per-monster **steal** table
     /// ([`legaia_asset::steal_table`], `DAT_80077828 + monster_id * 2`, fields
     /// `[chance, item]`). Install via
@@ -199,6 +209,7 @@ impl DiscTables {
             absorb_caption: None,
             defeat_text: None,
             summon_elements: std::collections::HashMap::new(),
+            summon_creatures: std::collections::HashMap::new(),
             steal_table: None,
             equipment_table: crate::battle_stats::EquipmentTable::new(),
             equip_stats: None,
