@@ -691,6 +691,9 @@ CANONICAL_LADDERS = [
     # VRAM tail (`80057914`), and a shipped Bezier stager advanced by
     # `World::step_world_frame_tail` (`801e45bc`).
     ("w8_world_tail_ladder", "legaia-engine-core"),
+    # An all-target spell committed on the play page from a played-through
+    # card, so the commit log copies the whole-row label (`801d57e8`).
+    ("w8_commit_log_all_target_page", "legaia-web-viewer"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 

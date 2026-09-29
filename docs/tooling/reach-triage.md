@@ -28,8 +28,8 @@ can and cannot execute at all.
 The report opens with three counts over the canonical union: the `// PORT:`
 anchors the static graph calls **live**, how many of those some run
 **entered**, and how many **no run entered** - the third being the set this
-page verdicts. Over the current union they are **859 live / 789 entered / 38
-never entered, across 83 ladders**, with both defect lists empty (and 39
+page verdicts. Over the current union they are **859 live / 790 entered / 37
+never entered, across 84 ladders**, with both defect lists empty (and 39
 addresses in the *not observable* bucket plus 2 const anchors, outside all
 three).
 
@@ -1342,7 +1342,6 @@ blocks a (b) row, or the disclosure state of a (c) row.
 | `battle_action.rs` | 1 | - | a `//!` module anchor, not a routine verdict - see [the added rows' note](#two-of-the-added-rows-were-the-anchor-mechanism-not-a-gap) | `801d5854` |
 | `battle_action/overlay_rng.rs` | 1 | (c) | disclosed | `801d0290` |
 | `battle_burst.rs` | 1 | (c) | disclosed | `801f30c4` |
-| `battle_cursor_pose.rs` | 1 | (a) | wired since the note below was written: `battle_commit_log::stage_commit_row` copies the placement on a commit whose target is a whole row (`AllEnemies` / `AllAllies`), and the commit log is drawn on both battle HUDs. No member commits an all-target command; the rest of the module is entered (`801d32bc` through `battle_member_step_back`, `801d5778` through the fights) or `REPLACED-BY` (`801d9ae8`) | `801d57e8` |
 | `battle_helpers.rs` | 1 | (c) | disclosed | `80046870` |
 | `battle_stream_slot.rs` | 2 | (c) | disclosed | `80055b4c` `801f17f8` |
 | `field_actor_timers.rs` | 2 | (a) | a scene script issuing the field-VM op that **spawns** the timer - `0x43 0C` for the cinematic wipe (`op43_alloc_scripted_actor`) and `0x43 09` for the three-axis tween (`op43_sub9_tween`). Both `step` bodies already run from the production world tick (`world/frame_tick.rs`), and the in-crate oracle that drives them (`world/tests/field_timer_actors.rs`) can never be a union member. The [op census](#the-op-census-names-both-carriers) finds **no coherent carrier for either op**, so this row is close to `(d)` - see the note under that section | `801dd4c4` `801dd784` |
@@ -1497,8 +1496,9 @@ under the ignore list's `unreferenced` rows and the port is removed
 
 This section describes the module before its wiring: `801d32bc` and
 `801d57e8` now have production callers (the ring cancel's member step and the
-battle commit log), and only `801d57e8` is still unentered - see the
-[`engine-vm` table](#engine-vm).
+battle commit log), and both are entered - `801d57e8` by an all-target
+commit on the play page (see
+[the rows no ladder converts](#rows-no-ladder-converts-and-why)).
 
 Most `(c)` rows on this page have *some* caller - a unit test, a sibling
 module, a `pub use` - and the finding is that none of them is a host.
@@ -2232,12 +2232,11 @@ one that does was declined for the reason given.
 | `80035bd0` | (a) | the SFX ring's replace-last op. `World::replace_last_sfx_cue` produces it (world-map sub-list and text box, the tile-board bonk, the Baka hub's confirm stings, the Incense notice), and only the hosts' SFX schedulers consume it - `AudioBgmDirector::apply_sfx_ring_ops` and the page's `play_sfx`. No headless member holds a scheduler (`enable_audio: false`), and no page member reaches one of those producers |
 | `8004c650` | (c) | `find_arts_record` carries `REPLACED-BY` (the typed arts catalog) and is live only through the permissive graph; no host is owed a call |
 | `801d31b0` | (a), render pass | `emit_strip`, reached through `engine-ui::move_strip::move_strip_prims` from both hosts' render passes, on the move-VM extension's sub-op `0x2C` strip requests. A composing member parked where a shipped move program issues `2F 2C` converts it; a headless one cannot |
-| `801d57e8` | (a) | see the [`engine-vm` table](#engine-vm): a commit whose target is a whole row |
 | `801d65f8` | (a), minigame | the Baka duel cameo's eye blit (`BakaDuelAssets::apply_wink`), run when a host builds the duel VRAM while the cameo's pose names a blit row. No member reaches a cameo frame |
 | `801db9c4` | (b) | see [the gate table](#gates-behind-the-b-rows) - disassembly-grounded |
 
-Three rows left through the headless frame tail and the ladder written on it,
-`w8_world_tail_ladder`. The two corpus rows did not need the ladder to be
+Four rows left. Three went through the headless frame tail and the ladder
+written on it, `w8_world_tail_ladder`, and one through a page ladder. The two corpus rows did not need the ladder to be
 reachable - they needed a headless run to execute the world side of the
 frame tail at all (see
 [the structural note](#what-a-pad-only-ladder-structurally-cannot-execute)).
@@ -2252,6 +2251,7 @@ on how far the full-game ladder happens to get:
 |---|---|---|
 | `80057914` | (a), no ladder enters the ending band | a shipped `43 12` stepped by the field VM, drained by `World::step_field_vram_effects` |
 | `801e45bc` | (a), census under a `NullHost` only | a shipped Bezier stager seated with `World::spawn_field_stager` and advanced by `World::step_world_frame_tail` |
+| `801d57e8` | (a), no member commits an all-target command | `w8_commit_log_all_target_page`: a played-through card (a cold start's ring refuses the Magic arm, status bit `0x1000`), the cheapest whole-row spell off the disc's spell table learned to the top of the lead's list, and the pad's Begin / Magic / row 0 - the commit lands the row label while the next member's ring is up |
 | `801d7a5c` | (a), minigame | a reel gesture matching a cadence template in the **world's** fishing tick - the Splash event is a cadence match while the lure waits, not the `Casting -> Fighting` edge the old verdict named |
 
 Two rows left the table above through page ladders, and both were closer
