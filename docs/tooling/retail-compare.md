@@ -230,8 +230,8 @@ The worst states are the product. For each, decide first whether the
 divergence is the instrument's - a [seeding gap](#the-seeding-model) - or
 the engine's: a camera channel at 1 with a bad image is a rendering
 question; a camera channel far off on a state whose label names a cutscene
-is script progress; a `bgm` miss on an arrival state is a timing question
-for a live probe, not a verdict.
+is script progress; a `bgm` miss on an arrival state is capture timing
+([below](#arrival-states-are-captured-before-the-town-runs)).
 
 ## Divergence shapes
 
@@ -244,7 +244,23 @@ Shapes the corpus separates, each with what it indicates:
 | an idle status panel in the engine frame only | the engine's panel timing / placement against retail's |
 | effect missing in the engine frame (save-point crystals, spell glows) | an actor or effect the fresh entry does not spawn, or one the port does not draw |
 | camera and dialogue off together | script progress - the seeding cannot resume a script |
-| retail BGM word `2000` on a town arrival | retail still holding the overworld track at capture; check with a live probe |
+| retail BGM word `2000` on a town arrival | the state was captured before the town's field init ran ([below](#arrival-states-are-captured-before-the-town-runs)) |
+| retail word held by a flag the entry script already consumed (`garmel`'s `0x196`, `rikuroa`'s `0x289`) | script progress: the track was started by a beat that has since cleared its trigger flag, so a card load would not restart it |
+| an engine walk-on record on a seated arrival (`kor5`'s `P2[4]`) | the seat lands on a trigger tile the retail player reached with the last-tile pair already set; a real arrival fires it too |
+
+### Arrival states are captured before the town runs
+
+`s2_rimelm_town01` and `doman_arrival_from_korb2` carry the town's scene
+label and field mode, but every other observable is still the overworld's:
+GTE `H = 368` (the value every `world_map`-class state holds, and no other
+`field`-class state), BGM word `2000`, the fog gate raised, and a player `Y`
+of `-96` - an overworld footing. `son_arrival_from_doman` agrees on the word,
+the gate and the footing. `son`'s scripts write no fog gate at all, and
+`FUN_8003AEB0` clears the gate on every scene load that is not a warp return
+(`sw zero,-0x47ac(v0)` at `0x8003B690`, behind the `_DAT_8007B8B8 != 2` test
+at `0x8003B510`; the states hold `0`), so a `son` whose loader had run could
+not hold it raised. The `bgm`, `fog_gate` and `footing` misses on these
+three states are capture timing, not engine verdicts.
 
 ## See also
 
