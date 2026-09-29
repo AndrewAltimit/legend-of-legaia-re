@@ -4077,4 +4077,44 @@ mod tests {
         assert!(w.step_field_frame_slice().is_none());
         assert!(!w.system_flag_test(0x0A));
     }
+
+    #[test]
+    fn a_seat_then_walk_in_one_slice_walks_from_the_seat() {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        use crate::field_channels::FieldChannel;
+        use legaia_engine_vm::field::FieldCtx;
+        // `CC 40 51 10 10 00 00` seats channel 0x40 at tile (16,16), then
+        // `C7 40 12 10 33` walks it to (18,16) - the shape of every cutscene
+        // that places an actor parked at the hide box and walks it in.
+        let bc = vec![
+            0xCC, 0x40, 0x51, 0x10, 0x10, 0x00, 0x00, 0xC7, 0x40, 0x12, 0x10, 0x33, 0x4A, 0x40,
+            0x00,
+        ];
+        let mut w = World::new();
+        w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
+        let hide = crate::world::FIELD_OFFMAP_HIDE_XZ;
+        w.field_vm.channels = vec![FieldChannel {
+            placement_index: 4,
+            ctx: FieldCtx {
+                script_id: 0x40,
+                world_x: hide as u16,
+                world_z: hide as u16,
+                ..FieldCtx::default()
+            },
+            record_offset: 0,
+            pc: 0,
+            done: false,
+            object_bind: false,
+        }];
+        w.npcs.positions.insert(4, (hide, hide));
+        w.step_cutscene_timeline();
+        let leg = w.npcs.motions.get(&4).expect("the walk leg started");
+        let (x, z) = (leg.state.world_x, leg.state.world_z);
+        assert_eq!(
+            (x, z),
+            (0x840, 0x840),
+            "the walk starts at the seat, not the hide box"
+        );
+        assert_eq!(leg.target, (0x940, 0x840));
+    }
 }

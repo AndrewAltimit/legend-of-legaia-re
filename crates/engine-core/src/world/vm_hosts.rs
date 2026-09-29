@@ -2468,6 +2468,18 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         {
             ctx.world_x = world_x;
             ctx.world_z = world_z;
+            // Publish the seat NOW, not at the slice's end-of-frame
+            // write-through: retail writes the actor's `+0x14`/`+0x18`
+            // directly, so a `C7 <id> ..` walk later in the SAME slice starts
+            // from here. Surfacing it only at slice end left the walk to read
+            // the previous position - the off-map hide box for an actor a
+            // cutscene places and then walks (`rugi`, `bylon`, `conc3`, ...),
+            // which then glided across the whole map.
+            self.world
+                .npcs
+                .positions
+                .insert(slot, (world_x as i16, world_z as i16));
+            self.world.npcs.motions.remove(&slot);
             if let Some(heading) =
                 crate::man_field_scripts::facing_index_to_engine_heading(depth_byte & 0xF)
             {
