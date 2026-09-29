@@ -552,3 +552,61 @@ fn a_crossing_under_a_running_helper_is_consumed() {
     assert_eq!(helpers(&host), 0, "standing on a spent tile fires nothing");
     eprintln!("[ran] taiku (16,28) crossing consumed under the P2[16] helper");
 }
+
+/// A crossing made while a script holds the player is **consumed**, not
+/// deferred: retail's dispatcher stores the new tile and returns under the
+/// `+0x10 & 0x80000` lock (`0x801D214C..0x801D2158` -> `0x801D2270`).
+/// `rugi`'s warp pads are the case that needs it - P2[0] seats the player on
+/// P2[1]'s pad at `(28, 106)`, whose record seats it back on P2[0]'s. When the
+/// port deferred the compare to the first free frame, the landing pad fired
+/// the moment the warp let go and the player bounced between the two pads
+/// for good.
+#[test]
+fn a_scripted_teleport_onto_a_trigger_tile_does_not_fire_it() {
+    let Some(mut host) = open_host() else {
+        return;
+    };
+    host.enter_field_scene("rugi", 0).expect("enter rugi");
+    for _ in 0..600 {
+        host.tick().expect("tick");
+    }
+    assert!(
+        !host.world.cutscene_timeline_active(),
+        "rugi's entry settles"
+    );
+    // Step onto P2[0]'s pad from the tile beside it.
+    seat_at_tile(&mut host.world, 33, 91);
+    host.tick().expect("tick");
+    seat_at_tile(&mut host.world, 34, 91);
+    let mut spawned = false;
+    for _ in 0..4 {
+        host.tick().expect("tick");
+        spawned |= host.world.cutscene_timeline_active();
+    }
+    assert!(spawned, "the pad at (34, 91) spawns its warp record");
+    let mut ticks = 0;
+    while host.world.cutscene_timeline_active() && ticks < 3000 {
+        host.tick().expect("tick");
+        ticks += 1;
+    }
+    assert!(
+        !host.world.cutscene_timeline_active(),
+        "the warp record finishes"
+    );
+    let slot = host.world.player_actor_slot.expect("player") as usize;
+    let ms = &host.world.actors[slot].move_state;
+    let landed = (ms.world_x >> 7, ms.world_z >> 7);
+    assert_eq!(
+        landed,
+        (28, 106),
+        "the warp seats the player on P2[1]'s pad"
+    );
+    // Standing still on the landing pad fires nothing.
+    for _ in 0..300 {
+        host.tick().expect("tick");
+        assert!(
+            !host.world.cutscene_timeline_active(),
+            "the landing pad must not fire until the player steps onto it"
+        );
+    }
+}

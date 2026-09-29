@@ -1992,9 +1992,7 @@ impl SceneHost {
                 }
             }
         }
-        if self.world.cutscene_timeline_active()
-            || self.world.name_entry_active()
-            || self.world.dialogue_owns_input()
+        if self.world.name_entry_active()
             || self.world.board.grid.is_some()
             || self.world.active_fmv().is_some()
         {
@@ -2006,6 +2004,31 @@ impl SceneHost {
         let Some(actor) = self.world.actors.get(slot as usize) else {
             return;
         };
+        // A script holding the player (retail: the `+0x10 & 0x80000` lock the
+        // context runner raises every frame it steps one) **consumes** a
+        // crossing rather than deferring it: on a new tile under the lock the
+        // dispatcher stores the tile and returns (`0x801D214C..0x801D2158` ->
+        // `0x801D2270`). So a record that teleports the player onto another
+        // trigger tile (`rugi`'s warp pads: P2[0] seats the player on P2[1]'s
+        // pad, which seats it back on P2[0]'s) does not fire the landing
+        // pad when it lets go. Deferring the compare instead fired it on the
+        // first free frame and bounced the player between the two pads for
+        // good. A stale compare (scene entry) is left stale, so an arrival
+        // tile still fires once the entry's script releases.
+        let script_owns = self.world.cutscene_timeline_active() || self.world.dialogue_owns_input();
+        if script_owns {
+            if self.last_trigger_tile.is_some() {
+                let quant = |w: i16| -> i32 { i32::from(w) >> 7 };
+                let (tx, tz) = (
+                    quant(actor.move_state.world_x),
+                    quant(actor.move_state.world_z),
+                );
+                if (0..=0x7F).contains(&tx) && (0..=0x7F).contains(&tz) {
+                    self.last_trigger_tile = Some((tx as u8, tz as u8));
+                }
+            }
+            return;
+        }
         // Retail's tile quantisation **in this dispatcher** is the raw
         // `world >> 7` (`FUN_801D1EC4` at `0x801d2068`: `sll 0x10; sra 0x17`
         // on each of `player+0x14` / `+0x18`), not the `(world - 0x40) >> 7`
@@ -2050,8 +2073,8 @@ impl SceneHost {
         // tiles it moves the player across. `taiku` P2[16], Zora Castle's
         // post-boss cutscene, seats the player on P2[15]'s walk-on tile;
         // dispatching there re-raised `0x393`, and P1[0] re-spawned P2[16]
-        // forever. (A modal timeline returned above, before the store: the
-        // port defers those crossings to the first free tick.)
+        // forever. (A modal timeline or conversation is consumed the same
+        // way, earlier in this dispatcher.)
         if locked || self.world.script_context_engages_player() {
             return;
         }
