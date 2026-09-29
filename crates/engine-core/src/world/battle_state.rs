@@ -366,6 +366,18 @@ pub struct BattleState {
     pub stage_id: u8,
     /// PROT 0968's own data words while it runs.
     pub arrival: crate::battle_stage_module::ArrivalState,
+    /// The backdrop actors' object table has had slot 1 copied over slot 0 -
+    /// the arrival's hand-back rebind
+    /// ([`crate::battle_stage_module::StageEffect::RebindBackdrop`]). Both
+    /// hosts build the stage shell from
+    /// [`crate::scene::SceneHost::battle_stage_object_indices`], which reads
+    /// it; reset at battle entry.
+    pub backdrop_rebound: bool,
+    /// Battle VRAM `MoveImage`s a stage module issued this frame, in order.
+    /// Applied to the host's battle VRAM by
+    /// [`crate::world::World::apply_battle_vram_moves`]; cleared at battle
+    /// entry.
+    pub vram_moves: Vec<crate::world::ScriptVramMove>,
     /// PROT 0969's own data words while it runs.
     pub form_transition: crate::battle_stage_module::FormTransitionState,
     /// The camera globals a stage module owns while it runs; `None` when the
@@ -597,6 +609,8 @@ impl BattleState {
             sideband: Default::default(),
             stage_id: 0,
             arrival: Default::default(),
+            backdrop_rebound: false,
+            vram_moves: Vec::new(),
             form_transition: Default::default(),
             stage_camera: None,
             stage_banner: None,

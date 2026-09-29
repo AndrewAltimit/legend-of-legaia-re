@@ -911,6 +911,11 @@ struct PlayWindowApp {
     /// textured prims; leaving them out punches holes in the arena shell.
     /// `None` when the stage shell has no untextured prims.
     battle_stage_color_mesh: Option<usize>,
+    /// The object list and second-copy transform the stage shell meshes were
+    /// built from (`SceneHost::battle_stage_object_indices`). A mid-fight
+    /// change - the evolved-Cort arrival's slot-0 rebind - rebuilds them
+    /// (`tick_battle_stage_shell`).
+    battle_stage_shell: Option<(Vec<usize>, legaia_asset::battle_backdrop::SecondCopy)>,
     /// Mesh index of the flat tiled ground grid drawn under the battle actors
     /// (retail's `func_0x801d02c0` grid), textured from the constant retail
     /// page/CLUT/UV-window address where the scene battle VRAM places its own

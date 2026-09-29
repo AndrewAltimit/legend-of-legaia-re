@@ -107,6 +107,35 @@ pub(crate) fn web_log(s: &str) {
     eprintln!("{s}");
 }
 
+/// The stage shell a [`BattleRender`] can rebuild its backdrop from.
+struct WebStageShell {
+    tmd: legaia_tmd::Tmd,
+    raw: Vec<u8>,
+    second: legaia_asset::battle_backdrop::SecondCopy,
+    objects: Vec<usize>,
+}
+
+/// The backdrop mesh for one object list: the shell drawn twice, the second
+/// copy under the per-stage transform. The disc shell is an authored HALF;
+/// the second copy closes the horizon. `append_scaled` reverses winding on a
+/// negative determinant (the mesh-level analogue of retail's `0x40000000 ->
+/// 0x48000000` draw-mode swap).
+fn stage_shell_mesh(
+    tmd: &legaia_tmd::Tmd,
+    raw: &[u8],
+    second: legaia_asset::battle_backdrop::SecondCopy,
+    objects: &[usize],
+) -> Option<BattleMesh> {
+    let tmd0 = legaia_asset::battle_backdrop::objects_tmd(tmd, objects);
+    let (mut vmesh, _oids, shading) = legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&tmd0, raw);
+    let mut flat = crate::packet_color::hybrid(&vmesh, &shading);
+    let first = vmesh.clone();
+    vmesh.append_scaled(&first, second.scale());
+    let flat_copy = flat.clone();
+    flat.extend(flat_copy);
+    (!vmesh.indices.is_empty()).then_some(BattleMesh { mesh: vmesh, flat })
+}
+
 /// One page-uploadable battle mesh in the play page's scene-mesh shape.
 struct BattleMesh {
     mesh: legaia_tmd::mesh::VramMesh,
@@ -187,6 +216,12 @@ pub(crate) struct BattleRender {
     /// page uploads this for the fight and restores the field VRAM after.
     pub(crate) vram: legaia_tim::Vram,
     backdrop: Option<BattleMesh>,
+    /// The stage shell (TMD + raw bytes + second-copy transform) and the
+    /// object list `backdrop` was built from
+    /// (`SceneHost::battle_stage_object_indices`); a mid-fight change - the
+    /// evolved-Cort arrival's slot-0 rebind - rebuilds `backdrop`
+    /// ([`LegaiaRuntime::tick_battle_stage_shell_web`]).
+    shell: Option<WebStageShell>,
     ground: Option<BattleMesh>,
     /// Ground-grid depth-cue far colour, display `0..1`, applied by the page
     /// as a **per-draw** cue on the grid mesh (the native `DrawCue` seam).
@@ -424,6 +459,7 @@ impl LegaiaRuntime {
         }
 
         let mut backdrop = None;
+        let mut shell = None;
         let mut ground = None;
         let mut grid_far = None;
         let outdoor = stage.as_ref().is_some_and(|st| st.outdoor);
@@ -437,30 +473,23 @@ impl LegaiaRuntime {
             ..
         }) = &stage
         {
-            // `_DAT_8007B64B` (region `+8` bit 5) keeps object 1.
-            let keep_object_1 = self
+            // `_DAT_8007B64B` (region `+8` bit 5) keeps object 1, and the
+            // evolved-Cort arrival's hand-back rebinds slot 0 to it - one
+            // shared kernel, `SceneHost::battle_stage_object_indices`.
+            let objects = self
                 .scene_host
                 .as_ref()
-                .is_some_and(|h| h.battle_stage_keeps_object_1());
-            let tmd0 = if keep_object_1 {
-                tmd.clone()
-            } else {
-                legaia_asset::battle_backdrop::drawn_objects_tmd(tmd)
-            };
-            let (mut vmesh, _oids, shading) =
-                legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&tmd0, raw);
-            let mut flat = crate::packet_color::hybrid(&vmesh, &shading);
-            // The disc shell is an authored HALF; the second copy under the
-            // per-stage transform closes the horizon. `append_scaled`
-            // reverses winding on a negative determinant (the mesh-level
-            // analogue of retail's 0x40000000 -> 0x48000000 draw-mode swap).
-            let first = vmesh.clone();
-            vmesh.append_scaled(&first, second.scale());
-            let flat_copy = flat.clone();
-            flat.extend(flat_copy);
-            if !vmesh.indices.is_empty() {
-                backdrop = Some(BattleMesh { mesh: vmesh, flat });
-            }
+                .map(|h| h.battle_stage_object_indices(tmd.objects.len()))
+                .unwrap_or_else(|| {
+                    legaia_asset::battle_backdrop::drawn_object_indices(tmd.objects.len())
+                });
+            backdrop = stage_shell_mesh(tmd, raw, *second, &objects);
+            shell = Some(WebStageShell {
+                tmd: tmd.clone(),
+                raw: raw.clone(),
+                second: *second,
+                objects,
+            });
             // Flat tiled ground grid under the actors (retail's
             // func_0x801d02c0), textured from the constant retail
             // page/CLUT/UV window the scene battle VRAM populates.
@@ -594,6 +623,7 @@ impl LegaiaRuntime {
         self.battle_render = Some(BattleRender {
             vram,
             backdrop,
+            shell,
             ground,
             grid_far,
             outdoor,
@@ -602,6 +632,36 @@ impl LegaiaRuntime {
             generation: self.battle_render_generation,
             faces,
         });
+    }
+
+    /// Stage-module render edits, mid-fight - the browser twin of the native
+    /// `tick_battle_stage_shell`: apply the battle `MoveImage`s a stage
+    /// module queued (`World::apply_battle_vram_moves`) to the battle VRAM,
+    /// and rebuild the backdrop when its object list changed
+    /// (`SceneHost::battle_stage_object_indices`), bumping the generation so
+    /// the page re-uploads the battle scene.
+    pub(crate) fn tick_battle_stage_shell_web(&mut self) {
+        let Some(host) = self.scene_host.as_mut() else {
+            return;
+        };
+        let Some(br) = self.battle_render.as_mut() else {
+            host.world.battle.vram_moves.clear();
+            return;
+        };
+        if host.world.apply_battle_vram_moves(&mut br.vram) {
+            self.battle_vram.mark_dirty();
+        }
+        let Some(sh) = br.shell.as_mut() else {
+            return;
+        };
+        let objects = host.battle_stage_object_indices(sh.tmd.objects.len());
+        if objects == sh.objects {
+            return;
+        }
+        br.backdrop = stage_shell_mesh(&sh.tmd, &sh.raw, sh.second, &objects);
+        sh.objects = objects;
+        self.battle_render_generation = self.battle_render_generation.wrapping_add(1);
+        br.generation = self.battle_render_generation;
     }
 
     /// Drop the battle render state on the `Battle -> Field` edge. The page

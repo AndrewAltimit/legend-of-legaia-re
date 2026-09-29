@@ -116,7 +116,7 @@ impl BattleVramChannel {
     }
 
     /// Mark the battle VRAM as changed since the page's last upload.
-    fn mark_dirty(&mut self) {
+    pub(crate) fn mark_dirty(&mut self) {
         if !self.dirty {
             self.serial = self.serial.wrapping_add(1);
         }
@@ -157,6 +157,7 @@ impl LegaiaRuntime {
         self.tick_battle_face_stamps_web();
         self.tick_battle_status_clut_web();
         self.tick_battle_effect_clut_web();
+        self.tick_battle_stage_shell_web();
         if entry_tick {
             // The page uploads the whole battle VRAM on the generation edge
             // this same frame; the entry-tick stamps are already in those

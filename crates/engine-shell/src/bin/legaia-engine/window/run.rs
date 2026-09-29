@@ -1287,6 +1287,7 @@ pub(super) fn cmd_play_window_with_record(
         summon_actor_slot: None,
         battle_stage_mesh: None,
         battle_stage_color_mesh: None,
+        battle_stage_shell: None,
         battle_ground_mesh: None,
         battle_ground_cue_far: None,
         battle_stage_outdoor: false,

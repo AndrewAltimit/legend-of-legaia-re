@@ -43,4 +43,21 @@ impl SceneHost {
             .and_then(|s| s.keep_backdrop_object_1)
             .unwrap_or(false)
     }
+
+    /// The backdrop TMD objects the two stage actors draw right now, in draw
+    /// order: battle init's object edit (object 1 dropped unless
+    /// [`Self::battle_stage_keeps_object_1`]) and, once the evolved-Cort
+    /// arrival has handed back, its slot-0 rebind
+    /// ([`crate::world::BattleState::backdrop_rebound`]). The one kernel both
+    /// hosts build the stage shell from; a host rebuilds its shell when the
+    /// list changes mid-fight.
+    ///
+    /// REF: FUN_800513F0, FUN_801F69F4
+    pub fn battle_stage_object_indices(&self, object_count: usize) -> Vec<usize> {
+        legaia_asset::battle_backdrop::drawn_object_indices_rebound(
+            object_count,
+            self.battle_stage_keeps_object_1(),
+            self.world.battle.backdrop_rebound,
+        )
+    }
 }

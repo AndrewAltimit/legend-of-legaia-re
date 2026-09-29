@@ -492,6 +492,7 @@ impl PlayWindowApp {
                 self.tick_battle_face_stamps();
                 self.tick_battle_status_clut();
                 self.tick_battle_effect_clut();
+                self.tick_battle_stage_shell();
             }
             // World-map ocean shimmer: cycle the 13-frame CLUT animation
             // (self-gates to None off the world map).

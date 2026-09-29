@@ -1370,19 +1370,34 @@ impl World {
     /// PORT: FUN_80058490 (the sub-0x60 consumer: `jal` at 0x801E1B84 in the
     /// handler arm 0x801E1B28..0x801E1B90 of FUN_801DE840)
     pub fn apply_script_vram_moves(&mut self, vram: &mut legaia_tim::Vram) -> bool {
-        let mut wrote = false;
-        for mv in std::mem::take(&mut self.ambient.script_vram_moves) {
-            let (sx, sy) = mv.src;
-            let (w, h) = mv.size;
-            let (dx, dy) = mv.dst;
-            if w <= 0 || h <= 0 || sx < 0 || sy < 0 || dx < 0 || dy < 0 {
-                continue;
-            }
-            vram.move_image(
-                sx as u16, sy as u16, w as u16, h as u16, dx as u16, dy as u16,
-            );
-            wrote = true;
-        }
-        wrote
+        let moves = std::mem::take(&mut self.ambient.script_vram_moves);
+        apply_vram_moves(moves, vram)
     }
+
+    /// Apply the battle `MoveImage`s a stage module queued
+    /// ([`crate::world::BattleState::vram_moves`]) to the host's battle VRAM,
+    /// in order. Both hosts call it once per battle frame; returns `true`
+    /// when any texel moved (the host re-uploads).
+    pub fn apply_battle_vram_moves(&mut self, vram: &mut legaia_tim::Vram) -> bool {
+        let moves = std::mem::take(&mut self.battle.vram_moves);
+        apply_vram_moves(moves, vram)
+    }
+}
+
+/// The shared `MoveImage` kernel behind the field and battle queues.
+fn apply_vram_moves(moves: Vec<ScriptVramMove>, vram: &mut legaia_tim::Vram) -> bool {
+    let mut wrote = false;
+    for mv in moves {
+        let (sx, sy) = mv.src;
+        let (w, h) = mv.size;
+        let (dx, dy) = mv.dst;
+        if w <= 0 || h <= 0 || sx < 0 || sy < 0 || dx < 0 || dy < 0 {
+            continue;
+        }
+        vram.move_image(
+            sx as u16, sy as u16, w as u16, h as u16, dx as u16, dy as u16,
+        );
+        wrote = true;
+    }
+    wrote
 }

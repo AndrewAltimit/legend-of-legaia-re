@@ -497,7 +497,7 @@ data band (`0x801F73F8`, stepped by the scratchpad frame-delta byte
 | `1` | Spawns three more records (`0x72D0` / `0x7320` / `0x7388`), then a `FUN_801D829C` camera move framed on the seat's live `+0x34` / `+0x38` / `+0x46`, and sets the seat's tint blend `+0x0C = 0x1000`, its anim rate `+0x21D = 1` and `+0x36 = 0x600`. |
 | `2`..`4` | Each walks a different camera axis by the frame delta (`0x800840C0`, `0x800840BC`, the scroll trio `0x8007B790` / `0x92`) and spawns record `0x73A4` on every eighth frame, ending in its own `FUN_801D829C` framing. Phase `4` also sets `ctx[+0x243] = 1` and `ctx[+0x278] = 2`. |
 | `5` | Measures a string with `FUN_80035F04` and draws it centred through `FUN_8003541C` at `(0xA0 - width/2, 0x96)` - the boss-name banner - then sets `ctx[+0x278] = 3`. |
-| `6` | The hand-back: clears `ctx[+0x243]`, `ctx[+0x278]`, `ctx[+0x6D6]`, `ctx[+0x289]` **and the stage id `0x8007B64A`** that paged the module in, sets the seat's anim rate `+0x21D = 8`, writes flow state `ctx[+0x06] = 0x0B`, rebinds the two model records at `ctx[+0x106C]` / `ctx[+0x1070]`, runs two move-VM effect trees through `FUN_80021B04`, and pushes one rect through `FUN_80058490`. |
+| `6` | The hand-back: clears `ctx[+0x243]`, `ctx[+0x278]`, `ctx[+0x6D6]`, `ctx[+0x289]` **and the stage id `0x8007B64A`** that paged the module in, sets the seat's anim rate `+0x21D = 8`, writes flow state `ctx[+0x06] = 0x0B`, rebinds the two backdrop records at `ctx[+0x106C]` / `ctx[+0x1070]`, runs two move-VM effect trees through `FUN_80021B04`, and pushes one rect through `FUN_80058490` ([below](#the-arrival-re-dresses-the-arena)). |
 
 **Entry 969 - `FUN_801F69D8`, four phases.** No head table: the image opens
 straight on its prologue and branches four ways on the same `ctx[+0x289]`.
@@ -513,6 +513,33 @@ countdown (`0x801F70DC`) with the fade block at `0x801C9070`; phase `2` then
 blanks all four leading actor slots (`+0x04 = 0`, `+0x21C = 0xFF`) and sets
 both model records' `+0x78 = 0x1000`. Phase `3` waits out the countdown and
 calls `FUN_8003ED04(0)`.
+
+#### The arrival re-dresses the arena
+
+The evolved-Cort stage (`jouine`, variant 2, PROT 693) is a two-object shell,
+and battle init's object edit leaves the two backdrop actors drawing object 0
+only - a wall on texture page 12 through CLUT row 473, pink-brown on its idle
+palette. Phase `6` changes what the arena is, in three steps:
+
+- **The rebind** (`0x801F7148..0x801F7180`): for both records, `t = rec[+0x44]`
+  (the object table `[count, slot 0, slot 1, ...]`) and `t[+4] = t[+8]` -
+  slot 1 over slot 0, count untouched. Battle init's shift left slot 1
+  holding object 1, so from here on the shell draws **object 1 alone**: the
+  flesh shell on page 13 through CLUT `(32, 479)`, the dark-red veins.
+- **The effect trees**: `FUN_80021B04` over `0x80078740` and `0x80078760`.
+  The first seats a mode-4 [VRAM-rect scroller](field-ambient-fx.md#the-vram-rect-scroller-render-mode-4)
+  on `(0x340, 0, 0x3F, 0xBF)`, the flesh texels, stepping up one row per
+  period; the second animates the CLUT `(32, 479)` the flesh samples.
+- **The rect push**: `MoveImage` of the empty `16 x 64` strip at
+  `(0x340, 0xC0)` onto `(0x370, 0xC0)` - the ground grid's tile window, so the
+  procedural floor samples only transparent texels and the flesh shell is the
+  only ground.
+
+The engine ports the rebind and the rect push
+(`StageEffect::RebindBackdrop` / `StageEffect::MoveImage`); both hosts build
+the shell from `SceneHost::battle_stage_object_indices` and apply the move
+through `World::apply_battle_vram_moves`. The two effect trees are not staged,
+so the engine's flesh neither scrolls nor pulses.
 
 So 968 is the **arrival** staging (camera walk in, cue, banner, hand back to
 flow state `0x0B`) and 969 is the **form transition** (drop the seat to 1 HP,
