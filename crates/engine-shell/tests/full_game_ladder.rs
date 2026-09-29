@@ -80,7 +80,7 @@
 //! milestones (the baseline is then not asserted); `LEGAIA_FGL_NO_PAD=1`
 //! skips the pad tier.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 
@@ -1970,6 +1970,117 @@ thread_local! {
         std::cell::RefCell::new(HashMap::new());
 }
 
+thread_local! {
+    /// Set while [`cross_over`] walks back out of a crossing scene: the
+    /// pad hop then takes the reachable door farthest from where the player
+    /// came in, instead of the nearest (which is the one it came in by).
+    static FAR_DOOR: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// A detour through a **crossing scene**: `cur`'s door toward `goal` lies in
+/// another walk component of `cur` (`map01`'s north and south halves meet
+/// only through `suimon`). A player crosses by entering a scene `X` that
+/// `cur` has a door to and that has a door back, and leaving `X` by its
+/// other door. Each candidate `X` is tried by pad hop in turn - an
+/// unreachable door refuses before any walking - and `Ok(scene)` is where
+/// the round trip landed.
+fn cross_over(
+    session: &mut BootSession,
+    graph: &DiscGraph,
+    cur: &str,
+    goal: &str,
+) -> Result<String, String> {
+    let back = |x: &String| graph.edges.get(x).is_some_and(|e| e.contains(cur));
+    let cands: Vec<String> = graph
+        .edges
+        .get(cur)
+        .into_iter()
+        .flatten()
+        .filter(|x| x.as_str() != goal && x.as_str() != cur && back(x))
+        .cloned()
+        .collect();
+    let mut tried = Vec::new();
+    // A crossing that brings the player back to the side it left is taken
+    // once more with its own beats played first: which side a crossing
+    // delivers to can be story state (`suimon`'s water gate, `0x27B`,
+    // switches the `map01` entry to the southern chamber).
+    let mut queue: VecDeque<(String, bool)> = cands.into_iter().map(|x| (x, false)).collect();
+    while let Some((x, again)) = queue.pop_front() {
+        let r = pad_hop(session, graph, &x);
+        if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+            let (px, pz) = player_xz(session);
+            eprintln!(
+                "    [cross] {cur} via {x}: {:?} at {:?}",
+                r.as_ref()
+                    .map_err(|e| e.chars().take(120).collect::<String>()),
+                dispatch_tile(px, pz)
+            );
+        }
+        match r {
+            Ok(entered) if entered == x => {
+                match run_while_moving(session, SCRIPT_CEILING) {
+                    Run::Entered(s) => return Ok(s),
+                    Run::Released => {}
+                    other => return Err(format!("entering crossing {x}: {other:?}")),
+                }
+                // On the second visit, play the crossing's own beats first:
+                // a sluice gate or a lever is a story beat like any other.
+                if again {
+                    let mut log = Vec::new();
+                    if let Some(s) = play_beats(session, &mut log)
+                        .map_err(|b| format!("in crossing {x}, playing beats: {b}"))?
+                    {
+                        return Ok(s);
+                    }
+                }
+                FAR_DOOR.with(|f| f.set(true));
+                let r = pad_hop(session, graph, cur);
+                FAR_DOOR.with(|f| f.set(false));
+                match r {
+                    // Back in `cur`: done when the goal's door is now in
+                    // reach, else the next candidate from here.
+                    Ok(s) if s == cur => {
+                        if door_in_reach(session, graph, goal) {
+                            return Ok(s);
+                        }
+                        if !again {
+                            queue.push_front((x.clone(), true));
+                        }
+                        tried.push(format!("{x}: back on the same side"));
+                    }
+                    Ok(s) => return Ok(s),
+                    Err(e) => return Err(format!("crossing {x} back to {cur}: {e}")),
+                }
+            }
+            Ok(other) => return Ok(other),
+            Err(e) => tried.push(format!("{x}: {}", e.chars().take(80).collect::<String>())),
+        }
+    }
+    Err(format!(
+        "no crossing scene reachable ({})",
+        tried.join("; ")
+    ))
+}
+
+/// Can the pad walk reach a door of the loaded scene toward `dest`?
+fn door_in_reach(session: &BootSession, graph: &DiscGraph, dest: &str) -> bool {
+    let Ok(doors) = doors_to(session, graph, dest) else {
+        return false;
+    };
+    let avoid = hazards(session, dest);
+    let (x, z) = player_xz(session);
+    let from = cell_of(x, z);
+    doors.iter().any(|d| {
+        let g = (i16::from(d.tile.0), i16::from(d.tile.1));
+        plan_path(session, from, g, &avoid)
+            .and_then(|p| p.last().copied())
+            .is_some_and(|c| {
+                let t = tile_of(cell_center(c).0, cell_center(c).1);
+                i32::from((t.0 - g.0).abs() + (t.1 - g.1).abs()) <= DOOR_APPROACH_SLACK
+            })
+    })
+}
+
 /// Is `b` one lattice step from `a`?
 fn adjacent(a: Cell, b: Cell) -> bool {
     (a.0 - b.0).abs() + (a.1 - b.1).abs() <= 1
@@ -2195,21 +2306,73 @@ fn pad_hop(session: &mut BootSession, graph: &DiscGraph, dest: &str) -> Result<S
     };
     HOP_DEST.with(|d| *d.borrow_mut() = Some(dest.to_string()));
     let avoid = hazards(session, dest);
+    if std::env::var_os("LEGAIA_FGL_WALK_DEBUG").is_some() {
+        let tiles: Vec<(u8, u8)> = doors.iter().map(|d| d.tile).collect();
+        eprintln!(
+            "      [hop] {} -> {dest}: door tiles {tiles:?}",
+            scene_name(session)
+        );
+        let w = &session.host.world;
+        let (px, pz) = player_xz(session);
+        let me = dispatch_tile(px, pz);
+        let warps = teleports(session);
+        for tz in 0..128i32 {
+            let row: String = (0..128i32)
+                .map(|tx| {
+                    if (tx, tz) == me {
+                        return '@';
+                    }
+                    if tiles.contains(&(tx as u8, tz as u8)) {
+                        return 'G';
+                    }
+                    if warps.contains_key(&(tx, tz)) {
+                        return 'T';
+                    }
+                    let walls = [(32, 32), (96, 32), (32, 96), (96, 96)]
+                        .iter()
+                        .filter(|&&(dx, dz)| {
+                            w.field_tile_is_wall((tx * 128 + dx) as i16, (tz * 128 + dz) as i16)
+                        })
+                        .count();
+                    ['.', ',', '+', '*', '#'][walls]
+                })
+                .collect();
+            if row.chars().any(|c| c != '#') {
+                eprintln!("      [map {tz:3}] {row}");
+            }
+        }
+    }
     let (sx, sz) = player_xz(session);
     let start = cell_of(sx, sz);
     // The door the lattice gets closest to.
-    let goal = doors
+    let misses: Vec<((i16, i16), i32)> = doors
         .iter()
         .map(|d| (i16::from(d.tile.0), i16::from(d.tile.1)))
-        .min_by_key(|&g| {
-            plan_path(session, start, g, &avoid)
+        .map(|g| {
+            let miss = plan_path(session, start, g, &avoid)
                 .and_then(|p| p.last().copied())
                 .map_or(i32::MAX, |c| {
                     let t = tile_of(cell_center(c).0, cell_center(c).1);
                     i32::from((t.0 - g.0).abs() + (t.1 - g.1).abs())
-                })
+                });
+            (g, miss)
         })
-        .expect("doors_to is non-empty");
+        .collect();
+    let me = tile_of(sx, sz);
+    let far = |g: &(i16, i16)| i32::from((g.0 - me.0).abs() + (g.1 - me.1).abs());
+    // On a crossing ([`cross_over`]) the way back is the reachable door
+    // farthest from the one the player came in by.
+    let goal = if FAR_DOOR.with(std::cell::Cell::get) {
+        misses
+            .iter()
+            .filter(|(_, m)| *m <= DOOR_APPROACH_SLACK)
+            .max_by_key(|(g, _)| far(g))
+            .or_else(|| misses.iter().min_by_key(|(_, m)| *m))
+    } else {
+        misses.iter().min_by_key(|(_, m)| *m)
+    }
+    .map(|(g, _)| *g)
+    .expect("doors_to is non-empty");
     let dist = |a: (i16, i16)| i32::from((a.0 - goal.0).abs() + (a.1 - goal.1).abs());
     // A door the collision lattice cannot get near is a different finding
     // from a walk that stalls on the way: the scene is split into walk
@@ -2227,7 +2390,14 @@ fn pad_hop(session: &mut BootSession, graph: &DiscGraph, dest: &str) -> Result<S
             ));
         }
     }
-    match pad_walk(session, goal, &avoid, 0)? {
+    // On the walk, stay off the live walk-on bands as well as the wrong
+    // doors: a band's record is a story beat (or a scripted game over) the
+    // route does not want.
+    let mut walk_avoid = pad_avoid(session, Some(goal));
+    for d in &doors {
+        walk_avoid.remove(&(i32::from(d.tile.0), i32::from(d.tile.1)));
+    }
+    match pad_walk(session, goal, &walk_avoid, 0)? {
         Walk::Entered(s) => Ok(s),
         Walk::Arrived => {
             // On the band: keep pressing into the door while its record
@@ -2478,9 +2648,20 @@ fn pad_walk(
     let mut path = Vec::new();
     for _ in 0..PAD_LEG_FRAMES {
         if session.host.world.mode == SceneMode::Battle {
+            let trace = std::env::var_os("LEGAIA_FGL_TRACE").is_some();
+            if trace {
+                eprintln!(
+                    "    [battle] {} at start: {}",
+                    scene_name(session),
+                    battle_snapshot(session)
+                );
+            }
             FLEE_ENCOUNTERS.with(|f| f.set(true));
             let r = drain_battle(session);
             FLEE_ENCOUNTERS.with(|f| f.set(false));
+            if trace {
+                eprintln!("    [battle] ended: {r:?}");
+            }
             if let Some(r) = r {
                 return Err(format!("battle on the walk to {goal:?}: {r:?}"));
             }
@@ -2537,7 +2718,16 @@ fn pad_walk(
         }
         let w = &session.host.world;
         if w.cutscene_timeline_active() || w.dialogue_owns_input() || w.active_fmv().is_some() {
-            match run_while_moving(session, DEEP_EXIT_TICKS) {
+            let site = format!("{} at {}", holder(session), park_site(session));
+            let r = run_while_moving(session, DEEP_EXIT_TICKS);
+            if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                eprintln!(
+                    "    [walk-script] tile {:?}: {site} -> {r:?}; game_over {}",
+                    here(session),
+                    session.host.world.game_over
+                );
+            }
+            match r {
                 Run::Entered(s) => return Ok(Walk::Entered(s)),
                 Run::Released => {}
                 other => return Err(format!("scripted sequence on the walk: {other:?}")),
@@ -2563,12 +2753,16 @@ fn pad_walk(
                 let w = &session.host.world;
                 if std::env::var_os("LEGAIA_FGL_WALK_DEBUG").is_some() {
                     // 64-unit wall sub-cells around the player, Z rows.
-                    for dz in -8i16..=8 {
-                        let row: String = (-8i16..=8)
+                    for dz in -24i16..=24 {
+                        let row: String = (-24i16..=24)
                             .map(|dx| {
                                 let (x, z) = (px + dx * 64, pz + dz * 64);
                                 if dx == 0 && dz == 0 {
                                     '@'
+                                } else if dispatch_tile(x, z)
+                                    == (i32::from(goal.0), i32::from(goal.1))
+                                {
+                                    'G'
                                 } else if w.field_tile_is_wall(x, z) {
                                     '#'
                                 } else {
@@ -2835,6 +3029,9 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
             }
             ran += 1;
             let f0 = flags_of_world(session);
+            if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                eprintln!("    [talk] {name} P1[{slot}] ...");
+            }
             let r = talk_to(session, slot);
             let r = fight_committed(session, r);
             trace_beat(session, &f0, || format!("{name} talk P1[{slot}] -> {r:?}"));
@@ -3638,6 +3835,7 @@ fn traverse(
     trail: &mut Vec<String>,
 ) -> Result<(), String> {
     let mut beaten: BTreeSet<String> = BTreeSet::new();
+    let mut crossed: BTreeSet<(String, String)> = BTreeSet::new();
     // Both tiers play the same beats and waypoints; the pad tier plays them
     // with pad input only ([`PAD_HAND`]).
     PAD_HAND.with(|h| h.set(pad));
@@ -3721,12 +3919,28 @@ fn traverse(
         };
         match hop {
             Ok(entered) => trail.push(entered),
+            Err(e)
+                if pad
+                    && e.contains("no walkable path")
+                    && crossed.insert((cur.clone(), goal.clone())) =>
+            {
+                match cross_over(session, graph, &cur, &goal) {
+                    Ok(s) => trail.push(format!("{s}(crossing)")),
+                    Err(why) => {
+                        if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                            eprintln!("    [cross] {e}; {why}");
+                        }
+                        // Try the scene's beats next, as for any failed hop.
+                        beaten.remove(&cur);
+                        crossed.insert((cur.clone(), goal.clone()));
+                        continue;
+                    }
+                }
+            }
             Err(e) => {
                 if beaten.insert(cur.clone()) {
-                    // The hop that sent the pass to the beats: with the
-                    // pass's own failure it would otherwise go unreported.
-                    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() && !e.is_empty() {
-                        eprintln!("    [hop] {e}");
+                    if !e.is_empty() && std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                        eprintln!("    [hop] {e}; playing {cur}'s beats");
                     }
                     let mut log = Vec::new();
                     // Only the milestone's own beats pass may stop short of
@@ -3735,7 +3949,8 @@ fn traverse(
                     BEAT_TARGET.with(|t| *t.borrow_mut() = aim);
                     let left = play_beats(session, &mut log);
                     BEAT_TARGET.with(|t| *t.borrow_mut() = None);
-                    let left = left.map_err(|b| format!("in {cur}, playing beats: {b}"))?;
+                    let left =
+                        left.map_err(|b| format!("in {cur}, playing beats (after {e}): {b}"))?;
                     trail.push(format!("[{}]", log.join("; ")));
                     if let Some(s) = left {
                         trail.push(format!("{s}(beat)"));
