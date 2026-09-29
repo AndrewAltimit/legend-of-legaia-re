@@ -2221,16 +2221,33 @@ one that does was declined for the reason given.
 | `801d65f8` | (a), minigame | the Baka duel cameo's eye blit (`BakaDuelAssets::apply_wink`), run when a host builds the duel VRAM while the cameo's pose names a blit row. No member reaches a cameo frame |
 | `801d7a5c` | (a), minigame | the splash burst, spawned on `World::tick_fishing`'s `Casting -> Fighting` edge. `w1f1_fishing_pond_ladder` drives `PondSession` without the world tick, and the native fishing rung captures before a bite. It was credited to `w5_native_minigame_ladder` and is not entered by it |
 | `801db9c4` | (b) | see [the gate table](#gates-behind-the-b-rows) - disassembly-grounded |
-| `801dbc30` | (b) | see [the gate table](#gates-behind-the-b-rows). Also a host asymmetry: only the native window's battle HUD draws the cross-out (`window/hud.rs`); the browser play page never calls `cross_out_mark_sprite` |
-| `801e0418` | (c), undisclosed | `title_strip_rows` is reached only from `title_strip_sprites`, which nothing in the workspace calls. Retail's one caller is `FUN_801DD35C` at `0x801E0260`, running it while `_DAT_8007BB00` is set with the dimmed title backdrop beside it - the title art behind the boot save-select. A wiring gap on both hosts, and the tag carries no disclosure |
 | `801e45bc` | (a) | the move-VM extension's Bezier evaluator, run by sub-ops `0x0E` and `0x12`. The move-VM census tests find shipped carriers but step them under a `NullHost`; a member that runs one of those programs in a `World` converts it |
+
+Two rows left the table above through page ladders, and both were closer
+than their verdicts said. `801e0418` was already drawn on both hosts - the
+save-select backdrop is `title_band_sprites`' dim arm, which returns
+`title_strip_sprites` - so the row was reach, not wiring:
+`title_backdrop_parity` walks the page's title Continue into the save-select
+and holds the backdrop to `title_strip_sprites` strip for strip, and the
+`legaia-engine` binary's `title_backdrop_tests` hold the native
+`boot_title_band_state` to the same list. `801dbc30` was drawn on both hosts
+too; it now rides one builder (`battle_command_ui::battle_command_menu_sprites`,
+switched by `battle_raseru_cross_out`), and its gate had a second raiser the
+row missed - see below.
 
 ## Gates behind the (b) rows
 
 | gate | rows | what has to happen |
 |---|---|---|
-| a Muscle Dome **Master** course | `801dbc30` | story flag `0x538` raised before the arena entry, which seeds the special-battle word to `0x321` and crosses the Ra-Seru chip out of the command ring (`battle_hud::battle_raseru_cross_out`). `play-window --set-flag 0x538` reaches it on the native window; no member plays a dome round with the flag up |
 | a pose `>= 6` on battle actor slot `>= 8` | `801db9c4` | `FUN_801D5854`'s invalid-slot guard (`0x801D58C8..0x801D58E8`: `sltiu v0,s4,0x6` then `sltiu v0,s5,0x8`, and only when both fail `li s4,0x9` + `jal 0x801DB9C4`). A pose request for a slot the eight-seat pointer table does not hold; no member issues one, and whether a shipped formation can is not established |
+
+**The Master-course gate closed on the other raiser.** `801dbc30` needs bit
+`0x200` of the special word in a command ring a member opens. The dome's Master
+course is one raiser (flag `0x538`, word `0x321`); battle init's first-monster
+arm is the other - Tetsu, monster `0xAF`, whose one row is `town0d` row 4 - and
+a forced fight there is an ordinary play-page encounter. `raseru_cross_out_page`
+opens that ring and a `map01` control ring, and asserts the mark on the first
+ring frame of the one and its absence from the other.
 
 The learned-spell gate this table last held (`801da2a0`) closed the way this
 page's other gates did - `w7_pause_learned_content_ladder` writes the one

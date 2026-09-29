@@ -2598,29 +2598,21 @@ impl PlayWindowApp {
             use legaia_engine_render::battle_command_ui as bcu;
             let (origin, scale) = self.save_select_stage(surface_w, surface_h);
             let views = bcu::command_chip_views(&chips);
-            out.extend(bcu::battle_command_chip_sprites(
-                &bcu::CommandChipAtlas::from_battle_chrome(&rects),
+            // The plates, and - in the Rim Elm ambush / against monster
+            // `0xAF` - the red cross-out over the Ra-Seru chip on top of
+            // them: one builder, one engine read, the same call the browser
+            // page makes.
+            out.extend(bcu::battle_command_menu_sprites(
+                &rects,
                 &bcu::BattleCommandMenuFrame {
                     chips: &views,
                     cursor: Some(cursor),
                     phase,
                 },
+                legaia_engine_core::battle_hud::battle_raseru_cross_out(&self.session.host.world),
                 origin,
                 scale,
             ));
-            // The Rim Elm ambush / monster `0xAF`: the red cross-out over the
-            // Ra-Seru chip, after the plates so it lands on top. The browser
-            // page appends the same sprite off the same engine read.
-            if let Some(src) = rects.cross_out
-                && legaia_engine_core::battle_hud::battle_raseru_cross_out(&self.session.host.world)
-            {
-                out.push(bcu::cross_out_mark_sprite(
-                    src,
-                    bcu::RASERU_MARK_ANCHOR,
-                    origin,
-                    scale,
-                ));
-            }
         }
         out
     }

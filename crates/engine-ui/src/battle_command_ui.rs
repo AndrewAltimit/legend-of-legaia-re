@@ -508,6 +508,45 @@ pub fn cross_out_mark_sprite(
     }
 }
 
+/// The command menu's sprite half for one frame, cross-out included: the
+/// chip plates and D-pad glyph ([`battle_command_chip_sprites`]) and, when
+/// `raseru_crossed`, the red X over the Ra-Seru chip
+/// ([`cross_out_mark_sprite`] at [`RASERU_MARK_ANCHOR`]) after them, so it
+/// lands on top of the plate.
+///
+/// Both play hosts draw the menu through this one call - the native window's
+/// battle chrome pass (`window/hud.rs`) and the browser play page's
+/// (`play_battle.rs`) - and both pass `engine-core`'s
+/// `battle_hud::battle_raseru_cross_out` as `raseru_crossed`: the ring is up
+/// and the special-battle word carries `0x200` (the Rim Elm ambush, monster
+/// `0xAF`). Retail's phase-`0x28` arm tests the bit and calls
+/// `FUN_801DBC30(0xF8, 0x42)` every frame of the phase
+/// (`0x801D12DC..0x801D12F4`). A host whose atlas skipped the cross-out bake
+/// (`rects.cross_out == None`) draws the plates and no mark.
+pub fn battle_command_menu_sprites(
+    rects: &crate::BattleChromeRects,
+    frame: &BattleCommandMenuFrame<'_>,
+    raseru_crossed: bool,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    let mut out = battle_command_chip_sprites(
+        &CommandChipAtlas::from_battle_chrome(rects),
+        frame,
+        stage_origin,
+        stage_scale,
+    );
+    if raseru_crossed && let Some(src) = rects.cross_out {
+        out.push(cross_out_mark_sprite(
+            src,
+            RASERU_MARK_ANCHOR,
+            stage_origin,
+            stage_scale,
+        ));
+    }
+    out
+}
+
 /// The command cluster's text half: each chip's label left-aligned in its
 /// interior, or a single `-` when the command cannot be chosen.
 pub fn battle_command_chip_text(
@@ -595,6 +634,36 @@ mod tests {
         let s = cross_out_mark_sprite((0, 48, 64, 16), RASERU_MARK_ANCHOR, (0, 0), 1);
         assert_eq!(s.dst, (240, 62, 64, 16), "x-8..=x+0x37, y-4..=y+0xB");
         assert_eq!(s.src, (0, 48, 64, 16));
+    }
+
+    /// The one menu builder both hosts call: the plates alone without the
+    /// bit, the plates plus the X - last, so on top - with it, and no X from
+    /// a host whose atlas has no cross-out cell.
+    #[test]
+    fn the_menu_builder_appends_the_cross_out_only_under_the_bit() {
+        let c = chips(4);
+        let frame = ring(&c, 0);
+        let baked = crate::BattleChromeRects {
+            cross_out: Some((0, 96, 64, 16)),
+            ..Default::default()
+        };
+        let plates = battle_command_chip_sprites(
+            &CommandChipAtlas::from_battle_chrome(&baked),
+            &frame,
+            (5, 9),
+            3,
+        );
+        let dbg = |v: &[SpriteDraw]| format!("{v:?}");
+        let off = battle_command_menu_sprites(&baked, &frame, false, (5, 9), 3);
+        assert_eq!(dbg(&off), dbg(&plates), "no bit, no mark");
+        let on = battle_command_menu_sprites(&baked, &frame, true, (5, 9), 3);
+        assert_eq!(on.len(), plates.len() + 1);
+        assert_eq!(dbg(&on[..plates.len()]), dbg(&plates));
+        let mark = cross_out_mark_sprite((0, 96, 64, 16), RASERU_MARK_ANCHOR, (5, 9), 3);
+        assert_eq!(dbg(&on[plates.len()..]), dbg(&[mark]), "the X draws last");
+        let unbaked = crate::BattleChromeRects::default();
+        let bare = battle_command_menu_sprites(&unbaked, &frame, true, (5, 9), 3);
+        assert_eq!(bare.len(), plates.len(), "no atlas cell, no mark");
     }
 
     #[test]

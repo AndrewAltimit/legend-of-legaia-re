@@ -679,6 +679,12 @@ CANONICAL_LADDERS = [
     ("boss_approach_disc", "legaia-engine-shell"),
     ("monster_approach_sweep_disc", "legaia-engine-core"),
     ("soak_harness", "legaia-engine-shell"),
+    # Two page ladders for the boot save-select's title backdrop (the title
+    # strips, `801e0418`) and the command ring's Ra-Seru cross-out in Tetsu's
+    # fight (`801dbc30`); each has a native twin outside the union (a bin
+    # unit test, a shared-builder unit test).
+    ("title_backdrop_parity", "legaia-web-viewer"),
+    ("raseru_cross_out_page", "legaia-web-viewer"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 
