@@ -55,7 +55,7 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x0C` | **Action seed** - reads `actor[+0x1DE]` (action category) and dispatches into the appropriate band. Calls `FUN_801EED1C` (the arts queue-builder; slot < 3) or, for a monster slot with the `+0x16E & 0x380` bits, `FUN_801E7320` (random-retarget: the rolled action - including a Magic cast - is kept, only its target re-rolls to the opposite side; see the [`0x380` notes](#ai-delegated-0x380-party-members---what-is-and-isnt-pinned)). Reads RNG via `func_0x80056798()`. Calls `FUN_801EFE44` (camera bounds) and `FUN_801D5854(actor_id, 6)` (idle pose) unless `+0x1DE == 5` (run). The inner switch on `actor[+0x1DE]` is the "action category" dispatch - see [Inner dispatch](#inner-dispatch---actor-action-category). | `0x14`/`0x28`/`0x3C`/`0x46`/`0x50`/`0x64`/`0x68` per category. |
 | `0x14` | **Attack - face target** | `FUN_801D5854(actor, 6)` (ready pose); computes target bearing via `func_0x80019B28(s8 X/Z, actor X/Z)` and writes facing into `actor[+0x46]`; iterates the 8-actor table at `0x801C9370` writing AI-side facing offsets at `ctx[+0x6E6 + i*2]`; calls `FUN_8004E2F0(actor, target)` for [range/LOS](battle.md). If range = 0 → `0x1E` (skip approach). Party arm: stages approach anim `+0x1DA = 1` (the walk entry) → short-step. Monster arm: first-byte tag search over its action-record array (`FUN_80050E2C`, tag `0x20`, retry `1`) stages the returned entry index. | `0x15` (monster, tag-0x20 found); `0x19` (party, **or** a monster whose action table has no tag-`0x20` walk - the fallback stages tag `1` and skips the walk chain entirely); `0x1E` (in range). |
 | `0x15` | Attack - windup | Same idle pose + facing update; waits until the staged `actor[+0x1DA]` matches the committed `actor[+0x1D9]` (the pre-approach clip has started), then stages the monster's tag-`1` walk (`FUN_80050E2C` at `0x801E3340`). | `0x16`. |
-| `0x16` | Attack - advance | Pose + facing recompute; range recheck. Out of range → stalls (`0x801E35D0`) - **no attacker movement here**; the walk is the clip's root motion in the anim tick (`FUN_80047430` `0x80047D20..0x80047E18`, gated on the same range check). On range 0: stages the tag-`0x21` close-in, then the **arrival shove** (`0x801E33EC..0x801E3490`): steps the *target's* live `+0x34`/`+0x38` **and** seat `+0x3C`/`+0x40` pairs along the attacker's facing by `sin/cos >> 9`, looping while still in range - pushing the target back out to the range boundary. (An earlier revision read this as the attacker's advance loop; all four stores go through `s8`, the target.) | `0x17`. |
+| `0x16` | Attack - advance | Pose + facing recompute; range recheck. Out of range → stalls (`0x801E35D0`) - **no attacker movement here**; the walk is the clip's root motion in the anim tick (`FUN_80047430` `0x80047D20..0x80047E18`, gated on the same range check). On range 0: stages the tag-`0x21` close-in, then the **arrival shove** (`0x801E33EC..0x801E3490`): steps the *target's* live `+0x34`/`+0x38` **and** body `+0x3C`/`+0x40` pairs along the attacker's facing by `sin/cos >> 9`, looping while still in range - pushing the target back out to the range boundary. (An earlier revision read this as the attacker's advance loop; all four stores go through `s8`, the target.) | `0x17`. |
 | `0x17` | Attack - close-range | Anim/facing update; matches `actor[+0x1DA]` against `actor[+0x1D9]`. | `0x18`. |
 | `0x18` | Attack - strike | Final anim match → falls into the swing apex frame. | `0x1E`. |
 | `0x19` | Attack - short-step (party attackers, and walk-less monsters via the `0x14` fallback) | Idle pose + facing + range recheck. While range > 0 → stays (no movement code, no timeout - see the park section below). Range == 0 → bumps `actor[+0x1DC] |= 1` (windup-done flag) and `actor[+0x16] = 0`. | `0x1E`. |
@@ -1604,7 +1604,8 @@ port) and the approach movement runs as the root-motion drive
 (`World::tick_battle_locomotion`, the `FUN_80047430` term - clip entry-speed
 `+0xC` when a committed clip carries one, else the captured Move-drive
 fallback), so a melee attacker physically closes on its target, strikes and
-walks back to its seat. The port still cannot reproduce this park, now for a
+stays where it struck ([below](#where-an-action-leaves-its-combatants)). The
+port still cannot reproduce this park, now for a
 stronger reason: the locomotion drive runs in every approach state whether
 or not a clip is playing - the engine-native form of the
 `--approach-softlock-fix` guard - so an approach state always closes. The
@@ -1615,10 +1616,20 @@ runs the tag search over the monster's installed action table
 (`legaia_engine_vm::battle_action::monster_action_by_tag`, fed by
 `World::battle_monster_action_tags`), so the 180 records with no
 tag-`0x20` entry take `0x19` exactly as retail does and the six that carry
-one play their own pre-approach and close-in clips. The walk-back targets
-the seat directly (with off-turn actors continuing home) rather than
-replaying per-clip retreat root motion - retail's committed forward drift
-re-seats exactly in the engine.
+one play their own pre-approach and close-in clips.
+
+The engine did park in `0x19` for a different reason, and the fix is worth
+recording because the symptom is identical. It held every actor's
+`+0x3C`/`+0x40` pair still for the length of an action as a "seat", where
+retail re-derives it every frame
+([below](#where-an-action-leaves-its-combatants)). The separation pass
+measures overlap on that pair and nudges the live pairs, so two party
+members whose held pairs overlapped were pushed apart every frame without
+the overlap ever clearing, walked tens of thousands of units off the stage,
+and a monster's approach - clamped at its target's live pair, measured
+against the stale one - never came in range (Zora in `taiku`, Rogue in
+`rugi`). The disc-gated `boss_approach_disc` test fights both, and
+`monster_approach_sweep_disc` fights every one of the 186 archive records.
 
 **The knockout taunt.** On the way into the Done band (`0x801E5594..
 0x801E5658`), a monster whose attack has left its target at zero HP searches
@@ -3348,7 +3359,11 @@ and `0x10` under the `0x19` starter) - and the staged id is rewritten to the
 slot number.
 
 `World::commit_staged_battle_anims` (called from `step_battle` pre-step and from `tick_battle_animations`) applies that ladder per actor: a staged swing/art plays as a one-shot `MonsterAnimPlayer` (rate from the record's entry `+0x78` byte through the same `step_for_rate` path as the idle clips), the id pair converges on the committed value, and the in-flight clip outranks the SM's per-frame `pose()` requests (the same precedence rule hit reactions use).
-A commit happens only at a clip boundary, as in retail: the natural end (`tick_battle_animations`, the `0x80047B54` call) or the event-path cut (`tick_battle_hit_events`, `0x80047900..0x80047948`). Either one zeroes the per-clip hit index `+0x1F4` and releases the stage latch `ADVANCE_DONE` (bit 1 of `+0x1DC`), which is what opens the `0x801E370C` read gate for the next byte; a byte staged over a still-playing one-shot waits for that boundary (`commit_staged_battle_anim`), and a natural end with a byte behind the clip commits it in the same tick. An actor with no usable clip for a staged id releases the latch at once (a zero-length swing), so clip-less hosts keep the pre-animation pacing.
+A commit happens only at a clip boundary, as in retail: the natural end (`tick_battle_animations`, the `0x80047B54` call) or the event-path cut (`tick_battle_hit_events`, `0x80047900..0x80047948`). Either one zeroes the per-clip hit index `+0x1F4` and releases the stage latch `ADVANCE_DONE` (bit 1 of `+0x1DC`), which is what opens the `0x801E370C` read gate for the next byte; a byte staged over a still-playing one-shot waits for that boundary (`commit_staged_battle_anim`), and a natural end with a byte behind the clip commits it in the same tick.
+
+"A byte behind the clip" is the latch, not the id pair. A monster stream that repeats a byte (`[5, 5, 0]`) stages the second `5` while the first swing plays, so `+0x1DA == +0x1D9` already; retail's natural end calls `FUN_8004AD80` regardless (`0x80047B30..0x80047B58`), and with the pair equal that is the re-commit - the clip replays from its first keyframe with its hit index zeroed.
+
+The replay matters beyond the animation: the strike loop has left for `0x1F` / `0x20` by then, so its hit is the one that lands with the cursor parked and subtracts the accumulated total from live HP. An engine that converged to idle on the equal pair dropped that hit, left the bar drained by the total over an untouched `+0x14C`, and parked the SM in `0x51`. An actor with no usable clip for a staged id releases the latch at once (a zero-length swing), so clip-less hosts keep the pre-animation pacing.
 
 Clip sources, decoded at battle entry next to the mesh assembly (`play-window`): the record[0] action streams + `swing_battle_animations` (per equipped item, runtime slots `0xC..0xF`) feed `World::set_actor_battle_action_clips`; the art bank (`art_animation_bank`, streams resolved through the `readef.DAT` `"ME"` archives via `art_me_archive`/`art_animation`) feeds `World::set_actor_battle_art_bank`.
 Monsters install no bank, so their staged ids stay plain archive entry indices across the whole range. Playback *stepping* follows the `+0x78` rate like every other entry (see [battle-data-pack.md § Art-animation bank](../formats/battle-data-pack.md#art-animation-bank-record0-0x58)).
@@ -3376,11 +3391,20 @@ The port reads it: `MonsterAnimPlayer::new` seeds `loop_budget = count << 4` and
 
 ### Where an action leaves its combatants
 
-An action does **not** return its combatants to their authored formation seats. Retail leaves each one standing on the ground the action put it on, and the reference pair the seat-measured range law reads moves with it; the port models that as a **ground commit** at `DoneCleanup` (`0x50`), which re-takes every living actor's seat pair from its live pair. `World::tick_battle_locomotion` therefore drives exactly one leg - the approach - and no walk-home leg at all.
+An action does **not** return its combatants to their authored formation seats. Retail leaves each one standing on the ground the action put it on. `World::tick_battle_locomotion` therefore drives exactly one leg - the approach - and no walk-home leg at all.
 
 The capture evidence is four save states of one solo fight. Two read the authored formation (party `z = -800`, monster `z = +800`, 1600 apart); two later ones read the party member at `z ~ -540` and the monster at `z ~ -250`, ~300 apart and both far off the formation. Across every mid-battle state in the library each actor's `+0x3C`/`+0x40` pair sits within ~110 units of its live `+0x34`/`+0x38` pair, so the reference pair cannot be a seat the actor has walked away from.
 
-Holding the seat still for the *duration* of an action and committing it at the end is what keeps the range law honest: the approach has a fixed goal and the separation pass a stable reference while the action runs, and once it ends a parked actor is again *at* the pair the gate measures - so the next attacker walks at where its target actually stands.
+That ~110 is the pose centroid: `+0x3C`/`+0x40` is the actor's **body pair**, not a seat. Battle setup stamps it with the formation seat (`FUN_800513F0`), but from then on the pose decoder `FUN_8004998C` - called per actor from the battle draw callback `FUN_80048A08` - rewrites it on every drawn frame (`0x8004A3DC..0x8004A5F8`): it sums the decoded pose's per-part translations in halfwords, divides by the part count, rotates the `(x, z)` centroid by the facing `+0x46`, scales it by the render scale `+0x72`, and adds it to the live pair:
+
+```text
++0x3C = +0x34 + ((sin[f]*cz >> 12) + (cos[0xFFF-f]*cx >> 12)) * s >> 12
++0x40 = +0x38 + ((sin[0xFFF-f]*cx >> 12) + (cos[f]*cz >> 12)) * s >> 12
+```
+
+(`sin` = `*0x8007B81C`, `cos` = `*0x8007B7F8`; a non-zero pitch `+0x44` re-derives `z` through a longer arm, `0x8004A534..0x8004A5F8`.) Everything that measures an actor from outside reads this pair: the target side of the range law `FUN_8004E2F0` and both sides of the separation pass `FUN_80050BB8`. Because it follows the live pair, an overlap the separation nudge resolves stays resolved, and the next attacker walks at where its target actually stands.
+
+The port's `World::refresh_battle_body_pairs` makes the same store at the head of the locomotion pass, from the pose the actor's clip player last produced (a zero centroid for an actor with no clip player, so its pair is its live pair). The live pairs it reads are the ones retail's draw reads - nothing moves them between the draw and the next anim tick - so only the pose is one frame newer; the render scale is the allocator's `0x1000`, and the pitch arm is not taken (no battle actor the port models carries a pitch).
 
 `tick_battle_locomotion` drives every playing clip's own `+0x0C` root speed (`drive_playing_root_motion`, the signed `0x80047D20..0x80047E18` term: `bltz` routes a negative speed straight to the step with no range test, a positive one steps only while the range poll fails, and the `+0x1DC` bit-3 latch blocks both).
 

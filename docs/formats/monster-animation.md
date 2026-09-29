@@ -380,6 +380,16 @@ The result is written to a pose buffer (6 shorts per object) and applied per
 object via the GTE in the draw loop, then `FUN_800495c8` / `FUN_8005b038`
 blend it onto the object vertices.
 
+The decoder also leaves one value on the actor. While it builds the pose it
+sums every part's translation into scratch `+0x120/+0x122/+0x124` (halfword
+adds in both the blending and the exact-frame loop), divides each by the part
+count - the pose **centroid** - and writes the actor's body pair
+`+0x3C/+0x3E/+0x40` as the live position `+0x34/+0x36/+0x38` plus that
+centroid rotated by the facing `+0x46` and scaled by the render scale `+0x72`
+(`0x8004A3DC..0x8004A5F8`). Every drawn frame re-takes it, so the pair is
+where the body is, not a seat; the range law and the separation pass measure
+actors by it ([battle-action.md](../subsystems/battle-action.md#where-an-action-leaves-its-combatants)).
+
 ### The blend: short arcs, a per-part step sum, and the Euler-flip retry
 
 A zero fraction skips the blend and decodes the cursor's frame alone
