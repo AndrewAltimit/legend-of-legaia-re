@@ -98,6 +98,10 @@ pub struct RetailBattle {
     pub run_state: u8,
     pub stage_id: u8,
     pub scripted: bool,
+    /// `0x8007BD60 & 0x1F` - the battle-stage variant the region reader
+    /// stamped for the tile the fight started on; battle init loads the
+    /// backdrop from entry `scene_index + variant` (`FUN_800513F0`).
+    pub stage_variant: u8,
     /// `0x8007BD10[0..party_count]`.
     pub seat_chars: Vec<u8>,
     /// Formation-cell ids, trimmed to the monster count.
@@ -156,6 +160,7 @@ impl RetailBattle {
             run_state: game_anchors::u8_at(ram, RUN_STATE),
             stage_id: game_anchors::u8_at(ram, STAGE_ID),
             scripted: game_anchors::u32_at(ram, PER_BATTLE_FLAGS) & 0x80 != 0,
+            stage_variant: game_anchors::u8_at(ram, PER_BATTLE_FLAGS) & 0x1F,
             monster_ids,
             seat_chars: (0..u32::from(party_count))
                 .map(|s| game_anchors::u8_at(ram, SEAT_CHARS + s))
@@ -297,6 +302,13 @@ pub fn run_engine_battle(
     // (`FUN_80055B6C` with `DAT_8007B7FC != 0`) re-seeds the fallback trio
     // `{1, 2, 3}` through `FUN_80055B20` whatever the field party was. The
     // image side passes the same list as `play-window --party`.
+    // The stage the fight is staged in: the region reader's variant for the
+    // tile it started on. The capture's player actor is no longer the field
+    // walker, so the seed cannot stand on that tile; it stamps the variant.
+    session
+        .host
+        .world
+        .seed_battle_stage_variant(battle.stage_variant);
     let seats = retail_roster_slots(battle);
     if !seats.is_empty() && seats != session.host.world.party.active_party {
         session.host.world.set_active_party(seats);

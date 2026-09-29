@@ -166,7 +166,13 @@ running field, as retail's was, so the scene's track has started. The
 formation cell is matched against the scene's registered MAN rows; a cell
 no row carries (a fight installed from another table) is registered as a
 formation of its own, carrying the scripted bit, with the monster archive's
-stats for its ids. `World::force_encounter` then arms the row through the
+stats for its ids. The fight's own composition and stage are seeded from the capture: retail's
+present list `0x8007BD10` becomes the engine's active party (a guest seat, or a
+battle-id fight whose init re-seeds the trio, is not the save window's field
+party), and the stage variant `0x8007BD60 & 0x1F` is stamped
+(`World::seed_battle_stage_variant`; `play-window` reads it as
+`LEGAIA_BATTLE_STAGE`), because a battle capture's player actor is no longer
+the field walker whose tile names it. `World::force_encounter` then arms the row through the
 ordinary transition - the path `play-window --battle` takes, including the
 scripted carrier's replayed tutorial arm. When the mode flips, the retail
 combatants' live HP / MP are written over the engine's, the opening runs to
@@ -200,7 +206,10 @@ present list names a seat the save window's roster does not seat (a guest
 combatant) reads as a short engine party in `battle_party`.
 
 **The image** comes from `play-window --battle <row> --party <ids>` with the
-retail system flags, captured at a fixed tick past the opening. A fight with
+retail system flags and stage variant, captured a fixed number of ticks past the
+fight's first prompt - the evolved-Cort arrival (PROT 0968) holds the prompt
+back about a thousand frames longer than an ordinary opening, and the headless
+side's opening window runs long enough to wait it out. A fight with
 no MAN row to name is not imaged; its reason is in the report.
 
 ### The track word in battle

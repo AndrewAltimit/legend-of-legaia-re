@@ -1005,7 +1005,11 @@ fn battle_image(
         &retail.scene,
         None,
         &extra,
-        crate::retail_compare_battle::BATTLE_CAPTURE_TICK,
+        &[("LEGAIA_BATTLE_STAGE", battle.stage_variant.to_string())],
+        // A fight whose opening outlasts the usual one (the evolved-Cort
+        // arrival) is captured the same distance past its own first prompt.
+        crate::retail_compare_battle::BATTLE_CAPTURE_TICK
+            + u64::from(engine.prompt_tick.unwrap_or(0)),
         opts.out_dir,
         &entry.label,
         crate::retail_compare_image::FrameEntry::Door(&flags),

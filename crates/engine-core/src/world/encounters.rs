@@ -763,6 +763,27 @@ impl World {
         self.encounters.region_setup = Some(setup);
     }
 
+    /// Stamp the battle-stage variant `_DAT_8007BD60 & 0x1F` directly - the
+    /// value the region reader leaves for the tile a fight starts on - for a
+    /// caller that enters a fight without standing on that tile: a replay of
+    /// a retail battle capture, whose RAM names the variant but whose player
+    /// actor is no longer the field walker. The rest of the last setup is
+    /// kept, as a short-layout region record would keep it.
+    pub fn seed_battle_stage_variant(&mut self, variant: u8) {
+        let mut setup =
+            self.encounters
+                .region_setup
+                .unwrap_or(crate::region_encounter::RegionBattleSetup {
+                    stage_variant: 0,
+                    keep_backdrop_object_1: None,
+                    door_of_light_blocked: true,
+                    door_of_wind_blocked: true,
+                    world_map_return: None,
+                });
+        setup.stage_variant = variant & 0x1F;
+        self.encounters.region_setup = Some(setup);
+    }
+
     /// The Door of Light / Door of Wind gates the last region setup left in
     /// scratchpad `0x1F800394` (`0x100000` / `0x200000`): `(light, wind)`,
     /// `true` = blocked. Open until a region has been stood in.

@@ -240,6 +240,16 @@ fn arm_requested_battle(session: &mut BootSession, spec: &str) {
              system-flag arm is replayed with the entry"
         );
     }
+    // `LEGAIA_BATTLE_STAGE=N` stamps the battle-stage variant the fight is
+    // staged in (`_DAT_8007BD60 & 0x1F`), for a fight entered without
+    // standing on the region tile that names it - the retail comparison
+    // corpus reads it off the capture.
+    if let Some(v) = std::env::var("LEGAIA_BATTLE_STAGE")
+        .ok()
+        .and_then(|s| s.trim().parse::<u8>().ok())
+    {
+        world.seed_battle_stage_variant(v);
+    }
     if world.force_encounter(row) {
         log::info!(
             "play-window: --battle armed formation row {row} in '{}' - the fight opens through \

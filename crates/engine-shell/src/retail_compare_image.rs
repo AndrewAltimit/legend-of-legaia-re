@@ -251,6 +251,7 @@ pub fn engine_frame(
         scene,
         Some((x, z)),
         &[],
+        &[],
         CAPTURE_TICK,
         out_dir,
         label,
@@ -260,7 +261,8 @@ pub fn engine_frame(
 
 /// [`engine_frame`] with the seat optional, extra `play-window` arguments
 /// (the battle half passes `--battle <row>` / `--party`), and the capture
-/// tick and the entry chosen by the caller.
+/// tick and the entry chosen by the caller, plus extra environment for the
+/// child (the battle half's `LEGAIA_BATTLE_STAGE`).
 #[allow(clippy::too_many_arguments)]
 pub fn engine_frame_with(
     exe: &Path,
@@ -268,6 +270,7 @@ pub fn engine_frame_with(
     scene: &str,
     seat: Option<(i16, i16)>,
     extra: &[String],
+    env: &[(&str, String)],
     tick: u64,
     out_dir: Option<&Path>,
     label: &str,
@@ -292,6 +295,9 @@ pub fn engine_frame_with(
     cmd.current_dir(&work);
     if let Some((x, z)) = seat {
         cmd.env("LEGAIA_SEAT", format!("{x},{z}"));
+    }
+    for (k, v) in env {
+        cmd.env(k, v);
     }
     cmd.args(["play-window", "--no-audio", "--scene", scene])
         .args(extra)
