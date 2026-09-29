@@ -80,7 +80,7 @@
 //! milestones (the baseline is then not asserted); `LEGAIA_FGL_NO_PAD=1`
 //! skips the pad tier.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 
@@ -1854,6 +1854,17 @@ fn teleports(session: &BootSession) -> WarpMap {
 /// placement's touch.
 const TOUCH_BOX_HALF: i32 = 0x50;
 
+/// Retail's actor-collision probe points per step direction (Z-, X-, Z+,
+/// X+; engine-core `world::config::FIELD_ACTOR_PROBES`, table
+/// `DAT_801f21b4`), applied as `(x + dx, z - dz)`: the points whose contact
+/// with a walk-touch box posts the touch.
+const ACTOR_PROBES: [[(i16, i16); 3]; 4] = [
+    [(-32, 64), (0, 64), (32, 64)],
+    [(-63, -32), (-63, 0), (-63, 32)],
+    [(-32, -63), (0, -63), (32, -63)],
+    [(64, -32), (64, 0), (64, 32)],
+];
+
 /// The loaded field scene's **object doors** under the live flags: each
 /// `.MAP`-object walk-touch placement whose record, resolved against the
 /// story flags as the contact dispatch resolves it, teleports the player
@@ -1891,11 +1902,118 @@ fn object_doors(session: &BootSession) -> Vec<((i16, i16), Cell)> {
     out
 }
 
-/// BFS over the collision lattice toward `goal`, never entering an `avoid`
+/// The actor-collision boxes one plan tests against, bucketed by the
+/// 128-unit tiles each overlaps: every field NPC at its live position
+/// (±40) and every solid placed prop (±80 static, ±40 moving). The
+/// planner's copy of `World::field_actor_dir_blocked`, built once per plan
+/// so a whole-map search does not re-walk every body per probe.
+/// A body box: centre `(x, z)` and half-extent.
+type BodyBox = (i32, i32, i32);
+
+struct Blockers(HashMap<(i32, i32), Vec<BodyBox>>);
+
+impl Blockers {
+    fn build(
+        w: &legaia_engine_core::world::World,
+        pass: impl Fn(&legaia_engine_core::world::FieldPropCollider) -> bool,
+    ) -> Self {
+        const NPC_HALF: i32 = 0x40 - 0x18;
+        let mut boxes: Vec<(i32, i32, i32)> = w
+            .npcs
+            .positions
+            .values()
+            .map(|&(x, z)| (i32::from(x), i32::from(z), NPC_HALF))
+            .collect();
+        for c in &w.props.colliders {
+            if !c.solid || pass(c) {
+                continue;
+            }
+            boxes.push(if c.moving_box {
+                (c.live.0, c.live.1, NPC_HALF)
+            } else {
+                (c.center.0, c.center.1, TOUCH_BOX_HALF)
+            });
+        }
+        let mut map: HashMap<(i32, i32), Vec<BodyBox>> = HashMap::new();
+        for b in boxes {
+            let (x, z, h) = b;
+            for tz in ((z - h) >> 7)..=((z + h) >> 7) {
+                for tx in ((x - h) >> 7)..=((x + h) >> 7) {
+                    map.entry((tx, tz)).or_default().push(b);
+                }
+            }
+        }
+        Self(map)
+    }
+
+    fn hit(&self, px: i32, pz: i32) -> bool {
+        self.0.get(&(px >> 7, pz >> 7)).is_some_and(|v| {
+            v.iter()
+                .any(|&(x, z, h)| (px - x).abs() < h && (pz - z).abs() < h)
+        })
+    }
+
+    fn dir_blocked(&self, cx: i16, cz: i16, dir: usize) -> bool {
+        ACTOR_PROBES[dir]
+            .iter()
+            .any(|&(dx, dz)| self.hit(i32::from(cx) + i32::from(dx), i32::from(cz) - i32::from(dz)))
+    }
+}
+
+thread_local! {
+    /// Teleport waypoints of the routes [`plan_path`] returned: the cell a
+    /// route steps into a teleport tile or against an object door from, and
+    /// the world point the follower presses toward there (the teleport
+    /// tile's centre, the door's contact centre). The route's next cell is
+    /// the landing, which no press reaches.
+    static PRESS_AT: std::cell::RefCell<HashMap<Cell, (i16, i16)>> =
+        std::cell::RefCell::new(HashMap::new());
+}
+
+/// Is `b` one lattice step from `a`?
+fn adjacent(a: Cell, b: Cell) -> bool {
+    (a.0 - b.0).abs() + (a.1 - b.1).abs() <= 1
+}
+
+/// One step of [`plan_path`]'s search: reach `to` from `cur` at `cost`,
+/// through the waypoint `via` when the step is a teleport.
+struct Search {
+    parent: HashMap<Cell, Cell>,
+    g: HashMap<Cell, i32>,
+    open: std::collections::BinaryHeap<std::cmp::Reverse<(i32, i32, Cell)>>,
+    goal: Cell,
+}
+
+impl Search {
+    fn h(&self, c: Cell) -> i32 {
+        i32::from((c.0 - self.goal.0).abs() + (c.1 - self.goal.1).abs())
+    }
+
+    fn step(&mut self, via: Option<Cell>, cur: Cell, to: Cell, cost: i32) {
+        if self.g.get(&to).is_some_and(|&old| old <= cost) {
+            return;
+        }
+        match via {
+            Some(v) => {
+                self.parent.insert(v, cur);
+                self.parent.insert(to, v);
+            }
+            None => {
+                self.parent.insert(to, cur);
+            }
+        }
+        self.g.insert(to, cost);
+        let f = cost + self.h(to);
+        self.open.push(std::cmp::Reverse((f, cost, to)));
+    }
+}
+
+/// A* over the collision lattice toward `goal`, never entering an `avoid`
 /// dispatch tile (retail fires on a tile change, so occupying one is safe).
 /// A step into a kind-0 teleport tile, or against an object door's contact
 /// box, continues from its landing cell, so a route may pass through a door
-/// into a room laid out elsewhere in the map.
+/// into a room laid out elsewhere in the map. When the goal is out of
+/// reach the route ends at the reachable cell nearest it.
 fn plan_path(
     session: &BootSession,
     from: Cell,
@@ -1908,16 +2026,36 @@ fn plan_path(
     let goal_tile = (i32::from(goal.0), i32::from(goal.1));
     let warps = teleports(session);
     let doors = object_doors(session);
-    let score = |c: Cell| (c.0 - gc.0).abs() + (c.1 - gc.1).abs();
-    let mut seen: HashMap<Cell, Cell> = HashMap::new();
-    let mut q = VecDeque::from([from]);
-    seen.insert(from, from);
+    // A closed door prop standing over a teleport tile, or beside an object
+    // door's contact (the leaf of a two-part door), is solid until its touch
+    // opens it; the route counts it open, and the follower's press into it
+    // is the touch.
+    let blockers = Blockers::build(w, |c| {
+        !c.moving_box
+            && !c.interact
+            && (warps.keys().any(|&(tx, tz)| {
+                let (lx, lz) = (tx * 128 - 64, tz * 128 - 64);
+                (lx..lx + 256).contains(&c.center.0) && (lz..lz + 256).contains(&c.center.1)
+            }) || doors.iter().any(|&((x, z), _)| {
+                (c.center.0 - i32::from(x)).abs() <= 128 && (c.center.1 - i32::from(z)).abs() <= 128
+            }))
+    });
+    let mut s = Search {
+        parent: HashMap::from([(from, from)]),
+        g: HashMap::from([(from, 0)]),
+        open: std::collections::BinaryHeap::new(),
+        goal: gc,
+    };
+    s.open.push(std::cmp::Reverse((s.h(from), 0, from)));
     let mut best = from;
-    while let Some(cur) = q.pop_front() {
-        if seen.len() > MAX_PLAN_NODES {
+    while let Some(std::cmp::Reverse((_, gcur, cur))) = s.open.pop() {
+        if s.g.get(&cur).is_some_and(|&v| v < gcur) {
+            continue;
+        }
+        if s.parent.len() > MAX_PLAN_NODES {
             break;
         }
-        if score(cur) < score(best) {
+        if s.h(cur) < s.h(best) {
             best = cur;
         }
         if cur == gc {
@@ -1926,31 +2064,50 @@ fn plan_path(
         let (cx, cz) = cell_center(cur);
         for ((dx, dz), dir) in STEPS {
             let next = (cur.0 + dx, cur.1 + dz);
-            if next.0 < 0 || next.1 < 0 || seen.contains_key(&next) {
+            if next.0 < 0 || next.1 < 0 {
                 continue;
             }
             let (nx, nz) = cell_center(next);
             // Leaning into an object door's contact box posts its touch,
-            // whose record teleports the player: solid or not, the step
+            // whose record teleports the player: the contact fires from the
+            // same leading probe points that block the step, so a door set
+            // in a wall is reached by pressing into the wall. The step
             // continues from the landing (the door cell is the waypoint the
             // follower presses toward).
-            if !w.field_dir_blocked(cx, cz, dir)
-                && let Some(&(_, land)) = doors.iter().find(|((dx, dz), _)| {
-                    (i32::from(nx) - i32::from(*dx)).abs() < TOUCH_BOX_HALF
-                        && (i32::from(nz) - i32::from(*dz)).abs() < TOUCH_BOX_HALF
+            // The player comes to rest anywhere in its cell, not at its
+            // centre, so the probes reach up to half a cell further than
+            // the centre's (the lattice would otherwise miss a door whose
+            // wall stops the player a few units short of the cell edge).
+            let (sx, sz) = (dx * SUBCELL / 2, dz * SUBCELL / 2);
+            let probes = ACTOR_PROBES[dir].map(|(px, pz)| {
+                (
+                    i32::from(cx) + i32::from(px) + i32::from(sx),
+                    i32::from(cz) - i32::from(pz) + i32::from(sz),
+                )
+            });
+            if let Some(&(contact, land)) = doors.iter().find(|((dx, dz), _)| {
+                probes.iter().any(|&(px, pz)| {
+                    (px - i32::from(*dx)).abs() < TOUCH_BOX_HALF
+                        && (pz - i32::from(*dz)).abs() < TOUCH_BOX_HALF
                 })
-            {
-                if !seen.contains_key(&land) && land != next {
-                    seen.insert(next, cur);
-                    seen.insert(land, next);
-                    q.push_back(land);
+            }) {
+                if land != next && !s.parent.contains_key(&next) {
+                    s.step(Some(next), cur, land, gcur + 2);
+                    PRESS_AT.with(|m| m.borrow_mut().insert(next, contact));
+                    if std::env::var_os("LEGAIA_FGL_PLAN_DEBUG").is_some() {
+                        eprintln!("      [plan] door {contact:?} from {cur:?} -> {land:?}");
+                    }
                 }
                 continue;
             }
-            if w.field_dir_blocked(cx, cz, dir) || w.field_actor_dir_blocked(cx, cz, dir) {
+            if w.field_dir_blocked(cx, cz, dir) {
                 continue;
             }
             let (nt, ct) = (dispatch_tile(nx, nz), dispatch_tile(cx, cz));
+            // A teleport tile under a closed door prop reads actor-blocked
+            // from every side: the prop is solid until the touch its body
+            // posts runs the door's bind record (`31 00`), so pressing into
+            // it opens the way. Only a static wall refuses the step.
             if nt != ct
                 && nt != goal_tile
                 && let Some(&land) = warps.get(&nt)
@@ -1958,29 +2115,33 @@ fn plan_path(
                 // Entering the teleport tile lands the player elsewhere; the
                 // tile itself is a waypoint the follower steps into, never a
                 // cell the walk continues from.
-                if !seen.contains_key(&land) && land != next {
-                    seen.insert(next, cur);
-                    seen.insert(land, next);
-                    q.push_back(land);
+                if land != next && !s.parent.contains_key(&next) {
+                    s.step(Some(next), cur, land, gcur + 2);
+                    PRESS_AT.with(|m| {
+                        m.borrow_mut()
+                            .insert(next, tile_center((nt.0 as i16, nt.1 as i16)))
+                    });
                 }
+                continue;
+            }
+            if blockers.dir_blocked(cx, cz, dir) {
                 continue;
             }
             if nt != ct && avoid.contains(&nt) {
                 continue;
             }
-            seen.insert(next, cur);
-            q.push_back(next);
+            s.step(None, cur, next, gcur + 1);
         }
     }
     if best == from {
         return None;
     }
     let mut path = vec![best];
-    let mut s = best;
-    while s != from {
-        s = seen[&s];
-        if s != from {
-            path.push(s);
+    let mut c = best;
+    while c != from {
+        c = s.parent[&c];
+        if c != from {
+            path.push(c);
         }
     }
     path.reverse();
@@ -2066,72 +2227,21 @@ fn pad_hop(session: &mut BootSession, graph: &DiscGraph, dest: &str) -> Result<S
             ));
         }
     }
-    let mut best = dist(tile_of(sx, sz));
-    let mut visited: HashSet<Cell> = HashSet::from([start]);
-    let mut since = 0u32;
-    let mut planned_from = start;
-    let mut path = plan_path(session, start, goal, &avoid).unwrap_or_default();
-    let walking_mode = session.host.world.mode;
-    for _ in 0..PAD_LEG_FRAMES {
-        if session.host.world.mode == SceneMode::Battle {
-            FLEE_ENCOUNTERS.with(|f| f.set(true));
-            let r = drain_battle(session);
-            FLEE_ENCOUNTERS.with(|f| f.set(false));
-            if let Some(r) = r {
-                return Err(format!("battle on the walk to {dest}: {r:?}"));
+    match pad_walk(session, goal, &avoid, 0)? {
+        Walk::Entered(s) => Ok(s),
+        Walk::Arrived => {
+            // On the band: keep pressing into the door while its record
+            // runs up to the scene change.
+            let door = tile_center(goal);
+            if let Some(s) = pad_lean(session, move |_| Some(door), 30, |s| !released(s)) {
+                return Ok(s);
             }
-            since = 0;
-            continue;
-        }
-        if session.host.world.mode != walking_mode {
-            return Err(format!("mode changed to {:?}", session.host.world.mode));
-        }
-        let (wx, wz) = player_xz(session);
-        let cell = cell_of(wx, wz);
-        if cell != planned_from {
-            path = plan_path(session, cell, goal, &avoid).unwrap_or_default();
-            planned_from = cell;
-        }
-        let (tx, tz) = match path.first() {
-            Some(&c) => cell_center(c),
-            None => tile_center(goal),
-        };
-        let pad = pad_for_step(session, (tx - wx).signum(), (tz - wz).signum());
-        session.host.world.set_pad(pad);
-        match session.tick() {
-            Ok(SceneTickEvent::SceneEntered { name }) => return Ok(name),
-            Ok(_) => {}
-            Err(e) => return Err(format!("tick: {e:#}")),
-        }
-        if session.host.world.mode == SceneMode::Battle {
-            continue;
-        }
-        let w = &session.host.world;
-        if w.cutscene_timeline_active() || w.dialogue_owns_input() || w.active_fmv().is_some() {
-            match run(session, DEEP_EXIT_TICKS, true) {
-                Run::Entered(s) => return Ok(s),
-                Run::Released => {}
-                other => return Err(format!("scripted sequence on the walk: {other:?}")),
-            }
-        }
-        let (px, pz) = player_xz(session);
-        let d = dist(tile_of(px, pz));
-        // Progress is a nearer tile or a cell never stood in: a route through
-        // a teleport walks away from the door before it lands nearer.
-        if d < best || visited.insert(cell_of(px, pz)) {
-            best = best.min(d);
-            since = 0;
-        } else {
-            since += 1;
-            if since >= PAD_STALL_FRAMES {
-                return Err(format!(
-                    "pad walk stalled at tile {:?} (world ({px},{pz})), {d} tiles short of door {goal:?}",
-                    tile_of(px, pz)
-                ));
+            match run_while_moving(session, DEEP_EXIT_TICKS) {
+                Run::Entered(s) => Ok(s),
+                other => Err(format!("on door {goal:?} to {dest}: {other:?}")),
             }
         }
     }
-    Err(format!("pad walk to {goal:?} ran out of frames"))
 }
 
 thread_local! {
@@ -2223,6 +2333,41 @@ fn plan_around(
     }
 }
 
+/// A route out of a wedge: the player can come to rest in the notch of a
+/// stair-stepped diagonal wall, where every one of the lattice's four
+/// probe-checked steps reads blocked although the free movement that got
+/// it there can leave. Plan from the nearest cell a step can leave instead,
+/// and head there first.
+fn unwedge(
+    session: &BootSession,
+    from: Cell,
+    goal: (i16, i16),
+    avoid: &HashSet<(i32, i32)>,
+    doors: &HashSet<(i32, i32)>,
+) -> Vec<Cell> {
+    for r in 1..=3i16 {
+        for dz in -r..=r {
+            for dx in -r..=r {
+                if dx.abs().max(dz.abs()) != r {
+                    continue;
+                }
+                let c = (from.0 + dx, from.1 + dz);
+                let (x, z) = cell_center(c);
+                if session.host.world.field_tile_is_wall(x, z) {
+                    continue;
+                }
+                let p = plan_around(session, c, goal, avoid, doors);
+                if !p.is_empty() {
+                    let mut out = vec![c];
+                    out.extend(p);
+                    return out;
+                }
+            }
+        }
+    }
+    Vec::new()
+}
+
 /// Walk with the pad until the player's dispatch tile is within `within`
 /// tiles of `goal`. Random encounters on the way are fled; a scripted
 /// sequence the walk sets off (a band's record, a talk) is paged through.
@@ -2254,6 +2399,57 @@ fn pad_walk(
                 .map(|(s, (c, e))| format!("{s}@{c:?}:{e:?}"))
                 .collect::<Vec<_>>()
         );
+        for (s, ((x, z), _)) in &w.props.walk_touch {
+            let near: Vec<String> = w
+                .props
+                .colliders
+                .iter()
+                .filter(|c| {
+                    (c.center.0 - i32::from(*x)).abs() < 256
+                        && (c.center.1 - i32::from(*z)).abs() < 256
+                })
+                .map(|c| {
+                    format!(
+                        "{:?} solid {} interact {} moving {} anchor {:?}",
+                        c.center, c.solid, c.interact, c.moving_box, c.anchor
+                    )
+                })
+                .collect();
+            eprintln!("      [door] {s}@({x},{z}) colliders {near:?}");
+        }
+    }
+    if std::env::var_os("LEGAIA_FGL_WALK_DEBUG").is_some() {
+        let w = &session.host.world;
+        for &(tx, tz) in teleports(session).keys() {
+            // For each side: the cell just outside the tile's edge, stepping in.
+            let c = |x: i32, z: i32| ((x * 128 + 64) as i16, (z * 128 + 64) as i16);
+            let (mx, mz) = c(tx, tz);
+            let sides = [
+                ((mx, mz + 96), 0usize),
+                ((mx + 96, mz), 1),
+                ((mx, mz - 96), 2),
+                ((mx - 96, mz), 3),
+            ];
+            let s: Vec<String> = sides
+                .iter()
+                .map(|&((x, z), d)| {
+                    format!(
+                        "{}{}",
+                        if w.field_dir_blocked(x, z, d) {
+                            "W"
+                        } else {
+                            "."
+                        },
+                        if w.field_actor_dir_blocked(x, z, d) {
+                            "A"
+                        } else {
+                            "."
+                        }
+                    )
+                })
+                .collect();
+            eprintln!("      [warp] ({tx},{tz}) entry from z+/x+/z-/x-: {s:?}");
+        }
     }
     let walking_mode = session.host.world.mode;
     let mut doors = hazards(session, "");
@@ -2269,7 +2465,8 @@ fn pad_walk(
             let miss = dist(dispatch_tile(ex, ez));
             if miss > within + DOOR_APPROACH_SLACK {
                 return Err(format!(
-                    "no walkable path: the walk component ends {miss} tiles short of {goal:?}"
+                    "no walkable path: the walk component ends {miss} tiles short of {goal:?} (closest {:?})",
+                    dispatch_tile(ex, ez)
                 ));
             }
         }
@@ -2296,14 +2493,39 @@ fn pad_walk(
         let (wx, wz) = player_xz(session);
         let cell = cell_of(wx, wz);
         if planned_from != Some(cell) {
-            path = plan_around(session, cell, goal, avoid, &doors);
+            // Follow the planned route while the player stays on it; plan
+            // again only off it (a slide, a teleport, a script's move).
+            if let Some(i) = path.iter().position(|&c| c == cell) {
+                // On a teleport waypoint the landing is next: keep pressing
+                // from the waypoint until the jump happens.
+                let jump = path.get(i + 1).is_some_and(|&n| !adjacent(cell, n));
+                path.drain(..if jump { i } else { i + 1 });
+            } else {
+                path = plan_around(session, cell, goal, avoid, &doors);
+                if path.is_empty() {
+                    path = unwedge(session, cell, goal, avoid, &doors);
+                }
+            }
             planned_from = Some(cell);
         }
         let (tx, tz) = match path.first() {
+            Some(&c) if c == cell => PRESS_AT
+                .with(|m| m.borrow().get(&c).copied())
+                .unwrap_or(cell_center(c)),
             Some(&c) => cell_center(c),
             None => tile_center(goal),
         };
-        let pad = pad_for_step(session, (tx - wx).signum(), (tz - wz).signum());
+        let mut pad = pad_for_step(session, (tx - wx).signum(), (tz - wz).signum());
+        // Held against something that will not give: a player tries the
+        // action button (a door that opens on a press, not on contact), and
+        // the route is planned afresh (an NPC walked into it).
+        if since > 0 && since.is_multiple_of(60) {
+            path.clear();
+            planned_from = None;
+            pad = 0;
+        } else if since > 0 && since % 60 == 1 {
+            pad = PadButton::Cross.mask();
+        }
         session.host.world.set_pad(pad);
         match session.tick() {
             Ok(SceneTickEvent::SceneEntered { name }) => return Ok(Walk::Entered(name)),
@@ -2321,6 +2543,7 @@ fn pad_walk(
                 other => return Err(format!("scripted sequence on the walk: {other:?}")),
             }
             planned_from = None;
+            path.clear();
         }
         let d = dist(here(session));
         if d <= within {
@@ -2336,8 +2559,41 @@ fn pad_walk(
             if since >= PAD_STALL_FRAMES {
                 session.host.world.set_pad(0);
                 let (px, pz) = player_xz(session);
+                let next: Vec<(i16, i16)> = path.iter().take(4).map(|&c| cell_center(c)).collect();
+                let w = &session.host.world;
+                if std::env::var_os("LEGAIA_FGL_WALK_DEBUG").is_some() {
+                    // 64-unit wall sub-cells around the player, Z rows.
+                    for dz in -8i16..=8 {
+                        let row: String = (-8i16..=8)
+                            .map(|dx| {
+                                let (x, z) = (px + dx * 64, pz + dz * 64);
+                                if dx == 0 && dz == 0 {
+                                    '@'
+                                } else if w.field_tile_is_wall(x, z) {
+                                    '#'
+                                } else {
+                                    '.'
+                                }
+                            })
+                            .collect();
+                        eprintln!("      [grid] {row}");
+                    }
+                }
+                let (cx, cz) = cell_center(cell_of(px, pz));
+                let block: String = (0..4)
+                    .map(|dir| {
+                        match (
+                            w.field_dir_blocked(cx, cz, dir),
+                            w.field_actor_dir_blocked(cx, cz, dir),
+                        ) {
+                            (true, _) => 'W',
+                            (false, true) => 'A',
+                            _ => '.',
+                        }
+                    })
+                    .collect();
                 return Err(format!(
-                    "pad walk stalled at tile {:?} (world ({px},{pz})), {d} tiles short of {goal:?}",
+                    "pad walk stalled at tile {:?} (world ({px},{pz})), {d} tiles short of {goal:?}; route head {next:?}; cell Z-/X-/Z+/X+ {block}",
                     here(session)
                 ));
             }
@@ -3287,8 +3543,13 @@ fn pad_talk_to(session: &mut BootSession, slot: u8) -> Run {
     let avoid = pad_avoid(session, None);
     let mut last = Run::Released;
     let mut talked = false;
-    for side in beside(session, npc_tile) {
-        match pad_walk(session, side, &avoid, 0) {
+    // Up to the NPC first (a counter or a table often fills the tile
+    // beside it, and the probe reaches over one), then from each side.
+    let approaches: Vec<((i16, i16), i32)> = std::iter::once((npc_tile, 1))
+        .chain(beside(session, npc_tile).into_iter().map(|t| (t, 0)))
+        .collect();
+    for (side, within) in approaches {
+        match pad_walk(session, side, &avoid, within) {
             Ok(Walk::Entered(s)) => return Run::Entered(s),
             Ok(Walk::Arrived) => {}
             Err(e) => {
