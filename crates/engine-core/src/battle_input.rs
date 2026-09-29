@@ -162,15 +162,15 @@ impl BattleCommand {
         )
     }
 
-    /// Can the command be chosen in *this* battle?
+    /// Can the command **succeed** in *this* battle?
     ///
     /// [`Self::enabled`] answers "is the command wired at all"; this adds
-    /// the per-battle refusal the retail flow has: a scripted no-escape
-    /// battle ([`crate::world::BattleState::no_escape`], the same flag the
-    /// field loop honours) forbids **Run**. A command that answers `false`
-    /// still draws its chip - retail keeps the plate and puts a single `-`
-    /// where the word would go
-    /// (`legaia_engine_ui::battle_command_ui`).
+    /// the per-battle outcome the retail flow has: in a scripted no-escape
+    /// battle ([`crate::world::BattleState::no_escape`], `ctx[+0x287]`) a
+    /// **Run** cannot get away. It is not a gate on choosing it: the round
+    /// prompt takes Run in every battle and the escape roll
+    /// (`FUN_801E791C`, `ctx[+0x287]` read at `0x801E7B14`) is what refuses
+    /// it - see [`BattleCommandSession::no_escape`].
     pub fn available(self, no_escape: bool) -> bool {
         if matches!(self, BattleCommand::Run) && no_escape {
             return false;
@@ -375,10 +375,11 @@ pub struct BattleCommandSession {
     /// Party-row index (0..=2) of the acting member - the target picker uses
     /// it to skip-self on ally-targeting commands.
     pub party_slot: u8,
-    /// Scripted no-escape battle: the round prompt draws its `Run` chip with
-    /// the `-` placeholder and refuses to take it. Set by the live loop from
-    /// [`crate::world::BattleState::no_escape`]; defaults to `false` so a
-    /// caller that does not know still gets a working prompt.
+    /// Scripted no-escape battle ([`crate::world::BattleState::no_escape`]),
+    /// carried for the session's readers. The prompt itself never reads it:
+    /// retail's flow SM `FUN_801D0748` takes Run in state `0x1E` and
+    /// confirms it in `0x32` without touching `ctx[+0x287]`, and the escape
+    /// roll is what fails. Set by the live loop; defaults to `false`.
     pub no_escape: bool,
     pub phase: CommandPhase,
 }
@@ -505,7 +506,7 @@ impl BattleCommandSession {
     ) {
         match &mut self.phase {
             CommandPhase::RoundPrompt { cursor } => {
-                self.phase = step_round_prompt(*cursor, ev, self.no_escape);
+                self.phase = step_round_prompt(*cursor, ev);
             }
             CommandPhase::CommitConfirm { cursor } => {
                 self.phase = step_commit_confirm(*cursor, ev);
@@ -654,8 +655,7 @@ const fn pair_seat(ev: BattleCommandInput) -> Option<u8> {
 /// (the left chip) and Right takes `Run` (the right chip) **on the press
 /// itself** - direction = screen side, one press commits, exactly retail's
 /// own dispatch. Cross commits whatever the cursor rests on (the scripted
-/// harness route), and Circle takes `Run` outright. A scripted no-escape
-/// battle refuses every route into `Run` and leaves the prompt up.
+/// harness route), and Circle takes `Run` outright.
 ///
 /// **The Circle route is the port's, not retail's, and the citation it used to
 /// carry was a raw-pad misread.** `FUN_801D0748`'s handlers test **packed**
@@ -669,8 +669,15 @@ const fn pair_seat(ev: BattleCommandInput) -> Option<u8> {
 /// ergonomic divergence; converting it wants the prompt's chrome moved with it,
 /// which lives in `engine-ui`. See `docs/subsystems/battle.md`.
 ///
+/// Run is taken in **every** battle. `0x801D1038..0x801D10D4` and the `0x32`
+/// confirm at `0x801D10F8..0x801D1184` read no `ctx[+0x287]` (the no-escape
+/// byte's readers are the escape roll, the monster flee roll and the action
+/// SM), so a boss fight's Run commits category `5` like any other and the
+/// roll at each member's dispatch fails it: the run band plays out, shows
+/// its "couldn't escape" banner and consumes the turn.
+///
 /// REF: FUN_801D0748 (state `0x1E`, `0x801D1038..0x801D10D4`)
-fn step_round_prompt(cursor: u8, ev: BattleCommandInput, no_escape: bool) -> CommandPhase {
+fn step_round_prompt(cursor: u8, ev: BattleCommandInput) -> CommandPhase {
     let len = RoundChoice::PROMPT.len() as u8;
     let mut cursor = cursor.min(len - 1);
     // Retail's state 0x1E commits on the direction press itself: Left
@@ -682,8 +689,7 @@ fn step_round_prompt(cursor: u8, ev: BattleCommandInput, no_escape: bool) -> Com
         }
         None => false,
     };
-    let run_now = ev.circle && !no_escape;
-    if run_now {
+    if ev.circle {
         return CommandPhase::RunAway;
     }
     if pressed || ev.cross {
@@ -695,8 +701,7 @@ fn step_round_prompt(cursor: u8, ev: BattleCommandInput, no_escape: bool) -> Com
                     .unwrap_or(0) as u8;
                 return CommandPhase::Menu { cursor: ring };
             }
-            RoundChoice::Run if !no_escape => return CommandPhase::RunAway,
-            RoundChoice::Run => {}
+            RoundChoice::Run => return CommandPhase::RunAway,
         }
     }
     CommandPhase::RoundPrompt { cursor }
@@ -956,23 +961,21 @@ mod tests {
         assert_eq!(by_circle.resolved(), Some(Resolution::RunAway));
     }
 
-    /// A scripted no-escape battle refuses both routes and leaves the prompt
-    /// up, so neither Right nor Circle can quietly flee a boss fight.
+    /// A scripted no-escape battle still takes Run from either route: the
+    /// flow SM's `0x1E` / `0x32` arms never read `ctx[+0x287]`, so the press
+    /// commits and the escape roll is what fails it.
     #[test]
-    fn a_no_escape_battle_refuses_run_from_either_route() {
+    fn a_no_escape_battle_still_takes_run_from_either_route() {
         for circle in [false, true] {
             let mut s = BattleCommandSession::new_round_open(0, 0, true);
             if circle {
                 s.input(press(|e| e.circle = true), party3(), one_monster());
             } else {
                 s.input(press(|e| e.right = true), party3(), one_monster());
-                s.input(press_cross(), party3(), one_monster());
             }
-            assert!(s.resolved().is_none(), "circle={circle}");
-            assert!(s.round_choice().is_some(), "circle={circle}");
+            assert_eq!(s.resolved(), Some(Resolution::RunAway), "circle={circle}");
         }
-        // ... and the chip still draws, carrying the `-` the UI layer puts
-        // there for an unavailable command.
+        // The outcome predicate still says the run cannot succeed.
         assert!(!BattleCommand::Run.available(true));
         assert!(BattleCommand::Run.available(false));
     }

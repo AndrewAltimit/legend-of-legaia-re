@@ -5047,6 +5047,7 @@ All six commands - **Attack**, **Arts**, **Magic**, **Item**, **Spirit**, **Run*
 
 - **Spirit** raises the guard stance at the **commit** (`World::battle.guarding`, the engine model of the retail pending-action byte `+0x1DE == 4`, which the melee kernel's guard roll reads) - so it protects against every monster that dispatches ahead of the member - and lasts until the next round's sweep clears the category. The AP charge (`ApGauge::charge_spirit`, the retail Square-press +5) is the Spirit band's own, at the member's dispatch.
 - **Run** stamps category `5` on every party actor at the commit and begins the round at once (retail `0x32`, `0x801D1174..0x801D1184`); each member's dispatch then rolls the escape and arms the ported run band (`RunBegin`/`RunWait`/`RunEscape`): success tears the battle down `Escaped` (no loot, no game over, downed members floored alive at 1 HP), failure consumes the turn. The roll is the decoded `FUN_801E791C` formula - party `(SPD*3)>>1 + missingHP>>4` vs enemy `SPD + missingHP>>5`, two rand draws, Chicken Heart / Chicken King passives honoured (`battle_formulas::escape_roll`; see [battle-action.md](battle-action.md#spirit--run-in-the-live-command-menu)).
+  A scripted no-escape fight (`ctx[+0x287]`) is no exception at the prompt: `0x1E` and `0x32` never read the byte, so Run commits there as anywhere, and the roll - which tests `ctx[+0x287]` after its compare (`0x801E7B14`) - fails it, so the run band plays its failure arm and the turn is spent.
 
 The submenu hand-offs:
 
