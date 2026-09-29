@@ -159,10 +159,22 @@ beats.
 
 In both passes a scripted sequence gets Cross on a press-2-release-14 duty
 cycle, the naming prompt's Yes/No confirm gets Up first (it opens on No), and a
-battle gets `critical_path_replay`'s command-ring presses: Begin, Attack, Auto,
-confirm the target; a random encounter that interrupts a pad-tier walk is
-fled instead (the round prompt's Run), unless the fight forbids running.
-Every one is a pad edge. Beyond that:
+battle is fought through the command ring, one pad edge at a time, by a
+fighter shaped like a player: a member under 45% of its HP, or down, gets the
+best heal or revive the item window lists; otherwise a member with an
+affordable damaging Seru spell casts the strongest one; otherwise it attacks
+through `Command`, entering the longest art its command pool pays for and
+spending the rest on plain directions (whether a matched art fires is the
+queue builder's call, out of the Spirit gauge). A random encounter that
+interrupts a pad-tier walk is fled instead (the round prompt's Run), unless
+the fight forbids running.
+
+A headless session renders nothing, so at battle entry the fighter installs
+each member's battle form the way both play hosts do
+(`engine-core::battle_party_form`, into a scratch VRAM): the action clips the
+hit events are paced by and the art records the arts input tokenizes. Without
+it a headless fight swings zero-length clips and matches no art. Beyond
+that:
 
 - Field dialogue runs through the inline-script field-VM runner, as it does
   in both play hosts (`World::toggles.use_vm_dialogue`); `BootSession` leaves
@@ -222,7 +234,7 @@ one level down from the tier that failed:
 | `B is reached by an FMV hand-off from record(s) {(p, r)}` | The hop is a movie whose trigger record is not on a walk-on band. |
 | `reach flag(s) 0x.. never set` | The target scene was reached but the beat that separates the milestones did not play. |
 | `battle unresolved ...: action SM ctx[7]=0x.. <state> actor N` | The battle action state machine (retail `FUN_801E295C`) sat in that state for the whole budget. |
-| `party wiped: ...` | The pad fighter lost; it has no healing, arts or magic. |
+| `party wiped: ...` | The pad fighter lost. It heals, casts and enters arts, but it never guards, charges Spirit or changes equipment. |
 | `no walkable path: the start's walk component ends N tiles short` | The lattice cannot reach the door from where the player stands; the planner does not route through a crossing scene. |
 | `pad walk stalled at tile ..` | A path existed and the follower stopped making progress on it. |
 | `PANIC: ...` | An engine panic, caught per segment. |
@@ -259,8 +271,9 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   options by rotation, not by reading them. Neither tier opens a menu, buys,
   equips or uses an item outside a tutorial battle; a beat that waits on one
   reads as a stall at that beat.
-- The pad fighter only swings, or flees a travel leg's random encounter. Boss
-  fights a player wins with arts, magic and healing read as wipes.
+- The pad fighter never guards, charges Spirit, targets a weakness or
+  changes equipment, and it flees a travel leg's random encounter. A fight
+  that needs any of those reads as a wipe.
 - The pad planner does not route through a crossing scene, so a door on the
   far side of a split walk component reads as `no walkable path`.
   `critical_path_replay` carries the `map01` / `suimon` crossing by hand.

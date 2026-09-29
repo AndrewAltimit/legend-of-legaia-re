@@ -55,7 +55,9 @@
 //!
 //! The seated tier places the player; it proves the doors, scripts and
 //! scene graph, not locomotion. Both tiers fight through the command ring
-//! with the pad (Attack / Auto; a sparring tutorial's lesson command). The
+//! with the pad: heal or revive from the item window, cast the strongest
+//! affordable damage spell, else enter an arts string through `Command` (a
+//! sparring tutorial's lesson command in a tutorial). The
 //! seated tier talks to the NPCs whose records reach a flag the next anchor
 //! carries or a destination the route needs; neither tier opens menus or
 //! buys anything, so a story beat that waits on one reads as a stall at that
@@ -664,8 +666,9 @@ const EXIT_TICKS: usize = 2_400;
 const DEEP_EXIT_TICKS: usize = 24_000;
 /// Consecutive idle ticks that end a post-step wait.
 const EXIT_IDLE_TICKS: usize = 4;
-/// A battle's tick budget under the pad fighter.
-const BATTLE_TICKS: usize = 30_000;
+/// A battle's tick budget under the pad fighter. A boss the fighter wears
+/// down with summons, arts and heals runs well past 30 000 ticks.
+const BATTLE_TICKS: usize = 60_000;
 /// The most a scripted sequence may run while its park site keeps moving.
 const SCRIPT_CEILING: usize = 60_000;
 /// Hops a segment may take before it is called lost.
@@ -959,40 +962,234 @@ thread_local! {
     /// Set while [`pad_hop`] drains a battle that interrupted its walk - a
     /// random encounter on a travel leg, which [`fight_pad`] flees.
     static FLEE_ENCOUNTERS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// `(actor, party HP sum)` pairs whose item window held nothing worth
+    /// using: the fighter does not reopen it until someone's HP moves.
+    static NO_ITEM: std::cell::RefCell<HashSet<(u8, u32)>> = Default::default();
+    /// Actors whose Magic window held no affordable damage spell this battle.
+    static NO_MAGIC: std::cell::RefCell<HashSet<u8>> = Default::default();
 }
 
-/// The pad mask a player presses this frame in a battle: Begin, Attack,
-/// Auto, confirm the target, confirm a message box, back out of a bag. The
-/// command-ring choices `critical_path_replay`'s fighter makes, minus its
-/// healing policy - every one a pad press, no engine call.
+/// Percent of max HP below which the fighter heals a member.
+const HEAL_BELOW_PCT: u32 = 45;
+
+fn party_hp_key(w: &legaia_engine_core::world::World) -> u32 {
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    (0..n).map(|i| u32::from(w.actors[i].battle.hp)).sum()
+}
+
+/// The heal worth using now among `ids`: a revive when a member is down,
+/// else a party heal when two or more are hurt, else the largest heal.
+fn wanted_item(w: &legaia_engine_core::world::World, ids: impl Iterator<Item = u8>) -> Option<u8> {
+    use legaia_engine_core::items::ItemEffect;
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    let dead = (0..n).filter(|&i| w.actors[i].battle.hp == 0).count();
+    let hurt = (0..n)
+        .filter(|&i| {
+            let b = &w.actors[i].battle;
+            b.hp > 0 && u32::from(b.hp) * 100 < u32::from(b.max_hp) * HEAL_BELOW_PCT
+        })
+        .count();
+    if dead == 0 && hurt == 0 {
+        return None;
+    }
+    let mut best: Option<(u32, u8)> = None;
+    for id in ids {
+        let Some(e) = w.tables.item_catalog.get(id).filter(|e| e.usable_in_battle) else {
+            continue;
+        };
+        let score = match e.effect {
+            ItemEffect::Revive { factor } if dead > 0 => 100_000 + u32::from(factor),
+            ItemEffect::HealAll if hurt >= 2 => 50_000,
+            ItemEffect::Heal { amount } if hurt > 0 => u32::from(amount),
+            _ => continue,
+        };
+        if best.is_none_or(|(b, _)| score > b) {
+            best = Some((score, id));
+        }
+    }
+    best.map(|(_, id)| id)
+}
+
+/// The Magic row worth casting: the strongest affordable damage spell.
+fn wanted_spell(
+    w: &legaia_engine_core::world::World,
+    m: &legaia_engine_core::battle_magic::BattleSpellSession,
+) -> Option<usize> {
+    use legaia_engine_core::spells::SpellEffect;
+    m.spells
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| r.affordable)
+        .filter_map(|(i, r)| match w.tables.spell_catalog.get(r.id)?.effect {
+            SpellEffect::Damage { base_power, .. } => Some((i, base_power)),
+            _ => None,
+        })
+        .max_by_key(|&(_, p)| p)
+        .map(|(i, _)| i)
+}
+
+/// The arts string worth entering: the longest of the character's arts that
+/// the command pool pays for, repeated while it fits, then the cheapest plain
+/// direction until nothing more is affordable. Whether a matched art fires is
+/// the queue builder's call (it pays out of the Spirit gauge); an unpaid one
+/// still swings.
+fn arts_plan(
+    w: &legaia_engine_core::world::World,
+    s: &legaia_engine_core::arts_command_input::ArtsCommandInputSession,
+) -> Vec<u8> {
+    use legaia_art::queue::Command;
+    const MAX_ENTRY: usize = 8;
+    let character = w.actors[usize::from(s.actor)].battle.character;
+    let cost = |cmds: &[Command]| -> u16 { cmds.iter().map(|&c| s.cost_of(c)).sum() };
+    let arts: Vec<&[Command]> = w
+        .tables
+        .art_records
+        .iter()
+        .filter(|((c, _), r)| *c == character && r.commands.len() >= 3)
+        .map(|(_, r)| r.commands.as_slice())
+        .collect();
+    let mut plan: Vec<Command> = Vec::new();
+    let mut pool = s.pool_max;
+    loop {
+        let art = arts
+            .iter()
+            .filter(|c| cost(c) <= pool && plan.len() + c.len() <= MAX_ENTRY)
+            .max_by_key(|c| {
+                (
+                    c.len(),
+                    std::cmp::Reverse(c.iter().map(|x| x.as_byte()).collect::<Vec<u8>>()),
+                )
+            });
+        if let Some(c) = art {
+            pool -= cost(c);
+            plan.extend_from_slice(c);
+            continue;
+        }
+        let Some(&d) = [Command::Left, Command::Right, Command::Down, Command::Up]
+            .iter()
+            .filter(|&&d| s.cost_of(d) <= pool)
+            .min_by_key(|&&d| s.cost_of(d))
+        else {
+            break;
+        };
+        if plan.len() >= MAX_ENTRY {
+            break;
+        }
+        pool -= s.cost_of(d);
+        plan.push(d);
+    }
+    plan.into_iter().map(|c| c.as_byte()).collect()
+}
+
+/// The ring press for one arts-entry direction byte.
+fn direction_mask(b: u8) -> u16 {
+    use legaia_art::queue::Command;
+    match Command::from_byte(b) {
+        Some(Command::Left) => PadButton::Left.mask(),
+        Some(Command::Right) => PadButton::Right.mask(),
+        Some(Command::Down) => PadButton::Down.mask(),
+        _ => PadButton::Up.mask(),
+    }
+}
+
+/// The pad mask a player presses this frame in a battle - every one a pad
+/// press through the engine's own battle menus, no engine call:
+///
+/// - a member at under [`HEAL_BELOW_PCT`] of its HP, or down, gets the best
+///   heal or revive the item window lists (the ring's up arm);
+/// - otherwise a member with an affordable damaging Seru spell casts the
+///   strongest one (the right arm);
+/// - otherwise it attacks through the `Command` chip, entering the longest
+///   art its command pool pays for ([`arts_plan`]);
+/// - a random encounter on a pad travel leg is fled (the round prompt's
+///   Run) unless the fight forbids running;
+/// - message boxes and results screens are paged with Cross.
+///
+/// A sparring tutorial validates each commit against its lesson, so there
+/// the hand keeps to the lesson: the up arm (using the first item) for the
+/// Items lesson, the down arm for Spirit, and `Auto` for the attack lessons.
 fn fight_pad(session: &BootSession) -> u16 {
+    use legaia_engine_core::arts_command_input::ArtsInputPhase;
     use legaia_engine_core::battle_input::CommandPhase;
+    use legaia_engine_core::battle_magic::SpellPhase;
     use legaia_engine_core::battle_tutorial::TutorialLesson;
     use legaia_engine_core::inventory_use::InventoryUseState;
     let w = &session.host.world;
     if !w.battle.tutorial_boxes.is_empty() {
         return PadButton::Cross.mask();
     }
-    // A tutorial battle (Tetsu's spar) validates each commit against the
-    // lesson it is teaching and rewinds any other command to the ring, so
-    // the hand picks the command the lesson names: the ring's up arm for
-    // Items (and uses the first item on the first target), its down arm for
-    // Spirit. Attacks and Hyper Arts both commit through Attack.
     let lesson = w.battle.tutorial.as_ref().map(|t| t.lesson());
     if let Some(menu) = w.battle.item_menu.as_ref() {
-        return match (lesson, &menu.state) {
-            (Some(TutorialLesson::Items), InventoryUseState::Browsing { .. })
-                if !menu.filtered_items.is_empty() =>
-            {
-                PadButton::Cross.mask()
-            }
-            (Some(TutorialLesson::Items), InventoryUseState::TargetSelect { .. }) => {
-                PadButton::Cross.mask()
-            }
+        if lesson == Some(TutorialLesson::Items) {
+            return match &menu.state {
+                InventoryUseState::Browsing { .. } if !menu.filtered_items.is_empty() => {
+                    PadButton::Cross.mask()
+                }
+                InventoryUseState::TargetSelect { .. } => PadButton::Cross.mask(),
+                _ => PadButton::Circle.mask(),
+            };
+        }
+        let listed = |i: usize| {
+            menu.filtered_items
+                .get(i)
+                .and_then(|&k| menu.items.get(k))
+                .copied()
+        };
+        let want = wanted_item(w, (0..menu.filtered_items.len()).filter_map(listed));
+        return match &menu.state {
+            InventoryUseState::Browsing { cursor } => match want {
+                Some(id) if listed(*cursor) == Some(id) => PadButton::Cross.mask(),
+                Some(_) => PadButton::Down.mask(),
+                None => {
+                    let key = (w.battle_ctx.active_actor, party_hp_key(w));
+                    NO_ITEM.with(|n| n.borrow_mut().insert(key));
+                    PadButton::Circle.mask()
+                }
+            },
+            // The session seeds the target cursor on the ally the item helps.
+            InventoryUseState::TargetSelect { .. } => PadButton::Cross.mask(),
             _ => PadButton::Circle.mask(),
         };
     }
+    if let Some(m) = w.battle.spell_menu.as_ref() {
+        return match &m.phase {
+            SpellPhase::Select { cursor } => match wanted_spell(w, m) {
+                Some(i) if i == usize::from(*cursor) => PadButton::Cross.mask(),
+                Some(_) => PadButton::Down.mask(),
+                None => {
+                    NO_MAGIC.with(|n| n.borrow_mut().insert(m.actor));
+                    PadButton::Circle.mask()
+                }
+            },
+            _ => PadButton::Cross.mask(),
+        };
+    }
+    if let Some(arts) = w.battle.arts_input.as_ref() {
+        return match &arts.phase {
+            ArtsInputPhase::Entering => {
+                let plan = arts_plan(w, arts);
+                if arts.buffer.len() < plan.len() && plan.starts_with(&arts.buffer) {
+                    direction_mask(plan[arts.buffer.len()])
+                } else {
+                    PadButton::Cross.mask()
+                }
+            }
+            _ => PadButton::Cross.mask(),
+        };
+    }
     if let Some(cmd) = w.battle.command.as_ref() {
+        let heal = || {
+            let bag: Vec<u8> = w
+                .party
+                .inventory
+                .iter()
+                .filter(|(_, c)| **c > 0)
+                .map(|(id, _)| *id)
+                .collect();
+            wanted_item(w, bag.into_iter()).is_some()
+                && !NO_ITEM.with(|n| n.borrow().contains(&(cmd.actor, party_hp_key(w))))
+        };
+        let magic = || !NO_MAGIC.with(|n| n.borrow().contains(&cmd.actor));
         return match &cmd.phase {
             CommandPhase::Menu { .. } if lesson == Some(TutorialLesson::Items) => {
                 PadButton::Up.mask()
@@ -1000,11 +1197,14 @@ fn fight_pad(session: &BootSession) -> u16 {
             CommandPhase::Menu { .. } if lesson == Some(TutorialLesson::Spirit) => {
                 PadButton::Down.mask()
             }
+            CommandPhase::Menu { .. } if lesson.is_none() && heal() => PadButton::Up.mask(),
+            CommandPhase::Menu { .. } if lesson.is_none() && magic() => PadButton::Right.mask(),
+            CommandPhase::AttackMode { .. } if lesson.is_none() => PadButton::Right.mask(),
             // A random encounter on a pad travel leg is fled: the prompt's
-            // Right takes Run. The fighter has no healing, and a lone
-            // member worn down by a string of fights wipes on whichever one
-            // the RNG happens to deal - a finding about the fighter, not
-            // the port. A fight that forbids running (`no_escape`) is fought.
+            // Right takes Run. A lone member worn down by a string of fights
+            // wipes on whichever one the RNG happens to deal - a finding
+            // about the route, not the port. A fight that forbids running
+            // (`no_escape`) is fought.
             CommandPhase::RoundPrompt { .. }
                 if FLEE_ENCOUNTERS.with(std::cell::Cell::get) && !w.battle.no_escape =>
             {
@@ -1020,6 +1220,29 @@ fn fight_pad(session: &BootSession) -> u16 {
     }
     // Between command sessions (intro, victory banner, results): page on.
     PadButton::Cross.mask()
+}
+
+/// Install each party member's battle form, as both play hosts do at battle
+/// entry (`engine-core::battle_party_form`): the idle and action clips the
+/// hit events are paced by, and the art records the arts input tokenizes.
+/// A headless session renders nothing, so the band pixels go to a scratch
+/// VRAM; without this step a headless fight swings zero-length clips and
+/// matches no art.
+fn install_party_battle_forms(session: &mut BootSession) {
+    use legaia_engine_core::battle_party_form as bpf;
+    let mut vram = legaia_tim::Vram::new();
+    let index = session.host.index.clone();
+    let Some(sources) = bpf::PartyFormSources::load(&index, &mut vram) else {
+        return;
+    };
+    let n = session.host.world.party.party_count.min(3) as usize;
+    for member in 0..n {
+        if let Some(mut form) =
+            bpf::build_party_battle_form(&index, &session.host.world, &sources, &mut vram, member)
+        {
+            session.host.world.install_party_battle_form(&mut form);
+        }
+    }
 }
 
 /// One line of battle state for a stall report.
@@ -1065,6 +1288,9 @@ fn battle_snapshot(session: &BootSession) -> String {
 /// Fight a battle with the pad ([`fight_pad`]). `None` when it ended and a
 /// walking mode came back.
 fn drain_battle(session: &mut BootSession) -> Option<Run> {
+    install_party_battle_forms(session);
+    NO_ITEM.with(|n| n.borrow_mut().clear());
+    NO_MAGIC.with(|n| n.borrow_mut().clear());
     let mut prev = 0u16;
     for _ in 0..BATTLE_TICKS {
         // A press is an edge: alternate the wanted mask with neutral.
