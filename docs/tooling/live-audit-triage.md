@@ -1263,7 +1263,7 @@ worth looking for in the rest.
 | `bite_interval` (`801d26cc`) | `WIRE` | `BandCheck::tick` was approximating the strike modulus with the length readout; the ladder is the real one. |
 | `bite_interval_bias` (`801d26cc`) | `WIRE` | Same call site, after correcting the kernel - see below. |
 | `clear_catch_slots` (`801d746c`, `fishing_chrome.rs`) | `DELETE` | Same table as `fishing::ReelCadence`'s ring; `reset` now calls it. |
-| `dance_scene_stage` (`801d414c`, `dance.rs`) | `WIRE` (partial) | Its `clear_pad_latch` field has an engine equivalent; `World::enter_dance` / `exit_dance` apply it. |
+| `dance_scene_stage` (`801d414c`, `dance.rs`) | `WIRE` (partial) | `clear_pad_latch` is applied by `World::enter_dance` / `exit_dance` and the block-base restore by `dance_venue::sync_dance_venue`; the scene-name restore is structural (the walked-in scene stays loaded) and `bgm_force_reload` has no consumer. |
 
 **`bite_interval_bias` was wrong, not just unwired.** It modelled retail's
 `li s1, -0x64` as a bias added to the strike credit. The instruction is an
@@ -1323,9 +1323,15 @@ page exists to name.
 **A disclosure can name the wrong level.** The three `GteMat3::rot_*` builders
 were disclosed as "GTE-oracle-only", i.e. as having no consumer but the tests.
 They have one: `camera_view_rotation`, the port of retail's own composition
-pass `FUN_8001CF50`, which sits three lines below them in the same file and is
-itself inert. Naming the tests as the blocker points a reader at coverage;
-naming the composition pass points at the camera that has to exist first.
+pass `FUN_8001CF50`, which sits three lines below them in the same file.
+Naming the tests as the blocker points a reader at coverage; naming the
+composition pass pointed at the draw record that had to carry the `+0x52`
+word first. It now does (`flags_52`), and both hosts' part passes reach
+`camera_view_rotation` through `camera_relative_model_prefix`
+([`renderer.md`](../subsystems/renderer.md#camera-relative-nodes-fun_8001cf50)),
+which makes the three builders live as its factors - the job retail's own
+`jal`s at `0x8001CF9C` / `0x8001CFC0` / `0x8001CFE4` give them - rather than
+replaced by the hosts' f32 factors.
 
 **"Has no source" can mean "has an inert producer".** The afterimage streak's
 half-width was disclosed as a word `engine-core` "does not model". It does:
@@ -1484,9 +1490,10 @@ that satisfies the audit without them is worse than the honest disclosure:
 `dance_face_rig` has a second twist worth keeping: the browser resolves the rig
 from the disc **cast table**'s per-dancer kind, which on the qualifier floor is
 already `0/2/3` - the exact output of the overlay's hard-coded slot -> rig
-remap. The two agree, so the selector is redundant rather than missing. A
-disclosure that says "no host" reads as work; "the host arrives at the same
-answer from disc data" reads as a closed question.
+remap. The two agree, so the per-frame draw never needed the selector. The
+selector is live all the same: the dance entry's five face-stamp calls address
+dancers by **slot**, not by kind, and `dance_venue::entry_face_stamps` resolves
+them through it before `DanceVenue::build` blits them into the venue VRAM.
 
 ### Three reasons were wrong about the *arithmetic*, not just the caller
 
@@ -2091,11 +2098,11 @@ checked.
 
 `80016230`, `800195a8`, `80020f88`, `8002174c`, `80029724`,
 `8003cb54` (both anchors), `8003cbf8`, `8005126c`
-(both anchors), `80056208`, `80064090`, `801d32bc` (both
+(both anchors), `80064090`, `801d32bc` (both
 anchors), `801d65f8`, `801d820c`, `801d9ae8` (module), `801dcc20`,
 `801e4140`, `801ddb30`, `801de37c`, `801e2650`, `801f81dc`. (`800480d8` is
 since live, as is `801d4df8` - the Baka impact pair, now seated and drawn through `engine-core::baka_impact_fx` - `801cf754` is `REPLACED-BY` the contact probes, and `801e0080`'s
-duplicate port is deleted in favour of the live effect-VM walker; `8001d088` is since live through the two-frame pose sampler `PlayerAnmBundle::sample_bone`.)
+duplicate port is deleted in favour of the live effect-VM walker; `8001d088` is since live through the two-frame pose sampler `PlayerAnmBundle::sample_bone`; `80056208` is since live, the side-band kernel moved to `engine-core::battle_sideband` and run every battle frame by `World::tick_battle_sideband`, with the two Cort stage modules it drives ported beside it.)
 
 Two of them are worth singling out. `8005126c` is a documented **negative**, not
 a gap: the five-form reference sweep found no reference to the on-screen test
@@ -2307,16 +2314,16 @@ structure they blamed and are rewritten; every row stays held.
 | `801d4a60` `step_scene_program` / `lift_step` / `entry_successor` | wired | the pair it parks on is the side-band **bank** request / acknowledge, live as `World::audio.sound_stream`, not a BGM latch; `World::tick_scene_programs` now steps each resumed program from the handler pass |
 | `801d72a0` `help_panel_layout` | wired | its callers are states `0x65` / `0x66`, reached from the venue menu's row 1; the menu opens from the idle shore on Triangle / Select (state `0x0C`, `& 0x110` at `0x801CF9EC`), which no host had bound. `engine-core::fishing_hub` runs the menu, help pages and tackle list on the shared `PondSession`, with the text read off the disc, on all three hosts |
 | `801d26cc` `bite_pad_nudge` | wired | the play hosts' `PondSession::tick` did run the band; what was off was the count - retail adds one per mask hit on `_DAT_8007B874` (`0x8000`, `0x2000`, and `0xC0` as one mask; the cast press none, `0x801D343C..0x801D3468`), and all three hosts now count through `PondInput::from_engine_pad` |
-| `801d56e4` `clip_segment_2d` | held | its one caller clips the fishing line's GPU packet (`0x801D3D00`). The draw kind is not the gap: `screen_prim::line_quad` is the line as a one-pixel quad every host draws for the paylines. The second endpoint is `0x801D9194`, which `FUN_8003D368` fills at `0x801D1FB4` by projecting `*s4 + 0x128` (the rod tip, by inference), and no host spawns the angler record it projects |
+| `801d56e4` `clip_segment_2d` | wired | its one caller clips the fishing line's packet (`0x801D3D00`). The blamed endpoint was never the angler: `*s4 + 0x128` is vertex 37 of the **rod actor's** own model (scene models `0x19..0x1B`, spawned by the cast lock), posed in view space and bent by VDF sub-entry 0. `RodActor` ports `FUN_801D1C5C`, and `PondSession::line_frame` builds and clips the line on all three hosts - see [minigame-fishing.md](../subsystems/minigame-fishing.md#the-fishing-line) |
 | `801dc6b4` `CONTEXT_LOCKED_ENTRY_SUBSCREEN` / `801dcd58` `notify_window_operands` | wired | the entry decode (`0x801DC85C..0x801DC8E4`) is ported as `pause_screens::menu_entry_subscreen`, and window 8 is the art-learned notice: its template `0x801E4700` is resident menu data and a Hyper-Art book stages its operands through `FUN_80035C00`, painted on both hosts |
 | `801dd330` `OPTIONS_SUBSCREEN_ROW_SPAN` | wired | its `0x30` is the settings window's id and its `1` the exit sub-screen; the retail display set is sliced from the sub-screen `0x17` row span |
 | `8003053c` `spell_party_broadcast::broadcast` | wired | its three `jal` sites are menu code; the out-of-battle validator host `menu_validator` greys and refuses a Magic row that would affect nobody, on both hosts |
 | `80046870` `top_up_cooldown` | wired | the Incense window: an Incense confirm tops it up, the field region roll skips while it is open, and the Use list greys the row from `0xE0`. The world map runs no walk-regen tick, so its encounters are not gated |
 | `80030628` `build_shop_buy_rows` | wired | `ShopInventory::from_stock_record` keeps the record's order, and `World::try_arm_field_shop` - the merchant path both play hosts open through - runs the builder with the live Platinum Card probe (`shop_tail_rows_allowed`); a retail capture pins both row lists |
 | `80017bec` `refresh_object_grid_marks` | wired | retail runs it once at field init (`0x801D6BF8`) over the fresh `.MAP`, which is where the engine's field entry now runs it; the `retona` capture holds a refreshed cell the disc lacks |
-| `801d7b50` `window_rebuild_spawns` | held | no windowed placement actor list exists to rebuild, and the descriptor region it indexes is dropped after scene load; `parse_map_objects` / `resolve_placed_env_draws` do not model the `template_kind`, `+0x74` or `+0x10 \| 4` descriptor state, so `REPLACED-BY` is not earned |
+| `801d7b50` `window_rebuild_spawns_resident` | wired | retail's callers are the camera re-centre pair `FUN_80017DD4` / `FUN_80017EC8` (`0x80017E14` / `0x80017F08`), each after `FUN_800180EC` latches the box at the re-centre tile. `World::recentre_field_window` is that pair, called from the field entry's window install and the warp landing, `0x23` / `4C 51` player and leader-swap re-centres; the descriptor region stays resident on `FieldTerrain::static_window`, and both play hosts gate the sweep's placements on the list through `field_env::placed_draw_live`. The descriptor bits were checked in `FUN_8001ADA4` / `FUN_80043390`: draw kind `0` never draws, the `+0x74` bits stage an `IR0 = 0` depth cue (the identity) and `+0x10 \| 4` only culls off-screen |
 | `801d0748` `battle_magic_chip_mark` | held | the ring greys the Ra-Seru chip and refuses its arm on both hosts; the red cross-out `FUN_801DBC30(0xF8, 0x42)` (`0x801D12DC..0x801D12F4`) needs an `etim` quad placed over the chip, which neither battle chip pass draws yet |
-| `801cef54` `dance_scene_entry` | held | the actor it spawns from `0x801D42E4` is the beat clock `World::enter_dance` already covers. The venue half has one loader, `LegaiaMinigames::load_dance_bodies`, which both browser hosts draw through and which frames the hall off the overlay's spawn table and an orbit camera; the native window draws the walk-in scene because the dance suspends the scene mode. What the record's spawn, camera pair, view window and face stamps wait on is a scene swap to `other7` with a restore on exit, which the teardown's three unread fields wait on too |
+| `801cef54` `dance_scene_entry` | wired | the mode half is `World::enter_dance` (the spawned actor is the beat clock); the venue half is `dance_venue`: `sync_dance_venue` stages the block base, view window and venue camera over the walked-in scene and restores them after, on the native window and the browser play page, and `DanceVenue::build` loads the `other7` block the stream id names with the five face stamps applied - drawn by the native window in place of the walked-in scene and baked by both browser pages, which frame it through the same camera |
 | `801d6e5c` `keyframe_in_range` | wired | the `+0x26` column is parsed, and the combat tick's call at `0x801D4334` is ported as `baka_fighter::StrikeClock`, which books each exchange on the winner's strike keyframe on all three hosts |
 | `8003c9ac` `motion_pause_kick` | wired | the requested-move target is the ambient channel's clip request, which the ambient tick now consumes per tick with a `+0x5E` latch; the kick copies the standing move, so it holds nothing |
 | `801d25ec` `spawn_arc_with_emitter` | held | op `0x43` sub-`0`/`1`/`0xA`/`0xB` reaches it at `0x801DF5AC`; the engine's arc channel is the player's alone |

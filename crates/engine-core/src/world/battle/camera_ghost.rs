@@ -41,7 +41,7 @@ use crate::action_effect_script::RotationLut;
 impl World {
     /// The retail pool slot of engine actor `e`. Scope codes `8` / `9` pass
     /// through.
-    fn retail_pool_slot(&self, e: u8) -> u8 {
+    pub(in crate::world) fn retail_pool_slot(&self, e: u8) -> u8 {
         let pc = self.party.party_count.clamp(1, 3);
         match e {
             8.. => e,

@@ -1,39 +1,29 @@
-//! Battle **sideband tick** - the once-per-frame pass that runs the battle
-//! intro sequence, holds the pad during a scene change, and ramps the two
-//! camera-distance registers.
+//! Battle **side-band tick** - the once-per-frame SCUS pass keyed on the
+//! battle **stage id** `_DAT_8007B64A`: the sparring fight's opening caption
+//! (stage `1`), and the host side of the two boss-stage modules (stage `2`,
+//! Cort's arrival, PROT 0968; stage `3`, Cort's form transition, PROT 0969).
 //!
 //! PORT: FUN_80056208
 //!
-//! NOT WIRED here: the intro caption half is wired in `engine-core` - the
-//! stage-1 phases `0` and `1` (the sparring caption, its hold timer, the
-//! any-press skip, and the `ctx[+0x6B0]` hold on the flow SM's round start)
-//! run live as `World::raise_sparring_caption_if_due` +
-//! `World::tick_battle_tutorial_boxes` (`world/battle/tutorial.rs`). Every arm
-//! left here is the host side of a **stage module** the engine does not run:
+//! The battle frame driver `FUN_80046A20` calls it on every battle frame
+//! (`jal 0x80056208` at `0x80046D60`), ahead of the opening-counter gate and of
+//! both battle state machines. The engine's seat is
+//! `World::tick_battle_sideband` (`world/battle/sideband.rs`), which runs this
+//! kernel once per live battle frame on both hosts and applies the returned
+//! [`BattleSidebandEffects`]:
 //!
-//! * stage-1 phases `2` / `3` call `0x801F6B70` (`jal` at `0x80056418`) in the
-//!   sparring stage overlay (PROT 0967) and tick its sub-overlay loader
-//!   `FUN_80025358` (`0x80056428`);
-//! * submode `2` calls `FUN_801F69F4` (`0x80056498`), the entry of the Cort
-//!   arrival module (PROT 0968), on every frame the battle-running signal
-//!   `DAT_8007BD71` reads `>= 0x12`; below that - only before the fight is
-//!   running - it clears the pads and walks the camera pair;
-//! * submode `3` calls `FUN_801F69D8` (`0x800565B0`), the Cort form-transition
-//!   module (PROT 0969), once `ctx[+0x6D8]` has run out and the CD is idle.
+//! | stage | arm | engine |
+//! |---|---|---|
+//! | `1` | phases `0` / `1` - caption, hold timer, any-press skip, `ctx[+0x6B0]` | `World::tick_battle_sideband` + the tutorial box queue |
+//! | `1` | phase `2` - the overlay-967 hook `0x801F6B70` | dispatched on flow edges by `World::set_battle_flow` (the hook's one-shot latch makes a per-frame call and an edge call the same) |
+//! | `1` | phase `3` - the battle-teardown staging `FUN_80025358` (PROT 0978) | not reached: the 967 port has no completion countdown that advances `ctx[+0x289]` to `3` |
+//! | `2` | the arrival module `FUN_801F69F4` | [`crate::battle_stage_module::arrival_tick`] |
+//! | `2` | pad clear + camera pull-back while the module is still paging in | unreachable in the engine - the module is resident from the first frame |
+//! | `3` | the form-transition module `FUN_801F69D8` | [`crate::battle_stage_module::form_transition_tick`] |
 //!
-//! Stage ids `2` and `3` are written only for the Cort fight (`FUN_80055B6C`
-//! on formation monster `0xB5`, and the Lost Grail sweep's tail arm), and the
-//! engine resolves the stage id but stages its own presentation instead of
-//! running either module (`docs/subsystems/battle.md`, "What the two
-//! boss-stage modules do"). So this tick has nothing to drive until 0968 /
-//! 0969 are ported; [`battle_sideband_tick`] is a pure transition function,
-//! so wiring it then is a matter of the battle host owning a
-//! [`BattleSidebandState`] and applying the returned [`BattleSidebandEffects`].
-//!
-//! This also settles what the address is: it is **not** libgpu-band vendor
-//! infrastructure despite sitting between the PsyQ veneers. It reads the game's
-//! own battle context, dispatches into three battle overlay hooks, and points a
-//! caption pointer at a game string.
+//! It is **not** libgpu-band vendor infrastructure despite sitting between
+//! the PsyQ veneers: it reads the game's own battle context, dispatches into
+//! three battle overlay hooks, and points a caption pointer at a game string.
 //!
 //! REF: FUN_801d8de8 - battle UI-element dispatcher (the intro caption).
 //! REF: FUN_801d829c - camera-state per-actor transform builder (the intro
@@ -42,58 +32,78 @@
 //! phase-1 exit.
 //! REF: FUN_80025358 - gated sub-overlay load sequencer, ticked by phase 3.
 //! REF: FUN_8003de7c - CD read-idle poll, gating the outro hook.
+//! REF: FUN_800520f0 - the battle scene loader whose step byte
+//! `DAT_8007BD71` gates stage 2.
 //!
-//! # Three submodes
+//! # Three stage arms
 //!
-//! `DAT_8007B64A` selects, and only `1` and `2` publish a hold:
+//! Only stages `1` and `2` publish a hold:
 //!
-//! | submode | role |
+//! | stage | role |
 //! |---|---|
-//! | `1` | the intro sequence, four phases on `ctx[+0x289]` |
-//! | `2` | in-battle: pad clear + camera pull-back ramp, or the overlay tick |
-//! | `3` | outro: wait out `ctx[+0x6D8]`, then the overlay hook once the CD is idle |
+//! | `1` | the sparring intro, four phases on `ctx[+0x289]` |
+//! | `2` | the arrival module's tick once it is resident; before that, pad clear + camera pull-back |
+//! | `3` | wait out `ctx[+0x6D8]`, then the form-transition module once the CD is idle |
 //!
 //! Everything else falls straight through to the tail, which always writes
 //! `ctx[+0x6B0]` - so the *hold* flag is published unconditionally and is `1`
 //! only for intro phases `0` and `1`.
+//!
+//! # The two gate bytes are loader and opening state
+//!
+//! `DAT_8007BD71` is the battle scene loader's step byte (`FUN_800520F0`,
+//! `gp[+0xA59]`): the loader parks it at `0x11` while it pages the stage
+//! overlay in (`0x80052694..0x800526A0`, `FUN_8003EC70(stage + 0x47)`), steps it
+//! past that once the read lands, and leaves `0xFF` for a running fight and
+//! `0xFE` for an ending one. So stage 2's `>= 0x12` test is "the arrival module
+//! is resident". The engine's loader is synchronous, so a live battle frame
+//! always reads [`BATTLE_RUNNING`].
+//!
+//! `DAT_8007B648` is `gp[+0x330]`, the frame driver's opening counter
+//! (`0x80046EEC..0x8004700C`): it counts up through the battle open and sits
+//! at `0xFF` - negative as a signed byte - for the rest of the fight.
 //!
 //! # The intro's phase 1 wait is cancellable
 //!
 //! Phase 1 decays `ctx[+0x6AE]` by `8 * frame_step` per frame, and any pad edge
 //! (`_DAT_8007B874 | _DAT_8007B938`, masked to 16 bits) zeroes it outright - so
 //! a button press skips the caption. The advance to phase 2 is then further
-//! gated on the battle-running signal `DAT_8007BD71` reading `0xFF`: while it does not, the
-//! timer is pinned at `1` and the phase holds.
+//! gated on `DAT_8007BD71` reading `0xFF`: while it does not, the timer is
+//! pinned at `1` and the phase holds.
 //!
 //! # The camera ramp is cadence-invariant
 //!
-//! Submode 2's ramp adds `4 * frame_step` to `0x800840BC` and `14 * frame_step`
-//! to `0x800840C0` per frame, capped by testing `0x800840BC < 0xC00` *before*
-//! the add - so the register can overshoot the cap by one step. Phase 3 of the
-//! intro pushes `0x800840C0` alone, by `8 * frame_step`.
+//! Stage 2's pre-residency ramp adds `4 * frame_step` to `0x800840BC` and
+//! `14 * frame_step` to `0x800840C0` per frame, capped by testing
+//! `0x800840BC < 0xC00` *before* the add - so the register can overshoot the
+//! cap by one step. Phase 3 of the intro pushes `0x800840C0` alone, by
+//! `8 * frame_step`.
 //!
 //! Source: `ghidra/scripts/funcs/80056208.txt` (disassembly).
 
-/// Sideband submode: the battle intro sequence.
-pub const SUBMODE_INTRO: u8 = 1;
-/// Sideband submode: in-battle.
-pub const SUBMODE_IN_BATTLE: u8 = 2;
-/// Sideband submode: the battle outro.
-pub const SUBMODE_OUTRO: u8 = 3;
+/// Stage id `1`: the sparring fight (PROT 0967).
+pub const STAGE_SPARRING: u8 = 1;
+/// Stage id `2`: Cort's arrival (PROT 0968).
+pub const STAGE_ARRIVAL: u8 = 2;
+/// Stage id `3`: Cort's form transition (PROT 0969).
+pub const STAGE_FORM_TRANSITION: u8 = 3;
 
 /// `DAT_8007BD71` while a fight is running - the value that releases the
-/// intro's phase-1 gate. The byte is the battle-running / battle-end signal
-/// (`0xFF` in every running-fight capture, `0xFE` once a wipe or an escape
-/// ends it, `0x00` while the battle is still opening), not an effect-VM flag.
-pub const EFFECT_VM_READY: u8 = 0xFF;
-/// `DAT_8007BD71` threshold at and above which submode 2 delegates to the
-/// stage module's tick instead of running its own ramp - i.e. once the fight
-/// is running.
-pub const OVERLAY_TICK_FROM: u8 = 0x12;
+/// intro's phase-1 gate. The byte is the battle scene loader's step byte
+/// (`FUN_800520F0`, `gp[+0xA59]`): `0xFF` once the load is done and the fight
+/// runs, `0xFE` once a wipe or an escape ends it, lower values while the
+/// battle is still loading.
+pub const BATTLE_RUNNING: u8 = 0xFF;
+/// `DAT_8007BD71` threshold at and above which stage 2 delegates to the
+/// arrival module's tick instead of running its own ramp. The loader parks
+/// the byte at `0x11` while the stage overlay pages in, so `>= 0x12` is "the
+/// module is resident".
+pub const STAGE_MODULE_RESIDENT: u8 = 0x12;
 
 /// Battle-context phase byte value that arms the intro (`ctx[+6]`).
 pub const INTRO_ARM_MODE: u8 = 0x14;
-/// Battle-context phase byte value the camera ramp requires (`ctx[+6]`).
+/// Command-flow byte value the camera ramp requires (`ctx[+6]`) - the value
+/// flow state `0x0A` stores directly for the `0xB5` formation.
 pub const RAMP_MODE: u8 = 0x0C;
 
 /// Caption timer seeded when the intro arms (`ctx[+0x6AE]`).
@@ -124,13 +134,15 @@ pub const PHASE3_RAMP_B: i32 = 8;
 /// The mutable state the tick owns.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct BattleSidebandState {
-    /// `ctx + 0x289` - the intro phase counter.
+    /// `ctx + 0x289` - the stage phase cursor: the sparring intro's here, and
+    /// the one both stage modules dispatch on.
     pub phase: u8,
     /// `ctx + 0x6AE` - the intro caption timer.
     pub caption_timer: i16,
     /// `ctx + 0x6CE` - a phase-3 accumulator.
     pub phase3_accum: u16,
-    /// `ctx + 0x6D6` - the delay submode 2 burns before it starts ramping.
+    /// `ctx + 0x6D6` - the delay stage 2 burns before it starts ramping (the
+    /// arrival module re-seeds it to `0x100` every tick).
     pub ramp_delay: i16,
     /// `ctx + 0x6D8` - the outro wait timer.
     pub outro_timer: i16,
@@ -145,19 +157,20 @@ pub struct BattleSidebandState {
 /// The read-only inputs.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BattleSidebandInputs {
-    /// `DAT_8007B64A` - the submode selector.
+    /// `DAT_8007B64A` - the battle stage id, which selects the arm.
     pub submode: u8,
     /// `DAT_1F800393` - the adaptive frame step, in vsyncs.
     pub frame_step: u8,
     /// `ctx + 6` - the battle context's own phase byte.
     pub ctx_mode: u8,
-    /// `DAT_8007BD71` - the battle-running / battle-end signal (see
-    /// [`EFFECT_VM_READY`]; the field keeps its older name).
-    pub effect_vm_ready: u8,
+    /// `DAT_8007BD71` - the battle scene loader's step byte (see
+    /// [`BATTLE_RUNNING`] and [`STAGE_MODULE_RESIDENT`]).
+    pub loader_state: u8,
     /// `_DAT_8007B874 | _DAT_8007B938` masked to 16 bits - any pad edge.
     pub pad_edge: bool,
-    /// `DAT_8007B648 < 0` - a scene transition is in flight.
-    pub scene_changing: bool,
+    /// `DAT_8007B648 < 0` - the frame driver's opening counter `gp[+0x330]`
+    /// has passed its midpoint (it rests at `0xFF` for a running fight).
+    pub opening_negative: bool,
     /// `FUN_8003DE7C(1) == 0` - the CD is idle.
     pub cd_idle: bool,
 }
@@ -173,17 +186,18 @@ pub enum BattleSidebandEffect {
     IntroCameraAim,
     /// `FUN_800355F0` - drain the 2D floating-element list.
     DrainFloatingElements,
-    /// `FUN_801F6B70` - intro phase-2 overlay hook.
-    IntroOverlayHook,
-    /// `FUN_80025358` - tick the gated sub-overlay loader; its return lands in
-    /// `ctx[+0xB]`.
-    SubOverlayTick,
+    /// `FUN_801F6B70` - the sparring prompt machine's tick (PROT 0967).
+    SparringHook,
+    /// `FUN_80025358` - tick the battle-teardown staging (the PROT 0978 load
+    /// and its streamer); its "still loading" return lands in `ctx[+0xB]`.
+    TeardownStaging,
     /// `FUN_801F69F4` - the Cort arrival module's tick (PROT 0968), taken
-    /// instead of the ramp once the fight is running.
-    InBattleOverlayTick,
+    /// instead of the ramp once the module is resident.
+    ArrivalModule,
     /// `FUN_801F69D8` - the Cort form-transition module (PROT 0969).
-    OutroOverlayHook,
-    /// Clear the pad masks and `ctx[+0x884]` - the in-battle input hold.
+    FormTransitionModule,
+    /// Clear the pad masks (`_DAT_8007B938` / `B874` / `B850`) and
+    /// `ctx[+0x884]` - the input hold while the arrival module pages in.
     ClearPadState,
 }
 
@@ -205,7 +219,7 @@ pub fn battle_sideband_tick(
     let mut hold: u16 = 0;
 
     match inputs.submode {
-        SUBMODE_INTRO => match state.phase {
+        STAGE_SPARRING => match state.phase {
             0 => {
                 if inputs.ctx_mode == INTRO_ARM_MODE {
                     hold = 1;
@@ -223,7 +237,7 @@ pub fn battle_sideband_tick(
                 if inputs.pad_edge {
                     state.caption_timer = 0;
                 }
-                if inputs.effect_vm_ready != EFFECT_VM_READY {
+                if inputs.loader_state != BATTLE_RUNNING {
                     // Pin at 1 and hold this phase.
                     if state.caption_timer <= 0 {
                         state.caption_timer = 1;
@@ -240,9 +254,9 @@ pub fn battle_sideband_tick(
                 out.effects
                     .push(BattleSidebandEffect::DrainFloatingElements);
             }
-            2 => out.effects.push(BattleSidebandEffect::IntroOverlayHook),
+            2 => out.effects.push(BattleSidebandEffect::SparringHook),
             3 => {
-                out.effects.push(BattleSidebandEffect::SubOverlayTick);
+                out.effects.push(BattleSidebandEffect::TeardownStaging);
                 state.phase3_accum = state
                     .phase3_accum
                     .wrapping_add(u16::from(inputs.frame_step));
@@ -250,12 +264,12 @@ pub fn battle_sideband_tick(
             }
             _ => {}
         },
-        SUBMODE_IN_BATTLE => {
-            if inputs.effect_vm_ready >= OVERLAY_TICK_FROM {
-                out.effects.push(BattleSidebandEffect::InBattleOverlayTick);
+        STAGE_ARRIVAL => {
+            if inputs.loader_state >= STAGE_MODULE_RESIDENT {
+                out.effects.push(BattleSidebandEffect::ArrivalModule);
             } else {
                 out.effects.push(BattleSidebandEffect::ClearPadState);
-                if inputs.scene_changing && inputs.ctx_mode == RAMP_MODE {
+                if inputs.opening_negative && inputs.ctx_mode == RAMP_MODE {
                     if state.ramp_delay > 0 {
                         state.ramp_delay = state
                             .ramp_delay
@@ -270,14 +284,14 @@ pub fn battle_sideband_tick(
                 }
             }
         }
-        SUBMODE_OUTRO => {
+        STAGE_FORM_TRANSITION => {
             let mut expired = true;
             if state.outro_timer > 0 {
                 state.outro_timer = state.outro_timer.wrapping_sub(i16::from(inputs.frame_step));
                 expired = state.outro_timer <= 0;
             }
             if expired && inputs.cd_idle {
-                out.effects.push(BattleSidebandEffect::OutroOverlayHook);
+                out.effects.push(BattleSidebandEffect::FormTransitionModule);
             }
         }
         _ => {}
@@ -296,9 +310,9 @@ mod tests {
             submode,
             frame_step: 1,
             ctx_mode: 0,
-            effect_vm_ready: EFFECT_VM_READY,
+            loader_state: BATTLE_RUNNING,
             pad_edge: false,
-            scene_changing: false,
+            opening_negative: false,
             cd_idle: true,
         }
     }
@@ -306,7 +320,7 @@ mod tests {
     #[test]
     fn phase_zero_needs_the_arm_mode_byte() {
         let mut s = BattleSidebandState::default();
-        let mut i = inputs(SUBMODE_INTRO);
+        let mut i = inputs(STAGE_SPARRING);
         assert!(battle_sideband_tick(&mut s, &i).effects.is_empty());
         assert_eq!(s.phase, 0);
         assert_eq!(s.hold, 0);
@@ -332,7 +346,7 @@ mod tests {
             caption_timer: 100,
             ..Default::default()
         };
-        let mut i = inputs(SUBMODE_INTRO);
+        let mut i = inputs(STAGE_SPARRING);
         i.frame_step = 3;
         battle_sideband_tick(&mut s, &i);
         assert_eq!(s.caption_timer, 100 - 24);
@@ -347,7 +361,7 @@ mod tests {
             caption_timer: INTRO_CAPTION_FRAMES,
             ..Default::default()
         };
-        let mut i = inputs(SUBMODE_INTRO);
+        let mut i = inputs(STAGE_SPARRING);
         i.pad_edge = true;
         let e = battle_sideband_tick(&mut s, &i);
         assert_eq!(s.phase, 2);
@@ -355,14 +369,14 @@ mod tests {
     }
 
     #[test]
-    fn phase_one_holds_while_the_effect_vm_is_not_ready() {
+    fn phase_one_holds_while_the_loader_is_not_done() {
         let mut s = BattleSidebandState {
             phase: 1,
             caption_timer: 4,
             ..Default::default()
         };
-        let mut i = inputs(SUBMODE_INTRO);
-        i.effect_vm_ready = 0x40;
+        let mut i = inputs(STAGE_SPARRING);
+        i.loader_state = 0x40;
         i.frame_step = 8; // 8*8 = 64 > 4, so the timer would go negative
         let e = battle_sideband_tick(&mut s, &i);
         assert!(e.effects.is_empty());
@@ -377,8 +391,8 @@ mod tests {
             phase: 2,
             ..Default::default()
         };
-        let e = battle_sideband_tick(&mut s, &inputs(SUBMODE_INTRO));
-        assert_eq!(e.effects, vec![BattleSidebandEffect::IntroOverlayHook]);
+        let e = battle_sideband_tick(&mut s, &inputs(STAGE_SPARRING));
+        assert_eq!(e.effects, vec![BattleSidebandEffect::SparringHook]);
         assert_eq!(s.hold, 0);
     }
 
@@ -388,42 +402,42 @@ mod tests {
             phase: 3,
             ..Default::default()
         };
-        let mut i = inputs(SUBMODE_INTRO);
+        let mut i = inputs(STAGE_SPARRING);
         i.frame_step = 2;
         let e = battle_sideband_tick(&mut s, &i);
-        assert_eq!(e.effects, vec![BattleSidebandEffect::SubOverlayTick]);
+        assert_eq!(e.effects, vec![BattleSidebandEffect::TeardownStaging]);
         assert_eq!(s.camera_b, 16);
         assert_eq!(s.phase3_accum, 2);
         assert_eq!(s.camera_a, 0);
     }
 
     #[test]
-    fn in_battle_delegates_to_the_overlay_once_the_effect_vm_is_live() {
+    fn stage_two_delegates_to_the_arrival_module_once_it_is_resident() {
         let mut s = BattleSidebandState::default();
-        let e = battle_sideband_tick(&mut s, &inputs(SUBMODE_IN_BATTLE));
-        assert_eq!(e.effects, vec![BattleSidebandEffect::InBattleOverlayTick]);
+        let e = battle_sideband_tick(&mut s, &inputs(STAGE_ARRIVAL));
+        assert_eq!(e.effects, vec![BattleSidebandEffect::ArrivalModule]);
     }
 
     #[test]
-    fn in_battle_clears_the_pad_below_the_overlay_threshold() {
+    fn stage_two_clears_the_pad_while_the_module_pages_in() {
         let mut s = BattleSidebandState::default();
-        let mut i = inputs(SUBMODE_IN_BATTLE);
-        i.effect_vm_ready = OVERLAY_TICK_FROM - 1;
+        let mut i = inputs(STAGE_ARRIVAL);
+        i.loader_state = STAGE_MODULE_RESIDENT - 1;
         let e = battle_sideband_tick(&mut s, &i);
         assert_eq!(e.effects, vec![BattleSidebandEffect::ClearPadState]);
     }
 
     #[test]
     fn camera_ramp_needs_both_the_scene_change_and_the_ramp_mode() {
-        let mut i = inputs(SUBMODE_IN_BATTLE);
-        i.effect_vm_ready = 0;
+        let mut i = inputs(STAGE_ARRIVAL);
+        i.loader_state = 0;
         for (changing, mode, want) in [
             (false, RAMP_MODE, 0),
             (true, 0u8, 0),
             (true, RAMP_MODE, CAMERA_RAMP_A),
         ] {
             let mut s = BattleSidebandState::default();
-            i.scene_changing = changing;
+            i.opening_negative = changing;
             i.ctx_mode = mode;
             battle_sideband_tick(&mut s, &i);
             assert_eq!(s.camera_a, want, "changing={changing} mode={mode}");
@@ -432,9 +446,9 @@ mod tests {
 
     #[test]
     fn camera_ramp_is_cadence_invariant_and_overshoots_its_cap_by_one_step() {
-        let mut i = inputs(SUBMODE_IN_BATTLE);
-        i.effect_vm_ready = 0;
-        i.scene_changing = true;
+        let mut i = inputs(STAGE_ARRIVAL);
+        i.loader_state = 0;
+        i.opening_negative = true;
         i.ctx_mode = RAMP_MODE;
 
         // Ten frames at step 1 lands where five frames at step 2 do.
@@ -464,12 +478,12 @@ mod tests {
     }
 
     #[test]
-    fn in_battle_burns_its_own_delay_before_it_ramps() {
+    fn stage_two_burns_its_own_delay_before_it_ramps() {
         // The delay is ctx+0x6D6, a different halfword from the outro's
         // ctx+0x6D8, and it decays 8 per step rather than 1.
-        let mut i = inputs(SUBMODE_IN_BATTLE);
-        i.effect_vm_ready = 0;
-        i.scene_changing = true;
+        let mut i = inputs(STAGE_ARRIVAL);
+        i.loader_state = 0;
+        i.opening_negative = true;
         i.ctx_mode = RAMP_MODE;
         let mut s = BattleSidebandState {
             ramp_delay: 16,
@@ -483,8 +497,8 @@ mod tests {
     }
 
     #[test]
-    fn outro_waits_out_its_timer_then_needs_the_cd_idle() {
-        let mut i = inputs(SUBMODE_OUTRO);
+    fn stage_three_waits_out_its_timer_then_needs_the_cd_idle() {
+        let mut i = inputs(STAGE_FORM_TRANSITION);
         i.frame_step = 0x10;
         let mut s = BattleSidebandState {
             outro_timer: 0x20,
@@ -499,11 +513,11 @@ mod tests {
 
         i.cd_idle = true;
         let e = battle_sideband_tick(&mut s, &i);
-        assert_eq!(e.effects, vec![BattleSidebandEffect::OutroOverlayHook]);
+        assert_eq!(e.effects, vec![BattleSidebandEffect::FormTransitionModule]);
     }
 
     #[test]
-    fn an_unknown_submode_still_publishes_the_hold() {
+    fn an_unknown_stage_still_publishes_the_hold() {
         let mut s = BattleSidebandState {
             hold: 1,
             ..Default::default()

@@ -123,6 +123,11 @@ pub struct FieldTerrain {
     ///
     /// REF: FUN_801D9E1C
     pub region_tracker: Option<crate::region_encounter::RegionEncounterTracker>,
+    /// The scene's **windowed static-object list** and the `.MAP`
+    /// object-descriptor region it is planned from - the actors the sub-area
+    /// window sweep (`FUN_801D7B50`) keeps, re-planned on every camera
+    /// re-centre by [`crate::world::World::recentre_field_window`].
+    pub static_window: crate::world::StaticObjectWindow,
 }
 
 impl FieldTerrain {
@@ -142,6 +147,7 @@ impl FieldTerrain {
             floor_tier_bobs: Vec::new(),
             last_tile: None,
             region_tracker: None,
+            static_window: Default::default(),
         }
     }
 }

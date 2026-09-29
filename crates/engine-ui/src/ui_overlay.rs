@@ -728,6 +728,10 @@ pub struct BattleHudFrame<'a> {
     /// [`BATTLE_INTRO_NAME_Y`] (`engine-core::battle_hud::battle_intro_names`,
     /// retail `FUN_801D9D3C`). Empty outside the intro timer.
     pub intro_names: &'a [(String, i32)],
+    /// The boss-name banner a battle-stage module raises, `(label, pen x,
+    /// pen y)` (`engine-core::battle_hud::battle_stage_banner`, PROT 0968's
+    /// phase 5): a bare text actor, no frame. `None` outside it.
+    pub stage_banner: Option<(&'a str, i32, i32)>,
     /// Diagnostic readout ([`diag_hud_enabled`]): the engine's debug rows -
     /// monster HP numerals/bars (retail draws **no** monster gauge,
     /// `docs/subsystems/battle-action.md`), per-slot LV / AP readouts, and
@@ -1738,6 +1742,14 @@ pub fn battle_hud_draws_for(
             ));
         }
         stage_text(&mut text, font, label, pen.0, pen.1, crate::MENU_TEXT_WHITE);
+    }
+
+    // ---- The battle-stage module's boss-name banner ----
+    //
+    // `FUN_8003541C(0, 0, name, x, y, 0, 0, 0)`: a text actor with no frame
+    // rect, centred on the screen by its caller.
+    if let Some((label, x, y)) = frame.stage_banner.filter(|(l, _, _)| !l.is_empty()) {
+        stage_text(&mut text, font, label, x, y, crate::MENU_TEXT_WHITE);
     }
 
     // ---- The message bar ----

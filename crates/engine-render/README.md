@@ -501,9 +501,6 @@ rather than emit geometry. Each is pure, unit-tested and carries a
   span against `[0, 0x140]`. Horizontal only: retail reads the X of two
   corners and no Y at all, which is what separates it from the rectangle
   probe `FUN_8001B73C`.
-- [`battle_sideband`](src/battle_sideband.rs) (`FUN_80056208`) - the battle
-  intro / in-battle / outro sideband state machine and its cadence-invariant
-  camera pull-back ramp.
 - [`mode_transition`](src/mode_transition.rs) (`FUN_80016230`) - the
   mode-entry prologue: frame-pacing reset, the RAM-cached-overlay word-sum
   verdict, and the field snapshot a battle / cutscene / minigame mode is

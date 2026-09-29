@@ -174,6 +174,7 @@ impl SceneHost {
             anchor_x,
             anchor_z,
             facing,
+            rod_mesh: crate::fishing_actors::RodMesh::from_scene(&scene),
         })
     }
 

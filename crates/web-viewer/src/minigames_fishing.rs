@@ -295,6 +295,7 @@ impl LegaiaMinigames {
                 anchor_x,
                 anchor_z,
                 facing: self.fishing_angler_facing,
+                rod_mesh: scene.rod_mesh.clone(),
             });
         }
         self.fishing_banners = Default::default();
@@ -330,8 +331,49 @@ impl LegaiaMinigames {
         )
     }
 
+    /// This frame's fishing line as
+    /// `{"fish":[x,y],"rod":[x,y],"fish_rgb":[r,g,b],"rod_rgb":[r,g,b]}` in
+    /// retail 320x240 screen space, or `null` while no line is out.
+    ///
+    /// The engine's line (`PondSession::line_frame`, the same call the two
+    /// world hosts make): the rod end is the rod actor's projected tip, the
+    /// packet is clipped by the ported `FUN_801D56E4`, and the colours are the
+    /// packet's. The fish end is the one input this page supplies - its own
+    /// projection of the lure it draws (`fish_x`, `fish_y`, retail screen
+    /// space), because this page's venue camera is its own fitted framing
+    /// rather than the retail camera the other two hosts resolve.
+    /// `fish_visible = false` means the lure did not project this frame.
+    pub fn fishing_line_json(&mut self, fish_x: i32, fish_y: i32, fish_visible: bool) -> String {
+        let Some(p) = self.fishing_pond.as_mut() else {
+            return "null".to_string();
+        };
+        let fish = fish_visible.then(|| {
+            (
+                fish_x.clamp(-1024, 1023) as i16,
+                fish_y.clamp(-1024, 1023) as i16,
+            )
+        });
+        let Some(l) = p.line_frame(|_| fish) else {
+            return "null".to_string();
+        };
+        format!(
+            r#"{{"fish":[{},{}],"rod":[{},{}],"fish_rgb":[{},{},{}],"rod_rgb":[{},{},{}]}}"#,
+            l.fish.0,
+            l.fish.1,
+            l.rod.0,
+            l.rod.1,
+            l.fish_rgb[0],
+            l.fish_rgb[1],
+            l.fish_rgb[2],
+            l.rod_rgb[0],
+            l.rod_rgb[1],
+            l.rod_rgb[2]
+        )
+    }
+
     /// Advance the pond one frame. `reel_mask` carries the held pad bits
-    /// (`0x40` Cross / reel A, `0x80` Square / reel B), `cast_edge` the cast /
+    /// (`0x40` Cross / reel A, `0x80` Square / reel B, and the D-pad's `0x2000`
+    /// right / `0x4000` down / `0x8000` left the rod actor reads), `cast_edge` the cast /
     /// confirm press, `pressed_mask` the **packed** retail newly-pressed word
     /// this frame (`_DAT_8007B874` layout: `0x8000` D-pad left, `0x2000`
     /// D-pad right, `0x40` / `0x80` the reel buttons). The strike credit's pad

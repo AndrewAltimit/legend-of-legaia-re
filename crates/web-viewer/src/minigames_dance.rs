@@ -16,13 +16,13 @@ use std::collections::HashMap;
 
 use legaia_asset::dance_art::{self, DanceWidget};
 use legaia_asset::dance_cast::{self, DanceCast, DanceClip};
-use legaia_asset::field_objects::FLAG_PLACED;
 use legaia_asset::player_anm::PlayerAnmBundle;
 use legaia_asset::{character_pack, field_char_textures};
 use legaia_engine_core::dance::dance_hit_sting_voices;
+use legaia_engine_core::dance_venue::{self, DanceVenue};
 use legaia_engine_core::field_env;
 use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::scene_resources::{BuildOptions, SceneLoadKind, SceneResources};
+use legaia_engine_core::scene_resources::SceneResources;
 use legaia_tmd::mesh::{VramMesh, tmd_to_vram_mesh_field_hybrid};
 
 /// Everything the dance panel renders with, decoded once at disc load.
@@ -143,91 +143,51 @@ impl DanceEnv {
     }
 }
 
-/// Frame-0 rigid transforms of scene-ANM record `anim_id - 1`, for baking a
-/// bound placement's rest pose - `None` (draw unposed) when the record is
-/// missing or its bone count doesn't match the mesh's object count (retail's
-/// count-equality contract, the same guard the play page applies).
-fn frame0_bone_offsets(
-    anm: &PlayerAnmBundle,
-    anim_id: u8,
-    objects: usize,
-) -> Option<Vec<([i16; 3], [i16; 3])>> {
-    let rec_idx = (anim_id as usize).checked_sub(1)?;
-    let rec = anm.record_lenient(rec_idx).ok()?;
-    if rec.bone_count as usize != objects {
-        return None;
+/// A world-frame camera as the view-projection of a page frame re-based on
+/// `origin` in retail Y-down coordinates: the focus moves with the frame and
+/// the Y column negates, which is the single flip the page's own orbit
+/// framing applies.
+pub(crate) fn dance_venue_vp_in_frame(
+    camera: &legaia_engine_vm::psx_camera::FieldCameraView,
+    origin: (f32, f32, f32),
+    aspect: f32,
+) -> [f32; 16] {
+    let v = legaia_engine_vm::psx_camera::FieldCameraView {
+        focus: [
+            camera.focus[0] - origin.0,
+            camera.focus[1] - origin.1,
+            camera.focus[2] - origin.2,
+        ],
+        ..*camera
+    };
+    let mut m = v.vp(aspect);
+    for x in &mut m[4..8] {
+        *x = -*x;
     }
-    Some(
-        (0..objects)
-            .map(|b| match anm.bone_transform(rec_idx, 0, b) {
-                Some(t) => (
-                    [t.t_x as i16, t.t_y as i16, t.t_z as i16],
-                    [t.r_x as i16, t.r_y as i16, t.r_z as i16],
-                ),
-                None => ([0; 3], [0; 3]),
-            })
-            .collect(),
-    )
+    m
 }
 
-/// Bake the `other7` scene's full static map into one [`DanceEnv`] mesh:
-/// the env-pack vote + the `.MAP` placed-object / terrain-tile resolution
-/// (the same [`field_env`] calls the play page makes - posed placements via
-/// `resolve_placed_env_draws`, `FLAG_PLACED` records excluded from the
-/// terrain sweep) + the walk-ground heightfield, every draw transformed to
-/// world space and re-based on the human dancer's spawn.
-fn bake_dance_env(
-    index: &ProtIndex,
-    scene: &Scene,
-    res: &SceneResources,
-    anm: &PlayerAnmBundle,
-    origin: (f32, f32, f32),
-) -> DanceEnv {
-    let env_tmds = field_env::env_pack_tmd_indices(scene, res);
-    let floor_lut = scene.field_floor_height_lut(index).ok().flatten();
-    let binds = scene.field_object_binds(index).ok().flatten();
-    let placement_records = scene
-        .field_object_placements(index)
-        .ok()
-        .flatten()
-        .unwrap_or_default();
-    let terrain_records: Vec<_> = scene
-        .field_terrain_tiles(index)
-        .ok()
-        .flatten()
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|p| p.flags & FLAG_PLACED == 0)
-        .collect();
-    let (placements, _) = field_env::resolve_placed_env_draws(
-        &env_tmds,
-        &placement_records,
-        floor_lut,
-        binds.as_ref(),
-    );
-    let (terrain, _) = field_env::resolve_env_draws(&env_tmds, &terrain_records, floor_lut);
-
-    // Rank the coplanar clusters across **both** layers, exactly as the play
-    // page and the native window do: terrain first, then placements - the
-    // ranking order decides which of a coplanar pair wins, so a baker that
-    // fed them in the other order would lift the opposite mesh and the venue
-    // would z-fight where every other host is clean.
-    let mut ranked: Vec<field_env::EnvDraw> = Vec::with_capacity(terrain.len() + placements.len());
-    ranked.extend(terrain.iter().copied());
-    ranked.extend(placements.iter().copied());
-    let planes = legaia_engine_core::coplanar_draws::draw_plane_summaries(&ranked, res);
-    let lifts = legaia_engine_core::coplanar_draws::coplanar_draw_offsets(&ranked, &planes);
-
+/// Bake the venue's full static map into one [`DanceEnv`] mesh: the
+/// kernel's ranked terrain + placement draw list
+/// ([`legaia_engine_core::dance_venue::DanceVenue::draws`], the same
+/// [`field_env`] resolution and coplanar lifts every host draws the venue
+/// with; bound props posed at frame 0 of their clip) + the walk-ground
+/// heightfield, every draw transformed to world space and re-based on
+/// `origin`.
+fn bake_dance_env(index: &ProtIndex, venue: &DanceVenue, origin: (f32, f32, f32)) -> DanceEnv {
+    let scene = &venue.scene;
+    let res = &venue.resources;
     let mut out = DanceEnv::default();
     let mut built: HashMap<(usize, u8), (VramMesh, Vec<u8>)> = HashMap::new();
-    for draw in placements.iter().chain(terrain.iter()) {
+    for vd in &venue.draws {
+        let draw = &vd.draw;
         let Some(rtmd) = res.tmds.get(draw.res_tmd) else {
             continue;
         };
         let key = (draw.env_slot, draw.anim_id);
         let entry = built.entry(key).or_insert_with(|| {
             let offsets = (draw.anim_id != 0)
-                .then(|| frame0_bone_offsets(anm, draw.anim_id, rtmd.tmd.objects.len()))
+                .then(|| venue.frame0_bone_offsets(draw.anim_id, rtmd.tmd.objects.len()))
                 .flatten();
             match &offsets {
                 Some(o) => crate::field_scene::build_hybrid_env_mesh_posed(rtmd, o),
@@ -235,8 +195,7 @@ fn bake_dance_env(
             }
         });
         let (mesh, flat) = (&entry.0, &entry.1);
-        let lift = lifts.get(draw).copied().unwrap_or([0.0; 3]);
-        out.append_draw(mesh, flat, draw, origin, lift);
+        out.append_draw(mesh, flat, draw, origin, vd.lift);
     }
 
     // The walk-ground heightfield: already world-space (Y-down), so only the
@@ -313,6 +272,12 @@ pub(crate) struct DanceBodies {
     /// what decides - on both hosts, from one predicate - whether the
     /// count-in banner draws as retail's sprite or as placeholder text.
     hud_staged: bool,
+    /// The world point every baked position is re-based on (the human
+    /// dancer's floor spawn), for [`LegaiaMinigames::dance_venue_vp`].
+    origin: (f32, f32, f32),
+    /// The dance entry's camera ([`dance_venue::venue_camera`]), in world
+    /// coordinates.
+    camera: legaia_engine_vm::psx_camera::FieldCameraView,
 }
 
 /// Number of clip slots exposed per dancer: idle, the dance loop, and the
@@ -353,10 +318,12 @@ impl LegaiaMinigames {
                 .map(|t| t.tim)
                 .find(|t| t.image.fb_x == rig.base.0 && t.image.fb_y == rig.base.1)
         });
+        // The audio bank the dance entry streams (`FUN_8001FC00` with raw
+        // `0x4D1`), read off the entry record rather than a second constant.
         let vab_entry = entry_bytes(
             &self.prot,
             &self.entries,
-            dance_art::DANCE_SFX_VAB_PROT_INDEX as u32,
+            dance_venue::venue_sfx_vab_index(&legaia_engine_core::dance::dance_scene_entry()),
         );
         let sfx = match (
             entry_bytes(
@@ -629,83 +596,28 @@ impl LegaiaMinigames {
         )?;
         let cast = dance_cast::parse(&overlay)?;
 
-        // The dance-hall scene module. Only its CDNAME define is needed to
-        // frame the block, so a two-line synthetic map keeps this path free
-        // of the full CDNAME.TXT (the minigames class only holds PROT bytes).
-        // The terminator define bounds the block at raw index 0x4D1 (the SFX
-        // VAB, not scene data): the entries past it sit in the PROT TOC's
-        // zeroed tail, where the indexed size formula underflows to a ~4 GiB
-        // footprint - harmless on 64-bit hosts (overcommit), but a reserve
-        // past `isize::MAX` on wasm32. The ProtIndex clone is dropped again
-        // before this function returns.
+        // The dance-hall venue, through the kernel the native window loads it
+        // with: the dance entry's record names the block (raw base `0x4CC`)
+        // and bounds it at its audio bank (raw `0x4D1`), so a two-define map
+        // built off the record frames it without the full CDNAME.TXT (this
+        // class only holds PROT bytes). Bounding it there also keeps the block
+        // off the PROT TOC's zeroed tail, where the indexed size formula
+        // underflows to a ~4 GiB footprint - a reserve past `isize::MAX` on
+        // wasm32. The venue build also puts Noa's field atlas, the HUD page
+        // and the entry's five face stamps into its VRAM. The ProtIndex clone
+        // is dropped again before this function returns.
+        let entry = legaia_engine_core::dance::dance_scene_entry();
         let index = ProtIndex::from_bytes(
             self.prot.clone(),
-            Some(&format!(
-                "#define {} 1228 \n#define {}_end 1233 \n",
-                dance_cast::DANCE_SCENE_NAME,
-                dance_cast::DANCE_SCENE_NAME
-            )),
+            Some(&dance_venue::venue_cdname_stub(&entry)),
         )
         .ok()?;
-        let scene = Scene::load(&index, dance_cast::DANCE_SCENE_NAME).ok()?;
-        let (res, _stats) = SceneResources::build_targeted_with_options(
-            &scene,
-            &[],
-            BuildOptions {
-                kind: SceneLoadKind::Field,
-                // Retail's loader DMA-uploads every scene TIM; the dancer
-                // atlases + their row-480/481 CLUTs must all be resident.
-                upload_all_tims: true,
-                system_ui: None,
-            },
-        )
-        .ok()?;
-
+        let venue = DanceVenue::build(&index, Some(&overlay))?;
+        let res = &venue.resources;
         // The scene's MOVE ANM bundle - the 60-record choreography bank.
-        let anm = scene.entries.iter().find_map(|e| {
-            [3usize, 5, 6, 7].into_iter().find_map(|desc| {
-                legaia_asset::player_anm::find_in_entry(&e.bytes, desc)
-                    .into_iter()
-                    .next()
-            })
-        })?;
-
-        // Merged VRAM: the scene upload + Noa's field-character atlas
-        // (PROT 0874 §2, row-478 CLUTs) - disjoint rects, one buffer.
-        let mut vram = res.vram.clone();
-        if let Some(raw) = entry_bytes(
-            &self.prot,
-            &self.entries,
-            field_char_textures::PROT_ENTRY_INDEX,
-        ) && let Ok(pack) = field_char_textures::parse(raw)
-        {
-            pack.upload_to_vram(&mut vram, false);
-        }
-        // ...and the HUD's own page, through the shared staging kernel the
-        // native window uses. The scene build above already walks this
-        // entry, so on a whole-hall load this is a no-op re-upload of the
-        // same rects - which is the point: residency stops being "the scene
-        // build probably covered it" and becomes a call whose return value
-        // the page can state. The rects come from the run's own widget
-        // table, so a page that could not parse the overlay stages nothing
-        // and keeps the placeholder.
-        let hud_rects: Vec<legaia_engine_core::dance::DanceHudRect> =
-            legaia_engine_core::dance::dance_widgets_with_abr(&overlay)
-                .iter()
-                .map(|(w, _)| {
-                    (
-                        w.tpage_xy(),
-                        (((w.clut & 0x3F) * 16), (w.clut >> 6) & 0x1FF),
-                    )
-                })
-                .fold(Vec::new(), |mut acc, r| {
-                    if !acc.contains(&r) {
-                        acc.push(r);
-                    }
-                    acc
-                });
-        let hud_staged =
-            legaia_engine_core::dance::stage_dance_hud_vram(&index, &hud_rects, &mut vram) > 0;
+        let anm = venue.anm.clone()?;
+        let vram = &res.vram;
+        let hud_staged = venue.hud_staged;
 
         // The floor cast: the qualifier (yosenn) spawn table, left..right by
         // spawn x - `[kind 2, Noa, kind 3]` on the retail floor.
@@ -730,23 +642,12 @@ impl LegaiaMinigames {
         // re-based so the human dancer's spawn is the origin (the frame the
         // page already poses the bodies in).
         let hs = &spawns[human.min(spawns.len() - 1)];
-        let env = bake_dance_env(
-            &index,
-            &scene,
-            &res,
-            &anm,
-            (hs.x as f32, hs.y as f32, hs.z as f32),
-        );
+        let origin = (hs.x as f32, hs.y as f32, hs.z as f32);
+        let env = bake_dance_env(&index, &venue, origin);
 
         // The step-marker tiles that stand on that floor. Same origin, so
         // they land in the frame the bodies and the hall already share.
-        let markers = bake_dance_markers(
-            &index,
-            &scene,
-            &res,
-            &overlay,
-            (hs.x as f32, hs.y as f32, hs.z as f32),
-        );
+        let markers = bake_dance_markers(&index, &venue.scene, res, &overlay, origin);
 
         Some(DanceBodies {
             dancers,
@@ -757,6 +658,8 @@ impl LegaiaMinigames {
             env,
             markers,
             hud_staged,
+            origin,
+            camera: venue.camera,
         })
     }
 
@@ -1057,6 +960,19 @@ impl LegaiaMinigames {
     /// belong to something else, so a host draws the placeholder instead.
     pub fn dance_hud_art_staged(&self) -> bool {
         self.dance_bodies.as_ref().is_some_and(|b| b.hud_staged)
+    }
+
+    /// The dance entry's own camera as a column-major view-projection over
+    /// this page's baked frame (positions re-based on the human dancer's
+    /// spawn, retail Y-down): the pose `FUN_801CEF54` stages - angles,
+    /// `H`, the eye-space pair, focused on its beat-clock actor - through the
+    /// shared kernel [`dance_venue::venue_camera`]. `aspect` is the canvas'
+    /// width over height. Empty when the cast did not decode.
+    pub fn dance_venue_vp(&self, aspect: f32) -> Vec<f32> {
+        let Some(b) = self.dance_bodies.as_ref() else {
+            return Vec::new();
+        };
+        dance_venue_vp_in_frame(&b.camera, b.origin, aspect).to_vec()
     }
 
     // ------------------------------------------------------ the dance hall

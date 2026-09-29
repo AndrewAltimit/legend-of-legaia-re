@@ -27,7 +27,6 @@ pub mod actor_cull;
 pub mod attach_swap;
 pub mod battle_intro;
 pub mod battle_on_screen;
-pub mod battle_sideband;
 pub mod gte_trace;
 pub mod mode_transition;
 pub mod window;

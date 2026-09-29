@@ -2783,16 +2783,9 @@ ENUM_COVERAGE: list[dict[str, object]] = [
         "mode-24 door warp for either) and only one can DRAW leaves the other "
         "host's player in a frozen field with no screen - the shape four "
         "minigame modes shipped in",
-        "waivers": {
-            # (variant, host) -> reason
-            ("Fishing", "web"): {
-                "blocked_on": "the play page's minigame screen dispatch "
-                "(`ActiveGame::of_mode`, play_minigames.rs) maps the four "
-                "door-warp games and returns None for Fishing; the page's "
-                "fishing host keys on the installed PondSession instead, "
-                "so the mode word reaches no page-side arm",
-            },
-        },
+        # (variant, host) -> reason. Empty: the play page's fishing line
+        # pass (`play_fishing.rs`) keys on `SceneMode::Fishing`.
+        "waivers": {},
     },
 ]
 

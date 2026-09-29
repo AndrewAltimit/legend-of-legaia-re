@@ -267,6 +267,14 @@ impl LegaiaRuntime {
         {
             host.world.exit_dance();
         }
+        // The dance entry's globals - block base, this page's camera window,
+        // the venue camera - staged on the first dance frame and restored on
+        // the first frame after it, through the kernel the native window
+        // runs (`FUN_801CEF54` / `FUN_801D414C`). The hall geometry itself is
+        // the minigame art's `DanceVenue` build (`play_mg_dance_*`).
+        if let Some(host) = self.scene_host.as_mut() {
+            legaia_engine_core::dance_venue::sync_dance_venue(&mut host.world, &mut self.camera);
+        }
         let now = self
             .scene_host
             .as_ref()

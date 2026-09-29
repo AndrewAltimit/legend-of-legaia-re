@@ -122,8 +122,10 @@ fn restore_action_anim_rates<H: BattleActionHost + ?Sized>(
     ctx.gauge_rearm_latch = 0;
 }
 
-/// "Any HP-bar drain still animating?" settle check - PORT: FUN_801E7250
-/// (battle overlay 0898, `ghidra/scripts/funcs/overlay_battle_action_801e7250.txt`).
+/// "Any HP-bar drain still animating?" settle check (battle overlay 0898,
+/// `ghidra/scripts/funcs/overlay_battle_action_801e7250.txt`).
+///
+/// PORT: FUN_801E7250
 ///
 /// Retail dispatches on the active actor's target byte (`+0x1DD`):
 ///

@@ -89,6 +89,7 @@ impl World {
     /// hosts and tests can call it directly.
     pub fn arm_battle_tutorial(&mut self) {
         self.battle.tutorial = Some(BattleTutorial::new());
+        self.battle.stage_id = crate::battle_tutorial::TUTORIAL_STAGE_ID;
         self.battle.tutorial_pending = false;
         self.battle.tutorial_boxes.clear();
         self.battle.flow = BattleFlowState::Idle;
@@ -126,70 +127,6 @@ impl World {
             .tutorial_boxes
             .back()
             .map_or(0, |b| b.group.wrapping_add(1))
-    }
-
-    /// The sparring fight's opening caption - the SCUS battle side-band
-    /// tick's stage-1 arm (`FUN_80056208`), which the flow SM's round start
-    /// waits behind.
-    ///
-    /// Retail keys the arm on the stage-1 phase byte `ctx[+0x289]`:
-    ///
-    /// ```text
-    /// 800562c8  lbu  v1,0x6(a2)          ; phase 0: wait for ctx[+0x06] == 0x14
-    /// 800562d0  bne  v1,v0,...           ;   (the round-start state the 0x0B timer stores)
-    /// 800562e8  sb   v0,0x289(a2)        ; phase = 1
-    /// 800562f8  sh   v0,0x6ae(a2)        ; hold timer = 0xB40 (drains 8 per frame)
-    /// 80056318  addiu v0,v0,-0x734c      ; the caption string (SCUS 0x80078CB4)
-    /// 80056320  _sw  v0,0x7494(v1)       ; -> the HUD caption pointer _DAT_80077494
-    /// 8005631c  jal  0x801d8de8          ; raise HUD element 0x5A
-    /// 80056360  jal  0x801d829c          ; aim the camera at the first monster seat
-    /// 80056370  ...                      ; phase 1: timer -= 8/frame, ANY pad press zeroes it
-    /// 80056400  sh   s0,0x6ae(v1)        ;   expired -> phase = 2 (the overlay-967 hook runs)
-    /// 800565c4  sh   s0,0x6b0(v0)        ; ctx[+0x6B0] = 1 through phases 0..1
-    /// ```
-    ///
-    /// `ctx[+0x6B0] != 0` is what parks the flow SM: `FUN_801D0748` tests it
-    /// at `0x801D0BDC` and returns before its state switch, so the `0x14`
-    /// arm - the actor sweep, the initiative seed, `Begin | Run` - does not
-    /// run until the caption has gone. Phase `2` is the only phase that
-    /// ticks the prompt machine (`jal 0x801f6b70` at `0x80056418`).
-    ///
-    /// The engine's box queue is the caption's carrier (both hosts already
-    /// draw it, framed and text-measured), placed by the retail frame: the
-    /// caption sits centred at the bottom anchor `0xCC`, which is the
-    /// emitter's style `9` corner. Returns `true` when the round start has
-    /// to wait; [`Self::tick_battle_tutorial_boxes`] advances the phase to
-    /// `2` when the caption is dismissed and opens the round then.
-    ///
-    /// A world with no caption text (no disc) skips the hold outright rather
-    /// than showing an empty window.
-    ///
-    /// PORT: FUN_80056208 (stage-1 arm; phases 0 and 1)
-    pub(in crate::world) fn raise_sparring_caption_if_due(&mut self) -> bool {
-        use crate::battle_tutorial::{SPARRING_CAPTION_FRAMES, SPARRING_CAPTION_STYLE};
-        if self.battle.tutorial.is_none() || self.battle.sparring_phase != 0 {
-            return false;
-        }
-        let Some(text) = self
-            .battle
-            .ui_strings
-            .get(legaia_asset::battle_ui_strings::BattleUiLabel::SparringIntro)
-            .map(str::to_string)
-        else {
-            self.battle.sparring_phase = 2;
-            return false;
-        };
-        self.battle.sparring_phase = 1;
-        let group = self.next_battle_tutorial_group();
-        self.battle.tutorial_boxes.push_back(ActiveTutorialBox {
-            text,
-            style: SPARRING_CAPTION_STYLE,
-            waits_for_input: false,
-            frames_remaining: SPARRING_CAPTION_FRAMES,
-            group,
-            any_press_dismisses: true,
-        });
-        true
     }
 
     /// Replay the one-shot system-flag arm the record that enters formation
@@ -237,11 +174,10 @@ impl World {
     /// box (`0`, `1`, `8`, `9`) counts itself down, and Cross skips it early
     /// so the player is never made to sit through a burst of them. The
     /// sparring caption is the one box any pad press dismisses - retail's
-    /// `FUN_80056208` phase-1 test is on the whole packed pad word.
-    ///
-    /// When the caption goes, the side-band phase advances to `2` and the
-    /// round it was holding back opens (retail: `ctx[+0x6B0]` drops and the
-    /// flow SM's `0x14` arm finally runs).
+    /// `FUN_80056208` phase-1 test is on the whole packed pad word - and the
+    /// side-band tick, which runs ahead of this every frame, is what retires
+    /// it and opens the round it was holding back
+    /// (`world/battle/sideband.rs`).
     pub(in crate::world) fn tick_battle_tutorial_boxes(&mut self) -> bool {
         use crate::input::PadButton;
 
@@ -284,10 +220,6 @@ impl World {
             } else {
                 i += 1;
             }
-        }
-        if self.battle.sparring_phase == 1 && self.battle.tutorial_boxes.is_empty() {
-            self.battle.sparring_phase = 2;
-            self.begin_battle_round();
         }
         true
     }

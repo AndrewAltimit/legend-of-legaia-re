@@ -703,6 +703,10 @@ impl PlayWindowApp {
         let field_fog_prims = self.take_field_fog_prims();
         // Move-VM strip spans (`FUN_801D31B0`), through the same camera.
         let move_strip_prims = self.take_move_strip_prims();
+        // The fishing line (`FUN_801D26CC`'s packet, clipped by
+        // `FUN_801D56E4`): latched here, outside the renderer borrow, through
+        // the same follow camera - the session's yaw feedback is a write.
+        let fishing_line_prims = self.fishing_line_screen_prims();
         // The Baka duel's 3D surface: posed and uploaded here, outside the
         // renderer borrow (`window::minigames`).
         self.refresh_baka_duel_gpu();
@@ -718,7 +722,13 @@ impl PlayWindowApp {
             let (scene_viewport, aspect) = scene_viewport_for(w, h);
             r.set_scene_viewport(scene_viewport);
             // A live Baka duel draws against its own VRAM.
-            let vram = self.baka_gpu.as_ref().map_or(vram, |g| &g.vram);
+            // So does the dance venue - the hall's own upload, never the
+            // walked-in scene's.
+            let vram = match (self.baka_gpu.as_ref(), self.dance_venue_gpu.as_ref()) {
+                (Some(g), _) => &g.vram,
+                (None, Some(d)) => &d.vram,
+                (None, None) => vram,
+            };
             // Upload (or drop) the opdeene "It was the Seru." caption sprite
             // atlas to track World state. The caption image is present only
             // while opdeene is loaded and never changes, so upload it once on
@@ -1273,6 +1283,36 @@ impl PlayWindowApp {
                         mvp: g.mvp,
                     });
                 }
+            } else if let Some(g) = self.dance_venue_gpu.as_ref() {
+                // The dance venue owns the 3D frame: the `other7` hall the
+                // dance entry loads, under the venue camera the frame
+                // resolves through (`FieldCameraFrame::Venue`). The walked-in
+                // scene's actors and geometry are not drawn - retail's dance
+                // is a scene of its own.
+                if let Some(hf) = g.ground.as_ref() {
+                    draws.push(SceneDraw {
+                        mesh: hf,
+                        mvp: cam,
+                        cue: None,
+                    });
+                }
+                for (mi, model) in &g.draws {
+                    if let Some(mesh) = g.meshes.get(*mi) {
+                        draws.push(SceneDraw {
+                            mesh,
+                            mvp: cam * *model,
+                            cue: None,
+                        });
+                    }
+                }
+                for (ci, model) in &g.color_draws {
+                    if let Some(mesh) = g.color_meshes.get(*ci) {
+                        color_draws.push(ColorSceneDraw {
+                            mesh,
+                            mvp: cam * *model,
+                        });
+                    }
+                }
             } else if in_world_map {
                 // World-map continent = two layers, both in the shared
                 // player / entity-marker world frame:
@@ -1542,11 +1582,23 @@ impl PlayWindowApp {
                                 let (a, b) = s.split_once("..")?;
                                 Some((a.parse::<usize>().ok()?, b.parse::<usize>().ok()?))
                             });
+                        // The sub-area window sweep's placements are gated
+                        // on the world's windowed static-object list (a
+                        // no-op unless retail windowing is on).
+                        let static_window = &self.session.host.world.terrain.static_window;
                         for (di, (mesh_idx, model)) in self.field_placement_draws.iter().enumerate()
                         {
                             if let Some((a, b)) = place_range
                                 && !(a..b).contains(&di)
                             {
+                                continue;
+                            }
+                            if !legaia_engine_core::field_env::placed_draw_live(
+                                self.field_placement_window_keys
+                                    .get(di)
+                                    .and_then(Option::as_ref),
+                                static_window,
+                            ) {
                                 continue;
                             }
                             let mesh = self
@@ -1585,7 +1637,18 @@ impl PlayWindowApp {
                     // Untextured props (the F*/G* meshes the VRAM path
                     // drops) on the colour pipeline, same transforms.
                     if layer_on("cplace") {
-                        for (mesh_idx, model) in &self.field_placement_color_draws {
+                        let static_window = &self.session.host.world.terrain.static_window;
+                        for (di, (mesh_idx, model)) in
+                            self.field_placement_color_draws.iter().enumerate()
+                        {
+                            if !legaia_engine_core::field_env::placed_draw_live(
+                                self.field_placement_color_window_keys
+                                    .get(di)
+                                    .and_then(Option::as_ref),
+                                static_window,
+                            ) {
+                                continue;
+                            }
                             if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
                                 color_draws.push(ColorSceneDraw {
                                     mesh,
@@ -2375,8 +2438,15 @@ impl PlayWindowApp {
             // the part's interpreted transform (world pos + rotation
             // banks). The animation computation is faithful (move VM);
             // the transform composition is the open PROT 0900 piece.
-            let summon_part_draws =
-                self.build_summon_and_move_fx_part_draws(r, fx_model_flip, in_world_map);
+            // The retail camera the parts' `+0x52` camera-relative bits
+            // resolve against (`FUN_8001CF50`); `None` under a host vantage.
+            let part_cam = self.part_camera_pose(in_world_map, cutscene_cam);
+            let summon_part_draws = self.build_summon_and_move_fx_part_draws(
+                r,
+                fx_model_flip,
+                in_world_map,
+                part_cam.as_ref(),
+            );
             for (mesh, model) in &summon_part_draws {
                 draws.push(SceneDraw {
                     mesh,
@@ -2395,7 +2465,8 @@ impl PlayWindowApp {
             // the part's relative `model_sel` (spawn base 0, surfaced as
             // `model_index`) indexes `env_tmds` directly, mirroring how a
             // placement's `pack_index` does.
-            let field_fx_draws = self.build_field_fx_part_draws(r, fx_model_flip, in_world_map);
+            let field_fx_draws =
+                self.build_field_fx_part_draws(r, fx_model_flip, in_world_map, part_cam.as_ref());
             for (mesh, model) in &field_fx_draws {
                 draws.push(SceneDraw {
                     mesh,
@@ -2562,6 +2633,9 @@ impl PlayWindowApp {
             // The slot machine's paylines, off the machine's own ported pass
             // and projection - the segments both browser pages stroke.
             screen_prims.extend(self.slot_payline_screen_prims());
+            // The fishing line, latched above: the same kernel and builder
+            // the browser play page uses.
+            screen_prims.extend(fishing_line_prims);
             // The overworld's entity + player markers: the shared
             // `world_map_markers` kernel's quads, the browser play page's
             // twin (`crate::play_world_map_markers` there).

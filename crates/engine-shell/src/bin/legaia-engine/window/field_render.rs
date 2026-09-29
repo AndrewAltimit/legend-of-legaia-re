@@ -4,6 +4,15 @@ use super::*;
 
 use legaia_engine_core::field_env::{FloorAnchor, FloorWave};
 
+/// One baked placed-object draw list: the `(mesh, model)` draws, the floor
+/// rungs each draw's Y came from, and which placed-object sweep owns each draw
+/// ([`legaia_engine_core::field_env::placed_window_key`]), all parallel.
+pub(super) type PlacedDrawList = (
+    Vec<(usize, Mat4)>,
+    Vec<FloorAnchor>,
+    Vec<Option<legaia_engine_core::field_env::PlacedWindowKey>>,
+);
+
 /// The live **floor-height ladder** patch for the field draw lists.
 ///
 /// The scene's sixteen-rung elevation ladder is not static: field-VM op `0x4C`
@@ -118,16 +127,13 @@ impl PlayWindowApp {
         tmd_src_index: &[usize],
         posed: &PosedPlacementMeshes,
         textured: bool,
-    ) -> (
-        Vec<(usize, Mat4)>,
-        Vec<legaia_engine_core::field_env::FloorAnchor>,
-    ) {
+    ) -> PlacedDrawList {
         let Some(scene) = self.session.host.scene.as_ref() else {
-            return (Vec::new(), Vec::new());
+            return Default::default();
         };
         let placements = match scene.field_object_placements(&self.session.host.index) {
             Ok(Some(p)) if !p.is_empty() => p,
-            _ => return (Vec::new(), Vec::new()),
+            _ => return Default::default(),
         };
         let binds = scene
             .field_object_binds(&self.session.host.index)
@@ -582,7 +588,9 @@ impl PlayWindowApp {
             return (Vec::new(), Vec::new());
         }
         // Field frame: raw retail-convention transforms (see above).
-        self.resolve_placement_draws(res, tmd_src_index, &tiles, false, None, None)
+        let (draws, floors, _) =
+            self.resolve_placement_draws(res, tmd_src_index, &tiles, false, None, None);
+        (draws, floors)
     }
 
     /// World-map continent terrain draws: the dense visible-tile set
@@ -972,15 +980,12 @@ impl PlayWindowApp {
             &std::collections::HashMap<(u8, u8), legaia_engine_core::field_env::ObjectBind>,
         >,
         posed: Option<(&PosedPlacementMeshes, bool)>,
-    ) -> (
-        Vec<(usize, Mat4)>,
-        Vec<legaia_engine_core::field_env::FloorAnchor>,
-    ) {
+    ) -> PlacedDrawList {
         let Some(scene) = self.session.host.scene.as_ref() else {
-            return (Vec::new(), Vec::new());
+            return Default::default();
         };
         if placements.is_empty() {
-            return (Vec::new(), Vec::new());
+            return Default::default();
         }
         // Per-tile floor-height LUT (MAN header). World Y for a placed object
         // is `-lut[tile_floor_nibble] + y_off`; without it the town renders on
@@ -998,7 +1003,7 @@ impl PlayWindowApp {
         // render-frame model matrix.
         let env_tmds = legaia_engine_core::field_env::env_pack_tmd_indices(scene, res);
         if env_tmds.is_empty() {
-            return (Vec::new(), Vec::new());
+            return Default::default();
         }
         let (mut env_draws, dropped) = legaia_engine_core::field_env::resolve_placed_env_draws(
             &env_tmds, placements, floor_lut, binds,
@@ -1063,6 +1068,10 @@ impl PlayWindowApp {
         // the per-frame floor wave (`FieldFloorWave`) can move the drawn ground
         // when a script sets a rung oscillating.
         let mut floors = Vec::new();
+        // Parallel to `draws`: which placed-object sweep owns each draw
+        // (`Some` = the sub-area window sweep's, gated per frame on the
+        // world's windowed static-object list by `field_env::placed_draw_live`).
+        let mut window_keys = Vec::new();
         for d in &env_draws {
             // A bind with an anim id means the prop's TMD objects are that
             // clip's bones, and the clip is live (a house door swings open on
@@ -1150,6 +1159,7 @@ impl PlayWindowApp {
             }
             draws.push((mesh_idx, model));
             floors.push(d.floor);
+            window_keys.push(legaia_engine_core::field_env::placed_window_key(d, binds));
         }
         log::info!(
             "play-window: {} field placement draws ({} placements, {} env meshes)",
@@ -1157,7 +1167,7 @@ impl PlayWindowApp {
             placements.len(),
             env_tmds.len(),
         );
-        (draws, floors)
+        (draws, floors, window_keys)
     }
 
     /// Debug-install a synthetic tile board (`LEGAIA_TILE_BOARD_DEMO=1`) so

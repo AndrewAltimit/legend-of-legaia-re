@@ -10,6 +10,11 @@
 //! ([`legaia_engine_ui::ui_dance::dance_countin_prims`]); what differs is only
 //! *where the VRAM lives*, and that is a genuine per-host fact.
 //!
+//! While a dance runs the native window draws the venue itself
+//! (`legaia_engine_core::dance_venue::DanceVenue::build`, the same build this
+//! page's minigame art bakes), and that venue's VRAM already carries the page,
+//! so its residency claim is the venue build's `hud_staged`.
+//!
 //! # The two hosts were not equally far from this
 //!
 //! It reads as one gap - "the count-in banner is text" - and it was two. The

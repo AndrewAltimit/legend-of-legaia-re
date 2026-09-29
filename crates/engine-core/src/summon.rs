@@ -472,6 +472,11 @@ pub struct SummonPartDraw {
     pub world_pos: [f32; 3],
     /// Euler XYZ rotation in radians (from the move-VM rotation banks).
     pub rot: [f32; 3],
+    /// The part's `+0x52` word (move-VM op `0x15`,
+    /// `move_vm::ActorState::field_52`). Its `0x780` bits send the draw
+    /// through retail's camera-relative rotation `FUN_8001CF50`; a host
+    /// resolves them with `legaia_engine_ui::gte::camera_relative_model_prefix`.
+    pub flags_52: u16,
 }
 
 impl SummonScene {
@@ -582,6 +587,7 @@ impl SummonScene {
                         (s.y_rot.wrapping_add(s.render_26) as f32) * A,
                         (s.render_28 as f32) * A,
                     ],
+                    flags_52: s.field_52,
                 }
             })
             .collect()
@@ -608,6 +614,7 @@ impl SummonScene {
                         (s.y_rot.wrapping_add(s.render_26) as f32) * A,
                         (s.render_28 as f32) * A,
                     ],
+                    flags_52: s.field_52,
                 })
             })
             .collect()
@@ -1156,6 +1163,33 @@ mod tests {
         let draws = scene.part_draws();
         assert_eq!(draws.len(), 1, "only the mesh part draws");
         assert_eq!(draws[0].model_index, 26, "model_sel 0 + base 26");
+        assert_eq!(draws[0].flags_52, 0, "no op 0x15: the full-camera default");
+    }
+
+    /// Move-VM op `0x15` writes the part's `+0x52` word, and the draw record
+    /// carries it to the host, whose part pass resolves the `0x780` bits
+    /// through `FUN_8001CF50`'s placement. `0x380` is the screen-aligned
+    /// billboard the battle-effect parts stage.
+    #[test]
+    fn op_0x15_reaches_the_part_draw_record() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&0i16.to_le_bytes());
+        bytes.extend_from_slice(&0u16.to_le_bytes());
+        for w in [0x15u16, 0x0380, 0x09, 0x0FFF] {
+            bytes.extend_from_slice(&w.to_le_bytes());
+        }
+        let parts = vec![SummonPart {
+            record_off: 0,
+            model_sel: 0,
+            reserved: 0,
+            bytecode: 4..bytes.len(),
+        }];
+        let mut scene = SummonScene::spawn_parts(&parts, &bytes, 0, [0, 0, 0]);
+        scene.tick(&mut H, 0x0400);
+        assert_eq!(scene.parts[0].state.field_52, 0x0380);
+        let draws = scene.part_draws();
+        assert_eq!(draws.len(), 1);
+        assert_eq!(draws[0].flags_52, 0x0380);
     }
 
     #[test]

@@ -146,6 +146,9 @@ pub(crate) struct FishingScene {
     pub(crate) map: Option<Vec<u8>>,
     /// See [`FishingScene::map`].
     pub(crate) region_block: Option<Vec<u8>>,
+    /// The venue's three rods and their bend, off the same scene bank - the
+    /// geometry the fishing line's rod end is a vertex of.
+    pub(crate) rod_mesh: Option<legaia_engine_core::fishing_actors::RodMesh>,
 }
 
 /// Frame-0 rigid transforms of scene-ANM record `anim_id - 1` for a bound
@@ -395,6 +398,7 @@ impl LegaiaMinigames {
             .field_map_index(&index)
             .and_then(|i| index.entry_bytes_extended(i).ok());
         let region_block = scene.field_map_region_block(&index).ok().flatten();
+        let rod_mesh = legaia_engine_core::fishing_actors::RodMesh::from_scene(&scene);
 
         Some(FishingScene {
             env,
@@ -406,6 +410,7 @@ impl LegaiaMinigames {
             vram: vram.as_bytes().to_vec(),
             map,
             region_block,
+            rod_mesh,
         })
     }
 }

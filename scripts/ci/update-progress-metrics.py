@@ -125,12 +125,17 @@ def build(scus, data, cat):
         tracks.append({
             "key": "formats",
             "label": "Asset formats",
-            "pct": round(data["pct_parsed"], 1),
-            "headline": "%.1f%% of PROT.DAT" % data["pct_parsed"],
+            "pct": round(data["pct_content_parsed"], 1),
+            "headline": "%.1f%% of PROT.DAT content" % data["pct_content_parsed"],
             "detail": "Share of disc asset bytes whose container resolves to a "
                       "documented format. This is format *recognition*, not a "
                       "byte-for-byte parse, so read it as an upper bound. "
-                      "%.1f%% remains unexplained." % data["pct_unexplained"],
+                      "%.1f%% remains unexplained. %d entries (%s bytes) of "
+                      "reserved dev filler are excluded from the denominator: "
+                      "each is a documented one-sector placeholder with nothing "
+                      "in it to parse."
+                      % (data["pct_unexplained"], data["filler_entries"],
+                         "{:,}".format(data["filler"])),
             "denominator": "disc bytes",
             "href": "formats/index.html",
         })
@@ -166,14 +171,16 @@ def build(scus, data, cat):
                 "pct": round(100.0 * live / (live + owed), 1),
                 "headline": "%d of %d ported functions reachable" % (live, live + owed),
                 "detail": "A ported function still needs a host that calls it. This "
-                          "is the share reachable from a real entry point; the "
-                          "remaining %d are implemented but not yet hosted, and each "
-                          "one says so in its source. %d further ports are excluded "
-                          "from the denominator entirely: the engine does their job "
-                          "by construction (CD DMA, memory-card device I/O, MDEC "
-                          "channel sync, GPU packet queues), so no host will ever "
-                          "call them and each says which mechanism replaced it."
-                          % (owed, replaced),
+                          "is the share reachable from a real entry point; %s %d "
+                          "further ports are excluded from the denominator "
+                          "entirely: the engine does their job by construction (CD "
+                          "DMA, memory-card device I/O, MDEC channel sync, GPU "
+                          "packet queues), so no host will ever call them and each "
+                          "says which mechanism replaced it."
+                          % (("every port a host is owed for is reached." if owed == 0
+                              else "the remaining %d are implemented but not yet "
+                                   "hosted, and each one says so in its source." % owed),
+                             replaced),
                 "denominator": "ported functions a host is owed for",
                 "href": "subsystems/engine.html",
             })

@@ -459,7 +459,7 @@ pub const MAP_WALK_GRID_OFFSET: usize = 0x4000;
 /// One actor the sub-area window sweep creates.
 ///
 /// Field names are the actor fields retail seeds, so the struct doubles as the
-/// spawn descriptor a host would apply.
+/// spawn descriptor a host applies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WindowSpawn {
     /// Object descriptor index (`cell & 0x1FF`; retail writes it to the actor's
@@ -467,6 +467,11 @@ pub struct WindowSpawn {
     pub descriptor: u16,
     /// Object-map tile the placement sits on.
     pub tile: (u8, u8),
+    /// The placement's **footprint-anchor tile** (`tile + (i8 desc[+6], i8
+    /// desc[+7])`) - the tile whose [`CELL_BIND_OWNED`] bit the sweep tests,
+    /// and the same anchor a [`crate::field_env::EnvDraw`] carries, which is
+    /// how a host matches a drawn placement to this actor.
+    pub anchor: (u8, u8),
     /// The spawn vector retail hands `FUN_80024C88`: `x = tile_x * 0x80 +
     /// 0x40 + desc[+0]`, `y = elevation_lut[nibble] + desc[+2]`,
     /// `z = tile_z * 0x80 - (desc[+4] - 0x40)`.
@@ -475,7 +480,8 @@ pub struct WindowSpawn {
     /// to the actor's `+0x24` / `+0x26` / `+0x28`.
     pub rotation: (u16, u16, u16),
     /// Sprite-template selector written to the template's `+0x14`: `5` when the
-    /// descriptor's flags carry bit `0x2`, else `0`.
+    /// descriptor's flags carry bit `0x2`, else `0`. `FUN_80020DE0` copies it
+    /// into the actor's draw kind `+0x56` - see [`Self::drawn`].
     pub template_kind: u16,
     /// Descriptor `+0x1E` is non-zero, so the actor takes `+0x74 |=
     /// 0x40000000`.
@@ -486,15 +492,80 @@ pub struct WindowSpawn {
     pub flag_state_4: bool,
 }
 
-/// Plan the sub-area **window rebuild** sweep.
+impl WindowSpawn {
+    /// Whether the actor ever reaches a draw.
+    ///
+    /// The per-actor render dispatcher `FUN_8001ADA4` switches on the draw kind
+    /// `+0x56` through an 11-entry table indexed by `kind - 1`
+    /// (`addiu v1,v0,-0x1` / `sltiu v0,v1,0xb` at `0x8001AE68..0x8001AE70`),
+    /// so draw kind `0` wraps to an out-of-range index and falls to the
+    /// no-draw exit `0x8001B704`. A window actor keeps the template's kind:
+    /// its `+0x5C` anim id is `0`, and the anim tick `FUN_800204F8` returns at
+    /// `blez` (`0x8002052C`) before the one store that would flip it to kind
+    /// `1`. So `template_kind == 0` is an actor that exists and never draws;
+    /// `5` is the single-transform mesh arm (`0x8001B1A8`).
+    ///
+    /// The other three descriptor bits do not change *whether* it draws:
+    ///
+    /// - `flag_state_4` (`+0x10 & 4`) is read in the kind-5 arm after the
+    ///   on-screen probe `FUN_8001B73C` (`0x8001B1E0..0x8001B1FC`): a probe
+    ///   miss with the bit set skips the draw. It culls an object that is off
+    ///   screen, which the port's whole-scene draw cannot show a difference
+    ///   for.
+    /// - `flag_40000000` / `flag_10000000` make the colour word `+0x74`'s high
+    ///   byte non-zero, which the prim dispatcher `FUN_80043390` reads as "a
+    ///   blend argument is present" (`srl s7,a1,0x18` / `ori a2,a2,1` at
+    ///   `0x800433C0..0x800433CC`): far colour from the word's low 24 bits,
+    ///   `IR0` cleared (`mtc2 t8,IR0` at `0x800434D4`), the depth-cue handler
+    ///   bank, and `ABR = (word >> 24) & 3 = 0`, semi-transparency bit 31
+    ///   clear. With `IR0 = 0` the depth cue is the identity, so the packet
+    ///   colour is the TMD's baked colour either way - the same retail
+    ///   shading every placed object already draws with.
+    pub fn drawn(&self) -> bool {
+        self.template_kind != 0
+    }
+}
+
+/// Plan the sub-area **window rebuild** sweep over a whole `.MAP` image.
+///
+/// The `.MAP`-shaped entry point of [`window_rebuild_spawns_resident`]: the
+/// object-descriptor region, the walk grid and the object-index grid are read
+/// out of one buffer at their file offsets (`+0x0000`, `+0x4000`, `+0x8000`).
+pub fn window_rebuild_spawns(
+    map: &[u8],
+    window: (u8, u8, u8, u8),
+    elevation_lut: [i16; 16],
+) -> Vec<WindowSpawn> {
+    let descriptors = map.get(..MAP_WALK_GRID_OFFSET).unwrap_or(map);
+    let walk_grid = map
+        .get(MAP_WALK_GRID_OFFSET..MAP_OBJECT_INDEX_OFFSET)
+        .unwrap_or(&[]);
+    let cells: Vec<u16> = map
+        .get(MAP_OBJECT_INDEX_OFFSET..)
+        .unwrap_or(&[])
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .take(0x80 * 0x80)
+        .map(|c| u16::from_le_bytes(*c))
+        .collect();
+    window_rebuild_spawns_resident(descriptors, walk_grid, &cells, window, elevation_lut)
+}
+
+/// Plan the sub-area **window rebuild** sweep over the scene's resident field
+/// state.
 ///
 /// PORT: FUN_801D7B50.
 ///
 /// The complement of the scene-init object sweep [`parse_map_objects`]
-/// (`FUN_8003A55C`). Retail runs this one whenever the camera's sub-area window
-/// changes: it frees the whole static-object actor list and re-populates it from
-/// the placements inside the **current region box** only. Differences from the
-/// init sweep, all of them load-bearing:
+/// (`FUN_8003A55C`). Retail runs this one from the two camera re-centre
+/// routines `FUN_80017DD4` / `FUN_80017EC8` (`jal 0x801D7B50` at
+/// `0x80017E14` / `0x80017F08`), each of which first re-latches the region box
+/// through `FUN_800180EC` at the re-centre tile. It frees its own static-object
+/// actor list (the scene control block's `+0x24` head, `0x8007C36C`; the init
+/// sweep's actors live on `+0x0C` and are untouched) and re-populates it from
+/// the placements inside the box. Differences from the init sweep, all of them
+/// load-bearing:
 ///
 /// - **Bounded, not whole-grid.** The walk covers `window = [x0, z0, x1, z1)`,
 ///   the scratchpad region box `0x1F800384..0x1F800387` that
@@ -502,51 +573,41 @@ pub struct WindowSpawn {
 ///   Both loops are half-open (`while t < limit`), so an empty or inverted box
 ///   spawns nothing.
 /// - **No bind lookup.** It never resolves a trigger, so its actors carry no
-///   script and no animation clip (`+0x5C == 0`, draw kind `5`).
+///   script and no animation clip (`+0x5C == 0`).
 /// - **The `0x400` gate instead.** Its only extra test is
 ///   [`CELL_BIND_OWNED`] on the *footprint-anchor* tile
 ///   (`0x801d7ccc`): set means the init sweep already owns this placement, so
 ///   the window sweep skips it. Across the disc corpus the bit and the bind are
 ///   complementary, so the union of the two sweeps is every placed record.
 /// - **Elevation from the walk grid.** Y is not the descriptor's raw `+0x2`: the
-///   sweep reads the walk-grid byte at
-///   [`MAP_WALK_GRID_OFFSET`]` + tile_x + tile_z * 0x80`, takes its low nibble,
-///   and indexes the scene's 16-entry elevation LUT in the scratchpad
+///   sweep reads the walk-grid byte at `tile_x + tile_z * 0x80`, takes its low
+///   nibble, and indexes the scene's 16-entry elevation LUT in the scratchpad
 ///   (`0x1F80035C`) before adding `+0x2`.
 ///
-/// `window` is `(x0, z0, x1, z1)` and `elevation_lut` the scratchpad LUT. The
-/// returned list is in the sweep's own order (X outer, Z inner).
+/// `descriptors` is the `.MAP` `+0x0000..0x4000` object-descriptor region,
+/// `walk_grid` the live walkability grid (`+0x4000`), `cells` the live
+/// object-index grid words (`+0x8000`, row-major `tz * 0x80 + tx`), `window` is
+/// `(x0, z0, x1, z1)` in the scratchpad's byte order and `elevation_lut` the
+/// scratchpad LUT. The returned list is in the sweep's own order (X outer,
+/// Z inner).
 ///
-/// NOT WIRED: the blocker is the **resident placement list**, not the map
-/// bytes. The sweep is a *mutation* of a live actor list (it frees every
-/// entry, including the `flags & 0x800` mesh buffers, before re-creating
-/// them), and the engine has no per-scene placement actor list to free and
-/// refill; nor does it retain the `+0x0000..0x4000` object-descriptor region
-/// this indexes, which is the one `.MAP` region that really is dropped after
-/// scene load (see [`refresh_object_grid_marks`] for which regions are not). The
-/// engine decodes the object grid once at scene entry into typed state and
-/// draws every placement for the whole map through
-/// [`crate::field_env::resolve_placed_env_draws`], which already honours this
-/// sweep's `0x400` gate as the *ownership* rule; nothing re-runs a windowed
-/// rebuild. Wiring it needs the descriptor region held resident and a
-/// placement actor list to re-plan on every region-box change. Its retail
-/// callers are two SCUS `jal`s (`0x80017E14`, `0x80017F08`); it is not
-/// `REPLACED-BY` the whole-map draw, because the actors it spawns carry
-/// descriptor-flag state (the `template_kind`, `+0x74` and `+0x10` bits on
-/// [`WindowSpawn`]) that no check has shown the static draw path reproduces.
+/// Live: [`crate::world::World::recentre_field_window`] runs it on every
+/// camera re-centre the engine models and keeps the result as the scene's
+/// windowed static-object list
+/// ([`crate::world::StaticObjectWindow`]); both play hosts consume that list
+/// through [`crate::field_env::placed_draw_live`].
 // REF: FUN_8003A55C (the complementary init sweep), FUN_80024C88 (the spawn),
-// FUN_801D7518 (the per-list free the sweep opens with)
-pub fn window_rebuild_spawns(
-    map: &[u8],
+// FUN_80020DE0 (template +0x14 -> actor +0x56)
+pub fn window_rebuild_spawns_resident(
+    descriptors: &[u8],
+    walk_grid: &[u8],
+    cells: &[u16],
     window: (u8, u8, u8, u8),
     elevation_lut: [i16; 16],
 ) -> Vec<WindowSpawn> {
     let (x0, z0, x1, z1) = window;
     let mut out = Vec::new();
-    let cell_at = |tx: usize, tz: usize| -> Option<u16> {
-        let o = MAP_OBJECT_INDEX_OFFSET + tx * 2 + tz * 0x100;
-        Some(u16::from_le_bytes([*map.get(o)?, *map.get(o + 1)?]))
-    };
+    let cell_at = |tx: usize, tz: usize| -> Option<u16> { cells.get(tx + tz * 0x80).copied() };
     let mut tx = i32::from(x0);
     while tx < i32::from(x1) {
         let mut tz = i32::from(z0);
@@ -558,7 +619,7 @@ pub fn window_rebuild_spawns(
             };
             let descriptor = cell & 0x1FF;
             let base = usize::from(descriptor) * MAP_OBJECT_DESCRIPTOR_STRIDE;
-            let Some(d) = map.get(base..base + MAP_OBJECT_DESCRIPTOR_STRIDE) else {
+            let Some(d) = descriptors.get(base..base + MAP_OBJECT_DESCRIPTOR_STRIDE) else {
                 continue;
             };
             let flags = u16::from_le_bytes([d[0x12], d[0x13]]);
@@ -577,8 +638,8 @@ pub fn window_rebuild_spawns(
                 continue; // the init sweep's placement
             }
             let wx = tx * 0x80 + i32::from(u16::from_le_bytes([d[0], d[1]])) + 0x40;
-            let nibble = map
-                .get(MAP_WALK_GRID_OFFSET + tx as usize + this as usize * 0x80)
+            let nibble = walk_grid
+                .get(tx as usize + this as usize * 0x80)
                 .map(|b| usize::from(b & 0xF))
                 .unwrap_or(0);
             let wy = i32::from(elevation_lut[nibble])
@@ -587,6 +648,7 @@ pub fn window_rebuild_spawns(
             out.push(WindowSpawn {
                 descriptor,
                 tile: (tx as u8, this as u8),
+                anchor: (ax as u8, az as u8),
                 world: (wx as i16, wy as i16, wz as i16),
                 rotation: (
                     u16::from_le_bytes([d[8], d[9]]),

@@ -1233,7 +1233,7 @@ from the gate-0 bind triggers. So it creates exactly the records the init sweep
 did *not*.
 
 Four more things distinguish it from the init sweep, all of them in the bytes and
-all mirrored by the port `legaia_engine_core::field_regions::window_rebuild_spawns`:
+all mirrored by the port `legaia_engine_core::field_regions::window_rebuild_spawns_resident`:
 
 - **It is bounded.** Both loops run over the scratchpad region box
   `0x1F800384..0x1F800387` (`[x0, z0, x1, z1]`, the box
@@ -1250,6 +1250,43 @@ all mirrored by the port `legaia_engine_core::field_regions::window_rebuild_spaw
 - **Two enable gates.** `_DAT_8007b868 & 2` and `_DAT_8007b8b8 != 0` each skip the
   whole sweep, and it resets the spawn counter `_DAT_8007b924` on entry either way.
 
+**When it runs.** The sweep has exactly two callers on the disc, the camera
+re-centre routines `FUN_80017DD4` (`jal` at `0x80017E14`) and `FUN_80017EC8`
+(`0x80017F08`). Both are the same body: store the scroll-origin pair
+`0x1F8003F8`/`FA`, call `FUN_800180EC(tile_x, tile_z)` to re-latch the region box
+at the re-centre tile, run the sweep over that box, then poll the empty stub
+`FUN_8002B96C` once per cell of a `32 x 32` window. `FUN_80017DD4` is the field
+initialiser's window install (`0x801D6ECC`, on the seat tile `anchor >> 7`);
+`FUN_80017EC8` is every mid-scene re-centre - the `0x23` `MOVE_TO` and `4C 51`
+player arms (operand bytes `& 0x7F`, `0x801DEC9C` / `0x801E1A58`), the kind-0 warp
+landing (`world >> 7`, `0x801D1FE0`), the leader swap (`0x801D2BC0`), and three
+sites the engine does not model: the player arms of the place-actor and
+copy-transform helpers `FUN_801D03A4` (`0x801D0484`) and `FUN_801D4908`
+(`0x801D4990`), and a dev-menu row handler (`0x801EA7A4`). So the list follows
+the camera's *re-centres*, not the player's tile: walking across a region
+boundary without one keeps the old list, and a door into a house interior - a
+warp - is what brings the interior's placements in. The two gates are
+unreachable from those sites: `_DAT_8007b8b8` is cleared by the initialiser's
+own epilogue before any mid-scene re-centre, and `_DAT_8007b868` is the dev
+menu's `CLOSED` word, which a retail session holds at `0`
+([`world-map.md`](world-map.md)).
+
+**What the descriptor bits do to the draw.** The render dispatcher `FUN_8001ADA4`
+indexes an 11-entry table by `draw kind - 1` (`0x8001AE68..0x8001AE70`), so
+template kind `0` (descriptor flags without bit `0x2`) is an actor that exists
+and never draws; its anim id is `0`, and `FUN_800204F8` returns at
+its `blez` (`0x8002052C`) before the one store that would flip it to kind `1`. Kind
+`5` is the single-transform arm `0x8001B1A8`. The `+0x10` bit `4` (flags `0x1000`) is
+read there after the on-screen probe `FUN_8001B73C`: a miss with the bit set
+skips the draw, which culls only what is off screen. The two `+0x74` bits make
+the colour word's high byte non-zero, which the prim dispatcher `FUN_80043390`
+reads as a blend argument (`0x800433C0..0x800433CC`): far colour from the low 24
+bits, `IR0` cleared (`0x800434D4`), the depth-cue handler bank, ABR `0` and no
+semi-transparency - a depth cue at `IR0 = 0`, which is the identity. None of the
+three changes the drawn pixels of an on-screen object. Across the disc's window
+placements two have kind `0` (`ropeway` descriptor `122`, `suimon` descriptor
+`233`); none carries flags `0x1000`.
+
 The two sets are complementary on the disc: across `town01` / `town0c` / `koin3` /
 `map01`, every placement whose anchor tile carries a bind trigger also carries
 `0x400` (37 / 58 / 6 of them), and every placement without one has the bit clear
@@ -1262,6 +1299,23 @@ as a *spawn gate* deletes the cave interior outright.
 The init sweep's half is live-verified against a Rim Elm capture's actor list: its
 37 static-object actors are exactly `town01`'s 37 bound placements, and each
 actor's `+0x5C` equals the anim id its bind resolves.
+
+**Engine port.** `World::recentre_field_window` (`world/static_window.rs`) is the
+logic half of the re-centre pair: it re-latches the box through
+`refresh_region_attributes` at the caller's tile and re-plans the list through
+`field_regions::window_rebuild_spawns_resident` against resident state - the
+`.MAP` `+0x0000..0x4000` descriptor region, held on
+`FieldTerrain::static_window` for the life of the scene, beside the live walk
+grid, object cells and floor ladder. It runs from the field entry after the
+floor ladder installs, the warp landing, the `0x23` / `4C 51` player arms and the
+leader swap. Both play hosts ask one kernel per placed draw,
+`field_env::placed_draw_live`: a bound draw is always live, and a window-owned
+one is live unless the `retail_static_window` option is on, in which case it
+draws only while the list holds a drawn actor for it. The default keeps the
+whole map, because retail's windowing is sub-area pop-in: at `town01`'s seat it
+hides 7 of the 46 placed draws, at `vell`'s 62 of 105. Disc-gated coverage:
+`crates/engine-core/tests/field_static_window_disc.rs`, which also checks that the
+two sweeps partition every drawn placement.
 
 - **The bind carries the object's animation id.** A partition-0 record's header
   is `[u8 n][n*2 name bytes][u8 anim_id]` (its own shape - the partition-1

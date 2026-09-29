@@ -1,22 +1,23 @@
-//! The battle **stage-id** resolver: which stage overlay slot
-//! (`_DAT_8007B64A`) the current fight reads.
+//! The battle **stage-id** byte `_DAT_8007B64A`: which stage overlay slot the
+//! current fight reads, and so which arm the side-band tick
+//! ([`crate::battle_sideband`]) takes.
 //!
-//! Retail treats the byte as last-writer-wins across four writers: the
-//! entity SM's battle-entry tail (`0` default / `1` tutorial,
-//! `FUN_801DA51C`), the battle initializer's per-formation override (`2`,
-//! `FUN_80055B6C`), and the mid-battle boss-transition arm (`3`, the tail of
-//! the Final Heal sweep `FUN_801E6968` - battle-overlay code the SCUS-only
-//! census misses). The engine keeps no mutable byte; [`World::battle_stage_id`]
-//! derives the same value from live battle state, which reproduces the
-//! last-writer order because each later writer's guard implies the earlier
-//! one's.
+//! Retail treats the byte as last-writer-wins across five writers, each
+//! ported at its own seat and writing [`crate::world::BattleState::stage_id`]:
 //!
-//! The stage overlays themselves are MIPS *code* (extraction entries
-//! `stage_id + 966`); the engine does not execute them. Stage `1`'s
-//! behaviour is ported natively (the sparring-prompt machine,
-//! `world/battle/tutorial.rs`); stages `2` / `3` - the two phases of the
-//! `0xB5` boss fight - have no native behaviour port yet, so this resolver
-//! is the pinned selection kernel, not a claim that a host pages 968/969.
+//! * the entity SM's battle-entry tail (`0` default / `1` tutorial,
+//!   `FUN_801DA51C`) - `World::enter_battle` / `World::arm_battle_tutorial`;
+//! * the battle initializer's per-formation override (`2` for formation
+//!   monster `0xB5`, `FUN_80055B6C`) - `World::enter_battle_from_formation`;
+//! * the arrival module's hand-back (`0`, PROT 0968 phase 6) -
+//!   `World::tick_battle_sideband`;
+//! * the mid-battle boss-transition arm (`3`, the tail of the Final Heal
+//!   sweep `FUN_801E6968`) - [`World::run_boss_transition_arm`].
+//!
+//! Stage `1`'s behaviour is the sparring-prompt machine
+//! (`world/battle/tutorial.rs`); stages `2` / `3` - the two phases of the
+//! Cort fight - are the two stage modules
+//! ([`crate::battle_stage_module`]), driven from the side-band.
 
 use super::*;
 
@@ -27,7 +28,7 @@ impl World {
     /// Retail's cell is one byte; an engine formation id above `0xFF` (a
     /// modded table) can never match the byte compare, so it resolves as
     /// "no override" rather than truncating onto an accidental match.
-    fn formation_slot0_monster_id(&self) -> Option<u8> {
+    pub(in crate::world) fn formation_slot0_monster_id(&self) -> Option<u8> {
         self.battle
             .active_formation
             .as_ref()
@@ -35,41 +36,43 @@ impl World {
             .and_then(|s| u8::try_from(s.monster_id).ok())
     }
 
-    /// The stage id the current battle reads, derived from live state.
-    ///
-    /// * `3` - the `0xB5` formation's first monster seat is dead: the
-    ///   mid-battle transition arm has fired
-    ///   ([`crate::overlay_loader::boss_transition_stage_id`],
-    ///   `FUN_801E6968` tail `0x801E6CE4..0x801E6D64`). Retail reads the seat's
-    ///   `+0x14C`, mirrored here as
-    ///   [`legaia_engine_vm::battle_action::BattleActor::liveness`].
-    /// * `2` - the `0xB5` formation, phase 1 still alive: the battle-init
-    ///   override ([`crate::overlay_loader::battle_init_stage_override`],
-    ///   `FUN_80055B6C` `0x80055D2C..0x80055D44`).
-    /// * `1` - the armed sparring tutorial (`FUN_801DA51C`'s entry tail,
-    ///   consumed by [`World::take_battle_tutorial_arm`]).
-    /// * `0` - every other fight: no stage overlay.
-    ///
-    /// REF: FUN_801E6968, FUN_80055B6C, FUN_801DA51C
+    /// The stage id the current battle reads (`_DAT_8007B64A`).
     pub fn battle_stage_id(&self) -> u8 {
-        if let Some(id) = self.formation_slot0_monster_id() {
-            let first_seat = self.party.party_count.max(1) as usize;
-            let seat_liveness = self
-                .actors
-                .get(first_seat)
-                .map(|a| a.battle.liveness)
-                .unwrap_or(0);
-            if let Some(stage) = crate::overlay_loader::boss_transition_stage_id(id, seat_liveness)
-            {
-                return stage;
-            }
-            if let Some(stage) = crate::overlay_loader::battle_init_stage_override(id) {
-                return stage;
-            }
-        }
-        if self.battle.tutorial.is_some() {
-            return crate::battle_tutorial::TUTORIAL_STAGE_ID;
-        }
-        0
+        self.battle.stage_id
+    }
+
+    /// The boss-transition tail of the Final Heal sweep (`FUN_801E6968`,
+    /// `0x801E6CE4..0x801E6D64`), run at the head of cleanup state `0x50` -
+    /// the one place retail calls the sweep (`jal 0x801E6968` at
+    /// `0x801E5C6C`). When the formation cell reads `0xB5` and the first
+    /// monster seat's live HP `+0x14C` is `0`, it pages entry 969 in, writes
+    /// stage id `3`, bumps `ctx[+0x26]` and zeroes the seat's `+0x21C` /
+    /// `+0x225`. Its `ctx[+0x07] = 0xFD` park is the caller's to apply after
+    /// the rest of the `0x50` body has run (`World::live_battle_tick`): the
+    /// state's advance to `0x51` is guarded on the byte still reading `0x50`,
+    /// so the park stands, the end-of-action gate `0x5A` never runs, and
+    /// nothing but the form-transition module ever closes this battle.
+    /// Returns `true` when the arm fired.
+    ///
+    /// REF: FUN_801E6968 (the arm's kernel is
+    /// [`crate::battle_stage_module::boss_transition_stage_id`])
+    pub(in crate::world) fn run_boss_transition_arm(&mut self) -> bool {
+        let Some(id) = self.formation_slot0_monster_id() else {
+            return false;
+        };
+        let first_seat = usize::from(self.party.party_count.max(1));
+        let Some(liveness) = self.actors.get(first_seat).map(|a| a.battle.liveness) else {
+            return false;
+        };
+        let Some(stage) = crate::battle_stage_module::boss_transition_stage_id(id, liveness) else {
+            return false;
+        };
+        self.battle.stage_id = stage;
+        self.battle_ctx.levelup_banner_element =
+            self.battle_ctx.levelup_banner_element.wrapping_add(1);
+        let seat = &mut self.actors[first_seat].battle;
+        seat.render_flag = 0;
+        seat.capture_state = 0;
+        true
     }
 }

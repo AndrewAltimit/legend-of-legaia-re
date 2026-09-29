@@ -437,8 +437,27 @@ window.MgDance = (function () {
         if (mp.length) b.out.set(mp, b.markerBase * 3);
       }
       b.renderer.updatePositions(b.out);
+      renderBody(b);
+    }
+
+    /* Draw the posed buffer. Until the visitor orbits, the hall frames
+     * through the dance entry's own camera (`dance_venue_vp`: the pose
+     * FUN_801CEF54 stages, from the engine kernel the native window draws
+     * with); a drag or a wheel hands the frame to the orbit, and dblclick
+     * gives it back. */
+    function renderBody(b) {
+      const c = b.renderer.canvas;
+      const vp = (!b.cam.orbit && b.env && api.dance_venue_vp)
+        ? api.dance_venue_vp(c.width / Math.max(c.height, 1)) : null;
+      b.renderer.mvpOverride = vp && vp.length === 16 ? Float32Array.from(vp) : null;
+      /* The engine projection carries the retail screen-X mirror the orbit
+       * framing does not, so its front faces wind the other way. */
+      const front = b.renderer.cullFrontFace;
+      if (b.renderer.mvpOverride) b.renderer.cullFrontFace = front === 'ccw' ? 'cw' : 'ccw';
       b.renderer.render(b.cam.yaw, b.cam.pitch, b.cam.distance,
                         0, 0, b.center, b.radius, b.fov);
+      b.renderer.cullFrontFace = front;
+      b.renderer.mvpOverride = null;
     }
 
     /* Drag-to-orbit on the gl canvas (the HUD canvas over it is
@@ -455,6 +474,7 @@ window.MgDance = (function () {
       });
       c.addEventListener('pointermove', (e) => {
         if (!drag) return;
+        scene.cam.orbit = true;
         scene.cam.yaw -= (e.clientX - lx) * 0.006;
         scene.cam.pitch = Math.max(-1.0, Math.min(1.0,
           scene.cam.pitch - (e.clientY - ly) * 0.006));
@@ -465,6 +485,7 @@ window.MgDance = (function () {
       });
       c.addEventListener('wheel', (e) => {
         e.preventDefault();
+        scene.cam.orbit = true;
         scene.cam.distance = Math.max(1.0, Math.min(6,
           scene.cam.distance * (e.deltaY > 0 ? 1.1 : 0.9)));
       }, { passive: false });

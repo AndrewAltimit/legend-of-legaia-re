@@ -242,6 +242,47 @@ pub fn tick_fishing_venue(
     out
 }
 
+/// This frame's fishing line on a world host: [`crate::fishing::PondSession::line_frame`]
+/// with the fish end projected through `view`, the scene camera the host
+/// resolved for the frame it draws (`camera_view::resolve_field_camera(..)
+/// .field_view()`), as retail's lure tick projects it through the scene
+/// view the field matrix build leaves in the GTE.
+///
+/// The native window and the browser play page both call this and wrap the
+/// result with the one builder `legaia_engine_ui::ui_fishing_line`. `None`
+/// with no session, no camera or no line out.
+pub fn fishing_line_frame(
+    mg: &mut MinigameState,
+    view: Option<&legaia_engine_vm::psx_camera::FieldCameraView>,
+) -> Option<fa::FishingLine> {
+    let view = view?;
+    mg.fishing
+        .as_mut()?
+        .line_frame(|p| project_to_retail_screen(view, p))
+}
+
+/// Project a raw retail-world point through a host camera pose into retail
+/// 320x240 screen space - `RTPS`'s `OFX/OFY + H * xy / z`, saturated to the
+/// `SXY` range, floored as the GTE's `>> 16` floors. `None` behind the eye.
+pub fn project_to_retail_screen(
+    view: &legaia_engine_vm::psx_camera::FieldCameraView,
+    p: [i32; 3],
+) -> Option<(i16, i16)> {
+    let e = view.eye_space([p[0] as f32, p[1] as f32, p[2] as f32]);
+    if e[2] <= 0.0 {
+        return None;
+    }
+    let axis = |c: f32, of: i32| {
+        (of as f32 + view.h * c / e[2])
+            .floor()
+            .clamp(-1024.0, 1023.0) as i16
+    };
+    Some((
+        axis(e[0], fa::GTE_SCREEN_CENTRE.0),
+        axis(e[1], fa::GTE_SCREEN_CENTRE.1),
+    ))
+}
+
 /// The venue scene's `.MAP` extended footprint - the engine's
 /// `_DAT_1F8003EC` floor buffer (tile records at `+0`, height/wall grid at
 /// `+0x4000`, cell grid at `+0x8000`). `None` when the current scene carries

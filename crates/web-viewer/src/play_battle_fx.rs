@@ -463,6 +463,13 @@ impl LegaiaRuntime {
         // `etmd.dat` effect meshes (the model-spawn seam) followed by the
         // move-VM scene-graph parts (summon + battle move-FX), the same two
         // sources and the same order the native redraw pushes them in.
+        //
+        // A part whose `+0x52` carries a `0x780` bit is placed by the
+        // camera-relative prefix (`FUN_8001CF50`'s result under the full
+        // battle camera, the native `part_camera_pose` selection); every
+        // other part keeps `T(world_pos)`. Battle models carry the per-model
+        // Y-flip, the frame flip the prefix conjugates by.
+        let part_cam = legaia_engine_ui::gte::PartCameraPose::from_battle(&self.battle_cam_pose());
         let flip: [f32; 16] = [
             1.0, 0.0, 0.0, 0.0, //
             0.0, -1.0, 0.0, 0.0, //
@@ -510,6 +517,10 @@ impl LegaiaRuntime {
                 0.0, 0.0, 0.0, 1.0,
             ]
         };
+        let place = |flags: u16, pos: [f32; 3]| -> [f32; 16] {
+            legaia_engine_ui::gte::camera_relative_model_prefix(flags, pos, Some(&part_cam), true)
+                .unwrap_or_else(|| fx_translate(pos))
+        };
         for em in world.active_effect_models() {
             if world.global_tmd(em.tmd_index as i16).is_none() {
                 continue;
@@ -535,7 +546,7 @@ impl LegaiaRuntime {
             let model = mat_mul(
                 &world_scale,
                 &mat_mul(
-                    &fx_translate(sp.world_pos),
+                    &place(sp.flags_52, sp.world_pos),
                     &mat_mul(
                         &fx_rot_y(sp.rot[1]),
                         &mat_mul(&fx_rot_x(sp.rot[0]), &mat_mul(&fx_rot_z(sp.rot[2]), &flip)),
@@ -562,7 +573,7 @@ impl LegaiaRuntime {
             let model = mat_mul(
                 &world_scale,
                 &mat_mul(
-                    &fx_translate(rb.world_pos),
+                    &place(rb.flags_52, rb.world_pos),
                     &mat_mul(
                         &fx_rot_y(rb.rot[1]),
                         &mat_mul(&fx_rot_x(rb.rot[0]), &mat_mul(&fx_rot_z(rb.rot[2]), &flip)),
@@ -727,13 +738,31 @@ impl LegaiaRuntime {
                 0.0, 0.0, 0.0, 1.0,
             ]
         };
+        // The engine camera the page draws through this frame (the same
+        // `resolve_field_camera` frame [`Self::play_camera_vp`] built `vp`
+        // from), for the parts' `+0x52` camera-relative bits. `None` when the
+        // page drew through its own orbit: nothing to undo.
+        let part_cam = self
+            .engine_camera
+            .filter(|(m, _)| *m == vp)
+            .and_then(|(_, frame)| frame.field_view())
+            .map(|v| legaia_engine_ui::gte::PartCameraPose::from_field_view(&v));
         // Native field composition is `T * Ry * Rx * Rz` with an identity
-        // `fx_model_flip`; the page-space flip goes on the outside.
-        let part_model = |pos: [f32; 3], rot: [f32; 3]| -> [f32; 16] {
+        // `fx_model_flip`; the page-space flip goes on the outside. A
+        // camera-relative part (`+0x52 & 0x780`) takes the `FUN_8001CF50`
+        // prefix in place of `T`, on the raw retail frame (no flip).
+        let part_model = |flags: u16, pos: [f32; 3], rot: [f32; 3]| -> [f32; 16] {
+            let place = legaia_engine_ui::gte::camera_relative_model_prefix(
+                flags,
+                pos,
+                part_cam.as_ref(),
+                false,
+            )
+            .unwrap_or_else(|| fx_translate(pos));
             mat_mul(
                 &flip_m,
                 &mat_mul(
-                    &fx_translate(pos),
+                    &place,
                     &mat_mul(
                         &fx_rot_y(rot[1]),
                         &mat_mul(&fx_rot_x(rot[0]), &fx_rot_z(rot[2])),
@@ -767,7 +796,7 @@ impl LegaiaRuntime {
             frame.models.push(FxModelDraw {
                 tmd_index: sp.model_index,
                 source: FxModelSource::GlobalPool,
-                model: part_model(sp.world_pos, sp.rot),
+                model: part_model(sp.flags_52, sp.world_pos, sp.rot),
             });
         }
         // Field move-VM stager parts resolve against the SCENE's TMD pack
@@ -781,7 +810,7 @@ impl LegaiaRuntime {
             frame.models.push(FxModelDraw {
                 tmd_index: fp.model_index,
                 source: FxModelSource::ScenePack,
-                model: part_model(fp.world_pos, fp.rot),
+                model: part_model(fp.flags_52, fp.world_pos, fp.rot),
             });
         }
         // Draw-kind-4 nodes (the `0x4000` sprite-arm quads of the field's
@@ -789,7 +818,7 @@ impl LegaiaRuntime {
         // and baked into the billboard stream in page space - the native
         // field pass draws the same list (`build_summon_and_move_fx_part_draws`).
         for rb in world.active_effect_kind4_draws() {
-            let model = part_model(rb.world_pos, rb.rot);
+            let model = part_model(rb.flags_52, rb.world_pos, rb.rot);
             let base = (frame.positions.len() / 3) as u32;
             let m = &rb.mesh;
             for (i, p) in m.positions.iter().enumerate() {

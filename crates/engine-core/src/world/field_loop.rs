@@ -414,10 +414,11 @@ impl World {
             vm::battle_formulas::battle_init_special_word(self.battle.special_word, lead_monster);
         // The stage id as battle init leaves it: the tutorial arm
         // `enter_battle` consumed, or the `0xB5` override (`FUN_80055B6C`,
-        // `0x80055D2C..0x80055D44`). `battle_stage_id` reads
-        // `active_formation`, which the caller sets after this.
-        let stage_set = self.battle.tutorial.is_some()
-            || lead_monster == crate::encounter_record::BOSS_TRANSITION_MONSTER_ID;
+        // `0x80055D2C..0x80055D44`), which pages the arrival module in.
+        if let Some(stage) = crate::battle_stage_module::battle_init_stage_override(lead_monster) {
+            self.battle.stage_id = stage;
+        }
+        let stage_set = self.battle.stage_id != 0;
         if !scripted && !stage_set {
             self.roll_battle_formation(formation);
         }

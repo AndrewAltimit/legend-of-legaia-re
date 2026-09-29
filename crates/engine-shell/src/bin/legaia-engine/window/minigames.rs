@@ -15,6 +15,27 @@ pub(super) struct BakaDuelGpu {
     pub(super) mvp: Mat4,
 }
 
+/// The dance venue on the GPU: the `other7` hall the dance overlay's entry
+/// loads (`legaia_engine_core::dance_venue::DanceVenue`), drawn in place of
+/// the walked-in scene for as long as the entry's globals are staged. Its own
+/// VRAM (the venue upload plus the HUD page and the five entry face stamps),
+/// so the field VRAM is never touched and needs no restore.
+pub(super) struct DanceVenueGpu {
+    /// The staging generation this copy was built for.
+    pub(super) generation: u32,
+    pub(super) vram: UploadedVram,
+    /// Whether the HUD page reached the venue VRAM.
+    pub(super) hud_staged: bool,
+    pub(super) meshes: Vec<UploadedVramMesh>,
+    pub(super) color_meshes: Vec<UploadedColorMesh>,
+    /// `(meshes index, model)` per textured instance.
+    pub(super) draws: Vec<(usize, Mat4)>,
+    /// `(color_meshes index, model)` per untextured instance.
+    pub(super) color_draws: Vec<(usize, Mat4)>,
+    /// The venue's walk-ground heightfield.
+    pub(super) ground: Option<UploadedVramMesh>,
+}
+
 impl PlayWindowApp {
     // The mode-24 minigame door warp (`World::arm_minigame_warp` /
     // `World::minigame_return_warp`, retail `FUN_80025980` / `FUN_80026018`)
@@ -237,6 +258,12 @@ impl PlayWindowApp {
     /// re-derived - the same shape the battle path uses for its own throwaway
     /// injection.
     fn stage_dance_hud_art(&mut self) {
+        // The venue owns its own VRAM, HUD page included: nothing to stage
+        // over the field, and the residency claim is the venue build's.
+        if let Some(g) = self.dance_venue_gpu.as_ref() {
+            self.session.host.world.minigames.dance_hud_art_staged = g.hud_staged;
+            return;
+        }
         let in_dance = self.session.host.world.mode == SceneMode::Dance;
         if !in_dance {
             // Leaving edge: the field VRAM goes back byte for byte.
@@ -285,6 +312,184 @@ impl PlayWindowApp {
         self.upload_cpu_vram();
         self.dance_vram_restore = Some(clean);
         self.session.host.world.minigames.dance_hud_art_staged = true;
+    }
+
+    /// The dance entry's venue, once a frame: stage or restore the entry's
+    /// globals through the shared kernel
+    /// ([`legaia_engine_core::dance_venue::sync_dance_venue`] - block base,
+    /// the session camera's view window, the venue camera the frame resolves
+    /// through), then keep the GPU copy of the venue in step with the staging:
+    /// built from [`legaia_engine_core::dance_venue::DanceVenue::build`] on a
+    /// new generation, dropped the frame the teardown restores. The walked-in
+    /// scene's render state is never rebuilt, so leaving the hall shows it
+    /// exactly as it was.
+    pub(super) fn sync_dance_venue(&mut self) {
+        use legaia_engine_core::dance_venue as dv;
+        if let Some(edge) =
+            dv::sync_dance_venue(&mut self.session.host.world, &mut self.session.camera)
+        {
+            log::info!("dance venue: {edge:?}");
+        }
+        let Some(generation) = self
+            .session
+            .host
+            .world
+            .minigames
+            .dance_venue
+            .map(|s| s.generation)
+        else {
+            self.dance_venue_gpu = None;
+            return;
+        };
+        if self
+            .dance_venue_gpu
+            .as_ref()
+            .is_some_and(|g| g.generation == generation)
+            || self.dance_venue_failed == Some(generation)
+        {
+            return;
+        }
+        match self.build_dance_venue_gpu(generation) {
+            Some(g) => {
+                log::info!(
+                    "dance venue: {} textured + {} untextured instances, hud page {}",
+                    g.draws.len(),
+                    g.color_draws.len(),
+                    g.hud_staged
+                );
+                self.dance_venue_gpu = Some(g);
+            }
+            None => {
+                log::warn!("dance venue: build failed - the walked-in scene stays on screen");
+                self.dance_venue_failed = Some(generation);
+                self.dance_venue_gpu = None;
+            }
+        }
+    }
+
+    fn build_dance_venue_gpu(&self, generation: u32) -> Option<DanceVenueGpu> {
+        use legaia_asset::static_overlay;
+        use legaia_engine_core::dance_venue::DanceVenue;
+        let r = self.win.renderer.as_ref()?;
+        let index = &self.session.host.index;
+        let overlay = static_overlay::overlay_map()
+            .by_prot_index(legaia_asset::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32)
+            .and_then(|rec| {
+                let raw = index.entry_bytes_extended(rec.prot_index).ok()?;
+                static_overlay::as_loaded(&raw, rec).ok()
+            });
+        let venue = DanceVenue::build(index, overlay.as_deref())?;
+        let res = &venue.resources;
+        let vram = r
+            .upload_vram(&res.vram)
+            .map_err(|e| log::warn!("dance venue: vram upload: {e:#}"))
+            .ok()?;
+        let mut meshes = Vec::new();
+        let mut color_meshes = Vec::new();
+        let mut draws = Vec::new();
+        let mut color_draws = Vec::new();
+        // One upload per (mesh, clip): a bound prop is baked at frame 0 of
+        // its clip, the rest pose every host draws it in.
+        let mut built: std::collections::HashMap<(usize, u8), (Option<usize>, Option<usize>)> =
+            std::collections::HashMap::new();
+        for vd in &venue.draws {
+            let d = vd.draw;
+            let Some(rtmd) = res.tmds.get(d.res_tmd) else {
+                continue;
+            };
+            let slot = *built.entry((d.res_tmd, d.anim_id)).or_insert_with(|| {
+                let offsets = (d.anim_id != 0)
+                    .then(|| venue.frame0_bone_offsets(d.anim_id, rtmd.tmd.objects.len()))
+                    .flatten();
+                let (mut vmesh, mut cmesh) = match &offsets {
+                    Some(o) => (
+                        legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(&rtmd.tmd, &rtmd.raw, o),
+                        legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(&rtmd.tmd, &rtmd.raw, o),
+                    ),
+                    None => (
+                        rtmd.build_filtered_vram_mesh_lit(&res.vram).0,
+                        legaia_tmd::mesh::tmd_to_color_mesh(&rtmd.tmd, &rtmd.raw),
+                    ),
+                };
+                legaia_tmd::mesh::resolve_hybrid(&mut vmesh, &mut cmesh);
+                let t = (!vmesh.indices.is_empty())
+                    .then(|| {
+                        r.upload_vram_mesh(
+                            &vmesh.positions,
+                            &vmesh.uvs,
+                            &vmesh.cba_tsb,
+                            &vmesh.normals,
+                            &vmesh.colors,
+                            &vmesh.indices,
+                        )
+                        .ok()
+                    })
+                    .flatten()
+                    .map(|m| {
+                        meshes.push(m);
+                        meshes.len() - 1
+                    });
+                let c = (!cmesh.is_empty())
+                    .then(|| {
+                        r.upload_color_mesh_blended(
+                            &cmesh.positions,
+                            &cmesh.colors,
+                            &cmesh.indices,
+                            &cmesh.blend,
+                        )
+                        .ok()
+                    })
+                    .flatten()
+                    .map(|m| {
+                        color_meshes.push(m);
+                        color_meshes.len() - 1
+                    });
+                (t, c)
+            });
+            // Raw retail Y-down transform; the camera's FIELD_WORLD_FLIP is
+            // the single net negation, as for every field placement.
+            let model = Mat4::from_translation(Vec3::new(
+                d.world_x as f32 + vd.lift[0],
+                d.world_y as f32 + vd.lift[1],
+                d.world_z as f32 + vd.lift[2],
+            )) * legaia_engine_render::battle_intro::placement_rotation(
+                d.rot_x, d.rot_y, d.rot_z,
+            );
+            if let Some(t) = slot.0 {
+                draws.push((t, model));
+            }
+            if let Some(c) = slot.1 {
+                color_draws.push((c, model));
+            }
+        }
+        let ground = venue
+            .scene
+            .walk_heightfield(index)
+            .ok()
+            .flatten()
+            .filter(|hf| !hf.indices.is_empty())
+            .and_then(|hf| {
+                let v = super::geometry::heightfield_to_vram_mesh(&hf);
+                r.upload_vram_mesh(
+                    &v.positions,
+                    &v.uvs,
+                    &v.cba_tsb,
+                    &v.normals,
+                    &v.colors,
+                    &v.indices,
+                )
+                .ok()
+            });
+        Some(DanceVenueGpu {
+            generation,
+            vram,
+            hud_staged: venue.hud_staged,
+            meshes,
+            color_meshes,
+            draws,
+            color_draws,
+            ground,
+        })
     }
 
     /// Re-upload `cpu_vram_base` to the GPU. Silent when the renderer is not
@@ -421,6 +626,34 @@ impl PlayWindowApp {
         usp::payline_screen_prims(&segments)
     }
 
+    /// The fishing line as a screen primitive: the session's line for this
+    /// frame (`legaia_engine_core::fishing_venue::fishing_line_frame`, the
+    /// fish end projected through the follow camera the scene draws with),
+    /// wrapped by the shared `ui_fishing_line` builder. The browser play page
+    /// makes the same two calls. Empty outside a live line.
+    pub(super) fn fishing_line_screen_prims(
+        &mut self,
+    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+        use legaia_engine_core::camera_view::resolve_field_camera;
+        if self.session.host.world.mode != SceneMode::Fishing {
+            return Vec::new();
+        }
+        let center = [
+            (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
+            (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
+        ];
+        let world = &mut self.session.host.world;
+        let view = resolve_field_camera(world, &self.session.camera, None, center).field_view();
+        legaia_engine_core::fishing_venue::fishing_line_frame(&mut world.minigames, view.as_ref())
+            .and_then(|l| {
+                legaia_engine_render::ui_fishing_line::fishing_line_prim(
+                    l.fish, l.rod, l.fish_rgb, l.rod_rgb, l.ot,
+                )
+            })
+            .into_iter()
+            .collect()
+    }
+
     /// Pose the Baka duel's 3D surface for this frame and put it on the GPU.
     ///
     /// The pose, the arena camera and the buffers are the engine's
@@ -515,6 +748,7 @@ impl PlayWindowApp {
     /// is aged by `World::tick`, where every host reaches it.
     pub(super) fn tick_minigame_extras(&mut self) {
         self.drain_minigame_sfx_cues();
+        self.sync_dance_venue();
         self.stage_dance_hud_art();
         self.tick_fishing_actors();
         self.tick_baka_chrome();

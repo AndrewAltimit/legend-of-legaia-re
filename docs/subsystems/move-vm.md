@@ -284,7 +284,7 @@ carrying structure are called out below the table.
 | `0x12` | 2 | `+0x7A = v1` (scale Z) |
 | `0x13` | 0x10 | draw-kind-4 node on the default emitter - see [draw-kind-4 setup ops](#draw-kind-4-setup-ops-0x13-0x23-0x42) |
 | `0x14` | 5 | `+0xC0/+0xC2/+0xC4/+0xC6 = v1..v4 << 3` (duration + colour channels) |
-| `0x15` | 2 | `+0x52 = v1`; if `v1 & 0x400` also clears actor flag bit `0x80` |
+| `0x15` | 2 | `+0x52 = v1`; if `v1 & 0x400` also clears actor flag bit `0x80`. The `0x780` bits make the node camera-relative at draw time ([`renderer.md`](renderer.md#camera-relative-nodes-fun_8001cf50)) |
 | `0x17` | 2 | **battle-overlay extension escape** - see below |
 | `0x18` | 2 | loop-open A: `+0x88 = PC`, `+0x8C = v1` (counter) |
 | `0x19` | 1/2 | loop-back A - see below |

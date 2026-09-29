@@ -139,8 +139,8 @@ impl World {
     /// monster slot dead + `DAT_8007BD0C == 0xB5` boss-transition arm,
     /// `0x801E6CE4..0x801E6D64`) is the second battle stage-id writer - the
     /// Cort form transition to stage 3 / entry 969 - ported separately as
-    /// [`crate::overlay_loader::boss_transition_stage_id`], resolved live by
-    /// [`World::battle_stage_id`].
+    /// [`crate::battle_stage_module::boss_transition_stage_id`], run at the
+    /// head of cleanup state `0x50` by [`World::run_boss_transition_arm`].
     ///
     /// REF: FUN_800402F4 (the revive arm this calls - case 4, tier 1 = full
     /// max HP + status clear)
@@ -212,6 +212,15 @@ impl World {
 
         // The modelled CD drive: one clip read span elapses per frame.
         self.audio.battle_xa_busy_frames = self.audio.battle_xa_busy_frames.saturating_sub(1);
+
+        // The side-band pass: the frame driver runs it first on every battle
+        // frame (`FUN_80046A20`, `jal 0x80056208` at `0x80046D60`), ahead of
+        // the results sequencer and both state machines. While a boss-stage
+        // module owns the fight nothing else runs.
+        // REF: FUN_80046A20
+        if self.tick_battle_sideband() {
+            return None;
+        }
 
         // The battle has ended and its presentation owns the frame: retail's
         // battle tick runs the results sequencer instead of the action SM
@@ -374,7 +383,21 @@ impl World {
             .map(|a| a.battle.strike_index)
             .unwrap_or(0);
 
+        // Cleanup state `0x50` opens with the Final Heal sweep (`jal
+        // 0x801E6968` at `0x801E5C6C`), whose tail hands the Cort fight to its
+        // form-transition module once the first form has fallen. The tail
+        // parks the SM at `0xFD`, and the state's own advance is guarded on
+        // `ctx[+0x07]` still reading `0x50` (`0x801E5F4C..0x801E5F5C`) - so
+        // the rest of the `0x50` body runs, the advance does not, and the
+        // end-of-action gate `0x5A` whose survivor count would end the fight
+        // is never reached.
+        let boss_transition = self.battle_ctx.action_state == ActionState::DoneCleanup.as_byte()
+            && self.run_boss_transition_arm();
+
         let outcome = self.step_battle();
+        if boss_transition {
+            self.battle_ctx.action_state = ActionState::IdleHold.as_byte();
+        }
 
         // Cast band: fold the owed outcome at retail's seam (the frame the
         // band leaves `0x29`; the summon route folds in its stager).
@@ -760,14 +783,16 @@ impl World {
     pub(in crate::world) fn begin_battle_round(&mut self) {
         use crate::battle_flow::BattleFlowState;
         use crate::battle_round::RoundPhase;
-        // The sparring fight's opening caption holds the round start back:
-        // retail's side-band tick sees `0x14` stored, raises the caption and
-        // sets `ctx[+0x6B0]`, and `FUN_801D0748` returns on it before its
-        // state switch (`0x801D0BDC`) - so none of the sweep / seed / prompt
-        // below runs until the caption has gone. The box tick reopens the
-        // round when it does.
-        // REF: FUN_80056208 (stage-1 phases 0..1), FUN_801D0748 (`0x801D0BDC`)
-        if self.raise_sparring_caption_if_due() {
+        // The side-band holds the round start back in two fights. The
+        // sparring fight's opening caption: retail's side-band tick sees
+        // `0x14` stored, raises the caption and sets `ctx[+0x6B0]`, and
+        // `FUN_801D0748` returns on it before its state switch (`0x801D0BDC`)
+        // - so none of the sweep / seed / prompt below runs until the caption
+        // has gone. And the Cort fight, whose flow sits at `0x0C` until the
+        // arrival module hands it back. The side-band reopens the round in
+        // both cases (`world/battle/sideband.rs`).
+        // REF: FUN_80056208, FUN_801D0748 (`0x801D0BDC`)
+        if self.battle_sideband_holds_round() {
             return;
         }
         self.battle.round_flow.flat_walk_last = None;

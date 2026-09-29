@@ -560,6 +560,13 @@ became reachable from a library test - `engine-ui/tests/pause_menu_compose.rs`
 - which it could not be while it sat inside a binary's private module, since
 a `tests/` target cannot import one.
 
+The dance hall has a native twin of the browser venue surface: while a dance
+runs, `window/minigames.rs` draws the same venue in place of the walked-in
+scene. Both take the draw list, the coplanar lifts, the VRAM (face stamps and
+HUD page included) and the camera from one kernel,
+`engine-core::dance_venue::DanceVenue::build`, so only the mesh build and the
+instance transform are per host.
+
 The reason this is not the answer everywhere: it needs the two surfaces to be
 the same screen with the same model. The five *render* surfaces above are not
 - the dance hall and the fishing venue bake venue-specific geometry - so there

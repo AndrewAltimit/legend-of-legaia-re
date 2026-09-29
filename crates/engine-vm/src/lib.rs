@@ -167,6 +167,7 @@ pub mod field_player_clip;
 pub mod field_state_pick;
 pub mod field_warp_tile;
 pub mod gameover_banner;
+pub mod gte_divide;
 pub mod menu;
 pub mod menu_actor_seed;
 pub mod motion_pause;

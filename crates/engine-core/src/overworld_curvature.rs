@@ -129,7 +129,8 @@ pub fn frame_curve_scale(overworld: bool, frame: &crate::camera_view::FieldCamer
     match frame {
         F::WorldMapWalk { .. } => 1.0,
         F::Cutscene(_) | F::Follow(_) => crate::camera_view::CUTSCENE_WORLD_SCALE,
-        F::WorldMapTopView { .. } | F::HostDebugOrbit => 0.0,
+        // A minigame venue is never the overworld; flat.
+        F::WorldMapTopView { .. } | F::HostDebugOrbit | F::Venue(_) => 0.0,
     }
 }
 

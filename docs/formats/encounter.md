@@ -999,6 +999,14 @@ The consumers, all disassembly-traced:
 | `FUN_801D6058`, the ambient particle emitter | Samples spawn points across `(EA − E8) − 1` by `(EB − E9) − 1` tiles, i.e. only inside the drawn window. |
 | `FUN_801EAD98` dev-menu rows `0x12..0x15` | Prints all four as signed decimals; `FUN_801E9F64` is the `±1` editor behind those rows. |
 
+The walk-region AABB those clamps read, `0x1F800384..87`, is a different box with a
+different writer: `FUN_800180EC` latches it from the `.MAP` region table, and the
+camera re-centre pair `FUN_80017DD4` / `FUN_80017EC8` runs that latch at the re-centre
+tile and then hands the same box to the sub-area window sweep `FUN_801D7B50`, which
+re-plans the scene's windowed static-object list from the placements inside it
+([`field-locomotion.md`](../subsystems/field-locomotion.md#the-object-bind-which-sweep-owns-the-object-and-its-rest-pose)).
+So one re-centre moves both the ground clamp and the set of window-owned props.
+
 The **mirror words `0x801F2778 / 7C / 80 / 84`** are `i32` copies with **no reader**. All
 three writers (the loader here, and op `0x46`'s two arms) store the byte and the word from
 the same register; the `DAT_1f8003e8 = (byte)DAT_801f2778` shape in the decompiled C is

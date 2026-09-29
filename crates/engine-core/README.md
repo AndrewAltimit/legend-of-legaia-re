@@ -282,6 +282,17 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   consumes, raised by town01's Tetsu record two ops before its battle-entry
   op. `World::prime_battle_tutorial` is a debug force, not the port. See
   `docs/subsystems/battle.md#the-sparring-tutorial-prompt-machine-overlay-967`.
+- `battle_sideband` - the battle side-band pass `FUN_80056208`, keyed on
+  the stage id `_DAT_8007B64A`: the sparring caption's hold (stage 1) and
+  the host side of the two Cort stage modules (stages 2 / 3). A pure
+  transition kernel; `World::tick_battle_sideband` runs it once per live
+  battle frame for both play hosts.
+- `battle_stage_module` - the two boss-stage modules the side-band drives
+  for formation monster `0xB5`: PROT 0968's arrival (camera walk, the boss
+  dropping in, the name banner, the hand-back to round one) and PROT 0969's
+  form transition (the 1-HP beat, the shake, the blanked field, the exit to
+  the field). See
+  `docs/subsystems/battle.md#what-the-two-boss-stage-modules-do-overlays-968--969`.
 - `battle_hud` - renderer-agnostic UI model. Holds per-slot HP / MP /
   AP / status icons, a queue of `DamagePopup`s with fade timers, and a
   ringed log column. Engines feed it from `BattleEvent::ApplyArtStrike`
@@ -429,6 +440,10 @@ presentation left to the host:
   also owns the two `minigame_actor` pools the overlay's draw kernels read: the
   floor cast (spawn positions + bound clip ids off the disc's own spawn and
   kind tables) and the sprite parts a scoring judge spawns.
+- `dance_venue` - what the dance overlay's entry stages around the run: the
+  globals it saves and replaces over the walked-in scene (block base, view
+  window, venue camera; restored on the way out) and the `other7` venue itself
+  with the entry's face stamps in its VRAM, built once for every host.
 - `minigame_actor` - the per-entity record the hub-band overlays spawn through
   the shared part-spawn API and read every frame, named by retail byte offset.
   Not the field actor; see the module docs for why they stay apart.
@@ -515,8 +530,13 @@ presentation left to the host:
   `World::tick_battle_animations` over each actor's committed clip
   (`MonsterAnimation::effect_script`); spawns drain via
   `World::drain_battle_effect_spawns`.
-- `field_regions::window_rebuild_spawns` - the sub-area **window rebuild**
-  placed-object sweep (`FUN_801D7B50`), complement of the scene-init sweep.
+- `field_regions::window_rebuild_spawns_resident` - the sub-area **window
+  rebuild** placed-object sweep (`FUN_801D7B50`), complement of the
+  scene-init sweep. `World::recentre_field_window` (`world/static_window.rs`)
+  runs it on every camera re-centre retail runs it on and keeps the result as
+  `FieldTerrain::static_window`; both play hosts gate the sweep's placements on
+  that list through `field_env::placed_draw_live` (whole map by default,
+  retail windowing behind the `retail_static_window` option).
 - `target_picker::enemy_menu_rows` + `layout_enemy_menu_rows` - the enemy
   target-menu row dedup / labelling and the overlap-relaxation layout
   (`FUN_801D9D3C`). `BattleSession::enemy_menu_rows` rebuilds the rows every

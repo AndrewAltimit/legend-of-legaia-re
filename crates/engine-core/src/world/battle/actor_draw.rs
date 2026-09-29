@@ -271,6 +271,9 @@ impl World {
                 f32::from(m.world_z),
             ],
             rot: [0.0; 3],
+            // A battle body's ground shadow is not a move-VM node; it draws
+            // under the full camera (`FUN_80048A08`).
+            flags_52: 0,
         })
     }
 

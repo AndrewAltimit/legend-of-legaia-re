@@ -772,6 +772,12 @@ pub struct RibbonDraw {
     pub world_pos: [f32; 3],
     /// Euler XYZ rotation in radians (from the move-VM rotation banks).
     pub rot: [f32; 3],
+    /// The node's `+0x52` word (move-VM op `0x15`). Its `0x780` bits select
+    /// retail's camera-relative rotation `FUN_8001CF50` at the render
+    /// dispatcher `FUN_8001ADA4` (`0x8001B374`); a host resolves them with
+    /// `legaia_engine_ui::gte::camera_relative_model_prefix`. `0` for draws
+    /// that are not move-VM nodes.
+    pub flags_52: u16,
 }
 
 #[cfg(test)]

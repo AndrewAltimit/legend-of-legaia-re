@@ -122,6 +122,15 @@ LAG_EXTENTS_SHOWN = 20
 # explained; it is broken out separately because calling reserved dev filler
 # "content we understand" overstates the result.
 PLACEHOLDER_CLASSES = {"pochi_filler", "mostly_zeros", "zero_sector_high_entropy"}
+
+# The subset of PLACEHOLDER_CLASSES a STRUCTURAL detector confirms is filler,
+# and so the only bytes the content figure (`pct_content_parsed`) drops from
+# its denominator. `mostly_zeros` / `zero_sector_high_entropy` are statistical
+# fallbacks - the absence of a finding, not a finding (docs/tooling/
+# disc-coverage.md, "A statistical class is not a verdict") - so they stay in
+# the denominator and count against the figure: a real format misfiled there
+# must still read as a gap.
+FILLER_CLASSES = {"pochi_filler"}
 UNEXPLAINED_CLASSES = {
     "unknown", "unknown_other", "unknown_high_entropy", "unknown_low_entropy",
 }
@@ -1031,6 +1040,8 @@ def data_report(extracted):
     placeholder = sum(v[1] for k, v in by.items() if k in PLACEHOLDER_CLASSES)
     unexplained = sum(v[1] for k, v in by.items() if k in UNEXPLAINED_CLASSES)
     parsed = total - placeholder - unexplained
+    filler = sum(v[1] for k, v in by.items() if k in FILLER_CLASSES)
+    content = total - filler
     return {
         "entries": sum(v[0] for v in by.values()),
         "total": total,
@@ -1039,6 +1050,14 @@ def data_report(extracted):
         "unexplained": unexplained,
         "pct_parsed": 100.0 * parsed / total if total else 0.0,
         "pct_unexplained": 100.0 * unexplained / total if total else 0.0,
+        # The same numerator over the disc's CONTENT: every byte except
+        # structurally confirmed filler. The headline figure - filler is
+        # documented but carries nothing to parse, so it belongs in neither
+        # side of the ratio.
+        "filler": filler,
+        "filler_entries": sum(v[0] for k, v in by.items() if k in FILLER_CLASSES),
+        "content": content,
+        "pct_content_parsed": 100.0 * parsed / content if content else 0.0,
         "by_class": sorted(
             ([k, v[0], v[1]] for k, v in by.items()), key=lambda r: -r[2]),
     }
@@ -1489,6 +1508,14 @@ def render(scus, overlays, amb_totals, data, rejects, attributed):
             data["unexplained"], data["pct_unexplained"]))
         add("| total | %d | |" % data["total"])
         add("")
+        add("Over the disc's **content** - every byte except the %d bytes of "
+            "structurally confirmed filler (`%s`, %d entries), which carries "
+            "nothing to parse - the parsed share is **%.1f%%**. That is the "
+            "headline figure; the statistical placeholder classes stay in its "
+            "denominator." % (
+                data["filler"], "`, `".join(sorted(FILLER_CLASSES)),
+                data["filler_entries"], data["pct_content_parsed"]))
+        add("")
         add("Placeholder covers reserved dev filler and zero padding. It is "
             "*explained* - `pochi_filler` has its own format page - but counting "
             "it as content we understand would overstate the result, so it is "
@@ -1575,6 +1602,7 @@ def snapshot(scus, overlays, data):
         out["code_floor"][r["name"]] = round(r["pct_floor"], 2)
     if data:
         out["data"]["pct_parsed"] = round(data["pct_parsed"], 2)
+        out["data"]["pct_content_parsed"] = round(data["pct_content_parsed"], 2)
     return out
 
 
@@ -1654,7 +1682,9 @@ def main():
                     % (r["pct_floor"], amb)))
         if data:
             print("[disc-coverage] PROT data parsed to a named format: %.1f%% "
-                  "(unexplained %.1f%%)" % (data["pct_parsed"], data["pct_unexplained"]))
+                  "(unexplained %.1f%%; %.1f%% of content, filler excluded)"
+                  % (data["pct_parsed"], data["pct_unexplained"],
+                     data["pct_content_parsed"]))
         print("[disc-coverage] wrote %s" % md_path)
         print("[disc-coverage] wrote %s" % work_md)
         print("[disc-coverage] wrote %s" % work_csv)

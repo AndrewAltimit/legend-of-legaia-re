@@ -119,6 +119,26 @@ So when reading the per-class table:
   instead. Structure at a known offset beats a whole-buffer ratio whenever one
   is available.
 
+### The content figure drops confirmed filler, and only that
+
+The data half reports two parsed shares over the same numerator. `pct_parsed`
+divides by every PROT byte. `pct_content_parsed` divides by the disc's
+**content**: every byte except those in `FILLER_CLASSES`, the placeholder
+classes a structural detector confirms carry nothing to parse. Today that set is
+`pochi_filler` alone ([`pochi.md`](../formats/pochi.md): one sector of fill per
+entry, no parseable asset). The landing-page tile quotes the content figure, and
+its text names the excluded entries and bytes.
+
+The statistical placeholder classes (`mostly_zeros`,
+`zero_sector_high_entropy`) are deliberately **not** in `FILLER_CLASSES`. They
+stay in the denominator and count against the figure, because a statistical
+class is not a verdict: a real format misfiled there must still read as a gap,
+not vanish from both sides of the ratio. A class joins `FILLER_CLASSES` only
+when a detector recognises the filler by its structure, the way
+`is_pochi_filler` does.
+
+Both figures are ratcheted in `disc-coverage-baseline.json`.
+
 ## How code coverage is computed
 
 Every Ghidra dump header carries an entry address and a byte length:

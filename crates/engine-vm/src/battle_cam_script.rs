@@ -1832,6 +1832,30 @@ impl BattleCamera {
         }
     }
 
+    /// Take the camera back from a battle-stage module that owned the camera
+    /// globals (the Cort arrival, PROT 0968), at the pose it left them in.
+    ///
+    /// The module hands the fight back to flow state `0x0B`, and the round it
+    /// opens re-arms case `9` - the far framing - over case 9's own `a3 = 0xE`
+    /// (7 camera steps), tweening from wherever the module left the
+    /// registers. Yaw passes straight through to the idle orbit, as in every
+    /// case-9 re-arm.
+    ///
+    /// REF: FUN_801D5854 (case 9), FUN_801D829C
+    pub fn hand_back_from(&mut self, pose: BattleCamPose) {
+        let mut from = pose;
+        self.glides.clear();
+        self.glides.push_back(Glide::linear(
+            &mut from,
+            self.menu_pose(),
+            menu_raw_z(self.formation),
+            SWING_RETURN_STEPS,
+            false,
+        ));
+        self.pose = from;
+        self.phase = BattleCamPhase::Menu;
+    }
+
     /// Observe the live battle phase; a change arms the measured glide.
     pub fn set_phase(&mut self, phase: BattleCamPhase) {
         if phase == self.phase {

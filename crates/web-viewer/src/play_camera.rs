@@ -156,9 +156,9 @@ impl LegaiaRuntime {
             FieldCameraFrame::WorldMapTopView { .. } => self.scene_aabb(),
             _ => ([0.0; 3], [0.0; 3]),
         };
-        camera_view::frame_vp(&frame, aabb, aspect)
-            .map(|m| m.to_vec())
-            .unwrap_or_default()
+        let vp = camera_view::frame_vp(&frame, aabb, aspect);
+        self.engine_camera = vp.map(|m| (m, frame));
+        vp.map(|m| m.to_vec()).unwrap_or_default()
     }
 
     /// This frame's world-space lens, in raw retail Y-down world coordinates -
@@ -189,6 +189,7 @@ impl LegaiaRuntime {
         let (arm, view) = match &frame {
             FieldCameraFrame::Cutscene(v) => ("cutscene", Some(*v)),
             FieldCameraFrame::Follow(v) => ("follow", Some(*v)),
+            FieldCameraFrame::Venue(v) => ("venue", Some(*v)),
             FieldCameraFrame::WorldMapWalk { view, .. } => ("worldmap_walk", Some(*view)),
             FieldCameraFrame::WorldMapTopView { .. } => ("worldmap_topview", None),
             FieldCameraFrame::HostDebugOrbit => ("host_debug_orbit", None),

@@ -598,6 +598,14 @@ struct PlayWindowApp {
     /// Field static-geometry colour draws: `(index into `color_meshes`, world
     /// model)` for the untextured props. Drawn alongside `field_placement_draws`.
     field_placement_color_draws: Vec<(usize, Mat4)>,
+    /// Which placed-object sweep owns each draw of `field_placement_draws` /
+    /// `field_placement_color_draws` (parallel lists): `Some` for the sub-area
+    /// window sweep's placements, which the per-frame pass gates on the
+    /// world's windowed static-object list through
+    /// `field_env::placed_draw_live` - the same kernel the browser play page
+    /// asks.
+    field_placement_window_keys: Vec<Option<legaia_engine_core::field_env::PlacedWindowKey>>,
+    field_placement_color_window_keys: Vec<Option<legaia_engine_core::field_env::PlacedWindowKey>>,
     /// Field-scene **terrain / ground** draws: `(uploaded-mesh index, world
     /// model)` per visible cell of the field `.MAP` object grid
     /// (`Scene::field_terrain_tiles`, the `CELL_VISIBLE` sweep - the dense
@@ -848,6 +856,12 @@ struct PlayWindowApp {
     /// This frame's GPU copy of that surface (see
     /// `PlayWindowApp::refresh_baka_duel_gpu`).
     baka_gpu: Option<minigames::BakaDuelGpu>,
+    /// The dance venue on the GPU while the dance entry's globals are staged
+    /// (see `PlayWindowApp::sync_dance_venue`).
+    dance_venue_gpu: Option<minigames::DanceVenueGpu>,
+    /// The staging generation whose venue build failed, so a disc without
+    /// the venue is not re-read every frame.
+    dance_venue_failed: Option<u32>,
     /// Muscle Dome hub-screen atlas + sprite table (see [`MuscleHubAssets`]).
     muscle_hub: Option<MuscleHubAssets>,
     /// The dome hub's screen timers - first visit, ROUND card, INTERVAL +

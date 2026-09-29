@@ -890,6 +890,7 @@ void main() {
       const rt = this.rt;
       this.renderer.clearScene();
       this.staticDraws = [];
+      this._staticWindowStamp = undefined;
       this.player = null;
       this.npcs = [];
       this.tileMeshSlots = [];   /* board-owned actor slots with an uploaded mesh */
@@ -957,7 +958,7 @@ void main() {
        * floor-wave offset array (`rt.field_floor_wave_offsets()`, terrain then
        * placements), so a draw the loop below SKIPS - a mesh with
        * no renderable prims - does not shift every later draw's rung. */
-      const push = (slots, pos, rots, anims, rotsX, rotsZ, floorBase) => {
+      const push = (slots, pos, rots, anims, rotsX, rotsZ, floorBase, placed) => {
         for (let i = 0; i < slots.length; i++) {
           const anim = anims ? anims[i] : 0;
           let meshId, animRec = null;
@@ -1009,6 +1010,9 @@ void main() {
             draw.eulerY = (rx || rz)
               ? [rx * A2R, (rots[i] & 0xFFF) * A2R, rz * A2R] : null;
           }
+          /* Placed layer only: the index into the engine's per-placement
+           * live mask (`_syncStaticWindow`). */
+          if (placed) draw.placeIdx = i;
           this.staticDraws.push(draw);
           if (animRec) this.animProps.push(animRec);
         }
@@ -1020,7 +1024,7 @@ void main() {
         rt.field_placement_anim_ids(),
         rt.field_placement_rot_x ? rt.field_placement_rot_x() : null,
         rt.field_placement_rot_z ? rt.field_placement_rot_z() : null,
-        terrainSlots.length);
+        terrainSlots.length, true);
       this._floorWaveLive = false;
 
       /* Player: geometry once, positions re-uploaded per frame from the pose. */
@@ -1984,6 +1988,24 @@ void main() {
      * the falling edge.
      *
      * The page's world frame negates retail Y, so the offset subtracts. */
+    /* The sub-area window sweep's placements live on the engine's windowed
+     * static-object list (retail FUN_801D7B50, re-planned on every camera
+     * re-centre). The engine answers which placement draws are live through
+     * the same `field_env::placed_draw_live` kernel the native window asks;
+     * the page re-reads that mask only when the list or the retail-windowing
+     * option changed. With windowing off (the default) every entry is live. */
+    _syncStaticWindow(rt) {
+      if (typeof rt.field_placement_live !== 'function') return;
+      const stamp = rt.field_static_window_stamp();
+      if (stamp === this._staticWindowStamp) return;
+      this._staticWindowStamp = stamp;
+      const live = rt.field_placement_live();
+      for (const d of this.staticDraws) {
+        if (d.placeIdx === undefined) continue;
+        d.hidden = d.placeIdx < live.length && live[d.placeIdx] === 0;
+      }
+    }
+
     _applyFloorWave(rt) {
       if (!rt.field_floor_wave_offsets) return;
       const wave = rt.field_floor_wave_offsets();
@@ -2259,6 +2281,10 @@ void main() {
        * frame and nothing else on a scene whose script never moves the ladder. */
       this._applyFloorWave(rt);
 
+      /* A camera re-centre this frame may have re-planned the windowed
+       * static-object list. */
+      this._syncStaticWindow(rt);
+
       /* A script may have re-bound an NPC's mesh this frame. */
       this._rebindLiveNpcModels(rt);
 
@@ -2381,9 +2407,9 @@ void main() {
         const px = pt[0], py = -pt[1] + HALF_CHAR_HEIGHT, pz = pt[2];
         const ex = eye[0] - px, ey = eye[1] - py, ez = eye[2] - pz;
         draws = this.staticDraws.filter(
-          d => !segmentHitsBox(px, py, pz, ex, ey, ez, d.box));
+          d => !d.hidden && !segmentHitsBox(px, py, pz, ex, ey, ez, d.box));
       } else {
-        draws = this.staticDraws.slice();
+        draws = this.staticDraws.filter(d => !d.hidden);
       }
 
       /* Player: the engine's live posed vertices + its world transform. The

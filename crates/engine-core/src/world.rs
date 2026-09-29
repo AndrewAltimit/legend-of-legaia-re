@@ -159,6 +159,7 @@ pub use cutscene_elements::{
     ElementKind, ElementLink, WorldRng,
 };
 mod assets_events;
+pub use assets_events::vdf_entry;
 mod bag_rows;
 pub use bag_rows::BagRow;
 mod battle;
@@ -190,6 +191,8 @@ mod field_movement;
 pub mod field_npc_cull;
 mod field_npc_height;
 mod field_warp;
+mod static_window;
+pub use static_window::StaticObjectWindow;
 mod motion_pause_host;
 pub use field_warp::FieldWarpTick;
 mod frame_tick;

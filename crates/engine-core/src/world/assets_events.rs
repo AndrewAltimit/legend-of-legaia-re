@@ -34,38 +34,7 @@ impl World {
     /// `ghidra/scripts/funcs/overlay_cutscene_dialogue_801d77f4.txt:152-203`:
     /// `puVar11 = (uint *)(iVar12 + *(int *)(((vdf_idx << 16) >> 14) + iVar12 + 4))`.
     pub fn vdf_record_bytes(&self, idx: u8) -> Option<&[u8]> {
-        let buf = self.vdf_buffer.as_deref()?;
-        if buf.len() < 4 {
-            return None;
-        }
-        let count = u32::from_le_bytes(buf[0..4].try_into().ok()?);
-        if (idx as u32) >= count {
-            return None;
-        }
-        let table_byte = 4usize;
-        let slot = table_byte + (idx as usize) * 4;
-        if slot + 4 > buf.len() {
-            return None;
-        }
-        let off = u32::from_le_bytes(buf[slot..slot + 4].try_into().ok()?) as usize;
-        if off >= buf.len() {
-            return None;
-        }
-        // Bound the body by the next *greater* offset (offsets aren't
-        // guaranteed monotonic - we pick the smallest offset above
-        // `off` from any later table slot, defaulting to EOB).
-        let mut end = buf.len();
-        for i in (idx as u32 + 1)..count {
-            let s = table_byte + (i as usize) * 4;
-            if s + 4 > buf.len() {
-                break;
-            }
-            let next = u32::from_le_bytes(buf[s..s + 4].try_into().ok()?) as usize;
-            if next > off && next <= buf.len() && next < end {
-                end = next;
-            }
-        }
-        Some(&buf[off..end])
+        vdf_entry(self.vdf_buffer.as_deref()?, idx)
     }
 
     /// Install a global TMD at pool index `idx`. The pool grows lazily on
@@ -478,4 +447,44 @@ impl World {
             }
         }
     }
+}
+
+/// One VDF sub-entry's body out of a `[u32 count][u32 byte_offsets[count]]
+/// [body...]` buffer - the lookup [`World::vdf_record_bytes`] runs over the
+/// installed scene buffer, as a free function for callers that hold the
+/// buffer without a world (the fishing rod's bend morph,
+/// [`crate::fishing_actors::RodMesh`]). `None` on a short header, an index
+/// past `count`, or an offset past the end.
+pub fn vdf_entry(buf: &[u8], idx: u8) -> Option<&[u8]> {
+    if buf.len() < 4 {
+        return None;
+    }
+    let count = u32::from_le_bytes(buf[0..4].try_into().ok()?);
+    if (idx as u32) >= count {
+        return None;
+    }
+    let table_byte = 4usize;
+    let slot = table_byte + (idx as usize) * 4;
+    if slot + 4 > buf.len() {
+        return None;
+    }
+    let off = u32::from_le_bytes(buf[slot..slot + 4].try_into().ok()?) as usize;
+    if off >= buf.len() {
+        return None;
+    }
+    // Bound the body by the next *greater* offset (offsets aren't
+    // guaranteed monotonic - we pick the smallest offset above
+    // `off` from any later table slot, defaulting to EOB).
+    let mut end = buf.len();
+    for i in (idx as u32 + 1)..count {
+        let s = table_byte + (i as usize) * 4;
+        if s + 4 > buf.len() {
+            break;
+        }
+        let next = u32::from_le_bytes(buf[s..s + 4].try_into().ok()?) as usize;
+        if next > off && next <= buf.len() && next < end {
+            end = next;
+        }
+    }
+    Some(&buf[off..end])
 }

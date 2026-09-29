@@ -141,11 +141,11 @@ not a different id. (A print-integrity footnote: this arm was long carried
 at the phantom coordinate `0x801FD514` from a base-tag-less `overlay_0897`
 dump, `+0x167E8` high; the store's byte pattern occurs in no PROT entry but
 0898, at file `0x18510`.) Engine mirror:
-`engine-core::overlay_loader::battle_init_stage_override` /
-`boss_transition_stage_id`, resolved live by `World::battle_stage_id`
-(`world/battle/stage.rs`); the stage overlays are MIPS code the engine does
-not execute, so the resolver pins the selection, not a 968/969 behaviour
-port.
+`engine-core::battle_stage_module::battle_init_stage_override` /
+`boss_transition_stage_id`, written into the stored stage byte by
+`World::enter_battle_from_formation` and `World::run_boss_transition_arm`
+(`world/battle/stage.rs`); the 968 / 969 behaviour is ported beside them -
+[below](#what-the-two-boss-stage-modules-do-overlays-968--969).
 
 **Stage id `0` is the norm, not a fallback.** Across the catalogued battle
 save-state library every battle reads `0` - the fight simply draws over the
@@ -407,11 +407,23 @@ does not run until the caption has gone, and the prompt machine only ticks in
 phase `2`. The retail frame (`v0_1_battle_start_tetsu`) is the caption
 centred on the bottom anchor `0xCC`, the same corner as emitter style `9`.
 
-Engine port: `World::raise_sparring_caption_if_due` (`world/battle/tutorial.rs`)
-holds `begin_battle_round` back on round 0 while the caption is queued, and
-the box tick opens the round when it goes; the pure transition kernel for the
-whole side-band lives in `engine-render::battle_sideband` (the camera ramp
-half of it is not wired). A world with no caption text skips the hold.
+Engine port: the side-band kernel is `engine-core::battle_sideband`, and
+`World::tick_battle_sideband` (`world/battle/sideband.rs`) runs it at the top
+of every live battle frame, for both play hosts. The round start asks it first
+(`World::battle_sideband_holds_round`): on stage 1 it runs the kernel with the
+flow byte at `0x14`, whose caption arm queues the caption on the tutorial box
+queue and publishes the hold; the per-frame tick then decays the timer, and
+its drain removes the caption and opens the round. The hold also selects the
+battle camera's Dialogue close-up, which is the `FUN_801D829C` aim above. A
+world with no caption text skips the hold.
+
+The other two stage-1 phases are not per-frame calls in the port. Phase `2`'s
+hook is the prompt machine, which the engine dispatches on each flow edge
+(`World::set_battle_flow`); its one-shot latch makes an edge call and a
+per-frame call equivalent. Phase `3` - the battle-teardown staging
+`FUN_80025358`, ticked once the 967 completion countdown (`ctx[+0x6B4]`,
+seeded by `FUN_801F7628`) runs out with the lesson counter at `4` and bumps
+`ctx[+0x289]` - is not reached: the 967 port has no completion countdown.
 
 ### What the two boss-stage modules do (overlays 968 / 969)
 
@@ -461,9 +473,41 @@ flow state `0x0B`) and 969 is the **form transition** (drop the seat to 1 HP,
 shake, blank the field). That is the same split the two writers of the stage id
 imply, and it is why the Cort fight walks both.
 
-Neither module is ported: the engine resolves *which* stage id a battle gets
-(`World::battle_stage_id`) and stages its own presentation, so what is owed
-here is a behaviour, not a MIPS body.
+Two details of the side-band's own stage arms matter to both modules. The
+stage-2 arm tests the battle scene loader's step byte `DAT_8007BD71`
+(`FUN_800520F0`, `gp[+0xA59]`), which the loader parks at `0x11` while it pages
+the stage overlay in: below `0x12` the arm clears the pads and pulls the
+camera back instead of ticking a module that is not resident yet. The stage-3
+arm waits out `ctx[+0x6D8]` and then for the CD to go idle
+(`FUN_8003DE7C(1)`). And the side-band never writes `ctx[+0x289]` for these
+stages - each module walks its own phases.
+
+Stage `3` is reached at the head of cleanup state `0x50`: the state opens with
+the Final Heal sweep (`jal 0x801E6968` at `0x801E5C6C`), and the sweep's tail
+parks the action SM at `0xFD`. The state's own advance to `0x51` is guarded on
+`ctx[+0x07]` still reading `0x50` (`0x801E5F4C..0x801E5F5C`), so the park
+stands and the end-of-action gate `0x5A` - whose survivor count would raise
+the battle-end signal - never runs. The results sequencer `FUN_8004E568`
+would return at once anyway while the stage id is non-zero
+(`lbu v1,0x332(gp)`, `gp + 0x332 = 0x8007B64A`; `bne` at `0x8004E5B8`), so no
+spoils are shown or credited. The form transition's phase 3 ends the
+battle itself: mode word `2` (back to the field) and `DAT_8007BD60 = 0x80`,
+the won bit MAIN INIT turns into story flag 1 (`0x8003B570..0x8003B590`).
+
+**Engine port.** `engine-core::battle_stage_module` ports both phase
+machines as pure kernels over the state they touch (`arrival_tick`,
+`form_transition_tick`), and `World::tick_battle_sideband` hosts them: the
+battle-init override writes stage `2` at entry, the round start holds until
+the arrival's hand-back, `World::run_boss_transition_arm` writes stage `3`
+at the head of cleanup state `0x50`, and the form transition's exit runs the engine's battle
+teardown. While a module runs it owns the frame and the camera globals
+(`World::battle_cam_pose` returns its camera to both hosts), and the arrival's
+boss-name banner is drawn by both hosts through
+`battle_hud::battle_stage_banner`. Not staged: the in-image spawn records
+(every one is a meshless `model_sel = -1` part), the two SCUS move-VM effect
+trees at the hand-back, the render-node words, the `FUN_80058490` rect push
+and the CD-XA stop; the form transition still draws its battle-RNG values, so
+the stream stays retail's.
 
 ### The command-flow byte `ctx[+0x06]` - what the hook table indexes
 
@@ -5391,9 +5435,9 @@ parked. Its head is a **7-word jump table at `0x801F69D8` indexed by `ctx[+0x289
 camera word `0x800840BC` passes `0xC00` - a dt-driven zoom-in - and then fires cue
 `0x20A` through `FUN_8004FCC8`; a later arm spawns its own centred banner through the
 SCUS text-actor spawner `FUN_8003541C` at `0x801F7098`, which is *why* the `0x0A` arm
-skips the standard composer for this formation. The phase byte is co-driven: SCUS's
-battle-intro sequencer `FUN_80056208` bumps it at `0x800562E8` once `ctx[+0x06]`
-reaches the value that arm expects.
+skips the standard composer for this formation. The module walks the phase byte
+itself: the side-band's stage-2 arm (`0x80056480..0x800564A0`) only ticks it, and
+its `0x289` writes (`0x800562E8`, `0x8005640C`) belong to the stage-1 arm.
 
 **The hand-back is a single store.** A scan of the whole 0968 image for
 `sb ?,0x6(?)` finds exactly one, at `0x801F713C`, in the last phase arm
@@ -5415,8 +5459,7 @@ The same block clears the stage id `0x8007B64A` (the `2` that paged this module 
 `966 + id` in extraction space), which is the module signing off. The write is
 witnessed live at the row above: **3207 vsyncs** - about 53 s of game time - after
 the `0x0C` park, with no input at any point, `ra` naming SCUS `0x800564A0` as the
-caller that ticks the module (the same `FUN_80056208` battle-intro sequencer that
-bumps the phase byte). So it hands the flow back as `0x0B` - a value the ladder
+caller that ticks the module (the side-band pass `FUN_80056208`). So it hands the flow back as `0x0B` - a value the ladder
 *does* have an arm for - with the intro timer already zeroed, and `0x0B` expires on its next tick into
 `0x14`, which sets `0x1E` unconditionally. That is exactly where the in-fight capture
 `cort_evolved_battle_first_menu` sits. Flow `0x0C` is therefore not a dead state: it

@@ -736,23 +736,12 @@ pub struct ClipRect {
     pub y_max: i16,
 }
 
-// NOT WIRED: the blocker is the line's **rod-tip endpoint**, not a draw kind.
-// Retail's one caller (`0x801D3D00`, inside the per-frame fishing tick
-// `FUN_801D26CC`) clips the two endpoint pairs of a GPU line packet in
-// place and links it into the ordering table. The line kind exists:
-// `legaia_engine_ui::screen_prim::line_quad` is the two-point line as a
-// one-pixel flat quad, which every host's screen-prim pass already draws for
-// the slot machine's projected paylines. What the port cannot source is one
-// end of this line. The packet's `+0x10` point is copied from `0x801D9194`,
-// which `FUN_8003D368` fills at `0x801D1FB4` by projecting the point at
-// `+0x128` of the record `*s4` names there - the rod tip (an inference from
-// the packet's other end), a point on the angler's posed model. The port
-// spawns no angler actor on any world host (see `VENUE_ANCHOR`), so there is
-// no record to project. The `+0x08` point is the hooked fish's world position
-// (`actor + 0x14..0x1B`, `0x801D3A70`) offset by the shared polar helper
-// `FUN_801D7BB8` and projected, which the session's lure actor could stand in
-// for - but a line with one real end is not this routine's output. The
-// minigames page draws its own curve from a guessed rod tip to the lure.
+// Wired through [`fishing_line`], the fishing line's per-frame build: retail's
+// one caller (`jal` at `0x801D3D00`, the tail of the per-frame lure tick
+// `FUN_801D26CC`) clips the line packet's two endpoints against
+// [`LINE_CLIP_RECT`] before linking it. `crate::fishing::PondSession::line_frame`
+// runs it every frame a line is out, on all three hosts (see
+// `docs/subsystems/minigame-fishing.md` § "The fishing line").
 // (`project_segment` above is a different case - retail never calls it at all.)
 /// Clip a 2-D segment in place against [`ClipRect`].
 ///
@@ -844,6 +833,432 @@ pub fn clip_segment_2d(p: &mut (i16, i16), q: &mut (i16, i16), rect: ClipRect) {
     arm_lo(q, *p, rect.y_min, true);
     arm_hi(p, *q, rect.y_max, true);
     arm_hi(q, *p, rect.y_max, true);
+}
+
+// --- The rod actor (FUN_801D1C5C) and the fishing line ---------------------
+
+/// Scene-bank index of rod `0` in the venue scene (`other1`).
+///
+/// The cast arm spawns the rod actor from the template at `0x801D8FDC` after
+/// writing its model word as `_DAT_8007B6F8 + _DAT_80084454 + 0x19`
+/// (`0x801CFC34..0x801CFC4C`): the scene bank's base plus the persistent rod
+/// index plus this constant, so rod `r` is scene model `0x19 + r`.
+pub const ROD_MODEL_BASE: i16 = 0x19;
+
+/// Vertex of the rod mesh's object 0 that is the line's rod end.
+///
+/// `FUN_801D1C5C` projects `+0x128` into the object's staged vertex array
+/// (`addiu a0,s0,0x128` in the delay slot at `0x801D1FB8`), eight bytes a
+/// vertex: vertex 37, the centre of the rod's last ring.
+pub const ROD_TIP_VERTEX: usize = 0x128 / 8;
+
+/// The VDF sub-entry the rod bends by: the actor's one morph slot names it
+/// (`sb zero,0xb0(s1)` at `0x801D1EDC`, slot count `1` at `+0x6C`) and the
+/// stager `FUN_8001C604` is asked for TMD group `0` (`clear a1` at
+/// `0x801D1F98`).
+pub const ROD_BEND_VDF_ENTRY: u8 = 0;
+
+/// The rod actor's `+0x14 / +0x16 / +0x18` position, written at spawn
+/// (`0x801CFC60..0x801CFC80`). It is a **view-space** point: the actor
+/// composes its own matrix rather than the scene camera's.
+pub const ROD_ACTOR_POS: [i16; 3] = [0, 0x46, 0x64];
+
+/// The diagonal of the matrix the rod composes on: `FUN_801D1C5C` copies the
+/// per-mode base matrix `0x8007BF10` to the scratchpad and stores `0x6000` into
+/// its three diagonal halfwords (`0x801D1E28..0x801D1E38`). The copied base
+/// is itself `0x6000 * I` with a zero translation in the fishing mode (read
+/// off the `minigame_fishing` save state), so the rotation is a pure 6x scale.
+pub const ROD_BASE_SCALE: i32 = 0x6000;
+
+/// GTE `H` the rod projects under (`li a0,0xdc` into `FUN_8003D254` at
+/// `0x801D1FA4`); the scene's own `_DAT_8007B6F4` is restored after the draw.
+pub const ROD_PROJECTION_H: u16 = 0xDC;
+
+/// The GTE screen centre `(OFX, OFY)` in whole pixels - global for the whole
+/// game ([`legaia_engine_vm::battle_cam_script::GTE_OFY`]); the fishing save
+/// state carries the same pair.
+pub const GTE_SCREEN_CENTRE: (i32, i32) = (160, 114);
+
+/// The draw-window bounds [`clip_segment_2d`] reads for the line: the
+/// scratchpad halfwords `0x1F800388..0x1F80038E`, read off the
+/// `minigame_fishing` save state. Retail's drawing area is `320 x 224` from
+/// row `4`, which is where the `4` / `0xE4` come from.
+pub const LINE_CLIP_RECT: ClipRect = ClipRect {
+    x_min: 0,
+    y_min: 4,
+    x_max: 0x140,
+    y_max: 0xE4,
+};
+
+/// The line packet's colour at its **fish** end (`+0x04`, the low three bytes
+/// of `0x50303030` at `0x801D3A28`). The packet is `LINE_G2` (`0x50`): a
+/// Gouraud line, opaque.
+pub const LINE_FISH_RGB: [u8; 3] = [0x30, 0x30, 0x30];
+
+/// The line packet's colour at its **rod** end (`+0x0C..+0x0E`, three `0x80`
+/// byte stores at `0x801D3A50..0x801D3A58`).
+pub const LINE_ROD_RGB: [u8; 3] = [0x80, 0x80, 0x80];
+
+/// The ordering-table shift the line links at: the rod tip's projected depth
+/// `>> (0x1F8003A4 + 2)` (`0x801D3D18..0x801D3D24`), the scratchpad byte
+/// being `3` in the fishing save state.
+pub const LINE_OT_SHIFT: u32 = 3 + 2;
+
+/// Per-frame-delta bob step of the rod's cast / recover swing (`sll v1,v1,0x6`
+/// at `0x801D1D00` / `0x801D1D40`).
+pub const ROD_BOB_STEP: i32 = 0x40;
+
+/// Where the cast swing stops (`slti v0,v0,-0x2bc` at `0x801D1D14`).
+pub const ROD_BOB_FLOOR: i16 = -0x2BC;
+
+/// Where the recover swing stops (`slti v0,v0,0x401` at `0x801D1D54`).
+pub const ROD_BOB_CEILING: i16 = 0x400;
+
+/// The bend the cast lock seeds (`li v0,0x1000` stored to `0x801D9150` at
+/// `0x801CFC2C`).
+pub const ROD_BEND_AT_CAST: i32 = 0x1000;
+
+/// The rod actor's sub-state (`0x801D91AC`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RodSwing {
+    /// `1`: the cast swing, dipping the rod to [`ROD_BOB_FLOOR`].
+    Cast,
+    /// `2`: holding the cast pose while the line is out.
+    Hold,
+    /// `10`: the recover swing back up to [`ROD_BOB_CEILING`] after a landed
+    /// catch or a snapped line (`0x801D3CB4` / `0x801D3C44`).
+    Recover,
+    /// `0x14`: the recover finished; the actor retires (`ori v0,v0,0x8`).
+    Done,
+}
+
+/// The rod geometry the line's rod end is a point of, lifted off the venue
+/// scene's bank.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RodMesh {
+    /// Object 0's vertex bytes (eight per vertex) of rods `0..=2`, scene
+    /// models `0x19..=0x1B`.
+    pub rods: [Option<Vec<u8>>; 3],
+    /// The bend: VDF sub-entry [`ROD_BEND_VDF_ENTRY`] of the scene's
+    /// type-7 buffer.
+    pub bend: Option<Vec<u8>>,
+}
+
+impl RodMesh {
+    /// Lift the three rods and the bend out of a loaded venue scene.
+    /// `None` when not one rod model resolves.
+    pub fn from_scene(scene: &crate::scene::Scene) -> Option<Self> {
+        let bank = crate::model_bank::SceneModelBank::build(scene);
+        let mut rods: [Option<Vec<u8>>; 3] = Default::default();
+        for (r, slot) in rods.iter_mut().enumerate() {
+            let Some(bytes) = bank.tmd_bytes(scene, ROD_MODEL_BASE + r as i16) else {
+                continue;
+            };
+            let Ok(tmd) = legaia_tmd::parse(&bytes) else {
+                continue;
+            };
+            *slot = tmd.objects.first().map(|o| {
+                o.vertices
+                    .iter()
+                    .flat_map(|v| {
+                        [v.x, v.y, v.z, v._pad]
+                            .into_iter()
+                            .flat_map(i16::to_le_bytes)
+                    })
+                    .collect()
+            });
+        }
+        if rods.iter().all(Option::is_none) {
+            return None;
+        }
+        let bend = crate::scene_bundle::find_vdf_buffer(scene)
+            .and_then(|buf| crate::world::vdf_entry(&buf, ROD_BEND_VDF_ENTRY).map(<[u8]>::to_vec));
+        Some(Self { rods, bend })
+    }
+
+    /// The tip vertex of rod `rod` bent by `weight` - the morph stager
+    /// `FUN_8001C604` over group 0 at that slot weight, then vertex
+    /// [`ROD_TIP_VERTEX`] of the staged array.
+    pub fn tip(&self, rod: usize, weight: i16) -> Option<[i16; 3]> {
+        let rest = self.rods.get(rod)?.as_deref()?;
+        let staged = match self.bend.as_deref() {
+            Some(entry) => {
+                legaia_engine_vm::vdf_morph::stage_group_morph(rest, 0, &[(entry, weight)])
+            }
+            None => rest.to_vec(),
+        };
+        let o = ROD_TIP_VERTEX * 8;
+        let v = staged.get(o..o + 6)?;
+        let h = |i: usize| i16::from_le_bytes([v[i], v[i + 1]]);
+        Some([h(0), h(2), h(4)])
+    }
+}
+
+/// The projected rod tip: the `0x801D9194` screen pair and the depth
+/// `FUN_8003D368` returns (`IR3`, kept at `0x801D913C`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RodTip {
+    pub sxy: (i16, i16),
+    pub depth: i32,
+}
+
+/// One `MVMVA` (`sf = 1`, `lm = 0`, `cv` = a zeroed `TR`): `m * v >> 12`,
+/// each component saturated to `i16`.
+fn mvmva(m: &[[i32; 3]; 3], v: [i32; 3]) -> [i32; 3] {
+    let row = |r: usize| {
+        let mac = (m[r][0] as i64 * v[0] as i64
+            + m[r][1] as i64 * v[1] as i64
+            + m[r][2] as i64 * v[2] as i64)
+            >> 12;
+        mac.clamp(-0x8000, 0x7FFF) as i32
+    };
+    [row(0), row(1), row(2)]
+}
+
+/// Post-multiply `m` by one axis rotation the way the SCUS builders
+/// `FUN_800461A4` / `FUN_8004629C` / `FUN_8004638C` (`RotMatrixX / Y / Z`) do:
+/// each new column is one `MVMVA` of the current matrix against that column
+/// of the axis rotation, read out of the retail sine table.
+fn rotate(m: &mut [[i32; 3]; 3], axis: usize, angle: i32) {
+    use legaia_asset::minigame_slot_scene::{cos_4096, sin_4096};
+    let a = angle & 0xFFF;
+    let (s, c) = (sin_4096(a), cos_4096(a));
+    let one = 0x1000;
+    let cols: [[i32; 3]; 3] = match axis {
+        0 => [[one, 0, 0], [0, c, s], [0, -s, c]],
+        1 => [[c, 0, -s], [0, one, 0], [s, 0, c]],
+        _ => [[c, s, 0], [-s, c, 0], [0, 0, one]],
+    };
+    let out = cols.map(|col| mvmva(m, col));
+    for (ci, col) in out.iter().enumerate() {
+        for r in 0..3 {
+            m[r][ci] = col[r];
+        }
+    }
+}
+
+/// Project the rod-tip vertex `v` the way `FUN_801D1C5C` does: the rod's
+/// matrix is the 6x base rotated by `RotMatrixX(rot_x)`, `RotMatrixY(0)`,
+/// `RotMatrixZ(rot_z)` and `RotMatrixY(-yaw)` in that order
+/// (`0x801D1E80..0x801D1EA8`), its translation is [`ROD_ACTOR_POS`] pushed
+/// through the base (`FUN_8003D344` at `0x801D1E40`, then `SetTransMatrix`),
+/// and `RTPS` runs under [`ROD_PROJECTION_H`] with the UNR divide.
+pub fn rod_tip_screen(v: [i16; 3], rot_x: i16, rot_z: i16, yaw: i32) -> RodTip {
+    let s = ROD_BASE_SCALE;
+    let base = [[s, 0, 0], [0, s, 0], [0, 0, s]];
+    let tr = mvmva(&base, ROD_ACTOR_POS.map(i32::from));
+    let mut m = base;
+    rotate(&mut m, 0, rot_x as i32);
+    rotate(&mut m, 1, 0);
+    rotate(&mut m, 2, rot_z as i32);
+    rotate(&mut m, 1, yaw.wrapping_neg());
+    // RTPS (`sf = 1`, `lm = 0`): MAC = (TR << 12 + R * V) >> 12.
+    let mac = |r: usize| {
+        ((tr[r] as i64) << 12)
+            + m[r][0] as i64 * v[0] as i64
+            + m[r][1] as i64 * v[1] as i64
+            + m[r][2] as i64 * v[2] as i64
+    };
+    let ir = |r: usize| (mac(r) >> 12).clamp(-0x8000, 0x7FFF);
+    let sz3 = (mac(2) >> 12).clamp(0, 0xFFFF) as u16;
+    let (div, _) = legaia_engine_vm::gte_divide::gte_divide(ROD_PROJECTION_H, sz3);
+    let screen =
+        |ir: i64, of: i32| (((div * ir) + ((of as i64) << 16)) >> 16).clamp(-0x400, 0x3FF) as i16;
+    RodTip {
+        sxy: (
+            screen(ir(0), GTE_SCREEN_CENTRE.0),
+            screen(ir(1), GTE_SCREEN_CENTRE.1),
+        ),
+        depth: ir(2) as i32,
+    }
+}
+
+/// The rod-side inputs one in-water frame of the lure tick feeds the rod
+/// (`FUN_801D26CC` state 2), off the held packed pad `_DAT_8007B850`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RodDrive {
+    /// A fish is on (`_DAT_801D91B4`) as the frame starts.
+    pub hooked: bool,
+    /// The held packed pad word.
+    pub held: u32,
+}
+
+/// The fishing rod as an advancing object: `FUN_801D1C5C` per frame, plus the
+/// rod globals the lure tick writes. Spawned by the cast lock; retired when
+/// the recover swing finishes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RodActor {
+    /// `0x801D91AC`.
+    pub swing: RodSwing,
+    /// `0x801D9134`, the swing's pitch term.
+    pub bob: i16,
+    /// `0x801D9150`: the bend, which is both a pitch term and the morph
+    /// slot's weight.
+    pub bend: i32,
+    /// `0x801D914C`: the D-pad-down pitch lift.
+    pub lift: i32,
+    /// `0x801D9140`: the roll toward the held D-pad side.
+    pub lean: i32,
+    /// `0x801D9144`: the roll's target.
+    pub lean_target: i32,
+    /// `0x801D911C`: the yaw toward the fish, `3 * (tip.x - fish.x)`.
+    pub yaw: i32,
+    /// This frame's projected tip, when the rod mesh resolved.
+    pub tip: Option<RodTip>,
+}
+
+impl RodActor {
+    /// The rod the cast lock spawns: the cast swing, the seeded bend, every
+    /// other term at the run-loop init's zero.
+    pub fn cast() -> Self {
+        Self {
+            swing: RodSwing::Cast,
+            bob: 0,
+            bend: ROD_BEND_AT_CAST,
+            lift: 0,
+            lean: 0,
+            lean_target: 0,
+            yaw: 0,
+            tip: None,
+        }
+    }
+
+    /// Start the recover swing (a landed catch or a snapped line).
+    pub fn recover(&mut self) {
+        self.swing = RodSwing::Recover;
+    }
+
+    /// Whether the actor has retired.
+    pub fn retired(&self) -> bool {
+        self.swing == RodSwing::Done
+    }
+
+    /// One frame of the rod actor: the swing, the pose off this frame's
+    /// globals, the tip projection, then the bend and lift bleeding off.
+    ///
+    /// PORT: FUN_801d1c5c
+    pub fn tick(&mut self, mesh: Option<&RodMesh>, rod: usize, frame_step: i32) {
+        let fs = frame_step.max(1);
+        let step = (ROD_BOB_STEP * fs) as i16;
+        match self.swing {
+            RodSwing::Cast => {
+                self.bob = self.bob.wrapping_sub(step);
+                if self.bob < ROD_BOB_FLOOR {
+                    self.bob = ROD_BOB_FLOOR;
+                    self.swing = RodSwing::Hold;
+                }
+            }
+            RodSwing::Recover => {
+                self.bob = self.bob.wrapping_add(step);
+                if self.bob > ROD_BOB_CEILING {
+                    self.bob = ROD_BOB_CEILING;
+                    self.swing = RodSwing::Done;
+                }
+            }
+            RodSwing::Hold | RodSwing::Done => {}
+        }
+        // Pitch: the swing plus a sixteenth of (lift + bend / 2), both
+        // divisions truncating toward zero (`0x801D1D7C..0x801D1DBC`).
+        let half = (self.bend + ((self.bend as u32) >> 31) as i32) >> 1;
+        let mut sum = self.lift.wrapping_add(half);
+        if sum < 0 {
+            sum += 0xF;
+        }
+        let rot_x = (self.bob as i32).wrapping_add(sum >> 4) as i16;
+        let rot_z = (self.lean << 1) as i16;
+        // The morph slot's weight is the bend's low halfword (`lhu` into
+        // `+0xA0` at `0x801D1EE0`).
+        self.tip = mesh
+            .and_then(|m| m.tip(rod, self.bend as u16 as i16))
+            .map(|v| rod_tip_screen(v, rot_x, rot_z, self.yaw));
+        // The lift bleeds toward zero at `0x20` a frame delta, the bend down to
+        // zero at `0x60` (`0x801D1EEC..0x801D1F7C`).
+        let lift_step = 0x20 * fs;
+        if self.lift < 0 {
+            self.lift = (self.lift + lift_step).min(0);
+        } else if self.lift > 0 {
+            self.lift = (self.lift - lift_step).max(0);
+        }
+        if self.bend > 0 {
+            self.bend = (self.bend - 0x60 * fs).max(0);
+        }
+    }
+
+    /// The lure tick's rod writes for one in-water frame (`FUN_801D26CC`
+    /// state 2): D-pad down lifts the rod (`0x801D2AB4..0x801D2AFC`), a held
+    /// reel or a fish on bends it (`0x801D2B04..0x801D2C30`), and the D-pad
+    /// sides roll it (`0x801D382C..0x801D395C`).
+    ///
+    /// The hooked arm's random `0x201` creak cue on the `_DAT_801D90C4` timer
+    /// is not modelled; the bend clamps read `_DAT_801D90F4`, which is `0`
+    /// from the landing to the snap, so they are the bare `0x1000` / `0x1800`.
+    ///
+    /// PORT: FUN_801d26cc (state 2: the rod lift, bend and roll writes)
+    pub fn drive(&mut self, d: RodDrive, frame_step: i32) {
+        let fs = frame_step.max(1);
+        if d.held & 0x4000 != 0 {
+            self.lift = (self.lift + 0x60 * fs).min(0x1000);
+        }
+        if d.held & 0xC0 != 0 || d.hooked {
+            self.bend += 0x100 * fs;
+            if d.held & 0x80 != 0 {
+                self.bend += 0x80 * fs;
+            }
+            let cap = if d.hooked { 0x1800 } else { 0x1000 };
+            if self.bend > cap {
+                self.bend = cap;
+            }
+        }
+        let decay = 4 * fs;
+        if self.lean_target > 0 {
+            self.lean_target = (self.lean_target - decay).max(0);
+        } else if self.lean_target < 0 {
+            self.lean_target = (self.lean_target + decay).min(0);
+        }
+        if d.held & 0x2000 != 0 {
+            self.lean_target = 0x100;
+        }
+        if d.held & 0x8000 != 0 {
+            self.lean_target = -0x100;
+        }
+        let ease = 0x10 * fs;
+        if self.lean < self.lean_target {
+            self.lean = (self.lean + ease).min(self.lean_target);
+        } else if self.lean > self.lean_target {
+            self.lean = (self.lean - ease).max(self.lean_target);
+        }
+    }
+}
+
+/// One frame's fishing line, clipped: retail's `LINE_G2` packet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FishingLine {
+    /// The fish end (`+0x08`), in retail 320x240 screen space.
+    pub fish: (i16, i16),
+    /// The rod end (`+0x10`).
+    pub rod: (i16, i16),
+    /// [`LINE_FISH_RGB`].
+    pub fish_rgb: [u8; 3],
+    /// [`LINE_ROD_RGB`].
+    pub rod_rgb: [u8; 3],
+    /// The ordering-table bucket, off the rod tip's depth.
+    pub ot: u32,
+}
+
+/// Build one frame's line from the fish's projected point and the rod tip:
+/// the packet's two endpoints through [`clip_segment_2d`] against
+/// [`LINE_CLIP_RECT`] (`jal 0x801D56E4` at `0x801D3D00`), linked at the tip's
+/// depth bucket.
+pub fn fishing_line(fish: (i16, i16), tip: RodTip) -> FishingLine {
+    let (mut p, mut q) = (fish, tip.sxy);
+    clip_segment_2d(&mut p, &mut q, LINE_CLIP_RECT);
+    FishingLine {
+        fish: p,
+        rod: q,
+        fish_rgb: LINE_FISH_RGB,
+        rod_rgb: LINE_ROD_RGB,
+        ot: (tip.depth.max(0) as u32) >> LINE_OT_SHIFT,
+    }
 }
 
 // --- Walk-grid overhead probe (FUN_801D7030) -------------------------------
@@ -1438,5 +1853,177 @@ mod tests {
         // The cues fire bottom-up, and the top tier is silent.
         let cues: Vec<Option<u8>> = celebration_bursts(2000).map(|b| b.cue).collect();
         assert_eq!(cues, vec![Some(0x25), Some(0x26), Some(0x27), None]);
+    }
+
+    /// A 42-vertex rod whose vertex [`ROD_TIP_VERTEX`] sits at the disc
+    /// rod's tip, `(0, -138, 0)`, and a one-record bend moving that vertex by
+    /// `(0, 6, 45)` at full weight - the shape of `other1`'s rods and VDF
+    /// sub-entry 0, synthesised so no disc bytes are needed.
+    fn synthetic_rod_mesh() -> RodMesh {
+        let mut rest = vec![0u8; 42 * 8];
+        let o = ROD_TIP_VERTEX * 8;
+        rest[o + 2..o + 4].copy_from_slice(&(-138i16).to_le_bytes());
+        let mut bend = Vec::new();
+        for w in [1u32, 0, ROD_TIP_VERTEX as u32, 1] {
+            bend.extend_from_slice(&w.to_le_bytes());
+        }
+        for c in [0i16, 6, 45, 0] {
+            bend.extend_from_slice(&c.to_le_bytes());
+        }
+        RodMesh {
+            rods: [Some(rest.clone()), Some(rest.clone()), Some(rest)],
+            bend: Some(bend),
+        }
+    }
+
+    #[test]
+    fn the_rod_tip_bends_by_the_weighted_vdf_delta() {
+        let m = synthetic_rod_mesh();
+        assert_eq!(m.tip(0, 0), Some([0, -138, 0]));
+        assert_eq!(m.tip(1, 0x1000), Some([0, -132, 45]));
+        // `(0x800 * 45) >> 12` = 22: the GPF blend truncates.
+        assert_eq!(m.tip(2, 0x800), Some([0, -135, 22]));
+        assert_eq!(m.tip(3, 0), None, "three rods");
+    }
+
+    #[test]
+    fn an_unrotated_rod_projects_its_tip_straight_up_the_centre_line() {
+        // R = 6I, TR = 6 * (0, 0x46, 0x64) = (0, 420, 600): the tip lands at
+        // view (0, 420 - 828, 600), i.e. screen y = 114 + 220 * -408 / 600.
+        let t = rod_tip_screen([0, -138, 0], 0, 0, 0);
+        assert_eq!(t.sxy, (160, -36));
+        assert_eq!(t.depth, 600);
+    }
+
+    #[test]
+    fn the_cast_pose_brings_the_tip_into_the_clip_window() {
+        let t = rod_tip_screen([0, -138, 0], ROD_BOB_FLOOR, 0, 0);
+        let r = LINE_CLIP_RECT;
+        assert!(
+            (r.x_min..=r.x_max).contains(&t.sxy.0) && (r.y_min..=r.y_max).contains(&t.sxy.1),
+            "{t:?}"
+        );
+    }
+
+    #[test]
+    fn the_yaw_swings_the_tip_to_mirrored_sides() {
+        // `RotMatrixY(-yaw)` is the last factor, so it acts on the vertex
+        // first - about the rod's own axis. A straight rod's tip sits on that
+        // axis and does not move; the bend's `z` lean is what the yaw swings.
+        let straight = rod_tip_screen([0, -138, 0], ROD_BOB_FLOOR, 0, 0x100);
+        assert_eq!(straight, rod_tip_screen([0, -138, 0], ROD_BOB_FLOOR, 0, 0));
+        let l = rod_tip_screen([0, -132, 45], ROD_BOB_FLOOR, 0, 0x100);
+        let r = rod_tip_screen([0, -132, 45], ROD_BOB_FLOOR, 0, -0x100);
+        assert!(l.sxy.0 != 160 && r.sxy.0 != 160);
+        assert!((l.sxy.0 - 160).signum() == -(r.sxy.0 - 160).signum());
+        assert!(((l.sxy.0 - 160).abs() - (r.sxy.0 - 160).abs()).abs() <= 1);
+        assert_eq!(l.sxy.1, r.sxy.1);
+    }
+
+    #[test]
+    fn the_line_clips_the_fish_end_and_links_at_the_tip_depth() {
+        let tip = RodTip {
+            sxy: (160, 100),
+            depth: 640,
+        };
+        // The fish is off the left edge: its end rides onto x = 0 along the
+        // segment, the rod end stays put.
+        let l = fishing_line((-160, 200), tip);
+        assert_eq!(l.rod, (160, 100));
+        assert_eq!(l.fish, (0, 150));
+        assert_eq!((l.fish_rgb, l.rod_rgb), (LINE_FISH_RGB, LINE_ROD_RGB));
+        assert_eq!(l.ot, 640 >> 5);
+        // An on-screen pair passes through untouched.
+        let l = fishing_line((40, 180), tip);
+        assert_eq!((l.fish, l.rod), ((40, 180), (160, 100)));
+    }
+
+    #[test]
+    fn the_rod_swings_down_on_the_cast_and_retires_after_the_recover() {
+        let mesh = synthetic_rod_mesh();
+        let mut rod = RodActor::cast();
+        let mut frames = 0;
+        while rod.swing == RodSwing::Cast {
+            rod.tick(Some(&mesh), 0, 1);
+            frames += 1;
+            assert!(frames < 100);
+        }
+        // 700 / 0x40 rounds up to eleven frames.
+        assert_eq!(frames, 11);
+        assert_eq!((rod.swing, rod.bob), (RodSwing::Hold, ROD_BOB_FLOOR));
+        assert!(rod.tip.is_some());
+        // The cast's seeded bend bleeds off at 0x60 a frame.
+        assert_eq!(rod.bend, ROD_BEND_AT_CAST - 11 * 0x60);
+        rod.recover();
+        let mut frames = 0;
+        while !rod.retired() {
+            rod.tick(Some(&mesh), 0, 1);
+            frames += 1;
+            assert!(frames < 100);
+        }
+        assert_eq!(rod.bob, ROD_BOB_CEILING);
+        assert_eq!(frames, 27, "(700 + 0x400) / 0x40 rounds up to 27");
+    }
+
+    #[test]
+    fn the_lure_tick_bends_lifts_and_rolls_the_rod() {
+        let mut rod = RodActor::cast();
+        rod.bend = 0;
+        // A held reel bends toward 0x1000; a fish on caps it at 0x1800.
+        for _ in 0..64 {
+            rod.drive(
+                RodDrive {
+                    hooked: false,
+                    held: 0x80,
+                },
+                1,
+            );
+        }
+        assert_eq!(rod.bend, 0x1000);
+        for _ in 0..64 {
+            rod.drive(
+                RodDrive {
+                    hooked: true,
+                    held: 0,
+                },
+                1,
+            );
+        }
+        assert_eq!(rod.bend, 0x1800);
+        // D-pad down lifts, capped at 0x1000.
+        for _ in 0..64 {
+            rod.drive(
+                RodDrive {
+                    hooked: false,
+                    held: 0x4000,
+                },
+                1,
+            );
+        }
+        assert_eq!(rod.lift, 0x1000);
+        // D-pad right rolls toward 0x100 at 0x10 a frame.
+        rod.drive(
+            RodDrive {
+                hooked: false,
+                held: 0x2000,
+            },
+            1,
+        );
+        assert_eq!((rod.lean_target, rod.lean), (0x100, 0x10));
+        for _ in 0..32 {
+            rod.drive(
+                RodDrive {
+                    hooked: false,
+                    held: 0x2000,
+                },
+                1,
+            );
+        }
+        assert_eq!(rod.lean, 0x100);
+        // Released, the target bleeds back and the roll follows it down.
+        for _ in 0..200 {
+            rod.drive(RodDrive::default(), 1);
+        }
+        assert_eq!((rod.lean_target, rod.lean), (0, 0));
     }
 }

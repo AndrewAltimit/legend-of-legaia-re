@@ -629,6 +629,9 @@ impl LegaiaRuntime {
         let intro_names = world
             .map(|w| bh::battle_intro_names(w, font))
             .unwrap_or_default();
+        // A battle-stage module's boss-name banner (the Cort arrival), the
+        // same builder the native window calls.
+        let stage_banner = world.and_then(|w| bh::battle_stage_banner(w, font));
         ui::battle_hud_draws_for(
             font,
             &ui::BattleHudFrame {
@@ -679,6 +682,7 @@ impl LegaiaRuntime {
                 ap_plate_value: world.and_then(bh::battle_ring_ap_plate_value),
                 commit_log: &commit_log,
                 intro_names: &intro_names,
+                stage_banner: stage_banner.as_ref().map(|(l, x, y)| (l.as_str(), *x, *y)),
                 diag: ui::diag_hud_enabled(),
             },
             BATTLE_HUD_PEN,
@@ -1991,6 +1995,10 @@ impl LegaiaRuntime {
         // and subtractive darkness masks, the native window's
         // `field_light_screen_prims` twin ([`crate::play_field_fx`]).
         prims.extend(self.field_light_prims());
+        // The fishing line (`FUN_801D26CC`'s packet, clipped by
+        // `FUN_801D56E4`), the native window's `fishing_line_screen_prims`
+        // twin ([`crate::play_fishing`]).
+        prims.extend(self.fishing_line_prims());
         // The battle value readout - retail's 24x24 numeral cells and the
         // `N HIT` / `TOTAL` counter cluster - off the resident effect atlas,
         // through the same `battle_numerals` builder the native window emits.

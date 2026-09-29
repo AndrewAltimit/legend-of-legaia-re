@@ -48,6 +48,12 @@ pub struct FieldRender {
     /// frame 0 of scene ANM record `anim_id - 1` (see
     /// [`field_env::resolve_placed_env_draws`]).
     pub placements: Vec<EnvDraw>,
+    /// Which placed-object sweep owns each placement draw (parallel to
+    /// [`Self::placements`]): `Some` for the sub-area window sweep's, which
+    /// [`LegaiaRuntime::field_placement_live`] gates on the world's windowed
+    /// static-object list through [`field_env::placed_draw_live`] - the kernel
+    /// the native play-window asks per frame.
+    pub window_keys: Vec<Option<field_env::PlacedWindowKey>>,
     /// Bulk terrain-tile draws (ground / decor tiles). `FLAG_PLACED` records
     /// are excluded - they are already drawn, posed, by the placement layer
     /// (the native window's `resolve_field_terrain_draws` rule).
@@ -230,6 +236,10 @@ pub fn build_field_render(
     if let Some(binds) = binds.as_ref() {
         field_env::retain_visible_placed_draws(&mut placements, binds, hidden_records);
     }
+    let window_keys = placements
+        .iter()
+        .map(|d| field_env::placed_window_key(d, binds.as_ref()))
+        .collect();
     let (terrain, _) = field_env::resolve_env_draws(&env_tmds, &terrain_records, floor_lut);
     let ground = scene
         .walk_heightfield(index)
@@ -250,6 +260,7 @@ pub fn build_field_render(
     FieldRender {
         env_tmds,
         placements,
+        window_keys,
         terrain,
         ground,
         floor_lut,
@@ -583,6 +594,48 @@ impl LegaiaRuntime {
             .as_ref()
             .map(|f| f.placements.iter().map(|d| d.anim_id as u32).collect())
             .unwrap_or_default()
+    }
+
+    /// Per-placement **live** mask (parallel to [`Self::field_placement_slots`]):
+    /// `1` = draw it this frame, `0` = the placement is a sub-area window
+    /// sweep's whose actor is not on the world's windowed static-object list.
+    /// Every entry is `1` unless retail windowing is on
+    /// ([`Self::set_retail_static_window`]). The same
+    /// [`field_env::placed_draw_live`] kernel the native play-window's
+    /// placed-object pass asks per draw.
+    pub fn field_placement_live(&self) -> Vec<u8> {
+        let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.as_ref()) else {
+            return Vec::new();
+        };
+        let window = &h.world.terrain.static_window;
+        f.window_keys
+            .iter()
+            .map(|k| u8::from(field_env::placed_draw_live(k.as_ref(), window)))
+            .collect()
+    }
+
+    /// A stamp that changes whenever [`Self::field_placement_live`] can: the
+    /// windowed list's rebuild generation, with the retail-windowing flag in
+    /// bit 0. The page re-reads the mask only when this moves.
+    pub fn field_static_window_stamp(&self) -> u32 {
+        self.scene_host.as_ref().map_or(0, |h| {
+            let w = &h.world.terrain.static_window;
+            (w.generation << 1) | u32::from(w.retail_windowing)
+        })
+    }
+
+    /// Turn retail static-object windowing on / off (the
+    /// `retail_static_window` option, persisted like the native config).
+    pub fn set_retail_static_window(&mut self, on: bool) {
+        if self.options_state.retail_static_window != on {
+            self.options_state.retail_static_window = on;
+            self.persist_and_apply_options();
+        }
+    }
+
+    /// Whether retail static-object windowing is on.
+    pub fn retail_static_window(&self) -> bool {
+        self.options_state.retail_static_window
     }
 
     /// Live pose key of each placement (parallel to
