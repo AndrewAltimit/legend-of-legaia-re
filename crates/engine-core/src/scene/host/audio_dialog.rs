@@ -234,6 +234,9 @@ impl SceneHost {
                     // 1 = start; 9 = start behind a load barrier this host
                     // never has to wait on (see the doc comment above).
                     1 | 9 => {
+                        // Both arms store the id into `_DAT_8007BAC8` before
+                        // anything resolves it, the park sentinel included.
+                        self.bgm_track_word = Some(text_id);
                         // Every track brings its own VAB. A scene-local id
                         // loads retail's fallback track, not a scene bank
                         // (`SCENE_LOCAL_BGM_FALLBACK_ID`); the id itself is

@@ -143,7 +143,7 @@ measured channels.
 | `position` | player `(X, Z)` after settling: 1 within 4 units, linear to 0 at 256 |
 | `footing` | engine floor sample at retail's `(X, Z)` vs retail's footing: 1 within 2, 0 at 128 (field class only) |
 | `camera` | mean of six parts: pitch and yaw (1 within 16, 0 at 256, wrapped), `H` (1 within 4, 0 at 128), each eye word (1 within 16, 0 at 1024) |
-| `bgm` | 1 when the last track the engine started equals retail's track word |
+| `bgm` | 1 when the engine's track-select word (`SceneHost::bgm_track_word`, the park sentinel `0x1000` included) equals retail's |
 | `fog_gate` | 1 when the engine's fog-pool gate equals retail's |
 | `party` | fraction of equal fields over retail's roster: HP / MP current and max, level, the eight equipment bytes |
 | `flags` | 1 - differing bits / bits set on either side, over the whole story-flag bitmap |

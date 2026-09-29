@@ -215,6 +215,13 @@ is where a save would be parked with no field track owed. Every other state
 carries a `2000..=2068` id. A state's *scene* still does not decide this; the
 globals do.
 
+The port routes a sentinel start to no director - there is nothing to play -
+so a director's last start cannot stand in for the word. The host keeps the
+word itself: `SceneHost::bgm_track_word` takes every sub-op `1` / `9` id as
+the start arm stores it, the sentinel included, and is what the retail
+comparison corpus compares against a state's `0x8007BAC8`
+(`engine-core/tests/bgm_track_word_disc.rs`).
+
 ### Which track a scene plays
 
 The track is **script-selected, not table-driven**: nothing maps a scene to a

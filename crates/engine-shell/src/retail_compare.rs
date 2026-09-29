@@ -274,7 +274,9 @@ pub struct EngineObs {
     /// The engine's floor sample under retail's own `(X, Z)`.
     pub floor_at_retail: Option<i32>,
     pub camera: CameraObs,
-    /// The last track the session started in the settle window.
+    /// The engine's track-select word after the settle window
+    /// ([`legaia_engine_core::scene::SceneHost::bgm_track_word`]), else the
+    /// last track the director started.
     pub bgm_id: Option<u16>,
     /// The engine's fog-pool gate (`World::fog.gate`).
     pub fog_gate: bool,
@@ -387,13 +389,16 @@ pub fn run_engine_with(
     let fog_gate = world.fog.gate;
     let save = world.save_full();
     let scene = session.host.scene.as_ref().map(|s| s.name.clone());
+    // The engine's `_DAT_8007BAC8`: a park-sentinel start (`0x1000`, the
+    // ending scenes') reaches no director, but it is the word retail holds.
+    let bgm_id = session.host.bgm_track_word.or(director.last);
     Ok(EngineObs {
         scene,
         mode,
         player,
         floor_at_retail,
         camera,
-        bgm_id: director.last,
+        bgm_id,
         fog_gate,
         save,
     })
