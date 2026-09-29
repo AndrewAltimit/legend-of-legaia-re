@@ -955,6 +955,12 @@ fn run_while_moving(session: &mut BootSession, ceiling: usize) -> Run {
     }
 }
 
+thread_local! {
+    /// Set while [`pad_hop`] drains a battle that interrupted its walk - a
+    /// random encounter on a travel leg, which [`fight_pad`] flees.
+    static FLEE_ENCOUNTERS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 /// The pad mask a player presses this frame in a battle: Begin, Attack,
 /// Auto, confirm the target, confirm a message box, back out of a bag. The
 /// command-ring choices `critical_path_replay`'s fighter makes, minus its
@@ -993,6 +999,16 @@ fn fight_pad(session: &BootSession) -> u16 {
             }
             CommandPhase::Menu { .. } if lesson == Some(TutorialLesson::Spirit) => {
                 PadButton::Down.mask()
+            }
+            // A random encounter on a pad travel leg is fled: the prompt's
+            // Right takes Run. The fighter has no healing, and a lone
+            // member worn down by a string of fights wipes on whichever one
+            // the RNG happens to deal - a finding about the fighter, not
+            // the port. A fight that forbids running (`no_escape`) is fought.
+            CommandPhase::RoundPrompt { .. }
+                if FLEE_ENCOUNTERS.with(std::cell::Cell::get) && !w.battle.no_escape =>
+            {
+                PadButton::Right.mask()
             }
             CommandPhase::RoundPrompt { .. }
             | CommandPhase::Menu { .. }
@@ -1647,7 +1663,10 @@ fn pad_hop(session: &mut BootSession, graph: &DiscGraph, dest: &str) -> Result<S
     let walking_mode = session.host.world.mode;
     for _ in 0..PAD_LEG_FRAMES {
         if session.host.world.mode == SceneMode::Battle {
-            if let Some(r) = drain_battle(session) {
+            FLEE_ENCOUNTERS.with(|f| f.set(true));
+            let r = drain_battle(session);
+            FLEE_ENCOUNTERS.with(|f| f.set(false));
+            if let Some(r) = r {
                 return Err(format!("battle on the walk to {dest}: {r:?}"));
             }
             since = 0;
