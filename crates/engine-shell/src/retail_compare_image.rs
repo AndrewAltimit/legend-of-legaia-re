@@ -43,6 +43,11 @@ pub const FRAME_H: usize = 224;
 pub const BLOCK: usize = 8;
 /// Per-channel tolerance on a block mean, 8-bit units.
 pub const BLOCK_TOLERANCE: f64 = 24.0;
+/// Mean luma below which a retail frame is a fade / black transition: the
+/// image channel is not scored on it, since any engine frame that is also
+/// dark would score as a match and any that is not would score as a miss,
+/// and neither says anything about the scene.
+pub const DARK_LUMA: f64 = 8.0;
 /// World tick `play-window` captures at.
 pub const CAPTURE_TICK: u64 = 120;
 
@@ -127,7 +132,8 @@ pub struct ImageScore {
     pub note: String,
 }
 
-fn luma(f: &Frame) -> f64 {
+/// Mean BT.601 luma of a frame.
+pub fn luma(f: &Frame) -> f64 {
     let mut s = 0.0;
     for p in f.rgb.as_chunks::<3>().0 {
         s += 0.299 * f64::from(p[0]) + 0.587 * f64::from(p[1]) + 0.114 * f64::from(p[2]);
@@ -164,9 +170,9 @@ pub fn score(retail: &Frame, engine: &Frame) -> ImageScore {
         }
     }
     let (rl, el) = (luma(retail), luma(engine));
-    let note = if rl < 8.0 {
+    let note = if rl < DARK_LUMA {
         "retail frame is near-black".to_string()
-    } else if el < 8.0 {
+    } else if el < DARK_LUMA {
         "engine frame is near-black".to_string()
     } else {
         String::new()
@@ -206,7 +212,10 @@ fn read_png_rgba(path: &Path) -> Result<(Vec<u8>, usize, usize)> {
 ///
 /// The child runs from a scratch directory under `out_dir` (the window
 /// resolves its options file and save directory against its cwd), seated
-/// through `LEGAIA_SEAT`, and captures at [`CAPTURE_TICK`].
+/// through `LEGAIA_SEAT`, handed the retail system-flag bank bit by bit
+/// through `--set-flag` (raised before the scene entry, so the entry scripts
+/// branch on retail's flags), and captures at [`CAPTURE_TICK`].
+#[allow(clippy::too_many_arguments)]
 pub fn engine_frame(
     exe: &Path,
     extracted: &Path,
@@ -215,6 +224,7 @@ pub fn engine_frame(
     z: i16,
     out_dir: Option<&Path>,
     label: &str,
+    system_flags: &[u16],
 ) -> Result<Frame> {
     let base: PathBuf = out_dir
         .map(Path::to_path_buf)
@@ -233,6 +243,11 @@ pub fn engine_frame(
         .arg("--screenshot")
         .arg(&shot)
         .args(["--screenshot-tick", &CAPTURE_TICK.to_string()])
+        .args(
+            system_flags
+                .iter()
+                .flat_map(|f| ["--set-flag".to_string(), f.to_string()]),
+        )
         .output()
         .context("spawn play-window")?;
     if !shot.exists() {

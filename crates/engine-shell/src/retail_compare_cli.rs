@@ -38,6 +38,11 @@ pub struct RetailCompareArgs {
     /// Only states whose label contains this substring.
     #[arg(long)]
     pub filter: Option<String>,
+    /// Diagnostic: apply the retail save before the scene entry as well as
+    /// after, so the entry scripts see the retail story flags (the default
+    /// is the engine's own card-load order, which hydrates after entry).
+    #[arg(long, default_value_t = false)]
+    pub flags_first: bool,
     /// Write the committed score baseline to this path (no pixels, no RAM).
     #[arg(long)]
     pub write_baseline: Option<PathBuf>,
@@ -62,6 +67,11 @@ pub fn run(args: RetailCompareArgs) -> Result<()> {
         engine_exe: args.images.then_some(exe.as_path()),
         out_dir: Some(&out),
         filter: args.filter.as_deref(),
+        order: if args.flags_first {
+            crate::retail_compare::SeedOrder::FlagsFirst
+        } else {
+            crate::retail_compare::SeedOrder::Resume
+        },
     })?;
     let summary = summarise(&reports);
     std::fs::write(out.join("report.md"), markdown_report(&reports, &summary))?;

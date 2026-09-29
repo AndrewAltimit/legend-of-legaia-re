@@ -59,6 +59,9 @@ const GTE_H: u32 = 0x8007_B6F4;
 const CAM_ROT: u32 = 0x8007_B790;
 const CAM_EYE: u32 = 0x8008_40B8;
 const BGM_ID: u32 = 0x8007_BAC8;
+/// The ambient-particle (fog pool) master gate, raised / cleared only by
+/// field-VM op `0x4C` nibble 3 (`docs/subsystems/field-ambient-fx.md`).
+const FOG_GATE: u32 = 0x8007_B854;
 
 /// What kind of retail situation a state is, as the engine would have to be
 /// seeded to reproduce it.
@@ -176,6 +179,8 @@ pub struct RetailObs {
     pub player: Option<[i16; 3]>,
     pub camera: CameraObs,
     pub bgm_id: u16,
+    /// `_DAT_8007B854 != 0`.
+    pub fog_gate: bool,
     /// The live game-state window lifted as a save.
     pub save: Option<legaia_save::SaveFile>,
     /// The displayed frame, when the state carries VRAM + display registers.
@@ -213,6 +218,7 @@ impl RetailObs {
             ],
         };
         let bgm_id = game_anchors::u16_at(ram, BGM_ID);
+        let fog_gate = game_anchors::u32_at(ram, FOG_GATE) != 0;
         let lo = (LIVE_STATE_VA & 0x1F_FFFF) as usize;
         let save = ram.get(lo..lo + LIVE_STATE_LEN).and_then(|win| {
             let mut block = win.to_vec();
@@ -230,6 +236,7 @@ impl RetailObs {
             player,
             camera,
             bgm_id,
+            fog_gate,
             save,
             frame,
         }
@@ -269,6 +276,8 @@ pub struct EngineObs {
     pub camera: CameraObs,
     /// The last track the session started in the settle window.
     pub bgm_id: Option<u16>,
+    /// The engine's fog-pool gate (`World::fog.gate`).
+    pub fog_gate: bool,
     pub save: legaia_save::SaveFile,
 }
 
@@ -295,7 +304,32 @@ impl BgmDirector for RecordingDirector {
 }
 
 /// Seed the engine from a retail state and sample it after [`SETTLE_TICKS`].
+/// How the retail save is applied around the scene entry.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum SeedOrder {
+    /// The engine's own card-load path ([`BootSession::resume_save`]): enter
+    /// the scene, then hydrate. The scene's entry scripts run before the
+    /// save's story flags exist.
+    #[default]
+    Resume,
+    /// Hydrate, enter, hydrate again: the entry scripts see the retail
+    /// flags. A diagnostic arm - the difference between the two orders is
+    /// how much of a channel's divergence the entry ordering explains.
+    FlagsFirst,
+}
+
+/// Seed through the engine's own card-load order ([`SeedOrder::Resume`]).
 pub fn run_engine(extracted: &Path, retail: &RetailObs) -> Result<EngineObs> {
+    run_engine_with(extracted, retail, SeedOrder::Resume)
+}
+
+/// Seed the engine from a retail state in the given order and sample it
+/// after [`SETTLE_TICKS`].
+pub fn run_engine_with(
+    extracted: &Path,
+    retail: &RetailObs,
+    order: SeedOrder,
+) -> Result<EngineObs> {
     let cfg = BootConfig {
         scene: retail.scene.clone(),
         enable_audio: false,
@@ -306,8 +340,17 @@ pub fn run_engine(extracted: &Path, retail: &RetailObs) -> Result<EngineObs> {
         .save
         .clone()
         .context("retail state has no liftable save window")?;
-    // The engine's own card-load path: land the save's scene, then hydrate.
-    let _landing = session.resume_save(save, &retail.scene, &opts);
+    match order {
+        // The engine's own card-load path: land the save's scene, then hydrate.
+        SeedOrder::Resume => {
+            let _landing = session.resume_save(save, &retail.scene, &opts);
+        }
+        SeedOrder::FlagsFirst => {
+            session.host.world.load_full(save.clone());
+            session.enter_scene_live(&retail.scene, &opts)?;
+            session.host.world.load_full(save);
+        }
+    }
     let mut director = RecordingDirector::default();
     // The entry itself may already have queued a start.
     session.host.route_bgm_events(&mut director)?;
@@ -341,6 +384,7 @@ pub fn run_engine(extracted: &Path, retail: &RetailObs) -> Result<EngineObs> {
         eye: [g[3], g[4], g[5]],
     };
     let mode = world.mode;
+    let fog_gate = world.fog.gate;
     let save = world.save_full();
     let scene = session.host.scene.as_ref().map(|s| s.name.clone());
     Ok(EngineObs {
@@ -350,8 +394,32 @@ pub fn run_engine(extracted: &Path, retail: &RetailObs) -> Result<EngineObs> {
         floor_at_retail,
         camera,
         bgm_id: director.last,
+        fog_gate,
         save,
     })
+}
+
+/// Offset of the system-flag bank (`0x80085758`) inside the story-flag
+/// bitmap a save carries (`0x80085600`).
+const SYSTEM_FLAG_WINDOW: usize = 0x158;
+
+/// Every raised bit of the save's system-flag bank, as the flag ids
+/// `World::system_flag_set` takes (MSB-first within a byte).
+pub fn system_flag_ids(save: &legaia_save::SaveFile) -> Vec<u16> {
+    let bits = save
+        .ext
+        .story_flag_bits
+        .get(SYSTEM_FLAG_WINDOW..)
+        .unwrap_or(&[]);
+    let mut out = Vec::new();
+    for (b, &byte) in bits.iter().enumerate() {
+        for k in 0..8 {
+            if byte & (0x80 >> k) != 0 {
+                out.push((b * 8 + k) as u16);
+            }
+        }
+    }
+    out
 }
 
 /// Linear falloff: `1` within `full`, `0` at or beyond `zero`.
@@ -380,6 +448,7 @@ pub const CHANNELS: &[&str] = &[
     "footing",
     "camera",
     "bgm",
+    "fog_gate",
     "party",
     "flags",
     "inventory",
@@ -609,6 +678,11 @@ pub fn compare(
         f64::from(u8::from(engine.bgm_id == Some(retail.bgm_id))),
         format!("retail={} engine={:?}", retail.bgm_id, engine.bgm_id),
     );
+    put(
+        "fog_gate",
+        f64::from(u8::from(engine.fog_gate == retail.fog_gate)),
+        format!("retail={} engine={}", retail.fog_gate, engine.fog_gate),
+    );
     if let Some(rs) = &retail.save {
         let (s, d, diffs) = party_score(&rs.party, &engine.save.party);
         let d = if diffs.is_empty() {
@@ -710,6 +784,8 @@ pub struct RunOptions<'a> {
     pub out_dir: Option<&'a Path>,
     /// Only states whose label contains this substring.
     pub filter: Option<&'a str>,
+    /// Save application order (see [`SeedOrder`]).
+    pub order: SeedOrder,
 }
 
 /// Run the whole corpus.
@@ -757,7 +833,7 @@ fn run_one(opts: &RunOptions<'_>, entry: &CorpusEntry, scus: &[u8]) -> StateRepo
         report.unseeded = retail.class.unseeded_reason().to_string();
         return report;
     }
-    let engine = match run_engine(opts.extracted, &retail) {
+    let engine = match run_engine_with(opts.extracted, &retail, opts.order) {
         Ok(e) => e,
         Err(e) => {
             report.unseeded = format!("seeding failed: {e:#}");
@@ -765,7 +841,21 @@ fn run_one(opts: &RunOptions<'_>, entry: &CorpusEntry, scus: &[u8]) -> StateRepo
         }
     };
     let image = match (opts.engine_exe, &retail.frame, retail.player) {
+        (Some(_), Some(rf), _)
+            if crate::retail_compare_image::luma(rf) < crate::retail_compare_image::DARK_LUMA =>
+        {
+            report.detail.insert(
+                "image".into(),
+                "not scored: retail frame is a fade (near-black)".into(),
+            );
+            None
+        }
         (Some(exe), Some(rf), Some([x, _, z])) => {
+            let flags = retail
+                .save
+                .as_ref()
+                .map(system_flag_ids)
+                .unwrap_or_default();
             match crate::retail_compare_image::engine_frame(
                 exe,
                 opts.extracted,
@@ -774,6 +864,7 @@ fn run_one(opts: &RunOptions<'_>, entry: &CorpusEntry, scus: &[u8]) -> StateRepo
                 z,
                 opts.out_dir,
                 &entry.label,
+                &flags,
             ) {
                 Ok(ef) => {
                     let score = crate::retail_compare_image::score(rf, &ef);
@@ -842,10 +933,10 @@ impl Baseline {
             reports.iter().map(|r| (r.label.as_str(), r)).collect();
         let mut out = Vec::new();
         for (label, chans) in &self.states {
+            // A state absent from this run is a property of the local
+            // library (backups are gitignored and per-machine), not of the
+            // engine, so it is reported by the caller rather than failed.
             let Some(r) = by_label.get(label.as_str()) else {
-                out.push(format!(
-                    "{label}: in the baseline but not in the corpus run"
-                ));
                 continue;
             };
             for (ch, &want) in chans {
