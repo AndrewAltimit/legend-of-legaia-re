@@ -553,13 +553,32 @@ impl SummonScene {
             // ahead of the move-VM call (`0x80021E78` vs `jal 0x80023070` at
             // `0x80022BA4`); it is what grows a ribbon node's `+0xC8` total.
             move_vm::integrate_draw_channels(&mut part.state, self.channel_delta);
+            let camera_locked = is_camera_locked(&part.state);
+            if camera_locked && crate::part_motion::runs_motion_block(&part.state) {
+                // Retail's motion block (`0x800228A0..0x80022B90`), ahead of
+                // the VM call: `+0x3C..+0x40` are velocities integrated into
+                // `+0x14..+0x18`, never offsets from a spawn origin.
+                crate::part_motion::motion_block(&mut part.state, self.channel_delta);
+            }
             match move_vm::actor_tick(host, &mut part.state, &part.buf, SUMMON_PART_BUDGET) {
                 ActorTickOutcome::Halted | ActorTickOutcome::EndOfBuffer { .. } => {
                     part.finished = true;
                 }
                 _ => {}
             }
-            apply_translation_update(&mut part.state, self.origin, frame_delta);
+            if is_camera_locked(&part.state) {
+                // The `+0x52 & 0x400` arm of `FUN_8001CF50` reads `+0x14`
+                // as an eye-space offset (`+0x2C = S_b * (+0x14)`,
+                // `FUN_8003D344`), so the part keeps the position its own
+                // program wrote (op `0x07` WORLD_SET / `0x01` WORLD_ADD) plus
+                // the motion block's integration. The glide below would move
+                // it to `origin + anim bank` - the cast target's world
+                // coordinates, which then lock to the eye as if they were an
+                // offset.
+                crate::part_motion::clamp_levels(&mut part.state);
+            } else {
+                apply_translation_update(&mut part.state, self.origin, frame_delta);
+            }
         }
     }
 
@@ -714,9 +733,34 @@ fn lerp_axis(target: i32, cur: i32, t: i32, d: i32) -> i32 {
     crate::screen_fx::interp(target, cur, t, d, crate::screen_fx::InterpMode::Linear)
 }
 
+/// `+0x52` bit the render dispatcher's camera-relative routine tests first
+/// (`FUN_8001CF50`, `0x8001CF7C`): the node is drawn at the eye-space offset
+/// `S_b * (+0x14)`, locked to the camera.
+pub const CAMERA_LOCKED_BIT: u16 = 0x0400;
+
+/// Whether a part is camera-locked (`+0x52 & 0x400`, written by move-VM op
+/// `0x15`).
+///
+/// Its position is therefore an eye-space offset, and it moves the way
+/// retail moves every part - the motion block `crate::part_motion` ports -
+/// rather than through [`apply_translation_update`]. The three retail
+/// captures that carry such nodes pin the difference: Horn (PROT 0930) at
+/// `(0, 0, 2048)`, Cort's Mystic Circle (0938) at `(0, -192, 1536)` and his
+/// Ultra Charge (0962) at `(0, 0, 256)`, each the value the part's own
+/// op `0x07` WORLD_SET writes; the glide put every one of them at
+/// `origin + anim bank` instead.
+pub fn is_camera_locked(state: &ActorState) -> bool {
+    state.field_52 & CAMERA_LOCKED_BIT != 0
+}
+
 /// Render-side translation glide for the stand-in scene-graph: each axis
 /// tweens toward `origin + anim bank` over `+0x9C / +0x9E`, snapping when no
 /// tween is active (`+0x9E == 0`) and latching exactly on completion.
+///
+/// Not run for a camera-locked part ([`is_camera_locked`]). Retail's part
+/// tick has no such glide at all: its motion block integrates `+0x3C..+0x40`
+/// as velocities (`0x800229DC..0x80022AE0`); the glide remains the stand-in
+/// for the world-space parts only.
 ///
 /// Provenance note: this glide **reuses the tween shape of `FUN_801F811C`**
 /// (advance-clamp-lerp-latch over the `+0x9C/+0x9E` clock with the

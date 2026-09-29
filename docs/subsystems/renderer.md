@@ -999,6 +999,19 @@ back into `a1`; `FUN_8005B4E8` scales the matrix by a vector):
 half times a plain part's size. The `0x400` test runs first (`0x8001CF7C`),
 so it wins over any skip bit.
 
+A `0x400` node's `+0x14` is therefore an eye-space offset, and the captures
+show where it comes from: the part's own op `0x07` WORLD_SET, moved on by the
+part tick's motion block (`FUN_80021DF4` `0x800228A0..0x80022B90`, which
+integrates `+0x3C..+0x40` as velocities). The retail camera-locked parts sit at
+`(0, -192, 1536)` in `cort_mystic_circle_mid_cast` (PROT 0938),
+`(0, 0, 256)` in `cort_evolved_ultra_charge_mid_cast` (0962) and on the
+`z = 2048` plane in `horn_summon_mid_cast` (0930), with `+0x2C` equal to
+`S_b` times each - never near the cast target. The engine's summon scene
+(`engine-core::summon`) runs a camera-locked part through that motion block
+and leaves its position to its program; its translation glide, which snaps a
+part to `origin + anim bank`, is kept for the world-space parts only
+(`summon_camera_locked_retail_capture` pins the three states).
+
 Both hosts honour it. Every move-VM part draw record carries the node's
 `+0x52` word as `flags_52` (`SummonPartDraw`, `RibbonDraw`), and each host's
 part pass - the native window's `build_summon_and_move_fx_part_draws` /
