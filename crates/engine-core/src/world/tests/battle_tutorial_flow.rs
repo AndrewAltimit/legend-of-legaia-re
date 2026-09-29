@@ -374,10 +374,131 @@ fn the_fourth_completed_lesson_closes_the_fight_out() {
         "sign-off box shown, got {:?}",
         queued(&world)
     );
-    assert!(
-        world.battle.tutorial.is_none(),
-        "the machine disarms once the fight is closed"
+    // The machine stays armed after the tail: its `ctx[+0x6B4]` countdown
+    // (armed by `FUN_801F7628` at `0x801F7460`) is what ends the fight. This
+    // test used to assert `tutorial.is_none()` - the disarm that left the
+    // sparring fight with nothing to end it.
+    let tut = world.battle.tutorial.as_ref().expect("still armed");
+    assert!(tut.finished);
+    assert_eq!(
+        tut.countdown,
+        crate::battle_tutorial::COMPLETION_COUNTDOWN_VSYNCS
     );
+}
+
+/// Close a sparring fight out (lesson 3 done, completion tail run) with the
+/// side-band past the caption, as a live round start leaves it.
+fn closed_sparring_world() -> World {
+    let mut world = tutorial_battle_world();
+    world.battle.tutorial.as_mut().unwrap().lesson = TutorialLesson::HyperArts.raw();
+    world.battle.tutorial.as_mut().unwrap().pending_advance = true;
+    // The caption hold drained at the round start (`FUN_80056208` phase
+    // 1 -> 2), so the per-frame hook call is live.
+    world.battle.sideband.phase = 2;
+    world.open_battle_command(0);
+    assert!(world.battle.tutorial.as_ref().unwrap().finished);
+    world
+}
+
+#[test]
+fn the_completion_countdown_takes_the_sparring_fight_back_to_the_field() {
+    let mut world = closed_sparring_world();
+    world.system_flag_clear(1);
+    assert_eq!(world.mode, SceneMode::Battle);
+    let mut frames = 0u32;
+    let mut vsyncs = 0u32;
+    let mut saw_phase3 = false;
+    while world.mode == SceneMode::Battle && frames < 2000 {
+        world.set_pad(0);
+        let _ = world.tick();
+        // Both counters drain by the frame step `DAT_1F800393`.
+        vsyncs += u32::from(world.clock.frame_step.max(1));
+        saw_phase3 |= world.battle.sideband.phase == 3;
+        frames += 1;
+    }
+    println!(
+        "sparring fight left battle after {frames} frames / {vsyncs} vsyncs \
+         (countdown 360 + exit gate 0x43)"
+    );
+    assert!(
+        saw_phase3,
+        "the countdown's expiry raises side-band phase 3"
+    );
+    assert_eq!(
+        world.mode,
+        SceneMode::Field,
+        "the sparring fight never exited"
+    );
+    // 360 vsyncs of countdown, then `ctx[+0x6CE]` counts to 0x43.
+    assert!(
+        (360 + 0x43..=360 + 0x43 + 8).contains(&vsyncs),
+        "exit after {vsyncs} vsyncs"
+    );
+    assert_eq!(
+        world.battle.stage_id, 0,
+        "the stage id dies with the battle"
+    );
+    assert!(world.battle.tutorial.is_none());
+    assert!(
+        world.system_flag_test(1),
+        "the 967 exit arm raises the survived bit - story flag 1 on return"
+    );
+    assert!(!world.game_over);
+}
+
+#[test]
+fn a_press_skips_the_completion_countdown_once_the_sign_off_box_is_gone() {
+    let mut world = closed_sparring_world();
+    // A press with the sign-off box up only dismisses the box
+    // (`ctx[+0x6B2] != 0` guards the zeroing at `0x801F7224`) ...
+    world.set_pad(0);
+    let _ = world.tick();
+    world.set_pad(crate::input::PadButton::Cross.mask());
+    let _ = world.tick();
+    world.set_pad(0);
+    let _ = world.tick();
+    assert!(
+        world.battle.tutorial_boxes.is_empty(),
+        "Cross dismisses the box"
+    );
+    assert_eq!(
+        world.battle.sideband.phase, 2,
+        "... and leaves the countdown running"
+    );
+    // ... and the next press ends the wait.
+    world.set_pad(crate::input::PadButton::Circle.mask());
+    let _ = world.tick();
+    world.set_pad(0);
+    assert_eq!(
+        world.battle.sideband.phase, 3,
+        "a press with no box up skips the wait"
+    );
+    let mut frames = 0u32;
+    while world.mode == SceneMode::Battle && frames < 200 {
+        let _ = world.tick();
+        frames += 1;
+    }
+    assert_eq!(world.mode, SceneMode::Field);
+    assert!(
+        frames * u32::from(world.clock.frame_step.max(1)) <= 0x43 + 4,
+        "phase 3 exits at ctx[+0x6CE] = 0x43, took {frames} frames"
+    );
+}
+
+#[test]
+fn a_closed_sparring_fight_runs_no_more_battle() {
+    let mut world = closed_sparring_world();
+    world.battle.tutorial_boxes.clear();
+    let action_state = world.battle_ctx.action_state;
+    let flow = world.battle.flow;
+    for _ in 0..100 {
+        world.set_pad(0);
+        let _ = world.tick();
+    }
+    // Flow byte 0xC8 is no `FUN_801D0748` case and the hook holds it.
+    assert_eq!(world.battle_ctx.action_state, action_state);
+    assert_eq!(world.battle.flow, flow);
+    assert_eq!(world.mode, SceneMode::Battle, "still counting down");
 }
 
 /// A direct entry into a scripted carrier's row (`--battle <row>`) replays

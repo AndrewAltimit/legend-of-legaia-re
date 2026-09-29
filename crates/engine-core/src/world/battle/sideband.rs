@@ -10,6 +10,10 @@
 //!   the flow byte at `0x14` ([`World::battle_sideband_holds_round`]), whose
 //!   `IntroCaption` queues the opening caption on the tutorial box queue; each
 //!   frame after that decays its hold timer, and the drain opens the round.
+//!   Phase 2 runs the prompt machine's `ctx[+0x6B4]` countdown every frame;
+//!   its expiry after the fourth lesson raises phase 3, whose `ctx[+0x6CE]`
+//!   count takes the fight back to the field through the frame driver's exit
+//!   gate.
 //! * **stage 2** (Cort's arrival, PROT 0968): the module owns the camera, the
 //!   boss seat and the frame until its phase 6 hands the battle back and
 //!   round one opens.
@@ -62,12 +66,131 @@ impl World {
         let inputs = self.battle_sideband_inputs(None);
         let fx = sb::battle_sideband_tick(&mut self.battle.sideband, &inputs);
         self.apply_battle_sideband(&fx.effects);
+        if self.mode == SceneMode::Battle && self.battle.stage_id == sb::STAGE_SPARRING {
+            self.sparring_exit_gate();
+        }
         // The form transition's exit leaves the battle on this frame.
         self.mode != SceneMode::Battle
             || matches!(
                 self.battle.stage_id,
                 sb::STAGE_ARRIVAL | sb::STAGE_FORM_TRANSITION
             )
+            || self.sparring_closing()
+    }
+
+    /// The sparring fight past its completion tail: the prompt machine's
+    /// countdown (phase `2`, `ctx[+0x6B4] != 0` with the flow closed at
+    /// `ctx[+0x06] = 0xC8`) or the teardown staging (phase `3`) owns the
+    /// frame. Retail runs neither battle state machine through it: the flow
+    /// byte `0xC8` is no `FUN_801D0748` case and the hook holds it
+    /// (`ctx[+0x6B0] = 1`), and the action SM only runs off the command
+    /// flow's `0xFF` (`0x80047024..0x8004702C`).
+    fn sparring_closing(&self) -> bool {
+        self.battle.stage_id == sb::STAGE_SPARRING
+            && (self.battle.sideband.phase >= 3
+                || self.battle.tutorial.as_ref().is_some_and(|t| t.finished))
+    }
+
+    /// The frame driver's battle exit gate for the sparring fight
+    /// (`FUN_80046A20` `0x80046D9C..0x80046E0C`), run right after the
+    /// side-band pass as retail runs it: once `ctx[+0x6CE]` - which the
+    /// side-band's phase `3` counts up by the frame step - reaches `0x43`
+    /// (`slti v0,v0,0x43` at `0x80046DAC`) and the teardown staging's
+    /// still-loading byte `ctx[+0xB]` is clear (the engine's loads are
+    /// synchronous), the battle leaves with mode word `2`. The survived bit
+    /// the 967 exit arm raised (`0x801F735C`) is what MAIN INIT turns into
+    /// story flag 1 - [`World::finish_battle`]'s non-wipe arm.
+    ///
+    /// REF: FUN_80046A20
+    fn sparring_exit_gate(&mut self) {
+        if self.battle.sideband.phase < 3
+            || self.battle.sideband.phase3_accum < super::victory::VICTORY_EXIT_PHASE
+        {
+            return;
+        }
+        log::info!(
+            "sparring fight: teardown staging done (ctx[+0x6CE] = {:#x}) - back to the field",
+            self.battle.sideband.phase3_accum
+        );
+        // `sb zero,0x332(gp)` at `0x80046E74`: the stage id dies with the
+        // battle.
+        self.battle.stage_id = 0;
+        self.battle.tutorial = None;
+        self.battle.tutorial_boxes.clear();
+        self.battle.end = None;
+        self.finish_battle();
+    }
+
+    /// Phase 2's per-frame hook call (`jal 0x801F6B70` at `0x80056418`) - the
+    /// half the flow-edge dispatch (`World::set_battle_flow`) cannot carry:
+    /// the `ctx[+0x6B4]` countdown section, which runs on every hook frame.
+    ///
+    /// Only the completion tail arms the countdown in the engine
+    /// ([`crate::battle_tutorial::BattleTutorial::arm_countdown`]), so this
+    /// is idle until the fourth lesson is done; then it holds the fight until
+    /// the countdown runs out (or a press lands with the sign-off box gone),
+    /// and its expiry is the fight's exit arm.
+    fn run_sparring_hook_frame(&mut self) {
+        use crate::battle_tutorial::{COMPLETION_FADE, CountdownTick};
+        // The completion tail runs on every hook frame, not only on a flow
+        // edge: a lesson counter bumped to `4` outside a flow change (the
+        // action SM's `case 0xFF`, `World::advance_battle_mode`) closes the
+        // fight on the next frame, as retail's does.
+        if self
+            .battle
+            .tutorial
+            .as_ref()
+            .is_some_and(|t| t.lesson == 4 && !t.finished)
+        {
+            self.run_sparring_completion_tail();
+        }
+        if self
+            .battle
+            .tutorial
+            .as_ref()
+            .is_none_or(|t| t.countdown == 0)
+        {
+            return;
+        }
+        // `ctx[+0x6B2]` and `_DAT_8007B874` as the hook reads them, before
+        // anything this frame consumes them.
+        let box_up = self.battle_tutorial_box_up();
+        let pad_edge = self.input.pad() & !self.input.pad_prev() != 0;
+        // The battle loop is parked behind the side-band from here on, so
+        // the sign-off box is aged here (Cross skips it; it is non-waiting
+        // style 9).
+        self.tick_battle_tutorial_boxes();
+        let step = self.clock.frame_step.max(1);
+        let Some(tut) = self.battle.tutorial.as_mut() else {
+            return;
+        };
+        let t = tut.tick_countdown(pad_edge, box_up, step);
+        if t == CountdownTick::Idle {
+            return;
+        }
+        // `0x801F7240..0x801F726C`: `ctx[+0x884]` and the three pad masks
+        // are cleared on every countdown frame.
+        self.input.clear_edges();
+        match t {
+            CountdownTick::Idle | CountdownTick::Holding => {}
+            // Unreachable in the engine (the rewind does not arm the
+            // countdown - see `BattleTutorial::arm_countdown`); retail's
+            // re-injected Cancel is the engine's immediate menu reopen.
+            CountdownTick::Rewind => {}
+            CountdownTick::Close => {
+                // `0x801F72B4..0x801F72C0`: phase 3, the teardown staging.
+                self.battle.sideband.phase = self.battle.sideband.phase.wrapping_add(1);
+                // `FUN_80024E80(0x801C9070, 0)` at `0x801F72F4`.
+                self.presentation.fade = Some(crate::fade::FadeState::load(&COMPLETION_FADE));
+                // `FUN_800355F0` at `0x801F7374`: the floating-element list
+                // (the sign-off box with it) is drained.
+                self.battle.tutorial_boxes.clear();
+                // Not staged: the `FUN_801D829C` aim at party seat 0
+                // (`0x801F7368`) - the phase-scripted camera keeps its
+                // framing through the fade.
+                log::info!("sparring fight: completion countdown expired - teardown staging");
+            }
+        }
     }
 
     /// The side-band's say over a round start (`FUN_801D0748` state `0x14`):
@@ -97,13 +220,15 @@ impl World {
                 // (`battle_cam_inputs`).
                 Fx::IntroCameraAim => {}
                 Fx::DrainFloatingElements => self.drain_sparring_caption(),
-                // The prompt machine is dispatched on every flow edge by
-                // `World::set_battle_flow`; its one-shot latch makes that the
-                // same as retail's per-frame call.
-                Fx::SparringHook => {}
-                // Only reached once the 967 machine advances `ctx[+0x289]` to
-                // `3`, which its port does not; the staging itself is the
-                // engine's synchronous battle teardown (`finish_battle`).
+                // The prompt machine's dispatch runs on every flow edge
+                // (`World::set_battle_flow`; its one-shot latch makes that the
+                // same as retail's per-frame call). Its countdown section is
+                // per frame, and runs here.
+                Fx::SparringHook => self.run_sparring_hook_frame(),
+                // Phase 3, raised by the countdown's expiry. The staging's
+                // PROT 0978 load is synchronous in the engine, so its
+                // still-loading byte `ctx[+0xB]` never holds the exit gate
+                // (`World::sparring_exit_gate`).
                 Fx::TeardownStaging => {}
                 Fx::ArrivalModule => self.run_arrival_module(),
                 Fx::FormTransitionModule => self.run_form_transition_module(),
@@ -302,13 +427,13 @@ impl World {
             StageEffect::ExitBattle => {
                 // Mode word `2` with `DAT_8007BD60 = 0x80`: MAIN INIT's
                 // back-from-battle arm reads the won bit and raises story
-                // flag 1 (`0x8003B570..0x8003B590`). No results sequence ran,
-                // so no spoils are credited.
+                // flag 1 (`0x8003B570..0x8003B590`) - `finish_battle`'s
+                // non-wipe arm. No results sequence ran, so no spoils are
+                // credited.
                 self.battle.stage_id = 0;
                 self.battle.stage_camera = None;
                 self.battle.stage_banner = None;
                 self.battle.end = None;
-                self.system_flag_set(1);
                 self.finish_battle();
             }
             // Not staged (every record is a meshless `model_sel = -1` part)

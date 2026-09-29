@@ -252,16 +252,22 @@ impl World {
         self.dispatch_battle_tutorial(next)
     }
 
-    /// Run one hook dispatch for `state` and queue the resulting boxes.
-    fn dispatch_battle_tutorial(&mut self, state: BattleFlowState) -> bool {
+    /// The completion tail on a frame with no flow edge (the side-band's
+    /// per-frame hook call): queue the sign-off box it emits.
+    pub(in crate::world) fn run_sparring_completion_tail(&mut self) {
         let Some(mut tut) = self.battle.tutorial.take() else {
-            return false;
+            return;
         };
-        let tick = tut.tick(state.raw());
-        let rewind = tick.emission.rewind;
-        // One dispatch = one group: its boxes share the frame.
+        let mut tick = crate::battle_tutorial::TutorialTick::default();
+        tut.completion_tail(&mut tick);
+        self.battle.tutorial = Some(tut);
+        self.queue_tutorial_boxes(&tick.emission);
+    }
+
+    /// Queue one dispatch's boxes as one on-screen group.
+    fn queue_tutorial_boxes(&mut self, emission: &crate::battle_tutorial::TutorialEmission) {
         let group = self.next_battle_tutorial_group();
-        for b in &tick.emission.boxes {
+        for b in &emission.boxes {
             let Some(text) = self.battle.tutorial_script.text(b.message) else {
                 // No disc text for this VA - skip it rather than showing a
                 // placeholder. A host booted without a disc shows no boxes.
@@ -277,14 +283,23 @@ impl World {
                 any_press_dismisses: false,
             });
         }
-        let over = tick.battle_over;
+    }
+
+    /// Run one hook dispatch for `state` and queue the resulting boxes.
+    fn dispatch_battle_tutorial(&mut self, state: BattleFlowState) -> bool {
+        let Some(mut tut) = self.battle.tutorial.take() else {
+            return false;
+        };
+        let tick = tut.tick(state.raw());
+        let rewind = tick.emission.rewind;
+        // One dispatch = one group: its boxes share the frame.
+        self.queue_tutorial_boxes(&tick.emission);
+        // The completion tail (`tick.battle_over`) wrote ctx[0x06] = 0xC8 /
+        // ctx[0x07] = 0xFF and armed the `ctx[+0x6B4]` countdown. The machine
+        // stays armed: its per-frame countdown (the side-band's phase-2 hook,
+        // `World::tick_battle_sideband`) is what ends the fight, and the
+        // closed command flow never raises another hook state.
         self.battle.tutorial = Some(tut);
-        if over {
-            // The completion tail wrote ctx[0x06] = 0xC8 / ctx[0x07] = 0xFF:
-            // the sparring fight is done. Disarm so the closing box is the last
-            // thing the machine ever emits.
-            self.battle.tutorial = None;
-        }
         rewind
     }
 

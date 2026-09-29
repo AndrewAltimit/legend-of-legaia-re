@@ -15,8 +15,8 @@
 //! | stage | arm | engine |
 //! |---|---|---|
 //! | `1` | phases `0` / `1` - caption, hold timer, any-press skip, `ctx[+0x6B0]` | `World::tick_battle_sideband` + the tutorial box queue |
-//! | `1` | phase `2` - the overlay-967 hook `0x801F6B70` | dispatched on flow edges by `World::set_battle_flow` (the hook's one-shot latch makes a per-frame call and an edge call the same) |
-//! | `1` | phase `3` - the battle-teardown staging `FUN_80025358` (PROT 0978) | not reached: the 967 port has no completion countdown that advances `ctx[+0x289]` to `3` |
+//! | `1` | phase `2` - the overlay-967 hook `0x801F6B70` | dispatch on flow edges (`World::set_battle_flow`); completion tail + `ctx[+0x6B4]` countdown per frame (`World::tick_battle_sideband`) |
+//! | `1` | phase `3` - the battle-teardown staging `FUN_80025358` (PROT 0978) | the countdown's expiry raises it; `ctx[+0x6CE]` counts to the frame driver's `0x43` exit gate |
 //! | `2` | the arrival module `FUN_801F69F4` | [`crate::battle_stage_module::arrival_tick`] |
 //! | `2` | pad clear + camera pull-back while the module is still paging in | unreachable in the engine - the module is resident from the first frame |
 //! | `3` | the form-transition module `FUN_801F69D8` | [`crate::battle_stage_module::form_transition_tick`] |

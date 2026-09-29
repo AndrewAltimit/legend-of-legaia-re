@@ -288,7 +288,9 @@ The hyper-arts drill at flow state `90` asks for `[High] [Low] [High]`
 
 The completion tail `0x801F7380` fires once `ctx[0x28A]` reaches `4`: it bumps
 the lesson to `5`, writes `ctx[0x06] = 0xC8` (`0x801F73DC`) and `ctx[0x07] =
-0xFF` (`0x801F73E8`) to close the fight, and emits the sign-off box.
+0xFF` (`0x801F73E8`) to close the command flow, emits the sign-off box and
+calls `FUN_801F7628` (`0x801F7460`). Those stores park the fight; they do not
+end it. What ends it is the countdown `FUN_801F7628` seeds.
 
 The tail opens on an idempotence guard the C flattens away. At
 `0x801F7390..0x801F73B4` an `sltiu ctx[0x28A], 5` skips ahead when the lesson is
@@ -417,13 +419,57 @@ its drain removes the caption and opens the round. The hold also selects the
 battle camera's Dialogue close-up, which is the `FUN_801D829C` aim above. A
 world with no caption text skips the hold.
 
-The other two stage-1 phases are not per-frame calls in the port. Phase `2`'s
-hook is the prompt machine, which the engine dispatches on each flow edge
-(`World::set_battle_flow`); its one-shot latch makes an edge call and a
-per-frame call equivalent. Phase `3` - the battle-teardown staging
-`FUN_80025358`, ticked once the 967 completion countdown (`ctx[+0x6B4]`,
-seeded by `FUN_801F7628`) runs out with the lesson counter at `4` and bumps
-`ctx[+0x289]` - is not reached: the 967 port has no completion countdown.
+#### How the sparring fight ends - the `ctx[+0x6B4]` countdown
+
+`FUN_801F7628` stores `ctx[+0x6B4] = rate * 360` (`x3`, `x15`, `x8` of the
+game-speed byte `DAT_1F80037D`, `0x801F7648..0x801F7660`), raises the hold
+`ctx[+0x6B0] = 1`, clears the pad masks and captures the cancel mask
+`_DAT_800846D4` into `ctx[+0x88C]`. Every hook call - dispatching, latched or
+suppressed by a box - then reaches the countdown section at `0x801F71F0`:
+
+```text
+801f71fc  lh   v0,0x6b4(a0)       ; zero -> skip the section
+801f7218  _sh  v0,0x6b0(a0)       ; hold = 1
+801f721c  lh   v0,0x6b2(a0)       ; a new press with no box up ...
+801f722c  sh   zero,0x6b4(a0)     ; ... zeroes the countdown
+801f7258  sw   zero,-0x478c(a0)   ; pad masks cleared (B874 / B938 / B850)
+801f7274  subu v0,v0,t2           ; countdown -= frame_step * rate
+801f7280  bgtz v0,0x801f7380      ; still positive -> keep holding
+801f7290  sltiu v0,v0,0x4         ; lesson < 4:
+801f72a4  _sw  v0,-0x478c(a0)     ;   re-inject the cancel mask as a press
+801f72c0  sb   v0,0x289(a2)       ; else: side-band phase + 1 (= 3)
+801f72f4  jal  0x80024e80         ;   fade (kind 2, 0x40 frames, to black)
+801f7318  sb   v1,-0x428f(t0)     ;   DAT_8007BD71 = 0xFE, the battle-end signal
+801f735c  sb   v0,-0x42a0(t0)     ;   DAT_8007BD60 |= 0x80, the survived bit
+801f7374  jal  0x800355f0         ;   drain the floating-element list
+```
+
+The rate cancels, so the hold is 360 vsyncs; a press skips it once the
+sign-off box has gone. The same routine serves the wrong-lesson rewinds,
+where the expiry's re-injected Cancel is what backs the player out of the
+rejected menu. On the completion path the expiry raises side-band phase `3`,
+whose arm ticks the teardown staging `FUN_80025358` and counts `ctx[+0x6CE]`
+up by the frame step; the frame driver `FUN_80046A20` leaves the battle once
+that halfword reaches `0x43` (`0x80046DAC`) with the staging's still-loading
+byte `ctx[+0xB]` clear, storing mode word `2` and clearing the stage id
+(`0x80046E74`). The results sequencer returns at once while the stage id is
+non-zero (`0x8004E5B8`), so no spoils are shown or credited, and MAIN INIT
+turns the survived bit into story flag 1.
+
+Engine port. Phase `2`'s hook is split: the dispatch runs on each flow edge
+(`World::set_battle_flow`; its one-shot latch makes an edge call and a
+per-frame call equivalent), and the per-frame half - the completion tail and
+the countdown section (`BattleTutorial::completion_tail` /
+`BattleTutorial::tick_countdown`) - runs off the side-band's `SparringHook`
+effect every battle frame. From the completion tail on, the side-band owns
+the frame (the flow byte `0xC8` is no `FUN_801D0748` case), the sign-off box
+is aged there, and the expiry raises phase `3`; `World::tick_battle_sideband`
+applies the `0x43` exit gate after the side-band pass, as the frame driver
+does, and exits through `World::finish_battle`. Only the completion tail arms
+the countdown in the engine: its rewinds reopen the command menu directly, so
+retail's 360-vsync hold after a wrong-lesson box and its synthetic Cancel are
+not reproduced. Not staged either: the `FUN_801D829C` camera aim at party
+seat 0 (`0x801F7368`).
 
 ### What the two boss-stage modules do (overlays 968 / 969)
 
