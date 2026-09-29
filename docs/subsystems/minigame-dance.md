@@ -446,8 +446,9 @@ Three further pieces of the retail frame run in the same host
   through `World::drain_minigame_sfx_cues`, which both hosts drain.
 - **Retail-coordinate HUD**: each frame the host lays the HUD out from
   `DanceGame::hud_draws` at its 320x240 stage positions (all three score
-  boxes, the rivals' rows included), with the rival gate raised in the two
-  versus modes as the `_DAT_8007B6D0` stand-in, and builds the full
+  boxes), with the rival gate `DanceGame::rival_hud_visible` - retail's dev
+  counter `_DAT_8007B6D0`, zero in play, so the rivals' gauge and track rows
+  stay off (see [the driver](#hud-render-driver-fun_801d231c)), and builds the full
   textured-quad frame (`DanceGame::hud_draw_quads` - the `FUN_801d2f38`
   emits with the `FUN_801d32f8` / `FUN_801d3e28` glyph-U patches applied).
   The sprite page is staged on entry (see [where the HUD's texels come
@@ -657,14 +658,11 @@ its mode and the parsed widget table, so `DanceGame::hud_draws` lays a frame out
 off the run's own live scores and gauges and `DanceGame::hud_quads` resolves the
 score-box frames through the emitter.
 
-Both are **inert**: no host calls either. The engine's dance HUD is a
-*single-dancer* font-text readout drawn at the host's own pens, so there is no
-three-box screen layout for the permutation to drive, no second or third
-dancer's score on screen, and no rival-HUD flag standing in for
-`_DAT_8007B6D0`; and the emitter additionally wants the overlay's `(512, 0)`
-HUD sprite page resident in VRAM, which nothing uploads. The output itself is
-sound - a disc-gated oracle pins both against the real widget table - so what
-is missing is the consumer, not the kernel.
+Both hosts lay the frame out through them every dance frame
+(`DanceGame::hud_frame_rows`, gated by `DanceGame::rival_hud_visible`); the
+native window also builds the textured quads (`hud_draw_quads`) against the
+HUD page the entry stages - see the Retail-coordinate HUD item above. A
+disc-gated oracle pins both against the real widget table.
 
 ## Assets: the overlay loads none - the entry path stages PROT 1230
 
@@ -940,6 +938,18 @@ frames, then the human's groove gauge (`FUN_801d3e28`) and beat track
 gauges and tracks at `(0xDC, 0x40)` / `(0xDC, 0xD4)` and `(0x50, 0x40)` /
 `(0x18, 0xD4)`. With that flag clear the rival rows are not drawn at all, even
 in the versus modes.
+
+The flag is the **dev counter**, and it is clear in every retail run. Its
+only writers disc-wide are the boot clear (`sw zero,0x3b8(gp)` at
+`0x80015F64`), the world-map dev menu's pad ring (`0x801EA00C` / `0x801EA030`,
+cleared at `0x801EABF8`) and the debug menu (`0x801CED54`, PROT 0971) - an
+enumeration over SCUS, every based overlay and every PROT entry in all
+reference forms (`find-address-word-refs.py`, `find-gp-relative-refs.py`).
+The dance tick reads it twice more as a dev switch: raised, it freezes the
+[camera keyframe track](#the-camera-keyframe-track) (`0x801CF4F8`) and skips
+the song-end test (`0x801D00B0`), so a qualifier with it up would never end.
+Retail's versus HUD is therefore the three score boxes plus the human's own
+gauge and track; `DanceGame::rival_hud_visible` returns that.
 
 Which score slot each screen box carries is a per-mode permutation, chosen so
 the human always lands in the centre box:

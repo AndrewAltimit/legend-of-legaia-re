@@ -710,9 +710,8 @@ impl DanceGame {
     /// Wired: the play window's dance block (`window/hud.rs`) lays the HUD out
     /// from this list in retail 320x240 framebuffer coordinates each frame,
     /// upscaled through the same stage transform the menu chrome uses. The
-    /// `rival_hud` gate stands in for `_DAT_8007B6D0`: the host raises it in
-    /// the two versus modes ([`DanceMode::Qualifier`] / [`DanceMode::Finals`]),
-    /// which is when retail's dance-hall script sets the flag.
+    /// `rival_hud` gate is `_DAT_8007B6D0`, which both hosts read through
+    /// [`DanceGame::rival_hud_visible`].
     ///
     /// PORT: FUN_801d231c - one frame of the HUD driver, laid out off this
     /// run's own live state.
@@ -2590,11 +2589,22 @@ pub struct DanceHudRow {
 }
 
 impl DanceGame {
-    /// Whether the rival half of the HUD frame draws: retail's
-    /// `_DAT_8007B6D0`, raised in the two versus modes. Both hosts stood in
-    /// for this global with their own copy of the same `matches!`.
+    /// Whether the rival half of the HUD frame draws: retail's gate
+    /// `_DAT_8007B6D0` (`lw v0,-0x4930(v0)` / `beq v0,zero` at
+    /// `0x801D24B0..0x801D24B8` in `FUN_801d231c`).
+    ///
+    /// That word is the **dev counter**, not a versus-mode flag: disc-wide its
+    /// only writers are the boot clear (`sw zero,0x3b8(gp)` at `0x80015F64`),
+    /// the world-map dev menu's pad ring (`0x801EA00C` / `0x801EA030`, cleared
+    /// at `0x801EABF8`, field overlay 0897) and the debug menu's store
+    /// (`0x801CED54`, PROT 0971) - no dance-hall script and no mode sets it.
+    /// The dance tick reads the same word as a dev switch twice more: raised,
+    /// it freezes the camera keyframe track (`0x801CF4F8`) and skips the
+    /// song-end test (`0x801D00B0`), so a versus run with it up would never
+    /// end. In retail play it is zero in every mode, and the rival gauges and
+    /// beat tracks never draw - only the three score boxes do.
     pub fn rival_hud_visible(&self) -> bool {
-        matches!(self.mode(), DanceMode::Qualifier | DanceMode::Finals)
+        false
     }
 
     /// The HUD frame as laid-out rows - the presentation half of
@@ -2666,8 +2676,8 @@ impl DanceGame {
 }
 
 // Wired: the free-function half of [`DanceGame::hud_draws`], reached through
-// it from the play window's dance block every frame (see the note there for
-// how the host stands in for `_DAT_8007B6D0`).
+// it from the play window's dance block every frame (the `rival_hud` gate is
+// [`DanceGame::rival_hud_visible`]).
 /// PORT: FUN_801d231c - the dance HUD render driver.
 ///
 /// Per frame it draws the three score readouts and their box frames, then the
@@ -3567,8 +3577,20 @@ mod tests {
     /// a plain status line and no frame at all.
     #[test]
     fn the_hud_frame_resolves_its_own_rows() {
-        let g = DanceGame::new(chart(), false);
-        assert!(g.rival_hud_visible(), "Qualifier is a versus mode");
+        let mut g = DanceGame::new(chart(), false);
+        // The rival gate is the dev counter `_DAT_8007B6D0`, zero in every
+        // retail run - a versus mode does not raise it (this asserted the
+        // opposite while the hosts stood in for it with a mode test).
+        for mode in [
+            DanceMode::Qualifier,
+            DanceMode::Finals,
+            DanceMode::HowTo,
+            DanceMode::FreePlay,
+        ] {
+            g.mode = mode;
+            assert!(!g.rival_hud_visible(), "{mode:?}");
+        }
+        g.mode = DanceMode::Qualifier;
         let solo = g.hud_frame_rows(false);
         let versus = g.hud_frame_rows(true);
         assert!(
