@@ -159,12 +159,11 @@ impl PlayWindowApp {
             // frozen and every pad edge routes into the entry SM (one
             // cell / glyph per press). Mirrors the opening `town01`
             // naming prompt, which suspends the field VM.
-            if self.session.host.world.name_entry_active() {
-                let input =
-                    legaia_engine_core::name_entry::NameEntryInput::from_pad_edge(pressed_edge);
-                self.session.host.world.step_name_entry(input);
-                // Keep the frame counter advancing so the caret blinks.
-                self.session.host.world.frame = self.session.host.world.frame.wrapping_add(1);
+            // The routing is the engine's (`World::step_name_entry_frame`, the
+            // kernel `BootSession::tick` runs for every other driver): the
+            // edge drives the entry SM and the frame counter advances so the
+            // caret blinks. This arm adds only the window's frame-tail skip.
+            if self.session.host.world.step_name_entry_frame(pressed_edge) {
                 // Same reason as the boot-UI arm above: the party readout's
                 // decision kernel is stepped in the fall-through path and its
                 // suppression predicate names this state, so an arm that

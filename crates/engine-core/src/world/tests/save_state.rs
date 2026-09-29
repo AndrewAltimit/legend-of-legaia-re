@@ -256,3 +256,15 @@ fn an_identity_party_below_the_roster_saves_as_a_prefix() {
     world.party.party_count = 4;
     assert_eq!(world.save_full().ext_v2.active_party, vec![0, 1, 2, 3]);
 }
+
+#[test]
+fn step_name_entry_frame_owns_the_frame_only_while_the_prompt_is_open() {
+    let mut world = World::new();
+    let f0 = world.frame;
+    assert!(!world.step_name_entry_frame(0));
+    assert_eq!(world.frame, f0, "no prompt: nothing advances");
+    world.open_name_entry(0);
+    assert!(world.step_name_entry_frame(0));
+    assert_eq!(world.frame, f0 + 1, "the caret clock advances");
+    assert!(world.name_entry_active());
+}

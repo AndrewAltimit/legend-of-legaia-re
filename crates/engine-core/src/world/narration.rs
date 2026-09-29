@@ -79,6 +79,31 @@ impl World {
         }
     }
 
+    /// One frame of the modal naming prompt, from a pad **edge** word (bits
+    /// newly pressed this frame, the [`Self::set_pad`] layout).
+    ///
+    /// While the prompt is open the field is frozen (the op-`0x49` gate holds
+    /// the script, and the timeline waits on [`Self::name_entry_active`]), so
+    /// a frame is: route the edge into the entry SM, and advance the frame
+    /// counter the caret blinks off. Returns `true` when the prompt owned the
+    /// frame - the caller then skips the rest of its world tick - and `false`
+    /// when no prompt is open.
+    ///
+    /// This is the one routing every host shares: the native window's
+    /// per-tick arm and [`crate::scene::SceneHost`]-driving sessions
+    /// (`BootSession::tick`, and so every headless driver) both call it. The
+    /// browser page runs the same pair on its own two clocks - one edge per
+    /// display frame into [`Self::step_name_entry`], the frame counter per
+    /// sim step.
+    pub fn step_name_entry_frame(&mut self, edge: u16) -> bool {
+        if !self.name_entry_active() {
+            return false;
+        }
+        self.step_name_entry(crate::name_entry::NameEntryInput::from_pad_edge(edge));
+        self.frame = self.frame.wrapping_add(1);
+        true
+    }
+
     /// Install the opening-cutscene narration presenter with `pages` (the
     /// inline subtitle pages decoded from the scene MAN's cutscene-timeline
     /// script; see [`crate::man_field_scripts::collect_partition_narration`]).

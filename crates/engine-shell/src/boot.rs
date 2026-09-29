@@ -256,6 +256,92 @@ pub struct BootSession {
     /// Scene mode the world ran before the pause menu opened, restored by
     /// [`BootSession::close_field_menu`].
     field_menu_resume: SceneMode,
+    /// `true` when the caller drains the world's per-tick presentation queues
+    /// itself after every [`Self::tick`] - the play window does. Otherwise
+    /// the session does it ([`HostQueueMarks`]).
+    host_drains_queues: bool,
+    /// Queue lengths the last full [`Self::tick`] left behind.
+    queue_marks: HostQueueMarks,
+}
+
+/// How much of each per-tick world queue a tick left behind.
+///
+/// Both play hosts consume these queues after every tick (the window's
+/// `drain_and_route_field_events` / `drain_and_log_battle_events` /
+/// minigame-cue drain; the browser runtime's twins), so an event still queued
+/// when the next tick starts is one no host would ever see again. A driver
+/// that only ticks the session - every headless run - consumed none of them,
+/// and the queues grew without bound (`map01` queues field events every
+/// frame). [`BootSession::tick`] therefore drops, at the start of a tick, the
+/// entries the previous tick left and nobody took: the front `min(mark, len)`
+/// of each queue. Anything queued **between** ticks (a scene entry's BGM
+/// start, a caller's own push) sits behind the mark and survives to the tick
+/// that consumes it, and a caller that reads a queue after `tick` - the BGM
+/// oracles route the field queue themselves - still sees the whole tick.
+///
+/// A host that drains every tick itself opts out
+/// ([`BootSession::set_host_drains_queues`]), which keeps the play window
+/// byte-for-byte what it was.
+///
+/// Dropping is the whole duty on purpose, including for the battle
+/// effect-spawn requests, whose host routing
+/// (`World::route_battle_effect_spawns`) does have a world side: a spawned
+/// effect is only retired by the hosts' frame-tail effect tick
+/// (`World::tick_effect_scene_graphs`) and its summon / move-FX siblings,
+/// none of which a bare session tick runs. Routing the spawns without that
+/// tail parks the battle action state machine on an effect that never
+/// finishes; a driver that wants the effects runs the whole tail, as the
+/// hosts do.
+#[derive(Debug, Default, Clone, Copy)]
+struct HostQueueMarks {
+    field_events: usize,
+    battle_events: usize,
+    hit_fx: usize,
+    hit_events: usize,
+    sfx_cues: usize,
+    shout_cues: usize,
+    xa_cues: usize,
+    xa_prestage: usize,
+    clut_stages: usize,
+    effect_spawns: usize,
+    minigame_sfx: usize,
+}
+
+impl HostQueueMarks {
+    fn record(world: &legaia_engine_core::world::World) -> Self {
+        Self {
+            field_events: world.pending_field_events.len(),
+            battle_events: world.pending_battle_events.len(),
+            hit_fx: world.battle.hit_fx.len(),
+            hit_events: world.battle.hit_events.len(),
+            sfx_cues: world.audio.battle_sfx_cues.len(),
+            shout_cues: world.audio.battle_shout_cues.len(),
+            xa_cues: world.audio.battle_xa_cues.len(),
+            xa_prestage: world.audio.battle_xa_prestage.len(),
+            clut_stages: world.battle.clut_stages.len(),
+            effect_spawns: world.battle.effect_spawns.len(),
+            minigame_sfx: world.minigames.pending_sfx.len(),
+        }
+    }
+
+    /// Drop the entries the last tick left that nobody consumed.
+    fn drop_stale(self, world: &mut legaia_engine_core::world::World) {
+        fn front<T>(q: &mut Vec<T>, n: usize) {
+            let n = n.min(q.len());
+            q.drain(..n);
+        }
+        front(&mut world.pending_field_events, self.field_events);
+        front(&mut world.pending_battle_events, self.battle_events);
+        front(&mut world.battle.hit_fx, self.hit_fx);
+        front(&mut world.battle.hit_events, self.hit_events);
+        front(&mut world.audio.battle_sfx_cues, self.sfx_cues);
+        front(&mut world.audio.battle_shout_cues, self.shout_cues);
+        front(&mut world.audio.battle_xa_cues, self.xa_cues);
+        front(&mut world.audio.battle_xa_prestage, self.xa_prestage);
+        front(&mut world.battle.clut_stages, self.clut_stages);
+        front(&mut world.battle.effect_spawns, self.effect_spawns);
+        front(&mut world.minigames.pending_sfx, self.minigame_sfx);
+    }
 }
 
 /// Read + parse the new-game starting-party template from a boot source's
@@ -826,7 +912,20 @@ impl BootSession {
             art_learned_notice: None,
             field_menu_resume: SceneMode::Field,
             mode_seat: legaia_engine_core::mode::ModeSeat::new_at_boot(),
+            host_drains_queues: false,
+            queue_marks: HostQueueMarks::default(),
         })
+    }
+
+    /// Declare that the caller drains the world's per-tick presentation
+    /// queues itself after every [`Self::tick`] (the play window does, routing
+    /// each into its renderer and audio). Off by default: the session then
+    /// drops whatever the previous tick left unconsumed before the next one
+    /// runs ([`HostQueueMarks`]), so a driver that only ticks does not grow
+    /// the queues without bound.
+    pub fn set_host_drains_queues(&mut self, on: bool) {
+        self.host_drains_queues = on;
+        self.queue_marks = HostQueueMarks::default();
     }
 
     /// Begin a New Game: clear the world to a fresh slate
@@ -1247,6 +1346,24 @@ impl BootSession {
     }
 
     pub fn tick(&mut self) -> Result<SceneTickEvent> {
+        // The hosts' per-tick queue duty, for a caller that does not perform
+        // it: what the previous tick queued and nobody took is gone before
+        // this one runs, as it is in both play hosts.
+        if !self.host_drains_queues {
+            std::mem::take(&mut self.queue_marks).drop_stale(&mut self.host.world);
+        }
+        // The naming prompt (field-VM op `0x49`, the opening's pc `0x02C6`) is
+        // modal: the field is frozen under it and every pad edge drives the
+        // entry SM. The edge is the one the caller's `set_pad` just made.
+        // Before this arm only the two window hosts routed the prompt, so any
+        // driver that ticks the session - every headless run - parked on it
+        // forever. The native window still takes its own arm first (it also
+        // skips its per-frame tail); both call the same kernel.
+        let input = &self.host.world.input;
+        let edge = input.pad() & !input.pad_prev();
+        if self.host.world.step_name_entry_frame(edge) {
+            return Ok(SceneTickEvent::Stepped);
+        }
         // The mode table's outer level, once per frame, ahead of everything
         // else - retail's `main` (`FUN_80015E90`, `0x8001615C..0x8001620C`)
         // takes any pending mode-change edge before it dispatches the new
@@ -1327,6 +1444,10 @@ impl BootSession {
         // The seat owns the word; the sessions own the scene, and this is the
         // one join between them (see `ModeSeat`'s "what owns what").
         self.mode_seat.adopt_world_mode(&self.host.world);
+        if !self.host_drains_queues {
+            // What this tick queued stays readable until the next one starts.
+            self.queue_marks = HostQueueMarks::record(&self.host.world);
+        }
         self.frames += 1;
         Ok(event)
     }

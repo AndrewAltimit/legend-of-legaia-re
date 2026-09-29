@@ -451,6 +451,9 @@ pub(super) fn cmd_play_window_with_record(
     }
 
     let mut session = crate::shared::open_boot_session(scene, enable_audio, extracted_root, disc)?;
+    // The window drains every per-tick world queue itself, right after each
+    // session tick (`drain_and_log_battle_events` / `drain_and_route_field_events`).
+    session.set_host_drains_queues(true);
     // Scene-entry VDF pulse (enhancement) gate - must land before the first
     // `enter_field_scene`, which is where the installer runs.
     session.host.world.toggles.entry_pulse_enabled = entry_pulse;
