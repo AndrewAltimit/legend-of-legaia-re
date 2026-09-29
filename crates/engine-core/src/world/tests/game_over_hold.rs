@@ -127,9 +127,13 @@ fn repeated_wipe_folds_during_the_hold_are_inert() {
 }
 
 #[test]
-fn non_wipe_teardown_keeps_the_latch_and_restores_the_field() {
-    // A victory in a latch-armed battle must not consume the latch or take
-    // any wipe arm: the non-wipe path is unchanged.
+fn non_wipe_teardown_consumes_the_latch_and_restores_the_field() {
+    // A victory in a latch-armed battle takes no wipe arm, but it DOES
+    // consume the latch: the survived arm joins the wipe arms at
+    // `0x8003B5F4` and the shared `andi 0x7f` at `0x8003B608` clears flag 0
+    // on every return. (This test used to assert the latch survived a win -
+    // the port's old defect; the Tetsu sparring capture pair shows the flag
+    // byte walk `0x81 -> 0x41` across a won fight.)
     let mut world = wiped_battle_world();
     world.system_flag_set(0);
     world.actors[0].battle.liveness = 1; // party survived after all
@@ -141,9 +145,10 @@ fn non_wipe_teardown_keeps_the_latch_and_restores_the_field() {
     assert_eq!(world.mode, SceneMode::Field);
     assert!(world.field_return.is_none(), "field snapshot restored");
     assert!(
-        world.system_flag_test(0),
-        "the wipe gate reads the latch only on a wipe"
+        !world.system_flag_test(0),
+        "every return from battle consumes the latch"
     );
+    assert!(world.system_flag_test(1), "a win raises the outcome flag");
     let evs = world.drain_field_events();
     assert!(
         evs.iter().any(|e| matches!(
