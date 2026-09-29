@@ -285,6 +285,7 @@ mod battle_auto_command;
 mod battle_capture_bgm;
 mod battle_capture_class_disc;
 mod battle_clip_ladder;
+mod battle_dead_target;
 mod battle_effects_ai2;
 mod battle_items_magic;
 mod battle_loot_use_item;

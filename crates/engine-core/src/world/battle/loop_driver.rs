@@ -1026,10 +1026,132 @@ impl World {
             self.arm_party_physical(next);
             return;
         }
-        match self.battle.round_flow.pending[usize::from(next)].take() {
+        let pending = self.battle.round_flow.pending[usize::from(next)]
+            .take()
+            .map(|action| self.redirect_pending_off_dead_target(action));
+        match pending {
             Some(action) => self.dispatch_pending_party_action(next, action),
             None => self.arm_party_physical(next),
         }
+    }
+
+    /// The turn picker's dead-target redirect for the party member it just
+    /// picked: `FUN_801DABA4` calls `FUN_801DB124` at `0x801DAF14`, gated on
+    /// the command-flow byte `ctx[+0x06] == 0xFF` - the round's execution
+    /// band, which is the only band the engine dispatches from. A physical
+    /// command (category `3`: a plain strike or an arts string) whose target
+    /// died earlier in the round re-rolls a living slot on the dead target's
+    /// own side (`rand % party_count`, or `rand % monster_count + 3`),
+    /// drawing until one lives. Without it the member walks at a corpse the
+    /// range law never brings into reach, and the attack short step `0x19`
+    /// (which has no timeout) holds the round forever.
+    ///
+    /// The engine seats its first monster at `party_count` rather than at
+    /// retail's fixed slot 3, so the kernel runs in retail's slot space and
+    /// the result maps back. Magic and item commands carry their own target
+    /// resolution at dispatch and are left alone here.
+    ///
+    /// REF: FUN_801DABA4 (party arm, `0x801DAEC4..0x801DAF1C`)
+    /// REF: FUN_801DB124 (`vm::battle_action::redirect_dead_target`)
+    fn redirect_pending_off_dead_target(
+        &mut self,
+        action: crate::battle_round::PendingPartyAction,
+    ) -> crate::battle_round::PendingPartyAction {
+        use crate::battle_round::PendingPartyAction as Pending;
+        match action {
+            Pending::Attack { target } => Pending::Attack {
+                target: self.redirect_dead_battle_target(target, 3, 0),
+            },
+            Pending::Art {
+                sequence,
+                target_row,
+                target_slot,
+            } => {
+                // The arts target is row-relative; the redirect keeps the
+                // side, so it maps back into the same row.
+                use crate::target_picker::CursorRow;
+                let party_count = self.party.party_count.max(1);
+                let target_slot = match target_row {
+                    CursorRow::Enemy => {
+                        self.redirect_dead_battle_target(party_count + target_slot, 3, 0)
+                            - party_count
+                    }
+                    CursorRow::Ally => self.redirect_dead_battle_target(target_slot, 3, 0),
+                };
+                Pending::Art {
+                    sequence,
+                    target_row,
+                    target_slot,
+                }
+            }
+            other => other,
+        }
+    }
+
+    /// [`vm::battle_action::redirect_dead_target`] over the engine's
+    /// compacted seating: `target` is an engine slot; the return is the
+    /// engine slot to use (unchanged when no redirect applies).
+    pub(in crate::world) fn redirect_dead_battle_target(
+        &mut self,
+        target: u8,
+        category: u8,
+        param0: u8,
+    ) -> u8 {
+        const RETAIL_FIRST_MONSTER: u8 = 3;
+        let party_count = self.party.party_count.max(1);
+        let seated = self.actors.len().min(BATTLE_SLOTS) as u8;
+        let monster_count = seated.saturating_sub(party_count);
+        let to_retail = |s: u8| {
+            if s < party_count {
+                s
+            } else {
+                s - party_count + RETAIL_FIRST_MONSTER
+            }
+        };
+        let to_engine = |s: u8| {
+            if s < RETAIL_FIRST_MONSTER {
+                s
+            } else {
+                s - RETAIL_FIRST_MONSTER + party_count
+            }
+        };
+        if target >= seated || monster_count == 0 {
+            return target;
+        }
+        let alive: Vec<bool> = (0..seated)
+            .map(|s| self.actors[usize::from(s)].battle.hp != 0)
+            .collect();
+        // The kernel retries until it lands on a living slot; a side with
+        // nobody left alive has already ended the battle, but never loop on it.
+        let side_alive = if target < party_count {
+            alive[..usize::from(party_count)].iter().any(|&a| a)
+        } else {
+            alive[usize::from(party_count)..].iter().any(|&a| a)
+        };
+        if !side_alive {
+            return target;
+        }
+        let is_alive = |retail: u8| {
+            let s = to_engine(retail);
+            // A retail slot past the seated band (party slots `party_count..3`
+            // when fewer than three are seated) is never alive.
+            (retail >= RETAIL_FIRST_MONSTER || retail < party_count)
+                && alive.get(usize::from(s)).copied().unwrap_or(false)
+        };
+        let mut rng = || (self.next_rand() & 0x7FFF) as i32;
+        vm::battle_action::redirect_dead_target(
+            vm::battle_action::RedirectQuery {
+                target_slot: to_retail(target),
+                category,
+                param0,
+            },
+            party_count,
+            monster_count,
+            &mut rng,
+            is_alive,
+            |_| 0,
+        )
+        .map_or(target, to_engine)
     }
 
     /// Backstop for a session that was already open when the flow byte moved

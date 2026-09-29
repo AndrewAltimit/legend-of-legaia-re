@@ -2819,7 +2819,12 @@ seats at the origin, and the cursor falls back to a plain slot-order scan.
   Magic when the spell class byte `>= 0xA` or the target is an enemy slot; Item
   only for ids `0xFE`/`0x98`), it re-rolls a **living** slot on the same side
   (`rand % party_count`, or `rand % monster_count + 3`), retrying until alive.
-  Port: `redirect_dead_target` / `RedirectQuery`.
+  Port: `redirect_dead_target` / `RedirectQuery`. Its turn-picker call site
+  (`FUN_801DABA4`'s party arm, `0x801DAF14`, gated on `ctx[+0x06] == 0xFF`)
+  is what stops a member whose target died earlier in the round from walking
+  at the corpse: the short step `0x19` has no timeout, and the range law never
+  brings a dead target into reach. The engine runs it at each party dispatch
+  (`World::redirect_dead_battle_target`).
 
 ### Per-frame action-effect update helpers
 
