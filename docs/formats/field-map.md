@@ -46,6 +46,17 @@ stride is `0x80` (1 byte per tile) and the object map's is `0x100` (one `u16`
 per tile), which is why the two regions differ in size despite covering the
 same tiles.
 
+### The whole image stays resident
+
+Retail reads every region for as long as the scene runs, not only at load. The
+descriptor table is the one that is easy to assume dead after the init sweep
+`FUN_8003A55C`: the sub-area window sweep `FUN_801D7B50` indexes it again on
+every camera re-centre, together with the live collision grid (for the floor
+nibble) and the live object-index map (for the `0x400` ownership bit). The
+engine keeps the descriptor region on `FieldTerrain::static_window` beside the
+grids it already holds; see
+[the object bind](../subsystems/field-locomotion.md#the-object-bind-which-sweep-owns-the-object-and-its-rest-pose).
+
 ## Trigger block (`+0x10000`)
 
 The block opens with an 18-byte header naming four sub-tables, then the four

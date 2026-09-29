@@ -666,6 +666,14 @@ impl SceneHost {
                 // `0x3000` in a live capture and not on the disc.
                 // PORT: FUN_80017BEC (scene-load call site)
                 crate::field_regions::refresh_object_grid_marks(&mut bytes);
+                // The object-descriptor region (`+0x0000..0x4000`) stays
+                // resident: the sub-area window sweep indexes it on every
+                // camera re-centre, not just at load.
+                self.world.load_field_object_descriptors(
+                    bytes
+                        .get(..crate::field_regions::MAP_WALK_GRID_OFFSET)
+                        .unwrap_or_default(),
+                );
                 self.world.load_field_object_cells(
                     bytes
                         .get(legaia_asset::field_objects::OBJECT_GRID_OFFSET..)
@@ -683,6 +691,7 @@ impl SceneHost {
             None => {
                 self.world.terrain.object_cells.clear();
                 self.world.terrain.elevation_overrides.clear();
+                self.world.load_field_object_descriptors(&[]);
             }
         }
         // Resolve the provisional cold spawn against the just-loaded collision
@@ -803,6 +812,14 @@ impl SceneHost {
             Some(Err(err)) => eprintln!("[scene] field floor-height LUT load skipped: {err:#}"),
             _ => {}
         }
+        // The field initialiser's camera-window install, `FUN_80017DD4(seat >>
+        // 7, ...)` at `0x801D6ECC` - after the grid marks (`0x801D6BF8`) and
+        // the MAN decode that installs the floor ladder (`0x801D6DA8`), which
+        // is the order here too. It latches the region box at the seat tile and
+        // runs the sub-area window sweep over it, planning the scene's first
+        // windowed static-object list.
+        // REF: FUN_80017DD4
+        self.world.recentre_field_window_on_player();
         // Prefer the real scene-entry system script (ctx 0xFB) over event-
         // script record 0. Record 0 is a per-scene trigger/dispatch table,
         // not linear bytecode, so the field VM halts at its pc 0 and the

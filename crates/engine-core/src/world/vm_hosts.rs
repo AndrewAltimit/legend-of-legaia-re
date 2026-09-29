@@ -2170,6 +2170,18 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             actor.move_state.world_x = world_x as i16;
             actor.move_state.world_z = world_z as i16;
         }
+        // The player arm's camera re-centre, `FUN_80017EC8(op[1] & 0x7F,
+        // op[2] & 0x7F, ..)` at `0x801DEC9C`: re-latch the region box on the
+        // operand tile and re-plan the windowed static-object list. The
+        // operand tile is `(world - 0x40) >> 7` of the seat (the half-tile bit
+        // only adds `+0x40`).
+        // REF: FUN_80017EC8
+        if is_player {
+            self.world.recentre_field_window(
+                (i32::from(world_x) - 0x40) >> 7,
+                (i32::from(world_z) - 0x40) >> 7,
+            );
+        }
         let _ = ctx;
         self.world.pending_field_events.push(FieldEvent::MoveTo {
             world_x,
@@ -2472,6 +2484,14 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                     actor.move_state.render_26 = heading;
                 }
             }
+            // The same re-centre the `0x23` player arm makes, from the `4C 51`
+            // player arm: `FUN_80017EC8(op[1] & 0x7F, op[2] & 0x7F, ..)` at
+            // `0x801E1A58`.
+            // REF: FUN_80017EC8
+            self.world.recentre_field_window(
+                (i32::from(world_x) - 0x40) >> 7,
+                (i32::from(world_z) - 0x40) >> 7,
+            );
             self.world.pending_field_events.push(FieldEvent::MoveTo {
                 world_x,
                 world_z,

@@ -147,6 +147,13 @@ impl World {
                     ms.world_z = world.1;
                     ms.world_y = y;
                 }
+                // The landing's camera re-centre, `FUN_80017EC8(x >> 7, z >> 7,
+                // ..)` at `0x801D1FE0`: re-latch the region box on the
+                // destination tile and re-plan the windowed static-object list
+                // (`FUN_801D7B50`) - the door into a house interior is what
+                // brings the interior's unbound placements into the list.
+                // REF: FUN_80017EC8
+                self.recentre_field_window(i32::from(world.0) >> 7, i32::from(world.1) >> 7);
                 self.pending_field_events
                     .push(crate::field_events::FieldEvent::MoveTo {
                         world_x: world.0 as u16,

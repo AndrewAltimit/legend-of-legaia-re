@@ -190,6 +190,8 @@ mod field_movement;
 pub mod field_npc_cull;
 mod field_npc_height;
 mod field_warp;
+mod static_window;
+pub use static_window::StaticObjectWindow;
 mod motion_pause_host;
 pub use field_warp::FieldWarpTick;
 mod frame_tick;

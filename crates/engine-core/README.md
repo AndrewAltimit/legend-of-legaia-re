@@ -515,8 +515,13 @@ presentation left to the host:
   `World::tick_battle_animations` over each actor's committed clip
   (`MonsterAnimation::effect_script`); spawns drain via
   `World::drain_battle_effect_spawns`.
-- `field_regions::window_rebuild_spawns` - the sub-area **window rebuild**
-  placed-object sweep (`FUN_801D7B50`), complement of the scene-init sweep.
+- `field_regions::window_rebuild_spawns_resident` - the sub-area **window
+  rebuild** placed-object sweep (`FUN_801D7B50`), complement of the
+  scene-init sweep. `World::recentre_field_window` (`world/static_window.rs`)
+  runs it on every camera re-centre retail runs it on and keeps the result as
+  `FieldTerrain::static_window`; both play hosts gate the sweep's placements on
+  that list through `field_env::placed_draw_live` (whole map by default,
+  retail windowing behind the `retail_static_window` option).
 - `target_picker::enemy_menu_rows` + `layout_enemy_menu_rows` - the enemy
   target-menu row dedup / labelling and the overlap-relaxation layout
   (`FUN_801D9D3C`). `BattleSession::enemy_menu_rows` rebuilds the rows every

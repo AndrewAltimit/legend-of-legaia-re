@@ -532,6 +532,77 @@ pub fn retain_visible_placed_draws(
     });
 }
 
+/// The identity a window-owned placed draw shares with the actor the sub-area
+/// window sweep spawns for it: the footprint-anchor tile plus the X/Z the
+/// sweep computes (`tile * 0x80 + 0x40 + desc[+0]`, `tile * 0x80 - (desc[+4] -
+/// 0x40)`, both taken as the actor's `i16` fields). The anchor alone is not
+/// unique - a descriptor's footprint offset can point two placements at one
+/// tile - so the position pins the pair.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PlacedWindowKey {
+    pub anchor: (u8, u8),
+    pub world_x: i16,
+    pub world_z: i16,
+}
+
+impl PlacedWindowKey {
+    /// The key of a resolved placed draw.
+    pub fn of_draw(d: &EnvDraw) -> Self {
+        Self {
+            anchor: d.anchor,
+            world_x: d.world_x as i16,
+            world_z: d.world_z as i16,
+        }
+    }
+
+    /// The key of a window-sweep actor.
+    pub fn of_spawn(s: &crate::field_regions::WindowSpawn) -> Self {
+        Self {
+            anchor: s.anchor,
+            world_x: s.world.0,
+            world_z: s.world.2,
+        }
+    }
+}
+
+/// Which of retail's two placed-object sweeps owns a placed draw: `Some(key)`
+/// for the sub-area window sweep's (no object bind on the anchor tile - the
+/// actor lives on the windowed list and only exists while the camera's region
+/// box holds it), `None` for the scene-init sweep's (bound; its actor lives for
+/// the whole scene). `binds = None` is a bind-less layer (terrain cells, the
+/// overworld), which neither sweep owns, so it is `None` too.
+///
+/// Hosts compute this once per draw when they bake the placed layer, then ask
+/// [`placed_draw_live`] per frame.
+pub fn placed_window_key(
+    d: &EnvDraw,
+    binds: Option<&HashMap<(u8, u8), ObjectBind>>,
+) -> Option<PlacedWindowKey> {
+    let binds = binds?;
+    (!binds.contains_key(&d.anchor)).then(|| PlacedWindowKey::of_draw(d))
+}
+
+/// Whether a placed draw is live this frame, against the scene's windowed
+/// static-object list - the one kernel both play hosts ask.
+///
+/// A draw the init sweep owns (`key == None`) is always live. A window-owned
+/// one is live when the port draws the whole map (the default -
+/// [`crate::world::StaticObjectWindow::retail_windowing`] clear), and under
+/// retail windowing only while the list holds a **drawn** actor for it: inside
+/// the box the last camera re-centre latched, and with a non-zero draw kind
+/// ([`crate::field_regions::WindowSpawn::drawn`]).
+// REF: FUN_801D7B50 (the list), FUN_8001ADA4 (the draw-kind range check)
+pub fn placed_draw_live(
+    key: Option<&PlacedWindowKey>,
+    window: &crate::world::StaticObjectWindow,
+) -> bool {
+    match key {
+        None => true,
+        Some(_) if !window.retail_windowing => true,
+        Some(k) => window.draws(k),
+    }
+}
+
 /// Evaluate a scene's story-hidden object records **without a live world** -
 /// the [`retain_visible_placed_draws`] input for hosts that assemble a scene
 /// statically (the site's full-map viewer, exporters).

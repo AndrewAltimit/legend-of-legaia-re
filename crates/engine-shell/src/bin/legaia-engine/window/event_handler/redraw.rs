@@ -1542,11 +1542,23 @@ impl PlayWindowApp {
                                 let (a, b) = s.split_once("..")?;
                                 Some((a.parse::<usize>().ok()?, b.parse::<usize>().ok()?))
                             });
+                        // The sub-area window sweep's placements are gated
+                        // on the world's windowed static-object list (a
+                        // no-op unless retail windowing is on).
+                        let static_window = &self.session.host.world.terrain.static_window;
                         for (di, (mesh_idx, model)) in self.field_placement_draws.iter().enumerate()
                         {
                             if let Some((a, b)) = place_range
                                 && !(a..b).contains(&di)
                             {
+                                continue;
+                            }
+                            if !legaia_engine_core::field_env::placed_draw_live(
+                                self.field_placement_window_keys
+                                    .get(di)
+                                    .and_then(Option::as_ref),
+                                static_window,
+                            ) {
                                 continue;
                             }
                             let mesh = self
@@ -1585,7 +1597,18 @@ impl PlayWindowApp {
                     // Untextured props (the F*/G* meshes the VRAM path
                     // drops) on the colour pipeline, same transforms.
                     if layer_on("cplace") {
-                        for (mesh_idx, model) in &self.field_placement_color_draws {
+                        let static_window = &self.session.host.world.terrain.static_window;
+                        for (di, (mesh_idx, model)) in
+                            self.field_placement_color_draws.iter().enumerate()
+                        {
+                            if !legaia_engine_core::field_env::placed_draw_live(
+                                self.field_placement_color_window_keys
+                                    .get(di)
+                                    .and_then(Option::as_ref),
+                                static_window,
+                            ) {
+                                continue;
+                            }
                             if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
                                 color_draws.push(ColorSceneDraw {
                                     mesh,

@@ -202,6 +202,15 @@ pub struct OptionsState {
     /// steps. Purely presentational - the move-VM simulation state is
     /// identical either way.
     pub reduce_flashing: bool,
+    /// Retail static-object windowing (engine-only, **retail-faithful** side
+    /// of an enhancement): draw a `.MAP` placement the sub-area window sweep
+    /// owns only while the camera's latched region box holds it, as retail's
+    /// windowed static-object list (`FUN_801D7B50`) does. Mirrors into
+    /// [`crate::world::StaticObjectWindow::retail_windowing`]. **Default off**
+    /// - the port draws every placement for the whole map, so a sub-area's
+    ///   unbound props do not pop in on a door. The list is re-planned on every
+    ///   re-centre either way.
+    pub retail_static_window: bool,
 }
 
 impl Default for OptionsState {
@@ -223,6 +232,7 @@ impl Default for OptionsState {
             camera_distance: crate::camera::CameraDistance::Far,
             precise_movement: false,
             reduce_flashing: true,
+            retail_static_window: false,
         }
     }
 }
@@ -242,6 +252,7 @@ impl OptionsState {
         world.locomotion.run_default = self.field_move == FieldMoveOpt::Run;
         world.toggles.reduce_flashing = self.reduce_flashing;
         world.toggles.select_attack = self.battle_select_attack;
+        world.terrain.static_window.retail_windowing = self.retail_static_window;
     }
 
     /// Load from a TOML file, falling back to [`Default`] if the file is

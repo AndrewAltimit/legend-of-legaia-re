@@ -598,6 +598,14 @@ struct PlayWindowApp {
     /// Field static-geometry colour draws: `(index into `color_meshes`, world
     /// model)` for the untextured props. Drawn alongside `field_placement_draws`.
     field_placement_color_draws: Vec<(usize, Mat4)>,
+    /// Which placed-object sweep owns each draw of `field_placement_draws` /
+    /// `field_placement_color_draws` (parallel lists): `Some` for the sub-area
+    /// window sweep's placements, which the per-frame pass gates on the
+    /// world's windowed static-object list through
+    /// `field_env::placed_draw_live` - the same kernel the browser play page
+    /// asks.
+    field_placement_window_keys: Vec<Option<legaia_engine_core::field_env::PlacedWindowKey>>,
+    field_placement_color_window_keys: Vec<Option<legaia_engine_core::field_env::PlacedWindowKey>>,
     /// Field-scene **terrain / ground** draws: `(uploaded-mesh index, world
     /// model)` per visible cell of the field `.MAP` object grid
     /// (`Scene::field_terrain_tiles`, the `CELL_VISIBLE` sweep - the dense

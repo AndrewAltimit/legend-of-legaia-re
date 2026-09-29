@@ -548,6 +548,11 @@ impl World {
                             a.move_state.render_26 = heading;
                         }
                         self.terrain.map_origin_xz = (-i32::from(nx), -i32::from(nz));
+                        // `FUN_80017EC8(x >> 7, z >> 7, 0, 0)` at `0x801D2BC0`:
+                        // the camera re-centre on the new leader's tile, which
+                        // re-plans the windowed static-object list.
+                        // REF: FUN_80017EC8
+                        self.recentre_field_window(i32::from(nx) >> 7, i32::from(nz) >> 7);
                     }
                 }
                 LeaderSwapEffect::ClearIncomingPose { slot } => {
