@@ -85,7 +85,9 @@ that the cheapest route skips. They are visited in order, each with its beats
 pass played, before the route heads for the milestone's own scene. Each
 carries a comment naming the flags that put it there - Rogue Tower goes
 through `conc3` (whose P2[10] sets the `0x3E5` the `juui1` hand-off in `conc2`
-waits on), Zora Castle through `son`, Noaru Valley through `concend` and `jou`.
+waits on), Zora Castle through `son`, Noaru Valley through `concend` and `jou`,
+Sol Tower back through its own start scene `dohaty` (whose P2[13] sets the
+`0x1D4` every `station` placement, the ticket seller among them, waits on).
 Part A checks every waypoint is a disc scene.
 
 ## Segments and tiers
@@ -120,6 +122,9 @@ while a round still gains flags, since each unlocks the other:
   beside the NPC, faces it so the retail interact probe (64 units ahead, the
   72-unit box) lands on it, presses Cross, pages the conversation to its end
   and steps back off, so the pulsing confirm cannot re-open the same talk.
+  A talk that hands the frame to a record it spawned stays put instead: the
+  beat owns the player (`station`'s P2[19] walks it from the counter to the
+  cart).
   A record that branches on where the player stands is tried from each side.
 - **Walk-ons.** The ladder steps onto every gate-1 walk-on tile whose
   partition-2 record the live flags let spawn and that is not a door. The
@@ -155,7 +160,9 @@ beats.
 In both passes a scripted sequence gets Cross on a press-2-release-14 duty
 cycle, the naming prompt's Yes/No confirm gets Up first (it opens on No), and a
 battle gets `critical_path_replay`'s command-ring presses: Begin, Attack, Auto,
-confirm the target. Every one is a pad edge. Beyond that:
+confirm the target; a random encounter that interrupts a pad-tier walk is
+fled instead (the round prompt's Run), unless the fight forbids running.
+Every one is a pad edge. Beyond that:
 
 - Field dialogue runs through the inline-script field-VM runner, as it does
   in both play hosts (`World::toggles.use_vm_dialogue`); `BootSession` leaves
@@ -252,8 +259,8 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   options by rotation, not by reading them. Neither tier opens a menu, buys,
   equips or uses an item outside a tutorial battle; a beat that waits on one
   reads as a stall at that beat.
-- The pad fighter only swings. Boss fights a player wins with arts, magic and
-  healing read as wipes.
+- The pad fighter only swings, or flees a travel leg's random encounter. Boss
+  fights a player wins with arts, magic and healing read as wipes.
 - The pad planner does not route through a crossing scene, so a door on the
   far side of a split walk component reads as `no walkable path`.
   `critical_path_replay` carries the `map01` / `suimon` crossing by hand.

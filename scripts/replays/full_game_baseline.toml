@@ -19,13 +19,13 @@
 # See docs/tooling/full-game-ladder.md.
 
 [headline]
-contiguous_progresses = 1
+contiguous_progresses = 10
 contiguous_pad = 1
-tier_sum = 95
+tier_sum = 100
 
 [segments]
 rim_elm = 4
-tetsu_spar = 2
+tetsu_spar = 3
 mist_rim_elm = 3
 hunters_spring = 3
 drake_castle = 3
@@ -49,7 +49,7 @@ sol_tower_b2 = 3
 usha_research = 3
 nivora = 3
 nivora_late = 3
-zora_castle = 2
+zora_castle = 3
 conkram_past = 2
 rogue_tower = 2
 jette_fortress = 2
