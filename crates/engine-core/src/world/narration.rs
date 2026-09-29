@@ -2340,10 +2340,11 @@ impl World {
         // in free-roam - its post-prologue body is the talked-to
         // conversation (and town01 `P1[40]`'s opens with a `52 34` flag SET
         // plus an op-`0x45` camera configure that must never fire
-        // ambiently). The engine's engaged windows: the placements an active
-        // cutscene timeline (or helper) has addressed - its choreography
-        // drives them - plus the opt-in `animate_field_npcs` liveliness
-        // approximation.
+        // ambiently). The engine's engaged window is the set of placements an
+        // active cutscene timeline (or helper) has addressed - its
+        // choreography drives them. The free-roam liveliness mode
+        // (`FieldNpcState::animate`) does not widen it: that mode drives the
+        // two motion VMs, never a placement's script.
         // REF: FUN_8003BC08 (the `+0x10 & 0x100` dispatch gate)
         if !self.cutscene_timeline_active() && !self.npcs.animate {
             return;
@@ -2412,23 +2413,25 @@ impl World {
             .filter(|tl| !tl.done)
             .and_then(|tl| tl.interaction_slot)
             .map(usize::from);
-        // Outside the entry pre-run and the opt-in liveliness mode, the
-        // engaged window is the timeline's: a placement steps only once a
-        // playing context has addressed it
+        // Outside the entry pre-run the engaged window is the timeline's: a
+        // placement steps only once a playing context has addressed it
         // ([`crate::cutscene_timeline::CutsceneTimeline::addressed_channels`]).
         // Stepping every placement instead woke each one's talk body - in
         // `town0d` one walk-on beat ran Noa's (`P1[2]`) and Gala's (`P1[3]`)
         // first-talk arms at once, and both spawned records walked the player
-        // toward different tiles.
-        let engaged: Option<std::collections::HashSet<usize>> =
-            (!entry_prerun && !self.npcs.animate).then(|| {
-                self.cutscene
-                    .timeline
-                    .iter()
-                    .chain(self.field_vm.helper_contexts.iter())
-                    .flat_map(|tl| tl.addressed_channels.iter().copied())
-                    .collect()
-            });
+        // toward different tiles. The liveliness mode is no exception: with
+        // it widening the window, an idle card-load resume in `vell` ran
+        // `P1[3]`'s talk body, whose `44 24` spawn walked the player off the
+        // seat, and one in `koin1` opened a placement's dialogue with no
+        // button pressed.
+        let engaged: Option<std::collections::HashSet<usize>> = (!entry_prerun).then(|| {
+            self.cutscene
+                .timeline
+                .iter()
+                .chain(self.field_vm.helper_contexts.iter())
+                .flat_map(|tl| tl.addressed_channels.iter().copied())
+                .collect()
+        });
         let mut channels = std::mem::take(&mut self.field_vm.channels);
         // Host hooks resolve cross-context ids against the channel set while
         // one of these is executing; the live vector is moved out for the

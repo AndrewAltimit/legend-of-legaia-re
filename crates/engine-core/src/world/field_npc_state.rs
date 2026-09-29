@@ -172,7 +172,9 @@ pub struct FieldNpcState {
     /// the motion VM. The engine default is off (NPCs rest at their placement
     /// anchors, as the locomotion oracles expect); both play hosts turn it on
     /// (`play-window --no-live-npcs` is the opt-out). Script-started motion
-    /// is NOT gated by this flag.
+    /// is NOT gated by this flag, and neither is placement-script stepping:
+    /// a placement's script runs only inside its engaged window
+    /// ([`crate::world::World::step_field_channels`]), whatever this says.
     pub animate: bool,
     /// Animation cues raised by channel scripts (op `0x4B` ANIMATE):
     /// `placement_index -> (count, base_id, keyframe bytes)`. The windowed

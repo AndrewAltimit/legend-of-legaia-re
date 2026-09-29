@@ -299,7 +299,11 @@ and `World::script_dialog_panel` (one box for the timeline and the helper
 contexts), and
 `CutsceneTimeline::addressed_channels` - the engine's stand-in for the
 engaged set while a timeline plays: a placement's own script steps only once
-a playing context has addressed it with a cross-context op.
+a playing context has addressed it with a cross-context op. The free-roam
+liveliness mode (`World::npcs.animate`) drives the motion VMs and leaves this
+window alone; when it widened the window to every placement, an idle
+card-load resume ran talk bodies nobody had touched (`vell` `P1[3]`'s spawn
+walked the player away, a `koin1` placement opened its lines).
 
 ## Top-level dispatch
 
