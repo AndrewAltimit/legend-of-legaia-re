@@ -44,7 +44,61 @@ pub struct NpcClipRetarget {
     pub player: FieldClipPlayer,
 }
 
+/// What [`World::step_world_frame_tail`] hands back: the half of each duty a
+/// host that draws or sounds the world still owns. A headless driver drops
+/// all of it - the world side already ran.
+#[derive(Default)]
+pub struct WorldFrameTail {
+    /// The sound cue of the move-FX this tick spawned, for the host's SFX
+    /// scheduler (retail's dispatch decode `classify_cue`).
+    pub move_fx_cue: Option<u8>,
+    /// The battle effect-script spawns routed this tick, for a host's log.
+    pub routed_effect_spawns: Vec<super::RoutedEffectSpawn>,
+    /// The NPC clip re-targets this tick's ANIMATE cues resolved.
+    pub npc_retargets: Vec<NpcClipRetarget>,
+}
+
 impl World {
+    /// The world-side half of the per-sim-tick tail both play hosts run after
+    /// the scene tick, in the native window's order: seat the pending move-FX (`spawn_move_fx`), advance the three effect
+    /// scene-graphs ([`Self::tick_effect_scene_graphs`]), route the battle
+    /// effect-script spawns ([`Self::route_battle_effect_spawns`]) and drain
+    /// the ANIMATE cues ([`Self::drain_field_anim_cues`]).
+    ///
+    /// Each of those has a world side a script or the battle action state
+    /// machine waits on - a routed effect is only retired by the scene-graph
+    /// tick, a latched `+0x5E` clip is what the NPC motion reads - so a driver
+    /// that ticks the scene without this tail measures a different game from
+    /// the one the play hosts run. `engine-shell`'s `BootSession::tick` calls
+    /// it for every headless driver; the play hosts interleave their render
+    /// work between the same steps and call the steps themselves.
+    ///
+    /// The summon-spawn request (`World::take_pending_summon_spawn`) is not
+    /// taken here: its only consumer is a host seating the namesake creature's
+    /// mesh, a render duty with no world side, and a headless caller that
+    /// observes the request reads it off the world after the tick.
+    pub fn step_world_frame_tail(
+        &mut self,
+        scene_bundle: Option<&PlayerAnmBundle>,
+        locomotion_bundle: Option<&PlayerAnmBundle>,
+        npc_bundle: impl Fn(u8) -> Option<bool>,
+    ) -> WorldFrameTail {
+        let mut move_fx_cue = None;
+        if let Some((move_id, origin)) = self.take_pending_move_fx_spawn()
+            && self.spawn_move_fx(move_id, origin)
+        {
+            move_fx_cue = self.take_pending_move_fx_cue();
+        }
+        self.tick_effect_scene_graphs();
+        let routed_effect_spawns = self.route_battle_effect_spawns();
+        let npc_retargets = self.drain_field_anim_cues(scene_bundle, locomotion_bundle, npc_bundle);
+        WorldFrameTail {
+            move_fx_cue,
+            routed_effect_spawns,
+            npc_retargets,
+        }
+    }
+
     /// Advance the three move-VM effect scene-graphs one tick: the active
     /// Seru-magic summon, the battle move-FX, and the field op-`0x34` sub-3
     /// effects. Each self-gates to a no-op when nothing is live.
@@ -169,6 +223,21 @@ mod tests {
         assert!(out.is_empty());
         assert!(w.locomotion.player_move_cues.is_empty());
         assert!(w.npcs.anim_cues.is_empty());
+    }
+
+    #[test]
+    fn the_world_tail_consumes_every_queue_a_headless_tick_used_to_drop() {
+        let mut w = World::new();
+        w.mode = SceneMode::Field;
+        w.locomotion.player_move_cues.push(7);
+        w.npcs.anim_cues.insert(3, (1, 5, Vec::new()));
+        let tail = w.step_world_frame_tail(None, None, |_| None);
+        assert!(w.locomotion.player_move_cues.is_empty());
+        assert!(w.npcs.anim_cues.is_empty());
+        // The single-move cue's `+0x5E` latch - the world side a host-less
+        // drain used to leave unset.
+        assert_eq!(w.npcs.clip_current.get(&3), Some(&5));
+        assert!(tail.npc_retargets.is_empty());
     }
 
     #[test]

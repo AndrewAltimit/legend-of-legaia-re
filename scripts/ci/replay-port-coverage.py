@@ -685,6 +685,12 @@ CANONICAL_LADDERS = [
     # unit test, a shared-builder unit test).
     ("title_backdrop_parity", "legaia-web-viewer"),
     ("raseru_cross_out_page", "legaia-web-viewer"),
+    # Three routines reached only through the world's frame tail: the
+    # fishing strike splash (`801d7a5c`, a cadence match in the world's
+    # fishing tick), a shipped op-`0x43` sub-`0x12` rect copy drained by the
+    # VRAM tail (`80057914`), and a shipped Bezier stager advanced by
+    # `World::step_world_frame_tail` (`801e45bc`).
+    ("w8_world_tail_ladder", "legaia-engine-core"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 

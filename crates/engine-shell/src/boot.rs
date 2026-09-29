@@ -283,15 +283,14 @@ pub struct BootSession {
 /// ([`BootSession::set_host_drains_queues`]), which keeps the play window
 /// byte-for-byte what it was.
 ///
-/// Dropping is the whole duty on purpose, including for the battle
-/// effect-spawn requests, whose host routing
-/// (`World::route_battle_effect_spawns`) does have a world side: a spawned
-/// effect is only retired by the hosts' frame-tail effect tick
-/// (`World::tick_effect_scene_graphs`) and its summon / move-FX siblings,
-/// none of which a bare session tick runs. Routing the spawns without that
-/// tail parks the battle action state machine on an effect that never
-/// finishes; a driver that wants the effects runs the whole tail, as the
-/// hosts do.
+/// The queues with a **world** side are not dropped but run: the effect
+/// spawns (`World::route_battle_effect_spawns`), the summon / move-FX
+/// requests, the effect scene-graph tick that retires what they seat, the
+/// ANIMATE cues and the scripted VRAM effects all go through
+/// [`BootSession::run_world_frame_tail`] before the marks are taken, so a
+/// headless run executes the same world the play hosts do. Routing the spawns
+/// alone would park the battle action state machine on an effect nothing
+/// retires, which is why the tail runs whole.
 #[derive(Debug, Default, Clone, Copy)]
 struct HostQueueMarks {
     field_events: usize,
@@ -1345,6 +1344,29 @@ impl BootSession {
         Some(outcome)
     }
 
+    /// The world-side half of the per-tick tail both play hosts run after the
+    /// scene tick ([`legaia_engine_core::world::World::step_world_frame_tail`]
+    /// plus [`legaia_engine_core::world::World::step_field_vram_effects`] over
+    /// the scene's own VRAM image, as the browser page steps it). What the
+    /// tail hands back for drawing is dropped - a headless session draws
+    /// nothing - except the spawned move's sound cue, which goes to the
+    /// director when one is attached, the way both hosts route it.
+    fn run_world_frame_tail(&mut self) {
+        let tail = self.host.world.step_world_frame_tail(None, None, |_| None);
+        if let (Some(cue), Some(bgm)) = (tail.move_fx_cue, self.bgm.as_mut())
+            && let legaia_engine_audio::CueDispatch::Ring { ring_value, .. } =
+                legaia_engine_audio::classify_cue(u32::from(cue))
+        {
+            bgm.enqueue_sfx(ring_value, 0, 0, 0);
+        }
+        if let Some(res) = self.host.resources.as_mut() {
+            let _ = self
+                .host
+                .world
+                .step_field_vram_effects(&mut res.vram, false);
+        }
+    }
+
     pub fn tick(&mut self) -> Result<SceneTickEvent> {
         // The hosts' per-tick queue duty, for a caller that does not perform
         // it: what the previous tick queued and nobody took is gone before
@@ -1440,6 +1462,12 @@ impl BootSession {
             self.after_scene_swap();
         }
         self.route_field_sfx();
+        if !self.host_drains_queues {
+            // The world-side half of the hosts' frame tail - effect
+            // scene-graphs, move-FX / effect-script spawns, ANIMATE cues and
+            // the scripted VRAM effects - which the play window runs itself.
+            self.run_world_frame_tail();
+        }
         // Reconcile the word with wherever the scene sessions left the world.
         // The seat owns the word; the sessions own the scene, and this is the
         // one join between them (see `ModeSeat`'s "what owns what").

@@ -180,7 +180,7 @@ mod encounters;
 pub use encounters::FieldBossStager;
 mod field_carriers;
 mod field_frame_tail;
-pub use field_frame_tail::{EFFECT_SCENE_GRAPH_STEP, NpcClipRetarget};
+pub use field_frame_tail::{EFFECT_SCENE_GRAPH_STEP, NpcClipRetarget, WorldFrameTail};
 pub mod field_elevation;
 mod field_hud;
 pub(crate) mod field_xa;
