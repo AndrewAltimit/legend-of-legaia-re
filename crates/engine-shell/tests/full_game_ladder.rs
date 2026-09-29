@@ -2113,7 +2113,13 @@ impl Search {
         }
         match via {
             Some(v) => {
+                // The waypoint's cost is recorded too: every parent edge
+                // must run from a cheaper cell to a dearer one, or a later
+                // plain step into `v` (from a cell descended from `to`)
+                // overwrites `parent[v]` and closes a cycle that the path
+                // walk-back follows forever.
                 self.parent.insert(v, cur);
+                self.g.insert(v, cost - 1);
                 self.parent.insert(to, v);
             }
             None => {
@@ -2263,12 +2269,21 @@ fn plan_path(
     if best == from {
         return None;
     }
-    let mut path = vec![best];
-    let mut c = best;
+    walk_back(&s.parent, from, best)
+}
+
+/// The route from `from` to `to` along `parent` links. A chain longer than
+/// the map holds is a cycle: `None`, never an unbounded walk.
+fn walk_back(parent: &HashMap<Cell, Cell>, from: Cell, to: Cell) -> Option<Vec<Cell>> {
+    let mut path = vec![to];
+    let mut c = to;
     while c != from {
-        c = s.parent[&c];
+        c = *parent.get(&c)?;
         if c != from {
             path.push(c);
+        }
+        if path.len() > parent.len() {
+            return None;
         }
     }
     path.reverse();
@@ -4493,6 +4508,34 @@ fn read_baseline() -> Baseline {
         .ok()
         .and_then(|t| toml::from_str(&t).ok())
         .unwrap_or_default()
+}
+
+/// The planner's parent links stay acyclic through a teleport waypoint, and
+/// the walk-back refuses a cycle rather than growing without bound. Before
+/// the waypoint's cost was recorded, a plain step into it from past the
+/// landing overwrote its parent and the walk-back looped forever (the
+/// kor3 pad hop's memory runaway). Disc-free.
+#[test]
+fn plan_search_parent_links_stay_acyclic() {
+    let (a, v, land, past) = ((0, 0), (1, 0), (9, 9), (2, 0));
+    let mut s = Search {
+        parent: HashMap::from([(a, a)]),
+        g: HashMap::from([(a, 0)]),
+        open: std::collections::BinaryHeap::new(),
+        goal: (20, 20),
+    };
+    // a -> (waypoint v) -> land, then land -> ... -> past, then past -> v.
+    s.step(Some(v), a, land, 2);
+    s.step(None, land, past, 3);
+    s.step(None, past, v, 4);
+    assert_eq!(
+        s.parent[&v], a,
+        "a dearer step must not re-parent the waypoint"
+    );
+    assert_eq!(walk_back(&s.parent, a, past), Some(vec![v, land, past]));
+    // A cyclic map (the shape the defect produced) ends, it does not loop.
+    let cyclic = HashMap::from([(a, a), (v, past), (land, v), (past, land)]);
+    assert_eq!(walk_back(&cyclic, a, past), None);
 }
 
 // ---------------------------------------------------------------------------
