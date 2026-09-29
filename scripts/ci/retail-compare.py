@@ -11,7 +11,7 @@ directory. See `docs/tooling/retail-compare.md`.
     scripts/ci/retail-compare.py                 # state channels only
     scripts/ci/retail-compare.py --images        # + frames (needs a display)
     scripts/ci/retail-compare.py --check         # assert the committed ratchet
-    scripts/ci/retail-compare.py --bless         # rewrite the baseline
+    scripts/ci/retail-compare.py --bless         # update the baseline (merges: unmeasured states/channels keep their values)
 
 Exit 0 and a `[skip]` line when the library or the extracted disc is missing,
 matching the repo's disc-gated convention.

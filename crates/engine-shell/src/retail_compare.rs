@@ -930,6 +930,20 @@ impl Baseline {
         b
     }
 
+    /// Lay this run's measurements over a prior baseline: states and
+    /// channels this run measured replace the prior values, everything else
+    /// (states outside a `--filter`, the image channel on a run without a
+    /// display) is carried over unchanged.
+    pub fn merged_over(self, prior: Option<Baseline>) -> Self {
+        let Some(mut out) = prior else { return self };
+        out.settle_ticks = self.settle_ticks;
+        out.classes.extend(self.classes);
+        for (label, chans) in self.states {
+            out.states.entry(label).or_default().extend(chans);
+        }
+        out
+    }
+
     /// Every drop against this baseline. A channel the run did not measure
     /// is skipped when `allow_unmeasured` names it (the image channel on a
     /// run without a display), and is a failure otherwise.

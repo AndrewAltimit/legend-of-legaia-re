@@ -93,7 +93,13 @@ pub fn run(args: RetailCompareArgs) -> Result<()> {
         println!("  {ch:<10} {mean:.3} over {n}");
     }
     if let Some(p) = args.write_baseline {
-        let b = Baseline::from_reports(&reports);
+        // A filtered or display-less run measures a subset, so it updates
+        // the states and channels it measured and keeps the rest of an
+        // existing baseline rather than rewriting the file from the subset.
+        let prior: Option<Baseline> = std::fs::read_to_string(&p)
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok());
+        let b = Baseline::from_reports(&reports).merged_over(prior);
         std::fs::write(&p, serde_json::to_string_pretty(&b)? + "\n")?;
         println!("wrote baseline {}", p.display());
     }

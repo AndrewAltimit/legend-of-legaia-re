@@ -231,6 +231,13 @@ pub fn engine_frame(
         .unwrap_or_else(|| std::env::temp_dir().join("legaia-retail-compare"));
     let work = base.join("engine");
     std::fs::create_dir_all(&work)?;
+    // The window's interactive default frames the field further out than
+    // retail (`CameraDistance::Far`); the comparand is retail's own frame,
+    // so the child reads a scratch options file pinning the retail vantage.
+    std::fs::write(
+        work.join("legaia-options.toml"),
+        "camera_distance = \"retail\"\n",
+    )?;
     let shot = work.join(format!("{label}.png"));
     let _ = std::fs::remove_file(&shot);
     let extracted = std::fs::canonicalize(extracted)?;

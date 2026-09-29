@@ -181,6 +181,15 @@ or extra geometry, wrong CLUTs and wrong overlays, and not on rasteriser
 noise. A retail frame whose mean luma is below `8` - a fade - is not scored:
 a dark engine frame would match it and say nothing about the scene.
 
+The engine frame comes from `play-window` run as a child in a scratch
+directory whose options file pins `camera_distance = "retail"`. The window's
+interactive default frames the field further out than retail, and a frame
+compared at that distance scores the zoom rather than the scene.
+
+The image channel is sensitive to machine load: fog and ambient animation
+are wall-clock paced in the window, so a run that overlaps a heavy build can
+read a few hundredths low. Check the image ratchet on an idle machine.
+
 The report writes `retail | engine | |diff|` side by side for every scored
 state. **Those PNGs are retail pixels**; the report directory must stay
 gitignored (`captures/` is).
@@ -191,7 +200,9 @@ gitignored (`captures/` is).
 measured channel's score, plus every state's class. The test
 `retail_compare_corpus` re-runs the corpus and fails when any state's
 channel falls below its baselined score. A rise is allowed and is folded in
-by a reviewed `--bless`. A baselined state missing from the local library is
+by a reviewed `--bless`. A bless merges into the existing file: a state
+outside a `--filter`, or the image channel on a run without a display, keeps
+its baselined value rather than being dropped. A baselined state missing from the local library is
 skipped (backups are per-machine), and the image channel is skipped unless
 the run renders frames (`LEGAIA_RETAIL_COMPARE_IMAGES=1`, which needs a
 display).
@@ -207,7 +218,7 @@ main checkout.
 scripts/ci/retail-compare.py                  # state channels, report under captures/retail-compare/
 scripts/ci/retail-compare.py --images         # + the image channel (needs a display)
 scripts/ci/retail-compare.py --images --check # assert the baseline
-scripts/ci/retail-compare.py --images --bless # rewrite the baseline after a reviewed rise
+scripts/ci/retail-compare.py --images --bless # fold a reviewed rise into the baseline
 scripts/ci/retail-compare.py --filter town01  # only matching labels
 
 LEGAIA_SAVES_LIBRARY=... LEGAIA_EXTRACTED_DIR=... \
