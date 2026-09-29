@@ -69,13 +69,27 @@ impl SceneHost {
                         )
                     })
                     .unwrap_or(0);
+                // Only the scene-init sweep's actors collide. The walk
+                // controller hands `FUN_801CFE4C` / `FUN_801CFC40` the actor
+                // list at the scene control block's `+0x0C` (`lw s6,
+                // -0x3CAC(v0)` = `0x8007C354` at `0x801D0344`), and the
+                // candidate gather `FUN_801CF754` walks that one list. The
+                // window sweep (`FUN_801D7B50`) spawns every placement whose
+                // anchor cell lacks `CELL_BIND_OWNED` onto its own list at
+                // `+0x24`, which no collision routine reads - so those
+                // placements are scenery the player walks through. Octam's
+                // gondola (`ropeway`) is one: `P2[6]` seats the player on its
+                // footprint (`A3 F8 24 1F`), and a solid box there boxed the
+                // player in on all four probes once the cutscene ended.
+                // REF: FUN_801CF754, FUN_801D7B50, FUN_801D01B0
+                let init_owned = p.anchor_cell & crate::field_regions::CELL_BIND_OWNED != 0;
                 crate::world::FieldPropCollider {
                     anchor: bind.map(|_| anchor),
                     center: (p.collider_x, p.collider_z),
                     live: (p.world_x, p.world_z),
                     moving_box: cflags & 0x0102_0000 != 0,
                     interact: cflags & 0x4002_0000 != 0,
-                    solid: cflags & 3 == 0,
+                    solid: init_owned && cflags & 3 == 0,
                 }
             })
             .collect();

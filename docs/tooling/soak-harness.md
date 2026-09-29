@@ -214,9 +214,8 @@ disc and, with one, replays each and reports whether it **still reproduces**.
 It never fails on a fixture that stopped reproducing: that is the signal a fix
 landed, and the fixture then moves to `fixed/`.
 
-| open replay | finding | status |
-|---|---|---|
-| `ropeway_player_parked_on_gondola` | a New Game party entering `ropeway` cold plays the scene's timeline until its `B8 26 84 14` (a targeted `0x38` hold of `0x14` frames); when the hold expires the timeline ends instead of resuming at the next op, and free roam resumes with the player on the gondola deck (`y = -320`) where no direction moves them | open: the hold's resume in the timeline runner, or a cold entry past the story gate the timeline assumes |
+An open finding's replay stays here until its fix moves it
+to `fixed/`.
 
 [`scripts/replays/soak/fixed/`](../../scripts/replays/soak/fixed/) holds the
 closed findings as regressions. `soak_fixed_fixtures` replays each and fails
@@ -243,6 +242,7 @@ regression.
 | `taiku2_hp_bar_absorbing_park` | the `0x51` bar-drain gate parked on an absorbing HP-bar pair | the restaged action clip replays |
 | `station3_door_of_light_head_define` / `conc3_door_of_light_head_define` | a Door of Light used where the region record stores an all-zero return triple warped to `init_data` and failed the scene entry | a travel word inside the TOC header rows is a miss (`World::drain_staged_menu_warp`) |
 | `jouinb_long_scripted_walk` | a scripted player walk across most of the map outlasted the stall window | harness: a walk op still stepping is progress |
+| `ropeway_player_parked_on_gondola` | Octam's first-arrival cutscene (`ropeway` `P2[6]`) ended with the player seated on the gondola (`A3 F8 24 1F`), unable to step off in any direction | only the scene-init sweep's placements collide: the walk controller's candidate gather `FUN_801CF754` walks the `+0x0C` actor list, and the window sweep's placements (the gondola among them) live on `+0x24` |
 | `balden_fishing_exchange_pad_dead` | the prize list opened from the pond's hub menu answered no pad input | the engine steps the list off the pad edge (state `0x78`'s keys) |
 
 The field-side fixes are described with their retail evidence in
