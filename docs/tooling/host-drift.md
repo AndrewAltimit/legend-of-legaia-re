@@ -1347,10 +1347,10 @@ carries `0x200`, and retail's command ring crosses the Ra-Seru chip out with
 the red `etim` quad (`FUN_801DBC30(0xF8, 0x42)`) and refuses its arm. Both
 play hosts take the refusal and the greyed chip from the engine
 (`battle_hud::battle_magic_chip`, `World::tick_battle_command`), and both
-draw the X the same way: `battle_hud::battle_raseru_cross_out` answers
-whether the ring is up under the bit, and `engine-ui`'s
-`battle_command_ui::cross_out_mark_sprite` places it at
-`RASERU_MARK_ANCHOR` after the chip plates.
+draw the X through one call: `engine-ui`'s
+`battle_command_ui::battle_command_menu_sprites` draws the chip plates and,
+switched by `battle_hud::battle_raseru_cross_out` (the ring is up under the
+bit), places the mark at `RASERU_MARK_ANCHOR` after them.
 
 The X is a sprite out of the chrome atlas, not a VRAM screen primitive,
 because the browser page draws the chips on its 2D overlay canvas above the

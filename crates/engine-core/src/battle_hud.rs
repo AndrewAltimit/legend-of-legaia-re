@@ -1721,9 +1721,10 @@ pub fn battle_magic_chip_mark(world: &crate::world::World) -> Option<crate::musc
 /// `FUN_801DBC30(0xF8, 0x42)` every frame of the phase, before it reads the
 /// pad (`0x801D12DC..0x801D12F4`).
 ///
-/// Both play hosts append `engine-ui`'s `battle_command_ui::cross_out_mark_sprite`
-/// at that anchor to the chip sprites when this answers `true` (native
-/// `window/hud.rs`, page `play_battle.rs`), out of the chrome atlas cell
+/// Both play hosts pass this as the switch of `engine-ui`'s
+/// `battle_command_ui::battle_command_menu_sprites` (native `window/hud.rs`,
+/// page `play_battle.rs`), which appends the mark at that anchor after the
+/// chip plates, out of the chrome atlas cell
 /// `save_menu_atlas::add_cross_out_mark` bakes from the effect page.
 ///
 /// PORT: FUN_801D0748 (phase-`0x28` arm, the `0x200` cross-out at `0x801D12DC..0x801D12F4`)
