@@ -59,9 +59,10 @@
 //! affordable damage spell, else enter an arts string through `Command` (a
 //! sparring tutorial's lesson command in a tutorial). The
 //! seated tier talks to the NPCs whose records reach a flag the next anchor
-//! carries or a destination the route needs; neither tier opens menus or
-//! buys anything, so a story beat that waits on one reads as a stall at that
-//! beat. The route follows `0x3F` scene changes and FMV hand-offs; a
+//! carries or a destination the route needs, and the pad tier plays the same
+//! beats by walking to them; neither tier buys or equips (the pad tier opens
+//! the pause menu only to heal), so a story beat that waits on one reads as
+//! a stall at that beat. The route follows `0x3F` scene changes and FMV hand-offs; a
 //! transport an entry script spawns on arrival is a missing edge (see
 //! `docs/tooling/full-game-ladder.md`).
 //!
@@ -961,6 +962,9 @@ fn flag_window_pad(session: &BootSession) -> Option<u16> {
 fn run(session: &mut BootSession, budget: usize, stop_on_release: bool) -> Run {
     let mut idle = 0usize;
     for f in 0..budget {
+        if let Err(e) = pad_budget(session) {
+            return Run::Parked(e);
+        }
         if session.host.world.mode == SceneMode::Battle {
             if let Some(r) = drain_battle(session) {
                 return r;
@@ -1339,6 +1343,9 @@ fn drain_battle(session: &mut BootSession) -> Option<Run> {
         eprintln!("    [battle] start: {}", battle_snapshot(session));
     }
     for t in 0..BATTLE_TICKS {
+        if pad_budget(session).is_err() {
+            break;
+        }
         // A press is an edge: alternate the wanted mask with neutral.
         let want = fight_pad(session);
         let pad = if prev == 0 { want } else { 0 };
@@ -1727,7 +1734,7 @@ const SUBCELL: i16 = 32;
 const TILE: i16 = 128;
 const PAD_LEG_FRAMES: u32 = 12_000;
 const PAD_STALL_FRAMES: u32 = 300;
-const MAX_PLAN_NODES: usize = 300_000;
+const MAX_PLAN_NODES: usize = 120_000;
 /// Tiles short of a door the lattice may end before a pad hop is called
 /// unwalkable rather than attempted.
 const DOOR_APPROACH_SLACK: i32 = 6;
@@ -2119,6 +2126,11 @@ impl Search {
     }
 }
 
+thread_local! {
+    /// Plans run and cells they expanded, for the trace's cost line.
+    static PLAN_STATS: std::cell::Cell<(u64, u64)> = const { std::cell::Cell::new((0, 0)) };
+}
+
 /// A* over the collision lattice toward `goal`, never entering an `avoid`
 /// dispatch tile (retail fires on a tile change, so occupying one is safe).
 /// A step into a kind-0 teleport tile, or against an object door's contact
@@ -2244,6 +2256,10 @@ fn plan_path(
             s.step(None, cur, next, gcur + 1);
         }
     }
+    PLAN_STATS.with(|p| {
+        let (n, cells) = p.get();
+        p.set((n + 1, cells + s.parent.len() as u64));
+    });
     if best == from {
         return None;
     }
@@ -2345,9 +2361,26 @@ fn pad_hop(session: &mut BootSession, graph: &DiscGraph, dest: &str) -> Result<S
     let (sx, sz) = player_xz(session);
     let start = cell_of(sx, sz);
     // The door the lattice gets closest to.
-    let misses: Vec<((i16, i16), i32)> = doors
+    // One plan per door band, not per tile: the tiles of one band share a
+    // reachability, and each plan can search the whole map.
+    let me0 = tile_of(sx, sz);
+    let mut tiles: Vec<(i16, i16)> = doors
         .iter()
         .map(|d| (i16::from(d.tile.0), i16::from(d.tile.1)))
+        .collect();
+    tiles.sort_by_key(|t| (t.0 - me0.0).abs() + (t.1 - me0.1).abs());
+    let mut picked: Vec<(i16, i16)> = Vec::new();
+    for t in tiles {
+        if picked.len() < 6
+            && !picked
+                .iter()
+                .any(|p| (p.0 - t.0).abs() + (p.1 - t.1).abs() <= 2)
+        {
+            picked.push(t);
+        }
+    }
+    let misses: Vec<((i16, i16), i32)> = picked
+        .into_iter()
         .map(|g| {
             let miss = plan_path(session, start, g, &avoid)
                 .and_then(|p| p.last().copied())
@@ -2415,6 +2448,15 @@ fn pad_hop(session: &mut BootSession, graph: &DiscGraph, dest: &str) -> Result<S
 }
 
 thread_local! {
+    /// `(scene, formation)` of every boss fight a stager beat armed this
+    /// segment. A stager's battle fires on the player's next field step, so
+    /// it interrupts whatever walk comes next; that walk must fight it, not
+    /// flee it as it would a random encounter.
+    static STAGED_FIGHTS: std::cell::RefCell<BTreeSet<(String, Option<u16>)>> =
+        const { std::cell::RefCell::new(BTreeSet::new()) };
+}
+
+thread_local! {
     /// Set while the pad tier drives: every beat is then played with pad
     /// input only - walked to, faced and pressed - instead of seated.
     static PAD_HAND: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -2422,6 +2464,27 @@ thread_local! {
 
 fn pad_hand() -> bool {
     PAD_HAND.with(std::cell::Cell::get)
+}
+
+/// Frames the pad tier may spend on one segment. Walking every beat of a
+/// scene is slow, and a segment the pad hand cannot finish should read as a
+/// stall rather than hold the whole run; a real play of one milestone-to-
+/// milestone stretch is well inside it.
+const PAD_SEGMENT_FRAMES: u64 = 216_000;
+
+thread_local! {
+    /// `BootSession::frames` at which the current pad segment's budget runs
+    /// out.
+    static PAD_DEADLINE: std::cell::Cell<u64> = const { std::cell::Cell::new(u64::MAX) };
+}
+
+/// `Err` once the pad segment's frame budget is spent.
+fn pad_budget(session: &BootSession) -> Result<(), String> {
+    if pad_hand() && session.frames >= PAD_DEADLINE.with(std::cell::Cell::get) {
+        Err(format!("pad frame budget ({PAD_SEGMENT_FRAMES}) spent"))
+    } else {
+        Ok(())
+    }
 }
 
 /// Where a [`pad_walk`] ended.
@@ -2506,15 +2569,19 @@ fn plan_around(
 /// A route out of a wedge: the player can come to rest in the notch of a
 /// stair-stepped diagonal wall, where every one of the lattice's four
 /// probe-checked steps reads blocked although the free movement that got
-/// it there can leave. Plan from the nearest cell a step can leave instead,
-/// and head there first.
-fn unwedge(
-    session: &BootSession,
-    from: Cell,
-    goal: (i16, i16),
-    avoid: &HashSet<(i32, i32)>,
-    doors: &HashSet<(i32, i32)>,
-) -> Vec<Cell> {
+/// it there can leave. Head for the nearest cell a step can leave; the
+/// route is planned again from there.
+fn unwedge(session: &BootSession, from: Cell) -> Vec<Cell> {
+    let w = &session.host.world;
+    let open = |c: Cell| {
+        let (x, z) = cell_center(c);
+        (0..4).any(|d| !w.field_dir_blocked(x, z, d))
+    };
+    // Only a real wedge: a start that can step somewhere but whose route
+    // simply ends here (the goal is out of reach) is not one.
+    if open(from) {
+        return Vec::new();
+    }
     for r in 1..=3i16 {
         for dz in -r..=r {
             for dx in -r..=r {
@@ -2523,14 +2590,8 @@ fn unwedge(
                 }
                 let c = (from.0 + dx, from.1 + dz);
                 let (x, z) = cell_center(c);
-                if session.host.world.field_tile_is_wall(x, z) {
-                    continue;
-                }
-                let p = plan_around(session, c, goal, avoid, doors);
-                if !p.is_empty() {
-                    let mut out = vec![c];
-                    out.extend(p);
-                    return out;
+                if !w.field_tile_is_wall(x, z) && open(c) {
+                    return vec![c];
                 }
             }
         }
@@ -2555,6 +2616,9 @@ fn pad_walk(
     if dist(here(session)) <= within {
         return Ok(Walk::Arrived);
     }
+    // A player low on HP heals before setting out, not after the next
+    // encounter has already rolled.
+    pad_field_heal(session, 500);
     if std::env::var_os("LEGAIA_FGL_WALK_DEBUG").is_some() {
         let w = &session.host.world;
         eprintln!(
@@ -2645,32 +2709,62 @@ fn pad_walk(
     let mut visited: HashSet<Cell> = HashSet::new();
     let mut since = 0u32;
     let mut planned_from = None;
+    let mut scripted_next = session.host.world.encounters.scripted_formation_pending;
     let mut path = Vec::new();
     for _ in 0..PAD_LEG_FRAMES {
+        pad_budget(session)?;
         if session.host.world.mode == SceneMode::Battle {
             let trace = std::env::var_os("LEGAIA_FGL_TRACE").is_some();
+            let f0 = flags_of_world(session);
+            let formation = session
+                .host
+                .world
+                .battle
+                .active_formation
+                .as_ref()
+                .map(|f| f.formation_id);
+            scripted_next |= formation.is_some()
+                && STAGED_FIGHTS.with(|s| s.borrow().contains(&(scene_name(session), formation)));
             if trace {
                 eprintln!(
-                    "    [battle] {} at start: {}",
+                    "    [battle] {} ({}) at start: {}",
                     scene_name(session),
+                    if scripted_next {
+                        "scripted, fought"
+                    } else {
+                        "random, fled"
+                    },
                     battle_snapshot(session)
                 );
             }
-            FLEE_ENCOUNTERS.with(|f| f.set(true));
+            // A random encounter is fled; a fight a script installed (a
+            // boss stager's, which fires on the next field step) is fought.
+            FLEE_ENCOUNTERS.with(|f| f.set(!scripted_next));
             let r = drain_battle(session);
             FLEE_ENCOUNTERS.with(|f| f.set(false));
+            scripted_next = false;
             if trace {
-                eprintln!("    [battle] ended: {r:?}");
+                eprintln!(
+                    "    [battle] ended: {r:?}; flags +{:?}",
+                    flags_of_world(session)
+                        .difference(&f0)
+                        .map(|f| format!("0x{f:03X}"))
+                        .collect::<Vec<_>>()
+                );
             }
             if let Some(r) = r {
                 return Err(format!("battle on the walk to {goal:?}: {r:?}"));
             }
+            pad_field_heal(session, 500);
+            planned_from = None;
+            path.clear();
             since = 0;
             continue;
         }
         if session.host.world.mode != walking_mode {
             return Err(format!("mode changed to {:?}", session.host.world.mode));
         }
+        scripted_next = session.host.world.encounters.scripted_formation_pending;
         let (wx, wz) = player_xz(session);
         let cell = cell_of(wx, wz);
         if planned_from != Some(cell) {
@@ -2681,10 +2775,18 @@ fn pad_walk(
                 // from the waypoint until the jump happens.
                 let jump = path.get(i + 1).is_some_and(|&n| !adjacent(cell, n));
                 path.drain(..if jump { i } else { i + 1 });
+            } else if let Some(i) = path
+                .iter()
+                .take(8)
+                .position(|&c| (c.0 - cell.0).abs() + (c.1 - cell.1).abs() <= 2)
+            {
+                // A slide a cell or two off the route rejoins it rather than
+                // re-planning the whole map.
+                path.drain(..i);
             } else {
                 path = plan_around(session, cell, goal, avoid, &doors);
                 if path.is_empty() {
-                    path = unwedge(session, cell, goal, avoid, &doors);
+                    path = unwedge(session, cell);
                 }
             }
             planned_from = Some(cell);
@@ -2864,6 +2966,159 @@ fn pad_step_onto(session: &mut BootSession, tile: (u8, u8)) -> Result<Walk, Stri
 }
 
 // ---------------------------------------------------------------------------
+// Healing through the pause menu
+// ---------------------------------------------------------------------------
+
+/// Press `mask` for one frame and release on the next: every menu surface
+/// reads `just_pressed`, so a held mask is one event.
+fn tap_pad(session: &mut BootSession, mask: u16) {
+    session.host.world.set_pad(mask);
+    let _ = session.tick();
+    session.host.world.set_pad(0);
+    let _ = session.tick();
+}
+
+/// The weakest living party member's HP as a fraction of its maximum, in
+/// per-mille. `1000` for a party at full health.
+fn party_hp_permille(session: &BootSession) -> u32 {
+    let w = &session.host.world;
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    (0..n)
+        .filter_map(|i| {
+            let b = &w.actors.get(i)?.battle;
+            (b.max_hp > 0 && b.hp > 0).then(|| u32::from(b.hp) * 1000 / u32::from(b.max_hp))
+        })
+        .min()
+        .unwrap_or(1000)
+}
+
+/// Heal the party with the pad, as a player does before a boss or after a
+/// fight that left it low: Start opens the pause menu, the cursor walks to
+/// Items, Use, the first HP-restoring item, the weakest member; repeat while
+/// the weakest is below `threshold` per-mille and the bag has a restorative;
+/// then Circle back out to the field. Every step is a pad edge through the
+/// same menu sessions both play hosts drive. Returns how many items it used.
+fn pad_field_heal(session: &mut BootSession, threshold: u32) -> usize {
+    use legaia_engine_core::field_menu::FieldMenuRow;
+    use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+    use legaia_engine_core::inventory_use::InventoryUseState;
+    use legaia_engine_core::items::ItemEffect;
+    use legaia_engine_core::pause_screens::PauseItemsFocus;
+    if !walking(session) || !released(session) || party_hp_permille(session) >= threshold {
+        return 0;
+    }
+    tap_pad(session, PadButton::Start.mask());
+    if session.field_menu.is_none() {
+        return 0;
+    }
+    let items_row = FieldMenuRow::Items.index();
+    let mut used = 0usize;
+    for _ in 0..200 {
+        let Some(menu) = session.field_menu.as_ref() else {
+            break;
+        };
+        let pad = match session.field_menu_sub.as_ref() {
+            None => match menu.phase() {
+                legaia_engine_core::field_menu::FieldMenuPhase::Browsing { cursor } => {
+                    if party_hp_permille(session) >= threshold
+                        || used >= 4
+                        || used > 0 && cursor != items_row
+                    {
+                        PadButton::Circle.mask()
+                    } else if cursor != items_row {
+                        PadButton::Down.mask()
+                    } else if used > 0 {
+                        PadButton::Circle.mask()
+                    } else {
+                        PadButton::Cross.mask()
+                    }
+                }
+                _ => 0,
+            },
+            Some(FieldMenuSubsession::Items(p)) => {
+                let heals = |id: u8| {
+                    p.inner.catalog.get(id).is_some_and(|e| {
+                        e.usable_in_field
+                            && matches!(e.effect, ItemEffect::Heal { .. } | ItemEffect::HealAll)
+                    })
+                };
+                let want = p
+                    .inner
+                    .filtered_items
+                    .iter()
+                    .position(|&i| p.inner.items.get(i).is_some_and(|&id| heals(id)));
+                match (p.focus, &p.inner.state) {
+                    _ if party_hp_permille(session) >= threshold || want.is_none() || used >= 4 => {
+                        PadButton::Circle.mask()
+                    }
+                    (PauseItemsFocus::Command, _) => {
+                        if p.command_cursor == 0 {
+                            PadButton::Cross.mask()
+                        } else {
+                            PadButton::Up.mask()
+                        }
+                    }
+                    (PauseItemsFocus::List, InventoryUseState::Browsing { cursor }) => {
+                        let want = want.unwrap_or(0);
+                        if *cursor < want {
+                            PadButton::Down.mask()
+                        } else if *cursor > want {
+                            PadButton::Up.mask()
+                        } else {
+                            PadButton::Cross.mask()
+                        }
+                    }
+                    (PauseItemsFocus::List, InventoryUseState::TargetSelect { cursor, .. }) => {
+                        let weakest = p
+                            .inner
+                            .targets
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, t)| !t.is_enemy && t.alive && t.hp_max > 0)
+                            .min_by_key(|(_, t)| u32::from(t.hp) * 1000 / u32::from(t.hp_max))
+                            .map_or(0, |(k, _)| k);
+                        if *cursor < weakest {
+                            PadButton::Down.mask()
+                        } else if *cursor > weakest {
+                            PadButton::Up.mask()
+                        } else {
+                            used += 1;
+                            PadButton::Cross.mask()
+                        }
+                    }
+                    _ => PadButton::Circle.mask(),
+                }
+            }
+            Some(_) => PadButton::Circle.mask(),
+        };
+        if pad == 0 {
+            let _ = session.tick();
+            continue;
+        }
+        tap_pad(session, pad);
+    }
+    // Whatever is still open closes on Circle.
+    for _ in 0..16 {
+        if session.field_menu.is_none() {
+            break;
+        }
+        tap_pad(session, PadButton::Circle.mask());
+    }
+    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+        eprintln!(
+            "    [heal] used {used} item(s); weakest now {} per-mille; menu {}",
+            party_hp_permille(session),
+            if session.field_menu.is_some() {
+                "STILL OPEN"
+            } else {
+                "closed"
+            }
+        );
+    }
+    used
+}
+
+// ---------------------------------------------------------------------------
 // Segments
 // ---------------------------------------------------------------------------
 
@@ -2949,6 +3204,24 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
         log.push(format!("{name}: {ran} beat(s) run, +{gained} flag(s)"));
     };
     for p in boss_stager_placements(&mf, &man) {
+        STAGED_FIGHTS.with(|s| {
+            s.borrow_mut()
+                .insert((name.clone(), Some(u16::from(p.formation_row))))
+        });
+        if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+            eprintln!(
+                "    [stager] {name} P1[{}] row {} park {:?} (set {:?}, next anchor {:?}) station {:?} spawn {:?} parked {}",
+                p.placement_index,
+                p.formation_row,
+                p.park_gate_flag,
+                p.park_gate_flag
+                    .map(|f| session.host.world.system_flag_test(f)),
+                p.park_gate_flag.map(next_anchor_has),
+                p.station_world,
+                p.spawn_world,
+                p.spawn_parked
+            );
+        }
         if p.park_gate_flag
             .is_some_and(|f| session.host.world.system_flag_test(f))
         {
@@ -2962,16 +3235,31 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
         let (tx, tz) = tile_of(at.0, at.1);
         ran += 1;
         if pad_hand() {
+            // A player walks into a boss at full strength.
+            pad_field_heal(session, 900);
             // Walk up to the stager; its touch dispatch runs off the
             // locomotion step, as it does for a player.
             let avoid = pad_avoid(session, None);
-            match pad_walk(session, (tx, tz), &avoid, 1) {
+            let walk = pad_walk(session, (tx, tz), &avoid, 1);
+            if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                eprintln!("    [stager] walk -> {walk:?}");
+            }
+            match walk {
                 Ok(Walk::Entered(s)) => {
                     finish(session, log, ran);
                     return Ok(Some(s));
                 }
                 Ok(Walk::Arrived) => {
                     let _ = pad_lean(session, move |_| Some(at), 24, |s| !released(s));
+                    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                        eprintln!(
+                            "    [stager] leaned: holder {} at {}; touch {:?}; player {:?}",
+                            holder(session),
+                            park_site(session),
+                            session.host.world.props.active_walk_touch,
+                            player_xz(session)
+                        );
+                    }
                 }
                 Err(_) => continue,
             }
@@ -2981,7 +3269,12 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
                 .world
                 .seat_player_at_tile(tx.clamp(0, 127) as u8, tz.clamp(0, 127) as u8);
         }
-        match run_while_moving(session, DEEP_EXIT_TICKS) {
+        let f0 = flags_of_world(session);
+        let r = run_while_moving(session, DEEP_EXIT_TICKS);
+        trace_beat(session, &f0, || {
+            format!("{name} boss stager P1[{}] -> {r:?}", p.placement_index)
+        });
+        match r {
             Run::Entered(s) => {
                 finish(session, log, ran);
                 return Ok(Some(s));
@@ -3024,6 +3317,7 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
             if let Some(w) = wiped(session) {
                 return Err(w);
             }
+            pad_budget(session)?;
             if ran >= MAX_BEATS {
                 continue;
             }
@@ -3049,6 +3343,7 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
             if let Some(w) = wiped(session) {
                 return Err(w);
             }
+            pad_budget(session)?;
             if doors.contains(&rec)
                 || walked.contains(&rec)
                 || overreach.contains(&usize::from(rec))
@@ -3097,6 +3392,7 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
             if let Some(w) = wiped(session) {
                 return Err(w);
             }
+            pad_budget(session)?;
             if !touched.insert(slot) || ran >= MAX_BEATS {
                 continue;
             }
@@ -3526,6 +3822,18 @@ fn talk_beats(
         })
         .collect();
     slots.sort_unstable();
+    if pad_hand() {
+        // A walking player talks to the nearest first: every tile walked is
+        // an encounter roll.
+        let (px, pz) = player_xz(session);
+        let me = dispatch_tile(px, pz);
+        slots.sort_by_key(|s| {
+            w.npcs.positions.get(s).map_or(i32::MAX, |&(x, z)| {
+                let t = dispatch_tile(x, z);
+                (t.0 - me.0).abs() + (t.1 - me.1).abs()
+            })
+        });
+    }
     slots
 }
 
@@ -3698,6 +4006,9 @@ fn interact_at(
 /// ended with the frame back on the field; `Some(run)` for anything else.
 fn page_talk(session: &mut BootSession) -> Option<Run> {
     for f in 0..DEEP_EXIT_TICKS {
+        if let Err(e) = pad_budget(session) {
+            return Some(Run::Parked(e));
+        }
         if session.host.world.mode == SceneMode::Battle {
             if let Some(r) = drain_battle(session) {
                 return Some(r);
@@ -3730,23 +4041,42 @@ fn page_talk(session: &mut BootSession) -> Option<Run> {
 /// the same talk. Each side is tried until one gains a flag, as the seated
 /// hand does.
 fn pad_talk_to(session: &mut BootSession, slot: u8) -> Run {
-    let Some(&(nx, nz)) = session.host.world.npcs.positions.get(&slot) else {
+    if !session.host.world.npcs.positions.contains_key(&slot) {
         return Run::Released;
-    };
-    let npc_tile = {
-        let t = dispatch_tile(nx, nz);
-        (t.0 as i16, t.1 as i16)
-    };
+    }
     let avoid = pad_avoid(session, None);
     let mut last = Run::Released;
     let mut talked = false;
     // Up to the NPC first (a counter or a table often fills the tile
-    // beside it, and the probe reaches over one), then from each side.
-    let approaches: Vec<((i16, i16), i32)> = std::iter::once((npc_tile, 1))
-        .chain(beside(session, npc_tile).into_iter().map(|t| (t, 0)))
-        .collect();
-    for (side, within) in approaches {
-        match pad_walk(session, side, &avoid, within) {
+    // beside it, and the probe reaches over one), then from each side. The
+    // NPC's tile is re-read per attempt: a routed NPC walks while the
+    // player does.
+    for attempt in 0..5usize {
+        let Some(&(nx, nz)) = session.host.world.npcs.positions.get(&slot) else {
+            break;
+        };
+        let npc_tile = {
+            let t = dispatch_tile(nx, nz);
+            (t.0 as i16, t.1 as i16)
+        };
+        let (side, within) = if attempt == 0 {
+            (npc_tile, 1)
+        } else {
+            match beside(session, npc_tile).get(attempt - 1) {
+                Some(&t) => (t, 0),
+                None => break,
+            }
+        };
+        let walk = pad_walk(session, side, &avoid, within);
+        if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+            eprintln!(
+                "      [talk-walk] P1[{slot}] attempt {attempt} to {side:?}: {:?} at frame {}",
+                walk.as_ref()
+                    .map_err(|e| e.chars().take(100).collect::<String>()),
+                session.frames
+            );
+        }
+        match walk {
             Ok(Walk::Entered(s)) => return Run::Entered(s),
             Ok(Walk::Arrived) => {}
             Err(e) => {
@@ -3763,7 +4093,14 @@ fn pad_talk_to(session: &mut BootSession, slot: u8) -> Run {
         }
         if !facing(session) {
             if !talked {
-                last = Run::Parked(format!("could not face P1[{slot}] from {side:?}"));
+                let w = &session.host.world;
+                last = Run::Parked(format!(
+                    "could not face P1[{slot}] from {side:?}: player {:?} npc {:?} probe hits {:?} holder {}",
+                    player_xz(session),
+                    w.npcs.positions.get(&slot),
+                    w.field_interact_probe_slot(),
+                    holder(session)
+                ));
             }
             continue;
         }
@@ -3847,6 +4184,7 @@ fn traverse(
     let mut steps = 0usize;
     while steps < MAX_HOPS + vias.len() * 4 + dead.len() * 4 {
         steps += 1;
+        pad_budget(session)?;
         // Let whatever the last landing started finish first.
         let here = scene_name(session);
         match run_while_moving(session, SCRIPT_CEILING) {
@@ -4111,9 +4449,19 @@ fn run_segment(
             let mut session = open_session(&inp.extracted);
             let opts = live_opts(true);
             seed(&mut session, from, from_anchor, &opts)?;
+            PAD_DEADLINE.with(|d| d.set(session.frames + PAD_SEGMENT_FRAMES));
+            let start = session.frames;
             let mut trail = vec![scene_name(&session)];
-            traverse(&mut session, graph, to, true, &mut trail)
-                .map_err(|e| format!("{e} [trail {}]", trail.join(">")))
+            let r = traverse(&mut session, graph, to, true, &mut trail)
+                .map_err(|e| format!("{e} [trail {}]", trail.join(">")));
+            if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                let (n, cells) = PLAN_STATS.with(std::cell::Cell::take);
+                eprintln!(
+                    "    [pad] {} frames, {n} plans over {cells} cells",
+                    session.frames - start
+                );
+            }
+            r
         }));
         match padded {
             Ok(Ok(())) => rep.tier = Tier::Pad,

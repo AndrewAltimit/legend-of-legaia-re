@@ -184,10 +184,52 @@ whose FMV hands off to it (`town01` P1[40] spawns P2[25], the mist-night
 movie). Battles are fought with the pad (below).
 
 The **pad tier** repeats the route from a fresh seed with the random-encounter
-roll armed. It walks to each door with a BFS over the collision lattice
-(`World::field_dir_blocked` and its actor sibling) and a follower that inverts
-the live camera remap - a condensed `critical_path_replay` walker. It plays no
-beats.
+roll armed, and plays the same waypoints and beats with pad input only. It
+plans with an A* over the collision lattice (`World::field_dir_blocked` and the
+actor boxes) and follows with a walker that inverts the live camera remap - a
+condensed `critical_path_replay` walker. The planner models the two ways a
+field map joins its own parts, since a town's house interiors sit in the same
+map as its street:
+
+- a **kind-0 teleport** tile is an edge to its landing cell. A closed door prop
+  standing over one reads solid from every side, and the planner counts it
+  open: pressing into it is the touch that opens it (`31 00`).
+- an **object door** - a walk-touch placement whose record, resolved against
+  the live flags, moves the player - is an edge wherever the leading actor
+  probe points reach its contact box, including through the wall the door is
+  set in. A second door leaf beside the contact counts as open for the same
+  reason.
+
+The follower presses a teleport waypoint until the jump lands, backs out of a
+diagonal-wall notch where all four lattice steps read blocked, and, held
+against something for a second, tries the action button. Walks avoid the live
+walk-on bands (a band whose record's story gates shut it is walkable) unless
+one is the only way through.
+
+The pad hand's beats are the seated tier's, played as a player plays them:
+
+- a **talk** walks up to the NPC (re-reading a routed NPC's position),
+  leans toward it until the retail interact probe lands on it, presses Cross,
+  pages the conversation and steps away. Talks go nearest first;
+- a **walk-on** walks to an inert tile beside the band, then onto it;
+- an **object door** or a **boss stager** is walked up to and leaned on. A
+  stager's fight fires on the next field step, so the walk that step belongs
+  to fights it instead of fleeing it;
+- before a boss, and whenever the weakest member is below half HP, the hand
+  heals through the pause menu: Start, Items, Use, the first HP restorative,
+  the weakest member, Circle back out.
+
+A pad segment has a frame budget (`PAD_SEGMENT_FRAMES`); a segment the hand
+cannot finish inside it stalls with `pad frame budget spent` rather than holding
+the run. `LEGAIA_FGL_TRACE` prints each pad segment's frames and planner cost,
+and `LEGAIA_FGL_WALK_DEBUG` adds a stalled walk's wall map, the scene's
+teleports and door colliders.
+
+A door whose walk component the start cannot reach is tried through a
+**crossing scene**: a scene the current one has a door to and a door back
+from, entered and left by its reachable door farthest from where the player
+came in. A crossing that returns to the same side is taken once more with its
+own beats played first.
 
 In both passes a scripted sequence gets Cross on a press-2-release-14 duty
 cycle, the naming prompt's Yes/No confirm gets Up first (it opens on No), and a
@@ -270,8 +312,8 @@ one level down from the tier that failed:
 | `B is reached by an FMV hand-off from record(s) {(p, r)}` | The hop is a movie whose trigger record is not on a walk-on band. |
 | `reach flag(s) 0x.. never set` | The target scene was reached but the beat that separates the milestones did not play. |
 | `battle unresolved ...: action SM ctx[7]=0x.. <state> actor N` | The battle action state machine (retail `FUN_801E295C`) sat in that state for the whole budget. |
-| `party wiped: ...` | The pad fighter lost. It heals, casts and enters arts, but it never guards, charges Spirit or changes equipment. |
-| `no walkable path: the start's walk component ends N tiles short` | The lattice cannot reach the door from where the player stands; the planner does not route through a crossing scene. |
+| `party wiped: ...` | The fighter lost. It heals, casts and enters arts, but it never guards, charges Spirit or changes equipment. |
+| `no walkable path: the start's walk component ends N tiles short` | The lattice cannot reach the door from where the player stands, through the scene's teleports and object doors; a pad hop then tries a crossing scene. |
 | `pad walk stalled at tile ..` | A path existed and the follower stopped making progress on it. |
 | `PANIC: ...` | An engine panic, caught per segment. |
 
@@ -304,15 +346,17 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   scene graph, not locomotion; the pad tier is the locomotion claim.
 - The seated tier talks only to NPCs whose record reaches a flag the next
   anchor carries or a destination the route needs, and picks conversation
-  options by rotation, not by reading them. Neither tier opens a menu, buys,
-  equips or uses an item outside a tutorial battle; a beat that waits on one
-  reads as a stall at that beat.
-- The pad fighter never guards, charges Spirit, targets a weakness or
-  changes equipment, and it flees a travel leg's random encounter. A fight
-  that needs any of those reads as a wipe.
-- The pad planner does not route through a crossing scene, so a door on the
-  far side of a split walk component reads as `no walkable path`.
-  `critical_path_replay` carries the `map01` / `suimon` crossing by hand.
+  options by rotation, not by reading them. Neither tier buys or equips, and
+  only the pad tier opens the pause menu (to heal); a beat that waits on a
+  purchase or an equip reads as a stall at that beat.
+- The fighter never guards, charges Spirit, targets a weakness or changes
+  equipment, and it flees a travel leg's random encounter. A fight that needs
+  any of those reads as a wipe.
+- The pad planner finds a crossing scene by trial, not by reading which side
+  each of its doors lands on, and a crossing whose side is story state
+  (`suimon`'s water gate `0x27B`) needs that beat played first.
+- The pad hand heals only with items it already carries; it does not buy
+  them, rest at an inn, or use magic.
 - Routes follow `0x3F` names and FMV hand-offs, and prefer walk-on bands. A
   transport an entry script spawns on a story flag (`map01`'s P1[0] spawns
   the P2[31] / P2[32] flights on `0x2C3` / `0x2C5`; `station`'s spawns the
