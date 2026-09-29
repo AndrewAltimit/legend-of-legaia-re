@@ -102,8 +102,10 @@ fn fight_pad(session: &BootSession) -> u16 {
 /// Longest a real approach walk takes: the widest formation gap is under
 /// 3000 units and the slowest walk covers ~10 units a frame.
 const APPROACH_HOLD_LIMIT: u32 = 900;
-/// Tick budget for the whole fight.
-const BATTLE_TICKS: u32 = 60_000;
+/// Tick budget for the whole fight. Every swing plays its real clip length
+/// (the engine installs the party's battle forms at battle entry), so a
+/// padded-HP party's fight to a wipe runs past sixty thousand ticks.
+const BATTLE_TICKS: u32 = 120_000;
 /// No battle position leaves this box (the stage is a few thousand units
 /// across; the parked fights had members at +-17000).
 const STAGE_BOUND: i16 = 6000;
