@@ -226,6 +226,12 @@ pub struct TitleStripRow {
 /// it only while `_DAT_8007BB00` is set, and hands the same brightness byte
 /// to the dimmed backdrop art `FUN_801E02A4` right after it.
 ///
+/// Both play hosts draw it through [`title_band_sprites`]' dim arm
+/// ([`TitleBandState::backdrop`]) for the save-select the title's Continue
+/// opens: the native window's `boot_title_band_state`, the browser page's
+/// `boot_title_backdrop_draws_json`. Each host has a test holding its output
+/// to [`title_strip_sprites`].
+///
 /// Retail also computes a triangle-wave pulse off the frame counter
 /// `DAT_801F3294 % 0xFFF` here and then never reads it - the value is dead
 /// at every use site (the delay-slot `li a0, 2` overwrites the only register
