@@ -610,3 +610,39 @@ fn a_scripted_teleport_onto_a_trigger_tile_does_not_fire_it() {
         );
     }
 }
+
+/// A committed battle holds the tile compare: between a `3E FF` and the
+/// fight, retail's intro overlay sits over the field overlay's head (frame
+/// pump and dispatcher included), so a trigger tile the player stands on
+/// fires nothing. `chitei2` P2[13] ends on `3E FF 0D`; when the compare kept
+/// running through the intro, a door stepped on in that window spawned its
+/// record and carried the player out of the scene before the fight began.
+#[test]
+fn a_committed_battle_holds_the_tile_compare() {
+    let Some(mut host) = open_host() else {
+        return;
+    };
+    host.enter_field_scene("town01", 0).expect("enter town01");
+    for _ in 0..5 {
+        host.tick().expect("tick");
+    }
+    assert!(
+        host.world.trigger_scripted_battle(4),
+        "town01 row 4 is a registered formation"
+    );
+    // The south-gate exit tile, which leaves for map01 when free.
+    seat_at_tile(&mut host.world, 25, 46);
+    for _ in 0..60 {
+        if let SceneTickEvent::SceneEntered { name } = host.tick().expect("tick") {
+            panic!("the exit fired under a committed battle (entered {name})");
+        }
+        assert!(
+            host.world.field_scripts_held_for_battle(),
+            "the fight stays committed through its intro"
+        );
+        assert!(
+            !host.world.cutscene_timeline_active(),
+            "no walk-on record spawns during the intro"
+        );
+    }
+}

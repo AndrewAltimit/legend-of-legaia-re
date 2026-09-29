@@ -1992,9 +1992,14 @@ impl SceneHost {
                 }
             }
         }
+        // A committed battle holds the whole field frame: retail's intro
+        // overlay (PROT 0979) is loaded over the field overlay's head, frame
+        // pump and this dispatcher included, so no tile compare runs between
+        // a `3E FF` and the fight (`World::field_scripts_held_for_battle`).
         if self.world.name_entry_active()
             || self.world.board.grid.is_some()
             || self.world.active_fmv().is_some()
+            || self.world.field_scripts_held_for_battle()
         {
             return;
         }
