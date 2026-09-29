@@ -11,13 +11,15 @@ use legaia_web_viewer::minigames::LegaiaMinigames;
 
 fn prot_dat() -> Option<PathBuf> {
     std::env::var_os("LEGAIA_DISC_BIN")?;
-    for p in ["extracted/PROT.DAT", "../../extracted/PROT.DAT"] {
-        let f = PathBuf::from(p);
-        if f.is_file() {
-            return Some(f);
-        }
-    }
-    None
+    // `LEGAIA_EXTRACTED_DIR` points at an extraction outside the checkout.
+    let over = std::env::var_os("LEGAIA_EXTRACTED_DIR").map(|d| PathBuf::from(d).join("PROT.DAT"));
+    over.into_iter()
+        .chain(
+            ["extracted/PROT.DAT", "../../extracted/PROT.DAT"]
+                .into_iter()
+                .map(PathBuf::from),
+        )
+        .find(|f| f.is_file())
 }
 
 #[test]
@@ -259,7 +261,23 @@ fn dance_actor_records_reach_the_page() {
     assert_eq!(idle["dancers"].as_array().unwrap().len(), 0);
     assert_eq!(idle["parts"].as_array().unwrap().len(), 0);
 
+    let entry_vp = mg.dance_venue_vp(4.0 / 3.0);
     assert!(mg.dance_start(false), "the qualifier run arms");
+    // The run's camera keyframe track opens on the entry's pose and moves
+    // with `dance_tick` (`FUN_801CF470`'s camera block).
+    if mg.dance_body_ready() {
+        assert_eq!(mg.dance_venue_vp(4.0 / 3.0), entry_vp, "pose 0 = the entry");
+        // (Nothing below depends on starting at beat 0: the part-spawn hunt
+        // plays on for thousands of frames.)
+        for _ in 0..30 {
+            mg.dance_tick(1);
+        }
+        assert_ne!(
+            mg.dance_venue_vp(4.0 / 3.0),
+            entry_vp,
+            "the dance camera holds still"
+        );
+    }
     let v: serde_json::Value = serde_json::from_str(&mg.dance_actors_json()).unwrap();
     let dancers = v["dancers"].as_array().unwrap();
     assert_eq!(dancers.len(), 3, "the qualifier floor is three dancers");
