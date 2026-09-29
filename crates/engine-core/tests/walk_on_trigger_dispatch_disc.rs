@@ -484,3 +484,71 @@ fn a_repoll_record_reruns_until_the_press() {
     );
     eprintln!("[ok] town01 (30,19) re-poll record saw the Down press");
 }
+
+/// A crossing made while a spawned record holds the player is spent
+/// (`FUN_801D1EC4`'s movement-disabled test, `0x801D214C..0x801D2158`, whose
+/// failure branch stores the tile with no lookup). `taiku` P2[16] - Zora
+/// Castle's post-boss cutscene, a concurrent helper P1[0] spawns on `0x393` -
+/// walks the player onto `(16, 28)`, the walk-on tile of P2[15], whose only
+/// act is to raise `0x393`. Dispatching there re-spawned P2[16] behind itself
+/// and the cutscene never ended.
+#[test]
+fn a_crossing_under_a_running_helper_is_consumed() {
+    const P2_15_TILE: (i16, i16) = (16, 28);
+    let Some(mut host) = open_host() else {
+        return;
+    };
+    host.enter_field_scene("taiku", 0).expect("enter taiku");
+    for _ in 0..3 {
+        host.tick().expect("tick");
+    }
+    // P2[15]'s C2 gate.
+    host.world.system_flag_set(0x38F);
+    let helpers = |host: &SceneHost| host.world.field_vm.helper_contexts.len();
+
+    // Contrast: a free crossing dispatches P2[15], and its `0x393` spawns a
+    // P2[16] helper through P1[0].
+    seat_at_tile(&mut host.world, 20, 20);
+    host.tick().expect("tick");
+    assert_eq!(helpers(&host), 0, "nothing runs before the crossing");
+    seat_at_tile(&mut host.world, P2_15_TILE.0, P2_15_TILE.1);
+    for _ in 0..3 {
+        host.tick().expect("tick");
+    }
+    assert!(
+        helpers(&host) >= 1,
+        "a free crossing of (16,28) runs P2[15] and P1[0] spawns P2[16]"
+    );
+    let running = helpers(&host);
+    assert!(
+        host.world.script_context_engages_player(),
+        "the helper holds the player"
+    );
+
+    // Under the running helper, crossings are spent: stepping off and back
+    // onto the tile spawns nothing more.
+    for _ in 0..3 {
+        seat_at_tile(&mut host.world, 20, 20);
+        host.tick().expect("tick");
+        seat_at_tile(&mut host.world, P2_15_TILE.0, P2_15_TILE.1);
+        host.tick().expect("tick");
+        assert!(
+            !host.world.system_flag_test(0x393),
+            "P2[15] must not run under the helper"
+        );
+        assert!(
+            helpers(&host) <= running,
+            "no second P2[16] behind the first ({} helpers)",
+            helpers(&host)
+        );
+    }
+
+    // The crossing was stored as "last": with the helper gone, standing on
+    // the tile fires nothing - only a further crossing would.
+    host.world.field_vm.helper_contexts.clear();
+    for _ in 0..3 {
+        host.tick().expect("tick");
+    }
+    assert_eq!(helpers(&host), 0, "standing on a spent tile fires nothing");
+    eprintln!("[ran] taiku (16,28) crossing consumed under the P2[16] helper");
+}

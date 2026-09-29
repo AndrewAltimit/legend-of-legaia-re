@@ -1109,7 +1109,14 @@ spawning". From a checkpoint taken after the lock clears (`+0x10` =
 scene re-entry. The port's `SceneHost::dispatch_walk_on_trigger` differs here:
 it returns before updating its last-tile mirror while a cutscene timeline is
 active, so a crossing made during the cutscene is deferred to the first free
-tick rather than spent.
+tick rather than spent. A crossing made while a concurrent **helper** record
+holds the player (`World::script_context_engages_player`) is spent as retail
+spends it: the tile is stored and nothing is looked up. That is what keeps
+`taiku` P2[16], Zora Castle's post-boss cutscene, from re-arming itself - it
+walks the player onto P2[15]'s tile `(16, 28)`, and P2[15] only raises the
+`0x393` that P1[0] answers by spawning P2[16]
+(`engine-core/tests/walk_on_trigger_dispatch_disc.rs`,
+`a_crossing_under_a_running_helper_is_consumed`).
 
 The same captures walk the rest of `kor5`'s `0x43A -> 0x436 -> 0x6C4` chain,
 whose links are the partition-2 C1/C2 headers plus the `.PCH` walk-on table

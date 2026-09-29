@@ -2039,6 +2039,22 @@ impl SceneHost {
         // A crossing drops the re-poll bit before anything else
         // (`0x801D2110..0x801D2120`), so a poll never outlives its tile.
         self.world.flags.story_flags &= !repoll;
+        // A crossing made while a script holds the player is spent: retail
+        // tests the player's movement-disabled bit `+0x10 & 0x80000`
+        // (`0x801D214C..0x801D2158`), and its failure branch (`0x801D226C`)
+        // stores the new tile as "last" with no lookup - neither the kind-1
+        // record nor the kind-0 teleport runs.
+        // The field VM's context runner raises that bit on every frame it
+        // steps a spawned record (`FUN_80039B7C`), so a concurrent helper
+        // that moves the player (`A3 F8 ..`) never trips the triggers on the
+        // tiles it moves the player across. `taiku` P2[16], Zora Castle's
+        // post-boss cutscene, seats the player on P2[15]'s walk-on tile;
+        // dispatching there re-raised `0x393`, and P1[0] re-spawned P2[16]
+        // forever. (A modal timeline returned above, before the store: the
+        // port defers those crossings to the first free tick.)
+        if locked || self.world.script_context_engages_player() {
+            return;
+        }
         self.dispatch_kind1_walk_on(tile, on_world_map, true);
         // Retail runs the kind-0 arm on the SAME crossing, after the kind-1
         // spawn (`FUN_801D1EC4` falls through to `0x801d21c0`), so a tile can
