@@ -21,14 +21,18 @@ fn loaded_runtime() -> Option<LegaiaRuntime> {
     Some(rt)
 }
 
-/// Free-roam field draws both sides (mode `0`); the opening prologue's
-/// scripted shot arms retail's NCLIP rejection (mode `2`).
+/// Free-roam field arms retail's NCLIP rejection (mode `2`): retail culls the
+/// back faces of every field mesh (`FUN_80043390`'s mask - see
+/// `camera_view::nclip_cull_mode`). This used to assert `0`, the port's old
+/// both-sided free roam, which let korout's and retona's sky domes paint
+/// their outer shells over the scene. The opening prologue's scripted shot
+/// arms it too.
 ///
 /// The page's assembled pass used to call `disable(CULL_FACE)`
 /// unconditionally, so the tableau shot rendered the near wall of the closed
 /// cave-wall backdrop it sits inside.
 #[test]
-fn nclip_mode_is_zero_in_free_roam_and_two_under_the_scripted_shot() {
+fn nclip_mode_is_two_in_free_roam_and_under_the_scripted_shot() {
     let Some(mut rt) = loaded_runtime() else {
         eprintln!("LEGAIA_DISC_BIN unset - skipping");
         return;
@@ -36,8 +40,8 @@ fn nclip_mode_is_zero_in_free_roam_and_two_under_the_scripted_shot() {
     rt.enter_field("town01").expect("enter town01");
     assert_eq!(
         rt.play_render_nclip_mode(),
-        0,
-        "free-roam field draws both sides"
+        2,
+        "free-roam field culls retail back faces"
     );
     rt.enter_field("opdeene").expect("enter opdeene");
     // The chain's first beats stage the camera within a few ticks.
