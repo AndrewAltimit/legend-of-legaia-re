@@ -1139,6 +1139,9 @@ const TILE: i16 = 128;
 const PAD_LEG_FRAMES: u32 = 12_000;
 const PAD_STALL_FRAMES: u32 = 300;
 const MAX_PLAN_NODES: usize = 300_000;
+/// Tiles short of a door the lattice may end before a pad hop is called
+/// unwalkable rather than attempted.
+const DOOR_APPROACH_SLACK: i32 = 6;
 type Cell = (i16, i16);
 
 fn cell_of(x: i16, z: i16) -> Cell {
@@ -1335,10 +1338,13 @@ fn pad_hop(session: &mut BootSession, graph: &DiscGraph, dest: &str) -> Result<S
     // A door the collision lattice cannot get near is a different finding
     // from a walk that stalls on the way: the scene is split into walk
     // components (map01's north / south halves meet only through `suimon`),
-    // and this planner does not route through a crossing scene.
+    // and this planner does not route through a crossing scene. A short gap
+    // is not that: a door tile reads as a wall from inside, so the lattice
+    // routinely ends a few tiles short and the follower presses on at the
+    // band (the critical-path ladder's rule).
     if let Some(end) = plan_path(session, start, goal, &avoid).and_then(|p| p.last().copied()) {
         let t = tile_of(cell_center(end).0, cell_center(end).1);
-        if dist(t) > 2 {
+        if dist(t) > DOOR_APPROACH_SLACK {
             return Err(format!(
                 "no walkable path: the start's walk component ends {} tiles short of door {goal:?} (closest tile {t:?})",
                 dist(t)
