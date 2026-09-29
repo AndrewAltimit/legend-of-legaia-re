@@ -684,6 +684,16 @@ every CDNAME scene built the window's way finds the overlap in `dolk` and
 scenes (mostly the `(320, 256)` page) and the non-field `other4..6` /
 `befect_data` blocks; every other scene's TIMs miss the pool entirely.
 
+"Under the build" means under the words no scene upload **wrote**, not
+under every zero word. Retail's `LoadImage` replaces the whole rect, so a
+scene TIM's transparent background - index-0 texels, a written `0x0000`
+word - hides the pool as completely as its ink does. The ending scenes are
+where that shows: their credit caption TIMs (`edteien`'s `(320, 416)`
+40x32 card among them) sit on the pool's `(320, 256..)` kanji sheet, and a
+value-keyed underlay put kanji in every transparent run of the credits
+roll. `Vram` therefore records per cell whether an upload wrote it, and
+`underlay` fills only unwritten cells; the same test pins it on `edteien`.
+
 A host whose scene VRAM lacks the pool draws the fog quads against zero
 words, and a textured fragment on a zero word is transparent: the pool is
 live, the quads are emitted, and nothing reaches the frame. That was the
