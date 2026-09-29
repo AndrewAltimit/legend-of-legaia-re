@@ -1978,14 +1978,21 @@ wipe and one plain-formation wipe on the `map01` overworld):
    cursor on CONTINUE** (framebuffer captured live at the wipe
    destination) - retail's game over is a silent return to the title /
    Continue flow, no GAME OVER art, no menu of its own.
-3. `DAT_8007BD60` bit `0x80` is a **party-survived latch**: seeded at
-   battle load (`FUN_8001822C` body, `0x80018670` / `0x8001869C`, next
-   to its `game_mode = 0x14` store), cleared by the `0x5A` end-of-action
+3. `DAT_8007BD60` bit `0x80` is a **party-survived latch** by the time
+   the battle ends. Before the fight the same bit is the scripted-fight
+   input (seeded by `FUN_8001822C`, `0x80018670` / `0x8001869C`, and by
+   the encounter reader for a non-zero `record[+0]`); battle init
+   `FUN_800513F0` folds it into `ctx[+0x287]` and clears it (`andi 0x7f`
+   at `0x80051A14`), which is why the sparring capture reads `0x01`
+   mid-fight. It is cleared again by the `0x5A` end-of-action
    wipe scans (0898 `0x801E65F0` / `0x801E6694`, beside their
-   `_DAT_8007BD2C` cause writes), then re-set on the surviving exits:
-   the victory reward path `FUN_80026018` (`ori 0x80` at `0x800260AC`)
-   and the successful-escape arm of the escape roll `FUN_801E791C`
-   (`0x801E802C`). A wipe is the only battle end that leaves it clear.
+   `_DAT_8007BD2C` cause writes), then re-set on the surviving exits: the
+   results sequencer's victory arm (`FUN_8004E568`, `ori 0x80` into
+   `0xa48(gp)` at `0x8004EDD8..0x8004EDE0`), the successful-escape arm of
+   the escape roll `FUN_801E791C` (`0x801E802C`), the sparring fight's
+   exit arm in PROT 0967 (`0x801F735C`) and the minigame exit
+   `FUN_80026018` (`0x800260AC`). A wipe is the only battle end that
+   leaves it clear.
    Captured live on both sides: a victory walks the byte to `0x80`
    before the mode-2 exit and returns to field even with a stale wipe
    cause `5` in `_DAT_8007BD2C` (the gate never reads the cause); the
@@ -2007,7 +2014,16 @@ wipe and one plain-formation wipe on the `map01` overworld):
    `0x8003B5A0`), before either path reaches the shared flag-0 clear. A
    scene script that runs on the post-battle reload can therefore test
    flag `1` to distinguish a won battle from a wiped one - the general
-   mechanism for scoring a scripted battle from the scene script.
+   mechanism for scoring a scripted battle from the scene script. The same
+   block also clears story flag 14 on every return and, when flag 28 is
+   set, flags 29 and 30 (`0x8003B530..0x8003B568`). The Tetsu sparring
+   capture pair shows the whole block at once: the flag bank's first four
+   bytes walk `81 02 80 00` in the fight (`v0_1_battle_start_tetsu`) to
+   `41 00 80 00` back in town01 (`v0_1_post_battle_tetsu_town`) - flag 1
+   up, flag 0 consumed, flag 14 cleared - with `DAT_8007BD60 = 0x81`.
+   Engine port: `engine-core::battle_return_flags`, run by
+   `World::finish_battle` for every ending, with the survived bit keyed on
+   the end cause not being a party wipe.
 6. Scripts can invoke the same handoff directly: `FUN_8003C7EC` is a
    helper twin of the inline gate body (same three stores), and the
    field-VM op `4C EA` (MENU_CTRL nibble-E sub-A, see
