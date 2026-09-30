@@ -358,15 +358,25 @@ ending the action on the spot, and the battle flow byte follows the player
 into the item / magic / arts windows ([battle](../subsystems/battle.md#how-the-engine-raises-the-flow-state)).
 
 - **A monster's capture-class special.** The spell catalog carries no
-  capture-class record, so a monster turn whose pick names one (Cort's, Zeto's,
-  Songi's, the Delilas duels') finds no record and strikes instead; retail
+  capture-class record, so a monster turn whose pick named one (Cort's, Zeto's,
+  Dohati's, the Delilas duels') found no record and struck instead; retail
   casts it through the capture band `0x6E..=0x71`, routed on the spell
-  table's class byte. The seed's forced cast builds the record off the disc
-  table (`World::monster_cast_def`), which is how the Cort and Delilas
-  captures reach `0x6F` / `0x70`. The AI's own picks do not take that record
-  yet: with it, Songi's special at the Dohati castle wipes the
-  [full-game ladder](full-game-ladder.md)'s party in the segment to the Sol
-  tower, and whether that fight's loss is scripted is not settled.
+  table's class byte. Every monster pick now builds that record off the disc
+  table (`World::monster_cast_def`), the seed's forced cast included, which
+  is how the Cort and Delilas captures reach `0x6F` / `0x70`. Opening it up
+  surfaced three more defects the seed alone never reached: Dohati's Chaos
+  Breath fired on every turn once charged, because the breath's arm 3 -
+  which spends the caster's `+0x170` gauge the pick is gated on - had been
+  filed as presentation
+  ([cast module](../subsystems/cast-module.md#the-twelve-bodies-the-trampoline-map-names));
+  Mystic Circle and Doomsday never reported done, so the band held `0x70`
+  forever; and Cort's Mystic Shield, which halves the party's damage until
+  he is at half HP and keeps his Evil Seru Magic shut until then, was not
+  modelled at all
+  ([cast module](../subsystems/cast-module.md#the-fourteen-trampoline-arms-that-are-the-bands-other-tick-bodies)).
+  Neither boss fight involved is a scripted loss: no story flag 0 latch
+  precedes `dohaty` P2[10]'s `3E FF 0A` (Dohati, monster `0x8A`) or
+  `chitei2` P2[13]'s `3E FF 0D` (Cort, `0xB4`).
 - **Zeto's waves.** The forced cast is armed but never consumed inside the
   budget - the monster pick that would take it is not reached on Zeto's seat -
   so `0x70` is not; why is open.

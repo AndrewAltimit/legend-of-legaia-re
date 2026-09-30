@@ -1708,6 +1708,20 @@ is the only routine in PROT 0903..0966 that **allocates a battle seat**, and
 its `0xAC` sibling blanks `actor_table[3]`'s reaction-clip run through a
 reassigned `s0` rather than the caster's `+0x0C`.
 
+That `0xAC` arm is Cort's **Mystic Shield**, and the blank is only half of
+it. The same arm stores the handle of the effect it spawns into
+`_DAT_8007BD84` (`0x801F7678`) - the word's only non-zero writer. While the
+handle is non-null the damage finisher halves every hit on an enemy defender
+(`FUN_801DDB30`, `0x801DDB98..0x801DDBC8`), and the `0xB4` pick's Evil Seru
+Magic arm, which tests the word for null, stays shut. The shield breaks in
+the per-frame actor pass `FUN_8004CE2C` (`0x8004D534..0x8004D668`): with the
+first formation id `0x8007BD0C` at `0xB4`, once the first monster seat's HP
+falls to half its maximum, the pass restores the reaction run (`+0x1EF..+0x1F2
+= 3, 2, 4, 5`), retires the effect, fires cue `0x10D` and clears the word. So
+Cort's first form fights the first half of his HP behind a halved-damage
+shield, and his Evil Seru Magic only opens after it breaks. The engine carries
+the word as `MonsterAiState::flag_bd84` (`World::tick_mystic_shield_break`).
+
 ### The player Seru band's tick bodies are code, not data
 
 The verdict table above answers for each module's **stager** - the

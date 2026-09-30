@@ -1772,9 +1772,15 @@ impl World {
                     use vm::cast_module_ticks::FIRST_MONSTER_SEAT;
                     let mut seat = self.cast_actor_state(FIRST_MONSTER_SEAT);
                     let mut ext = self.cast_arm_ext_state(FIRST_MONSTER_SEAT);
+                    let shield_arm = ctx.phase == arms::MYSTIC_SHIELD_ARM;
                     let step = arms::glare_divide_blind_tick(&mut ctx, &mut seat, &mut ext);
                     self.write_cast_actor_state(FIRST_MONSTER_SEAT, &seat);
                     self.write_cast_arm_ext_state(FIRST_MONSTER_SEAT, &ext);
+                    if shield_arm {
+                        // `_DAT_8007BD84 = FUN_80021B04(..)` - the shield's
+                        // effect handle; the engine carries it as a flag.
+                        self.battle.monster_ai_state.flag_bd84 = 1;
+                    }
                     Some(step)
                 }
                 (940, Some(arms::GLARE_DIVIDE_SPLIT_TICK)) => {

@@ -185,6 +185,10 @@ impl World {
         // XA-template tick ahead of the anim node advance).
         self.tick_battle_impact_fx();
         self.tick_battle_ambient();
+        // The same pass's Mystic Shield break (`0x8004D534..0x8004D668`).
+        if self.mode == SceneMode::Battle {
+            self.tick_mystic_shield_break();
+        }
         for i in 0..self.actors.len() {
             // Hit-reaction chaining first: a finished reaction clip takes the
             // natural-end path and the next commit's reaction arms - the

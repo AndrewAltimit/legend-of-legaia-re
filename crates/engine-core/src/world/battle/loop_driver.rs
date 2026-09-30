@@ -1813,7 +1813,7 @@ impl World {
                 attacker_element: 7, // basic attack is non-elemental
                 defender_resist,
                 defender_guarding: false,
-                enemy_defender_halve: false,
+                enemy_defender_halve: self.mystic_shield_up(),
                 bypass_party_resist: false,
                 summon_power_pct: 100,
                 floor_rand,
