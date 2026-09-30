@@ -270,8 +270,13 @@ straight back out counts as a round trip, landing and all.
 In both passes a scripted sequence gets Cross on a press-2-release-14 duty
 cycle, the naming prompt's Yes/No confirm gets Up first (it opens on No), and a
 battle is fought through the command ring, one pad edge at a time, by a
-fighter shaped like a player: a member under 45% of its HP, or down, gets the
-best heal or revive the item window lists; otherwise a member with an
+fighter shaped like a player: a member who is down gets a revive, and a
+member in danger - under 45% of its HP, or unable to take another hit the
+size of the biggest one seen this battle - gets a heal: a party heal when two
+or more are in danger, else the smallest single heal that lifts the worst-off
+member clear, aimed at that member. Heals the round's earlier members already
+committed count as landed, so two members never spend their turns on one
+wound. Otherwise a member with an
 affordable damaging Seru spell casts the strongest one; otherwise it attacks
 through `Command`, entering the longest art its command pool pays for and
 spending the rest on plain directions (whether a matched art fires is the

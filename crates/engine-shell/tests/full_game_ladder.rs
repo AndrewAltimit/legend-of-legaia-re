@@ -1084,42 +1084,143 @@ thread_local! {
 /// Percent of max HP below which the fighter heals a member.
 const HEAL_BELOW_PCT: u32 = 45;
 
+thread_local! {
+    /// The largest HP loss one member took in a single hit this battle. A
+    /// member is healed while it could not survive another such hit - the
+    /// threshold a player reads off the last big hit, not a fixed fraction.
+    static BIGGEST_HIT: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    /// Per acting slot, the ally its last committed item was aimed at, so a
+    /// later member of the same round counts that heal as already coming.
+    static ITEM_TARGET: std::cell::RefCell<[Option<u8>; 3]> = const { std::cell::RefCell::new([None; 3]) };
+}
+
 fn party_hp_key(w: &legaia_engine_core::world::World) -> u32 {
     let n = w.party.party_count.clamp(1, 3) as usize;
     (0..n).map(|i| u32::from(w.actors[i].battle.hp)).sum()
 }
 
-/// The heal worth using now among `ids`: a revive when a member is down,
-/// else a party heal when two or more are hurt, else the largest heal.
-fn wanted_item(w: &legaia_engine_core::world::World, ids: impl Iterator<Item = u8>) -> Option<u8> {
+/// What one heal item restores on `slot`, given the HP it would have.
+fn item_restore(w: &legaia_engine_core::world::World, id: u8, slot: usize, hp: u32) -> Option<u32> {
     use legaia_engine_core::items::ItemEffect;
+    let max = u32::from(w.actors[slot].battle.max_hp);
+    let e = w.tables.item_catalog.get(id)?;
+    Some(match e.effect {
+        ItemEffect::Revive { factor } if hp == 0 => (max * u32::from(factor) / 256).max(1),
+        ItemEffect::HealAll if hp > 0 => max - hp.min(max),
+        ItemEffect::Heal { amount } if hp > 0 => u32::from(amount).min(max - hp.min(max)),
+        _ => return None,
+    })
+}
+
+/// Each member's HP once the items the round's earlier members already
+/// committed have landed - so two members never spend their turns on the
+/// same wound.
+fn projected_hp(w: &legaia_engine_core::world::World) -> Vec<u32> {
+    use legaia_engine_core::battle_round::PendingPartyAction;
     let n = w.party.party_count.clamp(1, 3) as usize;
-    let dead = (0..n).filter(|&i| w.actors[i].battle.hp == 0).count();
-    let hurt = (0..n)
-        .filter(|&i| {
-            let b = &w.actors[i].battle;
-            b.hp > 0 && u32::from(b.hp) * 100 < u32::from(b.max_hp) * HEAL_BELOW_PCT
-        })
-        .count();
-    if dead == 0 && hurt == 0 {
-        return None;
-    }
-    let mut best: Option<(u32, u8)> = None;
-    for id in ids {
-        let Some(e) = w.tables.item_catalog.get(id).filter(|e| e.usable_in_battle) else {
+    let mut hp: Vec<u32> = (0..n).map(|i| u32::from(w.actors[i].battle.hp)).collect();
+    for (actor, p) in w.battle.round_flow.pending.iter().enumerate().take(n) {
+        let Some(PendingPartyAction::Item { item_id, .. }) = p else {
             continue;
         };
-        let score = match e.effect {
-            ItemEffect::Revive { factor } if dead > 0 => 100_000 + u32::from(factor),
-            ItemEffect::HealAll if hurt >= 2 => 50_000,
-            ItemEffect::Heal { amount } if hurt > 0 => u32::from(amount),
-            _ => continue,
+        let targets: Vec<usize> = if w.tables.item_catalog.is_all_party(*item_id) {
+            (0..n).collect()
+        } else {
+            ITEM_TARGET
+                .with(|t| t.borrow()[actor])
+                .map(usize::from)
+                .filter(|&t| t < n)
+                .into_iter()
+                .collect()
         };
-        if best.is_none_or(|(b, _)| score > b) {
-            best = Some((score, id));
+        for t in targets {
+            if let Some(r) = item_restore(w, *item_id, t, hp[t]) {
+                hp[t] += r;
+            }
         }
     }
-    best.map(|(_, id)| id)
+    hp
+}
+
+/// The heal worth using now among `ids`, and the ally it is for: a revive
+/// for a member who is down, else a party heal when two or more are in
+/// danger, else the smallest single heal that lifts the worst-off member out
+/// of danger (the largest when none does). "In danger" is under
+/// [`HEAL_BELOW_PCT`] of max HP, or unable to take another hit the size of
+/// the biggest one seen this battle; heals the round's earlier members
+/// committed count as landed ([`projected_hp`]).
+fn wanted_item(
+    w: &legaia_engine_core::world::World,
+    ids: impl Iterator<Item = u8>,
+) -> Option<(u8, u8)> {
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    let hp = projected_hp(w);
+    let threat = BIGGEST_HIT.with(std::cell::Cell::get);
+    // The HP a member needs to hold to be out of danger.
+    let limit = |i: usize| {
+        let max = u32::from(w.actors[i].battle.max_hp);
+        let pct = max * HEAL_BELOW_PCT / 100;
+        let hit = (threat + threat / 8).min(max * 95 / 100);
+        pct.max(hit)
+    };
+    let danger = |i: usize| hp[i] > 0 && hp[i] < limit(i);
+    let dead: Vec<usize> = (0..n).filter(|&i| hp[i] == 0).collect();
+    let hurt: Vec<usize> = (0..n).filter(|&i| danger(i)).collect();
+    if dead.is_empty() && hurt.is_empty() {
+        return None;
+    }
+    let ids: Vec<u8> = ids
+        .filter(|&id| {
+            w.tables
+                .item_catalog
+                .get(id)
+                .is_some_and(|e| e.usable_in_battle)
+        })
+        .collect();
+    if let Some(&d) = dead.first() {
+        let revive = ids
+            .iter()
+            .filter_map(|&id| Some((item_restore(w, id, d, 0)?, id)))
+            .max();
+        if let Some((_, id)) = revive {
+            return Some((id, d as u8));
+        }
+    }
+    if hurt.is_empty() {
+        return None;
+    }
+    if hurt.len() >= 2 {
+        let party = ids
+            .iter()
+            .filter(|&&id| w.tables.item_catalog.is_all_party(id))
+            .filter_map(|&id| {
+                let total: u32 = hurt
+                    .iter()
+                    .filter_map(|&i| item_restore(w, id, i, hp[i]))
+                    .sum();
+                (total > 0).then_some((total, id))
+            })
+            .max();
+        if let Some((_, id)) = party {
+            return Some((id, hurt[0] as u8));
+        }
+    }
+    let worst = *hurt
+        .iter()
+        .min_by_key(|&&i| hp[i] * 1000 / u32::from(w.actors[i].battle.max_hp).max(1))?;
+    let singles: Vec<(u32, u8)> = ids
+        .iter()
+        .filter(|&&id| !w.tables.item_catalog.is_all_party(id))
+        .filter_map(|&id| Some((item_restore(w, id, worst, hp[worst])?, id)))
+        .filter(|&(r, _)| r > 0)
+        .collect();
+    let enough = singles
+        .iter()
+        .filter(|&&(r, _)| hp[worst] + r >= limit(worst))
+        .min();
+    enough
+        .or_else(|| singles.iter().max())
+        .map(|&(_, id)| (id, worst as u8))
 }
 
 /// The Magic row worth casting: the strongest affordable damage spell.
@@ -1151,7 +1252,12 @@ fn arts_plan(
 ) -> Vec<u8> {
     use legaia_art::queue::Command;
     const MAX_ENTRY: usize = 8;
-    let character = w.actors[usize::from(s.actor)].battle.character;
+    // The occupying character's table: the actor's `character` key is only
+    // written by the first arts commit, so before it every member reads
+    // Vahn's.
+    let character = legaia_engine_core::battle_arts::character_for_slot(
+        w.party_roster_slot(usize::from(s.actor)) as u8,
+    );
     let cost = |cmds: &[Command]| -> u16 { cmds.iter().map(|&c| s.cost_of(c)).sum() };
     let arts: Vec<&[Command]> = w
         .tables
@@ -1207,8 +1313,8 @@ fn direction_mask(b: u8) -> u16 {
 /// The pad mask a player presses this frame in a battle - every one a pad
 /// press through the engine's own battle menus, no engine call:
 ///
-/// - a member at under [`HEAL_BELOW_PCT`] of its HP, or down, gets the best
-///   heal or revive the item window lists (the ring's up arm);
+/// - a member who is down, or in danger, gets the revive or heal
+///   [`wanted_item`] picks, aimed at that member (the ring's up arm);
 /// - otherwise a member with an affordable damaging Seru spell casts the
 ///   strongest one (the right arm);
 /// - otherwise it attacks through the `Command` chip, entering the longest
@@ -1248,18 +1354,40 @@ fn fight_pad(session: &BootSession) -> u16 {
                 .copied()
         };
         let want = wanted_item(w, (0..menu.filtered_items.len()).filter_map(listed));
+        let actor = w
+            .battle
+            .command
+            .as_ref()
+            .map_or(w.battle_ctx.active_actor, |c| c.actor);
         return match &menu.state {
             InventoryUseState::Browsing { cursor } => match want {
-                Some(id) if listed(*cursor) == Some(id) => PadButton::Cross.mask(),
+                Some((id, _)) if listed(*cursor) == Some(id) => PadButton::Cross.mask(),
                 Some(_) => PadButton::Down.mask(),
                 None => {
-                    let key = (w.battle_ctx.active_actor, party_hp_key(w));
+                    let key = (actor, party_hp_key(w));
                     NO_ITEM.with(|n| n.borrow_mut().insert(key));
                     PadButton::Circle.mask()
                 }
             },
-            // The session seeds the target cursor on the ally the item helps.
-            InventoryUseState::TargetSelect { .. } => PadButton::Cross.mask(),
+            // The session seeds the cursor on the first ally the item helps;
+            // the hand steps it to the one it chose, and remembers the aim so
+            // the round's later members count the heal as coming.
+            InventoryUseState::TargetSelect { cursor, .. } => {
+                let aim = want.map(|(_, t)| t);
+                let on = menu.targets.get(*cursor).map(|t| t.slot);
+                if aim.is_none() || on == aim {
+                    if let Some(slot) = on {
+                        ITEM_TARGET.with(|t| {
+                            if let Some(a) = t.borrow_mut().get_mut(usize::from(actor)) {
+                                *a = Some(slot);
+                            }
+                        });
+                    }
+                    PadButton::Cross.mask()
+                } else {
+                    PadButton::Down.mask()
+                }
+            }
             _ => PadButton::Circle.mask(),
         };
     }
@@ -1374,16 +1502,94 @@ fn battle_snapshot(session: &BootSession) -> String {
     )
 }
 
+/// The party a traced battle starts with: each member's level, MP, equipment
+/// and spell list, and the bag's battle-usable items.
+fn party_dump(session: &BootSession) {
+    let w = &session.host.world;
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    for i in 0..n {
+        let slot = w.party_roster_slot(i);
+        let Some(m) = w.party.roster.members.get(slot) else {
+            continue;
+        };
+        let list = m.spell_list();
+        let spells: Vec<String> = list.ids[..(list.count as usize).min(list.ids.len())]
+            .iter()
+            .map(|&id| match w.tables.spell_catalog.get(id) {
+                Some(d) => format!("{id:#x} {} mp{} {:?}", d.name, d.mp_cost, d.effect),
+                None => format!("{id:#x} ?"),
+            })
+            .collect();
+        let a = &w.actors[i].battle;
+        eprintln!(
+            "    [party] #{i} char {:?} lv {} hp {}/{} mp {} equip {:?} spells [{}]",
+            a.character,
+            m.level(),
+            a.hp,
+            a.max_hp,
+            a.mp,
+            m.equipment(),
+            spells.join("; ")
+        );
+    }
+    for i in 0..n {
+        let ch = legaia_engine_core::battle_arts::character_for_slot(w.party_roster_slot(i) as u8);
+        let mut arts: Vec<String> = w
+            .tables
+            .art_records
+            .iter()
+            .filter(|((c, _), _)| *c == ch)
+            .map(|((_, a), r)| {
+                let cmds: Vec<u8> = r.commands.iter().map(|c| c.as_byte()).collect();
+                format!(
+                    "{:#x} {:?} {cmds:?} pw{}",
+                    a.as_byte(),
+                    r.name,
+                    r.power.len()
+                )
+            })
+            .collect();
+        arts.sort();
+        eprintln!("    [arts] #{i} {ch:?}: {}", arts.join("; "));
+    }
+    let bag: Vec<String> = w
+        .party
+        .inventory
+        .iter()
+        .filter(|(_, c)| **c > 0)
+        .filter_map(|(&id, &c)| {
+            let e = w.tables.item_catalog.get(id)?;
+            e.usable_in_battle
+                .then(|| format!("{id:#x} {} x{c} {:?}", e.name, e.effect))
+        })
+        .collect();
+    eprintln!("    [party] bag: {}", bag.join("; "));
+}
+
 /// Fight a battle with the pad ([`fight_pad`]). `None` when it ended and a
 /// walking mode came back.
 fn drain_battle(session: &mut BootSession) -> Option<Run> {
     NO_ITEM.with(|n| n.borrow_mut().clear());
     NO_MAGIC.with(|n| n.borrow_mut().clear());
+    BIGGEST_HIT.with(|b| b.set(0));
+    ITEM_TARGET.with(|t| *t.borrow_mut() = [None; 3]);
+    let party_hp = |s: &BootSession| -> Vec<u16> {
+        let w = &s.host.world;
+        let n = w.party.party_count.clamp(1, 3) as usize;
+        (0..n).map(|i| w.actors[i].battle.hp).collect()
+    };
+    let mut party_prev = party_hp(session);
     let mut prev = 0u16;
     let trace = std::env::var_os("LEGAIA_FGL_TRACE").is_some();
     if trace {
         eprintln!("    [battle] start: {}", battle_snapshot(session));
+        party_dump(session);
     }
+    let trace_hits = trace && std::env::var_os("LEGAIA_FGL_TRACE_HITS").is_some();
+    let hp_all =
+        |s: &BootSession| -> Vec<u16> { s.host.world.actors.iter().map(|a| a.battle.hp).collect() };
+    let mut last_cmd: [String; 3] = Default::default();
+    let mut hp_prev = hp_all(session);
     for t in 0..BATTLE_TICKS {
         if pad_budget(session).is_err() {
             break;
@@ -1395,6 +1601,38 @@ fn drain_battle(session: &mut BootSession) -> Option<Run> {
         session.host.world.set_pad(pad);
         if let Err(e) = session.tick() {
             return Some(Run::Error(format!("{e:#}")));
+        }
+        let party_now = party_hp(session);
+        for (a, b) in party_prev.iter().zip(&party_now) {
+            let lost = u32::from(a.saturating_sub(*b));
+            BIGGEST_HIT.with(|h| h.set(h.get().max(lost)));
+        }
+        party_prev = party_now;
+        if trace_hits {
+            let w = &session.host.world;
+            for (i, p) in w.battle.round_flow.pending.iter().enumerate() {
+                if let Some(p) = p {
+                    let s: String = format!("{p:?}").chars().take(70).collect();
+                    last_cmd[i] = s;
+                }
+            }
+            let hp_now = hp_all(session);
+            if hp_now != hp_prev {
+                let who = w.battle_ctx.active_actor;
+                let what = last_cmd.get(usize::from(who)).cloned().unwrap_or_default();
+                let n = w.party.party_count.clamp(1, 3) as usize;
+                let gauges: Vec<u16> = (0..n).map(|i| w.actors[i].battle.spirit_gauge).collect();
+                eprintln!(
+                    "    [hit] t={t} actor {who} ({what}) sm 0x{:02X} hp {:?} -> {:?} mob mp {} mode {} shield {} gauges {gauges:?}",
+                    w.battle_ctx.action_state,
+                    &hp_prev[..n + 1],
+                    &hp_now[..n + 1],
+                    w.actors.get(n).map_or(0, |a| a.battle.mp),
+                    w.battle.monster_ai_state.mode_flags,
+                    w.battle.monster_ai_state.flag_bd84,
+                );
+                hp_prev = hp_now;
+            }
         }
         if trace && std::env::var_os("LEGAIA_FGL_TRACE_BATTLE").is_some() && t % 1000 == 0 {
             eprintln!("    [battle] t={t}: {}", battle_snapshot(session));
