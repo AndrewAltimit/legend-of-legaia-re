@@ -1069,3 +1069,16 @@ fn a_lone_set_then_jump_is_not_a_debug_menu_arm() {
     let body2 = [0x51u8, 0x42, 0x62, 0x89, 0xB2, 0x16, 0x1D, 0xCC, 0x16];
     assert!(!debug_flag_menu_arm(&body2, 0));
 }
+
+/// `son` P1[22]: the talk body opens `21`, a `Test / Test / JmpRel`
+/// dispatch, then `SET 0x3A2 / 44 2D / 21 / JmpRel`. The `21` follows a
+/// `JmpRel`'s high `00`, which looks like a label terminator; the tests are
+/// the arm's gate, so the lone `SET` arm is a story writer.
+#[test]
+fn a_gate_test_ahead_of_a_set_is_not_a_debug_menu_arm() {
+    let body = [
+        0x26, 0x02, 0x00, 0x21, 0x73, 0x80, 0x5B, 0x00, 0x73, 0xA2, 0x0D, 0x00, 0x26, 0x02, 0x00,
+        0x53, 0xA2, 0x44, 0x2D, 0x21, 0x26, 0x43, 0x02,
+    ];
+    assert!(!debug_flag_menu_arm(&body, 15));
+}

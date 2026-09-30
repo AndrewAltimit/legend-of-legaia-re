@@ -220,6 +220,19 @@ fn menu_block_covers(body: &[u8], head: usize, pc: usize) -> bool {
             // Text ends the block: the arms run between the label list and
             // the continuation prose.
             InsnInfo::TextSegment { .. } | InsnInfo::Picker { .. } => break,
+            // A test is the arm's gate, not an option's write: a talk body's
+            // `Test / Test / JmpRel` dispatch ahead of its `SET` would
+            // otherwise read as a first arm (`son` P1[22], whose `SET 0x3A2`
+            // sits behind a `JmpRel` operand's `00` that mimics a label
+            // terminator).
+            InsnInfo::GFlag {
+                kind: FlagKind::Test,
+                ..
+            }
+            | InsnInfo::SystemFlag {
+                kind: FlagKind::Test,
+                ..
+            } => {}
             InsnInfo::GFlag { .. } | InsnInfo::SystemFlag { .. } => {
                 flags_this_arm += 1;
                 if insn.pc == pc {
