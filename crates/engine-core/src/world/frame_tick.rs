@@ -1611,27 +1611,11 @@ impl World {
                 if !scripts_held {
                     self.step_spawned_record_contexts();
                 }
-                // Per-actor script channels (spawned with a cutscene
-                // timeline): each vignette actor's own placement script runs
-                // its frame slice - animate cues, scripted moves, flag
-                // handshakes with the timeline.
-                //
-                // Ungated deliberately, and that is the retail denomination,
-                // not an omission. A placement script is actor-pool work
-                // (`FUN_8002519C` -> the actor's `+0x0C` handler), so retail
-                // runs it once per game tick and credits `DAT_1F800393` frames
-                // of progress per visit - the same cadence-invariant identity
-                // the locomotion note above spells out. The engine takes the
-                // fine-grained half: one visit per vsync crediting one frame.
-                // Since a sim tick IS a vsync, calling it every tick is
-                // retail-frame paced already; a `field_frame_step` gate would
-                // be a tautology here, not a correction.
-                // Re-read: a context stepped above may have just committed a
-                // fight (`3E FF <row>`), and nothing after it runs this frame.
-                let scripts_held = scripts_held || self.field_scripts_held_for_battle();
-                if !scripts_held {
-                    self.step_field_channels();
-                }
+                // No placement channel steps here: retail runs a placement's
+                // own script only while a touch holds it engaged
+                // (`World::pre_run_field_channel_prologues` has the
+                // `+0x10 & 0x100` writers), which the engine plays as the
+                // interaction timeline.
                 let scripts_held = scripts_held || self.field_scripts_held_for_battle();
                 // The scene system script (ctx `0xFB`) gets a whole retail
                 // frame slice, not one instruction: see
@@ -1758,7 +1742,6 @@ impl World {
                 // drives playback, calling [`finish_cutscene`] when it ends.
                 if self.cutscene.active_fmv.is_none() {
                     self.step_spawned_record_contexts();
-                    self.step_field_channels();
                     self.step_field_frame_slice();
                     self.tick_field_script_arcs();
                     self.tick_field_attached_lights();

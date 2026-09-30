@@ -356,8 +356,12 @@ impl ScriptGate {
                 tl.frames
             )
         });
+        let player = world
+            .player_actor_slot
+            .and_then(|p| world.actors.get(usize::from(p)))
+            .map(|a| (a.move_state.world_x, a.move_state.world_z));
         format!(
-            "{c:?} mode={:?} glide={} {parks:?}",
+            "{c:?} mode={:?} glide={} player={player:?} {parks:?}",
             world.mode, world.camera.state.glide_frames
         )
     }

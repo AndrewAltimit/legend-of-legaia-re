@@ -62,7 +62,9 @@ pub struct FieldVmState {
     /// ([`crate::world::World::install_cutscene_timeline_record`]) so the timeline's
     /// cross-context pokes (flag writes, animate cues, moves) land on real
     /// per-actor contexts - the opening prologue's vignette mechanism.
-    /// Stepped run-until-yield per frame by [`crate::world::World::step_field_channels`].
+    /// Their own scripts run only in the load-frame spawn pre-run
+    /// ([`crate::world::World::pre_run_field_channel_prologues`]); a touch
+    /// resumes one as the interaction timeline.
     pub channels: Vec<crate::field_channels::FieldChannel>,
     /// A copy of [`Self::channels`] taken when a stepping pass moves the live
     /// vector out (`std::mem::take` in the channel and spawned-record
@@ -76,7 +78,7 @@ pub struct FieldVmState {
     /// buffer base is its `record_offset` into this).
     pub channels_man: Option<std::sync::Arc<Vec<u8>>>,
     /// Placement index of the channel context currently executing (its own
-    /// slice in [`crate::world::World::step_field_channels`], or the target of a
+    /// spawn pre-run slice, or the target of a
     /// cross-context poke from the cutscene timeline), so field-VM host hooks
     /// (animate, move) can attribute the side-effect to that placement's NPC.
     /// `None` outside a channel-targeted step.

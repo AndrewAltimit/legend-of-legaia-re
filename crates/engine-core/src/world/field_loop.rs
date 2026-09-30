@@ -646,8 +646,7 @@ impl World {
     /// The same guard is applied before the first instruction, so a slice
     /// never *starts* inside text either.
     ///
-    /// The per-actor channel runner ([`Self::step_field_channels`]) has always
-    /// paced itself this way (retail `FUN_80039B7C`'s own `0x21` break); the
+    /// The per-actor channel runner has always paced itself this way (retail `FUN_80039B7C`'s own `0x21` break); the
     /// system script did not, and one op per tick is a ~20x slowdown on a
     /// scene's per-frame system loop. Concretely, `town01` `P1[0]` starts BGM
     /// 2016 at `+0x000C` and stops it 32 instructions later at `+0x0061` on a

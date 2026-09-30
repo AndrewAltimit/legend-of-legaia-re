@@ -750,8 +750,7 @@ impl BootSession {
         host.set_map_resolver(Box::new(DefaultMapIdResolver::from_index(&host.index)));
         // Free-roam liveliness (NPC patrol routes + the ambient walk
         // mirror) on, as both play hosts run it: it is retail behaviour, and
-        // it never engages a placement's script (`World::step_field_channels`
-        // keeps its engaged window), so the headless drivers - ladders,
+        // it never engages a placement's script (only a touch does), so the headless drivers - ladders,
         // oracles, the retail comparison corpus - see the world a player sees.
         host.world.npcs.animate = true;
 

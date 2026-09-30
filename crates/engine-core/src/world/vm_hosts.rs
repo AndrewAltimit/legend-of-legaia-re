@@ -2586,8 +2586,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             self.world.carry_npc_run_anim(slot, move_id);
             return;
         }
-        // A live channel stepping its OWN script (an engaged
-        // `step_field_channels` slice, retail `FUN_80039B7C`):
+        // A live channel stepping its OWN script (the spawn pre-run
+        // slice, retail `FUN_80039B7C`):
         // walk the placement there as a scripted glide leg (the faithful
         // `4C 51` run dispatch plays a move clip toward the tile). Falls
         // back to a direct ctx seat when the slot has no surfaced position

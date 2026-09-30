@@ -616,7 +616,7 @@ pub(crate) const CUTSCENE_TIMELINE_MAX_FRAMES: u32 = 1200;
 pub(crate) const PROLOGUE_TIMELINE_MAX_FRAMES: u32 = 3600;
 
 /// Per-frame, per-channel field-VM step budget for the spawned per-actor
-/// channels ([`World::step_field_channels`]). Retail slices end at a yield /
+/// channels' spawn pre-run ([`World::pre_run_field_channel_prologues`]). Retail slices end at a yield /
 /// park / `0x21` NOP, normally within a handful of ops; the budget bounds a
 /// malformed non-yielding stretch.
 pub(crate) const FIELD_CHANNEL_STEP_BUDGET: u32 = 128;

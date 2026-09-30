@@ -223,19 +223,21 @@ started from:
 resume and paging, so the image channel frames the phase the state
 channels scored; it is handed only when the headless run met the gate.
 
-What the replay exposes is the engine's own record execution. Two shapes
-recur:
+What the replay exposes is the engine's own record execution, and two
+shapes it has shown are worth knowing:
 
-- **Engine-only flags from placements the record addressed.** The engine
-  steps a placement's own script once a playing record has addressed it
-  with a cross-context op (`CutsceneTimeline::addressed_channels`), so a
-  poked placement parked after its spawn section's `0x21` runs its talk body.
-  Retail runs a context only while `+0x10 & 0x100` is up, and a poke does
-  not raise it: `dolk2_market_noa`'s retail Noa context sits at `P1[2]`
-  `+0x40`, while the engine's runs on and sets `0x2FE`; the `town01` opening
-  states pick up `0x20A` / `0x23D` from `P1[10]` / `P1[11]` the same way.
-- **Pacing.** Where the engine takes a leg at another speed than retail,
-  the gate lands where the engine is, and the channels read the difference
+- **Talk bodies a cutscene never engages.** A placement's own script runs
+  only while `+0x10 & 0x100` is up, and only a touch raises it; a poke, a
+  walk or a placement from a cutscene record leaves it down
+  ([`script-vm.md`](../subsystems/script-vm.md#engagement-and-the-system-script)).
+  An engine that stepped every placement a record addressed ran their talk
+  bodies: `dolk2_market_noa`'s Noa (`P1[2]`) set `0x2FE`, and the `town01`
+  opening states picked up `0x20A` / `0x23D` from `P1[10]` / `P1[11]`.
+- **Where a record waits on a walk.** A player compass walk (`B7 F8` /
+  `C1 F8`) does not park its record: the record runs on and waits at its
+  next op on the player. A gate on that next op is met while the leg still
+  plays, and an engine that parked on the walk itself met it only after the
+  leg, with every beat after the walk late by a leg
   ([below](#ending-vignettes-are-mid-script)).
 
 ## Battle states
@@ -680,7 +682,7 @@ Shapes the corpus separates, each with what it indicates:
 | player seated exactly, camera focus thousands of units away (`kor5_post_43a_checkpoint`: player Z `5312`, focus Z `11840`) | script progress: a scene script aimed the retail camera at another part of the map; the engine's follow camera frames the player |
 | a town label over the overworld's `H`, word `2000` and fog gate | a door caught before the town's field init ran; scored as the overworld `0x80084540` names ([below](#arrival-states-are-captured-before-the-town-runs)) |
 | retail word held by a flag the entry script already consumed (`garmel`'s `0x196`, `rikuroa`'s `0x289`) | script progress: the track was started by a beat that has since cleared its trigger flag, so a card load would not restart it |
-| camera depth and position off on an ending vignette (`ending_vignette_rimelm_walkaway`) | the engine walks the credits path slower than retail, so its gate lands later in the shot ([below](#ending-vignettes-are-mid-script)) |
+| camera depth and position off on an ending vignette (`ending_vignette_rimelm_walkaway`) | a residue of about a dozen frames of the credits walk against the camera glide ([below](#ending-vignettes-are-mid-script)) |
 | camera exact, frame aimed at another part of the room; retail focus `0x80089118/20` is not `-player` | a probe-poked capture ([below](#a-poked-player-keeps-the-arrival-focus)) |
 
 ### A poked player keeps the arrival focus
@@ -755,13 +757,16 @@ camera back and round (slots 0, 1, 3..8). Traced per tick, the engine's
 globals reach `416 / 77 / 10477` near tick 190 of that walk - within two
 angle units and a hundred depth units of the retail state.
 
-The phase gate does not land there. Retail is parked on the record's
-`B8 F8 82 08` rotate at `+0x97` with the player still finishing the compass
-walk `C1 F8 03 C4` at `+0x93` (the player's `+0x94`) and the camera mover
-123 of 780 frames into its glide; the engine reaches `+0x97` about seventy
-ticks later than the tick where its camera matched, so its eye depth has
-run on to `12381`. The record's compass walks take the engine longer than
-retail, and the gated `camera` / `position` channels read that pacing.
+Retail is parked on the record's `B8 F8 82 08` rotate at `+0x97` with the
+player still walking the compass leg `C1 F8 03 C4` at `+0x93` (the player's
+`+0x94`), and the camera mover 123 of 780 frames into its glide. That is
+the compass-walk arm's own shape: it seats the leg on the player and returns
+past the op, and the `B8 F8` waits in the dispatcher prologue until the leg
+lands. The `45 0B` glide after `+0x6E` likewise starts with the `+0x6E` leg,
+not after it. The engine plays the walk the same way, and the gated state
+lands within a few dozen units of retail's player; what remains is about a
+dozen frames between the walk and the glide (retail's glide is 123 frames
+in after 111 walked units, the engine's after 123).
 
 ### The dance-hall state is inside the contest-entry cutscene
 
@@ -779,9 +784,9 @@ centre at `(6144, 13248)`, the four dancers present) and the frame reads as
 frame is also partway into the load fade.
 
 The phase gate resumes record 6 and replays that staging, which puts the
-camera exactly on retail's shot; the engine's player then stands at
-`(6208, 13120)` rather than retail's `(5952, 12992)`, so `position` reads the
-replay's player run rather than the seat.
+camera exactly on retail's shot and the player on retail's `(5952, 12992)`.
+An engine that stepped the placements the record pokes left the player at
+`(6208, 13120)`; no poke engages a placement, so none runs.
 
 ## See also
 

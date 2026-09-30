@@ -2165,8 +2165,8 @@ impl World {
     ///
     /// REF: FUN_8003774C, FUN_8003c9ac
     pub(crate) fn tick_field_npc_motions(&mut self) {
-        // A running cutscene timeline owns the stage: its per-actor channels
-        // ([`Self::step_field_channels`]) drive NPC moves, so the engine's
+        // A running cutscene timeline owns the stage: its pokes on the
+        // per-actor channels drive NPC moves, so the engine's
         // autonomous waypoint substitute stands down (it would overwrite the
         // scripted positions each frame). In-flight SCRIPTED legs keep
         // stepping - the timeline's own cross-context walk-to-tile yields

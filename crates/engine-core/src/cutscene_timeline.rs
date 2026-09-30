@@ -285,10 +285,12 @@ pub struct CutsceneTimeline {
     /// writing the NPC's render heading each frame.
     // REF: FUN_8003774C (case 0x38: rotate-to-angle interpreted in place)
     pub facing_wait: Option<TimelineFacing>,
-    /// `Some` while the timeline is PARKED on a cross-context **compass
-    /// walk** against the player (`B7 F8 <b0> <b1>` / `C1 F8 <b0> <b1>` = op
+    /// `Some` while a cross-context **compass walk** this timeline armed
+    /// against the player plays (`B7 F8 <b0> <b1>` / `C1 F8 <b0> <b1>` = op
     /// `0x37` / `0x41` with the player-anchor target). Retail's dispatcher
-    /// parks the record on the player's `+0x94` and the walk kernel
+    /// seats the op on the player's `+0x94`, raises its `0x400` and advances
+    /// the record past the op; the record's next cross-context op on the
+    /// player waits until the leg lands. The walk kernel
     /// (`FUN_8003774C`, arm `0x8003789C..0x800379F8`) translates the player
     /// along one of eight compass directions for `(b1 & 0x3F) * (4 << sel)`
     /// speed units, spending `DAT_1F800393` of them per game tick - one per
@@ -328,16 +330,6 @@ pub struct CutsceneTimeline {
     /// its own while the timeline holds it.
     // REF: FUN_80039B7C
     pub interaction_slot: Option<u8>,
-    /// Placement indices this context has addressed with a cross-context op
-    /// (`0x80`-bit, the target resolved to a placement channel). While a
-    /// timeline plays, only these placements' own scripts step
-    /// ([`crate::world::World::step_field_channels`]): retail runs a
-    /// placement context only while its `+0x10 & 0x100` is up, and a spawned
-    /// placement starts with it down (`FUN_801D3F24` clears it before the
-    /// spawn pre-run), so a beat that never addresses an actor does not wake
-    /// that actor's talk body.
-    // REF: FUN_8003BC08, FUN_80039B7C
-    pub addressed_channels: Vec<usize>,
 }
 
 /// State of a parked player compass walk (see
@@ -353,9 +345,10 @@ pub struct TimelinePlayerGlide {
     pub body1: u8,
     /// `0x80` for op `0x37`, `0x40` for op `0x41`.
     pub rate: i32,
-    /// PC to resume at once the leg completes (`yield pc + 4`).
+    /// PC past the op (`yield pc + 4`), where the record runs on while
+    /// the leg plays.
     pub resume_pc: usize,
-    /// Ticks parked so far, bounded by the walk park timeout.
+    /// Ticks the leg has played, bounded by the walk park timeout.
     pub frames: u32,
 }
 
@@ -451,7 +444,6 @@ impl CutsceneTimeline {
             player_clip_wait: None,
             stepped: false,
             interaction_slot: None,
-            addressed_channels: Vec::new(),
         }
     }
 

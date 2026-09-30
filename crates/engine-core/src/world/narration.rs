@@ -1023,6 +1023,40 @@ impl World {
     /// channel-completion handshake (nothing else ran this frame); `true`
     /// when a slice ran (the caller then applies its frame cap / teardown).
     // REF: FUN_8003BDE0
+    /// One vsync of a player compass-walk leg (`B7 F8` / `C1 F8`): the walk
+    /// kernel's spend against the player actor. `true` while the leg still
+    /// has units left (and the park timeout has not run out).
+    // REF: FUN_8003774C (the 0x37 / 0x41 arm)
+    fn step_player_glide(
+        &mut self,
+        glide: &mut crate::cutscene_timeline::TimelinePlayerGlide,
+    ) -> bool {
+        glide.frames += 1;
+        let done = match self.player_actor_slot {
+            Some(p) if (p as usize) < self.actors.len() => {
+                let ms = &self.actors[p as usize].move_state;
+                glide.state.world_x = ms.world_x;
+                glide.state.world_z = ms.world_z;
+                let done = vm::motion_vm::compass_walk(
+                    &mut glide.state,
+                    glide.body0,
+                    glide.body1,
+                    glide.rate,
+                );
+                let (nx, nz) = (glide.state.world_x, glide.state.world_z);
+                let y = self.sample_field_floor_height(i32::from(nx), i32::from(nz)) as i16;
+                let ms = &mut self.actors[p as usize].move_state;
+                ms.world_x = nx;
+                ms.world_z = nz;
+                ms.world_y = y;
+                done
+            }
+            // No player actor to move: nothing plays the leg out.
+            _ => true,
+        };
+        !done && glide.frames < WALK_PARK_TIMEOUT
+    }
+
     fn run_spawned_record_slice(
         &mut self,
         tl: &mut crate::cutscene_timeline::CutsceneTimeline,
@@ -1189,46 +1223,24 @@ impl World {
             }
             tl.pc = walk.resume_pc;
         }
-        // Player compass-walk park (`B7 F8 <b0> <b1>` / `C1 F8 ..`, ops
-        // `0x37` / `0x41` against the player anchor): the walk kernel
-        // translates the player in place, one speed unit per vsync, and the
-        // parked record resumes past the yield when the leg's budget is spent.
-        // REF: FUN_8003774C (the 0x37 / 0x41 arm)
+        // Player compass walk (`B7 F8 <b0> <b1>` / `C1 F8 ..`, ops `0x37` /
+        // `0x41` against the player anchor): the walk kernel translates the
+        // player in place, one speed unit per vsync, while the record runs on
+        // past the op; the record's next cross-context op on the player
+        // waits until the leg is spent (see the halted-target refusal below).
+        //
+        // Retail's kernel runs after the script in the record's actor tick
+        // (`FUN_8003BC08`: runner at `0x8003BD34`, kernel at `0x8003BD50`),
+        // so the leg spends its first unit on the frame the op arms it, and
+        // a leg that lands frees the player for the script only on the next
+        // frame. `glide_hold` carries that frame.
+        // REF: FUN_8003774C (the 0x37 / 0x41 arm), FUN_8003BC08
+        let mut glide_hold = false;
         if let Some(mut glide) = tl.player_glide.take() {
-            glide.frames += 1;
-            let done = match self.player_actor_slot {
-                Some(p) if (p as usize) < self.actors.len() => {
-                    let ms = &self.actors[p as usize].move_state;
-                    glide.state.world_x = ms.world_x;
-                    glide.state.world_z = ms.world_z;
-                    let done = vm::motion_vm::compass_walk(
-                        &mut glide.state,
-                        glide.body0,
-                        glide.body1,
-                        glide.rate,
-                    );
-                    let (nx, nz) = (glide.state.world_x, glide.state.world_z);
-                    let y = self.sample_field_floor_height(i32::from(nx), i32::from(nz)) as i16;
-                    let ms = &mut self.actors[p as usize].move_state;
-                    ms.world_x = nx;
-                    ms.world_z = nz;
-                    ms.world_y = y;
-                    done
-                }
-                // No player actor to move: nothing plays the leg out.
-                _ => true,
-            };
-            if !done && glide.frames < WALK_PARK_TIMEOUT {
+            if self.step_player_glide(&mut glide) {
                 tl.player_glide = Some(glide);
-                self.field_vm.channels = channels;
-                self.field_vm.stepping_view.clear();
-                self.cutscene.in_timeline = false;
-                self.field_vm.in_spawned_record_slice = false;
-                // Real playout progress, like the walk park.
-                tl.frames = tl.frames.saturating_sub(1);
-                return false;
             }
-            tl.pc = glide.resume_pc;
+            glide_hold = true;
         }
         // Player end-latch spin (`AD F8 08`): held while the scene-bank clip
         // the record poked onto the player is still playing; retail's clip
@@ -1430,7 +1442,20 @@ impl World {
                             }),
                         None => false,
                     };
-                if halted_target {
+                // The player walk this context armed itself holds the player's
+                // `0x400` the same way: the `0x37` / `0x41` arm advances the
+                // record past the op (`s7 = 3` at `0x801DEEFC` for a player
+                // target) and the next cross-context op on the player waits
+                // for the leg to land - `map01`'s credits record sits on its
+                // `B8 F8 82 08` at `+0x97` while the `C1 F8 03 C4` leg before
+                // it walks Vahn. `32 <id> 0A` (the halt clear) is exempt
+                // (`0x801DE8E0..0x801DE904`).
+                // REF: FUN_801DE840 (0x801DEE90..0x801DEF1C)
+                let own_glide_target = opcode_byte & 0x80 != 0
+                    && (tl.player_glide.is_some() || glide_hold)
+                    && vm::field::peek_extended(&tl.bytecode, pc) == Some(0xF8)
+                    && !(opcode_byte & 0x7F == 0x32 && tl.bytecode.get(pc + 2) == Some(&0x0A));
+                if halted_target || own_glide_target {
                     tl.frames = tl.frames.saturating_sub(1);
                     break;
                 }
@@ -1710,7 +1735,8 @@ impl World {
                         continue;
                     }
                     // Compass walk on the player (`B7 F8 b0 b1` / `C1 F8
-                    // b0 b1`): park while the walk kernel plays the leg.
+                    // b0 b1`): arm the leg and run on; the walk kernel plays
+                    // it while the record's next op on the player waits.
                     //
                     // Modal timelines and concurrent helpers alike: both run
                     // under the player's engaged bit, so the pad is refused
@@ -1725,7 +1751,7 @@ impl World {
                         if pc < tl.visited.len() {
                             tl.visited[pc] = true;
                         }
-                        tl.player_glide = Some(crate::cutscene_timeline::TimelinePlayerGlide {
+                        let mut glide = crate::cutscene_timeline::TimelinePlayerGlide {
                             state: vm::motion_vm::MotionState {
                                 speed: 1,
                                 ..Default::default()
@@ -1735,8 +1761,13 @@ impl World {
                             rate: if op == 0x37 { 0x80 } else { 0x40 },
                             resume_pc: pc + 4,
                             frames: 0,
-                        });
-                        break;
+                        };
+                        if host.world.step_player_glide(&mut glide) {
+                            tl.player_glide = Some(glide);
+                        }
+                        glide_hold = true;
+                        tl.pc = pc + 4;
+                        continue;
                     }
                     // End-latch spin on the player (`AD F8 08`): park while
                     // the poked scene-bank clip is still playing.
@@ -1790,14 +1821,6 @@ impl World {
                         tl.player_wait = Some(width);
                         break;
                     }
-                }
-                if let Some((_, ci)) = target
-                    && !channels[ci].object_bind
-                    && !tl
-                        .addressed_channels
-                        .contains(&channels[ci].placement_index)
-                {
-                    tl.addressed_channels.push(channels[ci].placement_index);
                 }
                 let result = if let Some((_, ci)) = target {
                     // Object-bind channels are poke targets, but their
@@ -2422,31 +2445,6 @@ impl World {
             .collect()
     }
 
-    // PORT: FUN_80039B7C (per-actor frame-slice loop; NOP break + halt park)
-    // REF: FUN_8003C83C (cross-context target resolve)
-    pub fn step_field_channels(&mut self) {
-        // ENGAGE-gated, not free-running. Retail's per-actor ticker
-        // (`FUN_8003BC08`, body `0x8003bd10..0x8003bd38`) dispatches the
-        // script runner `FUN_80039B7C` only while the actor carries the
-        // script-engaged bit (`actor[+0x10] & 0x100`, cleared by the
-        // runner's own interaction teardown `& 0xfffffeff`); ambient NPC
-        // walking is the motion-VM arm (`& 0x400` -> `FUN_8003774C`), not
-        // script stepping. A placement script therefore does NOT free-run
-        // in free-roam - its post-prologue body is the talked-to
-        // conversation (and town01 `P1[40]`'s opens with a `52 34` flag SET
-        // plus an op-`0x45` camera configure that must never fire
-        // ambiently). The engine's engaged window is the set of placements an
-        // active cutscene timeline (or helper) has addressed - its
-        // choreography drives them. The free-roam liveliness mode
-        // (`FieldNpcState::animate`) does not widen it: that mode drives the
-        // two motion VMs, never a placement's script.
-        // REF: FUN_8003BC08 (the `+0x10 & 0x100` dispatch gate)
-        if !self.cutscene_timeline_active() && !self.npcs.animate {
-            return;
-        }
-        self.step_field_channels_inner(false);
-    }
-
     /// Retail's spawn-install prologue pre-run: `FUN_8003A1E4` runs each
     /// just-spawned placement context through the field VM at scene load, so
     /// the record's story-flag-tested opening ops execute BEFORE the first
@@ -2457,9 +2455,8 @@ impl World {
     /// the placements stand parked or relocated from frame one, positions the
     /// raw placement header does not carry.
     ///
-    /// The engine mirror: run ONE frame slice per channel (the same
-    /// NOP-break slice [`Self::step_field_channels`] runs per frame - a spawn
-    /// prologue is written `test / MoveTo / 21`-idle, so its repositioning
+    /// The engine mirror: run ONE frame slice per channel (the NOP-break
+    /// slice of `FUN_80039B7C` - a spawn prologue is written `test / MoveTo / 21`-idle, so its repositioning
     /// lands in the first slice), *unconditionally* - this is load-time
     /// behaviour, not the opt-in free-roam liveliness - but only for a record
     /// whose first opcode is `0x24`/`0x25`, the install loop's own entry gate.
@@ -2480,11 +2477,25 @@ impl World {
     /// Call at scene entry after the carrier/channel install; the resulting
     /// positions snapshot into [`crate::world::FieldNpcState::entry_positions`], the state
     /// a cutscene teardown restores to.
+    ///
+    /// This load-frame slice is the only time the engine steps a placement
+    /// channel's own script. Retail's per-actor tick `FUN_8003BC08` runs a
+    /// context (`FUN_80039B7C`) only while its `+0x10 & 0x100` is up, and
+    /// the three writers of that bit are the touch post `FUN_801D5B5C`, the
+    /// op-`0x44` record spawner `FUN_8003BDE0` (a new partition-2 context -
+    /// the engine's helper contexts) and the system SM `FUN_801DA51C`. The
+    /// spawn install `FUN_8003A1E4` raises `0x01020000`, not `0x100`, and a
+    /// cross-context op runs on the caller's slice against the target's
+    /// context without raising it. So a placement a cutscene pokes, walks or
+    /// places does not run its talk body: `dolk2`'s Noa (`P1[2]`) and the
+    /// `town01` opening's `P1[10]` / `P1[11]` stay parked after their spawn
+    /// section. A touch runs the engaged context as the interaction timeline
+    /// ([`crate::cutscene_timeline::CutsceneTimeline::interaction_slot`]).
     // PORT: FUN_8003A1E4 (spawn-prologue pre-run -> initial actor positions)
-    // REF: FUN_8003AEB0, FUN_80039B7C
+    // REF: FUN_8003AEB0, FUN_80039B7C, FUN_8003BC08
     pub fn pre_run_field_channel_prologues(&mut self) {
         self.field_vm.entry_prerun = true;
-        self.step_field_channels_inner(true);
+        self.step_field_channel_prologues();
         self.field_vm.entry_prerun = false;
         self.npcs.entry_positions = self.npcs.positions.clone();
         // The ambient motion channels installed with the carriers still hold
@@ -2494,39 +2505,13 @@ impl World {
         self.resync_ambient_start_positions();
     }
 
-    fn step_field_channels_inner(&mut self, entry_prerun: bool) {
+    fn step_field_channel_prologues(&mut self) {
         if self.field_vm.channels.is_empty() {
             return;
         }
         let Some(man) = self.field_vm.channels_man.clone() else {
             return;
         };
-        let interaction_slot = self
-            .cutscene
-            .timeline
-            .as_ref()
-            .filter(|tl| !tl.done)
-            .and_then(|tl| tl.interaction_slot)
-            .map(usize::from);
-        // Outside the entry pre-run the engaged window is the timeline's: a
-        // placement steps only once a playing context has addressed it
-        // ([`crate::cutscene_timeline::CutsceneTimeline::addressed_channels`]).
-        // Stepping every placement instead woke each one's talk body - in
-        // `town0d` one walk-on beat ran Noa's (`P1[2]`) and Gala's (`P1[3]`)
-        // first-talk arms at once, and both spawned records walked the player
-        // toward different tiles. The liveliness mode is no exception: with
-        // it widening the window, an idle card-load resume in `vell` ran
-        // `P1[3]`'s talk body, whose `44 24` spawn walked the player off the
-        // seat, and one in `koin1` opened a placement's dialogue with no
-        // button pressed.
-        let engaged: Option<std::collections::HashSet<usize>> = (!entry_prerun).then(|| {
-            self.cutscene
-                .timeline
-                .iter()
-                .chain(self.field_vm.helper_contexts.iter())
-                .flat_map(|tl| tl.addressed_channels.iter().copied())
-                .collect()
-        });
         let mut channels = std::mem::take(&mut self.field_vm.channels);
         // Host hooks resolve cross-context ids against the channel set while
         // one of these is executing; the live vector is moved out for the
@@ -2546,19 +2531,6 @@ impl World {
             // bind-time `0x24`/`0x25` prologue already ran at install,
             // mirroring `FUN_8003A55C`).
             if channels[i].object_bind {
-                continue;
-            }
-            // The placement whose parked context a touch resumed as the
-            // modal timeline: that timeline IS this context
-            // ([`crate::cutscene_timeline::CutsceneTimeline::interaction_slot`]),
-            // so stepping the channel too would run the same bytes twice.
-            if interaction_slot == Some(channels[i].placement_index) {
-                continue;
-            }
-            if engaged
-                .as_ref()
-                .is_some_and(|set| !set.contains(&channels[i].placement_index))
-            {
                 continue;
             }
             if man.len() <= channels[i].record_offset {
@@ -2581,12 +2553,10 @@ impl World {
             // freshly seated `+0x9E` is `0x24` or `0x25` (`addiu v0,v1,-0x24;
             // sltiu v0,v0,0x2` at `0x8003A480`), so a placement opening on
             // anything else executes nothing inside the load frame.
-            if entry_prerun
-                && !matches!(
-                    man.get(channels[i].record_offset + channels[i].pc),
-                    Some(0x24 | 0x25)
-                )
-            {
+            if !matches!(
+                man.get(channels[i].record_offset + channels[i].pc),
+                Some(0x24 | 0x25)
+            ) {
                 continue;
             }
             let mut budget = FIELD_CHANNEL_STEP_BUDGET;
@@ -2675,20 +2645,13 @@ impl World {
                 }
             }
         }
-        // Write scripted moves through to the field NPC render/probe state.
-        // On free-roam the waypoint patroller owns routed placements (it runs
-        // right after this and would overwrite the slot anyway), so a channel's
-        // move is surfaced only for placements it does not drive - "keep the
-        // existing locomotion where the channel doesn't override it". During a
-        // cutscene the patroller stands down, so the channel owns every slot.
-        //
-        // The ENTRY PRE-RUN writes through unconditionally: the executed
-        // spawn-prologue branch is the story truth for the slot's initial
-        // position, and a decoded patrol route it contradicts (a park, or a
-        // relocation beyond the route's locality) is a branch the flag-blind
-        // route decode kept wrongly - drop it so the patroller can neither
-        // resurrect the ghost nor pace a patrol around the wrong anchor.
-        let patroller_active = !self.cutscene_timeline_active();
+        // Write the spawn prologue's moves through to the field NPC
+        // render/probe state, unconditionally: the executed branch is the
+        // story truth for the slot's initial position, and a decoded patrol
+        // route it contradicts (a park, or a relocation beyond the route's
+        // locality) is a branch the flag-blind route decode kept wrongly -
+        // drop it so the patroller can neither resurrect the ghost nor pace a
+        // patrol around the wrong anchor.
         for (c, pre) in channels.iter().zip(pre_pos) {
             if c.object_bind {
                 // Flat-record-keyed context; the NPC surfaces are
@@ -2700,45 +2663,21 @@ impl World {
                 continue;
             }
             let slot = c.placement_index as u8;
-            if entry_prerun {
-                let (nx, nz) = (nx as i16, nz as i16);
-                let hide = crate::world::FIELD_OFFMAP_HIDE_XZ;
-                let parked = (nx, nz) == (hide, hide);
-                let outside_route = self.npcs.routes.get(&slot).is_some_and(|route| {
-                    route.iter().all(|&(wx, wz)| {
-                        let (dx, dz) =
-                            ((wx as i32 - nx as i32).abs(), (wz as i32 - nz as i32).abs());
-                        dx.max(dz) > crate::man_field_scripts::NPC_ROUTE_LOCALITY
-                    })
-                });
-                if parked || outside_route {
-                    self.npcs.routes.remove(&slot);
-                    self.npcs.glide_speeds.remove(&slot);
-                    self.npcs.motions.remove(&slot);
-                }
-                self.npcs.positions.insert(slot, (nx, nz));
-                continue;
+            let (nx, nz) = (nx as i16, nz as i16);
+            let hide = crate::world::FIELD_OFFMAP_HIDE_XZ;
+            let parked = (nx, nz) == (hide, hide);
+            let outside_route = self.npcs.routes.get(&slot).is_some_and(|route| {
+                route.iter().all(|&(wx, wz)| {
+                    let (dx, dz) = ((wx as i32 - nx as i32).abs(), (wz as i32 - nz as i32).abs());
+                    dx.max(dz) > crate::man_field_scripts::NPC_ROUTE_LOCALITY
+                })
+            });
+            if parked || outside_route {
+                self.npcs.routes.remove(&slot);
+                self.npcs.glide_speeds.remove(&slot);
+                self.npcs.motions.remove(&slot);
             }
-            if patroller_active {
-                if self.npcs.routes.contains_key(&slot) {
-                    continue;
-                }
-                // Surface a facing from the scripted move so a never-walked NPC
-                // its placement script repositions no longer renders unrotated.
-                // Deliberate stand-in (retail's `0x23` teleport writes no
-                // heading at all), quantised onto the walk law's eight-point
-                // compass from the step's axis signs - every retail
-                // walk-driven facing is a compass entry (`walk_facing_yaw`,
-                // the `0x47` tail's LUT write), never an arbitrary bearing.
-                let (dx, dz) = (
-                    i32::from(nx) - i32::from(pre.0),
-                    i32::from(nz) - i32::from(pre.1),
-                );
-                if let Some(yaw) = vm::motion_vm::walk_facing_yaw(dx, dz) {
-                    self.npcs.headings.insert(slot, yaw as i16);
-                }
-            }
-            self.npcs.positions.insert(slot, (nx as i16, nz as i16));
+            self.npcs.positions.insert(slot, (nx, nz));
         }
         self.field_vm.channels = channels;
         self.field_vm.stepping_view.clear();
@@ -2748,15 +2687,14 @@ impl World {
     /// entry: one context per MAN partition-1 placement, exactly as a cutscene
     /// install seeds them, but without a timeline driving cross-context pokes.
     /// The scene loader calls this after the placement-derived carrier / NPC
-    /// install so each placement's own init opcodes run through
-    /// [`Self::step_field_channels`] - scripted facings, idle/`WAIT` cadence,
-    /// local-flag setup - the non-cutscene half of retail's `FUN_8003AEB0`
-    /// spawn loop.
+    /// install so each placement's spawn section runs through
+    /// [`Self::pre_run_field_channel_prologues`] - the non-cutscene half of
+    /// retail's `FUN_8003AEB0` spawn loop.
     ///
     /// Cutscene scenes (`opdeene` and friends) re-seed the set through
     /// [`Self::install_cutscene_timeline_record`] afterwards, which simply
     /// replaces this set, so the two paths compose. A scene with no placements
-    /// seeds an empty set and [`Self::step_field_channels`] no-ops - but the
+    /// seeds an empty set and the pre-run no-ops - but the
     /// MAN is retained regardless: object-bind channels
     /// ([`Self::seed_object_channels`]) and walk-on partition-2 installs
     /// ([`Self::install_gated_p2_record`]) execute out of the same buffer, and
@@ -4209,26 +4147,32 @@ mod tests {
     }
 
     /// `B7 F8 00 81` walks the player one tile along `-Z` over sixteen
-    /// ticks - one speed unit per vsync, `FUN_8003774C`'s `0x37` arm - and
-    /// the record resumes past the 4-byte yield only when the leg is spent.
+    /// ticks - one speed unit per vsync, `FUN_8003774C`'s `0x37` arm, the
+    /// first spent on the arming frame. The record runs on past the op at
+    /// once and waits at its next op on the player (`B2 F8 18`) until the
+    /// frame after the leg lands.
     #[test]
-    fn cutscene_timeline_player_compass_walk_parks_for_its_budget() {
+    fn cutscene_timeline_player_compass_walk_runs_its_budget_while_the_record_waits() {
         let mut w = timeline_with_player_walk_and_clip_wait(10);
-        w.step_cutscene_timeline(); // arms the walk park
         let mut ticks = 0;
-        while w
-            .cutscene
-            .timeline
-            .as_ref()
-            .is_some_and(|tl| tl.player_glide.is_some())
-        {
+        loop {
             w.step_cutscene_timeline();
             ticks += 1;
-            assert!(ticks < 64, "the walk park releases");
+            let tl = w.cutscene.timeline.as_ref().unwrap();
+            assert_eq!(tl.pc, 4, "past the walk, held on the player op");
+            if tl.player_glide.is_none() {
+                break;
+            }
+            assert!(ticks < 64, "the leg lands");
         }
         assert_eq!(ticks, 16, "sixteen speed units at one per tick");
         assert_eq!(w.actors[0].move_state.world_z, 0x2040 - 128);
         assert_eq!(w.actors[0].move_state.world_x, 0x1040);
+        w.step_cutscene_timeline();
+        assert!(
+            w.cutscene.timeline.as_ref().unwrap().pc > 4,
+            "the next frame runs the player op"
+        );
     }
 
     /// The `AD F8 08` spin after a scene-bank clip poke holds for the clip's
@@ -4357,22 +4301,6 @@ mod tests {
     }
 
     #[test]
-    fn the_channel_a_touch_resumed_timeline_holds_does_not_step_itself() {
-        // `SET 5`, a long `WaitFrames`, `21`. While the timeline parks on the
-        // wait, the channel stepper must not run the same bytes a second time
-        // - two copies of one context is how the Rim Elm bee beat fired its
-        // scripted fight from the channel while the timeline sat on the text.
-        let mut w = interaction_timeline(vec![0x50, 0x05, 0x4A, 0x40, 0x00, 0x21], 3);
-        w.step_cutscene_timeline();
-        assert!(w.cutscene.timeline.is_some(), "parked on the wait");
-        w.step_field_channels();
-        assert_eq!(
-            w.field_vm.channels[0].pc, 0,
-            "the held channel did not step"
-        );
-    }
-
-    #[test]
     fn the_system_script_starts_no_pass_while_another_context_holds_the_player() {
         use crate::cutscene_timeline::CutsceneTimeline;
         // Two passes: `SET 7`, `21`, then `SET 8`, `21`.
@@ -4466,42 +4394,43 @@ mod tests {
     }
 
     #[test]
-    fn a_timeline_wakes_only_the_placements_it_addresses() {
+    fn a_poked_placement_does_not_run_its_talk_body() {
         use crate::cutscene_timeline::CutsceneTimeline;
         use crate::field_channels::FieldChannel;
+        use crate::world::SceneMode;
         use legaia_engine_vm::field::FieldCtx;
-        // Two placements whose talk bodies are `SET 0x20` / `SET 0x21`. The
-        // timeline addresses only the first (`B1 40 01`, a cross-context
-        // CFLAG_SET), then waits.
-        let man = vec![0x50, 0x20, 0x21, 0x50, 0x21, 0x21];
+        // A placement whose talk body is `SET 0x20`. The timeline pokes it
+        // (`B1 40 01`, a cross-context CFLAG_SET), then waits. Retail runs a
+        // placement context only while `+0x10 & 0x100` is up, which a poke
+        // does not raise (`FUN_8003BC08` -> `FUN_80039B7C`), so the talk body
+        // stays asleep however many frames pass - `dolk2`'s Noa once set
+        // `0x2FE` this way.
+        let man = vec![0x50, 0x20, 0x21];
         let mut w = World::new();
+        w.mode = SceneMode::Cutscene;
         w.cutscene.timeline = Some(CutsceneTimeline::new(
             vec![0xB1, 0x40, 0x01, 0x4A, 0x40, 0x00],
             0,
         ));
         w.field_vm.channels_man = Some(std::sync::Arc::new(man));
-        let chan = |placement_index, script_id, record_offset| FieldChannel {
-            placement_index,
+        w.field_vm.channels = vec![FieldChannel {
+            placement_index: 1,
             ctx: FieldCtx {
-                script_id,
+                script_id: 0x40,
                 ..FieldCtx::default()
             },
-            record_offset,
+            record_offset: 0,
             pc: 0,
             done: false,
             object_bind: false,
-        };
-        w.field_vm.channels = vec![chan(1, 0x40, 0), chan(2, 0x41, 3)];
-        // Before the timeline addresses anyone, no talk body runs.
-        w.step_field_channels();
-        assert!(!w.system_flag_test(0x20) && !w.system_flag_test(0x21));
+        }];
         w.step_cutscene_timeline();
-        w.step_field_channels();
-        assert!(w.system_flag_test(0x20), "the addressed placement steps");
-        assert!(
-            !w.system_flag_test(0x21),
-            "an unaddressed placement's talk body stays asleep"
-        );
+        assert_eq!(w.field_vm.channels[0].ctx.flags & 2, 2, "the poke landed");
+        for _ in 0..8 {
+            w.tick();
+        }
+        assert!(!w.system_flag_test(0x20), "the talk body stays asleep");
+        assert_eq!(w.field_vm.channels[0].pc, 0);
     }
 
     #[test]
