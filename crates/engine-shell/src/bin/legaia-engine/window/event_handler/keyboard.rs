@@ -502,7 +502,8 @@ impl PlayWindowApp {
         }
         // `M`: toggle the Muscle Dome contest (an ordinary battle, fought to
         // a KO - nothing bounds it by turns); Left/Right/Up/Down enter the
-        // four directions, Cross confirms / continues. Pressing M again
+        // four directions, Triangle opens the Ra-Seru list (Circle closes it),
+        // Cross confirms / continues. Pressing M again
         // aborts (no reward on an abort).
         //
         // The launch is the mode-24 door warp itself
@@ -546,9 +547,11 @@ impl PlayWindowApp {
             }
             return;
         }
-        // `B`: toggle the Baka Fighter duel minigame - Left/Right/Up throw
-        // the three attacks, Down charges the special, Cross leaves a decided
-        // match. Pressing B again aborts (no coins on an abort). Launched
+        // `B`: toggle the Baka Fighter duel minigame - Square / Circle /
+        // Cross throw the three attacks, Triangle commits the chargeable
+        // special (`World::tick_baka_fighter`); after a decided match the
+        // cabinet takes Left / Right (NEXT GAME / PAY OUT) and Cross.
+        // Pressing B again aborts (no coins on an abort). Launched
         // through the mode-24 door warp like `M` above, so the overture swap
         // and the return warp are the door's own.
         if matches!(code, KeyCode::KeyB)

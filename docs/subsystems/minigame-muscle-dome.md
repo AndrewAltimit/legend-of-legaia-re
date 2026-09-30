@@ -1980,7 +1980,7 @@ paths install through. See
 
 The world hosts the contest as the suspending `SceneMode::MuscleDome`
 (play-window `M` key; Left/Right/Up/Down enter the four directions, Triangle
-opens the Ra-Seru list, Cross confirms/continues). A KO of the opponent inside
+opens the Ra-Seru list (Circle closes it), Cross confirms/continues). A KO of the opponent inside
 the limit credits the reward Seru through the engine's capture kernel.
 
 The opponent is the disc's own: both hosts resolve `(course, round)` through
