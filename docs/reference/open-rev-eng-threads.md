@@ -627,39 +627,16 @@ side-face shade page closed by capture. All in
 [`re-settled-threads.md`](re-settled-threads.md#battle--arts--level-up).
 
 
-### Which frames gate a tick body's arms
-
-*Status:* resolved - all fourteen trampoline arms are measured; kept here because the shape of the answer is what the next such question needs
-
-Every arm of the band's tick bodies is decoded and ported, and the per-arm
-**frame gating** is the leg that a disassembly cannot give: the dwell is a
-module-resident countdown (PROT 0955's `0x801F9D28`) whose seed is written by
-whichever arm armed it. The drain is **per arm** - a multiplier of the
-scratchpad frame byte at `0x1F800393`, taken as a product with `0x1F80037D`,
-twice it, or once it - so the product shape holds for one family, not for the
-band.
-
-Driving casts from pre-cast save states measures the player-Seru half - PROT
-0903 / 0904 / 0905 / 0907 / 0908 / 0910 / 0911, plus 0959 - and the result is
-**not** one constant per arm: PROT 0907 holds 8 of its 16 arms identical across
-two fights and moves the other 7. `ctx[+0x6D8]` seeds 120 and drains one per
-tick on the player half, and holds a constant 20 on the capture half. The
-capture half is measured for twelve of the fourteen trampoline-reached arms of
-PROT 0940..0962, one fight each, with PROT 0943's `0xAB` reproduced twice; an
-exec breakpoint on the single `jal 0x801F2160` site inside PROT 0898 (at
-`0x801E50C8`) is one module tick, which is what makes a per-arm figure
-readable. Three arms park rather than gate, and PROT 0950's arm 6 has no gate at
-all - it ends on countdown expiry. Tables in
-[`cast-module.md`](../subsystems/cast-module.md#frame-gating-measured).
-
-The last two arms - PROT 0943's `0x40` and PROT 0944's `0x53` - needed a
-different **caster**, not a different state. Both stage clip `0x0B`, and SCUS's
-anim commit resolves a staged clip by indexing the caster's own spell-entry
-offset array with it, so a ten-entry monster reads its record's name text as a
-pointer. Logging the unmapped access rather than pausing on it, and forcing the
-cast on a twelve-entry caster, walks both bodies through arms 0..4 in 1, 9, 40,
-8 and 32 ticks. No monster record's magic slots name either id, so retail never
-performs either cast ([settled](re-settled-threads.md#battle--arts--level-up)).
+**Which frames gate a tick body's arms** is answered for every arm of the
+cast-module band, both halves
+([settled](re-settled-threads.md#battle--arts--level-up),
+[`cast-module.md`](../subsystems/cast-module.md#frame-gating-measured)). The
+shape of that answer is what carries to the next such question: disassembly
+gives the arm and its countdown but never the dwell, because the seed is
+written by whichever arm armed it and the drain is a per-arm multiple of the
+scratchpad frame byte `0x1F800393`. The dwell is a capture, read one module
+tick per hit on the single `jal 0x801F2160` site in PROT 0898 - and an arm
+that faults may be SCUS walking the wrong caster, not the arm.
 
 
 ## Audio / BGM
