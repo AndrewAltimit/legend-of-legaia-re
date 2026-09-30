@@ -218,6 +218,22 @@ and swinging round as the accumulator runs; it also sets `ctx[+0x243] = 1`.
 Port: `legaia_engine_vm::battle_cam_script::summon_cast_framing`, stepped by
 the shared battle camera both hosts drive.
 
+The swing starts at the **invoke clip**, not at the action. The staged-anim
+commit `FUN_8004AD80` zeroes `ctx[+0x26E]`, `ctx[+0x87C]` and the latch
+`ctx[+0x26F]` whenever the committing actor is `ctx[+0x13]`
+(`0x8004BF50..0x8004BF78`; the death ramp `+0x270` is left alone), so when
+clip `9` commits the close-up restarts from a level, unrotated camera - a
+capture three frames in reads `ctx[+0x87C] = 72` and pitch `-144`. Port:
+`BattleCamera::observe_active_commits` on the active actor's commit count.
+
+`0x33`'s cue `actor[+0x1F5]` is that clip's **effect-script cursor**: the
+battle effect-script walker `FUN_801DEA50` bumps it as each record fires on
+its frame, and the commit zeroes it (`0x8004B060`). So the flash-in waits
+for the invoke clip's first record, well after the clip commits - on the
+captures, about `28` vsyncs in (`ctx[+0x87C] = 632` when the flash is `51` vsyncs
+old). Port: `summon_windup_cue` reads `Actor::battle_effect_cursor`; a
+caster with no effect script is cued at once.
+
 ## Inner dispatch - actor action category
 
 Read once at `ctx[7] == 0x0C`, the byte `actor[+0x1DE]` selects the action category and seeds `ctx[7]`. The actor pointer is `(&DAT_801C9370)[ctx[+0x13]]` - i.e. the active battle actor.

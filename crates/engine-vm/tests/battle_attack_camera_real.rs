@@ -216,6 +216,7 @@ fn the_shared_camera_settles_on_the_per_art_framing() {
                     action: ActionFraming::default(),
                     shake_amplitude: 0,
                     action_state: 0,
+                    active_commits: 0,
                     attack: if phase { attack } else { None },
                 };
                 drive(&mut slot, true, inputs, frames, Some(&table));
@@ -270,6 +271,7 @@ fn an_unarmed_art_id_leaves_case_six_standing() {
             action: ActionFraming::default(),
             shake_amplitude: 0,
             action_state: 0,
+            active_commits: 0,
             attack: Some(AttackCamChannels {
                 character: CharacterArm::One,
                 // `0x1B` is an epilogue slot inside character 1's own bound.

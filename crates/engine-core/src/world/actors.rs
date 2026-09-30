@@ -1002,6 +1002,17 @@ impl World {
             actor.battle.flag_bits.clear(ActorFlags::ADVANCE_DONE);
             return;
         }
+        // The install path re-zeroes the battle camera's ramp / accumulator /
+        // latch when the committing actor is the active one
+        // (`lbu v0,0x13(v1); bne s3,v0` then `sb zero,0x26e` / `sw zero,0x87c`
+        // / `sb zero,0x26f` at `0x8004BF50..0x8004BF78`), so every framing
+        // that reads them - the summon close-up's swing, the per-art arms -
+        // runs from the clip's own start rather than from the action's.
+        // REF: FUN_8004AD80
+        if i == usize::from(self.battle_ctx.active_actor) {
+            self.battle_ctx.active_clip_commits =
+                self.battle_ctx.active_clip_commits.wrapping_add(1);
+        }
         // `+0x1DB = +0x1DA` (`FUN_8004AD80` `0x8004AEB0..0x8004AEB8`), taken
         // BEFORE the art-bank rewrite below turns an id >= 0x10 into its
         // dynamic slot number - so the latch keeps the RAW staged id, which

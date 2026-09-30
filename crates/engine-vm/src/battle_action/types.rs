@@ -1027,6 +1027,14 @@ pub struct BattleActionCtx {
     /// whose gate passed). Cleared by [`crate::battle_action::done_cleanup`]
     /// via [`crate::battle_gauge_rearm::restore_anim_rates`].
     pub gauge_rearm_latch: u8,
+    /// How many clips the **active** actor has committed - a counter the
+    /// port keeps for the commit's camera-counter reset, not a retail byte.
+    /// `FUN_8004AD80`'s install path zeroes `ctx[+0x26E]` / `+0x87C` /
+    /// `+0x26F` when the committing actor is `ctx[+0x13]`
+    /// (`0x8004BF50..0x8004BF78`); the battle camera re-zeroes its copies of
+    /// those counters whenever this moves
+    /// (`BattleCamInputs::active_commits`).
+    pub active_clip_commits: u32,
     /// `[+0x28B]` - the **Arts announcement banner**: `0` idle, `1..=4` a
     /// live banner, `5..=8` a cancel request. Raised by the staged-animation
     /// commit's SpecialStarter arm and stepped once per battle frame; see

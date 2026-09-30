@@ -47,6 +47,7 @@ impl BattleCamera {
             action,
             action_yaw: 0,
             last_action_state: 0,
+            last_active_commits: None,
             strike_style_zeroed: false,
             shake: ShakeState {
                 seed: SHAKE_SEED,
@@ -138,6 +139,23 @@ impl BattleCamera {
     /// PsyQ `rand()` stream as the attack camera's column flip; retail draws
     /// both from the process-wide generator, so no particular sequence is
     /// being reproduced.
+    /// The staged-animation commit's counter reset: when the active actor
+    /// commits a clip, `FUN_8004AD80` zeroes `ctx[+0x26E]` (the ramp),
+    /// `ctx[+0x87C]` (the accumulator) and `ctx[+0x26F]` (the latch)
+    /// (`0x8004BF50..0x8004BF78`). `ctx[+0x270]` (the death ramp) is not
+    /// touched.
+    ///
+    /// REF: FUN_8004AD80
+    pub fn observe_active_commits(&mut self, commits: u32) {
+        let prev = self.last_active_commits.replace(commits);
+        if prev.is_some_and(|p| p != commits) {
+            let c = &mut self.attack.ctx;
+            c.ramp = 0;
+            c.accum = 0;
+            c.latch = 0;
+        }
+    }
+
     pub fn observe_action_state(&mut self, state: u8) {
         let prev = self.last_action_state;
         if state == prev {

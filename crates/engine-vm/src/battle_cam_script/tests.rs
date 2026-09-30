@@ -1960,6 +1960,7 @@ fn a_real_turn_films_its_done_tail_and_hands_back_at_end_of_action() {
                     shake_amplitude: 0,
                     attack: None,
                     action_state: state,
+                    active_commits: 0,
                 };
                 drive(&mut slot, true, inputs, frames, None);
                 let far = slot.as_ref().map(|c| c.phase()) == Some(BattleCamPhase::Menu);
@@ -2081,5 +2082,38 @@ fn the_summon_band_frames_the_cast_close_up() {
     assert!(
         (got.tr[1] - want.tr[1]).abs() <= 32.0,
         "{got:?} vs {want:?}"
+    );
+}
+
+/// The active actor's clip commit re-zeroes the ramp, the accumulator and
+/// the latch (`FUN_8004AD80` `0x8004BF50..0x8004BF78`) - the death ramp is
+/// left alone - so the summon close-up swings from the cast clip's start.
+#[test]
+fn an_active_clip_commit_rezeroes_the_camera_counters() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Action, 0);
+    cam.observe_active_commits(4);
+    for f in 1..=40u64 {
+        cam.advance_to(f);
+    }
+    assert_eq!(
+        cam.attack.ctx.ramp,
+        crate::battle_attack_camera::AttackCamCtx::RAMP_CAP
+    );
+    let death = cam.attack.ctx.death_ramp;
+    cam.attack.ctx.latch = 3;
+    // The same count again is no commit.
+    cam.observe_active_commits(4);
+    assert_eq!(
+        cam.attack.ctx.ramp,
+        crate::battle_attack_camera::AttackCamCtx::RAMP_CAP
+    );
+    cam.observe_active_commits(5);
+    let c = cam.attack.ctx;
+    assert_eq!((c.ramp, c.accum, c.latch), (0, 0, 0));
+    assert_eq!(c.death_ramp, death);
+    cam.advance_to(43);
+    assert_eq!(
+        cam.attack.ctx.accum,
+        3 * crate::battle_attack_camera::AttackCamCtx::RAMP_SCALE
     );
 }

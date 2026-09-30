@@ -194,6 +194,10 @@ pub struct BattleCamera {
     /// which owns the camera through the summon band's `0x35` / `0x36`
     /// ([`BattleCamera::arm_module_shot`]).
     pub(super) module_glide: Option<Glide>,
+    /// The last [`BattleCamInputs::active_commits`] seen; `None` until the
+    /// first drive, so a camera created mid-action does not reset on its
+    /// first frame.
+    pub(super) last_active_commits: Option<u32>,
 }
 
 /// [`BattleCamera`]'s per-art attack-camera state - retail's `ctx[+0x26D]` /
@@ -350,6 +354,10 @@ pub struct BattleCamInputs {
     /// classifies. The camera reads it for the edges that re-seed the yaw
     /// counter `ctx[+0x6DA]` ([`BattleCamera::observe_action_state`]).
     pub action_state: u8,
+    /// The active actor's clip-commit count
+    /// (`BattleActionCtx::active_clip_commits`): a change re-zeroes the
+    /// ramp / accumulator / latch the way the commit `FUN_8004AD80` does.
+    pub active_commits: u32,
 }
 
 /// Drive one host's battle camera for a frame - the single shared entry both
@@ -398,6 +406,7 @@ pub fn drive(
     cam.set_formation(inputs.formation);
     cam.set_action_framing(inputs.action);
     cam.observe_action_state(inputs.action_state);
+    cam.observe_active_commits(inputs.active_commits);
     cam.set_shake_amplitude(inputs.shake_amplitude);
     cam.set_attack_channels(inputs.attack, tracks);
     cam.set_phase(inputs.phase);
