@@ -35,6 +35,8 @@
 
 pub mod accents;
 pub mod build;
+pub mod code_refs;
+pub mod code_strings;
 pub mod coverage;
 pub mod diff;
 pub mod export;

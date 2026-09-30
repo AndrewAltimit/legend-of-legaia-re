@@ -115,6 +115,7 @@ pub mod seru_overlay;
 pub mod seru_trade;
 pub mod shiny_seru;
 pub mod shop;
+pub mod space_ledger;
 pub mod spell_cost;
 pub mod spirit_ap;
 pub mod starting_bag;

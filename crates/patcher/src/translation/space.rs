@@ -1191,6 +1191,9 @@ pub fn scene_fit(
 pub struct NameFitter {
     scus: Vec<u8>,
     pool: NamePool,
+    /// The executable's `system_text` strings, pinned against the overlays
+    /// the import reads ([`super::import::system_strings`]).
+    sys: Option<super::code_strings::CodeStrings>,
 }
 
 /// [`NameFitter::fit`]'s answer.
@@ -1211,13 +1214,23 @@ impl NameFitter {
         let scus = patcher
             .read_named_file("SCUS_942.54")
             .context("SCUS_942.54 not found in disc image")?;
-        Ok(Self::from_scus(scus))
+        let sys = super::import::system_strings(patcher, &scus);
+        let mut this = Self::from_scus(scus);
+        this.sys = Some(sys);
+        Ok(this)
     }
 
-    /// Measure the pools of a retail executable.
+    /// Measure the pools of a retail executable. Without the overlays a
+    /// `system_text` string cannot be proven movable, so this fitter
+    /// predicts none moving; [`Self::new`] reads them and predicts what
+    /// import does.
     pub fn from_scus(scus: Vec<u8>) -> Self {
         let pool = NamePool::build(&scus);
-        Self { scus, pool }
+        Self {
+            scus,
+            pool,
+            sys: None,
+        }
     }
 
     /// Plan every filled SCUS entry of `pack` exactly as import does, on a
@@ -1241,7 +1254,13 @@ impl NameFitter {
         }
         let mut scus = self.scus.clone();
         let mut report = ImportReport::default();
-        super::import::apply_scus_work(&mut scus, &self.pool, &work, &mut report);
+        super::import::apply_scus_work(
+            &mut scus,
+            &self.pool,
+            self.sys.as_ref(),
+            &work,
+            &mut report,
+        );
         let outcomes = Outcomes::new(&report, HashSet::new());
         let after = report.trace.name_layout.as_ref();
         let regions = english

@@ -242,7 +242,7 @@ impl Core {
         let english = export_pack(&patcher)?;
         let disc_report =
             space_report_with_export(&patcher, &english, None, SpaceOptions::default())?;
-        let names = NameFitter::from_scus(scus.clone());
+        let names = NameFitter::new(&patcher)?;
         let font = patcher
             .read_prot_bytes(
                 legaia_font::FONT_TIM_PROT_DAT_OFFSET,

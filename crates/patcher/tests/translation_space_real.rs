@@ -296,7 +296,7 @@ fn predicted_outcomes_match_the_import() {
     }
     assert_eq!(
         seen.get(&Outcome::Moved).copied().unwrap_or(0),
-        imp.relocated_names
+        imp.relocated_names + imp.relocated_strings
     );
     assert_eq!(
         seen.get(&Outcome::Grown).copied().unwrap_or(0),

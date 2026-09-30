@@ -380,6 +380,19 @@ impl NamePool {
     ///
     /// See [`Relocation`] for what comes back.
     pub fn relocate(&self, scus: &mut [u8], grow: &[(u32, Vec<u8>)]) -> Relocation {
+        self.relocate_with(scus, grow, false)
+    }
+
+    /// [`Self::relocate`], and with `compact` set the pools are compacted
+    /// even when no name grows, so each region's spare bytes collect into a
+    /// zero run at its end - the room a moved `system_text` string can take
+    /// ([`super::code_strings`]).
+    pub fn relocate_with(
+        &self,
+        scus: &mut [u8],
+        grow: &[(u32, Vec<u8>)],
+        compact: bool,
+    ) -> Relocation {
         let mut growing: BTreeMap<u32, &[u8]> = BTreeMap::new();
         let mut failed = Vec::new();
         for (va, text) in grow {
@@ -390,7 +403,7 @@ impl NamePool {
             }
         }
         let layout = self.layout(scus, &growing);
-        if growing.is_empty() {
+        if growing.is_empty() && !compact {
             return Relocation {
                 no_room: failed,
                 layout,

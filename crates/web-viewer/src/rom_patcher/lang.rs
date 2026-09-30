@@ -90,6 +90,11 @@ pub(crate) fn lang_report_json(
         &"grown_monster_names".into(),
         &num(report.grown_monster_names),
     )?;
+    Reflect::set(
+        &out,
+        &"relocated_strings".into(),
+        &num(report.relocated_strings),
+    )?;
     // Every skipped line, by key, so a translator can find and shorten it in
     // their own copy of the pack (the page offers these as a CSV download).
     let iarr = js_sys::Array::new();
@@ -120,6 +125,12 @@ pub(super) fn relayout_line(report: &ImportReport) -> String {
         out.push_str(&format!(
             "  longer names: {} name(s) moved to free table space, {} monster record(s) grown\n",
             report.relocated_names, report.grown_monster_names
+        ));
+    }
+    if report.relocated_strings > 0 {
+        out.push_str(&format!(
+            "  longer labels: {} menu / system string(s) moved, every reference rewritten\n",
+            report.relocated_strings
         ));
     }
     out

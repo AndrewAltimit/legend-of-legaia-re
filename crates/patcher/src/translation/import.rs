@@ -45,6 +45,7 @@ use legaia_asset::{item_names, new_game, scene_asset_table, worldmap_menu};
 
 use crate::disc::DiscPatcher;
 
+use super::code_strings::{self, CodeLayout, CodeStrings};
 use super::export::SceneManText;
 use super::markup::{self, Target};
 use super::monster_names;
@@ -84,6 +85,13 @@ pub struct ImportReport {
     /// room by growing the record (see [`super::monster_names`]). Counted in
     /// [`Self::applied`] too.
     pub grown_monster_names: usize,
+    /// `ui_menu` / `system_text` strings that outgrew their span and were
+    /// moved - into the bytes their pools' compaction frees, a translation
+    /// region of the [space ledger](crate::space_ledger), or (in the
+    /// executable) the name pools' free runs - with every reference
+    /// rewritten (see [`super::code_strings`]). Counted in [`Self::applied`]
+    /// too.
+    pub relocated_strings: usize,
     /// What the import measured and decided on the way, per key and per
     /// carrier - the numbers the space report ([`super::space`]) publishes,
     /// recorded where the importer computes them rather than re-derived.
@@ -202,13 +210,18 @@ pub struct ImportTrace {
     pub encoded: BTreeMap<String, usize>,
     /// Key -> class of its diagnostic.
     pub issue_kinds: BTreeMap<String, IssueKind>,
-    /// Key -> `(old VA, new VA)` of a name moved into the pools' free bytes.
+    /// Key -> `(old VA, new VA)` of a name moved into the pools' free
+    /// bytes, or a `ui_menu` / `system_text` string moved with its references.
     pub moved: BTreeMap<String, (u32, u32)>,
     /// Monster-name keys whose record grew.
     pub grown_monsters: BTreeSet<String>,
     /// The SCUS name pools' compaction after the import: the one relocation
     /// applied, or (no name grew) the layout of the pools as written.
     pub name_layout: Option<Layout>,
+    /// Code-string image (a PROT overlay entry, `usize::MAX` for the
+    /// executable) -> the layout of its `ui_menu` / `system_text` strings
+    /// after the moves, when any string grew.
+    pub code_layouts: BTreeMap<usize, CodeLayout>,
     /// Scene MAN PROT entry -> its import.
     pub scenes: BTreeMap<usize, SceneTrace>,
     /// Raw carrier PROT entry -> its import.
@@ -225,6 +238,7 @@ impl ImportTrace {
         if other.name_layout.is_some() {
             self.name_layout = other.name_layout;
         }
+        self.code_layouts.extend(other.code_layouts);
         self.scenes.extend(other.scenes);
         self.carriers.extend(other.carriers);
     }
@@ -282,6 +296,7 @@ impl ImportReport {
         self.relayout_sectors_added += other.relayout_sectors_added;
         self.relocated_names += other.relocated_names;
         self.grown_monster_names += other.grown_monster_names;
+        self.relocated_strings += other.relocated_strings;
         self.trace.merge(other.trace);
         if other.accent_font.is_some() {
             self.accent_font = other.accent_font;
@@ -545,6 +560,7 @@ fn plan_scus_str(
     entry: &Entry,
     va: u32,
     pool: &NamePool,
+    sys: Option<&CodeStrings>,
     report: &mut ImportReport,
 ) -> Option<ScusStrPlan> {
     let source = encode_source(entry, Target::CString, report).ok()?;
@@ -591,7 +607,9 @@ fn plan_scus_str(
     if source.is_none() && !hint_agrees(entry, writable, report) {
         return None;
     }
-    if translated.len() > entry.budget.min(writable) && pool.is_movable(va) {
+    if translated.len() > entry.budget.min(writable)
+        && (pool.is_movable(va) || sys.is_some_and(|s| s.is_movable(va)))
+    {
         return Some(ScusStrPlan::Grow(translated));
     }
     if !fits(entry, &translated, entry.budget.min(writable), report) {
@@ -731,8 +749,9 @@ fn plan_ui(
     e: &Entry,
     va: u32,
     pool_strict: bool,
+    movable: bool,
     report: &mut ImportReport,
-) -> Option<(usize, Vec<u8>)> {
+) -> Option<ScusStrPlan> {
     let source = encode_source(e, Target::CString, report).ok()?;
     let translated = encode_translation(e, Target::CString, report)?;
     let Some(off) = va.checked_sub(base_va).map(|d| d as usize) else {
@@ -771,6 +790,9 @@ fn plan_ui(
     if source.is_none() && !hint_agrees(e, writable, report) {
         return None;
     }
+    if translated.len() > e.budget.min(writable) && movable {
+        return Some(ScusStrPlan::Grow(translated));
+    }
     if !fits(e, &translated, e.budget.min(writable), report) {
         return None;
     }
@@ -781,7 +803,46 @@ fn plan_ui(
     if bytes.len() < cur_len + 1 {
         bytes.resize(cur_len + 1, 0);
     }
-    Some((off, bytes))
+    Some(ScusStrPlan::Write(off, bytes))
+}
+
+/// Report a [`code_strings`] relocation: moved strings count as applied, the
+/// ones without room as `no_free_run`.
+fn record_code_moves(
+    reloc: &code_strings::CodeRelocation,
+    image: usize,
+    grow: &[(u32, Vec<u8>)],
+    entries: &BTreeMap<u32, &Entry>,
+    report: &mut ImportReport,
+) {
+    for &(from, to) in &reloc.moved {
+        let e = entries[&from];
+        report.applied += 1;
+        report.relocated_strings += 1;
+        report.applied_keys.push(e.key.clone());
+        report.trace.moved.insert(e.key.clone(), (from, to));
+    }
+    for va in &reloc.no_room {
+        let e = entries[va];
+        let need = grow
+            .iter()
+            .find(|(v, _)| v == va)
+            .map_or(0, |(_, b)| b.len());
+        report.issue_as(
+            &e.key,
+            IssueKind::NoFreeRun,
+            format!(
+                "translation needs {need} bytes but the in-place budget is {} and there is \
+                 no free run that long this string's references can reach (shorten it, or \
+                 other strings in the same image to free room)",
+                e.budget
+            ),
+        );
+    }
+    report
+        .trace
+        .code_layouts
+        .insert(image, reloc.layout.clone());
 }
 
 /// A dialog segment inside a scene MAN, validated against the disc and ready
@@ -1407,7 +1468,8 @@ pub fn import_pack_phase(
             .context("SCUS_942.54 not found in disc image")?;
         // Measured before any write, so every span is the retail one.
         let pool = NamePool::build(&scus);
-        for (off, len) in apply_scus_work(&mut scus, &pool, &scus_work, &mut report) {
+        let sys = system_strings(patcher, &scus);
+        for (off, len) in apply_scus_work(&mut scus, &pool, Some(&sys), &scus_work, &mut report) {
             patcher.patch_named_file("SCUS_942.54", off as u64, &scus[off..off + len])?;
         }
     }
@@ -1631,14 +1693,48 @@ pub fn import_pack_phase(
                 continue;
             }
         };
+        // Measured before any write, so every span is the retail one.
+        let cs = overlay_strings(patcher, prot, &buf, base_va);
+        let mut grow: Vec<(u32, Vec<u8>)> = Vec::new();
+        let mut grow_entries: BTreeMap<u32, &Entry> = BTreeMap::new();
         for (va, en) in edits {
             let strict = ui::pool_for(prot, va).is_some_and(|p| p.strict);
-            if let Some((off, bytes)) = plan_ui(&buf, base_va, en, va, strict, &mut report) {
-                patcher.patch_prot_entry(prot, off as u64, &bytes)?;
-                buf[off..off + bytes.len()].copy_from_slice(&bytes);
-                report.applied += 1;
-                report.applied_keys.push(en.key.clone());
+            match plan_ui(
+                &buf,
+                base_va,
+                en,
+                va,
+                strict,
+                cs.is_movable(va),
+                &mut report,
+            ) {
+                Some(ScusStrPlan::Write(off, bytes)) => {
+                    patcher.patch_prot_entry(prot, off as u64, &bytes)?;
+                    buf[off..off + bytes.len()].copy_from_slice(&bytes);
+                    report.applied += 1;
+                    report.applied_keys.push(en.key.clone());
+                }
+                Some(ScusStrPlan::Grow(bytes)) => {
+                    grow.push((va, bytes));
+                    grow_entries.insert(va, en);
+                }
+                None => {}
             }
+        }
+        // Labels that outgrew their span: move them, with every reference,
+        // into the room the pools' compaction frees or the ledger's
+        // translation region in this image.
+        if !grow.is_empty() {
+            let extra = crate::space_ledger::translation_spans(
+                crate::space_ledger::Image::Prot(prot),
+                &buf,
+                base_va,
+            );
+            let reloc = cs.relocate(&mut buf, &grow, &extra);
+            for &(off, len) in &reloc.written {
+                patcher.patch_prot_entry(prot, off as u64, &buf[off..off + len])?;
+            }
+            record_code_moves(&reloc, prot, &grow, &grow_entries, &mut report);
         }
     }
 
@@ -1668,15 +1764,23 @@ pub fn import_pack_phase(
 pub(crate) fn apply_scus_work(
     scus: &mut [u8],
     pool: &NamePool,
+    sys: Option<&CodeStrings>,
     work: &[&Entry],
     report: &mut ImportReport,
 ) -> Vec<(usize, usize)> {
     let mut written = Vec::new();
     let mut grow: Vec<(u32, Vec<u8>)> = Vec::new();
     let mut grow_entries: BTreeMap<u32, &Entry> = BTreeMap::new();
+    let mut sys_grow: Vec<(u32, Vec<u8>)> = Vec::new();
+    let mut sys_entries: BTreeMap<u32, &Entry> = BTreeMap::new();
     for e in work {
         let plan = match parse_key(&e.key) {
-            Some(Key::ScusStr { va }) => match plan_scus_str(scus, e, va, pool, report) {
+            Some(Key::ScusStr { va }) => match plan_scus_str(scus, e, va, pool, sys, report) {
+                Some(ScusStrPlan::Grow(bytes)) if !pool.is_movable(va) => {
+                    sys_grow.push((va, bytes));
+                    sys_entries.insert(va, e);
+                    None
+                }
                 Some(ScusStrPlan::Grow(bytes)) => {
                     grow.push((va, bytes));
                     grow_entries.insert(va, e);
@@ -1701,8 +1805,9 @@ pub(crate) fn apply_scus_work(
     }
     // Names that outgrew their span: move them into the pools' free bytes
     // (the in-place writes above already freed every shortened tail). With
-    // nothing to move this only measures the pools as written.
-    let reloc = pool.relocate(scus, &grow);
+    // nothing to move this only measures the pools as written - unless a
+    // system string needs room, which the compacted pools' free runs give.
+    let reloc = pool.relocate_with(scus, &grow, !sys_grow.is_empty());
     written.extend(reloc.written);
     for m in &reloc.moved {
         let e = grow_entries[&m.from];
@@ -1728,8 +1833,70 @@ pub(crate) fn apply_scus_work(
             ),
         );
     }
+    // System strings that outgrew their span: move them, with every
+    // reference, into their own pools' compaction or the name pools' free
+    // runs (zero now: the compaction above just laid them out).
+    if let Some(sys) = sys
+        && !sys_grow.is_empty()
+    {
+        let runs: Vec<(u32, u32)> = reloc
+            .layout
+            .regions
+            .iter()
+            .filter(|r| r.free > 0)
+            .map(|r| (r.end_va - r.free as u32, r.end_va))
+            .collect();
+        let extra = crate::space_ledger::zero_spans(scus, ui::SCUS_POOL_BASE_VA, &runs);
+        let sreloc = sys.relocate(scus, &sys_grow, &extra);
+        written.extend(sreloc.written.iter().copied());
+        record_code_moves(&sreloc, usize::MAX, &sys_grow, &sys_entries, report);
+    }
     report.trace.name_layout = Some(reloc.layout);
     written
+}
+
+/// The `system_text` strings of `scus`, with every overlay the import can
+/// read as a foreign image (a string one of them references stays put).
+pub(crate) fn system_strings(patcher: &DiscPatcher, scus: &[u8]) -> CodeStrings {
+    let overlays: Vec<(Vec<u8>, u32)> = [897usize, 898, 899]
+        .iter()
+        .filter_map(|&p| Some((patcher.read_entry(p).ok()?, ui::overlay_base_va(p)?)))
+        .collect();
+    let foreign: Vec<(&[u8], u32)> = overlays
+        .iter()
+        .map(|(b, base)| (b.as_slice(), *base))
+        .collect();
+    CodeStrings::build(
+        scus,
+        ui::SCUS_POOL_BASE_VA,
+        code_strings::pools_of(usize::MAX),
+        &foreign,
+    )
+}
+
+/// The `ui_menu` strings of overlay `prot` (its bytes `buf`, loaded at
+/// `base_va`), with the executable and the images resident beside it as
+/// foreign images.
+pub(crate) fn overlay_strings(
+    patcher: &DiscPatcher,
+    prot: usize,
+    buf: &[u8],
+    base_va: u32,
+) -> CodeStrings {
+    let mut others: Vec<(Vec<u8>, u32)> = Vec::new();
+    if let Some(scus) = patcher.read_named_file("SCUS_942.54") {
+        others.push((scus, ui::SCUS_POOL_BASE_VA));
+    }
+    for &p in code_strings::co_resident(prot) {
+        if let (Ok(b), Some(base)) = (patcher.read_entry(p), ui::overlay_base_va(p)) {
+            others.push((b, base));
+        }
+    }
+    let foreign: Vec<(&[u8], u32)> = others
+        .iter()
+        .map(|(b, base)| (b.as_slice(), *base))
+        .collect();
+    CodeStrings::build(buf, base_va, code_strings::pools_of(prot), &foreign)
 }
 
 /// What one scene MAN's import decided ([`plan_scene_man`]): the writes to

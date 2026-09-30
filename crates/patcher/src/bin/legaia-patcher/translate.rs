@@ -751,6 +751,12 @@ pub(crate) fn cmd_import(
             report.relocated_names, report.grown_monster_names
         );
     }
+    if report.relocated_strings > 0 {
+        println!(
+            "longer labels: {} menu / system string(s) moved with every reference rewritten",
+            report.relocated_strings
+        );
+    }
     println!(
         "applied {} entr{}, {} already applied, {} untranslated (left vanilla)",
         report.applied,
