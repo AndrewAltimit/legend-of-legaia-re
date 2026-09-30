@@ -440,6 +440,7 @@ Shapes the corpus separates, each with what it indicates:
 | retail BGM word `2000` on a town arrival | the state was captured before the town's field init ran ([below](#arrival-states-are-captured-before-the-town-runs)) |
 | retail word held by a flag the entry script already consumed (`garmel`'s `0x196`, `rikuroa`'s `0x289`) | script progress: the track was started by a beat that has since cleared its trigger flag, so a card load would not restart it |
 | an engine walk-on record on a seated arrival (`kor5`'s `P2[4]`) | the seat lands on a trigger tile the retail player reached with the last-tile pair already set; a real arrival fires it too |
+| camera depth and position off on an ending vignette (`ending_vignette_rimelm_walkaway`) | the state is mid-way through a scripted shot the seed restarts ([below](#ending-vignettes-are-mid-script)) |
 
 ### Arrival states are captured before the town runs
 
@@ -454,6 +455,21 @@ the gate and the footing. `son`'s scripts write no fog gate at all, and
 at `0x8003B510`; the states hold `0`), so a `son` whose loader had run could
 not hold it raised. The `bgm`, `fog_gate` and `footing` misses on these
 three states are capture timing, not engine verdicts.
+
+### Ending vignettes are mid-script
+
+`ending_vignette_rimelm_walkaway` is `map01` inside the credits: retail reads
+pitch / yaw / eye depth `416 / 75 / 10389`, the engine `370 / 0 / 6400` after
+the settle. The engine's camera is not wrong, it is early. The seed enters
+`map01` and seats the player, and the credits script starts over: one tick in
+it moves Vahn to the start of the path and snaps the eye depth to `6400`
+(op `0x45`, slot 5 alone); about sixty ticks later a glide beat pulls the
+camera back and round (slots 0, 1, 3..8). Traced per tick, the engine's
+globals reach `416 / 77 / 10477` near tick 190 of that walk - within two
+angle units and a hundred depth units of the retail state - so the state was
+captured roughly three times the settle window into the shot. The camera and
+position channels on it measure script time, not the camera; the eye-space
+X / Y and `H` agree already.
 
 ## See also
 
