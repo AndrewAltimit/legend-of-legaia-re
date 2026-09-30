@@ -678,6 +678,9 @@ impl PlayWindowApp {
         // glides between). After `sync_battle_render` so battle entry sees
         // `battle_stage_mesh`; before the render borrow reads the pose.
         self.tick_battle_camera();
+        // Colour the ground grid from this frame's battle ambient (a summon
+        // close-up dims it); re-uploads the grid only when it moved.
+        self.sync_battle_ground_ambient();
         // Ease the in-engine cutscene camera between Camera Configure
         // beats. Done here (outside the renderer borrow below) so the
         // interpolator can take `&mut self`; while no cutscene timeline

@@ -1027,6 +1027,16 @@ pub struct BattleActionCtx {
     /// whose gate passed). Cleared by [`crate::battle_action::done_cleanup`]
     /// via [`crate::battle_gauge_rearm::restore_anim_rates`].
     pub gauge_rearm_latch: u8,
+    /// `[+0x890]` - the battle **ambient base**, a packed `10:10:10` colour
+    /// that `FUN_80050120` ramps every frame on [`Self::gauge_rearm_latch`]
+    /// (down while it is set, back up while it is clear) and derives the
+    /// ground grid's near colour `0x8007B7B0` and far colour `0x8007BB48`
+    /// from. Kernel: [`crate::battle_ground_grid::ambient_base_step`]. Battle
+    /// init seeds [`crate::battle_ground_grid::AMBIENT_BASE_FLOOR`]; the
+    /// summon band's `0x37` exit and the capture band's `0x71` exit write
+    /// [`crate::battle_ground_grid::AMBIENT_BASE_CAST_EXIT`]. A zero here is
+    /// the port's "no battle yet", not a retail value.
+    pub ambient_base: u32,
     /// How many clips the **active** actor has committed - a counter the
     /// port keeps for the commit's camera-counter reset, not a retail byte.
     /// `FUN_8004AD80`'s install path zeroes `ctx[+0x26E]` / `+0x87C` /

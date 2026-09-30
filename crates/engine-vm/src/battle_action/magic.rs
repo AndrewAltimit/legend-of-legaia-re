@@ -516,5 +516,10 @@ pub(super) fn magic_capture_finalize<H: BattleActionHost + ?Sized>(
             a.render_flag = 0;
         }
     }
+    // The `0x71` exit (`0x801E5214..0x801E5248`), the capture twin of the
+    // summon band's `0x37` one: clear `ctx[+0x243]` and re-seed the ambient
+    // base one step above the floor.
+    ctx.gauge_rearm_latch = 0;
+    ctx.ambient_base = crate::battle_ground_grid::AMBIENT_BASE_CAST_EXIT;
     transition(ctx, ActionState::DoneCleanup)
 }

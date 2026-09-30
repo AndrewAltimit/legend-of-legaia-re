@@ -2936,6 +2936,27 @@ void main() {
        * fogs. The engine resolved the far colour + ramp window at battle
        * entry; the page just attaches it. */
       if (b.ground) {
+        /* Battle ambient (`0x8007B7B0`): a summon close-up ramps it down, and
+         * the grid's packet colour and cue far colour both follow it. Re-read
+         * both only when the engine's key moves - the limb-key pattern.
+         * Guarded against a cached WASM without the export. */
+        if (typeof rt.play_battle_ground_ambient_key === 'function') {
+          const ambientKey = rt.play_battle_ground_ambient_key();
+          if (ambientKey !== b.groundAmbientKey) {
+            if (b.groundAmbientKey !== undefined) {
+              this.renderer.updateSceneMeshFlat(b.ground, rt.play_battle_ground_flat_rgba());
+            }
+            try {
+              const cue = JSON.parse(rt.play_battle_ground_cue_json());
+              if (cue && cue.far) {
+                b.groundCue = {
+                  far: cue.far, nearZ: cue.near_z, farZ: cue.far_z, maxIr0: cue.max_ir0,
+                };
+              }
+            } catch (e) { /* keep the last cue */ }
+            b.groundAmbientKey = ambientKey;
+          }
+        }
         draws.push({ meshId: b.ground, x: 0, y: 0, z: 0, rotY: 0, scale: 1.0, cue: b.groundCue });
       }
       const S = b.scale;

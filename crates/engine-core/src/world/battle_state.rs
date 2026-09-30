@@ -570,6 +570,16 @@ pub struct BattleState {
     /// as the retail per-frame call does. Hosts draw it through
     /// `legaia_engine_ui::streak_pass::clip_ribbon_quads`.
     pub clip_ribbon: Option<ClipRibbon>,
+    /// The battle ambient base as the last storing `FUN_80050120` pass left
+    /// it, 8 bits a channel - what the ground grid's near colour
+    /// `0x8007B7B0` (base `+ 0x404040`) and far colour `0x8007BB48`
+    /// (`battle_ground_grid::grid_far_colour`) are derived from. The live
+    /// ramped word is `World::battle_ctx.ambient_base`; this copy lags it
+    /// only on the frames the pass skips its stores
+    /// (`battle_ground_grid::ambient_store_skipped`). Advanced by
+    /// `World::tick_battle_ambient`; hosts read it through
+    /// `World::battle_ambient_base`.
+    pub ambient_stored: [u8; 3],
     /// The top-of-screen message line screen elements `0x59` (Seru absorbed)
     /// and `0x65` (magic level increased) carry, from the raise to the
     /// matching unload - see `world::battle::message_banner`.
@@ -676,6 +686,7 @@ impl BattleState {
             loot_applied: false,
             return_mode: SceneMode::Field,
             clip_ribbon: None,
+            ambient_stored: legaia_engine_vm::battle_ground_grid::GRID_FAR_BASE_NEUTRAL,
             message_banner: None,
             entry_serial: 0,
         }

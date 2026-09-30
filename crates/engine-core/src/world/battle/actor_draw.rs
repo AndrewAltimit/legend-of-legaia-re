@@ -431,6 +431,28 @@ mod tests {
         assert!(world.battle_ground_shadow(0, &plan).is_none());
     }
 
+    /// The grid's ambient fades in from the battle-init floor, dims under a
+    /// summon close-up's `ctx[+0x243]`, and climbs back once it clears.
+    #[test]
+    fn the_battle_ambient_fades_in_and_dims_under_the_close_up_latch() {
+        let mut world = battle_world();
+        assert_eq!(world.battle_ambient_base(), [0x20; 3]);
+        for _ in 0..48 {
+            world.tick_battle_animations();
+        }
+        assert_eq!(world.battle_ambient_base(), [0x80; 3]);
+        world.battle_ctx.gauge_rearm_latch = 1;
+        world.tick_battle_animations();
+        assert_eq!(world.battle_ambient_base(), [0x78; 3]);
+        for _ in 0..20 {
+            world.tick_battle_animations();
+        }
+        assert_eq!(world.battle_ambient_base(), [0x20; 3]);
+        world.battle_ctx.gauge_rearm_latch = 0;
+        world.tick_battle_animations();
+        assert_eq!(world.battle_ambient_base(), [0x22; 3]);
+    }
+
     #[test]
     fn a_near_resting_party_body_draws_neutral() {
         let mut world = battle_world();

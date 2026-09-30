@@ -585,6 +585,8 @@ impl PlayWindowApp {
                 ) {
                     Ok(gm) => {
                         self.battle_ground_mesh = Some(self.meshes.len());
+                        self.battle_ground_rgbc =
+                            legaia_engine_vm::battle_ground_grid::GRID_RGBC_SETTLED;
                         // The grid's GTE depth cue: far colour per stage
                         // class (resolved in `build_battle_stage`), ramped
                         // by the emitter's per-vertex `SZ >> 2` law at draw
@@ -1521,6 +1523,49 @@ impl PlayWindowApp {
         }
         log::info!("play-window: battle stage shell re-bound to objects {objects:?}");
         self.battle_stage_shell = Some((objects, second));
+    }
+
+    /// Follow the live battle ambient on the ground grid: the pre-cue vertex
+    /// colour is the ambient `0x8007B7B0` (base `+ 0x404040`) and the cue's
+    /// far colour `0x8007BB48` is derived from the same base, both of which a
+    /// summon close-up ramps down (`World::battle_ambient_base`, docs:
+    /// battle.md "A cast dims it"). The far colour is re-derived every frame;
+    /// the grid mesh bakes the near colour into its vertices, so it is rebuilt
+    /// only on the frames the ambient moves.
+    pub(super) fn sync_battle_ground_ambient(&mut self) {
+        use legaia_engine_vm::battle_ground_grid as grid;
+        let Some(gi) = self.battle_ground_mesh else {
+            return;
+        };
+        if self.session.host.world.mode != SceneMode::Battle {
+            return;
+        }
+        let base = self.session.host.world.battle_ambient_base();
+        self.battle_ground_cue_far = Some(
+            grid::grid_far_colour(base, self.battle_stage_outdoor).map(|c| f32::from(c) / 255.0),
+        );
+        let near = grid::battle_ambient_colour(base);
+        if near == self.battle_ground_rgbc {
+            return;
+        }
+        let Some(r) = self.win.renderer.as_ref() else {
+            return;
+        };
+        let g = build_battle_ground_grid(near);
+        match r.upload_vram_mesh(
+            &g.positions,
+            &g.uvs,
+            &g.cba_tsb,
+            &g.normals,
+            &g.colors,
+            &g.indices,
+        ) {
+            Ok(m) => {
+                self.meshes[gi] = m;
+                self.battle_ground_rgbc = near;
+            }
+            Err(e) => log::warn!("play-window: battle ground grid re-colour: {e:#}"),
+        }
     }
 
     /// Residency guard: while a battle texture is expected to be GPU-resident,

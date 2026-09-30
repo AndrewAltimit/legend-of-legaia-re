@@ -184,6 +184,7 @@ impl World {
         // like retail's tick order (the maintenance sweep runs off the
         // XA-template tick ahead of the anim node advance).
         self.tick_battle_impact_fx();
+        self.tick_battle_ambient();
         for i in 0..self.actors.len() {
             // Hit-reaction chaining first: a finished reaction clip takes the
             // natural-end path and the next commit's reaction arms - the
@@ -571,6 +572,36 @@ impl World {
         }
         a.battle.impact_state = selector;
         a.battle.render_blend = vm::battle_formulas::TINT_BLEND_FULL;
+    }
+
+    /// Per-frame **battle ambient ramp**: the trailing block of
+    /// `FUN_80050120` (`0x800505B0..0x8005083C`). The packed base
+    /// `ctx[+0x890]` steps down while the summon close-up holds
+    /// `ctx[+0x243]` and back up while it is clear
+    /// (`legaia_engine_vm::battle_ground_grid::ambient_base_step`), and the
+    /// pass stores the base the grid's near and far colours derive from
+    /// unless it skips on the floor. One call per vsync, so `dt = 1`.
+    // PORT: FUN_80050120 (the trailing ambient / far-colour block; the
+    // backdrop pair's `+0x78` / `+0x56` ramp is not modelled)
+    fn tick_battle_ambient(&mut self) {
+        use vm::battle_ground_grid as grid;
+        if self.mode != SceneMode::Battle {
+            return;
+        }
+        let ctx = &mut self.battle_ctx;
+        ctx.ambient_base = grid::ambient_base_step(ctx.ambient_base, ctx.gauge_rearm_latch != 0, 1);
+        let rgb = grid::ambient_base_rgb(ctx.ambient_base);
+        if !grid::ambient_store_skipped(rgb, ctx.gauge_rearm_latch, self.casting.module_ctx_278) {
+            self.battle.ambient_stored = rgb;
+        }
+    }
+
+    /// The battle ambient base the ground grid is coloured from this frame,
+    /// 8 bits a channel: near colour `battle_ground_grid::battle_ambient_colour`
+    /// of it, far colour `battle_ground_grid::grid_far_colour` of it. Settles
+    /// on `0x80` and dims toward `0x20` through a summon close-up.
+    pub fn battle_ambient_base(&self) -> [u8; 3] {
+        self.battle.ambient_stored
     }
 
     /// Per-frame **presentation tint + impact freeze** maintenance: the
@@ -1795,6 +1826,12 @@ impl World {
         // avoid pulling battle_action::ActionState into world.rs imports.
         self.battle_ctx = vm::battle_action::BattleActionCtx::new();
         self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
+        // Battle init's ambient seed (`0x80051C70..0x80051C84`): the floor,
+        // which the per-frame ramp lifts to the settled `0x80` while no cast
+        // holds `ctx[+0x243]` - the fight's floor fades in from dark.
+        self.battle_ctx.ambient_base = vm::battle_ground_grid::AMBIENT_BASE_FLOOR;
+        self.battle.ambient_stored =
+            vm::battle_ground_grid::ambient_base_rgb(vm::battle_ground_grid::AMBIENT_BASE_FLOOR);
         self.battle.end = None;
         // Effect pool is reused across scenes - reset to a fresh instance
         // (per-battle the head/free-list rebuilds from scratch). This is

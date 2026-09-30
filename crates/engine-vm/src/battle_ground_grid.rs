@@ -342,6 +342,81 @@ pub fn battle_ambient_colour(base: [u8; 3]) -> [u8; 3] {
 /// capture of a running map01 fight holds `0x8007B7B0 = 0xC0C0C0`.
 pub const GRID_RGBC_SETTLED: [u8; 3] = [0xC0; 3];
 
+// ---------------------------------------------------------------------------
+// The live base: `ctx + 0x890` and its per-frame ramp
+// ---------------------------------------------------------------------------
+
+/// `ctx + 0x890`'s floor, packed `10:10:10` (channel `c` at bits `2 + 10c`):
+/// base `0x20` per channel. Battle init seeds it here (`lui v1,0x802;
+/// ori v1,v1,0x80; sw v1,0x890(v0)` at `0x80051C70..0x80051C84`), so every
+/// fight's floor fades in from dark, and a cast's ramp clamps down to it
+/// (`0x80050660..0x800506A4`).
+pub const AMBIENT_BASE_FLOOR: u32 = 0x0802_0080;
+
+/// `ctx + 0x890`'s ceiling: base `0x80` per channel, the settled neutral
+/// the ramp climbs back to (`0x80050714..0x8005075C`).
+pub const AMBIENT_BASE_CEIL: u32 = 0x2008_0200;
+
+/// The base the summon band's `0x37` exit (`0x801E4E8C..0x801E4EA4`) and the
+/// capture band's `0x71` exit (`0x801E5214..0x801E5248`) write while
+/// clearing `ctx + 0x243`: `0x21` per channel, one step above the floor, so
+/// the floor climbs back from dark after the creature leaves.
+pub const AMBIENT_BASE_CAST_EXIT: u32 = 0x0842_1084;
+
+/// One frame of `FUN_80050120`'s base ramp (`0x80050600..0x8005075C`).
+///
+/// While `ctx + 0x243` is set (`dimming`, `0x80050608`) the whole packed word
+/// drops by `dt * 0x20` per channel lane - `8 * dt` per 8-bit channel - and a
+/// result at or below [`AMBIENT_BASE_FLOOR`] (one unsigned word compare,
+/// `sltu v0,a0,s2`) is clamped to it; while it is clear the word rises by
+/// `dt * 8` per lane - `2 * dt` per channel - and a result above
+/// [`AMBIENT_BASE_CEIL`] is clamped to that. A word already sitting on the
+/// target is left alone (`beq s2,a0` at `0x80050668` / `0x8005071C`).
+///
+/// `dt` is the frame step `0x1F800393` - vsyncs per game frame. The port
+/// ticks once a vsync, so its callers pass `1`.
+pub fn ambient_base_step(base: u32, dimming: bool, dt: u8) -> u32 {
+    // `v1 = ((dt * 0x401) << 10 + dt) << k` - `dt` in every lane.
+    let lanes = u32::from(dt).wrapping_mul(0x0010_0401);
+    if dimming {
+        if base == AMBIENT_BASE_FLOOR {
+            return base;
+        }
+        let next = base.wrapping_sub(lanes << 5);
+        if next > AMBIENT_BASE_FLOOR {
+            next
+        } else {
+            AMBIENT_BASE_FLOOR
+        }
+    } else {
+        if base == AMBIENT_BASE_CEIL {
+            return base;
+        }
+        let next = base.wrapping_add(lanes << 3);
+        if next > AMBIENT_BASE_CEIL {
+            AMBIENT_BASE_CEIL
+        } else {
+            next
+        }
+    }
+}
+
+/// The packed `10:10:10` base as three 8-bit channels
+/// (`srl 2 / srl 4 / srl 6` + masks at `0x80050764..0x8005078C`).
+pub fn ambient_base_rgb(base: u32) -> [u8; 3] {
+    [(base >> 2) as u8, (base >> 12) as u8, (base >> 22) as u8]
+}
+
+/// Whether this frame's pass **skips** the two colour stores
+/// (`0x80050790..0x800507D4`): only once the base sits on the floor
+/// (`0x202020`), and then when `ctx + 0x278` bit 0 is set or
+/// `ctx + 0x243 == 2`. The skip also clears the "draw the backdrop" bit 3 of
+/// scratch `0x1F800394`; the ambient `0x8007B7B0` and the far colour
+/// `0x8007BB48` keep whatever the last storing frame left.
+pub fn ambient_store_skipped(base_rgb: [u8; 3], ctx_243: u8, ctx_278: u8) -> bool {
+    base_rgb == [0x20; 3] && (ctx_278 & 1 != 0 || ctx_243 == 2)
+}
+
 /// Capture-pinned settled far colour on ordinary (indoor) stages.
 pub const GRID_FAR_INDOOR: [u8; 3] = [0x40; 3];
 
@@ -479,6 +554,74 @@ impl GroundGrid {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_base_ramp_constants_decode_to_their_documented_channels() {
+        assert_eq!(ambient_base_rgb(AMBIENT_BASE_FLOOR), [0x20; 3]);
+        assert_eq!(ambient_base_rgb(AMBIENT_BASE_CEIL), [0x80; 3]);
+        assert_eq!(ambient_base_rgb(AMBIENT_BASE_CAST_EXIT), [0x21; 3]);
+    }
+
+    #[test]
+    fn a_cast_dims_eight_a_vsync_and_the_fight_recovers_two_a_vsync() {
+        let mut b = AMBIENT_BASE_CEIL;
+        let mut frames = 0;
+        while b != AMBIENT_BASE_FLOOR {
+            b = ambient_base_step(b, true, 1);
+            frames += 1;
+            assert!(frames < 100);
+        }
+        // (0x80 - 0x20) / 8.
+        assert_eq!(frames, 12);
+        assert_eq!(
+            ambient_base_rgb(ambient_base_step(AMBIENT_BASE_CEIL, true, 1)),
+            [0x78; 3]
+        );
+        // The step is `dt`-scaled: a two-vsync frame drops sixteen.
+        assert_eq!(
+            ambient_base_rgb(ambient_base_step(AMBIENT_BASE_CEIL, true, 2)),
+            [0x70; 3]
+        );
+        let mut frames = 0;
+        while b != AMBIENT_BASE_CEIL {
+            b = ambient_base_step(b, false, 1);
+            frames += 1;
+            assert!(frames < 100);
+        }
+        assert_eq!(frames, 48);
+        // The cast exit's odd seed overshoots the ceiling and is clamped.
+        let mut b = AMBIENT_BASE_CAST_EXIT;
+        for _ in 0..47 {
+            b = ambient_base_step(b, false, 1);
+        }
+        assert_eq!(ambient_base_rgb(b), [0x7F; 3]);
+        assert_eq!(ambient_base_step(b, false, 1), AMBIENT_BASE_CEIL);
+    }
+
+    #[test]
+    fn the_summon_captures_ambients_are_points_on_the_ramp() {
+        // `0x606060` / `0x686868` / `0x707070` = base `0x20` / `0x28` /
+        // `0x30` plus `0x404040`.
+        let mut seen = std::collections::BTreeSet::new();
+        let mut b = AMBIENT_BASE_CEIL;
+        for _ in 0..20 {
+            b = ambient_base_step(b, true, 2);
+            seen.insert(battle_ambient_colour(ambient_base_rgb(b))[0]);
+        }
+        assert!(seen.contains(&0x60) && seen.contains(&0x70));
+        let mut b = AMBIENT_BASE_FLOOR;
+        b = ambient_base_step(b, false, 2);
+        b = ambient_base_step(b, false, 2);
+        assert_eq!(battle_ambient_colour(ambient_base_rgb(b)), [0x68; 3]);
+    }
+
+    #[test]
+    fn the_store_skips_only_on_the_floor_under_the_two_latches() {
+        assert!(!ambient_store_skipped([0x20; 3], 1, 0));
+        assert!(ambient_store_skipped([0x20; 3], 2, 0));
+        assert!(ambient_store_skipped([0x20; 3], 0, 1));
+        assert!(!ambient_store_skipped([0x21; 3], 2, 1));
+    }
 
     #[test]
     fn origin_is_x_centred_and_z_biased_one_cell() {

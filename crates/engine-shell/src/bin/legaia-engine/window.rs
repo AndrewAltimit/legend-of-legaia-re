@@ -1004,6 +1004,9 @@ struct PlayWindowApp {
     /// stages). Resolved per battle in `build_battle_stage`;
     /// `None` outside a stage-dome battle.
     battle_ground_cue_far: Option<[f32; 3]>,
+    /// The pre-cue vertex colour the uploaded ground grid was built with -
+    /// the battle ambient it last followed (`sync_battle_ground_ambient`).
+    battle_ground_rgbc: [u8; 3],
     /// Whether the current battle stage is on the `DAT_80078C1C` outdoor
     /// table - the tint pass's `DAT_8007BDA8` input
     /// (`World::battle_actor_draw_plan`). Resolved per battle in

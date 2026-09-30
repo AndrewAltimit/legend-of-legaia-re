@@ -2,9 +2,10 @@
 //! `FUN_80050120`'s per-actor arms, keyed on the actor state byte
 //! `actor[+0x21C]` (11-entry jump table at `0x8001532C`).
 //!
-//! PORT: FUN_80050120 (the per-actor arms; the trailing backdrop far-colour /
-//! depth-cue ramp block at `0x800505B0..0x800508B8` is the scene fog, not an
-//! actor state, and stays with the renderer)
+//! PORT: FUN_80050120 (the per-actor arms; the trailing ambient / far-colour
+//! ramp block at `0x800505B0..0x8005083C` is the scene's, not an actor
+//! state - kernel `crate::battle_ground_grid::ambient_base_step`, driven by
+//! `World::tick_battle_ambient`)
 //!
 //! Every frame the battle tick walks the eight actor slots (`DAT_801C9370`),
 //! skips an actor with no `+0x22C` battle record, loads the packed 10:10:10

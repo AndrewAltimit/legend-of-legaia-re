@@ -1321,6 +1321,7 @@ pub(super) fn cmd_play_window_with_record(
         battle_stage_shell: None,
         battle_ground_mesh: None,
         battle_ground_cue_far: None,
+        battle_ground_rgbc: legaia_engine_vm::battle_ground_grid::GRID_RGBC_SETTLED,
         battle_stage_outdoor: false,
         prev_scene_mode: None,
         monster_archive: None,

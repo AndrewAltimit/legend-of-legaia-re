@@ -853,13 +853,40 @@ impl LegaiaRuntime {
     }
 
     /// Per-vertex `[r, g, b, 255]` packet colours of the ground grid - the
-    /// modulation half of retail's `texel * colour / 128`.
+    /// modulation half of retail's `texel * colour / 128`. The colour is the
+    /// **live** battle ambient `0x8007B7B0` (`World::battle_ambient_base`
+    /// `+ 0x404040`), which a summon close-up ramps down; the page re-sends
+    /// this whenever [`Self::play_battle_ground_ambient_key`] moves, the way
+    /// the native window re-uploads its grid.
     pub fn play_battle_ground_flat_rgba(&self) -> Vec<u8> {
-        self.battle_render
+        let Some(ground) = self.battle_render.as_ref().and_then(|b| b.ground.as_ref()) else {
+            return Vec::new();
+        };
+        let near =
+            legaia_engine_vm::battle_ground_grid::battle_ambient_colour(self.battle_ambient_base());
+        if near == legaia_engine_vm::battle_ground_grid::GRID_RGBC_SETTLED {
+            return ground.flat.clone();
+        }
+        crate::packet_color::textured(&legaia_asset::battle_backdrop::build_ground_grid_rgbc(near))
+    }
+
+    /// The battle ambient base (`World::battle_ambient_base`, 8 bits a
+    /// channel) packed `0x00BBGGRR` - a change key for the ground grid's
+    /// colour: when it moves, the page re-reads
+    /// [`Self::play_battle_ground_flat_rgba`] and
+    /// [`Self::play_battle_ground_cue_json`].
+    pub fn play_battle_ground_ambient_key(&self) -> u32 {
+        let [r, g, b] = self.battle_ambient_base();
+        u32::from(r) | (u32::from(g) << 8) | (u32::from(b) << 16)
+    }
+
+    /// The live battle ambient base, or the settled neutral with no scene
+    /// host.
+    fn battle_ambient_base(&self) -> [u8; 3] {
+        self.scene_host
             .as_ref()
-            .and_then(|b| b.ground.as_ref())
-            .map(|m| m.flat.clone())
-            .unwrap_or_default()
+            .map(|h| h.world.battle_ambient_base())
+            .unwrap_or(legaia_engine_vm::battle_ground_grid::GRID_FAR_BASE_NEUTRAL)
     }
 
     /// Ground-grid depth-cue parameters:
@@ -874,10 +901,14 @@ impl LegaiaRuntime {
     /// fragment's view depth is retail's `SZ` as-is (see
     /// `docs/subsystems/battle.md`, the grid's depth cue).
     pub fn play_battle_ground_cue_json(&self) -> String {
-        let Some(far) = self.battle_render.as_ref().and_then(|b| b.grid_far) else {
+        let Some(br) = self.battle_render.as_ref().filter(|b| b.grid_far.is_some()) else {
             return "null".to_string();
         };
         use legaia_engine_vm::battle_ground_grid as grid;
+        // The far colour `0x8007BB48` follows the same live base as the
+        // near colour (both ramp through a summon close-up).
+        let far = grid::grid_far_colour(self.battle_ambient_base(), br.outdoor)
+            .map(|c| f32::from(c) / 255.0);
         format!(
             r#"{{"far":[{},{},{}],"near_z":0.0,"far_z":{},"max_ir0":{}}}"#,
             far[0],
