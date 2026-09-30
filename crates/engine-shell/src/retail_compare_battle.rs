@@ -28,12 +28,11 @@
 //! arms it through the ordinary transition, exactly as `play-window
 //! --battle` does. Once the mode flips to battle the retail combatants' live
 //! HP / MP are written over the engine's (the capture is mid-fight; the seed
-//! carries its damage), the opening runs to the first round prompt, and the
-//! session settles [`BATTLE_SETTLE_TICKS`] frames with no input.
-//!
-//! The seed cannot resume an action in flight: a capture taken mid-strike or
-//! mid-cast (flow `0xFF`) is compared against the engine parked on its round
-//! prompt, so its `phase` channel reads the capture's timing, not the port.
+//! carries its damage), and the session is placed at the capture's phase
+//! ([`SeedPlan`]): sampled at the flip for an opening capture, parked on the
+//! round prompt for a prompt capture, a summon-band cast replayed
+//! ([`PhaseGate`]), and any other menu surface or action in flight reached
+//! through the engine's own pad path ([`BattleDrive`]).
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -128,6 +127,9 @@ pub struct RetailBattle {
     pub queued_action: u8,
     /// The active seat's target byte `+0x1DD`.
     pub target_code: u8,
+    /// The active seat's committed action category `+0x1DE` (`1` item, `2`
+    /// magic, `3` attack, `4` spirit, `5` run).
+    pub queued_category: u8,
     /// The summon band's live flash, when one is up ([`RetailFade`]).
     pub summon_fade: Option<RetailFade>,
     /// `ctx[+0x279]` - the resident summon module's phase byte.
@@ -442,7 +444,12 @@ impl RetailBattle {
     /// The in-flight cast this capture holds, when the engine can replay it:
     /// a party seat running the summon band (`0x32..=0x36`) on a spell id.
     pub fn inflight_cast(&self) -> Option<legaia_engine_core::world::InflightCastSeed> {
-        let in_band = (0x32..=0x36).contains(&self.action_state);
+        // The summon band itself, or the Done band a cast hands on to
+        // (`0x37` / `0x38` then `0x50..=0x52`) while the caster still holds
+        // the frame with its category `2` queued.
+        let in_band = (0x32..=0x36).contains(&self.action_state)
+            || (matches!(self.action_state, 0x37 | 0x38 | 0x50..=0x52)
+                && self.queued_category == 2);
         (in_band
             && self.flow == 0xFF
             && self.active_actor < self.party_count
@@ -524,6 +531,62 @@ impl RetailBattle {
     }
 }
 
+/// Where in the fight a capture sits, as far as the seed has to place the
+/// engine to compare the same phase ([`RetailBattle::seed_plan`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SeedPlan {
+    /// The fight is still opening: `ctx[+0x06]` holds one of the entry
+    /// values below the round prompt. The engine is sampled at its
+    /// battle-mode flip, before its own opening runs.
+    Opening,
+    /// A command-selection surface above the round prompt, on party seat
+    /// `seat` (`ctx[+0x13]`, the member cursor): the engine's command flow
+    /// is driven there through its pad path.
+    Menu { flow: BattleFlowState, seat: u8 },
+    /// A party cast in the summon band: replayed through
+    /// [`legaia_engine_core::world::InflightCastSeed`] and gated on
+    /// [`PhaseGate`].
+    Cast,
+    /// Any other action in flight (flow `0xFF`): the round is played out
+    /// through the pad path until the engine's action SM holds the same
+    /// state on the same seat.
+    Action { seat: u8, state: u8 },
+    /// The round prompt: park on it and settle.
+    Prompt,
+}
+
+/// `ctx[+0x06]` values below the round prompt: SCUS battle init's `0xFD`
+/// (`FUN_80055B6C`, `sb v0,0x6(v1)` at `0x80055FA8`), the overlay's init
+/// `0x00`, the intro timer `0x0A` / `0x0B`, the boss stage module's baton
+/// `0x0C`, and the one-frame turn setup `0x14` (`FUN_801D0748`,
+/// `docs/subsystems/battle.md`).
+pub const OPENING_FLOWS: [u8; 6] = [0xFD, 0x00, 0x0A, 0x0B, 0x0C, 0x14];
+
+impl RetailBattle {
+    /// How the seed has to place the engine for this capture.
+    pub fn seed_plan(&self) -> SeedPlan {
+        if OPENING_FLOWS.contains(&self.flow) {
+            return SeedPlan::Opening;
+        }
+        if self.inflight_cast().is_some() {
+            return SeedPlan::Cast;
+        }
+        if self.flow == 0xFF {
+            return SeedPlan::Action {
+                seat: self.active_actor,
+                state: self.action_state,
+            };
+        }
+        match BattleFlowState::from_raw(self.flow) {
+            BattleFlowState::Idle | BattleFlowState::TurnPrompt => SeedPlan::Prompt,
+            flow => SeedPlan::Menu {
+                flow,
+                seat: self.active_actor,
+            },
+        }
+    }
+}
+
 fn in_ram(p: u32) -> bool {
     (0x8000_0000..0x8020_0000).contains(&p)
 }
@@ -592,6 +655,7 @@ impl RetailBattle {
             active_actor,
             queued_action: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DF)),
             target_code: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DD)),
+            queued_category: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DE)),
             summon_fade: summon_fade(ram),
             display_lag: display_lag_vsyncs(ram),
             cam_accum: game_anchors::u32_at(ram, ctx + 0x87C),
@@ -629,8 +693,15 @@ pub struct EngineBattle {
     /// dispatch to the capture's phase, `None` inside when the engine never
     /// reached it.
     pub inflight: Option<Option<u32>>,
+    /// `Some` when the capture's menu state or in-flight action was driven
+    /// to through the pad path ([`SeedPlan::Menu`] / [`SeedPlan::Action`]):
+    /// the ticks from the first prompt to the capture's phase, `None` inside
+    /// when the engine never reached it.
+    pub driven: Option<Option<u32>>,
     /// The engine's action-SM state when sampled.
     pub action_state: u8,
+    /// The engine's active seat `ctx[+0x13]` when sampled.
+    pub active_actor: u8,
     pub monster_ids: Vec<Option<u16>>,
     pub party: Vec<Combatant>,
     pub monsters: Vec<Combatant>,
@@ -800,33 +871,51 @@ pub fn run_engine_battle(
             a.battle.mp = c.mp;
         }
     }
-    // Run the opening (banner, intro camera, initiative) to the first round
-    // prompt, the earliest point a retail capture of a running fight can
-    // share with a fresh entry; then settle.
+    // Place the engine at the capture's phase ([`SeedPlan`]).
     //
-    // A capture taken mid-cast is replayed instead of parked: the cast is
-    // seeded to dispatch the moment that prompt opens, and the session runs
-    // until it reaches the capture's phase (`PhaseGate`) rather than a fixed
-    // settle.
+    // An opening capture is sampled at the battle-mode flip. Everything else
+    // runs the opening (banner, intro camera, initiative) to the first round
+    // prompt, the earliest point a retail capture of a running fight can
+    // share with a fresh entry, and then:
+    //
+    // - a prompt capture settles there;
+    // - a menu capture is driven to the same surface on the same seat
+    //   through the pad path ([`BattleDrive::Menu`]);
+    // - a mid-cast capture is replayed: the cast is seeded to dispatch the
+    //   moment the prompt opens, and the session runs until it reaches the
+    //   capture's phase ([`PhaseGate`]);
+    // - any other action in flight is reached by playing the round out
+    //   through the pad path until the action SM holds the capture's state
+    //   on the capture's seat ([`BattleDrive::Action`]).
+    let plan = battle.seed_plan();
     let seed = battle.inflight_cast();
     session.host.world.battle.inflight_seed = seed;
     let mut prompt_tick = None;
-    for t in 0..OPENING_TICKS {
-        let w = &session.host.world;
-        let reached = match seed {
-            Some(_) => w.battle.inflight_seed.is_none(),
-            None => w.battle.flow != BattleFlowState::Idle,
-        };
-        if reached {
-            prompt_tick = Some(t);
-            break;
+    if plan != SeedPlan::Opening {
+        for t in 0..OPENING_TICKS {
+            let w = &session.host.world;
+            let reached = match seed {
+                Some(_) => w.battle.inflight_seed.is_none(),
+                None => w.battle.flow != BattleFlowState::Idle,
+            };
+            if reached {
+                prompt_tick = Some(t);
+                break;
+            }
+            session.tick()?;
+            session.host.route_bgm_events(&mut director)?;
         }
-        session.tick()?;
-        session.host.route_bgm_events(&mut director)?;
     }
     let mut phase_tick = None;
-    match battle.phase_gate() {
-        Some(gate) if prompt_tick.is_some() => {
+    let mut driven = None;
+    // A driven capture plays rounds the retail history did not (a Spirit
+    // here, a strike there), so its combatant, bag, flag and track channels
+    // are read at the first prompt, before the drive - the moment the seed
+    // placed them - and only phase and camera at the phase itself.
+    let mut pre_drive = None;
+    match (plan, battle.phase_gate()) {
+        (SeedPlan::Opening, _) => {}
+        (SeedPlan::Cast, Some(gate)) if prompt_tick.is_some() => {
             for t in 0..INFLIGHT_TICKS {
                 if gate.met(&session.host.world) {
                     phase_tick = Some(t);
@@ -836,6 +925,13 @@ pub fn run_engine_battle(
                 session.host.route_bgm_events(&mut director)?;
             }
         }
+        (SeedPlan::Menu { .. } | SeedPlan::Action { .. }, _) if prompt_tick.is_some() => {
+            if let Some(drive) = battle.battle_drive() {
+                let track = session.host.bgm_track_word.or(director.last);
+                pre_drive = Some(combat_snapshot(&mut session.host.world, track));
+                driven = Some(run_drive(&mut session, &mut director, drive)?);
+            }
+        }
         _ => {
             for _ in 0..BATTLE_SETTLE_TICKS {
                 session.tick()?;
@@ -843,7 +939,64 @@ pub fn run_engine_battle(
             }
         }
     }
-    let world = &mut session.host.world;
+    let snap = match pre_drive.take() {
+        Some(snap) => snap,
+        None => {
+            let track = session.host.bgm_track_word.or(director.last);
+            combat_snapshot(&mut session.host.world, track)
+        }
+    };
+    let world = &session.host.world;
+    let pose = world.battle_cam_pose();
+    let camera = CameraObs {
+        pitch: pose.pitch.round() as i16,
+        yaw: (pose.yaw.round() as i32).rem_euclid(4096) as i16,
+        h: BATTLE_H,
+        eye: pose.tr.map(|v| v.round() as i32),
+        // The engine holds the focus un-negated; retail's words are negated.
+        focus: [
+            -(pose.focus[0].round() as i32),
+            -(pose.focus[2].round() as i32),
+        ],
+    };
+    Ok(EngineBattle {
+        scene: session.host.scene.as_ref().map(|s| s.name.clone()),
+        mode: snap.mode,
+        formation_source: source,
+        man_row,
+        prompt_tick,
+        inflight: seed.map(|_| phase_tick),
+        driven,
+        action_state: world.battle_ctx.action_state,
+        active_actor: world.battle_ctx.active_actor,
+        monster_ids: snap.monster_ids,
+        party: snap.party,
+        monsters: snap.monsters,
+        flow: world.battle.flow,
+        camera,
+        bgm_id: snap.bgm_id,
+        field_word,
+        field_current,
+        battle_bgm: snap.battle_bgm,
+        save: snap.save,
+    })
+}
+
+/// The combatant-side observables a battle state is scored on.
+struct CombatSnapshot {
+    mode: SceneMode,
+    monster_ids: Vec<Option<u16>>,
+    party: Vec<Combatant>,
+    monsters: Vec<Combatant>,
+    bgm_id: Option<u16>,
+    battle_bgm: Option<u16>,
+    save: legaia_save::SaveFile,
+}
+
+fn combat_snapshot(
+    world: &mut legaia_engine_core::world::World,
+    field_track: Option<u16>,
+) -> CombatSnapshot {
     let pc = world.party.party_count.clamp(1, 3) as usize;
     // Battle ordinal `s` holds roster record `party_roster_slot(s)` (the
     // present-party list): a solo duel's Gala is ordinal 0 but record 2, and
@@ -893,31 +1046,11 @@ pub fn run_engine_battle(
             Some(comb(a, mp_max))
         })
         .collect();
-    let pose = world.battle_cam_pose();
-    let camera = CameraObs {
-        pitch: pose.pitch.round() as i16,
-        yaw: (pose.yaw.round() as i32).rem_euclid(4096) as i16,
-        h: BATTLE_H,
-        eye: pose.tr.map(|v| v.round() as i32),
-        // The engine holds the focus un-negated; retail's words are negated.
-        focus: [
-            -(pose.focus[0].round() as i32),
-            -(pose.focus[2].round() as i32),
-        ],
-    };
-    Ok(EngineBattle {
-        scene: session.host.scene.as_ref().map(|s| s.name.clone()),
+    CombatSnapshot {
         mode: world.mode,
-        formation_source: source,
-        man_row,
-        prompt_tick,
-        inflight: seed.map(|_| phase_tick),
-        action_state: world.battle_ctx.action_state,
         monster_ids,
         party,
         monsters,
-        flow: world.battle.flow,
-        camera,
         // Retail's track-select word keeps the field track through a fight:
         // the battle theme is started without the op-0x35 store, so the word
         // the fight holds is the one the field resumes. The engine routes its
@@ -926,13 +1059,251 @@ pub fn run_engine_battle(
         bgm_id: if world.audio.battle_bgm_active {
             world.audio.field_bgm_resume
         } else {
-            session.host.bgm_track_word.or(director.last)
+            field_track
         },
-        field_word,
-        field_current,
         battle_bgm: world.audio.current_bgm,
         save: world.save_full(),
-    })
+    }
+}
+
+/// The engine battle ordinal of retail pool slot `seat`: party slots are
+/// shared, but retail's monsters sit at fixed pool slots `3..` whatever the
+/// party size while the engine seats them straight after the party.
+pub fn engine_seat(seat: u8, party_count: u8) -> u8 {
+    if seat >= 3 {
+        party_count + (seat - 3)
+    } else {
+        seat
+    }
+}
+
+/// Ticks the pad path may take to reach a menu capture's surface.
+const MENU_DRIVE_TICKS: u32 = 600;
+/// Ticks the pad path may take to reach an in-flight capture's action-SM
+/// state: long enough for several rounds, since the seat's turn comes up in
+/// initiative order.
+const ACTION_DRIVE_TICKS: u32 = 4000;
+/// The extra capture deadline a driven `play-window` child gets.
+pub const DRIVE_DEADLINE: u64 = ACTION_DRIVE_TICKS as u64;
+
+/// How a capture that sits past the round prompt is reached through the
+/// engine's own pad path - the headless seed and the `play-window` image
+/// child run the same driver (`LEGAIA_BATTLE_DRIVE`), so the frame is taken
+/// at the phase the state channels were scored at.
+///
+/// Seats are **retail** pool slots (`ctx[+0x13]`); [`engine_seat`] maps
+/// them onto the engine's seating.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BattleDrive {
+    /// A command-selection surface on party seat `seat`: members ahead of
+    /// it commit a plain Attack, the seat itself takes the arm that leads
+    /// to `flow`.
+    Menu { flow: BattleFlowState, seat: u8 },
+    /// An action in flight: rounds are committed (a plain Attack each, the
+    /// capture's own seat Spirit when that is what it had committed) until
+    /// the action SM holds `state` on `seat`. A monster seat that was
+    /// casting (`category == 2`) casts the capture's spell `queued` on its
+    /// next turn ([`legaia_engine_core::world::BattleState::forced_monster_cast`]).
+    Action {
+        seat: u8,
+        state: u8,
+        category: u8,
+        queued: u8,
+    },
+}
+
+impl BattleDrive {
+    /// `menu,<flow>,<seat>` or `action,<seat>,<state>,<category>,<queued>`.
+    pub fn to_env(&self) -> String {
+        match *self {
+            Self::Menu { flow, seat } => format!("menu,{},{seat}", flow.raw()),
+            Self::Action {
+                seat,
+                state,
+                category,
+                queued,
+            } => format!("action,{seat},{state},{category},{queued}"),
+        }
+    }
+
+    pub fn from_env(s: &str) -> Option<Self> {
+        let parts: Vec<u8> = s
+            .split(',')
+            .skip(1)
+            .map(|p| p.trim().parse().ok())
+            .collect::<Option<_>>()?;
+        match (s.split(',').next()?.trim(), parts.as_slice()) {
+            ("menu", &[flow, seat]) => Some(Self::Menu {
+                flow: BattleFlowState::from_raw(flow),
+                seat,
+            }),
+            ("action", &[seat, state, category, queued]) => Some(Self::Action {
+                seat,
+                state,
+                category,
+                queued,
+            }),
+            _ => None,
+        }
+    }
+
+    /// The tick budget the drive gets past the first prompt.
+    pub fn budget(&self) -> u32 {
+        match self {
+            Self::Menu { .. } => MENU_DRIVE_TICKS,
+            Self::Action { .. } => ACTION_DRIVE_TICKS,
+        }
+    }
+
+    /// Arm the drive's one-shot world seed (a monster cast to replay).
+    /// Idempotent while the seed is unconsumed.
+    pub fn prime(&self, world: &mut legaia_engine_core::world::World) {
+        if let Self::Action {
+            seat,
+            category: 2,
+            queued,
+            ..
+        } = *self
+        {
+            let pc = world.party.party_count.clamp(1, 3);
+            let seat = engine_seat(seat, pc);
+            if seat >= pc {
+                world.battle.forced_monster_cast = Some((seat, queued));
+            }
+        }
+    }
+
+    /// Whether the engine holds the capture's phase.
+    pub fn reached(&self, world: &legaia_engine_core::world::World) -> bool {
+        if world.mode != SceneMode::Battle {
+            return false;
+        }
+        let pc = world.party.party_count.clamp(1, 3);
+        match *self {
+            Self::Menu { flow, seat } => {
+                world.battle.flow == flow
+                    && (!menu_seat_matters(flow) || world.battle_ctx.active_actor == seat)
+            }
+            Self::Action { seat, state, .. } => {
+                world.battle.flow == BattleFlowState::Idle
+                    && world.battle.command.is_none()
+                    && world.battle_ctx.active_actor == engine_seat(seat, pc)
+                    && world.battle_ctx.action_state == state
+            }
+        }
+    }
+
+    /// The press that walks the engine one step toward the phase, or `None`
+    /// when nothing on screen wants one (the action SM owns the frame).
+    pub fn press(
+        &self,
+        world: &legaia_engine_core::world::World,
+    ) -> Option<legaia_engine_core::input::PadButton> {
+        use legaia_engine_core::battle_input::CommandPhase;
+        use legaia_engine_core::input::PadButton;
+        if world.mode != SceneMode::Battle {
+            return None;
+        }
+        // A battle message box parks the whole battle until it is dismissed.
+        if !world.battle.tutorial_boxes.is_empty() {
+            return Some(PadButton::Cross);
+        }
+        let cmd = world.battle.command.as_ref()?;
+        match *self {
+            Self::Menu { flow, seat } => {
+                let ours = cmd.actor == seat && flow != BattleFlowState::CommitBegin;
+                match cmd.phase {
+                    CommandPhase::RoundPrompt { .. } => Some(PadButton::Left),
+                    CommandPhase::Menu { .. } if !ours => Some(PadButton::Left),
+                    CommandPhase::Menu { .. } => match flow {
+                        BattleFlowState::ItemWindow => Some(PadButton::Up),
+                        BattleFlowState::MagicWindow => Some(PadButton::Right),
+                        BattleFlowState::ArtsCommandEntry
+                        | BattleFlowState::AttackModePrompt
+                        | BattleFlowState::TargetSelect => Some(PadButton::Left),
+                        _ => None,
+                    },
+                    CommandPhase::AttackMode { .. } if !ours => Some(PadButton::Left),
+                    CommandPhase::AttackMode { .. } => match flow {
+                        BattleFlowState::ArtsCommandEntry => Some(PadButton::Right),
+                        BattleFlowState::TargetSelect => Some(PadButton::Left),
+                        _ => None,
+                    },
+                    CommandPhase::Targeting { .. } if !ours => Some(PadButton::Cross),
+                    _ => None,
+                }
+            }
+            Self::Action { seat, category, .. } => Some(match cmd.phase {
+                CommandPhase::Menu { .. } if cmd.actor == seat && category == 4 => PadButton::Down,
+                CommandPhase::RoundPrompt { .. }
+                | CommandPhase::Menu { .. }
+                | CommandPhase::AttackMode { .. } => PadButton::Left,
+                _ => PadButton::Cross,
+            }),
+        }
+    }
+
+    /// This tick's pad word: the step's press on even ticks, released on odd
+    /// ones, so every press is an edge.
+    pub fn pad_word_at(&self, world: &legaia_engine_core::world::World, tick: u64) -> u16 {
+        if !tick.is_multiple_of(2) {
+            return 0;
+        }
+        self.press(world).map_or(0, |b| b.mask())
+    }
+}
+
+/// Whether a menu surface belongs to one member (the ring, a submenu, the
+/// target cursor) rather than to the party (the round prompt, the commit
+/// confirm).
+fn menu_seat_matters(flow: BattleFlowState) -> bool {
+    !matches!(
+        flow,
+        BattleFlowState::TurnPrompt | BattleFlowState::CommitBegin
+    )
+}
+
+impl RetailBattle {
+    /// The pad drive that reaches this capture, when its plan has one.
+    pub fn battle_drive(&self) -> Option<BattleDrive> {
+        match self.seed_plan() {
+            SeedPlan::Menu { flow, seat } => Some(BattleDrive::Menu { flow, seat }),
+            SeedPlan::Action { seat, state } => Some(BattleDrive::Action {
+                seat,
+                state,
+                category: self.queued_category,
+                queued: self.queued_action,
+            }),
+            _ => None,
+        }
+    }
+}
+
+/// Run `drive` from the round prompt through the pad path. The ticks it took,
+/// or `None` when the phase was never reached (or the fight ended first).
+fn run_drive(
+    session: &mut BootSession,
+    director: &mut crate::retail_compare::RecordingDirector,
+    drive: BattleDrive,
+) -> Result<Option<u32>> {
+    drive.prime(&mut session.host.world);
+    let mut reached = None;
+    for t in 0..drive.budget() {
+        let world = &session.host.world;
+        if drive.reached(world) {
+            reached = Some(t);
+            break;
+        }
+        if world.mode != SceneMode::Battle {
+            break;
+        }
+        let pad = drive.pad_word_at(world, u64::from(t));
+        session.host.world.input.set_pad(pad);
+        session.tick()?;
+        session.host.route_bgm_events(director)?;
+    }
+    session.host.world.input.set_pad(0);
+    Ok(reached)
 }
 
 /// Fraction of equal `(hp, hp_max, mp, mp_max)` fields over the retail
@@ -1030,25 +1401,48 @@ pub fn compare_battle(
     }
     put("battle_party", s, d);
     let want = BattleFlowState::from_raw(battle.flow);
-    // A replayed cast is scored on the action-SM state as well: the flow
-    // byte reads `Idle` for every in-flight action alike.
-    let phase_ok = engine.flow == want
-        && (engine.inflight.is_none() || engine.action_state == battle.action_state);
+    // A replayed cast or a driven action is scored on the action-SM state as
+    // well (the flow byte reads `Idle` for every in-flight action alike), a
+    // driven menu on the member it is open for.
+    let plan = battle.seed_plan();
+    let replayed = engine.inflight.is_some()
+        || matches!(plan, SeedPlan::Action { .. }) && engine.driven.is_some();
+    let seat_ok = match plan {
+        SeedPlan::Menu { flow, seat } if engine.driven.is_some() => {
+            !menu_seat_matters(flow) || engine.active_actor == seat
+        }
+        SeedPlan::Action { seat, .. } if engine.driven.is_some() => {
+            engine.active_actor == engine_seat(seat, engine.party.len() as u8)
+        }
+        _ => true,
+    };
+    let phase_ok =
+        engine.flow == want && (!replayed || engine.action_state == battle.action_state) && seat_ok;
     let inflight = match engine.inflight {
         None => String::new(),
         Some(Some(t)) => format!("; cast replayed, phase reached at +{t}"),
         Some(None) => "; cast replayed, phase never reached".to_string(),
     };
+    let driven = match (plan, engine.driven) {
+        (_, None) if plan == SeedPlan::Opening => "; sampled at the battle-mode flip".to_string(),
+        (_, None) => String::new(),
+        (_, Some(Some(t))) => format!("; driven by pad, reached at +{t}"),
+        (_, Some(None)) => "; driven by pad, never reached".to_string(),
+    };
     put(
         "phase",
         f64::from(u8::from(phase_ok)),
         format!(
-            "retail flow=0x{:02X} ({want:?}) action=0x{:02X} run=0x{:02X}; engine {:?} action=0x{:02X} (first prompt at +{:?}){inflight}",
+            "retail flow=0x{:02X} ({want:?}) action=0x{:02X} run=0x{:02X} seat={} cat={} queued=0x{:02X}; engine {:?} action=0x{:02X} seat={} (first prompt at +{:?}){inflight}{driven}",
             battle.flow,
             battle.action_state,
             battle.run_state,
+            battle.active_actor,
+            battle.queued_category,
+            battle.queued_action,
             engine.flow,
             engine.action_state,
+            engine.active_actor,
             engine.prompt_tick
         ),
     );
@@ -1236,6 +1630,73 @@ mod tests {
         ] {
             assert_eq!(PhaseGate::from_env(&g.to_env()), Some(g));
         }
+    }
+
+    #[test]
+    fn the_battle_drive_round_trips_through_its_env_form() {
+        for d in [
+            BattleDrive::Menu {
+                flow: BattleFlowState::ArtsCommandEntry,
+                seat: 2,
+            },
+            BattleDrive::Menu {
+                flow: BattleFlowState::CommitBegin,
+                seat: 1,
+            },
+            BattleDrive::Action {
+                seat: 3,
+                state: 0x6F,
+                category: 2,
+                queued: 0x7A,
+            },
+        ] {
+            assert_eq!(BattleDrive::from_env(&d.to_env()), Some(d));
+        }
+        assert_eq!(BattleDrive::from_env("menu,40"), None);
+    }
+
+    /// The seed plan follows the flow byte: the entry band opens, a cast in
+    /// the summon band replays, any other `0xFF` action is driven, the
+    /// selection band above the prompt is driven, the prompt parks.
+    #[test]
+    fn the_seed_plan_follows_the_flow_byte() {
+        let mut ram = vec![0u8; 0x20_0000];
+        let ctx = 0x800E_B654;
+        put32(&mut ram, BATTLE_CTX, ctx);
+        put8(&mut ram, ctx, 1);
+        put8(&mut ram, ctx + 1, 1);
+        put8(&mut ram, FORMATION_CELL, 0x4F);
+        let plan = |ram: &mut Vec<u8>, flow: u8, state: u8| {
+            put8(ram, ctx + 6, flow);
+            put8(ram, ctx + 7, state);
+            RetailBattle::from_ram(ram).expect("seedable").seed_plan()
+        };
+        for flow in OPENING_FLOWS {
+            assert_eq!(plan(&mut ram, flow, 0), SeedPlan::Opening);
+        }
+        assert_eq!(plan(&mut ram, 0x1E, 0), SeedPlan::Prompt);
+        assert_eq!(
+            plan(&mut ram, 0x50, 0),
+            SeedPlan::Menu {
+                flow: BattleFlowState::ArtsCommandEntry,
+                seat: 0
+            }
+        );
+        assert_eq!(
+            plan(&mut ram, 0xFF, 0x1E),
+            SeedPlan::Action {
+                seat: 0,
+                state: 0x1E
+            }
+        );
+    }
+
+    #[test]
+    fn a_monster_pool_slot_maps_onto_the_engine_seating() {
+        assert_eq!(engine_seat(1, 2), 1);
+        assert_eq!(engine_seat(3, 1), 1);
+        assert_eq!(engine_seat(4, 2), 3);
+        assert_eq!(engine_seat(3, 3), 3);
     }
 
     #[test]

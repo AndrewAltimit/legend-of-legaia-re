@@ -930,6 +930,15 @@ differ from retail and are deliberate:
   commit hook *accepts* the taught category - one lesson per successful player
   turn, which is the same observable cadence.
 
+The recomposition has to run on the frame a window **opens**, not only while
+the command session is unresolved: the resolution that hands off to a submenu
+consumes the session, and a byte synced only from the session stayed on the
+surface the player left (`0x28`, or `0x78` for the arts entry) for as long as
+the window was up. Retail stores the window's own state as it opens - `0x50`
+at `0x801D1738`, in the delay slot of the arts preseed `jal FUN_801DA34C` -
+and the engine syncs it at the same point
+(`World::tick_battle_command`).
+
 A queued box parks the whole battle tick (`World::live_battle_tick` returns
 early), which is the port of retail returning before it reads the flow state
 while `FUN_801D9BBC` reports a box up (`ctx[+0x6B2]`). A hook that takes the
@@ -2247,7 +2256,7 @@ The active battle context lives at `0x800EB654` (resolved at battle entry; the g
 | Offset | Type | Use |
 |---|---|---|
 | `+0x00` | u8 × 6 | Battle phase/state flags (mostly `01 01 01 00 00 00` while a turn is resolving). |
-| `+0x06` | u8 | The **command-flow byte** - the menu state machine's cursor, dispatched by `FUN_801D0748`. Value space `0x00`, `0x0A`, `0x0B`, `0x14`, `0x1E`, `0x28`, `0x32`, `0x3C`, `0x46`, `0x50`, `0x5A..0x5E`, `0x64..0x67`, `0x6E`, `0x78`, `0xFE`. See the flow table above. |
+| `+0x06` | u8 | The **command-flow byte** - the menu state machine's cursor, dispatched by `FUN_801D0748`. Value space `0xFD` (SCUS battle init's store, `FUN_80055B6C` at `0x80055FA8`, before the overlay's init), `0x00`, `0x0A`, `0x0B`, `0x0C`, `0x14`, `0x1E`, `0x28`, `0x32`, `0x3C`, `0x46`, `0x50`, `0x5A..0x5E`, `0x64..0x67`, `0x6E`, `0x78`, `0xFE`. See the flow table above. |
 | `+0x07` | u8 | Party-slot active action ID (or `0xFF`). The outer `switch((*_DAT_8007BD24)[7])` in `FUN_801E295C` keys on this. |
 | `+0x09` | u8 | Turn / phase counter. |
 | `+0x13` | u8 | Active-actor slot index - used to look up the actor pointer via `(&DAT_801C9370)[ctx[0x13]]`. |

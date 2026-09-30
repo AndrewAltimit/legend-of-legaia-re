@@ -1549,6 +1549,20 @@ fn battle_image(
         env.push(("LEGAIA_CAPTURE_GATE", gate.to_env()));
         tick += crate::retail_compare_battle::INFLIGHT_DEADLINE;
     }
+    // A menu capture or any other action in flight is walked there through
+    // the pad path, the same drive the headless seed ran, and captured the
+    // first frame it holds.
+    if let Some(drive) = battle.battle_drive() {
+        if engine.driven == Some(None) {
+            report.detail.insert(
+                "image".into(),
+                "not scored: the pad drive never reached the capture's phase headlessly".into(),
+            );
+            return None;
+        }
+        env.push(("LEGAIA_BATTLE_DRIVE", drive.to_env()));
+        tick += crate::retail_compare_battle::DRIVE_DEADLINE;
+    }
     match crate::retail_compare_image::engine_frame_with(
         exe,
         opts.extracted,

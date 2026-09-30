@@ -32,6 +32,7 @@ impl PlayWindowApp {
         self.screenshot.as_ref().is_some_and(|sc| {
             sc.phase_gate.as_ref().is_some_and(|g| g.met(world))
                 || sc.script_gate.as_ref().is_some_and(|g| g.met(world))
+                || sc.battle_drive.as_ref().is_some_and(|d| d.reached(world))
         })
     }
 
@@ -332,6 +333,18 @@ impl PlayWindowApp {
                 .apply_to_world(&mut self.session.host.world);
             // `set_pad` also latches the run button off the same word, so
             // there is nothing host-side to keep in sync.
+            // A `LEGAIA_BATTLE_DRIVE` capture walks the fight's pad path
+            // itself, arming the drive's world seed on the first battle tick.
+            let field_pad = match self.screenshot.as_ref() {
+                Some(sc) if let Some(drive) = sc.battle_drive => {
+                    let world = &mut self.session.host.world;
+                    if world.mode == SceneMode::Battle && !sc.battle_drive_primed.replace(true) {
+                        drive.prime(world);
+                    }
+                    drive.pad_word_at(world, self.tick_no)
+                }
+                _ => field_pad,
+            };
             self.session.host.world.set_pad(field_pad);
             if field_suspended {
                 // A shop / prize exchange: the field is frozen, tail included -
@@ -2809,7 +2822,10 @@ impl PlayWindowApp {
             // Screenshot harness: at the target tick, read the frame back
             // offscreen and exit instead of presenting to the window.
             let gated = self.screenshot.as_ref().is_some_and(|sc| {
-                sc.path.is_some() && (sc.phase_gate.is_some() || sc.script_gate.is_some())
+                sc.path.is_some()
+                    && (sc.phase_gate.is_some()
+                        || sc.script_gate.is_some()
+                        || sc.battle_drive.is_some())
             });
             if gated
                 && !self.capture_phase_met()

@@ -268,8 +268,33 @@ party), and the stage variant `0x8007BD60 & 0x1F` is stamped
 the field walker whose tile names it. `World::force_encounter` then arms the row through the
 ordinary transition - the path `play-window --battle` takes, including the
 scripted carrier's replayed tutorial arm. When the mode flips, the retail
-combatants' live HP / MP are written over the engine's, the opening runs to
-the first round prompt, and the session settles with no input.
+combatants' live HP / MP are written over the engine's, and the session is
+placed at the capture's phase.
+
+**Placing the phase.** The capture's command-flow byte `ctx[+0x06]` picks one
+of five plans (`SeedPlan`):
+
+| Retail `ctx[+0x06]` | Plan | What the engine runs |
+|---|---|---|
+| `0xFD`, `0x00`, `0x0A`, `0x0B`, `0x0C`, `0x14` | opening | nothing past the battle-mode flip; sampled there |
+| `0x1E` | prompt | the opening to the first round prompt, then a fixed settle |
+| a selection state above `0x1E` | menu | the pad path from the prompt to that surface, on the member cursor `ctx[+0x13]` ([below](#driving-to-the-phase)) |
+| `0xFF`, summon band | cast | the capture's cast replayed ([below](#replayed-casts)) |
+| `0xFF`, anything else | action | the pad path through rounds until the action SM holds `ctx[+0x07]` on seat `ctx[+0x13]` |
+
+The entry band is everything below the round prompt: `0xFD` is SCUS battle
+init's own store (`FUN_80055B6C`, `sb v0,0x6(v1)` at `0x80055FA8`, before the
+overlay's init writes `0x00`), `0x0A` / `0x0B` the intro timer, `0x0C` the boss
+stage module's baton, `0x14` the one-frame turn setup
+([battle](../subsystems/battle.md#the-battle-open-flow---ctx0x06-from-the-intro-timer-to-the-first-swing)).
+Every value decodes to the engine's `Idle`, so an opening capture is compared
+with the engine before its own opening has run. That comparison is only as
+good as the engine's opening: the port does not park its command flow on the
+intro timer (`battle::intro_names` - the round prompt opens with the names
+still up, which the recorded replays pace off), so an ordinary fight holds its
+prompt already at the flip and an opening capture of one reads `phase` `0`.
+The corpus's opening captures are all the sparring fight, whose opening the
+tutorial holds back.
 
 A battle state whose RAM does not describe a seedable fight (the context
 pointer not yet resident, counts out of range, an empty cell) is kept with a
@@ -282,7 +307,7 @@ seed failure.
 |---|---|
 | `enemies` | fraction of retail monster seats whose id the engine seated in the same order |
 | `enemy_hp` / `battle_party` | fraction of equal HP, max HP, MP and max MP fields over the retail combatants (max MP left out where the engine carries none) |
-| `phase` | 1 when the engine's command-flow state equals retail's `ctx[+0x06]` decoded to the engine's band |
+| `phase` | 1 when the engine's command-flow state equals retail's `ctx[+0x06]` decoded to the engine's band - and, for a replayed or driven action, the same action-SM state on the same seat; for a driven menu, the same member |
 | `bgm` | retail's track word against the field track the engine will resume ([below](#the-track-word-in-battle)) |
 
 `scene`, `mode` (engine `Battle`), `camera`, `flags`, `inventory` and `image`
@@ -290,9 +315,61 @@ keep their field meaning. HP / MP current values are seeded, so their misses
 are what the settle window changed; the max values are the real check
 (record-derived on the party, archive-derived on the monsters).
 
-**Replayed casts.** A capture taken inside the summon band - a party seat
+### Driving to the phase
+
+A menu or action capture is reached through the engine's own command surfaces
+(`BattleDrive`), one press every other tick so each press is an edge. Members
+ahead of the capture's seat commit a plain Attack (the ring's Left arm, `Auto`,
+the first target); the seat itself takes the arm that leads to the captured
+surface - Left then `Command` for the arts entry `0x50`, Up for the item window
+`0x3C`, Right for the magic window `0x46`. An action drive commits the same
+Attack every round, except that the capture's seat takes Spirit when its
+committed category `+0x1DE` is `4`, and a monster seat that was casting
+(`+0x1DE = 2`) casts the capture's spell id `+0x1DF` on its next turn
+(`BattleState::forced_monster_cast`, with the capture's already-debited MP
+credited back). Monster seats are translated from retail's fixed pool slots
+`3..` onto the engine's seating straight after the party. A message box on
+screen takes Cross.
+
+The phase is **held** when the engine's flow state equals the capture's and -
+for a per-member surface - the member is the same; an action phase when the
+round is executing and the same seat holds the same `ctx[+0x07]`. The drive
+gives up after its budget or when the fight ends, and the `phase` detail then
+reads `driven by pad, never reached`.
+
+A drive plays rounds the retail history did not, so a driven capture's
+combatant, bag, flag and track channels are read at the first prompt, before
+the drive - where the seed placed them - and only `phase` and `camera` at the
+phase itself. The image child runs the same drive (`LEGAIA_BATTLE_DRIVE`) and
+captures the first frame that holds the phase; a drive the headless side
+never completed is not imaged.
+
+What a drive cannot reach is a real finding, not a seeding limit - each open
+case is below.
+
+- **Spirit (`+0x1DE = 4`).** Retail's action seed sends category `4` to the
+  spirit band unconditionally (`li v0,0x46` / `sb v0,0x7(v1)` at
+  `0x801E2F5C`), which stages the spirit clip, ramps the gauge over a `0x20`
+  timer and holds on the clip at `0x47` (`0x801E52A4..0x801E54E8`) before the
+  Done band. The engine's Spirit dispatch charges the AP gauge and ends the
+  action at once (`EndOfAction`), so the band is never entered - the
+  `delilas_gi_spirit_*` captures sit at `0x47`.
+- **A monster's plain cast clip.** Retail stages a monster cast's clip as the
+  tag-`0x23` archive entry its pick walked to (`FUN_801E9FD4`,
+  `sb s2,0x1e0(s4)` at `0x801EA540`); the engine looks for an entry whose tag
+  equals the spell id, finds none for Gimard's Tail Fire, and leaves `0x29`
+  for the Done band without the `0x2A` / `0x2B` animation chain.
+- **Seat and timing.** A pick the engine's RNG does not reproduce (a monster's
+  plain strike on a given seat, a capture taken at the killing blow of a
+  specific seat, a victory banner) can run out of budget or end the fight
+  first.
+
+### Replayed casts
+
+A capture taken inside the summon band - a party seat
 (`ctx[+0x13]`) on action-SM state `0x32..=0x36` with a spell id queued at
-`+0x1DF` - is replayed rather than parked. The seed hands the engine that cast
+`+0x1DF`, or on the Done band it hands on to (`0x37` / `0x38`, `0x50..=0x52`)
+with its category `2` still committed - is replayed rather than parked. The seed hands the engine that cast
 (`World::battle.inflight_seed`, target byte `+0x1DD`), dispatched the moment
 the first command prompt opens, and the capture's MP charge is credited back so
 the band's own debit lands on the captured figure. The seed also carries every
@@ -369,10 +446,7 @@ one `0x35` capture of that kind left. Where the creature stands is the formation
 engine seats differ from retail's reads the difference in the creature focus
 too, since the module places the creature relative to caster and victim.
 
-**What the seed cannot carry.** Any other action in flight: a strike, an art
-or a monster's cast (flow `0xFF` outside the summon band) is compared with the
-engine parked on its round prompt, so its `phase` channel reads capture
-timing. The idle orbit's
+**The idle orbit.** The orbit's
 yaw is a clock (`-4` per camera step from whatever azimuth the field left), so
 on a prompt state the yaw part of `camera` reads the capture instant. The frame
 does not: when retail's command-flow byte is one the battle tick's orbit runs on

@@ -85,6 +85,17 @@ pub(crate) struct ScreenshotConfig {
     /// the record from its start when nothing runs it and paging its dialog
     /// boxes on the way. `capture_tick` is the deadline.
     pub script_gate: Option<legaia_engine_shell::retail_compare_script::ScriptGate>,
+    /// `LEGAIA_BATTLE_DRIVE=menu,<flow>,<seat>` /
+    /// `action,<seat>,<state>,<category>,<queued>`: walk the fight through
+    /// its pad path to the retail capture's phase and capture the first
+    /// frame that holds it
+    /// ([`legaia_engine_shell::retail_compare_battle::BattleDrive`]), the
+    /// same driver the headless seed runs. `capture_tick` becomes the
+    /// deadline. Set by the retail-compare image channel.
+    pub battle_drive: Option<legaia_engine_shell::retail_compare_battle::BattleDrive>,
+    /// Whether the drive's one-shot world seed has been armed (it is armed
+    /// on the first battle tick).
+    pub battle_drive_primed: std::cell::Cell<bool>,
 }
 
 /// Debug state `play-window` seeds before the first world tick, so a capture
@@ -262,6 +273,10 @@ impl ScreenshotConfig {
             script_gate: std::env::var("LEGAIA_SCRIPT_GATE")
                 .ok()
                 .and_then(|v| legaia_engine_shell::retail_compare_script::ScriptGate::from_env(&v)),
+            battle_drive: std::env::var("LEGAIA_BATTLE_DRIVE").ok().and_then(|v| {
+                legaia_engine_shell::retail_compare_battle::BattleDrive::from_env(&v)
+            }),
+            battle_drive_primed: std::cell::Cell::new(false),
         }))
     }
 }
