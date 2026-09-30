@@ -23,6 +23,11 @@
 --                      (hold defaults to 6), e.g. "60:SELECT,240:CROSS"
 --   LEGAIA_DUMP_AT     comma list of <vsync>:<name> checkpoints, e.g.
 --                      "500:items_browse"
+--   LEGAIA_POKES       optional `legaia-patcher scus-pokes` output, applied
+--                      right after the state load so the resident SCUS
+--                      matches a patched disc under test (a state carries
+--                      the SCUS of the disc that booted it; the menu
+--                      overlay reloads from the disc when the menu opens)
 --
 -- No breakpoints are armed, so --fast (dynarec) runs are fine.
 
@@ -35,6 +40,7 @@ local OUT_LOG = probe.out_path("menu_screen_dump.log")
 local FRAMES  = probe.getenv_num("LEGAIA_FRAMES", 600)
 local SCRIPT  = probe.getenv("LEGAIA_PAD_SCRIPT", "")
 local DUMPS   = probe.getenv("LEGAIA_DUMP_AT", "")
+local POKES   = probe.getenv("LEGAIA_POKES", "")
 
 local GAME_MODE_VA  = 0x8007b83c
 local SCENE_NAME_VA = 0x8007050c
@@ -153,6 +159,24 @@ probe.run({
     end,
 
     on_capture = function(_, vsync)
+        -- The state's RAM is in place by the first capture vsync.
+        if vsync == 1 then
+            if POKES ~= "" then
+                local n = 0
+                local f = io.open(POKES, "r")
+                if f then
+                    for line in f:lines() do
+                        local a, w = line:match("^%s*0x(%x+)%s*:%s*0x(%x+)")
+                        if a then
+                            probe.write_u32(tonumber(a, 16), tonumber(w, 16))
+                            n = n + 1
+                        end
+                    end
+                    f:close()
+                end
+                logf("applied %d SCUS pokes from %s", n, POKES)
+            end
+        end
         local mode = probe.read_u8(GAME_MODE_VA)
         if mode ~= last_mode then
             logf("vsync=%d game_mode=0x%02x scene=%q", vsync, mode or 0xFF,
