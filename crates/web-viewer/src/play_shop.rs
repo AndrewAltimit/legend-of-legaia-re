@@ -77,7 +77,7 @@
 //! REF: FUN_801d4868
 
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_core::menu_runtime::{MenuInput, MenuState, shop_menu_rows};
+use legaia_engine_core::menu_runtime::{MenuInput, MenuState};
 use legaia_engine_core::shop::ShopSession;
 use legaia_engine_ui::ui_menu_window_painters::{
     SELL_QUANTITY_HEADING, buy_quantity_draws_for, counter_panel_draws_for,
@@ -209,29 +209,19 @@ impl LegaiaRuntime {
         }
 
         let (rows_spec, show_gold): (Vec<ShopRowSpec>, Option<i32>) = match state {
-            // Top picker: Buy / Sell / (Trade) / Exit, matching the runtime's
-            // dynamic row layout. The Sell row's ink follows retail's bag scan
-            // (`shop_root_command_rows`): an empty bag greys it.
-            Some(MenuState::ShopMenu) => {
-                let sellable = !bag.is_empty();
-                let ink =
-                    legaia_engine_core::shop::shop_root_command_rows((0, 0), 0x4000, sellable);
-                (
-                    shop_menu_rows(world.seru_trade_enabled())
-                        .iter()
-                        .map(|s| {
-                            let (label, ink) = match s {
-                                MenuState::ShopBuy => ("Buy", ink[0].ink),
-                                MenuState::ShopSell => ("Sell", ink[1].ink),
-                                MenuState::ShopTrade => ("Trade Seru", ink[0].ink),
-                                _ => ("Exit", ink[0].ink),
-                            };
-                            (label.to_string(), None, ink)
-                        })
-                        .collect(),
-                    Some(gold),
+            // Top picker: Buy / Sell / (Trade) / Exit - labels and retail's
+            // bag-scan ink from `menu_runtime::shop_root_labels`, the native
+            // window's call too (an empty bag greys every row below Buy).
+            Some(MenuState::ShopMenu) => (
+                legaia_engine_core::menu_runtime::shop_root_labels(
+                    world.seru_trade_enabled(),
+                    !bag.is_empty(),
                 )
-            }
+                .into_iter()
+                .map(|(label, ink)| (label.to_string(), None, ink))
+                .collect(),
+                Some(gold),
+            ),
             Some(MenuState::ShopBuy) => (
                 shop.inventory
                     .items

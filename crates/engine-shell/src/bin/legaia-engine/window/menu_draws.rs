@@ -293,8 +293,13 @@ impl PlayWindowApp {
                 )
             }
             FieldMenuSubsession::Config(s) => {
-                let rows = s.state().rows_for(s.key_config_armed());
-                let row_views: Vec<legaia_engine_render::OptionsRowView<'_>> = rows
+                // The screen's model is the engine's
+                // (`OptionsSession::screen_model`, the play page's call too);
+                // this host only borrows it into the renderer's views and
+                // places the popup.
+                let m = s.screen_model();
+                let row_views: Vec<legaia_engine_render::OptionsRowView<'_>> = m
+                    .rows
                     .iter()
                     .map(|r| legaia_engine_render::OptionsRowView {
                         label: r.label,
@@ -303,51 +308,29 @@ impl PlayWindowApp {
                         advance: r.advance,
                     })
                     .collect();
-                let popup = s.popup().map(|p| legaia_engine_render::OptionsPopupDraw {
+                let popup = m.popup.map(|p| legaia_engine_render::OptionsPopupDraw {
                     rect: self.options_popup_rect(&p),
                     choices: p.choices,
                     cursor: p.cursor,
                 });
-                // Selected-row pointing hand at `x-10` on the cursor row
-                // (retail's FUN_8002b994 kind-0 cursor, shared with the
-                // status party list).
-                let row_y_off: i32 = rows
+                let rebind_pairs: Vec<(&str, &str)> = m
+                    .rebind
                     .iter()
-                    .take(s.cursor() as usize)
-                    .map(|r| r.advance)
-                    .sum();
-                // Key Config sub-screen model, when it is open. The pairs
-                // are the shared session's rows, so the native window and the
-                // play page print the same button order and the same bound
-                // keys.
-                let rebind_rows: Vec<(String, String)> = s
-                    .key_rebind()
-                    .map(|k| {
-                        k.rows()
-                            .iter()
-                            .map(|r| (r.button.name().to_string(), r.key.clone()))
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                let rebind_pairs: Vec<(&str, &str)> = rebind_rows
-                    .iter()
+                    .flat_map(|k| k.rows.iter())
                     .map(|(b, k)| (b.as_str(), k.as_str()))
                     .collect();
-                let rebind = s.key_rebind().map(|k| KeyRebindView {
+                let rebind = m.rebind.as_ref().map(|k| KeyRebindView {
                     rows: &rebind_pairs,
-                    cursor: k.cursor(),
-                    awaiting: matches!(
-                        k.phase(),
-                        legaia_engine_core::key_rebind::KeyRebindPhase::AwaitingKey { .. }
-                    ),
+                    cursor: k.cursor,
+                    awaiting: k.awaiting,
                 });
                 pause_screen_draws(
                     &ctx,
                     PauseScreen::Options(OptionsScreenView {
                         rows: &row_views,
-                        cursor: s.cursor(),
+                        cursor: m.cursor,
                         popup,
-                        row_y_off,
+                        row_y_off: m.row_y_off,
                         rebind,
                     }),
                 )

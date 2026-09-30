@@ -3529,6 +3529,14 @@ or the deviating host adopting the other's behaviour.
 - **The Seru-trade screen's text.** The offer list's title, owner rows and
   empty-list line and the confirm question were formatted once per host.
   `seru_trade::trade_screen_text` is the text now, under a `SIM_PAIRS` row.
+- **The shop root and Options row models.** Each host mapped
+  `shop_menu_rows` onto its own label and ink table, and both left Quit
+  white where retail's root window (`FUN_801D4868`) greys it with Sell on an
+  empty bag; `menu_runtime::shop_root_labels` is the table now, and the
+  engine-only Trade row takes the same rule. The Options screen's rows, the
+  hand's row offset and the Key Config rows come from
+  `OptionsSession::screen_model`; a host only borrows them into the view
+  types and places the popup. Two `SIM_PAIRS` rows.
 - **Small copies moved onto one call.** The spoils line's leader name
   (`World::battle_spoils_leader`) and a save's resume point
   (`SceneHost::current_resume`, behind the native session's wrapper and the
@@ -3554,10 +3562,10 @@ that could drift; none is gated.
   ([above](#derived-scene-point-lights-are-native-only)), the native `I`
   toggle's directional light and screen-centred light pool also have no page
   toggle or shader path.
-- **Copies with no kernel under them yet.** Each is one derivation written on
-  both hosts, equal today: the save-select overlay sequence (and the page drops its text entirely without the chrome
-  atlas, where the native window draws it either way), and the shop root /
-  Options row models.
+- **Copies with no kernel under them yet.** One derivation written on both
+  hosts, equal today: the save-select overlay sequence (and the page drops
+  its text entirely without the chrome atlas, where the native window draws
+  it either way).
 - **The fishing wander readout (native only).** A dev-menu debug readout of
   `FUN_801d2050`'s tracked points; the page's dev menu has no twin.
 - **The dance HUD quads (neither host).** The native window calls

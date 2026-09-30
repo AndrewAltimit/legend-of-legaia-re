@@ -1499,28 +1499,16 @@ impl PlayWindowApp {
                 let (title, rows_spec, show_gold): (_, Vec<(String, Option<u32>, u8)>, _) =
                     match state {
                         _ if trade_state => (label, Vec::new(), None),
-                        // Top picker: Buy / Sell / (Trade) / Exit, matching the
-                        // runtime's dynamic row layout. The Sell row's ink is
-                        // retail's bag-scan verdict.
+                        // Top picker: Buy / Sell / (Trade) / Exit - labels and
+                        // retail's bag-scan ink from
+                        // `menu_runtime::shop_root_labels`, the page's call too.
                         Some(MenuState::ShopMenu) => {
-                            let ink = legaia_engine_core::shop::shop_root_command_rows(
-                                (0, 0),
-                                0x4000,
-                                !bag.is_empty(),
-                            );
-                            let rows = legaia_engine_core::menu_runtime::shop_menu_rows(
+                            let rows = legaia_engine_core::menu_runtime::shop_root_labels(
                                 self.session.host.world.seru_trade_enabled(),
+                                !bag.is_empty(),
                             )
-                            .iter()
-                            .map(|s| {
-                                let (l, i) = match s {
-                                    MenuState::ShopBuy => ("Buy", ink[0].ink),
-                                    MenuState::ShopSell => ("Sell", ink[1].ink),
-                                    MenuState::ShopTrade => ("Trade Seru", ink[0].ink),
-                                    _ => ("Exit", ink[0].ink),
-                                };
-                                (l.to_string(), None, i)
-                            })
+                            .into_iter()
+                            .map(|(l, i)| (l.to_string(), None, i))
                             .collect();
                             (label, rows, Some(gold))
                         }

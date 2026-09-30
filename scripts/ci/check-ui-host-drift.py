@@ -622,6 +622,36 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["trade_screen_text"],
     },
     {
+        "what": "shop root picker rows, native vs play page - each host "
+        "mapped `shop_menu_rows` onto its own label + ink table (and both "
+        "left Quit white where retail greys it with Sell on an empty bag). "
+        "Both shop builders must read `menu_runtime::shop_root_labels`",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/bin/legaia-engine/window/hud.rs",
+                "shop_overlay_stage_draws",
+            ),
+            "web": (WEB_PLAY_SHOP, "shop_stage_draws"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["shop_root_labels"],
+    },
+    {
+        "what": "Options screen model, native vs play page - the rows, the "
+        "hand's row offset and the Key Config rows were derived once per "
+        "host from the session. Both Options builders must read "
+        "`OptionsSession::screen_model`",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/bin/legaia-engine/window/menu_draws.rs",
+                "field_menu_sub_draws",
+            ),
+            "web": ("crates/web-viewer/src/play_menu.rs", "build_config"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["screen_model"],
+    },
+    {
         "what": "shop item label, native vs play page - a nameless id (a "
         "load without the executable) printed `item 42` in the native shop "
         "and `Item 2A` on the page, each host spelling its own fallback. Both "
