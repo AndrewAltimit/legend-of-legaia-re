@@ -145,6 +145,7 @@ struct RowMeta {
 fn room_kind_name(v: &Value) -> &'static str {
     match v.as_str().unwrap_or("") {
         "string_fixed" => "string_fixed",
+        "string_movable" => "string_movable",
         "name_movable" => "name_movable",
         "field" => "field",
         "monster" => "monster",

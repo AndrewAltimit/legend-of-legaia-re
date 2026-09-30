@@ -25,7 +25,8 @@
 //! - nothing forms an address **inside** it (`@Items + 1` skips the marker);
 //! - no other image that can be resident with it forms its address;
 //! - it does not share bytes with another string, and it is not one of a run
-//!   of strings laid at a fixed stride (a table indexed by arithmetic);
+//!   of strings laid at a fixed stride with an unreferenced member (a table
+//!   indexed by arithmetic);
 //! - every reference can form the new address: a pointer word always can, a
 //!   private `lui` pair always can, a shared `lui` half only at the same
 //!   `%hi`, a `$gp` form only within its displacement.
@@ -54,7 +55,8 @@ pub enum CodePin {
     ForeignReference,
     /// It shares bytes with another string.
     TailShared,
-    /// One of a run of strings at a fixed stride.
+    /// One of a run of strings at a fixed stride, at least one of which
+    /// nothing references: a table indexed by arithmetic.
     FixedStride,
     /// A reference no address other than its own can satisfy.
     Unmovable,
@@ -249,7 +251,10 @@ impl CodeStrings {
             }
         }
         // Three or more strings at one stride, padded past their own
-        // alignment: a table indexed by arithmetic.
+        // alignment, one of which nothing references: a table indexed by
+        // arithmetic, so none of its members may move. (A run whose every
+        // member is referenced on its own is an ordinary pool of similar
+        // lengths.)
         let mut i = 0;
         while i + 2 < vas.len() {
             let d = vas[i + 1] - vas[i];
@@ -258,7 +263,10 @@ impl CodeStrings {
                 j += 1;
             }
             let padded = (i..=j).any(|k| d as usize > align4(text_len(vas[k]) as usize + 1));
-            if j - i >= 2 && padded {
+            let unreferenced = vas[i..=j]
+                .iter()
+                .any(|va| this.pins.get(va) == Some(&CodePin::NoReference));
+            if j - i >= 2 && padded && unreferenced {
                 for &va in &vas[i..=j] {
                     this.pins.entry(va).or_insert(CodePin::FixedStride);
                 }

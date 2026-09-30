@@ -111,7 +111,7 @@ fn fill(pack: &mut LanguagePack, f: impl Fn(usize, &str) -> Option<String>) {
 /// Import `pack` onto a copy of `original` and check every retail reference
 /// of every pool string reaches the text the import says it wrote. Returns
 /// `(patched image, moved count, moved into the ledger region)`.
-fn import_and_check(original: &[u8], pack: &LanguagePack) -> (Vec<u8>, usize, usize) {
+fn import_and_check(original: &[u8], pack: &LanguagePack) -> (Vec<u8>, usize, usize, usize) {
     let src = DiscPatcher::open(original.to_vec()).unwrap();
     let before = images(&src);
     let mut dst = DiscPatcher::open(original.to_vec()).unwrap();
@@ -182,7 +182,20 @@ fn import_and_check(original: &[u8], pack: &LanguagePack) -> (Vec<u8>, usize, us
     }
     assert!(checked > 100, "only {checked} sites checked");
     check_sectors(original, dst.image());
-    (dst.image().to_vec(), report.relocated_strings, in_ledger)
+    let moved_system = report
+        .trace
+        .moved
+        .keys()
+        .filter(|k| {
+            k.starts_with("scus:") && pack.sections.system_text.iter().any(|e| &e.key == *k)
+        })
+        .count();
+    (
+        dst.image().to_vec(),
+        report.relocated_strings,
+        in_ledger,
+        moved_system,
+    )
 }
 
 #[test]
@@ -219,19 +232,22 @@ fn longer_ui_and_system_strings_move_and_every_reference_follows() {
         1 => None,
         _ => Some(format!("{s} extra")),
     });
-    let (img1, moved1, ledger1) = import_and_check(&original, &pack);
-    eprintln!("[ran] shuffled: {moved1} strings moved, {ledger1} into the ledger region");
+    let (img1, moved1, ledger1, sys1) = import_and_check(&original, &pack);
+    eprintln!(
+        "[ran] shuffled: {moved1} strings moved ({sys1} system_text), {ledger1} into the ledger region"
+    );
     assert!(moved1 > 0, "nothing moved");
+    assert!(sys1 > 0, "no system_text string moved");
 
     // Determinism.
-    let (img1b, _, _) = import_and_check(&original, &pack);
+    let (img1b, _, _, _) = import_and_check(&original, &pack);
     assert!(img1 == img1b, "import is not byte-deterministic");
 
     // Pass 2: everything longer. Most cannot all fit; the ones that do not
     // stay retail (the oracle checks that too).
     let mut pack = english.clone();
     fill(&mut pack, |_, s| Some(format!("{s} (traduzido)")));
-    let (_, moved2, ledger2) = import_and_check(&original, &pack);
+    let (_, moved2, ledger2, _) = import_and_check(&original, &pack);
     eprintln!("[ran] all-longer: {moved2} strings moved, {ledger2} into the ledger region");
     assert!(
         ledger2 > 0,
