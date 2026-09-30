@@ -1146,7 +1146,14 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
         ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
     }
     let cued = psx_depth_cue(graded, psx_modulate(color.rgb, u.depth_cue.rgb * 255.0), ir0);
-    return vec4<f32>(cued * f_scale, 1.0);
+    // The GPU writes the texture-blended foreground at the framebuffer's
+    // 5-bit depth before the blend equation (`(t5 * c8) >> 7`,
+    // `legaia_engine_ui::screen_prim::psx_texture_blend`): `cued * 31` is
+    // `t5 * c / 128` for the cued packet colour `c`, so its floor is that
+    // law. A faint texel under a dim colour adds nothing, as on hardware;
+    // the bias keeps the neutral `0x80` exact against float error.
+    let q = floor(cued * 31.0 + vec3<f32>(0.001)) / 31.0;
+    return vec4<f32>(q * f_scale, 1.0);
 }
 
 @fragment
