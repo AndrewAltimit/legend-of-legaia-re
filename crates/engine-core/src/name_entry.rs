@@ -115,6 +115,12 @@ pub struct NameEntryInput {
     pub cancel: bool,
 }
 
+/// Whether the entry caret shows on frame `frame`: retail blinks it at 75%
+/// duty off the frame counter's `& 0x18` bits.
+pub fn caret_on(frame: u64) -> bool {
+    (frame & 0x18) != 0
+}
+
 impl NameEntryInput {
     /// Decode one frame's **raw** just-pressed pad word (the
     /// [`crate::input::PadButton`] layout both hosts feed `World::set_pad`)
@@ -238,6 +244,27 @@ impl NameEntry {
             6..=11 => Control::Default,
             _ => Control::End,
         })
+    }
+
+    /// Where the hand cursor sits, as the draw builders take it: a
+    /// `(row, column)` on the character grid, or the index of the control
+    /// button (`0` backspace, `1` default, `2` end) on the control row.
+    ///
+    /// Both hosts project the screen through this and [`caret_on`]; each used
+    /// to carry its own copy of the mapping.
+    pub fn cursor_cells(&self) -> (Option<(usize, usize)>, Option<usize>) {
+        if self.cursor < CHAR_CELLS {
+            return (
+                Some((self.cursor / GRID_COLS, self.cursor % GRID_COLS)),
+                None,
+            );
+        }
+        let idx = self.control_at(self.cursor).map(|c| match c {
+            Control::Backspace => 0,
+            Control::Default => 1,
+            Control::End => 2,
+        });
+        (None, idx)
     }
 
     /// Advance the SM by one input frame.

@@ -2073,21 +2073,8 @@ impl PlayWindowApp {
         &self,
         entry: &'a legaia_engine_core::name_entry::NameEntry,
     ) -> legaia_engine_render::NameEntryView<'a> {
-        use legaia_engine_core::name_entry::{CHAR_CELLS, Control, GRID, GRID_COLS};
-        let (grid_cursor, control_cursor) = if entry.cursor < CHAR_CELLS {
-            (
-                Some((entry.cursor / GRID_COLS, entry.cursor % GRID_COLS)),
-                None,
-            )
-        } else {
-            let idx = match entry.control_at(entry.cursor) {
-                Some(Control::Backspace) => Some(0),
-                Some(Control::Default) => Some(1),
-                Some(Control::End) => Some(2),
-                None => None,
-            };
-            (None, idx)
-        };
+        use legaia_engine_core::name_entry::GRID;
+        let (grid_cursor, control_cursor) = entry.cursor_cells();
         legaia_engine_render::NameEntryView {
             grid_rows: &GRID,
             name: &entry.name,
@@ -2096,9 +2083,7 @@ impl PlayWindowApp {
             control_cursor,
             confirming: entry.state == legaia_engine_core::name_entry::NameEntryState::Confirm,
             confirm_yes: entry.confirm_yes,
-            // Retail blinks the caret at 75% duty from the frame counter's
-            // `& 0x18` bits.
-            caret_on: (self.session.host.world.frame & 0x18) != 0,
+            caret_on: legaia_engine_core::name_entry::caret_on(self.session.host.world.frame),
         }
     }
 

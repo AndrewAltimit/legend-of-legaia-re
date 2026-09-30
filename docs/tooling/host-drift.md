@@ -3507,7 +3507,9 @@ or the deviating host adopting the other's behaviour.
 - **Small copies moved onto one call.** The spoils line's leader name
   (`World::battle_spoils_leader`) and a save's resume point
   (`SceneHost::current_resume`, behind the native session's wrapper and the
-  page's card and LGSF writers) were each written out once per host.
+  page's card and LGSF writers) and the name-entry view's cursor mapping and
+  caret blink (`NameEntry::cursor_cells`, `name_entry::caret_on`) were each
+  written out once per host.
 
 ### Open from the same pass
 
@@ -3541,8 +3543,7 @@ that could drift; none is gated.
 - **Copies with no kernel under them yet.** Each is one derivation written on
   both hosts, equal today: the battle-intro arming (PROT 0979 loader, the tile
   corner fallback, the shade-pack parse, the two `IntroEnv` seeds - only the
-  style inputs are shared), the name-entry view (cursor-to-grid map and caret
-  blink), the Seru-trade screen's text, the save-select overlay sequence (and
+  style inputs are shared), the Seru-trade screen's text, the save-select overlay sequence (and
   the page drops its text entirely without the chrome atlas, where the native
   window draws it either way), and the shop root / Options row models.
 - **The fishing wander readout (native only).** A dev-menu debug readout of
