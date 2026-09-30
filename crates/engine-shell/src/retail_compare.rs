@@ -449,7 +449,7 @@ pub fn run_engine_with(
     // The entry itself may already have queued a start.
     session.host.route_bgm_events(&mut director)?;
     if let Some([x, _, z]) = retail.player
-        && session.host.world.debug_seat_player(x, z)
+        && session.host.debug_seat_standing(x, z)
     {
         session.camera.zone.arm_arrival();
     }

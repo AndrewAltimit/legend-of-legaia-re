@@ -102,10 +102,18 @@ displayed frame by one rule.
 state's scene and seeded through its own card-load path,
 `BootSession::resume_save` over the lifted save (enter the scene, then
 hydrate party, flags, bag, gold). The player is then seated on retail's
-`(X, Z)` with the floor-sampled `Y` (`World::debug_seat_player`, the kernel
-behind `LEGAIA_SEAT`; on a field scene it is a warp landing and re-centres the
-region box and the windowed static-object list on the seat), the zone camera's arrival snap is re-armed, and the
-session ticks a fixed settle window with no input. BGM starts are recorded by
+`(X, Z)` with the floor-sampled `Y` (`SceneHost::debug_seat_standing` over
+`World::debug_seat_player`, the kernel behind `LEGAIA_SEAT`; on a field scene
+it is a warp landing and re-centres the region box and the windowed
+static-object list on the seat), the zone camera's arrival snap is re-armed,
+and the session ticks a fixed settle window with no input.
+
+The seat is a player **standing** on the tile, not one crossing onto it: the
+walk-on dispatcher's last-tile pair (`FUN_801D1EC4`) is stamped with the seat
+tile, because a retail capture of a player stood on a trigger tile holds that
+tile in the pair already. Seating without the stamp fired the tile's walk-on
+record on the first tick - `kor5_post_43a_checkpoint` stands on `P2[4]`, whose
+record walked the player out of the temple. BGM starts are recorded by
 a director on the scene host's event route.
 
 **The image channel** comes from `play-window`, the real renderer, run as a
@@ -445,7 +453,6 @@ Shapes the corpus separates, each with what it indicates:
 | camera and dialogue off together | script progress - the seeding cannot resume a script |
 | retail BGM word `2000` on a town arrival | the state was captured before the town's field init ran ([below](#arrival-states-are-captured-before-the-town-runs)) |
 | retail word held by a flag the entry script already consumed (`garmel`'s `0x196`, `rikuroa`'s `0x289`) | script progress: the track was started by a beat that has since cleared its trigger flag, so a card load would not restart it |
-| an engine walk-on record on a seated arrival (`kor5`'s `P2[4]`) | the seat lands on a trigger tile the retail player reached with the last-tile pair already set; a real arrival fires it too |
 | camera depth and position off on an ending vignette (`ending_vignette_rimelm_walkaway`) | the state is mid-way through a scripted shot the seed restarts ([below](#ending-vignettes-are-mid-script)) |
 | camera exact, frame aimed at another part of the room; retail focus `0x80089118/20` is not `-player` | a probe-poked capture ([below](#a-poked-player-keeps-the-arrival-focus)) |
 
@@ -459,9 +466,10 @@ stationary test (`0x801DB578..0x801DB5A4` in `FUN_801DB510`) sees no move and
 the focus-writing legs never run: the focus stays at the arrival tile
 (`-15168`, `-1280` stored; the X is a tile centre, the Z the edge clamp) while
 the player stands elsewhere. Every retail writer of the focus pair takes the
-player as its anchor, so no script or region record accounts for the offset. The engine seats the player and frames on the seat, so
-the `camera` channel reads 1 (it compares angles, `H` and the eye trio, not the
-focus) while the frame looks at a different part of the room. Seated at the
+player as its anchor, so no script or region record accounts for the offset.
+The engine seats the player and frames on the seat, so its angles, `H` and eye
+trio match while the frame looks at a different part of the room; only the
+`camera` channel's focus part misses. Seated at the
 arrival point instead, the engine frames the counter, the walkway and the void
 below it the way retail's frame does. The `image` miss on these two states is
 the capture method, not the camera.

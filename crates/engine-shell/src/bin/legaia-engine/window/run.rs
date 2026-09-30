@@ -639,7 +639,7 @@ pub(super) fn cmd_play_window_with_record(
             .filter_map(|v| v.trim().parse::<i16>().ok())
             .collect();
         if let [x, z] = xz[..]
-            && session.host.world.debug_seat_player(x, z)
+            && session.host.debug_seat_standing(x, z)
         {
             session.camera.zone.arm_arrival();
             log::info!("play-window: LEGAIA_SEAT seated the player at ({x}, {z})");
