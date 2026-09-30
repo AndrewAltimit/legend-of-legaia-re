@@ -225,7 +225,9 @@ pub struct ScriptGate {
     pub pc: usize,
     pub wait: i16,
     /// The opcode byte at the PC. A text segment (`& 0x7F < 0x20`) is a
-    /// capture on an open dialog box, met once the engine's box is open.
+    /// capture on an open dialog box, met once the engine's box has typed
+    /// its page and waits for the press - the frame every such capture in
+    /// the library shows (the whole page up, the prompt glyph on).
     pub op: u8,
     /// Display frames left on retail's camera glide, when one was in flight:
     /// a capture parked on the PC while the shot moves (a `4C CD` wait, a
@@ -302,7 +304,7 @@ impl ScriptGate {
                 && ((tl.pc == self.pc
                     && tl.ctx.wait_accum >= self.wait
                     && glide_landed
-                    && (!text || tl.dialog.is_some()))
+                    && (!text || tl.dialog.as_ref().is_some_and(|d| d.is_waiting_for_input())))
                     || (tl.pc != self.pc && tl.visited.get(self.pc).copied().unwrap_or(false)))
         };
         if world.cutscene.timeline.as_ref().is_some_and(passed)
