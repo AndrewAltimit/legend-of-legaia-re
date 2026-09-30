@@ -317,7 +317,7 @@ blocker is a table is the same error this page records for the panel painters.
 | `801cf0d8` | `cash_out` | `crates/engine-core/src/slot_machine.rs:973` | FALSE INERT |
 | `801cfc40` | `field_actor_dir_blocked` | `crates/engine-core/src/world/field_movement.rs:676` | WIRE |
 | `801d06c8` | `buy` | `crates/engine-core/src/fishing.rs:656` | FALSE INERT |
-| `801d0748` | `hp_left` / `turns_left` | `crates/engine-core/src/muscle_dome.rs` | FALSE INERT |
+| `801d0748` | `hp_left` / `turns_left` | `crates/engine-core/src/muscle_dome/session.rs` | FALSE INERT |
 | `801d092c` | `max_qty` | `crates/engine-core/src/fishing.rs:627` | FALSE INERT |
 | `801d0b90` | `tick_walk_regen` | `crates/engine-core/src/walk_regen.rs:86` | WIRE |
 | `801d0c3c` | `first_visible` | `crates/engine-core/src/fishing.rs:602` | FALSE INERT |
