@@ -14,7 +14,10 @@ write applies.
 The `tim` crate can encode a PNG back to a TIM, so a byte-identical-footprint
 swap is mechanically possible (the texture-replacement flow in the
 [randomizer reference](../randomizer.md#texture-replacement)). The blocker is
-art authoring (and, for logos, rights), not the pipeline. None are patched by
+art authoring (and, for logos, rights), not the pipeline. Before repainting a
+multi-palette sheet, read [shading and palettes](../../subsystems/shading.md#for-modders-editing-a-texture):
+each palette recolours the whole image, and the game draws each sprite through
+its own one. None are patched by
 the translation pipeline - each is a scoped follow-up. Legally, the boot /
 publisher logos must be left untouched regardless.
 

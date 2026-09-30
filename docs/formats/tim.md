@@ -227,8 +227,36 @@ slot changes, the rebuilt palette is **replicated into every CLUT row**
 rows); an untouched palette keeps the whole original CLUT block
 byte-identical.
 
+## Why an exported palette can look wrong
+
+A TIM export decodes the image through one of the file's own CLUT rows. That is
+the colour the game shows only when three things hold, and on Legaia they
+often do not:
+
+- **Each palette recolours the whole image.** A multi-palette 4bpp sheet is one
+  grid of indices that each sprite / polygon reads through its own palette, so
+  any single palette shows most of the sheet in colours it is never drawn
+  with.
+- **The draw names a VRAM cell, not a file.** A sprite can take a palette
+  another TIM uploaded (the system-UI sheet's status badges reach the
+  CLUT-only TIM at `PROT.DAT[0x1858]`), and a later upload can overwrite a
+  TIM's own palette before anything draws it (the ASCII battle font's
+  `(0, 510)` strip, covered by the menu-glyph atlas at boot).
+- **The screen multiplies the texel.** The primitive's colour word
+  (`texel * colour / 128`) and the depth cue sit on top of the palette, so a
+  correctly exported texture still reads darker or brighter than in game.
+
+`legaia_asset::tim_palette_context` resolves the first two from the disc: the
+boot-VRAM CLUT state (`BootClutVram`), a per-rectangle palette map of the
+system-UI page from the SCUS widget table (`sheet_palette_regions`), and an
+"as drawn" composite decode (`composite_rgba`). The asset viewer's TIM catalog
+surfaces all of it in its palette list and notes. The whole colour chain, and
+what it means for texture editing, is on
+[`subsystems/shading.md`](../subsystems/shading.md).
+
 ## See also
 
+- [Shading and palettes](../subsystems/shading.md) - how a texel becomes a screen pixel.
 - [Legaia TMD](tmd.md) - the mesh format that references these textures.
 - [TIM-pack](tim-pack.md) - the standalone bundle of multiple TIMs.
 - [NPC palettes](npc-palette.md) - the row-479 CLUT TIMs.

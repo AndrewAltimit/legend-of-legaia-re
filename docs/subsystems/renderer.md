@@ -2602,6 +2602,7 @@ The detector is preserved as a signal during exploration ("this buffer contains 
 ## See also
 
 **Reference** -
+[Shading and palettes](shading.md) (the whole pixel colour chain, one page) ·
 [Legaia TMD](../formats/tmd.md) ·
 [PSX TIM](../formats/tim.md) ·
 [NPC palettes](../formats/npc-palette.md) ·

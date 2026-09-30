@@ -125,6 +125,7 @@ const NAV = [
       // Output
       { href: 'subsystems/audio.html',          text: 'Audio',                    key: 'subsystems/audio' },
       { href: 'subsystems/renderer.html',       text: 'Renderer',                 key: 'subsystems/renderer' },
+      { href: 'subsystems/shading.html',        text: 'Shading and palettes',     key: 'subsystems/shading', indent: true },
       { href: 'subsystems/engine.html',         text: 'Engine port plan',         key: 'subsystems/engine' },
     ],
   },

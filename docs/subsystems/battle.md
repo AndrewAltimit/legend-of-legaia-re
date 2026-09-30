@@ -4283,7 +4283,10 @@ The second addresses a **separate 4-wide block of CLUTs at VRAM
 `(896.., 498..501)`**, and it is the whole answer to the element-badge palette
 question - see below.
 
-Bit 7 selects the GP0 code: `0x66` (raw sprite) instead of `0x64`.
+Bit 7 selects the GP0 code: `0x66` (semi-transparent sprite) instead of `0x64`
+(opaque). Both are modulated sprites, and the packet word is `0x64808080` /
+`0x66808080` (`0x8002C4C0`, `0x8002C5C4..0x8002C5CC`) - colour `0x808080`, the
+neutral multiply, so a widget sprite shows its palette colours unchanged.
 
 ### Chains: a widget is a run of records
 

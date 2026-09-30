@@ -150,8 +150,10 @@ pub const fn clut_fb(pal: u8) -> (u16, u16) {
     }
 }
 
-/// The GP0 primitive code a record's palette byte selects: `0x66` (raw sprite,
-/// texture unblended) when bit 7 is set, else `0x64`.
+/// The GP0 primitive code a record's palette byte selects: `0x66`
+/// (semi-transparent textured sprite) when bit 7 is set, else `0x64` (opaque).
+/// Both modulate the texel by the packet colour, which the emitters stamp
+/// `0x808080` - neutral.
 pub const fn sprite_code(pal: u8) -> u8 {
     if pal & 0x80 != 0 { 0x66 } else { 0x64 }
 }
