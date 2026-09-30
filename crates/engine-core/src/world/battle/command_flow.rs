@@ -258,6 +258,14 @@ impl World {
                 } else {
                     self.open_arts_command_input(session.actor);
                 }
+                // The flow byte follows the player into the window: retail's
+                // arts entry stores `ctx[+0x06] = 0x50` as it opens (`sb` at
+                // `0x801D1738`, the delay slot of `jal FUN_801DA34C`), and the
+                // ring's item / magic arms store `0x3C` / `0x46` the same way
+                // (the `0x28` row of `battle.md`'s flow table). Without it the byte reads the surface the player
+                // left (`0x78` / `0x28`) for as long as the window is up.
+                // REF: FUN_801D0748 (states 0x28 / 0x78 into 0x3C / 0x46 / 0x50)
+                self.sync_battle_flow(None);
             }
             Some(Resolution::OpenSpellMenu) if crate::battle_hud::battle_raseru_forbidden(self) => {
                 // The special word forbids the Ra-Seru chip: retail's arm
@@ -271,7 +279,10 @@ impl World {
                 // player casts (turn cycles via EndOfAction) or backs out.
                 self.battle_ctx.active_actor = session.actor;
                 match self.build_battle_spell_session(session.actor) {
-                    Some(menu) => self.battle.spell_menu = Some(menu),
+                    Some(menu) => {
+                        self.battle.spell_menu = Some(menu);
+                        self.sync_battle_flow(None);
+                    }
                     // No caster record / no catalog - don't strand the SM;
                     // reopen the command menu so the player can pick again.
                     None => self.open_battle_command(session.actor),
@@ -285,6 +296,7 @@ impl World {
                 // (the command menu reopens for the same actor).
                 self.battle_ctx.active_actor = session.actor;
                 self.battle.item_menu = Some(self.build_battle_item_session());
+                self.sync_battle_flow(None);
             }
             Some(Resolution::SpiritGuard) => {
                 // Player picked Spirit: the guard stance (retail's pending
