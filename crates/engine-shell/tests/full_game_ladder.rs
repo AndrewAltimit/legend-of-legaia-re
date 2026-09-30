@@ -2160,9 +2160,81 @@ fn plan_path(
     goal: (i16, i16),
     avoid: &HashSet<(i32, i32)>,
 ) -> Option<Vec<Cell>> {
+    // A goal outside the start's walk component costs a whole-component
+    // search every time it is asked for, and a stalled walk asks every
+    // second. The component and its nearest cell do not move while the
+    // scene, the flags and the avoid set stand, so a start inside a
+    // remembered failure plans straight to that cell instead.
+    let key = plan_key(session, goal, avoid);
+    let hit = UNREACHED.with(|u| {
+        u.borrow()
+            .get(&key)
+            .filter(|(seen, _)| seen.contains(&from))
+            .map(|&(_, best)| best)
+    });
+    if let Some(best) = hit {
+        if best == from {
+            return None;
+        }
+        if let Some((path, _, _)) = plan_search(session, from, goal, Some(best), avoid)
+            && path.last() == Some(&best)
+        {
+            return Some(path);
+        }
+    }
+    let (path, seen, reached) = plan_search(session, from, goal, None, avoid)?;
+    if !reached && seen.len() > UNREACHED_MIN_CELLS {
+        let best = path.last().copied().unwrap_or(from);
+        UNREACHED.with(|u| {
+            let mut u = u.borrow_mut();
+            if u.len() > 64 {
+                u.clear();
+            }
+            u.insert(key, (seen, best));
+        });
+    }
+    (!path.is_empty()).then_some(path)
+}
+
+/// Searches smaller than this are cheap enough to repeat.
+const UNREACHED_MIN_CELLS: usize = 4_000;
+
+/// What a failed plan's answer depends on: the scene, the goal, the avoid
+/// set and the story flags (which open and shut doors and paint walls).
+type PlanKey = (String, (i16, i16), u64, u64);
+
+thread_local! {
+    /// Failed plans: the cells the search reached and the one nearest the
+    /// goal, by [`PlanKey`].
+    static UNREACHED: std::cell::RefCell<HashMap<PlanKey, (HashSet<Cell>, Cell)>> =
+        std::cell::RefCell::new(HashMap::new());
+}
+
+fn plan_key(session: &BootSession, goal: (i16, i16), avoid: &HashSet<(i32, i32)>) -> PlanKey {
+    use std::hash::{Hash, Hasher};
+    let mut a: Vec<&(i32, i32)> = avoid.iter().collect();
+    a.sort();
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    a.hash(&mut h);
+    let mut f = std::collections::hash_map::DefaultHasher::new();
+    session.host.world.flags.system_flags.hash(&mut f);
+    (scene_name(session), goal, h.finish(), f.finish())
+}
+
+/// The A* behind [`plan_path`]: the route toward `goal`'s tile - or toward
+/// `target` when one is given, a cell already known reachable - the cells
+/// the search reached, and whether it reached its aim.
+#[allow(clippy::type_complexity)]
+fn plan_search(
+    session: &BootSession,
+    from: Cell,
+    goal: (i16, i16),
+    target: Option<Cell>,
+    avoid: &HashSet<(i32, i32)>,
+) -> Option<(Vec<Cell>, HashSet<Cell>, bool)> {
     let w = &session.host.world;
     let gw = tile_center(goal);
-    let gc = cell_of(gw.0, gw.1);
+    let gc = target.unwrap_or_else(|| cell_of(gw.0, gw.1));
     let goal_tile = (i32::from(goal.0), i32::from(goal.1));
     let warps = teleports(session);
     let doors = object_doors(session);
@@ -2277,10 +2349,13 @@ fn plan_path(
         let (n, cells) = p.get();
         p.set((n + 1, cells + s.parent.len() as u64));
     });
-    if best == from {
-        return None;
-    }
-    walk_back(&s.parent, from, best)
+    let reached = best == gc;
+    let path = if best == from {
+        Vec::new()
+    } else {
+        walk_back(&s.parent, from, best)?
+    };
+    Some((path, s.parent.into_keys().collect(), reached))
 }
 
 /// The route from `from` to `to` along `parent` links. A chain longer than
