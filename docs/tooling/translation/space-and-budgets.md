@@ -230,7 +230,14 @@ owner, and the two owners never share one:
   overwritten.
 
 That is why a language pack and the mods compose in either order: neither
-ever writes the other's bytes. `translate space --verbose` lists every region,
+places anything in the other's room. The one crossing is deliberate: a mod
+routine that loads a label the pack then moves is itself a reference to that
+label, so the import rewrites it like any other, and `--seru-trade` reads the
+shop's "Quit" label from the instruction pair that loads it rather than from
+its retail address. Import also tries the smallest edit first - only the
+growing strings move, into spare room - and compacts an image's pools only
+when that leaves one without room. `translation_code_strings_real.rs` applies a
+pack and the menu-overlay mods in both orders and checks both. `translate space --verbose` lists every region,
 its owner and how much of it is still zero.
 
 The translation region is the menu overlay's zero fill between the save-menu
