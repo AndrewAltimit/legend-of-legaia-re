@@ -2758,6 +2758,10 @@ impl PlayWindowApp {
             // same residency predicate decides for both hosts whether the
             // sprite or the letterforms draw.
             screen_prims.extend(self.dance_countin_prims());
+            // The dance HUD frame (score boxes, digits, `Lv.` gauges) as
+            // retail's own quads on the same page, through the shared
+            // `ui_dance::dance_hud_prims` the browser play page emits with.
+            screen_prims.extend(self.dance_hud_prims());
             // The slot machine's paylines, off the machine's own ported pass
             // and projection - the segments both browser pages stroke.
             screen_prims.extend(self.slot_payline_screen_prims());
@@ -3050,6 +3054,31 @@ impl PlayWindowApp {
             art,
             ud::COUNTIN_OT,
         )
+    }
+
+    /// The dance HUD's textured quads as screen-space PSX primitives, off the
+    /// world's one predicate (`MinigameState::dance_hud_quads`: HUD up and
+    /// page resident). Empty otherwise, when `hud.rs` draws the text rows.
+    pub(super) fn dance_hud_prims(&self) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+        use legaia_engine_render::ui_dance as ud;
+        let views: Vec<ud::DanceHudQuadView> = self
+            .session
+            .host
+            .world
+            .minigames
+            .dance_hud_quads()
+            .iter()
+            .map(|q| ud::DanceHudQuadView {
+                poly_code: q.poly_code,
+                rect: (q.x0, q.y0, q.x1, q.y1),
+                uv: q.uv,
+                rgb_top: q.rgb_top,
+                rgb_bottom: q.rgb_bottom,
+                clut: q.clut,
+                tpage: q.tpage_attr,
+            })
+            .collect();
+        ud::dance_hud_prims(&views, ud::COUNTIN_OT)
     }
 
     /// The frame's floating value readout, as screen-space PSX primitives in

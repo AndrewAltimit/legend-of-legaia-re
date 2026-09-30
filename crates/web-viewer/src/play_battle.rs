@@ -2016,6 +2016,8 @@ impl LegaiaRuntime {
         // The dance count-in banner's retail sprite (`crate::play_dance_art`),
         // off the dance hall's own HUD page while a dance owns the frame.
         prims.extend(self.dance_countin_prims());
+        // The dance HUD frame's retail quads on the same page.
+        prims.extend(self.dance_hud_prims());
         // The overworld's entity + player markers, through the shared
         // `world_map_markers` kernel the native window draws them with
         // (`crate::play_world_map_markers`).

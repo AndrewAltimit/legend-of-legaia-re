@@ -509,7 +509,15 @@ impl LegaiaRuntime {
         // lines above are in this page's own pen space; both go through the
         // caller's single `scale_stage_text_draws`, which is the transform
         // the native window also applies to this block.
-        for r in g.hud_frame_rows(g.rival_hud_visible()) {
+        // With the hall's HUD page resident the frame draws as retail's own
+        // quads in the prim pass (`dance_hud_prims`); these rows are the
+        // fallback without it - the same either/or the native window takes.
+        let frame_rows = if host.world.minigames.dance_hud_art_staged {
+            Vec::new()
+        } else {
+            g.hud_frame_rows(g.rival_hud_visible())
+        };
+        for r in frame_rows {
             out.extend(row(
                 font,
                 &r.text,

@@ -234,6 +234,23 @@ impl MinigameState {
         self.dance.is_some() && self.dance_countin_banner.is_none()
     }
 
+    /// The dance HUD's retail textured quads for this frame
+    /// ([`crate::dance::DanceGame::hud_draw_quads`]) when a host can draw
+    /// them: the HUD is up ([`Self::dance_status_visible`]) and the hall's
+    /// HUD page is resident ([`Self::dance_hud_art_staged`]). Empty
+    /// otherwise, which is when a host draws the frame's text rows
+    /// (`DanceGame::hud_frame_rows`) instead - the either/or the count-in
+    /// banner takes, off the same flag, on every host.
+    pub fn dance_hud_quads(&self) -> Vec<crate::dance::DanceHudQuad> {
+        if !self.dance_hud_art_staged || !self.dance_status_visible() {
+            return Vec::new();
+        }
+        self.dance
+            .as_ref()
+            .map(|g| g.hud_draw_quads(g.rival_hud_visible()))
+            .unwrap_or_default()
+    }
+
     pub fn new() -> Self {
         Self {
             dance: None,

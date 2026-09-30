@@ -315,6 +315,12 @@ fn dance_door_warp_draws_the_hall_and_start_leaves() {
         "the dance status readout arms once the count-in clears"
     );
     assert_hud_rows(&mut rt, "dance");
+    // With the hall's HUD page resident the score boxes / digits / `Lv.`
+    // gauges draw as retail's own quads in the screen-prim pass.
+    assert!(
+        rt.play_screen_prim_count() > 0,
+        "the dance HUD's retail quads reach the prim pass"
+    );
     assert!(
         rt.play_mg_dance_body_ready(),
         "the dance cast + choreography must decode"

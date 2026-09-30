@@ -450,7 +450,15 @@ impl PlayWindowApp {
                 let rival_hud = g.rival_hud_visible();
                 let (stage_origin, stage_scale) = self.save_select_stage(w, h);
                 let mut stage_draws: Vec<TextDraw> = Vec::new();
-                for r in g.hud_frame_rows(rival_hud) {
+                // With the hall's HUD page resident the frame draws as
+                // retail's own quads in the screen-prim pass
+                // (`dance_hud_prims`); these rows are the fallback without it.
+                let rows = if self.session.host.world.minigames.dance_hud_art_staged {
+                    Vec::new()
+                } else {
+                    g.hud_frame_rows(rival_hud)
+                };
+                for r in rows {
                     let ly = self.font.layout_ascii(&r.text);
                     stage_draws.extend(text_draws_for(
                         &ly,
@@ -464,19 +472,6 @@ impl PlayWindowApp {
                     stage_scale,
                 );
                 out.extend(stage_draws);
-                // The quad half of the same frame (the FUN_801d2f38 emits,
-                // with the digit / gauge glyph-U patches applied): geometry +
-                // gouraud colours are computed live; without the dance sprite
-                // page resident there is no solid atlas source, so the sink
-                // materialises nothing (same degradation as the fishing
-                // gauge fills).
-                let quads = g.hud_draw_quads(rival_hud);
-                out.extend(minigame_fx::dance_quad_draws(
-                    &quads,
-                    None,
-                    stage_origin,
-                    stage_scale,
-                ));
                 // The sprite-part layer: `FUN_801d387c`'s emit dispatch over
                 // the run's own part pool (the sequence-clear banner + stars
                 // the rules engine spawns), faded by its `+0x78` prologue.
