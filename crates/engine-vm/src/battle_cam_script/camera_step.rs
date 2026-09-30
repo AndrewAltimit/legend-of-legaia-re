@@ -47,6 +47,7 @@ impl BattleCamera {
             action,
             action_yaw: 0,
             last_action_state: 0,
+            acting_body: None,
             last_active_commits: None,
             strike_style_zeroed: false,
             shake: ShakeState {
@@ -740,7 +741,8 @@ impl BattleCamera {
             // calls `FUN_801D5854`, so case 6 does not run.
             if SUMMON_CAST_STATES.contains(&self.last_action_state) {
                 let c = self.attack.ctx;
-                let (target, raw_z) = summon_cast_framing(self.actor, c.accum, c.ramp);
+                let (target, raw_z) =
+                    summon_cast_framing(self.actor, self.acting_body, c.accum, c.ramp);
                 let mut from = self.pose;
                 let steps = (SUMMON_CAST_TWEEN_FRAMES / 2).max(1);
                 let g = Glide::linear(&mut from, target, raw_z, steps, true);

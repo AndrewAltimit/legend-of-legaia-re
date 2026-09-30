@@ -1961,6 +1961,7 @@ fn a_real_turn_films_its_done_tail_and_hands_back_at_end_of_action() {
                     attack: None,
                     action_state: state,
                     active_commits: 0,
+                    acting_body: None,
                 };
                 drive(&mut slot, true, inputs, frames, None);
                 let far = slot.as_ref().map(|c| c.phase()) == Some(BattleCamPhase::Menu);
@@ -2053,7 +2054,10 @@ fn the_summon_cast_close_up_matches_a_captured_frame() {
         world: [300.0, -40.0, -800.0],
         height: None,
     };
-    let (pose, raw_z) = summon_cast_framing(actor, 649, 0xC8);
+    let (pose, raw_z) = summon_cast_framing(actor, None, 649, 0xC8);
+    // The focus is the body pair `+0x3C` / `+0x40` when one is known.
+    let (bodied, _) = summon_cast_framing(actor, Some([123.0, -456.0]), 649, 0xC8);
+    assert_eq!(bodied.focus, [123.0, 0.0, -456.0]);
     assert_eq!(pose.pitch, -400.0);
     assert_eq!((pose.pitch as i32).rem_euclid(4096), 3696);
     assert_eq!(pose.tr[1], 2066.0);
@@ -2076,7 +2080,7 @@ fn the_summon_band_frames_the_cast_close_up() {
         cam.advance_to(f * 2);
     }
     let c = cam.attack.ctx;
-    let (want, _) = summon_cast_framing(cam.actor, c.accum, c.ramp);
+    let (want, _) = summon_cast_framing(cam.actor, cam.acting_body, c.accum, c.ramp);
     let got = cam.framing_pose();
     assert_eq!(got.pitch, want.pitch);
     assert!(

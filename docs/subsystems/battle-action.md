@@ -216,7 +216,10 @@ focus = -(actor[+0x3C], 0, actor[+0x40])
 A low camera beside the caster, pitched up by as much as `400` units, rising
 and swinging round as the accumulator runs; it also sets `ctx[+0x243] = 1`.
 Port: `legaia_engine_vm::battle_cam_script::summon_cast_framing`, stepped by
-the shared battle camera both hosts drive.
+the shared battle camera both hosts drive. The focus is the **body pair**
+(`lhu v0,0x3c(s2)` / `lhu v0,0x40(s2)` at `0x801DCD74..0x801DCD84`), not the
+live `+0x34` / `+0x38`: the camera input carries it as
+`BattleCamInputs::acting_body`, the engine's `BattleActor::seat`.
 
 The swing starts at the **invoke clip**, not at the action. The staged-anim
 commit `FUN_8004AD80` zeroes `ctx[+0x26E]`, `ctx[+0x87C]` and the latch

@@ -79,10 +79,21 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
             height,
         })
     };
+    let acting_seat = world
+        .battle
+        .command
+        .as_ref()
+        .map_or(acting_slot, |c| c.actor);
     let acting = match world.battle.command.as_ref() {
         Some(c) => actor_at(c.actor, Some(c.party_slot)),
         None => actor_at(acting_slot, None),
     };
+    // The body pair `+0x3C` / `+0x40` (`World::refresh_battle_body_pairs`).
+    let acting_body = world
+        .actors
+        .get(usize::from(acting_seat))
+        .and_then(|a| a.battle.seat)
+        .map(|(x, z)| [f32::from(x), f32::from(z)]);
     script::BattleCamInputs {
         phase,
         acting,
@@ -101,6 +112,7 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
         // state edges (`BattleCamera::observe_action_state`).
         action_state: world.battle_ctx.action_state,
         active_commits: world.battle_ctx.active_clip_commits,
+        acting_body,
     }
 }
 
