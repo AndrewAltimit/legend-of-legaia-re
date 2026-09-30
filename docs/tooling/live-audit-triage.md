@@ -327,10 +327,10 @@ blocker is a table is the same error this page records for the panel painters.
 | `801d8258` | `arm` | `crates/engine-core/src/world_map.rs:78` | DISCLOSE |
 | `801da9f8` | `OptionsPhase` | `crates/engine-core/src/options.rs:406` | FALSE INERT |
 | `801dd0c0` | `category_check` | `crates/engine-core/src/menu_item_category.rs` | WIRED |
-| `801e1208` | `classify_card_directory` | `crates/engine-core/src/save_select.rs` | WIRE |
+| `801e1208` | `classify_card_directory` | `crates/engine-core/src/save_select/card_directory.rs` | WIRE |
 | `801e295c` | `advance_battle_mode` | `crates/engine-core/src/world/battle/monster_ai.rs:414` | WIRE |
-| `801e3af0` | `card_directory_scan` | `crates/engine-core/src/save_select.rs:398` | DISCLOSE |
-| `801e3ba0` | `card_free_blocks` | `crates/engine-core/src/save_select.rs:422` | DISCLOSE |
+| `801e3af0` | `card_directory_scan` | `crates/engine-core/src/save_select/card_directory.rs:281` | DISCLOSE |
+| `801e3ba0` | `card_free_blocks` | `crates/engine-core/src/save_select/card_directory.rs:311` | DISCLOSE |
 | `801e4794` | `step_clut_fx` | `crates/engine-core/src/world/effects.rs:923` | FALSE INERT |
 | `801e4c58` | `ClutCellFx` | `crates/engine-core/src/world/effects.rs:852` | FALSE INERT |
 
@@ -606,7 +606,7 @@ anchor. Wrap to the file's comment width.
   `classify_card_directory` is now wired too, for the reason
   [below](#the-index-space-mismatch-was-the-wire-not-the-blocker) - which
   is the second time this bullet's reason has been outgrown rather than
-  found wrong. Read the tags in `save_select.rs`, not this bullet.
+  found wrong. Read the tags in `save_select/`, not this bullet.
 - **`alloc_list_head` / `alloc_and_append` / `free`** - the module doc carries
   the full reason under its `REPLACED-BY` headings; the audit compares per
   anchor, so each function needs its own line. Short form: the engine's actor
