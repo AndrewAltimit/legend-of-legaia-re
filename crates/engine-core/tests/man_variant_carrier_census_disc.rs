@@ -2195,3 +2195,63 @@ fn koin_gates_0x50a_writer_less_0x5d6_self_latched() {
         assert_eq!(tests, sites_want, "0x{flag:X} clean TEST sites in {scene}");
     }
 }
+
+/// No later `keikoku` MAN replaces `P2[7]`, the Ravine's inner-doorway
+/// record, and nothing outside it touches the record's own flags.
+///
+/// The Ravine block carries one MAN carrier - its bundle MAN - so the record
+/// retail runs on every visit is this one. `P2[7]` has no header gate and
+/// dispatches on its own flags: `0x142` (the Mt. Rikuroa post-Caruban latch)
+/// splits it into a before half and an after half, and each half counts
+/// visits on its own latch trio (`0x2BB..=0x2BD` / `0x2BE..=0x2C0`). Every
+/// arm ends by walking the player back out of the doorway, so the doorway is
+/// a story wall in every flag state the Ravine can be entered in (its `map01`
+/// portals close on `0x193`). The latch trios have no writer anywhere else on
+/// the disc.
+#[test]
+fn keikoku_inner_doorway_record_has_no_variant_and_no_foreign_writer() {
+    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    let Some(index) = open_index() else { return };
+    let scene = Scene::load(&index, "keikoku").expect("load keikoku");
+    let carriers = scene_man_carriers(&index, &scene);
+    assert_eq!(carriers.len(), 1, "keikoku ships exactly one MAN carrier");
+    assert!(!carriers[0].is_variant(), "and it is the bundle MAN");
+    let man = &carriers[0].payload;
+    let mf = legaia_asset::man_section::parse(man).expect("parse keikoku MAN");
+    let (c1, c2) = partition2_record_gates(&mf, man, 7).expect("P2[7] gates");
+    assert!(
+        c1.is_empty() && c2.is_empty(),
+        "P2[7] carries no header gate"
+    );
+
+    let scenes = index.cdname_scene_names();
+    let census = system_flag_census(&index, &scenes);
+    let clean = |flag: u16, kind: FlagKind| -> BTreeSet<(String, usize, usize)> {
+        census
+            .get(&flag)
+            .map(|v| {
+                v.iter()
+                    .filter(|h| h.kind == kind && h.clean && !h.text_alias && !h.debug_menu)
+                    .map(|h| (h.scene_name.clone(), h.partition, h.record))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let p2_7: BTreeSet<(String, usize, usize)> = [("keikoku".to_string(), 2usize, 7usize)].into();
+    assert!(
+        clean(0x142, FlagKind::Test).contains(&("keikoku".to_string(), 2, 7)),
+        "P2[7] dispatches on 0x142"
+    );
+    for flag in 0x2BBu16..=0x2C0 {
+        assert_eq!(
+            clean(flag, FlagKind::Set),
+            p2_7,
+            "0x{flag:X} is set by P2[7] only"
+        );
+        assert!(
+            clean(flag, FlagKind::Clear).is_empty(),
+            "0x{flag:X} has no clean clearer anywhere"
+        );
+    }
+    eprintln!("[ran] keikoku P2[7]: one carrier, no gate, latches 0x2BB..=0x2C0 P2[7]-only");
+}

@@ -287,7 +287,11 @@ during it.
 Text is part of the same runner and is not reserved for cutscenes: when the
 next byte is a text segment, the loop stops and the context parks on the one
 shared dialog box (`+0x9C = 2`) until it closes, whichever context reached
-it. A record spawned by op `0x44` in free roam (`town01` `P2[25]`, the FMV
+it. The box has one owner at a time: a context that reaches text while the box
+is taken sits at `+0x9C = 1` and claims it only once the state word
+`0x801F2734` reads free (`1` / `4` / `7`, `0x80039F9C..0x80039FD8`), while
+every context that is not on text keeps its slice - the runner gates on the
+context's own `+0x9C`, never on the box. A record spawned by op `0x44` in free roam (`town01` `P2[25]`, the FMV
 hand-off to `town0b`; `town0e` `P2[5]`, the ending's hop to `edteien`) shows
 its lines and runs on past them.
 

@@ -88,6 +88,12 @@ pub struct FieldVmState {
     /// the retail run settles on the op target) from the live channel
     /// stepper's own-script op (glide).
     pub in_spawned_record_slice: bool,
+    /// Claim counter for the one shared script dialog box: each spawned
+    /// record context that reaches a text segment stamps the next value into
+    /// its [`crate::cutscene_timeline::CutsceneTimeline::dialog_claim`], and
+    /// the lowest stamp among the helper contexts holding text owns the box
+    /// (retail's runner claims it first come, first served).
+    pub dialog_claims: u64,
     /// The scene's `.MAP` object script binds
     /// (`(flat_record_index, contact_centre)`, retail `FUN_8003A55C`),
     /// stored at scene entry so a cutscene-timeline install that has to
@@ -133,6 +139,7 @@ impl FieldVmState {
             channels_man: None,
             executing_channel: None,
             in_spawned_record_slice: false,
+            dialog_claims: 0,
             object_channel_binds: Vec::new(),
             pending_record_spawns: Vec::new(),
             system_pass_open: true,

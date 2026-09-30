@@ -786,10 +786,14 @@ impl World {
             .as_ref()
             .and_then(|tl| tl.dialog.as_ref())
             .or_else(|| {
+                // The helper that claimed the box first; the others wait.
                 self.field_vm
                     .helper_contexts
                     .iter()
-                    .find_map(|tl| tl.dialog.as_ref())
+                    .filter(|tl| !tl.done)
+                    .filter_map(|tl| tl.dialog.as_ref().map(|d| (tl.dialog_claim, d)))
+                    .min_by_key(|(claim, _)| *claim)
+                    .map(|(_, d)| d)
             })
     }
 
@@ -1367,6 +1371,8 @@ impl World {
                         );
                         panel.substitutions = host.world.dialog_substitutions(&tl.bytecode);
                         tl.dialog = Some(panel);
+                        host.world.field_vm.dialog_claims += 1;
+                        tl.dialog_claim = host.world.field_vm.dialog_claims;
                         break;
                     }
                     tl.pc = pc + 1;
@@ -2132,13 +2138,30 @@ impl World {
             return;
         }
         let mut contexts = std::mem::take(&mut self.field_vm.helper_contexts);
-        // One dialog box: the pad goes to the modal timeline's box when it
-        // shows one, else to the first helper holding a box.
-        let mut pad_free = self
+        // One dialog box, and it has one owner: the modal timeline's box when
+        // it shows one, else the first helper holding a box. A helper that
+        // reached its text while the box is taken waits for it without
+        // typing, paging or taking the pager's automatic press - retail's
+        // runner leaves such a context at `+0x9C = 1` and claims the box only
+        // once its state word `0x801F2734` reads free (`1` / `4` / `7`,
+        // `0x80039F9C..0x80039FD8`). Contexts that are not on text keep
+        // their slice every frame: the runner gates on the context's own
+        // `+0x9C`, never on the box.
+        // REF: FUN_80039B7C
+        let timeline_box = self
             .cutscene
             .timeline
             .as_ref()
-            .is_none_or(|t| t.dialog.is_none());
+            .is_some_and(|t| t.dialog.is_some());
+        let mut owner = if timeline_box {
+            None
+        } else {
+            contexts
+                .iter()
+                .filter(|tl| !tl.done && tl.dialog.is_some())
+                .map(|tl| tl.dialog_claim)
+                .min()
+        };
         for tl in contexts.iter_mut() {
             if tl.done {
                 continue;
@@ -2146,8 +2169,11 @@ impl World {
             // Parked on its text segment: the box, not the slice, advances
             // it; the park holds the frame cap like the modal timeline's.
             if tl.dialog.is_some() {
-                self.drive_script_dialog(tl, pad_free);
-                pad_free = false;
+                if owner != Some(tl.dialog_claim) {
+                    continue;
+                }
+                owner = None;
+                self.drive_script_dialog(tl, true);
                 if tl.dialog.is_some() || tl.done {
                     continue;
                 }
@@ -4404,5 +4430,96 @@ mod tests {
             "dismissing the box resumes the helper past the segment"
         );
         assert!(w.script_dialog_panel().is_none());
+    }
+
+    #[test]
+    fn a_helper_off_text_keeps_its_slice_while_the_box_is_taken() {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        // Retail's runner `FUN_80039B7C` gates a context on its own `+0x9C`,
+        // never on the box: while one context's text is up, a context that is
+        // not on text runs every frame, and a second context that reaches
+        // text waits for the box without typing it.
+        let text = vec![0x1F, b'H', b'i', 0x00, 0x50, 0x0C, 0x4A, 0x40, 0x00];
+        let first = vec![0x1F, b'Y', b'o', 0x00, 0x50, 0x0D, 0x4A, 0x40, 0x00];
+        // WAIT 16, SET 0x0E, then a long wait. `frames` is no witness here:
+        // a `WaitFrames` park is kept off the anti-hang cap, so a context
+        // that sits in a wait reads 0 frames however many slices it took.
+        let off_text = vec![0x4A, 0x10, 0x00, 0x50, 0x0E, 0x4A, 0xFF, 0x7F];
+        let mut w = World::new();
+        w.field_vm
+            .helper_contexts
+            .push(CutsceneTimeline::new(first, 0));
+        w.step_helper_contexts();
+        assert!(
+            w.script_dialog_panel().is_some(),
+            "the first helper holds the box"
+        );
+        // Two more contexts: one that never reaches text, one that does - and
+        // sits AHEAD of the owner in the table, so table order cannot pick it.
+        w.field_vm
+            .helper_contexts
+            .insert(0, CutsceneTimeline::new(text, 0));
+        w.field_vm
+            .helper_contexts
+            .push(CutsceneTimeline::new(off_text, 0));
+        for _ in 0..120 {
+            w.step_helper_contexts();
+        }
+        let ctxs = &w.field_vm.helper_contexts;
+        assert_eq!(ctxs.len(), 3);
+        assert!(
+            w.system_flag_test(0x0E),
+            "the off-text helper ran through its wait while the box was up"
+        );
+        let waiting = ctxs[0]
+            .dialog
+            .as_ref()
+            .expect("the second texter is parked on its text");
+        let owner = ctxs[1]
+            .dialog
+            .as_ref()
+            .expect("the owner still holds the box");
+        assert_eq!(owner.page_glyphs().len(), 2, "the owner's page typed out");
+        assert!(
+            waiting.page_glyphs().is_empty(),
+            "the waiting context's box has not typed while the box is taken"
+        );
+        assert!(
+            std::ptr::eq(w.script_dialog_panel().unwrap(), owner),
+            "the box shows the first claimant, not table order"
+        );
+        // Dismiss the owner's box: it runs on (SET 0x0D) and the waiting
+        // context gets the box.
+        for i in 0..200 {
+            w.set_pad(if i % 2 == 0 {
+                crate::input::PadButton::Cross.mask()
+            } else {
+                0
+            });
+            w.step_helper_contexts();
+            if w.system_flag_test(0x0D) {
+                break;
+            }
+        }
+        assert!(w.system_flag_test(0x0D), "the owner resumed past its text");
+        assert!(
+            !w.system_flag_test(0x0C),
+            "the waiting context has not run past its text"
+        );
+        for i in 0..400 {
+            w.set_pad(if i % 2 == 0 {
+                crate::input::PadButton::Cross.mask()
+            } else {
+                0
+            });
+            w.step_helper_contexts();
+            if w.system_flag_test(0x0C) {
+                break;
+            }
+        }
+        assert!(
+            w.system_flag_test(0x0C),
+            "the waiting context claims the freed box and runs on"
+        );
     }
 }

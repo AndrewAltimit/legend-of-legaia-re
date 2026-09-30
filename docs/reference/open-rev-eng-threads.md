@@ -104,8 +104,6 @@ cheapest place to look for a claim that is still wrong.
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Does a later keikoku variant MAN replace `P2[7]`'s pushback? | open - inference | Every arm of keikoku `P2[7]` walks the player back out of the doorway and the record has no header gate, so neither a route nor a flag seed restores critical-path rung 5 on this MAN. A variant MAN that replaces record 7 is the only way it could clear; nobody has checked. |
-| Does retail step helper contexts while a timeline sits on an open text box? | open - test observation | In korb3 two helper contexts spawned beside the first-visit timeline take no slice while it waits on dialogue (0 frames after 2800 ticks). A capture of retail on that dialogue closes it. |
 | Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order capture-confirmed for most spokes; the residual is a card-block question with the instrument ready | [details ↓](#region-story-flag-gate-families) |
 
 **Who sets a field NPC's moving-class bit** closed by disassembly and capture:
