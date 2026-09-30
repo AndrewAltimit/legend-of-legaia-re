@@ -309,7 +309,7 @@ Neither `mode` nor the writer of `+0x78` is pinned: no caller of `FUN_801d387c` 
 
 ### The dancer actor record
 
-`FUN_801d0190` spawns one actor per floor slot of the mode's spawn table and writes: the record's three words into `+0x14` / `+0x16` / `+0x18`, the slot index into `+0x5A`, the kind descriptor address into `+0x48`, `1` into `+0x56`, and **the kind's idle-clip anim id masked to `0x1FF` into `+0x5C`** with its rate word into `+0x6A`. Kind 0 additionally takes render scale `+0x72 = 0x1400` and the translucency bit `+0x10 |= 0x1000000`.
+`FUN_801d0190` spawns one actor per floor slot of the mode's spawn table and writes: the record's three words into `+0x14` / `+0x16` / `+0x18`, the slot index into `+0x5A`, the kind descriptor address into `+0x48`, `1` into `+0x56`, and **the kind's idle-clip anim id masked to `0x1FF` into `+0x5C`** with its rate word into `+0x6A`. Kind 0 additionally takes render scale `+0x72 = 0x1400` and the party-clip-bank bit `+0x10 |= 0x1000000` (see [The party-bank bit](#the-party-bank-bit-not-a-draw-mode)).
 
 `+0x5C` is therefore the **bound clip id**, not a spin counter - `FUN_801d1358` rewrites it with each judge-returned move pair (`andi ...,0x1ff` then `sh ...,0x5c(s0)`) and compares it against the descriptor's idle / dance-loop ids to decide whether the award routine may run at all. The groovy-move turn counter lives in the overlay global `DAT_801d564c[i]` and is not an actor field. So `FUN_801d4098`'s first arm means "this actor has a clip bound", and its `+0x10 & 0x1000` arm is the force-drive flag the field motion driver uses for the same purpose.
 
@@ -370,7 +370,7 @@ The "dance points" cheat anchor at `0x801d53cc` (see [`../reference/cheats.md`](
 | `FUN_801d231c` | Score / gauge HUD render (per-player score + groove gauge via the sprite emitter). `overlay_dance_801d231c.txt` |
 | `FUN_801d03c4` | Dancer face-pose switch driven by hit results (the eye/mouth MoveImage stamp). `overlay_dance_801d03c4.txt` |
 | `FUN_801d0190` | Dancer spawner: per-mode spawn table + kind descriptor table → actor list (see [Dancer bodies](#dancer-bodies-the-retail-cast--choreography-tables)). `overlay_dance_801d0190.txt` |
-| `FUN_801d1358` | Per-dancer actor handler: binds idle / the dance loop, applies the judge-returned move clip + translucency bit, then hands to the shared clip driver `FUN_800204F8`. `overlay_dance_801d1358.txt` |
+| `FUN_801d1358` | Per-dancer actor handler: binds idle / the dance loop, applies the judge-returned move clip + its party-clip-bank bit, then hands to the shared clip driver `FUN_800204F8`. `overlay_dance_801d1358.txt` |
 | `FUN_801d2f38` | Textured-quad sprite emitter (HUD digits / banners / gauge); the id's upper bits carry a per-draw blend mode. See [HUD widget table](#hud-widget-table-dat_801d46cc--emitter-geometry). `overlay_dance_801d2f38.txt` |
 | `FUN_801d73b8` | **Centred text/number draw** (render-track): measures the string (`func_0x80056768`), shifts x left by half its pixel width (13-unit/glyph pitch), draws via `func_0x80036888` at `(x, y + 7)`; skipped when `y >= 0xf1` (off-screen guard); returns a half-length metric. **not in this overlay** - see the alias note below. `overlay_dance_801d73b8.txt` |
 | `FUN_801d7dd8` | **Single small-digit glyph emit** (render-track): sets the glyph source column `DAT_801d8610 = digit*8 + 0x28`, then draws one sprite (tile id `6`) via the shared quad emitter `FUN_801d63b0` at `(x, y)`. Called per digit by the number renderer `FUN_801d76e0` when its style arg is 0. **not in this overlay** - see the alias note below. `overlay_dance_801d7dd8.txt` |
@@ -762,7 +762,8 @@ six)
 at `0x801D4E1C`. Parser: [`legaia_asset::dance_cast`]. Per descriptor: `+0xC`
 mesh id, `+0x10`/`+0x14` pre-game idle anim + rate, `+0x18`/`+0x1C` the
 in-play dance-groove loop, `+0x28..+0x80` eleven `[anim | flags, rate]` **move
-pairs** the judge triggers (anim bit `0x200` = draw translucent). Kind 0's
+pairs** the judge triggers (anim bit `0x200` = the clip is in the party
+bank - see [The party-bank bit](#the-party-bank-bit-not-a-draw-mode)). Kind 0's
 mesh id is written *without* the scene TMD base `hw(0x8007B6F8)`, so it
 indexes the resident global pool; the others get the base added, so they are
 scene-pool indices in the MAN model-byte space.
@@ -847,8 +848,26 @@ centre, the how-to's Noa + Disco King, free play's six.
 The native window hands the surface the venue it builds on the staging edge
 and draws the buffers under the venue camera; the browser play page poses the
 world's run through the same call (`play_mg_dance_scene_*`) and re-bases the
-positions onto its baked hall. What stays outside: the translucent draw a
-move clip's anim word bit `0x200` asks for.
+positions onto its baked hall.
+
+#### The party-bank bit, not a draw mode
+
+A descriptor anim word's bit `0x200` is not a translucent draw. `FUN_801d1358`
+folds it into actor flag `0x01000000` (`0x801D155C..0x801D1574` for a queued
+move, `0x801D171C..0x801D1748` for the award path, which also clears it when
+the bit is absent), and that flag has exactly one reader on the clip path: the
+clip selector `FUN_800204F8`, which tests it before anything else and, when it
+is set, resolves the clip id against `_DAT_8007B75C` - the resident party clip
+bank, PROT 0874 section 1 - instead of the scene's own bank
+(`0x80020530..0x80020560`). It is the same flag the field's placement seater
+raises on a party-bank actor and the ambient move-VM's op `0x0E` raises when it
+switches an actor to the second model bank. No clip in the five descriptors on
+the disc carries the bit, so on retail data every dancer clip resolves against
+the hall's bank. Kind 0's spawn raises the flag (`0x801D02C4`), but its handler
+re-derives it from the bound loop's word on its first tick on the loop, so
+Noa's clips resolve against the hall's bank too. The port names the bit for what
+it selects (`DanceClip::party_bank`, `minigame_actor::FLAG_PARTY_CLIP_BANK`)
+and, with no carrier on the disc, the cast surface holds no second bank.
 
 Under the entry camera the Disco King projects **below** the frame: he stands
 on the lower floor (`y = 0` against the dancers' `-0x80`) only `0x190` in

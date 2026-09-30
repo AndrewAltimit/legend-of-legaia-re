@@ -47,10 +47,12 @@ pub const FLAG_DRIVE_CLIP: u32 = 0x1000;
 /// Actor flag bit meaning "retired" - the shared actor teardown's killed bit.
 pub const FLAG_KILLED: u32 = 0x8;
 
-/// Actor flag bit set while the bound clip asked for a translucent draw (the
-/// dance kind descriptor's anim-word bit `0x200`, folded into `+0x10` by
-/// `FUN_801d1358`).
-pub const FLAG_TRANSLUCENT: u32 = 0x0100_0000;
+/// Actor flag bit that routes the bound clip id to the resident party clip
+/// bank (`_DAT_8007B75C`, PROT 0874 section 1) instead of the scene's: the clip
+/// selector `FUN_800204F8` tests it before anything else
+/// (`0x80020530..0x80020560`). The dance folds its kind descriptor's anim-word
+/// bit `0x200` into it (`FUN_801d1358`), and its spawn raises it on kind 0.
+pub const FLAG_PARTY_CLIP_BANK: u32 = 0x0100_0000;
 
 /// Beat / yaw value at or above which [`crate::dance::sprite_part_fade_weight`]
 /// collapses the sprite weight to zero outright.
@@ -65,7 +67,7 @@ pub const BEAT_FADE_CEILING: u16 = 0x4000;
 pub struct MinigameActor {
     /// `+0x10` - the actor flag word. [`FLAG_DRIVE_CLIP`] is the bit
     /// [`crate::dance::dance_clip_driver_gate`] tests; [`FLAG_KILLED`] and
-    /// [`FLAG_TRANSLUCENT`] are the two other bits the minigame overlays
+    /// [`FLAG_PARTY_CLIP_BANK`] are the two other bits the minigame overlays
     /// write.
     pub flags: u32,
     /// `+0x14` / `+0x16` / `+0x18` - the actor's position triple. The dance
@@ -149,13 +151,13 @@ impl MinigameActor {
         }
     }
 
-    /// Raise or clear [`FLAG_TRANSLUCENT`] - the bit the bound clip's anim
+    /// Raise or clear [`FLAG_PARTY_CLIP_BANK`] - the bit the bound clip's anim
     /// word (`0x200`) folds into `+0x10`.
-    pub fn set_translucent(&mut self, on: bool) {
+    pub fn set_party_clip_bank(&mut self, on: bool) {
         if on {
-            self.flags |= FLAG_TRANSLUCENT;
+            self.flags |= FLAG_PARTY_CLIP_BANK;
         } else {
-            self.flags &= !FLAG_TRANSLUCENT;
+            self.flags &= !FLAG_PARTY_CLIP_BANK;
         }
     }
 

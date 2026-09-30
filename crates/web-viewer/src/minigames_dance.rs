@@ -809,7 +809,7 @@ impl LegaiaMinigames {
     ///   "dancers": [
     ///     { "kind": 2, "model": 62, "x": 5952, "z": 13440,
     ///       "clips": [ { "id": 0, "record": 32, "frames": 20, "rate": 8,
-    ///                    "translucent": false }, ... ] }, ... ],
+    ///                    "party_bank": false }, ... ] }, ... ],
     ///   "moves": { "miss_square": 2, "miss_circle": 3,
     ///              "seq_square": [4, 6, 8], "seq_circle": [5, 7, 9],
     ///              "beat": [10, 11, 12] } }
@@ -842,12 +842,12 @@ impl LegaiaMinigames {
                                     rec.map(|r| r as i32).unwrap_or(-1),
                                     frames,
                                     cl.rate,
-                                    cl.translucent,
+                                    cl.party_bank,
                                 )
                             })
                             .unwrap_or((-1, 0, 0, false));
                         format!(
-                            r#"{{"id":{c},"record":{record},"frames":{frames},"rate":{rate},"translucent":{trans}}}"#
+                            r#"{{"id":{c},"record":{record},"frames":{frames},"rate":{rate},"party_bank":{trans}}}"#
                         )
                     })
                     .collect::<Vec<_>>()

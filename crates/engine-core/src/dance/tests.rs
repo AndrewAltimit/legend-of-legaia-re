@@ -1064,12 +1064,12 @@ fn the_emit_dispatch_rounds_a_negative_pair_toward_zero() {
 // ---------------------------------------------------------- move clip length
 
 /// Five kinds whose clips carry distinct ids: idle `10 + k`, dance `20 + k`,
-/// move pair `p` = `100 + p` (pair 1 translucent).
+/// move pair `p` = `100 + p` (pair 1 in the party bank).
 fn synthetic_kinds() -> Vec<legaia_asset::dance_cast::DanceKind> {
     use legaia_asset::dance_cast::{DanceClip, DanceKind, MOVE_PAIRS};
-    let clip = |anim_id: u16, translucent: bool| DanceClip {
+    let clip = |anim_id: u16, party_bank: bool| DanceClip {
         anim_id,
-        translucent,
+        party_bank,
         rate: 16,
     };
     (0..5u16)

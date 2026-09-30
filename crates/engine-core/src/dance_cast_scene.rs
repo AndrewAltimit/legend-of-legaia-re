@@ -24,8 +24,10 @@
 //! which already carries Noa's field atlas; a host draws them with the same
 //! view-projection it frames the hall with.
 //!
-//! What stays outside: the translucent draw some move clips ask for (anim
-//! word bit `0x200`), which no host's dancer pass applies yet.
+//! Every clip resolves against the hall's bank. A descriptor anim word's bit
+//! `0x200` would route its clip to the resident party bank instead
+//! ([`legaia_asset::dance_cast::DanceClip::party_bank`]); no clip on the disc
+//! carries it, so the surface has no second bank to hold.
 
 use std::ops::Range;
 use std::sync::Arc;
@@ -439,7 +441,7 @@ mod tests {
     fn body_clip_record_is_the_placement_id_minus_one() {
         let c = DanceBodyClip::of(&DanceClip {
             anim_id: 0x23B,
-            translucent: true,
+            party_bank: true,
             rate: 8,
         });
         assert_eq!(c.id, 0x3B);

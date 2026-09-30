@@ -688,7 +688,7 @@ impl LegaiaMinigames {
     ///
     /// ```json
     /// { "dancers": [ {"slot":0,"x":0,"y":-128,"z":0,"clip":6,"rate":8,
-    ///                 "clip_driver":true,"translucent":false} ],
+    ///                 "clip_driver":true,"party_bank":false} ],
     ///   "parts":   [ {"sprite":11,"x":160,"y":144,"fade":32,"shadow":true} ] }
     /// ```
     ///
@@ -716,7 +716,7 @@ impl LegaiaMinigames {
                 format!(
                     concat!(
                         r#"{{"slot":{},"x":{},"y":{},"z":{},"clip":{},"rate":{},"#,
-                        r#""clip_driver":{},"translucent":{}}}"#
+                        r#""clip_driver":{},"party_bank":{}}}"#
                     ),
                     f.slot,
                     a.pos[0],
@@ -725,7 +725,7 @@ impl LegaiaMinigames {
                     f.clip_id,
                     f.clip_rate,
                     f.clip_driver,
-                    f.translucent,
+                    f.party_bank,
                 )
             })
             .collect::<Vec<_>>()

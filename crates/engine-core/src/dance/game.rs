@@ -656,7 +656,7 @@ impl DanceGame {
                 clip_id: a.field_5c,
                 clip_rate: a.cursor as u16,
                 clip_driver: dance_clip_driver_gate(a.field_5c, a.flags),
-                translucent: a.flags & crate::minigame_actor::FLAG_TRANSLUCENT != 0,
+                party_bank: a.flags & crate::minigame_actor::FLAG_PARTY_CLIP_BANK != 0,
             })
             .collect()
     }

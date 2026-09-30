@@ -223,7 +223,7 @@ pub(super) struct Dancer {
     /// run has its clip lengths ([`super::DanceGame::attach_clip_bank`]).
     pub(super) move_left: u32,
     /// The actor flag word (`+0x10`). Only the bits the dance overlay writes
-    /// are modelled: [`crate::minigame_actor::FLAG_TRANSLUCENT`] (the anim
+    /// are modelled: [`crate::minigame_actor::FLAG_PARTY_CLIP_BANK`] (the anim
     /// word's `0x200`) and [`crate::minigame_actor::FLAG_DRIVE_CLIP`].
     pub(super) flags: u32,
     /// Score (`DAT_801d53cc`), clamped to [`SCORE_MAX`].
@@ -288,10 +288,10 @@ impl Dancer {
         self.show_loop = show;
         self.clip = id;
         self.clip_rate = clip.rate;
-        if clip.translucent {
-            self.flags |= crate::minigame_actor::FLAG_TRANSLUCENT;
+        if clip.party_bank {
+            self.flags |= crate::minigame_actor::FLAG_PARTY_CLIP_BANK;
         } else {
-            self.flags &= !crate::minigame_actor::FLAG_TRANSLUCENT;
+            self.flags &= !crate::minigame_actor::FLAG_PARTY_CLIP_BANK;
         }
     }
 
