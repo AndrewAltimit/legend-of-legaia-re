@@ -311,8 +311,8 @@ pub struct PhaseGate {
     /// accumulator `ctx[+0x87C]`, which the invoke clip's commit zeroed and
     /// which then gains `8` a vsync. The state alone does not place such a
     /// frame - `0x33` runs until the clip's first effect record fires - so
-    /// the engine frame is taken that many vsyncs after its caster commits
-    /// the same clip.
+    /// the engine frame is the first one where its caster has committed the
+    /// same clip and the engine's own `ctx[+0x87C]` has reached the value.
     pub cam_accum: Option<u32>,
     /// For a capture inside PROT 0903's walk arm (`11`): retail's yaw base
     /// `ctx[+0x6DA]`, which arm 10 seats at `0x200` and the walk swings by
@@ -427,11 +427,22 @@ impl PhaseGate {
             let committed = caster.is_some_and(|b| {
                 b.current_anim == SUMMON_INVOKE_CLIP && b.queued_anim == SUMMON_INVOKE_CLIP
             });
-            let since = world
-                .clock
-                .display_frames
-                .saturating_sub(world.battle_ctx.active_clip_commit_frame);
-            if !committed || since.saturating_mul(8) < u64::from(acc) {
+            // The engine's own `ctx[+0x87C]`: the commit zeroes it and the
+            // framing prologue adds `8` on the commit frame itself, so it
+            // reads `8 * (frames since the commit + 1)` - counting frames
+            // from the commit instead is one vsync late, and on a capture
+            // taken on the band's last `0x33` frame the gate was never met.
+            let accum = world.battle.camera.as_ref().map_or_else(
+                || {
+                    let since = world
+                        .clock
+                        .display_frames
+                        .saturating_sub(world.battle_ctx.active_clip_commit_frame);
+                    since.saturating_add(1).saturating_mul(8)
+                },
+                |c| u64::from(c.close_up_accum()),
+            );
+            if !committed || accum < u64::from(acc) {
                 return false;
             }
         }

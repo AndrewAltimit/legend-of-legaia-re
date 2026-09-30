@@ -419,9 +419,13 @@ captures on the same predicate (`LEGAIA_BATTLE_INFLIGHT`,
 `LEGAIA_CAPTURE_GATE`), stopping its tick loop the frame it holds. A
 `0x33` capture with no flash yet is gated on how long the caster's invoke
 clip has run instead: the clip's commit zeroes the close-up accumulator
-`ctx[+0x87C]`, which then gains `8` a vsync, so the engine frame is taken
-that many vsyncs after its caster commits clip `9` (the `a<acc>` suffix of
-`LEGAIA_CAPTURE_GATE`). `0x33` itself runs until the clip's first effect
+`ctx[+0x87C]`, which then gains `8` a vsync, so the engine frame is the
+first one where its caster has committed clip `9` and the engine's own
+accumulator (`BattleCamera::close_up_accum`) has reached retail's (the
+`a<acc>` suffix of `LEGAIA_CAPTURE_GATE`). The framing prologue adds its `8`
+on the commit frame itself, so the accumulator reads `8 * (frames since the
+commit + 1)`; counting the frames instead is one vsync late, which on a
+capture taken on the band's last `0x33` frame is a gate never met. `0x33` itself runs until the clip's first effect
 record fires, so the state alone placed the frame at the band's first
 vsync, before the commit. A capture inside PROT 0903's walk arm (`11`) is
 placed by the yaw base `ctx[+0x6DA]` the arm swings `6 * scalar` a vsync

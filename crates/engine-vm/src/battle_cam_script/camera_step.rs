@@ -330,6 +330,13 @@ impl BattleCamera {
         true
     }
 
+    /// Retail's `ctx[+0x87C]` - the close-up accumulator the framing
+    /// prologues advance by `8` a display frame and the active actor's clip
+    /// commit zeroes ([`Self::observe_active_commits`]).
+    pub fn close_up_accum(&self) -> u32 {
+        self.attack.ctx.accum
+    }
+
     /// Current camera pose (12-bit angle units + eye-space TR), **with** the
     /// live screen-shake offset folded into the translation pair - which is
     /// where retail's `FUN_801D9D30` puts it.
