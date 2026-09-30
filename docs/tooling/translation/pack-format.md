@@ -119,7 +119,7 @@ text:
 | `{c2:79}` | item-name substitution |
 | `{c3:..}` / `{c5:..}` | magic / art name substitution |
 | `{cf:0n}` | color change |
-| `{ce:..}` | spacing / icon escape |
+| `{ce:..}` | a button / icon / number symbol - see [Symbols](#symbols) |
 | `{xx:yy}` in general | a 2-byte token (opcode + argument) |
 | `{xx}` | a bare byte (`{01}` item-icon prefix, high glyph tiles) |
 | `{7b}` / `{7d}` | literal `{` / `}` |
@@ -138,6 +138,38 @@ Typed accents are handled one step before `encode`, by the pack's accent mode
 (next section). In the default mode an accented letter is an encode error
 whose message names its ASCII fold and the cell the accent font would give
 it. Cyrillic, Greek and CJK have no glyph and no fold in any mode.
+
+## Symbols
+
+A `{ce:NN}` token draws a controller button, an icon or a number inside the
+text - entry `NN` of the `0xCE` escape table
+([`dialog-font.md`](../../formats/dialog-font.md#escape-table-0x80074050)).
+Export writes the hex form. A pack may type the readable **alias** instead;
+`encode` turns it into the same two bytes (`0xCE`, `NN`), so a pack that uses
+aliases imports byte-identically, and a re-export of the patched disc reads
+`{ce:NN}` again. Aliases are case-insensitive; an unknown one
+(`{btn:start}`) is reported as an unknown symbol.
+
+| Token | Alias | Draws |
+|---|---|---|
+| `{ce:00}`..`{ce:07}` | `{btn:x}` `{btn:circle}` `{btn:square}` `{btn:triangle}` `{btn:r1}` `{btn:r2}` `{btn:l1}` `{btn:l2}` | controller buttons |
+| `{ce:08}` | `{icon:gold}` | `G` gold badge |
+| `{ce:09}` / `{ce:0a}` | `{icon:single}` / `{icon:all}` | `I` / `A` target badges |
+| `{ce:0b}`..`{ce:0e}` | `{num:0}`..`{num:3}` | a script counter, printed as a number |
+| `{ce:0f}` | `{text:ra-seru}` | "Ra-Seru" in Japanese kana |
+| `{ce:10}`..`{ce:13}` | `{icon:arms}` `{icon:head}` `{icon:body}` `{icon:legs}` | equip-slot icons |
+| `{ce:14}`..`{ce:1a}` | `{icon:fire}` `{icon:thunder}` `{icon:wind}` `{icon:water}` `{icon:earth}` `{icon:light}` `{icon:dark}` | element plates |
+| `{ce:1b}` | `{icon:monster}` | monster plate |
+| `{ce:1c}` | `{icon:fire-cut}` | the fire plate's left edge, 12 px |
+| `{ce:1d}`..`{ce:23}` | `{icon:fire2}` `{icon:thunder2}` `{icon:wind2}` `{icon:water2}` `{icon:earth2}` `{icon:light2}` `{icon:dark2}` | winged element icons |
+| `{ce:24}` | `{icon:monster2}` | the monster plate, 28 px wide |
+| `{ce:25}` | `{icon:fire-wide}` | the fire plate, 28 px wide |
+
+The table lives in one place, `legaia_patcher::translation::symbols::SYMBOLS`;
+the translation workbench's symbol palette and preview read it, drawing each
+symbol from the sprites on the user's own disc
+(`legaia_font::escape_icons`). The first list of these symbols was contributed
+by Stann0x (see [`dialog-font.md`](../../formats/dialog-font.md#symbol-names-and-aliases)).
 
 ## Accents
 

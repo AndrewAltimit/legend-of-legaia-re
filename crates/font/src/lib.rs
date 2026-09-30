@@ -22,6 +22,7 @@ use std::path::{Path, PathBuf};
 
 pub mod accent_font;
 pub mod builtin;
+pub mod escape_icons;
 pub mod glyph_count;
 pub mod latin;
 pub mod limits;

@@ -616,6 +616,31 @@ function renderPalette() {
   }).join('');
 }
 
+// The {ce:NN} symbol palette: buttons and icons drawn from the disc's own
+// sprites (names from legaia_patcher::translation::symbols). Inserts the
+// hex token the export writes; the name alias is shown as a hint.
+function renderSymbols() {
+  const el = $('wb-symbols');
+  const field = el.closest('.wb-field');
+  if (!S.wb || typeof S.wb.symbols !== 'function') { field.hidden = true; return; }
+  let syms = [];
+  try { syms = Array.from(S.wb.symbols()); } catch (e) { syms = []; }
+  field.hidden = !syms.length;
+  el.innerHTML = syms.map((s, i) => {
+    const pic = s.rgba ? `<canvas data-sym="${i}"></canvas>` : `<span>#${s.index - 0x0b}</span>`;
+    const t = `${s.name}: ${s.token}, or type ${s.alias}`;
+    return `<button type="button" class="wb-sym-key" data-ch="${esc(s.token)}" title="${esc(t)}" aria-label="${esc(s.name)}">${pic}<code>${esc(s.token.slice(4, 6))}</code></button>`;
+  }).join('');
+  for (const c of el.querySelectorAll('canvas[data-sym]')) {
+    const s = syms[+c.dataset.sym];
+    c.width = s.w;
+    c.height = s.h;
+    c.style.width = (s.w * 2) + 'px';
+    c.style.height = (s.h * 2) + 'px';
+    c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(s.rgba), s.w, s.h), 0, 0);
+  }
+}
+
 function renderCharStats() {
   if (!S.wb) return;
   let st = null;
@@ -816,6 +841,7 @@ async function afterPackChange(msg) {
   fillSectionFilter();
   $('wb-main').hidden = false;
   renderAccents();
+  renderSymbols();
   renderDashboard();
   refilter(true);
   setStatus(msg, 'ok');
@@ -1078,6 +1104,16 @@ function init() {
     insertChar(k.dataset.ch);
   });
   $('wb-palette').addEventListener('keydown', (ev) => {
+    const k = ev.target.closest('[data-ch]');
+    if (k && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); insertChar(k.dataset.ch); }
+  });
+  $('wb-symbols').addEventListener('mousedown', (ev) => {
+    const k = ev.target.closest('[data-ch]');
+    if (!k) return;
+    ev.preventDefault();
+    insertChar(k.dataset.ch);
+  });
+  $('wb-symbols').addEventListener('keydown', (ev) => {
     const k = ev.target.closest('[data-ch]');
     if (k && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); insertChar(k.dataset.ch); }
   });

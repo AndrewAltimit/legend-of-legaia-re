@@ -115,6 +115,20 @@ fn workbench_session_over_the_real_disc() {
     assert_eq!(r.limit_px, 244);
     assert!(r.w >= r.limit_px);
 
+    // A `{ce:NN}` symbol draws its sprite, and its alias draws the same.
+    let hex = core.render(key, &["{ce:00}{ce:14}"]).expect("font");
+    let named = core.render(key, &["{btn:x}{icon:fire}"]).expect("font");
+    let blank = core.render(key, &[""]).expect("font");
+    assert_eq!(hex.rgba, named.rgba);
+    assert_eq!((hex.w, hex.h), (blank.w, blank.h));
+    let differ = hex
+        .rgba
+        .iter()
+        .zip(&blank.rgba)
+        .filter(|(a, b)| a != b)
+        .count();
+    assert!(differ > 4 * 100, "the sprites draw ({differ} bytes differ)");
+
     // A shipped pack loads onto the disc's keys, survives the autosave
     // round trip and strips to its filled keys.
     let fr = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../site/lang/fr.yaml");

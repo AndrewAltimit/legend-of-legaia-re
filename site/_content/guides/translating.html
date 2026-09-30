@@ -59,7 +59,7 @@
     <li>its width on screen in the game's own font, against the width its box or menu column allows, and a picture of the dialog box as the game draws it;</li>
     <li>a moment after you stop typing, whether its scene still fits.</li>
   </ul>
-  <p>An <em>Accents</em> panel sets how accented letters reach the disc (see <a href="#accents">accents</a>), shows how many lines still hold a character the game will not draw, and has a character palette per language that types into the line you are editing. A dashboard shows where the room is: per section, per name table, per menu pool, and every scene from the fullest down. Click a row to list its lines. <em>Check against my disc</em> runs the full check. Your edits are saved in the browser as you type, and the page offers to resume them next time. Download the working pack to keep your own copy, and the shareable pack to share. The workbench does not patch a disc; load the shareable pack on the ROM patcher page for that.</p>
+  <p>An <em>Accents</em> panel sets how accented letters reach the disc (see <a href="#accents">accents</a>), shows how many lines still hold a character the game will not draw, and has a character palette per language that types into the line you are editing. Beside it, a <em>Symbols</em> palette shows every button and icon the game can draw inside text, taken from your own disc; click one to insert it (see <a href="#buttons-and-icons">buttons and icons</a>). A dashboard shows where the room is: per section, per name table, per menu pool, and every scene from the fullest down. Click a row to list its lines. <em>Check against my disc</em> runs the full check. Your edits are saved in the browser as you type, and the page offers to resume them next time. Download the working pack to keep your own copy, and the shareable pack to share. The workbench does not patch a disc; load the shareable pack on the ROM patcher page for that.</p>
 </section>
 
 <section class="doc-section" id="cli">
@@ -165,12 +165,15 @@ legaia-patcher translate import --input "Legend of Legaia (USA).bin" \
       <tr><td><code>{c1:00}</code></td><td>a character's name</td><td>keep it; it may move within the sentence</td></tr>
       <tr><td><code>{c2:..}</code> <code>{c3:..}</code> <code>{c5:..}</code></td><td>an item / magic / art name</td><td>keep it</td></tr>
       <tr><td><code>{cf:..}</code></td><td>a colour change</td><td>keep it, around the same words</td></tr>
-      <tr><td><code>{ce:..}</code> and other <code>{xx:yy}</code></td><td>spacing and icons</td><td>keep it</td></tr>
+      <tr><td><code>{ce:..}</code></td><td>a button, icon or number, such as <code>{ce:00}</code> = the X button</td><td>keep it, or add one; see <a href="#buttons-and-icons">buttons and icons</a></td></tr>
+      <tr><td>other <code>{xx:yy}</code></td><td>spacing and control codes</td><td>keep it</td></tr>
       <tr><td><code>{xx}</code></td><td>one special byte (<code>{01}</code> = item icon)</td><td>keep it</td></tr>
       <tr><td><code>{7b}</code> / <code>{7d}</code></td><td>a literal <code>{</code> / <code>}</code></td><td>use these instead of typing braces</td></tr>
     </tbody>
   </table>
   <p>The substituted names come from the tables you are also translating, so write sentences that stay grammatical whichever name appears.</p>
+  <h3 id="buttons-and-icons">Buttons and icons</h3>
+  <p><code>{ce:NN}</code> draws a picture inside the text: a controller button (<code>{ce:00}</code> is the X button), a gold or target badge, an equipment-slot icon, an element icon, or a number. Each has a name you can type instead, which reads better and imports as exactly the same bytes: <code>{btn:x}</code>, <code>{btn:circle}</code>, <code>{icon:gold}</code>, <code>{icon:legs}</code>, <code>{icon:fire}</code>, <code>{icon:fire2}</code>, and so on. On the workbench, the <em>Symbols</em> palette shows every one as your disc draws it (hover for its name) and inserts it where your cursor is; the dialog preview draws them in place. The full list, with every name, is in the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/translation/pack-format.md#symbols">pack format reference</a>.</p>
   <h3 id="accents">Accents</h3>
   <p>The game's own font draws plain English letters only. Type accents as you normally would and pick, once per pack, what happens to them:</p>
   <ul class="bullets">
