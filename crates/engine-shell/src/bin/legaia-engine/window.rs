@@ -935,6 +935,11 @@ struct PlayWindowApp {
     /// This frame's GPU copy of that surface (see
     /// `PlayWindowApp::refresh_baka_duel_gpu`).
     baka_gpu: Option<minigames::BakaDuelGpu>,
+    /// The Muscle Dome's 3D arena surface - the engine kernel the browser
+    /// play page drives too (`legaia_engine_core::muscle_dome_scene`).
+    muscle_surface: legaia_engine_core::muscle_dome_scene::MuscleDomeSurface,
+    /// The dome surface on the GPU while a dome session is live.
+    muscle_gpu: Option<minigames::BakaDuelGpu>,
     /// The dance venue on the GPU while the dance entry's globals are staged
     /// (see `PlayWindowApp::sync_dance_venue`).
     dance_venue_gpu: Option<minigames::DanceVenueGpu>,

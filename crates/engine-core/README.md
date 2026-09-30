@@ -480,6 +480,11 @@ presentation left to the host:
   between-leg HP restore, and settlement into casino coins. A leg pays
   nothing; a contest pays. Driven by `World::report_muscle_leg` /
   `World::settle_muscle_contest`.
+- `muscle_dome_scene` - the dome's 3D arena surface, `MuscleDomeSurface`:
+  the arena shell, the ground grid, the lead's assembled battle form and the
+  ladder's monster, posed off the session's turn edge and framed by
+  `DomeCamera`. Both play hosts drive it once a frame, as
+  `baka_duel_scene::BakaDuelSurface` serves the duel.
 
 ## Smaller modules worth knowing
 

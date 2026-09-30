@@ -3513,6 +3513,13 @@ or the deviating host adopting the other's behaviour.
   body's rest mesh CPU-side and re-uploads it blended while the word raises
   ABE) and `BattleActorDrawPlan::tint_cue_applies`, under two `SIM_PAIRS`
   rows.
+- **The Muscle Dome arena in 3D.** The page posed the arena, the fighter
+  and the monster in its script (swing clips picked off the turn edge, an
+  orbit framing) and the native window drew no 3D dome at all. Both play
+  hosts now drive `muscle_dome_scene::MuscleDomeSurface` - the seat, the
+  choreography, the pose and `DomeCamera::vp_raw` - and upload what it
+  returns, under two `SIM_PAIRS` rows. The standalone minigames page keeps
+  its own dome panel (`minigame-muscle.js`).
 - **Small copies moved onto one call.** The spoils line's leader name
   (`World::battle_spoils_leader`) and a save's resume point
   (`SceneHost::current_resume`, behind the native session's wrapper and the
@@ -3538,11 +3545,6 @@ that could drift; none is gated.
   ([above](#derived-scene-point-lights-are-native-only)), the native `I`
   toggle's directional light and screen-centred light pool also have no page
   toggle or shader path.
-- **The Muscle Dome arena in 3D (native).** The page draws the arena, the
-  fighter and the monster from its `play_mg_muscle_*` exports and picks swing
-  clips in its script off the turn edge; the native window draws the hub
-  sprites and the status rows only. There is no engine surface for the dome
-  the way `BakaDuelSurface` serves the duel, which is the piece to build.
 - **Copies with no kernel under them yet.** Each is one derivation written on
   both hosts, equal today: the battle-intro arming (PROT 0979 loader, the tile
   corner fallback, the shade-pack parse, the two `IntroEnv` seeds - only the

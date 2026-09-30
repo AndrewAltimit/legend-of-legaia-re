@@ -180,23 +180,19 @@ fn arena_door_warp_draws_the_muscle_dome_and_start_leaves() {
     let g = game_json(&rt);
     let monster = g["muscle"]["monster_id"]
         .as_u64()
-        .expect("the PROT 0977 ladder must stage a monster for the opened contest")
-        as u16;
-    let char_slot = g["muscle"]["char_slot"].as_u64().unwrap_or(0) as u32;
+        .expect("the PROT 0977 ladder must stage a monster for the opened contest");
+    // The 3D arena is the engine surface the native window draws too
+    // (`MuscleDomeSurface::frame`): it seats the ladder's monster, the lead's
+    // battle form and the PROT 1225 arena.
     assert!(
-        rt.play_mg_muscle_scene_ready(monster, char_slot),
-        "monster {monster:#x} + player file {char_slot} must build a scene"
+        rt.play_mg_muscle_scene_frame() >= 0,
+        "monster {monster:#x} + the lead's player file must build the dome surface"
     );
-    assert!(!rt.play_mg_muscle_fighter_positions(char_slot).is_empty());
-    assert!(!rt.play_mg_muscle_monster_positions(monster).is_empty());
-    assert_eq!(
-        rt.play_mg_muscle_vram(monster, char_slot).len(),
-        1024 * 512 * 2
-    );
-    assert!(
-        !rt.play_mg_muscle_arena_positions().is_empty(),
-        "PROT 1225 arena"
-    );
+    let pos = rt.play_mg_muscle_scene_positions();
+    assert!(!pos.is_empty());
+    assert_eq!(rt.play_mg_muscle_scene_flat_rgba().len(), pos.len() / 3 * 4);
+    assert_eq!(rt.play_mg_muscle_scene_vram().len(), 1024 * 512 * 2);
+    assert_eq!(rt.play_mg_muscle_scene_vp(4.0 / 3.0).len(), 16);
     let st: serde_json::Value =
         serde_json::from_str(&rt.play_mg_muscle_state_json()).expect("state json");
     assert_eq!(st["live"].as_bool(), Some(true));

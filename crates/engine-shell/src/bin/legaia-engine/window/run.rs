@@ -1295,6 +1295,8 @@ pub(super) fn cmd_play_window_with_record(
         baka_chrome_frame: Vec::new(),
         baka_surface: Default::default(),
         baka_gpu: None,
+        muscle_surface: Default::default(),
+        muscle_gpu: None,
         dance_venue_gpu: None,
         dance_venue_failed: None,
         dance_cast_surface: Default::default(),

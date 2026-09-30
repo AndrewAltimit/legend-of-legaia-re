@@ -789,6 +789,15 @@ with the shell's ABE lamp glows routed through the renderer's two-pass PSX
 blend (`site/js/minigame-muscle.js`, `semiTwoPass`) and the object-1 dust
 decal omitted per the capture above (`muscle_arena_hybrid` filters it).
 
+In the play hosts (the native window and the browser play page) the same
+shell, grid, fighter and monster come from one engine surface,
+`engine-core::muscle_dome_scene::MuscleDomeSurface`: it seats the course
+ladder's current rung, loads the bodies and the merged VRAM once per seated
+pair, replays a resolved turn's plays as swings (the defender flinching on a
+connecting one), holds the loser's knockdown when the leg settles, and hands
+both hosts one view-projection (`DomeCamera::vp_raw`). The choreography and
+the framing are the port's, not a retail track.
+
 The shell, the assembled fighter and the monster all upload their prims'
 baked **packet colour** on the `a_flat_rgba` attribute, because the page
 shades the retail way - `texel * colour / 128`, no light source. The dome's

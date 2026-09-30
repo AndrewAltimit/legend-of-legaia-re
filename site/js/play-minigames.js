@@ -27,9 +27,6 @@
   const SYM_PX = 64;                  /* a reel symbol cell, in texels */
   const HUD_W = 320, HUD_H = 240;     /* retail stage */
 
-  /* Player battle-form clip slots (minigame-muscle.js P_ANIM). */
-  const P_ANIM = { IDLE: 0, HIT: 2, KO: 4 };
-
   const S = {
     game: null,        /* 'slot' | 'muscle' | 'baka' | 'dance' | null */
     gen: -1,
@@ -596,181 +593,47 @@
   /* Muscle Dome: arena backdrop + ground grid, the lead's assembled battle
    * form and the ladder's monster, posed from their own clip banks. */
 
-  function pickMonsterClips(anims) {
-    const byTag = (t) => anims.findIndex(a => a.action_id === t);
-    const idle = byTag(0);
-    let attack = byTag(0x21);
-    if (attack < 0) attack = byTag(0x20);
-    if (attack < 0) attack = anims.findIndex(a => a.action_id >= 0x20);
-    if (attack < 0) attack = anims.length > 1 ? 1 : idle;
-    let hit = byTag(2);
-    if (hit < 0) hit = byTag(3);
-    let ko = byTag(4);
-    if (ko < 0) ko = hit;
-    return { idle: Math.max(idle, 0), attack, hit: hit < 0 ? idle : hit, ko };
+  /* The dome's 3D surface is the engine's (MuscleDomeSurface::frame, the
+   * call the native window makes too): the seat, the choreography, the pose
+   * and the camera. The page uploads the buffers on a generation change and
+   * the posed positions every frame. */
+  function muscleUpload(rt, view, gen) {
+    const pos = rt.play_mg_muscle_scene_positions();
+    if (!pos.length) return null;
+    const buf = {
+      pos,
+      uvs: rt.play_mg_muscle_scene_uvs(),
+      ct: rt.play_mg_muscle_scene_cba_tsb(),
+      flat: rt.play_mg_muscle_scene_flat_rgba(),
+      idx: rt.play_mg_muscle_scene_indices(),
+    };
+    /* The arena's lamp glow is semi-transparent (ABE) prims. */
+    if (!takeRenderer(view, rt.play_mg_muscle_scene_vram(), buf, { semiTwoPass: true })) return null;
+    return { kind: 'muscle', gen };
   }
 
-  /* The retail battle ground grid (minigame-muscle.js groundBuffers). */
-  function groundBuffers() {
-    const out = { pos: [], uvs: [], ct: [], flat: [], idx: [] };
-    const CELL = 0x200, SUB = 0x100, N = 14;
-    const CBA = 0x77C0, TSB = 0x000D;
-    for (let cz = -N; cz < N; cz++) for (let cx = -N; cx < N; cx++) {
-      for (let sr = 0; sr < 2; sr++) for (let sc = 0; sc < 2; sc++) {
-        const x0 = cx * CELL + sc * SUB, x1 = x0 + SUB;
-        const z0 = cz * CELL + sr * SUB, z1 = z0 + SUB;
-        const u0 = 192 + sc * 32, u1 = u0 + 31;
-        const v0 = 192 + sr * 32, v1 = v0 + 31;
-        const base = out.pos.length / 3;
-        out.pos.push(x0, 0, z0, x1, 0, z0, x1, 0, z1, x0, 0, z1);
-        out.uvs.push(u0, v0, u1, v0, u1, v1, u0, v1);
-        for (let k = 0; k < 4; k++) { out.ct.push(CBA, TSB); out.flat.push(128, 128, 128, 255); }
-        out.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
-      }
-    }
-    return out;
-  }
-  function floorBuffers(extent) {
-    const out = { pos: [], uvs: [], ct: [], flat: [], idx: [] };
-    const T = Math.max(160, Math.round(extent / 4));
-    const N = 12;
-    for (let iz = -N; iz < N; iz++) for (let ix = -N; ix < N; ix++) {
-      const dark = ((ix + iz) & 1) === 0;
-      const c = dark ? [34, 36, 44] : [48, 52, 62];
-      const base = out.pos.length / 3;
-      const x0 = ix * T, x1 = x0 + T, z0 = iz * T, z1 = z0 + T;
-      out.pos.push(x0, 0, z0, x1, 0, z0, x1, 0, z1, x0, 0, z1);
-      for (let k = 0; k < 4; k++) { out.uvs.push(0, 0); out.ct.push(0, 0); out.flat.push(c[0], c[1], c[2], 0); }
-      out.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
-    }
-    return out;
-  }
-
-  function muscleBuild(rt, view, info) {
-    const m = info.muscle || {};
-    const monsterId = m.monster_id, charSlot = m.char_slot | 0;
-    if (monsterId == null) return null;
-    if (!rt.play_mg_muscle_scene_ready || !rt.play_mg_muscle_scene_ready(monsterId, charSlot)) return null;
-    const P = {
-      pos: rt.play_mg_muscle_fighter_positions(charSlot),
-      uvs: rt.play_mg_muscle_fighter_uvs(charSlot),
-      ct: rt.play_mg_muscle_fighter_cba_tsb(charSlot),
-      idx: rt.play_mg_muscle_fighter_indices(charSlot),
-      oid: rt.play_mg_muscle_fighter_object_ids(charSlot),
-      flat: rt.play_mg_muscle_fighter_flat_rgba(charSlot),
-      parts: rt.play_mg_muscle_fighter_part_count(charSlot),
-    };
-    const M = {
-      pos: rt.play_mg_muscle_monster_positions(monsterId),
-      uvs: rt.play_mg_muscle_monster_uvs(monsterId),
-      ct: rt.play_mg_muscle_monster_cba_tsb(monsterId),
-      idx: rt.play_mg_muscle_monster_indices(monsterId),
-      oid: rt.play_mg_muscle_monster_object_ids(monsterId),
-      flat: rt.play_mg_muscle_monster_flat_rgba(monsterId),
-      parts: rt.play_mg_muscle_monster_part_count(monsterId),
-    };
-    if (!P.pos.length || !M.pos.length) return null;
-    const pAnims = parse(() => rt.play_mg_muscle_fighter_anims_json(charSlot)) || [];
-    const pClip = (slot) => {
-      const row = pAnims.find(a => a.slot === slot);
-      if (!row || !row.frame_count) return null;
-      const frames = rt.play_mg_muscle_fighter_pose_frames(charSlot, slot, P.parts);
-      if (!frames.length) return null;
-      return { frames, frameCount: row.frame_count, parts: P.parts, rate: Math.max(1, (row.rate || 1) * 2) };
-    };
-    const mAnims = parse(() => rt.play_mg_muscle_monster_anims_json(monsterId)) || [];
-    const mPick = pickMonsterClips(mAnims);
-    const mClip = (index) => {
-      if (index < 0 || index >= mAnims.length) return null;
-      const a = mAnims[index];
-      const frames = rt.play_mg_muscle_monster_pose_frames(monsterId, index, M.parts);
-      if (!frames.length) return null;
-      return { frames, frameCount: a.frame_count, parts: M.parts, rate: Math.max(1, (a.rate || 1) * 2) };
-    };
-    const pIdle = pClip(P_ANIM.IDLE), pHit = pClip(P_ANIM.HIT);
-    const clips = [
-      { idle: pIdle, hit: pHit || pIdle, ko: pClip(P_ANIM.KO) || pHit || pIdle,
-        byCmd: Object.fromEntries([12, 13, 14, 15].map(c => [c, pClip(c)])) },
-      { idle: mClip(mPick.idle), hit: mClip(mPick.hit), attack: mClip(mPick.attack), ko: mClip(mPick.ko) },
-    ];
-    if (!clips[0].idle || !clips[1].idle) return null;
-    const extP = poseExtent(P, clips[0].idle), extM = poseExtent(M, clips[1].idle);
-    const gap = (extP.half + extM.half) * 1.5 + 120;
-    const arenaPos = rt.play_mg_muscle_arena_positions();
-    const arena = arenaPos.length ? {
-      pos: arenaPos, uvs: rt.play_mg_muscle_arena_uvs(), ct: rt.play_mg_muscle_arena_cba_tsb(),
-      flat: rt.play_mg_muscle_arena_flat_rgba(), idx: rt.play_mg_muscle_arena_indices(),
-    } : null;
-    const statics = arena ? [arena, groundBuffers()] : [floorBuffers(gap)];
-    const buf = concatBuffers([P, M].concat(statics));
-    const spreadZ = !!arena;
-    const sc = {
-      kind: 'muscle', P, M, nP: P.pos.length / 3, clips,
-      base: buf.pos.slice(), out: buf.pos,
-      dx: spreadZ ? [0, 0] : [-gap / 2, gap / 2],
-      dz: spreadZ ? [-gap / 2, gap / 2] : [0, 0],
-      yaw: spreadZ ? [0, Math.PI] : [Math.PI / 2, -Math.PI / 2],
-      act: [{ clip: clips[0].idle, start: 0, loop: true }, { clip: clips[1].idle, start: 0, loop: true }],
-      cam: { yaw: spreadZ ? Math.PI / 2 : 0.0, pitch: 0.14, distance: spreadZ ? 2.1 : 1.75 },
-      center: [spreadZ ? 260 : 0, -Math.max(extP.height, extM.height) * 0.42, 0],
-      radius: gap * 0.95 + Math.max(extP.half, extM.half) * 0.6,
-      tick: 0, turnsSeen: 0, timers: [], phase: '',
-    };
-    if (!takeRenderer(view, rt.play_mg_muscle_vram(monsterId, charSlot), buf, { semiTwoPass: true })) return null;
-    return sc;
-  }
-
-  function musclePlay(sc, fi, clip, hold) {
-    if (!clip) return;
-    sc.act[fi] = { clip, start: sc.tick, loop: false, hold: !!hold };
+  function muscleBuild(rt, view) {
+    if (typeof rt.play_mg_muscle_scene_frame !== 'function') return null;
+    const gen = rt.play_mg_muscle_scene_frame();
+    return gen < 0 ? null : muscleUpload(rt, view, gen);
   }
 
   function muscleFrame(rt, view, skipDraw) {
-    const sc = S.scene;
-    const st = parse(() => rt.play_mg_muscle_state_json());
-    if (sc && st && st.live) {
-      sc.tick++;
-      /* Resolved turn: replay its plays as swings, defender flinch on the
-       * connect, 34 ticks per event (the standalone page's cadence). */
-      if (st.turns_resolved !== sc.turnsSeen) {
-        sc.turnsSeen = st.turns_resolved;
-        let at = 0;
-        for (const ev of (st.plays || [])) {
-          const attacker = ev.attacker | 0, defender = attacker ^ 1;
-          const swing = attacker === 0 ? (sc.clips[0].byCmd[ev.cmd] || sc.clips[0].idle) : sc.clips[1].attack;
-          const hit = defender === 0 ? sc.clips[0].hit : sc.clips[1].hit;
-          sc.timers.push({ at: sc.tick + at, fn: () => musclePlay(sc, attacker, swing) });
-          if (ev.damage > 0) sc.timers.push({ at: sc.tick + at + 12, fn: () => musclePlay(sc, defender, hit) });
-          at += 34;
-        }
-      }
-      if (st.phase !== sc.phase) {
-        sc.phase = st.phase;
-        if (st.phase === 'won') musclePlay(sc, 1, sc.clips[1].ko, true);
-        if (st.phase === 'lost') musclePlay(sc, 0, sc.clips[0].ko, true);
-      }
-      const due = sc.timers.filter(t => t.at <= sc.tick);
-      sc.timers = sc.timers.filter(t => t.at > sc.tick);
-      for (const t of due) t.fn();
-      for (let fi = 0; fi < 2; fi++) {
-        const a = sc.act[fi];
-        let clip = a.clip || sc.clips[fi].idle;
-        let frame;
-        if (a.loop) {
-          frame = Math.floor((sc.tick - a.start) * clip.rate / 16) % clip.frameCount;
-        } else {
-          frame = Math.floor((sc.tick - a.start) * clip.rate / 16);
-          if (frame >= clip.frameCount) {
-            if (a.hold) frame = clip.frameCount - 1;
-            else { sc.act[fi] = { clip: sc.clips[fi].idle, start: sc.tick, loop: true }; clip = sc.clips[fi].idle; frame = 0; }
-          }
-        }
-        const f = fi === 0 ? sc.P : sc.M;
-        poseInto(sc.out, sc.base, f.oid, clip, frame, fi === 0 ? 0 : sc.nP, sc.dx[fi], sc.yaw[fi], sc.dz[fi]);
-      }
-    }
+    const gen = typeof rt.play_mg_muscle_scene_frame === 'function'
+      ? rt.play_mg_muscle_scene_frame() : -1;
+    if (gen >= 0 && (!S.scene || S.scene.gen !== gen)) S.scene = muscleUpload(rt, view, gen);
     if (skipDraw) return;
-    if (sc) renderScene(view, sc); else clearGl(view);
+    const r = view.renderer;
+    if (gen < 0 || !S.scene || !r) {
+      clearGl(view);
+    } else {
+      r.updatePositions(rt.play_mg_muscle_scene_positions());
+      const c = r.canvas;
+      const vp = rt.play_mg_muscle_scene_vp(c.width / Math.max(c.height, 1));
+      r.mvpOverride = vp.length === 16 ? Float32Array.from(vp) : null;
+      r.render(0, 0, 1, 0, 0, [0, 0, 0], 1);
+      r.mvpOverride = null;
+    }
     /* Hub screens (intro card / ROUND banner) over the arena. */
     drawHubQuads(rt, view);
   }
@@ -1183,7 +1046,7 @@
     if (info.game === 'slot') { slotLoad(rt); return; }
     if (!info.art) return;
     try {
-      if (info.game === 'muscle') S.scene = muscleBuild(rt, view, info);
+      if (info.game === 'muscle') S.scene = muscleBuild(rt, view);
       else if (info.game === 'baka') S.scene = bakaBuild(rt, view);
       else if (info.game === 'dance') S.scene = danceBuild(rt, view, danceSceneFrame(rt));
     } catch (e) {

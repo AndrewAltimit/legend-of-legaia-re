@@ -681,165 +681,95 @@ impl LegaiaRuntime {
         vec![t.pixel_width() as u32, t.pixel_height() as u32]
     }
 
-    /// Whether the dome scene decodes for `(monster_id, char_slot)`.
-    pub fn play_mg_muscle_scene_ready(&self, monster_id: u16, char_slot: u32) -> bool {
-        self.minigame_art()
-            .is_some_and(|a| a.muscle_scene_ready(monster_id, char_slot))
+    /// Pose the dome's 3D arena surface for this frame
+    /// (`legaia_engine_core::muscle_dome_scene::MuscleDomeSurface::frame`,
+    /// the call the native window makes too) and return its generation - or
+    /// `-1` when no dome session is live or its scene does not decode. A
+    /// generation the page has not seen means the static buffers and the
+    /// VRAM changed (a new rung seated a new monster): re-read them before
+    /// the positions.
+    pub fn play_mg_muscle_scene_frame(&mut self) -> i32 {
+        let host = self.scene_host.as_ref();
+        let world = host.map(|h| &h.world);
+        let live =
+            world.is_some_and(|w| w.mode == legaia_engine_core::world::SceneMode::MuscleDome);
+        let session = world
+            .filter(|_| live)
+            .and_then(|w| w.minigames.muscle_dome.as_ref());
+        let contest = world.and_then(|w| w.minigames.muscle_contest.as_ref());
+        let read = |i: usize| host.and_then(|h| h.index.entry_bytes(i as u32).ok());
+        let char_slot = self.minigame_ui.muscle.char_slot;
+        let surface = &mut self.minigame_ui.muscle_surface;
+        match surface.frame(read, session, contest, char_slot) {
+            Some(_) => surface.generation() as i32,
+            None => -1,
+        }
     }
 
-    pub fn play_mg_muscle_fighter_positions(&self, char_slot: u32) -> Vec<f32> {
-        self.minigame_art()
-            .map(|a| a.muscle_fighter_positions(char_slot))
+    /// This frame's posed positions, `[x, y, z]` per vertex, raw retail world
+    /// coordinates (Y down): the fighter, the monster, then the arena.
+    pub fn play_mg_muscle_scene_positions(&self) -> Vec<f32> {
+        self.minigame_ui
+            .muscle_surface
+            .scene()
+            .map(|s| s.positions.iter().flatten().copied().collect())
             .unwrap_or_default()
     }
 
-    pub fn play_mg_muscle_fighter_uvs(&self, char_slot: u32) -> Vec<i32> {
-        self.minigame_art()
-            .map(|a| a.muscle_fighter_uvs(char_slot))
+    /// Per-vertex `[u, v]`.
+    pub fn play_mg_muscle_scene_uvs(&self) -> Vec<u8> {
+        self.minigame_ui
+            .muscle_surface
+            .scene()
+            .map(|s| s.uvs.iter().flatten().copied().collect())
             .unwrap_or_default()
     }
 
-    pub fn play_mg_muscle_fighter_cba_tsb(&self, char_slot: u32) -> Vec<u32> {
-        self.minigame_art()
-            .map(|a| a.muscle_fighter_cba_tsb(char_slot))
+    /// Per-vertex `[cba, tsb]`.
+    pub fn play_mg_muscle_scene_cba_tsb(&self) -> Vec<u16> {
+        self.minigame_ui
+            .muscle_surface
+            .scene()
+            .map(|s| s.cba_tsb.iter().flatten().copied().collect())
             .unwrap_or_default()
     }
 
-    pub fn play_mg_muscle_fighter_indices(&self, char_slot: u32) -> Vec<u32> {
-        self.minigame_art()
-            .map(|a| a.muscle_fighter_indices(char_slot))
+    /// Per-vertex `[r, g, b, textured]`.
+    pub fn play_mg_muscle_scene_flat_rgba(&self) -> Vec<u8> {
+        self.minigame_ui
+            .muscle_surface
+            .scene()
+            .map(|s| s.flat_rgba.clone())
             .unwrap_or_default()
     }
 
-    pub fn play_mg_muscle_fighter_object_ids(&self, char_slot: u32) -> Vec<u32> {
-        self.minigame_art()
-            .map(|a| a.muscle_fighter_object_ids(char_slot))
+    /// Triangle indices.
+    pub fn play_mg_muscle_scene_indices(&self) -> Vec<u32> {
+        self.minigame_ui
+            .muscle_surface
+            .scene()
+            .map(|s| s.indices.clone())
             .unwrap_or_default()
     }
 
-    pub fn play_mg_muscle_fighter_flat_rgba(&self, char_slot: u32) -> Vec<u8> {
-        self.minigame_art()
-            .map(|a| a.muscle_fighter_flat_rgba(char_slot))
+    /// The seated dome's VRAM (character pool + palette, monster pool, arena
+    /// pages); empty with no scene.
+    pub fn play_mg_muscle_scene_vram(&self) -> Vec<u8> {
+        self.minigame_ui
+            .muscle_surface
+            .vram()
+            .map(|v| v.as_bytes().to_vec())
             .unwrap_or_default()
     }
 
-    pub fn play_mg_muscle_fighter_part_count(&self, char_slot: u32) -> u32 {
-        self.minigame_art()
-            .map(|a| a.muscle_fighter_part_count(char_slot))
-            .unwrap_or(0)
-    }
-
-    pub fn play_mg_muscle_fighter_anims_json(&self, char_slot: u32) -> String {
-        self.minigame_art()
-            .map(|a| a.muscle_fighter_anims_json(char_slot))
-            .unwrap_or_else(|| "[]".to_string())
-    }
-
-    pub fn play_mg_muscle_fighter_pose_frames(
-        &self,
-        char_slot: u32,
-        slot: u32,
-        target_part_count: u32,
-    ) -> Vec<i32> {
-        self.minigame_art()
-            .map(|a| a.muscle_fighter_pose_frames(char_slot, slot, target_part_count))
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_muscle_monster_positions(&self, monster_id: u16) -> Vec<f32> {
-        self.minigame_art()
-            .map(|a| a.muscle_monster_positions(monster_id))
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_muscle_monster_uvs(&self, monster_id: u16) -> Vec<i32> {
-        self.minigame_art()
-            .map(|a| a.muscle_monster_uvs(monster_id))
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_muscle_monster_cba_tsb(&self, monster_id: u16) -> Vec<u32> {
-        self.minigame_art()
-            .map(|a| a.muscle_monster_cba_tsb(monster_id))
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_muscle_monster_indices(&self, monster_id: u16) -> Vec<u32> {
-        self.minigame_art()
-            .map(|a| a.muscle_monster_indices(monster_id))
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_muscle_monster_object_ids(&self, monster_id: u16) -> Vec<u32> {
-        self.minigame_art()
-            .map(|a| a.muscle_monster_object_ids(monster_id))
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_muscle_monster_flat_rgba(&self, monster_id: u16) -> Vec<u8> {
-        self.minigame_art()
-            .map(|a| a.muscle_monster_flat_rgba(monster_id))
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_muscle_monster_part_count(&self, monster_id: u16) -> u32 {
-        self.minigame_art()
-            .map(|a| a.muscle_monster_part_count(monster_id))
-            .unwrap_or(0)
-    }
-
-    pub fn play_mg_muscle_monster_anims_json(&self, monster_id: u16) -> String {
-        self.minigame_art()
-            .map(|a| a.muscle_monster_anims_json(monster_id))
-            .unwrap_or_else(|| "[]".to_string())
-    }
-
-    pub fn play_mg_muscle_monster_pose_frames(
-        &self,
-        monster_id: u16,
-        index: u32,
-        target_part_count: u32,
-    ) -> Vec<i32> {
-        self.minigame_art()
-            .map(|a| a.muscle_monster_pose_frames(monster_id, index, target_part_count))
-            .unwrap_or_default()
-    }
-
-    /// The dome's merged VRAM (character band-0 pool + palette, the
-    /// monster's pool, the arena pages).
-    pub fn play_mg_muscle_vram(&self, monster_id: u16, char_slot: u32) -> Vec<u8> {
-        self.minigame_art()
-            .map(|a| a.muscle_vram(monster_id, char_slot))
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_muscle_arena_positions(&self) -> Vec<f32> {
-        self.minigame_art()
-            .map(|a| a.muscle_arena_positions())
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_muscle_arena_uvs(&self) -> Vec<i32> {
-        self.minigame_art()
-            .map(|a| a.muscle_arena_uvs())
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_muscle_arena_cba_tsb(&self) -> Vec<u32> {
-        self.minigame_art()
-            .map(|a| a.muscle_arena_cba_tsb())
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_muscle_arena_indices(&self) -> Vec<u32> {
-        self.minigame_art()
-            .map(|a| a.muscle_arena_indices())
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_muscle_arena_flat_rgba(&self) -> Vec<u8> {
-        self.minigame_art()
-            .map(|a| a.muscle_arena_flat_rgba())
+    /// The dome camera's view-projection for a raw (Y-down) world vertex,
+    /// column-major (`DomeCamera::vp_raw`, the matrix the native window
+    /// draws the dome with). Empty with no scene.
+    pub fn play_mg_muscle_scene_vp(&self, aspect: f32) -> Vec<f32> {
+        self.minigame_ui
+            .muscle_surface
+            .scene()
+            .map(|s| s.camera.vp_raw(aspect).to_vec())
             .unwrap_or_default()
     }
 

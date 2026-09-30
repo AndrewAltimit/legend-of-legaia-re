@@ -768,6 +768,8 @@ impl PlayWindowApp {
         // The dance floor's bodies: posed by the engine surface and uploaded
         // here, drawn over the venue below.
         self.refresh_dance_cast_gpu();
+        // The Muscle Dome's 3D arena, posed by its engine surface.
+        self.refresh_muscle_dome_gpu();
         if let (Some(r), Some(vram), Some(atlas)) = (
             self.win.renderer.as_ref(),
             self.uploaded_vram.as_ref(),
@@ -782,7 +784,8 @@ impl PlayWindowApp {
             // A live Baka duel draws against its own VRAM.
             // So does the dance venue - the hall's own upload, never the
             // walked-in scene's.
-            let vram = match (self.baka_gpu.as_ref(), self.dance_venue_gpu.as_ref()) {
+            let duel_gpu = self.baka_gpu.as_ref().or(self.muscle_gpu.as_ref());
+            let vram = match (duel_gpu, self.dance_venue_gpu.as_ref()) {
                 (Some(g), _) => &g.vram,
                 (None, Some(d)) => &d.vram,
                 (None, None) => vram,
@@ -1319,9 +1322,12 @@ impl PlayWindowApp {
             let mut color_draws: Vec<ColorSceneDraw<'_>> = Vec::new();
             if self.boot_ui.is_active() && !game_over_hold {
                 // Boot UI is fullscreen - suppress 3D draws.
-            } else if let Some(g) = self.baka_gpu.as_ref() {
+            } else if let Some(g) = self.baka_gpu.as_ref().or(self.muscle_gpu.as_ref()) {
                 // The Baka duel owns the 3D frame: the engine-posed fighters,
-                // ghosts, walls and floor under the arena camera.
+                // ghosts, walls and floor under the arena camera. The Muscle
+                // Dome's arena surface draws the same way: the shell, the
+                // ground grid, the fighter and the monster under the dome
+                // camera.
                 if let Some(m) = g.textured.as_ref() {
                     draws.push(SceneDraw {
                         mesh: m,

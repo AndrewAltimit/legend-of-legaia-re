@@ -6,12 +6,17 @@ use super::*;
 /// engine's surface generation moves - a rung seats a new opponent) and this
 /// frame's posed meshes, the textured and untextured halves of the one
 /// buffer set `BakaDuelScene` builds.
+/// The player battle-file slot the dome's fighter assembles from (0 = Vahn,
+/// the lead); the browser play page seats the same.
+pub(super) const MUSCLE_DOME_CHAR_SLOT: u32 = 0;
+
 pub(super) struct BakaDuelGpu {
     pub(super) generation: u32,
     pub(super) vram: UploadedVram,
     pub(super) textured: Option<UploadedVramMesh>,
     pub(super) untextured: Option<UploadedColorMesh>,
-    /// `DuelCamera::vp_raw` for this frame's aspect.
+    /// The surface camera's `vp_raw` for this frame's aspect
+    /// (`DuelCamera` for the duel, `DomeCamera` for the dome).
     pub(super) mvp: Mat4,
 }
 
@@ -839,6 +844,98 @@ impl PlayWindowApp {
             }
         };
         self.baka_gpu = Some(BakaDuelGpu {
+            generation,
+            vram,
+            textured,
+            untextured,
+            mvp,
+        });
+    }
+
+    /// Pose the Muscle Dome's 3D arena surface for this frame and put it on
+    /// the GPU.
+    ///
+    /// The seat, the choreography, the camera and the buffers are the
+    /// engine's (`legaia_engine_core::muscle_dome_scene::MuscleDomeSurface::
+    /// frame`, the call the browser play page makes too); this host uploads
+    /// the dome VRAM on a generation change and the posed mesh every frame,
+    /// and the redraw draws them under `DomeCamera::vp_raw`. Drops the GPU
+    /// copy whenever no dome session is on screen.
+    pub(super) fn refresh_muscle_dome_gpu(&mut self) {
+        let world = &self.session.host.world;
+        let live = world.mode == SceneMode::MuscleDome;
+        let index = self.session.host.index.clone();
+        let read = |i: usize| index.entry_bytes(i as u32).ok();
+        let session = if live {
+            world.minigames.muscle_dome.as_ref()
+        } else {
+            None
+        };
+        let contest = world.minigames.muscle_contest.as_ref();
+        let generation_before = self.muscle_surface.generation();
+        if self
+            .muscle_surface
+            .frame(read, session, contest, MUSCLE_DOME_CHAR_SLOT)
+            .is_none()
+        {
+            self.muscle_gpu = None;
+            return;
+        }
+        let (Some(r), Some(scene)) = (self.win.renderer.as_ref(), self.muscle_surface.scene())
+        else {
+            return;
+        };
+        let generation = self.muscle_surface.generation();
+        let (sw, sh) = r.surface_size();
+        let (_, aspect) = super::geometry::scene_viewport_for(sw, sh);
+        let mvp = Mat4::from_cols_array(&scene.camera.vp_raw(aspect));
+        let normals = vec![[0.0f32; 3]; scene.positions.len()];
+        let textured = r
+            .upload_vram_mesh(
+                &scene.positions,
+                &scene.uvs,
+                &scene.cba_tsb,
+                &normals,
+                &scene.colors,
+                &scene.textured_indices,
+            )
+            .map_err(|e| log::warn!("muscle dome: textured upload failed: {e:#}"))
+            .ok();
+        let fill: Vec<[u8; 3]> = scene
+            .flat_rgba
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|c| [c[0], c[1], c[2]])
+            .collect();
+        let untextured = (!scene.untextured_indices.is_empty())
+            .then(|| {
+                r.upload_color_mesh(&scene.positions, &fill, &scene.untextured_indices)
+                    .map_err(|e| log::warn!("muscle dome: untextured upload failed: {e:#}"))
+                    .ok()
+            })
+            .flatten();
+        let stale = generation != generation_before
+            || self
+                .muscle_gpu
+                .as_ref()
+                .is_none_or(|g| g.generation != generation);
+        let vram = if stale {
+            match self.muscle_surface.vram().map(|v| r.upload_vram(v)) {
+                Some(Ok(v)) => v,
+                Some(Err(e)) => {
+                    log::warn!("muscle dome: vram upload failed: {e:#}");
+                    return;
+                }
+                None => return,
+            }
+        } else {
+            match self.muscle_gpu.take() {
+                Some(g) => g.vram,
+                None => return,
+            }
+        };
+        self.muscle_gpu = Some(BakaDuelGpu {
             generation,
             vram,
             textured,

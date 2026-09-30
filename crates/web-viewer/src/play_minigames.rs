@@ -114,6 +114,9 @@ pub(crate) struct MinigameUi {
     /// the hall origin its positions are re-based on for this page.
     pub(crate) dance_surface: legaia_engine_core::dance_cast_scene::DanceCastSurface,
     pub(crate) dance_origin: (f32, f32, f32),
+    /// The Muscle Dome's 3D arena surface - the engine cache the native
+    /// window drives too (`legaia_engine_core::muscle_dome_scene`).
+    pub(crate) muscle_surface: legaia_engine_core::muscle_dome_scene::MuscleDomeSurface,
 }
 
 /// The PROT entries the standalone presentation bundle reads, in extraction

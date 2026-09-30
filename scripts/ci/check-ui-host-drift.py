@@ -563,6 +563,36 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["tint_cue_applies"],
     },
     {
+        "what": "Muscle Dome 3D arena, native vs play page - the page posed "
+        "the arena, the fighter and the monster in its own script (clip picks "
+        "off the turn edge, an orbit camera) while the native window drew no "
+        "3D dome at all. Both hosts must drive the engine surface "
+        "(`MuscleDomeSurface::frame`, held as `muscle_surface`)",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/bin/legaia-engine/window/minigames.rs",
+                "refresh_muscle_dome_gpu",
+            ),
+            "web": (WEB_PLAY_ARENA, "play_mg_muscle_scene_frame"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["muscle_surface"],
+    },
+    {
+        "what": "Muscle Dome camera, native vs play page - both hosts draw "
+        "the dome under the surface camera's matrix (`DomeCamera::vp_raw`), "
+        "never a host-side orbit framing",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/bin/legaia-engine/window/minigames.rs",
+                "refresh_muscle_dome_gpu",
+            ),
+            "web": (WEB_PLAY_ARENA, "play_mg_muscle_scene_vp"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["vp_raw"],
+    },
+    {
         "what": "shop item label, native vs play page - a nameless id (a "
         "load without the executable) printed `item 42` in the native shop "
         "and `Item 2A` on the page, each host spelling its own fallback. Both "
