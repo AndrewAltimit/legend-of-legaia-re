@@ -1371,7 +1371,7 @@ fn battle_image(
     // (the gate), with the fixed tick as the deadline.
     let mut tick = crate::retail_compare_battle::BATTLE_CAPTURE_TICK
         + u64::from(engine.prompt_tick.unwrap_or(0));
-    if let (Some(seed), Some(gate)) = (battle.inflight_cast(), battle.phase_gate()) {
+    if let (Some(seed), Some(gate)) = (battle.inflight_cast(), battle.display_phase_gate()) {
         if engine.inflight == Some(None) {
             report.detail.insert(
                 "image".into(),

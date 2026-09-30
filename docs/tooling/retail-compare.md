@@ -248,6 +248,20 @@ captures on the same predicate (`LEGAIA_BATTLE_INFLIGHT`,
 `LEGAIA_CAPTURE_GATE`), stopping its tick loop the frame it holds. A
 `0x33` capture has no flash yet and is gated on the state alone.
 
+The frame and the RAM are not the same instant. Retail double-buffers its
+packet pools, so while the CPU builds frame `N` the display scans out
+`N - 2`: of the flash's two full-screen `POLY_F4` packets, one carries the
+block's value and the other the value one step earlier, and the displayed
+frame is one step older than that. A step is the adaptive frame step
+`*(0x1F800393)` - `2` or `3` vsyncs through the band, rebuilt from the
+frame-duration history at `0x80084098` since the scratchpad is not in a
+main-RAM image - so the flash on screen is `2 * step` vsyncs younger than
+the block says (a block at `178` shows `123`). The RAM channels are sampled
+on the block's age; the image gate takes the lag off
+(`RetailBattle::display_phase_gate`). Scored the other way, a flash-in
+ramping by `12.75` a vsync reads as a white-out the retail frame never
+shows.
+
 Before this, a mid-cast frame was scored against the round prompt, which reads
 as `image` near `0` on a white-out: an instrument artifact, not an engine
 verdict. The like-for-like frame is what exposed the cast close-up: through
