@@ -1722,6 +1722,18 @@ impl PlayWindowApp {
                     // building / terrain mesh at its world transform
                     // (resolved at scene load in
                     // `resolve_field_placement_draws`).
+                    // Retail's placed-object near reject
+                    // (`field_env::placed_origin_near_culled`): an object
+                    // whose origin sits within 160 units of the eye, or
+                    // behind it, is not drawn. Judged under the retail
+                    // camera only - the `F3` debug orbit frames from a
+                    // vantage retail never had.
+                    let place_near_culled = |mvp: &Mat4| {
+                        !self.field_debug_camera
+                            && legaia_engine_core::field_env::placed_origin_near_culled(
+                                mvp.w_axis.w,
+                            )
+                    };
                     if layer_on("place") {
                         // Diag bisect: `LEGAIA_DIAG_PLACE_RANGE=a..b` draws only
                         // placement-draw slots [a, b).
@@ -1753,10 +1765,14 @@ impl PlayWindowApp {
                                 .field_morph_live
                                 .get(mesh_idx)
                                 .or_else(|| self.meshes.get(*mesh_idx));
+                            let mvp = cam * *model;
+                            if place_near_culled(&mvp) {
+                                continue;
+                            }
                             if let Some(mesh) = mesh {
                                 draws.push(SceneDraw {
                                     mesh,
-                                    mvp: cam * *model,
+                                    mvp,
                                     cue: None,
                                 });
                             }
@@ -1766,18 +1782,26 @@ impl PlayWindowApp {
                         // mesh; the ones whose clip is running were re-posed
                         // above, so the door draws mid-swing.
                         for (mesh_idx, model) in &posed_prop_baked_v {
+                            let mvp = cam * *model;
+                            if place_near_culled(&mvp) {
+                                continue;
+                            }
                             if let Some(mesh) = self.meshes.get(*mesh_idx) {
                                 draws.push(SceneDraw {
                                     mesh,
-                                    mvp: cam * *model,
+                                    mvp,
                                     cue: None,
                                 });
                             }
                         }
                         for (mesh, model) in &posed_prop_live_v {
+                            let mvp = cam * *model;
+                            if place_near_culled(&mvp) {
+                                continue;
+                            }
                             draws.push(SceneDraw {
                                 mesh,
-                                mvp: cam * *model,
+                                mvp,
                                 cue: None,
                             });
                         }
@@ -1797,27 +1821,39 @@ impl PlayWindowApp {
                             ) {
                                 continue;
                             }
+                            let mvp = cam * *model;
+                            if place_near_culled(&mvp) {
+                                continue;
+                            }
                             if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
                                 color_draws.push(ColorSceneDraw {
                                     mesh,
-                                    mvp: cam * *model,
+                                    mvp,
                                     cue: None,
                                 });
                             }
                         }
                         for (mesh_idx, model) in &posed_prop_baked_c {
+                            let mvp = cam * *model;
+                            if place_near_culled(&mvp) {
+                                continue;
+                            }
                             if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
                                 color_draws.push(ColorSceneDraw {
                                     mesh,
-                                    mvp: cam * *model,
+                                    mvp,
                                     cue: None,
                                 });
                             }
                         }
                         for (mesh, model) in &posed_prop_live_c {
+                            let mvp = cam * *model;
+                            if place_near_culled(&mvp) {
+                                continue;
+                            }
                             color_draws.push(ColorSceneDraw {
                                 mesh,
-                                mvp: cam * *model,
+                                mvp,
                                 cue: None,
                             });
                         }

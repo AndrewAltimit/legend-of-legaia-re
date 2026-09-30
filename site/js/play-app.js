@@ -2641,6 +2641,20 @@ void main() {
         fieldVp = buildWorldOrbitVp(c.width, Math.max(c.height, 1), this._ext, this.cam);
       } catch (e) { fieldVp = null; }
 
+      /* Retail's placed-object near reject (FUN_8001ADA4's draw-kind 5
+       * arm): a placed object whose origin sits within 160 units of the eye,
+       * or behind it, is not drawn at all - retail has no near-plane clip, so
+       * the port would otherwise paint the inside of a prop the camera stands
+       * in (nilboa's mist shell). Judged by the engine's
+       * `field_env::placed_origin_near_culled` kernel, the one the native
+       * window asks, and only under the engine's retail camera. */
+      if (fieldVp && this.cam.vp && !this.debugCamera
+          && typeof rt.field_placed_near_culled === 'function') {
+        const m = fieldVp;
+        draws = draws.filter(d => d.placeIdx === undefined
+          || !rt.field_placed_near_culled(m[3] * d.x + m[7] * d.y + m[11] * d.z + m[15]));
+      }
+
       /* Field party-status HUD: retail's decision kernel compares the
        * lead's PROJECTED screen Y against a band (the native window's
        * `field_hud_projected_player_y`). Project the same point the native

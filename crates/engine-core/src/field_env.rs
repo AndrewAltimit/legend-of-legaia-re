@@ -602,6 +602,36 @@ impl PlacedWindowKey {
     }
 }
 
+/// The view depth below which retail does not draw a placed object at all:
+/// the case-5 arm of the field actor draw walk.
+///
+/// `FUN_8001ADA4` runs `MVMVA` on each drawn actor's world position
+/// (`cop2 0x480012` at `0x8001AE20`) and stores the view-space result at
+/// `+0x2C..+0x34`. Its draw-kind `5` arm - the placed static object's
+/// (`0x8001B1A8`) - then skips the whole object when its render scale `+0x72`
+/// is non-zero, its view depth `+0x34` is below `0xA0` (`slti v0,v0,0xa0` at
+/// `0x8001B1C0`) and `+0x52` does not carry `0x20`. Retail has no near-plane
+/// clip on the per-prim path, so an object whose origin sits beside or behind
+/// the eye is dropped rather than cut open.
+///
+/// nilboa's Delilas walk-in parks its cutscene camera inside the additive
+/// mist shell at `(11840, 0, 13784)`: retail holds that actor at view depth
+/// `-423` and draws nothing, while a port that near-clips per pixel painted
+/// the shell's inside over the whole frame as a blue-violet wash.
+///
+/// REF: FUN_8001ADA4
+pub const PLACED_NEAR_DEPTH: f32 = 160.0;
+
+/// Whether retail's placed-object near reject ([`PLACED_NEAR_DEPTH`]) drops a
+/// placed draw whose origin sits at `origin_view_depth` this frame - the
+/// origin's clip `w` under the frame's retail camera. The one test both play
+/// hosts ask per placed draw.
+///
+/// REF: FUN_8001ADA4
+pub fn placed_origin_near_culled(origin_view_depth: f32) -> bool {
+    origin_view_depth < PLACED_NEAR_DEPTH
+}
+
 /// Which of retail's two placed-object sweeps owns a placed draw: `Some(key)`
 /// for the sub-area window sweep's (no object bind on the anchor tile - the
 /// actor lives on the windowed list and only exists while the camera's region
@@ -1860,6 +1890,17 @@ mod anim_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `slti v0,v0,0xa0` at `0x8001B1C0`: a view depth of `0xA0` draws, one
+    /// below it does not, and an origin behind the eye never does.
+    #[test]
+    fn placed_near_reject_is_retails_case5_threshold() {
+        assert!(!placed_origin_near_culled(160.0));
+        assert!(!placed_origin_near_culled(2000.0));
+        assert!(placed_origin_near_culled(159.5));
+        assert!(placed_origin_near_culled(0.0));
+        assert!(placed_origin_near_culled(-423.0));
+    }
 
     #[test]
     fn prop_pose_key_drops_what_cannot_change_the_pose() {

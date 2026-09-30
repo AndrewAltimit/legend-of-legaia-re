@@ -1782,8 +1782,9 @@ ground heightfield, the posed props, the NPCs) are resolved once at scene load
 and submitted whole on every frame. A town is a few hundred draws of a few
 thousand triangles - the budget the port is not on is the PSX's.
 
-The one thing that can still remove geometry is the projection's own clip
-volume, so the clip planes are sized to hold an entire scene from any vantage
+Two things can still remove geometry: retail's own near reject on placed
+objects ([below](#the-placed-object-near-reject)), and the projection's clip
+volume, whose planes are sized to hold an entire scene from any vantage
 rather than to frame the current view:
 
 - [`window::SCENE_FAR`](../../crates/engine-render/src/window.rs) = `1e6` for
@@ -1862,6 +1863,33 @@ the decoration pass `FUN_801F7088` for, and a live dance capture has its placed
 actors' colour words at `0x40808080` - so it is armed too; see
 [`minigame-dance.md`](minigame-dance.md#the-camera-keyframe-track) for the
 second thing that frame depends on, the GPU's polygon-size limit.
+
+### The placed-object near reject
+
+Retail has no near-plane clip on the per-prim path, and it does not need one
+for placed objects: the field actor draw walk drops the whole object first.
+`FUN_8001ADA4` runs `MVMVA` on each drawn actor's world position
+(`cop2 0x480012` at `0x8001AE20`) into `+0x2C..+0x34`, then dispatches on the
+draw kind `+0x56` through the jump table at `0x8001042C`. The placed static
+object's arm, kind `5` at `0x8001B1A8`, skips the draw when the render scale
+`+0x72` is non-zero, the view depth `+0x34` is below `0xA0`
+(`slti v0,v0,0xa0` at `0x8001B1C0`) and `+0x52` does not carry `0x20`. The
+kind-`1` and kind-`2` arms test the same depth against `0xA1`.
+
+So an object whose origin sits within 160 units of the eye, or behind it, is
+simply not drawn, while the port's projection would near-clip it per pixel and
+draw its inside. The Thunder Ravine walk-in (`nilboa`, the Delilas intro) parks
+its cutscene camera inside an additive mist shell (placement at
+`(11840, 0, 13784)`); retail holds that actor at view depth `-423`, and the
+port painted the shell's inside over the whole frame as a blue-violet wash.
+
+Both hosts ask `field_env::placed_origin_near_culled` per placed draw with the
+origin's clip `w` under the frame's retail camera - the native placed, colour
+and posed-prop passes, and the play page's placed draws through the
+`field_placed_near_culled` export. The `F3` debug orbit is exempt: it frames
+from a vantage retail never had. The per-prim handlers carry a second gate the
+port does not reproduce, an `OTZ` cut against the scratch halfword
+`0x1F80037E` (kind 15: `sub v1,s2,t4` / `bltz v1` at `0x80043D6C`).
 
 ## Coplanar surfaces: retail's ordering model, the port's depth policy
 

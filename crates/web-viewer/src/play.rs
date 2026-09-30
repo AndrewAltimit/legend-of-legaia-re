@@ -668,6 +668,14 @@ impl LegaiaRuntime {
             .collect()
     }
 
+    /// Whether retail's placed-object near reject drops a placed draw whose
+    /// origin sits at clip `w` = `origin_view_depth` under this frame's
+    /// retail camera - the same `field_env::placed_origin_near_culled` kernel
+    /// the native play-window's placed-object pass asks per draw.
+    pub fn field_placed_near_culled(&self, origin_view_depth: f32) -> bool {
+        field_env::placed_origin_near_culled(origin_view_depth)
+    }
+
     /// A stamp that changes whenever [`Self::field_placement_live`] can: the
     /// windowed list's rebuild generation, with the retail-windowing flag in
     /// bit 0. The page re-reads the mask only when this moves.
