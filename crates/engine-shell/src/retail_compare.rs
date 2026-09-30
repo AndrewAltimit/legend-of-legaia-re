@@ -238,6 +238,9 @@ pub struct RetailObs {
     /// The pause-menu screen a menu-class state shows; `Err` names why the
     /// state is not one the seed can drive to.
     pub menu: Option<std::result::Result<RetailMenu, String>>,
+    /// The field-VM contexts the state holds
+    /// ([`crate::retail_compare_script`]).
+    pub scripts: crate::retail_compare_script::RetailScripts,
 }
 
 /// A menu-class capture the seed can reproduce: a pause-menu screen, named
@@ -352,6 +355,7 @@ impl RetailObs {
             battle: (class == StateClass::Battle)
                 .then(|| crate::retail_compare_battle::RetailBattle::from_ram(ram)),
             menu,
+            scripts: crate::retail_compare_script::RetailScripts::from_ram(ram),
         }
     }
 }
@@ -435,6 +439,8 @@ pub struct EngineObs {
     /// (the open row's retail id, `0x01` on the root list, `0x13` for the
     /// Equip candidate step), `None` when no menu opened.
     pub menu_subscreen: Option<u8>,
+    /// On a capture inside a running script: the phase gate's outcome.
+    pub script: Option<ScriptPhase>,
 }
 
 /// Records which track the field VM starts.
@@ -527,14 +533,87 @@ pub fn run_engine_with(
     {
         session.camera.zone.arm_arrival();
     }
-    for _ in 0..SETTLE_TICKS {
+    // A capture inside a running script is compared at the script's phase,
+    // not after a fixed window ([`crate::retail_compare_script::ScriptGate`]):
+    // the session runs until its own context for the record holds retail's
+    // PC and wait, up to a deadline. The settle-window sample is kept as the
+    // fallback for a gate the engine never meets.
+    let gate = (retail.menu.is_none()
+        && matches!(retail.class, StateClass::Field | StateClass::WorldMap))
+    .then(|| crate::retail_compare_script::ScriptGate::from_retail(&retail.scripts))
+    .flatten();
+    let deadline = if gate.is_some() {
+        crate::retail_compare_script::SCRIPT_GATE_DEADLINE
+    } else {
+        SETTLE_TICKS
+    };
+    let mut at_settle = None;
+    let mut met_at = None;
+    let mut resumed = false;
+    for t in 1..=deadline {
+        if let Some(g) = &gate {
+            let pad = g.advance_pad(&session.host.world, t);
+            session.host.world.input.set_pad(pad);
+        }
         session.tick()?;
         session.host.route_bgm_events(&mut director)?;
+        if let Some(g) = &gate {
+            if std::env::var_os("LEGAIA_RC_SCRIPT_TRACE").is_some() && (t % 25 == 0 || t < 5) {
+                eprintln!("script gate t={t}: {}", g.trace(&session.host.world));
+            }
+            if g.met(&session.host.world) {
+                met_at = Some(t);
+                break;
+            }
+            if t == SETTLE_TICKS {
+                at_settle = Some(sample_engine(&mut session, retail, &director, None));
+            }
+            if t == crate::retail_compare_script::SCRIPT_RESUME_TICK
+                && crate::retail_compare_script::resume_record(&mut session.host, g)
+            {
+                resumed = true;
+            }
+        }
+    }
+    session.host.world.input.set_pad(0);
+    let script = gate.as_ref().map(|g| ScriptPhase {
+        pc: g.pc,
+        wait: g.wait,
+        met_at,
+        resumed,
+    });
+    if let (Some(_), None, Some(mut obs)) = (&gate, met_at, at_settle) {
+        obs.script = script;
+        return Ok(obs);
     }
     let menu_subscreen = match &retail.menu {
         Some(Ok(menu)) => drive_pause_menu(&mut session, menu)?,
         _ => None,
     };
+    let mut obs = sample_engine(&mut session, retail, &director, menu_subscreen);
+    obs.script = script;
+    Ok(obs)
+}
+
+/// How a script-gated seed went: retail's phase and the tick the engine
+/// reached it (`None`: not within the deadline, so the settle-window sample
+/// stands).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScriptPhase {
+    pub pc: usize,
+    pub wait: i16,
+    pub met_at: Option<u64>,
+    /// The record was not running in the engine and was started from its
+    /// first opcode ([`crate::retail_compare_script::resume_record`]).
+    pub resumed: bool,
+}
+
+fn sample_engine(
+    session: &mut BootSession,
+    retail: &RetailObs,
+    director: &RecordingDirector,
+    menu_subscreen: Option<u8>,
+) -> EngineObs {
     let world = &mut session.host.world;
     let player = world.player_actor_slot.and_then(|s| {
         world.actors.get(s as usize).map(|a| {
@@ -563,7 +642,7 @@ pub fn run_engine_with(
     // The engine's `_DAT_8007BAC8`: a park-sentinel start (`0x1000`, the
     // ending scenes') reaches no director, but it is the word retail holds.
     let bgm_id = session.host.bgm_track_word.or(director.last);
-    Ok(EngineObs {
+    EngineObs {
         scene,
         mode,
         player,
@@ -574,7 +653,8 @@ pub fn run_engine_with(
         fog_gate,
         save,
         menu_subscreen,
-    })
+        script: None,
+    }
 }
 
 /// Ticks between two scripted pad edges of a menu drive: long enough for
@@ -808,18 +888,40 @@ pub(crate) fn flags_score(retail: &[u8], engine: &[u8]) -> (f64, String) {
     let n = retail.len().max(engine.len());
     let mut differ = 0u32;
     let mut union = 0u32;
+    // The first few differing bits, named: a system flag by its id (the
+    // bank at `+0x158`, MSB-first), anything below it by byte and mask;
+    // `+` is set on the engine side only, `-` on retail's only.
+    let mut named = Vec::new();
     for i in 0..n {
         let r = retail.get(i).copied().unwrap_or(0);
         let e = engine.get(i).copied().unwrap_or(0);
         differ += (r ^ e).count_ones();
         union += (r | e).count_ones();
+        for bit in 0..8u8 {
+            let m = 0x80u8 >> bit;
+            if (r ^ e) & m != 0 && named.len() < 4 {
+                let sign = if e & m != 0 { '+' } else { '-' };
+                named.push(match i.checked_sub(SYSTEM_FLAG_WINDOW) {
+                    Some(k) => format!("{sign}sys 0x{:03X}", k * 8 + usize::from(bit)),
+                    None => format!("{sign}[0x{i:03X}]&0x{m:02X}"),
+                });
+            }
+        }
     }
     let score = if union == 0 {
         1.0
     } else {
         1.0 - f64::from(differ) / f64::from(union)
     };
-    (score, format!("{differ} differing bit(s) of {union} set"))
+    let names = if named.is_empty() {
+        String::new()
+    } else {
+        format!(" ({})", named.join(", "))
+    };
+    (
+        score,
+        format!("{differ} differing bit(s) of {union} set{names}"),
+    )
 }
 
 pub(crate) fn inventory_score(
@@ -999,6 +1101,29 @@ pub fn compare(
             "image",
             img.within,
             format!("mae={:.1} within={:.3} ({})", img.mae, img.within, img.note),
+        );
+    }
+    if let Some(p) = engine.script {
+        det.insert(
+            "script".into(),
+            match p.met_at {
+                Some(t) => format!(
+                    "retail parked at pc {} wait {}; engine reached it at tick {t}{}",
+                    p.pc,
+                    p.wait,
+                    if p.resumed {
+                        " (record resumed from its start)"
+                    } else {
+                        ""
+                    }
+                ),
+                None => format!(
+                    "retail parked at pc {} wait {}; engine did not reach it in {} ticks (sampled at the settle window)",
+                    p.pc,
+                    p.wait,
+                    crate::retail_compare_script::SCRIPT_GATE_DEADLINE
+                ),
+            },
         );
     }
     (ch, det)
@@ -1191,17 +1316,44 @@ fn run_one(
             None
         }
         (Some(exe), Some(rf), Some([x, _, z]), Some(save)) => {
-            match crate::retail_compare_image::engine_frame(
-                exe,
-                opts.extracted,
-                &retail.scene,
-                x,
-                z,
-                opts.out_dir,
-                &entry.label,
-                save,
-                retail.hud_countdown,
-            ) {
+            // A capture the headless seed reached by its script phase is
+            // framed at that phase too: the child runs the same gate and
+            // captures the frame it holds, with the deadline as its bound.
+            let gate = engine.script.filter(|p| p.met_at.is_some()).and(
+                crate::retail_compare_script::ScriptGate::from_retail(&retail.scripts),
+            );
+            let frame = match gate {
+                Some(g) => {
+                    let mut env = vec![("LEGAIA_SCRIPT_GATE", g.to_env())];
+                    if let Some(n) = retail.hud_countdown {
+                        env.push(("LEGAIA_HUD_COUNTDOWN", n.to_string()));
+                    }
+                    crate::retail_compare_image::engine_frame_with(
+                        exe,
+                        opts.extracted,
+                        &retail.scene,
+                        Some((x, z)),
+                        &[],
+                        &env,
+                        crate::retail_compare_script::SCRIPT_GATE_DEADLINE,
+                        opts.out_dir,
+                        &entry.label,
+                        crate::retail_compare_image::FrameEntry::Resume(save),
+                    )
+                }
+                None => crate::retail_compare_image::engine_frame(
+                    exe,
+                    opts.extracted,
+                    &retail.scene,
+                    x,
+                    z,
+                    opts.out_dir,
+                    &entry.label,
+                    save,
+                    retail.hud_countdown,
+                ),
+            };
+            match frame {
                 Ok(ef) => {
                     let score = crate::retail_compare_image::score(rf, &ef);
                     if let Some(dir) = opts.out_dir {

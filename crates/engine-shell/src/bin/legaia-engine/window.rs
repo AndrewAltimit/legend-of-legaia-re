@@ -78,6 +78,13 @@ pub(crate) struct ScreenshotConfig {
     /// of [`Self::hud_countdown`]. Set by the retail-compare image channel
     /// from the battle state's own rotation global.
     pub battle_orbit_yaw: Option<f32>,
+    /// `LEGAIA_SCRIPT_GATE=<flat>:<head hex>:<pc>:<wait>`: the field twin of
+    /// [`Self::phase_gate`] - capture the first frame the engine's context
+    /// for a retail capture's running record holds its PC
+    /// ([`legaia_engine_shell::retail_compare_script::ScriptGate`]), resuming
+    /// the record from its start when nothing runs it and paging its dialog
+    /// boxes on the way. `capture_tick` is the deadline.
+    pub script_gate: Option<legaia_engine_shell::retail_compare_script::ScriptGate>,
 }
 
 /// Debug state `play-window` seeds before the first world tick, so a capture
@@ -252,6 +259,9 @@ impl ScreenshotConfig {
             battle_orbit_yaw: std::env::var("LEGAIA_BATTLE_ORBIT_YAW")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
+            script_gate: std::env::var("LEGAIA_SCRIPT_GATE")
+                .ok()
+                .and_then(|v| legaia_engine_shell::retail_compare_script::ScriptGate::from_env(&v)),
         }))
     }
 }

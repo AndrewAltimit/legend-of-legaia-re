@@ -28,10 +28,11 @@ fn present_target<'a>(
 impl PlayWindowApp {
     /// Whether a `LEGAIA_CAPTURE_GATE` capture's phase holds this frame.
     fn capture_phase_met(&self) -> bool {
-        self.screenshot
-            .as_ref()
-            .and_then(|sc| sc.phase_gate.as_ref())
-            .is_some_and(|g| g.met(&self.session.host.world))
+        let world = &self.session.host.world;
+        self.screenshot.as_ref().is_some_and(|sc| {
+            sc.phase_gate.as_ref().is_some_and(|g| g.met(world))
+                || sc.script_gate.as_ref().is_some_and(|g| g.met(world))
+        })
     }
 
     pub(super) fn handle_redraw(&mut self) {
@@ -133,7 +134,28 @@ impl PlayWindowApp {
                     .as_ref()
                     .and_then(|sc| sc.pad_script.get(&self.tick_no).copied())
                     .unwrap_or(0);
-                self.pad = scripted_pad | scripted_key_pad;
+                // A script-gated capture resumes the retail record when the
+                // entry did not start it, and pages its dialog boxes - the
+                // same drive the headless seed runs.
+                let gate = self
+                    .screenshot
+                    .as_ref()
+                    .and_then(|sc| sc.script_gate.clone());
+                let gate_pad = match &gate {
+                    Some(g) => {
+                        if self.tick_no
+                            == legaia_engine_shell::retail_compare_script::SCRIPT_RESUME_TICK
+                        {
+                            legaia_engine_shell::retail_compare_script::resume_record(
+                                &mut self.session.host,
+                                g,
+                            );
+                        }
+                        g.advance_pad(&self.session.host.world, self.tick_no)
+                    }
+                    None => 0,
+                };
+                self.pad = scripted_pad | scripted_key_pad | gate_pad;
             }
             // Party wipe: the world raises `game_over` when a battle
             // resolves to `BattleEndCause::PartyWipe`. Consume the flag and
@@ -2764,10 +2786,9 @@ impl PlayWindowApp {
             }
             // Screenshot harness: at the target tick, read the frame back
             // offscreen and exit instead of presenting to the window.
-            let gated = self
-                .screenshot
-                .as_ref()
-                .is_some_and(|sc| sc.path.is_some() && sc.phase_gate.is_some());
+            let gated = self.screenshot.as_ref().is_some_and(|sc| {
+                sc.path.is_some() && (sc.phase_gate.is_some() || sc.script_gate.is_some())
+            });
             if gated
                 && !self.capture_phase_met()
                 && self
