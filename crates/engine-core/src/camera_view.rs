@@ -231,7 +231,23 @@ pub fn field_follow_view(cam: &Camera, world: &World) -> Option<FieldCameraView>
         //
         // A world with no terrain has no composed eye trio to ride, so the
         // sampled floor still stands in for it there.
-        focus: [wx, if cam.zone.active { 0.0 } else { floor_y }, wz],
+        //
+        // With the zone camera live the focus is the globals themselves, not
+        // the lead actor: `FUN_800172C0` MVMVAs `-(_DAT_80089118/1C/20)` and
+        // nothing else. They equal the player in plain free roam (the
+        // follow writeback pins them there after the world tick), but three
+        // legs put them elsewhere - the edge clamp `FUN_801DAA50` at a
+        // room's rim, a mode-5 fixed shot's anchor, and an op-`0x45` beat's
+        // focus slots from a record that is **not** the modal timeline (a
+        // spawned helper such as `jouine`'s evolved-Cort arrival stages every
+        // shot through them). Framing on the actor there aims the lens at a
+        // point the retail frame is not looking at. The overworld keeps the
+        // actor: its walk arm scales the world about this point.
+        focus: if cam.zone.active && world.mode != SceneMode::WorldMap {
+            cam.globals.focus_world().map(|v| v as f32)
+        } else {
+            [wx, if cam.zone.active { 0.0 } else { floor_y }, wz]
+        },
         pitch: to_rad(pitch_units),
         // PSX camera yaw is the compass negation, so a positive manual orbit
         // subtracts from the render yaw.
