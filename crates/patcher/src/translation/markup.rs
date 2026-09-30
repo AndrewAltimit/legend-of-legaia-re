@@ -190,6 +190,33 @@ pub fn encode(markup: &str, target: Target) -> Result<Vec<u8>, Vec<EncodeIssue>>
                     i += consumed;
                 }
                 None => {
+                    // A readable symbol alias (`{btn:x}` = `{ce:00}`): the
+                    // same two bytes, so a pack using aliases imports
+                    // byte-identically to one using the hex token.
+                    let close = rest.iter().take(24).position(|&ch| ch == '}');
+                    if let Some(n) = close {
+                        let inner: String = rest[..n].iter().collect();
+                        let frag: String = chars[i..i + n + 2].iter().collect();
+                        if let Some(idx) = super::symbols::index_for_alias(&inner) {
+                            push_byte(0xCE, i, &frag, &mut out, &mut issues);
+                            out.push(idx);
+                            i += n + 2;
+                            continue;
+                        }
+                        if super::symbols::looks_like_alias(&inner) {
+                            issues.push(EncodeIssue {
+                                position: i,
+                                fragment: frag,
+                                reason: format!(
+                                    "unknown symbol {{{inner}}} - the symbol names are listed \
+                                     in docs/tooling/translation/pack-format.md, or write the \
+                                     escape as {{ce:NN}}"
+                                ),
+                            });
+                            i += n + 2;
+                            continue;
+                        }
+                    }
                     issues.push(EncodeIssue {
                         position: i,
                         fragment: "{".to_string(),
@@ -473,5 +500,32 @@ mod tests {
         assert!(err[1].reason.contains("stray"));
         let err = encode("a } b", Target::Segment).unwrap_err();
         assert!(err[0].reason.contains("stray"));
+    }
+
+    #[test]
+    fn symbol_aliases_encode_as_their_hex_token() {
+        // `{btn:x}` is `{ce:00}`: the same two bytes, so a pack using aliases
+        // imports byte-identically to one using the export's hex form.
+        let hex = encode("Press {ce:00}, {ce:14} and {ce:23}.", Target::Segment).unwrap();
+        let named = encode(
+            "Press {btn:x}, {ICON:Fire} and {icon:dark2}.",
+            Target::Segment,
+        )
+        .unwrap();
+        assert_eq!(hex, named);
+        // Export writes the hex form back, whatever the pack typed.
+        assert_eq!(decode(&named), "Press {ce:00}, {ce:14} and {ce:23}.");
+        for s in &crate::translation::symbols::SYMBOLS {
+            let a = encode(&format!("{{{}}}", s.alias), Target::Segment).unwrap();
+            assert_eq!(a, [0xCE, s.index]);
+        }
+        let err = encode("a {btn:start} b", Target::Segment).unwrap_err();
+        assert_eq!(err.len(), 1);
+        assert!(
+            err[0].reason.contains("unknown symbol"),
+            "{}",
+            err[0].reason
+        );
+        assert_eq!(err[0].fragment, "{btn:start}");
     }
 }

@@ -47,6 +47,7 @@ pub mod refpair;
 pub mod segments;
 pub mod space;
 pub mod stream_man;
+pub mod symbols;
 pub mod ui;
 
 pub use export::export_pack;
