@@ -243,6 +243,17 @@ plate draws over retail's flash where the engine's flash covers it, the engine
 captions the spell name over the caster, and from `0x35` the creature stager's
 own camera is not modelled.
 
+That last gap is the per-summon module's, not the band's. In the stager hold
+`0x36` the camera belongs to the slot-B module, which arms its own framings on
+the **creature** (actor slot 7) - PROT 0903 (Gimard) tweens to pitch `0x80`,
+yaw `0x880 - creature facing`, TR `(0, 0x400, 0x400)` in its arm 6, then to
+pitch `0x140`, yaw `0x940 - facing`, TR `(0, 0x340, 0xA00)` over `0xC0` frames
+in arm 7 (`0x801F704C..0x801F7234`), each gated on the module's own countdown
+word `0x801F7960`. The engine's module tick ports the phase chain and the hit
+but not those camera arms or that countdown, so it frames `0x36` with case 6
+on the caster, and a `0x36` capture's `camera` reads that gap (the creature's
+focus against the caster's).
+
 **What the seed cannot carry.** Any other action in flight: a strike, an art
 or a monster's cast (flow `0xFF` outside the summon band) is compared with the
 engine parked on its round prompt, so its `phase` channel reads capture
@@ -451,6 +462,7 @@ Shapes the corpus separates, each with what it indicates:
 | an idle status panel in the engine frame only | the engine's panel placement, or its suppress / rearm gates, against retail's - the countdown's phase is aligned |
 | effect missing in the engine frame (save-point crystals, spell glows) | an actor or effect the fresh entry does not spawn, or one the port does not draw |
 | camera and dialogue off together | script progress - the seeding cannot resume a script |
+| player seated exactly, camera focus thousands of units away (`kor5_post_43a_checkpoint`: player Z `5312`, focus Z `11840`) | script progress: a scene script aimed the retail camera at another part of the map; the engine's follow camera frames the player |
 | retail BGM word `2000` on a town arrival | the state was captured before the town's field init ran ([below](#arrival-states-are-captured-before-the-town-runs)) |
 | retail word held by a flag the entry script already consumed (`garmel`'s `0x196`, `rikuroa`'s `0x289`) | script progress: the track was started by a beat that has since cleared its trigger flag, so a card load would not restart it |
 | camera depth and position off on an ending vignette (`ending_vignette_rimelm_walkaway`) | the state is mid-way through a scripted shot the seed restarts ([below](#ending-vignettes-are-mid-script)) |
