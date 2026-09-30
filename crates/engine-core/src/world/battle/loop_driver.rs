@@ -1312,6 +1312,23 @@ impl World {
                 .flag_bits
                 .has(ActorFlags::ADVANCE_DONE);
             if staged_behind && event_commit_due(&src.event_frames, src.event_lock, frame) {
+                // The cut takes the entry's `+0x0E` displacement pro-rated by
+                // how far the clip got - no HP test on this path, unlike the
+                // natural end (`+0x228` taken as clear, as there).
+                // PORT: FUN_80047430 (`0x80047950..0x80047A28`)
+                let a = &mut self.actors[i];
+                if let Some(p) = a.battle_animation.as_ref() {
+                    let step = p.end_root_step();
+                    if step != 0 {
+                        let frames = p.frame_count().min(255) as u8;
+                        let (sin, cos) = vm::battle_action::motion::trig12(a.battle.facing_angle);
+                        let (dx, dz) = vm::battle_action::motion::event_cut_root_step(
+                            sin, cos, step, frame, frames,
+                        );
+                        a.move_state.world_x = a.move_state.world_x.wrapping_add(dx as i16);
+                        a.move_state.world_z = a.move_state.world_z.wrapping_add(dz as i16);
+                    }
+                }
                 self.commit_staged_battle_anim_at_boundary(i);
             }
         }

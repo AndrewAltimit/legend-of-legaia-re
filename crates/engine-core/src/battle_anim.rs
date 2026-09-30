@@ -103,6 +103,35 @@ pub struct MonsterAnimPlayer {
     /// that is actually playing (retail: the node's committed entry
     /// `node[+0x4C]`). `None` for a clip built without an entry head.
     hit_source: Option<HitEventSource>,
+    /// The entry's signed end-of-clip displacement (`+0x0E`), `0` for a
+    /// headless clip - the Z term the decoder folds into the last frame's
+    /// tween and the distance the anim tick moves the actor along its
+    /// facing at the natural end (`FUN_80047430` `0x80047A68..0x80047B2C`).
+    end_root_step: i16,
+    /// Frame 0 of the clip queued behind this one, set by the world each
+    /// tick ([`Self::set_tween_target`]); `None` blends the last frame
+    /// toward itself.
+    tween: Option<TweenTarget>,
+    /// Set on the tick the cursor crosses the stream's frame count (a
+    /// one-shot finishing, a looping clip wrapping); taken by
+    /// [`Self::take_natural_end`].
+    natural_end: bool,
+}
+
+/// What the decoder blends a clip's **last** frame toward: frame 0 of the
+/// queued clip, with the committed entry's `+0x0E` added to the Z delta
+/// (`FUN_8004998C` `0x80049A7C..0x80049BD0`, the Z term at `0x80049D64`).
+/// Built by the world from the actor's queued id
+/// (`World::battle_tween_target`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TweenTarget {
+    /// The queued clip's frame 0, one pose per part. `None` - the gate
+    /// failed (HP `0`, a queued id `>= 0x10`) or a monster's queued stream
+    /// has a different part count - blends the last frame toward itself.
+    pub frame0: Option<Vec<PartPose>>,
+    /// The Z-delta term: the committed entry's `+0x0E`, or `0` when the
+    /// actor's `+0x228` byte is set.
+    pub z_bias: i16,
 }
 
 /// The committed entry's hit-event side, as the damage kernel `FUN_801EC3E4`
@@ -193,6 +222,9 @@ impl MonsterAnimPlayer {
             loop_rewound: false,
             root_speed: anim.entry_root_speed().unwrap_or(0),
             hit_source,
+            end_root_step: anim.entry_end_root_step().unwrap_or(0),
+            tween: None,
+            natural_end: false,
         })
     }
 
@@ -200,6 +232,30 @@ impl MonsterAnimPlayer {
     /// clip.
     pub fn root_speed(&self) -> i16 {
         self.root_speed
+    }
+
+    /// The entry's signed end-of-clip displacement (`+0x0E`); `0` for a
+    /// headless clip.
+    pub fn end_root_step(&self) -> i16 {
+        self.end_root_step
+    }
+
+    /// Frame 0 of this clip, what a re-commit of it tweens into.
+    pub fn first_frame(&self) -> &[PartPose] {
+        &self.frames[0]
+    }
+
+    /// Install (or clear) the queued clip the last frame tweens into. The
+    /// world recomputes it every tick from the actor's `+0x1DA` mirror.
+    pub fn set_tween_target(&mut self, target: Option<TweenTarget>) {
+        self.tween = target;
+    }
+
+    /// `true` once on the tick the cursor crossed the stream's frame count
+    /// (retail's natural end, `FUN_80047430` `0x80047A48..0x80047A60`).
+    /// Clears on read.
+    pub fn take_natural_end(&mut self) -> bool {
+        std::mem::take(&mut self.natural_end)
     }
 
     /// The committed entry's hit-event side, or `None` for a clip built
@@ -369,45 +425,61 @@ impl MonsterAnimPlayer {
 
     fn advance(&mut self, step: u32) -> PoseFrame {
         let total = self.frame_count * PHASE_ONE;
-        let (f0, mut f1);
+        let last = self.frames.len() - 1;
+        // A finished one-shot holds: retail would have committed the queued
+        // clip on the crossing tick; the engine keeps the player until the
+        // world installs the next one (or forever, for the downed hold).
+        if !self.looping && self.finished {
+            return self.hold_pose();
+        }
         // Window before natural end, exactly like the tick.
         let raw = self.apply_loop_window(self.phase + step);
-        if self.looping {
+        // The natural end: the cursor crossed the stream's frame count
+        // (`FUN_80047430` `0x80047A48..0x80047A60`, `slt frame, frames`).
+        if raw >= total {
+            self.natural_end = true;
+            if !self.looping {
+                self.finished = true;
+                self.phase = last as u32 * PHASE_ONE;
+                return self.hold_pose();
+            }
             self.phase = raw % total;
-            f0 = (self.phase >> PHASE_FRAC_BITS) as usize % self.frames.len();
-            // The last frame blends toward frame 0 of the queued clip; a
-            // looping clip is re-queued at every natural end
-            // (`docs/formats/monster-animation.md` § Playback), so that is
-            // its own frame 0.
-            f1 = (f0 + 1) % self.frames.len();
         } else {
-            // One-shot: clamp the cursor on the final keyframe.
-            let last = (self.frame_count - 1) * PHASE_ONE;
-            self.phase = raw.min(last);
-            self.finished = self.phase >= last;
-            f0 = (self.phase >> PHASE_FRAC_BITS) as usize % self.frames.len();
-            f1 = (f0 + 1).min(self.frames.len() - 1);
+            self.phase = raw;
         }
-        // The loop-window arm of the next-entry rule: on the frame before the
-        // window's end, while cycles remain, the blend target is the window's
-        // start frame (`FUN_8004998C` `0x80049A28..0x80049A78`: frame ==
-        // `+0x86 - 1` and `+0x21B != 0` -> entry `+0x85`).
+        let f0 = ((self.phase >> PHASE_FRAC_BITS) as usize).min(last);
+        // Retail blends on the 12.4 cursor's low nibble (`+0x68 & 0xF`); this
+        // player's phase is 8.8, so the nibble is bits 4..8.
+        let frac16 = ((self.phase >> 4) & 0xF) as u8;
+        // The next-entry rule (`FUN_8004998C` `0x80049A28..0x80049BE4`).
+        // First the loop-window arm: on the frame before the window's end,
+        // while cycles remain, the blend target is the window's start frame
+        // (frame == `+0x86 - 1` and `+0x21B != 0` -> entry `+0x85`).
+        let mut next: &[PartPose] = if f0 < last {
+            &self.frames[f0 + 1]
+        } else {
+            self.last_frame_target()
+        };
+        let mut z_bias = 0;
+        let mut windowed = false;
         if self.loop_cycles_remaining() != 0 && self.loop_end > 0 {
             let end_frame = (self.loop_end / PHASE_ONE) as usize;
             let start_frame = (self.loop_start / PHASE_ONE) as usize;
             if f0 + 1 == end_frame && start_frame < self.frames.len() {
-                f1 = start_frame;
+                next = &self.frames[start_frame];
+                windowed = true;
             }
         }
-        // Retail blends on the 12.4 cursor's low nibble (`+0x68 & 0xF`); this
-        // player's phase is 8.8, so the nibble is bits 4..8.
-        let frac16 = ((self.phase >> 4) & 0xF) as u8;
+        // Then the last frame: the queued clip's frame 0 (or the clip
+        // itself), with the committed entry's `+0x0E` on the Z delta.
+        if f0 == last && !windowed {
+            z_bias = self.tween.as_ref().map_or(0, |t| t.z_bias);
+        }
 
         let a = &self.frames[f0];
-        let b = &self.frames[f1];
         let bone_outputs = (0..self.part_count)
             .map(|p| {
-                let blended = blend_part_pose(a[p], b[p], frac16, 0);
+                let blended = blend_part_pose(a[p], next[p], frac16, z_bias);
                 let r = blended.rotation.map(|v| v as i16);
                 (blended.translation, r)
             })
@@ -417,6 +489,49 @@ impl MonsterAnimPlayer {
             bone_outputs,
             factor: (self.phase & (PHASE_ONE - 1)) as u8,
             finished: self.finished,
+        }
+    }
+
+    /// The pose the last frame blends toward: the tween target's frame 0
+    /// when its part count matches, the clip's own last frame for a
+    /// self-blend (`move a1,t0`, `0x80049BCC` / `0x80049B9C`), and - with no
+    /// target installed - the historical default: a looping clip's own
+    /// frame 0 (the re-queued idle), a one-shot's own last frame.
+    fn last_frame_target(&self) -> &[PartPose] {
+        let last = &self.frames[self.frames.len() - 1];
+        match &self.tween {
+            Some(TweenTarget {
+                frame0: Some(f), ..
+            }) if f.len() == self.part_count => f,
+            Some(_) => last,
+            None if self.looping => &self.frames[0],
+            None => last,
+        }
+    }
+
+    /// A finished one-shot's pose: the frame the crossing tick shows - the
+    /// queued clip's frame 0 exact (retail's commit zeroes the cursor, so the
+    /// crossing tick draws the new entry's first frame), or the clip's own
+    /// last frame when it tweens into itself.
+    fn hold_pose(&self) -> PoseFrame {
+        let target = match &self.tween {
+            Some(TweenTarget {
+                frame0: Some(f), ..
+            }) if f.len() == self.part_count => f.as_slice(),
+            _ => &self.frames[self.frames.len() - 1],
+        };
+        let bone_outputs = target
+            .iter()
+            .take(self.part_count)
+            .map(|p| {
+                let b = blend_part_pose(*p, *p, 0, 0);
+                (b.translation, b.rotation.map(|v| v as i16))
+            })
+            .collect();
+        PoseFrame {
+            bone_outputs,
+            factor: 0,
+            finished: true,
         }
     }
 }
@@ -574,20 +689,101 @@ mod one_shot_tests {
 
     #[test]
     fn one_shot_clamps_on_last_keyframe_and_finishes() {
+        // Retail's natural end is the cursor crossing the frame count
+        // (`FUN_80047430` `slt frame, frames`), so the last keyframe's
+        // interval plays before the clip finishes.
         let mut p = MonsterAnimPlayer::new_one_shot(&clip(3)).unwrap();
         p.step = 256; // one keyframe per tick
         assert!(!p.finished());
         let _ = p.tick(); // frame 1
         assert!(!p.finished());
-        let f = p.tick(); // frame 2 (last)
+        let f = p.tick(); // frame 2 (last), its interval still to play
+        assert!(!p.finished());
+        assert_eq!(f.bone_outputs[0].0[0], 20);
+        let f = p.tick(); // crosses the frame count
         assert!(p.finished());
         assert!(f.finished);
+        assert!(p.take_natural_end(), "the crossing reports the natural end");
+        assert!(!p.take_natural_end(), "once");
         let (t, _) = f.bone_outputs[0];
-        assert_eq!(t[0], 20, "clamped on the final keyframe");
+        assert_eq!(t[0], 20, "held on the final keyframe");
+        assert_eq!(p.current_frame(), 2);
         // Further ticks hold the final pose.
         let f2 = p.tick();
         assert_eq!(f2.bone_outputs[0].0[0], 20);
         assert!(f2.finished);
+        assert!(!p.take_natural_end());
+    }
+
+    #[test]
+    fn the_last_frame_tweens_into_the_queued_clip_with_the_z_term() {
+        // `FUN_8004998C` `0x80049A7C..0x80049BD0`: on the last frame the
+        // blend target is the queued clip's frame 0, and the committed
+        // entry's `+0x0E` joins the Z delta (`0x80049D64`).
+        let mut p = MonsterAnimPlayer::new_one_shot(&clip(3)).unwrap();
+        p.step = 256 / 2; // half a keyframe per tick
+        let target = PartPose {
+            tx: 100,
+            ty: 0,
+            tz: 40,
+            rx: 0,
+            ry: 0,
+            rz: 0,
+        };
+        p.set_tween_target(Some(TweenTarget {
+            frame0: Some(vec![target]),
+            z_bias: -8,
+        }));
+        for _ in 0..4 {
+            p.tick(); // frames 0.5 .. 2.0
+        }
+        let f = p.tick(); // 2.5: halfway from the last frame into the target
+        let (t, _) = f.bone_outputs[0];
+        assert_eq!(t[0], 20 + (100 - 20) / 2);
+        assert_eq!(t[2], (40 - 8) / 2, "the Z term rides the delta");
+        assert!(!p.finished());
+        let f = p.tick(); // crosses: the new entry's frame 0, exact
+        assert!(p.finished());
+        assert_eq!(f.bone_outputs[0].0, [100, 0, 40]);
+        // A failed gate (`frame0: None`) blends toward itself: a static
+        // last interval, and the hold is the clip's own last frame.
+        let mut q = MonsterAnimPlayer::new_one_shot(&clip(3)).unwrap();
+        q.step = 128;
+        q.set_tween_target(Some(TweenTarget {
+            frame0: None,
+            z_bias: 0,
+        }));
+        for _ in 0..4 {
+            q.tick();
+        }
+        assert_eq!(q.tick().bone_outputs[0].0[0], 20);
+        assert_eq!(q.tick().bone_outputs[0].0[0], 20);
+        // A mismatched part count is a self-blend that keeps the Z term.
+        let mut r = MonsterAnimPlayer::new_one_shot(&clip(3)).unwrap();
+        r.step = 128;
+        r.set_tween_target(Some(TweenTarget {
+            frame0: Some(vec![target, target]),
+            z_bias: -8,
+        }));
+        for _ in 0..4 {
+            r.tick();
+        }
+        assert_eq!(r.tick().bone_outputs[0].0, [20, 0, -4]);
+    }
+
+    #[test]
+    fn a_looping_clip_wraps_into_its_own_frame_zero_and_reports_it() {
+        let mut p = MonsterAnimPlayer::new(&clip(3)).unwrap();
+        p.step = 128;
+        for _ in 0..4 {
+            p.tick();
+        }
+        // 2.5: halfway from the last frame back to frame 0.
+        assert_eq!(p.tick().bone_outputs[0].0[0], 10);
+        assert!(!p.take_natural_end());
+        p.tick(); // wraps
+        assert!(p.take_natural_end());
+        assert_eq!(p.current_frame(), 0);
     }
 
     #[test]
@@ -631,7 +827,8 @@ mod one_shot_tests {
                 break;
             }
         }
-        assert_eq!(seen, vec![1, 2, 3, 4, 5, 4, 5, 4, 5, 6, 7, 8, 9]);
+        // The last keyframe's interval plays before the natural end.
+        assert_eq!(seen, vec![1, 2, 3, 4, 5, 4, 5, 4, 5, 6, 7, 8, 9, 9]);
         assert_eq!(p.loop_cycles_remaining(), 0);
         assert!(p.finished());
     }
@@ -649,7 +846,7 @@ mod one_shot_tests {
                 break;
             }
         }
-        assert_eq!(seen, vec![1, 2, 3, 4, 5, 5, 5, 5, 6, 7]);
+        assert_eq!(seen, vec![1, 2, 3, 4, 5, 5, 5, 5, 6, 7, 7]);
     }
 
     #[test]

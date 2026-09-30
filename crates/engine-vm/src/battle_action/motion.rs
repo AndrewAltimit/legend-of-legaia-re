@@ -174,6 +174,34 @@ pub fn root_motion_step(sin: i16, cos: i16, speed: i16, frame_dt: u8, scale: u8)
     (step(sin), step(cos))
 }
 
+/// The anim tick's **end-of-clip displacement**: at the natural end the actor
+/// moves along its facing by the committed entry's `+0x0E`,
+/// `(sin * step >> 12, cos * step >> 12)` into the live `(+0x34, +0x38)`
+/// pair (`mult; mflo; sra 0xc` per axis).
+///
+/// PORT: FUN_80047430 (`0x80047A68..0x80047B2C`)
+pub fn end_root_step(sin: i16, cos: i16, step: i16) -> (i32, i32) {
+    let d = |trig: i16| (i32::from(trig) * i32::from(step)) >> 12;
+    (d(sin), d(cos))
+}
+
+/// The same displacement taken on the **event-path** commit, which cuts the
+/// clip short: pro-rated by the cursor's whole frame over the stream's frame
+/// count, `(trig * step * frame / frames) >> 12` with retail's truncating
+/// signed `div` (`0x80047970..0x80047A28`). A zero frame count moves nothing.
+///
+/// PORT: FUN_80047430 (`0x80047950..0x80047A28`)
+pub fn event_cut_root_step(sin: i16, cos: i16, step: i16, frame: i16, frames: u8) -> (i32, i32) {
+    if frames == 0 {
+        return (0, 0);
+    }
+    let d = |trig: i16| {
+        let v = (i32::from(trig) * i32::from(step)).wrapping_mul(i32::from(frame));
+        (v / i32::from(frames)) >> 12
+    };
+    (d(sin), d(cos))
+}
+
 /// PORT: FUN_801E295C state `0x16` (`0x801E33EC..0x801E3490`) - one
 /// iteration of the arrival shove: the per-axis displacement the target's
 /// live and seat pairs both take, `(sin >> 9, cos >> 9)` (arithmetic shifts
@@ -198,6 +226,19 @@ mod tests {
         // cos = the same table a quarter turn on.
         assert_eq!(trig12(0), (0, 4096));
         assert_eq!(trig12(0x400), (4096, 0));
+    }
+
+    #[test]
+    fn end_of_clip_displacement_is_the_entry_step_along_the_facing() {
+        // Facing 0: all on Z. A negative step walks back.
+        assert_eq!(end_root_step(0, 4096, -826), (0, -826));
+        // A quarter turn: all on X.
+        assert_eq!(end_root_step(4096, 0, 300), (300, 0));
+        // `sra 12` floors: a -1 step against a small positive sample is -1.
+        assert_eq!(end_root_step(100, -100, -1), (-1, 0));
+        // The event-path cut pro-rates by frame / frames (truncating div).
+        assert_eq!(event_cut_root_step(0, 4096, -800, 3, 8), (0, -300));
+        assert_eq!(event_cut_root_step(0, 4096, -800, 3, 0), (0, 0));
     }
 
     #[test]

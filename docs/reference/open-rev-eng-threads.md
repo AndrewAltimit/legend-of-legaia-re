@@ -403,7 +403,6 @@ process-matching helpers in
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Does a monster's one-shot clip tween into its queued clip? | open - disassembly; not modelled | `FUN_8004998C` blends the last frame into frame 0 of the queued clip when HP is non-zero and `+0x1DA < 0x10`, adding `+0xE` to the Z translation (`0x80049A7C..0x80049BD0`). `MonsterAnimPlayer` has no queued clip, so a one-shot clip clamps without the tween. |
 | Are camera-relative move-VM parts drawn camera-relative? | partial - both hosts do; not yet frame-compared | 334 of 3956 nodes across the 98 mednafen states carry a `+0x52 & 0x780` bit (billboards, per-axis skips, camera-locked summon parts), and 15 states have a non-zero skipped angle, e.g. `battle_melee_hit_spark`. Both play hosts now place those parts through `camera_relative_model_prefix` ([`renderer.md`](../subsystems/renderer.md#camera-relative-nodes-fun_8001cf50)); open is a frame comparison against one of those states, and whether the engine's part position (the move-VM `world_x/y/z`, which folds in the spawn origin) is the `+0x14` offset the `0x400` arm locks. |
 | Does the fight against monster `0xAF` (Tetsu) seat and flag as retail does? | open - disassembly and a synthetic poke only | The Rim Elm ambush is closed: its row carries header byte 0, so `ctx+0x287 = 0`, the map arm seats row 8, the word reads `0x200` and Run is allowed, in retail and in the engine (`rim_elm_ambush_disc`; [settled](re-settled-threads.md#battle--arts--level-up)). Tetsu's only formation row is `town0d` row 4 (header byte 1, scripted); a synthetic first-monster poke confirms the `0x200` raise, but no state or card block reaches `town0d`. A state inside that fight, read for the seats and the word, closes it. |
 
@@ -413,6 +412,15 @@ by disassembly: the ring stamps Rot on the Attack chip under all three limbs
 (`FUN_801DBEC4(0xF8, 0x42)`) and the arts entry stamps each rotted direction
 (`FUN_801DBDDC`, sized to the chip's cost); both hosts draw all three
 ([settled](re-settled-threads.md#battle--arts--level-up)).
+
+**Does a monster's one-shot clip tween into its queued clip** closed as yes,
+by disassembly, and ported: on its last frame `FUN_8004998C` blends into frame
+0 of the clip the engine installs next, with the committed entry's `+0x0E` on
+the Z delta, and the anim tick moves the actor by that step at the natural end
+(`0x80047A68..0x80047B2C`) - so a one-shot now runs to its frame count, not its
+last keyframe ([settled](re-settled-threads.md#battle--arts--level-up),
+[`monster-animation.md`](../formats/monster-animation.md#the-end-of-clip-step-0x0e)).
+
 **Which fights forbid the Ra-Seru chip** closed by disassembly: bit `0x200` of
 `_DAT_8007BAC0` has two raisers - battle init against first monster `0xAF`
 (`0x800519C0..0x80051A04`) and the formation roll in the Rim Elm ambush

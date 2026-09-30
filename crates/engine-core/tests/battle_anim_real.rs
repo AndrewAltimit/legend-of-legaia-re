@@ -228,3 +228,48 @@ fn monster_archive_pose_blend_retry_census() {
     );
     assert!(clips > 0 && blended > 0);
 }
+
+/// The end-of-clip step (entry `+0x0E`) the decoder's last-frame tween and
+/// the anim tick's natural-end displacement both read
+/// (`docs/formats/monster-animation.md` § Playback): every monster's idle
+/// entry carries `0`, so an idle loop neither drifts nor tweens with a Z
+/// term, while action entries carry real steps - the distance a lunge or a
+/// hop leaves the body from where the clip began.
+#[test]
+fn monster_archive_end_step_census() {
+    let Some(disc) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    };
+    let patcher = DiscPatcher::open(disc).expect("open disc");
+    let archive = patcher
+        .read_entry(MONSTER_ARCHIVE_ENTRY)
+        .expect("read monster archive");
+    let records = legaia_asset::monster_archive::records(&archive).expect("decode archive");
+    let (mut idle, mut actions, mut stepping) = (0u32, 0u32, 0u32);
+    for r in &records {
+        let Ok(Some(anims)) = legaia_asset::monster_archive::animations_by_entry(&archive, r.id)
+        else {
+            continue;
+        };
+        for (i, a) in anims.iter().enumerate() {
+            let Some(step) = a.as_ref().and_then(|a| a.entry_end_root_step()) else {
+                continue;
+            };
+            if i == 0 {
+                idle += 1;
+                assert_eq!(step, 0, "monster {:#04x}: idle entry carries a step", r.id);
+            } else {
+                actions += 1;
+                if step != 0 && step != -1 {
+                    stepping += 1;
+                }
+            }
+        }
+    }
+    eprintln!(
+        "[ok] end-step census: {idle} idle entries all 0; {stepping} of {actions} action \
+         entries step by more than one unit"
+    );
+    assert!(idle > 0 && stepping > 0);
+}

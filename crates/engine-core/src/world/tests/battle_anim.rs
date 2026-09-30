@@ -1134,3 +1134,87 @@ fn special_starter_commit_raises_the_arts_banner_and_the_ramp_emits_quads() {
     assert_eq!(world.battle_ctx.arts_banner_stage, 0);
     assert!(world.battle_arts_banner_quads().is_empty());
 }
+
+// --- the decoder's last-frame tween + the end-of-clip displacement ---------
+
+/// A two-frame one-shot whose entry head carries an end-of-clip step
+/// (`+0x0E`), translating Z from `tz0` to `tz1`.
+fn end_step_clip(action_id: u8, tz0: i16, tz1: i16, end_step: i16) -> MonsterAnimation {
+    use legaia_asset::monster_archive::PartPose;
+    let mut head = vec![0u8; legaia_asset::monster_archive::EFFECT_SCRIPT_HEAD_BYTES];
+    head[0x0E..0x10].copy_from_slice(&end_step.to_le_bytes());
+    let pose = |tz| {
+        vec![PartPose {
+            tx: 0,
+            ty: 0,
+            tz,
+            rx: 0,
+            ry: 0,
+            rz: 0,
+        }]
+    };
+    MonsterAnimation {
+        action_id,
+        rate: 2,
+        attach_key: 0,
+        solo_flag: 0,
+        impact_class: 0,
+        effect_script: head,
+        part_count: 1,
+        frame_count: 2,
+        frames: vec![pose(tz0), pose(tz1)],
+    }
+}
+
+fn end_step_world(end_step: i16) -> World {
+    let mut world = World::new();
+    world.actors[0].active = true;
+    world.actors[0].battle.hp = 100;
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 12];
+    clips[0] = Some(pose_test_clip(0, 2, 0));
+    // A lunge: the body ends 64 units forward in model Z, and the entry's
+    // step carries the actor the same 64 at the natural end.
+    clips[10] = Some(end_step_clip(10, 0, 64, end_step));
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    world.apply_battle_pose(0, vm::battle_action::Pose::Idle as u8);
+    world.actors[0].battle.queued_anim = 10;
+    world.commit_staged_battle_anim(0);
+    world
+}
+
+#[test]
+fn a_swing_tweens_into_the_idle_it_falls_back_to_and_steps_the_actor() {
+    let mut world = end_step_world(64);
+    assert_eq!(world.actors[0].battle_staged_anim, Some(10));
+    // Half a keyframe per tick (the action branch doubles the base step).
+    world.actors[0].battle_animation.as_mut().unwrap().step = 64;
+    let z0 = world.actors[0].move_state.world_z;
+    let mut zs = Vec::new();
+    for _ in 0..4 {
+        world.tick_battle_animations();
+        zs.push(world.actors[0].pose_frame.as_ref().unwrap().bone_outputs[0].0[2]);
+    }
+    // 0.5 / 1.0 / 1.5 / crossing: the last frame (64) blends toward the idle's
+    // frame 0 (0) plus the Z term (64) - the body holds 64 through the
+    // interval instead of snapping back - and the crossing tick draws the
+    // idle's frame 0 with the actor moved 64 along its facing (facing 0: +Z).
+    assert_eq!(zs, vec![32, 64, 64, 0]);
+    assert_eq!(world.actors[0].move_state.world_z, z0.wrapping_add(64));
+}
+
+#[test]
+fn a_downed_actor_does_not_tween_or_step() {
+    let mut world = end_step_world(64);
+    world.actors[0].battle.hp = 0;
+    world.actors[0].battle_animation.as_mut().unwrap().step = 64;
+    let z0 = world.actors[0].move_state.world_z;
+    let mut zs = Vec::new();
+    for _ in 0..4 {
+        world.tick_battle_animations();
+        zs.push(world.actors[0].pose_frame.as_ref().unwrap().bone_outputs[0].0[2]);
+    }
+    // HP 0 fails the gate: the last frame blends toward itself, and the
+    // natural end moves nothing (no Seru staged).
+    assert_eq!(zs, vec![32, 64, 64, 64]);
+    assert_eq!(world.actors[0].move_state.world_z, z0);
+}
