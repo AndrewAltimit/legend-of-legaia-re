@@ -8,13 +8,36 @@ use super::*;
 const SYSTEM_FLAG_WINDOW: usize = 0x158;
 
 impl World {
+    /// Whether projecting a party record onto actor `slot`
+    /// ([`Self::load_party`], [`Self::set_active_party`]) may raise the slot.
+    ///
+    /// On a field or the overworld the actor table is not the party: the
+    /// walking player's slot (slot 0 until a host installs another) is the
+    /// party's, and every other slot belongs to the scene - spawned records,
+    /// clones, effects, and the idle slots `init_scene_animations` leaves
+    /// pre-bound to scene-pack meshes. Raising one of those spawned a phantom
+    /// actor: drawn at the origin with whatever mesh the slot was pre-bound to
+    /// (uru's sky and cliff pack across the frame after a card load of a
+    /// four-member save), and held out of the spawn allocator's free list.
+    /// Retail's card load copies the records into `0x80084708` and touches no
+    /// actor; a battle seats its party itself ([`Self::enter_battle`]). The
+    /// HP / MP mirrors are still written - only the raise is withheld.
+    pub(crate) fn party_mirror_activates(&self, slot: usize) -> bool {
+        if !matches!(self.mode, SceneMode::Field | SceneMode::WorldMap) {
+            return true;
+        }
+        usize::from(self.player_actor_slot.unwrap_or(0)) == slot
+    }
+
     /// Load a `Party` (per-character roster) into the world's actor table.
     ///
     /// Per-character record 0 maps to actor slot 0, record 1 to slot 1, …
     /// up to `party.len()` (capped by `MAX_ACTORS`). For each loaded slot
     /// the world:
     ///
-    /// - activates the actor,
+    /// - activates the actor - except on a field or the overworld, where
+    ///   only the walking player's slot is the party's
+    ///   ([`Self::party_mirror_activates`]),
     /// - copies HP / MP from the record's [`HpMpSp`] block into the
     ///   `BattleActor` mirrors,
     /// - stows the full record bytes via [`crate::world::PartyState::roster`] for later
@@ -29,8 +52,11 @@ impl World {
         let n = party.members.len().min(self.actors.len());
         for (slot, rec) in party.members.iter().take(n).enumerate() {
             let hms = rec.hp_mp_sp();
+            let activate = self.party_mirror_activates(slot);
             let a = &mut self.actors[slot];
-            a.active = true;
+            if activate {
+                a.active = true;
+            }
             a.battle.hp = hms.hp_cur;
             a.battle.max_hp = hms.hp_max;
             a.battle.mp = hms.mp_cur;

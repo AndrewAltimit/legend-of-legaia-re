@@ -763,8 +763,11 @@ mod tests {
         assert_eq!(world.party.party_names[1], "Noa");
         assert_eq!(world.party.party_names[2], "Gala");
         // `load_party`'s projection ran, so the actors carry live mirrors.
+        // On the field only the walking player's slot is raised: slots 1..2
+        // are the scene's, and a raise there spawned a phantom actor
+        // (`World::party_mirror_activates`); the battle seats them itself.
         for slot in 0..3 {
-            assert!(world.actors[slot].active, "actor {slot} inactive");
+            assert_eq!(world.actors[slot].active, slot == 0, "actor {slot} raise");
             assert_ne!(world.actors[slot].battle.max_hp, 0, "actor {slot} max HP");
             assert_eq!(world.actors[slot].battle.liveness, 1);
         }

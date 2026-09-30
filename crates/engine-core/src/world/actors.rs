@@ -1588,8 +1588,11 @@ impl World {
                 continue;
             };
             let hms = rec.hp_mp_sp();
+            let activate = self.party_mirror_activates(member);
             if let Some(a) = self.actors.get_mut(member) {
-                a.active = true;
+                if activate {
+                    a.active = true;
+                }
                 a.battle.hp = hms.hp_cur;
                 a.battle.max_hp = hms.hp_max;
                 a.battle.mp = hms.mp_cur;
