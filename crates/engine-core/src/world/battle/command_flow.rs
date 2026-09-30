@@ -607,7 +607,17 @@ impl World {
             list_page: s.list_page,
             list_pages: s.list_pages,
             phase: (&s.phase).into(),
+            status: self.raw_status_word(s.actor),
         })
+    }
+
+    /// The `+0x16E` status word of the member the command ring is open for,
+    /// `None` without a command session. The ring's Rot / Curse marks read
+    /// it (`crate::battle_hud::battle_ring_marks`), as its refusals do
+    /// ([`ring_arm_refused`]).
+    pub fn battle_command_status_word(&self) -> Option<u16> {
+        let cmd = self.battle.command.as_ref()?;
+        Some(self.raw_status_word(cmd.actor))
     }
 
     pub(in crate::world) fn open_arts_command_input(&mut self, actor: u8) {

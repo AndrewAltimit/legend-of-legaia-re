@@ -402,6 +402,30 @@ pub fn curse_plate_on_chip(x: i16, y: i16) -> StripQuad {
     }
 }
 
+/// Which marks the command ring wears this frame. Retail's phase-`0x28` arm
+/// runs four independent tests, every frame of the phase, before it reads
+/// the pad (`0x801D12C0..0x801D1360`):
+///
+/// | field | test | emitter |
+/// |---|---|---|
+/// | `item_forbidden` | special word `& 0x100` | `FUN_801DBC30(0xCC, 0x22)` |
+/// | `raseru_forbidden` | special word `& 0x200` | `FUN_801DBC30(0xF8, 0x42)` |
+/// | `attack_rotted` | member `+0x16E & 0x38 == 0x38` | `FUN_801DBD04(0xA0, 0x42)` |
+/// | `magic_cursed` | member `+0x16E & 0x1000` | `FUN_801DBEC4(0xF8, 0x42)` |
+///
+/// The last two are the arms the ring refuses with cue `0x23`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RingMarks {
+    /// The red X over the Item chip.
+    pub item_forbidden: bool,
+    /// The red X over the Ra-Seru (Magic) chip.
+    pub raseru_forbidden: bool,
+    /// The Rot stamp over the Attack chip.
+    pub attack_rotted: bool,
+    /// The Curse plate over the Magic chip.
+    pub magic_cursed: bool,
+}
+
 /// Where the arts-entry arm stamps Rot this frame: one `(x, y, w)` argument
 /// triple per [`rot_stamp_on_arts_chip`] call, in retail's call order, for an
 /// acting member whose `+0x16E` word is `status` and whose chip costs are

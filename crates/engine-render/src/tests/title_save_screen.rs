@@ -208,6 +208,8 @@ pub(super) fn pinned_save_menu_rects() -> SaveMenuAtlasRects {
             separator: (96, 64, 8, 16),
             digits: Some((0, 244, 80, 12)),
             cross_out: None,
+            rot_stamp: None,
+            curse_plate: None,
         }),
     }
 }

@@ -750,6 +750,8 @@ impl PlayWindowApp {
                             separator: atlas_data.band_battle_separator(),
                             digits: atlas_data.band_hud_digits(),
                             cross_out: atlas_data.band_cross_out(),
+                            rot_stamp: atlas_data.band_rot_stamp(),
+                            curse_plate: atlas_data.band_curse_plate(),
                         }),
                     };
                     // The battle HUD's badge cells: which ones actually

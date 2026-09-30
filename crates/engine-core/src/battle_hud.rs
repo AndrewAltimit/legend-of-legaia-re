@@ -1733,6 +1733,43 @@ pub fn battle_raseru_cross_out(world: &crate::world::World) -> bool {
         && battle_command_chips(world).is_some_and(|c| c.phase == CommandChipPhase::CommandRing)
 }
 
+/// Every mark the command ring draws this frame: all clear unless the ring
+/// is up ([`CommandChipPhase::CommandRing`], retail's phase `0x28`).
+///
+/// Retail's arm runs four tests every frame of the phase, before it reads
+/// the pad (`0x801D12C0..0x801D1360`): the special word's `0x100` crosses the
+/// Item chip out (`FUN_801DBC30(0xCC, 0x22)`), its `0x200` the Ra-Seru chip
+/// (`FUN_801DBC30(0xF8, 0x42)`); the acting member's `+0x16E & 0x38 == 0x38`
+/// stamps Rot on the Attack chip (`FUN_801DBD04(0xA0, 0x42)`) and its
+/// `+0x16E & 0x1000` lays the Curse plate on the Magic chip
+/// (`FUN_801DBEC4(0xF8, 0x42)`). The two status tests are the ones the ring
+/// refuses a press on (`crate::world` `ring_arm_refused`); the member word is
+/// [`crate::world::World::battle_command_status_word`], the same composed
+/// word the refusal reads.
+///
+/// Both play hosts pass this to `engine-ui`'s
+/// `battle_command_ui::battle_command_menu_sprites` (native `window/hud.rs`,
+/// page `play_battle.rs`), which draws each mark out of the chrome atlas
+/// cells `save_menu_atlas::add_cross_out_mark` bakes from the effect page.
+///
+/// PORT: FUN_801D0748 (phase-`0x28` arm, the four ring marks at `0x801D12C0..0x801D1360`)
+pub fn battle_ring_marks(
+    world: &crate::world::World,
+) -> legaia_engine_vm::battle_party_panel::RingMarks {
+    if !battle_command_chips(world).is_some_and(|c| c.phase == CommandChipPhase::CommandRing) {
+        return legaia_engine_vm::battle_party_panel::RingMarks::default();
+    }
+    let word = world.battle.special_word;
+    let status = world.battle_command_status_word().unwrap_or(0);
+    legaia_engine_vm::battle_party_panel::RingMarks {
+        item_forbidden: word & legaia_engine_vm::battle_formulas::SPECIAL_ARENA != 0,
+        raseru_forbidden: battle_raseru_forbidden(world),
+        attack_rotted: status & legaia_engine_vm::battle_formulas::ROT_ALL_LIMBS
+            == legaia_engine_vm::battle_formulas::ROT_ALL_LIMBS,
+        magic_cursed: status & 0x1000 != 0,
+    }
+}
+
 /// Which selection surface a chip cluster belongs to - the three clusters
 /// retail seats differently (`engine-ui::battle_command_ui::ChipPhase`
 /// carries the seats; this is the renderer-free twin hosts map onto it).
@@ -3015,6 +3052,42 @@ mod tests {
         // Off the ring (no command session) the arm does not run.
         w.battle.command = None;
         assert!(!battle_raseru_cross_out(&w));
+    }
+
+    /// The ring's four marks, each off its own test: the special word's two
+    /// bits, then the acting member's Rot limbs (all three, not any) and
+    /// Curse - and nothing at all off the ring.
+    #[test]
+    fn the_ring_marks_follow_the_word_and_the_members_status() {
+        use crate::battle_input::BattleCommandSession;
+        let mut w = battle_world(1);
+        w.battle.command = Some(BattleCommandSession::new(0, 0));
+        assert_eq!(
+            battle_ring_marks(&w),
+            legaia_engine_vm::battle_party_panel::RingMarks::default()
+        );
+        w.actors[0].battle.field_flags = 0x18;
+        assert!(
+            !battle_ring_marks(&w).attack_rotted,
+            "two limbs leave a direction"
+        );
+        w.actors[0].battle.field_flags = 0x38 | 0x1000;
+        w.battle.special_word = 0x300;
+        assert_eq!(
+            battle_ring_marks(&w),
+            legaia_engine_vm::battle_party_panel::RingMarks {
+                item_forbidden: true,
+                raseru_forbidden: true,
+                attack_rotted: true,
+                magic_cursed: true,
+            }
+        );
+        // The round prompt is not the ring: no marks.
+        w.battle.command = Some(BattleCommandSession::new_round_open(0, 0, true));
+        assert_eq!(
+            battle_ring_marks(&w),
+            legaia_engine_vm::battle_party_panel::RingMarks::default()
+        );
     }
 
     #[test]

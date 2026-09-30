@@ -2180,6 +2180,8 @@ fn save_menu_rects(a: &SaveMenuAtlas) -> SaveMenuAtlasRects {
             separator: a.band_battle_separator(),
             digits: a.band_hud_digits(),
             cross_out: a.band_cross_out(),
+            rot_stamp: a.band_rot_stamp(),
+            curse_plate: a.band_curse_plate(),
         }),
     }
 }

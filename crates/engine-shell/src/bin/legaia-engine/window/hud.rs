@@ -2078,6 +2078,18 @@ impl PlayWindowApp {
             stage_origin,
             stage_scale,
         );
+        // The Rot stamp over each direction the caster's rotted limbs refuse,
+        // on top of the chips (retail draws it right after the D-pad glyph).
+        // The browser page makes the same call.
+        if let Some(rot) = assets.rects.battle.and_then(|b| b.rot_stamp) {
+            out.extend(ai::arts_input_rot_stamp_draws(
+                rot,
+                &frame,
+                view.status,
+                stage_origin,
+                stage_scale,
+            ));
+        }
         // The AP plate is the status screen's own AP-gauge widget, so it
         // reuses the pieces the atlas already carries.
         out.extend(ai::arts_input_ap_plate_draws(
@@ -2607,10 +2619,11 @@ impl PlayWindowApp {
             use legaia_engine_render::battle_command_ui as bcu;
             let (origin, scale) = self.save_select_stage(surface_w, surface_h);
             let views = bcu::command_chip_views(&chips);
-            // The plates, and - in the Rim Elm ambush / against monster
-            // `0xAF` - the red cross-out over the Ra-Seru chip on top of
-            // them: one builder, one engine read, the same call the browser
-            // page makes.
+            // The plates, and on top of them every mark the ring wears -
+            // the red cross-outs the special word raises (the Rim Elm
+            // ambush / monster `0xAF`) and the Rot / Curse marks over the
+            // arms the acting member's status refuses: one builder, one
+            // engine read, the same call the browser page makes.
             out.extend(bcu::battle_command_menu_sprites(
                 &rects,
                 &bcu::BattleCommandMenuFrame {
@@ -2618,7 +2631,7 @@ impl PlayWindowApp {
                     cursor: Some(cursor),
                     phase,
                 },
-                legaia_engine_core::battle_hud::battle_raseru_cross_out(&self.session.host.world),
+                legaia_engine_core::battle_hud::battle_ring_marks(&self.session.host.world),
                 origin,
                 scale,
             ));
@@ -2789,6 +2802,8 @@ mod battle_hud_wiring_tests {
                 separator: (96, 64, 8, 16),
                 digits: Some(BATTLE_MIRROR_DIGITS),
                 cross_out: None,
+                rot_stamp: None,
+                curse_plate: None,
             }),
             ..blank_rects()
         };

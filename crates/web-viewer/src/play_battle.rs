@@ -557,6 +557,17 @@ impl LegaiaRuntime {
         };
         let mut sprites =
             ai::arts_input_chrome_draws(&ai::ArtsInputAtlasRects::BAKED, &frame, origin, scale);
+        // The Rot stamp over each direction the caster's rotted limbs refuse,
+        // on top of the chips - the same call the native window makes.
+        if let Some(rot) = chrome.and_then(|r| r.battle).and_then(|b| b.rot_stamp) {
+            sprites.extend(ai::arts_input_rot_stamp_draws(
+                rot,
+                &frame,
+                view.status,
+                origin,
+                scale,
+            ));
+        }
         // The AP plate reuses the status screen's own AP-gauge pieces, so
         // it only draws when the page has the system-UI chrome loaded.
         if let Some(r) = chrome {
@@ -805,10 +816,11 @@ impl LegaiaRuntime {
             let (origin, scale) =
                 crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
             let views = bcu::command_chip_views(&chips);
-            // The plates, and - in the Rim Elm ambush / against monster
-            // `0xAF` - the red cross-out over the Ra-Seru chip on top of
-            // them: one builder, one engine read, the same call the native
-            // window makes.
+            // The plates, and on top of them every mark the ring wears -
+            // the red cross-outs the special word raises (the Rim Elm
+            // ambush / monster `0xAF`) and the Rot / Curse marks over the
+            // arms the acting member's status refuses: one builder, one
+            // engine read, the same call the native window makes.
             out.extend(bcu::battle_command_menu_sprites(
                 &rects,
                 &bcu::BattleCommandMenuFrame {
@@ -816,9 +828,10 @@ impl LegaiaRuntime {
                     cursor: Some(cursor),
                     phase,
                 },
-                self.scene_host.as_ref().is_some_and(|h| {
-                    legaia_engine_core::battle_hud::battle_raseru_cross_out(&h.world)
-                }),
+                self.scene_host
+                    .as_ref()
+                    .map(|h| legaia_engine_core::battle_hud::battle_ring_marks(&h.world))
+                    .unwrap_or_default(),
                 origin,
                 scale,
             ));

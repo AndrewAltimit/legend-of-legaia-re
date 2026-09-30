@@ -437,6 +437,10 @@ pub struct ArtsInputView<'a> {
     /// Pages the Triangle list can cycle (`0` = the toggle is inert).
     pub list_pages: u8,
     pub phase: ArtsInputScreen,
+    /// The caster's `+0x16E` status word. Its Rot limb bits (`0x38`) pick
+    /// which chips wear the Rot stamp during entry ([`rot_blocks`] refuses
+    /// the same directions).
+    pub status: u16,
 }
 
 impl ArtsInputView<'_> {
