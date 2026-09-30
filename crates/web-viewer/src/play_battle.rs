@@ -199,7 +199,7 @@ pub(crate) type CommandChips = (
 /// The **geometry** is not decided here: culling, UVs, colours and the retail
 /// ordering-table slot each widget kind links at all come out of
 /// [`legaia_engine_core::screen_fx::ScreenFxFrame::draw_quads`], the same kernel
-/// the native window's `build_screen_fx_meshes` consumes. This function exists
+/// the native window's `screen_fx_screen_prims` re-wraps the same way. This function exists
 /// only because `engine-core` sits below `engine-ui` and so cannot name
 /// `ScreenPrim` itself - it is a variant-for-variant re-wrap with no arithmetic.
 fn screen_fx_prims(

@@ -2570,29 +2570,14 @@ impl PlayWindowApp {
                     cue: None,
                 });
             }
-            // Screen-effect widget overlays (the PROT-0900 mask /
-            // sprite / panel / letterbox family, field-VM op 0x43):
-            // composite the world's published per-frame draw list
-            // above the 3D scene under an orthographic screen-space
-            // MVP (PSX 320x240 frame). Solid border/band quads ride
-            // the untextured colour pipeline; panel + sprite quads
-            // ride the VRAM pipeline (clut/texpage sampled like any
-            // retail prim). Depth layers mirror the retail OT slots:
-            // sprites (+0xc) in front, panels (+0x10), mask/bands
-            // (+0x1c) behind. The letterbox gradient feather strips
-            // are subtractive-blend draws the engine doesn't model
-            // yet and are skipped.
-            let (screen_fx_solid, screen_fx_tex) = self.build_screen_fx_meshes(r);
+            // The move-FX afterimage streak, under an orthographic
+            // screen-space MVP (PSX 320x240 frame). The PROT-0900
+            // screen-effect widgets (mask / sprite / panel / letterbox) are
+            // screen primitives instead - see `screen_fx_screen_prims` below.
+            let screen_fx_tex = self.build_screen_fx_meshes(r);
             let screen_fx_mvp = Mat4::orthographic_rh(0.0, 320.0, 240.0, 0.0, 0.0, 1.0);
             if let Some(m) = &screen_fx_tex {
                 draws.push(SceneDraw {
-                    mesh: m,
-                    mvp: screen_fx_mvp,
-                    cue: None,
-                });
-            }
-            if let Some(m) = &screen_fx_solid {
-                color_draws.push(ColorSceneDraw {
                     mesh: m,
                     mvp: screen_fx_mvp,
                     cue: None,
@@ -2674,6 +2659,9 @@ impl PlayWindowApp {
             light_prims.extend(self.field_drop_shadow_prims());
             light_prims.extend(move_strip_prims);
             light_prims.extend(self.field_light_screen_prims());
+            // The PROT-0900 screen-effect widgets sort in the same pass, by
+            // their retail OT slots - the play page's single-list order.
+            light_prims.extend(self.screen_fx_screen_prims());
             screen_prims.extend(self.weapon_trail_screen_prims(r));
             // The world's one live full-screen fade (the summon band's two
             // flashes, the escape white-out), drawn through the same kernel

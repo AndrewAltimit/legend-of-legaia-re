@@ -996,95 +996,86 @@ impl PlayWindowApp {
         out
     }
 
-    /// Build this frame's screen-effect widget meshes (PROT-0900 family) plus
-    /// the move-FX afterimage streak.
+    /// This frame's PROT-0900 screen-effect widgets (iris mask, scripted
+    /// sprites, image panel, letterbox bands and feathers) as screen
+    /// primitives, for the pass the field fog sheets and attached lights sort
+    /// in - the browser play page's `screen_fx_prims` twin, a variant-for-variant
+    /// re-wrap of the shared [`legaia_engine_core::screen_fx::ScreenFxFrame::draw_quads`]
+    /// kernel.
     ///
-    /// The widget geometry - culling, UVs, colours and the retail ordering-table
-    /// slot each kind links at - comes out of the shared
-    /// [`legaia_engine_core::screen_fx::ScreenFxFrame::draw_quads`] kernel, so
-    /// this host and the browser play page cannot disagree about it. What is
-    /// host-local is only the mesh upload and the depth each OT slot maps to.
-    ///
-    /// The ordering is load-bearing and was wrong while the two flat families
-    /// shared one batch: retail links the mask's borders at OT `+0x1c` (farthest)
-    /// and the letterbox's bands at `+0x4` (nearest, in front of the sprites), so
-    /// a letterbox band drawn with the mask sits behind every sprite the same
-    /// scene spawns. The feather strips were not drawn at all.
+    /// Retail links the mask's black borders at OT `+0x1C` and a fog sheet at
+    /// `SZ >> 5`, so the sheets sort **under** the mask. Drawn as scene meshes,
+    /// the widgets landed before every screen primitive and the ending's fog
+    /// haze painted over its black credits card.
+    pub(super) fn screen_fx_screen_prims(
+        &self,
+    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+        use legaia_engine_core::screen_fx::ScreenFxQuad;
+        use legaia_engine_render::screen_overlay::{FlatQuad, ScreenPrim, ScreenQuad};
+        self.session
+            .host
+            .world
+            .presentation
+            .fx_frame
+            .draw_quads()
+            .into_iter()
+            .map(|q| match q {
+                ScreenFxQuad::Flat {
+                    xy,
+                    rgba,
+                    gouraud,
+                    semi_transparent,
+                    abr_mode,
+                    ot,
+                } => ScreenPrim::Flat(FlatQuad {
+                    xy,
+                    color: rgba,
+                    gouraud,
+                    semi_transparent,
+                    abr_mode,
+                    ot_index: ot,
+                    depth: None,
+                }),
+                ScreenFxQuad::Textured {
+                    xy,
+                    uv,
+                    clut,
+                    tpage,
+                    color,
+                    semi_transparent,
+                    ot,
+                } => ScreenPrim::Textured(ScreenQuad {
+                    xy,
+                    uv,
+                    clut,
+                    tpage,
+                    color,
+                    gouraud: None,
+                    semi_transparent,
+                    ot_index: ot,
+                    depth: None,
+                }),
+            })
+            .collect()
+    }
+
+    /// Build this frame's move-FX afterimage streak mesh. The PROT-0900
+    /// screen-effect widgets it used to batch with ride the screen-prim pass
+    /// ([`Self::screen_fx_screen_prims`]), where they sort against the fog
+    /// sheets by their retail OT slots.
     pub(super) fn build_screen_fx_meshes(
         &self,
         r: &legaia_engine_render::Renderer,
-    ) -> (Option<UploadedColorMesh>, Option<UploadedVramMesh>) {
-        use legaia_engine_core::screen_fx::ScreenFxQuad;
-
-        let mut screen_fx_solid = None;
+    ) -> Option<UploadedVramMesh> {
         let mut screen_fx_tex = None;
         let streak = self.move_fx_streak_quads(r);
-        let fx_quads = self.session.host.world.presentation.fx_frame.draw_quads();
-        if fx_quads.is_empty() && streak.is_empty() {
-            return (None, None);
+        if streak.is_empty() {
+            return None;
         }
-        // Retail OT slot -> ortho depth. Larger slot = farther, and the pass
-        // draws through `Mat4::orthographic_rh(0, 320, 240, 0, 0.0, 1.0)`, whose
-        // depth is `-z`; the scale keeps every slot inside the near/far range.
-        let ot_depth = |ot: u32| -(ot as f32) / 1024.0;
-
-        // --- flat quads ----------------------------------------------------
-        let mut pos: Vec<[f32; 3]> = Vec::new();
-        let mut colors: Vec<[u8; 3]> = Vec::new();
-        let mut idx: Vec<u32> = Vec::new();
-        for q in &fx_quads {
-            let ScreenFxQuad::Flat {
-                xy,
-                rgba,
-                gouraud,
-                ot,
-                ..
-            } = q
-            else {
-                continue;
-            };
-            let base = pos.len() as u32;
-            let z = ot_depth(*ot);
-            for (i, (x, y)) in xy.iter().enumerate() {
-                pos.push([*x as f32, *y as f32, z]);
-                let c = gouraud.map_or(*rgba, |g| g[i]);
-                colors.push([c[0], c[1], c[2]]);
-            }
-            idx.extend_from_slice(&[base, base + 1, base + 2, base + 1, base + 3, base + 2]);
-        }
-        if !idx.is_empty() {
-            match r.upload_color_mesh(&pos, &colors, &idx) {
-                Ok(m) => screen_fx_solid = Some(m),
-                Err(e) => log::warn!("screen-fx solid mesh upload: {e:#}"),
-            }
-        }
-
-        // --- textured quads (panels + sprites) + the afterimage streak ------
         let mut pos: Vec<[f32; 3]> = Vec::new();
         let mut uvs: Vec<[u8; 2]> = Vec::new();
         let mut cba_tsb: Vec<[u16; 2]> = Vec::new();
         let mut idx: Vec<u32> = Vec::new();
-        for q in &fx_quads {
-            let ScreenFxQuad::Textured {
-                xy,
-                uv,
-                clut,
-                tpage,
-                ot,
-                ..
-            } = q
-            else {
-                continue;
-            };
-            let base = pos.len() as u32;
-            let z = ot_depth(*ot);
-            for ((x, y), (u, v)) in xy.iter().zip(uv) {
-                pos.push([*x as f32, *y as f32, z]);
-                uvs.push([*u, *v]);
-                cba_tsb.push([*clut, *tpage]);
-            }
-            idx.extend_from_slice(&[base, base + 1, base + 2, base + 1, base + 3, base + 2]);
-        }
         // Move-FX afterimage streak. Unlike the widget quads these are not
         // axis-aligned rects - the packet carries four independent corners in
         // the retail `xy0..xy3` order (TL, TR, BL, BR) - so they are pushed
@@ -1113,6 +1104,6 @@ impl PlayWindowApp {
                 Err(e) => log::warn!("screen-fx textured mesh upload: {e:#}"),
             }
         }
-        (screen_fx_solid, screen_fx_tex)
+        screen_fx_tex
     }
 }
