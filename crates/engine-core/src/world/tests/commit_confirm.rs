@@ -67,6 +67,14 @@ fn the_screen_waits_for_the_last_member_then_begin_plays_the_round() {
     press(&mut world, PadButton::Cross);
     assert!(world.battle.command.is_none(), "Begin leaves the screen");
     assert_eq!(world.battle.flow, BattleFlowState::Idle);
+    // The Spirit turns play through the action SM's spirit band one after
+    // another, so the round runs over frames.
+    for _ in 0..3000 {
+        if (0..3).all(|s| world.battle.ap_gauges[s].spirit_charged) {
+            break;
+        }
+        world.tick();
+    }
     for slot in 0..3 {
         assert!(
             world.battle.ap_gauges[slot].spirit_charged,

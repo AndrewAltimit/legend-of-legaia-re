@@ -3510,6 +3510,47 @@ fn spirit_seed_bumps_the_latch_and_folds_its_draw() {
     }
 }
 
+/// The spirit band stages the committed clip, holds `0x20` steps, waits on
+/// the clip, then drains the `0x300` flush eight units a step before the Done
+/// band - and a timer that went negative earlier never strands it (the hold
+/// is level-triggered, not an edge).
+#[test]
+fn the_spirit_band_holds_its_clip_and_both_timers() {
+    use super::spirit::{SPIRIT_BAND_HOLD, SPIRIT_FLUSH_HOLD, SPIRIT_FLUSH_STEP};
+    let (mut ctx, mut host) = fresh(ActionCategory::Spirit, 0);
+    host.actors[0].queued_anim_b = 0x10;
+    ctx.frame_timer = -5;
+    ctx.action_state = ActionState::SpiritArtsEntry.as_byte();
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.action_state, ActionState::SpiritArtsSustain.as_byte());
+    assert_eq!(
+        host.actors[0].queued_anim, 0x10,
+        "the committed clip is staged"
+    );
+    // The anim system commits the clip.
+    host.actors[0].current_anim = 0x10;
+    let mut steps = 0;
+    while ctx.action_state == ActionState::SpiritArtsSustain.as_byte() && steps < 200 {
+        step(&mut host, &mut ctx);
+        steps += 1;
+        if steps == 40 {
+            // The clip ends: the flag clears and the pair settles on idle.
+            host.actors[0].flag_bits = ActorFlags(0);
+            host.actors[0].current_anim = 0;
+        }
+    }
+    assert!(
+        steps > SPIRIT_BAND_HOLD as usize,
+        "held for the clip, {steps}"
+    );
+    assert_eq!(ctx.action_state, ActionState::SpiritArtsFlush.as_byte());
+    let flush_steps = (SPIRIT_FLUSH_HOLD / SPIRIT_FLUSH_STEP) as usize;
+    for _ in 0..flush_steps {
+        step(&mut host, &mut ctx);
+    }
+    assert_eq!(ctx.action_state, ActionState::DoneCleanup.as_byte());
+}
+
 /// Nothing in the dispatcher clears `ctx[+0x19]`, so it is a per-battle latch
 /// and a second Spirit action counts on top of the first.
 #[test]
