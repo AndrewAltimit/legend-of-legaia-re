@@ -309,6 +309,7 @@ pub(super) fn summon_verify_alive<H: BattleActionHost + ?Sized>(
     // `ctx[+0x243]` and re-seeds the ambient base one step above the
     // floor, so the battle ambient climbs back from dark.
     ctx.gauge_rearm_latch = 0;
+    ctx.summon_staging_a = 0;
     ctx.ambient_base = crate::battle_ground_grid::AMBIENT_BASE_CAST_EXIT;
     transition(ctx, ActionState::SummonDone)
 }

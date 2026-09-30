@@ -453,6 +453,31 @@ mod tests {
         assert_eq!(world.battle_ambient_base(), [0x22; 3]);
     }
 
+    /// Through `0x33` / `0x34` the band's `ctx[+0x278] = 1` skips the store
+    /// once the base sits on the floor, so the grid holds the last pre-floor
+    /// ambient - what the summon captures read (`0x68..0x78`, base at the
+    /// floor) - and resumes storing when `0x35` clears the byte.
+    #[test]
+    fn the_band_latch_freezes_the_ambient_above_the_floor() {
+        let mut world = battle_world();
+        for _ in 0..48 {
+            world.tick_battle_animations();
+        }
+        world.battle_ctx.gauge_rearm_latch = 1;
+        world.battle_ctx.summon_staging_a = 1;
+        for _ in 0..30 {
+            world.tick_battle_animations();
+        }
+        assert_eq!(
+            vm::battle_ground_grid::ambient_base_rgb(world.battle_ctx.ambient_base),
+            [0x20; 3]
+        );
+        assert_eq!(world.battle_ambient_base(), [0x28; 3]);
+        world.battle_ctx.summon_staging_a = 0;
+        world.tick_battle_animations();
+        assert_eq!(world.battle_ambient_base(), [0x20; 3]);
+    }
+
     #[test]
     fn a_near_resting_party_body_draws_neutral() {
         let mut world = battle_world();

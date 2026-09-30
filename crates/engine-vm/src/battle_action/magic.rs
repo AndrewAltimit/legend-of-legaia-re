@@ -520,6 +520,7 @@ pub(super) fn magic_capture_finalize<H: BattleActionHost + ?Sized>(
     // summon band's `0x37` one: clear `ctx[+0x243]` and re-seed the ambient
     // base one step above the floor.
     ctx.gauge_rearm_latch = 0;
+    ctx.summon_staging_a = 0;
     ctx.ambient_base = crate::battle_ground_grid::AMBIENT_BASE_CAST_EXIT;
     transition(ctx, ActionState::DoneCleanup)
 }

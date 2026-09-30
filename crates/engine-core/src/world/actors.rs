@@ -591,7 +591,13 @@ impl World {
         let ctx = &mut self.battle_ctx;
         ctx.ambient_base = grid::ambient_base_step(ctx.ambient_base, ctx.gauge_rearm_latch != 0, 1);
         let rgb = grid::ambient_base_rgb(ctx.ambient_base);
-        if !grid::ambient_store_skipped(rgb, ctx.gauge_rearm_latch, self.casting.module_ctx_278) {
+        // `ctx[+0x278]` is one retail byte the port carries in two places:
+        // the summon band's own `summon_staging_a` (set at `0x32 -> 0x33`,
+        // `0x801E49F8`; cleared at the `0x34` exit) and the slot-B module's
+        // scratch copy from `0x35` on. The band's `1` is what freezes the
+        // ambient once the base reaches the floor through `0x33` / `0x34`.
+        let ctx_278 = ctx.summon_staging_a | self.casting.module_ctx_278;
+        if !grid::ambient_store_skipped(rgb, ctx.gauge_rearm_latch, ctx_278) {
             self.battle.ambient_stored = rgb;
         }
     }
