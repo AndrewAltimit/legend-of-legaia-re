@@ -342,6 +342,8 @@
                  title="Precise (free-angle) movement: the movement vector follows the camera azimuth at full angular resolution instead of retail's quantised 8-way remap (the native window's R toggle, persisted like its other options). Simulation knob - off keeps the retail decode.">
             <input type="checkbox" id="play-precise-move"> Precise movement
           </label>
+          <button id="play-camera-distance" type="button"
+                  title="Cycle the follow camera's distance preset (retail, far, farther) - the native window's T key, persisted with the other options. Framing only - the simulation never changes.">Camera: far</button>
         </div>
         <details class="play-battle-tools" id="play-battle-tools">
           <summary>Battle tools</summary>
@@ -715,6 +717,7 @@
       /* The precise-movement box reflects the engine's persisted option;
        * the battle tools are session-only and start at the engine defaults. */
       if (typeof window.__playSyncPreciseMove === 'function') window.__playSyncPreciseMove();
+      if (typeof window.__playSyncCameraDistance === 'function') window.__playSyncCameraDistance();
       setSaveUi(true);
       /* The disc is up: re-render the save bar so it decodes the party
        * portrait faces + card icons now that WASM + disc bytes are available. */
@@ -1838,6 +1841,25 @@
   preciseEl.addEventListener('change', () => { applyPreciseMove(); canvas.focus(); });
   window.__playApplyPreciseMove = applyPreciseMove;
   window.__playSyncPreciseMove = syncPreciseMove;
+
+  /* Camera-distance preset - the native window's `T`. The engine steps and
+   * persists the option (`OptionsState::cycle_camera_distance`); the button
+   * only shows the label it hands back. */
+  const camDistEl = document.getElementById('play-camera-distance');
+  function syncCameraDistance() {
+    const rt = window.__playRuntime;
+    if (rt && typeof rt.play_camera_distance === 'function') {
+      try { camDistEl.textContent = 'Camera: ' + rt.play_camera_distance(); } catch (e) {}
+    }
+  }
+  camDistEl.addEventListener('click', () => {
+    const rt = window.__playRuntime;
+    if (rt && typeof rt.play_camera_cycle_distance === 'function') {
+      try { camDistEl.textContent = 'Camera: ' + rt.play_camera_cycle_distance(); } catch (e) {}
+    }
+    canvas.focus();
+  });
+  window.__playSyncCameraDistance = syncCameraDistance;
 
   /* Battle tools - the native play-window's battle flags, exposed the way
    * the page already exposes the dev menu: session-only, nothing persisted,

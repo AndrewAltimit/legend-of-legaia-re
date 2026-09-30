@@ -718,9 +718,8 @@ impl PlayWindowApp {
             && state == ElementState::Pressed
             && !self.boot_ui.is_active()
         {
-            let next = self.session.camera.distance.cycle();
+            let next = self.options_state.cycle_camera_distance();
             self.session.camera.distance = next;
-            self.options_state.camera_distance = next;
             self.persist_and_apply_options();
             log::info!("camera: distance = {} (T cycles)", next.label());
             return;

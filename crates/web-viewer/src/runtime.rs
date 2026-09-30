@@ -285,6 +285,10 @@ pub struct LegaiaRuntime {
     /// has spawned - the browser twin of the native window's
     /// `summon_actor_slot`, kept so a second cast reuses the same seat.
     pub(crate) summon_actor_slot: Option<usize>,
+    /// A session-only precise-movement override (VR first-person), laid over
+    /// the persisted option by every options apply and never written to the
+    /// store. `None` = the player's own setting rules.
+    pub(crate) precise_movement_override: Option<bool>,
     /// Raw `SCUS_942.54` bytes (in the visitor's own browser, like the disc
     /// itself), kept for the battle render's per-stage tables: the backdrop
     /// second-copy mirror list (`DAT_80078B50`) and the ground-grid outdoor
@@ -469,6 +473,7 @@ impl LegaiaRuntime {
             battle_render_generation: 0,
             battle_fx: Default::default(),
             summon_actor_slot: None,
+            precise_movement_override: None,
             scus: None,
             sfx: Default::default(),
             #[cfg(target_arch = "wasm32")]
@@ -920,6 +925,24 @@ impl LegaiaRuntime {
             self.options_state.precise_movement = on;
             self.persist_and_apply_options();
         }
+        // A live session override (VR first-person) still rules the world.
+        if let Some(o) = self.precise_movement_override {
+            match self.scene_host.as_mut() {
+                Some(h) => h.world.locomotion.precise_movement = o,
+                None => self.world.locomotion.precise_movement = o,
+            }
+        }
+    }
+
+    /// Lay a session-only precise-movement state over the persisted option,
+    /// or lift it (`None`). The VR first-person drive needs free-angle
+    /// locomotion for the stick while it is up; it used to get it through
+    /// [`Self::set_precise_movement`], which persists, so leaving VR saved
+    /// "off" over whatever the player had chosen. The override is re-applied
+    /// by every options apply and never reaches the store.
+    pub fn set_precise_movement_override(&mut self, on: Option<bool>) {
+        self.precise_movement_override = on;
+        self.apply_options_side_effects();
     }
 
     /// Whether precise (free-angle) movement is on - the persisted option
@@ -2394,6 +2417,9 @@ impl LegaiaRuntime {
             // reduce flashing, battle Select Attack) through the one push the
             // native window re-asserts each tick.
             self.options_state.apply_to_world(&mut host.world);
+            if let Some(on) = self.precise_movement_override {
+                host.world.locomotion.precise_movement = on;
+            }
         }
         // The follow-camera distance preset, the same host knob the native
         // window re-asserts each tick (`window/event_handler/redraw.rs`).

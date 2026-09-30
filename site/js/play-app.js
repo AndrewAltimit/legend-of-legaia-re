@@ -771,8 +771,11 @@ void main() {
         this._vrDrive = null;
         if (this._vrPrecise) {
           this._vrPrecise = false;
-          if (typeof this.rt.set_precise_movement === 'function') {
-            this.rt.set_precise_movement(false);
+          /* Lift the session-only override: the player's own persisted
+           * setting rules again. (Writing `false` through the persisting
+           * setter used to save "off" over whatever they had chosen.) */
+          if (typeof this.rt.set_precise_movement_override === 'function') {
+            this.rt.set_precise_movement_override(undefined);
             this.rt.set_left_stick(0, 0);
           }
         }
@@ -794,11 +797,12 @@ void main() {
       let pad = 0;
       if (d.buttons.trigger || d.buttons.a) pad |= 0x4000;  /* Cross */
       if (d.buttons.b) pad |= 0x2000;                       /* Circle */
-      const hasPrecise = typeof this.rt.set_precise_movement === 'function'
+      const hasPrecise = typeof this.rt.set_precise_movement_override === 'function'
         && typeof this.rt.set_left_stick === 'function';
       if (hasPrecise) {
         if (!this._vrPrecise) {
-          this.rt.set_precise_movement(true);
+          /* Session-only: never persisted over the player's option. */
+          this.rt.set_precise_movement_override(true);
           this._vrPrecise = true;
         }
         const clamp = (v) => Math.max(-127, Math.min(127, Math.round(v * 127)));

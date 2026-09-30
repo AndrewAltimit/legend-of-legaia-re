@@ -3431,6 +3431,23 @@ loader spawns, seated by `engine-core::place_name_banner` from
 share. Still open, and on neither host: the world-map location labels
 ([`place-names.md`](../formats/place-names.md)).
 
+## Options, battle chrome and minigame HUDs: a third side-by-side pass
+
+A read of both hosts over the options knobs, the battle chrome and the
+minigame HUDs. Each closed row below is one engine call both hosts make now,
+or the deviating host adopting the other's behaviour.
+
+- **The camera-distance preset.** The native `T` stepped the preset and
+  persisted it; the page's export stepped only its camera, had no caller, and
+  the next options apply put the stored value back. Both step the option now
+  (`OptionsState::cycle_camera_distance`), put the returned preset on their
+  camera and persist, and the page carries a control for it.
+- **VR saved precise movement off.** The page's VR first-person drive turned
+  precise movement on and off through the persisting setter, so leaving VR
+  stored "off" over the player's own choice. It lays a session-only override
+  over the option now (`set_precise_movement_override`), which every options
+  apply re-asserts and nothing writes to the store.
+
 ## Adding coverage
 
 - a screen appears on the surface by existing; wire it on both hosts, or waive it;
