@@ -621,15 +621,21 @@ Second pass only when the submenu id is settled on the equip screen
   best-candidate id (`DAT_801EF0C0[i]`) differs from the equipped id: a
   change-arrow glyph `FUN_8003C310(2)` at `X+0x8E` (CLUT 0), then - for
   class-1 (equipment) items - a weapon-class pictogram at `X+0xA8` (class
-  from the equip-stat record `+7` bits `0x60`, remapped `{2->2, 1->1,
-  0->3}` into `DAT_801E43F4`) with the candidate name at `X+0xB8`
+  from the equip-stat record `+7` bits `0x60`, indexing `DAT_801E43F4` as
+  class 2 -> 0 weapon, 1 -> 1 helmet, 0 -> 2 armour, 3 -> 3 boot at
+  `0x801D24F8..0x801D251C`) with the candidate name at `X+0xB8`
   (non-equipment names land at `X+0xA8`). Below, the **stat-compare
   block**: 3 rows at `Y+0x48/+0x55/+0x62`; 3-char stat label STR
   (`0x801CE9A0/A4/A8`) at `X+0xA0`, current value (3-digit NUM, 999-clamp,
   `DAT_801EF08C/90/94`) at `X+0xC8`; when the preview value
   (`DAT_801EF0AC/B0/B4`) differs, an up/down arrow `FUN_8003C1F8(4|5)` at
   `X+0xE4` (CLUT 6 raised / CLUT 1 lowered) and the preview value at
-  `X+0xF0`.
+  `X+0xF0`. The preview value re-stages ink 7 first. Engine port:
+  `pause_screens::equip_screen_model` publishes `stat_compare` (the menu
+  block, five-slot walk, against the block with the Best Equipment picks
+  installed) and `best_changes` only on this row, and both hosts draw them
+  through `engine-ui::equip_screen_draws_for` +
+  `equip_best_change_sprites_for`.
 - **Cursor row 1..7**: the selected slot's equipped item id lands in
   `DAT_801E46B0` and, when non-zero, an item info panel draws at
   `(X+0x94, Y+0xC)`: `FUN_801D0F1C` (description text) over two
@@ -671,9 +677,11 @@ slot hand), Cross hands the pad to the slot browse, and the browse's cancel
 returns to the picker. The engine's session works in its own slot order and
 reads the record through `equip_session::engine_equip_from_record` (the
 per-character weapon byte to the weapon slot, the other byte of the pair to
-the Hand Guard row); its browse rows run in retail's order
-(`equip_session::BROWSE_SLOT_ORDER`: weapon, helmet, body, footwear, Goods x3)
-with the engine-only Hand Guard row last.
+the Hand Guard slot); its browse rows are retail's seven, in retail's order
+(`equip_session::BROWSE_SLOT_ORDER`: weapon, helmet, body, footwear, Goods x3).
+The Hand Guard slot - the per-character Ra-Seru byte - gets no row, because
+neither of retail's row resolvers (the weapon halfword and `DAT_801E43E8`)
+ever names that byte: the Equip screen neither shows nor changes a Ra-Seru.
 
 `FUN_801CF760` does **not** write equip byte `i` for armament `i`. It
 resolves the record offset first - armament `0` from the per-character

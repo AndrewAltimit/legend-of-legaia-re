@@ -344,6 +344,7 @@ fn equip_compose_input(
         candidate_names: &m.candidate_names,
         candidate_counts: &m.candidate_counts,
         stat_compare: &m.stat_compare,
+        best_changes: &m.best_changes,
         phase: match m.phase {
             Tag::SlotPicker => ui::EquipDrawPhase::SlotPicker,
             Tag::ItemPicker => ui::EquipDrawPhase::ItemPicker,

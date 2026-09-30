@@ -994,6 +994,7 @@ fn equip_compose_input(
         candidate_names: &m.candidate_names,
         candidate_counts: &m.candidate_counts,
         stat_compare: &m.stat_compare,
+        best_changes: &m.best_changes,
         phase: match m.phase {
             Tag::SlotPicker => legaia_engine_render::EquipDrawPhase::SlotPicker,
             Tag::ItemPicker => legaia_engine_render::EquipDrawPhase::ItemPicker,

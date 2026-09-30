@@ -354,14 +354,15 @@ the title picker, the card-boot save select) and a screen no root row routes
 to is script-entered (the casino prize exchange, `0x20`); both are kept with
 a `menu not seedable:` reason and counted as classified limits.
 
-What a like-for-like menu frame shows is the engine's. The Equip row's slot
-browse draws the engine-only Hand Guard row as an eighth row below retail's
-seven, the Best Equipment row has no candidate preview beside it, and the
-options screen carries the port's extra Key Config row. The Status and Equip character lists are the present
+What a like-for-like menu frame shows is the engine's. The options screen
+carries the port's extra Key Config row. The Status and Equip character lists are the present
 party (`DAT_80084594` over `0x80084598`,
 `field_menu_dispatch::status_snapshots` and `EquipScreenModel::party_row`), not
 every roster record - the New Game template seeds all four records, so a
 roster walk listed Noa, Gala and Terra beside a Vahn still travelling alone.
+Each row's name is the record's own `+0x2A7` display name
+(`field_menu_dispatch::roster_names`), so a save with a renamed hero shows
+that name, as retail does.
 
 ## Channels
 

@@ -459,6 +459,7 @@ fn compose_equip(ctx: &PauseMenuCtx<'_>, phase: EquipDrawPhase) -> PauseMenuDraw
             candidate_names: &candidate_names,
             candidate_counts: &[2, 1],
             stat_compare: &stat_compare,
+            best_changes: &[],
             phase,
             cursor: 1,
             active_slot: 0,

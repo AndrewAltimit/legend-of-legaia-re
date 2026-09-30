@@ -16,30 +16,41 @@ use crate::battle_stats::{
 use crate::equipment::{DiscEquipInfo, EquipSlot, engine_slot_disc_category};
 use legaia_engine_vm::status_effects::StatusKind;
 
-/// Number of equip slots the engine models (retail draws seven; the eighth
-/// is the engine's over-model row).
+/// Number of equip slots the engine models - one per record `+0x196` byte.
+/// Seven of them are browse rows; the eighth (the Ra-Seru byte, the engine's
+/// Hand Guard slot) is carried but never browsed, as in retail.
 pub const EQUIP_SLOTS: u8 = 8;
 
+/// Slot rows below Best Equipment in the slot-browse step: retail's seven
+/// (`DAT_801E43E8` / `DAT_801E43F4` are seven entries each).
+pub const BROWSE_SLOT_ROWS: usize = 7;
+
 /// Rows in the slot-browse cursor space: "Best Equipment" plus one row per
-/// [`EQUIP_SLOTS`]. Retail's own space is `8` (`li a1,0x8` into the cursor
-/// stepper at `0x801D9AFC`); the engine's extra equip slot adds one row.
-pub const SLOT_BROWSE_ROWS: u8 = EQUIP_SLOTS + 1;
+/// browsable slot - retail's own `8` (`li a1,0x8` into the cursor stepper at
+/// `0x801D9AFC`, and the shared tail's wrap at 8 after a candidate commit).
+pub const SLOT_BROWSE_ROWS: u8 = BROWSE_SLOT_ROWS as u8 + 1;
 
 /// The slot-browse row that runs the Best Equipment applier.
 pub const SLOT_BROWSE_BEST_ROW: u8 = 0;
 
 /// Engine [`crate::equipment::EquipSlot`] index each slot-browse row below
 /// Best Equipment shows, in row order: retail's seven rows - weapon, helmet,
-/// body armour, footwear, Goods x3, the pictogram codes `DAT_801E43F4` - and
-/// then the engine's own Hand Guard row, which retail has no row for.
-pub const BROWSE_SLOT_ORDER: [u8; EQUIP_SLOTS as usize] = [0, 1, 2, 4, 5, 6, 7, 3];
+/// body armour, footwear, Goods x3, the pictogram codes `DAT_801E43F4`.
+///
+/// The engine's Hand Guard slot (index `3`, the per-character Ra-Seru byte
+/// `0x8007B424`) has no row: retail's browse resolves rows through the
+/// weapon halfword and `DAT_801E43E8` = `00 01 00 04 05 06 07`, neither of
+/// which ever names the Ra-Seru byte, so the Ra-Seru is shown and changed
+/// nowhere on the Equip screen.
+pub const BROWSE_SLOT_ORDER: [u8; BROWSE_SLOT_ROWS] = [0, 1, 2, 4, 5, 6, 7];
 
 /// The engine slot browse row `row` (`1..`) opens.
 pub fn slot_for_browse_row(row: u8) -> u8 {
-    BROWSE_SLOT_ORDER[usize::from(row.saturating_sub(1)).min(EQUIP_SLOTS as usize - 1)]
+    BROWSE_SLOT_ORDER[usize::from(row.saturating_sub(1)).min(BROWSE_SLOT_ROWS - 1)]
 }
 
-/// The browse row (`1..`) showing engine slot `slot`.
+/// The browse row (`1..`) showing engine slot `slot`. The unbrowsed Hand
+/// Guard slot answers row `1`.
 pub fn browse_row_for_slot(slot: u8) -> u8 {
     BROWSE_SLOT_ORDER
         .iter()
@@ -1405,7 +1416,8 @@ mod tests {
             .iter()
             .map(|&s| engine[usize::from(s)])
             .collect();
-        assert_eq!(rows, [0xA2, 0xA1, 0xA0, 0xA4, 0xA5, 0xA6, 0xA7, 0xA3]);
+        // Retail's seven rows; the Ra-Seru byte (engine Hand Guard) has none.
+        assert_eq!(rows, [0xA2, 0xA1, 0xA0, 0xA4, 0xA5, 0xA6, 0xA7]);
         // Noa's weapon is byte 3.
         assert_eq!(engine_equip_from_record(record, 1)[0], 0xA3);
         for party in 0..3u8 {
@@ -1415,7 +1427,7 @@ mod tests {
             }
             assert!(seen.iter().all(|&b| b), "character {party}");
         }
-        for row in 1..=8u8 {
+        for row in 1..SLOT_BROWSE_ROWS {
             assert_eq!(browse_row_for_slot(slot_for_browse_row(row)), row);
         }
     }

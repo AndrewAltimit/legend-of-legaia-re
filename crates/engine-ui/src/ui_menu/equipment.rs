@@ -71,13 +71,17 @@ pub struct EquipScreenView<'a> {
     pub party_names: &'a [&'a str],
     /// Row of the character being equipped (hand-cursor row).
     pub party_cursor: usize,
-    /// Slot rows for the main window (engine order; retail draws 7).
+    /// Slot rows for the main window, in retail's browse order (7 rows).
     pub slots: &'a [EquipSlotRow<'a>],
     /// Candidate items for the active slot. Empty in `SlotPicker` phase.
     pub candidates: &'a [EquipCandidateRow<'a>],
     /// Stat-compare rows (current vs candidate preview). Empty in
     /// `SlotPicker` phase; up to 3 rows drawn (the retail block height).
     pub stat_compare: &'a [EquipStatRow<'a>],
+    /// The Best Equipment row's change list, `(armament row 0..=3, pick
+    /// name)` - one entry per armament whose best pick differs from what it
+    /// holds. Empty off the Best Equipment row.
+    pub best_changes: &'a [(u8, &'a str)],
     pub phase: EquipDrawPhase,
     /// Cursor row inside the active phase column.
     ///
@@ -189,6 +193,18 @@ pub fn equip_screen_draws_for(
         }
     }
 
+    // Best-Equipment change list (PORT: FUN_801d21c0, `0x801D2404..0x801D2578`):
+    // on armament row `i`'s slot line, the change arrow `FUN_8003C310(2)` at
+    // X+0x8E in CLUT 0, then (a sprite - [`equip_best_change_sprites_for`])
+    // the armament pictogram at X+0xA8, then the pick's name at X+0xB8 in
+    // CLUT 7. ASCII stand-in for the arrow glyph, like the rise/fall arrows.
+    let grey: [f32; 4] = [0.6, 0.6, 0.6, 1.0];
+    for &(row, name) in view.best_changes.iter().take(4) {
+        let y = my + (i32::from(row) + 1) * EQUIP_ROW_PITCH;
+        str_at(&mut out, "->", mx + 0x8e, y, grey);
+        str_at(&mut out, name, mx + 0xb8, y, white);
+    }
+
     // Stat-compare block (PORT: FUN_801d21c0, Best-Equipment pass):
     // rows Y+0x48/+0x55/+0x62.
     for (i, sr) in view.stat_compare.iter().take(3).enumerate() {
@@ -218,7 +234,8 @@ pub fn equip_screen_draws_for(
                 mx + 0xf0,
                 y,
                 3,
-                c,
+                // Retail re-stages ink 7 before the value (`0x801D262C`).
+                white,
             ));
         }
     }
@@ -288,9 +305,8 @@ pub fn equip_screen_draws_for(
 /// Pictograms sit at `main_pen + (0x10, 0xE*(row+1))`: the fixed icon-code
 /// array `DAT_801E43F4` (weapon fist / helmet / armor / boot / 3x Goods
 /// ring - the same 12x12 row-8 ICO records the status screen's equipment
-/// grid uses, drawn via `FUN_8002C488`). Retail shows 7 rows; the engine's
-/// 8-slot model adds a hand-guard row that reuses the fist pictogram and
-/// an extra Goods row.
+/// grid uses, drawn via `FUN_8002C488`). Retail shows 7 rows, and so does
+/// the port: the engine's Hand Guard slot (the Ra-Seru byte) is not browsed.
 ///
 /// The hand cursor (the load-screen pointing-finger record) marks the
 /// active party row at `party_pen + (-0xC, 0xE*row)` (FUN_801d2094's
@@ -328,8 +344,7 @@ pub fn equip_screen_sprites_for(
     };
 
     // Slot pictogram column, in the browse order the rows are drawn in:
-    // retail's `DAT_801E43F4` (weapon / helmet / armor / boot / Goods x3),
-    // then the engine's Hand Guard row reusing the fist.
+    // retail's `DAT_801E43F4` (weapon / helmet / armor / boot / Goods x3).
     let icons = [
         rects.icon_weapon,
         rects.icon_helmet,
@@ -338,7 +353,6 @@ pub fn equip_screen_sprites_for(
         rects.icon_goods,
         rects.icon_goods,
         rects.icon_goods,
-        rects.icon_weapon,
     ];
     let (mx, my) = main_pen;
     for (i, src) in icons.into_iter().take(n_slot_rows).enumerate() {
@@ -362,6 +376,51 @@ pub fn equip_screen_sprites_for(
     out
 }
 
+/// The Best Equipment row's armament pictograms: one per changed armament
+/// row, at `main_pen + (0xA8, 0xE*(row+1))` - the icon `FUN_801D21C0` picks
+/// from the pick's equipment-record `+7` class (`0x801D24D8..0x801D253C`:
+/// class 2 weapon, 1 helmet, 0 armour, 3 boot, each an index into the same
+/// `DAT_801E43F4` pictogram array the slot column draws). A Best Equipment
+/// pick for armament `i` carries armament `i`'s class by construction, so
+/// the row picks the icon.
+///
+/// PORT: FUN_801d21c0 (the change list's pictogram column)
+pub fn equip_best_change_sprites_for(
+    rects: &SaveMenuAtlasRects,
+    best_rows: &[u8],
+    main_pen: (i32, i32),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    let scale = stage_scale.max(1) as i32;
+    let icons = [
+        rects.icon_weapon,
+        rects.icon_helmet,
+        rects.icon_armor,
+        rects.icon_boot,
+    ];
+    let (mx, my) = main_pen;
+    best_rows
+        .iter()
+        .filter_map(|&row| {
+            let src = *icons.get(usize::from(row))?;
+            let (_, _, w, h) = src;
+            let sx = mx + 0xa8;
+            let sy = my + EQUIP_ROW_PITCH * (i32::from(row) + 1);
+            Some(SpriteDraw {
+                dst: (
+                    stage_origin.0 + sx * scale,
+                    stage_origin.1 + sy * scale,
+                    w * stage_scale,
+                    h * stage_scale,
+                ),
+                src,
+                color: [1.0, 1.0, 1.0, 1.0],
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -383,6 +442,7 @@ mod tests {
             slots,
             candidates,
             stat_compare: &[],
+            best_changes: &[],
             phase,
             cursor,
             active_slot,
@@ -441,6 +501,26 @@ mod tests {
             vec![my + EQUIP_ROW_PITCH * 2],
             "browse row 2 marks the second slot row"
         );
+    }
+
+    /// The Best Equipment row's change list lands on the changed armament's
+    /// own slot line: the arrow at X+0x8E, the pick's name at X+0xB8
+    /// (`FUN_801D21C0`, `0x801D2490` / `0x801D2564`).
+    #[test]
+    fn best_equipment_changes_draw_on_the_armament_row() {
+        let font = legaia_font::synthetic_for_tests();
+        let slots = [EquipSlotRow {
+            label: "Weapon",
+            current_name: "Iron Sword",
+        }];
+        let changes = [(2u8, "Chain Mail")];
+        let mut v = view(&slots, &[], EquipDrawPhase::SlotPicker, 0, 0);
+        v.best_changes = &changes;
+        let draws = equip_screen_draws_for(&font, &v, PARTY, LIST, MAIN);
+        let (mx, my) = MAIN;
+        let row_y = my + EQUIP_ROW_PITCH * 3;
+        assert_eq!(cursor_rows(&draws, mx + 0xb8), vec![row_y]);
+        assert_eq!(cursor_rows(&draws, mx + 0x8e), vec![row_y]);
     }
 
     /// The candidate list's row 0 is retail's Remove entry when the session
