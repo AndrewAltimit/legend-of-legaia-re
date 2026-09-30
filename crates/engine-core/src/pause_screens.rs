@@ -2114,6 +2114,10 @@ pub struct EquipScreenModel {
     pub confirm_label: Option<String>,
     /// Roster slot of the character being equipped.
     pub char_slot: u8,
+    /// The party-window row that character sits on (its place in the
+    /// present party, which is what [`Self::party_names`] lists) - the row
+    /// the hand cursor marks.
+    pub party_row: u8,
     /// Slot-picker cursor row, or `None` past the slot picker - what the
     /// sprite pass puts the second hand on.
     pub slot_cursor: Option<u16>,
@@ -2312,6 +2316,7 @@ pub fn equip_screen_model(
     session: &crate::equip_session::EquipSession,
     char_slot: u8,
     party_names: &[String],
+    present: &[u8],
     text: Option<&dyn Fn(u8) -> crate::field_menu_dispatch::ItemDisplayText>,
     compare: Option<EquipCompareCtx<'_>>,
 ) -> EquipScreenModel {
@@ -2468,7 +2473,21 @@ pub fn equip_screen_model(
     EquipScreenModel {
         info,
         compare,
-        party_names: party_names.to_vec(),
+        // The party window lists the present party (retail's
+        // `DAT_80084594`-long member list), not every roster record; an empty
+        // `present` keeps the roster order.
+        party_names: if present.is_empty() {
+            party_names.to_vec()
+        } else {
+            present
+                .iter()
+                .filter_map(|&s| party_names.get(usize::from(s)).cloned())
+                .collect()
+        },
+        party_row: present
+            .iter()
+            .position(|&s| s == char_slot)
+            .map_or(char_slot, |r| r as u8),
         slot_labels,
         slot_items,
         candidate_names,
@@ -3452,7 +3471,7 @@ mod tests {
                 equip_info: None,
                 item_effects: None,
             };
-            let model = equip_screen_model(&session, 0, &names, None, Some(ctx));
+            let model = equip_screen_model(&session, 0, &names, &[], None, Some(ctx));
             let compare = model.compare.expect("candidate step publishes window 25");
             assert_eq!(
                 compare.slot_row, want_row,

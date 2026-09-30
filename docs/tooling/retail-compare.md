@@ -31,6 +31,7 @@ way `mednafen-state vram-dump --display-crop` reads it.
 - [Retail observables](#retail-observables)
 - [The seeding model](#the-seeding-model)
 - [Battle states](#battle-states)
+- [Menu states](#menu-states)
 - [Channels](#channels)
 - [The image channel](#the-image-channel)
 - [The ratchet](#the-ratchet)
@@ -53,7 +54,7 @@ by the game-mode word and the scene label:
 | `world_map` | mode `0x03` on a kingdom overworld (`mapNN`) | yes |
 | `field_init` | mode `0x02`, the scene mid-load | no |
 | `battle` | mode `0x14` / `0x15` | yes ([below](#battle-states)) |
-| `menu` | mode `0x17` (title, save screens, the pause menu) | no |
+| `menu` | mode `0x17` (title, save screens, the pause menu) | the pause-menu screens ([below](#menu-states)) |
 | `minigame` | mode `0x19` | no |
 | `cutscene` | mode `0x1A` / `0x1B` (STR playback) | no |
 | `other` | anything else | no |
@@ -265,6 +266,41 @@ event, so the engine's word is the scene *entry*'s choice - `korb3` parks at
 `bgm` misses are this limit, not a stash defect; see
 [audio](../subsystems/audio.md#the-battle-sound-set-picks-the-fights-track).
 
+## Menu states
+
+A menu-class capture (mode `0x17`) names its screen in the menu overlay's
+sub-screen word `DAT_801E46A4` ([save-screen](../subsystems/save-screen.md#sub-screen-function-pointer-table)).
+The pause menu's screens are the root rows' routes - Items `0x05`, Magic
+`0x0E`, Equip `0x12`, Status `0x15`, Options `0x17`, Load `0x18`, Save
+`0x19` - plus the Equip row's two later steps, the slot browse `0x13` and the
+candidate list `0x14` (`0x12` itself is Equip's character picker). Those are
+seeded: the field seed runs (card-load resume, seat, settle), then the pause
+menu is driven through its own pad path - `Start`, `Down` onto the row,
+`Cross`, and for `0x14` `Down` past Best Equipment and `Cross` into the first
+slot's candidates, one edge every `MENU_PRESS_GAP` ticks. The headless side
+presses them into `BootSession`'s menu; the image side hands the same edges to
+`play-window` as a `--pad-script` after the card-load resume.
+
+The `menu` channel is 1 when the engine's menu holds the same sub-screen
+(`0x01` on the root list, the open row's id; the engine's Equip session reads
+as `0x13` on its slot list and `0x14` on its candidates). `mode` wants the engine in `Menu`; the field channels keep their
+meaning, since the menu opens over the seated field.
+
+A capture with the word clear is the title / boot family (the attract loop,
+the title picker, the card-boot save select) and a screen no root row routes
+to is script-entered (the casino prize exchange, `0x20`); both are kept with
+a `menu not seedable:` reason and counted as classified limits.
+
+What a like-for-like menu frame shows is the engine's. The engine's Equip row
+has no character-picker step: it opens on the slot browse, so a `0x12`
+capture scores `menu` 0 against `0x13`. Its slot rows run in the engine's
+slot order rather than retail's, and the options screen carries the port's
+extra Key Config row. The Status and Equip character lists are the present
+party (`DAT_80084594` over `0x80084598`,
+`field_menu_dispatch::status_snapshots` and `EquipScreenModel::party_row`), not
+every roster record - the New Game template seeds all four records, so a
+roster walk listed Noa, Gala and Terra beside a Vahn still travelling alone.
+
 ## Channels
 
 Each channel scores in `[0, 1]`; a state's score is the mean of its
@@ -283,6 +319,7 @@ measured channels.
 | `flags` | 1 - differing bits / bits set on either side, over the whole story-flag bitmap |
 | `inventory` | fraction of non-empty bag slots equal, slot for slot, plus gold |
 | `enemies` / `enemy_hp` / `battle_party` / `phase` | battle states only ([above](#battle-states)) |
+| `menu` | menu states only: 1 when the engine's pause menu holds retail's sub-screen ([above](#menu-states)) |
 | `image` | fraction of `8 x 8` blocks within tolerance ([below](#the-image-channel)) |
 
 `party` and `inventory` are seeded straight from the retail window, so on

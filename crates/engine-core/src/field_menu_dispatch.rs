@@ -900,14 +900,20 @@ pub fn active_leader_slot(world: &World) -> u8 {
     world.party.party_leader_slot.unwrap_or_default()
 }
 
-/// Build a [`StatusSnapshot`] for every roster member that has a non-zero
-/// max-HP. Engines whose roster carries placeholder zeros (i.e. before
-/// the slot is "claimed") will see those filtered out - matching the
-/// retail status panel which only shows the active party.
+/// Build a [`StatusSnapshot`] for every member of the **present party**
+/// (retail's `DAT_80084594` count over the `0x80084598` member list,
+/// [`World::present_party_list`]), in that list's order, skipping a record
+/// with a zero max-HP. The retail status list is the present party, not the
+/// roster: the New Game template seeds all four records, so a roster walk
+/// lists Noa, Gala and Terra beside a Vahn who is still travelling alone.
 pub fn status_snapshots(world: &World) -> Vec<StatusSnapshot> {
     let names = roster_names(world);
     let mut out = Vec::new();
-    for (i, member) in world.party.roster.members.iter().enumerate() {
+    for slot in world.present_party_list() {
+        let i = usize::from(slot);
+        let Some(member) = world.party.roster.members.get(i) else {
+            continue;
+        };
         let hms = member.hp_mp_sp();
         if hms.hp_max == 0 {
             continue;
@@ -1518,6 +1524,20 @@ mod tests {
         w.party.roster.members[2].set_hp_mp_sp(hms);
         let snaps = status_snapshots(&w);
         assert_eq!(snaps.len(), 2);
+    }
+
+    /// A lone traveller's status list is the lone traveller, even though
+    /// every roster record is populated (the New Game template seeds all of
+    /// them), and a non-identity party lists its members in party order.
+    #[test]
+    fn status_snapshots_list_the_present_party_only() {
+        let mut w = fresh_world();
+        w.install_present_party_list(vec![0]);
+        let slots: Vec<u8> = status_snapshots(&w).iter().map(|s| s.slot).collect();
+        assert_eq!(slots, vec![0]);
+        w.install_present_party_list(vec![2, 0]);
+        let slots: Vec<u8> = status_snapshots(&w).iter().map(|s| s.slot).collect();
+        assert_eq!(slots, vec![2, 0]);
     }
 
     #[test]

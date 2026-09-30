@@ -66,6 +66,15 @@ const BGM_ID: u32 = 0x8007_BAC8;
 const FOG_GATE: u32 = 0x8007_B854;
 /// `_DAT_801F348C`, the field party HUD's idle countdown (`FUN_801D0D38`).
 const HUD_COUNTDOWN: u32 = 0x801F_348C;
+/// `DAT_801E46A4`, the menu overlay's current sub-screen id
+/// (`docs/subsystems/save-screen.md`).
+const MENU_SUBSCREEN: u32 = 0x801E_46A4;
+/// The Equip row's three retail steps: the character picker (`0x12`,
+/// `FUN_801D98F0` - the id the root row routes to), the slot browse
+/// (`0x13`, `FUN_801D99F0`) and the candidate list (`0x14`, `FUN_801D9C14`).
+const MENU_EQUIP_PICK: u8 = 0x12;
+const MENU_EQUIP_SLOTS: u8 = 0x13;
+const MENU_EQUIP_CANDIDATES: u8 = 0x14;
 
 /// What kind of retail situation a state is, as the engine would have to be
 /// seeded to reproduce it.
@@ -97,16 +106,15 @@ impl StateClass {
     pub fn seedable(self) -> bool {
         matches!(
             self,
-            StateClass::Field | StateClass::WorldMap | StateClass::Battle
+            StateClass::Field | StateClass::WorldMap | StateClass::Battle | StateClass::Menu
         )
     }
 
     /// The reason a non-seedable class is not seeded.
     pub fn unseeded_reason(self) -> &'static str {
         match self {
-            StateClass::Field | StateClass::WorldMap | StateClass::Battle => "",
+            StateClass::Field | StateClass::WorldMap | StateClass::Battle | StateClass::Menu => "",
             StateClass::FieldInit => "scene mid-load; no settled frame to reproduce",
-            StateClass::Menu => "no pause-menu / title seeding path",
             StateClass::Cutscene => "STR playback is not a seeded state",
             StateClass::Minigame => "no minigame session seeding path",
             StateClass::Other => "boot / unknown mode",
@@ -199,7 +207,60 @@ pub struct RetailObs {
     /// Battle observables for a battle-class state; `Err` names why the
     /// state cannot seed a battle.
     pub battle: Option<std::result::Result<crate::retail_compare_battle::RetailBattle, String>>,
+    /// The pause-menu screen a menu-class state shows; `Err` names why the
+    /// state is not one the seed can drive to.
+    pub menu: Option<std::result::Result<RetailMenu, String>>,
 }
+
+/// A menu-class capture the seed can reproduce: a pause-menu screen, named
+/// by the root row whose confirm opens it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RetailMenu {
+    /// `DAT_801E46A4`.
+    pub subscreen: u8,
+    /// The root row whose confirm reaches it.
+    pub row: legaia_engine_core::field_menu::FieldMenuRow,
+    /// For an Equip-row screen, how many confirms past the root row it sits
+    /// (`0` character picker, `1` slot browse, `2` candidate list).
+    pub equip_depth: u8,
+}
+
+impl RetailMenu {
+    /// Classify a menu-class capture's sub-screen id. The pause menu runs
+    /// over a walkable scene with the id set; the title / boot family (the
+    /// attract loop, the title picker, the card-boot save select) holds it
+    /// clear, and a script-entered screen (the casino prize exchange,
+    /// `0x20`) is no root row's.
+    fn from_ram(ram: &[u8], scene: &str) -> std::result::Result<Self, String> {
+        use legaia_engine_core::field_menu::FieldMenuRow;
+        let subscreen = game_anchors::u8_at(ram, MENU_SUBSCREEN);
+        if subscreen == 0 {
+            return Err(format!(
+                "title / boot screen on {scene} (sub-screen 0x00); no title seeding path"
+            ));
+        }
+        let (row, equip_depth) = match subscreen {
+            MENU_EQUIP_PICK => (FieldMenuRow::Equip, 0),
+            MENU_EQUIP_SLOTS => (FieldMenuRow::Equip, 1),
+            MENU_EQUIP_CANDIDATES => (FieldMenuRow::Equip, 2),
+            _ => {
+                let row = FieldMenuRow::from_retail_subscreen(subscreen).ok_or_else(|| {
+                    format!("sub-screen 0x{subscreen:02X} is no pause-menu row's (script-entered)")
+                })?;
+                (row, 0)
+            }
+        };
+        Ok(Self {
+            subscreen,
+            row,
+            equip_depth,
+        })
+    }
+}
+
+/// Prefix of the reason a menu-class state carries when it is not a
+/// pause-menu screen the seed can drive to.
+pub const MENU_NOT_SEEDABLE: &str = "menu not seedable: ";
 
 fn rd16(ram: &[u8], va: u32) -> i16 {
     game_anchors::i16_at(ram, va)
@@ -221,6 +282,7 @@ impl RetailObs {
             ]
         });
         let class = StateClass::classify(game_mode, &scene, player.is_some());
+        let menu = (class == StateClass::Menu).then(|| RetailMenu::from_ram(ram, &scene));
         let camera = CameraObs {
             pitch: rd16(ram, CAM_ROT),
             yaw: rd16(ram, CAM_ROT + 2),
@@ -256,6 +318,7 @@ impl RetailObs {
             frame,
             battle: (class == StateClass::Battle)
                 .then(|| crate::retail_compare_battle::RetailBattle::from_ram(ram)),
+            menu,
         }
     }
 }
@@ -298,6 +361,10 @@ pub struct EngineObs {
     /// The engine's fog-pool gate (`World::fog.gate`).
     pub fog_gate: bool,
     pub save: legaia_save::SaveFile,
+    /// On a menu-class seed: the sub-screen the engine's pause menu reached
+    /// (the open row's retail id, `0x01` on the root list, `0x13` for the
+    /// Equip candidate step), `None` when no menu opened.
+    pub menu_subscreen: Option<u8>,
 }
 
 /// Records which track the field VM starts.
@@ -382,6 +449,10 @@ pub fn run_engine_with(
         session.tick()?;
         session.host.route_bgm_events(&mut director)?;
     }
+    let menu_subscreen = match &retail.menu {
+        Some(Ok(menu)) => drive_pause_menu(&mut session, menu)?,
+        _ => None,
+    };
     let world = &mut session.host.world;
     let player = world.player_actor_slot.and_then(|s| {
         world.actors.get(s as usize).map(|a| {
@@ -418,6 +489,71 @@ pub fn run_engine_with(
         bgm_id,
         fog_gate,
         save,
+        menu_subscreen,
+    })
+}
+
+/// Ticks between two scripted pad edges of a menu drive: long enough for
+/// the menu's open / hand-off beats, which swallow the edge that caused them.
+pub const MENU_PRESS_GAP: u64 = 12;
+
+/// The pad edges that reach `menu` from a settled field, as `(tick offset,
+/// button)` pairs from the first press: `Start`, `Down` until the root
+/// cursor (opening on row `0`) sits on the row, `Cross`. The engine's Equip
+/// row opens on the slot browse (it has no character-picker step), so the
+/// candidate list takes one more `Down` past Best Equipment and a `Cross`.
+pub fn pause_menu_presses(menu: &RetailMenu) -> Vec<(u64, legaia_engine_core::input::PadButton)> {
+    use legaia_engine_core::input::PadButton;
+    let mut out = vec![(0, PadButton::Start)];
+    let mut t = 0;
+    let mut press = |b: PadButton| {
+        t += MENU_PRESS_GAP;
+        out.push((t, b));
+    };
+    for _ in 0..menu.row.index() {
+        press(PadButton::Down);
+    }
+    press(PadButton::Cross);
+    if menu.equip_depth == 2 {
+        press(PadButton::Down);
+        press(PadButton::Cross);
+    }
+    out
+}
+
+/// Ticks a menu drive runs from its first press to the sample.
+pub fn pause_menu_drive_ticks(menu: &RetailMenu) -> u64 {
+    pause_menu_presses(menu).last().map_or(0, |p| p.0) + 2 * MENU_PRESS_GAP
+}
+
+/// Drive the headless session's pause menu to `menu` through its pad path
+/// ([`pause_menu_presses`], each a one-tick edge), settle, and read back the
+/// sub-screen it holds.
+fn drive_pause_menu(session: &mut BootSession, menu: &RetailMenu) -> Result<Option<u8>> {
+    use legaia_engine_core::equip_session::EquipState;
+    use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+    let presses = pause_menu_presses(menu);
+    for t in 0..=pause_menu_drive_ticks(menu) {
+        let mask = presses
+            .iter()
+            .filter(|p| p.0 == t)
+            .fold(0u16, |m, p| m | p.1.mask());
+        session.host.world.input.set_pad(mask);
+        session.tick()?;
+    }
+    session.host.world.input.set_pad(0);
+    Ok(match (&session.field_menu, &session.field_menu_sub) {
+        (None, _) => None,
+        (Some(_), None) => Some(0x01),
+        // The engine's Equip session is retail's slot browse and candidate
+        // list; it has no character-picker step (`0x12`).
+        (Some(_), Some(sub)) => Some(match sub {
+            FieldMenuSubsession::Equip { session, .. } => match session.state() {
+                EquipState::SlotPicker { .. } => MENU_EQUIP_SLOTS,
+                _ => MENU_EQUIP_CANDIDATES,
+            },
+            other => other.row().retail_subscreen(),
+        }),
     })
 }
 
@@ -478,6 +614,7 @@ pub const CHANNELS: &[&str] = &[
     "enemy_hp",
     "battle_party",
     "phase",
+    "menu",
     "image",
 ];
 
@@ -667,8 +804,29 @@ pub fn compare(
     );
     let want_mode = match retail.class {
         StateClass::WorldMap => SceneMode::WorldMap,
+        StateClass::Menu => SceneMode::Menu,
         _ => SceneMode::Field,
     };
+    if let Some(Ok(menu)) = &retail.menu {
+        put(
+            "menu",
+            f64::from(u8::from(engine.menu_subscreen == Some(menu.subscreen))),
+            format!(
+                "retail sub-screen=0x{:02X} ({:?}{}) engine={:?}",
+                menu.subscreen,
+                menu.row,
+                match (menu.row, menu.equip_depth) {
+                    (legaia_engine_core::field_menu::FieldMenuRow::Equip, 0) => {
+                        ", character picker"
+                    }
+                    (_, 1) => ", slot browse",
+                    (_, 2) => ", candidate list",
+                    _ => "",
+                },
+                engine.menu_subscreen.map(|s| format!("0x{s:02X}"))
+            ),
+        );
+    }
     put(
         "mode",
         f64::from(u8::from(engine.mode == want_mode)),
@@ -776,7 +934,9 @@ pub fn summarise(reports: &[StateReport]) -> CorpusSummary {
         if r.class.seedable() {
             if r.unseeded.is_empty() {
                 s.seeded += 1;
-            } else if r.unseeded.starts_with(BATTLE_NOT_SEEDABLE) {
+            } else if r.unseeded.starts_with(BATTLE_NOT_SEEDABLE)
+                || r.unseeded.starts_with(MENU_NOT_SEEDABLE)
+            {
                 // A battle capture whose RAM names why it cannot be seeded
                 // (the fight still loading, an empty cell) is a classified
                 // instrument limit, not a failure of the seeding path.
@@ -870,6 +1030,10 @@ fn run_one(opts: &RunOptions<'_>, entry: &CorpusEntry, scus: &[u8]) -> StateRepo
         run_battle(opts, entry, &retail, &mut report);
         return report;
     }
+    if let Some(Err(why)) = &retail.menu {
+        report.unseeded = format!("{MENU_NOT_SEEDABLE}{why}");
+        return report;
+    }
     let engine = match run_engine_with(opts.extracted, &retail, opts.order) {
         Ok(e) => e,
         Err(e) => {
@@ -883,6 +1047,16 @@ fn run_one(opts: &RunOptions<'_>, entry: &CorpusEntry, scus: &[u8]) -> StateRepo
         retail.player,
         retail.save.as_ref(),
     ) {
+        (Some(exe), Some(rf), seat, Some(save))
+            if matches!(retail.menu, Some(Ok(_)))
+                && crate::retail_compare_image::luma(rf)
+                    >= crate::retail_compare_image::DARK_LUMA =>
+        {
+            let Some(Ok(menu)) = &retail.menu else {
+                unreachable!()
+            };
+            menu_image(opts, exe, entry, &retail, menu, seat, save, rf, &mut report)
+        }
         (Some(_), Some(rf), _, _)
             if crate::retail_compare_image::luma(rf) < crate::retail_compare_image::DARK_LUMA =>
         {
@@ -931,6 +1105,60 @@ fn run_one(opts: &RunOptions<'_>, entry: &CorpusEntry, scus: &[u8]) -> StateRepo
     report.channels = ch;
     report.image = image;
     report
+}
+
+/// The pause-menu frame through `play-window`: the card-load resume and seat
+/// a field state takes, then the same pad edges the headless drive presses
+/// ([`pause_menu_presses`]) as a `--pad-script`, captured once the drive has
+/// settled.
+#[allow(clippy::too_many_arguments)]
+fn menu_image(
+    opts: &RunOptions<'_>,
+    exe: &Path,
+    entry: &CorpusEntry,
+    retail: &RetailObs,
+    menu: &RetailMenu,
+    seat: Option<[i16; 3]>,
+    save: &legaia_save::SaveFile,
+    rf: &Frame,
+    report: &mut StateReport,
+) -> Option<ImageScore> {
+    let first = crate::retail_compare_image::CAPTURE_TICK;
+    let script = pause_menu_presses(menu)
+        .iter()
+        .map(|(t, b)| format!("{}:{b:?}", first + t))
+        .collect::<Vec<_>>()
+        .join(",");
+    let extra = vec!["--pad-script".to_string(), script];
+    match crate::retail_compare_image::engine_frame_with(
+        exe,
+        opts.extracted,
+        &retail.scene,
+        seat.map(|[x, _, z]| (x, z)),
+        &extra,
+        &[],
+        first + pause_menu_drive_ticks(menu),
+        opts.out_dir,
+        &entry.label,
+        crate::retail_compare_image::FrameEntry::Resume(save),
+    ) {
+        Ok(ef) => {
+            if let Some(dir) = opts.out_dir {
+                let _ = crate::retail_compare_image::write_side_by_side(
+                    &dir.join(format!("{}.png", entry.label)),
+                    rf,
+                    &ef,
+                );
+            }
+            Some(crate::retail_compare_image::score(rf, &ef))
+        }
+        Err(e) => {
+            report
+                .detail
+                .insert("image".into(), format!("engine frame failed: {e:#}"));
+            None
+        }
+    }
 }
 
 /// Prefix of the reason a battle-class state carries when its RAM does not
@@ -1217,4 +1445,48 @@ pub fn resolve_dirs() -> (Option<PathBuf>, Option<PathBuf>, Option<PathBuf>) {
         .map(PathBuf::from)
         .find(|p| p.exists());
     (manifest, library, extracted)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use legaia_engine_core::field_menu::FieldMenuRow;
+    use legaia_engine_core::input::PadButton;
+
+    fn ram_with_subscreen(sub: u8) -> Vec<u8> {
+        let mut ram = vec![0u8; 0x20_0000];
+        ram[(MENU_SUBSCREEN & 0x1F_FFFF) as usize] = sub;
+        ram
+    }
+
+    /// The sub-screen word names the screen: a root row's route, one of the
+    /// Equip row's three steps, the title family (clear) or a script-entered
+    /// screen no root row routes to.
+    #[test]
+    fn a_menu_capture_is_classified_by_its_subscreen() {
+        let m = RetailMenu::from_ram(&ram_with_subscreen(0x15), "town01").unwrap();
+        assert_eq!((m.row, m.equip_depth), (FieldMenuRow::Status, 0));
+        let m = RetailMenu::from_ram(&ram_with_subscreen(0x13), "map01").unwrap();
+        assert_eq!((m.row, m.equip_depth), (FieldMenuRow::Equip, 1));
+        let m = RetailMenu::from_ram(&ram_with_subscreen(0x14), "map01").unwrap();
+        assert_eq!((m.row, m.equip_depth), (FieldMenuRow::Equip, 2));
+        assert!(RetailMenu::from_ram(&ram_with_subscreen(0), "opdeene").is_err());
+        assert!(RetailMenu::from_ram(&ram_with_subscreen(0x20), "koin1").is_err());
+    }
+
+    #[test]
+    fn the_drive_walks_the_root_cursor_onto_the_row() {
+        let m = RetailMenu::from_ram(&ram_with_subscreen(0x17), "town01").unwrap();
+        let presses = pause_menu_presses(&m);
+        let buttons: Vec<PadButton> = presses.iter().map(|p| p.1).collect();
+        let mut want = vec![PadButton::Start];
+        want.extend(std::iter::repeat_n(PadButton::Down, 4));
+        want.push(PadButton::Cross);
+        assert_eq!(buttons, want);
+        assert!(
+            presses
+                .windows(2)
+                .all(|w| w[1].0 - w[0].0 == MENU_PRESS_GAP)
+        );
+    }
 }
