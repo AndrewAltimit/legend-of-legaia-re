@@ -288,7 +288,9 @@ The hyper-arts drill at flow state `90` asks for `[High] [Low] [High]`
 
 The completion tail `0x801F7380` fires once `ctx[0x28A]` reaches `4`: it bumps
 the lesson to `5`, writes `ctx[0x06] = 0xC8` (`0x801F73DC`) and `ctx[0x07] =
-0xFF` (`0x801F73E8`) to close the fight, and emits the sign-off box.
+0xFF` (`0x801F73E8`) to close the command flow, emits the sign-off box and
+calls `FUN_801F7628` (`0x801F7460`). Those stores park the fight; they do not
+end it. What ends it is the countdown `FUN_801F7628` seeds.
 
 The tail opens on an idempotence guard the C flattens away. At
 `0x801F7390..0x801F73B4` an `sltiu ctx[0x28A], 5` skips ahead when the lesson is
@@ -417,13 +419,57 @@ its drain removes the caption and opens the round. The hold also selects the
 battle camera's Dialogue close-up, which is the `FUN_801D829C` aim above. A
 world with no caption text skips the hold.
 
-The other two stage-1 phases are not per-frame calls in the port. Phase `2`'s
-hook is the prompt machine, which the engine dispatches on each flow edge
-(`World::set_battle_flow`); its one-shot latch makes an edge call and a
-per-frame call equivalent. Phase `3` - the battle-teardown staging
-`FUN_80025358`, ticked once the 967 completion countdown (`ctx[+0x6B4]`,
-seeded by `FUN_801F7628`) runs out with the lesson counter at `4` and bumps
-`ctx[+0x289]` - is not reached: the 967 port has no completion countdown.
+#### How the sparring fight ends - the `ctx[+0x6B4]` countdown
+
+`FUN_801F7628` stores `ctx[+0x6B4] = rate * 360` (`x3`, `x15`, `x8` of the
+game-speed byte `DAT_1F80037D`, `0x801F7648..0x801F7660`), raises the hold
+`ctx[+0x6B0] = 1`, clears the pad masks and captures the cancel mask
+`_DAT_800846D4` into `ctx[+0x88C]`. Every hook call - dispatching, latched or
+suppressed by a box - then reaches the countdown section at `0x801F71F0`:
+
+```text
+801f71fc  lh   v0,0x6b4(a0)       ; zero -> skip the section
+801f7218  _sh  v0,0x6b0(a0)       ; hold = 1
+801f721c  lh   v0,0x6b2(a0)       ; a new press with no box up ...
+801f722c  sh   zero,0x6b4(a0)     ; ... zeroes the countdown
+801f7258  sw   zero,-0x478c(a0)   ; pad masks cleared (B874 / B938 / B850)
+801f7274  subu v0,v0,t2           ; countdown -= frame_step * rate
+801f7280  bgtz v0,0x801f7380      ; still positive -> keep holding
+801f7290  sltiu v0,v0,0x4         ; lesson < 4:
+801f72a4  _sw  v0,-0x478c(a0)     ;   re-inject the cancel mask as a press
+801f72c0  sb   v0,0x289(a2)       ; else: side-band phase + 1 (= 3)
+801f72f4  jal  0x80024e80         ;   fade (kind 2, 0x40 frames, to black)
+801f7318  sb   v1,-0x428f(t0)     ;   DAT_8007BD71 = 0xFE, the battle-end signal
+801f735c  sb   v0,-0x42a0(t0)     ;   DAT_8007BD60 |= 0x80, the survived bit
+801f7374  jal  0x800355f0         ;   drain the floating-element list
+```
+
+The rate cancels, so the hold is 360 vsyncs; a press skips it once the
+sign-off box has gone. The same routine serves the wrong-lesson rewinds,
+where the expiry's re-injected Cancel is what backs the player out of the
+rejected menu. On the completion path the expiry raises side-band phase `3`,
+whose arm ticks the teardown staging `FUN_80025358` and counts `ctx[+0x6CE]`
+up by the frame step; the frame driver `FUN_80046A20` leaves the battle once
+that halfword reaches `0x43` (`0x80046DAC`) with the staging's still-loading
+byte `ctx[+0xB]` clear, storing mode word `2` and clearing the stage id
+(`0x80046E74`). The results sequencer returns at once while the stage id is
+non-zero (`0x8004E5B8`), so no spoils are shown or credited, and MAIN INIT
+turns the survived bit into story flag 1.
+
+Engine port. Phase `2`'s hook is split: the dispatch runs on each flow edge
+(`World::set_battle_flow`; its one-shot latch makes an edge call and a
+per-frame call equivalent), and the per-frame half - the completion tail and
+the countdown section (`BattleTutorial::completion_tail` /
+`BattleTutorial::tick_countdown`) - runs off the side-band's `SparringHook`
+effect every battle frame. From the completion tail on, the side-band owns
+the frame (the flow byte `0xC8` is no `FUN_801D0748` case), the sign-off box
+is aged there, and the expiry raises phase `3`; `World::tick_battle_sideband`
+applies the `0x43` exit gate after the side-band pass, as the frame driver
+does, and exits through `World::finish_battle`. Only the completion tail arms
+the countdown in the engine: its rewinds reopen the command menu directly, so
+retail's 360-vsync hold after a wrong-lesson box and its synthetic Cancel are
+not reproduced. Not staged either: the `FUN_801D829C` camera aim at party
+seat 0 (`0x801F7368`).
 
 ### What the two boss-stage modules do (overlays 968 / 969)
 
@@ -451,7 +497,7 @@ data band (`0x801F73F8`, stepped by the scratchpad frame-delta byte
 | `1` | Spawns three more records (`0x72D0` / `0x7320` / `0x7388`), then a `FUN_801D829C` camera move framed on the seat's live `+0x34` / `+0x38` / `+0x46`, and sets the seat's tint blend `+0x0C = 0x1000`, its anim rate `+0x21D = 1` and `+0x36 = 0x600`. |
 | `2`..`4` | Each walks a different camera axis by the frame delta (`0x800840C0`, `0x800840BC`, the scroll trio `0x8007B790` / `0x92`) and spawns record `0x73A4` on every eighth frame, ending in its own `FUN_801D829C` framing. Phase `4` also sets `ctx[+0x243] = 1` and `ctx[+0x278] = 2`. |
 | `5` | Measures a string with `FUN_80035F04` and draws it centred through `FUN_8003541C` at `(0xA0 - width/2, 0x96)` - the boss-name banner - then sets `ctx[+0x278] = 3`. |
-| `6` | The hand-back: clears `ctx[+0x243]`, `ctx[+0x278]`, `ctx[+0x6D6]`, `ctx[+0x289]` **and the stage id `0x8007B64A`** that paged the module in, sets the seat's anim rate `+0x21D = 8`, writes flow state `ctx[+0x06] = 0x0B`, rebinds the two model records at `ctx[+0x106C]` / `ctx[+0x1070]`, runs two move-VM effect trees through `FUN_80021B04`, and pushes one rect through `FUN_80058490`. |
+| `6` | The hand-back: clears `ctx[+0x243]`, `ctx[+0x278]`, `ctx[+0x6D6]`, `ctx[+0x289]` **and the stage id `0x8007B64A`** that paged the module in, sets the seat's anim rate `+0x21D = 8`, writes flow state `ctx[+0x06] = 0x0B`, rebinds the two backdrop records at `ctx[+0x106C]` / `ctx[+0x1070]`, runs two move-VM effect trees through `FUN_80021B04`, and pushes one rect through `FUN_80058490` ([below](#the-arrival-re-dresses-the-arena)). |
 
 **Entry 969 - `FUN_801F69D8`, four phases.** No head table: the image opens
 straight on its prologue and branches four ways on the same `ctx[+0x289]`.
@@ -467,6 +513,33 @@ countdown (`0x801F70DC`) with the fade block at `0x801C9070`; phase `2` then
 blanks all four leading actor slots (`+0x04 = 0`, `+0x21C = 0xFF`) and sets
 both model records' `+0x78 = 0x1000`. Phase `3` waits out the countdown and
 calls `FUN_8003ED04(0)`.
+
+#### The arrival re-dresses the arena
+
+The evolved-Cort stage (`jouine`, variant 2, PROT 693) is a two-object shell,
+and battle init's object edit leaves the two backdrop actors drawing object 0
+only - a wall on texture page 12 through CLUT row 473, pink-brown on its idle
+palette. Phase `6` changes what the arena is, in three steps:
+
+- **The rebind** (`0x801F7148..0x801F7180`): for both records, `t = rec[+0x44]`
+  (the object table `[count, slot 0, slot 1, ...]`) and `t[+4] = t[+8]` -
+  slot 1 over slot 0, count untouched. Battle init's shift left slot 1
+  holding object 1, so from here on the shell draws **object 1 alone**: the
+  flesh shell on page 13 through CLUT `(32, 479)`, the dark-red veins.
+- **The effect trees**: `FUN_80021B04` over `0x80078740` and `0x80078760`.
+  The first seats a mode-4 [VRAM-rect scroller](field-ambient-fx.md#the-vram-rect-scroller-render-mode-4)
+  on `(0x340, 0, 0x3F, 0xBF)`, the flesh texels, stepping up one row per
+  period; the second animates the CLUT `(32, 479)` the flesh samples.
+- **The rect push**: `MoveImage` of the empty `16 x 64` strip at
+  `(0x340, 0xC0)` onto `(0x370, 0xC0)` - the ground grid's tile window, so the
+  procedural floor samples only transparent texels and the flesh shell is the
+  only ground.
+
+The engine ports the rebind and the rect push
+(`StageEffect::RebindBackdrop` / `StageEffect::MoveImage`); both hosts build
+the shell from `SceneHost::battle_stage_object_indices` and apply the move
+through `World::apply_battle_vram_moves`. The two effect trees are not staged,
+so the engine's flesh neither scrolls nor pulses.
 
 So 968 is the **arrival** staging (camera walk in, cue, banner, hand back to
 flow state `0x0B`) and 969 is the **form transition** (drop the seat to 1 HP,
@@ -844,6 +917,13 @@ differ from retail and are deliberate:
 - **Target confirm.** `CommandPhase::Confirmed` is the Attack path, which retail
   routes `0x5A → 0x28` for the next member or `0x5A → 0x6E` after the last; state `100` is the item window's own target step and has
   no engine hook point yet.
+- **Every commit meets the `110` validator.** The handler reads the category
+  off the active actor (`lbu v1,0x1de(v0)` at `0x801F70E0`), so each of the
+  three committing surfaces reaches it with its own byte: the Attack target
+  confirm with `3`, Spirit with `4`, and the item window's use with `1`
+  (`World::tick_battle_item_menu`, checked before the copy is consumed). An
+  item commit that skipped the validator left the Items lesson unaccepted
+  forever, and the spar never ended.
 - **Lesson counter.** Retail shares `ctx[+0x28A]` with the action SM, where the
   sparring fight's scripted `case 0xFF` bumps it. The engine has no script driver
   for that fight, so `BattleTutorial::pending_advance` bumps the lesson when the
@@ -1248,8 +1328,11 @@ this way and label them from the resolved transform.
 
 The rest of the stage scene in `legaia-engine play-window`: the phase-scripted
 camera (below), the flat tiled ground grid under the actors (the
-`func_0x801d02c0` grid + constant texture address above), a sky-blue clear so
-open horizon reads as sky, the real **assembled** battle party (see below),
+`func_0x801d02c0` grid + constant texture address above), a black clear -
+the draw environments' background colour is `(0, 0, 0)` in every battle
+capture, so a stage shell with no sky panel (a cave, a castle hall) shows black
+above it, never a sky (`engine-ui::battle_stage_clear`) - the real
+**assembled** battle party (see below),
 and animated monsters. Monster actors compose a half-turn so they face the
 party (`-Z` from the `+Z` seats - the retail Tetsu dialogue close-up shows the
 monster's face while the archive meshes rest facing `+Z`). The actors draw
@@ -1729,11 +1812,23 @@ A 4th party slot is not rendered: the runtime texture band + CLUT rows cover
 party slots 0..=2 only, so Terra (player file 866, idle stream 17 parts)
 has no relocation target.
 
-Both play hosts decode a member's form through one kernel,
-`engine-core::battle_party_form` (`PartyFormSources::load`, then
-`build_party_battle_form` per member, then `World::install_party_battle_form`
-for the idle, action clips, art bank and art records); a host adds only the
-GPU upload and its own posing. The kernel falls back to PROT 1204 when the
+The party's forms are an engine duty, not a host one: retail's loader
+assembles the party with the fight whether or not anything draws it, so
+`SceneHost::tick` runs `SceneHost::ensure_battle_party_forms` the tick a
+battle is up, once per fight (`BattleState::entry_serial`, bumped by
+`World::enter_battle`). Every session gets the idle, action clips, art bank
+and art records - the play hosts and headless drivers (the ladders, the soak
+harness) alike; without them a fight swings zero-length clips and matches no
+art. The kernel is `engine-core::battle_party_form`
+(`install_party_battle_forms`: `PartyFormSources::load`, then
+`build_party_battle_form` per member, then `World::install_party_battle_form`).
+Its VRAM writes go to a `VramWriteLog` rather than a live VRAM; a renderer
+reads `SceneHost::battle_party_forms`, replays the log into the battle VRAM
+it composes, and adds only the GPU upload, its own posing and the facial
+animator's registration. A session that drives a bare `World` with no
+`SceneHost` has no disc index, and is the one explicit injection point: it
+calls `install_party_battle_forms` itself after `World::enter_battle`. The
+kernel falls back to PROT 1204 when the
 player file carries no idle stream - an assembled mesh with no pose source
 draws every piece at its object origin - and overlays the battle palette on
 a fallback mesh's rows too. Monsters install their texture slot and idle
@@ -1978,14 +2073,21 @@ wipe and one plain-formation wipe on the `map01` overworld):
    cursor on CONTINUE** (framebuffer captured live at the wipe
    destination) - retail's game over is a silent return to the title /
    Continue flow, no GAME OVER art, no menu of its own.
-3. `DAT_8007BD60` bit `0x80` is a **party-survived latch**: seeded at
-   battle load (`FUN_8001822C` body, `0x80018670` / `0x8001869C`, next
-   to its `game_mode = 0x14` store), cleared by the `0x5A` end-of-action
+3. `DAT_8007BD60` bit `0x80` is a **party-survived latch** by the time
+   the battle ends. Before the fight the same bit is the scripted-fight
+   input (seeded by `FUN_8001822C`, `0x80018670` / `0x8001869C`, and by
+   the encounter reader for a non-zero `record[+0]`); battle init
+   `FUN_800513F0` folds it into `ctx[+0x287]` and clears it (`andi 0x7f`
+   at `0x80051A14`), which is why the sparring capture reads `0x01`
+   mid-fight. It is cleared again by the `0x5A` end-of-action
    wipe scans (0898 `0x801E65F0` / `0x801E6694`, beside their
-   `_DAT_8007BD2C` cause writes), then re-set on the surviving exits:
-   the victory reward path `FUN_80026018` (`ori 0x80` at `0x800260AC`)
-   and the successful-escape arm of the escape roll `FUN_801E791C`
-   (`0x801E802C`). A wipe is the only battle end that leaves it clear.
+   `_DAT_8007BD2C` cause writes), then re-set on the surviving exits: the
+   results sequencer's victory arm (`FUN_8004E568`, `ori 0x80` into
+   `0xa48(gp)` at `0x8004EDD8..0x8004EDE0`), the successful-escape arm of
+   the escape roll `FUN_801E791C` (`0x801E802C`), the sparring fight's
+   exit arm in PROT 0967 (`0x801F735C`) and the minigame exit
+   `FUN_80026018` (`0x800260AC`). A wipe is the only battle end that
+   leaves it clear.
    Captured live on both sides: a victory walks the byte to `0x80`
    before the mode-2 exit and returns to field even with a stale wipe
    cause `5` in `_DAT_8007BD2C` (the gate never reads the cause); the
@@ -2007,7 +2109,16 @@ wipe and one plain-formation wipe on the `map01` overworld):
    `0x8003B5A0`), before either path reaches the shared flag-0 clear. A
    scene script that runs on the post-battle reload can therefore test
    flag `1` to distinguish a won battle from a wiped one - the general
-   mechanism for scoring a scripted battle from the scene script.
+   mechanism for scoring a scripted battle from the scene script. The same
+   block also clears story flag 14 on every return and, when flag 28 is
+   set, flags 29 and 30 (`0x8003B530..0x8003B568`). The Tetsu sparring
+   capture pair shows the whole block at once: the flag bank's first four
+   bytes walk `81 02 80 00` in the fight (`v0_1_battle_start_tetsu`) to
+   `41 00 80 00` back in town01 (`v0_1_post_battle_tetsu_town`) - flag 1
+   up, flag 0 consumed, flag 14 cleared - with `DAT_8007BD60 = 0x81`.
+   Engine port: `engine-core::battle_return_flags`, run by
+   `World::finish_battle` for every ending, with the survived bit keyed on
+   the end cause not being a party wipe.
 6. Scripts can invoke the same handoff directly: `FUN_8003C7EC` is a
    helper twin of the inline gate body (same three stores), and the
    field-VM op `4C EA` (MENU_CTRL nibble-E sub-A, see
@@ -2109,7 +2220,7 @@ Combatant struct fields surfaced by helpers analysed so far:
 | `+0x13` | u8 | Active-character index (read from `_DAT_8007BD24+0x13`). |
 | `+0x1F` | u8 | Hit-radius / size byte. Used by `FUN_8004E2F0` (range). |
 | `+0x34` / `+0x38` | i16 | Current world X / Z (Y in the adjacent halfwords `+0x36`/`+0x3A`; `0` on the flat stage). |
-| `+0x3C` / `+0x40` | i16 | Stamped with the authored stage seat at setup (`FUN_800513F0` copies the seat here, then into `+0x34`/`+0x38`); read as the b-actor position by `FUN_8004E2F0`. Live captures show it diverging from the seat mid-battle, so its steady-state role (approach target / delta anchor) is not fully pinned. |
+| `+0x3C` / `+0x40` | i16 | The **body pair**: stamped with the authored stage seat at setup (`FUN_800513F0` copies the seat here, then into `+0x34`/`+0x38`), then rewritten every drawn frame by the pose decoder `FUN_8004998C` as the live pair plus the facing-rotated pose centroid ([battle-action.md](battle-action.md#where-an-action-leaves-its-combatants)). Read as the b-actor position by `FUN_8004E2F0` and on both sides of the separation pass. |
 | `+0x4A` | u8 | Magic-slot count. |
 | `+0x4C` | int* | Spell-entry pointer array (each entry: `[u8 spell/action id, …, u8 AGL (action) cost @ +0x74]`). |
 | `+0x14C..+0x152` / `+0x172..+0x174` / `+0x150..+0x158` | u16 | HP / MP / current / max - three-way mirror layout. |
@@ -4936,6 +5047,7 @@ All six commands - **Attack**, **Arts**, **Magic**, **Item**, **Spirit**, **Run*
 
 - **Spirit** raises the guard stance at the **commit** (`World::battle.guarding`, the engine model of the retail pending-action byte `+0x1DE == 4`, which the melee kernel's guard roll reads) - so it protects against every monster that dispatches ahead of the member - and lasts until the next round's sweep clears the category. The AP charge (`ApGauge::charge_spirit`, the retail Square-press +5) is the Spirit band's own, at the member's dispatch.
 - **Run** stamps category `5` on every party actor at the commit and begins the round at once (retail `0x32`, `0x801D1174..0x801D1184`); each member's dispatch then rolls the escape and arms the ported run band (`RunBegin`/`RunWait`/`RunEscape`): success tears the battle down `Escaped` (no loot, no game over, downed members floored alive at 1 HP), failure consumes the turn. The roll is the decoded `FUN_801E791C` formula - party `(SPD*3)>>1 + missingHP>>4` vs enemy `SPD + missingHP>>5`, two rand draws, Chicken Heart / Chicken King passives honoured (`battle_formulas::escape_roll`; see [battle-action.md](battle-action.md#spirit--run-in-the-live-command-menu)).
+  A scripted no-escape fight (`ctx[+0x287]`) is no exception at the prompt: `0x1E` and `0x32` never read the byte, so Run commits there as anywhere, and the roll - which tests `ctx[+0x287]` after its compare (`0x801E7B14`) - fails it, so the run band plays its failure arm and the turn is spent.
 
 The submenu hand-offs:
 
@@ -5196,7 +5308,7 @@ stated by the concrete writes.
 | `FUN_80046978` | Screen-flash colour submit: when trigger `gp[0x9D4]` is set, scales stored colour `gp[0x9D0]` by scratch byte `0x1F800393` and submits via `FUN_80024EE4`. The per-channel saturating scale is ported as `scale_rgb24`; the trigger + submit stay caller-side. |
 | `FUN_80050120` | Per-actor battle-presentation tick: walks the actor table `DAT_801C9370`, skips actors with no `+0x22C` sub-struct, and dispatches on the actor state byte `+0x21C` (11-entry jump table at `0x8001532C`). Arm 0 eases `+0x04` to neutral, then drains `+0x0C`, then clears `+0x21F`; arms `1`/`3`/`4`/`6..=10` ease toward fixed colours (dim / red / blue / magenta / soft red / green / yellow / white) with `+0x0C = 0x1000`; arm 2 is the defeat / capture fade to black. Ported as `engine-vm::battle_formulas::tint_sm_step` (arm table in its module docs), driven per frame by `World::tick_battle_impact_fx`. |
 | `FUN_80050F30` | 3×10-bit packed approach-to-target step: eases each 10-bit channel of a packed `u32` toward an 8-bit target (widened `<<2`) by at most `step_scale * DAT_1f800393 * 8` per call, clamping on the target without overshoot; only differing channels are rewritten (the byte-exact masking is why the top two bits survive an unchanged Z channel). A pure closed-form kernel with no table/hardware dependency; **ported** (with tests) as `battle_formulas::packed3_approach_target` / `approach_channel_clamped`. |
-| `FUN_80050BB8` | Pairwise battle-actor separation (push-apart): reads two actors' body radii `+0x22C→+0x58` and positions `+0x3C`/`+0x40`, projects the between-actor distance onto the angle from `FUN_80019B28` via the sin/cos LUTs `_DAT_8007B81C`/`DAT_8007B7F8`, and if the projected gap is below `(r1+r2)/6` nudges both actors' **live** position pairs `+0x34`/`+0x38` apart by `sin/cos >> 10` (the `+0x3C`/`+0x40` pair it measures is the seat). Ported as a faithful fixed-point mirror in `engine-vm::battle_separation::push_apart` (trig samples lifted to caller parameters, no Sony table bytes); driven every live battle frame by `World::tick_battle_separation`, on the line after the action-SM step - retail's `FUN_80046A20` call order. |
+| `FUN_80050BB8` | Pairwise battle-actor separation (push-apart): reads two actors' body radii `+0x22C→+0x58` and positions `+0x3C`/`+0x40`, projects the between-actor distance onto the angle from `FUN_80019B28` via the sin/cos LUTs `_DAT_8007B81C`/`DAT_8007B7F8`, and if the projected gap is below `(r1+r2)/6` nudges both actors' **live** position pairs `+0x34`/`+0x38` apart by `sin/cos >> 10` (it measures the per-frame body pair `+0x3C`/`+0x40`, so a nudged overlap clears). Ported as a faithful fixed-point mirror in `engine-vm::battle_separation::push_apart` (trig samples lifted to caller parameters, no Sony table bytes); driven every live battle frame by `World::tick_battle_separation`, on the line after the action-SM step - retail's `FUN_80046A20` call order. |
 | `FUN_80051078` | Separation driver: the 7×7 double loop over the actor table that calls `FUN_80050BB8(i, j)` for every ordered pair of living actors (`i != j`, both `+4 != 0`), so every actor is pushed off every other once per pass. Its caller is `FUN_80046A20`, which runs it **every battle frame** immediately after the action SM (`jal 0x801E295C` then `jal 0x80051078`), gated only on "battle live and not tearing down". Not a movement-only pass. |
 | `FUN_8005133C` | Per-actor status-marker + display-list primitive spawn: allocates a primitive on the ordered list `_DAT_1F8003A0` (type tag `0x1E1 + slot`, size `0xF0`, priority 1), fills it from `gp[0xA0C] + slot*0x1E0 + 0x894` via `FUN_800583C8`, then sets the four actor status-marker bytes `+0x220..+0x223 = 1` (the lingering-status visual flags near the `+0x21F` marker). Render + status write: scope row in `render_pipeline` - the primitive is a wgpu draw in the port, and the four status-marker bytes it sets ride the actor's status flags. |
 

@@ -237,16 +237,59 @@ pub fn drawn_object_indices_gated(object_count: usize, keep_object_1: bool) -> V
     std::iter::once(0).chain(2..object_count).collect()
 }
 
+/// [`drawn_object_indices_gated`] after a **slot-0 rebind**: the backdrop
+/// actors' object table with its first pointer overwritten by its second.
+///
+/// The actor's object table is `[count, slot 0, slot 1, ...]`; battle init's
+/// edit leaves the pointer array itself in place past the new count, so slot
+/// 1 still names object 1 on a two-object shell even though the count no
+/// longer reaches it. PROT 0968's hand-back (the evolved-Cort arrival,
+/// `0x801F7148..0x801F7180`) copies slot 1 over slot 0 on both copies
+/// (`lw v0,0x8(v1)` / `sw v0,0x4(v1)`) without touching the count - so a
+/// two-object shell then draws object 1 **alone**, the flesh shell whose
+/// texture the arrival's effect trees animate.
+pub fn drawn_object_indices_rebound(
+    object_count: usize,
+    keep_object_1: bool,
+    slot0_from_slot1: bool,
+) -> Vec<usize> {
+    if !slot0_from_slot1 {
+        return drawn_object_indices_gated(object_count, keep_object_1);
+    }
+    // The pointer array as retail leaves it: the shift runs `A[i] = A[i+1]`
+    // for `1 <= i < count - 1` over the full-length array.
+    let mut slots: Vec<usize> = (0..object_count).collect();
+    let count = if keep_object_1 || object_count == 0 {
+        object_count
+    } else {
+        for i in 1..object_count - 1 {
+            slots[i] = slots[i + 1];
+        }
+        object_count - 1
+    };
+    if object_count > 1 {
+        slots[0] = slots[1];
+    }
+    slots.truncate(count);
+    slots
+}
+
 /// The drawn-object subset of a backdrop TMD, as a standalone [`Tmd`] the
 /// ordinary mesh builders can consume.
 ///
 /// [`Tmd`]: legaia_tmd::Tmd
 pub fn drawn_objects_tmd(tmd: &legaia_tmd::Tmd) -> legaia_tmd::Tmd {
+    objects_tmd(tmd, &drawn_object_indices(tmd.objects.len()))
+}
+
+/// The backdrop TMD restricted to `indices`, in that order - the object
+/// list a backdrop actor walks ([`drawn_object_indices_rebound`]).
+pub fn objects_tmd(tmd: &legaia_tmd::Tmd, indices: &[usize]) -> legaia_tmd::Tmd {
     legaia_tmd::Tmd {
         header: tmd.header.clone(),
-        objects: drawn_object_indices(tmd.objects.len())
-            .into_iter()
-            .filter_map(|i| tmd.objects.get(i).cloned())
+        objects: indices
+            .iter()
+            .filter_map(|&i| tmd.objects.get(i).cloned())
             .collect(),
     }
 }
@@ -620,6 +663,25 @@ mod tests {
         assert_eq!(drawn_object_indices(2), vec![0]);
         assert_eq!(drawn_object_indices(1), vec![0]);
         assert!(drawn_object_indices(0).is_empty());
+    }
+
+    #[test]
+    fn the_arrival_rebind_draws_slot_one_in_slot_zero() {
+        // Two-object shell (the Cort flesh arena): object 1 alone.
+        assert_eq!(drawn_object_indices_rebound(2, false, true), vec![1]);
+        // Four-object dome: the shifted list `0, 2, 3` with slot 0 := slot 1.
+        assert_eq!(drawn_object_indices_rebound(4, false, true), vec![2, 2, 3]);
+        // Kept object 1: no shift, slot 0 := object 1.
+        assert_eq!(drawn_object_indices_rebound(2, true, true), vec![1, 1]);
+        // No rebind: the ordinary edit.
+        for n in 0..6 {
+            for keep in [false, true] {
+                assert_eq!(
+                    drawn_object_indices_rebound(n, keep, false),
+                    drawn_object_indices_gated(n, keep)
+                );
+            }
+        }
     }
 
     #[test]

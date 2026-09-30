@@ -49,7 +49,7 @@ Per-mode behaviour, all read directly from `FUN_801cf470`:
 |---|---|
 | `0` yosenn | Versus. Grading compares the human score `DAT_801d53cc` against score slot 2 `DAT_801d53d4`; a lower score clears the win flag. |
 | `1` hosenn | Versus. Grading compares `DAT_801d53cc` against score slot 1 `DAT_801d53d0`; a lower score clears the win flag. |
-| `2` setumei | Short how-to/demo: shorter song limit (`0x41dc` vs `0x64fc`), the per-beat dancer-position interpolation at the head of `FUN_801cf470` is suppressed (guarded `DAT_801d514c != 2`), and state 1 routes through the load-wait state 2. Grading clears the win flag when the score exceeds `300`. |
+| `2` setumei | Short how-to/demo: shorter song limit (`0x41dc` vs `0x64fc`), the [camera keyframe track](#the-camera-keyframe-track) at the head of `FUN_801cf470` is skipped, so the camera holds the entry's pose (guarded `DAT_801d514c != 2`), and state 1 routes through the load-wait state 2. Grading clears the win flag when the score exceeds `300`. |
 | `3` asobi | Free play: draws the personal-best panel (`FUN_801d2f38` + `FUN_801d32f8` over `_DAT_80084464`) and cycles a start voice via `_DAT_80084468`; the grading switch has **no** branch, so free play sets no win/lose flag. |
 
 The win/lose story flag is `0x50a` (a bit in the `DAT_80085758` flag bank). It is **set** on entry (state 1, `func_0x8003ce08(0x50a)`; `ce08` = set, `ce34` = clear, `ce64` = test - see `8003ce08.txt`/`8003ce34.txt`/`8003ce64.txt`) and **cleared on a loss** in grading (modes 0/1 when the human loses the score comparison; mode 2 when the score tops `300`). Downstream field script tests `0x50a`: set = passed, clear = failed. **Confirmed.**
@@ -446,8 +446,9 @@ Three further pieces of the retail frame run in the same host
   through `World::drain_minigame_sfx_cues`, which both hosts drain.
 - **Retail-coordinate HUD**: each frame the host lays the HUD out from
   `DanceGame::hud_draws` at its 320x240 stage positions (all three score
-  boxes, the rivals' rows included), with the rival gate raised in the two
-  versus modes as the `_DAT_8007B6D0` stand-in, and builds the full
+  boxes), with the rival gate `DanceGame::rival_hud_visible` - retail's dev
+  counter `_DAT_8007B6D0`, zero in play, so the rivals' gauge and track rows
+  stay off (see [the driver](#hud-render-driver-fun_801d231c)), and builds the full
   textured-quad frame (`DanceGame::hud_draw_quads` - the `FUN_801d2f38`
   emits with the `FUN_801d32f8` / `FUN_801d3e28` glyph-U patches applied).
   The sprite page is staged on entry (see [where the HUD's texels come
@@ -557,10 +558,64 @@ the scene-name save / restore has nothing to copy; everything else is real:
   VAB off the record's second stream id, and frame the hall through the same
   camera (`dance_venue_vp`) until the visitor drags the view.
 
-Still open: the tick's own camera keyframe track (`FUN_801cf470` interpolates
-the `0x8007B790` triple from a table around `0x801CF704..0x801CF7B8`) is not
-ported, so the port holds the entry's pose for the whole run; and the native
-window draws no dancer bodies over the hall.
+Still open: the native window draws no dancer bodies over the hall.
+
+### The camera keyframe track
+
+The entry's pose is only the camera's first key. The dance tick
+`FUN_801cf470` flies the camera through a keyframe track every frame, in a
+block ahead of its state switch (`0x801CF51C..0x801CF7D8`). `0x801CF704` is
+an instruction inside that block (the `mult` of the eye's `z` lerp), not a
+table: the data it reads lives in the overlay's rodata.
+
+**Gate.** The block runs while the dance state `DAT_801D5334` is non-zero,
+the dev counter `_DAT_8007B6D0` is zero and the mode `DAT_801D514C` is not
+`2` (`0x801CF4E4..0x801CF514`). The entry leaves the state at `1` unless the
+field-entry word `_DAT_8007B8B8` is zero, when it parks at state `0` - a
+four-row mode picker (`0x801CF810`), during which the camera holds too
+(`0x801CF19C..0x801CF1A8`). From state `1` on the camera moves through the
+count-in, the song and the results alike; the how-to demo holds the entry's
+pose throughout.
+
+**Timing.** Two counters, both seeded by the entry: the segment timer
+`DAT_801D533C` (`0`) and the key `DAT_801D5338` (`-1`)
+(`0x801CF348..0x801CF350`). Each frame the timer drops by the frame delta
+`0x1F800393`; when it goes negative it reloads `0x151` and the key steps,
+wrapping from `13` back to **`1`** (`0x801CF52C..0x801CF560`). So a segment
+lasts `0x152` frames - it is not locked to the `0x119`-frame beat - and
+key 0 plays only on the first pass.
+
+**Data.** The key selects two pose indices out of a `u32` table -
+`0x801D4440` in the qualifier (mode `0`), `0x801D4488` in every other mode -
+at `key` and `key + 1` (the latter wrapping to `1` as well). A pose index `k`
+names two 8-byte records `[i16 x, i16 y, i16 z, i16 pad]` at `0x801D43A0`:
+record `2k` is the angle trio, record `2k + 1` the eye-space trio. Both
+tables open on pose 0, whose records are the entry's own stores
+(`(0x3C, 0, 0)` and `(0, 0x62C, 0xFF0)`), so the first frame lands exactly on
+the staged pose.
+
+**Ease.** The weight is `ease[((0x151 - timer) << 10) / 0x151]` (the
+division is the `0x309E0185` multiply at `0x801CF638..0x801CF664`), out of a
+table the entry builds into BSS at `DAT_801D583C` from the SCUS sine table
+(`0x801CEF98..0x801CF054`): `(sin[0xC00 + 2i] + 0x1000) / 2` for the first
+512 entries, `sin[2i] / 2 + 0x800` for the next 512, then 32 entries of
+`0x1000` - a half-cosine rise from `0` to `0x1000`. The table is read back
+byte-exact off the `minigame_dance_noa` state, which holds the
+entry-built BSS. Each component is `a + (b - a) * w / 0x1000`, the product
+truncated toward zero; the eye trio is stored as words into `0x800840B8`, the
+angles as halfwords into `_DAT_8007B790`.
+
+Port: `dance_venue::DanceCameraTrack` (`from_overlay` for the tables and
+records, `dance_camera_ease_table` for the ease, `tick` for the block), held
+by the run (`DanceGame::advance_camera` / `camera_pose`), and
+`dance_venue::venue_camera_at` for the field-frame pose. `sync_dance_venue`
+advances it once per staged frame on the native window and the browser play
+page and re-frames the staged camera, which is what
+`camera_view::resolve_field_camera` returns and what the play page's
+`play_mg_dance_venue_vp` frames the hall through. The minigames page advances
+its run's track in `dance_tick`, which the page does not call during its
+count-in, so there the camera starts moving with the song rather than with
+the count-in.
 
 `DanceGame::press` returns the full event (Miss / Hit / Sequence with its
 points / **Groovy** with its landed flag, lock frames and remaining stock /
@@ -603,14 +658,11 @@ its mode and the parsed widget table, so `DanceGame::hud_draws` lays a frame out
 off the run's own live scores and gauges and `DanceGame::hud_quads` resolves the
 score-box frames through the emitter.
 
-Both are **inert**: no host calls either. The engine's dance HUD is a
-*single-dancer* font-text readout drawn at the host's own pens, so there is no
-three-box screen layout for the permutation to drive, no second or third
-dancer's score on screen, and no rival-HUD flag standing in for
-`_DAT_8007B6D0`; and the emitter additionally wants the overlay's `(512, 0)`
-HUD sprite page resident in VRAM, which nothing uploads. The output itself is
-sound - a disc-gated oracle pins both against the real widget table - so what
-is missing is the consumer, not the kernel.
+Both hosts lay the frame out through them every dance frame
+(`DanceGame::hud_frame_rows`, gated by `DanceGame::rival_hud_visible`); the
+native window also builds the textured quads (`hud_draw_quads`) against the
+HUD page the entry stages - see the Retail-coordinate HUD item above. A
+disc-gated oracle pins both against the real widget table.
 
 ## Assets: the overlay loads none - the entry path stages PROT 1230
 
@@ -886,6 +938,18 @@ frames, then the human's groove gauge (`FUN_801d3e28`) and beat track
 gauges and tracks at `(0xDC, 0x40)` / `(0xDC, 0xD4)` and `(0x50, 0x40)` /
 `(0x18, 0xD4)`. With that flag clear the rival rows are not drawn at all, even
 in the versus modes.
+
+The flag is the **dev counter**, and it is clear in every retail run. Its
+only writers disc-wide are the boot clear (`sw zero,0x3b8(gp)` at
+`0x80015F64`), the world-map dev menu's pad ring (`0x801EA00C` / `0x801EA030`,
+cleared at `0x801EABF8`) and the debug menu (`0x801CED54`, PROT 0971) - an
+enumeration over SCUS, every based overlay and every PROT entry in all
+reference forms (`find-address-word-refs.py`, `find-gp-relative-refs.py`).
+The dance tick reads it twice more as a dev switch: raised, it freezes the
+[camera keyframe track](#the-camera-keyframe-track) (`0x801CF4F8`) and skips
+the song-end test (`0x801D00B0`), so a qualifier with it up would never end.
+Retail's versus HUD is therefore the three score boxes plus the human's own
+gauge and track; `DanceGame::rival_hud_visible` returns that.
 
 Which score slot each screen box carries is a per-mode permutation, chosen so
 the human always lands in the centre box:

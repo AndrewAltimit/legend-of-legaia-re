@@ -10,7 +10,7 @@ use super::*;
 // (XP add, 5-byte), sub-6 (FUN_801D8280, 8-byte), sub-7
 // (camera animate, 7-byte), sub-8 (camera zoom, 10-byte),
 // sub-9 (clear b9c4, 2-byte), sub-0xA (call c7ec then halt),
-// sub-0xB (actor lookup + conditional jump, 5-byte), sub-0xC
+// sub-0xB (actor lookup + relative skip, 5-byte), sub-0xC
 // (capture FUN_801DDF48, 2-byte), sub-0xD (set ba66, 3-byte),
 // sub-0xE (snapshot 84570, 2-byte). Sub-0xF has no `case` arm
 // in the original and falls through to the default halt.
@@ -222,21 +222,30 @@ pub(super) fn op_4c_ne<H: FieldHost>(
                 next_pc: pc + header_size + 2,
             }
         }
-        // Sub-B: 5-byte `[4C, 0xEB, actor_id, target_lo, target_hi]`.
-        // Conditional actor lookup with embedded jump target.
-        // When the host resolves the actor, advance PC by 5;
-        // otherwise jump to absolute `LE_u16(operand+2..=operand+3)`.
+        // Sub-B: 5-byte `[4C, 0xEB, actor_id, skip_lo, skip_hi]` - "if the
+        // actor exists, run the next op, else skip it". Raw asm
+        // `0x801E34DC..0x801E34F4`: `s8 += 5` in the `jal 0x8003C83C` delay
+        // slot, return on a non-null context; on a miss `j 0x801E360C` with
+        // `a0 = operand + 2`, i.e. `FUN_8003CE9C` (signed LE16) then the
+        // shared `addiu v0,v0,-2; addu s8,s8,v0` skip exit - so the miss
+        // lands at `pc + 5 + i16 - 2`, a **relative** skip. The shipped
+        // uses pair it with the one op that follows (`4C EB 39 05 00` +
+        // `B1 39 03` in koin3's entry script skips exactly the 3-byte
+        // cross-context flag write when actor `0x39` is absent).
         0xB => {
             if operand + 4 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
             }
             let actor_id = bytecode[operand + 1];
+            let next_pc = pc + header_size + 4;
             match host.op4c_n_e_sub_b_actor_jump(actor_id) {
-                Some(()) => StepResult::Advance {
-                    next_pc: pc + header_size + 4,
-                },
+                Some(()) => StepResult::Advance { next_pc },
                 None => {
-                    let target = crate::field_helpers::load_u16_le(&bytecode[operand + 2..]);
+                    let skip = crate::field_helpers::load_u16_le(&bytecode[operand + 2..]) as i16;
+                    let target = next_pc as isize + isize::from(skip) - 2;
+                    if target < 0 {
+                        return StepResult::Unknown { opcode, pc };
+                    }
                     StepResult::Advance {
                         next_pc: target as usize,
                     }

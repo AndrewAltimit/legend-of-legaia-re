@@ -26,6 +26,12 @@ at `block + 0x86F + n*0x414`. See
 [`docs/subsystems/save-screen.md`](../subsystems/save-screen.md)
 for the wrapper around it.
 
+Which records form the party is not a property of the records: all four are
+populated from the New Game template on. The present party is the member
+count at `0x80084594` and the roster-id list at `0x80084598` (SC `+0x454` /
+`+0x458`) - see
+[what a card load restores](../subsystems/save-screen.md#what-a-card-load-restores).
+
 "Verbatim dump" is true of the bytes and not of the whole block. Editing
 a record in place also invalidates the block's additive checksum at
 `block + 0x1FFC`, which retail's loader compares before it will accept

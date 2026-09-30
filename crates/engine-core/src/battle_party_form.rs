@@ -18,7 +18,13 @@
 //! a fallback member's (empty) art-record list - changed nothing, because
 //! installing an empty list writes no record. This module is the one copy,
 //! with the native window's choices; the hosts keep only what differs by
-//! renderer (the GPU mesh upload and the per-frame posing).
+//! renderer (the VRAM replay, the GPU mesh upload and the per-frame posing).
+//!
+//! Building and installing the forms is the engine's battle-entry duty, not
+//! a host's: [`install_party_battle_forms`], run once per fight by
+//! `SceneHost::ensure_battle_party_forms` from `SceneHost::tick`, so a
+//! headless session fights with the same clips and arts a windowed one does.
+//! Its VRAM writes are recorded ([`VramWriteLog`]) for a renderer to replay.
 //!
 //! The rule that decides content versus placement is retail's, live-verified
 //! for all four characters: the **character** picks the content (player file,
@@ -56,7 +62,7 @@ impl PartyFormSources {
     /// Parse the fallback pack and its rest poses, and upload the eight
     /// Baka Fighter authoring atlases the fallback meshes sample at their
     /// declared rects. `None` when the pack does not parse.
-    pub fn load(index: &ProtIndex, vram: &mut legaia_tim::Vram) -> Option<Self> {
+    pub fn load(index: &ProtIndex, vram: &mut impl VramSink) -> Option<Self> {
         let mesh = index
             .entry_bytes(legaia_asset::battle_char_pack::PROT_ENTRY_INDEX)
             .ok()?;
@@ -86,8 +92,162 @@ impl PartyFormSources {
     }
 }
 
+/// Where a battle-form build writes its band pixels, palettes and fallback
+/// atlases: a live [`legaia_tim::Vram`], or a [`VramWriteLog`] that records
+/// them for a renderer to replay into its own battle VRAM. The build only
+/// ever writes - it never reads VRAM back - so a log is a complete record.
+pub trait VramSink {
+    fn upload_tim(&mut self, tim: &legaia_tim::Tim);
+    fn write_block(&mut self, fb_x: u16, fb_y: u16, w_words: u16, h: u16, bytes: &[u8]);
+    fn write_clut_row(&mut self, fb_x: u16, fb_y: u16, bytes: &[u8]);
+}
+
+impl VramSink for legaia_tim::Vram {
+    fn upload_tim(&mut self, tim: &legaia_tim::Tim) {
+        legaia_tim::Vram::upload_tim(self, tim);
+    }
+    fn write_block(&mut self, fb_x: u16, fb_y: u16, w_words: u16, h: u16, bytes: &[u8]) {
+        legaia_tim::Vram::write_block(self, fb_x, fb_y, w_words, h, bytes);
+    }
+    fn write_clut_row(&mut self, fb_x: u16, fb_y: u16, bytes: &[u8]) {
+        legaia_tim::Vram::write_clut_row(self, fb_x, fb_y, bytes);
+    }
+}
+
+/// One recorded VRAM write.
+#[derive(Debug, Clone)]
+enum VramWrite {
+    Tim(legaia_tim::Tim),
+    Block {
+        fb_x: u16,
+        fb_y: u16,
+        w_words: u16,
+        h: u16,
+        bytes: Vec<u8>,
+    },
+    ClutRow {
+        fb_x: u16,
+        fb_y: u16,
+        bytes: Vec<u8>,
+    },
+}
+
+/// The VRAM writes of a party battle-form build, in order, for a renderer
+/// to [`replay`](Self::replay) into the battle VRAM it composes (stage,
+/// monster pages, then these). A headless session never replays it.
+#[derive(Debug, Clone, Default)]
+pub struct VramWriteLog {
+    writes: Vec<VramWrite>,
+}
+
+impl VramWriteLog {
+    /// Apply every recorded write to `vram`, in recording order.
+    pub fn replay(&self, vram: &mut legaia_tim::Vram) {
+        for w in &self.writes {
+            match w {
+                VramWrite::Tim(t) => vram.upload_tim(t),
+                VramWrite::Block {
+                    fb_x,
+                    fb_y,
+                    w_words,
+                    h,
+                    bytes,
+                } => vram.write_block(*fb_x, *fb_y, *w_words, *h, bytes),
+                VramWrite::ClutRow { fb_x, fb_y, bytes } => {
+                    vram.write_clut_row(*fb_x, *fb_y, bytes)
+                }
+            }
+        }
+    }
+
+    /// Number of recorded writes.
+    pub fn len(&self) -> usize {
+        self.writes.len()
+    }
+
+    /// `true` when nothing was recorded.
+    pub fn is_empty(&self) -> bool {
+        self.writes.is_empty()
+    }
+}
+
+impl VramSink for VramWriteLog {
+    fn upload_tim(&mut self, tim: &legaia_tim::Tim) {
+        self.writes.push(VramWrite::Tim(tim.clone()));
+    }
+    fn write_block(&mut self, fb_x: u16, fb_y: u16, w_words: u16, h: u16, bytes: &[u8]) {
+        self.writes.push(VramWrite::Block {
+            fb_x,
+            fb_y,
+            w_words,
+            h,
+            bytes: bytes.to_vec(),
+        });
+    }
+    fn write_clut_row(&mut self, fb_x: u16, fb_y: u16, bytes: &[u8]) {
+        self.writes.push(VramWrite::ClutRow {
+            fb_x,
+            fb_y,
+            bytes: bytes.to_vec(),
+        });
+    }
+}
+
+/// A battle's whole party form set, built and installed once per fight by
+/// the engine ([`crate::scene::SceneHost::ensure_battle_party_forms`]) and
+/// kept for the renderers: the forms carry the meshes, rest poses and face
+/// tracks a host draws, [`Self::vram_writes`] the pixels it samples. By the
+/// time a host reads this, the clips, art bank and art records have already
+/// been moved onto the actors.
+#[derive(Debug, Clone, Default)]
+pub struct BattlePartyForms {
+    /// [`crate::world::BattleState::entry_serial`] of the fight these belong to.
+    pub battle_serial: u32,
+    pub forms: Vec<PartyBattleForm>,
+    pub vram_writes: VramWriteLog,
+}
+
+/// Build every present member's battle form and install it on its actor -
+/// the battle-entry duty every session owes, windowed or headless. The
+/// VRAM writes are recorded, not applied; a renderer replays them.
+///
+/// This is the injection point for a session that holds a [`World`] but no
+/// [`crate::scene::SceneHost`] (and so no disc index): it calls this itself
+/// after [`crate::world::World::enter_battle`]. A world with no disc behind
+/// it has no player files to assemble, and its party fights with no clips
+/// and no arts.
+///
+/// [`World`]: crate::world::World
+pub fn install_party_battle_forms(
+    index: &ProtIndex,
+    world: &mut crate::world::World,
+) -> BattlePartyForms {
+    let mut out = BattlePartyForms {
+        battle_serial: world.battle.entry_serial,
+        ..Default::default()
+    };
+    let party_count = usize::from(world.party.party_count).min(3);
+    if party_count == 0 {
+        return out;
+    }
+    let Some(sources) = PartyFormSources::load(index, &mut out.vram_writes) else {
+        log::warn!("battle party: PROT 1204 fallback pack unavailable; no battle forms");
+        return out;
+    };
+    for member in 0..party_count {
+        if let Some(mut form) =
+            build_party_battle_form(index, world, &sources, &mut out.vram_writes, member)
+        {
+            world.install_party_battle_form(&mut form);
+            out.forms.push(form);
+        }
+    }
+    out
+}
+
 /// Everything one party member's battle form carries, once its pixels and
 /// palette are in the battle VRAM.
+#[derive(Debug, Clone)]
 pub struct PartyBattleForm {
     /// Present-party ordinal (the actor slot and the texture band).
     pub member: usize,
@@ -136,7 +296,7 @@ pub fn build_party_battle_form(
     index: &ProtIndex,
     world: &crate::world::World,
     sources: &PartyFormSources,
-    vram: &mut legaia_tim::Vram,
+    vram: &mut impl VramSink,
     member: usize,
 ) -> Option<PartyBattleForm> {
     let cslot = world.party_roster_slot(member);
@@ -169,7 +329,7 @@ pub fn build_party_battle_form(
 fn assemble(
     index: &ProtIndex,
     sources: &PartyFormSources,
-    vram: &mut legaia_tim::Vram,
+    vram: &mut impl VramSink,
     raw: &[u8],
     equipped: &[u8; 5],
     member: usize,
@@ -332,7 +492,7 @@ fn fallback(sources: &PartyFormSources, member: usize, cslot: usize) -> Option<P
 /// mesh samples: Vahn by the byte-exact record parse, the others through
 /// the equipment-robust collector over the sampled columns.
 fn overlay_battle_palette(
-    vram: &mut legaia_tim::Vram,
+    vram: &mut impl VramSink,
     raw: &[u8],
     cslot: usize,
     form: &PartyBattleForm,
@@ -436,9 +596,10 @@ impl crate::world::World {
     /// the action-clip set, the art bank, and the art records the live arts
     /// input tokenizes (a fallback form has none).
     ///
-    /// Both play hosts call this after uploading the form's mesh; the facial
-    /// animator's registration ([`PartyBattleForm::face_tracks`]) stays with
-    /// the host that owns the band's live VRAM.
+    /// Called by [`install_party_battle_forms`] at battle entry, for every
+    /// session; the facial animator's registration
+    /// ([`PartyBattleForm::face_tracks`]) stays with the host that owns the
+    /// band's live VRAM.
     pub fn install_party_battle_form(&mut self, form: &mut PartyBattleForm) {
         let member = form.member;
         if let Some(anim) = &form.idle

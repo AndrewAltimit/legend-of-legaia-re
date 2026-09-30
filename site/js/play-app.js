@@ -891,6 +891,7 @@ void main() {
       this.renderer.clearScene();
       this.staticDraws = [];
       this._staticWindowStamp = undefined;
+      this._viewWindowStamp = undefined;
       this.player = null;
       this.npcs = [];
       this.tileMeshSlots = [];   /* board-owned actor slots with an uploaded mesh */
@@ -958,7 +959,7 @@ void main() {
        * floor-wave offset array (`rt.field_floor_wave_offsets()`, terrain then
        * placements), so a draw the loop below SKIPS - a mesh with
        * no renderable prims - does not shift every later draw's rung. */
-      const push = (slots, pos, rots, anims, rotsX, rotsZ, floorBase, placed) => {
+      const push = (slots, pos, rots, anims, rotsX, rotsZ, floorBase, placed, scales) => {
         for (let i = 0; i < slots.length; i++) {
           const anim = anims ? anims[i] : 0;
           let meshId, animRec = null;
@@ -983,7 +984,9 @@ void main() {
             meshId,
             x: pos[i * 3], y: -pos[i * 3 + 1], z: pos[i * 3 + 2],
             rotY: -(rots[i] & 0xFFF) * A2R,
-            scale: 1.0,
+            /* The bind record's render scale (`actor[+0x72]`, retail's
+             * case-5 `ScaleMatrix`) - 1.0 for nearly every placement. */
+            scale: (scales && scales.length > i) ? scales[i] : 1.0,
           };
           /* A placement with an authored X/Z tilt cannot go through the
            * yaw-only path: that builder's negated-yaw convention is a
@@ -997,7 +1000,7 @@ void main() {
           if (rx || rz) {
             draw.model = placementModelEuler(
               draw.x, draw.y, draw.z,
-              rx * A2R, (rots[i] & 0xFFF) * A2R, rz * A2R, 1.0);
+              rx * A2R, (rots[i] & 0xFFF) * A2R, rz * A2R, draw.scale);
           }
           /* World box for the occluder test, baked once (see `_frame`). */
           draw.box = placementWorldBox(aabb, draw);
@@ -1013,6 +1016,9 @@ void main() {
           /* Placed layer only: the index into the engine's per-placement
            * live mask (`_syncStaticWindow`). */
           if (placed) draw.placeIdx = i;
+          /* Terrain layer only: the index into the engine's visible-tile
+           * crop mask (`_syncViewWindow`). */
+          else draw.terrainIdx = i;
           this.staticDraws.push(draw);
           if (animRec) this.animProps.push(animRec);
         }
@@ -1024,7 +1030,8 @@ void main() {
         rt.field_placement_anim_ids(),
         rt.field_placement_rot_x ? rt.field_placement_rot_x() : null,
         rt.field_placement_rot_z ? rt.field_placement_rot_z() : null,
-        terrainSlots.length, true);
+        terrainSlots.length, true,
+        rt.field_placement_scales ? rt.field_placement_scales() : null);
       this._floorWaveLive = false;
 
       /* Player: geometry once, positions re-uploaded per frame from the pose. */
@@ -2006,6 +2013,29 @@ void main() {
       }
     }
 
+    /* Retail's visible-tile crop (FUN_801F7088 and the ground emitters it
+     * calls): only the cells the camera's tile window reaches are drawn. The
+     * engine answers through the same `field_view_window` kernel the native
+     * window asks - a per-terrain-draw mask plus a cropped ground index list -
+     * and the page re-reads both only when the rectangle's stamp moves. It
+     * applies at retail framing only (the camera-distance preset at Retail, no
+     * drag / zoom, and never under `F3`), so the default page draws the map
+     * whole. */
+    _syncViewWindow(rt) {
+      if (typeof rt.field_view_window_stamp !== 'function') return;
+      const stamp = rt.field_view_window_stamp(this.debugCamera);
+      if (stamp === this._viewWindowStamp) return;
+      this._viewWindowStamp = stamp;
+      const live = rt.field_terrain_live(this.debugCamera);
+      for (const d of this.staticDraws) {
+        if (d.terrainIdx === undefined) continue;
+        d.hidden = d.terrainIdx < live.length && live[d.terrainIdx] === 0;
+      }
+      if (this.renderer.setGroundIndices && rt.field_ground_quad_count() > 0) {
+        this.renderer.setGroundIndices(rt.field_ground_indices_cropped(this.debugCamera));
+      }
+    }
+
     _applyFloorWave(rt) {
       if (!rt.field_floor_wave_offsets) return;
       const wave = rt.field_floor_wave_offsets();
@@ -2284,6 +2314,9 @@ void main() {
       /* A camera re-centre this frame may have re-planned the windowed
        * static-object list. */
       this._syncStaticWindow(rt);
+
+      /* Retail's visible-tile crop may have moved with the camera. */
+      this._syncViewWindow(rt);
 
       /* A script may have re-bound an NPC's mesh this frame. */
       this._rebindLiveNpcModels(rt);
@@ -2677,10 +2710,10 @@ void main() {
       }
       /* Retail GTE NCLIP winding rejection, from the shared engine kernel
        * (`camera_view::nclip_cull_mode`) the native window's
-       * `set_backface_cull` also reads: armed only while the in-engine
-       * cutscene camera owns a non-overworld frame. The opdeene prologue's
-       * tableau shot sits INSIDE the scene's closed cave-wall backdrop mesh
-       * and NCLIP is what discards its near wall. */
+       * `set_backface_cull` also reads: armed for the whole field pass
+       * (retail culls every field mesh's back faces - a sky dome's outer
+       * shell, the opdeene prologue shot's near cave wall) and for a
+       * cutscene camera on any other non-overworld mode. */
       if (this.renderer.setNclipCull && typeof rt.play_render_nclip_mode === 'function') {
         let mode = 0;
         try { mode = rt.play_render_nclip_mode(); } catch (_) { mode = 0; }
@@ -3002,9 +3035,9 @@ void main() {
       return true;
     }
 
-    /* The clear colour is part of what a battle looks like, not a renderer
-     * preference: the stage dome is a FRONT HALF, so the band it leaves open
-     * above the horizon is what the player reads as sky. The engine picks it
+    /* The clear colour is part of what a frame looks like, not a renderer
+     * preference: retail black, battle included - a roofless stage shell
+     * shows black above it. The engine picks it
      * (`battle_stage_clear::scene_clear`, the same selector the native window
      * renders with) and this page only applies it.
      *

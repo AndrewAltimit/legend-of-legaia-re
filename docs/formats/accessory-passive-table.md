@@ -266,7 +266,12 @@ screen and in battle alike - retail runs both through `FUN_80035394`
 ([battle-formulas.md](../subsystems/battle-formulas.md#field-casts-pay-the-same-discounted-price)). The percent stat boosts apply inside
 `compute_battle_stats_with_passives` (percent of the **base** stat window,
 truncating division, retail clamp block) and the max-HP boost lands on the
-live battle actor in `World::seed_party_battle_stats`. Disc-gated coverage:
+live battle actor in `World::seed_party_battle_stats`. The global mask is
+derived state - it sits outside the save block's live-state window - so a
+load (`World::load_full`, both play hosts' card and LGSF paths) re-derives it
+from the loaded equipment rather than leaving it empty until the next battle
+entry; the field's readers of it (the encounter-rate modifiers, the
+passive-ability badge column) see the loaded accessories at once. Disc-gated coverage:
 `engine-core/tests/accessory_passives_disc.rs`.
 
 ## See also

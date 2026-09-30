@@ -213,7 +213,26 @@ impl World {
                     _ => None,
                 }
             };
-            if let Some(id) = staged_done {
+            // The same id staged again behind itself - a monster stream that
+            // repeats a byte (`[5, 5, 0]`) - reads as "nothing new" on the id
+            // pair alone; the stage latch is what says a byte is waiting.
+            // Retail's natural-end path calls `FUN_8004AD80` unconditionally
+            // (`0x80047B30..0x80047B58`), and with `+0x1DA == +0x1D9` that is
+            // the re-commit: the clip replays from its first keyframe with
+            // its hit index zeroed. Converging to idle instead dropped the
+            // second swing - and with it the parked-cursor hit that lands the
+            // accumulated total on live HP, leaving the bar drained and the
+            // SM parked in `0x51` for good.
+            // PORT: FUN_80047430 (`0x80047B30..0x80047B58`, the natural-end commit)
+            let restaged = staged_done.is_some_and(|id| {
+                let b = &self.actors[i].battle;
+                b.queued_anim == id
+                    && b.current_anim == id
+                    && b.flag_bits.has(vm::battle_action::ActorFlags::ADVANCE_DONE)
+            });
+            if restaged {
+                self.commit_staged_battle_anim_at_boundary(i);
+            } else if let Some(id) = staged_done {
                 let a = &mut self.actors[i];
                 a.battle_staged_anim = None;
                 a.battle
@@ -1288,6 +1307,25 @@ impl World {
         }
     }
 
+    /// Whether a host's per-actor mesh pass draws actor `slot`: it must carry
+    /// a TMD binding **and** be active (spawned). [`Self::init_scene_animations`]
+    /// pre-binds every slot `K` to scene TMD `K` so a later spawn finds its
+    /// mesh, which leaves the never-spawned slots bound, inactive and parked
+    /// at the origin. Retail has no such actors - `FUN_8001E890` registers the
+    /// scene TMDs in the pointer table without allocating any, and the render
+    /// dispatcher walks only the allocated list - so drawing them paints every
+    /// scene-pack mesh at world `(0, 0, 0)`.
+    ///
+    /// `synthetic_battle_camera` is the one exception the native window keeps:
+    /// a battle with no stage dome frames every bound body round the origin.
+    // REF: FUN_8001E890 (scene TMD registration - no actor allocation)
+    // REF: FUN_8001D140 (the render dispatcher's allocated-list walk)
+    pub fn actor_slot_drawn(&self, slot: usize, synthetic_battle_camera: bool) -> bool {
+        self.actors
+            .get(slot)
+            .is_some_and(|a| a.tmd_binding.is_some() && (a.active || synthetic_battle_camera))
+    }
+
     /// Bind actor `slot` to TMD index `tmd_idx` in `SceneResources::tmds`.
     /// Renderers use this binding to look up the right mesh when applying
     /// the actor's `pose_frame`. No-ops for out-of-range slots.
@@ -1496,6 +1534,41 @@ impl World {
             .unwrap_or(member)
     }
 
+    /// The field party list - retail's `0x80084598` member ids for
+    /// `DAT_80084594` entries - as the field VM's party ops see it.
+    ///
+    /// [`crate::world::PartyState::party_actor_slots`] carries it once a
+    /// save or a party op has installed it. Before that (a New Game, or a
+    /// save whose composition is the roster's identity order) the list is
+    /// the installed battle composition: `active_party` when set, else the
+    /// identity `0..party_count`.
+    pub fn present_party_list(&self) -> Vec<u8> {
+        if !self.party.party_actor_slots.is_empty() {
+            return self
+                .party
+                .party_actor_slots
+                .iter()
+                .flatten()
+                .copied()
+                .collect();
+        }
+        if !self.party.active_party.is_empty() {
+            return self.party.active_party.clone();
+        }
+        (0..self.party.party_count.min(4)).collect()
+    }
+
+    /// Install `list` as the field party list and the battle composition
+    /// together, as retail's party ops write the one list both read.
+    /// An empty list clears the field list and leaves the battle
+    /// composition as it was (no party of zero is ever fought with).
+    pub fn install_present_party_list(&mut self, list: Vec<u8>) {
+        self.party.party_actor_slots = list.iter().take(4).map(|&id| Some(id)).collect();
+        if !list.is_empty() {
+            self.set_active_party(list);
+        }
+    }
+
     /// Install a present-party composition: `slots[i]` = roster slot for
     /// battle ordinal `i` (the engine mirror of retail's present-party
     /// list at `0x8007BD10`). The list caps at the 3 on-screen party
@@ -1515,8 +1588,11 @@ impl World {
                 continue;
             };
             let hms = rec.hp_mp_sp();
+            let activate = self.party_mirror_activates(member);
             if let Some(a) = self.actors.get_mut(member) {
-                a.active = true;
+                if activate {
+                    a.active = true;
+                }
                 a.battle.hp = hms.hp_cur;
                 a.battle.max_hp = hms.hp_max;
                 a.battle.mp = hms.mp_cur;
@@ -1553,6 +1629,7 @@ impl World {
     // PORT: FUN_800513F0 (battle setup: seat stamping from the SCUS tables)
     pub fn enter_battle(&mut self, party_count: u8, monster_count: u8) {
         self.mode = SceneMode::Battle;
+        self.battle.entry_serial = self.battle.entry_serial.wrapping_add(1);
         self.battle.monster_flee_attempted = false;
         // The magic-level-up queue is a per-battle oracle record, not a host
         // hand-off: the banner the level-up raises is the battle message
@@ -1591,13 +1668,28 @@ impl World {
             // Monsters face the party row (-Z = heading 0x800).
             actor.battle.facing_angle = 0x800;
         }
+        // Every battle row past this fight's layout starts empty. The target
+        // rows, the validator and the round walk all read slots
+        // `party_count..party_count + 5` and count one as present by its
+        // battle stats, so a slot the last fight (or the field) left carrying
+        // stats seated a ghost enemy: a one-member party after a larger
+        // layout faced its real monster plus stale rows that never die.
+        // Retail's battle loader builds the actor table fresh per fight.
+        for actor in self.actors.iter_mut().take(8).skip(actor_count) {
+            actor.battle = Default::default();
+            actor.battle_monster_id = None;
+        }
         // Reset the battle ctx and seed at Begin via the public byte API to
         // avoid pulling battle_action::ActionState into world.rs imports.
         self.battle_ctx = vm::battle_action::BattleActionCtx::new();
         self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
         self.battle.end = None;
         // Effect pool is reused across scenes - reset to a fresh instance
-        // (per-battle the head/free-list rebuilds from scratch).
+        // (per-battle the head/free-list rebuilds from scratch). This is
+        // retail's battle-loader init call (stage `0xE`, `0x80052670`): a
+        // fresh pool is exactly the state `FUN_801DE914(0x1000, 0xA00)`
+        // leaves, so `Pool::init_head` carries `REPLACED-BY` naming this line.
+        // REF: FUN_801DE914
         self.effect_pool = vm::effect_vm::Pool::new();
         // Sparring fight: resolve the battle-stage id exactly as retail's
         // battle-entry tail does - default 0, and raise it to the tutorial
@@ -1622,6 +1714,9 @@ impl World {
         self.battle.sideband = Default::default();
         self.battle.arrival = Default::default();
         self.battle.form_transition = Default::default();
+        // Battle init registers a fresh backdrop pair; any rebind is gone.
+        self.battle.backdrop_rebound = false;
+        self.battle.vram_moves.clear();
         self.battle.stage_camera = None;
         self.battle.stage_banner = None;
         // The entity SM's battle-entry tail writes the stage id: `0` in the

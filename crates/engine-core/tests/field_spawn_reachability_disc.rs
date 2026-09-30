@@ -224,14 +224,24 @@ fn izumi_spawn_is_walkable_and_pad_moves_the_player() {
     // Budget in SIM ticks. Spawned-record contexts step on the 60 Hz
     // retail-frame sub-clock, so ~1.67 sim ticks buy one record frame - the
     // budget has to cover the record's frame cap in display frames.
+    //
+    // The record's dialogue waits on the confirm button, as a player's
+    // would, so the drain pages it with Cross on a press-2-release-14 duty
+    // cycle (pages are edge-triggered).
     let mut budget = 2600usize;
+    let mut f = 0usize;
     loop {
+        let page = host.world.dialogue_owns_input() && f % 16 < 2;
+        host.world
+            .set_pad(if page { PadButton::Cross.mask() } else { 0 });
         let _ = host.tick();
+        f += 1;
         budget -= 1;
         if budget == 0 || (budget <= 2550 && host.world.field_vm.helper_contexts.is_empty()) {
             break;
         }
     }
+    host.world.set_pad(0);
     let (x1, z1) = player_xz(&host);
     assert!(
         host.world.field_walk_component_size(x1, z1) >= MIN_COMPONENT_SUBCELLS,

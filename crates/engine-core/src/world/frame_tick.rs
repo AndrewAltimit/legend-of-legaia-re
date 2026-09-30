@@ -10,6 +10,21 @@
 
 use super::*;
 
+/// The scene a travel art's destination word names, or `None` for a miss.
+///
+/// A word inside the TOC's header rows (`< RAW_TOC_INDEX_OFFSET`) names a
+/// head define - `init_data 0`, `gameover_data 1` - not a scene. Retail's
+/// resolve scan would match it, but there is no field to load there, and the
+/// scene host's entry fails half-way through its reset. It is the word a
+/// region record with an all-zero return triple stores (station3's), so a
+/// Door of Light used there drops like any other unresolved word.
+fn travel_scene(names: &legaia_prot::cdname::IndexMap, word: u32) -> Option<String> {
+    if word < legaia_prot::cdname::RAW_TOC_INDEX_OFFSET {
+        return None;
+    }
+    names.get(&word).cloned()
+}
+
 impl World {
     /// Advance the wall-clock play-time counter by `delta_seconds`. Engines
     /// drive this from the frame loop's wall-clock delta. Mirrors the
@@ -632,6 +647,11 @@ impl World {
             self.party.party_leader_slot = talk
                 .saved_leader
                 .or_else(|| self.party.party_actor_slots.first().copied().flatten());
+            // A party op inside the talk re-installed the battle
+            // composition from the collapsed list; the restored list is the
+            // one the next battle reads.
+            let list = self.present_party_list();
+            self.install_present_party_list(list);
         }
     }
 
@@ -670,10 +690,10 @@ impl World {
         use crate::pause_screens::{MENU_EXIT_CODE_FIELD_ESCAPE, MENU_EXIT_CODE_WORLD_MAP_WARP};
         use crate::world::pause_session::PauseTravelTarget;
         if let Some(warp) = self.menu.pending_warp.take() {
-            match self.tables.scene_toc_names.get(&u32::from(warp.scene_id)) {
+            match travel_scene(&self.tables.scene_toc_names, u32::from(warp.scene_id)) {
                 Some(name) => {
                     let target = PauseTravelTarget {
-                        scene: name.clone(),
+                        scene: name,
                         tile_x: warp.menu_x,
                         tile_z: warp.menu_y,
                     };
@@ -702,10 +722,10 @@ impl World {
                 .region_setup
                 .and_then(|s| s.world_map_return)
             {
-                match self.tables.scene_toc_names.get(&u32::from(ret.map_word)) {
+                match travel_scene(&self.tables.scene_toc_names, u32::from(ret.map_word)) {
                     Some(name) => {
                         let target = PauseTravelTarget {
-                            scene: name.clone(),
+                            scene: name,
                             tile_x: ret.tile_x,
                             tile_z: ret.tile_z,
                         };
@@ -766,9 +786,10 @@ impl World {
     /// `FUN_80062004(*(i16*)0x80070536, (level << 15) >> 16, deadline | 1)`
     /// (`0x800267E4`). Those two extra cells land in [`crate::world::AudioState::sound_arm`] so a
     /// host driving the shim has the exact arguments; the engine has no live
-    /// volume ramp of its own, so the latched level is the cold-reset value
-    /// retail boots `_DAT_8007B910` to - `0xD7`, carried on
-    /// [`crate::new_game::GameStateColdReset::audio_level`].
+    /// field-mode volume ramp of its own, so the latched level is the value
+    /// retail's MAN loader rests `_DAT_8007B910` on at every scene load - the
+    /// configured level `_DAT_8008457C` ([`crate::world::AudioState::levels`]),
+    /// `0xD7` from a cold boot and a loaded save's own word after a load.
     ///
     /// PORT: FUN_800267A8
     /// REF: FUN_800267FC, FUN_80062004
@@ -778,7 +799,7 @@ impl World {
         self.audio.sound_arm = Some(crate::scus_leaf_kernels::TimedSoundArm::arm(
             0,
             deadline_vsyncs.max(0) as u32,
-            crate::new_game::GAME_STATE_COLD_RESET.audio_level,
+            self.audio.levels.configured_level,
         ));
     }
 
@@ -1583,8 +1604,13 @@ impl World {
                 // Per-tick: one Cross/Circle edge feeds at most one of the
                 // script's 0x4C dialog poll or the interaction probe.
                 self.dialog.input_consumed = false;
+                // A committed battle suspends every field script context
+                // until the fight returns (`Self::field_scripts_held_for_battle`).
+                let scripts_held = self.field_scripts_held_for_battle();
                 // Retail-frame paced (see `step_spawned_record_contexts`).
-                self.step_spawned_record_contexts();
+                if !scripts_held {
+                    self.step_spawned_record_contexts();
+                }
                 // Per-actor script channels (spawned with a cutscene
                 // timeline): each vignette actor's own placement script runs
                 // its frame slice - animate cues, scripted moves, flag
@@ -1600,12 +1626,20 @@ impl World {
                 // Since a sim tick IS a vsync, calling it every tick is
                 // retail-frame paced already; a `field_frame_step` gate would
                 // be a tautology here, not a correction.
-                self.step_field_channels();
+                // Re-read: a context stepped above may have just committed a
+                // fight (`3E FF <row>`), and nothing after it runs this frame.
+                let scripts_held = scripts_held || self.field_scripts_held_for_battle();
+                if !scripts_held {
+                    self.step_field_channels();
+                }
+                let scripts_held = scripts_held || self.field_scripts_held_for_battle();
                 // The scene system script (ctx `0xFB`) gets a whole retail
                 // frame slice, not one instruction: see
                 // [`Self::step_field_frame_slice`] for the three stop
                 // conditions and what one-op-per-tick cost.
-                self.step_field_frame_slice();
+                if !scripts_held {
+                    self.step_field_frame_slice();
+                }
                 // Field script actors the VM just spawned or is running: the
                 // op-0x43 scripted arcs (arc helper `FUN_801D5C08` + release
                 // watcher `FUN_801D5D60`) and the op-0x34 sub-1 attached

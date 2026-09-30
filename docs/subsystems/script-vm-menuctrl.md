@@ -338,7 +338,7 @@ Misc scene writes + emitter helpers. Ported sub-ops:
 - **8** (round 18, 10-byte camera zoom: four 16-bit LE values for `zoom_x`/`zoom_y`/`zoom_z`/`mode`, dispatching to the camera struct's default zoom triplet (`+0x4C/+0x4E/+0x50`) for `mode=0`, or per-mode actor flag writes for `mode=1/2/3`)
 - **9** (clear `_DAT_8007B9C4` then PC += 2 via `caseD_4`)
 - **0xA** (call `func_0x8003C7EC` then halt)
-- **0xB** (5-byte conditional actor lookup with embedded jump target - host returns `Some(())` to take the resolved-actor "pc + 5" path or `None` to jump to the absolute u16 at `operand+2..=3`; jump target read via [`load_u16_le`](script-vm.md#helper-functions))
+- **0xB** (5-byte guard `[4C EB actor lo hi]`, `0x801E34DC..0x801E34F4`: resolve `actor` through `FUN_8003C83C` - `0xF8` is the player, anything else a live context's `+0x50` id - with `s8 += 5` in the call's delay slot; a hit returns `pc + 5`, a miss takes the shared `0x801E360C` exit, `FUN_8003CE9C` (signed LE16) then `addiu v0,v0,-2; addu s8,s8,v0`, i.e. a **relative** skip to `pc + 3 + i16`. The shipped uses guard the one op that follows - koin3's entry script pairs `4C EB 39 05 00` with the 3-byte `B1 39 03` flag write. An earlier reading here took the operand as an absolute target, which sent every missed lookup to a record-header byte and parked the script there)
 - **0xC** (2-byte encounter step-counter reroll: `_DAT_8007B5FC = FUN_801DDF48()`, see [Encounter step-counter reroll](#encounter-step-counter-reroll-fun_801ddf48); no shipped script issues a clean `4C EC`)
 - **0xD** (set `_DAT_8007BA66`, 3-byte)
 - **0xE** (snapshot `_DAT_80084570 → _DAT_800845DC`, 2-byte).
@@ -748,8 +748,8 @@ When `ticks == 0` the value is written directly to the slot; when `ticks != 0` t
 | 0 | `ctx[+0x72]` | Plain s16 write or ramp. |
 | 1 | `ctx[+0x6A]` | Input is `(value >> 1).max(1)` (signed halve, floor 1). |
 | 2 | `ctx[+0x8E]` | When ramp == 0 and `flags & 0x20000000`, also writes `world_y = -value`. |
-| 3 | `ctx[+0x24]` *or* abs-jump | If `ticks == 0`, returns absolute PC = `s16(operand+1..3)`. Otherwise ramps `+0x24`. |
-| 4 | `ctx[+0x28]` *or* abs-jump | Mirror of sub-3. If `ticks != 0`, returns abs PC. Otherwise immediate write. |
+| 3 | `ctx[+0x24]` | Plain s16 write or ramp (`0x801E1234`). No jump - see below. |
+| 4 | `ctx[+0x28]` | Plain s16 write or ramp (`0x801E126C`). |
 | 5 | `actor[+0x44].{0x9A,0x94,0x96,0x98}` | 11-byte instruction (overrides the 6-byte default). |
 | 6 | `_DAT_8007B92C` | Gated by `_DAT_800845A8 == 0`; when set, the gate clears both 6 and 7. |
 | 7 | `_DAT_8007B930` | Sister of sub-6. |
@@ -761,6 +761,16 @@ When `ticks == 0` the value is written directly to the slot; when `ticks != 0` t
 | D | `_DAT_8007B910` | Same shape, value `(input * _DAT_8008457C) >> 12` - a fixed-point fraction of the configured **audio** level, so `0x1000` means 100% ([battle-action.md](battle-action.md#the-_dat_8007b910-ramps-are-an-audio-duck)). |
 | E / F | - | Inner switch's `default:` arm prints `"SUB_40_ERROR"` and routes via `switchD_801e00f4::default()` - halts at PC. |
 
+**Sub-3 and sub-4 do not jump.** Each arm tests the ticks word and either
+calls `FUN_8003CE9C` and leaves through `j 0x801E3624` with the slot store
+(`sh v0,0x24(s5)` / `sh v0,0x28(s5)`) in the delay slot, or tails into the
+ramp scheduler `0x801E205C`; `0x801E3624` is `move v0,s8`, the shared exit
+with the PC already `+6`. The decompiled C renders that exit as a `return` of
+the operand, which once read as an absolute jump (sub-3 on a zero tick word,
+sub-4 on a non-zero one). On the disc it would restart `taiku` P2[16] - Zora
+Castle's post-boss cutscene, whose `CC 25 43 00 00 00 00` zeroes channel
+`0x25`'s `+0x24` - at its first byte on every pass.
+
 Sub-9's tristate dispatch:
 
 | Bit `0x02000000` | Bit `0x01000000` | Path |
@@ -770,6 +780,14 @@ Sub-9's tristate dispatch:
 | set | (ignored) | `Delta` - write/ramp both target slot **and** delta global at `_DAT_8007BCAC` |
 
 **Sub-9 never jumps in the cutscene-dialogue overlay.** Its case 9 (`overlay_cutscene_dialogue_801de840.txt`, around the `_DAT_1f800394 & 0x1000000` test) selects a **write variant** and always advances 6 bytes; the bit-24 arm is the player-relative write above. The absolute-jump arm read from the field-overlay-0897 dump does not apply to the New-Game opening path (live probe: `opurud`'s entry script reaches its op-`0x44` at `+0x7A` with bit 24 set, unreachable under a jump arm). Engine: `legaia_engine_vm::field::Sub9State::PlayerRelative` replaces the earlier `AbsJump`.
+
+The ramp arms advance too. The nibble-4 head adds the 6 bytes before it
+dispatches (`addiu s8,s8,6` at `0x801E1138`), and a sub-9 ramp tails into
+the shared scheduler exit `0x801E205C` - `jal 0x8003C5F0`, then
+`j 0x801E3628` with `v0 = s8` - the exit every ramping sub takes. The ramp
+is a scheduled actor; the script does not wait on it. An engine that parks
+at the op re-runs it every frame, which is how `conc3` `P2[10]` sat on a
+`4C 49` until its timeline's safety cap and never set `0x3E5`.
 
 ### 0x4C nibble-D sub-4 / sub-5 - VRAM STP-bit set/clear
 

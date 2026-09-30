@@ -1,0 +1,61 @@
+# Full-game ladder baseline.
+#
+# The scores `crates/engine-shell/tests/full_game_ladder.rs` part B last
+# cleared over the story spine in `scripts/replays/full_game_spine.toml`.
+# Each number is asserted `>=`, so a drop fails the run and a rise is a
+# reviewed edit (the test prints the block to paste). Never raise a number
+# the run did not clear, and never lower one to make a red run green -
+# a drop is a finding.
+#
+# Segment keys name the milestone the segment ENDS at. Tiers:
+#   0 none        seeding failed or panicked
+#   1 loads       the seeded save lands in its scene
+#   2 enters      the entry script settles (control back, or the script left)
+#   3 progresses  the next milestone is reached by seated traversal + beats
+#   4 pad         the next milestone is reached with pad input only
+#
+# The headline counts are how many milestones a cold New Game reaches
+# contiguously at each tier; tier_sum is the sum over all segments.
+# See docs/tooling/full-game-ladder.md.
+
+[headline]
+contiguous_progresses = 35
+contiguous_pad = 3
+tier_sum = 117
+
+[segments]
+rim_elm = 4
+tetsu_spar = 4
+mist_rim_elm = 4
+hunters_spring = 3
+drake_castle = 3
+rim_elm_restored = 4
+vidna = 3
+ravine = 4
+snowdrift_cave = 3
+mt_rikuroa = 4
+caruban_defeated = 4
+drake_castle_revisited = 3
+voz_forest = 3
+zeto_dungeon = 3
+zeto_dungeon_late = 4
+sky_gardens = 3
+fire_path = 3
+mt_letona = 3
+ratayu = 3
+dohati_castle = 3
+sol_tower = 3
+sol_tower_b2 = 3
+usha_research = 4
+nivora = 3
+nivora_late = 3
+zora_castle = 3
+conkram_past = 3
+rogue_tower = 3
+jette_fortress = 3
+jette_fortress_late = 3
+noaru_valley = 3
+bio_castle = 3
+cort_chamber = 4
+ending = 4
+credits = 4

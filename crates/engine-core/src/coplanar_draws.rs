@@ -680,6 +680,8 @@ mod tests {
             anim_id: 0,
             anchor: (0, 0),
             floor: Default::default(),
+            cell: (0, 0),
+            cull_radius: 0,
         }
     }
 
@@ -800,6 +802,8 @@ mod probe_tests {
             anim_id: 0,
             anchor: (0, 0),
             floor: Default::default(),
+            cell: (0, 0),
+            cull_radius: 0,
         };
         let draws = vec![mk(45), mk(39)];
         let offs = coplanar_draw_offsets(&draws, &planes);

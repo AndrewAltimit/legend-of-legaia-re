@@ -305,9 +305,13 @@ impl MonsterAnimPlayer {
         (self.phase >> PHASE_FRAC_BITS) as i16
     }
 
-    /// Reset the loop cursor to the start of the idle clip.
+    /// Reset the cursor to the clip's first keyframe. A one-shot player that
+    /// had run out plays again from here (retail's re-commit of a still
+    /// queued clip zeroes the node cursor, `FUN_8004AD80`), so the
+    /// completion flag clears with it.
     pub fn rewind(&mut self) {
         self.phase = 0;
+        self.finished = false;
     }
 
     /// Advance one tick and return the interpolated per-object pose. A looping

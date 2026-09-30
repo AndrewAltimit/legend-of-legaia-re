@@ -127,7 +127,7 @@ pub struct ConditionalDest {
 
 /// A decoded `0x3F` named-scene-change destination:
 /// `(index, scene_name, entry_x, entry_z, dir)`.
-type SceneChangeDest = (i16, String, u8, u8, u8);
+pub type SceneChangeDest = (i16, String, u8, u8, u8);
 
 /// The first `0x3F` named-scene-change destination reached by a fall-through
 /// walk of partition-2 record `body` starting at `from_pc`.
@@ -154,11 +154,175 @@ fn first_scene_change_from(body: &[u8], from_pc: usize) -> Option<SceneChangeDes
     None
 }
 
+/// Where a partition-2 entrance record's control flow ends, under one
+/// assignment of its story-flag tests. See [`record_path_scene_change`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RecordPathEnd {
+    /// The path reaches this `0x3F` named scene change.
+    SceneChange(SceneChangeDest),
+    /// The path parks (a backward `0x26` - the records' `21 26 FE FF` idle
+    /// spin) or runs off the record without a scene change: the entrance
+    /// does nothing under these flags.
+    Closed,
+    /// The path meets a branch the walk does not model (an op-`0x42`
+    /// conditional jump, a `0x4D` box test, a `0x4E` compare, a picker), so
+    /// where it ends depends on more than the story flags.
+    Undecided,
+}
+
+/// Follow partition-2 record `body`'s control flow from `pc`, the way the
+/// field VM runs it on the crossing: an op-`0x70` `SysFlag.Test` jumps to its
+/// target when `flag_set(idx)` answers `true` and falls through otherwise, a
+/// forward `0x26 JMP_REL` is taken, and the first `0x3F` reached is the
+/// destination.
+///
+/// The entrance records branch *before* their scene change, and the
+/// linear-first `0x3F` is not the fall-through arm in general: `map03`'s
+/// Nivora entrance (P2[3]) tests `0x378`, and its taken arm (NILBOA2) sits
+/// ahead of the fall-through arm (NILBOA), which the test's own jump skips.
+/// Reading the first `0x3F` as the flag-clear destination installed NILBOA2
+/// on both arms, so Nivora was never enterable. Records also nest tests
+/// (`map03` P2[7]: `0x3F2` set closes it, else `0x4C8` selects CONCNOW or -
+/// on a further `0x6C2` test - CONCEND), which one flag and one alternative
+/// cannot express.
+// REF: FUN_801DE840 (op 0x70 TEST taken arm, op 0x26 JMP_REL)
+pub fn record_path_scene_change(
+    body: &[u8],
+    pc: usize,
+    flag_set: &dyn Fn(u16) -> bool,
+) -> RecordPathEnd {
+    record_path_walk(body, pc, flag_set).0
+}
+
+/// [`record_path_scene_change`] plus the system-flag writes (`0x5x` SET as
+/// `(true, flag)`, `0x6x` CLEAR as `(false, flag)`, in order) the path makes
+/// before it ends. A later test on a flag the path already wrote reads the
+/// write, as the live bank would.
+///
+/// The crossing replays these so the bank ends as the field VM would leave
+/// it at the `0x3F`: an object-bound overworld entrance (`map01` P0[6], the
+/// Garmel mouth) raises the place-name flag `2` only after its opening
+/// tests and jumps, where a leading-writes walk stops at the first non-flag
+/// op.
+// REF: FUN_801DE840 (op 0x50 SET, op 0x60 CLEAR, op 0x70 TEST, op 0x26 JMP_REL)
+pub fn record_path_walk(
+    body: &[u8],
+    pc: usize,
+    flag_set: &dyn Fn(u16) -> bool,
+) -> (RecordPathEnd, Vec<(bool, u16)>) {
+    use legaia_engine_vm::field_disasm::decode;
+    let mut writes: Vec<(bool, u16)> = Vec::new();
+    let mut pc = pc;
+    for _ in 0..4096 {
+        if pc >= body.len() {
+            return (RecordPathEnd::Closed, writes);
+        }
+        let Ok(insn) = decode(body, pc) else {
+            pc += 1;
+            continue;
+        };
+        let next = pc + insn.size.max(1);
+        match insn.info {
+            InsnInfo::SceneChange {
+                index,
+                entry_x,
+                entry_z,
+                dir,
+                ..
+            } => {
+                if let Some(name) = scene_change_name(body, &insn) {
+                    return (
+                        RecordPathEnd::SceneChange((index, name, entry_x, entry_z, dir)),
+                        writes,
+                    );
+                }
+                pc = next;
+            }
+            InsnInfo::SystemFlag {
+                kind: FlagKind::Test,
+                idx,
+                target: Some(target),
+                ..
+            } => {
+                let set = writes
+                    .iter()
+                    .rev()
+                    .find(|&&(_, f)| f == idx)
+                    .map_or_else(|| flag_set(idx), |&(s, _)| s);
+                pc = if set { target } else { next };
+            }
+            InsnInfo::SystemFlag {
+                kind: FlagKind::Set,
+                idx,
+                ..
+            } => {
+                writes.push((true, idx));
+                pc = next;
+            }
+            InsnInfo::SystemFlag {
+                kind: FlagKind::Clear,
+                idx,
+                ..
+            } => {
+                writes.push((false, idx));
+                pc = next;
+            }
+            InsnInfo::JmpRel { target, .. } => {
+                if target <= pc {
+                    return (RecordPathEnd::Closed, writes);
+                }
+                pc = target;
+            }
+            InsnInfo::CondJmp { .. }
+            | InsnInfo::BBoxTest { .. }
+            | InsnInfo::InventoryCmp { .. }
+            | InsnInfo::Picker { .. } => return (RecordPathEnd::Undecided, writes),
+            _ => pc = next,
+        }
+    }
+    (RecordPathEnd::Undecided, writes)
+}
+
+/// [`record_path_walk`] over the MAN record at **flat** index `flat` (the
+/// `[P0..P1..P2]` index space a `.MAP` object bind names - retail's
+/// `FUN_8003C8F0` with partition base 0), from its first opcode. `None` when
+/// the record span does not resolve.
+pub fn flat_record_path_walk(
+    man_file: &ManFile,
+    man: &[u8],
+    flat: usize,
+    flag_set: &dyn Fn(u16) -> bool,
+) -> Option<(RecordPathEnd, Vec<(bool, u16)>)> {
+    let (start, pc0, len) = flat_record_span(man_file, man, flat)?;
+    Some(record_path_walk(&man[start..start + len], pc0, flag_set))
+}
+
+/// [`record_path_scene_change`] over partition-2 record `record` of a MAN,
+/// from its first opcode. `None` when the record span does not resolve.
+pub fn partition2_record_path_scene_change(
+    man_file: &ManFile,
+    man: &[u8],
+    record: usize,
+    flag_set: &dyn Fn(u16) -> bool,
+) -> Option<RecordPathEnd> {
+    let (start, pc0, len) = partition_record_span(man_file, man, 2, record)?;
+    Some(record_path_scene_change(
+        &man[start..start + len],
+        pc0,
+        flag_set,
+    ))
+}
+
 /// Decode partition-2 record `record`'s scene-change destination(s): the
-/// primary (fall-through) `0x3F`, plus - when the record branches to a *second*
-/// `0x3F` on an op-`0x70` story-flag test - the flag id and the flag-SET
-/// alternative. Returns `None` when the record is out of range or carries no
-/// `0x3F` at all.
+/// primary (every story-flag test clear) `0x3F`, plus - when the record's
+/// first op-`0x70` test selects a *different* `0x3F` - the flag id and the
+/// flag-SET alternative. Returns `None` when the record is out of range or
+/// carries no `0x3F` at all.
+///
+/// Both arms are followed as the VM runs them ([`record_path_scene_change`]),
+/// not read off the byte order. A record whose flag-clear path closes, or
+/// meets a branch the walk does not model, falls back to its first `0x3F` in
+/// byte order, which is what this static table held before.
 ///
 /// The conditional shape is retail's story-progression entrance: an op-`0x70`
 /// `SysFlag.Test` whose taken arm is a different `0x3F` than the linear
@@ -183,6 +347,33 @@ fn partition2_scene_changes(
 ) -> Option<(SceneChangeDest, Option<(u16, SceneChangeDest)>)> {
     let (start, pc0, len) = partition_record_span(man_file, man, 2, record)?;
     let body = &man[start..start + len];
+    // The first op-0x70 test on the all-clear path, and each arm's end.
+    let mut first_test: Option<(u16, usize)> = None;
+    for insn in LinearWalker::new(body, pc0).flatten() {
+        match insn.info {
+            InsnInfo::SystemFlag {
+                kind: legaia_asset::field_disasm::FlagKind::Test,
+                idx,
+                target: Some(target),
+                ..
+            } => {
+                first_test = Some((idx, target));
+                break;
+            }
+            InsnInfo::SceneChange { .. } => break,
+            _ => {}
+        }
+    }
+    let clear = record_path_scene_change(body, pc0, &|_| false);
+    if let RecordPathEnd::SceneChange(primary) = clear {
+        let alt = first_test.and_then(|(flag, _)| {
+            match record_path_scene_change(body, pc0, &|f| f == flag) {
+                RecordPathEnd::SceneChange(dest) if dest != primary => Some((flag, dest)),
+                _ => None,
+            }
+        });
+        return Some((primary, alt));
+    }
     // Remember the FIRST op-0x70 flag-test's (flag, taken-target) seen before
     // the primary scene change, so a post-beat alternative can be resolved.
     let mut pending_test: Option<(u16, usize)> = None;

@@ -142,7 +142,11 @@ impl PlayWindowApp {
                 Err(e) => log::warn!("level-up jingle bank (PROT 0889) read: {e:#}"),
             }
         }
+        let duck_ref = self.session.host.world.audio.levels.configured_level;
         if let Some(bgm) = self.session.bgm.as_mut() {
+            // The duck rests on the world's configured level - a loaded
+            // save's `_DAT_8008457C` - and takes its percentage of it.
+            bgm.set_duck_reference(duck_ref);
             bgm.tick_duck();
             for xa in &xa_cues {
                 let fired = bgm.play_xa_clip(xa.clip, xa.channel, xa.duration_sectors);
@@ -306,6 +310,41 @@ impl PlayWindowApp {
     }
 }
 
+/// The stage shell's two meshes for one object list: the textured half and
+/// the untextured (`F*` / `G*`) half, each drawn twice - the second copy
+/// under the per-stage transform.
+///
+/// Retail draws the shell TWICE, the second copy under a per-stage diagonal
+/// transform. The shell on the disc is an authored HALF (open toward -X, -Z
+/// or +X, never +Z); the second copy is what closes the horizon, so a
+/// single-copy backdrop is a half dome no matter how the camera orbits.
+/// `append_scaled` reverses winding and flips normals when the transform has
+/// negative determinant, which is the mesh-level analogue of retail's
+/// `0x40000000 -> 0x48000000` draw-mode swap.
+///
+/// The shell's UNTEXTURED half: between a fifth and a tenth of a backdrop's
+/// prims are `F*`/`G*` flat / gouraud panels carrying a baked colour word and
+/// no UVs - the sky band, the painted wall faces, the flat water. The
+/// VRAM-mesh builder drops every prim with no UVs, so those ride a colour
+/// mesh with the same second copy. Retail has no such split - `FUN_8001ADA4`
+/// case 3 walks the whole primitive list and the GPU takes
+/// `POLY_F*`/`POLY_G*` packets as readily as `POLY_*T*` ones.
+fn stage_shell_meshes(
+    tmd: &legaia_tmd::Tmd,
+    raw: &[u8],
+    second: legaia_asset::battle_backdrop::SecondCopy,
+    objects: &[usize],
+) -> (legaia_tmd::mesh::VramMesh, legaia_tmd::mesh::ColorMesh) {
+    let tmd0 = legaia_asset::battle_backdrop::objects_tmd(tmd, objects);
+    let mut vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd0, raw);
+    let first = vmesh.clone();
+    vmesh.append_scaled(&first, second.scale());
+    let mut cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&tmd0, raw);
+    let cfirst = cmesh.clone();
+    cmesh.append_scaled(&cfirst, second.scale());
+    (vmesh, cmesh)
+}
+
 /// The loaded battle-stage backdrop bundle `build_battle_stage` returns.
 pub(super) struct BattleStage {
     /// Scene + stage-dome textures resident - becomes the battle VRAM base.
@@ -427,6 +466,10 @@ impl PlayWindowApp {
         // renderer borrow below (both take `&mut self`).
         self.battle_faces.clear();
         self.load_face_tables();
+        // The party's forms are the engine's to build (normally already done
+        // by the tick that entered the battle); this covers a battle entered
+        // outside a tick.
+        self.session.host.ensure_battle_party_forms();
         // Build the battle-stage backdrop (the scene's scene_tmd_stream
         // half-dome). Its VRAM (scene + stage-dome textures resident) becomes
         // the battle base, so the dome renders textured behind the actors;
@@ -464,6 +507,7 @@ impl PlayWindowApp {
         // it away with the monster meshes.
         self.battle_stage_mesh = None;
         self.battle_stage_color_mesh = None;
+        self.battle_stage_shell = None;
         self.battle_stage_outdoor = false;
         // REF: FUN_800513f0 - the backdrop registration whose object-list edit
         // and second-copy transform this host consumes through
@@ -484,38 +528,15 @@ impl PlayWindowApp {
             // and drawing it painted an engine-only white streak across the
             // Tetsu arena floor. On the four-object overworld domes it keeps
             // objects 0 (sky), 2 (mountains) and 3 (the flat ground ring).
-            // `_DAT_8007B64B` (region `+8` bit 5) keeps object 1.
-            let tmd0 = if self.session.host.battle_stage_keeps_object_1() {
-                tmd.clone()
-            } else {
-                legaia_asset::battle_backdrop::drawn_objects_tmd(tmd)
-            };
-            // ...and it draws that shell TWICE, the second copy under a
-            // per-stage diagonal transform. The shell on the disc is an
-            // authored HALF (open toward -X, -Z or +X, never +Z); the second
-            // copy is what closes the horizon, so a single-copy backdrop is a
-            // half dome no matter how the camera orbits. `append_scaled`
-            // reverses winding and flips normals when the transform has
-            // negative determinant, which is the mesh-level analogue of
-            // retail's `0x40000000 -> 0x48000000` draw-mode swap.
-            let mut vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd0, raw);
-            let first = vmesh.clone();
-            vmesh.append_scaled(&first, second.scale());
-            // The shell's UNTEXTURED half. A backdrop shell is not all rock:
-            // between a fifth and a tenth of its prims are `F*`/`G*` flat /
-            // gouraud panels carrying a baked colour word and no UVs - the
-            // sky band, the painted wall faces, the flat water. The
-            // VRAM-mesh builder drops every prim with no UVs (it would
-            // sample nothing), so those panels were not drawn at all and the
-            // arena showed the clear colour through them: a rectangular hole
-            // across the top of the wall wherever the sky panel should be.
-            // Retail has no such split - `FUN_8001ADA4` case 3 walks the
-            // whole primitive list and the GPU takes `POLY_F*`/`POLY_G*`
-            // packets as readily as `POLY_*T*` ones - so the colour half
-            // rides the same second copy and the same draw.
-            let mut cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&tmd0, raw);
-            let cfirst = cmesh.clone();
-            cmesh.append_scaled(&cfirst, second.scale());
+            // `_DAT_8007B64B` (region `+8` bit 5) keeps object 1, and the
+            // evolved-Cort arrival's hand-back rebinds slot 0 to it - the one
+            // shared kernel is `SceneHost::battle_stage_object_indices`.
+            let objects = self
+                .session
+                .host
+                .battle_stage_object_indices(tmd.objects.len());
+            let (vmesh, cmesh) = stage_shell_meshes(tmd, raw, *second, &objects);
+            self.battle_stage_shell = Some((objects, *second));
             if !cmesh.is_empty()
                 && let Ok(cm) = r.upload_color_mesh_blended(
                     &cmesh.positions,
@@ -661,28 +682,16 @@ impl PlayWindowApp {
         // decode fails. Each character's decoded battle palette overlays the
         // rows its mesh CBA samples (= 481 + slot after relocation).
         let mut party_bound = 0usize;
-        let party_count = self.session.host.world.party.party_count as usize;
-        // The whole decode - assembly or PROT 1204 fallback, band pixels,
-        // palette, clips, art bank, face tracks - is the engine kernel the
-        // browser play page builds through too
-        // (`engine-core::battle_party_form`); this window adds only the GPU
-        // upload and the rest-pose bake of its static mesh.
-        if party_count > 0
-            && let Some(sources) = legaia_engine_core::battle_party_form::PartyFormSources::load(
-                &self.session.host.index,
-                &mut vram,
-            )
-        {
-            for member in 0..party_count.min(3) {
-                let Some(mut form) = legaia_engine_core::battle_party_form::build_party_battle_form(
-                    &self.session.host.index,
-                    &self.session.host.world,
-                    &sources,
-                    &mut vram,
-                    member,
-                ) else {
-                    continue;
-                };
+        // The engine built and installed each member's form at battle entry
+        // (`SceneHost::ensure_battle_party_forms`, run by `SceneHost::tick`
+        // for every session, headless included): the decode, the clips, the
+        // art bank and records. This window adds only what is a renderer's -
+        // the band pixels replayed into its battle VRAM, the GPU upload with
+        // the rest-pose bake, and the facial animator's registration.
+        let party = self.session.host.battle_party_forms().cloned();
+        if let Some(party) = party {
+            party.vram_writes.replay(&mut vram);
+            for form in party.forms {
                 // Rest pose: frame 0 of the assembled mesh's own idle stream
                 // (the combat stance retail holds at battle start), or the
                 // PROT 1203 bank's idle record for a fallback.
@@ -709,9 +718,7 @@ impl PlayWindowApp {
                     Ok(m) => {
                         let idx = self.meshes.len();
                         self.meshes.push(m);
-                        // Idle + action clips + art bank + art records, the
-                        // install the browser page runs off the same form.
-                        self.session.host.world.install_party_battle_form(&mut form);
+                        let member = form.member;
                         self.session.host.world.actors[member].tmd_binding = Some(idx);
                         registered.push(member);
                         // Facial animation (FUN_8004C7B4): the per-tick stamp
@@ -719,12 +726,12 @@ impl PlayWindowApp {
                         // current eye/mouth frame onto the band's live face
                         // rows; the form only carries tracks when the band
                         // holds the real face-frame strip.
-                        if let Some(tracks) = form.face_tracks.take() {
+                        if let Some(tracks) = form.face_tracks {
                             self.battle_faces.push(BattleMemberFace {
                                 actor_slot: member,
                                 char_index: form.cslot,
                                 tracks,
-                                art_tracks: std::mem::take(&mut form.art_face_tracks),
+                                art_tracks: form.art_face_tracks,
                                 last_stamps: None,
                                 art_counter: None,
                             });
@@ -1202,6 +1209,7 @@ impl PlayWindowApp {
         self.battle_tex_slots_used = 0;
         self.battle_stage_mesh = None;
         self.battle_stage_color_mesh = None;
+        self.battle_stage_shell = None;
         self.battle_ground_mesh = None;
         self.battle_ground_cue_far = None;
         self.battle_stage_outdoor = false;
@@ -1468,6 +1476,87 @@ impl PlayWindowApp {
                 Err(e) => log::error!("play-window: effect-CLUT VRAM re-upload: {e:#}"),
             }
         }
+    }
+
+    /// Stage-module render edits, mid-fight: the battle `MoveImage`s a stage
+    /// module queued (`World::apply_battle_vram_moves` - the evolved-Cort
+    /// arrival blanks the ground tile) and a changed backdrop object list
+    /// (`SceneHost::battle_stage_object_indices` - the same arrival's slot-0
+    /// rebind), which re-builds the stage shell meshes in place.
+    ///
+    /// Shares the mid-battle re-upload protocol with
+    /// [`Self::tick_battle_effect_clut`].
+    pub(super) fn tick_battle_stage_shell(&mut self) {
+        let moved = match self.battle_vram.as_mut() {
+            Some(vram) => self.session.host.world.apply_battle_vram_moves(vram),
+            None => {
+                self.session.host.world.battle.vram_moves.clear();
+                false
+            }
+        };
+        if moved
+            && let (Some(r), Some(vram)) = (self.win.renderer.as_ref(), self.battle_vram.as_ref())
+        {
+            match r.upload_vram(vram) {
+                Ok(v) => {
+                    self.battle_vram_generation = Some(v.generation());
+                    self.uploaded_vram = Some(v);
+                }
+                Err(e) => log::error!("play-window: stage-module VRAM re-upload: {e:#}"),
+            }
+        }
+        let (Some(idx), Some((built, second))) =
+            (self.battle_stage_mesh, self.battle_stage_shell.clone())
+        else {
+            return;
+        };
+        let Some((tmd, raw)) = self.scene_tmd_data.get(idx).cloned() else {
+            return;
+        };
+        let objects = self
+            .session
+            .host
+            .battle_stage_object_indices(tmd.objects.len());
+        if objects == built {
+            return;
+        }
+        let Some(r) = self.win.renderer.as_ref() else {
+            return;
+        };
+        let (vmesh, cmesh) = stage_shell_meshes(&tmd, &raw, second, &objects);
+        match r.upload_vram_mesh(
+            &vmesh.positions,
+            &vmesh.uvs,
+            &vmesh.cba_tsb,
+            &vmesh.normals,
+            &vmesh.colors,
+            &vmesh.indices,
+        ) {
+            Ok(m) => self.meshes[idx] = m,
+            Err(e) => log::warn!("play-window: stage shell rebuild: {e:#}"),
+        }
+        let cm = (!cmesh.is_empty())
+            .then(|| {
+                r.upload_color_mesh_blended(
+                    &cmesh.positions,
+                    &cmesh.colors,
+                    &cmesh.indices,
+                    &cmesh.blend,
+                )
+                .ok()
+            })
+            .flatten();
+        match (self.battle_stage_color_mesh, cm) {
+            (Some(ci), Some(cm)) => self.color_meshes[ci] = cm,
+            (Some(_), None) => self.battle_stage_color_mesh = None,
+            (None, Some(cm)) => {
+                self.battle_stage_color_mesh = Some(self.color_meshes.len());
+                self.color_meshes.push(cm);
+            }
+            (None, None) => {}
+        }
+        log::info!("play-window: battle stage shell re-bound to objects {objects:?}");
+        self.battle_stage_shell = Some((objects, second));
     }
 
     /// Residency guard: while a battle texture is expected to be GPU-resident,

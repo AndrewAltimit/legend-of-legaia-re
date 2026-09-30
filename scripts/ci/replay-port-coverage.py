@@ -633,6 +633,67 @@ CANONICAL_LADDERS = [
     ("w6c_morph_page_ladder", "legaia-web-viewer"),
     ("play_minigames_host", "legaia-web-viewer"),
     ("conc_flag_6de_position_latch_disc", "legaia-engine-core"),
+    # --- lane W7-C (reach burn-down) ---
+    # One new ladder, nine promotions and four whole-game instruments.
+    #
+    # `w7_pause_learned_content_ladder` opens the pause menu by pad over a
+    # party that has learned something - one Seru spell on the record, one
+    # art book in the bag - which is the content `menu_replay`'s cold party
+    # lacks: the Magic list's broadcast (`8003053c`), the Status screen's
+    # reorder page (`801da2a0`) and the art notice's operand patch
+    # (`801dcd58`).
+    #
+    # The nine promotions were found by running every integration test of the
+    # engine crates under coverage and joining each against the never-entered
+    # set; each was read before it was listed, and each drives its row through
+    # the path a host calls rather than calling the kernel from its own body.
+    # Disc-free ones seat a synthetic party (the L3 disclosure applies):
+    # `steal_attack_round_disc` (the death-spoils caption through the live
+    # round, `8003cb54`), `battle_always_resolves` (the results frame's panel
+    # read, `801d84c0`), `battle_member_step_back` (the ring cancel's cursor
+    # step, `801d32bc`), `w4a_shop_quantity_stepper` + the engine-ui
+    # `w4a_shop_quantity_compose` (the stepper session and window 35,
+    # `801db7f4` / `801d5510`), `fishing_hub_and_floor_window_disc` (the venue
+    # hub's help pages, `801d72a0`), `play_ringside_still_disc` (a dome leg won
+    # by pad on the page, `801d1288`), `attached_light_page_prims` (the page's
+    # screen-prim cache over `dolk`'s attached light, the light-pool quartet
+    # and `801e4470`) and `code_lock_doman_disc` (the shipped `49 02`,
+    # `801eed58`).
+    #
+    # The four whole-game instruments are session-shaped rather than
+    # pad-only (segments seeded from retail anchors, seeded approaches, a
+    # seeded-random soak); they are in the union because they execute
+    # content no other member reaches, and `soak_harness` contributes only
+    # its default `soak_smoke_no_panics` (the other tests are opt-in).
+    ("w7_pause_learned_content_ladder", "legaia-engine-shell"),
+    ("steal_attack_round_disc", "legaia-engine-core"),
+    ("battle_always_resolves", "legaia-engine-core"),
+    ("battle_member_step_back", "legaia-engine-core"),
+    ("w4a_shop_quantity_stepper", "legaia-engine-core"),
+    ("w4a_shop_quantity_compose", "legaia-engine-ui"),
+    ("fishing_hub_and_floor_window_disc", "legaia-engine-core"),
+    ("play_ringside_still_disc", "legaia-web-viewer"),
+    ("attached_light_page_prims", "legaia-web-viewer"),
+    ("code_lock_doman_disc", "legaia-engine-core"),
+    ("full_game_ladder", "legaia-engine-shell"),
+    ("boss_approach_disc", "legaia-engine-shell"),
+    ("monster_approach_sweep_disc", "legaia-engine-core"),
+    ("soak_harness", "legaia-engine-shell"),
+    # Two page ladders for the boot save-select's title backdrop (the title
+    # strips, `801e0418`) and the command ring's Ra-Seru cross-out in Tetsu's
+    # fight (`801dbc30`); each has a native twin outside the union (a bin
+    # unit test, a shared-builder unit test).
+    ("title_backdrop_parity", "legaia-web-viewer"),
+    ("raseru_cross_out_page", "legaia-web-viewer"),
+    # Three routines reached only through the world's frame tail: the
+    # fishing strike splash (`801d7a5c`, a cadence match in the world's
+    # fishing tick), a shipped op-`0x43` sub-`0x12` rect copy drained by the
+    # VRAM tail (`80057914`), and a shipped Bezier stager advanced by
+    # `World::step_world_frame_tail` (`801e45bc`).
+    ("w8_world_tail_ladder", "legaia-engine-core"),
+    # An all-target spell committed on the play page from a played-through
+    # card, so the commit log copies the whole-row label (`801d57e8`).
+    ("w8_commit_log_all_target_page", "legaia-web-viewer"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 

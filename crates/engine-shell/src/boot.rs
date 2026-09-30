@@ -256,6 +256,91 @@ pub struct BootSession {
     /// Scene mode the world ran before the pause menu opened, restored by
     /// [`BootSession::close_field_menu`].
     field_menu_resume: SceneMode,
+    /// `true` when the caller drains the world's per-tick presentation queues
+    /// itself after every [`Self::tick`] - the play window does. Otherwise
+    /// the session does it ([`HostQueueMarks`]).
+    host_drains_queues: bool,
+    /// Queue lengths the last full [`Self::tick`] left behind.
+    queue_marks: HostQueueMarks,
+}
+
+/// How much of each per-tick world queue a tick left behind.
+///
+/// Both play hosts consume these queues after every tick (the window's
+/// `drain_and_route_field_events` / `drain_and_log_battle_events` /
+/// minigame-cue drain; the browser runtime's twins), so an event still queued
+/// when the next tick starts is one no host would ever see again. A driver
+/// that only ticks the session - every headless run - consumed none of them,
+/// and the queues grew without bound (`map01` queues field events every
+/// frame). [`BootSession::tick`] therefore drops, at the start of a tick, the
+/// entries the previous tick left and nobody took: the front `min(mark, len)`
+/// of each queue. Anything queued **between** ticks (a scene entry's BGM
+/// start, a caller's own push) sits behind the mark and survives to the tick
+/// that consumes it, and a caller that reads a queue after `tick` - the BGM
+/// oracles route the field queue themselves - still sees the whole tick.
+///
+/// A host that drains every tick itself opts out
+/// ([`BootSession::set_host_drains_queues`]), which keeps the play window
+/// byte-for-byte what it was.
+///
+/// The queues with a **world** side are not dropped but run: the effect
+/// spawns (`World::route_battle_effect_spawns`), the summon / move-FX
+/// requests, the effect scene-graph tick that retires what they seat, the
+/// ANIMATE cues and the scripted VRAM effects all go through
+/// [`BootSession::run_world_frame_tail`] before the marks are taken, so a
+/// headless run executes the same world the play hosts do. Routing the spawns
+/// alone would park the battle action state machine on an effect nothing
+/// retires, which is why the tail runs whole.
+#[derive(Debug, Default, Clone, Copy)]
+struct HostQueueMarks {
+    field_events: usize,
+    battle_events: usize,
+    hit_fx: usize,
+    hit_events: usize,
+    sfx_cues: usize,
+    shout_cues: usize,
+    xa_cues: usize,
+    xa_prestage: usize,
+    clut_stages: usize,
+    effect_spawns: usize,
+    minigame_sfx: usize,
+}
+
+impl HostQueueMarks {
+    fn record(world: &legaia_engine_core::world::World) -> Self {
+        Self {
+            field_events: world.pending_field_events.len(),
+            battle_events: world.pending_battle_events.len(),
+            hit_fx: world.battle.hit_fx.len(),
+            hit_events: world.battle.hit_events.len(),
+            sfx_cues: world.audio.battle_sfx_cues.len(),
+            shout_cues: world.audio.battle_shout_cues.len(),
+            xa_cues: world.audio.battle_xa_cues.len(),
+            xa_prestage: world.audio.battle_xa_prestage.len(),
+            clut_stages: world.battle.clut_stages.len(),
+            effect_spawns: world.battle.effect_spawns.len(),
+            minigame_sfx: world.minigames.pending_sfx.len(),
+        }
+    }
+
+    /// Drop the entries the last tick left that nobody consumed.
+    fn drop_stale(self, world: &mut legaia_engine_core::world::World) {
+        fn front<T>(q: &mut Vec<T>, n: usize) {
+            let n = n.min(q.len());
+            q.drain(..n);
+        }
+        front(&mut world.pending_field_events, self.field_events);
+        front(&mut world.pending_battle_events, self.battle_events);
+        front(&mut world.battle.hit_fx, self.hit_fx);
+        front(&mut world.battle.hit_events, self.hit_events);
+        front(&mut world.audio.battle_sfx_cues, self.sfx_cues);
+        front(&mut world.audio.battle_shout_cues, self.shout_cues);
+        front(&mut world.audio.battle_xa_cues, self.xa_cues);
+        front(&mut world.audio.battle_xa_prestage, self.xa_prestage);
+        front(&mut world.battle.clut_stages, self.clut_stages);
+        front(&mut world.battle.effect_spawns, self.effect_spawns);
+        front(&mut world.minigames.pending_sfx, self.minigame_sfx);
+    }
 }
 
 /// Read + parse the new-game starting-party template from a boot source's
@@ -663,6 +748,12 @@ impl BootSession {
         // Wire the CDNAME-derived map-id resolver so field-VM scene
         // transitions resolve to the right CDNAME label.
         host.set_map_resolver(Box::new(DefaultMapIdResolver::from_index(&host.index)));
+        // Free-roam liveliness (NPC patrol routes + the ambient walk
+        // mirror) on, as both play hosts run it: it is retail behaviour, and
+        // it never engages a placement's script (`World::step_field_channels`
+        // keeps its engaged window), so the headless drivers - ladders,
+        // oracles, the retail comparison corpus - see the world a player sees.
+        host.world.npcs.animate = true;
 
         // Retail proportional dialog font off the disc (no save state). See
         // `BootSession::dialog_font`.
@@ -826,7 +917,20 @@ impl BootSession {
             art_learned_notice: None,
             field_menu_resume: SceneMode::Field,
             mode_seat: legaia_engine_core::mode::ModeSeat::new_at_boot(),
+            host_drains_queues: false,
+            queue_marks: HostQueueMarks::default(),
         })
+    }
+
+    /// Declare that the caller drains the world's per-tick presentation
+    /// queues itself after every [`Self::tick`] (the play window does, routing
+    /// each into its renderer and audio). Off by default: the session then
+    /// drops whatever the previous tick left unconsumed before the next one
+    /// runs ([`HostQueueMarks`]), so a driver that only ticks does not grow
+    /// the queues without bound.
+    pub fn set_host_drains_queues(&mut self, on: bool) {
+        self.host_drains_queues = on;
+        self.queue_marks = HostQueueMarks::default();
     }
 
     /// Begin a New Game: clear the world to a fresh slate
@@ -1246,7 +1350,48 @@ impl BootSession {
         Some(outcome)
     }
 
+    /// The world-side half of the per-tick tail both play hosts run after the
+    /// scene tick ([`legaia_engine_core::world::World::step_world_frame_tail`]
+    /// plus [`legaia_engine_core::world::World::step_field_vram_effects`] over
+    /// the scene's own VRAM image, as the browser page steps it). What the
+    /// tail hands back for drawing is dropped - a headless session draws
+    /// nothing - except the spawned move's sound cue, which goes to the
+    /// director when one is attached, the way both hosts route it.
+    fn run_world_frame_tail(&mut self) {
+        let tail = self.host.world.step_world_frame_tail(None, None, |_| None);
+        if let (Some(cue), Some(bgm)) = (tail.move_fx_cue, self.bgm.as_mut())
+            && let legaia_engine_audio::CueDispatch::Ring { ring_value, .. } =
+                legaia_engine_audio::classify_cue(u32::from(cue))
+        {
+            bgm.enqueue_sfx(ring_value, 0, 0, 0);
+        }
+        if let Some(res) = self.host.resources.as_mut() {
+            let _ = self
+                .host
+                .world
+                .step_field_vram_effects(&mut res.vram, false);
+        }
+    }
+
     pub fn tick(&mut self) -> Result<SceneTickEvent> {
+        // The hosts' per-tick queue duty, for a caller that does not perform
+        // it: what the previous tick queued and nobody took is gone before
+        // this one runs, as it is in both play hosts.
+        if !self.host_drains_queues {
+            std::mem::take(&mut self.queue_marks).drop_stale(&mut self.host.world);
+        }
+        // The naming prompt (field-VM op `0x49`, the opening's pc `0x02C6`) is
+        // modal: the field is frozen under it and every pad edge drives the
+        // entry SM. The edge is the one the caller's `set_pad` just made.
+        // Before this arm only the two window hosts routed the prompt, so any
+        // driver that ticks the session - every headless run - parked on it
+        // forever. The native window still takes its own arm first (it also
+        // skips its per-frame tail); both call the same kernel.
+        let input = &self.host.world.input;
+        let edge = input.pad() & !input.pad_prev();
+        if self.host.world.step_name_entry_frame(edge) {
+            return Ok(SceneTickEvent::Stepped);
+        }
         // The mode table's outer level, once per frame, ahead of everything
         // else - retail's `main` (`FUN_80015E90`, `0x8001615C..0x8001620C`)
         // takes any pending mode-change edge before it dispatches the new
@@ -1323,10 +1468,20 @@ impl BootSession {
             self.after_scene_swap();
         }
         self.route_field_sfx();
+        if !self.host_drains_queues {
+            // The world-side half of the hosts' frame tail - effect
+            // scene-graphs, move-FX / effect-script spawns, ANIMATE cues and
+            // the scripted VRAM effects - which the play window runs itself.
+            self.run_world_frame_tail();
+        }
         // Reconcile the word with wherever the scene sessions left the world.
         // The seat owns the word; the sessions own the scene, and this is the
         // one join between them (see `ModeSeat`'s "what owns what").
         self.mode_seat.adopt_world_mode(&self.host.world);
+        if !self.host_drains_queues {
+            // What this tick queued stays readable until the next one starts.
+            self.queue_marks = HostQueueMarks::record(&self.host.world);
+        }
         self.frames += 1;
         Ok(event)
     }
@@ -1567,8 +1722,16 @@ impl BootSession {
         let current = self.host.scene.as_ref().map(|s| s.name.clone());
         let landing =
             legaia_engine_core::resume::land_save(save_scene, current.as_deref(), |scene| {
-                self.enter_scene_live(scene, opts)?;
-                self.confirm_scene_landed(scene)
+                // The saved scene is entered at the save's own position, as
+                // retail's card load seats it (`SceneHost::arm_resume_seat`).
+                let armed = self.host.arm_resume_seat(&save, save_scene, scene);
+                let entered = self
+                    .enter_scene_live(scene, opts)
+                    .and_then(|_| self.confirm_scene_landed(scene));
+                if entered.is_err() && armed {
+                    self.host.disarm_entry_seat();
+                }
+                entered
             });
         self.host.world.load_full(save);
         log::info!(

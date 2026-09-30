@@ -332,7 +332,7 @@ impl LegaiaMinigames {
     }
 
     /// This frame's fishing line as
-    /// `{"fish":[x,y],"rod":[x,y],"fish_rgb":[r,g,b],"rod_rgb":[r,g,b]}` in
+    /// `{"fish":[x,y],"rod":[x,y],"fish_rgb":[r,g,b],"rod_rgb":[r,g,b],"ot":n}` in
     /// retail 320x240 screen space, or `null` while no line is out.
     ///
     /// The engine's line (`PondSession::line_frame`, the same call the two
@@ -357,7 +357,7 @@ impl LegaiaMinigames {
             return "null".to_string();
         };
         format!(
-            r#"{{"fish":[{},{}],"rod":[{},{}],"fish_rgb":[{},{},{}],"rod_rgb":[{},{},{}]}}"#,
+            r#"{{"fish":[{},{}],"rod":[{},{}],"fish_rgb":[{},{},{}],"rod_rgb":[{},{},{}],"ot":{}}}"#,
             l.fish.0,
             l.fish.1,
             l.rod.0,
@@ -367,8 +367,57 @@ impl LegaiaMinigames {
             l.fish_rgb[2],
             l.rod_rgb[0],
             l.rod_rgb[1],
-            l.rod_rgb[2]
+            l.rod_rgb[2],
+            l.ot
         )
+    }
+
+    /// This frame's rod model as `[{"xy":[x0,y0,..x3,y3],"rgb":[r0,g0,b0,..],
+    /// "ot":n}, ...]` in retail 320x240 screen space, **in draw order** -
+    /// the faces `PondSession::rod_faces` projects (the rod actor's pose,
+    /// culled and bucketed the way `FUN_80043390`'s handlers do), wrapped by
+    /// the shared `ui_fishing_rod` builder and ordered by
+    /// `screen_prim::order_primitives`, the order the other two hosts' quad
+    /// pass draws them in. A triangle repeats its third corner. `[]` with no
+    /// rod out.
+    ///
+    /// The rod is posed in view space, so this page's own venue framing does
+    /// not move it: these are the retail screen corners. The page fills the
+    /// faces whose `ot` is above the line's before stroking the line, the rest
+    /// after it (the rod's packets are the earlier `AddPrim`s, so a shared
+    /// bucket draws the line first).
+    pub fn fishing_rod_json(&self) -> String {
+        use legaia_engine_ui::screen_prim::{ScreenPrim, order_primitives};
+        let Some(p) = self.fishing_pond.as_ref() else {
+            return "[]".to_string();
+        };
+        let prims: Vec<ScreenPrim> = p
+            .rod_faces()
+            .into_iter()
+            .map(|f| legaia_engine_ui::ui_fishing_rod::fishing_rod_prim(f.xy, f.rgb, f.ot))
+            .collect();
+        let mut faces: Vec<String> = Vec::new();
+        for i in order_primitives(&prims) {
+            let ScreenPrim::Flat(q) = prims[i] else {
+                continue;
+            };
+            let g = q.gouraud.unwrap_or([q.color; 4]);
+            let xy: Vec<String> =
+                q.xy.iter()
+                    .flat_map(|c| [c.0.to_string(), c.1.to_string()])
+                    .collect();
+            let rgb: Vec<String> = g
+                .iter()
+                .flat_map(|c| [c[0].to_string(), c[1].to_string(), c[2].to_string()])
+                .collect();
+            faces.push(format!(
+                r#"{{"xy":[{}],"rgb":[{}],"ot":{}}}"#,
+                xy.join(","),
+                rgb.join(","),
+                q.ot_index
+            ));
+        }
+        format!("[{}]", faces.join(","))
     }
 
     /// Advance the pond one frame. `reel_mask` carries the held pad bits

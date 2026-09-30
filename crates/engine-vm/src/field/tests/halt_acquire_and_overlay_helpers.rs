@@ -582,27 +582,55 @@ fn op_4c_n_e_sub_b_actor_resolved_advances_5_bytes() {
 }
 
 #[test]
-fn op_4c_n_e_sub_b_actor_unresolved_jumps_to_target() {
-    // Same instruction; host returns None (actor not resolved). The
-    // dispatcher reads the absolute jump target via load_u16_le and
-    // returns it as the new PC.
+fn op_4c_n_e_sub_b_actor_unresolved_skips_relative() {
+    // Same instruction; host returns None (actor not resolved). Retail's
+    // miss path (`0x801E34F0` -> `0x801E360C`) reads a signed LE16 and exits
+    // through `addiu v0,v0,-2; addu s8,s8,v0` after `s8 += 5`: the skip is
+    // relative, `pc + 5 + i16 - 2`. This test used to assert an absolute
+    // jump to `0x2010`, which sent every missed lookup to a record-header
+    // byte.
     let bytecode = [0x4Cu8, 0xEB, 0x07, 0x10, 0x20];
     let mut host = TestHost::default(); // n_e_sub_b_resolves = false
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 0x2010 });
+    assert_eq!(
+        r,
+        StepResult::Advance {
+            next_pc: 5 + 0x2010 - 2
+        }
+    );
     assert_eq!(host.n_e_sub_b_actor_ids, vec![0x07]);
 }
 
 #[test]
-fn op_4c_n_e_sub_b_jump_target_uses_load_u16_le() {
-    // Verify endianness: bytes 0x34, 0x12 should produce target 0x1234,
-    // not 0x3412.
+fn op_4c_n_e_sub_b_miss_skips_the_following_op() {
+    // The shipped shape (koin3's entry script): `4C EB 39 05 00` then the
+    // 3-byte `B1 39 03` cross-context flag write it guards. A miss lands on
+    // the byte after that write.
+    let bytecode = [0x4Cu8, 0xEB, 0x39, 0x05, 0x00, 0xB1, 0x39, 0x03, 0x21];
+    let mut host = TestHost::default();
+    let mut ctx = FieldCtx::default();
+    let r = step(&mut host, &mut ctx, &bytecode, 0);
+    assert_eq!(r, StepResult::Advance { next_pc: 8 });
+}
+
+#[test]
+fn op_4c_n_e_sub_b_skip_is_a_signed_load_u16_le() {
+    // Endianness: bytes 0x34, 0x12 are a +0x1234 skip, not +0x3412.
     let bytecode = [0x4Cu8, 0xEB, 0xAA, 0x34, 0x12];
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 0x1234 });
+    assert_eq!(
+        r,
+        StepResult::Advance {
+            next_pc: 5 + 0x1234 - 2
+        }
+    );
+    // Sign: 0xFFFE is -2, so the miss lands at `pc + 5 - 2 - 2`.
+    let bytecode = [0x4Cu8, 0xEB, 0xAA, 0xFE, 0xFF];
+    let r = step(&mut host, &mut ctx, &bytecode, 0);
+    assert_eq!(r, StepResult::Advance { next_pc: 1 });
 }
 
 #[test]

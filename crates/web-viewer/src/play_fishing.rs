@@ -122,8 +122,10 @@ impl LegaiaRuntime {
         writes.apply(&mut self.camera);
     }
 
-    /// The fishing line as a screen primitive for this tick - the native
-    /// window's `fishing_line_screen_prims` twin: the session's line
+    /// The fishing rod and line as screen primitives for this tick - the
+    /// native window's `fishing_line_screen_prims` twin: the rod model
+    /// (`PondSession::rod_faces` through the shared `ui_fishing_rod` builder),
+    /// then the session's line
     /// (`legaia_engine_core::fishing_venue::fishing_line_frame`, the fish end
     /// through the follow camera the page draws the venue with) wrapped by the
     /// shared `ui_fishing_line` builder, into the page's screen-prim pass.
@@ -143,14 +145,30 @@ impl LegaiaRuntime {
             centre,
         )
         .field_view();
-        legaia_engine_core::fishing_venue::fishing_line_frame(&mut world.minigames, view.as_ref())
+        // The rod model first, as the native window orders it: the rod actor
+        // runs ahead of the lure tick, so its packets are the earlier
+        // `AddPrim`s in a shared bucket.
+        let mut prims: Vec<_> = world
+            .minigames
+            .fishing
+            .as_ref()
+            .map(|p| p.rod_faces())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|f| legaia_engine_ui::ui_fishing_rod::fishing_rod_prim(f.xy, f.rgb, f.ot))
+            .collect();
+        prims.extend(
+            legaia_engine_core::fishing_venue::fishing_line_frame(
+                &mut world.minigames,
+                view.as_ref(),
+            )
             .and_then(|l| {
                 legaia_engine_ui::ui_fishing_line::fishing_line_prim(
                     l.fish, l.rod, l.fish_rgb, l.rod_rgb, l.ot,
                 )
-            })
-            .into_iter()
-            .collect()
+            }),
+        );
+        prims
     }
 
     /// The live fishing session, when one is installed on the scene host's

@@ -79,6 +79,31 @@ impl World {
         }
     }
 
+    /// One frame of the modal naming prompt, from a pad **edge** word (bits
+    /// newly pressed this frame, the [`Self::set_pad`] layout).
+    ///
+    /// While the prompt is open the field is frozen (the op-`0x49` gate holds
+    /// the script, and the timeline waits on [`Self::name_entry_active`]), so
+    /// a frame is: route the edge into the entry SM, and advance the frame
+    /// counter the caret blinks off. Returns `true` when the prompt owned the
+    /// frame - the caller then skips the rest of its world tick - and `false`
+    /// when no prompt is open.
+    ///
+    /// This is the one routing every host shares: the native window's
+    /// per-tick arm and [`crate::scene::SceneHost`]-driving sessions
+    /// (`BootSession::tick`, and so every headless driver) both call it. The
+    /// browser page runs the same pair on its own two clocks - one edge per
+    /// display frame into [`Self::step_name_entry`], the frame counter per
+    /// sim step.
+    pub fn step_name_entry_frame(&mut self, edge: u16) -> bool {
+        if !self.name_entry_active() {
+            return false;
+        }
+        self.step_name_entry(crate::name_entry::NameEntryInput::from_pad_edge(edge));
+        self.frame = self.frame.wrapping_add(1);
+        true
+    }
+
     /// Install the opening-cutscene narration presenter with `pages` (the
     /// inline subtitle pages decoded from the scene MAN's cutscene-timeline
     /// script; see [`crate::man_field_scripts::collect_partition_narration`]).
@@ -740,7 +765,32 @@ impl World {
     ///
     /// REF: FUN_801D01B0 (`0x801D01F0`, the engaged-bit branch), FUN_801D5B5C
     pub fn dialogue_owns_input(&self) -> bool {
-        self.dialog.current.is_some() || self.dialog.inline.is_some()
+        self.dialog.current.is_some()
+            || self.dialog.inline.is_some()
+            // A spawned helper record parked on its text segment shows the
+            // one shared box ([`Self::script_dialog_panel`]).
+            || self
+                .field_vm
+                .helper_contexts
+                .iter()
+                .any(|tl| tl.dialog.is_some())
+    }
+
+    /// The dialog box a script context is showing: the modal timeline's when
+    /// it has one, else the first concurrent helper's. Retail has one shared
+    /// box, so hosts draw exactly this one
+    /// ([`Self::drive_script_dialog`] routes the pad the same way).
+    pub fn script_dialog_panel(&self) -> Option<&crate::dialog::OwnedDialogPanel> {
+        self.cutscene
+            .timeline
+            .as_ref()
+            .and_then(|tl| tl.dialog.as_ref())
+            .or_else(|| {
+                self.field_vm
+                    .helper_contexts
+                    .iter()
+                    .find_map(|tl| tl.dialog.as_ref())
+            })
     }
 
     /// Step the opening-cutscene timeline one frame.
@@ -823,67 +873,15 @@ impl World {
         // cursor, confirm commits a choice (applying its relative jump) or
         // dismisses a finished box, resuming the timeline past the segment.
         // The park freezes the frame cap - a dialog waits on the player.
-        if let Some(panel) = tl.dialog.as_mut() {
-            let confirm = self.input.just_pressed(crate::input::PadButton::Cross)
-                || self.input.just_pressed(crate::input::PadButton::Circle);
-            if panel.menu_active() {
-                if self.input.just_pressed(crate::input::PadButton::Up) {
-                    panel.move_picker_cursor(-1);
-                }
-                if self.input.just_pressed(crate::input::PadButton::Down) {
-                    panel.move_picker_cursor(1);
-                }
-            }
-            // One-frame rule (see `step_inline_dialogue`): a menu that opened
-            // on this tick is shown before any confirm can commit it.
-            let menu_was_open = panel.menu_active();
-            panel.tick_at_auto(self.clock.frame_step, &mut self.dialog.auto_press);
-            // The pager's automatic press (`_DAT_80073F00`, op `4C 89`) is a
-            // confirm the player did not make.
-            let confirm = confirm || panel.take_auto_press();
-            if confirm {
-                if panel.menu_active() && (!menu_was_open || !panel.picker_takes_input()) {
-                    // Opened this frame, or still sliding in (the pager reads the
-                    // choice only once the slide rests): nothing to commit yet.
-                } else if panel.menu_active() {
-                    // NB: unlike the inline runner's picker commit, the wrap
-                    // map is NOT cleared here. A cutscene record's picker
-                    // picks a branch of one linear scene (the Mei beat's
-                    // mid-conversation choice); clearing the map let the
-                    // record replay already-played choreography before
-                    // re-wrapping. Re-emission menus live in interaction
-                    // records (the inline runner), not timeline records.
-                    let choice = panel.picker_cursor();
-                    let target = panel.picker().and_then(|pk| pk.jump_target(choice));
-                    match target {
-                        Some(t) => tl.pc = t,
-                        None => tl.done = true,
-                    }
-                    tl.dialog = None;
-                } else if panel.is_done() {
-                    tl.pc = panel.pc;
-                    tl.dialog = None;
-                } else if panel.is_waiting_for_input() {
-                    // Multi-page conversation: turn the page in place (the
-                    // timeline stays parked on the segment until the last
-                    // page is dismissed).
-                    panel.advance_page();
-                    if panel.is_done() {
-                        tl.pc = panel.pc;
-                        tl.dialog = None;
-                    }
-                } else {
-                    // Still typing or scrolling: the pager's skip latch
-                    // completes the page (`crate::dialog_window`).
-                    panel.confirm_while_typing();
-                }
-            }
+        if tl.dialog.is_some() {
+            self.drive_script_dialog(&mut tl, true);
             if tl.dialog.is_some() && !tl.done {
                 self.cutscene.timeline = Some(tl);
                 return;
             }
             if tl.done {
                 let restore = tl.restore_hidden_on_complete;
+                self.release_interaction_context(&tl);
                 self.cutscene.timeline = None;
                 if restore {
                     self.restore_hidden_field_npcs();
@@ -912,6 +910,80 @@ impl World {
             // Still parked on the channel-completion handshake: keep the
             // timeline installed and re-test next tick.
             self.cutscene.timeline = Some(tl);
+        }
+    }
+
+    /// Tick a script context's owned dialog panel one frame and, when
+    /// `routed`, hand it the pad: Up/Down move a picker cursor, confirm
+    /// commits a choice (applying its relative jump), turns a page or
+    /// dismisses a finished box, resuming the context past the segment.
+    /// Shared by the modal timeline and the concurrent helper contexts:
+    /// retail's runner `FUN_80039B7C` hands any engaged context's text
+    /// segment to the one shared dialog box and parks the context on it
+    /// (its `+0x9C == 2` arm) until the box closes.
+    // REF: FUN_80039B7C
+    fn drive_script_dialog(
+        &mut self,
+        tl: &mut crate::cutscene_timeline::CutsceneTimeline,
+        routed: bool,
+    ) {
+        let Some(panel) = tl.dialog.as_mut() else {
+            return;
+        };
+        let pressed = |w: &Self, b: crate::input::PadButton| routed && w.input.just_pressed(b);
+        let confirm = pressed(self, crate::input::PadButton::Cross)
+            || pressed(self, crate::input::PadButton::Circle);
+        if panel.menu_active() {
+            if pressed(self, crate::input::PadButton::Up) {
+                panel.move_picker_cursor(-1);
+            }
+            if pressed(self, crate::input::PadButton::Down) {
+                panel.move_picker_cursor(1);
+            }
+        }
+        // One-frame rule (see `step_inline_dialogue`): a menu that opened
+        // on this tick is shown before any confirm can commit it.
+        let menu_was_open = panel.menu_active();
+        panel.tick_at_auto(self.clock.frame_step, &mut self.dialog.auto_press);
+        // The pager's automatic press (`_DAT_80073F00`, op `4C 89`) is a
+        // confirm the player did not make.
+        let confirm = confirm || panel.take_auto_press();
+        if confirm {
+            if panel.menu_active() && (!menu_was_open || !panel.picker_takes_input()) {
+                // Opened this frame, or still sliding in (the pager reads the
+                // choice only once the slide rests): nothing to commit yet.
+            } else if panel.menu_active() {
+                // NB: unlike the inline runner's picker commit, the wrap
+                // map is NOT cleared here. A cutscene record's picker
+                // picks a branch of one linear scene (the Mei beat's
+                // mid-conversation choice); clearing the map let the
+                // record replay already-played choreography before
+                // re-wrapping. Re-emission menus live in interaction
+                // records (the inline runner), not timeline records.
+                let choice = panel.picker_cursor();
+                let target = panel.picker().and_then(|pk| pk.jump_target(choice));
+                match target {
+                    Some(t) => tl.pc = t,
+                    None => tl.done = true,
+                }
+                tl.dialog = None;
+            } else if panel.is_done() {
+                tl.pc = panel.pc;
+                tl.dialog = None;
+            } else if panel.is_waiting_for_input() {
+                // Multi-page conversation: turn the page in place (the
+                // timeline stays parked on the segment until the last
+                // page is dismissed).
+                panel.advance_page();
+                if panel.is_done() {
+                    tl.pc = panel.pc;
+                    tl.dialog = None;
+                }
+            } else {
+                // Still typing or scrolling: the pager's skip latch
+                // completes the page (`crate::dialog_window`).
+                panel.confirm_while_typing();
+            }
         }
     }
 
@@ -1276,25 +1348,25 @@ impl World {
                     && text_byte & 0x7F < 0x20
                 {
                     if text_byte == 0x1F {
-                        if modal {
-                            // Resolve the record's `0xC1`/`0xC2`/`0xC4` name
-                            // escapes, exactly as the prop-interaction panel
-                            // does. Without this a cutscene renders an empty
-                            // string wherever a character name belongs - and
-                            // this is the cutscene path.
-                            let mut panel = crate::dialog::OwnedDialogPanel::at_segment(
-                                std::sync::Arc::clone(&tl.bytecode),
-                                pc,
-                            );
-                            panel.substitutions = host.world.dialog_substitutions(&tl.bytecode);
-                            tl.dialog = Some(panel);
-                        } else {
-                            // A concurrent helper context has no modal input
-                            // routing to page an inline dialog; complete the
-                            // context at the segment instead of parking on it
-                            // forever.
-                            tl.done = true;
-                        }
+                        // Modal timeline or concurrent helper alike: the
+                        // runner `FUN_80039B7C` parks ANY engaged context on
+                        // its text segment and hands it to the shared dialog
+                        // box (`+0x9C = 2`). A helper used to complete at its
+                        // first segment instead, which dropped the rest of
+                        // every op-`0x44` record with a line of text in it -
+                        // town01 `P2[25]` (the FMV hand-off to town0b) and
+                        // town0e `P2[5]` (the ending's hop to edteien).
+                        //
+                        // Resolve the record's `0xC1`/`0xC2`/`0xC4` name
+                        // escapes, exactly as the prop-interaction panel
+                        // does, or a name renders as an empty string.
+                        let _ = modal;
+                        let mut panel = crate::dialog::OwnedDialogPanel::at_segment(
+                            std::sync::Arc::clone(&tl.bytecode),
+                            pc,
+                        );
+                        panel.substitutions = host.world.dialog_substitutions(&tl.bytecode);
+                        tl.dialog = Some(panel);
                         break;
                     }
                     tl.pc = pc + 1;
@@ -1516,6 +1588,43 @@ impl World {
                 }
                 if vm::field::peek_extended(&tl.bytecode, pc) == Some(0xF8) {
                     let op = opcode_byte & 0x7F;
+                    // Player seats (`A3 F8 x z` MOVE_TO, `CC F8 51 x z ..`
+                    // NPC-run): `FUN_8003C83C` resolves `0xF8` to the player
+                    // object, so the op runs with the PLAYER as its context
+                    // and takes the player arm (`0x801DEC7C` compares the
+                    // context pointer against `_DAT_8007C364`). Stepping
+                    // them on the record's own context instead dropped the
+                    // seat: `urudre1` `P2[1]` walks the player to (97,8) for
+                    // the shot and closes with `A3 F8 60 0D`, and without it
+                    // free roam resumed on a tile no direction leaves.
+                    // REF: FUN_8003C83C, FUN_801DE840 (0x23 / 4C 51 arms)
+                    if op == 0x23 || (op == 0x4C && tl.bytecode.get(pc + 2) == Some(&0x51)) {
+                        let mut player_ctx = legaia_engine_vm::field::FieldCtx {
+                            script_id: 0xF8,
+                            flags: 0x0100_0000,
+                            ..Default::default()
+                        };
+                        let r = vm::field::step(&mut host, &mut player_ctx, &tl.bytecode, pc);
+                        if let FieldStepResult::Advance { next_pc } = r {
+                            if let Some(slot) = host.world.player_actor_slot
+                                && let Some(actor) = host.world.actors.get(slot as usize)
+                            {
+                                let (x, z) = (actor.move_state.world_x, actor.move_state.world_z);
+                                let y = host
+                                    .world
+                                    .sample_field_floor_height(i32::from(x), i32::from(z))
+                                    as i16;
+                                if let Some(a) = host.world.actors.get_mut(slot as usize) {
+                                    a.move_state.world_y = y;
+                                }
+                            }
+                            if pc < tl.visited.len() {
+                                tl.visited[pc] = true;
+                            }
+                            tl.pc = next_pc;
+                            continue;
+                        }
+                    }
                     if op == 0x22
                         && let Some(&move_id) = tl.bytecode.get(pc + 2)
                     {
@@ -1634,6 +1743,14 @@ impl World {
                         break;
                     }
                 }
+                if let Some((_, ci)) = target
+                    && !channels[ci].object_bind
+                    && !tl
+                        .addressed_channels
+                        .contains(&channels[ci].placement_index)
+                {
+                    tl.addressed_channels.push(channels[ci].placement_index);
+                }
                 let result = if let Some((_, ci)) = target {
                     // Object-bind channels are poke targets, but their
                     // `placement_index` is a flat record index - never
@@ -1649,6 +1766,7 @@ impl World {
                     // caller on its own frozen actor and the camera beats
                     // after the sweep never play.
                     channels[ci].ctx.flags &= !0x400;
+                    let before = (channels[ci].ctx.world_x, channels[ci].ctx.world_z);
                     let r = vm::field::step_with_caller(
                         &mut host,
                         &mut channels[ci].ctx,
@@ -1658,6 +1776,22 @@ impl World {
                         pc,
                     );
                     host.world.field_vm.executing_channel = None;
+                    // A poke that moved the actor (`A3 <id>` seat, `CC <id> 37`
+                    // copy-from-player, ...) lands on retail's `+0x14`/`+0x18`
+                    // at once; surface it now rather than at the slice's end,
+                    // so a walk later in the same slice starts from it.
+                    let c = &channels[ci];
+                    let after = (c.ctx.world_x, c.ctx.world_z);
+                    if !c.object_bind
+                        && after != before
+                        && let Ok(slot) = u8::try_from(c.placement_index)
+                    {
+                        host.world
+                            .npcs
+                            .positions
+                            .insert(slot, (after.0 as i16, after.1 as i16));
+                        host.world.npcs.motions.remove(&slot);
+                    }
                     r
                 } else {
                     vm::field::step(&mut host, &mut tl.ctx, &tl.bytecode, pc)
@@ -1797,6 +1931,20 @@ impl World {
                     tl.done = true;
                     stop = true;
                 }
+                // A touch-resumed placement context ends its interaction at
+                // the first raw `0x21` it executes (`FUN_80039B7C`: the loop
+                // exits on `0x21` at `0x80039E20` and `0x80039E68..0x80039E7C`
+                // clears the engaged bit). The Rim Elm bee beat (`town0c` /
+                // `town0b` `P1[21]`) is `50 00` (the scripted-loss latch),
+                // `3E FF 03`, `21`, then a jump back to its flag dispatch: the
+                // `21` is what stops the fight re-firing until the next touch.
+                if tl.interaction_slot.is_some()
+                    && opcode_byte == 0x21
+                    && matches!(kind, crate::cutscene_timeline::TraceResult::Advance)
+                {
+                    tl.done = true;
+                    stop = true;
+                }
                 if tl.trace_enabled {
                     if std::env::var_os("LEGAIA_DIAG_TIMELINE").is_some()
                         && !(matches!(kind, crate::cutscene_timeline::TraceResult::Halt)
@@ -1931,6 +2079,7 @@ impl World {
             // Timeline finished (or capped): drop it so the view reverts
             // from the cutscene camera to normal field gameplay.
             let restore = tl.restore_hidden_on_complete;
+            self.release_interaction_context(&tl);
             self.cutscene.timeline = None;
             // The town01 OPENING choreography `MoveTo`s the townsfolk to the
             // off-map hide box to clear the establishing shot. Nothing
@@ -1949,6 +2098,25 @@ impl World {
         }
     }
 
+    /// Hand a finished touch-resumed timeline's PC back to its placement
+    /// channel ([`crate::cutscene_timeline::CutsceneTimeline::interaction_slot`]):
+    /// the two are one retail context, so the next touch resumes where this
+    /// interaction's `0x21` left it. No-op for a spawned-record timeline.
+    // REF: FUN_80039B7C
+    fn release_interaction_context(&mut self, tl: &crate::cutscene_timeline::CutsceneTimeline) {
+        let Some(slot) = tl.interaction_slot else {
+            return;
+        };
+        if let Some(c) = self
+            .field_vm
+            .channels
+            .iter_mut()
+            .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
+        {
+            c.pc = tl.pc;
+        }
+    }
+
     /// Step every concurrent helper context ([`crate::world::FieldVmState::helper_contexts`]) one
     /// frame slice - the per-frame sweep over the mid-play spawned records,
     /// running each through the shared [`Self::run_spawned_record_slice`]
@@ -1964,9 +2132,25 @@ impl World {
             return;
         }
         let mut contexts = std::mem::take(&mut self.field_vm.helper_contexts);
+        // One dialog box: the pad goes to the modal timeline's box when it
+        // shows one, else to the first helper holding a box.
+        let mut pad_free = self
+            .cutscene
+            .timeline
+            .as_ref()
+            .is_none_or(|t| t.dialog.is_none());
         for tl in contexts.iter_mut() {
             if tl.done {
                 continue;
+            }
+            // Parked on its text segment: the box, not the slice, advances
+            // it; the park holds the frame cap like the modal timeline's.
+            if tl.dialog.is_some() {
+                self.drive_script_dialog(tl, pad_free);
+                pad_free = false;
+                if tl.dialog.is_some() || tl.done {
+                    continue;
+                }
             }
             if self.run_spawned_record_slice(tl, false) && tl.frames >= CUTSCENE_TIMELINE_MAX_FRAMES
             {
@@ -2121,6 +2305,28 @@ impl World {
             .collect()
     }
 
+    /// Flat partition-0 record index -> render scale for every **object-bind
+    /// channel** whose spawn prologue left `actor[+0x72]` at a non-zero,
+    /// non-unit value. Retail's per-actor render dispatcher composes that word
+    /// into the model matrix for every placed object it draws
+    /// (`FUN_8001ADA4` case 5: `lhu v1,0x72(s0)` / `li v0,0x1000` /
+    /// `beq v1,v0` at `0x8001B240`, else `ScaleMatrix` over `(s, s, s)` at
+    /// `0x8001B288`), so a prop the prologue shrinks draws shrunk. town01's
+    /// horizon backdrop (partition-0 record 26, a `17920 x 9600` plane at
+    /// `(3264, 6744)`) is the case that needs it: its actor carries `0x400`
+    /// in a retail capture, and at unit scale the plane stands between the
+    /// plaza camera and the player. Zero-scale objects are
+    /// [`Self::hidden_object_records`]' business and are not listed here.
+    // REF: FUN_8001ADA4 (scale-vector compose, disasm 8001b240..8001b28c)
+    pub fn object_render_scales(&self) -> std::collections::HashMap<usize, u16> {
+        self.field_vm
+            .channels
+            .iter()
+            .filter(|c| c.object_bind && c.ctx.field_72 != 0 && c.ctx.field_72 != 0x1000)
+            .map(|c| (c.placement_index, c.ctx.field_72))
+            .collect()
+    }
+
     // PORT: FUN_80039B7C (per-actor frame-slice loop; NOP break + halt park)
     // REF: FUN_8003C83C (cross-context target resolve)
     pub fn step_field_channels(&mut self) {
@@ -2134,9 +2340,11 @@ impl World {
         // in free-roam - its post-prologue body is the talked-to
         // conversation (and town01 `P1[40]`'s opens with a `52 34` flag SET
         // plus an op-`0x45` camera configure that must never fire
-        // ambiently). The engine's engaged windows: an active cutscene
-        // timeline (whose choreography drives the channels), plus the
-        // opt-in `animate_field_npcs` liveliness approximation.
+        // ambiently). The engine's engaged window is the set of placements an
+        // active cutscene timeline (or helper) has addressed - its
+        // choreography drives them. The free-roam liveliness mode
+        // (`FieldNpcState::animate`) does not widen it: that mode drives the
+        // two motion VMs, never a placement's script.
         // REF: FUN_8003BC08 (the `+0x10 & 0x100` dispatch gate)
         if !self.cutscene_timeline_active() && !self.npcs.animate {
             return;
@@ -2198,6 +2406,32 @@ impl World {
         let Some(man) = self.field_vm.channels_man.clone() else {
             return;
         };
+        let interaction_slot = self
+            .cutscene
+            .timeline
+            .as_ref()
+            .filter(|tl| !tl.done)
+            .and_then(|tl| tl.interaction_slot)
+            .map(usize::from);
+        // Outside the entry pre-run the engaged window is the timeline's: a
+        // placement steps only once a playing context has addressed it
+        // ([`crate::cutscene_timeline::CutsceneTimeline::addressed_channels`]).
+        // Stepping every placement instead woke each one's talk body - in
+        // `town0d` one walk-on beat ran Noa's (`P1[2]`) and Gala's (`P1[3]`)
+        // first-talk arms at once, and both spawned records walked the player
+        // toward different tiles. The liveliness mode is no exception: with
+        // it widening the window, an idle card-load resume in `vell` ran
+        // `P1[3]`'s talk body, whose `44 24` spawn walked the player off the
+        // seat, and one in `koin1` opened a placement's dialogue with no
+        // button pressed.
+        let engaged: Option<std::collections::HashSet<usize>> = (!entry_prerun).then(|| {
+            self.cutscene
+                .timeline
+                .iter()
+                .chain(self.field_vm.helper_contexts.iter())
+                .flat_map(|tl| tl.addressed_channels.iter().copied())
+                .collect()
+        });
         let mut channels = std::mem::take(&mut self.field_vm.channels);
         // Host hooks resolve cross-context ids against the channel set while
         // one of these is executing; the live vector is moved out for the
@@ -2217,6 +2451,19 @@ impl World {
             // bind-time `0x24`/`0x25` prologue already ran at install,
             // mirroring `FUN_8003A55C`).
             if channels[i].object_bind {
+                continue;
+            }
+            // The placement whose parked context a touch resumed as the
+            // modal timeline: that timeline IS this context
+            // ([`crate::cutscene_timeline::CutsceneTimeline::interaction_slot`]),
+            // so stepping the channel too would run the same bytes twice.
+            if interaction_slot == Some(channels[i].placement_index) {
+                continue;
+            }
+            if engaged
+                .as_ref()
+                .is_some_and(|set| !set.contains(&channels[i].placement_index))
+            {
                 continue;
             }
             if man.len() <= channels[i].record_offset {
@@ -2780,16 +3027,14 @@ impl World {
                 && let Some(target) = ext_target
                 && let Some(&move_id) = id.bytecode.get(id.pc + 2)
             {
-                let fallback = host.world.player_clip_frames_hint();
-                host.world
-                    .props
-                    .bank
-                    .bind_actor_clip(target, move_id, fallback);
                 if target == crate::field_env::PLAYER_ANCHOR_TARGET {
-                    host.world.field_player_script_clip(move_id);
-                    if move_id > 2 {
-                        host.world.locomotion.player_move_cues.push(move_id);
-                    }
+                    host.world.bind_player_script_clip(move_id);
+                } else {
+                    let fallback = host.world.player_clip_frames_hint();
+                    host.world
+                        .props
+                        .bank
+                        .bind_actor_clip(target, move_id, fallback);
                 }
             }
             // Bind the poked actor's `+0x62` into the executing context for the
@@ -3867,5 +4112,297 @@ mod tests {
         let tl = w.cutscene.timeline.as_ref().expect("installed");
         assert!(tl.player_clip_wait.is_none());
         assert_eq!(tl.pc, 6, "stepped past onto the wait");
+    }
+
+    /// A timeline that is a placement's own touch-resumed context
+    /// (`interaction_slot`) over `bc`, with that placement's channel sharing
+    /// the bytes at PC 0.
+    fn interaction_timeline(bc: Vec<u8>, slot: u8) -> World {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        use crate::field_channels::FieldChannel;
+        use legaia_engine_vm::field::FieldCtx;
+
+        let mut w = World::new();
+        let mut tl = CutsceneTimeline::new(bc.clone(), 0);
+        tl.interaction_slot = Some(slot);
+        w.cutscene.timeline = Some(tl);
+        w.field_vm.channels_man = Some(std::sync::Arc::new(bc));
+        w.field_vm.channels = vec![FieldChannel {
+            placement_index: usize::from(slot),
+            ctx: FieldCtx {
+                script_id: 0x40,
+                ..FieldCtx::default()
+            },
+            record_offset: 0,
+            pc: 0,
+            done: false,
+            object_bind: false,
+        }];
+        w
+    }
+
+    #[test]
+    fn a_touch_resumed_context_ends_at_its_nop_and_hands_the_pc_back() {
+        // `SET 5`, `21`, `SET 6`, `21`: the interaction ends on the first
+        // executed `0x21` (`FUN_80039B7C` `0x80039E20` / `0x80039E68`), so
+        // flag 6 - the bytes the NEXT touch runs - must not execute, and the
+        // placement channel resumes after the `21`.
+        let mut w = interaction_timeline(vec![0x50, 0x05, 0x21, 0x50, 0x06, 0x21], 3);
+        w.step_cutscene_timeline();
+        assert!(w.cutscene.timeline.is_none(), "the interaction ended");
+        assert!(w.system_flag_test(5));
+        assert!(!w.system_flag_test(6), "nothing past the `21` ran");
+        assert_eq!(
+            w.field_vm.channels[0].pc, 3,
+            "the channel resumes past the `21`"
+        );
+    }
+
+    #[test]
+    fn the_channel_a_touch_resumed_timeline_holds_does_not_step_itself() {
+        // `SET 5`, a long `WaitFrames`, `21`. While the timeline parks on the
+        // wait, the channel stepper must not run the same bytes a second time
+        // - two copies of one context is how the Rim Elm bee beat fired its
+        // scripted fight from the channel while the timeline sat on the text.
+        let mut w = interaction_timeline(vec![0x50, 0x05, 0x4A, 0x40, 0x00, 0x21], 3);
+        w.step_cutscene_timeline();
+        assert!(w.cutscene.timeline.is_some(), "parked on the wait");
+        w.step_field_channels();
+        assert_eq!(
+            w.field_vm.channels[0].pc, 0,
+            "the held channel did not step"
+        );
+    }
+
+    #[test]
+    fn the_system_script_starts_no_pass_while_another_context_holds_the_player() {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        // Two passes: `SET 7`, `21`, then `SET 8`, `21`.
+        let mut w = World::new();
+        w.load_field_script(vec![0x50, 0x07, 0x21, 0x50, 0x08, 0x21]);
+        w.step_field_frame_slice();
+        assert!(w.system_flag_test(7), "the install pass runs");
+        assert!(!w.field_vm.system_pass_open, "the `21` closed the pass");
+        // A stepped helper context holds the player (`+0x10 & 0x80000`):
+        // `FUN_801DA51C` starts no new pass (`0x801DA794..0x801DA7AC`).
+        let mut helper = CutsceneTimeline::new(vec![0x4A, 0x40, 0x00], 0);
+        helper.stepped = true;
+        w.field_vm.helper_contexts.push(helper);
+        assert!(w.step_field_frame_slice().is_none());
+        assert!(!w.system_flag_test(8), "no pass while the player is held");
+        // Released: the next pass runs.
+        w.field_vm.helper_contexts.clear();
+        w.step_field_frame_slice();
+        assert!(w.system_flag_test(8));
+    }
+
+    #[test]
+    fn an_open_system_pass_continues_under_a_held_player() {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        // `WaitFrames 2` inside the pass, then `SET 9`, `21`: a pass already
+        // open when the player gets held runs on (`0x801DA78C`).
+        let mut w = World::new();
+        w.load_field_script(vec![0x4A, 0x02, 0x00, 0x50, 0x09, 0x21]);
+        w.step_field_frame_slice();
+        assert!(w.field_vm.system_pass_open, "parked inside the pass");
+        let mut helper = CutsceneTimeline::new(vec![0x4A, 0x40, 0x00], 0);
+        helper.stepped = true;
+        w.field_vm.helper_contexts.push(helper);
+        for _ in 0..4 {
+            w.step_field_frame_slice();
+        }
+        assert!(w.system_flag_test(9), "the open pass ran to its `21`");
+    }
+
+    #[test]
+    fn a_committed_battle_holds_the_system_script() {
+        // The entity SM runs the system script only at state 0
+        // (`FUN_801DA51C` `0x801DA750`); a latched scripted fight holds it
+        // even inside an open pass.
+        let mut w = World::new();
+        w.load_field_script(vec![0x50, 0x0A, 0x21]);
+        w.carriers.pending_battle = Some(1);
+        assert!(w.field_scripts_held_for_battle());
+        assert!(w.step_field_frame_slice().is_none());
+        assert!(!w.system_flag_test(0x0A));
+    }
+
+    #[test]
+    fn a_seat_then_walk_in_one_slice_walks_from_the_seat() {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        use crate::field_channels::FieldChannel;
+        use legaia_engine_vm::field::FieldCtx;
+        // `CC 40 51 10 10 00 00` seats channel 0x40 at tile (16,16), then
+        // `C7 40 12 10 33` walks it to (18,16) - the shape of every cutscene
+        // that places an actor parked at the hide box and walks it in.
+        let bc = vec![
+            0xCC, 0x40, 0x51, 0x10, 0x10, 0x00, 0x00, 0xC7, 0x40, 0x12, 0x10, 0x33, 0x4A, 0x40,
+            0x00,
+        ];
+        let mut w = World::new();
+        w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
+        let hide = crate::world::FIELD_OFFMAP_HIDE_XZ;
+        w.field_vm.channels = vec![FieldChannel {
+            placement_index: 4,
+            ctx: FieldCtx {
+                script_id: 0x40,
+                world_x: hide as u16,
+                world_z: hide as u16,
+                ..FieldCtx::default()
+            },
+            record_offset: 0,
+            pc: 0,
+            done: false,
+            object_bind: false,
+        }];
+        w.npcs.positions.insert(4, (hide, hide));
+        w.step_cutscene_timeline();
+        let leg = w.npcs.motions.get(&4).expect("the walk leg started");
+        let (x, z) = (leg.state.world_x, leg.state.world_z);
+        assert_eq!(
+            (x, z),
+            (0x840, 0x840),
+            "the walk starts at the seat, not the hide box"
+        );
+        assert_eq!(leg.target, (0x940, 0x840));
+    }
+
+    #[test]
+    fn a_timeline_wakes_only_the_placements_it_addresses() {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        use crate::field_channels::FieldChannel;
+        use legaia_engine_vm::field::FieldCtx;
+        // Two placements whose talk bodies are `SET 0x20` / `SET 0x21`. The
+        // timeline addresses only the first (`B1 40 01`, a cross-context
+        // CFLAG_SET), then waits.
+        let man = vec![0x50, 0x20, 0x21, 0x50, 0x21, 0x21];
+        let mut w = World::new();
+        w.cutscene.timeline = Some(CutsceneTimeline::new(
+            vec![0xB1, 0x40, 0x01, 0x4A, 0x40, 0x00],
+            0,
+        ));
+        w.field_vm.channels_man = Some(std::sync::Arc::new(man));
+        let chan = |placement_index, script_id, record_offset| FieldChannel {
+            placement_index,
+            ctx: FieldCtx {
+                script_id,
+                ..FieldCtx::default()
+            },
+            record_offset,
+            pc: 0,
+            done: false,
+            object_bind: false,
+        };
+        w.field_vm.channels = vec![chan(1, 0x40, 0), chan(2, 0x41, 3)];
+        // Before the timeline addresses anyone, no talk body runs.
+        w.step_field_channels();
+        assert!(!w.system_flag_test(0x20) && !w.system_flag_test(0x21));
+        w.step_cutscene_timeline();
+        w.step_field_channels();
+        assert!(w.system_flag_test(0x20), "the addressed placement steps");
+        assert!(
+            !w.system_flag_test(0x21),
+            "an unaddressed placement's talk body stays asleep"
+        );
+    }
+
+    #[test]
+    fn a_player_targeted_move_to_in_a_timeline_seats_the_player() {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        // `A3 F8 60 0D` (MOVE_TO against the player anchor), then a wait.
+        let mut w = World::new();
+        w.install_field_player(0);
+        let slot = 0u8;
+        w.cutscene.timeline = Some(CutsceneTimeline::new(
+            vec![0xA3, 0xF8, 0x60, 0x0D, 0x4A, 0x40, 0x00],
+            0,
+        ));
+        w.step_cutscene_timeline();
+        let ms = &w.actors[slot as usize].move_state;
+        assert_eq!(
+            (ms.world_x, ms.world_z),
+            (0x60 * 0x80 + 0x40, 0x0D * 0x80 + 0x40),
+            "retail resolves 0xF8 to the player and takes the player arm"
+        );
+        assert_eq!(w.cutscene.timeline.as_ref().unwrap().pc, 4);
+    }
+
+    #[test]
+    fn a_copy_from_player_then_walk_starts_at_the_player() {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        use crate::field_channels::FieldChannel;
+        use legaia_engine_vm::field::FieldCtx;
+        // `CC 40 37` (4C nibble-3 sub-7: copy the player's position onto
+        // channel 0x40), then `C7 40 12 10 33` walks it off. The channel
+        // carries the party-bank bit a `4C 50 F1` model select raises, which
+        // must not read as "this is the player".
+        let bc = vec![
+            0xCC, 0x40, 0x37, 0xC7, 0x40, 0x12, 0x10, 0x33, 0x4A, 0x40, 0x00,
+        ];
+        let mut w = World::new();
+        w.install_field_player(0);
+        w.actors[0].move_state.world_x = 0x900;
+        w.actors[0].move_state.world_z = 0x700;
+        w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
+        let hide = crate::world::FIELD_OFFMAP_HIDE_XZ;
+        w.field_vm.channels = vec![FieldChannel {
+            placement_index: 4,
+            ctx: FieldCtx {
+                script_id: 0x40,
+                world_x: hide as u16,
+                world_z: hide as u16,
+                flags: 0x0100_0000,
+                ..FieldCtx::default()
+            },
+            record_offset: 0,
+            pc: 0,
+            done: false,
+            object_bind: false,
+        }];
+        w.npcs.positions.insert(4, (hide, hide));
+        w.step_cutscene_timeline();
+        let leg = w.npcs.motions.get(&4).expect("the walk leg started");
+        assert_eq!(
+            (leg.state.world_x, leg.state.world_z),
+            (0x900, 0x700),
+            "the walk starts at the player the actor was copied onto"
+        );
+    }
+
+    #[test]
+    fn a_helper_context_parks_on_its_text_and_runs_on_after_the_box() {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        // `1F 'H' 'i' 00` (one text segment), `SET 0x0C`, then a long wait.
+        // Retail's runner parks any engaged context on its text segment and
+        // hands it to the shared box; a helper used to complete there and
+        // drop the rest of the record.
+        let bc = vec![0x1F, b'H', b'i', 0x00, 0x50, 0x0C, 0x4A, 0x40, 0x00];
+        let mut w = World::new();
+        w.field_vm
+            .helper_contexts
+            .push(CutsceneTimeline::new(bc, 0));
+        w.step_helper_contexts();
+        assert_eq!(w.field_vm.helper_contexts.len(), 1, "parked, not dropped");
+        assert!(
+            w.script_dialog_panel().is_some(),
+            "the helper shows its box"
+        );
+        assert!(!w.system_flag_test(0x0C));
+        for i in 0..200 {
+            w.set_pad(if i % 2 == 0 {
+                crate::input::PadButton::Cross.mask()
+            } else {
+                0
+            });
+            w.step_helper_contexts();
+            if w.system_flag_test(0x0C) {
+                break;
+            }
+        }
+        assert!(
+            w.system_flag_test(0x0C),
+            "dismissing the box resumes the helper past the segment"
+        );
+        assert!(w.script_dialog_panel().is_none());
     }
 }

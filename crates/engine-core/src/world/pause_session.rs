@@ -44,7 +44,10 @@
 //! resolves and parks in the `UNFIND MAP NUMBER` phase on a miss, with the
 //! opener program still holding the player. The engine resolves the target
 //! before it installs anything and drops the use on a miss, as the direct
-//! transition it replaces did.
+//! transition it replaces did. A word inside the TOC's header rows (`0`
+//! `init_data`, `1` `gameover_data`) counts as a miss too: retail's scan
+//! matches it, but it names no scene. A region record with an all-zero
+//! return triple (station3's, conc3's) stores exactly that word.
 
 use legaia_engine_vm::travel_art_actor::{self as ta, TravelArt, TravelArtActor};
 use legaia_engine_vm::world_map_panel_actors::{

@@ -16,7 +16,14 @@
 //! `MAN[1] & 4` or that byte is set, `0x18` otherwise. The census below prints
 //! the scenes whose MAN raises either bit.
 //!
-//! Skips (and passes) when `LEGAIA_DISC_BIN` / `extracted/` are missing.
+//! "Under" means under what no scene upload **wrote**, not under every zero
+//! word: a caption TIM's transparent background is written zeros, and the
+//! ending scenes' credit captions at `(320, 416)` sit on the pool's `(320,
+//! 256..)` kanji sheet - keyed on the value, the kanji bled through every
+//! transparent run of the credits roll.
+//!
+//! Skips (and passes) when `LEGAIA_DISC_BIN` / `extracted/` are missing
+//! (`LEGAIA_EXTRACTED_DIR` first, then repo-relative).
 
 use legaia_engine_core::fog_particles::{FOG_CAP_DEFAULT, FOG_CAP_RAISED, fog_cap_for_man};
 use legaia_engine_core::scene::{ProtIndex, Scene, SceneHost};
@@ -36,8 +43,9 @@ fn extracted() -> Option<PathBuf> {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
         return None;
     }
-    for c in ["extracted", "../extracted", "../../extracted"] {
-        let d = PathBuf::from(c);
+    let env = std::env::var_os("LEGAIA_EXTRACTED_DIR").map(PathBuf::from);
+    let rel = ["extracted", "../extracted", "../../extracted"].map(PathBuf::from);
+    for d in env.into_iter().chain(rel) {
         if d.join("PROT.DAT").exists() && d.join("CDNAME.TXT").exists() {
             return Some(d);
         }
@@ -85,6 +93,67 @@ fn host_field_entry_underlays_the_effect_pool() {
         assert_eq!(cells, RETAIL_FOG_CELLS_FNV, "{scene}: fog wisps");
         assert_eq!(clut, RETAIL_FOG_CLUT_FNV, "{scene}: fog CLUT");
     }
+}
+
+/// Every word of `edteien`'s `(320, 416)` 40x32 caption TIM - the credits
+/// roll's first card - lands as the TIM wrote it, transparent zeros
+/// included, although the effect pool covers the same rect.
+#[test]
+fn a_caption_tims_transparent_words_stay_transparent_over_the_pool() {
+    let Some(extracted) = extracted() else { return };
+    let index = ProtIndex::open_extracted(&extracted).expect("index");
+    let mut pool = legaia_tim::Vram::new();
+    legaia_engine_core::scene::upload_effect_textures_into_vram(&index, &mut pool, true)
+        .expect("effect pool");
+    let scene = Scene::load(&index, "edteien").expect("edteien");
+    let mut caption = None;
+    for entry in &scene.entries {
+        let bytes: &[u8] = &entry.bytes;
+        let scan = legaia_asset::tim_scan::scan_entry(bytes);
+        for (source, hit) in &scan.hits {
+            let src: &[u8] = match source {
+                legaia_asset::tim_scan::Source::Raw => bytes,
+                legaia_asset::tim_scan::Source::Lzs(i) => scan.lzs_sections[*i].as_slice(),
+            };
+            let end = (hit.offset + hit.byte_len).min(src.len());
+            if let Ok(t) = legaia_tim::parse(&src[hit.offset..end])
+                && (t.image.fb_x, t.image.fb_y, t.image.fb_w, t.image.h) == (320, 416, 40, 32)
+            {
+                caption = Some(t);
+            }
+        }
+    }
+    let caption = caption.expect("edteien carries its (320, 416) 40x32 caption TIM");
+    let host = host_vram(&extracted, "edteien");
+    let vram = &host.resources.as_ref().expect("edteien resources").vram;
+    let (mut zeros, mut pool_under_zero, mut mismatched) = (0usize, 0usize, 0usize);
+    for row in 0..32usize {
+        for col in 0..40usize {
+            let o = (row * 40 + col) * 2;
+            let want = u16::from_le_bytes([caption.image.data[o], caption.image.data[o + 1]]);
+            let (x, y) = (320 + col, 416 + row);
+            if want == 0 {
+                zeros += 1;
+                if pool.pixel(x, y) != 0 {
+                    pool_under_zero += 1;
+                }
+            }
+            if vram.pixel(x, y) != want {
+                mismatched += 1;
+            }
+        }
+    }
+    eprintln!(
+        "[ok] edteien caption: {zeros} transparent words, {pool_under_zero} of them over pool texels, {mismatched} mismatched"
+    );
+    assert!(
+        pool_under_zero > 0,
+        "the pool must actually cover the caption for this to test anything"
+    );
+    assert_eq!(
+        mismatched, 0,
+        "pool texels bled into the caption's transparent words"
+    );
 }
 
 #[test]

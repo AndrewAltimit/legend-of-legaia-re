@@ -21,11 +21,14 @@
 //!   bit in `actor[+0x10]`. See [`docs/subsystems/renderer.md`].
 //! - [`ActorAllocatorHost::on_actor_cleanup`] (FUN_80024DFC, 3 instr):
 //!   per-actor cleanup hook called from `FUN_8002519C` while freeing
-//!   an actor. The retail body reads `actor[+0x56]` and masks the low
-//!   nibble into `v1`, but never sets `v0` - the function is
-//!   effectively an empty side-effect-free hook in retail. Engines
-//!   that want to drop per-actor allocator metadata on free override
-//!   this; the default implementation is a no-op (matching SCUS).
+//!   an actor. The retail body is `lhu v0,0x56(a0)` / `jr ra` /
+//!   `andi v1,v0,0xf`: it returns `actor[+0x56]` in `v0` (low nibble in
+//!   `v1`) and stores nothing, and every call site discards both - the
+//!   next instruction is always `jal 0x800204A4`, whose first two
+//!   instructions overwrite `v1` and `v0`. So it is a side-effect-free
+//!   hook in retail. Engines that want to drop per-actor allocator
+//!   metadata on free override this; the default implementation is a
+//!   no-op (matching SCUS).
 //!
 //! ## Port boundary
 //!
@@ -60,21 +63,20 @@ impl SpawnPosition {
 /// `None` on allocation failure (the retail `iVar1 == 0` branch).
 pub type ActorHandle = u32;
 
-/// PORT: FUN_80024C88, FUN_80024D78, FUN_80024DFC
-///
 /// Engine-side allocator hooks the runtime needs to construct + tear
 /// down actors. Default implementations are no-ops where retail's
 /// SCUS body is itself a no-op; the spawn / OBJECT-table methods
 /// have no useful default and engines must override them.
 ///
-/// The three tags sit on the trait rather than one per method:
+/// The port tags sit on the bodies, not on this trait: the trait is only
+/// a declaration, so a tag here anchors to a type no host ever enters.
 /// `spawn_at_position` (FUN_80024C88) and `rebuild_object_table`
-/// (FUN_80024D78) are bodyless declarations, which the port catalog's
-/// anchor resolver cannot attach a tag to (a tag above a bodyless `fn`
-/// falls back to module scope), and the trait declaration is the port -
-/// the engine layer (`engine-core::actor_alloc_host`) supplies the
-/// bodies. `on_actor_cleanup` (FUN_80024DFC) keeps retail's no-op body
-/// as its default below.
+/// (FUN_80024D78) are tagged on `World`'s implementation
+/// (`engine-core::actor_alloc_host`), and `on_actor_cleanup`
+/// (FUN_80024DFC) on its retail no-op default below. All three carry
+/// `REPLACED-BY`: the one production caller of the first two is
+/// `move_vm::spawn::spawn_move_actor`, itself replaced by the ambient
+/// pool, and each routine's job in play is done by a named mechanism.
 pub trait ActorAllocatorHost {
     /// Allocate a fresh actor at `position` from the pool keyed by
     /// `(pool_a, pool_b)`. Mirrors `FUN_80024C88(pos_ptr, pool_a,
@@ -118,6 +120,9 @@ pub trait ActorAllocatorHost {
     /// Engines that maintain per-actor allocator metadata (free
     /// lists, reverse pool indices) override this to drop the
     /// metadata on free.
+    ///
+    /// PORT: FUN_80024DFC
+    /// REPLACED-BY: nothing is owed a port - retail's body (`lhu v0,0x56(a0)` / `jr ra` / `andi v1,v0,0xf`) stores nothing, and every call site in the dump corpus (`0x80025214` in `FUN_8002519C`, `0x801D7BE8`, `0x801D6C58`, `0x801D3AC0`) discards `v0` / `v1` into the `jal 0x800204A4` that follows, so the routine has no observable behaviour to host
     fn on_actor_cleanup(&mut self, actor: ActorHandle) {
         let _ = actor;
     }

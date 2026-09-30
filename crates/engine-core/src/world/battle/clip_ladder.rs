@@ -325,6 +325,47 @@ impl World {
         }
     }
 
+    /// Stand a revived party member back up: release the downed chain
+    /// (`4 -> 7 -> 8`, whose entry `8` re-commits itself for as long as
+    /// `+0x1DA` reads 8) and drop the tag-8 root latch, so the idle restore
+    /// resumes the loop on the next anim tick.
+    ///
+    /// **Engine choice.** The retail restore primitive `FUN_800402F4` writes
+    /// the HP halfword and the readout seed and then spawns the item's cue
+    /// group (`jal 0x801E22C8` at `0x800408F8`); nothing on that path writes
+    /// `+0x1DA`, and which later write ends the kneel is not traced. What is
+    /// measured is the cost of leaving it: the kneel's pose centroid puts the
+    /// member's body pair (`+0x3C`/`+0x40`, what the range law measures) some
+    /// 300 units off its live pair, a monster's attack short step `0x19`
+    /// walks at the live pair and never comes in range, and `0x19` has no
+    /// timeout - the round never ends. A no-op for a monster, a living actor
+    /// that is not kneeling, or an actor still at zero HP.
+    ///
+    /// REF: FUN_800402F4, FUN_8004AD80 (the chain this releases)
+    pub(in crate::world) fn stand_revived_party_member(&mut self, slot: usize) {
+        let Some(a) = self.actors.get_mut(slot) else {
+            return;
+        };
+        if a.battle_monster_id.is_some() || a.battle.hp == 0 {
+            return;
+        }
+        let downed = matches!(
+            a.battle_reaction,
+            Some(4 | PARTY_DOWNED_ENTRY | PARTY_DOWNED_LOOP_ENTRY)
+        );
+        if !downed && !a.battle.flag_bits.has(ANIM_FLAG_ROOT_LATCH) {
+            return;
+        }
+        Self::end_battle_reaction(a);
+        a.battle.flag_bits.clear(ANIM_FLAG_ROOT_LATCH);
+        // The kneel played on the reaction channel, so the pose byte may
+        // still name idle; forget it so the idle loop is re-installed.
+        a.battle_pose = None;
+        if a.battle_action_clips.is_some() {
+            self.apply_battle_pose(slot, vm::battle_action::Pose::Idle as u8);
+        }
+    }
+
     /// Release the reaction channel; the idle restore resumes the loop.
     fn end_battle_reaction(a: &mut Actor) {
         a.battle_reaction = None;

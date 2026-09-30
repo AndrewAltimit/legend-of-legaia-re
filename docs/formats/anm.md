@@ -417,7 +417,19 @@ etc.), while the party actors point into the PROT 0874 §1 locomotion
 container above. **Which record an NPC plays comes from its MAN placement
 header**: the record's `anim_id` byte = bundle record index + 1 (`0` = no
 clip), installed into the actor `+0x5C` halfword at spawn - see
-[`subsystems/script-vm.md`](../subsystems/script-vm.md#placement-header-model--animation-resolution). The bundle is a
+[`subsystems/script-vm.md`](../subsystems/script-vm.md#placement-header-model--animation-resolution).
+The header only seeds the word: the record's spawn prologue runs before the
+first drawn frame and can rewrite it. Every save crystal (`model 0xF3`) ships
+header anim `0` and its prologue sets `22` - the locomotion bundle's savepoint
+clip, record 21 - which a retail `conc_field_card_boot` capture shows at the
+crystal actor's `+0x5C` with draw kind `1`. Both play hosts therefore pose a
+placement from the live word (`World::field_npc_live_anim`) and fall back to
+the header byte only when no channel owns the slot. The crystal's mesh is the
+player bank's slot 3 (`0xF3 - 0xF0`), the three-object PROT 0874 §0 member,
+which the engine keeps in `World::field_head_pool` apart from the shared
+global pool whose slots `3..=32` it fills with the battle effect-model
+library; the same capture shows the crystal actor at `+0x64 = 3` and the four
+torch-like aux props at `+0x64 = 4`, `+0x5C = 23`. The bundle is a
 [`parse_player_lzs`](../../crates/asset/src/lib.rs)-shaped container; section
 2 (the third descriptor) is tagged **type byte `0x05`** in the dispatcher
 table (labeled "MOVE" in `AssetType`, see [`docs/formats/asset-type.md`

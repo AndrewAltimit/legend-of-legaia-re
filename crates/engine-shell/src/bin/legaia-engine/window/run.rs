@@ -240,6 +240,16 @@ fn arm_requested_battle(session: &mut BootSession, spec: &str) {
              system-flag arm is replayed with the entry"
         );
     }
+    // `LEGAIA_BATTLE_STAGE=N` stamps the battle-stage variant the fight is
+    // staged in (`_DAT_8007BD60 & 0x1F`), for a fight entered without
+    // standing on the region tile that names it - the retail comparison
+    // corpus reads it off the capture.
+    if let Some(v) = std::env::var("LEGAIA_BATTLE_STAGE")
+        .ok()
+        .and_then(|s| s.trim().parse::<u8>().ok())
+    {
+        world.seed_battle_stage_variant(v);
+    }
     if world.force_encounter(row) {
         log::info!(
             "play-window: --battle armed formation row {row} in '{}' - the fight opens through \
@@ -451,6 +461,9 @@ pub(super) fn cmd_play_window_with_record(
     }
 
     let mut session = crate::shared::open_boot_session(scene, enable_audio, extracted_root, disc)?;
+    // The window drains every per-tick world queue itself, right after each
+    // session tick (`drain_and_log_battle_events` / `drain_and_route_field_events`).
+    session.set_host_drains_queues(true);
     // Scene-entry VDF pulse (enhancement) gate - must land before the first
     // `enter_field_scene`, which is where the installer runs.
     session.host.world.toggles.entry_pulse_enabled = entry_pulse;
@@ -502,7 +515,41 @@ pub(super) fn cmd_play_window_with_record(
     // unless `--world-map` was also passed. The flag still forces the
     // world-map entry for any other label.
     let world_map = world_map || legaia_engine_core::scene::is_world_map_scene(scene);
-    if world_map {
+    // `--resume-save`: land an LGSF file through the card-load path instead
+    // of the door entry below - the order the retail comparison corpus's
+    // headless channels seed with, so its image channel frames the same
+    // entry. The save's resume scene wins; `--scene` covers a file without.
+    let resumed = match debug_seeds.resume_save.as_deref() {
+        None => None,
+        Some(path) => {
+            let bytes = std::fs::read(path)
+                .with_context(|| format!("--resume-save: read {}", path.display()))?;
+            let (sf, resume) = legaia_save::SaveFile::parse_with_resume(&bytes)
+                .with_context(|| format!("--resume-save: parse {}", path.display()))?;
+            let target = if resume.scene.is_empty() {
+                scene.to_string()
+            } else {
+                resume.scene.clone()
+            };
+            let landing = session.resume_save(sf, &target, &field_live_opts);
+            log::info!(
+                "play-window: --resume-save landed {} ({:?})",
+                landing.kind(),
+                landing.scene()
+            );
+            Some(session.host.world.mode)
+        }
+    };
+    let world_map = match resumed {
+        Some(mode) => mode == legaia_engine_core::world::SceneMode::WorldMap,
+        None => world_map,
+    };
+    if world_map && resumed.is_some() {
+        if let Some(ctrl) = session.host.world.world_map.ctrl.as_mut() {
+            ctrl.debug_enabled = true;
+            ctrl.view_mode = 0;
+        }
+    } else if world_map {
         // Load the scene's resources, route its region-keyed encounter table
         // onto the overworld, install the player, and enter world-map mode
         // (camera controller included). World::tick drives locomotion + the
@@ -521,7 +568,7 @@ pub(super) fn cmd_play_window_with_record(
             ctrl.view_mode = 0;
         }
     }
-    if !world_map {
+    if !world_map && resumed.is_none() {
         // Free-roam story staging: the `--scene` direct entry is the native
         // picker - stage the scene at its canonical free-roam visit (entry
         // BGM pause dropped, story-twin event flags seeded). The boot-UI
@@ -1203,6 +1250,10 @@ pub(super) fn cmd_play_window_with_record(
         world_map_terrain_draws: Vec::new(),
         world_map_terrain_color_draws: Vec::new(),
         ground_heightfield: None,
+        ground_src: None,
+        ground_crop: None,
+        field_terrain_cell_keys: Vec::new(),
+        field_terrain_color_cell_keys: Vec::new(),
         // Headless capture harnesses can't press `F3`; let them start on the
         // wide debug vantage via the env switch.
         field_debug_camera: std::env::var_os("LEGAIA_FIELD_DEBUG_CAM").is_some(),
@@ -1236,6 +1287,7 @@ pub(super) fn cmd_play_window_with_record(
         summon_actor_slot: None,
         battle_stage_mesh: None,
         battle_stage_color_mesh: None,
+        battle_stage_shell: None,
         battle_ground_mesh: None,
         battle_ground_cue_far: None,
         battle_stage_outdoor: false,

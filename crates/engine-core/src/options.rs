@@ -202,15 +202,26 @@ pub struct OptionsState {
     /// steps. Purely presentational - the move-VM simulation state is
     /// identical either way.
     pub reduce_flashing: bool,
-    /// Retail static-object windowing (engine-only, **retail-faithful** side
-    /// of an enhancement): draw a `.MAP` placement the sub-area window sweep
-    /// owns only while the camera's latched region box holds it, as retail's
-    /// windowed static-object list (`FUN_801D7B50`) does. Mirrors into
-    /// [`crate::world::StaticObjectWindow::retail_windowing`]. **Default off**
-    /// - the port draws every placement for the whole map, so a sub-area's
-    ///   unbound props do not pop in on a door. The list is re-planned on every
-    ///   re-centre either way.
+    /// Retail static-object windowing: draw a `.MAP` placement the sub-area
+    /// window sweep owns only while the camera's latched region box holds it,
+    /// as retail's windowed static-object list (`FUN_801D7B50`) does. Mirrors
+    /// into [`crate::world::StaticObjectWindow::retail_windowing`].
+    /// **Default on**: drawing the props retail's box leaves out is not an
+    /// enhancement - they are other rooms' scenery authored to be seen only
+    /// from their own region (retona's cloud bowl covers the cave the player
+    /// stands in when drawn from outside its region). Off draws every
+    /// placement for the whole map, so a sub-area's unbound props do not pop
+    /// in on a door. The list is re-planned on every re-centre either way.
     pub retail_static_window: bool,
+    /// Retail's visible-tile crop: draw only the ground and decoration cells
+    /// the camera's visible tile window (`0x1F8003E8..EB`, clipped to the walk
+    /// region) reaches, as the field render library (`FUN_801F7088`) does.
+    /// Mirrors into [`crate::world::WorldToggles::view_window_crop`].
+    /// **Default on**, and only effective at retail framing
+    /// ([`crate::field_view_window::framing_is_retail`]): the window is sized
+    /// for retail's frustum, so a farther or re-aimed camera draws the whole
+    /// map instead of opening black edges. Off draws the whole map always.
+    pub retail_view_window: bool,
 }
 
 impl Default for OptionsState {
@@ -232,7 +243,8 @@ impl Default for OptionsState {
             camera_distance: crate::camera::CameraDistance::Far,
             precise_movement: false,
             reduce_flashing: true,
-            retail_static_window: false,
+            retail_static_window: true,
+            retail_view_window: true,
         }
     }
 }
@@ -253,6 +265,7 @@ impl OptionsState {
         world.toggles.reduce_flashing = self.reduce_flashing;
         world.toggles.select_attack = self.battle_select_attack;
         world.terrain.static_window.retail_windowing = self.retail_static_window;
+        world.toggles.view_window_crop = self.retail_view_window;
     }
 
     /// Load from a TOML file, falling back to [`Default`] if the file is
@@ -1001,6 +1014,20 @@ impl OptionsState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Retail's sub-area static-object windowing is the play hosts' default:
+    /// the props its region box leaves out are other rooms' scenery (retona's
+    /// cloud bowl covers the cave from outside its region), not an
+    /// enhancement worth drawing.
+    #[test]
+    fn retail_static_window_defaults_on_and_reaches_the_world() {
+        let opts = OptionsState::default();
+        assert!(opts.retail_static_window);
+        let mut w = crate::world::World::new();
+        assert!(!w.terrain.static_window.retail_windowing);
+        opts.apply_to_world(&mut w);
+        assert!(w.terrain.static_window.retail_windowing);
+    }
 
     #[test]
     fn rows_match_retail_display_order() {

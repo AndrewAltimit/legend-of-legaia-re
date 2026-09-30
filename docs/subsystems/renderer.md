@@ -999,6 +999,19 @@ back into `a1`; `FUN_8005B4E8` scales the matrix by a vector):
 half times a plain part's size. The `0x400` test runs first (`0x8001CF7C`),
 so it wins over any skip bit.
 
+A `0x400` node's `+0x14` is therefore an eye-space offset, and the captures
+show where it comes from: the part's own op `0x07` WORLD_SET, moved on by the
+part tick's motion block (`FUN_80021DF4` `0x800228A0..0x80022B90`, which
+integrates `+0x3C..+0x40` as velocities). The retail camera-locked parts sit at
+`(0, -192, 1536)` in `cort_mystic_circle_mid_cast` (PROT 0938),
+`(0, 0, 256)` in `cort_evolved_ultra_charge_mid_cast` (0962) and on the
+`z = 2048` plane in `horn_summon_mid_cast` (0930), with `+0x2C` equal to
+`S_b` times each - never near the cast target. The engine's summon scene
+(`engine-core::summon`) runs a camera-locked part through that motion block
+and leaves its position to its program; its translation glide, which snaps a
+part to `origin + anim bank`, is kept for the world-space parts only
+(`summon_camera_locked_retail_capture` pins the three states).
+
 Both hosts honour it. Every move-VM part draw record carries the node's
 `+0x52` word as `flags_52` (`SummonPartDraw`, `RibbonDraw`), and each host's
 part pass - the native window's `build_summon_and_move_fx_part_draws` /
@@ -1571,6 +1584,25 @@ render-node allocation and the mesh-chain follow-through - is written up under
 `legaia_engine_render::actor_bind`, which carries the index rule as a unit test
 against the obj-114 case above.
 
+**A placed object draws at its actor's render scale.** A bound placement is an
+actor, and the per-actor draw composes `actor[+0x72]` into the model matrix
+whenever it is not `0x1000`: `FUN_8001ADA4` case 5 reads it at `0x8001B240`
+(`lhu v1,0x72(s0)` / `li v0,0x1000` / `beq v1,v0`) and otherwise stores it three
+times into the scale vector at `0x1F800348` and calls `ScaleMatrix`
+(`jal 0x8005B4E8` at `0x8001B288`) on the actor's rotation. The bind record's
+spawn prologue sets the word, so the `.MAP` record alone does not say how big an
+object draws. town01's horizon backdrop is the case that shows it: pack 85, a
+`17920 x 9600` plane placed at `(3264, 6744)` behind partition-0 record 26,
+draws at `0x400`, a quarter - the value the actor at that position holds in a
+retail `first_town_interactive` capture. At unit scale the plane stands between
+the plaza camera and the player and fills the frame with its sky texture. The
+port reads the scale off the object-bind channels once the prologues have run
+(`World::object_render_scales`) and both hosts fold it in after the rotation
+through one kernel, `field_env::placed_render_scales`; a zero scale stays the
+story-hidden gate's business. Like the hidden gate, the scale is baked with the
+scene's draw lists, so a script that ramps it mid-scene is not followed. Pinned
+by `crates/engine-core/tests/field_object_render_scale_disc.rs`.
+
 #### CLUT-trace + VRAM-oracle diagnostics
 
 Two `legaia-engine` subcommands surface where the engine's loader still has gaps against a captured runtime VRAM:
@@ -1755,6 +1787,18 @@ corners must project inside the depth range even though the camera frames only
 a small player-sized box, and the near plane must stay within a few units of
 the lens at every framing distance the engine uses.
 
+"Every loaded body" means every body retail would draw, and an actor slot is
+not one until something spawns it. `World::init_scene_animations` binds every
+actor slot `K` to scene TMD `K` ahead of time so a field-VM spawn finds its
+mesh; the slots nothing spawns stay bound, inactive and at the origin. Retail
+has no counterpart - its scene load (`FUN_8001E890`) registers the TMDs in the
+pointer table and allocates no actor for them - so the per-actor pass draws a
+slot only through `World::actor_slot_drawn` (bound **and** active). Drawing
+the rest put the whole scene pack at world `(0, 0, 0)`: in uru that pack's
+sky and cliff geometry wraps the origin, and the frame filled with stretched
+texture while the camera matched retail exactly. Pinned by
+`crates/engine-core/tests/field_unspawned_actor_draw_disc.rs`.
+
 The **site play page** (`site/js/play-app.js`) draws the whole scene every
 frame, unconditionally, matching this renderer - `OCCLUDER_CULL = false`. It
 once ran a per-frame occlusion cull (drop a body the eye-to-player segment
@@ -1769,6 +1813,31 @@ instead - the
 [camera-occlusion fade](#camera-occlusion-fade-see-through-walls-opt-in-enhancement),
 which dissolves pixels rather than culling bodies and so has no
 neighbour-blink failure mode.
+
+### The field pass culls back faces
+
+Retail rejects the back faces of every field mesh. Each per-prim handler
+behind `FUN_80043390` runs `NCLIP` after the `RTPT` and ANDs the signed area
+with a mask before the sign test - in the quad handler `FUN_80043768`,
+`mfc2 s2,$24` / `and s2,s2,s3` / `blez s2` at `0x80043808..0x80043818`, and
+a quad is kept when either of its two triangles faces the eye. The
+dispatcher loads the mask as `0xFFFFFFFF` and lowers it to `0x7FFFFFFF` -
+every area non-negative, so both sides draw - only when its colour argument
+carries bit `0x08000000` (`0x80043520..0x80043540`). A field actor's colour
+word `actor[+0x74]` is born `0x00808080` (`FUN_80020DE0` at `0x80020F3C`) and
+both placed-object spawners only OR in `0x40000000` or `0x10000000`
+(`FUN_8003A55C` at `0x8003A730..0x8003A76C`, the window sweep `FUN_801D7B50`
+at `0x801D7D78..0x801D7DB4`), so no placed object is double-sided. A retail
+`first_town_interactive` capture agrees: no drawn actor carries the bit.
+
+The port arms the same rejection for the whole field pass through one kernel
+both hosts read, `camera_view::nclip_cull_mode` (`2` for `SceneMode::Field`
+and for a cutscene camera on any other non-overworld mode). Drawn both-sided,
+a sky dome the camera looks at from outside paints its outer shell over the
+scene - korout's and retona's did, and so did the flag-seeded frames of
+several other scenes. The world map keeps both-sided draws (its continent
+terrain's winding parity is the world-map pass's, not the field pass's), as
+do battle and the minigame venues.
 
 ## Coplanar surfaces: retail's ordering model, the port's depth policy
 
@@ -1802,9 +1871,11 @@ renderer and the site's WebGL viewers:
   opt-in post-pass the scene-assembly consumers run; preservation/export
   builders stay byte-faithful) flags both copies via bit 15 of the per-vertex
   CBA attribute (unused by the PSX CBA encoding). The fragment shaders then
-  discard the away-facing copy of *flagged* prims only - retail's per-prim
-  NCLIP, without the unsafe global cull (winding is not globally consistent
-  across the corpus). Which facing is "away" depends on the view chain's
+  discard the away-facing copy of *flagged* prims only. Outside the field
+  pass (the world map, battle, the minigame venues and the site's static
+  viewers) this is the only NCLIP the port applies; the field pass also
+  runs the [global back-face cull](#the-field-pass-culls-back-faces).
+  Which facing is "away" depends on the view chain's
   reflection parity: the native field frame and the site's `buildMvp` carry
   one net reflection, the site's assembled views add the retail screen-X
   mirror on top; the WebGL shader takes the parity as the `u_pair_front`

@@ -39,9 +39,11 @@ assert_eq!(r.hp_mp_sp(), r2.hp_mp_sp());
 
 ## Retail SC-block bridges
 
-The retail save block stores party records, the 512-byte story-flag
-bitmap, and the whole 256-slot item array (`+0x1818`, `0x200` bytes) at fixed
-offsets. 72 is the size of the consumable **display page** a cheat device
+The retail save block stores party records, the story-flag window
+(`+0x14C0..+0x1818`, which carries the whole `0x200`-byte system-flag bank at
+its `+0x158`), the present party (count `+0x454`, leader `+0x457`, member list
+`+0x458`), the field position snapshot (`+0x428` / `+0x42C`) and the whole
+256-slot item array (`+0x1818`, `0x200` bytes) at fixed offsets. 72 is the size of the consumable **display page** a cheat device
 targets, not a bound - a played-through bag runs past it, and lifting only the
 page dropped every item above slot 71. The character-record
 array anchors at **SC block offset `0x5C8`** with the `0x414` stride
@@ -69,6 +71,19 @@ want the whole `SaveFile` - including the party gold
 coin bank (`RETAIL_COINS_OFFSET` = SC `+0x464`, RAM `0x800845A4` - the
 slot-machine cash-out global).
 
+A lift reads the present party from the block's own count and member list
+(`read_retail_present_party` into `SaveExtV2::active_party`), never from the
+number of populated records - the New Game template populates all four - and
+the field position into `SaveExtV2::field_position`
+(`read_retail_field_position`; a never-written `(0, 0)` reads as `None`). The
+composer writes both back. In an LGSF file the position is the optional
+`LGX8` block, emitted only when present. The two audio-level words
+(configured level `+0x43C`, voice volume `+0x440`) lift into
+`SaveExtV2::audio_levels` (`read_retail_audio_levels`; an all-zero pair reads
+as `None`) and ride in the optional `LGX9` block. Why these words matter on a
+card load is in
+[`save-screen.md`](../../docs/subsystems/save-screen.md#what-a-card-load-restores).
+
 Two sibling writers complete a block the composer leaves alone:
 
 - `SaveResume` - the resume point (CDNAME scene label at SC `+0x408`,
@@ -82,7 +97,8 @@ Two sibling writers complete a block the composer leaves alone:
   as an `LGXE` blob in the block's tail from `RETAIL_LIVE_STATE_SIZE`
   (`0x1A18`) to the checksum word, the `0x5E4` bytes retail composes as
   zeros and never copies back. `from_retail_sc_block` reads it magic-guarded,
-  so a retail block still parses to `SaveExtV2::default()`.
+  so a retail block parses to `SaveExtV2::default()` apart from the two
+  fields retail itself carries (the present party and the field position).
 
 `SaveFile::leader_summary` (`displayed_level`) is the one info-panel
 derivation - name, level, HP, MP off the lead record - both the native
@@ -123,8 +139,8 @@ first block from a free block or a mid-chain continuation, and
 allocates the *lowest* free block - use it when the player picked the
 block (the retail save screen's 5x3 grid does exactly that).
 
-Story-flag rendering is the wide 512-byte
-bitmap mirroring RAM `0x80085600..0x80085800` - the engine carries it in
+Story-flag rendering is the wide story-flag
+window mirroring RAM `0x80085600..0x80085958` - the engine carries it in
 [`SaveExt::story_flag_bits`] alongside the narrower 32-bit scratchpad
 word at `_DAT_1F800394`.
 

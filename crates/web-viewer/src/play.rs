@@ -81,6 +81,11 @@ pub struct FieldRender {
     /// world plane (a floor slab against its room's wall-strip aprons)
     /// z-fights view-angle-dependently on this page alone.
     pub coplanar_offsets: std::collections::HashMap<EnvDraw, [f32; 3]>,
+    /// Per-placement uniform render scale (parallel to [`Self::placements`]):
+    /// the bind record's `actor[+0x72]` as a factor, `1.0` for the ordinary
+    /// unit-scale object - [`field_env::placed_render_scales`], the kernel the
+    /// native play-window folds into the same draws' model matrices.
+    pub placement_scales: Vec<f32>,
 }
 
 /// The lead party member's field-form actor: the object-local mesh, its
@@ -189,6 +194,7 @@ pub fn build_field_render(
     res: &SceneResources,
     is_world_map: bool,
     hidden_records: &std::collections::HashSet<usize>,
+    render_scales: &std::collections::HashMap<usize, u16>,
 ) -> FieldRender {
     let env_tmds = field_env::env_pack_tmd_indices(scene, res);
     let floor_lut = scene.field_floor_height_lut(index).ok().flatten();
@@ -236,6 +242,8 @@ pub fn build_field_render(
     if let Some(binds) = binds.as_ref() {
         field_env::retain_visible_placed_draws(&mut placements, binds, hidden_records);
     }
+    let placement_scales =
+        field_env::placed_render_scales(&placements, binds.as_ref(), render_scales);
     let window_keys = placements
         .iter()
         .map(|d| field_env::placed_window_key(d, binds.as_ref()))
@@ -267,6 +275,7 @@ pub fn build_field_render(
         cur: None,
         occluders,
         coplanar_offsets,
+        placement_scales,
     }
 }
 
@@ -566,6 +575,17 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
+    /// Per-placement uniform render scale (parallel to
+    /// [`Self::field_placement_slots`]): the bind record's `actor[+0x72]` as a
+    /// factor, applied after the rotation (`T * R * S`). `1.0` for nearly
+    /// every placement; town01's horizon backdrop draws at `0.25`.
+    pub fn field_placement_scales(&self) -> Vec<f32> {
+        self.field
+            .as_ref()
+            .map(|f| f.placement_scales.clone())
+            .unwrap_or_default()
+    }
+
     /// Per-placement authored pitch (object record `+0x08`), parallel to
     /// [`Self::field_placement_rot_y`]. Composed with yaw and roll in
     /// retail's `Rx * Ry * Rz` order (`FUN_80026988`).
@@ -636,6 +656,80 @@ impl LegaiaRuntime {
     /// Whether retail static-object windowing is on.
     pub fn retail_static_window(&self) -> bool {
         self.options_state.retail_static_window
+    }
+
+    /// This frame's visible-tile cell rectangle through the shared
+    /// `field_view_window::field_view_cells` kernel the native play-window
+    /// asks: `None` = draw the map whole. `debug_camera` is the page's `F3`
+    /// vantage, which (like the native window's) lifts the crop.
+    fn field_view_cells_now(
+        &self,
+        debug_camera: bool,
+    ) -> Option<legaia_engine_core::field_view_window::ViewCells> {
+        let h = self.scene_host.as_ref()?;
+        legaia_engine_core::field_view_window::field_view_cells(
+            &h.world,
+            legaia_engine_core::field_view_window::framing_is_retail(&self.camera) && !debug_camera,
+        )
+    }
+
+    /// A stamp that moves whenever the visible-tile crop can change what
+    /// [`Self::field_terrain_live`] and [`Self::field_ground_indices_cropped`]
+    /// return; `0` while no crop applies. The page re-reads both only when it
+    /// moves - the native window re-uploads its ground on the same stamp.
+    pub fn field_view_window_stamp(&self, debug_camera: bool) -> u32 {
+        self.field_view_cells_now(debug_camera)
+            .map_or(0, |c| c.stamp())
+    }
+
+    /// Per-terrain-draw **live** mask (parallel to [`Self::field_terrain_slots`]):
+    /// `1` = inside this frame's visible-tile crop
+    /// (`field_view_window::terrain_draw_visible`, the gate the native
+    /// window's terrain pass asks per draw). All `1` while no crop applies.
+    pub fn field_terrain_live(&self, debug_camera: bool) -> Vec<u8> {
+        let Some(f) = self.field.as_ref() else {
+            return Vec::new();
+        };
+        let cells = self.field_view_cells_now(debug_camera);
+        f.terrain
+            .iter()
+            .map(|d| {
+                u8::from(legaia_engine_core::field_view_window::terrain_draw_visible(
+                    cells.as_ref(),
+                    legaia_engine_core::field_view_window::CellKey::of_draw(d),
+                ))
+            })
+            .collect()
+    }
+
+    /// [`Self::field_ground_indices`] cropped to this frame's visible cells
+    /// (`field_ground::crop_indices`, the kernel the native window re-uploads
+    /// its ground through). The whole list while no crop applies.
+    pub fn field_ground_indices_cropped(&self, debug_camera: bool) -> Vec<u32> {
+        let Some(hf) = self.field.as_ref().and_then(|f| f.ground.as_ref()) else {
+            return Vec::new();
+        };
+        let cells = self.field_view_cells_now(debug_camera);
+        legaia_engine_core::field_ground::crop_indices(
+            &hf.positions,
+            &legaia_engine_core::field_ground::render_indices(hf),
+            cells.as_ref(),
+        )
+    }
+
+    /// Turn retail's visible-tile crop on / off (the `retail_view_window`
+    /// option, persisted like the native config). It only applies at retail
+    /// framing either way.
+    pub fn set_retail_view_window(&mut self, on: bool) {
+        if self.options_state.retail_view_window != on {
+            self.options_state.retail_view_window = on;
+            self.persist_and_apply_options();
+        }
+    }
+
+    /// Whether retail's visible-tile crop is on.
+    pub fn retail_view_window(&self) -> bool {
+        self.options_state.retail_view_window
     }
 
     /// Live pose key of each placement (parallel to
@@ -1008,7 +1102,7 @@ impl LegaiaRuntime {
                 let g = self
                     .scene_host
                     .as_ref()
-                    .and_then(|h| h.world.global_tmd_pool.get(slot))
+                    .and_then(|h| h.world.field_head_pool.get(slot))
                     .and_then(|s| s.as_ref())
                     .ok_or_else(|| JsValue::from_str("play_npc_mesh: no global-pool mesh"))?;
                 (g.tmd.clone(), g.raw.clone())

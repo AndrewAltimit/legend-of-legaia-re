@@ -387,7 +387,47 @@ page project through the follow camera their scene draws with
 `engine-ui::ui_fishing_line`; the minigames page projects its own lure and
 strokes the endpoints `fishing_line_json` returns. The port's lure exists
 from the landing, so the line is out while waiting and hooked, not during the
-flight. No host draws the rod mesh itself.
+flight.
+
+### The rod model
+
+The rod actor draws its model in the same tick that projects the tip: after
+the morph stager has bent object 0, it hands the object to the per-primitive
+dispatcher `FUN_80043390` (`jal` at `0x801D1FF4`) with the GTE still holding
+the rod's matrix and `H = 0xDC`. Its two arguments are the actor's `+0x74` and
+`+0x78`, which the allocator `FUN_80020DE0` sets to `0x00808080` and `0`
+(`0x80020F3C..0x80020F40`), so the dispatcher runs **bank 0**: opaque, no depth
+cue, and the single-sided cull mask `0xFFFFFFFF` (bit 27 of the argument is
+clear).
+
+All three rods are untextured: rods 0 and 1 are 8 flat triangles, 18 flat
+quads and 18 Gouraud quads, rod 2 is 7 flat quads, 8 Gouraud triangles and 29
+Gouraud quads - dispatcher kinds 12..15. Each kind's bank-0 handler:
+
+| Kinds | Handlers | Cull | Depth |
+|---|---|---|---|
+| 12, 14 (triangles) | `0x80043658`, `0x80043B58` | culled when `NCLIP(v0, v1, v2) < 0` (`bltz` at `0x80043700`) | `AVSZ3` |
+| 13, 15 (quads) | `0x80043768`, `0x80043C6C` | kept when `NCLIP(v0, v1, v2) > 0`; otherwise kept only when the second `NCLIP`, over `(v1, v2, v3)` after the fourth `RTPS`, is negative (`blez` at `0x80043818`, `bgez` at `0x8004384C`) | `AVSZ4` |
+
+The dispatcher loads `ZSF3 = 0x555 >> s` and `ZSF4 = 0x400 >> s` with `s` the
+scratch byte `0x1F8003A4` (`0x80043568..0x8004357C`), which is `3` in the
+`minigame_fishing` state. A primitive whose `OTZ` is below the scratch
+halfword `0x1F80037E` (`0x10` in the same state) is dropped, and the packet
+links at `OTZ >> 2` - the word index `OTZ & 0xFFFC` addresses. With `s = 3`
+that bucket is the mean depth `/ 32`, the scale the line's `IR3 >> 5` links
+at, so the rod's far end and the line share buckets. The rod actor runs ahead
+of the lure tick, so in a shared bucket its packets are the earlier
+`AddPrim`s and draw after the line: the line meets the rod under its tip.
+
+Port: `fishing_actors::rod_faces` (the per-vertex projection, both culls, the
+two averages, the cutoff and the bucket) over `RodMesh::prims`, off the pose
+the rod actor records each tick (`RodActor::pose`), reached through
+`PondSession::rod_faces`. The native window and the browser play page wrap
+each face with `engine-ui::ui_fishing_rod::fishing_rod_prim` and submit them
+ahead of the line in the same screen-prim pass; the minigames page fills the
+faces `fishing_rod_json` returns in that pass's draw order around its own
+line stroke, each face in its corners' mean colour (its canvas has no
+per-vertex colour, so the Gouraud quads lose their gradient there).
 
 ## Fishing actors and scene render
 
@@ -898,9 +938,11 @@ binding: retail casts on Cross / Square (see [the reeling
 mechanic](#tension--reeling-mechanic)) - Cross reels
 (reel A, `0x40`), Square reels harder (reel B, `0x80`); each frame's session
 events (`World::minigames.fishing_events`) seed both hosts' banner one-shots
-and queue the hook / celebration cues. `P` opens the [point
-exchange](#point-exchange-prize-shop) (Up/Down move, Left/Right switch venue,
-Enter trades), which owns the pad while open.
+and queue the hook / celebration cues. The [point exchange](#point-exchange-prize-shop) opens from the hub's row 3
+(or the native window's `P`) and owns the pad while open: the engine steps it
+off the pad edge itself (`World::tick_fishing_hub`), as retail's state `0x78`
+does - Up / Down move, Cross or L1 trades one, Circle or L2 closes back to
+the hub menu, and Left / Right switch the venue page (a port affordance).
 
 Both play hosts also run the overlay's **actor-side frame**, through one
 engine kernel (`engine-core::fishing_venue::tick_fishing_venue_on_host`, its

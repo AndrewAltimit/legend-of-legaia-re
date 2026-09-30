@@ -6,11 +6,14 @@ use legaia_engine_core::field_env::{FloorAnchor, FloorWave};
 
 /// One baked placed-object draw list: the `(mesh, model)` draws, the floor
 /// rungs each draw's Y came from, and which placed-object sweep owns each draw
-/// ([`legaia_engine_core::field_env::placed_window_key`]), all parallel.
+/// ([`legaia_engine_core::field_env::placed_window_key`]), and each draw's
+/// grid cell + cull radius for the visible-tile crop
+/// ([`legaia_engine_core::field_view_window::CellKey`]), all parallel.
 pub(super) type PlacedDrawList = (
     Vec<(usize, Mat4)>,
     Vec<FloorAnchor>,
     Vec<Option<legaia_engine_core::field_env::PlacedWindowKey>>,
+    Vec<legaia_engine_core::field_view_window::CellKey>,
 );
 
 /// The live **floor-height ladder** patch for the field draw lists.
@@ -109,6 +112,52 @@ impl FieldFloorWave {
 }
 
 impl PlayWindowApp {
+    /// Keep the cropped ground in step with this frame's visible-tile cell
+    /// rectangle: re-upload the ground with the index list
+    /// `field_ground::crop_indices` keeps whenever
+    /// [`legaia_engine_core::field_view_window::ViewCells::stamp`] moves, and
+    /// drop it when the crop is off. The browser play page re-uploads its
+    /// ground indices through the same kernel on the same stamp.
+    pub(super) fn sync_ground_crop(
+        &mut self,
+        cells: Option<&legaia_engine_core::field_view_window::ViewCells>,
+    ) {
+        let Some(cells) = cells else {
+            self.ground_crop = None;
+            return;
+        };
+        let stamp = cells.stamp();
+        if self.ground_crop.as_ref().is_some_and(|(s, _)| *s == stamp) {
+            return;
+        }
+        let (Some(src), Some(r)) = (self.ground_src.as_ref(), self.win.renderer.as_ref()) else {
+            self.ground_crop = None;
+            return;
+        };
+        let v = &src.vmesh;
+        let indices =
+            legaia_engine_core::field_ground::crop_indices(&v.positions, &v.indices, Some(cells));
+        // An empty crop is a real answer (no ground cell in the rectangle),
+        // kept as `(stamp, None)` so the full ground does not stand in for it.
+        if indices.is_empty() {
+            self.ground_crop = Some((stamp, None));
+            return;
+        }
+        self.ground_crop = r
+            .upload_vram_mesh_with_flat_refs(
+                &v.positions,
+                &v.uvs,
+                &v.cba_tsb,
+                &v.normals,
+                &v.colors,
+                &indices,
+                &src.flat_refs,
+            )
+            .map_err(|e| log::warn!("cropped ground upload skipped: {e:#}"))
+            .ok()
+            .map(|m| (stamp, Some(m)));
+    }
+
     /// Resolve the field static-geometry placement draws for the current
     /// scene: each placed environment object's scene-pack mesh paired with a
     /// world model matrix. Built from the field map's object table
@@ -201,9 +250,14 @@ impl PlayWindowApp {
             &self.session.host.world.hidden_object_records(),
         );
 
+        let scales = field_env::placed_render_scales(
+            &draws,
+            Some(&binds),
+            &self.session.host.world.object_render_scales(),
+        );
         let bank = &self.session.host.world.props.bank;
         let mut props = Vec::new();
-        for d in &draws {
+        for (d, &scale) in draws.iter().zip(&scales) {
             if d.anim_id == 0 || !bank.props.contains_key(&d.anchor) {
                 continue;
             }
@@ -224,7 +278,8 @@ impl PlayWindowApp {
                 d.world_z as f32 + off[2],
             ));
             let rot =
-                legaia_engine_render::battle_intro::placement_rotation(d.rot_x, d.rot_y, d.rot_z);
+                legaia_engine_render::battle_intro::placement_rotation(d.rot_x, d.rot_y, d.rot_z)
+                    * Mat4::from_scale(Vec3::splat(scale));
             props.push(PosedPropDraw {
                 anchor: d.anchor,
                 anim_id: d.anim_id,
@@ -572,9 +627,10 @@ impl PlayWindowApp {
     ) -> (
         Vec<(usize, Mat4)>,
         Vec<legaia_engine_core::field_env::FloorAnchor>,
+        Vec<legaia_engine_core::field_view_window::CellKey>,
     ) {
         let Some(scene) = self.session.host.scene.as_ref() else {
-            return (Vec::new(), Vec::new());
+            return Default::default();
         };
         let tiles: Vec<legaia_asset::field_objects::Placement> =
             match scene.field_terrain_tiles(&self.session.host.index) {
@@ -582,15 +638,15 @@ impl PlayWindowApp {
                     .into_iter()
                     .filter(|p| p.flags & legaia_asset::field_objects::FLAG_PLACED == 0)
                     .collect(),
-                _ => return (Vec::new(), Vec::new()),
+                _ => return Default::default(),
             };
         if tiles.is_empty() {
-            return (Vec::new(), Vec::new());
+            return Default::default();
         }
         // Field frame: raw retail-convention transforms (see above).
-        let (draws, floors, _) =
+        let (draws, floors, _, cells) =
             self.resolve_placement_draws(res, tmd_src_index, &tiles, false, None, None);
-        (draws, floors)
+        (draws, floors, cells)
     }
 
     /// World-map continent terrain draws: the dense visible-tile set
@@ -1019,6 +1075,14 @@ impl PlayWindowApp {
                 &self.session.host.world.hidden_object_records(),
             );
         }
+        // Render scale: a bind record's prologue can leave the actor's
+        // `+0x72` at a non-unit value (town01's horizon backdrop draws at a
+        // quarter), and retail's case-5 draw folds it into the model matrix.
+        let scales = legaia_engine_core::field_env::placed_render_scales(
+            &env_draws,
+            binds,
+            &self.session.host.world.object_render_scales(),
+        );
         let diag = std::env::var_os("LEGAIA_DIAG_PLACE").is_some();
         if diag {
             for d in &dropped {
@@ -1072,7 +1136,10 @@ impl PlayWindowApp {
         // (`Some` = the sub-area window sweep's, gated per frame on the
         // world's windowed static-object list by `field_env::placed_draw_live`).
         let mut window_keys = Vec::new();
-        for d in &env_draws {
+        // Parallel to `draws`: the grid cell + cull radius the visible-tile
+        // crop (`field_view_window::terrain_draw_visible`) tests per frame.
+        let mut cell_keys = Vec::new();
+        for (d, &scale) in env_draws.iter().zip(&scales) {
             // A bind with an anim id means the prop's TMD objects are that
             // clip's bones, and the clip is live (a house door swings open on
             // contact). Those props are drawn from `field_posed_props`, which
@@ -1139,7 +1206,8 @@ impl PlayWindowApp {
             // world-map pairing applies the per-model flip on the left of
             // `rot`. So the same matrix is correct for both.
             let rot =
-                legaia_engine_render::battle_intro::placement_rotation(d.rot_x, d.rot_y, d.rot_z);
+                legaia_engine_render::battle_intro::placement_rotation(d.rot_x, d.rot_y, d.rot_z)
+                    * Mat4::from_scale(Vec3::splat(scale));
             let model = if flip_y {
                 t * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0)) * rot
             } else {
@@ -1160,6 +1228,7 @@ impl PlayWindowApp {
             draws.push((mesh_idx, model));
             floors.push(d.floor);
             window_keys.push(legaia_engine_core::field_env::placed_window_key(d, binds));
+            cell_keys.push(legaia_engine_core::field_view_window::CellKey::of_draw(d));
         }
         log::info!(
             "play-window: {} field placement draws ({} placements, {} env meshes)",
@@ -1167,7 +1236,7 @@ impl PlayWindowApp {
             placements.len(),
             env_tmds.len(),
         );
-        (draws, floors, window_keys)
+        (draws, floors, window_keys, cell_keys)
     }
 
     /// Debug-install a synthetic tile board (`LEGAIA_TILE_BOARD_DEMO=1`) so

@@ -160,7 +160,9 @@ impl LegaiaRuntime {
             return;
         };
         let pad = host.world.input.retail_pad().pressed as u16;
-        let volume_word = legaia_engine_core::new_game::GAME_STATE_COLD_RESET.voice_volume as u32;
+        // `_DAT_80084580` off the world - a loaded save's word or the cold
+        // reset - as the native window reads it.
+        let volume_word = host.world.audio.levels.voice_volume as u32;
         let frame = self
             .minigame_ui
             .muscle
@@ -1342,13 +1344,25 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
-    /// The dance entry's camera over the baked hall's frame
-    /// (`LegaiaMinigames::dance_venue_vp`). Empty when the cast did not
-    /// decode.
+    /// The dance camera over the baked hall's frame: the world's staged
+    /// venue camera (`World::minigames.dance_venue`, which
+    /// `dance_venue::sync_dance_venue` re-frames every staged frame on the
+    /// run's keyframe track - the camera the native window draws the hall
+    /// with), else the entry's pose (`LegaiaMinigames::dance_venue_vp`).
+    /// Empty when the cast did not decode.
     pub fn play_mg_dance_venue_vp(&self, aspect: f32) -> Vec<f32> {
-        self.minigame_art()
-            .map(|a| a.dance_venue_vp(aspect))
-            .unwrap_or_default()
+        let Some(art) = self.minigame_art() else {
+            return Vec::new();
+        };
+        let staged = self
+            .scene_host
+            .as_ref()
+            .and_then(|h| h.world.minigames.dance_venue.as_ref())
+            .map(|s| s.camera);
+        match staged {
+            Some(camera) => art.dance_venue_vp_with(&camera, aspect),
+            None => art.dance_venue_vp(aspect),
+        }
     }
 
     pub fn play_mg_dance_body_vram(&self) -> Vec<u8> {

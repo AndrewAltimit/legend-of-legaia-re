@@ -225,6 +225,19 @@ pub struct World {
     /// is a scene-bank index ([`Self::field_pool_tmd`]).
     pub global_tmd_pool: Vec<Option<Arc<GlobalTmd>>>,
 
+    /// The **player bank** a `model >= 0xF0` field placement resolves
+    /// against: the five PROT 0874 §0 meshes (Vahn / Noa / Gala / save
+    /// crystal / aux), kept apart from [`Self::global_tmd_pool`] because the
+    /// engine keeps the battle effect-model library resident over that
+    /// pool's slots `[3..=32]`, which retail only loads at battle init. A
+    /// field frame's save crystal (`0xF3`) and aux prop (`0xF4`) are §0
+    /// meshes - a retail `conc_field_card_boot` capture draws the 3-object
+    /// crystal for its actor's `+0x64 = 3` - so reading them out of the
+    /// shared pool drew an effect model (or nothing) in their place.
+    /// Seeded with the pool head by the scene host.
+    // REF: FUN_8001E890 (the field head registration), FUN_8003A1E4
+    pub field_head_pool: Vec<Option<Arc<GlobalTmd>>>,
+
     /// The current field scene's **model bank**: pool slots
     /// `crate::model_bank::SCENE_BANK_BASE..` of retail `DAT_8007C018`, in
     /// registration order (index `i` = pool slot `5 + i`). Installed by
@@ -347,6 +360,7 @@ impl World {
             active_scene_label: String::new(),
             vdf_buffer: None,
             global_tmd_pool: Vec::new(),
+            field_head_pool: Vec::new(),
             field_scene_bank: Vec::new(),
             scene_battle_entry_arms: Vec::new(),
             game_over: false,

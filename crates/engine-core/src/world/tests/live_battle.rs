@@ -361,3 +361,75 @@ fn npc_walk_steps_track_heading_and_keep_it_after_arrival() {
     }
     assert_eq!(world.npcs.headings.get(&1), Some(&0x800));
 }
+
+/// Run in a scripted no-escape fight (`ctx[+0x287] != 0`) is taken, rolled
+/// and failed, as retail's is: the round prompt's `0x1E` / `0x32` arms never
+/// read the byte, the escape roll `FUN_801E791C` does (`0x801E7B14`, after the
+/// score compare). The run band plays out with its failure arm and the
+/// battle continues. A party fast enough to win every compare makes the
+/// refusal the flag's alone - the same fight without it escapes.
+#[test]
+fn run_in_a_no_escape_fight_rolls_and_fails() {
+    use crate::battle_input::{BattleCommandInput, BattleCommandSession, Resolution};
+    use crate::target_picker::SlotState;
+    let run = |no_escape: bool| -> (World, bool, bool) {
+        let mut world = live_battle_world_3v2();
+        world.battle.no_escape = no_escape;
+        // Party SPD 1000 vs enemy SPD 1: the compare cannot fail.
+        for i in 0..3 {
+            world.battle.speed[i] = 1000;
+        }
+        for i in 3..5 {
+            world.battle.speed[i] = 1;
+        }
+        let mut s = BattleCommandSession::new_round_open(0, 0, no_escape);
+        let right = BattleCommandInput {
+            right: true,
+            ..Default::default()
+        };
+        let alive = SlotState::alive(true, true);
+        s.input(
+            right,
+            [alive; 3],
+            [
+                alive,
+                alive,
+                SlotState::default(),
+                SlotState::default(),
+                SlotState::default(),
+            ],
+        );
+        assert_eq!(
+            s.resolved(),
+            Some(Resolution::RunAway),
+            "the prompt takes Run"
+        );
+        world.battle.command = Some(s);
+        world.tick_battle_command();
+        take_commit_begin(&mut world);
+        let mut escaped = false;
+        let mut run_band = false;
+        for _ in 0..0x400 {
+            run_band |= world.battle_ctx.action_state
+                == legaia_engine_vm::battle_action::ActionState::RunWait.as_byte();
+            if matches!(
+                world.live_battle_tick(),
+                Some(legaia_engine_vm::battle_action::StepOutcome::BattleComplete)
+            ) {
+                escaped = true;
+                break;
+            }
+            if world.battle.command.is_some() {
+                break; // the next round's prompt - the battle goes on
+            }
+        }
+        (world, escaped, run_band)
+    };
+    let (_, escaped, _) = run(false);
+    assert!(escaped, "without the flag the same roll gets away");
+    let (world, escaped, run_band) = run(true);
+    assert!(!escaped, "the no-escape flag fails the roll");
+    assert!(world.battle.end.is_none(), "no battle-end cause staged");
+    assert_eq!(world.mode, SceneMode::Battle, "still in battle");
+    assert!(run_band, "the member dispatched through the run band");
+}

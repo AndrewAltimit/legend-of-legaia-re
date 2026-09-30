@@ -1,0 +1,4450 @@
+# Soak-harness finding (pad input only - no disc bytes).
+# soak-scene = "balden+mg0"
+# soak-seed = 5008
+# soak-signature = "softlock|balden|mode:Fishing:exchange"
+# detail: no progress for 1800 frames under 23 distinct pad masks
+# reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell --profile release-test --test soak_harness soak_replay -- --nocapture
+[meta]
+schema = "j-replay-v1"
+rng_seed = 3875158309
+frames = 1861
+
+[[event]]
+frame = 0
+pad = 128
+
+[[event]]
+frame = 1
+pad = 0
+
+[[event]]
+frame = 3
+pad = 16384
+
+[[event]]
+frame = 4
+pad = 0
+
+[[event]]
+frame = 16
+pad = 4160
+
+[[event]]
+frame = 17
+pad = 0
+
+[[event]]
+frame = 18
+pad = 4160
+
+[[event]]
+frame = 19
+pad = 0
+
+[[event]]
+frame = 20
+pad = 4160
+
+[[event]]
+frame = 21
+pad = 0
+
+[[event]]
+frame = 22
+pad = 32896
+
+[[event]]
+frame = 23
+pad = 0
+
+[[event]]
+frame = 24
+pad = 32896
+
+[[event]]
+frame = 25
+pad = 0
+
+[[event]]
+frame = 33
+pad = 16512
+
+[[event]]
+frame = 34
+pad = 0
+
+[[event]]
+frame = 35
+pad = 16
+
+[[event]]
+frame = 45
+pad = 0
+
+[[event]]
+frame = 46
+pad = 16384
+
+[[event]]
+frame = 47
+pad = 0
+
+[[event]]
+frame = 48
+pad = 128
+
+[[event]]
+frame = 56
+pad = 0
+
+[[event]]
+frame = 57
+pad = 8256
+
+[[event]]
+frame = 58
+pad = 0
+
+[[event]]
+frame = 59
+pad = 16448
+
+[[event]]
+frame = 60
+pad = 0
+
+[[event]]
+frame = 61
+pad = 16448
+
+[[event]]
+frame = 62
+pad = 0
+
+[[event]]
+frame = 63
+pad = 16448
+
+[[event]]
+frame = 64
+pad = 0
+
+[[event]]
+frame = 65
+pad = 16448
+
+[[event]]
+frame = 66
+pad = 0
+
+[[event]]
+frame = 67
+pad = 16448
+
+[[event]]
+frame = 68
+pad = 0
+
+[[event]]
+frame = 69
+pad = 64
+
+[[event]]
+frame = 71
+pad = 16
+
+[[event]]
+frame = 91
+pad = 0
+
+[[event]]
+frame = 92
+pad = 8192
+
+[[event]]
+frame = 93
+pad = 0
+
+[[event]]
+frame = 94
+pad = 8192
+
+[[event]]
+frame = 95
+pad = 0
+
+[[event]]
+frame = 96
+pad = 16416
+
+[[event]]
+frame = 97
+pad = 0
+
+[[event]]
+frame = 98
+pad = 32768
+
+[[event]]
+frame = 99
+pad = 0
+
+[[event]]
+frame = 100
+pad = 16
+
+[[event]]
+frame = 110
+pad = 0
+
+[[event]]
+frame = 115
+pad = 8192
+
+[[event]]
+frame = 116
+pad = 0
+
+[[event]]
+frame = 117
+pad = 8192
+
+[[event]]
+frame = 118
+pad = 0
+
+[[event]]
+frame = 119
+pad = 8192
+
+[[event]]
+frame = 120
+pad = 0
+
+[[event]]
+frame = 121
+pad = 8192
+
+[[event]]
+frame = 122
+pad = 64
+
+[[event]]
+frame = 126
+pad = 0
+
+[[event]]
+frame = 136
+pad = 8192
+
+[[event]]
+frame = 137
+pad = 0
+
+[[event]]
+frame = 138
+pad = 8192
+
+[[event]]
+frame = 139
+pad = 0
+
+[[event]]
+frame = 140
+pad = 8192
+
+[[event]]
+frame = 141
+pad = 0
+
+[[event]]
+frame = 142
+pad = 8192
+
+[[event]]
+frame = 143
+pad = 0
+
+[[event]]
+frame = 144
+pad = 8192
+
+[[event]]
+frame = 145
+pad = 0
+
+[[event]]
+frame = 146
+pad = 8192
+
+[[event]]
+frame = 147
+pad = 0
+
+[[event]]
+frame = 148
+pad = 8208
+
+[[event]]
+frame = 149
+pad = 0
+
+[[event]]
+frame = 150
+pad = 8208
+
+[[event]]
+frame = 151
+pad = 0
+
+[[event]]
+frame = 152
+pad = 8208
+
+[[event]]
+frame = 153
+pad = 0
+
+[[event]]
+frame = 154
+pad = 8208
+
+[[event]]
+frame = 155
+pad = 0
+
+[[event]]
+frame = 156
+pad = 8208
+
+[[event]]
+frame = 157
+pad = 0
+
+[[event]]
+frame = 158
+pad = 32800
+
+[[event]]
+frame = 159
+pad = 0
+
+[[event]]
+frame = 160
+pad = 32800
+
+[[event]]
+frame = 161
+pad = 0
+
+[[event]]
+frame = 162
+pad = 32800
+
+[[event]]
+frame = 163
+pad = 0
+
+[[event]]
+frame = 164
+pad = 32800
+
+[[event]]
+frame = 165
+pad = 0
+
+[[event]]
+frame = 166
+pad = 32800
+
+[[event]]
+frame = 167
+pad = 32
+
+[[event]]
+frame = 173
+pad = 0
+
+[[event]]
+frame = 185
+pad = 32784
+
+[[event]]
+frame = 186
+pad = 0
+
+[[event]]
+frame = 187
+pad = 32784
+
+[[event]]
+frame = 188
+pad = 0
+
+[[event]]
+frame = 189
+pad = 32784
+
+[[event]]
+frame = 190
+pad = 0
+
+[[event]]
+frame = 191
+pad = 32784
+
+[[event]]
+frame = 192
+pad = 0
+
+[[event]]
+frame = 193
+pad = 32784
+
+[[event]]
+frame = 194
+pad = 0
+
+[[event]]
+frame = 195
+pad = 32784
+
+[[event]]
+frame = 196
+pad = 32
+
+[[event]]
+frame = 208
+pad = 0
+
+[[event]]
+frame = 209
+pad = 8192
+
+[[event]]
+frame = 210
+pad = 0
+
+[[event]]
+frame = 211
+pad = 32
+
+[[event]]
+frame = 234
+pad = 0
+
+[[event]]
+frame = 237
+pad = 8208
+
+[[event]]
+frame = 238
+pad = 0
+
+[[event]]
+frame = 239
+pad = 8208
+
+[[event]]
+frame = 240
+pad = 0
+
+[[event]]
+frame = 241
+pad = 8208
+
+[[event]]
+frame = 242
+pad = 0
+
+[[event]]
+frame = 243
+pad = 16416
+
+[[event]]
+frame = 244
+pad = 0
+
+[[event]]
+frame = 245
+pad = 16416
+
+[[event]]
+frame = 246
+pad = 0
+
+[[event]]
+frame = 247
+pad = 16416
+
+[[event]]
+frame = 248
+pad = 0
+
+[[event]]
+frame = 249
+pad = 16416
+
+[[event]]
+frame = 250
+pad = 0
+
+[[event]]
+frame = 251
+pad = 16416
+
+[[event]]
+frame = 252
+pad = 0
+
+[[event]]
+frame = 253
+pad = 16384
+
+[[event]]
+frame = 254
+pad = 0
+
+[[event]]
+frame = 255
+pad = 16384
+
+[[event]]
+frame = 256
+pad = 0
+
+[[event]]
+frame = 257
+pad = 16384
+
+[[event]]
+frame = 258
+pad = 0
+
+[[event]]
+frame = 259
+pad = 16384
+
+[[event]]
+frame = 260
+pad = 0
+
+[[event]]
+frame = 261
+pad = 16384
+
+[[event]]
+frame = 262
+pad = 0
+
+[[event]]
+frame = 263
+pad = 16384
+
+[[event]]
+frame = 264
+pad = 32
+
+[[event]]
+frame = 275
+pad = 0
+
+[[event]]
+frame = 276
+pad = 8256
+
+[[event]]
+frame = 277
+pad = 0
+
+[[event]]
+frame = 278
+pad = 8256
+
+[[event]]
+frame = 279
+pad = 0
+
+[[event]]
+frame = 280
+pad = 8256
+
+[[event]]
+frame = 281
+pad = 0
+
+[[event]]
+frame = 282
+pad = 8256
+
+[[event]]
+frame = 283
+pad = 0
+
+[[event]]
+frame = 284
+pad = 8192
+
+[[event]]
+frame = 285
+pad = 0
+
+[[event]]
+frame = 286
+pad = 8192
+
+[[event]]
+frame = 287
+pad = 0
+
+[[event]]
+frame = 288
+pad = 8192
+
+[[event]]
+frame = 289
+pad = 0
+
+[[event]]
+frame = 290
+pad = 8192
+
+[[event]]
+frame = 291
+pad = 32
+
+[[event]]
+frame = 296
+pad = 0
+
+[[event]]
+frame = 297
+pad = 16400
+
+[[event]]
+frame = 298
+pad = 0
+
+[[event]]
+frame = 299
+pad = 16400
+
+[[event]]
+frame = 300
+pad = 0
+
+[[event]]
+frame = 301
+pad = 16400
+
+[[event]]
+frame = 302
+pad = 0
+
+[[event]]
+frame = 303
+pad = 16400
+
+[[event]]
+frame = 304
+pad = 0
+
+[[event]]
+frame = 305
+pad = 32
+
+[[event]]
+frame = 309
+pad = 0
+
+[[event]]
+frame = 314
+pad = 32768
+
+[[event]]
+frame = 315
+pad = 0
+
+[[event]]
+frame = 316
+pad = 32768
+
+[[event]]
+frame = 317
+pad = 0
+
+[[event]]
+frame = 318
+pad = 32768
+
+[[event]]
+frame = 319
+pad = 0
+
+[[event]]
+frame = 320
+pad = 8208
+
+[[event]]
+frame = 321
+pad = 0
+
+[[event]]
+frame = 322
+pad = 8208
+
+[[event]]
+frame = 323
+pad = 0
+
+[[event]]
+frame = 324
+pad = 8208
+
+[[event]]
+frame = 325
+pad = 0
+
+[[event]]
+frame = 326
+pad = 32768
+
+[[event]]
+frame = 327
+pad = 0
+
+[[event]]
+frame = 328
+pad = 32768
+
+[[event]]
+frame = 329
+pad = 0
+
+[[event]]
+frame = 330
+pad = 32768
+
+[[event]]
+frame = 331
+pad = 0
+
+[[event]]
+frame = 332
+pad = 16448
+
+[[event]]
+frame = 333
+pad = 0
+
+[[event]]
+frame = 334
+pad = 16448
+
+[[event]]
+frame = 335
+pad = 0
+
+[[event]]
+frame = 336
+pad = 16448
+
+[[event]]
+frame = 337
+pad = 0
+
+[[event]]
+frame = 338
+pad = 16512
+
+[[event]]
+frame = 339
+pad = 0
+
+[[event]]
+frame = 350
+pad = 32768
+
+[[event]]
+frame = 351
+pad = 0
+
+[[event]]
+frame = 352
+pad = 32768
+
+[[event]]
+frame = 353
+pad = 0
+
+[[event]]
+frame = 354
+pad = 32768
+
+[[event]]
+frame = 355
+pad = 0
+
+[[event]]
+frame = 356
+pad = 32768
+
+[[event]]
+frame = 357
+pad = 0
+
+[[event]]
+frame = 358
+pad = 32768
+
+[[event]]
+frame = 359
+pad = 0
+
+[[event]]
+frame = 360
+pad = 32768
+
+[[event]]
+frame = 361
+pad = 0
+
+[[event]]
+frame = 362
+pad = 16512
+
+[[event]]
+frame = 363
+pad = 0
+
+[[event]]
+frame = 364
+pad = 16512
+
+[[event]]
+frame = 365
+pad = 0
+
+[[event]]
+frame = 366
+pad = 16512
+
+[[event]]
+frame = 367
+pad = 0
+
+[[event]]
+frame = 368
+pad = 16512
+
+[[event]]
+frame = 369
+pad = 0
+
+[[event]]
+frame = 370
+pad = 16384
+
+[[event]]
+frame = 371
+pad = 0
+
+[[event]]
+frame = 372
+pad = 16384
+
+[[event]]
+frame = 373
+pad = 0
+
+[[event]]
+frame = 374
+pad = 16384
+
+[[event]]
+frame = 375
+pad = 0
+
+[[event]]
+frame = 376
+pad = 8256
+
+[[event]]
+frame = 377
+pad = 0
+
+[[event]]
+frame = 378
+pad = 8256
+
+[[event]]
+frame = 379
+pad = 0
+
+[[event]]
+frame = 380
+pad = 8256
+
+[[event]]
+frame = 381
+pad = 0
+
+[[event]]
+frame = 382
+pad = 16384
+
+[[event]]
+frame = 383
+pad = 0
+
+[[event]]
+frame = 384
+pad = 16384
+
+[[event]]
+frame = 385
+pad = 128
+
+[[event]]
+frame = 390
+pad = 0
+
+[[event]]
+frame = 391
+pad = 8224
+
+[[event]]
+frame = 392
+pad = 0
+
+[[event]]
+frame = 401
+pad = 16400
+
+[[event]]
+frame = 402
+pad = 0
+
+[[event]]
+frame = 403
+pad = 16400
+
+[[event]]
+frame = 404
+pad = 0
+
+[[event]]
+frame = 405
+pad = 16400
+
+[[event]]
+frame = 406
+pad = 0
+
+[[event]]
+frame = 407
+pad = 16400
+
+[[event]]
+frame = 408
+pad = 0
+
+[[event]]
+frame = 409
+pad = 16400
+
+[[event]]
+frame = 410
+pad = 0
+
+[[event]]
+frame = 411
+pad = 8192
+
+[[event]]
+frame = 412
+pad = 0
+
+[[event]]
+frame = 413
+pad = 8192
+
+[[event]]
+frame = 414
+pad = 0
+
+[[event]]
+frame = 415
+pad = 16384
+
+[[event]]
+frame = 416
+pad = 0
+
+[[event]]
+frame = 417
+pad = 16384
+
+[[event]]
+frame = 418
+pad = 0
+
+[[event]]
+frame = 419
+pad = 16384
+
+[[event]]
+frame = 420
+pad = 0
+
+[[event]]
+frame = 421
+pad = 16416
+
+[[event]]
+frame = 422
+pad = 0
+
+[[event]]
+frame = 423
+pad = 16416
+
+[[event]]
+frame = 424
+pad = 0
+
+[[event]]
+frame = 425
+pad = 16416
+
+[[event]]
+frame = 426
+pad = 0
+
+[[event]]
+frame = 427
+pad = 8256
+
+[[event]]
+frame = 428
+pad = 0
+
+[[event]]
+frame = 429
+pad = 8256
+
+[[event]]
+frame = 430
+pad = 0
+
+[[event]]
+frame = 431
+pad = 8256
+
+[[event]]
+frame = 432
+pad = 0
+
+[[event]]
+frame = 433
+pad = 8256
+
+[[event]]
+frame = 434
+pad = 0
+
+[[event]]
+frame = 435
+pad = 128
+
+[[event]]
+frame = 444
+pad = 0
+
+[[event]]
+frame = 448
+pad = 16384
+
+[[event]]
+frame = 449
+pad = 0
+
+[[event]]
+frame = 450
+pad = 16384
+
+[[event]]
+frame = 451
+pad = 0
+
+[[event]]
+frame = 452
+pad = 16384
+
+[[event]]
+frame = 453
+pad = 0
+
+[[event]]
+frame = 454
+pad = 16384
+
+[[event]]
+frame = 455
+pad = 0
+
+[[event]]
+frame = 456
+pad = 16384
+
+[[event]]
+frame = 457
+pad = 0
+
+[[event]]
+frame = 458
+pad = 32
+
+[[event]]
+frame = 470
+pad = 0
+
+[[event]]
+frame = 481
+pad = 8192
+
+[[event]]
+frame = 482
+pad = 0
+
+[[event]]
+frame = 483
+pad = 8192
+
+[[event]]
+frame = 484
+pad = 0
+
+[[event]]
+frame = 485
+pad = 8192
+
+[[event]]
+frame = 486
+pad = 0
+
+[[event]]
+frame = 487
+pad = 8192
+
+[[event]]
+frame = 488
+pad = 64
+
+[[event]]
+frame = 494
+pad = 0
+
+[[event]]
+frame = 495
+pad = 16448
+
+[[event]]
+frame = 496
+pad = 0
+
+[[event]]
+frame = 497
+pad = 16448
+
+[[event]]
+frame = 498
+pad = 0
+
+[[event]]
+frame = 499
+pad = 16448
+
+[[event]]
+frame = 500
+pad = 0
+
+[[event]]
+frame = 501
+pad = 16448
+
+[[event]]
+frame = 502
+pad = 0
+
+[[event]]
+frame = 503
+pad = 16448
+
+[[event]]
+frame = 504
+pad = 128
+
+[[event]]
+frame = 513
+pad = 0
+
+[[event]]
+frame = 514
+pad = 8192
+
+[[event]]
+frame = 515
+pad = 0
+
+[[event]]
+frame = 516
+pad = 8192
+
+[[event]]
+frame = 517
+pad = 0
+
+[[event]]
+frame = 518
+pad = 8192
+
+[[event]]
+frame = 519
+pad = 0
+
+[[event]]
+frame = 520
+pad = 8192
+
+[[event]]
+frame = 521
+pad = 0
+
+[[event]]
+frame = 522
+pad = 8192
+
+[[event]]
+frame = 523
+pad = 0
+
+[[event]]
+frame = 538
+pad = 16384
+
+[[event]]
+frame = 539
+pad = 0
+
+[[event]]
+frame = 540
+pad = 16384
+
+[[event]]
+frame = 541
+pad = 0
+
+[[event]]
+frame = 542
+pad = 16384
+
+[[event]]
+frame = 543
+pad = 0
+
+[[event]]
+frame = 544
+pad = 16384
+
+[[event]]
+frame = 545
+pad = 0
+
+[[event]]
+frame = 546
+pad = 16384
+
+[[event]]
+frame = 547
+pad = 0
+
+[[event]]
+frame = 548
+pad = 16448
+
+[[event]]
+frame = 549
+pad = 0
+
+[[event]]
+frame = 550
+pad = 16448
+
+[[event]]
+frame = 551
+pad = 0
+
+[[event]]
+frame = 552
+pad = 16448
+
+[[event]]
+frame = 553
+pad = 0
+
+[[event]]
+frame = 554
+pad = 16448
+
+[[event]]
+frame = 555
+pad = 0
+
+[[event]]
+frame = 556
+pad = 16448
+
+[[event]]
+frame = 557
+pad = 0
+
+[[event]]
+frame = 558
+pad = 16448
+
+[[event]]
+frame = 559
+pad = 0
+
+[[event]]
+frame = 560
+pad = 32
+
+[[event]]
+frame = 564
+pad = 64
+
+[[event]]
+frame = 574
+pad = 0
+
+[[event]]
+frame = 575
+pad = 32800
+
+[[event]]
+frame = 576
+pad = 0
+
+[[event]]
+frame = 577
+pad = 32800
+
+[[event]]
+frame = 578
+pad = 64
+
+[[event]]
+frame = 586
+pad = 0
+
+[[event]]
+frame = 595
+pad = 32768
+
+[[event]]
+frame = 596
+pad = 0
+
+[[event]]
+frame = 597
+pad = 32768
+
+[[event]]
+frame = 598
+pad = 0
+
+[[event]]
+frame = 599
+pad = 32768
+
+[[event]]
+frame = 600
+pad = 0
+
+[[event]]
+frame = 601
+pad = 32768
+
+[[event]]
+frame = 602
+pad = 0
+
+[[event]]
+frame = 603
+pad = 32768
+
+[[event]]
+frame = 604
+pad = 0
+
+[[event]]
+frame = 605
+pad = 32
+
+[[event]]
+frame = 614
+pad = 0
+
+[[event]]
+frame = 615
+pad = 16400
+
+[[event]]
+frame = 616
+pad = 0
+
+[[event]]
+frame = 617
+pad = 16400
+
+[[event]]
+frame = 618
+pad = 0
+
+[[event]]
+frame = 619
+pad = 16400
+
+[[event]]
+frame = 620
+pad = 0
+
+[[event]]
+frame = 621
+pad = 16400
+
+[[event]]
+frame = 622
+pad = 0
+
+[[event]]
+frame = 629
+pad = 64
+
+[[event]]
+frame = 634
+pad = 0
+
+[[event]]
+frame = 635
+pad = 4096
+
+[[event]]
+frame = 636
+pad = 0
+
+[[event]]
+frame = 648
+pad = 8256
+
+[[event]]
+frame = 649
+pad = 0
+
+[[event]]
+frame = 650
+pad = 8256
+
+[[event]]
+frame = 651
+pad = 0
+
+[[event]]
+frame = 652
+pad = 8256
+
+[[event]]
+frame = 653
+pad = 0
+
+[[event]]
+frame = 654
+pad = 8256
+
+[[event]]
+frame = 655
+pad = 0
+
+[[event]]
+frame = 656
+pad = 8256
+
+[[event]]
+frame = 657
+pad = 0
+
+[[event]]
+frame = 658
+pad = 16384
+
+[[event]]
+frame = 659
+pad = 0
+
+[[event]]
+frame = 660
+pad = 16384
+
+[[event]]
+frame = 661
+pad = 0
+
+[[event]]
+frame = 662
+pad = 16384
+
+[[event]]
+frame = 663
+pad = 0
+
+[[event]]
+frame = 664
+pad = 16384
+
+[[event]]
+frame = 665
+pad = 0
+
+[[event]]
+frame = 666
+pad = 16384
+
+[[event]]
+frame = 667
+pad = 0
+
+[[event]]
+frame = 668
+pad = 16384
+
+[[event]]
+frame = 669
+pad = 0
+
+[[event]]
+frame = 670
+pad = 64
+
+[[event]]
+frame = 682
+pad = 0
+
+[[event]]
+frame = 683
+pad = 16384
+
+[[event]]
+frame = 684
+pad = 0
+
+[[event]]
+frame = 685
+pad = 16384
+
+[[event]]
+frame = 686
+pad = 0
+
+[[event]]
+frame = 687
+pad = 16384
+
+[[event]]
+frame = 688
+pad = 0
+
+[[event]]
+frame = 689
+pad = 16384
+
+[[event]]
+frame = 690
+pad = 0
+
+[[event]]
+frame = 691
+pad = 16384
+
+[[event]]
+frame = 692
+pad = 0
+
+[[event]]
+frame = 693
+pad = 16384
+
+[[event]]
+frame = 694
+pad = 0
+
+[[event]]
+frame = 695
+pad = 16384
+
+[[event]]
+frame = 696
+pad = 0
+
+[[event]]
+frame = 697
+pad = 16400
+
+[[event]]
+frame = 698
+pad = 0
+
+[[event]]
+frame = 699
+pad = 16400
+
+[[event]]
+frame = 700
+pad = 0
+
+[[event]]
+frame = 701
+pad = 16400
+
+[[event]]
+frame = 702
+pad = 0
+
+[[event]]
+frame = 703
+pad = 4096
+
+[[event]]
+frame = 704
+pad = 0
+
+[[event]]
+frame = 705
+pad = 16400
+
+[[event]]
+frame = 706
+pad = 0
+
+[[event]]
+frame = 707
+pad = 16400
+
+[[event]]
+frame = 708
+pad = 0
+
+[[event]]
+frame = 709
+pad = 16400
+
+[[event]]
+frame = 710
+pad = 0
+
+[[event]]
+frame = 711
+pad = 16400
+
+[[event]]
+frame = 712
+pad = 0
+
+[[event]]
+frame = 713
+pad = 16400
+
+[[event]]
+frame = 714
+pad = 0
+
+[[event]]
+frame = 715
+pad = 16400
+
+[[event]]
+frame = 716
+pad = 0
+
+[[event]]
+frame = 727
+pad = 4128
+
+[[event]]
+frame = 728
+pad = 0
+
+[[event]]
+frame = 729
+pad = 4128
+
+[[event]]
+frame = 730
+pad = 0
+
+[[event]]
+frame = 731
+pad = 4128
+
+[[event]]
+frame = 732
+pad = 0
+
+[[event]]
+frame = 733
+pad = 4128
+
+[[event]]
+frame = 734
+pad = 0
+
+[[event]]
+frame = 735
+pad = 32784
+
+[[event]]
+frame = 736
+pad = 0
+
+[[event]]
+frame = 737
+pad = 32784
+
+[[event]]
+frame = 738
+pad = 0
+
+[[event]]
+frame = 747
+pad = 64
+
+[[event]]
+frame = 750
+pad = 0
+
+[[event]]
+frame = 751
+pad = 16384
+
+[[event]]
+frame = 752
+pad = 0
+
+[[event]]
+frame = 753
+pad = 16384
+
+[[event]]
+frame = 754
+pad = 0
+
+[[event]]
+frame = 755
+pad = 32832
+
+[[event]]
+frame = 756
+pad = 0
+
+[[event]]
+frame = 757
+pad = 32832
+
+[[event]]
+frame = 758
+pad = 0
+
+[[event]]
+frame = 759
+pad = 32832
+
+[[event]]
+frame = 760
+pad = 0
+
+[[event]]
+frame = 761
+pad = 16400
+
+[[event]]
+frame = 762
+pad = 0
+
+[[event]]
+frame = 763
+pad = 16400
+
+[[event]]
+frame = 764
+pad = 0
+
+[[event]]
+frame = 765
+pad = 16400
+
+[[event]]
+frame = 766
+pad = 0
+
+[[event]]
+frame = 767
+pad = 16400
+
+[[event]]
+frame = 768
+pad = 0
+
+[[event]]
+frame = 769
+pad = 16400
+
+[[event]]
+frame = 770
+pad = 0
+
+[[event]]
+frame = 771
+pad = 16400
+
+[[event]]
+frame = 772
+pad = 0
+
+[[event]]
+frame = 773
+pad = 16384
+
+[[event]]
+frame = 774
+pad = 0
+
+[[event]]
+frame = 775
+pad = 16384
+
+[[event]]
+frame = 776
+pad = 0
+
+[[event]]
+frame = 777
+pad = 16384
+
+[[event]]
+frame = 778
+pad = 0
+
+[[event]]
+frame = 779
+pad = 16384
+
+[[event]]
+frame = 780
+pad = 0
+
+[[event]]
+frame = 781
+pad = 16384
+
+[[event]]
+frame = 782
+pad = 0
+
+[[event]]
+frame = 784
+pad = 16384
+
+[[event]]
+frame = 785
+pad = 0
+
+[[event]]
+frame = 786
+pad = 16384
+
+[[event]]
+frame = 787
+pad = 0
+
+[[event]]
+frame = 788
+pad = 16384
+
+[[event]]
+frame = 789
+pad = 0
+
+[[event]]
+frame = 790
+pad = 16384
+
+[[event]]
+frame = 791
+pad = 0
+
+[[event]]
+frame = 792
+pad = 16384
+
+[[event]]
+frame = 793
+pad = 0
+
+[[event]]
+frame = 794
+pad = 16512
+
+[[event]]
+frame = 795
+pad = 0
+
+[[event]]
+frame = 796
+pad = 16384
+
+[[event]]
+frame = 797
+pad = 0
+
+[[event]]
+frame = 798
+pad = 16384
+
+[[event]]
+frame = 799
+pad = 0
+
+[[event]]
+frame = 800
+pad = 16384
+
+[[event]]
+frame = 801
+pad = 0
+
+[[event]]
+frame = 802
+pad = 16384
+
+[[event]]
+frame = 803
+pad = 0
+
+[[event]]
+frame = 804
+pad = 16384
+
+[[event]]
+frame = 805
+pad = 0
+
+[[event]]
+frame = 806
+pad = 16384
+
+[[event]]
+frame = 807
+pad = 0
+
+[[event]]
+frame = 808
+pad = 16384
+
+[[event]]
+frame = 809
+pad = 0
+
+[[event]]
+frame = 810
+pad = 8192
+
+[[event]]
+frame = 811
+pad = 0
+
+[[event]]
+frame = 812
+pad = 8192
+
+[[event]]
+frame = 813
+pad = 0
+
+[[event]]
+frame = 814
+pad = 8192
+
+[[event]]
+frame = 815
+pad = 0
+
+[[event]]
+frame = 816
+pad = 8192
+
+[[event]]
+frame = 817
+pad = 0
+
+[[event]]
+frame = 818
+pad = 4128
+
+[[event]]
+frame = 819
+pad = 0
+
+[[event]]
+frame = 820
+pad = 4128
+
+[[event]]
+frame = 821
+pad = 0
+
+[[event]]
+frame = 822
+pad = 4128
+
+[[event]]
+frame = 823
+pad = 0
+
+[[event]]
+frame = 824
+pad = 4128
+
+[[event]]
+frame = 825
+pad = 0
+
+[[event]]
+frame = 826
+pad = 4128
+
+[[event]]
+frame = 827
+pad = 0
+
+[[event]]
+frame = 828
+pad = 8192
+
+[[event]]
+frame = 829
+pad = 0
+
+[[event]]
+frame = 830
+pad = 8192
+
+[[event]]
+frame = 831
+pad = 0
+
+[[event]]
+frame = 832
+pad = 8192
+
+[[event]]
+frame = 833
+pad = 0
+
+[[event]]
+frame = 834
+pad = 8192
+
+[[event]]
+frame = 835
+pad = 0
+
+[[event]]
+frame = 836
+pad = 8192
+
+[[event]]
+frame = 837
+pad = 16
+
+[[event]]
+frame = 846
+pad = 0
+
+[[event]]
+frame = 852
+pad = 16400
+
+[[event]]
+frame = 853
+pad = 0
+
+[[event]]
+frame = 854
+pad = 16400
+
+[[event]]
+frame = 855
+pad = 0
+
+[[event]]
+frame = 856
+pad = 8192
+
+[[event]]
+frame = 857
+pad = 0
+
+[[event]]
+frame = 858
+pad = 8192
+
+[[event]]
+frame = 859
+pad = 0
+
+[[event]]
+frame = 860
+pad = 8192
+
+[[event]]
+frame = 861
+pad = 0
+
+[[event]]
+frame = 862
+pad = 8192
+
+[[event]]
+frame = 863
+pad = 0
+
+[[event]]
+frame = 864
+pad = 8192
+
+[[event]]
+frame = 865
+pad = 0
+
+[[event]]
+frame = 866
+pad = 8192
+
+[[event]]
+frame = 867
+pad = 16
+
+[[event]]
+frame = 871
+pad = 0
+
+[[event]]
+frame = 872
+pad = 16384
+
+[[event]]
+frame = 873
+pad = 0
+
+[[event]]
+frame = 874
+pad = 16384
+
+[[event]]
+frame = 875
+pad = 0
+
+[[event]]
+frame = 876
+pad = 16384
+
+[[event]]
+frame = 877
+pad = 0
+
+[[event]]
+frame = 878
+pad = 16384
+
+[[event]]
+frame = 879
+pad = 0
+
+[[event]]
+frame = 880
+pad = 16384
+
+[[event]]
+frame = 881
+pad = 0
+
+[[event]]
+frame = 882
+pad = 16448
+
+[[event]]
+frame = 883
+pad = 0
+
+[[event]]
+frame = 884
+pad = 16448
+
+[[event]]
+frame = 885
+pad = 0
+
+[[event]]
+frame = 886
+pad = 16448
+
+[[event]]
+frame = 887
+pad = 0
+
+[[event]]
+frame = 890
+pad = 128
+
+[[event]]
+frame = 896
+pad = 0
+
+[[event]]
+frame = 911
+pad = 64
+
+[[event]]
+frame = 923
+pad = 0
+
+[[event]]
+frame = 924
+pad = 4128
+
+[[event]]
+frame = 925
+pad = 0
+
+[[event]]
+frame = 926
+pad = 4128
+
+[[event]]
+frame = 927
+pad = 0
+
+[[event]]
+frame = 928
+pad = 4128
+
+[[event]]
+frame = 929
+pad = 0
+
+[[event]]
+frame = 930
+pad = 4128
+
+[[event]]
+frame = 931
+pad = 0
+
+[[event]]
+frame = 935
+pad = 8192
+
+[[event]]
+frame = 936
+pad = 0
+
+[[event]]
+frame = 937
+pad = 8192
+
+[[event]]
+frame = 938
+pad = 0
+
+[[event]]
+frame = 939
+pad = 8192
+
+[[event]]
+frame = 940
+pad = 0
+
+[[event]]
+frame = 941
+pad = 8192
+
+[[event]]
+frame = 942
+pad = 0
+
+[[event]]
+frame = 943
+pad = 8192
+
+[[event]]
+frame = 944
+pad = 0
+
+[[event]]
+frame = 945
+pad = 8192
+
+[[event]]
+frame = 946
+pad = 0
+
+[[event]]
+frame = 951
+pad = 16400
+
+[[event]]
+frame = 952
+pad = 0
+
+[[event]]
+frame = 953
+pad = 16400
+
+[[event]]
+frame = 954
+pad = 0
+
+[[event]]
+frame = 955
+pad = 16400
+
+[[event]]
+frame = 956
+pad = 0
+
+[[event]]
+frame = 957
+pad = 16400
+
+[[event]]
+frame = 958
+pad = 0
+
+[[event]]
+frame = 959
+pad = 16400
+
+[[event]]
+frame = 960
+pad = 0
+
+[[event]]
+frame = 961
+pad = 16400
+
+[[event]]
+frame = 962
+pad = 0
+
+[[event]]
+frame = 963
+pad = 8192
+
+[[event]]
+frame = 964
+pad = 0
+
+[[event]]
+frame = 965
+pad = 8192
+
+[[event]]
+frame = 966
+pad = 0
+
+[[event]]
+frame = 967
+pad = 8192
+
+[[event]]
+frame = 968
+pad = 0
+
+[[event]]
+frame = 969
+pad = 8192
+
+[[event]]
+frame = 970
+pad = 0
+
+[[event]]
+frame = 971
+pad = 8192
+
+[[event]]
+frame = 972
+pad = 0
+
+[[event]]
+frame = 973
+pad = 8192
+
+[[event]]
+frame = 974
+pad = 0
+
+[[event]]
+frame = 993
+pad = 16
+
+[[event]]
+frame = 1004
+pad = 0
+
+[[event]]
+frame = 1005
+pad = 16384
+
+[[event]]
+frame = 1006
+pad = 0
+
+[[event]]
+frame = 1007
+pad = 16384
+
+[[event]]
+frame = 1008
+pad = 0
+
+[[event]]
+frame = 1009
+pad = 16384
+
+[[event]]
+frame = 1010
+pad = 0
+
+[[event]]
+frame = 1011
+pad = 8192
+
+[[event]]
+frame = 1012
+pad = 0
+
+[[event]]
+frame = 1013
+pad = 8192
+
+[[event]]
+frame = 1014
+pad = 0
+
+[[event]]
+frame = 1015
+pad = 8192
+
+[[event]]
+frame = 1016
+pad = 0
+
+[[event]]
+frame = 1017
+pad = 8192
+
+[[event]]
+frame = 1018
+pad = 0
+
+[[event]]
+frame = 1019
+pad = 8192
+
+[[event]]
+frame = 1020
+pad = 0
+
+[[event]]
+frame = 1021
+pad = 4224
+
+[[event]]
+frame = 1022
+pad = 0
+
+[[event]]
+frame = 1023
+pad = 4224
+
+[[event]]
+frame = 1024
+pad = 0
+
+[[event]]
+frame = 1025
+pad = 4224
+
+[[event]]
+frame = 1026
+pad = 0
+
+[[event]]
+frame = 1027
+pad = 4224
+
+[[event]]
+frame = 1028
+pad = 0
+
+[[event]]
+frame = 1029
+pad = 4224
+
+[[event]]
+frame = 1030
+pad = 0
+
+[[event]]
+frame = 1031
+pad = 4224
+
+[[event]]
+frame = 1032
+pad = 32
+
+[[event]]
+frame = 1043
+pad = 64
+
+[[event]]
+frame = 1055
+pad = 0
+
+[[event]]
+frame = 1056
+pad = 32800
+
+[[event]]
+frame = 1057
+pad = 0
+
+[[event]]
+frame = 1058
+pad = 32800
+
+[[event]]
+frame = 1059
+pad = 0
+
+[[event]]
+frame = 1060
+pad = 32800
+
+[[event]]
+frame = 1061
+pad = 0
+
+[[event]]
+frame = 1062
+pad = 32800
+
+[[event]]
+frame = 1063
+pad = 0
+
+[[event]]
+frame = 1072
+pad = 16384
+
+[[event]]
+frame = 1073
+pad = 0
+
+[[event]]
+frame = 1074
+pad = 16384
+
+[[event]]
+frame = 1075
+pad = 0
+
+[[event]]
+frame = 1076
+pad = 16384
+
+[[event]]
+frame = 1077
+pad = 0
+
+[[event]]
+frame = 1078
+pad = 16384
+
+[[event]]
+frame = 1079
+pad = 0
+
+[[event]]
+frame = 1086
+pad = 8224
+
+[[event]]
+frame = 1087
+pad = 0
+
+[[event]]
+frame = 1088
+pad = 8224
+
+[[event]]
+frame = 1089
+pad = 0
+
+[[event]]
+frame = 1090
+pad = 16416
+
+[[event]]
+frame = 1091
+pad = 0
+
+[[event]]
+frame = 1092
+pad = 16416
+
+[[event]]
+frame = 1093
+pad = 0
+
+[[event]]
+frame = 1105
+pad = 16512
+
+[[event]]
+frame = 1106
+pad = 0
+
+[[event]]
+frame = 1107
+pad = 8192
+
+[[event]]
+frame = 1108
+pad = 0
+
+[[event]]
+frame = 1109
+pad = 8192
+
+[[event]]
+frame = 1110
+pad = 0
+
+[[event]]
+frame = 1111
+pad = 16384
+
+[[event]]
+frame = 1112
+pad = 0
+
+[[event]]
+frame = 1113
+pad = 16384
+
+[[event]]
+frame = 1114
+pad = 0
+
+[[event]]
+frame = 1115
+pad = 16384
+
+[[event]]
+frame = 1116
+pad = 0
+
+[[event]]
+frame = 1117
+pad = 16384
+
+[[event]]
+frame = 1118
+pad = 0
+
+[[event]]
+frame = 1119
+pad = 16416
+
+[[event]]
+frame = 1120
+pad = 0
+
+[[event]]
+frame = 1121
+pad = 16416
+
+[[event]]
+frame = 1122
+pad = 0
+
+[[event]]
+frame = 1123
+pad = 16416
+
+[[event]]
+frame = 1124
+pad = 0
+
+[[event]]
+frame = 1125
+pad = 8192
+
+[[event]]
+frame = 1126
+pad = 0
+
+[[event]]
+frame = 1127
+pad = 8192
+
+[[event]]
+frame = 1128
+pad = 0
+
+[[event]]
+frame = 1129
+pad = 4160
+
+[[event]]
+frame = 1130
+pad = 0
+
+[[event]]
+frame = 1131
+pad = 4160
+
+[[event]]
+frame = 1132
+pad = 0
+
+[[event]]
+frame = 1133
+pad = 4160
+
+[[event]]
+frame = 1134
+pad = 0
+
+[[event]]
+frame = 1135
+pad = 4160
+
+[[event]]
+frame = 1136
+pad = 0
+
+[[event]]
+frame = 1137
+pad = 4160
+
+[[event]]
+frame = 1138
+pad = 0
+
+[[event]]
+frame = 1139
+pad = 32832
+
+[[event]]
+frame = 1140
+pad = 0
+
+[[event]]
+frame = 1141
+pad = 32832
+
+[[event]]
+frame = 1142
+pad = 0
+
+[[event]]
+frame = 1143
+pad = 32832
+
+[[event]]
+frame = 1144
+pad = 0
+
+[[event]]
+frame = 1145
+pad = 32832
+
+[[event]]
+frame = 1146
+pad = 0
+
+[[event]]
+frame = 1147
+pad = 32832
+
+[[event]]
+frame = 1148
+pad = 0
+
+[[event]]
+frame = 1149
+pad = 32832
+
+[[event]]
+frame = 1150
+pad = 0
+
+[[event]]
+frame = 1161
+pad = 16384
+
+[[event]]
+frame = 1162
+pad = 0
+
+[[event]]
+frame = 1163
+pad = 16384
+
+[[event]]
+frame = 1164
+pad = 0
+
+[[event]]
+frame = 1165
+pad = 16384
+
+[[event]]
+frame = 1166
+pad = 0
+
+[[event]]
+frame = 1167
+pad = 16384
+
+[[event]]
+frame = 1168
+pad = 0
+
+[[event]]
+frame = 1169
+pad = 16384
+
+[[event]]
+frame = 1170
+pad = 0
+
+[[event]]
+frame = 1171
+pad = 16384
+
+[[event]]
+frame = 1172
+pad = 32
+
+[[event]]
+frame = 1179
+pad = 0
+
+[[event]]
+frame = 1180
+pad = 32832
+
+[[event]]
+frame = 1181
+pad = 0
+
+[[event]]
+frame = 1182
+pad = 32832
+
+[[event]]
+frame = 1183
+pad = 0
+
+[[event]]
+frame = 1184
+pad = 32832
+
+[[event]]
+frame = 1185
+pad = 0
+
+[[event]]
+frame = 1186
+pad = 8192
+
+[[event]]
+frame = 1187
+pad = 0
+
+[[event]]
+frame = 1188
+pad = 8192
+
+[[event]]
+frame = 1189
+pad = 0
+
+[[event]]
+frame = 1199
+pad = 16384
+
+[[event]]
+frame = 1200
+pad = 0
+
+[[event]]
+frame = 1201
+pad = 16384
+
+[[event]]
+frame = 1202
+pad = 0
+
+[[event]]
+frame = 1203
+pad = 16384
+
+[[event]]
+frame = 1204
+pad = 0
+
+[[event]]
+frame = 1205
+pad = 16384
+
+[[event]]
+frame = 1206
+pad = 0
+
+[[event]]
+frame = 1212
+pad = 8192
+
+[[event]]
+frame = 1213
+pad = 0
+
+[[event]]
+frame = 1214
+pad = 8192
+
+[[event]]
+frame = 1215
+pad = 0
+
+[[event]]
+frame = 1216
+pad = 8192
+
+[[event]]
+frame = 1217
+pad = 0
+
+[[event]]
+frame = 1223
+pad = 32
+
+[[event]]
+frame = 1229
+pad = 64
+
+[[event]]
+frame = 1234
+pad = 0
+
+[[event]]
+frame = 1235
+pad = 16448
+
+[[event]]
+frame = 1236
+pad = 32
+
+[[event]]
+frame = 1246
+pad = 0
+
+[[event]]
+frame = 1247
+pad = 32800
+
+[[event]]
+frame = 1248
+pad = 0
+
+[[event]]
+frame = 1249
+pad = 32800
+
+[[event]]
+frame = 1250
+pad = 0
+
+[[event]]
+frame = 1251
+pad = 32800
+
+[[event]]
+frame = 1252
+pad = 0
+
+[[event]]
+frame = 1260
+pad = 16
+
+[[event]]
+frame = 1262
+pad = 0
+
+[[event]]
+frame = 1263
+pad = 16400
+
+[[event]]
+frame = 1264
+pad = 0
+
+[[event]]
+frame = 1265
+pad = 16400
+
+[[event]]
+frame = 1266
+pad = 0
+
+[[event]]
+frame = 1274
+pad = 8208
+
+[[event]]
+frame = 1275
+pad = 0
+
+[[event]]
+frame = 1276
+pad = 8208
+
+[[event]]
+frame = 1277
+pad = 0
+
+[[event]]
+frame = 1278
+pad = 8208
+
+[[event]]
+frame = 1279
+pad = 0
+
+[[event]]
+frame = 1280
+pad = 16400
+
+[[event]]
+frame = 1281
+pad = 0
+
+[[event]]
+frame = 1282
+pad = 16400
+
+[[event]]
+frame = 1283
+pad = 0
+
+[[event]]
+frame = 1284
+pad = 16400
+
+[[event]]
+frame = 1285
+pad = 0
+
+[[event]]
+frame = 1286
+pad = 4096
+
+[[event]]
+frame = 1287
+pad = 0
+
+[[event]]
+frame = 1288
+pad = 4096
+
+[[event]]
+frame = 1289
+pad = 0
+
+[[event]]
+frame = 1290
+pad = 4096
+
+[[event]]
+frame = 1291
+pad = 0
+
+[[event]]
+frame = 1292
+pad = 4096
+
+[[event]]
+frame = 1293
+pad = 0
+
+[[event]]
+frame = 1294
+pad = 4096
+
+[[event]]
+frame = 1295
+pad = 16
+
+[[event]]
+frame = 1306
+pad = 0
+
+[[event]]
+frame = 1307
+pad = 16384
+
+[[event]]
+frame = 1308
+pad = 0
+
+[[event]]
+frame = 1309
+pad = 16384
+
+[[event]]
+frame = 1310
+pad = 0
+
+[[event]]
+frame = 1311
+pad = 16384
+
+[[event]]
+frame = 1312
+pad = 0
+
+[[event]]
+frame = 1313
+pad = 16384
+
+[[event]]
+frame = 1314
+pad = 0
+
+[[event]]
+frame = 1315
+pad = 16384
+
+[[event]]
+frame = 1316
+pad = 0
+
+[[event]]
+frame = 1317
+pad = 32
+
+[[event]]
+frame = 1327
+pad = 0
+
+[[event]]
+frame = 1337
+pad = 128
+
+[[event]]
+frame = 1345
+pad = 0
+
+[[event]]
+frame = 1346
+pad = 16416
+
+[[event]]
+frame = 1347
+pad = 0
+
+[[event]]
+frame = 1348
+pad = 16416
+
+[[event]]
+frame = 1349
+pad = 0
+
+[[event]]
+frame = 1350
+pad = 16416
+
+[[event]]
+frame = 1351
+pad = 0
+
+[[event]]
+frame = 1352
+pad = 16416
+
+[[event]]
+frame = 1353
+pad = 0
+
+[[event]]
+frame = 1354
+pad = 16512
+
+[[event]]
+frame = 1355
+pad = 0
+
+[[event]]
+frame = 1356
+pad = 16512
+
+[[event]]
+frame = 1357
+pad = 0
+
+[[event]]
+frame = 1358
+pad = 16512
+
+[[event]]
+frame = 1359
+pad = 0
+
+[[event]]
+frame = 1360
+pad = 16512
+
+[[event]]
+frame = 1361
+pad = 0
+
+[[event]]
+frame = 1362
+pad = 16512
+
+[[event]]
+frame = 1363
+pad = 0
+
+[[event]]
+frame = 1364
+pad = 16384
+
+[[event]]
+frame = 1365
+pad = 0
+
+[[event]]
+frame = 1366
+pad = 16384
+
+[[event]]
+frame = 1367
+pad = 0
+
+[[event]]
+frame = 1368
+pad = 16448
+
+[[event]]
+frame = 1369
+pad = 0
+
+[[event]]
+frame = 1370
+pad = 16448
+
+[[event]]
+frame = 1371
+pad = 0
+
+[[event]]
+frame = 1372
+pad = 16448
+
+[[event]]
+frame = 1373
+pad = 0
+
+[[event]]
+frame = 1374
+pad = 4096
+
+[[event]]
+frame = 1375
+pad = 0
+
+[[event]]
+frame = 1376
+pad = 4096
+
+[[event]]
+frame = 1377
+pad = 0
+
+[[event]]
+frame = 1378
+pad = 4096
+
+[[event]]
+frame = 1379
+pad = 0
+
+[[event]]
+frame = 1380
+pad = 4096
+
+[[event]]
+frame = 1381
+pad = 0
+
+[[event]]
+frame = 1382
+pad = 4096
+
+[[event]]
+frame = 1383
+pad = 0
+
+[[event]]
+frame = 1384
+pad = 4096
+
+[[event]]
+frame = 1385
+pad = 0
+
+[[event]]
+frame = 1386
+pad = 16512
+
+[[event]]
+frame = 1387
+pad = 0
+
+[[event]]
+frame = 1396
+pad = 4096
+
+[[event]]
+frame = 1397
+pad = 0
+
+[[event]]
+frame = 1398
+pad = 4096
+
+[[event]]
+frame = 1399
+pad = 0
+
+[[event]]
+frame = 1400
+pad = 4096
+
+[[event]]
+frame = 1401
+pad = 0
+
+[[event]]
+frame = 1402
+pad = 4096
+
+[[event]]
+frame = 1403
+pad = 0
+
+[[event]]
+frame = 1404
+pad = 4096
+
+[[event]]
+frame = 1405
+pad = 0
+
+[[event]]
+frame = 1406
+pad = 32
+
+[[event]]
+frame = 1409
+pad = 16
+
+[[event]]
+frame = 1417
+pad = 0
+
+[[event]]
+frame = 1418
+pad = 16448
+
+[[event]]
+frame = 1419
+pad = 0
+
+[[event]]
+frame = 1420
+pad = 16448
+
+[[event]]
+frame = 1421
+pad = 0
+
+[[event]]
+frame = 1430
+pad = 32
+
+[[event]]
+frame = 1433
+pad = 0
+
+[[event]]
+frame = 1434
+pad = 8192
+
+[[event]]
+frame = 1435
+pad = 0
+
+[[event]]
+frame = 1436
+pad = 8192
+
+[[event]]
+frame = 1437
+pad = 0
+
+[[event]]
+frame = 1438
+pad = 8192
+
+[[event]]
+frame = 1439
+pad = 0
+
+[[event]]
+frame = 1440
+pad = 8192
+
+[[event]]
+frame = 1441
+pad = 64
+
+[[event]]
+frame = 1444
+pad = 0
+
+[[event]]
+frame = 1446
+pad = 32
+
+[[event]]
+frame = 1454
+pad = 0
+
+[[event]]
+frame = 1455
+pad = 16384
+
+[[event]]
+frame = 1456
+pad = 0
+
+[[event]]
+frame = 1457
+pad = 16384
+
+[[event]]
+frame = 1458
+pad = 0
+
+[[event]]
+frame = 1459
+pad = 32
+
+[[event]]
+frame = 1470
+pad = 0
+
+[[event]]
+frame = 1471
+pad = 16384
+
+[[event]]
+frame = 1472
+pad = 0
+
+[[event]]
+frame = 1473
+pad = 16448
+
+[[event]]
+frame = 1474
+pad = 0
+
+[[event]]
+frame = 1475
+pad = 16448
+
+[[event]]
+frame = 1476
+pad = 0
+
+[[event]]
+frame = 1477
+pad = 16448
+
+[[event]]
+frame = 1478
+pad = 0
+
+[[event]]
+frame = 1490
+pad = 16384
+
+[[event]]
+frame = 1491
+pad = 0
+
+[[event]]
+frame = 1492
+pad = 16384
+
+[[event]]
+frame = 1493
+pad = 0
+
+[[event]]
+frame = 1494
+pad = 16384
+
+[[event]]
+frame = 1495
+pad = 0
+
+[[event]]
+frame = 1496
+pad = 16384
+
+[[event]]
+frame = 1497
+pad = 0
+
+[[event]]
+frame = 1498
+pad = 4160
+
+[[event]]
+frame = 1499
+pad = 0
+
+[[event]]
+frame = 1500
+pad = 16384
+
+[[event]]
+frame = 1501
+pad = 0
+
+[[event]]
+frame = 1502
+pad = 16384
+
+[[event]]
+frame = 1503
+pad = 16
+
+[[event]]
+frame = 1510
+pad = 0
+
+[[event]]
+frame = 1520
+pad = 16416
+
+[[event]]
+frame = 1521
+pad = 0
+
+[[event]]
+frame = 1522
+pad = 16416
+
+[[event]]
+frame = 1523
+pad = 0
+
+[[event]]
+frame = 1524
+pad = 16416
+
+[[event]]
+frame = 1525
+pad = 0
+
+[[event]]
+frame = 1534
+pad = 32
+
+[[event]]
+frame = 1537
+pad = 0
+
+[[event]]
+frame = 1543
+pad = 8192
+
+[[event]]
+frame = 1544
+pad = 0
+
+[[event]]
+frame = 1545
+pad = 8192
+
+[[event]]
+frame = 1546
+pad = 0
+
+[[event]]
+frame = 1547
+pad = 8192
+
+[[event]]
+frame = 1548
+pad = 0
+
+[[event]]
+frame = 1549
+pad = 8208
+
+[[event]]
+frame = 1550
+pad = 0
+
+[[event]]
+frame = 1551
+pad = 8208
+
+[[event]]
+frame = 1552
+pad = 0
+
+[[event]]
+frame = 1553
+pad = 8208
+
+[[event]]
+frame = 1554
+pad = 0
+
+[[event]]
+frame = 1555
+pad = 16400
+
+[[event]]
+frame = 1556
+pad = 0
+
+[[event]]
+frame = 1557
+pad = 16400
+
+[[event]]
+frame = 1558
+pad = 0
+
+[[event]]
+frame = 1559
+pad = 16512
+
+[[event]]
+frame = 1560
+pad = 0
+
+[[event]]
+frame = 1561
+pad = 16512
+
+[[event]]
+frame = 1562
+pad = 64
+
+[[event]]
+frame = 1566
+pad = 0
+
+[[event]]
+frame = 1575
+pad = 8192
+
+[[event]]
+frame = 1576
+pad = 0
+
+[[event]]
+frame = 1577
+pad = 8192
+
+[[event]]
+frame = 1578
+pad = 0
+
+[[event]]
+frame = 1579
+pad = 8192
+
+[[event]]
+frame = 1580
+pad = 0
+
+[[event]]
+frame = 1581
+pad = 8192
+
+[[event]]
+frame = 1582
+pad = 0
+
+[[event]]
+frame = 1583
+pad = 8208
+
+[[event]]
+frame = 1584
+pad = 0
+
+[[event]]
+frame = 1585
+pad = 8208
+
+[[event]]
+frame = 1586
+pad = 0
+
+[[event]]
+frame = 1587
+pad = 8208
+
+[[event]]
+frame = 1588
+pad = 0
+
+[[event]]
+frame = 1589
+pad = 8208
+
+[[event]]
+frame = 1590
+pad = 0
+
+[[event]]
+frame = 1591
+pad = 32
+
+[[event]]
+frame = 1596
+pad = 16
+
+[[event]]
+frame = 1607
+pad = 0
+
+[[event]]
+frame = 1608
+pad = 16400
+
+[[event]]
+frame = 1609
+pad = 0
+
+[[event]]
+frame = 1610
+pad = 16400
+
+[[event]]
+frame = 1611
+pad = 0
+
+[[event]]
+frame = 1612
+pad = 16400
+
+[[event]]
+frame = 1613
+pad = 0
+
+[[event]]
+frame = 1614
+pad = 8320
+
+[[event]]
+frame = 1615
+pad = 0
+
+[[event]]
+frame = 1616
+pad = 8320
+
+[[event]]
+frame = 1617
+pad = 0
+
+[[event]]
+frame = 1618
+pad = 8320
+
+[[event]]
+frame = 1619
+pad = 0
+
+[[event]]
+frame = 1620
+pad = 8320
+
+[[event]]
+frame = 1621
+pad = 0
+
+[[event]]
+frame = 1622
+pad = 8320
+
+[[event]]
+frame = 1623
+pad = 0
+
+[[event]]
+frame = 1624
+pad = 16384
+
+[[event]]
+frame = 1625
+pad = 0
+
+[[event]]
+frame = 1626
+pad = 16384
+
+[[event]]
+frame = 1627
+pad = 0
+
+[[event]]
+frame = 1628
+pad = 16384
+
+[[event]]
+frame = 1629
+pad = 0
+
+[[event]]
+frame = 1630
+pad = 16384
+
+[[event]]
+frame = 1631
+pad = 0
+
+[[event]]
+frame = 1632
+pad = 16512
+
+[[event]]
+frame = 1633
+pad = 0
+
+[[event]]
+frame = 1634
+pad = 16512
+
+[[event]]
+frame = 1635
+pad = 0
+
+[[event]]
+frame = 1636
+pad = 16512
+
+[[event]]
+frame = 1637
+pad = 16
+
+[[event]]
+frame = 1639
+pad = 0
+
+[[event]]
+frame = 1640
+pad = 16400
+
+[[event]]
+frame = 1641
+pad = 0
+
+[[event]]
+frame = 1642
+pad = 16400
+
+[[event]]
+frame = 1643
+pad = 0
+
+[[event]]
+frame = 1652
+pad = 32
+
+[[event]]
+frame = 1656
+pad = 0
+
+[[event]]
+frame = 1657
+pad = 16384
+
+[[event]]
+frame = 1658
+pad = 0
+
+[[event]]
+frame = 1659
+pad = 16384
+
+[[event]]
+frame = 1660
+pad = 0
+
+[[event]]
+frame = 1661
+pad = 16384
+
+[[event]]
+frame = 1662
+pad = 0
+
+[[event]]
+frame = 1663
+pad = 8192
+
+[[event]]
+frame = 1664
+pad = 0
+
+[[event]]
+frame = 1665
+pad = 8192
+
+[[event]]
+frame = 1666
+pad = 0
+
+[[event]]
+frame = 1667
+pad = 8192
+
+[[event]]
+frame = 1668
+pad = 0
+
+[[event]]
+frame = 1669
+pad = 8192
+
+[[event]]
+frame = 1670
+pad = 0
+
+[[event]]
+frame = 1671
+pad = 8192
+
+[[event]]
+frame = 1672
+pad = 0
+
+[[event]]
+frame = 1673
+pad = 8192
+
+[[event]]
+frame = 1674
+pad = 0
+
+[[event]]
+frame = 1677
+pad = 16
+
+[[event]]
+frame = 1681
+pad = 0
+
+[[event]]
+frame = 1682
+pad = 16384
+
+[[event]]
+frame = 1683
+pad = 0
+
+[[event]]
+frame = 1684
+pad = 16384
+
+[[event]]
+frame = 1685
+pad = 0
+
+[[event]]
+frame = 1686
+pad = 16384
+
+[[event]]
+frame = 1687
+pad = 0
+
+[[event]]
+frame = 1688
+pad = 16384
+
+[[event]]
+frame = 1689
+pad = 0
+
+[[event]]
+frame = 1690
+pad = 16384
+
+[[event]]
+frame = 1691
+pad = 0
+
+[[event]]
+frame = 1692
+pad = 8256
+
+[[event]]
+frame = 1693
+pad = 0
+
+[[event]]
+frame = 1694
+pad = 8256
+
+[[event]]
+frame = 1695
+pad = 32
+
+[[event]]
+frame = 1703
+pad = 0
+
+[[event]]
+frame = 1707
+pad = 8256
+
+[[event]]
+frame = 1708
+pad = 0
+
+[[event]]
+frame = 1709
+pad = 8256
+
+[[event]]
+frame = 1710
+pad = 0
+
+[[event]]
+frame = 1711
+pad = 8256
+
+[[event]]
+frame = 1712
+pad = 0
+
+[[event]]
+frame = 1713
+pad = 8192
+
+[[event]]
+frame = 1714
+pad = 0
+
+[[event]]
+frame = 1715
+pad = 16384
+
+[[event]]
+frame = 1716
+pad = 0
+
+[[event]]
+frame = 1717
+pad = 16384
+
+[[event]]
+frame = 1718
+pad = 0
+
+[[event]]
+frame = 1719
+pad = 16384
+
+[[event]]
+frame = 1720
+pad = 0
+
+[[event]]
+frame = 1721
+pad = 16384
+
+[[event]]
+frame = 1722
+pad = 0
+
+[[event]]
+frame = 1723
+pad = 16384
+
+[[event]]
+frame = 1724
+pad = 0
+
+[[event]]
+frame = 1725
+pad = 16384
+
+[[event]]
+frame = 1726
+pad = 0
+
+[[event]]
+frame = 1727
+pad = 128
+
+[[event]]
+frame = 1731
+pad = 0
+
+[[event]]
+frame = 1732
+pad = 16448
+
+[[event]]
+frame = 1733
+pad = 0
+
+[[event]]
+frame = 1734
+pad = 16448
+
+[[event]]
+frame = 1735
+pad = 0
+
+[[event]]
+frame = 1736
+pad = 16448
+
+[[event]]
+frame = 1737
+pad = 0
+
+[[event]]
+frame = 1738
+pad = 16448
+
+[[event]]
+frame = 1739
+pad = 0
+
+[[event]]
+frame = 1740
+pad = 16448
+
+[[event]]
+frame = 1741
+pad = 0
+
+[[event]]
+frame = 1742
+pad = 16448
+
+[[event]]
+frame = 1743
+pad = 0
+
+[[event]]
+frame = 1753
+pad = 16384
+
+[[event]]
+frame = 1754
+pad = 0
+
+[[event]]
+frame = 1755
+pad = 16384
+
+[[event]]
+frame = 1756
+pad = 0
+
+[[event]]
+frame = 1757
+pad = 16384
+
+[[event]]
+frame = 1758
+pad = 0
+
+[[event]]
+frame = 1771
+pad = 8224
+
+[[event]]
+frame = 1772
+pad = 0
+
+[[event]]
+frame = 1773
+pad = 8224
+
+[[event]]
+frame = 1774
+pad = 0
+
+[[event]]
+frame = 1775
+pad = 8224
+
+[[event]]
+frame = 1776
+pad = 0
+
+[[event]]
+frame = 1777
+pad = 8224
+
+[[event]]
+frame = 1778
+pad = 0
+
+[[event]]
+frame = 1779
+pad = 8224
+
+[[event]]
+frame = 1780
+pad = 0
+
+[[event]]
+frame = 1781
+pad = 64
+
+[[event]]
+frame = 1787
+pad = 32
+
+[[event]]
+frame = 1791
+pad = 0
+
+[[event]]
+frame = 1792
+pad = 8256
+
+[[event]]
+frame = 1793
+pad = 0
+
+[[event]]
+frame = 1794
+pad = 8256
+
+[[event]]
+frame = 1795
+pad = 0
+
+[[event]]
+frame = 1796
+pad = 4128
+
+[[event]]
+frame = 1797
+pad = 0
+
+[[event]]
+frame = 1798
+pad = 4128
+
+[[event]]
+frame = 1799
+pad = 0
+
+[[event]]
+frame = 1800
+pad = 4128
+
+[[event]]
+frame = 1801
+pad = 0
+
+[[event]]
+frame = 1810
+pad = 16416
+
+[[event]]
+frame = 1811
+pad = 0
+
+[[event]]
+frame = 1812
+pad = 16416
+
+[[event]]
+frame = 1813
+pad = 0
+
+[[event]]
+frame = 1814
+pad = 16416
+
+[[event]]
+frame = 1815
+pad = 0
+
+[[event]]
+frame = 1816
+pad = 16416
+
+[[event]]
+frame = 1817
+pad = 0
+
+[[event]]
+frame = 1818
+pad = 64
+
+[[event]]
+frame = 1820
+pad = 0
+
+[[event]]
+frame = 1821
+pad = 8192
+
+[[event]]
+frame = 1822
+pad = 0
+
+[[event]]
+frame = 1823
+pad = 8192
+
+[[event]]
+frame = 1824
+pad = 0
+
+[[event]]
+frame = 1825
+pad = 8192
+
+[[event]]
+frame = 1826
+pad = 0
+
+[[event]]
+frame = 1827
+pad = 8192
+
+[[event]]
+frame = 1828
+pad = 0
+
+[[event]]
+frame = 1829
+pad = 8192
+
+[[event]]
+frame = 1830
+pad = 0
+
+[[event]]
+frame = 1831
+pad = 8192
+
+[[event]]
+frame = 1832
+pad = 0
+
+[[event]]
+frame = 1833
+pad = 8192
+
+[[event]]
+frame = 1834
+pad = 128
+
+[[event]]
+frame = 1842
+pad = 16
+
+[[event]]
+frame = 1852
+pad = 0
+
+[[event]]
+frame = 1854
+pad = 8192
+
+[[event]]
+frame = 1855
+pad = 0
+
+[[event]]
+frame = 1856
+pad = 4128
+
+[[event]]
+frame = 1857
+pad = 0
+
+[[event]]
+frame = 1858
+pad = 4128
+
+[[event]]
+frame = 1859
+pad = 0
+
+[[event]]
+frame = 1860
+pad = 4128

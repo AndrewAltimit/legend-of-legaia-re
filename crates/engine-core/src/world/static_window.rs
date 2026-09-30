@@ -22,11 +22,12 @@
 //! cells the terrain already holds.
 //!
 //! What a host draws from it is decided by one kernel,
-//! [`crate::field_env::placed_draw_live`]. By default the port keeps drawing
-//! every placement for the whole map (the list still runs; the draw simply does
-//! not gate on it); with [`StaticObjectWindow::retail_windowing`] set, a
-//! window-owned placement draws only while this list holds a drawn actor for
-//! it, which is retail's sub-area pop-in.
+//! [`crate::field_env::placed_draw_live`]. With
+//! [`StaticObjectWindow::retail_windowing`] set - the play hosts' default
+//! (`OptionsState::retail_static_window`) - a window-owned placement draws only
+//! while this list holds a drawn actor for it, which is retail's sub-area
+//! pop-in; clear, the port draws every placement for the whole map (the list
+//! still runs; the draw simply does not gate on it).
 //!
 //! REF: FUN_80017DD4, FUN_80017EC8 (the re-centre pair; their per-cell tile
 //! emission is scope-ignored), FUN_800180EC, FUN_801D6704
@@ -57,7 +58,8 @@ pub struct StaticObjectWindow {
     /// only when the list actually changed.
     pub generation: u32,
     /// Retail windowing: gate window-owned placements on this list (the
-    /// sub-area pop-in). Off by default - the port draws the whole map.
+    /// sub-area pop-in). Off on a bare `World`; both play hosts push
+    /// `OptionsState::retail_static_window` (default on) onto it.
     pub retail_windowing: bool,
     /// The drawn actors' identities, the set [`Self::draws`] answers from.
     drawn: HashSet<PlacedWindowKey>,

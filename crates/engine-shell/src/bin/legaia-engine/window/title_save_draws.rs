@@ -298,57 +298,13 @@ impl PlayWindowApp {
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<legaia_engine_render::SpriteDraw> {
-        // Active during both the Title phases and the SaveSelect boot
-        // sub-state. SaveSelect dims the bands to ~45 % brightness so
-        // the panel + slot pills layered on top read clearly. Retail
-        // pivots to pure black once a slot is confirmed (NowChecking /
-        // SlotPreview): the dialog + portrait grid + info panel are
-        // composed against black, never the title art.
-        let title_session: Option<&legaia_engine_core::title::TitleSession> = match &self.boot_ui {
-            BootUiState::Title(s) => Some(s),
-            BootUiState::SaveSelect(s) => {
-                use legaia_engine_core::save_select::SelectPhase;
-                if matches!(
-                    s.phase(),
-                    SelectPhase::NowChecking { .. } | SelectPhase::SlotPreview { .. }
-                ) {
-                    return Vec::new();
-                }
-                None
-            }
-            _ => return Vec::new(),
-        };
         // Everything below the composition is state, not geometry: which
-        // bands draw and how bright. The composition itself is
-        // `legaia_engine_ui::title_band_sprites`, shared with the browser
-        // play page so neither host can place a band the other does not.
-        let state = match title_session {
-            Some(session) => {
-                if matches!(
-                    session.phase(),
-                    legaia_engine_core::title::TitlePhase::Done(_)
-                ) {
-                    return Vec::new();
-                }
-                use legaia_engine_core::title::TitlePhase;
-                let alpha = match session.phase() {
-                    TitlePhase::FadeIn { frames_remaining } => {
-                        let total = session.fade_in_frames.max(1) as f32;
-                        1.0 - (frames_remaining as f32 / total).clamp(0.0, 1.0)
-                    }
-                    _ => 1.0,
-                };
-                let mut st = legaia_engine_render::TitleBandState::card(alpha);
-                st.press_start = matches!(session.phase(), TitlePhase::PressStart { .. });
-                // Main-menu rows: selected row bright, unselected dim.
-                if let TitlePhase::MainMenu { cursor } = session.phase() {
-                    st.menu = Some((cursor, true));
-                }
-                st
-            }
-            // SaveSelect: the retail backdrop - dimmed art with both rows
-            // drawn cursor-less behind the slot pills.
-            None => legaia_engine_render::TitleBandState::backdrop(),
+        // bands draw and how bright ([`boot_title_band_state`]). The
+        // composition itself is `legaia_engine_ui::title_band_sprites`,
+        // shared with the browser play page so neither host can place a band
+        // the other does not.
+        let Some(state) = boot_title_band_state(&self.boot_ui) else {
+            return Vec::new();
         };
         let Some(assets) = self.title_screen.as_ref() else {
             return Vec::new();
@@ -445,5 +401,97 @@ impl PlayWindowApp {
             pen,
             glyph_scale,
         )
+    }
+}
+
+/// Which title-TIM bands the boot UI draws this frame, and how bright - the
+/// state half of [`PlayWindowApp::title_screen_sprite_draws`].
+///
+/// Active during both the Title phases and the SaveSelect boot sub-state. The
+/// SaveSelect arm is the retail backdrop, [`TitleBandState::backdrop`]: the
+/// menu overlay's `FUN_801DD35C` calls the title-strip drawer `FUN_801E0418`
+/// at `0x801E0260` and then the dimmed art `FUN_801E02A4` with one brightness
+/// byte, only while `_DAT_8007BB00` (the came-from-the-title word) is set -
+/// the `lw v0,-0x4500(v0)` / `beq v0,zero,0x801E0270` pair at `0x801E01D0`.
+/// Retail pivots to pure black once a slot is confirmed (NowChecking /
+/// SlotPreview): the dialog + portrait grid + info panel are composed against
+/// black, never the title art. The browser play page makes the same two cuts
+/// (`boot_title_backdrop_visible`).
+///
+/// [`TitleBandState::backdrop`]: legaia_engine_render::TitleBandState::backdrop
+fn boot_title_band_state(boot_ui: &BootUiState) -> Option<legaia_engine_render::TitleBandState> {
+    use legaia_engine_core::save_select::SelectPhase;
+    use legaia_engine_core::title::TitlePhase;
+    match boot_ui {
+        BootUiState::Title(session) => {
+            let alpha = match session.phase() {
+                TitlePhase::Done(_) => return None,
+                TitlePhase::FadeIn { frames_remaining } => {
+                    let total = session.fade_in_frames.max(1) as f32;
+                    1.0 - (frames_remaining as f32 / total).clamp(0.0, 1.0)
+                }
+                _ => 1.0,
+            };
+            let mut st = legaia_engine_render::TitleBandState::card(alpha);
+            st.press_start = matches!(session.phase(), TitlePhase::PressStart { .. });
+            // Main-menu rows: selected row bright, unselected dim.
+            if let TitlePhase::MainMenu { cursor } = session.phase() {
+                st.menu = Some((cursor, true));
+            }
+            Some(st)
+        }
+        BootUiState::SaveSelect(s) => {
+            if matches!(
+                s.phase(),
+                SelectPhase::NowChecking { .. } | SelectPhase::SlotPreview { .. }
+            ) {
+                return None;
+            }
+            Some(legaia_engine_render::TitleBandState::backdrop())
+        }
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod title_backdrop_tests {
+    use super::*;
+    use legaia_engine_core::save_select::{SaveSelectMode, SaveSelectSession, SlotSnapshot};
+
+    /// The native half of the save-select backdrop parity: the boot
+    /// save-select resolves to the retail backdrop state, and that state
+    /// composes as retail's title-strip stack (`FUN_801E0418`,
+    /// `title_strip_sprites`) - the same five strips at the same dim the
+    /// browser play page emits from `boot_title_backdrop_draws_json`
+    /// (`web-viewer/tests/title_backdrop_parity.rs` pins that half off the
+    /// disc).
+    #[test]
+    fn the_boot_save_select_draws_retails_title_strips() {
+        let session = SaveSelectSession::new(SaveSelectMode::Load, vec![SlotSnapshot::empty(1)]);
+        let state = boot_title_band_state(&BootUiState::SaveSelect(session))
+            .expect("the save-select keeps the title behind it");
+        assert_eq!(state, legaia_engine_render::TitleBandState::backdrop());
+        let origin = (7, 11);
+        let drawn = legaia_engine_render::title_band_sprites(state, origin, 3);
+        // Brightness is TITLE_BACKDROP_LUM of the neutral 0x80, CONTINUE lit.
+        let b = (legaia_engine_render::TITLE_BACKDROP_LUM * 128.0).round() as u8;
+        let strips = legaia_engine_render::title_strip_sprites(true, b, 1.0, origin, 3);
+        assert_eq!(
+            drawn.len(),
+            5,
+            "wordmark, NEW GAME, CONTINUE, TM, copyright"
+        );
+        assert_eq!(
+            format!("{drawn:?}"),
+            format!("{strips:?}"),
+            "the backdrop is the title-strip drawer's output, sprite for sprite"
+        );
+    }
+
+    /// No boot UI, no backdrop: the strips are the save-select's, not the
+    /// field's.
+    #[test]
+    fn no_boot_ui_draws_no_title_strips() {
+        assert!(boot_title_band_state(&BootUiState::Inactive).is_none());
     }
 }

@@ -105,6 +105,16 @@ pub struct FieldVmState {
     /// [`crate::world::SPAWNED_CONTEXT_SLOTS`]) so a second spawn issued while another
     /// record executes is not dropped.
     pub pending_record_spawns: Vec<u8>,
+    /// `true` while the scene system script (ctx `0xFB`) is inside a pass:
+    /// set when a slice starts, cleared when a slice ends on an executed
+    /// `0x21`. A fresh install starts open (`FUN_8003AB2C` runs the first
+    /// pass in the load frame). The entity tick that drives the system
+    /// script, `FUN_801DA51C`, continues an open pass unconditionally
+    /// (`0x801DA78C`) but starts a new one only while the player's
+    /// `+0x10 & 0x80000` is down (`0x801DA794..0x801DA7AC`) - see
+    /// [`crate::world::World::step_field_frame_slice`].
+    // REF: FUN_801DA51C
+    pub system_pass_open: bool,
 }
 
 impl FieldVmState {
@@ -125,6 +135,7 @@ impl FieldVmState {
             in_spawned_record_slice: false,
             object_channel_binds: Vec::new(),
             pending_record_spawns: Vec::new(),
+            system_pass_open: true,
         }
     }
 }

@@ -15,7 +15,7 @@ and looking for its opcode table is a dead end - see
 [How it dispatches](#how-it-dispatches).
 
 The port models the slot pool (`Pool`), the `MasterSlot` / `ChildSlot` /
-`EffectScript` data structures, ports the init (`Pool::init`) and spawn
+`EffectScript` data structures, ports the init (`Pool::init_head`) and spawn
 (`Pool::spawn`) APIs faithfully, and executes the full pass-1 algebra in
 `Pool::tick_retail` (master spawn cadence + child anim/motion walk) with the
 pass-2 per-child computation exposed as `Pool::child_billboards` (brightness

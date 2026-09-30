@@ -1174,6 +1174,35 @@ pub fn field_hud_suppressed(world: &crate::world::World, host_panel_owns_frame: 
         || world.name_entry_active()
 }
 
+/// The player-engaged term of the field party HUD's **rearm** arm: while it
+/// holds, the idle countdown restarts every frame, so the readout never
+/// comes up.
+///
+/// `FUN_801D0D38` loads the player object out of `_DAT_8007C364`
+/// (`lw a1,0x1c(s0)` off `s0 = 0x8007C348`, `0x801D0DC4`) and takes the rearm
+/// arm when its `+0x10 & 0x80000` is set (`0x801D0DCC..0x801D0DD8`), ahead of
+/// the scratchpad and staged-load terms. That bit is the engaged bit the
+/// script runner `FUN_80039B7C` raises on every frame it steps a spawned
+/// context and the touch post raises for a conversation, so a scene whose
+/// script holds the player for its whole run - every ending scene, whose
+/// entry script spawns the credits record and never releases it - shows no
+/// readout at all. The engine answers the same question with
+/// [`crate::world::World::script_context_engages_player`] and
+/// [`crate::world::World::dialogue_owns_input`], plus the bit itself where
+/// an engine path sets it on the player's `move_state`.
+///
+/// Hosts call [`FieldPartyHud::rearm`] on a frame this returns `true`, before
+/// the tick.
+///
+/// PORT: FUN_801d0d38 (`0x801D0DC0..0x801D0DD8`, the player-bit rearm term)
+pub fn field_hud_rearm_held(world: &crate::world::World) -> bool {
+    let player_bit = world
+        .player_actor_slot
+        .and_then(|s| world.actors.get(usize::from(s)))
+        .is_some_and(|a| a.move_state.flags & 0x0008_0000 != 0);
+    player_bit || world.script_context_engages_player() || world.dialogue_owns_input()
+}
+
 /// Project the **present party** onto the field HUD's rows.
 ///
 /// Retail's draw loop walks the present-party list at `0x80084598` for
@@ -1299,6 +1328,25 @@ impl FieldPartyHud {
     }
 }
 
+/// Phase-align the HUD's idle countdown to a retail frame: `true` on every
+/// host tick at which the countdown must be rearmed so that, at
+/// `capture_tick`, it reads `retail_countdown` - the value of retail's
+/// `_DAT_801F348C` in the state being compared.
+///
+/// A capture harness ticks a fixed settle window, which outlasts the near
+/// idle (`0x28` frames), while a retail state is one instant at an arbitrary
+/// point of the countdown - a card-load state is typically two or three
+/// frames into it. Without the hold, a stationary seat would score the
+/// readout the retail frame is still `retail_countdown` frames short of.
+/// The hold rearms through tick `capture_tick - (idle - retail_countdown)`;
+/// the countdown then runs down one per frame and reads exactly
+/// `retail_countdown` at the capture (a `0` countdown is a drawn readout).
+pub fn hud_phase_hold(tick: u64, capture_tick: u64, retail_countdown: i16, idle: i16) -> bool {
+    let lead =
+        u64::try_from(i32::from(idle) - i32::from(retail_countdown.clamp(0, idle))).unwrap_or(0);
+    tick + lead <= capture_tick
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1348,6 +1396,77 @@ mod tests {
                 skipped.tick(false, 0, 0, Some((100, 200)), 1, None)
             );
         }
+    }
+
+    /// The phase hold lands the countdown on the retail value at the capture
+    /// tick: a card-load state three frames into the idle (`0x25` left) shows
+    /// no readout, a state whose countdown already expired (`0`) shows it.
+    #[test]
+    fn the_phase_hold_lands_retails_countdown_at_the_capture_tick() {
+        use legaia_engine_vm::world_map_panel_actors::HUD_IDLE_FRAMES_NEAR as IDLE;
+        const CAPTURE: u64 = 120;
+        for retail in [0i16, 1, 0x25, 0x26, IDLE] {
+            let mut hud = FieldPartyHud::new();
+            let mut last = None;
+            for tick in 1..=CAPTURE {
+                if hud_phase_hold(tick, CAPTURE, retail, IDLE) {
+                    hud.rearm();
+                }
+                last = Some(hud.tick(false, 0, 0, Some((100, 200)), 1, None));
+            }
+            let want = match retail {
+                0 => HudDecision::Draw { y: HUD_Y_BOTTOM },
+                t if t == IDLE => HudDecision::Rearmed { timer: IDLE },
+                t => HudDecision::CountingDown { timer: t },
+            };
+            assert_eq!(last, Some(want), "retail countdown {retail}");
+        }
+        // The un-held run (no retail value to align to) draws long before.
+        assert!(!hud_phase_hold(CAPTURE + 1, CAPTURE, 0, IDLE));
+    }
+
+    /// The player's engaged bit holds the HUD in its rearm arm: a host that
+    /// rearms on every held frame never reaches `Draw`, and once the bit
+    /// drops the readout waits out a full idle countdown before it returns.
+    #[test]
+    fn an_engaged_player_keeps_the_hud_rearming() {
+        let mut w = crate::world::World {
+            player_actor_slot: Some(0),
+            ..Default::default()
+        };
+        assert!(!field_hud_rearm_held(&w));
+        w.actors[0].move_state.flags |= 0x0008_0000;
+        assert!(field_hud_rearm_held(&w));
+
+        let mut hud = FieldPartyHud::new();
+        for _ in 0..200 {
+            if field_hud_rearm_held(&w) {
+                hud.rearm();
+            }
+            let d = hud.tick(false, 0, 0, Some((100, 200)), 1, None);
+            assert!(!matches!(d, HudDecision::Draw { .. }), "held: {d:?}");
+        }
+        w.actors[0].move_state.flags &= !0x0008_0000;
+        let mut first_draw = None;
+        for frame in 0..200 {
+            if field_hud_rearm_held(&w) {
+                hud.rearm();
+            }
+            if let HudDecision::Draw { .. } = hud.tick(false, 0, 0, Some((100, 200)), 1, None) {
+                first_draw = Some(frame);
+                break;
+            }
+        }
+        // The last held frame armed the full countdown; the released frames
+        // spend it, and the one that takes it to zero draws.
+        let idle = i32::from(legaia_engine_vm::world_map_panel_actors::hud_idle_frames(
+            0, false,
+        ));
+        assert_eq!(
+            first_draw,
+            Some(idle - 1),
+            "released: the near-camera idle countdown runs in full first"
+        );
     }
 
     /// The raw-to-packed conversion, on the two fixed points both layouts

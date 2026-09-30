@@ -47,6 +47,7 @@ fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let cli = Cli::parse();
     match cli.cmd {
+        Cmd::RetailCompare(args) => legaia_engine_shell::retail_compare_cli::run(args),
         Cmd::Info {
             scene,
             extracted_root,
@@ -331,6 +332,7 @@ fn main() -> Result<()> {
             no_occlusion_fade,
             learn_spell,
             set_flag,
+            resume_save,
         } => cmd_play_window(
             &scene,
             &extracted_root,
@@ -369,7 +371,7 @@ fn main() -> Result<()> {
             !no_dyn_shadows,
             !no_entry_pulse,
             !no_occlusion_fade,
-            window::DebugSeeds::from_args(&learn_spell, &set_flag)?,
+            window::DebugSeeds::from_args(&learn_spell, &set_flag, resume_save)?,
         ),
         Cmd::Save {
             extracted_root,

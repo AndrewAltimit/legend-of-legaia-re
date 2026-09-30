@@ -312,6 +312,28 @@ pub struct CutsceneTimeline {
     /// the script runner's step, not by the spawn); see
     /// `World::script_context_engages_player`.
     pub stepped: bool,
+    /// `Some(slot)` when this timeline is placement `slot`'s OWN parked
+    /// context resumed by a touch (the boss-stager dispatch), not a spawned
+    /// record. Retail has one context per placement: the touch raises its
+    /// engaged bit (`+0x10 & 0x100`) and the script runner `FUN_80039B7C`
+    /// steps it from its parked PC until it executes a raw `0x21`, where the
+    /// interaction ends (`0x80039E20` exits the loop on `0x21`,
+    /// `0x80039E68..0x80039E7C` clears `0x100`). So such a timeline starts at
+    /// the placement channel's PC, completes at its first executed `0x21`,
+    /// hands its PC back to the channel, and the channel does not step on
+    /// its own while the timeline holds it.
+    // REF: FUN_80039B7C
+    pub interaction_slot: Option<u8>,
+    /// Placement indices this context has addressed with a cross-context op
+    /// (`0x80`-bit, the target resolved to a placement channel). While a
+    /// timeline plays, only these placements' own scripts step
+    /// ([`crate::world::World::step_field_channels`]): retail runs a
+    /// placement context only while its `+0x10 & 0x100` is up, and a spawned
+    /// placement starts with it down (`FUN_801D3F24` clears it before the
+    /// spawn pre-run), so a beat that never addresses an actor does not wake
+    /// that actor's talk body.
+    // REF: FUN_8003BC08, FUN_80039B7C
+    pub addressed_channels: Vec<usize>,
 }
 
 /// State of a parked player compass walk (see
@@ -407,6 +429,8 @@ impl CutsceneTimeline {
             player_clip_ticks: 0,
             player_clip_wait: None,
             stepped: false,
+            interaction_slot: None,
+            addressed_channels: Vec::new(),
         }
     }
 

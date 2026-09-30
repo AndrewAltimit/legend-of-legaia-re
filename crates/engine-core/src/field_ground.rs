@@ -10,8 +10,8 @@
 //!   authored floor art on the same plane wins the depth test.
 //! - **Winding**: the heightfield is engine-synthesised geometry with no
 //!   retail winding to preserve, and its builder winds opposite to the scene
-//!   TMDs. Nothing notices under the both-sided passes, but the cutscene
-//!   camera's NCLIP pass (`camera_view::nclip_cull_mode` = 2) discards one
+//!   TMDs. Nothing notices under the both-sided passes, but the field
+//!   pass's NCLIP cull (`camera_view::nclip_cull_mode` = 2) discards one
 //!   facing, and a ground wound against the disc meshes is the half it
 //!   discards. Every triangle is reversed here so the ground carries the
 //!   disc meshes' parity.
@@ -44,6 +44,42 @@ pub fn render_indices(hf: &WalkHeightfield) -> Vec<u32> {
     let mut out = hf.indices.clone();
     for tri in out.as_chunks_mut::<3>().0 {
         tri.swap(1, 2);
+    }
+    out
+}
+
+/// Crop an already-built ground index list to this frame's visible cells: keep
+/// each quad (six indices, as [`render_indices`] or the builder emits them)
+/// whose cell the ground emitters visit
+/// ([`crate::field_view_window::ViewCells::ground_visible`]). The cell is read
+/// back off the quad's lowest vertex, which the builder places at
+/// `(col * 128, _, row * 128)` - X and Z survive the sink untouched, so the
+/// same call serves [`render_positions`]. `cells = None` returns the list
+/// whole.
+///
+/// Both hosts upload the result as the ground's index buffer whenever
+/// [`crate::field_view_window::ViewCells::stamp`] moves.
+pub fn crop_indices(
+    positions: &[[f32; 3]],
+    indices: &[u32],
+    cells: Option<&crate::field_view_window::ViewCells>,
+) -> Vec<u32> {
+    let Some(cells) = cells else {
+        return indices.to_vec();
+    };
+    let mut out = Vec::with_capacity(indices.len());
+    for quad in indices.chunks(6) {
+        let Some(&base) = quad.iter().min() else {
+            continue;
+        };
+        let Some(p) = positions.get(base as usize) else {
+            continue;
+        };
+        let col = (p[0] / 128.0).floor() as i32;
+        let row = (p[2] / 128.0).floor() as i32;
+        if cells.ground_visible(col, row) {
+            out.extend_from_slice(quad);
+        }
     }
     out
 }
@@ -84,5 +120,35 @@ mod tests {
             assert_eq!(a[1], b[1] + crate::coplanar_draws::GROUND_SINK);
             assert_eq!(a[2], b[2]);
         }
+    }
+
+    #[test]
+    fn crop_keeps_only_the_quads_the_ground_emitter_visits() {
+        // Two cells: (0, 2) and (5, 2).
+        let mut positions = Vec::new();
+        for col in [0.0f32, 5.0] {
+            let (x, z) = (col * 128.0, 256.0);
+            positions.extend([
+                [x, 0.0, z],
+                [x + 128.0, 0.0, z],
+                [x, 0.0, z + 128.0],
+                [x + 128.0, 0.0, z + 128.0],
+            ]);
+        }
+        let indices = vec![0, 2, 1, 1, 2, 3, 4, 6, 5, 5, 6, 7];
+        assert_eq!(crop_indices(&positions, &indices, None), indices);
+        let view = crate::world::field_npc_cull::FieldCullView {
+            // Focus tile (4, 3) with a (-2, 0, 4, 2) window: first cell
+            // (2, 3), so the ground walks columns 2..=7 by rows 2..=3.
+            focus_stored: [-(4 * 128), -(3 * 128)],
+            attr_box: [0, 0, 127, 127],
+            window: [-2, 0, 4, 2],
+        };
+        let cells = crate::field_view_window::view_cells(&view);
+        assert_eq!(cells.first, [2, 3]);
+        assert_eq!(
+            crop_indices(&positions, &indices, Some(&cells)),
+            vec![4, 6, 5, 5, 6, 7]
+        );
     }
 }

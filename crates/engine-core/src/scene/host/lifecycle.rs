@@ -27,6 +27,7 @@ impl SceneHost {
             move_power_loaded: false,
             battle_tutorial_loaded: false,
             cast_effect_pool_loaded: false,
+            battle_party_forms: None,
             last_minigame_warp: None,
             pending_entry_seat: None,
             scene_destinations: Vec::new(),
@@ -40,6 +41,7 @@ impl SceneHost {
             new_game_defaults: None,
             // DAT_8007B6EC boot value - FUN_8001FFA4 stores -1.
             bgm_volume_raw: crate::new_game::GAME_STATE_COLD_RESET.bgm_volume_raw,
+            bgm_track_word: None,
         }
     }
 

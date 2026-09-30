@@ -1989,6 +1989,28 @@ impl World {
         self.npcs.models.get(&slot).copied()
     }
 
+    /// The clip id a placement slot's actor carries once its spawn prologue
+    /// has run - retail's `actor[+0x5C]`, the word the per-actor anim tick
+    /// `FUN_800204F8` binds as `record = id - 1`. The MAN placement header
+    /// seeds it, but a prologue can rewrite it before the first drawn frame:
+    /// every save crystal ships header anim `0` and its record sets `22`
+    /// (the locomotion bundle's savepoint clip, record 21) - retail's
+    /// `conc_field_card_boot` capture holds `0x16` at the crystal actor's
+    /// `+0x5C` and draw kind `1` (posed). Read at the header anim byte alone,
+    /// the crystal's three objects draw unposed on the origin.
+    ///
+    /// `None` when no channel owns the slot or the channel's id is zero (a
+    /// model re-stage clears it); the host then keeps the header anim.
+    // REF: FUN_800204F8 (clip bind off actor+0x5C), FUN_8003A1E4 (prologue)
+    pub fn field_npc_live_anim(&self, slot: usize) -> Option<u8> {
+        self.field_vm
+            .channels
+            .iter()
+            .find(|c| !c.object_bind && c.placement_index == slot)
+            .and_then(|c| u8::try_from(c.ctx.move_id).ok())
+            .filter(|&id| id != 0)
+    }
+
     /// Install a live model id on a slot, as op `0x0E` does. For a host or a
     /// test that drives the re-bind directly.
     pub fn set_field_npc_live_model(&mut self, slot: u8, id: i16) {

@@ -34,6 +34,10 @@ impl LegaiaRuntime {
         // the BGM to 75% of its reference, the Done band's `0x51` arm
         // raises it back.
         let mut duck_pct = None;
+        // The duck's reference: the world's configured level, a loaded
+        // save's `_DAT_8008457C` - read here as the native window reads it
+        // beside its own duck step.
+        let duck_ref = host.world.audio.levels.configured_level;
         for ev in host.world.drain_battle_events() {
             if let BattleEvent::DuckAudioLevel { target_pct } = ev {
                 duck_pct = Some(target_pct);
@@ -45,6 +49,7 @@ impl LegaiaRuntime {
         let xa_prestage = host.world.drain_battle_xa_prestage();
         // Everything below needs `&mut self`, so it runs after the host
         // borrow ends.
+        self.sfx.set_duck_reference(duck_ref);
         if let Some(pct) = duck_pct {
             self.set_duck_pct(pct);
         }

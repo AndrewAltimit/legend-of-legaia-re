@@ -327,7 +327,10 @@ pub trait FieldHost {
     /// the `0x8007B628` / `0x8007B62A` overrides), then hands the unaligned `s16` at
     /// `operand + 1` to `FUN_801de084` as the apply trigger and advances the
     /// PC by four. It is NOT a jump: the `s16` is a trigger, not a target.
-    fn camera_apply(&mut self) {}
+    /// `mode` is `(op0 >> 2) & 0xF`, the same curve argument CONFIGURE passes.
+    fn camera_apply(&mut self, apply_trigger: i16, mode: u8) {
+        let _ = (apply_trigger, mode);
+    }
 
     /// Scene fade (op 0x36). The VM passes the two 16-bit operands raw and
     /// the host decides whether the fade applies immediately (PC += 5) or
@@ -1055,8 +1058,8 @@ pub trait FieldHost {
     /// | 0 | `+0x72` | `ctx.field_72` | plain s16 write or ramp |
     /// | 1 | `+0x6A` | `ctx.field_6a` | input is `(target >> 1).max(1)` (signed halve, floor 1) |
     /// | 2 | `+0x8E` | `ctx.field_8e` | when ramp == 0 and `flags & 0x20000000`, also writes `world_y = -value` |
-    /// | 3 | `+0x24` | `ctx.field_24` | **ramp path only**; ticks==0 reuses the encoding as an absolute PC jump (`pc = target`) and does not touch the slot |
-    /// | 4 | `+0x28` | `ctx.field_28` | **immediate path only**; ticks!=0 reuses the encoding as an absolute PC jump and does not touch the slot |
+    /// | 3 | `+0x24` | `ctx.field_24` | plain s16 write or ramp |
+    /// | 4 | `+0x28` | `ctx.field_28` | plain s16 write or ramp |
     /// | 8 | `+0x26` | `ctx.field_26` | plain s16 write or ramp |
     ///
     /// When `ticks == 0`, the VM writes the value directly to the ctx field
@@ -2237,23 +2240,22 @@ pub trait FieldHost {
         let _ = coin_delta;
     }
 
-    /// Op 0x4C outer-nibble-E sub-B - conditional actor lookup with
-    /// embedded jump target.
+    /// Op 0x4C outer-nibble-E sub-B - conditional actor lookup with an
+    /// embedded relative skip.
     ///
-    /// 5-byte instruction `[4C, 0xEB, actor_id, target_lo, target_hi]`.
-    /// The original (dispatcher dump 7370-7376) calls `func_0x8003C83C(b1)`
-    /// (the actor-table walker - see also [`docs/subsystems/script-vm.md`]'s
-    /// "intra-function label catalogue" for the F8/FB system-channel idiom).
+    /// 5-byte instruction `[4C, 0xEB, actor_id, skip_lo, skip_hi]`.
+    /// Retail (`0x801E34DC..0x801E34F4`) calls `FUN_8003C83C(actor_id)`, the
+    /// actor-list walk (`0xF8` = the player object).
     ///
     /// Two outcomes:
-    /// - **actor resolved** → return `pc + 5` (PC advances 5),
-    /// - **actor not resolved** → return absolute jump to
-    ///   `LE_u16(operand+2..=operand+3)`.
+    /// - **actor resolved** → PC advances 5,
+    /// - **actor not resolved** → relative skip to `pc + 5 + i16 - 2`
+    ///   (signed LE16 at `operand+2..=operand+3`, the shared
+    ///   `0x801E360C` skip exit).
     ///
-    /// The host returns `Some(new_pc)` to take the resolved-actor "pc + 5"
-    /// path (the host has confirmed the actor exists), or `None` to take the
-    /// embedded-jump path (actor lookup missed). Default impl returns `None`
-    /// - engines without an actor pool always take the jump.
+    /// The host returns `Some(())` when the actor exists, `None` on a miss.
+    /// Default impl returns `None` - engines without an actor pool always
+    /// take the skip.
     fn op4c_n_e_sub_b_actor_jump(&mut self, actor_id: u8) -> Option<()> {
         let _ = actor_id;
         None

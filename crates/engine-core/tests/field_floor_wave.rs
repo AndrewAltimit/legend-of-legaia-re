@@ -49,6 +49,7 @@ fn placed(nibble: u8) -> Placement {
         rot_z: 0,
         collider_x: 0,
         collider_z: 0,
+        cull_radius: 0,
     }
 }
 

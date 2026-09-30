@@ -169,6 +169,28 @@ impl PlayWindowApp {
             self.field_party_hud_scene = scene;
             self.field_party_hud.rearm();
         }
+        // Retail's player-engaged rearm term: a script or conversation that
+        // holds the player restarts the idle countdown every frame.
+        if legaia_engine_core::world_map_panel_host::field_hud_rearm_held(&self.session.host.world)
+        {
+            self.field_party_hud.rearm();
+        }
+        // Capture harness: phase-align the countdown to the retail state
+        // being compared (`LEGAIA_HUD_COUNTDOWN`).
+        if let Some(sc) = self.screenshot.as_ref()
+            && let Some(n) = sc.hud_countdown
+        {
+            let near = i32::from(self.session.host.world.mode == SceneMode::WorldMap);
+            let idle = legaia_engine_vm::world_map_panel_actors::hud_idle_frames(near, false);
+            if legaia_engine_core::world_map_panel_host::hud_phase_hold(
+                self.tick_no,
+                sc.capture_tick,
+                n,
+                idle,
+            ) {
+                self.field_party_hud.rearm();
+            }
+        }
         let suppressed = self.field_party_hud_suppressed();
         let projected_y = if suppressed {
             None
@@ -1965,14 +1987,7 @@ impl PlayWindowApp {
         if let Some(panel) = self.active_dialog.as_ref() {
             return from_panel(panel, false);
         }
-        if let Some(panel) = self
-            .session
-            .host
-            .world
-            .cutscene
-            .timeline
-            .as_ref()
-            .and_then(|tl| tl.dialog.as_ref())
+        if let Some(panel) = self.session.host.world.script_dialog_panel()
             && let Some(snap) = from_panel(panel, true)
         {
             return Some(snap);
@@ -2592,29 +2607,21 @@ impl PlayWindowApp {
             use legaia_engine_render::battle_command_ui as bcu;
             let (origin, scale) = self.save_select_stage(surface_w, surface_h);
             let views = bcu::command_chip_views(&chips);
-            out.extend(bcu::battle_command_chip_sprites(
-                &bcu::CommandChipAtlas::from_battle_chrome(&rects),
+            // The plates, and - in the Rim Elm ambush / against monster
+            // `0xAF` - the red cross-out over the Ra-Seru chip on top of
+            // them: one builder, one engine read, the same call the browser
+            // page makes.
+            out.extend(bcu::battle_command_menu_sprites(
+                &rects,
                 &bcu::BattleCommandMenuFrame {
                     chips: &views,
                     cursor: Some(cursor),
                     phase,
                 },
+                legaia_engine_core::battle_hud::battle_raseru_cross_out(&self.session.host.world),
                 origin,
                 scale,
             ));
-            // The Rim Elm ambush / monster `0xAF`: the red cross-out over the
-            // Ra-Seru chip, after the plates so it lands on top. The browser
-            // page appends the same sprite off the same engine read.
-            if let Some(src) = rects.cross_out
-                && legaia_engine_core::battle_hud::battle_raseru_cross_out(&self.session.host.world)
-            {
-                out.push(bcu::cross_out_mark_sprite(
-                    src,
-                    bcu::RASERU_MARK_ANCHOR,
-                    origin,
-                    scale,
-                ));
-            }
         }
         out
     }

@@ -509,7 +509,21 @@ impl World {
                     rec.set_hp_mp_sp(hms);
                     self.mirror_roster_hp_mp(idx);
                 } else if let Some(a) = self.actors.get_mut(idx) {
+                    // Retail's `+0x14C` is live HP and the liveness flag at
+                    // once, so a revive that writes HP stands the member back
+                    // up. The port keeps the two apart: raising HP alone left
+                    // a member every HP reader counts alive (the monster AI
+                    // picks it) and every liveness reader counts down, still
+                    // kneeling in its downed chain. The readout seed is
+                    // `apply_battle_item`'s.
+                    let before = a.battle.hp;
                     a.battle.hp = hp_after.min(a.battle.max_hp);
+                    if a.battle.hp > 0 {
+                        a.battle.liveness = 1;
+                    }
+                    if before == 0 {
+                        self.stand_revived_party_member(idx);
+                    }
                 }
             }
             crate::items::ItemOutcome::SpiritGained { amount }

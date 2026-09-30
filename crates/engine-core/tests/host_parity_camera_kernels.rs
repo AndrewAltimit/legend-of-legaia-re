@@ -94,14 +94,21 @@ fn snap_component_decode_matches_the_cutscene_view_slot_map() {
     assert_eq!(get(5), None, "H <= 1 is not a focal length");
 }
 
-/// The NCLIP mode word is armed for the cutscene camera and nothing else,
-/// and never on the overworld.
+/// The NCLIP mode word is armed for the whole field pass (retail culls the
+/// back faces of every field mesh - `FUN_80043390`'s mask is `0xFFFFFFFF`
+/// unless the colour word carries `0x08000000`, which no field spawner sets)
+/// and for a cutscene camera on any other non-overworld mode; never on the
+/// overworld, and not for a free battle / minigame frame.
 #[test]
-fn nclip_cull_mode_arms_only_for_a_non_overworld_cutscene_frame() {
-    assert_eq!(camera_view::nclip_cull_mode(true, false), 2);
-    assert_eq!(camera_view::nclip_cull_mode(true, true), 0);
-    assert_eq!(camera_view::nclip_cull_mode(false, false), 0);
-    assert_eq!(camera_view::nclip_cull_mode(false, true), 0);
+fn nclip_cull_mode_arms_for_the_field_pass_and_non_overworld_cutscenes() {
+    use SceneMode::*;
+    assert_eq!(camera_view::nclip_cull_mode(false, Field), 2);
+    assert_eq!(camera_view::nclip_cull_mode(true, Field), 2);
+    assert_eq!(camera_view::nclip_cull_mode(true, Cutscene), 2);
+    assert_eq!(camera_view::nclip_cull_mode(true, WorldMap), 0);
+    assert_eq!(camera_view::nclip_cull_mode(false, WorldMap), 0);
+    assert_eq!(camera_view::nclip_cull_mode(false, Battle), 0);
+    assert_eq!(camera_view::nclip_cull_mode(false, Dance), 0);
 }
 
 /// The debug orbit steers the SAME field the follow camera reads, is not

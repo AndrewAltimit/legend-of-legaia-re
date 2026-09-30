@@ -59,6 +59,12 @@ pub(crate) struct ScreenshotConfig {
     /// and the engine tick never sees an edge from it: drive pad input with
     /// `--pad-script`, dev/entry keys with this.
     pub key_script: std::collections::HashMap<u64, Vec<KeyCode>>,
+    /// `LEGAIA_HUD_COUNTDOWN=<n>`: the field party HUD's idle countdown
+    /// (retail's `_DAT_801F348C`) the capture must land on, so a stationary
+    /// seat shows the readout exactly when the retail frame does
+    /// ([`legaia_engine_core::world_map_panel_host::hud_phase_hold`]). Set by
+    /// the retail-compare image channel from the state's own RAM.
+    pub hud_countdown: Option<i16>,
 }
 
 /// Debug state `play-window` seeds before the first world tick, so a capture
@@ -83,11 +89,19 @@ pub(crate) struct DebugSeeds {
     /// `--set-flag <N>`, repeatable: system/story-flag indices raised in the
     /// shared bank `DAT_80085758`.
     pub story_flags: Vec<u16>,
+    /// `--resume-save <PATH>`: an LGSF file to land the way a card Load
+    /// does ([`legaia_engine_shell::boot::BootSession::resume_save`]) in
+    /// place of the `--scene` door entry.
+    pub resume_save: Option<std::path::PathBuf>,
 }
 
 impl DebugSeeds {
     /// Parse the two repeatable operands. Each accepts decimal or `0x` hex.
-    pub(crate) fn from_args(learn_spell: &[String], set_flag: &[String]) -> Result<Self> {
+    pub(crate) fn from_args(
+        learn_spell: &[String],
+        set_flag: &[String],
+        resume_save: Option<std::path::PathBuf>,
+    ) -> Result<Self> {
         fn num(s: &str) -> Option<u32> {
             let s = s.trim();
             s.strip_prefix("0x")
@@ -97,7 +111,10 @@ impl DebugSeeds {
                     |h| u32::from_str_radix(h, 16).ok(),
                 )
         }
-        let mut seeds = Self::default();
+        let mut seeds = Self {
+            resume_save,
+            ..Self::default()
+        };
         for s in learn_spell {
             let v = num(s)
                 .filter(|v| *v <= u32::from(u8::MAX))
@@ -213,6 +230,9 @@ impl ScreenshotConfig {
             sweep,
             pad_script: script,
             key_script: keys,
+            hud_countdown: std::env::var("LEGAIA_HUD_COUNTDOWN")
+                .ok()
+                .and_then(|v| v.trim().parse().ok()),
         }))
     }
 }
@@ -296,6 +316,13 @@ pub(crate) fn write_capture_png(path: &Path, img: &CaptureImage) -> Result<()> {
         .write_image_data(&img.rgba)
         .context("png data")?;
     Ok(())
+}
+
+/// The field ground's CPU mesh + per-vertex cell refs, as uploaded: the
+/// source the visible-tile crop re-uploads a cropped index list from.
+pub(crate) struct GroundSource {
+    pub(crate) vmesh: legaia_tmd::mesh::VramMesh,
+    pub(crate) flat_refs: Vec<[f32; 8]>,
 }
 
 /// The uploaded mesh slots of one **posed** static-object placement: the
@@ -717,6 +744,17 @@ struct PlayWindowApp {
     /// Kept out of `meshes` (it has no `Tmd` / actor binding); drawn directly
     /// with a constant Y-flip model.
     ground_heightfield: Option<UploadedVramMesh>,
+    /// The ground's CPU mesh, kept so the visible-tile crop can re-upload a
+    /// cropped index list without rebuilding the heightfield.
+    ground_src: Option<GroundSource>,
+    /// The cropped ground for the current cell rectangle, keyed by
+    /// `field_view_window::ViewCells::stamp`; rebuilt only when it moves.
+    ground_crop: Option<(u32, Option<UploadedVramMesh>)>,
+    /// Grid cell + cull radius per `field_terrain_draws` entry, for the
+    /// visible-tile crop (`field_view_window::terrain_draw_visible`).
+    field_terrain_cell_keys: Vec<legaia_engine_core::field_view_window::CellKey>,
+    /// The same, per `field_terrain_color_draws` entry.
+    field_terrain_color_cell_keys: Vec<legaia_engine_core::field_view_window::CellKey>,
     /// `C`-key toggle: when `true`, the field render uses the wide debug
     /// orbit vantage (`camera_mvp`) instead of the retail follow camera
     /// (`camera_view::field_follow_view`). Defaults to the retail view.
@@ -882,6 +920,11 @@ struct PlayWindowApp {
     /// textured prims; leaving them out punches holes in the arena shell.
     /// `None` when the stage shell has no untextured prims.
     battle_stage_color_mesh: Option<usize>,
+    /// The object list and second-copy transform the stage shell meshes were
+    /// built from (`SceneHost::battle_stage_object_indices`). A mid-fight
+    /// change - the evolved-Cort arrival's slot-0 rebind - rebuilds them
+    /// (`tick_battle_stage_shell`).
+    battle_stage_shell: Option<(Vec<usize>, legaia_asset::battle_backdrop::SecondCopy)>,
     /// Mesh index of the flat tiled ground grid drawn under the battle actors
     /// (retail's `func_0x801d02c0` grid), textured from the constant retail
     /// page/CLUT/UV-window address where the scene battle VRAM places its own

@@ -216,15 +216,15 @@ impl LegaiaRuntime {
     /// This frame's retail GTE **NCLIP** winding-rejection mode for the
     /// scene pass - the word the page hands `TmdRenderer.setNclipCull`, from
     /// the shared [`camera_view::nclip_cull_mode`] the native window's
-    /// `Renderer::set_backface_cull` call also reads. `2` only while the
-    /// in-engine cutscene camera owns a non-overworld frame; `0` otherwise,
-    /// which is both-sided drawing.
+    /// `Renderer::set_backface_cull` call also reads. `2` for the field pass
+    /// and for a cutscene camera on any other non-overworld mode; `0`
+    /// otherwise, which is both-sided drawing.
     pub fn play_render_nclip_mode(&self) -> u32 {
-        let in_world_map = self
+        let mode = self
             .scene_host
             .as_ref()
-            .is_some_and(|h| h.world.mode == SceneMode::WorldMap);
-        camera_view::nclip_cull_mode(self.cutscene_owns_frame(), in_world_map)
+            .map_or(SceneMode::Title, |h| h.world.mode);
+        camera_view::nclip_cull_mode(self.cutscene_owns_frame(), mode)
     }
 
     /// This frame's overworld-curvature scale for the scene pass - the

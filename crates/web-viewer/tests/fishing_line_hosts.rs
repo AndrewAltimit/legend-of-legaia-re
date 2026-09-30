@@ -8,7 +8,9 @@
 //! window's `fishing_line_screen_prims` makes the same two calls in a `bin/`
 //! target no test can reach), and the minigames page strokes the endpoints
 //! `fishing_line_json` hands back. Both run over the venue's real rods, lifted
-//! off the `other1` bank.
+//! off the `other1` bank, and both draw the rod model itself too
+//! (`PondSession::rod_faces`: the play page through the shared
+//! `ui_fishing_rod` builder, the minigames page off `fishing_rod_json`).
 
 #![cfg(not(target_arch = "wasm32"))]
 
@@ -77,8 +79,17 @@ fn the_play_page_draw_list_carries_the_line_while_a_fish_is_hooked() {
         let has = |rgb: u8| c.iter().any(|(col, flags)| *flags == 0 && *col == [rgb; 3]);
         has(0x30) && has(0x80)
     };
+    // The rod model's packet colours: each rod's dominant flat colour
+    // (rod 0 red, rod 1 blue, rod 2 gold), read off the `other1` models.
+    let rod_drawn = |rt: &LegaiaRuntime| {
+        let c = prim_colours(&rt.play_screen_prim_vertex_bytes());
+        [[0x80, 0x28, 0x28], [0x10, 0x10, 0x90], [0x9C, 0x80, 0x00]]
+            .iter()
+            .any(|rgb| c.iter().filter(|(col, f)| *f == 0 && col == rgb).count() >= 3)
+    };
 
     assert!(!line_drawn(&rt), "no line at the shore");
+    assert!(!rod_drawn(&rt), "no rod before the cast");
     cast(&mut rt);
     let mut hooked = false;
     for _ in 0..60_000 {
@@ -102,6 +113,10 @@ fn the_play_page_draw_list_carries_the_line_while_a_fish_is_hooked() {
         assert!(
             line_drawn(&rt),
             "the hooked frame's screen prims carry no fish-to-rod line"
+        );
+        assert!(
+            rod_drawn(&rt),
+            "the hooked frame's screen prims carry no rod model"
         );
         frames += 1;
     }
@@ -133,6 +148,7 @@ fn the_minigames_page_gets_the_engine_line_off_the_real_rod() {
         "null",
         "no line at the shore"
     );
+    assert_eq!(mg.fishing_rod_json(), "[]", "no rod at the shore");
 
     let mut hooked = false;
     'casts: for _ in 0..24 {
@@ -180,6 +196,25 @@ fn the_minigames_page_gets_the_engine_line_off_the_real_rod() {
     let rx = line["rod"][0].as_i64().unwrap();
     let ry = line["rod"][1].as_i64().unwrap();
     assert!((0..=320).contains(&rx) && (4..=228).contains(&ry), "{line}");
+    // The rod model is out with it: faces in draw order (farthest bucket
+    // first), the tip a corner of a face near the line's own bucket.
+    let rod: serde_json::Value = serde_json::from_str(&mg.fishing_rod_json()).expect("rod json");
+    let faces = rod.as_array().expect("a face list");
+    assert!(faces.len() > 10, "{} rod faces", faces.len());
+    let ots: Vec<i64> = faces.iter().map(|f| f["ot"].as_i64().unwrap()).collect();
+    assert!(ots.windows(2).all(|w| w[0] >= w[1]), "draw order {ots:?}");
+    let line_ot = line["ot"].as_i64().unwrap();
+    assert!(
+        faces.iter().any(|f| {
+            let xy = f["xy"].as_array().unwrap();
+            (0..4).any(|i| {
+                xy[2 * i].as_i64() == Some(rx)
+                    && xy[2 * i + 1].as_i64() == Some(ry)
+                    && (f["ot"].as_i64().unwrap() - line_ot).abs() <= 1
+            })
+        }),
+        "no rod face meets the line's rod end {line}"
+    );
     // A lure that did not project draws no line.
     mg.fishing_pond_tick(REEL_A, false, 0);
     assert_eq!(mg.fishing_line_json(0, 0, false), "null");

@@ -106,6 +106,14 @@ pub struct EnvDraw {
     /// resolved from, so a host can re-resolve it when the ladder **moves**
     /// under a baked draw list - see [`FloorAnchor`] and [`FloorWave`].
     pub floor: FloorAnchor,
+    /// The object-grid cell `(col, row)` whose word selected this draw's
+    /// record - the cell retail's per-cell decoration pass (`FUN_801F7088`)
+    /// walks, and so the key the camera's visible-tile crop
+    /// ([`crate::field_view_window`]) tests.
+    pub cell: (u8, u8),
+    /// The record's `+0x1E` cull radius ([`Placement::cull_radius`]), which
+    /// widens that per-cell window test.
+    pub cull_radius: u8,
 }
 
 /// The rung(s) of the scene floor-height ladder one [`EnvDraw`]'s world Y was
@@ -494,6 +502,8 @@ pub fn resolve_placed_env_draws(
                 corners: p.floor_corner_nibbles,
                 nibble: p.floor_nibble,
             },
+            cell: (p.col, p.row),
+            cull_radius: p.cull_radius,
         });
     }
     (draws, drops)
@@ -530,6 +540,33 @@ pub fn retain_visible_placed_draws(
             .get(&d.anchor)
             .is_none_or(|b| !hidden_records.contains(&(b.record as usize)))
     });
+}
+
+/// Per-draw uniform render scale of a placed-object list (parallel to
+/// `draws`): the bind record's `actor[+0x72]` as a factor (`0x1000` = `1.0`),
+/// `1.0` for a draw with no bind or no listed scale.
+///
+/// `record_scales` is [`World::object_render_scales`]. Both hosts fold the
+/// factor into the draw's model matrix after the rotation (`T * R * S`), which
+/// is where retail's `ScaleMatrix` lands it: the scale multiplies the actor's
+/// rotation matrix, never its translation.
+///
+/// [`World::object_render_scales`]: crate::world::World::object_render_scales
+// REF: FUN_8001ADA4 (case 5 scale compose, `0x8001B240..0x8001B28C`)
+pub fn placed_render_scales(
+    draws: &[EnvDraw],
+    binds: Option<&HashMap<(u8, u8), ObjectBind>>,
+    record_scales: &HashMap<usize, u16>,
+) -> Vec<f32> {
+    draws
+        .iter()
+        .map(|d| {
+            binds
+                .and_then(|b| b.get(&d.anchor))
+                .and_then(|b| record_scales.get(&(b.record as usize)))
+                .map_or(1.0, |&s| f32::from(s) / 4096.0)
+        })
+        .collect()
 }
 
 /// The identity a window-owned placed draw shares with the actor the sub-area
@@ -1869,6 +1906,7 @@ mod tests {
             rot_z: 0,
             collider_x: 0,
             collider_z: 0,
+            cull_radius: 0,
         }
     }
 
@@ -1899,6 +1937,8 @@ mod tests {
                     corners: None,
                     nibble: Some(6),
                 },
+                cell: (2, 3),
+                cull_radius: 0,
             }]
         );
     }

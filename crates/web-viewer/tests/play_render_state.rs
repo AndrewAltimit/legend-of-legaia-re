@@ -46,6 +46,7 @@ fn play_render_state_builds_from_the_running_host() {
             res,
             false,
             &host.world.hidden_object_records(),
+            &host.world.object_render_scales(),
         );
         assert!(
             !f.env_tmds.is_empty(),

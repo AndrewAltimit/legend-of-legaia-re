@@ -1052,7 +1052,15 @@ pub enum WorldMapEntityConfig {
         /// script retail runs on the crossing. The transition drain replays
         /// the flag operations that open it
         /// ([`crate::place_name_banner::record_leading_flag_writes`]).
+        /// With [`Self::OverworldPortal::object`] set it is instead the
+        /// **flat** MAN record a `.MAP` object bind names.
         record: u8,
+        /// The entrance is a `.MAP` **object** (a gate-0 bind whose record
+        /// runs on contact - `map01` P0[6], the Garmel mouth), not a gate-1
+        /// walk-on trigger. `record` is then a flat record index, and the
+        /// crossing replays the flag writes along the record's path to its
+        /// `0x3F` ([`crate::man_field_scripts::flat_record_path_walk`]).
+        object: bool,
     },
     /// A plain interactable (NPC / signpost). Surfaces a
     /// [`crate::field_events::FieldEvent::FieldInteract`] with `interact_id`.

@@ -892,6 +892,56 @@ Continue, the post-wipe title - through `TitleSession::for_front_end` with a
 fresh scan of their rack, so the row is live exactly when some port holds a
 save.
 
+### What a card load restores
+
+The load arm of `FUN_801DD35C` copies the whole live-state window back in one
+call - `FUN_8001A8B0(0x80084140, 0x801E5120, 0x1A18)` at `0x801DFA98..0x801DFAAC`,
+`a0` the destination - so everything the composer saved comes back, not a
+chosen subset. Four words in it decide what the resumed game looks like, and
+a lift that reads only the records, the flags page and the bag loses them:
+
+- **The whole system-flag bank.** The bank at `0x80085758` is `0x200` bytes
+  (flags `0x000..=0xFFF`) and ends at the item array, `0x80085958`. The
+  story-flag window a lift reads (`legaia_save::card::RETAIL_STORY_FLAGS_SIZE`)
+  therefore runs `0x80085600..0x80085958`, SC `0x14C0..0x1818`; a `0x200`-byte
+  window stops at `0x80085800` and drops every flag from `0x540` up. The
+  engine's save writes the live bank back over that span rather than OR-ing
+  it into the loaded bytes, so a flag the game cleared after the load stays
+  cleared.
+- **The present party.** The member count at `0x80084594` (SC `+0x454`, read
+  with `lbu` by every roster walk), the leader at `0x80084597` (`+0x457`,
+  which the MAN loader copies to `_DAT_8007B8F8` at `0x8003B724..0x8003B72C`)
+  and the member list at `0x80084598` (`+0x458`). The New Game template
+  populates all four records, so the number of non-empty records is not the
+  party: a save made with Vahn alone is a one-member party. The lift reads
+  the list into `SaveExtV2::active_party`, the engine seats it as the battle
+  composition and the field party list, and the composer writes it back.
+- **Where the player stood.** `FUN_80016230` snapshots the player actor's
+  `+0x14` / `+0x18` into `0x80084568` / `0x8008456C` (SC `+0x428` / `+0x42C`,
+  sign-extended words, `0x80016400..0x8001641C`) as the field run hands over
+  to the menu and battle modes. After its copy the load arm raises
+  `_DAT_8007B8C0 = 1` (`0x801DFB04`); on that flag the MAN loader
+  `FUN_8003AEB0` zeroes `_DAT_80073EFC` and copies the snapshot into the
+  destination-entry operand `_DAT_80073EF4` / `_DAT_80073EF8`
+  (`0x8003B764..0x8003B798`), which the field initialiser seats the player
+  from; the flag drops at the initialiser's epilogue. No facing is stored.
+  The port arms the same operand before the saved scene's entry
+  (`SceneHost::arm_resume_seat`, from both hosts' resume closures) and never
+  for a fallback landing. A `(0, 0)` snapshot - a window no mode change has
+  written - reads as no position and the entry takes the scene's own seat.
+- **The audio levels.** The configured level `0x8008457C` (SC `+0x43C`, cold
+  reset `0xD7`) and the voice / SFX volume `0x80084580` (`+0x440`, cold reset
+  `200`). The copy restores both; the next MAN load then rests the live level
+  on the configured one (`_DAT_8007B910 = _DAT_8008457C` in `FUN_8003AEB0`'s
+  non-skip arm), the battle duck takes its percentage of it, and every
+  voice-attr key-on halves the volume word into its `vol_l` / `vol_r` pair. The
+  US build has no screen that edits either word, so a retail save carries the
+  cold-reset pair; the lift still reads it into `SaveExtV2::audio_levels`, the
+  engine holds it on `AudioState::levels` (the duck reference on both play
+  hosts, the sound-release arm, the Muscle Dome tally cue) and the composer
+  writes it back - a block composed from scratch must not load the all-zero
+  pair, which is silence.
+
 ### Where the Save row's pad route is
 
 Two scene-scoped facts have to intersect for the row to be reachable at all,
@@ -1062,7 +1112,7 @@ unrelated regions, and **the SC save/load path does not sync between them**:
 
 | Store | Address | Size | Persists in SC? | Touched by save/load |
 |---|---|---|---|---|
-| Wide bitmap | RAM `0x80085600..0x80085800` | 512 B (4096 bits) | Yes - at SC offset `0x14C0` | Yes, via the bulk RAM→card transfer at `FUN_8001A8B0(0x80084340, card, ...)` (live RAM region containing the bitmap is part of the linear SC body) |
+| Wide bitmap | RAM `0x80085600..0x80085958` (system-flag bank from `0x80085758`) | `0x358` B | Yes - at SC offset `0x14C0` | Yes, via the bulk RAM→card transfer at `FUN_8001A8B0(0x80084340, card, ...)` (live RAM region containing the bitmap is part of the linear SC body) |
 | Scratchpad word | RAM `0x1F800394` | 4 B (32 bits) | No | No |
 
 The scratchpad word `_DAT_1F800394` is the field-VM transient that opcodes
@@ -1081,7 +1131,7 @@ _DAT_1f800394 = (uint)*(ushort *)(&DAT_800707a0 + _DAT_8007b83c * 0x18);
 word's lower 16 bits are re-initialised on every mode switch from the
 mode's `param` constant; the upper 16 bits start zeroed and are only ever
 written by the script-VM bit ops. No retail code path copies between
-`0x80085600..0x80085800` and `0x1F800394` in either direction.
+`0x80085600..0x80085958` and `0x1F800394` in either direction.
 
 In `legaia_save::SaveExt`, `story_flag_bits` mirrors the wide bitmap and
 round-trips through the LGSF v3 extension block; `story_flags` mirrors the
@@ -1105,7 +1155,7 @@ located via `block_offset = 0x200 + (ram_addr - 0x80084340)`.
 | `0x0100` | 256 | (duplicate icon frame or padding) |
 | `0x0200` | 0x3C8 | display/global header (see below) |
 | `0x05C8` | 0x414 × 4 | character records (Vahn, Noa, Gala, Terra) - base `game+0x3C8` = live RAM `0x80084708` |
-| `0x14C0` | 0x200 | story-flag bitmap (mirrors RAM `0x80085600..0x80085800`) - overlaps record [3]'s tail |
+| `0x14C0` | 0x358 | story-flag window (mirrors RAM `0x80085600..0x80085958`; the system-flag bank is its `+0x158..`, SC `0x1618..0x1818`) - overlaps record [3]'s tail |
 | `0x1818` | 0x90 | inventory array - 72 × `(item_id: u8, count: u8)` (mirrors RAM `0x80085958..0x800859E8`) - overlaps record [3]'s tail |
 | `0x1A18` | 0x5E4 | end of the live-state copy (`RETAIL_LIVE_STATE_SIZE`): zero on a retail card, never read back - the engine-ext blob's region ([above](#the-engine-ext-blob-in-the-unread-tail)) |
 | `0x1FFC` | 4 | additive block checksum ([above](#save-block-checksum-fun_801e38d8)) |
@@ -1118,6 +1168,11 @@ located via `block_offset = 0x200 + (ram_addr - 0x80084340)`.
 | `+0x054` | 12 | Primary character display name (for save-select screen) |
 | `+0x208` | 0x10 | CDNAME label of most-recently-visited scene (e.g. `town0b`), NUL-padded - the scene the loader resumes into. Absolute offset in the block: `0x408`, which is what a card-reading script measures when it looks for "which scene is this save in" without going through the header base |
 | `+0x218` | 0x10 | CDNAME label of previous scene (e.g. `town01`); absolute `0x418` |
+| `+0x228` | 8 | Field position snapshot `(x, z)`, two sign-extended words (RAM `0x80084568` / `0x8008456C`); absolute `0x428` - see [what a card load restores](#what-a-card-load-restores) |
+| `+0x23C` | 8 | Configured audio level + voice / SFX volume, two words (RAM `0x8008457C` / `0x80084580`); absolute `0x43C` - see [what a card load restores](#what-a-card-load-restores) |
+| `+0x254` | 1 | Present-party member count (RAM `0x80084594`); absolute `0x454` |
+| `+0x257` | 1 | Party leader id (RAM `0x80084597`); absolute `0x457` |
+| `+0x258` | 4 | Present-party member list, roster ids (RAM `0x80084598`); absolute `0x458` |
 | `+0x25C` | 4 | Party gold (mirrors RAM `0x8008459C`) |
 
 **Character records**: `CHARACTER_RECORD_SIZE` (0x414) bytes each. The SC block is a

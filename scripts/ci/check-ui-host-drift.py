@@ -793,6 +793,45 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["render_indices"],
     },
     {
+        "what": "visible-tile crop policy, native vs play page - retail draws "
+        "only the cells the camera's tile window reaches (FUN_801F7088), and "
+        "whether a frame crops at all is a policy (knob, retail framing, field "
+        "mode, no cutscene, a focus the region box holds). Both hosts ask the "
+        "one `field_view_window::field_view_cells` entry with "
+        "`framing_is_retail`, so a host that cropped under its own rule would "
+        "black out cells the other draws",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": (WEB_PLAY, "field_view_cells_now"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["field_view_cells", "framing_is_retail"],
+    },
+    {
+        "what": "visible-tile crop of the terrain list, native vs play page - "
+        "the decoration pass's per-cell gate (widened by record +0x1E) is "
+        "`field_view_window::terrain_draw_visible` on both hosts, keyed by "
+        "`CellKey::of_draw`",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": (WEB_PLAY, "field_terrain_live"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["terrain_draw_visible"],
+    },
+    {
+        "what": "visible-tile crop of the ground, native vs play page - the "
+        "ground emitters' cell loop (FUN_801F6D48) crops the heightfield's "
+        "index list through `field_ground::crop_indices` on both hosts, "
+        "re-issued on the rectangle's `stamp`",
+        "sites": {
+            "native": (NATIVE_FIELD_RENDER, "sync_ground_crop"),
+            "web": (WEB_PLAY, "field_ground_indices_cropped"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["crop_indices"],
+    },
+    {
         "what": "ground-heightfield sink, play page vs field-scene viewer - "
         "same property as the native pairing above, across the two web "
         "surfaces' ground exporters",

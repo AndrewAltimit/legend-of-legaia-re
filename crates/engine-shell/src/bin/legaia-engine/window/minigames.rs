@@ -626,11 +626,13 @@ impl PlayWindowApp {
         usp::payline_screen_prims(&segments)
     }
 
-    /// The fishing line as a screen primitive: the session's line for this
-    /// frame (`legaia_engine_core::fishing_venue::fishing_line_frame`, the
-    /// fish end projected through the follow camera the scene draws with),
-    /// wrapped by the shared `ui_fishing_line` builder. The browser play page
-    /// makes the same two calls. Empty outside a live line.
+    /// The fishing rod and line as screen primitives: the rod model the rod
+    /// actor posed this frame (`PondSession::rod_faces`, wrapped by the shared
+    /// `ui_fishing_rod` builder), then the session's line for this frame
+    /// (`legaia_engine_core::fishing_venue::fishing_line_frame`, the fish end
+    /// projected through the follow camera the scene draws with), wrapped by
+    /// the shared `ui_fishing_line` builder. The browser play page makes the
+    /// same calls. Empty with no rod and no line out.
     pub(super) fn fishing_line_screen_prims(
         &mut self,
     ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
@@ -644,14 +646,29 @@ impl PlayWindowApp {
         ];
         let world = &mut self.session.host.world;
         let view = resolve_field_camera(world, &self.session.camera, None, center).field_view();
-        legaia_engine_core::fishing_venue::fishing_line_frame(&mut world.minigames, view.as_ref())
+        // The rod model first: its actor runs ahead of the lure tick, so in a
+        // shared bucket its packets are the earlier `AddPrim`s.
+        let mut prims: Vec<_> = world
+            .minigames
+            .fishing
+            .as_ref()
+            .map(|p| p.rod_faces())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|f| legaia_engine_render::ui_fishing_rod::fishing_rod_prim(f.xy, f.rgb, f.ot))
+            .collect();
+        prims.extend(
+            legaia_engine_core::fishing_venue::fishing_line_frame(
+                &mut world.minigames,
+                view.as_ref(),
+            )
             .and_then(|l| {
                 legaia_engine_render::ui_fishing_line::fishing_line_prim(
                     l.fish, l.rod, l.fish_rgb, l.rod_rgb, l.ot,
                 )
-            })
-            .into_iter()
-            .collect()
+            }),
+        );
+        prims
     }
 
     /// Pose the Baka duel's 3D surface for this frame and put it on the GPU.
@@ -796,10 +813,9 @@ impl PlayWindowApp {
         // The pad edges the skippable holds read (retail's `DAT_801D1A9C`
         // snapshot of `_DAT_8007B874 | _DAT_8007B938`).
         let pad = self.session.host.world.input.retail_pad().pressed as u16;
-        // `_DAT_80084580`, the voice/SFX volume setting each tally cue halves.
-        // The engine holds no live mirror of that word, so this is its cold
-        // reset - the value a freshly booted game keys the cue at.
-        let volume_word = legaia_engine_core::new_game::GAME_STATE_COLD_RESET.voice_volume as u32;
+        // `_DAT_80084580`, the voice/SFX volume setting each tally cue halves:
+        // the world's mirror, a loaded save's own word or the cold reset.
+        let volume_word = self.session.host.world.audio.levels.voice_volume as u32;
         // The screen timers are one engine kernel on both play hosts; this
         // window only sounds what they fired.
         let frame = self

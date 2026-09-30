@@ -536,9 +536,14 @@ impl LegaiaMinigames {
     /// `frame_delta * 10` phase units per frame). This also runs the **CPU
     /// dancers**: retail feeds them the chart every frame through the same judge
     /// and award routine the human's presses take, so their scores climb here.
+    ///
+    /// The run's camera keyframe track steps with it (`FUN_801CF470`'s
+    /// camera block, `frames` as its frame delta), which is what
+    /// `dance_venue_vp` frames the hall through.
     pub fn dance_tick(&mut self, frames: u32) {
         if let Some(g) = self.dance.as_mut() {
             g.advance(frames);
+            g.advance_camera(frames.min(u32::from(u8::MAX)) as u8);
         }
     }
 

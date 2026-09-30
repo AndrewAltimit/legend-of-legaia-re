@@ -331,19 +331,30 @@ fn op_4c_n4_sub_1_ramp_passes_halved_target_to_host() {
     assert_eq!(host.n4_ctx_ramps, vec![(1u8, 10i16, 8u16)]);
 }
 
-// -- 0x4C outer-nibble-4 sub-3 (ramp +0x24 OR absolute jump)
+// -- 0x4C outer-nibble-4 sub-3 / sub-4 (write or ramp +0x24 / +0x28)
+//
+// Neither arm jumps: both store the value (or schedule the ramp) and leave
+// through the shared advancing exit `0x801E3624` (PROT 0897 `0x801E1234` /
+// `0x801E126C`). `taiku` P2[16] carries `CC 25 43 00 00 00 00`; read as an
+// absolute jump it restarted the cutscene at byte 0.
 
 #[test]
-fn op_4c_n4_sub_3_ticks_zero_jumps_absolute() {
-    // ticks=0 path: returned `iVar18` = signed_16(operand[0..2]) - the
-    // new PC offset is the literal target value.
+fn op_4c_n4_sub_3_ticks_zero_writes_field_24_and_advances() {
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &[0x4C, 0x43, 0x40, 0x00, 0, 0], 0);
-    // target = 0x40 → next_pc = 0x40
-    assert_eq!(r, StepResult::Advance { next_pc: 0x40 });
-    assert_eq!(ctx.field_24, 0); // jump-only branch does not write
+    assert_eq!(r, StepResult::Advance { next_pc: 6 });
+    assert_eq!(ctx.field_24, 0x40);
     assert!(host.n4_ctx_ramps.is_empty());
+
+    // The `taiku` P2[16] operand: a zero write, still an advance.
+    let mut ctx = FieldCtx {
+        field_24: 7,
+        ..FieldCtx::default()
+    };
+    let r = step(&mut host, &mut ctx, &[0x4C, 0x43, 0, 0, 0, 0], 0);
+    assert_eq!(r, StepResult::Advance { next_pc: 6 });
+    assert_eq!(ctx.field_24, 0);
 }
 
 #[test]
@@ -362,8 +373,6 @@ fn op_4c_n4_sub_3_ticks_nonzero_ramps_field_24() {
     assert_eq!(host.n4_ctx_ramps, vec![(3u8, 300i16, 12u16)]);
 }
 
-// -- 0x4C outer-nibble-4 sub-4 (immediate +0x28 OR absolute jump)
-
 #[test]
 fn op_4c_n4_sub_4_ticks_zero_writes_field_28() {
     let mut host = TestHost::default();
@@ -375,18 +384,18 @@ fn op_4c_n4_sub_4_ticks_zero_writes_field_28() {
 }
 
 #[test]
-fn op_4c_n4_sub_4_ticks_nonzero_jumps_absolute() {
+fn op_4c_n4_sub_4_ticks_nonzero_ramps_field_28() {
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
-    // ticks=4 (nonzero) → jump to target = 0x80
     let r = step(
         &mut host,
         &mut ctx,
         &[0x4C, 0x44, 0x80, 0x00, 0x04, 0x00],
         0,
     );
-    assert_eq!(r, StepResult::Advance { next_pc: 0x80 });
-    assert_eq!(ctx.field_28, 0); // jump-only branch does not write
+    assert_eq!(r, StepResult::Advance { next_pc: 6 });
+    assert_eq!(ctx.field_28, 0); // VM does not write in ramp path
+    assert_eq!(host.n4_ctx_ramps, vec![(4u8, 0x80i16, 4u16)]);
 }
 
 // -- 0x4C outer-nibble-4 sub-6 / sub-7 (paired-global gate)
@@ -522,17 +531,20 @@ fn op_4c_n4_sub_9_default_immediate_calls_default_write() {
 }
 
 #[test]
-fn op_4c_n4_sub_9_default_ramp_yields_at_pc() {
+fn op_4c_n4_sub_9_default_ramp_schedules_and_advances() {
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
-    // ticks = 60 → ramp path; VM yields at the same PC.
+    // ticks = 60 → ramp path. This test used to assert a yield at the same
+    // PC, which re-ran the op forever; the retail arm schedules the ramp and
+    // advances 6 through the shared scheduler exit (0x801E205C -> 0x801E3628
+    // with `v0 = s8`, s8 already +6 at 0x801E1138).
     let r = step(
         &mut host,
         &mut ctx,
         &[0x4C, 0x49, 0x42, 0x00, 0x3C, 0x00],
         0,
     );
-    assert_eq!(r, StepResult::Yield { resume_pc: 0 });
+    assert_eq!(r, StepResult::Advance { next_pc: 6 });
     assert_eq!(host.n4_sub9_default_ramps, vec![(0x0042i16, 60u16)]);
     assert!(host.n4_sub9_default_writes.is_empty());
 }
@@ -578,7 +590,7 @@ fn op_4c_n4_sub_9_delta_immediate_advances() {
 }
 
 #[test]
-fn op_4c_n4_sub_9_delta_ramp_yields() {
+fn op_4c_n4_sub_9_delta_ramp_advances() {
     let mut host = TestHost {
         n4_sub9_state: Sub9State::Delta,
         ..TestHost::default()
@@ -590,7 +602,8 @@ fn op_4c_n4_sub_9_delta_ramp_yields() {
         &[0x4C, 0x49, 0x55, 0x00, 0x14, 0x00],
         0,
     );
-    assert_eq!(r, StepResult::Yield { resume_pc: 0 });
+    // Same exit as the default ramp (it used to yield at PC and never move).
+    assert_eq!(r, StepResult::Advance { next_pc: 6 });
     assert_eq!(host.n4_sub9_delta_calls, vec![(0x55i16, 20u16)]);
 }
 

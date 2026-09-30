@@ -1,19 +1,24 @@
 //! What a battle frame clears to.
 //!
-//! Retail's stage dome is a **front half**: the arena mesh covers the ground
-//! and the horizon the camera looks at and leaves the rest of the frame open,
-//! so whatever the framebuffer was cleared to is what the player reads as sky.
-//! Clearing to the renderer's ordinary dark ground turns that open band into a
-//! black ceiling.
+//! **Black**, the same as every field frame. The draw-environment pair the
+//! frame-begin driver `FUN_80016B6C` swaps (`0x8007BF30 + i * 0x74`; its
+//! `dtd` byte is `+0x2A`, so the libgpu `DRAWENV` starts at `+0x14`) holds a
+//! background colour `+0x2D..+0x2F` of `(0, 0, 0)` in every catalogued
+//! battle state, where field states carry scene tints there. Wherever a
+//! stage shell leaves the frame open - a cave or castle stage whose shell
+//! has no sky panel, the Gaza fight's `korb3` - the retail display crop is
+//! black, and the shell's own sky panels are the only sky a battle has.
 //!
-//! The value lives here rather than in either host because it is not a
-//! renderer preference: it is part of what a battle looks like, and the two
-//! hosts answered it differently - the native window selected it per frame
-//! while the browser play page's WebGL path cleared every mode, battle
-//! included, to one hard-coded near-black.
-
-/// The sky the front-half stage dome leaves open, as linear RGBA.
-pub const BATTLE_SKY_CLEAR: [f32; 4] = [0.32, 0.46, 0.66, 1.0];
+//! The port once cleared a stage battle to a sky blue, on the reading that
+//! the shell is a front half whose open side is meant to read as sky. The
+//! shell is completed by its second copy
+//! (`docs/subsystems/battle.md`, backdrop shell - two copies of one mesh), so
+//! nothing was owed there, and the blue painted every roofless stage's
+//! ceiling a colour retail never draws.
+//!
+//! The value lives here rather than in either host because both hosts must
+//! answer it the same way - the native window selects it per frame, the
+//! browser play page reads it through `play_scene_clear_color`.
 
 /// The ordinary scene clear - what every non-battle 3D frame shows wherever no
 /// geometry covers it: **black**, retail's field and cutscene background.
@@ -28,6 +33,9 @@ pub const BATTLE_SKY_CLEAR: [f32; 4] = [0.32, 0.46, 0.66, 1.0];
 /// narration, the naming prompt and every gap in a scene's geometry.
 pub const SCENE_CLEAR: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
 
+/// A stage battle's clear: retail black ([module docs](self)).
+pub const BATTLE_STAGE_CLEAR: [f32; 4] = SCENE_CLEAR;
+
 /// Pure black, for the boot UI: the logos / title / save-select panels read on
 /// PSX-style black rather than on a dark-blue clear.
 pub const BOOT_UI_CLEAR: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
@@ -39,7 +47,7 @@ pub fn scene_clear(boot_ui: bool, stage_battle: bool) -> [f32; 4] {
     if boot_ui {
         BOOT_UI_CLEAR
     } else if stage_battle {
-        BATTLE_SKY_CLEAR
+        BATTLE_STAGE_CLEAR
     } else {
         SCENE_CLEAR
     }
@@ -50,10 +58,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_field_frame_clears_to_retail_black_and_only_a_stage_battle_to_sky() {
+    fn every_frame_clears_to_retail_black() {
         assert_eq!(scene_clear(false, false), [0.0, 0.0, 0.0, 1.0]);
         assert_eq!(scene_clear(true, false), BOOT_UI_CLEAR);
         assert_eq!(scene_clear(true, true), BOOT_UI_CLEAR, "boot UI wins");
-        assert_eq!(scene_clear(false, true), BATTLE_SKY_CLEAR);
+        assert_eq!(scene_clear(false, true), [0.0, 0.0, 0.0, 1.0]);
     }
 }

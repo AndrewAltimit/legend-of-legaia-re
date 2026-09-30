@@ -567,6 +567,21 @@ fn bake_dance_markers(
 }
 
 impl LegaiaMinigames {
+    /// `camera` as a column-major view-projection over this page's baked
+    /// hall frame. The play page frames its hall through the world's staged
+    /// dance camera with this; the standalone page through its own run's
+    /// track ([`Self::dance_venue_vp`]). Empty when the cast did not decode.
+    pub(crate) fn dance_venue_vp_with(
+        &self,
+        camera: &legaia_engine_vm::psx_camera::FieldCameraView,
+        aspect: f32,
+    ) -> Vec<f32> {
+        let Some(b) = self.dance_bodies.as_ref() else {
+            return Vec::new();
+        };
+        dance_venue_vp_in_frame(camera, b.origin, aspect).to_vec()
+    }
+
     /// Noa's body - the overlay spawns dancer kind 0 from the resident global
     /// TMD pool (slot 1 = PROT 0874 §0 pack slot 1, her field-view mesh; the
     /// spawner writes that model id *without* the scene-pool base). Mirrors
@@ -966,13 +981,23 @@ impl LegaiaMinigames {
     /// this page's baked frame (positions re-based on the human dancer's
     /// spawn, retail Y-down): the pose `FUN_801CEF54` stages - angles,
     /// `H`, the eye-space pair, focused on its beat-clock actor - through the
-    /// shared kernel [`dance_venue::venue_camera`]. `aspect` is the canvas'
-    /// width over height. Empty when the cast did not decode.
+    /// shared kernel [`dance_venue::venue_camera`]. While a run is live the
+    /// pose is the run's camera keyframe track instead
+    /// (`DanceGame::camera_pose` through [`dance_venue::venue_camera_at`] -
+    /// the track `dance_tick` advances). `aspect` is the canvas' width over
+    /// height. Empty when the cast did not decode.
     pub fn dance_venue_vp(&self, aspect: f32) -> Vec<f32> {
-        let Some(b) = self.dance_bodies.as_ref() else {
-            return Vec::new();
-        };
-        dance_venue_vp_in_frame(&b.camera, b.origin, aspect).to_vec()
+        let tracked = self.dance.as_ref().and_then(|g| g.camera_pose()).map(|p| {
+            dance_venue::venue_camera_at(&legaia_engine_core::dance::dance_scene_entry(), p)
+        });
+        match tracked {
+            Some(camera) => self.dance_venue_vp_with(&camera, aspect),
+            None => self
+                .dance_bodies
+                .as_ref()
+                .map(|b| self.dance_venue_vp_with(&b.camera, aspect))
+                .unwrap_or_default(),
+        }
     }
 
     // ------------------------------------------------------ the dance hall

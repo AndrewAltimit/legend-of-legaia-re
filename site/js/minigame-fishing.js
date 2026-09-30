@@ -388,6 +388,42 @@ window.MgFishing = (function () {
        * screen space - fish end = this page's lure projection, rod end = the
        * rod actor's projected tip, clipped by the ported clipper. One call a
        * frame (the engine latches the rod's yaw toward the fish off it). */
+      /* The rod: the engine's rod model (the rod actor's pose, culled and
+       * bucketed the way retail's primitive handlers do), faces in draw
+       * order in 320x240 screen space. Faces in a farther bucket than the
+       * line fill before it, the rest after (the rod's packets are the
+       * earlier AddPrims, so a shared bucket draws the line first). */
+      const rsx = canvas.width / 320, rsy = canvas.height / 240;
+      let rodFaces = [];
+      if (api.fishing_rod_json) {
+        try { rodFaces = JSON.parse(api.fishing_rod_json()) || []; }
+        catch (_) { rodFaces = []; }
+      }
+      const fillRod = (keep) => {
+        for (const f of rodFaces) {
+          if (!keep(f)) continue;
+          const c = f.rgb;
+          /* Canvas has no per-vertex colour: fill with the corner mean,
+           * which is the flat colour for the rod's F3 / F4 faces. */
+          const r = (c[0] + c[3] + c[6] + c[9]) >> 2;
+          const gg = (c[1] + c[4] + c[7] + c[10]) >> 2;
+          const b = (c[2] + c[5] + c[8] + c[11]) >> 2;
+          const p = f.xy;
+          g.save();
+          g.fillStyle = 'rgb(' + r + ',' + gg + ',' + b + ')';
+          g.beginPath();
+          /* PSX quad order is (v0, v1, v2) + (v1, v2, v3): the outline is
+           * v0 -> v1 -> v3 -> v2. */
+          g.moveTo(p[0] * rsx, p[1] * rsy);
+          g.lineTo(p[2] * rsx, p[3] * rsy);
+          g.lineTo(p[6] * rsx, p[7] * rsy);
+          g.lineTo(p[4] * rsx, p[5] * rsy);
+          g.closePath();
+          g.fill();
+          g.restore();
+        }
+      };
+      let lineOt = -1;
       if (api.fishing_line_json) {
         const sx = canvas.width / 320, sy = canvas.height / 240;
         let line = null;
@@ -395,6 +431,8 @@ window.MgFishing = (function () {
           line = JSON.parse(api.fishing_line_json(
             lp ? Math.floor(lp[0] / sx) : 0, lp ? Math.floor(lp[1] / sy) : 0, !!lp));
         } catch (_) { line = null; }
+        if (line) lineOt = line.ot | 0;
+        fillRod((f) => line && f.ot > lineOt);
         if (line) {
           const rgb = (c) => 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
           const ax = (line.fish[0] + 0.5) * sx, ay = (line.fish[1] + 0.5) * sy;
@@ -412,6 +450,7 @@ window.MgFishing = (function () {
           g.restore();
         }
       }
+      fillRod((f) => lineOt < 0 || f.ot <= lineOt);
 
       if (lp) {
         g.save();

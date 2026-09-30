@@ -69,13 +69,27 @@ impl SceneHost {
                         )
                     })
                     .unwrap_or(0);
+                // Only the scene-init sweep's actors collide. The walk
+                // controller hands `FUN_801CFE4C` / `FUN_801CFC40` the actor
+                // list at the scene control block's `+0x0C` (`lw s6,
+                // -0x3CAC(v0)` = `0x8007C354` at `0x801D0344`), and the
+                // candidate gather `FUN_801CF754` walks that one list. The
+                // window sweep (`FUN_801D7B50`) spawns every placement whose
+                // anchor cell lacks `CELL_BIND_OWNED` onto its own list at
+                // `+0x24`, which no collision routine reads - so those
+                // placements are scenery the player walks through. Octam's
+                // gondola (`ropeway`) is one: `P2[6]` seats the player on its
+                // footprint (`A3 F8 24 1F`), and a solid box there boxed the
+                // player in on all four probes once the cutscene ended.
+                // REF: FUN_801CF754, FUN_801D7B50, FUN_801D01B0
+                let init_owned = p.anchor_cell & crate::field_regions::CELL_BIND_OWNED != 0;
                 crate::world::FieldPropCollider {
                     anchor: bind.map(|_| anchor),
                     center: (p.collider_x, p.collider_z),
                     live: (p.world_x, p.world_z),
                     moving_box: cflags & 0x0102_0000 != 0,
                     interact: cflags & 0x4002_0000 != 0,
-                    solid: cflags & 3 == 0,
+                    solid: init_owned && cflags & 3 == 0,
                 }
             })
             .collect();
@@ -326,6 +340,47 @@ impl SceneHost {
         }
     }
 
+    /// Build and install the party's battle forms for the fight in progress,
+    /// once per [`crate::world::BattleState::entry_serial`]: each member's
+    /// idle and action clips (the swings the hit events are paced by), art
+    /// bank and art records (what the arts input tokenizes) - see
+    /// [`crate::battle_party_form::install_party_battle_forms`].
+    ///
+    /// Retail's battle loader assembles the party with the fight, whether or
+    /// not anything draws it. [`Self::tick`] runs this the tick a battle is
+    /// up, so every session gets it - the play hosts and headless drivers
+    /// alike; a host that enters a battle outside a tick (a debug
+    /// `World::enter_battle`) calls it before it builds its render. A no-op
+    /// outside battle and on a repeat call within the same fight.
+    ///
+    /// REF: FUN_800513F0
+    pub fn ensure_battle_party_forms(&mut self) {
+        if !matches!(self.world.mode, crate::world::SceneMode::Battle) {
+            return;
+        }
+        let serial = self.world.battle.entry_serial;
+        if self
+            .battle_party_forms
+            .as_ref()
+            .is_some_and(|f| f.battle_serial == serial)
+        {
+            return;
+        }
+        let forms =
+            crate::battle_party_form::install_party_battle_forms(&self.index, &mut self.world);
+        self.battle_party_forms = Some(forms);
+    }
+
+    /// The fight in progress's party battle forms, for a renderer: meshes,
+    /// rest poses, face tracks and the VRAM writes to replay into its battle
+    /// VRAM. `None` outside battle or before
+    /// [`Self::ensure_battle_party_forms`] ran for this fight.
+    pub fn battle_party_forms(&self) -> Option<&crate::battle_party_form::BattlePartyForms> {
+        self.battle_party_forms
+            .as_ref()
+            .filter(|f| f.battle_serial == self.world.battle.entry_serial)
+    }
+
     /// Refresh the **Auto** attack's disc inputs
     /// ([`crate::world::AutoComboState`]): per roster character, the four
     /// direction commands' leading entry bytes (the pool arm's weight input)
@@ -412,6 +467,50 @@ impl SceneHost {
     /// engine's own picker seat instead - see [`Self::pending_entry_seat`].
     pub fn set_entry_seat(&mut self, x: i16, z: i16) {
         self.pending_entry_seat = Some((x, z));
+    }
+
+    /// `true` while an entry operand is armed and no scene entry has
+    /// consumed it yet.
+    pub fn entry_seat_armed(&self) -> bool {
+        self.pending_entry_seat.is_some()
+    }
+
+    /// Drop an armed entry operand no entry consumed (a failed entry must not
+    /// hand its seat to whatever scene is entered next).
+    pub fn disarm_entry_seat(&mut self) {
+        self.pending_entry_seat = None;
+    }
+
+    /// Arm the seat a **card load** resumes at, before entering `scene`:
+    /// the save's field position ([`legaia_save::SaveExtV2::field_position`]),
+    /// and only when `scene` is the one the save was written in
+    /// ([`crate::resume::saved_entry_seat`]). An operand the caller already
+    /// armed wins - a driver that knows a better seat (a live capture's own
+    /// position) keeps it. Returns `true` when this call armed one, so the
+    /// caller can [`Self::disarm_entry_seat`] if the entry then fails.
+    ///
+    /// This is retail's card-load arm of the MAN loader: `FUN_801DD35C`
+    /// raises `_DAT_8007B8C0` after the load copy, and `FUN_8003AEB0` on that
+    /// flag copies the save's `0x80084568` / `0x8008456C` into the entry
+    /// operand `_DAT_80073EF4` / `_DAT_80073EF8` (`0x8003B764..0x8003B798`).
+    ///
+    /// REF: FUN_8003AEB0 (`0x8003B764..0x8003B798`, the card-load seat)
+    pub fn arm_resume_seat(
+        &mut self,
+        save: &legaia_save::SaveFile,
+        save_scene: &str,
+        scene: &str,
+    ) -> bool {
+        if self.pending_entry_seat.is_some() {
+            return false;
+        }
+        match crate::resume::saved_entry_seat(save, save_scene, scene) {
+            Some((x, z)) => {
+                self.set_entry_seat(x, z);
+                true
+            }
+            None => false,
+        }
     }
 
     /// Arm the entry operand from a **tile** pair, the form the field VM's
@@ -894,6 +993,21 @@ impl SceneHost {
                 // catalog above is the scene's own monsters, so a summon
                 // creature is not in it; the side-effect stager needs that
                 // one byte and nothing else off the creature.
+                if self.world.tables.summon_creatures.is_empty() {
+                    for spell_id in crate::summon::SERU_SUMMON_IDS {
+                        let Some(cid) = crate::summon::summon_creature_id(spell_id, &archive)
+                        else {
+                            continue;
+                        };
+                        if let Ok(Some(rec)) = legaia_asset::monster_archive::record(&archive, cid)
+                        {
+                            self.world.tables.summon_creatures.insert(
+                                spell_id,
+                                crate::monster_catalog::monster_def_from_record(&rec),
+                            );
+                        }
+                    }
+                }
                 if self.world.tables.summon_elements.is_empty() {
                     for spell_id in crate::summon::SERU_SUMMON_IDS {
                         let Some(cid) = crate::summon::summon_creature_id(spell_id, &archive)
@@ -1166,7 +1280,9 @@ impl SceneHost {
         // first call (subsequent calls early-return when the head is
         // already populated).
         let head_populated = self.world.global_tmd_pool.len() >= 5
-            && self.world.global_tmd_pool[..5].iter().all(|s| s.is_some());
+            && self.world.global_tmd_pool[..5].iter().all(|s| s.is_some())
+            && self.world.field_head_pool.len() >= 5
+            && self.world.field_head_pool[..5].iter().all(|s| s.is_some());
         if !head_populated
             && let Err(err) = seed_global_tmd_pool_from_befect_data(&self.index, &mut self.world)
         {
@@ -1629,14 +1745,27 @@ impl SceneHost {
                     i16::from(site.overworld_x) * 128 + 0x40,
                     i16::from(site.overworld_z) * 128 + 0x40,
                 );
-                // Story-conditional entrance: when the record selects its
-                // destination by an op-0x70 flag branch (retail's post-beat
+                // Story-conditional entrance: the record selects its
+                // destination by op-0x70 flag branches (retail's post-beat
                 // dungeon-variant entrance, e.g. `map01`'s dolk -> dolk2 on flag
-                // `0x142`), resolve to the flag-SET alternative once that story
-                // flag latches; otherwise the primary (flag-CLEAR) destination
-                // stands. Mirrors the op-0x70 semantics in the field VM.
-                let (scene_name, index, entry_x, entry_z, dir) = match site.conditional {
-                    Some(cd) if self.world.system_flag_test(cd.flag) => {
+                // `0x142`, or `map03`'s nested CONCNOW / CONCEND / closed
+                // tests). Run the record's branches against the live bank, as
+                // the field VM does on the crossing; a path that parks leaves
+                // the entrance shut, so no portal is installed. A record the
+                // walk cannot decide keeps the static primary / flag-SET pair.
+                use crate::man_field_scripts::{
+                    RecordPathEnd, partition2_record_path_scene_change,
+                };
+                let live =
+                    partition2_record_path_scene_change(&mf, man, usize::from(site.record), &|f| {
+                        self.world.system_flag_test(f)
+                    });
+                let (scene_name, index, entry_x, entry_z, dir) = match (live, site.conditional) {
+                    (Some(RecordPathEnd::SceneChange((index, name, ex, ez, dir))), _) => {
+                        (name, index, ex, ez, dir)
+                    }
+                    (Some(RecordPathEnd::Closed), _) => continue,
+                    (_, Some(cd)) if self.world.system_flag_test(cd.flag) => {
                         (cd.scene_name, cd.index, cd.entry_x, cd.entry_z, cd.dir)
                     }
                     _ => (
@@ -1655,9 +1784,60 @@ impl SceneHost {
                         entry_z,
                         dir,
                         record: site.record,
+                        object: false,
                     },
                     world,
                 ));
+            }
+            // Object-bound entrances: a `.MAP` object whose key tile binds
+            // (gate 0, `FUN_8003A55C`) a record that runs to a `0x3F` on
+            // contact. The world map's entrances are mostly the gate-1
+            // walk-ons above, but `map01`'s Garmel mouth is object `P0[6]`:
+            // its record tests `0x2C5` / `0x19A` (the latter parks it shut)
+            // and otherwise raises flag 2 and changes to GARMEL. The record
+            // is walked against the live flags, so a closed path installs
+            // nothing; the portal sits at the object's contact centre.
+            // REF: FUN_8003A55C, FUN_801CFC40
+            let map_bytes = scene
+                .field_map_index(&self.index)
+                .and_then(|idx| self.index.entry_bytes_extended(idx).ok());
+            if let Some(map) = map_bytes.as_deref() {
+                use crate::man_field_scripts::{RecordPathEnd, flat_record_path_walk};
+                for (flat, contact) in crate::man_field_scripts::object_script_binds(map, &triggers)
+                {
+                    let Ok(record) = u8::try_from(flat) else {
+                        continue;
+                    };
+                    let Some((
+                        RecordPathEnd::SceneChange((index, scene_name, entry_x, entry_z, dir)),
+                        _,
+                    )) = flat_record_path_walk(&mf, man, flat, &|f| self.world.system_flag_test(f))
+                    else {
+                        continue;
+                    };
+                    let tile = (contact.0 >> 7, contact.1 >> 7);
+                    let dup = entities.iter().any(|(cfg, pos)| {
+                        matches!(cfg, crate::world::WorldMapEntityConfig::OverworldPortal {
+                            scene_name: s, ..
+                        } if *s == scene_name)
+                            && (pos.0 >> 7, pos.1 >> 7) == tile
+                    });
+                    if dup {
+                        continue;
+                    }
+                    entities.push((
+                        crate::world::WorldMapEntityConfig::OverworldPortal {
+                            scene_name,
+                            index,
+                            entry_x,
+                            entry_z,
+                            dir,
+                            record,
+                            object: true,
+                        },
+                        contact,
+                    ));
+                }
             }
         }
         if let Some(table) = table {
@@ -1826,11 +2006,14 @@ impl SceneHost {
                 }
             }
         }
-        if self.world.cutscene_timeline_active()
-            || self.world.name_entry_active()
-            || self.world.dialogue_owns_input()
+        // A committed battle holds the whole field frame: retail's intro
+        // overlay (PROT 0979) is loaded over the field overlay's head, frame
+        // pump and this dispatcher included, so no tile compare runs between
+        // a `3E FF` and the fight (`World::field_scripts_held_for_battle`).
+        if self.world.name_entry_active()
             || self.world.board.grid.is_some()
             || self.world.active_fmv().is_some()
+            || self.world.field_scripts_held_for_battle()
         {
             return;
         }
@@ -1840,6 +2023,31 @@ impl SceneHost {
         let Some(actor) = self.world.actors.get(slot as usize) else {
             return;
         };
+        // A script holding the player (retail: the `+0x10 & 0x80000` lock the
+        // context runner raises every frame it steps one) **consumes** a
+        // crossing rather than deferring it: on a new tile under the lock the
+        // dispatcher stores the tile and returns (`0x801D214C..0x801D2158` ->
+        // `0x801D2270`). So a record that teleports the player onto another
+        // trigger tile (`rugi`'s warp pads: P2[0] seats the player on P2[1]'s
+        // pad, which seats it back on P2[0]'s) does not fire the landing
+        // pad when it lets go. Deferring the compare instead fired it on the
+        // first free frame and bounced the player between the two pads for
+        // good. A stale compare (scene entry) is left stale, so an arrival
+        // tile still fires once the entry's script releases.
+        let script_owns = self.world.cutscene_timeline_active() || self.world.dialogue_owns_input();
+        if script_owns {
+            if self.last_trigger_tile.is_some() {
+                let quant = |w: i16| -> i32 { i32::from(w) >> 7 };
+                let (tx, tz) = (
+                    quant(actor.move_state.world_x),
+                    quant(actor.move_state.world_z),
+                );
+                if (0..=0x7F).contains(&tx) && (0..=0x7F).contains(&tz) {
+                    self.last_trigger_tile = Some((tx as u8, tz as u8));
+                }
+            }
+            return;
+        }
         // Retail's tile quantisation **in this dispatcher** is the raw
         // `world >> 7` (`FUN_801D1EC4` at `0x801d2068`: `sll 0x10; sra 0x17`
         // on each of `player+0x14` / `+0x18`), not the `(world - 0x40) >> 7`
@@ -1873,6 +2081,22 @@ impl SceneHost {
         // A crossing drops the re-poll bit before anything else
         // (`0x801D2110..0x801D2120`), so a poll never outlives its tile.
         self.world.flags.story_flags &= !repoll;
+        // A crossing made while a script holds the player is spent: retail
+        // tests the player's movement-disabled bit `+0x10 & 0x80000`
+        // (`0x801D214C..0x801D2158`), and its failure branch (`0x801D226C`)
+        // stores the new tile as "last" with no lookup - neither the kind-1
+        // record nor the kind-0 teleport runs.
+        // The field VM's context runner raises that bit on every frame it
+        // steps a spawned record (`FUN_80039B7C`), so a concurrent helper
+        // that moves the player (`A3 F8 ..`) never trips the triggers on the
+        // tiles it moves the player across. `taiku` P2[16], Zora Castle's
+        // post-boss cutscene, seats the player on P2[15]'s walk-on tile;
+        // dispatching there re-raised `0x393`, and P1[0] re-spawned P2[16]
+        // forever. (A modal timeline or conversation is consumed the same
+        // way, earlier in this dispatcher.)
+        if locked || self.world.script_context_engages_player() {
+            return;
+        }
         self.dispatch_kind1_walk_on(tile, on_world_map, true);
         // Retail runs the kind-0 arm on the SAME crossing, after the kind-1
         // spawn (`FUN_801D1EC4` falls through to `0x801d21c0`), so a tile can
@@ -1993,6 +2217,9 @@ impl SceneHost {
         let _ = self.world.tick();
         if matches!(self.world.mode, crate::world::SceneMode::Battle) {
             self.install_battle_monster_action_clips();
+            self.ensure_battle_party_forms();
+        } else {
+            self.battle_party_forms = None;
         }
         // Post-battle field return: retail re-enters the field scene after a
         // battle (game-mode battle -> field reload), which re-runs the
@@ -2132,11 +2359,13 @@ impl SceneHost {
                 entry_z,
                 dir,
                 record,
+                object,
                 ..
             }) = self.world.world_map.entity_configs.get(slot as usize)
             {
                 let name = scene_name.clone();
-                let (entry_x, entry_z, dir, record) = (*entry_x, *entry_z, *dir, *record);
+                let (entry_x, entry_z, dir, record, object) =
+                    (*entry_x, *entry_z, *dir, *record, *object);
                 // Retail runs the entrance's partition-2 record on the
                 // crossing; the entity SM here keeps only its `0x3F`
                 // destination. The flag operations that open the record run
@@ -2147,12 +2376,23 @@ impl SceneHost {
                 if let Some(man) = self.field_man_cache.clone()
                     && let Ok(mf) = legaia_asset::man_section::parse(&man)
                 {
-                    let writes = crate::place_name_banner::record_leading_flag_writes(
-                        &mf,
-                        &man,
-                        usize::from(record),
-                        |idx| self.world.system_flag_test(idx),
-                    );
+                    let writes = if object {
+                        crate::man_field_scripts::flat_record_path_walk(
+                            &mf,
+                            &man,
+                            usize::from(record),
+                            &|idx| self.world.system_flag_test(idx),
+                        )
+                        .map(|(_, w)| w)
+                        .unwrap_or_default()
+                    } else {
+                        crate::place_name_banner::record_leading_flag_writes(
+                            &mf,
+                            &man,
+                            usize::from(record),
+                            |idx| self.world.system_flag_test(idx),
+                        )
+                    };
                     for (set, idx) in writes {
                         if set {
                             self.world.system_flag_set(idx);

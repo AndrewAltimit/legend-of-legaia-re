@@ -326,6 +326,13 @@ fn dance_door_warp_draws_the_hall_and_start_leaves() {
         "the other7 hall must bake"
     );
     assert_eq!(rt.play_mg_dance_body_vram().len(), 1024 * 512 * 2);
+    // The hall frames through the world's staged camera, which the overlay's
+    // keyframe track flies (`FUN_801CF470`): it moves frame to frame.
+    let vp_a = rt.play_mg_dance_venue_vp(4.0 / 3.0);
+    assert_eq!(vp_a.len(), 16);
+    tick(&mut rt, 30);
+    let vp_b = rt.play_mg_dance_venue_vp(4.0 / 3.0);
+    assert_ne!(vp_a, vp_b, "the dance camera holds still");
     let st: serde_json::Value =
         serde_json::from_str(&rt.play_mg_dance_state_json()).expect("state json");
     assert_eq!(st["live"].as_bool(), Some(true));

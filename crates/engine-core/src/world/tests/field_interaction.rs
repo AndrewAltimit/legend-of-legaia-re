@@ -168,6 +168,52 @@ fn interaction_probe_talks_to_adjacent_npc_only() {
     );
 }
 
+/// A script context that engages the player refuses the talk: the field tick
+/// skips the whole pad controller - the interact probe inside it included -
+/// while the player's `+0x10 & 0x80000` is up (`FUN_801D1344`
+/// `0x801D1694..0x801D16A0`). The talk that spawned a beat must not re-open
+/// under that beat (`station`'s ticket seller over its P2[19] departure).
+#[test]
+fn interaction_probe_is_refused_while_a_script_context_engages_the_player() {
+    use crate::cutscene_timeline::CutsceneTimeline;
+    use crate::input::PadButton;
+
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.player_actor_slot = Some(0);
+    world.actors[0].active = true;
+    world.actors[0].move_state.world_x = 2624;
+    world.actors[0].move_state.world_z = 2624;
+    world.actors[0].move_state.render_26 = 0x400;
+    world.npcs.dialog.insert(5, vec![0x1F, b'h', b'i', 0x00]);
+    world.npcs.positions.insert(5, (2752, 2624));
+    // A spawned record parked on a long WAIT_FRAMES: live and stepped.
+    world
+        .field_vm
+        .helper_contexts
+        .push(CutsceneTimeline::new(vec![0x4A, 0xFF, 0x7F], 0));
+    world.step_helper_contexts();
+    assert!(world.script_context_engages_player());
+
+    world.input.set_pad(PadButton::Cross.mask());
+    let _ = world.tick();
+    assert!(
+        world.dialog.current.is_none() && world.dialog.inline.is_none(),
+        "the faced NPC is not talked to under an engaging script context"
+    );
+
+    // The record ends: the same press talks again.
+    world.field_vm.helper_contexts.clear();
+    world.input.set_pad(0);
+    let _ = world.tick();
+    world.input.set_pad(PadButton::Cross.mask());
+    let _ = world.tick();
+    assert!(
+        world.dialog.current.is_some() || world.dialog.inline.is_some(),
+        "the talk is back once nothing engages the player"
+    );
+}
+
 /// The probe is facing-indexed: the same adjacent NPC does NOT answer when
 /// the player looks away from it (retail probes a single compass point 64
 /// units ahead of the facing, not a radius around the player).

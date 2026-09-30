@@ -197,10 +197,11 @@ impl World {
     ///   frame until [`Self::resolve_game_over_hold`].
     ///
     /// Both wipe arms clear story-flag index 1 (`andi 0xbf` at
-    /// `0x8003B5A0`), the survived-last-battle bit the same block sets on
-    /// the surviving exits. Non-wipe endings restore the field actor
-    /// snapshot, drop the encounter session into its grace window, and flip
-    /// the scene mode back to [`SceneMode::Field`], unchanged.
+    /// `0x8003B5A0`); every other ending **sets** it (`ori 0x40` at
+    /// `0x8003B58C`) - the script-readable battle outcome
+    /// ([`crate::battle_return_flags`]). Non-wipe endings restore the field
+    /// actor snapshot, drop the encounter session into its grace window, and
+    /// flip the scene mode back to [`SceneMode::Field`].
     // REF: FUN_8003AEB0 (the back-from-battle game-over gate this folds)
     pub(in crate::world) fn finish_battle(&mut self) {
         if self.game_over_hold {
@@ -238,22 +239,22 @@ impl World {
         // exit / escape template (`holds_at_end`) comes down here, never in
         // the world tick.
         self.presentation.fade = None;
-        // `true` only on the wipe-to-title arm; a wipe under the
-        // scripted-loss latch takes the ordinary field return below.
-        let mut wipe_to_title = false;
-        if self.battle.end == Some(BattleEndCause::PartyWipe) {
-            // Clear the survived-last-battle flag (story-flag index 1) on
-            // either wipe arm - retail `0x8003B5A0` `andi 0xbf`.
-            self.system_flag_clear(1);
-            if self.system_flag_test(0) {
-                // Scripted loss: consume the latch and fall through to the
-                // ordinary field return (retail skips the hand-off at
-                // `0x8003B5BC` and clears bit 0x80 at `0x8003B608`).
-                self.system_flag_clear(0);
-            } else {
-                self.game_over = true;
-                wipe_to_title = true;
-            }
+        // MAIN INIT's back-from-battle flag stores, run for every ending: the
+        // party-survived bit `DAT_8007BD60 & 0x80` is clear only after a
+        // party wipe, so every other end - a monster wipe, an escape, a
+        // scripted stage exit - raises story flag 1, the outcome a scene
+        // script tests after the fight; a wipe clears it. Flag 0 (the
+        // scripted-loss latch) is consumed either way, and a wipe without it
+        // is the game over. `wipe_to_title` is `true` only on that arm; a
+        // wipe under the latch takes the ordinary field return below.
+        let survived = self.battle.end != Some(BattleEndCause::PartyWipe);
+        let ret = crate::battle_return_flags::apply_battle_return_flags(
+            &mut WorldFlagBank(self),
+            survived,
+        );
+        let wipe_to_title = ret.game_over;
+        if wipe_to_title {
+            self.game_over = true;
         }
         self.battle.active_formation = None;
         self.battle.end = None;
@@ -415,5 +416,21 @@ impl World {
                 Some((idx, id, slot))
             })
             .collect()
+    }
+}
+
+/// The world's system-flag bank as the back-from-battle arm sees it
+/// (`DAT_80085758`, MSB-first).
+struct WorldFlagBank<'a>(&'a mut World);
+
+impl crate::battle_return_flags::FlagBank for WorldFlagBank<'_> {
+    fn test(&self, idx: u16) -> bool {
+        self.0.system_flag_test(idx)
+    }
+    fn set(&mut self, idx: u16) {
+        self.0.system_flag_set(idx);
+    }
+    fn clear(&mut self, idx: u16) {
+        self.0.system_flag_clear(idx);
     }
 }

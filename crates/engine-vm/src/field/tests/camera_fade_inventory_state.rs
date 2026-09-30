@@ -83,6 +83,11 @@ fn camera_apply_advances_4_and_pings_host() {
     // ... and a trigger of zero must not restart the record.
     let r0 = step(&mut host, &mut ctx, &[0x45, 0xC0, 0x00, 0x00], 0);
     assert_eq!(r0, StepResult::Advance { next_pc: 4 });
+    // The trigger and the `(op0 >> 2) & 0xF` curve reach the host - the
+    // same pair the CONFIGURE arm hands `FUN_801DE084`.
+    let r1 = step(&mut host, &mut ctx, &[0x45, 0xCC, 0x10, 0x00], 0);
+    assert_eq!(r1, StepResult::Advance { next_pc: 4 });
+    assert_eq!(host.camera_apply_args, vec![(0x42, 0), (0, 0), (0x10, 3)]);
 }
 
 #[test]

@@ -158,13 +158,19 @@ pub(crate) fn seed_global_tmd_pool_from_befect_data(
                 continue;
             }
         };
-        world.set_global_tmd(
-            i,
-            std::sync::Arc::new(crate::world::GlobalTmd {
-                tmd,
-                raw: body.to_vec(),
-            }),
-        );
+        let g = std::sync::Arc::new(crate::world::GlobalTmd {
+            tmd,
+            raw: body.to_vec(),
+        });
+        if world.field_head_pool.len() <= i {
+            world.field_head_pool.resize(i + 1, None);
+        }
+        world.field_head_pool[i] = Some(g.clone());
+        // Never clobber a pool slot something already holds (the effect-model
+        // library's `[3]` / `[4]` on a re-seed of the player bank alone).
+        if world.global_tmd_pool.get(i).is_none_or(|s| s.is_none()) {
+            world.set_global_tmd(i, g);
+        }
     }
     Ok(())
 }

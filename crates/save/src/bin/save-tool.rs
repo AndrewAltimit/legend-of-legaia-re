@@ -634,7 +634,7 @@ fn annotate_sc_offset(off: usize) -> &'static str {
     } else if (RETAIL_STORY_FLAGS_OFFSET..RETAIL_STORY_FLAGS_OFFSET + RETAIL_STORY_FLAGS_SIZE)
         .contains(&off)
     {
-        // The 512-byte story-flag bitmap physically overlaps record [3]'s tail.
+        // The story-flag window physically overlaps record [3]'s tail.
         "story flags (record [3] tail)"
     } else if (RETAIL_INVENTORY_OFFSET..RETAIL_INVENTORY_OFFSET + RETAIL_INVENTORY_SIZE)
         .contains(&off)

@@ -484,3 +484,165 @@ fn a_repoll_record_reruns_until_the_press() {
     );
     eprintln!("[ok] town01 (30,19) re-poll record saw the Down press");
 }
+
+/// A crossing made while a spawned record holds the player is spent
+/// (`FUN_801D1EC4`'s movement-disabled test, `0x801D214C..0x801D2158`, whose
+/// failure branch stores the tile with no lookup). `taiku` P2[16] - Zora
+/// Castle's post-boss cutscene, a concurrent helper P1[0] spawns on `0x393` -
+/// walks the player onto `(16, 28)`, the walk-on tile of P2[15], whose only
+/// act is to raise `0x393`. Dispatching there re-spawned P2[16] behind itself
+/// and the cutscene never ended.
+#[test]
+fn a_crossing_under_a_running_helper_is_consumed() {
+    const P2_15_TILE: (i16, i16) = (16, 28);
+    let Some(mut host) = open_host() else {
+        return;
+    };
+    host.enter_field_scene("taiku", 0).expect("enter taiku");
+    for _ in 0..3 {
+        host.tick().expect("tick");
+    }
+    // P2[15]'s C2 gate.
+    host.world.system_flag_set(0x38F);
+    let helpers = |host: &SceneHost| host.world.field_vm.helper_contexts.len();
+
+    // Contrast: a free crossing dispatches P2[15], and its `0x393` spawns a
+    // P2[16] helper through P1[0].
+    seat_at_tile(&mut host.world, 20, 20);
+    host.tick().expect("tick");
+    assert_eq!(helpers(&host), 0, "nothing runs before the crossing");
+    seat_at_tile(&mut host.world, P2_15_TILE.0, P2_15_TILE.1);
+    for _ in 0..3 {
+        host.tick().expect("tick");
+    }
+    assert!(
+        helpers(&host) >= 1,
+        "a free crossing of (16,28) runs P2[15] and P1[0] spawns P2[16]"
+    );
+    let running = helpers(&host);
+    assert!(
+        host.world.script_context_engages_player(),
+        "the helper holds the player"
+    );
+
+    // Under the running helper, crossings are spent: stepping off and back
+    // onto the tile spawns nothing more.
+    for _ in 0..3 {
+        seat_at_tile(&mut host.world, 20, 20);
+        host.tick().expect("tick");
+        seat_at_tile(&mut host.world, P2_15_TILE.0, P2_15_TILE.1);
+        host.tick().expect("tick");
+        assert!(
+            !host.world.system_flag_test(0x393),
+            "P2[15] must not run under the helper"
+        );
+        assert!(
+            helpers(&host) <= running,
+            "no second P2[16] behind the first ({} helpers)",
+            helpers(&host)
+        );
+    }
+
+    // The crossing was stored as "last": with the helper gone, standing on
+    // the tile fires nothing - only a further crossing would.
+    host.world.field_vm.helper_contexts.clear();
+    for _ in 0..3 {
+        host.tick().expect("tick");
+    }
+    assert_eq!(helpers(&host), 0, "standing on a spent tile fires nothing");
+    eprintln!("[ran] taiku (16,28) crossing consumed under the P2[16] helper");
+}
+
+/// A crossing made while a script holds the player is **consumed**, not
+/// deferred: retail's dispatcher stores the new tile and returns under the
+/// `+0x10 & 0x80000` lock (`0x801D214C..0x801D2158` -> `0x801D2270`).
+/// `rugi`'s warp pads are the case that needs it - P2[0] seats the player on
+/// P2[1]'s pad at `(28, 106)`, whose record seats it back on P2[0]'s. When the
+/// port deferred the compare to the first free frame, the landing pad fired
+/// the moment the warp let go and the player bounced between the two pads
+/// for good.
+#[test]
+fn a_scripted_teleport_onto_a_trigger_tile_does_not_fire_it() {
+    let Some(mut host) = open_host() else {
+        return;
+    };
+    host.enter_field_scene("rugi", 0).expect("enter rugi");
+    for _ in 0..600 {
+        host.tick().expect("tick");
+    }
+    assert!(
+        !host.world.cutscene_timeline_active(),
+        "rugi's entry settles"
+    );
+    // Step onto P2[0]'s pad from the tile beside it.
+    seat_at_tile(&mut host.world, 33, 91);
+    host.tick().expect("tick");
+    seat_at_tile(&mut host.world, 34, 91);
+    let mut spawned = false;
+    for _ in 0..4 {
+        host.tick().expect("tick");
+        spawned |= host.world.cutscene_timeline_active();
+    }
+    assert!(spawned, "the pad at (34, 91) spawns its warp record");
+    let mut ticks = 0;
+    while host.world.cutscene_timeline_active() && ticks < 3000 {
+        host.tick().expect("tick");
+        ticks += 1;
+    }
+    assert!(
+        !host.world.cutscene_timeline_active(),
+        "the warp record finishes"
+    );
+    let slot = host.world.player_actor_slot.expect("player") as usize;
+    let ms = &host.world.actors[slot].move_state;
+    let landed = (ms.world_x >> 7, ms.world_z >> 7);
+    assert_eq!(
+        landed,
+        (28, 106),
+        "the warp seats the player on P2[1]'s pad"
+    );
+    // Standing still on the landing pad fires nothing.
+    for _ in 0..300 {
+        host.tick().expect("tick");
+        assert!(
+            !host.world.cutscene_timeline_active(),
+            "the landing pad must not fire until the player steps onto it"
+        );
+    }
+}
+
+/// A committed battle holds the tile compare: between a `3E FF` and the
+/// fight, retail's intro overlay sits over the field overlay's head (frame
+/// pump and dispatcher included), so a trigger tile the player stands on
+/// fires nothing. `chitei2` P2[13] ends on `3E FF 0D`; when the compare kept
+/// running through the intro, a door stepped on in that window spawned its
+/// record and carried the player out of the scene before the fight began.
+#[test]
+fn a_committed_battle_holds_the_tile_compare() {
+    let Some(mut host) = open_host() else {
+        return;
+    };
+    host.enter_field_scene("town01", 0).expect("enter town01");
+    for _ in 0..5 {
+        host.tick().expect("tick");
+    }
+    assert!(
+        host.world.trigger_scripted_battle(4),
+        "town01 row 4 is a registered formation"
+    );
+    // The south-gate exit tile, which leaves for map01 when free.
+    seat_at_tile(&mut host.world, 25, 46);
+    for _ in 0..60 {
+        if let SceneTickEvent::SceneEntered { name } = host.tick().expect("tick") {
+            panic!("the exit fired under a committed battle (entered {name})");
+        }
+        assert!(
+            host.world.field_scripts_held_for_battle(),
+            "the fight stays committed through its intro"
+        );
+        assert!(
+            !host.world.cutscene_timeline_active(),
+            "no walk-on record spawns during the intro"
+        );
+    }
+}

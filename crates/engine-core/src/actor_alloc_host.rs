@@ -52,6 +52,12 @@ use legaia_engine_vm::move_vm::{MoveSpawnHost, MoveSpawnRequest, SpawnSubmode};
 use crate::world::{MOVE_VM_BUDGET, World};
 
 impl ActorAllocatorHost for World {
+    /// The allocator half of `FUN_80021B04`'s spawn, reached only through
+    /// `move_vm::spawn::spawn_move_actor` (itself `REPLACED-BY` the ambient
+    /// pool) and the unit tests below.
+    ///
+    /// PORT: FUN_80024C88
+    /// REPLACED-BY: each spawn site's own first-free `World::actors` slot scan, `Actor::init_allocated` (the `FUN_80020DE0` port this routine thunks to) and the site's position write - `World::enter_battle`'s seat stamping is `FUN_800513F0`'s call of this routine - with the `FUN_8003D344` view transform folded into the renderer's per-frame pass
     fn spawn_at_position(
         &mut self,
         position: SpawnPosition,
@@ -74,6 +80,11 @@ impl ActorAllocatorHost for World {
         Some(slot as ActorHandle)
     }
 
+    /// The OBJECT-table half of the spawn, reached only as
+    /// [`Self::spawn_at_position`] is.
+    ///
+    /// PORT: FUN_80024D78
+    /// REPLACED-BY: `Actor::tmd_ref` - every renderer walks the bound TMD's `objects` directly, so the `actor[+0x44]` group-pointer table this routine stamps has no port counterpart, and its `actor[+0x10] |= 0x08000000` renderable bit is `Actor::active`
     fn rebuild_object_table(&mut self, actor: ActorHandle) -> bool {
         let Some(a) = self.actors.get_mut(actor as usize) else {
             return false;

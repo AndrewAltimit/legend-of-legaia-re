@@ -135,6 +135,21 @@
 #     wrapped choreography and drop the record, which would have released
 #     the pad at about 14113 ticks; it now waits.
 
+#
+# WHY THE NUMBERS WENT DOWN AGAIN: 415 -> 410, full ladder 58 -> 56
+#
+# Entry scripts now run their guarded story beats. Field-VM op `4C EB` ("run
+# the next op only if this actor exists") used to jump to its skip operand as
+# an absolute address, and the engine never answered the actor lookup, so
+# every guard missed and sent the entry script to byte 5 of its record
+# header. With the guard fixed (relative skip, actor resolved as retail's
+# lookup does), `rikuroa` (6 -> 4) and `korout` (5 -> 4) play a first-visit
+# beat that opens a dialogue and then leaves the scene, and `izumi` (6 -> 4)
+# leaves on its own too. A scripted departure is capped at rung 4 by design,
+# so the rungs these scenes used to score were crediting the skipped beat.
+# The settle now pulses Cross while a dialogue owns input, as a player
+# pages text, so a dialogue that opens on entry is not scored as a stall.
+
 scenes = 74
-rung_total = 415
-full_ladder = 58
+rung_total = 410
+full_ladder = 56

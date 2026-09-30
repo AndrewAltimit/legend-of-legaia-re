@@ -163,3 +163,199 @@ fn load_full_clears_old_inventory() {
     assert!(!world.party.inventory.contains_key(&2));
     assert_eq!(world.party.inventory.get(&5), Some(&3));
 }
+
+// --- Retail card-load fidelity ---------------------------------------
+
+/// A retail-shaped SC block: the New Game template's four populated
+/// records, a one-member present party, flags either side of the old
+/// `0x540` cut, a field position.
+fn vahn_alone_sc_block() -> Vec<u8> {
+    use legaia_save::card::*;
+    let mut block = vec![0u8; legaia_save::BLOCK_SIZE];
+    block[..legaia_save::SAVE_BLOCK_HEADER.len()].copy_from_slice(&legaia_save::SAVE_BLOCK_HEADER);
+    let records: Vec<Vec<u8>> = (0..4u8)
+        .map(|i| {
+            let mut r = legaia_save::CharacterRecord::zeroed();
+            r.raw[0] = i + 1;
+            r.raw.to_vec()
+        })
+        .collect();
+    write_retail_char_records(&mut block, &records).unwrap();
+    for f in [0x0010u16, 0x053F, 0x0540, 0x05B3, 0x06C4, 0x0FFF] {
+        block[0x1618 + usize::from(f >> 3)] |= 0x80 >> (f & 7);
+    }
+    write_retail_present_party(&mut block, &[0]).unwrap();
+    write_retail_field_position(&mut block, (0x0E40, 0x2DC0)).unwrap();
+    block
+}
+
+#[test]
+fn a_card_load_seeds_the_whole_system_flag_bank() {
+    let sf = legaia_save::SaveFile::from_retail_sc_block(
+        &vahn_alone_sc_block(),
+        legaia_save::RETAIL_SC_PARTY_RECORDS,
+    )
+    .unwrap();
+    let mut world = World::new();
+    world.load_full(sf);
+    for f in [0x0010u16, 0x053F, 0x0540, 0x05B3, 0x06C4, 0x0FFF] {
+        assert!(world.system_flag_test(f), "flag {f:#05X} lost on load");
+    }
+    assert!(!world.system_flag_test(0x0541));
+}
+
+#[test]
+fn a_card_load_seats_the_saved_present_party_not_every_record() {
+    let sf = legaia_save::SaveFile::from_retail_sc_block(
+        &vahn_alone_sc_block(),
+        legaia_save::RETAIL_SC_PARTY_RECORDS,
+    )
+    .unwrap();
+    let mut world = World::new();
+    world.load_full(sf);
+    assert_eq!(world.party.roster.members.len(), 4);
+    assert_eq!(world.party.party_count, 1, "Vahn alone");
+    assert_eq!(world.party.active_party, vec![0]);
+    assert_eq!(world.party.party_actor_slots, vec![Some(0)]);
+    assert_eq!(world.party.party_leader_slot, Some(0));
+}
+
+#[test]
+fn save_full_keeps_the_party_count_and_a_cleared_flag_stays_cleared() {
+    let sf = legaia_save::SaveFile::from_retail_sc_block(
+        &vahn_alone_sc_block(),
+        legaia_save::RETAIL_SC_PARTY_RECORDS,
+    )
+    .unwrap();
+    let mut world = World::new();
+    world.load_full(sf);
+    // The game clears a loaded flag; the next save must not resurrect it
+    // from the bytes the load came from.
+    world.system_flag_clear(0x06C4);
+    world.system_flag_set(0x0700);
+    let saved = world.save_full();
+    let mut again = World::new();
+    again.load_full(saved);
+    assert!(!again.system_flag_test(0x06C4), "cleared flag resurrected");
+    assert!(again.system_flag_test(0x0700));
+    assert!(again.system_flag_test(0x0FFF));
+    assert_eq!(again.party.party_count, 1);
+}
+
+#[test]
+fn an_identity_party_below_the_roster_saves_as_a_prefix() {
+    let mut world = World::new();
+    world.load_party(legaia_save::Party::zeroed(4));
+    world.party.party_count = 2;
+    let saved = world.save_full();
+    assert_eq!(saved.ext_v2.active_party, vec![0, 1]);
+    let mut again = World::new();
+    again.load_full(saved);
+    assert_eq!(again.party.party_count, 2);
+    // Every record in the party is still the historical identity encoding.
+    world.party.party_count = 4;
+    assert_eq!(world.save_full().ext_v2.active_party, vec![0, 1, 2, 3]);
+}
+
+#[test]
+fn step_name_entry_frame_owns_the_frame_only_while_the_prompt_is_open() {
+    let mut world = World::new();
+    let f0 = world.frame;
+    assert!(!world.step_name_entry_frame(0));
+    assert_eq!(world.frame, f0, "no prompt: nothing advances");
+    world.open_name_entry(0);
+    assert!(world.step_name_entry_frame(0));
+    assert_eq!(world.frame, f0 + 1, "the caret clock advances");
+    assert!(world.name_entry_active());
+}
+
+/// The audio-level pair a retail block carries (`0x8008457C` configured
+/// level, `0x80084580` voice volume) reaches the world on import, drives the
+/// consumers that key off it, and goes back out on a save - into an LGSF
+/// file and into a freshly composed retail block alike.
+#[test]
+fn a_retail_saves_audio_levels_are_honoured_on_import() {
+    use legaia_save::card::{self, RetailAudioLevels};
+    let cold = RetailAudioLevels::COLD_RESET;
+    assert_eq!(
+        (cold.configured_level, cold.voice_volume),
+        (
+            crate::new_game::GAME_STATE_COLD_RESET.brightness_ref,
+            crate::new_game::GAME_STATE_COLD_RESET.voice_volume
+        ),
+        "the save crate's cold-reset pair is FUN_8001FFA4's"
+    );
+    let mut world = World::new();
+    assert_eq!(world.audio.levels, cold, "a cold boot holds the reset pair");
+
+    // A block written by retail with a player-lowered pair.
+    let mut block = vec![0u8; card::BLOCK_SIZE];
+    World::new()
+        .save_full()
+        .write_into_retail_sc_block(&mut block)
+        .unwrap();
+    let set = RetailAudioLevels {
+        configured_level: 0x6B,
+        voice_volume: 90,
+    };
+    card::write_retail_audio_levels(&mut block, set).unwrap();
+    let sf = legaia_save::SaveFile::from_retail_sc_block(&block, 4).unwrap();
+    assert_eq!(sf.ext_v2.audio_levels, Some(set));
+    world.load_full(sf);
+    assert_eq!(world.audio.levels, set, "the import installs the pair");
+
+    // Consumers: the sound-release arm latches the level the MAN loader
+    // rests the live cell on.
+    world.arm_sound_release(30);
+    let arm = world.audio.sound_arm.expect("armed");
+    assert_eq!(
+        arm,
+        crate::scus_leaf_kernels::TimedSoundArm::arm(0, 30, 0x6B)
+    );
+
+    // And it goes back out: LGSF and a fresh retail block.
+    let out = world.save_full();
+    assert_eq!(out.ext_v2.audio_levels, Some(set));
+    let lgsf = legaia_save::SaveFile::parse(&out.write()).unwrap();
+    assert_eq!(lgsf.ext_v2.audio_levels, Some(set));
+    let mut fresh = vec![0u8; card::BLOCK_SIZE];
+    out.write_into_retail_sc_block(&mut fresh).unwrap();
+    assert_eq!(card::read_retail_audio_levels(&fresh), Some(set));
+
+    // A save naming no pair keeps the live one.
+    let mut none = out.clone();
+    none.ext_v2.audio_levels = None;
+    world.audio.levels = cold;
+    world.load_full(none);
+    assert_eq!(world.audio.levels, cold);
+}
+
+/// A loaded save's accessory passives are live in the field at once: the
+/// derived ability mask is rebuilt from the loaded equipment rather than
+/// left empty until the first battle entry re-derives it.
+#[test]
+fn a_loaded_save_rebuilds_the_accessory_passive_mask() {
+    use crate::accessory_passives::AccessoryPassives;
+    use legaia_engine_vm::field_passive_hud::ability_bit;
+    let mut src = World::new();
+    let mut party = legaia_save::Party::zeroed(1);
+    let mut eq = party.members[0].equipment();
+    eq.slots[7] = 0x50;
+    party.members[0].set_equipment(eq);
+    src.load_party(party);
+    let sf = src.save_full();
+
+    let mut world = World::new();
+    world.set_accessory_passives(AccessoryPassives::from_entries(
+        [(0x50, ability_bit::ENCOUNTER_LOW)],
+        [],
+    ));
+    assert!(!world.party_has_ability(ability_bit::ENCOUNTER_LOW));
+    world.load_full(sf);
+    assert!(
+        world.party_has_ability(ability_bit::ENCOUNTER_LOW),
+        "the equipped accessory's passive is live after the load"
+    );
+    assert!(world.encounter_rate_modifiers().low_encounter);
+    assert!(world.passive_hud_active(), "the badge column anchors");
+}

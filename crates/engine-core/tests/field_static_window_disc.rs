@@ -15,7 +15,7 @@
 //! 3. **Retail windowing only ever hides the window sweep's placements** that
 //!    the current list does not hold, and re-centring on such a placement's
 //!    tile brings it back - the sub-area pop-in, and nothing else. With the
-//!    option off (the default) nothing is hidden.
+//!    option off nothing is hidden; the play hosts default it on.
 //!
 //! Skips (and passes) without `LEGAIA_DISC_BIN`.
 
@@ -237,5 +237,66 @@ fn retail_windowing_hides_only_window_placements_the_list_lacks() {
     assert!(
         any_hidden,
         "no scene hid anything - the retail path is vacuous"
+    );
+}
+
+/// The play hosts' default (retail windowing on) hides the scenery retail's
+/// region box leaves out, and a debug seat - a warp landing - re-centres the
+/// box on the seat so the room the player now stands in keeps its props.
+///
+/// retona: the cloud bowl (env pack 37, a `5550 x 2971 x 5754` shell at
+/// `(8384, 10176)`) belongs to another sub-area; drawn from the cave the
+/// `retona_field_card_boot` player stands in at `(8536, 12638)` it covers the
+/// frame. town01: `first_town_interactive`'s seat `(4160, 11840)` is the
+/// plaza, whose window-owned floor must stay drawn after the seat.
+#[test]
+fn default_windowing_hides_other_regions_and_the_seat_recentres() {
+    let Some(disc) = open_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let opts = legaia_engine_core::options::OptionsState::default();
+    assert!(opts.retail_static_window, "retail windowing is the default");
+
+    let mut e = enter(&disc, "retona");
+    opts.apply_to_world(&mut e.host.world);
+    assert!(e.host.world.debug_seat_player(8536, 12638));
+    let sw = &e.host.world.terrain.static_window;
+    let bowl = e
+        .draws
+        .iter()
+        .position(|d| d.env_slot == 37 && d.world_x == 8384 && d.world_z == 10176)
+        .expect("retona places the cloud bowl");
+    assert!(
+        !field_env::placed_draw_live(e.keys[bowl].as_ref(), sw),
+        "the cloud bowl is outside the cave's region box"
+    );
+    let retona_hidden = e
+        .keys
+        .iter()
+        .filter(|k| !field_env::placed_draw_live(k.as_ref(), sw))
+        .count();
+
+    let mut e = enter(&disc, "town01");
+    opts.apply_to_world(&mut e.host.world);
+    assert!(e.host.world.debug_seat_player(4160, 11840));
+    let sw = &e.host.world.terrain.static_window;
+    let near_hidden: Vec<_> = e
+        .draws
+        .iter()
+        .zip(&e.keys)
+        .filter(|(d, k)| {
+            (d.world_x - 4160).abs() <= 768
+                && (d.world_z - 11840).abs() <= 768
+                && !field_env::placed_draw_live(k.as_ref(), sw)
+        })
+        .map(|(d, _)| (d.env_slot, d.world_x, d.world_z))
+        .collect();
+    assert!(
+        near_hidden.is_empty(),
+        "the seat re-centres the box: nothing near the plaza seat is hidden ({near_hidden:?})"
+    );
+    println!(
+        "retona: cloud bowl hidden ({retona_hidden} window draws hidden); town01 plaza seat: 0 near draws hidden"
     );
 }

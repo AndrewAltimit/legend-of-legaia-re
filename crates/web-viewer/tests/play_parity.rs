@@ -41,7 +41,14 @@ fn play_render_state_matches_native_field_pipeline() {
 
         // ------------------------------------------------ placement layer
         let hidden = host.world.hidden_object_records();
-        let f = build_field_render(&host.index, scene, res, false, &hidden);
+        let f = build_field_render(
+            &host.index,
+            scene,
+            res,
+            false,
+            &hidden,
+            &host.world.object_render_scales(),
+        );
 
         // Native reference: the play-window's exact resolver calls.
         let env_tmds = legaia_engine_core::field_env::env_pack_tmd_indices(scene, res);
@@ -106,7 +113,7 @@ fn play_render_state_matches_native_field_pipeline() {
         );
 
         // ------------------------------------------------------- NPC layer
-        let npcs = build_npc_catalog_play(&host.index, name, res, &host.world.global_tmd_pool)
+        let npcs = build_npc_catalog_play(&host.index, name, res, &host.world.field_head_pool)
             .unwrap_or_else(|e| panic!("{name}: NPC catalog: {e}"));
 
         // Native reference: every classified placement draws unless parked at

@@ -217,7 +217,7 @@ pub struct ChildBillboard {
 /// `_DAT_8007BD30` in retail. Engines own one of these per scene.
 #[derive(Debug, Clone)]
 pub struct Pool {
-    /// `+0x00..0x10` - pool-head record set by [`Pool::init`].
+    /// `+0x00..0x10` - pool-head record set by [`Pool::init_head`].
     pub head: PoolHead,
     pub master_slots: [MasterSlot; MAX_MASTER_SLOTS],
     pub children: [ChildSlot; MAX_CHILD_SLOTS],
@@ -318,14 +318,26 @@ impl Pool {
     /// `(motion_scale, sprite_scale)` immediates and the three pack pointers
     /// into the head record. The pack-fixup half (rebasing pack0 and pack1's
     /// offset tables to absolute addresses) is moved to the asset layer in
-    /// this port - by the time [`Pool::init`] is called, the script catalog
+    /// this port - by the time [`Pool::init_head`] is called, the script catalog
     /// has already been resolved to in-memory offsets.
     ///
     /// Safe to call multiple times - re-initing the pool drops every
     /// active effect.
     ///
+    /// No host calls this, and none is owed. Retail's one call is the battle
+    /// loader's stage `0xE` (`FUN_800520F0` at `0x8005266C..0x80052674`:
+    /// `li a0,0x1000` / `jal 0x801DE914` / `li a1,0xA00`), once per battle,
+    /// right after `efect.dat` lands. The port does the same work at the same
+    /// juncture by rebuilding the pool: `World::enter_battle` assigns
+    /// [`Pool::new`], whose every slot is free and whose head is
+    /// [`PoolHead::default`] - exactly those two immediates - which is
+    /// bytewise what this routine leaves behind. The pack-fixup half is the
+    /// [`EffectCatalog`] parse. This body stays as the spec the unit tests
+    /// hold `Pool::new` to.
+    ///
     /// PORT: FUN_801DE914
-    pub fn init(&mut self, head: PoolHead) {
+    /// REPLACED-BY: `World::enter_battle`'s per-battle `Pool::new()` (all slots free, head at the retail `(0x1000, 0xA00)` immediates) plus the `EffectCatalog` parse for the pack fixup
+    pub fn init_head(&mut self, head: PoolHead) {
         // Retail clears `_DAT_8007BD30` for `0x4E4 = 1252` u32 words = 5008
         // bytes, which is the pool exactly - no tail: 16 (head) + 128 * 32
         // (children, `+0x10..+0x1010`) + 32 * 28 (masters, from `+0x1010`)

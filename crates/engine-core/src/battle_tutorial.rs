@@ -439,6 +439,51 @@ pub const SPARRING_CAPTION_STYLE: u8 = 9;
 /// Action-state value the completion tail writes to `ctx[0x07]`.
 pub const ACTION_STATE_TERMINAL: u8 = 0xFF;
 
+/// The hold countdown `FUN_801F7628` seeds into `ctx[+0x6B4]`, in vsyncs.
+///
+/// The seed is `rate * 360` (`0x801F7648..0x801F7660`: `x3`, `x15`, `x8` of
+/// the game-speed rate byte `DAT_1F80037D`) and the hook drains it by
+/// `frame_step * rate` per frame (`mult` at `0x801F7250`, `subu` at
+/// `0x801F7274`), so the rate cancels and the hold is 360 vsyncs.
+pub const COMPLETION_COUNTDOWN_VSYNCS: i16 = 360;
+
+/// The fade the countdown's expiry arm stages in the block `0x801C9070`
+/// and spawns through `FUN_80024E80(block, 0)` (`0x801F72C4..0x801F72F4`):
+/// kind `2`, `0x40` frames, `0 -> 0xFF`, no start delay, held (`+0x16 = -1`).
+/// Kind 2 is the `B - F` blend, so the scene fades to black - the same
+/// template the escape teardown spawns.
+pub const COMPLETION_FADE: crate::fade::FadeTemplate = crate::fade::FadeTemplate {
+    kind: 2,
+    duration: 0x40,
+    start_rgb: [0, 0, 0],
+    end_rgb: [0xFF, 0xFF, 0xFF],
+    mode: [0, -1, 0],
+};
+
+/// What one frame of the hook's countdown section (`0x801F71F0..0x801F72A8`)
+/// asks the battle host to do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CountdownTick {
+    /// `ctx[+0x6B4] == 0`: the section is skipped (`beq` at `0x801F7204`)
+    /// and nothing is held.
+    Idle,
+    /// The countdown is running: `ctx[+0x6B0] = 1` holds the command flow and
+    /// the section has cleared the pad masks.
+    Holding,
+    /// The countdown ran out with the lesson counter below `4`: the hook
+    /// re-injects the cancel mask `ctx[+0x88C]` (captured from
+    /// `_DAT_800846D4` by `FUN_801F7628`) as this frame's pad edge
+    /// (`0x801F729C..0x801F72A4`) - the synthetic Cancel that backs the
+    /// player out of a rejected menu.
+    Rewind,
+    /// The countdown ran out with the lesson counter at `4` or past it: the
+    /// fight's exit arm (`0x801F72A8..0x801F7378`) - bump the side-band phase
+    /// `ctx[+0x289]` to `3`, spawn [`COMPLETION_FADE`], raise the battle-end
+    /// signal `DAT_8007BD71 = 0xFE`, set the party-survived bit
+    /// `DAT_8007BD60 |= 0x80`, and drain the floating-element list.
+    Close,
+}
+
 /// Live inputs the hook handlers read besides the flow state and lesson.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TutorialInputs {
@@ -616,6 +661,11 @@ pub struct BattleTutorial {
     /// bump at the same observable place - one lesson per successful player
     /// turn.
     pub pending_advance: bool,
+    /// `ctx[+0x6B4]` - the hold countdown `FUN_801F7628` seeds, in vsyncs
+    /// ([`COMPLETION_COUNTDOWN_VSYNCS`]). Drained by
+    /// [`Self::tick_countdown`]; its expiry after the fourth lesson is what
+    /// ends the sparring fight.
+    pub countdown: i16,
 }
 
 /// What a [`BattleTutorial::tick`] asks the battle host to do.
@@ -686,7 +736,18 @@ impl BattleTutorial {
             self.latch = self.latch.wrapping_add(1);
         }
 
-        // --- completion tail (0x801F7380) ---
+        self.completion_tail(&mut tick);
+        tick
+    }
+
+    /// The completion tail (`0x801F7380..0x801F7464`), which every hook
+    /// call reaches - after a dispatch, on a latched frame and on a
+    /// suppressed one alike. A lesson counter at `4` closes the fight: the
+    /// counter goes to `5`, the flow bytes are parked (`ctx[+0x06] = 0xC8`,
+    /// `ctx[+0x07] = 0xFF`), the sign-off box is emitted and the countdown
+    /// is armed. A counter already past `4` re-pins it to `5` and re-issues
+    /// the flow stores only.
+    pub fn completion_tail(&mut self, tick: &mut TutorialTick) {
         if self.lesson >= 5 {
             self.lesson = 5;
             tick.battle_over = true;
@@ -697,9 +758,64 @@ impl BattleTutorial {
             tick.emission
                 .boxes
                 .push(TutorialBox::new(msg::PRACTICE_OVER, 9));
+            // `jal 0x801F7628` at `0x801F7460`, right after the sign-off box:
+            // the countdown whose expiry actually ends the fight.
+            self.arm_countdown();
         }
+    }
 
-        tick
+    /// `FUN_801F7628`'s store into `ctx[+0x6B4]`: arm the hold countdown.
+    ///
+    /// Retail also calls it on every wrong-lesson rewind (`0x801F7184` and
+    /// siblings), where the expiry injects a Cancel press. The engine's
+    /// rewind reopens the command menu directly
+    /// ([`TutorialEmission::rewind`]), so only the completion tail arms it.
+    ///
+    /// REF: FUN_801F7628
+    pub fn arm_countdown(&mut self) {
+        self.countdown = COMPLETION_COUNTDOWN_VSYNCS;
+    }
+
+    /// One frame of the hook's countdown section (`0x801F71F0..0x801F72A8`),
+    /// which runs on every hook call - latched, suppressed or dispatching.
+    ///
+    /// ```text
+    /// 801f71fc  lh   v0,0x6b4(a0)       ; countdown == 0 -> skip
+    /// 801f7218  _sh  v0,0x6b0(a0)       ; hold = 1
+    /// 801f720c  lw   v1,-0x478c(v0)     ; any new press ...
+    /// 801f721c  lh   v0,0x6b2(a0)       ; ... with no box up ...
+    /// 801f722c  sh   zero,0x6b4(a0)     ; ... zeroes the countdown
+    /// 801f7258  sw   zero,-0x478c(a0)   ; pad masks cleared (B874/B938/B850)
+    /// 801f7274  subu v0,v0,t2           ; countdown -= step * rate
+    /// 801f7280  bgtz v0,0x801f7380      ; still positive -> hold
+    /// 801f7290  sltiu v0,v0,0x4         ; lesson < 4 -> re-inject Cancel
+    /// 801f72c0  sb   v0,0x289(a2)       ; else side-band phase + 1
+    /// ```
+    ///
+    /// `pad_edge` is `_DAT_8007B874 != 0`; `box_up` is `ctx[+0x6B2] != 0`,
+    /// so a press only skips the wait once the sign-off box has gone.
+    pub fn tick_countdown(
+        &mut self,
+        pad_edge: bool,
+        box_up: bool,
+        frame_step: u8,
+    ) -> CountdownTick {
+        if self.countdown == 0 {
+            return CountdownTick::Idle;
+        }
+        if pad_edge && !box_up {
+            self.countdown = 0;
+        }
+        self.countdown = self.countdown.wrapping_sub(i16::from(frame_step.max(1)));
+        if self.countdown > 0 {
+            return CountdownTick::Holding;
+        }
+        self.countdown = 0;
+        if self.lesson < 4 {
+            CountdownTick::Rewind
+        } else {
+            CountdownTick::Close
+        }
     }
 }
 
@@ -1034,6 +1150,45 @@ mod tests {
                 .iter()
                 .any(|b| b.message == msg::PRACTICE_OVER)
         );
+    }
+
+    #[test]
+    fn the_completion_tail_arms_a_360_vsync_countdown() {
+        let mut t = BattleTutorial::new();
+        t.lesson = 4;
+        assert!(t.tick(30).battle_over);
+        assert_eq!(t.countdown, COMPLETION_COUNTDOWN_VSYNCS);
+        // Drained by the frame step; holds while positive.
+        for _ in 0..179 {
+            assert_eq!(t.tick_countdown(false, false, 2), CountdownTick::Holding);
+        }
+        assert_eq!(t.countdown, 2);
+        assert_eq!(t.tick_countdown(false, false, 2), CountdownTick::Close);
+        assert_eq!(t.countdown, 0);
+        assert_eq!(t.tick_countdown(false, false, 2), CountdownTick::Idle);
+    }
+
+    #[test]
+    fn a_press_ends_the_countdown_only_with_no_box_up() {
+        let mut t = BattleTutorial {
+            lesson: 5,
+            countdown: COMPLETION_COUNTDOWN_VSYNCS,
+            ..Default::default()
+        };
+        // `ctx[+0x6B2] != 0` skips the zeroing store (`0x801F7224`).
+        assert_eq!(t.tick_countdown(true, true, 1), CountdownTick::Holding);
+        assert_eq!(t.countdown, COMPLETION_COUNTDOWN_VSYNCS - 1);
+        assert_eq!(t.tick_countdown(true, false, 1), CountdownTick::Close);
+    }
+
+    #[test]
+    fn a_countdown_below_lesson_four_expires_into_the_cancel_rewind() {
+        let mut t = BattleTutorial {
+            lesson: 2,
+            countdown: 1,
+            ..Default::default()
+        };
+        assert_eq!(t.tick_countdown(false, false, 1), CountdownTick::Rewind);
     }
 
     #[test]

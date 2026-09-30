@@ -3,14 +3,41 @@
 
 use super::*;
 
+/// Byte offset of the system-flag bank (`0x80085758`) inside the saved
+/// story-flag window (`0x80085600`).
+const SYSTEM_FLAG_WINDOW: usize = 0x158;
+
 impl World {
+    /// Whether projecting a party record onto actor `slot`
+    /// ([`Self::load_party`], [`Self::set_active_party`]) may raise the slot.
+    ///
+    /// On a field or the overworld the actor table is not the party: the
+    /// walking player's slot (slot 0 until a host installs another) is the
+    /// party's, and every other slot belongs to the scene - spawned records,
+    /// clones, effects, and the idle slots `init_scene_animations` leaves
+    /// pre-bound to scene-pack meshes. Raising one of those spawned a phantom
+    /// actor: drawn at the origin with whatever mesh the slot was pre-bound to
+    /// (uru's sky and cliff pack across the frame after a card load of a
+    /// four-member save), and held out of the spawn allocator's free list.
+    /// Retail's card load copies the records into `0x80084708` and touches no
+    /// actor; a battle seats its party itself ([`Self::enter_battle`]). The
+    /// HP / MP mirrors are still written - only the raise is withheld.
+    pub(crate) fn party_mirror_activates(&self, slot: usize) -> bool {
+        if !matches!(self.mode, SceneMode::Field | SceneMode::WorldMap) {
+            return true;
+        }
+        usize::from(self.player_actor_slot.unwrap_or(0)) == slot
+    }
+
     /// Load a `Party` (per-character roster) into the world's actor table.
     ///
     /// Per-character record 0 maps to actor slot 0, record 1 to slot 1, …
     /// up to `party.len()` (capped by `MAX_ACTORS`). For each loaded slot
     /// the world:
     ///
-    /// - activates the actor,
+    /// - activates the actor - except on a field or the overworld, where
+    ///   only the walking player's slot is the party's
+    ///   ([`Self::party_mirror_activates`]),
     /// - copies HP / MP from the record's [`HpMpSp`] block into the
     ///   `BattleActor` mirrors,
     /// - stows the full record bytes via [`crate::world::PartyState::roster`] for later
@@ -25,8 +52,11 @@ impl World {
         let n = party.members.len().min(self.actors.len());
         for (slot, rec) in party.members.iter().take(n).enumerate() {
             let hms = rec.hp_mp_sp();
+            let activate = self.party_mirror_activates(slot);
             let a = &mut self.actors[slot];
-            a.active = true;
+            if activate {
+                a.active = true;
+            }
             a.battle.hp = hms.hp_cur;
             a.battle.max_hp = hms.hp_max;
             a.battle.mp = hms.mp_cur;
@@ -105,7 +135,7 @@ impl World {
         self.party.roster.clone()
     }
 
-    /// Write the **battle party's** live HP / MP into their roster records.
+    /// Write the **battle party's** live HP / MP / AP into their roster records.
     ///
     /// The narrow sibling of [`Self::save_party`], for
     /// [`Self::finish_battle`]. Two differences, both deliberate:
@@ -114,21 +144,26 @@ impl World {
     ///   the party band hold *monsters*, and `save_party`'s identity default
     ///   walks the whole roster - so running it verbatim at battle end would
     ///   copy a monster's HP into the fourth character's record.
-    /// - It writes `hp_cur` / `mp_cur` only, never `hp_max`. Max HP does not
+    /// - It writes `hp_cur` / `mp_cur` / `sp_cur` only, never `hp_max`. Max HP does not
     ///   move during a fight, and the level-up applier has already written
     ///   the post-victory maxima into the records by the time this runs.
     pub(in crate::world) fn persist_battle_party_hp(&mut self) {
         let n = (self.party.party_count as usize).min(self.actors.len());
         for member in 0..n {
             let rslot = self.party_roster_slot(member);
-            let (hp, mp) = {
+            let (hp, mp, ap) = {
                 let a = &self.actors[member].battle;
-                (a.hp, a.mp)
+                (a.hp, a.mp, a.spirit_gauge)
             };
             if let Some(rec) = self.party.roster.members.get_mut(rslot) {
                 let mut hms = rec.hp_mp_sp();
                 hms.hp_cur = hp;
                 hms.mp_cur = mp;
+                // The Spirit (AP) gauge goes back to the record's `+0x10E`
+                // with MP: both results arms of `FUN_8004E568` store
+                // `+0x150 -> +0x10A` and `+0x170 -> +0x10E` per member
+                // (`0x8004F1E8..0x8004F220`, `0x8004FBE8..0x8004FC20`).
+                hms.sp_cur = ap;
                 rec.set_hp_mp_sp(hms);
             }
         }
@@ -189,10 +224,19 @@ impl World {
 
         // Build per-character extension records from live world state.
         // The present-party composition persists when installed; the
-        // identity default serialises as the full roster order (the
-        // historical encoding, which `load_full` treats as identity).
+        // identity default serialises as the roster order up to the live
+        // party count - the full roster order when every record is in the
+        // party (the historical encoding, which `load_full` treats as
+        // identity), a prefix when fewer are. Retail keeps the same pair as
+        // the count at `0x80084594` and the member list at `0x80084598`; a
+        // full-roster encoding for a one-member party is what used to reload
+        // a Vahn-alone save as a four-member party.
         let active_party: Vec<u8> = if self.party.active_party.is_empty() {
-            (0..party.members.len() as u8).collect()
+            let n = match usize::from(self.party.party_count) {
+                0 => party.members.len(),
+                n => n.min(party.members.len()),
+            };
+            (0..n as u8).collect()
         } else {
             self.party.active_party.clone()
         };
@@ -241,16 +285,32 @@ impl World {
         // story-flag window at byte offset `0x158` (`0x80085758 - 0x80085600`).
         // Mirror the live bank into that window so gate/progression state
         // survives a save (the LGX3 block stores a u16-length bitmap, so a
-        // bank longer than the retail 512-byte window still fits).
+        // bank longer than the retail window still fits).
+        //
+        // The live bank is authoritative for the whole `+0x158..` span: the
+        // load seeds it from exactly that span, so a bit the bank no longer
+        // holds is a flag the game cleared since the load. An OR over the
+        // loaded bytes resurrected every such flag on the next save.
+        // Where the player stands - retail's position snapshot
+        // (`0x80084568` / `0x8008456C`), which `FUN_80016230` takes as the
+        // field run hands over to the menu, so a save from the pause menu
+        // carries the spot it was opened on. Only a walking (or paused)
+        // world has one: a battle's actor slots hold the battle seats.
+        let field_position = match self.mode {
+            SceneMode::Field | SceneMode::WorldMap | SceneMode::Menu => {
+                self.player_field_position()
+            }
+            _ => None,
+        };
         let mut story_flag_bits = self.flags.story_flag_bits.clone();
-        if !self.flags.system_flags.is_empty() {
-            let need = 0x158 + self.flags.system_flags.len();
+        if !self.flags.system_flags.is_empty() || story_flag_bits.len() > SYSTEM_FLAG_WINDOW {
+            let need = SYSTEM_FLAG_WINDOW + self.flags.system_flags.len();
             if story_flag_bits.len() < need {
                 story_flag_bits.resize(need, 0);
             }
-            for (k, b) in self.flags.system_flags.iter().enumerate() {
-                story_flag_bits[0x158 + k] |= b;
-            }
+            let window = &mut story_flag_bits[SYSTEM_FLAG_WINDOW..];
+            window.fill(0);
+            window[..self.flags.system_flags.len()].copy_from_slice(&self.flags.system_flags);
         }
         legaia_save::SaveFile {
             party,
@@ -277,6 +337,10 @@ impl World {
                 active_party,
                 per_char,
                 saved_chains: self.party.saved_chains.clone(),
+                field_position,
+                // Always the live pair: a block composed from scratch must not
+                // read back as the all-zero pair (silence) on retail's load.
+                audio_levels: Some(self.audio.levels),
             },
         }
     }
@@ -296,6 +360,19 @@ impl World {
         let identity: Vec<u8> = (0..self.party.roster.members.len() as u8).collect();
         if sf.ext_v2.active_party != identity {
             self.set_active_party(sf.ext_v2.active_party.clone());
+            // The same list is the field party - retail's `0x80084598`
+            // member list and its `0x80084597` leader (the head, as the
+            // leader swap keeps it) - which the field VM's party ops edit.
+            if !sf.ext_v2.active_party.is_empty() {
+                self.party.party_actor_slots = sf
+                    .ext_v2
+                    .active_party
+                    .iter()
+                    .take(4)
+                    .map(|&id| Some(id))
+                    .collect();
+                self.party.party_leader_slot = sf.ext_v2.active_party.first().copied();
+            }
         } else {
             self.party.active_party.clear();
         }
@@ -306,12 +383,24 @@ impl World {
         // record gates - story-progression one-shots, door cutscene beats -
         // resolve the same after a reload. OR-merge: a retail SC import that
         // populated `story_flag_bits` alone seeds the bank the same way.
+        //
+        // The span is the whole bank: `legaia_save`'s story window runs to the
+        // item array (`0x80085958`), which is where the `0x200`-byte bank
+        // ends, so flags `0x000..=0xFFF` all arrive - retail's card load
+        // restores the same span in its one `0x1A18`-byte copy.
         self.flags.system_flags.clear();
-        if self.flags.story_flag_bits.len() > 0x158 {
-            let window = self.flags.story_flag_bits[0x158..].to_vec();
+        if self.flags.story_flag_bits.len() > SYSTEM_FLAG_WINDOW {
+            let window = self.flags.story_flag_bits[SYSTEM_FLAG_WINDOW..].to_vec();
             self.flags.system_flags = window;
         }
         self.party.money = sf.ext.money;
+        // The configured audio level and the voice volume ride in the same
+        // live-state window as the gold; retail's card load restores them with
+        // it and the next MAN load re-applies the level. A save naming no
+        // pair keeps the current one.
+        if let Some(levels) = sf.ext_v2.audio_levels {
+            self.audio.levels = levels;
+        }
         // The minigame purses and records - retail keeps all of them in the
         // live-state window a save block mirrors (`legaia_save::minigame_save`).
         let m = sf.ext.minigames;
@@ -385,6 +474,13 @@ impl World {
                 self.seru.log.mark_shiny(*slot, spell_id);
             }
         }
+        // The accessory passive mask (`DAT_80074358`) is derived state, not
+        // part of the saved live-state window: re-derive it from the loaded
+        // equipment now, so the field's own readers - the encounter-rate
+        // modifiers and the passive-ability badge column - see the loaded
+        // party's accessories before the first battle entry would have
+        // rebuilt it. A no-op without the disc's passive table.
+        self.refresh_party_ability_bits();
     }
 }
 

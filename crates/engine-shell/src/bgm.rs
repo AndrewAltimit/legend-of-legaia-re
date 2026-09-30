@@ -113,6 +113,11 @@ pub struct AudioBgmDirector {
     /// `duck_level` mirrors the cell; `duck_target` the arm's clamp.
     duck_level: u8,
     duck_target: u8,
+    /// The reference the duck takes its percentage of and rests on - the
+    /// configured level `_DAT_8008457C` a save carries
+    /// ([`Self::set_duck_reference`]) - and the percentage last asked for.
+    duck_ref: u8,
+    duck_pct: u8,
     /// The current field scene's prescript bundle - the retail
     /// current-bundle slot `_DAT_8007B8D0` - whose record 0 is the runtime
     /// half (`>= 0x200`) of the SFX descriptor table. Mirrored from the world
@@ -263,6 +268,8 @@ impl AudioBgmDirector {
             xa_lazy: None,
             duck_level: DUCK_LEVEL_REF,
             duck_target: DUCK_LEVEL_REF,
+            duck_ref: DUCK_LEVEL_REF,
+            duck_pct: 100,
             runtime_sfx_bundle: Vec::new(),
             tail: BgmTail::default(),
             shared_region: None,
@@ -415,7 +422,21 @@ impl AudioBgmDirector {
     /// `100` when the Done band ramps it back. The ramp itself runs in
     /// [`Self::tick_duck`].
     pub fn set_duck_pct(&mut self, pct: u8) {
-        self.duck_target = legaia_engine_audio::duck::duck_target_for_pct(pct);
+        self.duck_pct = pct;
+        self.duck_target = legaia_engine_audio::duck::duck_target_for_pct_of(self.duck_ref, pct);
+    }
+
+    /// Install the configured audio level the duck is a percentage of and
+    /// rests on (`World::audio.levels.configured_level`, a loaded save's
+    /// `_DAT_8008457C`). Called per frame before [`Self::tick_duck`]; a
+    /// change re-targets the ramp, so a save carrying a lower level brings
+    /// the BGM down to it the way retail's next MAN load does.
+    pub fn set_duck_reference(&mut self, configured_level: i32) {
+        let reference = legaia_engine_audio::duck::reference_level(configured_level);
+        if reference != self.duck_ref {
+            self.duck_ref = reference;
+            self.set_duck_pct(self.duck_pct);
+        }
     }
 
     /// One frame of the duck ramp: step the live level one unit toward the

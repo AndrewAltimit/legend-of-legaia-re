@@ -207,6 +207,11 @@ pub struct SceneHost {
     /// Tracks whether the cast-effect pool install was attempted, so the 64
     /// band reads (PROT 0903..0966) only happen once per host.
     cast_effect_pool_loaded: bool,
+    /// The fight in progress's party battle forms, built and installed on
+    /// the actors by [`SceneHost::ensure_battle_party_forms`] once per
+    /// [`crate::world::BattleState::entry_serial`]; kept for the renderers
+    /// until the battle ends. `None` outside battle.
+    battle_party_forms: Option<crate::battle_party_form::BattlePartyForms>,
     /// What the last **mode-24 minigame door-warp** drain did, if one has run.
     ///
     /// Deliberately a host field rather than a [`SceneTickEvent`] variant: the
@@ -294,6 +299,14 @@ pub struct SceneHost {
     /// (set by the game-state initializer `FUN_8001FFA4`). Consumed by
     /// the op `0x35` sub-op `8` route ([`bgm_reattach_volume`]).
     pub bgm_volume_raw: i32,
+    /// The track-select word `_DAT_8007BAC8`: the id the last op-`0x35`
+    /// start (sub-op `1` or `9`) stored, whether or not it resolved to a
+    /// track. The park sentinel `0x1000` lands here like any id - retail's
+    /// start arm stores it verbatim and only the resolver (`0x8002454C`)
+    /// treats it as "leave the slot parked" - so this, not the director's
+    /// last start, is the word to compare against a save state's.
+    /// `None` until a script selects a track.
+    pub bgm_track_word: Option<u16>,
 }
 
 mod audio_dialog;

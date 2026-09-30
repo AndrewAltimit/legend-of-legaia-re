@@ -264,7 +264,54 @@ impl World {
                 if id.pc < id.visited.len() {
                     id.visited[id.pc] = true;
                 }
-                match vm::field::step(&mut host, &mut id.ctx, &id.bytecode, id.pc) {
+                // A `0x80`-prefix op aimed at the player (`0xF8`) runs with the
+                // PLAYER as its context: `FUN_8003C83C` resolves `0xF8` to
+                // `_DAT_8007C364` and the dispatcher applies the op to that
+                // record's words. Stepping it on the prop's own context put
+                // the player's halt-acquire on the prop - rayman's gondola
+                // (P0[4]) walks the player aboard with `B7 F8 04 81`, a YIELD
+                // whose halt bit (`+0x10 & 0x400`) then made the dispatcher's
+                // halted-target early-out (`0x801DE90C..0x801DE940`) refuse
+                // the prop's own next op, `AB 04 07`, for good.
+                //
+                // REF: FUN_8003C83C, FUN_801DE840 (the halted-target early-out)
+                let player_target = b & 0x80 != 0
+                    && vm::field::peek_extended(&id.bytecode, id.pc)
+                        == Some(crate::field_env::PLAYER_ANCHOR_TARGET);
+                let mut player_ctx = legaia_engine_vm::field::FieldCtx {
+                    script_id: u16::from(crate::field_env::PLAYER_ANCHOR_TARGET),
+                    flags: 0x0100_0000,
+                    ..Default::default()
+                };
+                // The player's clip is the one cursor such an op reaches: an
+                // `A2 F8 <clip>` ExecMove binds it (retail writes the player's
+                // `+0x5C` and calls the anim tick `FUN_800204F8`), and the
+                // clip-control ops `2B`/`2C`/`2D` read and write its `+0x62`.
+                // A fresh context word in its place left the switch pull's
+                // `AC F8 08` / `AD F8 08` end-latch spin (`chitei2` P0[33])
+                // waiting on a bit nothing latches, until the park timeout
+                // abandoned the record before its flag write.
+                // REF: FUN_800204F8, FUN_8003C83C
+                if player_target {
+                    if b & 0x7F == 0x22
+                        && let Some(&move_id) = id.bytecode.get(id.pc + 2)
+                    {
+                        host.world.bind_player_script_clip(move_id);
+                    }
+                    let hint = host.world.player_clip_frames_hint();
+                    player_ctx.local_flags = host.world.props.bank.player_clip(hint).flags;
+                }
+                let ctx = if player_target {
+                    &mut player_ctx
+                } else {
+                    &mut id.ctx
+                };
+                let step = vm::field::step(&mut host, ctx, &id.bytecode, id.pc);
+                if player_target && matches!(b & 0x7F, 0x2B..=0x2D) {
+                    let hint = host.world.player_clip_frames_hint();
+                    host.world.props.bank.player_clip(hint).flags = player_ctx.local_flags;
+                }
+                match step {
                     FieldStepResult::Advance { next_pc }
                         if next_pc <= id.pc
                             && id.visited.get(next_pc).copied().unwrap_or(false) =>
@@ -382,6 +429,24 @@ impl World {
         }
     }
 
+    /// Bind a cross-context `A2 F8 <clip>` ExecMove onto the player: the
+    /// bank's player cursor (what a following `AD F8 08` end-latch spin
+    /// waits on), the player's script clip, and the gesture cue the windowed
+    /// and browser hosts draw (moves 1/2 are the locomotion clips their own
+    /// controller already animates).
+    ///
+    /// REF: FUN_800204F8
+    pub(crate) fn bind_player_script_clip(&mut self, move_id: u8) {
+        let fallback = self.player_clip_frames_hint();
+        self.props
+            .bank
+            .bind_actor_clip(crate::field_env::PLAYER_ANCHOR_TARGET, move_id, fallback);
+        self.field_player_script_clip(move_id);
+        if move_id > 2 {
+            self.locomotion.player_move_cues.push(move_id);
+        }
+    }
+
     /// Name-substitution table for a record's dialog escapes: every
     /// `0xC1`/`0xC2`/`0xC4` escape pair in `record` resolved against the
     /// engine's live tables (`0xC1 63` = the party leader, `0xC2 xx` = item
@@ -422,5 +487,73 @@ impl World {
         } else {
             Some(std::sync::Arc::new(map))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::field_env::{PropAnim, PropAnimState, PropProgram};
+
+    /// A prop whose run makes the **player** play a clip and waits for it -
+    /// the shape of `chitei2` P0[33], the transport switch: `A2 F8 04`
+    /// (player ExecMove), `AC F8 08` / `AD F8 08` (clear, then spin on the
+    /// player's end latch), then the record's story-flag write and `21`.
+    fn world_with_switch() -> (World, (u8, u8)) {
+        let mut w = World::new();
+        w.install_field_player(0);
+        // `[u8 name_len = 0][u8 anim = 0]` header, then the script at pc 2.
+        let record = vec![
+            0x00, 0x00, // header
+            0xA2, 0xF8, 0x04, // ExecMove player move 4
+            0xAC, 0xF8, 0x08, // LFlag.Clear player bit 8
+            0xAD, 0xF8, 0x08, // LFlag.Test player bit 8 (end-latch spin)
+            0x54, 0xF0, // SysFlag.Set 0x4F0
+            0x21, // end of interaction
+        ];
+        let anchor = (16, 19);
+        w.props.bank.props.insert(
+            anchor,
+            PropAnimState {
+                anim: PropAnim::spawned(1, 4, false, 0),
+                program: PropProgram::default(),
+                world: (2240, 2496),
+                collider: (2240, 2496),
+                record: 33,
+                record_body: std::sync::Arc::new(record),
+                parked_pc: 2,
+                cflags: 0x4002_0000,
+            },
+        );
+        (w, anchor)
+    }
+
+    #[test]
+    fn a_prop_run_waits_on_the_players_clip_not_on_a_blank_word() {
+        let (mut w, anchor) = world_with_switch();
+        assert!(w.start_prop_interaction(anchor));
+        let mut ticks = 0;
+        while w.dialog.inline.is_some() && ticks < PROP_RUN_PARK_TIMEOUT as usize {
+            w.tick_prop_interactions();
+            ticks += 1;
+        }
+        assert!(
+            w.system_flag_test(0x4F0),
+            "the run must get past the player's end-latch spin to its flag write \
+             (ended after {ticks} ticks)"
+        );
+        assert!(
+            ticks < 200,
+            "the spin ends when the player's clip latches its end, not on the park \
+             timeout ({ticks} ticks)"
+        );
+        assert_eq!(
+            w.props
+                .bank
+                .actor_clip(crate::field_env::PLAYER_ANCHOR_TARGET)
+                .map(|a| a.anim_id),
+            Some(4),
+            "the ExecMove binds the player's clip cursor"
+        );
     }
 }

@@ -1,0 +1,294 @@
+# Full-game story spine (schema full-game-spine-v1).
+#
+# The ordered main-story milestones from a cold New Game to the ending
+# credits, consumed by crates/engine-shell/tests/full_game_ladder.rs. See
+# docs/tooling/full-game-ladder.md for what the ladder does with it.
+#
+# Where the order comes from. Each milestone names a RETAIL ANCHOR - a save on
+# one of the library's memory cards (by card file + save name, never by block
+# number) or a catalogued save state (by scenarios.toml label + backup
+# fingerprint). The anchor is read, never committed: the ladder lifts its SC
+# save window (RAM 0x80084140..0x80086140, the block a memory card stores) and
+# checks the anchor's own scene label against `scene` below. The sequence is
+# the one the anchors themselves put in order:
+#
+#   - the two playthrough cards (`playthrough-ladder-pro00-14.mcr`,
+#     `playthrough-endgame-7saves.mcr`) are one run: their play-time counters
+#     (SC +0x430) and system-flag populations rise together across all 22
+#     saves, so they order themselves;
+#   - chapter 1 before Mt. Rikuroa has no card save, so its milestones are
+#     save states from several sessions, ordered by system-flag inclusion
+#     (a state whose set flags are, save a handful, a subset of another's
+#     precedes it) - the same test the ladder's Part A re-runs;
+#   - the ending is the `ed*` scene band the final record hands off to.
+#
+# `reach` is what arriving means:
+#   "scene"    the engine is in `scene` (Field or WorldMap);
+#   "control"  ... and the scene has handed the pad back;
+#   "flags"    ... and every flag in `reach_flags` is set - used where two
+#              consecutive milestones share a scene and only a story beat
+#              separates them. Each reach flag is one the anchor gained over
+#              its predecessor AND that a clean partition-2 (story record)
+#              SET site in that scene writes - the ladder's Part A prints
+#              the candidates, and asserts each chosen flag is set in its own
+#              anchor. Entry-script (P1[0]) writes are left out: they fire on
+#              every visit and prove no beat.
+#
+# No game text, no bytes: scene labels, flag indices, hashes and names only.
+
+[meta]
+schema = "full-game-spine-v1"
+
+# ---------------------------------------------------------------- chapter 1
+
+[[milestone]]
+id = "new_game"
+scene = "opdeene"
+seed = "new_game"
+reach = "scene"
+anchor = { kind = "state", label = "s1_newgame_field", fingerprint = "e3d6b6f329cdcf23e28ac3a4f4e0bd6ef6b5abee99a354de48f9ce207e49f7e0" }
+
+[[milestone]]
+id = "rim_elm"
+scene = "town01"
+reach = "control"
+anchor = { kind = "state", label = "s3_rimelm_freeroam", fingerprint = "e9e526595d0479ce1af9619418922ca337019ba0d1078169bc65235c22d75fc8" }
+
+[[milestone]]
+id = "tetsu_spar"
+scene = "town01"
+reach = "flags"
+reach_flags = [0x226, 0x227]
+anchor = { kind = "state", label = "v0_1_post_battle_tetsu_town", fingerprint = "1b1d645f8f8827c97f678d214fe16d273153313872ef8ce29b426baeffbf8f84" }
+
+[[milestone]]
+id = "mist_rim_elm"
+scene = "town0b"
+reach = "scene"
+anchor = { kind = "state", label = "rim_elm_gimard_victory", fingerprint = "eaa8d800571dd9c144bcac7c740d1f9dcbeae4b0f7787a4b3e07acd1e82f1a73" }
+
+[[milestone]]
+id = "hunters_spring"
+scene = "izumi"
+reach = "scene"
+anchor = { kind = "state", label = "chest_open_trace_pcsx", fingerprint = "083275b4ab53021546759c3a0d36534d43ffcce40c6dd7b1c0629414d84a07f4" }
+
+[[milestone]]
+id = "drake_castle"
+scene = "dolk"
+reach = "scene"
+anchor = { kind = "state", label = "player_steal_skeleton_pre", fingerprint = "4dda3e8b2b9099024785896db03425a53c98bb9204ee910400802d4063612b8d" }
+
+[[milestone]]
+id = "rim_elm_restored"
+scene = "town0c"
+reach = "scene"
+anchor = { kind = "state", label = "rimelm_wall_press_down", fingerprint = "5461e7a0f28d55f805b298f5c97185fdf25d7b9fc1cc6571f5d50bee97065813" }
+
+[[milestone]]
+id = "vidna"
+scene = "vell"
+reach = "scene"
+anchor = { kind = "state", label = "vell_fog_field", fingerprint = "bd407707f5aa6f437bc3c9a075416da1ac26fad3d7ea6a54cf1fd6450965775e" }
+
+[[milestone]]
+id = "ravine"
+scene = "keikoku"
+reach = "scene"
+anchor = { kind = "state", label = "keikoku_chest_pre", fingerprint = "5c450953a321496e00c7410ba49f46e2d596beb983a863f74023cb8cf8e5f26a" }
+
+[[milestone]]
+id = "snowdrift_cave"
+scene = "cave01"
+reach = "scene"
+anchor = { kind = "state", label = "terra_party_battle", fingerprint = "21a55afe042ca93a245ab201fd4d683ed9e358c7368c72cdb2d5229241379c68" }
+
+[[milestone]]
+id = "mt_rikuroa"
+scene = "rikuroa"
+reach = "scene"
+anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-00" }
+
+[[milestone]]
+id = "caruban_defeated"
+scene = "rikuroa"
+reach = "flags"
+reach_flags = [0x142]
+anchor = { kind = "state", label = "rikuroa_post_caruban", fingerprint = "1adb5c862902908041b3a43350ebed266a23c80619d4bd333a4a19a9a568d2f5" }
+
+[[milestone]]
+id = "drake_castle_revisited"
+scene = "dolk2"
+reach = "scene"
+anchor = { kind = "state", label = "dolk2_market_noa", fingerprint = "72c8fcfc1340720dcee78de5f5e1e562431fce08c09feee0b87bbc254a4f9e24" }
+
+# ---------------------------------------------------------------- chapter 2
+
+[[milestone]]
+id = "voz_forest"
+scene = "vozz"
+reach = "scene"
+anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-01" }
+
+[[milestone]]
+id = "zeto_dungeon"
+scene = "garmel"
+reach = "scene"
+anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-02" }
+
+[[milestone]]
+id = "zeto_dungeon_late"
+scene = "garmel"
+reach = "flags"
+reach_flags = [0x195]
+anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-03" }
+
+[[milestone]]
+id = "sky_gardens"
+scene = "teien"
+reach = "scene"
+anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-04" }
+
+[[milestone]]
+id = "fire_path"
+scene = "tunnelb"
+reach = "scene"
+anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-05" }
+
+[[milestone]]
+id = "mt_letona"
+scene = "retona"
+reach = "scene"
+anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-06" }
+
+[[milestone]]
+id = "ratayu"
+scene = "retock"
+reach = "scene"
+anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-07" }
+
+[[milestone]]
+id = "dohati_castle"
+scene = "dohaty"
+reach = "scene"
+anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-08" }
+
+# ---------------------------------------------------------------- chapter 3
+
+[[milestone]]
+id = "sol_tower"
+scene = "kor5"
+reach = "scene"
+# The anchor gained 0x1D4 (dohaty P2[13], the castle's closing beat); every
+# station placement - the ticket seller P1[17] among them - is parked
+# off-map until it is set.
+via = ["dohaty"]
+anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-09" }
+
+[[milestone]]
+id = "sol_tower_b2"
+scene = "korb2"
+reach = "scene"
+anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-10" }
+
+[[milestone]]
+id = "usha_research"
+scene = "doman"
+reach = "scene"
+anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-11" }
+
+[[milestone]]
+id = "nivora"
+scene = "nilboa"
+reach = "scene"
+anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-12" }
+
+[[milestone]]
+id = "nivora_late"
+scene = "nilboa"
+reach = "flags"
+reach_flags = [0x456]
+anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-13" }
+
+[[milestone]]
+id = "zora_castle"
+scene = "taiku"
+reach = "scene"
+# The anchor gained son P1[0]'s 0x034 and son's beat flags; only son and the
+# map03 P2[9] cruise (gated on 0x501, set later in taiku) name taiku.
+via = ["son"]
+anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-14" }
+
+[[milestone]]
+id = "conkram_past"
+scene = "conc"
+reach = "scene"
+anchor = { kind = "card", card = "playthrough-endgame-7saves.mcr", save = "PRO-00" }
+
+[[milestone]]
+id = "rogue_tower"
+scene = "rugi"
+reach = "scene"
+# The anchor gained 0x3E5 (conc3 P2[10]) and 0x425 (conc2 P2[10]); conc2
+# P2[20] (C2 0x3E5) is the juui1 hand-off. The shortest route skips conc3.
+via = ["conc3", "conc2"]
+anchor = { kind = "card", card = "playthrough-endgame-7saves.mcr", save = "PRO-01" }
+
+[[milestone]]
+id = "jette_fortress"
+scene = "chitei2"
+reach = "scene"
+anchor = { kind = "card", card = "playthrough-endgame-7saves.mcr", save = "PRO-02" }
+
+[[milestone]]
+id = "jette_fortress_late"
+scene = "chitei2"
+reach = "flags"
+reach_flags = [0x3C8, 0x470]
+anchor = { kind = "card", card = "playthrough-endgame-7saves.mcr", save = "PRO-03" }
+
+[[milestone]]
+id = "noaru_valley"
+scene = "noaru"
+reach = "scene"
+# The anchor gained 0x3E7 (jou P2[2]), the C2 gate of uru2 P2[10], whose
+# 0x3E8 opens the juui1 door P2[11]; jou is in Drake, which the anchor
+# reached through concend -> town0d (it gained both scenes' flags). The
+# concend portal (map03 P2[7]) opens on 0x4C8, the end of the chitei2 chain
+# the anchor also gained (0x4C4..0x4C9): the P2[13] Jette fight, then the
+# system script's post-battle spawns - so chitei2's beats come first.
+# Back from Drake the anchor went by land and cart, not by the Uru Mais warp:
+# it carries none of the warp's flags (the rikuroa P2[57] hop to uru spawns
+# only on 0x3BC, from urudre2 P2[9] then map01 P2[33]) and it gained
+# retockin P1[29]'s 0x64E, in Karisto - jiji, map02, then the station cart
+# (P1[15] spawns the P2[24] hop to station3, on map03).
+via = ["chitei2", "concend", "jou", "retockin"]
+anchor = { kind = "card", card = "playthrough-endgame-7saves.mcr", save = "PRO-04" }
+
+[[milestone]]
+id = "bio_castle"
+scene = "jouind"
+reach = "scene"
+anchor = { kind = "card", card = "playthrough-endgame-7saves.mcr", save = "PRO-10" }
+
+[[milestone]]
+id = "cort_chamber"
+scene = "jouine"
+reach = "scene"
+anchor = { kind = "state", label = "cort_evolved_pre_battle", fingerprint = "7a8266530955d4442f32b0e1f6a4b4d1e1f7c61f22683b2c2e0dafcf519b8598" }
+
+# ---------------------------------------------------------------- ending
+
+[[milestone]]
+id = "ending"
+scene = "edteien"
+reach = "scene"
+# A debug-menu credits run (a fresh save's flags), not the main playthrough:
+# it anchors the scene, not the order.
+order_check = false
+anchor = { kind = "state", label = "ending_banner_mask_closed", fingerprint = "17552e64acb105d8c9f732f1144a5dd02b88bdadf13702cd23dd34b097b928a1" }
+
+[[milestone]]
+id = "credits"
+scene = "edlast"
+reach = "scene"

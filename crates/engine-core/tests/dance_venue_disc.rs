@@ -165,3 +165,115 @@ fn entering_the_dance_stages_the_venue_and_leaving_restores_the_scene() {
         FieldCameraFrame::Venue(_)
     ));
 }
+
+/// The camera keyframe track `FUN_801CF470` runs off the overlay's key
+/// tables (`0x801D4440` / `0x801D4488`) and pose records (`0x801D43A0`):
+/// decoded off the disc, it opens on the entry's own pose and the staged
+/// dance camera then follows it beat by beat.
+#[test]
+fn the_dance_camera_follows_the_overlay_keyframe_track() {
+    use legaia_engine_core::dance_venue::{
+        DANCE_CAMERA_SEGMENT, DanceCameraPose, DanceCameraTrack, venue_camera_at,
+    };
+    let Some(dir) = gate() else { return };
+    let mut host = SceneHost::open_extracted(&dir).expect("host");
+    host.enter_field_scene("town01", 0).expect("town01");
+    let overlay = dance_overlay(&host.index);
+    let e = dance_scene_entry();
+    let track = DanceCameraTrack::from_overlay(&overlay).expect("the track decodes");
+    // Both tables open on pose 0, and pose 0 is the entry's stores
+    // (angles `0x801CF29C..0x801CF2AC`, eye trio at `0x800840B8`).
+    let entry = DanceCameraPose {
+        angles: [
+            e.camera_angles.0 as i16,
+            e.camera_angles.1 as i16,
+            e.camera_angles.2 as i16,
+        ],
+        eye: [0, e.camera_pair.0 as i32, e.camera_pair.1 as i32],
+    };
+    for mode in [DanceMode::Qualifier, DanceMode::Finals, DanceMode::FreePlay] {
+        assert_eq!(track.key_pose(mode, 0), Some(entry), "{mode:?} key 0");
+        // Every key the cycle reaches decodes, and the track does move.
+        assert!((1..13).all(|k| track.key_pose(mode, k).is_some()));
+        assert!((1..13).any(|k| track.key_pose(mode, k) != Some(entry)));
+    }
+    // The two tables diverge: the finals and free play fly a different path.
+    assert!(
+        (1..13).any(
+            |k| track.key_pose(DanceMode::Qualifier, k) != track.key_pose(DanceMode::Finals, k)
+        )
+    );
+
+    let game = DanceGame::from_overlay_for_mode(&overlay, DanceMode::Qualifier, false)
+        .expect("dance chart parses");
+    let mut camera = Camera::new();
+    camera.reset_globals_for_scene_entry();
+    host.world.enter_dance(game);
+    let frame = |host: &SceneHost, camera: &Camera| match resolve_field_camera(
+        &host.world,
+        camera,
+        None,
+        [0.0, 0.0],
+    ) {
+        FieldCameraFrame::Venue(v) => v,
+        other => panic!("the dance frames through the venue camera, got {other:?}"),
+    };
+    // Staging frame = the tick's first: key 0 at weight 0, the entry pose.
+    sync_dance_venue(&mut host.world, &mut camera);
+    assert_eq!(frame(&host, &camera), venue_camera(&e));
+    let a = track.key_pose(DanceMode::Qualifier, 0).unwrap();
+    let b = track.key_pose(DanceMode::Qualifier, 1).unwrap();
+    // One beat (`BEAT_PERIOD` = 0x119 frames) later the camera is part-way
+    // along the first segment, on the half-cosine ease; at beat 2 it has
+    // already started the second segment.
+    let period = legaia_engine_core::dance::BEAT_PERIOD as i32;
+    let mut ticks = 1;
+    for beat in 1..=2 {
+        while ticks < 1 + beat * period {
+            sync_dance_venue(&mut host.world, &mut camera);
+            ticks += 1;
+        }
+        let v = frame(&host, &camera);
+        let pose = host
+            .world
+            .minigames
+            .dance
+            .as_ref()
+            .unwrap()
+            .camera_pose()
+            .unwrap();
+        assert_eq!(v, venue_camera_at(&e, pose), "beat {beat}");
+        // Segment-local frame and the float model of the ease.
+        let into = (ticks - 1) % (DANCE_CAMERA_SEGMENT + 1);
+        let (from, to) = if ticks - 1 <= DANCE_CAMERA_SEGMENT {
+            (a, b)
+        } else {
+            let c = track.key_pose(DanceMode::Qualifier, 2).unwrap();
+            (b, c)
+        };
+        let step = f64::from((into << 10) / DANCE_CAMERA_SEGMENT);
+        let w = 0.5 * (1.0 - (std::f64::consts::PI * step / 1024.0).cos());
+        for i in 0..3 {
+            let want = f64::from(from.eye[i]) + f64::from(to.eye[i] - from.eye[i]) * w;
+            assert!(
+                (f64::from(pose.eye[i]) - want).abs() <= 2.0,
+                "beat {beat} eye[{i}]: {} vs {want}",
+                pose.eye[i]
+            );
+        }
+        eprintln!(
+            "beat {beat}: tick {ticks}, key {:?}, eye {:?}, angles {:?}",
+            host.world
+                .minigames
+                .dance
+                .as_ref()
+                .unwrap()
+                .camera_track()
+                .unwrap()
+                .counters(),
+            pose.eye,
+            pose.angles
+        );
+        assert_ne!(v, venue_camera(&e), "beat {beat}: the camera moved");
+    }
+}

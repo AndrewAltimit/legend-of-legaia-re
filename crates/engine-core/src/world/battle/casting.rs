@@ -999,21 +999,27 @@ impl World {
     /// summon cast runs through the slot-7 summon body - its namesake
     /// `battle_data` creature ([`crate::summon::summon_creature_id`]) - so the
     /// attacker element is that creature's record `+0x1D`, *not* the casting
-    /// character's. Resolved off the loaded monster catalog by matching the
-    /// spell's display name ([`crate::retail_magic`]) to the lowest creature id
-    /// of that name (the `"$2"`/`"$3"` higher-level variants carry distinct names
-    /// and are excluded). `None` for a non-summon id or when the catalog / spell
-    /// name doesn't resolve.
+    /// character's. Resolved through [`Self::summon_creature_def`]. `None` for a
+    /// non-summon id or when the creature doesn't resolve.
     /// The `battle_data` creature def a player Seru-magic `spell_id` summons -
     /// the namesake creature (Gimard spell → Gimard creature; see
-    /// [`crate::summon::summon_creature_id`]). Resolved by matching the
-    /// spell's display name against the loaded monster catalog, so the
+    /// [`crate::summon::summon_creature_id`]). Read from
+    /// [`crate::world::DiscTables::summon_creatures`], the archive record the
+    /// scene entry resolved for every summon; failing that, the spell's
+    /// display name is matched against the loaded monster catalog, so the
     /// `"$2"`/`"$3"` higher-level enemy variants are excluded. `None` when the
-    /// id isn't a summon or the catalog doesn't carry the creature (disc-free
-    /// / synthetic battles).
+    /// id isn't a summon or neither source carries the creature (disc-free /
+    /// synthetic battles).
     fn summon_creature_def(&self, spell_id: u8) -> Option<&crate::monster_catalog::MonsterDef> {
         if !crate::summon::SERU_SUMMON_IDS.contains(&spell_id) {
             return None;
+        }
+        // The archive-resolved summon body, installed at scene entry for
+        // every summon. The scene catalog below holds only the scene's own
+        // monsters, so on its own it resolves a summon only where the
+        // creature also fights as an enemy.
+        if let Some(def) = self.tables.summon_creatures.get(&spell_id) {
+            return Some(def);
         }
         let name = crate::retail_magic::get(spell_id)?.name;
         self.tables
@@ -1140,6 +1146,9 @@ impl World {
                         a.battle.assign_hp_bar(
                             delta.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16,
                         );
+                    }
+                    if before == 0 {
+                        self.stand_revived_party_member(target as usize);
                     }
                 }
                 self.battle.hit_fx.push(BattleHitFx {

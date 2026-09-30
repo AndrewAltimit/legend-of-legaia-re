@@ -13,9 +13,15 @@
 //!   only stage the walk clip and poll the range.
 //!   [`World::tick_battle_locomotion`] is that drive's engine slot. There is
 //!   **no walk-home leg**: an action leaves its combatants standing where it
-//!   put them, and the seat pair the range law measures against is re-taken
-//!   from the live pair at `DoneCleanup` - see
-//!   [`World::tick_battle_locomotion`] for the capture evidence.
+//!   put them - see [`World::tick_battle_locomotion`] for the capture
+//!   evidence.
+//! - **The body pair is re-derived every frame.** `+0x3C`/`+0x40`, the pair
+//!   the range law measures a target by and the separation pass measures
+//!   overlap on, is the live pair plus the facing-rotated pose centroid,
+//!   written by the pose decoder `FUN_8004998C` on every drawn frame
+//!   ([`World::refresh_battle_body_pairs`]). It is stamped with the
+//!   formation seat at setup, which is where the "seat" name the port's
+//!   field carries comes from, but it does not hold still.
 //! - **The separation pass** `FUN_80051078` / `FUN_80050BB8` runs on the
 //!   line after the action SM, every live battle frame (`FUN_80046A20`:
 //!   `jal 0x801E295C; jal 0x80051078`). [`World::tick_battle_separation`]
@@ -56,6 +62,43 @@ const DEFAULT_SPEED_SCALE: u8 = 4;
 /// apart, so at threshold `(r1+r2)/6` this choice fires no party-party
 /// nudge from authored seats either way.
 const PARTY_SEPARATION_RADIUS: i16 = 14 << 5;
+
+/// The render scale `+0x72` the body-pair store multiplies by: the actor
+/// allocator's `0x1000` (`FUN_80020DE0`), 4.12 unity.
+const BATTLE_RENDER_SCALE: i32 = 0x1000;
+
+/// The pose centroid `FUN_8004998C` accumulates: each part's translation
+/// summed in 16-bit halfwords (`lhu`/`addu`/`sh`), then divided by the part
+/// count with a truncating signed `div` (`0x8004A3DC..0x8004A42C`). Returns
+/// the `(x, z)` pair; `(0, 0)` for an empty pose.
+pub(crate) fn pose_centroid_xz(parts: &[([i16; 3], [i16; 3])]) -> (i16, i16) {
+    let n = parts.len();
+    if n == 0 {
+        return (0, 0);
+    }
+    let (mut sx, mut sz) = (0i16, 0i16);
+    for (t, _) in parts {
+        sx = sx.wrapping_add(t[0]);
+        sz = sz.wrapping_add(t[2]);
+    }
+    let n = n as i32;
+    ((i32::from(sx) / n) as i16, (i32::from(sz) / n) as i16)
+}
+
+/// The facing-rotated, scaled centroid offset the body-pair store adds to
+/// the live pair (`FUN_8004998C` `0x8004A43C..0x8004A538`), with the retail
+/// multiply order and arithmetic shifts. The `0xFFF - f` reads are the
+/// table's own mirrored index, not a negated angle.
+pub(crate) fn body_offset(facing: u16, cx: i16, cz: i16, scale: i32) -> (i16, i16) {
+    let f = facing & 0xFFF;
+    let m = 0xFFF - f;
+    let (cx, cz) = (i32::from(cx), i32::from(cz));
+    let sin = |a: u16| i32::from(motion::sin12(a));
+    let cos = |a: u16| i32::from(motion::trig12(a).1);
+    let x = ((((sin(f) * cz) >> 12) + ((cos(m) * cx) >> 12)) * scale) >> 12;
+    let z = ((((sin(m) * cx) >> 12) + ((cos(f) * cz) >> 12)) * scale) >> 12;
+    (x as i16, z as i16)
+}
 
 impl World {
     /// The monster record `+0x1F` size class seated in `slot`, `0` for a
@@ -208,37 +251,27 @@ impl World {
     /// retail's frame order (the actor-list anim tick runs before
     /// `FUN_80046A20`'s SM dispatch).
     ///
-    /// One drive and one commit:
+    /// Opens with the **body-pair refresh** ([`Self::refresh_battle_body_pairs`]):
+    /// every actor's `+0x3C`/`+0x40` pair is re-derived from its live pair
+    /// and its pose, which is what the range law and the separation pass
+    /// read this frame. Then one drive:
     ///
     /// - **Approach** (acting actor, states `0x15`/`0x16`/`0x19`): step the
     ///   live pair along the facing toward the target, gated on the range
     ///   check still failing - the retail positive-speed gate, which stops
     ///   the walk exactly on arrival - and clamped so a step never crosses
     ///   the target's live position.
-    /// - **Ground commit** (state `0x50`, once per action): copy every living
-    ///   actor's live pair onto its seat pair. **Nothing walks home.**
     ///
-    /// ## Why there is no walk-home leg
-    ///
-    /// Retail does not return a combatant to its authored formation seat when
-    /// an action ends - it leaves it standing where the fight put it, and the
-    /// pair the range law measures against moves with it. Four capture-library
-    /// states of the same solo fight make that measurable: two read the
-    /// authored formation (party `z = -800`, monster `z = +800`, 1600 apart)
-    /// and two - later in the same fight - read the party member at
-    /// `z ~ -540` and the monster at `z ~ -250`, ~300 apart and both far off
-    /// the formation, with each actor's `+0x3C`/`+0x40` pair sitting within
-    /// ~110 units of its live `+0x34`/`+0x38` pair in every one of them. An
-    /// actor that had been walked home could not read those positions, and a
-    /// fixed seat could not stay that close to a live pair that has moved.
-    ///
-    /// So the engine commits the ground instead of undoing it: the seat is
-    /// held still for the duration of an action (a stable goal for the
-    /// approach and a stable reference for the separation pass) and then
-    /// re-taken from the live pair at `DoneCleanup`. The invariant the
-    /// seat-measured range law needs - a parked actor is *at* the pair the
-    /// gate measures - survives by the same route retail keeps it, and the
-    /// next attacker walks at where its target actually stands.
+    /// **Nothing walks home.** Retail does not return a combatant to its
+    /// authored formation seat when an action ends - it leaves it standing
+    /// where the fight put it. Four capture-library states of the same solo
+    /// fight make that measurable: two read the authored formation (party
+    /// `z = -800`, monster `z = +800`, 1600 apart) and two - later in the same
+    /// fight - read the party member at `z ~ -540` and the monster at
+    /// `z ~ -250`, both far off the formation, with each actor's
+    /// `+0x3C`/`+0x40` pair sitting within ~110 units of its live
+    /// `+0x34`/`+0x38` pair in every one of them. That ~110 is the pose
+    /// centroid the refresh adds: the pair is not a seat at all.
     ///
     /// ## The backstep
     ///
@@ -262,6 +295,7 @@ impl World {
     pub(in crate::world) fn tick_battle_locomotion(&mut self) {
         use vm::battle_action::ActionState;
         self.seed_battle_seats();
+        self.refresh_battle_body_pairs();
         let Some(state) = ActionState::from_byte(self.battle_ctx.action_state) else {
             return;
         };
@@ -280,8 +314,70 @@ impl World {
             }
             self.drive_playing_root_motion(i);
         }
-        if state == ActionState::DoneCleanup {
-            self.commit_battle_ground();
+    }
+
+    /// Re-derive every seated actor's `+0x3C`/`+0x40` **body pair** from its
+    /// live pair and its current pose - the store retail's pose decoder
+    /// makes on every drawn frame.
+    ///
+    /// `FUN_8004998C` (called per actor from the battle draw callback
+    /// `FUN_80048A08`) sums the decoded pose's per-part translations into
+    /// scratch `+0x120/+0x122/+0x124` (halfword adds, `0x8004A380..0x8004A3B8`
+    /// and the interpolating twin at `0x8004A230..0x8004A258`), divides each
+    /// by the part count (`div`, `0x8004A3DC..0x8004A42C`) - the pose's
+    /// **centroid** - then rotates the `(x, z)` centroid by the facing
+    /// `+0x46`, scales by the render scale `+0x72`, and adds it to the live
+    /// pair:
+    ///
+    /// ```text
+    /// +0x3C = +0x34 + ((sin[f]*cz >> 12) + (cos[0xFFF-f]*cx >> 12)) * s >> 12
+    /// +0x40 = +0x38 + ((sin[0xFFF-f]*cx >> 12) + (cos[f]*cz >> 12)) * s >> 12
+    /// ```
+    ///
+    /// (`0x8004A43C..0x8004A538`; `sin` = `*0x8007B81C`, `cos` =
+    /// `*0x8007B7F8`). So the pair is the actor's body position, re-taken
+    /// from the live pair every frame - never a fixed seat. Everything that
+    /// measures an actor from outside reads it: the range law's target side
+    /// (`FUN_8004E2F0`) and both sides of the separation pass
+    /// (`FUN_80050BB8`). The engine held it still for the length of an action
+    /// instead, and that is what let a boss fight park forever: the
+    /// separation pass nudges the **live** pairs of two actors whose pairs
+    /// overlap, so two party members whose held pairs overlapped were pushed
+    /// apart every frame without the overlap ever clearing, walked tens of
+    /// thousands of units off the stage, and the monster's approach - clamped
+    /// at its target's live position, measured against the stale pair -
+    /// never came in range.
+    ///
+    /// Engine choices, each noted where it differs: the refresh runs at the
+    /// head of the locomotion pass, not at the end of the previous frame's
+    /// draw - the live pairs it reads are the same ones (nothing moves them
+    /// between retail's draw and its next anim tick), only the pose is one
+    /// frame newer. The render scale is the allocator's `0x1000` (no battle
+    /// path the port models rewrites `+0x72`). The `+0x44` pitch arm
+    /// (`0x8004A534..0x8004A5F8`), which only re-derives `z` when a battle
+    /// actor carries a pitch, is not taken - the port's battle actors carry
+    /// none. An actor with no pose (no clip player) takes a zero centroid,
+    /// so its pair is its live pair.
+    // PORT: FUN_8004998C (`0x8004A3DC..0x8004A5F8`, the body-pair store)
+    pub(in crate::world) fn refresh_battle_body_pairs(&mut self) {
+        for a in self.actors.iter_mut() {
+            if a.battle.seat.is_none() {
+                continue;
+            }
+            let centroid = if a.battle_animation.is_some() {
+                a.pose_frame
+                    .as_ref()
+                    .map(|p| pose_centroid_xz(&p.bone_outputs))
+            } else {
+                None
+            };
+            let (dx, dz) = centroid
+                .map(|(cx, cz)| body_offset(a.battle.facing_angle, cx, cz, BATTLE_RENDER_SCALE))
+                .unwrap_or((0, 0));
+            a.battle.seat = Some((
+                a.move_state.world_x.wrapping_add(dx),
+                a.move_state.world_z.wrapping_add(dz),
+            ));
         }
     }
 
@@ -317,19 +413,6 @@ impl World {
         let ms = &mut self.actors[slot].move_state;
         ms.world_x = ms.world_x.wrapping_add(dx as i16);
         ms.world_z = ms.world_z.wrapping_add(dz as i16);
-    }
-
-    /// Re-take every living actor's seat pair from its live pair - the
-    /// end-of-action ground commit described on
-    /// [`Self::tick_battle_locomotion`]. A downed actor keeps its seat so the
-    /// slot it fell in stays the reference a revive re-enters at.
-    fn commit_battle_ground(&mut self) {
-        for a in self.actors.iter_mut() {
-            if a.battle.liveness == 0 {
-                continue;
-            }
-            a.battle.seat = Some((a.move_state.world_x, a.move_state.world_z));
-        }
     }
 
     /// Approach leg: facing recompute + range-gated root-motion step toward
@@ -485,8 +568,10 @@ mod tests {
         // One more pass is a no-op (the positive-speed gate).
         w.tick_battle_locomotion();
         assert_eq!(w.actors[0].move_state.world_z, arrived_z);
-        // The seat stayed put - only the live pair walked.
-        assert_eq!(w.battle_seat_of(0), (0, start_z));
+        // The body pair follows the live pair (no pose here, so a zero
+        // centroid): it is re-taken at the head of every pass.
+        w.tick_battle_locomotion();
+        assert_eq!(w.battle_seat_of(0), (0, arrived_z));
     }
 
     #[test]
@@ -524,52 +609,97 @@ mod tests {
     }
 
     #[test]
-    fn done_cleanup_commits_the_ground_as_the_new_seat() {
-        let mut w = battle_world();
-        w.actors[0].battle.liveness = 1;
-        w.actors[1].battle.liveness = 1;
-        w.tick_battle_locomotion(); // seed seats
-        let seat0 = w.battle_seat_of(0);
-        let arrived = (seat0.0 + 7, seat0.1 + 1360);
-        w.actors[0].move_state.world_x = arrived.0;
-        w.actors[0].move_state.world_z = arrived.1;
-        // Mid-action the seat is still the one the approach aimed at.
-        w.battle_ctx.active_actor = 0;
-        w.battle_ctx.action_state = ActionState::AttackChain.as_byte();
-        w.tick_battle_locomotion();
-        assert_eq!(
-            w.battle_seat_of(0),
-            seat0,
-            "the seat holds during an action"
-        );
-        // The action's cleanup state re-takes it from the live pair.
-        w.battle_ctx.action_state = ActionState::DoneCleanup.as_byte();
-        w.tick_battle_locomotion();
-        assert_eq!(
-            w.battle_seat_of(0),
-            arrived,
-            "DoneCleanup commits the ground the action ended on"
-        );
-        // ... which is what keeps the seat-measured range law honest: the
-        // next attacker now walks at where this actor actually stands.
-        assert_eq!(
-            w.battle_range_metric(1, 0),
-            w.battle_range_metric(1, 0),
-            "range metric resolves against the committed seat"
-        );
-    }
-
-    #[test]
-    fn a_downed_actor_keeps_its_seat_through_the_commit() {
+    fn the_body_pair_follows_the_live_pair_every_frame() {
+        // Retail's pose decoder re-takes `+0x3C`/`+0x40` from the live pair
+        // on every drawn frame (`FUN_8004998C`); the engine used to hold it
+        // for a whole action and re-take it only at DoneCleanup.
         let mut w = battle_world();
         w.actors[0].battle.liveness = 1;
         w.actors[1].battle.liveness = 0;
-        w.tick_battle_locomotion();
-        let seat1 = w.battle_seat_of(1);
-        w.actors[1].move_state.world_x = seat1.0 + 500;
-        w.battle_ctx.action_state = ActionState::DoneCleanup.as_byte();
-        w.tick_battle_locomotion();
-        assert_eq!(w.battle_seat_of(1), seat1, "a downed slot is not re-seated");
+        w.tick_battle_locomotion(); // seed
+        for (slot, state) in [
+            (0usize, ActionState::AttackChain),
+            (1usize, ActionState::DoneCleanup),
+        ] {
+            let seat = w.battle_seat_of(slot);
+            let moved = (seat.0 + 7, seat.1 + 1360);
+            w.actors[slot].move_state.world_x = moved.0;
+            w.actors[slot].move_state.world_z = moved.1;
+            w.battle_ctx.action_state = state.as_byte();
+            w.tick_battle_locomotion();
+            assert_eq!(
+                w.battle_seat_of(slot),
+                moved,
+                "slot {slot} in {state:?}: the body pair is the live pair"
+            );
+        }
+    }
+
+    #[test]
+    fn body_offset_rotates_the_centroid_by_the_facing() {
+        // Facing 0: the centroid passes straight through (the `0xFFF`
+        // mirror's sin(0xFFF) = -6 truncates away for small centroids).
+        let (x, z) = body_offset(0, 0, 100, BATTLE_RENDER_SCALE);
+        assert!(
+            x.abs() <= 1 && (99..=100).contains(&z),
+            "facing 0 ({x},{z})"
+        );
+        // A half turn flips it.
+        let (x, z) = body_offset(0x800, 0, 100, BATTLE_RENDER_SCALE);
+        assert!(
+            x.abs() <= 1 && (-101..=-99).contains(&z),
+            "half turn ({x},{z})"
+        );
+        // A quarter turn swings z into x.
+        let (x, z) = body_offset(0x400, 0, 100, BATTLE_RENDER_SCALE);
+        assert!(
+            (99..=100).contains(&x) && z.abs() <= 1,
+            "quarter turn ({x},{z})"
+        );
+        // Centroid: halfword sum, truncating divide by the part count.
+        let parts = [
+            ([10, 0, -7], [0; 3]),
+            ([11, 5, 0], [0; 3]),
+            ([0, 0, 0], [0; 3]),
+        ];
+        assert_eq!(pose_centroid_xz(&parts), (7, -2));
+        assert_eq!(pose_centroid_xz(&[]), (0, 0));
+    }
+
+    #[test]
+    fn overlapping_pairs_separate_instead_of_running_away() {
+        // The taiku / rugi boss park: two party members whose pairs overlap.
+        // The separation pass nudges the live pairs; with the body pair
+        // re-taken from the live pair each frame the overlap clears in a
+        // handful of frames. Held still (the old engine seat), the same
+        // overlap nudged the live pairs every frame for the whole action and
+        // flung both members tens of thousands of units off the stage.
+        let mut w = World::new();
+        w.enter_battle(2, 1);
+        for i in 0..3 {
+            w.actors[i].battle.liveness = 1;
+            w.actors[i].battle.seat = None;
+        }
+        w.actors[0].move_state.world_x = 0;
+        w.actors[0].move_state.world_z = 648;
+        w.actors[1].move_state.world_x = 68;
+        w.actors[1].move_state.world_z = 595;
+        w.battle_ctx.action_state = ActionState::AttackChain.as_byte();
+        w.battle_ctx.active_actor = 2;
+        for _ in 0..3000 {
+            w.tick_battle_locomotion();
+            w.tick_battle_separation();
+        }
+        for i in 0..2 {
+            let (x, z) = (
+                w.actors[i].move_state.world_x,
+                w.actors[i].move_state.world_z,
+            );
+            assert!(
+                x.abs() < 1000 && (0..2000).contains(&z),
+                "party slot {i} ran away to ({x},{z})"
+            );
+        }
     }
 
     #[test]
@@ -671,11 +801,12 @@ mod tests {
             end_dist, max_dist,
             "the attacker must hold the ground it closed to"
         );
-        // ... and that ground is now its seat (committed at DoneCleanup).
+        // ... and its body pair stands on that ground.
+        w.tick_battle_locomotion();
         assert_eq!(
             w.battle_seat_of(0),
             end,
-            "the action's ground was committed as the new seat"
+            "the body pair follows the ground the action ended on"
         );
     }
 }

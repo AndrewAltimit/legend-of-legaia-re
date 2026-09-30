@@ -62,6 +62,12 @@ const CUPBOARD_ANIM: u8 = 2;
 const HOUSE_DOOR_ANIM: u8 = 1;
 
 fn extracted_dir() -> Option<PathBuf> {
+    if let Some(d) = std::env::var_os("LEGAIA_EXTRACTED_DIR").map(PathBuf::from)
+        && d.join("PROT.DAT").exists()
+        && d.join("CDNAME.TXT").exists()
+    {
+        return Some(d);
+    }
     for c in ["extracted", "../extracted", "../../extracted"] {
         let d = PathBuf::from(c);
         if d.join("PROT.DAT").exists() && d.join("CDNAME.TXT").exists() {
@@ -607,5 +613,46 @@ fn a_prop_whose_spawn_pass_does_not_hold_it_loops() {
         seen.len() > 2 && seen.contains(&0),
         "the windmill must cycle through its clip and wrap (saw {} frames)",
         seen.len()
+    );
+}
+
+/// Rayman's gondola (`rayman` P0[4]) walks the player aboard before it swings
+/// off: its touch pass issues `B7 F8 04 81` - a YIELD against the **player**
+/// (`0xF8`) - and then its own `AB 04 07` / `AD 04 08` clip spin. The YIELD's
+/// halt bit belongs on the player; landing it on the prop's own context made
+/// the dispatcher's halted-target early-out refuse `AB 04 07` for good, and
+/// the ride sat on the prop-run timeout instead of reaching its scene change.
+#[test]
+fn a_player_aimed_yield_does_not_halt_the_prop_that_issues_it() {
+    if gate().is_none() {
+        return;
+    }
+    let extracted = extracted_dir().expect("gate checked it");
+    let mut host =
+        legaia_engine_core::scene::SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    host.enter_field_scene("rayman", 0).expect("enter rayman");
+    let w = &mut host.world;
+    let Some((&anchor, _)) = w.props.bank.props.iter().find(|(_, s)| s.record == 4) else {
+        panic!("rayman: no prop bound to P0[4]");
+    };
+    assert!(w.start_prop_interaction(anchor), "the touch starts the run");
+    let mut max_pc = 0usize;
+    let mut ticks = 0usize;
+    for i in 0..600 {
+        prop_tick(w, 0);
+        ticks = i + 1;
+        match w.dialog.inline.as_ref() {
+            Some(id) => max_pc = max_pc.max(id.pc),
+            None => break,
+        }
+        if max_pc > 0x42 {
+            break;
+        }
+    }
+    println!("rayman P0[4]: the gondola run reached pc {max_pc:#x} in {ticks} ticks");
+    assert!(
+        max_pc > 0x42,
+        "the run must get past its own clip spin (`AB 04 07` at 0x33, `AD 04 08` at 0x3F); \
+         it stopped at {max_pc:#x}"
     );
 }

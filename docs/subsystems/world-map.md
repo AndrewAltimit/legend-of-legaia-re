@@ -579,7 +579,17 @@ load at `0x801D0EF8` is `lbu v1,0x7f(t1)` against the scratchpad base
 `0x801EE02C`. A `_DAT_1F80038F` reading is four bytes short. The
 panel is built once it reaches zero. The scene-entry path arms the same
 countdown but consults `_DAT_8007B5F4` as well, shortening it to `0` in view
-mode 0 and to `0x50` in view mode 1.
+mode 0 and to `0x50` in view mode 1. That entry arm is taken on any of four
+terms (`0x801D0DC0..0x801D0E0C`), the first being the player object's
+engaged bit `+0x10 & 0x80000` (`lw a1,0x1c(s0)` off `0x8007C348` is
+`_DAT_8007C364`); the others are `_DAT_1F800394 & 0x400`,
+`_DAT_8007B6B4 != 0` and `_DAT_8007B6B0 == 0`. The script runner
+`FUN_80039B7C` raises the engaged bit on every frame it steps a spawned
+context, so a script that holds the player keeps the countdown rearming and
+the HUD never comes up - which is why no ending scene, whose entry script
+spawns the credits record and never lets it end, shows a party readout. The
+port's `world_map_panel_host::field_hud_rearm_held` answers that term for
+both hosts.
 
 The panel's top edge is `12`, except that the player's own position is
 projected through `FUN_800195A8` first and the panel drops to `0xAA` when the
@@ -1100,6 +1110,20 @@ VM's op-`0x70` semantics. (This falsifies the earlier "dolk2 is reached from a
 dungeon interior" reading - no interior scene lists `dolk2`; it is the same hub
 entrance as `dolk`, chosen by flag `0x142`. Where retail *sets* `0x142` - the
 dolk-dungeon-clear writer - is unrecovered, like the Zeto battle-id writer.)
+
+**Object-bound entrances.** A few hub entrances are no walk-on band at all but
+a `.MAP` **object** whose key tile binds a MAN record through a gate-0
+trigger (the scene-init spawner `FUN_8003A55C`; see
+[field-locomotion.md](field-locomotion.md)). The record runs on contact, and
+its path to a `0x3F` branches on story flags like any door. `map01`'s Garmel
+mouth is `P0[6]`: it tests `0x2C5` and `0x19A` (the latter parks it shut), and
+otherwise raises the place-name flag `2` and changes to GARMEL; `P0[10]`, the
+Drake castle door, runs the same `0x142` `dolk` / `dolk2` choice as the walk-on
+records. `SceneHost::enter_world_map_scene` walks every object bind's flat
+record against the live flags (`man_field_scripts::flat_record_path_walk`) and
+installs an `OverworldPortal` with `object: true` at the object's contact
+centre for each path that ends in a `0x3F`; the crossing replays the flag
+writes along that path, since the record's opening ops are not all flag ops.
 
 Overworld walk-on **beat** records are the other half. Not every gate-1 kind-1
 tile trigger on a hub is a portal: the Drake mist-wall force-walk bands (`map01`

@@ -440,6 +440,8 @@ mod tests {
             anim_id: 0,
             anchor: (0, 0),
             floor: Default::default(),
+            cell: (0, 0),
+            cull_radius: 0,
         }
     }
 

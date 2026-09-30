@@ -71,6 +71,26 @@ pub const BATTLE_THEME_1_BGM_ID: u16 = 2026;
 /// `0x370` = extraction 878. See [`BATTLE_THEME_1_BGM_ID`].
 pub const BATTLE_THEME_2_BGM_ID: u16 = 2027;
 
+/// Extraction index of battle bundle `0` (raw `0x36F`, the `sound_data2`
+/// battle-bank run the intro's phase 2 loads from, `0x36F + id`).
+pub const BATTLE_BANK_BASE_ENTRY: u32 = 877;
+
+/// The global-pool track each battle bundle `0x36F + N` plays, `N` being the
+/// battle sound set (`_DAT_8007B880`). Every entry of the battle bank carries a
+/// byte-identical copy of one `music_01` track's SEQ, which is what pins this
+/// join (`crates/engine-core/tests/battle_bank_bgm_disc.rs`): the two random-
+/// encounter themes, the boss themes, and the four story fights' own scores.
+pub const BATTLE_BANK_BGM_IDS: [u16; 10] =
+    [2026, 2027, 2028, 2030, 2032, 2031, 2051, 2067, 2061, 2073];
+
+/// The track battle sound set `set` loads: `Some` for `0..=9`, `None` for the
+/// "no battle track" set `-1` (and anything past the bank).
+pub fn battle_bank_bgm_id(set: i32) -> Option<u16> {
+    usize::try_from(set)
+        .ok()
+        .and_then(|i| BATTLE_BANK_BGM_IDS.get(i).copied())
+}
+
 /// The extraction-space PROT entry that holds a sound-test index's
 /// `[VAB][SEQ]` pair, honoring the 2-entry gap at index 68. `None` past the
 /// last row. This is the inverse of [`sound_test_index_for_prot_entry`] and

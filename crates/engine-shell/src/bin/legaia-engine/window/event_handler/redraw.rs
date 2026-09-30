@@ -159,12 +159,11 @@ impl PlayWindowApp {
             // frozen and every pad edge routes into the entry SM (one
             // cell / glyph per press). Mirrors the opening `town01`
             // naming prompt, which suspends the field VM.
-            if self.session.host.world.name_entry_active() {
-                let input =
-                    legaia_engine_core::name_entry::NameEntryInput::from_pad_edge(pressed_edge);
-                self.session.host.world.step_name_entry(input);
-                // Keep the frame counter advancing so the caret blinks.
-                self.session.host.world.frame = self.session.host.world.frame.wrapping_add(1);
+            // The routing is the engine's (`World::step_name_entry_frame`, the
+            // kernel `BootSession::tick` runs for every other driver): the
+            // edge drives the entry SM and the frame counter advances so the
+            // caret blinks. This arm adds only the window's frame-tail skip.
+            if self.session.host.world.step_name_entry_frame(pressed_edge) {
                 // Same reason as the boot-UI arm above: the party readout's
                 // decision kernel is stepped in the fall-through path and its
                 // suppression predicate names this state, so an arm that
@@ -493,6 +492,7 @@ impl PlayWindowApp {
                 self.tick_battle_face_stamps();
                 self.tick_battle_status_clut();
                 self.tick_battle_effect_clut();
+                self.tick_battle_stage_shell();
             }
             // World-map ocean shimmer: cycle the 13-frame CLUT animation
             // (self-gates to None off the world map).
@@ -580,6 +580,17 @@ impl PlayWindowApp {
                 ],
             );
         }
+        // Retail's visible-tile crop: the cell rectangle the field render
+        // library walks this frame (`field_view_window`, the shared kernel the
+        // browser play page asks too). The terrain draws are gated per draw
+        // below; the ground re-uploads a cropped index list whenever the
+        // rectangle moves.
+        let view_cells = legaia_engine_core::field_view_window::field_view_cells(
+            &self.session.host.world,
+            legaia_engine_core::field_view_window::framing_is_retail(&self.session.camera)
+                && !self.field_debug_camera,
+        );
+        self.sync_ground_crop(view_cells.as_ref());
         // A tick this frame may have flipped the world into
         // SceneMode::Cutscene (field-VM FMV-trigger op). Start
         // windowed STR playback if so; a cut/missing slot drains the
@@ -804,25 +815,19 @@ impl PlayWindowApp {
                 }
                 None => r.clear_depth_cue_ramp(),
             }
-            // Retail GTE NCLIP winding rejection, scoped to the in-engine
-            // cutscene camera: the opdeene prologue's crater-rim tableau shot
-            // sits INSIDE the scene's closed cave-wall backdrop mesh, and
-            // retail's per-prim NCLIP is what discards the shell's near wall
-            // (otherwise it renders over the whole tableau - the "wall of
-            // gold burying the camera" report). The field frame draws raw
-            // retail vertices under a camera-side Y-flip, which mirrors the
-            // projected winding, so retail's front faces arrive CW - mode 2
-            // (discard front-facing = discard CCW under the pipelines'
-            // default Ccw front-face) keeps them. Off outside the cutscene
-            // camera (free-roam field / battle / world map keep both-sided
-            // draws; their per-pass winding parities differ). The world-map
-            // fly-in leg keeps both-sided draws too - the continent terrain's
-            // winding parity is the world-map pass's, not the field pass's,
-            // so the field-tuned cull would eat the ground tiles.
-            let in_world_map_now = self.session.host.world.mode == SceneMode::WorldMap;
+            // Retail GTE NCLIP winding rejection over the whole field pass
+            // (`camera_view::nclip_cull_mode`): retail culls the back faces
+            // of every field mesh, which is what hides a sky dome's outer
+            // shell (korout, retona) and the opdeene prologue shot's near
+            // cave wall. The field frame draws raw retail vertices under a
+            // camera-side Y-flip, which mirrors the projected winding, so
+            // retail's front faces arrive CW - mode 2 (discard front-facing
+            // = discard CCW under the pipelines' default Ccw front-face)
+            // keeps them. The world map, battle and the minigame venues keep
+            // both-sided draws (their per-pass winding parities differ).
             let nclip_mode = legaia_engine_core::camera_view::nclip_cull_mode(
                 cutscene_cam.is_some(),
-                in_world_map_now,
+                self.session.host.world.mode,
             );
             r.set_backface_cull(nclip_mode);
             // The overworld's per-vertex screen-Y bend (`FUN_800271A8`'s
@@ -1529,8 +1534,14 @@ impl PlayWindowApp {
                     // cliff-top town core) render ABOVE sea-level
                     // tier-0 cells, matching retail. Pipelines don't
                     // cull, so winding is immaterial.
+                    // Under the visible-tile crop the cropped copy draws
+                    // instead (`sync_ground_crop`).
+                    let ground = match (&view_cells, &self.ground_crop) {
+                        (Some(_), Some((_, m))) => m.as_ref(),
+                        _ => self.ground_heightfield.as_ref(),
+                    };
                     if layer_on("hf")
-                        && let Some(hf_mesh) = self.ground_heightfield.as_ref()
+                        && let Some(hf_mesh) = ground
                     {
                         draws.push(SceneDraw {
                             mesh: hf_mesh,
@@ -1542,7 +1553,16 @@ impl PlayWindowApp {
                     // the buildings): the `CELL_VISIBLE` field-map tiles
                     // (stone plaza, paths, riverbank).
                     if layer_on("tiles") {
-                        for (mesh_idx, model) in &self.field_terrain_draws {
+                        for (di, (mesh_idx, model)) in self.field_terrain_draws.iter().enumerate() {
+                            if !legaia_engine_core::field_view_window::terrain_draw_visible(
+                                view_cells.as_ref(),
+                                self.field_terrain_cell_keys
+                                    .get(di)
+                                    .copied()
+                                    .unwrap_or_default(),
+                            ) {
+                                continue;
+                            }
                             let mesh = self
                                 .field_morph_live
                                 .get(mesh_idx)
@@ -1561,7 +1581,18 @@ impl PlayWindowApp {
                     // the floor shows holes where a tile's mesh carries
                     // no textured prims.
                     if layer_on("ctiles") {
-                        for (mesh_idx, model) in &self.field_terrain_color_draws {
+                        for (di, (mesh_idx, model)) in
+                            self.field_terrain_color_draws.iter().enumerate()
+                        {
+                            if !legaia_engine_core::field_view_window::terrain_draw_visible(
+                                view_cells.as_ref(),
+                                self.field_terrain_color_cell_keys
+                                    .get(di)
+                                    .copied()
+                                    .unwrap_or_default(),
+                            ) {
+                                continue;
+                            }
                             if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
                                 color_draws.push(ColorSceneDraw {
                                     mesh,
@@ -1900,12 +1931,20 @@ impl PlayWindowApp {
                     let Some(tmd_idx) = actor.tmd_binding else {
                         continue;
                     };
-                    // In a stage-dome battle, draw only the ACTIVE battle
-                    // actors (party + monsters). The scene-init actors
-                    // (bound but inactive, parked at the origin) would
-                    // otherwise pile their meshes at world (0,0,0) - the
-                    // "duplicate Vahn" + scattered scene geometry.
-                    if in_battle && self.battle_stage_mesh.is_some() && !actor.active {
+                    // Draw only ACTIVE (spawned) actors -
+                    // `World::actor_slot_drawn`. The never-spawned slots
+                    // `init_scene_animations` pre-binds would otherwise draw
+                    // every scene-pack mesh at world (0,0,0): in a stage-dome
+                    // battle the "duplicate Vahn", in the field uru's sky /
+                    // cliff pack smeared across the whole frame. The browser
+                    // play page never drew them (it draws the player and the
+                    // NPC catalog, not `world.actors`).
+                    if !self
+                        .session
+                        .host
+                        .world
+                        .actor_slot_drawn(i, in_battle && self.battle_stage_mesh.is_none())
+                    {
                         continue;
                     }
                     // The summon band's hide (`+0x21C = 0xFF` with the prim
@@ -2308,10 +2347,10 @@ impl PlayWindowApp {
                 });
 
             // The clear colour is the shared engine-ui selector on every
-            // frame, the one the browser play page reads too: black for the
-            // boot UI and for field / cutscene frames (retail's background),
-            // sky blue in a stage-dome battle so the gaps the front-half dome
-            // leaves open read as sky. Passing it only for the boot UI and a
+            // frame, the one the browser play page reads too: retail black for
+            // the boot UI, field / cutscene frames and stage battles alike
+            // (a roofless stage shell shows black above it, as retail's
+            // does). Passing it only for the boot UI and a
             // stage battle left every other frame on the renderer's own
             // fallback navy, a colour neither retail nor the page draws.
             let boot_ui_clear = self.boot_ui.is_active() && !game_over_hold;

@@ -24,6 +24,8 @@
 //!
 //! Disc-gated: the anchor search reads `extracted/SCUS_942.54` (or `$LEGAIA_SCUS`).
 
+pub mod gpu;
+
 use std::io::Read;
 use std::path::Path;
 

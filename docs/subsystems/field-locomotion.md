@@ -611,7 +611,7 @@ A **static entity** (`flags+0x10 & 0x1020000 == 0`) anchors at its **MAN object 
 A **moving actor** uses its live position with caller extents `±(0x40 + ex−0x18)` (the locomotion passes `ex = ez = 0` → ±40).
 A hit links the pair mutually at `+0x98`, posts `func_0x8003d038(other[+0x50])` (stores the touched bind-record index into `DAT_80073F1C` unless the per-record `DAT_801C6470` byte is `0x8C` - the motion-VM wait-for-touch opcode at `0x8003882C` consumes and resets it), and contributes result bit `1` (`flags & 0x40020000` class) or `4` (static prop). When the actor table is full (`_DAT_8007b6b8 == 0x20`) the whole call delegates to the `FUN_801cf9f4` box-test variant.
 
-The candidate table itself is rebuilt per frame by **`FUN_801cf754`** (`ghidra/scripts/funcs/overlay_0897_door2_801cf754.txt`): it walks the live actor linked list, culls to ±`0x180` of the player, caps at `0x20` entries - and **skips any actor whose `+0x10 & 3 != 0`**. `FUN_801cf9f4` applies the same `flags & 3` skip inline (`0x801cfa4c`). Those two bits are the placed-prop **collision/touch kill switch**, and prop bind scripts author them:
+The candidate table itself is rebuilt per frame by **`FUN_801cf754`** (`ghidra/scripts/funcs/overlay_0897_door2_801cf754.txt`): it walks the actor linked list at the scene control block's `+0x0C` (the walk controller loads `0x8007C354` into `s6` at `0x801D0344` and passes it down through `FUN_801cfe4c`; every `jal 0x801cf754` site takes `lw a1,0xc(v0)`), culls to ±`0x180` of the player, caps at `0x20` entries - and **skips any actor whose `+0x10 & 3 != 0`**. `FUN_801cf9f4` applies the same `flags & 3` skip inline (`0x801cfa4c`). Those two bits are the placed-prop **collision/touch kill switch**, and prop bind scripts author them:
 
 - A **door's touch pass runs `31 00`** (field-VM CFLAG_SET bit 0 on its own `+0x10`) immediately after its swing-start ops (`2C 07 / 2C 01 / 2B 03`, e.g. `town01` P0[0] offset `0x24`) and *before* the `2D 08` end-latch spin - so a closed door is **solid** (bit-4 contact blocks the step while the same probe posts the touch), and its collision + touch box drop **at touch-resume, as the swing starts**, not at full-open. Props born pass-through carry `31 00` in their spawn prologue instead.
 - A **searchable prop's spawn prologue runs `31 1E`** (`+0x10 |= 0x40000000`, e.g. the `town01` cupboard P0[12] offset `0x09`), flipping its contact class to result bit `1`: it still blocks, but the locomotion dispatch **never auto-posts bit-1 partners** - only the just-pressed-confirm facing probe does. That single authored op is the whole door-vs-cupboard discriminator: doors open on body contact, cupboards only on the interact button. (`31 11` - bit 17, `0x20000` - also selects the bit-1 class *and* the moving-arm box.)
@@ -684,11 +684,15 @@ The derivation and the footprint rest positions are pinned by two cheat-free Rim
   `SceneHost::install_field_props` builds one [`FieldPropCollider`] row per placement at field
   entry, classed by its bind record's spawn-prologue `0x31` ops
   (`interact`/`moving_box`/born-exempt); `advance_with_collision` blocks on them **unconditionally**
-  (retail's props always sit in the `FUN_801cf754` candidate list) - a head-on press rests 142 units
+  (the scene-init sweep's props always sit in the `FUN_801cf754` candidate list) - a head-on press rests 142 units
   short of a static prop centre (same pre-step parity as the NPC arm's 102), and the same refused
   step latches a static-class prop's touch into `World::props.pending_touch`. A prop whose script has
   run `31 00` (`FieldPropCollider::solid = false`) blocks and touches nothing, exactly like retail's
   `flags & 3` skip. Only the NPC arm is gated, by `World::npcs.solid` / `--no-solid-npcs`.
+  A placement the **window sweep** creates (anchor cell without `CELL_BIND_OWNED`) is built
+  non-solid: `FUN_801D7B50` puts it on the `+0x24` list, which no collision routine reads, so
+  retail walks through it. Octam's gondola is one - `ropeway` `P2[6]` seats the player on its
+  footprint, and a solid box there left no direction open once the cutscene ended.
 - **The button-press interact dispatch is modelled faithfully.** `World::field_interact_probe_slot` ports the `DAT_801f2254` facing probe (the radius-64 compass point, ±72 interact box); a hit opens the NPC's dialogue and turns the player toward it (`World::face_field_npc`, the face-the-NPC step - shape-faithful float `atan2` rather than retail's arctan LUT). The engine's field heading stores `0` = Z+ where retail facing stores `0` = Z− (a Z+ walk writes `0x800` to `+0x26`), so the sector index adds a half-turn before quantising. The captured Tetsu press-rest position talks to him through this probe (`world.rs::tests::interaction_probe_matches_tetsu_capture_geometry`).
 - **Field-NPC motion is modelled through the motion VM.** Each talk NPC's placement script carries its authored walk legs as `0x4C 0x51` NPC move-to-tile ops; `man_field_scripts::placement_motion_route` decodes the local waypoints and `World::tick_field_npc_motions` drives them through the ported motion VM (`FUN_8003774C`), one pursue step per field tick, writing the live position back into `World::npcs.positions` - so the moving NPC's ±40 collision box and its interact box follow it, exactly as retail probes the live `+0x14`/`+0x18`.
   Autonomous patrol is gated by `World::npcs.animate` (on by default in `play-window` and the browser play page; `play-window --no-live-npcs` parks NPCs at their anchors) and pauses while a dialogue is up (an engine choice - retail's motion-pause kick requests standing clips and holds nothing); an interaction prologue's own `0x4C 0x51` runs the interacted NPC through the same kernel regardless of the flag. See [`motion-vm.md`](motion-vm.md#field-npc-walking). Disc-gated: `engine-core/tests/field_npc_motion_disc.rs` (town01 derives routes for many villagers; the engine walks them off-anchor; the collision box follows).
@@ -1014,6 +1018,10 @@ The per-tile lookup (`FUN_801D5630`) scans the `+0x10000` primary block first an
 
 **Engine runtime dispatch.** All three trigger classes run live in the port. The per-frame tile compare is `SceneHost::dispatch_walk_on_trigger` (the `FUN_801D1EC4` port); it quantises `tile = world >> 7` (retail's raw shift at `0x801d2068`, **not** the `(world - 0x40) >> 7` form the region refresh uses - the two agree at tile centres and differ by a half-tile band, and a door tile is only one tile deep), compares against the host's last-tile mirror, and on a crossing runs the kind-1 arm and then the kind-0 arm - the same order retail falls through. A scene entry / warp arrival marks the compare stale so the arrival tile fires on the first tick, matching retail's stale globals.
 
+A crossing made while a script holds the player is **consumed**, not deferred: on a new tile under the `+0x10 & 0x80000` lock the dispatcher stores the tile and returns (`0x801D214C..0x801D2158` -> `0x801D2270`). The port does the same while a cutscene timeline or a conversation owns the frame (a stale compare stays stale). This is what keeps a record that teleports the player onto another trigger tile from firing it on release - `rugi`'s warp pads seat the player on each other's pads, and a deferred compare bounced it between them forever.
+
+A committed battle holds the compare altogether: between a `3E FF` and the fight, the intro overlay (PROT 0979) sits over the field overlay's head, this dispatcher included, so no trigger tile fires in that window (`World::field_scripts_held_for_battle`).
+
 - **Gate 1 - walk-on record spawn**: a gate-1 kind-1 hit spawns its partition-2 record through `World::install_gated_p2_record` (C1/C2 story-flag gates checked).
   This is how town exits work - Rim Elm's south-gate tiles reference the partition-2 record whose script runs the `0x3F` named scene-change to `map01` - and how walk-on story beats (the post-naming Vahn's-house chain) launch. Skipped while a spawned record / dialog / name entry owns the frame. The dispatch runs in **both** field and world-map mode: on the overworld a gate-1 record that IS a portal (carries a `0x3F`, tested by `SceneHost::p2_record_is_portal`) is left to the world-map entity SM (`OverworldPortal`), and only non-portal **beat** records spawn here - the Drake mist-wall force-walk bands (`map01` P2[34..36], `C1=[0x482]`), which shove the player back while their story flag is clear.
 - **Gate 0 - object binds** (`SceneHost::enter_field_scene` install, the `FUN_8003A55C` scene-init consumption): a gate-0 trigger is **not** a tile the player steps on. It is the **lookup key** an `.MAP` *object* uses to find its script: `FUN_8003A55C` walks the object-index map, and for each spawned object looks the kind-1 trigger up at the object's **key tile** (`object_tile + (i8)desc[+0x06], (i8)desc[+0x07]`), then resolves `trigger[2]` as a **flat** MAN record index (`FUN_8003C8F0` with partition base 0 - partitions 0/1/2 concatenated).
@@ -1109,7 +1117,14 @@ spawning". From a checkpoint taken after the lock clears (`+0x10` =
 scene re-entry. The port's `SceneHost::dispatch_walk_on_trigger` differs here:
 it returns before updating its last-tile mirror while a cutscene timeline is
 active, so a crossing made during the cutscene is deferred to the first free
-tick rather than spent.
+tick rather than spent. A crossing made while a concurrent **helper** record
+holds the player (`World::script_context_engages_player`) is spent as retail
+spends it: the tile is stored and nothing is looked up. That is what keeps
+`taiku` P2[16], Zora Castle's post-boss cutscene, from re-arming itself - it
+walks the player onto P2[15]'s tile `(16, 28)`, and P2[15] only raises the
+`0x393` that P1[0] answers by spawning P2[16]
+(`engine-core/tests/walk_on_trigger_dispatch_disc.rs`,
+`a_crossing_under_a_running_helper_is_consumed`).
 
 The same captures walk the rest of `kor5`'s `0x43A -> 0x436 -> 0x6C4` chain,
 whose links are the partition-2 C1/C2 headers plus the `.PCH` walk-on table
@@ -1311,11 +1326,24 @@ floor ladder installs, the warp landing, the `0x23` / `4C 51` player arms and th
 leader swap. Both play hosts ask one kernel per placed draw,
 `field_env::placed_draw_live`: a bound draw is always live, and a window-owned
 one is live unless the `retail_static_window` option is on, in which case it
-draws only while the list holds a drawn actor for it. The default keeps the
-whole map, because retail's windowing is sub-area pop-in: at `town01`'s seat it
-hides 7 of the 46 placed draws, at `vell`'s 62 of 105. Disc-gated coverage:
-`crates/engine-core/tests/field_static_window_disc.rs`, which also checks that the
-two sweeps partition every drawn placement.
+draws only while the list holds a drawn actor for it. At `town01`'s seat that
+hides 7 of the 46 placed draws, at `vell`'s 62 of 105. The option **defaults on**
+in both play hosts: the window-owned props are other sub-areas' scenery, authored
+to be seen from their own region, and drawing them from outside it is not an
+enhancement - `retona`'s cloud bowl (env pack 37, a `5550 x 2971 x 5754` shell)
+covers the cave the `retona_field_card_boot` player stands in, which retail's
+box leaves out. The cost is retail's own pop-in on a region change without a
+re-centre; off keeps the whole map. A host debug seat (`LEGAIA_SEAT`,
+`play_debug_seat`) is a warp landing and re-centres too, so a seated frame plans
+the list for the room it stands in rather than the entry spawn's. Disc-gated
+coverage: `crates/engine-core/tests/field_static_window_disc.rs`, which also
+checks that the two sweeps partition every drawn placement.
+
+The per-cell ground and decoration passes read a second window, the camera's
+visible tile window at `0x1F8003E8..EB` ([`encounter.md`](../formats/encounter.md#the-scratchpad-window-0x1f8003e8eb)),
+which the port tracks (`Camera::zone.view_window`) but does not yet crop the
+terrain / heightfield draws by: the ground beyond the window still draws, where
+retail's frame is black (`conc_field_card_boot`'s neighbouring room).
 
 - **The bind carries the object's animation id.** A partition-0 record's header
   is `[u8 n][n*2 name bytes][u8 anim_id]` (its own shape - the partition-1

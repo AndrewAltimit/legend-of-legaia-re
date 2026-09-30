@@ -932,6 +932,21 @@ pub enum RodSwing {
     Done,
 }
 
+/// One primitive of a rod model's object 0: the untextured flat / Gouraud
+/// triangles and quads the three rods are built from (TMD groups of kinds
+/// `12..=15`, the `FUN_80043390` bank-0 handlers).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RodPrim {
+    /// Vertex indices into object 0's (staged) vertex array; a triangle
+    /// repeats its third index in the fourth slot.
+    pub verts: [u16; 4],
+    /// `true` for a quad (the group's `flags` bit 1).
+    pub quad: bool,
+    /// Per-vertex packet colour, in [`Self::verts`] order. A flat primitive
+    /// carries its one colour word on every vertex.
+    pub rgb: [[u8; 3]; 4],
+}
+
 /// The rod geometry the line's rod end is a point of, lifted off the venue
 /// scene's bank.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -942,6 +957,51 @@ pub struct RodMesh {
     /// The bend: VDF sub-entry [`ROD_BEND_VDF_ENTRY`] of the scene's
     /// type-7 buffer.
     pub bend: Option<Vec<u8>>,
+    /// Object 0's primitives of rods `0..=2`, in packet order - what
+    /// `FUN_801D1C5C` hands the per-primitive dispatcher `FUN_80043390`
+    /// (`jal` at `0x801D1FF4`). Empty for a rod whose model did not resolve
+    /// or carried no untextured primitive.
+    pub prims: [Vec<RodPrim>; 3],
+}
+
+/// The rod's primitives off a parsed model: object 0's untextured groups.
+/// A textured group (none of the venue's three rods carries one) is skipped
+/// rather than drawn without its texture.
+fn rod_prims(bytes: &[u8], tmd: &legaia_tmd::Tmd) -> Vec<RodPrim> {
+    let Some(obj) = tmd.objects.first() else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for g in legaia_tmd::legaia_prims::iter_groups_lenient(
+        bytes,
+        obj.primitives_byte_offset,
+        obj.primitives_byte_size,
+    ) {
+        let quad = g.header.n_vertices() == 4;
+        for p in &g.prims {
+            if !p.uvs.is_empty() {
+                continue;
+            }
+            let idx = p.vertex_indices();
+            let n = idx.len().min(4);
+            if n < 3 || p.colors.len() < n {
+                continue;
+            }
+            let mut verts = [0u16; 4];
+            let mut rgb = [[0u8; 3]; 4];
+            for i in 0..4 {
+                let k = i.min(n - 1);
+                verts[i] = idx[k];
+                rgb[i] = p.colors[k];
+            }
+            out.push(RodPrim {
+                verts,
+                quad: quad && n == 4,
+                rgb,
+            });
+        }
+    }
+    out
 }
 
 impl RodMesh {
@@ -950,6 +1010,7 @@ impl RodMesh {
     pub fn from_scene(scene: &crate::scene::Scene) -> Option<Self> {
         let bank = crate::model_bank::SceneModelBank::build(scene);
         let mut rods: [Option<Vec<u8>>; 3] = Default::default();
+        let mut prims: [Vec<RodPrim>; 3] = Default::default();
         for (r, slot) in rods.iter_mut().enumerate() {
             let Some(bytes) = bank.tmd_bytes(scene, ROD_MODEL_BASE + r as i16) else {
                 continue;
@@ -957,6 +1018,7 @@ impl RodMesh {
             let Ok(tmd) = legaia_tmd::parse(&bytes) else {
                 continue;
             };
+            prims[r] = rod_prims(&bytes, &tmd);
             *slot = tmd.objects.first().map(|o| {
                 o.vertices
                     .iter()
@@ -973,13 +1035,20 @@ impl RodMesh {
         }
         let bend = crate::scene_bundle::find_vdf_buffer(scene)
             .and_then(|buf| crate::world::vdf_entry(&buf, ROD_BEND_VDF_ENTRY).map(<[u8]>::to_vec));
-        Some(Self { rods, bend })
+        Some(Self { rods, bend, prims })
     }
 
     /// The tip vertex of rod `rod` bent by `weight` - the morph stager
     /// `FUN_8001C604` over group 0 at that slot weight, then vertex
     /// [`ROD_TIP_VERTEX`] of the staged array.
     pub fn tip(&self, rod: usize, weight: i16) -> Option<[i16; 3]> {
+        self.staged(rod, weight)?.get(ROD_TIP_VERTEX).copied()
+    }
+
+    /// Every vertex of rod `rod`'s object 0 after the morph stager
+    /// `FUN_8001C604` bent it by `weight` - the array the draw and the tip
+    /// projection both read.
+    pub fn staged(&self, rod: usize, weight: i16) -> Option<Vec<[i16; 3]>> {
         let rest = self.rods.get(rod)?.as_deref()?;
         let staged = match self.bend.as_deref() {
             Some(entry) => {
@@ -987,10 +1056,15 @@ impl RodMesh {
             }
             None => rest.to_vec(),
         };
-        let o = ROD_TIP_VERTEX * 8;
-        let v = staged.get(o..o + 6)?;
-        let h = |i: usize| i16::from_le_bytes([v[i], v[i + 1]]);
-        Some([h(0), h(2), h(4)])
+        let h = |v: &[u8; 8], i: usize| i16::from_le_bytes([v[i], v[i + 1]]);
+        Some(
+            staged
+                .as_chunks::<8>()
+                .0
+                .iter()
+                .map(|v| [h(v, 0), h(v, 2), h(v, 4)])
+                .collect(),
+        )
     }
 }
 
@@ -1037,13 +1111,14 @@ fn rotate(m: &mut [[i32; 3]; 3], axis: usize, angle: i32) {
     }
 }
 
-/// Project the rod-tip vertex `v` the way `FUN_801D1C5C` does: the rod's
-/// matrix is the 6x base rotated by `RotMatrixX(rot_x)`, `RotMatrixY(0)`,
+/// The rod's GTE state for one frame: the rotation `FUN_801D1C5C` loads
+/// (`SetRotMatrix` at `0x801D1EB4`) and its translation.
+///
+/// The matrix is the 6x base rotated by `RotMatrixX(rot_x)`, `RotMatrixY(0)`,
 /// `RotMatrixZ(rot_z)` and `RotMatrixY(-yaw)` in that order
-/// (`0x801D1E80..0x801D1EA8`), its translation is [`ROD_ACTOR_POS`] pushed
-/// through the base (`FUN_8003D344` at `0x801D1E40`, then `SetTransMatrix`),
-/// and `RTPS` runs under [`ROD_PROJECTION_H`] with the UNR divide.
-pub fn rod_tip_screen(v: [i16; 3], rot_x: i16, rot_z: i16, yaw: i32) -> RodTip {
+/// (`0x801D1E80..0x801D1EA8`); the translation is [`ROD_ACTOR_POS`] pushed
+/// through the base (`FUN_8003D344` at `0x801D1E40`, then `SetTransMatrix`).
+fn rod_transform(rot_x: i16, rot_z: i16, yaw: i32) -> ([[i32; 3]; 3], [i32; 3]) {
     let s = ROD_BASE_SCALE;
     let base = [[s, 0, 0], [0, s, 0], [0, 0, s]];
     let tr = mvmva(&base, ROD_ACTOR_POS.map(i32::from));
@@ -1052,7 +1127,13 @@ pub fn rod_tip_screen(v: [i16; 3], rot_x: i16, rot_z: i16, yaw: i32) -> RodTip {
     rotate(&mut m, 1, 0);
     rotate(&mut m, 2, rot_z as i32);
     rotate(&mut m, 1, yaw.wrapping_neg());
-    // RTPS (`sf = 1`, `lm = 0`): MAC = (TR << 12 + R * V) >> 12.
+    (m, tr)
+}
+
+/// One `RTPS` (`sf = 1`, `lm = 0`) under [`ROD_PROJECTION_H`] with the UNR
+/// divide: the screen pair, `IR3` and `SZ3`.
+fn rod_rtps(m: &[[i32; 3]; 3], tr: [i32; 3], v: [i16; 3]) -> ((i16, i16), i32, i32) {
+    // MAC = (TR << 12 + R * V) >> 12.
     let mac = |r: usize| {
         ((tr[r] as i64) << 12)
             + m[r][0] as i64 * v[0] as i64
@@ -1064,13 +1145,145 @@ pub fn rod_tip_screen(v: [i16; 3], rot_x: i16, rot_z: i16, yaw: i32) -> RodTip {
     let (div, _) = legaia_engine_vm::gte_divide::gte_divide(ROD_PROJECTION_H, sz3);
     let screen =
         |ir: i64, of: i32| (((div * ir) + ((of as i64) << 16)) >> 16).clamp(-0x400, 0x3FF) as i16;
-    RodTip {
-        sxy: (
+    (
+        (
             screen(ir(0), GTE_SCREEN_CENTRE.0),
             screen(ir(1), GTE_SCREEN_CENTRE.1),
         ),
-        depth: ir(2) as i32,
+        ir(2) as i32,
+        i32::from(sz3),
+    )
+}
+
+/// Project the rod-tip vertex `v` the way `FUN_801D1C5C` does: the rod's
+/// matrix ([`rod_transform`]), then `RTPS` under [`ROD_PROJECTION_H`] with
+/// the UNR divide.
+pub fn rod_tip_screen(v: [i16; 3], rot_x: i16, rot_z: i16, yaw: i32) -> RodTip {
+    let (m, tr) = rod_transform(rot_x, rot_z, yaw);
+    let (sxy, depth, _) = rod_rtps(&m, tr, v);
+    RodTip { sxy, depth }
+}
+
+/// The pose one rod-actor tick drew with: the two rotation terms it built
+/// this frame, the yaw it read, and the morph weight.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RodPose {
+    /// `RotMatrixX`'s angle: the swing plus the lift / bend pitch.
+    pub rot_x: i16,
+    /// `RotMatrixZ`'s angle: twice the lean.
+    pub rot_z: i16,
+    /// `0x801D911C`, negated into the last `RotMatrixY`.
+    pub yaw: i32,
+    /// The morph slot's weight - the bend's low halfword.
+    pub weight: i16,
+}
+
+/// `ZSF3` the rod's triangles average under: the dispatcher loads
+/// `0x555 >> _DAT_1F8003A4` (`0x80043568..0x8004357C`), the scratch byte
+/// being `3` in the `minigame_fishing` save state.
+pub const ROD_ZSF3: i32 = 0x555 >> 3;
+
+/// `ZSF4` the rod's quads average under (`0x400 >> _DAT_1F8003A4`, same
+/// load). With it the ordering-table bucket `OTZ >> 2` is the mean depth
+/// `/ 32` - the scale the line's `IR3 >> 5` links at.
+pub const ROD_ZSF4: i32 = 0x400 >> 3;
+
+/// The handlers' near cutoff: a primitive whose `OTZ` falls below the
+/// scratch halfword `0x1F80037E` is dropped (`sub s1,s2,t4; bltz` at
+/// `0x80043870` / `0x80043720`). `0x10` in the `minigame_fishing` state.
+pub const ROD_NEAR_OTZ: i32 = 0x10;
+
+/// One rod primitive as retail links it: screen corners, per-corner colour
+/// and the ordering-table bucket. A triangle repeats its third corner.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RodFace {
+    pub xy: [(i16, i16); 4],
+    pub rgb: [[u8; 3]; 4],
+    pub quad: bool,
+    /// `OTZ >> 2` - the word index `(OTZ & 0xFFFC)` addresses in the OT.
+    pub ot: u32,
+}
+
+/// `NCLIP`: the signed area of the screen triangle `(a, b, c)`.
+fn nclip(a: (i16, i16), b: (i16, i16), c: (i16, i16)) -> i64 {
+    let (ax, ay) = (a.0 as i64, a.1 as i64);
+    let (bx, by) = (b.0 as i64, b.1 as i64);
+    let (cx, cy) = (c.0 as i64, c.1 as i64);
+    ax * by + bx * cy + cx * ay - ax * cy - bx * ay - cx * by
+}
+
+/// The rod model drawn: object 0 of rod `rod`, bent by the pose's morph
+/// weight, every vertex through the rod's matrix under `H = 0xDC`, then each
+/// primitive through the bank-0 handler of its kind the way
+/// `FUN_80043390` runs them for this call (the rod's `+0x74` is the
+/// allocator's `0x00808080` - `sw v1,0x74(s0)` at `0x80020F3C` - and its
+/// `+0x78` is `0`, so no blend bank, no depth cue and the single-sided
+/// cull mask `0xFFFFFFFF`):
+///
+/// - a **triangle** (kinds 12 / 14, `0x80043658` / `0x80043B58`) is culled
+///   when `NCLIP < 0` (`bltz` at `0x80043700`);
+/// - a **quad** (kinds 13 / 15, `0x80043768` / `0x80043C6C`) is kept when
+///   `NCLIP(v0, v1, v2) > 0`, else only when the second `NCLIP` over
+///   `(v1, v2, v3)` after the fourth `RTPS` is negative
+///   (`blez` at `0x80043818`, `bgez` at `0x8004384C`);
+/// - `AVSZ3` / `AVSZ4` under [`ROD_ZSF3`] / [`ROD_ZSF4`] give `OTZ`, a
+///   primitive below [`ROD_NEAR_OTZ`] is dropped, and the packet links at
+///   `OTZ >> 2`.
+///
+/// Faces come back in packet order - the order the handlers `AddPrim` them.
+///
+/// PORT: FUN_801d1c5c (the model draw: the `FUN_80043390` call at
+/// `0x801D1FF4` over the staged object 0)
+pub fn rod_faces(mesh: &RodMesh, rod: usize, pose: RodPose) -> Vec<RodFace> {
+    let Some(verts) = mesh.staged(rod, pose.weight) else {
+        return Vec::new();
+    };
+    let Some(prims) = mesh.prims.get(rod) else {
+        return Vec::new();
+    };
+    let (m, tr) = rod_transform(pose.rot_x, pose.rot_z, pose.yaw);
+    let projected: Vec<((i16, i16), i32)> = verts
+        .iter()
+        .map(|&v| {
+            let (sxy, _, sz) = rod_rtps(&m, tr, v);
+            (sxy, sz)
+        })
+        .collect();
+    let mut out = Vec::with_capacity(prims.len());
+    for p in prims {
+        let Some(c) = p
+            .verts
+            .iter()
+            .map(|&i| projected.get(usize::from(i)).copied())
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
+        let xy = [c[0].0, c[1].0, c[2].0, c[3].0];
+        let otz = if p.quad {
+            let front = nclip(xy[0], xy[1], xy[2]) > 0 || nclip(xy[1], xy[2], xy[3]) < 0;
+            if !front {
+                continue;
+            }
+            ((c[0].1 + c[1].1 + c[2].1 + c[3].1) as i64 * ROD_ZSF4 as i64) >> 12
+        } else {
+            if nclip(xy[0], xy[1], xy[2]) < 0 {
+                continue;
+            }
+            ((c[0].1 + c[1].1 + c[2].1) as i64 * ROD_ZSF3 as i64) >> 12
+        };
+        let otz = otz.clamp(0, 0xFFFF) as i32;
+        if otz < ROD_NEAR_OTZ {
+            continue;
+        }
+        out.push(RodFace {
+            xy,
+            rgb: p.rgb,
+            quad: p.quad,
+            ot: (otz >> 2) as u32,
+        });
     }
+    out
 }
 
 /// The rod-side inputs one in-water frame of the lure tick feeds the rod
@@ -1105,6 +1318,9 @@ pub struct RodActor {
     pub yaw: i32,
     /// This frame's projected tip, when the rod mesh resolved.
     pub tip: Option<RodTip>,
+    /// The pose this frame's tick drew the model with ([`rod_faces`]);
+    /// `None` until the first tick.
+    pub pose: Option<RodPose>,
 }
 
 impl RodActor {
@@ -1120,6 +1336,7 @@ impl RodActor {
             lean_target: 0,
             yaw: 0,
             tip: None,
+            pose: None,
         }
     }
 
@@ -1168,8 +1385,15 @@ impl RodActor {
         let rot_z = (self.lean << 1) as i16;
         // The morph slot's weight is the bend's low halfword (`lhu` into
         // `+0xA0` at `0x801D1EE0`).
+        let weight = self.bend as u16 as i16;
+        self.pose = Some(RodPose {
+            rot_x,
+            rot_z,
+            yaw: self.yaw,
+            weight,
+        });
         self.tip = mesh
-            .and_then(|m| m.tip(rod, self.bend as u16 as i16))
+            .and_then(|m| m.tip(rod, weight))
             .map(|v| rod_tip_screen(v, rot_x, rot_z, self.yaw));
         // The lift bleeds toward zero at `0x20` a frame delta, the bend down to
         // zero at `0x60` (`0x801D1EEC..0x801D1F7C`).
@@ -1873,6 +2097,7 @@ mod tests {
         RodMesh {
             rods: [Some(rest.clone()), Some(rest.clone()), Some(rest)],
             bend: Some(bend),
+            ..Default::default()
         }
     }
 
@@ -1936,6 +2161,89 @@ mod tests {
         // An on-screen pair passes through untouched.
         let l = fishing_line((40, 180), tip);
         assert_eq!((l.fish, l.rod), ((40, 180), (160, 100)));
+    }
+
+    /// A four-vertex square in the rod's local `xy` plane with three
+    /// primitives over it: a quad wound toward the camera, the same quad
+    /// wound away, and a triangle.
+    fn square_rod_mesh() -> RodMesh {
+        let mut rest = Vec::new();
+        for (x, y) in [(-10i16, -10i16), (10, -10), (-10, 10), (10, 10)] {
+            for c in [x, y, 0, 0] {
+                rest.extend_from_slice(&c.to_le_bytes());
+            }
+        }
+        let red = [[0x80, 0x28, 0x28]; 4];
+        RodMesh {
+            rods: [Some(rest), None, None],
+            bend: None,
+            prims: [
+                vec![
+                    RodPrim {
+                        verts: [0, 1, 2, 3],
+                        quad: true,
+                        rgb: red,
+                    },
+                    RodPrim {
+                        verts: [1, 0, 3, 2],
+                        quad: true,
+                        rgb: red,
+                    },
+                    RodPrim {
+                        verts: [0, 1, 2, 2],
+                        quad: false,
+                        rgb: red,
+                    },
+                ],
+                Vec::new(),
+                Vec::new(),
+            ],
+        }
+    }
+
+    #[test]
+    fn the_rod_model_culls_its_back_faces_and_buckets_by_mean_depth() {
+        let pose = RodPose {
+            rot_x: 0,
+            rot_z: 0,
+            yaw: 0,
+            weight: 0,
+        };
+        let faces = rod_faces(&square_rod_mesh(), 0, pose);
+        // The away-wound quad fails both NCLIP halves; the other two draw.
+        assert_eq!(faces.len(), 2, "{faces:?}");
+        assert!(faces[0].quad && !faces[1].quad, "packet order is kept");
+        // Every corner is the tip projection of its vertex.
+        for (i, v) in [(-10i16, -10i16), (10, -10), (-10, 10), (10, 10)]
+            .into_iter()
+            .enumerate()
+        {
+            assert_eq!(faces[0].xy[i], rod_tip_screen([v.0, v.1, 0], 0, 0, 0).sxy);
+        }
+        // Depth 600 at every corner: AVSZ4 = 4 * 600 * 0x80 >> 12 = 75,
+        // AVSZ3 = 3 * 600 * 0xAA >> 12 = 74; both link at `OTZ >> 2` = 18 -
+        // the line's `600 >> 5`.
+        assert_eq!((faces[0].ot, faces[1].ot), (18, 18));
+        assert_eq!(faces[0].ot, 600 >> 5);
+        // A missing rod draws nothing.
+        assert!(rod_faces(&square_rod_mesh(), 1, pose).is_empty());
+    }
+
+    #[test]
+    fn the_rod_actor_records_the_pose_it_drew_with() {
+        let mesh = synthetic_rod_mesh();
+        let mut rod = RodActor::cast();
+        assert_eq!(rod.pose, None);
+        rod.tick(Some(&mesh), 0, 1);
+        let pose = rod.pose.expect("a pose after the first tick");
+        // First cast frame: bob -0x40, pitch (0 + 0x1000 / 2) / 16 = 0x80.
+        assert_eq!(pose.rot_x, -0x40 + 0x80);
+        assert_eq!(pose.weight, ROD_BEND_AT_CAST as i16, "the pre-bleed bend");
+        let tip = mesh.tip(0, pose.weight).unwrap();
+        assert_eq!(
+            rod.tip,
+            Some(rod_tip_screen(tip, pose.rot_x, pose.rot_z, pose.yaw))
+        );
     }
 
     #[test]

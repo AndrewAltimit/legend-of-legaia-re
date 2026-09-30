@@ -471,21 +471,37 @@ impl FieldCameraFrame {
 /// the word both hosts hand their renderer (`Renderer::set_backface_cull` /
 /// the play page's `setNclipCull`).
 ///
-/// `2` = reject the retail back faces, `0` = draw both sides. It is armed for
-/// the in-engine cutscene camera and nothing else: the `opdeene` prologue's
-/// crater-rim tableau shot sits INSIDE the scene's closed cave-wall backdrop
-/// mesh, and retail's per-prim NCLIP is what discards the shell's near wall.
-/// Free-roam field, battle and the world map keep both-sided draws - their
-/// per-pass winding parities differ, and the world-map fly-in leg's continent
-/// terrain would lose its ground tiles under the field-tuned cull, which is
-/// why the overworld is excluded even while a timeline owns the camera.
+/// `2` = reject the retail back faces, `0` = draw both sides.
+///
+/// Retail rejects back faces on every field mesh draw. Each per-prim handler
+/// behind the dispatcher `FUN_80043390` runs `NCLIP` after `RTPT` and ANDs the
+/// signed area with a mask before its sign test (quad kind 13: `cop2
+/// 0x1400006`, `mfc2 s2,$24`, `and s2,s2,s3` at `0x80043814`, `blez`; the
+/// quad draws when either half faces the eye). The dispatcher loads that mask
+/// as `0xFFFFFFFF` and only lowers it to `0x7FFFFFFF` - which makes every
+/// area non-negative, i.e. double-sided - when the colour argument carries
+/// bit `0x08000000` (`0x80043520..0x80043540`). A field actor's colour word
+/// (`actor[+0x74]`) is born `0x00808080` (`FUN_80020DE0`) and the two
+/// placed-object spawners only OR in `0x40000000` / `0x10000000`
+/// (`FUN_8003A55C` at `0x8003A730..0x8003A76C`, the window sweep
+/// `FUN_801D7B50` at `0x801D7D78..0x801D7DB4`), so a placed object is
+/// single-sided. Drawing both sides is what let a sky dome the camera looks
+/// at from outside (korout's, retona's) paint its outer shell over the scene.
+///
+/// So the mode is armed for the whole **field** pass - free roam and the
+/// in-engine cutscene camera alike - and for a cutscene camera on any other
+/// non-overworld mode. The world map keeps both-sided draws: its continent
+/// terrain's winding parity is the world-map pass's, not the field pass's,
+/// and the field-tuned cull would eat the ground tiles. Battle and the
+/// minigame venues keep theirs (a different per-pass parity).
 ///
 /// Shared so the two hosts cannot arm it on different frames; each passes the
-/// two booleans it can answer locally.
+/// two values it can answer locally.
 ///
-/// REF: FUN_8002735c
-pub fn nclip_cull_mode(cutscene_camera_active: bool, in_world_map: bool) -> u32 {
-    u32::from(cutscene_camera_active && !in_world_map) * 2
+/// REF: FUN_80043390, FUN_80043768
+pub fn nclip_cull_mode(cutscene_camera_active: bool, mode: SceneMode) -> u32 {
+    let armed = mode == SceneMode::Field || (cutscene_camera_active && mode != SceneMode::WorldMap);
+    u32::from(armed) * 2
 }
 
 /// Resolve this frame's camera from the live world.

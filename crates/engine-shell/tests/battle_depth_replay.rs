@@ -168,13 +168,11 @@ fn disc_present() -> bool {
 }
 
 fn extracted_dir() -> Option<PathBuf> {
-    for c in ["extracted", "../extracted", "../../extracted"] {
-        let d = PathBuf::from(c);
-        if d.join("PROT.DAT").exists() && d.join("CDNAME.TXT").exists() {
-            return Some(d);
-        }
-    }
-    None
+    let env = std::env::var_os("LEGAIA_EXTRACTED_DIR").map(PathBuf::from);
+    let rel = ["extracted", "../extracted", "../../extracted"].map(PathBuf::from);
+    env.into_iter()
+        .chain(rel)
+        .find(|d| d.join("PROT.DAT").exists() && d.join("CDNAME.TXT").exists())
 }
 
 /// One press frame followed by one release frame. Every battle surface reads
@@ -901,8 +899,13 @@ fn battle_depth_ladder() {
         {
             return Err("battle_no_escape did not reach the command session".into());
         }
+        // Retail takes the press (the prompt never reads `ctx[+0x287]`) and
+        // the escape roll fails it: the run band plays out, the turn is
+        // spent, and the fight goes on.
         tap(&mut session, PadButton::Circle);
-        if session.host.world.mode != SceneMode::Battle {
+        if settle_until(&mut session, SETTLE_TICKS, |s| {
+            s.host.world.mode != SceneMode::Battle
+        }) {
             return Err("Run escaped a no-escape battle".into());
         }
         cleared.push("run-refused");

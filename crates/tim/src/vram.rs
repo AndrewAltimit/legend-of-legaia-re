@@ -81,6 +81,11 @@ impl PrimTextureStatus {
 #[derive(Clone)]
 pub struct Vram {
     pixels: Vec<u16>,
+    /// One bit per cell: has any upload written it? Kept apart from the
+    /// pixel value because a written `0x0000` is real content - a 4bpp
+    /// word of four index-0 texels, the transparent background of every
+    /// caption TIM - and [`Self::underlay`] must not treat it as a hole.
+    written: Vec<u64>,
 }
 
 impl Default for Vram {
@@ -94,6 +99,7 @@ impl Vram {
     pub fn new() -> Self {
         Self {
             pixels: vec![0u16; VRAM_PIXELS],
+            written: vec![0u64; VRAM_PIXELS.div_ceil(64)],
         }
     }
 
@@ -229,20 +235,44 @@ impl Vram {
         self.write_words(fb_x, fb_y, w_words, h, &halfwords);
     }
 
-    /// Fill every **zero** word of `self` from `base` - i.e. layer a
-    /// boot-resident upload *underneath* an already-built scene VRAM.
-    /// Scene words win wherever the scene build wrote (matching the
-    /// retail boot-first-then-scene DMA order, where a later scene
-    /// upload overwrites boot content); the boot content shows through
-    /// everywhere else. Uses the codebase-wide "0 = unpopulated"
-    /// convention (see [`Self::prim_has_texture_data`] and the VRAM
-    /// parity oracle's incompleteness rule).
+    /// Fill every word of `self` that no upload has written from `base` -
+    /// i.e. layer a boot-resident upload *underneath* an already-built
+    /// scene VRAM. Scene words win wherever the scene build wrote
+    /// (matching the retail boot-first-then-scene DMA order, where a later
+    /// scene upload overwrites boot content); the boot content shows
+    /// through everywhere else. A filled word counts as written from then
+    /// on when `base` wrote it, so a second underlay stays beneath the
+    /// first.
+    ///
+    /// "Written" is tracked per cell, not read off a zero value: retail's
+    /// `LoadImage` replaces every word of the rect, zeros included. Keying
+    /// on the value let the effect-texture pool's kanji sheet at
+    /// `(320, 256..)` bleed through the transparent background of the
+    /// ending scenes' credit caption TIMs (`(320, 416)` 40x32 in
+    /// `edteien`), where retail's VRAM holds clean zeros.
     pub fn underlay(&mut self, base: &Vram) {
-        for (dst, &src) in self.pixels.iter_mut().zip(base.pixels.iter()) {
-            if *dst == 0 {
+        for (i, (dst, &src)) in self.pixels.iter_mut().zip(base.pixels.iter()).enumerate() {
+            let (word, bit) = (i / 64, 1u64 << (i % 64));
+            if self.written[word] & bit == 0 {
                 *dst = src;
+                self.written[word] |= base.written[word] & bit;
             }
         }
+    }
+
+    /// Has any upload written the cell at `(x, y)`? `false` outside VRAM.
+    pub fn is_written(&self, x: usize, y: usize) -> bool {
+        if x >= VRAM_WIDTH || y >= VRAM_HEIGHT {
+            return false;
+        }
+        let i = y * VRAM_WIDTH + x;
+        self.written[i / 64] & (1u64 << (i % 64)) != 0
+    }
+
+    #[inline]
+    fn store(&mut self, i: usize, val: u16) {
+        self.pixels[i] = val;
+        self.written[i / 64] |= 1u64 << (i % 64);
     }
 
     /// VRAM-to-VRAM rectangle copy: `w x h` halfwords from `(src_x, src_y)`
@@ -290,7 +320,7 @@ impl Vram {
                 if src_idx >= src.len() {
                     return;
                 }
-                self.pixels[dy * VRAM_WIDTH + dx] = src[src_idx];
+                self.store(dy * VRAM_WIDTH + dx, src[src_idx]);
             }
         }
     }
@@ -320,7 +350,7 @@ impl Vram {
                 if val == 0 {
                     continue;
                 }
-                self.pixels[dy * VRAM_WIDTH + dx] = val;
+                self.store(dy * VRAM_WIDTH + dx, val);
             }
         }
     }
@@ -911,17 +941,47 @@ mod tests {
     }
 
     #[test]
-    fn underlay_fills_only_zero_words() {
+    fn underlay_fills_only_unwritten_words() {
         let mut scene = Vram::new();
         let mut boot = Vram::new();
-        // Scene wrote (5, 300); boot wrote (5, 300) and (6, 300).
+        // Scene wrote (5, 300) and a zero at (7, 300); boot wrote all three
+        // plus (6, 300).
         scene.write_block(5, 300, 1, 1, &0xAAAAu16.to_le_bytes());
-        boot.write_block(5, 300, 1, 1, &0xBBBBu16.to_le_bytes());
-        boot.write_block(6, 300, 1, 1, &0xCCCCu16.to_le_bytes());
+        scene.write_block(7, 300, 1, 1, &0u16.to_le_bytes());
+        for x in 5..8 {
+            boot.write_block(x, 300, 1, 1, &0xBBBBu16.to_le_bytes());
+        }
         scene.underlay(&boot);
-        // Scene word wins the overlap; boot shows through the zero word.
+        // Scene word wins the overlap; boot shows through the unwritten
+        // word only - a written zero (a transparent 4bpp run) is content.
         assert_eq!(scene.pixel(5, 300), 0xAAAA);
-        assert_eq!(scene.pixel(6, 300), 0xCCCC);
+        assert_eq!(scene.pixel(6, 300), 0xBBBB);
+        assert_eq!(scene.pixel(7, 300), 0);
+        assert!(scene.is_written(6, 300));
+        assert!(!scene.is_written(8, 300));
+    }
+
+    #[test]
+    fn a_second_underlay_stays_beneath_the_first() {
+        let mut scene = Vram::new();
+        let mut boot = Vram::new();
+        let mut pool = Vram::new();
+        boot.write_block(1, 1, 1, 1, &0x1111u16.to_le_bytes());
+        pool.write_block(1, 1, 1, 1, &0x2222u16.to_le_bytes());
+        pool.write_block(2, 1, 1, 1, &0x3333u16.to_le_bytes());
+        scene.underlay(&boot);
+        scene.underlay(&pool);
+        assert_eq!(scene.pixel(1, 1), 0x1111);
+        assert_eq!(scene.pixel(2, 1), 0x3333);
+    }
+
+    #[test]
+    fn merge_zero_clut_writes_mark_only_the_cells_they_store() {
+        let mut vram = Vram::new();
+        vram.write_words_merge_zeros(0, 500, 3, 1, &[0x1234, 0, 0x5678]);
+        assert!(vram.is_written(0, 500));
+        assert!(!vram.is_written(1, 500));
+        assert!(vram.is_written(2, 500));
     }
 
     #[test]

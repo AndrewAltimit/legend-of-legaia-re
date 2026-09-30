@@ -708,10 +708,11 @@ impl Camera {
                     }
                     applied += 1;
                 }
-                FieldEvent::CameraApply => {
-                    // Apply commits whatever the configure pass staged; engine
-                    // can re-derive eye/look-at on the next tick.
-                    self.mode = CameraMode::Cinematic;
+                FieldEvent::CameraApply {
+                    apply_trigger,
+                    mode,
+                } => {
+                    self.apply_follow_shot(world, apply_trigger, mode);
                     applied += 1;
                 }
                 // Op-`0x46` `VIEW_WINDOW`, both forms. Retail writes the same
@@ -1175,6 +1176,112 @@ impl Camera {
         g[8] = clamped[1];
         zone.focus_held = Some([g[6], g[8]]);
         zone.active = true;
+    }
+
+    /// Op-`0x45` APPLY: hand the camera back to the **follow shot**.
+    ///
+    /// Retail's arm (`0x801DF210` in the field overlay) composes the zone
+    /// camera for the player into the staging block (`FUN_801DAB90(player,
+    /// 0x801C6EA8)`), runs the focus edge clamp over the staged focus
+    /// (`FUN_801DAA50`), and hands the block to `FUN_801DE084` - the same
+    /// commit the CONFIGURE arm makes: with a zero trigger every staged axis
+    /// is copied straight into the camera globals and the live movers are
+    /// cancelled; otherwise a mover glides the globals there over `trigger`
+    /// frames with `mode` as its curve. It changes no camera mode: the
+    /// follow ease keeps running from the player's handler afterwards.
+    ///
+    /// So APPLY is where a script **releases** a shot it staged, and several
+    /// scenes run it from a looping record every frame to keep the camera
+    /// pinned on the composed follow pose. Reading it as "commit the staged
+    /// shot and go cinematic" froze the camera on the terrain-less fallback
+    /// pose (`H = 512`, the zone-miss depth) in every such scene.
+    ///
+    /// A zero trigger arms the follow camera's snap, which composes, clamps
+    /// and copies on this frame's [`Camera::tick`]; a non-zero trigger
+    /// composes now and arms the mover toward that pose.
+    ///
+    /// PORT: FUN_801DE084
+    /// REF: FUN_801DAB90, FUN_801DAA50
+    fn apply_follow_shot(&mut self, world: &World, apply_trigger: i16, mode: u8) {
+        self.mode = CameraMode::Follow;
+        self.script_owns_focus = false;
+        if apply_trigger == 0 || !zone_camera_scene(world) {
+            self.mover = None;
+            self.zone.snap_pending = true;
+            return;
+        }
+        // Bring the block up to date (an arrival still pending re-queries the
+        // tile) before composing from it.
+        self.prime_zone_before_script(world);
+        let Some((target, live_yaw)) = self.compose_follow_globals(world) else {
+            self.mover = None;
+            self.zone.snap_pending = true;
+            return;
+        };
+        if let Some(ly) = live_yaw {
+            self.globals.0[1] = i32::from(ly);
+        }
+        let mut mv = self.mover.take().unwrap_or_default();
+        mv.arm(self.globals.0, target, apply_trigger as u16, mode);
+        self.mover = Some(mv);
+    }
+
+    /// The ten camera globals the follow camera's snap would write for the
+    /// player's current position: the composed pitch / yaw / eye trio / `H`
+    /// (`FUN_801DAB90`), the focus on the player (a mode-5 shot's on its
+    /// anchor tile) with the edge clamp (`FUN_801DAA50`) applied, and focus
+    /// Y at `0` (`FUN_801DE084` clears it), plus the live yaw the mode-4
+    /// composer rewrites (see [`crate::camera_zone::Composed::live_yaw`]).
+    /// `None` without a player actor.
+    fn compose_follow_globals(&self, world: &World) -> Option<([i32; AXIS_COUNT], Option<i16>)> {
+        use crate::camera_zone::{ComposeInputs, compose, snap};
+        let a = world
+            .player_actor_slot
+            .and_then(|s| world.actors.get(s as usize))?;
+        let (x, y, z) = (
+            i32::from(a.move_state.world_x),
+            i32::from(a.move_state.world_y),
+            i32::from(a.move_state.world_z),
+        );
+        let zone = &self.zone;
+        let composed = compose(
+            &zone.config,
+            &ComposeInputs {
+                player: [x, y, z],
+                floor_y: world.sample_field_floor_height_static(x, z),
+                attr_box: zone.attrs.box_bytes,
+                live_pitch: self.globals.0[0],
+                live_yaw: self.globals.0[1],
+                half_eye_y: world.party.scene_save_allowed,
+            },
+        );
+        let (p, yw, eye, h) = snap(&composed.target);
+        let mut g = self.globals.0;
+        g[0] = p;
+        g[1] = yw;
+        g[3..6].copy_from_slice(&eye);
+        g[9] = h;
+        let focus = if zone.config.mode_nibble() == 5 {
+            [
+                -(zone.config.anchor_x << 7) - 0x40,
+                -(zone.config.anchor_z << 7) - 0x40,
+            ]
+        } else {
+            [-x, -z]
+        };
+        let clamped = crate::camera_zone::clamp_focus(
+            focus,
+            zone.config.mode_nibble(),
+            zone.attrs.kind != 0,
+            zone.attrs.box_bytes,
+            zone.view_window,
+            world.party.scene_save_allowed,
+            [0, 0],
+        );
+        g[6] = clamped[0];
+        g[7] = 0;
+        g[8] = clamped[1];
+        Some((g, composed.live_yaw))
     }
 
     /// Run the arrival snap now if it is still pending in a terrain-bearing
@@ -1652,7 +1759,10 @@ mod tests {
                 apply_trigger: 0,
                 mode: 0,
             },
-            FieldEvent::CameraApply,
+            FieldEvent::CameraApply {
+                apply_trigger: 0,
+                mode: 0,
+            },
             FieldEvent::Bgm {
                 text_id: 1,
                 sub_op: 1,
@@ -2155,6 +2265,86 @@ mod tests {
             );
             assert_eq!([c.globals.0[6], c.globals.0[8]], clamped, "pinned");
         }
+    }
+
+    /// Op-`0x45` APPLY hands the camera back to the follow shot
+    /// (`0x801DF210`: compose, clamp, `FUN_801DE084`). A scripted shot staged
+    /// before it gives way to the composed zone pose on the same frame, the
+    /// camera stays in `Follow`, and a looping record re-running the APPLY
+    /// every frame keeps the pose there rather than freezing the camera.
+    #[test]
+    fn camera_apply_snaps_back_to_the_composed_follow_shot() {
+        use legaia_engine_vm::field::CameraParam;
+        let (mut w, mut c) = gated_zone_world();
+        let composed = c.globals;
+        // A scripted CONFIGURE takes the shot: pitch 100, H 900.
+        w.pending_field_events.push(FieldEvent::CameraConfigure {
+            params: vec![
+                CameraParam {
+                    slot: 0,
+                    value: 100,
+                },
+                CameraParam {
+                    slot: 9,
+                    value: 900,
+                },
+            ],
+            apply_trigger: 0,
+            mode: 0,
+        });
+        c.route_camera_events(&mut w);
+        c.tick(&w);
+        assert_eq!(c.globals.angles()[0], 100, "the scripted shot holds");
+        assert_eq!(c.globals.h(), 900);
+        for _ in 0..3 {
+            w.pending_field_events.push(FieldEvent::CameraApply {
+                apply_trigger: 0,
+                mode: 0,
+            });
+            c.route_camera_events(&mut w);
+            assert_eq!(
+                c.mode,
+                CameraMode::Follow,
+                "APPLY is not a cinematic commit"
+            );
+            w.tick();
+            c.tick(&w);
+            assert_eq!(c.globals, composed, "APPLY snaps to the follow shot");
+            assert!(c.zone.active);
+        }
+    }
+
+    /// A non-zero APPLY trigger glides to the composed shot over that many
+    /// frames instead of snapping (`FUN_801DE084` -> `FUN_801DD310`).
+    #[test]
+    fn camera_apply_with_a_trigger_glides_to_the_follow_shot() {
+        use legaia_engine_vm::field::CameraParam;
+        let (mut w, mut c) = gated_zone_world();
+        let composed = c.globals;
+        w.pending_field_events.push(FieldEvent::CameraConfigure {
+            params: vec![CameraParam {
+                slot: 0,
+                value: 100,
+            }],
+            apply_trigger: 0,
+            mode: 0,
+        });
+        c.route_camera_events(&mut w);
+        w.pending_field_events.push(FieldEvent::CameraApply {
+            apply_trigger: 8,
+            mode: 1,
+        });
+        c.route_camera_events(&mut w);
+        assert!(c.mover.is_some(), "a glide is armed");
+        w.tick();
+        c.tick(&w);
+        let p = c.globals.angles()[0];
+        assert!(p > 100 && p < 450, "mid-glide pitch, got {p}");
+        for _ in 0..16 {
+            w.tick();
+            c.tick(&w);
+        }
+        assert_eq!(c.globals, composed, "the glide lands on the follow shot");
     }
 
     #[test]

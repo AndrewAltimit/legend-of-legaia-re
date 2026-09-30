@@ -240,6 +240,71 @@ that long cutscenes need catching up:
   different rate has to pace the VM off a display-frame sub-clock, not its own
   tick (see [`cutscene.md`](cutscene.md#record-pacing---the-60-hz-sub-clock)).
 
+### Engagement and the system script
+
+A context runs only while its `+0x10 & 0x100` (engaged) bit is up: the
+per-actor tick `FUN_8003BC08` hands it to the runner `FUN_80039B7C`, which
+steps opcodes until one of the three slice stops above. The runner is also
+what ends an engagement. When the op it just executed is a raw `0x21`
+(`0x80039E20`), it clears `0x100` and drops the frame count at
+`*(0x801C6EA4)+0xA` (`0x80039E68..0x80039EE4`); when that count reaches zero
+it clears the player's `+0x10 & 0x80000` again. On every frame it steps a
+context it raises that player bit (`0x80039DB8..0x80039DD4`), which is what
+stops the pad while a script runs.
+
+So a placement's script is a sequence of **interactions**, each running
+from where the last one's `0x21` left the PC to the next executed `0x21`. A
+spawned placement starts disengaged: the spawn pre-run clears `0x100` before
+it runs the `0x24`/`0x25` spawn section (`FUN_801D3F24`), and the talk body
+after that section's `0x21` waits for a touch. The Rim Elm bee beat
+(`town0c` / `town0b` `P1[21]`) shows why the boundary matters: its body ends
+`50 00` (the scripted-loss latch), `3E FF 03`, `21`, then jumps back to its
+flag dispatch. The `21` ends the interaction in the fight's own frame, so
+the fight does not fire again until the player touches Nene again.
+
+The **scene system script** (ctx `0xFB`, MAN `P1[0]`) is an ordinary context
+too. `FUN_8003AB2C` binds it to an actor whose tick is the SYSTEM entity SM
+`FUN_801DA51C` (actor descriptor `0x80073EA0`), and that SM's tail
+(`0x801DA750..0x801DA7C4`) is the script's driver:
+
+- nothing runs while the entity state `+0x8A` is non-zero - a committed
+  encounter or scripted battle;
+- a pass already open (`0x100` up) continues (`0x801DA78C`);
+- a new pass starts only while the player's `+0x10 & 0x80000` is down
+  (`0x801DA794..0x801DA7AC`), i.e. while no other context holds the player.
+
+A scene's system loop therefore sits out an NPC beat, a spawned record or a
+cutscene. In `town0c`, `P1[0]`'s loop tests `0x5C0` and spawns the bee
+fight's outcome record `P2[29]` (a flag-1 test at its head); `P1[21]` sets
+`0x5C0` eight frames before its `3E`, and the loop sees it only on the
+post-battle pass, where flag 1 holds that fight's outcome.
+
+The battle intro between the commit and the fight is its own slot-A overlay
+(PROT 0979, own content `0x4000`), loaded over the field overlay's head -
+the field frame pump `FUN_801D1344` included - so no field context runs
+during it.
+
+Text is part of the same runner and is not reserved for cutscenes: when the
+next byte is a text segment, the loop stops and the context parks on the one
+shared dialog box (`+0x9C = 2`) until it closes, whichever context reached
+it. A record spawned by op `0x44` in free roam (`town01` `P2[25]`, the FMV
+hand-off to `town0b`; `town0e` `P2[5]`, the ending's hop to `edteien`) shows
+its lines and runs on past them.
+
+Port: `World::step_field_frame_slice` (the system-script gate,
+`FieldVmState::system_pass_open`), `World::field_scripts_held_for_battle`,
+`CutsceneTimeline::interaction_slot` (a boss-stager touch resumes the
+placement's own context and ends at its `0x21`), `World::drive_script_dialog`
+and `World::script_dialog_panel` (one box for the timeline and the helper
+contexts), and
+`CutsceneTimeline::addressed_channels` - the engine's stand-in for the
+engaged set while a timeline plays: a placement's own script steps only once
+a playing context has addressed it with a cross-context op. The free-roam
+liveliness mode (`World::npcs.animate`) drives the motion VMs and leaves this
+window alone; when it widened the window to every placement, an idle
+card-load resume ran talk bodies nobody had touched (`vell` `P1[3]`'s spawn
+walked the player away, a `koin1` placement opened its lines).
+
 ## Top-level dispatch
 
 ```c
@@ -834,6 +899,23 @@ mode)` - the identical call the CONFIGURE arm makes with its own `s16` at
 `operand + 2`, i.e. the apply trigger. `mode` is `(op0 >> 2) & 0xF` on both
 arms.
 
+What the APPLY arm commits is the **follow shot**. Before the call it composes
+the zone camera for the player into the staging block (`jal 0x801DAB90` at
+`0x801DF228`, player `*0x8007C364`, staging `0x801C6EA8`), swaps the staged
+focus X / Z into the focus globals around the edge clamp (`jal 0x801DAA50` at
+`0x801DF24C`) and stores the clamped pair back into staging. `FUN_801DE084`
+then clears focus Y and either spawns the camera mover (`jal 0x801DD310`, a
+non-zero trigger: a glide of that many frames on curve `mode`) or cancels the
+live movers and copies all ten staged axes into the camera globals, `H`
+through `FUN_8003D254`. No camera mode changes and nothing latches: the follow
+ease keeps running from the player's handler afterwards. APPLY is therefore how
+a script releases a shot it staged, and scenes such as `rugi` run it from a
+looping record every frame, which pins the camera on the composed follow pose.
+The engine ports it as `Camera::apply_follow_shot`. Reading APPLY as "commit
+the staged shot and go cinematic" freezes such a scene's camera on the
+terrain-less fallback pose (`H = 512`, the zone-miss depth) instead of the
+region's own shot.
+
 Reading that `s16` as an absolute jump target is what kept `urudre2` one-way in
 the port: the room's only door record carries `45 C0 00 00` about `0x670` bytes
 before its `0x3F` -> `map01` tail, and a target of zero restarted the record.
@@ -918,9 +1000,7 @@ of a sub-`1` / `0xB` player arc, cutscene or not. The engine does the same:
 `World::script_arc_follow_camera` is true while such an arc flies, and the
 camera's tick runs its follow writeback and zone step through a cutscene for
 those frames, without the snap a cutscene hand-back takes (the watcher never
-calls `FUN_801DB8EC`). A glide in flight keeps the frame. Under the
-`Cinematic` camera mode an op-`0x45` apply selects, the port's view does not
-read the follow globals, so the arc's follow reaches only the `Follow` mode.
+calls `FUN_801DB8EC`). A glide in flight keeps the frame.
 
 **The acquire refuses an actor already mid arc.** The arm's acquire
 (`0x801DF384..0x801DF40C`) fails when the target carries the halt bit `0x400`

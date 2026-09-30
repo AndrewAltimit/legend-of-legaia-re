@@ -247,7 +247,7 @@ fn field_event_tag(e: &legaia_engine_core::field_events::FieldEvent) -> &'static
         E::CameraConfigure { .. } => "CameraConfigure",
         E::CameraLoad { .. } => "CameraLoad",
         E::CameraSave => "CameraSave",
-        E::CameraApply => "CameraApply",
+        E::CameraApply { .. } => "CameraApply",
         E::SetupAnimation { .. } => "SetupAnimation",
         E::ViewWindowLong { .. } => "ViewWindowLong",
         E::ViewWindowShort { .. } => "ViewWindowShort",

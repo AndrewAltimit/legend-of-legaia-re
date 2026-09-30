@@ -132,9 +132,38 @@ impl World {
     /// [`crate::world::AudioState::battle_bgm`] is `None` or the swap is already active. Stashes
     /// the current field track for [`World::restore_field_bgm`] and queues a
     /// `FieldEvent::Bgm` start so the host's BGM director cross-fades to it.
+    ///
+    /// Which track follows the battle sound set `_DAT_8007B880` the field
+    /// script left ([`crate::world::AudioState::battle_sound_set`]), as the
+    /// intro `FUN_801CF5BC` does: `-1` loads nothing (phase 2's `bltz` at
+    /// `0x801CF6EC`) and skips the completion arm's field stop and battle
+    /// start (`0x801CF8FC..`), so the field score - a boss theme the event
+    /// started - plays through the fight and nothing is stashed; `0` loads
+    /// the default bundle (`0x370` instead of `0x36F` when `DAT_8007B64B` is
+    /// set, `0x801CF6FC..0x801CF724`), which the port answers with the
+    /// configured track; `N > 0` loads bundle `0x36F + N`
+    /// ([`crate::music_labels::battle_bank_bgm_id`]).
     pub(crate) fn swap_to_battle_bgm(&mut self) {
-        let Some(battle) = self.audio.battle_bgm else {
+        let Some(configured) = self.audio.battle_bgm else {
             return;
+        };
+        let set = self.audio.battle_sound_set;
+        if set < 0 {
+            return;
+        }
+        let battle = if set == 0 {
+            let alt = self
+                .encounters
+                .region_setup
+                .and_then(|s| s.keep_backdrop_object_1)
+                .unwrap_or(false);
+            if alt && configured == crate::music_labels::BATTLE_THEME_1_BGM_ID {
+                crate::music_labels::BATTLE_THEME_2_BGM_ID
+            } else {
+                configured
+            }
+        } else {
+            crate::music_labels::battle_bank_bgm_id(set).unwrap_or(configured)
         };
         if self.audio.battle_bgm_active || self.audio.current_bgm == Some(battle) {
             return;
@@ -283,7 +312,22 @@ impl World {
         self.seat_monster_family(monster_count, u8::from(scripted) + u8::from(map_arm));
         let first_monster = party_count;
         for slot in 0..party_count as usize {
+            // The Spirit (AP) gauge `+0x170` opens at the character record's
+            // saved AP `+0x10E`: the party loader's last store
+            // (`FUN_80053CB8`, `lhu v0,0x6d6(record)` / `sh v0,0x170(actor)`
+            // at `0x800542BC..0x800542C4`). The results arms write it back
+            // ([`World::persist_battle_party_hp`]), so the gauge carries from
+            // fight to fight rather than restarting empty.
+            let saved_ap = self
+                .party
+                .roster
+                .members
+                .get(self.party_roster_slot(slot))
+                .map(|r| r.hp_mp_sp().sp_cur);
             let a = &mut self.actors[slot];
+            if let Some(ap) = saved_ap {
+                a.battle.spirit_gauge = ap;
+            }
             a.battle.liveness = 1;
             a.battle.action_category = 3; // Attack
             a.battle.active_target = first_monster;
@@ -627,6 +671,26 @@ impl World {
         if self.field_bytecode.get(self.field_pc)? & 0x7F < 0x20 {
             return None;
         }
+        // The system script is driven by the SYSTEM entity's tick
+        // `FUN_801DA51C`, which runs it through the interaction runner
+        // `FUN_80039B7C` only while the entity state `+0x8A` is 0 (not mid
+        // encounter, `0x801DA750`) - and which starts a NEW pass only while
+        // the player's `+0x10 & 0x80000` is down (`0x801DA794..0x801DA7AC`);
+        // a pass already open continues regardless (`0x801DA78C`). Every
+        // engaged interaction context raises that player bit on each frame
+        // it runs (`0x80039DB8..0x80039DD4`), so a scene's system loop sits
+        // out an NPC beat, a spawned record or a cutscene and resumes when
+        // they release the player. The Rim Elm bee beat depends on it: its
+        // `SET 0x5C0` precedes `3E FF 03` by an eight-frame wait, and the
+        // system loop's `0x5C0` test spawns the fight's outcome record - it
+        // must see the flag only on the post-battle pass.
+        if self.field_scripts_held_for_battle()
+            || (!self.field_vm.system_pass_open
+                && (self.script_context_engages_player() || self.dialogue_owns_input()))
+        {
+            return None;
+        }
+        self.field_vm.system_pass_open = true;
         let mode = self.mode;
         // Re-seat the system context's position anchor on the live player
         // before the slice runs. See [`Self::sync_field_ctx_player_anchor`].
@@ -672,7 +736,13 @@ impl World {
             // (1) the `0x21` NOP is the authored frame boundary; (2) a PC that
             // did not move is a park (wait, halt, unimplemented op); (3) the
             // next byte being a text segment ends the slice.
-            if opcode_byte == 0x21 || next == pc {
+            if opcode_byte == 0x21 {
+                // The pass ends: the runner clears the context's engaged bit
+                // on the executed `0x21` (`0x80039E68..0x80039E7C`).
+                self.field_vm.system_pass_open = false;
+                break;
+            }
+            if next == pc {
                 break;
             }
             match self.field_bytecode.get(next) {

@@ -805,31 +805,23 @@ impl LegaiaRuntime {
             let (origin, scale) =
                 crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
             let views = bcu::command_chip_views(&chips);
-            out.extend(bcu::battle_command_chip_sprites(
-                &bcu::CommandChipAtlas::from_battle_chrome(&rects),
+            // The plates, and - in the Rim Elm ambush / against monster
+            // `0xAF` - the red cross-out over the Ra-Seru chip on top of
+            // them: one builder, one engine read, the same call the native
+            // window makes.
+            out.extend(bcu::battle_command_menu_sprites(
+                &rects,
                 &bcu::BattleCommandMenuFrame {
                     chips: &views,
                     cursor: Some(cursor),
                     phase,
                 },
+                self.scene_host.as_ref().is_some_and(|h| {
+                    legaia_engine_core::battle_hud::battle_raseru_cross_out(&h.world)
+                }),
                 origin,
                 scale,
             ));
-            // The Rim Elm ambush / monster `0xAF`: the red cross-out over the
-            // Ra-Seru chip, after the plates so it lands on top. The native
-            // window appends the same sprite off the same engine read.
-            if let Some(src) = rects.cross_out
-                && self.scene_host.as_ref().is_some_and(|h| {
-                    legaia_engine_core::battle_hud::battle_raseru_cross_out(&h.world)
-                })
-            {
-                out.push(bcu::cross_out_mark_sprite(
-                    src,
-                    bcu::RASERU_MARK_ANCHOR,
-                    origin,
-                    scale,
-                ));
-            }
         }
         out
     }

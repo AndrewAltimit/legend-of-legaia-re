@@ -11,11 +11,11 @@
 //!    script-id rule `partition-0 count + record index` (`FUN_8003A1E4`) - on
 //!    the pre-change engine this set was empty outside a cutscene, so a
 //!    non-empty set is the regression-proof of the new seeding;
-//! 3. ticking the world in Field mode steps the channels: at least one runs its
-//!    own init opcodes past the entry PC and a channel context's state changes
-//!    (scripted facing / `WAIT` cadence / local-flag setup lands);
-//! 4. a scripted move surfaces a heading, so a repositioned NPC no longer
-//!    renders unrotated (reported; the exact set is scene-script dependent).
+//! 3. ticking the world in Field mode with no input - liveliness mode on, as
+//!    `play-window` runs it - steps **no** placement past the PC its spawn
+//!    pre-run left: retail runs a placement's script only while its actor
+//!    carries the engaged bit (`+0x10 & 0x100`, raised by a touch), so the
+//!    talk body after the spawn section's `0x21` waits for the player.
 //!
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 
@@ -112,44 +112,19 @@ fn freeroam_channels_seed_and_execute() {
             .collect::<Vec<_>>()
     );
 
-    // 3. Tick in Field mode and observe channel execution. Channel stepping is
-    //    gated behind the engine's NPC-animation switch (the same master gate
-    //    the waypoint patroller honours), so enable it to exercise execution -
-    //    seeding (parts 1-2) is unconditional and already asserted above.
+    // 3. Tick in Field mode with the liveliness mode on and no input. The
+    //    mode drives the motion VMs; it never engages a placement's script.
     host.world.npcs.animate = true;
-    let headings_before = host.world.npcs.headings.len();
-    let mut any_advanced = false;
-    let mut any_state_changed = false;
-    for _ in 0..600 {
+    for tick in 0..600 {
         let _ = host.world.tick();
         for (c, s) in host.world.field_vm.channels.iter().zip(&spawn_state) {
-            if c.pc != s.0 {
-                any_advanced = true;
-            }
-            if (
-                c.ctx.flags,
-                c.ctx.local_flags,
-                c.ctx.face_rotation,
-                c.ctx.wait_accum,
-                c.ctx.world_x,
-                c.ctx.world_z,
-            ) != (s.1, s.2, s.3, s.4, s.5, s.6)
-            {
-                any_state_changed = true;
-            }
+            assert_eq!(
+                c.pc, s.0,
+                "placement {} (script id {}) stepped past its spawn-section PC at tick {tick} \
+                 with no touch",
+                c.placement_index, c.ctx.script_id
+            );
         }
     }
-
-    assert!(
-        any_advanced,
-        "at least one free-roam channel executed past its entry PC (init opcodes run)"
-    );
-    assert!(
-        any_state_changed,
-        "at least one channel's context state changed (facing / wait / flag setup applied)"
-    );
-    let headings_after = host.world.npcs.headings.len();
-    eprintln!(
-        "[town01] channels advanced; NPC headings before={headings_before} after={headings_after}"
-    );
+    eprintln!("[town01] no placement script ran without a touch over 600 ticks");
 }

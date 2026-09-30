@@ -49,12 +49,10 @@ pub struct FieldCtx {
     /// op 0x4C outer-nibble-4 sub-0.
     pub field_72: u16,
     /// `+0x24` - generic per-actor scalar slot. Written / ramped by
-    /// op 0x4C outer-nibble-4 sub-3 (ramp path); the immediate path is
-    /// repurposed as an absolute jump and does not touch this field.
+    /// op 0x4C outer-nibble-4 sub-3.
     pub field_24: i16,
-    /// `+0x28` - generic per-actor scalar slot. Written by op 0x4C
-    /// outer-nibble-4 sub-4 (immediate path); the ramp path is repurposed
-    /// as an absolute jump and does not touch this field.
+    /// `+0x28` - generic per-actor scalar slot. Written / ramped by op
+    /// 0x4C outer-nibble-4 sub-4.
     pub field_28: i16,
     /// `+0x6A` - generic per-actor scalar slot. Written / ramped by op
     /// 0x4C outer-nibble-4 sub-1, which **halves the input** (`target >> 1`)

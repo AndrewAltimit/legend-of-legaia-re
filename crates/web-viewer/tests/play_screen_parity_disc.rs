@@ -45,6 +45,7 @@ fn page_ground_uploads_the_shared_render_surface() {
             host.resources.as_ref().expect("resources"),
             false,
             &host.world.hidden_object_records(),
+            &host.world.object_render_scales(),
         );
         let hf = f.ground.as_ref().expect("walk-ground heightfield");
         let Some(rt) = runtime_in(scene) else {

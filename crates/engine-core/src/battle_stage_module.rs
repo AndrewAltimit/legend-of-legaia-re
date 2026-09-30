@@ -33,9 +33,11 @@
 //! Not staged: the in-image spawn records `FUN_80050ED4` is handed (every one
 //! of them opens `model_sel = -1`, a meshless part), the two SCUS move-VM
 //! effect trees `FUN_80021B04` runs at the hand-back, the render-node words
-//! (`record[+0x42]`, `+0x72`, `+0x78`, the node rebinding at `ctx[+0x106C]` /
-//! `ctx[+0x1070]`), the `FUN_80058490` rect push and the CD-XA stop
-//! `FUN_8003ED04(0)`. The spawns are still reported as [`StageEffect::Spawn`]
+//! (`record[+0x42]`, `+0x72`, `+0x78`) and the CD-XA stop `FUN_8003ED04(0)`.
+//! The hand-back's backdrop rebind (`ctx[+0x106C]` / `ctx[+0x1070]` slot 0
+//! := slot 1) and its `FUN_80058490` rect push are reported as
+//! [`StageEffect::RebindBackdrop`] / [`StageEffect::MoveImage`], which the
+//! world turns into render state both hosts read. The spawns are still reported as [`StageEffect::Spawn`]
 //! and the form transition still draws its battle-RNG values, so the RNG
 //! stream matches retail's.
 //!
@@ -80,6 +82,21 @@ pub const FORM_TRANSITION_PARTY_Z: i16 = -0x307;
 pub const FORM_TRANSITION_ACTOR_Z: i16 = -0x339;
 /// The two alternating `TR.y` values of the transition shake.
 pub const FORM_TRANSITION_SHAKE: (i32, i32) = (0x780, 0x800);
+
+/// The arrival hand-back's `MoveImage` (`0x801F719C..0x801F71CC`): the
+/// empty `16 x 64` strip at `(0x340, 0xC0)` copied onto `(0x370, 0xC0)` -
+/// the ground grid's `(192..=255)^2` tile window on texture page 13
+/// ([`legaia_asset::battle_backdrop::GROUND_TSB`]). The strip is all index
+/// `0`, a transparent texel, so from the hand-back on the procedural floor
+/// draws nothing and the flesh shell is the only ground.
+pub const ARRIVAL_GROUND_BLANK: StageEffect = StageEffect::MoveImage {
+    x: 0x340,
+    y: 0xC0,
+    w: 0x10,
+    h: 0x40,
+    dst_x: 0x370,
+    dst_y: 0xC0,
+};
 
 /// The in-image spawn records each module hands `FUN_80050ED4`, by VA.
 pub mod records {
@@ -216,6 +233,21 @@ pub enum StageEffect {
     /// The boss-name banner: `FUN_8003541C` of the first monster's name at
     /// `(0xA0 - width / 2, 0x96)`.
     Banner,
+    /// The arrival's phase 6 rebind of both backdrop copies' object table:
+    /// slot 1 over slot 0 (`0x801F7148..0x801F7180`), so a two-object stage
+    /// shell draws its object 1 alone from here on
+    /// ([`legaia_asset::battle_backdrop::drawn_object_indices_rebound`]).
+    RebindBackdrop,
+    /// `FUN_80058490` (`MoveImage`): VRAM rect `(x, y, w, h)` onto
+    /// `(dst_x, dst_y)`.
+    MoveImage {
+        x: u16,
+        y: u16,
+        w: u16,
+        h: u16,
+        dst_x: u16,
+        dst_y: u16,
+    },
     /// The arrival's phase 6: stage id, `ctx[+0x289]` and `ctx[+0x6D6]`
     /// cleared, flow `ctx[+0x06] = 0x0B` - round one may open.
     HandBack,
@@ -420,6 +452,8 @@ pub fn arrival_tick(st: &mut ArrivalState, v: &mut ArrivalView, step: u8) -> Vec
             v.phase = 0;
             v.seat.anim_rate = 8;
             v.flow = ARRIVAL_HANDBACK_FLOW;
+            out.push(RebindBackdrop);
+            out.push(ARRIVAL_GROUND_BLANK);
             out.push(HandBack);
         }
         // `sltiu a0,7` bounds the table; anything past it is a no-op.
@@ -668,6 +702,40 @@ mod tests {
         assert_eq!(v.flow, ARRIVAL_HANDBACK_FLOW);
         assert_eq!((v.stage_id, v.phase, v.ramp_delay), (0, 0, 0));
         assert_eq!((v.ctx_243, v.ctx_278), (0, 0));
+    }
+
+    #[test]
+    fn the_hand_back_rebinds_the_backdrop_and_blanks_the_ground_tile() {
+        let mut st = ArrivalState {
+            countdown: 1,
+            ..Default::default()
+        };
+        let mut v = ArrivalView {
+            phase: 6,
+            ..Default::default()
+        };
+        let e = arrival_tick(&mut st, &mut v, 1);
+        // Retail order: the rebind (0x801F7148), the `MoveImage`
+        // (0x801F71CC), all inside the phase-6 arm that hands back.
+        assert_eq!(
+            e,
+            vec![
+                StageEffect::RebindBackdrop,
+                ARRIVAL_GROUND_BLANK,
+                StageEffect::HandBack
+            ]
+        );
+        // The strip lands on the ground grid's tile window: page 13's
+        // `(192..=255)` rows at halfword column `832 + 192 / 4`.
+        let StageEffect::MoveImage {
+            dst_x, dst_y, w, h, ..
+        } = ARRIVAL_GROUND_BLANK
+        else {
+            unreachable!()
+        };
+        let (page_x, page_y) = legaia_asset::battle_backdrop::ground_page_xy();
+        assert_eq!((dst_x, dst_y), (page_x + 192 / 4, page_y + 192));
+        assert_eq!((w, h), (64 / 4, 64));
     }
 
     #[test]

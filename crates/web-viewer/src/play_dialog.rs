@@ -150,12 +150,7 @@ impl LegaiaRuntime {
     /// the same precedence as the native window's `dialog_snapshot`.
     fn dialog_snapshot(&self) -> Option<DialogSnapshot> {
         let h = self.scene_host.as_ref()?;
-        if let Some(panel) = h
-            .world
-            .cutscene
-            .timeline
-            .as_ref()
-            .and_then(|tl| tl.dialog.as_ref())
+        if let Some(panel) = h.world.script_dialog_panel()
             && let Some(snap) = from_panel(panel, true)
         {
             return Some(snap);

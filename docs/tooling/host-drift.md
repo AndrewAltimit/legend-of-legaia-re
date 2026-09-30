@@ -254,6 +254,7 @@ is reached at runtime.
 | dev-records model | `symbols_all` on `record_counters` + `records_screen` across the two model builders. |
 | play clock | `symbols_same` on `advance_play_time` across the two menu draw sites. |
 | walk-ground render surface | `symbols_all` on `field_ground::render_positions` (the sink) and `render_indices` (the winding) across the native mesh builder and the play page's ground exports. |
+| visible-tile crop | `symbols_all` on `field_view_window::field_view_cells` + `framing_is_retail` (whether a frame crops), `terrain_draw_visible` (the terrain list) and `field_ground::crop_indices` (the ground) across the native redraw / ground re-upload and the play page's crop exports. |
 
 The last three exist because each named a divergence the reachability tier
 could not see, and each divergence was a *model* one rather than a missing
@@ -1347,10 +1348,10 @@ carries `0x200`, and retail's command ring crosses the Ra-Seru chip out with
 the red `etim` quad (`FUN_801DBC30(0xF8, 0x42)`) and refuses its arm. Both
 play hosts take the refusal and the greyed chip from the engine
 (`battle_hud::battle_magic_chip`, `World::tick_battle_command`), and both
-draw the X the same way: `battle_hud::battle_raseru_cross_out` answers
-whether the ring is up under the bit, and `engine-ui`'s
-`battle_command_ui::cross_out_mark_sprite` places it at
-`RASERU_MARK_ANCHOR` after the chip plates.
+draw the X through one call: `engine-ui`'s
+`battle_command_ui::battle_command_menu_sprites` draws the chip plates and,
+switched by `battle_hud::battle_raseru_cross_out` (the ring is up under the
+bit), places the mark at `RASERU_MARK_ANCHOR` after them.
 
 The X is a sprite out of the chrome atlas, not a VRAM screen primitive,
 because the browser page draws the chips on its 2D overlay canvas above the
@@ -3139,7 +3140,11 @@ The audio rows of the same pass are closed or settled in
   also carried a defect of its own: it skipped every call while four effect
   lists were empty, a test that left out the `4C DB` blend fades (a lone
   blend fade never stepped natively) and that left each list's tick backlog
-  banked for the next effect to consume at once.
+  banked for the next effect to consume at once. The headless session is a
+  third driver of the same tail: `BootSession::tick` runs its world side
+  through `World::step_world_frame_tail` whenever the caller does not drain
+  the queues itself, so replays and ladders execute what the hosts do
+  ([`reach-triage.md`](reach-triage.md#what-a-pad-only-ladder-structurally-cannot-execute)).
 - **The page's screen-prim camera centre.** Fog, drop shadows, move strips and
   light pools resolved the follow camera with a pinned `[0, 0]` fallback focus
   on the page and the scene AABB centre natively; the page passes the AABB

@@ -600,7 +600,7 @@ pub fn rename_retail_character(sc_block: &mut [u8], from: &str, to: &str) -> Res
 /// The four-slot record array is immediately followed by the global game
 /// data, so slot 3 (Terra)'s `0x414`-byte footprint runs from `game+0x1004`
 /// to `game+0x1418` and its **tail** (from internal offset `+0x2BC`,
-/// i.e. `game+0x12C0`) overlaps the 512-byte story-flag bitmap at
+/// i.e. `game+0x12C0`) overlaps the story-flag window at
 /// [`RETAIL_STORY_FLAGS_OFFSET`] and the inventory at
 /// [`RETAIL_INVENTORY_OFFSET`]. Terra's meaningful fields all sit *before*
 /// that boundary - her name (`+0x2A7`), live HP/MP (`+0x104`) and
@@ -624,8 +624,8 @@ pub const RETAIL_SC_PARTY_RECORDS: usize = 4;
 
 /// Byte offset from the SC block start to the story-flag bitmap.
 ///
-/// The story-flag bitmap occupies 512 bytes (`0x200`) and mirrors the
-/// live-RAM region `0x80085600..0x80085800`.  Derived via the linear
+/// The window runs [`RETAIL_STORY_FLAGS_SIZE`] bytes up to the item array and
+/// mirrors the live-RAM region `0x80085600..0x80085958`.  Derived via the linear
 /// address formula `block_offset = RETAIL_GAME_DATA_OFFSET +
 /// (ram_addr - SAVE_GAME_DATA_RAM_BASE)`:
 /// `0x200 + (0x80085600 - 0x80084340) = 0x14C0`.
@@ -634,9 +634,20 @@ pub const RETAIL_SC_PARTY_RECORDS: usize = 4;
 /// against retail Drake and Sebucus MCR save blocks.
 pub const RETAIL_STORY_FLAGS_OFFSET: usize = 0x14C0;
 
-/// Size of the story-flag bitmap in the save block (matches the live-RAM
-/// window `0x80085600..0x80085800`).
-pub const RETAIL_STORY_FLAGS_SIZE: usize = 0x200;
+/// Size of the story-flag window in the save block: live RAM
+/// `0x80085600..0x80085958`, i.e. everything from the window's start up to
+/// the item array at [`RETAIL_INVENTORY_OFFSET`].
+///
+/// The window's `+0x158` is the **system-flag bank** `0x80085758` (the
+/// bitfield `FUN_8003CE08` / `_CE34` / `_CE64` set, clear and test), which is
+/// `0x200` bytes long - flags `0x000..=0xFFF` - and so ends exactly at the
+/// item array. Retail's card load restores all of it: the load arm of
+/// `FUN_801DD35C` copies the whole `0x1A18`-byte live-state window back with
+/// `FUN_8001A8B0(0x80084140, 0x801E5120, 0x1A18)` (`0x801DFA98..0x801DFAAC`).
+/// A `0x200`-byte window here stopped at `0x80085800` and reached only the
+/// bank's first `0xA8` bytes, so every flag from `0x540` up was dropped on a
+/// lift.
+pub const RETAIL_STORY_FLAGS_SIZE: usize = RETAIL_INVENTORY_OFFSET - RETAIL_STORY_FLAGS_OFFSET;
 
 /// Byte offset from the SC block start to the global inventory array.
 ///
@@ -819,6 +830,178 @@ pub fn write_retail_gold(sc_block: &mut [u8], gold: i32) -> Result<()> {
     Ok(())
 }
 
+/// Byte offset of the **field position snapshot** X (i32 LE), live RAM
+/// `0x80084568`; the Z word follows at [`RETAIL_FIELD_POS_Z_OFFSET`].
+///
+/// The mode-change prologue `FUN_80016230` writes the pair when the field run
+/// (mode `3`) hands over to the menu / battle modes (`0x08` / `0x14` / `0x18`
+/// / `0x1A`): `lh` of the player actor's `+0x14` / `+0x18`, stored as a
+/// sign-extended word (`0x80016400..0x8001641C`). So a save made from the
+/// pause menu carries where the player stood.
+///
+/// Retail reads it back on the scene load that follows a **card load**: the
+/// load arm of `FUN_801DD35C` raises `_DAT_8007B8C0 = 1` after its
+/// `0x1A18`-byte copy (`0x801DFB04`), and the MAN loader `FUN_8003AEB0`, on
+/// that flag, zeroes `_DAT_80073EFC` and copies this pair into the
+/// destination-entry operand `_DAT_80073EF4` / `_DAT_80073EF8`
+/// (`0x8003B764..0x8003B798`) - the words every field entry seats the player
+/// from. No facing is stored: the arm zeroes `_DAT_80073EFC`.
+pub const RETAIL_FIELD_POS_X_OFFSET: usize = 0x428;
+/// Z word of the field position snapshot (live RAM `0x8008456C`).
+pub const RETAIL_FIELD_POS_Z_OFFSET: usize = 0x42C;
+
+/// Byte offset of the present-party **member count** (u8), live RAM
+/// `0x80084594`: what the field VM's `PARTY_ADD` (op `0x3C`) bumps and every
+/// roster walk (the pause menu, the item-window selector `FUN_8004313C`)
+/// reads with `lbu`.
+pub const RETAIL_PARTY_COUNT_OFFSET: usize = 0x454;
+/// Byte offset of the party **leader** id (u8), live RAM `0x80084597`. The MAN
+/// loader copies it into `_DAT_8007B8F8` (`0x8003B724..0x8003B72C`); the
+/// leader swap `FUN_801D27E0` writes the same id here and at the head of the
+/// member list.
+pub const RETAIL_PARTY_LEADER_OFFSET: usize = 0x457;
+/// Byte offset of the present-party **member list** (u8 roster ids), live
+/// RAM `0x80084598`, [`RETAIL_PARTY_COUNT_OFFSET`] entries long.
+pub const RETAIL_PARTY_MEMBERS_OFFSET: usize = 0x458;
+/// Longest member list the block holds: `PARTY_ADD` caps at four, and the
+/// party gold word follows at [`RETAIL_GOLD_OFFSET`].
+pub const RETAIL_PARTY_MEMBERS_MAX: usize = RETAIL_GOLD_OFFSET - RETAIL_PARTY_MEMBERS_OFFSET;
+
+/// The field position snapshot `(x, z)`, or `None` if the block is too small
+/// or the snapshot was never taken. The words are sign-extended halfwords, so
+/// the `i16` narrowing is exact.
+///
+/// `(0, 0)` reads as "never taken": it is the pair a window holds before the
+/// first mode-change snapshot (a live state captured without a menu visit
+/// carries it), and it is the grid's outer corner, not a place any scene
+/// seats the party. Retail would seat a card load there regardless; the
+/// engine lets that entry take the scene's own seat instead.
+pub fn read_retail_field_position(sc_block: &[u8]) -> Option<(i16, i16)> {
+    let word = |o: usize| -> Option<i16> {
+        let b = sc_block.get(o..o + 4)?;
+        Some(i32::from_le_bytes(b.try_into().unwrap()) as i16)
+    };
+    let pos = (
+        word(RETAIL_FIELD_POS_X_OFFSET)?,
+        word(RETAIL_FIELD_POS_Z_OFFSET)?,
+    );
+    (pos != (0, 0)).then_some(pos)
+}
+
+/// Write the field position snapshot as retail's `FUN_80016230` does (two
+/// sign-extended words), restamping the block checksum.
+pub fn write_retail_field_position(sc_block: &mut [u8], pos: (i16, i16)) -> Result<()> {
+    let end = RETAIL_FIELD_POS_Z_OFFSET + 4;
+    if sc_block.len() < end {
+        bail!("sc_block too small for the field position snapshot (need >= {end})");
+    }
+    sc_block[RETAIL_FIELD_POS_X_OFFSET..RETAIL_FIELD_POS_X_OFFSET + 4]
+        .copy_from_slice(&i32::from(pos.0).to_le_bytes());
+    sc_block[RETAIL_FIELD_POS_Z_OFFSET..end].copy_from_slice(&i32::from(pos.1).to_le_bytes());
+    restamp_sc_block_checksum(sc_block);
+    Ok(())
+}
+
+/// Byte offset of the **configured audio level** (i32 LE), live RAM
+/// `0x8008457C`: the reference the live level `_DAT_8007B910` is reset to.
+///
+/// The cold reset `FUN_8001FFA4` seeds it `0xD7`; the MAN loader
+/// `FUN_8003AEB0` copies it into the live level on every non-skip scene load
+/// (`_DAT_8007B910 = _DAT_8008457C`), so a card load re-applies the saved
+/// value at the first scene it enters; and the battle duck targets a
+/// percentage of it. Linear map: `0x200 + (0x8008457C - 0x80084340) = 0x43C`.
+pub const RETAIL_AUDIO_LEVEL_OFFSET: usize = 0x43C;
+/// Byte offset of the **voice / SFX volume** word (i32 LE), live RAM
+/// `0x80084580`, cold-reset `200`. Every voice-attr key-on halves it into its
+/// `vol_l` / `vol_r` pair (`(word << 15) >> 16`) - the SCUS cue drainer
+/// `FUN_80016B6C` and the minigame overlays alike.
+pub const RETAIL_VOICE_VOLUME_OFFSET: usize = 0x440;
+
+/// The two audio-level words a retail save block carries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RetailAudioLevels {
+    /// `_DAT_8008457C` - the configured (reference) audio level.
+    pub configured_level: i32,
+    /// `_DAT_80084580` - the voice / SFX volume word.
+    pub voice_volume: i32,
+}
+
+impl RetailAudioLevels {
+    /// The values the cold reset `FUN_8001FFA4` stores.
+    pub const COLD_RESET: Self = Self {
+        configured_level: 0xD7,
+        voice_volume: 200,
+    };
+}
+
+/// Read both audio-level words. `None` when the block is too small, or when
+/// both words are zero - a free block, or a live-state window the cold reset
+/// never ran over; no retail save loads that pair, so reading it as a real
+/// setting would import silence.
+pub fn read_retail_audio_levels(sc_block: &[u8]) -> Option<RetailAudioLevels> {
+    let word = |o: usize| -> Option<i32> {
+        Some(i32::from_le_bytes(sc_block.get(o..o + 4)?.try_into().ok()?))
+    };
+    let levels = RetailAudioLevels {
+        configured_level: word(RETAIL_AUDIO_LEVEL_OFFSET)?,
+        voice_volume: word(RETAIL_VOICE_VOLUME_OFFSET)?,
+    };
+    (levels.configured_level != 0 || levels.voice_volume != 0).then_some(levels)
+}
+
+/// Write both audio-level words, restamping the block checksum.
+pub fn write_retail_audio_levels(sc_block: &mut [u8], levels: RetailAudioLevels) -> Result<()> {
+    let end = RETAIL_VOICE_VOLUME_OFFSET + 4;
+    if sc_block.len() < end {
+        bail!("sc_block too small for the audio-level words (need >= {end})");
+    }
+    sc_block[RETAIL_AUDIO_LEVEL_OFFSET..RETAIL_AUDIO_LEVEL_OFFSET + 4]
+        .copy_from_slice(&levels.configured_level.to_le_bytes());
+    sc_block[RETAIL_VOICE_VOLUME_OFFSET..end].copy_from_slice(&levels.voice_volume.to_le_bytes());
+    restamp_sc_block_checksum(sc_block);
+    Ok(())
+}
+
+/// The present-party member list (roster ids, count taken from
+/// [`RETAIL_PARTY_COUNT_OFFSET`]). `None` when the block is too small or the
+/// count is `0` or past [`RETAIL_PARTY_MEMBERS_MAX`] - a free block, not a
+/// party.
+pub fn read_retail_present_party(sc_block: &[u8]) -> Option<Vec<u8>> {
+    let n = usize::from(*sc_block.get(RETAIL_PARTY_COUNT_OFFSET)?);
+    if !(1..=RETAIL_PARTY_MEMBERS_MAX).contains(&n) {
+        return None;
+    }
+    Some(
+        sc_block
+            .get(RETAIL_PARTY_MEMBERS_OFFSET..RETAIL_PARTY_MEMBERS_OFFSET + n)?
+            .to_vec(),
+    )
+}
+
+/// Write the present party: the count, the leader (the list's head, as the
+/// leader swap keeps it) and the member list zero-padded to
+/// [`RETAIL_PARTY_MEMBERS_MAX`], restamping the block checksum. `Err` on an
+/// empty or over-long list, or a block too small.
+pub fn write_retail_present_party(sc_block: &mut [u8], members: &[u8]) -> Result<()> {
+    if !(1..=RETAIL_PARTY_MEMBERS_MAX).contains(&members.len()) {
+        bail!(
+            "present party must hold 1..={RETAIL_PARTY_MEMBERS_MAX} members, got {}",
+            members.len()
+        );
+    }
+    let end = RETAIL_PARTY_MEMBERS_OFFSET + RETAIL_PARTY_MEMBERS_MAX;
+    if sc_block.len() < end {
+        bail!("sc_block too small for the present-party list (need >= {end})");
+    }
+    sc_block[RETAIL_PARTY_COUNT_OFFSET] = members.len() as u8;
+    sc_block[RETAIL_PARTY_LEADER_OFFSET] = members[0];
+    let dst = &mut sc_block[RETAIL_PARTY_MEMBERS_OFFSET..end];
+    dst.fill(0);
+    dst[..members.len()].copy_from_slice(members);
+    restamp_sc_block_checksum(sc_block);
+    Ok(())
+}
+
 /// Read the casino coin bank (u32 LE at [`RETAIL_COINS_OFFSET`]) from a
 /// retail SC save block. `None` if the block is too small.
 pub fn read_retail_coins(sc_block: &[u8]) -> Option<u32> {
@@ -995,13 +1178,14 @@ pub fn read_retail_char_records(sc_block: &[u8], max_records: usize) -> Option<V
     Some(out)
 }
 
-/// Extract the 512-byte story-flag bitmap from a retail SC save block.
+/// Extract the story-flag window from a retail SC save block.
 ///
-/// Returns a reference to the 512-byte slice at `RETAIL_STORY_FLAGS_OFFSET`, or
-/// `None` if the block is too small.  Each bit in the bitmap corresponds to one
-/// game-progress flag (visited towns, event triggers, Door of Wind flags, etc.).
+/// Returns the [`RETAIL_STORY_FLAGS_SIZE`]-byte slice at
+/// `RETAIL_STORY_FLAGS_OFFSET`, or `None` if the block is too small.  Each bit
+/// corresponds to one game-progress flag (visited towns, event triggers, Door
+/// of Wind flags, etc.); the system-flag bank is the slice's `+0x158..`.
 ///
-/// The slice mirrors the live-RAM region `0x80085600..0x80085800`.
+/// The slice mirrors the live-RAM region `0x80085600..0x80085958`.
 pub fn read_retail_story_flags(sc_block: &[u8]) -> Option<&[u8]> {
     sc_block.get(RETAIL_STORY_FLAGS_OFFSET..RETAIL_STORY_FLAGS_OFFSET + RETAIL_STORY_FLAGS_SIZE)
 }
@@ -1068,7 +1252,7 @@ pub fn write_retail_char_records(sc_block: &mut [u8], records: &[Vec<u8>]) -> Re
     Ok(n)
 }
 
-/// Write the 512-byte story-flag bitmap into a retail SC save block in place.
+/// Write the story-flag window into a retail SC save block in place.
 ///
 /// `bits` shorter than [`RETAIL_STORY_FLAGS_SIZE`] is zero-padded on the right;
 /// longer slices are truncated. Returns the number of bytes written.

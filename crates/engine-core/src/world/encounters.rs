@@ -763,6 +763,27 @@ impl World {
         self.encounters.region_setup = Some(setup);
     }
 
+    /// Stamp the battle-stage variant `_DAT_8007BD60 & 0x1F` directly - the
+    /// value the region reader leaves for the tile a fight starts on - for a
+    /// caller that enters a fight without standing on that tile: a replay of
+    /// a retail battle capture, whose RAM names the variant but whose player
+    /// actor is no longer the field walker. The rest of the last setup is
+    /// kept, as a short-layout region record would keep it.
+    pub fn seed_battle_stage_variant(&mut self, variant: u8) {
+        let mut setup =
+            self.encounters
+                .region_setup
+                .unwrap_or(crate::region_encounter::RegionBattleSetup {
+                    stage_variant: 0,
+                    keep_backdrop_object_1: None,
+                    door_of_light_blocked: true,
+                    door_of_wind_blocked: true,
+                    world_map_return: None,
+                });
+        setup.stage_variant = variant & 0x1F;
+        self.encounters.region_setup = Some(setup);
+    }
+
     /// The Door of Light / Door of Wind gates the last region setup left in
     /// scratchpad `0x1F800394` (`0x100000` / `0x200000`): `(light, wind)`,
     /// `true` = blocked. Open until a region has been stood in.
@@ -1052,6 +1073,32 @@ impl World {
         let installed =
             self.install_cutscene_timeline_record(&man_file, &man, 1, record as usize, false);
         if installed {
+            // The touch resumes the placement's own parked context: start at
+            // its PC (past the spawn section the entry pre-run executed) and
+            // mark the timeline as that context, so it ends at the next
+            // executed `0x21` and the channel never runs a second copy of the
+            // same bytes (`CutsceneTimeline::interaction_slot`).
+            let span = crate::man_field_scripts::partition_record_span(
+                &man_file,
+                &man,
+                1,
+                record as usize,
+            );
+            let channel_pc = self
+                .field_vm
+                .channels
+                .iter()
+                .find(|c| !c.object_bind && c.placement_index == record as usize && !c.done)
+                .zip(span)
+                .and_then(|(c, (start, _, len))| {
+                    (c.record_offset == start && c.pc < len).then_some(c.pc)
+                });
+            if let Some(tl) = self.cutscene.timeline.as_mut() {
+                tl.interaction_slot = Some(record);
+                if let Some(pc) = channel_pc {
+                    tl.pc = pc;
+                }
+            }
             self.props.boss_stagers.remove(&slot);
             self.props.walk_touch.remove(&slot);
             log::info!("field: boss stager P1[{record}] launched as the beat timeline");
@@ -1279,20 +1326,28 @@ impl World {
         // own countdown is the same clock read the other way round.
         entity.elapsed = total.saturating_sub(frames_remaining) as i16;
         let globals = TransitionGlobals {
-            // `_DAT_8007B880`. On the spin's first frame of an
-            // encounter-rolled battle retail still holds the `-1` "no id yet"
-            // sentinel - the id is written when the formation resolve lands,
-            // between phases 0 and 2 - which is why phase 0 selects the cue
-            // from the flags byte rather than from the id, and why the
-            // engine (which resolves the roll synchronously) re-creates the
-            // phase-0 view by passing the sentinel on that tick. From phase 1
-            // on, the resolved id feeds the BGM / bundle loads as retail's
-            // filled-in global does.
-            battle_id: if entity.phase == 0 {
-                -1
-            } else {
-                i32::from(roll.formation_id)
-            },
+            // `_DAT_8007B880` - the battle sound set the field script left
+            // (op-`0x35` sub-op `7`; zeroed on every scene entry), not the
+            // formation: nothing on the encounter path writes the word. `-1`
+            // is a script's "no battle track" choice, and the only arm that
+            // reads the flags byte for the cue.
+            battle_id: self.audio.battle_sound_set,
+            // `DAT_8007B64B`: the region record's alternate-default-bundle
+            // bit, read by phase 2 only for sound set `0`.
+            alt_default_bundle: u8::from(
+                self.encounters
+                    .region_setup
+                    .and_then(|s| s.keep_backdrop_object_1)
+                    .unwrap_or(false),
+            ),
+            // `DAT_8007BD0C` - the formation cell's slot 0, which the
+            // completion arm compares against `0xA6`.
+            formation_slot0: self
+                .tables
+                .formation_table
+                .formation(roll.formation_id)
+                .and_then(|d| d.slots.first())
+                .map_or(0, |s| s.monster_id as u8),
             total_duration: i32::from(total),
             // `DAT_8007BD60`. Bit `0x80` is the only bit this kernel reads,
             // and it is a property of the rolled formation row: the entity
@@ -1320,9 +1375,11 @@ impl World {
             // id, and the phase-0 tick passes the sentinel (above).
             bgm_voice_id: 0,
             // `_DAT_8007B910` - the live audio level. The engine models no
-            // field-mode duck, so the level sits at retail's cold-reset value
-            // (`0xD7`; `docs/subsystems/battle-action.md` § audio duck).
-            audio_level: crate::new_game::GAME_STATE_COLD_RESET.audio_level,
+            // field-mode duck, so the level sits where the MAN loader rests
+            // it: the configured level `_DAT_8008457C` (`0xD7` from a cold
+            // boot, a loaded save's own word after a load;
+            // `docs/subsystems/battle-action.md` § audio duck).
+            audio_level: self.audio.levels.configured_level,
             ..Default::default()
         };
         let tick = tick_transition(&mut entity, &globals, &TransitionResponses::default());
@@ -1360,6 +1417,13 @@ impl World {
                     target_slot: 0,
                 });
         }
+        // The completion arm zeroes the sound set after the fight whose
+        // first monster is `0xA6` (`0x801CF934..0x801CF94C`): the Gaza fight
+        // selects `-1` for its own score, and the next fight must not
+        // inherit it.
+        if tick.cleared_battle_id {
+            self.audio.battle_sound_set = 0;
+        }
         self.battle.intro_effects = tick.effects;
         // The master mode hand-off (`_DAT_8007B83C = 0x14` at `0x801CF8F8`).
         // Latching, not level-triggered: retail writes the word once, at the
@@ -1386,6 +1450,29 @@ impl World {
             self.encounters.session.as_ref().map(|s| s.phase()),
             Some(crate::encounter::EncounterPhase::Transition { .. })
         ) && !self.battle.intro_mode_handoff
+    }
+
+    /// `true` from the frame a battle is committed (a latched scripted fight,
+    /// or the encounter session's intro transition) until it opens: the
+    /// window in which no field script context may step.
+    ///
+    /// Retail's battle intro is its own slot-A overlay (PROT 0979,
+    /// `field_battle_intro`, base `0x801CE818`, own content `0x4000`), loaded
+    /// over the field overlay's head - which holds the field frame pump
+    /// `FUN_801D1344` that drives the script contexts. So between the
+    /// commit and the battle nothing field-side runs, and a scene's
+    /// post-battle beat only starts on the return. The Rim Elm bee beat
+    /// depends on it: `P1[21]` raises `0x5C0` and fires `3E FF 03`, and the
+    /// scene system script `P1[0]`, whose loop tests `0x5C0`, spawns the
+    /// outcome record `P2[29]` (a flag-1 test at its head) - on the
+    /// post-battle pass, where flag 1 holds this fight's outcome.
+    // REF: FUN_801D1344, FUN_801CF5BC
+    pub fn field_scripts_held_for_battle(&self) -> bool {
+        self.carriers.pending_battle.is_some()
+            || matches!(
+                self.encounters.session.as_ref().map(|s| s.phase()),
+                Some(crate::encounter::EncounterPhase::Transition { .. })
+            )
     }
 
     /// Return the resolved [`crate::monster_catalog::FormationDef`] for the

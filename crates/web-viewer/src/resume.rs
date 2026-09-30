@@ -66,10 +66,25 @@ impl LegaiaRuntime {
         let current = self.running_scene();
         let mut landed_with_save = false;
         let landing = land_save(&parked.scene, current.as_deref(), |scene| {
+            // The saved scene is entered at the save's own position, as
+            // retail's card load seats it - the same arm the native
+            // `BootSession::resume_save` takes (`SceneHost::arm_resume_seat`).
+            let armed = self
+                .scene_host
+                .as_mut()
+                .is_some_and(|h| h.arm_resume_seat(&parked.save, &parked.scene, scene));
             // The entry re-applies the save after the swap and skips the
             // picker's free-roam story baseline (a resume is not a visit).
-            self.enter_field_core(scene, Some(parked.save.clone()))
-                .map(|_| landed_with_save = true)
+            let entered = self
+                .enter_field_core(scene, Some(parked.save.clone()))
+                .map(|_| landed_with_save = true);
+            if entered.is_err()
+                && armed
+                && let Some(h) = self.scene_host.as_mut()
+            {
+                h.disarm_entry_seat();
+            }
+            entered
         });
         if !landed_with_save {
             // Landed on the running scene (or nowhere): the save applies over
