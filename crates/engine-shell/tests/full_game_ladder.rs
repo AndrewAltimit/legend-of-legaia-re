@@ -365,6 +365,9 @@ struct DiscGraph {
     fmv: BTreeMap<(String, String), BTreeSet<(usize, usize)>>,
     /// `(from, to)` pairs a walk-on band reaches.
     walk_on: BTreeSet<(String, String)>,
+    /// `(from, to)` -> every entry tile a `0x3F` from `from` lands on in
+    /// `to`: which side of `to` a round trip through `from` delivers to.
+    landings: BTreeMap<(String, String), BTreeSet<(u8, u8)>>,
 }
 
 /// Route cost of an edge no walk-on band reaches.
@@ -378,6 +381,7 @@ impl DiscGraph {
         let mut doors = BTreeSet::new();
         let mut fmv: BTreeMap<(String, String), BTreeSet<(usize, usize)>> = BTreeMap::new();
         let mut walk_on = BTreeSet::new();
+        let mut landings: BTreeMap<(String, String), BTreeSet<(u8, u8)>> = BTreeMap::new();
         for name in index.cdname_scene_names() {
             let Ok(scene) = Scene::load(index, &name) else {
                 continue;
@@ -391,7 +395,22 @@ impl DiscGraph {
                 for d in scene_destinations(&mf, man) {
                     if d.scene_name != name {
                         set.insert(d.scene_name.clone());
+                        landings
+                            .entry((name.clone(), d.scene_name.clone()))
+                            .or_default()
+                            .insert((d.entry_x & 0x7F, d.entry_z & 0x7F));
                         doors.insert((name.clone(), d.scene_name));
+                    }
+                }
+                // `scene_destinations` keeps one entry per destination; a
+                // scene with two exits to one map (a town's two gates) has
+                // two landings.
+                for s in legaia_asset::man_edit::scene_change_sites(man) {
+                    if s.name != name && set.contains(&s.name) {
+                        landings
+                            .entry((name.clone(), s.name.clone()))
+                            .or_default()
+                            .insert((s.entry_x & 0x7F, s.entry_z & 0x7F));
                     }
                 }
                 for partition in 1..3 {
@@ -444,6 +463,7 @@ impl DiscGraph {
             doors,
             fmv,
             walk_on,
+            landings,
         }
     }
 
@@ -2019,9 +2039,10 @@ fn cross_over(
     graph: &DiscGraph,
     cur: &str,
     goal: &str,
+    toward: &str,
 ) -> Result<String, String> {
     let back = |x: &String| graph.edges.get(x).is_some_and(|e| e.contains(cur));
-    let cands: Vec<String> = graph
+    let mut cands: Vec<String> = graph
         .edges
         .get(cur)
         .into_iter()
@@ -2029,13 +2050,46 @@ fn cross_over(
         .filter(|x| x.as_str() != goal && x.as_str() != cur && back(x))
         .cloned()
         .collect();
+    // The crossing the lattice names goes first ([`crossing_plan`]); the
+    // rest keep their order behind it, so a chain the lattice cannot see is
+    // still found by trial.
+    let all = cands.clone();
+    let plan = |session: &BootSession, shut: &BTreeSet<String>| {
+        let open: Vec<String> = all.iter().filter(|x| !shut.contains(*x)).cloned().collect();
+        let p = crossing_plan(session, graph, &open, toward);
+        if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+            let (px, pz) = player_xz(session);
+            eprintln!(
+                "    [cross] {cur} toward {toward} from {:?}: lattice plan {p:?} (shut {shut:?})",
+                dispatch_tile(px, pz)
+            );
+        }
+        p
+    };
+    // Crossings that brought the player back to the side it left, even with
+    // their beats played: which side a crossing delivers to can be story
+    // state (`suimon`'s water gate, `0x27B`, switches the `map01` entry to
+    // the southern chamber), and the lattice cannot see it.
+    let mut shut: BTreeSet<String> = BTreeSet::new();
+    if let Some(x) = plan(session, &shut)
+        && let Some(i) = cands.iter().position(|c| *c == x)
+    {
+        let x = cands.remove(i);
+        cands.insert(0, x);
+    }
     let mut tried = Vec::new();
+    let mut crossings = 0usize;
+    let mut visited: BTreeSet<String> = BTreeSet::new();
     // A crossing that brings the player back to the side it left is taken
-    // once more with its own beats played first: which side a crossing
-    // delivers to can be story state (`suimon`'s water gate, `0x27B`,
-    // switches the `map01` entry to the southern chamber).
+    // once more with its own beats played first.
     let mut queue: VecDeque<(String, bool)> = cands.into_iter().map(|x| (x, false)).collect();
     while let Some((x, again)) = queue.pop_front() {
+        if crossings >= MAX_CROSSINGS {
+            tried.push(format!("{MAX_CROSSINGS} crossings taken"));
+            break;
+        }
+        let (fx, fz) = player_xz(session);
+        let left_from = tile_of(fx, fz);
         let r = pad_hop(session, graph, &x);
         if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
             let (px, pz) = player_xz(session);
@@ -2048,35 +2102,115 @@ fn cross_over(
         }
         match r {
             Ok(entered) if entered == x => {
-                match run_while_moving(session, SCRIPT_CEILING) {
-                    Run::Entered(s) => return Ok(s),
-                    Run::Released => {}
-                    other => return Err(format!("entering crossing {x}: {other:?}")),
-                }
-                // On the second visit, play the crossing's own beats first:
-                // a sluice gate or a lever is a story beat like any other.
-                if again {
-                    let mut log = Vec::new();
-                    if let Some(s) = play_beats(session, &mut log)
-                        .map_err(|b| format!("in crossing {x}, playing beats: {b}"))?
-                    {
-                        return Ok(s);
+                crossings += 1;
+                visited.insert(x.clone());
+                let r = match run_while_moving(session, SCRIPT_CEILING) {
+                    // An arrival script that carries the party straight back
+                    // out (`rikuroa` turns a party away before its story
+                    // opens) is a crossing like any other: where it lands is
+                    // the answer.
+                    Run::Entered(s) => {
+                        if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                            eprintln!("    [cross] {x}'s arrival carried the party to {s}");
+                        }
+                        Ok(s)
                     }
+                    Run::Released => {
+                        // On the second visit, play the crossing's own beats
+                        // first: a sluice gate or a lever is a story beat like
+                        // any other.
+                        let mut left = None;
+                        if again {
+                            let mut log = Vec::new();
+                            left = play_beats(session, &mut log)
+                                .map_err(|b| format!("in crossing {x}, playing beats: {b}"))?;
+                        }
+                        match left {
+                            Some(s) => Ok(s),
+                            None => {
+                                FAR_DOOR.with(|f| f.set(true));
+                                let r = pad_hop(session, graph, cur);
+                                FAR_DOOR.with(|f| f.set(false));
+                                // A door whose record runs a script before
+                                // its scene change can report a release while
+                                // the change is still to come (`dolk`'s south
+                                // door): let the scene settle, and take the
+                                // scene it lands in as the answer.
+                                match r {
+                                    Err(e) => {
+                                        let settled = run(session, EXIT_TICKS, false);
+                                        if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                                            eprintln!(
+                                                "    [cross] leaving {x}: {e}; settled {settled:?} in {}",
+                                                scene_name(session)
+                                            );
+                                        }
+                                        match settled {
+                                            Run::Entered(s) => Ok(s),
+                                            _ if scene_name(session) == cur => Ok(cur.to_string()),
+                                            _ => Err(e),
+                                        }
+                                    }
+                                    r => r,
+                                }
+                            }
+                        }
+                    }
+                    other => return Err(format!("entering crossing {x}: {other:?}")),
+                };
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    let (px, pz) = player_xz(session);
+                    eprintln!(
+                        "    [cross] left {x}: {r:?}, now {} at {:?}",
+                        scene_name(session),
+                        dispatch_tile(px, pz)
+                    );
                 }
-                FAR_DOOR.with(|f| f.set(true));
-                let r = pad_hop(session, graph, cur);
-                FAR_DOOR.with(|f| f.set(false));
                 match r {
                     // Back in `cur`: done when the goal's door is now in
-                    // reach, else the next candidate from here.
+                    // reach, else the next crossing from here.
                     Ok(s) if s == cur => {
-                        if door_in_reach(session, graph, goal) {
+                        let (px, pz) = player_xz(session);
+                        if door_in_reach(session, graph, toward) {
+                            if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                                eprintln!(
+                                    "    [cross] {cur}: {toward}'s door in reach from {:?}",
+                                    dispatch_tile(px, pz)
+                                );
+                            }
                             return Ok(s);
                         }
-                        if !again {
-                            queue.push_front((x.clone(), true));
+                        let back =
+                            plan_path(session, cell_of(px, pz), left_from, &hazards(session, ""))
+                                .and_then(|p| p.last().copied())
+                                .is_none_or(|c| {
+                                    let t = tile_of(cell_center(c).0, cell_center(c).1);
+                                    i32::from((t.0 - left_from.0).abs() + (t.1 - left_from.1).abs())
+                                        <= DOOR_APPROACH_SLACK
+                                });
+                        if back && again {
+                            shut.insert(x.clone());
                         }
-                        tried.push(format!("{x}: back on the same side"));
+                        // The lattice names the next crossing from where the
+                        // player landed. A crossing taken before is taken
+                        // again with its beats played.
+                        match plan(session, &shut) {
+                            Some(y) => {
+                                let seen = visited.contains(&y);
+                                queue.retain(|(q, _)| *q != y);
+                                queue.push_front((y, seen));
+                            }
+                            None if !again => queue.push_front((x.clone(), true)),
+                            None => {}
+                        }
+                        tried.push(format!(
+                            "{x}: landed {} short of the door",
+                            if back {
+                                "back on the same side"
+                            } else {
+                                "on a new side"
+                            }
+                        ));
                     }
                     Ok(s) => return Ok(s),
                     Err(e) => return Err(format!("crossing {x} back to {cur}: {e}")),
@@ -2090,6 +2224,127 @@ fn cross_over(
         "no crossing scene reachable ({})",
         tried.join("; ")
     ))
+}
+
+/// The lattice cells of dispatch tile `t` (four 32-unit cells a side).
+fn tile_cells(t: (i16, i16)) -> impl Iterator<Item = Cell> {
+    (0..4).flat_map(move |i| (0..4).map(move |j| (t.0 * 4 + i, t.1 * 4 + j)))
+}
+
+/// The four tiles beside `t`.
+fn tile_nbrs(t: (i16, i16)) -> [(i16, i16); 4] {
+    [
+        (t.0, t.1 + 1),
+        (t.0, t.1 - 1),
+        (t.0 + 1, t.1),
+        (t.0 - 1, t.1),
+    ]
+}
+
+/// Most round trips one [`cross_over`] takes.
+const MAX_CROSSINGS: usize = 8;
+
+/// Most walk components one [`crossing_plan`] floods.
+const MAX_SIDES: usize = 16;
+
+/// The crossing to take first toward `toward`'s door, read off the loaded
+/// scene's lattice. Every door of every scene is a boundary (stepping on it
+/// leaves), so the scene splits into **sides**: walk components. A
+/// candidate `x` joins each side that touches one of its door tiles to each
+/// other such side, since a round trip through `x` lands beside the door it
+/// leaves by. A breadth-first search from the player's side to one touching
+/// a door toward `toward` names the first crossing of the shortest chain:
+/// `map01`'s north half reaches Vidna's door through `suimon` and then
+/// `bylon`, while `dolk` - the nearer crossing - only opens a pocket south
+/// of the castle. `None` when the lattice shows no chain; the caller then
+/// tries every candidate in turn.
+fn crossing_plan(
+    session: &BootSession,
+    graph: &DiscGraph,
+    cands: &[String],
+    toward: &str,
+) -> Option<String> {
+    let targets: Vec<(i16, i16)> = doors_to(session, graph, toward)
+        .ok()?
+        .iter()
+        .map(|d| (i16::from(d.tile.0), i16::from(d.tile.1)))
+        .collect();
+    let xdoors: Vec<(String, Vec<(i16, i16)>)> = cands
+        .iter()
+        .filter_map(|x| {
+            let d = doors_to(session, graph, x).ok()?;
+            Some((
+                x.clone(),
+                d.iter()
+                    .map(|d| (i16::from(d.tile.0), i16::from(d.tile.1)))
+                    .collect(),
+            ))
+        })
+        .collect();
+    let avoid = hazards(session, "");
+    let w = &session.host.world;
+    let flood = |from: Cell| -> HashSet<Cell> {
+        plan_search(session, from, (-64, -64), None, &avoid)
+            .map(|(_, seen, _)| seen)
+            .unwrap_or_default()
+    };
+    let touches = |side: &HashSet<Cell>, t: (i16, i16)| {
+        tile_nbrs(t)
+            .into_iter()
+            .any(|n| tile_cells(n).any(|c| side.contains(&c)))
+    };
+    let here = scene_name(session);
+    let (px, pz) = player_xz(session);
+    let mut sides: Vec<HashSet<Cell>> = vec![flood(cell_of(px, pz))];
+    let mut first: Vec<Option<String>> = vec![None];
+    let mut i = 0;
+    while i < sides.len() {
+        if i > 0 && targets.iter().any(|&t| touches(&sides[i], t)) {
+            return first[i].clone();
+        }
+        for (x, tiles) in &xdoors {
+            if !tiles.iter().any(|&t| touches(&sides[i], t)) {
+                continue;
+            }
+            // Where the round trip lands: the entry tiles of `x`'s own
+            // scene changes back to this scene, else beside its doors here.
+            // A landing on a door tile (a portal the entry re-seats the
+            // player on) counts by its neighbours.
+            let seeds: Vec<(i16, i16)> = match graph.landings.get(&(x.clone(), here.clone())) {
+                Some(l) if !l.is_empty() => l
+                    .iter()
+                    .map(|&(lx, lz)| (i16::from(lx), i16::from(lz)))
+                    .flat_map(|t| std::iter::once(t).chain(tile_nbrs(t)))
+                    .collect(),
+                _ => tiles.iter().flat_map(|&t| tile_nbrs(t)).collect(),
+            };
+            for n in seeds {
+                if sides.len() >= MAX_SIDES {
+                    break;
+                }
+                if avoid.contains(&(i32::from(n.0), i32::from(n.1)))
+                    || sides.iter().any(|s| tile_cells(n).any(|c| s.contains(&c)))
+                {
+                    continue;
+                }
+                let Some(start) = tile_cells(n).find(|&c| {
+                    let (cx, cz) = cell_center(c);
+                    !w.field_tile_is_wall(cx, cz)
+                }) else {
+                    continue;
+                };
+                let side = flood(start);
+                // A sliver of open ground inside a wall is not a side.
+                if side.len() < 16 {
+                    continue;
+                }
+                sides.push(side);
+                first.push(first[i].clone().or_else(|| Some(x.clone())));
+            }
+        }
+        i += 1;
+    }
+    None
 }
 
 /// Can the pad walk reach a door of the loaded scene toward `dest`?
@@ -2195,6 +2450,54 @@ fn plan_path(
         }
     }
     let (path, seen, reached) = plan_search(session, from, goal, None, avoid)?;
+    if !reached && std::env::var_os("LEGAIA_FGL_COMP_DEBUG").is_some() {
+        let tiles: HashSet<(i32, i32)> = seen
+            .iter()
+            .map(|&c| {
+                let (x, z) = cell_center(c);
+                dispatch_tile(x, z)
+            })
+            .collect();
+        let bl = Blockers::build(&session.host.world, |_| false);
+        eprintln!(
+            "      [comp] {} goal {goal:?} cells {}",
+            scene_name(session),
+            seen.len()
+        );
+        let w = &session.host.world;
+        for (cfg, &(x, z)) in w
+            .world_map
+            .entity_configs
+            .iter()
+            .zip(w.world_map.entity_positions.iter())
+        {
+            eprintln!("      [comp-ent] ({},{}) {cfg:?}", x >> 7, z >> 7);
+        }
+        for tz in 0..128 {
+            let row: String = (0..128)
+                .map(|tx| {
+                    if (tx, tz) == (i32::from(goal.0), i32::from(goal.1)) {
+                        'G'
+                    } else if avoid.contains(&(tx, tz)) {
+                        'A'
+                    } else if tiles.contains(&(tx, tz)) {
+                        'o'
+                    } else if bl.0.contains_key(&(tx, tz)) {
+                        'b'
+                    } else if session
+                        .host
+                        .world
+                        .field_tile_is_wall((tx * 128 + 64) as i16, (tz * 128 + 64) as i16)
+                    {
+                        '#'
+                    } else {
+                        '.'
+                    }
+                })
+                .collect();
+            eprintln!("      [comp {tz:3}] {row}");
+        }
+    }
     if !reached && seen.len() > UNREACHED_MIN_CELLS {
         let best = path.last().copied().unwrap_or(from);
         UNREACHED.with(|u| {
@@ -4431,7 +4734,7 @@ fn traverse(
                     && e.contains("no walkable path")
                     && crossed.insert((cur.clone(), goal.clone())) =>
             {
-                match cross_over(session, graph, &cur, &goal) {
+                match cross_over(session, graph, &cur, &goal, &next) {
                     Ok(s) => trail.push(format!("{s}(crossing)")),
                     Err(why) => {
                         if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {

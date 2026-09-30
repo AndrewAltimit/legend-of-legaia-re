@@ -230,7 +230,9 @@ cannot finish inside it stalls with `pad frame budget (N) spent` rather than hol
 the run. `LEGAIA_FGL_TRACE` prints each pad segment's frames and planner cost,
 and `LEGAIA_FGL_WALK_DEBUG` adds a stalled walk's wall map, the scene's
 teleports and door colliders. `LEGAIA_FGL_PLAN_DEBUG` prints each object-door
-edge the planner adds.
+edge the planner adds, and `LEGAIA_FGL_COMP_DEBUG` prints the tile map of every
+walk component a plan failed inside (`o` reached, `A` avoided door tile, `b`
+actor box, `G` the goal) with the overworld's installed entities.
 
 A plan that cannot reach its goal searches the start's whole walk component,
 and a stalled walk re-plans every second, so a failed plan is remembered -
@@ -243,8 +245,19 @@ rotation turns a cardinal step diagonal whenever the camera sits off an axis.
 A door whose walk component the start cannot reach is tried through a
 **crossing scene**: a scene the current one has a door to and a door back
 from, entered and left by its reachable door farthest from where the player
-came in. A crossing that returns to the same side is taken once more with its
-own beats played first.
+came in. The crossing to take is read off the lattice first: with every door
+tile a boundary, the scene splits into walk components, and a crossing joins
+the component its door touches to the components holding the entry tiles of
+its own `0x3F`s back (a town with two gates has two landings). A
+breadth-first search over those joins names the first crossing of the
+shortest chain to the component of the wanted door, and the chain is walked
+one round trip at a time, re-planned from each landing. A crossing that
+returns to the same side is taken once more with its own beats played first,
+and after that it is left out of the plan: which side it delivers to is story
+state the lattice cannot see (`suimon`'s two chambers join only once its water
+gate is drained). Candidates the lattice cannot place are still tried in
+turn behind the planned one. An arrival script that carries the party
+straight back out counts as a round trip, landing and all.
 
 In both passes a scripted sequence gets Cross on a press-2-release-14 duty
 cycle, the naming prompt's Yes/No confirm gets Up first (it opens on No), and a
