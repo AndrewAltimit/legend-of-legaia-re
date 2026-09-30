@@ -5250,6 +5250,7 @@ Grade `capture` for the census (a disc-derived executing oracle) and
 | What are PROT 0897's short data tables? | resolved (window layouts, sound-test rows, a handler table, window programs) | `disassembly` + `inference` | 27 `0x1C`-byte window records at `0x801F2B98` (index `a3 * 28` at `0x801ECA24`), 73 ten-byte sound-test rows at `0x801F2E94` (index `(n + 1) * 10`) - not the six-byte stride once read - a 52-word `jalr` table at `0x801F33B4` indexed by actor `+0x50`, and fifteen window programs from `0x801F3340` run by the overlay's own thirteen-arm interpreter `FUN_801E9B3C`. The two counts sized by layout rather than by a bound are `inference` ([`byte-accounting.md`](../tooling/byte-accounting.md#a-runtime-index-states-its-stride-and-a-consumer-its-count)). |
 | What is PROT 0976's sparse table? | resolved (Baka Fighter's per-fighter move table) | `disassembly` | Seventeen per-fighter blocks of nine `0x60`-byte move records tile `0x801D7E28..0x801DB788`, pointed at by the seventeen-word table `0x801DB8B8`; `FUN_801D553C` walks and formats them, `FUN_801D57BC` is the runtime reader (fighter `a0`, move `a1 * 0x60`, point count `+0x1C < 8`), and the name tags sit at `0x801DB7A8` ([`byte-accounting.md`](../tooling/byte-accounting.md#a-pointer-bump-loop-states-its-arrays-length)). |
 | What does the indexed form `lui; addu; lw lo(at)` hide? | resolved (512 accesses, none in 0897 / 0899, no verdict moved) | `disassembly` | A strict register walk completes the form 512 times over SCUS and the mapped overlays (273 SCUS, 223 PROT 0896, 9 PROT 0971). The earlier count of 23 / 44 sites in 0897 / 0899 came from a scanner that never dropped an overwritten register. Both reference sweeps now share that walk (`scripts/ghidra-analysis/mips_walk.py`), and re-running them over the 89 addresses the ignore list and docs call unreferenced changed no verdict. |
+| Which live ports cover only part of their routine, and which of those differ from retail? | resolved (every residue ported) | `disassembly` + `capture` | Of 43 partial ports a 316-tag audit found, each one that changed behaviour is ported or closed without a port [details ↓](#which-live-ports-cover-only-part-of-their-routine). |
 | How often does a live `// PORT:` tag describe its routine correctly? | resolved (about seven in ten) | `disassembly` | 316 live, dumped tags in the VM / world / audio crates read against their disassembly: 222 match, 45 misname the routine, 43 port only part of it, 6 name the wrong address. The window VM and anim VM were worst. `check-port-provenance.py` carries a `non-entry` signal from that audit; a tag naming an address that is no function entry is the shape it catches. |
 | Does the byte account cut an overlay's inherited tail the way `disc-coverage.py` does? | resolved (yes - one rule feeds both) | `disassembly` | `legaia_asset::inherited_tail` ports the sibling fixpoint and adds the **packer-buffer leg**: byte `k` of a tail is the byte of the nearest earlier entry reaching `k`, searched over the whole entry. `tail_cuts` / `tails_in` feed `disc-coverage.py`, the attribution sweep and the byte account alike; 85 of the 87 mapped images end in a tail, 96,986 bytes, and the leg reproduces 82 of the sibling rule's 83 cuts offset for offset. It adds a non-overlay donor (PROT 0898 and 0895 end in 0894's bytes) and moves 0901. [`disc-coverage.md`](../tooling/disc-coverage.md#the-packer-buffer-leg) |
 | What did the framed-text walk change in the op-`0x49` census? | resolved (55 sites lost, 54 gained, the spine-flag negative unmoved) | `disassembly` | Reconstructed at the pre-#470 disassembler and diffed site for site: every one of the 55 lost sites read a printable-ASCII base pair (dialogue decoded as an op), and five scenes left the census entirely; the 54 gained are real instructions behind a record's first line - 48 are the `[49 03 N]` / `[26 delta]` picker-resume ladder after a `0x1F` prompt in sixteen scenes, plus two `49 09` in `bylon` and four sub-`0x00`. `0x142`'s only near-miss is still the same 24 `kor` windows at distance 3. |
@@ -5312,6 +5313,76 @@ Grade `capture` for the census (a disc-derived executing oracle) and
 | How do you find a host's call sites for a web-only name? | resolved (scan `[.:]name(`, not `.name(`) | `inference` | A method-call scan misses path calls (`Type::name(`), which is how 31 of 32 "web-only" battle-presentation names turned out to have native call sites; the 32nd, `packet_color::hybrid`, is the page's WebGL vertex-colour stream, which the wgpu fragment shader replaces. |
 | Can a probe cross a field door without a pad ladder? | resolved (yes - by tile poke) | `capture` | A walk-on door is an exact tile match in the `.MAP` kind-1 trigger table, so writing the player object's position onto a door tile crosses it in about ninety vsyncs; a door that opens a Yes/No picker needs one confirm press too. It measures arrival, never locomotion. `scripts/pcsx-redux/autorun_w5a_poke_walk.lua`. |
 | Does any battle routine carry its own generator? | resolved (no - one overlay PRNG, for ribbon geometry only) | `disassembly` | A scan of SCUS and every based overlay for `jal 0x80056798` finds 163 sites in PROT 0898 and 58 in SCUS, and no inline LCG constant anywhere; the battle overlay's only other generator, `FUN_801D0290`, feeds ribbon geometry. Every modulo checked around a draw is a signed `div` or a reciprocal (`0x51EB851F` for `/100`, `0x55555556` for `/3`), equal to an unsigned `%` on a 15-bit draw ([`battle-formulas.md`](../subsystems/battle-formulas.md#how-the-port-draws-it)). |
+
+### Which live ports cover only part of their routine
+
+*Status:* resolved - every residue of the 316-tag audit's partial-port list is ported
+
+The audit found 43 partial ports. Fixed since, on both hosts where a host is
+involved: the encounter reroll `FUN_801DDF48` and its global `_DAT_8007B5FC`;
+the tile board's event-cell flag writes and trigger exit (states `3` and `8`)
+and its prompt and fade states; Baka Fighter's and the slot machine's face
+buttons; the actor tick's move-VM step when `+0x54 < 0`; `FUN_801DBF9C`'s
+parameter stream, which was written one byte low; the initiative sweep's
+dead-slot refund and tie list; the follow camera's shake consumption and its
+mode-5 focus; the SFX ring's three producers; the narration roller's config
+block; the escape timer's HUD; `FUN_8003540C`'s unconditional clear; the two
+routines that had no port at all, the strip emitter `FUN_801D31B0` and the dome
+course card `FUN_801D042C`; the "nobody can act" `0x1E` -> `0x6E` round with its
+`ctx[+0x25]` skip count; the `0x801F696C` swing drift; the settle's clip tail
+with the timed kind-0 warp; the settle's `4C CE` clip override
+`_DAT_8007B6AC`, op `0x22`'s clip-base write, the warp's `0x801DA7F0` tag (the
+`4C E1` text balloon, which the warp now tears down) and its `0x80000`
+same-tile re-poll; `FUN_801DB510`'s two hold gates, whose writers already
+existed and whose reader was the missing half; the actor allocator
+`FUN_80020DE0`, whose reused pool slots had inherited the retired actor's
+handler, reflection link and state words; the model setter's `4C 50` re-stage,
+now through `World::npcs.models`, which both hosts re-bind from; and the
+battle state `0x3E`'s class-5 arm at `0x801E3F2C`, with its `(rand % 2) * 2`
+camera draw.
+
+Two rows closed without a port. **`FUN_801CF8AC`**: only the `+0x10 & 3` exempt
+early-out changes behaviour - the no-class arm is unreachable, because bit 17 is
+never cleared on the disc and all three callers keep only `& 1` of its result,
+and the `+0x98` link is overwritten before anything reads it. **`FUN_80020F88`**
+is `REPLACED-BY` scene-build mesh binding plus the live model seat.
+
+Closed since, on both play hosts: `FUN_801D1BA0` / `FUN_801D1EC4`'s player
+CFlag bit 24, the player-mesh rebuild for `4C 50` aimed at `F8`, and the system
+channel's clip reset on every unlocked tick; the tile board's step cue, bonk,
+run and idle clips and octant facing (no retail scene installs a board, so
+these rest on disassembly); Rula and Riremito, which the Door of Wind / Door of
+Light now reach through the pause-menu session as retail does; the dome hub's
+subtractive shade on all three hosts, its two waits and first-visit lines;
+Baka Fighter's impact pair, cameo and cell blit, and its display clip - the
+actor's `+0x5C` / `+0x68` pair the clip selector plays out past the booked
+exchange, which all three hosts now pose from
+([`minigame-baka-fighter.md`](../subsystems/minigame-baka-fighter.md#the-display-clip));
+and in battle the commit's clip-tag ladder and the Seru absorb's kill-check
+gate.
+
+The last three residues:
+
+- **Battle**: none left in the flow. The special-battle word's readers are
+  ported (the wipe rule `0x801E6578`, the arena Run arm `0x801D322C`, the two
+  result-window calls in `FUN_8004E568`); the shadow's `+0x6A` flag is the
+  after-image bracket the engine already drew; the ghost pass's `gp+0x330`
+  gate passes on every battle state and `ctx[+6]` comes from the flow mirror.
+  `ctx[+0x26B]` follows a PCSX-Redux capture of the victory load hold -
+  raised for its first 28 of 80 vsyncs (one capture), then idle; the loss
+  window `0x42` draws on both hosts
+  ([`battle.md`](../subsystems/battle.md#the-near-camera-ghost-pass-fun_8004dc68)).
+  The `0x801F0518` flag write, the ribbon's per-clip caller and the War God
+  Icon's per-stage bump are modelled.
+- **Anim**: `FUN_800480D8`'s schedule lives in `engine-vm::battle_actor_tick`,
+  out of `engine-render`, so `engine-core` reaches it:
+  `World::battle_actor_draw_plan` runs it with the tint pass per body per
+  frame on both play hosts. The two audio rows that stood beside it left the
+  list without a port: `FUN_8004DA00` only seeks the drive and `FUN_80064090`
+  is unreachable ([settled](#audio)).
+
+Rows of the audit not named here were not re-read after it; the audit's own
+evidence column is the place to start before trusting one.
 
 ### What is in the `SCUS_942.54` code gap
 

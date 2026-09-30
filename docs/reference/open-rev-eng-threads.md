@@ -853,77 +853,15 @@ a coincidence of the pad byte plus the mask table's first three entries
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Which live ports cover only part of their routine, and which of those differ from retail? | open (narrowed) - listed, not ported | Of the 43 partial ports a tag audit found, the one that still changes behaviour is the anim barrier, named with its blocker [details ↓](#which-live-ports-cover-only-part-of-their-routine). Porting it, or disclosing it as blocked, closes the thread. |
 | Which save-state library entries still hold a patched executable? | open (narrowed) - audited and tagged; the rest need human play | A state made on a patched disc keeps that build's `SCUS_942.54` in RAM on every later load. `patch_taint_audit.py states` tags each library state's `resident_patch`; the S1..S5 anchors, `first_town_interactive` and `teien_field_run` are re-shot retail, and every capture-graded claim re-checked against its family stands ([`pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md#patched-disc-taint)). The `rikuroa_*`, `dolk2_market_noa`, `cort_evolved_*`, `minigame_*_pcsx`, `battle_gaza2_*` states and the mednafen `overworld_battle_bg_angle_*` states re-shot on an unpatched image close it. |
 | Which engine draws hand a raw LCG state where retail calls BIOS `rand`? | mostly resolved - every battle draw is shaped | `FUN_80056798` (BIOS `A(2Fh)`) returns `(seed >> 16) & 0x7FFF` and nothing reseeds it ([settled](re-settled-threads.md#measurement--corpus)). Every battle-side port draws through `World::next_rand`, the battle-action and effect-pool hosts included; every routine they port calls `jal 0x80056798`; neither PROT 0898 nor SCUS carries an inline LCG ([`battle-formulas.md`](../subsystems/battle-formulas.md#how-the-port-draws-it)). Left: the field move-VM extension `FUN_801D362C` (sub-ops `0x05` / `0x30`) draws the raw state, and the battle camera script, the camera shake and the Muscle Dome session keep private seeds. Moving those onto the world stream closes it. |
 
-### Which live ports cover only part of their routine
-
-*Status:* open - the list is the residue of a 316-tag audit after three rounds of fixes
-
-The audit found 43 partial ports. Fixed since, on both hosts where a host is
-involved: the encounter reroll `FUN_801DDF48` and its global `_DAT_8007B5FC`;
-the tile board's event-cell flag writes and trigger exit (states `3` and `8`)
-and its prompt and fade states; Baka Fighter's and the slot machine's face
-buttons; the actor tick's move-VM step when `+0x54 < 0`; `FUN_801DBF9C`'s
-parameter stream, which was written one byte low; the initiative sweep's
-dead-slot refund and tie list; the follow camera's shake consumption and its
-mode-5 focus; the SFX ring's three producers; the narration roller's config
-block; the escape timer's HUD; `FUN_8003540C`'s unconditional clear; the two
-routines that had no port at all, the strip emitter `FUN_801D31B0` and the dome
-course card `FUN_801D042C`; the "nobody can act" `0x1E` -> `0x6E` round with its
-`ctx[+0x25]` skip count; the `0x801F696C` swing drift; the settle's clip tail
-with the timed kind-0 warp; the settle's `4C CE` clip override
-`_DAT_8007B6AC`, op `0x22`'s clip-base write, the warp's `0x801DA7F0` tag (the
-`4C E1` text balloon, which the warp now tears down) and its `0x80000`
-same-tile re-poll; `FUN_801DB510`'s two hold gates, whose writers already
-existed and whose reader was the missing half; the actor allocator
-`FUN_80020DE0`, whose reused pool slots had inherited the retired actor's
-handler, reflection link and state words; the model setter's `4C 50` re-stage,
-now through `World::npcs.models`, which both hosts re-bind from; and the
-battle state `0x3E`'s class-5 arm at `0x801E3F2C`, with its `(rand % 2) * 2`
-camera draw.
-
-Two rows closed without a port. **`FUN_801CF8AC`**: only the `+0x10 & 3` exempt
-early-out changes behaviour - the no-class arm is unreachable, because bit 17 is
-never cleared on the disc and all three callers keep only `& 1` of its result,
-and the `+0x98` link is overwritten before anything reads it. **`FUN_80020F88`**
-is `REPLACED-BY` scene-build mesh binding plus the live model seat.
-
-Closed since, on both play hosts: `FUN_801D1BA0` / `FUN_801D1EC4`'s player
-CFlag bit 24, the player-mesh rebuild for `4C 50` aimed at `F8`, and the system
-channel's clip reset on every unlocked tick; the tile board's step cue, bonk,
-run and idle clips and octant facing (no retail scene installs a board, so
-these rest on disassembly); Rula and Riremito, which the Door of Wind / Door of
-Light now reach through the pause-menu session as retail does; the dome hub's
-subtractive shade on all three hosts, its two waits and first-visit lines;
-Baka Fighter's impact pair, cameo and cell blit, and its display clip - the
-actor's `+0x5C` / `+0x68` pair the clip selector plays out past the booked
-exchange, which all three hosts now pose from
-([`minigame-baka-fighter.md`](../subsystems/minigame-baka-fighter.md#the-display-clip));
-and in battle the commit's clip-tag ladder and the Seru absorb's kill-check
-gate.
-
-What remains, each with where it is recorded:
-
-- **Battle**: none left in the flow. The special-battle word's readers are
-  ported (the wipe rule `0x801E6578`, the arena Run arm `0x801D322C`, the two
-  result-window calls in `FUN_8004E568`); the shadow's `+0x6A` flag is the
-  after-image bracket the engine already drew; the ghost pass's `gp+0x330`
-  gate passes on every battle state and `ctx[+6]` comes from the flow mirror.
-  `ctx[+0x26B]` follows a PCSX-Redux capture of the victory load hold -
-  raised for its first 28 of 80 vsyncs (N = 1 capture), then idle; the loss
-  window `0x42` draws on both hosts
-  ([`battle.md`](../subsystems/battle.md#the-near-camera-ghost-pass-fun_8004dc68)).
-  The `0x801F0518` flag write, the ribbon's per-clip caller and the War God
-  Icon's per-stage bump are modelled.
-- **Anim**: `800480D8`, blocked on a crate barrier between `engine-core` and
-  `engine-render`. The two audio rows that stood beside it left the list without
-  a port: `FUN_8004DA00` only seeks the drive and `FUN_80064090` is unreachable
-  ([settled](re-settled-threads.md#audio)).
-
-Rows of the audit not named here were not re-read after it; the audit's own
-evidence column is the place to start before trusting one.
+**Which live ports cover only part of their routine** closed: every residue
+the audit named as still changing behaviour is ported - the last three were
+Baka Fighter's display clip (all three hosts pose from it), the victory load
+hold's `ctx[+0x26B]` span (now a capture) and `FUN_800480D8`, whose crate
+barrier went when the pass moved into `engine-vm`
+([settled](re-settled-threads.md#which-live-ports-cover-only-part-of-their-routine)).
 
 **Which references does the indexed form hide** closed at 512 accesses, none
 in PROT 0897 / 0899: the counts that opened the row came from a scanner that
