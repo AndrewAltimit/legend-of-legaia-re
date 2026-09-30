@@ -242,10 +242,10 @@ mod tests {
 
     #[test]
     fn decode_encode_round_trips_characters_and_escapes() {
-        // "鍵が" + party-name escape + a non-round-tripping pair.
-        let bytes = [0x8C, 0xAE, 0x82, 0xAA, 0xF1, 0x00, 0x81, 0x00];
+        // "日本" + party-name escape + a non-round-tripping pair.
+        let bytes = [0x93, 0xFA, 0x96, 0x7B, 0xF1, 0x00, 0x81, 0x00];
         let text = decode(&bytes);
-        assert_eq!(text, "鍵が{f1:00}{81:00}");
+        assert_eq!(text, "日本{f1:00}{81:00}");
         assert_eq!(encode(&text).unwrap(), bytes);
     }
 

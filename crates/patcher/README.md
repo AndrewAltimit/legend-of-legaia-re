@@ -1484,7 +1484,7 @@ bytes and a shared PPF carries only the user's own edit. Format reference:
 
 `translation` module + the `legaia-patcher translate` subcommands
 (`export` / `init` / `strip` / `merge` / `stats` / `diff-disc` /
-`lift-official` / `fit-report` / `space` / `import`): community language packs. Exports every cataloged user-facing string into an editable YAML
+`lift-official` / `fit-report` / `space` / `coverage` / `import`): community language packs. Exports every cataloged user-facing string into an editable YAML
 pack - the SCUS name pools (items, item types, spells, Tactical Arts, accessory
 passives, new-game party names) and the `0x1F`-segment dialog corpus
 (scene-bundle MANs, LZS-decompressed; plus raw carriers - v12 event-script
@@ -1527,6 +1527,16 @@ grows into its own sector slack (a same-size-image write) or, under
 `--allow-relayout`, by whole sectors. The bound is the loader's `0x62C00`-byte
 asset arena the entry is copied into; the importer keeps a 64 KiB headroom
 under it for the VDF morph scratch window at the arena's top.
+
+`export` is build-aware (`translation::build`, from `SYSTEM.CNF`): the USA
+disc exports every section; a PAL disc its dialog and monster names; the
+Japanese disc its dialog, whose count-led Shift-JIS lines
+(`translation::sjis`) decode to Unicode and re-encode byte-exact - a reading
+reference, since `import` refuses writes to a Japanese disc. `translate
+coverage` (`translation::coverage`) measures the export against the script
+walk per scene; disc-gated oracle `tests/translation_export_coverage_real.rs`
+(`LEGAIA_DISC_BIN`, `LEGAIA_DISC_BIN_JP`, `LEGAIA_DISC_BIN_PAL`). See
+[measuring coverage](../../docs/tooling/translation/index.md#measuring-coverage).
 
 Two pack shapes: a **working** pack carries `source:` (the game's own text - the
 translator's reference, gitignored, never committed) while a **distributable**

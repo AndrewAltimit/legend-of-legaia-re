@@ -105,6 +105,35 @@ Blank spacer lines (spaces only) are skipped. One scanner per domain
 (`segments::scan_man`, `segments::scan_raw_carrier`) feeds export,
 `lift-official` and `diff-disc`, so their keys agree.
 
+`translate coverage` measures this rule against the script walk; see
+[coverage](index.md#measuring-coverage).
+
+## Packs from other builds
+
+`export` reads the disc's `SYSTEM.CNF` boot line and exports what that build
+carries:
+
+| Build | Sections | Dialog codec |
+|---|---|---|
+| USA `SCUS_942.54` | all twelve | `0x1F <glyphs> 0x00` |
+| PAL `SCES_*` | `scene_dialog`, `inline_text`, `monster_names` | the same framing; accented glyphs above `0x7E` pass the quality gate and export as `{xx}` escapes |
+| Japan `SCPS_100.59` | `scene_dialog`, `inline_text` | count-led Shift-JIS ([`mes.md`](../../formats/mes.md#japanese-build-count-led-shift-jis-lines)) |
+
+The `scus:` / `ui:` / `scus:cell:` sections are USA virtual addresses, so they
+come from the USA disc only; the other builds' executables lay their tables
+out elsewhere. The `man:` / `raw:` / `mon:` keys are disc coordinates on the
+disc exported, and a pack's `game:` header names that disc. A PAL or Japanese
+pack's keys do not name the same lines on the USA disc - that pairing is what
+[`lift-official`](../pal-localizations.md) does for the Latin builds.
+
+A Japanese pack's `source` is Unicode: each two-byte token that is a
+Shift-JIS character decodes to that character, and every other token (the
+`F0..FF` substitution escapes, and any pair that does not re-encode to itself)
+is a `{xx:yy}` escape, so the text re-encodes to exactly the disc bytes. The
+key's offset is the first token byte (after the count byte) and the budget is
+twice the count. The Japanese pack is a reading reference: `import` refuses
+every filled entry on a Japanese disc and writes nothing.
+
 ## Text markup and encoding
 
 The glyph atlas is indexed by byte with `0x20..=0x7E` as plain ASCII

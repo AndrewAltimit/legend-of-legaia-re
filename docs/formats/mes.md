@@ -70,6 +70,23 @@ Reverse-engineered from the four SCUS interpreter functions ([`FUN_8003CA38`](#f
 
 The "is this a substitution opcode?" gate in `FUN_80036044` is the integer test `(byte + 0x40) < 8`, which catches `0xC0..0xC7`. Within that range the cases `0xC1..0xC5` and `0xC7` are explicit; `0xC0` and `0xC6` fall through to "no substitution" (still 2-byte stride).
 
+## Japanese build: count-led Shift-JIS lines
+
+The table above is the Latin builds' encoding (USA and PAL). The Japanese disc (`SCPS_100.59`) frames the same script positions differently, and this is measured from its scene MANs, not from its executable:
+
+| Latin | Japanese |
+|---|---|
+| a line is `0x1F <glyph bytes> 0x00` | a line is a **count byte** `N` (`0x01..=0x1F`) followed by exactly `N` two-byte tokens, with no terminator |
+| a blank row is `1F 20 00` | a blank row is a zero count, `00` |
+| substitutions `C1 xx` (name), `C2 xx` (item), ... | the same block moved to `F0..FF`: `F1 xx` party-member name (`F1 63` the leader), `F2 xx` item name; `F5`, `F7`, `FE`, `FF` also occur |
+| glyphs are single bytes | every other token is a Shift-JIS double-byte character |
+
+Both are what the pager's line test `(b & 0x7F) < 0x20` accepts as "a line starts here", which is why the Latin builds kept `0x1F` as their lead: every byte below `0x20` opens a line on the Japanese build, and `0x1F` is its longest count. The next byte after a Japanese line is the next line's count or the post-page control byte - the stream position a Latin line's successor holds: a two-row box reads `0A <10 tokens> 0B <11 tokens> 26 ..` on the Japanese disc where the USA disc has `1F <glyphs> 00 1F <glyphs> 00 26 ..`.
+
+The packets an instruction carries keep a trailing `0x00` after their tokens, where the Latin form keeps it after its glyphs: an op-`0x4C` `E1` balloon is `4C E1 N <tokens> 00`, an op-`0x49` sub-0 inline MES `49 00 len <args> N <tokens> 00`, and a shop record's vendor name `N <tokens> 00` after its id list. The field-VM opcodes and the record headers (whose names are count-led Shift-JIS on every build) are otherwise the same, so a clean script walk that sizes these shapes the Japanese way reaches every record's end (`legaia_patcher::translation::sjis`).
+
+Three Latin-build scene MANs still carry Japanese-framed lines no Latin script reaches: `other7`, `edbylon` and `edretoin` (`translate coverage` counts them). The Latin text engine reads their count byte as a terminator.
+
 ## Interpreter functions
 
 ### `FUN_8003CA38` - glyph stride walker

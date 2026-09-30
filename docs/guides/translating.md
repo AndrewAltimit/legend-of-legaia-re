@@ -13,7 +13,10 @@ it wherever you want the details.
 
 - **Your own copy of Legend of Legaia (USA)** (`SCUS-94254`) as a `.bin`
   image (Mode 2/2352), or its `.cue` sheet. The packs are keyed to the USA
-  disc, so they do not apply to the European or Japanese discs.
+  disc, so they do not apply to the European or Japanese discs. You can
+  still *export* those discs to read their script next to yours: a Japanese
+  export gives every line of the original Japanese dialog as readable text
+  ([packs from other builds](../tooling/translation/pack-format.md#packs-from-other-builds)).
 - **A text editor** that saves UTF-8, such as Notepad++, VS Code, Kate or
   TextEdit in plain-text mode. The pack is a YAML file: plain text with
   indentation.
