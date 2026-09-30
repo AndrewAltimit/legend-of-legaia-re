@@ -59,6 +59,7 @@ pub mod cutscene_narration;
 pub mod cutscene_script_elements;
 pub mod cutscene_timeline;
 pub mod dance;
+pub mod dance_cast_scene;
 pub mod dance_tutorial;
 pub mod dance_venue;
 pub mod debug_char_editor;

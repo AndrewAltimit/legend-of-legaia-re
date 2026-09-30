@@ -51,6 +51,9 @@ pub struct DanceGame {
     /// `0x801CF51C..0x801CF7D8`), when the run was started from a real
     /// overlay image.
     pub(super) camera: Option<crate::dance_venue::DanceCameraTrack>,
+    /// The how-to mode's Disco King ([`DemoDancer`]), spawned beside the
+    /// floor by `FUN_801d0190`'s mode-2 tail.
+    pub(super) demo: Option<DemoDancer>,
 }
 
 impl DanceGame {
@@ -94,6 +97,7 @@ impl DanceGame {
             marker_script: Default::default(),
             markers: Default::default(),
             camera: None,
+            demo: None,
         };
         // A chart-only run still spawns its floor - the actors just stand at
         // the origin and bind no clip, because both of those come off the
@@ -172,6 +176,10 @@ impl DanceGame {
         }
         game.camera = crate::dance_venue::DanceCameraTrack::from_overlay(overlay);
         game.spawn_dancer_actors(&spawns);
+        // PORT: FUN_801d0190 (the mode-2 Disco King spawn, 0x801D0338..0x801D0390)
+        if mode == DanceMode::HowTo {
+            game.demo = Some(DemoDancer::default());
+        }
         Some(game)
     }
 
@@ -891,7 +899,7 @@ impl DanceGame {
             return;
         };
         if let Some(d) = self.dancers.get_mut(i) {
-            d.bind_clip(&clip);
+            d.bind_move(&clip);
         }
     }
 

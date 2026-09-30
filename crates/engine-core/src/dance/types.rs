@@ -210,6 +210,14 @@ pub(super) struct Dancer {
     pub(super) clip: i16,
     /// The bound clip's cursor step (`+0x6A`), the kind descriptor's rate word.
     pub(super) clip_rate: u16,
+    /// The body's display track ([`super::DanceBodyClip`]): the standing loop
+    /// the dancer returns to ...
+    pub(super) show_loop: super::DanceBodyClip,
+    /// ... the judge-returned move playing over it, if one was bound ...
+    pub(super) show_move: Option<super::DanceBodyClip>,
+    /// ... and the ticks since the last restart of that track (the clip
+    /// driver's cursor `+0x68` before the per-record step is applied).
+    pub(super) show_ticks: u32,
     /// The actor flag word (`+0x10`). Only the bits the dance overlay writes
     /// are modelled: [`crate::minigame_actor::FLAG_TRANSLUCENT`] (the anim
     /// word's `0x200`) and [`crate::minigame_actor::FLAG_DRIVE_CLIP`].
@@ -266,13 +274,31 @@ impl Dancer {
     /// Bind a clip into the actor's `+0x5C` / `+0x6A` pair, folding the anim
     /// word's `0x200` bit into the flag word the way `FUN_801d1358` does.
     pub(super) fn bind_clip(&mut self, clip: &legaia_asset::dance_cast::DanceClip) {
-        self.clip = (clip.anim_id & 0x1FF) as i16;
+        let id = (clip.anim_id & 0x1FF) as i16;
+        let show = super::DanceBodyClip::of(clip);
+        // A loop that changes while no move plays restarts; the rebind the
+        // rules run every frame does not.
+        if self.show_move.is_none() && show.id != self.show_loop.id {
+            self.show_ticks = 0;
+        }
+        self.show_loop = show;
+        self.clip = id;
         self.clip_rate = clip.rate;
         if clip.translucent {
             self.flags |= crate::minigame_actor::FLAG_TRANSLUCENT;
         } else {
             self.flags &= !crate::minigame_actor::FLAG_TRANSLUCENT;
         }
+    }
+
+    /// Bind a judge-returned move clip: always from its first frame, even when
+    /// the same move is still playing (a fresh judge event restarts it).
+    pub(super) fn bind_move(&mut self, clip: &legaia_asset::dance_cast::DanceClip) {
+        let standing = self.show_loop;
+        self.bind_clip(clip);
+        self.show_loop = standing;
+        self.show_move = Some(super::DanceBodyClip::of(clip));
+        self.show_ticks = 0;
     }
 
     /// The dancer's difficulty lane (`gauge / 1000`), clamped to the chart.

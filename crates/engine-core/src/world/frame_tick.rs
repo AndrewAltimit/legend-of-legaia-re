@@ -2555,6 +2555,11 @@ impl World {
             self.mode = self.minigames.dance_return_mode;
             return;
         }
+        // Every body's clip runs every frame, count-in included: the clip
+        // driver ticks each actor whatever state the dance is in.
+        if let Some(g) = self.minigames.dance.as_mut() {
+            g.advance_body_clips(1);
+        }
         // The pre-song count-in owns the frame while it runs: the beat clock
         // does not advance and no press is judged, which is retail's
         // below-10 state band. The song starts on the frame it clears.
