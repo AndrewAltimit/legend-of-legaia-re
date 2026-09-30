@@ -20,15 +20,15 @@
 
 [headline]
 contiguous_progresses = 35
-contiguous_pad = 3
-tier_sum = 117
+contiguous_pad = 6
+tier_sum = 120
 
 [segments]
 rim_elm = 4
 tetsu_spar = 4
 mist_rim_elm = 4
-hunters_spring = 3
-drake_castle = 3
+hunters_spring = 4
+drake_castle = 4
 rim_elm_restored = 4
 vidna = 3
 ravine = 4
@@ -47,7 +47,7 @@ dohati_castle = 3
 sol_tower = 3
 sol_tower_b2 = 3
 usha_research = 4
-nivora = 3
+nivora = 4
 nivora_late = 3
 zora_castle = 3
 conkram_past = 3
