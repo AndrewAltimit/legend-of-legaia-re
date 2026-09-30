@@ -939,16 +939,20 @@ impl World {
     /// round's execution band and dispatch the seeded cast on the caster, as
     /// if its turn had come up in initiative order. Retail's `+0x1DD` target
     /// byte picks the picker row the spell's target resolution reads: `8` /
-    /// `9` are the party / enemy group codes, anything else an absolute slot.
+    /// `9` are the party / enemy group codes, anything else an absolute slot
+    /// in **retail** numbering - party `0..3`, monsters from
+    /// [`MONSTER_SLOT_FIRST`](legaia_engine_vm::battle_cue_group::MONSTER_SLOT_FIRST)
+    /// whatever the party size, where the engine seats monsters at
+    /// `party_count`.
     pub(in crate::world) fn dispatch_inflight_seed(&mut self, seed: InflightCastSeed) {
         use crate::battle_round::{PendingPartyAction, RoundPhase};
         use crate::target_picker::CursorRow;
-        let party_count = self.party.party_count.clamp(1, 3);
+        use legaia_engine_vm::battle_cue_group::MONSTER_SLOT_FIRST;
         let (target_row, target_slot) = match seed.target {
             8 => (CursorRow::Ally, 0),
             9 => (CursorRow::Enemy, 0),
-            t if t < party_count => (CursorRow::Ally, t),
-            t => (CursorRow::Enemy, t.saturating_sub(party_count)),
+            t if t < MONSTER_SLOT_FIRST => (CursorRow::Ally, t),
+            t => (CursorRow::Enemy, t - MONSTER_SLOT_FIRST),
         };
         self.battle.command = None;
         self.battle.spell_menu = None;
