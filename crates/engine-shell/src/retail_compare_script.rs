@@ -328,7 +328,7 @@ impl ScriptGate {
     /// captured. Neutral otherwise, and neutral once the context is on the
     /// gate PC (a capture on a box shows that box).
     pub fn advance_pad(&self, world: &legaia_engine_core::world::World, tick: u64) -> u16 {
-        if tick < SCRIPT_RESUME_TICK || tick % 2 != 0 {
+        if tick < SCRIPT_RESUME_TICK || !tick.is_multiple_of(2) {
             return 0;
         }
         match self.context(world) {
