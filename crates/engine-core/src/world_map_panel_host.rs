@@ -1328,6 +1328,25 @@ impl FieldPartyHud {
     }
 }
 
+/// Phase-align the HUD's idle countdown to a retail frame: `true` on every
+/// host tick at which the countdown must be rearmed so that, at
+/// `capture_tick`, it reads `retail_countdown` - the value of retail's
+/// `_DAT_801F348C` in the state being compared.
+///
+/// A capture harness ticks a fixed settle window, which outlasts the near
+/// idle (`0x28` frames), while a retail state is one instant at an arbitrary
+/// point of the countdown - a card-load state is typically two or three
+/// frames into it. Without the hold, a stationary seat would score the
+/// readout the retail frame is still `retail_countdown` frames short of.
+/// The hold rearms through tick `capture_tick - (idle - retail_countdown)`;
+/// the countdown then runs down one per frame and reads exactly
+/// `retail_countdown` at the capture (a `0` countdown is a drawn readout).
+pub fn hud_phase_hold(tick: u64, capture_tick: u64, retail_countdown: i16, idle: i16) -> bool {
+    let lead =
+        u64::try_from(i32::from(idle) - i32::from(retail_countdown.clamp(0, idle))).unwrap_or(0);
+    tick + lead <= capture_tick
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1377,6 +1396,33 @@ mod tests {
                 skipped.tick(false, 0, 0, Some((100, 200)), 1, None)
             );
         }
+    }
+
+    /// The phase hold lands the countdown on the retail value at the capture
+    /// tick: a card-load state three frames into the idle (`0x25` left) shows
+    /// no readout, a state whose countdown already expired (`0`) shows it.
+    #[test]
+    fn the_phase_hold_lands_retails_countdown_at_the_capture_tick() {
+        use legaia_engine_vm::world_map_panel_actors::HUD_IDLE_FRAMES_NEAR as IDLE;
+        const CAPTURE: u64 = 120;
+        for retail in [0i16, 1, 0x25, 0x26, IDLE] {
+            let mut hud = FieldPartyHud::new();
+            let mut last = None;
+            for tick in 1..=CAPTURE {
+                if hud_phase_hold(tick, CAPTURE, retail, IDLE) {
+                    hud.rearm();
+                }
+                last = Some(hud.tick(false, 0, 0, Some((100, 200)), 1, None));
+            }
+            let want = match retail {
+                0 => HudDecision::Draw { y: HUD_Y_BOTTOM },
+                t if t == IDLE => HudDecision::Rearmed { timer: IDLE },
+                t => HudDecision::CountingDown { timer: t },
+            };
+            assert_eq!(last, Some(want), "retail countdown {retail}");
+        }
+        // The un-held run (no retail value to align to) draws long before.
+        assert!(!hud_phase_hold(CAPTURE + 1, CAPTURE, 0, IDLE));
     }
 
     /// The player's engaged bit holds the HUD in its rearm arm: a host that

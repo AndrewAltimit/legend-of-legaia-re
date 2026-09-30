@@ -64,6 +64,8 @@ const BGM_ID: u32 = 0x8007_BAC8;
 /// The ambient-particle (fog pool) master gate, raised / cleared only by
 /// field-VM op `0x4C` nibble 3 (`docs/subsystems/field-ambient-fx.md`).
 const FOG_GATE: u32 = 0x8007_B854;
+/// `_DAT_801F348C`, the field party HUD's idle countdown (`FUN_801D0D38`).
+const HUD_COUNTDOWN: u32 = 0x801F_348C;
 
 /// What kind of retail situation a state is, as the engine would have to be
 /// seeded to reproduce it.
@@ -187,6 +189,11 @@ pub struct RetailObs {
     pub fog_gate: bool,
     /// The live game-state window lifted as a save.
     pub save: Option<legaia_save::SaveFile>,
+    /// The field party HUD's idle countdown `_DAT_801F348C` (field-overlay
+    /// data, so read on a [`StateClass::Field`] state only). The image
+    /// channel lands the engine's countdown on it at the capture tick, so
+    /// the readout is up in the engine frame exactly when it is in retail's.
+    pub hud_countdown: Option<i16>,
     /// The displayed frame, when the state carries VRAM + display registers.
     pub frame: Option<Frame>,
     /// Battle observables for a battle-class state; `Err` names why the
@@ -245,6 +252,7 @@ impl RetailObs {
             bgm_id,
             fog_gate,
             save,
+            hud_countdown: (class == StateClass::Field).then(|| rd16(ram, HUD_COUNTDOWN)),
             frame,
             battle: (class == StateClass::Battle)
                 .then(|| crate::retail_compare_battle::RetailBattle::from_ram(ram)),
@@ -894,6 +902,7 @@ fn run_one(opts: &RunOptions<'_>, entry: &CorpusEntry, scus: &[u8]) -> StateRepo
                 opts.out_dir,
                 &entry.label,
                 save,
+                retail.hud_countdown,
             ) {
                 Ok(ef) => {
                     let score = crate::retail_compare_image::score(rf, &ef);

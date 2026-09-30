@@ -685,9 +685,9 @@ reason = "The dev menu Records page, built on opposite sides of the frame. Both 
 [[frame_content]]
 native = "tick_field_party_hud"
 web = "tick_field_party_hud"
-native_only = ["battle_cam_pose", "frame_vp", "is_open", "resolve_field_camera", "scale"]
+native_only = ["battle_cam_pose", "frame_vp", "hud_idle_frames", "hud_phase_hold", "is_open", "resolve_field_camera", "scale"]
 web_only = []
-reason = "One kernel with the projection on opposite sides of the wasm boundary. The native window projects the lead through resolve_field_camera + frame_vp inside the step; the page draw pass holds no camera and no mutable self, so the projection is its own export, play_camera::play_field_hud_project, which the page calls before the tick - same resolver, same frame_vp, same 0x80 torso offset, and with the CUTSCENE arm suppressed the way the native step suppresses it. It used to be JS math over this frame draw VP, so a scripted shot decided where the readout sat. Both hosts read the suppress pad off World::input."
+reason = "One kernel with the projection on opposite sides of the wasm boundary. `hud_idle_frames` / `hud_phase_hold` are the native screenshot harness only: the retail-compare image channel phase-aligns the idle countdown to a retail state (`LEGAIA_HUD_COUNTDOWN`), a capture aid the page has no harness for. The native window projects the lead through resolve_field_camera + frame_vp inside the step; the page draw pass holds no camera and no mutable self, so the projection is its own export, play_camera::play_field_hud_project, which the page calls before the tick - same resolver, same frame_vp, same 0x80 torso offset, and with the CUTSCENE arm suppressed the way the native step suppresses it. It used to be JS math over this frame draw VP, so a scripted shot decided where the readout sat. Both hosts read the suppress pad off World::input."
 
 [[frame_content]]
 native = "tick_minigame_extras"

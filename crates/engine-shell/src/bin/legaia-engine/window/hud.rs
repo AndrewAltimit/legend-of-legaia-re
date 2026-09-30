@@ -175,6 +175,22 @@ impl PlayWindowApp {
         {
             self.field_party_hud.rearm();
         }
+        // Capture harness: phase-align the countdown to the retail state
+        // being compared (`LEGAIA_HUD_COUNTDOWN`).
+        if let Some(sc) = self.screenshot.as_ref()
+            && let Some(n) = sc.hud_countdown
+        {
+            let near = i32::from(self.session.host.world.mode == SceneMode::WorldMap);
+            let idle = legaia_engine_vm::world_map_panel_actors::hud_idle_frames(near, false);
+            if legaia_engine_core::world_map_panel_host::hud_phase_hold(
+                self.tick_no,
+                sc.capture_tick,
+                n,
+                idle,
+            ) {
+                self.field_party_hud.rearm();
+            }
+        }
         let suppressed = self.field_party_hud_suppressed();
         let projected_y = if suppressed {
             None

@@ -136,7 +136,16 @@ engine verdict:
   effects are whatever the engine's own entry produces.
 - **Timing.** Retail's frame is one instant; the engine's is a fixed tick
   after entry. Ambient animation, fog-pool population and water CLUT phases
-  cannot be phase-aligned.
+  cannot be phase-aligned. The one phase the channel does align is the field
+  party HUD's idle countdown (`_DAT_801F348C`, `FUN_801D0D38`): the settle
+  window outlasts the `0x28`-frame near idle, while a card-load state is
+  typically caught two or three frames into it, so an unaligned stationary
+  seat draws a readout retail's frame is still most of a second short of.
+  The countdown is read off the state and handed to the child as
+  `LEGAIA_HUD_COUNTDOWN`; the window rearms the HUD until the countdown lands
+  on that value at the capture tick
+  (`world_map_panel_host::hud_phase_hold`). A state whose countdown has
+  expired (`0`) scores the readout on both sides.
 
 `--flags-first` is a diagnostic arm for the headless side: hydrate, enter,
 hydrate again, so the entry scripts see retail's flags. Comparing its report
@@ -352,7 +361,7 @@ Shapes the corpus separates, each with what it indicates:
 |---|---|
 | camera exact, frame smeared by stretched texture planes or one flat colour | a mesh retail does not draw there: a sky dome's back faces ([NCLIP](../subsystems/renderer.md#the-field-pass-culls-back-faces)), a never-spawned actor slot at the origin, a prop at the wrong [render scale](../subsystems/renderer.md#field-static-object-placement-town01), or a window-owned prop outside the region box |
 | retail frame black beyond a rectangle, the engine's filled | the visible-tile window (op `0x46`); the port draws the whole scene |
-| an idle status panel in the engine frame only | the engine's panel timing / placement against retail's |
+| an idle status panel in the engine frame only | the engine's panel placement, or its suppress / rearm gates, against retail's - the countdown's phase is aligned |
 | effect missing in the engine frame (save-point crystals, spell glows) | an actor or effect the fresh entry does not spawn, or one the port does not draw |
 | camera and dialogue off together | script progress - the seeding cannot resume a script |
 | retail BGM word `2000` on a town arrival | the state was captured before the town's field init ran ([below](#arrival-states-are-captured-before-the-town-runs)) |

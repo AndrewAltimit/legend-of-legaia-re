@@ -231,7 +231,10 @@ pub enum FrameEntry<'a> {
 /// the retail save through `--resume-save` (a scratch LGSF file carrying
 /// `scene` as its resume point), is seated on retail's `(x, z)` through
 /// `LEGAIA_SEAT` - the same seat the headless channels take after their
-/// resume - and captures at [`CAPTURE_TICK`].
+/// resume - and captures at [`CAPTURE_TICK`]. `hud_countdown` is retail's
+/// field party HUD countdown in the state (`_DAT_801F348C`), handed to the
+/// child as `LEGAIA_HUD_COUNTDOWN` so the idle readout's phase matches the
+/// retail instant rather than the settle window's length.
 #[allow(clippy::too_many_arguments)]
 pub fn engine_frame(
     exe: &Path,
@@ -242,14 +245,19 @@ pub fn engine_frame(
     out_dir: Option<&Path>,
     label: &str,
     save: &legaia_save::SaveFile,
+    hud_countdown: Option<i16>,
 ) -> Result<Frame> {
+    let env: Vec<(&str, String)> = hud_countdown
+        .map(|n| ("LEGAIA_HUD_COUNTDOWN", n.to_string()))
+        .into_iter()
+        .collect();
     engine_frame_with(
         exe,
         extracted,
         scene,
         Some((x, z)),
         &[],
-        &[],
+        &env,
         CAPTURE_TICK,
         out_dir,
         label,

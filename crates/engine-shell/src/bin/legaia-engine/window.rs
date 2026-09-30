@@ -59,6 +59,12 @@ pub(crate) struct ScreenshotConfig {
     /// and the engine tick never sees an edge from it: drive pad input with
     /// `--pad-script`, dev/entry keys with this.
     pub key_script: std::collections::HashMap<u64, Vec<KeyCode>>,
+    /// `LEGAIA_HUD_COUNTDOWN=<n>`: the field party HUD's idle countdown
+    /// (retail's `_DAT_801F348C`) the capture must land on, so a stationary
+    /// seat shows the readout exactly when the retail frame does
+    /// ([`legaia_engine_core::world_map_panel_host::hud_phase_hold`]). Set by
+    /// the retail-compare image channel from the state's own RAM.
+    pub hud_countdown: Option<i16>,
 }
 
 /// Debug state `play-window` seeds before the first world tick, so a capture
@@ -224,6 +230,9 @@ impl ScreenshotConfig {
             sweep,
             pad_script: script,
             key_script: keys,
+            hud_countdown: std::env::var("LEGAIA_HUD_COUNTDOWN")
+                .ok()
+                .and_then(|v| v.trim().parse().ok()),
         }))
     }
 }
