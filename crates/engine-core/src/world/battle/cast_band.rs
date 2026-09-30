@@ -1671,6 +1671,7 @@ impl World {
                         .collect();
                     let sweep_arm = ctx.phase;
                     let rolls = self.sweep_status_rolls(&ctx, &seats, body, caster_slot);
+                    self.refresh_seat_spirit(&mut seats);
                     // The module's own baked power, rolled per seat: these
                     // three write `+0x14C` themselves, so they own the
                     // outcome and `fold_pending_cast` skips the generic fold
@@ -2422,6 +2423,7 @@ impl World {
                 .unwrap_or_default();
             rolls.push((seat, roll));
         }
+        self.refresh_seat_spirit(&mut seats);
         let take = |seat: u8| {
             rolls
                 .iter()
@@ -2498,15 +2500,86 @@ impl World {
             self.next_rand() as u16,
             self.next_rand() as u16,
         ];
-        Some(roll_module_hit(
-            shape,
-            0,
-            &a,
-            &d,
-            element_affinity_pct,
-            rng,
-            || self.next_rand() as u16,
-        ))
+        let net = roll_module_hit(shape, 0, &a, &d, element_affinity_pct, rng, || {
+            self.next_rand() as u16
+        });
+        Some(self.finish_module_hit(shape, attacker, target, net))
+    }
+
+    /// The finisher half of a module wrapper hit. Both per-move wrappers end
+    /// in the shared finisher: `FUN_801DD4B0` calls `jal 0x801DDB30` at
+    /// `0x801DD678` on its own attacker / defender roll words and returns
+    /// their difference afterwards (`subu v0,v1,v0` at `0x801DD6A8`), so the
+    /// net a module stores into `+0x14C` is **post**-finisher: the party
+    /// resist ladder (skipped by `FUN_801DD6B4`'s `param_5 = 1`), Mystic
+    /// Shield's enemy-defender halve, the guard halve (`+0x1DE == 4`), the
+    /// no-damage floor and the `9999` cap - and the finisher's spirit stage
+    /// fills the defender's gauge from the same hit. The earlier port
+    /// returned the raw wrapper net, so a guarding member took Cort's Mystic
+    /// Circle whole and gained no Spirit from it.
+    ///
+    /// `SharedSummon` (PROT 0927, `FUN_801DD0AC`'s summon branch) keeps the
+    /// raw net: its finisher arguments (attacker slot `7`, the power-percent
+    /// scale) are the shared kernel's own and are not modelled here.
+    ///
+    /// PORT: FUN_801DD4B0 (`0x801DD66C..0x801DD6AC`, the finisher call and return)
+    fn finish_module_hit(
+        &mut self,
+        shape: &vm::cast_module_ticks::CastDamageShape,
+        attacker: u8,
+        target: u8,
+        net: i32,
+    ) -> i32 {
+        use legaia_engine_vm::battle_damage_wrappers::{
+            ATK_WRAPPER_BYPASSES_PARTY_RESIST, INT_WRAPPER_BYPASSES_PARTY_RESIST,
+        };
+        use vm::battle_formulas::{DamageFinish, damage_finish_lazy};
+        use vm::cast_module_ticks::CastWrapper;
+
+        let bypass_party_resist = match shape.wrapper {
+            CastWrapper::Respect => INT_WRAPPER_BYPASSES_PARTY_RESIST,
+            CastWrapper::Bypass => ATK_WRAPPER_BYPASSES_PARTY_RESIST,
+            CastWrapper::SharedSummon => return net,
+        };
+        let party_count = self.party.party_count;
+        let attacker_element = self
+            .actors
+            .get(attacker as usize)
+            .and_then(|a| a.battle_monster_id)
+            .and_then(|id| self.tables.monster_catalog.get(id))
+            .map(|d| d.element)
+            .unwrap_or(7);
+        let finish = DamageFinish {
+            predamage: net.max(0) as u32,
+            attacker_slot: if attacker < party_count { 0 } else { 3 },
+            defender_slot: if target < party_count { 0 } else { 3 },
+            attacker_element,
+            defender_resist: self.defender_resist(target),
+            defender_guarding: self
+                .battle
+                .guarding
+                .get(target as usize)
+                .copied()
+                .unwrap_or(false),
+            enemy_defender_halve: self.mystic_shield_up(),
+            bypass_party_resist,
+            summon_power_pct: 100,
+            floor_rand: 0,
+        };
+        let over = damage_finish_lazy(&finish, || self.next_rand() as u16).min(9999);
+        self.accrue_spirit_gauge(target, over as u16);
+        over as i32
+    }
+
+    /// Carry the spirit gauges [`Self::finish_module_hit`] filled into seat
+    /// snapshots taken before the rolls, so the tick's write-back does not
+    /// restore the pre-hit gauge.
+    fn refresh_seat_spirit(&self, seats: &mut [vm::cast_module_ticks::CastActorState]) {
+        for (slot, st) in seats.iter_mut().enumerate() {
+            if let Some(a) = self.actors.get(slot) {
+                st.spirit_gauge = a.battle.spirit_gauge;
+            }
+        }
     }
 
     /// Pre-roll the status draws one whole-row sweep makes, in the order
@@ -2938,6 +3011,25 @@ mod capture_hold_tests {
         }
         world.mode = SceneMode::Battle;
         world
+    }
+
+    /// A module wrapper hit runs the shared finisher (`FUN_801DD4B0` calls
+    /// `0x801DDB30` at `0x801DD678`): Mystic Circle's sweep is halved on a
+    /// guarding seat, and the hit fills the defender's Spirit gauge.
+    #[test]
+    fn a_module_hit_is_finished_guard_halve_and_spirit() {
+        use vm::cast_module_ticks::{MYSTIC_CIRCLE_TICK, sweep_damage_shape_for};
+        let shape = sweep_damage_shape_for(MYSTIC_CIRCLE_TICK).expect("Mystic Circle shape");
+        let mut world = band_world();
+        world.actors[0].battle.max_hp = 2000;
+        world.actors[0].battle.spirit_gauge = 0;
+        assert_eq!(world.finish_module_hit(shape, 3, 0, 1200), 1200);
+        assert_eq!(world.actors[0].battle.spirit_gauge, 60, "1200 of 2000 HP");
+
+        world.actors[0].battle.spirit_gauge = 0;
+        world.battle.guarding[0] = true;
+        assert_eq!(world.finish_module_hit(shape, 3, 0, 1200), 600);
+        assert_eq!(world.actors[0].battle.spirit_gauge, 30);
     }
 
     /// Nothing paged in: the seam is inert, so a host that never reaches the

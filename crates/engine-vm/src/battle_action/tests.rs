@@ -1233,6 +1233,25 @@ fn magic_cast_begin_capture_spell_routes_to_capture_branch() {
     assert!(host.take().contains(&Event::LoadCapture(0x42)));
 }
 
+/// Retail's capture route (`ctx[7] = 0x6E` at `0x801E4490`) falls through
+/// into the MP debit at `0x801E4500`: a capture-class cast pays its MP.
+#[test]
+fn magic_cast_begin_capture_spell_still_pays_its_mp() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
+    ctx.action_state = ActionState::MagicCastBegin.as_byte();
+    host.actors[1].mp = 1000;
+    host.actors[1].params[0] = 0xB7;
+    host.capture_spells.insert(0xB7);
+    host.spell_costs.insert(0xB7, 100);
+    let out = step(&mut host, &mut ctx);
+    assert!(matches!(
+        out,
+        StepOutcome::Transition { to, .. } if to == ActionState::MagicCaptureBranch.as_byte()
+    ));
+    assert_eq!(host.actors[1].mp, 900);
+    assert_eq!(host.actors[1].last_mp_cost, 100);
+}
+
 #[test]
 fn magic_cast_begin_subtracts_mp_with_ability_bits() {
     let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);

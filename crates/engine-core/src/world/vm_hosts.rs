@@ -2739,8 +2739,16 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// disc this *is* the retail `+3` byte; disc-free it is the port's
     /// catalog. Either way there is one price per spell in this engine, and
     /// this is where the state machine reads it.
+    ///
+    /// A capture-class special the catalog does not carry (Cort's Mystic
+    /// Circle `0xB7`) is priced off the same disc record its cast is built
+    /// from ([`World::monster_cast_def`]): retail's state `0x28` reads the
+    /// `+3` byte for every id, capture route included (`0x801E4500`).
     fn spell_mp_cost(&self, id: u8) -> u8 {
-        self.world.tables.spell_catalog.mp_cost(id)
+        if self.world.tables.spell_catalog.get(id).is_some() {
+            return self.world.tables.spell_catalog.mp_cost(id);
+        }
+        self.world.monster_cast_def(id).map_or(0, |d| d.mp_cost)
     }
     fn character_ability_bits(&self, slot: u8) -> u32 {
         let i = slot as usize;
