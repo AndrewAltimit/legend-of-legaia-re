@@ -222,6 +222,9 @@ pub fn chaos_breath_tick(
 /// The baked power PROT 0938's `0xB7` body hands `FUN_801DD4B0`
 /// (`addiu a0,zero,0x309` at `0x801F70DC`, in the `beqz` delay slot).
 pub const MYSTIC_CIRCLE_POWER: u16 = 0x309;
+/// PROT 0938's `0xB7` terminal arm: table word 4, the only one that zeroes
+/// the busy register (`clear s6` at `0x801F7230`).
+pub const MYSTIC_CIRCLE_DONE_ARM: u8 = 4;
 /// The animation rate PROT 0938's `0xB7` sweep drops each hit seat to
 /// (`addiu v0,zero,4; sb v0,0x21d(v1)` at `0x801F7180`).
 pub const MYSTIC_CIRCLE_HIT_ANIM_RATE: u8 = 4;
@@ -252,6 +255,14 @@ pub fn mystic_circle_tick(
 ) -> (CastTickStep, Vec<SweepHit>) {
     let mut hits = Vec::new();
     let step = run_tick_latched(ctx, |c| {
+        // Table word 4 is the terminal arm: it waits out the module timer,
+        // clears `ctx[+0x0D]` and returns `0` with the phase left at 4
+        // (`0x801F71F8..0x801F7230`). Advancing past it walks off the
+        // `sltiu 5` table into the busy default, which parks the band.
+        if c.phase == MYSTIC_CIRCLE_DONE_ARM {
+            c.ctx_0d = 0;
+            return CastArmStep::Finish;
+        }
         if damage_arm {
             for seat in 0..c.party_count {
                 let Some(v) = seats.get_mut(seat as usize) else {
@@ -445,6 +456,14 @@ pub fn doomsday_tick(
 ) -> (CastTickStep, Vec<SweepHit>) {
     let mut hits = Vec::new();
     let step = run_tick_latched(ctx, |c| {
+        // The `0xFF` arm (`0x801F7A08`) restores the seats' poses, clears
+        // `ctx[+0x0D]` and returns `0` (`clear s8` at `0x801F7A84`). Without
+        // it the phase wrapped to `0` and the choreography - damage arm
+        // included - ran again.
+        if c.phase == CHOREOGRAPHY_DONE_PHASE {
+            c.ctx_0d = 0;
+            return CastArmStep::Finish;
+        }
         if damage_arm {
             for seat in 0..c.party_count {
                 let Some(v) = seats.get_mut(seat as usize) else {
