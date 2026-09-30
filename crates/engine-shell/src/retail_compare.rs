@@ -64,6 +64,10 @@ const CAM_EYE: u32 = 0x8008_40B8;
 /// the view orbits, stored **negated** (`engine-core::camera`, axes 6 / 8).
 const CAM_FOCUS: u32 = 0x8008_9118;
 const BGM_ID: u32 = 0x8007_BAC8;
+/// The field BGM sound-source slot (`docs/subsystems/audio.md`).
+const BGM_SLOT: u32 = 0x8007_052C;
+/// `0x8007B708`: `1` after the slot's replay, `0` after a stop / pause.
+const BGM_PLAYING: u32 = 0x8007_B708;
 /// `0x80084540`, the **loaded** scene's raw CDNAME define. The label at
 /// `0x8007050C` is written by the scene-change packet ahead of the load, so
 /// between a door and the next field init the two disagree and this one
@@ -211,6 +215,12 @@ pub struct RetailObs {
     pub player: Option<[i16; 3]>,
     pub camera: CameraObs,
     pub bgm_id: u16,
+    /// Whether the field BGM slot `0x8007052C` is attached and at a non-zero
+    /// volume: the playing word `0x8007B708` (raised by the replay primitive
+    /// `FUN_80026478`, cleared by the stop / pause / timed-release arms) and
+    /// the slot's `SsSeqSetVol` word `+0x6` (`FUN_8002657C`, zeroed by the
+    /// same arms and by the battle intro's field-voice stop).
+    pub bgm_sounding: bool,
     /// `_DAT_8007B854 != 0`.
     pub fog_gate: bool,
     /// The live game-state window lifted as a save.
@@ -333,6 +343,8 @@ impl RetailObs {
             player,
             camera,
             bgm_id,
+            bgm_sounding: game_anchors::u16_at(ram, BGM_PLAYING) != 0
+                && game_anchors::u16_at(ram, BGM_SLOT + 6) != 0,
             fog_gate,
             save,
             hud_countdown: (class == StateClass::Field).then(|| rd16(ram, HUD_COUNTDOWN)),
@@ -414,6 +426,8 @@ pub struct EngineObs {
     /// ([`legaia_engine_core::scene::SceneHost::bgm_track_word`]), else the
     /// last track the director started.
     pub bgm_id: Option<u16>,
+    /// A control op stopped or paused the track after its last start.
+    pub bgm_held: bool,
     /// The engine's fog-pool gate (`World::fog.gate`).
     pub fog_gate: bool,
     pub save: legaia_save::SaveFile,
@@ -427,22 +441,34 @@ pub struct EngineObs {
 #[derive(Default)]
 pub(crate) struct RecordingDirector {
     pub(crate) last: Option<u16>,
+    /// A control op has stopped or paused the track since the last start.
+    pub(crate) held: bool,
 }
 
 impl BgmDirector for RecordingDirector {
     fn start(&mut self, bgm_id: u16, _seq: &[u8]) {
         self.last = Some(bgm_id);
+        self.held = false;
     }
     fn start_owned_vab(&mut self, bgm_id: u16, _entry: &[u8]) {
         self.last = Some(bgm_id);
+        self.held = false;
     }
     // The comparand is the id the scripts selected (retail's track-select
     // word is written by the op-0x35 start arms). A control op starts no
-    // track, so each one is overridden on purpose and keeps `last`.
-    fn pause(&mut self) {}
-    fn resume(&mut self) {}
-    fn stop(&mut self) {}
-    fn unhalt_pause(&mut self) {}
+    // track, so it keeps `last` and only moves `held`.
+    fn pause(&mut self) {
+        self.held = true;
+    }
+    fn resume(&mut self) {
+        self.held = false;
+    }
+    fn stop(&mut self) {
+        self.held = true;
+    }
+    fn unhalt_pause(&mut self) {
+        self.held = false;
+    }
 }
 
 /// Seed the engine from a retail state and sample it after [`SETTLE_TICKS`].
@@ -544,6 +570,7 @@ pub fn run_engine_with(
         floor_at_retail,
         camera,
         bgm_id,
+        bgm_held: director.held,
         fog_gate,
         save,
         menu_subscreen,
@@ -938,7 +965,13 @@ pub fn compare(
     put(
         "bgm",
         f64::from(u8::from(engine.bgm_id == Some(retail.bgm_id))),
-        format!("retail={} engine={:?}", retail.bgm_id, engine.bgm_id),
+        format!(
+            "retail={}{} engine={:?}{}",
+            retail.bgm_id,
+            if retail.bgm_sounding { "" } else { " (held)" },
+            engine.bgm_id,
+            if engine.bgm_held { " (held)" } else { "" },
+        ),
     );
     put(
         "fog_gate",

@@ -68,12 +68,11 @@ A field-run state is named by the scene it is **running**, which is not
 always the label. A walked door writes the destination label to `0x8007050C`
 with the scene-change packet, frames before the field init loads the block
 and stores its raw CDNAME define to `0x80084540`. A capture in that window
-(`doman_arrival_from_korb2`, `son_arrival_from_doman`, `s2_rimelm_town01`)
-shows the outgoing overworld - its frame, camera, player and track - under
-the incoming label, so the corpus scores it as the scene the define names and
+shows the outgoing scene - its frame, camera, player and track - under the
+incoming label, so the corpus scores it as the scene the define names and
 records the label as `pending_scene` in the detail
-(`RetailObs::settle_on_loaded_scene`). Scored under the label, every channel
-compared the overworld's retail values against a fresh entry of the town.
+(`RetailObs::settle_on_loaded_scene`;
+[the arrival states](#arrival-states-are-captured-before-the-town-runs)).
 
 ## Retail observables
 
@@ -310,8 +309,12 @@ the fight (`korb3`'s Gaza event starts `2028`, then selects sound set `-1`;
 `jouine`'s Cort event starts `2071`), and the retail word holds that theme.
 The seed enters the scene fresh and forces the formation without running the
 event, so the engine's word is the scene *entry*'s choice - `korb3` parks at
-`0x1000`, `nilboa` picks `4096` or `2028` by which duel flags are up. Those
-`bgm` misses are this limit, not a stash defect; see
+`0x1000`, `nilboa` picks `4096` or `2028` by which duel flags are up. The
+sound set is the same kind of word: `jouine`'s entry selects `-1` and the
+Cort event (`P2[5]`) re-selects `8`, and `nilboa`'s Gi duel selects `4`
+(`P2[23]`), so the fight retail swapped to bank `8` / `4` the forced seed
+plays unswapped or on the default theme. Those `bgm` misses are this limit,
+not a stash defect; see
 [audio](../subsystems/audio.md#the-battle-sound-set-picks-the-fights-track).
 
 ## Menu states
@@ -362,7 +365,7 @@ measured channels.
 | `position` | player `(X, Z)` after settling: 1 within 4 units, linear to 0 at 256 |
 | `footing` | engine floor sample at retail's `(X, Z)` vs retail's footing: 1 within 2, 0 at 128 (field class only) |
 | `camera` | mean of eight parts: pitch and yaw (1 within 16, 0 at 256, wrapped), `H` (1 within 4, 0 at 128), each eye word and each focus word (1 within 16, 0 at 1024) |
-| `bgm` | 1 when the engine's track-select word (`SceneHost::bgm_track_word`, the park sentinel `0x1000` included) equals retail's |
+| `bgm` | 1 when the engine's track-select word (`SceneHost::bgm_track_word`, the park sentinel `0x1000` included) equals retail's; the detail marks a held track on either side ([below](#a-held-track)) |
 | `fog_gate` | 1 when the engine's fog-pool gate equals retail's |
 | `party` | fraction of equal fields over retail's roster: HP / MP current and max, level, the eight equipment bytes |
 | `flags` | 1 - differing bits / bits set on either side, over the whole story-flag bitmap |
@@ -487,7 +490,7 @@ Shapes the corpus separates, each with what it indicates:
 | effect missing in the engine frame (save-point crystals, spell glows) | an actor or effect the fresh entry does not spawn, or one the port does not draw |
 | camera and dialogue off together | script progress - the seeding cannot resume a script |
 | player seated exactly, camera focus thousands of units away (`kor5_post_43a_checkpoint`: player Z `5312`, focus Z `11840`) | script progress: a scene script aimed the retail camera at another part of the map; the engine's follow camera frames the player |
-| retail BGM word `2000` on a town arrival | the state was captured before the town's field init ran ([below](#arrival-states-are-captured-before-the-town-runs)) |
+| a town label over the overworld's `H`, word `2000` and fog gate | a door caught before the town's field init ran; scored as the overworld `0x80084540` names ([below](#arrival-states-are-captured-before-the-town-runs)) |
 | retail word held by a flag the entry script already consumed (`garmel`'s `0x196`, `rikuroa`'s `0x289`) | script progress: the track was started by a beat that has since cleared its trigger flag, so a card load would not restart it |
 | camera depth and position off on an ending vignette (`ending_vignette_rimelm_walkaway`) | the state is mid-way through a scripted shot the seed restarts ([below](#ending-vignettes-are-mid-script)) |
 | camera exact, frame aimed at another part of the room; retail focus `0x80089118/20` is not `-player` | a probe-poked capture ([below](#a-poked-player-keeps-the-arrival-focus)) |
@@ -512,17 +515,45 @@ the capture method, not the camera.
 
 ### Arrival states are captured before the town runs
 
-`s2_rimelm_town01` and `doman_arrival_from_korb2` carry the town's scene
-label and field mode, but every other observable is still the overworld's:
-GTE `H = 368` (the value every `world_map`-class state holds, and no other
-`field`-class state), BGM word `2000`, the fog gate raised, and a player `Y`
-of `-96` - an overworld footing. `son_arrival_from_doman` agrees on the word,
-the gate and the footing. `son`'s scripts write no fog gate at all, and
+`s2_rimelm_town01`, `doman_arrival_from_korb2` and `son_arrival_from_doman`
+carry the town's scene label and field mode, but every other observable is
+still the overworld's: GTE `H = 368` (the value every `world_map`-class state
+holds, and no other `field`-class state), BGM word `2000`, the fog gate raised,
+and an overworld footing. `son`'s scripts write no fog gate at all, and
 `FUN_8003AEB0` clears the gate on every scene load that is not a warp return
 (`sw zero,-0x47ac(v0)` at `0x8003B690`, behind the `_DAT_8007B8B8 != 2` test
-at `0x8003B510`; the states hold `0`), so a `son` whose loader had run could
-not hold it raised. The `bgm`, `fog_gate` and `footing` misses on these
-three states are capture timing, not engine verdicts.
+at `0x8003B510`), so a `son` whose loader had run could not hold it raised.
+The loaded-scene define settles it: `0x80084540` still reads `map01` (`85`)
+or `map03` (`391`) in all three. The corpus therefore scores them as the
+overworld ([above](#the-corpus)), where the word, the gate and the camera
+agree; scored under the label, every one of those channels had compared the
+overworld against the town.
+
+### A held track
+
+The word says which track a script selected, not whether it sounds. Retail's
+field slot `0x8007052C` is attached and audible only while the playing word
+`0x8007B708` is raised (the replay primitive `FUN_80026478` sets it; the stop,
+pause and timed-release arms clear it) and the slot's `SsSeqSetVol` word
+`+0x6` is non-zero (`FUN_8002657C`, zeroed by the same arms). The engine's
+side is its director's last control op after its last start. The `bgm`
+detail marks either side `(held)`; the score stays on the word, because
+every held-versus-sounding split in the corpus is script progress - a
+timeline pause (`rim_elm_zoom_intro`, `rikuroa_pre_caruban`), a minigame's
+own stop (`minigame_dance_pcsx`), a swap in flight - which the seed cannot
+resume.
+
+A swap in flight is the shape the word misreads most. Op `0x35` sub-op `9`
+stores the new id at once, but the old track keeps the slot until the script's
+sub-op `0xA` commit ([audio](../subsystems/audio.md#the-track-swap-handshake-fun_800243f0--op-0x35-sub-op-0xa)):
+`chapter2_garmel_pre_songi` and `_pre_zeto` hold `_DAT_8007B750 = 0x9`
+(start pending, load settled), the word naming `2033` / `2052` while the
+loaded barrier `0x8007BA9C` still names `2043` and the slot is silent. The
+same limit covers a flag the running script wrote after the entry read it:
+`koin1`'s slot-machine record (`P1[56]`) raises `0x4B8` before its warp, and
+the entry parks the track (`0x1000`) when that flag is up, so a fresh entry
+over `minigame_slot_machine_pcsx`'s flags parks where retail's earlier entry
+started `2018`.
 
 ### Ending vignettes are mid-script
 
