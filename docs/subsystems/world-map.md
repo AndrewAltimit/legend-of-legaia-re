@@ -2461,7 +2461,7 @@ the overworld from the flat-depth corner references
 in the play page's GLSL), each vertex of a cell computing the same colour.
 
 The **decoration cells** carry a cue of their own, per object rather than per
-cell, and the port does not draw it. Before each `jal 0x80043390`
+cell. Before each `jal 0x80043390`
 (`0x801F7254`) the sweep loads the object's composed translation into `TR`
 (`0x801F71E0..0x801F71F4`, three `ctc2` from the local matrix's `t`) and forms
 the dispatcher's third argument from its `TRZ` (`s1 + 0x40`):
@@ -2479,7 +2479,23 @@ and the 0901 handlers load that word into `IR0` right before their `DPCS`
 every prim of a landmark hazes toward `0xD0` by one `IR0` taken from its origin,
 while the ground under it hazes toward one past white by its own corner. A near
 landmark (`TRZ <= 0x5007`) passes `IR0 = 0` and the dispatcher skips the far
-colour setup entirely, which draws the same.
+colour setup entirely, which draws the same. All eight PROT 0901 prim leaves
+(`0x801F7644` .. `0x801F8690`, textured and untextured) run that `IR0` load.
+The `+0x1E` / `+0x800` bits raise `a1`'s top byte, which makes the dispatcher
+OR `1` into `a2` (`0x800433C0..0x800433CC`) - under one colour step, and not
+modelled. The placed landmarks are not this sweep's (it skips `+0x12 & 4` at
+`0x801F6EE8`) and take no cue from it.
+
+Both play hosts draw the decoration cue:
+`engine-core::overworld_ground_cue::decoration_draw_cue` turns the draw
+origin's clip `w` (times the frame's `clip.w`-to-`SZ` factor, the one the
+ground cue reads) into a far colour and `IR0`, and each host stages it as a
+per-draw constant cue on the decoration draws only - the native window from
+`world_map_deco_start` (landmarks and decorations resolve separately), the
+play page from `field_decoration_start` (`overworldDecorationCue` in
+`site/js/webgl-tmd.js`). Off the overworld's own cameras the factor is `0`
+and nothing is cued. `LEGAIA_DIAG_NO_DECO_CUE` drops it on the native
+window for before/after frames.
 
 The selector is the cell's object-record `+0x14..+0x18` run (the record reached
 through `cell & 0x1ff` → `×0x20`), byte-verified against the retail prim pool:

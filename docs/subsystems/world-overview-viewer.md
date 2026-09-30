@@ -383,7 +383,10 @@ retail counterpart to replace it with: the walk-view overworld's far colour is
 not per-kingdom. The continent ground is depth-cued toward the literal
 `SetFarColor(0x100, 0x100, 0x100)` its emitter's caller issues, and the
 decoration cells toward `0xD0D0D0` - both fixed in PROT 0901's code
-([world-map.md](world-map.md#ground-texturing)).
+([world-map.md](world-map.md#ground-texturing)). Both retail cues key on the
+walk camera's depth (`SZ` / `TRZ`), and this viewer's orbit camera is not
+retail's, so it stages neither: its curvature factor is `0`, which is the
+off switch of the ground cue and of `overworldDecorationCue` alike.
 
 This section used to describe an "atmospheric-tick actor" (`actor[+0x0C] ==
 0x801E3E00`) interpolating a per-kingdom haze RGB into its `+0x74` for the GTE
