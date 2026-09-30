@@ -77,9 +77,9 @@ fn jou_ambient_tree_spawns_and_cycles_clut_cells_or_skip() {
     assert_eq!(world.ambient.fx.len(), 20, "jou ambient fan-out");
 
     // The fifteen row-502 cyclers tile the CLUT row: the self-modifying
-    // ext-0x1E spawn stepping gives each instance its own 16-halfword cell.
-    // (Engine snapshot semantics land one 0x10 step behind retail - cells
-    // 0x00..0xE0 instead of 0x10..0xF0; see `world/ambient.rs`.)
+    // ext-0x1E spawn stepping gives each instance its own 16-halfword cell,
+    // and the bumped operand is read by the same run's capture - cells
+    // 0x10..=0xF0, retail's tiling.
     let mut ticks = 0;
     while ticks < 64 {
         world.tick_ambient_fx();
@@ -106,6 +106,13 @@ fn jou_ambient_tree_spawns_and_cycles_clut_cells_or_skip() {
     );
     let stride_ok = row_502.windows(2).all(|w| w[1] - w[0] == 0x10);
     assert!(stride_ok, "cells tile at 16-halfword stride: {row_502:x?}");
+    // Cell 0x00 is the lightning director's own capture (record 20); the
+    // fifteen cyclers take 0x10..=0xF0, so the row is covered end to end.
+    assert_eq!(
+        row_502,
+        (0..16).map(|i| i * 0x10).collect::<Vec<u16>>(),
+        "row-502 cells: director at 0x00, cyclers at retail's 0x10..=0xF0"
+    );
     assert!(
         fx.iter().any(|f| f.rect.1 == 0x1F8),
         "row-504 lightning palette cell present"

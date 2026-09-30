@@ -18,13 +18,10 @@
 //!    `0x1E` patching the shared bundle between spawns (jou's cycler record
 //!    steps its own op-`0x2C` capture `x` by 16 per instance, tiling the
 //!    CLUT row). Parts therefore snapshot their bytecode **at spawn time**
-//!    from the live bundle, and every tick's deferred bytecode writes are
-//!    flushed back into both the bundle and the part's own snapshot.
-//!    (Within a single tick an op still reads its operands from the
-//!    snapshot, so a self-write lands one instruction late relative to
-//!    retail's direct memory writes - for the spawn-stepping idiom this
-//!    shifts which 16-halfword cell each instance captures by one step, an
-//!    accepted engine divergence recorded in the subsystem doc.)
+//!    from the live bundle, and a part steps one opcode at a time with every
+//!    bytecode write landed in both the bundle and its own snapshot before
+//!    the next fetch ([`ambient_actor_tick`]) - retail's direct memory
+//!    writes, so a later op of the same run reads the patched operand.
 //! 2. **The mode-3 render tail.** `0x4000` render-mode parts run the
 //!    per-frame CLUT-cell integrator (`FUN_80021DF4` mode-3 arm) and emit
 //!    HSV palette rewrites ([`crate::clut_cell_fx`]), which need a VRAM
@@ -64,6 +61,58 @@ use vram_scroll::VramScrollFx;
 /// Per-tick opcode budget for one ambient part (the records are small; the
 /// budget only guards a malformed stream).
 const AMBIENT_PART_BUDGET: usize = 512;
+
+/// [`move_vm::actor_tick`] for an ambient part, with retail's **in-place**
+/// bytecode writes: retail's ops write `_DAT_8007B8D0` memory directly, so an
+/// op that patches a later operand of its own record is read by that later op
+/// in the same run. The VM fetches operands from a slice, so the port steps
+/// one opcode at a time and lands every self-write into the part's buffer
+/// (and the shared bundle) before the next fetch. jou's flesh cyclers depend
+/// on it: each instance's ext `0x1E` bumps its own following op-`0x2C` capture
+/// `x` by 16 and the capture then reads the bumped value, so the fifteen
+/// instances tile cells `0x10..=0xF0` of CLUT row 502, as in retail.
+///
+/// PORT: FUN_80021DF4 (the move-VM gate + call, `0x80022B94..0x80022BBC`)
+fn ambient_actor_tick(
+    host: &mut MoveVmHostImpl<'_>,
+    state: &mut ActorState,
+    mut buf: Vec<u16>,
+    record_words: usize,
+) -> ActorTickOutcome {
+    use legaia_engine_vm::move_vm::StepResult;
+    if state.wait_timer >= 0 {
+        return ActorTickOutcome::Waiting;
+    }
+    let mut result = StepResult::Pending { opcode: 0xFFFF };
+    for _ in 0..AMBIENT_PART_BUDGET {
+        let r = move_vm::step(host, state, &buf);
+        for (&word, &value) in &host.deferred_writes {
+            if let Some(slot) = buf.get_mut(word) {
+                *slot = value;
+            }
+            let byte = (record_words + word) * 2;
+            if let Some(b) = host.world.props.stager_bytes.get_mut(byte..byte + 2) {
+                b.copy_from_slice(&value.to_le_bytes());
+            }
+        }
+        if !matches!(r, StepResult::Advance) {
+            result = r;
+            break;
+        }
+    }
+    if state.flags & 0x8 != 0 {
+        return ActorTickOutcome::Halted;
+    }
+    match result {
+        StepResult::Wait => ActorTickOutcome::WaitSeeded,
+        StepResult::EndOfBuffer { opcode } => ActorTickOutcome::EndOfBuffer { opcode },
+        StepResult::Pending { opcode: 0xFFFF } | StepResult::Advance => {
+            ActorTickOutcome::BudgetExhausted
+        }
+        StepResult::Pending { opcode } => ActorTickOutcome::Pending { opcode },
+        StepResult::Halt => ActorTickOutcome::Halted,
+    }
+}
 
 /// Recursion guard for op-`0x25` spawn chains within one tick.
 const MAX_SPAWN_DEPTH: usize = 16;
@@ -248,7 +297,7 @@ impl World {
             field_record_words: Some(record_words),
             child_spawns: Vec::new(),
         };
-        let outcome = move_vm::actor_tick(&mut host, &mut state, &buf, AMBIENT_PART_BUDGET);
+        let outcome = ambient_actor_tick(&mut host, &mut state, buf, record_words);
         let writes = std::mem::take(&mut host.deferred_writes);
         let spawns = std::mem::take(&mut host.child_spawns);
         drop(host);

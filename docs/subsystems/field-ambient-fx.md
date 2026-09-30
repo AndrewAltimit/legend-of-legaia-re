@@ -276,10 +276,12 @@ as the label-call idiom in
 [`ghidra.md`](../tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims).
 
 The engine reproduces the fan-out with snapshot-at-spawn semantics
-(`world/ambient.rs`); a part's self-write lands one instruction late
-relative to retail's direct memory write, which shifts each instance's
-captured cell one 16-halfword step (engine cells `0x00..0xE0`, retail
-`0x10..0xF0`) - recorded here as a known divergence.
+(`world/ambient.rs`) and steps each part one opcode at a time, landing every
+bytecode self-write in the part's buffer and the shared bundle before the next
+fetch - retail's ops write the bundle in memory, so the op-`0x2C` after the
+`0x1E` reads the bumped `x` in the same run. The fifteen cyclers therefore take
+cells `0x10..=0xF0` of row 502, and the lightning director's own capture holds
+cell `0x00`, so the row is covered end to end.
 
 ### jou worked example (prescript records, extraction 0630)
 
