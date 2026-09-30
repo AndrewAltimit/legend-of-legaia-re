@@ -273,6 +273,18 @@ impl World {
         // segment bank over the battle (and nothing in battle mode owns
         // its input). Retail's in-battle tutorial boxes are a separate
         // stage-overlay (extraction 967) channel, not the field box.
+        //
+        // A prop run dropped here never reaches its teardown, which is what
+        // clears the player's engaged bit; release it with the run, or the
+        // field comes back with the pad controller locked for good.
+        if self
+            .dialog
+            .inline
+            .as_ref()
+            .is_some_and(|id| id.prop_anchor.is_some())
+        {
+            self.set_player_engaged(false);
+        }
         self.dialog.inline = None;
         self.dialog.current = None;
         self.carriers.menu = None;

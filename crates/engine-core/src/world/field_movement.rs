@@ -2767,6 +2767,20 @@ impl World {
         if self.dialogue_owns_input() || self.board.grid.is_some() {
             return;
         }
+        // A committed battle (an encounter's intro transition, a latched
+        // scripted fight) freezes the pad controller outright. Retail raises
+        // the player's `+0x10 |= 0x80000` in the roll itself (`FUN_801D9E1C`)
+        // and then pages the intro overlay (PROT 0979) over the field
+        // overlay's head, which holds the frame pump `FUN_801D1344` that calls
+        // this controller - so nothing walks, and nothing is touched, between
+        // the commit and the battle. Walking on here let the player bump a
+        // prop in the transition's last frames: its run raised the engaged
+        // bit, battle entry dropped the run, and nothing ever cleared the
+        // bit again (`town0b`, the player frozen at tile (37, 40)).
+        // REF: FUN_801D9E1C, FUN_801D1344
+        if self.field_scripts_held_for_battle() {
+            return;
+        }
         // Lock pad-driven locomotion while an opening-cutscene timeline owns
         // the scene (the establishing camera sweep + name-entry). During the
         // sweep the script drives the lead actor through its own MoveTo ops;

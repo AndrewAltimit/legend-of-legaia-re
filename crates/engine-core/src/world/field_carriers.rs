@@ -506,6 +506,15 @@ impl World {
             return;
         }
 
+        // Nothing opens between a battle's commit and the battle: retail's
+        // probe `FUN_801CF9F4` runs from the field frame pump, which the
+        // intro overlay pages out (see `World::step_field_locomotion`). A
+        // talk opened in the transition's last frames was dropped by battle
+        // entry half-run.
+        if !self.dialogue_owns_input() && self.field_scripts_held_for_battle() {
+            return;
+        }
+
         // A dialogue engagement owns the frame: **either** channel. Testing
         // only `current_dialog` here let the ordinary NPC talk - which the
         // inline field-VM runner drives, often with no `current_dialog` at all
