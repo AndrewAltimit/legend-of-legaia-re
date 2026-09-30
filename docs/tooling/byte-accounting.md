@@ -605,7 +605,7 @@ it.
 | `0977` | `0x3108`, 232 B | twenty-nine `[label pointer, u32]` pairs at `0x801D1920` naming the head label pool | no instruction in the image forms an address in the table, directly or `lui`/`addu`-indexed |
 | `0927` / `0912` / `0895` | claimed | spawn records | `0912`'s is formed in a saved register fifty-nine words above its call ([`slot-b-module-layout.md`](../formats/slot-b-module-layout.md#resolving-the-pointer-a-spawn-call-is-handed)); `0927`'s and `0895`'s chain exactly onto a pointer-credited record ([below](#a-record-chain-pinned-at-both-ends)) |
 | `0896` | `0x855B` up, about 470 B | the SJIS-bearing words at `0x801DD34B` and the short record runs at `0x801DD44D` / `0x801DD49D` | their consumers are the foreign build's routines, whose callee layouts are not the USA SCUS ones the record rules key on. The `a0`-formed pool from `0x801DD554` is claimed: it is twenty-eight window programs for the image's own interpreter `FUN_801D896C` ([below](#the-window-programs-are-read-off-their-interpreters-calls)) |
-| `0970` | `0x801D0E9C`, 2816 B, claimed as dead data | an AC VLC lookup table - every word is zero or `(len << 26) \| (run << 10) \| level`, the MPEG-1 run / level form - directly above the MDEC / DMA register-pointer block, running to the uninitialised region at `0x801D199C` | nothing reads it: no word, `jal`, `j` or `lui` pair names an address in it in any image (`find-address-word-refs.py --prot`), no `gp`, `lui` + load or base-plus-displacement access reaches it, the register block's own loads stop at `0x801D0E98`, and the overlay's decoder reads the separate table `FUN_801F1A00` unpacks at `0x801E0A00`. It is claimed shape-checked under that name ([`byte_account`](../../crates/asset/src/byte_account.rs), `claim_str_dead_vlc_table`), not as a structure a consumer walks |
+| `0970` | `0x801D0E9C`, 2816 B, claimed as dead data | an AC VLC lookup table - every word is zero or `(len << 26) \| (run << 10) \| level`, the MPEG-1 run / level form - directly above the MDEC / DMA register-pointer block, running to the uninitialised region at `0x801D199C` | nothing reads it: no word, `jal`, `j` or `lui` pair names an address in it in any image (`find-address-word-refs.py --prot`), no `gp`, `lui` + load or base-plus-displacement access reaches it, the register block's own loads stop at `0x801D0E98`, and the overlay's decoder reads the separate table `FUN_801F1A00` unpacks at `0x801E0A00`. It is claimed shape-checked under that name ([`byte_account`](../../crates/asset/src/byte_account/pinned.rs), `claim_str_dead_vlc_table`), not as a structure a consumer walks |
 
 The `0970` row used to start at `0x2534` and was taken by one reading for
 uninitialised data and by the shape classifier for code; it is neither. Its
@@ -653,7 +653,7 @@ scan cannot find; unlike the cast band, this module calls it with an internal
 An overlay's rodata string pool has no header and no count, so no walker can
 reach it the way a container walker reaches a record. What makes a byte run a
 string *of this image* is that the image's own code computes its address - the
-same `lui`-pair test ([`formed_addresses`](../../crates/asset/src/byte_account.rs))
+same `lui`-pair test ([`formed_addresses`](../../crates/asset/src/byte_account/code_scan.rs))
 the uninitialised-data claim rests on - and what bounds it is its own NUL. The
 walker claims a NUL-terminated run at every formed address when three quarters
 of its bytes are printable ASCII, and follows one level of indirection: where a
@@ -794,7 +794,7 @@ about these bytes. The rule moves a handful of other extents from `short` or
 ### The formed-address test follows the register
 
 Every claim above that rests on "the image's own code forms this address" reads
-it off [`lui_forms`](../../crates/asset/src/byte_account.rs): the `lui`
+it off [`lui_forms`](../../crates/asset/src/byte_account/code_scan.rs): the `lui`
 register is carried through copies, through one indexing `addu` (the
 `lui at,hi; addu at,at,rX; lw rY,lo(at)` array form, whose `hi + lo` is the
 array's base - reported separately by `indexed_addresses`, since it is not the
@@ -858,7 +858,7 @@ templates.
 
 ### A counted loop states its array's length
 
-[`loop_bounded_arrays`](../../crates/asset/src/byte_account.rs) claims an array
+[`loop_bounded_arrays`](../../crates/asset/src/byte_account/code_scan.rs) claims an array
 when the loop that walks it states the count: a backward `bnez`/`beqz` whose
 test is `slti`/`sltiu i, N` at most three words above it, `i` zeroed within
 eight words before the loop and bumped by one inside it, an `addu` of `i` (or
@@ -878,7 +878,7 @@ pointer bump and a runtime index have rules of their own, below.
 Most of an overlay's data segment is indexed at a **runtime** value - an actor
 field, a menu cursor, a script operand - so the counted-loop rule above sees
 none of it. The index arithmetic still states the element size, and
-[`byte_account_arrays`](../../crates/asset/src/byte_account_arrays.rs) reads it:
+[`byte_account::arrays`](../../crates/asset/src/byte_account/arrays.rs) reads it:
 at every `addu` in a dumped function whose one operand is a formed base (an
 `addiu` completing a `lui` pair, or the bare `lui` of the `lui at,hi; addu
 at,at,rX; lw y,lo(at)` form), the other operand is evaluated backwards as
