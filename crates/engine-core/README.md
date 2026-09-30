@@ -199,7 +199,8 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   battle event queue.
 - `arts_command_input` - the retail Arts command entry: per-press
   directional buffer, per-command AP debit from the turn pool, auto-end
-  when nothing is affordable, and the Begin | Reselect review. Resolves
+  when nothing is affordable, the auto-command-string preseed and its
+  bare-confirm replay (no pool charge), and the Begin | Reselect review. Resolves
   the entered sequence through the `legaia-art` matchers. Costs come from
   the equipped set's `+0x74` bytes (`World::battle.swing_costs`).
 - `ap_gauge` - per-character Action-Point gauge. Charges +5 on
@@ -340,11 +341,11 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   (`SavedChain::to_record` / `from_record` pack to the `Command` byte
   alphabet the battle side reads). In battle the chain does **not** commit
   an art by itself: retail's Arts command is the per-press
-  `arts_command_input` entry. The buffer retail preseeds is its unnamed
-  **auto command string** (`world::battle::auto_command`, replayed on an
-  Attack dispatch and rewritten on each arts commit), not this named
-  library, which preseeds nothing - see
-  [`arts-command-gauge.md`](../../docs/subsystems/arts-command-gauge.md#where-a-saved-chain-belongs).
+  `arts_command_input` entry. What retail preseeds that entry with is the
+  character's **auto command string** (record `+0x1A7` / `+0x1B7`), not a
+  named chain: loaded as the entry opens, replayed by a bare confirm without
+  charging a press, wiped by the first press - see
+  [`arts-command-gauge.md`](../../docs/subsystems/arts-command-gauge.md#the-auto-command-string-preseed-on-open-replay-on-a-bare-confirm).
   `build_battle_arts_rows` still reads `saved_chains` for the legacy
   submenu behind `LEGAIA_ARTS_SAVED_LIST=1`.
 - `man_field_scripts` - opcode-aware walk of a scene MAN's partition-1

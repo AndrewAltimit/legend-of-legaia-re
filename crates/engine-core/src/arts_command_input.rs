@@ -168,6 +168,17 @@ pub struct ArtsCommandInputSession {
     pub list_pages: u8,
     /// Open arts-list page (`None` = closed).
     pub list_page: Option<u8>,
+    /// The character's saved auto command string, loaded when the entry
+    /// opened (`FUN_801DA34C` at `0x801D1734`, beside the `0x50` phase
+    /// store), as `Command::as_byte()` values. Empty when the record held
+    /// none. The first accepted direction press wipes it - `FUN_801D388C`
+    /// case `0xB` zeroes the sixteen queue bytes when the committed count
+    /// is `0` (`0x801D3BE4..0x801D3C24`) - and so does the review's cancel.
+    pub preseed: Vec<u8>,
+    /// Set when the confirm on an empty entry took [`Self::preseed`] as the
+    /// turn's string (`0x801D1FA0..0x801D2044`). The resolved session then
+    /// commits the preseed rather than [`Self::buffer`].
+    pub replay: bool,
     pub phase: ArtsInputPhase,
 }
 
@@ -198,7 +209,26 @@ impl ArtsCommandInputSession {
             spent: Vec::new(),
             list_pages,
             list_page: None,
+            preseed: Vec::new(),
+            replay: false,
             phase: ArtsInputPhase::Entering,
+        }
+    }
+
+    /// The entry with the character's auto command string preseeded
+    /// ([`Self::preseed`]).
+    pub fn with_preseed(mut self, preseed: Vec<u8>) -> Self {
+        self.preseed = preseed;
+        self
+    }
+
+    /// The command string a resolved session commits: the replayed preseed
+    /// when the entry was confirmed empty, else the entered buffer.
+    pub fn committed_string(&self) -> &[u8] {
+        if self.replay {
+            &self.preseed
+        } else {
+            &self.buffer
         }
     }
 
@@ -272,6 +302,12 @@ impl ArtsCommandInputSession {
                     None
                 };
                 if let Some(cmd) = dir {
+                    // The first press of an entry wipes the preseeded string
+                    // (case `0xB`'s count-`0` arm zeroes all sixteen queue
+                    // bytes before the affordability test).
+                    if self.buffer.is_empty() {
+                        self.preseed.clear();
+                    }
                     let cost = self.cost_of(cmd);
                     if cost <= self.pool {
                         self.pool -= cost;
@@ -285,6 +321,19 @@ impl ArtsCommandInputSession {
                     } else {
                         ArtsInputPhase::Review
                     };
+                } else if ev.cross && self.buffer.is_empty() && !self.preseed.is_empty() {
+                    // **Replay.** With nothing entered and a preseeded string
+                    // in the window, the confirm mask takes that string as
+                    // the turn (`0x801D1FA0..0x801D2044`): gated on the
+                    // staging byte `DAT_8007BD04`, a zero committed count and
+                    // a non-zero `+0x1DF[0]`, it measures the string, stores
+                    // its length as the count (`0x801D2028`) and enters
+                    // `0x5A` through `FUN_801D388C` case `0xC`, exactly as a
+                    // typed confirm does. **No press is charged**: case `0xB`
+                    // never runs, so the entry pool `ctx+0x6DC` is neither
+                    // debited nor tested against the string's cost.
+                    self.replay = true;
+                    self.phase = ArtsInputPhase::Review;
                 } else if ev.cross && !self.buffer.is_empty() {
                     // Retail's configurable confirm mask `_DAT_800846D0`
                     // ends the entry, gated on the committed count
@@ -329,6 +378,9 @@ impl ArtsCommandInputSession {
                     // Retail's `0x5A` cancel (`0x801D2304..0x801D23DC`) wipes
                     // the sixteen queue bytes and, for an entry opened from
                     // the arts input, returns to it (`0x50`, case `0xF`).
+                    // The wipe takes a replayed preseed with it.
+                    self.preseed.clear();
+                    self.replay = false;
                     self.buffer.clear();
                     self.spent.clear();
                     self.pool = self.pool_max;
@@ -687,6 +739,41 @@ mod tests {
                 target_slot: 0,
             })
         );
+    }
+
+    /// The open-time preseed replays on a bare confirm, costs nothing from
+    /// the entry pool, and survives nothing but an empty entry: the first
+    /// press wipes it, and so does the review's cancel.
+    #[test]
+    fn a_bare_confirm_replays_the_preseed_without_a_charge() {
+        let mut s = ArtsCommandInputSession::new(0, 0, 60, [30; 4], 0).with_preseed(vec![4, 3, 1]);
+        s.input(press("c"), party3(), one_monster());
+        assert!(matches!(s.phase, ArtsInputPhase::Review));
+        assert!(s.replay);
+        assert_eq!(s.committed_string(), &[4, 3, 1]);
+        assert_eq!(s.pool, 60, "no press was charged");
+        assert!(s.spent.is_empty());
+        // A string dearer than the pool replays all the same.
+        assert!(3 * 30 > s.pool_max);
+
+        // The review's cancel wipes the window: back to a plain entry.
+        s.input(press("o"), party3(), one_monster());
+        assert!(matches!(s.phase, ArtsInputPhase::Entering));
+        assert!(!s.replay && s.preseed.is_empty());
+        s.input(press("c"), party3(), one_monster());
+        assert!(
+            matches!(s.phase, ArtsInputPhase::Entering),
+            "nothing left to replay"
+        );
+
+        // The first press wipes it too.
+        let mut t = ArtsCommandInputSession::new(0, 0, 90, [30; 4], 0).with_preseed(vec![4, 3]);
+        t.input(press("L"), party3(), one_monster());
+        assert!(t.preseed.is_empty());
+        t.input(press("c"), party3(), one_monster());
+        assert!(matches!(t.phase, ArtsInputPhase::Review));
+        assert!(!t.replay);
+        assert_eq!(t.committed_string(), &[1]);
     }
 
     #[test]

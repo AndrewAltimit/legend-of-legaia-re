@@ -429,35 +429,55 @@ are swapped against the raw BIOS word. So the entry's four direction tests at
 Down / Right, not Square / Triangle / Cross / Circle. Reading them raw turns a
 d-pad entry into a face-button one and makes the confirm mask look unreachable.
 
-### Where a saved chain belongs
+### The auto command string: preseed on open, replay on a bare confirm
 
-Retail has no "pick a saved art" list, so a saved chain never commits an art by
-itself. Its retail role is to **preseed the entry**: `FUN_801DA34C` copies one
-of the character record's two 16-byte arts-input strings (`+0x76F` / `+0x77F`)
-into `actor[+0x1DF..]` when the entry opens, the pad then edits those bytes in
-place, and `FUN_801DA59C` writes the result back after the action - so a chain
-is a *remembered starting buffer*, not a shortcut past the input
-([battle-action.md](battle-action.md#the-retail-queue-builder-fun_801eed1c-and-super-applier-fun_801ef9e4)
-carries the byte-level walk; ported as
-`legaia_engine_vm::battle_action::preseed_action_queue` / `save_action_queue`).
+Retail has no "pick a saved art" list. What it remembers is one
+**auto command string** per character: `FUN_801DA59C` copies the actor's
+sixteen-byte window `actor[+0x1DF..]` into one of the character record's two
+bands (`+0x1A7` / `+0x1B7`, the gauge picking which on
+`u16[+0x156] < u16[+0x154]`) from the target confirm at `0x801D22BC`, and
+`FUN_801DA34C` copies it back. The write-back runs **before** the queue
+builder `FUN_801EED1C` tokenizes anything - that happens at the dispatch - so
+the string holds the entered arrows as the gauge wrote them, one swing byte
+per press (the direction table `0x801F4B8C` reads `0C 0F 0E 0D` for Left / Up
+/ Down / Right).
 
-Those two strings are retail's **auto command string** - the unnamed,
-last-confirmed queue, record-relative `+0x1A7` / `+0x1B7`
-(`legaia_save::AUTO_COMMAND_STRING_A_OFFSET` / `_B_OFFSET`), the band picked by
-`u16[+0x156] < u16[+0x154]`. The port carries both legs
-(`engine-core::world::battle::auto_command`): the write-back runs on the arts
-commit, and the read preseeds the action window when an **Attack** dispatches
-(retail's `0x801D15C8` call site), so a character who has confirmed an arts
-combo replays it and one who has not falls through to the two-swing roll. The
-second retail read - at the arts-input entry (`0x801D1734`) - is not taken: the
-port's Arts entry (`World::open_arts_command_input`) still opens empty, because
-whether preseeded presses arrive already paid for or re-debit the pool on the
-way in is not pinned by any capture.
+`FUN_801DA34C` has two call sites in `FUN_801D0748`, and the second is the
+arts entry itself. When the attack-mode prompt (`0x78`) takes Command, the
+jump at `0x801D1734` preseeds the window with the `sb 0x50` phase store in its
+delay slot, and case `0x2C` of `FUN_801D388C` builds the gauge - which reads
+the costs and seeds the pool from `+0x154` but never reads the window, so the
+entry opens with an empty bar over a full one. Two things then happen to the
+preseed, both in the entry arm:
 
-`World::party.saved_chains` is different data: the engine's **named** chain
-library (LGSF v2), written by the chain editor, carried by the save round-trip
-and read by the legacy `LEGAIA_ARTS_SAVED_LIST=1` list. Retail has no
-counterpart, and nothing preseeds an entry from it.
+- **The first press wipes it.** Case `0xB` of `FUN_801D388C`, with the
+  committed count `ctx+0x19` at `0`, zeroes all sixteen window bytes before it
+  tests the pool or stores the press (`0x801D3BE4..0x801D3C24`). The pad does
+  not edit the preseed; it replaces it.
+- **A bare confirm replays it.** With no direction this frame, the arm at
+  `0x801D1FA0..0x801D2044` checks the staging byte `DAT_8007BD04`, a zero
+  count, a non-zero `+0x1DF[0]` and the confirm mask `0x800846D0`; it then
+  measures the string, stores the length as the count (`0x801D2028`) and
+  enters `0x5A` through case `0xC`, the same way a typed confirm does.
+
+**Preseeded presses cost no AP again.** The replay never runs case `0xB`, so
+the entry pool `ctx+0x6DC` is neither debited nor even compared with the
+string's cost: a string saved under a raised gauge replays in full. The band
+choice is the only budget guard, because the primary band is written and read
+only while the live gauge exceeds its base. The **Spirit** cost of the arts
+the string performs is charged again, though. The builder re-tokenizes the
+raw arrows at the dispatch and accrues their art bodies into `actor[+0x224]`,
+as for any typed string.
+
+Port: `ArtsCommandInputSession::preseed` / `replay` / `committed_string`,
+filled by `World::open_arts_command_input` through
+`preseed_auto_command_string`. `World::run_battle_art` stages the arrows as
+swing bytes and runs the write-back at the commit, and the Attack dispatch
+sends a preseeded string through `build_arts_action_queue` and
+`charge_art_spirit`, as the arts dispatch does. The engine's named chain
+library `World::party.saved_chains` is separate data. The chain editor writes
+it, the save round-trip carries it, and the legacy `LEGAIA_ARTS_SAVED_LIST=1`
+list reads it, but nothing preseeds from it.
 
 Because a turn now performs however many arts the pool paid for, the
 **shout cue and the learn-on-use check are per art, not per turn** - see

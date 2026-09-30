@@ -481,7 +481,7 @@ pub fn apply_super_tail_replace(
 /// from `FUN_801D0748` at `0x801D15C8` / `0x801D1734`).
 ///
 /// Wired: `engine-core`'s `World::preseed_auto_command_string` calls it when a
-/// party member's Attack is dispatched, over the record accessors
+/// party member's Attack is dispatched and when the arts entry opens, over the record accessors
 /// `legaia_save::CharacterRecord::auto_command_string` and the band selector
 /// `legaia_save::AutoCommandBand::for_gauge`; an empty read falls through to
 /// the engine's own no-input swing roll, which is what retail's zero-fill leg

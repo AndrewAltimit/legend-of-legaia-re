@@ -20,7 +20,12 @@
 //!
 //! ### Where the port puts each call
 //!
-//! The read is at **dispatch**, not at the confirm press, for the same reason
+//! The arts-entry read is at the **open**, as retail's is
+//! (`World::open_arts_command_input`): the entry session keeps the string so a
+//! bare confirm replays it without charging a press, and the first press
+//! wipes it (`crate::arts_command_input::ArtsCommandInputSession::preseed`).
+//!
+//! The Attack read is at **dispatch**, not at the confirm press, for the same reason
 //! [`crate::world::World::seed_basic_attack_queue`] is: the port arms a party
 //! member's action stream when the initiative pick lands on it, where retail
 //! arms it at the confirm and lets the SM carry it. The string that lands in
@@ -29,10 +34,13 @@
 //! a character that has never confirmed one, which is the zero-fill leg of
 //! the retail reader.
 //!
-//! The write is on the **arts commit**, which is where retail's is: the queue
-//! `FUN_801DA59C` copies out is the one the input gauge just built, and its
-//! two guards (`+0x14C != 0`, `+0x1DE == 3`) are the liveness and category the
-//! commit has by construction.
+//! The write is on the **arts commit** (`World::run_battle_art`), which is
+//! where retail's is: the window `FUN_801DA59C` copies out is the one the input
+//! gauge just built - the entered arrows as swing bytes `0x0C..=0x0F`, before
+//! the queue builder tokenizes them at the dispatch - and its two guards
+//! (`+0x14C != 0`, `+0x1DE == 3`) are the liveness and category the commit has
+//! by construction. Every replay therefore goes back through
+//! `World::build_arts_action_queue`, arts and their Spirit cost included.
 //!
 //! Neither call reaches [`crate::world::PartyState::saved_chains`]. That list
 //! is the engine's **named** chain library (LGSF v2, edited by
