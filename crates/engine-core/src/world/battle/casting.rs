@@ -1011,7 +1011,11 @@ impl World {
     /// id isn't a summon or neither source carries the creature (disc-free /
     /// synthetic battles).
     fn summon_creature_def(&self, spell_id: u8) -> Option<&crate::monster_catalog::MonsterDef> {
-        if !crate::summon::SERU_SUMMON_IDS.contains(&spell_id) {
+        // The evolved block (`0x8C..=0x95`) summons a `battle_data` creature
+        // exactly as the base block does; gating on the base block alone sent
+        // Aluru / Gilium & co. to the MP-scaled placeholder, which a boss's
+        // magic defence floors at 1.
+        if !crate::summon::has_summon_body(spell_id) {
             return None;
         }
         // The archive-resolved summon body, installed at scene entry for

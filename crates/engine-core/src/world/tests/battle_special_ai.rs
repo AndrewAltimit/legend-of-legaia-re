@@ -1022,6 +1022,10 @@ fn a_summon_rolls_from_its_archive_body_when_the_scene_lacks_the_creature() {
     use crate::monster_catalog::{MonsterCatalog, MonsterDef};
 
     fn build_world(archive_body: bool) -> World {
+        build_world_for(archive_body, 0x81)
+    }
+
+    fn build_world_for(archive_body: bool, spell_id: u8) -> World {
         let mut world = World {
             party: crate::world::PartyState {
                 party_count: 1,
@@ -1038,7 +1042,7 @@ fn a_summon_rolls_from_its_archive_body_when_the_scene_lacks_the_creature() {
             let mut creature = MonsterDef::new(10, "Gimard", 100, 10);
             creature.intel = 36;
             creature.element = 2;
-            world.tables.summon_creatures.insert(0x81, creature);
+            world.tables.summon_creatures.insert(spell_id, creature);
         }
         world.actors[0].battle.max_hp = 400;
         world.actors[0].battle.hp = 400;
@@ -1063,6 +1067,15 @@ fn a_summon_rolls_from_its_archive_body_when_the_scene_lacks_the_creature() {
         rolled.is_some_and(|d| d > 1),
         "the archive body rolls the summon branch: {rolled:?}"
     );
+    // The evolved block (`0x8C..=0x95`) summons a `battle_data` body too:
+    // Gilium `0x95` / Aluru `0x8E` rolled the placeholder, floored at 1.
+    for evolved in [0x8E, 0x95] {
+        let rolled = build_world_for(true, evolved).player_summon_predamage(0, 1, evolved);
+        assert!(
+            rolled.is_some_and(|d| d > 1),
+            "evolved {evolved:#x} rolls the summon branch: {rolled:?}"
+        );
+    }
 }
 
 /// A monster with no castable spells always picks a physical strike: the

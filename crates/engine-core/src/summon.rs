@@ -118,6 +118,15 @@ pub const SERU_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x81..=0x8B;
 /// nodes (`0x8E → 916`, `0x93 → 921`).
 pub const EVOLVED_SUMMON_IDS: std::ops::RangeInclusive<u8> = 0x8C..=0x95;
 
+/// Whether `spell_id` is a player Seru cast whose damage rolls through a
+/// `battle_data` summon body: the base block [`SERU_SUMMON_IDS`] or the
+/// evolved block [`EVOLVED_SUMMON_IDS`]. Both resolve their creature through
+/// [`summon_creature_id`] and hand the shared kernel's summon branch
+/// (`FUN_801DD0AC`, attacker slot `7`) the same summon-body stats.
+pub fn has_summon_body(spell_id: u8) -> bool {
+    SERU_SUMMON_IDS.contains(&spell_id) || EVOLVED_SUMMON_IDS.contains(&spell_id)
+}
+
 /// Rare-Seru **flute** summon block (`0x96..=0x98`), the contiguous
 /// continuation of [`EVOLVED_SUMMON_IDS`] under the same arithmetic
 /// (`0x96 → 924`, `0x97 → 925`, `0x98 → 926`). SummonFlute items (item-effect
