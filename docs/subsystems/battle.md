@@ -1054,20 +1054,58 @@ holds `0x8007B7B0 = 0xC0C0C0`.
 **A cast dims it.** The base is not a constant: it is `ctx+0x890`, a packed
 `10:10:10` colour (channel `c` at bits `2 + 10c`) that `FUN_80050120` ramps
 every frame on `ctx+0x243`. While the byte is set (`0x80050608`) the ramp
-subtracts `step * 0x20` per field (`8` per 8-bit channel per game frame,
-`0x80050670..0x800506A4`) down to the floor `0x08020080` - base `0x20`; while
-it is clear it adds `step * 8` per field (`2` a frame) back up to
-`0x20080200` - base `0x80` (`0x80050724..0x8005075C`). The ambient stored is
-the base plus `0x404040`, so a cast pulls the grid's near colour from `0xC0`
-to `0x60`, and the far colour `0x8007BB48` is derived from the same word
-(`0x800507FC..0x80050834`). The summon close-up (`FUN_801DC0A0` case `0x12`,
-`sb v0,0x243(v1)` at `0x801DCCFC`) sets `ctx+0x243` on every `0x33` / `0x34`
-pass, and the Done band clears it. The summon captures read the ramp
-mid-flight - `0x606060` (`slippery`, `vera`), `0x686868` (`nighto`),
-`0x707070` (`meta`) - and their grid packets (`tpage 13`) average about `20`
-per channel against the settled fight's `0xCC`+. The stage meshes do not ride
-it. The port's grid holds `GRID_RGBC_SETTLED` through a cast, so a summon
-frame's floor draws about twice retail's brightness under the white flash.
+subtracts `step * 0x20` per lane (`8` per 8-bit channel per vsync, `step`
+being the frame step `0x1F800393`, `0x80050670..0x800506A4`) down to the
+floor `0x08020080` - base `0x20`; while it is clear it adds `step * 8` per
+lane (`2` a vsync) back up to `0x20080200` - base `0x80`
+(`0x80050724..0x8005075C`). The ambient stored is the base plus `0x404040`,
+so a cast pulls the grid's near colour from `0xC0` toward `0x60`, and the far
+colour `0x8007BB48` is derived from the same word (`0x800507FC..0x80050834`).
+Battle init seeds the floor (`0x80051C84`), so every fight's floor fades in
+over its first 48 vsyncs.
+
+Who drives the latch: the summon close-up (`FUN_801DC0A0` case `0x12`,
+`sb v0,0x243(v1)` at `0x801DCCFC`) sets `ctx+0x243 = 1` on every `0x33` /
+`0x34` pass. The summon band's `0x37` exit (`0x801E4E8C..0x801E4EA4`) and the
+capture band's `0x71` exit (`0x801E5214..0x801E5248`) clear it together with
+`ctx+0x278` and re-seed the base at `0x08421084` (`0x21` a channel), so the
+floor climbs back from dark after the creature leaves.
+
+**The store can freeze.** Once the base sits on the floor, the pass skips
+both colour stores when `ctx+0x278` bit 0 is set or `ctx+0x243 == 2`
+(`0x80050790..0x800507D4`), and clears bit 3 of `0x1F800394` - the gate on
+`FUN_8001D058`'s call to `FUN_80026CE4`, the routine that copies the ambient
+into `RGBC`. The summon band sets `ctx+0x278 = 1` at `0x32 -> 0x33`
+(`0x801E49F8`) and clears it at the `0x34` exit (`0x801E4B14`), so through the
+close-up the grid holds its **last pre-floor** ambient. That is what the
+catalogued summon states read: the `0x34` captures hold
+`0x686868..0x787878` with the live base already at `0x20` (a `0x33` capture
+still mid-ramp holds its live base plus `0x404040`), and every `0x35` capture -
+`0x278` cleared, stores resumed - holds `0x606060`. The frozen value
+varies with the frame step, since the last pre-floor base depends on how many
+vsyncs each ramp step spans.
+
+The stage meshes do not ride the ambient. The backdrop pair
+(`ctx+0x106C` / `+0x1070`) has a parallel ramp of its own in the same pass:
+their `+0x78` depth-cue weight rises by `step << 6` while `ctx+0x243` is set,
+toward `0x800` (indoor), `0xC00` (outdoor) or `0x1000` (`ctx+0x278 > 1` or
+`ctx+0x243 > 1`), and falls back to `0` while it is clear
+(`0x800505B0..0x80050714`); `FUN_8001ADA4` case 3 hands that weight and the
+record's `+0x74` colour word (`0` from battle init) to `FUN_80043390`. A
+weight of `0x1000` switches `+0x56` to `0`, which drops the pair from that
+dispatcher entirely (`0x80050848..0x80050880`). The battle bodies are not lit
+from the ambient either; `ctx+0x243` reaches them only through the tint
+pass's plain arm ([the distance fade](#the-distance-fade)).
+
+Engine side: `legaia_engine_vm::battle_ground_grid::ambient_base_step` is the
+ramp, `BattleActionCtx::ambient_base` the word, and
+`World::tick_battle_ambient` runs it once a vsync with the store-skip test
+over the band's and the slot-B module's copies of `ctx+0x278`. Both hosts
+colour the grid from `World::battle_ambient_base`: the native window
+re-uploads the grid mesh when the ambient moves and re-derives the cue's far
+colour every frame; the play page re-reads the packet colours and the cue on
+the `play_battle_ground_ambient_key` change key. The backdrop pair's `+0x78`
+ramp is not modelled - the port's backdrop draws uncued through a cast.
 
 `IR0` is `SZ >> 2` on the vertex's own screen depth, with no scale of the
 battle world folded in. The `map01` Gobu Gobu capture's grid packets
@@ -1076,7 +1114,7 @@ channel at the bottom edge through `0xE9` at mid-ground to the `0xFF` clamp at
 the horizon; the bottom edge sits roughly `0xC00` deep under the far framing,
 and `0xC0 + (0xFE - 0xC0) * SZ / 0x4000` lands there only with `SZ` unscaled.
 Engine side: both battle
-hosts build the grid with `build_ground_grid_rgbc(GRID_RGBC_SETTLED)`
+hosts build the grid with `build_ground_grid_rgbc` over the live ambient
 (`legaia_asset::battle_backdrop`, `legaia_engine_vm::battle_ground_grid`) and
 cue it over the unscaled `grid_cue_far_z`. With the neutral `0x80` and a ramp
 four times too long, the port's floor read at about two thirds of retail's

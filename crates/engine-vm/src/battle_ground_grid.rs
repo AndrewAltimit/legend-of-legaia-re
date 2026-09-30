@@ -79,7 +79,10 @@
 //! The drawn mesh is the shared builder `legaia_asset::battle_backdrop::
 //! build_ground_grid_rgbc` (re-exported by `engine-shell`'s `play-window` as
 //! `build_battle_ground_grid` and drawn under the battle camera), coloured
-//! with [`GRID_RGBC_SETTLED`] - the ambient word the emitter's `RGBC` holds.
+//! with [`battle_ambient_colour`] of the live base
+//! (`World::battle_ambient_base`, ramped by [`ambient_base_step`]) - the
+//! ambient word the emitter's `RGBC` holds; [`GRID_RGBC_SETTLED`] outside a
+//! cast.
 //! This module carries the emitter's *laws* the hosts consume: both battle
 //! draws fog the grid with [`grid_cue_far_z`] / [`grid_cue_max_ir0`]
 //! and the [`grid_far_colour`] resolved through [`OutdoorCueTable`]. The
