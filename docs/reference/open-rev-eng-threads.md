@@ -403,21 +403,26 @@ process-matching helpers in
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Does the port draw retail's Rot / Curse crosses over refused arms? | open - disassembly; drawn on neither host | Retail marks a refused arts direction with `FUN_801DBDDC` (`0x801D1DA8..0x801D1E54`) and the ring's refused arms with `FUN_801DBD04(0xA0, 0x42)` / `FUN_801DBEC4(0xF8, 0x42)`. The refusals themselves are ported; the marks are not. |
 | Does a monster's one-shot clip tween into its queued clip? | open - disassembly; not modelled | `FUN_8004998C` blends the last frame into frame 0 of the queued clip when HP is non-zero and `+0x1DA < 0x10`, adding `+0xE` to the Z translation (`0x80049A7C..0x80049BD0`). `MonsterAnimPlayer` has no queued clip, so a one-shot clip clamps without the tween. |
 | Are camera-relative move-VM parts drawn camera-relative? | partial - both hosts do; not yet frame-compared | 334 of 3956 nodes across the 98 mednafen states carry a `+0x52 & 0x780` bit (billboards, per-axis skips, camera-locked summon parts), and 15 states have a non-zero skipped angle, e.g. `battle_melee_hit_spark`. Both play hosts now place those parts through `camera_relative_model_prefix` ([`renderer.md`](../subsystems/renderer.md#camera-relative-nodes-fun_8001cf50)); open is a frame comparison against one of those states, and whether the engine's part position (the move-VM `world_x/y/z`, which folds in the spawn origin) is the `+0x14` offset the `0x400` arm locks. |
 | Are the overworld decoration cells depth-cued? | open - disassembly; not in the port | Each decoration object is cued with `IR0 = min(max(TRZ - 0x5000, 0) >> 3, 0x1000)` toward far colour `0xD0` (`0x801F7200..0x801F7254`), parked at `0x1F800038` and loaded before `DPCS` (`0x801F7A44`). The ground under them is cued; the objects are not ([`world-map.md`](../subsystems/world-map.md)). |
 | Why do the overworld fog sheets read denser and brighter than retail's? | open (narrowed) - draw order closed; the density gap is not order | Draw order is matched: the port keys the continent at retail's bucket (`(max corner SZ >> 5) + 14`) and on `keikoku_chest_preload` covers 1.1% of the fog's light against retail's 1.0% ([`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#closing-the-draw-order-flat-per-primitive-terrain-depth)). "Terrain hides a fifth" was two sprite families ([falsified](re-do-not-re-walk.md#rendering--camera)). The ground under them is now cued as retail's ([settled](re-settled-threads.md#world-map--kingdom-bundles)) and the density is not re-measured. Candidates: the camera section; the whole continent drawn, not the tile window. |
 | Does the fight against monster `0xAF` (Tetsu) seat and flag as retail does? | open - disassembly and a synthetic poke only | The Rim Elm ambush is closed: its row carries header byte 0, so `ctx+0x287 = 0`, the map arm seats row 8, the word reads `0x200` and Run is allowed, in retail and in the engine (`rim_elm_ambush_disc`; [settled](re-settled-threads.md#battle--arts--level-up)). Tetsu's only formation row is `town0d` row 4 (header byte 1, scripted); a synthetic first-monster poke confirms the `0x200` raise, but no state or card block reaches `town0d`. A state inside that fight, read for the seats and the word, closes it. |
 
+**Does the port draw retail's Rot / Curse marks over refused arms** closed
+by disassembly: the ring stamps Rot on the Attack chip under all three limbs
+(`FUN_801DBD04(0xA0, 0x42)`), lays the Curse plate on the Magic chip
+(`FUN_801DBEC4(0xF8, 0x42)`) and the arts entry stamps each rotted direction
+(`FUN_801DBDDC`, sized to the chip's cost); both hosts draw all three
+([settled](re-settled-threads.md#battle--arts--level-up)).
 **Which fights forbid the Ra-Seru chip** closed by disassembly: bit `0x200` of
 `_DAT_8007BAC0` has two raisers - battle init against first monster `0xAF`
 (`0x800519C0..0x80051A04`) and the formation roll in the Rim Elm ambush
 (`0x8005200C..0x8005205C`) - and two readers, the ring's cross-out at
 `0x801D12DC` and its refused arm at `0x801D1448`
 ([settled](re-settled-threads.md#battle--arts--level-up)). The engine models
-both raisers and the refusal; the cross-out is drawn on neither host
-([`host-drift.md`](../tooling/host-drift.md#known-gaps-no-gate-fails-on)), and
+both raisers and the refusal; both hosts draw the cross-out
+([`host-drift.md`](../tooling/host-drift.md#the-ra-seru-chips-cross-out-one-atlas-cell-one-engine-read)), and
 the port's other readers of the word - the wipe rule, the arena Run arm and the
 result-window gate - are ported ([settled](re-settled-threads.md#battle--arts--level-up)).
 **The battle body's blend mode** reaches both hosts now, through one TSB

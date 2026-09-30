@@ -1461,7 +1461,8 @@ and the port gates by it on every path: the arts entry drops a rotted
 direction with cue `0x23` (`arts_command_input::rot_blocks`, read against
 every rolled limb), and the ring refuses Attack at `0x38` and Magic under
 Curse with the same cue (`ring_arm_refused`, `0x801D1434` / `0x801D1560`);
-the crosses retail draws over refused arms are drawn by neither host;
+the Rot / Curse marks retail draws over refused arms are drawn on both
+hosts ([arts-command-gauge.md](arts-command-gauge.md#status-limb-gating));
 and bytes `1`/`2` are resolved as purely cosmetic lingering visuals. The **one**
 remaining status-applier gap is the setter for `+0x16E` bit `0x400` - a
 guard-disabling status (read at `801ec3e4:2640` and the AI picker

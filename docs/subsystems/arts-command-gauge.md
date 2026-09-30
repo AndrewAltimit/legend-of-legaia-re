@@ -149,18 +149,37 @@ direction-vs-materialized-art split the action queue uses (see
 
 ## Status limb gating
 
-A **Rot** (or similar limb-disable) status grays individual command arrows and
-refuses their input. The gauge-input arm `FUN_801D0748` state `0x50`
-(`overlay_battle_action_801d0748.txt:3311-3360`) reads the active actor's
-`+0x16E` status halfword; the gray-draw pass and the input gate agree
-bit-for-bit:
+A **Rot** status stamps individual command arrows and refuses their input.
+The gauge-input arm `FUN_801D0748` state `0x50` reads the active actor's
+`+0x16E` status halfword; the stamp pass (`0x801D1DA8..0x801D1E54`) and the
+input gate agree bit-for-bit:
 
-| `+0x16E` bit | Arrow grayed (draw pos) | Blocks command |
+| `+0x16E` bit | Rot stamp (`FUN_801DBDDC` anchor) | Blocks command |
 |---|---|---|
 | `0x08` (limb 0) | LEFT (`0xb3 - w/2, 0x42`) | Left `0x8000` / dir 0 |
 | `0x10` (limb 1) | RIGHT (`0xe5 + w/2, 0x42`) | Right `0x2000` / dir 3 |
-| `0x20` (limb 2) | UP (`0xcc, 0x22`) **and** DOWN (`0xcc, 0x62`) | Up `0x1000` / dir 1 **and** Down `0x4000` / dir 2 |
-| `0x1000` (**Curse**) | the whole MAGIC command (`FUN_801dbec4(0xf8, 0x42)`, `:3229-3230`) | Magic |
+| `0x20` (limb 2) | UP (`0xcc, 0x22`) **and** DOWN (`0xcc, 0x62`), `w = 0x1E` | Up `0x1000` / dir 1 **and** Down `0x4000` / dir 2 |
+| `0x1000` (**Curse**) | the ring's MAGIC chip (`FUN_801dbec4(0xf8, 0x42)`, the Curse plate) | Magic |
+
+`w` is the chip's AP cost, `ctx[+0x14 + seat]` in seat order Left, High, Low,
+Right (written by `FUN_801D388C` case `9`, `0x801D3B3C`); `w/2` is an unsigned
+`srl`. The stamp is the `etim` page's blue hand-lettered "Rot", 32x24 at
+`(80, 96)` through CLUT `0x770B`, drawn `y-8 ..= y+0xF` and
+`x+8-h ..= x+0x27+h` with `h = (w - 0x1E) >> 1` - so it keeps the edge
+nearest the D-pad fixed exactly as the cost-widened chip does (the Left
+stamp's right edge at `0xCB`, the Right stamp's left edge at `0xFC`), and the
+High / Low stamps stay at the favoured width whatever those chips cost. The
+command ring marks the same states: all three limbs stamp Rot over the
+Attack chip (`FUN_801DBD04(0xA0, 0x42)`) and Curse lays the "Curse" plate
+over the Magic chip (`FUN_801DBEC4(0xF8, 0x42)`), every frame of the ring,
+before the pad is read.
+
+Both play hosts draw all of these out of the chrome atlas, where
+`save_menu_atlas::add_cross_out_mark` bakes the two marks from the effect
+page beside the red X: the ring's through
+`battle_command_ui::battle_command_menu_sprites` switched by
+`battle_hud::battle_ring_marks`, the entry's through
+`arts_input::arts_input_rot_stamp_draws` off `ArtsInputView::status`.
 
 With all three limb bits set (`0x38`) the whole Arm command is skipped and
 Attack is unusable (`801d0748:3226-3227,3277`; `801e295c:5452`). This pinned

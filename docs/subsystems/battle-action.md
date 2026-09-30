@@ -2847,11 +2847,14 @@ they are documented here rather than lifted whole into `engine-vm`.
   (`+0x14C != 0`) are touched. Self-contained; ported as
   `battle_action::target_cursor_highlight`. See
   `overlay_battle_action_801da6b4.txt`.
-- **`FUN_801DBDDC` - action banner box.** Gated on `ctx[+0x6CE] == 0`. Emits
-  one `0x09`-code quad into the ordering table at `_DAT_1F8003A0` (colour
-  `0x2C808080`, rect derived from the three `short` args) and links it via
-  `FUN_8003D2C4`. Pure GPU-primitive build. See
-  `overlay_battle_action_801dbddc.txt`.
+- **`FUN_801DBDDC` - the Rot stamp over an arts-entry chip.** Gated on
+  `ctx[+0x6CE] == 0`. Emits one `POLY_FT4` (tag `0x09000000`, colour
+  `0x2C808080`) sampling the `etim` Rot stamp (`(0x50, 0x60)` 32x24, CLUT
+  `0x770B`) over `(x, y, cost)`, widened by `(cost - 0x1E) >> 1` each side,
+  and links it via `FUN_8003D2C4`. Called only by the round driver's
+  arts-entry arm, once per rotted limb; see
+  [arts-command-gauge.md](arts-command-gauge.md#status-limb-gating). Ported
+  as `engine-vm::battle_party_panel::rot_stamp_on_arts_chip`.
 - **`FUN_801DEA50` - action effect-script stepper.** For the acting actor
   (`param_1 == ctx[+0x13]`) walks 8-byte effect-script records at `param_2`
   under the `actor[+0x1F5]` cursor (`< 8`), GTE-rotating each record's offset by
