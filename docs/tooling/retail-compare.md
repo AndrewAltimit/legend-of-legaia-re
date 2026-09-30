@@ -345,15 +345,25 @@ captures the first frame that holds the phase; a drive the headless side
 never completed is not imaged.
 
 What a drive cannot reach is a real finding, not a seeding limit - each open
-case is below.
+case is below. Two the drive has already surfaced and the engine now follows:
+a Spirit commit plays the spirit band `0x46..=0x48` (retail's seed sends
+category `4` there unconditionally, `li v0,0x46` at `0x801E2F5C`) rather than
+ending the action on the spot, and the battle flow byte follows the player
+into the item / magic / arts windows ([battle](../subsystems/battle.md#how-the-engine-raises-the-flow-state)).
 
-- **Spirit (`+0x1DE = 4`).** Retail's action seed sends category `4` to the
-  spirit band unconditionally (`li v0,0x46` / `sb v0,0x7(v1)` at
-  `0x801E2F5C`), which stages the spirit clip, ramps the gauge over a `0x20`
-  timer and holds on the clip at `0x47` (`0x801E52A4..0x801E54E8`) before the
-  Done band. The engine's Spirit dispatch charges the AP gauge and ends the
-  action at once (`EndOfAction`), so the band is never entered - the
-  `delilas_gi_spirit_*` captures sit at `0x47`.
+- **A monster's capture-class special.** The spell catalog carries no
+  capture-class record, so a monster turn whose pick names one (Cort's, Zeto's,
+  Songi's, the Delilas duels') finds no record and strikes instead; retail
+  casts it through the capture band `0x6E..=0x71`, routed on the spell
+  table's class byte. The seed's forced cast builds the record off the disc
+  table (`World::monster_cast_def`), which is how the Cort and Delilas
+  captures reach `0x6F` / `0x70`. The AI's own picks do not take that record
+  yet: with it, Songi's special at the Dohati castle wipes the
+  [full-game ladder](full-game-ladder.md)'s party in the segment to the Sol
+  tower, and whether that fight's loss is scripted is not settled.
+- **Zeto's waves.** The forced cast is armed but never consumed inside the
+  budget - the monster pick that would take it is not reached on Zeto's seat -
+  so `0x70` is not; why is open.
 - **A monster's plain cast clip.** Retail stages a monster cast's clip as the
   tag-`0x23` archive entry its pick walked to (`FUN_801E9FD4`,
   `sb s2,0x1e0(s4)` at `0x801EA540`); the engine looks for an entry whose tag

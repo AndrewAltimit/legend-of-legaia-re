@@ -424,24 +424,21 @@ fn insert_monster_specials(
     }
 }
 
-/// The cast record for a **capture-class** monster special (`0x01..=0x80`
-/// with class byte `'c'`), which [`insert_monster_specials`] keeps out of the
-/// catalog: name, MP and target shape off the table, `effect_class` = the
-/// `+0x01` sub-id the capture dispatcher `FUN_801F2160` keys the module on.
+/// The cast record for a **capture-class** special (class byte `'c'`),
+/// which [`insert_monster_specials`] keeps out of the catalog: name, MP and
+/// target shape off the table, `effect_class` = the `+0x01` sub-id the
+/// capture dispatcher `FUN_801F2160` keys the module on.
 ///
 /// The catalog stays free of these ids (their fold is the streamed module's,
 /// and a capture record in the catalog would read as a castable spell to
-/// every catalog consumer); a monster's turn asks for one through
-/// `World::monster_cast_def` instead. Without it the turn's catalog lookup
-/// found nothing and the monster struck instead of casting - so a capture
-/// special picked by the AI (Cort's, Zeto's, the Delilas duels') never
-/// reached the action SM's capture band `0x6E..=0x71`.
+/// every catalog consumer); `World::monster_cast_def` asks for one instead,
+/// so a cast it arms reaches the action SM's capture band `0x6E..=0x71`.
 pub fn capture_special_def(
     table: &legaia_asset::spell_names::SpellNameTable,
     id: u8,
 ) -> Option<SpellDef> {
     let e = table.entry(id)?;
-    if !(0x01..=0x80).contains(&id) || !e.is_capture_class() {
+    if !e.is_capture_class() {
         return None;
     }
     let name = e.name.as_deref().map(str::trim).unwrap_or_default();

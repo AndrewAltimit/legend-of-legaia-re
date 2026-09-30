@@ -93,19 +93,31 @@ pub(in crate::world) fn enemy_impact_status_proc(
 
 impl World {
     /// The cast record a monster's turn arms for `spell_id`: the catalog's,
-    /// or - for a capture-class special, which the catalog does not carry -
-    /// one built off the disc spell table
+    /// or - when `capture` allows it, for a capture-class special, which the
+    /// catalog does not carry - one built off the disc spell table
     /// ([`crate::retail_magic::capture_special_def`]). The action SM routes
     /// the latter to its capture band on the table's class byte.
+    ///
+    /// Only the retail-compare seed ([`crate::world::BattleState::forced_monster_cast`])
+    /// passes `capture` today. The AI's own picks still find no record for a
+    /// capture-class special and strike instead, which is **not** retail's
+    /// behaviour: retail casts it through the capture band. Opening that up
+    /// is gated on the fights it changes - with it, Songi's special at the
+    /// Dohati castle wipes the full-game ladder's party
+    /// (`docs/tooling/retail-compare.md`, "Driving to the phase").
     pub(in crate::world) fn monster_cast_def(
         &self,
         spell_id: u8,
+        capture: bool,
     ) -> Option<crate::spells::SpellDef> {
         self.tables
             .spell_catalog
             .get(spell_id)
             .cloned()
             .or_else(|| {
+                if !capture {
+                    return None;
+                }
                 let table = self.menu.text.as_ref()?.spell_names.as_ref()?;
                 crate::retail_magic::capture_special_def(table, spell_id)
             })
@@ -127,7 +139,12 @@ impl World {
             } => {
                 // A confused caster's spell lands on the opposite side.
                 self.confuse_retarget_cast(slot, &mut targets);
-                let def = self.monster_cast_def(spell_id);
+                // The seed is spent by the cast it names.
+                let forced = self.battle.forced_monster_cast == Some((slot, spell_id));
+                if forced {
+                    self.battle.forced_monster_cast = None;
+                }
+                let def = self.monster_cast_def(spell_id, forced);
                 let mp = self
                     .actors
                     .get(slot as usize)
@@ -806,9 +823,8 @@ impl World {
         // that cast on the seat's next turn instead of the AI's pick.
         if let Some((seat, spell_id)) = self.battle.forced_monster_cast
             && seat == slot
-            && let Some(def) = self.monster_cast_def(spell_id)
+            && let Some(def) = self.monster_cast_def(spell_id, true)
         {
-            self.battle.forced_monster_cast = None;
             let class = self.monster_cast_target_class(slot, &def);
             let targets = self.resolve_class_to_slots(slot, class);
             if !targets.is_empty() {
@@ -846,7 +862,7 @@ impl World {
         let mut target_class;
         if roll != 0 {
             let id = magic[(roll - 1) as usize];
-            if let Some(def) = self.monster_cast_def(id)
+            if let Some(def) = self.monster_cast_def(id, false)
                 && mp >= def.mp_cost as u16
             {
                 category = 2;
@@ -1343,13 +1359,21 @@ mod capture_special_tests {
     fn a_capture_special_has_a_cast_record_the_catalog_does_not_carry() {
         let world = world_with_capture_special();
         assert!(world.tables.spell_catalog.get(GUILTY_CROSS).is_none());
-        let def = world.monster_cast_def(GUILTY_CROSS).expect("a cast record");
+        assert!(
+            world.monster_cast_def(GUILTY_CROSS, false).is_none(),
+            "the AI's own pick finds no record"
+        );
+        let def = world
+            .monster_cast_def(GUILTY_CROSS, true)
+            .expect("a cast record");
         assert_eq!(
             (def.id, def.mp_cost, def.effect_class),
             (GUILTY_CROSS, 12, 2)
         );
         assert!(
-            World::default().monster_cast_def(GUILTY_CROSS).is_none(),
+            World::default()
+                .monster_cast_def(GUILTY_CROSS, true)
+                .is_none(),
             "no disc table, no record"
         );
     }
