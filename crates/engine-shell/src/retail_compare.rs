@@ -60,6 +60,9 @@ const SC_BLOCK_LEN: usize = 0x2000;
 const GTE_H: u32 = 0x8007_B6F4;
 const CAM_ROT: u32 = 0x8007_B790;
 const CAM_EYE: u32 = 0x8008_40B8;
+/// The camera focus pair `_DAT_80089118` / `_DAT_80089120` - the world X / Z
+/// the view orbits, stored **negated** (`engine-core::camera`, axes 6 / 8).
+const CAM_FOCUS: u32 = 0x8008_9118;
 const BGM_ID: u32 = 0x8007_BAC8;
 /// The ambient-particle (fog pool) master gate, raised / cleared only by
 /// field-VM op `0x4C` nibble 3 (`docs/subsystems/field-ambient-fx.md`).
@@ -182,6 +185,10 @@ pub struct CameraObs {
     pub yaw: i16,
     pub h: i16,
     pub eye: [i32; 3],
+    /// The focus X / Z words as retail stores them (negated world X / Z).
+    /// Without them a frame aimed at the wrong place scores its camera whole:
+    /// rotation and eye are all relative to the focus.
+    pub focus: [i32; 2],
 }
 
 /// Everything read off one retail state.
@@ -292,6 +299,7 @@ impl RetailObs {
                 rd32(ram, CAM_EYE + 4),
                 rd32(ram, CAM_EYE + 8),
             ],
+            focus: [rd32(ram, CAM_FOCUS), rd32(ram, CAM_FOCUS + 8)],
         };
         let bgm_id = game_anchors::u16_at(ram, BGM_ID);
         let fog_gate = game_anchors::u32_at(ram, FOG_GATE) != 0;
@@ -472,6 +480,7 @@ pub fn run_engine_with(
         yaw: g[1] as i16,
         h: g[9] as i16,
         eye: [g[3], g[4], g[5]],
+        focus: [g[6], g[8]],
     };
     let mode = world.mode;
     let fog_gate = world.fog.gate;
@@ -778,12 +787,25 @@ pub(crate) fn camera_score(r: &CameraObs, e: &CameraObs) -> (f64, String) {
         falloff(f64::from(r.eye[0] - e.eye[0]), 16.0, 1024.0),
         falloff(f64::from(r.eye[1] - e.eye[1]), 16.0, 1024.0),
         falloff(f64::from(r.eye[2] - e.eye[2]), 16.0, 1024.0),
+        falloff(f64::from(r.focus[0] - e.focus[0]), 16.0, 1024.0),
+        falloff(f64::from(r.focus[1] - e.focus[1]), 16.0, 1024.0),
     ];
+    // Focus prints as world X / Z (the stored words are negated).
+    let world = |f: [i32; 2]| [-f[0], -f[1]];
     (
         parts.iter().sum::<f64>() / parts.len() as f64,
         format!(
-            "retail pitch/yaw/H={}/{}/{} eye={:?}; engine {}/{}/{} eye={:?}",
-            r.pitch, r.yaw, r.h, r.eye, e.pitch, e.yaw, e.h, e.eye
+            "retail pitch/yaw/H={}/{}/{} eye={:?} focus={:?}; engine {}/{}/{} eye={:?} focus={:?}",
+            r.pitch,
+            r.yaw,
+            r.h,
+            r.eye,
+            world(r.focus),
+            e.pitch,
+            e.yaw,
+            e.h,
+            e.eye,
+            world(e.focus)
         ),
     )
 }

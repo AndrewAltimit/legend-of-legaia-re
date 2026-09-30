@@ -636,6 +636,11 @@ pub fn run_engine_battle(
         yaw: (pose.yaw.round() as i32).rem_euclid(4096) as i16,
         h: BATTLE_H,
         eye: pose.tr.map(|v| v.round() as i32),
+        // The engine holds the focus un-negated; retail's words are negated.
+        focus: [
+            -(pose.focus[0].round() as i32),
+            -(pose.focus[2].round() as i32),
+        ],
     };
     Ok(EngineBattle {
         scene: session.host.scene.as_ref().map(|s| s.name.clone()),

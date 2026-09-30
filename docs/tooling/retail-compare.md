@@ -74,6 +74,7 @@ hall before the song) is a `field` state and is scored as the field it is.
 | camera pitch / yaw | `0x8007B790` / `0x8007B792` | 12-bit angles |
 | GTE `H` | `0x8007B6F4` | |
 | camera eye | `0x800840B8/BC/C0` | the view builder's translation words |
+| camera focus | `0x80089118` / `0x80089120` | the world X / Z the view orbits, stored negated |
 | BGM track word | `0x8007BAC8` | written by op `0x35`'s start arms |
 | fog-pool gate | `0x8007B854` | written only by op `0x4C` nibble 3 ([field-ambient-fx](../subsystems/field-ambient-fx.md#mechanism-4---the-ambient-particle-emitter)) |
 | party / flags / bag / gold | `0x80084140`, `0x1A18` bytes | the live game-state window |
@@ -317,7 +318,7 @@ measured channels.
 | `mode` | 1 when the engine's mode is `Field` (field class) / `WorldMap` (overworld class) / `Battle` (battle class) |
 | `position` | player `(X, Z)` after settling: 1 within 4 units, linear to 0 at 256 |
 | `footing` | engine floor sample at retail's `(X, Z)` vs retail's footing: 1 within 2, 0 at 128 (field class only) |
-| `camera` | mean of six parts: pitch and yaw (1 within 16, 0 at 256, wrapped), `H` (1 within 4, 0 at 128), each eye word (1 within 16, 0 at 1024) |
+| `camera` | mean of eight parts: pitch and yaw (1 within 16, 0 at 256, wrapped), `H` (1 within 4, 0 at 128), each eye word and each focus word (1 within 16, 0 at 1024) |
 | `bgm` | 1 when the engine's track-select word (`SceneHost::bgm_track_word`, the park sentinel `0x1000` included) equals retail's |
 | `fog_gate` | 1 when the engine's fog-pool gate equals retail's |
 | `party` | fraction of equal fields over retail's roster: HP / MP current and max, level, the eight equipment bytes |
