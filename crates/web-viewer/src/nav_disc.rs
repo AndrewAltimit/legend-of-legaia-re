@@ -43,6 +43,8 @@ impl LegaiaViewer {
             tim_catalog: Vec::new(),
             tim_deep_catalog: Vec::new(),
             deep_section_cache: std::cell::RefCell::new(None),
+            boot_cluts: None,
+            sheet_regions: None,
             walk_ground: None,
             walk_placements: None,
             field_scene: None,
@@ -75,6 +77,8 @@ impl LegaiaViewer {
         self.tim_catalog = Vec::new();
         self.tim_deep_catalog = Vec::new();
         *self.deep_section_cache.borrow_mut() = None;
+        self.boot_cluts = None;
+        self.sheet_regions = None;
         self.walk_ground = None;
         self.walk_placements = None;
         self.field_scene = None;
@@ -143,6 +147,13 @@ impl LegaiaViewer {
                 // viewer can label each player file's five sections by the
                 // slot its ids belong to (the section order differs per
                 // character - Vahn's weapon section is Noa's Ra-Seru one).
+                // Palette map of the system-UI page (which CLUT each widget
+                // sprite draws through) for the catalog's composite view.
+                if let Some(table) = legaia_asset::ui_widgets::WidgetTable::from_scus(&scus) {
+                    self.sheet_regions = Some(
+                        legaia_asset::tim_palette_context::sheet_palette_regions(&table),
+                    );
+                }
                 if let Some(table) = legaia_asset::equip_stats::EquipStatTable::from_scus(&scus) {
                     self.equip_stats = Some(table);
                 } else {
@@ -205,6 +216,8 @@ impl LegaiaViewer {
             .map(|e| (e.byte_offset, e.size_bytes, e.index))
             .collect();
         self.tim_catalog = tim_catalog::build_from_spans(&prot_bytes, &spans);
+        self.boot_cluts =
+            legaia_asset::tim_palette_context::BootClutVram::from_prot_dat(&prot_bytes);
         console_log(&format!(
             "Cataloged {} TIMs in PROT.DAT",
             self.tim_catalog.len()

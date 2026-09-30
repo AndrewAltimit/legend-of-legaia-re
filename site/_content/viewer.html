@@ -233,7 +233,7 @@
   </style>
   <h2>PROT.DAT TIM catalog</h2>
   <p class="lede">Every texture the archive stores as plain bytes - menus, fonts, portraits, many environment sheets - each with a stable id you can link back to.</p>
-  <p class="hint">Click any thumbnail to load it full-size; the <strong>CLUT</strong> dropdown switches between an image's palette (<abbr title="Colour Look-Up Table">CLUT</abbr>) variants.</p>
+  <p class="hint">Click any thumbnail to load it full-size; the <strong>Palette</strong> dropdown switches between an image's palette (<abbr title="Colour Look-Up Table">CLUT</abbr>) variants. A texture with several palettes is one grid of colour indices that each sprite or polygon recolours with its <em>own</em> palette, so most of it looks wrong in any single one - that is how the game stores it, not an export bug. For the menu / battle UI sheet the list adds <strong>As the game draws it</strong> (every sprite through the palette the game uses for it) and the palettes VRAM really holds, and the note under the picture says when a texture's own palette is never used. How the game colours a pixel: <a href="subsystems/shading.html">shading and palettes</a>.</p>
   <div id="catalog-pane" style="display: none;">
     <div id="catalog-grid"></div>
     <div id="catalog-detail" style="display: none; margin-top: 0.75rem;">
@@ -241,12 +241,13 @@
         <button id="cat-prev" type="button">&larr; Prev</button>
         <input type="number" id="cat-id" min="0" value="0" title="TIM catalog id" style="width: 6rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); padding: 0.25rem 0.4rem; font-family: inherit;">
         <button id="cat-next" type="button">Next &rarr;</button>
-        <label style="font-size: 0.82rem; color: var(--text-dim);">CLUT
+        <label style="font-size: 0.82rem; color: var(--text-dim);">Palette
           <select id="cat-clut" title="Palette variant" style="background: var(--bg-code); color: var(--text); border: 1px solid var(--border); padding: 0.2rem;"></select>
         </label>
         <button id="cat-png" type="button" title="Download this texture (current palette) as a PNG">&#11015; PNG</button>
         <span class="viewer-info" id="cat-info"></span>
       </div>
+      <ul class="hint" id="cat-notes" style="margin: 0 0 0.5rem 1.1rem; padding: 0;"></ul>
       <div style="background: #0a0e15; border: 1px solid var(--border); padding: 0.6rem; overflow: auto; max-height: 560px;">
         <canvas id="catalog-canvas" width="256" height="256" style="image-rendering: pixelated; background: #11161f; transform-origin: top left;"></canvas>
       </div>
@@ -258,7 +259,7 @@
 <section class="doc-section" id="compressed-textures">
   <h2>Compressed textures (LZS-embedded)</h2>
   <p class="lede">The character and scene textures the catalog above cannot see, because they sit inside compressed sections of the archive. The page decompresses every entry to find them; each is keyed by the entry, section and offset it came from.</p>
-  <p class="hint">Click any thumbnail to load it full-size and switch CLUT variants, as in the catalog above.</p>
+  <p class="hint">Click any thumbnail to load it full-size and switch palette variants, as in the catalog above. Scene textures often carry palettes that are all zeros on disc (shown fully transparent): the colours those VRAM cells show in game come from another texture of the same scene.</p>
   <div id="deep-catalog-pane" style="display: none;">
     <div id="deep-catalog-grid"></div>
     <div id="deep-catalog-detail" style="display: none; margin-top: 0.75rem;">
@@ -266,12 +267,13 @@
         <button id="deep-cat-prev" type="button">&larr; Prev</button>
         <input type="number" id="deep-cat-id" min="0" value="0" title="compressed-texture id" style="width: 6rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); padding: 0.25rem 0.4rem; font-family: inherit;">
         <button id="deep-cat-next" type="button">Next &rarr;</button>
-        <label style="font-size: 0.82rem; color: var(--text-dim);">CLUT
+        <label style="font-size: 0.82rem; color: var(--text-dim);">Palette
           <select id="deep-cat-clut" title="Palette variant" style="background: var(--bg-code); color: var(--text); border: 1px solid var(--border); padding: 0.2rem;"></select>
         </label>
         <button id="deep-cat-png" type="button" title="Download this texture (current palette) as a PNG">&#11015; PNG</button>
         <span class="viewer-info" id="deep-cat-info"></span>
       </div>
+      <ul class="hint" id="deep-cat-notes" style="margin: 0 0 0.5rem 1.1rem; padding: 0;"></ul>
       <div style="background: #0a0e15; border: 1px solid var(--border); padding: 0.6rem; overflow: auto; max-height: 560px;">
         <canvas id="deep-catalog-canvas" width="256" height="256" style="image-rendering: pixelated; background: #11161f; transform-origin: top left;"></canvas>
       </div>
@@ -424,6 +426,7 @@
     const prevBt = document.getElementById(cfg.prev);
     const nextBt = document.getElementById(cfg.next);
     const pngBt  = document.getElementById(cfg.png);
+    const notesEl= document.getElementById(cfg.notes);
     let count = 0, cur = 0, observer = null;
 
     /* Download the detail canvas (already rendered at native TIM pixel
@@ -438,9 +441,11 @@
           name += '-' + String(meta.label).toLowerCase()
             .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
         }
-        if ((meta.clut_count | 0) > 1) {
-          name += `-p${parseInt(clutSel.value, 10) || 0}`;
-        }
+        /* Name the palette the download was decoded through. */
+        const v = String(clutSel.value || 'own:0');
+        if (v === 'composite') name += '-as-drawn';
+        else if (v.startsWith('vram:')) name += '-vram-' + v.slice(5).replace(':', '-');
+        else if ((meta.clut_count | 0) > 1) name += '-p' + (parseInt(v.slice(4), 10) || 0);
       } catch (e) { /* fall back to the bare id */ }
       cv.toBlob((blob) => {
         if (!blob) return;
@@ -453,10 +458,74 @@
       }, 'image/png');
     }
 
-    function render(id, clut) {
-      try { cfg.render(id, clut, cfg.canvas); }
-      catch (e) { infoEl.textContent = 'render error: ' + e; return false; }
+    /* Render the detail canvas through a palette choice: `own:N` (the
+     * TIM's own palette N), `vram:X:Y` (the palette VRAM holds at that
+     * cell after boot) or `composite` (every sprite through its own game
+     * palette). Tiers without `renderChoice` only know `own:N`. */
+    function render(id, choice) {
+      choice = String(choice || 'own:0');
+      try {
+        if (cfg.renderChoice) cfg.renderChoice(id, choice, cfg.canvas);
+        else cfg.render(id, parseInt(choice.slice(4), 10) || 0, cfg.canvas);
+      } catch (e) { infoEl.textContent = 'render error: ' + e; return false; }
       return true;
+    }
+
+    /* Fill the palette <select> from the TIM's palette context and return
+     * the value to show first. */
+    function fillPalettes(meta, pctx) {
+      clutSel.innerHTML = '';
+      const add = (parent, value, text) => {
+        const o = document.createElement('option');
+        o.value = value; o.textContent = text;
+        parent.appendChild(o);
+      };
+      if (pctx.composite) {
+        const c = pctx.composite;
+        add(clutSel, 'composite', 'As the game draws it (' +
+          Math.round(100 * c.covered / Math.max(1, c.total)) + '% placed)');
+      }
+      const nclut = Math.max(1, meta.clut_count | 0);
+      const over = new Set(pctx.overwritten_palettes || []);
+      const empty = new Set(pctx.empty_palettes || []);
+      const own = document.createElement('optgroup');
+      own.label = "This file's palettes";
+      for (let i = 0; i < nclut; i++) {
+        let t = 'palette ' + i;
+        if (empty.has(i)) t += ' (all zeros)';
+        if (over.has(i)) t += ' (never in VRAM)';
+        add(own, 'own:' + i, t);
+      }
+      clutSel.appendChild(own);
+      const cells = pctx.vram_palettes || [];
+      if (cells.length) {
+        const g = document.createElement('optgroup');
+        g.label = 'VRAM after boot (what the game samples)';
+        for (const c of cells) {
+          add(g, `vram:${c.x}:${c.y}`, `VRAM (${c.x}, ${c.y})` + (c.used ? ' - used by sprites' : ''));
+        }
+        clutSel.appendChild(g);
+      }
+      clutSel.disabled = clutSel.options.length <= 1;
+      /* Default: the as-drawn composite when there is one; for a texture
+       * whose own palette never reaches VRAM, the first VRAM cell a sprite
+       * uses (else the first VRAM cell); otherwise its own palette 0. */
+      if (pctx.composite) return 'composite';
+      if (pctx.fate === 'overwritten' && cells.length) {
+        const used = cells.find(c => c.used) || cells[0];
+        return `vram:${used.x}:${used.y}`;
+      }
+      return 'own:0';
+    }
+
+    function showNotes(pctx) {
+      if (!notesEl) return;
+      notesEl.innerHTML = '';
+      for (const n of (pctx.notes || [])) {
+        const li = document.createElement('li');
+        li.textContent = n;
+        notesEl.appendChild(li);
+      }
     }
 
     /* Load one TIM full-size into the detail panel below the grid. */
@@ -467,16 +536,13 @@
       idIn.value = id;
       detail.style.display = 'block';
       const meta = JSON.parse(cfg.infoJson(id));
-      const nclut = Math.max(1, meta.clut_count | 0);
-      clutSel.innerHTML = '';
-      for (let i = 0; i < nclut; i++) {
-        const o = document.createElement('option');
-        o.value = i; o.textContent = 'palette ' + i;
-        clutSel.appendChild(o);
-      }
-      clutSel.value = 0;                     /* CLUT resets to 0 per TIM */
-      clutSel.disabled = (meta.clut_count | 0) <= 1;
-      if (!render(id, 0)) return;
+      let pctx = {};
+      try { pctx = cfg.paletteJson ? JSON.parse(cfg.paletteJson(id)) : {}; }
+      catch (e) { pctx = {}; }
+      const first = fillPalettes(meta, pctx);   /* palette resets per TIM */
+      clutSel.value = first;
+      showNotes(pctx);
+      if (!render(id, first)) return;
       infoEl.textContent =
         `#${meta.id} / ${count - 1} · ${meta.width}×${meta.height} ${meta.bpp}bpp · ` +
         `${meta.clut_count | 0} CLUT · ${cfg.where(meta)} · ${meta.byte_len} B` +
@@ -548,7 +614,7 @@
     if (nextBt) nextBt.onclick = () => show(cur + 1);
     if (pngBt)  pngBt.onclick = downloadPng;
     if (idIn)   idIn.addEventListener('change', () => show(parseInt(idIn.value, 10) || 0));
-    if (clutSel) clutSel.addEventListener('change', () => render(cur, parseInt(clutSel.value, 10) || 0));
+    if (clutSel) clutSel.addEventListener('change', () => render(cur, clutSel.value));
 
     return { init };
   }
@@ -560,11 +626,15 @@
     detail: 'catalog-detail', idInput: 'cat-id', clut: 'cat-clut',
     info: 'cat-info', prev: 'cat-prev', next: 'cat-next',
     canvas: 'catalog-canvas', thumbPrefix: 'cat-thumb-',
-    png: 'cat-png', pngPrefix: 'tim-',
+    png: 'cat-png', pngPrefix: 'tim-', notes: 'cat-notes',
     emptyMsg: 'No TIM catalog for this input (load a disc or raw PROT.DAT).',
     len:      ()           => viewer.catalog_len(),
     infoJson: (id)         => viewer.catalog_info_json(id),
     render:   (id, c, cv)  => viewer.render_catalog_tim(id, c, cv),
+    renderChoice: (id, ch, cv) => (viewer.render_catalog_tim_choice
+      ? viewer.render_catalog_tim_choice(id, ch, cv)
+      : viewer.render_catalog_tim(id, parseInt(ch.slice(4), 10) || 0, cv)),
+    paletteJson: (id)      => (viewer.catalog_palette_context_json ? viewer.catalog_palette_context_json(id) : '{}'),
     where:    (meta)       => (meta.entry === 'gap' ? 'system-UI gap' : ('PROT ' + meta.entry))
                               + ' +0x' + meta.offset_in_entry.toString(16),
   });
@@ -576,11 +646,12 @@
     detail: 'deep-catalog-detail', idInput: 'deep-cat-id', clut: 'deep-cat-clut',
     info: 'deep-cat-info', prev: 'deep-cat-prev', next: 'deep-cat-next',
     canvas: 'deep-catalog-canvas', thumbPrefix: 'deep-cat-thumb-',
-    png: 'deep-cat-png', pngPrefix: 'tim-deep-',
+    png: 'deep-cat-png', pngPrefix: 'tim-deep-', notes: 'deep-cat-notes',
     emptyMsg: 'No compressed TIMs for this input (load a disc or raw PROT.DAT).',
     len:      ()           => viewer.deep_catalog_len(),
     infoJson: (id)         => viewer.deep_catalog_info_json(id),
     render:   (id, c, cv)  => viewer.render_deep_catalog_tim(id, c, cv),
+    paletteJson: (id)      => (viewer.deep_catalog_palette_context_json ? viewer.deep_catalog_palette_context_json(id) : '{}'),
     where:    (meta)       => 'PROT ' + meta.entry + ' · LZS sec ' + meta.lzs_section
                               + ' +0x' + meta.offset_in_section.toString(16),
   });

@@ -219,3 +219,348 @@ impl LegaiaViewer {
         Ok(())
     }
 }
+
+// --- Palette context: which palette the game really draws a TIM with -------
+//
+// A TIM's own CLUT rows are the right palettes only when the game samples the
+// texture through the cell the file uploads to and nothing overwrote it. See
+// `legaia_asset::tim_palette_context` for the three shapes that break it. The
+// accessors below let the catalog detail panel (a) say which shape applies,
+// (b) offer the palettes VRAM really holds on the TIM's CLUT row after the
+// boot upload, and (c) decode the system-UI page "as the game draws it" -
+// every widget sprite through its own palette.
+
+use legaia_asset::tim_palette_context::{self as palctx, ClutFate};
+
+/// How a catalog detail render picks its palette. Parsed from the page's
+/// `<select>` value: `own:N`, `vram:X:Y` or `composite`.
+enum PaletteChoice {
+    Own(usize),
+    Vram(u16, u16),
+    Composite,
+}
+
+fn parse_palette_choice(s: &str) -> Option<PaletteChoice> {
+    let mut it = s.split(':');
+    match it.next()? {
+        "own" => Some(PaletteChoice::Own(it.next()?.parse().ok()?)),
+        "vram" => Some(PaletteChoice::Vram(
+            it.next()?.parse().ok()?,
+            it.next()?.parse().ok()?,
+        )),
+        "composite" => Some(PaletteChoice::Composite),
+        _ => None,
+    }
+}
+
+fn entries_per_palette(tim: &legaia_tim::Tim) -> usize {
+    match tim.mode {
+        legaia_tim::PixelMode::Bpp4 => 16,
+        legaia_tim::PixelMode::Bpp8 => 256,
+        _ => 0,
+    }
+}
+
+/// Is `tim`'s image on the system-UI texture page (the page the widget
+/// table's rectangles address)?
+fn on_sheet_page(tim: &legaia_tim::Tim) -> bool {
+    let (px, py) = palctx::SHEET_PAGE_ORIGIN;
+    let img = &tim.image;
+    tim.mode == legaia_tim::PixelMode::Bpp4
+        && img.fb_x >= px
+        && img.fb_x + img.fb_w <= px + 64
+        && img.fb_y >= py
+        && img.fb_y + img.h <= py + 256
+}
+
+fn join_ids(v: &[usize]) -> String {
+    v.iter()
+        .map(|p| p.to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The sentences every tier shares: all-zero palettes, several palettes,
+/// STP colours.
+fn shared_palette_notes(
+    notes: &mut Vec<String>,
+    empty: &[usize],
+    stp: &[usize],
+    n_own: usize,
+    several: bool,
+) {
+    if !empty.is_empty() {
+        notes.push(format!(
+            "Palette(s) {} are all zeros on disc, so they show fully transparent here. In \
+             game those VRAM cells hold colours another TIM of the same scene uploads.",
+            join_ids(empty)
+        ));
+    }
+    if several && n_own > 1 {
+        notes.push(
+            "Several palettes: each one recolours the WHOLE image, and a model or sprite \
+             picks one per polygon / sprite - so most of the image usually looks wrong in \
+             any single palette. That is expected, not an export bug."
+                .to_string(),
+        );
+    }
+    if stp.iter().any(|&c| c > 0) {
+        notes.push(
+            "Some colours carry the STP (semi-transparency) bit: they draw blended in game \
+             when the sprite / polygon enables blending, but show opaque here."
+                .to_string(),
+        );
+    }
+}
+
+impl LegaiaViewer {
+    fn catalog_tim_parsed(&self, id: u32) -> Result<(u64, legaia_tim::Tim), String> {
+        let t = self
+            .tim_catalog
+            .get(id as usize)
+            .ok_or_else(|| format!("catalog id {id} out of range"))?;
+        let tim = legaia_tim::parse(&self.disc[t.abs_offset as usize..])
+            .map_err(|e| format!("catalog[{id}] TIM parse: {e}"))?;
+        Ok((t.abs_offset, tim))
+    }
+
+    /// Composite decode of a sheet-page TIM, if the palette map applies and
+    /// covers any of it. Returns `(rgba, covered, contested)`.
+    fn catalog_composite(&self, tim: &legaia_tim::Tim) -> Option<(Vec<u8>, usize, usize)> {
+        let regions = self.sheet_regions.as_ref()?;
+        let boot = self.boot_cluts.as_ref()?;
+        if !on_sheet_page(tim) {
+            return None;
+        }
+        let fallback = tim.clut.as_ref()?.palette(tim.mode, 0)?.to_vec();
+        let c = palctx::composite_rgba(
+            tim,
+            palctx::SHEET_PAGE_ORIGIN,
+            regions,
+            boot.vram(),
+            &fallback,
+        )?;
+        (c.covered > 0).then_some((c.rgba, c.covered, c.contested))
+    }
+
+    /// Decode catalog TIM `id` through palette `choice` (see
+    /// [`PaletteChoice`]). Native-callable so the disc-gated tests drive the
+    /// same decode the page does. Returns `(width, height, rgba)`.
+    pub fn catalog_decode_with_choice(
+        &self,
+        id: u32,
+        choice: &str,
+    ) -> Result<(u32, u32, Vec<u8>), String> {
+        let (_, tim) = self.catalog_tim_parsed(id)?;
+        let w = tim.pixel_width() as u32;
+        let h = tim.pixel_height() as u32;
+        let rgba = match parse_palette_choice(choice)
+            .ok_or_else(|| format!("bad palette choice {choice:?}"))?
+        {
+            PaletteChoice::Own(i) => {
+                let n = tim.palette_count();
+                let i = if n > 0 { i.min(n - 1) } else { 0 };
+                legaia_tim::decode_rgba8(&tim, i).map_err(|e| e.to_string())?
+            }
+            PaletteChoice::Vram(x, y) => {
+                let boot = self
+                    .boot_cluts
+                    .as_ref()
+                    .ok_or("no boot VRAM for this input")?;
+                let pal = boot.palette_at(x, y, entries_per_palette(&tim));
+                legaia_tim::decode_rgba8_with_palette(&tim, &pal.entries)
+                    .map_err(|e| e.to_string())?
+            }
+            PaletteChoice::Composite => {
+                self.catalog_composite(&tim)
+                    .ok_or("no palette map covers this texture")?
+                    .0
+            }
+        };
+        Ok((w, h, rgba))
+    }
+}
+
+#[wasm_bindgen]
+impl LegaiaViewer {
+    /// Palette context for cataloged TIM `id`, as JSON:
+    ///
+    /// * `fate`: `"not_boot"` / `"survives"` / `"overwritten"` - where the
+    ///   TIM's own CLUT ends up after the boot upload;
+    /// * `overwritten_palettes` + `overwritten_by` (catalog id, or null);
+    /// * `empty_palettes`: own palettes that are all `0x0000` on disc;
+    /// * `stp_counts`: per own palette, entries with the STP bit set;
+    /// * `vram_palettes`: `[{x, y, used}]` - the cells VRAM holds on the TIM's
+    ///   CLUT row after boot (boot members only), plus any other cell a widget
+    ///   sprite on this page names; `used` = a widget sprite draws through it;
+    /// * `composite`: `{covered, contested, total}` when the as-drawn view
+    ///   applies, else null;
+    /// * `notes`: plain-language sentences for the info panel.
+    pub fn catalog_palette_context_json(&self, id: u32) -> String {
+        let Ok((abs, tim)) = self.catalog_tim_parsed(id) else {
+            return "{}".to_string();
+        };
+        let per = entries_per_palette(&tim);
+        let n_own = tim.palette_count();
+        let empty = palctx::empty_palettes(&tim);
+        let stp: Vec<usize> = (0..n_own)
+            .map(|p| palctx::palette_flag_counts(&tim, p).0)
+            .collect();
+        let mut fate = "not_boot";
+        let mut over_pals: Vec<usize> = Vec::new();
+        let mut over_by: Option<u32> = None;
+        let mut vram_pals = Vec::new();
+        if let Some(boot) = self.boot_cluts.as_ref() {
+            match boot.clut_fate(abs, &tim) {
+                ClutFate::NotBootResident => {}
+                ClutFate::Survives => fate = "survives",
+                ClutFate::Overwritten {
+                    palettes,
+                    by_offset,
+                } => {
+                    fate = "overwritten";
+                    over_pals = palettes;
+                    over_by = by_offset.and_then(|o| {
+                        self.tim_catalog
+                            .iter()
+                            .find(|t| t.abs_offset == o)
+                            .map(|t| t.id)
+                    });
+                }
+            }
+            if fate != "not_boot"
+                && let Some(clut) = tim.clut.as_ref()
+            {
+                let used: Vec<(u16, u16)> = if on_sheet_page(&tim) {
+                    self.sheet_regions
+                        .iter()
+                        .flatten()
+                        .map(|r| r.clut_fb)
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+                for p in boot.row_palettes(clut.fb_y, per) {
+                    vram_pals.push(serde_json::json!({
+                        "x": p.fb_x, "y": p.fb_y,
+                        "used": used.contains(&(p.fb_x, p.fb_y)),
+                    }));
+                }
+                // Cells this page's sprites use on OTHER rows (the element
+                // badges' (896.., 498..501) block).
+                let mut extra: Vec<(u16, u16)> = used
+                    .iter()
+                    .copied()
+                    .filter(|&(_, y)| y != clut.fb_y)
+                    .collect();
+                extra.sort_unstable_by_key(|&(x, y)| (y, x));
+                extra.dedup();
+                for (x, y) in extra {
+                    vram_pals.push(serde_json::json!({"x": x, "y": y, "used": true}));
+                }
+            }
+        }
+        let mut notes: Vec<String> = Vec::new();
+        match fate {
+            "overwritten" => notes.push(format!(
+                "This texture's own palette ({}) never reaches VRAM: {} uploads over the same \
+                 VRAM cells at boot. The game draws it through a palette VRAM does hold - pick \
+                 one from the VRAM entries in the palette list.",
+                join_ids(&over_pals),
+                over_by
+                    .map(|i| format!("TIM #{i}"))
+                    .unwrap_or_else(|| "a later boot TIM".to_string()),
+            )),
+            "survives" => notes.push(
+                "Boot-resident: its palettes stay in VRAM for the whole game. A sprite can also \
+                 draw it through a neighbouring palette on the same VRAM row (VRAM entries in \
+                 the palette list)."
+                    .to_string(),
+            ),
+            _ => {}
+        }
+        let composite = self.catalog_composite(&tim).map(|(_, covered, contested)| {
+            serde_json::json!({
+                "covered": covered,
+                "contested": contested,
+                "total": tim.pixel_width() * tim.pixel_height(),
+            })
+        });
+        if composite.is_some() {
+            notes.push(
+                "\"As the game draws it\" colours every sprite rectangle the game's widget table \
+                 names through that sprite's own palette; dimmed areas are art no table entry \
+                 places (other code draws them, with a palette this view cannot know)."
+                    .to_string(),
+            );
+        }
+        shared_palette_notes(&mut notes, &empty, &stp, n_own, composite.is_none());
+        serde_json::json!({
+            "fate": fate,
+            "overwritten_palettes": over_pals,
+            "overwritten_by": over_by,
+            "empty_palettes": empty,
+            "stp_counts": stp,
+            "vram_palettes": vram_pals,
+            "composite": composite,
+            "notes": notes,
+        })
+        .to_string()
+    }
+
+    /// Render cataloged TIM `id` into canvas `canvas_id` through palette
+    /// `choice` (`own:N`, `vram:X:Y` or `composite`).
+    pub fn render_catalog_tim_choice(
+        &self,
+        id: u32,
+        choice: &str,
+        canvas_id: &str,
+    ) -> Result<(), JsValue> {
+        let (w, h, rgba) = self
+            .catalog_decode_with_choice(id, choice)
+            .map_err(|e| JsValue::from_str(&e))?;
+        if w == 0 || h == 0 {
+            return Err(JsValue::from_str(&format!("catalog[{id}]: empty TIM")));
+        }
+        let canvas = resolve_canvas(canvas_id)?;
+        let ctx = canvas
+            .get_context("2d")?
+            .ok_or_else(|| JsValue::from_str("catalog canvas has no 2D context"))?
+            .dyn_into::<CanvasRenderingContext2d>()?;
+        canvas.set_width(w);
+        canvas.set_height(h);
+        let img = ImageData::new_with_u8_clamped_array_and_sh(Clamped(&rgba), w, h)?;
+        ctx.put_image_data(&img, 0.0, 0.0)?;
+        Ok(())
+    }
+
+    /// Palette notes for deep-catalog TIM `id` (compressed scene / character
+    /// textures, never boot-resident): `empty_palettes`, `stp_counts` and
+    /// `notes`, as JSON in the same shape as
+    /// [`LegaiaViewer::catalog_palette_context_json`].
+    pub fn deep_catalog_palette_context_json(&self, id: u32) -> String {
+        let Ok((section, off)) = self.deep_section_bytes(id) else {
+            return "{}".to_string();
+        };
+        let Ok(tim) = legaia_tim::parse(&section[off..]) else {
+            return "{}".to_string();
+        };
+        let empty = palctx::empty_palettes(&tim);
+        let stp: Vec<usize> = (0..tim.palette_count())
+            .map(|p| palctx::palette_flag_counts(&tim, p).0)
+            .collect();
+        let mut notes: Vec<String> = Vec::new();
+        shared_palette_notes(&mut notes, &empty, &stp, tim.palette_count(), true);
+        serde_json::json!({
+            "fate": "not_boot",
+            "overwritten_palettes": [],
+            "overwritten_by": null,
+            "empty_palettes": empty,
+            "stp_counts": stp,
+            "vram_palettes": [],
+            "composite": null,
+            "notes": notes,
+        })
+        .to_string()
+    }
+}
