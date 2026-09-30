@@ -765,6 +765,20 @@ walk cycle (Mei: clip 61 walking, 60 idle). Engine port:
 NPC anim cue surfaced from `exec_move`. Dropping the walk playout is what left
 Mei out of the conversation frame for the whole beat.
 
+A walk is exclusive. The park leaves the target's halt bit `0x400` set until
+the kernel lands it, and the dispatcher prologue (`0x801DE90C..0x801DE944`)
+returns with the PC still on any cross-context op whose target carries
+`0x400` while the scene word `*(_DAT_801C6EA4) + 8` is zero, unless the
+caller's `+0x50` is `0xFB`. A spawned record never is: `FUN_8003BDE0` stamps
+its global record index there (`0x8003C094`). So a second record that pokes an
+actor another record is walking, turning or gliding waits at that op until the
+first leg ends. `dolk2`'s post-Caruban beat runs P2[12] to P2[15] at once, and
+both P2[12] (`C7 F8 48 53 23`) and P2[15] (`C7 F8 46 4C 33`) walk the player;
+the second walk starts only when the first lands. The engine keeps the same
+rule for the modal timeline and the helper contexts
+(`FieldVmState::halted_elsewhere`); without it the two walks pulled against
+each other and left the party inside a wall.
+
 The same park holds for the compass-walk ops against the **player**. `B7 F8 b0 b1`
 (op `0x37`, rate `0x80`; `0x41` is the `0x40` twin) moves the player along the
 direction `b0 & 7` names in the axis table at `0x80073F14`, for
