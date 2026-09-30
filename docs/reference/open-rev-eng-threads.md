@@ -104,7 +104,7 @@ cheapest place to look for a claim that is still wrong.
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order capture-confirmed for most spokes; the residual is a card-block question with the instrument ready | [details ↓](#region-story-flag-gate-families) |
+| Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; every residual family bracketed between two retail milestone saves; open is the write order inside a bracket | [details ↓](#region-story-flag-gate-families) |
 
 **Who sets a field NPC's moving-class bit** closed by disassembly and capture:
 the placement seater `FUN_8003A1E4` ORs `0x20000` into every partition-1
@@ -317,7 +317,7 @@ and the force-walk reading it falsified in
 
 ### Region story-flag gate families
 
-*Status:* structure resolved and settled; residual = play-order confirmation for the dungeons the capture corpus never walked
+*Status:* structure resolved and settled; every residual family bracketed between two retail milestone saves; residual = the write order inside a bracket for the multi-write families
 
 The per-region C1/C2 gate families - the partition-2 record-header flag lists
 the spawn evaluator `FUN_8003BDE0` checks - are decoded across the chapter-2/3
@@ -347,7 +347,7 @@ alongside the earlier organic `ropeway`/`ropeway2`/`jiji` walks and Nivora's
   0x1FC`, `bubu2`'s requires-all list, `station` / `station3` behind `taiku`'s
   `0x38F`, `deroa`'s `0x3E1`-gated descent - fire only on walk-on and talk
   beats, which need a human play-forward; `rayman2` also needs flag `0x1D5`,
-  which the ladder card lacks. Read any firehose over these with the `chitei2`
+  which every ladder save from Mt. Letona on carries. Read any firehose over these with the `chitei2`
   lesson in hand: a flag written every other frame from an entry script's
   per-frame body is a one-hot selector, not a progress latch;
 - **walked without an organic family SET** (the beats were already latched in
@@ -358,6 +358,24 @@ alongside the earlier organic `ropeway`/`ropeway2`/`jiji` walks and Nivora's
   captured, `kor5` with its `0x436` input poked rather than played; the
   retock / doman / nilboa entry families are measured
   ([settled](re-settled-threads.md#field--locomotion)).
+
+**Card brackets place every residual family between two milestones.** The
+two playthrough cards hold one retail save per story milestone, so a flag
+clear in one save and set in the next was written by the play between them.
+Every residual family lands inside one such bracket: `rayman`'s whole chain
+(`0x201`, `0x1FB`, `0x200`, `0x1FC`) between Sky Gardens and the Fire Path;
+`0x1D5` between the Fire Path and Mt. Letona; retock's `0x357` between Mt.
+Letona and Ratayu, and `0x33B` with `0x502` between Ratayu and Dohati's
+Castle; `bubu2`'s `0x608` between Dohati and Sol Tower and its `0x3D3` /
+`0x609` with doman's `0x3FB` between the Sol Tower B2 and Usha saves; the
+`kor5` tail between the two Sol Tower saves; `0x370` between Usha and Nivora;
+`0x378`, `0x3A6` and `0x60D` between Nivora and Zora; `0x38F` and `0x3A7`
+between Zora and Conkram; deroa's `0x3E1` / `0x46D..0x46F` between Rogue's
+Tower and Jette's Fortress. Pinned by `region_gate_card_brackets` (save
+library gated). So the order *between* families is settled by retail saves;
+what is still owed is the order *inside* a bracket, and only where a family
+has more than one write in it (`rayman`'s chain, retock's pair, doman's
+triple, deroa's group).
 
 The generic C1/C2 seeder already drives every family. One more session from
 an early-enough save (before the retock/doman/nilboa beats) closes the
