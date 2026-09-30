@@ -1788,93 +1788,32 @@ impl LegaiaRuntime {
             && let (Some(scene), Some(res)) = (host.scene.as_ref(), host.resources.as_mut())
         {
             let frame_step = host.world.clock.frame_step.max(1);
-            if legaia_engine_core::scene::is_world_map_scene(&scene.name) {
-                // Kingdom overworld: the ocean / shoreline shimmer is the
-                // kingdom bundle's slot-5 CLUT-walk table with its source
-                // strips in slot 0, plus the Drake complement rows the two
-                // later kingdoms inherit as VRAM residue (the native
-                // `resolve_ocean_anim` + `park_clut_walk_strips` pair).
-                for entry in &scene.entries {
-                    let Ok(table) = legaia_asset::clut_walk::from_kingdom_entry(&entry.bytes)
-                    else {
-                        continue;
-                    };
-                    if let Ok(slot0) = legaia_asset::kingdom_bundle::decode_slot(&entry.bytes, 0) {
-                        for s in legaia_asset::clut_walk::park_strips(&slot0) {
-                            res.vram.write_block(s.fb_x, s.fb_y, s.w, s.h, &s.data);
-                        }
-                    }
-                    let missing_rows: Vec<u16> = table
-                        .entries
-                        .iter()
-                        .flat_map(|e| e.frames.iter().map(|f| f.src_y))
-                        .filter(|&y| {
-                            !res.vram.region_has_data(
-                                0,
-                                y as usize,
-                                legaia_asset::clut_walk::COPY_WIDTH as usize,
-                                1,
-                            )
-                        })
-                        .collect();
-                    if !missing_rows.is_empty()
-                        && let Ok(drake) = host
-                            .index
-                            .entry_bytes(legaia_asset::kingdom_bundle::BUNDLE_ENTRIES[0])
-                        && let Ok(slot0) = legaia_asset::kingdom_bundle::decode_slot(&drake, 0)
-                    {
-                        for s in legaia_asset::clut_walk::park_strips(&slot0) {
-                            if missing_rows.contains(&s.fb_y) {
-                                res.vram.write_block(s.fb_x, s.fb_y, s.w, s.h, &s.data);
-                            }
-                        }
-                    }
-                    self.field_vram_anim = Some(crate::field_scene::FieldSceneAnim::walker_only(
-                        table, frame_step,
+            // One resolve + park for every host
+            // (`legaia_engine_core::clut_walk_anim::ClutWalkAnim::install`):
+            // the type-6 table on a field scene, the kingdom's slot-5 table
+            // on an overworld, the Drake complement rows, and the legacy
+            // ocean-head fallback.
+            if let Some(install) = legaia_engine_core::clut_walk_anim::ClutWalkAnim::install(
+                scene,
+                &host.index,
+                &mut res.vram,
+            ) {
+                if install.ocean_fallback {
+                    crate::console_log(
+                        "play: no slot-5 CLUT-walk table in the kingdom bundle; \
+                         falling back to the legacy ocean-head cycle",
+                    );
+                }
+                for (x, y) in &install.missing_cells {
+                    crate::console_log(&format!(
+                        "play: CLUT-walk source cell ({x}, {y}) has no VRAM data \
+                         (strip residency gap)"
                     ));
-                    break;
                 }
-                if self.field_vram_anim.is_none() {
-                    // Slot 5 absent / unparseable: the legacy single-cell
-                    // ocean-head cycle, the same fallback the native
-                    // `resolve_ocean_anim` keeps for a modified or damaged
-                    // bundle. Every retail kingdom ships slot 5, so this
-                    // never fires on a stock disc - and without it this host
-                    // froze the sea where the native window kept it moving.
-                    for entry in &scene.entries {
-                        let Ok(slot0) = legaia_asset::kingdom_bundle::decode_slot(&entry.bytes, 0)
-                        else {
-                            continue;
-                        };
-                        if let Some(ocean) = legaia_asset::ocean::find_ocean_assets(&slot0)
-                            && ocean.animation_frames.len() >= 32
-                        {
-                            crate::console_log(
-                                "play: no slot-5 CLUT-walk table in the kingdom bundle; \
-                                 falling back to the legacy ocean-head cycle",
-                            );
-                            self.field_vram_anim =
-                                Some(crate::field_scene::FieldSceneAnim::ocean_only(
-                                    ocean.animation_frames,
-                                    frame_step,
-                                ));
-                            break;
-                        }
-                    }
-                }
-            } else {
-                for entry in &scene.entries {
-                    let Ok(table) = legaia_asset::clut_walk::from_scene_bundle(&entry.bytes) else {
-                        continue;
-                    };
-                    for s in legaia_asset::clut_walk::scene_park_strips(&entry.bytes) {
-                        res.vram.write_block(s.fb_x, s.fb_y, s.w, s.h, &s.data);
-                    }
-                    self.field_vram_anim = Some(crate::field_scene::FieldSceneAnim::walker_only(
-                        table, frame_step,
-                    ));
-                    break;
-                }
+                self.field_vram_anim = Some(crate::field_scene::FieldSceneAnim::clut_only(
+                    install.anim,
+                    frame_step,
+                ));
             }
         }
         Ok(())

@@ -3104,16 +3104,8 @@ so the tier had nothing to pair:
 
 ### Open drift the same pass found
 
-Recorded rather than fixed; each names the host that lacks it. None is gated.
-
-- **Overworld CLUT walk.** Implemented twice (`window/field_render.rs`
-  `WaterAnim`, the page's `step_field_vram_fx` over `FieldSceneAnim`, which
-  the standalone field-scene viewer also runs), already differing in which
-  scenes patch strip rows (the native Drake-complement park) and which column
-  is checked (the native tests each source cell, the page column 0). The
-  step rule, the seeds, the ocean fallback, the battle guard and the order
-  against `step_field_vram_effects` agree; `legaia_asset::clut_walk` parses
-  the tables but steps nothing, so the stepper is the piece to share.
+Every row this pass recorded as open has since closed (below, and in
+[the third pass](#options-battle-chrome-and-minigame-huds-a-third-side-by-side-pass)).
 
 The audio rows of the same pass are closed or settled in
 [their own section](#audio-legs-one-kernel-per-decision).
@@ -3502,6 +3494,16 @@ or the deviating host adopting the other's behaviour.
   `BakaDuelSurface::frame`, ghosts and impact effects included, and the
   page's `play_mg_baka_state_json` shares the minigames page's builder; the
   row was stale.
+- **The CLUT-walk shimmer.** The overworld ocean and the field water /
+  waterfall walkers were implemented three times - the native `WaterAnim`,
+  the page's rebuild plus its `FieldSceneAnim` step, and the field-scene
+  viewer's own resolve - and the copies had drifted: the page never ran the
+  Drake-complement pass on a field scene, and tested strip coverage at column
+  0 where a source cell can sit at any x. `engine-core::clut_walk_anim` is the
+  resolve, the park (both layers), the ocean-head fallback and the per-game-
+  tick step; all three surfaces call it, and a `SIM_PAIRS` row holds both play
+  hosts' scene rebuilds to `ClutWalkAnim::install`. `legaia_asset::clut_walk`
+  stays the parser.
 - **Small copies moved onto one call.** The spoils line's leader name
   (`World::battle_spoils_leader`) and a save's resume point
   (`SceneHost::current_resume`, behind the native session's wrapper and the

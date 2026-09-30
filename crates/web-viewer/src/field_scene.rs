@@ -69,14 +69,10 @@ pub struct FieldScenePack {
 /// [`legaia_engine_core::world::FrameClock::frame_step`] vsyncs (`DAT_1F800393`; 2 in towns, 3 on the
 /// overworld).
 pub struct FieldSceneAnim {
-    /// Parsed walker table + per-entry `(accumulator, frame_index)` state.
-    walker: Option<(legaia_asset::clut_walk::ClutWalkTable, Vec<(u32, usize)>)>,
-    /// Legacy single-cell ocean-head cycle: `(13 x 32 CLUT bytes, frame
-    /// index, vsync accumulator)`. Used ONLY where no slot-5 walker table
-    /// parses - every retail kingdom ships one, so this is the
-    /// modified / damaged-bundle path the native window also keeps, and it
-    /// trades the seven non-ocean shimmer cells for a sea that still moves.
-    ocean: Option<(Vec<u8>, usize, u32)>,
+    /// The CLUT-walk shimmer (the slot-5 / type-6 walker or the legacy
+    /// ocean-head fallback), stepped by the one engine kernel the native
+    /// window runs (`legaia_engine_core::clut_walk_anim`).
+    clut: Option<legaia_engine_core::clut_walk_anim::ClutWalkAnim>,
     /// Ambient move-VM world (only the effect subsystem is used).
     ambient: Option<Box<legaia_engine_core::world::World>>,
     /// Vsyncs per game tick (retail `DAT_1F800393`).
@@ -130,20 +126,14 @@ pub fn build_field_scene_anim(
     let is_world_map = legaia_engine_core::scene::is_world_map_scene(&pack.name);
     let frame_step: u8 = if is_world_map { 3 } else { 2 };
 
-    // Walker table (any scene bundle; kingdom bundles resolve through the
-    // same by-type path).
-    let mut walker = None;
-    for entry in &scene.entries {
-        let Ok(table) = legaia_asset::clut_walk::from_scene_bundle(&entry.bytes) else {
-            continue;
-        };
-        for s in legaia_asset::clut_walk::scene_park_strips(&entry.bytes) {
-            pack.res.vram.write_block(s.fb_x, s.fb_y, s.w, s.h, &s.data);
-        }
-        let state = vec![(legaia_asset::clut_walk::ACCUMULATOR_SEED, 0usize); table.entries.len()];
-        walker = Some((table, state));
-        break;
-    }
+    // The CLUT-walk shimmer, resolved and parked by the engine kernel the
+    // play hosts call (`ClutWalkAnim::install`).
+    let clut = legaia_engine_core::clut_walk_anim::ClutWalkAnim::install(
+        &scene,
+        index,
+        &mut pack.res.vram,
+    )
+    .map(|i| i.anim);
 
     // Ambient move-VM tree: prescript stagers + the MAN P1 effect-script
     // installs (field scenes only; the overworld has no ambient tree).
@@ -193,12 +183,11 @@ pub fn build_field_scene_anim(
         }
     }
 
-    if walker.is_none() && ambient.is_none() {
+    if clut.is_none() && ambient.is_none() {
         return None;
     }
     Some(FieldSceneAnim {
-        walker,
-        ocean: None,
+        clut,
         ambient,
         frame_step,
         vsync_accum: 0,
@@ -206,33 +195,16 @@ pub fn build_field_scene_anim(
 }
 
 impl FieldSceneAnim {
-    /// Walker-only animation state for the **play** runtime
+    /// CLUT-walk-only animation state for the **play** runtime
     /// ([`crate::runtime::LegaiaRuntime`]): there the live scene host's own
     /// `World` carries the ambient move-VM tree (spawned at scene entry and
     /// drained per sim tick), so only the CLUT-walk half runs here.
-    pub(crate) fn walker_only(
-        table: legaia_asset::clut_walk::ClutWalkTable,
+    pub(crate) fn clut_only(
+        clut: legaia_engine_core::clut_walk_anim::ClutWalkAnim,
         frame_step: u8,
     ) -> FieldSceneAnim {
-        let state = vec![(legaia_asset::clut_walk::ACCUMULATOR_SEED, 0usize); table.entries.len()];
         FieldSceneAnim {
-            walker: Some((table, state)),
-            ocean: None,
-            ambient: None,
-            frame_step,
-            vsync_accum: 0,
-        }
-    }
-
-    /// Legacy ocean-head-only animation state: the 13-frame CLUT cycle
-    /// [`legaia_asset::ocean::find_ocean_assets`] decodes, for a kingdom
-    /// bundle whose slot-5 walker table does not parse. The browser twin of
-    /// the native `resolve_ocean_anim`'s fallback arm - `frames` is the raw
-    /// `13 x 32` byte run, and the whole cycle writes one CLUT row.
-    pub(crate) fn ocean_only(frames: Vec<u8>, frame_step: u8) -> FieldSceneAnim {
-        FieldSceneAnim {
-            walker: None,
-            ocean: Some((frames, 0, 0)),
+            clut: Some(clut),
             ambient: None,
             frame_step,
             vsync_accum: 0,
@@ -243,7 +215,12 @@ impl FieldSceneAnim {
     /// CLUT walker, bit 1 the legacy ocean-head cycle. Read by
     /// `LegaiaRuntime::play_field_anim_kind`.
     pub(crate) fn kind_code(&self) -> u32 {
-        u32::from(self.walker.is_some()) | (u32::from(self.ocean.is_some()) << 1)
+        use legaia_engine_core::clut_walk_anim::ClutWalkAnim;
+        match self.clut {
+            Some(ClutWalkAnim::Walk { .. }) => 1,
+            Some(ClutWalkAnim::Ocean { .. }) => 2,
+            None => 0,
+        }
     }
 
     /// Re-point the animator at the world's **live** vsyncs-per-game-tick
@@ -275,51 +252,10 @@ impl FieldSceneAnim {
             return false;
         }
         let mut wrote = false;
-        // Walker entries: acc += dt per game tick; on crossing the frame's
-        // hold, MoveImage the 16x1 source cell in and reset (the retail
-        // FUN_8001ada4 case-0xB law, same as the play-window animator).
-        if let Some((table, state)) = self.walker.as_mut() {
+        // The CLUT-walk shimmer, one engine step per game tick.
+        if let Some(clut) = self.clut.as_mut() {
             for _ in 0..game_ticks {
-                for (entry, (acc, idx)) in table.entries.iter().zip(state.iter_mut()) {
-                    *acc += dt;
-                    let frame = &entry.frames[*idx];
-                    if *acc < u32::from(frame.hold_vsyncs) {
-                        continue;
-                    }
-                    *acc = 0;
-                    vram.move_image(
-                        frame.src_x,
-                        frame.src_y,
-                        legaia_asset::clut_walk::COPY_WIDTH,
-                        1,
-                        entry.dest_x,
-                        entry.dest_y,
-                    );
-                    *idx = (*idx + 1) % entry.frames.len();
-                    wrote = true;
-                }
-            }
-        }
-        // Legacy ocean-head fallback: one cell, frame bytes written from the
-        // decoded table rather than copied from a parked strip. Same banking
-        // law as a walker entry (reset, not subtract-remainder), with the
-        // slot-5 ocean-head entry's own hold of 8 vsyncs.
-        if let Some((frames, cur, accum)) = self.ocean.as_mut() {
-            const OCEAN_ANIM_VSYNCS_PER_FRAME: u32 = 8;
-            let nframes = frames.len() / 32;
-            if nframes > 0 {
-                for _ in 0..game_ticks {
-                    *accum += dt;
-                    if *accum < OCEAN_ANIM_VSYNCS_PER_FRAME {
-                        continue;
-                    }
-                    *accum = 0;
-                    *cur = (*cur + 1) % nframes;
-                    let off = *cur * 32;
-                    // The ocean-head CLUT row: VRAM (0, 506).
-                    vram.write_clut_row(0, 506, &frames[off..off + 32]);
-                    wrote = true;
-                }
+                wrote |= clut.game_tick(dt, vram);
             }
         }
         // Ambient move-VM tree: bank the game ticks and drain against VRAM.
@@ -335,10 +271,12 @@ impl FieldSceneAnim {
     /// One-line status for the UI: walker entry count + live ambient parts.
     pub fn status(&self) -> (usize, usize) {
         (
-            self.walker
-                .as_ref()
-                .map(|(t, _)| t.entries.len())
-                .unwrap_or(0),
+            match self.clut.as_ref() {
+                Some(legaia_engine_core::clut_walk_anim::ClutWalkAnim::Walk { table, .. }) => {
+                    table.entries.len()
+                }
+                _ => 0,
+            },
             self.ambient
                 .as_ref()
                 .map(|w| w.ambient.fx.len())

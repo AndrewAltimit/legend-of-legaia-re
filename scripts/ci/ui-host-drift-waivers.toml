@@ -538,7 +538,7 @@ reason = "Each host's per-tick ANIMATE cue step, both a wrapper over the one eng
 host = "native"
 kernel = "advance_ocean_animation"
 host_only = true
-reason = "The world map's 13-frame ocean CLUT cycle. The page reaches the same cycle through `step_field_vram_fx`'s `step_ambient_fx` leg against its own VRAM copy, so it needs no separate step."
+reason = "The CLUT-walk shimmer (the overworld ocean and the field water / waterfall scenes), stepped through the one engine kernel `legaia_engine_core::clut_walk_anim::ClutWalkAnim::game_tick`. The page steps the same kernel inside `step_field_vram_fx` (its `FieldSceneAnim::tick`) against its own VRAM copy, so it needs no separately named step."
 
 [[frame_kernel]]
 host = "native"

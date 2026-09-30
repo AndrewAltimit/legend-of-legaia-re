@@ -506,6 +506,20 @@ NATIVE_TITLE_SAVE = (
 
 SIM_PAIRS: list[dict[str, object]] = [
     {
+        "what": "CLUT-walk shimmer install, native vs play page - the resolve "
+        "(type-6 table on a field scene, slot 5 on an overworld), the strip "
+        "park, the Drake complement and the ocean-head fallback were written "
+        "out once per host and had drifted in which rows a field scene parked "
+        "and which column the coverage test read. Both scene rebuilds must "
+        "install through `ClutWalkAnim::install`",
+        "sites": {
+            "native": (NATIVE_FIELD_RENDER, "resolve_ocean_anim"),
+            "web": (WEB_RUNTIME, "rebuild_render_state"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["ClutWalkAnim::install"],
+    },
+    {
         "what": "battle target-cursor cue, native vs play page - the pulse "
         "toward white on the pointed-at monster and the dim on the rest are "
         "the port's readout of the stamped render flag, and their numbers "

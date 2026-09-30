@@ -1469,58 +1469,14 @@ struct FieldNpcDraw {
     bound_model: i16,
 }
 
-/// World-map water/CLUT-cell animation state: the disc-derived kingdom
-/// slot-5 CLUT-walk table when the bundle ships it (every retail kingdom
-/// does), or the legacy single-cell ocean-head cycle as the fallback.
-enum WaterAnim {
-    Walk(ClutWalkAnim),
-    Ocean(OceanAnim),
-}
-
-/// Table-driven CLUT-walk animator: one independent accumulator per table
-/// entry, all sharing the same game-tick clock (retail spawns one walker
-/// actor per entry, and every accumulator steps by the same per-frame
-/// `DAT_1F800393` dt, so the entries stay phase-locked to a common epoch).
-// REF: FUN_80024cfc - the per-entry actor spawn (accumulator at +0x68,
-// seeded to 100 so every entry's first copy fires at scene entry).
-struct ClutWalkAnim {
-    /// The parsed kingdom slot-5 table ([`legaia_asset::clut_walk`]).
-    table: legaia_asset::clut_walk::ClutWalkTable,
-    /// Per-entry `(accumulator vsyncs, frame index)`, indexed like
-    /// `table.entries`.
-    state: Vec<(u32, usize)>,
-    /// Vsyncs counted toward the next retail *game tick* (a game tick spans
-    /// `World::clock.frame_step` vsyncs - the retail `DAT_1F800393` adaptive
-    /// frame-skip factor written by `FUN_80016B6C`).
+/// The scene's CLUT-walk shimmer (`legaia_engine_core::clut_walk_anim`, the
+/// one stepper both hosts run) and this host's vsync count toward the next
+/// retail game tick (a game tick spans `World::clock.frame_step` vsyncs - the
+/// retail `DAT_1F800393` factor).
+struct WaterAnim {
+    anim: legaia_engine_core::clut_walk_anim::ClutWalkAnim,
     vsyncs_to_game_tick: u32,
 }
-
-/// Legacy ocean-head cycle, kept only as the fallback for a kingdom bundle
-/// without a parseable slot-5 CLUT-walk table (no retail bundle hits this;
-/// it keeps the most visible effect - the sea shimmer - alive on a modified
-/// or damaged disc rather than freezing the ocean).
-struct OceanAnim {
-    /// 13 frames × 32 bytes (16 BGR555 entries each), as decoded by
-    /// [`legaia_asset::ocean::find_ocean_assets`].
-    frames: Vec<u8>,
-    /// Current frame index (`0..frames.len()/32`).
-    cur: usize,
-    /// Vsyncs counted toward the next retail *game tick* (see
-    /// [`ClutWalkAnim::vsyncs_to_game_tick`]).
-    vsyncs_to_game_tick: u32,
-    /// Vsync accumulator toward the next frame advance; each game tick adds
-    /// `frame_step` vsyncs and the frame advances (accumulator reset to
-    /// zero, the retail walker semantic) every
-    /// [`OCEAN_ANIM_VSYNCS_PER_FRAME`].
-    vsync_accum: u32,
-}
-
-/// Fallback-path vsyncs between ocean-head frame advances: the
-/// `hold_vsyncs` of the slot-5 ocean-head entry (`(0, 506)`, hold 8 - see
-/// [`legaia_asset::clut_walk`]), so even the fallback runs the disc-derived
-/// cadence (8 banked vsyncs -> a copy every 9 vsyncs at the overworld's
-/// `dt = 3`). The table-driven path reads the per-entry holds directly.
-const OCEAN_ANIM_VSYNCS_PER_FRAME: u32 = 8;
 
 /// Map a winit `KeyCode` to the user-friendly key name used in
 /// [`legaia_engine_core::input::Mapping`]. Returns `""` for keys outside
