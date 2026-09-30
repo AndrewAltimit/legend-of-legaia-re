@@ -112,6 +112,9 @@ opening, not a save. Tiers are cumulative:
 | 3 | `progresses` | The next milestone is reached by **seated** traversal plus the beats pass. |
 | 4 | `pad` | The next milestone is reached with pad input only. |
 
+A segment whose seed fails or lands outside its milestone scene, or whose
+seated pass panics, scores tier 0, `none`.
+
 **Seated traversal** follows the route hop by hop. On a field scene it seats
 the player one tile off a walk-on door and then onto it, so the engine's own
 tile-change dispatch fires the door record; on an overworld it seats the
@@ -220,10 +223,11 @@ The pad hand's beats are the seated tier's, played as a player plays them:
   the weakest member, Circle back out.
 
 A pad segment has a frame budget (`PAD_SEGMENT_FRAMES`); a segment the hand
-cannot finish inside it stalls with `pad frame budget spent` rather than holding
+cannot finish inside it stalls with `pad frame budget (N) spent` rather than holding
 the run. `LEGAIA_FGL_TRACE` prints each pad segment's frames and planner cost,
 and `LEGAIA_FGL_WALK_DEBUG` adds a stalled walk's wall map, the scene's
-teleports and door colliders.
+teleports and door colliders. `LEGAIA_FGL_PLAN_DEBUG` prints each object-door
+edge the planner adds.
 
 A door whose walk component the start cannot reach is tried through a
 **crossing scene**: a scene the current one has a door to and a door back
@@ -278,8 +282,9 @@ the tier - plus the tier sum over all segments.
 
 ## How to run
 
-The extracted tree and the save library live only in the main checkout, so a
-worktree points at them:
+The extracted tree and the save library default to `extracted/` and
+`saves/library/` under the repo root. They live only in the main checkout, so
+a worktree points at them:
 
 ```bash
 LEGAIA_EXTRACTED_DIR=/path/to/extracted \
@@ -291,10 +296,15 @@ cargo test -p legaia-engine-shell --profile release-test \
 `LEGAIA_DISC_BIN` must be set; without it, or without either tree, both parts
 print `[skip]` and pass. `LEGAIA_FGL_ONLY=<id>,...` runs only the segments
 ending at those milestones and does not assert the baseline;
-`LEGAIA_FGL_NO_PAD=1` skips the pad tier.
+`LEGAIA_FGL_NO_PAD=1` skips the pad tier. `LEGAIA_SCUS` defaults to the
+extracted tree's `SCUS_942.54`. Two part-A diagnostics:
+`LEGAIA_FGL_EDGES=<scene>,...` prints each named scene's out- and in-edges
+(`*` marks a scripted one), and `LEGAIA_FGL_GAINED=<id>,...` prints every flag
+each named milestone's anchor gained or lost over its predecessor, with its
+disc SET sites - the evidence a waypoint is chosen from.
 
-The ratchet asserts every per-segment tier and both headline counts `>=` the
-baseline. Raise the baseline in a reviewed edit from the block the run prints;
+The ratchet asserts every per-segment tier, both headline counts and the tier
+sum `>=` the baseline. Raise the baseline in a reviewed edit from the block the run prints;
 never lower it to make a red run green.
 
 ## How to read a stall
@@ -304,6 +314,7 @@ one level down from the tier that failed:
 
 | Line shape | Meaning |
 |---|---|
+| `seed: ...` / `seed landed A in <mode>, milestone scene is B` | The resume failed, or did not land walking in the milestone's scene (tier 0). |
 | `entry script never released: <holder> at <ctx> pc=.. op=..` | The pad holder - cutscene timeline, dialogue, spawned record - parked on that instruction for a whole window. |
 | `hop A -> B: no walk-on door to B (...)` | Scene A's `0x3F` to B is carried by a talk, touch or scripted record; seating cannot trigger it, and no talk the ladder can find leads there. |
 | `no walk-on door to B; talks that lead there did not leave: ...` | A talk whose record (or a record it spawns) names B ran, and the scene stayed. |

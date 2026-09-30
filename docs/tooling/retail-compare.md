@@ -308,7 +308,10 @@ gitignored (`captures/` is).
 `scripts/ci/retail-compare-baseline.json` holds, per state label, each
 measured channel's score, plus every state's class. The test
 `retail_compare_corpus` re-runs the corpus and fails when any state's
-channel falls below its baselined score. A rise is allowed and is folded in
+channel falls more than `0.0005` (the JSON round-trip slack) below its
+baselined score, when a baselined channel of a state the run did seed goes
+unmeasured, when a seedable state fails to seed, or when no state is seeded
+at all. A rise is allowed and is folded in
 by a reviewed `--bless`. A bless merges into the existing file: a state
 outside a `--filter`, or the image channel on a run without a display, keeps
 its baselined value rather than being dropped. A baselined state missing from the local library is
@@ -334,9 +337,16 @@ LEGAIA_SAVES_LIBRARY=... LEGAIA_EXTRACTED_DIR=... \
   cargo test -p legaia-engine-shell --profile release-test --test retail_compare_corpus -- --nocapture
 ```
 
-The subcommand is `legaia-engine retail-compare` with the same flags
-(`--library`, `--extracted-root`, `--manifest`, `--out`, `--images`,
-`--filter`, `--flags-first`, `--write-baseline`, `--check-baseline`).
+The driver builds `legaia-engine` under the `release-test` profile first
+(`--no-build` skips that), writes the report to `--out` (default
+`captures/retail-compare/`), and exits 0 with a `[skip]` line when the
+library or the extracted disc is missing; it looks for both in the worktree
+and then in the main checkout.
+
+The subcommand is `legaia-engine retail-compare`, which takes `--library`,
+`--extracted-root`, `--manifest`, `--out`, `--images`, `--filter`,
+`--flags-first`, `--write-baseline` (the driver's `--bless`) and
+`--check-baseline` (the driver's `--check`).
 
 ## Reading the report
 

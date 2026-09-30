@@ -23,6 +23,16 @@ when a ladder reaches it or the wiring lands. What outlives the rows is the
 bucket definitions plus the structural facts below about what a pad-only ladder
 can and cannot execute at all.
 
+The export recipe is the script's own module docstring: one
+`target/cov-<test>.json` per ladder that `--list-ladders` prints as
+`<test> <package>`. A bare run joins every `target/cov-*.json` (`--json PATH`,
+repeatable, names them instead) and writes the report to `--out`, by default
+`target/port-catalog/replay-port-entry.md`. `--fail-on-disclosed` exits
+non-zero when a `NOT WIRED` anchor ran, `--page-audit` is the page check
+[below](#a-row-can-leave-this-page-without-a-ladder-reaching-it), and
+`--selftest` exercises the item-verdict resolver on a synthetic corpus. The
+script skips (exit 0) when no export is present.
+
 ## The three figures, and the denominator they belong to
 
 The report opens with three counts over the canonical union: the `// PORT:`

@@ -124,14 +124,17 @@ player-owned modal (name entry, a shop).
 
 A finding's **signature** is `detector|scene|location`. Findings are
 deduplicated by signature and ranked: panics, hangs and tick errors first;
-softlocks, battle loops and stuck menus next; free-roam immobility and
-script stalls after; value checks last.
+softlocks, battle loops, stuck menus, endless battles, drops to title and
+unknown scenes next; free-roam immobility and script stalls after; value,
+non-finite, queue-growth and save round-trip checks last.
 
 A soak writes `target/soak/<tag>/` (gitignored with `target/`):
 
 - `report.md` - volume, mode coverage, and the ranked signature table;
 - `findings.json` - the same rows, machine-readable;
-- `replays/<signature>.replay.toml` - one `j-replay-v1` file per signature.
+- `replays/<slug>.replay.toml` - one `j-replay-v1` file per signature, named
+  by the signature with every non-alphanumeric character turned to `_` (cut
+  at 96 characters).
 
 For each signature the first occurrence is **confirmed** (replayed from its
 pads, truncated to the finding frame, and checked to fire again) and then
@@ -189,7 +192,7 @@ CARGO_PROFILE_RELEASE_TEST_DEBUG_ASSERTIONS=true \
 ## Reproducing and triaging a finding
 
 ```bash
-LEGAIA_SOAK_REPLAY=target/soak/big/replays/<signature>.replay.toml LEGAIA_SOAK_TRACE=60 \
+LEGAIA_SOAK_REPLAY=target/soak/big/replays/<slug>.replay.toml LEGAIA_SOAK_TRACE=60 \
   cargo test -p legaia-engine-shell --profile release-test --test soak_harness soak_replay -- --nocapture
 ```
 
@@ -258,7 +261,8 @@ The field-side fixes are described with their retail evidence in
   tile, a script branch the port takes and retail does not - all look like
   progress. The parity oracles own that question.
 - **Anything past the first finding in a run.** A run stops at its first
-  fatal finding (panic, softlock, stuck menu, endless battle).
+  fatal finding (panic, tick error, softlock, stuck menu, endless battle,
+  drop to title), and at a game over.
 - **Deep progression.** Every run starts from a New Game party in the scene
   it names, and a New Game party loses most late-game encounters; the harness
   does not cheat past that (the HP-bar pair makes a bare HP top-up a false
