@@ -252,7 +252,12 @@ clip has run instead: the clip's commit zeroes the close-up accumulator
 that many vsyncs after its caster commits clip `9` (the `a<acc>` suffix of
 `LEGAIA_CAPTURE_GATE`). `0x33` itself runs until the clip's first effect
 record fires, so the state alone placed the frame at the band's first
-vsync, before the commit.
+vsync, before the commit. A capture inside PROT 0903's walk arm (`11`) is
+placed by the yaw base `ctx[+0x6DA]` the arm swings `6 * scalar` a vsync
+from `0x200` (the `y<yaw>` suffix), since the phase byte only names the
+arm's entry; an engine walk that arrives sooner leaves the arm first, and
+its exit is then the frame taken. The headless seed seats no creature, so
+its walk arm passes at once.
 
 The frame and the RAM are not the same instant. Retail double-buffers its
 packet pools, so while the CPU builds frame `N` the display scans out

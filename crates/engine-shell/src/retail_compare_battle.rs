@@ -140,6 +140,8 @@ pub struct RetailBattle {
     pub cam_accum: u32,
     /// The active seat's committed clip `+0x1D9`.
     pub caster_clip: u8,
+    /// `ctx[+0x6DA]` - the yaw base a module walk arm swings.
+    pub walk_yaw_base: u16,
 }
 
 /// The summon band's live full-screen flash in a capture: which of the two
@@ -275,6 +277,10 @@ pub fn display_lag_vsyncs(ram: &[u8]) -> u16 {
 /// The caster's invoke clip through the summon band (`0x32` stages
 /// `actor[+0x1DA] = 9`).
 const SUMMON_INVOKE_CLIP: u8 = 9;
+/// PROT 0903 (Gimard) and its walk-in arm, the one module arm that hands
+/// the camera to case 6 (`FUN_801D5854(7, 6)`).
+const GIMARD_MODULE: u32 = 903;
+const GIMARD_WALK_ARM: u8 = 11;
 
 /// Where in the summon band a capture sits, as an engine frame has to be
 /// gated to match it: the action-SM state, and - while a flash is up - the
@@ -297,6 +303,17 @@ pub struct PhaseGate {
     /// the engine frame is taken that many vsyncs after its caster commits
     /// the same clip.
     pub cam_accum: Option<u32>,
+    /// For a capture inside PROT 0903's walk arm (`11`): retail's yaw base
+    /// `ctx[+0x6DA]`, which arm 10 seats at `0x200` and the walk swings by
+    /// `6 * scalar * delta` a pass. The module phase is the arm's entry; this
+    /// is how far into the walk the frame is.
+    pub walk_yaw: Option<u16>,
+}
+
+/// How far a walk-arm yaw base has swung from its seat (`0x200`), in
+/// 12-bit units.
+fn walk_swing(yaw: i32) -> i32 {
+    (yaw - legaia_engine_vm::cast_module_camera::GIMARD_WALK_YAW_BASE) & 0xFFF
 }
 
 impl PhaseGate {
@@ -308,6 +325,9 @@ impl PhaseGate {
         }
         if let Some(a) = self.cam_accum {
             s.push_str(&format!(",a{a}"));
+        }
+        if let Some(y) = self.walk_yaw {
+            s.push_str(&format!(",y{y}"));
         }
         s
     }
@@ -326,6 +346,14 @@ impl PhaseGate {
 
     pub fn from_env(s: &str) -> Option<Self> {
         let mut parts: Vec<&str> = s.split(',').map(str::trim).collect();
+        let walk_yaw = match parts.last() {
+            Some(t) if t.starts_with('y') => {
+                let y = t[1..].parse().ok()?;
+                parts.pop();
+                Some(y)
+            }
+            _ => None,
+        };
         let cam_accum = match parts.last() {
             Some(t) if t.starts_with('a') => {
                 let a = t[1..].parse().ok()?;
@@ -356,6 +384,7 @@ impl PhaseGate {
             fade,
             module_phase,
             cam_accum,
+            walk_yaw,
         })
     }
 
@@ -368,6 +397,14 @@ impl PhaseGate {
         }
         if let Some(p) = self.module_phase
             && world.casting.module_phase < p
+        {
+            return false;
+        }
+        // A walk that arrives sooner than retail's leaves the arm before its
+        // yaw gets as far; the arm's exit is then the nearest frame.
+        if let Some(y) = self.walk_yaw
+            && world.casting.module_phase <= GIMARD_WALK_ARM
+            && walk_swing(world.casting.module_cam.yaw_base) < walk_swing(i32::from(y))
         {
             return false;
         }
@@ -426,6 +463,12 @@ impl RetailBattle {
         if let Some(a) = g.cam_accum.as_mut() {
             *a = a.saturating_sub(u32::from(self.display_lag) * 8);
         }
+        if let Some(y) = g.walk_yaw.as_mut() {
+            // `6 * scalar` a vsync, taken back no further than the seat.
+            let per_vsync = 6 * legaia_engine_vm::cast_module_camera::MODULE_DRAIN_PER_TICK;
+            let back = (i32::from(self.display_lag) * per_vsync).min(walk_swing(i32::from(*y)));
+            *y = ((i32::from(*y) - back) & 0xFFF) as u16;
+        }
         Some(g)
     }
 
@@ -445,11 +488,16 @@ impl RetailBattle {
             && self.summon_fade.is_none()
             && self.caster_clip == SUMMON_INVOKE_CLIP)
             .then_some(self.cam_accum);
+        // PROT 0903's walk arm hands the camera to case 6 on the walking
+        // creature; its yaw base says how far in the frame is.
+        let walk_yaw = (entry == GIMARD_MODULE && module_phase == Some(GIMARD_WALK_ARM))
+            .then_some(self.walk_yaw_base);
         Some(PhaseGate {
             action_state: self.action_state,
             fade: self.summon_fade,
             module_phase,
             cam_accum,
+            walk_yaw,
         })
     }
 }
@@ -526,6 +574,7 @@ impl RetailBattle {
             display_lag: display_lag_vsyncs(ram),
             cam_accum: game_anchors::u32_at(ram, ctx + 0x87C),
             caster_clip: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1D9)),
+            walk_yaw_base: game_anchors::u16_at(ram, ctx + 0x6DA),
             module_phase: game_anchors::u8_at(ram, ctx + 0x279),
         })
     }
@@ -1132,6 +1181,7 @@ mod tests {
                 fade: None,
                 module_phase: None,
                 cam_accum: None,
+                walk_yaw: None,
             },
             PhaseGate {
                 action_state: 0x35,
@@ -1141,12 +1191,14 @@ mod tests {
                 }),
                 module_phase: None,
                 cam_accum: None,
+                walk_yaw: None,
             },
             PhaseGate {
                 action_state: 0x36,
                 fade: None,
                 module_phase: Some(6),
                 cam_accum: Some(72),
+                walk_yaw: Some(1497),
             },
         ] {
             assert_eq!(PhaseGate::from_env(&g.to_env()), Some(g));
