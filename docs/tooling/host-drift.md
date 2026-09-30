@@ -3520,6 +3520,12 @@ or the deviating host adopting the other's behaviour.
   choreography, the pose and `DomeCamera::vp_raw` - and upload what it
   returns, under two `SIM_PAIRS` rows. The standalone minigames page keeps
   its own dome panel (`minigame-muscle.js`).
+- **The battle-intro arming.** The PROT 0979 load and relocation, the
+  curtain table and tile-corner fallbacks, the shade-pack parse and the two
+  `IntroEnv` seeds were written out on both hosts, with only the style inputs
+  shared. `BattleIntro::arm_for_battle` (`engine-ui::battle_intro`) is the
+  arming now; the page adds only its bottom-up capture flip. A `SIM_PAIRS`
+  row holds both `arm_battle_intro` sites to it.
 - **Small copies moved onto one call.** The spoils line's leader name
   (`World::battle_spoils_leader`) and a save's resume point
   (`SceneHost::current_resume`, behind the native session's wrapper and the
@@ -3546,11 +3552,10 @@ that could drift; none is gated.
   toggle's directional light and screen-centred light pool also have no page
   toggle or shader path.
 - **Copies with no kernel under them yet.** Each is one derivation written on
-  both hosts, equal today: the battle-intro arming (PROT 0979 loader, the tile
-  corner fallback, the shade-pack parse, the two `IntroEnv` seeds - only the
-  style inputs are shared), the Seru-trade screen's text, the save-select overlay sequence (and
-  the page drops its text entirely without the chrome atlas, where the native
-  window draws it either way), and the shop root / Options row models.
+  both hosts, equal today: the Seru-trade screen's text, the save-select
+  overlay sequence (and the page drops its text entirely without the chrome
+  atlas, where the native window draws it either way), and the shop root /
+  Options row models.
 - **The fishing wander readout (native only).** A dev-menu debug readout of
   `FUN_801d2050`'s tracked points; the page's dev menu has no twin.
 - **The dance HUD quads (neither host).** The native window calls

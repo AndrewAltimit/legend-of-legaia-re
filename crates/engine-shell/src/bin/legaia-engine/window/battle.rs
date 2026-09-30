@@ -1054,82 +1054,37 @@ impl PlayWindowApp {
     /// engine feeds it the resolved formation and the loaded scene so a given
     /// battle gets the style retail gives it.
     fn arm_battle_intro(&self, formation_id: u16, total: i32) -> BattleIntro {
-        use legaia_engine_vm::battle_intro_styles::select_intro_style;
-
         // All three selector inputs come out of one engine-side resolver
-        // (`SceneHost::battle_intro_style_inputs`), so the browser play page's
-        // own arming cannot answer them differently - it did, on
-        // `formation_slot0`, which is the input every id-keyed style override
-        // keys on.
-        let inputs = self.session.host.battle_intro_style_inputs(formation_id);
-        let (slot0, battle_flags) = (inputs.formation_slot0, inputs.battle_flags);
-        let choice = select_intro_style(&inputs);
-        let table = self
-            .intro_quad_table()
-            .unwrap_or_else(legaia_engine_render::battle_intro::IntroQuadTable::neutral);
-        log::info!(
-            "play-window: battle intro style {:?} (sub {}) for formation slot0 {slot0:#04x}, \
-             battle flags {battle_flags:#04x}",
-            choice.style,
-            choice.sub_style
-        );
-        let seed = self.session.host.world.rng_state;
-        let mut env = IntroEnv::new(seed);
-        let mut trig = IntroEnv::new(seed);
-        // The tile seeder's corner table, decoded off PROT 0979 at
-        // `0x801CE8BC`; the documented `[0, 1, 17, 18]` is the disc-free
-        // fallback, so a host without the entry seeds the same grid.
-        let corners = self
-            .intro_overlay_loaded()
-            .and_then(|(img, base)| {
-                legaia_engine_render::battle_intro::parse_tile_corner_table(&img, base)
-            })
-            .unwrap_or([0, 1, 0x11, 0x12]);
-        // The shade page the shatter's side faces sample (field-character
-        // texture pack entry 0) - parsed from the disc so the capture can
-        // land it in the transition's cloned VRAM page.
-        let shade = self
-            .session
-            .host
+        // (`SceneHost::battle_intro_style_inputs`), and the arming itself -
+        // the PROT 0979 tables with their disc-free fallbacks, the shade
+        // pack, the env seeds - is the one `BattleIntro::arm_for_battle` the
+        // browser play page calls too.
+        let host = &self.session.host;
+        let inputs = host.battle_intro_style_inputs(formation_id);
+        let overlay = host
+            .index
+            .entry_bytes_extended(legaia_engine_render::battle_intro::INTRO_OVERLAY_PROT)
+            .ok();
+        let shade = host
             .index
             .entry_bytes(legaia_asset::field_char_textures::PROT_ENTRY_INDEX)
-            .ok()
-            .and_then(|b| legaia_asset::field_char_textures::parse(&b).ok());
-        BattleIntro::new(
-            choice.style,
-            choice.sub_style,
+            .ok();
+        let intro = BattleIntro::arm_for_battle(
+            &inputs,
             total,
-            table,
-            &mut env,
-            &mut trig,
-            corners,
-        )
-        .with_shade_pack(shade)
-    }
-
-    /// The PROT 0979 intro overlay relocated to its load base, for the two
-    /// in-overlay data tables ([`IntroQuadTable`], the tile corner table).
-    fn intro_overlay_loaded(&self) -> Option<(Vec<u8>, u32)> {
-        const INTRO_OVERLAY_PROT: u32 = 979;
-        let raw = self
-            .session
-            .host
-            .index
-            .entry_bytes_extended(INTRO_OVERLAY_PROT)
-            .ok()?;
-        let rec = legaia_asset::static_overlay::overlay_map().by_prot_index(INTRO_OVERLAY_PROT)?;
-        let as_loaded = legaia_asset::static_overlay::as_loaded(&raw, rec).ok()?;
-        Some((as_loaded, rec.base_va))
-    }
-
-    /// Parse the curtain style's descriptor table out of PROT 0979.
-    ///
-    /// `None` when the entry cannot be read or the overlay map has no base for
-    /// it, in which case the emitter falls back to a neutral table - the
-    /// strips then carry the capture unmodulated instead of not drawing.
-    fn intro_quad_table(&self) -> Option<legaia_engine_render::battle_intro::IntroQuadTable> {
-        let (as_loaded, base_va) = self.intro_overlay_loaded()?;
-        legaia_engine_render::battle_intro::IntroQuadTable::parse_overlay(&as_loaded, base_va)
+            overlay.as_deref(),
+            shade.as_deref().map(Vec::as_slice),
+            host.world.rng_state,
+        );
+        log::info!(
+            "play-window: battle intro style {:?} (sub {}) for formation slot0 {:#04x}, \
+             battle flags {:#04x}",
+            intro.style(),
+            intro.sub_style(),
+            inputs.formation_slot0,
+            inputs.battle_flags
+        );
+        intro
     }
 
     /// Bring the transition's private VRAM page up to date for this frame and
@@ -1776,13 +1731,6 @@ impl PlayWindowApp {
         )
     }
 }
-
-// The trig / sqrt / PRNG the intro styles' seeders reach into moved to
-// `legaia_engine_vm::battle_intro_particles::IntroEnv` - the browser play
-// page arms the same emitter now, and a per-host env is exactly the drift
-// (a degenerate local LCG once stopped the tile shatter dead) the shared
-// type exists to prevent.
-use legaia_engine_vm::battle_intro_particles::IntroEnv;
 
 /// Drop the `tmd_binding` of every actor slot the battle loader did **not**
 /// just register, and report the slots dropped.

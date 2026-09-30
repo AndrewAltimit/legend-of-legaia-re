@@ -593,6 +593,19 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["vp_raw"],
     },
     {
+        "what": "battle-intro arming, native vs play page - the PROT 0979 "
+        "load and relocation, the curtain table and tile-corner fallbacks, "
+        "the shade-pack parse and the two env seeds were written out once per "
+        "host, only the style inputs shared. Both arms must build the "
+        "emitter through `BattleIntro::arm_for_battle`",
+        "sites": {
+            "native": (NATIVE_BATTLE, "arm_battle_intro"),
+            "web": (WEB_PLAY_BATTLE, "arm_battle_intro"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["arm_for_battle"],
+    },
+    {
         "what": "shop item label, native vs play page - a nameless id (a "
         "load without the executable) printed `item 42` in the native shop "
         "and `Item 2A` on the page, each host spelling its own fallback. Both "

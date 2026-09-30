@@ -42,7 +42,7 @@ use legaia_engine_core::battle_hud::{
     encounter_banner_enabled, encounter_banner_label, sync_battle_hud_rows,
 };
 use legaia_engine_core::world::SceneMode;
-use legaia_engine_ui::battle_intro::{BattleIntro, IntroQuadTable};
+use legaia_engine_ui::battle_intro::BattleIntro;
 use legaia_engine_ui::{self as ui, HudPopupView, HudSlotMeta, HudSlotView, SpriteDraw, TextDraw};
 use wasm_bindgen::prelude::*;
 
@@ -2229,66 +2229,30 @@ impl LegaiaRuntime {
     /// row's own per-battle flags byte (`DAT_8007BD60` bit `0x80`, the only
     /// bit the selector reads), and the scene's PROT base (`DAT_80084540`).
     fn arm_battle_intro(&self, formation_id: u16, total: i32) -> BattleIntro {
-        use legaia_engine_vm::battle_intro_particles::IntroEnv;
-        use legaia_engine_vm::battle_intro_styles::select_intro_style;
-
         let host = self.scene_host.as_ref().expect("caller checked");
         // One engine-side resolver for all three inputs
-        // (`SceneHost::battle_intro_style_inputs`). This host used to resolve
-        // them inline and went straight from the formation-table lookup to
-        // the bare row index for `formation_slot0`, with no live-monster-table
-        // leg - so an in-battle re-arm, where the row is not the authority,
-        // fed the selector a row index and drew the default style.
+        // (`SceneHost::battle_intro_style_inputs`) and one arming
+        // (`BattleIntro::arm_for_battle`, the native window's call too): the
+        // PROT 0979 tables with their disc-free fallbacks, the shade pack,
+        // the env seeds.
         let inputs = host.battle_intro_style_inputs(formation_id);
-        let choice = select_intro_style(&inputs);
-        // The curtain's descriptor table + the tile seeder's corner table,
-        // both decoded off the PROT 0979 intro overlay at its load base; the
-        // disc-free fallbacks are the same ones the native window uses.
-        let overlay = self.intro_overlay_loaded();
-        let table = overlay
-            .as_ref()
-            .and_then(|(img, base)| IntroQuadTable::parse_overlay(img, *base))
-            .unwrap_or_else(IntroQuadTable::neutral);
-        let corners = overlay
-            .as_ref()
-            .and_then(|(img, base)| {
-                legaia_engine_ui::battle_intro::parse_tile_corner_table(img, *base)
-            })
-            .unwrap_or([0, 1, 0x11, 0x12]);
-        // The shade page the shatter's side faces sample (field-character
-        // texture pack entry 0), parsed from the disc so the capture can
-        // land it in the transition's cloned VRAM page.
+        let overlay = host
+            .index
+            .entry_bytes_extended(legaia_engine_ui::battle_intro::INTRO_OVERLAY_PROT)
+            .ok();
         let shade = host
             .index
             .entry_bytes(legaia_asset::field_char_textures::PROT_ENTRY_INDEX)
-            .ok()
-            .and_then(|b| legaia_asset::field_char_textures::parse(&b).ok());
-        let seed = host.world.rng_state;
-        let mut env = IntroEnv::new(seed);
-        let mut trig = IntroEnv::new(seed);
-        BattleIntro::new(
-            choice.style,
-            choice.sub_style,
+            .ok();
+        BattleIntro::arm_for_battle(
+            &inputs,
             total,
-            table,
-            &mut env,
-            &mut trig,
-            corners,
+            overlay.as_deref(),
+            shade.as_deref().map(Vec::as_slice),
+            host.world.rng_state,
         )
-        .with_shade_pack(shade)
         // `gl.readPixels` hands rows bottom-up; the shared blit flips them.
         .with_flipped_capture()
-    }
-
-    /// The PROT 0979 intro overlay relocated to its load base, for the two
-    /// in-overlay data tables the arm reads.
-    fn intro_overlay_loaded(&self) -> Option<(Vec<u8>, u32)> {
-        const INTRO_OVERLAY_PROT: u32 = 979;
-        let host = self.scene_host.as_ref()?;
-        let raw = host.index.entry_bytes_extended(INTRO_OVERLAY_PROT).ok()?;
-        let rec = legaia_asset::static_overlay::overlay_map().by_prot_index(INTRO_OVERLAY_PROT)?;
-        let as_loaded = legaia_asset::static_overlay::as_loaded(&raw, rec).ok()?;
-        Some((as_loaded, rec.base_va))
     }
 }
 
