@@ -221,11 +221,15 @@ Indexed modes must fit the palette (16 / 256 distinct 15-bit colors). Colors
 already in the original palette are free; new colors overwrite slots the new
 image no longer references. Overflow is a hard error listing the offending
 pixel coordinates + colors, or - behind an explicit quantize opt-in - the
-least-frequent extras fold to their nearest palette color. When any palette
-slot changes, the rebuilt palette is **replicated into every CLUT row**
-(multi-palette variants would otherwise recolor the new indices with stale
-rows); an untouched palette keeps the whole original CLUT block
-byte-identical.
+least-frequent extras fold to their nearest palette color. Only the palette
+the image was drawn through (`EncodeOptions::palette`, 0 by default) is ever
+rewritten; every other palette of a multi-palette CLUT stays byte-identical.
+The game picks a palette per sprite, so a multi-palette TIM is several
+colourings of one set of indices, and copying the edited palette over the
+others would recolour every region drawn through them. Editing several
+palettes at once - per-region views, the palette strip, the composite, the
+indexed PNG - is `legaia_tim::multi_palette`; the workflow is in
+[`textures-and-fonts.md`](../tooling/translation/textures-and-fonts.md#multi-palette-textures).
 
 ## Why an exported palette can look wrong
 

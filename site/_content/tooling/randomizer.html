@@ -770,13 +770,31 @@ legaia-patcher chests --input DISC.bin                     # read-only listing</
     <thead><tr><th>Subcommand</th><th>Args</th><th>Notes</th></tr></thead>
     <tbody>
       <tr><td>tim-list</td><td></td><td>Both catalogs: <strong>raw</strong> (standalone entries, timpack members, the system-UI gap) and <strong>lzs</strong> (inside compressed sections).</td></tr>
-      <tr><td>tim-export</td><td>--entry N --offset K -o out.png</td><td>Decode one texture.</td></tr>
-      <tr><td>tim-replace</td><td>--entry N --offset K --png in.png [--quantize]</td><td>Same pixel size required; colours must fit the palette (or be quantized).</td></tr>
+      <tr><td>tim-export</td><td>--entry N --offset K [--format image|composite|strip|indexed] [--clut K | --in-game] -o out.png</td><td>Decode one texture; a multi-palette one can also come with every palette, or as its palettes alone.</td></tr>
+      <tr><td>tim-palette-map</td><td>--entry N --offset K</td><td>Which palette the game draws each region through (the menu / battle UI sheet).</td></tr>
+      <tr><td>tim-replace</td><td>--entry N --offset K --png in.png [--quantize]</td><td>Same pixel size required; colours must fit the palette (or be quantized). Recognises every <code>tim-export</code> shape.</td></tr>
       <tr><td>&nbsp;&nbsp;--tier battle --battle-slot</td><td>record / header0 / header1</td><td>The battle-equipment upload block, which is not a TIM.</td></tr>
     </tbody>
   </table>
   <details class="disclosure"><summary>How it is patched</summary><div class="disclosure-body">
     <p>The encoder copies the original's pixel mode, CLUT layout and VRAM placement fields (<a href="../formats/tim.html">TIM</a>); alpha maps to the semi-transparency bit. A raw-tier texture always applies; an lzs-tier one only when its section re-compresses into the original footprint - the battle-equipment art is the tightest, with as little as two spare bytes in one record. A monster sheet is shown through the palettes its model uses and its palettes are never rewritten. Browser change packs carry your images plus a fingerprint of each retail texture, never the game's pixels. See also <a href="../formats/npc-palette.html">NPC palettes</a> and <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/save-icon.md" target="_blank" rel="noopener">save icons</a>.</p>
+  </div></details>
+</section>
+
+<section class="doc-section" id="multi-palette-textures">
+  <h3>Textures with several palettes</h3>
+  <p>A 4bpp texture stores color <em>numbers</em>, not colors, and many carry several 16-color palettes. The game picks the palette per sprite, so one texture is several colorings of the same pixels - the menu / battle UI sheet holds sixteen, and through any single one most of its badges, plates and labels show the wrong colors. Three downloads cover the edit loop, and the upload box (or <code>tim-replace</code>) recognises each one by its shape:</p>
+  <table class="layout">
+    <thead><tr><th>Download</th><th>What it is</th><th>What an edit changes</th></tr></thead>
+    <tbody>
+      <tr><td>The texture</td><td>Its own size, through the palette chosen in <em>Show colors through</em> (or each region's in-game palette).</td><td>Pixels, and a new color lands in a free slot of the palette that region is drawn with.</td></tr>
+      <tr><td>With every palette</td><td>That image, plus one row of color cells per palette below it.</td><td>Pixels and palette colors together; a recolored cell carries to every pixel using it.</td></tr>
+      <tr><td>Palettes only</td><td>One row of 16 cells per palette.</td><td>Colors only - no pixel moves.</td></tr>
+      <tr><td>Indexed PNG</td><td>The stored color numbers, one palette attached for display.</td><td>Color numbers only - no palette moves.</td></tr>
+    </tbody>
+  </table>
+  <details class="disclosure"><summary>How the palette of a region is known</summary><div class="disclosure-body">
+    <p>The texture file does not say which palette a region is drawn with; the draw call does. For the UI sheet it is disc data: the executable's widget table lists every sprite's rectangle and the palette it is drawn through (<code>tim-palette-map</code> prints it). Three of its status badges use palettes stored in a small sibling texture, which stay read-only here, and one rectangle (the button glyphs) is covered at runtime by another texture - edit that one instead. For every other texture, every palette is an equally valid view. Only the palettes an edit actually changes are rewritten; every other palette stays byte-identical, and a no-change round trip writes nothing.</p>
   </div></details>
 </section>
 

@@ -65,6 +65,14 @@ Pixel widths in real pixels:
   behind an explicit quantize opt-in. Alpha -> STP rule + the palette rules:
   [`docs/formats/tim.md`](../../docs/formats/tim.md#encoding-png---tim-texture-replacement).
   Consumed by `legaia-patcher tim-replace` and the site ROM-patcher page.
+  Only the palette the image was drawn through (`EncodeOptions::palette`) is
+  ever rewritten.
+- `multi_palette` - editing a TIM with several palettes: per-pixel palette
+  maps (`decode_mapped` / `encode_mapped`, with read-only external palettes),
+  the palette strip, the composite (image + strip), indexed-PNG export, and
+  `import_png`, which recognises which of those shapes a PNG is and writes it
+  back into the original layout with every untouched palette byte-identical.
+  Workflow: [`textures-and-fonts.md`](../../docs/tooling/translation/textures-and-fonts.md#multi-palette-textures).
 
 ## CLI
 

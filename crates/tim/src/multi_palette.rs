@@ -444,14 +444,19 @@ pub fn index_mapped(
 
     const UNSET: usize = usize::MAX;
     let mut idx = vec![UNSET; n];
-    let mut used = vec![false; per];
+    // Slot usage is per palette: slot `s` of palette `p` is taken when a
+    // pixel the map draws through `p` stores index `s`. A slot no pixel of
+    // `p` uses may take a new colour in `p` without changing any other
+    // pixel's display - pixels of other palettes read their own palette's
+    // slot `s`. (Under a uniform map this is the plain "unused index" rule.)
+    let mut used = vec![vec![false; per]; new_sets.len()];
 
     // Pass A: positional reuse against what the original displayed.
     for i in 0..n {
         let (p, oi) = (map[i] as usize, orig_index[i] as usize);
         if oi < per && bgr555_to_rgba8(orig_sets[p][oi]) == canon[i] {
             idx[i] = oi;
-            used[oi] = true;
+            used[p][oi] = true;
         }
     }
     // Pass B: first entry of the pixel's (edited) palette with the colour.
@@ -468,7 +473,7 @@ pub fn index_mapped(
             && let Some(&s) = first_slot[map[i] as usize].get(&canon[i])
         {
             idx[i] = s;
-            used[s] = true;
+            used[map[i] as usize][s] = true;
         }
     }
 
@@ -502,17 +507,18 @@ pub fn index_mapped(
 
     let mut order: Vec<usize> = (0..pending.len()).collect();
     order.sort_by_key(|&k| std::cmp::Reverse(pending[k].pixels.len()));
-    let free: Vec<usize> = (0..per).filter(|&s| !used[s]).collect();
-    let mut free_iter = free.iter().copied();
     let mut stats = MappedStats::default();
+    let mut new_in: Vec<usize> = vec![0; new_sets.len()];
     let mut leftover: Vec<usize> = Vec::new();
     for &k in &order {
         let pd = &pending[k];
-        if pd.palette < editable
-            && let Some(slot) = free_iter.next()
-        {
+        let free = (pd.palette < editable)
+            .then(|| (0..per).find(|&s| !used[pd.palette][s]))
+            .flatten();
+        if let Some(slot) = free {
             new_sets[pd.palette][slot] = pd.texel;
-            used[slot] = true;
+            used[pd.palette][slot] = true;
+            new_in[pd.palette] += 1;
             stats.new_entries += 1;
             for &i in &pd.pixels {
                 idx[i] = slot;
@@ -539,10 +545,12 @@ pub fn index_mapped(
                 samples,
             });
         }
-        let matched = used.iter().filter(|&&u| u).count();
+        let p0 = pending[leftover[0]].palette;
+        let matched = used[p0].iter().filter(|&&u| u).count() - new_in[p0];
+        let wanted = pending.iter().filter(|pd| pd.palette == p0).count();
         return Err(EncodeError::TooManyColors {
             capacity: per,
-            needed: matched - stats.new_entries + pending.len(),
+            needed: matched + wanted,
             overflow: leftover.len(),
             samples,
         });
@@ -552,7 +560,7 @@ pub fn index_mapped(
         let pd = &pending[k];
         let pal = &new_sets[pd.palette];
         let want = bgr555_to_rgba8(pd.texel);
-        let live: Vec<usize> = (0..per).filter(|&s| used[s]).collect();
+        let live: Vec<usize> = (0..per).filter(|&s| used[pd.palette][s]).collect();
         let live = if live.is_empty() {
             (0..per).collect()
         } else {

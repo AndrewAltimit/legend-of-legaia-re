@@ -14,9 +14,11 @@ use super::*;
 // are a translation layer to JS values and nothing else, so adding a texture
 // family does not touch this file.
 
-use legaia_patcher::texture::replace_texture;
+use legaia_patcher::texture::{ExportFormat, replace_texture_png};
+use legaia_patcher::texture_palettes::texture_palettes;
 use legaia_patcher::{battle_texture, monster_texture, save_icon};
 use legaia_tim::encode::{EncodeOptions, decode_png_rgba};
+use legaia_tim::multi_palette::{ImportKind, View};
 
 use crate::texture_pack::{self, PackEntry, PackMeta};
 use crate::texture_registry::{self as reg, ReplaceOp, Rgba, ScanCtx, TexCoord, TexRow};
@@ -318,7 +320,15 @@ pub fn decode_texture(
 ///
 /// One entry point for every family: the registry decides which writer a
 /// coordinate resolves to.
+///
+/// TIM families take any shape `tim-replace` does (image through any palette
+/// or the in-game palettes, composite, palette strip, indexed PNG) and add
+/// `import_kind` (what the PNG was recognised as) and
+/// `palette_entries_changed`. `view` (`-1` = the in-game palettes, `k` =
+/// palette `k`, absent = the in-game palettes when known) picks how the
+/// original is drawn.
 #[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
 pub fn preview_texture_replace(
     image: Vec<u8>,
     tier: &str,
@@ -327,6 +337,7 @@ pub fn preview_texture_replace(
     offset: f64,
     png: &[u8],
     quantize: bool,
+    view: Option<i32>,
 ) -> Result<JsValue, JsValue> {
     let coord = coord_of(tier, entry, section, offset)?;
     let mut patcher = DiscPatcher::open(image).map_err(|e| err(format!("parse disc: {e}")))?;
@@ -387,57 +398,69 @@ pub fn preview_texture_replace(
         ReplaceOp::Tim(target) => {
             let orig = legaia_patcher::texture::read_texture(&patcher, &target)
                 .map_err(|e| err(format!("read texture: {e:#}")))?;
+            let pals = texture_palettes(&patcher, &orig.tim)
+                .map_err(|e| err(format!("palette map: {e:#}")))?;
             let (ow, oh) = (orig.tim.pixel_width(), orig.tim.pixel_height());
-            let orig_rgba = legaia_tim::decode_rgba8(&orig.tim, 0)
+            let base_view = view_of(view);
+            let orig_rgba = legaia_patcher::texture::decode_view(&orig.tim, &pals, base_view)
                 .map_err(|e| err(format!("decode original: {e}")))?;
             Reflect::set(&out, &"original".into(), &rgba_js(ow, oh, &orig_rgba)?)?;
             Reflect::set(&out, &"width".into(), &num(ow as f64))?;
             Reflect::set(&out, &"height".into(), &num(oh as f64))?;
             Reflect::set(&out, &"cluts".into(), &num(orig.tim.palette_count() as f64))?;
+            if png.is_empty() {
+                return fail(&out, "no PNG chosen".to_string());
+            }
 
-            let (pw, ph, rgba) = match decode_png_rgba(png) {
-                Ok(v) => v,
-                Err(e) => return fail(&out, format!("read PNG: {e}")),
-            };
             let opts = EncodeOptions {
                 quantize,
                 ..Default::default()
             };
-            // Encode first (for the preview), then dry-run the full
-            // replacement so the LZS fit is measured exactly as apply would.
-            match legaia_tim::encode::encode_replacement(&orig.tim, &rgba, pw, ph, &opts) {
-                Ok(enc) => {
-                    Reflect::set(
-                        &out,
-                        &"new_palette_entries".into(),
-                        &num(enc.new_palette_entries as f64),
-                    )?;
-                    Reflect::set(
-                        &out,
-                        &"quantized_pixels".into(),
-                        &num(enc.quantized_pixels as f64),
-                    )?;
-                    let ptim = legaia_tim::parse(&enc.bytes)
-                        .map_err(|e| err(format!("re-parse encoded TIM: {e}")))?;
-                    let prgba = legaia_tim::decode_rgba8(&ptim, 0)
-                        .map_err(|e| err(format!("decode encoded TIM: {e}")))?;
-                    Reflect::set(&out, &"preview".into(), &rgba_js(pw, ph, &prgba)?)?;
-                }
-                Err(e) => return fail(&out, e.to_string()),
-            }
-            match replace_texture(&mut patcher, &target, &rgba, pw, ph, &opts, true) {
-                Ok(outcome) => {
-                    Reflect::set(&out, &"ok".into(), &JsValue::from_bool(true))?;
-                    Reflect::set(&out, &"error".into(), &"".into())?;
-                    Reflect::set(&out, &"bpp".into(), &num(outcome.bpp as f64))?;
-                    if let Some(fit) = outcome.lzs {
-                        let f = Object::new();
-                        Reflect::set(&f, &"capacity".into(), &num(fit.capacity as f64))?;
-                        Reflect::set(&f, &"recompressed".into(), &num(fit.recompressed as f64))?;
-                        Reflect::set(&out, &"fit".into(), &f)?;
-                    }
-                }
+            // One call: the same recognition, encode and (for the compressed
+            // tier) recompression the write performs, stopped before the
+            // patch.
+            let outcome = match replace_texture_png(&mut patcher, &target, png, &opts, true) {
+                Ok(o) => o,
                 Err(e) => return fail(&out, format!("{e:#}")),
+            };
+            let imp = legaia_tim::multi_palette::import_png(&orig.tim, png, &pals.context, &opts)
+                .map_err(|e| err(format!("{e:#}")))?;
+            let ptim = legaia_tim::parse(&imp.encoded.bytes)
+                .map_err(|e| err(format!("re-parse encoded TIM: {e}")))?;
+            // Show the result the way the edit was made: through the view it
+            // was drawn in, or (strip / indexed) through the page's view.
+            let shown = match imp.kind {
+                ImportKind::Image(v) | ImportKind::Composite(v) => v,
+                ImportKind::Indexed(p) => View::Palette(p),
+                ImportKind::PaletteStrip => base_view,
+            };
+            let prgba = legaia_patcher::texture::decode_view(&ptim, &pals, shown)
+                .map_err(|e| err(format!("decode encoded TIM: {e}")))?;
+            Reflect::set(&out, &"preview".into(), &rgba_js(ow, oh, &prgba)?)?;
+            Reflect::set(&out, &"import_kind".into(), &imp.kind.to_string().into())?;
+            Reflect::set(
+                &out,
+                &"palette_entries_changed".into(),
+                &num(outcome.palette_entries_changed as f64),
+            )?;
+            Reflect::set(
+                &out,
+                &"new_palette_entries".into(),
+                &num(outcome.new_palette_entries as f64),
+            )?;
+            Reflect::set(
+                &out,
+                &"quantized_pixels".into(),
+                &num(outcome.quantized_pixels as f64),
+            )?;
+            Reflect::set(&out, &"ok".into(), &JsValue::from_bool(true))?;
+            Reflect::set(&out, &"error".into(), &"".into())?;
+            Reflect::set(&out, &"bpp".into(), &num(outcome.bpp as f64))?;
+            if let Some(fit) = outcome.lzs {
+                let f = Object::new();
+                Reflect::set(&f, &"capacity".into(), &num(fit.capacity as f64))?;
+                Reflect::set(&f, &"recompressed".into(), &num(fit.recompressed as f64))?;
+                Reflect::set(&out, &"fit".into(), &f)?;
             }
         }
         ReplaceOp::BattleEquip(target) => {
@@ -629,12 +652,10 @@ pub async fn apply_texture_replacements(
                 ));
             }
             ReplaceOp::Tim(target) => {
-                let outcome = replace_texture(
+                let outcome = replace_texture_png(
                     &mut patcher,
                     &target,
-                    &rgba,
-                    w,
-                    h,
+                    &spec.png,
                     &EncodeOptions {
                         quantize: spec.quantize,
                         ..Default::default()
@@ -753,6 +774,151 @@ pub async fn apply_texture_replacements(
     Reflect::set(&out, &"data".into(), &data)?;
     Reflect::set(&out, &"summary".into(), &summary.into())?;
     Ok(out.into())
+}
+
+// --- Multi-palette views -----------------------------------------------------
+
+/// The page's view number: `-1` (or absent) = the in-game palettes, `k` =
+/// palette `k`.
+fn view_of(v: Option<i32>) -> View {
+    match v {
+        Some(k) if k >= 0 => View::Palette(k as usize),
+        _ => View::InGame,
+    }
+}
+
+fn tim_target(coord: &TexCoord) -> Result<legaia_patcher::texture::TextureTarget, JsValue> {
+    match reg::replace_op(coord).map_err(err)? {
+        ReplaceOp::Tim(t) => Ok(t),
+        _ => Err(err(
+            "palette views apply to TIM textures only (this family has its own palette rules)",
+        )),
+    }
+}
+
+/// What is known about a TIM texture's palettes: `{ count, has_map, source,
+/// notes: [..], unclaimed, regions: [{ x, y, w, h, palette, subpalette,
+/// widgets: [..], part }] }`. `palette >= count` is a read-only palette of a
+/// sibling texture. Families other than TIM report `{ count: 0 }`.
+#[wasm_bindgen]
+pub fn texture_palette_info(
+    image: Vec<u8>,
+    tier: &str,
+    entry: i32,
+    section: i32,
+    offset: f64,
+) -> Result<JsValue, JsValue> {
+    let coord = coord_of(tier, entry, section, offset)?;
+    let out = Object::new();
+    let num = JsValue::from_f64;
+    let Ok(target) = tim_target(&coord) else {
+        Reflect::set(&out, &"count".into(), &num(0.0))?;
+        return Ok(out.into());
+    };
+    let patcher = DiscPatcher::open(image).map_err(|e| err(format!("parse disc: {e}")))?;
+    let orig = legaia_patcher::texture::read_texture(&patcher, &target)
+        .map_err(|e| err(format!("read texture: {e:#}")))?;
+    let pals = texture_palettes(&patcher, &orig.tim).map_err(|e| err(format!("{e:#}")))?;
+    Reflect::set(&out, &"count".into(), &num(orig.tim.palette_count() as f64))?;
+    Reflect::set(&out, &"has_map".into(), &JsValue::from_bool(pals.has_map()))?;
+    Reflect::set(&out, &"source".into(), &pals.source.as_str().into())?;
+    Reflect::set(
+        &out,
+        &"unclaimed".into(),
+        &num(pals.unclaimed_pixels as f64),
+    )?;
+    let notes = js_sys::Array::new();
+    for n in &pals.notes {
+        notes.push(&n.as_str().into());
+    }
+    Reflect::set(&out, &"notes".into(), &notes)?;
+    // One row per distinct (rect, palette, part), with every widget id.
+    let mut rows: Vec<(&legaia_patcher::texture_palettes::PaletteRegion, Vec<u8>)> = Vec::new();
+    for r in &pals.regions {
+        match rows
+            .iter_mut()
+            .find(|(k, _)| k.rect == r.rect && k.palette == r.palette && k.part == r.part)
+        {
+            Some((_, ids)) => ids.push(r.widget),
+            None => rows.push((r, vec![r.widget])),
+        }
+    }
+    let regions = js_sys::Array::new();
+    for (r, ids) in rows {
+        let o = Object::new();
+        Reflect::set(&o, &"x".into(), &num(r.rect.0 as f64))?;
+        Reflect::set(&o, &"y".into(), &num(r.rect.1 as f64))?;
+        Reflect::set(&o, &"w".into(), &num(r.rect.2 as f64))?;
+        Reflect::set(&o, &"h".into(), &num(r.rect.3 as f64))?;
+        Reflect::set(&o, &"palette".into(), &num(r.palette as f64))?;
+        Reflect::set(&o, &"subpalette".into(), &num(r.subpalette as f64))?;
+        Reflect::set(
+            &o,
+            &"part".into(),
+            &format!("{:?}", r.part).to_lowercase().into(),
+        )?;
+        let w = js_sys::Array::new();
+        for id in ids {
+            w.push(&num(id as f64));
+        }
+        Reflect::set(&o, &"widgets".into(), &w)?;
+        regions.push(&o);
+    }
+    Reflect::set(&out, &"regions".into(), &regions)?;
+    Ok(out.into())
+}
+
+/// Decode a TIM texture through a view (`-1` = in-game palettes, `k` =
+/// palette `k`). Returns `{ w, h, rgba }`.
+#[wasm_bindgen]
+pub fn decode_texture_view(
+    image: Vec<u8>,
+    tier: &str,
+    entry: i32,
+    section: i32,
+    offset: f64,
+    view: i32,
+) -> Result<JsValue, JsValue> {
+    let coord = coord_of(tier, entry, section, offset)?;
+    let target = tim_target(&coord)?;
+    let patcher = DiscPatcher::open(image).map_err(|e| err(format!("parse disc: {e}")))?;
+    let orig = legaia_patcher::texture::read_texture(&patcher, &target)
+        .map_err(|e| err(format!("read texture: {e:#}")))?;
+    let pals = texture_palettes(&patcher, &orig.tim).map_err(|e| err(format!("{e:#}")))?;
+    let rgba = legaia_patcher::texture::decode_view(&orig.tim, &pals, view_of(Some(view)))
+        .map_err(|e| err(format!("decode: {e}")))?;
+    rgba_js(orig.tim.pixel_width(), orig.tim.pixel_height(), &rgba)
+}
+
+/// Encode a TIM texture as a download: `format` is `image` / `composite` /
+/// `strip` / `indexed`, `view` as in [`decode_texture_view`]. Returns `{
+/// png: Uint8Array, w, h, description }`. Every shape comes back through
+/// [`preview_texture_replace`] / [`apply_texture_replacements`] unchanged.
+#[wasm_bindgen]
+pub fn export_texture_as(
+    image: Vec<u8>,
+    tier: &str,
+    entry: i32,
+    section: i32,
+    offset: f64,
+    format: &str,
+    view: i32,
+) -> Result<JsValue, JsValue> {
+    let coord = coord_of(tier, entry, section, offset)?;
+    let target = tim_target(&coord)?;
+    let format: ExportFormat = format.parse().map_err(err)?;
+    let patcher = DiscPatcher::open(image).map_err(|e| err(format!("parse disc: {e}")))?;
+    let ex =
+        legaia_patcher::texture::export_texture_png(&patcher, &target, format, view_of(Some(view)))
+            .map_err(|e| err(format!("{e:#}")))?;
+    let o = Object::new();
+    let arr = Uint8Array::new_with_length(ex.png.len() as u32);
+    arr.copy_from(&ex.png);
+    Reflect::set(&o, &"png".into(), &arr)?;
+    Reflect::set(&o, &"w".into(), &JsValue::from_f64(ex.width as f64))?;
+    Reflect::set(&o, &"h".into(), &JsValue::from_f64(ex.height as f64))?;
+    Reflect::set(&o, &"description".into(), &ex.description.as_str().into())?;
+    Ok(o.into())
 }
 
 // --- Change packs -----------------------------------------------------------

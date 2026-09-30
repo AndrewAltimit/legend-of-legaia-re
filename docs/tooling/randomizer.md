@@ -4797,7 +4797,9 @@ encoder; format rules in [`formats/tim.md`](../formats/tim.md#encoding-png---tim
 
 ```bash
 legaia-patcher tim-list    --input DISC.bin [--entry N] [--tier raw|lzs|battle|all]
-legaia-patcher tim-export  --input DISC.bin --entry N --offset 0xHEX [--lzs-section S] [--clut K] -o out.png
+legaia-patcher tim-export  --input DISC.bin --entry N --offset 0xHEX [--lzs-section S] \
+    [--clut K | --in-game] [--format image|composite|strip|indexed] -o out.png
+legaia-patcher tim-palette-map --input DISC.bin --entry N --offset 0xHEX [--lzs-section S]
 legaia-patcher tim-replace --input DISC.bin --entry N --offset 0xHEX [--lzs-section S] \
     --png edited.png [--quantize] [--dry-run] [--output patched.bin] [--patch out.ppf]
 ```
@@ -4821,6 +4823,15 @@ placement field, so the write is same-size in place through
 each touched sector's EDC/ECC re-encoded - the standard
 [patch chain](#the-patch-chain). Alpha maps to the PSX STP bit
 ([the exact rule](../formats/tim.md#alpha---stp-mapping)).
+
+**Multi-palette textures.** A 4bpp TIM with several palettes is several
+colourings of one set of indices - the game picks a palette per sprite. A
+replacement rewrites only the palettes it changes. `tim-export --format
+composite|strip|indexed` (and `--clut K` / `--in-game` for the view) adds
+downloads that carry every palette; `tim-replace` recognises each shape, and
+`tim-palette-map` prints which palette the game draws each region of the
+menu / battle UI sheet through (from the SCUS widget table). Workflow and the
+map's rules: [`textures-and-fonts.md`](translation/textures-and-fonts.md#multi-palette-textures).
 
 **LZS-tier fits.** A compressed texture is replaced by splicing the encoded
 TIM into the decoded section and recompressing the whole section with

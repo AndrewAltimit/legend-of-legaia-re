@@ -1405,7 +1405,10 @@ and writes (with a `dry_run` mode the site's preview uses), and
 browser's texture browser. The CLI loop is `tim-list` -> `tim-export`
 (decode to PNG) -> edit -> `tim-replace` (`--quantize` folds palette
 overflow; `--dry-run` validates only; `--output`/`--patch` as everywhere
-else). Full reference:
+else). `replace_texture_png` / `export_texture_png` add the multi-palette
+shapes (composite, palette strip, indexed PNG, per-region in-game view), and
+`texture_palettes` builds the per-region palette map of the menu / battle UI
+sheet from the SCUS widget table (`tim-palette-map` prints it). Full reference:
 [`docs/tooling/randomizer.md`](../../docs/tooling/randomizer.md#texture-replacement);
 encoder rules (alpha -> STP, palette reuse, byte-exact round trips):
 [`docs/formats/tim.md`](../../docs/formats/tim.md#encoding-png---tim-texture-replacement).
@@ -1465,9 +1468,8 @@ nothing is written.
 
 Swaps one of the 16x16 character faces the save UI draws and the memory-card
 block icon is cut from. A separate family from `tim-replace` because the
-sheet's palette is **per tile** - the generic encoder replicates a rebuilt
-palette across every CLUT row, which here would repaint all sixteen
-portraits - and because a tile is stored as 16 eight-byte runs 128 bytes
+sheet's palette is **per tile** - the generic image encoder matches the whole
+sheet against one palette, where each tile needs its own - and because a tile is stored as 16 eight-byte runs 128 bytes
 apart, so one replacement is 17 small same-size writes.
 
 The CLI loop is `save-icon-list` -> `save-icon-export` (16x16 PNG) -> edit ->

@@ -147,7 +147,7 @@ asset-viewer tim extracted/PROT.DAT --offset 0x018E0 --clut 7   # cursor</code><
   <ul class="bullets">
     <li>A pixel whose position held the same colour keeps its original index verbatim; other matches reuse the first palette entry that decodes to the colour. Untouched regions keep their STP choices, so <code>encode(decode(tim))</code> reproduces the original byte-for-byte across the whole raw catalog.</li>
     <li>Indexed modes must fit 16 / 256 distinct 15-bit colours. New colours overwrite slots the new image no longer references; overflow is a hard error listing the offending pixels, or, behind an explicit quantize opt-in, the least-frequent extras fold to their nearest palette colour.</li>
-    <li>If any palette slot changes, the rebuilt palette is replicated into every CLUT row, so multi-palette variants do not recolour new indices with stale rows.</li>
+    <li>Only the palette the image was drawn through is rewritten; every other palette of a multi-palette CLUT stays byte-identical, because the game picks a palette per sprite and copying one over the rest would recolour every region drawn through them. Editing several palettes at once goes through the <a href="../tooling/randomizer.html#multi-palette-textures">multi-palette downloads</a>.</li>
   </ul>
 </section>
 

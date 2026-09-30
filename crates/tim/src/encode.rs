@@ -167,7 +167,9 @@ impl fmt::Display for EncodeError {
                     f,
                     "image uses {needed} distinct colors but the palette holds only \
                      {capacity}; {overflow} color(s) have no slot. Reduce the color \
-                     count or enable quantization. Offending pixels:"
+                     count, reuse a colour the palette already has (or recolour one of its \
+                     entries through the palette strip), or enable quantization. Offending \
+                     pixels:"
                 )?;
                 for s in samples {
                     write!(
