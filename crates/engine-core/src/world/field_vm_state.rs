@@ -88,6 +88,16 @@ pub struct FieldVmState {
     /// the retail run settles on the op target) from the live channel
     /// stepper's own-script op (glide).
     pub in_spawned_record_slice: bool,
+    /// Actors another spawned-record context holds in an in-place park
+    /// while the one being stepped runs: a walk-to-tile, rotate or player
+    /// glide leg (`None` = the player, `Some(slot)` = an NPC placement).
+    /// Retail's park leaves the target's halt bit `0x400` set until the walk
+    /// kernel lands it, and the dispatcher refuses every cross-context op
+    /// aimed at a halted target (`0x801DE90C..0x801DE944`), so the second
+    /// context waits at its op. Written by
+    /// [`crate::world::World::step_cutscene_timeline`] and
+    /// [`crate::world::World::step_helper_contexts`] before each slice.
+    pub halted_elsewhere: Vec<Option<u8>>,
     /// Claim counter for the one shared script dialog box: each spawned
     /// record context that reaches a text segment stamps the next value into
     /// its [`crate::cutscene_timeline::CutsceneTimeline::dialog_claim`], and
@@ -139,6 +149,7 @@ impl FieldVmState {
             channels_man: None,
             executing_channel: None,
             in_spawned_record_slice: false,
+            halted_elsewhere: Vec::new(),
             dialog_claims: 0,
             object_channel_binds: Vec::new(),
             pending_record_spawns: Vec::new(),

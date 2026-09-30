@@ -397,6 +397,22 @@ pub struct TimelineWalk {
 }
 
 impl CutsceneTimeline {
+    /// The actors this context's in-place park is moving: its walk-to-tile
+    /// leg (`C7 <id|F8> ..`), rotate leg (`B8 <id> ..`) or player compass
+    /// glide (`B7 F8 ..` / `C1 F8 ..`). `None` is the player, `Some(slot)` an
+    /// NPC placement. Retail's park leaves the target's halt bit `0x400` set
+    /// until the walk kernel lands it.
+    pub fn halted_targets(&self) -> impl Iterator<Item = Option<u8>> + '_ {
+        let live = !self.done;
+        let walk = self.walk_wait.as_ref().map(|w| w.slot);
+        let facing = self.facing_wait.as_ref().map(|f| Some(f.slot));
+        let glide = self.player_glide.as_ref().map(|_| None);
+        [walk, facing, glide]
+            .into_iter()
+            .flatten()
+            .filter(move |_| live)
+    }
+
     /// System-channel id for the spawned context (see [`Self::ctx`]).
     const SYSTEM_SCRIPT_ID: u16 = 0xFB;
 

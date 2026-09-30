@@ -910,6 +910,12 @@ impl World {
             tl.narration_pc = None;
             tl.narration_pending_open = false;
         }
+        self.field_vm.halted_elsewhere = self
+            .field_vm
+            .helper_contexts
+            .iter()
+            .flat_map(|h| h.halted_targets())
+            .collect();
         if self.run_spawned_record_slice(&mut tl, true) {
             self.finish_cutscene_timeline_frame(tl);
         } else {
@@ -1391,6 +1397,40 @@ impl World {
                 // the anti-hang frame cap, like the walk parks.
                 // REF: FUN_80037174
                 if opcode_byte & 0x7F == 0x3F && host.world.cutscene_narration_active() {
+                    tl.frames = tl.frames.saturating_sub(1);
+                    break;
+                }
+                // Halted-target refusal: a cross-context op aimed at an actor
+                // ANOTHER context holds in a walk / rotate / glide park waits
+                // at the op and retries next frame. The park holds the
+                // target's halt bit `0x400` until the kernel lands it, and
+                // the dispatcher's prologue returns with the PC still on the
+                // op for any target carrying `0x400` while the scene word
+                // `*(_DAT_801C6EA4) + 8` is zero, unless the caller is the
+                // system context `0xFB`. A spawned record's context is never
+                // that one: `FUN_8003BDE0` stamps its global record index into
+                // `+0x50` (`0x8003C094`); the `0xFB` this context carries is
+                // the engine's stand-in. Without the refusal two records
+                // walked the player at once: `dolk2` P2[15]'s
+                // `C7 F8 46 4C 33` pulled against P2[12]'s `C7 F8 48 53 23`,
+                // and the tug-of-war left the party inside the wall at tile
+                // (66, 87).
+                // REF: FUN_801DE840 (0x801DE90C..0x801DE944), FUN_8003BDE0
+                let halted_target = opcode_byte & 0x80 != 0
+                    && !host.world.field_vm.halted_elsewhere.is_empty()
+                    && match vm::field::peek_extended(&tl.bytecode, pc) {
+                        Some(0xF8) => host.world.field_vm.halted_elsewhere.contains(&None),
+                        Some(t) => crate::field_channels::resolve_target(&channels, t)
+                            .filter(|&ci| !channels[ci].object_bind)
+                            .is_some_and(|ci| {
+                                host.world
+                                    .field_vm
+                                    .halted_elsewhere
+                                    .contains(&Some(channels[ci].placement_index as u8))
+                            }),
+                        None => false,
+                    };
+                if halted_target {
                     tl.frames = tl.frames.saturating_sub(1);
                     break;
                 }
@@ -2172,10 +2212,28 @@ impl World {
                 .map(|tl| tl.dialog_claim)
                 .min()
         };
-        for tl in contexts.iter_mut() {
-            if tl.done {
+        let timeline_halted: Vec<Option<u8>> = self
+            .cutscene
+            .timeline
+            .iter()
+            .flat_map(|t| t.halted_targets())
+            .collect();
+        for i in 0..contexts.len() {
+            if contexts[i].done {
                 continue;
             }
+            // Recomputed per context: an earlier sibling may have just armed
+            // or landed its leg this frame.
+            let mut halted = timeline_halted.clone();
+            halted.extend(
+                contexts
+                    .iter()
+                    .enumerate()
+                    .filter(|&(j, _)| j != i)
+                    .flat_map(|(_, h)| h.halted_targets()),
+            );
+            self.field_vm.halted_elsewhere = halted;
+            let tl = &mut contexts[i];
             // Parked on its text segment: the box, not the slice, advances
             // it; the park holds the frame cap like the modal timeline's.
             if tl.dialog.is_some() {
@@ -2193,6 +2251,7 @@ impl World {
                 tl.done = true;
             }
         }
+        self.field_vm.halted_elsewhere.clear();
         let dropped = contexts.iter().any(|tl| tl.done);
         contexts.retain(|tl| !tl.done);
         self.field_vm.helper_contexts = contexts;
@@ -4633,6 +4692,54 @@ mod tests {
         assert!(
             w.system_flag_test(0x0C),
             "the waiting context claims the freed box and runs on"
+        );
+    }
+
+    #[test]
+    fn a_second_player_walk_waits_for_the_first_to_land() {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        // Two contexts each walk the player (`C7 F8 tx tz mode`) then SET a
+        // flag. Retail's walk park leaves the player's halt bit `0x400` set
+        // until the kernel lands it, and the dispatcher refuses the second
+        // context's cross-context op on a halted target
+        // (`0x801DE90C..0x801DE944`) - the walks run one after the other,
+        // never against each other.
+        let first = vec![0xC7, 0xF8, 0x12, 0x10, 0x33, 0x50, 0x0C, 0x4A, 0xFF, 0x7F];
+        let second = vec![0xC7, 0xF8, 0x10, 0x10, 0x33, 0x50, 0x0D, 0x4A, 0xFF, 0x7F];
+        let mut w = World::default();
+        w.actors[0].active = true;
+        w.player_actor_slot = Some(0);
+        w.actors[0].move_state.world_x = 0x10 * 0x80 + 0x40;
+        w.actors[0].move_state.world_z = 0x10 * 0x80 + 0x40;
+        w.field_vm
+            .helper_contexts
+            .push(CutsceneTimeline::new(first, 0));
+        w.field_vm
+            .helper_contexts
+            .push(CutsceneTimeline::new(second, 0));
+        let target_first = (0x12 * 0x80 + 0x40, 0x10 * 0x80 + 0x40);
+        let mut first_x = Vec::new();
+        for _ in 0..400 {
+            w.step_helper_contexts();
+            first_x.push(w.actors[0].move_state.world_x);
+            if w.system_flag_test(0x0D) {
+                break;
+            }
+        }
+        assert!(w.system_flag_test(0x0C), "the first walk landed");
+        assert!(w.system_flag_test(0x0D), "the second walk ran after it");
+        assert!(
+            first_x.contains(&target_first.0),
+            "the player reached the first walk's tile before turning back"
+        );
+        // Monotone out, then monotone back: no frame-by-frame tug-of-war.
+        let peak = first_x.iter().position(|&x| x == target_first.0).unwrap();
+        assert!(first_x[..=peak].windows(2).all(|p| p[1] >= p[0]));
+        assert!(first_x[peak..].windows(2).all(|p| p[1] <= p[0]));
+        assert_eq!(
+            w.actors[0].move_state.world_x,
+            0x10 * 0x80 + 0x40,
+            "the player ends on the second walk's tile"
         );
     }
 }
