@@ -24,10 +24,13 @@ use legaia_asset::{accessory_passive, item_names, new_game, spell_names, worldma
 
 use crate::disc::DiscPatcher;
 
+use super::build::TextCodec;
 use super::markup;
 use super::monster_names;
 use super::pack::{Entry, LanguagePack};
 use super::segments;
+use super::sjis;
+use super::stream_man::StreamManText;
 use super::ui;
 
 /// MAN asset type byte in a scene bundle's descriptor table.
@@ -529,21 +532,101 @@ fn clamped_entry_lens(patcher: &DiscPatcher) -> Vec<usize> {
         .collect()
 }
 
+/// One exported dialog line: its disc coordinate, byte length and decoded
+/// source text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DialogLine {
+    /// First text byte (the byte after the `0x1F` lead / the count byte).
+    pub off: usize,
+    /// Text bytes (Latin: up to the terminator; Japanese: `2 * count`).
+    pub len: usize,
+    /// Pack markup of the text bytes.
+    pub source: String,
+}
+
+/// The dialog lines of one PROT entry's **scene-bundle MAN** (`man:` keys,
+/// decompressed-MAN offsets), for the build's text codec.
+pub fn scene_man_lines(man: &SceneManText, codec: TextCodec) -> Vec<DialogLine> {
+    lines_of(&man.decoded, codec, 0)
+}
+
+/// The dialog lines of one PROT entry's **raw bytes** (`raw:` keys, entry
+/// offsets): the Latin raw-carrier scan ([`segments::scan_raw_carrier`]), or
+/// on the Japanese build the script walk of a streaming scene's leading MAN
+/// chunk.
+pub fn raw_lines(entry: &[u8], codec: TextCodec) -> Vec<DialogLine> {
+    match codec {
+        TextCodec::Latin { allow_high } => segments::scan_raw_carrier(entry, allow_high)
+            .into_iter()
+            .map(|seg| DialogLine {
+                off: seg.text_off,
+                len: seg.len,
+                source: markup::decode(&entry[seg.text_off..seg.text_off + seg.len]),
+            })
+            .collect(),
+        TextCodec::ShiftJis => match StreamManText::locate_structural(entry) {
+            Some(sm) => lines_of(&sm.man, codec, sm.man_range().start),
+            None => Vec::new(),
+        },
+    }
+}
+
+/// Lines of a decompressed MAN, offsets shifted by `base`.
+fn lines_of(man: &[u8], codec: TextCodec, base: usize) -> Vec<DialogLine> {
+    type Decode = fn(&[u8]) -> String;
+    let (segs, decode): (Vec<segments::Segment>, Decode) = match codec {
+        TextCodec::Latin { allow_high } => (segments::scan_man(man, allow_high), markup::decode),
+        TextCodec::ShiftJis => (sjis::man_lines(man), sjis::decode),
+    };
+    segs.into_iter()
+        .map(|seg| DialogLine {
+            off: base + seg.text_off,
+            len: seg.len,
+            source: decode(&man[seg.text_off..seg.text_off + seg.len]),
+        })
+        .collect()
+}
+
 /// Export the full language pack from an opened disc.
+///
+/// Every build exports its dialog (scene MANs and raw carriers) and, on a
+/// Latin build, its monster names - disc coordinates that mean the same thing
+/// on every build. The executable-keyed sections (name tables, system text,
+/// overlay UI, place-name cells) are exported from the USA build only: their
+/// `scus:` / `ui:` keys are USA virtual addresses (see [`super::build`]).
 pub fn export_pack(patcher: &DiscPatcher) -> Result<LanguagePack> {
-    let mut pack = LanguagePack::new("en");
+    let build = super::build::detect(patcher);
+    let mut pack = LanguagePack::new(build.language());
+    pack.game = build.label();
     pack.notes = "Source export - fill `translation:` fields (markup: printable ASCII, \
                   {xx}/{xx:yy} byte escapes, '|' = newline glyph) and run \
                   `legaia-patcher translate import`."
         .to_string();
 
-    let scus = patcher
-        .read_named_file("SCUS_942.54")
-        .context("SCUS_942.54 not found in disc image")?;
-    collect_scus_sections(&scus, &mut pack)?;
-    collect_ui_sections(patcher, &mut pack);
-    collect_scus_system_sections(&scus, &mut pack);
-    collect_monster_names(patcher, &mut pack);
+    if build.is_usa() {
+        let scus = patcher
+            .read_named_file("SCUS_942.54")
+            .context("SCUS_942.54 not found in disc image")?;
+        collect_scus_sections(&scus, &mut pack)?;
+        collect_ui_sections(patcher, &mut pack);
+        collect_scus_system_sections(&scus, &mut pack);
+    } else {
+        pack.notes = format!(
+            "Source export of {} - dialog only: the name tables, system text and \
+             menu labels are keyed to the USA executable and are exported from the \
+             USA disc only.{}",
+            build.label(),
+            if build.codec == TextCodec::ShiftJis {
+                " Japanese lines are count-led Shift-JIS; this pack is a reading \
+                 reference - `import` does not write to a Japanese disc."
+            } else {
+                ""
+            }
+        );
+    }
+    if matches!(build.codec, TextCodec::Latin { .. }) {
+        collect_monster_names(patcher, &mut pack);
+    }
 
     let cdname = patcher.cdname();
     let scene_of = |idx: usize| -> String {
@@ -569,16 +652,14 @@ pub fn export_pack(patcher: &DiscPatcher) -> Result<LanguagePack> {
         let scene = scene_of(idx);
 
         // Scene-bundle MAN (LZS domain).
-        let man = SceneManText::locate(&entry);
-        if let Some(man) = &man {
-            for seg in segments::scan_man(&man.decoded, false) {
-                let text = &man.decoded[seg.text_off..seg.text_off + seg.len];
+        if let Some(man) = SceneManText::locate(&entry) {
+            for line in scene_man_lines(&man, build.codec) {
                 pack.sections.scene_dialog.push(Entry {
-                    key: format!("man:{idx}:0x{off:x}", off = seg.text_off),
+                    key: format!("man:{idx}:0x{:x}", line.off),
                     context: scene.clone(),
-                    source: markup::decode(text),
+                    source: line.source,
                     translation: String::new(),
-                    budget: seg.len,
+                    budget: line.len,
                 });
             }
         }
@@ -590,14 +671,13 @@ pub fn export_pack(patcher: &DiscPatcher) -> Result<LanguagePack> {
         // scanner gates on a genuine dialog carrier and drops those hits (see
         // [`segments::scan_raw_carrier`]) - writing over a coincidental hit in
         // a binary bank corrupts the asset and freezes the game.
-        for seg in segments::scan_raw_carrier(&entry, false) {
-            let text = &entry[seg.text_off..seg.text_off + seg.len];
+        for line in raw_lines(&entry, build.codec) {
             pack.sections.inline_text.push(Entry {
-                key: format!("raw:{idx}:0x{off:x}", off = seg.text_off),
+                key: format!("raw:{idx}:0x{:x}", line.off),
                 context: scene.clone(),
-                source: markup::decode(text),
+                source: line.source,
                 translation: String::new(),
-                budget: seg.len,
+                budget: line.len,
             });
         }
     }

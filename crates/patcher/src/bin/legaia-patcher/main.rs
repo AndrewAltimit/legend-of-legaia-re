@@ -259,6 +259,11 @@ fn main() -> Result<()> {
                 language.as_deref(),
                 baseline.as_deref(),
             ),
+            cli::TranslateCmd::Coverage {
+                input,
+                json,
+                verbose,
+            } => translate::cmd_coverage(&input, json, verbose),
             cli::TranslateCmd::FitReport { from, target } => {
                 translate::cmd_fit_report(&from, &target)
             }

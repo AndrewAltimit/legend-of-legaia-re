@@ -186,6 +186,36 @@ fn record_for(mf: &ManFile, man: &[u8], op_pc: usize) -> Option<(usize, usize, u
     Some((start, pc0, end))
 }
 
+/// Every partition record's script window as `(first opcode, record end)` in
+/// absolute MAN coordinates, for records that sit before section 0 - the same
+/// set [`text_site`] walks. A caller with its own instruction decoder (the
+/// Japanese build's count-led text, see `docs/formats/mes.md`) walks each
+/// window from its first opcode.
+pub fn record_script_windows(man: &[u8]) -> Vec<(usize, usize)> {
+    let Ok(mf) = man_section::parse(man) else {
+        return Vec::new();
+    };
+    let sec0_abs = mf.data_region_offset + mf.header.u24_at_28 as usize;
+    let starts = record_starts(&mf);
+    let mut out = Vec::new();
+    for (i, &start) in starts.iter().enumerate() {
+        if start >= sec0_abs {
+            continue;
+        }
+        let Some(p) = partition_of(&mf, start) else {
+            continue;
+        };
+        let Some(pc0) = record_pc0(man, p, start) else {
+            continue;
+        };
+        let end = starts.get(i + 1).copied().unwrap_or(man.len());
+        if start + pc0 < end {
+            out.push((start + pc0, end));
+        }
+    }
+    out
+}
+
 /// Where a `0x1F`-framed text run at `offset` (the first glyph byte, the
 /// lead at `offset - 1`) sits relative to its record's clean script walk -
 /// the structural test that separates dialog from a coincidental byte run.

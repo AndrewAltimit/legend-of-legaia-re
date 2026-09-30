@@ -1375,6 +1375,29 @@ pub fn import_pack_phase(
         }
     }
 
+    // A Japanese disc frames its lines as count-led Shift-JIS (see
+    // [`super::sjis`]); the write paths below speak the Latin `0x1F .. 0x00`
+    // framing and USA executable addresses only. Its export is a reading
+    // reference, so every filled entry is refused here and nothing is written.
+    if super::build::detect(patcher).codec == super::build::TextCodec::ShiftJis {
+        let refused = scus_work
+            .iter()
+            .copied()
+            .chain(man_work.values().flatten().map(|(_, e)| *e))
+            .chain(raw_work.values().flatten().map(|(_, e)| *e))
+            .chain(ui_work.values().flatten().map(|(_, e)| *e))
+            .chain(mon_work.iter().map(|(_, e)| *e));
+        for e in refused {
+            report.issue_as(
+                &e.key,
+                IssueKind::Refused,
+                "Japanese disc: import writes to the Latin builds only \
+                 (the Japanese export is a reading reference) - skipped",
+            );
+        }
+        return Ok(report);
+    }
+
     // SCUS strings. Read the file once; every write lands in the local copy
     // (so later verifications stay coherent with earlier writes) and is then
     // mirrored onto the disc.

@@ -34,6 +34,8 @@
 //! committed - see `docs/tooling/translation/index.md`.
 
 pub mod accents;
+pub mod build;
+pub mod coverage;
 pub mod diff;
 pub mod export;
 pub mod fit;
@@ -45,6 +47,7 @@ pub mod name_pool;
 pub mod pack;
 pub mod refpair;
 pub mod segments;
+pub mod sjis;
 pub mod space;
 pub mod stream_man;
 pub mod symbols;

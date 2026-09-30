@@ -826,6 +826,24 @@ pub(crate) enum TranslateCmd {
         #[arg(long)]
         baseline: Option<PathBuf>,
     },
+    /// Dialog coverage of `export` on a disc: every line the scene scripts
+    /// reach (the script walk) against the lines the exported pack carries,
+    /// per scene, with the reason for each missing line. Also counts lines no
+    /// walk reaches, untranslated Japanese lines left in a Latin build, and
+    /// shop vendor names. Counts and offsets only - no text - so it is safe to
+    /// run and log.
+    Coverage {
+        /// The disc image (`.bin`, or a `.cue` resolved to its `.bin`): any
+        /// build - USA, PAL or Japanese.
+        #[arg(long)]
+        input: PathBuf,
+        /// Print the full report as JSON.
+        #[arg(long)]
+        json: bool,
+        /// List every carrier, not only the ones with missing lines.
+        #[arg(long, default_value_t = false)]
+        verbose: bool,
+    },
     /// Measure how much of an official localization fits the USA target under
     /// the per-string vs per-MAN (generalized rewriter) budget, and how many
     /// scene MANs remain sector-crossers. Counts only - no text - so it is safe

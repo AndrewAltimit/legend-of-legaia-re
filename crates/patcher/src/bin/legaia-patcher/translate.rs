@@ -556,6 +556,75 @@ pub(crate) fn cmd_lift_official(
     Ok(())
 }
 
+pub(crate) fn cmd_coverage(input: &Path, json: bool, verbose: bool) -> Result<()> {
+    let patcher = DiscPatcher::open(load_image(input)?).context("parse disc image")?;
+    let rep = legaia_patcher::translation::coverage::measure(&patcher)?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&rep)?);
+        return Ok(());
+    }
+    let (walked, exported, missing) = rep.totals();
+    println!("=== dialog coverage: {} ({}) ===", rep.exe, rep.codec);
+    for (name, n) in &rep.sections {
+        if *n > 0 {
+            println!("  {name:<20} {n:>6} entries");
+        }
+    }
+    println!(
+        "script-walked lines {walked}, exported {exported}, missing {missing} \
+         across {} MAN carriers",
+        rep.carriers.len()
+    );
+    let mut reasons: BTreeMap<&str, usize> = BTreeMap::new();
+    for c in &rep.carriers {
+        for (_, r) in &c.missing {
+            *reasons.entry(r).or_default() += 1;
+        }
+    }
+    for (r, n) in &reasons {
+        println!("  missing - {r}: {n}");
+    }
+    let sum = |f: fn(&legaia_patcher::translation::coverage::CarrierCoverage) -> usize| {
+        rep.carriers.iter().map(f).sum::<usize>()
+    };
+    println!(
+        "exported but not walked (quality-gated) {}; raw lines outside a MAN {}",
+        sum(|c| c.exported_unwalked),
+        rep.raw_unwalked_lines
+    );
+    println!(
+        "text-shaped lines no walk reaches {}; Japanese lines in a Latin MAN {}; \
+         shop vendor names (not exported) {}",
+        sum(|c| c.unreached_candidates),
+        sum(|c| c.foreign_lines),
+        sum(|c| c.shop_names)
+    );
+    println!(
+        "{:>5} {:<10} {:<10} {:>6} {:>6} {:>6} {:>6} {:>7} {:>5}",
+        "entry", "scene", "kind", "walked", "export", "miss", "gated", "unreach", "jp"
+    );
+    for c in &rep.carriers {
+        let interesting =
+            !c.missing.is_empty() || c.unreached_candidates > 0 || c.foreign_lines > 0;
+        if !(verbose || interesting) {
+            continue;
+        }
+        println!(
+            "{:>5} {:<10} {:<10} {:>6} {:>6} {:>6} {:>6} {:>7} {:>5}",
+            c.entry,
+            c.scene,
+            c.kind,
+            c.walked,
+            c.exported,
+            c.missing.len(),
+            c.exported_unwalked,
+            c.unreached_candidates,
+            c.foreign_lines
+        );
+    }
+    Ok(())
+}
+
 pub(crate) fn cmd_fit_report(from: &Path, target: &Path) -> Result<()> {
     let source = DiscPatcher::open(load_image(from)?).context("parse source (PAL) disc image")?;
     let usa = DiscPatcher::open(load_image(target)?).context("parse target (USA) disc image")?;

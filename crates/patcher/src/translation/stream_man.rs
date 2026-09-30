@@ -74,6 +74,15 @@ impl StreamManText {
         if !segments::is_dialog_carrier(entry) {
             return None;
         }
+        Self::locate_structural(entry)
+    }
+
+    /// [`Self::locate`] without the Latin prose gate: the structure alone (a
+    /// terminated typed-chunk stream led by a 4-aligned MAN chunk that
+    /// parses). The Japanese build's count-led lines never pass a Latin
+    /// prose test, so its export locates the chunk this way and lets the
+    /// script walk ([`super::sjis::man_lines`]) decide what is text.
+    pub fn locate_structural(entry: &[u8]) -> Option<Self> {
         let report = legaia_asset::parse_streaming(entry, 64).ok()?;
         if !report.terminated || report.chunks.is_empty() {
             return None;
