@@ -2181,20 +2181,25 @@ pub trait FieldHost {
         let _ = ctx;
     }
 
-    /// Op 0x4C outer-nibble-C sub-D - script-context allocation gate, halt.
+    /// Op 0x4C outer-nibble-C sub-D - **wait for the camera glide**.
     ///
-    /// 2-byte instruction `[4C, 0xCD]`. The original calls
-    /// `func_0x8003CF04(_DAT_8007C34C, FUN_801DC0BC)` (first live node whose
-    /// handler word `+0xC` equals the key), tests the resolved entry's flag bit `0x8`, and:
-    /// - if the entry exists AND the bit is set → halt acquired, PC stays at
-    ///   start-of-instruction (we model this as `Halt { final_pc: pc }`),
-    /// - else → yield via `LAB_801DEE50` (also `Halt { final_pc: pc }` in our
-    ///   model - the engine-side state-resume layer drives re-entry).
+    /// 2-byte instruction `[4C, 0xCD]`, arm at `0x801E29E0`: `s8 += 2`, then
+    /// `FUN_8003CF04(_DAT_8007C34C, 0x801DC0BC)` looks up the first node on
+    /// actor list 0 whose tick word `+0x0C` is the cutscene camera mover
+    /// `FUN_801DC0BC`. No mover, or a mover whose `+0x10 & 0x8` (dead) bit is
+    /// up, returns the advanced PC (`0x801E29FC` / `0x801E2A10`); a live one
+    /// takes the restore-PC exit (`j 0x801DEE50` / `move s8,s4`), so the op
+    /// re-runs next frame. The mover raises its dead bit the frame its
+    /// progress `+0x9C` reaches the duration `+0x9E` (`0x801DD238..0x801DD260`),
+    /// so a script that arms an op-`0x45` glide and then issues `4C CD` holds
+    /// until the shot has landed.
     ///
-    /// In both cases the dispatcher returns `Halt`, so the host hook only
-    /// records the side effect (registering the actor with the list-walk
-    /// machinery). Default no-op.
-    fn op4c_n_c_sub_d_script_alloc(&mut self) {}
+    /// Returns `true` while a glide is in flight. The default reports one
+    /// always, which parks the op - the behaviour of a host that does not
+    /// model the mover.
+    fn op4c_n_c_sub_d_camera_mover_live(&mut self) -> bool {
+        true
+    }
 
     /// Op 0x4C outer-nibble-E sub-4 - bounding-box collision query against
     /// the actor's world position.

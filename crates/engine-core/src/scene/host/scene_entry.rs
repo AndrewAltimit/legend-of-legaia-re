@@ -582,6 +582,7 @@ impl SceneHost {
         // in `camera_configure`, so a stale set would leak the prior scene's
         // focus / depth into a beat that omits those slots).
         self.world.camera.state.params.clear();
+        self.world.camera.state.glide_frames = 0;
         // The op-0x34 screen effect is scene-scoped (the opening timeline's
         // between-beat black fades); retire its tween and forget the slot.
         // Retail reaches the same state through the transition sweep, which

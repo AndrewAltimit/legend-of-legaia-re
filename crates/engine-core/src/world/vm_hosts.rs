@@ -1747,6 +1747,10 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         }
         self.world.camera.state.apply_trigger = apply_trigger;
         self.world.camera.state.mode = mode;
+        // A glide arms the mover for `apply_trigger` display frames; a snap
+        // marks every live mover dead.
+        // REF: FUN_801DE084
+        self.world.camera.state.glide_frames = i32::from(apply_trigger);
         // The event still carries only THIS beat's params (the per-beat delta):
         // the `Camera` controller's `route_camera_events` applies them per-axis
         // onto its own persistent eye/look-at, matching the same retail model.
@@ -1757,6 +1761,10 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                 apply_trigger,
                 mode,
             });
+    }
+
+    fn op4c_n_c_sub_d_camera_mover_live(&mut self) -> bool {
+        self.world.camera.state.glide_frames > 0
     }
 
     fn camera_load(&mut self, payload: &[u8]) {
@@ -1777,6 +1785,9 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn camera_apply(&mut self, apply_trigger: i16, mode: u8) {
+        // APPLY composes the follow pose and glides to it over the trigger's
+        // frames, or snaps (killing the mover) on a zero trigger.
+        self.world.camera.state.glide_frames = i32::from(apply_trigger.max(0));
         self.world
             .pending_field_events
             .push(FieldEvent::CameraApply {

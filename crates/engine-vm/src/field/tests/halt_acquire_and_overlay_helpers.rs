@@ -401,13 +401,17 @@ fn op_4c_n_c_sub_5_truncated_buffer_returns_unknown() {
 }
 
 #[test]
-fn op_4c_n_c_sub_d_script_alloc_halts_at_pc() {
+fn op_4c_n_c_sub_d_holds_while_the_camera_mover_is_live() {
     let bytecode = [0x4Cu8, 0xCD];
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
     assert_eq!(r, StepResult::Halt { final_pc: 0 });
-    assert_eq!(host.n_c_sub_d_allocs, 1);
+    assert_eq!(host.n_c_sub_d_queries, 1);
+    // No glide in flight: the op falls through past its two bytes.
+    host.n_c_sub_d_mover_idle = true;
+    let r = step(&mut host, &mut ctx, &bytecode, 0);
+    assert_eq!(r, StepResult::Advance { next_pc: 2 });
 }
 
 #[test]

@@ -850,6 +850,8 @@ impl World {
         if self.clock.display_frame_step != 1 {
             return;
         }
+        let glide = &mut self.camera.state.glide_frames;
+        *glide = (*glide - 1).max(0);
         self.step_cutscene_timeline();
         self.step_helper_contexts();
     }
@@ -1888,12 +1890,17 @@ impl World {
                         break;
                     }
                 }
-                let is_flag_test_handshake =
-                    matches!(op, 0x2D | 0x30 | 0x33) || (op == 0x4C && target.is_none());
+                // `4C CD` halts only while the camera mover's glide is in
+                // flight (the VM advances it otherwise), so its park is a
+                // timed wait to hold, not a handshake to step past.
+                let glide_wait = op == 0x4C && tl.bytecode.get(pc + 1) == Some(&0xCD);
+                let is_flag_test_handshake = matches!(op, 0x2D | 0x30 | 0x33)
+                    || (op == 0x4C && target.is_none() && !glide_wait);
                 if matches!(kind, crate::cutscene_timeline::TraceResult::Halt)
                     && next_pc == pc
                     && op != 0x4A
                     && op != 0x49
+                    && !glide_wait
                     && (target.is_none() || is_flag_test_handshake)
                 {
                     let header_size = if opcode_byte & 0x80 != 0 { 2 } else { 1 };
@@ -1993,7 +2000,10 @@ impl World {
                     // frames to reach their exits and were cut at 1200, so the
                     // forced completion dropped both records before their tail
                     // and those rooms read as one-way.
-                    if (opcode_byte & 0x7F) == 0x4A
+                    // A `4C CD` camera-glide wait is the same kind of hold:
+                    // bounded by the glide's own frame count, which the
+                    // mover spends one display frame at a time.
+                    if ((opcode_byte & 0x7F) == 0x4A || glide_wait)
                         && matches!(kind, crate::cutscene_timeline::TraceResult::Halt)
                         && next_pc == pc
                     {
@@ -3272,6 +3282,14 @@ impl World {
                 // and the fallback re-ran the pre-gathering speech in its
                 // place, so the arm that sets `0x141` never ran.
                 FieldStepResult::Halt { final_pc } if (b & 0x7F) == 0x4A => {
+                    id.pc = final_pc;
+                    break;
+                }
+                // `4C CD` holds while the camera mover's glide is in flight:
+                // the same timed park.
+                FieldStepResult::Halt { final_pc }
+                    if (b & 0x7F) == 0x4C && id.bytecode.get(id.pc + 1) == Some(&0xCD) =>
+                {
                     id.pc = final_pc;
                     break;
                 }
