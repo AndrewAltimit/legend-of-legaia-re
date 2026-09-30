@@ -66,6 +66,26 @@ pub const CURSOR_COLOR_DIM: u32 = 0x0040_1004;
 /// blend - not a mesh scale).
 pub const CURSOR_BLEND_ON: u32 = 0x1000;
 
+/// The depth-cue both hosts draw a cursor-stamped body with: the
+/// pointed-at monster pulses toward white on the world's display clock, the
+/// rest sit dimmed toward black. `(far colour, max IR0)`, or `None` for a
+/// body neither flag names.
+///
+/// The pulse is the port's readout of the stamped flag, not a traced retail
+/// curve. Its numbers used to be hand-copied into each host's draw pass
+/// (`0.30 + 0.20 * sin(frame * 0.25)`, dim `0.55`), which is a drift waiting
+/// to happen; this is the one copy.
+pub fn cursor_cue(render_flag: u8, display_frames: u64) -> Option<([f32; 3], f32)> {
+    match render_flag {
+        CURSOR_FLAG_SELECTED => Some((
+            [1.0, 1.0, 1.0],
+            0.30 + 0.20 * (display_frames as f32 * 0.25).sin(),
+        )),
+        CURSOR_FLAG_DIMMED => Some(([0.0, 0.0, 0.0], 0.55)),
+        _ => None,
+    }
+}
+
 /// Stamp (or clear) the target-select cursor tint across the monster slots.
 ///
 /// `enable` is retail's highlight-on case (`param_1 == 0`); `false` clears the

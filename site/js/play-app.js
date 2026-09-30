@@ -2294,6 +2294,17 @@ void main() {
            * engine decodes that one channel and replays the request. The
            * native window does the same read off the disc image. */
           this._serveXaStage(rt);
+          /* Re-read the presentation state the tick just moved. The read
+           * above the ticks serves the pad lock and the menu gate, which
+           * need the pre-tick value; the colour grade, the screen tint and
+           * the depth-cue ramp this frame stages are the post-tick ones,
+           * which is what the native window stages after its tick loop.
+           * Staging the pre-tick read ran the scene-entry fade and the
+           * prologue grade one frame behind on this page. */
+          if (typeof rt.play_cutscene_state_json === 'function') {
+            try { this._cut = JSON.parse(rt.play_cutscene_state_json()); }
+            catch (e) { /* keep the pre-tick read */ }
+          }
           if (entered) {
             /* The engine walked through a door: its scene swapped under us, so
              * the geometry has to swap too. A trap while rebuilding the new

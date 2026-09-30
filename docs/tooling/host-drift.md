@@ -175,11 +175,7 @@ is not an `engine-ui` builder.** A cheap sweep that finds them is "public
 content-shaped `fn` in `engine-core` / `engine-vm` named by exactly one host's
 sources" - both shop windows surface on it. Read the hits, though, rather than
 counting them: most one-host kernels are correct, because the minigame pages
-and the native minigame screens are genuinely different screen sets, and one
-more is a *better* implementation on one side (the browser's floating-damage
-readout uses the font fallback while the native window samples the real 24x24
-cells out of VRAM, which is what the builder's own doc asks a VRAM-capable host
-to do).
+and the native minigame screens are genuinely different screen sets.
 
 ## Tier 2 - paired constants: do paired values agree?
 
@@ -3111,10 +3107,13 @@ so the tier had nothing to pair:
 Recorded rather than fixed; each names the host that lacks it. None is gated.
 
 - **Overworld CLUT walk.** Implemented twice (`window/field_render.rs`
-  `WaterAnim`, the page's `step_field_vram_fx`), already differing in which
-  scenes patch strip rows and which column is checked.
-- **Baka on the play page** carries no strike clock or afterimage in its JSON;
-  the minigames page does.
+  `WaterAnim`, the page's `step_field_vram_fx` over `FieldSceneAnim`, which
+  the standalone field-scene viewer also runs), already differing in which
+  scenes patch strip rows (the native Drake-complement park) and which column
+  is checked (the native tests each source cell, the page column 0). The
+  step rule, the seeds, the ocean fallback, the battle guard and the order
+  against `step_field_vram_effects` agree; `legaia_asset::clut_walk` parses
+  the tables but steps nothing, so the stepper is the piece to share.
 
 The audio rows of the same pass are closed or settled in
 [their own section](#audio-legs-one-kernel-per-decision).
@@ -3457,6 +3456,99 @@ or the deviating host adopting the other's behaviour.
   HUD for the hold. The page silenced only its post-battle list, so the party
   strip, the plaque and the command chips stayed painted over the frozen
   frame; its whole overlay list is empty for the hold now.
+- **The colour grade a frame late.** The native window stages the screen
+  tint, the prologue grade and the depth-cue ramp after its tick loop. The
+  page read `play_cutscene_state_json` once, before its ticks (the pad lock
+  and the menu gate need that value), and staged the same read after them,
+  so the scene-entry fade and the prologue grade ran one frame behind. It
+  re-reads after each tick now. A tier cannot see this one: both hosts reach
+  the same export, and the difference is which side of the tick the read
+  sits on - [one decision, two inputs](#one-decision-two-inputs) again.
+- **The minigame status rows.** The slot, Baka, Muscle Dome and dance
+  affordance rows were written out once per host and had drifted in wording
+  (a Muscle Dome turn boundary telling the player to press Cross, where
+  retail's turn top is automatic and `World::tick` advances it with no press;
+  the slot exit reading "quit" on one host and "leave" on the other) and in
+  space (the native window drew the Muscle Dome rows, the dance beat track and
+  the Baka digit strip in raw surface pixels, top-left at a fraction of the
+  page's size). One row builder per game lives in
+  `engine-core::minigame_status`, one draw kernel in
+  `engine-ui::ui_text_lines::status_row_draws_for`, and each host applies its
+  one stage transform; tier 1 enumerates the kernel, so a host that stops
+  calling it fails. Only fishing already had this shape
+  (`PondSession::status_rows`).
+- **A nameless item in the shop.** On a load without the executable the
+  native shop printed `item 42` and the page `Item 2A`, each spelling its own
+  fallback. Both shop label helpers read `MenuState::item_label` now, the
+  engine's `Item 2A` form, and a `SIM_PAIRS` row holds them to it.
+- **The damage numerals' font fallback on the page.** Both hosts sample
+  retail's 24x24 cells off the battle VRAM once it exists and fall back to the
+  font before. The page's fallback could never draw: its layout read the
+  battle camera through the render-gated `play_battle_camera_vp`, which
+  answers empty on exactly the frames the fallback is for. The layout now
+  reads the engine's pose (`World::battle_cam_pose`) directly.
+- **The battle trail and move-FX streak aspect.** Both passes project into
+  the 320x240 stage, and the native window built their camera at the
+  surface's aspect, so on any window that is not 4:3 (the runner's 960x699
+  included) the trail and the streak sat off the bodies. They use the stage's
+  4:3 now, the aspect the scene pass draws at inside its stage viewport and
+  the page's `battle_vp` call already used.
+- **The target cursor's cue.** The pulse toward white on the pointed-at
+  monster and the dim on the rest were hand-copied numbers in each host's
+  draw pass; both read `battle_action::cursor_cue` now, under a `SIM_PAIRS`
+  row.
+- **Baka on the play page** was listed here as carrying no strike clock or
+  afterimage. Both play hosts draw the duel through the shared
+  `BakaDuelSurface::frame`, ghosts and impact effects included, and the
+  page's `play_mg_baka_state_json` shares the minigames page's builder; the
+  row was stale.
+- **Small copies moved onto one call.** The spoils line's leader name
+  (`World::battle_spoils_leader`) and a save's resume point
+  (`SceneHost::current_resume`, behind the native session's wrapper and the
+  page's card and LGSF writers) were each written out once per host.
+
+### Open from the same pass
+
+Recorded rather than fixed. Each names the host that lacks it or the copy
+that could drift; none is gated.
+
+- **A battle body's blend off its rest mesh (native).** The capture / defeat
+  fade and the near-camera ghost apply the colour word's blend to every prim
+  retail draws. The page applies it to every battle mesh; the native window
+  applies it to posed meshes only, so a body drawn from its rest mesh stays
+  opaque and un-cued there (its cue gate asks `pose_frame` for the same
+  reason). The page is the faithful side; closing it natively means applying
+  `apply_body_blend` to the rest-mesh upload too.
+- **World-map marker gates.** Both hosts emit the markers through
+  `marker_quads`, but feed it different predicates: the native window hides
+  them under a boot panel and draws the player stand-in off its drained spawn
+  slots, the page has no panel gate and keys the stand-in on whether its own
+  player rig exists.
+- **PSX rasterisation (native only).** `LEGAIA_PSX_RENDER` turns on vertex
+  jitter and 15-bit dither in the wgpu renderer; the page's shaders have
+  neither. Opt-in and non-default, so a feature gap rather than drift.
+- **Dynamic lighting, whole toggle.** Beyond the derived point lights
+  ([above](#derived-scene-point-lights-are-native-only)), the native `I`
+  toggle's directional light and screen-centred light pool also have no page
+  toggle or shader path.
+- **The Muscle Dome arena in 3D (native).** The page draws the arena, the
+  fighter and the monster from its `play_mg_muscle_*` exports and picks swing
+  clips in its script off the turn edge; the native window draws the hub
+  sprites and the status rows only. There is no engine surface for the dome
+  the way `BakaDuelSurface` serves the duel, which is the piece to build.
+- **Copies with no kernel under them yet.** Each is one derivation written on
+  both hosts, equal today: the battle-intro arming (PROT 0979 loader, the tile
+  corner fallback, the shade-pack parse, the two `IntroEnv` seeds - only the
+  style inputs are shared), the name-entry view (cursor-to-grid map and caret
+  blink), the Seru-trade screen's text, the save-select overlay sequence (and
+  the page drops its text entirely without the chrome atlas, where the native
+  window draws it either way), and the shop root / Options row models.
+- **The fishing wander readout (native only).** A dev-menu debug readout of
+  `FUN_801d2050`'s tracked points; the page's dev menu has no twin.
+- **The dance HUD quads (neither host).** The native window calls
+  `DanceGame::hud_draw_quads` into an emitter that returns nothing without a
+  page upload; the page never calls it. Host-identical, so a gap rather than
+  drift.
 
 ## Adding coverage
 

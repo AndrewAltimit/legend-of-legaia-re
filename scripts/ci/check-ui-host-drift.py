@@ -494,6 +494,7 @@ NATIVE_REDRAW_PASSES = (
 )
 NATIVE_CAMERA_MOD = "crates/engine-shell/src/bin/legaia-engine/window/camera.rs"
 WEB_PLAY_CAMERA = "crates/web-viewer/src/play_camera.rs"
+NATIVE_SHOP_WINDOWS = "crates/engine-shell/src/bin/legaia-engine/window/shop_windows.rs"
 NATIVE_KEYBOARD = "crates/engine-shell/src/bin/legaia-engine/window/event_handler/keyboard.rs"
 NATIVE_BATTLE = "crates/engine-shell/src/bin/legaia-engine/window/battle.rs"
 WEB_PLAY_ARENA = "crates/web-viewer/src/play_minigame_arena.rs"
@@ -504,6 +505,31 @@ NATIVE_TITLE_SAVE = (
 )
 
 SIM_PAIRS: list[dict[str, object]] = [
+    {
+        "what": "battle target-cursor cue, native vs play page - the pulse "
+        "toward white on the pointed-at monster and the dim on the rest are "
+        "the port's readout of the stamped render flag, and their numbers "
+        "were hand-copied into each host's draw pass. Both sites must read "
+        "`battle_action::cursor_cue`",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": ("crates/web-viewer/src/play_battle_fx.rs", "play_battle_actor_cursor"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["cursor_cue"],
+    },
+    {
+        "what": "shop item label, native vs play page - a nameless id (a "
+        "load without the executable) printed `item 42` in the native shop "
+        "and `Item 2A` on the page, each host spelling its own fallback. Both "
+        "shop label helpers must read `MenuState::item_label`",
+        "sites": {
+            "native": (NATIVE_SHOP_WINDOWS, "shop_item_name"),
+            "web": (WEB_PLAY_SHOP, "shop_item_label"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["item_label"],
+    },
     {
         "what": "camera-occlusion fade gate, native vs play page - the gate "
         "ray-casts the player's body cross from the eye, and the cross is "

@@ -19,7 +19,6 @@ use legaia_engine_core::slot_machine::{REEL_COUNT, STRIP_LEN, SlotMachine, SlotP
 use legaia_engine_ui::TextDraw;
 use wasm_bindgen::prelude::*;
 
-use crate::play_minigames::{DIM, PEN_PROMPT, PEN_STATUS, WHITE, row};
 use crate::runtime::LegaiaRuntime;
 
 /// Slot presentation edges the page cannot read off the session alone.
@@ -74,41 +73,17 @@ impl LegaiaRuntime {
         ui.prev_phase = phase;
     }
 
-    /// The native window's two slot HUD lines (`window/hud.rs`), with the
-    /// page's exit binding named.
+    /// The slot HUD rows, the engine's (`minigame_status::slot_status_rows`)
+    /// through the shared draw kernel the native window calls.
     pub(crate) fn slot_status_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
         let Some(m) = self.slot_session() else {
             return Vec::new();
         };
-        let reels = format!(
-            "[{}] [{}] [{}]",
-            m.payline_symbol(0),
-            m.payline_symbol(1),
-            m.payline_symbol(2)
-        );
-        let feature = match m.feature_mode() {
-            6 => format!("  BONUS x{}", m.bonus_spins()),
-            0 => String::new(),
-            mode => format!("  feature {mode}"),
-        };
-        let l1 = format!("SLOTS  {reels}  coins {}{feature}", m.balance());
-        let prompt = match m.phase() {
-            SlotPhase::Idle if !m.can_spin() => "not enough coins".to_string(),
-            SlotPhase::Idle => format!("Cross = spin ({} coins)", m.spin_cost()),
-            SlotPhase::Spinning => "spinning...".to_string(),
-            SlotPhase::Stopping => "Square/Cross/Circle = stop reels 1/2/3".to_string(),
-            SlotPhase::Payout => match m.last_result() {
-                Some(r) if r.payout > 0 => {
-                    format!("WIN +{} coins!  (Cross = collect)", r.payout)
-                }
-                _ => "no win  (Cross = continue)".to_string(),
-            },
-            SlotPhase::CashedOut => "cashed out".to_string(),
-        };
-        let l2 = format!("{prompt}   (Start = cash out + leave)");
-        let mut out = row(font, &l1, PEN_STATUS, WHITE);
-        out.extend(row(font, &l2, PEN_PROMPT, DIM));
-        out
+        let rows = legaia_engine_core::minigame_status::slot_status_rows(m);
+        legaia_engine_ui::ui_text_lines::status_row_draws_for(
+            font,
+            rows.iter().map(|r| (r.text.as_str(), r.pen, r.bright)),
+        )
     }
 }
 

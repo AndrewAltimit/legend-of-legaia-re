@@ -34,6 +34,20 @@ impl World {
     /// (~3 s at the 100 Hz sim clock).
     pub const SPOILS_BANNER_FRAMES: u16 = 300;
 
+    /// The party leader whose name opens the post-battle spoils line: the
+    /// member in party slot 0, or `Vahn` when that record carries no name
+    /// (a disc-free build's blank roster). Both hosts used to resolve it
+    /// with a copy of this lookup each.
+    pub fn battle_spoils_leader(&self) -> String {
+        self.party
+            .roster
+            .members
+            .get(self.party_roster_slot(0))
+            .map(|m| m.name())
+            .filter(|n| !n.trim().is_empty())
+            .unwrap_or_else(|| "Vahn".to_string())
+    }
+
     /// The post-battle spoils panel a host should be drawing this frame, or
     /// `None` when the panel is not up.
     ///

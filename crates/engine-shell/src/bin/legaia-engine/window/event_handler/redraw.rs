@@ -2099,33 +2099,23 @@ impl PlayWindowApp {
                         if in_battle {
                             use legaia_engine_vm::battle_action as ba;
                             let b = &actor.battle;
-                            match b.render_flag {
-                                ba::CURSOR_FLAG_SELECTED => {
-                                    let pulse = 0.30
-                                        + 0.20
-                                            * (self.session.host.world.clock.display_frames as f32
-                                                * 0.25)
-                                                .sin();
-                                    log::trace!(
-                                        "target cursor: actor {i} SELECTED pulse {pulse:.2}"
-                                    );
-                                    cue = Some(legaia_engine_render::DrawCue {
-                                        far: [1.0, 1.0, 1.0],
-                                        near_z: -1.0,
-                                        far_z: 0.0,
-                                        max_ir0: pulse,
-                                    });
-                                }
-                                ba::CURSOR_FLAG_DIMMED => {
-                                    log::trace!("target cursor: actor {i} DIMMED");
-                                    cue = Some(legaia_engine_render::DrawCue {
-                                        far: [0.0, 0.0, 0.0],
-                                        near_z: -1.0,
-                                        far_z: 0.0,
-                                        max_ir0: 0.55,
-                                    });
-                                }
-                                _ => {}
+                            // The cursor's cue is the engine's
+                            // (`battle_action::cursor_cue`), shared with the
+                            // page's `play_battle_actor_cursor`.
+                            if let Some((far, max_ir0)) = ba::cursor_cue(
+                                b.render_flag,
+                                self.session.host.world.clock.display_frames,
+                            ) {
+                                log::trace!(
+                                    "target cursor: actor {i} flag {} ir0 {max_ir0:.2}",
+                                    b.render_flag
+                                );
+                                cue = Some(legaia_engine_render::DrawCue {
+                                    far,
+                                    near_z: -1.0,
+                                    far_z: 0.0,
+                                    max_ir0,
+                                });
                             }
                             // Retail's one tint seam: `FUN_8004A908` packs
                             // the actor's `+0x04` lanes (`>> 2`) into the
@@ -2672,7 +2662,7 @@ impl PlayWindowApp {
             // The PROT-0900 screen-effect widgets sort in the same pass, by
             // their retail OT slots - the play page's single-list order.
             light_prims.extend(self.screen_fx_screen_prims());
-            screen_prims.extend(self.weapon_trail_screen_prims(r));
+            screen_prims.extend(self.weapon_trail_screen_prims());
             // The world's one live full-screen fade (the summon band's two
             // flashes, the escape white-out), drawn through the same kernel
             // the intro fades use so the ABR mode is honoured.

@@ -94,6 +94,23 @@ impl MenuState {
             pending_art_notice: None,
         }
     }
+
+    /// The display label for item `id`: its SCUS table name, or - on a
+    /// load without the executable - the raw id in hex (`Item 2A`), the
+    /// form the engine's own pause-screen builders already print.
+    ///
+    /// The shop's list and panes print this on both hosts. The fallback used
+    /// to be spelled per call site and had drifted (`item 42` in the native
+    /// shop, `Item 2A` on the page and in the native bag), so one nameless id
+    /// read differently in the shop than in the bag, and on the native window
+    /// than on the page.
+    pub fn item_label(&self, id: u8) -> String {
+        self.text
+            .as_ref()
+            .and_then(|t| t.item_name(id))
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("Item {id:02X}"))
+    }
 }
 
 impl Default for MenuState {

@@ -166,11 +166,10 @@ impl LegaiaRuntime {
     /// Display label for item `id` off the SCUS item table, falling back to
     /// the raw id when no executable was loaded (PROT.DAT-only session).
     fn shop_item_label(&self, id: u8) -> String {
+        // `MenuState::item_label`, the label the native shop prints.
         self.scene_host
             .as_ref()
-            .and_then(|h| h.world.menu.text.as_ref())
-            .and_then(|t| t.item_name(id))
-            .map(|s| s.to_string())
+            .map(|h| h.world.menu.item_label(id))
             .unwrap_or_else(|| format!("Item {id:02X}"))
     }
 

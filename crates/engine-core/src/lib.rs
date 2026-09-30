@@ -123,6 +123,7 @@ pub mod minigame_actor;
 pub mod minigame_entry;
 pub mod minigame_floor;
 pub mod minigame_fx;
+pub mod minigame_status;
 pub mod mode;
 pub mod model_bank;
 pub mod monster_ai;

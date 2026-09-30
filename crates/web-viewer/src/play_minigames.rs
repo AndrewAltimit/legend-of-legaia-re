@@ -479,12 +479,7 @@ impl LegaiaRuntime {
     }
 }
 
-/// Stage-space text rows at the native window's HUD pens: `(8, 44)` for a
-/// contest line, `(8, 62)` for the status line, `(8, 80)` for the prompt.
-pub(crate) const PEN_CONTEST: (i32, i32) = (8, 44);
-pub(crate) const PEN_STATUS: (i32, i32) = (8, 62);
-pub(crate) const PEN_PROMPT: (i32, i32) = (8, 80);
-pub(crate) const PEN_EXTRA: (i32, i32) = (8, 98);
+/// Stage-space row inks for this page's own status lines.
 pub(crate) const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 pub(crate) const DIM: [f32; 4] = [0.65, 0.72, 0.8, 1.0];
 

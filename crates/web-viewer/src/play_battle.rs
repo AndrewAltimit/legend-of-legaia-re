@@ -158,17 +158,6 @@ fn with_battle_item_frame<R>(
     f(&frame)
 }
 
-/// The party leader whose name opens the post-battle spoils line.
-fn battle_spoils_leader(w: &legaia_engine_core::world::World) -> String {
-    w.party
-        .roster
-        .members
-        .get(w.party_roster_slot(0))
-        .map(|m| m.name())
-        .filter(|n| !n.trim().is_empty())
-        .unwrap_or_else(|| "Vahn".to_string())
-}
-
 fn battle_hud_popup_views(hud: &BattleHud) -> Vec<HudPopupView> {
     hud.popup_views()
         .into_iter()
@@ -440,7 +429,7 @@ impl LegaiaRuntime {
         let Some(banner) = w.battle_spoils_banner() else {
             return Vec::new();
         };
-        let leader = battle_spoils_leader(w);
+        let leader = w.battle_spoils_leader();
         let view = ui::BattleSpoilsView {
             xp: banner.xp,
             gold: banner.gold,
@@ -484,7 +473,7 @@ impl LegaiaRuntime {
             ui::scale_stage_text_draws(&mut draws, origin, scale);
             out.extend(draws);
         } else if let Some(banner) = w.battle_spoils_banner() {
-            let leader = battle_spoils_leader(w);
+            let leader = w.battle_spoils_leader();
             let view = ui::BattleSpoilsView {
                 xp: banner.xp,
                 gold: banner.gold,
@@ -1163,10 +1152,19 @@ impl LegaiaRuntime {
             return None;
         }
         let world = &self.scene_host.as_ref()?.world;
-        let vp = self.play_battle_camera_vp(4.0 / 3.0);
-        if vp.len() != 16 {
+        // The camera is the engine's (`World::battle_cam_pose`, stepped by
+        // `World::tick`), so the layout needs no render build. It used to
+        // read `play_battle_camera_vp`, which answers empty without a battle
+        // render - the very frames the font fallback exists for - so a fight
+        // whose render did not build drew no numbers at all.
+        if world.mode != legaia_engine_core::world::SceneMode::Battle {
             return None;
         }
+        let vp = legaia_engine_vm::battle_cam_script::battle_vp(
+            &self.battle_cam_pose(),
+            BATTLE_WORLD_SCALE_LOCAL,
+            4.0 / 3.0,
+        );
         let cluster = self
             .battle_hud
             .combo
@@ -1274,11 +1272,7 @@ impl LegaiaRuntime {
             return Vec::new();
         };
         // The stage transform the rest of the battle chrome uses.
-        let scale = (surface_w / 320).min(surface_h / 240).clamp(1, 4);
-        let origin = (
-            (surface_w as i32 - 320 * scale as i32) / 2,
-            (surface_h as i32 - 240 * scale as i32) / 2,
-        );
+        let (origin, scale) = crate::play_menu::stage_transform(surface_w, surface_h);
         let view = |k: &legaia_engine_vm::battle_value_readout::ValueCell| ui::ValueCellView {
             digit: k.digit,
             x: k.x,

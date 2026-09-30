@@ -550,7 +550,7 @@ reason = "A native-only repair: the window uploads battle textures into a wgpu-r
 host = "native"
 kernel = "drain_baka_sfx_cues"
 host_only = true
-reason = "The Baka Fighter exchange-hit cues. The page drains every minigame cue lane in one place (`drain_minigame_sfx_cues_web`, inside `tick_sfx`) rather than one lane per kernel."
+reason = "The Baka Fighter exchange-hit cues (`BakaFight::take_cues`). The page drains the same lane inside `tick_minigame_ui`, in its per-game `tick_baka_ui` step, beside the shared minigame lane (`drain_minigame_sfx_cues_web`), rather than as a separately named kernel."
 
 [[frame_kernel]]
 host = "native"

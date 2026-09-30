@@ -1621,7 +1621,7 @@ impl PlayWindowApp {
         let Some(banner) = self.session.host.world.battle_spoils_banner() else {
             return Vec::new();
         };
-        let leader = self.battle_spoils_leader();
+        let leader = self.session.host.world.battle_spoils_leader();
         let view = legaia_engine_render::BattleSpoilsView {
             xp: banner.xp,
             gold: banner.gold,
@@ -1635,18 +1635,6 @@ impl PlayWindowApp {
         let mut draws = legaia_engine_render::battle_spoils_draws_for(&self.font, &view, &windows);
         legaia_engine_render::scale_stage_text_draws(&mut draws, origin, scale);
         draws
-    }
-
-    /// The party leader whose name opens the spoils line.
-    fn battle_spoils_leader(&self) -> String {
-        let w = &self.session.host.world;
-        w.party
-            .roster
-            .members
-            .get(w.party_roster_slot(0))
-            .map(|m| m.name())
-            .filter(|n| !n.trim().is_empty())
-            .unwrap_or_else(|| "Vahn".to_string())
     }
 
     /// The post-battle report's window chrome - the gold nine-slice over the
@@ -1673,7 +1661,7 @@ impl PlayWindowApp {
         let Some(banner) = self.session.host.world.battle_spoils_banner() else {
             return Vec::new();
         };
-        let leader = self.battle_spoils_leader();
+        let leader = self.session.host.world.battle_spoils_leader();
         let view = legaia_engine_render::BattleSpoilsView {
             xp: banner.xp,
             gold: banner.gold,
