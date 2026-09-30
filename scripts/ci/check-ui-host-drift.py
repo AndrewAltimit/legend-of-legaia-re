@@ -494,6 +494,7 @@ NATIVE_REDRAW_PASSES = (
 )
 NATIVE_CAMERA_MOD = "crates/engine-shell/src/bin/legaia-engine/window/camera.rs"
 WEB_PLAY_CAMERA = "crates/web-viewer/src/play_camera.rs"
+NATIVE_KEYBOARD = "crates/engine-shell/src/bin/legaia-engine/window/event_handler/keyboard.rs"
 NATIVE_BATTLE = "crates/engine-shell/src/bin/legaia-engine/window/battle.rs"
 WEB_PLAY_ARENA = "crates/web-viewer/src/play_minigame_arena.rs"
 WEB_PLAY_FISHING = "crates/web-viewer/src/play_fishing.rs"
@@ -503,6 +504,34 @@ NATIVE_TITLE_SAVE = (
 )
 
 SIM_PAIRS: list[dict[str, object]] = [
+    {
+        "what": "camera-occlusion fade gate, native vs play page - the gate "
+        "ray-casts the player's body cross from the eye, and the cross is "
+        "centred on `field_occlusion::player_body_centre` (the floor tier "
+        "under the actor lifted half a character height). The page rebuilt "
+        "that point inline with its own half-height literal, so a retune of "
+        "the kernel's constant would have moved one host's gate alone. Both "
+        "sites must read the kernel",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": (WEB_PLAY, "field_player_occluded"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["player_body_centre"],
+    },
+    {
+        "what": "camera-distance preset cycle, native vs play page - the "
+        "stored option is what every options apply re-asserts onto the "
+        "camera, so a cycle that steps the camera alone is undone by the next "
+        "apply and never persisted. The page's export did exactly that (and "
+        "had no caller). Both sites must step the option",
+        "sites": {
+            "native": (NATIVE_KEYBOARD, "handle_key"),
+            "web": (WEB_PLAY_CAMERA, "play_camera_cycle_distance"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["cycle_camera_distance", "persist_and_apply_options"],
+    },
     {
         "what": "field screen-effect washes, native vs play page - the field "
         "VM's op `0x34` sub-0 arm spawns colour-tween actors whose per-frame "

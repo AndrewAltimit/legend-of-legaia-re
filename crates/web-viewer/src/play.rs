@@ -1039,19 +1039,13 @@ impl LegaiaRuntime {
         let Some(h) = self.scene_host.as_ref() else {
             return false;
         };
-        let Some(slot) = h.world.player_actor_slot else {
+        // Body centre: the one kernel the native gate samples
+        // (`field_occlusion::player_body_centre` - the floor tier under the
+        // actor lifted half a character height). This page used to rebuild
+        // it here with its own copy of the half-height constant.
+        let Some(centre) = legaia_engine_core::field_occlusion::player_body_centre(&h.world) else {
             return false;
         };
-        let Some(a) = h.world.actors.get(slot as usize) else {
-            return false;
-        };
-        // Body centre: the floor tier under the actor lifted half a
-        // character height (~130-unit mesh; Y-down world, up = negative) -
-        // the same point the native gate samples.
-        const HALF_CHAR_HEIGHT: f32 = 65.0;
-        let (wx, wz) = (a.move_state.world_x, a.move_state.world_z);
-        let floor_y = h.world.sample_field_floor_height(wx as i32, wz as i32);
-        let centre = [wx as f32, floor_y as f32 - HALF_CHAR_HEIGHT, wz as f32];
         f.occluders.fully_occluded([eye_x, eye_y, eye_z], centre)
     }
 

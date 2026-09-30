@@ -3447,6 +3447,16 @@ or the deviating host adopting the other's behaviour.
   stored "off" over the player's own choice. It lays a session-only override
   over the option now (`set_precise_movement_override`), which every options
   apply re-asserts and nothing writes to the store.
+- **The occlusion gate's body centre.** The page rebuilt
+  `field_occlusion::player_body_centre` inline, half-height literal and all;
+  it calls the kernel now. The equal result today was a coincidence of two
+  constants, which is the shape tier 3 exists for, so both this and the
+  camera-distance cycle are `SIM_PAIRS` rows.
+- **The HUD over a party wipe.** Retail's frame after the wipe store is the
+  title overlay fading in, and the native window's boot-UI arm owns the whole
+  HUD for the hold. The page silenced only its post-battle list, so the party
+  strip, the plaque and the command chips stayed painted over the frozen
+  frame; its whole overlay list is empty for the hold now.
 
 ## Adding coverage
 

@@ -1287,6 +1287,16 @@ impl LegaiaRuntime {
     /// the live field - retail draws both over the running scene.
     pub fn play_overlay_draws_json(&mut self, surface_w: u32, surface_h: u32) -> String {
         const CLOSED: &str = r#"{"open":false,"sprites":[],"texts":[]}"#;
+        // A party wipe holds the frozen battle frame and adds nothing to it:
+        // retail's next frame after the wipe store is the title overlay
+        // fading in. The native window's boot-UI arm owns the whole HUD for
+        // the hold (`build_hud` returns the empty game-over list, and the
+        // battle chrome pass returns on `boot_ui.is_active()`); this page
+        // silenced only its post-battle list, so the party strip, the plaque
+        // and the command chips stayed painted over the wipe.
+        if self.game_over.is_some() {
+            return CLOSED.to_string();
+        }
         if !self.ensure_menu_assets() {
             return CLOSED.to_string();
         }
