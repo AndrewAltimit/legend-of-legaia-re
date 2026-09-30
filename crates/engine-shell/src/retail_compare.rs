@@ -1390,7 +1390,15 @@ fn battle_image(
         tick,
         opts.out_dir,
         &entry.label,
-        crate::retail_compare_image::FrameEntry::Door(&flags),
+        // The card-load resume the headless side seeds with, so the frame's
+        // party is retail's (levels, equipment, HP / MP on the HUD, the
+        // assembled battle meshes) rather than the New Game template the
+        // bare door entry seeds. The door with the system flags stays the
+        // fallback for a state whose save window does not lift.
+        match retail.save.as_ref() {
+            Some(save) => crate::retail_compare_image::FrameEntry::Resume(save),
+            None => crate::retail_compare_image::FrameEntry::Door(&flags),
+        },
     ) {
         Ok(ef) => {
             if let Some(dir) = opts.out_dir {

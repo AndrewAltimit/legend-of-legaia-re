@@ -286,8 +286,11 @@ yaw is a clock (`-4` per camera step), so on a prompt state the yaw part of
 present list names a seat the save window's roster does not seat (a guest
 combatant) reads as a short engine party in `battle_party`.
 
-**The image** comes from `play-window --battle <row> --party <ids>` with the
-retail system flags and stage variant, captured a fixed number of ticks past the
+**The image** comes from `play-window --resume-save <lifted save> --battle <row>
+--party <ids>` with the retail stage variant - the card-load resume the headless
+side takes, so the frame's party is retail's (levels, equipment and the battle
+meshes assembled from it, the HP / MP the HUD prints) rather than the New Game
+template a bare door entry seeds - captured a fixed number of ticks past the
 fight's first prompt - the evolved-Cort arrival (PROT 0968) holds the prompt
 back about a thousand frames longer than an ordinary opening, and the headless
 side's opening window runs long enough to wait it out. A fight with
