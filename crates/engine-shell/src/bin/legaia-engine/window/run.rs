@@ -240,15 +240,19 @@ fn arm_requested_battle(session: &mut BootSession, spec: &str) {
              system-flag arm is replayed with the entry"
         );
     }
-    // `LEGAIA_BATTLE_STAGE=N` stamps the battle-stage variant the fight is
-    // staged in (`_DAT_8007BD60 & 0x1F`), for a fight entered without
-    // standing on the region tile that names it - the retail comparison
-    // corpus reads it off the capture.
-    if let Some(v) = std::env::var("LEGAIA_BATTLE_STAGE")
-        .ok()
-        .and_then(|s| s.trim().parse::<u8>().ok())
-    {
-        world.seed_battle_stage_variant(v);
+    // `LEGAIA_BATTLE_STAGE=N[,K]` stamps the battle-stage variant the fight
+    // is staged in (`_DAT_8007BD60 & 0x1F`) and, with `K`, battle init's
+    // keep-object-1 byte (`_DAT_8007B64B`), for a fight entered without
+    // standing on the region tile that names them - the retail comparison
+    // corpus reads both off the capture.
+    if let Ok(s) = std::env::var("LEGAIA_BATTLE_STAGE") {
+        let mut it = s.trim().split(',');
+        if let Some(v) = it.next().and_then(|v| v.trim().parse::<u8>().ok()) {
+            world.seed_battle_stage_variant(v);
+        }
+        if let Some(k) = it.next().and_then(|k| k.trim().parse::<u8>().ok()) {
+            world.seed_battle_backdrop_keep_object_1(k != 0);
+        }
     }
     // `LEGAIA_BATTLE_INFLIGHT=caster,spell,target[;x:z,...]`: dispatch that
     // cast the moment the first command prompt opens - the retail comparison

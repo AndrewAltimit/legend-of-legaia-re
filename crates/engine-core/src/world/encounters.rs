@@ -784,6 +784,20 @@ impl World {
         self.encounters.region_setup = Some(setup);
     }
 
+    /// Stamp battle init's keep-object-1 byte `_DAT_8007B64B` directly, for
+    /// the same caller as [`Self::seed_battle_stage_variant`]: the region
+    /// reader leaves it from a long-layout record's `+8` bit 5, and
+    /// `FUN_800513F0` skips its drop-object-1 pass when it is set
+    /// (`0x80051ABC`). A capture's RAM holds the byte; a replay that cannot
+    /// stand on the region tile must carry it over, or the backdrop loses
+    /// the object retail drew - nilboa's horizon mist ribbon.
+    pub fn seed_battle_backdrop_keep_object_1(&mut self, keep: bool) {
+        self.seed_battle_stage_variant(self.encounters.region_setup.map_or(0, |s| s.stage_variant));
+        if let Some(setup) = self.encounters.region_setup.as_mut() {
+            setup.keep_backdrop_object_1 = Some(keep);
+        }
+    }
+
     /// The Door of Light / Door of Wind gates the last region setup left in
     /// scratchpad `0x1F800394` (`0x100000` / `0x200000`): `(light, wind)`,
     /// `true` = blocked. Open until a region has been stood in.

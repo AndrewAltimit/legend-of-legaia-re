@@ -264,10 +264,14 @@ formation of its own, carrying the scripted bit, with the monster archive's
 stats for its ids. The fight's own composition and stage are seeded from the capture: retail's
 present list `0x8007BD10` becomes the engine's active party (a guest seat, or a
 battle-id fight whose init re-seeds the trio, is not the save window's field
-party), and the stage variant `0x8007BD60 & 0x1F` is stamped
-(`World::seed_battle_stage_variant`; `play-window` reads it as
-`LEGAIA_BATTLE_STAGE`), because a battle capture's player actor is no longer
-the field walker whose tile names it. `World::force_encounter` then arms the row through the
+party), and the stage variant `0x8007BD60 & 0x1F` and battle init's
+keep-object-1 byte `0x8007B64B` are stamped
+(`World::seed_battle_stage_variant` / `seed_battle_backdrop_keep_object_1`;
+`play-window` reads both as `LEGAIA_BATTLE_STAGE=variant,keep`), because a
+battle capture's player actor is no longer the field walker whose tile names
+them. Both come from the region reader, and the second is not decoration:
+nilboa's Thunder Ravine region keeps the backdrop shell's object 1, the
+horizon mist ribbon, which a replay seeded with the variant alone dropped. `World::force_encounter` then arms the row through the
 ordinary transition - the path `play-window --battle` takes, including the
 scripted carrier's replayed tutorial arm. When the mode flips, the retail
 combatants' live HP / MP are written over the engine's, and the session is

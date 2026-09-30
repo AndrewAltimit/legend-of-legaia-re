@@ -1512,7 +1512,14 @@ fn battle_image(
         .map(system_flag_ids)
         .unwrap_or_default();
     let extra = crate::retail_compare_battle::play_window_args(battle, row);
-    let mut env = vec![("LEGAIA_BATTLE_STAGE", battle.stage_variant.to_string())];
+    let mut env = vec![(
+        "LEGAIA_BATTLE_STAGE",
+        format!(
+            "{},{}",
+            battle.stage_variant,
+            u8::from(battle.keep_backdrop_object_1)
+        ),
+    )];
     // The idle orbit is a clock: phase-align it to the retail instant when
     // retail's own orbit owns the yaw (the battle tick's prologue store,
     // gated on these command-flow bytes - `0x801D07AC..0x801D07CC`).

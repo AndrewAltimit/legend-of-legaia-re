@@ -56,6 +56,9 @@ const PER_BATTLE_FLAGS: u32 = 0x8007_BD60;
 const RUN_STATE: u32 = 0x8007_BD71;
 /// Battle stage id (`0` none; `1` the Tetsu tutorial module).
 const STAGE_ID: u32 = 0x8007_B64A;
+/// Battle init's keep-object-1 byte: set, `FUN_800513F0` keeps the backdrop
+/// shell's object 1 (`0x80051ABC`).
+const KEEP_BACKDROP_OBJECT_1: u32 = 0x8007_B64B;
 /// Present-party list: pool slot -> roster character id (1-based; `4` is
 /// the AI-companion seat).
 const SEAT_CHARS: u32 = 0x8007_BD10;
@@ -113,6 +116,9 @@ pub struct RetailBattle {
     /// stamped for the tile the fight started on; battle init loads the
     /// backdrop from entry `scene_index + variant` (`FUN_800513F0`).
     pub stage_variant: u8,
+    /// `0x8007B64B != 0` - battle init kept the backdrop shell's object 1
+    /// (the region reader's long-layout `+8` bit 5).
+    pub keep_backdrop_object_1: bool,
     /// `0x8007BD10[0..party_count]`.
     pub seat_chars: Vec<u8>,
     /// Formation-cell ids, trimmed to the monster count.
@@ -642,6 +648,7 @@ impl RetailBattle {
             stage_id: game_anchors::u8_at(ram, STAGE_ID),
             scripted: game_anchors::u32_at(ram, PER_BATTLE_FLAGS) & 0x80 != 0,
             stage_variant: game_anchors::u8_at(ram, PER_BATTLE_FLAGS) & 0x1F,
+            keep_backdrop_object_1: game_anchors::u8_at(ram, KEEP_BACKDROP_OBJECT_1) != 0,
             monster_ids,
             seat_chars: (0..u32::from(party_count))
                 .map(|s| game_anchors::u8_at(ram, SEAT_CHARS + s))
@@ -824,6 +831,10 @@ pub fn run_engine_battle(
         .host
         .world
         .seed_battle_stage_variant(battle.stage_variant);
+    session
+        .host
+        .world
+        .seed_battle_backdrop_keep_object_1(battle.keep_backdrop_object_1);
     let seats = retail_roster_slots(battle);
     if !seats.is_empty() && seats != session.host.world.party.active_party {
         session.host.world.set_active_party(seats);
