@@ -53,9 +53,15 @@ pub enum FieldMenuSubsession {
     /// Equip session paired with the slot of the character whose record is
     /// being edited so the caller can write the result back to the right
     /// roster member.
+    ///
+    /// `picking` is retail's character picker `0x12` (`FUN_801D98F0`), the
+    /// Equip row's first step: the pad walks the present party and the slot
+    /// rows show the hovered member's equipment; a confirm hands the pad to
+    /// the slot browse (`0x13`), whose cancel comes back here.
     Equip {
         session: EquipSession,
         char_slot: u8,
+        picking: bool,
     },
     Spells(SpellMenuSession),
     /// The per-character list page with the spell list's **reorder**.
@@ -99,11 +105,15 @@ impl FieldMenuSubsession {
         match row {
             FieldMenuRow::Items => Self::Items(build_pause_items_session(world)),
             FieldMenuRow::Equip => {
-                let leader = active_leader_slot(world);
-                let session = build_equip_session(world, leader, equipment_table);
+                // The picker opens on the leader - the head of the present
+                // party list retail's picker walks.
+                let first = active_leader_slot(world);
+                let mut session = build_equip_session(world, first, equipment_table);
+                session.set_slot_cursor_hidden(true);
                 Self::Equip {
                     session,
-                    char_slot: leader,
+                    char_slot: first,
+                    picking: true,
                 }
             }
             FieldMenuRow::Magic => Self::Spells(build_spell_session(world, spell_catalog)),
@@ -190,7 +200,25 @@ impl FieldMenuSubsession {
     pub fn tick_pad_edge_with_key(&mut self, pressed: u16, key_pressed: Option<&str>) {
         match self {
             Self::Items(s) => s.input_pad_edge(pressed),
-            Self::Equip { session, .. } => {
+            Self::Equip {
+                session, picking, ..
+            } if *picking => {
+                // Retail's character picker `0x12` (`FUN_801D98F0`): confirm
+                // hands the pad to the slot browse `0x13`, cancel leaves the
+                // Equip screen. Moving between members needs the world to
+                // rebuild the session, so [`tick_open_subsession`] takes the
+                // Up / Down edges before this arm.
+                if pressed & PadButton::Cross.mask() != 0 {
+                    *picking = false;
+                    session.set_slot_cursor_hidden(false);
+                    session.reopen_slot_browse();
+                } else if pressed & PadButton::Circle.mask() != 0 {
+                    session.cancel();
+                }
+            }
+            Self::Equip {
+                session, picking, ..
+            } => {
                 session.input(EquipInput {
                     up: pressed & PadButton::Up.mask() != 0,
                     down: pressed & PadButton::Down.mask() != 0,
@@ -200,6 +228,13 @@ impl FieldMenuSubsession {
                     circle: pressed & PadButton::Circle.mask() != 0,
                     triangle: pressed & PadButton::Triangle.mask() != 0,
                 });
+                // The slot browse's cancel returns to the character picker
+                // (`0x13` cancel -> `0x12`), not to the root list.
+                if session.outcome() == Some(EquipOutcome::Cancelled) {
+                    *picking = true;
+                    session.set_slot_cursor_hidden(true);
+                    session.reopen_slot_browse();
+                }
             }
             Self::Spells(s) => {
                 let _ = s.tick(SpellMenuInput::from_pad_edge(pressed));
@@ -290,8 +325,10 @@ pub fn apply_equip_outcome(
         && let Some(member) = world.party.roster.members.get_mut(char_slot as usize)
     {
         let mut eq = member.equipment();
-        if (slot as usize) < eq.slots.len() {
-            eq.slots[slot as usize] = added;
+        // The outcome names an engine slot; the record byte is retail's.
+        let byte = crate::equip_session::record_byte_for_engine_slot(slot, char_slot);
+        if byte < eq.slots.len() {
+            eq.slots[byte] = added;
             member.set_equipment(eq);
             // Reconcile the bag with the swap the session computed on its own
             // (cloned) copy: the newly-equipped item leaves inventory, the
@@ -621,10 +658,52 @@ pub fn tick_open_subsession(
     key_pressed: Option<&str>,
     world: &World,
 ) -> Option<Mapping> {
+    if step_equip_character_picker(active, edge, world) {
+        return None;
+    }
     if !try_open_arts_editor(active, edge, world) {
         active.tick_pad_edge_with_key(edge, key_pressed);
     }
     active.take_rebound_mapping()
+}
+
+/// The Equip character picker's Up / Down: walk the present party
+/// (`DAT_80084594` over `0x80084598`, [`World::present_party_list`]) and
+/// rebuild the session on the hovered member, so the slot rows show that
+/// member's equipment as retail's main window does. Returns `true` when the
+/// edge was taken.
+///
+/// REF: FUN_801D98F0
+fn step_equip_character_picker(active: &mut FieldMenuSubsession, edge: u16, world: &World) -> bool {
+    let FieldMenuSubsession::Equip {
+        session,
+        char_slot,
+        picking: true,
+    } = active
+    else {
+        return false;
+    };
+    let up = edge & PadButton::Up.mask() != 0;
+    let down = edge & PadButton::Down.mask() != 0;
+    if !(up || down) {
+        return false;
+    }
+    let list = world.present_party_list();
+    let at = list.iter().position(|&s| s == *char_slot).unwrap_or(0);
+    let next = if down {
+        (at + 1).min(list.len().saturating_sub(1))
+    } else {
+        at.saturating_sub(1)
+    };
+    if let Some(&slot) = list.get(next)
+        && slot != *char_slot
+    {
+        let mut rebuilt = build_equip_session(world, slot, &world.tables.equipment_table);
+        rebuilt.set_slot_cursor_hidden(true);
+        *session = rebuilt;
+        *char_slot = slot;
+    }
+    true
 }
 
 /// What a finished sub-session leaves for its host once
@@ -690,7 +769,9 @@ pub fn finish_subsession(finished: FieldMenuSubsession, world: &mut World) -> Fi
             let _ = apply_pause_items_outcome(&s, world);
             out.art_learned_notice = world.menu.pending_art_notice.take();
         }
-        FieldMenuSubsession::Equip { session, char_slot } => {
+        FieldMenuSubsession::Equip {
+            session, char_slot, ..
+        } => {
             let _ = apply_equip_outcome(&session, char_slot, world);
         }
         FieldMenuSubsession::Spells(s) => {
@@ -1299,15 +1380,23 @@ pub fn warp_destinations(world: &World) -> Vec<crate::pause_screens::WarpDestina
 }
 
 fn build_equip_session(world: &World, char_slot: u8, equipment: &EquipmentTable) -> EquipSession {
-    let record = world
-        .party
-        .roster
-        .members
-        .get(char_slot as usize)
-        .map(stat_record_from_character)
-        .unwrap_or_default();
+    // The session works in the engine's slot order; the record's `+0x196`
+    // bytes are retail's, reordered per character on the way in.
+    let record_for = |slot: u8| {
+        world
+            .party
+            .roster
+            .members
+            .get(slot as usize)
+            .map(|c| {
+                let mut r = stat_record_from_character(c);
+                r.equip = crate::equip_session::engine_equip_from_record(r.equip, slot);
+                r
+            })
+            .unwrap_or_default()
+    };
     let session = EquipSession::new(
-        record,
+        record_for(char_slot),
         world.party.inventory.clone(),
         equipment.clone(),
         StatusModifiers::default(),
@@ -1566,6 +1655,35 @@ mod tests {
         }
     }
 
+    /// The Equip row opens on retail's character picker (`0x12`): Down walks
+    /// the present party and re-points the screen at the hovered member,
+    /// Cross hands the pad to the slot browse, and the browse's cancel comes
+    /// back to the picker rather than leaving the screen.
+    #[test]
+    fn equip_opens_on_the_character_picker() {
+        let mut w = fresh_world();
+        w.install_present_party_list(vec![0, 1]);
+        let mut s = build(FieldMenuRow::Equip, &w);
+        let state = |s: &FieldMenuSubsession| match s {
+            FieldMenuSubsession::Equip {
+                char_slot, picking, ..
+            } => (*char_slot, *picking),
+            _ => panic!("expected Equip"),
+        };
+        assert_eq!(state(&s), (0, true));
+        tick_open_subsession(&mut s, PadButton::Down.mask(), None, &w);
+        assert_eq!(state(&s), (1, true));
+        tick_open_subsession(&mut s, PadButton::Down.mask(), None, &w);
+        assert_eq!(state(&s), (1, true), "the walk stops at the last member");
+        tick_open_subsession(&mut s, PadButton::Cross.mask(), None, &w);
+        assert_eq!(state(&s), (1, false));
+        tick_open_subsession(&mut s, PadButton::Circle.mask(), None, &w);
+        assert_eq!(state(&s), (1, true));
+        assert!(!s.is_done());
+        tick_open_subsession(&mut s, PadButton::Circle.mask(), None, &w);
+        assert!(s.is_done());
+    }
+
     #[test]
     fn build_equip_uses_active_leader() {
         let mut w = fresh_world();
@@ -1759,6 +1877,9 @@ mod tests {
         // Slot-browse row 0 is Best Equipment, so slot 1 (where item 0x25
         // lives) is row 2: two steps down, confirm into the item picker,
         // confirm the single item, confirm Yes.
+        // The Equip row opens on its character picker; confirm hands the pad
+        // to the slot browse.
+        s.tick_pad_edge(PadButton::Cross.mask());
         for _ in 0..2 {
             s.tick_pad_edge(PadButton::Down.mask());
         }
@@ -1766,7 +1887,10 @@ mod tests {
             s.tick_pad_edge(PadButton::Cross.mask());
         }
         assert!(s.is_done());
-        if let FieldMenuSubsession::Equip { session, char_slot } = &s {
+        if let FieldMenuSubsession::Equip {
+            session, char_slot, ..
+        } = &s
+        {
             let outcome = apply_equip_outcome(session, *char_slot, &mut w);
             assert!(matches!(outcome, Some(EquipOutcome::Committed { .. })));
             // Roster member 0's slot 1 byte now matches the equipped id.
@@ -1809,6 +1933,9 @@ mod tests {
         );
         // Row 2 is slot 1. The slot is occupied, so its candidate list
         // leads with the Remove row - one more step down lands on 0x25.
+        // The Equip row opens on its character picker; confirm hands the pad
+        // to the slot browse.
+        s.tick_pad_edge(PadButton::Cross.mask());
         for _ in 0..2 {
             s.tick_pad_edge(PadButton::Down.mask());
         }
@@ -1818,7 +1945,10 @@ mod tests {
             s.tick_pad_edge(PadButton::Cross.mask());
         }
         assert!(s.is_done());
-        let FieldMenuSubsession::Equip { session, char_slot } = &s else {
+        let FieldMenuSubsession::Equip {
+            session, char_slot, ..
+        } = &s
+        else {
             panic!("expected Equip variant");
         };
         let outcome = apply_equip_outcome(session, *char_slot, &mut w);

@@ -357,9 +357,9 @@ impl PlayWindowApp {
             FieldMenuSubsession::Save(_) => PauseMenuDraws::default(),
             FieldMenuSubsession::Spells(s) => self.pause_magic_draws(s, &ctx),
             FieldMenuSubsession::Items(s) => self.pause_items_draws(s, &ctx),
-            FieldMenuSubsession::Equip { session, char_slot } => {
-                self.equip_session_draws(session, *char_slot, &ctx)
-            }
+            FieldMenuSubsession::Equip {
+                session, char_slot, ..
+            } => self.equip_session_draws(session, *char_slot, &ctx),
             FieldMenuSubsession::Arts(s) => self.arts_session_draws(s, &ctx),
         }
     }

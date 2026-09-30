@@ -2328,17 +2328,23 @@ pub fn equip_screen_model(
         Some(f) => f(id).name,
         None => format!("Item {id:02X}"),
     };
-    let slot_labels: Vec<String> = (0..8u8)
-        .map(|i| {
+    // Rows in retail's browse order (weapon, helmet, body, footwear, Goods
+    // x3), the engine's Hand Guard row last.
+    let order = crate::equip_session::BROWSE_SLOT_ORDER;
+    let slot_labels: Vec<String> = order
+        .iter()
+        .map(|&i| {
             EquipSlot::from_index(i)
                 .map(|s| s.label().to_string())
                 .unwrap_or_else(|| format!("Slot {i}"))
         })
         .collect();
-    let slot_items: Vec<String> = record
-        .equip
+    let slot_items: Vec<String> = order
         .iter()
-        .map(|&id| if id == 0 { String::new() } else { name_of(id) })
+        .map(|&i| match record.equip.get(usize::from(i)).copied() {
+            None | Some(0) => String::new(),
+            Some(id) => name_of(id),
+        })
         .collect();
 
     let (phase, cursor, active_slot, confirm_label) = match session.state() {
@@ -2495,10 +2501,12 @@ pub fn equip_screen_model(
         stat_compare,
         phase,
         cursor,
-        active_slot,
+        // The row the active slot draws on (its place in the browse order).
+        active_slot: crate::equip_session::browse_row_for_slot(active_slot) - 1,
         confirm_label,
         char_slot,
         slot_cursor: match session.state() {
+            EquipState::SlotPicker { .. } if session.slot_cursor_hidden() => None,
             EquipState::SlotPicker { cursor } => Some(cursor as u16),
             _ => None,
         },
@@ -3452,7 +3460,7 @@ mod tests {
                 StatusModifiers::default(),
                 Vec::new(),
             );
-            for _ in 0..=engine_slot {
+            for _ in 0..crate::equip_session::browse_row_for_slot(engine_slot) {
                 session.input(EquipInput {
                     down: true,
                     ..Default::default()

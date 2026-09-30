@@ -1042,7 +1042,9 @@ impl LegaiaRuntime {
                 FieldMenuSubsession::Spells(s) => {
                     self.build_spells(assets, s, &mut sprites, &mut texts, origin, scale)
                 }
-                FieldMenuSubsession::Equip { session, char_slot } => self.build_equip(
+                FieldMenuSubsession::Equip {
+                    session, char_slot, ..
+                } => self.build_equip(
                     assets,
                     session,
                     *char_slot,

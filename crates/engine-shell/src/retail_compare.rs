@@ -499,9 +499,10 @@ pub const MENU_PRESS_GAP: u64 = 12;
 
 /// The pad edges that reach `menu` from a settled field, as `(tick offset,
 /// button)` pairs from the first press: `Start`, `Down` until the root
-/// cursor (opening on row `0`) sits on the row, `Cross`. The engine's Equip
-/// row opens on the slot browse (it has no character-picker step), so the
-/// candidate list takes one more `Down` past Best Equipment and a `Cross`.
+/// cursor (opening on row `0`) sits on the row, `Cross`. The Equip row opens
+/// on its character picker (`0x12`); the slot browse (`0x13`) is one more
+/// `Cross`, and the candidate list (`0x14`) a `Down` past Best Equipment and
+/// a `Cross` after that.
 pub fn pause_menu_presses(menu: &RetailMenu) -> Vec<(u64, legaia_engine_core::input::PadButton)> {
     use legaia_engine_core::input::PadButton;
     let mut out = vec![(0, PadButton::Start)];
@@ -514,7 +515,10 @@ pub fn pause_menu_presses(menu: &RetailMenu) -> Vec<(u64, legaia_engine_core::in
         press(PadButton::Down);
     }
     press(PadButton::Cross);
-    if menu.equip_depth == 2 {
+    if menu.equip_depth >= 1 {
+        press(PadButton::Cross);
+    }
+    if menu.equip_depth >= 2 {
         press(PadButton::Down);
         press(PadButton::Cross);
     }
@@ -545,9 +549,10 @@ fn drive_pause_menu(session: &mut BootSession, menu: &RetailMenu) -> Result<Opti
     Ok(match (&session.field_menu, &session.field_menu_sub) {
         (None, _) => None,
         (Some(_), None) => Some(0x01),
-        // The engine's Equip session is retail's slot browse and candidate
-        // list; it has no character-picker step (`0x12`).
+        // The Equip row's three steps: the character picker, the slot
+        // browse and the candidate list.
         (Some(_), Some(sub)) => Some(match sub {
+            FieldMenuSubsession::Equip { picking: true, .. } => MENU_EQUIP_PICK,
             FieldMenuSubsession::Equip { session, .. } => match session.state() {
                 EquipState::SlotPicker { .. } => MENU_EQUIP_SLOTS,
                 _ => MENU_EQUIP_CANDIDATES,

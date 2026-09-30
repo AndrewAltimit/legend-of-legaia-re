@@ -159,7 +159,13 @@ pub fn equip_screen_draws_for(
         "Best Equipment",
         mx + 0x10,
         my,
-        if best_row_active { gold } else { white },
+        // CLUT 7 like the slot rows: the hand marks the row, the tint only
+        // backs the text-cursor fallback.
+        if view.text_cursor && best_row_active {
+            gold
+        } else {
+            white
+        },
     );
     for (i, slot) in view.slots.iter().enumerate() {
         let y = my + (i as i32 + 1) * EQUIP_ROW_PITCH;
@@ -321,18 +327,18 @@ pub fn equip_screen_sprites_for(
         });
     };
 
-    // Slot pictogram column. Engine slot order (Weapon / Helmet / Body
-    // Armor / Hand Guard / Boots / Ring / Ring / Accessory) mapped onto
-    // the retail pictogram set.
+    // Slot pictogram column, in the browse order the rows are drawn in:
+    // retail's `DAT_801E43F4` (weapon / helmet / armor / boot / Goods x3),
+    // then the engine's Hand Guard row reusing the fist.
     let icons = [
         rects.icon_weapon,
         rects.icon_helmet,
         rects.icon_armor,
-        rects.icon_weapon,
         rects.icon_boot,
         rects.icon_goods,
         rects.icon_goods,
         rects.icon_goods,
+        rects.icon_weapon,
     ];
     let (mx, my) = main_pen;
     for (i, src) in icons.into_iter().take(n_slot_rows).enumerate() {

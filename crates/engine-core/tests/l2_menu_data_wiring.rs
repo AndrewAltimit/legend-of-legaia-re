@@ -387,7 +387,10 @@ fn best_weapon_for(world: &mut World, equipment: &EquipmentTable, leader: u8) ->
         &SpellCatalog::vanilla(),
         equipment,
     );
-    let FieldMenuSubsession::Equip { session, char_slot } = sub else {
+    let FieldMenuSubsession::Equip {
+        session, char_slot, ..
+    } = sub
+    else {
         panic!("Equip row");
     };
     assert_eq!(char_slot, leader);

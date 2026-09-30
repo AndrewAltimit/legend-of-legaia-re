@@ -280,14 +280,16 @@ The pause menu's screens are the root rows' routes - Items `0x05`, Magic
 candidate list `0x14` (`0x12` itself is Equip's character picker). Those are
 seeded: the field seed runs (card-load resume, seat, settle), then the pause
 menu is driven through its own pad path - `Start`, `Down` onto the row,
-`Cross`, and for `0x14` `Down` past Best Equipment and `Cross` into the first
-slot's candidates, one edge every `MENU_PRESS_GAP` ticks. The headless side
+`Cross`; one more `Cross` past the character picker for `0x13`, and for
+`0x14` a `Down` past Best Equipment and a `Cross` into the first slot's
+candidates, one edge every `MENU_PRESS_GAP` ticks. The headless side
 presses them into `BootSession`'s menu; the image side hands the same edges to
 `play-window` as a `--pad-script` after the card-load resume.
 
 The `menu` channel is 1 when the engine's menu holds the same sub-screen
-(`0x01` on the root list, the open row's id; the engine's Equip session reads
-as `0x13` on its slot list and `0x14` on its candidates). `mode` wants the engine in `Menu`; the field channels keep their
+(`0x01` on the root list, the open row's id; the engine's Equip screen reads
+as `0x12` in its character picker, `0x13` on its slot list and `0x14` on its
+candidates). `mode` wants the engine in `Menu`; the field channels keep their
 meaning, since the menu opens over the seated field.
 
 A capture with the word clear is the title / boot family (the attract loop,
@@ -295,11 +297,10 @@ the title picker, the card-boot save select) and a screen no root row routes
 to is script-entered (the casino prize exchange, `0x20`); both are kept with
 a `menu not seedable:` reason and counted as classified limits.
 
-What a like-for-like menu frame shows is the engine's. The engine's Equip row
-has no character-picker step: it opens on the slot browse, so a `0x12`
-capture scores `menu` 0 against `0x13`. Its slot rows run in the engine's
-slot order rather than retail's, and the options screen carries the port's
-extra Key Config row. The Status and Equip character lists are the present
+What a like-for-like menu frame shows is the engine's. The Equip row's slot
+browse draws the engine-only Hand Guard row as an eighth row below retail's
+seven, the Best Equipment row has no candidate preview beside it, and the
+options screen carries the port's extra Key Config row. The Status and Equip character lists are the present
 party (`DAT_80084594` over `0x80084598`,
 `field_menu_dispatch::status_snapshots` and `EquipScreenModel::party_row`), not
 every roster record - the New Game template seeds all four records, so a

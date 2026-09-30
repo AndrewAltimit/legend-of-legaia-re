@@ -664,6 +664,16 @@ writes the slot, then the hand advances to the next slot row and the
 screen returns to `0x13`. Engine ports:
 `equip_session::{preview_candidate, unequip, slot_browse_confirm,
 apply_best_equipment}`, all four on the live `EquipSession::input` path.
+The character picker `0x12` is the `picking` phase of
+`FieldMenuSubsession::Equip`: Up / Down walk the present party and rebuild the
+session on the hovered member (the slot rows show that member's gear, with no
+slot hand), Cross hands the pad to the slot browse, and the browse's cancel
+returns to the picker. The engine's session works in its own slot order and
+reads the record through `equip_session::engine_equip_from_record` (the
+per-character weapon byte to the weapon slot, the other byte of the pair to
+the Hand Guard row); its browse rows run in retail's order
+(`equip_session::BROWSE_SLOT_ORDER`: weapon, helmet, body, footwear, Goods x3)
+with the engine-only Hand Guard row last.
 
 `FUN_801CF760` does **not** write equip byte `i` for armament `i`. It
 resolves the record offset first - armament `0` from the per-character
