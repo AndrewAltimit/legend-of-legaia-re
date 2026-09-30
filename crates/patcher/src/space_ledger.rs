@@ -119,17 +119,19 @@ pub const REGIONS: &[Region] = &[
     },
     Region {
         image: Image::Prot(MENU_OVERLAY),
-        start_va: 0x801E_65F4,
-        end_va: 0x801E_6B43,
-        owner: Owner::Mods(&["--show-super-arts"]),
-        why: "inside the save screen's card-read buffer 0x801E5120..0x801E7120 (written while a card is read)",
+        start_va: 0x801E_A440,
+        end_va: 0x801E_B340,
+        owner: Owner::Mods(&["--seru-trade", "--show-super-arts"]),
+        why: "run-C: save-menu atlas rows 162..191, blank and never sampled; above both card \
+              buffers, no instruction in any image forms an address inside it, zero in every \
+              library capture with the overlay resident",
     },
     Region {
         image: Image::Prot(MENU_OVERLAY),
-        start_va: 0x801E_74E0,
-        end_va: 0x801E_83E0,
-        owner: Owner::Mods(&["--seru-trade", "--show-super-arts"]),
-        why: "run-C; overlaps the save compose buffer 0x801E7120..0x801E9120 (written while saving)",
+        start_va: 0x801E_B400,
+        end_va: 0x801E_B94F,
+        owner: Owner::Mods(&["--show-super-arts"]),
+        why: "the Moves-page descriptions: atlas rows 193..203, the same blank band as run-C",
     },
     Region {
         image: Image::Prot(MENU_OVERLAY),
@@ -141,6 +143,72 @@ pub const REGIONS: &[Region] = &[
               zero in every library capture with the overlay resident",
     },
 ];
+
+/// A span the running game itself writes, or reads as live data, while the
+/// image is resident - so no [`Region`] may overlap it, whatever the file holds
+/// there. Zero bytes in the file say nothing about these: a card buffer is
+/// all-zero on the disc and full of save data a moment after the player saves.
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+pub struct Buffer {
+    /// The image.
+    pub image: Image,
+    /// First VA (inclusive).
+    pub start_va: u32,
+    /// One past the last VA.
+    pub end_va: u32,
+    /// What uses it, and the evidence.
+    pub what: &'static str,
+}
+
+/// Runtime buffers and live data inside the images the ledger hands out room
+/// in. See `docs/subsystems/save-screen.md` ("Which buffer the sum runs over")
+/// and `docs/tooling/translation/space-and-budgets.md`.
+pub const BUFFERS: &[Buffer] = &[
+    Buffer {
+        image: Image::Prot(MENU_OVERLAY),
+        start_va: 0x801E_5120,
+        end_va: 0x801E_7120,
+        what: "save screen card-read buffer: FUN_801DD35C installs it (0x2000 bytes) and \
+               the card read fills it - at the title's Continue, and from the pause menu's \
+               Load row, which returns to the root menu with the overlay resident",
+    },
+    Buffer {
+        image: Image::Prot(MENU_OVERLAY),
+        start_va: 0x801E_7120,
+        end_va: 0x801E_9120,
+        what: "save compose buffer: FUN_801E1934 memsets its 0x2000 bytes and copies the \
+               live game state over them on every save; FUN_801DAEF4 then returns a \
+               pause-menu Save to the root menu with the overlay still resident",
+    },
+    Buffer {
+        image: Image::Prot(MENU_OVERLAY),
+        start_va: 0x801E_5120,
+        end_va: 0x801E_A440,
+        what: "save-menu atlas TIM header, CLUT and pixel rows 0..161: FUN_801DD35C uploads \
+               it to VRAM (960, 0) at card-screen entry and the card screen samples rows up \
+               to 160",
+    },
+    Buffer {
+        image: Image::Prot(MENU_OVERLAY),
+        start_va: 0x801E_E120,
+        end_va: 0x801E_EB40,
+        what: "save-slot icon sheet TIM, uploaded to VRAM (960, 224) right after the atlas",
+    },
+    Buffer {
+        image: Image::Prot(MENU_OVERLAY),
+        start_va: 0x801E_F070,
+        end_va: 0x801F_3818,
+        what: "the overlay's uninitialised data (menu state, card handles, staging), \
+               written at runtime in every capture with the overlay resident",
+    },
+];
+
+/// The first [`BUFFERS`] row `[start_va, end_va)` in `image` overlaps.
+pub fn overlapping_buffer(image: Image, start_va: u32, end_va: u32) -> Option<&'static Buffer> {
+    BUFFERS
+        .iter()
+        .find(|b| b.image == image && start_va < b.end_va && b.start_va < end_va)
+}
 
 /// The translation-owned spans of `image`, as `(start_va, end_va)`,
 /// trimmed to the bytes `bytes` (the image loaded at `base`) still holds as
@@ -216,6 +284,43 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn no_region_overlaps_a_runtime_buffer() {
+        for r in REGIONS {
+            let hit = overlapping_buffer(r.image, r.start_va, r.end_va);
+            assert!(hit.is_none(), "{r:?} overlaps {hit:?}");
+        }
+    }
+
+    #[test]
+    fn overlap_check_sees_the_old_menu_layout() {
+        // The two spans `--seru-trade` / `--show-super-arts` once used, inside
+        // the card buffers; the translation region is clear of every buffer.
+        let menu = Image::Prot(MENU_OVERLAY);
+        assert!(overlapping_buffer(menu, 0x801E_74E0, 0x801E_83E0).is_some());
+        assert!(overlapping_buffer(menu, 0x801E_65F4, 0x801E_6B43).is_some());
+        assert!(overlapping_buffer(menu, 0x801E_D340, 0x801E_E120).is_none());
+    }
+
+    /// The constants the menu-overlay mods write through sit inside their
+    /// ledger rows, so the ledger and the modules cannot drift apart.
+    #[test]
+    fn menu_overlay_mod_constants_are_ledger_rows() {
+        use crate::seru_overlay::{RUN_C_VA, TRADE_HANDLER_END};
+        use crate::super_art_menu::{MENU_DESC_END_VA, MENU_DESC_VA, MENU_RUN_END_VA, MENU_RUN_VA};
+        let within = |s: u32, e: u32| {
+            REGIONS.iter().any(|r| {
+                r.image == Image::Prot(MENU_OVERLAY)
+                    && matches!(r.owner, Owner::Mods(_))
+                    && r.start_va <= s
+                    && e <= r.end_va
+            })
+        };
+        assert!(within(RUN_C_VA, TRADE_HANDLER_END));
+        assert!(within(MENU_RUN_VA, MENU_RUN_END_VA));
+        assert!(within(MENU_DESC_VA, MENU_DESC_END_VA));
     }
 
     #[test]
