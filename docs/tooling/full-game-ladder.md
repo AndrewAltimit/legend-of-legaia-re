@@ -232,6 +232,14 @@ and `LEGAIA_FGL_WALK_DEBUG` adds a stalled walk's wall map, the scene's
 teleports and door colliders. `LEGAIA_FGL_PLAN_DEBUG` prints each object-door
 edge the planner adds.
 
+A plan that cannot reach its goal searches the start's whole walk component,
+and a stalled walk re-plans every second, so a failed plan is remembered -
+the cells it reached and the one nearest the goal, keyed by scene, goal,
+avoid set and story flags - and a start inside it plans straight to that
+cell. On the overworld the follower inverts the camera remap exactly (of the
+eight pad directions, the one whose world bits are the step's): a rounded
+rotation turns a cardinal step diagonal whenever the camera sits off an axis.
+
 A door whose walk component the start cannot reach is tried through a
 **crossing scene**: a scene the current one has a door to and a door back
 from, entered and left by its reachable door farthest from where the player

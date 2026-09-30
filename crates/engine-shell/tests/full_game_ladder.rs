@@ -842,11 +842,23 @@ fn picker_pad(session: &BootSession) -> Option<u16> {
         .as_ref()
         .and_then(|id| menu(&id.bytecode, id.panel.as_ref()?))
         .or_else(|| {
-            w.cutscene
+            // The FIRST box, picker or not: a later record's picker the
+            // engine does not route to must not steer the pad (`dolk2`'s
+            // market beat stacks three spawned records' boxes; pressing Down
+            // for the third's picker left the first's page unturned).
+            let tl = w
+                .cutscene
                 .timeline
                 .iter()
-                .chain(w.field_vm.helper_contexts.iter())
-                .find_map(|tl| menu(&tl.bytecode, tl.dialog.as_ref()?))
+                .filter(|t| t.dialog.is_some())
+                .chain(
+                    w.field_vm
+                        .helper_contexts
+                        .iter()
+                        .filter(|t| t.dialog.is_some()),
+                )
+                .next()?;
+            menu(&tl.bytecode, tl.dialog.as_ref()?)
         });
     let Some((key, n, cursor, takes)) = open else {
         PICKS.with(|p| p.borrow_mut().1 = None);
