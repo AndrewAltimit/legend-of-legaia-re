@@ -693,6 +693,30 @@ def consensus(dumps: list[Dump]) -> list[Dump]:
 # ---------------------------------------------------------------------------
 
 
+# Modules split into a directory for size (`foo.rs` + `foo/*.rs`) after their
+# findings and waivers were keyed. A split is a move, not a new module: every
+# file of one keeps one sibling set and one finding key, the parent file's, so
+# `module-orphan` sees the siblings it saw before the move and a waiver keyed on
+# the old path keeps matching. Only the displayed `file:line` names the child.
+SPLIT_MODULES = frozenset({
+    "crates/asset/src/byte_account",
+    "crates/engine-vm/src/battle_cam_script",
+    "crates/engine-core/src/muscle_dome",
+    "crates/engine-core/src/dance",
+    "crates/engine-core/src/save_select",
+    "crates/patcher/src/delilas_party",
+    "crates/engine-vm/src/cast_module_ticks",
+})
+
+
+def module_of(rel: str) -> str:
+    """The module a source file belongs to, for grouping and finding keys."""
+    for stem in SPLIT_MODULES:
+        if rel.startswith(stem + "/"):
+            return stem + ".rs"
+    return rel
+
+
 class Tag:
     """One address claimed by one `// PORT:` line.
 
@@ -704,13 +728,14 @@ class Tag:
     a block only the fifth ever claimed.
     """
 
-    __slots__ = ("addr", "file", "line", "tail", "seg", "raw")
+    __slots__ = ("addr", "file", "module", "line", "tail", "seg", "raw")
 
     def __init__(
         self, addr: str, file: str, line: int, tail: str, seg: str, raw: str
     ):
         self.addr = addr
         self.file = file
+        self.module = module_of(file)
         self.line = line
         self.tail = tail
         self.seg = seg
@@ -849,9 +874,9 @@ def elsewhere_claims(
     prof: dict[tuple[str, str], tuple[set[int], set[str], list[tuple[int, int]]]] = {}
     for t in tags:
         dumps = by_addr.get(t.addr)
-        if not dumps or (t.file, t.addr) in prof:
+        if not dumps or (t.module, t.addr) in prof:
             continue
-        prof[(t.file, t.addr)] = (
+        prof[(t.module, t.addr)] = (
             features(dumps, df, cdf, SPLIT_DF_MAX)[0],
             {d.image.split(".")[0].split(" ")[0] for d in consensus(dumps)},
             [extent_of(d) for d in consensus(dumps)],
@@ -1439,7 +1464,7 @@ def find_module_orphans(
     per_file: dict[str, set[str]] = defaultdict(set)
     for t in tags:
         if t.addr in by_addr:
-            per_file[t.file].add(t.addr)
+            per_file[t.module].add(t.addr)
 
     # Who calls what, over the whole corpus. Two routines a third one calls are
     # siblings in that caller's eyes whatever tables they touch, and this is the
@@ -1533,7 +1558,7 @@ def find_module_orphans(
                 + 2.0 * min(len({o for _, o, _ in elsewhere}), 3)
                 + 1.0 / max(rarest, 1)
             )
-            tag = next(t for t in tags if t.addr == a and t.file == rel)
+            tag = next(t for t in tags if t.addr == a and t.module == rel)
             lines = [
                 f"FUN_{a} shares no distinctive data address and no callee with "
                 f"any of the {len(cohesive)} corroborating siblings tagged in "
@@ -1551,7 +1576,7 @@ def find_module_orphans(
                 )
             out.append(
                 Finding("module-orphan", f"module-orphan:{rel}:{a}", a,
-                        f"{rel}:{tag.line}", rank, lines)
+                        f"{tag.file}:{tag.line}", rank, lines)
             )
     return out
 
@@ -1640,7 +1665,7 @@ def find_non_entry_tags(tags: list[Tag]) -> list[Finding]:
             out.append(
                 Finding(
                     "non-entry",
-                    f"non-entry:{t.file}:{addr}",
+                    f"non-entry:{t.module}:{addr}",
                     addr,
                     f"FUN_{addr} tagged at {where}",
                     3.0,
@@ -1686,7 +1711,7 @@ def find_absent_citations(
             out.append(
                 Finding(
                     "absent-citation",
-                    f"absent-citation:{t.file}:{t.addr}:{'+'.join(missing)}",
+                    f"absent-citation:{t.module}:{t.addr}:{'+'.join(missing)}",
                     t.addr,
                     f"{t.file}:{t.line}",
                     float(len(missing)),
