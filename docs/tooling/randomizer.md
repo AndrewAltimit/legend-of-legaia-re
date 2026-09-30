@@ -3845,6 +3845,16 @@ from the applier, which is 0898 code itself.
 A Super Art's **damage** row carries no AP override and never claims the arena,
 so `--super-art-power` composes with everything.
 
+Every region above, and the menu overlay's, is listed once with its owner in
+`legaia_patcher::space_ledger`, the table language packs consult too: a
+translation never writes a mod's region, and the one region reserved for
+relocated translation strings is never a mod's
+([`space-and-budgets.md`](translation/space-and-budgets.md#sharing-room-with-mods-the-space-ledger)).
+Two menu-overlay regions sit inside the save screen's card buffers - the
+description run in the card-read buffer, run-C in the save compose buffer - so
+their bytes are only trustworthy while the overlay was freshly loaded for the
+shop or the pause menu.
+
 **Known cosmetic gap.** The Triangle caption's own page thresholds (`< 6`,
 `< 11`, in `FUN_801D3444`) stay retail, so on a later page the prompt can still
 read "View Hyper Arts list" where it should read "View Next page". The list

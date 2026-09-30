@@ -1494,7 +1494,9 @@ prescripts and the streaming-MAN dungeon scenes). Import applies filled
 `translation:` fields as same-size in-place patches (strings re-terminated -
 budget reclaims the 4-byte-alignment zero padding, and a pointer-table name
 that still overflows moves into room the other names give up,
-`translation::name_pool`; a monster name grows its record; dialog segments space-padded
+`translation::name_pool`; a longer `ui_menu` / `system_text` string moves with
+every `lui` pair, pointer word and `$gp` form that reaches it rewritten,
+`translation::code_refs` + `translation::code_strings`; a monster name grows its record; dialog segments space-padded
 to their exact framing; a scene whose recompress overflows its LZS footprint
 rolls back its longest lines one at a time), with per-character encodability
 errors for anything outside the retail ASCII glyph set. Untranslated entries
@@ -1555,7 +1557,10 @@ bulk fill, `merge` recombines. Full workflow + schema:
 `translate space --input DISC [--pack P] [--section S] [--allow-relayout]
 [--scene PROT] [--json] [--verbose]` shows how much room every translatable
 string has and what uses it (`translation::space`, JSON schema
-`legaia-space-v1` in the module docs). Disc only, it lists the SCUS name
+`legaia-space-v1` in the module docs). Disc only, it opens with the room per
+category (`items`, `monster_names`, `place_names`, `ui_menu`, `system_text`:
+carrier, addressing, growable strings, free and spare bytes, competing mods)
+and the movable / pinned strings per code image, then lists the SCUS name
 compaction regions (bytes English uses per region), which names may move and
 why the rest are pinned, each monster record's in-place room and growth cap,
 the fixed-room `ui_menu` / `system_text` pools, every scene MAN's compressed

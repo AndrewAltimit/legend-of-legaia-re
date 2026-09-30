@@ -17,7 +17,7 @@ not as the characters you type.
 | `monster_names` | the name's room inside its monster record (7, 11 or 15 bytes) | yes: the record grows, up to 15 bytes | stays English, reported |
 | `party_names` | a fixed 10-byte field | no (9-byte budget) | stays English, reported |
 | `place_names` | a fixed `0x20`-byte cell | no (31-byte budget) | stays English, reported |
-| `ui_menu`, `system_text` | the string's span in its pool | no - these are reached from code | stays English, reported over budget |
+| `ui_menu`, `system_text` | the string's span in its pool | yes: the string moves and every instruction or word that reaches it is rewritten | stays English, reported `no free run` (or over budget when pinned) |
 | `scene_dialog` | the scene MAN's compressed footprint | yes, within the footprint; by whole sectors with `--allow-relayout` | lines rolled back to English, largest growth first |
 | `inline_text` (event-script carriers) | the line's own span | no | stays English, reported over budget |
 | `inline_text` (streaming dungeon scenes) | the entry's sector slack | yes, within the slack; by whole sectors with `--allow-relayout` | stays English, reported |
@@ -71,7 +71,8 @@ table slots are its only aligned-word references in the executable and no
 - the arts-menu descriptions - the in-battle matcher finds each art's combo
   string in the bytes after the description's terminator;
 - a string sharing its tail with another;
-- the `system_text` / `ui_menu` pools, which are reached from code.
+- the `system_text` / `ui_menu` pools, which are reached from code and move
+  by their own rules ([below](#moving-a-label)).
 
 Moved strings start 4-byte aligned, as every retail name does.
 
@@ -128,13 +129,165 @@ Two sections are fixed-width fields with no neighbour to borrow from:
 
 The `ui_menu` pools (overlay data segments) and the `system_text` pools
 (executable) are overwritten in place with the same span-plus-padding budget
-as a name, but they never move: code references them directly. They are tight.
-A pool is 4-byte aligned with little slack, so a same-size translation of a
-short label (`@Items` is six bytes) can be shorter than English but rarely
-much longer, and a lifted line that overflows stays English until a
-translator abbreviates it. The battle command chips are four to eight bytes
-each, so a translation abbreviates. The pools themselves are tabulated on
-[`ui-strings.md`](ui-strings.md).
+as a name. A pool is 4-byte aligned with little slack, so in place a short
+label (`@Items` is six bytes) can be shorter than English but rarely much
+longer; the battle command chips are four to eight bytes each. The pools
+themselves are tabulated on [`ui-strings.md`](ui-strings.md).
+
+### Moving a label
+
+A label longer than its span **moves**, like a name, but these strings are
+reached straight from code rather than through a table slot, so every
+instruction that forms the string's address has to follow it
+(`translation::code_refs`, `translation::code_strings`). Per image, import:
+
+1. finds every site that forms the address of a pool string: an aligned
+   pointer word (a message table, a screen-element record's payload
+   pointer), a `lui` pair completed by an `addiu` / `ori` / load / store and
+   followed down every path (a branch forks the walk, a `jal` delay slot still
+   sees the register), and a `$gp`-relative instruction;
+2. compacts each run of adjacent movable strings, as the name pools are
+   compacted, and places the longer strings into the free runs that leaves
+   or into the image's spare room (below);
+3. rewrites every site to the new address.
+
+Which address a string may take depends on its references. A pointer word
+takes any address. A **private** `lui` pair - `lui rX` completed once by an
+`addiu rX, rX, lo` / `ori` with nothing reading `rX` between, no branch
+leaving or landing in the gap, the `lui` not in a delay slot - has both halves
+rewritten, so it can move anywhere. A `lui` whose high half serves several
+completions keeps it: only the low half changes, so the new address must have
+the same `%hi`. A `$gp` form stays within its signed 16-bit displacement.
+
+A string stays where it is (and the space report names the reason) when:
+
+- nothing in its own image forms its address (`no_reference`): it is reached
+  as an offset from something else;
+- an adjacent string has no reference (`neighbour_unreferenced`): it may be
+  the base that one is reached from;
+- something forms an address inside it (`interior_reference`);
+- another image that can be resident with it forms its address
+  (`foreign_reference`): the executable for an overlay string; the overlays
+  for an executable string; the battle overlay and the slot-B battle modules
+  for each other;
+- it shares bytes with another string (`tail_shared`);
+- it is one of three or more strings at one stride, padded past their own
+  alignment, with an unreferenced member (`fixed_stride`): a table indexed
+  by arithmetic.
+
+The room a moved string can take:
+
+| Image | Room |
+|---|---|
+| an overlay | its own pools' compaction, and the ledger's translation region in that image (the menu overlay has one) |
+| `SCUS_942.54` | its own pools' compaction, and the free runs the name pools' compaction leaves once the names are placed |
+
+A string that finds no room keeps its English text and is reported
+`no free run`. Shortening other labels in the same image frees room.
+
+The move is a same-size edit of the image, so a PPF carries it. The disc
+oracle `crates/patcher/tests/translation_code_strings_real.rs` imports a
+length-shuffled and an all-longer pack and decodes, on the patched disc, every
+site that formed each pool string's address on the retail disc: each must now
+reach the text import says it wrote. Under PCSX-Redux the moved menu command
+labels and a moved `system_text` empty-list message draw from their new
+addresses (the menu overlay reloads from the disc when the menu opens; the
+executable's edits need `legaia-patcher scus-pokes` over a save state, which
+`autorun_menu_screen_dump.lua` applies from `LEGAIA_POKES`).
+
+## Where the text lives
+
+The memory map of every translatable category, and what room it has:
+
+| Category | Carrier and residency | Addressing | Room past its own |
+|---|---|---|---|
+| `items` (and item types, spells, arts, accessory passives) | `SCUS_942.54` name pools, always resident | a pointer word in each table record | the name regions' compaction ([above](#longer-names)) |
+| `monster_names` | the monster archive (PROT 0867), one record per monster, streamed per battle | the record's `+0x00` block-relative offset | the record grows, up to fifteen bytes ([below](#monster-names)) |
+| `place_names` | `SCUS_942.54` quick-travel cells, always resident | fixed `0x20`-byte cells | none needed: 31 bytes each |
+| `ui_menu` | overlay data segments, resident while their overlay is | `lui` pairs and pointer words in the overlay's code | its pools' compaction; the menu overlay's translation region |
+| `system_text` | `SCUS_942.54` system pools, always resident | pointer words, `lui` pairs, `$gp` forms | its pools' compaction; the name pools' free runs |
+
+`place_names` is one of three carriers a place name has; the world-map label
+table (a 24-byte field, so 23 characters) and each scene's entry banner are
+the others ([`place-names.md`](../../formats/place-names.md)), and
+`--rename-location` writes all three.
+
+## Sharing room with mods: the space ledger
+
+Mods need spare bytes too: every hand-assembled code hook in the randomizer
+writes a routine into a region the retail game never reads
+([`randomizer.md`](../randomizer.md#the-injected-code-arena-budget)). One table,
+`legaia_patcher::space_ledger::REGIONS`, lists every such region once with its
+owner, and the two owners never share one:
+
+- a **mod** region is written only by the flags that claim it, each of which
+  refuses to write unless its region is still all-zero on the disc. Translation
+  never places a string in a mod region, even one that is zero on the disc at
+  hand, so a mod applied after a language pack still finds its room;
+- a **translation** region is used only by relocated strings, and only over the
+  bytes still zero on the disc being patched (`space_ledger::translation_spans`),
+  so a second import, or anything else already written there, is never
+  overwritten.
+
+That is why a language pack and the mods compose in either order: neither
+ever writes the other's bytes. `translate space --verbose` lists every region,
+its owner and how much of it is still zero.
+
+The translation region is the menu overlay's zero fill between the save-menu
+atlas and the save-slot icon sheet (PROT 0899, `0x801ED340..0x801EE120`).
+No instruction in any image forms an address inside it, neither save-screen
+card buffer reaches it, and it reads zero in every library capture with the
+overlay resident - the title's card load, a shop, the pause menu. A moved
+menu label is read only while its overlay is resident, and the overlay loads
+whole (the loader reads the entry's full sector extent), so the region is
+there whenever the label is.
+
+Two menu-overlay mod regions sit inside the save screen's card buffers
+([`save-screen.md`](../../subsystems/save-screen.md#which-buffer-the-sum-runs-over)):
+the `--show-super-arts` description run (`0x801E65F4..`) inside the card-read
+buffer `0x801E5120..0x801E7120`, and run-C (`0x801E74E0..`, `--seru-trade` and
+`--show-super-arts`) inside the save compose buffer `0x801E7120..0x801E9120`.
+The description run reads non-zero in library captures of the title's card
+load. Both features read their bytes only while the overlay was reloaded for
+the shop or the pause menu, which is why they work, but the ledger records the
+overlap and translation never uses either region.
+
+### What composes with what
+
+| Growth | Room it uses | Mods writing the same image | Composes |
+|---|---|---|---|
+| longer names (`items` sections) | SCUS name pools | `--delilas-challenge` points three custom item names at code caves outside the pools | yes |
+| longer `system_text` | SCUS system pools, then the name pools' free runs | every SCUS mod arena (`--shiny-seru`, `--equipment-drops`, `--flee-exp`, `--enemy-ally`, `--seru-trade`, `--delilas-challenge`, `--show-super-arts`) | yes: the arenas are never used for text |
+| longer menu-overlay labels | 0899 pools, 0899 translation region | `--seru-trade`, `--show-super-arts` (run-C, the description run) | yes |
+| longer battle-overlay labels | 0898 pools | `--enemy-hp-bar`, the arts hooks (code outside the pools) | yes |
+| longer monster names | the record, inside its `0x14000` slot | `legaia-patcher monster-model` re-packs the same block; `--monster-stats` / `--enemy-stat-scale` write fields in it | yes, while the re-packed block fits its slot |
+| longer place names | none (31-byte cells) | `--rename-location` writes the same cells | the later write wins |
+
+## Room that is not used, and why
+
+Each place a larger text pool could live was measured:
+
+- **The SCUS mod arenas** are the only verified-dead executable bytes outside
+  the live tables, and the code hooks already claim them; see
+  [`randomizer.md`](../randomizer.md#the-injected-code-arena-budget) for why
+  there is no further region to grow into.
+- **An overlay's uninitialised data** is written at runtime. The menu
+  overlay's two card buffers are the measured case above; a zero run is dead
+  only when nothing forms an address in it and nothing reaches it from a base
+  below it, and only a capture of every state that uses the overlay says the
+  second.
+- **The `DMY.DAT` annex** holds records the player-file loader streams by
+  descriptor offset. Text read by address needs a RAM window that is resident
+  whenever the string is drawn; the executable has no free window of that
+  size and the overlay slots belong to the overlays, so a pool there would need
+  a new loader and a new home at once.
+- **A larger overlay entry** grows only through the whole-sector relayout (no
+  PPF), and the bytes it adds load after the image, where the slot's other
+  occupants live.
+
+So the room is where the importer already looks: bytes the English layout
+wastes (compaction), bytes a shorter translation gives up, and the one
+reserved translation region.
 
 ## Dialog
 
@@ -224,6 +377,16 @@ legaia-patcher translate space --input DISC.bin --pack legaia_fr.yaml --scene 38
 
 On a disc alone it lists:
 
+- a **room per category** table for the five categories a translator and a
+  modder share room in (`items`, `monster_names`, `place_names`, `ui_menu`,
+  `system_text`): the strings, how many can grow, the bytes English uses and
+  its room, the free bytes a longer string can still take, the spare bytes the
+  [space ledger](#sharing-room-with-mods-the-space-ledger) reserves, where the
+  strings live, how the game reaches them, and (`--verbose`) which mods write
+  the same room;
+- per code image (the executable and each overlay with a `ui_menu` pool), how
+  many strings can move and why the rest are pinned; `--verbose` adds every
+  ledger region, its owner, and the bytes still zero on this disc;
 - the SCUS name compaction regions and the bytes English uses in each, which
   names may move, and why the rest are pinned (arts description, a shared
   tail, extra pointer words, a `lui` pair);
@@ -240,7 +403,8 @@ moves; and per scene the recompressed size, the overflow before rollback, the
 rolled-back keys, whether the relocator refused it, and the sectors
 `--allow-relayout` would add. Tables list the tightest regions, pools and
 scenes first. `--json` prints the full report (schema `legaia-space-v1`,
-documented in `translation::space`); `--section` narrows it to one section and
+documented in `translation::space`, with `categories`, `code_images` and
+`spare_regions` beside the per-key rows); `--section` narrows it to one section and
 `--verbose` prints every row.
 
 Every number is the importer's own: `import` records what it measures and
@@ -259,8 +423,9 @@ give the same verdicts as a per-section summary.
 The site's translation workbench page runs the same kernel in the browser tab
 on the user's own disc (`crates/web-viewer/src/translate_workbench.rs`, a
 resident `Workbench` session). It shows the report as a dashboard - coverage
-per section, the name regions' free bytes, monster rooms, label-pool slack and
-the scenes fullest first - next to an editor that checks each line as it is
+per section, the room per category (with what your pack leaves once checked),
+the name regions' free bytes, monster rooms, label-pool slack and the scenes
+fullest first - next to an editor that checks each line as it is
 typed:
 
 - the encoded length against the key's room, with every character the retail

@@ -193,7 +193,7 @@ sections:
   <table>
     <thead><tr><th>Target</th><th>Budget</th></tr></thead>
     <tbody>
-      <tr><td>Menu / battle / system labels</td><td>the original string's span plus its alignment padding; reached from code, so never moved - shorter is fine, longer is reported</td></tr>
+      <tr><td>Menu / battle / system labels</td><td>the original string's span plus its alignment padding; a longer label moves, and every instruction or pointer that reaches it is rewritten - into bytes other labels in the same image free, the menu overlay's reserved translation bytes, or (system text) the name tables' free runs; a label nothing references directly stays, and longer is reported</td></tr>
       <tr><td>Party name / place name</td><td>fixed fields: 9 and 31 bytes</td></tr>
       <tr><td>Item / spell / art / accessory name</td><td>in place, its 4-byte-aligned slot - so 0..3 spare bytes depending on the English length; a longer name <strong>moves</strong> into bytes other, shorter names give up, and its table pointers follow (still same-size, PPF-safe)</td></tr>
       <tr><td>Monster name</td><td>in place, its record's 7 / 11 / 15-byte slot; a longer one grows the record, up to 15 bytes (the longest retail name)</td></tr>

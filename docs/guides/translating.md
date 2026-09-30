@@ -203,10 +203,17 @@ Details: [Space and budgets](../tooling/translation/space-and-budgets.md).
 
 ### Menu and battle labels
 
-Menu commands, battle messages and system prompts sit in the game code and
-cannot move. Their budget is a hard limit, and it is tight: a translation can
-be shorter than the English but rarely much longer. Abbreviate. Details:
-[UI strings](../tooling/translation/ui-strings.md).
+Menu commands, battle messages and system prompts are reached straight from
+the game code. A translation longer than its slot **moves automatically**: the
+tools find every place in the code that points at the label and point it at
+the new copy. The room comes from other labels in the same part of the game
+that your translation made shorter, and for the pause, shop and save menus
+from a block of spare bytes kept for translations (no mod uses it). A few
+labels cannot move (the report says which and why); for those the slot is a
+hard limit, so abbreviate. `translate space` and the workbench's **Room per
+category** card show how much room each category has left. Details:
+[UI strings](../tooling/translation/ui-strings.md) and
+[space and budgets](../tooling/translation/space-and-budgets.md#moving-a-label).
 
 ### Dialog
 
