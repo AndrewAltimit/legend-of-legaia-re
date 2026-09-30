@@ -147,3 +147,47 @@ fn a_flagged_boss_row_still_refuses_run() {
     );
     eprintln!("[ok] garmel 3E FF 09: flagged, Run refused, word 0");
 }
+
+/// Tetsu (`0xAF`), whose only formation row is `town0d` row 4 (header byte
+/// `1`): flagged, so Run is refused and the roll is skipped, yet the word
+/// still reads `0x200` - battle init's own arm raises it for first monster
+/// `0xAF` (`0x800519DC..0x80051A04`, straight-line after the seat loop,
+/// ungated by the row's flag). The lone seat is `(0, 800)` from either seat
+/// family: counts 1 and 2 are authored identical in rows `1..4` and `5..8`,
+/// and every solo library battle state reads it.
+#[test]
+fn tetsu_row_is_flagged_and_forbids_the_ra_seru() {
+    let Some(extracted) = gated() else { return };
+    let host = enter_scripted(&extracted, "town0d", 4);
+    let w = &host.world;
+    let ids: Vec<u16> = w
+        .battle
+        .active_formation
+        .as_ref()
+        .expect("active formation")
+        .slots
+        .iter()
+        .map(|s| s.monster_id)
+        .collect();
+    assert_eq!(ids, vec![0xAF], "town0d row 4 off the disc");
+    assert!(w.battle.scripted_fight, "header byte 1 -> scripted");
+    assert_eq!(w.battle_ctx.scripted_fight, 4, "(BD60 >> 5) & 4");
+    assert!(w.battle.no_escape);
+    assert!(!BattleCommand::Run.available(w.battle.no_escape));
+    assert_eq!(
+        w.battle.special_word, SPECIAL_RASERU_FORBIDDEN,
+        "battle init raises 0x200 for first monster 0xAF"
+    );
+    let pc = usize::from(w.party.party_count);
+    let m = &w.actors[pc].move_state;
+    let p = &w.actors[0].move_state;
+    assert_eq!(
+        (m.world_x, p.world_x),
+        (0, 0),
+        "centre-line seats (0, +/-800)"
+    );
+    eprintln!(
+        "[ok] town0d 3E FF 04: ids {ids:02X?}, ctx+0x287 4, word {:#x}, monster ({}, {}) party0 ({}, {})",
+        w.battle.special_word, m.world_x, m.world_z, p.world_x, p.world_z
+    );
+}

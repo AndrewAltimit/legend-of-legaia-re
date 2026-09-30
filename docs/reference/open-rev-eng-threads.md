@@ -402,7 +402,6 @@ process-matching helpers in
 | Thread | Status | What would close it |
 |---|---|---|
 | Are camera-relative move-VM parts drawn camera-relative? | partial - both hosts do; not yet frame-compared | 334 of 3956 nodes across the 98 mednafen states carry a `+0x52 & 0x780` bit (billboards, per-axis skips, camera-locked summon parts), and 15 states have a non-zero skipped angle, e.g. `battle_melee_hit_spark`. Both play hosts now place those parts through `camera_relative_model_prefix` ([`renderer.md`](../subsystems/renderer.md#camera-relative-nodes-fun_8001cf50)); open is a frame comparison against one of those states, and whether the engine's part position (the move-VM `world_x/y/z`, which folds in the spawn origin) is the `+0x14` offset the `0x400` arm locks. |
-| Does the fight against monster `0xAF` (Tetsu) seat and flag as retail does? | open - disassembly and a synthetic poke only | The Rim Elm ambush is closed: its row carries header byte 0, so `ctx+0x287 = 0`, the map arm seats row 8, the word reads `0x200` and Run is allowed, in retail and in the engine (`rim_elm_ambush_disc`; [settled](re-settled-threads.md#battle--arts--level-up)). Tetsu's only formation row is `town0d` row 4 (header byte 1, scripted); a synthetic first-monster poke confirms the `0x200` raise, but no state or card block reaches `town0d`. A state inside that fight, read for the seats and the word, closes it. |
 
 **Does the port draw retail's Rot / Curse marks over refused arms** closed
 by disassembly: the ring stamps Rot on the Attack chip under all three limbs
