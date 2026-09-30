@@ -773,6 +773,24 @@ fn tex_mod_factor(color: u32) -> [f32; 4] {
     [r, g, b, 1.0]
 }
 
+/// One channel of the PSX GPU's **texture blend** on a 5-bit texel: the
+/// GPU multiplies the texel by the packet colour over `128` and writes the
+/// result back at the framebuffer's 5-bit depth, so the fraction is dropped
+/// (`(t5 * c8) >> 7`, saturated at `31`). A neutral `0x80` colour is exact;
+/// a dim one rounds every faint texel to zero. Both hosts' screen-primitive
+/// shaders run this per channel on a textured quad (`psx_texture_blend` in
+/// `engine-render`'s `SCREEN_OVERLAY_SHADER_SRC`, `psxTextureBlend` in the
+/// play page's `FS_SCREEN_PRIM`).
+///
+/// It is what keeps retail's overworld fog sparse: the sheets are additive
+/// (ABR `1`) with a median packet colour near `39` over a wisp whose texels
+/// are mostly `1..4` of `31`, so most of each sheet contributes nothing to
+/// the frame, where an unquantised blend adds a faint film for every one of
+/// a hundred overlapping sheets (`docs/subsystems/field-ambient-fx.md`).
+pub fn psx_texture_blend(t5: u8, c8: u8) -> u8 {
+    ((u32::from(t5.min(31)) * u32::from(c8)) >> 7).min(31) as u8
+}
+
 /// Build one frame's screen-overlay geometry from a primitive list and the
 /// **coordinate space the primitives are authored in**. Primitives are drawn
 /// in [`order_primitives`] order and coalesced into [`DrawRun`]s of
@@ -913,6 +931,21 @@ pub fn line_quad(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn texture_blend_truncates_to_the_framebuffer_depth() {
+        // Neutral colour is exact for every texel.
+        for t in 0..=31u8 {
+            assert_eq!(psx_texture_blend(t, 0x80), t);
+        }
+        // The fog's median colour drops the faint texels entirely.
+        assert_eq!(psx_texture_blend(1, 39), 0);
+        assert_eq!(psx_texture_blend(3, 39), 0);
+        assert_eq!(psx_texture_blend(4, 39), 1);
+        assert_eq!(psx_texture_blend(14, 39), 4);
+        // Brightening saturates at the 5-bit ceiling.
+        assert_eq!(psx_texture_blend(31, 0xFF), 31);
+    }
 
     #[test]
     fn palette_stp_ignores_the_never_drawn_zero_entry() {

@@ -1028,7 +1028,7 @@ impl Renderer {
                 &mut bytes,
                 color_base + i,
                 draw.mvp,
-                None,
+                draw.cue,
                 i < occl_env_color,
             );
         }

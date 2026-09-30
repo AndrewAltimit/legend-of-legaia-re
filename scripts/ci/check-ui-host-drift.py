@@ -2134,6 +2134,7 @@ DIAG_GATES: list[dict[str, object]] = [
     {"env": "LEGAIA_DIAG_NOFX", "additive": False, "note": "suppress the effect layer"},
     {"env": "LEGAIA_DIAG_NO_GHOSTS", "additive": False, "note": "suppress the battle after-image ghost pass (A/B attribution)"},
     {"env": "LEGAIA_DIAG_NOSEMI", "additive": False, "note": "semi-transparent blend off"},
+    {"env": "LEGAIA_DIAG_NO_DECO_CUE", "additive": False, "note": "drop the overworld decoration depth cue (before/after frames)"},
     {"env": "LEGAIA_DIAG_LAYERS", "additive": False, "note": "draw only the named layers"},
     {"env": "LEGAIA_DIAG_PLACE_RANGE", "additive": False, "note": "draw only placements [a,b)"},
     {"env": "LEGAIA_DIAG_MESHTEX", "additive": False, "note": "mesh/texture bind log"},

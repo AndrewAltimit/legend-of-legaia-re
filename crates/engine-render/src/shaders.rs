@@ -1578,9 +1578,21 @@ fn fetch_vram_word(uv: vec2<f32>, cba: u32, tsb: u32) -> u32 {
     return textureLoad(t_vram, vec2<i32>(vx, vy), 0).r;
 }
 
+// The PSX texture blend at the framebuffer's 5-bit depth
+// (`legaia_engine_ui::screen_prim::psx_texture_blend`): `(t5 * c8) >> 7`,
+// saturated at 31, so a dim packet colour drops a faint texel to zero rather
+// than adding a fraction of a step. `texel` is the decoded 0..1 texel,
+// `factor` the vertex's `/128` colour factor. Exact at the neutral 0x80.
+fn psx_texture_blend(texel: vec3<f32>, factor: vec3<f32>) -> vec3<f32> {
+    let t5 = vec3<u32>(round(texel * 31.0));
+    let c8 = vec3<u32>(round(clamp(factor, vec3<f32>(0.0), vec3<f32>(255.0 / 128.0)) * 128.0));
+    return vec3<f32>(min((t5 * c8) >> vec3<u32>(7u), vec3<u32>(31u))) / 31.0;
+}
+
 // Resolve the RGB foreground for one fragment. `discard`s texels that must
 // not draw (fully transparent VRAM word 0x0000). Textured quads modulate
-// the sampled texel by `color` (a /128 factor); flat quads emit `color`.
+// the sampled texel by `color` (a /128 factor) through the GPU's 5-bit
+// texture blend; flat quads emit `color`.
 fn overlay_color(in: VsOut) -> vec4<f32> {
     if (in.flags & 1u) != 0u {
         let word = fetch_vram_word(in.uv, in.cba_tsb.x, in.cba_tsb.y);
@@ -1588,7 +1600,7 @@ fn overlay_color(in: VsOut) -> vec4<f32> {
             discard;
         }
         let texel = bgr555_to_rgba(word);
-        return vec4<f32>(texel.rgb * in.color.rgb, in.color.a * texel.a);
+        return vec4<f32>(psx_texture_blend(texel.rgb, in.color.rgb), in.color.a * texel.a);
     }
     return in.color;
 }

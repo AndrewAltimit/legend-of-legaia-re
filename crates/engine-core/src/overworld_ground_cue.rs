@@ -92,9 +92,138 @@ pub fn ground_cue_color(base: [u8; 3], sz1: u32) -> [u8; 3] {
     base.map(|c| dpcs_channel(c, GROUND_FAR_COLOR, ir0))
 }
 
+/// The overworld **decoration cells**' depth cue: one `IR0` per object, taken
+/// from the depth of the object's origin, toward the far colour `0xD0`.
+///
+/// The decoration sweep in `FUN_801F69D8` (PROT 0901) transforms each cell's
+/// object origin by the camera (`MVMVA` at `0x801F7058`, stored to scratch
+/// `0x1F8002E0..E8`), loads the result into `TR` (`0x801F71E0..0x801F71F4`)
+/// and forms the dispatcher's third argument from its `TRZ`:
+///
+/// ```text
+/// 801f71f8  lw    v0, 0x40(s1)      ; TRZ (s1 = 0x1F8002A8)
+/// 801f7200  addiu a2, v0, -0x5000
+///           bgez / clear a2          ; max(TRZ - 0x5000, 0)
+///           sra   a2, a2, 3
+/// 801f7214  slti  v0, a2, 0x1001
+///           li    a2, 0x1000         ; min(.., 0x1000)
+/// 801f721c  lui   a1, 0xd0 / ori a1, a1, 0xd0d0   ; a1 = 0x00D0D0D0
+/// 801f7254  jal   0x80043390
+/// ```
+///
+/// `FUN_80043390` turns a non-zero `a2` into the GTE far colour (each byte of
+/// `a1` `<< 4`, `& 0xFFFE`, into `RFC/GFC/BFC` at `0x800434B0..0x800434D0`)
+/// and parks `a2` at scratch `0x1F800038`, which the PROT 0901 prim handlers
+/// load into `IR0` before their `DPCS` (`lwc2 IR0, -0x2dc(t2)` at
+/// `0x801F7A44`). So every prim of one decoration hazes by the same `IR0`.
+///
+/// The record's `+0x1E` / `+0x12 & 0x800` bits raise `a1`'s top byte, which
+/// makes the dispatcher OR `1` into `a2` (`0x800433C0..0x800433CC`): an
+/// `IR0` of at most `1 / 0x1000` more, below one colour step, and not
+/// modelled.
+///
+/// The hosts stage the result as a per-draw constant cue
+/// ([`decoration_draw_cue`]). The placed landmarks are not this sweep's
+/// (`FUN_8003A55C`'s actors, skipped by the `+0x12 & 4` test at
+/// `0x801F6EE8`) and take no cue from it. All eight PROT 0901 prim leaves
+/// (`0x801F7644` .. `0x801F8690`, textured and untextured) run the load.
+pub const DECORATION_FAR_BYTE: u8 = 0xD0;
+
+/// `TRZ` below this leaves a decoration at its packet colour
+/// (`addiu a2, v0, -0x5000` at `0x801F7200`).
+pub const DECORATION_CUE_NEAR_Z: i64 = 0x5000;
+
+/// The clamp on a decoration's `IR0` (`slti v0, a2, 0x1001` / `li a2,
+/// 0x1000` at `0x801F7214..0x801F7220`).
+pub const DECORATION_IR0_MAX: i32 = 0x1000;
+
+/// The far colour a decoration hazes toward, in the control registers'
+/// units: the byte `<< 4`, low bit cleared (`0x800434B0..0x800434C4`).
+pub const DECORATION_FAR_COLOR: i32 = ((DECORATION_FAR_BYTE as i32) << 4) & 0xFFFE;
+
+/// `IR0` for a decoration whose origin sits at camera-space depth `trz`.
+pub fn decoration_cue_ir0(trz: i64) -> i32 {
+    (((trz - DECORATION_CUE_NEAR_Z).max(0) >> 3) as i32).min(DECORATION_IR0_MAX)
+}
+
+/// The packet colour a decoration prim of colour `base` draws with when its
+/// object's origin sits at camera-space depth `trz`.
+///
+/// REF: FUN_801F69D8
+pub fn decoration_cue_color(base: [u8; 3], trz: i64) -> [u8; 3] {
+    let ir0 = decoration_cue_ir0(trz);
+    base.map(|c| dpcs_channel(c, DECORATION_FAR_COLOR, ir0))
+}
+
+/// A decoration draw's cue as the hosts stage it: the far colour in display
+/// `0..1` units and `IR0` in `1.0 = 0x1000` units.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DecorationCue {
+    pub far: [f32; 3],
+    pub ir0: f32,
+}
+
+/// The cue for one decoration draw whose model origin projects at
+/// `origin_clip_w` under a frame whose `clip.w`-to-`SZ` factor is `sz_scale`
+/// ([`crate::overworld_curvature::frame_curve_scale`], the factor the ground
+/// cue reads). `None` off the overworld (`sz_scale == 0`) and for a near
+/// object (`IR0 == 0`), both of which draw uncued.
+pub fn decoration_draw_cue(origin_clip_w: f32, sz_scale: f32) -> Option<DecorationCue> {
+    if sz_scale <= 0.0 || !origin_clip_w.is_finite() {
+        return None;
+    }
+    let trz = (origin_clip_w * sz_scale).round() as i64;
+    let ir0 = decoration_cue_ir0(trz);
+    if ir0 == 0 {
+        return None;
+    }
+    let far = f32::from(DECORATION_FAR_BYTE) / 255.0;
+    Some(DecorationCue {
+        far: [far; 3],
+        ir0: ir0 as f32 / 4096.0,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decoration_ir0_follows_the_origin_depth_and_clamps() {
+        assert_eq!(decoration_cue_ir0(-100), 0);
+        assert_eq!(decoration_cue_ir0(0x5000), 0);
+        assert_eq!(decoration_cue_ir0(0x5007), 0);
+        assert_eq!(decoration_cue_ir0(0x5008), 1);
+        assert_eq!(decoration_cue_ir0(0x5000 + 8 * 0x800), 0x800);
+        assert_eq!(decoration_cue_ir0(0x5000 + 8 * 0x1000), 0x1000);
+        assert_eq!(decoration_cue_ir0(0x7FFF_FFFF), 0x1000);
+    }
+
+    #[test]
+    fn decoration_hazes_toward_d0() {
+        assert_eq!(DECORATION_FAR_COLOR, 0xD00);
+        assert_eq!(decoration_cue_color([0x80; 3], 0), [0x80; 3]);
+        // Saturated IR0 lands on the far colour whatever the base.
+        assert_eq!(decoration_cue_color([0x80; 3], 0x20000), [0xD0; 3]);
+        assert_eq!(decoration_cue_color([0x10, 0xFF, 0x80], 0x20000), [0xD0; 3]);
+        // Half way: 0x80 + (0xD0 - 0x80) / 2.
+        assert_eq!(
+            decoration_cue_color([0x80; 3], 0x5000 + 8 * 0x800),
+            [0xA8; 3]
+        );
+    }
+
+    #[test]
+    fn draw_cue_is_off_the_overworld_and_for_near_objects() {
+        assert_eq!(decoration_draw_cue(0x9000 as f32, 0.0), None);
+        assert_eq!(decoration_draw_cue(0x4000 as f32, 1.0), None);
+        let c = decoration_draw_cue(0x5000 as f32 + 8.0 * 2048.0, 1.0).unwrap();
+        assert_eq!(c.ir0, 0.5);
+        assert_eq!(c.far, [208.0 / 255.0; 3]);
+        // A 1x frame (the field / scripted cameras) scales clip.w up to SZ.
+        let s = decoration_draw_cue((0x5000 as f32 + 8.0 * 2048.0) / 6.0, 6.0).unwrap();
+        assert!((s.ir0 - 0.5).abs() < 1e-3);
+    }
 
     /// `(SZ1, IR0, packet colour)` rows logged at `0x801F8DB4` on
     /// `karisto_sol_pre_encounter` (`RGBC = 0x2C808080`, far `0x1000`): the

@@ -1286,6 +1286,7 @@ impl PlayWindowApp {
                     color_draws.push(ColorSceneDraw {
                         mesh: m,
                         mvp: g.mvp,
+                        cue: None,
                     });
                 }
             } else if let Some(g) = self.dance_venue_gpu.as_ref() {
@@ -1315,6 +1316,7 @@ impl PlayWindowApp {
                         color_draws.push(ColorSceneDraw {
                             mesh,
                             mvp: cam * *model,
+                            cue: None,
                         });
                     }
                 }
@@ -1350,23 +1352,54 @@ impl PlayWindowApp {
                         cue: None,
                     });
                 }
-                for (mesh_idx, model) in self.world_map_terrain_draws.iter() {
+                // Retail's decoration sweep (`FUN_801F69D8`) hazes each
+                // decoration toward `0xD0` by one `IR0` taken from its
+                // origin's camera depth; the landmarks ahead of
+                // `world_map_deco_start` carry no such cue.
+                // `LEGAIA_DIAG_NO_DECO_CUE` drops it, for before/after frames.
+                let deco_curve = if std::env::var_os("LEGAIA_DIAG_NO_DECO_CUE").is_some() {
+                    0.0
+                } else {
+                    self.overworld_curve_scale(cutscene_cam)
+                };
+                let deco_cue = |mvp: Mat4| {
+                    legaia_engine_core::overworld_ground_cue::decoration_draw_cue(
+                        mvp.w_axis.w,
+                        deco_curve,
+                    )
+                    .map(|c| legaia_engine_render::DrawCue {
+                        far: c.far,
+                        near_z: -1.0,
+                        far_z: 0.0,
+                        max_ir0: c.ir0,
+                    })
+                };
+                let (deco_start, color_deco_start) = self.world_map_deco_start;
+                for (i, (mesh_idx, model)) in self.world_map_terrain_draws.iter().enumerate() {
                     if let Some(mesh) = self.meshes.get(*mesh_idx) {
+                        let mvp = cam * *model;
                         draws.push(SceneDraw {
                             mesh,
-                            mvp: cam * *model,
-                            cue: None,
+                            mvp,
+                            cue: if i >= deco_start { deco_cue(mvp) } else { None },
                         });
                     }
                 }
                 // The untextured half of the same stamps (hut roofs,
                 // colour-only landmarks) on the colour pipeline - the
                 // field branch's pairing, which this branch lacked.
-                for (mesh_idx, model) in self.world_map_terrain_color_draws.iter() {
+                for (i, (mesh_idx, model)) in self.world_map_terrain_color_draws.iter().enumerate()
+                {
                     if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
+                        let mvp = cam * *model;
                         color_draws.push(ColorSceneDraw {
                             mesh,
-                            mvp: cam * *model,
+                            mvp,
+                            cue: if i >= color_deco_start {
+                                deco_cue(mvp)
+                            } else {
+                                None
+                            },
                         });
                     }
                 }
@@ -1425,6 +1458,7 @@ impl PlayWindowApp {
                             color_draws.push(ColorSceneDraw {
                                 mesh: cmesh,
                                 mvp: cam * self.actor_model(cslot),
+                                cue: None,
                             });
                         }
                     }
@@ -1506,6 +1540,7 @@ impl PlayWindowApp {
                         color_draws.push(ColorSceneDraw {
                             mesh: cmesh,
                             mvp: cam * Self::battle_stage_model(),
+                            cue: None,
                         });
                     }
                 } else {
@@ -1597,6 +1632,7 @@ impl PlayWindowApp {
                                 color_draws.push(ColorSceneDraw {
                                     mesh,
                                     mvp: cam * *model,
+                                    cue: None,
                                 });
                             }
                         }
@@ -1684,6 +1720,7 @@ impl PlayWindowApp {
                                 color_draws.push(ColorSceneDraw {
                                     mesh,
                                     mvp: cam * *model,
+                                    cue: None,
                                 });
                             }
                         }
@@ -1692,6 +1729,7 @@ impl PlayWindowApp {
                                 color_draws.push(ColorSceneDraw {
                                     mesh,
                                     mvp: cam * *model,
+                                    cue: None,
                                 });
                             }
                         }
@@ -1699,6 +1737,7 @@ impl PlayWindowApp {
                             color_draws.push(ColorSceneDraw {
                                 mesh,
                                 mvp: cam * *model,
+                                cue: None,
                             });
                         }
                     }
@@ -1723,6 +1762,7 @@ impl PlayWindowApp {
                         color_draws.push(ColorSceneDraw {
                             mesh,
                             mvp: cam * self.actor_model(slot),
+                            cue: None,
                         });
                     }
                     // Field NPCs + animated props at their live
@@ -1820,12 +1860,14 @@ impl PlayWindowApp {
                             (Some(mesh), _) => color_draws.push(ColorSceneDraw {
                                 mesh,
                                 mvp: cam * model,
+                                cue: None,
                             }),
                             (None, Some(ci)) => {
                                 if let Some(mesh) = self.color_meshes.get(ci) {
                                     color_draws.push(ColorSceneDraw {
                                         mesh,
                                         mvp: cam * model,
+                                        cue: None,
                                     });
                                 }
                             }
@@ -2177,6 +2219,7 @@ impl PlayWindowApp {
                         color_draws.push(ColorSceneDraw {
                             mesh,
                             mvp: actor_cam * push * *model,
+                            cue: None,
                         });
                     }
                 }
@@ -2538,6 +2581,7 @@ impl PlayWindowApp {
                 color_draws.push(ColorSceneDraw {
                     mesh: m,
                     mvp: screen_fx_mvp,
+                    cue: None,
                 });
             }
             // The floating value readout is a screen-space primitive run, not

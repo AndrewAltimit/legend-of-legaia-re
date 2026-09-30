@@ -735,6 +735,11 @@ struct PlayWindowApp {
     /// a world-map frame that draws only `world_map_terrain_draws` shows
     /// roofless huts.
     world_map_terrain_color_draws: Vec<(usize, Mat4)>,
+    /// Where the decoration layer starts in `world_map_terrain_draws` /
+    /// `world_map_terrain_color_draws` (landmarks first): the draws from here
+    /// on carry retail's per-object decoration depth cue
+    /// (`overworld_ground_cue::decoration_draw_cue`).
+    world_map_deco_start: (usize, usize),
     /// Bulk **ground**: the heightfield surface built from the scene's
     /// `.MAP` floor grid (`Scene::walk_heightfield`), textured per cell from
     /// the terrain-type-keyed atlas (record `+0x14`/`+0x15`/`+0x16`). `None`

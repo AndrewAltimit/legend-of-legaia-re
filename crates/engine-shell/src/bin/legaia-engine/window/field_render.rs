@@ -659,9 +659,9 @@ impl PlayWindowApp {
         &self,
         res: &SceneResources,
         tmd_src_index: &[usize],
-    ) -> Vec<(usize, Mat4)> {
+    ) -> (Vec<(usize, Mat4)>, usize) {
         let Some(scene) = self.session.host.scene.as_ref() else {
-            return Vec::new();
+            return (Vec::new(), 0);
         };
         // Free-roam walk view: read the *walk* `.MAP` (`Scene::walk_field_map_
         // index`, the `block_start - 2` entry the runtime resolves through
@@ -679,21 +679,37 @@ impl PlayWindowApp {
         // because their record[+0x10] is 0); it is the heightfield surface
         // built separately in `upload_assets` (`Scene::walk_heightfield`).
         // See docs/subsystems/world-map.md.
-        let mut tiles = match scene.walk_object_placements(&self.session.host.index) {
+        //
+        // The two layers resolve separately so the caller knows where the
+        // decorations start: retail's decoration sweep (`FUN_801F69D8`)
+        // depth-cues each decoration by its origin's depth
+        // (`legaia_engine_core::overworld_ground_cue::decoration_draw_cue`),
+        // the landmarks it skips take no cue from it.
+        let landmarks = match scene.walk_object_placements(&self.session.host.index) {
             Ok(Some(t)) => t,
             _ => Vec::new(),
         };
-        if let Ok(Some(deco)) = scene.walk_decoration_placements(&self.session.host.index) {
-            tiles.extend(deco);
-        }
-        if tiles.is_empty() {
-            return Vec::new();
-        }
+        let deco = match scene.walk_decoration_placements(&self.session.host.index) {
+            Ok(Some(t)) => t,
+            _ => Vec::new(),
+        };
         // World-map frame: raw retail-convention transforms - both world-map
         // cameras compose FIELD_WORLD_FLIP (the walk view through the pinned
         // retail composition), so the draws are unflipped like the field's.
-        self.resolve_placement_draws(res, tmd_src_index, &tiles, false, None, None)
-            .0
+        let mut draws = if landmarks.is_empty() {
+            Vec::new()
+        } else {
+            self.resolve_placement_draws(res, tmd_src_index, &landmarks, false, None, None)
+                .0
+        };
+        let deco_start = draws.len();
+        if !deco.is_empty() {
+            draws.extend(
+                self.resolve_placement_draws(res, tmd_src_index, &deco, false, None, None)
+                    .0,
+            );
+        }
+        (draws, deco_start)
     }
 
     /// Resolve the world-map water/CLUT-cell animation for the active scene.

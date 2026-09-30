@@ -368,12 +368,23 @@ uint fetch_vram_word(vec2 uv, uint cba, uint tsb) {
   return texelFetch(u_vram, ivec2(vx, vy), 0).r;
 }
 
+/* The PSX texture blend at the framebuffer's 5-bit depth - the twin of
+ * engine-render's psx_texture_blend (legaia_engine_ui::screen_prim::
+ * psx_texture_blend): (t5 * c8) >> 7, saturated at 31, so a dim packet
+ * colour drops a faint texel to zero. Exact at the neutral 0x80. It is what
+ * keeps the additive overworld fog sheets sparse. */
+vec3 psxTextureBlend(vec3 texel, vec3 factor) {
+  uvec3 t5 = uvec3(round(texel * 31.0));
+  uvec3 c8 = uvec3(round(clamp(factor, vec3(0.0), vec3(255.0 / 128.0)) * 128.0));
+  return vec3(min((t5 * c8) >> 7u, uvec3(31u))) / 31.0;
+}
+
 void main() {
   if ((v_flags & 1u) != 0u) {
     uint word = fetch_vram_word(v_uv, v_cba_tsb.x, v_cba_tsb.y);
     if (word == 0u) discard;
     vec4 texel = bgr555_to_rgba(word);
-    o_color = vec4(texel.rgb * v_color.rgb, v_color.a * texel.a);
+    o_color = vec4(psxTextureBlend(texel.rgb, v_color.rgb), v_color.a * texel.a);
   } else {
     o_color = v_color;
   }
@@ -959,7 +970,7 @@ void main() {
        * floor-wave offset array (`rt.field_floor_wave_offsets()`, terrain then
        * placements), so a draw the loop below SKIPS - a mesh with
        * no renderable prims - does not shift every later draw's rung. */
-      const push = (slots, pos, rots, anims, rotsX, rotsZ, floorBase, placed, scales) => {
+      const push = (slots, pos, rots, anims, rotsX, rotsZ, floorBase, placed, scales, decoStart) => {
         for (let i = 0; i < slots.length; i++) {
           const anim = anims ? anims[i] : 0;
           let meshId, animRec = null;
@@ -1016,6 +1027,11 @@ void main() {
           /* Placed layer only: the index into the engine's per-placement
            * live mask (`_syncStaticWindow`). */
           if (placed) draw.placeIdx = i;
+          /* Overworld decorations (the placed list past the landmarks):
+           * retail's decoration sweep hazes each one toward 0xD0 by its
+           * origin's camera depth - staged per draw by renderAssembled
+           * (`decoCue`, the native `world_map_deco_start` twin). */
+          if (placed && decoStart !== undefined && i >= decoStart) draw.decoCue = true;
           /* Terrain layer only: the index into the engine's visible-tile
            * crop mask (`_syncViewWindow`). */
           else draw.terrainIdx = i;
@@ -1031,7 +1047,8 @@ void main() {
         rt.field_placement_rot_x ? rt.field_placement_rot_x() : null,
         rt.field_placement_rot_z ? rt.field_placement_rot_z() : null,
         terrainSlots.length, true,
-        rt.field_placement_scales ? rt.field_placement_scales() : null);
+        rt.field_placement_scales ? rt.field_placement_scales() : null,
+        rt.field_decoration_start ? rt.field_decoration_start() : undefined);
       this._floorWaveLive = false;
 
       /* Player: geometry once, positions re-uploaded per frame from the pose. */

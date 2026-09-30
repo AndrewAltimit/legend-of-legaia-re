@@ -143,11 +143,12 @@ fn field_frame() -> Vec<u8> {
 ///   ([`legaia_engine_vm::battle_intro_styles::CURTAIN_INTENSITY`]) and the
 ///   disc's descriptor records carry `0xFF` on both edges, so
 ///   `build_intro_quad`'s `c * intensity / 256` shades white to `0x7F` - and
-///   PSX texture modulation is `texel * colour / 128`. A curtain strip is
-///   therefore one 128th darker than the frame it was cut from, on hardware
-///   as here.
-/// * **The 5-bit expansion.** The shader widens a VRAM channel as `c5 / 31`,
-///   the exact rescale, before the modulation and the UNORM8 write.
+///   PSX texture modulation is `(texel * colour) >> 7` at the framebuffer's
+///   5-bit depth ([`legaia_engine_ui::screen_prim::psx_texture_blend`]). A
+///   curtain strip therefore lands one 5-bit level below the frame it was
+///   cut from (level 0 stays 0), on hardware as here.
+/// * **The 5-bit expansion.** The shader widens the blended level as
+///   `c5 / 31`, the exact rescale, before the UNORM8 write.
 ///
 /// The comparison below allows a **one-step** difference per channel and no
 /// more. That is not slack for the wiring: it covers only the UNORM8 write's
@@ -156,7 +157,8 @@ fn field_frame() -> Vec<u8> {
 /// one 5-bit level per pixel, so a strip drawn one row or one column off its
 /// source is wrong by about **eight** 8-bit steps - far outside the bound.
 fn drawn_channel(c5: u8) -> u8 {
-    ((c5 as f32 / 31.0) * (127.0 / 128.0) * 255.0).round() as u8
+    let q = legaia_engine_ui::screen_prim::psx_texture_blend(c5, 0x7F);
+    ((q as f32 / 31.0) * 255.0).round() as u8
 }
 
 /// [`field_frame`] as the curtain must redraw it.
