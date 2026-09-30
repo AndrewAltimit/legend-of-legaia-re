@@ -381,6 +381,14 @@ pub struct BattleState {
     /// way into a capture taken mid-cast ([`InflightCastSeed`]). `None` on
     /// every ordinary fight; consumed (taken) by the live loop.
     pub inflight_seed: Option<InflightCastSeed>,
+    /// A debug seed that makes monster seat `.0` cast spell `.1` the next
+    /// time its turn comes up, in place of the AI's pick - the retail
+    /// comparison corpus's way into a capture taken mid monster cast (the
+    /// capture holds the caster seat `ctx[+0x13]` and its queued spell id
+    /// `+0x1DF`). The capture's MP is already charged, so the cast's price
+    /// is credited back as it is taken. `None` on every ordinary fight;
+    /// consumed (taken) by the monster pick.
+    pub forced_monster_cast: Option<(u8, u8)>,
     /// The commit log's launch glide - retail's `0x35 + i` clones gliding the
     /// log off the left edge when the member leaves the ring for a sub-screen
     /// and back when they return
@@ -642,6 +650,7 @@ impl BattleState {
             flow: crate::battle_flow::BattleFlowState::Idle,
             round_flow: crate::battle_round::RoundFlow::default(),
             inflight_seed: None,
+            forced_monster_cast: None,
             commit_log_launch: None,
             sideband: Default::default(),
             stage_id: 0,

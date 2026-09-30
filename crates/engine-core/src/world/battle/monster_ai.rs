@@ -92,6 +92,25 @@ pub(in crate::world) fn enemy_impact_status_proc(
 }
 
 impl World {
+    /// The cast record a monster's turn arms for `spell_id`: the catalog's,
+    /// or - for a capture-class special, which the catalog does not carry -
+    /// one built off the disc spell table
+    /// ([`crate::retail_magic::capture_special_def`]). The action SM routes
+    /// the latter to its capture band on the table's class byte.
+    pub(in crate::world) fn monster_cast_def(
+        &self,
+        spell_id: u8,
+    ) -> Option<crate::spells::SpellDef> {
+        self.tables
+            .spell_catalog
+            .get(spell_id)
+            .cloned()
+            .or_else(|| {
+                let table = self.menu.text.as_ref()?.spell_names.as_ref()?;
+                crate::retail_magic::capture_special_def(table, spell_id)
+            })
+    }
+
     pub(in crate::world) fn take_monster_turn(&mut self, slot: u8) {
         use vm::battle_action::ActionState;
 
@@ -108,7 +127,7 @@ impl World {
             } => {
                 // A confused caster's spell lands on the opposite side.
                 self.confuse_retarget_cast(slot, &mut targets);
-                let def = self.tables.spell_catalog.get(spell_id).cloned();
+                let def = self.monster_cast_def(spell_id);
                 let mp = self
                     .actors
                     .get(slot as usize)
@@ -783,6 +802,25 @@ impl World {
     pub(in crate::world) fn pick_monster_action(&mut self, slot: u8) -> MonsterAction {
         let pc = self.party.party_count.max(1);
 
+        // Retail-compare debug seed: a capture taken mid monster cast replays
+        // that cast on the seat's next turn instead of the AI's pick.
+        if let Some((seat, spell_id)) = self.battle.forced_monster_cast
+            && seat == slot
+            && let Some(def) = self.monster_cast_def(spell_id)
+        {
+            self.battle.forced_monster_cast = None;
+            let class = self.monster_cast_target_class(slot, &def);
+            let targets = self.resolve_class_to_slots(slot, class);
+            if !targets.is_empty() {
+                if let Some(a) = self.actors.get_mut(slot as usize) {
+                    a.battle.action_category = 2;
+                    a.battle.params[0] = spell_id;
+                    a.battle.mp = a.battle.mp.saturating_add(u16::from(def.mp_cost));
+                }
+                return MonsterAction::Cast { spell_id, targets };
+            }
+        }
+
         // --- generic decision core ---
         // The monster's own castable global magic ids (parser already drops the
         // empty `<= 1` slots, so every entry is "live").
@@ -808,7 +846,7 @@ impl World {
         let mut target_class;
         if roll != 0 {
             let id = magic[(roll - 1) as usize];
-            if let Some(def) = self.tables.spell_catalog.get(id).cloned()
+            if let Some(def) = self.monster_cast_def(id)
                 && mp >= def.mp_cost as u16
             {
                 category = 2;
@@ -1271,5 +1309,48 @@ mod impact_proc_tests {
             "selector 5 on a monster target does nothing (retail's `sltiu a1,0x3`)"
         );
         assert_eq!(draws, 0, "a non-party target draws no RNG");
+    }
+}
+
+#[cfg(test)]
+mod capture_special_tests {
+    use crate::world::World;
+    use legaia_asset::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
+
+    const GUILTY_CROSS: u8 = 0x37;
+
+    fn world_with_capture_special() -> World {
+        let mut entries = vec![SpellEntry::default(); 0x100];
+        entries[GUILTY_CROSS as usize] = SpellEntry {
+            class: CAPTURE_CLASS,
+            sub_class: 2,
+            mp: 12,
+            name: Some("Guilty Cross".into()),
+            ..SpellEntry::default()
+        };
+        let mut world = World::default();
+        world.menu.text = Some(crate::pause_screens::MenuTextTables {
+            spell_names: Some(SpellNameTable::from_entries(entries)),
+            ..Default::default()
+        });
+        world
+    }
+
+    /// A capture-class special is kept out of the spell catalog, so the
+    /// monster turn's cast record comes off the disc table - without it the
+    /// turn found no record and struck instead of casting.
+    #[test]
+    fn a_capture_special_has_a_cast_record_the_catalog_does_not_carry() {
+        let world = world_with_capture_special();
+        assert!(world.tables.spell_catalog.get(GUILTY_CROSS).is_none());
+        let def = world.monster_cast_def(GUILTY_CROSS).expect("a cast record");
+        assert_eq!(
+            (def.id, def.mp_cost, def.effect_class),
+            (GUILTY_CROSS, 12, 2)
+        );
+        assert!(
+            World::default().monster_cast_def(GUILTY_CROSS).is_none(),
+            "no disc table, no record"
+        );
     }
 }
