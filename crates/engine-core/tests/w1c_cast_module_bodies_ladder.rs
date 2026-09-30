@@ -25,9 +25,10 @@
 //!   inside the module's own sweep stager rather than in the generic fold.
 //!
 //! The denominator is the **sources**: `tagged_addresses` scrapes every
-//! `// PORT:` address out of `cast_module_ticks.rs`, which `include_str!`
-//! pulls in at compile time, and `ROWS` plus `TRAMPOLINE_TABLE` have to
-//! account for every one. Adding a body without adding a row fails
+//! `// PORT:` address out of `cast_module_ticks.rs` and its submodules,
+//! which `include_str!` pulls in at compile time, and `ROWS` plus
+//! `TRAMPOLINE_TABLE` have to account for every one. Adding a body without
+//! adding a row fails
 //! `the_row_table_accounts_for_every_ported_body` with no disc present - the
 //! same property that makes `w2c_cast_band_body_ladder` unable to go stale.
 //!
@@ -39,8 +40,20 @@ use legaia_engine_vm::cast_module_ticks as ticks;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-/// The module source, scraped for its `// PORT:` addresses at compile time.
-const MODULE_SOURCE: &str = include_str!("../../engine-vm/src/cast_module_ticks.rs");
+/// The module sources (`cast_module_ticks.rs` and every file of its
+/// directory), scraped for their `// PORT:` addresses at compile time.
+const MODULE_SOURCES: &[&str] = &[
+    include_str!("../../engine-vm/src/cast_module_ticks.rs"),
+    include_str!("../../engine-vm/src/cast_module_ticks/state.rs"),
+    include_str!("../../engine-vm/src/cast_module_ticks/idioms.rs"),
+    include_str!("../../engine-vm/src/cast_module_ticks/power.rs"),
+    include_str!("../../engine-vm/src/cast_module_ticks/stagers.rs"),
+    include_str!("../../engine-vm/src/cast_module_ticks/ticks.rs"),
+    include_str!("../../engine-vm/src/cast_module_ticks/capture.rs"),
+    include_str!("../../engine-vm/src/cast_module_ticks/arms.rs"),
+    include_str!("../../engine-vm/src/cast_module_ticks/arms_0955.rs"),
+    include_str!("../../engine-vm/src/cast_module_ticks/tests.rs"),
+];
 
 /// How a row's body is reached.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -343,7 +356,7 @@ const MAX_FRAMES: usize = 96;
 /// Every `FUN_801Fxxxxxxxx` address on a `// PORT:` marker in the module source.
 fn tagged_addresses() -> BTreeSet<u32> {
     let mut out = BTreeSet::new();
-    for line in MODULE_SOURCE.lines() {
+    for line in MODULE_SOURCES.iter().flat_map(|src| src.lines()) {
         if !line.trim_start().starts_with("//") {
             continue;
         }

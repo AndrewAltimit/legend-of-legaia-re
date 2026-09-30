@@ -1880,7 +1880,8 @@ row.
 
 ## The cast-module band, the largest cluster on this page and the one with no rows
 
-`crates/engine-vm/src/cast_module_ticks.rs` is still the largest single-file
+`crates/engine-vm/src/cast_module_ticks.rs` (with its `cast_module_ticks/`
+submodules) is still the largest single-module
 cluster in the never-entered set, and it is still the only cluster of any size
 not cited anywhere else on this page - the file arrived whole and never went
 through the per-row pass the rest of the buckets did.
@@ -1904,7 +1905,7 @@ transferable part:
 | `w1b_seru_ticks_ladder` / `w1c_seru_ticks_ladder` | phase depth, ids `0x81..=0x8b` | those bodies are `beq` chains fifteen arms deep whose simulation writes live in the late arms |
 | `w1d_trampoline_arms_ladder` | `(PROT entry, action id)` pairs | a body is reached only through its module's trampoline, and one cell can hold two |
 | `w2c_cast_band_body_ladder` | `// PORT:` addresses scraped from **three** band modules' sources | cannot go stale when a later lane adds a body to one of those three |
-| `w1c_cast_module_bodies_ladder` | `// PORT:` addresses scraped from `cast_module_ticks.rs`, by dispatch **seam** | the fourth module, and the three seams its bodies are reached through |
+| `w1c_cast_module_bodies_ladder` | `// PORT:` addresses scraped from `cast_module_ticks.rs` and its submodules, by dispatch **seam** | the fourth module, and the three seams its bodies are reached through |
 
 ### The eleventh-hour row set: a source-denominated ladder for `cast_module_ticks.rs`
 
