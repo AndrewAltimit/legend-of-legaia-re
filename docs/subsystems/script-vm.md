@@ -295,6 +295,20 @@ context's own `+0x9C`, never on the box. A record spawned by op `0x44` in free r
 hand-off to `town0b`; `town0e` `P2[5]`, the ending's hop to `edteien`) shows
 its lines and runs on past them.
 
+A conversation is the same runner on the talker's context, so a
+cross-context op inside it resolves its target byte like any other
+(`FUN_8003C83C`): `A3 F8 x z` seats the **player**, `CD F8 ..` tests the
+player's box, and `CC <id> 51 ..` walks the placement `<id>` names, not the
+talker. A `4A` wait parks the talk wherever it sits, before its first box
+included. `town0b`'s path out after the mist hangs on all of it: `P1[37]`'s
+night-before talk ends `A3 F8 20 63` then `21`, seating Vahn on the
+walled-in `P2[8]` tile `(32, 99)` so the crossing fires once the talk
+releases him (the village gathering, which raises `0x231`); the elder's
+`P1[55]` opens every talk with `CD F8 1E 5B 21 5C`, and only from inside
+`[30..33, 91..92]` does its `0x231` arm run - it waits eight frames, then
+sets `0x141` and changes to `map01`. The south gate stays painted shut
+(`P1[0]`'s `4C 71` rectangles while `0x147` is set and `0x141` clear).
+
 Port: `World::step_field_frame_slice` (the system-script gate,
 `FieldVmState::system_pass_open`), `World::field_scripts_held_for_battle`,
 `CutsceneTimeline::interaction_slot` (a boss-stager touch resumes the

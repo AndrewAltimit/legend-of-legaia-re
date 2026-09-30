@@ -3242,6 +3242,9 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
         {
             continue;
         }
+        if stager_overreaches(&mf, &man, p.placement_index) {
+            continue;
+        }
         let at = match (p.station_world, p.spawn_parked) {
             (Some(st), _) => st,
             (None, false) => p.spawn_world,
@@ -3782,6 +3785,37 @@ fn overreaching_records(
         }
     }
     out
+}
+
+/// Does boss stager placement `p1_record` set a flag the retail run never
+/// had by the next milestone? Its own record cleanly SETs a system flag the
+/// next anchor lacks and no record of the scene ever CLEARs - so the flag,
+/// once set, would still show, and its absence says retail never fought
+/// here. `town0b` P1[36], a loss-allowed fight (`50 00` then `3E FF 03`),
+/// raises `0x5C0` before its fight; the Hunter's Spring anchor has it clear.
+fn stager_overreaches(
+    mf: &legaia_asset::man_section::ManFile,
+    man: &[u8],
+    p1_record: usize,
+) -> bool {
+    use legaia_engine_core::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
+    let sites: Vec<_> = (0..3)
+        .flat_map(|p| walk_partition_gflag_sites(mf, man, p))
+        .filter(|s| s.bank == FlagBank::System && s.clean && !s.text_alias && !s.debug_menu)
+        .collect();
+    let cleared: BTreeSet<u16> = sites
+        .iter()
+        .filter(|s| s.kind == FlagKind::Clear)
+        .map(|s| s.flag)
+        .collect();
+    sites.iter().any(|s| {
+        s.partition == 1
+            && s.record == p1_record
+            && s.kind == FlagKind::Set
+            && s.flag != 0
+            && !cleared.contains(&s.flag)
+            && !next_anchor_has(s.flag)
+    })
 }
 
 /// Rounds of the talk + walk-on beat passes per scene visit.

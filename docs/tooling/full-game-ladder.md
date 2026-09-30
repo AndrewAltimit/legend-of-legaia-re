@@ -170,7 +170,10 @@ a **latch** - a flag some partition-2 C1 gate of the scene reads - that the
 next anchor does not carry: retail had not played it, and its latch shuts the
 record the story takes (`conc2` P2[12] latches `0x3E1`, the C1 gate of the
 `juui1` hand-off P2[20], and the walk-on P2[11] spawns P2[12] as its
-epilogue).
+epilogue). A boss stager is skipped on the same evidence: its own record
+sets a flag the next anchor lacks and no record of the scene clears, so
+retail never fought there (`town0b` P1[36], a loss-allowed fight, raises
+`0x5C0` before its `3E FF 03`).
 
 A talk or walk-on beat whose record ends on `3E FF` has committed a fight
 that starts only after the record is gone, so the beat is fought before the

@@ -3118,7 +3118,83 @@ impl World {
             // acquire succeeding.
             let caller_halt =
                 ext_target.map(|_| (id.ctx.flags & 0x400, id.ctx.saved_pc, id.ctx.wait_accum));
-            let step = vm::field::step(&mut host, &mut id.ctx, &id.bytecode, id.pc);
+            // A player seat (`A3 F8 x z` MOVE_TO, `CC F8 51 x z ..` run) or a
+            // player box test (`CD F8 ..` BBOX_TEST): `FUN_8003C83C` resolves
+            // `0xF8` to the player object, so the op runs with the PLAYER as
+            // its context - the seat takes the player arm (`0x801DEC7C`
+            // compares the context pointer against `_DAT_8007C364`) and the
+            // box test reads the player's `+0x14` / `+0x18`. Stepped on the
+            // talker's own context, the seat moved nobody and the box tested
+            // where the talker stands. `town0b` P1[37], the night-before
+            // talk, closes with `A3 F8 20 63` - it puts Vahn on `(32, 99)`,
+            // the walled-in tile of the P2[8] walk-on that stages the village
+            // gathering, then ends the interaction (`21`), and the crossing
+            // fires on the first unlocked frame. The elder's P1[55] then
+            // opens every talk with `CD F8 1E 5B 21 5C`: only a player
+            // standing in `[30..33, 91..92]` reaches the arm that sets
+            // `0x141` and leaves for `map01`. The cutscene timeline and the
+            // prop runner already take the seat arm.
+            // REF: FUN_8003C83C, FUN_801DE840 (0x23 / 4C 51 / 4D arms)
+            let op = b & 0x7F;
+            let player_seat = ext_target == Some(crate::field_env::PLAYER_ANCHOR_TARGET)
+                && (op == 0x23
+                    || op == 0x4D
+                    || (op == 0x4C && id.bytecode.get(id.pc + 2) == Some(&0x51)));
+            // A run aimed at ANOTHER actor (`CC <id> 51 x z ..`) walks that
+            // actor, not the talker: `town0b` P1[55]'s first talk sends
+            // placement `0x2A` home with `CC 2A 51 27 28`, and routing it to
+            // the talker walked the village elder out of the room the next
+            // beat needs him in. An id no placement channel carries moves
+            // nobody.
+            // REF: FUN_8003C83C
+            let run_target =
+                (op == 0x4C && id.bytecode.get(id.pc + 2) == Some(&0x51) && !player_seat)
+                    .then_some(ext_target)
+                    .flatten()
+                    .filter(|&t| t != 0xFB);
+            let talker = host.world.dialog.stepping_inline_npc;
+            if let Some(t) = run_target {
+                let view = host.world.channel_view();
+                host.world.dialog.stepping_inline_npc =
+                    crate::field_channels::resolve_target(view, t)
+                        .map(|ci| &view[ci])
+                        .filter(|ch| !ch.object_bind)
+                        .and_then(|ch| u8::try_from(ch.placement_index).ok());
+            }
+            let step = if player_seat {
+                let (px, pz) = host
+                    .world
+                    .player_actor_slot
+                    .and_then(|slot| host.world.actors.get(usize::from(slot)))
+                    .map_or((0, 0), |a| (a.move_state.world_x, a.move_state.world_z));
+                let mut player_ctx = legaia_engine_vm::field::FieldCtx {
+                    script_id: u16::from(crate::field_env::PLAYER_ANCHOR_TARGET),
+                    flags: 0x0100_0000,
+                    world_x: px as u16,
+                    world_z: pz as u16,
+                    ..Default::default()
+                };
+                let r = vm::field::step(&mut host, &mut player_ctx, &id.bytecode, id.pc);
+                if let Some(slot) = host.world.player_actor_slot
+                    && let Some((x, z)) = host
+                        .world
+                        .actors
+                        .get(usize::from(slot))
+                        .map(|a| (a.move_state.world_x, a.move_state.world_z))
+                {
+                    let y = host
+                        .world
+                        .sample_field_floor_height(i32::from(x), i32::from(z))
+                        as i16;
+                    if let Some(a) = host.world.actors.get_mut(usize::from(slot)) {
+                        a.move_state.world_y = y;
+                    }
+                }
+                r
+            } else {
+                vm::field::step(&mut host, &mut id.ctx, &id.bytecode, id.pc)
+            };
+            host.world.dialog.stepping_inline_npc = talker;
             if let Some((halt, saved_pc, wait_accum)) = caller_halt
                 && halt == 0
                 && id.ctx.flags & 0x400 != 0
@@ -3188,12 +3264,14 @@ impl World {
                 // Persist the PC and resume next tick instead of ending, so
                 // option effects scripted *behind* a wait still run - the Rim
                 // Elm spar's `3E FF 04` battle install sits behind a
-                // `WaitFrames 16`. Only when no prologue fallback is pending;
-                // a wait during prologue selection still falls back so the box
-                // is never worse than the truncated path.
-                FieldStepResult::Halt { final_pc }
-                    if (b & 0x7F) == 0x4A && id.fallback_segment_pc.is_none() =>
-                {
+                // `WaitFrames 16`. A wait before the talk's first box parks
+                // the same way: retail's runner has no notion of a prologue,
+                // and falling back to the record's first segment there
+                // replayed the wrong speech - `town0b` P1[55]'s gathering
+                // arm (`+0xE14`) waits eight frames before its first box,
+                // and the fallback re-ran the pre-gathering speech in its
+                // place, so the arm that sets `0x141` never ran.
+                FieldStepResult::Halt { final_pc } if (b & 0x7F) == 0x4A => {
                     id.pc = final_pc;
                     break;
                 }
