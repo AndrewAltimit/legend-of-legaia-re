@@ -57,6 +57,14 @@ impl BattleCamera {
         self.module_glide = Some(g);
     }
 
+    /// A module arm's direct writes into the live camera globals (pitch, TR
+    /// y, TR z in its prescaled units), added to the pose as it stands.
+    pub fn nudge_module(&mut self, pitch: i16, tr_y: i16, tr_z: i16) {
+        self.pose.pitch += f32::from(pitch);
+        self.pose.tr[1] += f32::from(tr_y);
+        self.pose.tr[2] += f32::from(tr_z);
+    }
+
     fn land(&mut self, g: &Glide) {
         self.pose.pitch = g.target.pitch;
         self.pose.tr = g.target.tr;

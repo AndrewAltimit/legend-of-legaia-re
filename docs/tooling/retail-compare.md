@@ -247,7 +247,7 @@ That last gap is the per-summon module's, not the band's. In `0x35` / `0x36`
 the camera belongs to the slot-B module, which arms its own framings on the
 **creature** (actor slot 7) and paces its arms on a countdown of its own
 ([`cast-module.md`](../subsystems/cast-module.md#the-module-owns-the-camera-and-the-bands-length)).
-Where the engine ports a module's director (PROT 0903, Gimard) the band's
+Where the engine ports a module's director (PROT 0903, 0905, 0908) the band's
 length is the module's, so a `0x35` / `0x36` capture of that module is gated on
 the module's phase byte `ctx[+0x279]` as well (`PhaseGate::module_phase`, the
 `m<phase>` suffix of `LEGAIA_CAPTURE_GATE`). A walk arm is gated on its entry,

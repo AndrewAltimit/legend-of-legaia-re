@@ -1836,11 +1836,33 @@ Port: `legaia_engine_vm::cast_module_camera` (`ModuleShot`, `ModuleCountdown`,
 `ModuleFollow`) and a per-module director that runs before the phase-chain
 body and withholds it while an arm holds. The battle camera steps the shot
 (`BattleCamera::arm_module_shot` / `arm_module_follow`) in `0x35` / `0x36` on
-both hosts; a module with no director arms no shot, and keeps case 6. PROT 0903
-(Gimard) has a director: the snap of arm 0, the pan of arm 1, the creature
-placement of arm 3 (half a unit from the victim toward the caster, facing the
-victim), the cuts of arms 4 and 6, the `0xC0`-frame pan of arm 7, the gates of
-arms 2 and 4..10 and the walk-in of arm 11.
+both hosts; a module with no director arms no shot, and keeps case 6. The
+directors so far, each read off its own tick's disassembly:
+
+- **PROT 0903 (Gimard)** - the whole choreography: the snap of arm 0, the pan
+  of arm 1, the creature placement of arm 3 (half a unit from the victim
+  toward the caster, facing the victim), the cuts of arms 4 and 6, the
+  `0xC0`-frame pan of arm 7, the gates of arms 2 and 4..10 and the walk-in of
+  arm 11;
+- **PROT 0905 (Vera)** - the whole choreography, including a third kernel the
+  other two do not need: arms 8..10 write the camera globals directly every
+  pass (pitch `0x8007B790`, TR y / z `0x800840BC` / `0x800840C0`), a drift on
+  top of arm 8's cut. Its gate is the `bgez` form - hold while the word is
+  still non-negative - and arm 5 advances the phase by **3**, so arms 6 and 7
+  of its chain are unreachable;
+- **PROT 0908 (Zenoir)** - the summoning (arms `0..=5`): the framed point is
+  the victim's `0x200` grid cell half a unit back toward the caster, and arm
+  3 waits on the **band's** timer `ctx[+0x6D8]` - the sustain `0x35`'s own
+  `0x78` frames - before arm 4 seats the creature and reuses that word as the
+  module's countdown. The creature's clip-paced strike (arms 6..10) is not
+  directed.
+
+Two gates the engine reads as already open: the creature stream load
+(`FUN_8003EAE4` / the `0x8007BDB0` token) and the CD poll `FUN_8003F2B8(1)`.
+The engine has the record resident, so a module that spends its opening
+frames waiting on the load - PROT 0913 (Nova) sits in arm 2 on that poll
+through most of the sustain - frames differently in the engine until a
+director models the read.
 
 Five VAs cover the eleven arms, because a module whose image opens with code
 puts its tick at the load base. `0x801F69D8` alone is the arm for **six** of

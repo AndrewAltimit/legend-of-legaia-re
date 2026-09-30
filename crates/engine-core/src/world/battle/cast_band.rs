@@ -740,17 +740,23 @@ impl World {
         // (`vm::cast_module_camera`) owns the band's length the way retail's
         // does: `0x36` holds on the module's return, and the outcome lands on
         // the module's hit arm rather than on the engine's walk-in.
-        let directed_hit = run
+        let profile = run
             .as_ref()
-            .and_then(|r| vm::cast_module_camera::module_hit_arm(r.prot_entry));
+            .and_then(|r| vm::cast_module_camera::module_profile(r.prot_entry));
+        let directed_hit = profile.map(|p| p.hit_arm);
         let module_busy =
-            directed_hit.is_some() && run.as_ref().is_some_and(|r| r.tick_ported && r.busy);
+            profile.is_some() && run.as_ref().is_some_and(|r| r.tick_ported && r.busy);
         let module_phase = run.as_ref().map_or(0, |r| r.phase);
         if let Some(shot) = run.as_ref().and_then(|r| r.camera_shot)
             && let Some(cam) = self.battle.camera.as_mut()
         {
             let (pose, raw_z) = shot.pose();
             cam.arm_module_shot(pose, raw_z, u32::from(shot.frames));
+        }
+        if let Some(n) = run.as_ref().and_then(|r| r.camera_nudge)
+            && let Some(cam) = self.battle.camera.as_mut()
+        {
+            cam.nudge_module(n.pitch, n.tr_y, n.tr_z);
         }
         if let Some(f) = run.as_ref().and_then(|r| r.camera_follow)
             && let Some(cam) = self.battle.camera.as_mut()
@@ -789,8 +795,8 @@ impl World {
                     .filter(|&s| self.actors.get(s as usize).is_some_and(|a| a.active));
                 // A directed module walks its creature in its own walk arm,
                 // not after the engine's idle count.
-                let may_walk = match directed_hit {
-                    Some(walk_arm) => module_phase >= walk_arm,
+                let may_walk = match profile {
+                    Some(p) => p.walk_arm.is_some_and(|w| module_phase >= w),
                     None => st.frames > SUMMON_IDLE_FRAMES,
                 };
                 let walked = match seat {
@@ -990,6 +996,8 @@ pub struct CastModuleCodeRun {
     /// The case-6 follow the module re-armed this frame
     /// ([`vm::cast_module_camera::ModuleFollow`]).
     pub camera_follow: Option<vm::cast_module_camera::ModuleFollow>,
+    /// The drift the module wrote into the camera globals this frame.
+    pub camera_nudge: Option<vm::cast_module_camera::ModuleNudge>,
 }
 
 // --- W1-D: the fourteen trampoline arms ---
@@ -1403,6 +1411,7 @@ impl World {
         vm::cast_module_camera::ModuleCamSeats {
             caster: seat(caster_slot),
             victim: seat(victim_slot),
+            band_timer: i32::from(self.battle_ctx.frame_timer),
         }
     }
 
@@ -1539,7 +1548,12 @@ impl World {
             None
         } else {
             vm::cast_module_camera::module_director(entry).map(|direct| {
-                let seats = self.module_cam_seats(caster_slot, victim_slot);
+                let latched = *self
+                    .casting
+                    .module_cam
+                    .victim_slot
+                    .get_or_insert(victim_slot);
+                let seats = self.module_cam_seats(caster_slot, latched);
                 let mut st = self.casting.module_cam;
                 let d = direct(&mut st, ctx.phase, seats);
                 self.casting.module_cam = st;
@@ -1548,6 +1562,7 @@ impl World {
         };
         run.camera_shot = direction.and_then(|d| d.shot);
         run.camera_follow = direction.and_then(|d| d.follow);
+        run.camera_nudge = direction.and_then(|d| d.nudge);
         let held = direction.is_some_and(|d| d.hold);
         let step = if held {
             Some(ticks::CastTickStep::Busy)
@@ -2377,6 +2392,7 @@ impl World {
             element_change: None,
             camera_shot: None,
             camera_follow: None,
+            camera_nudge: None,
         })
     }
 

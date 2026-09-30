@@ -482,13 +482,22 @@ fn the_vera_restore_arm_leaves_hp_to_the_fold_and_still_cures() {
     member.set_spell_list(list);
     world.party.roster.members = vec![member];
 
+    // Each arm is re-entered until it lets the phase through: PROT 0905's
+    // counted arms hold on the module's own countdown
+    // (`legaia_engine_vm::cast_module_camera`), so one call per arm would
+    // stop at the first gate.
     let mut ran_restore = false;
     for arm in 0..=VERA_RESTORE_ARM {
         world.casting.module_phase = arm;
-        if world.run_cast_module_code(0x83, arm).is_none() {
-            break;
+        for _ in 0..2048 {
+            if world.run_cast_module_code(0x83, arm).is_none() {
+                break;
+            }
+            if world.casting.module_phase != arm {
+                break;
+            }
         }
-        ran_restore |= arm == VERA_RESTORE_ARM;
+        ran_restore |= arm == VERA_RESTORE_ARM && world.casting.module_phase != arm;
     }
     assert!(ran_restore, "the restore arm has to have executed");
     assert_eq!(
