@@ -2859,9 +2859,12 @@ function init() {
       const code = (v && !v.startsWith('__')) ? v : (packLanguage(resume) || 'en');
       const yaml = mod.export_lang_pack(buf, code, resume || undefined);
       const bytes = new TextEncoder().encode(yaml);
-      triggerDownload(bytes, `legaia_${code}.working.yaml`);
-      setLangStatus(`Downloaded legaia_${code}.working.yaml - fill the translation: fields and import it above. ` +
-        'It contains the game\'s English text, so keep it to yourself and share the "shareable pack" instead.', 'ok');
+      // A PAL or Japanese disc exports its own script (dialog only), stamped
+      // with its own language: name the file after it.
+      const fileCode = noPack ? (packLanguage(yaml) || code) : code;
+      triggerDownload(bytes, `legaia_${fileCode}.working.yaml`);
+      setLangStatus(`Downloaded legaia_${fileCode}.working.yaml - fill the translation: fields and import it above. ` +
+        'It contains the game\'s own text, so keep it to yourself and share the "shareable pack" instead.', 'ok');
     } catch (e) {
       setLangStatus('Error: ' + (e && e.message ? e.message : e), 'err');
     }
