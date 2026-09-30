@@ -321,7 +321,7 @@ blocker is a table is the same error this page records for the panel painters.
 | `801d092c` | `max_qty` | `crates/engine-core/src/fishing.rs:627` | FALSE INERT |
 | `801d0b90` | `tick_walk_regen` | `crates/engine-core/src/walk_regen.rs:86` | WIRE |
 | `801d0c3c` | `first_visible` | `crates/engine-core/src/fishing.rs:602` | FALSE INERT |
-| `801d4040` | `symbol_pad_bit` | `crates/engine-core/src/dance.rs:219` | DELETE |
+| `801d4040` | `symbol_pad_bit` | `crates/engine-core/src/dance/types.rs:84` | DELETE |
 | `801d6f90` | `is_available` | `crates/engine-core/src/fishing.rs:614` | FALSE INERT |
 | `801d712c` | `select_owned_rod` | `crates/engine-core/src/fishing.rs:705` | FALSE INERT |
 | `801d8258` | `arm` | `crates/engine-core/src/world_map.rs:78` | DISCLOSE |
@@ -491,7 +491,7 @@ why the obvious placement was wrong. Where each one lives now:
   `battle_target_rows` in `command_flow.rs`.
 
 The `DELETE` row below is likewise applied: the free `symbol_pad_bit` is gone
-and the `// PORT: FUN_801d4040` tag sits on `DanceDir::pad_bit` in `dance.rs`.
+and the `// PORT: FUN_801d4040` tag sits on `DanceDir::pad_bit` in `dance/types.rs`.
 
 **`minigame_return_warp`** (`80026018`). **This row's original reasoning was wrong and
 is corrected here**, because acting on it as written produces a double credit.
@@ -552,7 +552,7 @@ arm-`0x82` callee.
 
 ## `DELETE` row
 
-**`symbol_pad_bit`** (`801d4040`, `crates/engine-core/src/dance.rs:219`).
+**`symbol_pad_bit`** (`801d4040`, `crates/engine-core/src/dance/types.rs:84`).
 `DanceDir::pad_bit` in the same file has identical arms (`0x80` / `0x20` /
 `0x10`), cites the same `FUN_801d4040`, and is the copy the live path uses -
 `World`'s dance tick references it from `world/frame_tick.rs`. The free function
@@ -1263,7 +1263,7 @@ worth looking for in the rest.
 | `bite_interval` (`801d26cc`) | `WIRE` | `BandCheck::tick` was approximating the strike modulus with the length readout; the ladder is the real one. |
 | `bite_interval_bias` (`801d26cc`) | `WIRE` | Same call site, after correcting the kernel - see below. |
 | `clear_catch_slots` (`801d746c`, `fishing_chrome.rs`) | `DELETE` | Same table as `fishing::ReelCadence`'s ring; `reset` now calls it. |
-| `dance_scene_stage` (`801d414c`, `dance.rs`) | `WIRE` (partial) | `clear_pad_latch` is applied by `World::enter_dance` / `exit_dance` and the block-base restore by `dance_venue::sync_dance_venue`; the scene-name restore is structural (the walked-in scene stays loaded) and `bgm_force_reload` has no consumer. |
+| `dance_scene_stage` (`801d414c`, `dance/stage.rs`) | `WIRE` (partial) | `clear_pad_latch` is applied by `World::enter_dance` / `exit_dance` and the block-base restore by `dance_venue::sync_dance_venue`; the scene-name restore is structural (the walked-in scene stays loaded) and `bgm_force_reload` has no consumer. |
 
 **`bite_interval_bias` was wrong, not just unwired.** It modelled retail's
 `li s1, -0x64` as a bias added to the strike credit. The instruction is an

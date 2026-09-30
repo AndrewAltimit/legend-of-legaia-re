@@ -944,7 +944,7 @@ all of it executes under one ladder now.
 
 | group | n | addresses | what runs it |
 |---|---|---|---|
-| `dance.rs` (HUD + banner) | 7 | `801d231c` `801d3e28` `801d32f8` `801d2524` `801d2d98` `801d2f38` `801d387c` | `40:K`, then judged face-button presses |
+| `dance/` (HUD + banner) | 7 | `801d231c` `801d3e28` `801d32f8` `801d2524` `801d2d98` `801d2f38` `801d387c` | `40:K`, then judged face-button presses |
 | `fishing_chrome.rs` | 5 | `801d03b0` `801d78c0` `801d74b0` `801d70ec` `801d7c30` | `40:L` + a cast; the venue panel needs `P`. A sixth address, `801d7a5c`, was credited here and this rung does not enter it; `w8_world_tail_ladder` does - see [its route](#rows-no-ladder-converts-and-why) |
 | `fishing_actors.rs` | 3 | `801d2050` `801d2278` `801d4948` | the same run's wander / line / celebration actors. A fourth address was credited here and is not converted - see the note below |
 | `minigame_floor.rs` | 2 | `801d2a10` `801d6028` | the fishing venue's floor solve |
