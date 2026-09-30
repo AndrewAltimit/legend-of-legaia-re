@@ -891,6 +891,21 @@ fn part_f_castle_chain_e2e() {
             panic!("arrival spawn bounced straight to {name}");
         }
     }
+    // A crossing made while a script holds the player is consumed, not
+    // deferred (`FUN_801D1EC4`'s `+0x10 & 0x80000` test), so the seat onto the
+    // door band waits for jouina's arrival script to hand control back.
+    let mut settle = 0;
+    while (host.world.cutscene_timeline_active()
+        || host.world.dialogue_owns_input()
+        || host.world.script_context_engages_player())
+        && settle < 1800
+    {
+        if let SceneTickEvent::SceneEntered { name } = host.tick().expect("tick") {
+            panic!("arrival script left for {name}");
+        }
+        settle += 1;
+    }
+    eprintln!("[ran] jouina arrival settled after {settle} ticks");
     let band = gate1_tiles_of(&index, "jouina", 20);
     let &(bx, bz) = band.iter().next().expect("jouina P2[20] has a door band");
     host.world.seat_player_at_tile(bx, bz);
