@@ -250,6 +250,10 @@ pub struct LocationInventory {
     pub world_map: Vec<(u8, u8, u8, String)>,
     /// Scene banner names -> how many scene bundles carry each.
     pub scene_banners: BTreeMap<String, usize>,
+    /// Every scene bundle's banner, per bundle: `(extraction entry index,
+    /// CDNAME scene label, banner name)`. The label is `None` when the disc
+    /// carries no `CDNAME.TXT` or the entry falls outside every block.
+    pub scene_banner_entries: Vec<(usize, Option<String>, String)>,
 }
 
 /// The world-map label records `(region, map_x, map_y, name)`, off the first
@@ -289,6 +293,7 @@ pub fn list_locations(patcher: &DiscPatcher) -> Result<LocationInventory> {
         landmarks: location_name::list_names(&scus)?,
         ..Default::default()
     };
+    let cdname = patcher.cdname();
     for idx in 0..patcher.entry_count() {
         let Ok(entry) = patcher.read_entry(idx) else {
             continue;
@@ -302,6 +307,11 @@ pub fn list_locations(patcher: &DiscPatcher) -> Result<LocationInventory> {
         };
         if let Some(name) = carrier.scene_name.as_ref() {
             *inv.scene_banners.entry(name.name.clone()).or_default() += 1;
+            let label = cdname.as_ref().and_then(|m| {
+                legaia_prot::cdname::block_for_extraction_index(m, idx as u32).map(str::to_owned)
+            });
+            inv.scene_banner_entries
+                .push((idx, label, name.name.clone()));
         }
         if inv.world_map.is_empty()
             && let Some(table) = carrier.world_map.as_ref()

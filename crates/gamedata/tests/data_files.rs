@@ -464,3 +464,50 @@ fn music_tracks_cover_debug_indices_contiguously() {
     // The trailing placeholder/test entries are flagged uncertain.
     assert!(db.music_by_index(80).unwrap().uncertain);
 }
+
+#[test]
+fn scene_names_are_unique_ordered_and_named() {
+    let db = Database::load();
+    let scenes = db.scene_names();
+    assert!(!scenes.is_empty());
+    let mut ids = std::collections::BTreeSet::new();
+    let mut names = std::collections::BTreeSet::new();
+    let mut prev = None;
+    for s in scenes {
+        assert!(ids.insert(s.id.as_str()), "duplicate scene id {}", s.id);
+        assert!(!s.name.trim().is_empty(), "{} has no name", s.id);
+        assert!(
+            [
+                "town",
+                "field",
+                "world_map",
+                "cutscene",
+                "battle",
+                "audio",
+                "system"
+            ]
+            .contains(&s.category.as_str()),
+            "{} has unknown category {}",
+            s.id,
+            s.category
+        );
+        // CDNAME order: strictly increasing `#define` numbers.
+        if let Some(p) = prev {
+            assert!(s.cdname > p, "{} out of CDNAME order", s.id);
+        }
+        prev = Some(s.cdname);
+        // A playable scene's name tells it apart from its siblings: no two
+        // scene rows share a display name.
+        if matches!(s.category.as_str(), "town" | "field" | "world_map") {
+            assert!(names.insert(s.name.as_str()), "duplicate name {}", s.name);
+        }
+    }
+    // Pins from the disc's own name carriers (docs/reference/scene-names.md).
+    assert_eq!(db.scene_by_id("balden").unwrap().name, "Vidna");
+    assert_eq!(db.scene_by_id("VELL").unwrap().name, "West Voz Forest");
+    assert_eq!(db.scene_by_id("station").unwrap().name, "Octam Station");
+    assert_eq!(
+        db.scene_by_id("stone").unwrap().banner.as_deref(),
+        Some("Shadow Gate")
+    );
+}

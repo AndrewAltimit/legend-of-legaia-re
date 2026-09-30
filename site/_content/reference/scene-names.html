@@ -1,0 +1,78 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">reference</a> &middot; scene names</div>
+  <h1>Scene names</h1>
+  <p class="lede">What is <code>balden</code>? Every scene on the disc is addressed by a short developer label from <code>CDNAME.TXT</code> - <code>town01</code>, <code>balden</code>, <code>vozz</code> - that says little about where you are. This page is the one table that names each of them: the name every page on this site shows, the banner the game itself draws when you walk in, and the in-game reading the table was cross-checked against.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>What it is</dt><dd>One row per <code>CDNAME.TXT</code> block, in disc order, from <code>data/gamedata/scenes.toml</code>.</dd>
+    <dt>Ground truth</dt><dd>The scene's own <strong>banner</strong> - the name the game draws on entering it and writes into a save slot (<a href="../formats/place-names.html">place names</a>, site 3). A disc-gated test holds every banner in the table to the disc byte for byte.</dd>
+    <dt>Where a banner is shared</dt><dd>Thirteen Sol scenes all say "Sol Tower"; the table adds a qualifier - <em>Sol Tower (stairs A)</em> - so no two playable scenes share a name.</dd>
+    <dt>Who reads it</dt><dd>The play page's scene picker, the asset viewer's scene filter, the world and NPC pages, and <code>gamedata-tool list scenes</code>.</dd>
+    <dt>Contributor</dt><dd>Scene identifications by <a href="https://github.com/Stann0xus" target="_blank" rel="noopener">Stann0x</a>; his reading of each scene is kept in its own column.</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="table">
+  <h2>The table</h2>
+  <p>
+    <label>Filter <input type="search" id="sn-filter" placeholder="id or name" autocomplete="off"></label>
+    <label style="margin-left:0.75rem"><input type="checkbox" id="sn-all"> include battle / audio / system blocks</label>
+  </p>
+  <table id="sn-table">
+    <thead><tr><th>Scene id</th><th>Name</th><th>Banner on the disc</th><th>Stann0x's reading</th><th>Note</th></tr></thead>
+    <tbody><tr><td colspan="5">Loading&hellip;</td></tr></tbody>
+  </table>
+  <p>A blank banner means the scene carries none the game can draw: an empty name, an untranslated Shift-JIS one (the <code>ed*</code> endings), or no scene script at all.</p>
+</section>
+
+<section class="doc-section" id="crashing-slots">
+  <h2>The slots that crash when loaded</h2>
+  <p>Six blocks cannot be entered as scenes, for two different reasons:</p>
+  <ul>
+    <li><strong><code>opkorout</code>, <code>opmap01</code></strong> - every entry of both blocks is a single 2048-byte <a href="../formats/pochi.html">pochi</a> placeholder sector. There is no map, no asset bundle and no scene script, so a loader pointed at them decompresses filler.</li>
+    <li><strong><code>other4</code>, <code>other5</code>, <code>other6</code></strong> - minigame data (the slot machine, Baka Fighter, the Muscle Dome's ringside stills) that the minigame overlays load by path. They carry no walkability map, so they are not scenes at all.</li>
+    <li><strong><code>other7</code></strong> - scene-shaped, but a developer leftover: an earlier revision of <code>koin3</code>'s scene script that nothing in the retail game loads.</li>
+  </ul>
+</section>
+
+<script>
+(function () {
+  var tbody = document.querySelector('#sn-table tbody');
+  var filterEl = document.getElementById('sn-filter');
+  var allEl = document.getElementById('sn-all');
+  var rows = [];
+  var PLAYABLE = { town: 1, field: 1, world_map: 1, cutscene: 1 };
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+  function render() {
+    var f = (filterEl.value || '').trim().toLowerCase();
+    var html = rows
+      .filter(function (r) { return allEl.checked || PLAYABLE[r.category]; })
+      .filter(function (r) {
+        if (!f) return true;
+        return [r.label, r.display, r.banner, r.contributor]
+          .some(function (v) { return v && v.toLowerCase().indexOf(f) >= 0; });
+      })
+      .map(function (r) {
+        return '<tr><td><code>' + esc(r.label) + '</code></td><td>' + esc(r.display) +
+          '</td><td>' + esc(r.banner) + '</td><td>' + esc(r.contributor) +
+          '</td><td>' + esc(r.note) + '</td></tr>';
+      });
+    tbody.innerHTML = html.join('') || '<tr><td colspan="5">No match</td></tr>';
+  }
+  fetch('../scenes.json').then(function (r) { return r.ok ? r.json() : []; }).then(function (s) {
+    rows = s;
+    render();
+  }).catch(function () {
+    tbody.innerHTML = '<tr><td colspan="5">scenes.json is not generated yet - run <code>python3 site/_gen.py</code>.</td></tr>';
+  });
+  filterEl.addEventListener('input', render);
+  allEl.addEventListener('change', render);
+})();
+</script>

@@ -1,0 +1,995 @@
+# Scene display names: one row per CDNAME block, keyed by its dev label.
+#
+#   id           the CDNAME.TXT label (`#define <id> N`) the engine and every
+#                tool address the scene by
+#   cdname       the `#define` number - a raw in-RAM PROT-TOC index; the
+#                block's extraction-space first entry is `cdname - 2`
+#                (docs/formats/cdname.md, "Numbering space")
+#   category     town | field | world_map | cutscene | battle | audio | system
+#   name         the display name every consumer shows
+#   banner       the scene MAN's section-2 name - the banner the game draws
+#                on entering the scene and the save-screen location row
+#                (docs/formats/place-names.md, site 3). Omitted where the
+#                disc carries none (empty, untranslated Shift-JIS, or no MAN).
+#                Pinned to the disc by crates/patcher/tests/place_names_real.rs.
+#   contributor  Stann0x's in-game reading of the scene, verbatim in title
+#                case, where one was given
+#   note         why the name is what it is, when that is not obvious
+#
+# `name` follows the disc: it keeps the banner's spelling and adds a
+# qualifier when several scenes share one banner. Where the contributor's
+# reading and the disc disagree on spelling (Byron / Biron, Gate of Shadow /
+# Shadow Gate) the disc wins and both are kept here.
+#
+# Source: scene identifications by Henrique Stanke Scandelari (Stann0x,
+# github.com/Stann0xus), cross-checked against the disc's own name carriers
+# and each scene's contents. Factual short labels only. Companion page:
+# docs/reference/scene-names.md.
+
+[[scene]]
+id = "init_data"
+cdname = 0
+category = "system"
+name = "Boot init"
+
+[[scene]]
+id = "gameover_data"
+cdname = 1
+category = "system"
+name = "Game over"
+
+[[scene]]
+id = "town01"
+cdname = 3
+category = "town"
+name = "Rim Elm"
+banner = "Rim Elm"
+contributor = "Rim Elm A"
+note = "The opening scene the new-game table names."
+
+[[scene]]
+id = "town0b"
+cdname = 12
+category = "town"
+name = "Rim Elm (under attack)"
+banner = "Rim Elm"
+contributor = "Rim Elm B"
+note = "Story-state variant of town01: walkability grid 100% identical, Rim Elm cast."
+
+[[scene]]
+id = "town0c"
+cdname = 21
+category = "town"
+name = "Rim Elm (after the Mist)"
+banner = "Rim Elm"
+contributor = "Rim Elm C"
+note = "Story-state variant of town01."
+
+[[scene]]
+id = "izumi"
+cdname = 30
+category = "town"
+name = "Hunter's Spring"
+contributor = "Hunter's Spring"
+note = "No banner; Lezam and the spring pin it."
+
+[[scene]]
+id = "cave01"
+cdname = 38
+category = "field"
+name = "Snowdrift Cave"
+banner = "Snowdrift Cave"
+contributor = "Snowdrift Cave"
+
+[[scene]]
+id = "vell"
+cdname = 45
+category = "field"
+name = "West Voz Forest"
+banner = "West Voz Forest"
+contributor = "West Voz Forest"
+note = "The Bridge Grass scene. Was mislabelled \"Drake Castle\"."
+
+[[scene]]
+id = "bylon"
+cdname = 52
+category = "town"
+name = "Biron Monastery"
+banner = "Biron Monastery"
+contributor = "Byron"
+note = "The disc spells it Biron everywhere."
+
+[[scene]]
+id = "dolk"
+cdname = 60
+category = "field"
+name = "Drake Castle (Mist)"
+banner = "Drake Castle"
+contributor = "Drake Castle (Mist)"
+note = "Pre-boss entrance; map01 picks dolk or dolk2 on flag 0x142."
+
+[[scene]]
+id = "dolk2"
+cdname = 68
+category = "field"
+name = "Drake Castle"
+contributor = "Drake Castle"
+note = "Post-boss variant of dolk (flag 0x142)."
+
+[[scene]]
+id = "suimon"
+cdname = 77
+category = "field"
+name = "Water Gate"
+banner = "Water Gate"
+contributor = "Water Gate"
+
+[[scene]]
+id = "map01"
+cdname = 85
+category = "world_map"
+name = "World map (Drake Kingdom)"
+banner = "Drake Kingdom"
+contributor = "World map 01 (Drake Kingdom)"
+
+[[scene]]
+id = "garmel"
+cdname = 94
+category = "field"
+name = "Zeto's Dungeon"
+banner = "Zeto's Dungeon"
+contributor = "Zeto's Dungeon"
+
+[[scene]]
+id = "vozz"
+cdname = 103
+category = "field"
+name = "East Voz Forest"
+banner = "East Voz Forest"
+contributor = "East Voz Forest"
+
+[[scene]]
+id = "keikoku"
+cdname = 111
+category = "field"
+name = "Ravine"
+banner = "Ravine"
+contributor = "Valleys of Mist"
+note = "The banner reads just \"Ravine\"."
+
+[[scene]]
+id = "rikuroa2"
+cdname = 120
+category = "field"
+name = "Mt. Rikuroa (2)"
+contributor = "Mt. Rikuroa 2"
+
+[[scene]]
+id = "dream"
+cdname = 128
+category = "field"
+name = "Noa's Dreams"
+contributor = "Noa's Dreams"
+note = "Noa's four dream beats (her mother in the Mist)."
+
+[[scene]]
+id = "jiji"
+cdname = 137
+category = "field"
+name = "Ancient Wind Cave"
+banner = "Ancient Wind Cave"
+contributor = "Ancient Wind Cave"
+
+[[scene]]
+id = "retock"
+cdname = 145
+category = "town"
+name = "Ratayu"
+banner = "Ratayu"
+contributor = "Ratayu"
+
+[[scene]]
+id = "rikuroa"
+cdname = 155
+category = "field"
+name = "Mt. Rikuroa"
+contributor = "Mt. Rikuroa"
+note = "The Caruban fight and the Genesis Tree revival."
+
+[[scene]]
+id = "geremi"
+cdname = 165
+category = "town"
+name = "Jeremi"
+banner = "Jeremi"
+contributor = "Jeremi"
+
+[[scene]]
+id = "stone"
+cdname = 174
+category = "field"
+name = "Shadow Gate"
+banner = "Shadow Gate"
+contributor = "Gate of Shadow"
+note = "Banner and world-map label read \"Shadow Gate\"; dialogue says \"Gate of Shadows\"."
+
+[[scene]]
+id = "balden"
+cdname = 182
+category = "town"
+name = "Vidna"
+banner = "Vidna"
+contributor = "Vidna"
+
+[[scene]]
+id = "conc"
+cdname = 191
+category = "town"
+name = "Conkram (Past)"
+banner = "Conkram (Past)"
+contributor = "Conkram (Past)"
+note = "Past Conkram on the eve of the new-weapon demonstration."
+
+[[scene]]
+id = "rayman"
+cdname = 199
+category = "town"
+name = "Octam (Underground)"
+contributor = "Octam Underground"
+note = "Hari's underground city. No banner; rayman2 carries the name."
+
+[[scene]]
+id = "ropeway"
+cdname = 207
+category = "town"
+name = "Octam"
+banner = "Octam"
+contributor = "Octam"
+note = "Surface Octam after the Mist (inn, shops)."
+
+[[scene]]
+id = "dohaty"
+cdname = 217
+category = "field"
+name = "Dohati's Castle"
+banner = "Dohati's Castle"
+contributor = "Sebucus Mist Generator"
+note = "Houses the Sebucus Mist Generator."
+
+[[scene]]
+id = "station"
+cdname = 226
+category = "town"
+name = "Octam Station"
+contributor = "Octam Station"
+note = "The Sebucus end of the flying train. Was mislabelled \"Karisto Station\"."
+
+[[scene]]
+id = "tunnela"
+cdname = 235
+category = "field"
+name = "Ancient Path"
+banner = "Ancient Path"
+contributor = "Underground Path A"
+
+[[scene]]
+id = "map02"
+cdname = 244
+category = "world_map"
+name = "World map (Sebucus Islands)"
+banner = "Sebucus Islands"
+contributor = "World map 02 (Sebucus Islands)"
+
+[[scene]]
+id = "tower"
+cdname = 254
+category = "field"
+name = "Sky Gardens Tower"
+banner = "Sky Gardens Tower"
+contributor = "Jeremi Tower"
+
+[[scene]]
+id = "teien"
+cdname = 263
+category = "field"
+name = "Sky Gardens"
+banner = "Sky Gardens"
+contributor = "Jeremi Garden"
+
+[[scene]]
+id = "tunnelb"
+cdname = 272
+category = "field"
+name = "Fire Path"
+banner = "Fire Path"
+contributor = "Underground Path B"
+
+[[scene]]
+id = "retockin"
+cdname = 281
+category = "town"
+name = "Ratayu (interior)"
+banner = "Ratayu"
+contributor = "Ratayu inside"
+
+[[scene]]
+id = "retona"
+cdname = 290
+category = "field"
+name = "Mt. Letona"
+banner = "Mt. Letona"
+contributor = "Mt. Letona"
+
+[[scene]]
+id = "jagaroom"
+cdname = 300
+category = "field"
+name = "Juggernaut Room"
+banner = "Juggernaut Room"
+contributor = "Juggernaut Room"
+
+[[scene]]
+id = "tunnelc"
+cdname = 309
+category = "field"
+name = "Fire Path (2)"
+banner = "Fire Path"
+contributor = "Underground Path C"
+note = "Where Xain works on the stone pillar."
+
+[[scene]]
+id = "balden2"
+cdname = 318
+category = "town"
+name = "Vidna (2)"
+contributor = "Vidna 2"
+
+[[scene]]
+id = "rayman2"
+cdname = 328
+category = "town"
+name = "Octam (Underground, frozen)"
+banner = "Octam (Underground)"
+contributor = "Octam Underground 2"
+note = "The frozen-magma revisit."
+
+[[scene]]
+id = "ropeway2"
+cdname = 337
+category = "town"
+name = "Octam (2)"
+contributor = "Rope Way"
+note = "Surface Octam again (the elevator is powered down); nothing in it is a ropeway."
+
+[[scene]]
+id = "town0d"
+cdname = 347
+category = "town"
+name = "Rim Elm (revisit)"
+banner = "Rim Elm"
+contributor = "Rim Elm D"
+note = "Story-state variant of town01."
+
+[[scene]]
+id = "son"
+cdname = 354
+category = "town"
+name = "Soren Camp"
+banner = "Soren Camp"
+contributor = "Soren"
+
+[[scene]]
+id = "concnow"
+cdname = 362
+category = "field"
+name = "Conkram (Present)"
+banner = "Conkram"
+contributor = "Conkram (Present)"
+
+[[scene]]
+id = "taiku"
+cdname = 371
+category = "field"
+name = "Zora's Floating Castle"
+contributor = "Floating Castle"
+note = "Throne-room lever puzzle. Was mislabelled \"Muscle Dome\"."
+
+[[scene]]
+id = "deene"
+cdname = 382
+category = "field"
+name = "Mt. Dhini"
+banner = "Mt. Dhini"
+contributor = "Mt. Dhini"
+
+[[scene]]
+id = "map03"
+cdname = 391
+category = "world_map"
+name = "World map (Karisto Kingdom)"
+banner = "Karisto Kingdom"
+contributor = "World map 03 (Karisto Kingdom)"
+
+[[scene]]
+id = "doman"
+cdname = 399
+category = "town"
+name = "Usha Research Center"
+contributor = "Usha's research lab"
+note = "Name from the quick-travel and world-map labels."
+
+[[scene]]
+id = "bubu1"
+cdname = 407
+category = "town"
+name = "Buma"
+banner = "Buma"
+contributor = "Buma"
+note = "The thawed town with the shops (\"Buma isn't frozen anymore!\")."
+
+[[scene]]
+id = "bubu2"
+cdname = 416
+category = "town"
+name = "Buma (frozen)"
+banner = "Buma"
+contributor = "Frozen Buma"
+note = "Doors frozen shut, the Genesis Tree iced over."
+
+[[scene]]
+id = "taiku2"
+cdname = 425
+category = "field"
+name = "Zora's Floating Castle (2)"
+banner = "Zora's Floating Castle"
+contributor = "Floating Castle 2"
+
+[[scene]]
+id = "uru"
+cdname = 434
+category = "field"
+name = "Uru Mais"
+banner = "Uru Mais"
+contributor = "Uru Mais"
+
+[[scene]]
+id = "uru2"
+cdname = 444
+category = "field"
+name = "Uru Mais (2)"
+banner = "Uru Mais"
+contributor = "Uru Mais destroyed"
+
+[[scene]]
+id = "urudre1"
+cdname = 454
+category = "field"
+name = "Vahn's dream (Rim Elm)"
+banner = "Rim Elm"
+contributor = "Vahn dream Rim Elm"
+note = "Uru Mais dream: Val, Nora and baby Nene."
+
+[[scene]]
+id = "urudre2"
+cdname = 465
+category = "field"
+name = "Noa's dream (Conkram)"
+banner = "Conkram"
+contributor = "Noa dream Conkram"
+note = "Uru Mais dream: King Nebular names his daughter."
+
+[[scene]]
+id = "urudre3"
+cdname = 474
+category = "field"
+name = "Gala's dream (Biron)"
+banner = "Biron Monastery"
+contributor = "Gala dream Byron"
+note = "Uru Mais dream: the Transmigration Festival."
+
+[[scene]]
+id = "kor"
+cdname = 483
+category = "field"
+name = "Sol Tower (stairs A)"
+banner = "Sol Tower"
+contributor = "Sol stairs A"
+
+[[scene]]
+id = "kor3"
+cdname = 492
+category = "field"
+name = "Sol Tower (stairs B)"
+banner = "Sol Tower"
+contributor = "Sol stairs B"
+
+[[scene]]
+id = "kor4"
+cdname = 501
+category = "field"
+name = "Sol Tower (stairs C)"
+banner = "Sol Tower"
+contributor = "Sol stairs C"
+
+[[scene]]
+id = "kor5"
+cdname = 509
+category = "field"
+name = "Sol Tower (stairs D)"
+banner = "Sol Tower"
+contributor = "Sol stairs D"
+
+[[scene]]
+id = "korb2"
+cdname = 517
+category = "field"
+name = "Sol Tower (underground A)"
+banner = "Sol Tower"
+contributor = "Sol underground A"
+note = "The Genesis Tree Monument level."
+
+[[scene]]
+id = "korb3"
+cdname = 524
+category = "field"
+name = "Sol Tower (underground B)"
+banner = "Sol Tower"
+contributor = "Sol underground B"
+note = "The lowest level of Sol."
+
+[[scene]]
+id = "korout"
+cdname = 533
+category = "field"
+name = "Sol Tower (entrance)"
+banner = "Sol Tower"
+contributor = "Sol entrance"
+
+[[scene]]
+id = "koin1"
+cdname = 542
+category = "field"
+name = "Sol Tower (rooms A, arena floor)"
+banner = "Sol Tower"
+contributor = "Sol rooms A"
+note = "The coin-games venue hub: door-warps into Muscle Dome and Baka Fighter."
+
+[[scene]]
+id = "koin2"
+cdname = 551
+category = "field"
+name = "Sol Tower (rooms B)"
+banner = "Sol Tower"
+contributor = "Sol rooms B"
+
+[[scene]]
+id = "koin3"
+cdname = 561
+category = "field"
+name = "Sol Tower (rooms C, dance floor)"
+banner = "Sol Tower"
+contributor = "Sol rooms C"
+note = "Door-warps into the dance minigame."
+
+[[scene]]
+id = "koin4"
+cdname = 570
+category = "field"
+name = "Sol Tower (rooms D)"
+banner = "Sol Tower"
+contributor = "Sol rooms D"
+
+[[scene]]
+id = "koin6"
+cdname = 578
+category = "field"
+name = "Sol Tower (rooms E)"
+banner = "Sol Tower"
+contributor = "Sol rooms E"
+
+[[scene]]
+id = "juui1"
+cdname = 587
+category = "field"
+name = "Bio Castle (F)"
+contributor = "Juggernaut F"
+note = "Inside the Juggernaut: the Rogue Fragment and the Ra-Seru farewell."
+
+[[scene]]
+id = "juui2"
+cdname = 596
+category = "field"
+name = "Bio Castle (G)"
+contributor = "Juggernaut G"
+note = "Inside the Juggernaut: the Ra-Seru farewell."
+
+[[scene]]
+id = "deroa"
+cdname = 605
+category = "field"
+name = "Jette's Fortress (entrance)"
+banner = "Jette's Fortress"
+contributor = "Absolute Fortress entrance"
+note = "Dialogue calls it the Absolute Fortress; the Conkram Mist Generator is here."
+
+[[scene]]
+id = "station3"
+cdname = 615
+category = "field"
+name = "Karisto Station"
+banner = "Karisto Station"
+contributor = "Karisto Station"
+
+[[scene]]
+id = "conc2"
+cdname = 623
+category = "field"
+name = "Conkram (Past, 2)"
+banner = "Conkram (Past)"
+contributor = "Conkram (opening?)"
+note = "Past Conkram with the underground-lab stairs guarded; not the opening."
+
+[[scene]]
+id = "jou"
+cdname = 630
+category = "field"
+name = "Rim Elm (Juggernaut)"
+banner = "Rim Elm"
+contributor = "Rim Elm (Juggernaut)"
+note = "The Juggernaut over Rim Elm; its door leads to jouina."
+
+[[scene]]
+id = "nilboa"
+cdname = 637
+category = "field"
+name = "Nivora Ravine"
+banner = "Nivora Ravine"
+contributor = "Nivora Ravine"
+note = "Koru, the Ice Seru."
+
+[[scene]]
+id = "nilboa2"
+cdname = 646
+category = "field"
+name = "Nivora Ravine (melted)"
+contributor = "Nivora Ravine (melted)"
+note = "After Koru: \"the ice in Buma must be melted by now\"."
+
+[[scene]]
+id = "jouina"
+cdname = 655
+category = "field"
+name = "Bio Castle (A)"
+banner = "Bio Castle"
+contributor = "Juggernaut A"
+
+[[scene]]
+id = "jouinb"
+cdname = 664
+category = "field"
+name = "Bio Castle (B)"
+banner = "Bio Castle"
+contributor = "Juggernaut B"
+
+[[scene]]
+id = "jouinc"
+cdname = 672
+category = "field"
+name = "Bio Castle (C)"
+banner = "Bio Castle"
+contributor = "Juggernaut C"
+
+[[scene]]
+id = "jouind"
+cdname = 680
+category = "field"
+name = "Bio Castle (D)"
+banner = "Bio Castle"
+contributor = "Juggernaut D"
+
+[[scene]]
+id = "jouine"
+cdname = 688
+category = "field"
+name = "Bio Castle (E)"
+banner = "Bio Castle"
+contributor = "Juggernaut E"
+
+[[scene]]
+id = "rugi"
+cdname = 696
+category = "field"
+name = "Rogue's Tower"
+banner = "Rogue's Tower"
+contributor = "Rogue dungeon"
+
+[[scene]]
+id = "chitei2"
+cdname = 705
+category = "field"
+name = "Jette's Fortress (transport system)"
+banner = "Jette's Fortress"
+contributor = "Floating Castle control room"
+note = "Rapid Transport System switches; Jette: \"This is my castle.\" Was mislabelled \"Underground Octam\"."
+
+[[scene]]
+id = "noaru"
+cdname = 716
+category = "field"
+name = "Noaru Valley"
+banner = "Noaru Valley"
+contributor = "Noaru Valley"
+
+[[scene]]
+id = "concend"
+cdname = 725
+category = "field"
+name = "Conkram (fallen)"
+contributor = "Conkram (after Seru death)"
+note = "The Sim-Seru die with the Mist and Conkram with them."
+
+[[scene]]
+id = "conc3"
+cdname = 733
+category = "field"
+name = "Conkram (Past, 3)"
+banner = "Conkram (Past)"
+contributor = "Conkram (past after Mist)"
+
+[[scene]]
+id = "town0e"
+cdname = 741
+category = "town"
+name = "Rim Elm (epilogue)"
+banner = "Rim Elm"
+contributor = "Rim Elm ending"
+
+[[scene]]
+id = "opdeene"
+cdname = 748
+category = "cutscene"
+name = "Opening (Mt. Dhini)"
+banner = "Mt. Dhini"
+contributor = "Opening Mt. Dhini"
+
+[[scene]]
+id = "opstati"
+cdname = 753
+category = "cutscene"
+name = "Opening (Karisto Station)"
+banner = "Karisto Station"
+contributor = "Opening station"
+
+[[scene]]
+id = "opkorout"
+cdname = 758
+category = "cutscene"
+name = "Empty slot (opkorout)"
+note = "Every entry of the block is a one-sector \"pochi\" placeholder: no map, no bundle, no MAN, so loading it crashes."
+
+[[scene]]
+id = "opurud"
+cdname = 763
+category = "cutscene"
+name = "Opening (Conkram)"
+banner = "Conkram"
+contributor = "Opening Conkram"
+
+[[scene]]
+id = "opmap01"
+cdname = 768
+category = "cutscene"
+name = "Empty slot (opmap01)"
+note = "Every entry of the block is a one-sector \"pochi\" placeholder: no map, no bundle, no MAN, so loading it crashes."
+
+[[scene]]
+id = "koin1b"
+cdname = 773
+category = "field"
+name = "Sol Tower (rooms F, arena floor)"
+banner = "Sol Tower"
+contributor = "Sol rooms F"
+note = "Story-state sibling of koin1."
+
+[[scene]]
+id = "edteien"
+cdname = 780
+category = "cutscene"
+name = "Ending (Sky Gardens)"
+contributor = "Ending sequence Jeremi"
+
+[[scene]]
+id = "edbylon"
+cdname = 785
+category = "cutscene"
+name = "Ending (Biron Monastery)"
+contributor = "Ending sequence Byron"
+
+[[scene]]
+id = "edbalden"
+cdname = 790
+category = "cutscene"
+name = "Ending (Vidna)"
+contributor = "Ending sequence Vidna"
+
+[[scene]]
+id = "edlast"
+cdname = 795
+category = "cutscene"
+name = "Ending (final)"
+contributor = "Ending sequence final"
+
+[[scene]]
+id = "edretoin"
+cdname = 800
+category = "cutscene"
+name = "Ending (Ratayu)"
+contributor = "Ending sequence Ratayu"
+
+[[scene]]
+id = "edkorout"
+cdname = 805
+category = "cutscene"
+name = "Ending (Sol Tower)"
+contributor = "Ending sequence Sol"
+
+[[scene]]
+id = "edbubu"
+cdname = 810
+category = "cutscene"
+name = "Ending (Buma)"
+contributor = "Ending sequence Buma"
+note = "Was mislabelled \"Ending (Usha)\"; eddoman is the Usha one."
+
+[[scene]]
+id = "eddoman"
+cdname = 815
+category = "cutscene"
+name = "Ending (Usha Research Center)"
+contributor = "Ending sequence Usha"
+
+[[scene]]
+id = "edson"
+cdname = 820
+category = "cutscene"
+name = "Ending (Soren Camp)"
+contributor = "Ending sequence Soren"
+
+[[scene]]
+id = "edstati3"
+cdname = 825
+category = "cutscene"
+name = "Ending (station gondola)"
+contributor = "Ending sequence gondola"
+
+[[scene]]
+id = "battle_data"
+cdname = 865
+category = "battle"
+name = "Battle data (party/monster TMDs + textures)"
+
+[[scene]]
+id = "monster_data"
+cdname = 869
+category = "battle"
+name = "Monster data"
+
+[[scene]]
+id = "sound_data"
+cdname = 870
+category = "audio"
+name = "Sound data (driver outputs)"
+
+[[scene]]
+id = "befect_data"
+cdname = 872
+category = "battle"
+name = "Battle effect data"
+
+[[scene]]
+id = "player_data"
+cdname = 876
+category = "battle"
+name = "Player data (TMDs / arts)"
+
+[[scene]]
+id = "sound_data2"
+cdname = 877
+category = "audio"
+name = "Sound data (dev branch)"
+
+[[scene]]
+id = "level_up"
+cdname = 891
+category = "system"
+name = "Level-up overlay + VABs"
+
+[[scene]]
+id = "monster_se"
+cdname = 893
+category = "audio"
+name = "Monster SFX"
+
+[[scene]]
+id = "card_data"
+cdname = 894
+category = "system"
+name = "Card data"
+
+[[scene]]
+id = "bat_back_dat"
+cdname = 895
+category = "battle"
+name = "Battle backgrounds"
+
+[[scene]]
+id = "xxx_dat"
+cdname = 897
+category = "system"
+name = "Scene-scripted asset table"
+
+[[scene]]
+id = "move_program_no"
+cdname = 972
+category = "system"
+name = "Move-program overlay"
+
+[[scene]]
+id = "other_game"
+cdname = 974
+category = "system"
+name = "Other-game overlays"
+
+[[scene]]
+id = "monster_test"
+cdname = 980
+category = "system"
+name = "Monster test scenes"
+
+[[scene]]
+id = "music_01"
+cdname = 990
+category = "audio"
+name = "Music (BGM SEQs)"
+
+[[scene]]
+id = "vab_01"
+cdname = 1072
+category = "audio"
+name = "VAB sound banks"
+
+[[scene]]
+id = "other1"
+cdname = 1195
+category = "system"
+name = "Fishing pond (minigame)"
+contributor = "Mini-game location (fishing)"
+note = "The fishing minigame's field (dev module other1)."
+
+[[scene]]
+id = "other4"
+cdname = 1200
+category = "system"
+name = "Slot machine data (minigame)"
+note = "Casino slot-machine assets, loaded by the mode-24 overlay; not a field scene (no map), so loading it as one crashes."
+
+[[scene]]
+id = "other5"
+cdname = 1203
+category = "system"
+name = "Baka Fighter data (minigame)"
+note = "Battle-form party meshes + atlases the Baka Fighter overlay loads; not a field scene."
+
+[[scene]]
+id = "other6"
+cdname = 1222
+category = "system"
+name = "Muscle Dome data (minigame)"
+note = "The dome's ringside stills and arena assets; not a field scene."
+
+[[scene]]
+id = "other7"
+cdname = 1228
+category = "system"
+name = "Unused koin3 draft"
+note = "A dev-leftover earlier revision of koin3's field MAN; nothing in retail loads it."

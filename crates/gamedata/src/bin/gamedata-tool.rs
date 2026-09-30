@@ -23,7 +23,7 @@ enum Cmd {
         /// Which table to list: arts | magic | items | weapons | armor |
         ///                       accessories | enemies | bosses | shops |
         ///                       slots | muscle | baka | fishing | characters |
-        ///                       music
+        ///                       music | scenes
         table: String,
         /// Filter `arts` by character (Vahn/Noa/Gala).
         #[arg(long)]
@@ -278,6 +278,16 @@ fn list(
                 );
             }
         }
+        "scenes" => {
+            for s in db.scene_names() {
+                let banner = s.banner.as_deref().unwrap_or("-");
+                let contrib = s.contributor.as_deref().unwrap_or("-");
+                println!(
+                    "{:<14} {:<10} {:<36} banner:{:<24} contributor:{}",
+                    s.id, s.category, s.name, banner, contrib
+                );
+            }
+        }
         other => bail!("unknown table {other:?}"),
     }
     Ok(())
@@ -428,6 +438,7 @@ fn dump_json(db: &Database, table: &str) -> Result<()> {
         "fishing" => serde_json::to_string_pretty(db.fishing_prizes())?,
         "characters" => serde_json::to_string_pretty(db.characters())?,
         "music" => serde_json::to_string_pretty(db.music_tracks())?,
+        "scenes" => serde_json::to_string_pretty(db.scene_names())?,
         other => bail!("unknown table {other:?}"),
     };
     println!("{json}");

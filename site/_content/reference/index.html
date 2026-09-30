@@ -12,6 +12,7 @@
       <tr><td>An address or a <code>FUN_</code> symbol</td><td><a href="functions.html">Key functions</a>, then the <a href="memory-map.html">RAM map</a> for globals</td></tr>
       <tr><td>A binary record and want to know what the values mean</td><td><a href="gamedata.html">Game-data tables</a> for the labels; <a href="cheats.html">cheat databases</a> for the RAM offsets</td></tr>
       <tr><td>An extracted track and want its name</td><td><a href="music-tracks.html">Music tracks</a></td></tr>
+      <tr><td>A scene id (<code>balden</code>, <code>vozz</code>) and want to know where it is</td><td><a href="scene-names.html">Scene names</a></td></tr>
       <tr><td>A question and want to know if it is still contested</td><td><a href="open-rev-eng-threads.html">Open RE threads</a> - check before starting a hunt</td></tr>
       <tr><td>A question and want the answer plus how firmly it is pinned</td><td><a href="re-settled-threads.html">Settled threads</a></td></tr>
       <tr><td>An "obvious" reading of some bytes</td><td><a href="re-do-not-re-walk.html">Do not re-walk</a> - it may already be disproved</td></tr>
@@ -41,6 +42,10 @@
     <a class="card" href="music-tracks.html">
       <div class="card-title">Music tracks</div>
       <div class="card-body">Every BGM cue across its four naming spaces - sound-test id, in-game context, OST title, proposed relocalization - and the disc join behind it.</div>
+    </a>
+    <a class="card" href="scene-names.html">
+      <div class="card-title">Scene names</div>
+      <div class="card-body">Every CDNAME scene id with its display name, the banner the game draws on entering it, and a contributor's in-game reading - plus why six slots crash when loaded.</div>
     </a>
     <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/builds.md" target="_blank" rel="noopener">
       <div class="card-title">Builds + region differences</div>
@@ -72,7 +77,7 @@
       <tr><td><a href="https://github.com/mstan/psxrecomp" target="_blank" rel="noopener">PSXRecomp</a> (mstan / <a href="https://github.com/SamSteProjects" target="_blank" rel="noopener">SamSteProjects</a>) and its <a href="https://github.com/SamSteProjects/psxrecomp/tree/codex/legaia-recompile-fixes" target="_blank" rel="noopener">Legaia fork</a></td><td>A static recompiler (MIPS &rarr; C &rarr; native, on the <a href="https://github.com/N64Recomp/N64Recomp" target="_blank" rel="noopener">N64Recomp</a> model) the project runs as an independent execution oracle for GTE registers, overlay identity, render dispatch and sound-driver behaviour - never as a source of Sony bytes</td></tr>
       <tr><td><a href="https://docs.google.com/spreadsheets/d/1_U_AKdEncylFwE0lXkvPG-OhMWpNXgUdoaSGZ6vSUg0/edit?usp=drive_link" target="_blank" rel="noopener">ZetaPhoenix's "Legaia Arts Data"</a></td><td>Tactical / Miracle / Super Arts trigger strings that <code>crates/art</code> validates against; the Offense-minus-Defense damage analysis that organises the <a href="../subsystems/battle-formulas.html">battle formulas</a> page; the Super Arts Pack the <a href="../tooling/rom-patcher.html">ROM patcher</a> installs</td></tr>
       <tr><td><a href="https://gamefaqs.gamespot.com/ps/197766-legend-of-legaia/faqs/53721" target="_blank" rel="noopener">Meth962's 100% Walkthrough</a> and forum threads (<a href="https://web.archive.org/web/20161205053304/https://www.legendoflegaia.net/forums/viewtopic.php?f=66&amp;t=800&amp;sid=b9049876cd2bcdd56c9eb66fe8614cf4&amp;start=30" target="_blank" rel="noopener">800</a>, <a href="https://web.archive.org/web/20161203095801/https://www.legendoflegaia.net/forums/viewtopic.php?f=66&amp;t=941&amp;sid=10471c996f5bab205174f85853bf65e7" target="_blank" rel="noopener">941</a>)</td><td>The original community damage analysis; the enemy-stat, Seru-magic and magic-levelling tables behind the <a href="gamedata.html">game-data tables</a></td></tr>
-      <tr><td><a href="https://github.com/Stann0xus" target="_blank" rel="noopener">Henrique Stanke Scandelari (Stann0x)</a></td><td>The <a href="music-tracks.html">music-track disambiguation</a> - the label layer for every extracted BGM cue</td></tr>
+      <tr><td><a href="https://github.com/Stann0xus" target="_blank" rel="noopener">Henrique Stanke Scandelari (Stann0x)</a></td><td>The <a href="music-tracks.html">music-track disambiguation</a> - the label layer for every extracted BGM cue - and the in-game identifications behind the <a href="scene-names.html">scene names</a></td></tr>
       <tr><td>The PSX scene</td><td>Sony PsyQ documentation, Martin Korth's <a href="https://problemkaputt.de/psx-spx.htm" target="_blank" rel="noopener">PSX-SPX</a>, decades of TIM / TMD / SPU documentation</td></tr>
       <tr><td>Legal-pattern precedents</td><td><a href="https://www.scummvm.org/" target="_blank" rel="noopener">ScummVM</a>, <a href="https://github.com/OpenRCT2/OpenRCT2" target="_blank" rel="noopener">OpenRCT2</a>, <a href="https://github.com/OpenMW/openmw" target="_blank" rel="noopener">OpenMW</a>, <a href="https://github.com/XProger/OpenLara" target="_blank" rel="noopener">OpenLara</a></td></tr>
     </tbody>

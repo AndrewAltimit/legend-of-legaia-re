@@ -39,6 +39,7 @@ const CASINO_TOML: &str = include_str!("../../../data/gamedata/casino.toml");
 const FISHING_TOML: &str = include_str!("../../../data/gamedata/fishing.toml");
 const CHARACTERS_TOML: &str = include_str!("../../../data/gamedata/characters.toml");
 const MUSIC_TOML: &str = include_str!("../../../data/gamedata/music.toml");
+const SCENES_TOML: &str = include_str!("../../../data/gamedata/scenes.toml");
 
 // ---------------------------------------------------------------------------
 // Arts
@@ -708,6 +709,48 @@ struct MusicFile {
 }
 
 // ---------------------------------------------------------------------------
+// Scene display names
+// ---------------------------------------------------------------------------
+
+/// One CDNAME block's human-readable name.
+///
+/// The one table every consumer (site scene pickers, the asset viewer's
+/// scene filter, CLIs) names a scene id by. `name` follows the disc's own
+/// spelling - the scene MAN's section-2 banner, see
+/// `docs/formats/place-names.md` - with a qualifier where several scenes share
+/// one banner; `contributor` keeps Stann0x's in-game reading alongside. See
+/// `docs/reference/scene-names.md`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SceneName {
+    /// CDNAME.TXT label (`town01`, `balden`, ...).
+    pub id: String,
+    /// The `#define` number: a raw in-RAM PROT-TOC index. The block's first
+    /// extraction-space entry is `cdname - 2`.
+    pub cdname: u32,
+    /// `town` / `field` / `world_map` / `cutscene` / `battle` / `audio` /
+    /// `system`.
+    pub category: String,
+    /// Display name.
+    pub name: String,
+    /// The scene-entry banner the disc carries (MAN section 2), when it
+    /// carries a readable one.
+    #[serde(default)]
+    pub banner: Option<String>,
+    /// Stann0x's in-game reading of the scene, where one was given.
+    #[serde(default)]
+    pub contributor: Option<String>,
+    /// Why the name is what it is, when that is not obvious.
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ScenesFile {
+    #[serde(rename = "scene")]
+    scenes: Vec<SceneName>,
+}
+
+// ---------------------------------------------------------------------------
 // Database
 // ---------------------------------------------------------------------------
 
@@ -732,6 +775,7 @@ pub struct Database {
     fishing: Vec<FishingPrize>,
     characters: Vec<CharacterProfile>,
     music: Vec<MusicTrack>,
+    scenes: Vec<SceneName>,
     item_index: BTreeMap<String, usize>,
     weapon_index: BTreeMap<String, usize>,
     armor_index: BTreeMap<String, usize>,
@@ -761,6 +805,7 @@ impl Database {
         let fishing: FishingFile = toml::from_str(FISHING_TOML).expect("fishing.toml");
         let characters: CharactersFile = toml::from_str(CHARACTERS_TOML).expect("characters.toml");
         let music: MusicFile = toml::from_str(MUSIC_TOML).expect("music.toml");
+        let scenes: ScenesFile = toml::from_str(SCENES_TOML).expect("scenes.toml");
 
         let mut db = Self {
             arts: arts.arts,
@@ -778,6 +823,7 @@ impl Database {
             fishing: fishing.prizes,
             characters: characters.characters,
             music: music.tracks,
+            scenes: scenes.scenes,
             item_index: BTreeMap::new(),
             weapon_index: BTreeMap::new(),
             armor_index: BTreeMap::new(),
@@ -1027,6 +1073,16 @@ impl Database {
             t.id.as_deref()
                 .is_some_and(|i| i.to_ascii_lowercase() == id)
         })
+    }
+
+    /// Every CDNAME block's display name, in CDNAME order.
+    pub fn scene_names(&self) -> &[SceneName] {
+        &self.scenes
+    }
+
+    /// Look up a scene's display row by its CDNAME label (case-insensitive).
+    pub fn scene_by_id(&self, id: &str) -> Option<&SceneName> {
+        self.scenes.iter().find(|s| s.id.eq_ignore_ascii_case(id))
     }
 
     /// Look up a music track by its debug sound-test index (0..=80).
