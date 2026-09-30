@@ -2025,3 +2025,45 @@ fn no_resting_framing_puts_the_eye_inside_the_acting_actor() {
         );
     }
 }
+
+/// `FUN_801DC0A0` case `0x12` against the `puera_summon_mid_cast` capture:
+/// the ramp saturated at `0xC8` gives retail's pitch `3696` (`-400`), and an
+/// accumulator of `649` lands the eye height on the captured `2066`.
+#[test]
+fn the_summon_cast_close_up_matches_a_captured_frame() {
+    let actor = BattleCamActor {
+        facing: 0,
+        world: [300.0, -40.0, -800.0],
+        height: None,
+    };
+    let (pose, raw_z) = summon_cast_framing(actor, 649, 0xC8);
+    assert_eq!(pose.pitch, -400.0);
+    assert_eq!((pose.pitch as i32).rem_euclid(4096), 3696);
+    assert_eq!(pose.tr[1], 2066.0);
+    assert_eq!(raw_z, 0x680 - 3 * 649);
+    assert_eq!(pose.tr[2], prescale_tr_z(raw_z));
+    assert_eq!(pose.yaw, (649 * 2 + 0x500) as f32);
+    // The focus is the caster's X/Z at floor height.
+    assert_eq!(pose.focus, [300.0, 0.0, -800.0]);
+}
+
+/// While the action SM sits in the summon band's `0x33` / `0x34`, the
+/// action camera walks to the cast close-up, not case 6's framing.
+#[test]
+fn the_summon_band_frames_the_cast_close_up() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    cam.set_phase(BattleCamPhase::Action);
+    cam.observe_action_state(0x32);
+    cam.observe_action_state(0x34);
+    for f in 1..=200u64 {
+        cam.advance_to(f * 2);
+    }
+    let c = cam.attack.ctx;
+    let (want, _) = summon_cast_framing(cam.actor, c.accum, c.ramp);
+    let got = cam.framing_pose();
+    assert_eq!(got.pitch, want.pitch);
+    assert!(
+        (got.tr[1] - want.tr[1]).abs() <= 32.0,
+        "{got:?} vs {want:?}"
+    );
+}

@@ -225,10 +225,14 @@ captures on the same predicate (`LEGAIA_BATTLE_INFLIGHT`,
 
 Before this, a mid-cast frame was scored against the round prompt, which reads
 as `image` near `0` on a white-out: an instrument artifact, not an engine
-verdict. What a like-for-like frame still shows is the engine's: retail frames
-the caster in a close-up cast camera over a darkened backdrop through `0x33` /
-`0x34`, the engine keeps the battle camera and backdrop, and the caster's name
-plate draws over retail's flash where the engine's flash covers it.
+verdict. The like-for-like frame is what exposed the cast close-up: through
+`0x33` / `0x34` retail frames the caster from a low camera pitched up at it
+(`FUN_801DC0A0` case `0x12`, `battle_cam_script::summon_cast_framing`), so the
+upper, darker half of the stage backdrop fills the frame - there is no
+separate darkening pass. What still differs is the engine's: the caster's name
+plate draws over retail's flash where the engine's flash covers it, the engine
+captions the spell name over the caster, and from `0x35` the creature stager's
+own camera is not modelled.
 
 **What the seed cannot carry.** Any other action in flight: a strike, an art
 or a monster's cast (flow `0xFF` outside the summon band) is compared with the

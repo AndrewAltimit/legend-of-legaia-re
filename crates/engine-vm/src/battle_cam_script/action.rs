@@ -199,3 +199,55 @@ pub fn action_framing(actor: BattleCamActor, f: ActionFraming) -> BattleCamPose 
         focus: [actor.world[0], 0.0, actor.world[2]],
     }
 }
+
+// ---------------------------------------------------------------------------
+// Summon cast close-up - `FUN_801DC0A0` case `0x12`.
+// ---------------------------------------------------------------------------
+
+/// The action-SM states whose every pass calls `FUN_801DC0A0(caster, 0x12)`:
+/// the summon band's flash-in `0x33` (`0x801E4A48`) and actor-freeze `0x34`
+/// (`0x801E4ACC`), while the caster plays its cast clip. Neither calls
+/// `FUN_801D5854`, so case 6 does not frame them.
+pub const SUMMON_CAST_STATES: [u8; 2] = [0x33, 0x34];
+
+/// `FUN_801DC0A0` case `0x12`'s tween duration `a3` (`li a3,0x3` at
+/// `0x801DCD5C`), in display frames.
+pub const SUMMON_CAST_TWEEN_FRAMES: u32 = 3;
+
+/// The summon cast close-up, `FUN_801DC0A0` case `0x12`
+/// (`0x801DCCF0..0x801DCD94`): a camera low beside the caster looking up at
+/// it, swinging round and rising as the context accumulator `ctx[+0x87C]`
+/// runs.
+///
+/// ```text
+/// pitch = -(ctx[+0x26E] * 2)                     // the capped ramp: down to -400
+/// yaw   = -actor[+0x46] + ctx[+0x87C] * 2 + 0x500
+/// TR    = (0, ctx[+0x87C] * 2 + 0x300, 0x680 - ctx[+0x87C] * 3)
+/// focus = -(actor[+0x3C], 0, actor[+0x40])       // display X/Z, floor height
+/// ```
+///
+/// Every component is stored as a halfword (`sh`), so the accumulator terms
+/// wrap at 16 bits exactly as retail's do. The routine's prologue advances
+/// `ctx[+0x26E]` / `ctx[+0x87C]` on the same law `FUN_801D5854`'s does
+/// ([`crate::battle_attack_camera::AttackCamCtx::advance`]), and it hands the
+/// three vectors to `FUN_801D829C` with [`SUMMON_CAST_TWEEN_FRAMES`]. Returns
+/// the pose (TR.z prescaled) and the raw TR.z.
+///
+/// REF: FUN_801DC0A0 (case `0x12`), FUN_801D829C
+pub fn summon_cast_framing(actor: BattleCamActor, accum: u32, ramp: u8) -> (BattleCamPose, i32) {
+    let half = |v: i64| i32::from(v as i16);
+    let acc = i64::from(accum);
+    let pitch = half(-(i64::from(ramp) * 2));
+    let yaw = half(-i64::from(actor.facing) + acc * 2 + 0x500);
+    let tr_y = half(acc * 2 + 0x300);
+    let raw_z = half(0x680 - acc * 3);
+    (
+        BattleCamPose {
+            pitch: pitch as f32,
+            yaw: yaw.rem_euclid(4096) as f32,
+            tr: [0.0, tr_y as f32, prescale_tr_z(raw_z)],
+            focus: [actor.world[0], 0.0, actor.world[2]],
+        },
+        raw_z,
+    )
+}

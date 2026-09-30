@@ -696,6 +696,20 @@ impl BattleCamera {
         // per-art target the walker steps toward this frame, not case 6's.
         // An art with no arm returns `None` and case 6's glide stands.
         if self.phase == BattleCamPhase::Action {
+            // The summon band's `0x33` / `0x34` call `FUN_801DC0A0(caster,
+            // 0x12)` every pass, which arms its own close-up; neither state
+            // calls `FUN_801D5854`, so case 6 does not run.
+            if SUMMON_CAST_STATES.contains(&self.last_action_state) {
+                let c = self.attack.ctx;
+                let (target, raw_z) = summon_cast_framing(self.actor, c.accum, c.ramp);
+                let mut from = self.pose;
+                let steps = (SUMMON_CAST_TWEEN_FRAMES / 2).max(1);
+                let g = Glide::linear(&mut from, target, raw_z, steps, true);
+                self.pose = from;
+                self.glides.clear();
+                self.step_components(&g);
+                return;
+            }
             if let Some(f) = self.attack_framing() {
                 self.glides.clear();
                 self.step_toward_attack_pose(f);

@@ -70,7 +70,7 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x2D` | Magic - recovery | If `ctx[+0x24D] == 0`: clears `actor[+0x176]` and `actor[+0x21B]`. Item-class spells (target == 9) set `DAT_8007B64C = 0x78` (UI flash). | `0x2E` once `+0x24D == 0`. |
 | `0x2E` | Magic - exit | Gated on `ctx[+0x249] == 0`. Resets screen-shake (`_DAT_8007B790` if > 400, sets to 0; `_DAT_800840BC = 0x500`). | `0x50`. |
 | `0x32` | Summon - invoke | `FUN_801D5854(actor, 6)` + waits on `func_0x8003DE7C(1)` (sound bank ready). When ready, computes summon-frame index `bVar5` from `actor[+0x1DF]` (if < 0x9A: `(actor[+0x1DF] + 0x7F) * 3 + 0x80`, else `actor[+0x1DF] * 4 + 99`); writes `ctx[+0x277] = bVar5`, `ctx[+0x276] = 1`, `ctx[+0x278] = 1`. Sets `actor[+0x1DA] = 9`, `actor[+0x1DC] |= 1`, `actor[+0x1FA]++`. | `0x33`. |
-| `0x33` | Summon - fade in | `FUN_801DC0A0(party, 0x12)` - the cast-effect driver on the `0x12` the trigger staged, while the caster stays on clip `9`. When `actor[+0x1F5] != 0` (anim cue): writes the flash-in template at `DAT_801C9070` (kind `1` = additive, ramp `0x14`, black → white, start delay `0x14`, hold `-1`), spawns it with id `1` via `func_0x80024E80`, then fires cue `0x63` through `FUN_8004FCC8` (`0x801E4AA8`). The `-1` hold is why the white persists until `0x34` kills the actor. | `0x34`. |
+| `0x33` | Summon - fade in | `FUN_801DC0A0(party, 0x12)` - the cast-effect driver on the `0x12` the trigger staged, while the caster stays on clip `9`; its case `0x12` also arms the summon cast close-up camera (see [below](#the-summon-cast-close-up-camera)). When `actor[+0x1F5] != 0` (anim cue): writes the flash-in template at `DAT_801C9070` (kind `1` = additive, ramp `0x14`, black → white, start delay `0x14`, hold `-1`), spawns it with id `1` via `func_0x80024E80`, then fires cue `0x63` through `FUN_8004FCC8` (`0x801E4AA8`). The `-1` hold is why the white persists until `0x34` kills the actor. | `0x34`. |
 | `0x34` | Summon - actor freeze | `FUN_801DC0A0(party, 0x12)`. When `actor[+0x1D9] == 0`: OR's the fade actor's bit `8` (kills the flash-in), clears `ctx[+0x278/+0x279]`, sets `ctx[+0x6D8] = 0x78` (timer), calls `func_0x801F1ED4` (the [player-summon stager dispatch](#the-engines-summon-stager), keyed on the summon id `actor[+0x1DF]` - phase 0 seats the creature), iterates the 8-actor table clearing `actor[+0x4]` and setting `+0x21C = 0xFF` on every party seat and every **living** monster (`lhu +0x14C` / `sltiu s0,3`, `0x801E4B30..0x801E4B6C`). Writes the flash-out template (additive, ramp `0x78`, white → black, no delay, hold `1`) and spawns it with id `1`. | `0x35`. |
 | `0x35` | Summon - sustain | Decrements `ctx[+0x6D8]`; ducks the live **audio level** `_DAT_8007B910` down by `DAT_1F800393` per frame, clamped at `(_DAT_8008457C * 0x4B) / 100` (75% of the configured level) for spells < 0x99 or 50% for higher. If `+0x6D8 < 0` and `ctx[+0x276] != 0`, force-clamp `+0x6D8 = 1`. | `0x36` when timer expires. |
 | `0x36` | Summon - return-from-fade | Runs `func_0x801F1ED4` and **holds while it returns non-zero** (`bne v0,zero,<exit>` at `0x801E4CB0`) - the stager's own phase machine paces this state. Calls `FUN_801F3C34` at `0x801E4CB8` - the [queued-magic follow-up guard](#the-queued-magic-follow-up-guard-fun_801f3c34). Then iterates 8-actor table clearing `+0x21C = 0` and resetting `+0x8 = 0x81000000` for actors with `+0x4 == 0`. Calls `FUN_801E70BC` (the summon-magic level-up check - see [`reference/functions.md`](../reference/functions.md); engine `World::accrue_summon_spell_xp` + `battle_formulas::summon_magic_levels_up`). Finally clamps the follow-up hold `*(0x801F6964)` to `1` when it is non-zero. | `0x37`. |
@@ -194,6 +194,29 @@ The full step body for state `0x28`:
 - If the spell's first table byte is `'c'` (capture-class spell) → `ctx[7] = 0x6E` (capture path) + queues capture archive load via `func_0x8003EC70`.
 - Reads MP cost from the spell record's `+3` byte (`lbu s0,0x3(v1)` at `0x801E451C`, record base `DAT_800754C8 + spell_id*0xC`, loaded at `0x801E4464`; `DAT_800754D0` is the same table viewed `+8`, which is how the name lookup reaches the record's `name_ptr`). Reduces it by half (`cost - cost>>1`) if the character's ability bitmask has `0x20` ("MP-half"), else by a quarter (`cost - cost>>2`) if `0x10` ("MP-quarter") - `0x20` is tested first and wins when both are set (`0x801E4568`). Stores the applied cost at `actor[+0x178]` and subtracts it from `actor[+0x150]` (MP).
 - **Which copy is which.** The identical fold is inlined twice, and the two are easy to swap: `0x801E4568` is *this* state, immediately after the capture-archive `jal 0x8003EC70` at `0x801E44EC`; `0x801E3D0C` is state `0x3C`'s copy, immediately after that state's Pomander (`+0x1DF == 0xFE`) special case at `0x801E3C4C`. Behaviour is the same either way - only the state label differs.
+
+
+## The summon cast close-up camera
+
+`FUN_801DC0A0` is the cast-effect driver *and* a camera script: its prologue
+advances the same `ctx[+0x26E]` ramp (capped at `0xC8`) and `ctx[+0x87C]`
+accumulator `FUN_801D5854`'s does, then a 20-way jump table (`0x801CECAC`)
+picks a framing it hands to the tween builder `FUN_801D829C`. The summon band
+calls it with `0x12` on every pass of `0x33` and `0x34`, and neither state
+calls `FUN_801D5854`, so case `0x12` (`0x801DCCF0..0x801DCD94`, duration
+`a3 = 3`) owns the camera while the caster plays its cast clip:
+
+```text
+pitch = -(ctx[+0x26E] * 2)
+yaw   = -actor[+0x46] + ctx[+0x87C] * 2 + 0x500
+TR    = (0, ctx[+0x87C] * 2 + 0x300, 0x680 - ctx[+0x87C] * 3)
+focus = -(actor[+0x3C], 0, actor[+0x40])
+```
+
+A low camera beside the caster, pitched up by as much as `400` units, rising
+and swinging round as the accumulator runs; it also sets `ctx[+0x243] = 1`.
+Port: `legaia_engine_vm::battle_cam_script::summon_cast_framing`, stepped by
+the shared battle camera both hosts drive.
 
 ## Inner dispatch - actor action category
 
