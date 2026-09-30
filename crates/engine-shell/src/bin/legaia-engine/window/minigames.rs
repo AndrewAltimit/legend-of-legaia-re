@@ -31,18 +31,44 @@ pub(super) struct DanceVenueGpu {
     pub(super) vram: UploadedVram,
     /// Whether the HUD page reached the venue VRAM.
     pub(super) hud_staged: bool,
-    pub(super) meshes: Vec<UploadedVramMesh>,
-    pub(super) color_meshes: Vec<UploadedColorMesh>,
-    /// `(meshes index, model)` per textured instance.
-    pub(super) draws: Vec<(usize, Mat4)>,
-    /// `(color_meshes index, model)` per untextured instance.
-    pub(super) color_draws: Vec<(usize, Mat4)>,
-    /// The venue's walk-ground heightfield.
-    pub(super) ground: Option<UploadedVramMesh>,
+    /// The hall's textured draws + the walk-ground heightfield, baked into
+    /// raw world coordinates (placement transform and coplanar lift applied).
+    pub(super) textured: VenueTexturedBake,
+    /// The hall's untextured draws, baked the same way.
+    pub(super) untextured: VenueColorBake,
+    /// This frame's upload of [`Self::textured`], carrying only the
+    /// triangles the PSX GPU draws under the venue camera
+    /// (`dance_venue::psx_gpu_visible_indices`), and the index list it holds.
+    pub(super) textured_gpu: Option<UploadedVramMesh>,
+    pub(super) textured_kept: Option<Vec<u32>>,
+    /// The same for [`Self::untextured`].
+    pub(super) untextured_gpu: Option<UploadedColorMesh>,
+    pub(super) untextured_kept: Option<Vec<u32>>,
     /// The floor's body meshes + choreography bank off this venue, handed to
     /// the cast surface when this copy is installed.
     pub(super) cast_assets:
         Option<std::sync::Arc<legaia_engine_core::dance_cast_scene::DanceCastAssets>>,
+}
+
+/// The venue's textured half in world space, kept CPU-side so each frame can
+/// re-upload the triangles the GPU would draw.
+#[derive(Default)]
+pub(super) struct VenueTexturedBake {
+    pub(super) positions: Vec<[f32; 3]>,
+    pub(super) uvs: Vec<[u8; 2]>,
+    pub(super) cba_tsb: Vec<[u16; 2]>,
+    pub(super) normals: Vec<[f32; 3]>,
+    pub(super) colors: Vec<[u8; 3]>,
+    pub(super) indices: Vec<u32>,
+}
+
+/// The venue's untextured half in world space.
+#[derive(Default)]
+pub(super) struct VenueColorBake {
+    pub(super) positions: Vec<[f32; 3]>,
+    pub(super) colors: Vec<[u8; 3]>,
+    pub(super) blend: Vec<u16>,
+    pub(super) indices: Vec<u32>,
 }
 
 /// The dance floor's posed bodies on the GPU for this frame
@@ -372,9 +398,9 @@ impl PlayWindowApp {
         match self.build_dance_venue_gpu(generation) {
             Some(g) => {
                 log::info!(
-                    "dance venue: {} textured + {} untextured instances, hud page {}",
-                    g.draws.len(),
-                    g.color_draws.len(),
+                    "dance venue: {} textured + {} untextured triangles, hud page {}",
+                    g.textured.indices.len() / 3,
+                    g.untextured.indices.len() / 3,
                     g.hud_staged
                 );
                 self.dance_cast_surface.set_assets(g.cast_assets.clone());
@@ -421,20 +447,20 @@ impl PlayWindowApp {
             .upload_vram(&res.vram)
             .map_err(|e| log::warn!("dance venue: vram upload: {e:#}"))
             .ok()?;
-        let mut meshes = Vec::new();
-        let mut color_meshes = Vec::new();
-        let mut draws = Vec::new();
-        let mut color_draws = Vec::new();
-        // One upload per (mesh, clip): a bound prop is baked at frame 0 of
-        // its clip, the rest pose every host draws it in.
-        let mut built: std::collections::HashMap<(usize, u8), (Option<usize>, Option<usize>)> =
-            std::collections::HashMap::new();
+        // One mesh build per (mesh, clip): a bound prop is baked at frame 0
+        // of its clip, the rest pose every host draws it in.
+        let mut built: std::collections::HashMap<
+            (usize, u8),
+            (legaia_tmd::mesh::VramMesh, legaia_tmd::mesh::ColorMesh),
+        > = std::collections::HashMap::new();
+        let mut textured = VenueTexturedBake::default();
+        let mut untextured = VenueColorBake::default();
         for vd in &venue.draws {
             let d = vd.draw;
             let Some(rtmd) = res.tmds.get(d.res_tmd) else {
                 continue;
             };
-            let slot = *built.entry((d.res_tmd, d.anim_id)).or_insert_with(|| {
+            let (vmesh, cmesh) = built.entry((d.res_tmd, d.anim_id)).or_insert_with(|| {
                 let offsets = (d.anim_id != 0)
                     .then(|| venue.frame0_bone_offsets(d.anim_id, rtmd.tmd.objects.len()))
                     .flatten();
@@ -449,39 +475,7 @@ impl PlayWindowApp {
                     ),
                 };
                 legaia_tmd::mesh::resolve_hybrid(&mut vmesh, &mut cmesh);
-                let t = (!vmesh.indices.is_empty())
-                    .then(|| {
-                        r.upload_vram_mesh(
-                            &vmesh.positions,
-                            &vmesh.uvs,
-                            &vmesh.cba_tsb,
-                            &vmesh.normals,
-                            &vmesh.colors,
-                            &vmesh.indices,
-                        )
-                        .ok()
-                    })
-                    .flatten()
-                    .map(|m| {
-                        meshes.push(m);
-                        meshes.len() - 1
-                    });
-                let c = (!cmesh.is_empty())
-                    .then(|| {
-                        r.upload_color_mesh_blended(
-                            &cmesh.positions,
-                            &cmesh.colors,
-                            &cmesh.indices,
-                            &cmesh.blend,
-                        )
-                        .ok()
-                    })
-                    .flatten()
-                    .map(|m| {
-                        color_meshes.push(m);
-                        color_meshes.len() - 1
-                    });
-                (t, c)
+                (vmesh, cmesh)
             });
             // Raw retail Y-down transform; the camera's FIELD_WORLD_FLIP is
             // the single net negation, as for every field placement.
@@ -492,42 +486,121 @@ impl PlayWindowApp {
             )) * legaia_engine_render::battle_intro::placement_rotation(
                 d.rot_x, d.rot_y, d.rot_z,
             );
-            if let Some(t) = slot.0 {
-                draws.push((t, model));
-            }
-            if let Some(c) = slot.1 {
-                color_draws.push((c, model));
-            }
+            let base = textured.positions.len() as u32;
+            textured.positions.extend(
+                vmesh
+                    .positions
+                    .iter()
+                    .map(|p| model.transform_point3(Vec3::from(*p)).to_array()),
+            );
+            textured.normals.extend(vmesh.normals.iter().map(|n| {
+                model
+                    .transform_vector3(Vec3::from(*n))
+                    .normalize_or_zero()
+                    .to_array()
+            }));
+            textured.uvs.extend_from_slice(&vmesh.uvs);
+            textured.cba_tsb.extend_from_slice(&vmesh.cba_tsb);
+            textured.colors.extend_from_slice(&vmesh.colors);
+            textured
+                .indices
+                .extend(vmesh.indices.iter().map(|i| i + base));
+            let base = untextured.positions.len() as u32;
+            untextured.positions.extend(
+                cmesh
+                    .positions
+                    .iter()
+                    .map(|p| model.transform_point3(Vec3::from(*p)).to_array()),
+            );
+            untextured.colors.extend_from_slice(&cmesh.colors);
+            untextured.blend.extend_from_slice(&cmesh.blend);
+            untextured
+                .indices
+                .extend(cmesh.indices.iter().map(|i| i + base));
         }
-        let ground = venue
+        // The walk-ground heightfield, already in world space.
+        if let Some(hf) = venue
             .scene
             .walk_heightfield(index)
             .ok()
             .flatten()
             .filter(|hf| !hf.indices.is_empty())
-            .and_then(|hf| {
-                let v = super::geometry::heightfield_to_vram_mesh(&hf);
-                r.upload_vram_mesh(
-                    &v.positions,
-                    &v.uvs,
-                    &v.cba_tsb,
-                    &v.normals,
-                    &v.colors,
-                    &v.indices,
-                )
-                .ok()
-            });
+        {
+            let v = super::geometry::heightfield_to_vram_mesh(&hf);
+            let base = textured.positions.len() as u32;
+            textured.positions.extend_from_slice(&v.positions);
+            textured.normals.extend_from_slice(&v.normals);
+            textured.uvs.extend_from_slice(&v.uvs);
+            textured.cba_tsb.extend_from_slice(&v.cba_tsb);
+            textured.colors.extend_from_slice(&v.colors);
+            textured.indices.extend(v.indices.iter().map(|i| i + base));
+        }
         Some(DanceVenueGpu {
             generation,
             vram,
             hud_staged: venue.hud_staged,
-            meshes,
-            color_meshes,
-            draws,
-            color_draws,
-            ground,
+            textured,
+            untextured,
+            textured_gpu: None,
+            textured_kept: None,
+            untextured_gpu: None,
+            untextured_kept: None,
             cast_assets,
         })
+    }
+
+    /// Put the hall on the GPU for this frame's venue camera: only the
+    /// triangles the PSX GPU draws from this eye
+    /// ([`legaia_engine_core::dance_venue::psx_gpu_visible_indices`], the
+    /// kernel the browser play page filters its baked hall through too).
+    /// Re-uploads only when the kept set changes.
+    pub(super) fn refresh_dance_venue_view(&mut self) {
+        use legaia_engine_core::dance_venue::psx_gpu_visible_indices;
+        let Some(camera) = self
+            .session
+            .host
+            .world
+            .minigames
+            .dance_venue
+            .as_ref()
+            .map(|s| s.camera)
+        else {
+            return;
+        };
+        let (Some(r), Some(g)) = (self.win.renderer.as_ref(), self.dance_venue_gpu.as_mut()) else {
+            return;
+        };
+        let t = &g.textured;
+        let kept = psx_gpu_visible_indices(&camera, &t.positions, [0.0; 3], &t.indices);
+        if g.textured_kept.as_ref() != Some(&kept) {
+            g.textured_gpu = (!kept.is_empty())
+                .then(|| {
+                    r.upload_vram_mesh(
+                        &t.positions,
+                        &t.uvs,
+                        &t.cba_tsb,
+                        &t.normals,
+                        &t.colors,
+                        &kept,
+                    )
+                    .map_err(|e| log::warn!("dance venue: textured upload failed: {e:#}"))
+                    .ok()
+                })
+                .flatten();
+            g.textured_kept = Some(kept);
+        }
+        let c = &g.untextured;
+        let kept = psx_gpu_visible_indices(&camera, &c.positions, [0.0; 3], &c.indices);
+        if g.untextured_kept.as_ref() != Some(&kept) {
+            g.untextured_gpu = (!kept.is_empty())
+                .then(|| {
+                    r.upload_color_mesh_blended(&c.positions, &c.colors, &kept, &c.blend)
+                        .map_err(|e| log::warn!("dance venue: untextured upload failed: {e:#}"))
+                        .ok()
+                })
+                .flatten();
+            g.untextured_kept = Some(kept);
+        }
     }
 
     /// Pose the dance floor's bodies for this frame and put them on the GPU.

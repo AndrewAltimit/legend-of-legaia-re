@@ -98,7 +98,8 @@ fn snap_component_decode_matches_the_cutscene_view_slot_map() {
 /// back faces of every field mesh - `FUN_80043390`'s mask is `0xFFFFFFFF`
 /// unless the colour word carries `0x08000000`, which no field spawner sets)
 /// and for a cutscene camera on any other non-overworld mode; never on the
-/// overworld, and not for a free battle / minigame frame.
+/// overworld, and not for a free battle frame. The dance hall is a field-shaped
+/// pass (its placed actors are single-sided too), so it is armed.
 #[test]
 fn nclip_cull_mode_arms_for_the_field_pass_and_non_overworld_cutscenes() {
     use SceneMode::*;
@@ -108,7 +109,7 @@ fn nclip_cull_mode_arms_for_the_field_pass_and_non_overworld_cutscenes() {
     assert_eq!(camera_view::nclip_cull_mode(true, WorldMap), 0);
     assert_eq!(camera_view::nclip_cull_mode(false, WorldMap), 0);
     assert_eq!(camera_view::nclip_cull_mode(false, Battle), 0);
-    assert_eq!(camera_view::nclip_cull_mode(false, Dance), 0);
+    assert_eq!(camera_view::nclip_cull_mode(false, Dance), 2);
 }
 
 /// The debug orbit steers the SAME field the follow camera reads, is not

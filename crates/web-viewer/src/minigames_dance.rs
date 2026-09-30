@@ -586,6 +586,22 @@ impl LegaiaMinigames {
         dance_venue_vp_in_frame(camera, b.origin, aspect).to_vec()
     }
 
+    /// The baked hall's triangles the PSX GPU draws under `camera`
+    /// ([`dance_venue::psx_gpu_visible_indices`], the kernel the native
+    /// window cuts its hall with): [`Self::dance_env_indices`] less every
+    /// triangle whose screen span the GPU refuses. Empty with no hall.
+    pub(crate) fn dance_env_visible_indices_with(
+        &self,
+        camera: &legaia_engine_vm::psx_camera::FieldCameraView,
+    ) -> Vec<u32> {
+        let Some(b) = self.dance_bodies.as_ref().filter(|b| !b.env.is_empty()) else {
+            return Vec::new();
+        };
+        let positions: Vec<[f32; 3]> = b.env.positions.as_chunks::<3>().0.to_vec();
+        let (ox, oy, oz) = b.origin;
+        dance_venue::psx_gpu_visible_indices(camera, &positions, [ox, oy, oz], &b.env.indices)
+    }
+
     /// Noa's body - the overlay spawns dancer kind 0 from the resident global
     /// TMD pool (slot 1 = PROT 0874 §0 pack slot 1, her field-view mesh; the
     /// spawner writes that model id *without* the scene-pool base). Mirrors
@@ -1062,6 +1078,19 @@ impl LegaiaMinigames {
         self.dance_bodies
             .as_ref()
             .map(|b| b.env.indices.clone())
+            .unwrap_or_default()
+    }
+
+    /// This frame's drawable subset of [`Self::dance_env_indices`] under the
+    /// camera [`Self::dance_venue_vp`] frames with: the triangles the PSX GPU
+    /// would not refuse for their screen span.
+    pub fn dance_env_visible_indices(&self) -> Vec<u32> {
+        let tracked = self.dance.as_ref().and_then(|g| g.camera_pose()).map(|p| {
+            dance_venue::venue_camera_at(&legaia_engine_core::dance::dance_scene_entry(), p)
+        });
+        let camera = tracked.or_else(|| self.dance_bodies.as_ref().map(|b| b.camera));
+        camera
+            .map(|c| self.dance_env_visible_indices_with(&c))
             .unwrap_or_default()
     }
 

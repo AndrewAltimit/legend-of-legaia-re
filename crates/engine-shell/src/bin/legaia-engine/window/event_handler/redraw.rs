@@ -783,6 +783,8 @@ impl PlayWindowApp {
         self.refresh_dance_cast_gpu();
         // The Muscle Dome's 3D arena, posed by its engine surface.
         self.refresh_muscle_dome_gpu();
+        // The hall, cut to what the GPU draws under this frame's camera.
+        self.refresh_dance_venue_view();
         if let (Some(r), Some(vram), Some(atlas)) = (
             self.win.renderer.as_ref(),
             self.uploaded_vram.as_ref(),
@@ -1361,30 +1363,22 @@ impl PlayWindowApp {
                 // resolves through (`FieldCameraFrame::Venue`). The walked-in
                 // scene's actors and geometry are not drawn - retail's dance
                 // is a scene of its own.
-                if let Some(hf) = g.ground.as_ref() {
+                // The hall, baked in raw world coordinates and cut to the
+                // triangles the PSX GPU draws from this eye
+                // (`refresh_dance_venue_view`).
+                if let Some(mesh) = g.textured_gpu.as_ref() {
                     draws.push(SceneDraw {
-                        mesh: hf,
+                        mesh,
                         mvp: cam,
                         cue: None,
                     });
                 }
-                for (mi, model) in &g.draws {
-                    if let Some(mesh) = g.meshes.get(*mi) {
-                        draws.push(SceneDraw {
-                            mesh,
-                            mvp: cam * *model,
-                            cue: None,
-                        });
-                    }
-                }
-                for (ci, model) in &g.color_draws {
-                    if let Some(mesh) = g.color_meshes.get(*ci) {
-                        color_draws.push(ColorSceneDraw {
-                            mesh,
-                            mvp: cam * *model,
-                            cue: None,
-                        });
-                    }
+                if let Some(mesh) = g.untextured_gpu.as_ref() {
+                    color_draws.push(ColorSceneDraw {
+                        mesh,
+                        mvp: cam,
+                        cue: None,
+                    });
                 }
                 // The floor's bodies, posed in raw world coordinates by the
                 // engine surface (`refresh_dance_cast_gpu`).

@@ -1856,7 +1856,12 @@ a sky dome the camera looks at from outside paints its outer shell over the
 scene - korout's and retona's did, and so did the flag-seeded frames of
 several other scenes. The world map keeps both-sided draws (its continent
 terrain's winding parity is the world-map pass's, not the field pass's), as
-do battle and the minigame venues.
+do battle and the minigame venues other than the dance hall. The dance hall is
+a field-shaped pass - game mode `0x19` is one of the three `FUN_80026CE4` runs
+the decoration pass `FUN_801F7088` for, and a live dance capture has its placed
+actors' colour words at `0x40808080` - so it is armed too; see
+[`minigame-dance.md`](minigame-dance.md#the-camera-keyframe-track) for the
+second thing that frame depends on, the GPU's polygon-size limit.
 
 ## Coplanar surfaces: retail's ordering model, the port's depth policy
 
@@ -1891,7 +1896,7 @@ renderer and the site's WebGL viewers:
   builders stay byte-faithful) flags both copies via bit 15 of the per-vertex
   CBA attribute (unused by the PSX CBA encoding). The fragment shaders then
   discard the away-facing copy of *flagged* prims only. Outside the field
-  pass (the world map, battle, the minigame venues and the site's static
+  pass (the world map, battle, the non-dance minigame venues and the site's static
   viewers) this is the only NCLIP the port applies; the field pass also
   runs the [global back-face cull](#the-field-pass-culls-back-faces).
   Which facing is "away" depends on the view chain's

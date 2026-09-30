@@ -1176,6 +1176,26 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
+    /// This frame's drawable subset of [`Self::play_mg_dance_env_indices`]:
+    /// the triangles the PSX GPU draws under the staged venue camera (the
+    /// camera [`Self::play_mg_dance_venue_vp`] frames with), through the
+    /// kernel the native window cuts its hall with
+    /// (`dance_venue::psx_gpu_visible_indices`).
+    pub fn play_mg_dance_env_visible_indices(&self) -> Vec<u32> {
+        let Some(art) = self.minigame_art() else {
+            return Vec::new();
+        };
+        let staged = self
+            .scene_host
+            .as_ref()
+            .and_then(|h| h.world.minigames.dance_venue.as_ref())
+            .map(|s| s.camera);
+        match staged {
+            Some(camera) => art.dance_env_visible_indices_with(&camera),
+            None => art.dance_env_visible_indices(),
+        }
+    }
+
     pub fn play_mg_dance_env_flat_rgba(&self) -> Vec<u8> {
         self.minigame_art()
             .map(|a| a.dance_env_flat_rgba())

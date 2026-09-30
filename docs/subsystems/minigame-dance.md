@@ -625,6 +625,32 @@ its run's track in `dance_tick`, which the page does not call during its
 count-in, so there the camera starts moving with the song rather than with
 the count-in.
 
+**What the far poses draw.** Poses 1 and 3 ease the eye back to
+`z = 0x1810` in eye space, which puts it on the audience side of the
+stage-entrance curtain (the two-panel placed prop at `(0x1800, 0, 0x2F60)`,
+bound to clip 4). A live run of the qualifier - camera globals logged per
+vsync, frames captured every fifteenth - reproduces the track above value for
+value (the frame delta is `3`: the dance runs at 20 fps) and shows the stage
+clear through the whole pull-back: the curtain never reaches the frame. Two
+retail rules keep it out, and the port applies both to the hall:
+
+- **NCLIP.** The hall is drawn by the field render path (the decoration pass
+  under game mode `0x19`, the placed actors through the prim dispatcher
+  `FUN_80043390`), and the placed actors' colour words read `0x40808080` in a
+  live dance capture - no double-sided bit - so their back faces are rejected
+  (`camera_view::nclip_cull_mode` arms for `SceneMode::Dance`).
+- **The GPU's polygon-size limit.** The prim leaves hand the GPU the SXY FIFO
+  with no clip of their own, and the GPU skips any polygon whose corners lie
+  more than `1023` pixels apart horizontally or `511` vertically. From just
+  behind the curtain every one of its quads is that wide, so none is drawn.
+  `dance_venue::psx_gpu_visible_indices` is the rule (the GTE projection
+  with its divide saturation and SXY clamp, then the span test); the native
+  window re-uploads its world-space hall bake through it whenever the kept set
+  changes (`refresh_dance_venue_view`), and both browser pages swap the hall's
+  span of their index buffer for `play_mg_dance_env_visible_indices` /
+  `dance_env_visible_indices` under the engine camera. A disc-gated test pins
+  the curtain out of the key-1 frame and the rest of the hall in it.
+
 `DanceGame::press` returns the full event (Miss / Hit / Sequence with its
 points / **Groovy** with its landed flag, lock frames and remaining stock /
 NoCharge / Ignored-while-spinning) and applies the score, gauge and latch side

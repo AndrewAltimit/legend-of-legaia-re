@@ -856,6 +856,12 @@
     const sc = {
       kind: 'dance', gen,
       markerBase: markers ? buf.bases[1 + (env ? 1 : 0)] : -1,
+      /* Where the hall's triangles sit in the combined index list, so each
+       * frame can draw only the ones the PSX GPU would (hallIndices). */
+      hall: env ? {
+        full: buf.idx, castLen: cast.idx.length,
+        end: cast.idx.length + env.idx.length, base: buf.bases[1], key: null,
+      } : null,
       out: buf.pos,
       /* Orbit fallback only - the engine camera frames the hall (`vp`). */
       cam: { yaw: Math.PI, pitch: 0.24, distance: 2.7 },
@@ -864,6 +870,36 @@
     const flags = env ? { cullBackfaces: true, cullFrontFace: 'ccw', semiTwoPass: true } : {};
     if (!takeRenderer(view, rt.play_mg_dance_body_vram(), buf, flags)) return null;
     return sc;
+  }
+
+  /* The hall under the engine camera draws only the triangles the PSX GPU
+   * would: one spanning more than 1023 x 511 screen pixels is refused whole,
+   * which keeps the stage-entrance curtain out of the camera track's far
+   * poses. The subset is the engine's (`play_mg_dance_env_visible_indices`,
+   * the `dance_venue::psx_gpu_visible_indices` kernel the native window cuts
+   * its hall with); swapped in only when it changes. */
+  function hallIndexKey(a) {
+    let h = 0x811c9dc5 ^ a.length;
+    for (let i = 0; i < a.length; i++) h = Math.imul(h ^ a[i], 0x01000193);
+    return a.length + ':' + (h >>> 0);
+  }
+
+  function hallIndices(rt, view, sc) {
+    const hall = sc.hall;
+    const r = view.renderer;
+    if (!hall || !r || !r.updateIndices
+      || typeof rt.play_mg_dance_env_visible_indices !== 'function') return;
+    const vis = sc.vp && sc.vp.length === 16 ? rt.play_mg_dance_env_visible_indices() : null;
+    const key = vis ? hallIndexKey(vis) : 'full';
+    if (key === hall.key) return;
+    hall.key = key;
+    if (!vis) { r.updateIndices(hall.full); return; }
+    const tail = hall.full.length - hall.end;
+    const out = new Uint32Array(hall.castLen + vis.length + tail);
+    out.set(hall.full.subarray(0, hall.castLen), 0);
+    for (let i = 0; i < vis.length; i++) out[hall.castLen + i] = vis[i] + hall.base;
+    out.set(hall.full.subarray(hall.end), hall.castLen + vis.length);
+    r.updateIndices(out);
   }
 
   /* Pose this frame through the engine surface and build on first sight. */
@@ -894,6 +930,7 @@
       const c = view.renderer.canvas;
       sc.vp = rt.play_mg_dance_venue_vp(c.width / Math.max(c.height, 1));
     }
+    if (sc) hallIndices(rt, view, sc);
     if (sc) renderScene(view, sc); else clearGl(view);
   }
 
