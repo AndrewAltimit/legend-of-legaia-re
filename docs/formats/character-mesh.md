@@ -1003,6 +1003,15 @@ it depends on equipment. Two parser entry points in
   (`(cba & 0x3F) * 16`). The mesh-column filter resolves which variant belongs to
   the character (Vahn samples col `0x70` not `0x90`, so his `0x70` band is kept).
 
+Both are **default-palette** readers - neither follows the equipment
+selector. The palette retail shows is the one the texture uploads carry:
+each flagged section's block is `[CLUT struct][pixels]`, uploaded by the same
+`FUN_80053B9C` call as its pixels, so
+`battle_char_assembly::character_texture_uploads` (record[0]'s two blocks plus
+the five *selected* sections) reproduces rows 481..483 cell-for-cell for a
+party in late-game Ra-Seru armour, where the separator defaults miss about a
+quarter of Vahn's row.
+
 **All three party palettes decode from the disc** (`FUN_80052FA0` ported as a
 unit), validated against a full-party battle VRAM capture (mednafen mc1/mc7/mc9,
 rows 481/482/483 all populated): **Vahn (PROT `0863`) byte-exact, Noa (PROT `0864`)

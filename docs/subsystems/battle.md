@@ -1832,11 +1832,17 @@ apart. The **PROT 1203 ANM (`other5`) is NOT this pose source** - its banks
 object order, which differs from the assembled tag order per character, so
 it stays the rest-pose source for the **1204 fallback mesh only** (identity
 object→bone). Pinned live + cross-pipeline in
-`crates/engine-shell/tests/battle_party_pose_live.rs`. Palette: each
-character's decoded battle palette (Vahn `parse_record` PROT 0863; Noa/Gala
-`collect_palette` 0864/0865 - the `PLAYER1..3` files) overlays the CLUT rows
-its mesh samples (`481 + slot` after relocation), so the party reads in its
-real colours (blue Vahn / pink Noa / Gala).
+`crates/engine-shell/tests/battle_party_pose_live.rs`. Palette: every
+upload block is `[CLUT struct][pixels]` and `FUN_80053B9C` writes both
+halves, so the band uploads of record[0] and the five **equipped** sections
+already put the character's palette on row `481 + slot` - the equipped
+pieces in their own colours (a Ra-Seru armour set is not the unequipped
+default). The separator-default collectors (Vahn `parse_record`, Noa/Gala
+`collect_palette`) only paint a fallback picture - a PROT 1204 mesh, or an
+assembled mesh whose pool decode failed; running them over a real band
+repaints every equipped piece in default colours. Pinned against two
+late-game captures in
+`crates/engine-core/tests/battle_party_palette_retail_capture.rs`.
 A 4th party slot is not rendered: the runtime texture band + CLUT rows cover
 party slots 0..=2 only, so Terra (player file 866, idle stream 17 parts)
 has no relocation target.
@@ -1859,8 +1865,8 @@ animator's registration. A session that drives a bare `World` with no
 calls `install_party_battle_forms` itself after `World::enter_battle`. The
 kernel falls back to PROT 1204 when the
 player file carries no idle stream - an assembled mesh with no pose source
-draws every piece at its object origin - and overlays the battle palette on
-a fallback mesh's rows too. Monsters install their texture slot and idle
+draws every piece at its object origin - and overlays the separator-default
+battle palette on a fallback mesh's rows only. Monsters install their texture slot and idle
 clip through `World::install_monster_battle_form`, and the slot a mid-battle
 summon takes is one past the highest monster slot bound
 (`battle_party_form::monster_tex_slots_used`), since repeated species share

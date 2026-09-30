@@ -316,11 +316,17 @@ pub fn build_party_battle_form(
             [s[0], s[1], s[2], s[3], s[4]]
         })
         .unwrap_or_default();
-    let form = raw
+    let (form, band_palette) = raw
         .as_deref()
         .and_then(|raw| assemble(index, sources, vram, raw, &equipped, member, cslot))
-        .or_else(|| fallback(sources, member, cslot))?;
-    if let Some(raw) = raw.as_deref() {
+        .or_else(|| fallback(sources, member, cslot).map(|f| (f, false)))?;
+    // A real band already carries retail's palette: each upload block is
+    // `[CLUT struct][pixels]` and `FUN_80053B9C` writes both, for record[0]
+    // and the five *equipped* sections. The collector below reads the
+    // sections' `id = 0` defaults instead, so running it over a real band
+    // repaints every equipped piece (the Ra-Seru armour sets) with the
+    // unequipped colours. It stays for the fallback pictures only.
+    if !band_palette && let Some(raw) = raw.as_deref() {
         overlay_battle_palette(vram, raw, cslot, &form);
     }
     Some(form)
@@ -334,7 +340,7 @@ fn assemble(
     equipped: &[u8; 5],
     member: usize,
     cslot: usize,
-) -> Option<PartyBattleForm> {
+) -> Option<(PartyBattleForm, bool)> {
     let warn = |what: &str, e: &dyn std::fmt::Display| {
         log::warn!("battle party {cslot}: {what}: {e:#} (PROT 1204 fallback)");
     };
@@ -440,7 +446,7 @@ fn assemble(
         && cslot < legaia_asset::face_anim::FACE_CHAR_COUNT
         && member < legaia_asset::face_anim::FACE_SLOT_COUNT)
         .then_some(faces);
-    Some(PartyBattleForm {
+    let form = PartyBattleForm {
         member,
         cslot,
         assembled: true,
@@ -453,7 +459,8 @@ fn assemble(
         art_records,
         face_tracks,
         art_face_tracks,
-    })
+    };
+    Some((form, real_band))
 }
 
 /// The static PROT 1204 slot, posed from its PROT 1203 bank.
