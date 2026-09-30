@@ -281,8 +281,15 @@ too, since the module places the creature relative to caster and victim.
 or a monster's cast (flow `0xFF` outside the summon band) is compared with the
 engine parked on its round prompt, so its `phase` channel reads capture
 timing. The idle orbit's
-yaw is a clock (`-4` per camera step), so on a prompt state the yaw part of
-`camera` - and most of the frame - reads the capture instant. A party whose
+yaw is a clock (`-4` per camera step from whatever azimuth the field left), so
+on a prompt state the yaw part of `camera` reads the capture instant. The frame
+does not: when retail's command-flow byte is one the battle tick's orbit runs on
+(`0x1E` / `0x32` / `0x6E` / `0xFE`, `FUN_801D0748` at `0x801D0784..0x801D07A4`)
+the child gets retail's yaw as `LEGAIA_BATTLE_ORBIT_YAW` and holds its own orbit
+there while the orbit owns the yaw (`BattleCamera::align_orbit_yaw`) - the
+camera twin of the field HUD countdown hold. Unaligned, an orbit sample
+hundreds of units off put the formation on the other side of the frame and
+scored the clock rather than the scene. A party whose
 present list names a seat the save window's roster does not seat (a guest
 combatant) reads as a short engine party in `battle_party`.
 

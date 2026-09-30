@@ -482,6 +482,22 @@ fn submenu_yaw_takes_shortest_arc() {
     assert_eq!(cam.pose().yaw, BattleCamActor::default().submenu_pose().yaw);
 }
 
+/// The capture harness's orbit alignment moves the free-running azimuth
+/// only where the orbit owns it, and the orbit keeps running from there.
+#[test]
+fn orbit_alignment_applies_only_to_the_idle_orbit() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    assert!(cam.align_orbit_yaw(4064.0 + 4096.0));
+    assert_eq!(cam.pose().yaw, 4064.0);
+    steps(&mut cam, 1);
+    assert_eq!(cam.pose().yaw, 4064.0 - ORBIT_STEP);
+    // The submenu close-up owns its own yaw: no alignment.
+    cam.set_phase(BattleCamPhase::Submenu);
+    let before = cam.pose().yaw;
+    assert!(!cam.align_orbit_yaw(100.0));
+    assert_eq!(cam.pose().yaw, before);
+}
+
 /// `phase_for` is the shared boolean mapping: dialogue outranks the
 /// submenu (retail's tutorial text draws over an open menu), and an
 /// executing action outranks only the idle far framing.

@@ -65,6 +65,12 @@ const ACTOR_TABLE: u32 = 0x801C_9370;
 /// Frames a forced encounter may take to reach battle mode (the intro
 /// transition runs 132 display frames).
 const ENTRY_TICKS: u32 = 400;
+/// The command-flow bytes `ctx[+6]` whose frames the battle tick's idle
+/// orbit owns: `FUN_801D0748`'s prologue decrements the shared yaw
+/// `_DAT_8007B792` only on these (`0x801D07AC..0x801D07CC`), so a capture on
+/// one of them holds an orbit sample - a clock reading, not a framing.
+pub const ORBIT_FLOWS: [u8; 4] = [0x1E, 0x32, 0x6E, 0xFE];
+
 /// Engine ticks run between the battle-mode flip and sampling.
 pub const BATTLE_SETTLE_TICKS: u64 = 60;
 /// Frames the battle opening may take to reach the first round prompt. The

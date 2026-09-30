@@ -71,6 +71,13 @@ pub(crate) struct ScreenshotConfig {
     /// at a fixed tick; `capture_tick` becomes the deadline, past which the
     /// run exits without a PNG. Set by the retail-compare image channel.
     pub phase_gate: Option<legaia_engine_shell::retail_compare_battle::PhaseGate>,
+    /// `LEGAIA_BATTLE_ORBIT_YAW=<yaw>`: the battle idle orbit's azimuth the
+    /// capture must show, held while the orbit owns yaw
+    /// ([`legaia_engine_vm::battle_cam_script::BattleCamera::align_orbit_yaw`]).
+    /// The orbit is a clock, so this is its phase alignment - the camera twin
+    /// of [`Self::hud_countdown`]. Set by the retail-compare image channel
+    /// from the battle state's own rotation global.
+    pub battle_orbit_yaw: Option<f32>,
 }
 
 /// Debug state `play-window` seeds before the first world tick, so a capture
@@ -242,6 +249,9 @@ impl ScreenshotConfig {
             phase_gate: std::env::var("LEGAIA_CAPTURE_GATE")
                 .ok()
                 .and_then(|v| legaia_engine_shell::retail_compare_battle::PhaseGate::from_env(&v)),
+            battle_orbit_yaw: std::env::var("LEGAIA_BATTLE_ORBIT_YAW")
+                .ok()
+                .and_then(|v| v.trim().parse().ok()),
         }))
     }
 }

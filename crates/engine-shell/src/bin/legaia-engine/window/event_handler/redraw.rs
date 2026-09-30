@@ -567,6 +567,14 @@ impl PlayWindowApp {
         if self.screenshot.is_some() {
             self.pad_taps.clear();
         }
+        // Capture harness: phase-align the battle idle orbit to the retail
+        // state being compared (`LEGAIA_BATTLE_ORBIT_YAW`).
+        if let Some(yaw) = self.screenshot.as_ref().and_then(|sc| sc.battle_orbit_yaw)
+            && self.session.host.world.mode == SceneMode::Battle
+            && let Some(cam) = self.session.host.world.battle.camera.as_mut()
+        {
+            cam.align_orbit_yaw(yaw);
+        }
         legaia_engine_render::profile::mark("tick");
         // The scene floor-height ladder is script-animated (op `0x4C`
         // nibble-9): fold whatever the ticks above moved it by into the four

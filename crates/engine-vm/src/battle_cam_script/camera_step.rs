@@ -292,6 +292,25 @@ impl BattleCamera {
         self.phase
     }
 
+    /// Phase-align the idle orbit's clock: set the free-running azimuth to
+    /// `yaw` (12-bit units). Applies only where the orbit owns yaw - the
+    /// [`BattleCamPhase::Menu`] far framing with no yaw glide in flight - and
+    /// returns whether it did.
+    ///
+    /// The orbit is a clock (`-4` per camera step from whatever azimuth the
+    /// field left), so a comparison against one retail instant reads the
+    /// capture's timing unless the two clocks are aligned; this is the
+    /// capture harness's handle for that, the camera twin of the field HUD
+    /// countdown hold. Nothing in play calls it.
+    pub fn align_orbit_yaw(&mut self, yaw: f32) -> bool {
+        let yaw_gliding = self.glides.front().is_some_and(|g| g.yaw_glides);
+        if self.phase != BattleCamPhase::Menu || yaw_gliding {
+            return false;
+        }
+        self.pose.yaw = yaw.rem_euclid(4096.0);
+        true
+    }
+
     /// Current camera pose (12-bit angle units + eye-space TR), **with** the
     /// live screen-shake offset folded into the translation pair - which is
     /// where retail's `FUN_801D9D30` puts it.
