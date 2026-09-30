@@ -6,8 +6,9 @@
 //! playthrough cards hold one save per story milestone. A flag clear in one
 //! save and set in the next was written by the play between them - so each
 //! row below places a gate family's writes between two named milestones.
-//! It does not order the writes *inside* one bracket; that still takes a
-//! play-forward capture.
+//! It does not order the writes *inside* one bracket; where a gate fixes
+//! that order, `engine-core`'s `region_gate_in_bracket_write_order` pins it
+//! from the MAN bytes.
 //!
 //! See `docs/reference/open-rev-eng-threads.md` § Region story-flag gate
 //! families. Skips (and passes) when the library is absent.

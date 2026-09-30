@@ -3105,7 +3105,7 @@ Mixed meshes (some textured + some untextured prims) now render **both** halves:
 
 ### Region story-flag gate families
 
-*Status:* resolved as structure across the chapter-2/3 regions; play order is capture-confirmed for `retona`, `dohaty`, `taiku`, the Sebucus spine, `korb3`, the `kor5` chain head and the `map03` hub latch (see the play-order captures paragraph below); the remaining play-order residual is tracked on [`open-rev-eng-threads.md`](open-rev-eng-threads.md#region-story-flag-gate-families)
+*Status:* resolved as structure across the chapter-2/3 regions; play order is capture-confirmed for `retona`, `dohaty`, `taiku`, the Sebucus spine, `korb3`, the `kor5` chain head and the `map03` hub latch (see the play-order captures paragraph below); the in-bracket order is pinned by disassembly for `rayman`, `bubu2`, retock and deroa's `0x46D`; the remaining play-order residual is tracked on [`open-rev-eng-threads.md`](open-rev-eng-threads.md#region-story-flag-gate-families)
 
 Every field scene's MAN carries one **partition-2 record** per cutscene or story beat, and each record's *header* holds two flag lists that the spawn evaluator `FUN_8003BDE0` checks before running it: a **C1** one-shot list (the record is suppressed once any listed flag is set) and a **C2** requires-all list (the record spawns only when every listed flag is set). Regional progression is expressed almost entirely through these header gates.
 
@@ -3214,6 +3214,15 @@ The poll corpus also pins the `0x7` discriminator's own SET: it latches inside t
 - **Rim Elm opening** — the `549` latch has a live organic SET at the opening commit, with `0x226` in the same beat.
 
 Regions walked in the corpus **without** an organic family SET stay play-order-unconfirmed: `retock`/`retockin` (entered with `0x357` already latched; `0x502` never fired), `doman` (only the unpinned lead `0x379` fired; `0x3FB` did not), `nilboa`/`nilboa2` and `son` (entered mid-arc from loaded states; the only nilboa flag burst is a load frame).
+
+**In-bracket write order (disassembly).** The playthrough cards place each residual family between two milestone saves; where a family writes more than once inside one bracket, the order is fixed by the scripts themselves. Counting only story SET sites (clean, not a prose alias, not a developer flag-menu arm), each case below has exactly the writers named:
+
+- **`rayman` - `0x201 -> 0x1FB -> 0x200 -> 0x1FC`, forced.** `0x201` is set by the talk record `P1[47]`; `0x1FB` by `P2[12]` (C2 `0x201`), `0x200` by `P2[18]` (C2 `0x1FB`), `0x1FC` by `P2[19]` (C2 `0x200`). No link can be written before the one its only writer requires.
+- **`bubu2` - `0x609` then `0x3D3`, one beat.** Once `0x608` is set (the bracket before), the live writer is `P2[0]` (C1 `0x3D3`, C2 `0x608`), which SETs `0x609` and `0x3D3` on adjacent instructions (body `+0x1E` / `+0x20`). `P2[2]` carries `0x608` in its C1 and `P2[3]` is retired by `P2[0]`'s `0x609`.
+- **retock - `0x502` before `0x33B`.** `0x502`'s writer is `retock P2[33]` (C1 `0x502`, C2 `0x357`), spawned only by Eliza's talk dispatch `P1[31]`, which tests `0x33B` first and diverts to her post-`0x33B` lines when it is set, then spawns `P2[33]` once `0x63C` (set by `P2[16]`, the first talk) is up. `0x33B`'s writer is `jagaroom P2[8]` (C2 `0x351`, which the `jagaroom P1[8]` actor sets when it spawns), and nothing there waits on `0x502`. So a play that latches `0x33B` first can never write `0x502`; the Dohati save holds both, so its play wrote `0x502` first. The full chain is `0x357 -> 0x63C -> 0x502 -> 0x33B -> 0x34F` (`jagaroom P2[9]`, C2 `0x33B`).
+- **deroa - `0x3E1` before `0x46D`.** `P2[4]` (C1 `0x46D`, C2 `0x3E1`); `P2[5]` / `P2[6]` carry only their own latch.
+
+`retock P1[1]` / `retockin P1[1]` also write `0x33B`, `0x502` and `0x357`, but as developer flag-menu arms (flag-op runs ending in a `JmpRel` back to the picker), not story writers. Pinned by `man_variant_carrier_census_disc.rs::region_gate_in_bracket_write_order`. The two orders no gate decides stay on the open page.
 
 ### Extraction-0874 §2 (`player.lzs`) F-variant pixels - a one-shot opening face-frame stamp, not a menu writer
 

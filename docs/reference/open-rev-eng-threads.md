@@ -104,7 +104,7 @@ cheapest place to look for a claim that is still wrong.
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; every residual family bracketed between two retail milestone saves; open is the write order inside a bracket | [details ↓](#region-story-flag-gate-families) |
+| Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; every residual family bracketed between two retail milestone saves, and the order inside a bracket pinned wherever a gate fixes it; open is doman's `0x3FB` against bubu2's pair and deroa's walk-on latches | [details ↓](#region-story-flag-gate-families) |
 
 **Who sets a field NPC's moving-class bit** closed by disassembly and capture:
 the placement seater `FUN_8003A1E4` ORs `0x20000` into every partition-1
@@ -317,7 +317,7 @@ and the force-walk reading it falsified in
 
 ### Region story-flag gate families
 
-*Status:* structure resolved and settled; every residual family bracketed between two retail milestone saves; residual = the write order inside a bracket for the multi-write families
+*Status:* structure resolved and settled; every residual family bracketed between two retail milestone saves; the in-bracket order is pinned by disassembly for rayman, bubu2, retock and deroa's `0x46D`; residual = the two orders no gate decides
 
 The per-region C1/C2 gate families - the partition-2 record-header flag lists
 the spawn evaluator `FUN_8003BDE0` checks - are decoded across the chapter-2/3
@@ -372,10 +372,27 @@ Castle; `bubu2`'s `0x608` between Dohati and Sol Tower and its `0x3D3` /
 `0x378`, `0x3A6` and `0x60D` between Nivora and Zora; `0x38F` and `0x3A7`
 between Zora and Conkram; deroa's `0x3E1` / `0x46D..0x46F` between Rogue's
 Tower and Jette's Fortress. Pinned by `region_gate_card_brackets` (save
-library gated). So the order *between* families is settled by retail saves;
-what is still owed is the order *inside* a bracket, and only where a family
-has more than one write in it (`rayman`'s chain, retock's pair, doman's
-triple, deroa's group).
+library gated). So the order *between* families is settled by retail saves.
+
+**Inside a bracket, the gates decide most of the order.** Where a family has
+more than one write in a bracket, the story SET sites (clean, not a prose
+alias, not a developer flag menu) and the record gates fix it
+([settled](re-settled-threads.md#region-story-flag-gate-families)):
+`rayman`'s chain runs `0x201 -> 0x1FB -> 0x200 -> 0x1FC` because each link has
+one writer and each writer's C2 is the link before; `bubu2`'s `0x609` and
+`0x3D3` are one beat, adjacent SETs in `P2[0]`; retock's `0x502` precedes
+`0x33B`, because Eliza's talk dispatch spawns the `0x502` writer only while
+`0x33B` is clear; and deroa's `0x46D` waits on `0x3E1`. Two orders are not
+script facts, and they are what is still owed:
+
+- **doman's `0x3FB` against bubu2's pair.** `doman P2[4]` carries only its own
+  C1 latch, and no clean site anywhere tests `0x3FB`, so which fires first is
+  the route the player takes between the two scenes;
+- **deroa's `0x46E` / `0x46F` against `0x46D`.** `P2[5]` and `P2[6]` carry only
+  their own C1 latch and no op `0x44` in deroa spawns them, so a walk-on tile
+  does, and their order is where the player walks.
+
+Both need a play-forward capture of the bracket, not more disassembly.
 
 The generic C1/C2 seeder already drives every family. One more session from
 an early-enough save (before the retock/doman/nilboa beats) closes the
