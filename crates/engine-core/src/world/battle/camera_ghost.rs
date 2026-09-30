@@ -24,9 +24,11 @@
 //!   is up. At the end of a won battle the request is the win-pose archive
 //!   staged by the victory hook, which holds the results sequencer at its head
 //!   (`0x8004E5C0`) until it lands; it reads `0` on the results frame
-//!   (`noa_levelup_banner`). The engine streams nothing, so it is taken as
-//!   raised through the sequence's load hold and idle from the results frame
-//!   on - the split inside that hold is not measured.
+//!   (`noa_levelup_banner`). The engine streams nothing, so it takes the
+//!   measured span: raised for the first
+//!   [`crate::world::VICTORY_STREAM_FRAMES`] vsyncs of the load hold, idle
+//!   for the rest of it (the phase walk's own CD waits) and from the results
+//!   frame on ([`crate::world::VictorySequence::side_band_request_up`]).
 //!
 //! The driver's `gp[+0x330]` gate (`lb` at `0x800470EC`) is the battle-load
 //! stage byte `0x8007B648`: non-negative while `FUN_80052770` loads, negative
@@ -108,14 +110,11 @@ impl World {
             } else {
                 0xFF
             },
-            ctx_26b: match self.battle.victory {
-                Some(crate::world::VictorySequence {
-                    cause: BattleEndCause::MonsterWipe,
-                    phase: crate::world::VictoryPhase::Loading { .. },
-                    ..
-                }) => 1,
-                _ => 0,
-            },
+            ctx_26b: u8::from(
+                self.battle
+                    .victory
+                    .is_some_and(|v| v.side_band_request_up()),
+            ),
         };
         let lut = crate::action_effect_script::retail_rotation_lut();
         camera_ghost_pass(
