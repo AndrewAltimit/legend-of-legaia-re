@@ -776,6 +776,84 @@ pub fn mesh_pool(entry_bytes: &[u8]) -> Vec<PoolMesh> {
     out
 }
 
+/// Whether the table in `entry_bytes` carries a `Flag(0x14)` descriptor -
+/// retail's request to stream the scene's `DATA\FIELD\<scene>.pac` (the
+/// block's `+4` entry) after the walk.
+///
+/// The dispatcher's `0x14` arm returns `type << 8`, `FUN_80020224` ORs it
+/// into its status word, and the field init hands `status >> 8` to
+/// `FUN_8002541C` as the load mode (`801d6bf8`). See
+/// [`docs/formats/field-pack.md`](../../../docs/formats/field-pack.md#the-bundles-flag-descriptor-is-the-mode-argument).
+///
+/// REF: FUN_8001F05C, FUN_8002541C
+pub fn streams_scene_pac(entry_bytes: &[u8]) -> bool {
+    let Some(resolved) = resolve(entry_bytes) else {
+        return false;
+    };
+    let Some(table) = entry_bytes.get(resolved.table_base..) else {
+        return false;
+    };
+    let mut hit = false;
+    let _ = crate::walk_descriptor_pairs(table, |d| {
+        hit |= d.type_byte == 0x14;
+        0
+    });
+    hit
+}
+
+/// The meshes a streamed `<scene>.pac` registers: `FUN_8002541C`'s mode-`0x14`
+/// arm walks the buffer as DATA_FIELD chunks - `size = *base & 0xFFFFFF`,
+/// `FUN_8001F05C(base + 4, *base, 0, 1)`, `base += (size & !3) + 4`, stop on a
+/// zero size - so a type-`0x02` chunk registers its (uncompressed)
+/// [`crate::pack`] members and a type-`0x09` chunk one bare mesh, appended to
+/// the pool after the table walk's own registrations.
+///
+/// A scene whose table carries no mesh slot of its own (`chitei2`) gets its
+/// whole environment pack this way. [`PoolMesh::slot`] is the chunk index.
+///
+/// REF: FUN_8002541C, FUN_8001F05C, FUN_80026B4C
+pub fn pac_mesh_pool(pac: &[u8]) -> Vec<PoolMesh> {
+    let mut out = Vec::new();
+    let mut off = 0usize;
+    let mut chunk = 0usize;
+    while let Some(header) = legaia_bytes::u32_le(pac, off) {
+        let size = (header & 0x00FF_FFFF) as usize;
+        if size == 0 {
+            break;
+        }
+        let type_byte = (header >> 24) as u8;
+        let Some(body) = pac.get(off + 4..off + 4 + size) else {
+            break;
+        };
+        match type_byte {
+            0x02 => {
+                if let Ok(members) = crate::pack::parse_pack(body) {
+                    for m in members {
+                        if let Some(b) = body.get(m.byte_offset..m.byte_offset + m.size) {
+                            out.push(PoolMesh {
+                                slot: chunk,
+                                member: m.index,
+                                offset: off + 4 + m.byte_offset,
+                                bytes: b.to_vec(),
+                            });
+                        }
+                    }
+                }
+            }
+            0x09 => out.push(PoolMesh {
+                slot: chunk,
+                member: 0,
+                offset: off + 4,
+                bytes: body.to_vec(),
+            }),
+            _ => {}
+        }
+        off += (size & !3) + 4;
+        chunk += 1;
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -802,6 +880,41 @@ mod tests {
         }
         buf.resize(total_size.max(buf.len()), 0);
         buf
+    }
+
+    /// A DATA_FIELD chunk: `(type << 24) | size`, then the body.
+    fn chunk(type_byte: u8, body: &[u8]) -> Vec<u8> {
+        let mut v = ((u32::from(type_byte) << 24) | body.len() as u32)
+            .to_le_bytes()
+            .to_vec();
+        v.extend_from_slice(body);
+        v
+    }
+
+    #[test]
+    fn a_streamed_pac_registers_every_mesh_chunk_member_in_order() {
+        // Pack of two members: count, two word offsets, then the bodies.
+        let mut pack = Vec::new();
+        pack.extend_from_slice(&2u32.to_le_bytes());
+        pack.extend_from_slice(&3u32.to_le_bytes());
+        pack.extend_from_slice(&5u32.to_le_bytes());
+        pack.extend_from_slice(&[0xA1; 8]);
+        pack.extend_from_slice(&[0xB2; 8]);
+        let mut pac = chunk(0x01, &[0; 12]); // a TIM chunk registers nothing
+        pac.extend(chunk(0x02, &pack));
+        pac.extend(chunk(0x09, &[0xC3; 8]));
+        pac.extend_from_slice(&0u32.to_le_bytes()); // zero-size terminator
+        pac.extend(chunk(0x09, &[0xD4; 8])); // past the terminator: unread
+        let pool = pac_mesh_pool(&pac);
+        let firsts: Vec<u8> = pool.iter().map(|m| m.bytes[0]).collect();
+        assert_eq!(firsts, [0xA1, 0xB2, 0xC3]);
+        assert_eq!(pool[2].slot, 2);
+    }
+
+    #[test]
+    fn only_a_type_0x14_descriptor_streams_the_pac() {
+        assert!(streams_scene_pac(&synth([1, 3, 4, 5, 6, 7, 0x14], 0x10000)));
+        assert!(!streams_scene_pac(&synth([1, 2, 3, 4, 5, 6, 7], 0x10000)));
     }
 
     #[test]

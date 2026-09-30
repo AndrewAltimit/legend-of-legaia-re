@@ -396,6 +396,10 @@ A scene's own pack starts past the resident head - the five party / savepoint me
 
 **A byte sweep for TMD magic is not a substitute.** A scene block's bytes carry meshes the walk never registers - `town01`'s `field_pack` sibling, the boot `init_data` stream - so a sweep over-collects, and by an amount that depends on how far each entry is read. That made the sweep agree with the live 119-slot pool while the PROT entry size was over-read ([`prot.md`](prot.md)) and disagree once it was corrected: two errors cancelling, not a measurement. The engine walks the descriptors (`legaia-engine-core::scene_resources`, disc-gated `scene_mesh_pool_walk_disc`) and keeps the sweep only for blocks with no table at all - the v12-family dungeons, whose environment geometry is a standalone `lzs_container`.
 
+**A `Flag(0x14)` table's meshes include its streamed `.pac`.** The field init hands the walk's status word to `FUN_8002541C` ([below](#a-flag-descriptor-streams-an-extra-file)), whose mode-`0x14` arm walks the block's `+4` entry as DATA_FIELD chunks through the same dispatcher, so a type-`0x02` chunk registers its (uncompressed) pack members behind the table's own.
+Ten scene tables carry no mesh slot at all and get their whole environment pack this way (`balden`, `ropeway`, `retockin`, `tunnelc`, `concnow`, `bubu1`, `nilboa`, `chitei2`, `edretoin`, `edbubu`); no table carries both.
+A magic sweep of the `.pac` is not equivalent: on `chitei2` it recovers 101 of the 102 members, and every placement past the missed one draws its neighbour's mesh - a different room. Parser: `scene_asset_table::streams_scene_pac` + `pac_mesh_pool`.
+
 ### A `type 0x0A` descriptor is a reserved slot, and one of them still has content
 
 Type `0x0A` is the dispatcher's pure-flag arm ([`asset-type.md`](asset-type.md)):
