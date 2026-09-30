@@ -606,6 +606,22 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["arm_for_battle"],
     },
     {
+        "what": "seru-trade screen text, native vs play page - the offer "
+        "list's title and owner rows and the confirm question were formatted "
+        "once per host (the page even kept its own copy of the title and "
+        "empty-row strings). Both trade draws must read "
+        "`seru_trade::trade_screen_text`",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/bin/legaia-engine/window/menu_draws.rs",
+                "draw_shop_trade",
+            ),
+            "web": (WEB_PLAY_SHOP, "shop_trade_draws"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["trade_screen_text"],
+    },
+    {
         "what": "shop item label, native vs play page - a nameless id (a "
         "load without the executable) printed `item 42` in the native shop "
         "and `Item 2A` on the page, each host spelling its own fallback. Both "

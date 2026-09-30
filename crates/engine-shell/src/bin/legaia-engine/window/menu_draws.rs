@@ -882,96 +882,35 @@ impl PlayWindowApp {
         state: Option<MenuState>,
         cursor: usize,
     ) {
-        let name_of = |id: u8| -> String {
-            self.seru_names
-                .as_ref()
-                .and_then(|t| t.name(id))
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| format!("Seru {id:02X}"))
-        };
-        let owner_of = |slot: u8| -> String {
-            self.session
-                .host
-                .world
-                .party
-                .roster
-                .members
-                .get(slot as usize)
-                .map(|m| m.name())
-                .filter(|n| !n.is_empty())
-                .unwrap_or_else(|| format!("P{slot}"))
-        };
-        match state {
-            Some(MenuState::ShopTrade) => {
-                // Mirror the retail trade screen: the title names BOTH sides of
-                // the bucket's standing offer, each line is one qualifying
-                // owner, and an empty list spells out the missing trade.
-                let mut title = "SHOP - TRADE SERU".to_string();
-                let mut labels: Vec<String> = Vec::new();
-                match self.menu_runtime.trade_session.as_ref() {
-                    Some(t) => {
-                        title = format!(
-                            "TRADE - WANTS {} / OFFERS {} LV{}",
-                            name_of(t.offer.want_id),
-                            name_of(t.offer.give_id),
-                            t.offer.give_level,
-                        );
-                        if t.offers.is_empty() {
-                            labels.push(format!(
-                                "No '{}' available to trade for '{}'",
-                                name_of(t.offer.want_id),
-                                name_of(t.offer.give_id),
-                            ));
-                        } else {
-                            for o in &t.offers {
-                                labels.push(format!(
-                                    "{} Lv{} ({}) -> {} Lv{}",
-                                    name_of(o.given_id),
-                                    o.given_level,
-                                    owner_of(o.owner_slot),
-                                    name_of(o.received_id),
-                                    o.received_level,
-                                ));
-                            }
-                        }
-                    }
-                    None => labels.push("(no trades offered)".to_string()),
-                }
-                let rows: Vec<ShopRow<'_>> = labels
-                    .iter()
-                    .map(|l| ShopRow::new(l.as_str(), None))
-                    .collect();
-                out.extend(shop_draws_for(
-                    &self.font,
-                    &title,
-                    &rows,
-                    cursor,
-                    None,
-                    super::hud::SHOP_OVERLAY_PEN,
-                ));
-            }
-            Some(MenuState::ShopTradeConfirm) => {
-                let title = match self.menu_runtime.pending_trade_offer() {
-                    Some(o) => format!(
-                        "Trade {} for {} Lv{}?",
-                        name_of(o.given_id),
-                        name_of(o.received_id),
-                        o.received_level,
-                    ),
-                    None => "Trade?".to_string(),
-                };
-                let rows = vec![ShopRow::new("Yes", None), ShopRow::new("No", None)];
-                out.extend(shop_draws_for(
-                    &self.font,
-                    &title,
-                    &rows,
-                    cursor,
-                    None,
-                    super::hud::SHOP_OVERLAY_PEN,
-                ));
-            }
-            _ => {}
+        if !matches!(
+            state,
+            Some(MenuState::ShopTrade) | Some(MenuState::ShopTradeConfirm)
+        ) {
+            return;
         }
+        // The screen's text is the engine's (`seru_trade::trade_screen_text`,
+        // the browser play page's call too).
+        let pending = self.menu_runtime.pending_trade_offer();
+        let text = legaia_engine_core::seru_trade::trade_screen_text(
+            self.menu_runtime.trade_session.as_ref(),
+            pending.as_ref(),
+            state == Some(MenuState::ShopTradeConfirm),
+            &self.session.host.world.party.roster.members,
+            self.seru_names.as_ref(),
+        );
+        let rows: Vec<ShopRow<'_>> = text
+            .rows
+            .iter()
+            .map(|l| ShopRow::new(l.as_str(), None))
+            .collect();
+        out.extend(shop_draws_for(
+            &self.font,
+            &text.title,
+            &rows,
+            cursor,
+            None,
+            super::hud::SHOP_OVERLAY_PEN,
+        ));
     }
 }
 

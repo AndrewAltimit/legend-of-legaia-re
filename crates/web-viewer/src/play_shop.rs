@@ -131,11 +131,6 @@ const SELL_DETAIL_PRICE_LABEL: &str = "Price";
 /// What window 39 prints in place of the price row when the item's `+2` buy
 /// price is zero - retail's quest-item / unsellable arm.
 const SELL_DETAIL_CANNOT_SELL: &str = "Cannot sell";
-/// Title of the seru-trade offer list. Engine-authored (the feature is the
-/// patcher's, so retail has no string for it); matches the native window's.
-const TRADE_LIST_TITLE: &str = "SHOP - TRADE SERU";
-/// The offer list's single row when this vendor has nothing to trade.
-const TRADE_EMPTY_ROW: &str = "(no trades offered)";
 /// Stage-pixel pen for the level-up banner (native `(8, 60)`).
 const LEVEL_UP_PEN: (i32, i32) = (8, 60);
 /// Stage-pixel pen for the Seru-capture banner (native `(8, 40)`).
@@ -396,80 +391,27 @@ impl LegaiaRuntime {
         state: Option<MenuState>,
         cursor: usize,
     ) -> Vec<TextDraw> {
-        let name_of = |id: u8| -> String {
-            self.seru_names
-                .as_ref()
-                .and_then(|t| t.name(id))
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| format!("Seru {id:02X}"))
-        };
-        let owner_of = |slot: u8| -> String {
-            self.scene_host
-                .as_ref()
-                .and_then(|h| h.world.party.roster.members.get(slot as usize))
-                .map(|m| m.name())
-                .filter(|n| !n.is_empty())
-                .unwrap_or_else(|| format!("P{slot}"))
-        };
-        match state {
-            Some(MenuState::ShopTradeConfirm) => {
-                let title = match self.menu.pending_trade_offer() {
-                    Some(o) => format!(
-                        "Trade {} for {} Lv{}?",
-                        name_of(o.given_id),
-                        name_of(o.received_id),
-                        o.received_level,
-                    ),
-                    None => "Trade?".to_string(),
-                };
-                let rows = [ShopRow::new("Yes", None), ShopRow::new("No", None)];
-                ui::shop_draws_for(font, &title, &rows, cursor, None, SHOP_PEN)
-            }
-            _ => {
-                // Mirror the retail trade screen (and the native host): the
-                // title names BOTH sides of the bucket's standing offer, each
-                // line is one qualifying owner, and an empty list spells out
-                // the missing trade.
-                let mut title = TRADE_LIST_TITLE.to_string();
-                let labels: Vec<String> = match self.menu.trade_session.as_ref() {
-                    Some(t) => {
-                        title = format!(
-                            "TRADE - WANTS {} / OFFERS {} LV{}",
-                            name_of(t.offer.want_id),
-                            name_of(t.offer.give_id),
-                            t.offer.give_level,
-                        );
-                        if t.offers.is_empty() {
-                            vec![format!(
-                                "No '{}' available to trade for '{}'",
-                                name_of(t.offer.want_id),
-                                name_of(t.offer.give_id),
-                            )]
-                        } else {
-                            t.offers
-                                .iter()
-                                .map(|o| {
-                                    format!(
-                                        "{} Lv{} ({}) -> {} Lv{}",
-                                        name_of(o.given_id),
-                                        o.given_level,
-                                        owner_of(o.owner_slot),
-                                        name_of(o.received_id),
-                                        o.received_level,
-                                    )
-                                })
-                                .collect()
-                        }
-                    }
-                    None => vec![TRADE_EMPTY_ROW.to_string()],
-                };
-                let rows: Vec<ShopRow<'_>> = labels
-                    .iter()
-                    .map(|l| ShopRow::new(l.as_str(), None))
-                    .collect();
-                ui::shop_draws_for(font, &title, &rows, cursor, None, SHOP_PEN)
-            }
-        }
+        // The screen's text is the engine's (`seru_trade::trade_screen_text`,
+        // the native window's call too).
+        let pending = self.menu.pending_trade_offer();
+        let party = self
+            .scene_host
+            .as_ref()
+            .map(|h| h.world.party.roster.members.as_slice())
+            .unwrap_or(&[]);
+        let text = legaia_engine_core::seru_trade::trade_screen_text(
+            self.menu.trade_session.as_ref(),
+            pending.as_ref(),
+            state == Some(MenuState::ShopTradeConfirm),
+            party,
+            self.seru_names.as_ref(),
+        );
+        let rows: Vec<ShopRow<'_>> = text
+            .rows
+            .iter()
+            .map(|l| ShopRow::new(l.as_str(), None))
+            .collect();
+        ui::shop_draws_for(font, &text.title, &rows, cursor, None, SHOP_PEN)
     }
 
     /// The live shop's vendor name, recovered the way the native host does.
