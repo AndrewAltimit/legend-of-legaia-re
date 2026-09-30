@@ -441,6 +441,24 @@ Shapes the corpus separates, each with what it indicates:
 | retail word held by a flag the entry script already consumed (`garmel`'s `0x196`, `rikuroa`'s `0x289`) | script progress: the track was started by a beat that has since cleared its trigger flag, so a card load would not restart it |
 | an engine walk-on record on a seated arrival (`kor5`'s `P2[4]`) | the seat lands on a trigger tile the retail player reached with the last-tile pair already set; a real arrival fires it too |
 | camera depth and position off on an ending vignette (`ending_vignette_rimelm_walkaway`) | the state is mid-way through a scripted shot the seed restarts ([below](#ending-vignettes-are-mid-script)) |
+| camera exact, frame aimed at another part of the room; retail focus `0x80089118/20` is not `-player` | a probe-poked capture ([below](#a-poked-player-keeps-the-arrival-focus)) |
+
+### A poked player keeps the arrival focus
+
+`retock_innkeeper_talk_open` and `retock_inn_stay_prompt` were captured by
+warping into the inn at `(15168, 1280)` and then **poking** the player to
+`(14816, 1728)` (`LEGAIA_POKE_POS`). The states hold the player's position
+and its previous-position pair `+0x1C` / `+0x20` equal, so the ease's
+stationary test (`0x801DB578..0x801DB5A4` in `FUN_801DB510`) sees no move and
+the focus-writing legs never run: the focus stays at the arrival tile
+(`-15168`, `-1280` stored; the X is a tile centre, the Z the edge clamp) while
+the player stands elsewhere. Every retail writer of the focus pair takes the
+player as its anchor, so no script or region record accounts for the offset. The engine seats the player and frames on the seat, so
+the `camera` channel reads 1 (it compares angles, `H` and the eye trio, not the
+focus) while the frame looks at a different part of the room. Seated at the
+arrival point instead, the engine frames the counter, the walkway and the void
+below it the way retail's frame does. The `image` miss on these two states is
+the capture method, not the camera.
 
 ### Arrival states are captured before the town runs
 
