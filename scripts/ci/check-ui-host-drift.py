@@ -805,13 +805,17 @@ SIM_PAIRS: list[dict[str, object]] = [
         "raises the overwrite / delete prompt FROM the preview (see "
         "docs/subsystems/save-screen.md), so a confirm is a `SlotPreview` "
         "wearing a messagebox. The native window drew neither the grid nor "
-        "the panel under it. Both sites must read `save_select::phase_layout`",
+        "the panel under it. The whole overlay sequence is one model now "
+        "(`SaveScreenFlow::overlay_model`, which reads `phase_layout`) and one "
+        "composition (`save_select_overlay_draws`), whose text half draws "
+        "without the chrome atlas - the page had returned before every phase "
+        "overlay without it. Both sites must call both",
         "sites": {
-            "native": (NATIVE_TITLE_SAVE, "save_select_chrome_sprite_draws"),
+            "native": (NATIVE_TITLE_SAVE, "save_select_overlay"),
             "web": (WEB_PLAY_MENU, "build_save_select"),
         },
         "mode": "symbols_all",
-        "symbols": ["phase_layout"],
+        "symbols": ["overlay_model", "save_select_overlay_draws"],
     },
     {
         "what": "shop / inn / prize / coin overlay stage transform, native "

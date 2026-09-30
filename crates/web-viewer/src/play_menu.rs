@@ -83,9 +83,7 @@ use legaia_engine_core::inventory_use::{InventoryUseSession, InventoryUseState};
 use legaia_engine_core::options::OptionsSession;
 use legaia_engine_core::save_menu_atlas::{SaveMenuAtlas, build_atlas};
 use legaia_engine_core::save_screen::{SaveCommitKind, SaveRefusal, SaveScreenFlow};
-use legaia_engine_core::save_select::{
-    SaveRack, SaveSelectMode, SaveSelectSession, SelectPhase, SlotInfoMode,
-};
+use legaia_engine_core::save_select::{SaveRack, SaveSelectSession};
 use legaia_engine_core::spell_menu::{SpellMenuPhase, SpellMenuSession};
 use legaia_engine_core::status_screen::StatusScreenSession;
 use legaia_engine_core::world::SceneMode;
@@ -306,22 +304,6 @@ fn target_panel_cursor(
             pressed: false,
         }
     }
-}
-
-/// Slide-in y-offset (delta from parked y) of the save screen's bottom info
-/// panel. Mirrors the native shell's `info_panel_slide_offset`: retail's
-/// `FUN_801E08D8` ramps the panel from off-screen-below (394) up to parked
-/// (138) as its own timer runs, so 0 = fully landed.
-fn info_panel_slide_offset(session: &SaveSelectSession) -> i32 {
-    use legaia_engine_core::save_select::{
-        INFO_PANEL_OFFSCREEN_Y, INFO_PANEL_PARKED_Y, interpolate_anim,
-    };
-    let (_, y) = interpolate_anim(
-        (0, INFO_PANEL_OFFSCREEN_Y),
-        (0, INFO_PANEL_PARKED_Y),
-        session.info_panel_slide_anim_t(),
-    );
-    y - INFO_PANEL_PARKED_Y
 }
 
 /// Borrow the shared `engine-core` Equip screen model into the shared
@@ -1519,10 +1501,9 @@ impl LegaiaRuntime {
     }
 
     /// Load / Save sub-screen: the real retail save-select chrome, driven off
-    /// the memory-card rack. Mirrors the native window's
-    /// `save_select_chrome_sprite_draws` + its `boot_ui_draws` text half,
-    /// with the pill row bound to the rack's card ports and the preview grid
-    /// to the selected card's blocks.
+    /// the memory-card rack - the native window's `save_select_overlay`
+    /// twin, with the pill row bound to the rack's card ports and the preview
+    /// grid to the selected card's blocks.
     #[allow(clippy::too_many_arguments)]
     fn build_save_select(
         &self,
@@ -1534,20 +1515,15 @@ impl LegaiaRuntime {
         origin: (i32, i32),
         scale: u32,
     ) {
-        let font = &assets.font;
-        let title = match s.mode() {
-            SaveSelectMode::Load => "Load",
-            SaveSelectMode::Save => "Save",
+        // The screen is the shared composition over the engine's overlay
+        // sequence (`SaveScreenFlow::overlay_model` ->
+        // `save_select_overlay_draws`), the native window's calls too. Its
+        // text half draws with or without the chrome atlas: this page used
+        // to return before every phase overlay when the atlas was absent,
+        // leaving the title and nothing else.
+        let Some(m) = menu.save_flow.overlay_model(s) else {
+            return;
         };
-        let phase = s.phase();
-        let card = s.current_slot();
-
-        // --- text: the panel title ---
-        // The confirm prompt is deliberately NOT handed to
-        // `save_select_draws_for`: its inline Yes/No is the flat model's
-        // layout, which lands on top of this screen's info panel. Retail
-        // raises the prompt as its own centred messagebox (FUN_801E1C1C
-        // mode 3) - emitted at the end of this function.
         let rows: Vec<ui::SaveSelectRow<'_>> = s
             .slots()
             .iter()
@@ -1560,164 +1536,53 @@ impl LegaiaRuntime {
                 location: &slot.location,
             })
             .collect();
-        let mut d = ui::save_select_draws_for(
-            font,
-            title,
-            &rows,
-            card as usize,
-            None,
+        let cells: Vec<SlotGridCell> = m
+            .preview
+            .iter()
+            .flat_map(|p| p.cells.iter())
+            .map(|c| SlotGridCell {
+                present: c.present,
+                portrait_char_id: c.portrait_char_id,
+            })
+            .collect();
+        let preview = m.preview.as_ref().map(|p| ui::SaveSelectPreviewView {
+            cells: &cells,
+            cell: p.cell,
+            info: p.info.map(|b| SlotInfoView {
+                slot_no: b.slot.saturating_add(1),
+                location: &b.location,
+                play_time: &p.play_time,
+                leader_name: &b.leader_name,
+                leader_level: b.party_lv,
+                leader_hp: b.leader_hp,
+                leader_mp: b.leader_mp,
+                leader_char_id: b.leader_char_id,
+            }),
+            caption: p.caption,
+            panel_y_offset: p.panel_y_offset,
+        });
+        let view = ui::SaveSelectOverlayView {
+            title: m.title,
+            rows: &rows,
+            cursor: m.cursor,
+            single_pill: m.single_pill,
+            pills: &m.pills,
+            pill_cursor: m.pill_cursor,
+            slide_t: m.slide_t,
+            info_t: m.info_t,
+            now_checking: m.now_checking,
+            preview,
+            confirm: m.confirm,
+        };
+        let out = ui::save_select_overlay_draws(
+            &assets.font,
+            assets.chrome.as_ref().map(|(_, rects)| rects),
+            &view,
             origin,
             scale,
-            // The chrome atlas supplies the pointing-finger cursor sprite;
-            // fall back to the ASCII cursor glyph only without it.
-            assets.chrome.is_none(),
         );
-
-        // --- sprites: pills + phase overlays (need the chrome atlas) ---
-        let Some((_, rects)) = assets.chrome.as_ref() else {
-            texts.extend(d);
-            return;
-        };
-
-        // Retail draws every pill while browsing, but shows only the picked
-        // one - relocated up under the Load panel - once a card is committed,
-        // sliding it there over 16 frames (FUN_801E1C1C mode 2).
-        // Which pills, which cursor, which overlays - the shared decision
-        // (`save_select::phase_layout`) the native window also reads, so a
-        // phase cannot mean two screens.
-        let layout = legaia_engine_core::save_select::phase_layout(phase);
-        let (pills, pill_anchor): (Vec<u8>, (i32, i32)) = if layout.single_pill {
-            // Slide start = the pill's Browsing position (retail mode-2
-            // start (160, 96) minus the inlined -0x18 x-shift = the
-            // Browsing pill quad).
-            let pos = s.interpolate(
-                ui::SAVE_SELECT_SLOT1_POS,
-                ui::SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE,
-            );
-            (vec![s.current_slot()], pos)
-        } else {
-            (
-                (0..s.slots().len().min(2) as u8).collect(),
-                ui::SAVE_SELECT_SLOT1_POS,
-            )
-        };
-        sprites.extend(ui::save_select_chrome_draws_for(
-            rects,
-            &pills,
-            pill_anchor,
-            origin,
-            scale,
-        ));
-        // The pill cursor is suppressed once a card is committed: the dialog
-        // covers the pill row and the grid emits its own cursor.
-        if layout.pill_cursor && !s.slots().is_empty() {
-            sprites.push(ui::save_select_cursor_draw_for(
-                rects,
-                (card as usize).min(1),
-                origin,
-                scale,
-            ));
-        }
-
-        match phase {
-            _ if layout.now_checking => {
-                // Panel + text slide in together from the right, matching
-                // retail mode-0's (416, 112) -> (160, 112).
-                let pos_x = legaia_engine_core::save_select::interpolate_anim(
-                    (ui::NOW_CHECKING_SLIDE_START_X, 0),
-                    (ui::NOW_CHECKING_SLIDE_TARGET_X, 0),
-                    s.slide_anim_t(),
-                )
-                .0;
-                let slide = (pos_x - ui::NOW_CHECKING_SLIDE_TARGET_X, 0);
-                sprites.extend(ui::now_checking_panel_draws_for(
-                    rects, origin, scale, slide,
-                ));
-                d.extend(ui::now_checking_text_draws_for(font, origin, scale, slide));
-            }
-            _ if layout.preview => {
-                // The picked card's fifteen blocks as retail's 5x3 grid, plus
-                // the focused block's info panel sliding up underneath. The
-                // blocks come off the card read's cache - see
-                // `refresh_card_read_cache`; an unread card draws an empty
-                // grid rather than re-parsing here every frame.
-                let (blocks, cell) = menu.save_flow.preview(s);
-                let cells: Vec<SlotGridCell> = blocks
-                    .iter()
-                    .map(|b| SlotGridCell {
-                        present: b.present,
-                        portrait_char_id: b.present.then_some(b.leader_char_id),
-                    })
-                    .collect();
-                sprites.extend(ui::slot_preview_grid_draws_for(
-                    rects, &cells, cell, origin, scale,
-                ));
-                let focused = blocks.get(cell as usize).filter(|b| b.present);
-                let play_time = focused.map(|b| b.play_time_string()).unwrap_or_default();
-                let view = focused.map(|b| SlotInfoView {
-                    slot_no: b.slot.saturating_add(1),
-                    location: &b.location,
-                    play_time: &play_time,
-                    leader_name: &b.leader_name,
-                    leader_level: b.party_lv,
-                    leader_hp: b.leader_hp,
-                    leader_mp: b.leader_mp,
-                    leader_char_id: b.leader_char_id,
-                });
-                let y_off = info_panel_slide_offset(s);
-                sprites.extend(ui::slot_info_panel_draws_for(
-                    rects,
-                    view.as_ref(),
-                    y_off,
-                    origin,
-                    scale,
-                ));
-                d.extend(ui::slot_info_panel_text_draws_for(
-                    font,
-                    view.as_ref(),
-                    y_off,
-                    origin,
-                    scale,
-                    // This branch only runs with the chrome atlas
-                    // resident, which draws the label sprites.
-                    true,
-                ));
-                // No preview means the block holds nothing loadable; retail
-                // fills the panel with a caption saying which kind of
-                // nothing rather than leaving it blank.
-                if view.is_none()
-                    && let Some(b) = blocks.get(cell as usize)
-                    && let Some(caption) = SlotInfoMode::for_grid_cell(cell, b).caption(s.mode())
-                {
-                    d.extend(ui::slot_info_caption_draws_for(
-                        font, caption, y_off, origin, scale,
-                    ));
-                }
-            }
-            _ => {}
-        }
-
-        // The confirm prompt rides on top of everything, sliding up from
-        // below the stage (retail mode 3, (160, 344) -> (160, 88)).
-        let prompt: (&str, u8) = match phase {
-            SelectPhase::ConfirmOverwrite { cursor, .. } => ("Do you wish to save?", cursor),
-            SelectPhase::ConfirmDelete { cursor, .. } => ("Delete this save?", cursor),
-            _ => ("", 0),
-        };
-        let confirm: Option<(&str, u8)> = layout.confirm.then_some(prompt);
-        if let Some((prompt, cursor)) = confirm {
-            let y = legaia_engine_core::save_select::interpolate_anim(
-                (0, ui::CONFIRM_DIALOG_SLIDE_START_Y),
-                (0, ui::CONFIRM_DIALOG_SLIDE_TARGET_Y),
-                s.info_panel_slide_anim_t(),
-            )
-            .1;
-            sprites.extend(ui::confirm_dialog_panel_draws_for(rects, y, origin, scale));
-            d.extend(ui::confirm_dialog_text_draws_for(
-                font, prompt, cursor, y, origin, scale,
-            ));
-        }
-        texts.extend(d);
+        sprites.extend(out.sprites);
+        texts.extend(out.texts);
     }
 
     /// Items sub-screen: the retail four-window layout (command 13 / list

@@ -352,62 +352,18 @@ impl PlayWindowApp {
     /// Not part of [`Self::field_menu_sub_draws`]'s shared composition: this
     /// screen is the **save-select** surface, and the native window reaches
     /// the same one from the boot Continue -> Load path
-    /// (`BootUiState::SaveSelect`). Both go through
-    /// `save_select_phase_text_draws` + `save_select_chrome_sprite_draws` so
-    /// the in-game and boot entries cannot drift from each other; hoisting
-    /// only the pause half would have forked them. Pre-scaled to surface
-    /// coords, so the caller must not scale it again.
+    /// (`BootUiState::SaveSelect`). Both go through `save_select_overlay`
+    /// (the shared overlay model + composition) so the in-game and boot
+    /// entries cannot drift from each other; hoisting only the pause half
+    /// would have forked them. Pre-scaled to surface coords, so the caller
+    /// must not scale it again.
     pub(super) fn field_save_sub_draws(
         &self,
         s: &legaia_engine_core::save_select::SaveSelectSession,
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<TextDraw> {
-        use legaia_engine_core::save_select::SelectPhase;
-        let rows: Vec<legaia_engine_render::SaveSelectRow<'_>> = s
-            .slots()
-            .iter()
-            .map(|snap| legaia_engine_render::SaveSelectRow {
-                label: &snap.label,
-                present: snap.present,
-                party_lv: snap.party_lv,
-                play_time_seconds: snap.play_time_seconds,
-                money: snap.money,
-                location: &snap.location,
-            })
-            .collect();
-        let cursor = match s.phase() {
-            SelectPhase::Browsing { cursor } => cursor as usize,
-            SelectPhase::NowChecking { slot, .. }
-            | SelectPhase::SlotPreview { slot }
-            | SelectPhase::ConfirmOverwrite { slot, .. }
-            | SelectPhase::ConfirmDelete { slot, .. } => slot as usize,
-            SelectPhase::Done(_) => return Vec::new(),
-        };
-        let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
-        // The title word comes from the session's MODE, not from which menu
-        // row opened it: the field menu's Load row builds the same
-        // sub-session shape as its Save row, and retail's header tab toggles
-        // its string on the same direction flag (`_DAT_801f0200`).
-        let mut out = legaia_engine_render::save_select_draws_for(
-            &self.font,
-            save_select_title_word(s),
-            &rows,
-            cursor,
-            None,
-            stage_origin,
-            stage_scale,
-            self.save_menu.is_none(),
-        );
-        out.extend(save_select_phase_text_draws(
-            &self.font,
-            s,
-            &self.save_flow,
-            stage_origin,
-            stage_scale,
-            self.save_menu.is_some(),
-        ));
-        out
+        self.save_select_overlay(s, surface_w, surface_h).texts
     }
 
     /// Build draws for the retail **Magic** screen: caster window (id 19),

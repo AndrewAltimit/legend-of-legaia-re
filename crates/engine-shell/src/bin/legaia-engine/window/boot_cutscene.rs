@@ -971,60 +971,11 @@ impl PlayWindowApp {
                 )
             }
             BootUiState::SaveSelect(s) => {
-                use legaia_engine_core::save_select::SelectPhase;
-                let rows: Vec<legaia_engine_render::SaveSelectRow<'_>> = s
-                    .slots()
-                    .iter()
-                    .map(|snap| legaia_engine_render::SaveSelectRow {
-                        label: &snap.label,
-                        present: snap.present,
-                        party_lv: snap.party_lv,
-                        play_time_seconds: snap.play_time_seconds,
-                        money: snap.money,
-                        location: &snap.location,
-                    })
-                    .collect();
-                let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
-                let cursor = match s.phase() {
-                    SelectPhase::Browsing { cursor } => cursor as usize,
-                    SelectPhase::NowChecking { slot, .. }
-                    | SelectPhase::SlotPreview { slot }
-                    | SelectPhase::ConfirmOverwrite { slot, .. }
-                    | SelectPhase::ConfirmDelete { slot, .. } => slot as usize,
-                    SelectPhase::Done(_) => return Vec::new(),
-                };
-                // Always emit the base save-select chrome text (the
-                // mode's title word) so it stays visible in every
-                // phase. Skip the ASCII `>` cursor when the
-                // sprite-based pointing-finger cursor is being emitted
-                // alongside (i.e. when the save-menu atlas is loaded).
-                // The confirm prompt is NOT the flat inline Yes/No:
-                // retail raises it as its own centred messagebox,
-                // emitted by `save_select_phase_text_draws` (text) +
-                // `save_select_chrome_sprite_draws` (panels).
-                let emit_text_cursor = self.save_menu.is_none();
-                let mut out = legaia_engine_render::save_select_draws_for(
-                    &self.font,
-                    save_select_title_word(s),
-                    &rows,
-                    cursor,
-                    None,
-                    stage_origin,
-                    stage_scale,
-                    emit_text_cursor,
-                );
-                // Phase-specific overlays (NowChecking dialog text,
-                // slot-info panel text / captions, confirm messagebox)
-                // - shared with the field-menu Load / Save sub-screens.
-                out.extend(save_select_phase_text_draws(
-                    &self.font,
-                    s,
-                    &self.save_flow,
-                    stage_origin,
-                    stage_scale,
-                    self.save_menu.is_some(),
-                ));
-                out
+                // The whole screen's text half - the mode's title word and
+                // pill rows, the phase overlays (NowChecking dialog, slot-info
+                // text / captions, confirm messagebox) - through the one
+                // composition the pause menu's Load / Save rows share.
+                self.save_select_overlay(s, surface_w, surface_h).texts
             }
             BootUiState::FieldMenu { sub } => {
                 use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;

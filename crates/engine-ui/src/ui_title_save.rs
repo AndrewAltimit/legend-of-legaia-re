@@ -22,3 +22,6 @@ pub use slot_grid::*;
 
 mod slot_info;
 pub use slot_info::*;
+
+mod overlay;
+pub use overlay::*;

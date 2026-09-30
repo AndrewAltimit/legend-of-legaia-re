@@ -3537,6 +3537,16 @@ or the deviating host adopting the other's behaviour.
   hand's row offset and the Key Config rows come from
   `OptionsSession::screen_model`; a host only borrows them into the view
   types and places the popup. Two `SIM_PAIRS` rows.
+- **The save-select overlay sequence.** Each host sequenced the screen's
+  overlays itself - the pills and their hand, the "Now checking" beat, the
+  preview grid and info panel or its caption, the confirm messagebox - with
+  the text and sprite halves in separate functions, and the page returned
+  before every phase overlay when the chrome atlas was absent, where the
+  native window still printed them. `SaveScreenFlow::overlay_model` is the
+  sequence and `save_select_overlay_draws` (`engine-ui`) the one composition
+  of both halves; its text half draws with or without the atlas. Both doors
+  to the screen (boot Continue -> Load, the pause menu's Load / Save rows) go
+  through it on both hosts; the `SIM_PAIRS` save-select row holds the calls.
 - **Small copies moved onto one call.** The spoils line's leader name
   (`World::battle_spoils_leader`) and a save's resume point
   (`SceneHost::current_resume`, behind the native session's wrapper and the
@@ -3562,10 +3572,6 @@ that could drift; none is gated.
   ([above](#derived-scene-point-lights-are-native-only)), the native `I`
   toggle's directional light and screen-centred light pool also have no page
   toggle or shader path.
-- **Copies with no kernel under them yet.** One derivation written on both
-  hosts, equal today: the save-select overlay sequence (and the page drops
-  its text entirely without the chrome atlas, where the native window draws
-  it either way).
 - **The fishing wander readout (native only).** A dev-menu debug readout of
   `FUN_801d2050`'s tracked points; the page's dev menu has no twin.
 - **The dance HUD quads (neither host).** The native window calls

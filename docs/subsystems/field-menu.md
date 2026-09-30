@@ -451,10 +451,11 @@ the assembly is in a library. While it lived in a binary's private module no
 
 The Load / Save sub-screen is **not** in this composition: it is the
 save-select surface, and the native window reaches the same one from the boot
-Continue -> Load path. Both go through `save_select_phase_text_draws` +
-`save_select_chrome_sprite_draws` so the in-game and boot entries cannot drift
-from each other; hoisting only the pause half would have forked them. See
-[`save-screen.md`](save-screen.md).
+Continue -> Load path. Both entries, on both hosts, go through one overlay
+model (`SaveScreenFlow::overlay_model`) and one composition of its text and
+sprite halves (`engine-ui`'s `save_select_overlay_draws`), so the in-game and
+boot entries cannot drift from each other; hoisting only the pause half would
+have forked them. See [`save-screen.md`](save-screen.md).
 
 ### The menu does not open at all while a dialogue is up
 

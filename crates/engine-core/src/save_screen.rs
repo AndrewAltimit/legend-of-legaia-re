@@ -592,6 +592,136 @@ pub fn card_port_snapshot(port: u8, mounted: Option<&str>) -> SlotSnapshot {
     }
 }
 
+/// One cell of the preview grid as the overlay draws it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SaveOverlayCell {
+    pub present: bool,
+    /// The leader's portrait, on a present block.
+    pub portrait_char_id: Option<u8>,
+}
+
+/// The preview half of a [`SaveOverlayModel`]: the picked card's grid, the
+/// focused block (when it holds a save) and its caption otherwise.
+#[derive(Debug, Clone)]
+pub struct SaveOverlayPreview<'a> {
+    /// [`SLOT_GRID_CELLS`] cells, an unread block empty.
+    pub cells: Vec<SaveOverlayCell>,
+    pub cell: u8,
+    /// The focused block, when it holds a loadable save.
+    pub info: Option<&'a SlotSnapshot>,
+    /// `info`'s play time, formatted.
+    pub play_time: String,
+    /// What the panel says about a block with nothing loadable.
+    pub caption: Option<&'static str>,
+    /// The info panel's slide delta from its parked y (`0` = landed).
+    pub panel_y_offset: i32,
+}
+
+/// Everything the save-select screen draws this frame - the one sequence both
+/// play hosts compose from (`engine-ui`'s `save_select_overlay_draws`), for
+/// both doors to the screen (boot Continue -> Load, and the pause menu's
+/// Load / Save rows). `None` once the session is done.
+#[derive(Debug, Clone)]
+pub struct SaveOverlayModel<'a> {
+    /// The header tab's word: the session's mode, never the door it came in
+    /// by - retail's tab toggles on the same direction flag.
+    pub title: &'static str,
+    pub cursor: usize,
+    pub single_pill: bool,
+    pub pills: Vec<u8>,
+    pub pill_cursor: Option<usize>,
+    pub slide_t: u16,
+    pub info_t: u16,
+    pub now_checking: bool,
+    pub preview: Option<SaveOverlayPreview<'a>>,
+    pub confirm: Option<(&'static str, u8)>,
+}
+
+impl SaveScreenFlow {
+    /// The save-select screen's overlay sequence for `session` - see
+    /// [`SaveOverlayModel`]. Which pills, which cursor, which overlays come
+    /// from [`crate::save_select::phase_layout`]; the grid previews the
+    /// picked **port**'s blocks ([`Self::preview`]), never the pill row.
+    pub fn overlay_model<'a>(
+        &'a self,
+        session: &'a SaveSelectSession,
+    ) -> Option<SaveOverlayModel<'a>> {
+        let phase = session.phase();
+        let cursor = match phase {
+            SelectPhase::Browsing { cursor } => cursor as usize,
+            SelectPhase::NowChecking { slot, .. }
+            | SelectPhase::SlotPreview { slot }
+            | SelectPhase::ConfirmOverwrite { slot, .. }
+            | SelectPhase::ConfirmDelete { slot, .. } => slot as usize,
+            SelectPhase::Done(_) => return None,
+        };
+        let layout = crate::save_select::phase_layout(phase);
+        let ports = session.slots().len().min(2) as u8;
+        let pills = if layout.single_pill {
+            vec![session.current_slot()]
+        } else {
+            (0..ports).collect()
+        };
+        let pill_cursor =
+            (layout.pill_cursor && ports > 0).then(|| (session.current_slot() as usize).min(1));
+        let preview = layout.preview.then(|| {
+            let (blocks, cell) = self.preview(session);
+            let cells = (0..SLOT_GRID_CELLS as usize)
+                .map(|i| {
+                    blocks
+                        .get(i)
+                        .map(|b| SaveOverlayCell {
+                            present: b.present,
+                            portrait_char_id: b.present.then_some(b.leader_char_id),
+                        })
+                        .unwrap_or_default()
+                })
+                .collect();
+            let focused = blocks.get(cell as usize);
+            let info = focused.filter(|b| b.present);
+            let caption = match (info, focused) {
+                (None, Some(b)) => {
+                    crate::save_select::SlotInfoMode::for_grid_cell(cell, b).caption(session.mode())
+                }
+                _ => None,
+            };
+            let (_, y) = crate::save_select::interpolate_anim(
+                (0, crate::save_select::INFO_PANEL_OFFSCREEN_Y),
+                (0, crate::save_select::INFO_PANEL_PARKED_Y),
+                session.info_panel_slide_anim_t(),
+            );
+            SaveOverlayPreview {
+                cells,
+                cell,
+                info,
+                play_time: info.map(|b| b.play_time_string()).unwrap_or_default(),
+                caption,
+                panel_y_offset: y - crate::save_select::INFO_PANEL_PARKED_Y,
+            }
+        });
+        let confirm = layout.confirm.then_some(match phase {
+            SelectPhase::ConfirmOverwrite { cursor, .. } => ("Do you wish to save?", cursor),
+            SelectPhase::ConfirmDelete { cursor, .. } => ("Delete this save?", cursor),
+            _ => ("", 0),
+        });
+        Some(SaveOverlayModel {
+            title: match session.mode() {
+                SaveSelectMode::Load => "Load",
+                SaveSelectMode::Save => "Save",
+            },
+            cursor,
+            single_pill: layout.single_pill,
+            pills,
+            pill_cursor,
+            slide_t: session.slide_anim_t(),
+            info_t: session.info_panel_slide_anim_t(),
+            now_checking: layout.now_checking,
+            preview,
+            confirm,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -622,6 +752,26 @@ mod tests {
 
     fn cross() -> u16 {
         PadButton::Cross.mask()
+    }
+
+    /// The overlay's header word follows the session's MODE - the field
+    /// menu's Load row builds the same sub-session shape as its Save row, and
+    /// a hardcoded word at a draw site is what put the Save title on the
+    /// in-game Load screen. Browsing draws both pills and the hand, no
+    /// preview and no confirm.
+    #[test]
+    fn overlay_model_titles_by_mode_and_browses_the_pill_row() {
+        let flow = SaveScreenFlow::default();
+        let rack = card_rack(&[true, false]);
+        let load = SaveSelectSession::for_rack(SaveSelectMode::Load, &rack);
+        let save = SaveSelectSession::for_rack(SaveSelectMode::Save, &rack);
+        let m = flow.overlay_model(&load).expect("browsing draws");
+        assert_eq!(m.title, "Load");
+        assert_eq!(flow.overlay_model(&save).unwrap().title, "Save");
+        assert!(!m.single_pill);
+        assert_eq!(m.pills, vec![0, 1]);
+        assert_eq!(m.pill_cursor, Some(0));
+        assert!(m.preview.is_none() && m.confirm.is_none() && !m.now_checking);
     }
 
     /// The rack is what turns the two-stage flow on - not a host flag.

@@ -1728,9 +1728,9 @@ from there directly). The renderer
 functions `slot_info_panel_draws_for` (chrome + portrait) and
 `slot_info_panel_text_draws_for` (text rows) take a
 `panel_y_offset: i32` parameter - caller-provided delta from the
-parked y. The shell driver
-(`legaia-engine play-window --boot-ui`) wires this via
-`info_panel_slide_offset(session)`. All per-element offset constants
+parked y. Both play hosts get it from the overlay model
+(`SaveScreenFlow::overlay_model`, `SaveOverlayPreview::panel_y_offset`) and
+hand it to the shared composition `save_select_overlay_draws`. All per-element offset constants
 (`SLOT_INFO_LOCATION_OFFSET`, `SLOT_INFO_TIME_LABEL_OFFSET`,
 `SLOT_INFO_PORTRAIT_OFFSET`, `SLOT_INFO_NAME_OFFSET`,
 `SLOT_INFO_LV_*`, `SLOT_INFO_HP_*`, `SLOT_INFO_MP_*`) are exported

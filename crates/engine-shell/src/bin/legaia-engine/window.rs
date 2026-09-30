@@ -1338,10 +1338,8 @@ pub(crate) use run::cmd_play_window;
 // that `use super::*` still resolve them unqualified.
 pub(in crate::window) use run::{build_window_scene_resources, cmd_play_window_with_record};
 pub(crate) use save_select_helpers::{
-    MountedCard, build_slot_info_view, confirm_dialog_slide_y, disk_port_blocks_with_card,
-    disk_save_rack_with_card, info_panel_slide_offset, read_slot_save,
-    save_select_phase_text_draws, save_select_title_word, scan_save_dir, slot_leader_char_id,
-    write_slot_save,
+    MountedCard, disk_port_blocks_with_card, disk_save_rack_with_card, read_slot_save,
+    scan_save_dir, write_slot_save,
 };
 pub(crate) use str_player::{cmd_play_str, resolve_iso_file};
 
