@@ -525,9 +525,14 @@ impl LegaiaMinigames {
         let Some(img) = self.dance_overlay() else {
             return false;
         };
-        let Some(game) = DanceGame::from_overlay(&img, long_song) else {
+        let Some(mut game) = DanceGame::from_overlay(&img, long_song) else {
             return false;
         };
+        // The hall's choreography bank (decoded with the bodies) times each
+        // judge move, as on the play hosts.
+        if let Some(b) = self.dance_bodies.as_ref() {
+            game.attach_clip_bank(b.clip_bank());
+        }
         self.dance = Some(game);
         true
     }

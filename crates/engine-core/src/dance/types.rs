@@ -218,6 +218,10 @@ pub(super) struct Dancer {
     /// ... and the ticks since the last restart of that track (the clip
     /// driver's cursor `+0x68` before the per-record step is applied).
     pub(super) show_ticks: u32,
+    /// Ticks the bound judge move still plays before the clip driver raises
+    /// its end flag (`0` = the standing loop is bound). Only counted when the
+    /// run has its clip lengths ([`super::DanceGame::attach_clip_bank`]).
+    pub(super) move_left: u32,
     /// The actor flag word (`+0x10`). Only the bits the dance overlay writes
     /// are modelled: [`crate::minigame_actor::FLAG_TRANSLUCENT`] (the anim
     /// word's `0x200`) and [`crate::minigame_actor::FLAG_DRIVE_CLIP`].
@@ -306,9 +310,11 @@ impl Dancer {
         (self.gauge / GAUGE_STEP).min(rows.saturating_sub(1) as u32)
     }
 
-    /// Nothing is judged for this dancer right now: mid-spin, latched, or a
-    /// press already registered on this beat.
+    /// Nothing is judged for this dancer right now: a judge move still
+    /// playing (retail calls the award routine only while the bound clip is a
+    /// standing loop), mid-spin, latched, or a press already registered on
+    /// this beat.
     pub(super) fn locked(&self, beat: u32) -> bool {
-        self.spin_turns > 0 || self.latch != 0 || self.last_beat == Some(beat)
+        self.move_left > 0 || self.spin_turns > 0 || self.latch != 0 || self.last_beat == Some(beat)
     }
 }

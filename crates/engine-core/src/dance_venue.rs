@@ -483,6 +483,16 @@ pub fn venue_scene_name(index: &ProtIndex, e: &DanceSceneEntry) -> Option<String
     index.cdname_map()?.get(&e.stream_ids.0).cloned()
 }
 
+/// The dance hall's choreography bank - the venue scene's MOVE ANM bundle
+/// (PROT 1229), which every descriptor clip indexes - for
+/// [`crate::dance::DanceGame::attach_clip_bank`]. `None` when the venue block
+/// or its bundle does not resolve.
+pub fn dance_clip_bank(index: &ProtIndex) -> Option<PlayerAnmBundle> {
+    let name = venue_scene_name(index, &dance_scene_entry())?;
+    let scene = Scene::load(index, &name).ok()?;
+    crate::npc_catalog::scene_anm_bundle(&scene)
+}
+
 /// One of the venue's static draws with its cross-draw coplanar lift.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct VenueDraw {

@@ -79,6 +79,14 @@ pub(crate) struct DanceEnv {
     indices: Vec<u32>,
 }
 
+impl DanceBodies {
+    /// The dance hall's choreography bank, for
+    /// [`DanceGame::attach_clip_bank`](legaia_engine_core::dance::DanceGame::attach_clip_bank).
+    pub(crate) fn clip_bank(&self) -> &PlayerAnmBundle {
+        &self.anm
+    }
+}
+
 impl DanceEnv {
     /// Append one env-pack mesh instanced at an [`field_env::EnvDraw`],
     /// re-based to `origin` (the human dancer's spawn). The transform is the

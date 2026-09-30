@@ -385,9 +385,15 @@ impl SceneHost {
     /// song.
     fn enter_dance_from_overlay(&mut self, loaded: &[u8]) -> bool {
         let mode = crate::dance::dance_mode_from_flags(|f| self.world.system_flag_test(f));
-        let Some(game) = crate::dance::DanceGame::from_overlay_for_mode(loaded, mode, false) else {
+        let Some(mut game) = crate::dance::DanceGame::from_overlay_for_mode(loaded, mode, false)
+        else {
             return false;
         };
+        // The hall's choreography bank times each judge move (retail rebinds
+        // the standing loop off the clip's own end flag).
+        if let Some(bank) = crate::dance_venue::dance_clip_bank(&self.index) {
+            game.attach_clip_bank(&bank);
+        }
         self.world.enter_dance(game);
         true
     }

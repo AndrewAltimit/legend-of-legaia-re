@@ -391,3 +391,33 @@ fn the_far_camera_poses_leave_the_curtain_to_the_gpu_limit() {
         curtain.len()
     );
 }
+
+/// The hall's choreography bank times every descriptor clip, and a judge
+/// move outlasts the note latch the rules used to time it with - so a move
+/// plays to its last frame before the dancer is judged again.
+#[test]
+fn the_choreography_bank_times_every_judge_move() {
+    let Some(dir) = gate() else { return };
+    let index = ProtIndex::open_extracted(&dir).expect("prot index");
+    let overlay = dance_overlay(&index);
+    let bank = legaia_engine_core::dance_venue::dance_clip_bank(&index).expect("bank loads");
+    let cast = legaia_asset::dance_cast::parse(&overlay).expect("cast parses");
+    let mut game =
+        DanceGame::from_overlay_for_mode(&overlay, DanceMode::Qualifier, false).expect("run");
+    game.attach_clip_bank(&bank);
+    let latch_ticks = (legaia_engine_core::dance::NOTE_LATCH_TIMER
+        / legaia_engine_core::dance::NOTE_LATCH_DECAY) as u32
+        + 1;
+    let mut timed = 0;
+    for kind in cast.kinds.iter().take(4) {
+        for mv in &kind.moves {
+            let Some(len) = game.clip_len(mv) else {
+                continue;
+            };
+            assert!(len > latch_ticks, "move {} plays {len} ticks", mv.anim_id);
+            timed += 1;
+        }
+    }
+    assert!(timed >= 40, "only {timed} judge moves timed");
+    eprintln!("[ran] {timed} judge moves timed off the bank");
+}

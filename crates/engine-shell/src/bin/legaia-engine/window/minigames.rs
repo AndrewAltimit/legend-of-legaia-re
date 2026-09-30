@@ -243,7 +243,13 @@ impl PlayWindowApp {
         };
         match legaia_engine_core::dance::DanceGame::from_overlay_for_mode(&loaded, mode, long_song)
         {
-            Some(game) => {
+            Some(mut game) => {
+                // The hall's choreography bank times each judge move.
+                if let Some(bank) =
+                    legaia_engine_core::dance_venue::dance_clip_bank(&self.session.host.index)
+                {
+                    game.attach_clip_bank(&bank);
+                }
                 // `World::enter_dance` arms the count-in, the how-to tutorial
                 // actor and the pending song id; the world's dance tick holds
                 // the beat clock off until the banner clears. This window used

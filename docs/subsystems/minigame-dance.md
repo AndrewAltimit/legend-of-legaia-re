@@ -658,11 +658,13 @@ effects; `judge_press` folds it to the legacy three-way result for hosts that
 only want Miss/Hit/Sequence. `DanceGame::from_overlay` starts a run straight
 off the disc - chart, both scoring tables, and the qualifier cast's dancer
 kinds (disc-gated `dance_minigame_real` auto-plays the real chart end to end
-and drives a hands-off run to watch the rivals score). The one thing the rules
-layer approximates is the *length* of the input-disruption window: retail
-gates re-judging on the move clip's own playback, and the port times it off
-the dancer's spin (`lane + 1` turns at `0x80 + lane * 0x20` per frame), which
-is the same disc-derived formula for the visible move. The dance-floor / arrow
+and drives a hands-off run to watch the rivals score). Retail gates
+re-judging on the move clip's own playback, and so does the port once the
+hall's choreography bank is attached (`DanceGame::attach_clip_bank`, off
+`dance_venue::dance_clip_bank` - every play host attaches it on entry): a
+judge move holds the dancer for its clip length, see
+[the spawner's two actor kinds](#the-spawners-two-actor-kinds). A chart-only
+run has no clip lengths and falls back to the note latch. The dance-floor / arrow
 rendering (the [floor cluster](#dance-floor-rendering)) is not part of the
 rules port - it is a separate host concern.
 
@@ -817,7 +819,15 @@ counter `+0x9C` - the one clip loops for the whole lesson. **Confirmed**
 
 A dancer's clip returns to its loop when the clip driver raises its end flag
 (`+0x62 & 0x100`, tested at `0x801D14C8`), so a judge move plays to its last
-frame before the loop resumes from its first.
+frame before the loop resumes from its first. The award routine `FUN_801d1af4`
+is called only while the bound clip **is** the idle or the dance loop
+(`0x801D168C..0x801D16B4`), so the same end flag is what re-opens judging: a
+move - the miss reaction included - locks its dancer's presses out for its
+whole length, far past the eight-frame note latch. The port times both off the
+clip itself: `DanceGame::attach_clip_bank` reads every descriptor clip's
+length from the hall's MOVE bundle (`field_anim::clip_end_ticks` over the
+record's frame count and the rate's per-record step - the display's own
+timing), and a bound move holds `+0x5C` and the lock until it runs out.
 
 #### Drawing the floor: one cast surface
 
@@ -1210,10 +1220,6 @@ stays possible and unevidenced.
   position
   (see [Dancer bodies](#dancer-bodies-the-retail-cast--choreography-tables))
   but not the facing, and the actor records are not RAM-pinned live.
-- The exact **length** of each judge-triggered move clip: it is what retail
-  really gates re-judging on (the award routine is only called while the dancer
-  is on its idle / dance loop), and the port times the window off the dancer's
-  spin instead - see [the wildcard](#the-triangle-wildcard-the-groovy-move).
 - Which of `DAT_801D514C`'s modes picks BGM 1048 vs 1054 (the branch is
   pinned, the arm-to-song mapping is not; both are short chart-sized loops -
   see the PROT-load table above).
