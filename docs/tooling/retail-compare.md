@@ -18,6 +18,7 @@ way `mednafen-state vram-dump --display-crop` reads it.
 |---|---|---|
 | corpus + channels + ratchet | [`retail_compare.rs`](../../crates/engine-shell/src/retail_compare.rs) | Enumerate the library, read retail, seed the engine, score |
 | battle half | [`retail_compare_battle.rs`](../../crates/engine-shell/src/retail_compare_battle.rs) | Read the encounter out of a battle state, enter it, score the battle channels |
+| script phase | [`retail_compare_script.rs`](../../crates/engine-shell/src/retail_compare_script.rs) | Read the running field contexts off the actor lists, run the engine to the same script phase |
 | frame channel | [`retail_compare_image.rs`](../../crates/engine-shell/src/retail_compare_image.rs) | Crop retail's frame, render the engine's, the metric |
 | `legaia-engine retail-compare` | [`retail_compare_cli.rs`](../../crates/engine-shell/src/retail_compare_cli.rs) | Human report (markdown + JSON + side-by-side PNGs) |
 | PCSX-Redux GPU reader | [`legaia_pcsxr::gpu`](../../crates/pcsxr/src/gpu.rs) | VRAM + GP1 control log out of a `.sstate` |
@@ -30,6 +31,7 @@ way `mednafen-state vram-dump --display-crop` reads it.
 - [The corpus](#the-corpus)
 - [Retail observables](#retail-observables)
 - [The seeding model](#the-seeding-model)
+- [Mid-script states](#mid-script-states)
 - [Battle states](#battle-states)
 - [Menu states](#menu-states)
 - [Channels](#channels)
@@ -153,11 +155,12 @@ instead of the scene.
 What the seeding does **not** carry - each is an instrument limit, not an
 engine verdict:
 
-- **Script progress.** A state captured mid-cutscene, mid-dialogue or on an
-  arrival is a point inside a running script. The engine enters the scene
-  fresh, so it runs the entry prologue instead of resuming the retail
-  script: a scripted camera, an open dialogue box, a banner or an event
-  track is not reproduced.
+- **Script progress outside a running record.** A state inside a running
+  field record is run to that record's phase
+  ([below](#mid-script-states)). What the phase gate does not reach - a
+  record the engine never gets to, or progress held only in actor state
+  (a camera aimed by a script that has since returned) - is the entry
+  prologue's, not the retail script's.
 - **Actor state.** NPC positions, animation phases, open doors and live
   effects are whatever the engine's own entry produces.
 - **Timing.** Retail's frame is one instant; the engine's is a fixed tick
@@ -177,6 +180,63 @@ engine verdict:
 hydrate again, so the entry scripts see retail's flags. Comparing its report
 with the default shows how much of a channel's divergence the card-load
 ordering explains.
+
+## Mid-script states
+
+A field capture taken while a spawned record runs holds that record's
+context on the SCUS actor lists (`_DAT_8007C34C..`, linked through
+`+0x00`): the field actor tick `FUN_8003BC08` at `+0x0C`, the engaged bit
+`+0x10 & 0x100`, the script base `+0x90` (the record's script start) and
+the PC `+0x9E` that the runner `FUN_80039B7C` reads, the flat MAN record
+index `+0x50` (`FUN_8003BDE0` stores `N0 + N1 + i`) and the op-`0x4A` wait
+accumulator `+0x54`. The cutscene camera mover (tick `FUN_801DC0BC`) on the
+same lists gives the shot's progress: `+0x9C` counts up to the duration
+`+0x9E`, and `+0x10 & 0x8` marks it landed. The scene system script (tick
+`FUN_801DA51C`) and the player are not candidates.
+
+Such a capture is not sampled a fixed window after the entry. The seed runs
+the engine until its own context for the record - found by the record's
+first 48 bytes, so the partition and the index need no mapping - holds the
+retail PC with at least the retail wait and at most the retail glide left,
+or has just executed the op retail is parked on (the engine clears some
+parks inside one slice that retail holds across frames: a channel flag
+already up, a walk already at its tile). A text segment is met once the
+engine's box has typed its page and waits for the press, the frame every
+such capture shows. The run has a deadline of 9000 ticks; a gate it never
+meets keeps the settle-window sample, and the `script` detail says which
+it was.
+
+Two drives get the engine there without changing the retail state it
+started from:
+
+- **Resume.** A record the card-load entry does not start - its one-shot
+  gate flag is already in the save, or its trigger is a walk-on tile the
+  seat does not cross - is installed from its first opcode at the settle
+  tick, ungated, as the modal timeline (a concurrent context when another
+  timeline holds that slot). The record replays its own staging: its
+  `MoveTo`s, camera beats and pokes run from the top.
+- **Paging.** From the settle tick on, while the record sits in a dialog box
+  short of the gate PC, `Cross` is pressed every other tick - the presses
+  the player made to page the conversation to where it was captured.
+
+`play-window` takes the same gate as `LEGAIA_SCRIPT_GATE`, with the same
+resume and paging, so the image channel frames the phase the state
+channels scored; it is handed only when the headless run met the gate.
+
+What the replay exposes is the engine's own record execution. Two shapes
+recur:
+
+- **Engine-only flags from placements the record addressed.** The engine
+  steps a placement's own script once a playing record has addressed it
+  with a cross-context op (`CutsceneTimeline::addressed_channels`), so a
+  poked placement parked after its spawn section's `0x21` runs its talk body.
+  Retail runs a context only while `+0x10 & 0x100` is up, and a poke does
+  not raise it: `dolk2_market_noa`'s retail Noa context sits at `P1[2]`
+  `+0x40`, while the engine's runs on and sets `0x2FE`; the `town01` opening
+  states pick up `0x20A` / `0x23D` from `P1[10]` / `P1[11]` the same way.
+- **Pacing.** Where the engine takes a leg at another speed than retail,
+  the gate lands where the engine is, and the channels read the difference
+  ([below](#ending-vignettes-are-mid-script)).
 
 ## Battle states
 
@@ -524,11 +584,12 @@ Shapes the corpus separates, each with what it indicates:
 | retail frame black beyond a rectangle, the engine's filled | the visible-tile window (op `0x46`); the port draws the whole scene |
 | an idle status panel in the engine frame only | the engine's panel placement, or its suppress / rearm gates, against retail's - the countdown's phase is aligned |
 | effect missing in the engine frame (save-point crystals, spell glows) | an actor or effect the fresh entry does not spawn, or one the port does not draw |
-| camera and dialogue off together | script progress - the seeding cannot resume a script |
+| camera and dialogue off together, `script` detail says the gate was not met | a record the phase gate could not bring the engine to ([above](#mid-script-states)) |
+| flags `+sys` bits only the engine has, on a gated state | a placement the record poked ran its talk body in the engine ([above](#mid-script-states)) |
 | player seated exactly, camera focus thousands of units away (`kor5_post_43a_checkpoint`: player Z `5312`, focus Z `11840`) | script progress: a scene script aimed the retail camera at another part of the map; the engine's follow camera frames the player |
 | a town label over the overworld's `H`, word `2000` and fog gate | a door caught before the town's field init ran; scored as the overworld `0x80084540` names ([below](#arrival-states-are-captured-before-the-town-runs)) |
 | retail word held by a flag the entry script already consumed (`garmel`'s `0x196`, `rikuroa`'s `0x289`) | script progress: the track was started by a beat that has since cleared its trigger flag, so a card load would not restart it |
-| camera depth and position off on an ending vignette (`ending_vignette_rimelm_walkaway`) | the state is mid-way through a scripted shot the seed restarts ([below](#ending-vignettes-are-mid-script)) |
+| camera depth and position off on an ending vignette (`ending_vignette_rimelm_walkaway`) | the engine walks the credits path slower than retail, so its gate lands later in the shot ([below](#ending-vignettes-are-mid-script)) |
 | camera exact, frame aimed at another part of the room; retail focus `0x80089118/20` is not `-player` | a probe-poked capture ([below](#a-poked-player-keeps-the-arrival-focus)) |
 
 ### A poked player keeps the arrival focus
@@ -601,10 +662,15 @@ it moves Vahn to the start of the path and snaps the eye depth to `6400`
 (op `0x45`, slot 5 alone); about sixty ticks later a glide beat pulls the
 camera back and round (slots 0, 1, 3..8). Traced per tick, the engine's
 globals reach `416 / 77 / 10477` near tick 190 of that walk - within two
-angle units and a hundred depth units of the retail state - so the state was
-captured roughly three times the settle window into the shot. The camera and
-position channels on it measure script time, not the camera; the eye-space
-X / Y and `H` agree already.
+angle units and a hundred depth units of the retail state.
+
+The phase gate does not land there. Retail is parked on the record's
+`B8 F8 82 08` rotate at `+0x97` with the player still finishing the compass
+walk `C1 F8 03 C4` at `+0x93` (the player's `+0x94`) and the camera mover
+123 of 780 frames into its glide; the engine reaches `+0x97` about seventy
+ticks later than the tick where its camera matched, so its eye depth has
+run on to `12381`. The record's compass walks take the engine longer than
+retail, and the gated `camera` / `position` channels read that pacing.
 
 ### The dance-hall state is inside the contest-entry cutscene
 
@@ -620,6 +686,11 @@ scene entry, so it draws the placement headers (the Disco King front and
 centre at `(6144, 13248)`, the four dancers present) and the frame reads as
 "dancers placed wrong". It is script progress, not placement; the retail
 frame is also partway into the load fade.
+
+The phase gate resumes record 6 and replays that staging, which puts the
+camera exactly on retail's shot; the engine's player then stands at
+`(6208, 13120)` rather than retail's `(5952, 12992)`, so `position` reads the
+replay's player run rather than the seat.
 
 ## See also
 
