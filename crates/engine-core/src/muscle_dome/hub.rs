@@ -70,7 +70,7 @@ pub const TIME_METER_MAX: u8 = 0xC;
 /// `0x2AAAAAAB` reciprocal-multiply divide) - `-0x92` empty, `+0xE` full.
 /// Returns `(new_counter, bar_y)`.
 ///
-/// Wired: [`MuscleDomeSession::tick_time_meter`], which the host calls once a
+/// Wired: [`MuscleDomeSession::tick_time_meter`](super::MuscleDomeSession::tick_time_meter), which the host calls once a
 /// frame while a contest is up.
 pub fn time_meter_step(counter: u8, dt: u8, in_select_phase: bool, ramp_up: bool) -> (u8, i16) {
     let new = if ramp_up && in_select_phase {

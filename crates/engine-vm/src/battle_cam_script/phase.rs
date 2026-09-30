@@ -17,10 +17,10 @@ pub enum BattleCamPhase {
     Action,
     /// The post-strike recovery / return / done band: `FUN_801D5854` case
     /// `7`, the **two-shot** on the attacker-target midpoint. See
-    /// [`recover_framing`].
+    /// [`recover_framing`](super::recover_framing).
     Recover,
     /// The end-of-action band: `FUN_801D5854` case `8`, framed on the
-    /// **target**. See [`action_end_framing`].
+    /// **target**. See [`action_end_framing`](super::action_end_framing).
     ActionEnd,
 }
 
@@ -40,7 +40,7 @@ pub enum BattleCamPhase {
 /// 801e2a68  andi v0,v0,0xfff
 /// ```
 ///
-/// That is [`ORBIT_STEP`] falling out of the disassembly: two display frames
+/// That is [`ORBIT_STEP`](super::ORBIT_STEP) falling out of the disassembly: two display frames
 /// per camera step at `2` units per frame is the `-4` the trace measured, and
 /// it pins *when* the orbit runs - only while the SM is idling between
 /// actions.
@@ -53,7 +53,7 @@ pub enum BattleCamPhase {
 /// `battle_gaza2_prompt` state (`scripts/pcsx-redux/autorun_battle_cam_orbit.lua`)
 /// counts the dispatcher's store once per battle tick and the SM's store
 /// never, the yaw stepping `-2 * DAT_1F800393` each time - `-2` per display
-/// frame, i.e. [`ORBIT_STEP`] per camera step, from either writer alone.
+/// frame, i.e. [`ORBIT_STEP`](super::ORBIT_STEP) per camera step, from either writer alone.
 ///
 /// ## The test is a **band**
 ///
@@ -145,7 +145,7 @@ pub fn phase_for(dialogue_up: bool, submenu_open: bool, action_executing: bool) 
 }
 
 /// `ctx[7]` values whose arm hands `FUN_801D5854` mode **`7`** - the
-/// attacker-target two-shot ([`recover_framing`]).
+/// attacker-target two-shot ([`recover_framing`](super::recover_framing)).
 ///
 /// `0x1F` (recovery wait) and `0x20` (return) share one arm, and mode `7` is
 /// its **default**: `0x801E5660..0x801E56C0` takes mode `8` only when the
@@ -161,7 +161,7 @@ pub fn phase_for(dialogue_up: bool, submenu_open: bool, action_executing: bool) 
 pub const RECOVER_STATES: [u8; 2] = [0x1F, 0x20];
 
 /// `ctx[7]` values whose arm hands `FUN_801D5854` mode **`8`**
-/// unconditionally ([`action_end_framing`]): `0x52` (multi-cast
+/// unconditionally ([`action_end_framing`](super::action_end_framing)): `0x52` (multi-cast
 /// continuation) and `0xFD` (idle hold), both `li a1,0x8` at `0x801E5F74`.
 /// The Done-cleanup pair forks per category instead - [`DONE_STATES`] and
 /// [`done_band_phase`].
