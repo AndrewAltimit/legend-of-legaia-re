@@ -319,8 +319,17 @@ fn dance_door_warp_draws_the_hall_and_start_leaves() {
         rt.play_mg_dance_body_ready(),
         "the dance cast + choreography must decode"
     );
-    assert!(rt.play_mg_dance_body_count() >= 1);
-    assert!(!rt.play_mg_dance_body_positions(0).is_empty());
+    // The run's floor poses through the engine cast surface: a live
+    // generation, and positions that move frame to frame.
+    let scene_gen = rt.play_mg_dance_scene_frame();
+    assert!(
+        scene_gen >= 0,
+        "the dance cast surface poses the run's floor"
+    );
+    let pos_a = rt.play_mg_dance_scene_positions();
+    assert!(!pos_a.is_empty());
+    assert_eq!(pos_a.len() / 3 * 2, rt.play_mg_dance_scene_uvs().len());
+    assert!(!rt.play_mg_dance_scene_indices().is_empty());
     assert!(
         !rt.play_mg_dance_env_positions().is_empty(),
         "the other7 hall must bake"
@@ -333,6 +342,16 @@ fn dance_door_warp_draws_the_hall_and_start_leaves() {
     tick(&mut rt, 30);
     let vp_b = rt.play_mg_dance_venue_vp(4.0 / 3.0);
     assert_ne!(vp_a, vp_b, "the dance camera holds still");
+    assert_eq!(
+        rt.play_mg_dance_scene_frame(),
+        scene_gen,
+        "a pose is not a rebuild"
+    );
+    assert_ne!(
+        pos_a,
+        rt.play_mg_dance_scene_positions(),
+        "the dancers' clips run"
+    );
     let st: serde_json::Value =
         serde_json::from_str(&rt.play_mg_dance_state_json()).expect("state json");
     assert_eq!(st["live"].as_bool(), Some(true));

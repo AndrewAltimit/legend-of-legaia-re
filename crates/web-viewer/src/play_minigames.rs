@@ -109,6 +109,11 @@ pub(crate) struct MinigameUi {
     /// The Baka duel's 3D surface - the engine cache the native window
     /// drives too (`legaia_engine_core::baka_duel_scene::BakaDuelSurface`).
     pub(crate) baka_surface: legaia_engine_core::baka_duel_scene::BakaDuelSurface,
+    /// The dance floor's bodies - the engine cache the native window drives
+    /// too (`legaia_engine_core::dance_cast_scene::DanceCastSurface`) - and
+    /// the hall origin its positions are re-based on for this page.
+    pub(crate) dance_surface: legaia_engine_core::dance_cast_scene::DanceCastSurface,
+    pub(crate) dance_origin: (f32, f32, f32),
 }
 
 /// The PROT entries the standalone presentation bundle reads, in extraction

@@ -34,6 +34,18 @@ pub(super) struct DanceVenueGpu {
     pub(super) color_draws: Vec<(usize, Mat4)>,
     /// The venue's walk-ground heightfield.
     pub(super) ground: Option<UploadedVramMesh>,
+    /// The floor's body meshes + choreography bank off this venue, handed to
+    /// the cast surface when this copy is installed.
+    pub(super) cast_assets:
+        Option<std::sync::Arc<legaia_engine_core::dance_cast_scene::DanceCastAssets>>,
+}
+
+/// The dance floor's posed bodies on the GPU for this frame
+/// ([`legaia_engine_core::dance_cast_scene::DanceCastSurface::frame`]). They
+/// sample the venue's VRAM and draw under the venue camera.
+pub(super) struct DanceCastGpu {
+    pub(super) textured: Option<UploadedVramMesh>,
+    pub(super) untextured: Option<UploadedColorMesh>,
 }
 
 impl PlayWindowApp {
@@ -339,6 +351,9 @@ impl PlayWindowApp {
             .map(|s| s.generation)
         else {
             self.dance_venue_gpu = None;
+            if self.dance_cast_surface.has_assets() {
+                self.dance_cast_surface.set_assets(None);
+            }
             return;
         };
         if self
@@ -357,6 +372,7 @@ impl PlayWindowApp {
                     g.color_draws.len(),
                     g.hud_staged
                 );
+                self.dance_cast_surface.set_assets(g.cast_assets.clone());
                 self.dance_venue_gpu = Some(g);
             }
             None => {
@@ -379,6 +395,22 @@ impl PlayWindowApp {
                 static_overlay::as_loaded(&raw, rec).ok()
             });
         let venue = DanceVenue::build(index, overlay.as_deref())?;
+        // The floor's bodies draw off this same venue (its scene TMD pool and
+        // choreography bank) plus kind 0's resident mesh (PROT 0874).
+        let cast_assets = overlay
+            .as_deref()
+            .and_then(legaia_asset::dance_cast::parse)
+            .and_then(|cast| {
+                let pack = index
+                    .entry_bytes(legaia_asset::character_pack::PROT_ENTRY_INDEX)
+                    .ok();
+                legaia_engine_core::dance_cast_scene::DanceCastAssets::from_venue(
+                    &venue,
+                    &cast,
+                    pack.as_deref().map(|p| p.as_slice()),
+                )
+            })
+            .map(std::sync::Arc::new);
         let res = &venue.resources;
         let vram = r
             .upload_vram(&res.vram)
@@ -489,7 +521,63 @@ impl PlayWindowApp {
             draws,
             color_draws,
             ground,
+            cast_assets,
         })
+    }
+
+    /// Pose the dance floor's bodies for this frame and put them on the GPU.
+    ///
+    /// The cast, the clips and the pose are the engine's
+    /// ([`legaia_engine_core::dance_cast_scene::DanceCastSurface::frame`] over
+    /// `World::minigames.dance`, the call the browser play page makes too);
+    /// this host uploads the posed buffers and the redraw's venue branch
+    /// draws them under the venue camera. Dropped whenever no venue is up.
+    pub(super) fn refresh_dance_cast_gpu(&mut self) {
+        let game = if self.dance_venue_gpu.is_some() {
+            self.session.host.world.minigames.dance.as_ref()
+        } else {
+            None
+        };
+        let Some(scene) = self.dance_cast_surface.frame(game) else {
+            self.dance_cast_gpu = None;
+            return;
+        };
+        let Some(r) = self.win.renderer.as_ref() else {
+            return;
+        };
+        let normals = vec![[0.0f32; 3]; scene.positions.len()];
+        let textured = (!scene.textured_indices.is_empty())
+            .then(|| {
+                r.upload_vram_mesh(
+                    &scene.positions,
+                    &scene.uvs,
+                    &scene.cba_tsb,
+                    &normals,
+                    &scene.colors,
+                    &scene.textured_indices,
+                )
+                .map_err(|e| log::warn!("dance cast: textured upload failed: {e:#}"))
+                .ok()
+            })
+            .flatten();
+        let fill: Vec<[u8; 3]> = scene
+            .flat_rgba
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|c| [c[0], c[1], c[2]])
+            .collect();
+        let untextured = (!scene.untextured_indices.is_empty())
+            .then(|| {
+                r.upload_color_mesh(&scene.positions, &fill, &scene.untextured_indices)
+                    .map_err(|e| log::warn!("dance cast: untextured upload failed: {e:#}"))
+                    .ok()
+            })
+            .flatten();
+        self.dance_cast_gpu = Some(DanceCastGpu {
+            textured,
+            untextured,
+        });
     }
 
     /// Re-upload `cpu_vram_base` to the GPU. Silent when the renderer is not

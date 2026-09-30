@@ -1297,6 +1297,8 @@ pub(super) fn cmd_play_window_with_record(
         baka_gpu: None,
         dance_venue_gpu: None,
         dance_venue_failed: None,
+        dance_cast_surface: Default::default(),
+        dance_cast_gpu: None,
         muscle_hub: None,
         muscle_timers: Default::default(),
         summon_actor_slot: None,

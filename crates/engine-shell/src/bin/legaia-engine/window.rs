@@ -934,6 +934,12 @@ struct PlayWindowApp {
     /// The staging generation whose venue build failed, so a disc without
     /// the venue is not re-read every frame.
     dance_venue_failed: Option<u32>,
+    /// The dance floor's bodies (`legaia_engine_core::dance_cast_scene`):
+    /// the engine surface every dance host poses the cast through.
+    dance_cast_surface: legaia_engine_core::dance_cast_scene::DanceCastSurface,
+    /// This frame's GPU copy of that surface (see
+    /// `PlayWindowApp::refresh_dance_cast_gpu`).
+    dance_cast_gpu: Option<minigames::DanceCastGpu>,
     /// Muscle Dome hub-screen atlas + sprite table (see [`MuscleHubAssets`]).
     muscle_hub: Option<MuscleHubAssets>,
     /// The dome hub's screen timers - first visit, ROUND card, INTERVAL +

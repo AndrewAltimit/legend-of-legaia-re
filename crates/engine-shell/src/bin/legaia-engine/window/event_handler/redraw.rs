@@ -765,6 +765,9 @@ impl PlayWindowApp {
         // The Baka duel's 3D surface: posed and uploaded here, outside the
         // renderer borrow (`window::minigames`).
         self.refresh_baka_duel_gpu();
+        // The dance floor's bodies: posed by the engine surface and uploaded
+        // here, drawn over the venue below.
+        self.refresh_dance_cast_gpu();
         if let (Some(r), Some(vram), Some(atlas)) = (
             self.win.renderer.as_ref(),
             self.uploaded_vram.as_ref(),
@@ -1360,6 +1363,24 @@ impl PlayWindowApp {
                         color_draws.push(ColorSceneDraw {
                             mesh,
                             mvp: cam * *model,
+                            cue: None,
+                        });
+                    }
+                }
+                // The floor's bodies, posed in raw world coordinates by the
+                // engine surface (`refresh_dance_cast_gpu`).
+                if let Some(c) = self.dance_cast_gpu.as_ref() {
+                    if let Some(mesh) = c.textured.as_ref() {
+                        draws.push(SceneDraw {
+                            mesh,
+                            mvp: cam,
+                            cue: None,
+                        });
+                    }
+                    if let Some(mesh) = c.untextured.as_ref() {
+                        color_draws.push(ColorSceneDraw {
+                            mesh,
+                            mvp: cam,
                             cue: None,
                         });
                     }

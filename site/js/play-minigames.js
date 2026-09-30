@@ -957,40 +957,21 @@
   }
 
   /* ================================================================== */
-  /* Dance: Noa + the hall's dancer NPCs over the baked `other7` hall, posed
-   * off the scene's choreography bundle (minigame-dance.js). */
+  /* Dance: the run's own floor over the baked `other7` hall. The bodies are
+   * the engine's cast surface (`engine-core::dance_cast_scene` through the
+   * `play_mg_dance_scene_*` exports) - the same kernel the native window
+   * poses them with - so the cast follows the run's mode (qualifier, finals,
+   * the how-to's Disco King, free play's six) and the page never picks one. */
 
-  function danceBuild(rt, view) {
+  function danceBuild(rt, view, gen) {
     if (!rt.play_mg_dance_body_ready || !rt.play_mg_dance_body_ready()) return null;
-    const count = rt.play_mg_dance_body_count();
-    if (!count) return null;
-    const cast = parse(() => rt.play_mg_dance_cast_json());
-    if (!cast) return null;
-    const dancers = [];
-    for (let d = 0; d < count; d++) {
-      const pos = rt.play_mg_dance_body_positions(d);
-      if (!pos.length) return null;
-      dancers.push({
-        pos, uvs: rt.play_mg_dance_body_uvs(d), ct: rt.play_mg_dance_body_cba_tsb(d),
-        idx: rt.play_mg_dance_body_indices(d), oid: rt.play_mg_dance_body_object_ids(d),
-        flat: rt.play_mg_dance_body_flat_rgba(d), parts: rt.play_mg_dance_body_part_count(d),
-        kind: cast.dancers[d] ? cast.dancers[d].kind : 0,
-      });
-    }
-    const clip = (d, c, parts) => {
-      const dims = rt.play_mg_dance_body_anim_dims(d, c);
-      if (!dims[0] || !dims[1]) return null;
-      const frames = rt.play_mg_dance_body_pose_frames(d, c, parts);
-      if (!frames.length) return null;
-      const meta = (cast.dancers[d].clips || [])[c] || {};
-      return { frames, frameCount: dims[1], parts, rate: meta.rate || 8 };
+    if (gen < 0) return null;
+    const cast = {
+      pos: rt.play_mg_dance_scene_positions(), uvs: rt.play_mg_dance_scene_uvs(),
+      ct: rt.play_mg_dance_scene_cba_tsb(), idx: rt.play_mg_dance_scene_indices(),
+      flat: rt.play_mg_dance_scene_flat_rgba(),
     };
-    const clips = dancers.map((f, d) => {
-      const per = [];
-      for (let c = 0; c < (cast.dancers[d].clips || []).length; c++) per.push(clip(d, c, f.parts));
-      return per;
-    });
-    const anim = dancers.map(() => ({ cursor: 0, move: null }));
+    if (!cast.pos.length) return null;
     let env = null;
     const ep = rt.play_mg_dance_env_positions();
     if (ep.length) {
@@ -1005,102 +986,39 @@
           idx: rt.play_mg_dance_marker_indices(), flat: rt.play_mg_dance_marker_flat_rgba() };
       }
     }
-    const halfOf = (f, cl) => {
-      const c = cl[0] || cl[1];
-      if (!c) return 200;
-      return poseExtent(f, c).half;
-    };
-    const maxHalf = Math.max.apply(null, dancers.map((f, d) => halfOf(f, clips[d])));
-    const human = rt.play_mg_dance_body_human_index();
-    const humanX = cast.dancers[human] ? cast.dancers[human].x : 0;
-    const dx = dancers.map((_, d) => cast.dancers[d] ? (cast.dancers[d].x - humanX) : 0);
-    const spread = Math.max.apply(null, dx.map(Math.abs)) || maxHalf;
-    const parts = dancers.slice();
+    const parts = [cast];
     if (env) parts.push(env);
     if (markers) parts.push(markers);
     const buf = concatBuffers(parts);
     const sc = {
-      kind: 'dance', dancers, clips, anim, moves: cast.moves, dx,
-      vertBases: buf.bases.slice(0, dancers.length),
-      markerBase: markers ? buf.bases[dancers.length + (env ? 1 : 0)] : -1,
-      base: buf.pos.slice(), out: buf.pos,
-      lastBeat: -1, rivalTri: {}, human,
-      cam: env ? { yaw: Math.PI, pitch: 0.24, distance: 2.7 } : { yaw: 0.0, pitch: 0.12, distance: 1.9 },
-      center: [0, -maxHalf * (env ? 1.6 : 0.85), 0],
-      radius: spread * 1.15 + maxHalf * 1.05,
-      fov: env ? 0.85 : undefined,
-      faceYaw: env ? 0 : Math.PI,
+      kind: 'dance', gen,
+      markerBase: markers ? buf.bases[1 + (env ? 1 : 0)] : -1,
+      out: buf.pos,
+      /* Orbit fallback only - the engine camera frames the hall (`vp`). */
+      cam: { yaw: Math.PI, pitch: 0.24, distance: 2.7 },
+      center: [0, -400, 0], radius: 900, fov: 0.85,
     };
     const flags = env ? { cullBackfaces: true, cullFrontFace: 'ccw', semiTwoPass: true } : {};
     if (!takeRenderer(view, rt.play_mg_dance_body_vram(), buf, flags)) return null;
     return sc;
   }
 
-  function danceTrigger(sc, d, clipId) {
-    if (!sc.clips[d] || !sc.clips[d][clipId]) return;
-    sc.anim[d].move = clipId;
-    sc.anim[d].cursor = 0;
-  }
-  function danceAdvance(sc, d, live) {
-    const a = sc.anim[d];
-    const loopId = live ? 1 : 0;
-    let clipId = a.move !== null ? a.move : loopId;
-    let c = sc.clips[d][clipId] || sc.clips[d][loopId] || sc.clips[d][0];
-    if (!c) return { clip: null, frame: 0 };
-    const last = c.frameCount * 16 - 1;
-    if (a.move !== null && a.cursor >= last) {
-      a.move = null; a.cursor = 0; clipId = loopId;
-      c = sc.clips[d][clipId] || sc.clips[d][0];
-      if (!c) return { clip: null, frame: 0 };
-    }
-    const frame = Math.min(a.cursor >> 4, c.frameCount - 1);
-    a.cursor += c.rate;
-    if (a.move === null && a.cursor > last) a.cursor = 0;
-    return { clip: c, frame };
+  /* Pose this frame through the engine surface and build on first sight. */
+  function danceSceneFrame(rt) {
+    return typeof rt.play_mg_dance_scene_frame === 'function'
+      ? rt.play_mg_dance_scene_frame() : -1;
   }
 
   function danceFrame(rt, view, skipDraw) {
-    const sc = S.scene;
-    const st = parse(() => rt.play_mg_dance_state_json());
-    if (sc) {
-      const live = !!(st && st.live);
-      const chart = live ? parse(() => rt.play_mg_dance_chart_json()) : null;
-      const rivals = (st && st.rivals) || [];
-      if (live && chart && sc.moves) {
-        const beat = st.beat | 0;
-        const rivalOf = (d) => rivals.find(r => r.kind === sc.dancers[d].kind);
-        for (let d = 0; d < sc.dancers.length; d++) {
-          if (d === sc.human) continue;
-          const rv = rivalOf(d);
-          if (!rv) continue;
-          const lane = Math.min(rv.lane | 0, chart.rows.length - 1);
-          const was = sc.rivalTri[d];
-          sc.rivalTri[d] = rv.triangles;
-          if (was !== undefined && rv.triangles < was) {
-            danceTrigger(sc, d, sc.moves.beat[Math.min(lane, 2)]);
-          } else if (beat !== sc.lastBeat) {
-            const rowc = chart.rows[lane];
-            const sym = rowc ? rowc[beat % rowc.length] : 0;
-            if (sym === 1) danceTrigger(sc, d, sc.moves.seq_square[Math.min(lane, 2)]);
-            else if (sym === 2) danceTrigger(sc, d, sc.moves.seq_circle[Math.min(lane, 2)]);
-          }
-        }
-        /* The human's own judged press: the sequence move on a hit. */
-        if (st.judged != null && beat !== sc.lastBeat) {
-          const lane = Math.min(st.lane | 0, 2);
-          if (st.judged === 1) danceTrigger(sc, sc.human, sc.moves.seq_square[lane]);
-          else if (st.judged === 2) danceTrigger(sc, sc.human, sc.moves.seq_circle[lane]);
-          else if (st.judged === 3) danceTrigger(sc, sc.human, sc.moves.beat[lane]);
-        }
-        sc.lastBeat = beat;
-      } else {
-        sc.lastBeat = -1; sc.rivalTri = {};
-      }
-      for (let d = 0; d < sc.dancers.length; d++) {
-        const adv = danceAdvance(sc, d, live);
-        if (!adv.clip) continue;
-        poseInto(sc.out, sc.base, sc.dancers[d].oid, adv.clip, adv.frame, sc.vertBases[d], sc.dx[d], sc.faceYaw, 0);
-      }
+    let sc = S.scene;
+    const gen = danceSceneFrame(rt);
+    /* A new generation is a new cast (another mode's floor): rebuild. */
+    if (gen >= 0 && (!sc || sc.gen !== gen)) {
+      sc = danceBuild(rt, view, gen);
+      S.scene = sc;
+    }
+    if (sc && gen >= 0) {
+      sc.out.set(rt.play_mg_dance_scene_positions(), 0);
       if (sc.markerBase >= 0) {
         const mp = rt.play_mg_dance_marker_step(1);
         if (mp.length) sc.out.set(mp, sc.markerBase * 3);
@@ -1267,7 +1185,7 @@
     try {
       if (info.game === 'muscle') S.scene = muscleBuild(rt, view, info);
       else if (info.game === 'baka') S.scene = bakaBuild(rt, view);
-      else if (info.game === 'dance') S.scene = danceBuild(rt, view);
+      else if (info.game === 'dance') S.scene = danceBuild(rt, view, danceSceneFrame(rt));
     } catch (e) {
       try { console.warn('play-minigames: scene build failed', e); } catch (_) { /* no console */ }
       S.scene = null;

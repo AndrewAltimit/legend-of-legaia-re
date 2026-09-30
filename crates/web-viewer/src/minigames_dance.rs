@@ -278,6 +278,10 @@ pub(crate) struct DanceBodies {
     /// The dance entry's camera ([`dance_venue::venue_camera`]), in world
     /// coordinates.
     camera: legaia_engine_vm::psx_camera::FieldCameraView,
+    /// The floor's body meshes + choreography bank for the engine's cast
+    /// surface ([`legaia_engine_core::dance_cast_scene`]), which the play page
+    /// poses the run's own cast through - whatever mode it is.
+    cast_assets: Option<std::sync::Arc<legaia_engine_core::dance_cast_scene::DanceCastAssets>>,
 }
 
 /// Number of clip slots exposed per dancer: idle, the dance loop, and the
@@ -590,12 +594,7 @@ impl LegaiaMinigames {
     /// never drawn - FUN_8001E890).
     fn build_noa_body(&self, spawn: (i16, i16)) -> Option<DanceBodyMesh> {
         let raw = entry_bytes(&self.prot, &self.entries, character_pack::PROT_ENTRY_INDEX)?;
-        let pack = character_pack::parse(raw).ok()?;
-        let cslot = pack.slot(1)?;
-        let mut tmd_bytes = cslot.tmd_bytes.clone();
-        if cslot.is_active_party() && tmd_bytes.len() >= 0x0C {
-            tmd_bytes[0x08..0x0C].copy_from_slice(&10u32.to_le_bytes());
-        }
+        let tmd_bytes = legaia_engine_core::dance_cast_scene::resident_body_tmd(raw, 1)?;
         hybrid_body(&tmd_bytes, 0, spawn)
     }
 
@@ -628,6 +627,12 @@ impl LegaiaMinigames {
         )
         .ok()?;
         let venue = DanceVenue::build(&index, Some(&overlay))?;
+        let cast_assets = legaia_engine_core::dance_cast_scene::DanceCastAssets::from_venue(
+            &venue,
+            &cast,
+            entry_bytes(&self.prot, &self.entries, character_pack::PROT_ENTRY_INDEX),
+        )
+        .map(std::sync::Arc::new);
         let res = &venue.resources;
         // The scene's MOVE ANM bundle - the 60-record choreography bank.
         let anm = venue.anm.clone()?;
@@ -675,6 +680,7 @@ impl LegaiaMinigames {
             hud_staged,
             origin,
             camera: venue.camera,
+            cast_assets,
         })
     }
 
@@ -696,6 +702,18 @@ impl LegaiaMinigames {
     fn dance_anim_record(&self, dancer: u32, clip: u32) -> Option<(&PlayerAnmBundle, usize)> {
         let record = self.dance_clip(dancer, clip)?.record_index()?;
         Some((&self.dance_bodies.as_ref()?.anm, record))
+    }
+
+    /// The engine cast surface's assets off this disc's venue, and the world
+    /// point the page's baked hall is re-based on.
+    pub(crate) fn dance_cast_assets(
+        &self,
+    ) -> Option<(
+        std::sync::Arc<legaia_engine_core::dance_cast_scene::DanceCastAssets>,
+        (f32, f32, f32),
+    )> {
+        let b = self.dance_bodies.as_ref()?;
+        Some((b.cast_assets.clone()?, b.origin))
     }
 
     fn dance_body(&self, dancer: u32) -> Option<&DanceBodyMesh> {

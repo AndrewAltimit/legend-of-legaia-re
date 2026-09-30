@@ -1110,80 +1110,80 @@ impl LegaiaRuntime {
         self.minigame_art().is_some_and(|a| a.dance_body_ready())
     }
 
-    pub fn play_mg_dance_body_count(&self) -> u32 {
-        self.minigame_art()
-            .map(|a| a.dance_body_count())
-            .unwrap_or(0)
+    /// Pose the dance floor's bodies for this frame through the engine's
+    /// cast surface (`legaia_engine_core::dance_cast_scene::DanceCastSurface::frame`
+    /// over the world's run - the call the native window makes too) and
+    /// return its generation, or `-1` when no run is live. A generation the
+    /// page has not seen means the static buffers changed (a run on another
+    /// mode seated another cast): re-read them before the positions.
+    pub fn play_mg_dance_scene_frame(&mut self) -> i32 {
+        if !self.minigame_ui.dance_surface.has_assets()
+            && let Some((assets, origin)) = self.minigame_art().and_then(|a| a.dance_cast_assets())
+        {
+            self.minigame_ui.dance_surface.set_assets(Some(assets));
+            self.minigame_ui.dance_origin = origin;
+        }
+        let game = self
+            .scene_host
+            .as_ref()
+            .and_then(|h| h.world.minigames.dance.as_ref());
+        let surface = &mut self.minigame_ui.dance_surface;
+        match surface.frame(game) {
+            Some(_) => surface.generation() as i32,
+            None => -1,
+        }
     }
 
-    pub fn play_mg_dance_body_human_index(&self) -> u32 {
-        self.minigame_art()
-            .map(|a| a.dance_body_human_index())
-            .unwrap_or(0)
-    }
-
-    pub fn play_mg_dance_cast_json(&self) -> String {
-        self.minigame_art()
-            .map(|a| a.dance_cast_json())
-            .unwrap_or_else(|| "null".to_string())
-    }
-
-    pub fn play_mg_dance_body_positions(&self, dancer: u32) -> Vec<f32> {
-        self.minigame_art()
-            .map(|a| a.dance_body_positions(dancer))
+    /// This frame's posed positions, `[x, y, z]` per vertex, in the frame the
+    /// page's baked hall is drawn in (raw retail world coordinates re-based
+    /// on the hall origin, `LegaiaMinigames::dance_venue_vp`'s frame).
+    pub fn play_mg_dance_scene_positions(&self) -> Vec<f32> {
+        let (ox, oy, oz) = self.minigame_ui.dance_origin;
+        self.minigame_ui
+            .dance_surface
+            .scene()
+            .map(|s| {
+                s.positions
+                    .iter()
+                    .flat_map(|p| [p[0] - ox, p[1] - oy, p[2] - oz])
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
-    pub fn play_mg_dance_body_uvs(&self, dancer: u32) -> Vec<i32> {
-        self.minigame_art()
-            .map(|a| a.dance_body_uvs(dancer))
+    /// Per-vertex `[u, v]`.
+    pub fn play_mg_dance_scene_uvs(&self) -> Vec<u8> {
+        self.minigame_ui
+            .dance_surface
+            .scene()
+            .map(|s| s.uvs.iter().flatten().copied().collect())
             .unwrap_or_default()
     }
 
-    pub fn play_mg_dance_body_cba_tsb(&self, dancer: u32) -> Vec<u32> {
-        self.minigame_art()
-            .map(|a| a.dance_body_cba_tsb(dancer))
+    /// Per-vertex `[cba, tsb]`.
+    pub fn play_mg_dance_scene_cba_tsb(&self) -> Vec<u16> {
+        self.minigame_ui
+            .dance_surface
+            .scene()
+            .map(|s| s.cba_tsb.iter().flatten().copied().collect())
             .unwrap_or_default()
     }
 
-    pub fn play_mg_dance_body_indices(&self, dancer: u32) -> Vec<u32> {
-        self.minigame_art()
-            .map(|a| a.dance_body_indices(dancer))
+    /// Per-vertex `[r, g, b, flag]` (the hybrid textured / fill layout).
+    pub fn play_mg_dance_scene_flat_rgba(&self) -> Vec<u8> {
+        self.minigame_ui
+            .dance_surface
+            .scene()
+            .map(|s| s.flat_rgba.clone())
             .unwrap_or_default()
     }
 
-    pub fn play_mg_dance_body_object_ids(&self, dancer: u32) -> Vec<u32> {
-        self.minigame_art()
-            .map(|a| a.dance_body_object_ids(dancer))
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_dance_body_flat_rgba(&self, dancer: u32) -> Vec<u8> {
-        self.minigame_art()
-            .map(|a| a.dance_body_flat_rgba(dancer))
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_dance_body_part_count(&self, dancer: u32) -> u32 {
-        self.minigame_art()
-            .map(|a| a.dance_body_part_count(dancer))
-            .unwrap_or(0)
-    }
-
-    pub fn play_mg_dance_body_anim_dims(&self, dancer: u32, clip: u32) -> Vec<u32> {
-        self.minigame_art()
-            .map(|a| a.dance_body_anim_dims(dancer, clip))
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_dance_body_pose_frames(
-        &self,
-        dancer: u32,
-        clip: u32,
-        target_part_count: u32,
-    ) -> Vec<i32> {
-        self.minigame_art()
-            .map(|a| a.dance_body_pose_frames(dancer, clip, target_part_count))
+    /// Triangle indices.
+    pub fn play_mg_dance_scene_indices(&self) -> Vec<u32> {
+        self.minigame_ui
+            .dance_surface
+            .scene()
+            .map(|s| s.indices.clone())
             .unwrap_or_default()
     }
 
