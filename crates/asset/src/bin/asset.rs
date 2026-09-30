@@ -342,7 +342,8 @@ enum Cmd {
     },
     /// Scan PROT entries (raw + LZS-decoded) for embedded PSX TIMs.
     /// Reports per-entry hit counts; with `--out` extracts each TIM to
-    /// `<out>/<entry>/raw_off<H>.tim` (or `lzs<i>_off<H>.tim`).
+    /// `<out>/<entry>/raw_off<HEX>_<W>x<H>_<BPP>bpp.tim` (or
+    /// `lzs<i>_off<HEX>_<W>x<H>_<BPP>bpp.tim`).
     TimScan {
         /// Directory of extracted PROT entries (e.g. `extracted/PROT`).
         dir: PathBuf,
@@ -454,8 +455,8 @@ enum Cmd {
     /// Walk `tim_scan/<entry>/*.tim` under `extracted/` and report every
     /// TIM that places its CLUT or image at the requested VRAM cell. Used
     /// to discover which PROT entry provides a missing CLUT row that a
-    /// character mesh references - the runtime asset chain is partially
-    /// undocumented (see `project_clut_scattering.md`), and this is the
+    /// character mesh references - the runtime asset chain spreads CLUT rows
+    /// across several PROT entries, and this is the
     /// principled discovery step before adding the TIM dir to the viewer's
     /// `--vram-extra-dir` set.
     ClutFinder {
@@ -865,8 +866,10 @@ enum Cmd {
         #[arg(long, default_value_t = false)]
         json: bool,
     },
-    /// Render a kingdom's slot-4 wireframe (or a raw decoded slot-4 .bin)
-    /// to a top-down PNG. The output uses the same per-body color palette
+    /// Render a kingdom's slot-4 payload (or a raw decoded slot-4 .bin) to a
+    /// top-down PNG under the falsified polyline / "wireframe" reading. Slot 4
+    /// is the world-map ANM animation bank (`docs/formats/world-map-overlay.md`);
+    /// this view is kept as the diagnostic behind that falsification. The output uses the same per-body color palette
     /// as the WebGL world-overview viewer so a PNG screenshot can be
     /// visually diffed against the in-browser render.
     ///
@@ -946,28 +949,24 @@ enum Cmd {
     /// Decode one slot of a kingdom-bundle PROT entry (map01 / map02 / map03).
     ///
     /// Locates the 7-asset table, LZS-decodes the requested slot, and prints
-    /// a structural summary. When `slot=4` (world-map overlay outlines), also
-    /// dumps the per-body inventory. Optional `--out` writes the raw decoded
-    /// bytes; optional `--wireframe-obj` writes the slot-4 wireframe as a
-    /// Wavefront OBJ for inspection in any 3D viewer.
+    /// a structural summary. When `slot=4` (the world-map ANM animation bank,
+    /// `docs/formats/world-map-overlay.md`), also dumps the per-body inventory
+    /// of the falsified polyline reading. Optional `--out` writes the raw
+    /// decoded bytes; optional `--wireframe-obj` writes that polyline reading
+    /// as a Wavefront OBJ.
     KingdomSlot {
         /// Path to a kingdom PROT entry buffer (e.g. `extracted/PROT/0085_xxx.BIN`).
         input: PathBuf,
-        /// Slot index (0..7). Slot 4 = world-map overlay outlines.
+        /// Slot index (0..7). Slot 4 = the world-map ANM animation bank.
         #[arg(long, default_value_t = 4)]
         slot: u8,
         /// Write the raw decoded bytes to this path.
         #[arg(long)]
         out: Option<PathBuf>,
-        /// When `slot=4`: write a Wavefront OBJ of the wireframe (lines only).
+        /// When `slot=4`: write the falsified polyline reading as a Wavefront OBJ (lines only).
         #[arg(long)]
         wireframe_obj: Option<PathBuf>,
     },
-    /// Inspect one PROT entry's MAN (asset type 0x03) sub-asset:
-    /// LZS-decode the third descriptor of a `scene_asset_table` bundle
-    /// and walk the multi-section header at FUN_8003AEB0. Prints the
-    /// header fields, every section's offset+length, and (when `--with-encounter`)
-    /// decodes section 0 as the encounter section (FUN_8003A110).
     /// Print the boot path's overlay / side-band resolution table: which
     /// `PROT.DAT` entry each loader parameter names, what the slot-B default
     /// picker chooses per (summon-render flag, suppression) pair, and the
@@ -1018,6 +1017,11 @@ enum Cmd {
         #[arg(long, default_value = "slot-art")]
         out: PathBuf,
     },
+    /// Inspect one PROT entry's MAN (asset type 0x03) sub-asset:
+    /// LZS-decode the third descriptor of a `scene_asset_table` bundle
+    /// and walk the multi-section header at FUN_8003AEB0. Prints the
+    /// header fields, every section's offset+length, and (when `--with-encounter`)
+    /// decodes section 0 as the encounter section (FUN_8003A110).
     Man {
         /// PROT entry (`extracted/PROT/0086_map01.BIN`).
         input: PathBuf,
@@ -1083,9 +1087,9 @@ enum Cmd {
         only_hits: bool,
     },
     /// Cluster-aware extraction of the battle-effect `befect_data` cluster.
-    /// The per-entry PROT extractor over-reads here (the entries overlap on
-    /// disc), so this slices each entry at its true footprint, expands the
-    /// LZS-container entry into its sub-files, classifies every part
+    /// Slices each entry at its footprint (the sector gap to the next
+    /// entry), expands the LZS-container entry into its sub-files,
+    /// classifies every part
     /// (`efect.dat` 2-pack / effect-model TMDs / effect-texture TIMs / packs),
     /// and optionally writes the clean parts to `--out`.
     BefectCluster {

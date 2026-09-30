@@ -1,13 +1,10 @@
 //! Cluster-aware extractor for the battle-effect `befect_data` cluster.
 //!
-//! The per-entry PROT extractor over-reads this cluster: its entries overlap
-//! on disc - each starts only a few sectors into the previous entry's extended
-//! footprint, so the naive per-entry `.BIN` files bleed into their neighbours
-//! (e.g. `0873_befect_data.BIN` at offset `0x2000` is byte-identical to the
-//! start of `0874_befect_data.BIN`). This module slices each cluster entry at
-//! its true *footprint* (`next_lba - this_lba`), expands the LZS-container
-//! entry into its sub-files, and classifies every resulting blob by content
-//! signature.
+//! This module slices each cluster entry at its *footprint*
+//! (`next_lba - this_lba`, the same sector gap `Entry::size_sectors` holds;
+//! the superseded extended size bled each `.BIN` into its neighbour), expands
+//! the LZS-container entry into its sub-files, and classifies every resulting
+//! blob by content signature.
 //!
 //! Identity note: the CDNAME `#define` numbers are raw-TOC indices, so the
 //! symbol's window is converted to the retail **extraction** frame
@@ -236,8 +233,8 @@ pub fn extract(archive: &mut Archive, cdname: &IndexMap) -> Result<BefectCluster
             .get(idx as usize)
             .ok_or_else(|| anyhow!("PROT entry {idx} out of range"))?
             .clone();
-        // True per-file size is the footprint to the next entry; the indexed /
-        // extended size over-reads this cluster.
+        // True per-file size is the footprint to the next entry (what
+        // `Entry::size_sectors` also holds); the extended size over-reads.
         let footprint_sectors = match archive.entries.get(idx as usize + 1) {
             Some(next) => next.start_lba.saturating_sub(entry.start_lba),
             None => entry.size_sectors,

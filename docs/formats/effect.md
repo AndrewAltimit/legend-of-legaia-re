@@ -174,7 +174,7 @@ So the dev names map 1:1 onto the four retail `befect_data` slots. Earlier readi
 | 0872 | `vdf.dat` | Offset pack, 32 strictly-ascending entries (~96 B records). |
 | 0873 | `efect.dat` | The 2-pack: 144 atlas entries, `pack0@0x488` (14 anim batches), `pack1@0x900` (33 scripts). Byte-identical to the live post-init buffer at `_DAT_8007BD5C` (PROT.DAT sector `0x9086` = this entry's start). |
 
-The per-entry PROT extractor over-reads here (neighbouring entries' extended footprints overlap), so naive `.BIN` files bleed into their neighbours. `asset befect-cluster PROT.DAT --cdname CDNAME.TXT [--out DIR]` footprint-bounds and classifies a window of entries; note it resolves the CDNAME symbol in define-number space, so its "befect" window is extraction 872..875 - retail `vdf.dat`, `efect.dat`, `player.lzs` (= `player_data`), and a `sound_data2` VAB stream. Its LZS-section expansion of entry 874 is the **player.lzs** split, not the battle effect files.
+`asset befect-cluster PROT.DAT --cdname CDNAME.TXT [--out DIR]` slices each entry of the cluster at its footprint (the sector gap to the next entry, the size [`prot.md`](prot.md) gives every entry) and classifies the parts. It converts the CDNAME `befect_data` symbol into the extraction frame (`cdname::block_range_for_name_extraction`), so its window is exactly the four files above, extraction 0870..0873; the older reading that applied the define number unshifted landed on 872..875 and expanded `player.lzs` as if it were effect content.
 
 #### The battle value readout's glyph sheet lives here too
 

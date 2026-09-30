@@ -135,7 +135,8 @@ pub(crate) fn write_stage_obj(
 /// every TIM whose CLUT or image rect covers the requested VRAM cell.
 ///
 /// Used to discover which PROT entry provides a specific CLUT row that a
-/// character mesh references - see `project_clut_scattering.md`.
+/// character mesh references (the asset chain spreads CLUT rows across
+/// several PROT entries).
 pub(crate) fn clut_finder_cmd(
     extracted_root: &Path,
     x: u16,
