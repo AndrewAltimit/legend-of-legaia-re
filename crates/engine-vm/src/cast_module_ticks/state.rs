@@ -64,6 +64,11 @@ pub struct CastActorState {
     pub intel: u16,
     /// See [`CastActorState::intel`].
     pub intel_base: u16,
+    /// `+0x170` - the spirit-art charge gauge, filled on the defender of
+    /// every damaging hit by the shared finisher. Monster `0x8A`'s pick
+    /// reads its own as the Chaos Breath gate, and PROT 0938's `0x4E` body
+    /// drains it back down ([`super::chaos_breath_tick`]).
+    pub spirit_gauge: u16,
     /// `+0x16C` - the per-round **initiative key**, doubling as "has not
     /// acted yet". The turn-steal idiom clears it.
     pub init_key: u16,

@@ -1085,6 +1085,7 @@ impl World {
                 a.battle.intel_base,
                 self.battle.accuracy.get(slot as usize).copied(),
             ),
+            spirit_gauge: a.battle.spirit_gauge,
             init_key: a.battle.init_key,
             action_category: a.battle.action_category,
             queued_action: a.battle.params.first().copied().unwrap_or(0),
@@ -1197,6 +1198,7 @@ impl World {
         a.battle.intel = st.intel;
         a.battle.intel_base = st.intel_base;
         a.battle.init_key = st.init_key;
+        a.battle.spirit_gauge = st.spirit_gauge;
         a.battle.action_category = st.action_category;
         // ...and back into the mirrors the rest of the engine reads, so a
         // five-stat debuff is visible to turn order and the accuracy seed

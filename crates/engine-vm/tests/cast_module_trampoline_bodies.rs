@@ -80,6 +80,34 @@ fn the_phase_advances_exactly_once_per_tick() {
     }
 }
 
+/// PROT 0938's breath spends the gauge that gated it: the sweep arms the
+/// `0x32` budget (`0x801F7880`) and arm 3 drains it out of the caster's
+/// `+0x170`, so the `0x8A` pick - which clamped the gauge to `0x32` as it
+/// fired - is closed again until the monster has taken fresh damage. A sweep
+/// that hit nobody arms no budget.
+#[test]
+fn the_breath_drains_the_gauge_that_gated_it() {
+    let mut c = ctx(2, 3);
+    let mut caster = CastActorState {
+        spirit_gauge: 0x32,
+        ..actor(100)
+    };
+    let mut seats = vec![actor(100); 3];
+    let (_, hits) = chaos_breath_tick(&mut c, &mut caster, &mut seats, |_| 5, |_| (1, 1));
+    assert_eq!(hits.len(), 3);
+    assert_eq!(caster.spirit_gauge, 0, "the whole 0x32 budget is spent");
+
+    let mut c = ctx(2, 3);
+    let mut caster = CastActorState {
+        spirit_gauge: 0x32,
+        ..actor(100)
+    };
+    let mut seats = vec![actor(0); 3];
+    let (_, hits) = chaos_breath_tick(&mut c, &mut caster, &mut seats, |_| 5, |_| (1, 1));
+    assert!(hits.is_empty());
+    assert_eq!(caster.spirit_gauge, 0x32, "no hit, no budget");
+}
+
 /// The terminal arm is the only one that reports done, and PROT 0938's also
 /// undoes the rate halving its arm 0 applied.
 #[test]

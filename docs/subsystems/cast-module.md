@@ -1211,6 +1211,17 @@ Circle - table word 3 at `0x801F69E4`) and phase `0x0B` (Doomsday, the arm the
 carrying `+0x16E & 4`; PROT 0938's `0xB7` body tests only `+0x14C == 0`
 (`0x801F70D0`), so Mystic Circle hits a petrified seat.
 
+**Chaos Breath spends the gauge that gated it.** Monster `0x8A`'s pick fires
+the breath once its own `+0x170` gauge passes `0x31` and clamps the gauge to
+`0x32` as it does (`FUN_801E9FD4`, `0x801EB960..0x801EB984`). The clamp alone
+would leave the gate open. What closes it is the breath's own arm 3: every
+seat the sweep hits re-arms the module timer `0x801F8040` to `0x32`
+(`0x801F7880`), and arm 3 spends that timer out of the caster's `+0x170` a
+frame step (`0x1F800393`) at a time (`0x801F793C..0x801F7978`) - so a cast
+leaves the gauge at zero, and the breath returns only after the monster has
+taken fresh damage. The port folds the whole drain at the sweep, since
+nothing reads the caster's gauge before arm 3 has spent it.
+
 **Out of range is busy, not done.** Each of these bodies seeds a saved
 register with `1` and returns it, and only a terminal arm zeroes it - so a
 phase past a `sltiu` bound still reports busy. PROT 0949's tick is the

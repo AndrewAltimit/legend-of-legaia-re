@@ -115,6 +115,11 @@ pub const CHAOS_BREATH_POWER: u16 = 0x274;
 /// The clip PROT 0938's arm 0 stages on the caster
 /// (`addiu v1,zero,9; sb v1,0x1da(s3)` at `0x801F73C8`).
 pub const CHAOS_BREATH_ARM0_CLIP: u8 = 9;
+/// The gauge budget PROT 0938's `0x4E` sweep arms for arm 3 to drain out of
+/// the caster's `+0x170` (`li v0,0x32` at `0x801F7880`) - the same `0x32`
+/// the monster `0x8A` pick clamps the gauge to when it fires the breath, so
+/// a cast leaves the gauge at zero.
+pub const CHAOS_BREATH_GAUGE_DRAIN: u16 = 0x32;
 /// `+0x16E` bit `0x1` - **Venom** (`docs/subsystems/battle-formulas.md`).
 pub const FLAG_VENOM: u16 = 0x0001;
 /// `+0x16E` bit `0x2` - **Toxic**.
@@ -150,8 +155,10 @@ pub const FLAG_TOXIC: u16 = 0x0002;
 ///
 /// `rolls` supplies one wrapper result per hittable seat in seat order, and
 /// `status` one `rand()` pair per hittable seat, so the caller keeps retail's
-/// RNG cursor. Not ported: the packet and camera arms, and arms `1` / `3`,
-/// which are frame-gated presentation.
+/// RNG cursor. Arm `3` is frame-gated, but it is not only presentation: it
+/// drains [`CHAOS_BREATH_GAUGE_DRAIN`] out of the caster's `+0x170` gauge,
+/// which the port folds at the sweep. Not ported: the packet and camera
+/// arms, and arm `1`'s wait.
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
@@ -190,6 +197,16 @@ pub fn chaos_breath_tick(
                     v.flags |= FLAG_TOXIC;
                 }
                 hits.push(SweepHit { seat, applied });
+            }
+            // Every hit seat re-arms the module timer to the drain budget
+            // (`li v0,0x32; sw v0,-0x7FC0(0x8020)` at `0x801F7880`), and arm 3
+            // spends that budget out of the caster's own gauge, a frame step
+            // at a time (`0x801F793C..0x801F7978`). Nothing reads the gauge
+            // before arm 3 has drained it, so the port takes the whole budget
+            // here. Without it the gauge the `0x8A` pick clamped to `0x32`
+            // stays above its `0x31` gate and the breath fires every turn.
+            if !hits.is_empty() {
+                caster.spirit_gauge = caster.spirit_gauge.wrapping_sub(CHAOS_BREATH_GAUGE_DRAIN);
             }
             CastArmStep::Advance
         }
