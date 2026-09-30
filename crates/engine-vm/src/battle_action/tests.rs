@@ -34,6 +34,8 @@ struct RecHost {
     /// is what a host without a disc image reports.
     spell_classes: std::collections::HashMap<u8, u8>,
     ability_bits: std::collections::HashMap<u8, u32>,
+    /// Record word one (`+0xF8`) per party slot - the auto-fill passive bit.
+    ability_bits_high: std::collections::HashMap<u8, u32>,
     ranges: std::collections::HashMap<(u8, u8), u16>,
     prev_cleared: bool,
     sound_ready: bool,
@@ -188,6 +190,9 @@ impl BattleActionHost for RecHost {
     fn character_ability_bits(&self, slot: u8) -> u32 {
         self.ability_bits.get(&slot).copied().unwrap_or(0)
     }
+    fn character_ability_bits_high(&self, slot: u8) -> u32 {
+        self.ability_bits_high.get(&slot).copied().unwrap_or(0)
+    }
     fn screen_shake(&mut self, m: u16) {
         self.record(Event::ScreenShake(m));
     }
@@ -309,6 +314,45 @@ fn begin_seeds_the_turn_cursor_from_the_formation_advantage() {
 /// `0x801D3224` each round): within a round the pass is a no-op, and once the
 /// host clears the flag at the round boundary the next pass copies the
 /// already-cleared `+0x290` over `+0x291`.
+/// The auto-fill leg rolls its target over the **seated** monsters
+/// (`rand() % ctx[+0x01] + 3`, `0x801F0538..0x801F0570`) and redirects a dead
+/// pick until it lands on a living one. With the two front monsters down and
+/// the third standing, a roll over the living count alone could only name
+/// the first seat, and the unbounded redirect never returned.
+#[test]
+fn auto_fill_target_roll_spans_the_seated_monsters() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
+    host.slot_count = 6;
+    host.ability_bits_high
+        .insert(0, crate::battle_arts_auto_combo::AUTO_FILL_ABILITY_BIT);
+    for (slot, hp) in [(3usize, 0u16), (4, 0), (5, 40)] {
+        host.actors[slot].max_hp = 40;
+        host.actors[slot].liveness = hp;
+    }
+    host.rng_seq = vec![0, 0, 1, 2];
+    round_state_zero(&mut host, &mut ctx);
+    assert_eq!(host.actors[0].active_target, 5);
+}
+
+/// With fewer than three party members the host seats its monsters straight
+/// after the party, so the retail seat the roll names is translated before
+/// it is tested and stored.
+#[test]
+fn auto_fill_target_is_stored_in_host_seating() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
+    host.party_count = 2;
+    host.slot_count = 4;
+    host.ability_bits_high
+        .insert(0, crate::battle_arts_auto_combo::AUTO_FILL_ABILITY_BIT);
+    for slot in 2..4usize {
+        host.actors[slot].max_hp = 40;
+    }
+    host.actors[2].liveness = 0;
+    host.rng_seq = vec![0, 1];
+    round_state_zero(&mut host, &mut ctx);
+    assert_eq!(host.actors[0].active_target, 3);
+}
+
 #[test]
 fn round_state_zero_runs_once_per_round_and_relatches_the_cleared_byte() {
     let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
