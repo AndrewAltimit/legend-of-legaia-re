@@ -85,6 +85,7 @@ full design.
   - [Enemy ally (charm)](#enemy-ally-charm) - [Charm softlock fix](#charm-softlock-fix-charm_fix-module)
   - [Enemy HP bars](#enemy-hp-bars)
   - [Jewel fix](#jewel-fix-jewel_fix-module)
+  - [Approach-softlock fix](#approach-softlock-fix-approach_fix-module)
   - [Fishing prize prices](#fishing-prize-prices-fishing_price-module)
   - [Place names](#place-names-location_name-module)
   - [Earth Egg coin threshold](#earth-egg-coin-threshold-earth_egg-module)
@@ -445,6 +446,19 @@ neighbouring `09xx` extents overlap on disc (e.g. entry 953 starts `0x1800`
 into 952's window); every site lies in its module's own extent, so each
 physical word is written exactly once. See
 [`docs/tooling/randomizer.md` § Jewel fix](../../docs/tooling/randomizer.md#jewel-fix).
+
+## Approach-softlock fix (`approach_fix` module)
+
+`--approach-softlock-fix` closes the retail "endless camera orbit" park. A
+monster attacking out of reach waits in the battle-action state machine's
+in-range poll (state `0x19`, PROT 898), which has no movement code and no
+timeout; the staged approach clip does the moving, and when that clip dies
+mid-approach (a summon immediately before the melee) nothing re-stages it. The
+fix rewrites nine words of the poll's redundant facing recompute to re-stage
+the dead clip through the game's own staging state, so the monster resumes
+walking. Same-size word edits in the overlay, checked against the stock words
+first. See
+[`docs/tooling/randomizer.md` § Approach-softlock fix](../../docs/tooling/randomizer.md#approach-softlock-fix).
 
 ## Fishing prize prices (`fishing_price` module)
 
@@ -999,6 +1013,11 @@ register by 65 and 80 to reach a character's rows, so doubling it yields the
 pack's `10 x 13` and `10 x 16` strides exactly, and makes his own
 `(t5>>1) + t5 + t5` resolve to `5 * character`.
 
+The pack also installs his **arts name-length fix** (`arts_name_fix` module):
+retail centres a Super / Miracle Art name banner for the width of a fixed
+placeholder name, and a 3-word SCUS detour into an arena-1 routine behind the
+pack's stub re-measures the name actually installed.
+
 Mutually exclusive with `--shiny-seru`, `--show-super-arts`, the arts AP
 overrides and `--delilas-challenge` (same arena; the move list also detours the
 same applier). Full reference, including what is reconstruction rather than his:
@@ -1346,7 +1365,7 @@ this table is the map, the full mechanism reference is
 |---|---|
 | `delilas_party` | Orchestrator + `PartyMapping` (any permutation of `gi`/`lu`/`che`); battle + field model swap both directions, names both directions. `DelilasPartyOptions::keep_che_hammer` (`--delilas-che-hammer`) keeps Che's welded hammer on the mesh, skips his weapon fusion, and flips the kept hand to the sibling's natural wrist relation (`retarget_clip_wrist`) so the hammer holds Che's own model-space attitude - `delilas-verify` detects the state, `delilas-audit` needs `--allow-kept-hammer`. |
 | `delilas_voice` | Battle grunt voices resampled from the sibling SPU banks in place. |
-| `delilas_voice_fx` | `--delilas-arts-voice` modes (`original` / `removed` / `adjusted`, default `adjusted` - the pitch/formant re-voice). |
+| `delilas_voice_fx` | `--delilas-arts-voice` modes (`original` / `removed` / `adjusted`, default `original`; `adjusted` is the pitch/formant re-voice). |
 | `delilas_xa_voice` | The XA-sector write path (Form 2 EDC re-encode via `legaia_iso::write`). |
 | `delilas_signature_attack` | Hero Hyper -> sibling signature: stage-chain retarget, event-frame replace, `name_field` renames in both id spaces. |
 | `delilas_effects` | Signature effect-prototype transplant into the spare prototype-table ids (the 88-byte cave). |
@@ -1712,7 +1731,7 @@ legaia-patcher verify --input DISC.bin --patch run.ppf
   preset - the swap machinery lives in `legaia_asset::party_swap`, the
   disc apply in `delilas_party`. See `docs/tooling/randomizer.md`
   § Delilas party swap.
-- `--delilas-arts-voice original|removed|adjusted` (default `adjusted`)
+- `--delilas-arts-voice original|removed|adjusted` (default `original`)
   picks what the swapped party's XA arts shouts become
   (`delilas_voice_fx`): `adjusted` re-voices the retail Vahn / Noa / Gala
   takes toward the mapped sibling through the tuned pitch/formant map,
@@ -1833,7 +1852,9 @@ A PROT-entry-relative offset maps to the PROT.DAT-logical offset
 `start_lba[entry] * 2048 + offset_in_entry`, which
 `legaia_iso::write::patch_file_logical` turns into physical-sector writes plus
 EDC/ECC re-encode. Every edit is same-size and in place - no LBA, TOC, or
-directory record moves.
+directory record moves - except under `--allow-relayout` (`randomize` with
+`--equip-owner`, `translate import`), which grows entries by whole sectors,
+relays the disc out, and so writes an image but no PPF.
 
 ## Tests
 
