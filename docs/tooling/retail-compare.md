@@ -64,11 +64,23 @@ what the instrument cannot reach instead of dropping it. A minigame the
 retail state shows *inside* a field-run frame (the casino floor, the dance
 hall before the song) is a `field` state and is scored as the field it is.
 
+A field-run state is named by the scene it is **running**, which is not
+always the label. A walked door writes the destination label to `0x8007050C`
+with the scene-change packet, frames before the field init loads the block
+and stores its raw CDNAME define to `0x80084540`. A capture in that window
+(`doman_arrival_from_korb2`, `son_arrival_from_doman`, `s2_rimelm_town01`)
+shows the outgoing overworld - its frame, camera, player and track - under
+the incoming label, so the corpus scores it as the scene the define names and
+records the label as `pending_scene` in the detail
+(`RetailObs::settle_on_loaded_scene`). Scored under the label, every channel
+compared the overworld's retail values against a fresh entry of the town.
+
 ## Retail observables
 
 | Observable | Address | Notes |
 |---|---|---|
 | scene label | `0x8007050C` | CDNAME label, 8 bytes |
+| loaded scene | `0x80084540` | raw CDNAME define of the loaded block ([above](#the-corpus)) |
 | game mode | `0x8007B83C` | the next-mode word the dispatcher reads |
 | player `(X, footing, Z)` | `*0x8007C364 + 0x14/0x16/0x18` | `i16`s; the footing is the floor sample under the player |
 | camera pitch / yaw | `0x8007B790` / `0x8007B792` | 12-bit angles |
@@ -113,8 +125,13 @@ walk-on dispatcher's last-tile pair (`FUN_801D1EC4`) is stamped with the seat
 tile, because a retail capture of a player stood on a trigger tile holds that
 tile in the pair already. Seating without the stamp fired the tile's walk-on
 record on the first tick - `kor5_post_43a_checkpoint` stands on `P2[4]`, whose
-record walked the player out of the temple. BGM starts are recorded by
-a director on the scene host's event route.
+record walked the player out of the temple. The overworld's portals are
+entity auto-engages rather than walk-on records, so on a world map the seat
+also holds its tile against them until the player steps off
+(`WorldMapState::seat_hold_tile`): a pending-door capture stands on the
+portal that already fired, and re-engaging it crossed the door a second time
+inside the settle window. BGM starts are recorded by a director on the scene
+host's event route.
 
 **The image channel** comes from `play-window`, the real renderer, run as a
 child process from a scratch directory under the report, and seeded the same

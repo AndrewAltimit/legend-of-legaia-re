@@ -64,6 +64,11 @@ const CAM_EYE: u32 = 0x8008_40B8;
 /// the view orbits, stored **negated** (`engine-core::camera`, axes 6 / 8).
 const CAM_FOCUS: u32 = 0x8008_9118;
 const BGM_ID: u32 = 0x8007_BAC8;
+/// `0x80084540`, the **loaded** scene's raw CDNAME define. The label at
+/// `0x8007050C` is written by the scene-change packet ahead of the load, so
+/// between a door and the next field init the two disagree and this one
+/// names the scene still running (`docs/tooling/retail-compare.md`).
+const LOADED_SCENE_DEFINE: u32 = 0x8008_4540;
 /// The ambient-particle (fog pool) master gate, raised / cleared only by
 /// field-VM op `0x4C` nibble 3 (`docs/subsystems/field-ambient-fx.md`).
 const FOG_GATE: u32 = 0x8007_B854;
@@ -194,6 +199,12 @@ pub struct CameraObs {
 /// Everything read off one retail state.
 pub struct RetailObs {
     pub scene: String,
+    /// `0x80084540`: the raw CDNAME define of the scene actually loaded.
+    pub loaded_define: u16,
+    /// The label a scene-change packet had already written when the state
+    /// was taken, when it names a scene other than the loaded one
+    /// ([`RetailObs::settle_on_loaded_scene`]).
+    pub pending_scene: Option<String>,
     pub game_mode: u8,
     pub class: StateClass,
     /// `(X, footing, Z)`.
@@ -315,6 +326,8 @@ impl RetailObs {
         });
         Self {
             scene,
+            loaded_define: game_anchors::u16_at(ram, LOADED_SCENE_DEFINE),
+            pending_scene: None,
             game_mode,
             class,
             player,
@@ -327,6 +340,41 @@ impl RetailObs {
             battle: (class == StateClass::Battle)
                 .then(|| crate::retail_compare_battle::RetailBattle::from_ram(ram)),
             menu,
+        }
+    }
+}
+
+impl RetailObs {
+    /// Name the state by the scene it is **running**, not the one a door has
+    /// queued. A walked crossing writes the destination label to
+    /// `0x8007050C` with the scene-change packet, frames before the field
+    /// init loads the block and stores its define to `0x80084540`; a
+    /// field-run capture in that window shows the outgoing scene (its frame,
+    /// its camera, its player, its track) under the incoming label. Scored
+    /// under the label, every one of those channels compares the outgoing
+    /// scene's retail values against a fresh entry of the incoming one.
+    ///
+    /// Only field-run states are re-named: a mode-`0x02` capture is the load
+    /// itself, and the title / battle / menu modes hold other words there.
+    pub fn settle_on_loaded_scene(&mut self, cdname: &legaia_prot::cdname::IndexMap) {
+        if !matches!(self.class, StateClass::Field | StateClass::WorldMap) {
+            return;
+        }
+        let label_define = cdname
+            .iter()
+            .find(|(_, name)| **name == self.scene)
+            .map(|(&define, _)| define);
+        let Some(loaded) = cdname.get(&u32::from(self.loaded_define)) else {
+            return;
+        };
+        if label_define == Some(u32::from(self.loaded_define)) || *loaded == self.scene {
+            return;
+        }
+        let pending = std::mem::replace(&mut self.scene, loaded.clone());
+        self.pending_scene = Some(pending);
+        self.class = StateClass::classify(self.game_mode, &self.scene, self.player.is_some());
+        if self.class != StateClass::Field {
+            self.hud_countdown = None;
         }
     }
 }
@@ -1012,6 +1060,7 @@ pub struct RunOptions<'a> {
 pub fn run_corpus(opts: &RunOptions<'_>) -> Result<Vec<StateReport>> {
     let scus = std::fs::read(opts.extracted.join("SCUS_942.54"))
         .with_context(|| format!("read {}/SCUS_942.54", opts.extracted.display()))?;
+    let cdname = legaia_prot::cdname::parse(&opts.extracted.join("CDNAME.TXT"))?;
     let entries = enumerate_corpus(opts.manifest, opts.library);
     let mut out = Vec::new();
     for entry in entries {
@@ -1020,12 +1069,17 @@ pub fn run_corpus(opts: &RunOptions<'_>) -> Result<Vec<StateReport>> {
         {
             continue;
         }
-        out.push(run_one(opts, &entry, &scus));
+        out.push(run_one(opts, &entry, &scus, &cdname));
     }
     Ok(out)
 }
 
-fn run_one(opts: &RunOptions<'_>, entry: &CorpusEntry, scus: &[u8]) -> StateReport {
+fn run_one(
+    opts: &RunOptions<'_>,
+    entry: &CorpusEntry,
+    scus: &[u8],
+    cdname: &legaia_prot::cdname::IndexMap,
+) -> StateReport {
     let mut report = StateReport {
         label: entry.label.clone(),
         emulator: entry.emulator.to_string(),
@@ -1039,13 +1093,23 @@ fn run_one(opts: &RunOptions<'_>, entry: &CorpusEntry, scus: &[u8]) -> StateRepo
         score: None,
         image: None,
     };
-    let retail = match read_retail(entry, scus) {
+    let mut retail = match read_retail(entry, scus) {
         Ok(r) => r,
         Err(e) => {
             report.unseeded = format!("unreadable state: {e:#}");
             return report;
         }
     };
+    retail.settle_on_loaded_scene(cdname);
+    if let Some(pending) = &retail.pending_scene {
+        report.detail.insert(
+            "pending_scene".into(),
+            format!(
+                "label reads {pending} but define {} ({}) is loaded; scored as {}",
+                retail.loaded_define, retail.scene, retail.scene
+            ),
+        );
+    }
     report.scene = retail.scene.clone();
     report.game_mode = retail.game_mode;
     report.class = retail.class;
@@ -1499,6 +1563,40 @@ mod tests {
         assert_eq!((m.row, m.equip_depth), (FieldMenuRow::Equip, 2));
         assert!(RetailMenu::from_ram(&ram_with_subscreen(0), "opdeene").is_err());
         assert!(RetailMenu::from_ram(&ram_with_subscreen(0x20), "koin1").is_err());
+    }
+
+    fn field_run_ram(label: &str, loaded_define: u16) -> Vec<u8> {
+        let mut ram = vec![0u8; 0x20_0000];
+        let at = |va: u32| (va & 0x1F_FFFF) as usize;
+        let l = at(game_anchors::SCENE_NAME_VA);
+        ram[l..l + label.len()].copy_from_slice(label.as_bytes());
+        ram[at(game_anchors::GAME_MODE_VA)] = 0x03;
+        let p = at(game_anchors::PLAYER_PTR_VA);
+        ram[p..p + 4].copy_from_slice(&0x8010_0000u32.to_le_bytes());
+        let d = at(LOADED_SCENE_DEFINE);
+        ram[d..d + 2].copy_from_slice(&loaded_define.to_le_bytes());
+        ram
+    }
+
+    /// A walked crossing caught between the scene-change packet and the next
+    /// field init reads the incoming label over the outgoing scene: the state
+    /// is scored as the scene `0x80084540` names, and a settled state keeps
+    /// its label.
+    #[test]
+    fn a_pending_door_is_scored_as_the_loaded_scene() {
+        let cdname: legaia_prot::cdname::IndexMap =
+            [(391, "map03".to_string()), (399, "doman".to_string())].into();
+        let mut obs = RetailObs::from_ram(&field_run_ram("doman", 391), None);
+        assert_eq!(obs.class, StateClass::Field);
+        obs.settle_on_loaded_scene(&cdname);
+        assert_eq!(obs.scene, "map03");
+        assert_eq!(obs.pending_scene.as_deref(), Some("doman"));
+        assert_eq!(obs.class, StateClass::WorldMap);
+
+        let mut settled = RetailObs::from_ram(&field_run_ram("doman", 399), None);
+        settled.settle_on_loaded_scene(&cdname);
+        assert_eq!(settled.scene, "doman");
+        assert_eq!(settled.pending_scene, None);
     }
 
     #[test]

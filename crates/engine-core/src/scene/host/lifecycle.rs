@@ -297,6 +297,13 @@ impl SceneHost {
         if (0..=0x7F).contains(&tx) && (0..=0x7F).contains(&tz) {
             self.last_trigger_tile = Some((tx as u8, tz as u8));
         }
+        // The overworld's portals are entity auto-engages, not walk-on
+        // records, so the stamp above does not reach them: hold the seat tile
+        // for them the same way (a walked crossing caught between its portal
+        // firing and the next scene loading stands on that portal).
+        if self.world.mode == crate::world::SceneMode::WorldMap {
+            self.world.world_map.seat_hold_tile = Some((tx, tz));
+        }
         true
     }
 
