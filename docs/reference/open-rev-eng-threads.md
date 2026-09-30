@@ -845,7 +845,7 @@ a coincidence of the pad byte plus the mask table's first three entries
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Which live ports cover only part of their routine, and which of those differ from retail? | open (narrowed) - listed, not ported | Of the 43 partial ports a tag audit found, the ones that still change behaviour are Baka Fighter's attack-clip tail, a battle residue (the victory load hold's `ctx[+0x26B]` timing) and the anim barrier - each named with its blocker [details ↓](#which-live-ports-cover-only-part-of-their-routine). Each residue ported, or disclosed where it is blocked, closes it. |
+| Which live ports cover only part of their routine, and which of those differ from retail? | open (narrowed) - listed, not ported | Of the 43 partial ports a tag audit found, the ones that still change behaviour are a battle residue (the victory load hold's `ctx[+0x26B]` timing) and the anim barrier - each named with its blocker [details ↓](#which-live-ports-cover-only-part-of-their-routine). Each residue ported, or disclosed where it is blocked, closes it. |
 | Which save-state library entries still hold a patched executable? | open (narrowed) - audited and tagged; the rest need human play | A state made on a patched disc keeps that build's `SCUS_942.54` in RAM on every later load. `patch_taint_audit.py states` tags each library state's `resident_patch`; the S1..S5 anchors, `first_town_interactive` and `teien_field_run` are re-shot retail, and every capture-graded claim re-checked against its family stands ([`pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md#patched-disc-taint)). The `rikuroa_*`, `dolk2_market_noa`, `cort_evolved_*`, `minigame_*_pcsx`, `battle_gaza2_*` states and the mednafen `overworld_battle_bg_angle_*` states re-shot on an unpatched image close it. |
 | Which engine draws hand a raw LCG state where retail calls BIOS `rand`? | mostly resolved - every battle draw is shaped | `FUN_80056798` (BIOS `A(2Fh)`) returns `(seed >> 16) & 0x7FFF` and nothing reseeds it ([settled](re-settled-threads.md#measurement--corpus)). Every battle-side port draws through `World::next_rand`, the battle-action and effect-pool hosts included; every routine they port calls `jal 0x80056798`; neither PROT 0898 nor SCUS carries an inline LCG ([`battle-formulas.md`](../subsystems/battle-formulas.md#how-the-port-draws-it)). Left: the field move-VM extension `FUN_801D362C` (sub-ops `0x05` / `0x30`) draws the raw state, and the battle camera script, the camera shake and the Muscle Dome session keep private seeds. Moving those onto the world stream closes it. |
 
@@ -889,14 +889,15 @@ run and idle clips and octant facing (no retail scene installs a board, so
 these rest on disassembly); Rula and Riremito, which the Door of Wind / Door of
 Light now reach through the pause-menu session as retail does; the dome hub's
 subtractive shade on all three hosts, its two waits and first-visit lines;
-Baka Fighter's impact pair, cameo and cell blit; and in battle the commit's
-clip-tag ladder and the Seru absorb's kill-check gate.
+Baka Fighter's impact pair, cameo and cell blit, and its display clip - the
+actor's `+0x5C` / `+0x68` pair the clip selector plays out past the booked
+exchange, which all three hosts now pose from
+([`minigame-baka-fighter.md`](../subsystems/minigame-baka-fighter.md#the-display-clip));
+and in battle the commit's clip-tag ladder and the Seru absorb's kill-check
+gate.
 
 What remains, each with where it is recorded:
 
-- **Baka Fighter's duel**: an attack clip stops at the booked exchange instead
-  of playing out its tail
-  ([`minigame-baka-fighter.md`](../subsystems/minigame-baka-fighter.md#impact-cue-and-afterimage)).
 - **Battle**: none left in the flow. The special-battle word's readers are
   ported (the wipe rule `0x801E6578`, the arena Run arm `0x801D322C`, the two
   result-window calls in `FUN_8004E568`); the shadow's `+0x6A` flag is the

@@ -647,6 +647,19 @@
         }
       }
       const poseFighter = (fi, f, vertBase, dx, yaw) => {
+        /* The engine's display clip (`BakaFight::motion`, the actor's `+0x5C`
+         * clip and `+0x68` cursor the clip selector FUN_800204F8 advances):
+         * an attack plays out past the booked exchange, a hit holds one tick,
+         * a knockdown holds to the next round, the win flourish is pinned -
+         * the same clip the two play hosts pose. The page-side drive below
+         * is only the fallback for a bundle that predates `motion`. */
+        const m = st && st.motion && st.motion[fi];
+        const mc = m && this.clipFor(fi, m[0]);
+        if (mc) {
+          const frame = Math.min(Math.max(0, m[1]), mc.frameCount - 1);
+          poseInto(S.out, S.base, f.oid, mc, frame, vertBase, dx, yaw);
+          return;
+        }
         const a = this.action[fi];
         const c = this.clipFor(fi, a.id) || this.clipFor(fi, ACT.IDLE);
         if (!c) return;
