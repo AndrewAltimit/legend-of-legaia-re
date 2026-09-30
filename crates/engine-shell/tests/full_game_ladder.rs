@@ -2143,7 +2143,16 @@ fn cross_over(
                         if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
                             eprintln!("    [cross] {x}'s arrival carried the party to {s}");
                         }
-                        Ok(s)
+                        // Let the landing scene's own arrival run before the
+                        // position is read: a hand-off may land on the
+                        // parked sentinel (127, 127) and leave the seat to
+                        // the destination's script (`ropeway` P2[31] lands
+                        // in `jiji`, whose entry spawns P2[10] and its
+                        // `CC F8 51` puts the party at (67, 74)).
+                        match run_while_moving(session, SCRIPT_CEILING) {
+                            Run::Entered(s2) => Ok(s2),
+                            _ => Ok(s),
+                        }
                     }
                     Run::Released => {
                         // On the second visit, play the crossing's own beats
@@ -4235,7 +4244,12 @@ fn trace_beat(session: &BootSession, before: &BTreeSet<u16>, what: impl FnOnce()
         .difference(before)
         .map(|f| format!("0x{f:03X}"))
         .collect();
-    eprintln!("    [beat] {} +{gained:?}", what());
+    let (px, pz) = player_xz(session);
+    eprintln!(
+        "    [beat] {} +{gained:?} (ends at {:?} ({px},{pz}))",
+        what(),
+        tile_of(px, pz)
+    );
 }
 
 thread_local! {
@@ -4558,11 +4572,7 @@ fn interact_at(
             || !w.field_vm.helper_contexts.is_empty()
             || w.cutscene.timeline.is_some();
         if walking(session) && !beat_follows {
-            let tile = tile_of(bx, bz);
-            session
-                .host
-                .world
-                .seat_player_at_tile(tile.0.clamp(0, 127) as u8, tile.1.clamp(0, 127) as u8);
+            restore_player_xz(session, (bx, bz));
         }
         let r = run_while_moving(session, DEEP_EXIT_TICKS);
         if !matches!(r, Run::Released) || !walking(session) {
@@ -4575,13 +4585,25 @@ fn interact_at(
         }
     }
     if walking(session) {
-        let tile = tile_of(bx, bz);
-        session
-            .host
-            .world
-            .seat_player_at_tile(tile.0.clamp(0, 127) as u8, tile.1.clamp(0, 127) as u8);
+        restore_player_xz(session, (bx, bz));
     }
     last
+}
+
+/// Put the player back on the exact spot it stood before an interaction.
+/// Re-seating on the centre of `tile_of` the spot instead moved a player
+/// standing off-centre onto the neighbouring tile, and against a wall that
+/// tile can be solid: `jiji`'s prop examine left the party at (69, 71),
+/// walled on all four sides, after starting from (9020, 9216).
+fn restore_player_xz(session: &mut BootSession, (x, z): (i16, i16)) {
+    let w = &mut session.host.world;
+    let y = w.sample_field_floor_height(i32::from(x), i32::from(z)) as i16;
+    let slot = w.player_actor_slot.unwrap_or(0) as usize;
+    if let Some(a) = w.actors.get_mut(slot) {
+        a.move_state.world_x = x;
+        a.move_state.world_y = y;
+        a.move_state.world_z = z;
+    }
 }
 
 /// Page an open conversation to its end with [`script_pad`]. `None` when it
