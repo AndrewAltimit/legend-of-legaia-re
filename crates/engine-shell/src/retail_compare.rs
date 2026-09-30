@@ -1531,9 +1531,20 @@ fn battle_image(
             );
             return None;
         }
+        let ground: Vec<String> = seed
+            .ground
+            .iter()
+            .map(|g| g.map_or_else(|| "-".to_string(), |[x, z]| format!("{x}:{z}")))
+            .collect();
         env.push((
             "LEGAIA_BATTLE_INFLIGHT",
-            format!("{},{},{}", seed.caster, seed.spell_id, seed.target),
+            format!(
+                "{},{},{};{}",
+                seed.caster,
+                seed.spell_id,
+                seed.target,
+                ground.join(",")
+            ),
         ));
         env.push(("LEGAIA_CAPTURE_GATE", gate.to_env()));
         tick += crate::retail_compare_battle::INFLIGHT_DEADLINE;

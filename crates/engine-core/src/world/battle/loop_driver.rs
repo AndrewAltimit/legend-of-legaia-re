@@ -957,6 +957,15 @@ impl World {
         // The capture's MP is already charged (the Magic band debits at
         // `0x28`, before the summon band); credit the catalog price back so
         // the band's own debit lands on the captured figure.
+        for (slot, at) in seed.ground.iter().enumerate() {
+            if let (Some([x, z]), Some(a)) = (*at, self.actors.get_mut(slot)) {
+                a.move_state.world_x = x;
+                a.move_state.world_z = z;
+                if a.battle.seat.is_some() {
+                    a.battle.seat = Some((x, z));
+                }
+            }
+        }
         let price = u16::from(self.tables.spell_catalog.mp_cost(seed.spell_id));
         if let Some(a) = self.actors.get_mut(usize::from(seed.caster)) {
             a.battle.action_category = 2;

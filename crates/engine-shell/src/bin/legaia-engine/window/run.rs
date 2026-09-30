@@ -250,15 +250,27 @@ fn arm_requested_battle(session: &mut BootSession, spec: &str) {
     {
         world.seed_battle_stage_variant(v);
     }
-    // `LEGAIA_BATTLE_INFLIGHT=caster,spell,target`: dispatch that cast the
-    // moment the first command prompt opens - the retail comparison corpus's
-    // replay of a capture taken mid-cast (`InflightCastSeed`). A debug seam.
+    // `LEGAIA_BATTLE_INFLIGHT=caster,spell,target[;x:z,...]`: dispatch that
+    // cast the moment the first command prompt opens - the retail comparison
+    // corpus's replay of a capture taken mid-cast (`InflightCastSeed`), with
+    // each battle slot's ground (`-` keeps the seat). A debug seam.
     if let Some(seed) = std::env::var("LEGAIA_BATTLE_INFLIGHT").ok().and_then(|s| {
-        let v: Vec<u8> = s.split(',').filter_map(|p| p.trim().parse().ok()).collect();
+        let (head, ground_s) = s.split_once(';').unwrap_or((s.as_str(), ""));
+        let v: Vec<u8> = head
+            .split(',')
+            .filter_map(|p| p.trim().parse().ok())
+            .collect();
+        let mut ground = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+        for (g, tok) in ground.iter_mut().zip(ground_s.split(',')) {
+            *g = tok.split_once(':').and_then(|(x, z)| {
+                Some([x.trim().parse::<i16>().ok()?, z.trim().parse::<i16>().ok()?])
+            });
+        }
         (v.len() == 3).then(|| legaia_engine_core::world::InflightCastSeed {
             caster: v[0],
             spell_id: v[1],
             target: v[2],
+            ground,
         })
     }) {
         log::info!("play-window: LEGAIA_BATTLE_INFLIGHT seeds {seed:?} at the first prompt");

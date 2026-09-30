@@ -142,6 +142,9 @@ pub struct RetailBattle {
     pub caster_clip: u8,
     /// `ctx[+0x6DA]` - the yaw base a module walk arm swings.
     pub walk_yaw_base: u16,
+    /// Each pool slot's live `+0x34` / `+0x38` pair (party `0..=2`,
+    /// monsters `3..=7`), `None` for an empty slot.
+    pub ground: Vec<Option<[i16; 2]>>,
 }
 
 /// The summon band's live full-screen flash in a capture: which of the two
@@ -444,11 +447,30 @@ impl RetailBattle {
             && self.flow == 0xFF
             && self.active_actor < self.party_count
             && self.queued_action >= legaia_engine_vm::battle_action::SPELL_TRIGGER_SUMMON_MIN_ID)
-            .then_some(legaia_engine_core::world::InflightCastSeed {
+            .then(|| legaia_engine_core::world::InflightCastSeed {
                 caster: self.active_actor,
                 spell_id: self.queued_action,
                 target: self.target_code,
+                ground: self.engine_ground(),
             })
+    }
+
+    /// [`Self::ground`] re-keyed to engine battle slots: the party keeps its
+    /// seats, monster pool slot `3 + m` is engine slot `party_count + m`.
+    pub fn engine_ground(
+        &self,
+    ) -> [Option<[i16; 2]>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS] {
+        let mut out = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+        let pc = usize::from(self.party_count);
+        for (s, o) in out.iter_mut().enumerate().take(pc) {
+            *o = self.ground.get(s).copied().flatten();
+        }
+        for m in 0..usize::from(self.monster_count) {
+            if let Some(o) = out.get_mut(pc + m) {
+                *o = self.ground.get(3 + m).copied().flatten();
+            }
+        }
+        out
     }
 
     /// The phase the capture's **displayed frame** sits at: [`Self::phase_gate`]
@@ -576,6 +598,17 @@ impl RetailBattle {
             caster_clip: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1D9)),
             walk_yaw_base: game_anchors::u16_at(ram, ctx + 0x6DA),
             module_phase: game_anchors::u8_at(ram, ctx + 0x279),
+            ground: (0..8u32)
+                .map(|slot| {
+                    let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
+                    in_ram(p).then(|| {
+                        [
+                            game_anchors::u16_at(ram, p + 0x34) as i16,
+                            game_anchors::u16_at(ram, p + 0x38) as i16,
+                        ]
+                    })
+                })
+                .collect(),
         })
     }
 }

@@ -295,7 +295,14 @@ are what the settle window changed; the max values are the real check
 `+0x1DF` - is replayed rather than parked. The seed hands the engine that cast
 (`World::battle.inflight_seed`, target byte `+0x1DD`), dispatched the moment
 the first command prompt opens, and the capture's MP charge is credited back so
-the band's own debit lands on the captured figure. The session then runs to
+the band's own debit lands on the captured figure. The seed also carries every
+combatant's live `+0x34` / `+0x38` pair (`InflightCastSeed::ground`, the
+`;x:z,...` tail of `LEGAIA_BATTLE_INFLIGHT`), applied at the dispatch: retail
+walks nobody home after an action
+([battle-action.md](../subsystems/battle-action.md#where-an-action-leaves-its-combatants)),
+so a mid-fight caster stands wherever earlier actions left it, and the cast
+close-up frames that ground - a fresh entry's authored seats frame it
+elsewhere. Nothing in the summon band itself moves the caster. The session then runs to
 the capture's **phase**, not a fixed settle: the same action-SM state and,
 while the band's full-screen flash is up, the same flash the same number of
 vsyncs in. Retail's flash is a SCUS fade actor (tick word `FUN_80025000` at

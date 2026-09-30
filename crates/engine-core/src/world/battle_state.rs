@@ -22,7 +22,19 @@ pub struct InflightCastSeed {
     pub spell_id: u8,
     /// Retail's `+0x1DD` target byte.
     pub target: u8,
+    /// Where each combatant stands, by engine battle slot (party
+    /// `0..party_count`, then the monsters): the capture's live `+0x34` /
+    /// `+0x38` pair. Retail never walks a combatant home after an action
+    /// (`docs/subsystems/battle-action.md`, "Where an action leaves its
+    /// combatants"), so a mid-fight capture's actors stand wherever earlier
+    /// actions left them - the caster included - and a fresh entry's
+    /// authored seats frame the cast somewhere else. `None` keeps the seat.
+    pub ground: [Option<[i16; 2]>; INFLIGHT_GROUND_SLOTS],
 }
+
+/// Battle slots an [`InflightCastSeed`] places: three party seats and five
+/// monster seats.
+pub const INFLIGHT_GROUND_SLOTS: usize = 8;
 
 /// Live battle session state: per-seat stat arrays, command / submenu sessions, flow + round state, tutorial, intro transition, escape timer, buffs, hit / effect queues and the end-of-battle latches.
 pub struct BattleState {
