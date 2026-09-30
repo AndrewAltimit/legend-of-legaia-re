@@ -583,9 +583,10 @@ playthrough executes. It found fourteen, and the split is the interesting half:
   registers a retained-mode SCUS text actor, and
   `legaia_engine_ui::battle_hud_draws_for` rebuilds every `TextDraw` from the
   live model each frame, so there is no handle to hold.
-- **Four carry `NOT WIRED:`** - the `DRAW_ENV_INIT` values, the field
-  load-entry plan, and the battle party panel's label build and cross-out
-  mark. These are still the declared wiring worklist.
+- **Three carry `NOT WIRED:`** - the `DRAW_ENV_INIT` values, the field
+  load-entry plan, and the battle party panel's label build. These are still
+  the declared wiring worklist. The cross-out mark left it: both play hosts
+  draw it over the command ring.
 
 The distinction is not bookkeeping: a `REPLACED-BY` row is out of the wiring
 denominator entirely, so counting it as a gap states work that will never be
@@ -1820,7 +1821,7 @@ gates:
 | address | why it stayed |
 |---|---|
 | `801f44a0` | resolved: `engine-core`'s `BattleHud::push_popup` delegates every popup push to `DamagePopupRing::push`, so simultaneous popups are ring-bounded on both battle-HUD hosts |
-| the battle party panel's three | `panel_anchors` is production-called (`engine-ui`'s `party_panel_stage_x` reads it for the roster name pens); the rest of `battle_party_panel.rs` (`panel_labels`, the label-actor lifecycle, `cross_out_mark`) stays disclosed `NOT WIRED` - and the address follows the *anchor*, see below |
+| the battle party panel's three | `panel_anchors` is production-called (`engine-ui`'s `party_panel_stage_x` reads it for the roster name pens); `cross_out_mark` and the Rot / Curse stamps are drawn by both play hosts' command ring; the rest (`panel_labels`, the label-actor lifecycle) stays disclosed `NOT WIRED` or `REPLACED-BY` - and the address follows the *anchor*, see below |
 | `801e1ab0` | content-gated: the streak needs a move-FX scene whose move-power record carries a non-zero trail texture page (`+0x0b`) |
 
 The party-panel row was the sharper finding: `engine-ui` reproduced
@@ -1862,7 +1863,8 @@ stashes its handle;
 the port's battle HUD rebuilds every `TextDraw` from the live model each frame
 on both hosts, so there is no handle to hold and no host is owed one. It carries
 `REPLACED-BY:` and is out of the wiring denominator, while the panel build
-and the cross-out mark remain declared gaps.
+remains a declared gap. The cross-out mark is no longer one: both play hosts
+draw it over the command ring.
 
 So every instrument that keys on the address answers for `panel_labels`, and
 the catalog reads it inert with a disclosure. Crediting the row as
