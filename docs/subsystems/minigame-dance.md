@@ -843,8 +843,17 @@ move clip's anim word bit `0x200` asks for.
 Under the entry camera the Disco King projects **below** the frame: he stands
 on the lower floor (`y = 0` against the dancers' `-0x80`) only `0x190` in
 front of the eye, where his vertices land at NDC `y` between `-1.4` and
-`-2.5`. The spawn is the disassembly's; which camera retail frames the how-to
-with is open (see [Open](#open)).
+`-2.5`. That is retail's frame too. Nothing in the overlay moves the how-to
+camera: the keyframe block is gated off for mode `2`, the focus is the
+beat-clock actor's fixed position (`0x801CFF84..0x801CFFA4`), and neither the
+lesson script `FUN_801d0750` nor the entry writes the angle, eye or focus
+globals again. A live how-to run (the field reaches mode `2` through story
+flag `0x133`, which state 1 tests at `0x801CF8F4`; flags `0x134` / `0x135` /
+`0x428` pick modes `0` / `1` / `3` the same way, tested in that order, so a
+later flag wins) holds the entry pose for the whole lesson - pitch `0x3C`,
+eye `(0, 0x62C, 0xFF0)` every vsync - and its frames show Noa alone
+centre-stage: the Disco King is an off-screen voice, heard through his dialogue
+lines and never seen. The port frames the lesson the same way.
 
 The standalone minigames page runs its own qualifier-only session and poses
 it in its own script: the retail qualifier cast at
@@ -1201,11 +1210,6 @@ stays possible and unevidenced.
   position
   (see [Dancer bodies](#dancer-bodies-the-retail-cast--choreography-tables))
   but not the facing, and the actor records are not RAM-pinned live.
-- The how-to mode's **camera**: the keyframe track is skipped
-  (`DAT_801d514c != 2`), and the entry pose leaves the Disco King below the
-  frame (see [Drawing the floor](#drawing-the-floor-one-cast-surface)). No
-  retail capture of the how-to exists in the state library to pin what does
-  frame him.
 - The exact **length** of each judge-triggered move clip: it is what retail
   really gates re-judging on (the award routine is only called while the dancer
   is on its idle / dance loop), and the port times the window off the dancer's
