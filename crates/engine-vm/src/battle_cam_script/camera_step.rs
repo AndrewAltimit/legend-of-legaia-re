@@ -56,6 +56,7 @@ impl BattleCamera {
                 seed: ATTACK_CURSOR_SEED,
                 ..Default::default()
             },
+            module_glide: None,
         }
     }
 
@@ -143,6 +144,7 @@ impl BattleCamera {
             return;
         }
         self.last_action_state = state;
+        self.release_module_shot(state);
         if state == 0x00 {
             self.action_yaw = 0;
             return;
@@ -708,6 +710,14 @@ impl BattleCamera {
                 self.pose = from;
                 self.glides.clear();
                 self.step_components(&g);
+                return;
+            }
+            // `0x35` / `0x36` frame nothing of their own: the camera is the
+            // summon module's ([`Self::step_module_shot`]). A module whose
+            // camera arms are not ported arms no shot, and keeps case 6.
+            if SUMMON_MODULE_STATES.contains(&self.last_action_state) && self.module_shot_armed() {
+                self.glides.clear();
+                self.step_module_shot();
                 return;
             }
             if let Some(f) = self.attack_framing() {

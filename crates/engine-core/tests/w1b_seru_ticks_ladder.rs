@@ -34,10 +34,12 @@ const IDS: [(u8, u32); 6] = [
     (0x86, 908),
 ];
 
-/// Hard stop on the walk. The deepest chain in the set names sixteen arms
-/// plus the `0xFF` terminal, and PROT 0906's stager arm can advance a second
-/// time, so anything past this is a body that never reported done.
-const MAX_FRAMES: usize = 64;
+/// Hard stop on the walk. A body the engine runs ungated steps one arm a
+/// frame; one whose arms are paced on its own countdown
+/// (`legaia_engine_vm::cast_module_camera`, PROT 0903) holds each counted arm
+/// for as long as retail does - about 500 frames for Gimard - so anything
+/// past this is a body that never reported done.
+const MAX_FRAMES: usize = 1024;
 
 fn extracted_dir() -> Option<PathBuf> {
     std::env::var_os("LEGAIA_DISC_BIN")?;

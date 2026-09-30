@@ -190,6 +190,10 @@ pub struct BattleCamera {
     /// The per-art attack camera's channel: the disc track table, the battle
     /// context's own counters, and the acting actor's three bytes.
     pub(super) attack: AttackChannel,
+    /// The summon module's own shot (`FUN_801D829C` out of a slot-B arm),
+    /// which owns the camera through the summon band's `0x35` / `0x36`
+    /// ([`BattleCamera::arm_module_shot`]).
+    pub(super) module_glide: Option<Glide>,
 }
 
 /// [`BattleCamera`]'s per-art attack-camera state - retail's `ctx[+0x26D]` /

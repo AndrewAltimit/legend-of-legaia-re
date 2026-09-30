@@ -243,16 +243,20 @@ plate draws over retail's flash where the engine's flash covers it, the engine
 captions the spell name over the caster, and from `0x35` the creature stager's
 own camera is not modelled.
 
-That last gap is the per-summon module's, not the band's. In the stager hold
-`0x36` the camera belongs to the slot-B module, which arms its own framings on
-the **creature** (actor slot 7) - PROT 0903 (Gimard) tweens to pitch `0x80`,
-yaw `0x880 - creature facing`, TR `(0, 0x400, 0x400)` in its arm 6, then to
-pitch `0x140`, yaw `0x940 - facing`, TR `(0, 0x340, 0xA00)` over `0xC0` frames
-in arm 7 (`0x801F704C..0x801F7234`), each gated on the module's own countdown
-word `0x801F7960`. The engine's module tick ports the phase chain and the hit
-but not those camera arms or that countdown, so it frames `0x36` with case 6
-on the caster, and a `0x36` capture's `camera` reads that gap (the creature's
-focus against the caster's).
+That last gap is the per-summon module's, not the band's. In `0x35` / `0x36`
+the camera belongs to the slot-B module, which arms its own framings on the
+**creature** (actor slot 7) and paces its arms on a countdown of its own
+([`cast-module.md`](../subsystems/cast-module.md#the-module-owns-the-camera-and-the-bands-length)).
+Where the engine ports a module's director (PROT 0903, Gimard) the band's
+length is the module's, so a `0x35` / `0x36` capture of that module is gated on
+the module's phase byte `ctx[+0x279]` as well (`PhaseGate::module_phase`, the
+`m<phase>` suffix of `LEGAIA_CAPTURE_GATE`). A walk arm is gated on its entry,
+not on how far the creature has walked, so a capture mid-walk reads its
+`camera` against the framing the walk starts from. A module with no director
+keeps case 6 on the caster through `0x35` / `0x36`, and its capture's `camera`
+reads that gap. Where the creature stands is the formation's: a fight whose
+engine seats differ from retail's reads the difference in the creature focus
+too, since the module places the creature relative to caster and victim.
 
 **What the seed cannot carry.** Any other action in flight: a strike, an art
 or a monster's cast (flow `0xFF` outside the summon band) is compared with the

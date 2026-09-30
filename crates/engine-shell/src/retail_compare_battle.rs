@@ -124,6 +124,8 @@ pub struct RetailBattle {
     pub target_code: u8,
     /// The summon band's live flash, when one is up ([`RetailFade`]).
     pub summon_fade: Option<RetailFade>,
+    /// `ctx[+0x279]` - the resident summon module's phase byte.
+    pub module_phase: u8,
 }
 
 /// The summon band's live full-screen flash in a capture: which of the two
@@ -204,11 +206,24 @@ pub fn summon_fade(ram: &[u8]) -> Option<RetailFade> {
 pub struct PhaseGate {
     pub action_state: u8,
     pub fade: Option<RetailFade>,
+    /// The summon module's phase `ctx[+0x279]`, gated on only in `0x35` /
+    /// `0x36` and only for a module whose arms the engine paces on retail's
+    /// own countdown (`cast_module_camera::module_director`): there the band's
+    /// length is the module's, so the state alone does not place the frame.
+    pub module_phase: Option<u8>,
 }
 
 impl PhaseGate {
     /// `state[,white|black,age]`.
     pub fn to_env(&self) -> String {
+        let base = self.env_state_and_fade();
+        match self.module_phase {
+            Some(p) => format!("{base},m{p}"),
+            None => base,
+        }
+    }
+
+    fn env_state_and_fade(&self) -> String {
         match self.fade {
             None => format!("{}", self.action_state),
             Some(f) => format!(
@@ -221,7 +236,16 @@ impl PhaseGate {
     }
 
     pub fn from_env(s: &str) -> Option<Self> {
-        let mut it = s.split(',').map(str::trim);
+        let mut parts: Vec<&str> = s.split(',').map(str::trim).collect();
+        let module_phase = match parts.last() {
+            Some(t) if t.starts_with('m') => {
+                let p = t[1..].parse().ok()?;
+                parts.pop();
+                Some(p)
+            }
+            _ => None,
+        };
+        let mut it = parts.into_iter();
         let action_state = it.next()?.parse().ok()?;
         let fade = match (it.next(), it.next()) {
             (Some(dir), Some(age)) => Some(RetailFade {
@@ -230,7 +254,11 @@ impl PhaseGate {
             }),
             _ => None,
         };
-        Some(Self { action_state, fade })
+        Some(Self {
+            action_state,
+            fade,
+            module_phase,
+        })
     }
 
     /// Whether `world` is at this phase: the action SM on the same state
@@ -238,6 +266,11 @@ impl PhaseGate {
     /// in.
     pub fn met(&self, world: &legaia_engine_core::world::World) -> bool {
         if world.mode != SceneMode::Battle || world.battle_ctx.action_state != self.action_state {
+            return false;
+        }
+        if let Some(p) = self.module_phase
+            && world.casting.module_phase < p
+        {
             return false;
         }
         let Some(want) = self.fade else {
@@ -270,9 +303,16 @@ impl RetailBattle {
     /// The phase an in-flight capture's engine frame is gated on.
     pub fn phase_gate(&self) -> Option<PhaseGate> {
         self.inflight_cast()?;
+        // The player summon block is linear: PROT `903 + (id - 0x81)`.
+        let entry = u32::from(self.queued_action).wrapping_sub(0x81) + 903;
+        let directed = (0x81..=0xA0).contains(&self.queued_action)
+            && legaia_engine_vm::cast_module_camera::module_director(entry).is_some();
+        let module_phase =
+            (directed && (0x35..=0x36).contains(&self.action_state)).then_some(self.module_phase);
         Some(PhaseGate {
             action_state: self.action_state,
             fade: self.summon_fade,
+            module_phase,
         })
     }
 }
@@ -346,6 +386,7 @@ impl RetailBattle {
             queued_action: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DF)),
             target_code: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DD)),
             summon_fade: summon_fade(ram),
+            module_phase: game_anchors::u8_at(ram, ctx + 0x279),
         })
     }
 }
@@ -930,6 +971,7 @@ mod tests {
             PhaseGate {
                 action_state: 0x33,
                 fade: None,
+                module_phase: None,
             },
             PhaseGate {
                 action_state: 0x35,
@@ -937,6 +979,12 @@ mod tests {
                     to_white: false,
                     age: 24,
                 }),
+                module_phase: None,
+            },
+            PhaseGate {
+                action_state: 0x36,
+                fade: None,
+                module_phase: Some(6),
             },
         ] {
             assert_eq!(PhaseGate::from_env(&g.to_env()), Some(g));

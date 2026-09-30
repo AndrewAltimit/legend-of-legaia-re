@@ -144,6 +144,9 @@ pub struct SummonStager {
     pub spawn: [i16; 3],
     /// Where the walk ends and the outcome lands.
     pub goal: [i16; 3],
+    /// The creature's walk has reached [`Self::goal`] (the answer a directed
+    /// module's walk arm polls).
+    pub walked: bool,
 }
 
 impl World {
@@ -404,6 +407,7 @@ impl World {
         self.casting.module_nighto_outcome = None;
         self.casting.module_ring_angle = 0;
         self.casting.module_swordie = Default::default();
+        self.casting.module_cam = Default::default();
         self.casting.summon_stager = Some(SummonStager {
             caster,
             spell_id,
@@ -411,6 +415,7 @@ impl World {
             frames: 0,
             spawn: [cx, cy, cz.saturating_sub(SUMMON_SPAWN_BEHIND)],
             goal: [cx, cy, cz.saturating_sub(SUMMON_STRIKE_BEHIND)],
+            walked: false,
         });
         self.emit_cast_module_voice(spell_id);
     }
@@ -703,7 +708,64 @@ impl World {
         // Retail re-enters the paged module every frame from this seam; the
         // band's PORT rows are the code that runs there.
         let module_arm = self.casting.module_phase;
-        let _ = self.run_cast_module_code(st.spell_id, module_arm);
+        // The creature's live seat and walk state, as a directed module's
+        // walk arm reads them.
+        let seat_live = self
+            .casting
+            .summon_actor_slot
+            .filter(|&s| self.actors.get(s as usize).is_some_and(|a| a.active))
+            .and_then(|s| self.actors.get(s as usize))
+            .map(|a| vm::cast_module_camera::ModuleSeat {
+                x: a.move_state.world_x,
+                y: a.move_state.world_y,
+                z: a.move_state.world_z,
+                facing: a.battle.facing_angle & 0xFFF,
+            });
+        self.casting.module_cam.creature_live = seat_live;
+        self.casting.module_cam.creature_arrived = st.walked;
+        let placed_before = self.casting.module_cam.creature.is_some();
+        let run = self.run_cast_module_code(st.spell_id, module_arm);
+        // The module seats its creature itself (Gimard's arm 3); put the
+        // engine's creature where it did.
+        if !placed_before
+            && let Some(c) = self.casting.module_cam.creature
+            && let Some(slot) = self.casting.summon_actor_slot
+            && let Some(a) = self.actors.get_mut(slot as usize)
+        {
+            a.move_state.world_x = c.x;
+            a.move_state.world_z = c.z;
+            a.battle.facing_angle = c.facing;
+        }
+        // A module whose arms are paced by their own countdown
+        // (`vm::cast_module_camera`) owns the band's length the way retail's
+        // does: `0x36` holds on the module's return, and the outcome lands on
+        // the module's hit arm rather than on the engine's walk-in.
+        let directed_hit = run
+            .as_ref()
+            .and_then(|r| vm::cast_module_camera::module_hit_arm(r.prot_entry));
+        let module_busy =
+            directed_hit.is_some() && run.as_ref().is_some_and(|r| r.tick_ported && r.busy);
+        let module_phase = run.as_ref().map_or(0, |r| r.phase);
+        if let Some(shot) = run.as_ref().and_then(|r| r.camera_shot)
+            && let Some(cam) = self.battle.camera.as_mut()
+        {
+            let (pose, raw_z) = shot.pose();
+            cam.arm_module_shot(pose, raw_z, u32::from(shot.frames));
+        }
+        if let Some(f) = run.as_ref().and_then(|r| r.camera_follow)
+            && let Some(cam) = self.battle.camera.as_mut()
+        {
+            let actor = legaia_engine_vm::battle_cam_script::BattleCamActor {
+                facing: i32::from(f.seat.facing),
+                world: [
+                    f32::from(f.seat.x),
+                    f32::from(f.seat.y),
+                    f32::from(f.seat.z),
+                ],
+                height: None,
+            };
+            cam.arm_module_follow(actor, f.yaw_base, f.depth_raw);
+        }
         let busy = match st.phase {
             SummonPhase::Armed => {
                 // Phase 0: seat the creature (retail: the stager's
@@ -725,12 +787,20 @@ impl World {
                     .casting
                     .summon_actor_slot
                     .filter(|&s| self.actors.get(s as usize).is_some_and(|a| a.active));
-                let strike = match seat {
-                    Some(slot) => {
-                        st.frames > SUMMON_IDLE_FRAMES
-                            && self.summon_walk_step(slot as usize, st.goal)
-                    }
+                // A directed module walks its creature in its own walk arm,
+                // not after the engine's idle count.
+                let may_walk = match directed_hit {
+                    Some(walk_arm) => module_phase >= walk_arm,
+                    None => st.frames > SUMMON_IDLE_FRAMES,
+                };
+                let walked = match seat {
+                    Some(slot) => may_walk && self.summon_walk_step(slot as usize, st.goal),
                     None => st.frames >= SUMMON_UNSEATED_GRACE,
+                };
+                st.walked = walked;
+                let strike = match directed_hit {
+                    Some(hit) => module_phase > hit || !module_busy,
+                    None => walked,
                 };
                 if strike {
                     self.fold_pending_cast();
@@ -748,7 +818,7 @@ impl World {
                     // Back to the idle loop for the hold.
                     a.battle.queued_anim = 0;
                 }
-                if st.frames >= SUMMON_LINGER_FRAMES {
+                if st.frames >= SUMMON_LINGER_FRAMES && !module_busy {
                     self.despawn_summon_actor();
                     st.phase = SummonPhase::Done;
                 }
@@ -914,6 +984,12 @@ pub struct CastModuleCodeRun {
     /// `(element, group)` PROT 0964's Element Change committed onto the first
     /// monster seat's record this frame (`+0x1D` / `+0x1C`).
     pub element_change: Option<(u8, u8)>,
+    /// The camera shot the module armed this frame
+    /// ([`vm::cast_module_camera::ModuleShot`]).
+    pub camera_shot: Option<vm::cast_module_camera::ModuleShot>,
+    /// The case-6 follow the module re-armed this frame
+    /// ([`vm::cast_module_camera::ModuleFollow`]).
+    pub camera_follow: Option<vm::cast_module_camera::ModuleFollow>,
 }
 
 // --- W1-D: the fourteen trampoline arms ---
@@ -1306,6 +1382,30 @@ impl World {
         outcome
     }
 
+    /// The caster and victim as the module camera arms read them: world
+    /// position (`+0x34..+0x38`) and battle heading (`+0x46`).
+    fn module_cam_seats(
+        &self,
+        caster_slot: u8,
+        victim_slot: u8,
+    ) -> vm::cast_module_camera::ModuleCamSeats {
+        let seat = |slot: u8| {
+            self.actors
+                .get(slot as usize)
+                .map(|a| vm::cast_module_camera::ModuleSeat {
+                    x: a.move_state.world_x,
+                    y: a.move_state.world_y,
+                    z: a.move_state.world_z,
+                    facing: a.battle.facing_angle & 0xFFF,
+                })
+                .unwrap_or_default()
+        };
+        vm::cast_module_camera::ModuleCamSeats {
+            caster: seat(caster_slot),
+            victim: seat(victim_slot),
+        }
+    }
+
     /// The context bytes the kernels read (`ctx+0`, `+1`, `+0x13`, `+0x278`,
     /// `+0x279`).
     ///
@@ -1430,7 +1530,28 @@ impl World {
         // 0965's Doomsday wear the same address in different images.
         let body = ticks::capture_tick_body(entry, spell_id);
         let has_trampoline = ticks::capture_trampoline_for(entry).is_some();
-        let step = if has_trampoline {
+        // A player-Seru module whose camera arms are ported paces its own
+        // arms: the director runs first and, while an arm's countdown holds,
+        // the phase-chain body does not run at all (retail's arm returns
+        // before any of its writes). Its shot is the camera the summon band's
+        // `0x35` / `0x36` hand the battle camera.
+        let direction = if has_trampoline {
+            None
+        } else {
+            vm::cast_module_camera::module_director(entry).map(|direct| {
+                let seats = self.module_cam_seats(caster_slot, victim_slot);
+                let mut st = self.casting.module_cam;
+                let d = direct(&mut st, ctx.phase, seats);
+                self.casting.module_cam = st;
+                d
+            })
+        };
+        run.camera_shot = direction.and_then(|d| d.shot);
+        run.camera_follow = direction.and_then(|d| d.follow);
+        let held = direction.is_some_and(|d| d.hold);
+        let step = if held {
+            Some(ticks::CastTickStep::Busy)
+        } else if has_trampoline {
             match (entry, body) {
                 (958, Some(ticks::BLAZING_SLASH_TICK)) => {
                     Some(ticks::blazing_slash_tick(&mut ctx, &mut victim, None))
@@ -2254,6 +2375,8 @@ impl World {
             item_refund: None,
             voided_accessory: None,
             element_change: None,
+            camera_shot: None,
+            camera_follow: None,
         })
     }
 

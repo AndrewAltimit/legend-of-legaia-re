@@ -221,6 +221,7 @@
 mod action;
 mod camera;
 mod camera_step;
+mod module_shot;
 mod phase;
 mod pose;
 mod post_action;
@@ -228,6 +229,7 @@ mod projection;
 
 pub use action::*;
 pub use camera::*;
+pub use module_shot::*;
 pub use phase::*;
 pub use pose::*;
 pub use post_action::*;

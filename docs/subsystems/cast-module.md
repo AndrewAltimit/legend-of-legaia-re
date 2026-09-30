@@ -1798,12 +1798,49 @@ All eleven are ported, one function per body:
 `nova_tick`). `World::run_cast_module_code` drives them from the same seam it
 drives the capture-class bodies from, so a player summon in `play-window` or
 on the browser play page runs the module's own phase machine. What they leave
-out is what the static window cannot answer: the GPU-packet and camera arms,
-and the per-arm frame gating (PROT 0910's arm `6..=0x0A` timers excepted,
-above). The damage half still folds once, at
+out is the GPU-packet arms, and - except where a module has a director, below -
+the camera arms and the per-arm frame gating (PROT 0910's arm `6..=0x0A`
+timers excepted, above). The damage half still folds once, at
 `World::cast_spell_on_slots_prepaid`, with the module's magnitudes routed into
 the fold - Vera's `level * 0x20 + 0xE0` and Orb's `(level << 6) + 0x1C0` - so
 no body applies HP twice.
+
+### The module owns the camera and the band's length
+
+From the actor freeze `0x34` on, the summon band calls no framing case: `0x35`
+and `0x36` only re-enter the module through `FUN_801F1ED4`. The camera in those
+states is the module's, and every player-Seru module arms it with the same two
+kernels:
+
+- **the shot** - three stack trios (`sp+0x20` pitch / yaw / roll, `sp+0x28`
+  TR with TR z raw, `sp+0x30` the negated focus) and a duration in display
+  frames, handed to the tween builder `FUN_801D829C`. What varies per arm is
+  only where the halfwords come from: immediates, the negated creature seat
+  `actor_table[7]`, a yaw `K - facing`, or a heading between caster and victim
+  through `FUN_80019B28`;
+- **the countdown** - one word in the module's own image (`0x801F7960` in
+  PROT 0903), armed as a multiple of the speed scalar `*(0x1F80037D)` and
+  drained by `*(0x1F80037D) * *(0x1F800393)` per battle frame, each counted
+  arm holding while the word is above its own threshold.
+
+A walk arm hands the camera back to the action SM's framing instead: PROT
+0903's arm 11 calls `FUN_801D5854(7, 6)` - case 6 on the creature - every pass,
+with the depth `ctx[+0x6D0] = 0x800` and yaw base `ctx[+0x6DA] = 0x200` its
+arm 10 stored and `6 * scalar * delta` added to the yaw base per pass, and
+holds on the range poll `FUN_8004E2F0(7, victim)` while the creature walks in.
+Because the counted arms hold, the module - not a fixed stager script - sets
+how long `0x36` lasts: PROT 0903's run from arm 1 to the hit is about 500
+display frames.
+
+Port: `legaia_engine_vm::cast_module_camera` (`ModuleShot`, `ModuleCountdown`,
+`ModuleFollow`) and a per-module director that runs before the phase-chain
+body and withholds it while an arm holds. The battle camera steps the shot
+(`BattleCamera::arm_module_shot` / `arm_module_follow`) in `0x35` / `0x36` on
+both hosts; a module with no director arms no shot, and keeps case 6. PROT 0903
+(Gimard) has a director: the snap of arm 0, the pan of arm 1, the creature
+placement of arm 3 (half a unit from the victim toward the caster, facing the
+victim), the cuts of arms 4 and 6, the `0xC0`-frame pan of arm 7, the gates of
+arms 2 and 4..10 and the walk-in of arm 11.
 
 Five VAs cover the eleven arms, because a module whose image opens with code
 puts its tick at the load base. `0x801F69D8` alone is the arm for **six** of
