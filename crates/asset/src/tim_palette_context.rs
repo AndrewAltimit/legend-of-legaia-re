@@ -35,10 +35,7 @@
 use legaia_tim::{PixelMode, Tim, Vram};
 
 use crate::system_ui_bundle::SystemUiBundle;
-use crate::ui_widgets::{self, WidgetTable};
-
-/// VRAM origin of the system-UI texture page (`ui_widgets::SHEET_TPAGE`).
-pub const SHEET_PAGE_ORIGIN: (u16, u16) = (896, 256);
+use crate::ui_widgets::{self, ClaimPart, SHEET_VRAM_ORIGIN, SUBPALETTE_EXT_FIRST, WidgetTable};
 
 /// Where a TIM's own CLUT ends up after the boot upload.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -234,155 +231,292 @@ pub fn palette_flag_counts(tim: &Tim, idx: usize) -> (usize, usize) {
     (stp, transparent)
 }
 
-/// One rectangle of the system-UI texture page and the CLUT cell the game
-/// draws it through.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// One rectangle of the system-UI texture page one widget record samples,
+/// and the CLUT cell it samples it through.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SheetRegion {
-    /// `(u, v, w, h)` on the page (texel coordinates from
-    /// [`SHEET_PAGE_ORIGIN`]).
+    /// `(u, v, w, h)` in texels. From [`sheet_palette_regions`] it is on the
+    /// page (relative to [`SHEET_VRAM_ORIGIN`]); in a [`TexelPalettes`] it is
+    /// relative to that TIM's top-left and clipped to it.
     pub rect: (u16, u16, u16, u16),
-    /// VRAM cell of its 16-entry CLUT.
+    /// VRAM cell of its 16-entry CLUT ([`ui_widgets::clut_fb`] of the
+    /// record's palette byte).
     pub clut_fb: (u16, u16),
-    /// Widget record ids that name this rectangle with this palette.
-    pub widget_ids: Vec<u8>,
+    /// Widget record id.
+    pub widget: u8,
+    /// The record's frame class (selects the draw arm).
+    pub class: u8,
+    pub part: ClaimPart,
 }
 
-/// Every `(rectangle, palette)` pair the widget-class table draws off the
-/// system-UI page: each record's own sprite rect (`FUN_8002C488`), plus the
-/// frame tile-set quads of class-0 records and the cap pair of class-3 plate
-/// records (`FUN_8002C69C`'s arms), each through the record's palette byte.
-/// The portrait records sample another page and are left out. Duplicate
-/// `(rect, clut)` pairs merge; the same rectangle in two palettes stays as
-/// two regions.
-pub fn sheet_palette_regions(table: &WidgetTable) -> Vec<SheetRegion> {
-    let mut out: Vec<SheetRegion> = Vec::new();
-    let mut push = |rect: (u16, u16, u16, u16), clut_fb: (u16, u16), id: u8| {
-        if rect.2 == 0 || rect.3 == 0 {
-            return;
-        }
-        if let Some(r) = out
-            .iter_mut()
-            .find(|r| r.rect == rect && r.clut_fb == clut_fb)
-        {
-            if !r.widget_ids.contains(&id) {
-                r.widget_ids.push(id);
-            }
+impl SheetRegion {
+    /// Row-511 sub-palette number (`clut_fb.x / 16`), or `None` for the
+    /// `(896.., 498..501)` badge-block form.
+    pub const fn subpalette(&self) -> Option<u16> {
+        if self.clut_fb.1 == 511 {
+            Some(self.clut_fb.0 / 16)
         } else {
-            out.push(SheetRegion {
-                rect,
-                clut_fb,
-                widget_ids: vec![id],
-            });
-        }
-    };
-    for (i, w) in table.records().iter().enumerate() {
-        let id = i as u8;
-        if (ui_widgets::SPRITE_PORTRAIT_FIRST..ui_widgets::SPRITE_PORTRAIT_FIRST + 3).contains(&id)
-            || id == ui_widgets::SPRITE_PORTRAIT_FRAME
-        {
-            continue;
-        }
-        let clut = w.clut_fb();
-        let (u, v, ww, hh) = w.rect;
-        push((u as u16, v as u16, ww as u16, hh as u16), clut, id);
-        match w.class {
-            0 => {
-                if let Some(quads) = table.tileset(w.tileset) {
-                    for q in quads {
-                        push((q.u as u16, q.v as u16, q.w as u16, q.h as u16), clut, id);
-                    }
-                }
-            }
-            3 => {
-                if let Some((l, r)) = table.plate_caps(w.tileset) {
-                    for q in [l, r] {
-                        push((q.u as u16, q.v as u16, q.w as u16, q.h as u16), clut, id);
-                    }
-                }
-            }
-            _ => {}
+            None
         }
     }
-    out
+
+    /// Precedence when two regions sample the same texel (lower wins):
+    /// the draw paths whose sheet reads are pinned first - single sprites
+    /// (class 5, `FUN_8002C488`), then plate runs (class 3), bar runs
+    /// (class 4), framed windows (class 0), then the rest - and within a
+    /// path the smaller rectangle (the most specific sprite), then the
+    /// lower record id.
+    fn precedence(&self) -> (u8, usize, u8) {
+        let tier = match self.class {
+            5 => 0u8,
+            3 => 1,
+            4 => 2,
+            0 => 3,
+            _ => 4,
+        };
+        (
+            tier,
+            self.rect.2 as usize * self.rect.3 as usize,
+            self.widget,
+        )
+    }
 }
 
-/// Result of [`composite_rgba`].
-pub struct Composite {
-    /// Row-major RGBA8, the TIM's own dimensions.
-    pub rgba: Vec<u8>,
-    /// Texels some region decoded through its game palette.
-    pub covered: usize,
-    /// Texels two regions claim with **different** palettes (the first
-    /// region in table order wins; the same art is drawn in several colours).
+/// Every `(rectangle, CLUT cell)` the widget-class table draws off the
+/// system-UI page ([`WidgetTable::sheet_claims`]), in table order, one per
+/// claim. The portrait records sample another page and are left out.
+pub fn sheet_palette_regions(table: &WidgetTable) -> Vec<SheetRegion> {
+    table
+        .sheet_claims()
+        .into_iter()
+        .map(|c| SheetRegion {
+            rect: (
+                c.rect.0 as u16,
+                c.rect.1 as u16,
+                c.rect.2 as u16,
+                c.rect.3 as u16,
+            ),
+            clut_fb: ui_widgets::clut_fb(c.palette),
+            widget: c.widget,
+            class: c.class,
+            part: c.part,
+        })
+        .collect()
+}
+
+/// A rectangle of a sheet-page TIM another TIM uploads over at runtime: the
+/// game never shows the covered TIM's texels there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CoveredRect {
+    /// `(x, y, w, h)` in the covered TIM's texels.
+    pub rect: (u16, u16, u16, u16),
+    /// `PROT.DAT` byte offset of the TIM whose pixels the game shows there.
+    pub by_offset: u64,
+    /// VRAM cell of that TIM's own CLUT.
+    pub clut_fb: (u16, u16),
+}
+
+/// The one answer to "which palette draws which texel" for a TIM on the
+/// system-UI page. Both the viewer's as-drawn composite and the texture
+/// editor's per-pixel palette map read it.
+#[derive(Debug, Clone, Default)]
+pub struct TexelPalettes {
+    pub width: usize,
+    pub height: usize,
+    /// Every region that lands on this TIM outside the covered rectangle,
+    /// TIM-relative and clipped, in table order.
+    pub regions: Vec<SheetRegion>,
+    /// Per texel (row-major): index into `regions` of the region the texel
+    /// is attributed to ([`SheetRegion`] precedence), `None` when no region
+    /// samples it or it is covered.
+    pub owner: Vec<Option<u16>>,
+    /// Texels two regions sample through **different** CLUT cells - the
+    /// game really draws that art in several colours; `owner` names the one
+    /// with precedence.
     pub contested: usize,
+    /// The rectangle another TIM covers at runtime, when one does.
+    pub covered: Option<CoveredRect>,
 }
 
-/// Decode a 4bpp TIM that sits on a texture page as the game draws it:
-/// every texel a region covers goes through that region's palette (read
-/// from `vram`), and every other texel through `fallback` (typically the
-/// TIM's own palette 0) with its alpha halved so uncovered art reads as
-/// "not placed by the table" at a glance. `page_origin` is the VRAM
-/// origin the regions' `(u, v)` are relative to. `None` for a non-4bpp TIM.
-pub fn composite_rgba(
+impl TexelPalettes {
+    /// Texels some region is attributed to.
+    pub fn claimed(&self) -> usize {
+        self.owner.iter().filter(|o| o.is_some()).count()
+    }
+
+    /// The CLUT cell texel `(x, y)` is drawn through, if a region names one.
+    pub fn clut_at(&self, x: usize, y: usize) -> Option<(u16, u16)> {
+        let o = (*self.owner.get(y * self.width + x)?)?;
+        Some(self.regions[o as usize].clut_fb)
+    }
+
+    /// Is texel `(x, y)` inside the covered rectangle?
+    pub fn is_covered(&self, x: usize, y: usize) -> bool {
+        self.covered.is_some_and(|c| {
+            let (cx, cy, cw, ch) = c.rect;
+            (cx as usize..(cx + cw) as usize).contains(&x)
+                && (cy as usize..(cy + ch) as usize).contains(&y)
+        })
+    }
+}
+
+/// Is `tim` a 4bpp image lying on the system-UI texture page?
+pub fn on_sheet_page(tim: &Tim) -> bool {
+    let (px, py) = SHEET_VRAM_ORIGIN;
+    let img = &tim.image;
+    tim.mode == PixelMode::Bpp4
+        && img.fb_x >= px
+        && img.fb_x + img.fb_w <= px + 64
+        && img.fb_y >= py
+        && img.fb_y + img.h <= py + 256
+}
+
+/// Parse the button-glyph TIM ([`ui_widgets::BUTTON_GLYPH_TIM_PROT_OFFSET`])
+/// out of bytes starting at it, checking it is the row-511 sprite set.
+pub fn parse_button_glyph_tim(bytes: &[u8]) -> Option<Tim> {
+    legaia_tim::parse_strict(bytes)
+        .ok()
+        .filter(|t| on_sheet_page(t) && t.clut.as_ref().is_some_and(|c| c.fb_y == 511))
+}
+
+/// Parse the row-511 sub-palette extension TIM
+/// ([`ui_widgets::SUBPALETTE_EXT_TIM_PROT_OFFSET`]) out of bytes starting at
+/// it, checking its CLUT lands on `(256, 511)`.
+pub fn parse_subpalette_ext_tim(bytes: &[u8]) -> Option<Tim> {
+    legaia_tim::parse_strict(bytes).ok().filter(|t| {
+        t.clut
+            .as_ref()
+            .is_some_and(|c| (c.fb_x, c.fb_y) == (SUBPALETTE_EXT_FIRST * 16, 511))
+    })
+}
+
+/// Attribute every texel of `tim` (a 4bpp TIM on the system-UI page) to the
+/// region that draws it. `cover` is the button-glyph TIM when it could be
+/// read: its image uploads over part of the sheet at runtime, so the
+/// regions under it draw *its* texels and are left out here.
+pub fn texel_palettes(
     tim: &Tim,
-    page_origin: (u16, u16),
     regions: &[SheetRegion],
-    vram: &Vram,
-    fallback: &[u16],
-) -> Option<Composite> {
-    if tim.mode != PixelMode::Bpp4 || fallback.len() < 16 {
+    cover: Option<&Tim>,
+) -> Option<TexelPalettes> {
+    if tim.mode != PixelMode::Bpp4 {
         return None;
     }
-    let w = tim.pixel_width();
-    let h = tim.pixel_height();
+    let (w, h) = (tim.pixel_width(), tim.pixel_height());
     // Texel offset of the TIM's top-left on the page (4 texels per word).
-    let ox = (tim.image.fb_x as i64 - page_origin.0 as i64) * 4;
-    let oy = tim.image.fb_y as i64 - page_origin.1 as i64;
-    // Per-texel owning region (first in table order) + contest marks.
-    let mut owner: Vec<Option<usize>> = vec![None; w * h];
+    let ox = (tim.image.fb_x as i64 - SHEET_VRAM_ORIGIN.0 as i64) * 4;
+    let oy = tim.image.fb_y as i64 - SHEET_VRAM_ORIGIN.1 as i64;
+    let clip = |(u, v, rw, rh): (u16, u16, u16, u16)| -> Option<(u16, u16, u16, u16)> {
+        let x0 = (u as i64 - ox).max(0);
+        let y0 = (v as i64 - oy).max(0);
+        let x1 = (u as i64 + rw as i64 - ox).min(w as i64);
+        let y1 = (v as i64 + rh as i64 - oy).min(h as i64);
+        (x0 < x1 && y0 < y1).then_some((x0 as u16, y0 as u16, (x1 - x0) as u16, (y1 - y0) as u16))
+    };
+    let covered = cover
+        .filter(|c| (c.image.fb_x, c.image.fb_y) != (tim.image.fb_x, tim.image.fb_y))
+        .and_then(|c| {
+            let rect = clip((
+                (c.image.fb_x - SHEET_VRAM_ORIGIN.0) * 4,
+                c.image.fb_y.checked_sub(SHEET_VRAM_ORIGIN.1)?,
+                c.pixel_width() as u16,
+                c.pixel_height() as u16,
+            ))?;
+            let clut = c.clut.as_ref()?;
+            Some(CoveredRect {
+                rect,
+                by_offset: ui_widgets::BUTTON_GLYPH_TIM_PROT_OFFSET as u64,
+                clut_fb: (clut.fb_x, clut.fb_y),
+            })
+        });
+    let mut out = TexelPalettes {
+        width: w,
+        height: h,
+        covered,
+        ..Default::default()
+    };
+    for r in regions {
+        let Some(rect) = clip(r.rect) else { continue };
+        let tr = SheetRegion { rect, ..*r };
+        let (x, y, cw, ch) = rect;
+        let all_covered = out.is_covered(x as usize, y as usize)
+            && out.is_covered((x + cw - 1) as usize, (y + ch - 1) as usize);
+        if !all_covered {
+            out.regions.push(tr);
+        }
+    }
+    let mut order: Vec<usize> = (0..out.regions.len()).collect();
+    order.sort_by_key(|&i| (out.regions[i].precedence(), i));
+    out.owner = vec![None; w * h];
     let mut contested = vec![false; w * h];
-    for (ri, r) in regions.iter().enumerate() {
-        let (u, v, rw, rh) = r.rect;
-        for y in v as i64..(v + rh) as i64 {
-            let ty = y - oy;
-            if ty < 0 || ty >= h as i64 {
-                continue;
-            }
-            for x in u as i64..(u + rw) as i64 {
-                let tx = x - ox;
-                if tx < 0 || tx >= w as i64 {
+    for &i in &order {
+        let r = out.regions[i];
+        for y in r.rect.1 as usize..(r.rect.1 + r.rect.3) as usize {
+            for x in r.rect.0 as usize..(r.rect.0 + r.rect.2) as usize {
+                if out.is_covered(x, y) {
                     continue;
                 }
-                let k = ty as usize * w + tx as usize;
-                match owner[k] {
-                    None => owner[k] = Some(ri),
-                    Some(o) if regions[o].clut_fb != r.clut_fb => contested[k] = true,
+                let k = y * w + x;
+                match out.owner[k] {
+                    None => out.owner[k] = Some(i as u16),
+                    Some(o) if out.regions[o as usize].clut_fb != r.clut_fb => contested[k] = true,
                     _ => {}
                 }
             }
         }
     }
-    let palettes: Vec<Vec<u16>> = regions
-        .iter()
-        .map(|r| {
-            (0..16)
-                .map(|i| vram.pixel(r.clut_fb.0 as usize + i, r.clut_fb.1 as usize))
-                .collect()
-        })
-        .collect();
-    let row_bytes = tim.image.fb_w as usize * 2;
+    out.contested = contested.iter().filter(|&&c| c).count();
+    Some(out)
+}
+
+/// Decode a sheet-page TIM as the game draws it: every attributed texel
+/// through its region's CLUT read from `vram`, the covered rectangle as the
+/// covering TIM's own texels through its own CLUT (from `vram`), and every
+/// other texel through `fallback` (typically the TIM's own palette 0) with
+/// its alpha halved, so art no table entry places reads as such at a
+/// glance. Returns row-major RGBA8 at the TIM's own size.
+pub fn composite_rgba(
+    tim: &Tim,
+    texels: &TexelPalettes,
+    vram: &Vram,
+    fallback: &[u16],
+    cover: Option<&Tim>,
+) -> Option<Vec<u8>> {
+    if tim.mode != PixelMode::Bpp4 || fallback.len() < 16 {
+        return None;
+    }
+    let (w, h) = (texels.width, texels.height);
+    let cell = |(x, y): (u16, u16)| -> Vec<u16> {
+        (0..16)
+            .map(|i| vram.pixel(x as usize + i, y as usize))
+            .collect()
+    };
+    let palettes: Vec<Vec<u16>> = texels.regions.iter().map(|r| cell(r.clut_fb)).collect();
+    let nibble = |t: &Tim, x: usize, y: usize| -> Option<usize> {
+        let byte = *t.image.data.get(y * t.image.fb_w as usize * 2 + x / 2)?;
+        Some(if x & 1 == 0 { byte & 0x0F } else { byte >> 4 } as usize)
+    };
+    let cover_pal = texels.covered.map(|c| cell(c.clut_fb));
+    // Covered texel (x, y) of `tim` -> texel of `cover`.
+    let cover_at = |x: usize, y: usize| -> Option<(usize, usize)> {
+        let c = cover?;
+        let cx = (tim.image.fb_x as i64 - c.image.fb_x as i64) * 4 + x as i64;
+        let cy = tim.image.fb_y as i64 - c.image.fb_y as i64 + y as i64;
+        (cx >= 0 && cy >= 0).then_some((cx as usize, cy as usize))
+    };
     let mut rgba = Vec::with_capacity(w * h * 4);
-    let mut covered = 0;
     for y in 0..h {
         for x in 0..w {
-            let byte = *tim.image.data.get(y * row_bytes + x / 2)?;
-            let nib = if x & 1 == 0 { byte & 0x0F } else { byte >> 4 } as usize;
-            let k = y * w + x;
-            let px = match owner[k] {
-                Some(ri) => {
-                    covered += 1;
-                    legaia_tim::bgr555_to_rgba8(palettes[ri][nib])
-                }
+            if texels.is_covered(x, y)
+                && let (Some(pal), Some((cx, cy)), Some(c)) = (&cover_pal, cover_at(x, y), cover)
+            {
+                let nib = nibble(c, cx, cy)?;
+                rgba.extend_from_slice(&legaia_tim::bgr555_to_rgba8(pal[nib]));
+                continue;
+            }
+            let nib = nibble(tim, x, y)?;
+            let px = match texels.owner[y * w + x] {
+                Some(ri) => legaia_tim::bgr555_to_rgba8(palettes[ri as usize][nib]),
                 None => {
                     let mut p = legaia_tim::bgr555_to_rgba8(fallback[nib]);
                     p[3] /= 2;
@@ -392,11 +526,7 @@ pub fn composite_rgba(
             rgba.extend_from_slice(&px);
         }
     }
-    Some(Composite {
-        rgba,
-        covered,
-        contested: contested.iter().filter(|&&c| c).count(),
-    })
+    Some(rgba)
 }
 
 #[cfg(test)]
@@ -432,55 +562,89 @@ mod tests {
         p
     }
 
+    fn region(
+        widget: u8,
+        class: u8,
+        rect: (u16, u16, u16, u16),
+        clut_fb: (u16, u16),
+    ) -> SheetRegion {
+        SheetRegion {
+            rect,
+            clut_fb,
+            widget,
+            class,
+            part: ClaimPart::Rect,
+        }
+    }
+
     #[test]
     fn composite_decodes_each_region_through_its_own_vram_palette() {
         // 8x2 texels at the page origin; left half region -> VRAM cell A,
         // right half -> cell B, row 1 uncovered.
-        let t = tim4(SHEET_PAGE_ORIGIN, 2, 2, (0, 511), &[pal(0x001F)]);
+        let t = tim4(SHEET_VRAM_ORIGIN, 2, 2, (0, 511), &[pal(0x001F)]);
         let mut vram = Vram::new();
         vram.write_clut_row(0, 511, &[0, 0, 0xE0, 0x03]); // cell A: [1] = green
         vram.write_clut_row(16, 511, &[0, 0, 0x00, 0x7C]); // cell B: [1] = blue
         let regions = vec![
-            SheetRegion {
-                rect: (0, 0, 4, 1),
-                clut_fb: (0, 511),
-                widget_ids: vec![1],
-            },
-            SheetRegion {
-                rect: (4, 0, 4, 1),
-                clut_fb: (16, 511),
-                widget_ids: vec![2],
-            },
+            region(1, 5, (0, 0, 4, 1), (0, 511)),
+            region(2, 5, (4, 0, 4, 1), (16, 511)),
         ];
+        let tp = texel_palettes(&t, &regions, None).unwrap();
+        assert_eq!(tp.claimed(), 8);
+        assert_eq!(tp.contested, 0);
         let own = t.clut.as_ref().unwrap().entries.clone();
-        let c = composite_rgba(&t, SHEET_PAGE_ORIGIN, &regions, &vram, &own).unwrap();
-        assert_eq!(c.covered, 8);
-        assert_eq!(c.contested, 0);
-        assert_eq!(&c.rgba[0..4], &[0, 255, 0, 255]);
-        assert_eq!(&c.rgba[4 * 4..4 * 4 + 4], &[0, 0, 255, 255]);
+        let rgba = composite_rgba(&t, &tp, &vram, &own, None).unwrap();
+        assert_eq!(&rgba[0..4], &[0, 255, 0, 255]);
+        assert_eq!(&rgba[4 * 4..4 * 4 + 4], &[0, 0, 255, 255]);
         // Row 1 falls back to the TIM's own palette at half alpha.
-        assert_eq!(&c.rgba[8 * 4..8 * 4 + 4], &[255, 0, 0, 127]);
+        assert_eq!(&rgba[8 * 4..8 * 4 + 4], &[255, 0, 0, 127]);
     }
 
     #[test]
-    fn composite_counts_texels_drawn_in_two_palettes() {
-        let t = tim4(SHEET_PAGE_ORIGIN, 1, 1, (0, 511), &[pal(0x001F)]);
-        let vram = Vram::new();
+    fn precedence_is_draw_path_then_smallest_rect_and_contests_are_counted() {
+        let t = tim4(SHEET_VRAM_ORIGIN, 4, 8, (0, 511), &[pal(0x001F)]);
         let regions = vec![
-            SheetRegion {
-                rect: (0, 0, 4, 1),
-                clut_fb: (0, 511),
-                widget_ids: vec![1],
-            },
-            SheetRegion {
-                rect: (2, 0, 2, 1),
-                clut_fb: (16, 511),
-                widget_ids: vec![2],
-            },
+            // A class-4 bar body over the same texels as a class-5 badge:
+            // the pinned single sprite wins even though it is larger.
+            region(6, 4, (0, 0, 4, 4), (80, 511)),
+            region(0x1F, 5, (0, 0, 8, 4), (208, 511)),
+            // Two class-5 sprites: the smaller one wins.
+            region(9, 5, (0, 4, 16, 4), (0, 511)),
+            region(1, 5, (8, 4, 4, 4), (64, 511)),
         ];
+        let tp = texel_palettes(&t, &regions, None).unwrap();
+        assert_eq!(tp.clut_at(0, 0), Some((208, 511)));
+        assert_eq!(tp.clut_at(8, 5), Some((64, 511)));
+        assert_eq!(tp.clut_at(0, 5), Some((0, 511)));
+        assert_eq!(tp.contested, 16 + 16);
+        assert_eq!(regions[1].subpalette(), Some(13));
+    }
+
+    #[test]
+    fn a_covering_tim_hides_its_rectangle_and_the_composite_shows_it() {
+        // Sheet 16x4 texels; the cover TIM sits at page texel (8, 0), 8x4,
+        // every texel index 1 through its own CLUT at (304, 511).
+        let t = tim4(SHEET_VRAM_ORIGIN, 4, 4, (0, 511), &[pal(0x001F)]);
+        let cover = tim4((898, 256), 2, 4, (304, 511), &[pal(0x03E0)]);
+        let mut vram = Vram::new();
+        vram.write_clut_row(0, 511, &[0, 0, 0x1F, 0x00]); // sub 0: red
+        vram.write_clut_row(304, 511, &[0, 0, 0xE0, 0x03]); // sub 19: green
+        let regions = vec![
+            region(9, 5, (0, 0, 16, 4), (0, 511)),
+            region(0x37, 5, (8, 0, 8, 4), (304, 511)),
+        ];
+        let tp = texel_palettes(&t, &regions, Some(&cover)).unwrap();
+        assert_eq!(tp.covered.unwrap().rect, (8, 0, 8, 4));
+        assert_eq!(tp.regions.len(), 1, "the glyph region is wholly covered");
+        assert_eq!(tp.clut_at(9, 1), None);
+        assert_eq!(tp.claimed(), 32);
         let own = t.clut.as_ref().unwrap().entries.clone();
-        let c = composite_rgba(&t, SHEET_PAGE_ORIGIN, &regions, &vram, &own).unwrap();
-        assert_eq!(c.contested, 2);
+        let rgba = composite_rgba(&t, &tp, &vram, &own, Some(&cover)).unwrap();
+        assert_eq!(&rgba[0..4], &[255, 0, 0, 255]);
+        assert_eq!(&rgba[9 * 4..9 * 4 + 4], &[0, 255, 0, 255]);
+        // The cover TIM is not covered by itself.
+        let own_view = texel_palettes(&cover, &regions, Some(&cover)).unwrap();
+        assert!(own_view.covered.is_none());
     }
 
     #[test]
@@ -489,15 +653,12 @@ mod tests {
         let t = tim4((896, 448), 1, 1, (896, 498), &[pal(0x001F)]);
         let mut vram = Vram::new();
         vram.write_clut_row(0, 511, &[0, 0, 0xE0, 0x03]);
-        let regions = vec![SheetRegion {
-            rect: (0, 192, 4, 1),
-            clut_fb: (0, 511),
-            widget_ids: vec![0x8B],
-        }];
+        let regions = vec![region(0x8B, 5, (0, 192, 4, 1), (0, 511))];
+        let tp = texel_palettes(&t, &regions, None).unwrap();
+        assert_eq!(tp.claimed(), 4);
         let own = t.clut.as_ref().unwrap().entries.clone();
-        let c = composite_rgba(&t, SHEET_PAGE_ORIGIN, &regions, &vram, &own).unwrap();
-        assert_eq!(c.covered, 4);
-        assert_eq!(&c.rgba[0..4], &[0, 255, 0, 255]);
+        let rgba = composite_rgba(&t, &tp, &vram, &own, None).unwrap();
+        assert_eq!(&rgba[0..4], &[0, 255, 0, 255]);
     }
 
     #[test]

@@ -8,7 +8,8 @@
 //! * the system-UI sheet offers the "as the game draws it" composite, marks
 //!   the row-511 cells its sprites use - including the `(256..288, 511)`
 //!   extension cells the file itself does not carry - and the composite
-//!   decode differs from the palette-0 decode.
+//!   decode differs from the palette-0 decode, and shows the button-glyph
+//!   TIM where that TIM covers the sheet at runtime.
 //!
 //! Structural facts only. Skips + passes when `LEGAIA_DISC_BIN` is unset.
 
@@ -73,6 +74,16 @@ fn catalog_palette_context_names_the_game_palette() {
         composite,
         v.catalog_decode_with_choice(sheet, "own:0").unwrap().2
     );
+    // The button-glyph rectangle shows the glyph TIM (0x7B00) that covers
+    // it at runtime, not the sheet's hidden texels.
+    let glyphs = id_at(&v, 0x7B00);
+    let (gw, gh, g) = v.catalog_decode_with_choice(glyphs, "own:0").unwrap();
+    let (gw, gh) = (gw as usize, gh as usize);
+    for (gx, gy) in [(0usize, 0usize), (17, 5), (gw - 1, gh - 1)] {
+        let s = ((96 + gy) * 256 + 128 + gx) * 4;
+        let o = (gy * gw + gx) * 4;
+        assert_eq!(composite[s..s + 4], g[o..o + 4], "glyph texel ({gx}, {gy})");
+    }
 
     // A scene texture is not boot-resident and carries no composite.
     let scene = (0..v.catalog_len())

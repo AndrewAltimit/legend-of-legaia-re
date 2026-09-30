@@ -86,13 +86,55 @@ purple, brown and red in the game, each through its own palette, and any one
 palette paints all nine in a single colour scheme. That is not a decode bug; it is how
 4bpp sheets are stored.
 
-The asset viewer's TIM catalog resolves this where the disc says how. For
-textures on the system-UI page it offers **As the game draws it**: every
-rectangle the widget table names, decoded through that rectangle's own
-palette out of the boot VRAM (`legaia_asset::tim_palette_context`). It also
-lists the palettes VRAM really holds on the texture's CLUT row, marks the
-ones the page's sprites use, and says when a texture's own palette is
-overwritten at boot or is all zeros on disc.
+### Which palette draws which region
+
+For the system-UI page (VRAM `(896, 256)`: the menu / battle sheet at
+`PROT.DAT` `0x18E0` and the smaller TIMs uploaded beside it) the mapping is
+disc data, and one kernel reads it: `legaia_asset::tim_palette_context::texel_palettes`.
+The asset viewer's **As the game draws it** view and the ROM patcher's
+texture editor (region list, in-game view, `tim-palette-map`) both call it,
+so the two can no longer disagree.
+
+- **Who samples what.** Every rectangle comes from the widget-class table
+  (`SCUS_942.54` `0x800732A4`, [`ui_widgets`](../../crates/asset/src/ui_widgets.rs),
+  [`battle.md`](battle.md#the-widget-class-table---where-every-chrome-sprite-comes-from)),
+  expanded per draw arm of `FUN_8002C69C` exactly as the arm emits it: a
+  class-5 record is its own sprite; a class-3 plate run adds its cap pair
+  (`0x80073A60 + tileset * 8`); a class-4 bar (arm `0x8002EAB4`) draws the
+  same cap pair as two sprites and then stretches the record's rectangle
+  across a textured quad; a class-0 window adds its eight frame tiles. Every
+  piece is drawn through the record's palette byte. The portrait records
+  sample the next page and are not part of the map.
+- **Which cell.** The palette byte decodes to a CLUT cell
+  ([`clut_fb`](../../crates/asset/src/ui_widgets.rs)): bit 6 clear is
+  `CBA = 0x7FC0 + (b & 0x3F)`, VRAM `(16 * (b & 0x3F), 511)` - "sub-palette
+  `b & 0x3F`"; bit 6 set is the 4x4 badge block at `(896.., 498..501)`. The
+  sheet's 16x16 CLUT block lands flattened on row 511, so sub-palette `k`
+  below 16 **is** the sheet file's palette `k`, and all sixteen survive the
+  boot upload unchanged. Sub-palettes 16-18 are the three rows of the
+  CLUT-only TIM at `0x1858`; sub-palette 19 is the button-glyph TIM's own.
+- **Overlaps.** Where two records sample the same texel, the attributed
+  palette follows the draw path: single sprites (class 5), then plate runs
+  (3), bars (4), framed windows (0), the rest; within a path the smaller
+  rectangle, then the lower record id. Such texels are really drawn in more
+  than one colour - the bar record `0x06` stretches a 16x16 cut of the Curse
+  badge's texels through sub-palette 5 while the badge itself draws them
+  through 13 - and the kernel counts them (`contested`).
+- **Covered texels.** The 64x32 button-glyph TIM at `PROT.DAT` `0x7B00`
+  uploads its pixels over sheet texels `(128, 96)..(191, 127)`; the records
+  that draw there (`0x37..=0x3E`, sub-palette 19) draw the glyphs. The kernel
+  leaves that rectangle out of the map and reports it; the viewer's composite
+  shows the glyph TIM there, and the texture editor points at that TIM.
+- **Unplaced texels.** Art no record samples has no palette the disc names;
+  overlay code may still draw it. The viewer dims it, the editor maps it to
+  palette 0.
+
+The viewer reads each cell's colours out of the boot VRAM, so a palette a
+later boot upload overwrote shows as the game has it; it also lists the
+palettes VRAM holds on a texture's CLUT row and says when a texture's own
+palette is overwritten at boot or is all zeros on disc. The editing side of
+the same map - download shapes, what an edit rewrites - is in
+[`textures-and-fonts.md`](../tooling/translation/textures-and-fonts.md#multi-palette-textures).
 
 ## Step 4: the colour word - why raw textures look darker or brighter
 
@@ -244,7 +286,7 @@ and [`textures-and-fonts.md`](../tooling/translation/textures-and-fonts.md).
 
 | Chain step | Port |
 |---|---|
-| Palette resolution for exports | `legaia_asset::tim_palette_context`, `legaia_tim::decode_rgba8_with_palette` |
+| Palette resolution for exports | `legaia_asset::tim_palette_context` (`texel_palettes`: which cell draws which texel; `BootClutVram`: what the cells hold), `legaia_tim::decode_rgba8_with_palette` |
 | VRAM + CLUT decode | `engine-render` VRAM pipeline (1024x512 R16Uint, CLUT decode in the fragment shader); `legaia_tim::Vram` |
 | Colour word + depth cue | `psx_modulate` / `psx_depth_cue` in the shader prelude, CPU mirror `legaia_engine_render::psx_light` |
 | Battle ambient | `legaia_engine_vm::battle_ground_grid::ambient_base_step`, `World::tick_battle_ambient` |

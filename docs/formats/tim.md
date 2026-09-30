@@ -252,9 +252,11 @@ often do not:
 
 `legaia_asset::tim_palette_context` resolves the first two from the disc: the
 boot-VRAM CLUT state (`BootClutVram`), a per-rectangle palette map of the
-system-UI page from the SCUS widget table (`sheet_palette_regions`), and an
-"as drawn" composite decode (`composite_rgba`). The asset viewer's TIM catalog
-surfaces all of it in its palette list and notes. The whole colour chain, and
+system-UI page from the SCUS widget table (`sheet_palette_regions`), the one
+per-texel attribution of it (`texel_palettes`), and an "as drawn" composite
+decode (`composite_rgba`). The asset viewer's TIM catalog surfaces all of it
+in its palette list and notes; the ROM patcher's texture editor reads the same
+`texel_palettes`. The whole colour chain, and
 what it means for texture editing, is on
 [`subsystems/shading.md`](../subsystems/shading.md).
 

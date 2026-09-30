@@ -261,18 +261,6 @@ fn entries_per_palette(tim: &legaia_tim::Tim) -> usize {
     }
 }
 
-/// Is `tim`'s image on the system-UI texture page (the page the widget
-/// table's rectangles address)?
-fn on_sheet_page(tim: &legaia_tim::Tim) -> bool {
-    let (px, py) = palctx::SHEET_PAGE_ORIGIN;
-    let img = &tim.image;
-    tim.mode == legaia_tim::PixelMode::Bpp4
-        && img.fb_x >= px
-        && img.fb_x + img.fb_w <= px + 64
-        && img.fb_y >= py
-        && img.fb_y + img.h <= py + 256
-}
-
 fn join_ids(v: &[usize]) -> String {
     v.iter()
         .map(|p| p.to_string())
@@ -325,22 +313,27 @@ impl LegaiaViewer {
     }
 
     /// Composite decode of a sheet-page TIM, if the palette map applies and
-    /// covers any of it. Returns `(rgba, covered, contested)`.
+    /// covers any of it. Returns `(rgba, covered, contested)`. Reads the
+    /// same kernel as the ROM patcher's region map
+    /// (`legaia_asset::tim_palette_context::texel_palettes`).
     fn catalog_composite(&self, tim: &legaia_tim::Tim) -> Option<(Vec<u8>, usize, usize)> {
         let regions = self.sheet_regions.as_ref()?;
         let boot = self.boot_cluts.as_ref()?;
-        if !on_sheet_page(tim) {
+        if !palctx::on_sheet_page(tim) {
+            return None;
+        }
+        let cover = self
+            .disc
+            .get(legaia_asset::ui_widgets::BUTTON_GLYPH_TIM_PROT_OFFSET..)
+            .and_then(palctx::parse_button_glyph_tim);
+        let texels = palctx::texel_palettes(tim, regions, cover.as_ref())?;
+        let covered = texels.claimed();
+        if covered == 0 {
             return None;
         }
         let fallback = tim.clut.as_ref()?.palette(tim.mode, 0)?.to_vec();
-        let c = palctx::composite_rgba(
-            tim,
-            palctx::SHEET_PAGE_ORIGIN,
-            regions,
-            boot.vram(),
-            &fallback,
-        )?;
-        (c.covered > 0).then_some((c.rgba, c.covered, c.contested))
+        let rgba = palctx::composite_rgba(tim, &texels, boot.vram(), &fallback, cover.as_ref())?;
+        Some((rgba, covered, texels.contested))
     }
 
     /// Decode catalog TIM `id` through palette `choice` (see
@@ -431,7 +424,7 @@ impl LegaiaViewer {
             if fate != "not_boot"
                 && let Some(clut) = tim.clut.as_ref()
             {
-                let used: Vec<(u16, u16)> = if on_sheet_page(&tim) {
+                let used: Vec<(u16, u16)> = if palctx::on_sheet_page(&tim) {
                     self.sheet_regions
                         .iter()
                         .flatten()

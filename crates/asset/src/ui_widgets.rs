@@ -341,7 +341,7 @@ pub enum ClaimPart {
     /// The record's own `(u, v, w, h)` - the sprite, a plate run's body
     /// tile, or a window's interior fill.
     Rect,
-    /// A class-3 plate run's left / right cap (`0x80073A60 + tileset * 8`).
+    /// A class-3 plate run's or class-4 bar's left / right cap (`0x80073A60 + tileset * 8`).
     Cap,
     /// One of a class-0 window's eight frame quads (`0x80073A00 + tileset *
     /// 0x20`).
@@ -377,11 +377,13 @@ impl SheetClaim {
 
 impl WidgetTable {
     /// Every sheet rectangle the table makes the game draw, with its palette:
-    /// each record's own rect, a class-3 plate's cap pair, and a class-0
-    /// window's eight frame quads. Only the two arms whose tile-set reads are
-    /// pinned (classes 0 and 3) contribute tile-set quads; the other classes
-    /// contribute their rect alone. The portrait ids (another texture page)
-    /// and empty rects are left out.
+    /// each record's own rect, the cap pair of a class-3 plate or a class-4
+    /// bar, and a class-0 window's eight frame quads. Classes 0, 3 and 4 are
+    /// the arms whose tile-set reads are pinned (the class-4 arm at
+    /// `0x8002EAB4` emits the cap pair at `0x80073A60 + tileset * 8` as two
+    /// sprites, then stretches the record's rect across a textured quad); the
+    /// other classes contribute their rect alone. The portrait ids (another
+    /// texture page) and empty rects are left out.
     // REF: FUN_8002c488, FUN_8002c69c
     pub fn sheet_claims(&self) -> Vec<SheetClaim> {
         let mut out = Vec::new();
@@ -412,7 +414,7 @@ impl WidgetTable {
                         }
                     }
                 }
-                3 => {
+                3 | 4 => {
                     if let Some((l, r)) = self.plate_caps(w.tileset) {
                         push(ClaimPart::Cap, (l.u, l.v, l.w, l.h));
                         push(ClaimPart::Cap, (r.u, r.v, r.w, r.h));
@@ -512,6 +514,13 @@ mod tests {
             rect: (128, 0, 32, 32),
             ..Default::default()
         };
+        records[6] = Widget {
+            class: 4,
+            tileset: 2,
+            palette: 0x05,
+            rect: (64, 64, 16, 16),
+            ..Default::default()
+        };
         records[SPRITE_PORTRAIT_FIRST as usize] = Widget {
             class: 5,
             rect: (64, 0, 16, 16),
@@ -523,6 +532,8 @@ mod tests {
         }
         // Cap pair 3 = pool bytes 0x78..0x80.
         pool[0x78..0x80].copy_from_slice(&[208, 0, 8, 20, 216, 0, 8, 20]);
+        // Cap pair 2 (the class-4 bar's) = pool bytes 0x70..0x78.
+        pool[0x70..0x78].copy_from_slice(&[192, 24, 9, 18, 216, 24, 9, 18]);
         let t = WidgetTable {
             records,
             tileset_pool: pool,
@@ -532,6 +543,7 @@ mod tests {
         let of = |id: u8| c.iter().filter(|k| k.widget == id).count();
         assert_eq!(of(1), 3, "body + two caps");
         assert_eq!(of(3), 9, "interior + eight frame quads");
+        assert_eq!(of(6), 3, "class-4 bar: body + two caps");
         assert_eq!(of(SPRITE_PORTRAIT_FIRST), 0, "portraits are another page");
         assert!(c.iter().all(|k| k.rect.2 > 0 && k.rect.3 > 0));
         let cap = c.iter().find(|k| k.part == ClaimPart::Cap).unwrap();

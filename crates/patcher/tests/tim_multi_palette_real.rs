@@ -128,10 +128,24 @@ fn the_ui_sheet_has_a_region_map_and_edits_stay_surgical() {
     assert_eq!(at(10, 10), 0, "marbled panel");
     assert_eq!(at(10, 50), 9, "Venom badge (widget 0x18)");
     assert_eq!(at(60, 90), 16, "Stone badge: sub-palette 16 = external 0");
+    // Same kernel as the viewer composite (tim_palette_context_real): the
+    // Curse badge keeps its own sub-palette 13 over the class-4 bar record
+    // that also samples those texels, and the class-4 cap pair maps.
+    assert_eq!(at(64, 64), 13, "Curse badge (widget 0x1F)");
+    assert_eq!(at(193, 25), 5, "class-4 bar cap");
+    // The button-glyph rectangle is another TIM's at runtime: named in a
+    // note, not mapped, and no "unresolved sub-palette 19" left over.
     assert!(
         pals.notes.iter().any(|n| n.contains("0x7B00")),
         "{:?}",
         pals.notes
+    );
+    assert_eq!(pals.notes.len(), 1, "{:?}", pals.notes);
+    assert!(
+        pals.regions
+            .iter()
+            .all(|r| !(128..192).contains(&r.rect.0) || !(96..128).contains(&r.rect.1)),
+        "a region inside the covered glyph rectangle"
     );
 
     // In-game composite: byte-identical round trip.

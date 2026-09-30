@@ -1407,8 +1407,10 @@ browser's texture browser. The CLI loop is `tim-list` -> `tim-export`
 overflow; `--dry-run` validates only; `--output`/`--patch` as everywhere
 else). `replace_texture_png` / `export_texture_png` add the multi-palette
 shapes (composite, palette strip, indexed PNG, per-region in-game view), and
-`texture_palettes` builds the per-region palette map of the menu / battle UI
-sheet from the SCUS widget table (`tim-palette-map` prints it). Full reference:
+`texture_palettes` turns the per-texel palette map of the menu / battle UI
+sheet (`legaia_asset::tim_palette_context::texel_palettes`, the same kernel
+the asset viewer's in-game view reads) into this texture's palette numbers
+(`tim-palette-map` prints it). Full reference:
 [`docs/tooling/randomizer.md`](../../docs/tooling/randomizer.md#texture-replacement);
 encoder rules (alpha -> STP, palette reuse, byte-exact round trips):
 [`docs/formats/tim.md`](../../docs/formats/tim.md#encoding-png---tim-texture-replacement).

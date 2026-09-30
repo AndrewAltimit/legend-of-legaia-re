@@ -82,19 +82,20 @@ strip is the place to recolour a whole family of sprites at once.
 
 ### How a region's palette is chosen
 
-For the UI sheet the mapping is disc data. The widget-class table in
-`SCUS_942.54` at `0x800732A4` (parser `legaia_asset::ui_widgets`, described
-in [`battle.md`](../../subsystems/battle.md#the-widget-class-table---where-every-chrome-sprite-comes-from))
-gives every UI sprite its sheet rectangle and a palette byte `b`; with bit 6
-clear, the sprite is drawn through **sub-palette `b & 0x3F`** of VRAM row
-511. The sheet's own 16x16 CLUT block is those sub-palettes 0..15 (row `k`
-sits at `(16k, 511)` at runtime), so the widget's palette byte *is* the
-palette index in the downloaded file. Plate runs add their cap pair and
-framed windows their eight frame tiles, both under the record's palette.
-`legaia_patcher::texture_palettes` turns that into the per-pixel map;
-`tim-palette-map` prints it.
+For the UI sheet the mapping is disc data: the executable's widget table
+gives every UI sprite its sheet rectangle and a palette byte, and a byte `b`
+with bit 6 clear means **palette `b & 0x3F` of the downloaded file** (the
+sheet's sixteen palettes are sub-palettes 0..15 of VRAM row 511). The
+mechanism - which draw arm samples which rectangle, how the byte becomes a
+CLUT cell, which record wins an overlap - is stated once in
+[`shading.md`](../../subsystems/shading.md#which-palette-draws-which-region),
+and one kernel implements it (`legaia_asset::tim_palette_context::texel_palettes`).
+The editor's map, `tim-palette-map` and the asset viewer's **As the game
+draws it** view all read that kernel, so what the viewer shows is what the
+editor edits. `legaia_patcher::texture_palettes` only turns its CLUT cells
+into this texture's palette numbers.
 
-Three edges of that map:
+What that means when editing:
 
 - **Sub-palettes 16..18** (the Stone, Rage and Faint status badges) live in a
   CLUT-only sibling TIM at `PROT.DAT` `0x1858`. Those badges show in their
@@ -105,11 +106,13 @@ Three edges of that map:
   palette sub-palette 19; see
   [`minigame-muscle-dome.md`](../../subsystems/minigame-muscle-dome.md)).
   What the game shows there is that TIM, so edits to the sheet under it are
-  never seen - edit the glyph TIM instead.
+  never seen - edit the glyph TIM instead. The map leaves that rectangle out.
+- **Some texels are drawn in two palettes.** Where two sprites sample the
+  same art, the map shows the one with precedence (single sprites, then
+  plates, bars, windows, then the smaller rectangle); `tim-palette-map`
+  prints how many texels are shared. A colour change there shows in both.
 - Texels no widget record samples are drawn through palette 0 in the map.
-  Overlay code can still draw some of them with a palette of its own; where
-  two records sample the same texels, single sprites win over plate runs,
-  plate runs over framed windows, then the smaller rectangle.
+  Overlay code can still draw some of them with a palette of its own.
 
 For every other multi-palette texture no such table is decoded: every
 palette is an equally valid view, and the composite shows them all at once.

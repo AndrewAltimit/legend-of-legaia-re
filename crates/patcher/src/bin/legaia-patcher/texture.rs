@@ -329,10 +329,12 @@ pub(crate) fn cmd_tim_palette_map(
         "{} region(s). `sub N*` = a palette of the sibling extension TIM (PROT.DAT 0x{:X}), \
          read-only here. {} pixel(s) no widget draws are shown through palette 0 (overlay code \
          may draw some of them with a palette of its own). Where regions overlap, single \
-         sprites win over plates, plates over windows, then the smaller rect.",
+         sprites win over plates, plates over bars, bars over windows, then the smaller rect; \
+         {} pixel(s) are drawn through more than one palette.",
         rows.len(),
         legaia_asset::ui_widgets::SUBPALETTE_EXT_TIM_PROT_OFFSET,
-        pals.unclaimed_pixels
+        pals.unclaimed_pixels,
+        pals.contested_pixels
     );
     for note in &pals.notes {
         println!("note: {note}");

@@ -10,16 +10,22 @@
 //!   one of the row-510 cells VRAM does hold;
 //! * the widget table's palette map puts status badge `0x1A` (`Stone`) on the
 //!   row-511 extension cell `(256, 511)`, a palette the sheet's own file does
-//!   not carry, and the as-drawn composite covers most of the sheet.
+//!   not carry; the button-glyph TIM covers texels `(128, 96)..(191, 127)`;
+//!   the Curse badge's texels go to its own sub-palette 13 over the class-4
+//!   record that also samples them; and the map claims most of the sheet.
+//!
+//! The ROM patcher's editor view of the same kernel is pinned in
+//! `crates/patcher/tests/tim_multi_palette_real.rs`.
 //!
 //! Skips + passes without `LEGAIA_DISC_BIN` / `extracted/`.
 
 use std::path::PathBuf;
 
 use legaia_asset::tim_palette_context::{
-    BootClutVram, ClutFate, SHEET_PAGE_ORIGIN, composite_rgba, sheet_palette_regions,
+    BootClutVram, ClutFate, composite_rgba, parse_button_glyph_tim, sheet_palette_regions,
+    texel_palettes,
 };
-use legaia_asset::ui_widgets::WidgetTable;
+use legaia_asset::ui_widgets::{BUTTON_GLYPH_TIM_PROT_OFFSET, WidgetTable};
 
 const SHEET_OFFSET: u64 = 0x18E0;
 const BATTLE_FONT_OFFSET: u64 = 0x7F40;
@@ -73,24 +79,37 @@ fn boot_clut_fates_and_sheet_palette_map() {
     let regions = sheet_palette_regions(&table);
     let stone = regions
         .iter()
-        .find(|r| r.widget_ids.contains(&0x1A))
+        .find(|r| r.widget == 0x1A)
         .expect("Stone badge region");
     assert_eq!(stone.clut_fb, (256, 511));
     assert_eq!(stone.rect, (48, 80, 48, 16));
 
+    // The one texel -> palette kernel both the viewer composite and the ROM
+    // patcher's region map read.
+    let cover = parse_button_glyph_tim(&prot[BUTTON_GLYPH_TIM_PROT_OFFSET..]).expect("glyph TIM");
+    let texels = texel_palettes(&sheet, &regions, Some(&cover)).unwrap();
+    let covered = texels.covered.expect("button glyphs cover the sheet");
+    assert_eq!(covered.rect, (128, 96, 64, 32));
+    assert_eq!(covered.clut_fb, (304, 511));
+    // The Curse badge (class 5, sub-palette 13) wins its texels over the
+    // class-4 bar record 0x06 that stretches a 16x16 cut of them through
+    // sub-palette 5.
+    assert_eq!(texels.clut_at(64, 64), Some((208, 511)));
+    // The class-4 bars' cap pair is part of the map.
+    assert_eq!(texels.clut_at(193, 25), Some((80, 511)));
     let own = sheet.clut.as_ref().unwrap().entries[..16].to_vec();
-    let c = composite_rgba(&sheet, SHEET_PAGE_ORIGIN, &regions, ctx.vram(), &own).unwrap();
+    let c = composite_rgba(&sheet, &texels, ctx.vram(), &own, Some(&cover)).unwrap();
     let total = sheet.pixel_width() * sheet.pixel_height();
     eprintln!(
-        "sheet composite: {} regions, covered {}/{} texels, contested {}",
-        regions.len(),
-        c.covered,
+        "sheet texels: {} regions, claimed {}/{} texels, contested {}",
+        texels.regions.len(),
+        texels.claimed(),
         total,
-        c.contested
+        texels.contested
     );
     assert!(
-        c.covered * 2 > total,
-        "composite covers under half the sheet"
+        texels.claimed() * 2 > total,
+        "the map claims under half the sheet"
     );
     // Local eyeballing only (decoded pixels - never commit the output).
     if let Some(out) = std::env::var_os("LEGAIA_DUMP_SHEET_COMPOSITE") {
@@ -98,7 +117,7 @@ fn boot_clut_fates_and_sheet_palette_map() {
             std::path::Path::new(&out),
             sheet.pixel_width(),
             sheet.pixel_height(),
-            &c.rgba,
+            &c,
         )
         .unwrap();
     }

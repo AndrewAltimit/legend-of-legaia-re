@@ -1,45 +1,36 @@
-//! Which palette the game draws each pixel of a texture through.
+//! Which palette the game draws each pixel of a texture through - the
+//! texture editor's view of it.
 //!
 //! A multi-palette TIM does not say which of its palettes a region is meant
 //! to be seen in - the draw packet does. For most textures nothing on the
 //! disc pins that per region, and every palette is an equally honest view.
 //! For the **system-UI sheet** (the 256x192 4 bpp TIM at `PROT.DAT` `0x18E0`
 //! uploaded to VRAM `(896, 256)`: menu and battle chrome, plates, status
-//! badges, gauge, button glyphs) it is disc data: the widget-class table at
-//! `SCUS_942.54` `0x800732A4` gives every sprite's `(u, v, w, h)` and the
-//! palette byte it is drawn through ([`legaia_asset::ui_widgets`]). This
-//! module turns that table into a per-pixel palette map the
-//! [`legaia_tim::multi_palette`] editor consumes.
+//! badges, gauge, button glyphs) it is disc data, and the one kernel that
+//! reads it is [`legaia_asset::tim_palette_context::texel_palettes`]: which
+//! widget record draws which texel through which CLUT cell, which record
+//! wins where two overlap, and which rectangle another TIM covers at
+//! runtime. The asset viewer's "as the game draws it" view reads the same
+//! kernel. This module only translates its CLUT cells into this texture's
+//! palette indices for the [`legaia_tim::multi_palette`] editor.
 //!
-//! How a palette byte names one of the sheet's palettes: the sheet's CLUT
-//! block is 16x16 on disc (at `(0, 511)`), and at runtime its row `k` sits
-//! at VRAM `(16k, 511)` - the "sub-palette `k`" a byte `b` with bit 6 clear
-//! addresses as `b & 0x3F`. Sub-palettes 16..18 are **not** in the sheet:
-//! they are the three rows of a CLUT-only sibling TIM at `PROT.DAT` `0x1858`
-//! (uploaded to `(256, 511)`), and are carried here as read-only external
-//! palettes. Bit 6 set addresses a badge CLUT block at `(896.., 498..)`;
-//! every record that uses it samples texels below the sheet (`v >= 192`), so
-//! it never reaches this map.
-//!
-//! Where two records sample the same texels, the draw paths whose sheet
-//! reads are pinned win - single sprites (class 5), then plate runs (class
-//! 3), then framed windows (class 0), then the rest - and within a path the
-//! smaller rectangle (the most specific sprite), then the lower record id.
-//! Texels no record samples are drawn through palette 0 in the map - overlay
-//! code may still draw them with a palette of its own, and
-//! [`TexturePalettes::unclaimed_pixels`] says how many there are.
-//!
-//! One rectangle of the sheet is not what the game shows at all: the
-//! 64x32 button-glyph TIM at `PROT.DAT` `0x7B00` uploads over texels
-//! `(128, 96)..(191, 127)` at runtime, and the records that draw there
-//! (`0x37..=0x3E`, sub-palette 19 - that TIM's own palette) draw *its*
-//! pixels. [`TexturePalettes::notes`] says so; edit that TIM instead.
+//! A cell on VRAM row 511 at `x = 16k` is sub-palette `k`. The sheet's
+//! 16x16 CLUT block lands flattened on that row, so sub-palette `k < 16` is
+//! the sheet's own palette `k`. Sub-palettes 16..18 are the three rows of a
+//! CLUT-only sibling TIM at `PROT.DAT` `0x1858` (uploaded to `(256, 511)`),
+//! carried here as read-only external palettes. The rectangle the
+//! button-glyph TIM at `PROT.DAT` `0x7B00` covers is left out of the map and
+//! named in [`TexturePalettes::notes`] - edit that TIM instead.
 
 use anyhow::Result;
 
+use legaia_asset::tim_palette_context::{
+    SheetRegion, parse_button_glyph_tim, parse_subpalette_ext_tim, sheet_palette_regions,
+    texel_palettes,
+};
 use legaia_asset::ui_widgets::{
-    ClaimPart, SHEET_VRAM_ORIGIN, SUBPALETTE_EXT_FIRST, SUBPALETTE_EXT_TIM_PROT_OFFSET, SheetClaim,
-    WidgetTable,
+    BUTTON_GLYPH_TIM_PROT_OFFSET, ClaimPart, SHEET_VRAM_ORIGIN, SUBPALETTE_EXT_FIRST,
+    SUBPALETTE_EXT_TIM_PROT_OFFSET, WidgetTable,
 };
 use legaia_tim::multi_palette::{PaletteContext, own_palettes};
 use legaia_tim::{PixelMode, Tim};
@@ -70,6 +61,9 @@ pub struct TexturePalettes {
     pub regions: Vec<PaletteRegion>,
     /// Pixels no region covers (drawn through palette 0 in the map).
     pub unclaimed_pixels: usize,
+    /// Pixels two regions draw through different palettes (the map holds
+    /// the one with precedence).
+    pub contested_pixels: usize,
     /// One line on where the map comes from, empty when there is none.
     pub source: String,
     /// Things a modder must know about this texture's regions (rectangles
@@ -97,126 +91,83 @@ pub fn is_system_ui_sheet(tim: &Tim) -> bool {
         && tim.palette_count() == 16
 }
 
-/// Build the system-UI sheet's map from the widget claims. `ext` is the
-/// sub-palette extension TIM when it could be read.
-pub fn sheet_palettes(tim: &Tim, claims: &[SheetClaim], ext: Option<&Tim>) -> TexturePalettes {
-    sheet_palettes_with(tim, claims, ext, None)
-}
-
-/// [`sheet_palettes`] plus the button-glyph TIM that covers part of the
-/// sheet at runtime, when it could be read.
-pub fn sheet_palettes_with(
+/// Build the system-UI sheet's map from the widget table's page regions
+/// ([`sheet_palette_regions`]). `ext` is the sub-palette extension TIM and
+/// `cover` the button-glyph TIM, each when it could be read.
+pub fn sheet_palettes(
     tim: &Tim,
-    claims: &[SheetClaim],
+    page_regions: &[SheetRegion],
     ext: Option<&Tim>,
     cover: Option<&Tim>,
 ) -> TexturePalettes {
-    let (w, h) = (tim.pixel_width(), tim.pixel_height());
+    let Some(texels) = texel_palettes(tim, page_regions, cover) else {
+        return TexturePalettes::default();
+    };
     let own = own_palettes(tim).len();
     let external: Vec<Vec<u16>> = ext.map(own_palettes).unwrap_or_default();
-
-    let resolve = |sub: u16| -> Option<usize> {
-        let sub = sub as usize;
-        if sub < own {
-            Some(sub)
-        } else {
-            let k = sub.checked_sub(SUBPALETTE_EXT_FIRST as usize)?;
-            (k < external.len()).then_some(own + k)
+    // CLUT cell -> index into own palettes, then the external ones.
+    let resolve = |r: &SheetRegion| -> Option<(usize, u16)> {
+        let sub = r.subpalette()?;
+        if (sub as usize) < own {
+            return Some((sub as usize, sub));
         }
+        let k = sub.checked_sub(SUBPALETTE_EXT_FIRST)? as usize;
+        (k < external.len()).then_some((own + k, sub))
     };
 
     let mut notes = Vec::new();
-    let mut unresolved: Vec<(u16, Vec<u8>)> = Vec::new();
+    let mut unresolved: Vec<((u16, u16), Vec<u8>)> = Vec::new();
+    let resolved: Vec<Option<(usize, u16)>> = texels.regions.iter().map(resolve).collect();
     let mut regions = Vec::new();
-    let mut classes = Vec::new();
-    for c in claims {
-        let Some(sub) = c.subpalette() else { continue };
-        let Some(palette) = resolve(sub) else {
-            if (c.rect.0 as usize) < w && (c.rect.1 as usize) < h {
-                match unresolved.iter_mut().find(|(s, _)| *s == sub) {
-                    Some((_, ids)) => ids.push(c.widget),
-                    None => unresolved.push((sub, vec![c.widget])),
-                }
-            }
-            continue;
-        };
-        let (u, v, cw, ch) = (
-            c.rect.0 as usize,
-            c.rect.1 as usize,
-            c.rect.2 as usize,
-            c.rect.3 as usize,
-        );
-        if u >= w || v >= h {
-            continue;
+    for (r, res) in texels.regions.iter().zip(&resolved) {
+        match res {
+            Some((palette, subpalette)) => regions.push(PaletteRegion {
+                rect: r.rect,
+                palette: *palette,
+                subpalette: *subpalette,
+                widget: r.widget,
+                part: r.part,
+            }),
+            None => match unresolved.iter_mut().find(|(c, _)| *c == r.clut_fb) {
+                Some((_, ids)) => ids.push(r.widget),
+                None => unresolved.push((r.clut_fb, vec![r.widget])),
+            },
         }
-        let (cw, ch) = (cw.min(w - u), ch.min(h - v));
-        regions.push(PaletteRegion {
-            rect: (u as u16, v as u16, cw as u16, ch as u16),
-            palette,
-            subpalette: sub,
-            widget: c.widget,
-            part: c.part,
-        });
-        classes.push(c.class);
     }
+    let map: Vec<u16> = texels
+        .owner
+        .iter()
+        .map(|o| {
+            o.and_then(|i| resolved[i as usize])
+                .map_or(0, |(p, _)| p as u16)
+        })
+        .collect();
+    let unclaimed_pixels = texels
+        .owner
+        .iter()
+        .filter(|o| o.and_then(|i| resolved[i as usize]).is_none())
+        .count();
 
-    // Pinned draw paths first: single sprites, plate runs, framed windows.
-    let tier = |class: u8| match class {
-        5 => 0u8,
-        3 => 1,
-        0 => 2,
-        _ => 3,
-    };
-    let mut order: Vec<usize> = (0..regions.len()).collect();
-    order.sort_by_key(|&i| {
-        let r = regions[i].rect;
-        (
-            tier(classes[i]),
-            r.2 as usize * r.3 as usize,
-            regions[i].widget,
-            i,
-        )
-    });
-    let mut map = vec![0u16; w * h];
-    let mut claimed = vec![false; w * h];
-    for &i in &order {
-        let r = &regions[i];
-        for y in r.rect.1 as usize..(r.rect.1 + r.rect.3) as usize {
-            for x in r.rect.0 as usize..(r.rect.0 + r.rect.2) as usize {
-                let p = y * w + x;
-                if !claimed[p] {
-                    claimed[p] = true;
-                    map[p] = r.palette as u16;
-                }
-            }
-        }
+    if let (Some(c), Some(cv)) = (texels.covered, cover) {
+        let (x, y, w, h) = c.rect;
+        notes.push(format!(
+            "texels ({x}, {y})..({}, {}) are covered at runtime by the {}x{} button-glyph TIM \
+             at PROT.DAT 0x{BUTTON_GLYPH_TIM_PROT_OFFSET:X} (its own pixels and palette, \
+             sub-palette {}) - what the game shows there is that TIM, so edit it instead; the \
+             sheet's pixels under it are never seen",
+            x + w - 1,
+            y + h - 1,
+            cv.pixel_width(),
+            cv.pixel_height(),
+            c.clut_fb.0 / 16,
+        ));
     }
-    let unclaimed_pixels = claimed.iter().filter(|&&c| !c).count();
-
-    if let Some(cv) = cover {
-        let u = cv.image.fb_x as i32 - tim.image.fb_x as i32;
-        let v = cv.image.fb_y as i32 - tim.image.fb_y as i32;
-        let (cw, ch) = (cv.pixel_width() as i32, cv.pixel_height() as i32);
-        // VRAM words -> 4bpp texels on this page.
-        let (u, cwt) = (u * 4, cw);
-        if u >= 0 && v >= 0 && (u as usize) < w && (v as usize) < h {
-            notes.push(format!(
-                "texels ({u}, {v})..({}, {}) are covered at runtime by the {cwt}x{ch} \
-                 button-glyph TIM at PROT.DAT 0x{:X} (its own pixels and palette, sub-palette \
-                 {}) - what the game shows there is that TIM, so edit it instead; the sheet's \
-                 pixels under it are never seen",
-                u + cwt - 1,
-                v + ch - 1,
-                legaia_asset::ui_widgets::BUTTON_GLYPH_TIM_PROT_OFFSET,
-                cv.clut.as_ref().map_or(0, |c| c.fb_x / 16),
-            ));
-        }
-    }
-    for (sub, ids) in &unresolved {
+    for (cell, ids) in &unresolved {
         let ids: Vec<String> = ids.iter().map(|i| format!("0x{i:02X}")).collect();
         notes.push(format!(
-            "widget(s) {} draw through sub-palette {sub}, which is neither this texture's nor \
-             its extension's - their texels are shown through palette 0 here",
+            "widget(s) {} draw through the CLUT at VRAM {cell:?}, which is neither this \
+             texture's palette nor its extension's - their texels are shown through palette 0 \
+             here",
             ids.join(", ")
         ));
     }
@@ -227,6 +178,7 @@ pub fn sheet_palettes_with(
         },
         regions,
         unclaimed_pixels,
+        contested_pixels: texels.contested,
         source: "the SCUS widget-class table (0x800732A4): each sprite's rect and the palette \
                  byte it is drawn with"
             .to_string(),
@@ -249,26 +201,12 @@ pub fn texture_palettes(patcher: &DiscPatcher, tim: &Tim) -> Result<TexturePalet
     let Some(table) = WidgetTable::from_scus(&scus) else {
         return Ok(TexturePalettes::default());
     };
-    let ext = patcher
-        .read_prot_bytes(SUBPALETTE_EXT_TIM_PROT_OFFSET as u64, 0x800)
-        .ok()
-        .and_then(|b| legaia_tim::parse_strict(&b).ok())
-        .filter(|t| {
-            t.clut
-                .as_ref()
-                .is_some_and(|c| (c.fb_x, c.fb_y) == (256, 511))
-        });
-    let cover = patcher
-        .read_prot_bytes(
-            legaia_asset::ui_widgets::BUTTON_GLYPH_TIM_PROT_OFFSET as u64,
-            0x800,
-        )
-        .ok()
-        .and_then(|b| legaia_tim::parse_strict(&b).ok())
-        .filter(|t| t.clut.as_ref().is_some_and(|c| c.fb_y == 511));
-    Ok(sheet_palettes_with(
+    let read = |off: usize| patcher.read_prot_bytes(off as u64, 0x800).ok();
+    let ext = read(SUBPALETTE_EXT_TIM_PROT_OFFSET).and_then(|b| parse_subpalette_ext_tim(&b));
+    let cover = read(BUTTON_GLYPH_TIM_PROT_OFFSET).and_then(|b| parse_button_glyph_tim(&b));
+    Ok(sheet_palettes(
         tim,
-        &table.sheet_claims(),
+        &sheet_palette_regions(&table),
         ext.as_ref(),
         cover.as_ref(),
     ))
@@ -321,29 +259,29 @@ mod tests {
         legaia_tim::parse_strict(&b).unwrap()
     }
 
-    fn claim(widget: u8, rect: (u8, u8, u8, u8), palette: u8) -> SheetClaim {
-        SheetClaim {
+    fn region(widget: u8, rect: (u16, u16, u16, u16), palette: u8) -> SheetRegion {
+        SheetRegion {
+            rect,
+            clut_fb: legaia_asset::ui_widgets::clut_fb(palette),
             widget,
             class: 5,
             part: ClaimPart::Rect,
-            rect,
-            palette,
         }
     }
 
     #[test]
-    fn map_follows_claims_smallest_first_and_resolves_the_extension() {
+    fn map_resolves_sub_palettes_to_own_and_external_palettes() {
         let tim = sheet();
         assert!(is_system_ui_sheet(&tim));
-        let claims = [
-            claim(9, (0, 0, 32, 8), 0x00),   // big panel, palette 0
-            claim(1, (8, 0, 8, 4), 0x04),    // plate inside it, palette 4
-            claim(2, (40, 0, 8, 8), 0x11),   // status badge on sub-palette 17
-            claim(3, (48, 0, 8, 8), 0x45),   // badge-block form: not this sheet's
-            claim(4, (60, 6, 16, 16), 0x86), // clipped at the edge, bit 7 ignored
+        let regions = [
+            region(9, (0, 0, 32, 8), 0x00),   // big panel, palette 0
+            region(1, (8, 0, 8, 4), 0x04),    // plate inside it, palette 4
+            region(2, (40, 0, 8, 8), 0x11),   // status badge on sub-palette 17
+            region(3, (48, 0, 8, 8), 0x45),   // badge-block form: not this sheet's
+            region(4, (60, 6, 16, 16), 0x86), // clipped at the edge, bit 7 ignored
         ];
         let e = ext();
-        let m = sheet_palettes(&tim, &claims, Some(&e));
+        let m = sheet_palettes(&tim, &regions, Some(&e), None);
         let map = m.context.map.as_ref().unwrap();
         let at = |x: usize, y: usize| map[y * 64 + x];
         assert_eq!(at(0, 0), 0);
@@ -357,27 +295,18 @@ mod tests {
         assert_eq!(clipped.rect, (60, 6, 4, 2));
         // Unclaimed: 64*8 - (32*8 + 8*8 + 4*2).
         assert_eq!(m.unclaimed_pixels, 64 * 8 - (256 + 64 + 8));
-    }
-
-    #[test]
-    fn a_pinned_sprite_beats_a_smaller_rect_of_an_unpinned_class() {
-        let tim = sheet();
-        let mut odd = claim(6, (8, 0, 4, 4), 0x05);
-        odd.class = 4;
-        let claims = [claim(1, (0, 0, 16, 8), 0x0D), odd];
-        let m = sheet_palettes(&tim, &claims, None);
-        assert_eq!(m.context.map.as_ref().unwrap()[8], 13);
+        assert!(m.notes.iter().any(|n| n.contains("0x03")), "{:?}", m.notes);
     }
 
     #[test]
     fn without_the_extension_its_regions_drop_out() {
         let tim = sheet();
-        let claims = [claim(2, (40, 0, 8, 8), 0x11)];
-        let m = sheet_palettes(&tim, &claims, None);
+        let regions = [region(2, (40, 0, 8, 8), 0x11)];
+        let m = sheet_palettes(&tim, &regions, None, None);
         assert!(m.regions.is_empty());
         assert!(m.context.external.is_empty());
         assert!(
-            m.notes.iter().any(|n| n.contains("sub-palette 17")),
+            m.notes.iter().any(|n| n.contains("(272, 511)")),
             "{:?}",
             m.notes
         );

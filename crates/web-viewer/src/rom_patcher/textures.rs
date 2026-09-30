@@ -827,6 +827,11 @@ pub fn texture_palette_info(
         &"unclaimed".into(),
         &num(pals.unclaimed_pixels as f64),
     )?;
+    Reflect::set(
+        &out,
+        &"contested".into(),
+        &num(pals.contested_pixels as f64),
+    )?;
     let notes = js_sys::Array::new();
     for n in &pals.notes {
         notes.push(&n.as_str().into());
