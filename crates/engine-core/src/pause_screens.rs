@@ -2114,6 +2114,10 @@ pub struct EquipScreenModel {
     pub confirm_label: Option<String>,
     /// Roster slot of the character being equipped.
     pub char_slot: u8,
+    /// The party-window row that character sits on (its place in the
+    /// present party, which is what [`Self::party_names`] lists) - the row
+    /// the hand cursor marks.
+    pub party_row: u8,
     /// Slot-picker cursor row, or `None` past the slot picker - what the
     /// sprite pass puts the second hand on.
     pub slot_cursor: Option<u16>,
@@ -2312,6 +2316,7 @@ pub fn equip_screen_model(
     session: &crate::equip_session::EquipSession,
     char_slot: u8,
     party_names: &[String],
+    present: &[u8],
     text: Option<&dyn Fn(u8) -> crate::field_menu_dispatch::ItemDisplayText>,
     compare: Option<EquipCompareCtx<'_>>,
 ) -> EquipScreenModel {
@@ -2323,17 +2328,23 @@ pub fn equip_screen_model(
         Some(f) => f(id).name,
         None => format!("Item {id:02X}"),
     };
-    let slot_labels: Vec<String> = (0..8u8)
-        .map(|i| {
+    // Rows in retail's browse order (weapon, helmet, body, footwear, Goods
+    // x3), the engine's Hand Guard row last.
+    let order = crate::equip_session::BROWSE_SLOT_ORDER;
+    let slot_labels: Vec<String> = order
+        .iter()
+        .map(|&i| {
             EquipSlot::from_index(i)
                 .map(|s| s.label().to_string())
                 .unwrap_or_else(|| format!("Slot {i}"))
         })
         .collect();
-    let slot_items: Vec<String> = record
-        .equip
+    let slot_items: Vec<String> = order
         .iter()
-        .map(|&id| if id == 0 { String::new() } else { name_of(id) })
+        .map(|&i| match record.equip.get(usize::from(i)).copied() {
+            None | Some(0) => String::new(),
+            Some(id) => name_of(id),
+        })
         .collect();
 
     let (phase, cursor, active_slot, confirm_label) = match session.state() {
@@ -2468,7 +2479,21 @@ pub fn equip_screen_model(
     EquipScreenModel {
         info,
         compare,
-        party_names: party_names.to_vec(),
+        // The party window lists the present party (retail's
+        // `DAT_80084594`-long member list), not every roster record; an empty
+        // `present` keeps the roster order.
+        party_names: if present.is_empty() {
+            party_names.to_vec()
+        } else {
+            present
+                .iter()
+                .filter_map(|&s| party_names.get(usize::from(s)).cloned())
+                .collect()
+        },
+        party_row: present
+            .iter()
+            .position(|&s| s == char_slot)
+            .map_or(char_slot, |r| r as u8),
         slot_labels,
         slot_items,
         candidate_names,
@@ -2476,10 +2501,12 @@ pub fn equip_screen_model(
         stat_compare,
         phase,
         cursor,
-        active_slot,
+        // The row the active slot draws on (its place in the browse order).
+        active_slot: crate::equip_session::browse_row_for_slot(active_slot) - 1,
         confirm_label,
         char_slot,
         slot_cursor: match session.state() {
+            EquipState::SlotPicker { .. } if session.slot_cursor_hidden() => None,
             EquipState::SlotPicker { cursor } => Some(cursor as u16),
             _ => None,
         },
@@ -3433,7 +3460,7 @@ mod tests {
                 StatusModifiers::default(),
                 Vec::new(),
             );
-            for _ in 0..=engine_slot {
+            for _ in 0..crate::equip_session::browse_row_for_slot(engine_slot) {
                 session.input(EquipInput {
                     down: true,
                     ..Default::default()
@@ -3452,7 +3479,7 @@ mod tests {
                 equip_info: None,
                 item_effects: None,
             };
-            let model = equip_screen_model(&session, 0, &names, None, Some(ctx));
+            let model = equip_screen_model(&session, 0, &names, &[], None, Some(ctx));
             let compare = model.compare.expect("candidate step publishes window 25");
             assert_eq!(
                 compare.slot_row, want_row,

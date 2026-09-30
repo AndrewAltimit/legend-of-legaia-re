@@ -316,21 +316,21 @@ blocker is a table is the same error this page records for the panel painters.
 | `801cf0d8` | `build_strip` | `crates/engine-core/src/slot_machine.rs:172` | WIRE |
 | `801cf0d8` | `cash_out` | `crates/engine-core/src/slot_machine.rs:973` | FALSE INERT |
 | `801cfc40` | `field_actor_dir_blocked` | `crates/engine-core/src/world/field_movement.rs:676` | WIRE |
-| `801d06c8` | `buy` | `crates/engine-core/src/fishing.rs:656` | FALSE INERT |
-| `801d0748` | `hp_left` / `turns_left` | `crates/engine-core/src/muscle_dome.rs` | FALSE INERT |
-| `801d092c` | `max_qty` | `crates/engine-core/src/fishing.rs:627` | FALSE INERT |
+| `801d06c8` | `buy` | `crates/engine-core/src/fishing/prize.rs:159` | FALSE INERT |
+| `801d0748` | `hp_left` / `turns_left` | `crates/engine-core/src/muscle_dome/session.rs` | FALSE INERT |
+| `801d092c` | `max_qty` | `crates/engine-core/src/fishing/prize.rs:137` | FALSE INERT |
 | `801d0b90` | `tick_walk_regen` | `crates/engine-core/src/walk_regen.rs:86` | WIRE |
-| `801d0c3c` | `first_visible` | `crates/engine-core/src/fishing.rs:602` | FALSE INERT |
-| `801d4040` | `symbol_pad_bit` | `crates/engine-core/src/dance.rs:219` | DELETE |
-| `801d6f90` | `is_available` | `crates/engine-core/src/fishing.rs:614` | FALSE INERT |
-| `801d712c` | `select_owned_rod` | `crates/engine-core/src/fishing.rs:705` | FALSE INERT |
+| `801d0c3c` | `first_visible` | `crates/engine-core/src/fishing/prize.rs:98` | FALSE INERT |
+| `801d4040` | `symbol_pad_bit` | `crates/engine-core/src/dance/types.rs:84` | DELETE |
+| `801d6f90` | `is_available` | `crates/engine-core/src/fishing/prize.rs:124` | FALSE INERT |
+| `801d712c` | `select_owned_rod` | `crates/engine-core/src/fishing/rod_menu.rs:42` | FALSE INERT |
 | `801d8258` | `arm` | `crates/engine-core/src/world_map.rs:78` | DISCLOSE |
 | `801da9f8` | `OptionsPhase` | `crates/engine-core/src/options.rs:406` | FALSE INERT |
 | `801dd0c0` | `category_check` | `crates/engine-core/src/menu_item_category.rs` | WIRED |
-| `801e1208` | `classify_card_directory` | `crates/engine-core/src/save_select.rs` | WIRE |
+| `801e1208` | `classify_card_directory` | `crates/engine-core/src/save_select/card_directory.rs` | WIRE |
 | `801e295c` | `advance_battle_mode` | `crates/engine-core/src/world/battle/monster_ai.rs:414` | WIRE |
-| `801e3af0` | `card_directory_scan` | `crates/engine-core/src/save_select.rs:398` | DISCLOSE |
-| `801e3ba0` | `card_free_blocks` | `crates/engine-core/src/save_select.rs:422` | DISCLOSE |
+| `801e3af0` | `card_directory_scan` | `crates/engine-core/src/save_select/card_directory.rs:281` | DISCLOSE |
+| `801e3ba0` | `card_free_blocks` | `crates/engine-core/src/save_select/card_directory.rs:311` | DISCLOSE |
 | `801e4794` | `step_clut_fx` | `crates/engine-core/src/world/effects.rs:923` | FALSE INERT |
 | `801e4c58` | `ClutCellFx` | `crates/engine-core/src/world/effects.rs:852` | FALSE INERT |
 
@@ -491,7 +491,7 @@ why the obvious placement was wrong. Where each one lives now:
   `battle_target_rows` in `command_flow.rs`.
 
 The `DELETE` row below is likewise applied: the free `symbol_pad_bit` is gone
-and the `// PORT: FUN_801d4040` tag sits on `DanceDir::pad_bit` in `dance.rs`.
+and the `// PORT: FUN_801d4040` tag sits on `DanceDir::pad_bit` in `dance/types.rs`.
 
 **`minigame_return_warp`** (`80026018`). **This row's original reasoning was wrong and
 is corrected here**, because acting on it as written produces a double credit.
@@ -552,7 +552,7 @@ arm-`0x82` callee.
 
 ## `DELETE` row
 
-**`symbol_pad_bit`** (`801d4040`, `crates/engine-core/src/dance.rs:219`).
+**`symbol_pad_bit`** (`801d4040`, `crates/engine-core/src/dance/types.rs:84`).
 `DanceDir::pad_bit` in the same file has identical arms (`0x80` / `0x20` /
 `0x10`), cites the same `FUN_801d4040`, and is the copy the live path uses -
 `World`'s dance tick references it from `world/frame_tick.rs`. The free function
@@ -606,7 +606,7 @@ anchor. Wrap to the file's comment width.
   `classify_card_directory` is now wired too, for the reason
   [below](#the-index-space-mismatch-was-the-wire-not-the-blocker) - which
   is the second time this bullet's reason has been outgrown rather than
-  found wrong. Read the tags in `save_select.rs`, not this bullet.
+  found wrong. Read the tags in `save_select/`, not this bullet.
 - **`alloc_list_head` / `alloc_and_append` / `free`** - the module doc carries
   the full reason under its `REPLACED-BY` headings; the audit compares per
   anchor, so each function needs its own line. Short form: the engine's actor
@@ -1263,7 +1263,7 @@ worth looking for in the rest.
 | `bite_interval` (`801d26cc`) | `WIRE` | `BandCheck::tick` was approximating the strike modulus with the length readout; the ladder is the real one. |
 | `bite_interval_bias` (`801d26cc`) | `WIRE` | Same call site, after correcting the kernel - see below. |
 | `clear_catch_slots` (`801d746c`, `fishing_chrome.rs`) | `DELETE` | Same table as `fishing::ReelCadence`'s ring; `reset` now calls it. |
-| `dance_scene_stage` (`801d414c`, `dance.rs`) | `WIRE` (partial) | `clear_pad_latch` is applied by `World::enter_dance` / `exit_dance` and the block-base restore by `dance_venue::sync_dance_venue`; the scene-name restore is structural (the walked-in scene stays loaded) and `bgm_force_reload` has no consumer. |
+| `dance_scene_stage` (`801d414c`, `dance/stage.rs`) | `WIRE` (partial) | `clear_pad_latch` is applied by `World::enter_dance` / `exit_dance` and the block-base restore by `dance_venue::sync_dance_venue`; the scene-name restore is structural (the walked-in scene stays loaded) and `bgm_force_reload` has no consumer. |
 
 **`bite_interval_bias` was wrong, not just unwired.** It modelled retail's
 `li s1, -0x64` as a bias added to the strike credit. The instruction is an
@@ -2255,7 +2255,7 @@ second and third visits, at the level arm `0x0A` had reached
 | anchor | verdict | what it rests on |
 |---|---|---|
 | `801d84c0` `result_subject` (was `panel_labels`) | live | the four buffers are the battle-result messages, not panel labels; the solo / team build arm now words the post-battle report's victory line on both play hosts |
-| `801dbc30` `cross_out_mark` | live | the standalone minigames page places the dome ring's forbidden-chip X from it (`mark_quad`); the play hosts draw the ring as text and have no chip to mark |
+| `801dbc30` `cross_out_mark` | live | both play hosts draw it through `engine-ui`'s `battle_command_ui::cross_out_mark_sprite` (ring marks switched by `battle_hud::battle_ring_marks`); the standalone minigames page places the dome ring's X from it too (`mark_quad`) |
 | `801d32bc` `step_actor_cursor` | live | the ring's cancel arm (`0x801D11B4`) runs it backward through `World::step_back_battle_command`, on both play hosts' pads |
 | `801d57e8` / `801d5778` | held | the mutable placement-table seat array below `engine-vm`, and its other two writers |
 
@@ -2322,7 +2322,7 @@ structure they blamed and are rewritten; every row stays held.
 | `80030628` `build_shop_buy_rows` | wired | `ShopInventory::from_stock_record` keeps the record's order, and `World::try_arm_field_shop` - the merchant path both play hosts open through - runs the builder with the live Platinum Card probe (`shop_tail_rows_allowed`); a retail capture pins both row lists |
 | `80017bec` `refresh_object_grid_marks` | wired | retail runs it once at field init (`0x801D6BF8`) over the fresh `.MAP`, which is where the engine's field entry now runs it; the `retona` capture holds a refreshed cell the disc lacks |
 | `801d7b50` `window_rebuild_spawns_resident` | wired | retail's callers are the camera re-centre pair `FUN_80017DD4` / `FUN_80017EC8` (`0x80017E14` / `0x80017F08`), each after `FUN_800180EC` latches the box at the re-centre tile. `World::recentre_field_window` is that pair, called from the field entry's window install and the warp landing, `0x23` / `4C 51` player and leader-swap re-centres; the descriptor region stays resident on `FieldTerrain::static_window`, and both play hosts gate the sweep's placements on the list through `field_env::placed_draw_live`. The descriptor bits were checked in `FUN_8001ADA4` / `FUN_80043390`: draw kind `0` never draws, the `+0x74` bits stage an `IR0 = 0` depth cue (the identity) and `+0x10 \| 4` only culls off-screen |
-| `801d0748` `battle_magic_chip_mark` | held | the ring greys the Ra-Seru chip and refuses its arm on both hosts; the red cross-out `FUN_801DBC30(0xF8, 0x42)` (`0x801D12DC..0x801D12F4`) needs an `etim` quad placed over the chip, which neither battle chip pass draws yet |
+| `801d0748` `battle_magic_chip_mark` | live | the ring greys the Ra-Seru chip and refuses its arm on both hosts, and both draw the red cross-out `FUN_801DBC30(0xF8, 0x42)` (`0x801D12DC..0x801D12F4`) over it from the chrome atlas, alongside the Rot / Curse marks (`battle_hud::battle_ring_marks`) |
 | `801cef54` `dance_scene_entry` | wired | the mode half is `World::enter_dance` (the spawned actor is the beat clock); the venue half is `dance_venue`: `sync_dance_venue` stages the block base, view window and venue camera over the walked-in scene and restores them after, on the native window and the browser play page, and `DanceVenue::build` loads the `other7` block the stream id names with the five face stamps applied - drawn by the native window in place of the walked-in scene and baked by both browser pages, which frame it through the same camera |
 | `801d6e5c` `keyframe_in_range` | wired | the `+0x26` column is parsed, and the combat tick's call at `0x801D4334` is ported as `baka_fighter::StrikeClock`, which books each exchange on the winner's strike keyframe on all three hosts |
 | `8003c9ac` `motion_pause_kick` | wired | the requested-move target is the ambient channel's clip request, which the ambient tick now consumes per tick with a `+0x5E` latch; the kick copies the standing move, so it holds nothing |

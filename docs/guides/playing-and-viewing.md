@@ -47,19 +47,27 @@ double-click puts the framing back to retail - all three are locked while a
 cutscene has the camera. `T` cycles the coarse
 camera-distance preset, `R` toggles precise free-angle movement (an opt-in
 enhancement - retail-style movement is the default), `I` toggles dynamic
-lighting (also opt-in, `--dynamic-lighting` to start with it on), `F1` shows
+lighting (also opt-in, `--dynamic-lighting` to start with it on), `Y` toggles
+that enhancement's shadow-casting point lights (`--no-dyn-shadows` starts with
+them off), `F1` shows
 the engine's diagnostic text rows (off by default), `F2` mutes audio, `F3`
 swaps the field camera for the wide debug orbit, `F4` toggles the
 camera-occlusion fade (on by default: walls between the camera and your
 character dissolve to a dither so you can always see yourself;
 `--no-occlusion-fade` starts with it off).
 
+A handful of keys are development hand-triggers rather than player controls:
+`N` opens the name-entry screen for the lead character, and `F5`, `F`, `G`,
+`H` and `J` spawn a debug effect, effect model, summon, battle move effect or
+field effect at an actor so those render paths can be exercised without the
+script that normally fires them.
+
 No window toggle sits on a key the pad table can bind, and that is not
 cosmetic: a window key arm runs **before** the pad lookup, so one parked on a
 bindable key deletes that button from the keyboard entirely. The bindable
 vocabulary is the table above plus `C`, `V`, `D` and `E`. Every window toggle
 is either an F-key, which the pad lookup never resolves, or a letter outside
-that vocabulary (`I`, `R`, `T`, `Y`, and the minigame entries below), so no
+that vocabulary (`I`, `R`, `T`, `Y`, the dev triggers, and the minigame entries below), so no
 rebinding can collide with one.
 
 `--boot-ui` starts at the title screen → save-select flow instead of jumping
@@ -200,7 +208,10 @@ separate program: the field scene stays loaded underneath and comes back when
 you leave, so you start one from wherever you happen to be standing.
 
 In `play-window` each is one key, and the same key leaves again: `L` fishing,
-`K` dance, `O` the casino slot machine, `B` Baka Fighter, `M` Muscle Dome. Each
+`K` dance, `U` the how-to dance (the Disco King tutorial), `O` the casino slot
+machine, `B` Baka Fighter, `M` Muscle Dome. While fishing, `P` opens the
+point-exchange prize list (Up / Down move, Left / Right switch venue, Enter
+buys one). Each
 loads that minigame's overlay off the disc and installs a session, so the rules,
 tables and scoring all come from the disc rather than from hardcoded numbers.
 

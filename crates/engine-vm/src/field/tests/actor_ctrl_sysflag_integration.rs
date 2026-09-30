@@ -180,18 +180,22 @@ fn op_43_sub_9_immediate_writes_when_ticks_zero() {
 fn op_43_sub_10_emitter_init() {
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
-    // 21-byte instruction. Payload is 19 bytes after the [43, 0x10] header.
-    let mut bc = [0u8; 21];
+    // 21-byte instruction: the 19-byte record after the [43, 0x10] header,
+    // then the widget's own `0x40` sub-op script, which the spawner reads
+    // from record + 0x13 and the VM steps over. The host gets both.
+    let mut bc = [0u8; 24];
     bc[0] = 0x43;
     bc[1] = 0x10;
     for (i, b) in bc.iter_mut().enumerate().skip(2) {
         *b = i as u8;
     }
+    bc[21..].copy_from_slice(&[0x40, 0x01, 0x00]); // widget sub-op 0 (kill)
     let r = step(&mut host, &mut ctx, &bc, 0);
     assert_eq!(r, StepResult::Advance { next_pc: 21 });
     assert_eq!(host.emitter_init_payloads.len(), 1);
-    assert_eq!(host.emitter_init_payloads[0].len(), 19);
+    assert_eq!(host.emitter_init_payloads[0].len(), 22);
     assert_eq!(host.emitter_init_payloads[0][0], 2);
+    assert_eq!(host.emitter_init_payloads[0][0x13..], [0x40, 0x01, 0x00]);
 }
 
 #[test]

@@ -76,6 +76,15 @@ use legaia_asset::victory_pose::VictoryPoseTable;
 /// a real drive varies it, the engine keeps the measured span.
 pub const VICTORY_LOAD_FRAMES: u16 = 80;
 
+/// Vsyncs the side-band stream request `ctx[+0x26B]` stays raised at the
+/// head of the load hold: `FUN_80055B4C` raises it with the battle-end
+/// signal and the stream tick `FUN_801F17F8` clears it on landing, and the
+/// sequencer holds at `0x8004E5C0` until it does - the pose-archive stream,
+/// before the phase walk's own two CD waits. Measured on
+/// `rim_elm_gimard_victory` under PCSX-Redux (`autorun_victory_timeline.lua`:
+/// raised v322..v349 with the signal at v322, the phase walk from v350).
+pub const VICTORY_STREAM_FRAMES: u16 = 28;
+
 /// The results hold: `gp+0xA54` counts one per vsync and the exit fade is
 /// spawned once it reaches `0x100` (`0x8004F778` / `0x8004FAF8`).
 pub const VICTORY_RESULTS_HOLD_FRAMES: u16 = 0x100;
@@ -131,6 +140,20 @@ pub struct VictorySequence {
     /// so an arena leg or a Ra-Seru-forbidden fight ends on the bare scene.
     /// `false` until the results frame runs.
     pub window_opened: bool,
+}
+
+impl VictorySequence {
+    /// `ctx[+0x26B]` as retail holds it through this sequence: raised for the
+    /// first [`VICTORY_STREAM_FRAMES`] vsyncs of a victory's load hold (the
+    /// win-pose archive streaming in), idle from then on and on every other
+    /// end.
+    pub fn side_band_request_up(&self) -> bool {
+        matches!(
+            (self.cause, self.phase),
+            (BattleEndCause::MonsterWipe, VictoryPhase::Loading { frames_left })
+                if frames_left > VICTORY_LOAD_FRAMES - VICTORY_STREAM_FRAMES
+        )
+    }
 }
 
 impl VictorySequence {
@@ -481,6 +504,42 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_side_band_request_covers_the_head_of_the_load_hold_only() {
+        let seq = |cause, phase| VictorySequence {
+            cause,
+            phase,
+            pose_actor: 0,
+            pose_id: None,
+            window_opened: false,
+        };
+        let win = |frames_left| {
+            seq(
+                BattleEndCause::MonsterWipe,
+                VictoryPhase::Loading { frames_left },
+            )
+        };
+        // The hold counts VICTORY_LOAD_FRAMES down; the request is up for
+        // its first VICTORY_STREAM_FRAMES ticks (v322..v349 of 80).
+        let up: Vec<bool> = (1..=VICTORY_LOAD_FRAMES)
+            .rev()
+            .map(|f| win(f).side_band_request_up())
+            .collect();
+        assert_eq!(up.iter().filter(|&&u| u).count(), 28);
+        assert!(up[..28].iter().all(|&u| u) && up[28..].iter().all(|&u| !u));
+        assert!(
+            !seq(
+                BattleEndCause::MonsterWipe,
+                VictoryPhase::Results { hold: 0 }
+            )
+            .side_band_request_up()
+        );
+        assert!(
+            !seq(BattleEndCause::PartyWipe, VictoryPhase::Results { hold: 0 })
+                .side_band_request_up()
+        );
+    }
 
     #[test]
     fn tier_follows_hp_quarters_then_ages_with_rounds() {

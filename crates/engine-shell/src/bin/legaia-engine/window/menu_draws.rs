@@ -357,9 +357,9 @@ impl PlayWindowApp {
             FieldMenuSubsession::Save(_) => PauseMenuDraws::default(),
             FieldMenuSubsession::Spells(s) => self.pause_magic_draws(s, &ctx),
             FieldMenuSubsession::Items(s) => self.pause_items_draws(s, &ctx),
-            FieldMenuSubsession::Equip { session, char_slot } => {
-                self.equip_session_draws(session, *char_slot, &ctx)
-            }
+            FieldMenuSubsession::Equip {
+                session, char_slot, ..
+            } => self.equip_session_draws(session, *char_slot, &ctx),
             FieldMenuSubsession::Arts(s) => self.arts_session_draws(s, &ctx),
         }
     }
@@ -830,6 +830,7 @@ impl PlayWindowApp {
             session,
             char_slot,
             &names,
+            &world.present_party_list(),
             Some(&text),
             compare,
         );
@@ -1001,7 +1002,7 @@ fn equip_compose_input(
         cursor: m.cursor,
         active_slot: m.active_slot,
         confirm_label: m.confirm_label.as_deref(),
-        char_slot: m.char_slot as usize,
+        char_slot: m.party_row as usize,
         slot_cursor: m.slot_cursor,
         pictogram_rows: m.pictogram_rows,
         text_cursor,

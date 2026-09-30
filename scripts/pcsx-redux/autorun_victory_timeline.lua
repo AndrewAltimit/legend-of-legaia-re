@@ -12,6 +12,10 @@
 --     hero voice clip (slot 7) and the PROT 0889 level-up bank (slot 11)
 --     stream in, i.e. how many vsyncs the pose-8 hold lasts on real CD
 --     timing;
+--   * the side-band stream request ctx+0x26B (FUN_80055B4C stores slot+1,
+--     the stream tick FUN_801F17F8 clears it on landing) and its progress
+--     byte ctx+0x26C - the sequencer holds at 0x8004E5C0 while it is up,
+--     and the near-camera ghost pass reads it under 0xFE;
 --   * the results frame (ctx+0x6CE 0 -> 1): pose id staged into the pose
 --     actor's +0x1DA, DAT_8007BD60 |= 0x80, result windows up;
 --   * the results hold (0x8007BD6C counts vsyncs to 0x100), the white-out
@@ -50,7 +54,7 @@ local ACTOR_TABLE = 0x801C9370 -- 8 actor pointers
 local PARTY_IDS   = 0x8007BD10 -- DAT_8007BD10: seat -> 1-based char id
 
 local csv = probe.csv_open(OUT_PATH,
-    "vsync,signal,cause,survived,mode,flow,astate,ctx13,ctx0b,ctx0c,phase6ce," ..
+    "vsync,signal,cause,survived,mode,flow,astate,ctx13,ctx0b,ctx0c,phase6ce,req26b,prog26c," ..
     "pose_id,hold,xp,gold,fade_kind,fade_time,p0_q,p0_c,p0_hp,p1_q,p1_c,p1_hp,p2_q,p2_c,p2_hp,m0_hp")
 
 local function actor_triplet(seat)
@@ -78,6 +82,7 @@ probe.run({
         local survived = probe.read_u8(SURVIVED)
         local mode     = probe.read_u16(GAME_MODE)
         local flow, astate, ctx13, ctx0b, ctx0c, phase = 0, 0, 0, 0, 0, 0
+        local req26b, prog26c = 0, 0
         if ctx_ok then
             flow   = probe.read_u8(ctx + 0x6)
             astate = probe.read_u8(ctx + 0x7)
@@ -85,6 +90,8 @@ probe.run({
             ctx0b  = probe.read_u8(ctx + 0xB)
             ctx0c  = probe.read_u8(ctx + 0xC)
             phase  = probe.read_u16(ctx + 0x6CE)
+            req26b = probe.read_u8(ctx + 0x26B)
+            prog26c = probe.read_u8(ctx + 0x26C)
         end
         local pose_id = probe.read_u32(POSE_ID)
         local hold    = probe.read_u32(HOLD_TIMER)
@@ -96,8 +103,8 @@ probe.run({
         local p1q, p1c, p1hp = actor_triplet(1)
         local p2q, p2c, p2hp = actor_triplet(2)
         local _, _, m0hp = actor_triplet(3)
-        local sig = string.format("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
-            signal, cause, survived, mode, flow, astate, ctx13, ctx0b, ctx0c, phase,
+        local sig = string.format("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
+            signal, cause, survived, mode, flow, astate, ctx13, ctx0b, ctx0c, phase, req26b, prog26c,
             pose_id, hold, xp, gold, fk, ft, p0q, p0c, p0hp, p1q, p1c, p1hp, p2q, p2c, p2hp, m0hp)
         -- Emit on any change, plus a heartbeat every 30 vsyncs so the hold
         -- timer's slope is visible even when nothing else moves.

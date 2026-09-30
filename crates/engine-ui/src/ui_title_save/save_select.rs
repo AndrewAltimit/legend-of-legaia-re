@@ -461,6 +461,13 @@ pub struct BattleChromeRects {
     /// when the atlas was built without it; the chip then keeps its greyed
     /// plate and `-` label with no mark.
     pub cross_out: Option<(u32, u32, u32, u32)>,
+    /// The blue **Rot** stamp (32x24) retail lays over a refused Attack chip
+    /// and over each rotted arts-entry direction (`FUN_801DBD04` /
+    /// `FUN_801DBDDC`), baked off the same effect page. `None` = no stamp.
+    pub rot_stamp: Option<(u32, u32, u32, u32)>,
+    /// The blue **Curse** plate (64x16) retail lays over a refused Magic chip
+    /// (`FUN_801DBEC4`). `None` = no plate.
+    pub curse_plate: Option<(u32, u32, u32, u32)>,
 }
 
 /// Width and horizontal pitch of one HUD numeral cell

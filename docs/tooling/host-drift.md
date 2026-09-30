@@ -1363,6 +1363,13 @@ texels live on the battle effect page (PROT 870, page `(448, 0)`, CLUT
 bake gets `BattleChromeRects::cross_out = None` and no mark. See
 [battle.md](../subsystems/battle.md#the-ra-seru-forbidden-bit-of-the-special-battle-word).
 
+The status marks ride the same shape. The one bake also seats the Rot stamp
+and the Curse plate (`BattleChromeRects::rot_stamp` / `curse_plate`), the
+ring builder takes `battle_hud::battle_ring_marks` - a `RingMarks` from
+`engine-vm`, so neither host copies it field by field - and the arts entry's
+stamps come from `arts_input::arts_input_rot_stamp_draws` off
+`ArtsInputView::status`, called by both hosts after the entry chrome.
+
 ### The minigame side-channel step is paired; its contents are not
 
 Tier 11 pairs `tick_minigame_extras` (native) with `tick_minigame_ui` (page) as

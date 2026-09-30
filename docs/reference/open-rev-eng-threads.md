@@ -104,9 +104,7 @@ cheapest place to look for a claim that is still wrong.
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Does a later keikoku variant MAN replace `P2[7]`'s pushback? | open - inference | Every arm of keikoku `P2[7]` walks the player back out of the doorway and the record has no header gate, so neither a route nor a flag seed restores critical-path rung 5 on this MAN. A variant MAN that replaces record 7 is the only way it could clear; nobody has checked. |
-| Does retail step helper contexts while a timeline sits on an open text box? | open - test observation | In korb3 two helper contexts spawned beside the first-visit timeline take no slice while it waits on dialogue (0 frames after 2800 ticks). A capture of retail on that dialogue closes it. |
-| Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; play order capture-confirmed for most spokes; the residual is a card-block question with the instrument ready | [details ↓](#region-story-flag-gate-families) |
+| Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; every residual family bracketed between two retail milestone saves; open is the write order inside a bracket | [details ↓](#region-story-flag-gate-families) |
 
 **Who sets a field NPC's moving-class bit** closed by disassembly and capture:
 the placement seater `FUN_8003A1E4` ORs `0x20000` into every partition-1
@@ -319,7 +317,7 @@ and the force-walk reading it falsified in
 
 ### Region story-flag gate families
 
-*Status:* structure resolved and settled; residual = play-order confirmation for the dungeons the capture corpus never walked
+*Status:* structure resolved and settled; every residual family bracketed between two retail milestone saves; residual = the write order inside a bracket for the multi-write families
 
 The per-region C1/C2 gate families - the partition-2 record-header flag lists
 the spawn evaluator `FUN_8003BDE0` checks - are decoded across the chapter-2/3
@@ -349,7 +347,7 @@ alongside the earlier organic `ropeway`/`ropeway2`/`jiji` walks and Nivora's
   0x1FC`, `bubu2`'s requires-all list, `station` / `station3` behind `taiku`'s
   `0x38F`, `deroa`'s `0x3E1`-gated descent - fire only on walk-on and talk
   beats, which need a human play-forward; `rayman2` also needs flag `0x1D5`,
-  which the ladder card lacks. Read any firehose over these with the `chitei2`
+  which every ladder save from Mt. Letona on carries. Read any firehose over these with the `chitei2`
   lesson in hand: a flag written every other frame from an entry script's
   per-frame body is a one-hot selector, not a progress latch;
 - **walked without an organic family SET** (the beats were already latched in
@@ -360,6 +358,24 @@ alongside the earlier organic `ropeway`/`ropeway2`/`jiji` walks and Nivora's
   captured, `kor5` with its `0x436` input poked rather than played; the
   retock / doman / nilboa entry families are measured
   ([settled](re-settled-threads.md#field--locomotion)).
+
+**Card brackets place every residual family between two milestones.** The
+two playthrough cards hold one retail save per story milestone, so a flag
+clear in one save and set in the next was written by the play between them.
+Every residual family lands inside one such bracket: `rayman`'s whole chain
+(`0x201`, `0x1FB`, `0x200`, `0x1FC`) between Sky Gardens and the Fire Path;
+`0x1D5` between the Fire Path and Mt. Letona; retock's `0x357` between Mt.
+Letona and Ratayu, and `0x33B` with `0x502` between Ratayu and Dohati's
+Castle; `bubu2`'s `0x608` between Dohati and Sol Tower and its `0x3D3` /
+`0x609` with doman's `0x3FB` between the Sol Tower B2 and Usha saves; the
+`kor5` tail between the two Sol Tower saves; `0x370` between Usha and Nivora;
+`0x378`, `0x3A6` and `0x60D` between Nivora and Zora; `0x38F` and `0x3A7`
+between Zora and Conkram; deroa's `0x3E1` / `0x46D..0x46F` between Rogue's
+Tower and Jette's Fortress. Pinned by `region_gate_card_brackets` (save
+library gated). So the order *between* families is settled by retail saves;
+what is still owed is the order *inside* a bracket, and only where a family
+has more than one write in it (`rayman`'s chain, retock's pair, doman's
+triple, deroa's group).
 
 The generic C1/C2 seeder already drives every family. One more session from
 an early-enough save (before the retock/doman/nilboa beats) closes the
@@ -403,12 +419,22 @@ process-matching helpers in
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Does the port draw retail's Rot / Curse crosses over refused arms? | open - disassembly; drawn on neither host | Retail marks a refused arts direction with `FUN_801DBDDC` (`0x801D1DA8..0x801D1E54`) and the ring's refused arms with `FUN_801DBD04(0xA0, 0x42)` / `FUN_801DBEC4(0xF8, 0x42)`. The refusals themselves are ported; the marks are not. |
-| Does a monster's one-shot clip tween into its queued clip? | open - disassembly; not modelled | `FUN_8004998C` blends the last frame into frame 0 of the queued clip when HP is non-zero and `+0x1DA < 0x10`, adding `+0xE` to the Z translation (`0x80049A7C..0x80049BD0`). `MonsterAnimPlayer` has no queued clip, so a one-shot clip clamps without the tween. |
 | Are camera-relative move-VM parts drawn camera-relative? | partial - both hosts do; not yet frame-compared | 334 of 3956 nodes across the 98 mednafen states carry a `+0x52 & 0x780` bit (billboards, per-axis skips, camera-locked summon parts), and 15 states have a non-zero skipped angle, e.g. `battle_melee_hit_spark`. Both play hosts now place those parts through `camera_relative_model_prefix` ([`renderer.md`](../subsystems/renderer.md#camera-relative-nodes-fun_8001cf50)); open is a frame comparison against one of those states, and whether the engine's part position (the move-VM `world_x/y/z`, which folds in the spawn origin) is the `+0x14` offset the `0x400` arm locks. |
-| Are the overworld decoration cells depth-cued? | open - disassembly; not in the port | Each decoration object is cued with `IR0 = min(max(TRZ - 0x5000, 0) >> 3, 0x1000)` toward far colour `0xD0` (`0x801F7200..0x801F7254`), parked at `0x1F800038` and loaded before `DPCS` (`0x801F7A44`). The ground under them is cued; the objects are not ([`world-map.md`](../subsystems/world-map.md)). |
-| Why do the overworld fog sheets read denser and brighter than retail's? | open (narrowed) - draw order closed; the density gap is not order | Draw order is matched: the port keys the continent at retail's bucket (`(max corner SZ >> 5) + 14`) and on `keikoku_chest_preload` covers 1.1% of the fog's light against retail's 1.0% ([`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#closing-the-draw-order-flat-per-primitive-terrain-depth)). "Terrain hides a fifth" was two sprite families ([falsified](re-do-not-re-walk.md#rendering--camera)). The ground under them is now cued as retail's ([settled](re-settled-threads.md#world-map--kingdom-bundles)) and the density is not re-measured. Candidates: the camera section; the whole continent drawn, not the tile window. |
-| Does the fight against monster `0xAF` (Tetsu) seat and flag as retail does? | open - disassembly and a synthetic poke only | The Rim Elm ambush is closed: its row carries header byte 0, so `ctx+0x287 = 0`, the map arm seats row 8, the word reads `0x200` and Run is allowed, in retail and in the engine (`rim_elm_ambush_disc`; [settled](re-settled-threads.md#battle--arts--level-up)). Tetsu's only formation row is `town0d` row 4 (header byte 1, scripted); a synthetic first-monster poke confirms the `0x200` raise, but no state or card block reaches `town0d`. A state inside that fight, read for the seats and the word, closes it. |
+
+**Does the port draw retail's Rot / Curse marks over refused arms** closed
+by disassembly: the ring stamps Rot on the Attack chip under all three limbs
+(`FUN_801DBD04(0xA0, 0x42)`), lays the Curse plate on the Magic chip
+(`FUN_801DBEC4(0xF8, 0x42)`) and the arts entry stamps each rotted direction
+(`FUN_801DBDDC`, sized to the chip's cost); both hosts draw all three
+([settled](re-settled-threads.md#battle--arts--level-up)).
+
+**Does a monster's one-shot clip tween into its queued clip** closed as yes,
+by disassembly, and ported: on its last frame `FUN_8004998C` blends into frame
+0 of the clip the engine installs next, with the committed entry's `+0x0E` on
+the Z delta, and the anim tick moves the actor by that step at the natural end
+(`0x80047A68..0x80047B2C`) - so a one-shot now runs to its frame count, not its
+last keyframe ([settled](re-settled-threads.md#battle--arts--level-up),
+[`monster-animation.md`](../formats/monster-animation.md#the-end-of-clip-step-0x0e)).
 
 **Which fights forbid the Ra-Seru chip** closed by disassembly: bit `0x200` of
 `_DAT_8007BAC0` has two raisers - battle init against first monster `0xAF`
@@ -416,8 +442,8 @@ process-matching helpers in
 (`0x8005200C..0x8005205C`) - and two readers, the ring's cross-out at
 `0x801D12DC` and its refused arm at `0x801D1448`
 ([settled](re-settled-threads.md#battle--arts--level-up)). The engine models
-both raisers and the refusal; the cross-out is drawn on neither host
-([`host-drift.md`](../tooling/host-drift.md#known-gaps-no-gate-fails-on)), and
+both raisers and the refusal; both hosts draw the cross-out
+([`host-drift.md`](../tooling/host-drift.md#the-ra-seru-chips-cross-out-one-atlas-cell-one-engine-read)), and
 the port's other readers of the word - the wipe rule, the arena Run arm and the
 result-window gate - are ported ([settled](re-settled-threads.md#battle--arts--level-up)).
 **The battle body's blend mode** reaches both hosts now, through one TSB
@@ -842,75 +868,15 @@ a coincidence of the pad byte plus the mask table's first three entries
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Which live ports cover only part of their routine, and which of those differ from retail? | open (narrowed) - listed, not ported | Of the 43 partial ports a tag audit found, the ones that still change behaviour are Baka Fighter's attack-clip tail, a battle residue (the victory load hold's `ctx[+0x26B]` timing) and the anim barrier - each named with its blocker [details ↓](#which-live-ports-cover-only-part-of-their-routine). Each residue ported, or disclosed where it is blocked, closes it. |
 | Which save-state library entries still hold a patched executable? | open (narrowed) - audited and tagged; the rest need human play | A state made on a patched disc keeps that build's `SCUS_942.54` in RAM on every later load. `patch_taint_audit.py states` tags each library state's `resident_patch`; the S1..S5 anchors, `first_town_interactive` and `teien_field_run` are re-shot retail, and every capture-graded claim re-checked against its family stands ([`pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md#patched-disc-taint)). The `rikuroa_*`, `dolk2_market_noa`, `cort_evolved_*`, `minigame_*_pcsx`, `battle_gaza2_*` states and the mednafen `overworld_battle_bg_angle_*` states re-shot on an unpatched image close it. |
 | Which engine draws hand a raw LCG state where retail calls BIOS `rand`? | mostly resolved - every battle draw is shaped | `FUN_80056798` (BIOS `A(2Fh)`) returns `(seed >> 16) & 0x7FFF` and nothing reseeds it ([settled](re-settled-threads.md#measurement--corpus)). Every battle-side port draws through `World::next_rand`, the battle-action and effect-pool hosts included; every routine they port calls `jal 0x80056798`; neither PROT 0898 nor SCUS carries an inline LCG ([`battle-formulas.md`](../subsystems/battle-formulas.md#how-the-port-draws-it)). Left: the field move-VM extension `FUN_801D362C` (sub-ops `0x05` / `0x30`) draws the raw state, and the battle camera script, the camera shake and the Muscle Dome session keep private seeds. Moving those onto the world stream closes it. |
 
-### Which live ports cover only part of their routine
-
-*Status:* open - the list is the residue of a 316-tag audit after three rounds of fixes
-
-The audit found 43 partial ports. Fixed since, on both hosts where a host is
-involved: the encounter reroll `FUN_801DDF48` and its global `_DAT_8007B5FC`;
-the tile board's event-cell flag writes and trigger exit (states `3` and `8`)
-and its prompt and fade states; Baka Fighter's and the slot machine's face
-buttons; the actor tick's move-VM step when `+0x54 < 0`; `FUN_801DBF9C`'s
-parameter stream, which was written one byte low; the initiative sweep's
-dead-slot refund and tie list; the follow camera's shake consumption and its
-mode-5 focus; the SFX ring's three producers; the narration roller's config
-block; the escape timer's HUD; `FUN_8003540C`'s unconditional clear; the two
-routines that had no port at all, the strip emitter `FUN_801D31B0` and the dome
-course card `FUN_801D042C`; the "nobody can act" `0x1E` -> `0x6E` round with its
-`ctx[+0x25]` skip count; the `0x801F696C` swing drift; the settle's clip tail
-with the timed kind-0 warp; the settle's `4C CE` clip override
-`_DAT_8007B6AC`, op `0x22`'s clip-base write, the warp's `0x801DA7F0` tag (the
-`4C E1` text balloon, which the warp now tears down) and its `0x80000`
-same-tile re-poll; `FUN_801DB510`'s two hold gates, whose writers already
-existed and whose reader was the missing half; the actor allocator
-`FUN_80020DE0`, whose reused pool slots had inherited the retired actor's
-handler, reflection link and state words; the model setter's `4C 50` re-stage,
-now through `World::npcs.models`, which both hosts re-bind from; and the
-battle state `0x3E`'s class-5 arm at `0x801E3F2C`, with its `(rand % 2) * 2`
-camera draw.
-
-Two rows closed without a port. **`FUN_801CF8AC`**: only the `+0x10 & 3` exempt
-early-out changes behaviour - the no-class arm is unreachable, because bit 17 is
-never cleared on the disc and all three callers keep only `& 1` of its result,
-and the `+0x98` link is overwritten before anything reads it. **`FUN_80020F88`**
-is `REPLACED-BY` scene-build mesh binding plus the live model seat.
-
-Closed since, on both play hosts: `FUN_801D1BA0` / `FUN_801D1EC4`'s player
-CFlag bit 24, the player-mesh rebuild for `4C 50` aimed at `F8`, and the system
-channel's clip reset on every unlocked tick; the tile board's step cue, bonk,
-run and idle clips and octant facing (no retail scene installs a board, so
-these rest on disassembly); Rula and Riremito, which the Door of Wind / Door of
-Light now reach through the pause-menu session as retail does; the dome hub's
-subtractive shade on all three hosts, its two waits and first-visit lines;
-Baka Fighter's impact pair, cameo and cell blit; and in battle the commit's
-clip-tag ladder and the Seru absorb's kill-check gate.
-
-What remains, each with where it is recorded:
-
-- **Baka Fighter's duel**: an attack clip stops at the booked exchange instead
-  of playing out its tail
-  ([`minigame-baka-fighter.md`](../subsystems/minigame-baka-fighter.md#impact-cue-and-afterimage)).
-- **Battle**: none left in the flow. The special-battle word's readers are
-  ported (the wipe rule `0x801E6578`, the arena Run arm `0x801D322C`, the two
-  result-window calls in `FUN_8004E568`); the shadow's `+0x6A` flag is the
-  after-image bracket the engine already drew; the ghost pass's `gp+0x330`
-  gate passes on every battle state and `ctx[+6]` comes from the flow mirror.
-  `ctx[+0x26B]` is still taken as raised through the victory load hold, which
-  is inference; the loss window `0x42` draws on both hosts
-  ([`battle.md`](../subsystems/battle.md#the-near-camera-ghost-pass-fun_8004dc68)).
-  The `0x801F0518` flag write, the ribbon's per-clip caller and the War God
-  Icon's per-stage bump are modelled.
-- **Anim**: `800480D8`, blocked on a crate barrier between `engine-core` and
-  `engine-render`. The two audio rows that stood beside it left the list without
-  a port: `FUN_8004DA00` only seeks the drive and `FUN_80064090` is unreachable
-  ([settled](re-settled-threads.md#audio)).
-
-Rows of the audit not named here were not re-read after it; the audit's own
-evidence column is the place to start before trusting one.
+**Which live ports cover only part of their routine** closed: every residue
+the audit named as still changing behaviour is ported - the last three were
+Baka Fighter's display clip (all three hosts pose from it), the victory load
+hold's `ctx[+0x26B]` span (now a capture) and `FUN_800480D8`, whose crate
+barrier went when the pass moved into `engine-vm`
+([settled](re-settled-threads.md#which-live-ports-cover-only-part-of-their-routine)).
 
 **Which references does the indexed form hide** closed at 512 accesses, none
 in PROT 0897 / 0899: the counts that opened the row came from a scanner that

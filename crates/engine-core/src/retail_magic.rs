@@ -302,8 +302,56 @@ pub fn seru_magic_catalog_from_scus(scus: &[u8]) -> Option<SpellCatalog> {
         }
         c.insert(def);
     }
+    insert_player_seru_tail(&mut c, &table);
     insert_monster_specials(&mut c, &table);
     Some(c)
+}
+
+/// The last player Seru id: the action-id cast band `FUN_801F1ED4` maps
+/// `0x81..=0xA0` onto PROT `903..=934`, one cast module per id.
+pub const PLAYER_SERU_LAST_ID: u8 = 0xA0;
+
+/// The player Seru ids above the pinned block (`0x8C..=0xA0` - Gola Gola
+/// through Ozma, the flute summons and the Ra-Seru evolutions), read off the
+/// disc table the same way: name, MP, target shape and `+0x01` class. Without
+/// them a captured Seru past Nova has no catalog entry, so the battle Magic
+/// submenu cannot list it and a dispatch of its id spends the turn instead of
+/// casting. The element is the table's blind spot (it lives only in the MES
+/// name-colour prefix), so these carry `Neutral`; the damage figure is the
+/// same MP-scaled placeholder as the pinned block's.
+fn insert_player_seru_tail(
+    c: &mut SpellCatalog,
+    table: &legaia_asset::spell_names::SpellNameTable,
+) {
+    let first = SERU_MAGIC.last().map_or(0x81, |s| s.id + 1);
+    for id in first..=PLAYER_SERU_LAST_ID {
+        let Some(e) = table.entry(id) else {
+            continue;
+        };
+        let Some(name) = e.name.as_deref().map(str::trim).filter(|n| !n.is_empty()) else {
+            continue;
+        };
+        let target = target_from_shape(e.target_shape());
+        let mp = u16::from(e.mp);
+        let effect = match target {
+            SpellTarget::OneAlly => SpellEffect::Heal { amount: mp * 8 },
+            SpellTarget::AllAllies => SpellEffect::HealAll { amount: mp * 6 },
+            _ => SpellEffect::Damage {
+                base_power: mp * 2,
+                element: SpellElement::Neutral,
+            },
+        };
+        c.insert(SpellDef {
+            id,
+            name: name.to_string(),
+            mp_cost: e.mp,
+            element: SpellElement::Neutral,
+            target,
+            effect,
+            anim_id: 0x25 + (id - 0x81),
+            effect_class: e.sub_class,
+        });
+    }
 }
 
 /// Every named, non-capture id below the player block (`0x01..=0x80`) as the

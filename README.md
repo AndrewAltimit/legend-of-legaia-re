@@ -20,7 +20,7 @@ Four things, all usable today. Everything browser-side reads your disc image loc
 
 **Play and explore in your browser.**
 
-- [**Play the port**](https://andrewaltimit.github.io/legend-of-legaia-re/play.html) - walk real towns and fields with retail movement and collision, talk to NPCs (the field VM plays their actual dialogue, branches and all), pass through doors, open the retail pause menu and every screen behind it, and load/save against a real memory-card image your emulator still accepts. Works flat or in VR over WebXR. Battles and the opening cutscenes are native-only for now.
+- [**Play the port**](https://andrewaltimit.github.io/legend-of-legaia-re/play.html) - walk real towns and fields with retail movement and collision, talk to NPCs (the field VM plays their actual dialogue, branches and all), pass through doors, open the retail pause menu and every screen behind it, and load/save against a real memory-card image your emulator still accepts. Random encounters run into live battles with the player-driven command menus, the opening chain plays its prologue legs, narration crawl and FMVs, and the whole page works flat or in VR over WebXR.
 - [**Minigames**](https://andrewaltimit.github.io/legend-of-legaia-re/minigames.html) - the casino slot machine, Noa's dance, and Baka Fighter, playable against the real step charts, rosters and payout tables read from your disc. The odds you're beating are the odds the cabinet shipped with.
 - [**ROM patcher**](https://andrewaltimit.github.io/legend-of-legaia-re/tooling/rom-patcher.html) - the disc randomizer running client-side, with a spoiler-safe change report.
 - [**Asset viewer**](https://andrewaltimit.github.io/legend-of-legaia-re/viewer.html) and [**media browser**](https://andrewaltimit.github.io/legend-of-legaia-re/media.html) - textures, 3D models, dialog, music, sound banks, and the FMVs, decoded in the tab.
@@ -106,9 +106,9 @@ source change is dominated by that link-time work, so dropping it is close to
 an order of magnitude. The tradeoff is a second set of artifacts in
 `target/`, and test binaries whose codegen no longer matches a release build.
 
-CI stays on `--release`: its `ci` job runs `cargo build --release` alongside the
-test step and the runner's target directory persists, so there the two profiles
-would be built rather than one substituted for the other.
+CI tests under `release-test` as well; its `ci` job still runs
+`cargo build --release` after the test step, so the shipped profile is built
+and linked on every run.
 
 Optional extras, only needed for the reverse-engineering workflows:
 
@@ -234,7 +234,7 @@ legend-of-legaia-re/
 ├── docker/ghidra.Dockerfile      # wraps blacktop/ghidra:latest with host-UID mapping
 ├── crates/
 │   │   # Track 1 - preservation (disc → PNG / WAV / OBJ / JSON)
-│   ├── bytes/                    # Checked little-endian readers; leaf dep of every parser
+│   ├── bytes/                    # Checked little-endian readers (used by asset + engine-core)
 │   ├── iso/                      # PSX disc reader + ISO9660 walker + sector write-back
 │   ├── prot/                     # PROT.DAT TOC + CDNAME + standalone TIM-pack
 │   ├── lzs/                      # Legaia LZS decoder (FUN_8001a55c) + re-packer

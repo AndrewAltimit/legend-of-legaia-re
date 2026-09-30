@@ -786,10 +786,14 @@ impl World {
             .as_ref()
             .and_then(|tl| tl.dialog.as_ref())
             .or_else(|| {
+                // The helper that claimed the box first; the others wait.
                 self.field_vm
                     .helper_contexts
                     .iter()
-                    .find_map(|tl| tl.dialog.as_ref())
+                    .filter(|tl| !tl.done)
+                    .filter_map(|tl| tl.dialog.as_ref().map(|d| (tl.dialog_claim, d)))
+                    .min_by_key(|(claim, _)| *claim)
+                    .map(|(_, d)| d)
             })
     }
 
@@ -1367,6 +1371,8 @@ impl World {
                         );
                         panel.substitutions = host.world.dialog_substitutions(&tl.bytecode);
                         tl.dialog = Some(panel);
+                        host.world.field_vm.dialog_claims += 1;
+                        tl.dialog_claim = host.world.field_vm.dialog_claims;
                         break;
                     }
                     tl.pc = pc + 1;
@@ -2132,13 +2138,30 @@ impl World {
             return;
         }
         let mut contexts = std::mem::take(&mut self.field_vm.helper_contexts);
-        // One dialog box: the pad goes to the modal timeline's box when it
-        // shows one, else to the first helper holding a box.
-        let mut pad_free = self
+        // One dialog box, and it has one owner: the modal timeline's box when
+        // it shows one, else the first helper holding a box. A helper that
+        // reached its text while the box is taken waits for it without
+        // typing, paging or taking the pager's automatic press - retail's
+        // runner leaves such a context at `+0x9C = 1` and claims the box only
+        // once its state word `0x801F2734` reads free (`1` / `4` / `7`,
+        // `0x80039F9C..0x80039FD8`). Contexts that are not on text keep
+        // their slice every frame: the runner gates on the context's own
+        // `+0x9C`, never on the box.
+        // REF: FUN_80039B7C
+        let timeline_box = self
             .cutscene
             .timeline
             .as_ref()
-            .is_none_or(|t| t.dialog.is_none());
+            .is_some_and(|t| t.dialog.is_some());
+        let mut owner = if timeline_box {
+            None
+        } else {
+            contexts
+                .iter()
+                .filter(|tl| !tl.done && tl.dialog.is_some())
+                .map(|tl| tl.dialog_claim)
+                .min()
+        };
         for tl in contexts.iter_mut() {
             if tl.done {
                 continue;
@@ -2146,8 +2169,11 @@ impl World {
             // Parked on its text segment: the box, not the slice, advances
             // it; the park holds the frame cap like the modal timeline's.
             if tl.dialog.is_some() {
-                self.drive_script_dialog(tl, pad_free);
-                pad_free = false;
+                if owner != Some(tl.dialog_claim) {
+                    continue;
+                }
+                owner = None;
+                self.drive_script_dialog(tl, true);
                 if tl.dialog.is_some() || tl.done {
                     continue;
                 }
@@ -3092,7 +3118,83 @@ impl World {
             // acquire succeeding.
             let caller_halt =
                 ext_target.map(|_| (id.ctx.flags & 0x400, id.ctx.saved_pc, id.ctx.wait_accum));
-            let step = vm::field::step(&mut host, &mut id.ctx, &id.bytecode, id.pc);
+            // A player seat (`A3 F8 x z` MOVE_TO, `CC F8 51 x z ..` run) or a
+            // player box test (`CD F8 ..` BBOX_TEST): `FUN_8003C83C` resolves
+            // `0xF8` to the player object, so the op runs with the PLAYER as
+            // its context - the seat takes the player arm (`0x801DEC7C`
+            // compares the context pointer against `_DAT_8007C364`) and the
+            // box test reads the player's `+0x14` / `+0x18`. Stepped on the
+            // talker's own context, the seat moved nobody and the box tested
+            // where the talker stands. `town0b` P1[37], the night-before
+            // talk, closes with `A3 F8 20 63` - it puts Vahn on `(32, 99)`,
+            // the walled-in tile of the P2[8] walk-on that stages the village
+            // gathering, then ends the interaction (`21`), and the crossing
+            // fires on the first unlocked frame. The elder's P1[55] then
+            // opens every talk with `CD F8 1E 5B 21 5C`: only a player
+            // standing in `[30..33, 91..92]` reaches the arm that sets
+            // `0x141` and leaves for `map01`. The cutscene timeline and the
+            // prop runner already take the seat arm.
+            // REF: FUN_8003C83C, FUN_801DE840 (0x23 / 4C 51 / 4D arms)
+            let op = b & 0x7F;
+            let player_seat = ext_target == Some(crate::field_env::PLAYER_ANCHOR_TARGET)
+                && (op == 0x23
+                    || op == 0x4D
+                    || (op == 0x4C && id.bytecode.get(id.pc + 2) == Some(&0x51)));
+            // A run aimed at ANOTHER actor (`CC <id> 51 x z ..`) walks that
+            // actor, not the talker: `town0b` P1[55]'s first talk sends
+            // placement `0x2A` home with `CC 2A 51 27 28`, and routing it to
+            // the talker walked the village elder out of the room the next
+            // beat needs him in. An id no placement channel carries moves
+            // nobody.
+            // REF: FUN_8003C83C
+            let run_target =
+                (op == 0x4C && id.bytecode.get(id.pc + 2) == Some(&0x51) && !player_seat)
+                    .then_some(ext_target)
+                    .flatten()
+                    .filter(|&t| t != 0xFB);
+            let talker = host.world.dialog.stepping_inline_npc;
+            if let Some(t) = run_target {
+                let view = host.world.channel_view();
+                host.world.dialog.stepping_inline_npc =
+                    crate::field_channels::resolve_target(view, t)
+                        .map(|ci| &view[ci])
+                        .filter(|ch| !ch.object_bind)
+                        .and_then(|ch| u8::try_from(ch.placement_index).ok());
+            }
+            let step = if player_seat {
+                let (px, pz) = host
+                    .world
+                    .player_actor_slot
+                    .and_then(|slot| host.world.actors.get(usize::from(slot)))
+                    .map_or((0, 0), |a| (a.move_state.world_x, a.move_state.world_z));
+                let mut player_ctx = legaia_engine_vm::field::FieldCtx {
+                    script_id: u16::from(crate::field_env::PLAYER_ANCHOR_TARGET),
+                    flags: 0x0100_0000,
+                    world_x: px as u16,
+                    world_z: pz as u16,
+                    ..Default::default()
+                };
+                let r = vm::field::step(&mut host, &mut player_ctx, &id.bytecode, id.pc);
+                if let Some(slot) = host.world.player_actor_slot
+                    && let Some((x, z)) = host
+                        .world
+                        .actors
+                        .get(usize::from(slot))
+                        .map(|a| (a.move_state.world_x, a.move_state.world_z))
+                {
+                    let y = host
+                        .world
+                        .sample_field_floor_height(i32::from(x), i32::from(z))
+                        as i16;
+                    if let Some(a) = host.world.actors.get_mut(usize::from(slot)) {
+                        a.move_state.world_y = y;
+                    }
+                }
+                r
+            } else {
+                vm::field::step(&mut host, &mut id.ctx, &id.bytecode, id.pc)
+            };
+            host.world.dialog.stepping_inline_npc = talker;
             if let Some((halt, saved_pc, wait_accum)) = caller_halt
                 && halt == 0
                 && id.ctx.flags & 0x400 != 0
@@ -3162,14 +3264,33 @@ impl World {
                 // Persist the PC and resume next tick instead of ending, so
                 // option effects scripted *behind* a wait still run - the Rim
                 // Elm spar's `3E FF 04` battle install sits behind a
-                // `WaitFrames 16`. Only when no prologue fallback is pending;
-                // a wait during prologue selection still falls back so the box
-                // is never worse than the truncated path.
-                FieldStepResult::Halt { final_pc }
-                    if (b & 0x7F) == 0x4A && id.fallback_segment_pc.is_none() =>
-                {
+                // `WaitFrames 16`. A wait before the talk's first box parks
+                // the same way: retail's runner has no notion of a prologue,
+                // and falling back to the record's first segment there
+                // replayed the wrong speech - `town0b` P1[55]'s gathering
+                // arm (`+0xE14`) waits eight frames before its first box,
+                // and the fallback re-ran the pre-gathering speech in its
+                // place, so the arm that sets `0x141` never ran.
+                FieldStepResult::Halt { final_pc } if (b & 0x7F) == 0x4A => {
                     id.pc = final_pc;
                     break;
+                }
+                // A cross-context CFLAG_TST (`B3 <id> <bit>`) waits on
+                // another actor's context word - `town01` P1[32] closes its
+                // spar setup with `C1 44 02` (park actor `0x44`) and then
+                // `B3 44 0A`, the halt-bit verify. The runner has no
+                // resolved context word to read it from, and the engine's
+                // cross-context pokes complete synchronously, so it steps
+                // past by width as the cutscene timeline does; ending the
+                // talk there left the player on the seat the talk had just
+                // made, a walled-in tile, with the rest of the
+                // choreography unrun.
+                // REF: FUN_8003C83C
+                FieldStepResult::Halt { final_pc }
+                    if (b & 0x7F) == 0x33 && ext_target.is_some() && final_pc == id.pc =>
+                {
+                    id.pc = final_pc + 3;
+                    id.park_frames = 0;
                 }
                 // op-0x2D LFLAG_TST is a **spin**, not an end. The bit it
                 // tests is in the clip-control word `actor+0x62`, and bit 8
@@ -4404,5 +4525,96 @@ mod tests {
             "dismissing the box resumes the helper past the segment"
         );
         assert!(w.script_dialog_panel().is_none());
+    }
+
+    #[test]
+    fn a_helper_off_text_keeps_its_slice_while_the_box_is_taken() {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        // Retail's runner `FUN_80039B7C` gates a context on its own `+0x9C`,
+        // never on the box: while one context's text is up, a context that is
+        // not on text runs every frame, and a second context that reaches
+        // text waits for the box without typing it.
+        let text = vec![0x1F, b'H', b'i', 0x00, 0x50, 0x0C, 0x4A, 0x40, 0x00];
+        let first = vec![0x1F, b'Y', b'o', 0x00, 0x50, 0x0D, 0x4A, 0x40, 0x00];
+        // WAIT 16, SET 0x0E, then a long wait. `frames` is no witness here:
+        // a `WaitFrames` park is kept off the anti-hang cap, so a context
+        // that sits in a wait reads 0 frames however many slices it took.
+        let off_text = vec![0x4A, 0x10, 0x00, 0x50, 0x0E, 0x4A, 0xFF, 0x7F];
+        let mut w = World::new();
+        w.field_vm
+            .helper_contexts
+            .push(CutsceneTimeline::new(first, 0));
+        w.step_helper_contexts();
+        assert!(
+            w.script_dialog_panel().is_some(),
+            "the first helper holds the box"
+        );
+        // Two more contexts: one that never reaches text, one that does - and
+        // sits AHEAD of the owner in the table, so table order cannot pick it.
+        w.field_vm
+            .helper_contexts
+            .insert(0, CutsceneTimeline::new(text, 0));
+        w.field_vm
+            .helper_contexts
+            .push(CutsceneTimeline::new(off_text, 0));
+        for _ in 0..120 {
+            w.step_helper_contexts();
+        }
+        let ctxs = &w.field_vm.helper_contexts;
+        assert_eq!(ctxs.len(), 3);
+        assert!(
+            w.system_flag_test(0x0E),
+            "the off-text helper ran through its wait while the box was up"
+        );
+        let waiting = ctxs[0]
+            .dialog
+            .as_ref()
+            .expect("the second texter is parked on its text");
+        let owner = ctxs[1]
+            .dialog
+            .as_ref()
+            .expect("the owner still holds the box");
+        assert_eq!(owner.page_glyphs().len(), 2, "the owner's page typed out");
+        assert!(
+            waiting.page_glyphs().is_empty(),
+            "the waiting context's box has not typed while the box is taken"
+        );
+        assert!(
+            std::ptr::eq(w.script_dialog_panel().unwrap(), owner),
+            "the box shows the first claimant, not table order"
+        );
+        // Dismiss the owner's box: it runs on (SET 0x0D) and the waiting
+        // context gets the box.
+        for i in 0..200 {
+            w.set_pad(if i % 2 == 0 {
+                crate::input::PadButton::Cross.mask()
+            } else {
+                0
+            });
+            w.step_helper_contexts();
+            if w.system_flag_test(0x0D) {
+                break;
+            }
+        }
+        assert!(w.system_flag_test(0x0D), "the owner resumed past its text");
+        assert!(
+            !w.system_flag_test(0x0C),
+            "the waiting context has not run past its text"
+        );
+        for i in 0..400 {
+            w.set_pad(if i % 2 == 0 {
+                crate::input::PadButton::Cross.mask()
+            } else {
+                0
+            });
+            w.step_helper_contexts();
+            if w.system_flag_test(0x0C) {
+                break;
+            }
+        }
+        assert!(
+            w.system_flag_test(0x0C),
+            "the waiting context claims the freed box and runs on"
+        );
     }
 }

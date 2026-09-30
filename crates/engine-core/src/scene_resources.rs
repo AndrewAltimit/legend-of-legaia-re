@@ -486,9 +486,18 @@ fn pochi_filler_skip(entry: &SceneEntry) -> bool {
 /// standalone LZS container instead - those fall back to the byte sweep.
 fn descriptor_walk_pool(scene: &Scene) -> Vec<ResolvedTmd> {
     let mut out = Vec::new();
+    // A table's `Flag(0x14)` descriptor streams the block's `+4` entry
+    // (`<scene>.pac`) after the walk (`FUN_8002541C`), and its mesh chunks
+    // register behind the table's own. Without it a scene whose table has no
+    // mesh slot (`chitei2`) fell to the magic sweep, which misses members
+    // and so shifts every later placement onto the wrong mesh.
+    let mut pac_entry: Option<u32> = None;
     for entry in &scene.entries {
         if pochi_filler_skip(entry) {
             continue;
+        }
+        if pac_entry.is_none() && legaia_asset::scene_asset_table::streams_scene_pac(&entry.bytes) {
+            pac_entry = Some(entry.idx + 1);
         }
         for mesh in legaia_asset::scene_asset_table::mesh_pool(&entry.bytes) {
             let Ok(tmd) = legaia_tmd::parse(&mesh.bytes) else {
@@ -496,6 +505,20 @@ fn descriptor_walk_pool(scene: &Scene) -> Vec<ResolvedTmd> {
             };
             out.push(ResolvedTmd {
                 entry_idx: entry.idx,
+                offset: mesh.offset,
+                byte_len: mesh.bytes.len(),
+                tmd,
+                raw: mesh.bytes,
+            });
+        }
+    }
+    if let Some(pac) = pac_entry.and_then(|i| scene.entries.iter().find(|e| e.idx == i)) {
+        for mesh in legaia_asset::scene_asset_table::pac_mesh_pool(&pac.bytes) {
+            let Ok(tmd) = legaia_tmd::parse(&mesh.bytes) else {
+                continue;
+            };
+            out.push(ResolvedTmd {
+                entry_idx: pac.idx,
                 offset: mesh.offset,
                 byte_len: mesh.bytes.len(),
                 tmd,

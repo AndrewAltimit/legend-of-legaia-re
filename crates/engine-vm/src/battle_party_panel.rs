@@ -300,6 +300,158 @@ pub fn cross_out_mark(x: i16, y: i16) -> StripQuad {
 }
 
 // ---------------------------------------------------------------------------
+// FUN_801DBD04 / FUN_801DBEC4 / FUN_801DBDDC - the status stamps
+// ---------------------------------------------------------------------------
+
+/// CLUT the **Rot** stamp samples (`0x770B` = VRAM `(176, 476)`).
+pub const ROT_STAMP_CLUT: u16 = 0x770B;
+/// CLUT the **Curse** plate samples (`0x7700` = VRAM `(0, 476)`).
+pub const CURSE_PLATE_CLUT: u16 = 0x7700;
+
+/// The **Rot** stamp over the command ring's Attack chip at `(x, y)`
+/// (`FUN_801DBD04`).
+///
+/// Same `POLY_FT4` shape as [`cross_out_mark`] - the `ctx+0x6CE` early-out,
+/// tag `0x09000000`, code `0x2C808080`, `tpage 7` - and the same
+/// `x-8 ..= x+0x37`, `y-4 ..= y+0xB` screen span, but it samples the
+/// `0x20 x 0x18` texel block `(0x50, 0x60)..(0x6F, 0x77)` of the `etim`
+/// effect page through CLUT `0x770B`: a blue hand-lettered "Rot" stamp,
+/// squeezed from 24 texel rows into the chip's 16 screen rows and stretched
+/// to its 64 columns. The round driver's command-ring arm draws it at
+/// `(0xA0, 0x42)` - the Attack chip's anchor - when the acting member's
+/// `+0x16E & 0x38 == 0x38`, all three Rot limbs set (`0x801D1314..0x801D132C`).
+///
+/// PORT: FUN_801DBD04
+pub fn rot_stamp_on_chip(x: i16, y: i16) -> StripQuad {
+    let x0 = x.wrapping_sub(8);
+    let x1 = x.wrapping_add(0x37);
+    let y0 = y.wrapping_sub(4);
+    let y1 = y.wrapping_add(0x0B);
+    StripQuad {
+        tag: STRIP_OT_TAG,
+        code_colour: STRIP_CODE_COLOUR,
+        xy: [(x0, y0), (x1, y0), (x0, y1), (x1, y1)],
+        uv: [(0x50, 0x60), (0x6F, 0x60), (0x50, 0x77), (0x6F, 0x77)],
+        clut: ROT_STAMP_CLUT,
+        tpage: STRIP_TPAGE,
+    }
+}
+
+/// The Rot stamp over one **arts-entry direction chip**, anchored at `(x, y)`
+/// and sized to the chip's AP cost `w` (`FUN_801DBDDC`).
+///
+/// The texels and CLUT are [`rot_stamp_on_chip`]'s, drawn 1:1 in `y`
+/// (`y-8 ..= y+0xF`, 24 rows) and widened symmetrically in `x` by
+/// `h = (w - 0x1E) >> 1`: `x+8-h ..= x+0x27+h`, so at the favoured 30-AP cost
+/// the stamp is exactly its 32 texels. `0x1E` is the same cost zero point the
+/// chip builder subtracts. The shift is `srl` on a 32-bit difference and the
+/// result is stored as a halfword, so the low 16 bits are the arithmetic
+/// half - a sub-30 cost narrows the stamp rather than wrapping it.
+///
+/// The arts-entry arm (phase `0x50`, `0x801D1D84`) calls it after the D-pad
+/// glyph, one test per Rot limb on the acting member's `+0x16E`
+/// (`0x801D1DA8..0x801D1E54`), with `w` the chip's cost out of
+/// `ctx[+0x14 + seat]` (seat order Left, High, Low, Right, written by
+/// `FUN_801D388C` case `9` at `0x801D3B3C`):
+///
+/// | bit | chip | anchor |
+/// |---|---|---|
+/// | `0x08` | Left | `(0xB3 - w/2, 0x42)` |
+/// | `0x10` | Right | `(0xE5 + w/2, 0x42)` |
+/// | `0x20` | High and Low | `(0xCC, 0x22)` and `(0xCC, 0x62)`, `w = 0x1E` |
+///
+/// PORT: FUN_801DBDDC
+pub fn rot_stamp_on_arts_chip(x: i16, y: i16, w: u8) -> StripQuad {
+    let h = ((i32::from(w) - 0x1E) >> 1) as i16;
+    let x0 = x.wrapping_add(8).wrapping_sub(h);
+    let x1 = x.wrapping_add(0x27).wrapping_add(h);
+    let y0 = y.wrapping_sub(8);
+    let y1 = y.wrapping_add(0x0F);
+    StripQuad {
+        tag: STRIP_OT_TAG,
+        code_colour: STRIP_CODE_COLOUR,
+        xy: [(x0, y0), (x1, y0), (x0, y1), (x1, y1)],
+        uv: [(0x50, 0x60), (0x6F, 0x60), (0x50, 0x77), (0x6F, 0x77)],
+        clut: ROT_STAMP_CLUT,
+        tpage: STRIP_TPAGE,
+    }
+}
+
+/// The **Curse** plate over the command ring's Magic chip at `(x, y)`
+/// (`FUN_801DBEC4`).
+///
+/// [`cross_out_mark`]'s shape and 1:1 `0x40 x 0x10` span, sampling texels
+/// `(0x78, 0x60)..(0xB7, 0x6F)` of the `etim` page through CLUT `0x7700`: a
+/// blue rounded plate lettered "Curse". The ring arm draws it at
+/// `(0xF8, 0x42)` - the Magic chip's anchor - when the acting member's
+/// `+0x16E & 0x1000` is set (`0x801D1330..0x801D1360`).
+///
+/// PORT: FUN_801DBEC4
+pub fn curse_plate_on_chip(x: i16, y: i16) -> StripQuad {
+    let x0 = x.wrapping_sub(8);
+    let x1 = x.wrapping_add(0x37);
+    let y0 = y.wrapping_sub(4);
+    let y1 = y.wrapping_add(0x0B);
+    StripQuad {
+        tag: STRIP_OT_TAG,
+        code_colour: STRIP_CODE_COLOUR,
+        xy: [(x0, y0), (x1, y0), (x0, y1), (x1, y1)],
+        uv: [(0x78, 0x60), (0xB7, 0x60), (0x78, 0x6F), (0xB7, 0x6F)],
+        clut: CURSE_PLATE_CLUT,
+        tpage: STRIP_TPAGE,
+    }
+}
+
+/// Which marks the command ring wears this frame. Retail's phase-`0x28` arm
+/// runs four independent tests, every frame of the phase, before it reads
+/// the pad (`0x801D12C0..0x801D1360`):
+///
+/// | field | test | emitter |
+/// |---|---|---|
+/// | `item_forbidden` | special word `& 0x100` | `FUN_801DBC30(0xCC, 0x22)` |
+/// | `raseru_forbidden` | special word `& 0x200` | `FUN_801DBC30(0xF8, 0x42)` |
+/// | `attack_rotted` | member `+0x16E & 0x38 == 0x38` | `FUN_801DBD04(0xA0, 0x42)` |
+/// | `magic_cursed` | member `+0x16E & 0x1000` | `FUN_801DBEC4(0xF8, 0x42)` |
+///
+/// The last two are the arms the ring refuses with cue `0x23`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RingMarks {
+    /// The red X over the Item chip.
+    pub item_forbidden: bool,
+    /// The red X over the Ra-Seru (Magic) chip.
+    pub raseru_forbidden: bool,
+    /// The Rot stamp over the Attack chip.
+    pub attack_rotted: bool,
+    /// The Curse plate over the Magic chip.
+    pub magic_cursed: bool,
+}
+
+/// Where the arts-entry arm stamps Rot this frame: one `(x, y, w)` argument
+/// triple per [`rot_stamp_on_arts_chip`] call, in retail's call order, for an
+/// acting member whose `+0x16E` word is `status` and whose chip costs are
+/// `costs` in **seat order** (Left, High, Low, Right - `ctx[+0x14..+0x17]`).
+///
+/// `w/2` is `srl 1` of the unsigned cost byte (`0x801D1DC4` / `0x801D1E04`).
+///
+/// PORT: FUN_801D0748 (phase-`0x50` arm, the Rot stamps at `0x801D1DA8..0x801D1E54`)
+pub fn arts_entry_rot_stamps(status: u16, costs: [u8; 4]) -> Vec<(i16, i16, u8)> {
+    let mut out = Vec::new();
+    if status & 0x08 != 0 {
+        let w = costs[0];
+        out.push((0xB3 - i16::from(w >> 1), 0x42, w));
+    }
+    if status & 0x10 != 0 {
+        let w = costs[3];
+        out.push((i16::from(w >> 1) + 0xE5, 0x42, w));
+    }
+    if status & 0x20 != 0 {
+        out.push((0xCC, 0x22, 0x1E));
+        out.push((0xCC, 0x62, 0x1E));
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
 // FUN_801D84C0 - panel build + teardown
 // ---------------------------------------------------------------------------
 
@@ -524,6 +676,59 @@ impl DefeatText {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The two ring stamps share [`cross_out_mark`]'s screen span and differ
+    /// only in the texels and CLUT (`0x801DBD7C..0x801DBDBC`,
+    /// `0x801DBF3C..0x801DBF7C`).
+    #[test]
+    fn ring_stamps_sample_their_own_cells() {
+        let x = cross_out_mark(0xA0, 0x42);
+        let rot = rot_stamp_on_chip(0xA0, 0x42);
+        assert_eq!(rot.xy, x.xy);
+        assert_eq!(rot.uv[0], (0x50, 0x60));
+        assert_eq!(rot.uv[3], (0x6F, 0x77));
+        assert_eq!(rot.clut, 0x770B);
+        let curse = curse_plate_on_chip(0xF8, 0x42);
+        assert_eq!(curse.xy, cross_out_mark(0xF8, 0x42).xy);
+        assert_eq!(curse.uv[0], (0x78, 0x60));
+        assert_eq!(curse.uv[3], (0xB7, 0x6F));
+        assert_eq!(curse.clut, 0x7700);
+        assert_eq!((rot.tpage, curse.tpage), (7, 7));
+    }
+
+    /// `FUN_801DBDDC` is 1:1 at the favoured cost and widens symmetrically.
+    #[test]
+    fn arts_stamp_widens_by_half_the_cost_excess() {
+        let q = rot_stamp_on_arts_chip(0xCC, 0x22, 0x1E);
+        assert_eq!(q.xy[0], (0xD4, 0x1A));
+        assert_eq!(q.xy[3], (0xF3, 0x31));
+        let wide = rot_stamp_on_arts_chip(0xCC, 0x22, 0x28);
+        assert_eq!(wide.xy[0].0, 0xD4 - 5);
+        assert_eq!(wide.xy[3].0, 0xF3 + 5);
+        // A sub-30 cost narrows (the halfword store keeps the low 16 bits).
+        let narrow = rot_stamp_on_arts_chip(0xCC, 0x22, 0x1C);
+        assert_eq!((narrow.xy[0].0, narrow.xy[3].0), (0xD5, 0xF2));
+    }
+
+    /// The side stamps stay pinned to the edge nearest the D-pad: the Left
+    /// stamp's right edge and the Right stamp's left edge do not move with
+    /// the cost, as the chips' do not.
+    #[test]
+    fn arts_entry_stamps_follow_the_limb_bits() {
+        assert!(arts_entry_rot_stamps(0x1007, [30; 4]).is_empty());
+        for c in [30u8, 36, 40] {
+            let s = arts_entry_rot_stamps(0x08, [c, 30, 30, 30]);
+            assert_eq!(s.len(), 1);
+            let q = rot_stamp_on_arts_chip(s[0].0, s[0].1, s[0].2);
+            assert_eq!(q.xy[1].0, 0xCB, "left stamp's right edge at cost {c}");
+            let s = arts_entry_rot_stamps(0x10, [30, 30, 30, c]);
+            let q = rot_stamp_on_arts_chip(s[0].0, s[0].1, s[0].2);
+            assert_eq!(q.xy[0].0, 0xFC, "right stamp's left edge at cost {c}");
+        }
+        let legs = arts_entry_rot_stamps(0x20, [40; 4]);
+        assert_eq!(legs, vec![(0xCC, 0x22, 0x1E), (0xCC, 0x62, 0x1E)]);
+        assert_eq!(arts_entry_rot_stamps(0x38, [30; 4]).len(), 4);
+    }
 
     /// A synthetic image with both defeat pieces planted at their VAs.
     /// Placeholder text only.

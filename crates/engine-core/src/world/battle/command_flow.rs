@@ -34,6 +34,16 @@ pub(crate) fn ring_arm_refused(status: u16, arm: crate::battle_input::BattleComm
     }
 }
 
+/// The entry command a saved swing byte stands for: `0x0C..=0x0F` are Left,
+/// Right, Down, Up (`legaia_art::Command::as_action`), anything else ends
+/// the string.
+fn swing_byte_command(b: u8) -> Option<legaia_art::Command> {
+    use legaia_art::Command;
+    [Command::Left, Command::Right, Command::Down, Command::Up]
+        .into_iter()
+        .find(|c| c.as_action().as_byte() == b)
+}
+
 impl World {
     /// Open the player-driven command menu for party member `actor` and park
     /// the action SM. The action context's `active_actor` is set now; the
@@ -607,7 +617,17 @@ impl World {
             list_page: s.list_page,
             list_pages: s.list_pages,
             phase: (&s.phase).into(),
+            status: self.raw_status_word(s.actor),
         })
+    }
+
+    /// The `+0x16E` status word of the member the command ring is open for,
+    /// `None` without a command session. The ring's Rot / Curse marks read
+    /// it (`crate::battle_hud::battle_ring_marks`), as its refusals do
+    /// ([`ring_arm_refused`]).
+    pub fn battle_command_status_word(&self) -> Option<u16> {
+        let cmd = self.battle.command.as_ref()?;
+        Some(self.raw_status_word(cmd.actor))
     }
 
     pub(in crate::world) fn open_arts_command_input(&mut self, actor: u8) {
@@ -639,9 +659,31 @@ impl World {
             .filter(|((ch, _), rec)| *ch == character && !rec.commands.is_empty())
             .count();
         let pages = n_arts.div_ceil(ARTS_LIST_ROWS_PER_PAGE) as u8;
-        self.battle.arts_input = Some(ArtsCommandInputSession::new(
-            actor, actor, pool, costs, pages,
-        ));
+        // Retail preseeds the queue window from the character's auto command
+        // string as the entry opens (`jal FUN_801DA34C` at `0x801D1734`, the
+        // `sb 0x50` phase store in its delay slot); a bare confirm replays it.
+        let preseed = self.preseed_arts_entry_string(actor);
+        self.battle.arts_input = Some(
+            ArtsCommandInputSession::new(actor, actor, pool, costs, pages).with_preseed(preseed),
+        );
+    }
+
+    /// Load `actor`'s auto command string into its `+0x1DF` window
+    /// ([`Self::preseed_auto_command_string`]) and return it as the entry's
+    /// command bytes (`Command::as_byte()`), for the arts input to replay.
+    /// The saved window holds the entered arrows as the gauge wrote them -
+    /// the swing bytes `0x0C..=0x0F` - so the string ends at its first byte
+    /// outside that range.
+    fn preseed_arts_entry_string(&mut self, actor: u8) -> Vec<u8> {
+        let n = self.preseed_auto_command_string(actor);
+        let Some(a) = self.actors.get(usize::from(actor)) else {
+            return Vec::new();
+        };
+        a.battle.params[..n]
+            .iter()
+            .map_while(|&b| swing_byte_command(b))
+            .map(legaia_art::Command::as_byte)
+            .collect()
     }
 
     /// Drive the open Arts command input one frame from [`World::input`].
@@ -706,7 +748,10 @@ impl World {
                 target_slot,
             }) => {
                 let caster = session.actor;
-                self.run_battle_art(caster, &session.buffer, target_row, target_slot);
+                // A replayed preseed commits exactly as a typed string does
+                // - retail's bare confirm enters the same `0x5A` state.
+                let sequence = session.committed_string().to_vec();
+                self.run_battle_art(caster, &sequence, target_row, target_slot);
             }
             Some(ArtsInputResolution::Aborted) => {
                 let actor = self.battle_ctx.active_actor;
@@ -853,7 +898,29 @@ impl World {
     ) {
         if let Some(a) = self.actors.get_mut(caster as usize) {
             a.battle.action_category = 3;
+            // The window as the gauge leaves it at the input confirm: one
+            // swing byte `0x0C..=0x0F` per entered arrow (the direction table
+            // `0x801F4B8C` reads `0C 0F 0E 0D` for Left / Up / Down / Right),
+            // zero-terminated. Retail's write-back `FUN_801DA59C` runs here,
+            // from `0x801D22BC` in the target confirm, **before** the queue
+            // builder tokenizes anything at the dispatch - so the record holds
+            // raw arrows, and every replay goes back through the builder.
+            a.battle.params = [0; vm::battle_action::ACTION_PARAM_BYTES];
+            let arrows = sequence
+                .iter()
+                .filter_map(|&b| legaia_art::Command::from_byte(b))
+                .map(|c| c.as_action().as_byte());
+            for (dst, src) in a
+                .battle
+                .params
+                .iter_mut()
+                .take(legaia_save::AUTO_COMMAND_STRING_LEN)
+                .zip(arrows)
+            {
+                *dst = src;
+            }
         }
+        self.save_auto_command_string(caster);
         self.commit_party_command(
             caster,
             crate::battle_round::PendingPartyAction::Art {
@@ -1006,11 +1073,6 @@ impl World {
         self.battle_ctx.active_actor = caster;
         self.battle_ctx.queued_action = 3;
         self.battle_ctx.action_state = vm::battle_action::ActionState::Begin.as_byte();
-        // Retail's write-back (`FUN_801DA59C` from `0x801D22BC`) runs on the
-        // input confirm, over the window the gauge just filled and with the
-        // category already stamped - which is the state this arm has ended in.
-        // It is what makes the next Attack replay this combo.
-        self.save_auto_command_string(caster);
     }
 
     /// Dispatch the command `actor` committed this round - the engine's
@@ -1064,8 +1126,30 @@ impl World {
                         }
                         a.battle.strike_index = 0;
                     }
-                } else if self.preseed_auto_command_string(actor) == 0 {
-                    self.seed_basic_attack_queue(actor, target);
+                } else {
+                    // The preseeded string is raw arrows, which retail's
+                    // builder tokenizes at this dispatch like any entered
+                    // string - arts, learn-on-use and the Spirit cost
+                    // included.
+                    let arrows = self.preseed_arts_entry_string(actor);
+                    let commands: Vec<legaia_art::Command> = arrows
+                        .iter()
+                        .filter_map(|&b| legaia_art::Command::from_byte(b))
+                        .collect();
+                    if commands.is_empty() {
+                        self.seed_basic_attack_queue(actor, target);
+                    } else {
+                        let (queue, actions, marks) =
+                            self.build_arts_action_queue(actor, &commands);
+                        self.charge_art_spirit(actor, &actions);
+                        let party_count = self.party.party_count.clamp(1, 3);
+                        let (row, slot) = if target >= party_count {
+                            (crate::target_picker::CursorRow::Enemy, target - party_count)
+                        } else {
+                            (crate::target_picker::CursorRow::Ally, target)
+                        };
+                        self.arm_battle_art_action(actor, &queue, &actions, marks, row, slot);
+                    }
                 }
                 self.battle_ctx.queued_action = 3;
                 self.battle_ctx.action_state = ActionState::Begin.as_byte();

@@ -494,7 +494,9 @@ knockdown holds until the next round setup.
 Port: `engine-core::baka_duel_scene::FighterMotion`, one per seat in
 `BakaFight` (`BakaFight::motion`), stepped every tick after the rules. It
 feeds only the presentation - the exchange still books off the strike
-clock, and cooldowns still pace re-entry.
+clock, and cooldowns still pace re-entry. All three hosts pose the fighters
+from it: the native window and the play page through the duel surface, the
+minigames page from the `motion` pair of its state JSON.
 
 **How a display id becomes an ANM bank record.** The anim play path
 resolves `actor + 0x5c` **through the ANM container header**: at

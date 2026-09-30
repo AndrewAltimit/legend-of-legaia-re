@@ -437,9 +437,12 @@ two exceptions tested in order:
    clip when the actor's HP (`+0x14C`) is non-zero and its queued id
    (`+0x1DA`) is below `0x10`: entry 0 when `+0x1DC` bit 2 (stage idle at the
    end) is set, else entry `+0x1DA`, looked up through the party table
-   `0x801C9360` or the monster record table `0x801C9348` by seat. A monster
-   whose queued stream has a different part count, and every other case,
-   blends the last frame toward itself (`0x80049A7C..0x80049BD0`).
+   `0x801C9360` or the monster record table `0x801C9348` by seat (the part
+   count is checked only on the monster's non-idle arm). A monster whose
+   queued stream has a different part count blends the last frame toward
+   itself but keeps the Z term (`0x80049B9C` falls into the `+0xE` arm with
+   `a1 = t0`); every other case blends toward itself with no Z term
+   (`0x80049A7C..0x80049BD0`).
 
 Census over the monster archive (PROT 867, every decodable action clip,
 every in-clip frame pair, every non-zero fraction, every part): 103650 of
@@ -590,10 +593,14 @@ retail-pinned through the entry's rate byte
 normal `frame_dt = 1`, `+0x21D = 8` case); the engine also plays the
 hit-reaction family - `World::queue_battle_reaction` mirrors the
 `FUN_800402F4` staging and `tick_battle_animations` the knockdown → get-up
-chain. The decoder's cross-blend into the queued clip, and its `+0xE` Z
-term, are a known engine simplification: a looping clip blends its last frame
-toward its own frame 0 (what a re-queued idle does in retail), and a one-shot
-clamps on its last frame without the tween. The player
+chain. The decoder's cross-blend into the queued clip is ported with its
+`+0xE` Z term: `World::battle_tween_target` resolves the entry the engine will
+install at the natural end (the reaction channel's staged entry, a byte staged
+behind a swing, the swing itself on a re-commit, else the idle), applies
+retail's HP / `< 0x10` gate, and hands its frame 0 to the player, whose one-shot
+runs to the frame count - retail's natural end - rather than stopping on its
+last keyframe. The crossing tick draws the queued frame 0 and moves the actor
+by the entry's `+0xE` ([below](#the-end-of-clip-step-0x0e)). The player
 also carries the entry head the tick and the damage kernel read off the
 committed entry: the `+0x84..+0x86` loop window (`apply_loop_window`, run
 before the natural-end test as the tick does), the signed `+0x0C` root speed
@@ -605,6 +612,31 @@ index with holes kept): a monster's staged anim id is that index - the AI
 picker queues its swing entries by it and `FUN_8004AD80` reads
 `action_table[slot][id]` - so the compacted `animations` list would
 mis-address every entry after the first undecodable one.
+
+### The end-of-clip step (`+0x0E`)
+
+The entry's signed `+0x0E` halfword is the distance the clip leaves the body
+from where it began, along the actor's facing. Two readers take it, and they
+agree by construction:
+
+- The **decoder** adds it to the Z delta of the last frame's blend into the
+  queued frame 0 (above), so the body travels the step in model space over the
+  final interval.
+- The **anim tick**, at the natural end, moves the live pair by it -
+  `+0x34 += sin(facing) * step >> 12`, `+0x38 += cos(facing) * step >> 12` -
+  unless the `+0x1DC` bit-3 root latch is up, the actor's HP is `0` with no
+  Seru staged in `ctx[+0x269]`, or the `+0x228` byte is set
+  (`0x80047A68..0x80047B2C`). The event-path commit, which cuts a clip short,
+  moves it by the step pro-rated as `trig * step * frame / frames >> 12`
+  (`0x80047950..0x80047A28`), with no HP test.
+
+So a lunge ends one step forward, drawn without a snap: the tween carries the
+body to `frame0 + step`, and the commit puts the actor there and the pose back
+at `frame0`. The `+0x228` byte has three readers and no store in the dump
+corpus; the port takes it as clear. Every monster's idle entry carries `0`
+and the action entries carry steps up to several hundred units
+(`battle_anim_real.rs::monster_archive_end_step_census`). Kernels:
+`legaia_engine_vm::battle_action::motion::{end_root_step, event_cut_root_step}`.
 
 ## Export
 

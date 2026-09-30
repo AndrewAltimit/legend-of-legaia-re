@@ -17,7 +17,7 @@ scene's MAN - use `legaia-engine man-scripts` instead.
 ## Contents
 
 - [The window-widget VM - `FUN_801D6628`](#the-window-widget-vm---fun_801d6628)
-- [`field_vm` - `FUN_801DE840`](#field_vm---fun_801de840-the-fieldevent-script-vm)
+- [`field` - `FUN_801DE840`](#field---fun_801de840-the-fieldevent-script-vm)
 - [`effect_vm` - `FUN_801DE914` / `FUN_801DFDF0` / `FUN_801E0080`](#effect_vm---fun_801de914--fun_801dfdf0--fun_801e0080)
 - [`move_vm` - `FUN_80023070`](#move_vm---fun_80023070)
 - [`motion_vm` - `FUN_8003774C` / `FUN_80038158`](#motion_vm---fun_8003774c--fun_80038158)
@@ -33,6 +33,7 @@ scene's MAN - use `legaia-engine man-scripts` instead.
 - [Battle-overlay leaves outside the action SM](#battle-overlay-leaves-outside-the-action-sm)
 - [`field_party_cursor` - `FUN_801F1278`](#field_party_cursor---fun_801f1278)
 - [`battle_formulas`](#battle_formulas)
+- [Other modules](#other-modules)
 - [See also](#see-also)
 
 ## The window-widget VM - `FUN_801D6628`
@@ -82,14 +83,14 @@ x = (operand_w >> 7) & 0x1FE
 y =  operand_w       & 0xFF
 ```
 
-## `field_vm` - `FUN_801DE840` (the field/event script VM)
+## `field` - `FUN_801DE840` (the field/event script VM)
 
 Per-scene event script VM (traced from `FUN_801DE840`). Switch dispatch at
 `0x801E00F4`; ~17.5 KB, the largest function in the corpus. All 43
 opcodes ported. Default-route opcodes (`0x5x` / `0x6x` / `0x7x`) are
 SET / CLEAR / TEST against a 256-bit bitfield at `DAT_80085758` and
 exposed via `FieldHost::system_flag_{set,clear,test}`. Distinct from
-the actor VM above.
+the window-widget VM above.
 
 ## `effect_vm` - `FUN_801DE914` / `FUN_801DFDF0` / `FUN_801E0080`
 
@@ -220,8 +221,12 @@ reproduces retail's actor ordering. `list_append_u16` is the sprite
 path's pre-increment u16 append (`FUN_8001FA68`), which indexes at the
 *new* count and ignores the capacity its caller passes in `a2`.
 
-Nothing in the engine calls either yet - both carry a `NOT WIRED` note
-naming the reason.
+Neither is called, and neither is owed a call: both carry a `REPLACED-BY:`
+tag. The pool is replaced by the engine's `Vec`-backed actor pool with
+generational slots; the append is the same routine ported a second time as
+`legaia_engine_core::cutscene::sprite_stack_push`, which is live on both
+hosts. The module's `copy_blocks_32` is likewise replaced, by the in-place
+chunk walk in `legaia_asset::parse_streaming_with`.
 
 ## `battle_action` - `FUN_801E295C`
 
@@ -250,8 +255,9 @@ than on typed action constants: `apply_miracle_replace` (the flat 16-byte
 overwrite from the resident Miracle row at `0x801F64F4`), `clear_queue_msb`
 (the sweep that strips the row's on-disc `0x8C..0x8F` quirk),
 `apply_super_tail_replace` (`FUN_801EF9E4`, first-matching-row tail replace
-from `0x801F6524` / `0x801F65E8`), plus the still-inert `preseed_action_queue`
-/ `save_action_queue` / `check_and_learn_art`. (`learned_seru_position`, the
+from `0x801F6524` / `0x801F65E8`), plus `preseed_action_queue` /
+`save_action_queue` (called from `engine-core`'s auto-command path) and
+`check_and_learn_art` (called from `engine-core::tactical_arts`). (`learned_seru_position`, the
 `FUN_801E91E8` port beside them, is not a queue routine: it is the
 already-learned check of the killing-blow Seru absorb, and it is live.)
 `resolve_action_queue` - the entry point `engine-core` calls once per committed
@@ -338,8 +344,11 @@ pair per body per frame through `engine-core`'s
 
 ## Battle-overlay leaves outside the action SM
 
-More `0898` bodies whose kernels are ported here, each with its own
-`NOT WIRED` disclosure naming the caller or the disc table it still needs:
+More `0898` bodies whose kernels are ported here. All but `battle_burst` are
+reached from `engine-core` or a host; `battle_burst` carries a `NOT WIRED`
+disclosure (nothing in the engine spawns the move-VM actors it seats), and
+`battle_party_panel`'s label-actor open is `REPLACED-BY:` the immediate-mode
+battle HUD:
 
 | Module | Retail | What is ported |
 |---|---|---|
@@ -348,7 +357,7 @@ More `0898` bodies whose kernels are ported here, each with its own
 | `battle_attack_camera` | `FUN_801D71B8` | The per-art attack camera: gate, pose seed, character / art dispatch and animation-frame push. Dispatch is three per-character jump tables (17 / 20 / 17 slots) reaching 13 distinct arms; the row folds come from `legaia_asset::battle_attack_camera_table`. |
 | `battle_value_readout` | `FUN_801E805C` | The battle value readout: the landed-hit numeral's sheet, cells and pop/rise envelope, plus the multi-cast half's decimal split, teardown pairing, slot-to-widget indirection and label quad. |
 | `battle_approach` | `FUN_801DF570` | The attack-approach distance clamp: the projected attacker/target separation and the `[3d/4, d]` band a requested step is clamped into. |
-| `battle_party_panel` | `FUN_801DBB8C`, `FUN_801DBC30`, `FUN_801D84C0` | The label-actor open (`FUN_801DBB8C`, handle at `0x801F4E0C`), the cross-out mark blit (`FUN_801DBC30`), the per-party-size anchors, and `FUN_801D84C0`'s battle-result message buffers (victory with spoils, defeat, escaped, escape failed) - not party-name panels. |
+| `battle_party_panel` | `FUN_801DBB8C`, `FUN_801DBC30`, `FUN_801DBD04`, `FUN_801DBDDC`, `FUN_801DBEC4`, `FUN_801D84C0` | The label-actor open (`FUN_801DBB8C`, handle at `0x801F4E0C`), the cross-out mark blit (`FUN_801DBC30`), the command ring's Rot stamp / Curse plate and the arts-entry Rot stamp (`RingMarks`), the per-party-size anchors, and `FUN_801D84C0`'s battle-result message buffers (victory with spoils, defeat, escaped, escape failed) - not party-name panels. |
 | `battle_burst` | `FUN_801F30C4` | The two-mode radial effect burst: four compass iterations x three spawn blocks, the per-block placement / spread / tail arithmetic, and both parameter sets. |
 
 The last two are ported from a disassembly of the mapped `0898` image rather
@@ -396,6 +405,36 @@ indirection, system flags, the `FUN_80046898` inventory leaf). The older
 consumption-site mirrors remain where they are used - liveness/kind gating in
 `legaia-engine-core`'s `target_picker`, and the item-benefit arms in
 `inventory_use::effect_benefits_target`.
+
+## Other modules
+
+The crate's remaining modules are leaf kernels; the larger families:
+
+- `anim_vm` - the per-actor animation runtime wrapping the actor-tick anim
+  dispatch (`FUN_80024CFC` seat, `FUN_8004998C`'s `BoneFrame` unpack).
+- `menu` - the engine's pause / shop / inn menu state machine (not a port of
+  a single retail routine); `title_overlay` is the title-screen tick
+  `FUN_801DD35C`.
+- `camera_mover` - the cutscene camera glide behind field-VM op `0x45`
+  (`FUN_801DC0BC`); `battle_camera` - the battle camera's tween step table and
+  shake jitter.
+- `battle_intro_transition` (+ `battle_intro_styles` / `_tiles` / `_swirl` /
+  `_particles`) - the field-to-battle transition overlay's state machine and
+  per-style kernels; `engine-ui::battle_intro` is its draw half.
+- `cast_module_ticks` / `cast_arm_ticks` / `cast_seru_ticks_a` /
+  `cast_seru_ticks_b` - the slot-B cast-module tick bodies (PROT 0903..0966);
+  see [`cast-module.md`](../../docs/subsystems/cast-module.md).
+- `battle_chrome` - the battle screen's name plaque, party status readout and
+  command-chip geometry `engine-ui::battle_command_ui` mirrors.
+- `move_vm_overlay_ext` / `move_ext_strip` - the op-`0x2F` extension VM
+  (`FUN_801D362C`) and its sub-op `0x2C` scanline strip emitter
+  (`FUN_801D31B0`).
+- `prim_dispatch` / `vdf_morph` - the per-prim renderer dispatch
+  (`FUN_80043390`) and VDF vertex-morph staging (`FUN_8001C604`).
+- `world_map_overlay` and the `world_map_*` family - the world-map overlay's
+  dev menu, panels, CLUT fade, dim and horizon leaves.
+- `field_*` - field-overlay leaves: actor billboards, reflection, timers,
+  ledge-hop arc, passive-ability HUD, player clip, warp tile.
 
 ## See also
 

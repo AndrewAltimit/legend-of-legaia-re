@@ -259,7 +259,12 @@ pub(super) fn op_43<H: FieldHost>(
             if operand + 20 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
             }
-            host.op43_widget_sprite_spawn(&bytecode[operand + 1..operand + 20]);
+            // The widget's script is not in the record: `FUN_801F8004` seeds
+            // its cursor at `record + 0x13`, i.e. on the bytes that follow
+            // this instruction in the field script - the `0x40` sub-op run
+            // (colour tweens, flag waits, kill) the field VM itself steps
+            // over as data. Hand the host the record and everything after it.
+            host.op43_widget_sprite_spawn(&bytecode[operand + 1..]);
             StepResult::Advance {
                 next_pc: pc + header_size + 20,
             }

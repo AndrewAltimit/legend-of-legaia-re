@@ -258,7 +258,7 @@ Every form above except `disp(gp)` starts at a `lui` and follows the register
 it loads until something completes the address. What "follow" means is the
 whole of the scans' precision, so it lives once, in
 [`scripts/ghidra-analysis/mips_walk.py`](../../scripts/ghidra-analysis/mips_walk.py),
-and the byte account's [`lui_forms`](../../crates/asset/src/byte_account.rs)
+and the byte account's [`lui_forms`](../../crates/asset/src/byte_account/code_scan.rs)
 is the same walk in Rust:
 
 | Step | Treatment |

@@ -133,6 +133,7 @@ pub mod battle_trail;
 pub mod battle_value_readout;
 pub mod camera_mover;
 pub mod camera_rel_actor;
+pub mod cast_module_camera;
 pub mod cast_module_ticks;
 // --- W1-C ---
 pub mod cast_seru_ticks_b;

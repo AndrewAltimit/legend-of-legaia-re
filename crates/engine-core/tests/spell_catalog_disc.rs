@@ -58,3 +58,44 @@ fn disc_spell_catalog_matches_pinned_mp_and_target() {
         "Orb all allies"
     );
 }
+
+/// The whole player Seru block reaches the catalog, not only the pinned
+/// eleven: every id the action-id cast band maps onto a cast module
+/// (`0x81..=0xA0`) that the disc table names resolves, so a captured Seru past
+/// Nova can be listed by the battle Magic submenu and cast.
+#[test]
+fn disc_spell_catalog_covers_the_whole_player_seru_block() {
+    let Some(path) = std::env::var_os("LEGAIA_DISC_BIN").map(PathBuf::from) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    if !path.is_file() {
+        eprintln!("[skip] LEGAIA_DISC_BIN is not a file");
+        return;
+    }
+    let scus = legaia_engine_core::DiscVfs::open(&path)
+        .expect("open disc")
+        .read("SCUS_942.54")
+        .expect("SCUS_942.54 present");
+    let table = legaia_asset::spell_names::SpellNameTable::from_scus(&scus).expect("table");
+    let disc = legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(&scus)
+        .expect("spell table parses");
+    let mut named = 0;
+    for id in 0x81..=legaia_engine_core::retail_magic::PLAYER_SERU_LAST_ID {
+        let Some(e) = table.entry(id) else { continue };
+        let Some(name) = e.name.as_deref().map(str::trim).filter(|n| !n.is_empty()) else {
+            continue;
+        };
+        named += 1;
+        let def = disc
+            .get(id)
+            .unwrap_or_else(|| panic!("catalog missing {id:#04x} ({name})"));
+        assert_eq!(def.name, name, "{id:#04x} name");
+        assert_eq!(def.mp_cost, e.mp, "{id:#04x} MP");
+    }
+    eprintln!("[ran] {named} named player Seru ids");
+    assert!(
+        named > 11,
+        "the table names more than the pinned block ({named})"
+    );
+}

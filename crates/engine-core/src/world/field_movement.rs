@@ -147,7 +147,7 @@ impl World {
     /// The `FIELD_ACTOR_PROBES` row indices of the directions held in a
     /// post-remap `dir_bits` word (`0x1000` = Z+ -> row 2, `0x4000` = Z- ->
     /// row 0, `0x2000` = X+ -> row 3, `0x8000` = X- -> row 1).
-    fn dirs_of_bits(dir_bits: u16) -> impl Iterator<Item = usize> {
+    pub(crate) fn dirs_of_bits(dir_bits: u16) -> impl Iterator<Item = usize> {
         [(0x1000u16, 2usize), (0x4000, 0), (0x2000, 3), (0x8000, 1)]
             .into_iter()
             .filter_map(move |(bit, dir)| (dir_bits & bit != 0).then_some(dir))

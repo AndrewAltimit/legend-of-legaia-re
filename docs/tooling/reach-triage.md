@@ -23,6 +23,16 @@ when a ladder reaches it or the wiring lands. What outlives the rows is the
 bucket definitions plus the structural facts below about what a pad-only ladder
 can and cannot execute at all.
 
+The export recipe is the script's own module docstring: one
+`target/cov-<test>.json` per ladder that `--list-ladders` prints as
+`<test> <package>`. A bare run joins every `target/cov-*.json` (`--json PATH`,
+repeatable, names them instead) and writes the report to `--out`, by default
+`target/port-catalog/replay-port-entry.md`. `--fail-on-disclosed` exits
+non-zero when a `NOT WIRED` anchor ran, `--page-audit` is the page check
+[below](#a-row-can-leave-this-page-without-a-ladder-reaching-it), and
+`--selftest` exercises the item-verdict resolver on a synthetic corpus. The
+script skips (exit 0) when no export is present.
+
 ## The three figures, and the denominator they belong to
 
 The report opens with three counts over the canonical union: the `// PORT:`
@@ -547,7 +557,7 @@ descriptor drops.
 | `mode.rs` | 4 | `80017978` `80025eec` `80025f2c` `80025f74` | Closed: `mode::ModeSeat` wraps `ModeDriver` and `engine-shell`'s `BootSession` owns one, driving it every frame; `World::tick` resolves `runs_master_frame_driver` (and so `per_frame_stage`) on every host. |
 | `prize_exchange.rs` | 1 | `801dc1cc` | Closed: `World::try_arm_prize_exchange` (op-`0x49` sub-op 7) stages the session and `MenuRuntime::tick` drives it on both hosts; the koin1 interaction oracle `prize_exchange_disc.rs` reaches it from a real record. |
 | `scene_name_sync.rs` | 1 | `8001d7f8` | `sync_scene_name` is called only from that file's tests. Two anchors share the address - the `fn` and a `//! PORT:` module tag - and it is the module tag that carries the liveness verdict, so both need the disclosure. |
-| `save_select.rs` | 1 | `801e3294` | Closed: the same flow keeps a `CardIoMachine` for as long as a card screen is up and advances it through `card_frame_tick` each frame, with the poll status taken from the host's own block backend. |
+| `save_select/card_io.rs` | 1 | `801e3294` | Closed: the same flow keeps a `CardIoMachine` for as long as a card screen is up and advances it through `card_frame_tick` each frame, with the poll status taken from the host's own block backend. |
 
 Three of these name routines that are heavily used on the disc, so the gap is a
 port that is not reached rather than a port of dead code. A five-form
@@ -573,9 +583,10 @@ playthrough executes. It found fourteen, and the split is the interesting half:
   registers a retained-mode SCUS text actor, and
   `legaia_engine_ui::battle_hud_draws_for` rebuilds every `TextDraw` from the
   live model each frame, so there is no handle to hold.
-- **Four carry `NOT WIRED:`** - the `DRAW_ENV_INIT` values, the field
-  load-entry plan, and the battle party panel's label build and cross-out
-  mark. These are still the declared wiring worklist.
+- **Three carry `NOT WIRED:`** - the `DRAW_ENV_INIT` values, the field
+  load-entry plan, and the battle party panel's label build. These are still
+  the declared wiring worklist. The cross-out mark left it: both play hosts
+  draw it over the command ring.
 
 The distinction is not bookkeeping: a `REPLACED-BY` row is out of the wiring
 denominator entirely, so counting it as a gap states work that will never be
@@ -934,13 +945,13 @@ all of it executes under one ladder now.
 
 | group | n | addresses | what runs it |
 |---|---|---|---|
-| `dance.rs` (HUD + banner) | 7 | `801d231c` `801d3e28` `801d32f8` `801d2524` `801d2d98` `801d2f38` `801d387c` | `40:K`, then judged face-button presses |
+| `dance/` (HUD + banner) | 7 | `801d231c` `801d3e28` `801d32f8` `801d2524` `801d2d98` `801d2f38` `801d387c` | `40:K`, then judged face-button presses |
 | `fishing_chrome.rs` | 5 | `801d03b0` `801d78c0` `801d74b0` `801d70ec` `801d7c30` | `40:L` + a cast; the venue panel needs `P`. A sixth address, `801d7a5c`, was credited here and this rung does not enter it; `w8_world_tail_ladder` does - see [its route](#rows-no-ladder-converts-and-why) |
 | `fishing_actors.rs` | 3 | `801d2050` `801d2278` `801d4948` | the same run's wander / line / celebration actors. A fourth address was credited here and is not converted - see the note below |
 | `minigame_floor.rs` | 2 | `801d2a10` `801d6028` | the fishing venue's floor solve |
 | `baka_fighter.rs` (digit strips) | 3 | `801d6a18` `801d6f44` `801d69e4` | a duel played to a **player win** - a lost match installs no tally and two of the three stay dark |
 | `dance_tutorial.rs` | 1 | `801d0750` | `40:U`, the Disco King how-to |
-| `fishing.rs` (prize row remainder) | 1 | `801d092c` | a **committed** prize purchase; the panel alone stops one gate short |
+| `fishing/prize.rs` (prize row remainder) | 1 | `801d092c` | a **committed** prize purchase; the panel alone stops one gate short |
 | `bin/.../window/field_render.rs` | 1 | `8001ada4` | any spawned `play-window` frame loop |
 
 **`801e6f70` left this ladder.** It was credited to `40:O`, whose empty-bank path bought coins through the quote; `O` now arms the mode-24 door warp like every other launcher, and the routine is the coin counter's entry panel, which runs only while op-`0x49` sub-op 6 has the counter open (`engine-core::field_submode_screen`). No native ladder rung opens that screen.
@@ -984,8 +995,8 @@ about the cells that outlived their own fixtures.
 | group | n | addresses | what reaches it |
 |---|---|---|---|
 | `screen_fx.rs` | 10 | `801de4c8` `801f8d4c` `801f811c` `801f8004` `801f7a9c` `801f88fc` `801f8e6c` `801f849c` `801f8f28` `801f8a34` | Closed: `chapter1_frontier_ladder` enters all ten - a scene whose script spawns an iris mask, letterbox or image panel is exactly what its scene walk drives. |
-| `fishing.rs` (session kernels) | 6 | `801d5298` `801d0474` `801d0f5c` `801d26cc` `801d3db4` `801d746c` | Closed: `w1f1_fishing_pond_ladder` casts, matches the reel cadence and lands a catch (the point credit, the band roll, the species spawn, the cadence), and `w1g_fishing_tackle_pick_ladder` adds the two picker screens it could not reach - see the note below on why a second ladder was the only way |
-| `muscle_dome.rs` | 4 | `801cf074` `801d1184` `801d1510` `801d9bbc` | Closed, and `801d9bbc` closed **elsewhere**: the export enters it through its second anchor, `engine-vm::battle_value_readout`'s per-handle step, which the battle numerals now run on both hosts. Its `muscle_dome.rs` anchor still has no producer, and an address-level verdict cannot say so - see the anchor note above |
+| `fishing/` (session kernels) | 6 | `801d5298` `801d0474` `801d0f5c` `801d26cc` `801d3db4` `801d746c` | Closed: `w1f1_fishing_pond_ladder` casts, matches the reel cadence and lands a catch (the point credit, the band roll, the species spawn, the cadence), and `w1g_fishing_tackle_pick_ladder` adds the two picker screens it could not reach - see the note below on why a second ladder was the only way |
+| `muscle_dome/` | 4 | `801cf074` `801d1184` `801d1510` `801d9bbc` | Closed, and `801d9bbc` closed **elsewhere**: the export enters it through its second anchor, `engine-vm::battle_value_readout`'s per-handle step, which the battle numerals now run on both hosts. Its `muscle_dome/hub.rs` anchor still has no producer, and an address-level verdict cannot say so - see the anchor note above |
 | `baka_fighter*.rs` (tally + intro) | 4 | `801d6710` `801d239c` `801d2a28` `801d59d4` | Closed: `w1b_baka_duel_ladder` plays the duel from its intro card to a player **win** and drains the tally. The door entry is a separate rung and still arms neither |
 | `pause_screens.rs` (special Use) | 4 | `801d7e50` `801d8a58` `801d8b90` `801d8d94` | Closed: `w1f1_pause_special_use_ladder` seeds the bag (no `debug_` helper grants `0x88` / `0x89` / `0x8A`) and drives Door of Light's confirm and Door of Wind's destination pick to their commits |
 | `other_game_overlay.rs` | 1 | `801d14b0` | Closed by delegation: `baka_fighter::tally_drain_step` (`801d6710`) **is** `other_game_overlay::step_scale`, one routine linked twice, so the duel ladder's tally drain enters the anchor. The arena's own driver is still one call away |
@@ -1810,7 +1821,7 @@ gates:
 | address | why it stayed |
 |---|---|
 | `801f44a0` | resolved: `engine-core`'s `BattleHud::push_popup` delegates every popup push to `DamagePopupRing::push`, so simultaneous popups are ring-bounded on both battle-HUD hosts |
-| the battle party panel's three | `panel_anchors` is production-called (`engine-ui`'s `party_panel_stage_x` reads it for the roster name pens); the rest of `battle_party_panel.rs` (`panel_labels`, the label-actor lifecycle, `cross_out_mark`) stays disclosed `NOT WIRED` - and the address follows the *anchor*, see below |
+| the battle party panel's three | `panel_anchors` is production-called (`engine-ui`'s `party_panel_stage_x` reads it for the roster name pens); `cross_out_mark` and the Rot / Curse stamps are drawn by both play hosts' command ring; the rest (`panel_labels`, the label-actor lifecycle) stays disclosed `NOT WIRED` or `REPLACED-BY` - and the address follows the *anchor*, see below |
 | `801e1ab0` | content-gated: the streak needs a move-FX scene whose move-power record carries a non-zero trail texture page (`+0x0b`) |
 
 The party-panel row was the sharper finding: `engine-ui` reproduced
@@ -1852,7 +1863,8 @@ stashes its handle;
 the port's battle HUD rebuilds every `TextDraw` from the live model each frame
 on both hosts, so there is no handle to hold and no host is owed one. It carries
 `REPLACED-BY:` and is out of the wiring denominator, while the panel build
-and the cross-out mark remain declared gaps.
+remains a declared gap. The cross-out mark is no longer one: both play hosts
+draw it over the command ring.
 
 So every instrument that keys on the address answers for `panel_labels`, and
 the catalog reads it inert with a disclosure. Crediting the row as
@@ -1868,7 +1880,8 @@ row.
 
 ## The cast-module band, the largest cluster on this page and the one with no rows
 
-`crates/engine-vm/src/cast_module_ticks.rs` is still the largest single-file
+`crates/engine-vm/src/cast_module_ticks.rs` (with its `cast_module_ticks/`
+submodules) is still the largest single-module
 cluster in the never-entered set, and it is still the only cluster of any size
 not cited anywhere else on this page - the file arrived whole and never went
 through the per-row pass the rest of the buckets did.
@@ -1892,7 +1905,7 @@ transferable part:
 | `w1b_seru_ticks_ladder` / `w1c_seru_ticks_ladder` | phase depth, ids `0x81..=0x8b` | those bodies are `beq` chains fifteen arms deep whose simulation writes live in the late arms |
 | `w1d_trampoline_arms_ladder` | `(PROT entry, action id)` pairs | a body is reached only through its module's trampoline, and one cell can hold two |
 | `w2c_cast_band_body_ladder` | `// PORT:` addresses scraped from **three** band modules' sources | cannot go stale when a later lane adds a body to one of those three |
-| `w1c_cast_module_bodies_ladder` | `// PORT:` addresses scraped from `cast_module_ticks.rs`, by dispatch **seam** | the fourth module, and the three seams its bodies are reached through |
+| `w1c_cast_module_bodies_ladder` | `// PORT:` addresses scraped from `cast_module_ticks.rs` and its submodules, by dispatch **seam** | the fourth module, and the three seams its bodies are reached through |
 
 ### The eleventh-hour row set: a source-denominated ladder for `cast_module_ticks.rs`
 

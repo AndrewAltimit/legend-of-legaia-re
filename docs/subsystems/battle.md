@@ -3245,9 +3245,13 @@ pool slots) and keeps the word in `BattleActor::flag_word`, which
 `BattleFlowState` (the selection band byte for byte) while the command band
 runs, `0xFF` while the action SM owns the round and `0x14` before the first
 round executes; retail's one-frame `0xFE` hand-off has no engine frame.
-`ctx[+0x26B]` is taken as raised through the victory sequence's load hold and
-idle from the results frame on - the engine streams nothing, and where the
-archive lands inside that hold is not measured. The `gp[+0x330]` gate has no
+`ctx[+0x26B]` follows the measured span - the engine streams nothing: on
+`rim_elm_gimard_victory` the request rises with the battle-end signal (v322)
+and clears 28 vsyncs later (v350), after which the phase walk's own two CD
+waits run the rest of the 80-vsync load hold (`autorun_victory_timeline.lua`,
+columns `req26b` / `prog26c`). So bodies near the camera ghost again for the
+last 52 vsyncs of the hold, and the engine raises the byte for exactly its
+first 28 (`VictorySequence::side_band_request_up`). The `gp[+0x330]` gate has no
 engine twin because the engine has no load stage. Neither host draws a body
 with a per-draw blend override yet, so the ghost is carried to the draw plan
 and not rendered - the same gap as the capture / defeat fade above.

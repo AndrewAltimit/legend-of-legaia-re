@@ -352,7 +352,7 @@ fn equip_compose_input(
         cursor: m.cursor,
         active_slot: m.active_slot,
         confirm_label: m.confirm_label.as_deref(),
-        char_slot: m.char_slot as usize,
+        char_slot: m.party_row as usize,
         slot_cursor: m.slot_cursor,
         pictogram_rows: m.pictogram_rows,
         text_cursor,
@@ -1042,7 +1042,9 @@ impl LegaiaRuntime {
                 FieldMenuSubsession::Spells(s) => {
                     self.build_spells(assets, s, &mut sprites, &mut texts, origin, scale)
                 }
-                FieldMenuSubsession::Equip { session, char_slot } => self.build_equip(
+                FieldMenuSubsession::Equip {
+                    session, char_slot, ..
+                } => self.build_equip(
                     assets,
                     session,
                     *char_slot,
@@ -2024,6 +2026,7 @@ impl LegaiaRuntime {
             session,
             char_slot,
             &names,
+            &world.map(|w| w.present_party_list()).unwrap_or_default(),
             Some(&text),
             compare,
         );
@@ -2180,6 +2183,8 @@ fn save_menu_rects(a: &SaveMenuAtlas) -> SaveMenuAtlasRects {
             separator: a.band_battle_separator(),
             digits: a.band_hud_digits(),
             cross_out: a.band_cross_out(),
+            rot_stamp: a.band_rot_stamp(),
+            curse_plate: a.band_curse_plate(),
         }),
     }
 }

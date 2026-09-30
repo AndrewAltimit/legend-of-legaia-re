@@ -1,0 +1,1572 @@
+//! The randomizer entry points: seed resolution and `patch_rom`.
+//! Split out of `rom_patcher.rs`.
+
+use super::*;
+
+/// Resolve a user seed string to the numeric seed, as a decimal string (so the
+/// page can display / persist it without JS `BigInt` precision loss).
+#[wasm_bindgen]
+pub fn resolve_seed(seed: &str) -> String {
+    seed_from_str(seed).to_string()
+}
+
+/// Number of `prog.stage(..)` boundaries in [`patch_rom`] (the `stage_count`
+/// every progress-callback invocation carries).
+pub(super) const PATCH_ROM_STAGES: u32 = 38;
+
+/// Patch a user-supplied disc image with the chosen randomizer settings.
+///
+/// `drops` / `encounters` / `chests` / `shops` / `casino` / `steals` / `arts` /
+/// `doors` / `house_doors` are each `"shuffle"`, `"random"`, or `"none"`.
+/// `arts` reassigns Tactical-Arts button combos (same-length, unique within
+/// character; Miracle Arts untouched). `shops`
+/// randomizes what town stores sell; `casino` the casino prize exchange. `door_coupling` is `"coupled"`
+/// (bidirectional) or `"decoupled"` (one-way). `house_doors` honours only
+/// `"shuffle"` and covers both intra-town door classes: the scripted door
+/// warps and the `.MAP` kind-0 intra-scene teleports (most house exits),
+/// the latter rewired per scene only when walk-component reachability is
+/// preserved. `starting_items` is the number of random starting consumables
+/// the new game begins with (`0` = leave the vanilla Healing Leaf ×5). The
+/// random fill shares the seed's capacity (7 slots, or 5 with `all_warps`) with
+/// the convenience-item toggles below and takes whatever they leave, so it adds
+/// on top of them. `door_of_wind` is how many Door of Wind (the warp consumable) to seed
+/// into the starting bag (`0` = none); `incense` is how many Incense (the
+/// encounter-rate consumable) to seed likewise (`0` = none); `speed_chain` /
+/// `chicken_heart` / `good_luck_bell` seed those accessories the same way
+/// (`0` = none each); `all_warps` presets the visited-towns
+/// bitmask so Door of Wind can teleport to any town from the start (its own code
+/// region, so it doesn't reduce the item count). `unused_enemies` adds the unused Evil Bat ids to the random-encounter
+/// pool (only with `encounters = "random"`); `unused_items` adds the unused
+/// "Something Good" / unnamed-accessory items to the random-fill pool (only the
+/// `random` drop / chest / steal modes use it). `equipment_drops` injects a code
+/// hook into the battle-end reward routine that, on a low per-battle chance,
+/// grants one *extra* random weapon / armor / accessory on top of the normal
+/// drop - additive, so `drops` is never disturbed. `monster_stats` / `move_power` /
+/// `element_affinity` / `spell_cost` / `equip_bonus` are the battle-tuning +
+/// equipment-bonus passes, each `"shuffle"` / `"random"` / `"none"`: monster
+/// combat stats, special-attack power, the element-affinity matrix, spell MP
+/// costs, and the equipment passive stat tuples (redistributed within each slot
+/// category). `encounter_scope` widens the monster pool an
+/// encounter roll draws from: `"scene"` (default - each scene's own monsters),
+/// `"kingdom"` (any monster in the scene's Drake/Sebucus/Karisto kingdom), or
+/// `"world"` (any monster on the disc, so late-game monsters can appear at the
+/// start). Only matters when `encounters` is not `"none"`.
+/// `solo_strong_encounters` (only with `encounters` set) forces any randomized
+/// formation holding a monster much stronger than the area's natives down to that
+/// lone enemy, so an over-strong monster is faced solo instead of in a pack.
+/// `flee_exp` injects a code hook into the battle-action escape teardown so that
+/// successfully running away banks a small slice of the fled fight's experience
+/// into the party (vanilla awards nothing for fleeing). `seru_trade` adds an
+/// in-shop trading vendor (a fourth Buy/Sell/Trade/Quit row) that swaps a party
+/// member's learned Seru-magic for a different one at a fixed level, on a
+/// time-bucketed schedule derived from the seed; all of it is hosted in the menu
+/// overlay, so it composes with every other option here. `enemy_ally` injects a
+/// code hook into battle setup so that, with a per-battle chance, a random enemy
+/// is charmed onto the party's side as an uncontrolled ally (works in any fight,
+/// bosses included), plus a one-word widen of the victory check so the ally isn't
+/// an enemy you must defeat. `enemy_hp_bar` draws a red HP gauge over every
+/// living monster (the `HP` label chip + the AP meter's gauge primitive and
+/// numeral, no chrome, stepping per hit; one row per monster slot along the
+/// top of the screen, tracking each monster's screen X),
+/// from a detour at the damage-popup renderer with the routine laid over four
+/// routines retail never references - no arena bytes, composes with everything.
+/// `shiny_seru` injects code hooks so that, with a
+/// per-battle chance, the frontmost *capturable* enemy spawns as a rare shiny
+/// variant (+35% stats) whose captured Seru deals +35% damage on every future
+/// cast (the flag rides the spell's level byte and is masked from the level-up +
+/// menu readers). `jewel_fix` retargets the boss cinematic casts' damage calls
+/// from the resist-ladder-bypassing wrapper to the guard-respecting one, so
+/// elemental jewels / guards / All Guard apply to Xain's Bloody Horns / Terio
+/// Punch, Cort's Guilty Cross, and the Delilas trio's signature moves (a fix,
+/// not a randomization - it is seedless). `delilas_challenge` adds a fourth
+/// Muscle Dome enrollment option: a new 2-round dome course - Che & Lu
+/// Delilas double-team, then Gi - unlocked by the Koru event; losing a round
+/// returns to the venue by the dome's design - no game over (seedless).
+/// `custom_items` injects three brand-new items into cut item slots
+/// (Nature's Elixir / Ra-Seru Tear / Fury Bloom) - standalone: with a
+/// `random` drop / chest / steal mode they join the fill pool, and with
+/// `delilas_challenge` they replace the Honey as the course's full-clear
+/// reward. `approach_softlock_fix` re-stages a
+/// monster's approach animation when it dies mid-approach (the summon-then-
+/// melee clip death that parks the battle in an infinite range poll - the
+/// "endless camera orbit" softlock), so the monster resumes walking instead
+/// of wedging the fight; healthy fights are byte-identical (also seedless).
+/// `fishing_prices` is a
+/// comma/space-separated list of `item=points` pairs that set the
+/// fishing-exchange point cost of prizes (e.g. `0x6F=500` for the Water Egg).
+/// `location_renames` is a newline-separated list of `index=name` lines that
+/// rename world-map location slots (e.g. `3=Ancient Fire Cave`).
+/// `earth_egg_price` (empty = untouched) sets the casino-coin threshold the Sol
+/// Tower Prize Counter requires before it offers the Earth Ra-Seru Egg (retail
+/// 100000); the game debits exactly that many coins on purchase. `arts_powers`
+/// is a comma/space-separated list of `combo=value` pairs that rebalance a
+/// Tactical Art's damage-power bytes (e.g. `RDLDL=0x16`; `value` a power byte
+/// `0x0C..=0x1F` or `0`). `super_art_powers` is the Super Art sibling - a
+/// comma/newline-separated (never space-separated, the names contain spaces)
+/// list of `name=value` pairs (e.g. `Tri-Somersault=0x1A`), rebalancing a Super
+/// Art's own `record0` power bytes; Super Arts carry no combo, no
+/// arts-name-table row and no AP cost of their own, so name is the only key
+/// they have. `show_super_arts` lists a character's Super Arts on the
+/// Tactical-Arts list the Triangle button opens in battle, which retail never
+/// draws at all: a row appears once the player has **performed** that Super Art
+/// (a per-character byte the Super applier's detour records, saved with the
+/// character), sits among the regular arts **by AP**, and shows the Super Art's
+/// name, the chain's summed AP cost and the arrows the player types; the pause
+/// menu's Status screen (Left = Moves) lists them the same way. The
+/// Triangle caption's own page thresholds stay retail, so on a later page it can
+/// still read "View Hyper Arts list". `super_arts_pack` installs the **Super
+/// Arts Pack by ZetaPhoenix**: fifteen extra Super Arts, five per
+/// character, each with its own name, hit count and animation, from his own
+/// 3764-byte block (parked in the disc's `DMY.DAT` annex, streamed to
+/// `0x801FD000` at battle load). Mutually exclusive with the same four features
+/// as `show_super_arts`, plus `show_super_arts` itself. Mutually exclusive with
+/// `shiny_seru`, the arts AP override and `delilas_challenge` (same SCUS
+/// regions). `arts_ap_grants` and `arts_ap_costs` are
+/// comma/space-separated lists of `[character:]combo=amount` pairs (e.g.
+/// `Vahn:RDLDL=10`; `amount` 1..=100 AP): a grant makes the art castable at any
+/// AP level and *add* that much, a cost charges exactly that much instead of
+/// retail's computed value, and both rewrite the art's menu AP number (a grant
+/// shows `0`). Each entry keys on `(character, arts row)`, so one character's
+/// art never moves another's. Mutually exclusive with `shiny_seru` (same SCUS
+/// regions). `spirit_ap` (empty = untouched) sets how much AP the Spirit
+/// command charges into the battle gauge (retail 32; `0` = defence boost
+/// only, `100` = one press fills the gauge, negative = Spirit drains the
+/// gauge) - four immediate words in the battle overlay (the accrual plus the
+/// gauge-widget ramp targets that mirror it). `damage_ap` (empty = untouched)
+/// sets how much AP taking damage grants, as AP per 100% of max HP lost
+/// (retail 100; `0` = damage never feeds the gauge, negative = being hit
+/// drains it) - the damage finisher's scale chain in the same overlay.
+/// `oscillating_ap` (`0..=100`, empty = off) turns on oscillating AP costs:
+/// every battle each Tactical Art is dealt onto the cost side (retail) or the
+/// grant side (castable at any AP, gives its AP back, deals that percent of
+/// its damage) - it claims the same dead regions as every other arena feature
+/// and is refused alongside any of them. A
+/// negative value on either knob also neutralizes the AP-Boost accessory
+/// arms, which read the accrual unsigned. `enemy_stat_scale` (empty or `1` =
+/// untouched) multiplies every monster's combat stats by a difficulty factor
+/// (`0.1`..`5`), story bosses included; it moves nothing between monsters, so
+/// each keeps its own profile while the whole roster shifts together, and it is
+/// applied after `monster_stats` so the two compose. It takes either spelling of
+/// the knob - a bare multiplier (`"2.5"`) scales every stat, and a `key=value`
+/// list (`"hp=2,attack=1.5"`) scales only the stats it names, and a
+/// `|`-separated per-group split (`"regular:0.75|boss:2"`, each half itself
+/// either of the first two spellings) gives random encounters and scripted boss
+/// fights their own scale - which is what the page's simple and advanced slider
+/// panes send. `exp_scale` (empty or `1` = untouched) multiplies every
+/// monster's base EXP reward (`0.1`..`5`) - the victory spoils, the party
+/// split, and the flee-EXP grant all read that record field, so one edit
+/// scales them together; gold and drops stay retail, a scaled reward floors
+/// at 1 EXP and saturates at 65535. `seru_catch_rate` (empty = untouched)
+/// overrides every capturable Seru monster's catch chance with one flat
+/// percent (`0`..`100`) - the odds that a killing blow absorbs its magic;
+/// only the 63 capturable records are touched, so a non-Seru monster can
+/// never become capturable. `enemy_attack_count` (empty or `1` = untouched)
+/// scales how many hits enemies land with their standard physical attacks
+/// (`0.1`..`5`): retail prices each attack in AGL against a per-round AGL
+/// gauge, so this divides each attack entry's AGL-cost byte by the
+/// multiplier while leaving AGL itself (and every spell cast) alone; costs
+/// round half up and clamp so a retail attacker always lands at least one
+/// hit per attack turn, never zero, and the engine's own 15-action queue
+/// bounds the top end. These are all manual, seedless edits.
+/// `starting_level`
+/// begins the new game at that character level instead of 1 (`0` or `1` =
+/// vanilla; range 2..=14), seeding the lead character's XP and recomputing the
+/// starting stats from the disc's growth curves. `seed` is a number or
+/// any string (hashed).
+///
+/// `lang_pack` is an **optional** `legaia-text-pack-v1` YAML document (empty
+/// string = no language patch, the default). It is applied **first**, before
+/// any randomizer pass, because a translation edit is keyed by a byte offset
+/// into a scene's decompressed MAN and the door / starting-bag passes relocate
+/// those records - translate-then-randomize composes, the reverse loses the
+/// moved scenes' lines. Per-entry skips (a line over budget, a wrong-disc
+/// mismatch) are counted in the summary but never abort the patch.
+/// `lang_relayout` lets a scene whose translated dialog no longer fits its
+/// compressed footprint grow by whole sectors (the CLI's `translate import
+/// --allow-relayout`): the image gets larger and the dialog lands at full
+/// length instead of rolling lines back to English. It only matters with a
+/// pack, and it runs in the dialog phase, before any randomizer pass, so every
+/// later index-keyed edit resolves against the relaid-out disc. Returns
+/// `{ data, summary, seed, lang }`.
+///
+/// Async: the optional trailing `progress` callback is invoked with
+/// `(stage_index, stage_count, label)` at each feature-stage boundary, and
+/// the function yields one macrotask after each call so the page can paint
+/// a progress bar instead of looking hanged for the whole run. Without the
+/// callback no yields happen and the patch runs straight through.
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub async fn patch_rom(
+    image: Vec<u8>,
+    seed: &str,
+    lang_pack: &str,
+    lang_relayout: bool,
+    drops: &str,
+    encounters: &str,
+    encounter_scope: &str,
+    chests: &str,
+    shops: &str,
+    casino: &str,
+    steals: &str,
+    arts: &str,
+    doors: &str,
+    door_coupling: &str,
+    house_doors: &str,
+    starting_items: usize,
+    door_of_wind: u8,
+    incense: u8,
+    speed_chain: u8,
+    chicken_heart: u8,
+    good_luck_bell: u8,
+    all_warps: bool,
+    unused_enemies: bool,
+    unused_items: bool,
+    equipment_drops: bool,
+    monster_stats: &str,
+    move_power: &str,
+    element_affinity: &str,
+    spell_cost: &str,
+    equip_bonus: &str,
+    weapon_specialty: bool,
+    starting_level: u8,
+    solo_strong_encounters: bool,
+    flee_exp: bool,
+    seru_trade: bool,
+    enemy_ally: bool,
+    shiny_seru: bool,
+    jewel_fix: bool,
+    approach_softlock_fix: bool,
+    delilas_challenge: bool,
+    custom_items: bool,
+    fishing_prices: &str,
+    location_renames: &str,
+    earth_egg_price: &str,
+    arts_powers: &str,
+    arts_ap_grants: &str,
+    arts_ap_costs: &str,
+    spirit_ap: &str,
+    damage_ap: &str,
+    oscillating_ap: &str,
+    enemy_stat_scale: &str,
+    exp_scale: &str,
+    seru_catch_rate: &str,
+    delilas_party: &str,
+    delilas_arts_voice: &str,
+    delilas_moves: &str,
+    super_art_powers: &str,
+    show_super_arts: bool,
+    super_arts_pack: bool,
+    enemy_attack_count: &str,
+    swing_costs: &str,
+    equip_owners: &str,
+    enemy_hp_bar: bool,
+    progress: Option<js_sys::Function>,
+) -> Result<JsValue, JsValue> {
+    let seed_n = seed_from_str(seed);
+    let drops_mode = parse_mode(drops);
+    let enc_mode = parse_mode(encounters);
+    let chest_mode = parse_mode(chests);
+    let monster_stats_mode = parse_mode(monster_stats);
+    let move_power_mode = parse_mode(move_power);
+    let element_affinity_mode = parse_mode(element_affinity);
+    let spell_cost_mode = parse_mode(spell_cost);
+    let equip_bonus_mode = parse_mode(equip_bonus);
+    let shop_mode = parse_mode(shops);
+    let casino_mode = parse_mode(casino);
+    let steal_mode = parse_mode(steals);
+    let arts_mode = parse_mode(arts).map(|m| match m {
+        DropMode::Shuffle => legaia_patcher::arts::ArtsMode::Shuffle,
+        DropMode::Random => legaia_patcher::arts::ArtsMode::Random,
+    });
+    let door_mode = parse_mode(doors);
+    let house_door_mode = parse_mode(house_doors);
+
+    // Arts AP-grant, shiny-Seru, and the Delilas Challenge dome course reuse the
+    // same verified-dead SCUS arena bytes (0x8007AE00). Arts AP-grant is a hard
+    // conflict with either (manual-only); shiny-Seru vs the Delilas Challenge is
+    // resolved softly below (the challenge wins). Refuse the hard combos here.
+    let arts_ap = !(arts_ap_grants.trim().is_empty() && arts_ap_costs.trim().is_empty());
+    // Oscillating AP costs claims all four regions, so it is a hard conflict
+    // with every other arena feature.
+    let oscillating = !oscillating_ap.trim().is_empty();
+    for (other, what) in [
+        (arts_ap, "the arts AP override"),
+        (shiny_seru, "shiny-seru"),
+        (delilas_challenge, "the Delilas Challenge"),
+        (show_super_arts, "showing Super Arts on the move list"),
+        (super_arts_pack, "the Super Arts Pack"),
+    ] {
+        if oscillating && other {
+            return Err(err(format!(
+                "oscillating AP costs and {what} both inject into the same verified-dead SCUS \
+                 regions and are mutually exclusive; enable only one"
+            )));
+        }
+    }
+    if arts_ap && shiny_seru {
+        return Err(err(
+            "the arts AP override and shiny-seru both inject into the same verified-dead SCUS \
+             regions and are mutually exclusive; enable only one",
+        ));
+    }
+    if arts_ap && delilas_challenge {
+        return Err(err(
+            "the arts AP override and the Delilas Challenge both inject into the same \
+             verified-dead SCUS regions and are mutually exclusive; enable only one",
+        ));
+    }
+    // The Super Arts move-list rows span all four verified-dead SCUS regions
+    // (a shared unlock leaf, three hook routines and four small tables), so
+    // they are a hard conflict with all three - the Delilas Challenge included,
+    // which is never silently dropped in their favour.
+    for (other, what) in [
+        (arts_ap, "the arts AP override"),
+        (shiny_seru, "shiny-seru"),
+        (delilas_challenge, "the Delilas Challenge"),
+    ] {
+        if show_super_arts && other {
+            return Err(err(format!(
+                "showing Super Arts on the move list and {what} both inject into the same \
+                 verified-dead SCUS regions and are mutually exclusive; enable only one"
+            )));
+        }
+    }
+    // The Super Arts Pack hosts its battle-load stub in the same arena and
+    // rewrites the applier the move list detours, so it conflicts with all four.
+    for (other, what) in [
+        (arts_ap, "the arts AP override"),
+        (shiny_seru, "shiny-seru"),
+        (delilas_challenge, "the Delilas Challenge"),
+        (show_super_arts, "showing Super Arts on the move list"),
+    ] {
+        if super_arts_pack && other {
+            return Err(err(format!(
+                "the Super Arts Pack and {what} both inject into the same verified-dead SCUS \
+                 regions and are mutually exclusive; enable only one"
+            )));
+        }
+    }
+    let mut prog = Progress::new(progress, PATCH_ROM_STAGES);
+    prog.stage("parsing disc image").await;
+    let mut patcher = DiscPatcher::open(image).map_err(|e| err(format!("parse disc: {e}")))?;
+
+    // The valid item pool (from SCUS) is needed only by the `random` modes.
+    // Shops build their own sellable pool internally, so they don't need the
+    // general valid-item pool.
+    let needs_pool = drops_mode == Some(DropMode::Random)
+        || chest_mode == Some(DropMode::Random)
+        || steal_mode == Some(DropMode::Random);
+    let mut pool = if needs_pool {
+        let scus = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+            .ok_or_else(|| err("SCUS_942.54 not found in disc image (needed for a random mode)"))?;
+        valid_item_pool(&scus).map_err(|e| err(format!("item pool: {e}")))?
+    } else {
+        Vec::new()
+    };
+    // `--unused-items`: widen the random-fill pool with the curated unused items
+    // (the unnamed accessory in particular is otherwise excluded - no name), and
+    // give that accessory the name "Seru Bell" so it doesn't show as a blank.
+    if unused_items && needs_pool {
+        legaia_patcher::unused::extend_pool(&mut pool, legaia_patcher::unused::UNUSED_ITEM_IDS);
+        apply::inject_seru_bell_name(&mut patcher).map_err(|e| err(format!("name inject: {e}")))?;
+    }
+    // The unused-enemy id set passed to the encounter randomizer (empty unless on).
+    let unused_enemy_ids: &[u8] = if unused_enemies {
+        legaia_patcher::unused::UNUSED_ENEMY_IDS
+    } else {
+        &[]
+    };
+
+    let mut summary = String::new();
+
+    // Custom items: inject the standalone item set (records, effect machinery,
+    // battle hooks - no Delilas dependency) and widen the random-fill pool so
+    // the `random` drop/chest/steal modes can hand them out. With the Delilas
+    // Challenge also on, they become the course's full-clear reward (the grant
+    // half is installed with the challenge below).
+    prog.stage("custom items").await;
+    if custom_items {
+        match apply::inject_custom_item_set(&mut patcher) {
+            Ok(true) => summary
+                .push_str("custom-items: injected Nature's Elixir, Ra-Seru Tear, Fury Bloom\n"),
+            Ok(false) => summary.push_str("custom-items: already injected\n"),
+            Err(e) => return Err(err(format!("custom-items: {e:#}"))),
+        }
+        if needs_pool {
+            legaia_patcher::unused::extend_pool(
+                &mut pool,
+                legaia_patcher::custom_items::CUSTOM_ITEM_IDS,
+            );
+        } else if !delilas_challenge {
+            summary.push_str(
+                "  note: without a random drop/chest/steal mode or the Delilas Challenge, \
+                 the custom items exist but nothing hands them out\n",
+            );
+        }
+    }
+
+    // Language pack, phase 1 of 2: the dialog sections (`man:` / `raw:` keys)
+    // go FIRST, before any data randomization - a dialog edit is keyed by a
+    // byte offset into a scene's decompressed MAN, and the door / starting-bag
+    // passes relocate those records. The SCUS name sections go LAST (after
+    // every randomizer pass), because passes that classify items by their
+    // English names - the equipment-drop gear pool - must still see the
+    // retail names; nothing in the randomizer relocates a SCUS string, so
+    // translating them at the end is always safe.
+    prog.stage("language pack: dialog text").await;
+    let lang_pack = lang_pack.trim();
+    let parsed_pack = if lang_pack.is_empty() {
+        None
+    } else {
+        Some(LanguagePack::from_yaml(lang_pack).map_err(|e| err(format!("language pack: {e}")))?)
+    };
+    let mut lang_report = ImportReport::default();
+    if let Some(pack) = &parsed_pack {
+        let report = import_pack_phase(&mut patcher, pack, ImportPhase::DialogOnly, lang_relayout)
+            .map_err(|e| err(format!("apply language pack (dialog): {e}")))?;
+        lang_report.merge(report);
+    }
+
+    prog.stage("monster drops").await;
+    // Normal drop table first: reassign the monsters that already drop something.
+    match drops_mode {
+        Some(m) => {
+            let (plan, rep) = apply::randomize_drops(&mut patcher, &pool, seed_n, m)
+                .map_err(|e| err(format!("drops: {e}")))?;
+            summary.push_str(&format!(
+                "drops: {} of {} reassigned ({})\n",
+                rep.changed,
+                plan.len(),
+                drops
+            ));
+            if !rep.skipped.is_empty() {
+                summary.push_str(&format!(
+                    "  {} slot(s) too full to re-pack\n",
+                    rep.skipped.len()
+                ));
+            }
+        }
+        None => summary.push_str("drops: untouched\n"),
+    }
+
+    // Equipment-as-drops layers on top via a code hook into the battle-end
+    // reward routine: a low-chance roll grants one extra random equipment piece
+    // in addition to the normal drop, which is never disturbed.
+    prog.stage("equipment bonus drops").await;
+    if equipment_drops {
+        let rep = apply::inject_equipment_bonus_drop(
+            &mut patcher,
+            legaia_patcher::bonus_drop::DEFAULT_CHANCE_PCT,
+        )
+        .map_err(|e| err(format!("equipment drops: {e}")))?;
+        summary.push_str(&format!(
+            "equipment-drops: bonus drop injected ({}% per battle, {} gear ids in pool)\n",
+            rep.chance_pct, rep.table_len
+        ));
+    }
+
+    prog.stage("random encounters").await;
+    match enc_mode {
+        Some(m) => {
+            let scope = parse_encounter_scope(encounter_scope);
+            let solo = solo_strong_encounters.then(apply::SoloStrongConfig::default);
+            let rep = apply::randomize_encounters_full(
+                &mut patcher,
+                seed_n,
+                m,
+                scope,
+                unused_enemy_ids,
+                solo,
+            )
+            .map_err(|e| err(format!("encounters: {e}")))?;
+            summary.push_str(&format!(
+                "encounters: {} scenes, {} ids changed ({} {})\n",
+                rep.scenes_changed, rep.ids_changed, encounter_scope, encounters
+            ));
+            if rep.unused_placed > 0 {
+                summary.push_str(&format!(
+                    "  including {} unused-enemy spawn(s) injected\n",
+                    rep.unused_placed
+                ));
+            }
+            if solo.is_some() {
+                summary.push_str(&format!(
+                    "  solo-strong: {} strong fight(s) forced to a lone enemy\n",
+                    rep.solo_collapsed
+                ));
+            }
+            if rep.battle_load_capped > 0 {
+                summary.push_str(&format!(
+                    "  battle-load cap: {} formation(s) reduced to fit the battle heap\n",
+                    rep.battle_load_capped
+                ));
+            }
+        }
+        None => summary.push_str("encounters: untouched\n"),
+    }
+
+    // Run-away EXP: a code hook in the escape teardown banks a slice of a fled
+    // fight's experience into the party (vanilla gives nothing for fleeing).
+    prog.stage("run-away EXP hook").await;
+    if flee_exp {
+        let rep = apply::inject_flee_exp(&mut patcher, legaia_patcher::flee_exp::DEFAULT_PCT)
+            .map_err(|e| err(format!("flee-exp: {e}")))?;
+        summary.push_str(&format!(
+            "flee-exp: {}% of a fled fight's experience banked into the party\n",
+            rep.pct
+        ));
+    } else {
+        summary.push_str("flee-exp: untouched\n");
+    }
+
+    // Enemy ally ("charm"): a code hook in battle setup flags the frontmost enemy
+    // so it fights on the player's side (works on bosses); a one-word widen of the
+    // victory check keeps the charmed enemy from being one you must defeat.
+    prog.stage("enemy-ally hook").await;
+    if enemy_ally {
+        let rep = apply::inject_enemy_ally(&mut patcher, legaia_patcher::enemy_ally::DEFAULT_PCT)
+            .map_err(|e| err(format!("enemy-ally: {e}")))?;
+        summary.push_str(&format!(
+            "enemy-ally: {}% chance per battle a random enemy fights on your side\n",
+            rep.pct
+        ));
+    } else {
+        summary.push_str("enemy-ally: untouched\n");
+    }
+
+    // Enemy HP bars: a per-frame gauge over each living monster, drawn with
+    // retail's own AP-plate tiles + gauge primitive. Cosmetic; no arena bytes.
+    prog.stage("enemy HP bars").await;
+    if enemy_hp_bar {
+        let rep = apply::inject_enemy_hp_bar(&mut patcher)
+            .map_err(|e| err(format!("enemy-hp-bar: {e}")))?;
+        summary.push_str(&format!(
+            "enemy-hp-bar: red HP gauge over every enemy ({} edits)\n",
+            rep.edits
+        ));
+    } else {
+        summary.push_str("enemy-hp-bar: untouched\n");
+    }
+
+    // Shiny Seru: a code hook boosts a rare capturable enemy's stats +35%; the
+    // capture/damage hooks make its captured Seru deal +35% damage forever.
+    // It shares the verified-dead SCUS arena bytes (0x8007AE00) with the
+    // Delilas Challenge's dome-course cave, so the two cannot coexist; the
+    // Delilas Challenge takes precedence and shiny-Seru yields with a note.
+    prog.stage("shiny Seru").await;
+    if shiny_seru && delilas_challenge {
+        summary.push_str(
+            "shiny-seru: skipped (shares SCUS arena bytes with the Delilas Challenge, which wins)\n",
+        );
+    } else if shiny_seru {
+        let rep = apply::inject_shiny_seru(&mut patcher, legaia_patcher::shiny_seru::DEFAULT_PCT)
+            .map_err(|e| err(format!("shiny-seru: {e}")))?;
+        summary.push_str(&format!(
+            "shiny-seru: {}% chance per battle a capturable enemy is shiny (+35% stats / damage)\n",
+            rep.pct
+        ));
+    } else {
+        summary.push_str("shiny-seru: untouched\n");
+    }
+
+    // Show Super Arts: the in-battle Tactical-Arts list gains, sorted in by AP,
+    // the Super Arts the character has performed - name, chain AP cost and the
+    // arrows the player types per row (two detours into the SCUS list renderer
+    // plus their routines and tables in dead space, a replaced list pager in
+    // PROT 0898 whose tail records a performed Super Art, and a detour from the
+    // Super applier into it). Spoiler-safe: the count, never the roster.
+    prog.stage("Super Arts move list").await;
+    if show_super_arts {
+        let rep = apply::inject_super_art_list(&mut patcher)
+            .map_err(|e| err(format!("show-super-arts: {e}")))?;
+        summary.push_str(&format!(
+            "show-super-arts: {} Super Arts join the in-battle move list and the status \
+             screen's Moves page once performed\n",
+            rep.rows.len()
+        ));
+    } else {
+        summary.push_str("show-super-arts: untouched\n");
+    }
+
+    // Super Arts Pack (by ZetaPhoenix): his 3764-byte block parked in the annex
+    // and streamed to 0x801FD000 at battle load, reached by ten word edits.
+    // Spoiler-safe: the count, never the roster.
+    prog.stage("Super Arts Pack (by ZetaPhoenix)").await;
+    if super_arts_pack {
+        let rep = apply::inject_super_arts_pack(&mut patcher)
+            .map_err(|e| err(format!("super-arts-pack: {e}")))?;
+        // The pack ships with the author's arts name-length fix - his own
+        // update to the mod - parked directly behind the battle-load stub.
+        apply::inject_arts_name_fix(
+            &mut patcher,
+            legaia_patcher::super_arts_pack::ARENA_USED_END_VA,
+        )
+        .map_err(|e| err(format!("super-arts-pack (name-length fix): {e}")))?;
+        summary.push_str(&format!(
+            "super-arts-pack (by ZetaPhoenix): {} extra Super Arts, five per character, \
+             incl. the author's name-banner fix\n",
+            rep.names.len()
+        ));
+    } else {
+        summary.push_str("super-arts-pack: untouched\n");
+    }
+
+    // Seru trading: a vendor in shops offers to trade a party member's Seru-magic for
+    // a different one (time-bucketed, deterministic from the seed). All code + data is
+    // hosted in the menu overlay, so it composes with every other feature here.
+    prog.stage("Seru trading").await;
+    if seru_trade {
+        apply::inject_trade_full(&mut patcher, seed_n)
+            .map_err(|e| err(format!("seru-trade: {e}")))?;
+        // Also embed the engine-facing config blob (same seed), so the patched
+        // disc trades identically when booted in the engine.
+        apply::enable_seru_trades(
+            &mut patcher,
+            seed_n,
+            legaia_asset::seru_trade::DEFAULT_MAX_OFFERS,
+        )
+        .map_err(|e| err(format!("seru-trade config: {e}")))?;
+        summary.push_str("seru-trade: in-shop Seru trading vendor enabled\n");
+    } else {
+        summary.push_str("seru-trade: untouched\n");
+    }
+
+    // Jewel fix: retarget the boss cinematic casts' damage calls from the
+    // resist-ladder-bypassing wrapper to the guard-respecting one, so elemental
+    // jewels / guards / All Guard apply to Xain's Bloody Horns / Terio Punch,
+    // Cort's Guilty Cross, and the Delilas trio's signature moves. Seedless.
+    prog.stage("jewel fix").await;
+    if jewel_fix {
+        let rep =
+            apply::apply_jewel_fix(&mut patcher).map_err(|e| err(format!("jewel-fix: {e}")))?;
+        summary.push_str(&format!(
+            "jewel-fix: {} boss-cast damage calls now respect elemental guards\n",
+            rep.sites_patched
+        ));
+    } else {
+        summary.push_str("jewel-fix: untouched\n");
+    }
+
+    // Attack-approach softlock fix: nine words in the battle overlay so a
+    // monster whose approach animation dies mid-approach is re-staged and
+    // resumes walking instead of parking the battle in the state-0x19 range
+    // poll forever. Seedless.
+    prog.stage("approach-softlock fix").await;
+    if approach_softlock_fix {
+        let rep = apply::apply_approach_fix(&mut patcher)
+            .map_err(|e| err(format!("approach-softlock-fix: {e}")))?;
+        summary.push_str(if rep.changed {
+            "approach-softlock-fix: battle overlay patched (dead approach animations are re-staged)\n"
+        } else {
+            "approach-softlock-fix: already applied\n"
+        });
+    } else {
+        summary.push_str("approach-softlock-fix: untouched\n");
+    }
+
+    // Delilas Challenge: a fourth Muscle Dome enrollment option that runs a
+    // brand-new 2-round dome course - Che & Lu double-team (1v2), then Gi -
+    // routed through the real arena (magic-off), gated on the Koru event in
+    // Nivora Ravine. The 1v2 fits the battle heap via slim clones at
+    // unreachable archive slots; the originals are untouched. Losing a round
+    // returns to the venue by the dome's design; a full clear pays 5000
+    // coins. koin1 script edit + a companion arena/SCUS code injection;
+    // seedless. A koin1 MAN another edit has already grown past its
+    // zero-slack footprint skips with a note instead of failing the run.
+    prog.stage("Delilas Challenge").await;
+    if delilas_challenge {
+        match apply::apply_delilas_challenge(&mut patcher, custom_items) {
+            Ok(rep) if rep.changed => summary.push_str(&format!(
+                "delilas-challenge: Muscle Dome enrollment offers the Delilas Challenge \
+                 (a 2-round dome course: Che & Lu double-team, then Gi; a full clear pays \
+                 5000 coins + {}; unlocks after Nivora Ravine)\n",
+                if custom_items {
+                    "the three custom items"
+                } else {
+                    "a Honey"
+                }
+            )),
+            Ok(_) => summary.push_str("delilas-challenge: already applied\n"),
+            Err(e) => summary.push_str(&format!("delilas-challenge: skipped ({e:#})\n")),
+        }
+    } else {
+        summary.push_str("delilas-challenge: untouched\n");
+    }
+
+    // Fishing-exchange price edits: a comma/semicolon/whitespace-separated list
+    // of `item=points` pairs (item id decimal or 0xHH). Each sets the fishing
+    // point cost of every prize row granting that item; the price also gates
+    // when the prize appears. A malformed pair is reported and skipped rather
+    // than aborting the whole patch.
+    prog.stage("prices and gauge tuning").await;
+    let fishing_prices = fishing_prices.trim();
+    if fishing_prices.is_empty() {
+        summary.push_str("fishing-price: untouched\n");
+    } else {
+        for tok in fishing_prices
+            .split([',', ';', '\n', ' '])
+            .filter(|t| !t.trim().is_empty())
+        {
+            match parse_id_eq_u32(tok) {
+                Some((item_id, price)) => {
+                    match apply::set_fishing_price(&mut patcher, item_id as u32, price) {
+                        Ok(rep) if rep.edits.is_empty() => summary.push_str(&format!(
+                            "fishing-price: item 0x{item_id:02X} already {price} points\n"
+                        )),
+                        Ok(rep) => {
+                            for (page, _row, _id, old, new) in &rep.edits {
+                                let venue = if *page == 0 { "Buma" } else { "Vidna" };
+                                summary.push_str(&format!(
+                                    "fishing-price: {venue} item 0x{item_id:02X}: {old} -> {new} points\n"
+                                ));
+                            }
+                        }
+                        Err(e) => summary.push_str(&format!("fishing-price: {e}\n")),
+                    }
+                }
+                None => {
+                    summary.push_str(&format!("fishing-price: skipped malformed entry {tok:?}\n"))
+                }
+            }
+        }
+    }
+
+    // Earth Egg coin threshold: the Sol Tower Prize Counter's scripted
+    // coin-for-Earth-Egg exchange (koin1 MAN). A single coins-required value
+    // (empty = untouched); the game debits exactly that many on purchase.
+    let earth_egg_price = earth_egg_price.trim();
+    if earth_egg_price.is_empty() {
+        summary.push_str("earth-egg-price: untouched\n");
+    } else {
+        match earth_egg_price.parse::<u32>() {
+            Ok(price) => match apply::set_earth_egg_price(&mut patcher, price) {
+                Ok(rep) if !rep.changed => {
+                    summary.push_str(&format!("earth-egg-price: already {price} coins\n"))
+                }
+                Ok(rep) => summary.push_str(&format!(
+                    "earth-egg-price: {} -> {} coins\n",
+                    rep.old_price, rep.new_price
+                )),
+                Err(e) => summary.push_str(&format!("earth-egg-price: {e}\n")),
+            },
+            Err(_) => summary.push_str(&format!(
+                "earth-egg-price: skipped non-numeric value {earth_egg_price:?}\n"
+            )),
+        }
+    }
+
+    // Spirit AP: the AP the Spirit command charges into the battle gauge
+    // (retail 32; 0 = defence-only, 100 = full gauge, negative = Spirit drains
+    // the gauge). A single value (empty = untouched); four immediate words in
+    // the battle overlay, plus the signed accrual tail when negative.
+    let spirit_ap = spirit_ap.trim();
+    if spirit_ap.is_empty() {
+        summary.push_str("spirit-ap: untouched\n");
+    } else {
+        match spirit_ap.parse::<i16>() {
+            Ok(ap) if (-100..=100).contains(&ap) => {
+                match apply::apply_spirit_ap(&mut patcher, ap) {
+                    Ok(rep) if !rep.changed => {
+                        summary.push_str(&format!("spirit-ap: already {ap} AP per Spirit\n"))
+                    }
+                    Ok(rep) => summary.push_str(&format!(
+                        "spirit-ap: {} -> {ap} AP per Spirit (retail 32)\n",
+                        rep.previous
+                    )),
+                    Err(e) => summary.push_str(&format!("spirit-ap: {e}\n")),
+                }
+            }
+            _ => summary.push_str(&format!(
+                "spirit-ap: skipped out-of-range value {spirit_ap:?} (want -100..=100)\n"
+            )),
+        }
+    }
+
+    // Enemy-damage AP: AP granted per 100% of max HP lost (retail 100; 0 =
+    // damage never feeds the gauge, negative = being hit drains it). A single
+    // value (empty = untouched); the damage finisher's scale chain in the
+    // battle overlay, plus its accrual tail when negative.
+    let damage_ap = damage_ap.trim();
+    if damage_ap.is_empty() {
+        summary.push_str("damage-ap: untouched\n");
+    } else {
+        match damage_ap.parse::<i16>() {
+            Ok(v) if (-200..=200).contains(&v) => match apply::apply_damage_ap(&mut patcher, v) {
+                Ok(rep) if !rep.changed => summary.push_str(&format!(
+                    "damage-ap: already {v} AP per 100% max-HP damage\n"
+                )),
+                Ok(rep) => summary.push_str(&format!(
+                    "damage-ap: {} -> {v} AP per 100% max-HP damage (retail 100)\n",
+                    rep.previous
+                )),
+                Err(e) => summary.push_str(&format!("damage-ap: {e}\n")),
+            },
+            _ => summary.push_str(&format!(
+                "damage-ap: skipped out-of-range value {damage_ap:?} (want -200..=200)\n"
+            )),
+        }
+    }
+
+    // Oscillating AP costs: `DAMAGE_PCT` (0..=100, empty = off). Per battle,
+    // each Tactical Art lands on the cost side (retail) or the grant side
+    // (admitted at any AP, adds the AP it would have cost, deals DAMAGE_PCT
+    // percent of its damage). Mutually exclusive with every other arena
+    // feature (guarded above).
+    let oscillating_ap = oscillating_ap.trim();
+    if oscillating_ap.is_empty() {
+        summary.push_str("oscillating-ap: off\n");
+    } else {
+        match oscillating_ap.parse::<u8>() {
+            Ok(pct) if pct <= legaia_patcher::oscillating_ap::MAX_DAMAGE_PCT => {
+                match apply::inject_oscillating_ap(&mut patcher, pct) {
+                    Ok(rep) => summary.push_str(&format!(
+                        "oscillating-ap: every battle re-deals each art onto the cost side \
+                         (retail) or the grant side (gives its AP back, {}% damage)\n",
+                        rep.damage_pct
+                    )),
+                    Err(e) => summary.push_str(&format!("oscillating-ap: {e}\n")),
+                }
+            }
+            _ => summary.push_str(&format!(
+                "oscillating-ap: skipped out-of-range value {oscillating_ap:?} (want 0..=100)\n"
+            )),
+        }
+    }
+
+    // Place renames: newline-separated `target=name` lines (a name may contain
+    // spaces, so only the newline splits entries). `target` is a landmark index
+    // or the place's current name. Each rename propagates to all three carriers
+    // - the SCUS quick-travel cell, the world-map labels, and the scene-entry
+    // banners - so one line changes every place the game shows the name. A bad
+    // entry is reported and skipped.
+    prog.stage("location renames").await;
+    let location_renames = location_renames.trim();
+    if location_renames.is_empty() {
+        summary.push_str("rename-location: untouched\n");
+    } else {
+        let mut targets = Vec::new();
+        for line in location_renames.lines().filter(|l| !l.trim().is_empty()) {
+            match line.split_once('=') {
+                Some((target, name)) if !target.trim().is_empty() => {
+                    targets.push((apply::RenameTarget::parse(target), name.to_string()));
+                }
+                _ => summary.push_str(&format!(
+                    "rename-location: skipped malformed entry {line:?}\n"
+                )),
+            }
+        }
+        match apply::rename_locations_by_target(&mut patcher, &targets) {
+            Ok(rep) => {
+                for (i, old, new) in &rep.renames {
+                    summary.push_str(&format!(
+                        "rename-location: landmark {i} {old:?} -> {new:?}\n"
+                    ));
+                }
+                summary.push_str(&format!(
+                    "rename-location: {} world-map label(s), {} scene banner(s)\n",
+                    rep.world_map_records, rep.scene_banners
+                ));
+                for name in &rep.unmatched {
+                    summary.push_str(&format!("rename-location: {name:?} matched no place\n"));
+                }
+                for idx in &rep.skipped {
+                    summary.push_str(&format!(
+                        "rename-location: scene bundle {idx} left vanilla (would not fit)\n"
+                    ));
+                }
+                if rep.is_empty() {
+                    summary.push_str("rename-location: nothing changed (names already match)\n");
+                }
+            }
+            Err(e) => summary.push_str(&format!("rename-location: {e}\n")),
+        }
+    }
+
+    // Arts damage-power edits: comma/space/newline-separated `COMBO=VALUE`
+    // tokens (`RDLDL=0x16`). `VALUE` is a power-encoding byte (`0` disables, or
+    // `0x0C..=0x1F` = a damage tier; lower = weaker). A bad entry is reported
+    // and skipped.
+    prog.stage("arts tuning").await;
+    let arts_powers = arts_powers.trim();
+    if arts_powers.is_empty() {
+        summary.push_str("arts-power: untouched\n");
+    } else {
+        for tok in arts_powers
+            .split([',', ';', '\n', ' '])
+            .filter(|t| !t.trim().is_empty())
+        {
+            let parsed = tok.split_once('=').and_then(|(c, v)| {
+                let combo = legaia_patcher::arts_power::parse_combo(c.trim())?;
+                let vs = v.trim();
+                let value = vs
+                    .strip_prefix("0x")
+                    .or_else(|| vs.strip_prefix("0X"))
+                    .map(|h| u8::from_str_radix(h, 16))
+                    .unwrap_or_else(|| vs.parse::<u8>())
+                    .ok()?;
+                (value == 0 || legaia_patcher::arts_power::is_power_byte(value))
+                    .then_some((combo, value))
+            });
+            match parsed {
+                Some((combo, value)) => {
+                    match apply::set_arts_power(&mut patcher, &[(combo, value)]) {
+                        Ok(rep) if rep.edits.is_empty() => {
+                            summary.push_str(&format!("arts-power: {tok} unchanged\n"))
+                        }
+                        Ok(rep) => {
+                            for e in &rep.edits {
+                                let combo: String = e
+                                    .combo
+                                    .iter()
+                                    .map(legaia_patcher::arts_power::command_glyph)
+                                    .collect();
+                                summary.push_str(&format!(
+                                    "arts-power: {combo} ({:?}) -> {value:#04X}\n",
+                                    e.character
+                                ));
+                            }
+                        }
+                        Err(e) => summary.push_str(&format!("arts-power: {e}\n")),
+                    }
+                }
+                None => summary.push_str(&format!("arts-power: skipped malformed entry {tok:?}\n")),
+            }
+        }
+    }
+
+    // Super Art damage-power edits: `NAME=VALUE` tokens
+    // (`Tri-Somersault=0x1A`). Super Art names contain spaces, so this field
+    // splits on commas / semicolons / newlines only - never on a space. A Super
+    // Art has no combo and no arts-name-table row, so it is addressed by name
+    // and located through its finisher action constant in the character's own
+    // `record0` art block. A bad entry is reported and skipped.
+    let super_art_powers = super_art_powers.trim();
+    if super_art_powers.is_empty() {
+        summary.push_str("super-art-power: untouched\n");
+    } else {
+        for tok in super_art_powers
+            .split([',', ';', '\n'])
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+        {
+            let parsed = tok.split_once('=').and_then(|(n, v)| {
+                let hits = legaia_patcher::super_art_power::find_super_art(n.trim(), None);
+                let art = (hits.len() == 1).then_some(hits[0])?;
+                let vs = v.trim();
+                let value = vs
+                    .strip_prefix("0x")
+                    .or_else(|| vs.strip_prefix("0X"))
+                    .map(|h| u8::from_str_radix(h, 16))
+                    .unwrap_or_else(|| vs.parse::<u8>())
+                    .ok()?;
+                legaia_patcher::super_art_power::is_accepted_power(value).then_some((art, value))
+            });
+            match parsed {
+                Some((art, value)) => {
+                    match apply::set_super_art_power(&mut patcher, &[(art, value)]) {
+                        Ok(rep) if rep.edits.is_empty() => {
+                            summary.push_str(&format!("super-art-power: {} unchanged\n", art.name))
+                        }
+                        Ok(rep) => {
+                            for e in &rep.edits {
+                                summary.push_str(&format!(
+                                    "super-art-power: {} ({:?}) -> {value:#04X}\n",
+                                    e.name, e.character
+                                ));
+                            }
+                        }
+                        Err(e) => summary.push_str(&format!("super-art-power: {e}\n")),
+                    }
+                }
+                None => summary.push_str(&format!(
+                    "super-art-power: skipped malformed entry {tok:?}\n"
+                )),
+            }
+        }
+    }
+
+    // Arts AP override: comma/space/newline-separated `[CHARACTER:]COMBO=AMOUNT`
+    // tokens (`Vahn:RDLDL=10`). In `arts_ap_grants` the amount is AP granted per
+    // use (the art becomes castable at any AP level and adds that much, clamped
+    // at 100); in `arts_ap_costs` it is the flat AP the art charges, replacing
+    // retail's computed `multiplier x command count`. Each entry lands in its own
+    // per-(character, row) config cell, so one character's art never moves
+    // another's. Mutually exclusive with shiny-seru (guarded above).
+    let arts_ap_grants = arts_ap_grants.trim();
+    let arts_ap_costs = arts_ap_costs.trim();
+    if arts_ap_grants.is_empty() && arts_ap_costs.is_empty() {
+        summary.push_str("arts-ap: untouched\n");
+    } else {
+        let mut specs: Vec<legaia_patcher::arts_ap_grant::ArtApSpec> = Vec::new();
+        for (src, grant) in [(arts_ap_grants, true), (arts_ap_costs, false)] {
+            for tok in src
+                .split([',', ';', '\n', ' '])
+                .filter(|t| !t.trim().is_empty())
+            {
+                match parse_art_ap_token(tok, grant) {
+                    Some(s) => specs.push(s),
+                    None => {
+                        summary.push_str(&format!("arts-ap: skipped malformed entry {tok:?}\n"))
+                    }
+                }
+            }
+        }
+        if specs.is_empty() {
+            summary.push_str("arts-ap: no valid entries\n");
+        } else {
+            match apply::inject_arts_ap_grant(&mut patcher, &specs) {
+                Ok(rep) => {
+                    for g in &rep.resolved {
+                        let combo = legaia_patcher::arts_ap_grant::combo_str(&g.combo);
+                        let what = if g.mode.is_grant() {
+                            format!("grants {} AP", g.mode.amount())
+                        } else {
+                            format!("costs {} AP", g.mode.amount())
+                        };
+                        summary.push_str(&format!(
+                            "arts-ap: {:?} {combo} {:?} {what} (menu list now reads {}, was {})\n",
+                            g.character, g.name, g.display_ap, g.previous_display_ap
+                        ));
+                    }
+                }
+                Err(e) => summary.push_str(&format!("arts-ap: {e}\n")),
+            }
+        }
+    }
+
+    prog.stage("treasure chests").await;
+    match chest_mode {
+        Some(m) => {
+            // Protect every quest / key / story item by default (same disc-derived
+            // set as the CLI), so the in-browser patcher behaves identically: no
+            // quest item is moved out of its chest or dropped into another.
+            let keep_static: std::collections::BTreeSet<u8> =
+                match legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54") {
+                    Some(scus) => legaia_patcher::items::default_static_chest_items(&scus),
+                    None => legaia_patcher::items::DEFAULT_STATIC_CHEST_ITEMS
+                        .iter()
+                        .copied()
+                        .collect(),
+                };
+            let rep = apply::randomize_chests(&mut patcher, &pool, seed_n, m, &keep_static)
+                .map_err(|e| err(format!("chests: {e}")))?;
+            summary.push_str(&format!(
+                "chests: {} of {} sites changed across {} scenes ({}); {} kept static\n",
+                rep.items_changed,
+                rep.sites_total,
+                rep.scenes_changed,
+                chests,
+                keep_static.len()
+            ));
+        }
+        None => summary.push_str("chests: untouched\n"),
+    }
+
+    prog.stage("town shops").await;
+    match shop_mode {
+        Some(m) => {
+            let rep = apply::randomize_shops(&mut patcher, seed_n, m)
+                .map_err(|e| err(format!("shops: {e}")))?;
+            summary.push_str(&format!(
+                "shops: {} of {} town-shop slots changed across {} scenes ({})\n",
+                rep.items_changed, rep.slots_total, rep.scenes_changed, shops
+            ));
+        }
+        None => summary.push_str("shops: untouched\n"),
+    }
+
+    prog.stage("casino prizes").await;
+    match casino_mode {
+        Some(m) => {
+            let changed = apply::randomize_casino(&mut patcher, seed_n, m)
+                .map_err(|e| err(format!("casino: {e}")))?;
+            summary.push_str(&format!(
+                "casino: {changed} prize slot(s) changed ({casino})\n"
+            ));
+        }
+        None => summary.push_str("casino: untouched\n"),
+    }
+
+    prog.stage("monster stats").await;
+    match monster_stats_mode {
+        Some(m) => {
+            let rep = apply::randomize_monster_stats(&mut patcher, seed_n, m)
+                .map_err(|e| err(format!("monster-stats: {e}")))?;
+            summary.push_str(&format!(
+                "monster-stats: {} monsters changed, {} fields ({})\n",
+                rep.monsters_changed, rep.fields_changed, monster_stats
+            ));
+        }
+        None => summary.push_str("monster-stats: untouched\n"),
+    }
+
+    // Enemy difficulty scale: a multiplier over every monster's combat stats,
+    // with its own value for random encounters and for bosses (empty or `1` =
+    // retail). Sequenced after the stat randomizer so it scales whatever that
+    // pass dealt out. The per-group split rides inside this same string - the
+    // page emits `regular:...|boss:...` when the two halves differ - so widening
+    // the knob needed no new argument on this boundary.
+    prog.stage("enemy tuning scales").await;
+    let enemy_stat_scale = enemy_stat_scale.trim();
+    if enemy_stat_scale.is_empty() {
+        summary.push_str("enemy-stat-scale: 1x (retail)\n");
+    } else {
+        match legaia_patcher::monster_stats::ScaleProfile::parse(enemy_stat_scale) {
+            Ok(scale) if scale.is_retail() => {
+                summary.push_str("enemy-stat-scale: 1x (retail)\n");
+            }
+            Ok(scale) => match apply::scale_monster_stats_profile(&mut patcher, scale) {
+                Ok(rep) if scale.is_uniform() => summary.push_str(&format!(
+                    "enemy-stat-scale: {scale} ({} monsters changed, {} stats)\n",
+                    rep.monsters_changed, rep.fields_changed
+                )),
+                Ok(rep) => summary.push_str(&format!(
+                    "enemy-stat-scale: {scale} ({} monsters changed incl. {} bosses, {} stats)\n",
+                    rep.monsters_changed, rep.bosses_changed, rep.fields_changed
+                )),
+                Err(e) => summary.push_str(&format!("enemy-stat-scale: {e}\n")),
+            },
+            Err(e) => summary.push_str(&format!("enemy-stat-scale: skipped - {e}\n")),
+        }
+    }
+
+    // EXP multiplier: scales every monster's base-EXP reward halfword (empty
+    // or 1 = retail). Seedless, same shape as the difficulty scale above.
+    let exp_scale = exp_scale.trim();
+    if exp_scale.is_empty() {
+        summary.push_str("exp-scale: 1x (retail)\n");
+    } else {
+        match legaia_patcher::monster_stats::ScalePermille::parse(exp_scale) {
+            Ok(scale) if scale.is_retail() => {
+                summary.push_str("exp-scale: 1x (retail)\n");
+            }
+            Ok(scale) => match apply::scale_monster_exp(&mut patcher, scale) {
+                Ok(rep) => summary.push_str(&format!(
+                    "exp-scale: {scale} ({} monsters changed)\n",
+                    rep.monsters_changed
+                )),
+                Err(e) => summary.push_str(&format!("exp-scale: {e}\n")),
+            },
+            Err(e) => summary.push_str(&format!("exp-scale: skipped - {e}\n")),
+        }
+    }
+
+    // Seru catch-rate override: one flat percent into every capturable
+    // record's catch-chance byte (empty = retail per-monster rates).
+    let seru_catch_rate = seru_catch_rate.trim();
+    if seru_catch_rate.is_empty() {
+        summary.push_str("seru-catch-rate: retail\n");
+    } else {
+        match legaia_patcher::rewards::parse_catch_rate(seru_catch_rate) {
+            Ok(pct) => match apply::set_seru_catch_rate(&mut patcher, pct) {
+                Ok(rep) => summary.push_str(&format!(
+                    "seru-catch-rate: {pct}% ({} monsters changed)\n",
+                    rep.monsters_changed
+                )),
+                Err(e) => summary.push_str(&format!("seru-catch-rate: {e}\n")),
+            },
+            Err(e) => summary.push_str(&format!("seru-catch-rate: skipped - {e}\n")),
+        }
+    }
+
+    // Delilas party swap (empty = off): play as the mapped siblings, the
+    // ravine duels field Vahn / Noa / Gala models. Runs after
+    // --delilas-challenge (same ordering as the CLI - the challenge cuts
+    // its slim dome clones from the pre-swap blocks). The single heaviest
+    // stage in the whole run (player files + monster blocks + field forms
+    // + XA banks), so it gets its own progress label.
+    prog.stage("Delilas party swap").await;
+    let delilas_party = delilas_party.trim();
+    if delilas_party.is_empty() {
+        summary.push_str("delilas-party: off\n");
+    } else {
+        // Arts-voice mode for the swapped shout banks; an empty or
+        // unknown value falls back to the default (original).
+        let arts_voice = delilas_arts_voice
+            .trim()
+            .parse::<legaia_patcher::delilas_voice_fx::ArtsVoiceMode>()
+            .unwrap_or_default();
+        // Move mode for the swapped kit; an empty or unknown value falls
+        // back to the retail-preserving default (hybrid).
+        let move_mode = delilas_moves
+            .trim()
+            .parse::<legaia_patcher::delilas_party::DelilasMoveMode>()
+            .unwrap_or_default();
+        match legaia_patcher::delilas_party::PartyMapping::parse(delilas_party) {
+            Ok(mapping) => {
+                let cast_route = if shiny_seru
+                    || show_super_arts
+                    || super_arts_pack
+                    || !arts_ap_grants.trim().is_empty()
+                    || !arts_ap_costs.trim().is_empty()
+                    || oscillating
+                {
+                    legaia_patcher::delilas_party::CastRoutePolicy::ArenaTaken
+                } else {
+                    legaia_patcher::delilas_party::CastRoutePolicy::Install
+                };
+                match legaia_patcher::delilas_party::apply_delilas_party(
+                    &mut patcher,
+                    &mapping,
+                    arts_voice,
+                    move_mode,
+                    cast_route,
+                ) {
+                    Ok(rep) if rep.changed => {
+                        summary.push_str(&format!(
+                            "delilas-party: playing as {} / {} / {} (duels field the heroes); \
+                             moves: {move_mode}; arts voices: {arts_voice}\n",
+                            mapping.vahn.display_name(),
+                            mapping.noa.display_name(),
+                            mapping.gala.display_name()
+                        ));
+                        for note in rep.notes.iter().filter(|n| n.contains("cast route")) {
+                            summary.push_str(&format!("  {note}\n"));
+                        }
+                    }
+                    Ok(_) => summary.push_str("delilas-party: already applied\n"),
+                    // A mid-apply error leaves the image partially
+                    // swapped (the swap touches many entries before the
+                    // failing one) - shipping that as a "skipped" note
+                    // would hand the user a broken hybrid ROM. Fail the
+                    // whole patch instead, like the CLI does.
+                    Err(e) => {
+                        return Err(JsValue::from_str(&format!(
+                            "delilas-party failed mid-apply ({e:#}); no ROM was produced - \
+                             the image would have been a partial hybrid"
+                        )));
+                    }
+                }
+            }
+            Err(e) => summary.push_str(&format!("delilas-party: skipped - {e}\n")),
+        }
+    }
+
+    // Enemy attack-count multiplier: divides each attack entry's AGL-cost
+    // byte so the per-round AGL budget affords more (or fewer) strikes
+    // (empty or 1 = retail). Seedless, same shape as the scales above.
+    let enemy_attack_count = enemy_attack_count.trim();
+    if enemy_attack_count.is_empty() {
+        summary.push_str("enemy-attack-count: 1x (retail)\n");
+    } else {
+        match legaia_patcher::monster_stats::ScalePermille::parse(enemy_attack_count) {
+            Ok(scale) if scale.is_retail() => {
+                summary.push_str("enemy-attack-count: 1x (retail)\n");
+            }
+            Ok(scale) => match apply::scale_enemy_attack_count(&mut patcher, scale) {
+                Ok(rep) => summary.push_str(&format!(
+                    "enemy-attack-count: {scale} ({} monsters changed, {} attack entries)\n",
+                    rep.monsters_changed, rep.entries_changed
+                )),
+                Err(e) => summary.push_str(&format!("enemy-attack-count: {e}\n")),
+            },
+            Err(e) => summary.push_str(&format!("enemy-attack-count: skipped - {e}\n")),
+        }
+    }
+
+    prog.stage("move powers").await;
+    match move_power_mode {
+        Some(m) => {
+            let changed = apply::randomize_move_powers(&mut patcher, seed_n, m)
+                .map_err(|e| err(format!("move-power: {e}")))?;
+            summary.push_str(&format!(
+                "move-power: {changed} special-attack power(s) changed ({move_power})\n"
+            ));
+        }
+        None => summary.push_str("move-power: untouched\n"),
+    }
+
+    prog.stage("element affinity").await;
+    match element_affinity_mode {
+        Some(m) => {
+            let changed = apply::randomize_element_affinity(&mut patcher, seed_n, m)
+                .map_err(|e| err(format!("element-affinity: {e}")))?;
+            summary.push_str(&format!(
+                "element-affinity: {changed} matrix cell(s) changed ({element_affinity})\n"
+            ));
+        }
+        None => summary.push_str("element-affinity: untouched\n"),
+    }
+
+    prog.stage("spell costs").await;
+    match spell_cost_mode {
+        Some(m) => {
+            let changed = apply::randomize_spell_costs(&mut patcher, seed_n, m)
+                .map_err(|e| err(format!("spell-cost: {e}")))?;
+            summary.push_str(&format!(
+                "spell-cost: {changed} spell MP cost(s) changed ({spell_cost})\n"
+            ));
+        }
+        None => summary.push_str("spell-cost: untouched\n"),
+    }
+
+    prog.stage("equipment bonuses").await;
+    match equip_bonus_mode {
+        Some(m) => {
+            let changed = apply::randomize_equip_bonuses(&mut patcher, seed_n, m)
+                .map_err(|e| err(format!("equip-bonus: {e}")))?;
+            summary.push_str(&format!(
+                "equip-bonus: {changed} bonus row(s) changed ({equip_bonus})\n"
+            ));
+        }
+        None => summary.push_str("equip-bonus: untouched\n"),
+    }
+
+    prog.stage("weapon specialty").await;
+    if weapon_specialty {
+        let rep = apply::randomize_weapon_specialty(&mut patcher, seed_n)
+            .map_err(|e| err(format!("weapon-specialty: {e}")))?;
+        let map = rep
+            .assignments
+            .iter()
+            .map(|a| format!("{}->{}", a.character, a.to))
+            .collect::<Vec<_>>()
+            .join(", ");
+        summary.push_str(&format!(
+            "weapon-specialty: reassigned ({map}); {} weapon(s) rewritten\n",
+            rep.weapons_changed
+        ));
+    } else {
+        summary.push_str("weapon-specialty: untouched\n");
+    }
+
+    prog.stage("equipment edits").await;
+    let equipment_edits = apply::parse_edit_lists(swing_costs, equip_owners)
+        .map_err(|e| err(format!("equipment: {e}")))?;
+    if equipment_edits.is_empty() {
+        summary.push_str("equipment: untouched\n");
+    } else {
+        let rep = apply::apply_equipment_edits(&mut patcher, &equipment_edits)
+            .map_err(|e| err(format!("equipment: {e}")))?;
+        summary.push_str(&format!(
+            "equipment: {} swing cost(s) rewritten, {} owner row(s) changed\n",
+            rep.costs_changed, rep.owners_changed
+        ));
+        for (c, what) in &rep.costs_no_section {
+            summary.push_str(&format!(
+                "  {c} has no battle section or record for {what}; no cost to set\n"
+            ));
+        }
+        for (c, what) in &rep.costs_skipped_fit {
+            summary.push_str(&format!(
+                "  skipped: {c} {what} does not recompress into its slot\n"
+            ));
+        }
+        for (id, sib) in &rep.owners_shared_rows {
+            let s: Vec<String> = sib.iter().map(|i| format!("0x{i:02X}")).collect();
+            summary.push_str(&format!(
+                "  item 0x{id:02X} shares its stat row with {}; their owners moved too\n",
+                s.join(", ")
+            ));
+        }
+        for n in apply::fall_through_notes(&rep.owners_without_section) {
+            summary.push_str(&format!("  {n}\n"));
+        }
+        for n in apply::transplant_notes(&rep) {
+            summary.push_str(&format!("  {n}\n"));
+        }
+    }
+
+    prog.stage("steal items").await;
+    match steal_mode {
+        Some(m) => {
+            let (plan, rep) = apply::randomize_steals(&mut patcher, &pool, seed_n, m)
+                .map_err(|e| err(format!("steals: {e}")))?;
+            summary.push_str(&format!(
+                "steals: {} of {} stealable monsters reassigned ({})\n",
+                rep.items_changed,
+                plan.len(),
+                steals
+            ));
+        }
+        None => summary.push_str("steals: untouched\n"),
+    }
+
+    prog.stage("arts combos").await;
+    match arts_mode {
+        Some(m) => {
+            let (_plan, rep) = apply::randomize_arts(&mut patcher, seed_n, m)
+                .map_err(|e| err(format!("arts: {e}")))?;
+            summary.push_str(&format!(
+                "arts: {} of {} arts re-combo'd ({})\n",
+                rep.combos_changed, rep.arts, arts
+            ));
+        }
+        None => summary.push_str("arts: untouched\n"),
+    }
+
+    prog.stage("doors").await;
+    match door_mode {
+        Some(m) => {
+            let coupling = match door_coupling {
+                "decoupled" => apply::DoorCoupling::Decoupled,
+                _ => apply::DoorCoupling::Coupled,
+            };
+            let rep = apply::randomize_doors(&mut patcher, seed_n, m, coupling)
+                .map_err(|e| err(format!("doors: {e}")))?;
+            summary.push_str(&format!(
+                "doors: {} of {} sites changed across {} scenes ({}, {})\n",
+                rep.sites_changed, rep.sites_total, rep.scenes_changed, doors, door_coupling
+            ));
+            if !rep.skipped.is_empty() {
+                summary.push_str(&format!(
+                    "  {} hub scene(s) too big to grow in place, kept original doors\n",
+                    rep.skipped.len()
+                ));
+            }
+        }
+        None => summary.push_str("doors: untouched\n"),
+    }
+
+    prog.stage("house doors").await;
+    match house_door_mode {
+        Some(legaia_patcher::drops::DropMode::Shuffle) => {
+            let rep = apply::randomize_house_doors(
+                &mut patcher,
+                seed_n,
+                legaia_patcher::drops::DropMode::Shuffle,
+            )
+            .map_err(|e| err(format!("house-doors: {e}")))?;
+            summary.push_str(&format!(
+                "house-doors: {} of {} door-warp targets shuffled across {} scenes\n",
+                rep.sites_changed, rep.sites_total, rep.scenes_changed
+            ));
+            summary.push_str(&format!(
+                "map-doors: {} of {} kind-0 teleports rewired across {} scenes\n",
+                rep.map.sites_changed, rep.map.sites_total, rep.map.scenes_changed
+            ));
+        }
+        Some(_) => summary.push_str("house-doors: only `shuffle` supported; untouched\n"),
+        None => summary.push_str("house-doors: untouched\n"),
+    }
+
+    prog.stage("starting items").await;
+    let seed_opts = legaia_patcher::starting_items::StartingSeedOptions {
+        random_items: starting_items,
+        door_of_wind,
+        incense,
+        speed_chain,
+        chicken_heart,
+        good_luck_bell,
+        all_warps,
+        // The in-browser patcher doesn't surface explicit item picks yet; the CLI
+        // `--start-with` flag does. Leave it empty so web behaviour is unchanged.
+        extra_items: Vec::new(),
+    };
+    if seed_opts.is_active() {
+        let rep = apply::randomize_starting_items(&mut patcher, seed_n, &seed_opts)
+            .map_err(|e| err(format!("starting-items: {e}")))?;
+        // With a random fill requested, the seeded bag contains seed-derived
+        // draws - listing their names would spoil the run before it starts.
+        // Only the convenience toggles (which the user picked themselves) are
+        // ever named; a randomized bag is reported count-only.
+        if starting_items > 0 {
+            summary.push_str(&format!(
+                "starting-items: new game begins with {} item(s) (randomized - names hidden, no spoilers)\n",
+                rep.items_set
+            ));
+        } else {
+            let names = legaia_iso::iso9660::read_file_in_image(patcher.image(), "SCUS_942.54")
+                .and_then(|scus| legaia_asset::item_names::ItemNameTable::from_scus(&scus));
+            let list: Vec<String> = rep
+                .items
+                .iter()
+                .map(|(id, count)| {
+                    let nm = names.as_ref().and_then(|t| t.name(*id)).unwrap_or("?");
+                    format!("{count}x {nm}")
+                })
+                .collect();
+            summary.push_str(&format!(
+                "starting-items: new game begins with {} item(s): {}\n",
+                rep.items_set,
+                list.join(", ")
+            ));
+        }
+        if rep.all_warps {
+            summary.push_str("all-warps: every Door of Wind destination unlocked from the start\n");
+        }
+        // Items beyond the 7-slot direct-seed cap are granted on top via a silent
+        // GIVE_ITEM block injected into the opening scene (see `starting_bag`), so
+        // the explicit convenience items AND the full requested random fill land.
+        let overflow = legaia_patcher::starting_items::overflow_bag(seed_n, &seed_opts);
+        if !overflow.is_empty() {
+            let bag = apply::apply_starting_bag(
+                &mut patcher,
+                &overflow,
+                legaia_patcher::starting_bag::DEFAULT_GUARD_BIT,
+            )
+            .map_err(|e| err(format!("starting-items overflow: {e}")))?;
+            if bag.applied {
+                // Overflow slots are always part of the random fill - count
+                // only, same no-spoiler rule as the direct seed above.
+                summary.push_str(&format!(
+                    "starting-items: + {} more via the opening scene\n",
+                    overflow.len()
+                ));
+            } else {
+                summary.push_str(&format!(
+                    "starting-items: WARNING - {} overflow item(s) could not be injected; \
+                     bag truncated to the direct seed\n",
+                    overflow.len()
+                ));
+            }
+        }
+    } else {
+        summary.push_str("starting-items: untouched (vanilla Healing Leaf x5)\n");
+    }
+
+    prog.stage("starting level").await;
+    if legaia_patcher::starting_level::is_active(starting_level) {
+        let rep = apply::apply_starting_level(&mut patcher, starting_level)
+            .map_err(|e| err(format!("starting-level: {e}")))?;
+        summary.push_str(&format!(
+            "starting-level: starting party begins at level {} ({} slot(s) leveled; \
+             lead HP {}, MP {}, ATK {})\n",
+            rep.level, rep.slots_leveled, rep.stats[0], rep.stats[1], rep.stats[3]
+        ));
+    } else {
+        summary.push_str("starting-level: untouched (vanilla level 1)\n");
+    }
+
+    // Language pack, phase 2 of 2: the SCUS name-table sections (see the
+    // phase-1 comment above for why they come after every randomizer pass).
+    prog.stage("language pack: name tables").await;
+    let mut lang_line = String::from("language: untouched (English)\n");
+    let mut lang_json = JsValue::NULL;
+    if let Some(pack) = &parsed_pack {
+        let report = import_pack_phase(&mut patcher, pack, ImportPhase::NamesOnly, false)
+            .map_err(|e| err(format!("apply language pack (names): {e}")))?;
+        lang_report.merge(report);
+        let sections = lang_report.section_counts(pack);
+        lang_line = format!(
+            "language ({}): {} strings translated{}\n{}",
+            pack.language,
+            lang_report.applied + lang_report.already_applied,
+            if lang_report.issues.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    " ({} line(s) skipped - over budget, non-encodable or not on this disc)",
+                    lang_report.issues.len()
+                )
+            },
+            relayout_line(&lang_report),
+        );
+        // Per-section rows live in the `lang` JSON object; the page renders
+        // them as the coverage block, so the text summary stays one line.
+        lang_json = lang_report_json(&pack.language, &lang_report, &sections)?;
+    }
+    summary.insert_str(0, &lang_line);
+
+    prog.stage("assembling patched image").await;
+    let patched = patcher.into_image();
+    let data = Uint8Array::new_with_length(patched.len() as u32);
+    data.copy_from(&patched);
+
+    let out = Object::new();
+    Reflect::set(&out, &"data".into(), &data)?;
+    Reflect::set(&out, &"summary".into(), &summary.into())?;
+    Reflect::set(&out, &"seed".into(), &seed_n.to_string().into())?;
+    Reflect::set(&out, &"lang".into(), &lang_json)?;
+    Ok(out.into())
+}

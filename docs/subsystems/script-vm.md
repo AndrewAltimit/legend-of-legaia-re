@@ -287,9 +287,27 @@ during it.
 Text is part of the same runner and is not reserved for cutscenes: when the
 next byte is a text segment, the loop stops and the context parks on the one
 shared dialog box (`+0x9C = 2`) until it closes, whichever context reached
-it. A record spawned by op `0x44` in free roam (`town01` `P2[25]`, the FMV
+it. The box has one owner at a time: a context that reaches text while the box
+is taken sits at `+0x9C = 1` and claims it only once the state word
+`0x801F2734` reads free (`1` / `4` / `7`, `0x80039F9C..0x80039FD8`), while
+every context that is not on text keeps its slice - the runner gates on the
+context's own `+0x9C`, never on the box. A record spawned by op `0x44` in free roam (`town01` `P2[25]`, the FMV
 hand-off to `town0b`; `town0e` `P2[5]`, the ending's hop to `edteien`) shows
 its lines and runs on past them.
+
+A conversation is the same runner on the talker's context, so a
+cross-context op inside it resolves its target byte like any other
+(`FUN_8003C83C`): `A3 F8 x z` seats the **player**, `CD F8 ..` tests the
+player's box, and `CC <id> 51 ..` walks the placement `<id>` names, not the
+talker. A `4A` wait parks the talk wherever it sits, before its first box
+included. `town0b`'s path out after the mist hangs on all of it: `P1[37]`'s
+night-before talk ends `A3 F8 20 63` then `21`, seating Vahn on the
+walled-in `P2[8]` tile `(32, 99)` so the crossing fires once the talk
+releases him (the village gathering, which raises `0x231`); the elder's
+`P1[55]` opens every talk with `CD F8 1E 5B 21 5C`, and only from inside
+`[30..33, 91..92]` does its `0x231` arm run - it waits eight frames, then
+sets `0x141` and changes to `map01`. The south gate stays painted shut
+(`P1[0]`'s `4C 71` rectangles while `0x147` is set and `0x141` clear).
 
 Port: `World::step_field_frame_slice` (the system-script gate,
 `FieldVmState::system_pass_open`), `World::field_scripts_held_for_battle`,
@@ -1096,7 +1114,7 @@ bounds-checks the sub-op (`< 0x16`) and jumps through the 22-entry JT at
 
 | Sub-op | Encoding | Callee (PROT 0900 unless noted) | PC delta |
 |---|---|---|---|
-| 0x10 | `[43, 0x10][x][y][w][h][tex_x][tex_y][clut_x][clut_y]` i16s + `rgb` u24 | `FUN_801F8004(operand+1)` - **sprite-widget spawn** (inline 19-byte record) | +21 |
+| 0x10 | `[43, 0x10][x][y][w][h][tex_x][tex_y][clut_x][clut_y]` i16s + `rgb` u24 | `FUN_801F8004(operand+1)` - **sprite-widget spawn** (inline 19-byte record; the widget script at record `+0x13` is the `0x40` run *after* this op, which the VM steps over as data) | +21 |
 | 0x11 | `[43, 0x11][l][t][r][b][dur]` u16s | `FUN_801F8D4C(l,t,r,b,dur)` - **screen-mask (iris) rect tween** | +12 |
 | 0x12 | `[43, 0x12][src_x][src_y][w][h][dst_x][dst_y]` s16s | `FUN_800468A4(6, …)` (SCUS) - **GP0 `0x80` VRAM→VRAM rect copy** into OT slot 6 (packet builder `FUN_80057914`; `src_y += 0xF0` under the back-buffer flag `DAT_8007B74C`); **dual call** when `w > 0xFF` with offset shifts `(+0xF0, _, -0xE0, _, +0x100, _)` and a 0x100 clamp - the same >256-wide two-page split as the panel widget. No on-disc scene script uses it. | +14 |
 | 0x13 | `[43, 0x13][x][y][w][h][tex_x][tex_y]` i16s | `FUN_801F88FC(operand)` - **image-panel spawn** (record read from operand+1) | +14 |

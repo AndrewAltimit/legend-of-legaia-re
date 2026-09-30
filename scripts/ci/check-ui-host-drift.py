@@ -486,7 +486,7 @@ NATIVE_REDRAW = "crates/engine-shell/src/bin/legaia-engine/window/event_handler/
 NATIVE_FIELD_RENDER = "crates/engine-shell/src/bin/legaia-engine/window/field_render.rs"
 NATIVE_GEOMETRY = "crates/engine-shell/src/bin/legaia-engine/window/geometry.rs"
 WEB_BOOT_TITLE = "crates/web-viewer/src/boot_title.rs"
-WEB_MINIGAMES_MUSCLE = "crates/web-viewer/src/minigames_muscle.rs"
+WEB_MINIGAMES_MUSCLE = "crates/web-viewer/src/minigames_muscle/exports.rs"
 WEB_PLAY_BATTLE = "crates/web-viewer/src/play_battle.rs"
 WEB_PLAY = "crates/web-viewer/src/play.rs"
 NATIVE_REDRAW_PASSES = (
@@ -2134,6 +2134,7 @@ DIAG_GATES: list[dict[str, object]] = [
     {"env": "LEGAIA_DIAG_NOFX", "additive": False, "note": "suppress the effect layer"},
     {"env": "LEGAIA_DIAG_NO_GHOSTS", "additive": False, "note": "suppress the battle after-image ghost pass (A/B attribution)"},
     {"env": "LEGAIA_DIAG_NOSEMI", "additive": False, "note": "semi-transparent blend off"},
+    {"env": "LEGAIA_DIAG_NO_DECO_CUE", "additive": False, "note": "drop the overworld decoration depth cue (before/after frames)"},
     {"env": "LEGAIA_DIAG_LAYERS", "additive": False, "note": "draw only the named layers"},
     {"env": "LEGAIA_DIAG_PLACE_RANGE", "additive": False, "note": "draw only placements [a,b)"},
     {"env": "LEGAIA_DIAG_MESHTEX", "additive": False, "note": "mesh/texture bind log"},

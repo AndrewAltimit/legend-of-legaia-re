@@ -30,6 +30,15 @@ The crate root (`src/lib.rs`) re-exports the glue every embedding shares:
   (pad-transition capture + deterministic playback).
 - [`scenarios`](src/scenarios.rs) - the engine integration-scenario manifest
   runner (boot a scenario headlessly, assert the SHA-256 of its `SaveFile`).
+- [`retail_compare`](src/retail_compare.rs) (+ `retail_compare_battle`,
+  `retail_compare_image`, `retail_compare_cli`) - the retail comparison
+  corpus behind `legaia-engine retail-compare`
+  ([`docs/tooling/retail-compare.md`](../../docs/tooling/retail-compare.md)).
+- [`tile_board_draws`](src/tile_board_draws.rs) - re-export of the
+  tile-board draw assembly, which lives in `legaia_engine_core::tile_board`
+  so the browser play page reaches it too.
+- [`xa_clip`](src/xa_clip.rs) - XA voice-clip dispatch arithmetic behind the
+  `xa-cue` census.
 
 ### Parity oracles
 
@@ -68,11 +77,11 @@ authoritative list; the broad groups are:
 
 | Group | Subcommands | What they do |
 |---|---|---|
-| Scene inspection | `info`, `list-scenes`, `clut-trace`, `man-scripts`, `xa-cue`, `dump-cutscene-map` | Headless reports on a scene's resolved asset chain / dropped CLUTs / MAN field-VM scripts / XA voice-cue slots, plus the CDNAME→`MV*` map as an editable TOML. |
+| Scene inspection | `info`, `list-scenes`, `clut-trace`, `man-scripts`, `xa-cue`, `config dump-cutscene-map` | Headless reports on a scene's resolved asset chain / dropped CLUTs / MAN field-VM scripts / XA voice-cue slots, plus the CDNAME→`MV*` map as an editable TOML. |
 | Run | `play`, `play-window`, `play-str`, `record` | Boot a scene headless (`play`) or in a wgpu window (`play-window`); play an MDEC movie (`play-str`); capture pad input to a replay (`record`). |
 | Asset export | `export-glb` | Bake a scene (or `--all-scenes`) into textured world / NPC / animated-prop `.glb`s + a placement manifest for Unity/VRChat or Blender; `--items` exports every equipment item as animated item-alone / with-limb `.glb`s ([`docs/tooling/vrchat-world-export.md`](../../docs/tooling/vrchat-world-export.md)). |
 | Save / config | `save`, `load`, `config` | Disk-save smoke round-trip + the keyboard→pad input mapping. The window's own Save writes `saves/slot_NN.bin` with the loaded scene as its resume point (LGSF `LGX5`), and Continue / Load re-enter that scene before hydrating the world, as retail does; a file without one loads onto the current scene. `load --card <image>` reads a block out of a real PSX memory-card image instead ([below](#memory-card-images)). |
-| Parity oracles | `vram-oracle`, `mode-trace`, `audio-trace`, `pcm-trace`, `sim-trace`, `replay`, `scenarios` | The harnesses above, plus the recomp differential's engine-side emitter, deterministic replay and the scenario-hash suite. |
+| Parity oracles | `vram-oracle`, `mode-trace`, `audio-trace`, `pcm-trace`, `sim-trace`, `replay`, `scenarios`, `retail-compare` | The harnesses above, plus the recomp differential's engine-side emitter, deterministic replay, the scenario-hash suite and the [retail comparison corpus](../../docs/tooling/retail-compare.md). |
 | Synthetic sessions | `battle`, `inventory`, `equip`, `title`, `save-select`, `encounter`, `target-pick`, `chain-editor`, `seru-capture`, `gte-replay` | Drive one engine subsystem's state machine headless from a scripted input string - no disc required. |
 
 ### Memory-card images
@@ -129,16 +138,17 @@ scene when it ends; press the same key again to quit.
 
 | Key | Minigame | Rules engine | Table source | Controls |
 |---|---|---|---|---|
-| `K` | Noa dance rhythm | `legaia_engine_core::dance` | dance overlay PROT 0980 | Square/Circle/Triangle are the three arrows (the retail pad bits) |
-| `L` | Fishing | `legaia_engine_core::fishing` | fishing overlay PROT 0972 | Cross casts then reels, Circle is the second reel button |
+| `K` / `U` | Noa dance rhythm (`U` = the how-to dance with the Disco King tutorial) | `legaia_engine_core::dance` | dance overlay PROT 0980 | Square/Circle/Triangle are the three arrows (the retail pad bits) |
+| `L` | Fishing | `legaia_engine_core::fishing` | fishing overlay PROT 0972 | Cross casts then reels, Square is the second reel button; `P` opens the point-exchange prize list |
 | `O` | Casino slot machine | `legaia_engine_core::slot_machine` | slot overlay PROT 0975 | Cross spins / stops each reel / collects |
-| `B` | Baka Fighter duel | `legaia_engine_core::baka_fighter` | Baka Fighter overlay PROT 0976 | Left/Right/Up throw the three rock-paper-scissors attacks, Down charges the special |
-| `M` | Muscle Dome contest | `legaia_engine_core::muscle_dome` | hand tables from battle overlay PROT 0898; card costs from the lead's player-file swing records | Left/Right/Up/Down commit the four strike-command cards under the point budget, Cross confirms/continues |
+| `B` | Baka Fighter duel | `legaia_engine_core::baka_fighter` | Baka Fighter overlay PROT 0976 | Square / Circle / Cross throw the three rock-paper-scissors attacks, Triangle commits the chargeable special (a port enhancement); Left / Right pick NEXT GAME / PAY OUT after a win |
+| `M` | Muscle Dome contest | `legaia_engine_core::muscle_dome` | hand tables from battle overlay PROT 0898; card costs from the lead's player-file swing records | Left/Right/Up/Down queue the four direction commands under the AP budget, Cross confirms/continues |
 
 Payouts and rewards land in real party state: a slot spin is the retail flat
 3-coin bet across all five paylines (1 coin during a feature) and quitting
 cashes the balance out into the casino coin bank; a best-of-3 Baka Fighter
-match win banks the ladder opponent's gold prize into party money; a Muscle
+match win's prize runs through the retail tally into the casino coin bank
+(NEXT GAME climbs the ladder, PAY OUT or a loss ends the visit); a Muscle
 Dome win credits the reward Seru through the capture kernel.
 
 In `play-window`, when the booted disc was randomized with `--seru-trade`,
@@ -154,11 +164,16 @@ root `src/bin/legaia-engine.rs` keeps only `main` + the clap dispatch):
 
 - `cli.rs` - the clap `Cli` / `Cmd` / `ConfigCmd` definitions (the help text
   doubles as the user-facing per-subcommand docs).
-- `commands.rs` - the headless subcommand implementations (scene inspection,
-  the oracle drivers, save/load, and the synthetic-session drivers).
-- `window.rs` - the winit + wgpu drivers: the `play-window` / `record`
-  engine viewer (`PlayWindowApp`) and the `play-str` movie player
-  (`StrPlayerApp`), plus their geometry / asset helpers.
+- `commands.rs` + `commands/` - the headless subcommand implementations
+  (`info`, `run`, `replay`, `trace`, `vram`, `sessions`, `export_glb`: scene
+  inspection, the oracle drivers, save/load, and the synthetic-session
+  drivers).
+- `window.rs` + `window/` - the winit + wgpu drivers: the `play-window` /
+  `record` engine viewer (`PlayWindowApp`, its `event_handler/` for input and
+  the redraw passes, and per-screen modules such as `battle`, `hud`,
+  `minigames`, `shop_windows`) and the `play-str` movie player
+  (`str_player`), plus their geometry / asset helpers.
+- `shared.rs` - helpers both halves use.
 
 ## Tests
 

@@ -188,7 +188,7 @@ classifies each code by the RAM region it targets. The community Legaia
 NTSC-U databases are embedded, so no input file is needed:
 
 ```bash
-./cheat-tool list                    # built-in databases
+./cheat-tool list                    # every entry of the built-in databases
 ./cheat-tool classify                # per-category roll-up
 ./cheat-tool extract-offsets         # codes that land in the character record
 ./cheat-tool parse my-cheats.cht     # or point it at your own file

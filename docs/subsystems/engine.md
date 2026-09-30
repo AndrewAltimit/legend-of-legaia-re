@@ -1,6 +1,6 @@
 # Engine reimplementation
 
-The from-scratch Rust port of the Legend of Legaia engine, written from the project's own reverse-engineering record - Ghidra-traced function dumps and live emulator probes. End-user model: the engine is a binary; the user supplies a disc image; the engine extracts the assets at first run and plays the game using from-scratch ports of every runtime subsystem.
+The from-scratch Rust port of the Legend of Legaia engine, written from the project's own reverse-engineering record - Ghidra-traced function dumps and live emulator probes. End-user model: the engine is a binary; the user supplies a disc image; the engine reads the assets straight off that image (`--disc`, no extraction step) and plays the game using from-scratch ports of every runtime subsystem.
 
 ## Goal
 
@@ -59,7 +59,7 @@ So the knob defaults on and the policy lifts it off retail framing, rather than 
 
 A mode the player can *enter* has to be one the player can *leave*, on every host, or reaching it is a softlock. `SceneHost::drain_minigame_warp` already states that invariant for its failure arms - "a script that armed a warp must never be left in a mode with no exit" - and it holds for the successful ones too.
 
-It is not free, because retail does not have one exit to port. Each of the five minigames quits through its own overlay's state machine: the slot cabinet's exit menu row, the duel's decided-match confirm, the arena's give-up arm. None of those was wired to a control on any shipped host - the native window exposes developer hotkeys (`O` / `B` / `M`) and the browser play page does not draw four of the five modes at all, so entering one there left a frozen field with the BGM still running and no input that did anything.
+It is not free, because retail does not have one exit to port. Each of the five minigames quits through its own overlay's state machine: the slot cabinet's exit menu row, the duel's decided-match confirm, the arena's give-up arm. None of those is wired to a control a player can find on either host - the native window's `O` / `B` / `M` are developer hotkeys and the browser play page has none - so without an engine-level exit, a minigame entered through its door would leave a frozen field with the BGM still running and no input that did anything.
 
 `World::poll_minigame_escape` is therefore an engine affordance rather than a port: Start leaves whichever minigame is live, through that game's own `exit_*`, and closes the mode-24 round trip (`World::minigame_return_warp`) when the entry came through a door warp. It lives in `World::tick`, so both hosts inherit it and neither can drift from the other. Pinned by `engine-shell/tests/casino_floor_softlock.rs`, which enters each of the five the way the door warp does and asserts a pad press gets back out.
 
@@ -84,22 +84,22 @@ The project deliberately does not describe this as "clean-room": the same people
 iso          ← (none)
 prot         → iso (conceptual)
 lzs          ← (none)
-asset        → lzs, prot
-tmd          ← (none)
+asset        → lzs, prot, tim, tmd, vab, mes, anm, mdec, bytes
+tmd          → tim
 tim          ← (none)
-xa           ← (none)
+xa           → iso
 vab          → xa  (shares SPU-ADPCM F0/F1 filter constants)
 mdt          ← (none)
 mes          ← (none)
 anm          ← (none)
-extract      → all of the above
+extract      → iso, prot, lzs, asset, tim, tmd, xa, font
 
 engine-vm     → asset, prot, art, anm       (VM layer; no GPU / audio deps)
 engine-core   → engine-vm + the parser crates
-engine-ui     → asset, tim, font            (draw-list builders; no wgpu)
-engine-render → engine-ui, asset, tim, font (wgpu; no engine-core dep)
+engine-ui     → engine-vm, asset, tim, font (draw-list builders; no wgpu)
+engine-render → engine-ui, engine-vm, asset, tim, font (wgpu; no engine-core dep)
 engine-audio  → xa, vab, seq, prot          (cpal + SPU model; no engine-core dep)
-engine-shell  → engine-core, engine-vm, engine-render, engine-audio
+engine-shell  → engine-core, engine-vm, engine-render, engine-audio (+ parser crates, mednafen, pcsxr)
 asset-viewer  → engine-*, all parser crates
 ```
 
@@ -196,7 +196,7 @@ Retail's adaptive frame step (`DAT_1F800393`) is a different quantity: the numbe
 - **Asset crates stay engine-agnostic.** `crates/tim`, `crates/tmd`, etc. don't depend on wgpu / winit / cpal.
 - **Mockable I/O for tests.** The disc read path is abstracted via `crates/iso::RawDisc`; the same pattern extends to file-system extraction so tests can run without a disc.
 - **Deterministic gameplay.** RNG seeded from a known value; physics tick on a fixed timestep. Required for any future TAS / verification work.
-- **Fixed-timestep game tick, uncapped render.** The windowed engine uses `wgpu::PresentMode::AutoVsync`; the render rate is driven by the display refresh. A `f64` accumulator in the event-loop handler converts wall-clock delta-time into an integer number of 1/60 s game ticks (capped at 4 per render frame to absorb minor VSync jitter without a runaway spiral). This separation means the game logic advances at a stable 60 Hz independent of the display refresh rate, and render frames can interpolate ahead-of-tick state in the future without changing the tick interface.
+- **Fixed-timestep game tick, uncapped render.** The windowed engine uses `wgpu::PresentMode::AutoVsync`; the render rate is driven by the display refresh. The shared `frame_step::SimStepper` ([the frame model](#the-frame-model)) converts wall-clock delta-time into whole 1/60 s game ticks, at most four per render frame, on both hosts. The game logic therefore advances at a stable 60 Hz independent of the display refresh rate.
 - **Quirks are preserved in the faithful mode, fixable outside it.** Quirky damage rounding and oddly-timed cutscenes are replicated exactly where the oracles measure - that is what keeps ground truth honest. Changing them is legitimate engine work, but it lands as a toggle over the faithful path, never a silent edit to it.
 - **Behaviour tests against runtime traces.** Inputs, RNG and frame outputs captured from the original game replay through the engine and diff against it - the [VRAM diff harness](#vram-diff-harness) and the [mode / audio parity oracles](../tooling/determinism-replay.md) are where that lands.
 
@@ -204,7 +204,7 @@ Retail's adaptive frame step (`DAT_1F800393`) is a different quantity: the numbe
 
 Every VM is a handler-by-handler translation: the opcode handler is dumped from Ghidra, hand-ported to Rust, and unit-tested against captured runtime traces. The target is behavioural fidelity per opcode, not byte-exactness of the VM's internals. Each VM abstracts its SCUS callbacks behind a `Host` trait, so the VM crate itself stays free of GPU and audio dependencies.
 
-- **Actor VM** - `crates/engine-vm/src/lib.rs`. 13 opcodes, full unit-test coverage. Drives the title screen sprite cluster.
+- **Actor VM** - `crates/engine-vm/src/lib.rs`. 13 opcodes, full unit-test coverage. `FUN_801D6628` is the menu overlay's window-widget script interpreter; its programs are the [window scripts](../formats/window-script.md) behind the shop / menu window choreography. See [actor VM](actor-vm.md).
 - **Field VM** - `crates/engine-vm/src/field.rs`. All 43 explicit opcodes of `FUN_801DE840`, with a `FieldHost` trait abstracting every SCUS callback. Cross-context dispatch (extended-bit prefix), YIELD caller-propagation, `Op49State` tristate, the `0x4C` outer-nibble dispatcher, and the `0x5x/0x6x/0x7x` default-route fourth-flag-bank dispatchers are all wired. See [script VM](script-vm.md).
 - **Move VM** - `crates/engine-vm/src/move_vm.rs`. All 71 main opcodes (`0x00..0x46`) of `FUN_80023070`, plus the `0x2F` extension dispatcher (61 sub-opcodes via `FUN_801D362C`). Per-frame entry is `actor_tick`, mirroring the gate at `FUN_80021DF4 + 0x80022B94`: skip when `wait_timer >= 0`, otherwise step, then report `Halted` if the post-call `flags & 0x8` bit is set. See [move VM](move-vm.md).
 - **Effect VM** - `crates/engine-vm/src/effect_vm.rs`. Slot pool (`Pool`), 28-byte `MasterSlot` + 32-byte `ChildSlot`, the `Pool::init_head` / `Pool::spawn` ports of `FUN_801DE914` / `FUN_801DFDF8`, and the per-frame `Pool::tick`. The retail walker's inlined per-state transitions do not form a clean opcode dispatch, so they are delegated to the host through the `EffectHost::advance_state` extension hook rather than ported as a table. See [effect VM](effect-vm.md).
@@ -225,7 +225,7 @@ The shell loop closes: title → save-select → field / encounter → battle �
 - **Save-select** (`engine-core::save_select::SaveSelectSession`) - slot-list browse with Load / Save / Delete confirms.
 - **Encounter system** (`engine-core::encounter`) - per-scene table + step-driven random battle trigger + 5-phase transition SM.
 - **Battle** - the [battle subsystem](battle.md) runs end to end, Tactical Arts included: the `FUN_801E295C` state machine above drives a scene the loader stages, with the party assembled from the player battle files' equipment sections. `engine-core::target_picker` is the post-action target cursor, parameterised on a `TargetKind` enum.
-- **Equipment catalog** (`engine-core::equipment`) - vanilla 30-entry table covering weapons / armor / accessories with character restrictions.
+- **Equipment catalog** (`engine-core::equipment`) - the typed 8-slot model plus a from-scratch vanilla table of weapons / armor / accessories with character restrictions, overridable per id (`EquipmentCatalog::set`).
 - **Seru capture + spell learning** (`engine-core::seru_learning`) - per-character per-Seru point accumulator with banner session.
 - **Tactical Arts chain editor** (`engine-core::tactical_arts_editor`) - menu-side compose + name + save flow with a per-character library.
 - **Field map + dialog** - the field-loader chain is wired, so scenes load and run their own MAN bytecode. `World::step_inline_dialogue` ports the retail dialog state machine `FUN_80039B7C` through the real field VM (default on; `play-window --simple-dialogue` opts back out to the segment-pool fallback).
@@ -268,6 +268,11 @@ The writer emits the highest version any populated field requires; readers accep
 | `vab <PATH> [--offset 0xN] [--sample N] [--rate Hz]` | One VAG sample from a VAB bank. |
 | `prot <PROT.DAT> [--cdname FILE] [--start N]` | Every PROT entry: auto-detects via the `categorize` classifier and shows / plays the first viewable sub-asset. |
 | `dialog <PATH> [--message N]` | A Compact MES blob through the `legaia-mes` interpreter and dialog player, against the extracted dialog font. Z/Enter advance past page breaks; N/P jump messages. |
+| `save-icons <PATH> [--tile N]` | The save-slot portrait sheet from the menu overlay (PROT 899), each tile through its own CLUT. |
+| `seq <SEQ> <VAB> [--vab-offset 0xN]` | A SEQ through the SsAPI-shape sequencer against a VAB bank, with a live status window. |
+| `field <SCENE>` | A CDNAME scene with the field VM stepping its event-script records; the HUD shows the VM PC, last `StepResult` and an opcode tally. |
+| `battle-scene [--queued-action N]` | The battle bundle driven by the battle-action state machine through `World::tick` in `SceneMode::Battle`. |
+| `world <SCENE>` | The `engine-core` `World` composite ticking over a CDNAME scene. |
 
 The PROT browser dispatch handles `tim_passthrough`, `tim_pack`, `data_field_streaming`, `scene_tmd_stream`, `scene_vab_stream`, and a VAB byte-search fallback for any class with embedded banks.
 
@@ -281,7 +286,7 @@ Open ports are tracked structurally rather than as a hand-maintained list: the [
 
 The WASM target runs the **engine itself**, not a second implementation of it: `legaia_web_viewer::runtime::LegaiaRuntime` owns a real [`SceneHost`](../../crates/engine-core/src/scene/host.rs), so the browser executes the same field / event VM, free-movement controller, floor sampler, NPC motion VMs, interaction probe, and inline-dialogue runner the native window drives. The host's per-frame contract is small: hand the engine a PSX pad word, tell it the camera azimuth (so the d-pad remaps camera-relative), tick it, draw what it reports. Rendering goes through the site's shared WebGL TMD renderer rather than `engine-render`'s wgpu path.
 
-What the browser host reaches today: field and town scenes (map, player, NPCs, doors, dialogue). What it does not: battles, the title / prologue chain, the pause-menu screens, and audio - each of those has its *state* ported but its *draw path* only in the native window (`engine-render`).
+The browser host reaches field and town scenes (map, player, NPCs, doors, dialogue), live battles (`play_battle*`), the title and the opening chain (`boot_title`, `play_cutscene`, `play_fmv`), the pause menu and shops (`play_menu`, `play_shop`), the minigames (`play_minigames`, `play_fishing`) and audio (`play_bgm`, `play_sfx`, `play_xa`). Each draws its own screen from the engine's state through the shared `engine-ui` builders rather than `engine-render`; per-feature parity between the two hosts is policed by the [host-drift](../tooling/host-drift.md) gates.
 
 Two responsibilities fall to any host that enters a scene without a door to arrive through - the browser's scene picker is the case that exists:
 
@@ -290,7 +295,7 @@ Two responsibilities fall to any host that enters a scene without a door to arri
   - otherwise the spawn relocates to a kind-0 door-arrival destination inside that component, or to the component's centroid. A warp arrival still overrides X/Z afterwards.
   - Hosts seating a player manually should also avoid gate-1 walk-on trigger tiles ([`SceneHost::tile_has_walk_on_trigger`]) - the first tick would fire it and warp the scene away.
   - If an entry-spawned record ends with the player parked inside a wall (a first-visit record's `MoveTo` choreography, e.g. izumi's spring), the helper-context teardown re-seats them at the resolved spawn (`World::step_helper_contexts`).
-- **Framing.** Retail authors a camera per scene; a generic follow camera puts a cave roof between the lens and the player. The browser host culls meshes straddling the camera-to-player line.
+- **Framing.** Both hosts run the engine's retail follow camera ([`camera_view`](../../crates/engine-core/src/camera_view.rs)), and neither culls geometry: a wall or roof between the lens and the player is handled by the camera-occlusion fade ([Fidelity and enhancements](#fidelity-and-enhancements)), which the browser stages through `play_occlusion_focus`.
 
 ## Provenance + memory hygiene
 

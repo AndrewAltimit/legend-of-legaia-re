@@ -40,6 +40,7 @@ common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
   - [Cutscene / FMV / summon](#cutscene--fmv--summon) - `cutscene_text`, `str_fmv_table`, `fmv_dispatch`, `summon_overlay`, `summon_readef`, `summon_creatures`
   - [Scene + MAN](#scene--man) - `man_section`, `man_edit`, scene tables
   - [TIM/TMD scan + catalog](#timtmd-scan--catalog)
+  - [Other modules](#other-modules)
 - [CLI](#cli)
 - [See also](#see-also)
 
@@ -323,7 +324,8 @@ it carries no `cop2` op of its own.
   four scalars are *fitted* to a retail framebuffer (the GTE control words are in
   COP2, not main RAM), solved on the five payline lamps and then verified by
   predicting every other element's rect. No Sony bytes committed (disc-gated
-  `the_slot_machines_3d_scene_decodes_and_projects_onto_the_retail_frame`).
+  `the_slot_machines_3d_scene_decodes_and_projects_onto_the_retail_frame` in
+  `crates/web-viewer/tests/minigames_wasm_api.rs`).
 
 ### `baka_opponents`
 
@@ -664,28 +666,50 @@ slot table `scene_asset_table` and its `scene_v12_table` variant are in the
 | `battle_texture_catalog` | A third texture tier keyed by `(entry, record, section, pool offset)`: the headerless 4bpp party-character art in the player battle files (PROT 863..866). Not TIMs - no magic, no header, geometry from the loader's rect table - so both TIM catalogs miss the family by construction. Admission is the exact-extent rule. Rows carry the same fields a `tim_deep_catalog` row does plus a human-readable `label` (item names join in via the descriptor's equipment id), and `decode_block` renders one to RGBA from just the PROT image + spans. |
 | `tim_labels` | Curated semantic labels for cataloged TIMs (raw + deep), keyed by content fingerprint: coarse visual categories + precise reverse-engineered pins for the boot/title/menu textures. Our own annotations, not asset bytes. |
 
+### Other modules
+
+| Module | What it covers |
+|---|---|
+| `absorb_caption` | The Seru-absorb caption pieces the battle HUD's screen element `0x59` composes (PROT 0898). |
+| `battle_jump_tables` | PROT 0898's `switch` jump tables and head string pool, bound to the instructions that read them. |
+| `battle_ui_strings` | Pinned disc coordinates of the battle command / prompt / banner labels. |
+| `boot_overlay` | Boot-time overlay + side-band asset resolution (which PROT entry each loader parameter names). CLI `asset boot-overlay`. |
+| `dance_art` / `dance_cast` | Dance-minigame presentation art (PROT 1230 TIM pack, HUD widget table, face-stamp rig) and cast / choreography tables. |
+| `equip_hand_frame` / `equip_transplant` | Cross-character weapon transplant: the hand-frame calibration between two player battle files, and the section-record grafting. |
+| `player_file_annex` | Player battle files whose slot region is annexed outside the PROT entry. |
+| `field_probe_tables` | The field overlay's three probe-offset tables, bound to their readers. |
+| `switch_tables` | `switch` jump tables in any overlay image, found from their dispatch. |
+| `inherited_tail` | Where an overlay image stops being its own content (the donor bytes at the end of its extent). |
+| `man_motion` | The motion-VM (`FUN_80038158`) script table, MAN tail-section 1. |
+| `minigame_art` / `minigame_sfx` | Minigame texture packs and the runtime SFX bank the minigame overlays fire into. |
+| `other3_roster` | The `OTHER3` dev module's selection roster (PROT 0974). |
+| `seru_trade` | Seru-trade vendor offers: the deterministic time-bucketed trade table shared by the patcher and the engine. |
+| `spell_anim_pairs` | The party cast trigger's per-spell anim-pair lists in PROT 0898 (`FUN_801DBF9C`). |
+| `victory_pose` | The static `SCUS_942.54` victory-pose table `FUN_8004E568` indexes. |
+| `xa_cue_table` | The static `SCUS_942.54` XA cue duration table at `DAT_800788B8`. |
+
 ## CLI
 
 ```bash
 asset describe         <input>            # parse + print descriptor
-asset decode           <input> <output>   # apply the dispatcher
-asset categorize       <PROT.DAT> [--cdname <CDNAME.TXT>]
+asset decode           <input> --type-size 0xTTSSSSSS --offset 0xNN [--mode lzs|raw] [-o <out>]
+asset categorize       <PROT dir> [--cdname <CDNAME.TXT>]   # e.g. extracted/PROT
 asset account          <entry.BIN|index> [--funcs <dir>] [--depth N] [--json]
-asset find-overlay     <PROT.DAT>         # MIPS-code candidate scan
+asset find-overlay     <PROT dir>         # MIPS-code candidate scan
 asset overlay          list|extract|verify|ghidra|scan|find-sig|generate   # static overlay pipeline
-asset tim-scan         <input>            # locate embedded TIMs (per-entry, lenient)
+asset tim-scan         <PROT dir>         # locate embedded TIMs (per-entry, lenient)
 asset tim-catalog      <PROT.DAT>         # flat strict TIM catalog (--out f.tsv|f.json, --rollup)
 asset tim-deep-catalog <PROT.DAT>         # TIMs inside LZS-compressed sections (--out, --rollup)
 asset battle-texture-catalog <PROT.DAT>   # headerless 4bpp battle art in PROT 863..866 (--scus for names, --out, --rollup)
 asset tim-render-distinct <PROT.DAT> --out <dir>  # decode each distinct TIM to PNG (local only; drives tim_labels)
-asset tmd-scan         <input>            # locate embedded TMDs
-asset clut-finder                         # which entry's TIM supplies a VRAM CLUT cell
+asset tmd-scan         <PROT dir>         # locate embedded TMDs
+asset clut-finder     <x> <y>            # which entry's TIM supplies a VRAM CLUT cell
 asset stage / stage-scan
 asset field-pack / field-pack-scan
 asset effect-bundle / effect-bundle-scan
 asset battle-data-pack / battle-data-pack-scan
 asset befect-cluster   <PROT.DAT> --cdname <CDNAME.TXT> --out <dir>
-asset monster-archive  [--id N --obj/--texture-png/--anim/--glb/--dump-block/--write-block]
+asset monster-archive  <PROT 0867 .BIN> [--id N --obj/--texture-png/--anim/--glb/--dump-block/--write-block]
 asset character-pack / battle-char-pack / field-char-tex
 asset player-anm / player-anm-scan
 asset scene-v12 / scene-v12-scan
@@ -699,8 +723,8 @@ asset summon-creatures                    # summon -> creature map (--scus, --js
 asset mode-table / worldmap-menu / item-tables   # SCUS_942.54 static tables
 asset spell-names / steal-table / accessory-passive   # more SCUS_942.54 tables (--json)
 asset sfx-table / new-game / level-up             # more SCUS_942.54 tables (--json)
-asset extract <PROT.DAT> <out_dir>        # full per-entry extraction
-asset validate                            # cross-check detector coverage
+asset extract          <entry.BIN> --out <dir>   # unpack a streaming entry's TIM_LIST / TMD chunks
+asset validate         <PROT dir>         # strict checks on each CDNAME block's first entry
 ```
 
 `asset --help` lists the rest. `categorize` is the one most other tools

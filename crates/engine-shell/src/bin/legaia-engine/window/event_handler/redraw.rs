@@ -26,6 +26,14 @@ fn present_target<'a>(
 }
 
 impl PlayWindowApp {
+    /// Whether a `LEGAIA_CAPTURE_GATE` capture's phase holds this frame.
+    fn capture_phase_met(&self) -> bool {
+        self.screenshot
+            .as_ref()
+            .and_then(|sc| sc.phase_gate.as_ref())
+            .is_some_and(|g| g.met(&self.session.host.world))
+    }
+
     pub(super) fn handle_redraw(&mut self) {
         // Opt-in frame profiler (`LEGAIA_PROFILE=1`; see
         // `legaia_engine_render::profile`). Free when off - each call is a
@@ -73,6 +81,12 @@ impl PlayWindowApp {
         // `tick_frame` on those frames, freezes them the same way.
         let mut field_tail_ticks = 0;
         for _ in 0..run_ticks {
+            // A phase-gated capture stops ticking the frame its phase is
+            // reached, so the frame drawn is that one and not up to three
+            // ticks past it.
+            if self.capture_phase_met() {
+                break;
+            }
             self.pad = if std::mem::take(&mut first_tick) {
                 first_tick_pad
             } else {
@@ -1286,6 +1300,7 @@ impl PlayWindowApp {
                     color_draws.push(ColorSceneDraw {
                         mesh: m,
                         mvp: g.mvp,
+                        cue: None,
                     });
                 }
             } else if let Some(g) = self.dance_venue_gpu.as_ref() {
@@ -1315,6 +1330,7 @@ impl PlayWindowApp {
                         color_draws.push(ColorSceneDraw {
                             mesh,
                             mvp: cam * *model,
+                            cue: None,
                         });
                     }
                 }
@@ -1350,23 +1366,54 @@ impl PlayWindowApp {
                         cue: None,
                     });
                 }
-                for (mesh_idx, model) in self.world_map_terrain_draws.iter() {
+                // Retail's decoration sweep (`FUN_801F69D8`) hazes each
+                // decoration toward `0xD0` by one `IR0` taken from its
+                // origin's camera depth; the landmarks ahead of
+                // `world_map_deco_start` carry no such cue.
+                // `LEGAIA_DIAG_NO_DECO_CUE` drops it, for before/after frames.
+                let deco_curve = if std::env::var_os("LEGAIA_DIAG_NO_DECO_CUE").is_some() {
+                    0.0
+                } else {
+                    self.overworld_curve_scale(cutscene_cam)
+                };
+                let deco_cue = |mvp: Mat4| {
+                    legaia_engine_core::overworld_ground_cue::decoration_draw_cue(
+                        mvp.w_axis.w,
+                        deco_curve,
+                    )
+                    .map(|c| legaia_engine_render::DrawCue {
+                        far: c.far,
+                        near_z: -1.0,
+                        far_z: 0.0,
+                        max_ir0: c.ir0,
+                    })
+                };
+                let (deco_start, color_deco_start) = self.world_map_deco_start;
+                for (i, (mesh_idx, model)) in self.world_map_terrain_draws.iter().enumerate() {
                     if let Some(mesh) = self.meshes.get(*mesh_idx) {
+                        let mvp = cam * *model;
                         draws.push(SceneDraw {
                             mesh,
-                            mvp: cam * *model,
-                            cue: None,
+                            mvp,
+                            cue: if i >= deco_start { deco_cue(mvp) } else { None },
                         });
                     }
                 }
                 // The untextured half of the same stamps (hut roofs,
                 // colour-only landmarks) on the colour pipeline - the
                 // field branch's pairing, which this branch lacked.
-                for (mesh_idx, model) in self.world_map_terrain_color_draws.iter() {
+                for (i, (mesh_idx, model)) in self.world_map_terrain_color_draws.iter().enumerate()
+                {
                     if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
+                        let mvp = cam * *model;
                         color_draws.push(ColorSceneDraw {
                             mesh,
-                            mvp: cam * *model,
+                            mvp,
+                            cue: if i >= color_deco_start {
+                                deco_cue(mvp)
+                            } else {
+                                None
+                            },
                         });
                     }
                 }
@@ -1425,6 +1472,7 @@ impl PlayWindowApp {
                             color_draws.push(ColorSceneDraw {
                                 mesh: cmesh,
                                 mvp: cam * self.actor_model(cslot),
+                                cue: None,
                             });
                         }
                     }
@@ -1506,6 +1554,7 @@ impl PlayWindowApp {
                         color_draws.push(ColorSceneDraw {
                             mesh: cmesh,
                             mvp: cam * Self::battle_stage_model(),
+                            cue: None,
                         });
                     }
                 } else {
@@ -1597,6 +1646,7 @@ impl PlayWindowApp {
                                 color_draws.push(ColorSceneDraw {
                                     mesh,
                                     mvp: cam * *model,
+                                    cue: None,
                                 });
                             }
                         }
@@ -1684,6 +1734,7 @@ impl PlayWindowApp {
                                 color_draws.push(ColorSceneDraw {
                                     mesh,
                                     mvp: cam * *model,
+                                    cue: None,
                                 });
                             }
                         }
@@ -1692,6 +1743,7 @@ impl PlayWindowApp {
                                 color_draws.push(ColorSceneDraw {
                                     mesh,
                                     mvp: cam * *model,
+                                    cue: None,
                                 });
                             }
                         }
@@ -1699,6 +1751,7 @@ impl PlayWindowApp {
                             color_draws.push(ColorSceneDraw {
                                 mesh,
                                 mvp: cam * *model,
+                                cue: None,
                             });
                         }
                     }
@@ -1723,6 +1776,7 @@ impl PlayWindowApp {
                         color_draws.push(ColorSceneDraw {
                             mesh,
                             mvp: cam * self.actor_model(slot),
+                            cue: None,
                         });
                     }
                     // Field NPCs + animated props at their live
@@ -1820,12 +1874,14 @@ impl PlayWindowApp {
                             (Some(mesh), _) => color_draws.push(ColorSceneDraw {
                                 mesh,
                                 mvp: cam * model,
+                                cue: None,
                             }),
                             (None, Some(ci)) => {
                                 if let Some(mesh) = self.color_meshes.get(ci) {
                                     color_draws.push(ColorSceneDraw {
                                         mesh,
                                         mvp: cam * model,
+                                        cue: None,
                                     });
                                 }
                             }
@@ -2177,6 +2233,7 @@ impl PlayWindowApp {
                         color_draws.push(ColorSceneDraw {
                             mesh,
                             mvp: actor_cam * push * *model,
+                            cue: None,
                         });
                     }
                 }
@@ -2513,31 +2570,17 @@ impl PlayWindowApp {
                     cue: None,
                 });
             }
-            // Screen-effect widget overlays (the PROT-0900 mask /
-            // sprite / panel / letterbox family, field-VM op 0x43):
-            // composite the world's published per-frame draw list
-            // above the 3D scene under an orthographic screen-space
-            // MVP (PSX 320x240 frame). Solid border/band quads ride
-            // the untextured colour pipeline; panel + sprite quads
-            // ride the VRAM pipeline (clut/texpage sampled like any
-            // retail prim). Depth layers mirror the retail OT slots:
-            // sprites (+0xc) in front, panels (+0x10), mask/bands
-            // (+0x1c) behind. The letterbox gradient feather strips
-            // are subtractive-blend draws the engine doesn't model
-            // yet and are skipped.
-            let (screen_fx_solid, screen_fx_tex) = self.build_screen_fx_meshes(r);
+            // The move-FX afterimage streak, under an orthographic
+            // screen-space MVP (PSX 320x240 frame). The PROT-0900
+            // screen-effect widgets (mask / sprite / panel / letterbox) are
+            // screen primitives instead - see `screen_fx_screen_prims` below.
+            let screen_fx_tex = self.build_screen_fx_meshes(r);
             let screen_fx_mvp = Mat4::orthographic_rh(0.0, 320.0, 240.0, 0.0, 0.0, 1.0);
             if let Some(m) = &screen_fx_tex {
                 draws.push(SceneDraw {
                     mesh: m,
                     mvp: screen_fx_mvp,
                     cue: None,
-                });
-            }
-            if let Some(m) = &screen_fx_solid {
-                color_draws.push(ColorSceneDraw {
-                    mesh: m,
-                    mvp: screen_fx_mvp,
                 });
             }
             // The floating value readout is a screen-space primitive run, not
@@ -2616,6 +2659,9 @@ impl PlayWindowApp {
             light_prims.extend(self.field_drop_shadow_prims());
             light_prims.extend(move_strip_prims);
             light_prims.extend(self.field_light_screen_prims());
+            // The PROT-0900 screen-effect widgets sort in the same pass, by
+            // their retail OT slots - the play page's single-list order.
+            light_prims.extend(self.screen_fx_screen_prims());
             screen_prims.extend(self.weapon_trail_screen_prims(r));
             // The world's one live full-screen fade (the summon band's two
             // flashes, the escape white-out), drawn through the same kernel
@@ -2718,10 +2764,31 @@ impl PlayWindowApp {
             }
             // Screenshot harness: at the target tick, read the frame back
             // offscreen and exit instead of presenting to the window.
-            let capture_due = self
+            let gated = self
                 .screenshot
                 .as_ref()
-                .is_some_and(|sc| sc.path.is_some() && self.tick_no >= sc.capture_tick);
+                .is_some_and(|sc| sc.path.is_some() && sc.phase_gate.is_some());
+            if gated
+                && !self.capture_phase_met()
+                && self
+                    .screenshot
+                    .as_ref()
+                    .is_some_and(|sc| self.tick_no >= sc.capture_tick)
+            {
+                eprintln!(
+                    "phase gate not met by tick {} (action state 0x{:02X})",
+                    self.tick_no, self.session.host.world.battle_ctx.action_state
+                );
+                std::process::exit(3);
+            }
+            let capture_due = self.screenshot.as_ref().is_some_and(|sc| {
+                sc.path.is_some()
+                    && if gated {
+                        self.capture_phase_met()
+                    } else {
+                        self.tick_no >= sc.capture_tick
+                    }
+            });
             if capture_due {
                 let path = self
                     .screenshot

@@ -786,7 +786,9 @@ pub trait FieldHost {
     ///
     /// 21-byte instruction. The original calls `FUN_801F8004(operand + 1)` -
     /// the PROT-0900 sprite-widget spawner with its inline 19-byte record
-    /// (`engine-core::screen_fx::SpriteRecord`). PC += 21.
+    /// (`engine-core::screen_fx::SpriteRecord`). PC += 21. `payload` runs
+    /// from the record to the end of the script: the widget's own script
+    /// starts at record `+0x13`, on the bytes after this instruction.
     fn op43_widget_sprite_spawn(&mut self, payload: &[u8]) {
         let _ = payload;
     }

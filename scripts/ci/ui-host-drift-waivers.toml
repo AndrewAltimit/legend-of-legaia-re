@@ -705,3 +705,9 @@ reason = "The sub-step table in docs/tooling/host-drift.md is this row in long f
 [[boot_install]]
 method = "set_active_scene_label"
 reason = "Not a table install: the native `--world-map` launcher's failure arm (`BootSession::enter_world_map_live` when `enter_world_map_scene` errors) labels the world by hand so the window still has a camera. The page has no such launcher arm - its scene entries go through `SceneHost::enter_field_scene` / `enter_world_map_scene`, which set the label themselves."
+
+[[frame_kernel]]
+host = "native"
+kernel = "capture_phase_met"
+host_only = true
+reason = "The screenshot harness's phase gate (`LEGAIA_CAPTURE_GATE`), which the retail comparison corpus sets on the `play-window` child it captures an engine frame from. A capture-harness trigger a browser has no counterpart for, not a player surface."

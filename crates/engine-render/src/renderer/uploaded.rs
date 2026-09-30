@@ -504,6 +504,10 @@ pub struct DrawCue {
 pub struct ColorSceneDraw<'a> {
     pub mesh: &'a UploadedColorMesh,
     pub mvp: Mat4,
+    /// Per-draw GTE depth cue, as [`SceneDraw::cue`]. An untextured prim
+    /// fills with the cued packet colour, so the far term is the far colour
+    /// itself.
+    pub cue: Option<DrawCue>,
 }
 
 /// Multi-actor scene payload. Drawn against a single shared VRAM with one

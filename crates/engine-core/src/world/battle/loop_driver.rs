@@ -271,6 +271,16 @@ impl World {
             return None;
         }
 
+        // Retail-compare debug seed: a capture taken mid-cast starts its cast
+        // from the first command prompt, bypassing the pad.
+        if self.battle.inflight_seed.is_some()
+            && self.battle.command.is_some()
+            && self.battle.flow == crate::battle_flow::BattleFlowState::TurnPrompt
+            && let Some(seed) = self.battle.inflight_seed.take()
+        {
+            self.dispatch_inflight_seed(seed);
+        }
+
         // Player-driven: while the retail-model Arts command input is open
         // the action SM is parked - the per-press entry / review / Begin
         // flow owns the pad until the entered sequence runs (turn cycles)
@@ -924,6 +934,43 @@ impl World {
         self.cycle_battle_turn();
     }
 
+    /// Consume an [`InflightCastSeed`]: close the command surfaces, enter the
+    /// round's execution band and dispatch the seeded cast on the caster, as
+    /// if its turn had come up in initiative order. Retail's `+0x1DD` target
+    /// byte picks the picker row the spell's target resolution reads: `8` /
+    /// `9` are the party / enemy group codes, anything else an absolute slot.
+    pub(in crate::world) fn dispatch_inflight_seed(&mut self, seed: InflightCastSeed) {
+        use crate::battle_round::{PendingPartyAction, RoundPhase};
+        use crate::target_picker::CursorRow;
+        let party_count = self.party.party_count.clamp(1, 3);
+        let (target_row, target_slot) = match seed.target {
+            8 => (CursorRow::Ally, 0),
+            9 => (CursorRow::Enemy, 0),
+            t if t < party_count => (CursorRow::Ally, t),
+            t => (CursorRow::Enemy, t.saturating_sub(party_count)),
+        };
+        self.battle.command = None;
+        self.battle.spell_menu = None;
+        self.battle.round_flow.phase = RoundPhase::Execute;
+        self.set_battle_flow(crate::battle_flow::BattleFlowState::Idle);
+        // The capture's MP is already charged (the Magic band debits at
+        // `0x28`, before the summon band); credit the catalog price back so
+        // the band's own debit lands on the captured figure.
+        let price = u16::from(self.tables.spell_catalog.mp_cost(seed.spell_id));
+        if let Some(a) = self.actors.get_mut(usize::from(seed.caster)) {
+            a.battle.action_category = 2;
+            a.battle.mp = a.battle.mp.saturating_add(price);
+        }
+        self.dispatch_pending_party_action(
+            seed.caster,
+            PendingPartyAction::Spell {
+                spell_id: seed.spell_id,
+                target_row,
+                target_slot,
+            },
+        );
+    }
+
     /// Commit `action` as `actor`'s command for this round and walk the ring
     /// on - retail's ten-site commit idiom (`0x801D16AC` and siblings):
     /// advance to the next member that still owes a command, or - once none
@@ -1312,6 +1359,23 @@ impl World {
                 .flag_bits
                 .has(ActorFlags::ADVANCE_DONE);
             if staged_behind && event_commit_due(&src.event_frames, src.event_lock, frame) {
+                // The cut takes the entry's `+0x0E` displacement pro-rated by
+                // how far the clip got - no HP test on this path, unlike the
+                // natural end (`+0x228` taken as clear, as there).
+                // PORT: FUN_80047430 (`0x80047950..0x80047A28`)
+                let a = &mut self.actors[i];
+                if let Some(p) = a.battle_animation.as_ref() {
+                    let step = p.end_root_step();
+                    if step != 0 {
+                        let frames = p.frame_count().min(255) as u8;
+                        let (sin, cos) = vm::battle_action::motion::trig12(a.battle.facing_angle);
+                        let (dx, dz) = vm::battle_action::motion::event_cut_root_step(
+                            sin, cos, step, frame, frames,
+                        );
+                        a.move_state.world_x = a.move_state.world_x.wrapping_add(dx as i16);
+                        a.move_state.world_z = a.move_state.world_z.wrapping_add(dz as i16);
+                    }
+                }
                 self.commit_staged_battle_anim_at_boundary(i);
             }
         }

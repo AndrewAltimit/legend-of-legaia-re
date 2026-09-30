@@ -91,7 +91,7 @@ use legaia_engine_core::man_field_scripts::{
     overworld_portal_sites, scene_destinations, scene_man_carriers, system_flag_census,
 };
 use legaia_engine_core::scene::{FmvHandoffOutcome, ProtIndex, Scene, SceneTickEvent};
-use legaia_engine_core::world::{SceneMode, WorldMapEntityConfig};
+use legaia_engine_core::world::{SceneMode, WorldMapEntityConfig, world_map_camera_relative_bits};
 use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
 use legaia_engine_vm::field_disasm::FlagKind;
 use serde::Deserialize;
@@ -842,11 +842,23 @@ fn picker_pad(session: &BootSession) -> Option<u16> {
         .as_ref()
         .and_then(|id| menu(&id.bytecode, id.panel.as_ref()?))
         .or_else(|| {
-            w.cutscene
+            // The FIRST box, picker or not: a later record's picker the
+            // engine does not route to must not steer the pad (`dolk2`'s
+            // market beat stacks three spawned records' boxes; pressing Down
+            // for the third's picker left the first's page unturned).
+            let tl = w
+                .cutscene
                 .timeline
                 .iter()
-                .chain(w.field_vm.helper_contexts.iter())
-                .find_map(|tl| menu(&tl.bytecode, tl.dialog.as_ref()?))
+                .filter(|t| t.dialog.is_some())
+                .chain(
+                    w.field_vm
+                        .helper_contexts
+                        .iter()
+                        .filter(|t| t.dialog.is_some()),
+                )
+                .next()?;
+            menu(&tl.bytecode, tl.dialog.as_ref()?)
         });
     let Some((key, n, cursor, takes)) = open else {
         PICKS.with(|p| p.borrow_mut().1 = None);
@@ -1764,33 +1776,44 @@ fn pad_for_step(session: &BootSession, dwx: i16, dwz: i16) -> u16 {
             .ctrl
             .as_ref()
             .map_or(0, |c| c.azimuth);
-        let (dx, dz) = (f32::from(dwx), f32::from(dwz));
-        let len = (dx * dx + dz * dz).sqrt();
-        if len == 0.0 {
+        if dwx == 0 && dwz == 0 {
             return 0;
         }
-        let theta = (az as f32) / 4096.0 * std::f32::consts::TAU;
-        let (sin, cos) = theta.sin_cos();
-        let (dx, dz) = (dx / len, dz / len);
-        let sx = dx * cos + dz * sin;
-        let sy = -dx * sin + dz * cos;
-        const T: f32 = 0.382_683_43;
-        (
-            if sx > T {
-                1
-            } else if sx < -T {
-                -1
-            } else {
-                0
-            },
-            if sy > T {
-                1
-            } else if sy < -T {
-                -1
-            } else {
-                0
-            },
-        )
+        // Invert the overworld remap exactly: of the eight pad directions,
+        // take the one whose world bits are the wanted step's, else the one
+        // sharing most of them with none opposed. A rounded rotation turns a
+        // cardinal step into a diagonal whenever the camera sits off an
+        // axis, and a diagonal cannot thread a one-tile cave mouth.
+        let want = |b: u16| -> (i16, i16) {
+            (
+                i16::from(b & 0x2000 != 0) - i16::from(b & 0x8000 != 0),
+                i16::from(b & 0x1000 != 0) - i16::from(b & 0x4000 != 0),
+            )
+        };
+        let target = (dwx.signum(), dwz.signum());
+        let mut best: Option<(i32, (i32, i32))> = None;
+        for sx in -1..=1i32 {
+            for sy in -1..=1i32 {
+                if sx == 0 && sy == 0 {
+                    continue;
+                }
+                let (wx, wz) = want(world_map_camera_relative_bits(az, sx, sy));
+                let axis = |w: i16, t: i16| -> i32 {
+                    if w == t {
+                        2
+                    } else if w == 0 || t == 0 {
+                        0
+                    } else {
+                        -4
+                    }
+                };
+                let score = axis(wx, target.0) + axis(wz, target.1);
+                if best.is_none_or(|(b, _)| score > b) {
+                    best = Some((score, (sx, sy)));
+                }
+            }
+        }
+        best.map_or((0, 0), |(_, (sx, sy))| (sx as i16, sy as i16))
     } else {
         let az = session.host.world.locomotion.camera_azimuth;
         let quadrant = (u32::from(az).wrapping_add(512) / 1024) & 3;
@@ -2149,9 +2172,81 @@ fn plan_path(
     goal: (i16, i16),
     avoid: &HashSet<(i32, i32)>,
 ) -> Option<Vec<Cell>> {
+    // A goal outside the start's walk component costs a whole-component
+    // search every time it is asked for, and a stalled walk asks every
+    // second. The component and its nearest cell do not move while the
+    // scene, the flags and the avoid set stand, so a start inside a
+    // remembered failure plans straight to that cell instead.
+    let key = plan_key(session, goal, avoid);
+    let hit = UNREACHED.with(|u| {
+        u.borrow()
+            .get(&key)
+            .filter(|(seen, _)| seen.contains(&from))
+            .map(|&(_, best)| best)
+    });
+    if let Some(best) = hit {
+        if best == from {
+            return None;
+        }
+        if let Some((path, _, _)) = plan_search(session, from, goal, Some(best), avoid)
+            && path.last() == Some(&best)
+        {
+            return Some(path);
+        }
+    }
+    let (path, seen, reached) = plan_search(session, from, goal, None, avoid)?;
+    if !reached && seen.len() > UNREACHED_MIN_CELLS {
+        let best = path.last().copied().unwrap_or(from);
+        UNREACHED.with(|u| {
+            let mut u = u.borrow_mut();
+            if u.len() > 64 {
+                u.clear();
+            }
+            u.insert(key, (seen, best));
+        });
+    }
+    (!path.is_empty()).then_some(path)
+}
+
+/// Searches smaller than this are cheap enough to repeat.
+const UNREACHED_MIN_CELLS: usize = 4_000;
+
+/// What a failed plan's answer depends on: the scene, the goal, the avoid
+/// set and the story flags (which open and shut doors and paint walls).
+type PlanKey = (String, (i16, i16), u64, u64);
+
+thread_local! {
+    /// Failed plans: the cells the search reached and the one nearest the
+    /// goal, by [`PlanKey`].
+    static UNREACHED: std::cell::RefCell<HashMap<PlanKey, (HashSet<Cell>, Cell)>> =
+        std::cell::RefCell::new(HashMap::new());
+}
+
+fn plan_key(session: &BootSession, goal: (i16, i16), avoid: &HashSet<(i32, i32)>) -> PlanKey {
+    use std::hash::{Hash, Hasher};
+    let mut a: Vec<&(i32, i32)> = avoid.iter().collect();
+    a.sort();
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    a.hash(&mut h);
+    let mut f = std::collections::hash_map::DefaultHasher::new();
+    session.host.world.flags.system_flags.hash(&mut f);
+    (scene_name(session), goal, h.finish(), f.finish())
+}
+
+/// The A* behind [`plan_path`]: the route toward `goal`'s tile - or toward
+/// `target` when one is given, a cell already known reachable - the cells
+/// the search reached, and whether it reached its aim.
+#[allow(clippy::type_complexity)]
+fn plan_search(
+    session: &BootSession,
+    from: Cell,
+    goal: (i16, i16),
+    target: Option<Cell>,
+    avoid: &HashSet<(i32, i32)>,
+) -> Option<(Vec<Cell>, HashSet<Cell>, bool)> {
     let w = &session.host.world;
     let gw = tile_center(goal);
-    let gc = cell_of(gw.0, gw.1);
+    let gc = target.unwrap_or_else(|| cell_of(gw.0, gw.1));
     let goal_tile = (i32::from(goal.0), i32::from(goal.1));
     let warps = teleports(session);
     let doors = object_doors(session);
@@ -2266,10 +2361,13 @@ fn plan_path(
         let (n, cells) = p.get();
         p.set((n + 1, cells + s.parent.len() as u64));
     });
-    if best == from {
-        return None;
-    }
-    walk_back(&s.parent, from, best)
+    let reached = best == gc;
+    let path = if best == from {
+        Vec::new()
+    } else {
+        walk_back(&s.parent, from, best)?
+    };
+    Some((path, s.parent.into_keys().collect(), reached))
 }
 
 /// The route from `from` to `to` along `parent` links. A chain longer than
@@ -2869,7 +2967,24 @@ fn pad_walk(
                 let next: Vec<(i16, i16)> = path.iter().take(4).map(|&c| cell_center(c)).collect();
                 let w = &session.host.world;
                 if std::env::var_os("LEGAIA_FGL_WALK_DEBUG").is_some() {
-                    // 64-unit wall sub-cells around the player, Z rows.
+                    let lock = w
+                        .player_actor_slot
+                        .and_then(|sl| w.actors.get(usize::from(sl)))
+                        .map(|a| a.move_state.flags);
+                    eprintln!(
+                        "      [stall] holder {} mode {:?} player flags {lock:x?} pad {:#06x} next {next:?} here-blocked {:?} actor {:?}",
+                        holder(session),
+                        w.mode,
+                        w.input.pad(),
+                        (0..4)
+                            .map(|d| w.field_dir_blocked(px, pz, d))
+                            .collect::<Vec<_>>(),
+                        (0..4)
+                            .map(|d| w.field_actor_dir_blocked(px, pz, d))
+                            .collect::<Vec<_>>()
+                    );
+                    // 64-unit wall sub-cells around the player, Z rows. The
+                    // goal tile reads `G` where it is wall, `g` where open.
                     for dz in -24i16..=24 {
                         let row: String = (-24i16..=24)
                             .map(|dx| {
@@ -2879,7 +2994,7 @@ fn pad_walk(
                                 } else if dispatch_tile(x, z)
                                     == (i32::from(goal.0), i32::from(goal.1))
                                 {
-                                    'G'
+                                    if w.field_tile_is_wall(x, z) { 'G' } else { 'g' }
                                 } else if w.field_tile_is_wall(x, z) {
                                     '#'
                                 } else {
@@ -3240,6 +3355,9 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
         if p.park_gate_flag
             .is_some_and(|f| session.host.world.system_flag_test(f))
         {
+            continue;
+        }
+        if stager_overreaches(&mf, &man, p.placement_index) {
             continue;
         }
         let at = match (p.station_world, p.spawn_parked) {
@@ -3782,6 +3900,42 @@ fn overreaching_records(
         }
     }
     out
+}
+
+/// Did the retail run leave boss stager placement `p1_record` alone before
+/// the next milestone? Of the system flags its own record cleanly SETs and
+/// no record of the scene ever CLEARs - flags that, once set, would still
+/// show - the next anchor carries none. `town0b` P1[36], a loss-allowed
+/// fight (`50 00` then `3E FF 03`), raises `0x5C0` / `0x5C1` before its
+/// fight and the Hunter's Spring anchor has both clear; `town01` P1[10],
+/// Tetsu's spar, is played for the `0x22E` its record also raises.
+fn stager_overreaches(
+    mf: &legaia_asset::man_section::ManFile,
+    man: &[u8],
+    p1_record: usize,
+) -> bool {
+    use legaia_engine_core::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
+    let sites: Vec<_> = (0..3)
+        .flat_map(|p| walk_partition_gflag_sites(mf, man, p))
+        .filter(|s| s.bank == FlagBank::System && s.clean && !s.text_alias && !s.debug_menu)
+        .collect();
+    let cleared: BTreeSet<u16> = sites
+        .iter()
+        .filter(|s| s.kind == FlagKind::Clear)
+        .map(|s| s.flag)
+        .collect();
+    let lasting: BTreeSet<u16> = sites
+        .iter()
+        .filter(|s| {
+            s.partition == 1
+                && s.record == p1_record
+                && s.kind == FlagKind::Set
+                && s.flag != 0
+                && !cleared.contains(&s.flag)
+        })
+        .map(|s| s.flag)
+        .collect();
+    !lasting.is_empty() && !lasting.iter().any(|&f| next_anchor_has(f))
 }
 
 /// Rounds of the talk + walk-on beat passes per scene visit.

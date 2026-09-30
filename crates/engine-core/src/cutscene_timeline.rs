@@ -207,6 +207,10 @@ pub struct CutsceneTimeline {
     /// move a picker cursor). On dismissal the timeline resumes at the
     /// panel's final PC (past the consumed segment).
     pub dialog: Option<crate::dialog::OwnedDialogPanel>,
+    /// When [`Self::dialog`] was opened, in
+    /// [`crate::world::FieldVmState::dialog_claims`] order - which of several
+    /// contexts holding text got to the shared box first.
+    pub dialog_claim: u64,
     /// Per-byte "an instruction was executed here" map over
     /// [`Self::bytecode`], kept for the timeline's whole life. A backward
     /// jump into an already-executed PC means the record's linear
@@ -418,6 +422,7 @@ impl CutsceneTimeline {
             narration_pc: None,
             narration_pending_open: false,
             dialog: None,
+            dialog_claim: 0,
             visited,
             channel_wait: None,
             player_move_frames: 0,

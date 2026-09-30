@@ -67,7 +67,7 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.as_mut() else {
             return false;
         };
-        let seated = host.world.debug_seat_player(x, z);
+        let seated = host.debug_seat_standing(x, z);
         if seated {
             self.camera.zone.arm_arrival();
         }

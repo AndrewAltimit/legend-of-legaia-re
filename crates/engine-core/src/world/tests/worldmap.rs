@@ -553,6 +553,57 @@ fn world_map_walking_onto_minigame_door_auto_engages() {
     );
 }
 
+/// An object entrance (a `.MAP` object whose bind record runs to a `0x3F` -
+/// `map01` P0[10], the Drake castle door) is solid, so the player never
+/// stands on its tile: it engages on contact, from the leading probes that
+/// stop the step. A walk-on portal behind the same wall stays unreached.
+#[test]
+fn world_map_pressing_into_an_object_entrance_engages_it() {
+    let run = |object: bool| {
+        let mut world = World::default();
+        world.enter_world_map();
+        world.install_field_player(0);
+        world.set_world_map_encounter(false, 50, 0, 64);
+        // Wall off tile column 4 so the entrance tile (4, 3) cannot be
+        // entered from the -X side; the retail leading-edge probes stop the
+        // player a probe's length short of it, on tile 3.
+        world.locomotion.leading_edge_wall_probes = true;
+        world.paint_field_collision(1, (4, 5), (0, 0x80), 0);
+        world.install_world_map_entities_at(vec![(
+            WorldMapEntityConfig::OverworldPortal {
+                scene_name: "dolk".to_string(),
+                index: 0,
+                entry_x: 0,
+                entry_z: 0,
+                dir: 0,
+                record: 0,
+                object,
+            },
+            (560, 448),
+        )]);
+        world.actors[0].move_state.world_x = 256;
+        world.actors[0].move_state.world_z = 448;
+        world.set_pad(input::PadButton::Right.mask());
+        for _ in 0..200 {
+            let _ = world.tick();
+            if world
+                .drain_field_events()
+                .into_iter()
+                .any(|e| matches!(e, FieldEvent::WorldMapTransition { .. }))
+            {
+                return true;
+            }
+        }
+        assert!(
+            world.actors[0].move_state.world_x < 512,
+            "the wall holds the player off the entrance tile"
+        );
+        false
+    };
+    assert!(run(true), "pressing into an object entrance engages it");
+    assert!(!run(false), "a walk-on portal needs its tile");
+}
+
 /// Auto-engage is walk-onto-only: walking onto an NPC entity's tile fires
 /// neither a transition nor a door warp (NPCs are talk-to).
 #[test]

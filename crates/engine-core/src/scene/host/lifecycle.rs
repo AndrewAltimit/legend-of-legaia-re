@@ -276,6 +276,30 @@ impl SceneHost {
             .map(|c| c.cost)
     }
 
+    /// Seat the player on raw world `(x, z)` ([`crate::world::World::debug_seat_player`])
+    /// as a player **standing** there, not one arriving: the walk-on
+    /// dispatcher's last-tile pair is stamped with the seat tile, so a trigger
+    /// under the seat does not fire on the first tick. Walk-on records fire
+    /// on a tile *crossing* (`FUN_801D1EC4` compares the player's tile with
+    /// the stored pair and returns on a match), and a retail capture of a
+    /// player stood on a trigger tile holds that tile in the pair already -
+    /// the crossing that fired it, if any, is behind it. A debug affordance
+    /// shared by every seat host (`LEGAIA_SEAT`, the play page's
+    /// `play_debug_seat`, the retail comparison corpus).
+    ///
+    /// REF: FUN_801D1EC4
+    pub fn debug_seat_standing(&mut self, x: i16, z: i16) -> bool {
+        if !self.world.debug_seat_player(x, z) {
+            return false;
+        }
+        let quant = |w: i16| i32::from(w) >> 7;
+        let (tx, tz) = (quant(x), quant(z));
+        if (0..=0x7F).contains(&tx) && (0..=0x7F).contains(&tz) {
+            self.last_trigger_tile = Some((tx as u8, tz as u8));
+        }
+        true
+    }
+
     /// `true` when the world position `(world_x, world_z)` falls on a tile that
     /// carries a **gate-1 walk-on trigger** - the per-tile compare the field loop
     /// fires on a tile crossing (a town exit, a scripted story beat). Read-only

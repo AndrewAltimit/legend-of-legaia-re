@@ -65,6 +65,13 @@ and it lifts the row when the same rare table turns up under a module with an
 unrelated name. For `FUN_801D5DE0` in `shop.rs` that second half reads
 `0x801E4518 is also formed by FUN_801dc1cc, PORT-tagged in prize_exchange.rs`.
 
+A "module" is a source file, with one exception: a module split into a
+directory for size (`foo.rs` plus `foo/*.rs`, listed in the checker's
+`SPLIT_MODULES`) stays one module. The split is a move, so its files keep one
+sibling set and the parent file's finding keys - otherwise each child file
+would be judged against a fraction of its siblings, and every waiver keyed on
+the old path would stop matching.
+
 ### `dual-label` compares defining pages, and a pointer is not a claim
 
 Page relatedness starts from filename tokens, and that alone over-fires by a

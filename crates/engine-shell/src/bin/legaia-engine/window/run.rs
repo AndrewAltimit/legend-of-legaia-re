@@ -250,6 +250,20 @@ fn arm_requested_battle(session: &mut BootSession, spec: &str) {
     {
         world.seed_battle_stage_variant(v);
     }
+    // `LEGAIA_BATTLE_INFLIGHT=caster,spell,target`: dispatch that cast the
+    // moment the first command prompt opens - the retail comparison corpus's
+    // replay of a capture taken mid-cast (`InflightCastSeed`). A debug seam.
+    if let Some(seed) = std::env::var("LEGAIA_BATTLE_INFLIGHT").ok().and_then(|s| {
+        let v: Vec<u8> = s.split(',').filter_map(|p| p.trim().parse().ok()).collect();
+        (v.len() == 3).then(|| legaia_engine_core::world::InflightCastSeed {
+            caster: v[0],
+            spell_id: v[1],
+            target: v[2],
+        })
+    }) {
+        log::info!("play-window: LEGAIA_BATTLE_INFLIGHT seeds {seed:?} at the first prompt");
+        world.battle.inflight_seed = Some(seed);
+    }
     if world.force_encounter(row) {
         log::info!(
             "play-window: --battle armed formation row {row} in '{}' - the fight opens through \
@@ -625,7 +639,7 @@ pub(super) fn cmd_play_window_with_record(
             .filter_map(|v| v.trim().parse::<i16>().ok())
             .collect();
         if let [x, z] = xz[..]
-            && session.host.world.debug_seat_player(x, z)
+            && session.host.debug_seat_standing(x, z)
         {
             session.camera.zone.arm_arrival();
             log::info!("play-window: LEGAIA_SEAT seated the player at ({x}, {z})");
@@ -1249,6 +1263,7 @@ pub(super) fn cmd_play_window_with_record(
         field_terrain_color_draws: Vec::new(),
         world_map_terrain_draws: Vec::new(),
         world_map_terrain_color_draws: Vec::new(),
+        world_map_deco_start: (0, 0),
         ground_heightfield: None,
         ground_src: None,
         ground_crop: None,

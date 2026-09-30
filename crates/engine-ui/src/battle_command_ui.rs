@@ -474,8 +474,50 @@ pub fn battle_command_chip_sprites(
 /// Seat of the red cross-out X over the command ring's Ra-Seru chip: the
 /// anchor retail's phase-`0x28` arm passes `FUN_801DBC30` (`0xF8`, `0x42`
 /// at `0x801D12D4` / `0x801D12F0`) - the right arm's placement record, so
-/// `plate + (8, 6)` of [`MENU_SEATS`]`[2]`.
+/// `plate + (8, 6)` of [`MENU_SEATS`]`[2]`. The Curse plate
+/// (`FUN_801DBEC4(0xF8, 0x42)` at `0x801D135C`) takes the same anchor.
 pub const RASERU_MARK_ANCHOR: (i16, i16) = (0xF8, 0x42);
+
+/// Seat of the Rot stamp over the ring's Attack chip: `FUN_801DBD04(0xA0,
+/// 0x42)` at `0x801D1328` - the left arm's record, `plate + (8, 6)` of
+/// [`MENU_SEATS`]`[1]`.
+pub const ATTACK_MARK_ANCHOR: (i16, i16) = (0xA0, 0x42);
+
+/// Seat of the cross-out X over the ring's Item chip: `FUN_801DBC30(0xCC,
+/// 0x22)` at `0x801D12D4` - the top arm's record, `plate + (8, 6)` of
+/// [`MENU_SEATS`]`[0]`.
+pub const ITEM_MARK_ANCHOR: (i16, i16) = (0xCC, 0x22);
+
+/// Which marks the command ring wears this frame - one type from
+/// `engine-vm`, so `engine-core`'s `battle_hud::battle_ring_marks` hands it to
+/// this builder with no per-host copy.
+pub use legaia_engine_vm::battle_party_panel::RingMarks;
+
+/// One ring mark from a [`legaia_engine_vm::battle_party_panel::StripQuad`]:
+/// the quad's screen span (inclusive corners, so `x1 - x0 + 1` wide), drawn
+/// from the whole atlas cell `src` - the stretch the quad's texel span
+/// implies is the stretch the sprite's `dst / src` ratio reproduces.
+pub fn mark_sprite(
+    src: (u32, u32, u32, u32),
+    q: legaia_engine_vm::battle_party_panel::StripQuad,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> SpriteDraw {
+    let scale = stage_scale.max(1);
+    let (x0, y0) = (i32::from(q.xy[0].0), i32::from(q.xy[0].1));
+    let w = (i32::from(q.xy[1].0) - x0 + 1).max(1) as u32;
+    let h = (i32::from(q.xy[2].1) - y0 + 1).max(1) as u32;
+    SpriteDraw {
+        dst: (
+            stage_origin.0 + x0 * scale as i32,
+            stage_origin.1 + y0 * scale as i32,
+            w * scale,
+            h * scale,
+        ),
+        src,
+        color: CHIP_TINT_SELECTED,
+    }
+}
 
 /// The red cross-out X at chip anchor `anchor`, as one sprite out of the
 /// host's chrome atlas (`src` = [`crate::BattleChromeRects::cross_out`]).
@@ -491,42 +533,65 @@ pub fn cross_out_mark_sprite(
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> SpriteDraw {
-    let scale = stage_scale.max(1);
     let q = legaia_engine_vm::battle_party_panel::cross_out_mark(anchor.0, anchor.1);
-    let (x0, y0) = (i32::from(q.xy[0].0), i32::from(q.xy[0].1));
-    let w = (i32::from(q.xy[1].0) - x0 + 1) as u32;
-    let h = (i32::from(q.xy[2].1) - y0 + 1) as u32;
-    SpriteDraw {
-        dst: (
-            stage_origin.0 + x0 * scale as i32,
-            stage_origin.1 + y0 * scale as i32,
-            w * scale,
-            h * scale,
-        ),
-        src: (src.0, src.1, w.min(src.2), h.min(src.3)),
-        color: CHIP_TINT_SELECTED,
-    }
+    let mut s = mark_sprite(src, q, stage_origin, stage_scale);
+    // A 1:1 blit: never sample past the cell.
+    let scale = stage_scale.max(1);
+    let (w, h) = (s.dst.2 / scale, s.dst.3 / scale);
+    s.src = (src.0, src.1, w.min(src.2), h.min(src.3));
+    s
 }
 
-/// The command menu's sprite half for one frame, cross-out included: the
-/// chip plates and D-pad glyph ([`battle_command_chip_sprites`]) and, when
-/// `raseru_crossed`, the red X over the Ra-Seru chip
-/// ([`cross_out_mark_sprite`] at [`RASERU_MARK_ANCHOR`]) after them, so it
-/// lands on top of the plate.
+/// The Rot stamp over the ring's Attack chip (`FUN_801DBD04`): the 32x24
+/// cell `src` ([`crate::BattleChromeRects::rot_stamp`]) stretched over the
+/// chip's 64x16 span, as retail's quad stretches its texels.
+pub fn rot_stamp_sprite(
+    src: (u32, u32, u32, u32),
+    anchor: (i16, i16),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> SpriteDraw {
+    let q = legaia_engine_vm::battle_party_panel::rot_stamp_on_chip(anchor.0, anchor.1);
+    mark_sprite(src, q, stage_origin, stage_scale)
+}
+
+/// The Curse plate over the ring's Magic chip (`FUN_801DBEC4`): the 64x16
+/// cell `src` ([`crate::BattleChromeRects::curse_plate`]) drawn 1:1.
+pub fn curse_plate_sprite(
+    src: (u32, u32, u32, u32),
+    anchor: (i16, i16),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> SpriteDraw {
+    let q = legaia_engine_vm::battle_party_panel::curse_plate_on_chip(anchor.0, anchor.1);
+    mark_sprite(src, q, stage_origin, stage_scale)
+}
+
+/// The command menu's sprite half for one frame, marks included: the chip
+/// plates and D-pad glyph ([`battle_command_chip_sprites`]) and then every
+/// mark `marks` raises, after them, so each lands on top of its plate.
 ///
 /// Both play hosts draw the menu through this one call - the native window's
 /// battle chrome pass (`window/hud.rs`) and the browser play page's
 /// (`play_battle.rs`) - and both pass `engine-core`'s
-/// `battle_hud::battle_raseru_cross_out` as `raseru_crossed`: the ring is up
-/// and the special-battle word carries `0x200` (the Rim Elm ambush, monster
-/// `0xAF`). Retail's phase-`0x28` arm tests the bit and calls
-/// `FUN_801DBC30(0xF8, 0x42)` every frame of the phase
-/// (`0x801D12DC..0x801D12F4`). A host whose atlas skipped the cross-out bake
-/// (`rects.cross_out == None`) draws the plates and no mark.
+/// `battle_hud::battle_ring_marks`. The marks are four tests in retail's
+/// phase-`0x28` arm (see [`RingMarks`]), each posting one quad through
+/// `FUN_8003D2C4(*0x1F8003F4, prim)` - the ordering table's base entry (the
+/// emitters' `lw a0, 0xE0(a0)` off `0x1F800314`). That linker is a head
+/// insert: it swaps the entry's 24-bit next pointer into the prim and points
+/// the entry at the prim, each word keeping its own top byte
+/// (`0x8003D2CC..0x8003D2F4`). So the GPU walks the **last** posted mark
+/// **first**, and the sprites here are pushed in the reverse of
+/// retail's call order - Curse, Rot, then the two crosses - which keeps the
+/// Ra-Seru X on top of the Curse plate that shares its anchor. That the marks
+/// land over the plates is the port's order; the plates are text actors on a
+/// different entry, and their relative order is not pinned here. A host whose
+/// atlas skipped a mark's bake (its rect `None`) draws the plates and no
+/// mark.
 pub fn battle_command_menu_sprites(
     rects: &crate::BattleChromeRects,
     frame: &BattleCommandMenuFrame<'_>,
-    raseru_crossed: bool,
+    marks: RingMarks,
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> Vec<SpriteDraw> {
@@ -536,13 +601,40 @@ pub fn battle_command_menu_sprites(
         stage_origin,
         stage_scale,
     );
-    if raseru_crossed && let Some(src) = rects.cross_out {
-        out.push(cross_out_mark_sprite(
+    if marks.magic_cursed
+        && let Some(src) = rects.curse_plate
+    {
+        out.push(curse_plate_sprite(
             src,
             RASERU_MARK_ANCHOR,
             stage_origin,
             stage_scale,
         ));
+    }
+    if marks.attack_rotted
+        && let Some(src) = rects.rot_stamp
+    {
+        out.push(rot_stamp_sprite(
+            src,
+            ATTACK_MARK_ANCHOR,
+            stage_origin,
+            stage_scale,
+        ));
+    }
+    if let Some(src) = rects.cross_out {
+        for (on, anchor) in [
+            (marks.raseru_forbidden, RASERU_MARK_ANCHOR),
+            (marks.item_forbidden, ITEM_MARK_ANCHOR),
+        ] {
+            if on {
+                out.push(cross_out_mark_sprite(
+                    src,
+                    anchor,
+                    stage_origin,
+                    stage_scale,
+                ));
+            }
+        }
     }
     out
 }
@@ -654,16 +746,90 @@ mod tests {
             3,
         );
         let dbg = |v: &[SpriteDraw]| format!("{v:?}");
-        let off = battle_command_menu_sprites(&baked, &frame, false, (5, 9), 3);
+        let raseru = RingMarks {
+            raseru_forbidden: true,
+            ..Default::default()
+        };
+        let off = battle_command_menu_sprites(&baked, &frame, RingMarks::default(), (5, 9), 3);
         assert_eq!(dbg(&off), dbg(&plates), "no bit, no mark");
-        let on = battle_command_menu_sprites(&baked, &frame, true, (5, 9), 3);
+        let on = battle_command_menu_sprites(&baked, &frame, raseru, (5, 9), 3);
         assert_eq!(on.len(), plates.len() + 1);
         assert_eq!(dbg(&on[..plates.len()]), dbg(&plates));
         let mark = cross_out_mark_sprite((0, 96, 64, 16), RASERU_MARK_ANCHOR, (5, 9), 3);
         assert_eq!(dbg(&on[plates.len()..]), dbg(&[mark]), "the X draws last");
         let unbaked = crate::BattleChromeRects::default();
-        let bare = battle_command_menu_sprites(&unbaked, &frame, true, (5, 9), 3);
+        let bare = battle_command_menu_sprites(&unbaked, &frame, raseru, (5, 9), 3);
         assert_eq!(bare.len(), plates.len(), "no atlas cell, no mark");
+    }
+
+    /// The other two anchors are the other arms' records, `plate + (8, 6)`.
+    #[test]
+    fn every_mark_anchor_sits_on_its_arm_record() {
+        for (seat, anchor) in [
+            (0, ITEM_MARK_ANCHOR),
+            (1, ATTACK_MARK_ANCHOR),
+            (2, RASERU_MARK_ANCHOR),
+        ] {
+            let (px, py) = MENU_SEATS[seat].plate_origin();
+            assert_eq!(
+                (px + 8, py + 6),
+                (i32::from(anchor.0), i32::from(anchor.1)),
+                "seat {seat}"
+            );
+        }
+    }
+
+    /// The Rot stamp squeezes its 32x24 cell into the chip's 64x16 span and
+    /// the Curse plate is a 1:1 64x16 blit - both over `x-8 ..= x+0x37`.
+    #[test]
+    fn status_marks_cover_their_chip_span() {
+        let rot = rot_stamp_sprite((64, 64, 32, 24), ATTACK_MARK_ANCHOR, (0, 0), 1);
+        assert_eq!(rot.dst, (0x98, 0x3E, 64, 16));
+        assert_eq!(rot.src, (64, 64, 32, 24));
+        let curse = curse_plate_sprite((0, 64, 64, 16), RASERU_MARK_ANCHOR, (0, 0), 2);
+        assert_eq!(curse.dst, (0xF0 * 2, 0x3E * 2, 128, 32));
+        assert_eq!(curse.src, (0, 64, 64, 16));
+    }
+
+    /// Retail posts Rot then Curse onto one head-linked ordering-table
+    /// entry, so the builder paints them Curse first, and the crosses after
+    /// both; a mark whose cell was not baked is skipped on its own.
+    #[test]
+    fn status_marks_paint_in_reverse_post_order() {
+        let c = chips(4);
+        let frame = ring(&c, 0);
+        let rects = crate::BattleChromeRects {
+            cross_out: Some((0, 48, 64, 16)),
+            rot_stamp: Some((64, 64, 32, 24)),
+            curse_plate: Some((0, 64, 64, 16)),
+            ..Default::default()
+        };
+        let all = RingMarks {
+            item_forbidden: true,
+            raseru_forbidden: true,
+            attack_rotted: true,
+            magic_cursed: true,
+        };
+        let plates = battle_command_menu_sprites(&rects, &frame, RingMarks::default(), (0, 0), 1);
+        let on = battle_command_menu_sprites(&rects, &frame, all, (0, 0), 1);
+        let srcs: Vec<_> = on[plates.len()..]
+            .iter()
+            .map(|s| (s.src.0, s.src.1, s.dst.0))
+            .collect();
+        assert_eq!(
+            srcs,
+            vec![(0, 64, 0xF0), (64, 64, 0x98), (0, 48, 0xF0), (0, 48, 0xC4)],
+        );
+        let no_rot = crate::BattleChromeRects {
+            rot_stamp: None,
+            ..rects
+        };
+        let rotted = RingMarks {
+            attack_rotted: true,
+            ..Default::default()
+        };
+        let bare = battle_command_menu_sprites(&no_rot, &frame, rotted, (0, 0), 1);
+        assert_eq!(bare.len(), plates.len(), "no Rot cell, no stamp");
     }
 
     #[test]

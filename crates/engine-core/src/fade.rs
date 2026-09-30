@@ -91,6 +91,10 @@ pub struct FadeState {
     /// holds the landed colour until the fade is replaced or torn down, `0`
     /// drops the fade the frame the ramp lands, `n > 0` holds `n` frames.
     hold_left: i16,
+    /// Vsyncs stepped since the load, delay and hold included - the clock a
+    /// retail capture's block reads back as `delay0 - delay + duration0 -
+    /// duration` ([`Self::age_vsyncs`]).
+    age: u16,
 }
 
 impl FadeState {
@@ -121,6 +125,7 @@ impl FadeState {
             mode: t.mode,
             delay_left: t.mode[0],
             hold_left: t.mode[1],
+            age: 0,
         }
     }
 
@@ -171,6 +176,7 @@ impl FadeState {
             self.mode[2],
         );
         let alive = tick_fade_ramp(&mut ramp, dt).is_some() || !ramp.flags.finished;
+        self.age = self.age.saturating_add(u16::from(dt));
         // Retail leaves the delay negative once it lands; the engine's
         // `visible()` reads `<= 0`, so either sign works, but keeping it at
         // the floor keeps the field's range as documented.
@@ -200,6 +206,24 @@ impl FadeState {
             (self.current_q6[0] >> 6).clamp(0, 255) as u8,
             (self.current_q6[1] >> 6).clamp(0, 255) as u8,
             (self.current_q6[2] >> 6).clamp(0, 255) as u8,
+        ]
+    }
+
+    /// Vsyncs this fade has been stepped since it was loaded - the start
+    /// delay and the hold included. The phase clock the retail comparison
+    /// corpus aligns a capture on: a retail block's own countdowns give the
+    /// same figure, so an engine frame can be taken the same number of
+    /// vsyncs into the same fade.
+    pub fn age_vsyncs(&self) -> u16 {
+        self.age
+    }
+
+    /// The colour the ramp lands on (`+0x08/0A/0C >> 6`).
+    pub fn target_rgb(&self) -> [u8; 3] {
+        [
+            (self.end_q6[0] >> 6).clamp(0, 255) as u8,
+            (self.end_q6[1] >> 6).clamp(0, 255) as u8,
+            (self.end_q6[2] >> 6).clamp(0, 255) as u8,
         ]
     }
 

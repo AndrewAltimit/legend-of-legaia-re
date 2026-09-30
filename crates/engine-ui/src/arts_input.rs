@@ -522,6 +522,53 @@ pub fn arts_input_chrome_draws(
     out
 }
 
+/// The Rot stamps over the rotted direction chips, for an acting member whose
+/// `+0x16E` word is `status`: one sprite per stamp out of the atlas cell
+/// `rot_stamp` (`BattleChromeRects::rot_stamp`, the 32x24 Rot stamp), in
+/// retail's call order. Empty outside the entry phase - retail's phase-`0x50`
+/// arm draws them right after the D-pad glyph, which is only up while the
+/// chips are (`0x801D1D84..0x801D1E54`).
+///
+/// Each stamp is `FUN_801DBDDC`'s quad
+/// ([`legaia_engine_vm::battle_party_panel::rot_stamp_on_arts_chip`]) at the
+/// anchor [`legaia_engine_vm::battle_party_panel::arts_entry_rot_stamps`]
+/// picks from the limb bits and this caster's chip costs, so a stamp keeps
+/// the edge nearest the D-pad pinned as an off-class chip widens - the same
+/// law the chips follow. Bit `0x08` stamps Left, `0x10` Right, `0x20` both
+/// High and Low.
+pub fn arts_input_rot_stamp_draws(
+    rot_stamp: (u32, u32, u32, u32),
+    frame: &ArtsInputFrame<'_>,
+    status: u16,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    use legaia_engine_vm::battle_party_panel as bpp;
+    if !frame.chips_visible() {
+        return Vec::new();
+    }
+    // `ctx[+0x14 + seat]` is in seat order (Left, High, Low, Right); the
+    // frame carries the costs in Command-byte order (Left, Right, Down, Up).
+    let byte = |dir: ChipDirection| frame.chip_costs[dir.command_index()].min(0xFF) as u8;
+    let seat_costs = [
+        byte(ChipDirection::Left),
+        byte(ChipDirection::High),
+        byte(ChipDirection::Low),
+        byte(ChipDirection::Right),
+    ];
+    bpp::arts_entry_rot_stamps(status, seat_costs)
+        .into_iter()
+        .map(|(x, y, w)| {
+            crate::battle_command_ui::mark_sprite(
+                rot_stamp,
+                bpp::rot_stamp_on_arts_chip(x, y, w),
+                stage_origin,
+                stage_scale,
+            )
+        })
+        .collect()
+}
+
 /// Rects the AP plate needs out of a host's system-UI atlas. These are
 /// the status screen's own AP-gauge pieces (CLUT row 4) - the input
 /// screen's plate is the same widget, so a host passes what it already
@@ -633,6 +680,45 @@ mod tests {
         let mut f = frame(buffer, spent);
         f.chip_costs = costs;
         f
+    }
+
+    /// Retail's `FUN_801DBDDC` anchors are independent of the chip layout
+    /// this module pins from a capture, yet every stamp lands on its chip:
+    /// top edge on the chip's `y`, span covering the cost-sized body with a
+    /// few pixels to spare - at the favoured cost and with off-class side
+    /// chips alike.
+    #[test]
+    fn rot_stamps_cover_their_chip_bodies() {
+        let cell = (64, 64, 32, 24);
+        for costs in [ArtsInputFrame::FAVORED_CHIP_COSTS, [42, 38, 30, 30]] {
+            let f = frame_costs(&[], &[], costs);
+            let all = arts_input_rot_stamp_draws(cell, &f, 0x38, (0, 0), 1);
+            assert_eq!(all.len(), 4);
+            for (s, dir) in all.iter().zip([
+                ChipDirection::Left,
+                ChipDirection::Right,
+                ChipDirection::High,
+                ChipDirection::Low,
+            ]) {
+                let (bx, by) = f.chip_anchor(dir);
+                let bw = f.chip_w(dir);
+                let (x0, y0, w, h) = s.dst;
+                assert_eq!((y0, h), (by, 24), "{dir:?} at {costs:?}");
+                // High / Low are always stamped at the favoured width.
+                if matches!(dir, ChipDirection::Left | ChipDirection::Right) {
+                    assert!(x0 <= bx && x0 + w as i32 >= bx + bw, "{dir:?} at {costs:?}");
+                }
+                assert_eq!(s.src, cell);
+            }
+        }
+        let f = frame(&[], &[]);
+        assert!(arts_input_rot_stamp_draws(cell, &f, 0x1007, (0, 0), 1).is_empty());
+        let mut review = frame(&[], &[]);
+        review.phase = ArtsInputScreen::Review;
+        assert!(
+            arts_input_rot_stamp_draws(cell, &review, 0x38, (0, 0), 1).is_empty(),
+            "no chips, no stamps"
+        );
     }
 
     #[test]

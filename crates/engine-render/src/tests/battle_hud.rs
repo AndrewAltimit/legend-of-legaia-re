@@ -154,6 +154,8 @@ fn chrome_rects() -> SaveMenuAtlasRects {
             separator: SEPARATOR_SRC,
             digits: Some(DIGIT_STRIP),
             cross_out: None,
+            rot_stamp: None,
+            curse_plate: None,
         }),
         ..Default::default()
     }

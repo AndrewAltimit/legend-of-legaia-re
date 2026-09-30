@@ -263,7 +263,15 @@ impl World {
             if restore_idle {
                 self.apply_battle_pose(i, vm::battle_action::Pose::Idle as u8);
             }
+            // The decoder's last-frame tween reads the clip queued behind
+            // this one; recompute it before the step, like the draw that
+            // follows the tick in retail.
+            let tween = self.battle_tween_target(i);
+            let seru_staged = self.battle_ctx.multi_cast_gate != 0;
             let actor = &mut self.actors[i];
+            if let Some(player) = &mut actor.battle_animation {
+                player.set_tween_target(tween);
+            }
             let frame = if let Some(player) = &mut actor.battle_animation {
                 let before = player.current_frame();
                 // Retail rate law (`FUN_80047430`): the cursor advance
@@ -274,6 +282,29 @@ impl World {
                 let idle = actor.battle.current_anim == 0 && actor.battle_reaction.is_none();
                 let pose = player.tick_rated(rate, idle);
                 let after = player.current_frame();
+                // The natural end's displacement: the actor steps along its
+                // facing by the committed entry's `+0x0E` - the distance the
+                // last frame's tween carried the body in model Z - unless the
+                // root latch (`+0x1DC` bit 3) is up, or the actor is down with
+                // no Seru staged (`0x80047A68..0x80047B2C`; the `+0x228` byte
+                // it also tests has no store in the dump corpus and is taken
+                // as clear).
+                // PORT: FUN_80047430 (`0x80047A68..0x80047B2C`)
+                if player.take_natural_end() {
+                    let step = player.end_root_step();
+                    let latched = actor
+                        .battle
+                        .flag_bits
+                        .has(vm::battle_action::ActorFlags::FX_SUPPRESSED);
+                    if step != 0 && !latched && (actor.battle.hp != 0 || seru_staged) {
+                        let (sin, cos) =
+                            vm::battle_action::motion::trig12(actor.battle.facing_angle);
+                        let (dx, dz) = vm::battle_action::motion::end_root_step(sin, cos, step);
+                        let ms = &mut actor.move_state;
+                        ms.world_x = ms.world_x.wrapping_add(dx as i16);
+                        ms.world_z = ms.world_z.wrapping_add(dz as i16);
+                    }
+                }
                 // History-ring push (retail `FUN_80047430`
                 // `0x80047E58..0x80048060`): slot 0 takes this frame's pose
                 // + position; the arts after-image walk samples it. The
@@ -814,6 +845,75 @@ impl World {
     /// [`Self::step_battle`] (pre-step) and [`Self::tick_battle_animations`].
     // PORT: FUN_8004AD80 (staged-anim commit; the id -> slot/record ladder
     // lives in `legaia_engine_vm::anim_vm::resolve_staged_anim`).
+    /// The clip the decoder tweens `slot`'s last frame into - the port of
+    /// the next-entry rule's queued arm (`FUN_8004998C`
+    /// `0x80049A7C..0x80049BD0`). Retail reads `+0x1DA`; the engine keeps
+    /// that byte on two channels, so this resolves the entry the engine will
+    /// actually install at the natural end: the reaction channel's staged
+    /// entry (idle when `+0x1DC` bit 2 is up or nothing is staged), a byte
+    /// staged behind a playing swing, the swing itself on a re-commit, and
+    /// otherwise the idle a finished one-shot falls back to. A looping clip
+    /// re-queues itself.
+    ///
+    /// The gate is retail's: HP `+0x14C` non-zero and the queued id below
+    /// `0x10`, else the last frame blends toward itself with no Z term. A
+    /// monster whose queued stream has a different part count also blends
+    /// toward itself, but keeps the Z term (`0x80049B9C` branches into the
+    /// `+0xE` arm with `a1 = t0`). The Z term is the **committed** entry's
+    /// `+0x0E`; the `+0x228` byte that suppresses it has no store in the
+    /// dump corpus and is taken as clear.
+    // PORT: FUN_8004998C (`0x80049A7C..0x80049BD0`, the queued-clip arm of
+    // the next-entry rule)
+    pub(in crate::world) fn battle_tween_target(
+        &self,
+        slot: usize,
+    ) -> Option<crate::battle_anim::TweenTarget> {
+        use crate::battle_anim::TweenTarget;
+        use vm::battle_action::ActorFlags;
+        let a = self.actors.get(slot)?;
+        let player = a.battle_animation.as_ref()?;
+        let queued: u8 = if a.battle_reaction.is_some() {
+            if a.battle.flag_bits.has(ActorFlags::EXIT) {
+                0
+            } else {
+                a.battle_reaction_next.unwrap_or(0)
+            }
+        } else if let Some(id) = a.battle_staged_anim {
+            if player.is_looping() || a.battle.queued_anim != id {
+                a.battle.queued_anim
+            } else if a.battle.flag_bits.has(ActorFlags::ADVANCE_DONE) {
+                id
+            } else {
+                0
+            }
+        } else if player.is_looping() {
+            a.battle.current_anim
+        } else {
+            0
+        };
+        if a.battle.hp == 0 || queued >= 0x10 {
+            return Some(TweenTarget {
+                frame0: None,
+                z_bias: 0,
+            });
+        }
+        let z_bias = player.end_root_step();
+        let frame0 = if player.is_looping() && queued == a.battle.current_anim {
+            Some(player.first_frame().to_vec())
+        } else {
+            a.battle_action_clips
+                .as_ref()
+                .and_then(|cl| cl.get(usize::from(queued)))
+                .and_then(|c| c.as_ref())
+                .and_then(|c| c.frames.first().cloned())
+        };
+        // Retail's monster arm checks the queued stream's part count on the
+        // non-idle path only; the player also refuses a mismatched frame
+        // for either seat, which a party table never produces.
+        let frame0 = frame0.filter(|f| f.len() == player.part_count());
+        Some(TweenTarget { frame0, z_bias })
+    }
+
     pub fn commit_staged_battle_anims(&mut self) {
         for i in 0..self.actors.len() {
             self.commit_staged_battle_anim(i);

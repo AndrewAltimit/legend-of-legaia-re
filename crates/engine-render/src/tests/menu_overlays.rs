@@ -675,16 +675,17 @@ fn equip_screen_sprites_pin_pictogram_and_cursor_positions() {
             .find(|d| d.dst.0 == x && d.dst.1 == y)
             .unwrap_or_else(|| panic!("no sprite at ({x},{y})"))
     };
-    // Pictogram column: weapon fist / helmet / armor / (hand-guard fist)
-    // / boot / 3x Goods ring, rows my+0xE onward.
+    // Pictogram column in retail's `DAT_801E43F4` order: weapon fist /
+    // helmet / armor / boot / 3x Goods ring, rows my+0xE onward, then the
+    // engine's hand-guard row reusing the fist.
     assert_eq!(at(mx + 0x10, my + 0x0e).src, rects.icon_weapon);
     assert_eq!(at(mx + 0x10, my + 0x1c).src, rects.icon_helmet);
     assert_eq!(at(mx + 0x10, my + 0x2a).src, rects.icon_armor);
-    assert_eq!(at(mx + 0x10, my + 0x38).src, rects.icon_weapon);
-    assert_eq!(at(mx + 0x10, my + 0x46).src, rects.icon_boot);
-    for dy in [0x54, 0x62, 0x70] {
+    assert_eq!(at(mx + 0x10, my + 0x38).src, rects.icon_boot);
+    for dy in [0x46, 0x54, 0x62] {
         assert_eq!(at(mx + 0x10, my + dy).src, rects.icon_goods);
     }
+    assert_eq!(at(mx + 0x10, my + 0x70).src, rects.icon_weapon);
     // Party hand cursor overhangs the window's left edge (X-0xC).
     let (px, py) = EQUIP_PARTY_PEN;
     assert_eq!(at(px - 0x0c, py).src, rects.cursor);

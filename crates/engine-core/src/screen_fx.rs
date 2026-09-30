@@ -1048,10 +1048,12 @@ impl ScreenFxHost {
     }
 
     /// Op `0x43` sub-0x10: spawn a scripted sprite widget from its inline
-    /// 19-byte record (`FUN_801F8004`). The record bytes are kept so the
-    /// widget script (cursor past the header) can run; the VM's fixed
-    /// 19-byte slice carries no trailing script, which parks the widget
-    /// on its static draw - the faithful outcome for a bare record.
+    /// 19-byte record (`FUN_801F8004`). `payload` is the record **and the
+    /// field-script bytes after it**: the spawner seeds the widget cursor at
+    /// record `+0x13`, so the widget script is the `0x40` sub-op run that
+    /// follows the spawn instruction (the ending credits' fade-in, flag
+    /// wait, fade-out and kill). A bare 19-byte record parks the widget on
+    /// its static draw at the record's initial colour.
     pub fn sprite_spawn(&mut self, payload: &[u8]) {
         if let Some(rec) = SpriteRecord::parse(payload) {
             self.sprites
@@ -1383,6 +1385,38 @@ mod tests {
         // clut = (0x1E2 << 6) + (0x320 >> 4) = 0x7880 + 0x32 = 0x78B2.
         assert_eq!(p.clut as u16, 0x78B2);
         assert_eq!(p.rgb, [0x80, 0x40, 0x20]);
+    }
+
+    /// The ending credits' shape: the spawn payload runs past the record into
+    /// the script that follows it, so the widget fades in from the record's
+    /// black, holds while its flag is up, fades out and dies.
+    #[test]
+    fn a_spawned_sprite_runs_the_script_after_its_record() {
+        let mut rec = sprite_record(&[
+            0x40, 0x07, 0x04, 0x80, 0x80, 0x80, 0x01, 0x30,
+            0x00, // tween to 0x808080 over 0x30
+            0x40, 0x03, 0x02, 0x0B, 0x00, // wait for flag 0x0B clear
+            0x40, 0x07, 0x04, 0x00, 0x00, 0x00, 0x01, 0x50, 0x00, // fade out over 0x50
+            0x40, 0x01, 0x00, // kill
+        ]);
+        rec[0x10..0x13].copy_from_slice(&[0, 0, 0]);
+        let mut host = ScreenFxHost::default();
+        host.sprite_spawn(&rec);
+        let mut flag = true;
+        let mut peak = 0u8;
+        for _ in 0..0x30 {
+            let f = host.tick(1, |_| flag);
+            peak = peak.max(f.sprites[0].rgb[0]);
+        }
+        assert_eq!(peak, 0x80, "faded in to the neutral modulation");
+        let held = host.tick(1, |_| flag);
+        assert_eq!(held.sprites[0].rgb, [0x80; 3], "holds while the flag is up");
+        flag = false;
+        let mut frames = 0;
+        while !host.tick(1, |_| flag).sprites.is_empty() {
+            frames += 1;
+            assert!(frames < 0x60, "fade-out ends in the kill");
+        }
     }
 
     #[test]

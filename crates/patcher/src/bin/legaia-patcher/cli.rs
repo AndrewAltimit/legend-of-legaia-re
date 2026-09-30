@@ -800,7 +800,9 @@ pub(crate) enum TranslateCmd {
         /// Allow a whole-sector **disc relayout**: scene MANs whose full-length
         /// dialog overflows their compressed footprint gain `+N` sectors (the
         /// PROT entry grows and the disc is relaid out) so the dialog imports
-        /// byte-faithfully instead of being abbreviated. Grows the image.
+        /// byte-faithfully instead of being abbreviated. Grows the image, so
+        /// it needs `--output` and is refused with `--patch` (a PPF cannot
+        /// describe a longer image).
         #[arg(long)]
         allow_relayout: bool,
         /// How typed accents reach the disc, overriding the pack's own
@@ -1466,8 +1468,9 @@ pub(crate) struct RandomizeArgs {
     /// starting-items` shows the current starting level.
     #[arg(long, default_value_t = 0)]
     pub(crate) starting_level: u8,
-    /// Re-introduce unused enemies (the Evil Bat duplicates that no formation
-    /// references) into the random-encounter pool. Only takes effect with
+    /// Re-introduce unused enemies (the standalone "Comm" record, id 78, and
+    /// the Evil Bat duplicates 176..=178 - ids no formation references) into
+    /// the random-encounter pool. Only takes effect with
     /// `--encounters random` (a `shuffle` can't introduce a new monster).
     #[arg(long, default_value_t = false)]
     pub(crate) unused_enemies: bool,

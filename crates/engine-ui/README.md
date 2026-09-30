@@ -86,6 +86,25 @@ navigation logic depends on the GPU backend.
   turns a battle context's projection block into those quads, the swept
   weapon trail's projected `POLY_G4` band, and the shared screen-space
   corner projector (`FUN_800195a8`) all four ride on.
+- `dialog_reading_box` - the field dialog reading box's text rows: the draw
+  half of `engine-core::dialog_window`'s row window, scroll and typing reveal.
+- `incense_notice_box` / `tile_board_prompt` - the Incense wear-off notice
+  (`FUN_801F1E48` / `FUN_801F1B64`) and the tile board's quit prompt (walk-SM
+  state `5`); geometry arrives from `engine-core::incense_notice` /
+  `engine-core::tile_board`.
+- `battle_timed_fight_strip` - the `Turns Left / HP Left` strip of the one
+  turn-limited boss fight; gate and numbers are `engine-core::timed_fight`.
+- `ui_baka_strips` - the Baka Fighter HUD's digit strips (`FUN_801d69e4`,
+  `FUN_801d6ef4`, `FUN_801d6f44`), drawn as font glyphs at the ported cell x.
+- `ui_fishing_hub` / `ui_fishing_exchange` / `ui_fishing_rod` - the fishing
+  venue's hub menu and help pages, its point-exchange sub-screen, and the
+  first-person rod's faces (`PondSession::rod_faces`) as flat prims.
+- `ui_slot_paylines` - the slot machine's five projected paylines as the prim
+  set's line kind.
+- `ui_text_lines` - positioned `(bytes, x, y, marked)` / `(bytes, x, y, pen)`
+  lines to `TextDraw`s, the last step every engine-laid-out text screen shares.
+- `ringside_backdrop` - the Muscle Dome hub's ringside still: the two
+  `POLY_FT4` quads a re-entered hub draws and the 16bpp sheet they sample.
 
 `ui_fishing` is the one module that owns both halves. The fishing overlay's
 HUD helpers are ports in their own right (`FUN_801d13f0`, `FUN_801d1580`,
@@ -123,6 +142,11 @@ shared leaf:
 - `ui_boot_logos` - the publisher-logo boot pass's stage-into-surface fit, so
   the native `--boot-ui` chain and the play page's own logo stage letterbox
   retail's 640x480 quads identically.
+- `battle_stage_clear` - the colour a battle frame clears to (black, per the
+  `FUN_80016B6C` draw-environment pair), answered once for both hosts.
+- `move_strip` - the draw half of the move-VM extension's scanline strip
+  emitter (sub-op `0x2C`, `FUN_801D31B0`): project, run
+  `legaia_engine_vm::move_ext_strip::emit_strip`, return screen prims.
 - `ui_dance` - the dance count-in banner and the how-to tutorial's captions,
   projected from the phase `World::tick_dance` publishes.
 
@@ -166,6 +190,6 @@ blocks the wire, because the checker validates a waiver's bucket but cannot
 read its prose.
 
 What the gate cannot see is drift *inside* a shared builder's inputs - two
-hosts calling the same function with different models. Three such gaps were
-found by hand rather than by the gate; the two live ones are recorded in the
+hosts calling the same function with different models. The gaps of that
+shape found by reading the hosts side by side are recorded in the
 [web-viewer README](../web-viewer/README.md#platform-drift-against-the-native-window).

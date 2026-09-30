@@ -28,6 +28,49 @@ pub const SLOT_BROWSE_ROWS: u8 = EQUIP_SLOTS + 1;
 /// The slot-browse row that runs the Best Equipment applier.
 pub const SLOT_BROWSE_BEST_ROW: u8 = 0;
 
+/// Engine [`crate::equipment::EquipSlot`] index each slot-browse row below
+/// Best Equipment shows, in row order: retail's seven rows - weapon, helmet,
+/// body armour, footwear, Goods x3, the pictogram codes `DAT_801E43F4` - and
+/// then the engine's own Hand Guard row, which retail has no row for.
+pub const BROWSE_SLOT_ORDER: [u8; EQUIP_SLOTS as usize] = [0, 1, 2, 4, 5, 6, 7, 3];
+
+/// The engine slot browse row `row` (`1..`) opens.
+pub fn slot_for_browse_row(row: u8) -> u8 {
+    BROWSE_SLOT_ORDER[usize::from(row.saturating_sub(1)).min(EQUIP_SLOTS as usize - 1)]
+}
+
+/// The browse row (`1..`) showing engine slot `slot`.
+pub fn browse_row_for_slot(slot: u8) -> u8 {
+    BROWSE_SLOT_ORDER
+        .iter()
+        .position(|&s| s == slot)
+        .map_or(1, |i| i as u8 + 1)
+}
+
+/// Engine slot -> record `+0x196` byte for the character in roster slot
+/// `party_slot`: the weapon on its per-character byte (`DAT_8007B42C`), the
+/// Hand Guard row on the other one of the pair (`0x8007B424`, the Ra-Seru
+/// byte), body armour on byte `0`, the rest in place. A bijection per
+/// character, so a record round-trips through the engine's slot order.
+pub fn record_byte_for_engine_slot(slot: u8, party_slot: u8) -> usize {
+    let p = usize::from(party_slot).min(2);
+    match slot {
+        0 => RETAIL_WEAPON_EQUIP_BYTE[p] as usize,
+        2 => 0,
+        3 => RETAIL_RASERU_EQUIP_BYTE[p] as usize,
+        s => usize::from(s),
+    }
+}
+
+/// A record's `+0x196` equip bytes in the engine's slot order.
+pub fn engine_equip_from_record(bytes: [u8; 8], party_slot: u8) -> [u8; 8] {
+    let mut out = [0u8; 8];
+    for (slot, o) in out.iter_mut().enumerate() {
+        *o = bytes[record_byte_for_engine_slot(slot as u8, party_slot)];
+    }
+    out
+}
+
 /// Item id standing for the candidate list's **Remove** row - retail's
 /// class-`0x4000` payload-`0` entry, which carries no item at all.
 pub const REMOVE_ROW_ID: u8 = 0;
@@ -309,6 +352,8 @@ pub struct EquipSession {
     /// by [`crate::menu_item_category::parse_category_table`]). Empty means
     /// the Best Equipment weapon rank falls back to raw ATK.
     weapon_category: Vec<crate::menu_item_category::CategoryEntry>,
+    /// The character picker owns the pad ([`Self::set_slot_cursor_hidden`]).
+    slot_cursor_hidden: bool,
 }
 
 impl EquipSession {
@@ -333,7 +378,33 @@ impl EquipSession {
             restrictions: None,
             active_party_slot: 0,
             weapon_category: Vec::new(),
+            slot_cursor_hidden: false,
         }
+    }
+
+    /// Hide the slot-browse hand while the Equip screen's character picker
+    /// (`0x12`) owns the pad: the slot rows still show the hovered
+    /// character's equipment, but no row is under the cursor.
+    pub fn set_slot_cursor_hidden(&mut self, hidden: bool) {
+        self.slot_cursor_hidden = hidden;
+    }
+
+    /// Whether the slot-browse hand is hidden ([`Self::set_slot_cursor_hidden`]).
+    pub fn slot_cursor_hidden(&self) -> bool {
+        self.slot_cursor_hidden
+    }
+
+    /// End the session as cancelled - the character picker's cancel, which
+    /// leaves the Equip screen for the root list.
+    pub fn cancel(&mut self) {
+        self.state = EquipState::Done(EquipOutcome::Cancelled);
+    }
+
+    /// Re-open the slot browse on its Best Equipment row - the state the
+    /// character picker hands the pad to on a confirm, and the one a
+    /// cancelled browse is rewound to when it goes back to the picker.
+    pub fn reopen_slot_browse(&mut self) {
+        self.state = EquipState::SlotPicker { cursor: 0 };
     }
 
     /// Install the weapon-category favour table the Best Equipment weapon
@@ -686,7 +757,7 @@ impl EquipSession {
                         // nothing and runs the shared tail, which steps the
                         // hand to the next slot row (wrapping at 8) and
                         // returns to the slot picker (`0x801DA1DC..0x801DA254`).
-                        let next = slot + 2;
+                        let next = browse_row_for_slot(slot) + 1;
                         self.state = EquipState::SlotPicker {
                             cursor: if next < 8 { next } else { 0 },
                         };
@@ -710,9 +781,10 @@ impl EquipSession {
                     self.preview_candidate(slot, item.id);
                 } else if input.circle {
                     // Retail's cancel returns to sub-screen 0x13 with the hand
-                    // back on the slot's own row - row `slot + 1` in the
-                    // Best-Equipment-first row space.
-                    self.state = EquipState::SlotPicker { cursor: slot + 1 };
+                    // back on the slot's own row ([`browse_row_for_slot`]).
+                    self.state = EquipState::SlotPicker {
+                        cursor: browse_row_for_slot(slot),
+                    };
                 }
             }
             EquipState::Confirm {
@@ -1080,7 +1152,7 @@ impl EquipSession {
 
     /// The Equip screen's slot-browse confirm dispatch: row `0` is the
     /// "Best Equipment" auto-equip, rows `1..` open the candidate list
-    /// for slot `row - 1`. (Retail's cancel leaves for the character
+    /// for slot [`slot_for_browse_row`]. (Retail's cancel leaves for the character
     /// picker, sub-screen `0x12`; the engine host owns that transition.)
     ///
     /// `candidates` are the four best-armament ids the retail candidate
@@ -1114,7 +1186,7 @@ impl EquipSession {
             }
         } else {
             SlotBrowseOutcome::OpenCandidates {
-                slot: (row - 1).min(EQUIP_SLOTS - 1),
+                slot: slot_for_browse_row(row),
             }
         }
     }
@@ -1316,6 +1388,37 @@ pub fn apply_best_equipment(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Retail's `+0x196` array is `[body, head, weapon, weapon, footwear,
+    /// goods x3]` with the weapon on a per-character byte; the engine's
+    /// slot order puts the weapon first and the other byte of the pair on
+    /// its Hand Guard row. Vahn's record (the `equip_ui_vahn_*` captures:
+    /// armour, seal, sword, Ra-Seru, boots) lands row for row on retail's
+    /// browse order, and the mapping is a bijection for every character.
+    #[test]
+    fn the_record_bytes_map_onto_the_browse_rows() {
+        let record = [0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7];
+        let engine = engine_equip_from_record(record, 0);
+        // Weapon (byte 2), helmet (1), body (0), Ra-Seru (3), boots (4)...
+        assert_eq!(engine, [0xA2, 0xA1, 0xA0, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7]);
+        let rows: Vec<u8> = BROWSE_SLOT_ORDER
+            .iter()
+            .map(|&s| engine[usize::from(s)])
+            .collect();
+        assert_eq!(rows, [0xA2, 0xA1, 0xA0, 0xA4, 0xA5, 0xA6, 0xA7, 0xA3]);
+        // Noa's weapon is byte 3.
+        assert_eq!(engine_equip_from_record(record, 1)[0], 0xA3);
+        for party in 0..3u8 {
+            let mut seen = [false; 8];
+            for slot in 0..8u8 {
+                seen[record_byte_for_engine_slot(slot, party)] = true;
+            }
+            assert!(seen.iter().all(|&b| b), "character {party}");
+        }
+        for row in 1..=8u8 {
+            assert_eq!(browse_row_for_slot(slot_for_browse_row(row)), row);
+        }
+    }
 
     fn fresh_record() -> StatRecord {
         StatRecord {

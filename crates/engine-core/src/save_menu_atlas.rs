@@ -357,6 +357,12 @@ pub struct SaveMenuAtlas {
     /// [`add_cross_out_mark`]; [`SaveMenuAtlas::band_cross_out`] answers
     /// `None` until then.
     pub has_cross_out: bool,
+    /// Whether [`ATLAS_RECT_ROT_STAMP`] carries the Rot stamp. Set by
+    /// [`add_cross_out_mark`] alongside the X.
+    pub has_rot_stamp: bool,
+    /// Whether [`ATLAS_RECT_CURSE_PLATE`] carries the Curse plate. Set by
+    /// [`add_cross_out_mark`] alongside the X.
+    pub has_curse_plate: bool,
 }
 
 impl SaveMenuAtlas {
@@ -533,6 +539,14 @@ impl SaveMenuAtlas {
     /// The red cross-out X ([`add_cross_out_mark`]), when baked.
     pub fn band_cross_out(&self) -> Option<(u32, u32, u32, u32)> {
         self.has_cross_out.then_some(ATLAS_RECT_CROSS_OUT)
+    }
+    /// The Rot stamp ([`add_cross_out_mark`]), when baked.
+    pub fn band_rot_stamp(&self) -> Option<(u32, u32, u32, u32)> {
+        self.has_rot_stamp.then_some(ATLAS_RECT_ROT_STAMP)
+    }
+    /// The Curse plate ([`add_cross_out_mark`]), when baked.
+    pub fn band_curse_plate(&self) -> Option<(u32, u32, u32, u32)> {
+        self.has_curse_plate.then_some(ATLAS_RECT_CURSE_PLATE)
     }
     /// Battle roster-panel background (102x48, sub-palette 0).
     pub fn band_battle_panel_bg(&self) -> (u32, u32, u32, u32) {
@@ -981,6 +995,8 @@ pub fn build_atlas(
         status_badges_baked,
         element_badges_baked,
         has_cross_out: false,
+        has_rot_stamp: false,
+        has_curse_plate: false,
     })
 }
 
@@ -1001,18 +1017,42 @@ const CROSS_OUT_TEXELS: (u32, u32, u32, u32) = (0, 0x60, 64, 16);
 /// CLUT the X samples (`0x7704` = VRAM `(64, 476)`).
 const CROSS_OUT_CLUT: (u16, u16) = (64, 476);
 
-/// Bake the red cross-out X into `atlas` from the battle effect atlas
-/// (PROT 870, the entry `crate::scene::host::upload_flame_atlas_into_vram`
+/// Atlas cell of the blue **Rot** stamp retail lays over a refused Attack
+/// chip and over each rotted arts-entry direction (`FUN_801DBD04` /
+/// `FUN_801DBDDC`): the stamp's own 32x24 texels, re-seated from the battle
+/// effect page like the X.
+pub const ATLAS_RECT_ROT_STAMP: (u32, u32, u32, u32) = (64, 64, 32, 24);
+/// Texel rect of the Rot stamp (`u 0x50..=0x6F`, `v 0x60..=0x77`).
+const ROT_STAMP_TEXELS: (u32, u32, u32, u32) = (0x50, 0x60, 32, 24);
+/// CLUT the Rot stamp samples (`0x770B` = VRAM `(176, 476)`).
+const ROT_STAMP_CLUT: (u16, u16) = (176, 476);
+
+/// Atlas cell of the blue **Curse** plate retail lays over a refused Magic
+/// chip (`FUN_801DBEC4`): 64x16, off the same effect page.
+pub const ATLAS_RECT_CURSE_PLATE: (u32, u32, u32, u32) = (0, 64, 64, 16);
+/// Texel rect of the Curse plate (`u 0x78..=0xB7`, `v 0x60..=0x6F`).
+const CURSE_PLATE_TEXELS: (u32, u32, u32, u32) = (0x78, 0x60, 64, 16);
+/// CLUT the Curse plate samples (`0x7700` = VRAM `(0, 476)`).
+const CURSE_PLATE_CLUT: (u16, u16) = (0, 476);
+
+/// Bake the command ring's three marks into `atlas` from the battle effect
+/// atlas (PROT 870, the entry `crate::scene::host::upload_flame_atlas_into_vram`
 /// uploads on battle entry): the TIM whose image lands on page `(448, 0)`,
-/// decoded through the 16-colour palette at VRAM `(64, 476)`, texels
-/// `(0, 96)`..`(63, 111)` - the quad
-/// `legaia_engine_vm::battle_party_panel::cross_out_mark` samples.
+/// each mark decoded through its own 16-colour palette on CLUT row 476.
 ///
-/// The X lives on an effect page, not on the system-UI sheet the rest of
-/// the atlas comes from, which is why it is a separate step: both play
-/// hosts draw the command chips out of this atlas, and the mark has to sit
-/// in the same texture to draw over them. Returns whether the cell baked;
-/// a source without that TIM leaves the atlas untouched.
+/// - the red cross-out X, texels `(0, 96)`..`(63, 111)` through `(64, 476)` -
+///   the quad `legaia_engine_vm::battle_party_panel::cross_out_mark` samples;
+/// - the Rot stamp, `(80, 96)`..`(111, 119)` through `(176, 476)` -
+///   `rot_stamp_on_chip` / `rot_stamp_on_arts_chip`;
+/// - the Curse plate, `(120, 96)`..`(183, 111)` through `(0, 476)` -
+///   `curse_plate_on_chip`.
+///
+/// The marks live on an effect page, not on the system-UI sheet the rest of
+/// the atlas comes from, which is why this is a separate step: both play
+/// hosts draw the command chips and the arts-entry chips out of this atlas,
+/// and a mark has to sit in the same texture to draw over them. Returns
+/// whether the X baked; a source without that TIM leaves the atlas
+/// untouched.
 pub fn add_cross_out_mark(atlas: &mut SaveMenuAtlas, flame_atlas_entry: &[u8]) -> bool {
     for target in legaia_asset::befect_cluster::scan_tims(flame_atlas_entry) {
         let Ok(tim) = legaia_tim::parse(&flame_atlas_entry[target.offset..]) else {
@@ -1023,37 +1063,66 @@ pub fn add_cross_out_mark(atlas: &mut SaveMenuAtlas, flame_atlas_entry: &[u8]) -
         {
             continue;
         }
-        let Some(clut) = tim.clut.as_ref() else {
-            continue;
-        };
-        let (cx, cy) = CROSS_OUT_CLUT;
-        if cy < clut.fb_y || cx < clut.fb_x {
-            continue;
-        }
-        let entry = usize::from(cy - clut.fb_y) * usize::from(clut.w) + usize::from(cx - clut.fb_x);
-        if entry % 16 != 0 {
-            continue;
-        }
-        let Ok(rgba) = legaia_tim::decode_rgba8(&tim, entry / 16) else {
-            continue;
-        };
-        let src_w = tim.pixel_width() as u32;
-        let (u, v, w, h) = CROSS_OUT_TEXELS;
-        if src_w < u + w || (tim.pixel_height() as u32) < v + h {
-            continue;
-        }
-        copy_rect(
-            &mut atlas.rgba,
-            atlas.width,
-            &rgba,
-            src_w,
+        if !bake_effect_page_cell(
+            atlas,
+            &tim,
+            CROSS_OUT_CLUT,
             CROSS_OUT_TEXELS,
             ATLAS_RECT_CROSS_OUT,
-        );
+        ) {
+            continue;
+        }
         atlas.has_cross_out = true;
+        atlas.has_rot_stamp = bake_effect_page_cell(
+            atlas,
+            &tim,
+            ROT_STAMP_CLUT,
+            ROT_STAMP_TEXELS,
+            ATLAS_RECT_ROT_STAMP,
+        );
+        atlas.has_curse_plate = bake_effect_page_cell(
+            atlas,
+            &tim,
+            CURSE_PLATE_CLUT,
+            CURSE_PLATE_TEXELS,
+            ATLAS_RECT_CURSE_PLATE,
+        );
         return true;
     }
     false
+}
+
+/// Decode `texels` of the effect-page `tim` through the 16-colour palette at
+/// VRAM `clut` and copy them to `cell`. `false` (atlas untouched) when the
+/// TIM's CLUT block does not hold that palette or the page is too small.
+fn bake_effect_page_cell(
+    atlas: &mut SaveMenuAtlas,
+    tim: &legaia_tim::Tim,
+    clut: (u16, u16),
+    texels: (u32, u32, u32, u32),
+    cell: (u32, u32, u32, u32),
+) -> bool {
+    let Some(block) = tim.clut.as_ref() else {
+        return false;
+    };
+    let (cx, cy) = clut;
+    if cy < block.fb_y || cx < block.fb_x || cy >= block.fb_y + block.h {
+        return false;
+    }
+    let entry = usize::from(cy - block.fb_y) * usize::from(block.w) + usize::from(cx - block.fb_x);
+    if entry % 16 != 0 {
+        return false;
+    }
+    let Ok(rgba) = legaia_tim::decode_rgba8(tim, entry / 16) else {
+        return false;
+    };
+    let src_w = tim.pixel_width() as u32;
+    let (u, v, w, h) = texels;
+    if src_w < u + w || (tim.pixel_height() as u32) < v + h {
+        return false;
+    }
+    copy_rect(&mut atlas.rgba, atlas.width, &rgba, src_w, texels, cell);
+    true
 }
 
 /// Split a leading row-511 CLUT-extension TIM off the caller's PROT.DAT

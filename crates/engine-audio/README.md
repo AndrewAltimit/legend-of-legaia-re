@@ -85,6 +85,12 @@ Capture, diff and the retail side are documented in
 | [`seq_slots`](src/seq_slots.rs) | The SEQ resource-slot table at `0x80091508` (12-byte stride): which side-band SEQ/VAB resources hold an open libsnd handle. Pure bookkeeping - the hardware side of a close is a caller-supplied closure. |
 | [`battle_voice`](src/battle_voice.rs) | `battle_voice_step` (`FUN_8004DA00`) - which XA file, if any, a battle action seeks the drive to this frame. A seek-ahead that plays nothing (`FUN_8003EAE4` issues `CdlSeekL` and no read), so it is `REPLACED-BY` the pre-decoded clip bank; retail reaches it through a static actor template rather than a call. |
 | [`footstep`](src/footstep.rs) | The field movement cadence kernel (`FUN_80018DB0`). **Deliberately mislabelled**: retail's cadence drives the libpad *actuators*, not audio - it plays no footstep sound. The module docs enumerate each name that reads as audio and what it really is. |
+| [`sequencer`](src/sequencer.rs) | `Sequencer` - the tick-driven SsAPI-shaped SEQ player: one SEQ + one VAB bank, channel-to-voice allocation over the 24 SPU voices, pitch-bend / CC7 / CC10. |
+| [`spu_layout`](src/spu_layout.rs) | The play hosts' shared SPU RAM map (reserved scratch, BGM region, resident SFX region) and the upload helpers that place banks into it. |
+| [`bgm_tail`](src/bgm_tail.rs) | `BgmTail` - the reward (slot 11) and field side-band (slot 3) banks parked in the BGM region's free tail, and the residency rule that drops a borrower a new track overruns. |
+| [`duck`](src/duck.rs) | The battle BGM duck (`_DAT_8007B910`): target, per-vsync step and `SsSeqSetVol` re-apply, one kernel for both play hosts. |
+| [`xa_clip_bank`](src/xa_clip_bank.rs) | `XaClipBank` - pre-decoded CD-XA clips standing in for the one-shot clip starter `FUN_8003D53C`, with the retail stop point. |
+| [`xa_transport`](src/xa_transport.rs) | The shape of the one-shot XA clip's CD-callback ring (`FUN_8003D764`), kept as a reference model; the engine has no drive. |
 | [`test_sink`](src/test_sink.rs) | `TestAudioSink` - the device-free stand-in for `AudioOut`, so a headless test can drive the BGM/SFX plumbing. See below. |
 
 ## Driving the mixer without a device

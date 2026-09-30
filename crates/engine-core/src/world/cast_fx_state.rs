@@ -83,6 +83,11 @@ pub struct CastFxState {
     /// ([`legaia_engine_vm::cast_seru_ticks_b::SwordieSlashes`]) - the module
     /// image's own words in retail, so a fresh cast starts them at zero.
     pub module_swordie: legaia_engine_vm::cast_seru_ticks_b::SwordieSlashes,
+    /// The resident player-Seru module's camera-arm state: its countdown
+    /// word and the creature seat as the module placed it
+    /// ([`legaia_engine_vm::cast_module_camera`]). Module-image words in
+    /// retail, so a fresh cast starts them at zero.
+    pub module_cam: legaia_engine_vm::cast_module_camera::ModuleCamState,
     /// The action id whose **capture-band** module is resident, i.e. the one
     /// battle phase `0x70` re-enters every frame through `FUN_801F2160`.
     ///
@@ -158,6 +163,7 @@ impl CastFxState {
             module_split_saved_target: None,
             // --- end W1-D ---
             module_swordie: Default::default(),
+            module_cam: Default::default(),
             capture_spell: None,
             pending_move_fx_spawn: None,
             active_move_fx: None,

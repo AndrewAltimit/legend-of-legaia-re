@@ -276,10 +276,12 @@ as the label-call idiom in
 [`ghidra.md`](../tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims).
 
 The engine reproduces the fan-out with snapshot-at-spawn semantics
-(`world/ambient.rs`); a part's self-write lands one instruction late
-relative to retail's direct memory write, which shifts each instance's
-captured cell one 16-halfword step (engine cells `0x00..0xE0`, retail
-`0x10..0xF0`) - recorded here as a known divergence.
+(`world/ambient.rs`) and steps each part one opcode at a time, landing every
+bytecode self-write in the part's buffer and the shared bundle before the next
+fetch - retail's ops write the bundle in memory, so the op-`0x2C` after the
+`0x1E` reads the bumped `x` in the same run. The fifteen cyclers therefore take
+cells `0x10..=0xF0` of row 502, and the lightning director's own capture holds
+cell `0x00`, so the row is covered end to end.
 
 ### jou worked example (prescript records, extraction 0630)
 
@@ -815,8 +817,35 @@ fog packet's modulation colour is `FUN_8003F3FC`'s `grey * tint * brightness
 of the frame step `2`, libgpu double-buffering the table): all 104 packets of
 the state's walked ordering table match the engine's kernel
 (`FogParticle::sheet_rgb`) that way, median `rgb` 39. What differed was the
-sheet's shape and which sheets survive the culls, both corrected below; what
-still differs is the draw order and the camera.
+sheet's shape, which sheets survive the culls, the draw order and - the
+density itself - the [texture blend's depth](#the-texture-blend-is-5-bit),
+all corrected below.
+
+#### The texture blend is 5-bit
+
+A fog half is a texture-blended `POLY_FT4` (command `0x2E`) on an additive
+page (`ABR 1`), and every entry of its row-473 CLUT has `STP` set, so every
+non-zero texel blends. The GPU multiplies the texel by the packet colour over
+`128` and writes the product at the framebuffer's 5-bit depth: `(t5 * c8) >>
+7` per channel, saturated at `31`. The fraction is dropped *before* the
+additive blend. The wisp is mostly faint - on `keikoku_chest_preload`'s VRAM
+the texels of rows `0x40..0x6F` sit at `1..14` of `31`, most of them `1..4` -
+and the packet colours are dim (median `39`), so a texel of `1..3` adds
+nothing at that colour and a whole sheet delivers about half the light an
+unquantised multiply gives (about a third at colour `20`, three quarters at
+`90`). Over a hundred overlapping sheets the unquantised blend lays a film of
+fractional steps across the whole frame, where retail's haze shows only where
+the brighter texels and the brighter, older particles overlap - the band above
+the ridges.
+
+Both hosts' screen-primitive shaders now run that law on every textured quad
+(`psx_texture_blend` in `engine-render`'s `SCREEN_OVERLAY_SHADER_SRC`,
+`psxTextureBlend` in the play page's `FS_SCREEN_PRIM`, kernel
+`legaia_engine_ui::screen_prim::psx_texture_blend`). It is exact at the
+neutral `0x80`, so a UI sprite drawn at the neutral colour is unchanged. The
+GPU's dither, when on, spreads the dropped fraction over a 4x4 pattern
+instead; the average light is close to the truncated figure, and the port
+draws screen primitives without it.
 
 #### The sheet is a view-space billboard
 
@@ -941,8 +970,9 @@ The "about a fifth" an earlier opaque-coverage pass over the same table
 reported is not the terrain: of it, `18.6` points are the two `SPRT`
 families at the top of the frame (CLUTs `0x7F8D`, `0x7FC1`), screen-space
 sprites linked in the nearest buckets, and only `1.4` points (texel-weighted)
-are continent cells. Whatever makes the port's overworld haze read denser
-than retail's is therefore not the draw order.
+are continent cells. What made the port's overworld haze read denser than
+retail's was not the draw order but the blend arithmetic
+([below](#the-texture-blend-is-5-bit)).
 
 The render step subtracts the camera vertical offset `_DAT_8007BCAC` from
 every particle height. On `keikoku_chest_preload` it reads 252: the ease

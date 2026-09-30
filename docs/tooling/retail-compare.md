@@ -31,6 +31,7 @@ way `mednafen-state vram-dump --display-crop` reads it.
 - [Retail observables](#retail-observables)
 - [The seeding model](#the-seeding-model)
 - [Battle states](#battle-states)
+- [Menu states](#menu-states)
 - [Channels](#channels)
 - [The image channel](#the-image-channel)
 - [The ratchet](#the-ratchet)
@@ -53,7 +54,7 @@ by the game-mode word and the scene label:
 | `world_map` | mode `0x03` on a kingdom overworld (`mapNN`) | yes |
 | `field_init` | mode `0x02`, the scene mid-load | no |
 | `battle` | mode `0x14` / `0x15` | yes ([below](#battle-states)) |
-| `menu` | mode `0x17` (title, save screens, the pause menu) | no |
+| `menu` | mode `0x17` (title, save screens, the pause menu) | the pause-menu screens ([below](#menu-states)) |
 | `minigame` | mode `0x19` | no |
 | `cutscene` | mode `0x1A` / `0x1B` (STR playback) | no |
 | `other` | anything else | no |
@@ -73,6 +74,7 @@ hall before the song) is a `field` state and is scored as the field it is.
 | camera pitch / yaw | `0x8007B790` / `0x8007B792` | 12-bit angles |
 | GTE `H` | `0x8007B6F4` | |
 | camera eye | `0x800840B8/BC/C0` | the view builder's translation words |
+| camera focus | `0x80089118` / `0x80089120` | the world X / Z the view orbits, stored negated |
 | BGM track word | `0x8007BAC8` | written by op `0x35`'s start arms |
 | fog-pool gate | `0x8007B854` | written only by op `0x4C` nibble 3 ([field-ambient-fx](../subsystems/field-ambient-fx.md#mechanism-4---the-ambient-particle-emitter)) |
 | party / flags / bag / gold | `0x80084140`, `0x1A18` bytes | the live game-state window |
@@ -100,10 +102,18 @@ displayed frame by one rule.
 state's scene and seeded through its own card-load path,
 `BootSession::resume_save` over the lifted save (enter the scene, then
 hydrate party, flags, bag, gold). The player is then seated on retail's
-`(X, Z)` with the floor-sampled `Y` (`World::debug_seat_player`, the kernel
-behind `LEGAIA_SEAT`; on a field scene it is a warp landing and re-centres the
-region box and the windowed static-object list on the seat), the zone camera's arrival snap is re-armed, and the
-session ticks a fixed settle window with no input. BGM starts are recorded by
+`(X, Z)` with the floor-sampled `Y` (`SceneHost::debug_seat_standing` over
+`World::debug_seat_player`, the kernel behind `LEGAIA_SEAT`; on a field scene
+it is a warp landing and re-centres the region box and the windowed
+static-object list on the seat), the zone camera's arrival snap is re-armed,
+and the session ticks a fixed settle window with no input.
+
+The seat is a player **standing** on the tile, not one crossing onto it: the
+walk-on dispatcher's last-tile pair (`FUN_801D1EC4`) is stamped with the seat
+tile, because a retail capture of a player stood on a trigger tile holds that
+tile in the pair already. Seating without the stamp fired the tile's walk-on
+record on the first tick - `kor5_post_43a_checkpoint` stands on `P2[4]`, whose
+record walked the player out of the temple. BGM starts are recorded by
 a director on the scene host's event route.
 
 **The image channel** comes from `play-window`, the real renderer, run as a
@@ -204,9 +214,57 @@ keep their field meaning. HP / MP current values are seeded, so their misses
 are what the settle window changed; the max values are the real check
 (record-derived on the party, archive-derived on the monsters).
 
-**What the seed cannot carry.** An action in flight: most battle captures are
-mid-strike or mid-cast (flow `0xFF`), and the engine is compared parked on its
-round prompt, so their `phase` channel reads capture timing. The idle orbit's
+**Replayed casts.** A capture taken inside the summon band - a party seat
+(`ctx[+0x13]`) on action-SM state `0x32..=0x36` with a spell id queued at
+`+0x1DF` - is replayed rather than parked. The seed hands the engine that cast
+(`World::battle.inflight_seed`, target byte `+0x1DD`), dispatched the moment
+the first command prompt opens, and the capture's MP charge is credited back so
+the band's own debit lands on the captured figure. The session then runs to
+the capture's **phase**, not a fixed settle: the same action-SM state and,
+while the band's full-screen flash is up, the same flash the same number of
+vsyncs in. Retail's flash is a SCUS fade actor (tick word `FUN_80025000` at
+`+0x0C`, not done, kind `1`, id `1`), told apart from a creature's own fades by
+its per-frame delta; its `+0x7C` block's countdowns give its age
+(`delay0 - delay` in the start delay, `delay0 + duration0 - duration - 1`
+once landed - the landing frame steps both). `FadeState::age_vsyncs` is the
+engine's twin. `phase` then also compares the action-SM state, and `play-window`
+captures on the same predicate (`LEGAIA_BATTLE_INFLIGHT`,
+`LEGAIA_CAPTURE_GATE`), stopping its tick loop the frame it holds. A
+`0x33` capture has no flash yet and is gated on the state alone.
+
+Before this, a mid-cast frame was scored against the round prompt, which reads
+as `image` near `0` on a white-out: an instrument artifact, not an engine
+verdict. The like-for-like frame is what exposed the cast close-up: through
+`0x33` / `0x34` retail frames the caster from a low camera pitched up at it
+(`FUN_801DC0A0` case `0x12`, `battle_cam_script::summon_cast_framing`), so the
+upper, darker half of the stage backdrop fills the frame - there is no
+separate darkening pass. What still differs is the engine's: the caster's name
+plate draws over retail's flash where the engine's flash covers it, the engine
+captions the spell name over the caster, and from `0x35` the creature stager's
+own camera is not modelled.
+
+That last gap is the per-summon module's, not the band's. In `0x35` / `0x36`
+the camera belongs to the slot-B module, which arms its own framings on the
+**creature** (actor slot 7) and paces its arms on a countdown of its own
+([`cast-module.md`](../subsystems/cast-module.md#the-module-owns-the-camera-and-the-bands-length)).
+Where the engine ports a module's pacing director (PROT 0903, 0905, 0908)
+the band's length is the module's, so a `0x35` / `0x36` capture of that module is gated on
+the module's phase byte `ctx[+0x279]` as well (`PhaseGate::module_phase`, the
+`m<phase>` suffix of `LEGAIA_CAPTURE_GATE`). A walk arm is gated on its entry,
+not on how far the creature has walked, so a capture mid-walk reads its
+`camera` against the framing the walk starts from. A camera-only director
+(the summon creatures) does not move the band's length, so its captures stay
+gated on the flash alone. A module with no director keeps case 6 on the
+caster through `0x35` / `0x36`, and its capture's `camera` reads that gap -
+PROT 0913 (Nova), whose opening arms wait on the creature's CD read, is the
+one `0x35` capture of that kind left. Where the creature stands is the formation's: a fight whose
+engine seats differ from retail's reads the difference in the creature focus
+too, since the module places the creature relative to caster and victim.
+
+**What the seed cannot carry.** Any other action in flight: a strike, an art
+or a monster's cast (flow `0xFF` outside the summon band) is compared with the
+engine parked on its round prompt, so its `phase` channel reads capture
+timing. The idle orbit's
 yaw is a clock (`-4` per camera step), so on a prompt state the yaw part of
 `camera` - and most of the frame - reads the capture instant. A party whose
 present list names a seat the save window's roster does not seat (a guest
@@ -239,6 +297,42 @@ event, so the engine's word is the scene *entry*'s choice - `korb3` parks at
 `bgm` misses are this limit, not a stash defect; see
 [audio](../subsystems/audio.md#the-battle-sound-set-picks-the-fights-track).
 
+## Menu states
+
+A menu-class capture (mode `0x17`) names its screen in the menu overlay's
+sub-screen word `DAT_801E46A4` ([save-screen](../subsystems/save-screen.md#sub-screen-function-pointer-table)).
+The pause menu's screens are the root rows' routes - Items `0x05`, Magic
+`0x0E`, Equip `0x12`, Status `0x15`, Options `0x17`, Load `0x18`, Save
+`0x19` - plus the Equip row's two later steps, the slot browse `0x13` and the
+candidate list `0x14` (`0x12` itself is Equip's character picker). Those are
+seeded: the field seed runs (card-load resume, seat, settle), then the pause
+menu is driven through its own pad path - `Start`, `Down` onto the row,
+`Cross`; one more `Cross` past the character picker for `0x13`, and for
+`0x14` a `Down` past Best Equipment and a `Cross` into the first slot's
+candidates, one edge every `MENU_PRESS_GAP` ticks. The headless side
+presses them into `BootSession`'s menu; the image side hands the same edges to
+`play-window` as a `--pad-script` after the card-load resume.
+
+The `menu` channel is 1 when the engine's menu holds the same sub-screen
+(`0x01` on the root list, the open row's id; the engine's Equip screen reads
+as `0x12` in its character picker, `0x13` on its slot list and `0x14` on its
+candidates). `mode` wants the engine in `Menu`; the field channels keep their
+meaning, since the menu opens over the seated field.
+
+A capture with the word clear is the title / boot family (the attract loop,
+the title picker, the card-boot save select) and a screen no root row routes
+to is script-entered (the casino prize exchange, `0x20`); both are kept with
+a `menu not seedable:` reason and counted as classified limits.
+
+What a like-for-like menu frame shows is the engine's. The Equip row's slot
+browse draws the engine-only Hand Guard row as an eighth row below retail's
+seven, the Best Equipment row has no candidate preview beside it, and the
+options screen carries the port's extra Key Config row. The Status and Equip character lists are the present
+party (`DAT_80084594` over `0x80084598`,
+`field_menu_dispatch::status_snapshots` and `EquipScreenModel::party_row`), not
+every roster record - the New Game template seeds all four records, so a
+roster walk listed Noa, Gala and Terra beside a Vahn still travelling alone.
+
 ## Channels
 
 Each channel scores in `[0, 1]`; a state's score is the mean of its
@@ -250,13 +344,14 @@ measured channels.
 | `mode` | 1 when the engine's mode is `Field` (field class) / `WorldMap` (overworld class) / `Battle` (battle class) |
 | `position` | player `(X, Z)` after settling: 1 within 4 units, linear to 0 at 256 |
 | `footing` | engine floor sample at retail's `(X, Z)` vs retail's footing: 1 within 2, 0 at 128 (field class only) |
-| `camera` | mean of six parts: pitch and yaw (1 within 16, 0 at 256, wrapped), `H` (1 within 4, 0 at 128), each eye word (1 within 16, 0 at 1024) |
+| `camera` | mean of eight parts: pitch and yaw (1 within 16, 0 at 256, wrapped), `H` (1 within 4, 0 at 128), each eye word and each focus word (1 within 16, 0 at 1024) |
 | `bgm` | 1 when the engine's track-select word (`SceneHost::bgm_track_word`, the park sentinel `0x1000` included) equals retail's |
 | `fog_gate` | 1 when the engine's fog-pool gate equals retail's |
 | `party` | fraction of equal fields over retail's roster: HP / MP current and max, level, the eight equipment bytes |
 | `flags` | 1 - differing bits / bits set on either side, over the whole story-flag bitmap |
 | `inventory` | fraction of non-empty bag slots equal, slot for slot, plus gold |
 | `enemies` / `enemy_hp` / `battle_party` / `phase` | battle states only ([above](#battle-states)) |
+| `menu` | menu states only: 1 when the engine's pause menu holds retail's sub-screen ([above](#menu-states)) |
 | `image` | fraction of `8 x 8` blocks within tolerance ([below](#the-image-channel)) |
 
 `party` and `inventory` are seeded straight from the retail window, so on
@@ -308,7 +403,10 @@ gitignored (`captures/` is).
 `scripts/ci/retail-compare-baseline.json` holds, per state label, each
 measured channel's score, plus every state's class. The test
 `retail_compare_corpus` re-runs the corpus and fails when any state's
-channel falls below its baselined score. A rise is allowed and is folded in
+channel falls more than `0.0005` (the JSON round-trip slack) below its
+baselined score, when a baselined channel of a state the run did seed goes
+unmeasured, when a seedable state fails to seed, or when no state is seeded
+at all. A rise is allowed and is folded in
 by a reviewed `--bless`. A bless merges into the existing file: a state
 outside a `--filter`, or the image channel on a run without a display, keeps
 its baselined value rather than being dropped. A baselined state missing from the local library is
@@ -334,9 +432,16 @@ LEGAIA_SAVES_LIBRARY=... LEGAIA_EXTRACTED_DIR=... \
   cargo test -p legaia-engine-shell --profile release-test --test retail_compare_corpus -- --nocapture
 ```
 
-The subcommand is `legaia-engine retail-compare` with the same flags
-(`--library`, `--extracted-root`, `--manifest`, `--out`, `--images`,
-`--filter`, `--flags-first`, `--write-baseline`, `--check-baseline`).
+The driver builds `legaia-engine` under the `release-test` profile first
+(`--no-build` skips that), writes the report to `--out` (default
+`captures/retail-compare/`), and exits 0 with a `[skip]` line when the
+library or the extracted disc is missing; it looks for both in the worktree
+and then in the main checkout.
+
+The subcommand is `legaia-engine retail-compare`, which takes `--library`,
+`--extracted-root`, `--manifest`, `--out`, `--images`, `--filter`,
+`--flags-first`, `--write-baseline` (the driver's `--bless`) and
+`--check-baseline` (the driver's `--check`).
 
 ## Reading the report
 
@@ -364,9 +469,29 @@ Shapes the corpus separates, each with what it indicates:
 | an idle status panel in the engine frame only | the engine's panel placement, or its suppress / rearm gates, against retail's - the countdown's phase is aligned |
 | effect missing in the engine frame (save-point crystals, spell glows) | an actor or effect the fresh entry does not spawn, or one the port does not draw |
 | camera and dialogue off together | script progress - the seeding cannot resume a script |
+| player seated exactly, camera focus thousands of units away (`kor5_post_43a_checkpoint`: player Z `5312`, focus Z `11840`) | script progress: a scene script aimed the retail camera at another part of the map; the engine's follow camera frames the player |
 | retail BGM word `2000` on a town arrival | the state was captured before the town's field init ran ([below](#arrival-states-are-captured-before-the-town-runs)) |
 | retail word held by a flag the entry script already consumed (`garmel`'s `0x196`, `rikuroa`'s `0x289`) | script progress: the track was started by a beat that has since cleared its trigger flag, so a card load would not restart it |
-| an engine walk-on record on a seated arrival (`kor5`'s `P2[4]`) | the seat lands on a trigger tile the retail player reached with the last-tile pair already set; a real arrival fires it too |
+| camera depth and position off on an ending vignette (`ending_vignette_rimelm_walkaway`) | the state is mid-way through a scripted shot the seed restarts ([below](#ending-vignettes-are-mid-script)) |
+| camera exact, frame aimed at another part of the room; retail focus `0x80089118/20` is not `-player` | a probe-poked capture ([below](#a-poked-player-keeps-the-arrival-focus)) |
+
+### A poked player keeps the arrival focus
+
+`retock_innkeeper_talk_open` and `retock_inn_stay_prompt` were captured by
+warping into the inn at `(15168, 1280)` and then **poking** the player to
+`(14816, 1728)` (`LEGAIA_POKE_POS`). The states hold the player's position
+and its previous-position pair `+0x1C` / `+0x20` equal, so the ease's
+stationary test (`0x801DB578..0x801DB5A4` in `FUN_801DB510`) sees no move and
+the focus-writing legs never run: the focus stays at the arrival tile
+(`-15168`, `-1280` stored; the X is a tile centre, the Z the edge clamp) while
+the player stands elsewhere. Every retail writer of the focus pair takes the
+player as its anchor, so no script or region record accounts for the offset.
+The engine seats the player and frames on the seat, so its angles, `H` and eye
+trio match while the frame looks at a different part of the room; only the
+`camera` channel's focus part misses. Seated at the
+arrival point instead, the engine frames the counter, the walkway and the void
+below it the way retail's frame does. The `image` miss on these two states is
+the capture method, not the camera.
 
 ### Arrival states are captured before the town runs
 
@@ -381,6 +506,21 @@ the gate and the footing. `son`'s scripts write no fog gate at all, and
 at `0x8003B510`; the states hold `0`), so a `son` whose loader had run could
 not hold it raised. The `bgm`, `fog_gate` and `footing` misses on these
 three states are capture timing, not engine verdicts.
+
+### Ending vignettes are mid-script
+
+`ending_vignette_rimelm_walkaway` is `map01` inside the credits: retail reads
+pitch / yaw / eye depth `416 / 75 / 10389`, the engine `370 / 0 / 6400` after
+the settle. The engine's camera is not wrong, it is early. The seed enters
+`map01` and seats the player, and the credits script starts over: one tick in
+it moves Vahn to the start of the path and snaps the eye depth to `6400`
+(op `0x45`, slot 5 alone); about sixty ticks later a glide beat pulls the
+camera back and round (slots 0, 1, 3..8). Traced per tick, the engine's
+globals reach `416 / 77 / 10477` near tick 190 of that walk - within two
+angle units and a hundred depth units of the retail state - so the state was
+captured roughly three times the settle window into the shot. The camera and
+position channels on it measure script time, not the camera; the eye-space
+X / Y and `H` agree already.
 
 ## See also
 

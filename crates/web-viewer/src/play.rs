@@ -86,6 +86,13 @@ pub struct FieldRender {
     /// unit-scale object - [`field_env::placed_render_scales`], the kernel the
     /// native play-window folds into the same draws' model matrices.
     pub placement_scales: Vec<f32>,
+    /// Where the overworld's **decoration** layer starts in
+    /// [`Self::placements`] (the landmarks come first); `placements.len()`
+    /// on every other scene. The draws from here on carry retail's
+    /// per-object decoration depth cue
+    /// ([`legaia_engine_core::overworld_ground_cue::decoration_draw_cue`]),
+    /// the native window's `world_map_deco_start` twin.
+    pub decoration_start: usize,
 }
 
 /// The lead party member's field-form actor: the object-local mesh, its
@@ -236,6 +243,21 @@ pub fn build_field_render(
         floor_lut,
         binds.as_ref(),
     );
+    // The decorations follow the landmarks in `placement_records`; binds are
+    // `None` on the overworld, so the landmark count is what they resolve to
+    // on their own (and the retain below never runs there).
+    let decoration_start = if is_world_map {
+        let landmarks = scene
+            .walk_object_placements(index)
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        field_env::resolve_placed_env_draws(&env_tmds, &landmarks, floor_lut, None)
+            .0
+            .len()
+    } else {
+        placements.len()
+    };
     // Story-hidden placed objects (bind prologue parked at the hide box -
     // town01's flag-gated gate rocks): same gate the native shell applies in
     // `resolve_placement_draws`.
@@ -276,6 +298,7 @@ pub fn build_field_render(
         occluders,
         coplanar_offsets,
         placement_scales,
+        decoration_start,
     }
 }
 
@@ -579,6 +602,17 @@ impl LegaiaRuntime {
     /// [`Self::field_placement_slots`]): the bind record's `actor[+0x72]` as a
     /// factor, applied after the rotation (`T * R * S`). `1.0` for nearly
     /// every placement; town01's horizon backdrop draws at `0.25`.
+    /// Index of the first overworld **decoration** draw in the placement
+    /// list (the landmarks come first): the page stages retail's per-object
+    /// decoration depth cue on the draws from here on. Equal to the list's
+    /// length off the overworld.
+    pub fn field_decoration_start(&self) -> u32 {
+        self.field
+            .as_ref()
+            .map(|f| f.decoration_start as u32)
+            .unwrap_or(0)
+    }
+
     pub fn field_placement_scales(&self) -> Vec<f32> {
         self.field
             .as_ref()

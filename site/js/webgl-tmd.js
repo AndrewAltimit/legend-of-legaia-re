@@ -34,6 +34,8 @@
  *              the whole x/y/z/rotY/scale/anchor construction. The battle FX
  *              layer passes engine-composed matrices through this so the
  *              browser cannot drift from the native `fx_cam * model`.
+ *     decoCue - overworld decoration: stage retail's per-object cue
+ *              (overworldDecorationCue) from the draw origin's depth.
  *     cue    - per-draw GTE depth cue { far: [r,g,b], nearZ, farZ, maxIr0 },
  *              overriding the frame-global `setDepthCue` for this draw only.
  *              The engine's `DrawCue` seam: the battle ground grid's per-stage
@@ -47,6 +49,27 @@
  *   color   - { r, g, b } in 0..1 floats; mid-distance tint baseline.
  *   farRef  - 0..16383 reference Z for the far plane (retail gp-0x2E0).
  */
+
+/* The overworld decoration cells' depth cue - the page twin of
+ * legaia_engine_core::overworld_ground_cue::decoration_draw_cue. Retail's
+ * decoration sweep (FUN_801F69D8, PROT 0901) takes one IR0 per object from
+ * the camera depth of its origin, IR0 = min(max(TRZ - 0x5000, 0) >> 3,
+ * 0x1000), and hazes every prim of it toward the far colour 0xD0 (the
+ * dispatcher FUN_80043390 stages a1 = 0x00D0D0D0 as the far colour). TRZ
+ * is the origin's clip w times the frame's clip.w-to-SZ factor (the
+ * u_curve the ground cue reads); 0 - every page but the play page on an
+ * overworld - is no cue. Returns a per-draw cue record (a flat blend: the
+ * ramp saturates at any positive depth) or null. vp and model are
+ * column-major. */
+function overworldDecorationCue(vp, model, curve) {
+  if (!(curve > 0)) return null;
+  const w = vp[3] * model[12] + vp[7] * model[13] + vp[11] * model[14] + vp[15] * model[15];
+  const trz = Math.round(w * curve);
+  const ir0 = Math.min(Math.max(trz - 0x5000, 0) >> 3, 0x1000);
+  if (ir0 <= 0) return null;
+  const far = 0xD0 / 255;
+  return { far: [far, far, far], nearZ: -1, farZ: 0, maxIr0: ir0 / 4096 };
+}
 
 /* PSX semi-transparency (ABE) tail for a scene mesh's index list: bucket
  * every semi-transparent triangle (first vertex's TSB bit 15, packed by the
@@ -1312,9 +1335,12 @@ class TmdRenderer {
       }
       gl.bindVertexArray(m.vao);
       for (const p of list) {
-        const wantCue = p.cue || this.cueParams;
+        const model = this._placementModel(p, m);
+        const wantCue = p.cue
+          || (p.decoCue && overworldDecorationCue(vp, model, this.overworldCurve))
+          || this.cueParams;
         if (wantCue !== cueOn) { this._setCue(wantCue); cueOn = wantCue; }
-        gl.uniformMatrix4fv(this.locModel, false, this._placementModel(p, m));
+        gl.uniformMatrix4fv(this.locModel, false, model);
         /* Actor draws (the player, NPCs - `noOccl` on the placement) must
          * never dissolve; environment placements may. */
         gl.uniform1i(this.locOcclAllow, p.noOccl ? 0 : 1);
@@ -1350,7 +1376,10 @@ class TmdRenderer {
       }
       gl.bindVertexArray(m.vao);
       for (const p of list) {
-        const wantCue = p.cue || this.cueParams;
+        const model = this._placementModel(p, m);
+        const wantCue = p.cue
+          || (p.decoCue && overworldDecorationCue(vp, model, this.overworldCurve))
+          || this.cueParams;
         if (wantCue !== cueOn) { this._setCue(wantCue); cueOn = wantCue; }
         /* Strictly-nearer depth test for placements that ask for it (the
          * arts after-image ghosts): at LEQUAL a ghost pose coincident with
@@ -1363,7 +1392,7 @@ class TmdRenderer {
           gl.depthFunc(wantStrict ? gl.LESS : gl.LEQUAL);
           strictOn = wantStrict;
         }
-        gl.uniformMatrix4fv(this.locModel, false, this._placementModel(p, m));
+        gl.uniformMatrix4fv(this.locModel, false, model);
         gl.uniform1i(this.locOcclAllow, p.noOccl ? 0 : 1);
         for (const r of m.semiRanges) {
           this._setSemiBlend(r.mode);

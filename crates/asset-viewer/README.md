@@ -6,8 +6,9 @@ One binary: `asset-viewer`. Driven by `winit` 0.30 + `wgpu` 26 via
 
 ## Subcommands
 
-Every subcommand reads the `legaia-extract` output tree (`--extracted-root`
-defaults to `extracted`, resolved against the current directory). `field` and
+`tmd`, `field`, `dialog`, `battle-scene` and `world` read the `legaia-extract`
+output tree (`--extracted-root` defaults to `extracted`, resolved against the
+current directory); the rest take explicit file paths. `field` and
 `dialog` additionally need the dialog font under `extracted/font/`, written by
 `legaia-extract` or `font-extract --disc <bin>`.
 
@@ -36,9 +37,10 @@ session exercises every record in order.
 
 ### `tmd` - textured 3D meshes
 
-Renders Legaia TMDs spinning, lit by a single directional light. Uploads
-every sibling TIM into the shared software VRAM model so meshes that
-reference textures across multiple VRAM pages render correctly.
+Renders Legaia TMDs spinning. Uploads every sibling TIM into the shared
+software VRAM model so meshes that reference textures across multiple VRAM
+pages render correctly; the textured path draws the TMD's baked colour words
+through the retail texture blend and depth cue, with no light source.
 
 Useful flags:
 
@@ -49,7 +51,8 @@ Useful flags:
 - `--vram-extra-dir <dir>` - workaround for character meshes whose CLUT
   rows live in *different* PROT entries from their TMD source.
 - `--no-textures` (alias `--flat-shaded`) - skip the VRAM path entirely
-  and render unlit flat-shaded geometry. Use this when you want to see
+  and render bare flat-shaded geometry under a single directional light (a
+  viewer aid, not retail shading). Use this when you want to see
   what a mesh's silhouette looks like without battling palette guesses;
   the runtime LoadImage trace for field / town scenes isn't captured
   yet, so some palette rows always render as garbage in textured mode.
@@ -79,7 +82,7 @@ boundary.
 For offline diagnostics the same targeted-upload + per-prim verdict
 logic is also exposed by the `tmd` CLI: `tmd prims <input> --vram-dir
 <dir>` prints a per-prim status tag (`Ok` / `MissingClut` /
-`MissingTexturePage`), and `tmd vram-dump <input>
+`ClutDepthMismatch` / `MissingTexturePage`), and `tmd vram-dump <input>
 -o vram.png [--annotate]` writes the simulated post-upload VRAM as a
 PNG so collisions are obvious without firing up the GUI.
 
@@ -105,9 +108,10 @@ retail's default and the status line says the transform is unresolved.
 
 ### `field` - field-VM scene runner
 
-Boots a CDNAME scene through `engine-core::World::tick_field` so the
-field VM steps through the scene's event-script records. The HUD
-surfaces:
+Boots a CDNAME scene and steps the field VM through the scene's event-script
+records. The viewer's frame tick mirrors `World::tick`'s mode dispatch but calls
+`engine-core::World::step_field` itself, so the HUD can observe each
+`StepResult`. The HUD surfaces:
 
 - Step-outcome tally (`adv / yld / halt / pending / unknown`).
 - Last opcode dispatched + a per-opcode top-5 histogram so naturalistic
@@ -122,8 +126,7 @@ what real scenes do.
 
 ## Architecture
 
-The viewer is the only place where Track 1 (asset crates) and Track 2
-(engine crates) currently meet:
+The viewer composes Track 1 (asset crates) with Track 2 (engine crates):
 
 ```text
 legaia-iso ─┐                                      ┌─ winit  (input)

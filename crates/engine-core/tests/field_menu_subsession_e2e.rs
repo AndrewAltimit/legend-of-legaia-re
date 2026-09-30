@@ -226,7 +226,9 @@ fn apply_equip_outcome_writes_back_to_roster() {
         &SpellCatalog::vanilla(),
         &equip_table,
     );
-    // Slot-browse row 0 is "Best Equipment", so slot 1 is row 2.
+    // The Equip row opens on its character picker; confirm hands the pad to
+    // the slot browse, whose row 0 is "Best Equipment", so slot 1 is row 2.
+    sub.tick_pad_edge(PadButton::Cross.mask());
     for _ in 0..2 {
         sub.tick_pad_edge(PadButton::Down.mask());
     }
@@ -234,7 +236,10 @@ fn apply_equip_outcome_writes_back_to_roster() {
         sub.tick_pad_edge(PadButton::Cross.mask());
     }
     assert!(sub.is_done());
-    if let FieldMenuSubsession::Equip { session, char_slot } = &sub {
+    if let FieldMenuSubsession::Equip {
+        session, char_slot, ..
+    } = &sub
+    {
         let _ = apply_equip_outcome(session, *char_slot, &mut world);
         assert_eq!(world.party.roster.members[0].equipment().slots[1], 0x25);
     } else {

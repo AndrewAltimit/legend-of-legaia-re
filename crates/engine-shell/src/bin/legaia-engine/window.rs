@@ -65,6 +65,12 @@ pub(crate) struct ScreenshotConfig {
     /// ([`legaia_engine_core::world_map_panel_host::hud_phase_hold`]). Set by
     /// the retail-compare image channel from the state's own RAM.
     pub hud_countdown: Option<i16>,
+    /// `LEGAIA_CAPTURE_GATE=state[,white|black,age]`: capture the first
+    /// frame the battle's action SM holds the retail capture's phase
+    /// ([`legaia_engine_shell::retail_compare_battle::PhaseGate`]) instead of
+    /// at a fixed tick; `capture_tick` becomes the deadline, past which the
+    /// run exits without a PNG. Set by the retail-compare image channel.
+    pub phase_gate: Option<legaia_engine_shell::retail_compare_battle::PhaseGate>,
 }
 
 /// Debug state `play-window` seeds before the first world tick, so a capture
@@ -233,6 +239,9 @@ impl ScreenshotConfig {
             hud_countdown: std::env::var("LEGAIA_HUD_COUNTDOWN")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
+            phase_gate: std::env::var("LEGAIA_CAPTURE_GATE")
+                .ok()
+                .and_then(|v| legaia_engine_shell::retail_compare_battle::PhaseGate::from_env(&v)),
         }))
     }
 }
@@ -735,6 +744,11 @@ struct PlayWindowApp {
     /// a world-map frame that draws only `world_map_terrain_draws` shows
     /// roofless huts.
     world_map_terrain_color_draws: Vec<(usize, Mat4)>,
+    /// Where the decoration layer starts in `world_map_terrain_draws` /
+    /// `world_map_terrain_color_draws` (landmarks first): the draws from here
+    /// on carry retail's per-object decoration depth cue
+    /// (`overworld_ground_cue::decoration_draw_cue`).
+    world_map_deco_start: (usize, usize),
     /// Bulk **ground**: the heightfield surface built from the scene's
     /// `.MAP` floor grid (`Scene::walk_heightfield`), textured per cell from
     /// the terrain-type-keyed atlas (record `+0x14`/`+0x15`/`+0x16`). `None`

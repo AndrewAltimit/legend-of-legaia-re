@@ -1238,8 +1238,8 @@ overlay and all called from the phase-`0x28` cluster arm of `FUN_801D0748`:
 | Emitter | Source rect on the `etim` page | CLUT | Raised by |
 |---|---|---|---|
 | `FUN_801DBC30` | `(0,96)` 64x16 - the red cross-out X | `0x7704` | the special-battle word's restriction bit |
-| `FUN_801DBD04` | `(80,96)` 32x24 | `0x770B` | `actor+0x16E & 0x38 == 0x38` (Attack) |
-| `FUN_801DBEC4` | `(120,96)` 64x16 | `0x7700` | `actor+0x16E & 0x1000` (Ra-Seru, magic sealed) |
+| `FUN_801DBD04` | `(80,96)` 32x24 - the blue Rot stamp | `0x770B` | `actor+0x16E & 0x38 == 0x38`, all three Rot limbs (over the Attack chip) |
+| `FUN_801DBEC4` | `(120,96)` 64x16 - the blue Curse plate | `0x7700` | `actor+0x16E & 0x1000`, Curse (over the Ra-Seru chip) |
 
 All three take `(x, y)` and emit one `POLY_FT4` (tag `0x09000000`, code
 `0x2C808080`, tpage `7`) covering `(x-8, y-4)` to `(x+0x37, y+0xB)` - a
@@ -1980,7 +1980,7 @@ paths install through. See
 
 The world hosts the contest as the suspending `SceneMode::MuscleDome`
 (play-window `M` key; Left/Right/Up/Down enter the four directions, Triangle
-opens the Ra-Seru list, Cross confirms/continues). A KO of the opponent inside
+opens the Ra-Seru list (Circle closes it), Cross confirms/continues). A KO of the opponent inside
 the limit credits the reward Seru through the engine's capture kernel.
 
 The opponent is the disc's own: both hosts resolve `(course, round)` through

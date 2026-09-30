@@ -20,6 +20,7 @@ native window.
 - [Dialogue, save/load, and loot](#dialogue-saveload-and-loot)
 - [Minigame rules engines](#minigame-rules-engines)
 - [Smaller modules worth knowing](#smaller-modules-worth-knowing)
+- [Other major modules](#other-major-modules)
 - [See also](#see-also)
 
 ## What it provides
@@ -46,10 +47,13 @@ TIM/TMD/VAB on every frame when an actor is referenced repeatedly.
 
 ### Frame timing
 
-`FrameClock` - fixed-step driver that targets the PSX's nominal NTSC
-60 Hz. Returns the number of logical ticks elapsed since the last call,
-so the host can drive the script VMs deterministically regardless of
-render rate.
+`frame_step::SimStepper` - the fixed-step driver every host's display loop
+drains wall time through: it runs as many whole 1/60 s ticks (one
+`World::tick` = one retail vsync) as have elapsed, carries the remainder, and
+caps the backlog, so the script VMs advance deterministically regardless of
+render rate. `world::FrameClock` (`world.clock`) holds the retail
+frame-step factor, the vsync accumulators, the tick / display-frame counters
+and play time.
 
 ### Composite `World`
 
@@ -58,11 +62,17 @@ VMs. One actor table (default capacity 64) is shared across all four
 script VMs; the `Host` traits are implemented by routing through this
 struct. `World::tick` runs:
 
-1. Effect pool tick (every frame, every mode).
+1. Effect pool tick.
 2. Per-actor move-VM tick - only for active actors with bytecode loaded
    via `set_move_bytecode`.
-3. The mode-specific top-level VM - `Battle`, `Field` / `Cutscene`, or
-   `Title` (which runs no further VM). The first two are detailed below.
+3. The mode-specific top-level step - `Battle`, `Field` / `Cutscene`,
+   `WorldMap`, one of the minigame modes (`Dance`, `Fishing`,
+   `SlotMachine`, `BakaFighter`, `MuscleDome`), or `Menu` / `Title` (which
+   run none). The first two are detailed below.
+
+Steps 1 and 2 are skipped under `SceneMode::Menu`: retail's CARD mode runs no
+master frame driver, so nothing on the actor lists advances while the pause
+menu owns the frame (`mode::runs_master_frame_driver`).
 
 Engines that want a different storage layout (ECS, custom parallelism)
 implement the per-VM `Host` traits themselves; `World` is the default.
@@ -86,6 +96,7 @@ each a plain data struct in its own `world/*.rs` file. Access is
 | `camera` / `presentation` / `ambient` | `CameraRig` / `ScreenFxState` / `AmbientFxState` | Camera snapshot + ease + register file; fades, tints, cinematic bars; CLUT cyclers, VDF pulse, VRAM moves. |
 | `audio` / `move_vm` / `clock` | `AudioState` / `MoveVmGlobals` / `FrameClock` | BGM + SFX cue slots + battle cue queues; move-VM pools and globals; frame-step factor, vsync accumulators, tick counters. |
 | `tables` / `flags` / `toggles` | `DiscTables` / `StoryFlagState` / `WorldToggles` | Disc-parsed static tables; story / system flag words; engine behaviour toggles. |
+| `script_actors` / `fog` | `FieldScriptActorState` / `FogPool` | Scripted arcs, the NPC height channel and attached lights; the fog-particle pool. |
 
 #### `SceneMode::Battle`
 
@@ -125,17 +136,21 @@ placement, port of `FUN_8003A1E4`/`FUN_8003AEB0`) - the vignette actors
 the timeline halt-acquires and pokes beat by beat. Animate cues go into
 `npcs.anim_cues` (drained by the windowed render to re-target each
 NPC's clip player); scripted moves go into `npcs.positions`. The
-opening white flash (op `0x34` sub-0) drives `fade::ColorFade` on
-`World::color_fade`, drawn as a full-screen wash. See
+opening white flash (op `0x34` sub-0) installs the screen-effect colour
+tween (`presentation.effect_tween_slot`), drawn from
+`World::screen_tint_pushes` as a full-screen wash. See
 [`docs/subsystems/cutscene.md`](../../docs/subsystems/cutscene.md).
 
 **Locomotion.** In `Field` the field-VM step is followed by
 `step_field_locomotion`, the free-movement player controller (port of
 `FUN_801d01b0`). The held d-pad becomes a camera-relative direction
-(remapped by `field_camera_azimuth`, quantised to the nearest 90° like
-retail); the player actor advances in 2-unit steps with per-axis
-collision against the per-scene `field_collision_grid`, and facing is
-updated. The opt-in `World::locomotion.precise_movement` swaps in a continuous
+through retail's 45° eighth-turn ring remap (`World::remap_pad_direction`,
+`FUN_800467e8`) at an octant derived from `locomotion.camera_azimuth`; the
+mask then passes the wall-slide resolver (`World::resolve_field_slide`,
+`FUN_80046494` - skids the player along a blocked wall toward the open side),
+and the player actor advances in 2-unit steps with per-axis collision
+against the per-scene `terrain.collision_grid`, and facing is updated.
+The opt-in `World::locomotion.precise_movement` swaps in a continuous
 decode - true key diagonals + analog-stick angles - through the *same*
 collision, so it changes input feel without forking the physics.
 
@@ -144,11 +159,7 @@ yaw + user drag-orbit + the renderer's framing bias). `Camera::distance`
 is the discrete follow-camera distance preset (retail / far / farther) -
 render framing only.
 
-Two faithful direction-decode leaves are ported standalone (not yet on the
-hot path): `World::remap_pad_direction` (the retail 45° eighth-turn ring
-remap `FUN_800467e8`) and `World::resolve_field_slide` (the wall-slide
-resolver `FUN_80046494` - skids the player along a blocked wall toward the
-open side, over `field_tile_is_wall`). See
+See
 [`docs/subsystems/field-locomotion.md`](../../docs/subsystems/field-locomotion.md).
 
 The collision grid (one byte per 128-unit tile, high nibble = 4 sub-cell
@@ -188,7 +199,8 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   battle event queue.
 - `arts_command_input` - the retail Arts command entry: per-press
   directional buffer, per-command AP debit from the turn pool, auto-end
-  when nothing is affordable, and the Begin | Reselect review. Resolves
+  when nothing is affordable, the auto-command-string preseed and its
+  bare-confirm replay (no pool charge), and the Begin | Reselect review. Resolves
   the entered sequence through the `legaia-art` matchers. Costs come from
   the equipped set's `+0x74` bytes (`World::battle.swing_costs`).
 - `ap_gauge` - per-character Action-Point gauge. Charges +5 on
@@ -214,8 +226,10 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   `apply_effect` resolves an `ItemEffect` against a `TargetSnapshot` to
   produce an `ItemOutcome` engines fold into world state. `vanilla()`
   models the faithful consumable subset (HP/MP restore, cure, revive,
-  field escape); effect *amounts* are the curated walkthrough values
-  (the on-disc effect-value table is not yet pinned).
+  field escape); effect *amounts* are the curated walkthrough values,
+  byte-confirmed against the static `SCUS_942.54` heal-amount table
+  (`0x8007655C`, `legaia_asset::item_effect`) by the disc-gated
+  `item_effect_real` test.
 - `shop` / `shop_catalog` - shop session state (buy/sell cursor,
   quantity, gold/inventory delta) plus the disc-sourced **gold-shop
   stock catalog**: `ShopItemData::from_scus` reads per-id buy prices
@@ -237,7 +251,7 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   Trade / Exit picker (`MenuState::ShopMenu` → `ShopTrade` → `ShopTradeConfirm`,
   driven by `menu_runtime`; the dynamic Trade row resolves via the menu-VM's
   `commit_route_override` hook). `try_arm_field_shop` stamps a stable per-vendor
-  id (`seru_trade::vendor_id_from_shop`, from the shop's name + stock) onto the
+  id (`legaia_asset::seru_trade::vendor_id_from_shop`, from the shop's name + stock) onto the
   `ShopSession`, so each merchant reseeds independently. Offers come from the
   shared `legaia_asset::seru_trade` kernel, so the engine and the randomizer
   preview always agree.
@@ -265,8 +279,8 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   Target selection reuses `target_picker`. When
   `World::battle.player_driven` is set, `World::live_battle_tick` opens
   one per party turn and parks the action SM until the player confirms;
-  otherwise the loop auto-resolves with a physical Attack. v0.1 enables
-  only the Attack command. See `docs/subsystems/battle.md#auto-resolve-vs-player-driven`.
+  otherwise the loop auto-resolves with a physical Attack. The menu carries
+  Attack, Arts, Magic, Item, Spirit and Run (`BattleCommand`). See `docs/subsystems/battle.md#auto-resolve-vs-player-driven`.
 - `battle_flow` - the retail command-flow byte `ctx[+0x06]`, the cursor of
   the battle's *menu* SM `FUN_801D0748` (not the action SM's `ctx[+0x07]`,
   whose value space it overlaps). `flow_state_for` recomposes it each frame
@@ -327,9 +341,11 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   (`SavedChain::to_record` / `from_record` pack to the `Command` byte
   alphabet the battle side reads). In battle the chain does **not** commit
   an art by itself: retail's Arts command is the per-press
-  `arts_command_input` entry, and a saved chain's retail role is to preseed
-  that entry's buffer (not yet wired - see
-  [`arts-command-gauge.md`](../../docs/subsystems/arts-command-gauge.md#where-a-saved-chain-belongs)).
+  `arts_command_input` entry. What retail preseeds that entry with is the
+  character's **auto command string** (record `+0x1A7` / `+0x1B7`), not a
+  named chain: loaded as the entry opens, replayed by a bare confirm without
+  charging a press, wiped by the first press - see
+  [`arts-command-gauge.md`](../../docs/subsystems/arts-command-gauge.md#the-auto-command-string-preseed-on-open-replay-on-a-bare-confirm).
   `build_battle_arts_rows` still reads `saved_chains` for the legacy
   submenu behind `LEGAIA_ARTS_SAVED_LIST=1`.
 - `man_field_scripts` - opcode-aware walk of a scene MAN's partition-1
@@ -579,6 +595,42 @@ presentation left to the host:
 - `EffectCatalog`, `input::Mapping`, `DefaultMapIdResolver` - effect
   lookup, host-agnostic input binding, and scene-name → map-id
   resolution.
+
+## Other major modules
+
+- `mode` - the game-mode driver and retail mode table (`ModeSeat`, which both
+  hosts enter INIT modes through).
+- `scene` - the scene-loading shell: PROT asset indexing, per-CDNAME-block
+  bundle resolution, BGM lookup, and `SceneHost` (`enter_field_scene`).
+- `model_bank` - the retail model pool `DAT_8007C018` and the id space a
+  placement's model byte and the scripted-motion VM's op `0x0E` share.
+- `levelup` / `inn` / `equip_session` / `spells` - the post-battle
+  `LevelUpTracker`, the inn rest session, the equipment session, and the
+  spell catalog + cast resolver.
+- `field_menu` / `field_menu_dispatch` / `menu_runtime` and the `menu_*`
+  family - pause-menu sessions, sub-session dispatch, and list / input /
+  validator leaves.
+- `title` / `save_select` / `save_subscreen` / `card_flow` / `card_write` /
+  `card_bu_io` - title state machine, save-slot select, and the memory-card
+  I/O and write flow.
+- `dialog_window` - the field dialog pager's row window, scroll and typing
+  reveal.
+- `screen_fx` - the PROT-0900 screen-effect widget family (iris mask,
+  sprites, panels, letterbox) the field VM drives.
+- `fishing` / `fishing_actors` / `fishing_hub` / `fishing_venue` - the
+  fishing minigame's `PondSession`, its actors, the venue hub screen and
+  venue-actor step.
+- `slot_machine` / `baka_cabinet` / `baka_duel_scene` - the casino slot
+  machine rules engine, and the Baka Fighter cabinet shell and 3D duel scene.
+- `tile_board` / `timed_fight` / `incense_notice` - the op-`0x49` tile board,
+  the turn-limited boss fight's gate, and the Incense wear-off notice.
+- `encounter` / `encounter_man` / `monster_ai` / `monster_catalog` - per-scene
+  random-encounter tables and trigger, and the per-monster battle AI
+  (`FUN_801E9FD4`).
+- `new_game` - seeds live party records from the `SCUS_942.54` starting-party
+  template.
+- `cd_dma` / `overlay_loader` / `stream_file` - the CD streaming host traits
+  and overlay / stream loaders.
 
 ## See also
 

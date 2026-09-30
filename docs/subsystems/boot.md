@@ -326,7 +326,7 @@ The title-screen NEW GAME selection is the entry point into modes 2/3:
 3. **Mode-2 init.** The mode dispatcher runs `FUN_80025B64`: load the field overlay (`FUN_8003EBE4(2)`) → call `FUN_801D6704`.
 4. **Field scene init.** `FUN_801D6704` reads the resident map id, loads geometry + MAN + camera + fog + BGM, allocates the game-mode work buffer, and writes `_DAT_8007B83C = 3` - the field per-frame loop ("MAIN MODE") takes over the next frame.
 
-The mode-transition control flow is mirrored in `crates/engine-vm/src/title_overlay.rs` (`MASTER_GAME_MODE_FIELD_LAUNCH` = 2, `MASTER_GAME_MODE_FIELD_RUN` = 3, `FIELD_SCENE_INIT_PC`, `MENU_INDEX_NEW_GAME`) and `crates/engine-core/src/world.rs` (`World::begin_new_game`). `FUN_801D6704` itself is generic field entry, used for every scene transition, and reads the *fresh-state seed* a new game establishes (starting party stats, gold, starting scene id) from globals rather than seeding it.
+The mode-transition control flow is mirrored in `crates/engine-vm/src/title_overlay/state_layout.rs` (`MASTER_GAME_MODE_FIELD_LAUNCH` = 2, `MASTER_GAME_MODE_FIELD_RUN` = 3, `FIELD_SCENE_INIT_PC`, `MENU_INDEX_NEW_GAME`) and `crates/engine-core/src/world.rs` (`World::begin_new_game`). `FUN_801D6704` itself is generic field entry, used for every scene transition, and reads the *fresh-state seed* a new game establishes (starting party stats, gold, starting scene id) from globals rather than seeding it.
 
 The fresh-state seed is the new-game data-init `FUN_80034A6C` (called via the boot mode initializer `FUN_8001DCF8`). It establishes the new-game world state:
 

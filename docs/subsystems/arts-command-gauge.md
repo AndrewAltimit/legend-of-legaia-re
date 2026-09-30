@@ -149,18 +149,37 @@ direction-vs-materialized-art split the action queue uses (see
 
 ## Status limb gating
 
-A **Rot** (or similar limb-disable) status grays individual command arrows and
-refuses their input. The gauge-input arm `FUN_801D0748` state `0x50`
-(`overlay_battle_action_801d0748.txt:3311-3360`) reads the active actor's
-`+0x16E` status halfword; the gray-draw pass and the input gate agree
-bit-for-bit:
+A **Rot** status stamps individual command arrows and refuses their input.
+The gauge-input arm `FUN_801D0748` state `0x50` reads the active actor's
+`+0x16E` status halfword; the stamp pass (`0x801D1DA8..0x801D1E54`) and the
+input gate agree bit-for-bit:
 
-| `+0x16E` bit | Arrow grayed (draw pos) | Blocks command |
+| `+0x16E` bit | Rot stamp (`FUN_801DBDDC` anchor) | Blocks command |
 |---|---|---|
 | `0x08` (limb 0) | LEFT (`0xb3 - w/2, 0x42`) | Left `0x8000` / dir 0 |
 | `0x10` (limb 1) | RIGHT (`0xe5 + w/2, 0x42`) | Right `0x2000` / dir 3 |
-| `0x20` (limb 2) | UP (`0xcc, 0x22`) **and** DOWN (`0xcc, 0x62`) | Up `0x1000` / dir 1 **and** Down `0x4000` / dir 2 |
-| `0x1000` (**Curse**) | the whole MAGIC command (`FUN_801dbec4(0xf8, 0x42)`, `:3229-3230`) | Magic |
+| `0x20` (limb 2) | UP (`0xcc, 0x22`) **and** DOWN (`0xcc, 0x62`), `w = 0x1E` | Up `0x1000` / dir 1 **and** Down `0x4000` / dir 2 |
+| `0x1000` (**Curse**) | the ring's MAGIC chip (`FUN_801dbec4(0xf8, 0x42)`, the Curse plate) | Magic |
+
+`w` is the chip's AP cost, `ctx[+0x14 + seat]` in seat order Left, High, Low,
+Right (written by `FUN_801D388C` case `9`, `0x801D3B3C`); `w/2` is an unsigned
+`srl`. The stamp is the `etim` page's blue hand-lettered "Rot", 32x24 at
+`(80, 96)` through CLUT `0x770B`, drawn `y-8 ..= y+0xF` and
+`x+8-h ..= x+0x27+h` with `h = (w - 0x1E) >> 1` - so it keeps the edge
+nearest the D-pad fixed exactly as the cost-widened chip does (the Left
+stamp's right edge at `0xCB`, the Right stamp's left edge at `0xFC`), and the
+High / Low stamps stay at the favoured width whatever those chips cost. The
+command ring marks the same states: all three limbs stamp Rot over the
+Attack chip (`FUN_801DBD04(0xA0, 0x42)`) and Curse lays the "Curse" plate
+over the Magic chip (`FUN_801DBEC4(0xF8, 0x42)`), every frame of the ring,
+before the pad is read.
+
+Both play hosts draw all of these out of the chrome atlas, where
+`save_menu_atlas::add_cross_out_mark` bakes the two marks from the effect
+page beside the red X: the ring's through
+`battle_command_ui::battle_command_menu_sprites` switched by
+`battle_hud::battle_ring_marks`, the entry's through
+`arts_input::arts_input_rot_stamp_draws` off `ArtsInputView::status`.
 
 With all three limb bits set (`0x38`) the whole Arm command is skipped and
 Attack is unusable (`801d0748:3226-3227,3277`; `801e295c:5452`). This pinned
@@ -410,24 +429,55 @@ are swapped against the raw BIOS word. So the entry's four direction tests at
 Down / Right, not Square / Triangle / Cross / Circle. Reading them raw turns a
 d-pad entry into a face-button one and makes the confirm mask look unreachable.
 
-### Where a saved chain belongs
+### The auto command string: preseed on open, replay on a bare confirm
 
-Retail has no "pick a saved art" list, so a saved chain never commits an art by
-itself. Its retail role is to **preseed the entry**: `FUN_801DA34C` copies one
-of the character record's two 16-byte arts-input strings (`+0x76F` / `+0x77F`)
-into `actor[+0x1DF..]` when the entry opens, the pad then edits those bytes in
-place, and `FUN_801DA59C` writes the result back after the action - so a chain
-is a *remembered starting buffer*, not a shortcut past the input
-([battle-action.md](battle-action.md#the-retail-queue-builder-fun_801eed1c-and-super-applier-fun_801ef9e4)
-carries the byte-level walk; ported as
-`legaia_engine_vm::battle_action::preseed_action_queue` / `save_action_queue`).
+Retail has no "pick a saved art" list. What it remembers is one
+**auto command string** per character: `FUN_801DA59C` copies the actor's
+sixteen-byte window `actor[+0x1DF..]` into one of the character record's two
+bands (`+0x1A7` / `+0x1B7`, the gauge picking which on
+`u16[+0x156] < u16[+0x154]`) from the target confirm at `0x801D22BC`, and
+`FUN_801DA34C` copies it back. The write-back runs **before** the queue
+builder `FUN_801EED1C` tokenizes anything - that happens at the dispatch - so
+the string holds the entered arrows as the gauge wrote them, one swing byte
+per press (the direction table `0x801F4B8C` reads `0C 0F 0E 0D` for Left / Up
+/ Down / Right).
 
-The port opens every entry empty. `World::party.saved_chains` stays live data - the
-chain editor writes it, the save round-trip carries it, and the legacy
-`LEGAIA_ARTS_SAVED_LIST=1` list still reads it - but nothing preseeds the input
-from it. Wiring that is the open piece; what it needs first is whether the
-preseeded presses arrive already paid for or re-debit the pool on the way in,
-which no capture pins yet.
+`FUN_801DA34C` has two call sites in `FUN_801D0748`, and the second is the
+arts entry itself. When the attack-mode prompt (`0x78`) takes Command, the
+jump at `0x801D1734` preseeds the window with the `sb 0x50` phase store in its
+delay slot, and case `0x2C` of `FUN_801D388C` builds the gauge - which reads
+the costs and seeds the pool from `+0x154` but never reads the window, so the
+entry opens with an empty bar over a full one. Two things then happen to the
+preseed, both in the entry arm:
+
+- **The first press wipes it.** Case `0xB` of `FUN_801D388C`, with the
+  committed count `ctx+0x19` at `0`, zeroes all sixteen window bytes before it
+  tests the pool or stores the press (`0x801D3BE4..0x801D3C24`). The pad does
+  not edit the preseed; it replaces it.
+- **A bare confirm replays it.** With no direction this frame, the arm at
+  `0x801D1FA0..0x801D2044` checks the staging byte `DAT_8007BD04`, a zero
+  count, a non-zero `+0x1DF[0]` and the confirm mask `0x800846D0`; it then
+  measures the string, stores the length as the count (`0x801D2028`) and
+  enters `0x5A` through case `0xC`, the same way a typed confirm does.
+
+**Preseeded presses cost no AP again.** The replay never runs case `0xB`, so
+the entry pool `ctx+0x6DC` is neither debited nor even compared with the
+string's cost: a string saved under a raised gauge replays in full. The band
+choice is the only budget guard, because the primary band is written and read
+only while the live gauge exceeds its base. The **Spirit** cost of the arts
+the string performs is charged again, though. The builder re-tokenizes the
+raw arrows at the dispatch and accrues their art bodies into `actor[+0x224]`,
+as for any typed string.
+
+Port: `ArtsCommandInputSession::preseed` / `replay` / `committed_string`,
+filled by `World::open_arts_command_input` through
+`preseed_auto_command_string`. `World::run_battle_art` stages the arrows as
+swing bytes and runs the write-back at the commit, and the Attack dispatch
+sends a preseeded string through `build_arts_action_queue` and
+`charge_art_spirit`, as the arts dispatch does. The engine's named chain
+library `World::party.saved_chains` is separate data. The chain editor writes
+it, the save round-trip carries it, and the legacy `LEGAIA_ARTS_SAVED_LIST=1`
+list reads it, but nothing preseeds from it.
 
 Because a turn now performs however many arts the pool paid for, the
 **shout cue and the learn-on-use check are per art, not per turn** - see

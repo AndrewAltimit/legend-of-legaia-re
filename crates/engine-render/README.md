@@ -11,7 +11,7 @@ re-exports that crate wholesale (`pub use legaia_engine_ui::*`), so
 `engine_render::status_screen_draws_for` still resolves; edit them in
 `engine-ui`.
 
-Owns a `wgpu` device + surface plus two render pipelines, sharing the
+Owns a `wgpu` device + surface plus several render pipelines, sharing the
 same surface and depth attachment:
 
 - **Textured-quad** - `upload_texture` + `render(RenderTarget::Texture)`.
@@ -60,15 +60,21 @@ correctly in one draw, instead of needing per-page sub-meshes.
 - `glam` 0.30 - math.
 - `legaia-tim` for `Vram`.
 
+The [`window`](src/window.rs) module is the shared winit + wgpu app scaffold
+(`EngineWindow`: open, resize, fixed-step tick pacing) that `asset-viewer` and
+`engine-shell` both build on.
+
 ## PSX-style rendering
 
-The 3D mesh pipelines support PSX-faithful rasterisation via
-`Renderer::set_psx_mode(true)`:
+The 3D mesh pipelines carry the PSX rasterisation traits below. Only two of
+them - vertex snap and dithering - are gated, by
+`Renderer::set_psx_mode(true)` (off by default); the rest are unconditional,
+and semi-transparency has its own switch.
 
 - **Affine UV interpolation.** UVs interpolate linearly in screen space
   (no perspective-correct division) - this reproduces the warping you
   see on retail PSX surfaces with steep depth gradients. UV is
-  `@interpolate(linear)` in WGSL.
+  `@interpolate(linear)` in WGSL, on every path regardless of PSX mode.
 - **Sub-pixel vertex snap ("vertex jitter").** Clip-space `x`/`y` are
   snapped to the nearest integer pixel before rasterisation, giving the
   GTE's characteristic per-vertex shimmer on slow-moving geometry.
@@ -92,8 +98,9 @@ The 3D mesh pipelines support PSX-faithful rasterisation via
   no synthetic Lambert on any path that has real colour data to draw.
 
 - **Semi-transparency blend modes.** Per-prim PSX blending on the
-  VRAM-mesh and colour-mesh paths - see [Semi-transparency](#semi-transparency)
-  below, which is the one part of PSX mode with real structure to it.
+  VRAM-mesh and colour-mesh paths, gated by `Renderer::set_semi_blend`
+  (**on by default**, independent of PSX mode) - see
+  [Semi-transparency](#semi-transparency) below.
 
 ### Semi-transparency
 
@@ -117,8 +124,8 @@ mirror the blend-state mapping is unit-tested against.
 **Untextured prims are the exception.** Untextured (`F*`/`G*`) ABE prims
 have no per-texel STP gate - they blend *all* their pixels.
 `upload_color_mesh_blended` carries that state in a per-vertex blend
-word (same ABE/ABR bit positions, `psx_blend::pack_blend_word`); in PSX
-mode the opaque colour pass discards ABE prims and the colour-mesh blend
+word (same ABE/ABR bit positions, `psx_blend::pack_blend_word`); with
+semi-blend on, the opaque colour pass discards ABE prims and the colour-mesh blend
 pipelines re-draw their per-ABR-mode index tail
 (`psx_blend::append_semi_tail_words`) with the prim colour as
 `F`. Untextured TMD prims carry no texpage, so the caller resolves ABR
@@ -148,8 +155,8 @@ dithered: the untextured blend entries dither `F` (a gouraud result)
 before the blend; the textured blend pass draws raw texels and stays
 undithered.
 
-In the `legaia-engine play-window` binary this whole mode is opt-in via
-the `LEGAIA_PSX_RENDER=1` environment variable.
+In the `legaia-engine play-window` binary PSX mode (vertex snap + dither)
+is opt-in via the `LEGAIA_PSX_RENDER=1` environment variable.
 
 ## Opt-in dynamic lighting (enhancement, NOT retail)
 
@@ -246,7 +253,7 @@ screen corners + the move's trail-texture id, reproducing the per-corner
 `rand` wobble, the random brightness band that picks a texture sub-column,
 and the exact UV / CLUT / texpage layout. It takes an injected rng (the
 retail source is the BIOS `rand`) so the construction is pure and
-unit-tested. The finished quad is no longer parked: `screen_overlay::
+unit-tested. `screen_overlay::
 afterimage_screen_quad` lifts it into a `ScreenPrim` that the
 [`screen_overlay`](src/screen_overlay.rs) pass links into the screen-space
 ordering table and the wgpu renderer draws via `RenderTarget::ScreenOverlay`.
@@ -480,12 +487,14 @@ populated town. `LEGAIA_POSE_CACHE_VERIFY=1` re-checks the memo against the
 live pose on every cache hit and logs any mismatch, which is what pins the
 `(slot, frame)` key as non-aliasing.
 
-## Retail draw-decision kernels (no host yet)
+## Retail draw-decision kernels (reference ports)
 
 A family of modules ports SCUS passes that *decide* what the draw path does
-rather than emit geometry. Each is pure, unit-tested and carries a
-`NOT WIRED` disclosure naming the host it is missing - the state they act on
-(actor pool, battle context, mode dispatcher) lives in `engine-core`.
+rather than emit geometry. Each is pure and unit-tested, and none is called by
+a host: `attach_swap` carries a `NOT WIRED` disclosure naming the destination
+it is missing, and the rest carry `REPLACED-BY` naming the engine mechanism
+that does the routine's job (or, for `battle_on_screen`, that nothing on the
+disc references it).
 
 - [`actor_bind`](src/actor_bind.rs) (`FUN_80020f88`) - resolves an actor's
   mesh-pool index off its `.MAP` placement record (`rec[+0x10] + prefix`,

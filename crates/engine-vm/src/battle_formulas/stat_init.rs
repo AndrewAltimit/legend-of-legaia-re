@@ -147,7 +147,7 @@ pub struct BattleActorStats {
 ///
 /// Wired: the browser Muscle Dome page builds its player fighter through this
 /// kernel - `LegaiaMinigames::muscle_player_fighter` in
-/// `crates/web-viewer/src/minigames_muscle.rs` levels the SCUS new-game
+/// `crates/web-viewer/src/minigames_muscle/session.rs` levels the SCUS new-game
 /// template through the growth curves and then calls this with an empty equip
 /// window, and `muscle_start_vs` (a `#[wasm_bindgen]` export) is the host root
 /// above it. `engine-core`'s own `seed_party_battle_stats` does not route here

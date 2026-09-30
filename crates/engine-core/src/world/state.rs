@@ -378,7 +378,7 @@ impl World {
     /// whose per-scene initializer `FUN_801D6704` loads the map and then
     /// hands off to mode 3 (field per-frame) by writing
     /// `_DAT_8007B83C = 3`. See `docs/subsystems/boot.md` ("New Game boot
-    /// chain") and `crates/engine-vm/src/title_overlay.rs`
+    /// chain") and `crates/engine-vm/src/title_overlay/state_layout.rs`
     /// (`MASTER_GAME_MODE_FIELD_LAUNCH` / `MASTER_GAME_MODE_FIELD_RUN`).
     ///
     /// Here that collapses to: clear the unambiguous new-game-owned state
