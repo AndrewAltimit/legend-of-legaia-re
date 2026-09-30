@@ -306,7 +306,8 @@ impl RetailBattle {
         // The player summon block is linear: PROT `903 + (id - 0x81)`.
         let entry = u32::from(self.queued_action).wrapping_sub(0x81) + 903;
         let directed = (0x81..=0xA0).contains(&self.queued_action)
-            && legaia_engine_vm::cast_module_camera::module_director(entry).is_some();
+            && legaia_engine_vm::cast_module_camera::module_profile(entry)
+                .is_some_and(|p| p.paces_band());
         let module_phase =
             (directed && (0x35..=0x36).contains(&self.action_state)).then_some(self.module_phase);
         Some(PhaseGate {

@@ -742,8 +742,9 @@ impl World {
         // the module's hit arm rather than on the engine's walk-in.
         let profile = run
             .as_ref()
-            .and_then(|r| vm::cast_module_camera::module_profile(r.prot_entry));
-        let directed_hit = profile.map(|p| p.hit_arm);
+            .and_then(|r| vm::cast_module_camera::module_profile(r.prot_entry))
+            .filter(|p| p.paces_band());
+        let directed_hit = profile.and_then(|p| p.hit_arm);
         let module_busy =
             profile.is_some() && run.as_ref().is_some_and(|r| r.tick_ported && r.busy);
         let module_phase = run.as_ref().map_or(0, |r| r.phase);
@@ -1544,6 +1545,11 @@ impl World {
         // the phase-chain body does not run at all (retail's arm returns
         // before any of its writes). Its shot is the camera the summon band's
         // `0x35` / `0x36` hand the battle camera.
+        let profile = if has_trampoline {
+            None
+        } else {
+            vm::cast_module_camera::module_profile(entry)
+        };
         let direction = if has_trampoline {
             None
         } else {
@@ -1564,8 +1570,16 @@ impl World {
         run.camera_follow = direction.and_then(|d| d.follow);
         run.camera_nudge = direction.and_then(|d| d.nudge);
         let held = direction.is_some_and(|d| d.hold);
-        let step = if held {
+        // A camera-only director owns the phase of a module whose tick body
+        // is unported: its pass advances it, and it claims no tick.
+        let camera_only = profile.is_some_and(|p| !p.paces_band());
+        if camera_only && !held {
+            ctx.phase = ctx.phase.wrapping_add(1);
+        }
+        let step = if held && !camera_only {
             Some(ticks::CastTickStep::Busy)
+        } else if held || camera_only {
+            None
         } else if has_trampoline {
             match (entry, body) {
                 (958, Some(ticks::BLAZING_SLASH_TICK)) => {

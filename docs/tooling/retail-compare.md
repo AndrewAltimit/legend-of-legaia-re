@@ -247,14 +247,17 @@ That last gap is the per-summon module's, not the band's. In `0x35` / `0x36`
 the camera belongs to the slot-B module, which arms its own framings on the
 **creature** (actor slot 7) and paces its arms on a countdown of its own
 ([`cast-module.md`](../subsystems/cast-module.md#the-module-owns-the-camera-and-the-bands-length)).
-Where the engine ports a module's director (PROT 0903, 0905, 0908) the band's
-length is the module's, so a `0x35` / `0x36` capture of that module is gated on
+Where the engine ports a module's pacing director (PROT 0903, 0905, 0908)
+the band's length is the module's, so a `0x35` / `0x36` capture of that module is gated on
 the module's phase byte `ctx[+0x279]` as well (`PhaseGate::module_phase`, the
 `m<phase>` suffix of `LEGAIA_CAPTURE_GATE`). A walk arm is gated on its entry,
 not on how far the creature has walked, so a capture mid-walk reads its
-`camera` against the framing the walk starts from. A module with no director
-keeps case 6 on the caster through `0x35` / `0x36`, and its capture's `camera`
-reads that gap. Where the creature stands is the formation's: a fight whose
+`camera` against the framing the walk starts from. A camera-only director
+(the summon creatures) does not move the band's length, so its captures stay
+gated on the flash alone. A module with no director keeps case 6 on the
+caster through `0x35` / `0x36`, and its capture's `camera` reads that gap -
+PROT 0913 (Nova), whose opening arms wait on the creature's CD read, is the
+one `0x35` capture of that kind left. Where the creature stands is the formation's: a fight whose
 engine seats differ from retail's reads the difference in the creature focus
 too, since the module places the creature relative to caster and victim.
 

@@ -144,6 +144,9 @@ pub struct ModuleCamState {
     pub yaw_base: i32,
     /// The victim seat the cast latched on its first pass.
     pub victim_slot: Option<u8>,
+    /// A module-side mirror of the TR y global, for an arm that gates on the
+    /// camera it is climbing (PROT 0917's arm 1).
+    pub tr_y: i32,
 }
 
 /// `FUN_801D5854(7, 6)` out of a module arm: the action SM's own case-6
@@ -207,6 +210,9 @@ pub struct ArmDirection {
     pub follow: Option<ModuleFollow>,
     /// The drift the arm wrote straight into the camera globals, if any.
     pub nudge: Option<ModuleNudge>,
+    /// `true` on an arm a camera-only director does not cover: the module
+    /// phase stays where it is and the camera keeps the last framing.
+    pub park: bool,
 }
 
 /// A module arm's direct writes into the live camera globals - pitch
@@ -226,12 +232,21 @@ impl ArmDirection {
         shot: None,
         follow: None,
         nudge: None,
+        park: false,
     };
     pub(super) const PASS: Self = Self {
         hold: false,
         shot: None,
         follow: None,
         nudge: None,
+        park: false,
+    };
+    pub(super) const PARK: Self = Self {
+        hold: true,
+        shot: None,
+        follow: None,
+        nudge: None,
+        park: true,
     };
     pub(super) fn shot(shot: ModuleShot) -> Self {
         Self {
@@ -268,7 +283,9 @@ pub(super) fn focus_on(seat: ModuleSeat) -> [i16; 3] {
     [seat.x.wrapping_neg(), 0, seat.z.wrapping_neg()]
 }
 
+pub mod creature;
 mod seru;
+pub use creature::*;
 pub use seru::*;
 
 pub(super) fn gate(hold: bool) -> ArmDirection {
@@ -289,8 +306,12 @@ pub struct ModuleProfile {
     /// The arms.
     pub direct: ModuleDirector,
     /// The phase arm the module lands its outcome in: once the phase has
-    /// passed it, the hit / restore has been applied.
-    pub hit_arm: u8,
+    /// passed it, the hit / restore has been applied. `None` for a
+    /// **camera-only** director - one over a module whose tick body is not
+    /// ported ([`creature`]): it owns the module phase for the arms it
+    /// covers and parks on the first it does not, and the band's length
+    /// stays the engine stager's.
+    pub hit_arm: Option<u8>,
     /// The phase arm the module walks its creature in, if it walks one: the
     /// host starts the creature's walk there and reports its arrival back
     /// through [`ModuleCamState::creature_arrived`]. A module with none keeps
@@ -305,20 +326,44 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
     match prot_entry {
         903 => Some(ModuleProfile {
             direct: gimard_direct,
-            hit_arm: GIMARD_WALK_ARM,
+            hit_arm: Some(GIMARD_WALK_ARM),
             walk_arm: Some(GIMARD_WALK_ARM),
         }),
         905 => Some(ModuleProfile {
             direct: vera_direct,
-            hit_arm: VERA_RESTORE_ARM,
+            hit_arm: Some(VERA_RESTORE_ARM),
             walk_arm: None,
         }),
         908 => Some(ModuleProfile {
             direct: zenoir_direct,
-            hit_arm: ZENOIR_FINISH_ARM,
+            hit_arm: Some(ZENOIR_FINISH_ARM),
             walk_arm: None,
         }),
+        914 => Some(ModuleProfile::camera_only(gola_gola_direct)),
+        915 => Some(ModuleProfile::camera_only(mushura_direct)),
+        917 => Some(ModuleProfile::camera_only(barra_direct)),
+        920 => Some(ModuleProfile::camera_only(slippery_direct)),
+        923 => Some(ModuleProfile::camera_only(gilium_direct)),
+        928 => Some(ModuleProfile::camera_only(palma_direct)),
+        930 => Some(ModuleProfile::camera_only(horn_direct)),
+        931 => Some(ModuleProfile::camera_only(jedo_direct)),
         _ => None,
+    }
+}
+
+impl ModuleProfile {
+    const fn camera_only(direct: ModuleDirector) -> Self {
+        Self {
+            direct,
+            hit_arm: None,
+            walk_arm: None,
+        }
+    }
+
+    /// Whether this director paces the band (the module's own tick body is
+    /// ported and its holds hold `0x36`).
+    pub const fn paces_band(&self) -> bool {
+        self.hit_arm.is_some()
     }
 }
 

@@ -1857,6 +1857,19 @@ directors so far, each read off its own tick's disassembly:
   module's countdown. The creature's clip-paced strike (arms 6..10) is not
   directed.
 
+- **The summon creatures PROT 0914, 0915, 0917, 0920, 0923, 0928, 0930,
+  0931** - their tick bodies are not ported, so their directors are
+  **camera-only**: each covers the opening arms the sustain `0x35` runs (the
+  arm-0 cut, an arm-1 cut or pan, and the drift some of them write into the
+  globals while the load runs), owns the module phase over those arms, and
+  **parks** on the first arm it does not cover, where the camera holds. The
+  engine's stager keeps deciding the band's length for them. PROT 0923 counts
+  its drift on the frame delta alone (`8 * delta` off the word, `4 * delta`
+  off TR z), not on the scalar-times-delta product; PROT 0917's arm 1 gates on
+  the camera itself, climbing TR y until it reaches `0x800`. PROT 0931 and
+  0930 dispatch through a jump table at the image head (`sltiu 0x20`) rather
+  than a compare chain.
+
 Two gates the engine reads as already open: the creature stream load
 (`FUN_8003EAE4` / the `0x8007BDB0` token) and the CD poll `FUN_8003F2B8(1)`.
 The engine has the record resident, so a module that spends its opening

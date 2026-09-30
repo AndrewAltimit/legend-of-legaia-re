@@ -101,3 +101,38 @@ fn gimard_creature_shots_frame_the_placed_creature() {
     assert_eq!(raw_z, 0x400);
     assert_eq!(pose.focus, [f32::from(c.x), 0.0, f32::from(c.z)]);
 }
+
+#[test]
+fn camera_only_directors_park_past_their_arms() {
+    for entry in [914, 915, 917, 920, 923, 928, 930, 931] {
+        let p = module_profile(entry).expect("directed");
+        assert!(!p.paces_band(), "PROT {entry} is camera-only");
+        let mut st = ModuleCamState::default();
+        let d = (p.direct)(&mut st, 0, seats());
+        assert!(d.shot.is_some(), "PROT {entry} cuts at arm 0");
+        // Walk until it parks; every covered arm lets the phase through
+        // eventually.
+        let mut phase = 0u8;
+        for _ in 0..4096 {
+            let d = (p.direct)(&mut st, phase, seats());
+            if d.park {
+                break;
+            }
+            if !d.hold {
+                phase += 1;
+            }
+        }
+        assert!((1..8).contains(&phase), "PROT {entry} parked at {phase}");
+    }
+}
+
+#[test]
+fn barra_climbs_until_tr_y_reaches_0x800() {
+    let mut st = ModuleCamState::default();
+    let _ = barra_direct(&mut st, 0, seats());
+    let mut holds = 0;
+    while barra_direct(&mut st, 1, seats()).hold {
+        holds += 1;
+    }
+    assert_eq!(holds, (0x800 - 0x400) / MODULE_DRAIN_PER_TICK);
+}
