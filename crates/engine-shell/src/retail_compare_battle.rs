@@ -74,6 +74,12 @@ pub const BATTLE_SETTLE_TICKS: u64 = 60;
 /// is the boss stage module's baton). Every other fight leaves the loop on
 /// its first prompt, so the bound costs nothing there.
 const OPENING_TICKS: u32 = 4800;
+/// Frames a replayed cast may take to reach the capture's phase. The summon
+/// band's longest pre-creature stretch is the caster's clip plus the `0x78`
+/// flash-out; a creature's own choreography (`0x36`) runs longer.
+const INFLIGHT_TICKS: u32 = 1200;
+/// The extra capture deadline a phase-gated `play-window` child gets.
+pub const INFLIGHT_DEADLINE: u64 = INFLIGHT_TICKS as u64;
 /// The battle projection's `H` (`FUN_8003D254`; `battle_cam_script::GTE_H`).
 const BATTLE_H: i16 = 256;
 
@@ -110,6 +116,165 @@ pub struct RetailBattle {
     pub party: Vec<Option<Combatant>>,
     /// Monster seats (pool slots `3..3 + monster_count`).
     pub monsters: Vec<Option<Combatant>>,
+    /// `ctx[+0x13]` - the seat the action SM is running.
+    pub active_actor: u8,
+    /// The active seat's queued action id `+0x1DF` (a spell id on a cast).
+    pub queued_action: u8,
+    /// The active seat's target byte `+0x1DD`.
+    pub target_code: u8,
+    /// The summon band's live flash, when one is up ([`RetailFade`]).
+    pub summon_fade: Option<RetailFade>,
+}
+
+/// The summon band's live full-screen flash in a capture: which of the two
+/// templates it is and how many vsyncs it has run. Read off the SCUS fade
+/// actor's `+0x7C` block ([`legaia_engine_core::fade_ramp`]), whose
+/// countdowns give the age back exactly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RetailFade {
+    /// `true` for the `0x33` flash-in (black to white), `false` for the
+    /// `0x34` flash-out.
+    pub to_white: bool,
+    /// Vsyncs since the spawn, the start delay included.
+    pub age: u16,
+}
+
+/// The SCUS fade actor's tick (`FUN_80025000`), stored at actor `+0x0C`.
+const FADE_ACTOR_TICK: u32 = 0x8002_5000;
+/// The actor-list "done" bit (`actor[+0x10] |= 8`) a killed fade carries.
+const ACTOR_DONE: u32 = 0x8;
+/// Where the effect-actor pool lives (`FUN_80020DE0`'s allocations).
+const ACTOR_POOL: std::ops::Range<u32> = 0x8007_0000..0x800A_0000;
+
+/// The block's per-frame red delta for a template (`FUN_80020B00`).
+fn template_delta(t: &legaia_engine_vm::battle_action::SummonFadeTemplate) -> i16 {
+    (((i32::from(t.end_rgb[0]) - i32::from(t.start_rgb[0])) * 0x40) / i32::from(t.duration)) as i16
+}
+
+/// Find the live summon flash among the fade actors: tick word
+/// `FUN_80025000`, not done, kind `1`, id `1`, and the delta of one of the
+/// two summon templates (the creature's own fades share the actor and the
+/// kind, never the delta and duration pair).
+pub fn summon_fade(ram: &[u8]) -> Option<RetailFade> {
+    use legaia_engine_vm::battle_action::{SUMMON_FADE_ID, SUMMON_FLASH_IN, SUMMON_FLASH_OUT};
+    let s16 = |va: u32| game_anchors::u16_at(ram, va) as i16;
+    let mut a = ACTOR_POOL.start;
+    while a + 0xA0 < ACTOR_POOL.end {
+        let base = a;
+        a += 4;
+        if game_anchors::u32_at(ram, base + 0x0C) != FADE_ACTOR_TICK
+            || game_anchors::u32_at(ram, base + 0x10) & ACTOR_DONE != 0
+        {
+            continue;
+        }
+        let b = base + 0x7C;
+        if s16(b + 0x18) != 1 || s16(b + 0x22) != SUMMON_FADE_ID {
+            continue;
+        }
+        let (delta, delay, duration) = (s16(b + 0x10), s16(b + 0x1C), s16(b + 0x20));
+        for (t, to_white) in [(&SUMMON_FLASH_IN, true), (&SUMMON_FLASH_OUT, false)] {
+            if delta != template_delta(t) {
+                continue;
+            }
+            // `FUN_80020C14` counts the delay down first; the frame it lands
+            // also steps the duration, so a landed block's age is one short
+            // of the two countdowns' sum.
+            let age = if delay > 0 {
+                i32::from(t.delay) - i32::from(delay)
+            } else if t.delay > 0 {
+                i32::from(t.delay) + i32::from(t.duration) - i32::from(duration) - 1
+            } else {
+                i32::from(t.duration) - i32::from(duration)
+            };
+            return Some(RetailFade {
+                to_white,
+                age: age.clamp(0, i32::from(u16::MAX)) as u16,
+            });
+        }
+    }
+    None
+}
+
+/// Where in the summon band a capture sits, as an engine frame has to be
+/// gated to match it: the action-SM state, and - while a flash is up - the
+/// same flash the same number of vsyncs in. `play-window` reads it as
+/// `LEGAIA_CAPTURE_GATE` and captures the first frame it holds; the headless
+/// seed samples on the same predicate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PhaseGate {
+    pub action_state: u8,
+    pub fade: Option<RetailFade>,
+}
+
+impl PhaseGate {
+    /// `state[,white|black,age]`.
+    pub fn to_env(&self) -> String {
+        match self.fade {
+            None => format!("{}", self.action_state),
+            Some(f) => format!(
+                "{},{},{}",
+                self.action_state,
+                if f.to_white { "white" } else { "black" },
+                f.age
+            ),
+        }
+    }
+
+    pub fn from_env(s: &str) -> Option<Self> {
+        let mut it = s.split(',').map(str::trim);
+        let action_state = it.next()?.parse().ok()?;
+        let fade = match (it.next(), it.next()) {
+            (Some(dir), Some(age)) => Some(RetailFade {
+                to_white: dir == "white",
+                age: age.parse().ok()?,
+            }),
+            _ => None,
+        };
+        Some(Self { action_state, fade })
+    }
+
+    /// Whether `world` is at this phase: the action SM on the same state
+    /// and, when the capture had a flash up, the same flash at least as far
+    /// in.
+    pub fn met(&self, world: &legaia_engine_core::world::World) -> bool {
+        if world.mode != SceneMode::Battle || world.battle_ctx.action_state != self.action_state {
+            return false;
+        }
+        let Some(want) = self.fade else {
+            return true;
+        };
+        world.presentation.fade.as_ref().is_some_and(|f| {
+            f.kind == 1
+                && (f.target_rgb()[0] == 0xFF) == want.to_white
+                && f.age_vsyncs() >= want.age
+        })
+    }
+}
+
+impl RetailBattle {
+    /// The in-flight cast this capture holds, when the engine can replay it:
+    /// a party seat running the summon band (`0x32..=0x36`) on a spell id.
+    pub fn inflight_cast(&self) -> Option<legaia_engine_core::world::InflightCastSeed> {
+        let in_band = (0x32..=0x36).contains(&self.action_state);
+        (in_band
+            && self.flow == 0xFF
+            && self.active_actor < self.party_count
+            && self.queued_action >= legaia_engine_vm::battle_action::SPELL_TRIGGER_SUMMON_MIN_ID)
+            .then_some(legaia_engine_core::world::InflightCastSeed {
+                caster: self.active_actor,
+                spell_id: self.queued_action,
+                target: self.target_code,
+            })
+    }
+
+    /// The phase an in-flight capture's engine frame is gated on.
+    pub fn phase_gate(&self) -> Option<PhaseGate> {
+        self.inflight_cast()?;
+        Some(PhaseGate {
+            action_state: self.action_state,
+            fade: self.summon_fade,
+        })
+    }
 }
 
 fn in_ram(p: u32) -> bool {
@@ -152,6 +317,12 @@ impl RetailBattle {
         if monster_ids.iter().all(|&id| id == 0) {
             return Err("formation cell empty".into());
         }
+        let active_actor = game_anchors::u8_at(ram, ctx + 0x13);
+        let active = Some(game_anchors::u32_at(
+            ram,
+            ACTOR_TABLE + u32::from(active_actor.min(7)) * 4,
+        ))
+        .filter(|&p| in_ram(p));
         Ok(Self {
             party_count,
             monster_count,
@@ -171,6 +342,10 @@ impl RetailBattle {
             monsters: (0..u32::from(monster_count))
                 .map(|m| combatant(ram, 3 + m))
                 .collect(),
+            active_actor,
+            queued_action: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DF)),
+            target_code: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DD)),
+            summon_fade: summon_fade(ram),
         })
     }
 }
@@ -187,6 +362,12 @@ pub struct EngineBattle {
     /// Ticks from the battle-mode flip to the first command prompt; `None`
     /// when the opening never reached one.
     pub prompt_tick: Option<u32>,
+    /// `Some` when the capture's cast was replayed: the ticks from the
+    /// dispatch to the capture's phase, `None` inside when the engine never
+    /// reached it.
+    pub inflight: Option<Option<u32>>,
+    /// The engine's action-SM state when sampled.
+    pub action_state: u8,
     pub monster_ids: Vec<Option<u16>>,
     pub party: Vec<Combatant>,
     pub monsters: Vec<Combatant>,
@@ -359,18 +540,45 @@ pub fn run_engine_battle(
     // Run the opening (banner, intro camera, initiative) to the first round
     // prompt, the earliest point a retail capture of a running fight can
     // share with a fresh entry; then settle.
+    //
+    // A capture taken mid-cast is replayed instead of parked: the cast is
+    // seeded to dispatch the moment that prompt opens, and the session runs
+    // until it reaches the capture's phase (`PhaseGate`) rather than a fixed
+    // settle.
+    let seed = battle.inflight_cast();
+    session.host.world.battle.inflight_seed = seed;
     let mut prompt_tick = None;
     for t in 0..OPENING_TICKS {
-        if session.host.world.battle.flow != BattleFlowState::Idle {
+        let w = &session.host.world;
+        let reached = match seed {
+            Some(_) => w.battle.inflight_seed.is_none(),
+            None => w.battle.flow != BattleFlowState::Idle,
+        };
+        if reached {
             prompt_tick = Some(t);
             break;
         }
         session.tick()?;
         session.host.route_bgm_events(&mut director)?;
     }
-    for _ in 0..BATTLE_SETTLE_TICKS {
-        session.tick()?;
-        session.host.route_bgm_events(&mut director)?;
+    let mut phase_tick = None;
+    match battle.phase_gate() {
+        Some(gate) if prompt_tick.is_some() => {
+            for t in 0..INFLIGHT_TICKS {
+                if gate.met(&session.host.world) {
+                    phase_tick = Some(t);
+                    break;
+                }
+                session.tick()?;
+                session.host.route_bgm_events(&mut director)?;
+            }
+        }
+        _ => {
+            for _ in 0..BATTLE_SETTLE_TICKS {
+                session.tick()?;
+                session.host.route_bgm_events(&mut director)?;
+            }
+        }
     }
     let world = &mut session.host.world;
     let pc = world.party.party_count.clamp(1, 3) as usize;
@@ -435,6 +643,8 @@ pub fn run_engine_battle(
         formation_source: source,
         man_row,
         prompt_tick,
+        inflight: seed.map(|_| phase_tick),
+        action_state: world.battle_ctx.action_state,
         monster_ids,
         party,
         monsters,
@@ -552,12 +762,26 @@ pub fn compare_battle(
     }
     put("battle_party", s, d);
     let want = BattleFlowState::from_raw(battle.flow);
+    // A replayed cast is scored on the action-SM state as well: the flow
+    // byte reads `Idle` for every in-flight action alike.
+    let phase_ok = engine.flow == want
+        && (engine.inflight.is_none() || engine.action_state == battle.action_state);
+    let inflight = match engine.inflight {
+        None => String::new(),
+        Some(Some(t)) => format!("; cast replayed, phase reached at +{t}"),
+        Some(None) => "; cast replayed, phase never reached".to_string(),
+    };
     put(
         "phase",
-        f64::from(u8::from(engine.flow == want)),
+        f64::from(u8::from(phase_ok)),
         format!(
-            "retail flow=0x{:02X} ({want:?}) action=0x{:02X} run=0x{:02X}; engine {:?} (first prompt at +{:?})",
-            battle.flow, battle.action_state, battle.run_state, engine.flow, engine.prompt_tick
+            "retail flow=0x{:02X} ({want:?}) action=0x{:02X} run=0x{:02X}; engine {:?} action=0x{:02X} (first prompt at +{:?}){inflight}",
+            battle.flow,
+            battle.action_state,
+            battle.run_state,
+            engine.flow,
+            engine.action_state,
+            engine.prompt_tick
         ),
     );
     let (s, d) = camera_score(&retail.camera, &engine.camera);
@@ -660,6 +884,58 @@ mod tests {
             BattleFlowState::from_raw(b.flow),
             BattleFlowState::TurnPrompt
         );
+    }
+
+    /// A live summon flash-in block, as `FUN_80024E80` leaves it in the
+    /// actor pool: the reader finds it by tick word, kind, id and delta, and
+    /// takes its age off the two countdowns.
+    #[test]
+    fn reads_the_summon_flash_age_off_the_fade_block() {
+        use legaia_engine_vm::battle_action::SUMMON_FLASH_IN;
+        let mut ram = vec![0u8; 0x20_0000];
+        let actor = 0x8008_2BC4;
+        put32(&mut ram, actor + 0x0C, FADE_ACTOR_TICK);
+        let b = actor + 0x7C;
+        put16(&mut ram, b + 0x10, template_delta(&SUMMON_FLASH_IN) as u16);
+        put16(&mut ram, b + 0x18, 1);
+        put16(&mut ram, b + 0x22, 1);
+        // Still in the start delay: 14 of 20 left -> 6 vsyncs in.
+        put16(&mut ram, b + 0x1C, 14);
+        put16(&mut ram, b + 0x20, 20);
+        assert_eq!(
+            summon_fade(&ram),
+            Some(RetailFade {
+                to_white: true,
+                age: 6
+            })
+        );
+        // Landed and 14 into the hold: 20 + 20 + 14 vsyncs, less the one the
+        // landing frame counts twice.
+        put16(&mut ram, b + 0x1C, 0);
+        put16(&mut ram, b + 0x20, (-14i16) as u16);
+        assert_eq!(summon_fade(&ram).map(|f| f.age), Some(53));
+        // A killed block is not the live flash.
+        put32(&mut ram, actor + 0x10, ACTOR_DONE);
+        assert_eq!(summon_fade(&ram), None);
+    }
+
+    #[test]
+    fn the_phase_gate_round_trips_through_its_env_form() {
+        for g in [
+            PhaseGate {
+                action_state: 0x33,
+                fade: None,
+            },
+            PhaseGate {
+                action_state: 0x35,
+                fade: Some(RetailFade {
+                    to_white: false,
+                    age: 24,
+                }),
+            },
+        ] {
+            assert_eq!(PhaseGate::from_env(&g.to_env()), Some(g));
+        }
     }
 
     #[test]

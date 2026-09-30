@@ -26,6 +26,14 @@ fn present_target<'a>(
 }
 
 impl PlayWindowApp {
+    /// Whether a `LEGAIA_CAPTURE_GATE` capture's phase holds this frame.
+    fn capture_phase_met(&self) -> bool {
+        self.screenshot
+            .as_ref()
+            .and_then(|sc| sc.phase_gate.as_ref())
+            .is_some_and(|g| g.met(&self.session.host.world))
+    }
+
     pub(super) fn handle_redraw(&mut self) {
         // Opt-in frame profiler (`LEGAIA_PROFILE=1`; see
         // `legaia_engine_render::profile`). Free when off - each call is a
@@ -73,6 +81,12 @@ impl PlayWindowApp {
         // `tick_frame` on those frames, freezes them the same way.
         let mut field_tail_ticks = 0;
         for _ in 0..run_ticks {
+            // A phase-gated capture stops ticking the frame its phase is
+            // reached, so the frame drawn is that one and not up to three
+            // ticks past it.
+            if self.capture_phase_met() {
+                break;
+            }
             self.pad = if std::mem::take(&mut first_tick) {
                 first_tick_pad
             } else {
@@ -2762,10 +2776,31 @@ impl PlayWindowApp {
             }
             // Screenshot harness: at the target tick, read the frame back
             // offscreen and exit instead of presenting to the window.
-            let capture_due = self
+            let gated = self
                 .screenshot
                 .as_ref()
-                .is_some_and(|sc| sc.path.is_some() && self.tick_no >= sc.capture_tick);
+                .is_some_and(|sc| sc.path.is_some() && sc.phase_gate.is_some());
+            if gated
+                && !self.capture_phase_met()
+                && self
+                    .screenshot
+                    .as_ref()
+                    .is_some_and(|sc| self.tick_no >= sc.capture_tick)
+            {
+                eprintln!(
+                    "phase gate not met by tick {} (action state 0x{:02X})",
+                    self.tick_no, self.session.host.world.battle_ctx.action_state
+                );
+                std::process::exit(3);
+            }
+            let capture_due = self.screenshot.as_ref().is_some_and(|sc| {
+                sc.path.is_some()
+                    && if gated {
+                        self.capture_phase_met()
+                    } else {
+                        self.tick_no >= sc.capture_tick
+                    }
+            });
             if capture_due {
                 let path = self
                     .screenshot

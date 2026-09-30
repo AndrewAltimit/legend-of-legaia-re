@@ -5,6 +5,25 @@
 
 use super::*;
 
+/// A party cast to dispatch at the first command prompt instead of waiting
+/// for the pad: what a retail capture taken mid-cast holds in RAM - the
+/// active seat `ctx[+0x13]`, the caster's queued action id `+0x1DF` and its
+/// target byte `+0x1DD` (a slot, or the group codes `8` = party /
+/// `9` = enemy row). A **debug affordance** for the retail comparison corpus
+/// (`docs/tooling/retail-compare.md`), not a player surface: it skips the
+/// round's command band and initiative walk and hands the caster straight to
+/// the action SM's Magic band, so a capture of the summon band compares
+/// against the same band rather than against a round prompt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InflightCastSeed {
+    /// Battle ordinal of the caster (a party seat).
+    pub caster: u8,
+    /// The queued action id (`+0x1DF`) - a spell-table id.
+    pub spell_id: u8,
+    /// Retail's `+0x1DD` target byte.
+    pub target: u8,
+}
+
 /// Live battle session state: per-seat stat arrays, command / submenu sessions, flow + round state, tutorial, intro transition, escape timer, buffs, hit / effect queues and the end-of-battle latches.
 pub struct BattleState {
     /// The loaded scene's **map id** - retail's `_DAT_80084540`, the scene's
@@ -345,6 +364,11 @@ pub struct BattleState {
     /// commands committed so far, and the member cursor `ctx[+0x13]`. See
     /// [`crate::battle_round::RoundPhase`].
     pub round_flow: crate::battle_round::RoundFlow,
+    /// A debug seed that puts a Seru cast **in flight** the moment the
+    /// battle's first command prompt opens - the retail comparison corpus's
+    /// way into a capture taken mid-cast ([`InflightCastSeed`]). `None` on
+    /// every ordinary fight; consumed (taken) by the live loop.
+    pub inflight_seed: Option<InflightCastSeed>,
     /// The commit log's launch glide - retail's `0x35 + i` clones gliding the
     /// log off the left edge when the member leaves the ring for a sub-screen
     /// and back when they return
@@ -605,6 +629,7 @@ impl BattleState {
             swing_costs: [[crate::arts_command_input::FAVORED_COST; 4]; 3],
             flow: crate::battle_flow::BattleFlowState::Idle,
             round_flow: crate::battle_round::RoundFlow::default(),
+            inflight_seed: None,
             commit_log_launch: None,
             sideband: Default::default(),
             stage_id: 0,

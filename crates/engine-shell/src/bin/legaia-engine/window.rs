@@ -65,6 +65,12 @@ pub(crate) struct ScreenshotConfig {
     /// ([`legaia_engine_core::world_map_panel_host::hud_phase_hold`]). Set by
     /// the retail-compare image channel from the state's own RAM.
     pub hud_countdown: Option<i16>,
+    /// `LEGAIA_CAPTURE_GATE=state[,white|black,age]`: capture the first
+    /// frame the battle's action SM holds the retail capture's phase
+    /// ([`legaia_engine_shell::retail_compare_battle::PhaseGate`]) instead of
+    /// at a fixed tick; `capture_tick` becomes the deadline, past which the
+    /// run exits without a PNG. Set by the retail-compare image channel.
+    pub phase_gate: Option<legaia_engine_shell::retail_compare_battle::PhaseGate>,
 }
 
 /// Debug state `play-window` seeds before the first world tick, so a capture
@@ -233,6 +239,9 @@ impl ScreenshotConfig {
             hud_countdown: std::env::var("LEGAIA_HUD_COUNTDOWN")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
+            phase_gate: std::env::var("LEGAIA_CAPTURE_GATE")
+                .ok()
+                .and_then(|v| legaia_engine_shell::retail_compare_battle::PhaseGate::from_env(&v)),
         }))
     }
 }

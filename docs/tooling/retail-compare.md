@@ -204,9 +204,35 @@ keep their field meaning. HP / MP current values are seeded, so their misses
 are what the settle window changed; the max values are the real check
 (record-derived on the party, archive-derived on the monsters).
 
-**What the seed cannot carry.** An action in flight: most battle captures are
-mid-strike or mid-cast (flow `0xFF`), and the engine is compared parked on its
-round prompt, so their `phase` channel reads capture timing. The idle orbit's
+**Replayed casts.** A capture taken inside the summon band - a party seat
+(`ctx[+0x13]`) on action-SM state `0x32..=0x36` with a spell id queued at
+`+0x1DF` - is replayed rather than parked. The seed hands the engine that cast
+(`World::battle.inflight_seed`, target byte `+0x1DD`), dispatched the moment
+the first command prompt opens, and the capture's MP charge is credited back so
+the band's own debit lands on the captured figure. The session then runs to
+the capture's **phase**, not a fixed settle: the same action-SM state and,
+while the band's full-screen flash is up, the same flash the same number of
+vsyncs in. Retail's flash is a SCUS fade actor (tick word `FUN_80025000` at
+`+0x0C`, not done, kind `1`, id `1`), told apart from a creature's own fades by
+its per-frame delta; its `+0x7C` block's countdowns give its age
+(`delay0 - delay` in the start delay, `delay0 + duration0 - duration - 1`
+once landed - the landing frame steps both). `FadeState::age_vsyncs` is the
+engine's twin. `phase` then also compares the action-SM state, and `play-window`
+captures on the same predicate (`LEGAIA_BATTLE_INFLIGHT`,
+`LEGAIA_CAPTURE_GATE`), stopping its tick loop the frame it holds. A
+`0x33` capture has no flash yet and is gated on the state alone.
+
+Before this, a mid-cast frame was scored against the round prompt, which reads
+as `image` near `0` on a white-out: an instrument artifact, not an engine
+verdict. What a like-for-like frame still shows is the engine's: retail frames
+the caster in a close-up cast camera over a darkened backdrop through `0x33` /
+`0x34`, the engine keeps the battle camera and backdrop, and the caster's name
+plate draws over retail's flash where the engine's flash covers it.
+
+**What the seed cannot carry.** Any other action in flight: a strike, an art
+or a monster's cast (flow `0xFF` outside the summon band) is compared with the
+engine parked on its round prompt, so its `phase` channel reads capture
+timing. The idle orbit's
 yaw is a clock (`-4` per camera step), so on a prompt state the yaw part of
 `camera` - and most of the frame - reads the capture instant. A party whose
 present list names a seat the save window's roster does not seat (a guest

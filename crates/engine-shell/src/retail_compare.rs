@@ -1008,17 +1008,34 @@ fn battle_image(
         .map(system_flag_ids)
         .unwrap_or_default();
     let extra = crate::retail_compare_battle::play_window_args(battle, row);
+    let mut env = vec![("LEGAIA_BATTLE_STAGE", battle.stage_variant.to_string())];
+    // A capture taken mid-cast replays its cast and is captured on its phase
+    // (the gate), with the fixed tick as the deadline.
+    let mut tick = crate::retail_compare_battle::BATTLE_CAPTURE_TICK
+        + u64::from(engine.prompt_tick.unwrap_or(0));
+    if let (Some(seed), Some(gate)) = (battle.inflight_cast(), battle.phase_gate()) {
+        if engine.inflight == Some(None) {
+            report.detail.insert(
+                "image".into(),
+                "not scored: the replayed cast never reached the capture's phase headlessly".into(),
+            );
+            return None;
+        }
+        env.push((
+            "LEGAIA_BATTLE_INFLIGHT",
+            format!("{},{},{}", seed.caster, seed.spell_id, seed.target),
+        ));
+        env.push(("LEGAIA_CAPTURE_GATE", gate.to_env()));
+        tick += crate::retail_compare_battle::INFLIGHT_DEADLINE;
+    }
     match crate::retail_compare_image::engine_frame_with(
         exe,
         opts.extracted,
         &retail.scene,
         None,
         &extra,
-        &[("LEGAIA_BATTLE_STAGE", battle.stage_variant.to_string())],
-        // A fight whose opening outlasts the usual one (the evolved-Cort
-        // arrival) is captured the same distance past its own first prompt.
-        crate::retail_compare_battle::BATTLE_CAPTURE_TICK
-            + u64::from(engine.prompt_tick.unwrap_or(0)),
+        &env,
+        tick,
         opts.out_dir,
         &entry.label,
         crate::retail_compare_image::FrameEntry::Door(&flags),
