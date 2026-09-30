@@ -1311,6 +1311,7 @@ pub(super) fn cmd_play_window_with_record(
         prev_scene_mode: None,
         monster_archive: None,
         battle_mesh_base: 0,
+        battle_rest_vmesh: std::collections::HashMap::new(),
         battle_color_mesh_base: 0,
         scene_aabb: ([f32::NEG_INFINITY; 3], [f32::INFINITY; 3]),
         pad: 0,

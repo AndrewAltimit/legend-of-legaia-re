@@ -66,6 +66,33 @@ impl BattleActorDrawPlan {
         crate::battle_body_blend::draw_colour_semi_mode(self.draw_colour)
     }
 
+    /// Apply this body's whole-mesh semi-transparency
+    /// ([`crate::battle_body_blend::apply_body_blend`]) to a `[cba, tsb]`
+    /// stream. Every stream the body draws takes it - a posed rebuild and
+    /// the rest mesh alike - since retail's dispatcher ORs the word into
+    /// every packet whatever pose the object is in. Both hosts call this:
+    /// the native window on the per-frame posed mesh and on the rest mesh's
+    /// blended override, the browser page on its blend re-upload.
+    pub fn apply_body_blend(&self, cba_tsb: &mut [[u16; 2]]) {
+        crate::battle_body_blend::apply_body_blend(cba_tsb, self.semi_mode());
+    }
+
+    /// Whether the body takes the tint pass's cue (`cue_far` / `cue_ir0`)
+    /// this frame, given its render flag. The target cursor's two flags
+    /// carry their own cue (`battle_action::cursor_cue`); the capture /
+    /// defeat fade (`render_flag == 2`) draws additive, so it takes the cue
+    /// only while its word raises ABE - un-cued it is never an opaque black
+    /// silhouette. The blend rides every stream the body draws
+    /// ([`Self::apply_body_blend`]), so the answer does not depend on
+    /// whether the body is posed.
+    pub fn tint_cue_applies(&self, render_flag: u8) -> bool {
+        use legaia_engine_vm::battle_action as ba;
+        !matches!(
+            render_flag,
+            ba::CURSOR_FLAG_SELECTED | ba::CURSOR_FLAG_DIMMED
+        ) && (render_flag != 2 || self.semi_mode().is_some())
+    }
+
     /// The GTE `IR0` as the hosts' `DrawCue.max_ir0` (`0x1000` = `1.0`).
     pub fn cue_ir0(&self) -> f32 {
         f32::from(self.tint.weight) / 4096.0
@@ -461,6 +488,25 @@ mod tests {
         let p = world.battle_actor_draw_plan(3, None, 4.0, false).unwrap();
         assert!(p.drawn, "lone monster, scripted fight: stamped grey");
         assert_eq!(p.draw_colour, tick::DEFEATED_GREY);
+    }
+
+    #[test]
+    fn the_fade_cue_follows_the_blend_word_not_the_pose() {
+        let world = battle_world();
+        let mut p = world.battle_actor_draw_plan(0, None, 4.0, false).unwrap();
+        assert!(p.tint_cue_applies(0));
+        assert!(!p.tint_cue_applies(5), "cursor flag keeps its own cue");
+        assert!(!p.tint_cue_applies(200));
+        p.draw_colour &= 0x7FFF_FFFF;
+        assert!(!p.tint_cue_applies(2), "opaque fade: no cue");
+        p.draw_colour |= 0x8100_0000;
+        assert!(p.tint_cue_applies(2), "additive fade: cued");
+        let mut ct = [[0u16, 0u16]; 3];
+        p.apply_body_blend(&mut ct);
+        assert!(
+            ct.iter()
+                .all(|c| c[1] & 0x8000 != 0 && (c[1] >> 5) & 3 == 1)
+        );
     }
 
     #[test]

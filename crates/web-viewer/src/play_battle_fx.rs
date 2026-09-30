@@ -1125,14 +1125,8 @@ impl LegaiaRuntime {
             // black silhouette; its zero-lanes end is the draw gate in
             // `play_battle_actor_transforms`.
             if let Some(b) = b
-                && !matches!(
-                    b.render_flag,
-                    ba::CURSOR_FLAG_SELECTED | ba::CURSOR_FLAG_DIMMED
-                )
                 && let Some(p) = self.battle_draw_plan(actor_idx)
-                && (b.render_flag != 2
-                    || legaia_engine_core::battle_body_blend::draw_colour_semi_mode(p.draw_colour)
-                        .is_some())
+                && p.tint_cue_applies(b.render_flag)
             {
                 let far = p.cue_far();
                 out.extend_from_slice(&[1.0, far[0], far[1], far[2], p.cue_ir0(), 1.0]);

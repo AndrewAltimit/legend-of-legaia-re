@@ -500,6 +500,7 @@ impl PlayWindowApp {
             log::warn!("play-window: flame-atlas VRAM upload skipped: {e:#}");
         }
         self.battle_mesh_base = self.meshes.len();
+        self.battle_rest_vmesh.clear();
         self.battle_color_mesh_base = self.color_meshes.len();
         // Upload the stage dome mesh (drawn as the backdrop). Its textures live
         // in the stage VRAM, so build it unfiltered (all textured prims are
@@ -634,6 +635,7 @@ impl PlayWindowApp {
                 Ok(m) => {
                     let idx = self.meshes.len();
                     self.meshes.push(m);
+                    self.battle_rest_vmesh.insert(idx, vmesh);
                     // Keep `scene_tmd_data` length-parallel with `meshes`.
                     self.scene_tmd_data.push((tmd, mesh.tmd_bytes().to_vec()));
                     self.session.host.world.actors[actor_idx].tmd_binding = Some(idx);
@@ -722,6 +724,7 @@ impl PlayWindowApp {
                     Ok(m) => {
                         let idx = self.meshes.len();
                         self.meshes.push(m);
+                        self.battle_rest_vmesh.insert(idx, vmesh);
                         let member = form.member;
                         self.session.host.world.actors[member].tmd_binding = Some(idx);
                         registered.push(member);
@@ -890,6 +893,7 @@ impl PlayWindowApp {
         };
         let idx = self.meshes.len();
         self.meshes.push(uploaded);
+        self.battle_rest_vmesh.insert(idx, vmesh);
         self.scene_tmd_data.push((tmd, mesh.tmd_bytes().to_vec()));
         match r.upload_vram(&vram) {
             Ok(v) => {
@@ -1200,6 +1204,7 @@ impl PlayWindowApp {
         }
         let keep = self.battle_mesh_base.min(self.meshes.len());
         self.meshes.truncate(keep);
+        self.battle_rest_vmesh.clear();
         self.scene_tmd_data
             .truncate(keep.min(self.scene_tmd_data.len()));
         let keep_color = self.battle_color_mesh_base.min(self.color_meshes.len());

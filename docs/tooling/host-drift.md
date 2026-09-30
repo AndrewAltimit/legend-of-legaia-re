@@ -3504,6 +3504,15 @@ or the deviating host adopting the other's behaviour.
   tick step; all three surfaces call it, and a `SIM_PAIRS` row holds both play
   hosts' scene rebuilds to `ClutWalkAnim::install`. `legaia_asset::clut_walk`
   stays the parser.
+- **A battle body's blend off its rest mesh.** The capture / defeat fade and
+  the near-camera ghost apply the colour word's blend to every prim retail
+  draws, posed or not. The native window applied it to posed meshes only, and
+  its cue gate asked `pose_frame` for the same reason, so a body drawn from
+  its rest mesh stayed opaque and un-cued there. Both hosts now go through
+  `BattleActorDrawPlan::apply_body_blend` (the native window keeps each battle
+  body's rest mesh CPU-side and re-uploads it blended while the word raises
+  ABE) and `BattleActorDrawPlan::tint_cue_applies`, under two `SIM_PAIRS`
+  rows.
 - **Small copies moved onto one call.** The spoils line's leader name
   (`World::battle_spoils_leader`) and a save's resume point
   (`SceneHost::current_resume`, behind the native session's wrapper and the
@@ -3516,13 +3525,6 @@ or the deviating host adopting the other's behaviour.
 Recorded rather than fixed. Each names the host that lacks it or the copy
 that could drift; none is gated.
 
-- **A battle body's blend off its rest mesh (native).** The capture / defeat
-  fade and the near-camera ghost apply the colour word's blend to every prim
-  retail draws. The page applies it to every battle mesh; the native window
-  applies it to posed meshes only, so a body drawn from its rest mesh stays
-  opaque and un-cued there (its cue gate asks `pose_frame` for the same
-  reason). The page is the faithful side; closing it natively means applying
-  `apply_body_blend` to the rest-mesh upload too.
 - **World-map marker gates**, read and left as they are. Both hosts emit the
   markers through `marker_quads` and differ in two predicates, neither of
   which is drift: the player stand-in asks each host whether its own leader

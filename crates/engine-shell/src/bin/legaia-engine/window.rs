@@ -850,6 +850,13 @@ struct PlayWindowApp {
     /// `meshes.len()` at battle entry: the boundary appended battle monster
     /// meshes start at, so leaving battle truncates back to it.
     battle_mesh_base: usize,
+    /// The CPU-side rest mesh of every battle body registered this battle,
+    /// keyed by its `meshes` index. A body that draws without a pose frame
+    /// draws this mesh, and when its colour word raises semi-transparency
+    /// (the capture / defeat fade, the near-camera ghost) the posed-override
+    /// builder re-uploads it with `BattleActorDrawPlan::apply_body_blend`, as
+    /// the browser page re-uploads its blended stream. Cleared on exit.
+    battle_rest_vmesh: std::collections::HashMap<usize, legaia_tmd::mesh::VramMesh>,
     /// `color_meshes.len()` at battle entry - the twin of `battle_mesh_base`
     /// for the untextured pipeline, so the backdrop shell's colour half is
     /// truncated away on battle exit alongside the textured meshes.

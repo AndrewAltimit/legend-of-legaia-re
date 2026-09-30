@@ -2190,13 +2190,15 @@ impl PlayWindowApp {
                             // `render_flag == 2` (the capture / defeat fade,
                             // SM arm 2) also ORs `0x81000000` into the node's
                             // mode word, so the fading actor draws ABE|ABR1
-                            // additive and black = gone. The posed-mesh
-                            // builder applies that word's blend to every prim
-                            // (`battle_body_blend`, `redraw_passes.rs`), so
-                            // the fade takes its cue whenever the body is
-                            // posed and its word raises ABE; a body drawn off
-                            // its rest mesh has no blend and stays un-cued
-                            // rather than an opaque black silhouette. Once its
+                            // additive and black = gone. The override builder
+                            // applies that word's blend to every prim of the
+                            // posed mesh and the rest mesh alike
+                            // (`BattleActorDrawPlan::apply_body_blend`,
+                            // `redraw_passes.rs`), so the fade takes its cue
+                            // whenever its word raises ABE
+                            // (`BattleActorDrawPlan::tint_cue_applies`, the
+                            // page's gate too), never as an opaque black
+                            // silhouette. Once its
                             // lanes reach zero the draw plan above skips the
                             // body (`FUN_800480D8`'s word-zero arm), as it
                             // does the summon hide. The two cursor flags keep
@@ -2210,19 +2212,8 @@ impl PlayWindowApp {
                             // - a darker copy of its colour, or a brighter
                             // one on the outdoor stages - plus the status
                             // colours. `World::battle_actor_draw_plan`.
-                            let blended = battle_plan.is_some_and(|p| {
-                                actor.pose_frame.is_some()
-                                    && legaia_engine_core::battle_body_blend::draw_colour_semi_mode(
-                                        p.draw_colour,
-                                    )
-                                    .is_some()
-                            });
                             if let Some(p) = battle_plan
-                                && !matches!(
-                                    b.render_flag,
-                                    ba::CURSOR_FLAG_SELECTED | ba::CURSOR_FLAG_DIMMED
-                                )
-                                && (b.render_flag != 2 || blended)
+                                && p.tint_cue_applies(b.render_flag)
                             {
                                 cue = Some(legaia_engine_render::DrawCue {
                                     far: p.cue_far(),

@@ -533,6 +533,36 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["cursor_cue"],
     },
     {
+        "what": "battle body whole-mesh blend, native vs play page - the "
+        "capture / defeat fade and the near-camera ghost OR the colour word's "
+        "ABE + ABR into every prim. The native window applied it to posed "
+        "meshes only, so a body drawn off its rest mesh stayed opaque there. "
+        "Both hosts' stream builders must go through "
+        "`BattleActorDrawPlan::apply_body_blend`",
+        "sites": {
+            "native": (NATIVE_REDRAW_PASSES, "build_posed_actor_overrides"),
+            "web": (
+                "crates/web-viewer/src/play_battle_body_blend.rs",
+                "play_battle_actor_blend_cba_tsb",
+            ),
+        },
+        "mode": "symbols_all",
+        "symbols": ["apply_body_blend"],
+    },
+    {
+        "what": "battle body tint-cue gate, native vs play page - which "
+        "render flags take the tint pass's cue (not the cursor's two; the "
+        "fade only while its word raises ABE). The native gate also asked "
+        "whether the body was posed. Both draw passes must ask "
+        "`BattleActorDrawPlan::tint_cue_applies`",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": ("crates/web-viewer/src/play_battle_fx.rs", "play_battle_actor_cursor"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["tint_cue_applies"],
+    },
+    {
         "what": "shop item label, native vs play page - a nameless id (a "
         "load without the executable) printed `item 42` in the native shop "
         "and `Item 2A` on the page, each host spelling its own fallback. Both "

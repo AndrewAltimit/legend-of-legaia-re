@@ -209,7 +209,33 @@ impl PlayWindowApp {
             if !actor.active {
                 continue;
             }
-            let (Some(tmd_idx), Some(pose)) = (actor.tmd_binding, &actor.pose_frame) else {
+            let Some(tmd_idx) = actor.tmd_binding else {
+                continue;
+            };
+            let Some(pose) = &actor.pose_frame else {
+                // A battle body drawn off its rest mesh still takes its
+                // colour word's blend (the capture / defeat fade, the
+                // near-camera ghost): retail's dispatcher ORs it into every
+                // packet whatever the pose. Only a blended body needs the
+                // re-upload; an opaque one draws the resident rest mesh.
+                if let Some(plan) = self.body_draw_plan(ai)
+                    && plan.semi_mode().is_some()
+                    && let Some(rest) = self.battle_rest_vmesh.get(&tmd_idx)
+                {
+                    let mut cba_tsb = rest.cba_tsb.clone();
+                    plan.apply_body_blend(&mut cba_tsb);
+                    match r.upload_vram_mesh(
+                        &rest.positions,
+                        &rest.uvs,
+                        &cba_tsb,
+                        &rest.normals,
+                        &rest.colors,
+                        &rest.indices,
+                    ) {
+                        Ok(m) => posed_overrides[tmd_idx] = Some(m),
+                        Err(e) => log::warn!("blended rest mesh upload: {e:#}"),
+                    }
+                }
                 continue;
             };
             let Some((tmd, raw)) = self.scene_tmd_data.get(tmd_idx) else {
@@ -271,10 +297,7 @@ impl PlayWindowApp {
             // them into each packet. The browser play page's twin is
             // `web-viewer::play_battle_body_blend`.
             if let Some(plan) = self.body_draw_plan(ai) {
-                legaia_engine_core::battle_body_blend::apply_body_blend(
-                    &mut vmesh.cba_tsb,
-                    legaia_engine_core::battle_body_blend::draw_colour_semi_mode(plan.draw_colour),
-                );
+                plan.apply_body_blend(&mut vmesh.cba_tsb);
             }
             if std::env::var_os("LEGAIA_DIAG_POSE").is_some() {
                 let (lo, hi) = vmesh.aabb();
