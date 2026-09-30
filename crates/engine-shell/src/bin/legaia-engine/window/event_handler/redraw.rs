@@ -1953,10 +1953,12 @@ impl PlayWindowApp {
                 // battle draw class (see the stage-scale note on the
                 // backdrop draw above): the party stands ON its own grid
                 // cell only if the cell and the actor's stage translation
-                // are lifted by the same factor. The DPCS ramp is a
-                // VIEW-depth window, so it is lifted with the geometry -
-                // otherwise the whole ramp would collapse into the near
-                // field and the floor would read as fully fogged.
+                // are lifted by the same factor. The DPCS ramp is NOT
+                // lifted: it is keyed on the vertex's view depth `SZ`, and
+                // the camera translation trio is already in view units, so
+                // the fragment depth is retail's `SZ` unscaled (see
+                // docs/subsystems/battle.md, the grid's near colour and cue
+                // depth, for the capture that pins it).
                 if in_battle
                     && let Some(gi) = self.battle_ground_mesh
                     && let Some(gmesh) = self.meshes.get(gi)
@@ -1971,7 +1973,7 @@ impl PlayWindowApp {
                             .map(|far| legaia_engine_render::DrawCue {
                                 far,
                                 near_z: 0.0,
-                                far_z: grid::grid_cue_far_z() * BATTLE_WORLD_SCALE,
+                                far_z: grid::grid_cue_far_z(),
                                 max_ir0: grid::grid_cue_max_ir0(),
                             }),
                     });

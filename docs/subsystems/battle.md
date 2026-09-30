@@ -1029,6 +1029,32 @@ are copied into the packet verbatim.
 the grid is not symmetric about the origin - at the live 28×28 it spans
 `x ∈ [-7168, +7168]` but `z ∈ [-7680, +6656]`.
 
+#### The grid's near colour and cue depth
+
+Each lattice vertex is cued by `DPCS` from the GTE `RGBC` register, which the
+emitter loads from scratch `0x1F800398` (`lwc2 a2, 0x84(t9)` at `0x801d05f4`,
+`t9 = 0x1F800314`) and never writes. `FUN_80026CE4` rewrites that word every
+frame from the ambient word `0x8007B7B0`, and the backdrop pass `FUN_80050120`
+stores the ambient beside the far colour, on every stage class, as the stage
+base plus `0x404040` (`0x800507E0..0x800507F0`). Once the intro fade has
+settled the base is `0x808080`, so the floor's **near** colour is `0xC0` per
+channel - the texel is lifted by half before the cue blends it toward the far
+colour. Every catalogued battle capture, indoor and outdoor, holds
+`0x8007B7B0 = 0xC0C0C0`.
+
+`IR0` is `SZ >> 2` on the vertex's own screen depth, with no scale of the
+battle world folded in. The `map01` Gobu Gobu capture's grid packets
+(`mednafen-state display-list`, the `77C0/000D` family) climb from `0xCC` per
+channel at the bottom edge through `0xE9` at mid-ground to the `0xFF` clamp at
+the horizon; the bottom edge sits roughly `0xC00` deep under the far framing,
+and `0xC0 + (0xFE - 0xC0) * SZ / 0x4000` lands there only with `SZ` unscaled.
+Engine side: both battle
+hosts build the grid with `build_ground_grid_rgbc(GRID_RGBC_SETTLED)`
+(`legaia_asset::battle_backdrop`, `legaia_engine_vm::battle_ground_grid`) and
+cue it over the unscaled `grid_cue_far_z`. With the neutral `0x80` and a ramp
+four times too long, the port's floor read at about two thirds of retail's
+brightness on outdoor stages and too bright on indoor ones.
+
 **The two culls.** Pass 1 transforms each cell *centre* by the view matrix
 (`cop2 0x0480012` = `MVMVA` rotation/`V0`/`+TR`/`sf=1`), reads `IR3` back, and
 writes `-1` / `0` / `1` per cell: `-1` when `z + 0x200 <= 0`, `0` when
@@ -1728,8 +1754,11 @@ combatants - the backdrop is registered as an ordinary background actor
 through the same `FUN_80048A08` composition. The port therefore lifts the
 arena and the ground grid with the same `BATTLE_WORLD_SCALE = 4.0`
 (`PlayWindowApp::battle_stage_model` natively, `BattleMesh::stage_positions`
-in the browser upload) and scales the grid's DPCS ramp window with them,
-because that window is a view depth.
+in the browser upload). The grid's DPCS ramp window is **not** scaled with
+them: it is keyed on the vertex's view depth `SZ`, and the scale is a model
+transform under a camera whose translation trio is already in view units, so
+the port's fragment depth is retail's `SZ` as-is
+([the grid's near colour and cue depth](#the-grids-near-colour-and-cue-depth)).
 
 The camera's translation trio is authored in this scaled space: the traced
 far framing's `TR.z = 7680` is the eye distance to a formation whose seats

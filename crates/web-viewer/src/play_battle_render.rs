@@ -493,7 +493,11 @@ impl LegaiaRuntime {
             // Flat tiled ground grid under the actors (retail's
             // func_0x801d02c0), textured from the constant retail
             // page/CLUT/UV window the scene battle VRAM populates.
-            let grid = legaia_asset::battle_backdrop::build_ground_grid();
+            // Pre-cue colour = the settled battle ambient (`0x8007B7B0` ->
+            // `RGBC`), the same one the native host draws with.
+            let grid = legaia_asset::battle_backdrop::build_ground_grid_rgbc(
+                legaia_engine_vm::battle_ground_grid::GRID_RGBC_SETTLED,
+            );
             if !grid.indices.is_empty() {
                 ground = Some(BattleMesh::textured(grid));
                 grid_far = Some(*gf);
@@ -864,10 +868,11 @@ impl LegaiaRuntime {
     /// grid placement as a **per-draw** cue, so the browser grid fogs into
     /// the stage's far colour exactly as the native `DrawCue` seam does.
     ///
-    /// `far_z` is a VIEW-depth window, so it rides the same
-    /// [`BATTLE_WORLD_SCALE`] the grid's vertices do
-    /// ([`BattleMesh::stage_positions`]) - otherwise the whole ramp would
-    /// collapse into the near field and the floor would read fully fogged.
+    /// `far_z` is a VIEW-depth window in GTE units, and is **not** scaled:
+    /// the grid's vertices ride [`BATTLE_WORLD_SCALE`] as a model transform,
+    /// but the camera's translation trio is already in view units, so the
+    /// fragment's view depth is retail's `SZ` as-is (see
+    /// `docs/subsystems/battle.md`, the grid's depth cue).
     pub fn play_battle_ground_cue_json(&self) -> String {
         let Some(far) = self.battle_render.as_ref().and_then(|b| b.grid_far) else {
             return "null".to_string();
@@ -878,7 +883,7 @@ impl LegaiaRuntime {
             far[0],
             far[1],
             far[2],
-            grid::grid_cue_far_z() * BATTLE_WORLD_SCALE,
+            grid::grid_cue_far_z(),
             grid::grid_cue_max_ir0()
         )
     }

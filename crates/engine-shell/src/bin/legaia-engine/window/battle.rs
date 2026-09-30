@@ -569,7 +569,11 @@ impl PlayWindowApp {
                 self.battle_ground_mesh = None;
                 self.battle_ground_cue_far = None;
                 self.battle_stage_outdoor = *outdoor;
-                let grid = build_battle_ground_grid();
+                // Pre-cue colour = the settled battle ambient
+                // (`0x8007B7B0` -> `RGBC`), see `build_ground_grid_rgbc`.
+                let grid = build_battle_ground_grid(
+                    legaia_engine_vm::battle_ground_grid::GRID_RGBC_SETTLED,
+                );
                 match r.upload_vram_mesh(
                     &grid.positions,
                     &grid.uvs,

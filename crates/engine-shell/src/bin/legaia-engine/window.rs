@@ -1293,7 +1293,7 @@ pub(crate) use geometry::{
 // The procedural battle ground grid lives in `legaia-asset` so all three
 // hosts share one implementation (the native window, the asset-viewer and
 // the browser play page) rather than forking the kernel per host.
-pub(crate) use legaia_asset::battle_backdrop::build_ground_grid as build_battle_ground_grid;
+pub(crate) use legaia_asset::battle_backdrop::build_ground_grid_rgbc as build_battle_ground_grid;
 pub(crate) use run::cmd_play_window;
 // These two stay window-tree-private (their signatures reference the
 // `pub(super)` record types); re-exported only so the sibling submodules

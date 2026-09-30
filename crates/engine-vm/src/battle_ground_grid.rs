@@ -77,10 +77,11 @@
 //! # Wiring
 //!
 //! The drawn mesh is the shared builder `legaia_asset::battle_backdrop::
-//! build_ground_grid` (re-exported by `engine-shell`'s `play-window` as
-//! `build_battle_ground_grid` and drawn under the battle camera). This
-//! module carries the emitter's *laws* the hosts consume: the play-window
-//! battle draw fogs the grid with [`grid_cue_far_z`] / [`grid_cue_max_ir0`]
+//! build_ground_grid_rgbc` (re-exported by `engine-shell`'s `play-window` as
+//! `build_battle_ground_grid` and drawn under the battle camera), coloured
+//! with [`GRID_RGBC_SETTLED`] - the ambient word the emitter's `RGBC` holds.
+//! This module carries the emitter's *laws* the hosts consume: both battle
+//! draws fog the grid with [`grid_cue_far_z`] / [`grid_cue_max_ir0`]
 //! and the [`grid_far_colour`] resolved through [`OutdoorCueTable`]. The
 //! visibility culls ([`classify_cell`] / [`quad_on_screen`]) stay reference
 //! kernels: under a depth-buffered projection they are visually neutral,
@@ -324,6 +325,22 @@ pub fn grid_far_colour(base: [u8; 3], outdoor: bool) -> [u8; 3] {
         }
     })
 }
+
+/// The ambient word `0x8007B7B0` the same `FUN_80050120` pass stores beside
+/// the far colour, on every stage class: the base plus `0x404040`
+/// (`lui v0,0x40; ori v0,v0,0x4040; addu v0,s2,v0; sw v0,-0x4850(at)` at
+/// `0x800507E0..0x800507F0`). `FUN_80026CE4` copies it into scratch
+/// `0x1F800398` every frame, and that word is the `RGBC` the grid emitter
+/// cues each vertex from (`lwc2` at `0x801d05f4`) - the floor's **near**
+/// colour. Channel arithmetic saturates, as [`grid_far_colour`]'s does.
+pub fn battle_ambient_colour(base: [u8; 3]) -> [u8; 3] {
+    base.map(|c| c.saturating_add(0x40))
+}
+
+/// The grid's pre-cue vertex colour once the intro fade has settled:
+/// [`battle_ambient_colour`] of the neutral base, `0xC0` per channel. A
+/// capture of a running map01 fight holds `0x8007B7B0 = 0xC0C0C0`.
+pub const GRID_RGBC_SETTLED: [u8; 3] = [0xC0; 3];
 
 /// Capture-pinned settled far colour on ordinary (indoor) stages.
 pub const GRID_FAR_INDOOR: [u8; 3] = [0x40; 3];
@@ -637,18 +654,31 @@ mod tests {
 
     #[test]
     fn dpcs_at_the_captured_far_colours_pins_the_drawn_packet_colour() {
-        let neutral = 0x80 as f32; // the grid quads' packet colour
+        // The grid quads' pre-cue colour is the settled battle ambient
+        // (`RGBC` <- `0x1F800398` <- `0x8007B7B0`), not the neutral `0x80`.
+        let near = GRID_RGBC_SETTLED[0] as f32;
         // Indoor: full blend lands exactly on the far colour...
-        assert_eq!(dpcs(neutral, 0x40 as f32, 1.0), 0x40 as f32);
-        // ...and the far cull edge extrapolates darker (SZ = 0x6500).
-        let edge = dpcs(neutral, 0x40 as f32, grid_ir0(0x6500));
-        assert!((edge - 27.0).abs() < 1.0, "edge = {edge}");
+        assert_eq!(dpcs(near, 0x40 as f32, 1.0), 0x40 as f32);
+        // ...and the far cull edge extrapolates past it to black
+        // (SZ = 0x6500, IR0 ~ 1.58).
+        assert_eq!(dpcs(near, 0x40 as f32, grid_ir0(0x6500)), 0.0);
         // Outdoor: brightens toward 0xFE and saturates just past full
         // blend rather than overshooting.
-        assert_eq!(dpcs(neutral, 0xFE as f32, 1.0), 0xFE as f32);
-        assert_eq!(dpcs(neutral, 0xFE as f32, grid_ir0(0x6500)), 255.0);
-        // ir0 = 0 is the identity - the near edge draws unfogged.
-        assert_eq!(dpcs(neutral, 0x40 as f32, 0.0), neutral);
+        assert_eq!(dpcs(near, 0xFE as f32, 1.0), 0xFE as f32);
+        assert_eq!(dpcs(near, 0xFE as f32, grid_ir0(0x6500)), 255.0);
+        // ir0 = 0 is the identity - the near edge draws the ambient.
+        assert_eq!(dpcs(near, 0x40 as f32, 0.0), near);
+    }
+
+    #[test]
+    fn the_ambient_is_the_base_lifted_by_0x40() {
+        assert_eq!(
+            battle_ambient_colour(GRID_FAR_BASE_NEUTRAL),
+            GRID_RGBC_SETTLED
+        );
+        // The intro ramp sample base (0x0C0C0C) and a saturating channel.
+        assert_eq!(battle_ambient_colour([0x0C; 3]), [0x4C; 3]);
+        assert_eq!(battle_ambient_colour([0xF0, 0, 0x80]), [0xFF, 0x40, 0xC0]);
     }
 
     #[test]
