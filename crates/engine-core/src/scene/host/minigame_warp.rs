@@ -378,14 +378,14 @@ impl SceneHost {
 
     /// PROT 0980's baked step chart -> a live [`crate::dance::DanceGame`].
     ///
-    /// The door warp opens the qualifier (`yosenn`) on the short song; which
-    /// heat is staged is the hall's own story-flag state, not the warp's.
+    /// The door warp opens the floor the hall's script asked for: the overlay's
+    /// state 1 reads it off story flags `0x133` / `0x134` / `0x135` / `0x428`
+    /// ([`crate::dance::dance_mode_from_flags`]), so the qualifier, the finals,
+    /// the how-to demo and free play each seat their own cast. On the short
+    /// song.
     fn enter_dance_from_overlay(&mut self, loaded: &[u8]) -> bool {
-        let Some(game) = crate::dance::DanceGame::from_overlay_for_mode(
-            loaded,
-            crate::dance::DanceMode::Qualifier,
-            false,
-        ) else {
+        let mode = crate::dance::dance_mode_from_flags(|f| self.world.system_flag_test(f));
+        let Some(game) = crate::dance::DanceGame::from_overlay_for_mode(loaded, mode, false) else {
             return false;
         };
         self.world.enter_dance(game);

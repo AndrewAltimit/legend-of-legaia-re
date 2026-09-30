@@ -22,6 +22,45 @@ pub enum DanceMode {
     FreePlay,
 }
 
+/// Story flag state 1 maps to [`DanceMode::HowTo`] (`li a0,0x133` at
+/// `0x801CF8F8`).
+pub const MODE_FLAG_HOW_TO: u16 = 0x133;
+/// Story flag state 1 maps to [`DanceMode::Qualifier`] (`0x801CF910`).
+pub const MODE_FLAG_QUALIFIER: u16 = 0x134;
+/// Story flag state 1 maps to [`DanceMode::Finals`] (`0x801CF924`).
+pub const MODE_FLAG_FINALS: u16 = 0x135;
+/// Story flag state 1 maps to [`DanceMode::FreePlay`] (`0x801CF93C`). Unlike
+/// the other three it is **not** cleared on entry: it is the standing "the
+/// hall is yours to play" state, not a one-shot request.
+pub const MODE_FLAG_FREE_PLAY: u16 = 0x428;
+/// The run's pass flag: set on entry (`0x801CF968`), cleared by the results
+/// state on a loss (`0x801CFF10`), read by the hall's field script.
+pub const WIN_FLAG: u16 = 0x50A;
+
+/// Which floor the dance overlay's state 1 opens, off the story flags the
+/// calling field script raised.
+///
+/// State 1 tests the four flags in a fixed order and each hit overwrites the
+/// mode global (`0x801CF8F4..0x801CF94C`): `0x133` -> how-to, `0x134` ->
+/// qualifier, `0x135` -> finals, `0x428` -> free play - so a later flag in
+/// that order wins. With none set the global keeps the `0` the overlay's
+/// entry `FUN_801CEF54` stored at `0x801CF398`: the qualifier.
+// PORT: FUN_801cf470 (state 1's flag -> mode map)
+pub fn dance_mode_from_flags(test: impl Fn(u16) -> bool) -> DanceMode {
+    let mut mode = DanceMode::Qualifier;
+    for (flag, m) in [
+        (MODE_FLAG_HOW_TO, DanceMode::HowTo),
+        (MODE_FLAG_QUALIFIER, DanceMode::Qualifier),
+        (MODE_FLAG_FINALS, DanceMode::Finals),
+        (MODE_FLAG_FREE_PLAY, DanceMode::FreePlay),
+    ] {
+        if test(flag) {
+            mode = m;
+        }
+    }
+    mode
+}
+
 impl DanceMode {
     /// The mode global's value.
     pub fn value(self) -> u32 {

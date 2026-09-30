@@ -96,6 +96,23 @@ fn enter_dance_suspends_mode_and_exit_restores_it() {
     assert!(world.minigames.dance.is_none());
 }
 
+/// Entering a run is the overlay's state 1: the one-shot mode requests are
+/// consumed, the free-play flag stands, and the pass flag is raised.
+#[test]
+fn enter_dance_consumes_the_mode_request_and_raises_the_pass_flag() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    for f in [0x133, 0x134, 0x135, 0x428] {
+        world.system_flag_set(f);
+    }
+    world.enter_dance(crate::dance::DanceGame::new(dance_test_chart(), false));
+    for f in [0x133, 0x134, 0x135] {
+        assert!(!world.system_flag_test(f), "flag {f:#x} consumed");
+    }
+    assert!(world.system_flag_test(0x428));
+    assert!(world.system_flag_test(crate::dance::WIN_FLAG));
+}
+
 /// Both hosts poll `exit_dance` from their frame path on every non-`Dance`
 /// frame, so the poll has to be inert when no run is installed. It was not:
 /// the teardown ran the dance stager's PAD-LATCH CLEAR every frame, which

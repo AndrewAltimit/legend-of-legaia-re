@@ -335,6 +335,52 @@ fn pass_threshold_and_versus_grade() {
     assert!(!g.beating_rivals());
 }
 
+/// State 1 tests `0x133`, `0x134`, `0x135`, `0x428` in that order and each
+/// hit overwrites the mode, so the last flag set wins; none keeps the
+/// entry's qualifier.
+#[test]
+fn state_one_maps_the_story_flags_to_the_floor() {
+    let only = |f: u16| move |x: u16| x == f;
+    assert_eq!(dance_mode_from_flags(|_| false), DanceMode::Qualifier);
+    assert_eq!(dance_mode_from_flags(only(0x133)), DanceMode::HowTo);
+    assert_eq!(dance_mode_from_flags(only(0x134)), DanceMode::Qualifier);
+    assert_eq!(dance_mode_from_flags(only(0x135)), DanceMode::Finals);
+    assert_eq!(dance_mode_from_flags(only(0x428)), DanceMode::FreePlay);
+    assert_eq!(
+        dance_mode_from_flags(|f| f == 0x133 || f == 0x135),
+        DanceMode::Finals
+    );
+}
+
+/// The results state's grade, per mode (`0x801CFE80..0x801CFF14`): the
+/// qualifier reads slot 2, the finals slot 1, a tie keeps the pass flag, the
+/// how-to demo clears at `0x12D` and up, free play never clears.
+#[test]
+fn results_grade_clears_the_pass_flag_per_mode() {
+    let mut g = game();
+    g.mode = DanceMode::Qualifier;
+    g.dancers[0].score = 100;
+    g.dancers[1].score = 500;
+    g.dancers[2].score = 100;
+    assert!(
+        !g.results_clear_win_flag(),
+        "slot 1 is not the qualifier's rival"
+    );
+    g.dancers[2].score = 101;
+    assert!(g.results_clear_win_flag());
+    g.mode = DanceMode::Finals;
+    assert!(g.results_clear_win_flag());
+    g.dancers[1].score = 100;
+    assert!(!g.results_clear_win_flag(), "a tie keeps the flag");
+    g.mode = DanceMode::HowTo;
+    g.dancers[0].score = 0x12C;
+    assert!(!g.results_clear_win_flag());
+    g.dancers[0].score = 0x12D;
+    assert!(g.results_clear_win_flag());
+    g.mode = DanceMode::FreePlay;
+    assert!(!g.results_clear_win_flag());
+}
+
 #[test]
 fn legacy_judge_wrapper_folds_the_events() {
     let mut g = game();

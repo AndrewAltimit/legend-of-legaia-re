@@ -581,6 +581,21 @@ captured roughly three times the settle window into the shot. The camera and
 position channels on it measure script time, not the camera; the eye-space
 X / Y and `H` agree already.
 
+### The dance-hall state is inside the contest-entry cutscene
+
+`minigame_dance_pcsx` is `koin3` with the qualifier request (story flag
+`0x134`) raised, captured on the frame the hall starts loading the dance. Its
+NPCs stand where `koin3`'s partition-2 record 6 walks them: a run of
+cross-context `4C 51` NPC-run ops (from MAN offset `0x3ACF`) moves the player
+to tile `(46, 101)`, Gala to `(49, 101)`, the Disco King to `(6144, 12672)` and
+Mary to `(5760, 13120)` - every one of those positions is the retail
+actor's own - and four of the floor dancers the headers place are gone from
+the state's actor list. The engine seeds a fresh
+scene entry, so it draws the placement headers (the Disco King front and
+centre at `(6144, 13248)`, the four dancers present) and the frame reads as
+"dancers placed wrong". It is script progress, not placement; the retail
+frame is also partway into the load fade.
+
 ## See also
 
 - [recomp-differential](recomp-differential.md) - the frame-tagged

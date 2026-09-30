@@ -708,6 +708,26 @@ impl DanceGame {
         self.score() >= WIN_THRESHOLD_SOLO
     }
 
+    /// Whether the results state clears the run's pass flag [`WIN_FLAG`]
+    /// (`FUN_801cf470` state `0x14`, `0x801CFE80..0x801CFF14`).
+    ///
+    /// Per mode: the qualifier compares the human's score against score slot
+    /// 2 (`lw v1,0x8(a1)`), the finals against slot 1 (`lw v1,0x4(a1)`), and
+    /// clears on `human < rival` (`slt`, so a tie keeps the flag). The how-to
+    /// demo clears when the score is **not** below `0x12D` (`slti` / `bne` to
+    /// the skip), and free play grades nothing.
+    // PORT: FUN_801cf470 (results-state grade)
+    pub fn results_clear_win_flag(&self) -> bool {
+        let me = self.score() as i32;
+        let slot = |i: usize| self.dancers.get(i).map_or(0, |d| d.score as i32);
+        match self.mode {
+            DanceMode::Qualifier => me < slot(2),
+            DanceMode::Finals => me < slot(1),
+            DanceMode::HowTo => me >= 0x12D,
+            DanceMode::FreePlay => false,
+        }
+    }
+
     /// The versus grade (retail modes 0/1): the human out-scores every rival on
     /// the floor. Ties go to the human - retail clears the win flag only when
     /// `human < rival`.

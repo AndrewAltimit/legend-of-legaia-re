@@ -2452,6 +2452,19 @@ impl World {
         // driver of its own.
         let long_song = game.song_len() == crate::dance::SONG_LEN_LONG;
         let how_to = game.mode() == crate::dance::DanceMode::HowTo;
+        // State 1's flag writes, after it has read the mode off them: the
+        // three one-shot mode requests are cleared (`0x801CF950..0x801CF964`;
+        // the free-play flag stays) and the pass flag is raised for the
+        // results state to clear on a loss (`0x801CF968`).
+        // PORT: FUN_801cf470 (state 1's flag writes)
+        for flag in [
+            crate::dance::MODE_FLAG_FINALS,
+            crate::dance::MODE_FLAG_QUALIFIER,
+            crate::dance::MODE_FLAG_HOW_TO,
+        ] {
+            self.system_flag_clear(flag);
+        }
+        self.system_flag_set(crate::dance::WIN_FLAG);
         self.minigames.dance = Some(game);
         self.minigames.dance_last_judge = None;
         self.minigames.dance_countin = Some(crate::dance::CountIn::new());
@@ -2584,9 +2597,14 @@ impl World {
             self.minigames.dance_last_judge = Some(game.judge_press(dir));
         }
         if game.song_over() {
-            // Song finished: restore the interrupted mode, leaving `dance`
-            // in place so the host can read the final score before clearing.
+            // Song finished: the results state grades the run into the pass
+            // flag, then the interrupted mode is restored, leaving `dance` in
+            // place so the host can read the final score before clearing.
+            let clear_win = game.results_clear_win_flag();
             self.mode = self.minigames.dance_return_mode;
+            if clear_win {
+                self.system_flag_clear(crate::dance::WIN_FLAG);
+            }
         }
         self.step_dance_tutorial();
     }

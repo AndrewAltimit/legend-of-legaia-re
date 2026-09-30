@@ -41,7 +41,11 @@ Song end (state 10 only): when `DAT_801d5820` reaches the song-length limit - `0
 
 ### Mode global `DAT_801d514c`
 
-Four modes, `0..3`. The on-screen state-0 menu prints four labels top-to-bottom at y `0x50`/`0x58`/`0x60`/`0x68` (`s_yosenn`/`s_hosenn`/`s_setumei`/`s_asobi`) with the cursor at y `= value*8 + 0x54`, so value 0 = `yosenn` (予選, qualifier), 1 = `hosenn` (本選, finals), 2 = `setumei` (説明, how-to/demo), 3 = `asobi` (遊び, free play). In normal play the mode is chosen by the *caller* (a field script sets a story flag before entering): state 1 maps flag `0x134 → 0`, `0x135 → 1`, `0x133 → 2`, `0x428 → 3` then clears them. The state-0 cursor menu is the debug/test selector. **Confirmed** (value↔label from the state-0 layout + state-1 flag map; the English glosses of the romaji labels are **Inferred**). See `overlay_dance_801cf470.txt`.
+Four modes, `0..3`. The on-screen state-0 menu prints four labels top-to-bottom at y `0x50`/`0x58`/`0x60`/`0x68` (`s_yosenn`/`s_hosenn`/`s_setumei`/`s_asobi`) with the cursor at y `= value*8 + 0x54`, so value 0 = `yosenn` (予選, qualifier), 1 = `hosenn` (本選, finals), 2 = `setumei` (説明, how-to/demo), 3 = `asobi` (遊び, free play).
+
+In normal play the mode is chosen by the *caller* (a field script sets a story flag before entering): state 1 tests `0x133 → 2`, `0x134 → 0`, `0x135 → 1`, `0x428 → 3` in that order, each hit overwriting the global, so the last flag set wins and none leaves the entry's `0` (`0x801CF8F4..0x801CF94C`). It then clears `0x135` / `0x134` / `0x133` - **not** `0x428`, the standing free-play state - and sets the win flag `0x50a`.
+
+The state-0 cursor menu is the debug/test selector. **Confirmed** (value↔label from the state-0 layout + state-1 flag map; the English glosses of the romaji labels are **Inferred**). See `overlay_dance_801cf470.txt`.
 
 Per-mode behaviour, all read directly from `FUN_801cf470`:
 
@@ -51,6 +55,8 @@ Per-mode behaviour, all read directly from `FUN_801cf470`:
 | `1` hosenn | Versus. Grading compares `DAT_801d53cc` against score slot 1 `DAT_801d53d0`; a lower score clears the win flag. |
 | `2` setumei | Short how-to/demo: shorter song limit (`0x41dc` vs `0x64fc`), the [camera keyframe track](#the-camera-keyframe-track) at the head of `FUN_801cf470` is skipped, so the camera holds the entry's pose (guarded `DAT_801d514c != 2`), and state 1 routes through the load-wait state 2. Grading clears the win flag when the score exceeds `300`. |
 | `3` asobi | Free play: draws the personal-best panel (`FUN_801d2f38` + `FUN_801d32f8` over `_DAT_80084464`) and cycles a start voice via `_DAT_80084468`; the grading switch has **no** branch, so free play sets no win/lose flag. |
+
+Engine port: the door warp picks its floor through `dance::dance_mode_from_flags`, `World::enter_dance` runs state 1's flag writes, and the song's end applies `DanceGame::results_clear_win_flag` - all in `engine-core`, so every host that drains the warp gets them.
 
 The win/lose story flag is `0x50a` (a bit in the `DAT_80085758` flag bank). It is **set** on entry (state 1, `func_0x8003ce08(0x50a)`; `ce08` = set, `ce34` = clear, `ce64` = test - see `8003ce08.txt`/`8003ce34.txt`/`8003ce64.txt`) and **cleared on a loss** in grading (modes 0/1 when the human loses the score comparison; mode 2 when the score tops `300`). Downstream field script tests `0x50a`: set = passed, clear = failed. **Confirmed.**
 
