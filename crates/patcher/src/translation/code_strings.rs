@@ -339,6 +339,20 @@ impl CodeStrings {
         growing: &BTreeMap<u32, &[u8]>,
         extra: &[(u32, u32)],
     ) -> CodeLayout {
+        self.layout_with(image, growing, extra, true)
+    }
+
+    /// [`Self::layout`]; with `compact` off the strings that do not grow
+    /// stay at their own addresses and the growing ones go to `extra` only -
+    /// the smallest edit, which moves nothing a mod might have pinned by
+    /// address.
+    fn layout_with(
+        &self,
+        image: &[u8],
+        growing: &BTreeMap<u32, &[u8]>,
+        extra: &[(u32, u32)],
+        compact: bool,
+    ) -> CodeLayout {
         let mut growing: BTreeMap<u32, &[u8]> = growing
             .iter()
             .filter(|(va, _)| self.is_movable(**va))
@@ -372,7 +386,7 @@ impl CodeStrings {
             .collect();
         let mut no_room = Vec::new();
         let (placed, free) = loop {
-            match self.plan(&regions, &current, &growing, &extra_offs) {
+            match self.plan(&regions, &current, &growing, &extra_offs, compact) {
                 Ok(p) => break p,
                 Err(failed) => {
                     for va in failed {
@@ -428,6 +442,7 @@ impl CodeStrings {
         current: &BTreeMap<u32, Vec<u8>>,
         growing: &BTreeMap<u32, &[u8]>,
         extra: &[(usize, usize)],
+        compact: bool,
     ) -> Result<(BTreeMap<u32, usize>, Vec<usize>), Vec<u32>> {
         let mut placed = BTreeMap::new();
         let mut runs: Vec<(usize, usize, Option<usize>)> = Vec::new();
@@ -436,7 +451,7 @@ impl CodeStrings {
             for va in vas.iter().filter(|va| !growing.contains_key(va)) {
                 let orig = self.strs[va].off;
                 let cand = align4(cur);
-                let at = if cand <= orig && self.allowed(*va, self.base + cand as u32) {
+                let at = if compact && cand <= orig && self.allowed(*va, self.base + cand as u32) {
                     cand
                 } else {
                     orig
@@ -444,7 +459,8 @@ impl CodeStrings {
                 placed.insert(*va, at);
                 cur = at + current[va].len() + 1;
             }
-            runs.push((align4(cur).min(*end), *end, Some(ri)));
+            let tail = if compact { align4(cur).min(*end) } else { *end };
+            runs.push((tail, *end, Some(ri)));
         }
         for &(s, e) in extra {
             runs.push((align4(s), e, None));
@@ -511,7 +527,13 @@ impl CodeStrings {
                 failed.push(*va);
             }
         }
-        let layout = self.layout(image, &growing, extra);
+        // The smallest edit first: only the growing strings move, into the
+        // spare spans. Compaction (which moves other strings too) only when
+        // that leaves one without room.
+        let mut layout = self.layout_with(image, &growing, extra, false);
+        if !layout.no_room.is_empty() {
+            layout = self.layout_with(image, &growing, extra, true);
+        }
         for va in &layout.no_room {
             growing.remove(va);
             failed.push(*va);

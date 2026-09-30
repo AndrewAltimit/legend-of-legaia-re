@@ -254,3 +254,177 @@ fn longer_ui_and_system_strings_move_and_every_reference_follows() {
         "the menu overlay's translation region took nothing"
     );
 }
+
+/// The menu-overlay code hooks, applied in one go.
+fn apply_mods(p: &mut DiscPatcher) {
+    legaia_patcher::apply::inject_trade_full(p, 7).expect("--seru-trade");
+    legaia_patcher::apply::inject_super_art_list(p).expect("--show-super-arts");
+}
+
+/// The bytes of every mod region of the ledger, in ledger order.
+fn mod_region_bytes(p: &DiscPatcher) -> Vec<Vec<u8>> {
+    let imgs = images(p);
+    space_ledger::REGIONS
+        .iter()
+        .filter(|r| r.owner != Owner::Translation)
+        .map(|r| {
+            let id = match r.image {
+                Image::Scus => usize::MAX,
+                Image::Prot(x) => x,
+            };
+            let (_, b, base) = imgs.iter().find(|i| i.0 == id).unwrap();
+            b[(r.start_va - base) as usize..(r.end_va - base) as usize].to_vec()
+        })
+        .collect()
+}
+
+/// Every moved string reads its translation at its new address.
+fn moved_ok(p: &DiscPatcher, pack: &LanguagePack, moved: &BTreeMap<String, (u32, u32)>) {
+    let imgs = images(p);
+    for (key, &(_, to)) in moved {
+        let e = pack
+            .sections
+            .ui_menu
+            .iter()
+            .chain(&pack.sections.system_text)
+            .find(|e| &e.key == key)
+            .unwrap();
+        let id = if key.starts_with("scus:") {
+            usize::MAX
+        } else {
+            key.split(':').nth(1).unwrap().parse().unwrap()
+        };
+        let (_, b, base) = imgs.iter().find(|i| i.0 == id).unwrap();
+        let want = markup::encode(&e.translation, Target::CString).unwrap();
+        assert_eq!(read_str(b, *base, to, true), want, "{key} at {to:#x}");
+    }
+}
+
+#[test]
+fn a_language_pack_and_the_mods_compose_in_either_order() {
+    let Some(original) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let src = DiscPatcher::open(original.clone()).expect("open disc");
+    let mut pack = export_pack(&src).expect("export");
+    fill(&mut pack, |i, s| match i % 3 {
+        0 => Some(s.chars().take((s.chars().count() / 2).max(1)).collect()),
+        _ => Some(format!("{s} extra")),
+    });
+    let quit_key = pack
+        .sections
+        .ui_menu
+        .iter()
+        .find(|e| e.source == "@Quit")
+        .map(|e| e.key.clone())
+        .expect("@Quit label");
+    for e in pack.sections.ui_menu.iter_mut() {
+        if e.key == quit_key {
+            e.translation = "@Quit extra".into();
+        }
+    }
+
+    // Translation first, then the mods: every mod still installs, and the
+    // shop's reordered Quit row draws the moved "@Quit".
+    let mut a = DiscPatcher::open(original.clone()).unwrap();
+    let rep = import_pack(&mut a, &pack).expect("import");
+    let to = rep
+        .trace
+        .moved
+        .get(&quit_key)
+        .map(|m| m.1)
+        .expect("@Quit did not move");
+    apply_mods(&mut a);
+    let menu = a.read_entry(899).unwrap();
+    let base = ui::overlay_base_va(899).unwrap();
+    let refs = code_refs::scan(&menu, base, None, to, to + 1);
+    let run_c = space_ledger::REGIONS
+        .iter()
+        .find(|r| {
+            r.image == Image::Prot(899)
+                && matches!(r.owner, Owner::Mods(m) if m.contains(&"--seru-trade"))
+        })
+        .unwrap();
+    assert!(
+        refs.get(&to).into_iter().flatten().any(|s| match *s {
+            code_refs::RefSite::Pair { lui, .. } => {
+                (run_c.start_va..run_c.end_va).contains(&(base + lui as u32))
+            }
+            _ => false,
+        }),
+        "the trade row stub does not draw the moved @Quit"
+    );
+    moved_ok(&a, &pack, &rep.trace.moved);
+    check_sectors(&original, a.image());
+
+    // Mods first, then translation: the import places no string in a mod
+    // region, and the only mod bytes it changes are the mod's own references
+    // to a string that moved (its code must follow the string).
+    let mut b = DiscPatcher::open(original.clone()).unwrap();
+    apply_mods(&mut b);
+    let before = mod_region_bytes(&b);
+    let rep = import_pack(&mut b, &pack).expect("import");
+    assert!(rep.relocated_strings > 0);
+    let after = mod_region_bytes(&b);
+    let imgs = images(&b);
+    let mut sites: BTreeSet<(usize, u32)> = BTreeSet::new();
+    for (key, &(_, to)) in &rep.trace.moved {
+        let id = if key.starts_with("scus:") {
+            usize::MAX
+        } else {
+            key.split(':').nth(1).unwrap().parse().unwrap()
+        };
+        let (_, img, base) = imgs.iter().find(|i| i.0 == id).unwrap();
+        for s in code_refs::scan(img, *base, Some(RETAIL_GP), to, to + 1)
+            .get(&to)
+            .into_iter()
+            .flatten()
+        {
+            match *s {
+                code_refs::RefSite::Word { off } | code_refs::RefSite::Gp { off, .. } => {
+                    sites.insert((id, base + off as u32));
+                }
+                code_refs::RefSite::Pair { lui, lo, .. } => {
+                    sites.insert((id, base + lui as u32));
+                    sites.insert((id, base + lo as u32));
+                }
+            }
+        }
+    }
+    let mods: Vec<&space_ledger::Region> = space_ledger::REGIONS
+        .iter()
+        .filter(|r| r.owner != Owner::Translation)
+        .collect();
+    let mut followed = 0;
+    for ((x, y), r) in before.iter().zip(&after).zip(&mods) {
+        let id = match r.image {
+            Image::Scus => usize::MAX,
+            Image::Prot(p) => p,
+        };
+        for (o, (p, q)) in x.iter().zip(y).enumerate() {
+            if p != q {
+                let word_va = (r.start_va + o as u32) & !3;
+                assert!(
+                    sites.contains(&(id, word_va)),
+                    "translation wrote {word_va:#x} in a mod region ({}) that is no reference to a moved string",
+                    r.why
+                );
+                followed += 1;
+            }
+        }
+        for &(_, to) in rep.trace.moved.values() {
+            assert!(
+                !(r.start_va..r.end_va).contains(&to),
+                "a string moved into a mod region at {to:#x}"
+            );
+        }
+    }
+    eprintln!("[ran] mods then pack: {followed} mod byte(s) follow a moved string");
+    moved_ok(&b, &pack, &rep.trace.moved);
+    check_sectors(&original, b.image());
+    eprintln!(
+        "[ran] mods then pack: {} strings moved; pack then mods: both install",
+        rep.relocated_strings
+    );
+}
