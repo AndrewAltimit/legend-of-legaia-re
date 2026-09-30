@@ -91,7 +91,7 @@ use legaia_engine_core::man_field_scripts::{
     overworld_portal_sites, scene_destinations, scene_man_carriers, system_flag_census,
 };
 use legaia_engine_core::scene::{FmvHandoffOutcome, ProtIndex, Scene, SceneTickEvent};
-use legaia_engine_core::world::{SceneMode, WorldMapEntityConfig};
+use legaia_engine_core::world::{SceneMode, WorldMapEntityConfig, world_map_camera_relative_bits};
 use legaia_engine_shell::boot::{BootConfig, BootSession, FieldLiveOpts};
 use legaia_engine_vm::field_disasm::FlagKind;
 use serde::Deserialize;
@@ -1764,33 +1764,44 @@ fn pad_for_step(session: &BootSession, dwx: i16, dwz: i16) -> u16 {
             .ctrl
             .as_ref()
             .map_or(0, |c| c.azimuth);
-        let (dx, dz) = (f32::from(dwx), f32::from(dwz));
-        let len = (dx * dx + dz * dz).sqrt();
-        if len == 0.0 {
+        if dwx == 0 && dwz == 0 {
             return 0;
         }
-        let theta = (az as f32) / 4096.0 * std::f32::consts::TAU;
-        let (sin, cos) = theta.sin_cos();
-        let (dx, dz) = (dx / len, dz / len);
-        let sx = dx * cos + dz * sin;
-        let sy = -dx * sin + dz * cos;
-        const T: f32 = 0.382_683_43;
-        (
-            if sx > T {
-                1
-            } else if sx < -T {
-                -1
-            } else {
-                0
-            },
-            if sy > T {
-                1
-            } else if sy < -T {
-                -1
-            } else {
-                0
-            },
-        )
+        // Invert the overworld remap exactly: of the eight pad directions,
+        // take the one whose world bits are the wanted step's, else the one
+        // sharing most of them with none opposed. A rounded rotation turns a
+        // cardinal step into a diagonal whenever the camera sits off an
+        // axis, and a diagonal cannot thread a one-tile cave mouth.
+        let want = |b: u16| -> (i16, i16) {
+            (
+                i16::from(b & 0x2000 != 0) - i16::from(b & 0x8000 != 0),
+                i16::from(b & 0x1000 != 0) - i16::from(b & 0x4000 != 0),
+            )
+        };
+        let target = (dwx.signum(), dwz.signum());
+        let mut best: Option<(i32, (i32, i32))> = None;
+        for sx in -1..=1i32 {
+            for sy in -1..=1i32 {
+                if sx == 0 && sy == 0 {
+                    continue;
+                }
+                let (wx, wz) = want(world_map_camera_relative_bits(az, sx, sy));
+                let axis = |w: i16, t: i16| -> i32 {
+                    if w == t {
+                        2
+                    } else if w == 0 || t == 0 {
+                        0
+                    } else {
+                        -4
+                    }
+                };
+                let score = axis(wx, target.0) + axis(wz, target.1);
+                if best.is_none_or(|(b, _)| score > b) {
+                    best = Some((score, (sx, sy)));
+                }
+            }
+        }
+        best.map_or((0, 0), |(_, (sx, sy))| (sx as i16, sy as i16))
     } else {
         let az = session.host.world.locomotion.camera_azimuth;
         let quadrant = (u32::from(az).wrapping_add(512) / 1024) & 3;
@@ -2869,7 +2880,24 @@ fn pad_walk(
                 let next: Vec<(i16, i16)> = path.iter().take(4).map(|&c| cell_center(c)).collect();
                 let w = &session.host.world;
                 if std::env::var_os("LEGAIA_FGL_WALK_DEBUG").is_some() {
-                    // 64-unit wall sub-cells around the player, Z rows.
+                    let lock = w
+                        .player_actor_slot
+                        .and_then(|sl| w.actors.get(usize::from(sl)))
+                        .map(|a| a.move_state.flags);
+                    eprintln!(
+                        "      [stall] holder {} mode {:?} player flags {lock:x?} pad {:#06x} next {next:?} here-blocked {:?} actor {:?}",
+                        holder(session),
+                        w.mode,
+                        w.input.pad(),
+                        (0..4)
+                            .map(|d| w.field_dir_blocked(px, pz, d))
+                            .collect::<Vec<_>>(),
+                        (0..4)
+                            .map(|d| w.field_actor_dir_blocked(px, pz, d))
+                            .collect::<Vec<_>>()
+                    );
+                    // 64-unit wall sub-cells around the player, Z rows. The
+                    // goal tile reads `G` where it is wall, `g` where open.
                     for dz in -24i16..=24 {
                         let row: String = (-24i16..=24)
                             .map(|dx| {
@@ -2879,7 +2907,7 @@ fn pad_walk(
                                 } else if dispatch_tile(x, z)
                                     == (i32::from(goal.0), i32::from(goal.1))
                                 {
-                                    'G'
+                                    if w.field_tile_is_wall(x, z) { 'G' } else { 'g' }
                                 } else if w.field_tile_is_wall(x, z) {
                                     '#'
                                 } else {
@@ -3787,12 +3815,13 @@ fn overreaching_records(
     out
 }
 
-/// Does boss stager placement `p1_record` set a flag the retail run never
-/// had by the next milestone? Its own record cleanly SETs a system flag the
-/// next anchor lacks and no record of the scene ever CLEARs - so the flag,
-/// once set, would still show, and its absence says retail never fought
-/// here. `town0b` P1[36], a loss-allowed fight (`50 00` then `3E FF 03`),
-/// raises `0x5C0` before its fight; the Hunter's Spring anchor has it clear.
+/// Did the retail run leave boss stager placement `p1_record` alone before
+/// the next milestone? Of the system flags its own record cleanly SETs and
+/// no record of the scene ever CLEARs - flags that, once set, would still
+/// show - the next anchor carries none. `town0b` P1[36], a loss-allowed
+/// fight (`50 00` then `3E FF 03`), raises `0x5C0` / `0x5C1` before its
+/// fight and the Hunter's Spring anchor has both clear; `town01` P1[10],
+/// Tetsu's spar, is played for the `0x22E` its record also raises.
 fn stager_overreaches(
     mf: &legaia_asset::man_section::ManFile,
     man: &[u8],
@@ -3808,14 +3837,18 @@ fn stager_overreaches(
         .filter(|s| s.kind == FlagKind::Clear)
         .map(|s| s.flag)
         .collect();
-    sites.iter().any(|s| {
-        s.partition == 1
-            && s.record == p1_record
-            && s.kind == FlagKind::Set
-            && s.flag != 0
-            && !cleared.contains(&s.flag)
-            && !next_anchor_has(s.flag)
-    })
+    let lasting: BTreeSet<u16> = sites
+        .iter()
+        .filter(|s| {
+            s.partition == 1
+                && s.record == p1_record
+                && s.kind == FlagKind::Set
+                && s.flag != 0
+                && !cleared.contains(&s.flag)
+        })
+        .map(|s| s.flag)
+        .collect();
+    !lasting.is_empty() && !lasting.iter().any(|&f| next_anchor_has(f))
 }
 
 /// Rounds of the talk + walk-on beat passes per scene visit.

@@ -215,6 +215,10 @@ impl World {
         }
         let azimuth = self.world_map.ctrl.as_ref().map(|c| c.azimuth).unwrap_or(0);
         let dir_bits = world_map_camera_relative_bits(azimuth, sx, sy);
+        // The frame's direction bits pick the leading probes an object
+        // entrance's contact is read from ([`Self::auto_engage_world_map_portals`]),
+        // as the field controller's do for a door.
+        self.locomotion.last_move_dir_bits = dir_bits;
         if dir_bits == 0 {
             return;
         }
@@ -519,12 +523,35 @@ impl World {
         let Some(slot) = self.player_actor_slot else {
             return;
         };
-        let (px, pz) = match self.actors.get(slot as usize) {
-            Some(a) => (
-                (a.move_state.world_x as i32) >> 7,
-                (a.move_state.world_z as i32) >> 7,
-            ),
-            None => return,
+        let Some((wx, wz)) = self
+            .actors
+            .get(slot as usize)
+            .map(|a| (a.move_state.world_x, a.move_state.world_z))
+        else {
+            return;
+        };
+        let (px, pz) = ((wx as i32) >> 7, (wz as i32) >> 7);
+        // An object entrance (a `.MAP` object whose bind record runs to a
+        // `0x3F` on contact - `map01` P0[10], the Drake castle door) is
+        // solid: its collider stops the player a probe's length short of its
+        // tile, so the tile compare never fires. Retail posts the contact
+        // from the same probe points that refuse the step (`FUN_801CFE4C`'s
+        // `FUN_801CFC40` calls); read it the way the field walk-touch does.
+        // REF: FUN_801CFC40, FUN_801D5B5C
+        let mut probes: Vec<(i32, i32)> = vec![(i32::from(wx), i32::from(wz))];
+        for dir in Self::dirs_of_bits(self.locomotion.last_move_dir_bits) {
+            for &(dx, dz) in &FIELD_ACTOR_PROBES[dir] {
+                probes.push((
+                    i32::from(wx.saturating_add(dx)),
+                    i32::from(wz.saturating_sub(dz)),
+                ));
+            }
+        }
+        let in_contact = |ex: i16, ez: i16| {
+            probes.iter().any(|&(qx, qz)| {
+                (qx - i32::from(ex)).abs() < FIELD_PROP_BOX_HALF
+                    && (qz - i32::from(ez)).abs() < FIELD_PROP_BOX_HALF
+            })
         };
         // Collect the portals the player is standing on (still Idle), then
         // engage them - separated so the immutable scan drops before the
@@ -544,7 +571,12 @@ impl World {
             let Some(&(ex, ez)) = self.world_map.entity_positions.get(idx) else {
                 continue;
             };
-            if (ex as i32) >> 7 == px && (ez as i32) >> 7 == pz {
+            let object = matches!(
+                self.world_map.entity_configs.get(idx),
+                Some(WorldMapEntityConfig::OverworldPortal { object: true, .. })
+            );
+            if ((ex as i32) >> 7 == px && (ez as i32) >> 7 == pz) || (object && in_contact(ex, ez))
+            {
                 to_engage.push(idx);
             }
         }

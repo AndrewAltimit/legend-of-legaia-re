@@ -3275,6 +3275,23 @@ impl World {
                     id.pc = final_pc;
                     break;
                 }
+                // A cross-context CFLAG_TST (`B3 <id> <bit>`) waits on
+                // another actor's context word - `town01` P1[32] closes its
+                // spar setup with `C1 44 02` (park actor `0x44`) and then
+                // `B3 44 0A`, the halt-bit verify. The runner has no
+                // resolved context word to read it from, and the engine's
+                // cross-context pokes complete synchronously, so it steps
+                // past by width as the cutscene timeline does; ending the
+                // talk there left the player on the seat the talk had just
+                // made, a walled-in tile, with the rest of the
+                // choreography unrun.
+                // REF: FUN_8003C83C
+                FieldStepResult::Halt { final_pc }
+                    if (b & 0x7F) == 0x33 && ext_target.is_some() && final_pc == id.pc =>
+                {
+                    id.pc = final_pc + 3;
+                    id.park_frames = 0;
+                }
                 // op-0x2D LFLAG_TST is a **spin**, not an end. The bit it
                 // tests is in the clip-control word `actor+0x62`, and bit 8
                 // (`0x0100`) is the "end" flag the actor's anim tick

@@ -1124,6 +1124,12 @@ record against the live flags (`man_field_scripts::flat_record_path_walk`) and
 installs an `OverworldPortal` with `object: true` at the object's contact
 centre for each path that ends in a `0x3F`; the crossing replays the flag
 writes along that path, since the record's opening ops are not all flag ops.
+The object is solid - its collider stops the player a probe's length short of
+its tile, so a tile compare never reaches it - and the portal engages on
+**contact** instead: the player's position or one of the leading actor probes
+(`FIELD_ACTOR_PROBES` for the frame's direction) inside the `±0x50` static
+box, the points `FUN_801CFE4C` both refuses the step with and posts the touch
+from. The Drake castle door is only reachable this way.
 
 Overworld walk-on **beat** records are the other half. Not every gate-1 kind-1
 tile trigger on a hub is a portal: the Drake mist-wall force-walk bands (`map01`
