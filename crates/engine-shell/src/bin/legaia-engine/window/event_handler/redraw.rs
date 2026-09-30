@@ -1186,7 +1186,7 @@ impl PlayWindowApp {
             // `npc_frames` records which frame each slot is showing *this*
             // render, so the draw pass below can look its mesh up in the cache.
             let mut npc_frames: Vec<(u8, usize)> = Vec::new();
-            if self.session.host.world.mode == SceneMode::Field {
+            if self.session.host.world.field_npc_clips_advance() {
                 // (The op-`0x4B` / `A2 F8` cue drain that re-targets these
                 // players runs per sim tick in the loop above -
                 // `Self::drain_anim_cues`.)

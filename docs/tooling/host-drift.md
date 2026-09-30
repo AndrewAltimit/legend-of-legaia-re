@@ -3110,21 +3110,9 @@ so the tier had nothing to pair:
 
 Recorded rather than fixed; each names the host that lacks it. None is gated.
 
-- **NPC clip advance off the field.** Both hosts drain the ANIMATE cues
-  every tick, but the window advances its NPC clip players in its draw pass
-  and only in `SceneMode::Field` (the frame index keys its pose cache), while
-  the page advances them every tick in every mode.
-- **Shop tick.** The window ticks the world under an open shop with a neutral
-  pad; the page freezes the world.
-- **Sub-tick taps.** The window sets and clears its pad straight from key
-  events, so a press and release between two ticks never reaches `set_pad`;
-  the page latches it.
 - **Overworld CLUT walk.** Implemented twice (`window/field_render.rs`
   `WaterAnim`, the page's `step_field_vram_fx`), already differing in which
   scenes patch strip rows and which column is checked.
-- **Monster action-tag clips** are installed from each host's render path, so a
-  monster with no mesh - or a native frame's first battle ticks - reads no tag
-  table.
 - **Baka on the play page** carries no strike clock or afterimage in its JSON;
   the minigames page does.
 
@@ -3133,6 +3121,19 @@ The audio rows of the same pass are closed or settled in
 
 ### Closed from the same list
 
+- **Monster action-tag clips.** Each host used to install a monster's
+  archive-order clip table from its own render build, so a monster with no
+  mesh - or a native frame's first battle ticks - read no tag table.
+  `SceneHost::install_battle_monster_action_clips` installs them from the
+  engine tick the battle is up, for either host. The shop tick and the
+  sub-tick taps from the same list are closed in
+  [the menus section](#menus-saves-and-minigame-exits-one-call-per-decision).
+- **NPC clip advance off the field.** The window advanced its NPC clip
+  players only in `SceneMode::Field`, the page in every mode, so an NPC came
+  back from a fight on a different clip frame per host. When the players run
+  is the world's decision now, `World::field_npc_clips_advance`, which both
+  hosts ask; only where they advance (the page's per-tick step, the window's
+  draw pass keyed on its pose cache) stays per host.
 - **The field frame tail.** Three one-host tails moved onto engine kernels in
   `engine-core`'s `world/field_frame_tail.rs`, each called by both hosts:
   `World::tick_effect_scene_graphs` (summon / move-FX / field-FX),

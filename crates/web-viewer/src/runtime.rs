@@ -1956,8 +1956,12 @@ impl LegaiaRuntime {
                 clip.generation = clip.generation.wrapping_add(1);
             }
         }
-        for clip in self.npc_clips.values_mut() {
-            clip.player.advance(1);
+        // The playheads run only while the field owns the frame - the
+        // world's decision, shared with the native draw pass.
+        if host.world.field_npc_clips_advance() {
+            for clip in self.npc_clips.values_mut() {
+                clip.player.advance(1);
+            }
         }
     }
 

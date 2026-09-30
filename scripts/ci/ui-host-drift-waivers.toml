@@ -672,8 +672,8 @@ reason = "The page folds its whole battle presentation frame into this one named
 native = "drain_anim_cues"
 web = "drive_npc_clips"
 native_only = []
-web_only = ["advance"]
-reason = "The cue drain is one engine kernel on both hosts; `advance` is the page stepping its NPC clip players one tick inside the same step. The native window advances its players in its draw pass by the sim ticks the redraw ran, and only in `SceneMode::Field`, because the frame index keys the pose cache that pass reads - so off the field the native NPC clips hold still while the page's run on. That residue is listed under host-drift.md's known gaps."
+web_only = ["advance", "field_npc_clips_advance"]
+reason = "The cue drain is one engine kernel on both hosts; `advance` is the page stepping its NPC clip players one tick inside the same step, under the engine's `World::field_npc_clips_advance` gate. The native window advances its players in its draw pass by the sim ticks the redraw ran, behind the same `field_npc_clips_advance` gate, because the frame index keys the pose cache that pass reads - so the step and its gate sit outside this kernel natively, and both hosts hold the clips still off the field."
 
 [[frame_content]]
 native = "tick_dev_menu"
