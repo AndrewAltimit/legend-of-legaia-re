@@ -422,12 +422,23 @@ is a *remembered starting buffer*, not a shortcut past the input
 carries the byte-level walk; ported as
 `legaia_engine_vm::battle_action::preseed_action_queue` / `save_action_queue`).
 
-The port opens every entry empty. `World::party.saved_chains` stays live data - the
-chain editor writes it, the save round-trip carries it, and the legacy
-`LEGAIA_ARTS_SAVED_LIST=1` list still reads it - but nothing preseeds the input
-from it. Wiring that is the open piece; what it needs first is whether the
-preseeded presses arrive already paid for or re-debit the pool on the way in,
-which no capture pins yet.
+Those two strings are retail's **auto command string** - the unnamed,
+last-confirmed queue, record-relative `+0x1A7` / `+0x1B7`
+(`legaia_save::AUTO_COMMAND_STRING_A_OFFSET` / `_B_OFFSET`), the band picked by
+`u16[+0x156] < u16[+0x154]`. The port carries both legs
+(`engine-core::world::battle::auto_command`): the write-back runs on the arts
+commit, and the read preseeds the action window when an **Attack** dispatches
+(retail's `0x801D15C8` call site), so a character who has confirmed an arts
+combo replays it and one who has not falls through to the two-swing roll. The
+second retail read - at the arts-input entry (`0x801D1734`) - is not taken: the
+port's Arts entry (`World::open_arts_command_input`) still opens empty, because
+whether preseeded presses arrive already paid for or re-debit the pool on the
+way in is not pinned by any capture.
+
+`World::party.saved_chains` is different data: the engine's **named** chain
+library (LGSF v2), written by the chain editor, carried by the save round-trip
+and read by the legacy `LEGAIA_ARTS_SAVED_LIST=1` list. Retail has no
+counterpart, and nothing preseeds an entry from it.
 
 Because a turn now performs however many arts the pool paid for, the
 **shout cue and the learn-on-use check are per art, not per turn** - see

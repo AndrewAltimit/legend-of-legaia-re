@@ -340,9 +340,11 @@ HP/MP/SPD mirrors), resolve via `party_roster_slot`; persisted through
   (`SavedChain::to_record` / `from_record` pack to the `Command` byte
   alphabet the battle side reads). In battle the chain does **not** commit
   an art by itself: retail's Arts command is the per-press
-  `arts_command_input` entry, and a saved chain's retail role is to preseed
-  that entry's buffer (not yet wired - see
-  [`arts-command-gauge.md`](../../docs/subsystems/arts-command-gauge.md#where-a-saved-chain-belongs)).
+  `arts_command_input` entry. The buffer retail preseeds is its unnamed
+  **auto command string** (`world::battle::auto_command`, replayed on an
+  Attack dispatch and rewritten on each arts commit), not this named
+  library, which preseeds nothing - see
+  [`arts-command-gauge.md`](../../docs/subsystems/arts-command-gauge.md#where-a-saved-chain-belongs).
   `build_battle_arts_rows` still reads `saved_chains` for the legacy
   submenu behind `LEGAIA_ARTS_SAVED_LIST=1`.
 - `man_field_scripts` - opcode-aware walk of a scene MAN's partition-1
