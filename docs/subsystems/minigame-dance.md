@@ -458,10 +458,12 @@ Three further pieces of the retail frame run in the same host
   textured-quad frame (`DanceGame::hud_draw_quads` - the `FUN_801d2f38`
   emits with the `FUN_801d32f8` / `FUN_801d3e28` glyph-U patches applied).
   The sprite page is staged on entry (see [where the HUD's texels come
-  from](#where-the-huds-texels-come-from)), so the quads have a texel source;
-  the native window's own score / gauge / track quads still materialise
-  through its flat sink and render as font text, which is the remaining half
-  of this frame.
+  from](#where-the-huds-texels-come-from)), so the quads have a texel source:
+  both hosts emit them as `POLY_GT4` screen primitives through
+  `engine-ui::ui_dance::dance_hud_prims` at the HUD's shared bucket, off
+  `MinigameState::dance_hud_quads` (HUD up and page resident). Without the
+  page the frame falls back to `DanceGame::hud_frame_rows` as font text - the
+  count-in banner's either/or, off the same flag.
 - **Effect spawns**: the human's scoring judge spawns the sequence-clear
   banner + stars (`good_banner_spawn` -> `step_mark_effect_spawn`) into the
   **run's own** part pool, inside `DanceGame::judge_press` - gameplay, not
