@@ -399,7 +399,10 @@ pub fn preview_texture_replace(
                 Ok(v) => v,
                 Err(e) => return fail(&out, format!("read PNG: {e}")),
             };
-            let opts = EncodeOptions { quantize };
+            let opts = EncodeOptions {
+                quantize,
+                ..Default::default()
+            };
             // Encode first (for the preview), then dry-run the full
             // replacement so the LZS fit is measured exactly as apply would.
             match legaia_tim::encode::encode_replacement(&orig.tim, &rgba, pw, ph, &opts) {
@@ -634,6 +637,7 @@ pub async fn apply_texture_replacements(
                     h,
                     &EncodeOptions {
                         quantize: spec.quantize,
+                        ..Default::default()
                     },
                     false,
                 )

@@ -270,7 +270,10 @@ pub(crate) fn cmd_tim_replace(
     let png_bytes = std::fs::read(png).with_context(|| format!("read {}", png.display()))?;
     let (w, h, rgba) = decode_png_rgba(&png_bytes)?;
 
-    let opts = EncodeOptions { quantize };
+    let opts = EncodeOptions {
+        quantize,
+        ..Default::default()
+    };
     let outcome = replace_texture(&mut patcher, &t, &rgba, w, h, &opts, dry_run)?;
 
     println!(
