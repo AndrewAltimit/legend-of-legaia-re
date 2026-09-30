@@ -737,3 +737,48 @@ fn the_swordie_slashes_land_from_the_cast_band_seam() {
         "a live victim takes the alternate reaction on every landing"
     );
 }
+
+/// A monster's cast clip is the tag-`0x23` entry its magic **slot** walks to
+/// (`FUN_801E9FD4`, `0x801EA4A4..0x801EA548`), reversed against the slot
+/// order - not an entry tagged with the spell id. Gimard's lone Tail Fire
+/// `0x27` plays entry 8, his only tag-`0x23` entry, as the
+/// `battle_gimard_tail_fire_a` capture reads (`+0x1E0 = 8`).
+#[test]
+fn a_monster_cast_plays_the_tag_0x23_entry_its_magic_slot_walks_to() {
+    use legaia_asset::monster_archive::MonsterAnimation;
+    use std::sync::Arc;
+    let clip = |tag: u8| {
+        Some(MonsterAnimation {
+            action_id: tag,
+            rate: 1,
+            attach_key: 0,
+            solo_flag: 0,
+            impact_class: 0,
+            effect_script: Vec::new(),
+            part_count: 0,
+            frame_count: 0,
+            frames: Vec::new(),
+        })
+    };
+    let mut world = World::default();
+    world.party.party_count = 1;
+    world.actors.push(Actor::default());
+    world.actors.push(Actor::default());
+    world
+        .tables
+        .monster_catalog
+        .insert(crate::monster_catalog::MonsterDef::new(10, "Gimard", 99, 60).with_magic([0x27]));
+    world.actors[1].battle_monster_id = Some(10);
+    let tags = [0x00, 0x01, 0x02, 0x04, 0x05, 0x0B, 0x0D, 0x0F, 0x23];
+    world.actors[1].battle_action_clips = Some(Arc::new(tags.iter().map(|&t| clip(t)).collect()));
+    assert_eq!(world.monster_cast_clip(1, 0x27), Some(8));
+
+    // Two slots: the first tag-0x23 entry belongs to the LAST slot.
+    world.tables.monster_catalog.insert(
+        crate::monster_catalog::MonsterDef::new(10, "Gimard", 99, 60).with_magic([0x27, 0x28]),
+    );
+    let tags = [0x00, 0x01, 0x23, 0x04, 0x23];
+    world.actors[1].battle_action_clips = Some(Arc::new(tags.iter().map(|&t| clip(t)).collect()));
+    assert_eq!(world.monster_cast_clip(1, 0x28), Some(2));
+    assert_eq!(world.monster_cast_clip(1, 0x27), Some(4));
+}

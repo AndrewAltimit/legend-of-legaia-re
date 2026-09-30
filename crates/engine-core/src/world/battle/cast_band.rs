@@ -239,9 +239,9 @@ impl World {
     }
 
     /// The monster twin of [`Self::arm_player_cast`]. A monster's stream
-    /// carries its cast clip behind the spell id (`params[1]`, the entry of
-    /// its archive action table whose tag is the spell id - the `+0x1DA`
-    /// stage the `0x29` arm makes), terminated at `params[2]`; a monster
+    /// carries its cast clip behind the spell id (`params[1]`, the `+0x1E0`
+    /// byte the `0x29` arm stages into `+0x1DA` - see
+    /// [`Self::monster_cast_clip`]), terminated at `params[2]`; a monster
     /// with no such clip installed stages the terminator at once and the
     /// band ends the action after the wait.
     pub(in crate::world) fn arm_monster_cast(
@@ -251,17 +251,7 @@ impl World {
         targets: Vec<u8>,
     ) {
         let code = self.cast_target_code(def, &targets, slot);
-        let clip = self
-            .actors
-            .get(slot as usize)
-            .and_then(|a| a.battle_action_clips.as_ref())
-            .and_then(|clips| {
-                clips
-                    .iter()
-                    .position(|c| c.as_ref().is_some_and(|c| c.action_id == def.id))
-            })
-            .and_then(|i| u8::try_from(i).ok())
-            .unwrap_or(0xFF);
+        let clip = self.monster_cast_clip(slot, def.id).unwrap_or(0xFF);
         self.clear_action_stream(slot);
         if let Some(a) = self.actors.get_mut(slot as usize) {
             a.battle.active_target = code;
@@ -279,6 +269,52 @@ impl World {
         self.battle_ctx.active_actor = slot;
         self.battle_ctx.queued_action = ActionCategory::Magic.as_byte();
         self.battle_ctx.action_state = ActionState::Begin.as_byte();
+    }
+
+    /// The archive entry a monster's cast plays - the `+0x1E0` byte the
+    /// picker `FUN_801E9FD4` stores beside the spell id.
+    ///
+    /// Retail's generic magic pick does not look the clip up by the spell id.
+    /// It counts the record's live magic slots (`+0x21..+0x23` at `>= 2`,
+    /// `0x801EA3E0..0x801EA408`), rolls `k = rand() % count`, then walks the
+    /// entry table from index 2 counting the entries tagged `0x23`
+    /// (`0x801EA4C8..0x801EA4D0`): the `k`-th one is the clip, and the spell
+    /// is magic slot `count - 1 - k` (`+0x21 + (s1 - 1)` with `s1` counted
+    /// down beside `k`, `0x801EA4E0..0x801EA544`). So the clip is keyed on the
+    /// spell's **slot**, reversed, and on no tag the spell id names - Gimard's
+    /// Tail Fire `0x27` plays his lone tag-`0x23` entry 8, which a search for
+    /// tag `0x27` never finds (`battle_gimard_tail_fire_a` reads `+0x1E0 = 8`).
+    ///
+    /// A spell outside the record's magic slots (a per-monster scripted
+    /// cast) falls back to the entry whose tag is the spell id.
+    ///
+    /// PORT: FUN_801E9FD4 (the tag-`0x23` clip walk, `0x801EA4A4..0x801EA548`)
+    pub(in crate::world) fn monster_cast_clip(&self, slot: u8, spell_id: u8) -> Option<u8> {
+        /// The tag the picker walks for a castable's clip.
+        const CAST_CLIP_TAG: u8 = 0x23;
+        /// The walk starts past the idle and walk entries (`li s2,0x2`).
+        const FIRST_CAST_ENTRY: usize = 2;
+        let actor = self.actors.get(slot as usize)?;
+        let clips = actor.battle_action_clips.as_ref()?;
+        let magic = actor
+            .battle_monster_id
+            .and_then(|id| self.tables.monster_catalog.get(id))
+            .map(|d| d.magic_attacks.as_slice())
+            .unwrap_or(&[]);
+        if let Some(m) = magic.iter().position(|&id| id == spell_id) {
+            let k = magic.len() - 1 - m;
+            return clips
+                .iter()
+                .enumerate()
+                .skip(FIRST_CAST_ENTRY)
+                .filter(|(_, c)| c.as_ref().is_some_and(|c| c.action_id == CAST_CLIP_TAG))
+                .nth(k)
+                .and_then(|(i, _)| u8::try_from(i).ok());
+        }
+        clips
+            .iter()
+            .position(|c| c.as_ref().is_some_and(|c| c.action_id == spell_id))
+            .and_then(|i| u8::try_from(i).ok())
     }
 
     /// Fold the owed cast's outcome - exactly once. The MP was the band's

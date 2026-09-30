@@ -382,9 +382,10 @@ into the item / magic / arts windows ([battle](../subsystems/battle.md#how-the-e
   so `0x70` is not; why is open.
 - **A monster's plain cast clip.** Retail stages a monster cast's clip as the
   tag-`0x23` archive entry its pick walked to (`FUN_801E9FD4`,
-  `sb s2,0x1e0(s4)` at `0x801EA540`); the engine looks for an entry whose tag
-  equals the spell id, finds none for Gimard's Tail Fire, and leaves `0x29`
-  for the Done band without the `0x2A` / `0x2B` animation chain.
+  `sb s2,0x1e0(s4)` at `0x801EA540`), not an entry tagged with the spell id.
+  The engine had searched for the latter, found none for Gimard's Tail Fire,
+  and left `0x29` for the Done band without the `0x2A` / `0x2B` chain; it now
+  walks the same entries ([monster animation](../formats/monster-animation.md#action-tags-and-the-0x1ef-reaction-map)).
 - **Seat and timing.** A pick the engine's RNG does not reproduce (a monster's
   plain strike on a given seat, a capture taken at the killing blow of a
   specific seat, a victory banner) can run out of budget or end the fight
