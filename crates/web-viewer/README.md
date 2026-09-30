@@ -215,13 +215,9 @@ native `enter_field_live` is the paired site), and the page's picker calls
 `play_abandon_opening_chain` first so a scene picked mid-opening is that
 scene's free-roam rather than the interrupted chain's next leg.
 
-This host held **no** `engine_core::camera::Camera` at all before: it framed
-the field with a spherical orbit projection of its own and re-mapped the
-cutscene params onto it, so nothing here routed the Camera Configure beats
-into a controller, advanced the mover, wrote the follow focus back into the
-retail globals, or reset them on scene entry. The page keeps exactly one
-camera of its own now - the debug orbit vantage on `F3`, which the native
-window has too, and which is an explicit override rather than the default.
+The page keeps exactly one camera of its own - the debug orbit vantage on
+`F3`, which the native window has too, and which is an explicit override
+rather than the default.
 
 ## Retail pause menu (`play_menu`)
 
@@ -345,8 +341,11 @@ through `play_battle_vram` against the page's battle VRAM copy - the same
 three drains the native window runs - and the page re-uploads the texture on
 `play_battle_vram_take_dirty` (a VRAM serial doubles as the residency
 guard). Battle exit drops the state and the page restores the untouched
-field VRAM. Still native-only: the damage numerals and combo counter in the
-retail 24x24 art cells (the page draws the same layout from the font atlas).
+field VRAM. The damage numerals, the `N HIT` / `TOTAL` combo cluster and the
+`<word> ARTS!!` banner draw in retail's 24x24 cells off the resident battle
+effect atlas through the shared `legaia_engine_ui::battle_numerals` builder the
+native window emits through; the font-atlas layout is only the fallback for
+frames before the battle VRAM exists.
 
 ## Battle effects (`play_battle_fx`)
 
@@ -460,11 +459,10 @@ residency names (PROT 0876 in the field, PROT 0869 in battle,
 BGM sequencer feeds, so a cue and the music share one voice pool as they do on
 hardware.
 
-That last part forced a fix worth knowing about: the page's BGM allocator
-previously claimed all of SPU RAM above `0x1000`, so a scene-BGM upload could
-have overwritten the SFX region. Both BGM upload sites are now capped below it,
-matching the native boot's split, and a unit test asserts the two regions stay
-disjoint.
+Sharing the mixer means sharing SPU RAM: both BGM upload sites are capped
+below the SFX region, matching the native boot's split
+(`legaia_engine_audio::spu_layout`), and a unit test asserts the two regions
+stay disjoint.
 
 ### Cue provenance is reported, not assumed
 
@@ -528,7 +526,7 @@ gate:
 |---|---|
 | Seru-trade shop screens | Closed. Config + name table install at `load_disc`, and `play_shop::shop_trade_draws` is the twin of the native `draw_shop_trade`. |
 | Options screen | Half closed. Edits persist for the session; a page reload still starts from defaults, where the native window reloads `legaia-options.toml`. |
-| Inn prompt | Open, and host-symmetric in the sense that matters least: neither host opens an inn session, but only the native window would draw one if something did. |
+| Inn prompt | Closed. Neither host opens an inn session (the retail inn is an ordinary field-VM dialogue), and both draw the prompt when one is up: `play_shop`'s inn arm ports the native `window/hud.rs` arm. |
 | Load / Save rows | Closed at the model. This host browses the console's two memory-card ports; the native window writes LGSF files to `saves/` - but both build the slot from one `legaia_save` summary (leader name, level, HP/MP, resume scene + location), and the card block carries the engine ext (play clock, saved chains) in the tail retail never reads. |
 | Dance / Baka / Muscle / slots | Closed in-world. Both hosts enter them from the scene's own door warps; this host draws them through `play_minigames` (below) with the standalone page's renderers, and the standalone page stays as the free-play surface. |
 | Field BGM / SFX / XA | Closed. `play_bgm` carries the native director's guard and volume policy, `play_sfx` the full u16 cue space with the duck and the reward bank, `play_xa` the shout and clip banks. What remains is host-identical: cast-voice cues are declined on both hosts. |
@@ -577,8 +575,9 @@ session, live state reads off the world's own sessions, the text HUD rides
 tick, and Start exits back to the field with coins and prizes settled.
 `site/js/play-minigames.js` also carries the fishing prize-exchange panel
 over `play_fishing_prizes_json` / `play_fishing_prize_buy`. Disc-gated oracle:
-`tests/play_minigames_host.rs`. Open: the overlays' own BGM tracks are not
-started in-world, and the dance count-in / how-to are not shown.
+`tests/play_minigames_host.rs`. The overlays' own BGM tracks start through the
+shared scene host's warp (`World::swap_to_minigame_bgm`), and the dance
+count-in banner and how-to draw through `ui_dance` on this host too.
 
 ## Field effects and script-spawned actors
 
@@ -1124,6 +1123,31 @@ weren't supplied are dropped from the mesh before upload, which
 prevents the "solid green / cyan tint" symptom for entries that
 reference TIMs sitting in other PROT entries.
 
+## Other modules
+
+| Module | Covers |
+|---|---|
+| [`nav_disc`](src/nav_disc.rs) / [`inspect`](src/inspect.rs) / [`viewer_render`](src/viewer_render.rs) | `LegaiaViewer`'s disc load + entry navigation, the entry inspector's exports, and its internal render helpers. |
+| [`scene_geom`](src/scene_geom.rs) | Kingdom / walk-ground / continent / ocean / slot-4 geometry exports behind the world-overview pages. |
+| [`fog_lut`](src/fog_lut.rs) | Static locator for the world-map distance-cue fog LUT. |
+| [`sentinel_placements`](src/sentinel_placements.rs) | Cross-references a save state's live world-map actors against the disc's MAN placement records. |
+| [`prot_locate`](src/prot_locate.rs) | `PROT.DAT` offset to owning-entry lookup, the browser twin of `prot-extract locate`. |
+| [`player_anm`](src/player_anm.rs) | Player-ANM corpus + record decode exports. |
+| [`packet_color`](src/packet_color.rs) | Per-vertex packet-colour streams for the WebGL renderer, over `engine-core::packet_color`. |
+| [`pad_bindings`](src/pad_bindings.rs) | The keyboard-to-pad binding table, read from the engine rather than typed into each page. |
+| [`summon_view`](src/summon_view.rs) | `LegaiaSummons` - the Seru-magic summon viewer. |
+| [`translate_workbench`](src/translate_workbench.rs) | `Workbench` - the in-browser language-pack editor over the visitor's own disc. |
+| [`minigames_fishing_scene`](src/minigames_fishing_scene.rs) | The fishing venue's 3D field scene and the player's body for the minigames page. |
+| [`play_minigame_arena`](src/play_minigame_arena.rs) / [`play_minigame_slots`](src/play_minigame_slots.rs) / [`play_dance_art`](src/play_dance_art.rs) | The play page's in-world Muscle Dome / Baka Fighter / dance and slot-machine read-outs and art. |
+| [`play_battle_audio`](src/play_battle_audio.rs) | The audio half of the play page's battle tick, twin of the native `window/battle.rs` cue block. |
+| [`play_battle_body_blend`](src/play_battle_body_blend.rs) / [`play_battle_limb_dim`](src/play_battle_limb_dim.rs) | Browser seats of the battle body's whole-mesh semi-transparency and the Rot limb dimming. |
+| [`play_field_fx`](src/play_field_fx.rs) | Field fog sheets, actor drop shadows and op `0x34` sub-1 attached lights. |
+| [`play_field_hud`](src/play_field_hud.rs) | The field party-status HUD (name / `LV` / `HP` / `MP`). |
+| [`play_tile_board`](src/play_tile_board.rs) | Tile-board (op `0x49`) rendering on the play page. |
+| [`play_world_map_markers`](src/play_world_map_markers.rs) | The overworld's kind-coded entity and player markers (a port marker, not a retail draw). |
+| [`play_frame_step`](src/play_frame_step.rs) | The shared wall-clock to sim-tick rule (`engine-core::frame_step::SimStepper`). |
+| [`play_host_parity`](src/play_host_parity.rs) | Read-only probes over the live `World` for the tests pairing this host against the native window; not wasm exports. |
+
 ## Build
 
 `wasm-bindgen` for the JS bindings; `wasm-pack` for packaging.
@@ -1157,9 +1181,10 @@ page; nothing leaves the browser.
 
 ## Crate type
 
-`crate-type = ["cdylib", "rlib"]` - `cdylib` for the WASM build,
-`rlib` so the host renderer in `site/` can also link against it for
-ahead-of-time bundling experiments.
+`crate-type = ["cdylib", "rlib"]` - `cdylib` for the WASM build, `rlib` so
+native Rust can link it: this crate's own `tests/` and `engine-shell`'s
+dev-only host-parity tests (`mode_seat_host_parity`) drive the browser host
+beside the native one.
 
 ## See also
 
