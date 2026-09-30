@@ -747,13 +747,6 @@ void main() {
     return;
   }
 
-  /* Blend pass: the GPU writes the texture-blended foreground at the
-   * framebuffer's 5-bit depth before the blend equation ((t5 * c8) >> 7,
-   * legaia_engine_ui::screen_prim::psx_texture_blend) - lit * 31 is
-   * t5 * c / 128 for the cued packet colour, so its floor is that law. The
-   * twin of engine-render's blend_pass_color; exact at the neutral 0x80. */
-  if (u_semi_pass == 1) lit = floor(lit * 31.0 + vec3(0.001)) / 31.0;
-
   o_color = vec4(lit, 1.0);
 }
 `;
