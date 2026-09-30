@@ -564,7 +564,7 @@ the scene-name save / restore has nothing to copy; everything else is real:
   VAB off the record's second stream id, and frame the hall through the same
   camera (`dance_venue_vp`) until the visitor drags the view.
 
-Still open: the native window draws no dancer bodies over the hall.
+Both hosts draw the floor's bodies over the hall through one engine kernel - see [Drawing the floor](#drawing-the-floor-one-cast-surface).
 
 ### The camera keyframe track
 
@@ -771,7 +771,55 @@ timing-button step. Several choreography records carry frame data past the
 header's frame count (the retail cursor clamps at `frame_count*16 - 1`, so
 the tail never plays); `PlayerAnmBundle::record_lenient` accepts them.
 
-This is what the site's playable dance renders: the retail qualifier cast at
+#### The spawner's two actor kinds
+
+`FUN_801d0190` seats two kinds of actor. The **dancers** come off the mode's
+spawn table (one per record, `+0x48` = the kind descriptor, `+0x5C` / `+0x6A`
+= its idle clip + rate). Kind 0 - the human, Noa - is the one record whose
+model id skips the scene TMD base (`0x801D0280`), and the only one given
+`+0x72 = 0x1400` (`0x801D02B8`), the actor render scale: her field mesh draws
+at `1.25x` beside the hall's dancer NPCs. In the how-to mode alone
+(`0x801D0338..0x801D0390`) a second template at `0x801D4344` - whose tick word
+is the tutorial script `FUN_801d0750` - spawns the **Disco King**: scene model
+`base + 0x3F` (kind 4's mesh), clip `0x3B` at rate `8`, at
+`(0x1800, 0, 0x3200)`. He has no slot in the per-dancer arrays, so nothing
+judges or scores him, and his script's only actor store is its own step
+counter `+0x9C` - the one clip loops for the whole lesson. **Confirmed**
+(`overlay_dance_801d0190.txt`, `overlay_dance_801d0750.txt`).
+
+A dancer's clip returns to its loop when the clip driver raises its end flag
+(`+0x62 & 0x100`, tested at `0x801D14C8`), so a judge move plays to its last
+frame before the loop resumes from its first.
+
+#### Drawing the floor: one cast surface
+
+`DanceGame::body_frames` lists every body the spawner seats for the run's
+mode, each with a display track (the standing loop, the last judge move, the
+ticks since the track restarted), advanced every dance frame including the
+count-in. `legaia_engine_core::dance_cast_scene::DanceCastSurface` turns that
+into one posed vertex buffer in raw world coordinates: the meshes off the
+venue's scene TMD pool plus Noa's resident mesh (PROT 0874, capped to the ten
+live groups), the cursor through `field_anim::clip_step` /
+`clip_end_ticks` on the record's own gate and divisor, the record's
+sub-frame blend, `Rz.Ry.Rx . v + T` per object, then the render scale, the
+spin yaw and the position. The buffers rebuild when the run's model list
+changes, so the cast is the mode's - the qualifier's three, the finals' Mary
+centre, the how-to's Noa + Disco King, free play's six.
+
+The native window hands the surface the venue it builds on the staging edge
+and draws the buffers under the venue camera; the browser play page poses the
+world's run through the same call (`play_mg_dance_scene_*`) and re-bases the
+positions onto its baked hall. What stays outside: the translucent draw a
+move clip's anim word bit `0x200` asks for.
+
+Under the entry camera the Disco King projects **below** the frame: he stands
+on the lower floor (`y = 0` against the dancers' `-0x80`) only `0x190` in
+front of the eye, where his vertices land at NDC `y` between `-1.4` and
+`-2.5`. The spawn is the disassembly's; which camera retail frames the how-to
+with is open (see [Open](#open)).
+
+The standalone minigames page runs its own qualifier-only session and poses
+it in its own script: the retail qualifier cast at
 the spawn-table offsets, textured against the `other7` scene VRAM (+ Noa's
 field atlas), playing the descriptor-named clips - idle before the run, the
 dance-groove loop synced to the beat clock, Noa's judge-triggered move on
@@ -1125,6 +1173,11 @@ stays possible and unevidenced.
   position
   (see [Dancer bodies](#dancer-bodies-the-retail-cast--choreography-tables))
   but not the facing, and the actor records are not RAM-pinned live.
+- The how-to mode's **camera**: the keyframe track is skipped
+  (`DAT_801d514c != 2`), and the entry pose leaves the Disco King below the
+  frame (see [Drawing the floor](#drawing-the-floor-one-cast-surface)). No
+  retail capture of the how-to exists in the state library to pin what does
+  frame him.
 - The exact **length** of each judge-triggered move clip: it is what retail
   really gates re-judging on (the award routine is only called while the dancer
   is on its idle / dance loop), and the port times the window off the dancer's
