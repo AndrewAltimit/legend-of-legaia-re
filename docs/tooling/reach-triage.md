@@ -951,7 +951,7 @@ all of it executes under one ladder now.
 | `minigame_floor.rs` | 2 | `801d2a10` `801d6028` | the fishing venue's floor solve |
 | `baka_fighter.rs` (digit strips) | 3 | `801d6a18` `801d6f44` `801d69e4` | a duel played to a **player win** - a lost match installs no tally and two of the three stay dark |
 | `dance_tutorial.rs` | 1 | `801d0750` | `40:U`, the Disco King how-to |
-| `fishing.rs` (prize row remainder) | 1 | `801d092c` | a **committed** prize purchase; the panel alone stops one gate short |
+| `fishing/prize.rs` (prize row remainder) | 1 | `801d092c` | a **committed** prize purchase; the panel alone stops one gate short |
 | `bin/.../window/field_render.rs` | 1 | `8001ada4` | any spawned `play-window` frame loop |
 
 **`801e6f70` left this ladder.** It was credited to `40:O`, whose empty-bank path bought coins through the quote; `O` now arms the mode-24 door warp like every other launcher, and the routine is the coin counter's entry panel, which runs only while op-`0x49` sub-op 6 has the counter open (`engine-core::field_submode_screen`). No native ladder rung opens that screen.
@@ -995,7 +995,7 @@ about the cells that outlived their own fixtures.
 | group | n | addresses | what reaches it |
 |---|---|---|---|
 | `screen_fx.rs` | 10 | `801de4c8` `801f8d4c` `801f811c` `801f8004` `801f7a9c` `801f88fc` `801f8e6c` `801f849c` `801f8f28` `801f8a34` | Closed: `chapter1_frontier_ladder` enters all ten - a scene whose script spawns an iris mask, letterbox or image panel is exactly what its scene walk drives. |
-| `fishing.rs` (session kernels) | 6 | `801d5298` `801d0474` `801d0f5c` `801d26cc` `801d3db4` `801d746c` | Closed: `w1f1_fishing_pond_ladder` casts, matches the reel cadence and lands a catch (the point credit, the band roll, the species spawn, the cadence), and `w1g_fishing_tackle_pick_ladder` adds the two picker screens it could not reach - see the note below on why a second ladder was the only way |
+| `fishing/` (session kernels) | 6 | `801d5298` `801d0474` `801d0f5c` `801d26cc` `801d3db4` `801d746c` | Closed: `w1f1_fishing_pond_ladder` casts, matches the reel cadence and lands a catch (the point credit, the band roll, the species spawn, the cadence), and `w1g_fishing_tackle_pick_ladder` adds the two picker screens it could not reach - see the note below on why a second ladder was the only way |
 | `muscle_dome/` | 4 | `801cf074` `801d1184` `801d1510` `801d9bbc` | Closed, and `801d9bbc` closed **elsewhere**: the export enters it through its second anchor, `engine-vm::battle_value_readout`'s per-handle step, which the battle numerals now run on both hosts. Its `muscle_dome/hub.rs` anchor still has no producer, and an address-level verdict cannot say so - see the anchor note above |
 | `baka_fighter*.rs` (tally + intro) | 4 | `801d6710` `801d239c` `801d2a28` `801d59d4` | Closed: `w1b_baka_duel_ladder` plays the duel from its intro card to a player **win** and drains the tally. The door entry is a separate rung and still arms neither |
 | `pause_screens.rs` (special Use) | 4 | `801d7e50` `801d8a58` `801d8b90` `801d8d94` | Closed: `w1f1_pause_special_use_ladder` seeds the bag (no `debug_` helper grants `0x88` / `0x89` / `0x8A`) and drives Door of Light's confirm and Door of Wind's destination pick to their commits |

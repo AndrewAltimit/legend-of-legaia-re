@@ -706,6 +706,7 @@ SPLIT_MODULES = frozenset({
     "crates/engine-core/src/save_select",
     "crates/patcher/src/delilas_party",
     "crates/engine-vm/src/cast_module_ticks",
+    "crates/engine-core/src/fishing",
 })
 
 
