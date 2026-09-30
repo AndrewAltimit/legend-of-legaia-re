@@ -1721,10 +1721,10 @@ pub fn battle_magic_chip_mark(world: &crate::world::World) -> Option<crate::musc
 /// `FUN_801DBC30(0xF8, 0x42)` every frame of the phase, before it reads the
 /// pad (`0x801D12DC..0x801D12F4`).
 ///
-/// Both play hosts pass this as the switch of `engine-ui`'s
+/// [`battle_ring_marks`] folds this into its `raseru_forbidden` field, which
+/// both play hosts hand to `engine-ui`'s
 /// `battle_command_ui::battle_command_menu_sprites` (native `window/hud.rs`,
-/// page `play_battle.rs`), which appends the mark at that anchor after the
-/// chip plates, out of the chrome atlas cell
+/// page `play_battle.rs`); the mark draws out of the chrome atlas cell
 /// `save_menu_atlas::add_cross_out_mark` bakes from the effect page.
 ///
 /// PORT: FUN_801D0748 (phase-`0x28` arm, the `0x200` cross-out at `0x801D12DC..0x801D12F4`)
@@ -1763,7 +1763,7 @@ pub fn battle_ring_marks(
     let status = world.battle_command_status_word().unwrap_or(0);
     legaia_engine_vm::battle_party_panel::RingMarks {
         item_forbidden: word & legaia_engine_vm::battle_formulas::SPECIAL_ARENA != 0,
-        raseru_forbidden: battle_raseru_forbidden(world),
+        raseru_forbidden: battle_raseru_cross_out(world),
         attack_rotted: status & legaia_engine_vm::battle_formulas::ROT_ALL_LIMBS
             == legaia_engine_vm::battle_formulas::ROT_ALL_LIMBS,
         magic_cursed: status & 0x1000 != 0,
