@@ -26,9 +26,9 @@ use std::path::PathBuf;
         Playing:      play-window, play-str, config, save, load\n  \
         Exploring:    list-scenes, info, record, replay, export-glb\n  \
         Diagnostics (engine development; not needed to play):\n    \
-        scene / script analysis:  play, clut-trace, man-scripts\n    \
+        scene / script analysis:  play, clut-trace, man-scripts, xa-cue\n    \
         parity oracles:           vram-oracle, mode-trace, audio-trace, pcm-trace, gte-replay, scenarios,\n                              \
-        sim-trace\n    \
+        sim-trace, retail-compare\n    \
         synthetic state drivers:  battle, inventory, equip, title, save-select, encounter,\n                              \
         target-pick, chain-editor, seru-capture"
 )]
