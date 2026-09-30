@@ -22,12 +22,13 @@ and surfaces them through a stable API.
 | `fishing` | Vidna/Buma pond prize tables. |
 | `characters` | Vahn / Noa / Gala affinities and favorite-weapon classes. |
 | `music` | Music-track disambiguation: every BGM cue across its four naming spaces (debug sound-test id + title / in-game context / official OST title / proposed relocalization). Contributed by Stann0x. |
+| `scenes` | Scene display names per CDNAME block (`scene_names` / `scene_by_id`), with the disc's banner and Stann0x's in-game reading. See [`docs/reference/scene-names.md`](../../docs/reference/scene-names.md). |
 
 ## Source attribution
 
 Data is mined from two public GameFAQs walkthroughs (Tan Yong Hua 1999,
-Psycho Penguin 2001) and cross-validated; the `music` table is a separate
-contribution by Stann0x. See
+Psycho Penguin 2001) and cross-validated; the `music` and `scenes` tables are separate
+contributions by Stann0x. See
 [`data/gamedata/README.md`](../../data/gamedata/README.md) for full
 provenance. The curated tables are checked against the user's disc by a set
 of disc-gated oracles (item prices, equipment slots, enemy stats, magic,

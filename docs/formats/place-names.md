@@ -44,6 +44,11 @@ across 7, Bio Castle across 5.
 Near-miss names are genuinely distinct strings and stay that way: site 1's
 "Sol" is not site 2's "Sol Tower", and "Conkram" is not "Conkram (Past)".
 
+`legaia-patcher locations --input <disc>` lists all three carriers, ending
+with every scene's site-3 banner beside its CDNAME id. The scene-name table
+([`scene-names.md`](../reference/scene-names.md)) records each banner and is
+held to the disc by `scene_name_table_banners_match_the_disc`.
+
 ## Site 2 - the world-map location table
 
 MAN section 5 is the chain terminator (`length == 0`) in every scene bundle, so

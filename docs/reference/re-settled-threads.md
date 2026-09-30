@@ -5187,14 +5187,14 @@ the same tilt, which is what an authored Dutch angle looks like.
 
 | scene | what it is | PROT entry | record | roll (12-bit) | degrees |
 |---|---|---|---|---|---|
-| `edstati3` | Ending (station3) | 826 | P2[0] | `10`, `20` | 0.9, 1.8 |
-| `station3` | Karisto Station (late) | 616 | P2[0] | `30` | 2.6 |
-| `map03` | World map (Karisto) | 392 | P2[10] | `60` | 5.3 |
+| `edstati3` | Ending (station gondola) | 826 | P2[0] | `10`, `20` | 0.9, 1.8 |
+| `station3` | Karisto Station | 616 | P2[0] | `30` | 2.6 |
+| `map03` | World map (Karisto Kingdom) | 392 | P2[10] | `60` | 5.3 |
 | `nilboa` | Nivora Ravine | 638 | P2[33] | `60` | 5.3 |
-| `taiku` | Muscle Dome | 373 | P2[27] | `-120` | -10.5 |
-| `korout` | Field (korout) | 534 | P2[3] | `240` | 21.1 |
-| `juui1` | Juggernaut interior 1 | 588 | P2[0], P2[3], P2[4] | `-400` | -35.2 |
-| `juui2` | Juggernaut interior 2 | 597 | P2[0] | `-660` | -58.0 |
+| `taiku` | Zora's Floating Castle | 373 | P2[27] | `-120` | -10.5 |
+| `korout` | Sol Tower (entrance) | 534 | P2[3] | `240` | 21.1 |
+| `juui1` | Bio Castle (F) | 588 | P2[0], P2[3], P2[4] | `-400` | -35.2 |
+| `juui2` | Bio Castle (G) | 597 | P2[0] | `-660` | -58.0 |
 
 The two biggest tilts sit inside the Juggernaut, and the smallest opens an
 ending cutscene - which is where a canted camera is exactly what an author

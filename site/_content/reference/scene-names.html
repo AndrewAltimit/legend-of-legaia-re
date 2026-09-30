@@ -30,7 +30,7 @@
 
 <section class="doc-section" id="crashing-slots">
   <h2>The slots that crash when loaded</h2>
-  <p>Six blocks cannot be entered as scenes, for two different reasons:</p>
+  <p>Six blocks cannot be entered as scenes, for three different reasons:</p>
   <ul>
     <li><strong><code>opkorout</code>, <code>opmap01</code></strong> - every entry of both blocks is a single 2048-byte <a href="../formats/pochi.html">pochi</a> placeholder sector. There is no map, no asset bundle and no scene script, so a loader pointed at them decompresses filler.</li>
     <li><strong><code>other4</code>, <code>other5</code>, <code>other6</code></strong> - minigame data (the slot machine, Baka Fighter, the Muscle Dome's ringside stills) that the minigame overlays load by path. They carry no walkability map, so they are not scenes at all.</li>

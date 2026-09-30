@@ -50,10 +50,11 @@ exposes typed accessors.
 | `bosses.toml` | Per-fight boss summaries: named attacks + MP cost, XP / gold / item rewards, recommended party level (18 main-story bosses + Lapis + Muscle Dome rounds) |
 | `shops.toml` | Per-town shop inventories (Rim Elm through Conkram); each entry references an item key |
 | `casino.toml` | Sol/Vidna slot prizes + Muscle Dome courses + Baka Fighter |
-| `sol_tower.toml` | Sol Tower (CDNAME `town0d`) floor map + the named side-quest chains that don't fit any other table. Read by the site's minigames + world pages |
+| `sol_tower.toml` | Sol Tower (the `kor*` / `koin*` CDNAME blocks) floor map + the named side-quest chains that don't fit any other table. Read by the site's minigames + world pages |
 | `fishing.toml` | Vidna/Buma fishing pond prizes |
 | `characters.toml` | Player-character profiles: elemental affinity (the 8 elements partitioned into strong / weak) + favorite-weapon class names |
 | `music.toml` | Music-track disambiguation: every BGM cue across its four naming spaces (debug sound-test id + title / in-game context / official OST title / proposed relocalization). Contributed by Stann0x; see [`docs/reference/music-tracks.md`](../../docs/reference/music-tracks.md) |
+| `scenes.toml` | Scene display names: one row per CDNAME block (id, `#define` number, category, name, the disc's banner, the contributor's reading). The one table the site and CLIs name scenes by; identifications by Stann0x, banners pinned to the disc. See [`docs/reference/scene-names.md`](../../docs/reference/scene-names.md) |
 
 ## Cross-validation invariants
 
