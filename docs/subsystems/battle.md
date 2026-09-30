@@ -1039,8 +1039,26 @@ stores the ambient beside the far colour, on every stage class, as the stage
 base plus `0x404040` (`0x800507E0..0x800507F0`). Once the intro fade has
 settled the base is `0x808080`, so the floor's **near** colour is `0xC0` per
 channel - the texel is lifted by half before the cue blends it toward the far
-colour. Every catalogued battle capture, indoor and outdoor, holds
-`0x8007B7B0 = 0xC0C0C0`.
+colour. Every catalogued battle capture outside a cast, indoor and outdoor,
+holds `0x8007B7B0 = 0xC0C0C0`.
+
+**A cast dims it.** The base is not a constant: it is `ctx+0x890`, a packed
+`10:10:10` colour (channel `c` at bits `2 + 10c`) that `FUN_80050120` ramps
+every frame on `ctx+0x243`. While the byte is set (`0x80050608`) the ramp
+subtracts `step * 0x20` per field (`8` per 8-bit channel per game frame,
+`0x80050670..0x800506A4`) down to the floor `0x08020080` - base `0x20`; while
+it is clear it adds `step * 8` per field (`2` a frame) back up to
+`0x20080200` - base `0x80` (`0x80050724..0x8005075C`). The ambient stored is
+the base plus `0x404040`, so a cast pulls the grid's near colour from `0xC0`
+to `0x60`, and the far colour `0x8007BB48` is derived from the same word
+(`0x800507FC..0x80050834`). The summon close-up (`FUN_801DC0A0` case `0x12`,
+`sb v0,0x243(v1)` at `0x801DCCFC`) sets `ctx+0x243` on every `0x33` / `0x34`
+pass, and the Done band clears it. The summon captures read the ramp
+mid-flight - `0x606060` (`slippery`, `vera`), `0x686868` (`nighto`),
+`0x707070` (`meta`) - and their grid packets (`tpage 13`) average about `20`
+per channel against the settled fight's `0xCC`+. The stage meshes do not ride
+it. The port's grid holds `GRID_RGBC_SETTLED` through a cast, so a summon
+frame's floor draws about twice retail's brightness under the white flash.
 
 `IR0` is `SZ >> 2` on the vertex's own screen depth, with no scale of the
 battle world folded in. The `map01` Gobu Gobu capture's grid packets
