@@ -12,7 +12,7 @@
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
-    <dt>Host</dt><dd>Menu overlay, PROT 0899, load base <code>0x801CE818</code>; dead region <code>0x801E74E0</code>&ndash;<code>0x801E83E0</code></dd>
+    <dt>Host</dt><dd>Menu overlay, PROT 0899, load base <code>0x801CE818</code>; dead region <code>0x801EA440</code>&ndash;<code>0x801EB340</code></dd>
     <dt>Picker edits</dt><dd>Row clamp 3&rarr;4, box height <code>0x26</code>&rarr;<code>0x34</code>, a label-draw detour, a confirm-dispatch detour, a per-frame entry detour</dd>
     <dt>The swap</dt><dd>Character record Seru id at <code>+0x13D</code>, level at <code>+0x161</code>; records at <code>0x80084708</code>, stride <code>0x414</code>; count never changes</dd>
     <dt>Offers</dt><dd>64-bucket schedule, a pure function of the seed; kernel <code>legaia_asset::seru_trade</code> shared with the from-scratch engine</dd>
@@ -43,7 +43,7 @@
 <section class="doc-section" id="dead-region">
   <h2>The dead region</h2>
   <figure class="overlay-strip">
-    <svg viewBox="0 0 880 210" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The menu overlay as a strip: live code and data from the load base, then the dead region from 0x801E74E0 to 0x801E83E0 holding the trade handler, three stubs, strings, the active flag and the offer table">
+    <svg viewBox="0 0 880 210" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The menu overlay as a strip: live code and data from the load base, then the dead region from 0x801EA440 to 0x801EB340 holding the trade handler, three stubs, strings, the active flag and the offer table">
       <title>The Seru-trade screen inside PROT 0899's reference-free dead region</title>
       <style>
         .dr-live { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.2; }
@@ -59,8 +59,8 @@
       <rect x="400" y="40" width="460" height="44" class="dr-dead"/>
       <text x="630" y="62" class="dr-t">dead region - referenced by nothing</text>
       <text x="20"  y="104" class="dr-addr">0x801CE818</text>
-      <text x="400" y="104" class="dr-addr">0x801E74E0</text>
-      <text x="860" y="104" class="dr-addr" text-anchor="end">0x801E83E0</text>
+      <text x="400" y="104" class="dr-addr">0x801EA440</text>
+      <text x="860" y="104" class="dr-addr" text-anchor="end">0x801EB340</text>
 
       <rect x="400" y="130" width="150" height="40" class="dr-seg"/><text x="475" y="150" class="dr-t">trade handler</text>
       <rect x="550" y="130" width="110" height="40" class="dr-seg"/><text x="605" y="150" class="dr-t">3 stubs</text>
@@ -70,16 +70,17 @@
     </svg>
     <figcaption>Nothing lands in the executable's rodata gap, so the vendor composes with every gap-based feature.</figcaption>
   </figure>
+  <p>The region is the blank lower band of the save-menu picture the overlay carries (rows 162 and up of a 256&times;256 atlas nothing ever draws from). Zero bytes alone were not enough: the save screen reuses the start of that picture as two 8&nbsp;KB memory-card buffers, and a save from the pause menu fills them and goes back to the menu without reloading the overlay. An earlier layout sat inside those buffers; the patcher's space ledger now lists them and refuses any region that overlaps one.</p>
   <table class="layout">
     <thead><tr><th>VA</th><th>Contents</th></tr></thead>
     <tbody>
-      <tr><td><code>0x801E74E0</code></td><td>trade-screen handler: render, input, slide, swap</td></tr>
-      <tr><td><code>0x801E7B00</code></td><td>entry-detour stub - per-frame gate on the active flag</td></tr>
-      <tr><td><code>0x801E7B60</code></td><td>dispatch-detour stub - routes the Trade row to its sub-mode</td></tr>
-      <tr><td><code>0x801E7C20</code></td><td>row-4 label-draw stub (text first, per the native order)</td></tr>
-      <tr><td><code>0x801E7D20</code></td><td>"Trade" / "SERU TRADE" / "Trade?" / "Yes" / "No"</td></tr>
-      <tr><td><code>0x801E7D60</code></td><td>seed-derived offer schedule: 64 buckets &times; 3 bytes</td></tr>
-      <tr><td><code>0x801E7E20</code></td><td>trade-active flag</td></tr>
+      <tr><td><code>0x801EA440</code></td><td>trade-screen handler: render, input, slide, swap</td></tr>
+      <tr><td><code>0x801EAB80</code></td><td>row-4 label-draw stub (text first, per the native order)</td></tr>
+      <tr><td><code>0x801EAC80</code></td><td>"Trade" / "SERU TRADE" / "Trade?" / "Yes" / "No"</td></tr>
+      <tr><td><code>0x801EACC0</code></td><td>seed-derived offer schedule: 64 buckets &times; 3 bytes</td></tr>
+      <tr><td><code>0x801EAD80</code></td><td>trade-active flag and the screen's runtime cells</td></tr>
+      <tr><td><code>0x801EADB0</code></td><td>entry-detour stub - per-frame gate on the active flag</td></tr>
+      <tr><td><code>0x801EAE10</code></td><td>dispatch-detour stub - routes the Trade row to its sub-mode</td></tr>
     </tbody>
   </table>
 </section>
@@ -114,7 +115,7 @@
     <tbody>
       <tr><td>0899 is the menu overlay at <code>0x801CE818</code></td><td>Static <code>jal</code> base recovery; RAM byte-match of a <code>0x15E8C</code>-byte clean prefix across six menu-open save states</td><td><a href="../../tooling/static-overlay-pipeline.html">static-overlay-pipeline</a></td></tr>
       <tr><td>Picker clamp, box height, draw order</td><td>Renderer <code>FUN_801D4868</code> and its dispatcher <code>FUN_801DAFD4</code>, disassembled at the recovered base</td><td><a href="../../subsystems/shop.html">shop</a></td></tr>
-      <tr><td>The dead region is unreferenced</td><td>Address-reference scan over the based image (no literal, <code>lui</code>/<code>addiu</code>, <code>jal</code>, <code>j</code> or branch reaches it); all-zero in live RAM</td><td><a href="../../tooling/address-reference-scan.html">address-reference-scan</a></td></tr>
+      <tr><td>The dead region is unreferenced</td><td>Address-reference scan over the based image (no literal, <code>lui</code>/<code>addiu</code>, <code>jal</code>, <code>j</code> or branch reaches it); above both save-screen card buffers; all-zero in every library capture with the overlay resident</td><td><a href="../../tooling/address-reference-scan.html">address-reference-scan</a></td></tr>
       <tr><td>Spell list layout <code>+0x13C</code> / <code>+0x13D</code> / <code>+0x161</code></td><td>Typed save-record accessors; the engine's <code>apply_trade</code> mirrors the same offsets</td><td><a href="../../formats/save-record.html">save-record</a></td></tr>
       <tr><td>Play counter at <code>0x80084570</code> ticks per frame</td><td>Runtime capture</td><td><a href="../../reference/memory-map.html">memory-map</a></td></tr>
       <tr><td>The screen works end to end</td><td>Hardware playtest; disc oracle decodes the embedded schedule back to the kernel's offers and checks the rodata gap is untouched</td><td><code>seru_trade_real.rs</code></td></tr>

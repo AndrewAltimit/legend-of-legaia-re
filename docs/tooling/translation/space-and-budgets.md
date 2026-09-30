@@ -249,15 +249,38 @@ menu label is read only while its overlay is resident, and the overlay loads
 whole (the loader reads the entry's full sector extent), so the region is
 there whenever the label is.
 
-Two menu-overlay mod regions sit inside the save screen's card buffers
-([`save-screen.md`](../../subsystems/save-screen.md#which-buffer-the-sum-runs-over)):
-the `--show-super-arts` description run (`0x801E65F4..`) inside the card-read
-buffer `0x801E5120..0x801E7120`, and run-C (`0x801E74E0..`, `--seru-trade` and
-`--show-super-arts`) inside the save compose buffer `0x801E7120..0x801E9120`.
-The description run reads non-zero in library captures of the title's card
-load. Both features read their bytes only while the overlay was reloaded for
-the shop or the pause menu, which is why they work, but the ledger records the
-overlap and translation never uses either region.
+### Zero is not room: runtime buffers
+
+A zero run in the file is not spare while the overlay is resident if the game
+writes it, or reads it as live data. The ledger lists those spans too, as
+`space_ledger::BUFFERS`, and a test rejects any region that overlaps one:
+
+| Span (PROT 0899) | What uses it |
+|---|---|
+| `0x801E5120..0x801E7120` | the card-read buffer: every card read fills it |
+| `0x801E7120..0x801E9120` | the save compose buffer: every save memsets and fills it |
+| `0x801E5120..0x801EA440` | the save-menu atlas's header, palette and pixel rows 0..161, uploaded to VRAM `(960, 0)` when the card screen opens |
+| `0x801EE120..0x801EEB40` | the save-slot icon sheet, uploaded to `(960, 224)` over the atlas's rows 224..239 |
+| `0x801EF070..0x801F3818` | the overlay's uninitialised data |
+
+The two card buffers reuse the atlas's memory once it has been uploaded
+([`save-screen.md`](../../subsystems/save-screen.md#which-buffer-the-sum-runs-over)),
+and neither is confined to the title's Continue screen. The pause menu's Save
+and Load rows run the same card drivers, and when the save or load finishes,
+the driver (`FUN_801DAEF4` / `FUN_801DAE24`) returns to the root menu **with
+the overlay still resident**. Anything placed in a buffer is overwritten by
+save data, and the pause menu then runs on those bytes.
+
+That is the hazard the old `--seru-trade` / `--show-super-arts` layout had. Its
+code and description runs sat at `0x801E74E0..` and `0x801E65F4..`, inside the
+two buffers, so on the overworld a Save followed by Status → Moves jumped into
+save-block bytes. Both runs now sit in the atlas's blank lower band - rows
+162..203, `0x801EA440..0x801EB94F`. Every one of those bytes is zero in the
+file. No instruction in any image forms an address inside it, both buffers end
+below it, and the card screen never samples those rows: a capture of its draw
+list reads the atlas page only up to row 160, plus rows 224..239 from the icon
+sheet. The band also reads zero in every library capture with the overlay
+resident.
 
 ### What composes with what
 
@@ -265,7 +288,7 @@ overlap and translation never uses either region.
 |---|---|---|---|
 | longer names (`items` sections) | SCUS name pools | `--delilas-challenge` points three custom item names at code caves outside the pools | yes |
 | longer `system_text` | SCUS system pools, then the name pools' free runs | every SCUS mod arena (`--shiny-seru`, `--equipment-drops`, `--flee-exp`, `--enemy-ally`, `--seru-trade`, `--delilas-challenge`, `--show-super-arts`) | yes: the arenas are never used for text |
-| longer menu-overlay labels | 0899 pools, 0899 translation region | `--seru-trade`, `--show-super-arts` (run-C, the description run) | yes |
+| longer menu-overlay labels | 0899 pools, 0899 translation region | `--seru-trade`, `--show-super-arts` (run-C and the description run, in the atlas's blank band) | yes |
 | longer battle-overlay labels | 0898 pools | `--enemy-hp-bar`, the arts hooks (code outside the pools) | yes |
 | longer monster names | the record, inside its `0x14000` slot | `legaia-patcher monster-model` re-packs the same block; `--monster-stats` / `--enemy-stat-scale` write fields in it | yes, while the re-packed block fits its slot |
 | longer place names | none (31-byte cells) | `--rename-location` writes the same cells | the later write wins |
@@ -279,7 +302,8 @@ Each place a larger text pool could live was measured:
   [`randomizer.md`](../randomizer.md#the-injected-code-arena-budget) for why
   there is no further region to grow into.
 - **An overlay's uninitialised data** is written at runtime. The menu
-  overlay's two card buffers are the measured case above; a zero run is dead
+  overlay's two card buffers are the measured case
+  ([above](#zero-is-not-room-runtime-buffers)); a zero run is dead
   only when nothing forms an address in it and nothing reaches it from a base
   below it, and only a capture of every state that uses the overlay says the
   second.

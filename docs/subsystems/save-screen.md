@@ -750,6 +750,23 @@ before comparing its `+0x1FFC`. So the sum covers the block as stored on
 the card, starting at the `SC` magic, and the `0x1A18`-byte staging copy
 is one region inside it rather than the whole payload.
 
+Neither buffer is memory of its own. Both reuse the save-menu atlas TIM the
+overlay carries at `0x801E5120` (header, palette, then 256x256 4bpp pixels to
+`0x801ED340`), which `FUN_801DD35C` uploads to VRAM `(960, 0)` with
+`FUN_800198E0(0x801E5120)` at `0x801DD4BC` before the first card read. The
+save-slot icon sheet at `0x801EE120` follows, landing on `(960, 224)`. Only
+atlas rows 0..160 are drawn from; its rows 162 and up are blank in the file,
+and the card buffers end at `0x801E9120`, near row 124.
+
+The buffers are also not confined to the title's Continue screen. From the
+overworld pause menu, the Save and Load rows run these same drivers, and step 3
+of each returns to the root picker (`sw a0,0x46a4(v1)` with `a0 = 1` at
+`0x801DAFB4`) with the overlay still resident. Anything else placed in
+`0x801E5120..0x801E9120` is therefore save data by the time the menu's next
+screen runs. That is why the patcher's space ledger lists both buffers as
+spans no mod or translation region may overlap
+([`space-and-budgets.md`](../tooling/translation/space-and-budgets.md#zero-is-not-room-runtime-buffers)).
+
 An earlier reading recorded this as an open tension, on the grounds that
 `legaia-save`'s card layer modelled the SC payload as checksum-free. That
 reading is **falsified**: the checksum exists, retail stamps it on save

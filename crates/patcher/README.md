@@ -603,7 +603,9 @@ fully **deterministic from the seed**.
   handler, the strings, the bucket table, and the runtime cells - is hosted in the
   **menu overlay (PROT 0899)**: two byte-verified edits add the Trade row + route
   a confirm into an unused picker sub-mode, and everything else sits in 0899's
-  reference-free ~3.8 KB all-zero dead run (resident throughout the shop). Nothing
+  reference-free ~3.8 KB all-zero dead run (resident throughout the shop):
+  `0x801EA440..0x801EB340`, the save-menu atlas's blank lower band, clear of the
+  save screen's card buffers (`space_ledger::BUFFERS`). Nothing
   touches the SCUS rodata gap, so seru trading **composes with the
   bonus-equipment-drop / flee-EXP / Seru-Bell-name gap features**.
   `apply::inject_trade_full` writes each piece via `patch_prot_entry(899, …)`,
@@ -978,10 +980,13 @@ coloured arrows for the selected row and a retail-style description
 (`Super Arts. Somersault,|Cyclone, Somersault.`) - four detours into the menu
 overlay's own row loop, count reads and cursor bound
 ([`super_art_menu`](src/super_art_menu.rs)), with routines, names and
-descriptions in 0899's own reference-free dead space (read/write-watched across
-a pause-menu tour; the run `--seru-trade` shares, past its highest blob, plus a
-second one for the text), so that half costs no SCUS bytes and composes with
-everything. Names are carried because the battle art records the in-battle chase
+descriptions in 0899's own reference-free dead space (the run `--seru-trade`
+shares, past its highest blob, plus a second one for the text, both in the
+save-menu atlas's blank band `0x801EA440..0x801EB94F`), so that half costs no
+SCUS bytes and composes with everything. Neither run may sit in the save
+screen's card buffers (`0x801E5120..0x801E9120`): a pause-menu Save fills them
+and returns to the menu with the overlay still resident. `space_ledger::BUFFERS`
+lists every such span and a test rejects any ledger region overlapping one. Names are carried because the battle art records the in-battle chase
 reads are not resident in the menu.
 
 Code and tables spread over the four verified-dead SCUS regions (~600 of 652 B),

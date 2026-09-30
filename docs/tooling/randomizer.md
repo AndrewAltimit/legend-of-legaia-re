@@ -1031,7 +1031,10 @@ route a confirmed Trade into an unused picker sub-mode; the trade screen itself 
 the per-owner render, the native window-slide in/out, the cursor, the explicit
 "Trade?" confirm, and the swap - is a routine hosted **entirely in 0899's own
 reference-free dead region** (a ~3.8 KB all-zero run inside the resident overlay
-image), reached by `j` from the in-overlay detours. Because nothing lands in the
+image, `0x801EA440..0x801EB340` - the blank lower band of the save-menu atlas,
+clear of the save screen's card buffers; see
+[where menu-overlay hooks may live](#where-menu-overlay-hooks-may-live)), reached
+by `j` from the in-overlay detours. Because nothing lands in the
 SCUS rodata gap, seru trading **composes with every gap-based feature**
 ([equipment drops](#equipment-drops), [flee-EXP](#run-away-exp), the Seru-Bell
 [name](#unused-content)). The injector writes the handler + stubs + strings + the
@@ -3770,12 +3773,12 @@ hook (B) runs in battle (a learned row re-enters the scan at its merged index, a
 Super row fills a menu scratch record - character, AP, glyph buffer, name,
 description - and enters the found arm at `0x801D44C8`), and the cursor bound
 `0x801DA64C` gains the performed count. Routines, names, the scratch record and
-the glyph buffer sit in the dead run `--seru-trade` shares (`0x801E7FB0..`,
+the glyph buffer sit in the dead run `--seru-trade` shares (`0x801EAF10..`,
 past its highest blob); the descriptions (`Super Arts. Somersault,|Cyclone,
-Somersault.`) in a second run (`0x801E65F4..`). Both are all-zero in the file,
-referenced by nothing in the overlay or SCUS, and read/write-watched untouched
-across a pause-menu tour (Items, Magic, Equip, Status incl. Moves with its
-cursor, Options, Save; the only writes are the loader's own copy at menu open).
+Somersault.`) in a second run (`0x801EB400..`). Both are all-zero in the file,
+referenced by nothing in any image, above both save-screen card buffers, and
+zero in every library capture with the overlay resident
+([where menu-overlay hooks may live](#where-menu-overlay-hooks-may-live)).
 No SCUS bytes, so this half composes with everything. Verified live: Carl's
 Moves page opens with Tri-Somersault first, its coloured arrows and description
 on the selected row, the cursor and scroll walk all fifteen rows, and Noa's page
@@ -3850,10 +3853,32 @@ Every region above, and the menu overlay's, is listed once with its owner in
 translation never writes a mod's region, and the one region reserved for
 relocated translation strings is never a mod's
 ([`space-and-budgets.md`](translation/space-and-budgets.md#sharing-room-with-mods-the-space-ledger)).
-Two menu-overlay regions sit inside the save screen's card buffers - the
-description run in the card-read buffer, run-C in the save compose buffer - so
-their bytes are only trustworthy while the overlay was freshly loaded for the
-shop or the pause menu.
+The ledger also lists the **runtime buffers** no region may overlap
+(`space_ledger::BUFFERS`), and a test enforces it.
+
+#### Where menu-overlay hooks may live
+
+A zero run in PROT 0899 is not automatically room. The save screen's two card
+buffers - the card-read buffer `0x801E5120..0x801E7120` and the save compose
+buffer `0x801E7120..0x801E9120` - are all-zero in the file. At runtime they are
+full of save data, and they are not confined to the title's Continue screen. On
+the overworld, the pause menu's Save row runs the save driver `FUN_801DAEF4`.
+The compose step `FUN_801E1934` memsets the compose buffer and copies the live
+game state over it. The driver then writes `1` to the sub-screen selector and
+returns to the root picker, with the overlay still resident. The Load row does
+the same with the read buffer. Code placed in either buffer is therefore
+overwritten, and the next menu screen that reaches it runs save-block bytes.
+
+`--seru-trade` and `--show-super-arts` once placed their runs at `0x801E74E0..`
+and `0x801E65F4..`, inside those buffers. The trade screen was safe by
+accident, because a shop is its own overlay residency and never reaches a card
+driver. The Moves page was not: Save, then Status → Moves, jumped into the
+compose buffer. Both runs now sit in the save-menu atlas's blank lower band,
+`0x801EA440..0x801EB94F`. That band is atlas rows 162..203, zero in the file
+and never sampled by the card screen. It lies above both buffers, no image
+forms an address inside it, and it is zero in every library capture with the
+overlay resident. The full list of 0899's runtime spans is in
+[`space-and-budgets.md`](translation/space-and-budgets.md#zero-is-not-room-runtime-buffers).
 
 **Known cosmetic gap.** The Triangle caption's own page thresholds (`< 6`,
 `< 11`, in `FUN_801D3444`) stay retail, so on a later page the prompt can still
