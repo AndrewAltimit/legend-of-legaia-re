@@ -3523,11 +3523,12 @@ that could drift; none is gated.
   opaque and un-cued there (its cue gate asks `pose_frame` for the same
   reason). The page is the faithful side; closing it natively means applying
   `apply_body_blend` to the rest-mesh upload too.
-- **World-map marker gates.** Both hosts emit the markers through
-  `marker_quads`, but feed it different predicates: the native window hides
-  them under a boot panel and draws the player stand-in off its drained spawn
-  slots, the page has no panel gate and keys the stand-in on whether its own
-  player rig exists.
+- **World-map marker gates**, read and left as they are. Both hosts emit the
+  markers through `marker_quads` and differ in two predicates, neither of
+  which is drift: the player stand-in asks each host whether its own leader
+  mesh drew (the native drained spawn slots, the page's player rig), and the
+  native boot-panel gate has no page twin because no page boot panel draws
+  over a world-map frame.
 - **PSX rasterisation (native only).** `LEGAIA_PSX_RENDER` turns on vertex
   jitter and 15-bit dither in the wgpu renderer; the page's shaders have
   neither. Opt-in and non-default, so a feature gap rather than drift.
