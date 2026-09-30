@@ -575,11 +575,17 @@ pub fn curse_plate_sprite(
 /// battle chrome pass (`window/hud.rs`) and the browser play page's
 /// (`play_battle.rs`) - and both pass `engine-core`'s
 /// `battle_hud::battle_ring_marks`. The marks are four tests in retail's
-/// phase-`0x28` arm (see [`RingMarks`]), each posting one quad through the
-/// head-linking `FUN_8003D2C4` onto one ordering-table entry, so the **last**
-/// posted draws **first**: the sprites here are pushed in the reverse of
+/// phase-`0x28` arm (see [`RingMarks`]), each posting one quad through
+/// `FUN_8003D2C4(*0x1F8003F4, prim)` - the ordering table's base entry (the
+/// emitters' `lw a0, 0xE0(a0)` off `0x1F800314`). That linker is a head
+/// insert: it swaps the entry's 24-bit next pointer into the prim and points
+/// the entry at the prim, each word keeping its own top byte
+/// (`0x8003D2CC..0x8003D2F4`). So the GPU walks the **last** posted mark
+/// **first**, and the sprites here are pushed in the reverse of
 /// retail's call order - Curse, Rot, then the two crosses - which keeps the
-/// Ra-Seru X on top of the Curse plate that shares its anchor. A host whose
+/// Ra-Seru X on top of the Curse plate that shares its anchor. That the marks
+/// land over the plates is the port's order; the plates are text actors on a
+/// different entry, and their relative order is not pinned here. A host whose
 /// atlas skipped a mark's bake (its rect `None`) draws the plates and no
 /// mark.
 pub fn battle_command_menu_sprites(
