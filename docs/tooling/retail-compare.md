@@ -246,7 +246,13 @@ once landed - the landing frame steps both). `FadeState::age_vsyncs` is the
 engine's twin. `phase` then also compares the action-SM state, and `play-window`
 captures on the same predicate (`LEGAIA_BATTLE_INFLIGHT`,
 `LEGAIA_CAPTURE_GATE`), stopping its tick loop the frame it holds. A
-`0x33` capture has no flash yet and is gated on the state alone.
+`0x33` capture with no flash yet is gated on how long the caster's invoke
+clip has run instead: the clip's commit zeroes the close-up accumulator
+`ctx[+0x87C]`, which then gains `8` a vsync, so the engine frame is taken
+that many vsyncs after its caster commits clip `9` (the `a<acc>` suffix of
+`LEGAIA_CAPTURE_GATE`). `0x33` itself runs until the clip's first effect
+record fires, so the state alone placed the frame at the band's first
+vsync, before the commit.
 
 The frame and the RAM are not the same instant. Retail double-buffers its
 packet pools, so while the CPU builds frame `N` the display scans out

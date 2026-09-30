@@ -135,6 +135,11 @@ pub struct RetailBattle {
     /// Vsyncs the capture's displayed frame lags its RAM
     /// ([`display_lag_vsyncs`]).
     pub display_lag: u16,
+    /// `ctx[+0x87C]` - the close-up accumulator the active actor's clip
+    /// commit zeroes.
+    pub cam_accum: u32,
+    /// The active seat's committed clip `+0x1D9`.
+    pub caster_clip: u8,
 }
 
 /// The summon band's live full-screen flash in a capture: which of the two
@@ -267,6 +272,10 @@ pub fn display_lag_vsyncs(ram: &[u8]) -> u16 {
     2 * u16::from(frame_step(ram))
 }
 
+/// The caster's invoke clip through the summon band (`0x32` stages
+/// `actor[+0x1DA] = 9`).
+const SUMMON_INVOKE_CLIP: u8 = 9;
+
 /// Where in the summon band a capture sits, as an engine frame has to be
 /// gated to match it: the action-SM state, and - while a flash is up - the
 /// same flash the same number of vsyncs in. `play-window` reads it as
@@ -281,16 +290,26 @@ pub struct PhaseGate {
     /// own countdown (`cast_module_camera::module_director`): there the band's
     /// length is the module's, so the state alone does not place the frame.
     pub module_phase: Option<u8>,
+    /// For a `0x33` capture with no flash up yet: retail's close-up
+    /// accumulator `ctx[+0x87C]`, which the invoke clip's commit zeroed and
+    /// which then gains `8` a vsync. The state alone does not place such a
+    /// frame - `0x33` runs until the clip's first effect record fires - so
+    /// the engine frame is taken that many vsyncs after its caster commits
+    /// the same clip.
+    pub cam_accum: Option<u32>,
 }
 
 impl PhaseGate {
     /// `state[,white|black,age]`.
     pub fn to_env(&self) -> String {
-        let base = self.env_state_and_fade();
-        match self.module_phase {
-            Some(p) => format!("{base},m{p}"),
-            None => base,
+        let mut s = self.env_state_and_fade();
+        if let Some(p) = self.module_phase {
+            s.push_str(&format!(",m{p}"));
         }
+        if let Some(a) = self.cam_accum {
+            s.push_str(&format!(",a{a}"));
+        }
+        s
     }
 
     fn env_state_and_fade(&self) -> String {
@@ -307,6 +326,14 @@ impl PhaseGate {
 
     pub fn from_env(s: &str) -> Option<Self> {
         let mut parts: Vec<&str> = s.split(',').map(str::trim).collect();
+        let cam_accum = match parts.last() {
+            Some(t) if t.starts_with('a') => {
+                let a = t[1..].parse().ok()?;
+                parts.pop();
+                Some(a)
+            }
+            _ => None,
+        };
         let module_phase = match parts.last() {
             Some(t) if t.starts_with('m') => {
                 let p = t[1..].parse().ok()?;
@@ -328,6 +355,7 @@ impl PhaseGate {
             action_state,
             fade,
             module_phase,
+            cam_accum,
         })
     }
 
@@ -342,6 +370,22 @@ impl PhaseGate {
             && world.casting.module_phase < p
         {
             return false;
+        }
+        if let Some(acc) = self.cam_accum {
+            let caster = world
+                .actors
+                .get(usize::from(world.battle_ctx.active_actor))
+                .map(|a| &a.battle);
+            let committed = caster.is_some_and(|b| {
+                b.current_anim == SUMMON_INVOKE_CLIP && b.queued_anim == SUMMON_INVOKE_CLIP
+            });
+            let since = world
+                .clock
+                .display_frames
+                .saturating_sub(world.battle_ctx.active_clip_commit_frame);
+            if !committed || since.saturating_mul(8) < u64::from(acc) {
+                return false;
+            }
         }
         let Some(want) = self.fade else {
             return true;
@@ -379,6 +423,9 @@ impl RetailBattle {
         if let Some(f) = g.fade.as_mut() {
             f.age = f.age.saturating_sub(self.display_lag);
         }
+        if let Some(a) = g.cam_accum.as_mut() {
+            *a = a.saturating_sub(u32::from(self.display_lag) * 8);
+        }
         Some(g)
     }
 
@@ -392,10 +439,17 @@ impl RetailBattle {
                 .is_some_and(|p| p.paces_band());
         let module_phase =
             (directed && (0x35..=0x36).contains(&self.action_state)).then_some(self.module_phase);
+        // A `0x33` frame before the flash-in is placed by how long the invoke
+        // clip has run: the accumulator its commit zeroed.
+        let cam_accum = (self.action_state == 0x33
+            && self.summon_fade.is_none()
+            && self.caster_clip == SUMMON_INVOKE_CLIP)
+            .then_some(self.cam_accum);
         Some(PhaseGate {
             action_state: self.action_state,
             fade: self.summon_fade,
             module_phase,
+            cam_accum,
         })
     }
 }
@@ -470,6 +524,8 @@ impl RetailBattle {
             target_code: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DD)),
             summon_fade: summon_fade(ram),
             display_lag: display_lag_vsyncs(ram),
+            cam_accum: game_anchors::u32_at(ram, ctx + 0x87C),
+            caster_clip: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1D9)),
             module_phase: game_anchors::u8_at(ram, ctx + 0x279),
         })
     }
@@ -1075,6 +1131,7 @@ mod tests {
                 action_state: 0x33,
                 fade: None,
                 module_phase: None,
+                cam_accum: None,
             },
             PhaseGate {
                 action_state: 0x35,
@@ -1083,11 +1140,13 @@ mod tests {
                     age: 24,
                 }),
                 module_phase: None,
+                cam_accum: None,
             },
             PhaseGate {
                 action_state: 0x36,
                 fade: None,
                 module_phase: Some(6),
+                cam_accum: Some(72),
             },
         ] {
             assert_eq!(PhaseGate::from_env(&g.to_env()), Some(g));

@@ -1035,6 +1035,10 @@ pub struct BattleActionCtx {
     /// those counters whenever this moves
     /// (`BattleCamInputs::active_commits`).
     pub active_clip_commits: u32,
+    /// The display frame of the active actor's last clip commit - the
+    /// origin the re-zeroed `ctx[+0x87C]` counts from (`8` per vsync), which
+    /// the retail comparison corpus aligns a summon `0x33` capture on.
+    pub active_clip_commit_frame: u64,
     /// `[+0x28B]` - the **Arts announcement banner**: `0` idle, `1..=4` a
     /// live banner, `5..=8` a cancel request. Raised by the staged-animation
     /// commit's SpecialStarter arm and stepped once per battle frame; see

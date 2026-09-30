@@ -1012,6 +1012,7 @@ impl World {
         if i == usize::from(self.battle_ctx.active_actor) {
             self.battle_ctx.active_clip_commits =
                 self.battle_ctx.active_clip_commits.wrapping_add(1);
+            self.battle_ctx.active_clip_commit_frame = self.clock.display_frames;
         }
         // `+0x1DB = +0x1DA` (`FUN_8004AD80` `0x8004AEB0..0x8004AEB8`), taken
         // BEFORE the art-bank rewrite below turns an id >= 0x10 into its
