@@ -233,8 +233,10 @@
   .wb-pal-key { min-width: 2rem; padding: 0.25rem 0.4rem; font: inherit; font-size: 1.05em; color: var(--text-muted); background: var(--bg-code); border: 1px dashed var(--border-hi); border-radius: 5px; cursor: pointer; }
   .wb-pal-key.is-drawn { color: var(--text-bright); border-style: solid; border-color: var(--accent-line); }
   .wb-pal-key:hover, .wb-pal-key:focus-visible { border-color: var(--accent); }
-  .wb-sym-key { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.2rem 0.4rem; font: inherit; font-size: 0.8em; color: var(--text-muted); background: var(--bg-code); border: 1px solid var(--border-hi); border-radius: 5px; cursor: pointer; }
-  .wb-sym-key canvas { image-rendering: pixelated; background: #101848; border-radius: 2px; }
+  .wb-sym-field { grid-column: 1 / -1; }
+  .wb-symbols { display: grid; grid-template-columns: repeat(auto-fill, minmax(4.2rem, 1fr)); gap: 0.3rem; }
+  .wb-sym-key { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.2rem; min-height: 3.1rem; padding: 0.3rem 0.3rem 0.2rem; font: inherit; font-size: 0.8em; color: var(--text-muted); background: var(--bg-code); border: 1px solid var(--border-hi); border-radius: 5px; cursor: pointer; }
+  .wb-sym-key canvas { display: block; max-width: 100%; image-rendering: pixelated; background: #101848; border-radius: 2px; }
   .wb-sym-key:hover, .wb-sym-key:focus-visible { border-color: var(--accent); color: var(--text-bright); }
   .wb-char-stats { grid-column: 1 / -1; font-size: 0.86em; color: var(--text-muted); }
   .wb-preview { display: flex; flex-direction: column; align-items: flex-start; gap: 0.15rem; margin-top: 0.35rem; min-width: 0; }
