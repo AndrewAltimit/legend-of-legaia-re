@@ -232,7 +232,13 @@ and `LEGAIA_FGL_WALK_DEBUG` adds a stalled walk's wall map, the scene's
 teleports and door colliders. `LEGAIA_FGL_PLAN_DEBUG` prints each object-door
 edge the planner adds, and `LEGAIA_FGL_COMP_DEBUG` prints the tile map of every
 walk component a plan failed inside (`o` reached, `A` avoided door tile, `b`
-actor box, `G` the goal) with the overworld's installed entities.
+actor box, `G` the goal) with the overworld's installed entities, and a
+sub-cell flood of the wall bits alone beside it (when that flood stops short
+too, the gap is a join the walls do not show - a script, a story gate - not
+the planner). `LEGAIA_FGL_POS_TRACE` prints every tick of a scripted run that
+moves the player or changes the pad holder's park site, and the trace prints
+the seated tier's trail on success, so a pad stall can be read against the
+route the seated tier took.
 
 A plan that cannot reach its goal searches the start's whole walk component,
 and a stalled walk re-plans every second, so a failed plan is remembered -
@@ -251,7 +257,9 @@ the component its door touches to the components holding the entry tiles of
 its own `0x3F`s back (a town with two gates has two landings). A
 breadth-first search over those joins names the first crossing of the
 shortest chain to the component of the wanted door, and the chain is walked
-one round trip at a time, re-planned from each landing. A crossing that
+one round trip at a time, re-planned from each landing. Leaving the crossing,
+the hand prefers the door whose own record lands on the planned side, and
+takes any door when that one is out of reach. A crossing that
 returns to the same side is taken once more with its own beats played first,
 and after that it is left out of the plan: which side it delivers to is story
 state the lattice cannot see (`suimon`'s two chambers join only once its water
@@ -406,3 +414,15 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   canonical playthrough.
 - A card save whose scene lies off the route between two milestones (the
   endgame card's last save, on `deene`) anchors no milestone.
+- The `vidna` segment's pad tier has no walkable way from its seed. On
+  `map01` Rim Elm's side and Vidna's are separate walk components of the
+  static collision grid (the grid in a retail RAM image of the overworld
+  matches the disc `.MAP` except Rim Elm's gate paint), and every crossing
+  the seed's flags leave open lands elsewhere: `dolk` opens only the pocket
+  south of the castle, `suimon`'s two chambers join only once its water gate
+  is drained (the controller, P1[4], wants `0x26F`, the Water Gate key, whose
+  one clean setter is `dolk2` P2[7], after Caruban), and `rikuroa`'s first
+  arrival (P2[43]) turns the party back and `map01` P2[14] carries it to
+  `cave01`, a later milestone. The chapter-1 anchors come from separate
+  sessions (the `rim_elm_restored` state has not entered `dolk`), so the
+  story state that opened the way in the retail run is not in the seed.
