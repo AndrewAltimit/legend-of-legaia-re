@@ -419,9 +419,14 @@ process-matching helpers in
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Are camera-relative move-VM parts drawn camera-relative? | partial - both hosts do; not yet frame-compared | 334 of 3956 nodes across the 98 mednafen states carry a `+0x52 & 0x780` bit (billboards, per-axis skips, camera-locked summon parts), and 15 states have a non-zero skipped angle, e.g. `battle_melee_hit_spark`. Both play hosts now place those parts through `camera_relative_model_prefix` ([`renderer.md`](../subsystems/renderer.md#camera-relative-nodes-fun_8001cf50)); open is a frame comparison against one of those states, and whether the engine's part position (the move-VM `world_x/y/z`, which folds in the spawn origin) is the `+0x14` offset the `0x400` arm locks. |
 
-**Does the port draw retail's Rot / Curse marks over refused arms** closed
+**Are camera-relative move-VM parts drawn camera-relative** closed by capture:
+read against each library state's own RAM and primitive pool, every flagged
+part's `+0x14` is what `FUN_8001CF50` says (a world point on the skip arm, an
+eye offset under `0x400`), and the hosts' kernel puts the hit-spark billboards
+and `opdeene`'s locked quads on retail's packets to the pixel, at the six-fold
+size ([settled](re-settled-threads.md#rendering--camera)). Before it,
+**does the port draw retail's Rot / Curse marks over refused arms** closed
 by disassembly: the ring stamps Rot on the Attack chip under all three limbs
 (`FUN_801DBD04(0xA0, 0x42)`), lays the Curse plate on the Magic chip
 (`FUN_801DBEC4(0xF8, 0x42)`) and the arts entry stamps each rotted direction

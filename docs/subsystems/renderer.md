@@ -1028,6 +1028,25 @@ orbit, the overworld top view), where there is no retail rotation to undo. The
 Baka Fighter cameo is the same `0x400` shape written as its own placement
 ([`minigame-baka-fighter.md`](minigame-baka-fighter.md)).
 
+The retail frames agree. Across the mednafen library, every flagged part-tick
+node's `+0x2C` is the scratchpad camera matrix `0x1F8003C8` (rotation and
+translation) applied to `+0x14` on the skip arm, and `S_b * (+0x14)` under
+`0x400` - the two readings above, read off retail's own RAM rather than the
+code. Two kinds of node fall outside it, both timing: a part spawned this frame
+still holds its recycled slot's `+0x2C`, and in one state the camera moved
+between the node's update and the view build. The frame half is the hit spark
+in `battle_melee_hit_spark`: twelve `0x380` parts, each one `±16` quad, under
+a camera yawed `2925`. Retail draws them as axis-aligned squares of `7` and
+`14` px for `+0x72` `0x800` and `0x1000` at depth about `3500` - the size the
+`0x6000` literal gives, where the `4x` battle base would give about `5` and
+`9`. Projecting each quad through the hosts' composition (`T(pos) * K * N`
+under the full camera, `H`, `OFX = 160`, `OFY = 114`) lands every corner on a
+packet in retail's primitive pool within 1.5 px, as it does `opdeene`'s two
+camera-locked quads, while the same parts composed flag-free or at the base
+scale miss every packet. Overworld parts are left out of the packet compare:
+the curvature table bends their `SY` after projection. Test
+`engine-ui/tests/camera_relative_retail_oracle.rs` (save-library gated).
+
 ## Frame setup + present
 
 - **`FUN_800271A8`** - the overworld's scratch init and **screen-Y curvature
