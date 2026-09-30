@@ -1244,7 +1244,7 @@ about these is contested.
 |---|---|
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
 | derived scene lights | An enhancement the browser renderer cannot express. See [below](#derived-scene-point-lights-are-native-only). |
-| battle body blend modes | Both hosts draw a whole battle body's semi-transparency; three residues differ in scope and ordering. See [below](#a-battle-bodys-blend-mode-reaches-both-hosts-with-three-residues). |
+| battle body blend modes | Both hosts draw a whole battle body's semi-transparency; two residues differ in override keying and ordering. See [below](#a-battle-bodys-blend-mode-reaches-both-hosts-with-two-residues). |
 | save rack port 1 | The native rack's first port is an engine-format save directory; the page's two ports are both memory-card images. See [below](#the-save-racks-first-port-differs-per-host). |
 
 ### The frame loop rules are engine-side
@@ -1310,7 +1310,7 @@ fidelity: this is the one row here where the *native* host is the one running
 a non-retail path, so the page being without it is a feature gap rather than
 a correctness gap.
 
-### A battle body's blend mode reaches both hosts, with three residues
+### A battle body's blend mode reaches both hosts, with two residues
 
 Two retail writers put a whole battle body into a semi-transparent blend
 mode through the top byte of its tint colour word: the near-camera ghost
@@ -1321,16 +1321,15 @@ ABR mode into the packets' tpage bits, so every prim draws semi-transparent,
 the GPU still honouring each texel's STP bit
 ([battle.md](../subsystems/battle.md#the-near-camera-ghost-pass-fun_8004dc68)).
 
-Both hosts reproduce that through one kernel, `engine-core::battle_body_blend`,
-which rewrites a body's TSB words from the draw plan's colour word: the native
-posed-mesh builder applies it before upload
-(`event_handler/redraw_passes.rs`), and the page re-sends the stream on a
+Both hosts reproduce that through one kernel, `engine-core::battle_body_blend`
+behind `BattleActorDrawPlan::apply_body_blend`, which rewrites a body's TSB
+words from the draw plan's colour word: the native override builder applies it
+to the posed mesh and, while the word raises ABE, to a re-upload of the rest
+mesh (`event_handler/redraw_passes.rs`), and the page re-sends the stream on a
 blend-key change (`web-viewer::play_battle_body_blend`, with
 `TmdRenderer::updateSceneMeshCbaTsb` rebuilding the per-ABR semi tail). What
 still differs:
 
-- **native:** only posed bodies (the `pose_frame` path) take the blend; a body
-  drawn unposed keeps its authored TSB words;
 - **native:** the posed override is keyed by TMD index, so two bodies sharing
   one TMD share one override;
 - **page:** blend-pass ordering is per mesh, not per prim, so a blended body's
@@ -3567,17 +3566,48 @@ that could drift; none is gated.
   over a world-map frame.
 - **PSX rasterisation (native only).** `LEGAIA_PSX_RENDER` turns on vertex
   jitter and 15-bit dither in the wgpu renderer; the page's shaders have
-  neither. Opt-in and non-default, so a feature gap rather than drift.
+  neither. Opt-in and non-default, so a feature gap rather than drift. See
+  [what the page would need](#what-the-page-needs-for-the-two-native-only-render-toggles).
 - **Dynamic lighting, whole toggle.** Beyond the derived point lights
   ([above](#derived-scene-point-lights-are-native-only)), the native `I`
   toggle's directional light and screen-centred light pool also have no page
-  toggle or shader path.
-- **The fishing wander readout (native only).** A dev-menu debug readout of
-  `FUN_801d2050`'s tracked points; the page's dev menu has no twin.
+  toggle or shader path; same section.
+- **The fishing wander readout (native only), left as a debug aid.** A
+  dev-menu readout of `FUN_801d2050`'s tracked points, not a retail surface;
+  nothing a player sees depends on it, so the page's dev menu carries no twin
+  by choice.
 - **The dance HUD quads (neither host).** The native window calls
   `DanceGame::hud_draw_quads` into an emitter that returns nothing without a
   page upload; the page never calls it. Host-identical, so a gap rather than
   drift.
+
+### What the page needs for the two native-only render toggles
+
+Neither toggle changes a retail frame (both default off), and neither is
+wired on the page. Assessed rather than built, because both land in
+[`site/js/webgl-shaders.js`](../../site/js/webgl-shaders.js), the one GLSL
+program every 3D page shares - a compile error there blanks the site - and
+no gate compiles that program outside a browser.
+
+- **PSX rasterisation** is the smaller of the two. The native shader carries
+  it in one `psx_params` vector (framebuffer width and height, snap on,
+  dither on): the vertex stage snaps the projected position to the
+  framebuffer's pixel grid (`psx_snap_clip` in `engine-render::shaders`), and
+  every fragment path ends in a 4x4 ordered dither down to 15-bit colour
+  (`psx_dither`, the PSX dither matrix `-4 0 -3 1 / 2 -2 3 -1 / -3 1 -4 0 /
+  3 -1 2 -2` added before the `>> 3`, then `(c5 << 3) | (c5 >> 2)` back to 8
+  bits). The page needs the same two functions in its main program, one
+  `vec4` uniform set per draw in `webgl-tmd.js` (`render` and
+  `renderAssembled`), and a toggle; a unset uniform is all zeros, which is
+  off, so the faithful path stays untouched. Native has no in-game toggle
+  either - the env var is the whole switch.
+- **Dynamic lighting** needs a lighting term the page does not have at all:
+  the `I` toggle's warm directional light and screen-centred pool (a per-draw
+  light direction + colour and a capped multiply over the baked shading), and
+  under it the derived point lights with their PCF shadow maps, which need a
+  per-frame export of the picked light set and a shadow-map pass
+  ([above](#derived-scene-point-lights-are-native-only)). It is an
+  enhancement both ways, so the page is short a feature, not wrong.
 
 ## Adding coverage
 
