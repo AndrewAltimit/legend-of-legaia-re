@@ -231,6 +231,12 @@
   margin-top: 0.45rem; line-height: 1.55; word-break: break-word;
 }
 .play-save-status.is-error { color: #d84b4b; }
+#play-cheats .play-btn-row { margin-top: 0.4rem; align-items: center; }
+#play-cheats input[type="text"] { max-width: 100%; }
+.play-cheat-party {
+  font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-dim);
+  margin-top: 0.45rem; line-height: 1.55; word-break: break-word;
+}
 .play-save-status button {
   background: var(--bg-code); color: var(--text); border: 1px solid var(--border);
   padding: 0.14rem 0.4rem; font-family: var(--font-mono); font-size: 0.68rem;
@@ -366,6 +372,38 @@
               <input type="checkbox" id="play-no-encounters"> No encounters
             </label>
           </div>
+        </details>
+        <details class="play-battle-tools" id="play-cheats">
+          <summary>Cheats</summary>
+          <div class="play-btn-row">
+            <label title="Raise every party member to this level. The engine grants the experience that reaches it, so the stat gains are each character's own retail growth. Levels only go up.">
+              Level <input type="number" id="play-cheat-level" min="1" max="99" size="3" placeholder="20">
+            </label>
+            <button id="play-cheat-level-apply" type="button">Set level</button>
+            <button id="play-cheat-restore" type="button"
+                    title="Restore every party member's HP and MP and revive the fallen - works mid-battle too.">Restore HP/MP</button>
+          </div>
+          <div class="play-btn-row">
+            <label title="Gold (capped at 9,999,999).">
+              Gold <input type="number" id="play-cheat-gold" min="0" max="9999999" size="8">
+            </label>
+            <button id="play-cheat-gold-apply" type="button">Set gold</button>
+            <label title="Casino coins (capped at 9,999,999).">
+              Coins <input type="number" id="play-cheat-coins" min="0" max="9999999" size="8">
+            </label>
+            <button id="play-cheat-coins-apply" type="button">Set coins</button>
+          </div>
+          <div class="play-btn-row">
+            <label title="Item name (or its id). Items stack to 99 and land in the bag the way a pickup would.">
+              Item <input type="text" id="play-cheat-item" size="16" list="play-cheat-item-names" placeholder="Healing Leaf" autocomplete="off">
+            </label>
+            <datalist id="play-cheat-item-names"></datalist>
+            <label>
+              &times; <input type="number" id="play-cheat-item-qty" min="1" max="99" size="3" value="1">
+            </label>
+            <button id="play-cheat-item-apply" type="button">Add item</button>
+          </div>
+          <div class="play-cheat-party" id="play-cheat-party" aria-live="polite"></div>
         </details>
       </div>
 
@@ -1902,6 +1940,73 @@
     canvas.focus();
   });
   window.__playApplyBattleTools = applyBattleTools;
+
+  /* Cheats - every write is the engine's (legaia_engine_core::cheats, the
+   * same mutations the native play-window's --cheat-* flags make): levels
+   * go through the retail growth tables, items through the bag's add
+   * helper. Session-only, nothing persisted. */
+  const cheatsEl = document.getElementById('play-cheats');
+  const cheatPartyEl = document.getElementById('play-cheat-party');
+  const cheatItemList = document.getElementById('play-cheat-item-names');
+  let cheatItemsFilled = false;
+  function cheatState() {
+    const rt = window.__playRuntime;
+    if (!rt || typeof rt.cheat_state_json !== 'function') return null;
+    try { return JSON.parse(rt.cheat_state_json()); } catch (e) { return null; }
+  }
+  function syncCheats() {
+    const st = cheatState();
+    if (!st) { cheatPartyEl.textContent = 'Load a disc and pick a scene first.'; return; }
+    const who = (st.party || []).map((m) =>
+      `${m.name} Lv ${m.level} - HP ${m.hp}/${m.hp_max}, MP ${m.mp}/${m.mp_max}`);
+    cheatPartyEl.textContent = (who.length ? who.join(' · ') : 'No party.')
+      + ` · Gold ${st.gold} · Coins ${st.coins}`;
+    if (!cheatItemsFilled && st.items && st.items.length) {
+      const frag = document.createDocumentFragment();
+      for (const [, name] of st.items) {
+        const o = document.createElement('option');
+        o.value = name;
+        frag.appendChild(o);
+      }
+      cheatItemList.appendChild(frag);
+      cheatItemsFilled = true;
+    }
+  }
+  function runCheat(fn) {
+    const rt = window.__playRuntime;
+    if (!rt) { saveMsg('Load a disc first.', true); return; }
+    let msg = '';
+    try { msg = fn(rt); } catch (e) { saveMsg(`Cheat failed: ${e}`, true); return; }
+    if (msg) saveMsg(msg, false);
+    syncCheats();
+    canvas.focus();
+  }
+  cheatsEl.addEventListener('toggle', () => { if (cheatsEl.open) syncCheats(); });
+  document.getElementById('play-cheat-level-apply').addEventListener('click', () => {
+    const lv = parseInt(document.getElementById('play-cheat-level').value, 10);
+    if (!(lv >= 1 && lv <= 99)) { saveMsg('Level must be 1-99.', true); return; }
+    runCheat((rt) => `Level: ${rt.cheat_set_party_level(lv)}`);
+  });
+  document.getElementById('play-cheat-restore').addEventListener('click', () => {
+    runCheat((rt) => { rt.cheat_restore_party(); return 'Party restored.'; });
+  });
+  document.getElementById('play-cheat-gold-apply').addEventListener('click', () => {
+    const v = parseInt(document.getElementById('play-cheat-gold').value, 10);
+    if (!(v >= 0)) return;
+    runCheat((rt) => `Gold set to ${rt.cheat_set_gold(v)}.`);
+  });
+  document.getElementById('play-cheat-coins-apply').addEventListener('click', () => {
+    const v = parseInt(document.getElementById('play-cheat-coins').value, 10);
+    if (!(v >= 0)) return;
+    runCheat((rt) => `Coins set to ${rt.cheat_set_coins(v)}.`);
+  });
+  document.getElementById('play-cheat-item-apply').addEventListener('click', () => {
+    const q = document.getElementById('play-cheat-item').value.trim();
+    const n = Math.min(99, Math.max(1, parseInt(document.getElementById('play-cheat-item-qty').value, 10) || 1));
+    if (!q) return;
+    runCheat((rt) => rt.cheat_give_item(q, n));
+  });
+  window.__playSyncCheats = syncCheats;
 
   /* Fishing minigame. The engine suspends whatever mode the scene is in and
      restores it on exit, so this works from any staged scene - the disc's own

@@ -121,9 +121,10 @@ than on frame 0 - allow ~40 ticks when pairing it with a capture:
 `--battle` turns the live loop on even under `--no-live-loop`, because the
 loop is what drains the transition.
 
-`--seed-party` alone seeds retail's New Game roster, which is **Vahn alone** -
-correct for the early game, and not enough for a three-member fight. Name the
-members you want and each one is seeded from its own row of the executable's
+A `--scene` entry already brings the full party (see
+[Pick a scene](#2-pick-a-scene)). `--seed-party` instead reseeds retail's New
+Game roster, which is **Vahn alone**. Name the members you want and each one
+missing from the roster is seeded from its own row of the executable's
 starting-party template, so it arrives with real level-1 stats and its own
 name:
 
@@ -187,6 +188,37 @@ is applied after any `--learn-spell`.
 `list-scenes` prints every scene name the game's file map exposes with the
 PROT entry range each covers - the same names feed `--scene`, and a range
 start is where that scene's files land in `extracted/PROT/`.
+
+A scene entered this way - `--scene` with no save, or a scene picked on the
+browser play page - starts with the **full party**: Vahn, Noa and Gala, each
+from their own row of the executable's starting-party template (level 1) and
+wearing a starter loadout, the weakest gear the disc's equipment table lets
+them wear in each slot, their own weapon family first. That is an engine
+choice, not retail's: a true New Game starts with Vahn alone and still does
+(the title screen's NEW GAME, and `--seed-party`, reseed retail's roster).
+Both hosts reach the same seed, `World::seed_picker_party`.
+
+### Cheats
+
+Both hosts carry the same cheats, all written by `legaia_engine_core::cheats`
+so the state they leave is one a playthrough could reach:
+
+| Cheat | Native flag | Effect |
+|---|---|---|
+| Level | `--cheat-level N` | Grants each present member the XP that reaches level `N`, so the stat gains are their own retail growth. Levels only go up. |
+| Gold | `--cheat-gold N` | Sets the purse, capped at 9,999,999. |
+| Coins | `--cheat-coins N` | Sets the casino coin bank, capped at 9,999,999. |
+| Item | `--cheat-item ITEM[:QTY]` | Adds through the bag's own add helper: stacks cap at 99, a full bag refuses. `ITEM` is an id or a name (`healing-leaf:5`). Repeatable. |
+| Restore | (page only) | Refills HP / MP and revives, mid-battle included. |
+
+On the browser play page they sit in the collapsed **Cheats** panel under the
+canvas, beside **Battle tools** (whose **No encounters** box turns random
+fights off).
+
+```bash
+./legaia-engine play-window --disc "/path/to/disc.bin" --scene vell \
+    --cheat-level 20 --cheat-gold 50000 --cheat-item "healing leaf:20"
+```
 
 ## 3. Play the FMVs
 
