@@ -1734,6 +1734,60 @@ impl LegaiaRuntime {
 mod live_hud_tests {
     use super::*;
 
+    /// The battle-intro enemy-name labels reach the page's overlay draw list
+    /// on retail's class-0 frame: the marbled fill columns (`FUN_8002BDC4`)
+    /// from the frame origin `(x - 8, 40)`, each the full 28-row height.
+    #[test]
+    fn live_battle_intro_labels_are_filled_class0_frames() {
+        let Ok(disc) = std::env::var("LEGAIA_DISC_BIN") else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+            return;
+        };
+        let Ok(bytes) = std::fs::read(&disc) else {
+            eprintln!("[skip] disc unreadable");
+            return;
+        };
+        let mut rt = LegaiaRuntime::new();
+        rt.load_disc(bytes, String::new()).expect("load disc");
+        rt.enter_field("town01").expect("enter town01");
+        for _ in 0..5 {
+            rt.tick_frame().expect("tick");
+        }
+        if !rt.debug_start_test_battle() {
+            eprintln!("[skip] no scripted formation row resolved");
+            return;
+        }
+        let mut seen = false;
+        for _ in 0..400 {
+            rt.tick_frame().expect("tick");
+            let labels = rt.scene_host.as_ref().is_some_and(|h| {
+                h.world.mode == SceneMode::Battle && h.world.battle.intro_names_frames > 0
+            });
+            if !labels {
+                continue;
+            }
+            let json = rt.play_overlay_draws_json(960, 720);
+            let v: serde_json::Value = serde_json::from_str(&json).expect("overlay json");
+            let fill: Vec<&serde_json::Value> = v["sprites"]
+                .as_array()
+                .expect("sprites array")
+                .iter()
+                .filter(|q| q["src"][0] == 128 && q["src"][1] == 0 && q["dst"][1] == 40 * 3)
+                .collect();
+            if fill.is_empty() {
+                continue;
+            }
+            assert!(
+                fill.iter().all(|q| q["dst"][3] == 28 * 3),
+                "every fill column spans the 28-row frame: {fill:?}"
+            );
+            seen = true;
+            break;
+        }
+        assert!(seen, "no filled intro label reached the page's draw list");
+        eprintln!("[ran] intro labels drew on filled class-0 frames");
+    }
+
     #[test]
     fn live_battle_overlay_carries_bars_and_enemy_target_strip() {
         let Ok(disc) = std::env::var("LEGAIA_DISC_BIN") else {
