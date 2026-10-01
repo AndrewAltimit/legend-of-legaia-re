@@ -1020,6 +1020,14 @@ pub fn battle_intro_names(
     if battle_action_in_flight(world.battle_ctx.action_state) {
         return Vec::new();
     }
+    // The same hold keeps every command surface past the round prompt off
+    // the screen while the labels are up: retail's sweep empties the text
+    // actor list before the prompt builds, so a ring, picker, submenu or
+    // Begin / Reselect confirm never shares a frame with the labels. One the
+    // port opens inside the span ends them.
+    if battle_hud_phase(world) == BattleHudPhase::CommandEntry {
+        return Vec::new();
+    }
     let mut rows = battle_enemy_target_rows(world);
     crate::target_picker::layout_enemy_menu_rows(&mut rows, |s| {
         font.layout_ascii(s).advance_x as i16

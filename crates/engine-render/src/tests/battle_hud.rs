@@ -135,6 +135,7 @@ fn chrome_rects() -> SaveMenuAtlasRects {
         label_mp: (224, 86, 16, 10),
         label_lv: (192, 86, 16, 10),
         dialog_fill: (128, 0, 32, 29),
+        panel_interior: (128, 0, 32, 29),
         panel_tl: (160, 0, 4, 4),
         panel_tr: (188, 0, 4, 4),
         panel_bl: (160, 28, 4, 4),
@@ -1432,12 +1433,19 @@ fn the_message_banner_takes_the_plaques_seat() {
         "no top-left corner: {corners:?}"
     );
     assert!(corners.contains(&(fx + fw - 4, fy + fh - 4)));
-    // Retail draws no interior fill under the banner - the scene shows
-    // through - so the gradient column must not appear.
-    assert!(
-        !draws.sprites.iter().any(|s| s.src == rects.dialog_fill),
-        "the banner painted an interior fill"
-    );
+    // Retail fills the frame with the marbled patch (`FUN_8002BDC4`) under
+    // the border: full-height columns of the baked interior tile from the
+    // frame origin across the record's 296-wide frame.
+    assert_eq!((fw, fh), (296, 28), "the record's fixed 280-wide box");
+    let fill: Vec<(i32, i32)> = draws
+        .sprites
+        .iter()
+        .filter(|s| s.src.0 == 128 && s.src.1 == 0 && s.dst.1 / STAGE_SCALE == fy)
+        .map(|s| (s.dst.0 / STAGE_SCALE, s.dst.3 as i32 / STAGE_SCALE))
+        .collect();
+    assert_eq!(fill.len(), 10, "ten fill columns: {fill:?}");
+    assert!(fill.iter().all(|&(_, h)| h == 28));
+    assert_eq!(fill[0].0, fx);
 }
 
 /// A host that draws its own box on the plaque's pen (the sparring-tutorial

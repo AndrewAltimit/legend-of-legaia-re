@@ -60,3 +60,29 @@ fn monster_0xb5_opens_without_names() {
     world.arm_battle_intro_names();
     assert_eq!(world.battle.intro_names_frames, 0);
 }
+
+/// Retail's expiry sweep empties the text-actor list before the round
+/// prompt builds, so the labels never share a frame with a command surface
+/// past the prompt: the ring, a picker, or the Begin / Reselect confirm.
+#[test]
+fn the_labels_never_share_a_frame_with_a_command_surface() {
+    use crate::battle_input::BattleCommandSession;
+    let font = legaia_font::synthetic_for_tests();
+    let mut world = intro_world();
+    world.arm_battle_intro_names();
+    assert_eq!(
+        crate::battle_hud::battle_intro_names(&world, &font).len(),
+        1,
+        "the labels are up through the hold"
+    );
+    world.battle.command = Some(BattleCommandSession::new_round_open(0, 0, false));
+    assert_eq!(
+        crate::battle_hud::battle_intro_names(&world, &font).len(),
+        1,
+        "the round prompt is the port's documented overlap"
+    );
+    world.battle.command = Some(BattleCommandSession::new(0, 0));
+    assert!(crate::battle_hud::battle_intro_names(&world, &font).is_empty());
+    world.battle.command = Some(BattleCommandSession::new_commit_confirm(0, 0));
+    assert!(crate::battle_hud::battle_intro_names(&world, &font).is_empty());
+}
