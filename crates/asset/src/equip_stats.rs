@@ -294,6 +294,25 @@ impl EquipStatTable {
         })
     }
 
+    /// Build a table from `(item id, 8-byte bonus record)` pairs: each id is
+    /// marked equipment and given its own bonus row. For synthetic tables in
+    /// tests and tools that have no `SCUS_942.54` image.
+    pub fn from_entries(entries: &[(u8, [u8; 8])]) -> Self {
+        let mut kind = vec![0u8; ITEM_COUNT];
+        let mut bonus_index = vec![0u8; ITEM_COUNT];
+        let mut bonuses = Vec::with_capacity(entries.len());
+        for (row, &(id, raw)) in entries.iter().enumerate() {
+            kind[id as usize] = KIND_EQUIPMENT;
+            bonus_index[id as usize] = row as u8;
+            bonuses.push(EquipBonus { raw });
+        }
+        Self {
+            kind,
+            bonus_index,
+            bonuses,
+        }
+    }
+
     /// `true` if the item id is an equippable item (`kind == 1`).
     pub fn is_equipment(&self, id: u8) -> bool {
         self.kind[id as usize] == KIND_EQUIPMENT

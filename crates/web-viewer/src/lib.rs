@@ -34,6 +34,7 @@ pub mod play_battle_render;
 pub mod play_battle_vram;
 pub mod play_bgm;
 pub mod play_camera;
+pub mod play_cheats;
 pub mod play_cutscene;
 pub mod play_dance_art;
 pub mod play_dev_menu;

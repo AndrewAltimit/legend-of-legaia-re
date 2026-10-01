@@ -537,6 +537,14 @@ pub(super) fn cmd_play_window_with_record(
     // `begin_new_game` resets the bank - dropping them there would make the
     // two flags silently exclusive.
     seed_debug_story_flags(&mut session, &debug_seeds);
+    // The direct `--scene` entry is this window's scene picker: a cold entry
+    // (no save, no New Game) seeds the full Vahn / Noa / Gala party through
+    // the engine's one picker seed (`World::seed_picker_party`), the same one
+    // the browser play page's picker reaches. The boot-UI NEW GAME still
+    // reseeds retail's Vahn-alone roster; `--seed-party` does too.
+    if let Some(defaults) = session.host.new_game_defaults.as_mut() {
+        defaults.picker_party = true;
+    }
     // Which entry a scene takes is the scene's own property, decided by the
     // one engine predicate every host asks (`is_world_map_scene`) - the
     // browser play page's `enter_field` and the in-world door transition both
@@ -970,6 +978,10 @@ pub(super) fn cmd_play_window_with_record(
             world.party.active_party
         );
     }
+
+    // `--cheat-*`: after the roster and the present party have settled, so
+    // the level cheat grows the members that will actually fight.
+    debug_seeds.cheats.apply(&mut session.host.world);
 
     // `--battle <ROW|first>`: arm a deterministic fight. Last of the world
     // setup, so the party / cheats / New Game reset have all settled and the

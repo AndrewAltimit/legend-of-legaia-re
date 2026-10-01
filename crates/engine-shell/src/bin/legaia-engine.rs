@@ -333,6 +333,10 @@ fn main() -> Result<()> {
             learn_spell,
             set_flag,
             resume_save,
+            cheat_level,
+            cheat_gold,
+            cheat_coins,
+            cheat_item,
         } => cmd_play_window(
             &scene,
             &extracted_root,
@@ -371,7 +375,14 @@ fn main() -> Result<()> {
             !no_dyn_shadows,
             !no_entry_pulse,
             !no_occlusion_fade,
-            window::DebugSeeds::from_args(&learn_spell, &set_flag, resume_save)?,
+            window::DebugSeeds::from_args(&learn_spell, &set_flag, resume_save)?.with_cheats(
+                window::PlayCheats {
+                    level: cheat_level,
+                    gold: cheat_gold,
+                    coins: cheat_coins,
+                    items: cheat_item,
+                },
+            ),
         ),
         Cmd::Save {
             extracted_root,

@@ -33,7 +33,12 @@ fn defaults_from_disc(disc: &std::path::Path) -> Option<NewGameDefaults> {
         .ok()?;
     let party = legaia_asset::new_game::StartingParty::from_scus(&scus)?;
     let inventory = legaia_asset::new_game::StartingInventory::from_scus(&scus);
-    Some(NewGameDefaults { party, inventory })
+    Some(NewGameDefaults {
+        party,
+        inventory,
+        picker_party: false,
+        equip_stats: legaia_asset::equip_stats::EquipStatTable::from_scus(&scus),
+    })
 }
 
 #[test]

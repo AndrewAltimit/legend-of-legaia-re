@@ -775,6 +775,11 @@ impl BootSession {
                 .map(|party| legaia_engine_core::new_game::NewGameDefaults {
                     party,
                     inventory: starting_inventory.clone(),
+                    // Retail's Vahn-alone roster by default: every headless
+                    // harness cold-boots `town01` as the opening. The
+                    // `play-window` scene picker raises it (`window/run.rs`).
+                    picker_party: false,
+                    equip_stats: equip_stats.clone(),
                 });
 
         // The static-SCUS progression tables (XP curve + Noa/Gala correction

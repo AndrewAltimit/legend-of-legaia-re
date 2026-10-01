@@ -1109,6 +1109,24 @@ pub(crate) enum Cmd {
         /// frame is taken from the same seeding the headless channels use.
         #[arg(long, value_name = "PATH")]
         resume_save: Option<PathBuf>,
+        /// Cheat: raise every present party member to this level (1..=99)
+        /// once the scene is entered, through the level-up tracker so the
+        /// gains are the retail per-character stat growth
+        /// (`legaia_engine_core::cheats`, the same mutation the browser play
+        /// page's Cheats panel makes). Levels only go up.
+        #[arg(long, value_name = "LEVEL")]
+        cheat_level: Option<u8>,
+        /// Cheat: set the gold purse (clamped to 9,999,999).
+        #[arg(long, value_name = "GOLD")]
+        cheat_gold: Option<u32>,
+        /// Cheat: set the casino coin bank (clamped to 9,999,999).
+        #[arg(long, value_name = "COINS")]
+        cheat_coins: Option<u32>,
+        /// Cheat: add an item to the bag, `ITEM[:QTY]` (QTY defaults to 1,
+        /// stacks cap at 99). ITEM is a decimal / `0x` id or an item name
+        /// (`healing-leaf:5`, `0x77:5`). Repeatable.
+        #[arg(long, value_name = "ITEM[:QTY]")]
+        cheat_item: Vec<String>,
         /// Disable the camera-occlusion fade ENHANCEMENT (see-through
         /// walls). By default, field scene geometry between the camera and
         /// the player dissolves to a screen-door dither in a circle around

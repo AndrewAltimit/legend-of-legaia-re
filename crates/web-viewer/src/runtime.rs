@@ -584,13 +584,15 @@ impl LegaiaRuntime {
                     .map_err(|e| crate::console_log(&format!("dialog font decode failed: {e}")))
                     .ok()
             });
-        if let Some(scus) = scus.as_ref()
-            && let Some(party) = legaia_asset::new_game::StartingParty::from_scus(scus)
+        // Every cold entry on this page is a scene-picker entry (a New Game
+        // seeds its own Vahn-alone roster before entering), so the cold seed
+        // stands up the full Vahn / Noa / Gala party.
+        if let Some(mut defaults) = scus
+            .as_ref()
+            .and_then(|s| legaia_engine_core::new_game::NewGameDefaults::from_scus(s))
         {
-            host.new_game_defaults = Some(legaia_engine_core::new_game::NewGameDefaults {
-                party,
-                inventory: legaia_asset::new_game::StartingInventory::from_scus(scus),
-            });
+            defaults.picker_party = true;
+            host.new_game_defaults = Some(defaults);
         }
 
         // Install the equipment / spell / item catalogs on the host world so the
