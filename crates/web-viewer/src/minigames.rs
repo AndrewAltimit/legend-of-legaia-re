@@ -28,7 +28,7 @@ use super::*;
 // live in a child module so this file stays the rules-engine shell.
 #[path = "minigames_baka.rs"]
 mod baka_presentation;
-pub(crate) use baka_presentation::baka_state_json_for;
+pub(crate) use baka_presentation::{baka_state_json_for, duel_surface};
 
 // Dance presentation exports (PROT 1230 HUD art, the overlay's widget table,
 // the dancer face-stamp rig, SFX + BGM) live in a child module too.
@@ -74,6 +74,10 @@ pub struct LegaiaMinigames {
     /// Live Baka Fighter ladder run (the between-match cash-out bookkeeping;
     /// each rung's duel itself runs in `baka`).
     baka_run: Option<LadderRun>,
+    /// The duel's 3D surface (`engine-core::baka_duel_scene`) - the same
+    /// per-host cache the native window and the play page pose the duel
+    /// through, here over this page's own fight.
+    baka_surface: legaia_engine_core::baka_duel_scene::BakaDuelSurface,
     /// Parsed Baka roster + action tables (cached; the roster picker reads them
     /// before a fight starts).
     baka_tables: Option<(
@@ -267,6 +271,7 @@ impl LegaiaMinigames {
             dance: None,
             baka: None,
             baka_run: None,
+            baka_surface: Default::default(),
             baka_tables: None,
             slot: None,
             slot_payouts: None,
@@ -354,6 +359,7 @@ impl LegaiaMinigames {
         self.dance = None;
         self.baka = None;
         self.baka_run = None;
+        self.baka_surface = Default::default();
         self.slot = None;
         self.fishing_species = None;
         self.fishing_overlay = None;
@@ -834,14 +840,30 @@ impl LegaiaMinigames {
         format!("[{rows}]")
     }
 
-    /// Start a best-of-3 duel: the visitor fights as roster fighter 0 (the
-    /// player-side default) against `opponent`. Returns `false` when the tables
-    /// didn't decode or the roster id is out of range.
+    /// Start a best-of-3 duel as roster fighter 0 (Vahn) against `opponent`
+    /// - [`Self::baka_start_as`] with the player-select cursor on its first
+    /// column.
     pub fn baka_start(&mut self, opponent: usize, seed: u32) -> bool {
+        self.baka_start_as(0, opponent, seed)
+    }
+
+    /// Start a best-of-3 duel: the visitor fights as party fighter `player`
+    /// (`0..=2` - Vahn, Noa, Gala; the PLAYER SELECT column) against roster
+    /// `opponent`. The pick is the player seat's **roster record**, not a skin:
+    /// the round setup stores the select cursor `DAT_801DBF70` as slot 0's
+    /// roster id (`sw a0,0x94(v1)` = `DAT_801DC050` at `0x801D0058`) and reads
+    /// that record's `+0x44` stand-off off the same index
+    /// (`0x801D0040..0x801D005C`), so the stats, action table, special camera
+    /// and stand-off are the picked fighter's. Returns `false` when the tables
+    /// didn't decode or a roster id is out of range.
+    pub fn baka_start_as(&mut self, player: usize, opponent: usize, seed: u32) -> bool {
+        if player >= legaia_engine_core::baka_cabinet::SELECT_OPTIONS as usize {
+            return false;
+        }
         let Some((opponents, actions)) = self.baka_tables.as_ref() else {
             return false;
         };
-        match BakaFight::from_tables(opponents, actions, 0, opponent, seed) {
+        match BakaFight::from_tables(opponents, actions, player, opponent, seed) {
             Some(f) => {
                 // Every roster fighter's clip headers, off the same banks this
                 // page poses the fighters from, through the engine's one

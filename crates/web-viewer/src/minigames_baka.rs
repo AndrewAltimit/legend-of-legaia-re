@@ -648,3 +648,134 @@ pub(crate) fn baka_state_json_for(f: &legaia_engine_core::baka_fighter::BakaFigh
         last,
     )
 }
+
+// ------------------------------------------------------------ duel surface
+
+/// The duel surface's buffers flattened for a WebGL upload - the one reader
+/// both browser duel hosts (this page's `baka_scene_*` and the play page's
+/// `play_mg_baka_scene_*`) hand their `TmdRenderer`, so the two pages cannot
+/// read the same `BakaDuelSurface` into different layouts.
+pub(crate) mod duel_surface {
+    use legaia_engine_core::baka_duel_scene::BakaDuelSurface;
+
+    /// Posed positions, `[x, y, z]` per vertex, raw retail world (Y down).
+    pub(crate) fn positions(s: &BakaDuelSurface) -> Vec<f32> {
+        s.scene()
+            .map(|s| s.positions.iter().flatten().copied().collect())
+            .unwrap_or_default()
+    }
+
+    /// Per-vertex `[u, v]`.
+    pub(crate) fn uvs(s: &BakaDuelSurface) -> Vec<u8> {
+        s.scene()
+            .map(|s| s.uvs.iter().flatten().copied().collect())
+            .unwrap_or_default()
+    }
+
+    /// Per-vertex `[cba, tsb]`.
+    pub(crate) fn cba_tsb(s: &BakaDuelSurface) -> Vec<u16> {
+        s.scene()
+            .map(|s| s.cba_tsb.iter().flatten().copied().collect())
+            .unwrap_or_default()
+    }
+
+    /// Per-vertex `[r, g, b, flag]` (the hybrid textured / fill layout).
+    pub(crate) fn flat_rgba(s: &BakaDuelSurface) -> Vec<u8> {
+        s.scene().map(|s| s.flat_rgba.clone()).unwrap_or_default()
+    }
+
+    /// Triangle indices.
+    pub(crate) fn indices(s: &BakaDuelSurface) -> Vec<u32> {
+        s.scene().map(|s| s.indices.clone()).unwrap_or_default()
+    }
+
+    /// The duel VRAM for the seated pair (with the cameo's wink applied).
+    pub(crate) fn vram(s: &BakaDuelSurface) -> Vec<u8> {
+        s.vram().map(|v| v.as_bytes().to_vec()).unwrap_or_default()
+    }
+
+    /// The scene's attribute generation, `-1` with no scene.
+    pub(crate) fn attr_generation(s: &BakaDuelSurface) -> i32 {
+        s.scene().map_or(-1, |s| s.attr_generation() as i32)
+    }
+}
+
+#[wasm_bindgen]
+impl LegaiaMinigames {
+    /// Pose this page's duel on the engine's 3D surface
+    /// (`legaia_engine_core::baka_duel_scene::BakaDuelSurface::frame`) - the
+    /// call the native window and the play page make over the world's duel -
+    /// and return its generation, or `-1` with no duel live. A generation the
+    /// page has not seen means the static buffers and the VRAM changed (a new
+    /// pairing): re-read them before the positions.
+    ///
+    /// The surface is the fighters posed by their display clips at the round
+    /// setup's stand-offs, the special's afterimage ghosts, the four arena
+    /// walls, the floor grid, the round-start cameo and the impact parts,
+    /// framed by [`Self::baka_scene_vp`].
+    pub fn baka_scene_frame(&mut self) -> i32 {
+        let (prot, entries) = (&self.prot, &self.entries);
+        let read = |i: usize| entry_bytes(prot, entries, i as u32).map(<[u8]>::to_vec);
+        match self.baka_surface.frame(read, self.baka.as_ref()) {
+            Some(_) => self.baka_surface.generation() as i32,
+            None => -1,
+        }
+    }
+
+    /// The scene's attribute generation (`BakaDuelScene::attr_generation`):
+    /// it moves when a pose rewrote the UVs, CBA/TSB words or colours - the
+    /// impact effect's flip-book cells and fades. `-1` with no scene.
+    pub fn baka_scene_attr_generation(&self) -> i32 {
+        duel_surface::attr_generation(&self.baka_surface)
+    }
+
+    /// This frame's posed positions, raw retail world coordinates (Y down).
+    pub fn baka_scene_positions(&self) -> Vec<f32> {
+        duel_surface::positions(&self.baka_surface)
+    }
+
+    /// Per-vertex `[u, v]`.
+    pub fn baka_scene_uvs(&self) -> Vec<u8> {
+        duel_surface::uvs(&self.baka_surface)
+    }
+
+    /// Per-vertex `[cba, tsb]`.
+    pub fn baka_scene_cba_tsb(&self) -> Vec<u16> {
+        duel_surface::cba_tsb(&self.baka_surface)
+    }
+
+    /// Per-vertex `[r, g, b, flag]`.
+    pub fn baka_scene_flat_rgba(&self) -> Vec<u8> {
+        duel_surface::flat_rgba(&self.baka_surface)
+    }
+
+    /// Triangle indices.
+    pub fn baka_scene_indices(&self) -> Vec<u32> {
+        duel_surface::indices(&self.baka_surface)
+    }
+
+    /// The duel VRAM for the seated pair.
+    pub fn baka_scene_vram(&self) -> Vec<u8> {
+        duel_surface::vram(&self.baka_surface)
+    }
+
+    /// The arena camera's view-projection for a raw (Y-down) world vertex,
+    /// column-major (`DuelCamera::vp_raw`): the round setup's snap, the
+    /// spin, the special glides and the result close-up. Empty with no duel.
+    pub fn baka_scene_vp(&self, aspect: f32) -> Vec<f32> {
+        self.baka
+            .as_ref()
+            .map(|f| f.duel_camera().vp_raw(aspect).to_vec())
+            .unwrap_or_default()
+    }
+
+    /// Hand the duel this frame's **packed** held pad word (`_DAT_8007B850`,
+    /// Legaia's layout) - `BakaFight::set_held_pad`, the call `World`'s duel
+    /// tick makes for both play hosts. Its reader is the round setup's cameo
+    /// test: Triangle (`0x10`) held at a round setup sends the ring girl on.
+    pub fn baka_set_held_pad(&mut self, packed: u16) {
+        if let Some(f) = self.baka.as_mut() {
+            f.set_held_pad(packed);
+        }
+    }
+}

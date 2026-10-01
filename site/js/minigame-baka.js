@@ -101,6 +101,25 @@
        * source of truth also asserted in baka_presentation_wasm_api.rs). The
        * player stands LEFT and faces RIGHT; the opponent stands RIGHT and
        * faces LEFT - so each looks at the other. */
+      /* The engine's duel surface, when the bundle carries it: the same
+       * kernel (`engine-core::baka_duel_scene::BakaDuelSurface`) the native
+       * window and the play page pose the duel through - the fighters at the
+       * round setup's traced stand-offs, posed by the duel's own display
+       * clips, the special's ghosts, the four arena walls, the floor grid,
+       * the round-start cameo and the impact flashes, drawn under the arena
+       * camera's view-projection (spin, special glides, result close-up).
+       * Nothing below is posed or framed on the page. */
+      if (typeof api.baka_scene_frame === 'function') {
+        if (!this.renderer) this.renderer = new window.TmdRenderer(this.glCanvas);
+        const gen = api.baka_scene_frame();
+        if (gen < 0 || !this._engineUpload(gen)) return false;
+        this.engine = true;
+        this._resetDuelState();
+        this.ok = true;
+        return true;
+      }
+      this.engine = false;
+
       this.facing = (api.baka_duel_facing_json
         ? JSON.parse(api.baka_duel_facing_json())
         : { player: { side: -1, facing: 1 }, opponent: { side: 1, facing: -1 } });
@@ -242,6 +261,13 @@
        * is the duel's own strike clock (st.clock) rather than this page's
        * tick: the swing starts at the commit and lands its strike on the
        * frame the engine books the exchange. */
+      this._resetDuelState();
+      this.ok = true;
+      return true;
+    }
+
+    /* Per-match presentation state shared by both duel paths. */
+    _resetDuelState() {
       this.action = [
         { id: ACT.IDLE, start: 0, loop: true },
         { id: ACT.IDLE, start: 0, loop: true },
@@ -255,8 +281,48 @@
       this.roundSeen = -1;
       this.tick = 0;
       this.mode = 'duel';
-      this.ok = true;
+    }
+
+    /* Upload the engine surface's static buffers + duel VRAM for generation
+     * `gen` (a new pairing or a cameo wink). The arena's lamp glow is
+     * semi-transparent (ABE) prims, so the two-pass draw keeps them from
+     * painting opaque - the play page's flag too. */
+    _engineUpload(gen) {
+      const api = this.api, r = this.renderer;
+      const pos = api.baka_scene_positions();
+      if (!pos.length) return false;
+      r.semiTwoPass = true;
+      r.cullBackfaces = false;
+      r.uploadVram(api.baka_scene_vram());
+      r.uploadMesh(pos, api.baka_scene_uvs(), api.baka_scene_cba_tsb(),
+        api.baka_scene_indices(), api.baka_scene_flat_rgba());
+      this.engineGen = gen;
+      this.engineAttrGen = api.baka_scene_attr_generation();
       return true;
+    }
+
+    /* One engine-posed frame: pose, re-read whatever moved, draw under the
+     * arena camera's matrix (`DuelCamera::vp_raw`). */
+    _engineDraw() {
+      const api = this.api, r = this.renderer;
+      const gen = api.baka_scene_frame();
+      if (gen < 0) return;
+      if (gen !== this.engineGen && !this._engineUpload(gen)) return;
+      const ag = api.baka_scene_attr_generation();
+      if (ag !== this.engineAttrGen) {
+        /* Same buffers, new attributes (the impact flip-book cells and
+         * fades): re-upload the mesh, keep the VRAM. */
+        r.uploadMesh(api.baka_scene_positions(), api.baka_scene_uvs(),
+          api.baka_scene_cba_tsb(), api.baka_scene_indices(),
+          api.baka_scene_flat_rgba());
+        this.engineAttrGen = ag;
+      }
+      r.updatePositions(api.baka_scene_positions());
+      const c = r.canvas;
+      const vp = api.baka_scene_vp(c.width / Math.max(c.height, 1));
+      r.mvpOverride = vp.length === 16 ? Float32Array.from(vp) : null;
+      r.render(0, 0, 1, 0, 0, [0, 0, 0], 1);
+      r.mvpOverride = null;
     }
 
     /* ---------------- fighter-select screen ----------------
@@ -269,6 +335,8 @@
     loadSelect(api) {
       this.api = api;
       this.ok = false;
+      this.engine = false;
+      if (this.renderer) this.renderer.semiTwoPass = false;
       if (!api.baka_presentation_ready || !api.baka_presentation_ready()) return false;
       this.widgets = JSON.parse(api.baka_hud_json());
       if (!this.widgets.length) return false;
@@ -530,7 +598,8 @@
      * record is missing / empty). `hold` freezes the clip on its final frame
      * instead of dropping back to idle - the loser's stay-down knockdown. */
     play(fi, actionId, hold) {
-      if (!this.ok) return;
+      /* The engine path poses from the duel's own display clips. */
+      if (!this.ok || this.engine) return;
       const c = this.clipFor(fi, actionId);
       this.action[fi] = c
         ? { id: actionId, start: this.tick, loop: actionId === ACT.IDLE, hold: !!hold }
@@ -627,9 +696,13 @@
         }
       }
 
-      this._pose();
-      this.renderer.render(this.cam.yaw, this.cam.pitch, this.cam.distance,
-                           0, 0, this.center, this.radius);
+      if (this.engine) {
+        this._engineDraw();
+      } else {
+        this._pose();
+        this.renderer.render(this.cam.yaw, this.cam.pitch, this.cam.distance,
+                             0, 0, this.center, this.radius);
+      }
       this._drawHud(st, meta);
     }
 

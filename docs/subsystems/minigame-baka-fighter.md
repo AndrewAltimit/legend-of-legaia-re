@@ -495,8 +495,7 @@ Port: `engine-core::baka_duel_scene::FighterMotion`, one per seat in
 `BakaFight` (`BakaFight::motion`), stepped every tick after the rules. It
 feeds only the presentation - the exchange still books off the strike
 clock, and cooldowns still pace re-entry. All three hosts pose the fighters
-from it: the native window and the play page through the duel surface, the
-minigames page from the `motion` pair of its state JSON.
+from it through the duel surface ([In the port](#in-the-port)).
 
 **How a display id becomes an ANM bank record.** The anim play path
 resolves `actor + 0x5c` **through the ANM container header**: at
@@ -610,9 +609,14 @@ draws through it:
 The native play window uploads the posed buffers and the duel VRAM
 (`window/minigames.rs`, `refresh_baka_duel_gpu`) and draws them in place of
 the field; the browser play page reads the same buffers and matrix through
-the `play_mg_baka_scene_*` exports (`site/js/play-minigames.js`). The
-standalone minigames page still poses its own buffers under a fitted camera;
-see [Site presentation](#site-presentation).
+the `play_mg_baka_scene_*` exports (`site/js/play-minigames.js`), and the
+standalone minigames page reads its own fight's surface through the
+`baka_scene_*` exports (`site/js/minigame-baka.js`). Both browser export sets
+flatten the surface through one reader (`web-viewer::minigames::duel_surface`),
+so the two pages cannot lay the same buffers out differently. The minigames
+page also hands the duel its held Triangle (`baka_set_held_pad`) for the
+cameo, and keeps ticking it past the deciding exchange so the cabinet's tally
+runs and the result close-up and pinned win flourish draw.
 
 ## Opponent + scoring
 
@@ -856,9 +860,8 @@ than reproducing the uninitialised read.
 
 Port: `engine-core::baka_fighter_chrome::{afterimage_pass, AfterimageActor}`,
 spawned and stepped by `BakaFight`. Every host draws the ghosts as darkened
-copies of the thrower's mesh: the native window and the play page through
-the engine's duel surface ([the arena](#the-arena-in-3d)), the minigames
-page from its own mesh buffers.
+copies of the thrower's mesh through the engine's duel surface
+([the arena](#the-arena-in-3d)).
 
 **`FUN_801d65f8` is only defined for its mode-0 call.** It builds a VRAM
 `RECT` out of the 4-byte record at `&DAT_801dbe84 + index * 4` - source
@@ -1189,28 +1192,22 @@ host's CD-XA clip path.
 
 The site's minigames page draws the duel from exactly these sources, decoded
 from the visitor's disc in the browser (`crates/web-viewer/src/minigames_baka.rs`
-+ `site/js/minigame-baka.js`): the player mesh from PROT 1204 posed by the
-PROT 1203 bank (`char*9 + action`), the opponent mesh + anim bank from its own
-pack, the arena from the 1203 TMD pack, and the HUD from the widget table
-at the `FUN_801d2afc` positions above. Traced vs fitted is stated on the page:
-this page's 3D camera, the fighters' spacing and the select/tally screen
-layouts are fitted by eye, and the bar-frame cells fall back to an outline
-because their cell table is runtime-built. The camera and the placements are
-traced now ([The arena in 3D](#the-arena-in-3d)) and the two play hosts draw
-the traced ones; this page has not moved onto that surface yet.
++ `site/js/minigame-baka.js`). The 3D duel is the engine's surface
+([In the port](#in-the-port)) - the same fighters, ghosts, walls, floor grid,
+cameo, impact parts and arena camera the two play hosts draw - and the HUD is
+the widget table at the `FUN_801d2afc` positions above. Traced vs fitted is
+stated on the page: the select screen's camera and line-up and the tally
+screen's layout are fitted by eye, and the bar-frame cells fall back to an
+outline because their cell table is runtime-built.
 
-The **arena** is stage TMD 0 (the pack's only world-framed piece): the tall
-patterned backdrop wall with lattice fences and two ceiling lamps, base on the
-`y = 0` floor plane and face authored at `z 44..225` - drawn at its authored
-placement (spun 180° to the page camera's behind-the-fighters side). The
-stage set carries **no floor mesh**, so the page tiles a floor from the wall's
-own dominant textured face (its exact uv cell + CLUT, repeated on
-`y = 0`); the tiling is a stated fit - retail's floor is the battle ground
-grid's routine on the `(832, 0)` page ([Walls and floor](#walls-and-floor)),
-and retail draws the wall four times, as a room. The three prop meshes (two
-identical single-object pieces + the 10-object figure, which is the
-[cameo](#the-round-start-cameo)) stay out; the epilogue places only model
-`0`.
+**The PLAYER SELECT pick is a roster record, not a skin.** The round setup
+stores the select cursor `DAT_801DBF70` as slot 0's roster id
+(`sw a0,0x94(v1)` into `DAT_801DC050` at `0x801D0058`) and reads that same
+record's `+0x44` stand-off (`0x801D0040..0x801D005C`), so the picked party
+fighter brings its own stats, action table, strike clips and special camera.
+The minigames page seats it that way (`baka_start_as`). **Confirmed**
+(disassembly). The world hosts enter the cabinet at the duel, past the select
+screen, and seat roster `0`.
 
 The run opens on the retail **PLAYER SELECT** screen - the three party
 fighters' battle-form models idling in front of the arena under the sheet's

@@ -481,9 +481,18 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
                 its first frame. Full trace: <code>docs/subsystems/minigame-baka-fighter.md</code>.
               </p>
               <p>
-                <b>Fitted rather than traced:</b> the 3D camera, fighter spacing and menu layout
-                (the duel's GTE matrices are not in a save state), the tiled floor (the stage set
-                carries no floor mesh), the HP-bar frame, and the animation slot order. When the
+                <b>The duel itself is the engine's.</b> The fighters stand at the round setup's
+                traced stand-offs and play their display clips; the arena is the four walls and
+                the floor grid the overlay's epilogue draws, framed by the arena camera (the
+                round-start spin, each special's glide, the result close-up). Hold
+                <kbd data-pad-key="Triangle">C</kbd> as a round starts for the ring-girl cameo.
+                The native window and the play page draw the same surface. Your PLAYER SELECT
+                pick is your fighter's own roster record - its stats and moves, not just its
+                model.
+              </p>
+              <p>
+                <b>Fitted rather than traced:</b> the PLAYER SELECT screen's camera and line-up,
+                the menu layout, the HP-bar frame, and the animation slot order. When the
                 presentation assets do not decode, the duel falls back to the stat panel above
                 and says so - no stand-in art is drawn.
               </p>
@@ -1406,6 +1415,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   let bakaChoiceSel = 0;     /* tally menu highlight: 0 NEXT GAME, 1 PAY OUT */
   let bakaFlourish = 0;      /* frames of victory flourish before the menu */
   let bakaPchar = 0;         /* the fighter picked for this run */
+  let bakaHeld = 0;          /* packed held pad word (0x10 = Triangle) */
   /* The 3D duel view (js/minigame-baka.js): real meshes + retail HUD off the
    * disc. Null / not-ok leaves the stat-panel presentation in charge. */
   let bakaView = null;
@@ -1512,7 +1522,12 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
    * is an off-ladder spar. Returns false if the tables didn't decode. */
   function bakaBeginFight(foe, rung) {
     const seed = (Math.random() * 0xFFFFFFFF) >>> 0;
-    if (!api || !api.baka_start(foe, seed)) {
+    /* The PLAYER SELECT pick is the player seat's roster record (the round
+     * setup stores the select cursor as slot 0's roster id), so it changes
+     * the stats, the action table and the stand-off - not just the mesh. */
+    const started = api && (typeof api.baka_start_as === 'function'
+      ? api.baka_start_as(bakaPchar, foe, seed) : api.baka_start(foe, seed));
+    if (!started) {
       verdict($('baka-verdict'), 'The roster tables did not decode from this disc.', 'bad');
       return false;
     }
@@ -1535,8 +1550,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 
     /* Stand the real fighters up. Only ladder fighters (roster 3..16) carry
      * their own mesh pack; a spar against a player-side record keeps the
-     * stat panel. The "Fight as" pick is cosmetic - the rules engine plays
-     * roster record 0 either way, exactly like the retail player slot. */
+     * stat panel. */
     let viewOk = false;
     try {
       if (window.MinigameBakaView && foe >= 3) {
@@ -1761,8 +1775,13 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     }
 
     if (!st.live) return;
-    if (st.phase !== 'match_over') api.baka_tick(1);
-    else if (bakaLive) {
+    /* The duel keeps ticking past the deciding exchange: the engine's
+     * cabinet runs its tally, and its result close-up + the winner's pinned
+     * flourish are presentation the duel surface draws. The held word feeds
+     * the round setup's cameo test (Triangle held). */
+    if (typeof api.baka_set_held_pad === 'function') api.baka_set_held_pad(bakaHeld);
+    api.baka_tick(1);
+    if (st.phase === 'match_over' && bakaLive) {
       bakaLive = false;
       bakaOnMatchOver(st);
     }
@@ -2985,6 +3004,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         /* The cabinet reads Square / Circle / Cross as throws 1 / 2 / 3
          * (FUN_801D3F44's slot-0 branch); Triangle is this port's Special. */
         const m = BAKA_LANES[b];
+        if (b === 'Triangle') bakaHeld |= 0x10;
         if (m) { e.preventDefault(); bakaChoose(m); }
         else if (n >= 1 && n <= 4) { e.preventDefault(); bakaChoose(n); }
       }
@@ -3049,6 +3069,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   });
 
   document.addEventListener('keyup', (e) => {
+    if (active === 'baka' && btnOf(e) === 'Triangle') bakaHeld &= ~0x10;
     if (active !== 'fishing') return;
     const b = btnOf(e);
     if (b === 'Cross') fishHold &= ~0x40;

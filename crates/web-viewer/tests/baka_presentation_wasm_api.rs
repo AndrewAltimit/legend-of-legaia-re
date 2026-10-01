@@ -309,3 +309,59 @@ fn hud_widget_quads_come_from_the_ported_emitter() {
     // An id past the 51-record table is `{}`, not a panic.
     assert_eq!(mg.baka_hud_quad_json(999, 0, 0, 0x80, 0x1000, false), "{}");
 }
+
+/// The standalone page draws the duel through the engine's surface
+/// (`baka_scene_*`, `BakaDuelSurface`) - the kernel the native window and the
+/// play page pose it with - and the PLAYER SELECT pick seats that fighter's
+/// own roster record.
+#[test]
+fn duel_draws_through_the_engine_surface_with_the_picked_fighter() {
+    let Some(mut mg) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    eprintln!("[ran] engine duel surface");
+    assert_eq!(mg.baka_scene_frame(), -1, "no duel, no surface");
+    assert!(
+        !mg.baka_start_as(3, 5, 1),
+        "the select cursor spans the three party fighters"
+    );
+
+    let mut verts = Vec::new();
+    let mut last_gen = -1;
+    for player in 0..3usize {
+        assert!(mg.baka_start_as(player, 5, 0x1234));
+        let generation = mg.baka_scene_frame();
+        assert!(generation >= 0, "surface builds for fighter {player}");
+        assert_ne!(generation, last_gen, "a new pairing is a new generation");
+        last_gen = generation;
+        let pos = mg.baka_scene_positions();
+        assert!(!pos.is_empty() && pos.len() % 3 == 0);
+        let n = pos.len() / 3;
+        assert_eq!(mg.baka_scene_uvs().len(), n * 2);
+        assert_eq!(mg.baka_scene_cba_tsb().len(), n * 2);
+        assert_eq!(mg.baka_scene_flat_rgba().len(), n * 4);
+        let idx = mg.baka_scene_indices();
+        assert!(!idx.is_empty() && idx.iter().all(|&i| (i as usize) < n));
+        assert!(!mg.baka_scene_vram().is_empty());
+        assert_eq!(mg.baka_scene_vp(4.0 / 3.0).len(), 16);
+        verts.push(n);
+        // Ticking poses the same buffers while the round-start spin moves
+        // the arena camera.
+        let vp0 = mg.baka_scene_vp(1.0);
+        for _ in 0..30 {
+            mg.baka_tick(1);
+        }
+        assert_eq!(
+            mg.baka_scene_frame(),
+            generation,
+            "same pairing, same buffers"
+        );
+        assert_ne!(mg.baka_scene_vp(1.0), vp0, "the round-start spin moves");
+    }
+    // Each pick seats its own mesh (the three party meshes differ).
+    assert!(
+        verts[0] != verts[1] || verts[1] != verts[2],
+        "the picked fighter's mesh is drawn: {verts:?}"
+    );
+}

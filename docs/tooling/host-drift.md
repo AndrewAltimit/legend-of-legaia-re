@@ -1470,7 +1470,7 @@ when the exchange report arrived. Both browser pages read the duel's state
 through one builder, `minigames::baka_state_json_for`; the play page's own
 copy carried no `clock` and no `ghosts`.
 
-**The duel's 3D surface is one engine kernel on the two play hosts.**
+**The duel's 3D surface is one engine kernel on all three hosts.**
 `engine-core::baka_duel_scene` builds the buffers (both fighters, two ghost
 copies each, the four arena walls, the floor), poses them from the fighters'
 display clips and the afterimage passes, and owns the arena camera; the
@@ -1480,9 +1480,19 @@ posed and draw it under `DuelCamera::vp_raw`. Before it, the native window
 drew the duel as labels only, and the play page drew the fighter meshes
 under a fitted orbit camera, timed each clip off its own tick and drew no
 ghosts - so "both play hosts draw labels only" was true of one of them.
-The standalone minigames page still poses its own buffers under its fitted
-camera: it holds a `BakaFight` but no surface, the same blocking shape as the
-rest of that page (below).
+The standalone minigames page now drives a `BakaDuelSurface` over its own
+`BakaFight` (`baka_scene_*`) - before, it held the fight but no surface and
+posed its own buffers under a fitted camera, with one authored wall, a floor
+tiled from the wall's texture, no cameo and no impact parts. Both browser
+export sets flatten the surface through `minigames::duel_surface`, the
+`baka_state_json_for` shape applied to the buffers. The two shapes that hid
+the gap: the page's fight carried the clip headers, cameras and impact
+templates, so it *stepped* everything the surface draws and every state
+read-out agreed; and the page stopped ticking at the deciding exchange, so
+the result close-up and pinned flourish never ran there either. A state
+oracle cannot see either - only a frame can. The PLAYER SELECT pick was a
+skin on that page as well, where retail seats it as the player's roster
+record (`minigame-baka-fighter.md`, Site presentation).
 
 What stays open was misnamed "sprite effects". The afterimage and the cameo
 draw no sprite: the two banks `_DAT_8007B888` / `_DAT_8007B840` are the

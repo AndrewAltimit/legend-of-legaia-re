@@ -37,6 +37,7 @@ use legaia_engine_ui::TextDraw;
 use legaia_engine_ui::other_game_hud::{self as hud, HudQuad, HudSprite};
 use wasm_bindgen::prelude::*;
 
+use crate::minigames::duel_surface;
 use crate::play_minigames::{DIM, WHITE, row};
 use crate::runtime::LegaiaRuntime;
 
@@ -810,65 +811,38 @@ impl LegaiaRuntime {
     /// and fades - so the page re-reads those without re-uploading the VRAM.
     /// `-1` with no scene.
     pub fn play_mg_baka_scene_attr_generation(&self) -> i32 {
-        self.minigame_ui
-            .baka_surface
-            .scene()
-            .map_or(-1, |s| s.attr_generation() as i32)
+        duel_surface::attr_generation(&self.minigame_ui.baka_surface)
     }
 
     /// This frame's posed positions, `[x, y, z]` per vertex, raw retail world
     /// coordinates (Y down).
     pub fn play_mg_baka_scene_positions(&self) -> Vec<f32> {
-        self.minigame_ui
-            .baka_surface
-            .scene()
-            .map(|s| s.positions.iter().flatten().copied().collect())
-            .unwrap_or_default()
+        duel_surface::positions(&self.minigame_ui.baka_surface)
     }
 
     /// Per-vertex `[u, v]`.
     pub fn play_mg_baka_scene_uvs(&self) -> Vec<u8> {
-        self.minigame_ui
-            .baka_surface
-            .scene()
-            .map(|s| s.uvs.iter().flatten().copied().collect())
-            .unwrap_or_default()
+        duel_surface::uvs(&self.minigame_ui.baka_surface)
     }
 
     /// Per-vertex `[cba, tsb]`.
     pub fn play_mg_baka_scene_cba_tsb(&self) -> Vec<u16> {
-        self.minigame_ui
-            .baka_surface
-            .scene()
-            .map(|s| s.cba_tsb.iter().flatten().copied().collect())
-            .unwrap_or_default()
+        duel_surface::cba_tsb(&self.minigame_ui.baka_surface)
     }
 
     /// Per-vertex `[r, g, b, flag]` (the hybrid textured / fill layout).
     pub fn play_mg_baka_scene_flat_rgba(&self) -> Vec<u8> {
-        self.minigame_ui
-            .baka_surface
-            .scene()
-            .map(|s| s.flat_rgba.clone())
-            .unwrap_or_default()
+        duel_surface::flat_rgba(&self.minigame_ui.baka_surface)
     }
 
     /// Triangle indices.
     pub fn play_mg_baka_scene_indices(&self) -> Vec<u32> {
-        self.minigame_ui
-            .baka_surface
-            .scene()
-            .map(|s| s.indices.clone())
-            .unwrap_or_default()
+        duel_surface::indices(&self.minigame_ui.baka_surface)
     }
 
     /// The duel VRAM for the seated opponent.
     pub fn play_mg_baka_scene_vram(&self) -> Vec<u8> {
-        self.minigame_ui
-            .baka_surface
-            .vram()
-            .map(|v| v.as_bytes().to_vec())
-            .unwrap_or_default()
+        duel_surface::vram(&self.minigame_ui.baka_surface)
     }
 
     /// The arena camera's view-projection for a raw (Y-down) world vertex,
