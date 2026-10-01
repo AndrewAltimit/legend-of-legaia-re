@@ -302,14 +302,20 @@ fn muscle_arena_backdrop_decodes() {
     assert!(!idx.is_empty() && idx.len() % 3 == 0);
     assert!(idx.iter().all(|&i| (i as usize) < n), "indices in range");
 
-    // Half-stage authoring rule: the shell sits at X >= 0 (open side -X),
-    // spanning thousands of world units on a Y <= ~0 (Y-down) profile.
-    let (mut min_x, mut max_x) = (f32::MAX, f32::MIN);
-    for v in pos.as_chunks::<3>().0 {
-        min_x = min_x.min(v[0]);
-        max_x = max_x.max(v[0]);
+    // Half-stage authoring rule: the shell is authored at X >= 0 (open side
+    // -X), and retail draws it twice - the second copy half-turned about Y -
+    // so the page's mesh is the closed ring: the first half at X >= 0, the
+    // second its exact `(-x, y, -z)` image.
+    let verts = pos.as_chunks::<3>().0;
+    assert_eq!(n % 2, 0, "two copies of one shell");
+    let (a, b) = verts.split_at(n / 2);
+    for v in a {
+        assert!(v[0] >= -1.0, "copy A authored at X >= 0: {v:?}");
     }
-    assert!(min_x >= -1.0, "authored at X >= 0: min_x = {min_x}");
+    for (va, vb) in a.iter().zip(b) {
+        assert_eq!(*vb, [-va[0], va[1], -va[2]], "copy B is the half turn");
+    }
+    let max_x = a.iter().map(|v| v[0]).fold(f32::MIN, f32::max);
     assert!(max_x > 2000.0, "arena-scale extent: max_x = {max_x}");
 
     // The backdrop's texture pages ride in the dome VRAM: the (832, 0) page

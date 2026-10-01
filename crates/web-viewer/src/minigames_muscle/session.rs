@@ -154,64 +154,12 @@ impl LegaiaMinigames {
         scene_tmd_stream::detect(buf).map(|_| buf)
     }
 
-    /// The arena-shell TMD built as a hybrid VRAM mesh (textured prims sample
-    /// the backdrop pages; untextured prims keep their baked colour word).
+    /// The arena backdrop as retail draws it - the half-shell plus its
+    /// half-turned second copy, less the object-1 dust decal - through the
+    /// engine kernel every dome host shares
+    /// ([`legaia_engine_core::muscle_dome_scene::arena_ring`]).
     pub(super) fn muscle_arena_hybrid(&self) -> Option<(legaia_tmd::mesh::VramMesh, Vec<u8>)> {
-        let buf = self.muscle_arena_entry()?;
-        let stream = scene_tmd_stream::detect(buf)?;
-        let tmd_bytes = buf.get(stream.tmd_range())?;
-        let tmd = legaia_tmd::parse(tmd_bytes).ok()?;
-        let (mesh, oids, shading) =
-            legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&tmd, tmd_bytes);
-        // A textured vert's colour is its MODULATION and lives on `mesh`;
-        // `shading.colors` reports white there by design, so reading one
-        // array for both halves uploads white and draws the shell at
-        // `texel * 255/128`. [`crate::packet_color::hybrid`] is the split.
-        let flat = crate::packet_color::hybrid(&mesh, &shading);
-        // Drop TMD object 1 - the wall-base dust-decal object (12 ABE ABR-1
-        // quads over the (128..190, 192..253) window of the (832, 0) page,
-        // CLUT (16, 479)). Its texels are genuinely BRIGHT (whitish wisps up
-        // to ~(208, 208, 248)), so even a correct additive draw reads as a
-        // white cloud band ringing the arena - and the retail match capture
-        // shows a mist-free interior, i.e. the retail backdrop path does not
-        // draw this object as static geometry. The shell (object 0) keeps
-        // its own ABE lamp-glow prims. See
-        // docs/subsystems/minigame-muscle-dome.md (Arena backdrop).
-        if oids.iter().any(|&o| o != 0) {
-            let mut mesh2 = mesh.clone();
-            mesh2.positions.clear();
-            mesh2.uvs.clear();
-            mesh2.cba_tsb.clear();
-            mesh2.normals.clear();
-            mesh2.colors.clear();
-            mesh2.indices.clear();
-            let mut remap = vec![u32::MAX; oids.len()];
-            let mut flat2 = Vec::new();
-            for (i, &o) in oids.iter().enumerate() {
-                if o != 0 {
-                    continue;
-                }
-                remap[i] = mesh2.positions.len() as u32;
-                mesh2.positions.push(mesh.positions[i]);
-                mesh2.uvs.push(mesh.uvs[i]);
-                mesh2.cba_tsb.push(mesh.cba_tsb[i]);
-                mesh2.normals.push(mesh.normals[i]);
-                mesh2.colors.push(mesh.colors[i]);
-                flat2.extend_from_slice(&flat[i * 4..i * 4 + 4]);
-            }
-            for t in mesh.indices.as_chunks::<3>().0 {
-                let (a, b, c) = (
-                    remap[t[0] as usize],
-                    remap[t[1] as usize],
-                    remap[t[2] as usize],
-                );
-                if a != u32::MAX && b != u32::MAX && c != u32::MAX {
-                    mesh2.indices.extend_from_slice(&[a, b, c]);
-                }
-            }
-            return Some((mesh2, flat2));
-        }
-        Some((mesh, flat))
+        legaia_engine_core::muscle_dome_scene::arena_ring(self.muscle_arena_entry()?)
     }
 
     /// The player battle file (`data\battle\PLAYER1..3`) for a dome fighter
