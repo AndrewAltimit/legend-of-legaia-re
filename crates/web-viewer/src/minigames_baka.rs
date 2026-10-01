@@ -779,3 +779,102 @@ impl LegaiaMinigames {
         }
     }
 }
+
+// ------------------------------------------------------------ announcer XA
+
+/// Rounds whose banner line is staged (`XA32` channel = round index). A
+/// best-of-three ends by the third, and a drawn round only repeats one.
+const ANNOUNCER_ROUNDS: i32 = 4;
+
+/// Every announcer line the duel's chrome can start, one per `(clip,
+/// channel)`: [`legaia_engine_core::baka_fighter_chrome::announcer_xa_prestage`]
+/// over the staged rounds.
+fn announcer_cues() -> Vec<legaia_engine_core::baka_fighter_chrome::XaCue> {
+    let mut cues: Vec<_> = (0..ANNOUNCER_ROUNDS)
+        .flat_map(legaia_engine_core::baka_fighter_chrome::announcer_xa_prestage)
+        .collect();
+    cues.sort_by_key(|c| (c.clip, c.chan, c.dur));
+    cues.dedup_by_key(|c| (c.clip, c.chan));
+    cues
+}
+
+/// Decode every announcer line out of a raw Mode 2/2352 image: per line,
+/// the span the clip starter reads from `XA<clip + 1>.XA`'s first sector
+/// (`xa_clip_bank::read_span_sectors`, `FUN_8003D53C`'s stop point),
+/// demuxed to the line's channel. Only the decoded PCM is kept - the same
+/// staging the play page does lazily off its disc bytes. A line whose file
+/// or channel is missing is left out and plays silent.
+pub(crate) fn stage_baka_announcer(image: &[u8]) -> legaia_engine_audio::XaClipBank {
+    use legaia_engine_audio::xa_clip_bank::{decode_channel_span, read_span_sectors};
+    const RAW: usize = crate::play_xa::RAW_SECTOR_BYTES;
+    let mut bank = legaia_engine_audio::XaClipBank::new();
+    for cue in announcer_cues() {
+        let path = format!("XA/XA{}.XA", u32::from(cue.clip) + 1);
+        let Some((lba, size)) = legaia_iso::iso9660::find_path_in_image(image, &path) else {
+            continue;
+        };
+        let sectors = read_span_sectors(u32::from(cue.dur)).min(size.div_ceil(2048));
+        let start = lba as usize * RAW;
+        let Some(span) = image.get(start..start + sectors as usize * RAW) else {
+            continue;
+        };
+        if let Some((clip, width)) = decode_channel_span(span, cue.chan) {
+            bank.insert(cue.clip, cue.chan, clip);
+            bank.set_channel_count(cue.clip, width.max(bank.channel_count(cue.clip)));
+        }
+    }
+    bank
+}
+
+impl LegaiaMinigames {
+    /// Start one announcer line - `FUN_8003D53C(clip, channel, dur)` cut at
+    /// the retail read span, through the XA path the play page's clips take.
+    /// Silent when the line did not stage or audio is off.
+    pub(crate) fn play_baka_xa(&mut self, xa: legaia_engine_core::baka_fighter_chrome::XaCue) {
+        let Some(pcm) =
+            crate::play_xa::cut_clip(&self.baka_xa, xa.clip, xa.chan, u32::from(xa.dur))
+        else {
+            return;
+        };
+        self.baka_xa_fired = self.baka_xa_fired.wrapping_add(1);
+        #[cfg(target_arch = "wasm32")]
+        if let Some(out) = self.audio_out.as_ref() {
+            let channels = if pcm.stereo {
+                legaia_xa::Channels::Stereo
+            } else {
+                legaia_xa::Channels::Mono
+            };
+            out.play_xa_shout(
+                pcm.pcm,
+                pcm.sample_rate,
+                channels,
+                crate::play_xa::XA_GAIN_UNITY,
+                legaia_engine_audio::SHOUT_CD_RESPONSE_DELAY,
+            );
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        let _ = pcm;
+    }
+}
+
+#[wasm_bindgen]
+impl LegaiaMinigames {
+    /// The announcer lane: lines staged off the disc out of those the chrome
+    /// can start, and lines the duel has started.
+    ///
+    /// ```json
+    /// { "staged": 11, "lines": 11, "fired": 3 }
+    /// ```
+    pub fn baka_xa_state_json(&self) -> String {
+        let cues = announcer_cues();
+        let staged = cues
+            .iter()
+            .filter(|c| self.baka_xa.is_staged(c.clip, c.chan))
+            .count();
+        format!(
+            r#"{{"staged":{staged},"lines":{},"fired":{}}}"#,
+            cues.len(),
+            self.baka_xa_fired
+        )
+    }
+}

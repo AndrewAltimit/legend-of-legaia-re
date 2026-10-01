@@ -359,6 +359,30 @@ fn duel_draws_through_the_engine_surface_with_the_picked_fighter() {
         );
         assert_ne!(mg.baka_scene_vp(1.0), vp0, "the round-start spin moves");
     }
+    // The chrome's announcer lines stage off the disc's XA32 / XA33 and the
+    // duel starts them - the round banner's line once the first round ends.
+    let mut first_fire = None;
+    for t in 0..20_000u32 {
+        mg.baka_choose((1 + t % 3) as u8);
+        mg.baka_tick(1);
+        let xa: serde_json::Value = serde_json::from_str(&mg.baka_xa_state_json()).unwrap();
+        if xa["fired"].as_u64().unwrap() > 0 {
+            first_fire = Some(t);
+            break;
+        }
+    }
+    eprintln!("first announcer line at tick {first_fire:?}");
+    let xa: serde_json::Value = serde_json::from_str(&mg.baka_xa_state_json()).unwrap();
+    assert!(xa["lines"].as_u64().unwrap() > 0);
+    assert_eq!(
+        xa["staged"], xa["lines"],
+        "every announcer line stages: {xa}"
+    );
+    assert!(
+        xa["fired"].as_u64().unwrap() > 0,
+        "the duel starts lines: {xa}"
+    );
+
     // Each pick seats its own mesh (the three party meshes differ).
     assert!(
         verts[0] != verts[1] || verts[1] != verts[2],

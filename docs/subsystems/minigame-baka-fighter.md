@@ -1186,7 +1186,10 @@ countdown) reaches all three hosts: the native window and the play page
 print it through the same label kernel (`baka_fighter_chrome::chrome_labels`),
 and the standalone minigames page draws its widgets with the sheet art
 (`baka_chrome_json`). The chrome's announcer line plays through each play
-host's CD-XA clip path.
+host's CD-XA clip path; the minigames page decodes every line the chrome can
+start (`baka_fighter_chrome::announcer_xa_prestage`, `XA32` / `XA33`) at disc
+load, while the raw sectors are still in hand, and plays them through the
+same XA output (`baka_xa_state_json` reports staged and fired lines).
 
 ### Site presentation
 

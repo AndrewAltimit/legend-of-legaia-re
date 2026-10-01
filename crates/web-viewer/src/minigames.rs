@@ -78,6 +78,11 @@ pub struct LegaiaMinigames {
     /// per-host cache the native window and the play page pose the duel
     /// through, here over this page's own fight.
     baka_surface: legaia_engine_core::baka_duel_scene::BakaDuelSurface,
+    /// The duel's CD-XA announcer lines (`XA32` / `XA33`), decoded at disc
+    /// load while the raw sectors are still in hand.
+    baka_xa: legaia_engine_audio::XaClipBank,
+    /// Announcer lines started (a read-out for the page's checks).
+    baka_xa_fired: u32,
     /// Parsed Baka roster + action tables (cached; the roster picker reads them
     /// before a fight starts).
     baka_tables: Option<(
@@ -272,6 +277,8 @@ impl LegaiaMinigames {
             baka: None,
             baka_run: None,
             baka_surface: Default::default(),
+            baka_xa: legaia_engine_audio::XaClipBank::new(),
+            baka_xa_fired: 0,
             baka_tables: None,
             slot: None,
             slot_payouts: None,
@@ -330,6 +337,13 @@ impl LegaiaMinigames {
     /// a reason rather than throwing - a regional / modded disc can still play
     /// the others.
     pub fn load_disc(&mut self, bytes: Vec<u8>) -> Result<String, JsValue> {
+        // The Baka announcer lines are CD-XA, outside PROT.DAT: decode them
+        // now, before the raw image is dropped.
+        self.baka_xa = if disc::is_mode2_2352_disc(&bytes) {
+            baka_presentation::stage_baka_announcer(&bytes)
+        } else {
+            legaia_engine_audio::XaClipBank::new()
+        };
         let (prot, scus) = if disc::is_mode2_2352_disc(&bytes) {
             // Keep the executable too: the Muscle Dome reads the new-game
             // party template / growth curves / spell names out of it, and
@@ -916,6 +930,11 @@ impl LegaiaMinigames {
         };
         for id in cues {
             self.minigame_sfx_cue(u16::from(id));
+        }
+        // The round chrome's announcer line (`FUN_8003D53C`), the native
+        // window's `tick_baka_chrome` / the play page's `tick_baka_ui` twin.
+        if let Some(xa) = self.baka.as_ref().and_then(|f| f.chrome_frame().xa) {
+            self.play_baka_xa(xa);
         }
     }
 
