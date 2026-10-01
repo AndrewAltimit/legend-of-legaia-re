@@ -465,7 +465,12 @@ arms. Random encounters use a separate path:
 **Roll function.** `FUN_801D9E1C` (in the world_map overlay; also paged
 in by dance / fishing / slot-machine / cutscene_mapview / dialog_typing /
 debug_menu overlays - same code each time) runs once per movement
-update. It first runs the [condition walk](#the-condition-array-story-flag-gated-region-groups)
+update. It first caches the player's tile (`world >> 7`) in the entity's
+`+0x8E` / `+0x8F` and leaves unless the new tile differs from the cached one
+by at most one on each axis (`slti 0x2` at `0x801D9EF0` / `0x801D9F08`), so a
+script seating the player across the map or a warp landing is not a step: it
+neither drains the counter nor rolls (engine
+`region_encounter::is_region_step`). It then runs the [condition walk](#the-condition-array-story-flag-gated-region-groups)
 to pick which slice of the per-scene **region table** at
 `*(_DAT_801C6EA4 + 0x28) + 1` is live, then matches the player's
 `(x, y)` against each region's AABB at `pbVar9[0..3]` **within that

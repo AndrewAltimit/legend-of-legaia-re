@@ -4556,8 +4556,10 @@ fn trace_beat(session: &BootSession, before: &BTreeSet<u16>, what: impl FnOnce()
         .collect();
     let (px, pz) = player_xz(session);
     eprintln!(
-        "    [beat] {} +{gained:?} (ends at {:?} ({px},{pz}))",
+        "    [beat] {} +{gained:?} (ends in {} {:?} at {:?} ({px},{pz}))",
         what(),
+        scene_name(session),
+        session.host.world.mode,
         tile_of(px, pz)
     );
 }

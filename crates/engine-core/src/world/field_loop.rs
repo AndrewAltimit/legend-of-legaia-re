@@ -38,7 +38,16 @@ impl World {
                     // `FUN_801DBA20` grain - retail re-runs the region scan
                     // when the player tile changes).
                     self.refresh_field_regions();
-                    self.on_field_step();
+                    // A jump of two or more tiles (a script seating the
+                    // player, a warp landing) is not a step to the region
+                    // reader; a forced scripted formation still fires.
+                    let step = crate::region_encounter::is_region_step(
+                        (i32::from(prev.0), i32::from(prev.1)),
+                        (i32::from(tile.0), i32::from(tile.1)),
+                    );
+                    if step || self.encounters.scripted_formation_pending {
+                        self.on_field_step();
+                    }
                 }
                 None => self.terrain.last_tile = Some(tile),
                 _ => {}

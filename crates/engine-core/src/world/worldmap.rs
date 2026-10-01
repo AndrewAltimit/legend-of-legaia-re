@@ -370,7 +370,9 @@ impl World {
         let crossed = match self.world_map.last_tile {
             Some(prev) if prev != tile => {
                 self.world_map.last_tile = Some(tile);
-                true
+                // A seat or warp landing two or more tiles away is not a
+                // step to the region reader.
+                crate::region_encounter::is_region_step(prev, tile)
             }
             None => {
                 self.world_map.last_tile = Some(tile);
