@@ -1071,6 +1071,9 @@ pub struct BattleIntro {
     /// trail quads show exactly what retail's undrawn gaps show. Empty for
     /// every other style.
     display_accum: Vec<u16>,
+    /// The clock [`BattleIntro::advance_to`] last stepped to and the frame it
+    /// emitted there.
+    last_frame: Option<(i16, IntroFrame)>,
 }
 
 impl BattleIntro {
@@ -1159,6 +1162,7 @@ impl BattleIntro {
             pending_rows: Vec::new(),
             intermediate: Vec::new(),
             display_accum: Vec::new(),
+            last_frame: None,
         }
     }
 
@@ -1504,6 +1508,43 @@ impl BattleIntro {
                 depth: None,
             }));
         }
+    }
+
+    /// Bring the working set up to the live transition clock and emit its
+    /// frame - the call both play hosts make, once per **drawn** frame.
+    ///
+    /// The working set integrates per [`Self::tick`] call (every style steps
+    /// its tiles / particles / strips by `frame_step` each time it is called),
+    /// so a host whose draw cadence is not one-per-simulation-tick cannot call
+    /// [`Self::tick`] directly: the native window draws once per redraw and a
+    /// redraw can drain several world ticks (the capture redraw that lands
+    /// the field frame is the slow one), which left its shatter two ticks
+    /// behind the browser page's, whose step runs one call per tick. Here the
+    /// emitter steps exactly once per clock unit the entity has advanced since
+    /// the last call - from the entity's first frame on the first call, so a
+    /// host that arms late catches up - and a call that finds the clock where
+    /// it was re-emits the cached frame without stepping.
+    pub fn advance_to(&mut self, elapsed: i16) -> IntroFrame {
+        if let Some((last, frame)) = self.last_frame.as_ref()
+            && *last == elapsed
+        {
+            return frame.clone();
+        }
+        let first = match self.last_frame.as_ref() {
+            Some((last, _)) if *last < elapsed => last.wrapping_add(1),
+            // A clock that moved backwards: one step at the new value.
+            Some(_) => elapsed,
+            // A fresh emitter: from the entity's first frame.
+            None => 0.min(elapsed),
+        };
+        let mut e = first;
+        let mut frame = self.tick(e, 1);
+        while e < elapsed {
+            e = e.wrapping_add(1);
+            frame = self.tick(e, 1);
+        }
+        self.last_frame = Some((elapsed, frame.clone()));
+        frame
     }
 
     /// Advance one frame and emit.
@@ -1936,5 +1977,35 @@ mod arm_for_battle_tests {
         assert_eq!(a.sub_style(), choice.sub_style);
         let b = BattleIntro::arm_for_battle(&inputs, 60, Some(&[]), Some(&[]), 0x1234);
         assert_eq!(b.style(), a.style());
+    }
+
+    /// The emitter's picture is a function of the transition clock, not of
+    /// how often a host draws: one host stepping every clock unit and one
+    /// drawing on an uneven cadence (several world ticks per redraw, a late
+    /// first draw, a redraw with no tick between) emit the same frame at the
+    /// same clock. Stepping once per call is what put the native window's
+    /// shatter two ticks behind the browser page's.
+    #[test]
+    fn the_frame_depends_on_the_clock_not_the_draw_cadence() {
+        for formation_slot0 in [0u8, 0x10, 0x40, 0xA6] {
+            let inputs = IntroStyleInputs {
+                formation_slot0,
+                ..Default::default()
+            };
+            let mut every = BattleIntro::arm_for_battle(&inputs, 60, None, None, 0x1234);
+            let mut uneven = every.clone();
+            let mut at = std::collections::BTreeMap::new();
+            for e in 0..40i16 {
+                at.insert(e, every.advance_to(e));
+            }
+            for e in [2i16, 2, 3, 7, 7, 8, 11, 20, 39] {
+                assert_eq!(
+                    uneven.advance_to(e),
+                    at[&e],
+                    "style {:?}, clock {e}",
+                    uneven.style()
+                );
+            }
+        }
     }
 }
