@@ -277,6 +277,20 @@ scripted carrier's replayed tutorial arm. When the mode flips, the retail
 combatants' live HP / MP are written over the engine's, and the session is
 placed at the capture's phase.
 
+**The stream at the entry.** Retail's RNG state at the instant its fight began
+is not in the capture, and left alone the engine's would be whatever the
+field settle happened to draw - so every channel that rides a draw (a
+monster's pick and target, the battle camera, the frame) moved whenever a
+field-side port changed how many draws it takes or how they are shaped,
+with nothing in the battle changed. The world stream is therefore set to a
+fixed seed just before `World::force_encounter`, on the headless seed and in
+the image child alike (`LEGAIA_BATTLE_RNG_SEED`). A capture of something a
+draw decides is still one realisation of the stream, so the seeds in
+`BATTLE_RNG_SEEDS` are tried in order and the first under which the fight is
+still on, its opening reached a prompt, and the drive or replayed cast
+reached the capture's phase is the one scored; a state no seed satisfies
+keeps the first seed's run, `never reached`.
+
 **Placing the phase.** The capture's command-flow byte `ctx[+0x06]` picks one
 of five plans (`SeedPlan`):
 
@@ -386,10 +400,18 @@ into the item / magic / arts windows ([battle](../subsystems/battle.md#how-the-e
   The engine had searched for the latter, found none for Gimard's Tail Fire,
   and left `0x29` for the Done band without the `0x2A` / `0x2B` chain; it now
   walks the same entries ([monster animation](../formats/monster-animation.md#action-tags-and-the-0x1ef-reaction-map)).
-- **Seat and timing.** A pick the engine's RNG does not reproduce (a monster's
-  plain strike on a given seat, a capture taken at the killing blow of a
-  specific seat, a victory banner) can run out of budget or end the fight
-  first.
+- **A capture taken on the killing blow.** A party action in flight whose
+  target already reads `0` HP is the swing that killed it, and a replay
+  seeded with that HP ends the fight at the first `0x5A` wipe gate, before
+  the swing starts. When no seed reaches such a capture with the HP as read,
+  the search runs again with each such victim at `1` HP
+  (`RetailBattle::action_victims`), so the replayed swing makes the kill; the
+  victim's HP is then read at the phase, not at the prompt.
+- **Seat and timing.** A pick no seed reproduces (a monster's plain strike on
+  a given seat, a victory banner on the seat retail's kill was made from)
+  can run out of budget or end the fight first. A capture on the Done band's
+  multi-cast continuation `0x52` after a Seru capture is not reached: the
+  engine's `0x51` hands on to `0x5A` there.
 
 ### Replayed casts
 
@@ -636,8 +658,12 @@ baselined score, when a baselined channel of a state the run did seed goes
 unmeasured, when a seedable state fails to seed, or when no state is seeded
 at all. A rise is allowed and is folded in
 by a reviewed `--bless`. A bless merges into the existing file: a state
-outside a `--filter`, or the image channel on a run without a display, keeps
-its baselined value rather than being dropped. A baselined state missing from the local library is
+outside a `--filter`, or one the run could not seed, keeps its baselined
+channels, and a run without a display keeps each state's baselined image
+score. A state the run did seed otherwise takes the run's channel set, so a
+channel that no longer applies to it (a field state re-classed `world_map`
+has no `footing`) leaves the file rather than failing every later check as
+`not measured`. A baselined state missing from the local library is
 skipped (backups are per-machine), and the image channel is skipped unless
 the run renders frames (`LEGAIA_RETAIL_COMPARE_IMAGES=1`, which needs a
 display).
@@ -654,7 +680,7 @@ scripts/ci/retail-compare.py                  # state channels, report under cap
 scripts/ci/retail-compare.py --images         # + the image channel (needs a display)
 scripts/ci/retail-compare.py --images --check # assert the baseline
 scripts/ci/retail-compare.py --images --bless # fold a reviewed rise into the baseline
-scripts/ci/retail-compare.py --filter town01  # only matching labels
+scripts/ci/retail-compare.py --filter town01  # only matching labels (a,b = either)
 
 LEGAIA_SAVES_LIBRARY=... LEGAIA_EXTRACTED_DIR=... \
   cargo test -p legaia-engine-shell --profile release-test --test retail_compare_corpus -- --nocapture
@@ -801,6 +827,14 @@ scene entry, so it draws the placement headers (the Disco King front and
 centre at `(6144, 13248)`, the four dancers present) and the frame reads as
 "dancers placed wrong". It is script progress, not placement; the retail
 frame is also partway into the load fade.
+
+The settled engine frame also holds the record's dialog box over a scene the
+screen push has darkened, where retail's frame is lit and boxless. The engine
+draws that push under the box, the order retail's ordering table gives a
+kind-2/8 push (`FUN_80024EE4` links at bucket `a0`, the MES glyphs at bucket
+1 - [cutscene](../subsystems/cutscene.md)); an engine that washed every push
+over its text drew a near-black frame here, which the block metric scored
+above the box. The gap is the script's timing, not the wash.
 
 The phase gate resumes record 6 and replays that staging, which puts the
 camera exactly on retail's shot and the player on retail's `(5952, 12992)`.

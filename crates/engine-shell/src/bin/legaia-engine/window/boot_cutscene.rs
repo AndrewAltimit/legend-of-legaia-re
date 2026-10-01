@@ -1029,6 +1029,18 @@ impl PlayWindowApp {
     ///   surfaced via the HUD log instead by callers that want them.
     pub(super) fn drain_and_route_field_events(&mut self) {
         use legaia_engine_core::field_events::FieldEvent;
+        // Route any BGM event the frame's own steps raised after the session
+        // tick's routing pass - a dance song ending on its own
+        // (`World::exit_dance` -> `restore_minigame_bgm`), a minigame swap -
+        // before the drain below drops every non-spawn event. Without this the
+        // hall's track restart was thrown away here and the chart loop played
+        // on over the field. The browser page makes the same second pass
+        // (`route_bgm_wasm` ahead of `drain_and_route_field_events_web`).
+        if let Some(bgm) = self.session.bgm.as_mut()
+            && let Err(e) = self.session.host.route_bgm_events(bgm)
+        {
+            log::error!("late BGM route: {e:#}");
+        }
         let world = &mut self.session.host.world;
         let events = world.drain_field_events();
         // `ActorSpawned` is the only variant this drain answers, and there is

@@ -2035,8 +2035,8 @@ A survey of the high-reference `0x801F` VA band the field overlay shares with th
 | `0x801EC0DC` | INTERIOR | Delay-slot entry; sprite/text draw fragment (`8003CD00` + `8002B994`), register-arg `s1`/`s2`/`s3`. | `overlay_0896_801ec0dc.txt` |
 | `0x801F20B0` | DUPLICATE | Interior of `FUN_801F2098`, a twin of the living-slot scanner `FUN_801DB8B4` (below). | `overlay_overlay_0897_xxx_dat_801f20b0.txt` |
 | `0x801F6B24` | out-of-scope | NOFUNC in the Legaia field/battle overlays (0897/0967/0898); the only analyzed body at this VA (82 instructions) lives in the unrelated `0978_other_game` overlay, so it is not a Legaia field-VM function. | `overlay_0978_other_game_801f6b24.txt` |
-| `0x801F1278` | REAL (C-only) | Party-cursor submode enter (below). | `overlay_overlay_0897_801f1278.txt` |
-| `0x801F159C` | REAL (C-only) | Party-cursor submode resume / close (below). | `overlay_overlay_0897_801f159c.txt` |
+| `0x801F1278` | REAL (C-only) | Subsystem actor installer - the op-`0x49` / menu-button enter half (below). | `overlay_overlay_0897_801f1278.txt` |
+| `0x801F159C` | REAL (C-only) | Subsystem actor dispatcher - resume / close (below). | `overlay_overlay_0897_801f159c.txt` |
 | `0x801F71E0` / `0x801F5748` | REAL, large | Per-actor command / queue loops over the actor band (below). | `overlay_0897_801f71e0.txt` / `overlay_0897_801f5748.txt` |
 | `0x801E0598` | REAL (other subsystem) | Menu/save overlay state-init: zeroes ~25 `0x801Fxxxx`/`0x801EFxxx` globals, calls `Init_card`, installs the save-scan base `&DAT_80084140` at `_DAT_801F32A0`. | `overlay_menu_801e0598.txt` |
 | `0x801F6D48` | REAL (other subsystem) | Baka Fighter minigame overlay function; see [`minigame-baka-fighter.md`](minigame-baka-fighter.md). | `overlay_baka_fighter_801f6d48.txt` |
@@ -2069,11 +2069,13 @@ Two structural facts about it are worth stating where the address is first met, 
 
 Its layout half - average the members' projected screen X, centre, then relax overlaps pairwise and clamp inside `[0x06, 0x13A - width]`, repeating until a pass clamps nothing - shares its inner loop with the `0x801F07AC` / `0x801F0ADC` de-overlap fragment two rows up in the table. Ported as `legaia_engine_core::target_picker::enemy_menu_rows` + `layout_enemy_menu_rows`.
 
-### The op-`0x49` party-cursor submode (`FUN_801F1278` / `FUN_801F159C`)
+<a id="the-op-0x49-party-cursor-submode-fun_801f1278--fun_801f159c"></a>
 
-The STATE_RESUME "Done writer (field-overlay `FUN_801F159C`-class)" named above drives a second op-`0x49` sub-screen (sibling to the name-entry screen), reached through actor `+0x50` handler slot `7` in the table `PTR_FUN_801F33B4`:
+### The op-`0x49` subsystem actor (`FUN_801F1278` / `FUN_801F159C`)
 
-- **Enter** `FUN_801F1278(actor)`: suspends field input (`FUN_801DE190`, sets `_DAT_8007C364+0x10` bit `0x80000`, clears pad latch `_DAT_1F800394` bit `0x8000`), forces the cursor context `_DAT_801C6EA4+0x3E = 1`, saves the caller's `+0x50` into `+0x40` and installs handler `7`, seeds portrait/member cells `_DAT_801C6EA4+0x36/+0x38/+0x3A` from the roster `DAT_80084594` (count) / `DAT_80084598..A` (member ids), homes the cursor (`+0x46=0xA0`,`+0x48=0x58`), and if a pending pick `_DAT_8007B450` is live remaps `+0x50` through the id table `&DAT_801F33A4` (below).
+The STATE_RESUME "Done writer (field-overlay `FUN_801F159C`-class)" named above is the dispatcher of the subsystem actor that op `0x49` and the field menu button both spawn. It is not a party picker: its default handler is slot `7` of the table `PTR_FUN_801F33B4`, the state pick `FUN_801F1F4C`, which moves the actor on to the pause-menu session `0x30`; a sub-op whose `0x801F33A4` byte is not `-1` replaces that `7` with its own screen. Ported as `legaia_engine_vm::field_subsystem_enter` (the installer) and `field_state_pick` (slot `7`).
+
+- **Enter** `FUN_801F1278(actor)`: suspends field input (`FUN_801DE190`, sets `_DAT_8007C364+0x10` bit `0x80000`, clears pad latch `_DAT_1F800394` bit `0x8000`), forces the submode context `_DAT_801C6EA4+0x3E = 1`, saves the caller's `+0x50` into `+0x40` and installs handler `7` (the state pick), seeds three roster cells `_DAT_801C6EA4+0x36/+0x38/+0x3A` from the roster `DAT_80084594` (count) / `DAT_80084598..A` (member ids), homes the cursor (`+0x46=0xA0`,`+0x48=0x58`), and if a parked op-`0x49` operand `_DAT_8007B450` is live remaps `+0x50` through the sub-op table `&DAT_801F33A4` (below).
 - **Resume / close** `FUN_801F159C(actor)`: active only while submode state `DAT_801F2734 ∈ {1,4,7}`; re-arms via `FUN_801F1278` when a pad flag is set, dispatches the per-frame handler `PTR_FUN_801F33B4[actor+0x50]`, and on confirm (`_DAT_801C6EA4+0x3E == 0`) sets the actor yield bit (`+0x10 |= 8`), releases the pad latch, and drops the field/tile-board busy flag (`_DAT_8007B450` / `_DAT_8007C364+0x10 &= ~0x80000`).
 
 #### Which screen a sub-op opens: the table at `0x801F33A4`
@@ -2312,7 +2314,7 @@ captured value by `-0x140` instead of re-parking.
 ### Party-roster panel renderers
 
 `801D0D38` (387 insn) is a per-frame panel builder in the op-`0x49`
-party-cursor submode family (sibling of `801F1278` / `801F159C` above). It
+subsystem-actor family (sibling of `801F1278` / `801F159C` above). It
 walks the live roster - member count `DAT_80084594`, records `DAT_800845C4`,
 player context `_DAT_8007C364` - and the cursor context `DAT_801F3488..348C`,
 drawing per-member numerics through `func_0x80034B78` and screen-projecting

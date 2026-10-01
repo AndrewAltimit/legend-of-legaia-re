@@ -103,6 +103,18 @@ impl World {
         // Incense window drain and its wear-off notice.
         self.tick_field_walk_regen();
         self.tick_incense_notice();
+        // The player's locomotion clip, in the field pump's order: the
+        // settle's clip tail binds the base the step above wrote
+        // (`jal 0x801D1BA0` at `0x801D1744`, the same call the field pump
+        // makes), the system channel's per-tick idle store follows, then the
+        // clip advances into the player's `pose_frame`. Without these the
+        // overworld figure held its rest pose while it slid across the map.
+        // REF: FUN_801D1344, FUN_801D1BA0
+        self.field_settle_clip_tail();
+        self.tick_field_system_channel_clip_reset();
+        self.tick_player_scale_ramp();
+        self.detect_field_actor_motion();
+        self.tick_field_player_anim();
 
         if !self.world_map.entities.is_empty() {
             // Take the entity list out so the SM's host bridge can borrow the
@@ -136,11 +148,6 @@ impl World {
         }
     }
 
-    /// Overworld player walk speed in world units per frame (per held d-pad
-    /// direction). The field player moves ~8 units/frame
-    /// (`FIELD_BASE_STEP`); the overworld uses the same baseline.
-    pub const WORLD_MAP_PLAYER_SPEED: i16 = 8;
-
     /// Move the overworld player actor from the held d-pad, bounded by the
     /// scene's walkability grid.
     ///
@@ -159,9 +166,25 @@ impl World {
     /// [`Self::advance_with_collision`], so walls stop the overworld player
     /// exactly as on the field.
     ///
+    /// **Speed and clip are the field controller's.** The world-map-walk
+    /// overlay's frame pump `FUN_801D1344` and pad controller `FUN_801D01B0`
+    /// are instruction-identical to the field overlay's, so the overworld step
+    /// is `((base_step * player[+0x72]) >> 12) * DAT_1F800393` - walk / run
+    /// off [`Self::field_base_step`] - and the frame writes the same clip base
+    /// (idle `2` / walk `1` / run `3`) the settle tail binds
+    /// ([`Self::field_settle_clip_tail`]). What differs on a kingdom map is
+    /// the multiplier and the base step: each kingdom's entry script sets the
+    /// player's `+0x72` to `0xC00` (`CC F8 40 00 0C 00 00`) - the same word
+    /// the per-actor draw reads as its render scale - and `_DAT_8007B6A8`
+    /// forces the slow step `5`, so a retail frame at the overworld's frame
+    /// step `3` walks `10` units ([`WORLD_MAP_FRAME_STEP`], paid out over
+    /// three vsync ticks through [`crate::world::WorldMapState::walk_carry`]).
+    ///
     /// No-op without a live player actor, while a dialog owns the frame, in the
     /// top-view debug camera, or while the player's movement-disabled flag
     /// (`+0x10 & 0x80000`) is set (encounter queued / cutscene owns the player).
+    ///
+    /// REF: FUN_801D01B0 (speed + the clip-base slice `0x801D0424..0x801D04A4`)
     fn step_world_map_locomotion(&mut self) {
         if self.dialogue_owns_input() {
             return;
@@ -219,8 +242,29 @@ impl World {
         // entrance's contact is read from ([`Self::auto_engage_world_map_portals`]),
         // as the field controller's do for a door.
         self.locomotion.last_move_dir_bits = dir_bits;
+        // The clip base the settle tail strides into the player's clip -
+        // the same slice of `FUN_801D01B0` the field step runs, since the
+        // overworld runs that very controller.
+        if let Some(base) = vm::field_player_clip::locomotion_clip_base(
+            self.locomotion.player_clip,
+            dir_bits,
+            self.field_base_step(),
+            self.party.scene_save_allowed,
+        ) {
+            self.locomotion.clip_base = base;
+            self.locomotion.player_party_bank = true;
+            if let Some(anim) = &mut self.locomotion.player_anim {
+                anim.pad_drove_this_frame = true;
+            }
+        }
         if dir_bits == 0 {
+            self.world_map.walk_carry = 0;
             return;
+        }
+        // A held direction walks the clip even when a wall blocks the step
+        // (retail walks in place), as on the field.
+        if let Some(anim) = &mut self.locomotion.player_anim {
+            anim.moved_this_frame = true;
         }
         // Record the heading from the world-space movement direction (the same
         // `render_26` field the field path stores from `decode_field_direction`,
@@ -236,7 +280,12 @@ impl World {
                 .rem_euclid(4096) as i16;
             self.actors[slot].move_state.render_26 = heading;
         }
-        let mut speed = self.world_map.player_speed.max(1) as i32;
+        // speed = ((base_step * player[+0x72]) >> 12) * DAT_1F800393, for
+        // one retail frame at the overworld's frame step
+        // ([`WORLD_MAP_FRAME_STEP`]).
+        let mult = i32::from(self.actors[slot].move_state.field_72);
+        let dt = WORLD_MAP_FRAME_STEP;
+        let mut speed = ((self.field_base_step() * mult) >> 12) * dt;
         // Diagonal normalise: when both axes are moving, x0.75 - mirroring the
         // field controller (`FUN_801d01b0`) and the retail world-map walk
         // overlay (`speed -= speed >> 2`). `advance_with_collision` steps both
@@ -244,6 +293,24 @@ impl World {
         // each axis = ~1.41x the cardinal speed.
         if dx != 0 && dz != 0 {
             speed -= speed >> 2;
+        }
+        if speed <= 0 {
+            self.world_map.walk_carry = 0;
+            return;
+        }
+        // Retail commits that frame step in whole 2-unit sub-steps (the
+        // stepper loops while the remainder is positive, so `9` walks `10`),
+        // once per `dt` vsyncs. The port ticks every vsync: carry the rounded
+        // frame step in `1/dt` units and commit the sub-steps it has paid
+        // for, so the displacement over time is retail's - `10` units every
+        // `3` vsyncs, `130` per `39` - rather than `4` every vsync.
+        let frame_units = (speed + FIELD_STEP_UNIT - 1) / FIELD_STEP_UNIT * FIELD_STEP_UNIT;
+        let per_sub_step = FIELD_STEP_UNIT * dt;
+        let carry = self.world_map.walk_carry + frame_units;
+        let speed = (carry / per_sub_step) * FIELD_STEP_UNIT;
+        self.world_map.walk_carry = carry % per_sub_step;
+        if speed <= 0 {
+            return;
         }
         let before = {
             let ms = &self.actors[slot].move_state;
@@ -303,7 +370,9 @@ impl World {
         let crossed = match self.world_map.last_tile {
             Some(prev) if prev != tile => {
                 self.world_map.last_tile = Some(tile);
-                true
+                // A seat or warp landing two or more tiles away is not a
+                // step to the region reader.
+                crate::region_encounter::is_region_step(prev, tile)
             }
             None => {
                 self.world_map.last_tile = Some(tile);

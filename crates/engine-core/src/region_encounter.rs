@@ -87,6 +87,24 @@ pub const ENCOUNTER_COUNTER_MOD: u32 = 0x1e7;
 /// `rng` is the retail `rand()` (`0..=0x7FFF`); any non-negative draw gives
 /// the same result because the reduction is a truncating signed modulus.
 ///
+/// Whether a player tile change from `prev` to `now` is a **step** the region
+/// reader counts.
+///
+/// `FUN_801D9E1C` caches the player's tile in its own `+0x8E` / `+0x8F`
+/// every call (`sb s4,0x8e(s6)` / `sb s3,0x8f(s6)`), then leaves without
+/// reading a region unless the new tile is a different one at most one tile
+/// away on each axis: `slti v0,v0,0x2` on `|old_x - new_x|` (`0x801D9EF0`)
+/// and on `|old_z - new_z|` (`0x801D9F08`), each `beq v0,zero` to the exit.
+/// A teleport - a script seating the player across the map, a warp landing -
+/// therefore neither drains the step counter nor rolls a fight; the next
+/// ordinary step from the landing does. (The `0xFF` cache preset op `0x3E`
+/// writes is the reader's other way in; the engine runs that arm itself.)
+///
+/// REF: FUN_801D9E1C
+pub fn is_region_step(prev: (i32, i32), now: (i32, i32)) -> bool {
+    prev != now && (prev.0 - now.0).abs() < 2 && (prev.1 - now.1).abs() < 2
+}
+
 /// PORT: FUN_801DDF48
 pub fn encounter_counter_reroll(mut rng: impl FnMut() -> u32) -> i32 {
     let ra = (rng() % ENCOUNTER_COUNTER_MOD) as i32;
@@ -1015,6 +1033,18 @@ mod tests {
         for _ in 0..10_000 {
             assert!(tracker.on_step(64, 64, || 0).is_none());
         }
+    }
+
+    #[test]
+    fn only_a_one_tile_move_is_a_step() {
+        // Same tile: no step. One tile on either or both axes: a step.
+        assert!(!is_region_step((10, 10), (10, 10)));
+        assert!(is_region_step((10, 10), (11, 10)));
+        assert!(is_region_step((10, 10), (9, 11)));
+        // Two or more on either axis (a script seat, a warp landing): the
+        // reader's `slti 0x2` exits without reading a region.
+        assert!(!is_region_step((10, 10), (12, 10)));
+        assert!(!is_region_step((32, 93), (25, 31)));
     }
 
     #[test]

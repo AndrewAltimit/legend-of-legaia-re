@@ -49,6 +49,8 @@ impl World {
     ///
     /// [`HpMpSp`]: legaia_save::HpMpSp
     pub fn load_party(&mut self, party: legaia_save::Party) {
+        // A loaded roster starts from no party-op history.
+        self.party.field_list_emptied = false;
         let n = party.members.len().min(self.actors.len());
         for (slot, rec) in party.members.iter().take(n).enumerate() {
             let hms = rec.hp_mp_sp();
@@ -74,13 +76,12 @@ impl World {
         // from the installed records. Without this the tracker keeps its
         // default 0-XP / level-1 state even when the record has the party
         // deep into the game, and the next grant would re-run the whole
-        // curve from L1. Level prefers the engine cell (+0x100), falling
-        // back to the retail displayed-level byte (+0x130) for records
-        // lifted from retail saves.
+        // curve from L1. Level is the record's `+0x130` byte - the same cell
+        // for engine LGSF saves and records lifted from retail cards.
         for (slot, rec) in self.party.roster.members.iter().enumerate() {
             if slot < self.party.level_up_tracker.level.len() {
                 self.party.level_up_tracker.xp[slot] = rec.cumulative_xp();
-                self.party.level_up_tracker.level[slot] = rec.level().max(rec.magic_rank()).max(1);
+                self.party.level_up_tracker.level[slot] = rec.level().max(1);
             }
         }
         // Adopt each record's stored display name (`+0x2A7`) so a loaded save's
@@ -521,26 +522,33 @@ impl World {
     /// Release an op-`0x49` **menu-entry-context** park once the pause menu
     /// has closed. Returns whether a park was released.
     ///
-    /// Retail's menu teardown leaf `FUN_8003540C` is three instructions -
-    /// `sw zero,0x148(gp)` / `sw zero,0x138(gp)` / `jr ra` - and it clears the
-    /// entry-context word `gp+0x138` (`_DAT_8007B450`) **unconditionally**,
-    /// whatever sub-op parked it. That store is what releases a kind-`0x0D`
-    /// park: the op-`0x49` dispatcher leaves a `-1` table row standing (see
-    /// [`crate::field_submode_screen::OP49_PARK_PRESERVING_SUB_OPS`]), and the
-    /// menu's close is the only thing that ends it. Under that gate the root
-    /// picker's cancel opens the ready check, and only its **Yes** closes the
-    /// menu, so the release reads as "the player answered ready". Hosts call
-    /// this from their pause-menu close path.
+    /// A scripted menu press ([`World::scripted_menu_open_pending`]) ends the
+    /// way retail's does: the pause-menu session's last phase clears the
+    /// cursor context's completion gate (`sh zero,0x3e(v0)` at `0x801ED52C`),
+    /// and the dispatcher `FUN_801F159C` then retires the subsystem actor and,
+    /// because the park is still live, writes the Done sentinel into it
+    /// (`0x801F1678` `lw v1,-0x4bb0(a2)`, `bne v1,zero,0x801F16A8`,
+    /// `sw 1,-0x4bb0(a2)`). So the parked op resumes once - a save point's
+    /// `49 01` takes its Done arm, a `49 0D` advances - rather than re-arming
+    /// and pressing the menu again. The port raises the screen's Done for the
+    /// park's own context and drops the kind byte.
     ///
-    /// The other store, `gp+0x148` (`_DAT_8007B460`), zeroes the live
-    /// window-list head; the port's menu windows are owned by the menu
-    /// session, which the same close drops, so there is no separate word to
-    /// clear.
+    /// Any other park is dropped without a Done, as before.
     ///
-    /// PORT: FUN_8003540C
+    /// The three-instruction leaf `FUN_8003540C` (`sw zero,0x148(gp)` /
+    /// `sw zero,0x138(gp)` / `jr ra`) is **not** this release: it has no
+    /// reference of any form on the disc (`find-address-word-refs.py 8003540c
+    /// --prot`), so nothing ever zeroes the park on a menu close. Its sibling
+    /// `FUN_800353E0`, which makes the same two stores, is reached only from
+    /// the scene loaders (`0x8003B2C8`, `0x80055FC8`).
+    ///
+    /// REF: FUN_801F159C (retire arm), FUN_801ED308 (phase 5)
     pub fn release_menu_entry_context_park(&mut self) -> bool {
-        if self.field_vm.submode_screen.park_sub_op.is_none() {
+        let Some(kind) = self.field_vm.submode_screen.park_sub_op else {
             return false;
+        };
+        if crate::field_submode_screen::OP49_PARK_PRESERVING_SUB_OPS.contains(&kind) {
+            self.field_vm.submode_screen.done = true;
         }
         self.clear_op49_park();
         true
@@ -737,6 +745,10 @@ impl World {
             debug_mode: u32::from(debug),
             pad_mask: u32::from(crate::world_map_panel_host::packed_pad(self.input.pad())),
         };
-        state_pick(inputs, 7).actor_state
+        state_pick(
+            inputs,
+            legaia_engine_vm::field_subsystem_enter::STATE_PICK_HANDLER,
+        )
+        .actor_state
     }
 }

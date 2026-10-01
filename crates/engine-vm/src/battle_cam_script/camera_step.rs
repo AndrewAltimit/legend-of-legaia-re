@@ -293,6 +293,17 @@ impl BattleCamera {
         let Some(t) = self.target.filter(|t| !t.live) else {
             return (pose, f.depth_raw);
         };
+        // Both dead-target arms start from the target-facing yaw.
+        let yaw = dead_target_yaw(t.facing, self.attack.ctx.phase_cursor, f);
+        if t.node_gone {
+            // The stand-off arm adds the live ladder rather than zeroing it.
+            let yaw = yaw + self.action_yaw;
+            let raw_z = apply_node_gone_reframe(&mut pose, self.actor, yaw, f.body_radius);
+            return (pose, raw_z);
+        }
+        // Stored straight over the unwrapped base (`sh v1,0x12(sp)`); the
+        // tween builder's shortest-arc adjust takes it from there.
+        pose.yaw = yaw.rem_euclid(4096) as f32;
         // The death re-frame owns the yaw ladder too: `sh zero,0x4(t0)` with
         // `t0 = ctx + 0x6D6` zeroes `ctx[+0x6DA]` before the fork.
         self.action_yaw = 0;
@@ -364,11 +375,14 @@ impl BattleCamera {
         action_framing(self.actor, self.live_action_framing())
     }
 
-    /// [`Self::action`] with the live yaw counter substituted in, and the
-    /// swing-clip commit's `ctx[+0xD] = 0` applied while it is latched.
+    /// [`Self::action`] with the live yaw counter and close-up counters
+    /// substituted in, and the swing-clip commit's `ctx[+0xD] = 0` applied
+    /// while it is latched.
     pub(super) fn live_action_framing(&self) -> ActionFraming {
         ActionFraming {
             yaw_base: self.action_yaw,
+            accum: self.attack.ctx.accum,
+            ramp: self.attack.ctx.ramp,
             style: if self.strike_style_zeroed {
                 0
             } else {
@@ -693,8 +707,11 @@ impl BattleCamera {
     /// [`Self::retarget_action_glide`]'s sibling for cases `7` and `8`: rebuild
     /// the step table against the live pose, carrying the armed segment's
     /// remaining step count so a settled framing stays settled.
-    pub(super) fn retarget_post_action_glide(&mut self, live: BattleCamPose) {
-        let raw_z = self.live_action_framing().depth_raw;
+    ///
+    /// `raw_z` is the framing's own depth in world units: case 8's death and
+    /// stand-off arms move it off `ctx[+0x6D0]`, and the chase has to
+    /// converge on the depth the pose took, not on the unmoved one.
+    pub(super) fn retarget_post_action_glide(&mut self, live: BattleCamPose, raw_z: i32) {
         let steps = self
             .glides
             .front()
@@ -781,11 +798,12 @@ impl BattleCamera {
         match self.phase {
             BattleCamPhase::Recover => {
                 let target = self.recover_pose();
-                self.retarget_post_action_glide(target);
+                let raw_z = self.live_action_framing().depth_raw;
+                self.retarget_post_action_glide(target, raw_z);
             }
             BattleCamPhase::ActionEnd => {
-                let (target, _raw_z) = self.action_end_pose();
-                self.retarget_post_action_glide(target);
+                let (target, raw_z) = self.action_end_pose();
+                self.retarget_post_action_glide(target, raw_z);
             }
             BattleCamPhase::Menu => self.retarget_menu_glide(),
             _ => {}

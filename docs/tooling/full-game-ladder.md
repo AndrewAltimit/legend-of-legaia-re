@@ -248,6 +248,23 @@ cell. On the overworld the follower inverts the camera remap exactly (of the
 eight pad directions, the one whose world bits are the step's): a rounded
 rotation turns a cardinal step diagonal whenever the camera sits off an axis.
 
+On the overworld the pad tier walks diagonals **through tile corners**. The
+encounter step is a change of 128-unit tile, and a change of one tile on both
+axes at once is one step: `FUN_801D9E1C` caches the tile and reads a region
+only when the new one differs by at most one on each axis (`slti 0x2` at
+`0x801D9EF0` / `0x801D9F08`). The lattice's four-way staircase pays two steps
+for every diagonal tile it gains, so a kingdom crossing drains the counter
+about twice as fast as a player cutting corners does - the difference between
+two fights and three for a lone member walking out of a dungeon worn down.
+The tile route is eight-connected over tiles whose four wall sub-cells are
+open (a diagonal also needs both tiles whose corner it cuts), one step per
+move, to the open tile nearest the goal; the lattice finishes from there and
+takes over outright when the route presses without moving. A diagonal is held
+only once both axes are the same number of 2-unit sub-steps from their tile
+edge, so both edges fall in one sub-step. Until then the farther axis walks
+alone, tapping when close: a released pad zeroes the overworld walk carry, so
+the next pressed tick commits exactly one sub-step.
+
 A door whose walk component the start cannot reach is tried through a
 **crossing scene**: a scene the current one has a door to and a door back
 from, entered and left by its reachable door farthest from where the player
@@ -271,8 +288,10 @@ In both passes a scripted sequence gets Cross on a press-2-release-14 duty
 cycle, the naming prompt's Yes/No confirm gets Up first (it opens on No), and a
 battle is fought through the command ring, one pad edge at a time, by a
 fighter shaped like a player: a member who is down gets a revive, and a
-member in danger - under 45% of its HP, or unable to take another hit the
-size of the biggest one seen this battle - gets a heal: a party heal when two
+member in danger - under 45% of its HP, or unable to take another loss the
+size of the biggest it took this battle between two of the party's command
+windows (a round, not a hit: a fast foe acts twice in one, and a cast lands
+its flurry and its burst as separate HP writes) - gets a heal: a party heal when two
 or more are in danger, else the smallest single heal that lifts the worst-off
 member clear, aimed at that member. Heals the round's earlier members already
 committed count as landed, so two members never spend their turns on one

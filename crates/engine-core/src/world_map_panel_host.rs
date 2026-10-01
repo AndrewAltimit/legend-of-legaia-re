@@ -1172,6 +1172,24 @@ pub fn field_hud_suppressed(world: &crate::world::World, host_panel_owns_frame: 
         // overlay owns the frame, and because a term present on one host only
         // is the drift this kernel exists to end.
         || world.name_entry_active()
+        // The field-to-battle transition. Its overlay, PROT 0979
+        // `field_battle_intro`, loads into slot A at `0x801CE818` - the slot
+        // the field overlay (0897) and so `FUN_801D0D38` itself live in - so
+        // no readout is drawn on any transition frame; the intro's own
+        // packets own the screen. The native window happened to paint the
+        // readout under the intro's backdrop and the play page above it on
+        // its separate overlay canvas, so the page showed it over the whole
+        // shatter.
+        || field_battle_transition_active(world)
+}
+
+/// `true` while the encounter session sits in its field-to-battle
+/// `Transition` phase - the frames PROT 0979 owns slot A.
+pub fn field_battle_transition_active(world: &crate::world::World) -> bool {
+    matches!(
+        world.encounters.session.as_ref().map(|s| s.phase()),
+        Some(crate::encounter::EncounterPhase::Transition { .. })
+    )
 }
 
 /// The player-engaged term of the field party HUD's **rearm** arm: while it
@@ -1929,5 +1947,29 @@ mod tests {
         h.note_visit(3, 9, 9);
         assert_eq!(h.visited.len(), 2);
         assert_eq!(h.visited[0].tile_x, 9);
+    }
+
+    /// The field-to-battle transition suppresses the readout on every host:
+    /// PROT 0979 loads into slot A over the field overlay, so the HUD code
+    /// is not resident while the intro plays.
+    #[test]
+    fn the_battle_transition_suppresses_the_field_hud() {
+        use crate::world::{SceneMode, World};
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        world.install_encounter_bracket();
+        assert!(!field_hud_suppressed(&world, false), "idle field draws");
+        let session = world
+            .encounters
+            .session
+            .as_mut()
+            .expect("bracket installed");
+        assert!(session.trigger_with(crate::encounter::EncounterRoll {
+            formation_id: 1,
+            row_index: 0,
+            roll_q8: 0,
+        }));
+        assert!(field_battle_transition_active(&world));
+        assert!(field_hud_suppressed(&world, false), "the intro owns slot A");
     }
 }

@@ -357,25 +357,48 @@ window.MgMuscle = (function () {
     function blit(src, pal, u, v, w, h, dx, dy, dw, dh, abr) {
       const s = sheet(src, pal);
       if (!s) return false;
-      withAbr(g, abr, () =>
-        g.drawImage(s, u, v, w, h, dx * 2, dy * 2, (dw || w) * 2, (dh || h) * 2));
+      withAbr(g, abr, (sub) =>
+        g.drawImage(sub ? hubSilhouette(s) : s, u, v, w, h,
+          dx * 2, dy * 2, (dw || w) * 2, (dh || h) * 2));
       return true;
     }
     /* PSX semi-transparency for a hub quad's `abr` (null = opaque): 0 is
-     * `B/2 + F/2`, 1 `B + F`, 3 `B + F/4` - all three are canvas composites
-     * (a transparent texel has alpha 0 and adds nothing). 2 (`B - F`) has no
-     * composite, and no hub palette that blends is ever drawn with it (only
-     * STP-free palettes reach ABR 2, and those draw opaque), so it takes the
-     * plain draw. */
+     * `B/2 + F/2`, 1 `B + F`, 3 `B + F/4` - canvas composites (a transparent
+     * texel has alpha 0 and adds nothing). 2 is `B - F`, which a 2D canvas has
+     * no composite for: `draw` receives `true` and must hand in the sprite's
+     * black silhouette (`hubSilhouette`) instead. Every ABR-2 hub quad samples
+     * one of the all-white knockout palettes the variant-2 emitter bump
+     * selects (7 under 6, 9 under 8, ...), and the arena uploads those
+     * STP-set, so `B - white` clamps to black under every texel - which is the
+     * silhouette, exactly, at full fade. */
     function withAbr(g, abr, draw) {
-      if (abr == null || abr === 2) return draw();
+      if (abr == null) return draw(false);
+      if (abr === 2) return draw(true);
       g.save();
       if (abr === 0) g.globalAlpha *= 0.5;
       else {
         g.globalCompositeOperation = 'lighter';
         if (abr === 3) g.globalAlpha *= 0.25;
       }
-      try { return draw(); } finally { g.restore(); }
+      try { return draw(false); } finally { g.restore(); }
+    }
+    /* The black silhouette of a decoded sheet (every opaque texel -> black,
+     * alpha kept), cached per sheet canvas. */
+    const hubSilhouettes = new WeakMap();
+    function hubSilhouette(c) {
+      if (!c) return c;
+      let s = hubSilhouettes.get(c);
+      if (!s) {
+        s = document.createElement('canvas');
+        s.width = c.width; s.height = c.height;
+        const sg = s.getContext('2d');
+        sg.drawImage(c, 0, 0);
+        sg.globalCompositeOperation = 'source-in';
+        sg.fillStyle = '#000';
+        sg.fillRect(0, 0, s.width, s.height);
+        hubSilhouettes.set(c, s);
+      }
+      return s;
     }
 
     function hudAdv(ch) {
@@ -1326,6 +1349,12 @@ window.MgMuscle = (function () {
 
     function finishPlayback() {
       const state = st();
+      /* The play-out's damage numerals belong to the play-out: the last one
+       * lands 34 ticks before this and lives 46, so without this it rode
+       * over the command cluster / the INTERVAL tally that follows. Retail
+       * shows neither screen with a hit numeral still up - the INTERVAL
+       * screen is the arena hub, drawn after the battle has ended. */
+      popups = [];
       if (state.phase === 'turn_over') {
         /* A TURN ended, not a fight. Retail's battle SM writes ctx[6] = 0x14
          * and re-enters its own command cluster (ctx+6 = 0x28) - the arena hub
@@ -2056,20 +2085,23 @@ window.MgMuscle = (function () {
       text(mp + '/' + mp, 230, 222, 8, '#f2f4fa');
     }
 
-    /* Defender name chip (playback): right-aligned blue chip. Capture (the
-     * HYPER ARTS!! moment): body ends at x=304, plate at y=188 with the
-     * status plate hidden; outside the banner it sits one row above the
-     * plate (fitted seat between two captured states). */
-    function drawFoeChip(state) {
+    /* Opponent name chip: right-aligned blue chip, body ending at x=304.
+     * `y` is the seat: the review screen's target-select row (168), or the
+     * bar's row (188) during playback - the battle's target plaque
+     * (placement record 81), which rises to the status plate's own row and
+     * takes it over while the fighter is the one attacking (captured at the
+     * HYPER ARTS!! moment; `engine-core::battle_hud::battle_target_plaque`).
+     * The playback seat used to be a fitted y=168, which put the plate
+     * under the TOTAL tally row (value cells at y=168..183). */
+    function drawFoeChip(state, y) {
       const name = state.names[1] || '';
       if (!name) return;
       if (hudOk()) {
-        const y = artsBanner ? 188 : 168;
         rChip(name, 304 - hudTextW(name), y, 'blue');
         return;
       }
       const w = Math.max(44, name.length * 7 + 12);
-      chip(310 - w, 196, w, 13, 'blue', name);
+      chip(310 - w, y + 8, w, 13, 'blue', name);
     }
 
     /* Attacker name chip, top-left gold (retail arts-playback header). */
@@ -2289,13 +2321,16 @@ window.MgMuscle = (function () {
     }
 
     /* The retail play-out damage tally: the etim TOTAL word + the big
-     * orange numerals, at the captured seat (word at (184, 170), 16x15
-     * digit cells ending at x=304 - run5 packet listing). */
+     * orange numerals, at the battle overlay's own combo-cluster seats
+     * (`legaia_engine_vm::battle_value_readout`: COMBO_TOTAL_LABEL_SEAT
+     * (216, 170), 16-px value cells ending at x=304 on row 168 - the
+     * frame-oracle-pinned seats every battle draws the cluster at; the
+     * dome reuses the battle overlay wholesale). */
     function drawTally() {
       if (!tally || !tally.total) return;
       if (hudOk()) {
         const num = String(tally.total);
-        hudWord('word_total', 184, 170);
+        hudWord('word_total', 216, 170);
         hudBigDigits(num, 304 - num.length * 16, 168);
         return;
       }
@@ -2443,7 +2478,7 @@ window.MgMuscle = (function () {
         } else if (selectSub === 'review' || selectSub === 'confirm') {
           if (selectSub === 'review') {
             drawHeaderChips(state, true);
-            drawFoeChip(state);
+            drawFoeChip(state, 168);
           } else {
             /* Retail's 0x6e screen keeps a lone Begin chip top-left. */
             if (hudOk()) rChip('Begin', 16, 8, 'gold');
@@ -2455,10 +2490,13 @@ window.MgMuscle = (function () {
         }
       } else if (mode === 'playback') {
         drawAttackerChip(state.names[tally ? tally.attacker : 0] || state.names[0]);
-        drawFoeChip(state);
-        /* Retail hides the AP plate during playback and the status plate
-         * while the arts banner is up (both captured states). */
-        if (!artsBanner) drawStatusPlate(state);
+        /* The bar's row carries one plate at a time, as in any battle's
+         * action phase: the opponent's plaque while the fighter attacks it
+         * (the readout bar is parked - `battle_readout_bar_slot` opens it
+         * only for a party *target*), and the fighter's status plate while
+         * the opponent attacks. Retail hides the AP plate during playback. */
+        if (tally && tally.attacker === 0) drawFoeChip(state, 188);
+        else if (!artsBanner) drawStatusPlate(state);
         drawTally();
         drawArtsBanner();
       } else if (mode === 'interval') {

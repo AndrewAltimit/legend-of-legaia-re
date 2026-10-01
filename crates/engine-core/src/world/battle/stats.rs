@@ -98,7 +98,9 @@ impl World {
             max_hp: self.actors[i].battle.max_hp,
         };
         let party: Vec<EscapeActor> = (0..party_n).map(fold).collect();
-        let enemies: Vec<EscapeActor> = (party_n..self.actors.len()).map(fold).collect();
+        // The enemy loop is bounded by the seated count `ctx[+1]`
+        // (`lbu v1,0x1(v0)` at `0x801E7A34`), not the actor table.
+        let enemies: Vec<EscapeActor> = self.seated_monster_slots().map(fold).collect();
         let mut flags = EscapeFlags {
             no_escape: self.battle.no_escape,
             ..EscapeFlags::default()
@@ -131,6 +133,17 @@ impl World {
         )
     }
 
+    /// The engine's mirror of retail's seated-monster count `ctx[+1]`: the
+    /// monster rows `party_count..party_count + 5` that carry a combatant
+    /// (`max_hp > 0`). A downed monster still counts - retail's count is the
+    /// formation's, not the living one - and the preallocated actor slots
+    /// above the battle layout never do.
+    pub(in crate::world) fn seated_monster_slots(&self) -> impl Iterator<Item = usize> + '_ {
+        let pc = (self.party.party_count as usize).min(self.actors.len());
+        let end = (pc + 5).min(self.actors.len());
+        (pc..end).filter(|&i| self.actors[i].battle.max_hp > 0)
+    }
+
     /// The enemy-side flee decision for the monster in `slot` - the roll the
     /// action picker's once-per-pass checkpoint makes (`FUN_801E9FD4` calling
     /// `FUN_801EC0DC` with the monster's pool slot).
@@ -156,7 +169,12 @@ impl World {
             atk: world.battle.attack.get(i).copied().unwrap_or(0),
         };
         let party: Vec<FleeActor> = (0..pc).map(|i| fold(self, i)).collect();
-        let monsters: Vec<FleeActor> = (pc..self.actors.len()).map(|i| fold(self, i)).collect();
+        // The monster side is summed over, and averaged by, the seated count
+        // `ctx[+1]` (`0x801EC118` loop bound, `div s1,v0` at `0x801EC280`) -
+        // never the whole actor table. Averaging a lone monster over the
+        // preallocated pool divided its score by the table size and let a
+        // 999-HP sparring partner flee from a level-1 party.
+        let monsters: Vec<FleeActor> = self.seated_monster_slots().map(|i| fold(self, i)).collect();
         let ability_word1: Vec<u32> = (0..pc)
             .map(|i| {
                 self.party

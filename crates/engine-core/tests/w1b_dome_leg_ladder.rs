@@ -103,12 +103,6 @@ fn session_from(t: &DiscTables) -> MuscleDomeSession {
 
 /// Play the entered leg by pad until the session decides it.
 fn play_leg(world: &mut World) -> md::LegReport {
-    let directions = [
-        PadButton::Left.mask(),
-        PadButton::Right.mask(),
-        PadButton::Up.mask(),
-        PadButton::Down.mask(),
-    ];
     let mut frames = 0u32;
     loop {
         frames += 1;
@@ -125,15 +119,7 @@ fn play_leg(world: &mut World) -> md::LegReport {
             0
         } else {
             match s.phase() {
-                MusclePhase::Select => {
-                    let pick = (0..md::HAND_SLOTS)
-                        .filter(|&c| s.can_commit(0, c))
-                        .min_by_key(|&c| s.hand(0)[c].cost);
-                    match pick {
-                        Some(c) => directions[c],
-                        None => PadButton::Cross.mask(),
-                    }
-                }
+                MusclePhase::Select => s.scripted_press().map_or(0, |b| b.mask()),
                 MusclePhase::Resolve => 0,
                 MusclePhase::TurnOver | MusclePhase::Won | MusclePhase::Lost => {
                     PadButton::Cross.mask()

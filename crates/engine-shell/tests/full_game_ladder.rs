@@ -1003,7 +1003,13 @@ fn run(session: &mut BootSession, budget: usize, stop_on_release: bool) -> Run {
             }
             continue;
         }
-        let pad = script_pad(session, f);
+        // A save point or a ready check presses the menu button itself
+        // (`World::scripted_menu_open_pending`), and `BootSession::tick` opens
+        // the menu; answer it the way a player who is not saving does.
+        let pad = match scripted_menu_pad(session, f) {
+            Some(p) => p,
+            None => script_pad(session, f),
+        };
         // The naming prompt (the opening's op-0x49) takes this pad's edge
         // inside `BootSession::tick`, as it does in both play hosts.
         session.host.world.set_pad(pad);
@@ -1048,6 +1054,48 @@ fn run(session: &mut BootSession, budget: usize, stop_on_release: bool) -> Run {
     }
 }
 
+/// The pad that closes a pause menu a script opened: back out of the save
+/// screen, dismiss the notice panel, and answer the ready check Yes. Pressed
+/// on alternate frames, because the menu reads edges. `None` while no menu is
+/// up.
+fn scripted_menu_pad(session: &BootSession, f: usize) -> Option<u16> {
+    use legaia_engine_core::field_menu::FieldMenuPhase;
+    let menu = session.field_menu.as_ref()?;
+    let button = if session.field_menu_sub.is_some() {
+        PadButton::Circle
+    } else {
+        match menu.phase() {
+            FieldMenuPhase::Notice => PadButton::Cross,
+            FieldMenuPhase::ReadyConfirm { cursor: 0, .. } => PadButton::Cross,
+            FieldMenuPhase::ReadyConfirm { .. } => PadButton::Left,
+            _ => PadButton::Circle,
+        }
+    };
+    Some(if f.is_multiple_of(2) {
+        button.mask()
+    } else {
+        0
+    })
+}
+
+/// Close a pause menu a script opened mid-walk (a save point the route
+/// brushed), answering it with [`scripted_menu_pad`]. Returns whether one was
+/// up.
+fn close_scripted_menu(session: &mut BootSession) -> bool {
+    if session.field_menu.is_none() {
+        return false;
+    }
+    for g in 0..600 {
+        let Some(pad) = scripted_menu_pad(session, g) else {
+            break;
+        };
+        session.host.world.set_pad(pad);
+        let _ = session.tick();
+    }
+    session.host.world.set_pad(0);
+    true
+}
+
 /// [`run`] until a scene change or release, for as long as the pad holder's
 /// park site keeps moving: a window of [`SETTLE_TICKS`] is re-granted
 /// whenever the site changed across the last one, up to `ceiling` ticks in
@@ -1085,10 +1133,16 @@ thread_local! {
 const HEAL_BELOW_PCT: u32 = 45;
 
 thread_local! {
-    /// The largest HP loss one member took in a single hit this battle. A
-    /// member is healed while it could not survive another such hit - the
-    /// threshold a player reads off the last big hit, not a fixed fraction.
+    /// The largest HP loss one member took between two of the party's
+    /// command windows this battle. A member is healed while it could not
+    /// survive another such stretch - the threshold a player reads off the
+    /// last bad round, not a fixed fraction. A round, not a hit: a fast foe
+    /// acts twice before the party's next input (Lu Delilas's swing then her
+    /// Plasma Strike), and a cast lands its flurry and its burst as separate
+    /// HP writes.
     static BIGGEST_HIT: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    /// Per member, the HP lost since the party's last command window.
+    static ROUND_LOSS: std::cell::Cell<[u32; 3]> = const { std::cell::Cell::new([0; 3]) };
     /// Per acting slot, the ally its last committed item was aimed at, so a
     /// later member of the same round counts that heal as already coming.
     static ITEM_TARGET: std::cell::RefCell<[Option<u8>; 3]> = const { std::cell::RefCell::new([None; 3]) };
@@ -1468,7 +1522,9 @@ fn battle_snapshot(session: &BootSession) -> String {
     let n = w.party.party_count.clamp(1, 3) as usize;
     let hp = |i: usize| format!("{}/{}", w.actors[i].battle.hp, w.actors[i].battle.max_hp);
     let party: Vec<String> = (0..n).map(hp).collect();
-    let mobs: Vec<String> = (3..w.actors.len())
+    // The engine seats monsters right behind the party, not at retail's
+    // fixed seat 3 - a lone fighter's opponent sits in slot 1.
+    let mobs: Vec<String> = (n..w.actors.len())
         .filter(|&i| w.actors[i].battle.max_hp > 0)
         .map(hp)
         .collect();
@@ -1572,6 +1628,7 @@ fn drain_battle(session: &mut BootSession) -> Option<Run> {
     NO_ITEM.with(|n| n.borrow_mut().clear());
     NO_MAGIC.with(|n| n.borrow_mut().clear());
     BIGGEST_HIT.with(|b| b.set(0));
+    ROUND_LOSS.with(|r| r.set([0; 3]));
     ITEM_TARGET.with(|t| *t.borrow_mut() = [None; 3]);
     let party_hp = |s: &BootSession| -> Vec<u16> {
         let w = &s.host.world;
@@ -1603,10 +1660,22 @@ fn drain_battle(session: &mut BootSession) -> Option<Run> {
             return Some(Run::Error(format!("{e:#}")));
         }
         let party_now = party_hp(session);
-        for (a, b) in party_prev.iter().zip(&party_now) {
-            let lost = u32::from(a.saturating_sub(*b));
-            BIGGEST_HIT.with(|h| h.set(h.get().max(lost)));
+        // A command window opening ends the stretch the foes had.
+        let window = session.host.world.battle.command.as_ref().is_some_and(|c| {
+            matches!(
+                c.phase,
+                legaia_engine_core::battle_input::CommandPhase::RoundPrompt { .. }
+            )
+        });
+        let mut run = ROUND_LOSS.with(std::cell::Cell::get);
+        if window {
+            run = [0; 3];
         }
+        for (i, (a, b)) in party_prev.iter().zip(&party_now).enumerate().take(3) {
+            run[i] += u32::from(a.saturating_sub(*b));
+            BIGGEST_HIT.with(|h| h.set(h.get().max(run[i])));
+        }
+        ROUND_LOSS.with(|r| r.set(run));
         party_prev = party_now;
         if trace_hits {
             let w = &session.host.world;
@@ -3102,6 +3171,11 @@ fn pad_hop(session: &mut BootSession, graph: &DiscGraph, dest: &str) -> Result<S
             scene_name(session)
         );
         let w = &session.host.world;
+        if let Some(t) = w.world_map.region_tracker.as_ref() {
+            for r in t.table().active_regions() {
+                eprintln!("      [region] {r:?}");
+            }
+        }
         let (px, pz) = player_xz(session);
         let me = dispatch_tile(px, pz);
         let warps = teleports(session);
@@ -3372,6 +3446,130 @@ fn unwedge(session: &BootSession, from: Cell) -> Vec<Cell> {
     Vec::new()
 }
 
+/// The overworld's encounter step is a change of 128-unit tile, and a change
+/// of one tile on **both** axes at once is one step, not two
+/// (`FUN_801D9E1C` caches the tile and reads a region only when the new one
+/// differs by at most one on each axis - `slti 0x2` at `0x801D9EF0` /
+/// `0x801D9F08`; engine `region_encounter::is_region_step`). A player who
+/// walks a diagonal through tile corners therefore drains the encounter
+/// counter about half as fast as one who walks the staircase a four-way
+/// lattice plans. On a crossing worn down to a lone member that is the
+/// difference between two fights and three.
+///
+/// This is the tile route for that walk: eight-connected over tiles whose
+/// four wall sub-cells are all open (a diagonal also needs both tiles it
+/// cuts the corner of), every move costing one step, ending on the open
+/// tile nearest `goal`. The lattice planner finishes from there.
+fn overworld_tile_route(
+    session: &BootSession,
+    goal: (i16, i16),
+    avoid: &HashSet<(i32, i32)>,
+) -> Vec<(i32, i32)> {
+    let w = &session.host.world;
+    let open = |t: (i32, i32)| {
+        (0..128).contains(&t.0)
+            && (0..128).contains(&t.1)
+            && !avoid.contains(&t)
+            && [(32, 32), (96, 32), (32, 96), (96, 96)]
+                .iter()
+                .all(|&(dx, dz)| {
+                    !w.field_tile_is_wall((t.0 * 128 + dx) as i16, (t.1 * 128 + dz) as i16)
+                })
+    };
+    let (px, pz) = player_xz(session);
+    let start = dispatch_tile(px, pz);
+    if !open(start) {
+        return Vec::new();
+    }
+    let g = (i32::from(goal.0), i32::from(goal.1));
+    let far = |t: (i32, i32)| (t.0 - g.0).abs() + (t.1 - g.1).abs();
+    let mut parent: HashMap<(i32, i32), (i32, i32)> = HashMap::from([(start, start)]);
+    let mut q = VecDeque::from([start]);
+    let mut best = start;
+    while let Some(t) = q.pop_front() {
+        if far(t) < far(best) {
+            best = t;
+        }
+        for dz in -1..=1 {
+            for dx in -1..=1 {
+                let n = (t.0 + dx, t.1 + dz);
+                if (dx, dz) == (0, 0) || parent.contains_key(&n) || !open(n) {
+                    continue;
+                }
+                if dx != 0 && dz != 0 && !(open((t.0 + dx, t.1)) && open((t.0, t.1 + dz))) {
+                    continue;
+                }
+                parent.insert(n, t);
+                q.push_back(n);
+            }
+        }
+    }
+    let mut route = Vec::new();
+    let mut t = best;
+    while t != start {
+        route.push(t);
+        t = parent[&t];
+    }
+    route.reverse();
+    route
+}
+
+/// The pad for one tick of an [`overworld_tile_route`] move from the tile the
+/// player stands on to the adjacent `next`. A diagonal move is held only once
+/// both axes are the same number of 2-unit sub-steps from their tile edge, so
+/// both edges fall in one sub-step and the reader sees one step; until then
+/// the axis further from its edge is walked alone - in single sub-steps when
+/// close, by tapping (a released pad zeroes the overworld walk carry, so the
+/// next pressed tick commits exactly one sub-step). `None` when the camera
+/// gives no pad for the move's world direction.
+fn overworld_corner_pad(session: &BootSession, next: (i32, i32), tapped: bool) -> Option<u16> {
+    let (px, pz) = player_xz(session);
+    let t = dispatch_tile(px, pz);
+    let (dx, dz) = (next.0 - t.0, next.1 - t.1);
+    let need = |p: i16, tile: i32, d: i32| -> i32 {
+        if d > 0 {
+            128 * (tile + 1) - i32::from(p)
+        } else {
+            i32::from(p) - 128 * tile + 1
+        }
+    };
+    let pad_for = |sx: i32, sz: i32| -> Option<u16> {
+        let pad = pad_for_step(session, sx as i16, sz as i16);
+        let az = session
+            .host
+            .world
+            .world_map
+            .ctrl
+            .as_ref()
+            .map_or(0, |c| c.azimuth);
+        let sx_pad = i32::from(pad & PadButton::Right.mask() != 0)
+            - i32::from(pad & PadButton::Left.mask() != 0);
+        let sy_pad = i32::from(pad & PadButton::Up.mask() != 0)
+            - i32::from(pad & PadButton::Down.mask() != 0);
+        let b = world_map_camera_relative_bits(az, sx_pad, sy_pad);
+        let got = (
+            i32::from(b & 0x2000 != 0) - i32::from(b & 0x8000 != 0),
+            i32::from(b & 0x1000 != 0) - i32::from(b & 0x4000 != 0),
+        );
+        (got == (sx, sz)).then_some(pad)
+    };
+    if dx == 0 || dz == 0 {
+        return pad_for(dx, dz);
+    }
+    let sx = (need(px, t.0, dx) + 1) / 2;
+    let sz = (need(pz, t.1, dz) + 1) / 2;
+    let (axis, gap) = match sx.cmp(&sz) {
+        std::cmp::Ordering::Equal => return pad_for(dx, dz),
+        std::cmp::Ordering::Greater => ((dx, 0), sx - sz),
+        std::cmp::Ordering::Less => ((0, dz), sz - sx),
+    };
+    if gap < 3 && tapped {
+        Some(0)
+    } else {
+        pad_for(axis.0, axis.1)
+    }
+}
+
 /// Walk with the pad until the player's dispatch tile is within `within`
 /// tiles of `goal`. Random encounters on the way are fled; a scripted
 /// sequence the walk sets off (a band's record, a talk) is paged through.
@@ -3484,8 +3682,28 @@ fn pad_walk(
     let mut planned_from = None;
     let mut scripted_next = session.host.world.encounters.scripted_formation_pending;
     let mut path = Vec::new();
+    // The overworld's corner-crossing walk ([`overworld_tile_route`]).
+    let mut corner_route: Vec<(i32, i32)> = Vec::new();
+    let (mut corner_planned, mut corner_failed, mut corner_tapped) = (false, false, false);
+    let mut corner_last: Option<(i16, i16)> = None;
+    let mut corner_stuck = 0u32;
+    let mut traced_tile = None;
     for _ in 0..PAD_LEG_FRAMES {
         pad_budget(session)?;
+        // Per overworld tile: the encounter step counter it left behind.
+        if std::env::var_os("LEGAIA_FGL_WALK_DEBUG").is_some()
+            && session.host.world.mode == SceneMode::WorldMap
+        {
+            let (x, z) = player_xz(session);
+            let t = dispatch_tile(x, z);
+            if traced_tile != Some(t) {
+                traced_tile = Some(t);
+                eprintln!(
+                    "      [step] tile {t:?} counter {}",
+                    session.host.world.encounters.step_counter
+                );
+            }
+        }
         if session.host.world.mode == SceneMode::Battle {
             let trace = std::env::var_os("LEGAIA_FGL_TRACE").is_some();
             let f0 = flags_of_world(session);
@@ -3534,6 +3752,9 @@ fn pad_walk(
             since = 0;
             continue;
         }
+        if close_scripted_menu(session) {
+            continue;
+        }
         if session.host.world.mode != walking_mode {
             return Err(format!("mode changed to {:?}", session.host.world.mode));
         }
@@ -3572,6 +3793,46 @@ fn pad_walk(
             None => tile_center(goal),
         };
         let mut pad = pad_for_step(session, (tx - wx).signum(), (tz - wz).signum());
+        if walking_mode == SceneMode::WorldMap && !corner_failed {
+            let t = dispatch_tile(wx, wz);
+            if corner_route.is_empty() && !corner_planned {
+                corner_route = overworld_tile_route(session, goal, &doors);
+                corner_planned = true;
+            }
+            if let Some(i) = corner_route.iter().position(|&r| r == t) {
+                corner_route.drain(..=i);
+            }
+            match corner_route.first() {
+                Some(&n) if (n.0 - t.0).abs() <= 1 && (n.1 - t.1).abs() <= 1 => {
+                    match overworld_corner_pad(session, n, corner_tapped) {
+                        Some(p) => {
+                            corner_tapped = p != 0;
+                            pad = p;
+                        }
+                        None => corner_failed = true,
+                    }
+                }
+                // Off the route (a slide, a script's seat): plan it again
+                // from here.
+                Some(_) => {
+                    corner_route.clear();
+                    corner_planned = false;
+                }
+                None => {}
+            }
+            // Pressing without moving: the tile route met something the
+            // wall bits do not show; the lattice takes over.
+            if pad != 0 && corner_last == Some((wx, wz)) {
+                corner_stuck += 1;
+                if corner_stuck > 8 {
+                    corner_failed = true;
+                    corner_route.clear();
+                }
+            } else {
+                corner_stuck = 0;
+            }
+            corner_last = Some((wx, wz));
+        }
         // Held against something that will not give: a player tries the
         // action button (a door that opens on a press, not on contact), and
         // the route is planned afresh (an NPC walked into it).
@@ -4484,8 +4745,10 @@ fn trace_beat(session: &BootSession, before: &BTreeSet<u16>, what: impl FnOnce()
         .collect();
     let (px, pz) = player_xz(session);
     eprintln!(
-        "    [beat] {} +{gained:?} (ends at {:?} ({px},{pz}))",
+        "    [beat] {} +{gained:?} (ends in {} {:?} at {:?} ({px},{pz}))",
         what(),
+        scene_name(session),
+        session.host.world.mode,
         tile_of(px, pz)
     );
 }

@@ -1074,17 +1074,10 @@ impl PlayWindowApp {
             self.open_muscle_contest();
             self.load_muscle_hub_assets();
         }
-        // The pad edges the skippable holds read (retail's `DAT_801D1A9C`
-        // snapshot of `_DAT_8007B874 | _DAT_8007B938`).
-        let pad = self.session.host.world.input.retail_pad().pressed as u16;
-        // `_DAT_80084580`, the voice/SFX volume setting each tally cue halves:
-        // the world's mirror, a loaded save's own word or the cold reset.
-        let volume_word = self.session.host.world.audio.levels.voice_volume as u32;
-        // The screen timers are one engine kernel on both play hosts; this
-        // window only sounds what they fired.
-        let frame = self
-            .muscle_timers
-            .tick(&self.session.host.world, pad, volume_word);
+        // The screen timers are the world's own (`World::tick_muscle_hub`,
+        // run by the shared scene host every tick, which also hands the next
+        // leg its fight); this window only sounds what they fired.
+        let frame = self.session.host.world.take_muscle_hub_sounds();
         // The first visit's two announcer lines (`FUN_8003D53C` at arms 0 and
         // 0x15), through the same XA path the battle clips use.
         if let Some(c) = frame.xa
@@ -1154,9 +1147,7 @@ impl PlayWindowApp {
         if self.muscle_hub.is_some() {
             return;
         }
-        /// PROT entry (extraction space) of the dome data container:
-        /// LZS section 0 carries the two hub-page TIMs back to back.
-        const HUB_CONTAINER_PROT_INDEX: u32 = 1220;
+        use legaia_asset::muscle_dome::HUB_CONTAINER_PROT_INDEX;
         let Some(renderer) = self.win.renderer.as_ref() else {
             return;
         };
@@ -1172,17 +1163,9 @@ impl PlayWindowApp {
                 return;
             }
         };
-        let Some((tim0, tim1)) =
-            legaia_lzs::decompress_container(&container)
-                .ok()
-                .and_then(|sections| {
-                    // Section 0 = `[12-byte header][TIM][TIM]`.
-                    let blob = sections.into_iter().next()?;
-                    let t0 = legaia_tim::parse(blob.get(0xC..)?).ok()?;
-                    let t1 = legaia_tim::parse(blob.get(0xC + t0.byte_extent()..)?).ok()?;
-                    Some((t0, t1))
-                })
-        else {
+        // Section 0 = `[12-byte header][TIM][TIM]`, decoded with the arena's
+        // upload STP applied (the VRAM CLUT words the blend classes key on).
+        let Some((tim0, tim1)) = legaia_asset::muscle_dome::hub_page_tims(&container) else {
             log::warn!("muscle hub: page TIMs did not decode from the dome container");
             return;
         };
@@ -1319,8 +1302,9 @@ impl PlayWindowApp {
     /// first visit's shade through the subtractive (`ABR 2`) sprite
     /// pipeline, between the wall tiles and the screens drawn over them, and
     /// a hub quad through its tpage's ABR wherever its palette carries STP
-    /// (`HubPaletteStp::quad_abr` - an STP-free palette draws opaque, as
-    /// retail's GPU draws it).
+    /// (`HubPaletteStp::quad_abr` over the CLUTs as the arena uploads them -
+    /// STP-set on every non-zero entry, so an STP-free palette, which draws
+    /// opaque as retail's GPU draws it, is one that is all zero).
     ///
     /// One disclosed stand-in: a packet's vertical two-stop colour gradient
     /// flattens to the stops' mean (the sprite pipeline is one-colour).
@@ -1339,7 +1323,11 @@ impl PlayWindowApp {
             return (Vec::new(), Vec::new());
         };
         let world = &self.session.host.world;
-        let in_dome = world.mode == SceneMode::MuscleDome;
+        // A leg is open (the first visit / the leg-open ROUND card draw over
+        // it); otherwise the arena hub is between legs, or the contest has
+        // handed the field back, and the INTERVAL + still screens are the
+        // hub's own.
+        let in_dome = world.mode == SceneMode::MuscleDome && world.minigames.muscle_dome.is_some();
         // The retail emitters mutate the shared table (variant write-back),
         // so run them over a per-frame copy of the pristine parse.
         let mut table = assets.table.clone();
@@ -1357,7 +1345,7 @@ impl PlayWindowApp {
             // A first visit's frame: the brick wall + shade (the backdrop
             // emitter's latch-0 arm) behind the arm's screens, all composed
             // by the shared kernel the play page draws with.
-            if let Some(hub) = self.muscle_timers.first_visit {
+            if let Some(hub) = self.session.host.world.minigames.muscle_hub.first_visit {
                 let f = hub.frame();
                 let levels = legaia_engine_render::ringside_backdrop::FirstVisitLevels {
                     backdrop: f.backdrop,
@@ -1377,14 +1365,16 @@ impl PlayWindowApp {
                 quads.extend(d.tiles);
                 shade = d.shade;
                 front.extend(d.hud);
-            } else if let Some((round, banner)) = self.muscle_timers.round_banner {
+            } else if let Some((round, banner)) =
+                self.session.host.world.minigames.muscle_hub.round_banner
+            {
                 quads.extend(hud::hub_screen_quads(
                     &mut table,
                     &hud::round_banner_draws(round),
                     banner.brightness(),
                 ));
             }
-        } else if let Some(interval) = self.muscle_timers.interval {
+        } else if let Some(interval) = self.session.host.world.minigames.muscle_hub.interval {
             let bright = interval.brightness();
             quads.extend(hud::hub_screen_quads(
                 &mut table,
@@ -1396,24 +1386,36 @@ impl PlayWindowApp {
             // lane counting down and the coin tally counting up. With no roll
             // armed the screen draws the settled values, which is where the
             // roll ends anyway.
-            let (values, row_bright) = match self.muscle_timers.tally.as_ref() {
-                Some((ramp, tally)) => (ramp.row_values(*tally), ramp.row_brightness(bright)),
-                None => {
-                    let (rows, tally) = world
-                        .minigames
-                        .muscle_contest
-                        .as_ref()
-                        .map_or((Default::default(), 0), |c| (c.rows(), c.tally()));
-                    ([0, 0, 0, rows.hp_restore(), 0, tally], [bright; 6])
-                }
-            };
+            let (values, row_bright) =
+                match self.session.host.world.minigames.muscle_hub.tally.as_ref() {
+                    Some((ramp, tally)) => (ramp.row_values(*tally), ramp.row_brightness(bright)),
+                    None => {
+                        let (rows, tally) = world
+                            .minigames
+                            .muscle_contest
+                            .as_ref()
+                            .map_or((Default::default(), 0), |c| (c.rows(), c.tally()));
+                        ([0, 0, 0, rows.hp_restore(), 0, tally], [bright; 6])
+                    }
+                };
             quads.extend(hud::score_tally_quads(&mut table, values, row_bright));
         }
         // The re-entered hub's ROUND card (arms 0x15 / 0x16) over the still.
         if !in_dome
-            && self.muscle_timers.interval.is_none()
+            && self
+                .session
+                .host
+                .world
+                .minigames
+                .muscle_hub
+                .interval
+                .is_none()
             && let Some(card) = self
-                .muscle_timers
+                .session
+                .host
+                .world
+                .minigames
+                .muscle_hub
                 .backdrop
                 .and_then(|b| b.card_brightness())
         {
@@ -1432,7 +1434,14 @@ impl PlayWindowApp {
         // The backdrop goes first: retail links the still's two packets at
         // the ordering table's far end (`OT + 0xFA0`), behind every sprite.
         if !in_dome
-            && let Some(b) = self.muscle_timers.backdrop.filter(|b| b.visible())
+            && let Some(b) = self
+                .session
+                .host
+                .world
+                .minigames
+                .muscle_hub
+                .backdrop
+                .filter(|b| b.visible())
             && let Some(&(_, still_y)) = assets.stills.iter().find(|(v, _)| *v == b.variant())
         {
             use legaia_engine_render::ringside_backdrop as rb;
@@ -1482,9 +1491,10 @@ impl PlayWindowApp {
             else {
                 continue;
             };
-            // A semi packet blends only through STP texels: the hub's
-            // variant-2 palettes (and sheet 1's) carry none, so those
-            // packets draw opaque whatever their ABR.
+            // A semi packet blends only through STP texels. The arena
+            // uploads the hub CLUTs STP-set (`hub_page_tims`), so the
+            // variant-2 knockout palettes blend subtractively (`B - F`)
+            // under the face the variant-1 pass adds over them.
             let semi_abr = assets.palette_stp.quad_abr(q);
             let dw = (q.xy[1].0 as i32 - q.xy[0].0 as i32 + 1).max(0) as u32;
             let dh = (q.xy[2].1 as i32 - q.xy[0].1 as i32 + 1).max(0) as u32;

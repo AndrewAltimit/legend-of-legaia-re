@@ -1388,7 +1388,12 @@ void main() {
       let open;
       try { open = rt.play_menu_is_open(); } catch (e) { return false; }
       if (!open) {
-        if (startEdge && this._canOpenFieldMenu()) {
+        /* A script's op-0x49 save point / ready check presses the menu
+         * button itself (`play_menu_scripted_open_pending`): no Start edge,
+         * no page-side gate, and no confirm blip. */
+        let scripted = false;
+        try { scripted = rt.play_menu_scripted_open_pending(); } catch (e) {}
+        if (scripted || (startEdge && this._canOpenFieldMenu())) {
           try { rt.play_menu_open(); } catch (e) { return false; }
           /* The engine can REFUSE - `play_menu_open` declines while a dialogue
            * engagement owns the player (`World::dialogue_owns_input`), which is
@@ -1397,7 +1402,7 @@ void main() {
           let opened = false;
           try { opened = rt.play_menu_is_open(); } catch (e) {}
           if (!opened) return false;
-          this.sfxEvent('menu_confirm');
+          if (!scripted) this.sfxEvent('menu_confirm');
           this._ensureMenuBlitters();
           /* Start the menu clock now: whatever wall-clock gap preceded the
            * open is not menu time. */
@@ -1408,34 +1413,35 @@ void main() {
         }
         return false;
       }
-      /* Menu up: Start toggles it shut - but only from the ROOT row list.
-       * The native window never lets Start reach the close: while a
-       * sub-screen owns the pad its session gets the raw mask and the root
-       * list is not ticked at all, so Start there is the sub-screen's own
-       * business and at most walks back to the root. Closing the whole menu
-       * from inside one threw away a half-typed rebind or a staged equip
-       * pick on a button that is inert in the window. Guarded so a cached
-       * WASM without the export keeps the old behaviour rather than
-       * trapping. */
+      /* Menu up: every edge, Start included, goes to the engine's menu step.
+       * What Start does is the shared picker's rule
+       * (`FieldMenuSession::tick`, via `tick_root_list`): on the root list it
+       * closes the menu, on the save point notice it does nothing, and under
+       * an op-0x49 kind-0x0D ready check it opens the Yes / No confirm
+       * instead of closing. Inside a sub-screen it is the sub-screen's own
+       * edge. The page used to close the menu itself on any root-level
+       * Start, which skipped all three rules and released a parked ready
+       * check as answered - the native window has always handed Start to
+       * the kernel. Guarded so a cached WASM without the export keeps a
+       * sensible blip rather than trapping. */
       let inSubScreen = false;
       try {
         inSubScreen = typeof rt.play_menu_sub_is_open === 'function'
           && rt.play_menu_sub_is_open();
       } catch (e) {}
-      if (startEdge && !inSubScreen) {
-        try { rt.play_menu_close(); } catch (e) {}
-        this.menuBlip(padMaskOf(p), true);
-      } else {
+      {
         let edge = 0;
         edge |= padMaskOf(p);
         /* Cue the engine's own blip off this frame's edges. Which edge fires
          * which cue (a direction a cursor move, Cross a confirm, Circle a
-         * cancel; Start inside a sub-screen nothing) is the engine's rule, and
-         * so are the ids - the page never spells either. The engine counts
-         * every request (`menu_cue_requests` in `play_sfx_state_json`), so the
-         * wiring stays measurable. See `play_sfx::CUE_MENU_CURSOR` for the one
-         * inexactness left, which is a bank choice rather than a pitch. */
-        if (edge) this.menuBlip(edge, false);
+         * cancel; Start a cancel on the root list, nothing inside a
+         * sub-screen) is the engine's rule, and so are the ids - the page
+         * never spells either. `!inSubScreen` is the native window's
+         * `start_closes_menu = sub.is_none()`. The engine counts every request
+         * (`menu_cue_requests` in `play_sfx_state_json`), so the wiring stays
+         * measurable. See `play_sfx::CUE_MENU_CURSOR` for the one inexactness
+         * left, which is a bank choice rather than a pitch. */
+        if (edge) this.menuBlip(edge, !inSubScreen);
         /* Tick EVERY frame, edge or not, and tick at 60 Hz.
          *
          * The menu is not purely input-driven: the save screen's "Now
@@ -1575,6 +1581,22 @@ void main() {
       this.pulse.clear();
       this._repack();
       try { return rt.play_shop_is_open(); } catch (e) { return false; }
+    }
+
+    /* Did the tick just run open a screen that suspends the field? The
+     * shop / prize counter (`play_shop_is_open`, the engine's
+     * `MenuRuntime::is_open`) or a pending scripted menu press
+     * (`play_menu_scripted_open_pending`). Both are engine answers. */
+    _modalOpenedThisTick() {
+      const rt = this.rt;
+      try {
+        if (typeof rt.play_shop_is_open === 'function' && rt.play_shop_is_open()) return true;
+      } catch (e) { /* fall through */ }
+      try {
+        if (typeof rt.play_menu_scripted_open_pending === 'function'
+            && rt.play_menu_scripted_open_pending()) return true;
+      } catch (e) { /* fall through */ }
+      return false;
     }
 
     /* Whether Start opens the menu right now.
@@ -1864,9 +1886,10 @@ void main() {
         if (this._menuChrome) this._menuChrome.blit(ctx, dlg.sprites);
         if (this._menuFont) this._menuFont.blit(ctx, dlg.texts);
         this._overlayActive = true;
+        this._applyTextWash(ctx, ov);
         return;
       }
-      if (overlayDrew) return;
+      if (overlayDrew) { this._applyTextWash(ctx, ov); return; }
       /* Opening-cutscene narration crawl / title card / "It was the Seru."
        * caption: font-atlas text quads + one faded image quad over the live
        * 3D prologue scene. */
@@ -1913,12 +1936,53 @@ void main() {
             cutDrew = true;
           }
         }
-        if (cutDrew) { this._overlayActive = true; return; }
+        if (cutDrew) {
+          this._overlayActive = true;
+          this._applyTextWash(ctx, ov);
+          return;
+        }
       }
       if (this._overlayActive) {
         ctx.clearRect(0, 0, ov.width, ov.height);
         this._overlayActive = false;
       }
+    }
+
+    /* The screen-effect pushes that draw OVER the text layer, applied to this
+     * frame's freshly painted overlay pixels. Retail links every glyph at OT
+     * bucket 1 and a bucket-0 push after it, so the opening's push to black
+     * dims the crawl with the scene; the GL pass already washed the scene,
+     * but this canvas sits above it. The engine resolves which pushes those
+     * are and their colours (`play_text_layer_washes_json`); the equations
+     * are the PSX ABR modes `legaia_engine_ui::screen_prim::wash_channel`
+     * names. Only called right after a branch repainted the canvas, so a
+     * wash never compounds across frames. */
+    _applyTextWash(ctx, ov) {
+      if (typeof this.rt.play_text_layer_washes_json !== 'function') return;
+      let washes = null;
+      try { washes = JSON.parse(this.rt.play_text_layer_washes_json()); }
+      catch (e) { return; }
+      if (!washes || !washes.length || !ov.width || !ov.height) return;
+      const img = ctx.getImageData(0, 0, ov.width, ov.height);
+      const px = img.data;
+      for (const [abr, fr, fg, fb] of washes) {
+        const f = [fr, fg, fb];
+        for (let i = 0; i < px.length; i += 4) {
+          if (px[i + 3] === 0) continue;
+          for (let c = 0; c < 3; c++) {
+            const b = px[i + c];
+            let v;
+            switch (abr & 3) {
+              case 0: v = (b + f[c]) >> 1; break;
+              case 1: v = b + f[c]; break;
+              case 2: v = b - f[c]; break;
+              default: v = b + (f[c] >> 2); break;
+            }
+            px[i + c] = v < 0 ? 0 : (v > 255 ? 255 : v);
+          }
+        }
+      }
+      ctx.putImageData(img, 0, 0);
     }
 
     /* ---------- loop ---------- */
@@ -2324,6 +2388,16 @@ void main() {
              * already charged their wall time, so breaking here dropped up
              * to three ticks per door. */
           }
+          /* A tick that opened a modal screen - a merchant's shop or prize
+           * counter (op 0x49, drained inside `tick_frame`), or a save point's
+           * scripted menu press - ends the field's run for this frame. The
+           * native window suspends the field on the very next tick
+           * (`MenuRuntime::suspends_field`, the scripted-press arm ahead of
+           * its scene tick); running the frame's catch-up ticks here walked
+           * the field, pad live, for up to three more ticks behind a shop
+           * the engine had already opened. The screens' own steps above pick
+           * them up next frame. */
+          if (this._modalOpenedThisTick()) break;
         }
       } else {
         /* Keep the sim clock current while paused so unpausing doesn't dump the
@@ -2372,6 +2446,9 @@ void main() {
        * VR first-person never fade (battle frames its own subjects; in
        * first-person the eye IS the player, nothing can sit between). */
       this.renderer.clearOcclusionFocus();
+      /* The renderer's sticky per-frame state, staged ahead of EVERY draw
+       * branch (see `_stageFrameState`). */
+      this._stageFrameState(rt);
       if (window.LegaiaPlayMinigames && window.LegaiaPlayMinigames.frame(rt, this, skipDraw)) {
         /* An in-world minigame (casino slots, Muscle Dome, Baka Fighter,
          * dance hall) owns the 3D frame; HUD/overlay below still run. Runs
@@ -2731,49 +2808,6 @@ void main() {
       if (fieldVp && typeof rt.play_field_fx_sync === 'function') {
         this._fieldFxDraws(rt, fieldVp, draws);
       }
-      /* Prologue colour grade + gold depth-cue ramp (the native window's
-       * per-frame set_color_grade / set_depth_cue_ramp staging). No-ops on
-       * a renderer without the uniforms (cached JS). */
-      if (this.renderer.setColorGrade) {
-        const g = this._cut && this._cut.grade;
-        this.renderer.setColorGrade(g ? g.gold : null, g ? g.strength : 0);
-        const c = this._cut && this._cut.cue;
-        this.renderer.setDepthCue(c ? c.far : null,
-          c ? c.near_z : 0, c ? c.far_z : 0, c ? c.max_ir0 : 0);
-      }
-      /* The prologue grade's PALETTE-COLLAPSE half (the native window's
-       * second staging call, `set_palette_grade`): with a prologue grade
-       * live, the shaders give the packet words the `4C E6` sepia rewrite
-       * and this carries the op-`4C 12` screen tint. The
-       * engine composed both arms already - the page just stages what
-       * `play_cutscene_state_json` hands back. Without this the tint reached
-       * the engine-built field-FX geometry and nothing else, so an ordinary
-       * town's scene-entry fade darkened the smoke puffs over a town that
-       * never faded. */
-      if (this.renderer.setPaletteGrade) {
-        const pg = this._cut && this._cut.palette_grade;
-        this.renderer.setPaletteGrade(pg ? pg.mul : null, !!(pg && pg.on));
-      }
-      /* Retail GTE NCLIP winding rejection, from the shared engine kernel
-       * (`camera_view::nclip_cull_mode`) the native window's
-       * `set_backface_cull` also reads: armed for the whole field pass
-       * (retail culls every field mesh's back faces - a sky dome's outer
-       * shell, the opdeene prologue shot's near cave wall) and for a
-       * cutscene camera on any other non-overworld mode. */
-      if (this.renderer.setNclipCull && typeof rt.play_render_nclip_mode === 'function') {
-        let mode = 0;
-        try { mode = rt.play_render_nclip_mode(); } catch (_) { mode = 0; }
-        this.renderer.setNclipCull(mode);
-      }
-      /* The overworld's per-vertex screen-Y bend (FUN_800271A8's table,
-       * applied by retail's overworld prim leaves), scaled for this frame's
-       * camera arm by the shared `overworld_curvature::frame_curve_scale`
-       * kernel the native window's `set_overworld_curvature` reads. */
-      if (this.renderer.setOverworldCurve && typeof rt.play_render_curve_scale === 'function') {
-        let scale = 0;
-        try { scale = rt.play_render_curve_scale(); } catch (_) { scale = 0; }
-        this.renderer.setOverworldCurve(scale);
-      }
       this._applySceneClear(rt);
       this._draws = draws;
       /* `skipDraw`: a VR session owns the framebuffer and re-issues this draw
@@ -3100,6 +3134,65 @@ void main() {
       this._draws = draws;
       if (!skipDraw) this.renderer.renderAssembled(draws, this._ext, this.cam);
       return true;
+    }
+
+    /* The renderer's per-frame state words: NCLIP cull, prologue colour
+     * grade + depth-cue ramp, the palette-collapse half of the grade, and
+     * the overworld curvature. Each is a value the engine decides for the
+     * current mode, and each sticks in the renderer until it is set again.
+     *
+     * Called once a frame ahead of every draw branch - field, battle and the
+     * in-world minigame venues - which is where the native window stages the
+     * same five (`set_backface_cull`, `set_color_grade`,
+     * `set_depth_cue_ramp`, `set_palette_grade`, `set_overworld_curvature`,
+     * all before its mode branches). They used to be staged inside the field
+     * branch alone, so a battle drew under whatever the last field frame
+     * left: the field's NCLIP cull armed on the stage dome (the victory
+     * orbit, whose eye leaves the dome, looked straight through a shell the
+     * native window draws), and a fight entered from the overworld under
+     * the overworld's screen-Y bend. See docs/tooling/host-drift.md. */
+    _stageFrameState(rt) {
+      /* Retail GTE NCLIP winding rejection, from the shared engine kernel
+       * (`camera_view::nclip_cull_mode`): armed for the whole field pass
+       * (retail culls every field mesh's back faces - a sky dome's outer
+       * shell, the opdeene prologue shot's near cave wall) and for a
+       * cutscene camera on any other non-overworld mode; both-sided for
+       * battle, the overworld and the minigame venues. */
+      if (this.renderer.setNclipCull && typeof rt.play_render_nclip_mode === 'function') {
+        let mode = 0;
+        try { mode = rt.play_render_nclip_mode(); } catch (_) { mode = 0; }
+        this.renderer.setNclipCull(mode);
+      }
+      /* Prologue colour grade + gold depth-cue ramp. No-ops on a renderer
+       * without the uniforms (cached JS). */
+      if (this.renderer.setColorGrade) {
+        const g = this._cut && this._cut.grade;
+        this.renderer.setColorGrade(g ? g.gold : null, g ? g.strength : 0);
+        const c = this._cut && this._cut.cue;
+        this.renderer.setDepthCue(c ? c.far : null,
+          c ? c.near_z : 0, c ? c.far_z : 0, c ? c.max_ir0 : 0);
+      }
+      /* The prologue grade's PALETTE-COLLAPSE half: with a prologue grade
+       * live, the shaders give the packet words the `4C E6` sepia rewrite
+       * and this carries the op-`4C 12` screen tint. The engine composed
+       * both arms already - the page just stages what
+       * `play_cutscene_state_json` hands back. Without it the tint reached
+       * the engine-built field-FX geometry and nothing else, so an ordinary
+       * town's scene-entry fade darkened the smoke puffs over a town that
+       * never faded. */
+      if (this.renderer.setPaletteGrade) {
+        const pg = this._cut && this._cut.palette_grade;
+        this.renderer.setPaletteGrade(pg ? pg.mul : null, !!(pg && pg.on));
+      }
+      /* The overworld's per-vertex screen-Y bend (FUN_800271A8's table,
+       * applied by retail's overworld prim leaves), scaled for this frame's
+       * camera arm by the shared `overworld_curvature::frame_curve_scale`
+       * kernel; `0` (flat) off the kingdom overworld. */
+      if (this.renderer.setOverworldCurve && typeof rt.play_render_curve_scale === 'function') {
+        let scale = 0;
+        try { scale = rt.play_render_curve_scale(); } catch (_) { scale = 0; }
+        this.renderer.setOverworldCurve(scale);
+      }
     }
 
     /* The clear colour is part of what a frame looks like, not a renderer

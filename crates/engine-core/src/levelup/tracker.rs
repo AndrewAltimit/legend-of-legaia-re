@@ -376,7 +376,7 @@ impl LevelUpTracker {
     /// `mp_max`, adds the six battle-stat gains to both the record-side window
     /// (`+0x11C..+0x12D`) and the live window (`+0x110..+0x11B`) - matching
     /// `FUN_801E9504`'s write-then-mirror - and writes the new level back to
-    /// the record's `+0x100` byte.
+    /// the record's `+0x130` level byte.
     ///
     /// **Current HP / MP are deliberately untouched.** A level-up is not a
     /// heal. `FUN_801E9504` stores to exactly eleven addresses, and every one

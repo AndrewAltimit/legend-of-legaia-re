@@ -201,6 +201,11 @@ pub struct SubmodeScreen {
     /// `slot_machine` rather than beside the other painters because it reads
     /// the counter's cells. Empty while that record is not installed.
     pub coin_panel: Vec<crate::slot_machine::CoinPanelDraw>,
+    /// A host has opened the pause menu for the current scripted
+    /// menu-button press ([`OP49_PARK_PRESERVING_SUB_OPS`]), so the request
+    /// is spent until the park is re-armed. See
+    /// [`World::scripted_menu_open_pending`].
+    pub scripted_menu_opened: bool,
 }
 
 impl SubmodeScreen {
@@ -340,6 +345,56 @@ impl World {
     pub fn record_op49_park(&mut self, sub_op: u8) {
         self.field_vm.submode_screen.owner = self.op49_park_owner();
         self.field_vm.submode_screen.park_sub_op = Some(sub_op);
+        // Every Idle arm spawns a fresh subsystem actor in retail, so every
+        // arm is a fresh menu-button press.
+        self.field_vm.submode_screen.scripted_menu_opened = false;
+    }
+
+    /// Whether an op-`0x49` park is a **scripted menu-button press** that no
+    /// host has answered yet - the cue for a host to open the pause menu
+    /// without a Start edge.
+    ///
+    /// The op's Idle arm spawns the same subsystem actor the locomotion
+    /// controller's menu accept spawns: `FUN_80020DE0(0x8007065C,
+    /// *0x8007C34C)` at `0x801E0998..0x801E09A4`, against the pad path's
+    /// call at `0x801D0324`. That actor's enter half `FUN_801F1278` stores
+    /// handler id `7` into `+0x50` (`0x801F140C`) and zeroes `+0x54`
+    /// (`0x801F141C`) **before** it reads the sub-op table at `0x801F33A4`
+    /// (`0x801F1468`); a `-1` row only skips the overwrite (`0x801F1470`), so
+    /// handler `7` stands. Handler `7` is the state pick `FUN_801F1F4C`,
+    /// which with a park live always picks `0x30`, the pause-menu session
+    /// `FUN_801ED308`. So a `-1` row the port does not route elsewhere -
+    /// sub-op `1`, a save point, and sub-op `0x0D` - opens the menu by
+    /// itself, and the entry decode then picks its first screen off the kind
+    /// byte ([`crate::pause_screens::menu_entry_subscreen`]).
+    ///
+    /// Not under the opening narration crawl or a title card: the timeline
+    /// owns the scene there and the press waits for it to end. Both halves
+    /// live here so every host asks the same question - the native window
+    /// once added the crawl term beside this call and the browser page did
+    /// not.
+    ///
+    /// Only the field-run modes the menu can open in. The player's
+    /// engagement does **not** refuse it, unlike the Start path: the press
+    /// comes from the interaction the dialog SM is running, and the
+    /// subsystem actor is not the locomotion controller whose engaged-bit
+    /// branch (`0x801D01F0`) guards the pad accept.
+    ///
+    /// PORT: FUN_801F1278 (the `-1`-row arm: `+0x50 = 7`, then the table read)
+    /// REF: FUN_801F1F4C, FUN_801ED308, FUN_80020DE0
+    pub fn scripted_menu_open_pending(&self) -> bool {
+        let s = &self.field_vm.submode_screen;
+        s.park_sub_op
+            .is_some_and(|k| OP49_PARK_PRESERVING_SUB_OPS.contains(&k))
+            && !s.scripted_menu_opened
+            && self.scene_mode_takes_menu_open()
+            && self.cutscene.card.is_none()
+            && !self.cutscene_narration_active()
+    }
+
+    /// Spend the pending scripted menu press: a host opened the menu for it.
+    pub fn note_scripted_menu_opened(&mut self) {
+        self.field_vm.submode_screen.scripted_menu_opened = true;
     }
 
     /// Record the op-`0x49` operand's payload bytes for the screen this arm
@@ -1013,38 +1068,40 @@ pub const COIN_PANEL_WINDOW: usize = hub::window::TWO_OPTION;
 /// keeps them out of the dispatcher.
 pub const OP49_DEDICATED_SUB_OPS: [u8; 4] = [0, 3, 5, 7];
 
-/// Op-`0x49` sub-ops whose park is a **standing menu-entry context**, not a
-/// request for a screen: the table row is `-1` *and* nothing else opens a
-/// screen for them either, so the park has to survive.
+/// Op-`0x49` sub-ops whose park is a **scripted menu-button press**: the
+/// table row is `-1` *and* the port has no dedicated path for it, so no
+/// submode screen is opened and the park stands until the pause menu the
+/// press opens has closed.
 ///
-/// Only sub-`0x0D` is in this set. The dispatcher's `-1` arm returns before
-/// it touches the driver actor's `+0x50` state or `+0x54` timer and before
-/// anything clears `_DAT_8007B450`:
+/// A `-1` row does not leave the subsystem actor alone. The enter half
+/// `FUN_801F1278` writes handler `7` and a zero phase before it reads the
+/// table, and the `-1` test only skips the overwrite:
 ///
 /// ```text
+/// 801f1404  li    v0,0x7
+/// 801f140c  sh    v0,0x50(s4)         ; +0x50 = 7, the state pick
+/// 801f141c  sh    zero,0x54(s4)       ; +0x54 = 0
 /// 801f1454  lw    a1,-0x4bb0(v0)      ; the parked operand pointer
 /// 801f145c  lbu   v0,0x0(a1)          ; its first byte = the sub-op
-/// 801f1460  addiu a2,v1,0x33a4
 /// 801f1468  lb    v0,0x0(v0)          ; OP49_SUBOP_SLOTS[sub_op], SIGNED
-/// 801f1470  beq   v0,a0,0x801f14b0    ; == -1 -> return, park intact
+/// 801f1470  beq   v0,a0,0x801f14b0    ; == -1 -> keep +0x50 = 7
 /// ```
 ///
-/// (`0x801F1454..0x801F14AC` in PROT 0897, base `0x801CE818`.) So the script
-/// stays halted on the instruction and
-/// [`World::menu_entry_context_kind`](crate::world::World::menu_entry_context_kind)
-/// keeps answering `0x0D` - which is the whole point of the sub-op: it is the
-/// context `FUN_801DC6B4` reads to open the pause menu on the notice panel,
-/// block its Load row and turn its cancel into the ready check. A screen that
-/// retires takes the context with it, and the player who opens the menu two
-/// seconds later gets the plain picker.
+/// (`overlay_baka_fighter_801f1278.txt`, `FUN_801F1278`.) Handler `7` picks
+/// `0x30`, the pause-menu session, so the menu opens by itself - see
+/// [`World::scripted_menu_open_pending`]. Its close is the release
+/// ([`World::release_menu_entry_context_park`]): the session's last phase
+/// clears the cursor context's `+0x3E` (`0x801ED52C`), and the dispatcher's
+/// retire arm then writes the Done sentinel because the park is still live
+/// (`0x801F1678..0x801F16AC`: `bne v1,zero` -> `sw 1,-0x4bb0`).
 ///
-/// The other `-1` rows are **not** here: retail routes each into a driver
-/// that does hand back (`0` the inline gold shop, `1` the card save flow,
-/// `7` the casino prize exchange). Sub-ops `0` and `7` are in
-/// [`OP49_DEDICATED_SUB_OPS`] (their world channels own the park); sub-`1`'s
-/// close-tick fallback below stays as the engine's unpark. That fallback is
-/// a port affordance the retail table does not have.
-pub const OP49_PARK_PRESERVING_SUB_OPS: [u8; 1] = [0x0D];
+/// Sub-op `1` is a field save point - the menu's entry decode opens it on the
+/// save-card driver `0x19` - and sub-op `0x0D` the context that opens on the
+/// notice panel, blocks the root Load row and turns its cancel into the ready
+/// check. The other `-1` rows run through the same press in retail (`0` the
+/// inline gold shop, `7` the casino prize exchange), and the port reaches
+/// both through [`OP49_DEDICATED_SUB_OPS`] instead.
+pub const OP49_PARK_PRESERVING_SUB_OPS: [u8; 2] = [1, 0x0D];
 
 /// The handler slot an op-`0x49` sub-op opens.
 ///
@@ -1058,9 +1115,9 @@ pub fn slot_for_op49_sub_op(sub_op: u8) -> Option<u16> {
     if OP49_DEDICATED_SUB_OPS.contains(&sub_op) || OP49_PARK_PRESERVING_SUB_OPS.contains(&sub_op) {
         return None;
     }
-    // A sub-op the table gives no handler for still needs the park cleared,
-    // and slot `0` is what a freshly spawned driver carries - retail's own
-    // fallback for a `-1` row, which leaves `+0x50` at the spawn value.
+    // Every `-1` row is in one of the two sets above, so the fallback only
+    // answers a sub-op past the table (`>= 0x0E`, which the op's own range
+    // test refuses before it arms): the close tick unparks it.
     Some(hub::slot_for_sub_op(sub_op).unwrap_or(slot::CLOSE_TICK))
 }
 
@@ -1390,9 +1447,11 @@ mod tests {
         // Everything else takes the handler retail's `0x801F33A4` table names.
         assert_eq!(slot_for_op49_sub_op(9), Some(slot::PROMPT));
         assert_eq!(slot_for_op49_sub_op(6), Some(slot::COIN_COUNTER));
-        // A `-1` row with no dedicated path leaves `+0x50` at the spawn
-        // value, which is slot `0`. (Sub-7, once this row, now routes to
-        // the prize exchange through `World::try_arm_prize_exchange`.)
-        assert_eq!(slot_for_op49_sub_op(1), Some(slot::CLOSE_TICK));
+        // A `-1` row with no dedicated path is a scripted menu press: the
+        // enter half stores handler `7` before the table read
+        // (`0x801F140C`), so no submode screen opens and the park stands for
+        // the pause menu (`World::scripted_menu_open_pending`).
+        assert_eq!(slot_for_op49_sub_op(1), None);
+        assert_eq!(slot_for_op49_sub_op(0x0D), None);
     }
 }

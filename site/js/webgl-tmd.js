@@ -819,6 +819,21 @@ class TmdRenderer {
     /* The single-mesh viewer never bends (the curve is an overworld
      * scene-pass term, staged by renderAssembled). */
     if (this.locCurve) gl.uniform1f(this.locCurve, 0);
+    /* Nor does it NCLIP-reject: `u_nclip_cull` is a scene-pass word too
+     * (renderAssembled stages `nclipCull`), and the uniform persists on the
+     * shared program. Left at the field's `2`, the play page's in-world
+     * minigames (the Muscle Dome's arena shell, drawn through this path
+     * after a field frame) lost every front-facing wall fragment - the
+     * dome read as a bare dirt floor. */
+    if (this.locNclipCull) gl.uniform1i(this.locNclipCull, 0);
+    /* The prologue grade / palette collapse / depth cue are scene-pass
+     * state of the same kind (play-app stages them per field frame and only
+     * renderAssembled pushes them): stage the identity so a field's grade
+     * or cue cannot tint a minigame drawn here. Every other page leaves the
+     * params at their identity defaults, so this is a no-op there. */
+    if (this.locGrade) gl.uniform4f(this.locGrade, 1, 1, 1, 0);
+    if (this.locPalette) gl.uniform4f(this.locPalette, 1, 1, 1, 0);
+    this._setCue(null);
     /* buildMvp = single reflection (Y flip): a double-sided pair's visible
      * copy is the front-facing one under this projection. */
     gl.uniform1i(this.locPairFront, 1);

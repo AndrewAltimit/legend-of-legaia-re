@@ -342,3 +342,62 @@ pub fn placement_interaction_record(
         placement_interaction_entry_pc(&record.body, record.entry_pc, record.first_segment);
     Some(record)
 }
+
+/// The interaction record of a **text-free scripted menu press** - a save
+/// point - or `None` for any other placement.
+///
+/// A save point's record is `31 02 21` (its spawn section) then `49 01 00 21`:
+/// the interaction is a single op-`0x49` park on a `-1` table row, which
+/// presses the menu button ([`crate::world::World::scripted_menu_open_pending`]),
+/// and the `0x21` after it is where retail's dialog SM stops once the park
+/// resumes. It carries no text, so [`placement_interaction_record`] (keyed on
+/// the first text segment) never sees it, and the placement had no
+/// interaction dispatch at all: the action button found the save point and
+/// ran nothing.
+///
+/// The record qualifies when its interaction section - from the spawn
+/// terminator to the next raw `0x21` - decodes cleanly and holds an op `0x49`
+/// whose sub-op is a scripted press
+/// ([`crate::field_submode_screen::OP49_PARK_PRESERVING_SUB_OPS`]). The
+/// returned `first_segment` is the body length: there is no text to page.
+///
+/// REF: FUN_80039B7C (the dialog SM's run loop and its `0x21` stop)
+pub fn placement_scripted_menu_record(
+    man_file: &ManFile,
+    man: &[u8],
+    p: &ActorPlacement,
+) -> Option<InlineDialogPrologue> {
+    if placement_inline_prologue(man_file, man, p).is_some() {
+        return None;
+    }
+    let start = p.record_offset;
+    let end = record_end_bound(man_file, man.len(), start);
+    if start + p.script_pc0 >= end {
+        return None;
+    }
+    let body = &man[start..end];
+    let entry_pc = placement_interaction_entry_pc(body, p.script_pc0, body.len());
+    if entry_pc == p.script_pc0 {
+        // No spawn terminator: nothing marks where an interaction begins.
+        return None;
+    }
+    let mut presses = false;
+    for insn in LinearWalker::new(body, entry_pc) {
+        let Ok(insn) = insn else {
+            return None;
+        };
+        if body.get(insn.pc).copied() == Some(0x21) {
+            break;
+        }
+        if let InsnInfo::StateResume { sub_op, .. } = insn.info
+            && crate::field_submode_screen::OP49_PARK_PRESERVING_SUB_OPS.contains(&sub_op)
+        {
+            presses = true;
+        }
+    }
+    presses.then(|| InlineDialogPrologue {
+        body: body.to_vec(),
+        entry_pc,
+        first_segment: body.len(),
+    })
+}

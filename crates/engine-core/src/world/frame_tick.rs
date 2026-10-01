@@ -1686,6 +1686,7 @@ impl World {
                 // so the walk clip is selected by whether an actor moved, not
                 // by which subsystem moved it - the script paths commit a
                 // position and raise no flag of their own.
+                self.tick_player_scale_ramp();
                 self.detect_field_actor_motion();
                 // Locomotion animation: idle vs walk off the movement flag
                 // the step above just set, folded into the player's
@@ -3002,6 +3003,18 @@ impl World {
             SceneMode::SlotMachine => {
                 self.exit_slot_machine();
             }
+            // The attract card reads Start itself (its `0x844` edge is
+            // Start, Cross or L1), so there Start begins rather than quits;
+            // from the player select on it quits as everywhere else.
+            SceneMode::BakaFighter
+                if self
+                    .minigames
+                    .baka_fighter
+                    .as_ref()
+                    .is_some_and(|f| f.cabinet().state() == crate::baka_cabinet::ST_ATTRACT) =>
+            {
+                return;
+            }
             SceneMode::BakaFighter => {
                 self.exit_baka_fighter();
             }
@@ -3275,6 +3288,18 @@ impl World {
             self.mode = self.minigames.baka_return_mode;
             return;
         };
+        if fight.cabinet().front_end() {
+            // The attract card and the player select: the cabinet reads the
+            // packed edge itself (start `0x844`, cursor `0x8000` / `0x2000`,
+            // confirm `0x44`) and no fight runs until the pick is seated.
+            let edge = crate::dev_menu::retail_packed(self.input.pad() & !self.input.pad_prev());
+            if let Some(f) = self.minigames.baka_fighter.as_mut() {
+                f.set_cabinet_pad(edge);
+                f.tick(1);
+            }
+            self.queue_baka_xa_prestage();
+            return;
+        }
         if fight.match_over() {
             // The result screen: run the score tally, banking each drained
             // step into the mode-24 winnings accumulator exactly as retail's
@@ -3375,6 +3400,7 @@ impl World {
             crate::muscle_dome::apply_contest_start_restore(rec, restore);
         }
         self.minigames.muscle_dome = Some(session);
+        self.minigames.muscle_hub_between_legs = false;
         self.mode = SceneMode::MuscleDome;
         // The hub's announcer lines, staged ahead of the first visit's arms.
         self.queue_xa_prestage(crate::muscle_ringside::hub_xa_prestage());
@@ -3397,6 +3423,19 @@ impl World {
     /// contest open with its tally intact.
     pub fn leave_muscle_dome(&mut self) -> Option<crate::muscle_dome::MuscleDomeSession> {
         use crate::muscle_dome::{LEG_OUTCOME_RAN, LegReport, MusclePhase};
+        if self.minigames.muscle_hub_between_legs && self.minigames.muscle_dome.is_none() {
+            // Between legs: the last leg is already reported, so leaving
+            // here is giving up the next one - the run / give-up arm, which
+            // ends the contest and voids the tally.
+            self.leave_muscle_arena();
+            self.report_muscle_leg(LegReport {
+                survived: true,
+                outcome: LEG_OUTCOME_RAN,
+                turns_taken: 0,
+            });
+            self.settle_muscle_contest();
+            return None;
+        }
         let s = self.exit_muscle_dome()?;
         let phase = s.phase();
         let decided = matches!(phase, MusclePhase::Won | MusclePhase::Lost);
@@ -3424,12 +3463,25 @@ impl World {
     ///
     /// Returns the session so the host can read the final state.
     pub fn exit_muscle_dome(&mut self) -> Option<crate::muscle_dome::MuscleDomeSession> {
+        self.leave_muscle_arena();
+        self.end_muscle_leg()
+    }
+
+    /// Hand the frame back from the arena: the interrupted mode and the
+    /// venue's own music, and no between-legs hub left open.
+    fn leave_muscle_arena(&mut self) {
+        self.minigames.muscle_hub_between_legs = false;
         if self.mode == SceneMode::MuscleDome {
             self.mode = self.minigames.muscle_return_mode;
         }
         // Give the venue its own music back when the arena's battle theme
         // displaced it (no-op when it did not).
         self.restore_minigame_bgm();
+    }
+
+    /// The battle end of one leg, which leaves the mode alone: take the
+    /// session, write the fighter's HP back and pick the ringside still.
+    fn end_muscle_leg(&mut self) -> Option<crate::muscle_dome::MuscleDomeSession> {
         let session = self.minigames.muscle_dome.take();
         // The battle end writes the fighter's HP back into the lead record
         // (`+0x106`), and the background read that follows streams one of the
@@ -3645,9 +3697,11 @@ impl World {
     ///   browser host resolves with. A session with no model installed
     ///   resolves to no damage rather than to invented constants.
     /// - **TurnOver / decided**: the next turn is taken automatically (retail
-    ///   confirms nothing at a turn boundary), and [`Cross`] leaves a
-    ///   finished leg (via [`World::exit_muscle_dome`], crediting the reward
-    ///   Seru capture on a win). A leg finishes on a KO and on nothing else:
+    ///   confirms nothing at a turn boundary), and [`Cross`] closes a
+    ///   finished leg: it is reported to the contest, and a survived leg
+    ///   with the course not exhausted stays in the arena for the hub's
+    ///   INTERVAL / ROUND screens ([`World::muscle_hub_between_legs`]) while
+    ///   every other leg settles and hands the field back. A leg finishes on a KO and on nothing else:
     ///   turns are counted, never budgeted. Retail agrees - the arena hands
     ///   the round to an ordinary battle (`FUN_801D1510` sets game mode
     ///   `0x14`), and the only battle-end signal comes from the `0x5A`
@@ -3667,18 +3721,22 @@ impl World {
     fn tick_muscle_dome(&mut self) {
         use crate::muscle_dome::MusclePhase;
         let Some(phase) = self.minigames.muscle_dome.as_ref().map(|s| s.phase()) else {
-            self.mode = self.minigames.muscle_return_mode;
+            // Between legs the arena hub owns the frame (its INTERVAL, the
+            // ringside still and the ROUND card) until
+            // [`Self::begin_next_muscle_leg`] stages the next fight.
+            if !self.minigames.muscle_hub_between_legs {
+                self.leave_muscle_arena();
+            }
             return;
         };
         let confirm = self.input.just_pressed(input::PadButton::Cross);
         match phase {
             MusclePhase::Select => {
-                // The whole selection surface - the direction input and the
-                // Ra-Seru list over it - is the session's, so the browser
-                // minigames page runs the identical rule.
-                // Triangle is this host's binding for the ring's Right chip:
-                // the port's selection has no ring screen, so the four
-                // directions stay the input screen's.
+                // The whole selection - the command ring, the Auto |
+                // Command prompt, the direction entry and its review, the
+                // Ra-Seru list and the Begin | Reselect confirm - is the
+                // session's command flow, which runs the battle's own
+                // command and entry sessions (`muscle_dome::DomeMenu`).
                 let pad = crate::muscle_dome::DomeSelectPad {
                     left: self.input.just_pressed(input::PadButton::Left),
                     right: self.input.just_pressed(input::PadButton::Right),
@@ -3686,7 +3744,8 @@ impl World {
                     down: self.input.just_pressed(input::PadButton::Down),
                     confirm,
                     cancel: self.input.just_pressed(input::PadButton::Circle),
-                    magic: self.input.just_pressed(input::PadButton::Triangle),
+                    triangle: self.input.just_pressed(input::PadButton::Triangle),
+                    select_attack: self.toggles.select_attack,
                 };
                 if let Some(s) = self.minigames.muscle_dome.as_mut() {
                     s.select_input(pad);
@@ -3720,13 +3779,90 @@ impl World {
                         outcome: 0,
                         turns_taken: self.minigames.muscle_dome.as_ref().map_or(0, |s| s.turn()),
                     };
-                    self.exit_muscle_dome();
+                    self.end_muscle_leg();
                     self.report_muscle_leg(report);
                     // A contest that has run out settles on the spot: the
                     // payout is the contest's, not the leg's.
                     self.settle_muscle_contest();
+                    // A survived leg with the course not exhausted re-enters
+                    // the arena hub (state `0x0A`), which plays the INTERVAL
+                    // tally and the ROUND card and then starts the next fight
+                    // itself (`FUN_801D1510` past arm `0x16`): the player
+                    // never leaves the arena between legs. Every other leg
+                    // settles and hands the field back.
+                    let continues = crate::muscle_dome::leg_boundary_raises_interval(
+                        self.minigames.muscle_contest.as_ref().map(|c| c.state()),
+                    );
+                    if continues {
+                        self.minigames.muscle_hub_between_legs = true;
+                    } else {
+                        self.leave_muscle_arena();
+                    }
                 }
             }
         }
+    }
+
+    /// Whether the arena hub is between two legs of an open contest: the
+    /// mode is still [`SceneMode::MuscleDome`], no leg is open, and the hub's
+    /// INTERVAL / ROUND screens own the frame.
+    pub fn muscle_hub_between_legs(&self) -> bool {
+        self.minigames.muscle_hub_between_legs
+            && self.minigames.muscle_dome.is_none()
+            && self.mode == SceneMode::MuscleDome
+    }
+
+    /// Advance the arena hub's screen timers one tick
+    /// ([`crate::muscle_ringside::HubTimers`], `FUN_801CF870`'s screen arms),
+    /// off this tick's leg / contest edges and pad. Runs every tick in every
+    /// mode - the INTERVAL screen plays after the leg has closed - and is
+    /// called by the shared scene host right after [`Self::tick`], so the
+    /// two play hosts and a headless harness all run one hub. The hub's
+    /// hand-off past arm `0x16` stages the next fight here
+    /// ([`Self::begin_next_muscle_leg`]); the sounds it fires queue for the
+    /// host ([`Self::take_muscle_hub_sounds`]).
+    pub fn tick_muscle_hub(&mut self) {
+        let pad = self.input.retail_pad().pressed as u16;
+        // `_DAT_80084580`, the voice/SFX volume each tally cue halves.
+        let volume_word = self.audio.levels.voice_volume as u32;
+        let mut timers = std::mem::take(&mut self.minigames.muscle_hub);
+        let frame = timers.tick(self, pad, volume_word);
+        self.minigames.muscle_hub = timers;
+        if frame.next_leg {
+            self.begin_next_muscle_leg();
+        }
+        let sounds = &mut self.minigames.muscle_hub_sounds;
+        if frame.xa.is_some() {
+            sounds.xa = frame.xa;
+        }
+        sounds.voice_cues.extend(frame.voice_cues);
+        // A host that never drains (a headless harness) keeps only the
+        // latest roll's keys.
+        let excess = sounds.voice_cues.len().saturating_sub(32);
+        sounds.voice_cues.drain(..excess);
+    }
+
+    /// Drain the CD-XA line and the tally voice keys the hub fired since the
+    /// last drain, for the host to sound.
+    pub fn take_muscle_hub_sounds(&mut self) -> crate::muscle_ringside::HubTimersFrame {
+        std::mem::take(&mut self.minigames.muscle_hub_sounds)
+    }
+
+    /// Stage the contest's next fight once the between-legs hub has played
+    /// out - the hub's hand-off past arm `0x16` (`FUN_801D1510`). The fight
+    /// opens through the same mode-24 drain the arena door uses, without
+    /// re-arming the round trip (the departure scene stays backed up from
+    /// the door). A no-op when the hub is not between legs.
+    ///
+    /// [`Self::tick_muscle_hub`] calls it on [`crate::muscle_ringside::HubTimersFrame::next_leg`].
+    pub fn begin_next_muscle_leg(&mut self) {
+        if !self.muscle_hub_between_legs() {
+            return;
+        }
+        // The flag stays up until the leg is installed
+        // ([`Self::enter_muscle_dome`]), so the arena keeps the frame on the
+        // ticks before the scene host drains the request.
+        self.minigames.pending_warp =
+            Some(crate::minigame_entry::MinigameSubId::MuscleDome.sub_id());
     }
 }

@@ -85,6 +85,22 @@ pub(crate) fn pose_centroid_xz(parts: &[([i16; 3], [i16; 3])]) -> (i16, i16) {
     ((i32::from(sx) / n) as i16, (i32::from(sz) / n) as i16)
 }
 
+/// The Y half of [`pose_centroid_xz`]: the same 16-bit sum and truncating
+/// divide, stored by `FUN_8004998C` as the display height
+/// `+0x3E = +0x36 + (cy * +0x72) >> 12` (`0x8004A430..0x8004A458`) - no
+/// facing rotation, since the rotation is about Y.
+pub(crate) fn pose_centroid_y(parts: &[([i16; 3], [i16; 3])]) -> i16 {
+    let n = parts.len();
+    if n == 0 {
+        return 0;
+    }
+    let mut sy = 0i16;
+    for (t, _) in parts {
+        sy = sy.wrapping_add(t[1]);
+    }
+    (i32::from(sy) / n as i32) as i16
+}
+
 /// The facing-rotated, scaled centroid offset the body-pair store adds to
 /// the live pair (`FUN_8004998C` `0x8004A43C..0x8004A538`), with the retail
 /// multiply order and arithmetic shifts. The `0xFFF - f` reads are the
@@ -101,6 +117,26 @@ pub(crate) fn body_offset(facing: u16, cx: i16, cz: i16, scale: i32) -> (i16, i1
 }
 
 impl World {
+    /// The display trio `+0x3C / +0x3E / +0x40` of battle seat `slot`: the
+    /// body pair ([`Self::refresh_battle_body_pairs`]) plus the display
+    /// height, the live `+0x36` raised by the pose centroid's Y
+    /// ([`pose_centroid_y`]). Falls back to the live position for a seat with
+    /// no body pair or no decoded pose.
+    pub fn battle_display_trio(&self, slot: usize) -> Option<[f32; 3]> {
+        let a = self.actors.get(slot)?;
+        let (x, z) = a
+            .battle
+            .seat
+            .unwrap_or((a.move_state.world_x, a.move_state.world_z));
+        let cy = a
+            .battle_animation
+            .as_ref()
+            .and(a.pose_frame.as_ref())
+            .map_or(0, |p| pose_centroid_y(&p.bone_outputs));
+        let y = a.move_state.world_y.wrapping_add(cy);
+        Some([f32::from(x), f32::from(y), f32::from(z)])
+    }
+
     /// The monster record `+0x1F` size class seated in `slot`, `0` for a
     /// party slot / empty slot / unresolved catalog (the same resolution the
     /// battle host's `monster_size_class` performs).

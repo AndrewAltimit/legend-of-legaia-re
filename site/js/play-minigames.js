@@ -654,20 +654,42 @@
     return c;
   }
   /* PSX semi-transparency for a hub quad's `abr` (null = opaque): 0 is
-   * `B/2 + F/2`, 1 `B + F`, 3 `B + F/4` - all three are canvas composites
-   * (a transparent texel has alpha 0 and adds nothing). 2 (`B - F`) has no
-   * composite, and no hub palette that blends is ever drawn with it (only
-   * STP-free palettes reach ABR 2, and those draw opaque), so it takes the
-   * plain draw. */
+   * `B/2 + F/2`, 1 `B + F`, 3 `B + F/4` - canvas composites (a transparent
+   * texel has alpha 0 and adds nothing). 2 is `B - F`, which a 2D canvas has
+   * no composite for: `draw` receives `true` and must hand in the sprite's
+   * black silhouette (`hubSilhouette`) instead. Every ABR-2 hub quad samples
+   * one of the all-white knockout palettes the variant-2 emitter bump
+   * selects (7 under 6, 9 under 8, ...), and the arena uploads those
+   * STP-set, so `B - white` clamps to black under every texel - which is the
+   * silhouette, exactly, at full fade. */
   function withAbr(g, abr, draw) {
-    if (abr == null || abr === 2) return draw();
+    if (abr == null) return draw(false);
+    if (abr === 2) return draw(true);
     g.save();
     if (abr === 0) g.globalAlpha *= 0.5;
     else {
       g.globalCompositeOperation = 'lighter';
       if (abr === 3) g.globalAlpha *= 0.25;
     }
-    try { return draw(); } finally { g.restore(); }
+    try { return draw(false); } finally { g.restore(); }
+  }
+  /* The black silhouette of a decoded sheet (every opaque texel -> black,
+   * alpha kept), cached per sheet canvas. */
+  const hubSilhouettes = new WeakMap();
+  function hubSilhouette(c) {
+    if (!c) return c;
+    let s = hubSilhouettes.get(c);
+    if (!s) {
+      s = document.createElement('canvas');
+      s.width = c.width; s.height = c.height;
+      const sg = s.getContext('2d');
+      sg.drawImage(c, 0, 0);
+      sg.globalCompositeOperation = 'source-in';
+      sg.fillStyle = '#000';
+      sg.fillRect(0, 0, s.width, s.height);
+      hubSilhouettes.set(c, s);
+    }
+    return s;
   }
   function drawHubQuads(rt, view) {
     if (typeof rt.play_mg_muscle_hub_quads_json !== 'function') return false;
@@ -703,8 +725,9 @@
       }
       const s = hubSheet(rt, q.sheet, q.pal);
       if (!s) continue;
-      withAbr(g, q.abr, () =>
-        g.drawImage(s, q.u, q.v, q.w, q.h, q.x * sx, q.y * sy, q.dw * sx, q.dh * sy));
+      withAbr(g, q.abr, (sub) =>
+        g.drawImage(sub ? hubSilhouette(s) : s, q.u, q.v, q.w, q.h,
+          q.x * sx, q.y * sy, q.dw * sx, q.dh * sy));
       /* The ringside still is an opaque packet modulated by its fade level
        * (`texel * c / 128`): below neutral that is the image darkened
        * toward black, which a black fill at `1 - c/128` reproduces. */
@@ -1099,9 +1122,9 @@
     const info = parse(() => rt.play_mg_game_json());
     if (!info || !info.game) {
       if (S.game) teardown(rt, view);
-      /* The arena hub outlives the leg: the INTERVAL + tally screen and the
-       * re-entered hub's ringside still play after the dome has handed the
-       * field back, so they are drawn over it here. */
+      /* Between legs the arena keeps the frame (the engine stays in the
+       * dome mode, so `muscleFrame` draws the hub over a cleared view); this
+       * only clears a hub layer left up when the field comes back. */
       drawHubQuads(rt, view);
       if (typeof rt.play_mg_take_vram_restore === 'function' && rt.play_mg_take_vram_restore()
           && view.renderer && typeof rt.field_vram_bytes === 'function') {

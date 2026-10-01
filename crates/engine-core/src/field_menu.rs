@@ -323,6 +323,10 @@ pub struct FieldMenuSession {
     pub money: u32,
     /// Optional play-time-seconds for the corner badge.
     pub play_time_seconds: u32,
+    /// The session opened straight on a sub-screen the entry decode chose
+    /// (kind `1`, the save-card driver), so finishing that screen ends the
+    /// menu instead of falling back to a root picker it never showed.
+    entry_sub: bool,
 }
 
 impl Default for FieldMenuSession {
@@ -339,6 +343,7 @@ impl FieldMenuSession {
             gate: FieldMenuGate::default(),
             money: 0,
             play_time_seconds: 0,
+            entry_sub: false,
         }
     }
 
@@ -564,46 +569,47 @@ impl FieldMenuSession {
     ///
     /// Retail does not always start a menu on the root picker: the
     /// save/menu driver's entry decode picks the starting sub-screen off
-    /// the entry-context kind byte, and kind
+    /// the entry-context kind byte. Kind
     /// [`crate::pause_screens::ROOT_MENU_CONTEXT_LOCKED`] starts on
-    /// sub-screen `4` - the notice panel. Every other kind (and a null
-    /// context) starts on the picker, which is what the session already
-    /// did.
+    /// sub-screen `4` - the notice panel - and kind `1`, a field save point,
+    /// starts on the save-card driver `0x19`
+    /// ([`crate::pause_screens::CONTEXT_SAVE_ENTRY_SUBSCREEN`]), skipping the
+    /// picker and with it the root Save row's scene gate. Every other kind
+    /// (and a null context) starts on the picker.
     ///
-    /// Hosts call this right after [`Self::set_gate`], so the two hosts
-    /// cannot disagree about which screen a locked context opens on.
+    /// The save entry lands as `Suspended { row: Save }`, which is the state a
+    /// picker confirm leaves, so every host's
+    /// [`crate::field_menu_dispatch::tick_root_list`] builds the Save
+    /// sub-session on its next frame through the path it already has.
+    /// [`Self::resume`] then ends the menu rather than showing the picker.
+    ///
+    /// Hosts call this right after [`Self::set_gate`], so the hosts cannot
+    /// disagree about which screen a context opens on.
     ///
     /// REF: FUN_801DC6B4 (the entry decode, ported as
     /// [`crate::pause_screens::menu_entry_subscreen`])
     ///
-    /// ## How a real script's `0x0D` park reaches this call
+    /// ## How a real script's park reaches this call
     ///
-    /// It does not need a pending-request channel, and the earlier reading
-    /// that retail's op-`0x49` arm "spawns a driver actor that opens the menu
-    /// itself" is wrong for this sub-op. The dispatcher indexes a **signed**
-    /// 14-byte table at `0x801F33A4` with the parked operand's first byte, and
-    /// row `0x0D` is `-1`: it returns before it writes the driver's state or
-    /// clears `_DAT_8007B450`. Nothing opens; the park simply stands, and the
-    /// player's own Start is what enters the menu it gates.
-    ///
-    /// The port used to open the close-tick screen for that row, which retires
-    /// within a few frames and lets `FieldHost::op49_clear` drop the park - so
-    /// the kind byte was produced and carried, but had usually evaporated by
-    /// the time anyone pressed Start.
-    /// [`crate::field_submode_screen::OP49_PARK_PRESERVING_SUB_OPS`] is that
-    /// fix: sub-`0x0D` opens no screen, so the park survives exactly as long
-    /// as retail's does.
-    ///
-    /// What is still an inference is the *release*: retail's clearer for a
-    /// standing `-1` park is outside the dispatcher and is not decoded, so
-    /// [`crate::world::World::release_menu_entry_context_park`] picks the one
-    /// exit this gate structurally has - the ready check's Yes - and hosts
-    /// call it from their menu-close path.
+    /// Through a scripted menu-button press: op `0x49`'s Idle arm spawns the
+    /// same subsystem actor the menu button does, and for the `-1` rows the
+    /// port does not route elsewhere (sub-ops `1` and `0x0D`) its handler is
+    /// the state pick, which opens the pause-menu session. Hosts open the
+    /// menu on [`crate::world::World::scripted_menu_open_pending`] and call
+    /// [`crate::world::World::release_menu_entry_context_park`] on close,
+    /// which resumes the parked op the way the dispatcher's retire arm does.
     pub fn open_entry_screen(&mut self) {
-        if crate::pause_screens::menu_entry_subscreen(self.gate.entry_context_kind)
-            == crate::pause_screens::CONTEXT_LOCKED_ENTRY_SUBSCREEN
-        {
-            self.phase = FieldMenuPhase::Notice;
+        match crate::pause_screens::menu_entry_subscreen(self.gate.entry_context_kind) {
+            crate::pause_screens::CONTEXT_LOCKED_ENTRY_SUBSCREEN => {
+                self.phase = FieldMenuPhase::Notice;
+            }
+            crate::pause_screens::CONTEXT_SAVE_ENTRY_SUBSCREEN => {
+                self.phase = FieldMenuPhase::Suspended {
+                    row: FieldMenuRow::Save,
+                };
+                self.entry_sub = true;
+            }
+            _ => {}
         }
     }
 
@@ -629,7 +635,9 @@ impl FieldMenuSession {
         let mut events = Vec::new();
         if let FieldMenuPhase::Suspended { row } = self.phase {
             events.push(FieldMenuEvent::Resumed { row });
-            if close {
+            // A menu that opened straight on its sub-screen has no picker to
+            // fall back to.
+            if close || std::mem::take(&mut self.entry_sub) {
                 self.phase = FieldMenuPhase::Done(FieldMenuOutcome::Confirmed(row));
             } else {
                 self.phase = FieldMenuPhase::Browsing {

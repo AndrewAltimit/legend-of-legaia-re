@@ -120,8 +120,12 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
         // jou's lightning director points it one word past this op - the
         // following `0x09` wait's operand - which is what randomises the
         // strike cadence.
+        // The divisor is `lh` and the divide is signed (`div v0,v1`;
+        // `mfhi`): with a draw in `0..=0x7FFF` the remainder takes the
+        // dividend's sign, so it is `rand % |op_w(3)|`. A zero divisor
+        // traps on retail (`break 0x1c00`); the port writes the minimum.
         0x05 => {
-            let div = op_w(3);
+            let div = (op_w(3) as i16).unsigned_abs();
             let r = if div == 0 { 0 } else { host.ext_rand16() % div };
             let dst = state.pc as usize + op_w(4) as usize + 5;
             host.move_bytecode_write_u16(dst, op_w(2).wrapping_add(r));

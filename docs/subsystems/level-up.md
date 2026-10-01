@@ -385,9 +385,10 @@ with helpers `read_record_stats` / `read_rank_counter` / `read_xp_u16`.
   writer on the disc and it has no reader in any image, while the magic-rank counter
   is capture-pinned at record `+0x9C` (see
   [`save-record.md`](../formats/save-record.md#0x130-is-the-displayed-character-level)).
-  NB the engine port tracks its own level at `+0x100` (always zero in retail, where
-  the live byte is `+0x130`) - self-consistent for the port's own LGSF saves, a
-  deliberate divergence from the retail byte, not a mirror of it.
+  The engine port keeps its level in the same `+0x130` byte
+  (`CharacterRecord::level`). It must not live at `+0x100`: that is word 3 of the
+  ability bitfield `+0xF4..+0x103`, which the aggregator zeroes and rebuilds from
+  equipment on every pass, so a level stored there reads back as `0`.
 
 ### Cross-character delta search (negative finding)
 
@@ -421,7 +422,7 @@ After a battle win with `BattleEndCause::MonsterWipe`:
 5. For each level-up: `LevelUpTracker::apply_to_record(result, record)` bumps
    `hp_max` and `mp_max`, restores `hp_cur` and `mp_cur` to the new maxima
    (retail restores full HP/MP on level-up), and writes `result.new_level`
-   back to the record's `+0x100` byte via `CharacterRecord::set_level`.
+   back to the record's `+0x130` level byte via `CharacterRecord::set_level`.
    Independent of whether a threshold was crossed, `apply_battle_xp` re-stamps
    the record's cumulative XP (`+0x0`), next-level threshold (`+0x4`, slots-1/2
    corrected via `threshold_for`), and displayed-level byte (`+0x130`) - the
@@ -434,9 +435,8 @@ After a battle win with `BattleEndCause::MonsterWipe`:
 
 `World::load_party` (the party-install primitive `load_full` and the New Game
 seeder go through) syncs `LevelUpTracker::xp[]` from each record's cumulative
-XP word (`+0x0`) and `LevelUpTracker::level[]` from the engine level cell
-(`+0x100`), falling back to the retail displayed-level byte (`+0x130`) for
-records lifted from retail saves. Without this, a reloaded party would keep
+XP word (`+0x0`) and `LevelUpTracker::level[]` from the level byte (`+0x130`),
+the same cell for engine LGSF saves and records lifted from retail cards. Without this, a reloaded party would keep
 the tracker's default 0-XP / level-1 state even when the saved records hold
 the party at level 30; the next XP grant would then roll the party back to
 level 1 + N.

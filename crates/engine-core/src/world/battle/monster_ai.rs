@@ -933,7 +933,10 @@ impl World {
                         .is_some_and(|a| a.battle.liveness != 0 && a.battle.mp != 0)
                 })
                 .count() as u8;
-            let n = self.actors.len() as u8;
+            // `ctx[+1]`, the seated monster count - not the actor table's
+            // length, which would read every `monster_count != 4` / `!= 3`
+            // scripted-cast gate as open.
+            let seated = self.seated_monster_slots().count() as u8;
             let ctx = crate::monster_ai::MonsterAiCtx {
                 monster_id: (monster_id & 0xFF) as u8,
                 monster_index: slot.saturating_sub(pc),
@@ -942,7 +945,7 @@ impl World {
                 max_hp,
                 mp,
                 party_count: pc,
-                monster_count: n.saturating_sub(pc).max(1),
+                monster_count: seated.max(1),
                 field_flags: self
                     .actors
                     .get(slot as usize)
@@ -960,7 +963,9 @@ impl World {
             if let Some(cast) = crate::monster_ai::decide(&ctx, &mut ai, &mut || self.next_rand()) {
                 category = cast.category;
                 spell_id = cast.spell_id;
-                target_class = cast.target_class;
+                if !cast.keep_target {
+                    target_class = cast.target_class;
+                }
                 spirit_writeback = cast.spirit_gauge_writeback;
             }
             // The 0x8A charge gate clamps the caster's own gauge as it fires

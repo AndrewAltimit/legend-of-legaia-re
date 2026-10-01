@@ -800,6 +800,10 @@ struct SlotRow {
 /// anchoring off the same index space, so compacting here would mis-anchor
 /// every damage number.
 pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
+    if world.mode == crate::world::SceneMode::MuscleDome {
+        sync_dome_hud_rows(hud, world);
+        return;
+    }
     let pc = (world.party.party_count.clamp(1, 3) as usize).min(world.actors.len());
     let party_names = crate::field_menu_dispatch::roster_names(world);
 
@@ -905,6 +909,47 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
         hud.clear_slot(slot);
     }
     hud.arm_combo(battle_combo_style(world), world.battle_ctx.active_actor);
+}
+
+/// The Muscle Dome leg's rows for the same HUD model: the lead fighter at
+/// ordinal 0 off the dome session (HP, and MP off its magic loadout), every
+/// other slot cleared. Retail draws no enemy plate in a dome leg any more
+/// than in a battle, so the opponent has no row here.
+fn sync_dome_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
+    let Some(s) = world.minigames.muscle_dome.as_ref() else {
+        for slot in 0..hud.slots.len() {
+            hud.clear_slot(slot as u8);
+        }
+        return;
+    };
+    let name = party_member_name(world, 0);
+    let clamp = |v: i32| v.clamp(0, i32::from(u16::MAX)) as u16;
+    hud.sync_slot(
+        0,
+        SlotSyncInfo {
+            name: &name,
+            is_party: true,
+            alive: s.hp(0) > 0,
+            hp: clamp(s.hp(0)),
+            hp_max: clamp(s.hp_max(0)),
+            mp: s.mp(0),
+            mp_max: s.magic(0).map_or(0, |m| m.mp_max),
+            ap: None,
+        },
+    );
+    hud.sync_level(
+        0,
+        world
+            .party
+            .roster
+            .members
+            .get(world.party_roster_slot(0))
+            .map(|m| m.magic_rank())
+            .unwrap_or(0),
+    );
+    for slot in 1..hud.slots.len() {
+        hud.clear_slot(slot as u8);
+    }
 }
 
 /// Build the deduplicated enemy target-menu rows straight off the live
@@ -1020,6 +1065,14 @@ pub fn battle_intro_names(
     if battle_action_in_flight(world.battle_ctx.action_state) {
         return Vec::new();
     }
+    // The same hold keeps every command surface past the round prompt off
+    // the screen while the labels are up: retail's sweep empties the text
+    // actor list before the prompt builds, so a ring, picker, submenu or
+    // Begin / Reselect confirm never shares a frame with the labels. One the
+    // port opens inside the span ends them.
+    if battle_hud_phase(world) == BattleHudPhase::CommandEntry {
+        return Vec::new();
+    }
     let mut rows = battle_enemy_target_rows(world);
     crate::target_picker::layout_enemy_menu_rows(&mut rows, |s| {
         font.layout_ascii(s).advance_x as i16
@@ -1113,6 +1166,15 @@ pub fn battle_action_in_flight(state: u8) -> bool {
 /// session wins over the action SM (it opens between actions).
 pub fn battle_hud_phase(world: &crate::world::World) -> BattleHudPhase {
     use crate::battle_input::CommandPhase;
+    if world.mode == crate::world::SceneMode::MuscleDome {
+        // A dome leg is a battle whose only command surfaces are the
+        // fighter's selection screens (`muscle_dome::DomeMenu`); the play-out
+        // has no battle-action band behind it.
+        return match world.minigames.muscle_dome.as_ref().map(|s| s.phase()) {
+            Some(crate::muscle_dome::MusclePhase::Select) => BattleHudPhase::CommandEntry,
+            _ => BattleHudPhase::Idle,
+        };
+    }
     if world.mode != crate::world::SceneMode::Battle {
         return BattleHudPhase::Idle;
     }
@@ -1191,6 +1253,18 @@ pub fn battle_command_surface(world: &crate::world::World) -> Option<CommandSurf
     if battle_hud_phase(world) != BattleHudPhase::CommandEntry {
         return None;
     }
+    if world.mode == crate::world::SceneMode::MuscleDome {
+        use crate::muscle_dome::DomeMenu;
+        return Some(match world.minigames.muscle_dome.as_ref()?.menu() {
+            DomeMenu::Command(c) => match c.phase {
+                CommandPhase::Menu { .. } => CommandSurface::Ring,
+                CommandPhase::AttackMode { .. } => CommandSurface::AttackMode,
+                _ => CommandSurface::Other,
+            },
+            DomeMenu::Input(_) => CommandSurface::ArtsInput,
+            DomeMenu::Magic => CommandSurface::SpellBrowse,
+        });
+    }
     if world.arts_input_active() {
         return Some(CommandSurface::ArtsInput);
     }
@@ -1235,6 +1309,10 @@ pub fn battle_command_surface(world: &crate::world::World) -> Option<CommandSurf
 
 /// The party member entering a command while a command surface is up.
 fn command_entry_actor(world: &crate::world::World) -> Option<u8> {
+    // The dome fields one fighter, seated at ordinal 0.
+    if world.mode == crate::world::SceneMode::MuscleDome {
+        return world.minigames.muscle_dome.as_ref().map(|_| 0);
+    }
     if let Some(slot) = world.arts_input_actor() {
         return Some(slot);
     }
@@ -1252,6 +1330,11 @@ fn command_entry_actor(world: &crate::world::World) -> Option<u8> {
 
 /// Seated party count, clamped to the actor table.
 fn party_count(world: &crate::world::World) -> usize {
+    // A dome leg seats the lead fighter alone, and no battle actor table
+    // backs it.
+    if world.mode == crate::world::SceneMode::MuscleDome {
+        return 1;
+    }
     (world.party.party_count.clamp(1, 3) as usize).min(world.actors.len())
 }
 
@@ -1453,6 +1536,9 @@ pub fn battle_readout_bar_slot(world: &crate::world::World) -> Option<u8> {
 pub fn battle_ring_ap_plate_value(world: &crate::world::World) -> Option<u8> {
     if battle_command_surface(world) != Some(CommandSurface::Ring) {
         return None;
+    }
+    if world.mode == crate::world::SceneMode::MuscleDome {
+        return Some(world.minigames.muscle_dome.as_ref()?.spirit(0).min(100) as u8);
     }
     let actor = world.battle.command.as_ref()?.actor;
     Some(world.spirit_gauge(actor).min(100) as u8)
@@ -1793,6 +1879,14 @@ pub fn battle_ring_marks(
     if !battle_command_chips(world).is_some_and(|c| c.phase == CommandChipPhase::CommandRing) {
         return legaia_engine_vm::battle_party_panel::RingMarks::default();
     }
+    if world.mode == crate::world::SceneMode::MuscleDome {
+        return world
+            .minigames
+            .muscle_dome
+            .as_ref()
+            .map(|s| s.ring_marks())
+            .unwrap_or_default();
+    }
     let word = world.battle.special_word;
     let status = world.battle_command_status_word().unwrap_or(0);
     legaia_engine_vm::battle_party_panel::RingMarks {
@@ -1836,6 +1930,9 @@ pub struct BattleCommandChips {
 pub fn battle_command_chips(world: &crate::world::World) -> Option<BattleCommandChips> {
     use crate::battle_input::{AttackMode, BattleCommand, CommandPhase, CommitChoice, RoundChoice};
     use legaia_asset::battle_ui_strings::BattleUiLabel;
+    if world.mode == crate::world::SceneMode::MuscleDome {
+        return dome_command_chips(world);
+    }
     if world.mode != crate::world::SceneMode::Battle {
         return None;
     }
@@ -1912,6 +2009,52 @@ pub fn battle_command_chips(world: &crate::world::World) -> Option<BattleCommand
         }),
         _ => None,
     }
+}
+
+/// The Muscle Dome leg's command cluster, through the same projection the
+/// battle's takes: the dome's command flow runs the battle's own command
+/// session (`muscle_dome::DomeMenu`), and the labels come off the same
+/// sources - the ring's right arm is the lead's Ra-Seru name (or `-` for a
+/// fighter carrying none, `FUN_801D8DE8` record `0xA`), and the confirm pair
+/// is the disc's `Begin` / `Reselect`.
+fn dome_command_chips(world: &crate::world::World) -> Option<BattleCommandChips> {
+    use crate::battle_input::{BattleCommand, CommitChoice};
+    use legaia_asset::battle_ui_strings::BattleUiLabel;
+    let s = world.minigames.muscle_dome.as_ref()?;
+    if world.dialog.current.is_some() || world.dialog.inline.is_some() {
+        return None;
+    }
+    let char_id = world.party_roster_slot(0) as u8 + 1;
+    let idx = if s.ring(0).has_raseru && (1..=3).contains(&char_id) {
+        char_id
+    } else {
+        4
+    };
+    let raseru = world
+        .battle
+        .ui_strings
+        .raseru_label(idx)
+        .filter(|l| !l.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            if idx == 4 {
+                "-".to_string()
+            } else {
+                BattleCommand::Magic.label().to_string()
+            }
+        });
+    let label = |which: BattleUiLabel, fallback: CommitChoice| {
+        world
+            .battle
+            .ui_strings
+            .get(which)
+            .filter(|l| !l.is_empty())
+            .unwrap_or(fallback.label())
+            .to_string()
+    };
+    let begin = label(BattleUiLabel::CommitBegin, CommitChoice::Begin);
+    let reselect = label(BattleUiLabel::Reselect, CommitChoice::Reselect);
+    s.command_chips(&raseru, [&begin, &reselect])
 }
 
 pub use legaia_engine_vm::battle_commit_log::{CommitLogRow, CommitLogTarget};

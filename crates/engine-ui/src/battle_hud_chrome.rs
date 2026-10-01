@@ -14,15 +14,21 @@
 //!   its caller's `(x, y)` verbatim;
 //! * the eight plain element badges are records `0x8B..=0x92`, 20x12.
 //!
-//! ## The banner draws no interior fill
+//! ## The frame is filled
 //!
-//! Retail's display list for the banner carries the border sprites and the
-//! glyph run and **nothing else** - the scene shows through it. The 32x32
-//! blue-marbled patch record `0x03` carries as its own rect is the fill
-//! the framed *menu* windows use, not this banner, which is why
-//! [`message_banner_chrome_draws_for`] emits no
-//! [`SaveMenuAtlasRects::dialog_fill`] quad while
-//! [`crate::dialog_window_chrome_draws_for`] does.
+//! A class-0 frame is drawn over a **fill** that covers the whole frame
+//! rect: `FUN_8002BDC4`, which the layout dispatcher calls for every class-0
+//! node (`jal` at `0x8002D7E8`), queues opaque gouraud textured quads
+//! (`POLY_GT4`, code `0x3C`) of the widget record's own 32x32 blue-marbled
+//! rect - texels `(128, 0)` on CLUT `(32, 511)` - before the border sprites.
+//! The quads tile the frame in 32-pixel columns and 32-row bands from the
+//! frame origin, last column and band clipped, texels 1:1 with pixels, and
+//! the vertex grey runs from `0x40` at the frame's top to `0x88` at its
+//! bottom in steps of `0x900 / height` per band. Two retail display lists
+//! carry exactly that run: the message banner (`noa_levelup_banner`,
+//! ten quads over `(8, 4)..(304, 32)`) and the intro labels (a
+//! `karisto_sol_pre_encounter` intro frame, three per label). See
+//! [`class0_fill_draws_at`].
 //!
 //! ## It shares its seat with the actor-name plaque
 //!
@@ -39,6 +45,18 @@ pub const BANNER_PEN: (i32, i32) = (16, 12);
 pub const BANNER_BORDER: i32 = 4;
 /// How far the content pen sits inside the interior, both axes.
 pub const BANNER_PEN_INSET: i32 = 4;
+/// Content-box width of the message banner: `+0x06` of every placement
+/// record that carries one (`0x45..=0x4B`, `0x59`, `0x65`, `0x66`, all kind
+/// `3` on seat `(16, 14)`). The box is fixed, not measured, which is why
+/// every retail message frame spans `(8, 4)..(304, 32)` whatever its text.
+pub const BANNER_BOX_W: i32 = 280;
+/// Fill-tile edge: `FUN_8002BDC4` steps its columns by the record's `w`
+/// and its bands by the record's `h`, both 32 for widget record `3`.
+pub const CLASS0_FILL_TILE: i32 = 32;
+/// Fill vertex grey at the frame's top edge (`li a2,0x40`, `0x8002BE38`).
+pub const CLASS0_FILL_TOP: i32 = 0x40;
+/// Fill vertex grey at the frame's bottom edge (`li a2,0x88`, `0x8002BE94`).
+pub const CLASS0_FILL_BOTTOM: i32 = 0x88;
 /// Interior height of a one-line banner. Retail's captured frame is 28
 /// tall: `4 + 20 + 4`.
 pub const BANNER_INTERIOR_H: i32 = 20;
@@ -46,24 +64,26 @@ pub const BANNER_INTERIOR_H: i32 = 20;
 /// other in-battle text box uses.
 pub const BANNER_ROW_PITCH: i32 = 14;
 
-/// Interior rect of a banner whose measured content is `w` x `h`, at
-/// [`BANNER_PEN`].
+/// Interior rect of a banner whose content box is `w` wide and whose
+/// interior is `h` tall, at [`BANNER_PEN`].
 ///
-/// The pen sits [`BANNER_PEN_INSET`] inside the interior on both axes and
-/// the interior's right edge lands on `pen.x + w`, which is the packet-read
-/// "its right column starts at `16 + measured_width`".
+/// The pen sits [`BANNER_PEN_INSET`] inside the interior on both axes, and
+/// the interior is the content box grown by the inset on **both** sides:
+/// `w + 8` wide, so the right border column starts at `pen.x + w + 4`.
 pub const fn banner_interior(w: i32, h: i32) -> (i32, i32, i32, i32) {
     banner_interior_at(BANNER_PEN, w, h)
 }
 
 /// [`banner_interior`] for a class-0 frame on any content pen - the law is
 /// the widget record's, not the seat's: the battle-intro enemy-name labels
-/// wear the same frame on pen `(x, 48)`.
+/// wear the same frame on pen `(x, 48)`. `Moldy Worm` (66 wide) on pen
+/// `(86, 48)` frames `(78, 40)..(159, 67)` in retail's display list, its top
+/// edge tiled at `82 / 106 / 130` and clipped to 2 pixels at `154`.
 pub const fn banner_interior_at(pen: (i32, i32), w: i32, h: i32) -> (i32, i32, i32, i32) {
     (
         pen.0 - BANNER_PEN_INSET,
         pen.1 - BANNER_PEN_INSET,
-        w + BANNER_PEN_INSET,
+        w + 2 * BANNER_PEN_INSET,
         h,
     )
 }
@@ -97,13 +117,13 @@ pub const fn banner_interior_h(lines: usize) -> i32 {
 /// Build the banner's frame sprites - the class-0 nine-slice, corners
 /// first, then the four tiled edges.
 ///
-/// `content` is the measured `(w, h)` of the message. Tiles come from the
+/// `content` is the `(w, h)` of [`message_banner_content`]. Tiles come from the
 /// gold border tile-set the save/load panel already samples
 /// (`title_pak::OVERLAY_SYSTEM_UI_PANEL_*`, which **is** widget tile-set 0
 /// at texels `(160, 0)`); each edge run clips its final tile to the
 /// remainder, the same law a plate run's last body tile follows.
 ///
-/// Emits **no interior fill** - see the module header.
+/// The fill goes first, under the border - see the module header.
 pub fn message_banner_chrome_draws_for(
     rects: &SaveMenuAtlasRects,
     content: (i32, i32),
@@ -111,6 +131,102 @@ pub fn message_banner_chrome_draws_for(
     stage_scale: u32,
 ) -> Vec<SpriteDraw> {
     class0_frame_draws_at(rects, BANNER_PEN, content, stage_origin, stage_scale)
+}
+
+/// The class-0 frame's **fill**: the frame rect `(x, y, w, h)` covered by
+/// the blue-marbled patch, drawn under the border.
+///
+/// PORT: FUN_8002BDC4 - columns of [`CLASS0_FILL_TILE`] from the frame's
+/// left edge and bands of the same height from its top, the last of each
+/// clipped, texels 1:1 with pixels (each band restarts at texel row 0).
+/// Band `k`'s top grey is `0x40 + k * (0x900 / h)` and its bottom grey the
+/// next band's top, the last band ending on `0x88`; the GPU interpolates
+/// between them down the band, and the texel is modulated `texel * grey /
+/// 128`.
+///
+/// A frame no taller than the baked tile (every one-line frame is 28) is
+/// one band whose grey runs `0x40 -> 0x88` over its height, which is the
+/// ramp `rects.panel_interior` is baked with - so it draws as whole-height
+/// column sprites of that tile. A taller frame draws one-row strips of the
+/// raw `rects.panel_filigree` tile, each tinted to its row's grey. The atlas
+/// carries 29 of the patch's 32 texel rows, so rows `29..32` of a full band
+/// wrap to the top of the tile.
+pub fn class0_fill_draws_at(
+    rects: &SaveMenuAtlasRects,
+    frame: (i32, i32, i32, i32),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    let (fx, fy, fw, fh) = frame;
+    let s = stage_scale as i32;
+    let mut out = Vec::new();
+    if fw <= 0 || fh <= 0 {
+        return out;
+    }
+    let mut push = |src: (u32, u32, u32, u32), x: i32, y: i32, w: i32, h: i32, grey: f32| {
+        out.push(SpriteDraw {
+            dst: (
+                stage_origin.0 + x * s,
+                stage_origin.1 + y * s,
+                w as u32 * stage_scale,
+                h as u32 * stage_scale,
+            ),
+            src,
+            color: [grey, grey, grey, 1.0],
+        });
+    };
+    let baked = rects.panel_interior;
+    if baked.2 > 0 && fh <= baked.3 as i32 {
+        let mut x = 0;
+        while x < fw {
+            let cw = CLASS0_FILL_TILE.min(fw - x).min(baked.2 as i32);
+            push(
+                (baked.0, baked.1, cw as u32, fh as u32),
+                fx + x,
+                fy,
+                cw,
+                fh,
+                1.0,
+            );
+            x += cw;
+        }
+        return out;
+    }
+    let raw = rects.panel_filigree;
+    if raw.2 == 0 || raw.3 == 0 {
+        return out;
+    }
+    let step = 0x900 / fh;
+    let mut band_y = 0;
+    let mut top = CLASS0_FILL_TOP;
+    while band_y < fh {
+        let bh = CLASS0_FILL_TILE.min(fh - band_y);
+        let bottom = if band_y + bh >= fh {
+            CLASS0_FILL_BOTTOM
+        } else {
+            top + step
+        };
+        for row in 0..bh {
+            let grey = top + (bottom - top) * row / bh;
+            let tex_row = raw.1 + (row as u32 % raw.3);
+            let mut x = 0;
+            while x < fw {
+                let cw = CLASS0_FILL_TILE.min(fw - x).min(raw.2 as i32);
+                push(
+                    (raw.0, tex_row, cw as u32, 1),
+                    fx + x,
+                    fy + band_y + row,
+                    cw,
+                    1,
+                    grey as f32 / 128.0,
+                );
+                x += cw;
+            }
+        }
+        band_y += bh;
+        top = bottom;
+    }
+    out
 }
 
 /// The class-0 frame (widget record `3`) around `content` on content pen
@@ -128,7 +244,7 @@ pub fn class0_frame_draws_at(
     let (fx, fy, fw, fh) = banner_frame_at(pen, content.0, content.1);
     let (ix, iy, iw, ih) = banner_interior_at(pen, content.0, content.1);
     let s = stage_scale as i32;
-    let mut out = Vec::new();
+    let mut out = class0_fill_draws_at(rects, (fx, fy, fw, fh), stage_origin, stage_scale);
     let mut blit = |src: (u32, u32, u32, u32), x: i32, y: i32, w: u32, h: u32| {
         if w == 0 || h == 0 {
             return;
@@ -191,14 +307,16 @@ pub fn message_banner_text_draws_for(font: &legaia_font::Font, text: &str) -> Ve
     out
 }
 
-/// Measured `(w, h)` of a message for [`banner_frame`]: the widest
-/// rendered line, and the interior height its line count implies.
+/// `(w, h)` of a message for [`banner_frame`]: the record's fixed
+/// [`BANNER_BOX_W`] content box (grown only for a line wider than it, which
+/// no retail message is), and the interior height its line count implies.
 pub fn message_banner_content(font: &legaia_font::Font, text: &str) -> (i32, i32) {
     let w = text
         .lines()
         .map(|l| font.layout_ascii(l).advance_x as i32)
         .max()
-        .unwrap_or(0);
+        .unwrap_or(0)
+        .max(BANNER_BOX_W);
     (w, banner_interior_h(text.lines().count().max(1)))
 }
 
@@ -272,17 +390,28 @@ impl BattleBadgeRects {
 mod tests {
     use super::*;
 
-    /// The packet-pinned frame: content pen `(16, 12)`, frame origin
-    /// `(8, 4)`, 28 tall, right border column at `16 + measured_width`.
+    /// The packet-pinned frames: content pen `(16, 12)` with the record's
+    /// 280-wide box frames `(8, 4)` 296x28 (`noa_levelup_banner`), and the
+    /// intro label `Moldy Worm` (66 wide) on pen `(86, 48)` frames
+    /// `(78, 40)` 82x28 with its right column at `156`.
     #[test]
     fn the_banner_frame_is_the_captured_one() {
-        let (fx, fy, _fw, fh) = banner_frame(200, BANNER_INTERIOR_H);
-        assert_eq!((fx, fy), (8, 4));
-        assert_eq!(fh, 28);
+        assert_eq!(
+            banner_frame(BANNER_BOX_W, BANNER_INTERIOR_H),
+            (8, 4, 296, 28)
+        );
         let (ix, iy, iw, ih) = banner_interior(200, BANNER_INTERIOR_H);
         assert_eq!((ix, iy), (12, 8), "the interior starts 4 inside the frame");
-        assert_eq!(ix + iw, BANNER_PEN.0 + 200, "right column at pen + width");
+        assert_eq!(
+            ix + iw,
+            BANNER_PEN.0 + 200 + 4,
+            "right column at pen + w + 4"
+        );
         assert_eq!(ih, BANNER_INTERIOR_H);
+        assert_eq!(
+            banner_frame_at((86, 48), 66, BANNER_INTERIOR_H),
+            (78, 40, 82, 28)
+        );
     }
 
     /// A second line grows the interior by the text pitch, nothing else.
@@ -296,11 +425,8 @@ mod tests {
         assert_eq!(two.3 - one.3, BANNER_ROW_PITCH);
     }
 
-    /// Retail's banner has no fill primitive, so the builder emits only
-    /// border tiles - and every one of them samples a panel tile rect.
-    #[test]
-    fn the_banner_draws_border_tiles_and_no_fill() {
-        let rects = SaveMenuAtlasRects {
+    fn panel_rects() -> SaveMenuAtlasRects {
+        SaveMenuAtlasRects {
             panel_tl: (160, 0, 4, 4),
             panel_tr: (188, 0, 4, 4),
             panel_bl: (160, 28, 4, 4),
@@ -309,15 +435,76 @@ mod tests {
             panel_bot: (164, 28, 24, 4),
             panel_left: (160, 4, 4, 21),
             panel_right: (188, 4, 4, 21),
+            panel_interior: (128, 0, 32, 29),
+            panel_filigree: (0, 200, 32, 29),
             dialog_fill: (240, 200, 4, 32),
             ..Default::default()
-        };
-        let draws = message_banner_chrome_draws_for(&rects, (60, BANNER_INTERIOR_H), (0, 0), 1);
-        assert!(!draws.is_empty());
+        }
+    }
+
+    /// The retail fill under the message banner: ten columns from the
+    /// frame origin, 32 wide with an 8-wide remainder, each the full frame
+    /// height, ahead of every border sprite - the run `FUN_8002BDC4` queued
+    /// in `noa_levelup_banner`.
+    #[test]
+    fn the_banner_is_filled_under_its_border() {
+        let rects = panel_rects();
+        let draws =
+            message_banner_chrome_draws_for(&rects, (BANNER_BOX_W, BANNER_INTERIOR_H), (0, 0), 1);
+        let fill: Vec<_> = draws.iter().take_while(|d| d.src.0 == 128).collect();
+        assert_eq!(fill.len(), 10, "ten fill columns");
+        let xs: Vec<i32> = fill.iter().map(|d| d.dst.0).collect();
+        assert_eq!(xs, vec![8, 40, 72, 104, 136, 168, 200, 232, 264, 296]);
+        assert!(fill.iter().all(|d| d.dst.1 == 4 && d.dst.3 == 28));
+        assert_eq!(fill.last().unwrap().dst.2, 8, "last column clipped");
         assert!(
-            draws.iter().all(|d| d.src.0 != 240),
-            "the banner must not emit the dialog fill"
+            fill.iter().all(|d| d.src == (128, 0, d.dst.2, 28)),
+            "fill samples the gradient-baked marbled tile 1:1"
         );
+        assert!(
+            draws[fill.len()..].iter().all(|d| d.src.0 >= 160),
+            "the border follows the fill"
+        );
+        assert!(draws.iter().all(|d| d.src.0 != 240), "not the dialog fill");
+    }
+
+    /// The intro label's fill: three columns from `(78, 40)`, the last 18
+    /// wide - the run in the `karisto_sol_pre_encounter` intro frame.
+    #[test]
+    fn the_intro_label_fill_is_the_captured_one() {
+        let rects = panel_rects();
+        let draws = class0_frame_draws_at(&rects, (86, 48), (66, BANNER_INTERIOR_H), (0, 0), 1);
+        let fill: Vec<_> = draws.iter().take_while(|d| d.src.0 == 128).collect();
+        let cols: Vec<(i32, u32)> = fill.iter().map(|d| (d.dst.0, d.dst.2)).collect();
+        assert_eq!(cols, vec![(78, 32), (110, 32), (142, 18)]);
+    }
+
+    /// A frame taller than one band (`FUN_8002BDC4`'s 32 rows) ramps
+    /// `0x40 -> 0x40 + 0x900 / h` over the first band and on to `0x88`
+    /// over the last - the two-band run of a 58-tall frame retail queued
+    /// as `0x40 -> 0x67`, `0x67 -> 0x88`.
+    #[test]
+    fn a_tall_fill_bands_its_gradient() {
+        let rects = panel_rects();
+        let draws = class0_fill_draws_at(&rects, (8, 152, 304, 58), (0, 0), 1);
+        let grey_at = |y: i32| {
+            draws
+                .iter()
+                .find(|d| d.dst.1 == y && d.dst.0 == 8)
+                .map(|d| (d.color[0] * 128.0).round() as i32)
+                .unwrap()
+        };
+        assert_eq!(grey_at(152), 0x40);
+        assert_eq!(grey_at(184), 0x67, "band 2 starts on band 1's bottom");
+        assert!(grey_at(209) < 0x88 && grey_at(209) > 0x84);
+        assert!(draws.iter().all(|d| d.dst.3 == 1 && d.src.1 >= 200));
+    }
+
+    /// Nothing the banner draws leaves its frame.
+    #[test]
+    fn the_banner_stays_inside_its_frame() {
+        let rects = panel_rects();
+        let draws = message_banner_chrome_draws_for(&rects, (60, BANNER_INTERIOR_H), (0, 0), 1);
         // Four corners, then a tiled top/bottom pair and a left/right pair.
         assert_eq!(
             draws
@@ -327,7 +514,6 @@ mod tests {
             4,
             "exactly four corner tiles"
         );
-        // Nothing leaves the frame.
         let (fx, fy, fw, fh) = banner_frame(60, BANNER_INTERIOR_H);
         for d in &draws {
             assert!(d.dst.0 >= fx && d.dst.1 >= fy);

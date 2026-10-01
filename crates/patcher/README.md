@@ -1291,8 +1291,7 @@ random count. Disc-gated oracle: `starting_bag_real`.
 
 `apply_starting_level` begins a New Game with the starting party at a chosen level
 instead of 1 (`starting_level` module). The **displayed level** is the byte at
-`+0x130` (boot-confirmed - *not* derived from experience at a New Game; `+0x100` is
-zero in retail), and the seed routine's **record-init loop stamps `+0x130` on every
+`+0x130` (boot-confirmed - *not* derived from experience at a New Game), and the seed routine's **record-init loop stamps `+0x130` on every
 roster slot**, so the level applies party-wide. Same-size SCUS edits make a level-`N`
 start coherent:
 

@@ -533,9 +533,9 @@ impl FirstVisitHub {
 /// entered from `0x14` on either visit - the first visit reaches `0x14` from
 /// arm `6`'s battle-load kick (`0x801CFC88..0x801CFC94`), a re-entered hub
 /// from the INTERVAL arms. The port's re-entered hub plays those arms
-/// ([`HubBackdrop`]), but the leg itself only opens later, when the player
-/// walks back through the dome door - so a host that raised the card again
-/// at that edge showed it twice. `card_shown_round` is the round a
+/// ([`HubBackdrop`]) and only then opens the leg
+/// ([`HubTimersFrame::next_leg`]) - so a host that raised the card again at
+/// that edge showed it twice. `card_shown_round` is the round a
 /// [`HubBackdrop`] last drew its card for (`None` when no re-entered hub ran
 /// since the last leg); the leg-open card is owed only when that is not the
 /// round now opening.
@@ -548,8 +548,9 @@ pub fn leg_open_raises_round_card(card_shown_round: Option<i32>, round: i32) -> 
 /// The dome hub's per-frame screen timers - the first visit, the leg-open
 /// ROUND card, the between-legs INTERVAL screen with its score tally, and
 /// the re-entered hub's backdrop - with the leg edges that arm them. One
-/// kernel both play hosts drive once a frame ([`HubTimers::tick`]); each
-/// host keeps its own instance and draws from its fields.
+/// instance lives on the world (`MinigameState::muscle_hub`), ticked once per
+/// world tick by [`crate::world::World::tick_muscle_hub`]; both play hosts
+/// draw from its fields.
 #[derive(Debug, Clone, Default)]
 pub struct HubTimers {
     /// The hub's first visit on a freshly opened contest.
@@ -579,9 +580,22 @@ pub struct HubTimersFrame {
     pub xa: Option<HubXaCue>,
     /// The tally lanes' voice keys (`FUN_801D1288` builds each attr set).
     pub voice_cues: Vec<crate::other_game_overlay::VoiceAttrCue>,
+    /// The between-legs hub has played out (INTERVAL drained, ROUND card
+    /// gone): [`crate::world::World::tick_muscle_hub`] hands the next fight
+    /// its start through [`crate::world::World::begin_next_muscle_leg`] -
+    /// retail's arm `0x16` exit into `FUN_801D1510`.
+    pub next_leg: bool,
 }
 
 impl HubTimers {
+    /// Whether a hub screen is up over an open leg - the first visit or the
+    /// leg-open ROUND card. Retail runs those arms in the arena (mode `0x18`)
+    /// before the round driver puts its command cluster up, so a host draws
+    /// no battle chrome under them.
+    pub fn covers_leg(&self) -> bool {
+        self.first_visit.is_some() || self.round_banner.is_some()
+    }
+
     /// One frame. `pad` is the packed pad edge the skippable holds read
     /// (retail's `DAT_801D1A9C` snapshot), `volume_word` the voice-volume
     /// setting each tally cue halves.
@@ -682,6 +696,10 @@ impl HubTimers {
                 self.tally = None;
             }
         }
+        out.next_leg = world.muscle_hub_between_legs()
+            && self.interval.is_none()
+            && self.backdrop.is_none()
+            && self.first_visit.is_none();
         self.prev_leg_open = leg_open;
         self.prev_contest_open = contest_open;
         out

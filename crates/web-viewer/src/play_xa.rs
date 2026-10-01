@@ -65,7 +65,7 @@ pub(crate) const RAW_SECTOR_BYTES: usize = 2352;
 pub(crate) const BATTLE_XA_CLIP_SLOTS: &[(u8, &str)] = &[(26, "XA27.XA"), (0x1D, "XA30.XA")];
 
 /// Unity XA gain (Q1.14), what both native XA players pass.
-const XA_GAIN_UNITY: u16 = 0x4000;
+pub(crate) const XA_GAIN_UNITY: u16 = 0x4000;
 
 /// Trailing samples under this magnitude are channel-padding silence, trimmed
 /// off a shout so its audible end matches the retail read-span cutoff closely
@@ -510,7 +510,12 @@ impl LegaiaRuntime {
 
 /// The staged clip cut at the retail read span, or `None` when it is not
 /// in the bank / cuts to nothing.
-fn cut_clip(bank: &XaClipBank, slot: u8, ch: u8, duration_sectors: u32) -> Option<XaClip> {
+pub(crate) fn cut_clip(
+    bank: &XaClipBank,
+    slot: u8,
+    ch: u8,
+    duration_sectors: u32,
+) -> Option<XaClip> {
     let clip = bank.clip(slot, ch)?;
     let frames = bank
         .cut_frames(slot, ch, duration_sectors)

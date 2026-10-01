@@ -775,6 +775,11 @@ impl BootSession {
                 .map(|party| legaia_engine_core::new_game::NewGameDefaults {
                     party,
                     inventory: starting_inventory.clone(),
+                    // Retail's Vahn-alone roster by default: every headless
+                    // harness cold-boots `town01` as the opening. The
+                    // `play-window` scene picker raises it (`window/run.rs`).
+                    picker_party: false,
+                    equip_stats: equip_stats.clone(),
                 });
 
         // The static-SCUS progression tables (XP curve + Noa/Gala correction
@@ -1015,7 +1020,9 @@ impl BootSession {
         // `player+0x10 & 0x80000` raised the pad never reaches it and no menu
         // (and no deny buzz) happens at all.
         // REF: FUN_801D01B0
-        if self.host.world.dialogue_owns_input() {
+        // A script's own menu press (a save point's `49 01`) comes from the
+        // interaction the engagement belongs to, so it is not refused.
+        if self.host.world.dialogue_owns_input() && !self.host.world.scripted_menu_open_pending() {
             return;
         }
         let world = &mut self.host.world;
@@ -1070,10 +1077,9 @@ impl BootSession {
             // takes the edge (and the pad swallow) on the next frame, so the
             // confirm that closed the menu does not walk the player.
             self.mode_seat.adopt_scene_mode(self.field_menu_resume);
-            // A kind-`0x0D` entry context is a *standing* op-`0x49` park: the
-            // script halts on the instruction and keeps the menu gated until
-            // the player answers, and closing the menu under that gate is the
-            // answer. Twin of `play_menu_close` on the browser host.
+            // A scripted menu press (a save point's `49 01`, a `49 0D` ready
+            // check) parks its op until the menu it opened closes; the close
+            // resumes it once. Twin of `play_menu_close` on the browser host.
             self.host.world.release_menu_entry_context_park();
         }
     }
@@ -1421,11 +1427,21 @@ impl BootSession {
         // frame), so the two hosts can't double-drive the session.
         //
         // REF: FUN_801D01B0 (`0x801D0250`, the menu-open accept)
-        let menu_opened_this_tick = if self.field_menu.is_none()
-            && self.host.world.field_menu_open_allowed()
-            && self.host.world.input.just_pressed(PadButton::Start)
+        // A script's op-`0x49` save point / ready check is a menu-button press
+        // of its own (`World::scripted_menu_open_pending`): it opens the menu
+        // with no Start edge and past the engagement gate the Start path
+        // keeps, exactly once per arm.
+        let scripted_menu =
+            self.field_menu.is_none() && self.host.world.scripted_menu_open_pending();
+        let menu_opened_this_tick = if scripted_menu
+            || (self.field_menu.is_none()
+                && self.host.world.field_menu_open_allowed()
+                && self.host.world.input.just_pressed(PadButton::Start))
         {
             self.open_field_menu();
+            if scripted_menu && self.field_menu.is_some() {
+                self.host.world.note_scripted_menu_opened();
+            }
             true
         } else {
             false

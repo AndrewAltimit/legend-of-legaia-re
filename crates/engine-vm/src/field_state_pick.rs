@@ -1,5 +1,5 @@
-//! The field overlay's debug-gated actor state pick: one entry of the
-//! per-state handler table at `0x801F33B8`, which pushes the actor's current
+//! The field overlay's debug-gated actor state pick: slot `7` of the
+//! subsystem actor's handler table at `0x801F33B4`, which pushes the actor's current
 //! state onto the scene record and installs either the normal successor state
 //! `0x30` or the debug shortcut state `0x13`.
 //!
@@ -15,12 +15,14 @@
 //! bytes of content, so this is field code and not the PROT 0898 tail the
 //! extraction over-reads past that boundary.
 //!
-//! 23 instructions, no stack frame, `jr ra` at `0x801F1FCC` with a second
-//! `jr ra` immediately after at `0x801F1FD4` and the next function's
+//! 34 instructions (`0x801F1F4C..0x801F1FD0`, read from
+//! `overlay_field_0897_801f1f4c.txt`), no stack frame, `jr ra` at `0x801F1FCC`
+//! with a second `jr ra` immediately after at `0x801F1FD4` and the next function's
 //! `addiu sp, sp, -0x18` prologue at `0x801F1FDC`. Like its siblings it is
 //! reached through a table rather than a `jal`: the word `0x801F1F4C` sits at
-//! VA `0x801F33D0` in the same image, the seventh slot of a run of
-//! `0x801F1xxx` handler pointers that starts at `0x801F33B8`.
+//! VA `0x801F33D0` in the same image, slot `7` of the 52-entry table at
+//! `0x801F33B4` (slot `0` is the close tick `FUN_801F2134`) that the
+//! dispatcher `FUN_801F159C` indexes by the actor's `+0x50`.
 //!
 //! # Globals it reads
 //!

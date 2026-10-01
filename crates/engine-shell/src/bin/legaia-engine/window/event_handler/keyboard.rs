@@ -501,9 +501,10 @@ impl PlayWindowApp {
             return;
         }
         // `M`: toggle the Muscle Dome contest (an ordinary battle, fought to
-        // a KO - nothing bounds it by turns); Left/Right/Up/Down enter the
-        // four directions, Triangle opens the Ra-Seru list (Circle closes it),
-        // Cross confirms / continues. Pressing M again
+        // a KO - nothing bounds it by turns). The selection is the battle's
+        // command flow: the ring (Left = Attack, Right = Ra-Seru, Down =
+        // Spirit), Auto | Command, the direction entry (Triangle pages the
+        // arts list), the review and Begin | Reselect. Pressing M again
         // aborts (no reward on an abort).
         //
         // The launch is the mode-24 door warp itself
@@ -674,6 +675,22 @@ impl PlayWindowApp {
                     "off (retail authored framing)"
                 }
             );
+            return;
+        }
+        // `F6`: cheat - fill the party's AP (Spirit) gauge (the play page's
+        // Cheats -> Max AP). `F7`: cheat - random encounters on / off (the
+        // play page's "No encounters", `--no-live-loop` at launch). F-keys,
+        // like `F4`, because nothing can be bound to them.
+        if matches!(code, KeyCode::F6) && state == ElementState::Pressed {
+            let n = self.session.host.world.cheat_max_ap();
+            log::info!("cheat: AP full for {n} member(s)");
+            return;
+        }
+        if matches!(code, KeyCode::F7) && state == ElementState::Pressed {
+            let world = &mut self.session.host.world;
+            let on = !world.toggles.live_gameplay_loop;
+            world.cheat_set_random_encounters(on);
+            log::info!("cheat: random encounters {}", if on { "ON" } else { "off" });
             return;
         }
         // `F1`: toggle the shell's diagnostic text rows (scene / frame /

@@ -607,6 +607,9 @@ pub struct BakaFight {
     /// A round setup (cabinet state `0x32`) is due on the next presentation
     /// tick - the first round's and every later one's.
     setup_pending: bool,
+    /// Frames the player-select lineup has been on stage - the clock its
+    /// three idle clips run off ([`Self::select_lineup`]).
+    select_clock: i32,
     /// The round-start cameo's actor, while it walks: its phase `+0x22` and
     /// the clip cursor `+0x68` its clip selector advances.
     cameo: Option<CameoActor>,
@@ -746,6 +749,7 @@ impl BakaFight {
             special_cameras: Vec::new(),
             held_pad: 0,
             setup_pending: true,
+            select_clock: 0,
             cameo: None,
             special_latch: false,
             impact: crate::baka_impact_fx::ImpactFx::default(),
@@ -1116,8 +1120,9 @@ impl BakaFight {
             // duel band's one read is the pause edge `0x110`, which overlaps
             // the port's Triangle special, and the port's cabinet sits in the
             // duel state for up to `0xB5` frames after the deciding exchange.
-            pad_edge: if matches!(self.phase, MatchPhase::MatchOver(_))
-                && self.cabinet.state() != crate::baka_cabinet::ST_DUEL
+            pad_edge: if self.cabinet.front_end()
+                || matches!(self.phase, MatchPhase::MatchOver(_))
+                    && self.cabinet.state() != crate::baka_cabinet::ST_DUEL
             {
                 std::mem::take(&mut self.cabinet_pad)
             } else {
@@ -1136,6 +1141,13 @@ impl BakaFight {
         };
         self.cabinet_frame = self.cabinet.tick(&input);
         self.cues.append(&mut self.cabinet_frame.cues);
+        if let Some(roster) = self
+            .cabinet_frame
+            .install_player
+            .and_then(|r| usize::try_from(r).ok())
+        {
+            self.install_player(roster);
+        }
         if let Some((roster, _mesh)) = self.cabinet_frame.install_opponent
             && let Ok(roster) = usize::try_from(roster)
         {
@@ -1146,10 +1158,60 @@ impl BakaFight {
         // state machine, and those arms are what advance its clock. Hand the
         // clock to the chrome while the cabinet is on one of them, so the card
         // runs for any host that enters at the cabinet's own boot rather than
-        // only for one that armed a private timeline.
-        if self.cabinet.in_attract() {
-            self.chrome.set_intro_clock(self.cabinet.intro_clock());
+        // only for one that armed a private timeline. The arms call the card
+        // only on the frames they draw it (the fade-out stops after `0x1E`),
+        // so the chrome takes exactly what this frame called.
+        if self.cabinet.front_end() || self.cabinet_frame.title_card.is_some() {
+            self.chrome.set_intro_clock(self.cabinet_frame.title_card);
         }
+    }
+
+    /// Seat the player-select pick in slot 0 - the port side of state `0x0E`,
+    /// which spawns the chosen fighter's actor with the select cursor as its
+    /// roster id (`sh a0,0x5a(t1)` at `0x801CFC50`) and reads that record's
+    /// stand-off (`0x801CFC40`). The pick brings its own stats, action table,
+    /// strike clips and special camera; the opponent install that follows
+    /// starts the match.
+    fn install_player(&mut self, roster: usize) {
+        let Some(t) = self.tables.clone() else {
+            return;
+        };
+        let (Some(rec), Some(act)) = (t.0.get(roster), t.1.get(roster)) else {
+            return;
+        };
+        self.cfg[0] = FighterConfig::from_tables(rec, act);
+        let kf = act.keyframes[legaia_asset::baka_opponents::ACTION_SPECIAL];
+        self.special_full_frames[0] = kf.max(0) as u32 * SPECIAL_CHARGE_FRAMES_PER_KEYFRAME;
+        if let Some(st) = self.strike.as_mut() {
+            st[0] = StrikeTable::from_actions(act);
+            if let Some(h) = self.roster_clips.as_ref().and_then(|r| r.get(roster)) {
+                st[0].clips = *h;
+            }
+        }
+        self.stand_off[0] = i32::from(rec.stand_off);
+    }
+
+    /// The player-select lineup while it is on stage: the select cursor
+    /// (`DAT_801DBF70`) and the frames the three idle clips have run. `None`
+    /// outside states `0x0A` / `0x0B`.
+    pub fn select_lineup(&self) -> Option<(usize, i32)> {
+        crate::baka_cabinet::lineup_live(self.cabinet.state()).then(|| {
+            (
+                usize::try_from(self.cabinet.select_cursor()).unwrap_or(0),
+                self.select_clock,
+            )
+        })
+    }
+
+    /// The cabinet's own widget draws this frame - the attract prompt, the
+    /// "PLAYER SELECT" banner and the "NEXT GAME / PAY OUT" sheet - as one
+    /// list every host draws the same way.
+    pub fn cabinet_cells(&self) -> Vec<crate::baka_cabinet::SheetCell> {
+        let mut out = self.cabinet_frame.widgets.clone();
+        if let Some(sheet) = self.cabinet.choice_sheet() {
+            out.extend_from_slice(&sheet);
+        }
+        out
     }
 
     /// Start the cabinet at its **boot** state instead of mid-duel, so the
@@ -1157,7 +1219,7 @@ impl BakaFight {
     /// fight. Retail's cabinet always enters here; the port's hosts enter
     /// through the duel, which is why the card had no production caller.
     pub fn with_attract(mut self) -> Self {
-        self.cabinet = crate::baka_cabinet::BakaCabinet::new();
+        self.cabinet.reboot();
         self
     }
 
@@ -1575,6 +1637,19 @@ impl BakaFight {
         use crate::baka_cabinet::{ST_CHOICE, ST_CHOICE_SECRET, ST_TALLY_OUT};
         use crate::baka_duel_scene::MOTION_WIN;
         let st = self.cabinet.state();
+        if crate::baka_cabinet::front_end(st) {
+            // State `0x0A` writes the select camera (`0x801CF8F4..0x801CF924`)
+            // as it spawns the lineup; the attract arms draw no 3D at all.
+            if crate::baka_cabinet::lineup_live(st) {
+                if self.select_clock == 0 {
+                    self.camera.select_screen();
+                }
+                self.select_clock += frame_step;
+            } else {
+                self.select_clock = 0;
+            }
+            return;
+        }
         if matches!(self.phase, MatchPhase::MatchOver(0))
             && matches!(st, ST_TALLY_OUT | ST_CHOICE | ST_CHOICE_SECRET)
             && !self.motion[0].pinned
@@ -1656,6 +1731,11 @@ impl BakaFight {
         };
         self.chrome_frame = self.chrome.step(&chrome_tick, (&[], &[]));
         self.tick_cabinet(frame_step);
+        if self.cabinet.front_end() {
+            // Attract and player select: retail spawns the round SM only at
+            // `0x0E`, so nothing of the fight runs yet.
+            return;
+        }
         match self.phase {
             MatchPhase::MatchOver(_) => {
                 // The match is decided: the tally screen runs (FUN_801d239c).

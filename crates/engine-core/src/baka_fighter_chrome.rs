@@ -924,6 +924,9 @@ pub struct ChromeSprite {
 pub struct BakaChrome {
     intro: IntroTitle,
     intro_t: Option<i32>,
+    /// The cabinet-driven card clock for the next step
+    /// ([`Self::set_intro_clock`]), consumed by it.
+    intro_live: Option<i32>,
     banner_t: Option<i32>,
     countdown: Countdown,
     /// `DAT_801DBEB4` / `DAT_801DBEB0` - the two banner brightness globals
@@ -977,10 +980,15 @@ impl BakaChrome {
     /// state, with the cabinet's own counter as `t`, rather than arming a
     /// private timeline at duel start.
     ///
-    /// Idempotent per frame; a clock past [`INTRO_END`] stops the card, which
-    /// is what [`Self::step`]'s own arm does.
-    pub fn set_intro_clock(&mut self, t: i32) {
-        self.intro_t = (t < INTRO_END).then_some(t);
+    /// `Some(t)` draws the card at `t` on the next [`Self::step`]; `None`
+    /// (the cabinet called no attract arm) draws none. There is no upper
+    /// bound: past [`INTRO_END`] the card's last segment keeps drawing the
+    /// assembled card, which is what a parked attract screen shows (the
+    /// `minigame_baka_fighter` state sits at `DAT_801DBE94 = 373` with the
+    /// whole card up).
+    pub fn set_intro_clock(&mut self, t: Option<i32>) {
+        self.intro_t = None;
+        self.intro_live = t;
     }
 
     /// Start the round banner timeline and spawn its sprite actor at the
@@ -1006,7 +1014,7 @@ impl BakaChrome {
 
     /// `true` while any timeline is still running.
     pub fn busy(&self) -> bool {
-        self.intro_t.is_some() || self.banner_t.is_some()
+        self.intro_t.is_some() || self.intro_live.is_some() || self.banner_t.is_some()
     }
 
     /// The live banner sprite pool.
@@ -1029,7 +1037,10 @@ impl BakaChrome {
     pub fn step(&mut self, tick: &ChromeTick, banks: (&[u8], &[u8])) -> ChromeFrame {
         let mut out = ChromeFrame::default();
 
-        if let Some(t) = self.intro_t {
+        if let Some(t) = self.intro_live.take() {
+            let f = self.intro.frame(t);
+            merge_frame(&mut out, f);
+        } else if let Some(t) = self.intro_t {
             let f = self.intro.frame(t);
             merge_frame(&mut out, f);
             self.intro_t = if t + 1 < INTRO_END { Some(t + 1) } else { None };

@@ -115,16 +115,15 @@ pub struct FieldLocomotion {
     /// buttons is the host's binding table
     /// (`legaia-engine config set --binding`), not this mask.
     pub run_button_mask: u16,
-    /// Forced-slow gate: retail's `_DAT_8007B6A8` arm of the base-step
-    /// selector. Non-zero there selects base step
+    /// Forced-slow override: selects base step
     /// [`crate::world::config::FIELD_BASE_STEP_FORCED_SLOW`] and **skips the
     /// run check entirely** - a forced walk cannot be run out of.
     ///
-    /// NOT WIRED: no host drives this yet. `_DAT_8007B6A8` is the same word
-    /// the action-button gate and the per-scene save-allow test read
-    /// (`docs/subsystems/field-locomotion.md`), and the port has no
-    /// equivalent of its writer, so the constant and the arm are ported and
-    /// the flag stays `false`.
+    /// Retail's arm reads `_DAT_8007B6A8`, which the port carries as
+    /// [`crate::world::PartyState::scene_save_allowed`] (set on the kingdom
+    /// world maps) and [`crate::world::World::field_base_step`] tests
+    /// directly; this flag forces the same arm on any scene, for tests and
+    /// debug drivers.
     pub forced_slow: bool,
     /// Sub-step remainder carried between precise-movement frames, in world
     /// units per axis (|carry| < one collision step). Lets shallow movement
@@ -132,6 +131,15 @@ pub struct FieldLocomotion {
     /// zero. Only touched while [`crate::world::FieldLocomotion::precise_movement`] is active with a
     /// direction held; reset when input releases.
     pub precise_move_carry: (f32, f32),
+    /// The player's `+0x72` ramps: op `4C` nibble-4 sub-0 aimed at the player
+    /// (`CC F8 40 lo hi tlo thi` with a non-zero tick count) installs a slot of
+    /// retail's generic ramp pool (`FUN_8003C5F0`, kind 2, from the live
+    /// `+0x72` to the operand) and `FUN_80036D80` lerps it each frame
+    /// ([`crate::world::World::tick_player_scale_ramp`]). Only the player's
+    /// slot lives here: it is the one `+0x72` both play hosts read
+    /// ([`crate::world::World::player_render_scale`]). Cleared at scene entry
+    /// with the rest of the pool (`FUN_8003CDA8`).
+    pub player_scale_ramps: legaia_engine_vm::ambient_motion::RampScheduler,
     /// Last frame's field position for every actor the motion detector
     /// tracks - the player (from its [`crate::vm::ActorMoveState`]) and every
     /// entry of [`crate::world::FieldNpcState::positions`]. Rewritten each field tick by
@@ -304,6 +312,7 @@ impl FieldLocomotion {
             run_button_mask: crate::world::config::FIELD_RUN_BUTTON_MASK_DEFAULT,
             forced_slow: false,
             precise_move_carry: (0.0, 0.0),
+            player_scale_ramps: legaia_engine_vm::ambient_motion::RampScheduler::new(),
             motion_prev: std::collections::HashMap::new(),
             actor_moving: std::collections::HashSet::new(),
             last_move_dir_bits: 0,

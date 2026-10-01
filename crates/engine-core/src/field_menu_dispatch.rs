@@ -1580,6 +1580,25 @@ mod tests {
         )
     }
 
+    /// Every pause-menu level readout reads the record's `+0x130` byte, so a
+    /// level cheat shows on Status and on the Magic caster window alike, and
+    /// survives the ability-bitfield rebuild (`+0xF4..+0x103`) the battle-stat
+    /// refresh runs.
+    #[test]
+    fn status_and_magic_read_the_live_level() {
+        let mut w = fresh_world();
+        w.party.roster.members[0].set_level(30);
+        w.party.roster.members[0].set_ability_bits([0; legaia_save::ABILITY_BITS_LEN]);
+        assert_eq!(status_snapshots(&w)[0].level, 30);
+        match build(FieldMenuRow::Magic, &w) {
+            FieldMenuSubsession::Spells(s) => {
+                let m = crate::pause_screens::magic_screen_model(&s, None);
+                assert_eq!(m.casters[0].1, 30);
+            }
+            _ => panic!("expected Spells"),
+        }
+    }
+
     #[test]
     fn build_items_returns_inventory_session() {
         let w = fresh_world();

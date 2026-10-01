@@ -329,3 +329,30 @@ fn the_seru_trade_screens_draw_on_the_browser_host() {
          empty panel is the blank screen this test exists to catch"
     );
 }
+
+/// The page keys the shop's own blips: every shop edge the engine answers
+/// with a cue (`MenuRuntime::take_ui_cue`) reaches the page's SFX channel.
+/// Counted on the channel's `queued` total, which the cue path bumps before
+/// it asks the (here absent) SPU for a voice.
+#[test]
+fn shop_edges_reach_the_sfx_channel() {
+    let Some(mut rt) = loaded_in_town() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    if !rt.debug_open_test_shop() {
+        eprintln!("[skip] no shop catalog on this disc");
+        return;
+    }
+    let queued = |rt: &LegaiaRuntime| -> u64 {
+        let v: serde_json::Value = serde_json::from_str(&rt.play_sfx_state_json()).unwrap();
+        v["queued"].as_u64().unwrap_or(0)
+    };
+    rt.play_shop_input(0);
+    let before = queued(&rt);
+    rt.play_shop_input(DOWN);
+    assert_eq!(queued(&rt), before + 1, "a picker step keys a cue");
+    rt.play_shop_input(0);
+    assert_eq!(queued(&rt), before + 1, "an idle frame keys nothing");
+    eprintln!("[ran] shop cue reached the page SFX channel");
+}

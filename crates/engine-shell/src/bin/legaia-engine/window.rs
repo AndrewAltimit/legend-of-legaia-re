@@ -124,9 +124,101 @@ pub(crate) struct DebugSeeds {
     /// does ([`legaia_engine_shell::boot::BootSession::resume_save`]) in
     /// place of the `--scene` door entry.
     pub resume_save: Option<std::path::PathBuf>,
+    /// `--cheat-*`: the player cheats applied once the scene is entered.
+    pub cheats: PlayCheats,
+}
+
+/// The `--cheat-*` operands - the native twin of the browser play page's
+/// Cheats panel (its "No encounters" switch is `--no-live-loop` here, and
+/// `F7` at runtime). Every write is `legaia_engine_core::cheats`'.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct PlayCheats {
+    pub level: Option<u8>,
+    pub gold: Option<u32>,
+    pub coins: Option<u32>,
+    /// `ITEM[:QTY]` specs, resolved against the disc's item names.
+    pub items: Vec<String>,
+    pub max_ap: bool,
+    pub seru_level: Option<u8>,
+    pub arts: bool,
+    pub max_items: bool,
+}
+
+impl PlayCheats {
+    /// Apply every requested cheat to `world`, logging each outcome.
+    /// `templates` is the executable's New Game party template, which a
+    /// level below the current one is rebuilt from.
+    pub(crate) fn apply(
+        &self,
+        world: &mut legaia_engine_core::world::World,
+        templates: Option<&legaia_asset::new_game::StartingParty>,
+    ) {
+        if let Some(level) = self.level {
+            let got = world.cheat_set_party_level_with(level, templates);
+            log::info!("play-window: --cheat-level {level}: {got:?} (roster slot, level)");
+        }
+        if let Some(g) = self.gold {
+            let v = world.cheat_set_gold(i64::from(g));
+            log::info!("play-window: --cheat-gold -> {v}");
+        }
+        if let Some(c) = self.coins {
+            let v = world.cheat_set_coins(u64::from(c));
+            log::info!("play-window: --cheat-coins -> {v}");
+        }
+        if let Some(level) = self.seru_level {
+            let got = world.cheat_grant_seru(level);
+            log::info!("play-window: --cheat-seru {level}: {got:?}");
+        }
+        if self.arts {
+            let got = world.cheat_learn_all_arts();
+            log::info!("play-window: --cheat-arts: {got:?} (roster slot, new, known)");
+        }
+        if self.max_ap {
+            let n = world.cheat_max_ap();
+            log::info!("play-window: --cheat-max-ap: {n} member(s)");
+        }
+        if self.max_items {
+            let n = world.cheat_max_items();
+            log::info!("play-window: --cheat-max-items: {n} stack(s) raised to 99");
+        }
+        if self.items.is_empty() {
+            return;
+        }
+        let pairs = world.item_name_pairs();
+        for spec in &self.items {
+            let (query, qty) = match spec.rsplit_once(':') {
+                Some((q, n)) => match n.trim().parse::<u8>() {
+                    Ok(qty) => (q, qty),
+                    Err(_) => (spec.as_str(), 1),
+                },
+                None => (spec.as_str(), 1),
+            };
+            let query = query.replace(['-', '_'], " ");
+            match legaia_engine_core::cheats::resolve_item(
+                &query,
+                pairs.iter().map(|(i, n)| (*i, n.as_str())),
+            )
+            .and_then(|id| world.cheat_give_item(id, qty))
+            {
+                Some(g) => log::info!(
+                    "play-window: --cheat-item {spec}: id {:#04x} +{} (holding {})",
+                    g.id,
+                    g.granted,
+                    g.held
+                ),
+                None => log::warn!("play-window: --cheat-item {spec}: no single item matches"),
+            }
+        }
+    }
 }
 
 impl DebugSeeds {
+    /// Attach the `--cheat-*` operands.
+    pub(crate) fn with_cheats(mut self, cheats: PlayCheats) -> Self {
+        self.cheats = cheats;
+        self
+    }
+
     /// Parse the two repeatable operands. Each accepts decimal or `0x` hex.
     pub(crate) fn from_args(
         learn_spell: &[String],
@@ -969,10 +1061,6 @@ struct PlayWindowApp {
     dance_cast_gpu: Option<minigames::DanceCastGpu>,
     /// Muscle Dome hub-screen atlas + sprite table (see [`MuscleHubAssets`]).
     muscle_hub: Option<MuscleHubAssets>,
-    /// The dome hub's screen timers - first visit, ROUND card, INTERVAL +
-    /// tally, re-entered backdrop - the engine kernel the browser play page
-    /// drives too (`legaia_engine_core::muscle_ringside::HubTimers`).
-    muscle_timers: legaia_engine_core::muscle_ringside::HubTimers,
     /// World actor slot the spawned player-summon creature occupies (`>= 8`, so
     /// it never collides with the party/monster battle slots), or `None`.
     summon_actor_slot: Option<usize>,

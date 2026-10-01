@@ -558,6 +558,51 @@ impl BakaHudWidget {
     }
 }
 
+/// Runtime VA of the VITAL bar **frame-cell table** the HUD renderer
+/// `FUN_801d2afc` walks (`lui 0x801e` / `addiu -0x43cc` at `0x801D2CA8`).
+///
+/// It is initialised data in the overlay image, not a runtime build: the HUD
+/// renderer is its only reference in the overlay, and it only reads it.
+pub const HUD_BAR_FRAME_TABLE_VA: u32 = 0x801D_BC34;
+
+/// File offset of [`HUD_BAR_FRAME_TABLE_VA`] within the as-loaded image.
+pub const HUD_BAR_FRAME_TABLE_FILE_OFFSET: usize =
+    (HUD_BAR_FRAME_TABLE_VA - BAKA_OVERLAY_BASE_VA) as usize;
+
+/// Stride of one frame-cell record.
+pub const HUD_BAR_FRAME_STRIDE: usize = 0x10;
+
+/// Cells per VITAL frame: the loop bound `slti v0,s3,0x3` at `0x801D2D98`.
+pub const HUD_BAR_FRAME_CELLS: usize = 3;
+
+/// One VITAL bar frame cell (`0x801DBC34 + i * 0x10`): a screen width and
+/// the four texture corners, sampled from texpage 5 (`(320, 0)`) through
+/// CLUT `0x7D80` at the neutral `0x808080`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BakaBarFrameCell {
+    /// `+0x00` the cell's screen width; the next cell starts this far right.
+    pub width: i32,
+    /// `+0x08..+0x0F` the `(u, v)` of corners 0..3 (top-left, top-right,
+    /// bottom-left, bottom-right), copied straight into the packet.
+    pub uv: [(u8, u8); 4],
+}
+
+/// Parse the [`HUD_BAR_FRAME_CELLS`] frame cells out of the as-loaded Baka
+/// Fighter overlay image.
+pub fn parse_baka_bar_frame(overlay: &[u8]) -> Option<[BakaBarFrameCell; HUD_BAR_FRAME_CELLS]> {
+    let end = HUD_BAR_FRAME_TABLE_FILE_OFFSET + HUD_BAR_FRAME_CELLS * HUD_BAR_FRAME_STRIDE;
+    if overlay.len() < end {
+        return None;
+    }
+    Some(std::array::from_fn(|i| {
+        let o = HUD_BAR_FRAME_TABLE_FILE_OFFSET + i * HUD_BAR_FRAME_STRIDE;
+        BakaBarFrameCell {
+            width: read_i32(overlay, o),
+            uv: std::array::from_fn(|c| (overlay[o + 8 + c * 2], overlay[o + 9 + c * 2])),
+        }
+    }))
+}
+
 /// Parse the [`HUD_WIDGET_COUNT`] widget descriptors out of the **as-loaded**
 /// Baka Fighter overlay image (PROT entry [`BAKA_OVERLAY_PROT_INDEX`]).
 pub fn parse_baka_hud(overlay: &[u8]) -> Option<Vec<BakaHudWidget>> {

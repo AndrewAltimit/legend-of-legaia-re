@@ -21,7 +21,7 @@
 [headline]
 contiguous_progresses = 35
 contiguous_pad = 6
-tier_sum = 120
+tier_sum = 121
 
 [segments]
 rim_elm = 4
@@ -32,7 +32,7 @@ drake_castle = 4
 rim_elm_restored = 4
 vidna = 3
 ravine = 4
-snowdrift_cave = 3
+snowdrift_cave = 4
 mt_rikuroa = 4
 caruban_defeated = 4
 drake_castle_revisited = 3

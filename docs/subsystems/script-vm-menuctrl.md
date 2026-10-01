@@ -768,7 +768,7 @@ When `ticks == 0` the value is written directly to the slot; when `ticks != 0` t
 
 | Sub | Slot | Notes |
 |---|---|---|
-| 0 | `ctx[+0x72]` | Plain s16 write or ramp. |
+| 0 | `ctx[+0x72]` | Plain s16 write or ramp. Speed multiplier and draw scale (`0` = not drawn); aimed at `0xF8` it lands on the player ([world-map.md](world-map.md#overworld-walk-speed-and-clip)). |
 | 1 | `ctx[+0x6A]` | Input is `(value >> 1).max(1)` (signed halve, floor 1). |
 | 2 | `ctx[+0x8E]` | When ramp == 0 and `flags & 0x20000000`, also writes `world_y = -value`. |
 | 3 | `ctx[+0x24]` | Plain s16 write or ramp (`0x801E1234`). No jump - see below. |

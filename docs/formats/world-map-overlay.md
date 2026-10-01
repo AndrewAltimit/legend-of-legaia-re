@@ -260,6 +260,16 @@ see [Consumer call sites](#consumer-call-sites)). The leading three
 clips (`rate = 1`, `part_count = 10`) are byte-identical across all three
 kingdoms.
 
+Those three are the **overworld walk clips** of Vahn, Noa and Gala. The
+kingdom maps set `_DAT_8007B6A8`, so the field pad step stores the
+scene-sentinel clip base `99` while a direction is held and the settle binds
+clip `leader + 1` from this bank - body `leader` - in place of the party
+walk; standing binds the party-bank idle as in a town
+([`field-locomotion.md`](../subsystems/field-locomotion.md#the-clip-base-and-the-settle-tail)).
+Their 10-part skeleton is the party figures'. `World::field_settle_clip_tail`
+makes the pick and `FieldPlayerAnim::resolve_scene_clip` binds it against the
+bundle each play host passes `World::drain_field_anim_cues`.
+
 The X / Y / Z "span" columns this table used to carry are deleted, not
 recomputed: they measured bytes 0-1 / 2-3 / 4-5 as three `i16`, a
 partitioning that straddles the packed 12-bit translation fields (see

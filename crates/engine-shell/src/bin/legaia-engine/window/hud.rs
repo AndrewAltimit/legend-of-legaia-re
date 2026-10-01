@@ -785,10 +785,16 @@ impl PlayWindowApp {
             // index a sprite page no host uploads, so each cell draws as a
             // font glyph at its ported x: the layout is retail's, the glyph
             // source is not.
-            let placed = legaia_engine_core::baka_fighter_chrome::hud_digit_placements(
-                f.round() as i32,
-                f.tally().map(|t| (t.total(), t.gold_remaining())),
-            );
+            // The attract card and the player select draw no duel HUD
+            // (`baka_cabinet::draws_hud` is false across the front end).
+            let placed = if f.cabinet().front_end() {
+                Vec::new()
+            } else {
+                legaia_engine_core::baka_fighter_chrome::hud_digit_placements(
+                    f.round() as i32,
+                    f.tally().map(|t| (t.total(), t.gold_remaining())),
+                )
+            };
             // The placements are 320x240 stage cells, like the rows above:
             // drawn raw they sat top-left at a fraction of the page's size.
             let mut cells = legaia_engine_render::ui_baka_strips::baka_digit_strip_draws_for(
@@ -810,7 +816,8 @@ impl PlayWindowApp {
             // (`baka_fighter_chrome::chrome_labels`, `ui_baka_strips`), the
             // same the browser play page draws.
             let sheet = f.cabinet().choice_sheet();
-            if !self.baka_chrome_frame.is_empty() || sheet.is_some() {
+            let cabinet_cells = f.cabinet_cells();
+            if !self.baka_chrome_frame.is_empty() || !cabinet_cells.is_empty() {
                 let (stage_origin, stage_scale) = self.save_select_stage(w, h);
                 let draws: Vec<_> = self.baka_chrome_frame.iter().map(|(d, _)| *d).collect();
                 let mut cd = legaia_engine_render::ui_baka_strips::baka_widget_label_draws_for(
@@ -818,17 +825,19 @@ impl PlayWindowApp {
                     &legaia_engine_core::baka_fighter_chrome::chrome_labels(&draws),
                     [1.0; 4],
                 );
-                // The "NEXT GAME / PAY OUT" sheet (`FUN_801CF388` state
-                // `0x68`) and its pot numeral off the live accumulator.
-                if let Some(cells) = sheet {
-                    use legaia_engine_core::baka_cabinet as bcab;
-                    cd.extend(
-                        legaia_engine_render::ui_baka_strips::baka_widget_label_draws_for(
-                            &self.font,
-                            &bcab::choice_sheet_labels(&cells),
-                            [1.0; 4],
-                        ),
-                    );
+                // The cabinet's own widgets (`FUN_801CF388`): the attract
+                // prompt, the "PLAYER SELECT" banner and the "NEXT GAME /
+                // PAY OUT" sheet, plus the sheet's pot numeral off the live
+                // accumulator.
+                use legaia_engine_core::baka_cabinet as bcab;
+                cd.extend(
+                    legaia_engine_render::ui_baka_strips::baka_widget_label_draws_for(
+                        &self.font,
+                        &bcab::choice_sheet_labels(&cabinet_cells),
+                        [1.0; 4],
+                    ),
+                );
+                if sheet.is_some() {
                     cd.extend(
                         legaia_engine_render::ui_baka_strips::baka_digit_strip_draws_for(
                             &self.font,
@@ -843,8 +852,32 @@ impl PlayWindowApp {
                 out.extend(cd);
             }
         }
-        // Muscle Dome HUD: the engine's rows (`minigame_status`), which also
-        // carry why the retail "Turns Left / HP Left" strip is not among them.
+        // Muscle Dome leg: the battle HUD's text half - the status plate and
+        // the command cluster's labels - off the same builders a battle
+        // draws, fed by the dome session's command flow (the sprite half
+        // rides `battle_chrome_sprite_draws`). The browser play page makes
+        // the same two calls.
+        if self.session.host.world.mode == SceneMode::MuscleDome && self.dome_battle_chrome_up() {
+            out.extend(self.battle_hud_frame_draws(w, h).text);
+            if let Some((chips, cursor, phase)) = self.battle_command_menu_chips() {
+                use legaia_engine_render::battle_command_ui as bcu;
+                let (origin, scale) = self.save_select_stage(w, h);
+                let views = bcu::command_chip_views(&chips);
+                out.extend(bcu::battle_command_chip_text(
+                    &self.font,
+                    &bcu::BattleCommandMenuFrame {
+                        chips: &views,
+                        cursor: Some(cursor),
+                        phase,
+                    },
+                    origin,
+                    scale,
+                ));
+            }
+        }
+        // Muscle Dome rows (`minigame_status`): the Ra-Seru list stand-in and
+        // the between-turn / decided prompts. They also carry why the retail
+        // "Turns Left / HP Left" strip is not among them.
         if self.session.host.world.mode == SceneMode::MuscleDome {
             out.extend(self.stage_status_rows(
                 &legaia_engine_core::minigame_status::muscle_status_rows(&self.session.host.world),
@@ -1830,6 +1863,11 @@ impl PlayWindowApp {
         let Some(assets) = self.save_menu.as_ref() else {
             return Vec::new();
         };
+        if self.session.host.world.mode == legaia_engine_core::world::SceneMode::MuscleDome
+            && !self.dome_battle_chrome_up()
+        {
+            return Vec::new();
+        }
         let Some(view) = self.session.host.world.arts_input_view() else {
             return Vec::new();
         };
@@ -2303,6 +2341,16 @@ impl PlayWindowApp {
     /// The projection itself is `engine-core::battle_hud::battle_command_chips`,
     /// shared with the browser page, and where the ring's element chip
     /// becomes the member's Ra-Seru name or `-` off the disc.
+    /// Whether a Muscle Dome leg's battle chrome is on screen: the leg's
+    /// selection is up and no hub screen (the first visit, the leg-open
+    /// ROUND card) covers it. Retail runs those hub arms before the round
+    /// driver raises its command cluster.
+    pub(super) fn dome_battle_chrome_up(&self) -> bool {
+        self.session.host.world.mode == SceneMode::MuscleDome
+            && self.session.host.world.minigames.muscle_dome.is_some()
+            && !self.session.host.world.minigames.muscle_hub.covers_leg()
+    }
+
     pub(super) fn battle_command_menu_chips(&self) -> Option<CommandChips> {
         use legaia_engine_core::battle_hud::{CommandChipPhase, battle_command_chips};
         use legaia_engine_render::battle_command_ui::ChipPhase;
@@ -2339,7 +2387,16 @@ impl PlayWindowApp {
         if self.boot_ui.is_active() {
             return Vec::new();
         }
-        if self.session.host.world.mode != legaia_engine_core::world::SceneMode::Battle {
+        if self.session.host.world.mode == legaia_engine_core::world::SceneMode::MuscleDome
+            && !self.dome_battle_chrome_up()
+        {
+            return Vec::new();
+        }
+        if !matches!(
+            self.session.host.world.mode,
+            legaia_engine_core::world::SceneMode::Battle
+                | legaia_engine_core::world::SceneMode::MuscleDome
+        ) {
             let Some(message) = self.battle_banner_message() else {
                 return Vec::new();
             };

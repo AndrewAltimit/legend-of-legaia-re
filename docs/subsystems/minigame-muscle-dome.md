@@ -274,6 +274,14 @@ Hub state `0x0C` (`0x801CFE7C..0x801CFEA8`) does
 of the game-state window `0x80084140`. That pair is the lead party record's
 own `+0x104` / `+0x106` HP fields (`0x80084708 - 0x80084140 = 0x5C8`).
 
+The restore raises the **current** HP only, so a later leg opens hurt. The
+next leg's battle init seeds the fighter actor's two HP words from two
+different record fields - current `+0x14C` and maximum `+0x14E`, the maximum
+off record `+0x104` (`FUN_80053CB8`, `0x80053DD4..0x80053DDC`) - so the status
+plate reads `hp / max` and never `hp / hp`. The port carries the maximum into
+the leg separately from the entry HP (`MuscleDomeSession::set_hp_max`, seated
+by the door warp from `SceneHost::dome_lead_fighter`).
+
 `FUN_801D0ED8` does the wider restores. It refills HP/MP/SP to their maxima at
 contest start, and - only when `course != 0`, behind a `bnez` at `0x801D0EE8`
 - first zeroes the four equipment bytes `+0x75E`/`+0x75F`/`+0x760`/`+0x762`.
@@ -798,6 +806,16 @@ connecting one), holds the loser's knockdown when the leg settles, and hands
 both hosts one view-projection (`DomeCamera::vp_raw`). The choreography and
 the framing are the port's, not a retail track.
 
+The browser play page draws that surface through the WebGL renderer's
+single-mesh path (`TmdRenderer.render`), on the same program the field's
+assembled pass has just used. Every scene-pass uniform that path does not
+own - the NCLIP rejection word, the prologue grade, the palette collapse
+and the depth cue - is staged to its identity there, because uniforms persist
+on a shared program: with the field's NCLIP word left at `2`, every
+front-facing shell fragment was discarded and the in-world dome drew as a
+bare dirt floor with the two fighters on it, while the native window, on
+the same surface, showed the walls, fence and lamps.
+
 The shell, the assembled fighter and the monster all upload their prims'
 baked **packet colour** on the `a_flat_rgba` attribute, because the page
 shades the retail way - `texel * colour / 128`, no light source. The dome's
@@ -876,12 +894,10 @@ its bit is never raised by a dome round
 ported rules resolve each queued command as a basic strike" - is closed:
 see [the queue the dome resolves](#the-queue-the-dome-resolves-is-the-tokenizers).
 
-The two hosts reach the chip from different buttons, and that is the one
-disclosed difference: retail opens the list from the ring's **Right** chip,
-which the port's collapsed selection cannot spare (the four directions are
-the input screen's), so the browser minigames page - which keeps a ring
-screen - binds Right, and the native `play-window` binds **Triangle**. Both
-land in `MuscleDomeSession::select_input`, so the rules are one.
+The in-world dome (the `koin1` arena door, on the native `play-window` and
+the browser play page) runs the selection as the battle's own command flow
+and draws it with the battle HUD - see
+[The selection is the battle's command flow](#the-selection-is-the-battles-command-flow).
 
 ## HUD chrome texture sources (capture-pinned)
 
@@ -1232,11 +1248,11 @@ both screens read the equipped set's `+0x74` bytes through
 `legaia_asset::battle_char_assembly::swing_command_costs`
 ([`arts-command-gauge.md`](arts-command-gauge.md#reading-it)).
 
-What is still *not* unified is the session object: the dome keeps its own
-`MuscleDomeSession` budget / spent / queue triple while the battle runs
-`engine_core::arts_command_input`. The two model the same retail state
-(`ctx+0x6dc`, `ctx+0x6d8`, `actor+0x1df`) in the same units, so the seam is
-a refactor rather than a question.
+The session object is shared too: the dome's command flow embeds the
+battle's `engine_core::arts_command_input` entry session and mirrors its
+buffer into `MuscleDomeSession`'s budget / spent / queue triple after every
+press - the same retail state (`ctx+0x6dc`, `ctx+0x6d8`, `actor+0x1df`) in
+the same units.
 
 ### Three marks for "you cannot pick this", and the gates that raise them
 
@@ -1353,6 +1369,38 @@ page has no save and latches the word from the `unlock` mask its own
 that opens a standalone leg without a contest keeps the word at `0`, which
 forbids nothing.
 
+### The selection is the battle's command flow
+
+A dome round is a round of the battle overlay's own driver, so the port runs
+its selection through the battle's sessions rather than a dome-only input
+rule: `muscle_dome::DomeMenu` holds a `battle_input::BattleCommandSession`
+for the ring (`0x28`), the `Auto | Command` prompt (`0x78`) and the
+`Begin | Reselect` confirm (`0x6E`), an `arts_command_input` entry session for
+the direction entry (`0x50`) and its review (`0x5A`), or the Ra-Seru list
+(`0x46`, off the ring's right arm). `MuscleDomeSession::select_input` steps
+whichever owns the pad; only `Begin` closes the turn. The review's commit goes
+straight to the confirm - the captured dome chain has no target cursor
+between `0x5A` and `0x6E`, and a dome round fields one opponent.
+
+The HUD is the battle's for the same reason. During a leg
+`battle_hud::battle_command_chips`, `battle_ring_marks`,
+`World::arts_input_view` and `sync_battle_hud_rows` answer from the dome
+session (`battle_hud_phase` reads its selection as command entry), so both
+play hosts draw the chips, the cross-out / Rot / Curse marks, the entry
+chrome, the readout bar and the AP plate through the builders a battle uses.
+They hold the chrome while a hub screen covers the leg
+(`muscle_ringside::HubTimers::covers_leg` - the first visit and the leg-open
+ROUND card run in the arena before the round driver raises its cluster).
+
+Disclosed host models inside the flow: the ring's Item arm refuses (the
+session carries no bag; every unlocked course forbids items anyway), Auto
+fills the string greedily in deal order rather than reloading the saved
+string ([the Auto arm](#the-auto-arm-reloads-a-saved-string-and-the-round-rebuilds-it)),
+and Spirit commits an empty string. The Ra-Seru list itself stays a text
+stand-in: its window's pieces are not pinned. The standalone minigames page
+still drives the session's commit / cast calls from its own page-side
+screen sequence.
+
 ### The command cluster is the battle cluster
 
 The dome's chip anchors are the same cluster the battle command menu draws,
@@ -1390,6 +1438,32 @@ draws no hub screen and where the shared verdict lives. Both hosts run each
 screen on the hub controllers' own counters - see
 [the hub screen envelopes](#the-hub-screens-are-envelopes-not-frame-counts).
 
+### Between legs the arena keeps the frame
+
+A survived leg with the course not exhausted never leaves the arena: the
+battle exits to arena mode `0x18`, the re-entered hub runs `0x0A..0x0C` (the
+INTERVAL tally over the ringside still) and `0x14..0x16` (the ROUND card), and
+the end of arm `0x16` starts the next fight itself (`FUN_801D1510`). In the
+port the in-world dome's decided leg closes on Cross through
+`World::tick_muscle_dome`, which reports it and asks the shared verdict
+(`leg_boundary_raises_interval`): a continuing contest sets
+`MinigameState::muscle_hub_between_legs` and keeps `SceneMode::MuscleDome`
+with no leg open (`World::muscle_hub_between_legs`); every other leg settles
+and hands the field back. The hub kernel `HubTimers` lives on the world
+(`MinigameState::muscle_hub`) and `World::tick_muscle_hub` runs it every tick,
+called by the shared scene host right after `World::tick` - so both play
+hosts and a headless harness run one hub. It raises
+`HubTimersFrame::next_leg` once its INTERVAL and backdrop arms have drained,
+answered by `World::begin_next_muscle_leg`, which stages the next fight
+through the same mode-24 drain the arena door uses without re-arming the
+round trip. While the hub owns the frame neither host
+draws the field (no 3D, and the field party HUD is suppressed outside the
+field modes) nor battle chrome; a decided leg puts no text up - the KO is the
+battle's, and the tally is the hub's. Start between legs is the give-up arm
+(the contest ends and the tally is void). Locked by
+`engine-core/tests/muscle_contest_world.rs` and
+`web-viewer/tests/play_ringside_still_disc.rs`.
+
 ### The hub screens are envelopes, not frame counts
 
 A hub screen is not "up for N frames at full brightness". Each is a **fade-in
@@ -1425,9 +1499,9 @@ corner-anchored draws: the course-name strip (record `5 + course`,
 `*(0x801D1A90)`) as variant 1 at `(8, 0x78)`, variant 2 at the same seat and
 variant 2 again at `(0x10, 0x80)`, then record `8` the same way at
 `(0xB8, 0x7B)` / `(0xC0, 0x83)` - a shadow, an under-layer and a face once
-painted in OT order. The variant-2 packets are marked ABR 2 but sample
-STP-free palettes, so they draw opaque, and both records sit on the STP-free
-row 503, so the face draws opaque too
+painted in OT order. The variant-2 packets subtract a white knockout
+palette and the variant-1 face adds over it: the arena uploads the hub CLUTs
+STP-set, so both marks reach the GPU
 ([`ringside-still.md`](../formats/ringside-still.md#which-hub-packets-blend)). Arm `3` also starts the card's level
 climbing (`0x801CFA74`, `+dt*2`) while the title zooms, so the card enters
 arm `4` part-lit. Port: `other_game_hud::course_card_draws`; the first visit
@@ -1446,9 +1520,10 @@ countdown `DAT_8007C338 = [0, 0x1E, 0x3C, 0x5A]` - the four "ka-ching" cues
 staggered 0 / 30 / 60 / 90 frames (`0x801CFCAC..0x801CFCEC`).
 
 Port: `engine-core::muscle_dome::HubScreen` carries the envelope,
-`engine-core::muscle_ringside::HubTimers` arms and ticks it on both play hosts
-(the native window's and the play page's `tick_muscle_hub` are each that one
-call plus the sounds it fires), and the standalone page samples the same
+`engine-core::muscle_ringside::HubTimers` arms and ticks it once per world
+tick (`World::tick_muscle_hub`, from the shared scene host; each play host's
+own `tick_muscle_hub` only sounds what it fired, via
+`World::take_muscle_hub_sounds`), and the standalone page samples the same
 kernel through `muscle_hub_screen_json` - so no host picks a count or a
 brightness of its own.
 
@@ -1982,14 +2057,15 @@ clears the direction string and leaves the AP budget alone, because retail's
 arm never reads `ctx+0x6D8` / `ctx+0x6DC`), and the debit lands at the
 play-out, where the shared band's `0x28` charges it. The outcome runs through
 `engine-core::spells::cast_spell` - the same rule an ordinary battle's cast
-band folds with. `select_input` is the one selection surface both hosts drive;
+band folds with. `select_input` is the one selection surface both world hosts drive
+([the battle's command flow](#the-selection-is-the-battles-command-flow));
 the loadout comes from `magic_loadout_for`, the door both native dome entry
 paths install through. See
 [What makes a Ra-Seru chip render](#what-makes-a-ra-seru-chip-render).
 
 The world hosts the contest as the suspending `SceneMode::MuscleDome`
-(play-window `M` key; Left/Right/Up/Down enter the four directions, Triangle
-opens the Ra-Seru list (Circle closes it), Cross confirms/continues). A KO of the opponent inside
+(play-window `M` key, or the arena door; the selection is the battle's
+command screens, Cross confirms/continues). A KO of the opponent inside
 the limit credits the reward Seru through the engine's capture kernel.
 
 The opponent is the disc's own: both hosts resolve `(course, round)` through

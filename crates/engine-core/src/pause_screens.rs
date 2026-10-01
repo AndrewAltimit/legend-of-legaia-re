@@ -33,12 +33,6 @@ use legaia_engine_vm::battle_formulas::{MpCostModifier, mp_cost_after_ability_bi
 /// 182-px content height at the 0xE pitch).
 pub const LIST_PAGE_ROWS: usize = 12;
 
-/// Default bag capacity backing the Items list's page count. The retail
-/// header reads `PAGE 1 / 6` on the catalogued capture - six 12-row pages
-/// = 72 bag slots (the `0x80085958 + i*2` slot array scanned over
-/// `_DAT_8007B5EA.._DAT_8007B5EC`).
-pub const DEFAULT_BAG_PAGES: u16 = 6;
-
 /// Ra-Seru summon spell-id block (`Palma`..`Ozma`, the egg-derived
 /// summons): these rows lead with the wider winged element icon in the
 /// spell list. See `docs/formats/spell-table.md`.
@@ -350,10 +344,18 @@ impl PauseItemsSession {
         (self.list_cursor() / LIST_PAGE_ROWS) as u16 + 1
     }
 
-    /// Total page count: the fixed bag capacity's page count (the retail
-    /// header shows the bag's page total, not the held-item count).
+    /// Total page count: `ceil(rows / 12)`, `0` for an empty list.
+    ///
+    /// Retail's kind-4 list kernel `FUN_80032A44` recovers the total by
+    /// stepping `visible`-sized pages until the accumulator reaches the row
+    /// count (`0x80032e44..0x80032e78`), and draws no PAGE header at all
+    /// for a zero count (`beq a0,zero` at `0x80032e18`). The row count is
+    /// the **occupied** slot count: the Use-list builder `FUN_80030628`
+    /// skips an empty slot (`beq s0,zero,0x80030a0c` at `0x8003089c`). So
+    /// one held item reads `PAGE 1/ 1` with no page-turn arrow - the bag's
+    /// capacity never enters the figure.
     pub fn pages(&self) -> u16 {
-        DEFAULT_BAG_PAGES.max(self.rows.len().div_ceil(LIST_PAGE_ROWS).max(1) as u16)
+        self.rows.len().div_ceil(LIST_PAGE_ROWS) as u16
     }
 
     /// `true` while the item-use flow is in its target-select phase (the
@@ -1044,7 +1046,9 @@ pub fn magic_screen_model(s: &SpellMenuSession, text: Option<&MenuTextTables>) -
         .get(caster_idx)
         .map(|c| c.spells.clone())
         .unwrap_or_default();
-    let pages = spells.len().div_ceil(LIST_PAGE_ROWS).max(1) as u16;
+    // `0` for a caster with no spells: the list kernel draws no PAGE header
+    // at a zero row count (`FUN_80032A44`, `beq a0,zero` at `0x80032e18`).
+    let pages = spells.len().div_ceil(LIST_PAGE_ROWS) as u16;
     // In caster focus the hovered caster's list previews from page 1; the
     // list cursor only exists in list focus.
     let cursor = if focus_list { list_cursor } else { 0 };
@@ -2636,8 +2640,23 @@ mod tests {
         assert_eq!(s.focus, PauseItemsFocus::Command);
     }
 
+    /// The page total is the occupied-row count's page count, never the
+    /// bag capacity: one held item reads `PAGE 1/ 1` (no page-turn arrow),
+    /// and an empty bag reports `0`, which suppresses the header the way
+    /// retail's zero-count branch does.
+    #[test]
+    fn items_page_total_counts_rows_not_capacity() {
+        let one = items_screen_model(&items_session(&[(0x77, 47)]));
+        assert_eq!((one.page, one.pages), (1, 1));
+        let twelve: Vec<(u8, u8)> = (1..=12).map(|i| (i, 1)).collect();
+        assert_eq!(items_screen_model(&items_session(&twelve)).pages, 1);
+        let thirteen: Vec<(u8, u8)> = (1..=13).map(|i| (i, 1)).collect();
+        assert_eq!(items_screen_model(&items_session(&thirteen)).pages, 2);
+        assert_eq!(items_screen_model(&items_session(&[])).pages, 0);
+    }
+
     /// Left/Right flip 12-row pages over the bag; the model slices the
-    /// visible page and reports the retail 6-page bag total.
+    /// visible page and reports `ceil(rows / 12)` as the total.
     #[test]
     fn items_page_flip_and_model_slice() {
         let rows: Vec<(u8, u8)> = (1..=30).map(|i| (i, 1)).collect();
@@ -2645,7 +2664,7 @@ mod tests {
         s.input_pad_edge(edge(PadButton::Cross)); // into the list
         let m = items_screen_model(&s);
         assert_eq!(m.page, 1);
-        assert_eq!(m.pages, DEFAULT_BAG_PAGES);
+        assert_eq!(m.pages, 3);
         assert_eq!(m.page_rows.len(), LIST_PAGE_ROWS);
         assert!(m.focus_list);
 
@@ -2858,6 +2877,27 @@ mod tests {
         assert_eq!(m.casters[1].3, 80);
         assert!(m.info.is_none());
         assert_eq!(m.page_rows.len(), 2);
+        assert_eq!((m.page, m.pages), (1, 1));
+    }
+
+    /// A caster with no spells has a zero-row list, which retail's list
+    /// kernel draws with no PAGE header at all: the page total is `0`.
+    #[test]
+    fn magic_model_empty_list_has_no_page_total() {
+        let party = vec![CasterSlot {
+            slot: 0,
+            name: "Gala".into(),
+            hp: 60,
+            mp: 30,
+            hp_max: 100,
+            mp_max: 120,
+            level: 7,
+            ..Default::default()
+        }];
+        let s = SpellMenuSession::new(party, Vec::new(), SpellCatalog::vanilla());
+        let m = magic_screen_model(&s, None);
+        assert_eq!(m.pages, 0);
+        assert!(m.page_rows.is_empty());
     }
 
     /// List focus: rows grey (focus_list), the hovered spell stages into

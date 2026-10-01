@@ -1293,6 +1293,20 @@ Guard ("enemies can't escape") - bit 54 of the 64-bit ability field, i.e.
 [`accessory-passive-table.md`](../formats/accessory-passive-table.md). Retail
 traps on a zero side count (`break 0x1C00`); the port saturates the divisors.
 
+**Both counts are the battle context's seat counts**, `ctx[+0]` (party) and
+`ctx[+1]` (monsters): the monster loop runs `ctx[+1]` pool slots from slot 3
+(`0x801EC118`) and the average divides by the same byte (`div s1,v0` at
+`0x801EC280`). A downed monster stays in the divisor, contributing nothing to
+the sum. The count is the whole safeguard bosses get here. The flag gate is a
+property of the formation row, not of the monster, and the Rim Elm sparring
+fight's row (town01 row 4) carries header byte `0`: its battle states read
+`ctx+0x287 = 0`, `DAT_8007BD60 = 0x01` and `_DAT_8007BAC0 = 0`, so neither gate
+refuses the roll. Tetsu stays because a lone 999-HP monster's average sits in
+the thousands while a starting party's roll cannot pass a few hundred. An
+engine that averages the monster side over its whole actor table instead of
+the seated count divides that score by the table size, and the sparring partner
+flees once wounded.
+
 Ported as `engine-vm::battle_formulas::monster_escape_roll` /
 `monster_escape_side_scores`; `see ghidra/scripts/funcs/overlay_battle_action_801ec0dc.txt`.
 
@@ -1919,7 +1933,9 @@ Every battle-side consumer draws through `World::next_rand`: the battle-action h
 
 On the disc, every one of the corresponding routines reaches the generator by `jal 0x80056798`; the battle overlay's only other generator is `FUN_801D0290`, which feeds ribbon geometry. Where a port used to mask the raw word `& 0x7FFF` (the **low** fifteen bits, the wrong half), the shaped draw replaces it; where a port's own arithmetic differed from retail's around the draw, the retail instructions replaced it (the victory re-pick is retail's `rand() % party_count` rejection loop, and the drop roll above replaced a one-byte roll against a 1/256 rate).
 
-Three draw sites still do not sit on that stream. The field overlay's move-VM extension `FUN_801D362C` (sub-ops `0x05` / `0x30`) still hands over a raw state. The battle camera script and the camera's own shake draw from a private, already-shaped seed. The Muscle Dome session keeps a per-session seed. The engine's own step tracker (`encounter::EncounterTracker::on_step`) is not a retail port and splits one raw word into a low trigger byte and a high pick half. Minigames and pure kernels that keep a private seed use the already-shaped `psyq_rand_step` / `BiosRand`.
+The field overlay's move-VM extension `FUN_801D362C` draws on the same stream: sub-ops `0x05` (RAND_ADD, `jal 0x80056798` at `0x801D3714`) and `0x30` (RAND_PICK, `0x801D45F8`) take `World::next_rand`, and `0x05`'s modulo is retail's signed `div` by the `lh` operand, `rand % |divisor|`.
+On the raw state, `0x30`'s `rand & 1` coin flip strictly alternated.
+Two draw sites still do not sit on the world stream, and both already draw the retail shape. The battle camera script and the camera's own shake draw from a private seed through `psyq_rand_step`. The Muscle Dome session keeps a per-session seed. The engine's own step tracker (`encounter::EncounterTracker::on_step`) is not a retail port and splits one raw word into a low trigger byte and a high pick half. Minigames and pure kernels that keep a private seed use the already-shaped `psyq_rand_step` / `BiosRand`.
 
 ## Engine-side mirror - `engine-vm::battle_formulas`
 

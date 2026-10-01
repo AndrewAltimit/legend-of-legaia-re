@@ -22,7 +22,7 @@ below to jump within this page.
 - [Encounter-record installation](#encounter-record-installation) · [from-scratch port](#from-scratch-port---both-overworld-and-field) · [NPC dialogue text source](#npc-dialogue-text-source)
 
 **Overworld player + scenes**
-- [Player movement + region-keyed encounters](#overworld-player-movement--region-keyed-encounters) · [collision / walkability](#overworld-collision--walkability) · [not one walk component](#the-overworld-is-not-one-walk-component) · [camera-relative movement remap](#camera-relative-movement-remap) · [axis convention](#overworld-axis-convention) · [boot-path seeding](#boot-path-seeding)
+- [Player movement + region-keyed encounters](#overworld-player-movement--region-keyed-encounters) · [walk speed and clip](#overworld-walk-speed-and-clip) · [collision / walkability](#overworld-collision--walkability) · [not one walk component](#the-overworld-is-not-one-walk-component) · [camera-relative movement remap](#camera-relative-movement-remap) · [axis convention](#overworld-axis-convention) · [boot-path seeding](#boot-path-seeding)
 - [Entity / actor placement table](#entity--actor-placement-table) · [classifying the entity kind](#classifying-the-entity-kind-from-its-script) · [scene destinations](#scene-destinations) · [chapter-1 Drake hub sweep](#chapter-1-drake-hub-sweep) · [Uru Mais + `jouine` exits](#uru-mais-and-jouine-exits-carried-by-the-pch-sidecar)
 
 **Terrain + geometry**
@@ -590,6 +590,14 @@ the HUD never comes up - which is why no ending scene, whose entry script
 spawns the credits record and never lets it end, shows a party readout. The
 port's `world_map_panel_host::field_hud_rearm_held` answers that term for
 both hosts.
+
+The routine is field-overlay code (PROT 0897, slot A at `0x801CE818`), so it
+draws nothing on a frame that slot holds another image. The field-to-battle
+transition is one: its overlay, PROT 0979 `field_battle_intro`, loads into
+the same slot, so no readout appears over the intro. The port's suppress
+kernel `field_hud_suppressed` carries that as a term
+(`field_battle_transition_active`, the encounter session's `Transition`
+phase).
 
 The panel's top edge is `12`, except that the player's own position is
 projected through `FUN_800195A8` first and the panel drops to `0xAA` when the
@@ -1389,10 +1397,10 @@ movement.
 
 ### Overworld player movement + region-keyed encounters
 
-The overworld now has a moving player and a position-routed random-encounter
+The overworld has a moving player and a position-routed random-encounter
 roll. `tick_world_map` walks the player actor from the held d-pad
-(`World::step_world_map_locomotion`, direct screen-axis mapping at
-`World::WORLD_MAP_PLAYER_SPEED` units/frame) and, on each 128-unit tile the
+(`World::step_world_map_locomotion`, camera-relative, at the field
+controller's speed - [below](#overworld-walk-speed-and-clip)) and, on each 128-unit tile the
 player crosses (`World::live_world_map_tick`, mirroring the field
 `live_field_tick`), rolls the scene's region-keyed encounter table
 (`World::set_world_map_regions`). That table is the from-scratch port of
@@ -1439,6 +1447,71 @@ while the timeline runs (retail's descent shows the bare continent); a
 world-map beat record **without** camera beats (the Drake mist-wall
 force-walk bands) keeps the ordinary walk camera. Disc-gated pin:
 `engine-core/tests/map01_flyin_camera.rs`.
+
+### Overworld walk speed and clip
+
+The world-map-walk overlay's frame pump `FUN_801D1344` and pad controller
+`FUN_801D01B0` are instruction-identical to the field overlay's (compared
+from the base-tagged dumps of both loads), so the overworld player is the
+field player with two inputs changed:
+
+- **`+0x72 = 0xC00`.** Each kingdom's entry script (`P1[0]`) opens with
+  `CC F8 40 00 0C 00 00`, op `4C` nibble-4 sub-0 aimed at the player: the
+  speed multiplier the pad step folds in and the render scale the animated
+  renderer `FUN_8001B964` applies (`0x8001BA6C..0x8001BAA4`). Every retail
+  overworld state holds `0xC00`; a town holds `0x1000`. The overworld figure
+  is three quarters of its town size.
+- **`_DAT_8007B6A8 = 1`.** The per-scene MAN flag (the save-allow byte) is set
+  on the three kingdom maps only. The pad step's base-step selector then
+  forces the slow step `5` and skips the run test, and while a direction is
+  held it stores the scene-sentinel clip base `99`, which the settle
+  `FUN_801D1BA0` turns into clip `leader + 1` bound from the **scene** bank:
+  body `leader` of the kingdom's own ANM bundle
+  ([`world-map-overlay.md`](../formats/world-map-overlay.md#per-kingdom-clip-inventory)).
+  Standing stores the idle base `2`, the party-bank idle.
+
+So the overworld step is `(5 * 0xC00) >> 12 = 3` units per `dt`. Retail runs
+the overworld at `dt = 3` (the state-poll `dt` rows), and the 2-unit stepper
+rounds the `9` up to `10`: the captured tile crossings on `map01` are `130`
+units every `39` vsyncs, against a town's `128` every `16`.
+
+The port runs that controller's pieces in the world-map tick: the base-step
+selector (`World::field_base_step`, which reads `_DAT_8007B6A8` as
+`World::party.scene_save_allowed`), the clip-base store, the settle's clip
+tail, the system channel's idle store and the clip advance into the player's
+`pose_frame`. Both play hosts draw the player at `World::player_render_scale`.
+Disc-gated pin: `engine-core/tests/world_map_player_anim_disc.rs` (130 units
+over 39 ticks).
+
+**Displacement over time.** The port ticks once per vsync, so it cannot take
+retail's frame step literally: at `dt = 1` the `3`-unit step rounds up to `4`
+every tick, 20% faster than retail's `10` every three vsyncs. The overworld
+walk instead computes the step for one retail frame at `dt = 3`
+(`WORLD_MAP_FRAME_STEP`), rounds it to whole 2-unit sub-steps as retail's
+stepper does, and pays it out over three ticks through a carry
+(`WorldMapState::walk_carry`, cleared on release) - `2, 4, 4` units, `130`
+per `39` ticks. A town needs no carry: its steps (`8` walk, `12` run at
+`0x1000`) are whole sub-steps at any frame step. The walk clip needs no
+correction either: `FUN_800204F8` multiplies its cursor step by the same
+`DAT_1F800393`, so a clip advances at one rate per vsync whatever the frame
+step.
+
+**Hiding and resizing the player.** `+0x72` is also what cutscenes use to hide
+the player: `FUN_8001B964` returns before drawing an actor whose word is `0`
+(`0x8001B9A0`), and the disc carries `CC F8 40 00 00 00 00` throughout its
+cutscene and talk scripts (a stand-in walks while the player is hidden), with
+`CC F8 40 00 10 00 00` to restore it and a few tick-counted ramps
+(`CC F8 40 00 10 64 00`, back to full size over 100 frames). The branch lands
+on the routine's shadow tail, so a hidden actor still casts its drop shadow.
+`FUN_8003C83C` resolves `0xF8` to the live player whichever script issues the
+op, so the port routes it the same way from every runner (system script,
+cutscene timeline, placement channels, inline talk, prop run): see
+`field_step_routed`. A tick-counted form installs a kind-2 slot of the generic
+ramp pool (`FUN_8003C5F0`, from the live word to the operand), which
+`World::tick_player_scale_ramp` lerps each frame; scene entry clears it with
+the rest of the pool. A `0` word is `World::player_hidden`, and
+`player_render_scale` is `0.0` - the posed mesh collapses on both hosts and the
+drop shadow stays.
 
 ### Overworld collision / walkability
 

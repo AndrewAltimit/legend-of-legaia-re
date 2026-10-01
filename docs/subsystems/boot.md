@@ -358,6 +358,8 @@ The fresh-state seed is the new-game data-init `FUN_80034A6C` (called via the bo
 
 The engine port also applies this seed on a **cold scene boot** - entering a scene directly (native `play-window --scene X`, the site play page's scene picker) with no New Game confirm and no save loaded. `SceneHost::enter_field_scene` consults an optional `NewGameDefaults` (template party + starting bag, parsed from the boot source's `SCUS_942.54` and installed by the native `BootSession` and the browser runtime's `load_disc`), and `World::seed_cold_boot_defaults` fires it once, guarded on an empty roster, so the pause menu always reads valid party data and a loaded save is never clobbered. Retail has no equivalent code path - there is no way to reach a scene without the data-init having run - so this is a port-side invariant, not a traced routine.
 
+On a scene-picker host (`NewGameDefaults::picker_party`, raised by the play-window's `--scene` entry and the browser runtime) the party half of that seed is `World::seed_picker_party` instead of the Vahn-alone New Game roster: Vahn, Noa and Gala as the present battle party, each from their own template row and in a starter loadout (`new_game::starter_loadout` - the weakest gear the `DAT_80074F68` equipment table lets the character wear per slot, their exclusive weapon family first). That loadout is the port's choice; retail's New Game leaves the equipment bytes zero. Headless sessions keep the retail roster, and a NEW GAME reseeds it.
+
 #### Title screen is not in the mode table
 
 *Superseded, and the heading is kept because both the question and the links to

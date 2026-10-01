@@ -15,9 +15,10 @@
 //!   cluster: the plate 3-slice, the four-arm diamond and its D-pad glyph,
 //!   and the `-` chip an unavailable command draws.
 //! * [`battle_hud_chrome`] - the battle surfaces that are widget-table
-//!   records rather than plate runs: the class-0 message banner (which
-//!   draws no interior fill and shares its seat with the actor-name
-//!   plaque) and the status / element badge cells.
+//!   records rather than plate runs: the class-0 frame of the message
+//!   banner and the intro enemy-name labels (a marbled fill under a gold
+//!   border; the banner shares its seat with the actor-name plaque) and the
+//!   status / element badge cells.
 //! * [`ui_fishing`] - fishing-minigame HUD: the ported draw-list layout plus
 //!   the consumer that renders it.
 //! * [`ui_menu`] - pause-menu field/status/spell/inventory/equipment panels,

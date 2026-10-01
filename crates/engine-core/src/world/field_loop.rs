@@ -38,7 +38,16 @@ impl World {
                     // `FUN_801DBA20` grain - retail re-runs the region scan
                     // when the player tile changes).
                     self.refresh_field_regions();
-                    self.on_field_step();
+                    // A jump of two or more tiles (a script seating the
+                    // player, a warp landing) is not a step to the region
+                    // reader; a forced scripted formation still fires.
+                    let step = crate::region_encounter::is_region_step(
+                        (i32::from(prev.0), i32::from(prev.1)),
+                        (i32::from(tile.0), i32::from(tile.1)),
+                    );
+                    if step || self.encounters.scripted_formation_pending {
+                        self.on_field_step();
+                    }
                 }
                 None => self.terrain.last_tile = Some(tile),
                 _ => {}
@@ -524,6 +533,9 @@ impl World {
             actor.active = true;
             actor.move_state.field_72 = FIELD_PLAYER_SPEED_MULT;
         }
+        // Scene entry resets the ramp pool (`FUN_8003CDA8`): a ramp the last
+        // scene left running must not resize the player on this one.
+        self.locomotion.player_scale_ramps.reset_pool();
         if self.move_vm.ramp_ratio == 0 {
             self.move_vm.ramp_ratio = 1;
         }
@@ -622,7 +634,10 @@ impl World {
         // `world.field_bytecode` through the borrow.
         let ctx = unsafe { &mut *ctx_ptr };
         let bc: &[u8] = unsafe { (*bc_ptr).as_slice() };
-        let res = vm::field::step(&mut host, ctx, bc, pc);
+        // A player-aimed `+0x72` write (every kingdom map's entry script
+        // opens with `CC F8 40 00 0C 00 00`) lands on the player, not on the
+        // system context: `field_step_routed`.
+        let res = field_step_routed(&mut host, ctx, bc, pc);
         match &res {
             FieldStepResult::Advance { next_pc } => self.field_pc = *next_pc,
             FieldStepResult::Yield { resume_pc } => self.field_pc = *resume_pc,

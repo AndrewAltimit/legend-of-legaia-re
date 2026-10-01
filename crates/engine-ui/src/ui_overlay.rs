@@ -1531,9 +1531,8 @@ pub fn battle_hud_draws_for(
     // up and the host can also claim the seat outright
     // (`plaque_seat_taken`) for a box it draws itself.
     if let Some(message) = frame.banner.filter(|m| !m.is_empty()) {
-        // The class-0 nine-slice, sized to the measured message - and no
-        // interior fill: retail's display list carries the border sprites
-        // and the glyph run and nothing else, so the scene shows through.
+        // The class-0 nine-slice over its marbled fill, on the record's fixed
+        // 280-wide content box (`battle_hud_chrome::BANNER_BOX_W`).
         if let Some(rects) = frame.chrome {
             let content = message_banner_content(font, message);
             sprites.extend(message_banner_chrome_draws_for(
@@ -1727,7 +1726,7 @@ pub fn battle_hud_draws_for(
     //
     // One label per monster group, laid out by retail's composer and each
     // spawned on the message banner's class-0 frame (kind 3) at pen
-    // `(x, 48)`, with no interior fill. Frame origin is the pen less
+    // `(x, 48)` over the same marbled fill. Frame origin is the pen less
     // `(8, 8)`, so `Moldy Worm` on `(86, 48)` frames `(78, 40)..(159, 67)`.
     for (label, x) in frame.intro_names.iter().filter(|(l, _)| !l.is_empty()) {
         let pen = (*x, BATTLE_INTRO_NAME_Y);

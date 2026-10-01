@@ -1484,6 +1484,28 @@ consumer is pinned by `crates/web-viewer/tests/w4b_screen_effect_page_prims.rs`
 (the `town0e` entry script issues the instruction), the native call site by the
 `SIM_PAIRS` row in `scripts/ci/check-ui-host-drift.py`.
 
+##### A push in front of the text, or behind it
+
+The bucket is what decides whether a wash dims the text drawn over the scene.
+Every MES glyph - the opening crawl included, which draws through the same
+renderer - is linked at `*(0x1F8003F4) + 4`, bucket `1` (`FUN_80036888`,
+`0x80036B88..0x80036B98`; the roller `FUN_80037174` adds its clip-window
+packets at the same `+4`). The table is cleared with `ClearOTagR` and drawn
+from its last entry, so bucket `0` draws after the glyphs. A push of kind `0`
+(op `0x34` sub-0 with `op0 & 4` and not `op0 & 2`, e.g. `34 05`) therefore
+washes the crawl with the scene; kinds `2` and `8` (`34 01`, `op0 & 2`) draw
+under it and leave the text at full strength. A push sharing bucket `1` with
+the glyphs would be ordered by `AddPrim` sequence, which no capture has read;
+the port keeps it under the text.
+
+Both hosts split on that one predicate
+(`screen_prim::screen_effect_push_prims_split`). The native window draws the
+under-text half beneath its overlay text and the other half above it; the
+browser play page draws both halves over the scene in its GL pass and applies
+the over-text half to its 2D overlay canvas's own pixels
+(`play_text_layer_washes_json`, the PSX ABR equations of
+`screen_prim::wash_channel`), since that canvas sits above the GL canvas.
+
 ##### The arm is a pair, and the sub-op byte carries both selectors
 
 Reading `0x801DFCD4..0x801DFEF8` off the field overlay, one instruction does

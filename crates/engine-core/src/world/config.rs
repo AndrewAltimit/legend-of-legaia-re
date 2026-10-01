@@ -92,9 +92,10 @@ pub(crate) const FIELD_BASE_STEP: i32 = 8;
 /// [`crate::world::World::field_run_active`] for the XOR that picks it.
 pub(crate) const FIELD_BASE_STEP_RUN: i32 = 0xc;
 /// Forced-slow base step (retail `0x801D0354`: `addiu $s4, $zero, 5`, in the
-/// delay slot of `beqz` on `_DAT_8007B6A8`). This arm `j`s straight past the
-/// run and turbo checks at `0x801D0350`, so a forced walk cannot be run out
-/// of - which is why the selector tests it first.
+/// delay slot of the `j 0x801D03A4` the set `_DAT_8007B6A8` arm takes). The
+/// jump lands past the run test, so a forced walk cannot be run out of; the
+/// debug-turbo test after it still runs. The byte is set on the kingdom
+/// world maps, so this is the overworld's step.
 pub(crate) const FIELD_BASE_STEP_FORCED_SLOW: i32 = 5;
 /// Debug turbo base step (retail `0x801D03DC`: `addiu $s4, $zero, 0x18`).
 ///
@@ -104,6 +105,18 @@ pub(crate) const FIELD_BASE_STEP_FORCED_SLOW: i32 = 5;
 /// first two globals, so the constant is recorded and the arm is not taken.
 #[allow(dead_code)]
 pub(crate) const FIELD_BASE_STEP_DEBUG_TURBO: i32 = 0x18;
+/// The frame step `DAT_1F800393` retail runs the kingdom world maps at: three
+/// vsyncs per game frame, measured off the state-poll `dt` rows of every
+/// retail overworld capture (a town runs at `1` or `2`, where every walk step
+/// is already a whole number of 2-unit sub-steps per vsync).
+///
+/// The port ticks once per vsync, so the overworld walk spreads one retail
+/// frame's displacement - `((5 * 0xC00) >> 12) * 3 = 9`, rounded up to `10`
+/// by the 2-unit stepper - across three ticks
+/// ([`crate::world::WorldMapState::walk_carry`]). Ticking at `dt = 1` instead
+/// rounds every tick's `3` up to `4`: `4` units a vsync against retail's
+/// `10 / 3`.
+pub(crate) const WORLD_MAP_FRAME_STEP: i32 = 3;
 /// Per-iteration advance of the locomotion step loop (retail commits in
 /// 2-unit increments per axis).
 pub(crate) const FIELD_STEP_UNIT: i32 = 2;

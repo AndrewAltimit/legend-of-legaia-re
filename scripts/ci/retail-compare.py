@@ -57,7 +57,7 @@ def main() -> int:
     ap.add_argument("--check", action="store_true", help="assert the baseline")
     ap.add_argument("--bless", action="store_true", help="rewrite the baseline")
     ap.add_argument("--flags-first", action="store_true", help="diagnostic seeding order")
-    ap.add_argument("--filter", help="only labels containing this")
+    ap.add_argument("--filter", help="only labels containing this (comma = any of several)")
     ap.add_argument("--out", default=str(REPO / "captures" / "retail-compare"))
     ap.add_argument("--no-build", action="store_true")
     a = ap.parse_args()

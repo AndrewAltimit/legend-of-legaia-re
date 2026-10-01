@@ -399,6 +399,13 @@ meshes that count is the **runtime-capped 10** (the disc pack ships
 `nobj = 12`; groups 10/11 are the equipment-swap templates and are never
 rendered - see [`character-mesh.md`](character-mesh.md)).
 
+The bank's walk clip is the **town** walk only. On a kingdom world map the
+pad step stores the scene-sentinel base `99`, so the overworld walk binds
+body `leader` of the kingdom's own ANM bank instead (three 10-part clips,
+byte-identical across the kingdoms - see
+[`world-map-overlay.md`](world-map-overlay.md#per-kingdom-clip-inventory));
+the standing idle there is still this bank's slot 1.
+
 Parser: `legaia_asset::character_pack::field_locomotion_anm` (+ the
 `LOCOMOTION_*` bank constants). Display labels follow the same pinning
 discipline: `locomotion_slot_label` names only the two capture-pinned

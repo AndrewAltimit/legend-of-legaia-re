@@ -88,6 +88,24 @@ pub const SWEEP_GLIDE: [i16; 20] = [
 pub const DUEL_CAMERA: RetailCamGlobals =
     RetailCamGlobals([0, 0, 0, 0xC8, 0x898, 0x3520, 0, 0, 0, 0x200]);
 
+/// The player-select camera state `0x0A` stores as it spawns the lineup:
+/// pitch `0x8C`, yaw `0`, roll `0` (`0x801CF8F4..0x801CF910`), eye trio
+/// `(0, 0x2D0, 0x3FC0)` (`0x801CF910..0x801CF924`). The state leaves the
+/// focus alone; the parked attract state holds it at zero.
+pub const SELECT_CAMERA: RetailCamGlobals =
+    RetailCamGlobals([0x8C, 0, 0, 0, 0x2D0, 0x3FC0, 0, 0, 0, 0x200]);
+
+/// The player-select lineup, by party roster id: the 8-byte position records
+/// state `0x0A` copies into each fighter actor's `+0x14..+0x1B`
+/// (`0x801CF97C..0x801CF998`, table `0x801DBC04`) - Vahn front and centre,
+/// Noa to his right, Gala to his left, both a step back.
+pub const SELECT_LINEUP: [[i16; 3]; 3] = [[0, 0, -1000], [350, 0, -600], [-350, 0, -600]];
+/// The lineup's yaw (`+0x26 = 0x800`, `0x801CF9DC`): all three face the camera.
+pub const SELECT_YAW: i32 = 0x800;
+/// Depth-cue level the select tick `FUN_801D3390` gives every fighter but the
+/// cursor's (`+0x78 = 0x800`, toward the black colour word): half brightness.
+pub const SELECT_DIM_KEEP: f32 = 0.5;
+
 /// The result close-up the tally's end snaps to: yaw `0x3D4`, eye
 /// `(0, 0x8FC, 0x1900)`, pitch `0` (`0x801D0A38..0x801D0A70`) - or `0x64`
 /// on the secret opponent's variant (`0x801D0FBC..0x801D0FF0`). Focus and
@@ -184,6 +202,15 @@ impl DuelCamera {
         self.globals = ROUND_SETUP_CAMERA;
         self.glide = None;
         self.sweeping = true;
+    }
+
+    /// The player-select camera ([`SELECT_CAMERA`]), held still.
+    ///
+    /// REF: FUN_801CF388 (state `0x0A`, `0x801CF8CC..0x801CF924`)
+    pub fn select_screen(&mut self) {
+        self.globals = SELECT_CAMERA;
+        self.glide = None;
+        self.sweeping = false;
     }
 
     /// The tally's end: snap to [`RESULT_CAMERA`] and drop any glide.
@@ -604,6 +631,9 @@ pub struct BakaDuelScene {
     fighter: [Range<usize>; 2],
     ghost: [[Range<usize>; 2]; 2],
     cameo: Range<usize>,
+    /// The three party fighters of the player-select lineup, by roster id.
+    lineup: Vec<Range<usize>>,
+    floor: Range<usize>,
     walls: Vec<(Range<usize>, StagePlacement)>,
     /// Sprite-arm quad instances, four vertices each.
     impact_sprites: Vec<Range<usize>>,
@@ -643,6 +673,8 @@ impl BakaDuelScene {
             fighter: [0..0, 0..0],
             ghost: [[0..0, 0..0], [0..0, 0..0]],
             cameo: 0..0,
+            lineup: Vec::new(),
+            floor: 0..0,
             walls: Vec::new(),
             impact_sprites: Vec::new(),
             impact_meshes: Vec::new(),
@@ -663,7 +695,16 @@ impl BakaDuelScene {
         if let Some((tmd, raw)) = assets.cameo.as_ref() {
             s.cameo = s.push_tmd(tmd, raw, 1.0);
         }
+        let floor_start = s.base.len();
         s.push_floor();
+        s.floor = floor_start..s.base.len();
+        for roster in 0..SELECT_LINEUP.len() {
+            let r = match assets.fighters.get(roster).and_then(|a| a.as_ref()) {
+                Some(a) => s.push_tmd(&a.tmd, &a.raw, 1.0),
+                None => s.base.len()..s.base.len(),
+            };
+            s.lineup.push(r);
+        }
         for _ in 0..IMPACT_SPRITE_SLOTS {
             let r = s.push_quad();
             s.impact_sprites.push(r);
@@ -886,6 +927,109 @@ impl BakaDuelScene {
 
     /// Pose every dynamic range for this frame of `fight`.
     pub fn pose(&mut self, assets: &BakaDuelAssets, fight: &BakaFight) {
+        let state = fight.cabinet().state();
+        let arena = crate::baka_cabinet::draws_arena(state);
+        let floor = self.floor.clone();
+        if arena {
+            self.positions[floor.clone()].copy_from_slice(&self.base[floor]);
+        } else {
+            self.collapse(floor);
+        }
+        if crate::baka_cabinet::front_end(state) {
+            self.pose_front_end(assets, fight, arena);
+            return;
+        }
+        for i in 0..self.lineup.len() {
+            let r = self.lineup[i].clone();
+            self.collapse(r);
+        }
+        self.pose_duel(assets, fight);
+    }
+
+    /// The cabinet's front end: the attract card draws no 3D at all; the
+    /// player select draws the arena and the three-fighter lineup, the
+    /// cursor's fighter lit and the other two at half depth cue.
+    ///
+    /// REF: FUN_801D3390 (the lineup tick: `+0x78 = 0` on the cursor's
+    /// fighter, `0x800` otherwise; the idle clip `+0x5C` = `1 + 9 * roster`
+    /// stepped at its record's byte `+0x07`)
+    fn pose_front_end(&mut self, assets: &BakaDuelAssets, fight: &BakaFight, arena: bool) {
+        let mut dead: Vec<Range<usize>> = vec![self.fighter[0].clone(), self.fighter[1].clone()];
+        dead.extend(self.ghost.iter().flatten().cloned());
+        dead.push(self.cameo.clone());
+        dead.extend(self.impact_sprites.iter().cloned());
+        dead.extend(self.impact_meshes.iter().map(|(_, r)| r.clone()));
+        for r in dead {
+            self.collapse(r);
+        }
+        let camera = fight.duel_camera().clone();
+        for i in 0..self.walls.len() {
+            let (range, (pos, yaw)) = self.walls[i].clone();
+            if arena {
+                let (base, out) = (&self.base[range.clone()], &mut self.positions[range]);
+                place_stage_model(&camera, pos, yaw, base, out);
+            } else {
+                self.collapse(range);
+            }
+        }
+        let lineup = fight.select_lineup();
+        let mut changed = false;
+        for (roster, spot) in SELECT_LINEUP.iter().enumerate().take(self.lineup.len()) {
+            let range = self.lineup[roster].clone();
+            let (Some((cursor, clock)), Some(asset)) =
+                (lineup, assets.fighters.get(roster).and_then(|a| a.as_ref()))
+            else {
+                self.collapse(range);
+                continue;
+            };
+            let rec = asset.first_record;
+            let frame = asset
+                .bank
+                .record(rec)
+                .ok()
+                .map(|r| {
+                    let h = crate::baka_fighter::ClipHeader::from_record_words(r.a, r.b, r.flag);
+                    let step = h.selector_step(i32::from(r.flag >> 8));
+                    let span = (i32::from(r.frame_count) * 16).max(1);
+                    (clock.wrapping_mul(step).rem_euclid(span) >> 4) as usize
+                })
+                .unwrap_or(0);
+            let [x, y, z] = *spot;
+            let origin = [f32::from(x), f32::from(y), f32::from(z)];
+            self.pose_range(
+                &asset.tmd,
+                &asset.bank,
+                rec,
+                frame,
+                range.clone(),
+                origin,
+                SELECT_YAW,
+            );
+            let keep = if roster == cursor {
+                1.0
+            } else {
+                SELECT_DIM_KEEP
+            };
+            let scale = |c: u8| (f32::from(c) * keep).round().clamp(0.0, 255.0) as u8;
+            for i in range {
+                let b = self.base_colors[i];
+                changed |= set(&mut self.colors[i], [scale(b[0]), scale(b[1]), scale(b[2])]);
+                let f = &self.base_flat[i * 4..i * 4 + 4];
+                let v = [scale(f[0]), scale(f[1]), scale(f[2]), f[3]];
+                let dst: &mut [u8; 4] = (&mut self.flat_rgba[i * 4..i * 4 + 4])
+                    .try_into()
+                    .expect("four bytes");
+                changed |= set(dst, v);
+            }
+        }
+        if changed {
+            self.attr_generation = self.attr_generation.wrapping_add(1);
+        }
+    }
+
+    /// The duel proper: both fighters, their ghosts, the cameo, the walls
+    /// and the impact parts.
+    fn pose_duel(&mut self, assets: &BakaDuelAssets, fight: &BakaFight) {
         let camera = fight.duel_camera();
         let view = camera.view();
         // Eye-forward in world space, for the ghost setback.

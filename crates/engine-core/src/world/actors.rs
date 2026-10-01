@@ -1514,6 +1514,69 @@ impl World {
             .unwrap_or(crate::field_env::PLAYER_CLIP_STANDIN_FRAMES)
     }
 
+    /// The size the player's figure draws at, as a factor of its mesh:
+    /// the player's `+0x72` over `0x1000`.
+    ///
+    /// The animated renderer `FUN_8001B964` scales the actor matrix by
+    /// `+0x72` whenever it is not `0x1000` (`0x8001BA6C..0x8001BAA4`, the
+    /// three stores into the scale vector `0x1F800348` and `ScaleMatrix`), so
+    /// the word the pad step reads as its speed multiplier is also the
+    /// figure's size. Each kingdom's entry script sets it to `0xC00`, which is
+    /// why the overworld player stands at three quarters of its town height.
+    /// Both play hosts fold this into the player's draw.
+    ///
+    /// A `0` word is retail's "do not draw": `FUN_8001B964` tests it first
+    /// (`lhu v0,0x72(s0)` / `beq v0,zero,0x8001BE20` at `0x8001B998..0x8001B9A0`)
+    /// and returns without emitting a packet. Cutscenes hide the player that
+    /// way while a stand-in walks (`CC F8 40 00 00 00 00`, see
+    /// [`Self::player_hidden`]), so the scale is `0.0` and both hosts skip the
+    /// draw. `1.0` with no player actor.
+    ///
+    /// REF: FUN_8001B964
+    pub fn player_render_scale(&self) -> f32 {
+        f32::from(self.player_scale_word()) / 4096.0
+    }
+
+    /// `true` while the player's `+0x72` is `0` - retail's animated renderer
+    /// skips the actor outright (`FUN_8001B964` at `0x8001B9A0`). Both play
+    /// hosts drop the player's draw (textured and colour halves) on it.
+    ///
+    /// REF: FUN_8001B964
+    pub fn player_hidden(&self) -> bool {
+        self.player_scale_word() == 0
+    }
+
+    /// The player's live `+0x72`, `0x1000` with no player actor.
+    fn player_scale_word(&self) -> u16 {
+        self.player_actor_slot
+            .and_then(|s| self.actors.get(s as usize))
+            .map_or(0x1000, |a| a.move_state.field_72)
+    }
+
+    /// One frame of the player's `+0x72` ramps - the slots
+    /// [`crate::world::FieldLocomotion::player_scale_ramps`] holds, lerped by
+    /// retail's ramp ticker (`end + (start - end) * remaining / total`,
+    /// `remaining` down by the frame step) and stored as a halfword (kind 2).
+    /// A cutscene's `CC F8 40 00 10 64 00` grows the player back from hidden
+    /// over 100 frames this way.
+    ///
+    /// REF: FUN_80036D80
+    pub(crate) fn tick_player_scale_ramp(&mut self) {
+        if self.locomotion.player_scale_ramps.active() == 0 {
+            return;
+        }
+        let speed = self.move_vm.ramp_ratio.max(1);
+        let writes = self.locomotion.player_scale_ramps.tick(speed);
+        let Some(slot) = self.player_actor_slot.map(usize::from) else {
+            return;
+        };
+        if let Some(a) = self.actors.get_mut(slot) {
+            for w in writes {
+                a.move_state.field_72 = w.value as u16;
+            }
+        }
+    }
+
     /// Is the player running this frame?
     ///
     /// Retail (`FUN_801d01b0` at `0x801D0358..0x801D03A0`) computes it as the
@@ -1542,9 +1605,17 @@ impl World {
     /// ([`crate::world::config::FIELD_BASE_STEP_DEBUG_TURBO`]) is recorded but
     /// never taken - see its doc comment for the three gates.
     ///
+    /// The forced-slow arm's byte `_DAT_8007B6A8` is the per-scene MAN flag
+    /// [`crate::world::PartyState::scene_save_allowed`] (`FUN_8003AEB0` copies
+    /// `MAN[1] & 1` into it), set on exactly the three kingdom world maps - so
+    /// the overworld player always takes the slow step and never runs, which
+    /// is what the retail overworld states measure (`10` units per `dt = 3`
+    /// frame: `(5 * 0xC00) >> 12 = 3`, times 3, rounded up by the 2-unit
+    /// stepper).
+    ///
     /// PORT: FUN_801d01b0 (base-step selector)
     pub fn field_base_step(&self) -> i32 {
-        if self.locomotion.forced_slow {
+        if self.locomotion.forced_slow || self.party.scene_save_allowed {
             return crate::world::config::FIELD_BASE_STEP_FORCED_SLOW;
         }
         if self.field_run_active() {
@@ -1694,8 +1765,12 @@ impl World {
     /// save or a party op has installed it. Before that (a New Game, or a
     /// save whose composition is the roster's identity order) the list is
     /// the installed battle composition: `active_party` when set, else the
-    /// identity `0..party_count`.
+    /// identity `0..party_count`. A list the party ops emptied stays empty
+    /// ([`crate::world::PartyState::field_list_emptied`]).
     pub fn present_party_list(&self) -> Vec<u8> {
+        if self.party.party_actor_slots.is_empty() && self.party.field_list_emptied {
+            return Vec::new();
+        }
         if !self.party.party_actor_slots.is_empty() {
             return self
                 .party
@@ -1717,6 +1792,7 @@ impl World {
     /// composition as it was (no party of zero is ever fought with).
     pub fn install_present_party_list(&mut self, list: Vec<u8>) {
         self.party.party_actor_slots = list.iter().take(4).map(|&id| Some(id)).collect();
+        self.party.field_list_emptied = list.is_empty();
         if !list.is_empty() {
             self.set_active_party(list);
         }

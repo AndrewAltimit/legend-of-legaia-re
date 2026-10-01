@@ -42,6 +42,66 @@ pub struct PostActionTarget {
     /// "the target slot is real and its node is live" (`0x801D6808`,
     /// `0x801D682C`). False takes the arm that frames the actor instead.
     pub live: bool,
+    /// The target's battle heading `+0x46`, which case 8's dead-target arm
+    /// builds its yaw from (`0x801D6A60..0x801D6A98`).
+    pub facing: i32,
+    /// The target's scene node is gone - the low 24 bits of
+    /// `actor_table[target][+4]` read zero (`0x801D6AA8..0x801D6AC0`). A dead
+    /// target whose node is gone takes the stand-off arm
+    /// ([`apply_node_gone_reframe`]) instead of the death re-frame. Every
+    /// dead monster of the `noa_levelup_banner` save state reads a zero
+    /// node.
+    pub node_gone: bool,
+}
+
+/// Case 8's dead-target yaw (`0x801D6A20..0x801D6A98`), stored over the
+/// unwrapped base yaw before either dead-target arm runs:
+/// `-target[+0x46] - ((ctx[+0x26D] << 9) - 0x100)`, with `ctx[+0x26D]` (the
+/// per-action track coin) zeroed first when a party seat is character `3`.
+pub fn dead_target_yaw(target_facing: i32, phase_cursor: u8, f: ActionFraming) -> i32 {
+    let cursor = if f.party_slot && f.char_id == 3 {
+        0
+    } else {
+        i32::from(phase_cursor)
+    };
+    i32::from((-target_facing - ((cursor << 9) - 0x100)) as i16)
+}
+
+/// TR.y of case 8's stand-off arm (`li v0,0x400` at `0x801D6AC4`).
+pub const NODE_GONE_TR_Y: i32 = 0x400;
+
+/// A party seat's body radius `actor[+0x22C][+0x58]`: `0x280` for each of
+/// Vahn, Noa and Gala in the `noa_levelup_banner` save state.
+pub const PARTY_BODY_RADIUS: i32 = 0x280;
+
+/// Case 8's **stand-off** arm (`0x801D6B9C..0x801D6BF8`): a dead target
+/// whose node is gone frames the acting actor alone, level, at a depth sized
+/// by the actor's own body radius.
+///
+/// ```text
+/// TR    = (0, 0x400, radius * 5 >> 1)       radius = actor[+0x22C][+0x58]
+/// pitch = 0
+/// yaw   = dead_target_yaw + ctx[+0x6DA]
+/// focus = (actor[+0x3C], 0, actor[+0x40])
+/// ```
+///
+/// It is the framing the battle-end sequence's load window lands on: every
+/// monster is down and gone, so `FUN_8004E568`'s `FUN_801D5854(seat, 8)`
+/// arrives here. Returns the raw TR.z.
+///
+/// PORT: FUN_801D5854 (case 8's node-gone arm)
+pub fn apply_node_gone_reframe(
+    pose: &mut BattleCamPose,
+    actor: BattleCamActor,
+    yaw: i32,
+    radius: i32,
+) -> i32 {
+    let raw_z = i32::from(((radius * 5) >> 1) as i16);
+    pose.pitch = 0.0;
+    pose.tr = [0.0, NODE_GONE_TR_Y as f32, prescale_tr_z(raw_z)];
+    pose.yaw = (yaw & 0xFFF) as f32;
+    pose.focus = [actor.world[0], 0.0, actor.world[2]];
+    raw_z
 }
 
 /// Retail's case-7 framing: the post-strike **two-shot**.

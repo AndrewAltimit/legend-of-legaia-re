@@ -1451,7 +1451,7 @@ do the same two things with it: sound the announcer line it fired - the native
 window through `AudioBgmDirector::play_xa_clip`, the play page through its
 CD-XA clip path (`tick_baka_ui`) - and print its widgets through the shared
 label kernel (`baka_fighter_chrome::chrome_labels`). The minigames page plays
-no announcer line (see the Baka cabinet section below), but draws the widgets
+the same lines through its own XA output and draws the widgets
 from the duel's own art: `baka_chrome_json` carries each glyph
 draw's texel column, stamped by the same `baka_fighter_chrome::glyph_u` the
 native window resolves its draws with, and the page samples widget 5's strip
@@ -1470,7 +1470,7 @@ when the exchange report arrived. Both browser pages read the duel's state
 through one builder, `minigames::baka_state_json_for`; the play page's own
 copy carried no `clock` and no `ghosts`.
 
-**The duel's 3D surface is one engine kernel on the two play hosts.**
+**The duel's 3D surface is one engine kernel on all three hosts.**
 `engine-core::baka_duel_scene` builds the buffers (both fighters, two ghost
 copies each, the four arena walls, the floor), poses them from the fighters'
 display clips and the afterimage passes, and owns the arena camera; the
@@ -1480,9 +1480,19 @@ posed and draw it under `DuelCamera::vp_raw`. Before it, the native window
 drew the duel as labels only, and the play page drew the fighter meshes
 under a fitted orbit camera, timed each clip off its own tick and drew no
 ghosts - so "both play hosts draw labels only" was true of one of them.
-The standalone minigames page still poses its own buffers under its fitted
-camera: it holds a `BakaFight` but no surface, the same blocking shape as the
-rest of that page (below).
+The standalone minigames page now drives a `BakaDuelSurface` over its own
+`BakaFight` (`baka_scene_*`) - before, it held the fight but no surface and
+posed its own buffers under a fitted camera, with one authored wall, a floor
+tiled from the wall's texture, no cameo and no impact parts. Both browser
+export sets flatten the surface through `minigames::duel_surface`, the
+`baka_state_json_for` shape applied to the buffers. The two shapes that hid
+the gap: the page's fight carried the clip headers, cameras and impact
+templates, so it *stepped* everything the surface draws and every state
+read-out agreed; and the page stopped ticking at the deciding exchange, so
+the result close-up and pinned flourish never ran there either. A state
+oracle cannot see either - only a frame can. The PLAYER SELECT pick was a
+skin on that page as well, where retail seats it as the player's roster
+record (`minigame-baka-fighter.md`, Site presentation).
 
 What stays open was misnamed "sprite effects". The afterimage and the cameo
 draw no sprite: the two banks `_DAT_8007B888` / `_DAT_8007B840` are the
@@ -2589,11 +2599,27 @@ chrome's announcer line through their CD-XA clip path. The play page follows
 a newly seated rung by bumping its scene generation, so the opponent's mesh
 and duel VRAM are rebuilt.
 
+The **front end** reaches all three hosts through one kernel. The scene
+host's mode-24 arm boots every fight at the cabinet's attract card
+(`BakaFight::with_attract`), so the native window and the play page open on
+the title card and the player select rather than on the duel as Vahn; the
+cabinet emits its own widget cells (`BakaFight::cabinet_cells` - PRESS START,
+PLAYER SELECT, the choice sheet) which both play hosts label through the same
+`choice_sheet_labels` call, and the duel surface poses the select camera and
+lineup (`baka_duel_scene::SELECT_CAMERA` / `SELECT_LINEUP`). The standalone
+page opens the same cabinet (`baka_start_cabinet`, `baka_cabinet_pad`,
+`baka_cabinet_json`), draws it through the same surface with the sheet art,
+and hands the seated pick to its own ladder run once the cabinet leaves the
+front end. Two shapes the per-host versions had wrong: the page fitted its
+select camera and line-up by eye and drew cursor arrows retail does not
+draw; and the page fired the duel's hit a second time by event name in JS
+while `baka_tick` already drained the same cue into its SPU.
+
 The standalone minigames page keeps its own run model,
 `baka_fighter::LadderRun` behind the `baka_run_*` surface: fixed serve order
 from `baka_ladder()`, a page-drawn choice sheet at fitted positions, no
 score-gated secret rungs. It draws the engine chrome with the sheet's own
-widget art (`baka_chrome_json`), and plays no announcer line. That page has
+widget art (`baka_chrome_json`). That page has
 no `World` to tick the cabinet through (next section), which is the
 blocking capability for giving it the cabinet's ladder too.
 
@@ -3609,6 +3635,195 @@ no gate compiles that program outside a browser.
   ([above](#derived-scene-point-lights-are-native-only)). It is an
   enhancement both ways, so the page is short a feature, not wrong.
 
+## A tick-locked side-by-side pass
+
+The earlier passes read the two hosts' source, or paired screenshots taken
+at roughly the same moment. This one drives both hosts with the **same pad
+script on the same world tick** and compares the frames, so any difference
+is a difference in what the hosts do, not in when the picture was taken.
+
+- **Native:** `play-window --screenshot-every N --screenshot-dir ... --pad-script ...`
+  (a `TICK:BUTTON` edge or a `A-B:BUTTON` hold per entry; file names carry
+  the world tick).
+- **Page:** a headless Chromium driver pauses the view before its first
+  frame (a setter on `window.__playView` calls `setPaused(true)` the moment
+  the page creates it), then steps exactly one tick per frame through
+  `view.step()`, writing the page's held / pulse key sets from the same
+  script and screenshotting `.play-canvas-wrap` (the GL canvas plus the
+  overlay canvas above it) on the same ticks. The page's keyboard layout is
+  `Mapping::web_default` (`X` is Circle, `V` Square, `C` Triangle), not the
+  desktop one - driving it with the native keys reads as a broken Circle.
+  A GPU-backed Chromium (`--use-angle=vulkan`) keeps the run to minutes.
+
+Two things look like drift and are not. `--seed-party` resets the story
+flags to a fresh New Game, which changes what a scene's entry script does
+(`cave01` fades in from black with it and opens lit without it); the page's
+picker has no such seed, so a fair comparison drops the flag. And the pause
+menu's play clock is wall time on both hosts (`World::tick_play_clock`), so a
+tick-stepped page and a free-running window show different `TIME` values for
+the same tick.
+
+On those terms the field walk and camera, the dialogue box (typewriter, page
+hand, row scroll), the pause menu's Items / Magic / Equip / Status / Options
+screens, the battle open (`Begin | Run`, the command ring, `Auto | Command`,
+the High / Low / Left / Right arts arm and the `Begin | Reselect` confirm),
+the swing with its numerals and `HIT` / `TOTAL` cluster, and the spoils
+banner and field return match frame for frame. The gaps that did not are below.
+
+### The field readout over the battle transition
+
+The page drew the party readout over the whole field-to-battle shatter and
+the black hold after it. The suppress kernel
+(`world_map_panel_host::field_hud_suppressed`) had no term for the
+transition, so both hosts produced the readout; the native window painted it
+under the intro's backdrop, which hid it by luck, and the page's overlay
+canvas sits above the GL canvas. Retail draws none: the intro is PROT 0979
+`field_battle_intro`, a slot-A overlay at `0x801CE818` - the slot the field
+overlay (0897), and so `FUN_801D0D38` itself, lives in. The kernel now
+suppresses while the encounter session sits in its `Transition` phase
+(`field_battle_transition_active`), for both hosts.
+
+### Sticky renderer state staged on one draw branch
+
+The page draws its field, battle and minigame frames through one
+`TmdRenderer`, and five of its setters store a value the renderer keeps until
+the next call: the NCLIP cull word, the prologue colour grade and depth-cue
+ramp, the palette-collapse half of the grade, and the overworld curvature.
+All five were staged inside the field branch of `_frame` only, so a battle
+drew under whatever the last field frame left:
+
+- every fight entered from the **overworld** kept the overworld's screen-Y
+  bend, which folded the mountains out of the battle backdrop and curled the
+  sky down to the ground line;
+- every battle kept the field's NCLIP cull armed on the stage dome, so the
+  victory orbit - whose eye leaves the dome - looked straight through a shell
+  the native window draws.
+
+The native window stages all five once a frame ahead of its mode branches.
+The page now does the same in `_stageFrameState`, called ahead of every
+branch. This is the [GL state word](#a-gl-state-word-the-engine-does-not-own)
+shape with a second half: the engine owned each decision and both hosts
+asked it, but one host asked on one branch. No Rust tier can see it, so
+`scripts/ci/check-js-sticky-frame-state.py` reads the two js files: every
+`TmdRenderer` `set*` method whose body makes no `gl.` call is sticky, and
+every play-page call of one must sit in `_stageFrameState` unless the setter
+is classified as branch-owned with a reason. It runs in the pre-commit hook
+when `site/` is touched and in CI.
+
+### The intro emitter stepped per draw
+
+The tile shatter ran about two ticks ahead on the page: on the tick the
+native window still showed the captured field frame, the page already drew
+the first tiles lifting. Every intro style integrates its working set once per
+`BattleIntro::tick` call, and the native window called it once per **redraw**
+- a redraw can drain several world ticks, the capture redraw first among them
+- while the page calls once per world tick. The page was right and the
+native window was behind. Both now call `BattleIntro::advance_to(elapsed)`,
+which steps once per clock unit the transition entity advanced and re-emits
+the cached frame when it has not moved, so the picture is a function of the
+clock alone (`the_frame_depends_on_the_clock_not_the_draw_cadence`). A
+shared kernel whose state advances per call is still a host-cadence
+dependency: sharing the code does not share the call rate.
+
+### The opening crawl under a screen-effect push
+
+Where `opdeene`'s timeline runs an op-`0x34` sub-0 push, the native window
+composited every push over its text overlay and the page drew every push
+under its overlay canvas. Retail decides per push: the glyphs sit at
+ordering-table bucket `1` and a push at bucket `0` draws over them, a deeper
+one under them ([cutscene.md](../subsystems/cutscene.md#a-push-in-front-of-the-text-or-behind-it)).
+Both hosts now split on `screen_prim::screen_effect_push_prims_split` (the
+`SIM_PAIRS` row names it); the page applies the over-text half to its overlay
+canvas's pixels (`play_text_layer_washes_json`).
+
+### Open from the same pass
+
+- **The victory camera** was host-identical and is fixed in the engine: the
+  battle-end sequence now frames the pose actor the way retail's results
+  sequencer does ([battle.md](../subsystems/battle.md#the-victory-camera)).
+  What still differs from retail there is the pose itself - the engine strikes
+  the win pose once and hands back to the idle loop, so the camera films the
+  character's back where retail's held pose has turned to face it.
+- **The overworld leader** draws at roughly half the native window's size
+  on the page, and the native size matches the retail frame of
+  `keikoku_chest_preload`. The page poses the leader from the world-map
+  clip bank; that path belongs to the world-map walk animation work.
+
+## Shops, save points, movies and audio switching
+
+A side-by-side read of the areas the tick-locked pass did not drive: the
+shop and inn screens, the save-point menu press, the title and New Game
+flow, the world map's menus, movies, BGM / SFX switching, the level-up
+banner and the cheats panel. Closed rows:
+
+- **Shops were silent on both hosts.** Retail keys a blip for every shop
+  edge - the list kernel's cursor / confirm / buzz / cancel and the quantity
+  and recipient screens' own purchase, sale and equip cues
+  ([`shop.md`](../subsystems/shop.md#sound)). Neither host raised any, and
+  the engine's quantity and recipient events named the cues in comments
+  only. `MenuRuntime::take_ui_cue` is the decision now, and a `SIM_PAIRS`
+  row holds both hosts' shop steps to it.
+- **Start closed the pause menu outside the kernel on the page.** A
+  root-level Start called `play_menu_close` directly, so it dismissed the
+  save-point notice (which retail holds for Cross or Circle) and, under an
+  op-`0x49` kind-`0x0D` ready check, closed the menu and released the
+  parked script as answered where the kernel opens the Yes / No confirm.
+  Start reaches `tick_root_list` on the page now, as it always did natively.
+- **The scripted press's narration gate was a native-local term.** The
+  native window added "no narration crawl" beside
+  `World::scripted_menu_open_pending`; the page did not. The kernel holds it.
+- **Catch-up ticks behind a screen.** The page ran up to four field ticks a
+  frame and opened a shop or a scripted menu only at the next frame's top,
+  so the field walked, pad live, behind a screen the engine had already
+  opened. Its tick loop ends the field's run on the tick that opens one.
+- **A shop's opening edge.** The native window handed a shop opened this
+  tick the same tick's pad edge - the press that had just closed the
+  merchant's line and run the script into op `0x49` - so that one press
+  also confirmed the picker's first row. The opening step takes no edge.
+- **Late BGM events.** The native window's field-event drain dropped every
+  non-spawn event, BGM included, after the session tick's routing pass had
+  run; a dance song ending on its own queued the hall's track there, so the
+  chart loop played on over the hall. Both hosts' drains open with a late
+  routing pass, which tier 12 pairs by content.
+
+### Open from the same pass
+
+- **The movie clock is written twice.** The native window paces a movie
+  with audio off the XA cursor (`cutscene_av::due_video_frame`); the page
+  re-implements that rule in `play-fmv.js` and adds a one-second stall
+  fallback to the wall clock, which the native window lacks, so a stalled
+  cursor holds frame 0 natively. The two STR decoders also differ: the page
+  counts assembled frames and assumes 4-bit XA, the native one counts
+  decoded frames and reads the bit depth.
+- **A scene-script movie skips on the page only.** The page tests the skip
+  button on every movie; the native window only on the title attract.
+- **Paced per display frame on the page.** The game-over panel and the
+  shop step once per display frame on the page and once per sim tick
+  natively, and the boot title catches up to thirty ticks a frame where the
+  shared stepper allows four.
+- **Two copies of the menu-open body.** `play_menu.rs` re-spells
+  `BootSession::open_field_menu` and re-checks the whole open predicate, so a
+  title Continue can be refused on the page and never natively.
+- **An overworld Load arms the top-view debug chord on the page only**
+  (`enter_field_core`); the native in-game Load does not.
+- **The inn prompt freezes the field on the page.** The page freezes on
+  `MenuRuntime::is_open`, the native window on `suspends_field`, which
+  excludes an inn. `InnSession` has no production caller
+  ([`inn.md`](../subsystems/inn.md)), so no player reaches it.
+- **The shop panels' rows** (`title`, rows, gold footer per state) and the
+  inn prompt's text are written once per host over shared leaves; they agree
+  today.
+- **The level-up banner without menu chrome** draws in raw surface pixels
+  natively and stage-scaled on the page. Only a run with no system-UI atlas
+  takes that path.
+- **Cheats.** Every cheat is one `World::cheat_*` call on both hosts; the
+  hosts differ in which exist (restore HP / MP is page-only, a GameShark
+  cheat file native-only) and when they apply (the native flags once at
+  boot, the page's panel between any two ticks).
+- **Absent on both:** a dialogue text blip, a door cue and any footstep cue
+  (the page runs a footstep timer that keys nothing), and the casino prize
+  counter's cues.
+
 ## Adding coverage
 
 - a screen appears on the surface by existing; wire it on both hosts, or waive it;
@@ -3617,6 +3832,9 @@ no gate compiles that program outside a browser.
 - a trait joins tier 4 by having a default method body and two implementers;
 - a diagnostic joins tier 6 by being declared in `DIAG_GATES` - which is not
   optional: an undeclared `LEGAIA_DIAG_*` fails the gate.
+- a renderer setter that stores frame state is staged in the play page's
+  `_stageFrameState`, or classified in
+  `check-js-sticky-frame-state.py`'s `BRANCH_OWNED` with its reason;
 - a boot install joins tier 13 by being a `world.install_*` / `world.set_*`
   call in the native boot - fold a new table into an engine install both
   boots call rather than a field assignment the tier cannot see.

@@ -72,6 +72,15 @@ Rows the last audit wave overturned. They are listed here rather than filed
 silently into the settled page, because a claim that was wrong once is the
 cheapest place to look for a claim that is still wrong.
 
+- **A save point opens the pause menu by itself.** Op `0x49`'s `-1` rows
+  (sub-ops `1` and `0x0D`) are a scripted menu-button press: the enter half
+  stores handler `7` before it reads the table, so the "the park simply
+  stands until Start" reading was wrong, and so was the menu-teardown leaf
+  said to clear the park - it has no reference on the disc. A capture at the
+  `town01` save point pins the chain and its release; every one of the
+  disc's save points had saved nothing in the port
+  ([settled](re-settled-threads.md#field--locomotion),
+  [falsified](re-do-not-re-walk.md#menus--ui)).
 - **BGM sub-op 3 pauses and sub-op 4 re-attaches.** The field VM's op-`0x35`
   arm table at `0x801CEE00` gives 3 = set pause bit 1 + `FUN_80026740` and
   4 = clear it + `FUN_80026478`, which replays the sequence from its start;
@@ -868,7 +877,7 @@ a coincidence of the pad byte plus the mask table's first three entries
 | Thread | Status | What would close it |
 |---|---|---|
 | Which save-state library entries still hold a patched executable? | open (narrowed) - audited and tagged; the rest need human play | A state made on a patched disc keeps that build's `SCUS_942.54` in RAM on every later load. `patch_taint_audit.py states` tags each library state's `resident_patch`; the S1..S5 anchors, `first_town_interactive` and `teien_field_run` are re-shot retail, and every capture-graded claim re-checked against its family stands ([`pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md#patched-disc-taint)). The `rikuroa_*`, `dolk2_market_noa`, `cort_evolved_*`, `minigame_*_pcsx`, `battle_gaza2_*` states and the mednafen `overworld_battle_bg_angle_*` states re-shot on an unpatched image close it. |
-| Which engine draws hand a raw LCG state where retail calls BIOS `rand`? | mostly resolved - every battle draw is shaped | `FUN_80056798` (BIOS `A(2Fh)`) returns `(seed >> 16) & 0x7FFF` and nothing reseeds it ([settled](re-settled-threads.md#measurement--corpus)). Every battle-side port draws through `World::next_rand`, the battle-action and effect-pool hosts included; every routine they port calls `jal 0x80056798`; neither PROT 0898 nor SCUS carries an inline LCG ([`battle-formulas.md`](../subsystems/battle-formulas.md#how-the-port-draws-it)). Left: the field move-VM extension `FUN_801D362C` (sub-ops `0x05` / `0x30`) draws the raw state, and the battle camera script, the camera shake and the Muscle Dome session keep private seeds. Moving those onto the world stream closes it. |
+| Which engine draws hand a raw LCG state where retail calls BIOS `rand`? | mostly resolved - every draw is shaped; three private seeds left | `FUN_80056798` (BIOS `A(2Fh)`) returns `(seed >> 16) & 0x7FFF` and nothing reseeds it ([settled](re-settled-threads.md#measurement--corpus)). Every battle-side port and the field move-VM extension `FUN_801D362C` (sub-ops `0x05` / `0x30`) draw through `World::next_rand` ([`battle-formulas.md`](../subsystems/battle-formulas.md#how-the-port-draws-it)). Left: the battle camera script, the camera shake and the Muscle Dome session keep private seeds. All three already draw the retail shape (`psyq_rand_step`), so only stream identity remains; moving them onto the world stream closes it. |
 
 **Which live ports cover only part of their routine** closed: every residue
 the audit named as still changing behaviour is ported - the last three were

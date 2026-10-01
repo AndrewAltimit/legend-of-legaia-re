@@ -203,9 +203,14 @@ impl SceneHost {
     /// PROT 0976's roster + action tables -> a live
     /// [`crate::baka_fighter::BakaFight`].
     ///
-    /// Roster `0` is the player-side default; the opponent is the cabinet's
-    /// first rung ([`crate::baka_fighter::first_rung_roster`]), and the
-    /// cabinet climbs the ladder from there. The RNG seed is frame-derived,
+    /// The cabinet boots at its attract card ([`BakaFight::with_attract`]),
+    /// exactly as retail's sub-id-4 init leaves it at state `0x00`: the
+    /// player select seats the picked party fighter, the opponent is the
+    /// cabinet's first rung ([`crate::baka_fighter::first_rung_roster`]), and
+    /// the cabinet climbs the ladder from there. Roster `0` only holds the
+    /// player seat until the pick replaces it.
+    ///
+    /// [`BakaFight::with_attract`]: crate::baka_fighter::BakaFight::with_attract The RNG seed is frame-derived,
     /// so a replayed pad stream stays deterministic.
     fn enter_baka_from_overlay(&mut self, loaded: &[u8]) -> bool {
         let Some(opponents) = legaia_asset::baka_opponents::parse(loaded) else {
@@ -228,7 +233,8 @@ impl SceneHost {
                 index.entry_bytes(i as u32).ok().map(|b| b.to_vec())
             }))
             .with_special_cameras(crate::baka_duel_scene::parse_special_cameras(loaded))
-            .with_impact_overlay(loaded);
+            .with_impact_overlay(loaded)
+            .with_attract();
         self.world.enter_baka_fighter(fight);
         true
     }
@@ -338,6 +344,9 @@ impl SceneHost {
             hp,
             CAPTION_SERU_INDEX,
         );
+        // The plate's maximum is the record's, not the entry HP: a leg
+        // entered hurt shows `hp / max`, never `hp / hp`.
+        session.set_hp_max(0, lead.hp_max);
         let seed = 0x4D55_5343 ^ self.world.frame as u32;
         if let Some(model) =
             DomeDamageModel::from_battle_overlay(&raw, [lead.profile, opponent], hp, seed)
@@ -425,6 +434,9 @@ pub struct DomeLeadFighter {
     pub costs: [u16; crate::muscle_dome::HAND_SLOTS],
     /// Entry HP (the lead record's live `+0x106`).
     pub hp: i32,
+    /// Maximum HP (the lead record's `+0x104`), which the entry HP does not
+    /// reach after a leg that cost HP the interval did not hand back.
+    pub hp_max: i32,
     /// AP pool (the lead record's live AGL `+0x110`).
     pub budget: u16,
     /// Damage-roll profile (max HP `+0x104`, live INT / UDF / LDF).
@@ -485,6 +497,7 @@ impl SceneHost {
         DomeLeadFighter {
             costs,
             hp,
+            hp_max: i32::from(hp_max),
             budget,
             profile,
         }

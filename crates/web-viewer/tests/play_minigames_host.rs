@@ -176,7 +176,6 @@ fn arena_door_warp_draws_the_muscle_dome_and_start_leaves() {
         return;
     };
     warp_into(&mut rt, SUB_MUSCLE, "MuscleDome", "muscle");
-    assert_hud_rows(&mut rt, "muscle");
     let g = game_json(&rt);
     let monster = g["muscle"]["monster_id"]
         .as_u64()
@@ -235,6 +234,25 @@ fn arena_door_warp_draws_the_muscle_dome_and_start_leaves() {
         rt.play_mg_muscle_hub_sheet_rgba(4, 0).len(),
         (dims[0] * dims[1] * 4) as usize
     );
+    // The hub's first visit (intro strip, title, course card, ROUND card)
+    // covers the leg, and draws on the hub layer; the leg's own HUD is the
+    // battle chrome - the command ring's plates and the status plate, the
+    // same builders a battle draws - and it comes up once the hub is done.
+    let mut chrome_at = None;
+    for t in 0..4000 {
+        tick(&mut rt, 1);
+        let ov: serde_json::Value =
+            serde_json::from_str(&rt.play_overlay_draws_json(960, 720)).expect("overlay json");
+        if ov["sprites"].as_array().is_some_and(|s| !s.is_empty()) {
+            chrome_at = Some(t);
+            break;
+        }
+    }
+    assert!(
+        chrome_at.is_some(),
+        "the leg's battle chrome never came up past the hub"
+    );
+    assert_hud_rows(&mut rt, "muscle");
     assert_start_exits(&mut rt, "muscle");
 }
 
@@ -275,6 +293,15 @@ fn duel_door_warp_draws_baka_fighter_and_start_leaves() {
         serde_json::from_str(&rt.play_mg_baka_state_json()).expect("state json");
     assert_eq!(st["live"].as_bool(), Some(true));
     assert_eq!(st["phase"].as_str(), Some("fighting"));
+    // The cabinet boots on its attract card, whose own "press start" edge
+    // (`0x844`) takes Start: the first press begins, and from the fade-out
+    // on Start quits as in every other game.
+    press(&mut rt, START);
+    assert_eq!(
+        rt.scene_mode(),
+        "BakaFighter",
+        "Start begins on the attract card"
+    );
     assert_start_exits(&mut rt, "baka");
 }
 

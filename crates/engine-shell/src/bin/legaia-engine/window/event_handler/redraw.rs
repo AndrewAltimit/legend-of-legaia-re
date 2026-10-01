@@ -275,10 +275,17 @@ impl PlayWindowApp {
             // so this asks the engine instead
             // ([`World::field_menu_open_allowed`]) and every host that opens
             // the menu asks the same question.
-            if !narration
-                && pressed_edge & 0x0008 != 0
-                && self.session.host.world.field_menu_open_allowed()
-                && !self.menu_runtime.is_open()
+            // A script's op-`0x49` save point / ready check presses the menu
+            // button itself (`World::scripted_menu_open_pending`): no Start
+            // edge, no engagement gate, and no confirm blip - retail's cue
+            // `0x20` belongs to the pad controller, not to the actor it spawns.
+            let scripted_menu = !self.menu_runtime.is_open()
+                && self.session.host.world.scripted_menu_open_pending();
+            if scripted_menu
+                || (!narration
+                    && pressed_edge & 0x0008 != 0
+                    && self.session.host.world.field_menu_open_allowed()
+                    && !self.menu_runtime.is_open())
             {
                 // Start: open the BootSession-hosted pause menu (the
                 // retail CARD pair, game_mode 0x17 - the world holds
@@ -293,9 +300,13 @@ impl PlayWindowApp {
                 // stayed skipped.
                 self.session.open_field_menu();
                 if self.session.field_menu_is_open() {
-                    // The open blips as a confirm, as on the browser page;
-                    // a refused open blips nothing.
-                    self.fire_menu_cue(legaia_engine_shell::bgm::RETAIL_MENU_CONFIRM_CUE);
+                    if scripted_menu {
+                        self.session.host.world.note_scripted_menu_opened();
+                    } else {
+                        // The open blips as a confirm, as on the browser page;
+                        // a refused open blips nothing.
+                        self.fire_menu_cue(legaia_engine_shell::bgm::RETAIL_MENU_CONFIRM_CUE);
+                    }
                     self.tick_menu_sfx();
                     self.boot_ui = BootUiState::FieldMenu { sub: None };
                     // The boot-UI state is set above, so the readout's
@@ -357,11 +368,13 @@ impl PlayWindowApp {
                 // still runs is what the page runs: the menu session on this
                 // tick's edges, the unpark on close, and (like the pause-menu
                 // arm above) the SFX scheduler step.
-                tick_menu_runtime_session(
+                if let Some(cue) = tick_menu_runtime_session(
                     &mut self.menu_runtime,
                     &mut self.session.host.world,
                     pressed_edge,
-                );
+                ) {
+                    self.fire_menu_cue(u16::from(cue));
+                }
                 self.tick_menu_sfx();
                 self.prev_pad = self.pad;
                 if let Some(log) = self.record_log.as_mut() {
@@ -462,7 +475,9 @@ impl PlayWindowApp {
             // list. The field VM is suspended (op-0x49 Armed) until the
             // player leaves, at which point `finish_field_shop` (below)
             // lets it resume past the merchant op.
+            let mut shop_opened_this_tick = false;
             if let Some(shop) = self.session.host.world.take_pending_field_shop() {
+                shop_opened_this_tick = true;
                 // Open the top-level Buy / Sell / Trade picker (Trade row
                 // present only when the disc enabled seru trading). Names
                 // for the trade rows come from the boot SCUS.
@@ -475,6 +490,7 @@ impl PlayWindowApp {
             // exchange this tick: hand the player into the prize list. The
             // field VM stays suspended until the browse cancel closes it.
             if let Some(exchange) = self.session.host.world.take_pending_prize_exchange() {
+                shop_opened_this_tick = true;
                 self.menu_runtime.open_prize_exchange(exchange);
             }
             // Production cast-band trigger: a player Seru-magic cast
@@ -554,12 +570,26 @@ impl PlayWindowApp {
             // texture this frame (and restore it).
             self.check_battle_vram_residency();
             // A shop or prize counter opened on this tick (the take above)
-            // gets its first edge now; an inn session runs here every tick.
-            tick_menu_runtime_session(
+            // takes its first step now, on no edge: the press this tick
+            // carries already went to the field - typically the Cross that
+            // closed the merchant's line and ran the script into op 0x49 -
+            // and handing it to the screen too committed the picker's first
+            // row on the same press. Retail's screen comes up on a later
+            // frame (the menu overlay swaps in), and the browser page hands a
+            // shop only the edges of the frames after it opened. An inn
+            // session runs here every tick on the tick's own edge.
+            let menu_edge = if shop_opened_this_tick {
+                0
+            } else {
+                pressed_edge
+            };
+            if let Some(cue) = tick_menu_runtime_session(
                 &mut self.menu_runtime,
                 &mut self.session.host.world,
-                pressed_edge,
-            );
+                menu_edge,
+            ) {
+                self.fire_menu_cue(u16::from(cue));
+            }
             self.prev_pad = self.pad;
             // Record-mode: advance the log's frame counter so
             // `meta.frames` reflects the recorded duration even
@@ -1360,6 +1390,10 @@ impl PlayWindowApp {
                         cue: None,
                     });
                 }
+            } else if self.session.host.world.muscle_hub_between_legs() {
+                // The arena hub between two legs: retail runs it in arena
+                // mode `0x18` with no 3D scene - the ringside still and the
+                // INTERVAL / ROUND screens are the whole frame.
             } else if let Some(g) = self.dance_venue_gpu.as_ref() {
                 // The dance venue owns the 3D frame: the `other7` hall the
                 // dance entry loads, under the venue camera the frame
@@ -2761,11 +2795,19 @@ impl PlayWindowApp {
             // drew it. Through the same shared emitter the browser play page
             // composites them with, so the ordering-table bucket, the ABR
             // equation and the GP0 channel order are decided once.
-            screen_prims.extend(
-                legaia_engine_render::screen_overlay::screen_effect_push_prims(
+            //
+            // Split at the text layer: retail links every glyph at OT bucket
+            // `1` (`TEXT_OT_BUCKET`), so a push at bucket `0` washes the
+            // text with the scene and a deeper one draws under it. The
+            // overlay text sits between this host's two lists, so the
+            // under-text pushes join `light_prims`. The browser play page
+            // makes the same split through the same kernel.
+            let (pushes_under, pushes_over) =
+                legaia_engine_render::screen_overlay::screen_effect_push_prims_split(
                     &self.session.host.world.screen_tint_push_args(),
-                ),
-            );
+                );
+            light_prims.extend(pushes_under);
+            screen_prims.extend(pushes_over);
             // The field overlay's cinematic wipe (`0x43 0C` -> `FUN_801DD784`),
             // through the same shared emitter the browser play page uses so
             // the two bars cannot drift between hosts.
@@ -3295,7 +3337,8 @@ fn tick_menu_runtime_session(
     menu: &mut legaia_engine_core::menu_runtime::MenuRuntime,
     world: &mut legaia_engine_core::world::World,
     pressed_edge: u16,
-) {
+) -> Option<u8> {
+    let mut cue = None;
     if menu.is_open() {
         // Edges, not the held word: the runtime filters no repeats, so a held
         // key used to step the shop cursor / commit a screen every tick it
@@ -3303,6 +3346,9 @@ fn tick_menu_runtime_session(
         // same decode.
         let input = legaia_engine_core::menu_runtime::menu_input_from_pad_edges(pressed_edge);
         menu.tick(world, input);
+        // The shop's own blip (`MenuRuntime::take_ui_cue`); the browser
+        // page's `play_shop_input` keys the same one.
+        cue = menu.take_ui_cue();
     }
     // A field-VM-triggered shop the player has now closed: tell the world so
     // the suspended op-0x49 resumes (Armed -> Done) and the field VM advances
@@ -3316,4 +3362,5 @@ fn tick_menu_runtime_session(
     if world.shops.prize_exchange_open && !menu.is_open() {
         world.finish_prize_exchange();
     }
+    cue
 }

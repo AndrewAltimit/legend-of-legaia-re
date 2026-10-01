@@ -1,11 +1,41 @@
-//! The field VM's party-member cursor: entering the submode.
+//! The field overlay's **subsystem actor installer**: the enter half of the
+//! actor that the field VM's op `0x49` and the field menu button both spawn.
 //!
 //! PORT: FUN_801F1278
 //!
-//! The "pick a party member" overlay the field VM raises for op `0x49` - the
-//! same submode the tile-board and Seru-trade flows reuse. This is the **enter**
-//! half; the per-frame resume / close half is `FUN_801F159C`. Both are described
-//! in [`docs/subsystems/script-vm.md`](../../docs/subsystems/script-vm.md).
+//! `FUN_801F1278(actor)` is not a party picker. It is the one installer every
+//! field subsystem screen goes through: it suspends field input, refreshes the
+//! player, seeds the submode context `*_DAT_801C6EA4`, and installs the actor's
+//! `+0x50` handler id - the index the dispatcher `FUN_801F159C` (the per-frame
+//! resume / close half) `jalr`s through the 52-entry table `0x801F33B4`.
+//!
+//! The handler it installs by default is id `7` ([`STATE_PICK_HANDLER`]), and
+//! slot `7` of that table is the **state pick** `FUN_801F1F4C`
+//! ([`crate::field_state_pick`]), not a cursor screen. The state pick runs once
+//! on the actor's first dispatch and moves the actor on to `0x30`, the
+//! pause-menu session `FUN_801ED308` (or the debug shortcut `0x13`). Only when
+//! the op-`0x49` operand pointer `_DAT_8007B450` is live and its sub-op maps to
+//! a slot through the byte table `0x801F33A4` does the installer overwrite that
+//! `7` with the sub-op's own screen (name entry, tile board, the shop and
+//! flag windows, ...):
+//!
+//! ```text
+//! 801f13f4  sh   v0,0x2e(v1)       ; ctx[+0x2E] = -1
+//! 801f13f8  lhu  v0,0x50(s4)
+//! 801f1400  sh   v0,0x40(v1)       ; ctx[+0x40] = actor[+0x50] (outgoing)
+//! 801f1404  li   v0,0x7
+//! 801f140c  sh   v0,0x50(s4)       ; actor[+0x50] = 7, the state pick
+//! 801f141c  sh   zero,0x54(s4)     ; (delay slot) actor[+0x54] = 0
+//! 801f1468  lb   v0,0x0(v0)        ; slot = (i8)table_0x801F33A4[sub_op]
+//! 801f1470  beq  v0,a0,0x801f14b0  ; -1 -> keep the 7
+//! 801f14ac  sh   v0,0x50(s4)       ; else install the sub-op's screen
+//! ```
+//!
+//! So the menu button and every op-`0x49` row whose table byte is `-1` reach
+//! the pause menu through this routine - the save-point menu press is one of
+//! them. Both are described in
+//! [`docs/subsystems/script-vm.md`](../../docs/subsystems/script-vm.md) and
+//! [`docs/subsystems/field-locomotion.md`](../../docs/subsystems/field-locomotion.md).
 //!
 //! Transcribed from the DISASSEMBLY in
 //! `ghidra/scripts/funcs/overlay_baka_fighter_801f1278.txt` (201 instructions).
@@ -16,47 +46,70 @@
 //! `dance`, `debug_menu`, `fishing` and `slot_machine` images - carry the
 //! **byte-identical** 201-instruction body (same instruction stream modulo the
 //! printed addresses), because all five are RAM-derived captures in which this
-//! address belongs to resident library code rather than to the minigame overlay
-//! that names the file. The sixth, `overlay_overlay_0897_801f1278.txt`, reports
-//! `0 instructions` and carries only decompiled C - one of the artifacts
+//! address belongs to the resident field overlay (PROT 0897) rather than to the
+//! minigame overlay that names the file. The sixth,
+//! `overlay_overlay_0897_801f1278.txt`, reports `0 instructions` and carries
+//! only decompiled C - one of the artifacts
 //! [`docs/tooling/ghidra.md`](../../docs/tooling/ghidra.md) catalogues, and not
-//! usable as evidence on its own. The port therefore reads a
-//! disassembly-bearing dump and the C only as a cross-check; the two agree.
+//! usable as evidence on its own.
 //!
-//! ## Roster centring
+//! ## What the installer writes, in order
 //!
-//! The one behaviour worth calling out, because the C's `if`-chain hides it:
-//! the three portrait cells are seeded `0, 1, 2` and then **overwritten by
-//! roster size**, and a one-member party goes into the *middle* cell while a
-//! two-member party takes the *outer* two. So the picker is centre-weighted, not
-//! left-packed. [`seed_member_cells`] is that table.
+//! 1. `FUN_801DE190()` (input suspend), player `*_DAT_8007C364` flag word
+//!    `[+0x10] |= 0x80000`, pad latch
+//!    `_DAT_1F800394 &= ~0x8000`.
+//! 2. The player's `+0x8E` / `+0x8F` bytes are forced to `0xFF` around a
+//!    `FUN_801D9E1C(player, 0)` refresh and restored afterwards
+//!    ([`MaskedBytes`]).
+//! 3. `_DAT_8007BDD8 = 2`, player `[+0x5C]`, player `[+0x10] |= 0x1000000`, pad latch
+//!    re-set ([`enter_context`]).
+//! 4. `submode[+0x3E] = 1`, `actor[+0x1A] = 1`, `_DAT_8007B374 = 0`, the
+//!    current-member byte `_DAT_8007B469` re-resolved against the roster
+//!    ([`resolve_current_member`]).
+//! 5. The handler install above ([`installer_entry`]), the submode state
+//!    `DAT_801F2734` rewind ([`rearm_state`]).
+//! 6. The submode context's cursor home and its three roster cells
+//!    ([`seed_member_cells`]).
+//!
+//! ## Roster cells
+//!
+//! The three cells at `submode[+0x36]`, `+0x38`, `+0x3A` are seeded `0, 1, 2`
+//! by a countdown loop and then **overwritten by roster size**: a one-member
+//! party goes into the *middle* cell and a two-member party takes the *outer*
+//! two. This routine only writes them; which screen reads them is not traced
+//! here.
 //!
 //! # NOT WIRED
 //!
-//! No engine caller. The submode's own driver is the field VM's op-`0x49`
-//! `MENU_CTRL` arm, and the engine's field VM routes that opcode to the
-//! tile-board installer instead (`FieldHost::op4c_*` and the board path in
-//! `engine-core`), with no party-picker submode behind it. Wiring means a
-//! picker submode on the engine's field side - a `engine-core` menu runtime
-//! change plus the portrait cells reaching `engine-ui`, both other crates.
+//! No engine caller for this module's kernels. The installer's load-bearing
+//! decision - default handler `7`, then the `0x801F33A4` sub-op table read - is
+//! ported a second time where the engine needs it, in `engine-core`'s
+//! `field_submode_screen` (the `-1`-row arm that turns an op-`0x49` park into a
+//! scripted menu press) and `World::field_menu_button_state` (which runs the
+//! state pick with handler `7`). The context-flag, pad-latch, roster-cell and
+//! cursor-home writes have no engine reader: the engine models neither the
+//! submode context `*_DAT_801C6EA4` nor the field-context flag word.
 
 /// Field-context flag bit the enter path raises (`ctx[+0x10] |= 0x80000`) -
 /// the "a modal submode owns input" marker the close path clears.
 pub const CTX_SUBMODE_BUSY: u32 = 0x0008_0000;
 /// Second field-context flag bit raised on the way in (`|= 0x1000000`).
-pub const CTX_PICKER_ACTIVE: u32 = 0x0100_0000;
+pub const CTX_SUBSYSTEM_ACTIVE: u32 = 0x0100_0000;
 /// Pad-latch bit cleared and then re-set around the roster seed
 /// (`_DAT_1F800394 & ~0x8000`, then `| 0x8000`).
 pub const PAD_LATCH_BIT: u32 = 0x0000_8000;
 /// Submode kind word the enter path writes (`_DAT_8007BDD8 = 2`).
 pub const SUBMODE_KIND: u32 = 2;
-/// Handler id installed into the caller's `+0x50` slot.
-pub const PICKER_HANDLER: u16 = 7;
-/// Cursor home position (`cursor[+0x46]`, `cursor[+0x48]`).
+/// Default handler id installed into the actor's `+0x50` slot: slot `7` of
+/// the `0x801F33B4` table, the state pick `FUN_801F1F4C`
+/// ([`crate::field_state_pick`]), which hands on to the pause-menu session.
+pub const STATE_PICK_HANDLER: u16 = 7;
+/// Cursor home position (`submode[+0x46]`, `submode[+0x48]`).
 pub const CURSOR_HOME: (u16, u16) = (0xA0, 0x58);
 /// Submode states the enter path rewinds to `1` when re-armed.
 pub const REARM_STATES: [u32; 2] = [4, 7];
-/// Sentinel in the pending-pick remap table meaning "no remap".
+/// Sentinel in the op-`0x49` sub-op slot table (`0x801F33A4`) meaning "this
+/// sub-op opens no screen of its own" - the default handler stands.
 pub const REMAP_NONE: i8 = -1;
 
 /// The field-context writes the enter path makes, in one value so a caller can
@@ -81,7 +134,7 @@ pub struct EnterContext {
 /// dependency is on the submode-kind word, not on a constant.
 pub fn enter_context(flags_before: u32, pad_before: u32, scroll_base: u16) -> EnterContext {
     EnterContext {
-        flags: flags_before | CTX_SUBMODE_BUSY | CTX_PICKER_ACTIVE,
+        flags: flags_before | CTX_SUBMODE_BUSY | CTX_SUBSYSTEM_ACTIVE,
         // Cleared first, then re-set - the net effect on this bit is "set", and
         // the clear matters only to code that runs in between (the roster seed
         // call `FUN_801D9E1C`).
@@ -128,7 +181,7 @@ pub fn resolve_current_member(current: u8, roster: &[u8]) -> u8 {
     }
 }
 
-/// The three portrait cells at `cursor[+0x36]`, `+0x38`, `+0x3A`.
+/// The three roster cells at `submode[+0x36]`, `+0x38`, `+0x3A`.
 ///
 /// Seeded `0, 1, 2` by a countdown loop and then overwritten per roster size:
 ///
@@ -160,42 +213,44 @@ pub fn seed_member_cells(roster: &[u8]) -> [u16; 3] {
     cells
 }
 
-/// What the enter path writes into the cursor context and the calling actor.
+/// What the enter path writes into the submode context `*_DAT_801C6EA4` and the calling actor.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct PickerEntry {
-    /// `cursor[+0x3E] = 1` - "a pick is in progress".
-    pub picking: u16,
-    /// `cursor[+0x2E] = -1` - the selection sentinel.
+pub struct InstallerEntry {
+    /// `submode[+0x3E] = 1` - the completion gate `FUN_801F159C` polls; the
+    /// screen the handler opens clears it to close.
+    pub completion_gate: u16,
+    /// `submode[+0x2E] = -1` - the selection sentinel.
     pub selection: i16,
-    /// `cursor[+0x40]` - the caller's previous `+0x50` handler, saved.
+    /// `submode[+0x40]` - the caller's previous `+0x50` handler, saved.
     pub saved_handler: u16,
-    /// `actor[+0x50]` - the handler installed for the picker.
+    /// `actor[+0x50]` - the installed handler: [`STATE_PICK_HANDLER`] or the
+    /// sub-op's slot.
     pub handler: u16,
     /// `actor[+0x54] = 0` - the handler's sub-state.
     pub sub_state: u16,
     /// `actor[+0x1A] = 1` - the actor's yield marker.
     pub yield_marker: u16,
-    /// `cursor[+0x46]`, `cursor[+0x48]` - cursor home.
+    /// `submode[+0x46]`, `submode[+0x48]` - cursor home.
     pub cursor: (u16, u16),
-    /// The three portrait cells.
+    /// The three roster cells.
     pub cells: [u16; 3],
 }
 
 /// Build the enter-path writes (`0x801F1368` onward), including the optional
-/// pending-pick remap.
+/// op-`0x49` sub-op slot lookup.
 ///
-/// `pending` is `_DAT_8007B450`: `0` means no pending pick, `1` is consumed and
+/// `pending` is `_DAT_8007B450`: `0` means no parked op `0x49`, `1` is consumed and
 /// cleared on the way in, and any other value is a pointer whose first byte
 /// indexes the remap table at `DAT_801F33A4`. When that lookup yields anything
 /// but [`REMAP_NONE`], the installed handler becomes the remapped value instead
-/// of [`PICKER_HANDLER`] - and the saved handler is re-saved from the
+/// of [`STATE_PICK_HANDLER`] - and the saved handler is re-saved from the
 /// already-overwritten `+0x50`, so a remap saves `7`, not the caller's original.
-pub fn picker_entry(caller_handler: u16, roster: &[u8], remap: Option<i8>) -> PickerEntry {
-    let mut entry = PickerEntry {
-        picking: 1,
+pub fn installer_entry(caller_handler: u16, roster: &[u8], remap: Option<i8>) -> InstallerEntry {
+    let mut entry = InstallerEntry {
+        completion_gate: 1,
         selection: -1,
         saved_handler: caller_handler,
-        handler: PICKER_HANDLER,
+        handler: STATE_PICK_HANDLER,
         sub_state: 0,
         yield_marker: 1,
         cursor: CURSOR_HOME,
@@ -203,7 +258,7 @@ pub fn picker_entry(caller_handler: u16, roster: &[u8], remap: Option<i8>) -> Pi
     };
     if let Some(target) = remap.filter(|&t| t != REMAP_NONE) {
         // Retail re-runs the same three stores with `+0x50` already at 7.
-        entry.saved_handler = PICKER_HANDLER;
+        entry.saved_handler = STATE_PICK_HANDLER;
         entry.handler = target as i16 as u16;
         entry.sub_state = 0;
     }
@@ -222,7 +277,7 @@ pub fn rearm_state(state: u32) -> u32 {
     }
 }
 
-/// Is the pending-pick word the "consume and clear" sentinel?
+/// Is the op-`0x49` operand word the "consume and clear" sentinel?
 pub const fn pending_is_consumed(pending: u32) -> bool {
     pending == 1
 }
@@ -234,7 +289,10 @@ mod tests {
     #[test]
     fn enter_sets_both_context_bits_and_leaves_the_latch_set() {
         let c = enter_context(0x0000_0001, 0, 0);
-        assert_eq!(c.flags, 0x0000_0001 | CTX_SUBMODE_BUSY | CTX_PICKER_ACTIVE);
+        assert_eq!(
+            c.flags,
+            0x0000_0001 | CTX_SUBMODE_BUSY | CTX_SUBSYSTEM_ACTIVE
+        );
         assert_eq!(c.pad_latch, PAD_LATCH_BIT);
         // An already-set latch stays set.
         let c = enter_context(0, PAD_LATCH_BIT | 0x0F, 0);
@@ -293,11 +351,11 @@ mod tests {
     }
 
     #[test]
-    fn entry_saves_the_callers_handler_and_installs_the_picker() {
-        let e = picker_entry(0x12, &[1, 2, 3], None);
+    fn entry_saves_the_callers_handler_and_installs_the_state_pick() {
+        let e = installer_entry(0x12, &[1, 2, 3], None);
         assert_eq!(e.saved_handler, 0x12);
-        assert_eq!(e.handler, PICKER_HANDLER);
-        assert_eq!(e.picking, 1);
+        assert_eq!(e.handler, STATE_PICK_HANDLER);
+        assert_eq!(e.completion_gate, 1);
         assert_eq!(e.selection, -1);
         assert_eq!(e.sub_state, 0);
         assert_eq!(e.yield_marker, 1);
@@ -307,18 +365,18 @@ mod tests {
 
     #[test]
     fn a_remap_overwrites_the_handler_and_loses_the_callers_original() {
-        let e = picker_entry(0x12, &[1], Some(9));
+        let e = installer_entry(0x12, &[1], Some(9));
         assert_eq!(e.handler, 9);
         assert_eq!(
-            e.saved_handler, PICKER_HANDLER,
+            e.saved_handler, STATE_PICK_HANDLER,
             "the second save reads the already-installed 7"
         );
     }
 
     #[test]
     fn the_remap_sentinel_leaves_the_handler_alone() {
-        let e = picker_entry(0x12, &[1], Some(REMAP_NONE));
-        assert_eq!(e.handler, PICKER_HANDLER);
+        let e = installer_entry(0x12, &[1], Some(REMAP_NONE));
+        assert_eq!(e.handler, STATE_PICK_HANDLER);
         assert_eq!(e.saved_handler, 0x12);
     }
 
@@ -326,7 +384,7 @@ mod tests {
     fn a_negative_remap_target_sign_extends_into_the_halfword() {
         // The table is read with `lb` and stored with `sh` after a
         // sign-extending shift pair, so -2 becomes 0xFFFE.
-        let e = picker_entry(0, &[1], Some(-2));
+        let e = installer_entry(0, &[1], Some(-2));
         assert_eq!(e.handler, 0xFFFE);
     }
 

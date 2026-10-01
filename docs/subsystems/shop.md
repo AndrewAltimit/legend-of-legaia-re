@@ -650,6 +650,32 @@ maximum the numbers agreed, which made the screen look finished while the
 interaction was still a different one. A shared bound is not a shared
 screen.
 
+## Sound
+
+Every shop screen keys its own blips, and none of them is the pause menu's
+edge rule. The buy list (built by `FUN_80030628` case `0x0B`) and the sell
+list are paged by the kind-4 list kernel `FUN_80032A44`, which pushes a cursor step `0x21` only when the hand
+actually moved, a confirm `0x20` on an enabled row or the dim-row buzz
+`0x23` on a dim one (a buy the purse cannot cover), and a cancel `0x37`.
+The Buy / Sell / Trade picker is given the same rule: its renderer
+`FUN_801D4868` keys no cue of its own, and that it is a kernel-paged list is
+an inference rather than a traced call. The sub-screens add their own ring
+writes:
+
+| Screen | Step | Commit | Cancel |
+|---|---|---|---|
+| Buy quantity `FUN_801DB7F4` | `0x21`, behind each bound test (`0x801DB9B0` and siblings) | `0x2C`, through the overwrite producer `FUN_80035BD0` (`0x801DB940`) | `0x37` (`0x801DB970`) |
+| Sell quantity `FUN_801DBD94` | `0x21` (`0x801DC064` and siblings) | `0x36` (`0x801DBE78`) | `0x37` (`0x801DC020`) |
+| Buy recipient `FUN_801DB380` | the kernel's `0x21` | `0x2C` into the bag (`0x801DB480`), `0x24` buy-and-equip (`0x801DB5C8`), `0x23` a member who cannot wear it (`0x801DB5AC`) | the kernel's `0x37` |
+
+The recipient picker's commits use `FUN_80035BD0` because the list kernel has
+already pushed its own `0x20` for the same press: the overwrite replaces it,
+so the player hears one cue. The port raises the final cue of a tick from
+`MenuRuntime::tick` (`MenuRuntime::take_ui_cue`) and both play hosts key it
+through their SFX channel. The quantity commit sounds one tick after the press
+in the port, on the tick the transaction lands. The casino prize counter's
+cues are not modelled.
+
 ## Open items
 
 - **Mode-select panel - RESOLVED.** Full layout (window 0x2A rect, row

@@ -189,6 +189,53 @@ impl LegaiaMinigames {
         format!("[{rows}]")
     }
 
+    /// One side's VITAL bar frame, as the HUD renderer lays it
+    /// ([`legaia_engine_core::baka_cabinet::vital_frame_cells`], the cell
+    /// table at `0x801DBC34`): `side` 0 = the player's, 1 = the opponent's.
+    ///
+    /// ```json
+    /// { "page": 0, "palette": 0,
+    ///   "cells": [ { "x0": 28, "y0": 32, "x1": 36, "y1": 48,
+    ///                "u0": 24, "v0": 0, "u1": 31, "v1": 15 }, ... ] }
+    /// ```
+    ///
+    /// `page` indexes the PROT 1203 art pack like [`Self::baka_hud_json`]'s
+    /// (the frame samples texpage 5 = VRAM `(320, 0)`, CLUT `0x7D80` =
+    /// palette 0); the UVs are the inclusive corner span. `{}` when the
+    /// overlay or the art pack did not decode.
+    pub fn baka_bar_frame_json(&self, side: u32) -> String {
+        let img = overlay_image(
+            &self.prot,
+            &self.entries,
+            baka::BAKA_OVERLAY_PROT_INDEX as u32,
+        );
+        let (Some(cells), Some(art)) = (
+            img.as_deref().and_then(baka::parse_baka_bar_frame),
+            self.baka_art(),
+        ) else {
+            return "{}".to_string();
+        };
+        let page = art
+            .iter()
+            .position(|t| t.image.fb_x == 320 && t.image.fb_y == 0)
+            .map(|p| p.to_string())
+            .unwrap_or("null".into());
+        let quads = legaia_engine_core::baka_cabinet::vital_frame_cells(side as usize, &cells[..])
+            .iter()
+            .map(|c| {
+                format!(
+                    concat!(
+                        r#"{{"x0":{},"y0":{},"x1":{},"y1":{},"#,
+                        r#""u0":{},"v0":{},"u1":{},"v1":{}}}"#
+                    ),
+                    c.x0, c.y0, c.x1, c.y1, c.uv[0].0, c.uv[0].1, c.uv[3].0, c.uv[3].1,
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        format!(r#"{{"page":{page},"palette":0,"cells":[{quads}]}}"#)
+    }
+
     /// One HUD widget resolved through the **ported POLY_GT4 emitter**
     /// ([`legaia_engine_core::baka_fighter::hud_widget_quad`], `FUN_801d5ed0`):
     ///
@@ -647,4 +694,279 @@ pub(crate) fn baka_state_json_for(f: &legaia_engine_core::baka_fighter::BakaFigh
         winner,
         last,
     )
+}
+
+// ------------------------------------------------------------ duel surface
+
+/// The duel surface's buffers flattened for a WebGL upload - the one reader
+/// both browser duel hosts (this page's `baka_scene_*` and the play page's
+/// `play_mg_baka_scene_*`) hand their `TmdRenderer`, so the two pages cannot
+/// read the same `BakaDuelSurface` into different layouts.
+pub(crate) mod duel_surface {
+    use legaia_engine_core::baka_duel_scene::BakaDuelSurface;
+
+    /// Posed positions, `[x, y, z]` per vertex, raw retail world (Y down).
+    pub(crate) fn positions(s: &BakaDuelSurface) -> Vec<f32> {
+        s.scene()
+            .map(|s| s.positions.iter().flatten().copied().collect())
+            .unwrap_or_default()
+    }
+
+    /// Per-vertex `[u, v]`.
+    pub(crate) fn uvs(s: &BakaDuelSurface) -> Vec<u8> {
+        s.scene()
+            .map(|s| s.uvs.iter().flatten().copied().collect())
+            .unwrap_or_default()
+    }
+
+    /// Per-vertex `[cba, tsb]`.
+    pub(crate) fn cba_tsb(s: &BakaDuelSurface) -> Vec<u16> {
+        s.scene()
+            .map(|s| s.cba_tsb.iter().flatten().copied().collect())
+            .unwrap_or_default()
+    }
+
+    /// Per-vertex `[r, g, b, flag]` (the hybrid textured / fill layout).
+    pub(crate) fn flat_rgba(s: &BakaDuelSurface) -> Vec<u8> {
+        s.scene().map(|s| s.flat_rgba.clone()).unwrap_or_default()
+    }
+
+    /// Triangle indices.
+    pub(crate) fn indices(s: &BakaDuelSurface) -> Vec<u32> {
+        s.scene().map(|s| s.indices.clone()).unwrap_or_default()
+    }
+
+    /// The duel VRAM for the seated pair (with the cameo's wink applied).
+    pub(crate) fn vram(s: &BakaDuelSurface) -> Vec<u8> {
+        s.vram().map(|v| v.as_bytes().to_vec()).unwrap_or_default()
+    }
+
+    /// The scene's attribute generation, `-1` with no scene.
+    pub(crate) fn attr_generation(s: &BakaDuelSurface) -> i32 {
+        s.scene().map_or(-1, |s| s.attr_generation() as i32)
+    }
+}
+
+#[wasm_bindgen]
+impl LegaiaMinigames {
+    /// Pose this page's duel on the engine's 3D surface
+    /// (`legaia_engine_core::baka_duel_scene::BakaDuelSurface::frame`) - the
+    /// call the native window and the play page make over the world's duel -
+    /// and return its generation, or `-1` with no duel live. A generation the
+    /// page has not seen means the static buffers and the VRAM changed (a new
+    /// pairing): re-read them before the positions.
+    ///
+    /// The surface is the fighters posed by their display clips at the round
+    /// setup's stand-offs, the special's afterimage ghosts, the four arena
+    /// walls, the floor grid, the round-start cameo and the impact parts,
+    /// framed by [`Self::baka_scene_vp`].
+    pub fn baka_scene_frame(&mut self) -> i32 {
+        let (prot, entries) = (&self.prot, &self.entries);
+        let read = |i: usize| entry_bytes(prot, entries, i as u32).map(<[u8]>::to_vec);
+        match self.baka_surface.frame(read, self.baka.as_ref()) {
+            Some(_) => self.baka_surface.generation() as i32,
+            None => -1,
+        }
+    }
+
+    /// The scene's attribute generation (`BakaDuelScene::attr_generation`):
+    /// it moves when a pose rewrote the UVs, CBA/TSB words or colours - the
+    /// impact effect's flip-book cells and fades. `-1` with no scene.
+    pub fn baka_scene_attr_generation(&self) -> i32 {
+        duel_surface::attr_generation(&self.baka_surface)
+    }
+
+    /// This frame's posed positions, raw retail world coordinates (Y down).
+    pub fn baka_scene_positions(&self) -> Vec<f32> {
+        duel_surface::positions(&self.baka_surface)
+    }
+
+    /// Per-vertex `[u, v]`.
+    pub fn baka_scene_uvs(&self) -> Vec<u8> {
+        duel_surface::uvs(&self.baka_surface)
+    }
+
+    /// Per-vertex `[cba, tsb]`.
+    pub fn baka_scene_cba_tsb(&self) -> Vec<u16> {
+        duel_surface::cba_tsb(&self.baka_surface)
+    }
+
+    /// Per-vertex `[r, g, b, flag]`.
+    pub fn baka_scene_flat_rgba(&self) -> Vec<u8> {
+        duel_surface::flat_rgba(&self.baka_surface)
+    }
+
+    /// Triangle indices.
+    pub fn baka_scene_indices(&self) -> Vec<u32> {
+        duel_surface::indices(&self.baka_surface)
+    }
+
+    /// The duel VRAM for the seated pair.
+    pub fn baka_scene_vram(&self) -> Vec<u8> {
+        duel_surface::vram(&self.baka_surface)
+    }
+
+    /// The arena camera's view-projection for a raw (Y-down) world vertex,
+    /// column-major (`DuelCamera::vp_raw`): the round setup's snap, the
+    /// spin, the special glides and the result close-up. Empty with no duel.
+    pub fn baka_scene_vp(&self, aspect: f32) -> Vec<f32> {
+        self.baka
+            .as_ref()
+            .map(|f| f.duel_camera().vp_raw(aspect).to_vec())
+            .unwrap_or_default()
+    }
+
+    /// Hand the duel this frame's **packed** held pad word (`_DAT_8007B850`,
+    /// Legaia's layout) - `BakaFight::set_held_pad`, the call `World`'s duel
+    /// tick makes for both play hosts. Its reader is the round setup's cameo
+    /// test: Triangle (`0x10`) held at a round setup sends the ring girl on.
+    pub fn baka_set_held_pad(&mut self, packed: u16) {
+        if let Some(f) = self.baka.as_mut() {
+            f.set_held_pad(packed);
+        }
+    }
+
+    /// Hand the cabinet this frame's **packed** pad edge (Legaia's layout:
+    /// `0x8000` left, `0x2000` right, `0x40` Cross, `0x800` Start) for the
+    /// next [`Self::baka_tick`] - the edge the attract card, the player
+    /// select and the "NEXT GAME / PAY OUT" sheet read
+    /// ([`legaia_engine_core::baka_fighter::BakaFight::set_cabinet_pad`]).
+    pub fn baka_cabinet_pad(&mut self, packed_edge: u16) {
+        if let Some(f) = self.baka.as_mut() {
+            f.set_cabinet_pad(packed_edge);
+        }
+    }
+
+    /// Where the cabinet is and what it draws this frame:
+    ///
+    /// ```json
+    /// { "state": 11, "front_end": true, "lineup": [1, 42],
+    ///   "player": 0, "opponent": 5,
+    ///   "cells": [ { "w": 12, "x": 160, "y": 32, "b": 128 } ] }
+    /// ```
+    ///
+    /// `lineup` is the player-select cursor and the lineup's idle clock
+    /// (`null` off that screen); `cells` are the cabinet's own widget draws
+    /// (the attract "PRESS START" prompt, the "PLAYER SELECT" banner, the
+    /// "NEXT GAME / PAY OUT" sheet) at retail's emitter arguments - the list
+    /// the two play hosts label (`BakaFight::cabinet_cells`).
+    pub fn baka_cabinet_json(&self) -> String {
+        let Some(f) = self.baka.as_ref() else {
+            return r#"{"live":false}"#.to_string();
+        };
+        let cells: Vec<serde_json::Value> = f
+            .cabinet_cells()
+            .iter()
+            .map(|c| serde_json::json!({ "w": c.widget, "x": c.x, "y": c.y, "b": c.brightness }))
+            .collect();
+        serde_json::json!({
+            "live": true,
+            "state": f.cabinet().state(),
+            "front_end": f.cabinet().front_end(),
+            "lineup": f.select_lineup().map(|(c, t)| [c as i32, t]),
+            "player": f.player_roster(),
+            "opponent": f.opponent_roster(),
+            "cells": cells,
+        })
+        .to_string()
+    }
+}
+
+// ------------------------------------------------------------ announcer XA
+
+/// Rounds whose banner line is staged (`XA32` channel = round index). A
+/// best-of-three ends by the third, and a drawn round only repeats one.
+const ANNOUNCER_ROUNDS: i32 = 4;
+
+/// Every announcer line the duel's chrome can start, one per `(clip,
+/// channel)`: [`legaia_engine_core::baka_fighter_chrome::announcer_xa_prestage`]
+/// over the staged rounds.
+fn announcer_cues() -> Vec<legaia_engine_core::baka_fighter_chrome::XaCue> {
+    let mut cues: Vec<_> = (0..ANNOUNCER_ROUNDS)
+        .flat_map(legaia_engine_core::baka_fighter_chrome::announcer_xa_prestage)
+        .collect();
+    cues.sort_by_key(|c| (c.clip, c.chan, c.dur));
+    cues.dedup_by_key(|c| (c.clip, c.chan));
+    cues
+}
+
+/// Decode every announcer line out of a raw Mode 2/2352 image: per line,
+/// the span the clip starter reads from `XA<clip + 1>.XA`'s first sector
+/// (`xa_clip_bank::read_span_sectors`, `FUN_8003D53C`'s stop point),
+/// demuxed to the line's channel. Only the decoded PCM is kept - the same
+/// staging the play page does lazily off its disc bytes. A line whose file
+/// or channel is missing is left out and plays silent.
+pub(crate) fn stage_baka_announcer(image: &[u8]) -> legaia_engine_audio::XaClipBank {
+    use legaia_engine_audio::xa_clip_bank::{decode_channel_span, read_span_sectors};
+    const RAW: usize = crate::play_xa::RAW_SECTOR_BYTES;
+    let mut bank = legaia_engine_audio::XaClipBank::new();
+    for cue in announcer_cues() {
+        let path = format!("XA/XA{}.XA", u32::from(cue.clip) + 1);
+        let Some((lba, size)) = legaia_iso::iso9660::find_path_in_image(image, &path) else {
+            continue;
+        };
+        let sectors = read_span_sectors(u32::from(cue.dur)).min(size.div_ceil(2048));
+        let start = lba as usize * RAW;
+        let Some(span) = image.get(start..start + sectors as usize * RAW) else {
+            continue;
+        };
+        if let Some((clip, width)) = decode_channel_span(span, cue.chan) {
+            bank.insert(cue.clip, cue.chan, clip);
+            bank.set_channel_count(cue.clip, width.max(bank.channel_count(cue.clip)));
+        }
+    }
+    bank
+}
+
+impl LegaiaMinigames {
+    /// Start one announcer line - `FUN_8003D53C(clip, channel, dur)` cut at
+    /// the retail read span, through the XA path the play page's clips take.
+    /// Silent when the line did not stage or audio is off.
+    pub(crate) fn play_baka_xa(&mut self, xa: legaia_engine_core::baka_fighter_chrome::XaCue) {
+        let Some(pcm) =
+            crate::play_xa::cut_clip(&self.baka_xa, xa.clip, xa.chan, u32::from(xa.dur))
+        else {
+            return;
+        };
+        self.baka_xa_fired = self.baka_xa_fired.wrapping_add(1);
+        #[cfg(target_arch = "wasm32")]
+        if let Some(out) = self.audio_out.as_ref() {
+            let channels = if pcm.stereo {
+                legaia_xa::Channels::Stereo
+            } else {
+                legaia_xa::Channels::Mono
+            };
+            out.play_xa_shout(
+                pcm.pcm,
+                pcm.sample_rate,
+                channels,
+                crate::play_xa::XA_GAIN_UNITY,
+                legaia_engine_audio::SHOUT_CD_RESPONSE_DELAY,
+            );
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        let _ = pcm;
+    }
+}
+
+#[wasm_bindgen]
+impl LegaiaMinigames {
+    /// The announcer lane: lines staged off the disc out of those the chrome
+    /// can start, and lines the duel has started.
+    ///
+    /// ```json
+    /// { "staged": 11, "lines": 11, "fired": 3 }
+    /// ```
+    pub fn baka_xa_state_json(&self) -> String {
+        let cues = announcer_cues();
+        let staged = cues
+            .iter()
+            .filter(|c| self.baka_xa.is_staged(c.clip, c.chan))
+            .count();
+        format!(
+            r#"{{"staged":{staged},"lines":{},"fired":{}}}"#,
+            cues.len(),
+            self.baka_xa_fired
+        )
+    }
 }

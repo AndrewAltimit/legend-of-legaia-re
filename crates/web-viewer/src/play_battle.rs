@@ -368,6 +368,11 @@ impl LegaiaRuntime {
                 self.battle_hud
                     .sync_status(slot, &host.world.battle.status_effects);
             }
+        } else if host.world.mode == SceneMode::MuscleDome {
+            // A dome leg is a battle on the same HUD: the shared fold seats
+            // the lead fighter's row off the dome session, as the native
+            // window's does.
+            sync_battle_hud_rows(&mut self.battle_hud, &host.world);
         }
         self.battle_hud.tick();
         // Age the encounter-transition banner one frame; drop it at zero.
@@ -522,6 +527,9 @@ impl LegaiaRuntime {
             return empty;
         };
         if bw.dialogue_owns_input() {
+            return empty;
+        }
+        if bw.mode == SceneMode::MuscleDome && !self.dome_battle_chrome_up() {
             return empty;
         }
         let Some(view) = bw.arts_input_view() else {
@@ -751,10 +759,18 @@ impl LegaiaRuntime {
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<ui::SpriteDraw> {
-        let in_battle = self
+        let in_dome = self
             .scene_host
             .as_ref()
-            .is_some_and(|h| h.world.mode == SceneMode::Battle);
+            .is_some_and(|h| h.world.mode == SceneMode::MuscleDome);
+        if in_dome && !self.dome_battle_chrome_up() {
+            return Vec::new();
+        }
+        let in_battle = in_dome
+            || self
+                .scene_host
+                .as_ref()
+                .is_some_and(|h| h.world.mode == SceneMode::Battle);
         if !in_battle {
             let (Some(rects), Some(message)) =
                 (assets.chrome_rects(), self.battle_banner_message(assets))
@@ -840,6 +856,35 @@ impl LegaiaRuntime {
         let Some(bw) = self.scene_host.as_ref().map(|h| &h.world) else {
             return Vec::new();
         };
+        // Muscle Dome leg: the battle HUD's text half - the status plate and
+        // the command cluster's labels - off the same builders a battle
+        // draws, fed by the dome session's command flow. The native window
+        // makes the same two calls.
+        if bw.mode == SceneMode::MuscleDome {
+            if !self.dome_battle_chrome_up() {
+                return Vec::new();
+            }
+            let mut out = self
+                .battle_hud_frame_draws(assets, surface_w, surface_h)
+                .text;
+            if let Some((chips, cursor, phase)) = self.battle_command_menu_chips() {
+                use legaia_engine_ui::battle_command_ui as bcu;
+                let (origin, scale) =
+                    crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
+                let views = bcu::command_chip_views(&chips);
+                out.extend(bcu::battle_command_chip_text(
+                    assets.font_ref(),
+                    &bcu::BattleCommandMenuFrame {
+                        chips: &views,
+                        cursor: Some(cursor),
+                        phase,
+                    },
+                    origin,
+                    scale,
+                ));
+            }
+            return out;
+        }
         if bw.mode != SceneMode::Battle {
             return Vec::new();
         }
@@ -1734,6 +1779,60 @@ impl LegaiaRuntime {
 mod live_hud_tests {
     use super::*;
 
+    /// The battle-intro enemy-name labels reach the page's overlay draw list
+    /// on retail's class-0 frame: the marbled fill columns (`FUN_8002BDC4`)
+    /// from the frame origin `(x - 8, 40)`, each the full 28-row height.
+    #[test]
+    fn live_battle_intro_labels_are_filled_class0_frames() {
+        let Ok(disc) = std::env::var("LEGAIA_DISC_BIN") else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+            return;
+        };
+        let Ok(bytes) = std::fs::read(&disc) else {
+            eprintln!("[skip] disc unreadable");
+            return;
+        };
+        let mut rt = LegaiaRuntime::new();
+        rt.load_disc(bytes, String::new()).expect("load disc");
+        rt.enter_field("town01").expect("enter town01");
+        for _ in 0..5 {
+            rt.tick_frame().expect("tick");
+        }
+        if !rt.debug_start_test_battle() {
+            eprintln!("[skip] no scripted formation row resolved");
+            return;
+        }
+        let mut seen = false;
+        for _ in 0..400 {
+            rt.tick_frame().expect("tick");
+            let labels = rt.scene_host.as_ref().is_some_and(|h| {
+                h.world.mode == SceneMode::Battle && h.world.battle.intro_names_frames > 0
+            });
+            if !labels {
+                continue;
+            }
+            let json = rt.play_overlay_draws_json(960, 720);
+            let v: serde_json::Value = serde_json::from_str(&json).expect("overlay json");
+            let fill: Vec<&serde_json::Value> = v["sprites"]
+                .as_array()
+                .expect("sprites array")
+                .iter()
+                .filter(|q| q["src"][0] == 128 && q["src"][1] == 0 && q["dst"][1] == 40 * 3)
+                .collect();
+            if fill.is_empty() {
+                continue;
+            }
+            assert!(
+                fill.iter().all(|q| q["dst"][3] == 28 * 3),
+                "every fill column spans the 28-row frame: {fill:?}"
+            );
+            seen = true;
+            break;
+        }
+        assert!(seen, "no filled intro label reached the page's draw list");
+        eprintln!("[ran] intro labels drew on filled class-0 frames");
+    }
+
     #[test]
     fn live_battle_overlay_carries_bars_and_enemy_target_strip() {
         let Ok(disc) = std::env::var("LEGAIA_DISC_BIN") else {
@@ -2035,11 +2134,16 @@ impl LegaiaRuntime {
         // The field overlay's screen-effect washes (op `0x34` sub-0 ->
         // `FUN_80024EE4`): the scene-entry fade-from-black and the door
         // prologue's fade-to-black, through the same shared emitter the
-        // native window composites them with.
+        // native window composites them with. The split is the native
+        // window's too: both halves wash the scene here, and the half that
+        // also washes the text reaches the page's 2D overlay canvas through
+        // `play_text_layer_washes_json`.
         if let Some(host) = self.scene_host.as_ref() {
-            prims.extend(legaia_engine_ui::screen_prim::screen_effect_push_prims(
+            let (under, over) = legaia_engine_ui::screen_prim::screen_effect_push_prims_split(
                 &host.world.screen_tint_push_args(),
-            ));
+            );
+            prims.extend(under);
+            prims.extend(over);
         }
         // The field overlay's cinematic wipe (`0x43 0C` -> `FUN_801DD784`).
         // Same shared emitter as the native window's screen-prim pass, so
@@ -2102,9 +2206,10 @@ impl LegaiaRuntime {
             self.battle_intro = Some(self.arm_battle_intro(roll.formation_id, total));
         }
         let mut intro = self.battle_intro.take().expect("armed above");
-        // Retail's per-frame step is the display-frame delta; the page's
-        // simulation tick is one display frame, same as the native window.
-        let frame = intro.tick(entity.elapsed, 1);
+        // Stepped to the entity's clock, one step per clock unit - the same
+        // call the native window makes, whose redraws do not run one per
+        // world tick (`BattleIntro::advance_to`).
+        let frame = intro.advance_to(entity.elapsed);
         // The curtain's CPU two-pass composition (and nothing else, for the
         // other styles) changes the captured page per frame; the page
         // re-uploads through the same dirty flag the field CLUT effects use.
@@ -2318,6 +2423,33 @@ impl LegaiaRuntime {
             .as_ref()
             .map(|h| h.world.screen_tint_push_args().len() as u32)
             .unwrap_or(0)
+    }
+
+    /// This frame's screen-effect pushes that wash over the **text layer**
+    /// (`legaia_engine_ui::screen_prim::text_layer_washes`), as
+    /// `[[abr, r, g, b], ...]` in draw order; `[]` when none does.
+    ///
+    /// Retail links every glyph at OT bucket `1` and a push at bucket `0`
+    /// draws over it - the opening's `34 05` push to black dims the crawl
+    /// with the scene. The GL pass draws every push over the scene, but the
+    /// page's text is a 2D canvas above the GL canvas, so the page applies
+    /// these to that canvas's own pixels (`wash_channel`'s equations) - the
+    /// native window draws the same pushes as primitives over its text.
+    pub fn play_text_layer_washes_json(&self) -> String {
+        let washes = self
+            .scene_host
+            .as_ref()
+            .map(|h| {
+                legaia_engine_ui::screen_prim::text_layer_washes(&h.world.screen_tint_push_args())
+            })
+            .unwrap_or_default();
+        serde_json::to_string(
+            &washes
+                .iter()
+                .map(|(abr, [r, g, b])| [*abr, *r, *g, *b])
+                .collect::<Vec<_>>(),
+        )
+        .unwrap_or_else(|_| "[]".to_string())
     }
 
     /// How many screen-space PSX primitives this frame carries. `0` is the

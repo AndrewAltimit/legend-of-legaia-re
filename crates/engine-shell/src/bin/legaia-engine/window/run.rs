@@ -280,6 +280,16 @@ fn arm_requested_battle(session: &mut BootSession, spec: &str) {
         log::info!("play-window: LEGAIA_BATTLE_INFLIGHT seeds {seed:?} at the first prompt");
         world.battle.inflight_seed = Some(seed);
     }
+    // `LEGAIA_BATTLE_RNG_SEED=<u32>`: the world stream's state at the entry,
+    // so the fight does not inherit however many field draws the boot took.
+    // The retail comparison corpus pins it on both its sides
+    // (`retail_compare_battle::BATTLE_RNG_SEEDS`).
+    if let Some(seed) = std::env::var("LEGAIA_BATTLE_RNG_SEED")
+        .ok()
+        .and_then(|s| s.trim().parse::<u32>().ok())
+    {
+        world.rng_state = seed;
+    }
     if world.force_encounter(row) {
         log::info!(
             "play-window: --battle armed formation row {row} in '{}' - the fight opens through \
@@ -537,6 +547,14 @@ pub(super) fn cmd_play_window_with_record(
     // `begin_new_game` resets the bank - dropping them there would make the
     // two flags silently exclusive.
     seed_debug_story_flags(&mut session, &debug_seeds);
+    // The direct `--scene` entry is this window's scene picker: a cold entry
+    // (no save, no New Game) seeds the full Vahn / Noa / Gala party through
+    // the engine's one picker seed (`World::seed_picker_party`), the same one
+    // the browser play page's picker reaches. The boot-UI NEW GAME still
+    // reseeds retail's Vahn-alone roster; `--seed-party` does too.
+    if let Some(defaults) = session.host.new_game_defaults.as_mut() {
+        defaults.picker_party = true;
+    }
     // Which entry a scene takes is the scene's own property, decided by the
     // one engine predicate every host asks (`is_world_map_scene`) - the
     // browser play page's `enter_field` and the in-world door transition both
@@ -971,6 +989,17 @@ pub(super) fn cmd_play_window_with_record(
         );
     }
 
+    // `--cheat-*`: after the roster and the present party have settled, so
+    // the level cheat grows the members that will actually fight.
+    let templates = session
+        .host
+        .new_game_defaults
+        .as_ref()
+        .map(|d| d.party.clone());
+    debug_seeds
+        .cheats
+        .apply(&mut session.host.world, templates.as_ref());
+
     // `--battle <ROW|first>`: arm a deterministic fight. Last of the world
     // setup, so the party / cheats / New Game reset have all settled and the
     // combatants entering the battle are the ones the run configured.
@@ -1318,7 +1347,6 @@ pub(super) fn cmd_play_window_with_record(
         dance_cast_surface: Default::default(),
         dance_cast_gpu: None,
         muscle_hub: None,
-        muscle_timers: Default::default(),
         summon_actor_slot: None,
         battle_stage_mesh: None,
         battle_stage_color_mesh: None,

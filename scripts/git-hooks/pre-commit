@@ -141,6 +141,20 @@ if [[ "$SITE_TOUCHED" == "1" ]] && command -v python3 >/dev/null 2>&1 \
     fi
 fi
 
+# Sticky renderer state staged on one draw branch. The play page draws its
+# field, battle and minigame frames through ONE renderer; a setter that stores
+# a value (NCLIP cull, colour grade, overworld curvature) called inside one
+# branch leaks into the others. Every overworld fight drew under the
+# overworld's screen-Y bend that way. See docs/tooling/host-drift.md.
+if [[ "$SITE_TOUCHED" == "1" ]] && command -v python3 >/dev/null 2>&1 \
+    && [[ -f "scripts/ci/check-js-sticky-frame-state.py" ]]; then
+    printf '[pre-commit] play page sticky frame state\n'
+    if ! python3 scripts/ci/check-js-sticky-frame-state.py --quiet; then
+        printf '[pre-commit] stage the setter in _stageFrameState, or classify it in BRANCH_OWNED (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
+        exit 1
+    fi
+fi
+
 # Generated-page staleness. The link gate above proves every reference RESOLVES;
 # it cannot see a reference that is absent. Editing a _content fragment to pull
 # in a new asset and not re-running site/_gen.py leaves the served page loading

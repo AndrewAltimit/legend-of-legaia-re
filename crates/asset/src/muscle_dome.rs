@@ -172,9 +172,79 @@ pub fn victory_message_offsets(overlay: &[u8]) -> Vec<usize> {
         .collect()
 }
 
+/// PROT entry (extraction space) of the dome data container (`other6.lzs`
+/// slot 0): LZS section 0 is `[12-byte header][TIM][TIM]`, the two 4bpp hub
+/// pages at VRAM `(320, 0)` / `(320, 256)` with CLUT rows 502 / 503.
+pub const HUB_CONTAINER_PROT_INDEX: u32 = 1220;
+
+/// Set STP (bit 15) on every **non-zero** CLUT entry of `tim` - the
+/// `FUN_800198E0` upload with the STP flag `_DAT_8007B998` raised.
+///
+/// The arena's entry routine raises that flag immediately before it loads
+/// the dome data file: `FUN_801CEA6C` stores `s2 = 1` to `0x8007B998`
+/// (`sw s2,-0x4668(v0)` at `0x801CEB00`, the delay slot of the `jal
+/// 0x80020DE0` that reads the file). So the hub CLUTs reach VRAM bit-15-set
+/// even though the file stores them clear - a live dome VRAM snapshot shows
+/// every non-zero entry of rows 502 / 503 as `entry | 0x8000`, and the zero
+/// entries as `0`. Which is what decides how the hub's variant passes
+/// blend: the all-white "knockout" palettes the variant-2 emitter bump
+/// selects (`clut + 1`, e.g. 7 under 6, 9 under 8) are STP-clear on the disc,
+/// and drawn from the file they would be opaque white plates instead of the
+/// subtractive (`B - F`) under-layer retail draws.
+pub fn apply_upload_stp(tim: &mut legaia_tim::Tim) {
+    if let Some(clut) = tim.clut.as_mut() {
+        for e in clut.entries.iter_mut() {
+            if *e != 0 {
+                *e |= 0x8000;
+            }
+        }
+    }
+}
+
+/// The two hub page TIMs out of the dome data container (raw extraction
+/// [`HUB_CONTAINER_PROT_INDEX`] bytes), with the arena's upload STP applied
+/// ([`apply_upload_stp`]) - the CLUT words as they sit in VRAM, which is
+/// what every host must classify and decode the hub quads against.
+pub fn hub_page_tims(container: &[u8]) -> Option<(legaia_tim::Tim, legaia_tim::Tim)> {
+    let sections = legaia_lzs::decompress_container(container).ok()?;
+    let blob = sections.first()?;
+    let mut t0 = legaia_tim::parse(blob.get(0xC..)?).ok()?;
+    let mut t1 = legaia_tim::parse(blob.get(0xC + t0.byte_extent()..)?).ok()?;
+    apply_upload_stp(&mut t0);
+    apply_upload_stp(&mut t1);
+    Some((t0, t1))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn upload_stp_sets_bit_15_on_non_zero_entries_only() {
+        let mut tim = legaia_tim::Tim {
+            flags: 0x8,
+            mode: legaia_tim::PixelMode::Bpp4,
+            clut: Some(legaia_tim::Clut {
+                fb_x: 0,
+                fb_y: 502,
+                w: 4,
+                h: 1,
+                entries: vec![0x0000, 0x7FFF, 0x9C84, 0x1086],
+            }),
+            image: legaia_tim::Image {
+                fb_x: 320,
+                fb_y: 0,
+                fb_w: 1,
+                h: 1,
+                data: vec![0; 2],
+            },
+        };
+        apply_upload_stp(&mut tim);
+        assert_eq!(
+            tim.clut.unwrap().entries,
+            vec![0x0000, 0xFFFF, 0x9C84, 0x9086]
+        );
+    }
 
     #[test]
     fn hand_tables_decode() {

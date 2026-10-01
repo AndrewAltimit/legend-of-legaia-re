@@ -1865,7 +1865,7 @@ impl World {
                     }
                     r
                 } else {
-                    vm::field::step(&mut host, &mut tl.ctx, &tl.bytecode, pc)
+                    field_step_routed(&mut host, &mut tl.ctx, &tl.bytecode, pc)
                 };
                 let (mut next_pc, kind, mut stop) = match result {
                     FieldStepResult::Advance { next_pc } => (
@@ -2608,7 +2608,7 @@ impl World {
                         }
                         None => {
                             let bc = &man[record_offset..];
-                            vm::field::step(&mut host, &mut channels[i].ctx, bc, pc)
+                            field_step_routed(&mut host, &mut channels[i].ctx, bc, pc)
                         }
                     }
                 };
@@ -2792,7 +2792,7 @@ impl World {
                 }
                 let result = {
                     let mut host = FieldHostImpl { world: self };
-                    vm::field::step(&mut host, &mut c.ctx, bc, pc)
+                    field_step_routed(&mut host, &mut c.ctx, bc, pc)
                 };
                 match result {
                     FieldStepResult::Advance { next_pc } => {
@@ -3199,7 +3199,7 @@ impl World {
                 }
                 r
             } else {
-                vm::field::step(&mut host, &mut id.ctx, &id.bytecode, id.pc)
+                field_step_routed(&mut host, &mut id.ctx, &id.bytecode, id.pc)
             };
             host.world.dialog.stepping_inline_npc = talker;
             if let Some((halt, saved_pc, wait_accum)) = caller_halt

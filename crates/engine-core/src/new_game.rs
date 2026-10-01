@@ -35,6 +35,102 @@ pub struct NewGameDefaults {
     /// Starting-inventory seed (`FUN_80034A6C`; vanilla = Healing Leaf ×5).
     /// `None` when the seed couldn't be decoded - the bag stays empty.
     pub inventory: Option<StartingInventory>,
+    /// `true` on a **scene-picker** host (the browser play page, the native
+    /// `play-window`): a cold entry seeds the full Vahn / Noa / Gala party
+    /// ([`World::seed_picker_party`]) instead of retail's Vahn-alone New Game
+    /// roster, so a scene picked mid-story is playable with the party the
+    /// story has by then. `false` keeps the retail roster - what every
+    /// headless harness that cold-boots `town01` as "the opening" expects.
+    /// A true New Game never reaches this guard (it seeds first).
+    pub picker_party: bool,
+    /// The `SCUS_942.54` equipment stat-bonus table the picker party's
+    /// starter loadout is chosen from ([`starter_loadout`]). `None` falls
+    /// back to the world's installed table, and with neither the members
+    /// stay unequipped (the battle file's default look).
+    pub equip_stats: Option<legaia_asset::equip_stats::EquipStatTable>,
+}
+
+impl NewGameDefaults {
+    /// Every cold-boot default the executable carries, parsed once: the
+    /// starting-party template, the starting bag and the equipment table.
+    /// `None` when the template does not parse (not a PSX-EXE).
+    /// `picker_party` starts `false`; a picker host sets it.
+    pub fn from_scus(scus: &[u8]) -> Option<Self> {
+        Some(Self {
+            party: StartingParty::from_scus(scus)?,
+            inventory: StartingInventory::from_scus(scus),
+            picker_party: false,
+            equip_stats: legaia_asset::equip_stats::EquipStatTable::from_scus(scus),
+        })
+    }
+}
+
+/// The roster slots a scene-picker entry seeds: Vahn, Noa, Gala - the
+/// three-member party the story carries from Noa's and Gala's joins onward
+/// (Terra is a guest, never a battle member).
+pub const PICKER_PARTY_SLOTS: [u8; 3] = [0, 1, 2];
+
+/// Which equipment-slot byte holds each character's weapon - the
+/// per-character table at `_DAT_8007B42C` (`2, 3, 2` for Vahn / Noa / Gala;
+/// see [`legaia_save::EquipmentSlots`]). Body armour is byte 0, head byte 1
+/// and footwear byte 4 for everyone.
+pub const WEAPON_SLOT_BYTE: [usize; 3] = [2, 3, 2];
+
+/// The starter loadout a scene-picker party member wears: for each of the
+/// four equip categories, the **weakest** item the disc's equipment table
+/// lets `char_slot` wear - lowest positive stat bonus for the category
+/// (attack for a weapon, defence + intelligence for the rest), ties broken by
+/// the lower id. A weapon exclusive to the character (equip mask = their bit
+/// alone) wins over a shared one. Ra-Seru story gear and items carrying an accessory passive
+/// are never picked, so the result is ordinary shop-tier gear.
+///
+/// This is an engine choice, not a retail table: retail's New Game clears the
+/// equipment bytes (the `0x1A18`-byte memset before `FUN_80034A6C`), and each
+/// character's later gear comes from story scripts and shops. A scene picked
+/// past those points would otherwise put three unarmed characters into a
+/// fight. Accessory slots (5..7) stay empty.
+pub fn starter_loadout(
+    table: &legaia_asset::equip_stats::EquipStatTable,
+    char_slot: u8,
+) -> legaia_save::EquipmentSlots {
+    use legaia_asset::equip_stats::EquipSlot as Cat;
+    let mut eq = legaia_save::EquipmentSlots::default();
+    let Some(&weapon_byte) = WEAPON_SLOT_BYTE.get(char_slot as usize) else {
+        return eq;
+    };
+    for (cat, byte) in [
+        (Cat::Body, 0usize),
+        (Cat::Head, 1),
+        (Cat::Weapon, weapon_byte),
+        (Cat::Footwear, 4),
+    ] {
+        let best = (1u8..=255)
+            .filter(|&id| table.is_equipment(id))
+            .filter_map(|id| table.bonus(id).map(|b| (id, b)))
+            .filter(|(_, b)| {
+                b.slot() == cat
+                    && b.equips_party_slot(char_slot)
+                    && !b.is_ra_seru()
+                    && !b.has_passive()
+            })
+            .map(|(id, b)| {
+                let score = match cat {
+                    Cat::Weapon => u32::from(b.attack()),
+                    _ => u32::from(b.def_up()) + u32::from(b.def_down()) + u32::from(b.int_up()),
+                };
+                // A weapon only this character can hold is their own weapon
+                // family; a shared one (knives) is off-class for most and
+                // costs more on the arts gauge. Prefer the exclusive ones.
+                let shared = cat == Cat::Weapon && b.equip_mask() != 1 << char_slot;
+                (shared, score, id)
+            })
+            .filter(|&(_, score, _)| score > 0)
+            .min();
+        if let Some((_, _, id)) = best {
+            eq.slots[byte] = id;
+        }
+    }
+    eq
 }
 
 /// Build a live 0x414-byte character record from one starting-party template
@@ -198,6 +294,50 @@ impl World {
         seeded
     }
 
+    /// Seed the **scene-picker party**: Vahn, Noa and Gala
+    /// ([`PICKER_PARTY_SLOTS`]) as the present battle party, each from their
+    /// own row of the SCUS starting-party template ([`starting_record`] - the
+    /// same rows retail seeds them from when they join) and wearing the
+    /// [`starter_loadout`] when an equipment table is reachable (`equip`, else
+    /// the world's installed one).
+    ///
+    /// The one helper both picker hosts reach, through
+    /// [`Self::seed_cold_boot_defaults`] with
+    /// [`NewGameDefaults::picker_party`] set. It is **not** the New Game
+    /// roster - [`Self::seed_starting_party`] keeps that Vahn-alone. Replaces
+    /// whatever roster the world held, so callers gate it themselves (the
+    /// cold-boot guard only fires on an empty roster). Returns how many
+    /// members it seeded (`0` on an empty template).
+    pub fn seed_picker_party(
+        &mut self,
+        starting: &StartingParty,
+        equip: Option<&legaia_asset::equip_stats::EquipStatTable>,
+    ) -> usize {
+        let table = equip.cloned().or_else(|| self.tables.equip_stats.clone());
+        let mut members = Vec::new();
+        for slot in PICKER_PARTY_SLOTS {
+            let Some(tpl) = starting.member(slot as usize) else {
+                break;
+            };
+            let mut rec = starting_record(tpl);
+            if let Some(t) = table.as_ref() {
+                rec.set_equipment(starter_loadout(t, slot));
+            }
+            members.push(rec);
+        }
+        let n = members.len();
+        if n == 0 {
+            return 0;
+        }
+        self.load_party(Party { members });
+        // Every template row's display name, as the New Game seed does, so
+        // Terra's `0xC1 03` substitution still resolves.
+        self.party.party_names = starting.members().iter().map(|m| m.name.clone()).collect();
+        self.set_active_party((0..n as u8).collect());
+        self.seed_party_battle_stats();
+        n
+    }
+
     /// Seed the New Game starting inventory from the SCUS seed
     /// ([`StartingInventory`], `FUN_80034A6C`). Vanilla retail is the single
     /// slot Healing Leaf (`0x77`) ×5; the starting-item randomizer rewrites the
@@ -239,7 +379,11 @@ impl World {
         if !self.party.roster.members.is_empty() {
             return false;
         }
-        self.seed_starting_party(&defaults.party);
+        if defaults.picker_party {
+            self.seed_picker_party(&defaults.party, defaults.equip_stats.as_ref());
+        } else {
+            self.seed_starting_party(&defaults.party);
+        }
         if self.party.roster.members.is_empty() {
             // Empty template (unreadable SCUS) - nothing was seeded.
             return false;
@@ -604,6 +748,8 @@ mod tests {
         let defaults = NewGameDefaults {
             party: StartingParty::from_members(vec![vahn()]),
             inventory: Some(StartingInventory::from_items(vec![(0x77, 5)])),
+            picker_party: false,
+            equip_stats: None,
         };
         // Fresh world: seed fires - party + bag + gold.
         let mut world = World::new();
@@ -635,11 +781,126 @@ mod tests {
         );
     }
 
+    fn template(name: &str, hp: u16) -> StartingChar {
+        StartingChar {
+            name: name.into(),
+            hp_max: hp,
+            ..vahn()
+        }
+    }
+
+    fn trio() -> StartingParty {
+        StartingParty::from_members(vec![
+            vahn(),
+            template("Noa", 150),
+            template("Gala", 220),
+            template("Terra", 99),
+        ])
+    }
+
+    /// `+7` byte per category: Body `0x00`, Head `0x20`, Weapon `0x40`,
+    /// Footwear `0x60`; `| 1` marks Ra-Seru gear.
+    fn bonus(atk: u8, udf: u8, mask: u8, cat: u8) -> [u8; 8] {
+        let none = legaia_asset::equip_stats::PASSIVE_NONE;
+        [0, atk, udf, 0, 0, none, mask, cat]
+    }
+
+    fn synthetic_equip_table() -> legaia_asset::equip_stats::EquipStatTable {
+        legaia_asset::equip_stats::EquipStatTable::from_entries(&[
+            // Weapons: Vahn-only 10, Vahn-only 4 (weakest), Noa-only 6,
+            // Gala-only 9, a Ra-Seru weapon with 1 that must never be picked.
+            (0x10, bonus(10, 0, 1, 0x40)),
+            (0x11, bonus(4, 0, 1, 0x40)),
+            (0x12, bonus(6, 0, 2, 0x40)),
+            (0x13, bonus(9, 0, 4, 0x40)),
+            (0x14, bonus(1, 0, 7, 0x41)),
+            // Armour for everyone, head for everyone, boots Vahn-only.
+            (0x20, bonus(0, 5, 7, 0x00)),
+            (0x21, bonus(0, 3, 7, 0x00)),
+            (0x30, bonus(0, 2, 7, 0x20)),
+            (0x40, bonus(0, 1, 1, 0x60)),
+            // A zero-stat placeholder is never picked.
+            (0x41, bonus(0, 0, 7, 0x60)),
+        ])
+    }
+
+    #[test]
+    fn starter_loadout_picks_the_weakest_wearable_per_category() {
+        let t = synthetic_equip_table();
+        // Vahn: body 0x21, head 0x30, weapon (byte 2) 0x11, boots 0x40.
+        assert_eq!(
+            starter_loadout(&t, 0).slots,
+            [0x21, 0x30, 0x11, 0, 0x40, 0, 0, 0]
+        );
+        // Noa wears her weapon in byte 3 and has no wearable boots.
+        assert_eq!(
+            starter_loadout(&t, 1).slots,
+            [0x21, 0x30, 0, 0x12, 0, 0, 0, 0]
+        );
+        // Gala: byte 2.
+        assert_eq!(
+            starter_loadout(&t, 2).slots,
+            [0x21, 0x30, 0x13, 0, 0, 0, 0, 0]
+        );
+        // Terra is not a picker member: nothing.
+        assert_eq!(starter_loadout(&t, 3).slots, [0; 8]);
+    }
+
+    #[test]
+    fn picker_cold_boot_seeds_vahn_noa_and_gala() {
+        let defaults = NewGameDefaults {
+            party: trio(),
+            inventory: Some(StartingInventory::from_items(vec![(0x77, 5)])),
+            picker_party: true,
+            equip_stats: Some(synthetic_equip_table()),
+        };
+        let mut world = World::new();
+        assert!(world.seed_cold_boot_defaults(&defaults));
+        assert_eq!(world.party.party_count, 3);
+        assert_eq!(world.party.active_party, vec![0, 1, 2]);
+        assert_eq!(world.party.roster.members.len(), 3);
+        assert_eq!(world.party_name(1), "Noa");
+        assert_eq!(world.party_name(2), "Gala");
+        // Terra's name still seeds for the dialog substitution.
+        assert_eq!(world.party_name(3), "Terra");
+        let hp: Vec<u16> = world
+            .party
+            .roster
+            .members
+            .iter()
+            .map(|r| r.hp_mp_sp().hp_max)
+            .collect();
+        assert_eq!(hp, vec![180, 150, 220]);
+        for r in &world.party.roster.members {
+            assert_eq!(r.hp_mp_sp().hp_cur, r.hp_mp_sp().hp_max);
+        }
+        assert_eq!(world.party.roster.members[1].equipment().slots[3], 0x12);
+        assert_eq!(world.party.money, crate::world::NEW_GAME_STARTING_GOLD);
+        assert_eq!(world.party.inventory.get(&0x77).copied(), Some(5));
+        // The battle mirrors cover all three ordinals.
+        assert_eq!(world.actors[1].battle.max_hp, 150);
+        assert_eq!(world.actors[2].battle.max_hp, 220);
+        // Once-only, like the retail seed.
+        assert!(!world.seed_cold_boot_defaults(&defaults));
+    }
+
+    #[test]
+    fn new_game_after_a_picker_party_is_vahn_alone() {
+        let mut world = World::new();
+        world.seed_picker_party(&trio(), None);
+        assert_eq!(world.party.party_count, 3);
+        world.begin_new_game_seeded(Some(&trio()), None);
+        assert_eq!(world.party.party_count, 1, "a New Game stays retail");
+        assert_eq!(world.party.roster.members.len(), 1);
+    }
+
     #[test]
     fn cold_boot_defaults_with_empty_template_are_a_no_op() {
         let defaults = NewGameDefaults {
             party: StartingParty::from_members(vec![]),
             inventory: Some(StartingInventory::from_items(vec![(0x77, 5)])),
+            picker_party: false,
+            equip_stats: None,
         };
         let mut world = World::new();
         assert!(!world.seed_cold_boot_defaults(&defaults));

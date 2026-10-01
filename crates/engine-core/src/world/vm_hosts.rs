@@ -144,9 +144,12 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
         0x10
     }
     fn ext_rand16(&mut self) -> u16 {
-        // Retail ext 0x05/0x30 call the BIOS `A(2Fh) rand`; the world RNG
-        // stands in.
-        self.world.next_rng() as u16
+        // Retail ext 0x05/0x30 call the BIOS `A(2Fh) rand` thunk
+        // `FUN_80056798` (`jal 0x80056798` at 0x801D3714 / 0x801D45F8 in
+        // `overlay_0897_801d362c.txt`), so the draw is the shaped world
+        // stream, `0..=0x7FFF` - 0x30 tests its low bit, and the raw LCG
+        // state's low bit strictly alternates.
+        self.world.next_rand() as u16
     }
 
     // --- ext-VM globals -----------------------------------------------
@@ -640,6 +643,57 @@ pub(super) fn apply_script_table_teleport(
     true
 }
 
+/// `true` when the op at `pc` is `CC F8 40`: op `4C` nibble-4 sub-0 (the
+/// `+0x72` write-or-ramp) aimed at the player anchor `0xF8`.
+pub(super) fn is_player_scale_op(bytecode: &[u8], pc: usize) -> bool {
+    bytecode.get(pc) == Some(&0xCC)
+        && bytecode.get(pc + 1) == Some(&crate::field_env::PLAYER_ANCHOR_TARGET)
+        && bytecode.get(pc + 2) == Some(&0x40)
+}
+
+/// Step one field-VM op, landing a player-aimed `+0x72` write on the player.
+///
+/// `FUN_8003C83C` resolves the extended target `0xF8` to the live player
+/// object (`_DAT_8007C364`), so `CC F8 40 lo hi tlo thi` writes - or, with a
+/// non-zero tick count, ramps - the **player's** `+0x72`: the pad step's speed
+/// multiplier and `FUN_8001B964`'s render scale, where `0` is "do not draw".
+/// Every runner that can meet the op (the system script, the cutscene
+/// timeline, the placement channels, an inline talk, a prop run) calls this in
+/// place of [`vm::field::step`], so the op runs on a stand-in player context
+/// seeded from the live word and the result is written back, whichever
+/// script issued it. Cutscenes hide the player this way (`CC F8 40 00 00 ..`
+/// before a stand-in walks) and restore it with `CC F8 40 00 10 ..`.
+///
+/// Every other op passes straight through to [`vm::field::step`].
+///
+/// REF: FUN_8003C83C, FUN_801DE840 (the nibble-4 sub-0 arm `0x801E1174..0x801E11A8`)
+pub(super) fn field_step_routed(
+    host: &mut FieldHostImpl<'_>,
+    ctx: &mut FieldCtx,
+    bytecode: &[u8],
+    pc: usize,
+) -> vm::field::StepResult {
+    let slot = host
+        .world
+        .player_actor_slot
+        .map(usize::from)
+        .filter(|&s| s < host.world.actors.len());
+    let Some(slot) = slot.filter(|_| is_player_scale_op(bytecode, pc)) else {
+        return vm::field::step(host, ctx, bytecode, pc);
+    };
+    let mut player_ctx = FieldCtx {
+        script_id: u16::from(crate::field_env::PLAYER_ANCHOR_TARGET),
+        flags: 0x0100_0000,
+        field_72: host.world.actors[slot].move_state.field_72,
+        ..Default::default()
+    };
+    let r = vm::field::step(host, &mut player_ctx, bytecode, pc);
+    if let Some(a) = host.world.actors.get_mut(slot) {
+        a.move_state.field_72 = player_ctx.field_72;
+    }
+    r
+}
+
 pub(super) struct FieldHostImpl<'a> {
     pub(super) world: &'a mut World,
 }
@@ -733,6 +787,30 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     // The ramp arms post the endpoint immediately for the same reason the
     // sub-9 ramp does - the gate reads a level, not a trajectory.
     // REF: FUN_801D1344 (the gate arm), FUN_801DE840 (these four arms)
+    // Op `0x4C` nibble-4 sub-0 with a tick count, aimed at the player
+    // ([`field_step_routed`] runs it on the player's stand-in context): the
+    // arm hands `&ctx+0x72` to the generic ramp scheduler, kind 2, from the
+    // live `+0x72` (`lhu a3,0x72(a0)`) to the operand over `ticks` frames
+    // (`0x801E118C..0x801E11A8` -> `jal 0x8003C5F0` at `0x801E205C`). Other
+    // contexts' `+0x72` ramps still drop: no port reader animates them.
+    // REF: FUN_8003C5F0
+    fn op4c_nibble4_ctx_ramp(&mut self, ctx: &mut FieldCtx, sub: u8, target: i16, ticks: u16) {
+        if sub != 0 || ctx.script_id != u16::from(crate::field_env::PLAYER_ANCHOR_TARGET) {
+            return;
+        }
+        use vm::ambient_motion::{RAMP_DEST_SCALE, Ramp, RampKind};
+        let total = i32::from(ticks);
+        self.world.locomotion.player_scale_ramps.install(Ramp {
+            dest: RAMP_DEST_SCALE,
+            owner: u32::from(crate::field_env::PLAYER_ANCHOR_TARGET),
+            start: i32::from(ctx.field_72),
+            end: i32::from(target),
+            total,
+            remaining: total,
+            kind: RampKind::U16,
+        });
+    }
+
     fn op4c_nibble4_global_write(&mut self, sub: u8, target: i32, ticks: u16) {
         let _ = ticks;
         let Some(ctrl) = self.world.world_map.ctrl.as_mut() else {

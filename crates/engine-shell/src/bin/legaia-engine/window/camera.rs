@@ -559,7 +559,18 @@ impl PlayWindowApp {
         } else {
             let yaw = std::f32::consts::PI
                 + (a.move_state.render_26 as f32) / 4096.0 * std::f32::consts::TAU;
-            Mat4::from_translation(pos) * Mat4::from_rotation_y(yaw)
+            // The player draws at its `+0x72` render scale (`0xC00` on a
+            // kingdom map) - `World::player_render_scale`, which the browser
+            // play page folds into its posed player mesh.
+            let world = &self.session.host.world;
+            let scale = if world.player_actor_slot.map(usize::from) == Some(slot) {
+                world.player_render_scale()
+            } else {
+                1.0
+            };
+            Mat4::from_translation(pos)
+                * Mat4::from_rotation_y(yaw)
+                * Mat4::from_scale(Vec3::splat(scale))
         }
     }
 }

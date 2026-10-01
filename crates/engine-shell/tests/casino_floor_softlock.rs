@@ -246,11 +246,17 @@ fn every_minigame_can_be_left_by_pad() {
             "{slot:?}: still inside before the escape press"
         );
 
-        host.world.set_pad(PadButton::Start.mask());
-        let _ = host.tick();
-        host.world.set_pad(0);
-        for _ in 0..3 {
+        // Baka Fighter's cabinet boots on its attract card, which reads
+        // Start itself (retail's `0x844` "press start" edge), so there the
+        // first press begins and the second - from the fade-out on - quits.
+        let presses = if mode == SceneMode::BakaFighter { 2 } else { 1 };
+        for _ in 0..presses {
+            host.world.set_pad(PadButton::Start.mask());
             let _ = host.tick();
+            host.world.set_pad(0);
+            for _ in 0..3 {
+                let _ = host.tick();
+            }
         }
         assert_eq!(
             host.world.mode,

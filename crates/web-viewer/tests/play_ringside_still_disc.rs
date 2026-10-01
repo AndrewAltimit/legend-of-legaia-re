@@ -4,14 +4,16 @@
 //!
 //! What it pins, host-side:
 //!
-//! 1. The leg's end leaves a still resident - the engine's
-//!    `World::exit_muscle_dome` runs the battle end's pick (`FUN_801F6B24`'s
-//!    `0x4C7 + s0`, extraction `1221` / `1222`).
+//! 1. The leg's end leaves a still resident - the engine's leg close runs
+//!    the battle end's pick (`FUN_801F6B24`'s `0x4C7 + s0`, extraction
+//!    `1221` / `1222`) - and the arena keeps the frame between legs.
 //! 2. The re-entered hub draws it as two quads addressed **by texture page**,
 //!    `0x106` then `0x109` - the packets `FUN_801D00F8`'s still arm writes -
 //!    ahead of every hub sprite, with a fade level that rises off zero.
 //! 3. The sheet those quads resolve onto decodes off the disc at the still's
 //!    320x256 VRAM extent.
+//! 4. Once the hub has played out it opens the next leg itself, with no
+//!    trip back to the field.
 //!
 //! No Sony bytes are asserted, only structural facts. Skips + passes when
 //! `LEGAIA_DISC_BIN` is unset.
@@ -99,7 +101,13 @@ fn a_won_leg_reenters_the_hub_over_the_ringside_still() {
         }
     }
     assert!(won, "no leg was won in six tries");
-    assert_eq!(rt.scene_mode(), "Field", "the dome hands the field back");
+    // A won leg mid-ladder re-enters the arena hub: the frame stays in the
+    // arena, and the hub stages the next fight itself.
+    assert_eq!(
+        rt.scene_mode(),
+        "MuscleDome",
+        "the arena keeps the frame between legs"
+    );
 
     let mut seen: Option<Vec<serde_json::Value>> = None;
     let mut peak = 0u64;
@@ -152,5 +160,18 @@ fn a_won_leg_reenters_the_hub_over_the_ringside_still() {
             .len(),
         320 * 256 * 4
     );
+    // Once the INTERVAL and the ROUND card have played, the next leg opens
+    // without a trip to the field.
+    let mut next = false;
+    for _ in 0..3000 {
+        step(&mut rt, 0);
+        assert_eq!(rt.scene_mode(), "MuscleDome", "never back to the field");
+        let st = json(&rt.play_mg_muscle_state_json());
+        if st["phase"].as_str() == Some("select") {
+            next = true;
+            break;
+        }
+    }
+    assert!(next, "the hub handed the next leg its fight");
     eprintln!("[ok] ringside still variant {variant}, peak level {peak:#x}");
 }

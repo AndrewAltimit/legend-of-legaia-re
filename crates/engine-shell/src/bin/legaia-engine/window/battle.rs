@@ -218,6 +218,10 @@ impl PlayWindowApp {
                 self.battle_hud
                     .sync_status(slot, &self.session.host.world.battle.status_effects);
             }
+        } else if self.session.host.world.mode == SceneMode::MuscleDome {
+            // A dome leg is a battle on the same HUD: the shared fold seats
+            // the lead fighter's row off the dome session.
+            self.sync_battle_hud_rows();
         }
         self.battle_hud.tick();
 
@@ -1016,9 +1020,10 @@ impl PlayWindowApp {
         // renderer holds an immutable borrow of `self`, which a `&mut self`
         // method could not have. The caller puts it back.
         let mut intro = self.battle_intro.take().expect("armed above");
-        // Retail's per-frame step is the display-frame delta; the window's
-        // simulation tick is one display frame.
-        let prims = intro.tick(entity.elapsed, 1).prims;
+        // Stepped to the entity's clock, one step per clock unit: a redraw can
+        // drain several world ticks, and stepping once per redraw left the
+        // shatter behind the browser page's (`BattleIntro::advance_to`).
+        let prims = intro.advance_to(entity.elapsed).prims;
         // Per-frame emitter yield. The styles differ by what they draw on top
         // of the captured field frame, so a style that emits nothing but the
         // fade is indistinguishable from a blank transition on screen - this

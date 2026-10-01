@@ -141,13 +141,16 @@
 //!
 //! **Battle-over arm** (`0x801D5CFC`): pitch `0`, yaw `0x800 - actor[+0x46]`
 //! (over the actor's shoulder from behind), TR `(0, -5 * actor[+0x3E],
-//! 0x500)`, focus the actor's display position `actor[+0x3C/+0x3E/+0x40]`,
-//! then a per-character (`DAT_8007BD10[slot]`) / per-anim (`actor[+0x1DB]`)
-//! script and a **height floor with a pitch compensation** (`0x801D6494`): a
-//! TR.y below `0x280` is raised to `0x280` and a quarter of the shortfall is
-//! added to the pitch. Character `2` in anim `0x16` skips the floor. The
-//! port carries the arm behind [`ActionFraming::battle_over`], which no host
-//! raises yet - the victory-pose sequence is not modelled.
+//! 0x500)`, focus the actor's display X / Z `actor[+0x3C/+0x40]` on the
+//! floor, then a per-character (`DAT_8007BD10[slot]`) / per-anim
+//! (`actor[+0x1DB]`) win-pose script ([`battle_over_script`]) and a **height
+//! floor with a pitch compensation** (`0x801D6494`): a TR.y below `0x281` is
+//! raised to `0x280` and a quarter of the shortfall is added to the pitch.
+//! Character `2` in anim `0x16` skips the floor. The port carries the arm
+//! behind [`ActionFraming::battle_over`], which the engine core raises from
+//! the battle-end sequence's results frame on - the results sequencer
+//! `FUN_8004E568` calls `FUN_801D5854(seat, 6)` every frame with the signal
+//! up, after a load window on case 8 (`legaia_engine_core::battle_cam_inputs`).
 //!
 //! ## The yaw counter `ctx[+0x6DA]` is re-seeded per action
 //!

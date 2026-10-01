@@ -116,6 +116,19 @@ pub struct MinigameState {
     /// ends. A re-entered hub draws it as its backdrop
     /// ([`crate::muscle_ringside::HubBackdrop`]).
     pub muscle_ringside_still: Option<u32>,
+    /// The arena hub is between two legs of an open contest: a survived leg
+    /// with the course not exhausted keeps the mode on the arena, and the
+    /// hub's INTERVAL / ROUND screens play before the next fight opens
+    /// ([`crate::world::World::begin_next_muscle_leg`]).
+    pub muscle_hub_between_legs: bool,
+    /// The arena hub's screen timers - the first visit, the leg-open ROUND
+    /// card, the INTERVAL tally and the re-entered hub's backdrop - ticked by
+    /// [`crate::world::World::tick_muscle_hub`]; both play hosts draw from
+    /// it.
+    pub muscle_hub: crate::muscle_ringside::HubTimers,
+    /// Sounds the hub fired that the host has not drained yet
+    /// ([`crate::world::World::take_muscle_hub_sounds`]).
+    pub muscle_hub_sounds: crate::muscle_ringside::HubTimersFrame,
     /// The casino coin bank (`_DAT_800845A4`, the GameShark "Infinite
     /// Coins" cell). Read to seed the slot machine's playing balance and
     /// **assigned** its final balance on cash-out (the retail state-100
@@ -278,6 +291,9 @@ impl MinigameState {
             muscle_contest: None,
             muscle_settlement: None,
             muscle_ringside_still: None,
+            muscle_hub_between_legs: false,
+            muscle_hub: Default::default(),
+            muscle_hub_sounds: Default::default(),
             casino_coins: 0,
             point_card: 0,
             scene_backup: None,

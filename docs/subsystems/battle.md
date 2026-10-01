@@ -1507,8 +1507,8 @@ of sinking (`0x801D6494`), and between the base pose and that floor runs a
 per-character script dispatched at `0x801D5D50` (`0x801D5DAC` / `0x801D5FC0`
 / `0x801D61E8` / `0x801D6440`, rejoining at `0x801D645C`) which reads
 `actor[+0x1DB]` over the win-pose band `0x11..=0x18` (bias `-0x11`, bound
-`8`). The port carries it behind `ActionFraming::battle_over`, which no host
-raises yet. An earlier reading of `0xFE` as "the in-battle state" sent every
+`8`). The port carries it behind `ActionFraming::battle_over`, raised only by
+the battle-end sequence ([the victory camera](#the-victory-camera)). An earlier reading of `0xFE` as "the in-battle state" sent every
 party action through this arm - eye `prescale(0x500)` behind the actor, i.e.
 inside whichever combatant stood there - and is recorded in
 [re-do-not-re-walk.md](../reference/re-do-not-re-walk.md#the-case-6-party-arm-is-the-battle-over-framing).
@@ -2216,6 +2216,9 @@ wipe and one plain-formation wipe on the `map01` overworld):
    bytes walk `81 02 80 00` in the fight (`v0_1_battle_start_tetsu`) to
    `41 00 80 00` back in town01 (`v0_1_post_battle_tetsu_town`) - flag 1
    up, flag 0 consumed, flag 14 cleared - with `DAT_8007BD60 = 0x81`.
+   That `0x80` is the sparring overlay's close arm (`0x801F7358`), not the
+   formation's: in the fight itself the byte reads `0x01` and
+   `ctx+0x287 = 0`, because town01 row 4 carries header byte `0`.
    Engine port: `engine-core::battle_return_flags`, run by
    `World::finish_battle` for every ending, with the survived bit keyed on
    the end cause not being a party wipe.
@@ -3352,9 +3355,22 @@ waits run the rest of the 80-vsync load hold (`autorun_victory_timeline.lua`,
 columns `req26b` / `prog26c`). So bodies near the camera ghost again for the
 last 52 vsyncs of the hold, and the engine raises the byte for exactly its
 first 28 (`VictorySequence::side_band_request_up`). The `gp[+0x330]` gate has no
-engine twin because the engine has no load stage. Neither host draws a body
-with a per-draw blend override yet, so the ghost is carried to the draw plan
-and not rendered - the same gap as the capture / defeat fade above.
+engine twin because the engine has no load stage. Both hosts draw the ghost:
+`engine-core::battle_body_blend` ORs the word's ABE / ABR into the body's TSB
+words, as `FUN_80043390` does into its packets.
+
+**The pose actor is the acting slot.** The battle-over close-up sits right
+behind the posing character, well inside `dist / 4`, and retail keeps that body
+solid only because the pass's acting slot `ctx[+0x13]` is the same field the
+results sequencer frames (`noa_levelup_banner`: `ctx[+0x13] == 0`, seat 0's
+`+0x8` clear and filling the foreground opaque, the dead monster in slot 3 the
+only body near `P`). The engine's acting mirror keeps the fight's last actor,
+so while a non-escape `VictorySequence` is armed `tick_battle_camera_ghost`
+feeds the pass the pose actor instead; otherwise a win landed by another seat
+fades the framed leader to a screen-filling `B + F/4` ghost. Other party
+members near the close-up still ghost, as retail's pass would. The field's
+camera-occlusion fade is a separate mechanism and never arms in battle
+(`field_occlusion::fade_armed` requires `SceneMode::Field`).
 
 ## Per-frame actor maintenance (`FUN_8004CE2C`)
 
@@ -4328,14 +4344,29 @@ The top-of-screen banner every battle message uses is a class-0 window on the
 same seat, and it is packet-pinned mid-fight (the `rim_elm_gimard_seru_capture_after`
 and `noa_levelup_banner` states). Content pen `(16, 12)`, frame origin
 `(8, 4)`, left / right border columns 4 wide, interior 20 tall - so the frame
-is 28 tall and its right column starts at `16 + measured_width`. The top and
-bottom edges tile 24 wide from `x = 12` with the final tile clipped, exactly
-as a plate run clips its last body tile.
+is 28 tall. Its width is **not** measured from the message: every record that
+raises a message (`0x45..=0x4B`, `0x59`, `0x65`, `0x66`, kind `3` on seat
+`(16, 14)`) carries a fixed `280 x 12` content box, and both captures frame
+`(8, 4)..(304, 32)` whatever their text. The class-0 law is the content box
+grown by 4 on each side for the interior (`w + 8`) and by 4 more for the
+border, so the right column starts at `pen.x + w + 4`. The top and bottom
+edges tile 24 wide from `x = 12` with the final tile clipped, exactly as a
+plate run clips its last body tile.
 
-Retail draws **no interior fill** under it: the display list carries the
-border sprites and the glyph run and nothing else, so the scene shows
-through. The 32x32 blue-marbled patch records `0x03` / `0x04` carry as their
-own rect is a fill the framed *menu* windows use, not this banner.
+**The frame is filled.** Ahead of the border sprites the display list
+carries a run of opaque gouraud textured quads (`POLY_GT4`, code `0x3C`)
+covering the whole frame rect: the 32x32 blue-marbled patch widget record `3`
+carries as its own rect, texels `(128, 0)` on CLUT `(32, 511)`, tiled in
+32-pixel columns from the frame origin with the last one clipped (eight full
+columns and an 8-wide one for the 296-wide frame), texels 1:1 with pixels,
+and the vertex grey `0x40` along the top edge and `0x88` along the bottom.
+The emitter is `FUN_8002BDC4`, which the layout dispatcher calls for every
+class-0 node (`jal` at `0x8002D7E8`): it steps columns by the record's `w`
+and bands by its `h`, restarts the texture at each band, and ramps the grey
+`0x900 / height` per band, so a taller frame - the 58-tall window under the
+same `noa_levelup_banner` frame - is two bands, `0x40 -> 0x67` and
+`0x67 -> 0x88`. An ordering-table walk that keeps only `SPRT` packets cannot
+see the fill, which is how this banner was once recorded as hollow.
 
 The same frames catch the actor-name plaque parked: a gold plate run at
 `(8, -30)` with a 27-pixel interior (cap, one 16-wide body tile, one clipped
@@ -4344,8 +4375,11 @@ disc-side parked seat `(16, -24)` through the pen and bias law above, and it
 is the clip rule and the plate arithmetic confirmed in one packet run.
 
 **Port.** [`engine-ui::battle_hud_chrome`](../../crates/engine-ui/src/battle_hud_chrome.rs)
-carries the geometry (`banner_frame` / `banner_interior`, the tiled-edge
-emit, no fill) and the HUD builder draws it in place of the plaque. What
+carries the geometry (`banner_frame` / `banner_interior`, the fixed
+`BANNER_BOX_W`, the tiled-edge emit, and the fill `class0_fill_draws_at`,
+which draws a one-band frame from the gradient-baked interior tile and a
+taller one as tinted rows of the raw tile) and the HUD builder draws it in
+place of the plaque. What
 feeds it is the port's two battle messages, level-up and Seru-capture - the
 `noa_levelup_banner` state is one of the two the geometry came from. The port
 raises both a mode-tick **after** the fight has handed the frame back to the
@@ -4378,13 +4412,16 @@ intro wears [the message banner](#the-full-width-message-banner)'s frame, and
 an ordering-table walk of a live intro frame
 ([`widget-draw-sweep.py`](../../scripts/mednafen/widget-draw-sweep.py) over a
 save state the probe below writes on the banner's own frames) says it draws
-exactly that and nothing else: per label a 4x4 corner pair from texels
-`(160, 0)` and `(188, 0)`, 24-wide top and bottom edges from `origin + 4` with
-the last tile clipped, 4x20 side columns, every piece on CLUT `(32, 511)` - and
-no fill sprite anywhere in the frame. Frame origin is the pen less `(8, 8)` and
+exactly that: per label a 4x4 corner pair from texels `(160, 0)` and
+`(188, 0)`, 24-wide top and bottom edges from `origin + 4` with the last tile
+clipped, 4x20 side columns, every piece on CLUT `(32, 511)`, over the same
+[marbled fill](#the-full-width-message-banner) - three `POLY_GT4` columns per
+label, the last clipped (`(78, 40)` 32 / 32 / 18 wide for `Moldy Worm`), which
+a `SPRT`-only sweep does not list. Frame origin is the pen less `(8, 8)` and
 the right column lands at `pen.x + width + 4`, so `Moldy Worm` on pen
 `(86, 48)` 66 wide frames `(78, 40)` to `(159, 67)` with its top edge tiled at
-x `82` / `106` / `130` and clipped to 2 pixels at `154`. None of those tiles
+x `82` / `106` / `130` and clipped to 2 pixels at `154`. The labels are white
+glyphs on that fill, and the port draws them so on both hosts. None of those tiles
 matches a widget record's own rect, because a class-0 frame's eight quads come
 from the tile-set pool at `0x80073A00` rather than from the record.
 
@@ -4423,8 +4460,11 @@ of `target_picker::layout_enemy_menu_rows`, both `FUN_801D9D3C`), measured with
 the host's `legaia-font`; `engine-core::world::battle::intro_names` owns the
 `ctx[+0x6D6]` timer, armed beside the formation banner and drained by the
 frame step; and `engine-ui`'s battle HUD builder draws each label on the
-class-0 frame (`battle_hud_chrome::class0_frame_draws_at`) at `(x, 48)`. Both
-hosts pass the labels through `BattleHudFrame::intro_names`. The X each group
+class-0 frame (`battle_hud_chrome::class0_frame_draws_at`, fill included) at
+`(x, 48)`. Both hosts pass the labels through `BattleHudFrame::intro_names`,
+and the builder drops them once any command surface past the round prompt is
+open (the ring, a picker, a submenu, the Begin / Reselect confirm), none of
+which retail can reach while they are up. The X each group
 averages is the monster actor's `+0x34` (`lhu a0,0x34(v0)` at `0x801D9E00` /
 `0x801D9ED4`), its battle **world** X, laid out as `(avg >> 3) - width / 2 +
 0xA0` - so a label sits over its group's seat. The port reads it off the live
@@ -5351,6 +5391,15 @@ staged - no engine bank carries `monster.snd`.
 
 An **escape** runs the sequencer's `0x67` arm: no results, the phase halfword counts up from the fade the SM's `0x66` teardown spawned, same `0x43` gate. A **party wipe** runs the annihilated arm: the same `0x100` hold and fade, every member floored at 1 HP on the fade frame (`0x8004FB94..0x8004FBA4` - a scripted loss returns to the field standing), then the MAIN INIT game-over gate `finish_battle` folds.
 
+#### The victory camera
+
+The sequencer frames its pose actor `ctx[+0x13]` on every frame it runs, in two ways:
+
+- **The load window** (the side-band hold at its head, `0x8004E5C0..0x8004E624`, and phases `0..=4`, `0x8004EE10..0x8004EE98`): it stores `ctx[+0xD] = 1`, forces a party seat's target `actor[+0x1DD]` into the monster band `3..=6` (`3` when it is not), turns that target to the pose actor's heading `+ 0x800`, and calls `FUN_801D5854(seat, 8)`. Every monster is down, and a dead monster's node is gone (`noa_levelup_banner`: each dead seat's `+4` reads zero), so case 8 takes its **stand-off arm** (`0x801D6B9C`): `TR (0, 0x400, radius * 5 / 2)` with the radius `actor[+0x22C][+0x58]` (`0x280` for every party member in that state), pitch `0`, focus the pose actor's display X / Z, yaw `-target[+0x46] - ((ctx[+0x26D] << 9) - 0x100) + ctx[+0x6DA]`.
+- **The results frame onward** (`0x8004FC80..0x8004FC90`): it stores `ctx[+0xD] = 0` and calls `FUN_801D5854(seat, 6)`. With the signal up and a party seat, case 6 takes the battle-over arm: the close-up from behind the posing character, moved by the per-character win-pose script (`battle_cam_script::battle_over_script`), which reads the close-up accumulator `ctx[+0x87C]` - zeroed by the pose clip's commit (`FUN_8004AD80`, `0x8004BF68..0x8004BF78`) and advanced `8` a frame by every framing call - so the shot keeps moving through the hold.
+
+The escape arm returns before either call (`0x8004E720`). `noa_levelup_banner` reads the results framing directly: Vahn posing `0x14` with `ctx[+0x87C] = 616`, pitch `-0x20` and yaw `0x800 - actor[+0x46]` exactly, TR one tween step short of the script's `(0, 928, prescale(1126))` and walking down toward it from the stand-off pose. The port folds both framings over the camera inputs while `World::battle.victory` is armed (`battle_cam_inputs::battle_end_cam_inputs`); before it, the camera stayed on the far framing with the idle orbit through the whole sequence. Disc-free regression: `engine-core/tests/battle_end_camera.rs`.
+
 The exit fade is a fade **to black**, not a white-out. The template's kind word (`2`) is also
 the quad's blend: the fade actor's tick `FUN_80025000` hands it to the quad emitter
 `FUN_80024EE4` as the second argument, which folds it into the draw-mode packet's ABR bits (`sll
@@ -5375,7 +5424,7 @@ The spine began as physical-attack-only, single-formation; the Arts / Magic / It
 
 `crates/engine-core/tests/end_to_end_gameplay_loop.rs` stitches every gameplay-side subsystem into one cycle:
 
-1. **Boot** - load an `LGSF` `SaveFile` (party + story flags + money + inventory) into a fresh `World` via `load_full`. `load_full` hydrates the `LevelUpTracker` per-slot level from each record's `+0x100` byte so reloads don't roll the tracker back to L1.
+1. **Boot** - load an `LGSF` `SaveFile` (party + story flags + money + inventory) into a fresh `World` via `load_full`. `load_full` hydrates the `LevelUpTracker` per-slot level from each record's `+0x130` level byte so reloads don't roll the tracker back to L1.
 2. **Field walk** - switch to `SceneMode::Field`, install an `EncounterSession` keyed to `vanilla_formation_table` at saturated trigger rate, step until `EncounterPhase::Triggered`.
 3. **Encounter** - drain the formation roll, populate monster slots 3..N from the `MonsterCatalog`, flip mode to `SceneMode::Battle`.
 4. **Battle SM** - drive `World::tick` while applying from-scratch formula damage on every `AttackChain → AttackRecovery` transition until the action SM resolves to `BattleEndCause::MonsterWipe`.

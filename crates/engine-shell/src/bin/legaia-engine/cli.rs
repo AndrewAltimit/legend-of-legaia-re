@@ -828,7 +828,8 @@ pub(crate) enum Cmd {
     /// (non-retail; true key diagonals + continuous analog angles,
     /// persisted); `F3` toggles the wide debug orbit vantage; `I` toggles
     /// dynamic lighting; `F4` toggles the camera-occlusion fade; `F2` mutes
-    /// audio. The shell's own toggles sit on function keys because every
+    /// audio; `F6` fills the party's AP gauge and `F7` toggles random
+    /// encounters (cheats). The shell's own toggles sit on function keys because every
     /// letter is bindable to a pad button - a toggle on a bound letter
     /// consumes the event and deletes that button from the keyboard.
     ///
@@ -1109,6 +1110,42 @@ pub(crate) enum Cmd {
         /// frame is taken from the same seeding the headless channels use.
         #[arg(long, value_name = "PATH")]
         resume_save: Option<PathBuf>,
+        /// Cheat: set every present party member to this level (1..=99)
+        /// once the scene is entered, through the level-up tracker so the
+        /// gains are the retail per-character stat growth
+        /// (`legaia_engine_core::cheats`, the same mutation the browser play
+        /// page's Cheats panel makes). Raising grants the XP; lowering
+        /// rebuilds each character from the executable's New Game template
+        /// plus the growth for the levels it keeps.
+        #[arg(long, value_name = "LEVEL")]
+        cheat_level: Option<u8>,
+        /// Cheat: set the gold purse (clamped to 9,999,999).
+        #[arg(long, value_name = "GOLD")]
+        cheat_gold: Option<u32>,
+        /// Cheat: set the casino coin bank (clamped to 9,999,999).
+        #[arg(long, value_name = "COINS")]
+        cheat_coins: Option<u32>,
+        /// Cheat: add an item to the bag, `ITEM[:QTY]` (QTY defaults to 1,
+        /// stacks cap at 99). ITEM is a decimal / `0x` id or an item name
+        /// (`healing-leaf:5`, `0x77:5`). Repeatable.
+        #[arg(long, value_name = "ITEM[:QTY]")]
+        cheat_item: Vec<String>,
+        /// Cheat: fill every party member's AP (Spirit) gauge to 100 at scene
+        /// entry. At runtime, `F6` does the same (mid-battle too).
+        #[arg(long)]
+        cheat_max_ap: bool,
+        /// Cheat: teach every party member all its Seru magic (the 21 Seru
+        /// and its own Ra-Seru; Vahn also the Sim-Seru and Evil Seru
+        /// summons) with every spell at this level (1..=9).
+        #[arg(long, value_name = "LEVEL")]
+        cheat_seru: Option<u8>,
+        /// Cheat: teach every party member every art in its list.
+        #[arg(long)]
+        cheat_arts: bool,
+        /// Cheat: raise every held item and every usable consumable to 99
+        /// (key items and equipment are left alone).
+        #[arg(long)]
+        cheat_max_items: bool,
         /// Disable the camera-occlusion fade ENHANCEMENT (see-through
         /// walls). By default, field scene geometry between the camera and
         /// the player dissolves to a screen-door dither in a circle around

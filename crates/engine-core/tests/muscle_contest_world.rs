@@ -250,3 +250,170 @@ fn the_shared_escape_reports_a_left_leg_and_ends_the_contest() {
     assert!(w.system_flag_test(md::CONTEST_GAVE_UP_FLAG));
     assert_eq!(w.minigames.casino_coins, 0, "a give-up pays nothing");
 }
+
+/// A won leg with the course not exhausted keeps the frame in the arena:
+/// retail re-enters the hub (state `0x0A`), plays the INTERVAL tally and the
+/// ROUND card and starts the next fight itself. The leg used to hand the
+/// field back on its confirm, so the next round never opened.
+#[test]
+fn a_won_leg_mid_ladder_stays_in_the_arena_and_stages_the_next_fight() {
+    use legaia_engine_core::input::PadButton;
+    use legaia_engine_core::minigame_entry::MinigameSubId;
+    use legaia_engine_core::world::SceneMode;
+    let mut w = world_with_contest();
+    w.mode = SceneMode::Field;
+    let card = md::MuscleCard {
+        command_id: 0x0C,
+        cost: 0x1E,
+    };
+    let won_leg = |w: &mut World| {
+        let mut s = md::MuscleDomeSession::new(
+            [card; md::HAND_SLOTS],
+            [card; md::HAND_SLOTS],
+            [120, 120],
+            [400, 1],
+            1,
+        );
+        assert!(s.commit_card(0, 0));
+        s.end_selection();
+        s.resolve_turn(|attacker, _| if attacker == 0 { 5 } else { 0 });
+        assert_eq!(s.phase(), md::MusclePhase::Won);
+        w.enter_muscle_dome(s);
+    };
+    won_leg(&mut w);
+    // No text over the KO.
+    assert!(legaia_engine_core::minigame_status::muscle_status_rows(&w).is_empty());
+    w.set_pad(0);
+    let _ = w.tick();
+    w.set_pad(PadButton::Cross.mask());
+    let _ = w.tick();
+    assert!(w.minigames.muscle_dome.is_none(), "the leg closed");
+    assert_eq!(w.mode, SceneMode::MuscleDome, "the arena keeps the frame");
+    assert!(w.muscle_hub_between_legs());
+    assert_eq!(w.minigames.muscle_contest.as_ref().unwrap().round(), 1);
+    // Ticks with no host hub hold the arena; nothing leaks back to the field.
+    for _ in 0..30 {
+        w.set_pad(0);
+        let _ = w.tick();
+    }
+    assert_eq!(w.mode, SceneMode::MuscleDome);
+    assert_eq!(w.minigames.pending_warp, None);
+    // The hub's hand-off stages the next fight through the mode-24 drain.
+    w.begin_next_muscle_leg();
+    assert_eq!(
+        w.minigames.pending_warp,
+        Some(MinigameSubId::MuscleDome.sub_id())
+    );
+    assert_eq!(w.mode, SceneMode::MuscleDome);
+    won_leg(&mut w);
+    assert!(!w.muscle_hub_between_legs(), "the new leg owns the arena");
+}
+
+/// The hub kernel both play hosts drive plays the INTERVAL screen and the
+/// re-entered hub's ROUND card over the still, and only then asks for the
+/// next fight - once.
+#[test]
+fn the_hub_timers_hand_the_next_leg_off_after_the_round_card() {
+    use legaia_engine_core::input::PadButton;
+    use legaia_engine_core::world::SceneMode;
+    let mut w = world_with_contest();
+    w.mode = SceneMode::Field;
+    let card = md::MuscleCard {
+        command_id: 0x0C,
+        cost: 0x1E,
+    };
+    let mut s = md::MuscleDomeSession::new(
+        [card; md::HAND_SLOTS],
+        [card; md::HAND_SLOTS],
+        [120, 120],
+        [400, 1],
+        1,
+    );
+    assert!(s.commit_card(0, 0));
+    s.end_selection();
+    s.resolve_turn(|attacker, _| if attacker == 0 { 5 } else { 0 });
+    w.enter_muscle_dome(s);
+    let mut saw_interval = false;
+    let mut saw_card = false;
+    let mut handed_off_at = None;
+    for frame in 0..4000 {
+        w.set_pad(if frame == 2 {
+            PadButton::Cross.mask()
+        } else {
+            0
+        });
+        let _ = w.tick();
+        // The shared scene host runs the hub right after the world tick.
+        w.tick_muscle_hub();
+        let timers = &w.minigames.muscle_hub;
+        saw_interval |= timers.interval.is_some();
+        saw_card |= timers
+            .backdrop
+            .is_some_and(|b| b.card_brightness().is_some());
+        if handed_off_at.is_none() && w.minigames.pending_warp.is_some() {
+            assert!(saw_interval && saw_card, "the hub played out first");
+            handed_off_at = Some(frame);
+        }
+    }
+    assert_eq!(w.mode, SceneMode::MuscleDome);
+    assert!(handed_off_at.is_some(), "the hub handed the next fight off");
+    assert!(w.minigames.pending_warp.is_some());
+}
+
+/// The last leg of a course settles and hands the field back; Start between
+/// legs gives the contest up.
+#[test]
+fn a_course_ending_leg_and_a_between_legs_escape_hand_the_field_back() {
+    use legaia_engine_core::input::PadButton;
+    use legaia_engine_core::world::SceneMode;
+    let card = md::MuscleCard {
+        command_id: 0x0C,
+        cost: 0x1E,
+    };
+    let decide = |w: &mut World, won: bool| {
+        let mut s = md::MuscleDomeSession::new(
+            [card; md::HAND_SLOTS],
+            [card; md::HAND_SLOTS],
+            [120, 120],
+            [400, 400],
+            1,
+        );
+        assert!(s.commit_card(0, 0));
+        assert!(s.commit_card(1, 0));
+        s.end_selection();
+        s.resolve_turn(|attacker, _| if (attacker == 0) == won { 999 } else { 0 });
+        w.enter_muscle_dome(s);
+        w.set_pad(0);
+        let _ = w.tick();
+        w.set_pad(PadButton::Cross.mask());
+        let _ = w.tick();
+    };
+    // A lost leg settles at once.
+    let mut w = world_with_contest();
+    w.mode = SceneMode::Field;
+    decide(&mut w, false);
+    assert_eq!(w.mode, SceneMode::Field);
+    assert!(w.minigames.muscle_contest.is_none(), "settled");
+    // Three won legs run a three-round course out: hub, hub, then the field.
+    let mut w = world_with_contest();
+    w.mode = SceneMode::Field;
+    decide(&mut w, true);
+    assert!(w.muscle_hub_between_legs());
+    decide(&mut w, true);
+    assert!(w.muscle_hub_between_legs());
+    decide(&mut w, true);
+    assert_eq!(w.mode, SceneMode::Field, "the exhausted course settles");
+    assert!(w.minigames.muscle_contest.is_none());
+    // Start between legs is the give-up arm.
+    let mut w = world_with_contest();
+    w.mode = SceneMode::Field;
+    decide(&mut w, true);
+    assert!(w.muscle_hub_between_legs());
+    w.set_pad(0);
+    let _ = w.tick();
+    w.set_pad(PadButton::Start.mask());
+    let _ = w.tick();
+    assert_eq!(w.mode, SceneMode::Field);
+    assert!(w.minigames.muscle_contest.is_none());
+    assert!(w.system_flag_test(md::CONTEST_GAVE_UP_FLAG));
+}

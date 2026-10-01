@@ -76,6 +76,20 @@ fn the_play_page_cabinet_climbs_or_exits_by_itself() {
         assert!(st.get(key).is_some(), "state JSON carries {key}: {st}");
     }
 
+    // The cabinet boots on its attract card, as retail's does: Cross (one of
+    // the `0x844` start bits) leaves it, the fade-out runs, and Cross again
+    // confirms the player select's first column (Vahn) - after which the
+    // pick is seated and the first rung's duel starts.
+    let before_pick = json(rt.play_mg_baka_state_json());
+    assert_eq!(
+        before_pick["hp"][0], before_pick["hp_start"],
+        "no fight on the attract card"
+    );
+    press(&mut rt, CROSS);
+    tick(&mut rt, 0x48);
+    press(&mut rt, CROSS);
+    tick(&mut rt, 0x40);
+
     let mut over = false;
     for _ in 0..20_000 {
         let st = json(rt.play_mg_baka_state_json());

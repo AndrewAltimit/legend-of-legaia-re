@@ -1056,6 +1056,15 @@ impl PlayWindowApp {
         self.npc_pose_verify.clear();
         self.npc_anim_bundles = (None, None);
         self.npc_bundle_special.clear();
+        // On a kingdom map the player's walk binds from the scene bank: the
+        // pad step stores the scene sentinel under `_DAT_8007B6A8` and the
+        // settle picks record `leader` of the kingdom's own ANM bundle
+        // (`World::field_base_step`). The world map places no field NPCs, so
+        // the bundle is retained for the player's pick alone - the browser
+        // page resolves its scene bundle the same way in every mode.
+        if world.mode == SceneMode::WorldMap {
+            self.npc_anim_bundles.0 = scene_bundle.clone();
+        }
         if world.mode == SceneMode::Field
             && let Some(r) = self.win.renderer.as_ref()
         {

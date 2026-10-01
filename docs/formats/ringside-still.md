@@ -266,17 +266,32 @@ over them.
 ### Which hub packets blend
 
 The hub emitters mark every variant packet semi-transparent - variant 1 with
-ABR 1 (`B + F`), variant 2 with ABR 2 (`B - F`) through `clut + 1` - but the
+ABR 1 (`B + F`), variant 2 with ABR 2 (`B - F`) through `clut + 1` - and the
 GPU applies the equation only to texels whose CLUT colour carries STP (bit
-15). The two hub pages' palettes are each all-STP or STP-free: CLUT row 502's
-sub-palettes `0`, `2`, `6` and `8` carry STP on every non-zero colour, its
-others carry none, and row 503 carries none at all. So only the row-502
-records' own palettes (the intro strip, the ROUND banner and digits, the
-tally rows) blend, additively; every variant-2 shadow and every row-503
-packet (the course names, the title art) draws **opaque**. No hub packet
-ever subtracts a texture. `ringside_backdrop::HubPaletteStp` classifies the
-palettes and resolves each quad's equation for all three hosts; the pin is
-`crates/web-viewer/tests/hub_palette_stp_real.rs`.
+15). The **file** is not what decides that. The arena's entry routine
+`FUN_801CEA6C` raises the upload STP flag `_DAT_8007B998` (`sw s2,-0x4668(v0)`
+with `s2 = 1` at `0x801CEB00`, the delay slot of the `jal 0x80020DE0` that
+reads the dome data), so `FUN_800198E0` writes the hub CLUTs as `entry |
+0x8000` for every non-zero entry. A live dome VRAM snapshot shows exactly
+that on rows 502 and 503, although the file carries STP on only four row-502
+palettes (`0`, `2`, `6`, `8`).
+
+So every hub variant packet blends. The variant-2 pass samples an all-white
+knockout palette (the `clut + 1` sibling: `7` under `6`, `9` under `8`, row
+503's `1` under `0`), and `B - white` clamps to black under every texel it
+covers; the variant-1 face then adds its own colours over that black. The
+pair reads as the face drawn opaque - the plate behind each tally label
+included - which is the point of the pair. Taking the file's classes for the
+GPU's drew the knockout opaque instead, as solid white plates, and the
+additive face over white stayed white: the "white blocks" the INTERVAL tally
+labels showed on every host.
+
+`legaia_asset::muscle_dome::hub_page_tims` is the one decoder all three hosts
+use, and it applies the upload STP; `ringside_backdrop::HubPaletteStp`
+classifies its palettes and resolves each quad's equation. The browser pages
+have no subtractive canvas composite, so they draw an ABR 2 hub quad as the
+sprite's black silhouette - exact for a white knockout palette at full fade.
+The pin is `crates/web-viewer/tests/hub_palette_stp_real.rs`.
 
 Two waits in the first visit come from the hub's own sound. Arms `3`, `4`
 and `0x16` hold on `_DAT_8007BC20`, the **CD-XA in-flight** word: the clip
@@ -300,9 +315,9 @@ each packet), and the link `FUN_8003D2C4` pushes onto the slot's head, so the
 last packet emitted is the first drawn. The course card, the title art and the
 ROUND banner each draw a variant-2 copy (`clut + 1`, marked ABR 2) and a
 variant-1 copy (marked ABR 1) of the same record: emitted variant 1 first,
-they paint variant 2 underneath. The marks are not what the GPU draws: every
-variant-2 palette is STP-free, so the shadow is an opaque darker copy, and
-the face blends additively only on a row-502 record
+they paint variant 2 underneath. The marks are what the GPU draws: the uploaded
+CLUTs carry STP, so the variant-2 copy knocks the area out to black and the
+variant-1 face adds over it
 ([which hub packets blend](#which-hub-packets-blend)). `other_game_hud::hub_screen_quads` takes draws in
 emit order and returns paint order. Before this, the hosts painted in emit
 order - the shadow over the face - and the title art was

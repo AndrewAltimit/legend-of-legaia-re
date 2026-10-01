@@ -139,6 +139,13 @@ pub struct MenuRuntime {
     /// A host paints window 31 (`engine-ui`'s `amount_prompt_draws_for`)
     /// while this is `Some`.
     point_card_toast: Option<i32>,
+    /// The UI cue this tick's shop step raised, if any, for the host to key
+    /// ([`Self::take_ui_cue`]). Retail's shop screens key their own blips:
+    /// the kind-4 list kernel `FUN_80032A44` (cursor `0x21` on a move,
+    /// confirm `0x20` / dim-row buzz `0x23`, cancel `0x37`) and the
+    /// quantity / recipient screens' own `FUN_80035B50` / `FUN_80035BD0`
+    /// calls ([`shop_ui_cue`] has the per-screen table).
+    ui_cue: Option<u8>,
     /// The live **spell level-up notice**: `Some` while retail's window 7 is
     /// up, holding the `(caster, spell index)` pair `FUN_80035C00` set plus
     /// the assembled prompt line.
@@ -269,11 +276,19 @@ impl MenuRuntime {
             prize_session: None,
             stay_cursor: None,
             point_card_toast: None,
+            ui_cue: None,
             spell_level_notice: None,
             art_learned_notice: None,
             pending: None,
             widget_state_seen: 0,
         }
+    }
+
+    /// Take the UI cue the last [`Self::tick`] raised (a shop blip), if any.
+    /// Both hosts key it through their SFX channel right after the tick -
+    /// the shop's cues are the engine's decision, the voice is the host's.
+    pub fn take_ui_cue(&mut self) -> Option<u8> {
+        self.ui_cue.take()
     }
 
     /// The live Point Card toast's credit, or `None` when window 31 is not
@@ -530,6 +545,7 @@ impl MenuRuntime {
         // `ctx.state` directly, so the entry edge lands here on the first
         // tick; the post-`step` call below catches in-menu transitions.
         self.sync_widget_choreo(world);
+        self.ui_cue = None;
         if self.prize_session.is_some() {
             self.tick_prize(world, input);
             return MenuTickEvent::Stepped;
@@ -560,7 +576,11 @@ impl MenuRuntime {
             // Window 8 (art learned): the Items use sub-screen's same stall.
             return MenuTickEvent::Stepped;
         }
+        let list_state_before = MenuState::from_byte(self.ctx.state);
+        let list_cursor_before = self.ctx.cursor;
+        let mut refused = false;
         let mut host = MenuRuntimeHost {
+            refused: &mut refused,
             world,
             slot_count: self.slot_count,
             pending: &mut self.pending,
@@ -576,6 +596,15 @@ impl MenuRuntime {
             point_card_toast: &mut self.point_card_toast,
         };
         step(&mut host, &mut self.ctx, input);
+        self.ui_cue = list_state_before.and_then(|state| {
+            shop_ui_cue(
+                state,
+                input,
+                MenuState::from_byte(self.ctx.state) == Some(state)
+                    && self.ctx.cursor != list_cursor_before,
+                refused,
+            )
+        });
         // A stay-route (refused buy / recipient open) keeps the hand on the
         // confirmed row; the VM's transition reset dropped it to 0.
         if let Some(cursor) = self.stay_cursor.take() {
@@ -636,6 +665,7 @@ impl MenuRuntime {
             input.down,
         );
         let event = session.tick(buttons);
+        self.ui_cue = recipient_ui_cue(&event);
         let done = session.is_done();
         // The credit only exists once the purchase actually landed - a
         // refusal (short purse, full stack, no equip record) must bank
@@ -758,6 +788,7 @@ impl MenuRuntime {
         };
         let buying = picker.is_buying();
         let event = picker.tick(pressed, 1);
+        self.ui_cue = quantity_ui_cue(&event);
         match event {
             crate::shop::QuantityPickerEvent::Bought {
                 item_id,
@@ -1189,7 +1220,85 @@ pub fn shop_root_labels(trading: bool, bag_has_sellable: bool) -> Vec<(&'static 
         .collect()
 }
 
+/// The UI cue a shop **list** screen keys for one tick of input - the
+/// kind-4 list kernel `FUN_80032A44`'s ring writes, which every shop list
+/// (the root picker, the buy list built by `FUN_80030628` case `0x0B`, the
+/// sell list) is paged by: a cursor step `0x21` (`li a2,0x21` at
+/// `0x80032B9C`) only when the cursor actually moved, a confirm `0x20` on an
+/// enabled row (`0x80032D24`) or the dim-row buzz `0x23` (`0x80032D0C`), and
+/// the cancel `0x37` (`0x80032D74`). `None` outside the shop's list states
+/// (the inn prompt and the pause-menu screens key their own).
+// REF: FUN_80032A44
+pub fn shop_ui_cue(state: MenuState, input: MenuInput, moved: bool, refused: bool) -> Option<u8> {
+    use crate::menu_cues::{MENU_CANCEL_CUE, MENU_CONFIRM_CUE, MENU_CURSOR_CUE};
+    if !matches!(
+        state,
+        MenuState::ShopMenu
+            | MenuState::ShopBuy
+            | MenuState::ShopSell
+            | MenuState::ShopConfirm
+            | MenuState::ShopTrade
+    ) {
+        return None;
+    }
+    if input.cross {
+        return Some(if refused {
+            SHOP_REFUSAL_CUE
+        } else {
+            MENU_CONFIRM_CUE
+        });
+    }
+    if input.circle || input.triangle {
+        return Some(MENU_CANCEL_CUE);
+    }
+    moved.then_some(MENU_CURSOR_CUE)
+}
+
+/// The list kernel's dim-row buzz (`li a1,0x23` at `0x80032D0C`), which the
+/// recipient picker also keys for a member who cannot equip the piece.
+pub const SHOP_REFUSAL_CUE: u8 = 0x23;
+
+/// The quantity steppers' cues. Buying (`FUN_801DB7F4`): a step `0x21` only
+/// when the number moved (`0x801DB9B0` and siblings, each behind its bound
+/// test), the purchase `0x2C` (`FUN_80035BD0(0x2C)` at `0x801DB940`, the
+/// overwrite producer, which replaces the confirm blip of the same frame),
+/// cancel `0x37` (`0x801DB970`). Selling (`FUN_801DBD94`): the same steps
+/// and cancel (`0x801DC064..`, `0x801DC020`) and the sale `0x36`
+/// (`0x801DBE78`).
+// REF: FUN_801DB7F4, FUN_801DBD94
+fn quantity_ui_cue(event: &crate::shop::QuantityPickerEvent) -> Option<u8> {
+    use crate::shop::QuantityPickerEvent as E;
+    match event {
+        E::Moved => Some(crate::menu_cues::MENU_CURSOR_CUE),
+        E::Bought { .. } => Some(0x2C),
+        E::Sold { .. } => Some(0x36),
+        E::Cancelled => Some(crate::menu_cues::MENU_CANCEL_CUE),
+        E::None | E::Finished => None,
+    }
+}
+
+/// The buy-recipient picker's cues (`FUN_801DB380`, a list-kernel list): a
+/// row step `0x21`, cancel `0x37` (the kernel's), and the confirm the overlay
+/// overwrites through `FUN_80035BD0` - `0x2C` into the bag (`0x801DB480`),
+/// `0x24` buy-and-equip (`0x801DB5C8`), `0x23` a member who cannot equip it
+/// (`0x801DB5AC`).
+// REF: FUN_801DB380
+fn recipient_ui_cue(event: &crate::shop::BuyRecipientEvent) -> Option<u8> {
+    use crate::shop::BuyRecipientEvent as E;
+    match event {
+        E::Moved => Some(crate::menu_cues::MENU_CURSOR_CUE),
+        E::BoughtToBag { .. } => Some(0x2C),
+        E::BoughtAndEquipped { .. } => Some(0x24),
+        E::Buzz => Some(SHOP_REFUSAL_CUE),
+        E::Cancelled => Some(crate::menu_cues::MENU_CANCEL_CUE),
+        E::None | E::ExitToBuyList => None,
+    }
+}
+
 struct MenuRuntimeHost<'a> {
+    /// Set when a confirm landed on a row the list refuses (a buy the purse
+    /// cannot cover): the list kernel's dim-row buzz instead of a confirm.
+    refused: &'a mut bool,
     world: &'a mut World,
     slot_count: u8,
     pending: &'a mut Option<PendingOp>,
@@ -1574,6 +1683,7 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
                 // Gold short: the retail refusal beat (buzz SFX `0x23`,
                 // list re-armed) - no pending item, hand stays on the row.
                 Some(BuyListRoute::Refused) => {
+                    *self.refused = true;
                     *self.stay_cursor = Some(slot);
                 }
                 // Equipment: the recipient picker takes the pad; the buy
@@ -2303,6 +2413,62 @@ mod tests {
         world.party.money = 500;
         runtime.tick(&mut world, cross());
         assert_eq!(runtime.ctx.state, MenuState::ShopQuantity.as_byte());
+    }
+
+    /// The shop keys retail's list-kernel cues: a step only when the hand
+    /// moved, the dim-row buzz for a refused buy, a confirm for an accepted
+    /// one, then the quantity stepper's own step / cancel.
+    #[test]
+    fn shop_ticks_raise_the_list_kernel_cues() {
+        use crate::shop::{ShopInventory, ShopItem, ShopSession};
+
+        let mut world = world_with_party(1);
+        world.party.money = 50;
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        runtime.open_shop(ShopSession::new(ShopInventory::new(
+            1,
+            vec![
+                ShopItem {
+                    item_id: 9,
+                    price: 10,
+                },
+                ShopItem {
+                    item_id: 10,
+                    price: 100,
+                },
+            ],
+        )));
+        runtime.ctx.state = MenuState::ShopBuy.as_byte();
+        runtime.tick(&mut world, down());
+        assert_eq!(runtime.take_ui_cue(), Some(0x21), "the hand moved");
+        assert_eq!(runtime.take_ui_cue(), None, "a cue is taken once");
+        assert_eq!(runtime.ctx.cursor, 1);
+        runtime.tick(&mut world, MenuInput::default());
+        assert_eq!(runtime.take_ui_cue(), None, "an idle tick is silent");
+        runtime.tick(&mut world, cross());
+        assert_eq!(runtime.take_ui_cue(), Some(SHOP_REFUSAL_CUE));
+        world.party.money = 500;
+        runtime.tick(&mut world, cross());
+        assert_eq!(runtime.ctx.state, MenuState::ShopQuantity.as_byte());
+        assert_eq!(runtime.take_ui_cue(), Some(0x20));
+        // The stepper: its first frame stages, then a step moves the number.
+        runtime.tick(&mut world, MenuInput::default());
+        runtime.tick(
+            &mut world,
+            MenuInput {
+                right: true,
+                ..MenuInput::default()
+            },
+        );
+        assert_eq!(runtime.take_ui_cue(), Some(0x21));
+        runtime.tick(
+            &mut world,
+            MenuInput {
+                circle: true,
+                ..MenuInput::default()
+            },
+        );
+        assert_eq!(runtime.take_ui_cue(), Some(0x37));
     }
 
     #[test]

@@ -85,6 +85,7 @@
      * (the page keeps its text presentation and says why). */
     load(api, playerChar, opponentRoster) {
       this.api = api;
+      this._barFrames = undefined;
       this.ok = false;
       if (!api.baka_presentation_ready || !api.baka_presentation_ready()) return false;
 
@@ -101,6 +102,25 @@
        * source of truth also asserted in baka_presentation_wasm_api.rs). The
        * player stands LEFT and faces RIGHT; the opponent stands RIGHT and
        * faces LEFT - so each looks at the other. */
+      /* The engine's duel surface, when the bundle carries it: the same
+       * kernel (`engine-core::baka_duel_scene::BakaDuelSurface`) the native
+       * window and the play page pose the duel through - the fighters at the
+       * round setup's traced stand-offs, posed by the duel's own display
+       * clips, the special's ghosts, the four arena walls, the floor grid,
+       * the round-start cameo and the impact flashes, drawn under the arena
+       * camera's view-projection (spin, special glides, result close-up).
+       * Nothing below is posed or framed on the page. */
+      if (typeof api.baka_scene_frame === 'function') {
+        if (!this.renderer) this.renderer = new window.TmdRenderer(this.glCanvas);
+        const gen = api.baka_scene_frame();
+        if (gen < 0 || !this._engineUpload(gen)) return false;
+        this.engine = true;
+        this._resetDuelState();
+        this.ok = true;
+        return true;
+      }
+      this.engine = false;
+
       this.facing = (api.baka_duel_facing_json
         ? JSON.parse(api.baka_duel_facing_json())
         : { player: { side: -1, facing: 1 }, opponent: { side: 1, facing: -1 } });
@@ -242,6 +262,13 @@
        * is the duel's own strike clock (st.clock) rather than this page's
        * tick: the swing starts at the commit and lands its strike on the
        * frame the engine books the exchange. */
+      this._resetDuelState();
+      this.ok = true;
+      return true;
+    }
+
+    /* Per-match presentation state shared by both duel paths. */
+    _resetDuelState() {
       this.action = [
         { id: ACT.IDLE, start: 0, loop: true },
         { id: ACT.IDLE, start: 0, loop: true },
@@ -255,8 +282,100 @@
       this.roundSeen = -1;
       this.tick = 0;
       this.mode = 'duel';
+    }
+
+    /* Upload the engine surface's static buffers + duel VRAM for generation
+     * `gen` (a new pairing or a cameo wink). The arena's lamp glow is
+     * semi-transparent (ABE) prims, so the two-pass draw keeps them from
+     * painting opaque - the play page's flag too. */
+    _engineUpload(gen) {
+      const api = this.api, r = this.renderer;
+      const pos = api.baka_scene_positions();
+      if (!pos.length) return false;
+      r.semiTwoPass = true;
+      r.cullBackfaces = false;
+      r.uploadVram(api.baka_scene_vram());
+      r.uploadMesh(pos, api.baka_scene_uvs(), api.baka_scene_cba_tsb(),
+        api.baka_scene_indices(), api.baka_scene_flat_rgba());
+      this.engineGen = gen;
+      this.engineAttrGen = api.baka_scene_attr_generation();
+      return true;
+    }
+
+    /* One engine-posed frame: pose, re-read whatever moved, draw under the
+     * arena camera's matrix (`DuelCamera::vp_raw`). */
+    _engineDraw() {
+      const api = this.api, r = this.renderer;
+      const gen = api.baka_scene_frame();
+      if (gen < 0) return;
+      if (gen !== this.engineGen && !this._engineUpload(gen)) return;
+      const ag = api.baka_scene_attr_generation();
+      if (ag !== this.engineAttrGen) {
+        /* Same buffers, new attributes (the impact flip-book cells and
+         * fades): re-upload the mesh, keep the VRAM. */
+        r.uploadMesh(api.baka_scene_positions(), api.baka_scene_uvs(),
+          api.baka_scene_cba_tsb(), api.baka_scene_indices(),
+          api.baka_scene_flat_rgba());
+        this.engineAttrGen = ag;
+      }
+      r.updatePositions(api.baka_scene_positions());
+      const c = r.canvas;
+      const vp = api.baka_scene_vp(c.width / Math.max(c.height, 1));
+      r.mvpOverride = vp.length === 16 ? Float32Array.from(vp) : null;
+      r.render(0, 0, 1, 0, 0, [0, 0, 0], 1);
+      r.mvpOverride = null;
+    }
+
+    /* ---------------- the cabinet's front end ----------------
+     *
+     * The attract card and the PLAYER SELECT screen, run by the engine's
+     * cabinet (`engine-core::baka_cabinet`, the FUN_801CF388 port) and drawn
+     * by its duel surface: the select camera and the three-fighter lineup
+     * (`baka_duel_scene::SELECT_CAMERA` / `SELECT_LINEUP`, read off the
+     * overlay) with the cursor's fighter lit and the other two at half depth
+     * cue, the attract card's title widgets off the chrome, and the
+     * cabinet's own cells (PRESS START, PLAYER SELECT) at retail's emitter
+     * arguments. The same kernel the native window and the play page draw. */
+    loadCabinet(api) {
+      this.api = api;
+      this.ok = false;
+      if (!api.baka_presentation_ready || !api.baka_presentation_ready()) return false;
+      if (typeof api.baka_scene_frame !== 'function') return false;
+      this.widgets = JSON.parse(api.baka_hud_json());
+      if (!this.widgets.length) return false;
+      this.pageCanvases.clear();
+      if (this._quadCache) this._quadCache.clear();
+      if (!this.renderer) this.renderer = new window.TmdRenderer(this.glCanvas);
+      const gen = api.baka_scene_frame();
+      if (gen < 0 || !this._engineUpload(gen)) return false;
+      this.engine = true;
+      this._resetDuelState();
+      this.mode = 'cabinet';
       this.ok = true;
       return true;
+    }
+
+    /* One front-end frame: `cab` is baka_cabinet_json, `chrome` the
+     * baka_chrome_json draws (the attract title card). */
+    frameCabinet(cab, chrome) {
+      if (!this.ok || this.mode !== 'cabinet') return;
+      this._engineDraw();
+      const cv = this.hudCanvas, g = cv.getContext('2d');
+      g.setTransform(cv.width / HUD_W, 0, 0, cv.height / HUD_H, 0, 0);
+      g.clearRect(0, 0, HUD_W, HUD_H);
+      g.imageSmoothingEnabled = false;
+      /* Every widget quad goes to one ordering-table slot through AddPrim
+       * (FUN_801D5ED0 -> FUN_8003D2C4), which links each new packet AHEAD of
+       * the last: a later submit draws underneath. So the lists are painted
+       * back to front, and the cabinet's prompt - submitted before the card -
+       * lands on top of it. */
+      for (const d of (chrome || []).slice().reverse()) {
+        if (d.g != null) continue;
+        this._widget(g, d.w, d.x, d.y, Math.max(0, Math.min(1, d.b / 128)), false, d.b, d.s);
+      }
+      for (const c of ((cab && cab.cells) || []).slice().reverse()) {
+        this._widget(g, c.w, c.x, c.y, Math.max(0, Math.min(1, c.b / 128)), false, c.b, 0x1000);
+      }
     }
 
     /* ---------------- fighter-select screen ----------------
@@ -269,6 +388,8 @@
     loadSelect(api) {
       this.api = api;
       this.ok = false;
+      this.engine = false;
+      if (this.renderer) this.renderer.semiTwoPass = false;
       if (!api.baka_presentation_ready || !api.baka_presentation_ready()) return false;
       this.widgets = JSON.parse(api.baka_hud_json());
       if (!this.widgets.length) return false;
@@ -530,7 +651,8 @@
      * record is missing / empty). `hold` freezes the clip on its final frame
      * instead of dropping back to idle - the loser's stay-down knockdown. */
     play(fi, actionId, hold) {
-      if (!this.ok) return;
+      /* The engine path poses from the duel's own display clips. */
+      if (!this.ok || this.engine) return;
       const c = this.clipFor(fi, actionId);
       this.action[fi] = c
         ? { id: actionId, start: this.tick, loop: actionId === ACT.IDLE, hold: !!hold }
@@ -627,9 +749,13 @@
         }
       }
 
-      this._pose();
-      this.renderer.render(this.cam.yaw, this.cam.pitch, this.cam.distance,
-                           0, 0, this.center, this.radius);
+      if (this.engine) {
+        this._engineDraw();
+      } else {
+        this._pose();
+        this.renderer.render(this.cam.yaw, this.cam.pitch, this.cam.distance,
+                             0, 0, this.center, this.radius);
+      }
       this._drawHud(st, meta);
     }
 
@@ -746,7 +872,7 @@
       this._quadCache = this._quadCache || new Map();
       let q = this._quadCache.get(key);
       if (q === undefined) {
-        try { q = JSON.parse(api.baka_hud_quad_json(id, cx, cy, brightness, size, !!mirror)); }
+        try { q = JSON.parse(this.api.baka_hud_quad_json(id, cx, cy, brightness, size, !!mirror)); }
         catch (e) { q = null; }
         if (q && q.page == null) q = null;
         this._quadCache.set(key, q);
@@ -793,6 +919,28 @@
       g.drawImage(img, u, v, w, h, x, y, w, h);
     }
 
+    /* The two VITAL frames, cached off `baka_bar_frame_json`. */
+    _drawBarFrames(g) {
+      if (this._barFrames === undefined) {
+        this._barFrames = null;
+        if (typeof this.api.baka_bar_frame_json === 'function') {
+          try {
+            const f = [0, 1].map(s => JSON.parse(this.api.baka_bar_frame_json(s)));
+            if (f.every(x => x && x.cells && x.page != null)) this._barFrames = f;
+          } catch (e) { this._barFrames = null; }
+        }
+      }
+      if (!this._barFrames) return;
+      for (const f of this._barFrames) {
+        const img = this._page(f.page, f.palette);
+        if (!img) continue;
+        for (const c of f.cells) {
+          g.drawImage(img, c.u0, c.v0, c.u1 - c.u0 + 1, c.v1 - c.v0 + 1,
+                      c.x0, c.y0, c.x1 - c.x0, c.y1 - c.y0);
+        }
+      }
+    }
+
     _drawHud(st, meta) {
       const cv = this.hudCanvas, g = cv.getContext('2d');
       g.setTransform(cv.width / HUD_W, 0, 0, cv.height / HUD_H, 0, 0);
@@ -813,7 +961,9 @@
       this._widget(g, W.STAGE_SM, 0x30, 0x1e);
       const stageNo = meta && meta.stage ? meta.stage : 1;
       const digits = String(stageNo).split('').map(Number);
-      let dx = 0x40 - (digits.length - 1) * 8;
+      /* Ones at x 0x48, tens (stage >= 10 only) at 0x40 - the two
+       * FUN_801d69e4 calls at 0x801D32B4 / 0x801D32F8. */
+      let dx = 0x48 - (digits.length - 1) * 8;
       for (const d of digits) {
         /* widget 0x13 with u patched to digit*8 (FUN_801d69e4). */
         const w19 = this.widgets[W.DIGIT_SM];
@@ -837,15 +987,12 @@
         g.fillStyle = grad;
         g.fillRect(x0, 0x26, x1 - x0, 6);
       };
-      /* Chrome: the retail frame cells come from a runtime-built table
-       * (DAT_801dbc34) this page can't read statically; the VITAL label +
-       * a plain outline stand in, and the section note says so. */
-      g.strokeStyle = 'rgba(255,255,255,0.55)';
-      g.lineWidth = 1;
-      g.strokeRect(0x1c + 0.5, 0x25 + 0.5, 110, 8);
-      g.strokeRect(0xb0 + 0.5, 0x25 + 0.5, 110, 8);
-      this._widget(g, W.VITAL, 0x1c + 16, 0x24);
-      this._widget(g, W.VITAL, 0xb0 + 16, 0x24);
+      /* Bar frames: three cells per side off the overlay's frame table
+       * (0x801DBC34) - cap, stretched body, cap - laid out by the engine
+       * (baka_cabinet::vital_frame_cells). The fill bars go over them: both
+       * land in one OT bucket and the frames are linked last. The duel HUD
+       * draws no "VITAL" label; that widget (0x18) is the select screen's. */
+      this._drawBarFrames(g);
       bar(st.hp[0], false);
       bar(st.hp[1], true);
 
@@ -892,7 +1039,9 @@
        * it is up it owns the round framing, so the page's own round banner
        * stands down. */
       const chrome = (meta && Array.isArray(meta.chrome)) ? meta.chrome : [];
-      for (const d of chrome) {
+      /* Back to front: a later AddPrim into the same slot draws underneath
+       * (see frameCabinet). */
+      for (const d of chrome.slice().reverse()) {
         const alpha = Math.max(0, Math.min(1, d.b / 128));
         if (d.g != null) {
           /* Widget 5's strip paged to cell g. The texel column is the

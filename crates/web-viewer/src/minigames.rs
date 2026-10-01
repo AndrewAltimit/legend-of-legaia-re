@@ -28,7 +28,7 @@ use super::*;
 // live in a child module so this file stays the rules-engine shell.
 #[path = "minigames_baka.rs"]
 mod baka_presentation;
-pub(crate) use baka_presentation::baka_state_json_for;
+pub(crate) use baka_presentation::{baka_state_json_for, duel_surface};
 
 // Dance presentation exports (PROT 1230 HUD art, the overlay's widget table,
 // the dancer face-stamp rig, SFX + BGM) live in a child module too.
@@ -74,6 +74,15 @@ pub struct LegaiaMinigames {
     /// Live Baka Fighter ladder run (the between-match cash-out bookkeeping;
     /// each rung's duel itself runs in `baka`).
     baka_run: Option<LadderRun>,
+    /// The duel's 3D surface (`engine-core::baka_duel_scene`) - the same
+    /// per-host cache the native window and the play page pose the duel
+    /// through, here over this page's own fight.
+    baka_surface: legaia_engine_core::baka_duel_scene::BakaDuelSurface,
+    /// The duel's CD-XA announcer lines (`XA32` / `XA33`), decoded at disc
+    /// load while the raw sectors are still in hand.
+    baka_xa: legaia_engine_audio::XaClipBank,
+    /// Announcer lines started (a read-out for the page's checks).
+    baka_xa_fired: u32,
     /// Parsed Baka roster + action tables (cached; the roster picker reads them
     /// before a fight starts).
     baka_tables: Option<(
@@ -267,6 +276,9 @@ impl LegaiaMinigames {
             dance: None,
             baka: None,
             baka_run: None,
+            baka_surface: Default::default(),
+            baka_xa: legaia_engine_audio::XaClipBank::new(),
+            baka_xa_fired: 0,
             baka_tables: None,
             slot: None,
             slot_payouts: None,
@@ -325,6 +337,13 @@ impl LegaiaMinigames {
     /// a reason rather than throwing - a regional / modded disc can still play
     /// the others.
     pub fn load_disc(&mut self, bytes: Vec<u8>) -> Result<String, JsValue> {
+        // The Baka announcer lines are CD-XA, outside PROT.DAT: decode them
+        // now, before the raw image is dropped.
+        self.baka_xa = if disc::is_mode2_2352_disc(&bytes) {
+            baka_presentation::stage_baka_announcer(&bytes)
+        } else {
+            legaia_engine_audio::XaClipBank::new()
+        };
         let (prot, scus) = if disc::is_mode2_2352_disc(&bytes) {
             // Keep the executable too: the Muscle Dome reads the new-game
             // party template / growth curves / spell names out of it, and
@@ -354,6 +373,7 @@ impl LegaiaMinigames {
         self.dance = None;
         self.baka = None;
         self.baka_run = None;
+        self.baka_surface = Default::default();
         self.slot = None;
         self.fishing_species = None;
         self.fishing_overlay = None;
@@ -834,14 +854,59 @@ impl LegaiaMinigames {
         format!("[{rows}]")
     }
 
-    /// Start a best-of-3 duel: the visitor fights as roster fighter 0 (the
-    /// player-side default) against `opponent`. Returns `false` when the tables
-    /// didn't decode or the roster id is out of range.
+    /// Start a best-of-3 duel as roster fighter 0 (Vahn) against `opponent`
+    /// - [`Self::baka_start_as`] with the player-select cursor on its first
+    /// column.
     pub fn baka_start(&mut self, opponent: usize, seed: u32) -> bool {
-        let Some((opponents, actions)) = self.baka_tables.as_ref() else {
+        self.baka_start_as(0, opponent, seed)
+    }
+
+    /// Start a best-of-3 duel: the visitor fights as party fighter `player`
+    /// (`0..=2` - Vahn, Noa, Gala; the PLAYER SELECT column) against roster
+    /// `opponent`. The pick is the player seat's **roster record**, not a skin:
+    /// the round setup stores the select cursor `DAT_801DBF70` as slot 0's
+    /// roster id (`sw a0,0x94(v1)` = `DAT_801DC050` at `0x801D0058`) and reads
+    /// that record's `+0x44` stand-off off the same index
+    /// (`0x801D0040..0x801D005C`), so the stats, action table, special camera
+    /// and stand-off are the picked fighter's. Returns `false` when the tables
+    /// didn't decode or a roster id is out of range.
+    pub fn baka_start_as(&mut self, player: usize, opponent: usize, seed: u32) -> bool {
+        if player >= legaia_engine_core::baka_cabinet::SELECT_OPTIONS as usize {
             return false;
-        };
-        match BakaFight::from_tables(opponents, actions, 0, opponent, seed) {
+        }
+        match self.baka_fight_for(player, opponent, seed) {
+            Some(f) => {
+                self.baka = Some(f);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Start the cabinet at its **boot** state: the attract card, then the
+    /// player select, then the first rung - the front end the native window
+    /// and the play page enter the cabinet on
+    /// ([`BakaFight::with_attract`]). The pad reaches it through
+    /// [`Self::baka_cabinet_pad`]; [`Self::baka_cabinet_json`] reports where
+    /// it is and what it draws.
+    pub fn baka_start_cabinet(&mut self, seed: u32) -> bool {
+        let first = legaia_engine_core::baka_fighter::first_rung_roster();
+        match self.baka_fight_for(0, first, seed) {
+            Some(f) => {
+                self.baka = Some(f.with_attract());
+                true
+            }
+            None => false,
+        }
+    }
+}
+
+impl LegaiaMinigames {
+    /// The fight every start path seats: the parsed tables plus every
+    /// roster's clip headers, the special cameras and the impact templates.
+    fn baka_fight_for(&self, player: usize, opponent: usize, seed: u32) -> Option<BakaFight> {
+        let (opponents, actions) = self.baka_tables.as_ref()?;
+        match BakaFight::from_tables(opponents, actions, player, opponent, seed) {
             Some(f) => {
                 // Every roster fighter's clip headers, off the same banks this
                 // page poses the fighters from, through the engine's one
@@ -865,16 +930,18 @@ impl LegaiaMinigames {
                 let f = f
                     .with_roster_clip_headers(headers)
                     .with_special_cameras(cameras);
-                self.baka = Some(match img.as_deref() {
+                Some(match img.as_deref() {
                     Some(i) => f.with_impact_overlay(i),
                     None => f,
-                });
-                true
+                })
             }
-            None => false,
+            None => None,
         }
     }
+}
 
+#[wasm_bindgen]
+impl LegaiaMinigames {
     /// Advance the duel one frame's worth of `frame_step` (the retail SM's
     /// per-frame delta; `1` is a normal frame).
     ///
@@ -894,6 +961,11 @@ impl LegaiaMinigames {
         };
         for id in cues {
             self.minigame_sfx_cue(u16::from(id));
+        }
+        // The round chrome's announcer line (`FUN_8003D53C`), the native
+        // window's `tick_baka_chrome` / the play page's `tick_baka_ui` twin.
+        if let Some(xa) = self.baka.as_ref().and_then(|f| f.chrome_frame().xa) {
+            self.play_baka_xa(xa);
         }
     }
 
