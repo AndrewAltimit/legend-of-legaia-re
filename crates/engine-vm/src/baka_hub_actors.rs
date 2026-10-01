@@ -420,7 +420,7 @@ pub mod slot {
 /// 801f1464  addu v0,v0,a2
 /// 801f1468  lb   v0,0x0(v0)        ; slot = (i8)table[sub_op]
 /// 801f146c  li   a0,-0x1
-/// 801f1470  beq  v0,a0,0x801f14b0  ; -1 -> leave +0x50 alone
+/// 801f1470  beq  v0,a0,0x801f14b0  ; -1 -> keep +0x50 = 7 (0x801F140C)
 /// 801f14ac  sh   v0,0x50(s4)       ; else install the handler
 /// ```
 ///

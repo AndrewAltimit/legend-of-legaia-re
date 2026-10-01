@@ -1388,7 +1388,12 @@ void main() {
       let open;
       try { open = rt.play_menu_is_open(); } catch (e) { return false; }
       if (!open) {
-        if (startEdge && this._canOpenFieldMenu()) {
+        /* A script's op-0x49 save point / ready check presses the menu
+         * button itself (`play_menu_scripted_open_pending`): no Start edge,
+         * no page-side gate, and no confirm blip. */
+        let scripted = false;
+        try { scripted = rt.play_menu_scripted_open_pending(); } catch (e) {}
+        if (scripted || (startEdge && this._canOpenFieldMenu())) {
           try { rt.play_menu_open(); } catch (e) { return false; }
           /* The engine can REFUSE - `play_menu_open` declines while a dialogue
            * engagement owns the player (`World::dialogue_owns_input`), which is
@@ -1397,7 +1402,7 @@ void main() {
           let opened = false;
           try { opened = rt.play_menu_is_open(); } catch (e) {}
           if (!opened) return false;
-          this.sfxEvent('menu_confirm');
+          if (!scripted) this.sfxEvent('menu_confirm');
           this._ensureMenuBlitters();
           /* Start the menu clock now: whatever wall-clock gap preceded the
            * open is not menu time. */

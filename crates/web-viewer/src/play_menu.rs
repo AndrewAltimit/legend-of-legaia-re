@@ -507,10 +507,19 @@ impl LegaiaRuntime {
         // through - three local copies of the mode test is how the overworld
         // lost the pause menu.
         // REF: FUN_801D01B0
-        if self
+        //
+        // A script's op-`0x49` save point / ready check is a menu-button
+        // press of its own and skips that gate - the same rule
+        // `BootSession::tick` applies (`World::scripted_menu_open_pending`).
+        let scripted = self
             .scene_host
             .as_ref()
-            .is_some_and(|h| !h.world.field_menu_open_allowed())
+            .is_some_and(|h| h.world.scripted_menu_open_pending());
+        if !scripted
+            && self
+                .scene_host
+                .as_ref()
+                .is_some_and(|h| !h.world.field_menu_open_allowed())
         {
             return;
         }
@@ -527,6 +536,9 @@ impl LegaiaRuntime {
                 // Same entry decode the native window runs: a locked context
                 // opens on the notice panel, not on the root picker.
                 session.open_entry_screen();
+                if scripted {
+                    world.note_scripted_menu_opened();
+                }
                 let resume = world.mode;
                 world.mode = SceneMode::Menu;
                 resume
@@ -622,12 +634,9 @@ impl LegaiaRuntime {
         };
         if let Some(host) = self.scene_host.as_mut() {
             host.world.mode = menu.resume_mode;
-            // A kind-`0x0D` entry context is a *standing* op-`0x49` park: the
-            // script halts on the instruction and keeps the menu gated
-            // (notice panel, Load blocked, cancel becomes the ready check)
-            // until the player answers. Closing the menu under that gate is
-            // the answer, so release the park and let the script run on.
-            // See `World::release_menu_entry_context_park`.
+            // A scripted menu press (a save point's `49 01`, a `49 0D` ready
+            // check) parks its op until the menu it opened closes; the close
+            // resumes it once. See `World::release_menu_entry_context_park`.
             host.world.release_menu_entry_context_park();
         }
         // The word follows the world back out of `CARD MODE` at the close,
@@ -655,6 +664,20 @@ impl LegaiaRuntime {
 
     pub fn play_menu_is_open(&self) -> bool {
         self.play_menu.is_some()
+    }
+
+    /// Whether a script has pressed the menu button this frame - an op-`0x49`
+    /// save point or ready check
+    /// ([`legaia_engine_core::world::World::scripted_menu_open_pending`]). The
+    /// page opens the menu on it with no Start edge, through
+    /// [`Self::play_menu_open`], and plays no confirm blip: retail's cue
+    /// `0x20` is the pad controller's, not the subsystem actor's.
+    pub fn play_menu_scripted_open_pending(&self) -> bool {
+        self.play_menu.is_none()
+            && self
+                .scene_host
+                .as_ref()
+                .is_some_and(|h| h.world.scripted_menu_open_pending())
     }
 
     /// Whether a pause-menu **sub-screen** owns the pad (Items, Magic,

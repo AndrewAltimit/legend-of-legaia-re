@@ -267,7 +267,10 @@ than an anywhere one: across the disc's MAN-bearing scenes it is set on the
 three kingdom world maps (`map01` / `map02` / `map03`) and clear on every
 field scene, town and dungeon alike. A field save is reached the other way -
 through the entry-context byte `0x01`, which opens `0x19` directly from a
-script's save point without going through this row at all.
+script's save point without going through this row at all. The save point
+opens the menu itself: its `49 01` is a scripted menu-button press
+([field-menu.md](field-menu.md#which-screen-opens-a-window)), and the menu ends when the
+card driver does.
 
 Cancel leaves for sub-screen `0` (the terminal exit screen) - except
 under that same `0x0D` entry context, where it goes to `3`, the Yes/No

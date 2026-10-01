@@ -330,6 +330,7 @@ mod physics_steal_shop;
 mod player_clip_pick;
 mod save_state;
 mod script_teleport;
+mod scripted_menu_press;
 mod seru_absorb;
 mod seru_side_effect_live_disc;
 mod shiny;

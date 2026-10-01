@@ -89,6 +89,7 @@
   <p>Claims that stood on these pages and were overturned. They stay listed - a claim that was wrong once is the cheapest place to look for a claim that is still wrong - and each stands corrected on <a href="re-settled-threads.html">settled threads</a> or <a href="re-do-not-re-walk.html">do not re-walk</a>.</p>
   <details class="disclosure"><summary>History: the overturned claims</summary><div class="disclosure-body">
     <ul class="bullets">
+      <li><strong>A save point opens the pause menu by itself.</strong> The script's park is a menu-button press, not a context that waits for Start, and the menu teardown said to clear it is never called; a capture at the Rim Elm save point pins both. In the port, every save point had saved nothing.</li>
       <li><strong>A scene-local music id never loads the scene's own block.</strong> The loader computes that index only to test for a change, then loads a fixed fallback track from the shared bank; retail never stages a scene bank.</li>
       <li><strong>The shop's last three rows are Platinum Card stock.</strong> The probe looks for item <code>0xFF</code>, the card - not an empty slot - and without it those rows are dropped; a capture shows 13 rows with the card and 10 without.</li>
       <li><strong>Rula and Riremito are the Door of Wind and Door of Light.</strong> The handler table is indexed by value, so the missing address references proved nothing; the arts scan the CDNAME define table, and the routine read as a fade is the pause-menu session.</li>

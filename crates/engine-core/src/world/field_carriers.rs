@@ -169,6 +169,22 @@ impl World {
             {
                 self.npcs.dialog_prologue.insert(slot, record);
             }
+            // A **save point** (and any other text-free record whose
+            // interaction is a scripted menu press): the same dialog SM runs
+            // its interaction section, which parks on `49 01` and opens the
+            // pause menu on the save screen. With no text it is invisible to
+            // the text-keyed arms here, so pressing the action button at one
+            // ran nothing.
+            // REF: FUN_80039B7C
+            if let Some(record) =
+                crate::man_field_scripts::placement_scripted_menu_record(man_file, man, &placement)
+            {
+                self.npcs.dialog_prologue.insert(slot, record);
+                self.npcs
+                    .positions
+                    .entry(slot)
+                    .or_insert((placement.world_x, placement.world_z));
+            }
             if let crate::man_field_scripts::PlacementKind::Npc {
                 dialog_inline: Some(inline),
                 ..

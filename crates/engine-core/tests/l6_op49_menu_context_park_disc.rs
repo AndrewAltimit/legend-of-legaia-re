@@ -3,7 +3,9 @@
 //!
 //! `ContextReady` (`0x801D61B0`) and `ContextNotice` (`0x801D6360`) are the
 //! kind-`0x0D` pair. Reaching them needs `World::menu_entry_context_kind()` to
-//! still answer `0x0D` when the player presses Start, and it did not: the port
+//! still answer `0x0D` when the menu opens - which the park itself does, as a
+//! scripted menu-button press (`World::scripted_menu_open_pending`; see
+//! `save_point_menu_press_disc.rs`) - and it did not: the port
 //! opened a submode screen for a table row retail gives no handler at all
 //! (`OP49_SUBOP_SLOTS[0x0D] == -1`), and that screen's retirement unparked the
 //! script within a few frames.

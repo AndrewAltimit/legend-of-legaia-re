@@ -1003,7 +1003,13 @@ fn run(session: &mut BootSession, budget: usize, stop_on_release: bool) -> Run {
             }
             continue;
         }
-        let pad = script_pad(session, f);
+        // A save point or a ready check presses the menu button itself
+        // (`World::scripted_menu_open_pending`), and `BootSession::tick` opens
+        // the menu; answer it the way a player who is not saving does.
+        let pad = match scripted_menu_pad(session, f) {
+            Some(p) => p,
+            None => script_pad(session, f),
+        };
         // The naming prompt (the opening's op-0x49) takes this pad's edge
         // inside `BootSession::tick`, as it does in both play hosts.
         session.host.world.set_pad(pad);
@@ -1046,6 +1052,48 @@ fn run(session: &mut BootSession, budget: usize, stop_on_release: bool) -> Run {
     } else {
         Run::Parked(format!("{} at {}", holder(session), park_site(session)))
     }
+}
+
+/// The pad that closes a pause menu a script opened: back out of the save
+/// screen, dismiss the notice panel, and answer the ready check Yes. Pressed
+/// on alternate frames, because the menu reads edges. `None` while no menu is
+/// up.
+fn scripted_menu_pad(session: &BootSession, f: usize) -> Option<u16> {
+    use legaia_engine_core::field_menu::FieldMenuPhase;
+    let menu = session.field_menu.as_ref()?;
+    let button = if session.field_menu_sub.is_some() {
+        PadButton::Circle
+    } else {
+        match menu.phase() {
+            FieldMenuPhase::Notice => PadButton::Cross,
+            FieldMenuPhase::ReadyConfirm { cursor: 0, .. } => PadButton::Cross,
+            FieldMenuPhase::ReadyConfirm { .. } => PadButton::Left,
+            _ => PadButton::Circle,
+        }
+    };
+    Some(if f.is_multiple_of(2) {
+        button.mask()
+    } else {
+        0
+    })
+}
+
+/// Close a pause menu a script opened mid-walk (a save point the route
+/// brushed), answering it with [`scripted_menu_pad`]. Returns whether one was
+/// up.
+fn close_scripted_menu(session: &mut BootSession) -> bool {
+    if session.field_menu.is_none() {
+        return false;
+    }
+    for g in 0..600 {
+        let Some(pad) = scripted_menu_pad(session, g) else {
+            break;
+        };
+        session.host.world.set_pad(pad);
+        let _ = session.tick();
+    }
+    session.host.world.set_pad(0);
+    true
 }
 
 /// [`run`] until a scene change or release, for as long as the pad holder's
@@ -3532,6 +3580,9 @@ fn pad_walk(
             planned_from = None;
             path.clear();
             since = 0;
+            continue;
+        }
+        if close_scripted_menu(session) {
             continue;
         }
         if session.host.world.mode != walking_mode {

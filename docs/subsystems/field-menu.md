@@ -2173,35 +2173,45 @@ destination - and each host resolves the window id off the disc table through
 the VAs the two renderers load (`pause_screens::ContextLockedLabels`),
 installed by the `install_menu_overlay_tables` call both hosts already make.
 
-What makes the trigger *reachable* is that a kind-`0x0D` park stands. The
-submode dispatcher indexes a signed 14-byte table at `0x801F33A4` with the
-parked operand's first byte, and row `0x0D` is `-1`: the routine returns
-(`0x801F1468..0x801F1470`) before it writes the driver actor's state or clears
-`_DAT_8007B450`. Nothing opens a screen, so the script stays halted on the
-instruction and the context keeps answering `0x0D` until the player's own
-Start enters the menu it gates. The port models that with
-`field_submode_screen::OP49_PARK_PRESERVING_SUB_OPS`; opening a screen for the
-row instead - which the engine used to do, falling back to the close tick -
-retires within a few frames and takes the context with it, which is why these
-two screens had no live trigger.
+What makes the trigger reachable is that a `-1` row of the submode table is
+a **scripted menu-button press**. Op `0x49`'s Idle arm spawns the same
+subsystem actor the locomotion controller's menu accept spawns
+(`FUN_80020DE0(0x8007065C, *0x8007C34C)` at `0x801E0998..0x801E09A4`, against
+`0x801D0324` on the pad path) and parks the operand pointer in
+`_DAT_8007B450` (`0x801E09A8`). The actor's enter half `FUN_801F1278` stores
+handler `7` into `+0x50` (`0x801F140C`) and zeroes `+0x54` (`0x801F141C`)
+**before** it reads the signed 14-byte table at `0x801F33A4` (`0x801F1468`);
+a `-1` row only skips the overwrite (`0x801F1470`). Handler `7` is the state
+pick `FUN_801F1F4C`, which with a park live always moves on to `0x30`, the
+pause-menu session `FUN_801ED308` - so the menu opens by itself, on the
+screen the entry decode picks off the kind byte: `0x19`, the save-card
+driver, for a save point's `49 01`, and the notice panel for `49 0D`.
 
-What clears a standing `-1` park is outside the dispatcher, but it is not
-undecoded: `_DAT_8007B450` has exactly **eleven** writers across the whole
-disc corpus and seven of them store zero
-(`find-gp-relative-refs.py --va 0x8007b450`, 72 references over 84 images).
-Two are SCUS leaves that sit next to each other -
-`FUN_800353E0` (`gp+0x148 = 0`, `gp+0x138 = 0`, `FUN_8003C110(0xC)`,
-`gp+0x13C = 7`) and its four-instruction sibling `FUN_8003540C`, which zeroes
-the same pair and returns. `gp+0x148` is the **live-window list head**, so
-both are menu teardowns: closing the menu drops the window list and the entry
-context together. The port's release on the menu-close path
-(`World::release_menu_entry_context_park`) is therefore the mechanism retail
-uses, not a stand-in for it. The rest of the clearers are the per-scene
-control-block reset `FUN_8003A024` (`0x8003A104`), the field VM's own op-`0x49`
-sentinel arm at `0x801E08D8` (`if (_DAT_8007B450 == 1) _DAT_8007B450 = 0`), two
-sites inside the submode dispatcher band (`0x801F1420` / `0x801F1F20`), one in
-the world-map controller (`0x801ED694`), and the save/menu dispatcher's own
-sentinel path at `0x801DC878`.
+A PCSX-Redux capture at the `town01` save point
+([`autorun_save_point_press.lua`](../../scripts/pcsx-redux/autorun_save_point_press.lua),
+`town01_field_card_boot`) logs that chain once per press: the park store, the
+enter half, the state pick with `+0x50 = 7`, the session with `+0x50 = 0x30`,
+and game mode `23` with no Start press.
+
+The release is the dispatcher's retire arm, not a menu teardown. The
+session's last phase clears the cursor context's `+0x3E` (`0x801ED52C`), and
+`FUN_801F159C` then retires the actor and, because the park is still live,
+stores the Done sentinel `1` (`0x801F1678..0x801F16AC`); the op's own Done arm
+zeroes it (`0x801E08D8`) and the interaction stops on its `0x21`. The same
+capture shows one Done store after the menu closed, and the park clear from
+then on. The two SCUS leaves that zero `gp+0x138` are not on this path:
+`FUN_8003540C` has no reference of any form on the disc
+(`find-address-word-refs.py 8003540c --prot`), and `FUN_800353E0` is reached
+only from the scene loaders (`0x8003B2C8`, `0x80055FC8`).
+
+The port: `World::scripted_menu_open_pending` is the press, every host opens
+the menu on it (no Start edge, no engagement refusal, no confirm cue - cue
+`0x20` belongs to the pad controller), `FieldMenuSession::open_entry_screen`
+opens a kind-`1` menu straight on the Save sub-session and ends the menu when
+it finishes, and `World::release_menu_entry_context_park` on the close
+resumes the parked op once. A save point carries no text, so its interaction
+record is installed by `man_field_scripts::placement_scripted_menu_record`;
+without it the action button found the save point and ran nothing.
 
 The painters for windows 24 and 46 stay unreached by a **screen** rather than
 by a mechanism; each one's remaining blocker is recorded per builder in

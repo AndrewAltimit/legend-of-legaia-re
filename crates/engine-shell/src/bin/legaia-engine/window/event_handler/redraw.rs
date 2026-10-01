@@ -275,10 +275,18 @@ impl PlayWindowApp {
             // so this asks the engine instead
             // ([`World::field_menu_open_allowed`]) and every host that opens
             // the menu asks the same question.
-            if !narration
-                && pressed_edge & 0x0008 != 0
-                && self.session.host.world.field_menu_open_allowed()
+            // A script's op-`0x49` save point / ready check presses the menu
+            // button itself (`World::scripted_menu_open_pending`): no Start
+            // edge, no engagement gate, and no confirm blip - retail's cue
+            // `0x20` belongs to the pad controller, not to the actor it spawns.
+            let scripted_menu = !narration
                 && !self.menu_runtime.is_open()
+                && self.session.host.world.scripted_menu_open_pending();
+            if scripted_menu
+                || (!narration
+                    && pressed_edge & 0x0008 != 0
+                    && self.session.host.world.field_menu_open_allowed()
+                    && !self.menu_runtime.is_open())
             {
                 // Start: open the BootSession-hosted pause menu (the
                 // retail CARD pair, game_mode 0x17 - the world holds
@@ -293,9 +301,13 @@ impl PlayWindowApp {
                 // stayed skipped.
                 self.session.open_field_menu();
                 if self.session.field_menu_is_open() {
-                    // The open blips as a confirm, as on the browser page;
-                    // a refused open blips nothing.
-                    self.fire_menu_cue(legaia_engine_shell::bgm::RETAIL_MENU_CONFIRM_CUE);
+                    if scripted_menu {
+                        self.session.host.world.note_scripted_menu_opened();
+                    } else {
+                        // The open blips as a confirm, as on the browser page;
+                        // a refused open blips nothing.
+                        self.fire_menu_cue(legaia_engine_shell::bgm::RETAIL_MENU_CONFIRM_CUE);
+                    }
                     self.tick_menu_sfx();
                     self.boot_ui = BootUiState::FieldMenu { sub: None };
                     // The boot-UI state is set above, so the readout's

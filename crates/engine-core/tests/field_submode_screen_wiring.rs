@@ -225,21 +225,20 @@ fn the_four_dedicated_sub_ops_still_own_their_own_paths() {
     for s in [0u8, 3, 5, 7] {
         assert_eq!(slot_for_op49_sub_op(s), None);
     }
-    // Sub-`0xD` opens nothing either, for a different reason: its row in
-    // retail's table is `-1` AND nothing else opens a screen for it, so the
-    // park has to stand as a menu-entry context. Opening the close tick for
-    // it - what this list used to assert - retires within a few frames and
-    // takes the context with it, which is why the kind-0xD notice panel and
-    // ready check were unreachable.
+    // Sub-`1` (a save point) and sub-`0xD` open nothing either, for a
+    // different reason: their rows in retail's table are `-1`, and the enter
+    // half stores handler `7` before it reads the table (`0x801F140C`), so
+    // the subsystem actor runs the state pick into the pause-menu session.
+    // The park stands until that menu closes; opening the close tick for
+    // them - what this list used to assert for sub-`1` - retired within a few
+    // frames and took the context with it, so a save point saved nothing.
     // See `field_submode_screen::OP49_PARK_PRESERVING_SUB_OPS`.
+    assert_eq!(slot_for_op49_sub_op(1), None);
     assert_eq!(slot_for_op49_sub_op(0x0D), None);
     // Every other sub-op takes the handler retail's own table names
-    // (`0x801F33A4`); the one remaining row that names no handler (`1`)
-    // falls back to the slot a freshly spawned driver carries, because
-    // retail routes it into a driver that does hand back.
+    // (`0x801F33A4`).
     for (s, want) in [
-        (1u8, slot::CLOSE_TICK),
-        (2, 0x21),
+        (2u8, 0x21),
         (4, 0x23),
         (6, slot::COIN_COUNTER),
         (8, slot::START_MENU),

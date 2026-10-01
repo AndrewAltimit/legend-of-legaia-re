@@ -72,6 +72,15 @@ Rows the last audit wave overturned. They are listed here rather than filed
 silently into the settled page, because a claim that was wrong once is the
 cheapest place to look for a claim that is still wrong.
 
+- **A save point opens the pause menu by itself.** Op `0x49`'s `-1` rows
+  (sub-ops `1` and `0x0D`) are a scripted menu-button press: the enter half
+  stores handler `7` before it reads the table, so the "the park simply
+  stands until Start" reading was wrong, and so was the menu-teardown leaf
+  said to clear the park - it has no reference on the disc. A capture at the
+  `town01` save point pins the chain and its release; every one of the
+  disc's save points had saved nothing in the port
+  ([settled](re-settled-threads.md#field--locomotion),
+  [falsified](re-do-not-re-walk.md#menus--ui)).
 - **BGM sub-op 3 pauses and sub-op 4 re-attaches.** The field VM's op-`0x35`
   arm table at `0x801CEE00` gives 3 = set pause bit 1 + `FUN_80026740` and
   4 = clear it + `FUN_80026478`, which replays the sequence from its start;
