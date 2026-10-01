@@ -98,6 +98,37 @@ fn hud_widget_table_reproduces() {
     }
 }
 
+/// The VITAL bar frame table (`0x801DBC34`) is initialised data in the
+/// overlay image: three cells - an 8-wide cap, a body stretched across the
+/// 100-pixel bar, an 8-wide cap - each a 16-texel-tall axis-aligned rect on
+/// the `(320, 0)` page, side by side.
+#[test]
+fn hud_bar_frame_table_reproduces() {
+    let Some(prot) = prot_dat() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN or extracted/PROT.DAT missing");
+        return;
+    };
+    let mut archive = Archive::open(&prot).expect("open PROT.DAT");
+    let rec = static_overlay::overlay_map()
+        .by_prot_index(baka::BAKA_OVERLAY_PROT_INDEX as u32)
+        .expect("baka overlay in static map");
+    let raw = entry_bytes(&mut archive, rec.prot_index);
+    let overlay = static_overlay::as_loaded(&raw, rec).expect("as-loaded form");
+    let cells = baka::parse_baka_bar_frame(&overlay).expect("frame table parses");
+    let widths: Vec<i32> = cells.iter().map(|c| c.width).collect();
+    assert_eq!(widths, vec![8, 100, 8], "cap, body, cap");
+    for (i, c) in cells.iter().enumerate() {
+        let [(u0, v0), (u1, v1), (u2, v2), (u3, v3)] = c.uv;
+        assert_eq!((u0, v0 + 15), (u2, v2), "cell {i} left column");
+        assert_eq!((u1, v1 + 15), (u3, v3), "cell {i} right column");
+        assert_eq!(v0, v1, "cell {i} top row");
+        assert!(u1 > u0, "cell {i} spans texels");
+    }
+    assert_eq!(cells[0].uv[1].0 + 1, cells[1].uv[0].0);
+    assert_eq!(cells[1].uv[1].0 + 1, cells[2].uv[0].0);
+    eprintln!("[ran] bar frame cells {widths:?}");
+}
+
 #[test]
 fn hud_art_stage_and_anm_bank_reproduce() {
     let Some(prot) = prot_dat() else {

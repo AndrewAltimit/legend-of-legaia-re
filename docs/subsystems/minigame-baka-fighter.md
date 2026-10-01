@@ -840,9 +840,20 @@ The HUD renderer `FUN_801d2afc` draws, per frame (retail 320x240 frame):
   opponent's left-anchored at `0xB8` filling rightward. The quad's gouraud
   runs `(0xBC, hp >> 5, 0)` at the far end to `(0xBC, 0, 0)` at the anchor -
   the bar reddens toward the anchor and dims as HP drops.
-- **Bar frames** - 3 texture cells per side at x `0x1C` / `0xB0`, y
-  `0x20..0x30`, read from a **runtime-built** cell table at `DAT_801dbc34`
-  (not recoverable from the overlay's rodata).
+- **Bar frames** - 3 `POLY_FT4` cells per side (texpage 5 = `(320, 0)`, CLUT
+  `0x7D80`, colour `0x808080`), laid left to right from x `0x1C` / `0xB0`, y
+  `0x20..0x30`, each as wide as its record says. The cells come from a
+  16-byte-stride table at `0x801DBC34` (`+0` screen width, `+8..+0xF` the four
+  corner UVs) that is **initialised data in the overlay image** - the HUD
+  renderer is its only reference, and only reads it. It holds an 8-wide cap,
+  a 100-wide body stretched from 8 texels, and an 8-wide cap: a 116-pixel
+  frame round the 100-pixel bar. Both land in one OT bucket and the frames
+  are linked after the bars, so the bars draw over them. Parser
+  `legaia_asset::baka_opponents::parse_baka_bar_frame`, layout
+  `engine-core::baka_cabinet::vital_frame_cells`.
+- **No "VITAL" label.** The duel HUD draws only widgets `0x12` and `0x14` plus
+  digits; widget `0x18` (the 32x8 VITAL cell) is the select screen's, drawn
+  at `(0x5B, 0x60)` (`0x801D2450`).
 - **Round-win pips** - 16x16 cells at `u = 0x30` (filled) / `0x40` (empty),
   `v = 0` on the `(320, 0)` page; player at `x = 0x70 + i*16`, opponent at
   `0xC0 - i*16`, y `0x30`; `DAT_801dbed0` pips per side.
@@ -854,8 +865,9 @@ The HUD renderer `FUN_801d2afc` draws, per frame (retail 320x240 frame):
   `0x110`, y `0x60 + i*16`; the row matching the fighter's current action
   index (record `+0x24`) brightens with the combo count.
 - **Top strip** - the "STAGE" label (widget `0x12`) at `(0x30, 0x1E)` with the
-  stage digits beside it, and "PRESS SELECT TO MENU" (widget `0x14`) at
-  `(0xEA, 0x1E)`.
+  stage number beside it through the 8px digit drawer - ones at x `0x48`,
+  tens at `0x40` only from stage 10 (`0x801D32B4` / `0x801D32F8`) - and
+  "PRESS SELECT TO MENU" (widget `0x14`) at `(0xEA, 0x1E)`.
 
 The round-start banner path `FUN_801d21fc` draws widget `0x1C` and the
 round-result banners are sprite actors (spawned by `FUN_801d6e04`, widget id
@@ -1259,9 +1271,8 @@ from the visitor's disc in the browser (`crates/web-viewer/src/minigames_baka.rs
 ([In the port](#in-the-port)) - the same fighters, ghosts, walls, floor grid,
 cameo, impact parts and arena camera the two play hosts draw - and the HUD is
 the widget table at the `FUN_801d2afc` positions above. Traced vs fitted is
-stated on the page: the tally screen's layout is fitted by eye, and the
-bar-frame cells fall back to an outline because their cell table is
-runtime-built. The attract card and the player select are the engine
+stated on the page: the tally screen's layout is fitted by eye, while the
+bar frames are the overlay's own cell table (`baka_bar_frame_json`). The attract card and the player select are the engine
 cabinet's ([The front end](#the-front-end)), drawn by the duel surface with
 the cabinet's own widget cells.
 
@@ -1426,7 +1437,7 @@ described, not pasted). The fighter cluster sits around `0x801dbf00` and
 | `DAT_801d76bc` | the `+0x20` view into the **roster record table** at `0x801d769c` (`0x6c` stride, 17 records; gold, stats, anchor, AI pattern - see [Opponent + scoring](#opponent--scoring)). Parser `legaia_asset::baka_opponents`. |
 | `DAT_801d7160` | HUD **widget descriptor table** (51 records, 0x14 stride; see [HUD widget table](#hud-widget-table--traced-draw-geometry)). Parser `legaia_asset::baka_opponents::parse_baka_hud` |
 | `DAT_801d71cc` | widget 5's `u` field, patched to `stage * 0x18` (the 24px stage digit) |
-| `DAT_801dbc34` | runtime-built VITAL bar-frame cell table (3 cells per side) |
+| `DAT_801dbc34` | VITAL bar-frame cell table (3 cells per side), initialised data in the overlay image |
 | `DAT_801d7684` | special-attack effect-actor template |
 | `_DAT_8007b8c2` | streaming-mode flag; `0` = dev LZS `other5`, non-zero (retail) = raw PROT load |
 | `_DAT_8007ba2c` | actor-draw hook (set to `FUN_801d67f0`) |

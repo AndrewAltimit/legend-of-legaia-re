@@ -85,6 +85,7 @@
      * (the page keeps its text presentation and says why). */
     load(api, playerChar, opponentRoster) {
       this.api = api;
+      this._barFrames = undefined;
       this.ok = false;
       if (!api.baka_presentation_ready || !api.baka_presentation_ready()) return false;
 
@@ -918,6 +919,28 @@
       g.drawImage(img, u, v, w, h, x, y, w, h);
     }
 
+    /* The two VITAL frames, cached off `baka_bar_frame_json`. */
+    _drawBarFrames(g) {
+      if (this._barFrames === undefined) {
+        this._barFrames = null;
+        if (typeof this.api.baka_bar_frame_json === 'function') {
+          try {
+            const f = [0, 1].map(s => JSON.parse(this.api.baka_bar_frame_json(s)));
+            if (f.every(x => x && x.cells && x.page != null)) this._barFrames = f;
+          } catch (e) { this._barFrames = null; }
+        }
+      }
+      if (!this._barFrames) return;
+      for (const f of this._barFrames) {
+        const img = this._page(f.page, f.palette);
+        if (!img) continue;
+        for (const c of f.cells) {
+          g.drawImage(img, c.u0, c.v0, c.u1 - c.u0 + 1, c.v1 - c.v0 + 1,
+                      c.x0, c.y0, c.x1 - c.x0, c.y1 - c.y0);
+        }
+      }
+    }
+
     _drawHud(st, meta) {
       const cv = this.hudCanvas, g = cv.getContext('2d');
       g.setTransform(cv.width / HUD_W, 0, 0, cv.height / HUD_H, 0, 0);
@@ -938,7 +961,9 @@
       this._widget(g, W.STAGE_SM, 0x30, 0x1e);
       const stageNo = meta && meta.stage ? meta.stage : 1;
       const digits = String(stageNo).split('').map(Number);
-      let dx = 0x40 - (digits.length - 1) * 8;
+      /* Ones at x 0x48, tens (stage >= 10 only) at 0x40 - the two
+       * FUN_801d69e4 calls at 0x801D32B4 / 0x801D32F8. */
+      let dx = 0x48 - (digits.length - 1) * 8;
       for (const d of digits) {
         /* widget 0x13 with u patched to digit*8 (FUN_801d69e4). */
         const w19 = this.widgets[W.DIGIT_SM];
@@ -962,15 +987,12 @@
         g.fillStyle = grad;
         g.fillRect(x0, 0x26, x1 - x0, 6);
       };
-      /* Chrome: the retail frame cells come from a runtime-built table
-       * (DAT_801dbc34) this page can't read statically; the VITAL label +
-       * a plain outline stand in, and the section note says so. */
-      g.strokeStyle = 'rgba(255,255,255,0.55)';
-      g.lineWidth = 1;
-      g.strokeRect(0x1c + 0.5, 0x25 + 0.5, 110, 8);
-      g.strokeRect(0xb0 + 0.5, 0x25 + 0.5, 110, 8);
-      this._widget(g, W.VITAL, 0x1c + 16, 0x24);
-      this._widget(g, W.VITAL, 0xb0 + 16, 0x24);
+      /* Bar frames: three cells per side off the overlay's frame table
+       * (0x801DBC34) - cap, stretched body, cap - laid out by the engine
+       * (baka_cabinet::vital_frame_cells). The fill bars go over them: both
+       * land in one OT bucket and the frames are linked last. The duel HUD
+       * draws no "VITAL" label; that widget (0x18) is the select screen's. */
+      this._drawBarFrames(g);
       bar(st.hp[0], false);
       bar(st.hp[1], true);
 

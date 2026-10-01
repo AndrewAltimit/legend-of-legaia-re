@@ -189,6 +189,53 @@ impl LegaiaMinigames {
         format!("[{rows}]")
     }
 
+    /// One side's VITAL bar frame, as the HUD renderer lays it
+    /// ([`legaia_engine_core::baka_cabinet::vital_frame_cells`], the cell
+    /// table at `0x801DBC34`): `side` 0 = the player's, 1 = the opponent's.
+    ///
+    /// ```json
+    /// { "page": 0, "palette": 0,
+    ///   "cells": [ { "x0": 28, "y0": 32, "x1": 36, "y1": 48,
+    ///                "u0": 24, "v0": 0, "u1": 31, "v1": 15 }, ... ] }
+    /// ```
+    ///
+    /// `page` indexes the PROT 1203 art pack like [`Self::baka_hud_json`]'s
+    /// (the frame samples texpage 5 = VRAM `(320, 0)`, CLUT `0x7D80` =
+    /// palette 0); the UVs are the inclusive corner span. `{}` when the
+    /// overlay or the art pack did not decode.
+    pub fn baka_bar_frame_json(&self, side: u32) -> String {
+        let img = overlay_image(
+            &self.prot,
+            &self.entries,
+            baka::BAKA_OVERLAY_PROT_INDEX as u32,
+        );
+        let (Some(cells), Some(art)) = (
+            img.as_deref().and_then(baka::parse_baka_bar_frame),
+            self.baka_art(),
+        ) else {
+            return "{}".to_string();
+        };
+        let page = art
+            .iter()
+            .position(|t| t.image.fb_x == 320 && t.image.fb_y == 0)
+            .map(|p| p.to_string())
+            .unwrap_or("null".into());
+        let quads = legaia_engine_core::baka_cabinet::vital_frame_cells(side as usize, &cells[..])
+            .iter()
+            .map(|c| {
+                format!(
+                    concat!(
+                        r#"{{"x0":{},"y0":{},"x1":{},"y1":{},"#,
+                        r#""u0":{},"v0":{},"u1":{},"v1":{}}}"#
+                    ),
+                    c.x0, c.y0, c.x1, c.y1, c.uv[0].0, c.uv[0].1, c.uv[3].0, c.uv[3].1,
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        format!(r#"{{"page":{page},"palette":0,"cells":[{quads}]}}"#)
+    }
+
     /// One HUD widget resolved through the **ported POLY_GT4 emitter**
     /// ([`legaia_engine_core::baka_fighter::hud_widget_quad`], `FUN_801d5ed0`):
     ///

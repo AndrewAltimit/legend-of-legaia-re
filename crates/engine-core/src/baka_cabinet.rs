@@ -552,6 +552,54 @@ pub fn vital_bar(slot: usize, hp: i32) -> VitalBar {
     }
 }
 
+/// Left edge of each side's VITAL frame (`li s1,0x1c` / `li s1,0xb0`).
+pub const VITAL_FRAME_X: [i16; 2] = [0x1C, 0xB0];
+/// Top scanline of the VITAL frames (`li s4,0x20`).
+pub const VITAL_FRAME_Y0: i16 = 0x20;
+/// Bottom scanline of the VITAL frames (`s4 + 0x10`).
+pub const VITAL_FRAME_Y1: i16 = 0x30;
+
+/// One cell of a VITAL bar frame as the HUD renderer emits it: a `POLY_FT4`
+/// (`0x2C`, colour `0x808080`, texpage 5, CLUT `0x7D80`) spanning
+/// `x0..x1` x [`VITAL_FRAME_Y0`]..[`VITAL_FRAME_Y1`] with the record's four
+/// texture corners.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VitalFrameCell {
+    pub x0: i16,
+    pub y0: i16,
+    pub x1: i16,
+    pub y1: i16,
+    /// Corner UVs, top-left / top-right / bottom-left / bottom-right.
+    pub uv: [(u8, u8); 4],
+}
+
+/// PORT: FUN_801d2afc (`0x801D2C9C`..`0x801D2DAC`) - the VITAL bar frames.
+///
+/// Each side lays the [`legaia_asset::baka_opponents::HUD_BAR_FRAME_CELLS`]
+/// table cells left to right from [`VITAL_FRAME_X`], each `width` wide - the
+/// cap, the stretched body, the cap. There is no "VITAL" label in the duel
+/// HUD: widget `0x18` is only drawn by the select screen (`0x801D2450`).
+pub fn vital_frame_cells(
+    side: usize,
+    cells: &[legaia_asset::baka_opponents::BakaBarFrameCell],
+) -> Vec<VitalFrameCell> {
+    let mut x = VITAL_FRAME_X[side.min(1)];
+    cells
+        .iter()
+        .map(|c| {
+            let x0 = x;
+            x = x.wrapping_add(c.width as i16);
+            VitalFrameCell {
+                x0,
+                y0: VITAL_FRAME_Y0,
+                x1: x,
+                y1: VITAL_FRAME_Y1,
+                uv: c.uv,
+            }
+        })
+        .collect()
+}
+
 /// Texture-U of a **filled** round-win pip (`0x30`).
 pub const PIP_U_FILLED: u8 = 0x30;
 /// Texture-U of an **empty** round-win pip (`0x40`).
@@ -1861,6 +1909,30 @@ mod tests {
         let opp = vital_bar(1, FULL_HP);
         assert_eq!(opp.x0, VITAL_ANCHOR_RIGHT);
         assert_eq!(opp.x1, VITAL_ANCHOR_RIGHT + 0x64);
+    }
+
+    #[test]
+    fn vital_frames_tile_from_each_side_anchor() {
+        use legaia_asset::baka_opponents::BakaBarFrameCell;
+        let cell = |width, u: u8| BakaBarFrameCell {
+            width,
+            uv: [(u, 0), (u + 7, 0), (u, 15), (u + 7, 15)],
+        };
+        let cells = [cell(8, 0x18), cell(100, 0x20), cell(8, 0x28)];
+        let left = vital_frame_cells(0, &cells);
+        assert_eq!(
+            left.iter().map(|c| (c.x0, c.x1)).collect::<Vec<_>>(),
+            vec![(0x1C, 0x24), (0x24, 0x88), (0x88, 0x90)]
+        );
+        assert!(left.iter().all(|c| (c.y0, c.y1) == (0x20, 0x30)));
+        // The frames hold the fill bars' full-HP extent and its scanlines.
+        let full = vital_bar(0, FULL_HP);
+        assert!(left[0].x0 <= full.x0 && full.x1 <= left[2].x1);
+        assert!(left.iter().all(|c| c.y0 < full.y0 && full.y1 < c.y1));
+        let right = vital_frame_cells(1, &cells);
+        assert_eq!((right[0].x0, right[2].x1), (0xB0, 0xB0 + 116));
+        let opp = vital_bar(1, FULL_HP);
+        assert!(right[0].x0 <= opp.x0 && opp.x1 <= right[2].x1);
     }
 
     #[test]
