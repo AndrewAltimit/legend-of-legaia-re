@@ -1571,7 +1571,7 @@ programs are RAM-derived captures in which this address belongs to resident
 field-overlay code rather than to the minigame overlay that names the file.
 The statically extracted Baka Fighter overlay is PROT 976, `0xE000` bytes at
 base `0x801CE818`, so it stops at `0x801DC818` and cannot hold `0x801f0adc`
-at all. `field_party_cursor.rs` already diagnoses the same artifact at
+at all. `field_subsystem_enter.rs` already diagnoses the same artifact at
 `FUN_801f1278`.
 
 The artifact has a cost beyond attribution: the minigame-named dumps of

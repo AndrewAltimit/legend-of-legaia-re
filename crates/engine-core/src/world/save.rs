@@ -745,6 +745,10 @@ impl World {
             debug_mode: u32::from(debug),
             pad_mask: u32::from(crate::world_map_panel_host::packed_pad(self.input.pad())),
         };
-        state_pick(inputs, 7).actor_state
+        state_pick(
+            inputs,
+            legaia_engine_vm::field_subsystem_enter::STATE_PICK_HANDLER,
+        )
+        .actor_state
     }
 }
