@@ -667,3 +667,25 @@ fn field_op_3d_party_remove_reaches_battle_composition() {
     assert_eq!(world.party.active_party, vec![0, 2]);
     assert_eq!(world.party.party_leader_slot, Some(0));
 }
+
+/// Emptying the list and adding one member back fights with that member
+/// alone. Nivora's solo Delilas duels (`nilboa` P2[22], P2[23]) open with
+/// `3D 00` / `3D 01` / `3D 02` and then `3C <id>`; retail's count is 0
+/// after the removes, so the add leaves a party of one. An empty field list
+/// must not fall back to the previous battle composition here, or Gala's
+/// duel party rides along into Noa's.
+#[test]
+fn field_op_3d_emptied_list_then_3c_fights_alone() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.install_present_party_list(vec![2]);
+    world.party.party_leader_slot = Some(2);
+    world.load_field_script(vec![0x3D, 0x00, 0x3D, 0x01, 0x3D, 0x02, 0x3C, 0x01]);
+    for _ in 0..4 {
+        let _ = world.tick();
+    }
+    assert_eq!(world.party.party_actor_slots, vec![Some(1)]);
+    assert_eq!(world.party.party_count, 1);
+    assert_eq!(world.party.active_party, vec![1]);
+    assert_eq!(world.party.party_leader_slot, Some(1));
+}

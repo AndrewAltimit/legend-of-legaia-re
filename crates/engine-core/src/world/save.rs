@@ -49,6 +49,8 @@ impl World {
     ///
     /// [`HpMpSp`]: legaia_save::HpMpSp
     pub fn load_party(&mut self, party: legaia_save::Party) {
+        // A loaded roster starts from no party-op history.
+        self.party.field_list_emptied = false;
         let n = party.members.len().min(self.actors.len());
         for (slot, rec) in party.members.iter().take(n).enumerate() {
             let hms = rec.hp_mp_sp();

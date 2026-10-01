@@ -12,6 +12,14 @@ pub struct PartyState {
     /// world-coords of the actor at that slot. Default empty (the lookup
     /// returns `None`, which forces sub-op 0x3B's "skip" path).
     pub party_actor_slots: Vec<Option<u8>>,
+    /// The field party ops emptied the list (retail `DAT_80084594 == 0`):
+    /// every member removed and none added back yet. An empty
+    /// [`Self::party_actor_slots`] otherwise means "never installed" and
+    /// falls back to the battle composition, which would resurrect the
+    /// removed members on the next op `0x3C` - Nivora's solo Delilas
+    /// fights strip the party (`3D 00`, `3D 01`, `3D 02`) and add one
+    /// member back, and the fallback fought Noa's duel with Gala beside her.
+    pub field_list_emptied: bool,
     /// Battle-action helper tables.
     ///
     /// There is deliberately **no** spell-cost or capture-spell table here.
@@ -148,6 +156,7 @@ impl PartyState {
     pub fn new() -> Self {
         Self {
             party_actor_slots: Vec::new(),
+            field_list_emptied: false,
             character_ability_bits: [0; 8],
             party_count: 3,
             active_party: Vec::new(),

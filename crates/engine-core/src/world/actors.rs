@@ -1765,8 +1765,12 @@ impl World {
     /// save or a party op has installed it. Before that (a New Game, or a
     /// save whose composition is the roster's identity order) the list is
     /// the installed battle composition: `active_party` when set, else the
-    /// identity `0..party_count`.
+    /// identity `0..party_count`. A list the party ops emptied stays empty
+    /// ([`crate::world::PartyState::field_list_emptied`]).
     pub fn present_party_list(&self) -> Vec<u8> {
+        if self.party.party_actor_slots.is_empty() && self.party.field_list_emptied {
+            return Vec::new();
+        }
         if !self.party.party_actor_slots.is_empty() {
             return self
                 .party
@@ -1788,6 +1792,7 @@ impl World {
     /// composition as it was (no party of zero is ever fought with).
     pub fn install_present_party_list(&mut self, list: Vec<u8>) {
         self.party.party_actor_slots = list.iter().take(4).map(|&id| Some(id)).collect();
+        self.party.field_list_emptied = list.is_empty();
         if !list.is_empty() {
             self.set_active_party(list);
         }
