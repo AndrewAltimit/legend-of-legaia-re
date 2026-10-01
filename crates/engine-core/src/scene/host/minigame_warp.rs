@@ -344,6 +344,9 @@ impl SceneHost {
             hp,
             CAPTION_SERU_INDEX,
         );
+        // The plate's maximum is the record's, not the entry HP: a leg
+        // entered hurt shows `hp / max`, never `hp / hp`.
+        session.set_hp_max(0, lead.hp_max);
         let seed = 0x4D55_5343 ^ self.world.frame as u32;
         if let Some(model) =
             DomeDamageModel::from_battle_overlay(&raw, [lead.profile, opponent], hp, seed)
@@ -431,6 +434,9 @@ pub struct DomeLeadFighter {
     pub costs: [u16; crate::muscle_dome::HAND_SLOTS],
     /// Entry HP (the lead record's live `+0x106`).
     pub hp: i32,
+    /// Maximum HP (the lead record's `+0x104`), which the entry HP does not
+    /// reach after a leg that cost HP the interval did not hand back.
+    pub hp_max: i32,
     /// AP pool (the lead record's live AGL `+0x110`).
     pub budget: u16,
     /// Damage-roll profile (max HP `+0x104`, live INT / UDF / LDF).
@@ -491,6 +497,7 @@ impl SceneHost {
         DomeLeadFighter {
             costs,
             hp,
+            hp_max: i32::from(hp_max),
             budget,
             profile,
         }

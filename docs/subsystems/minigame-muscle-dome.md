@@ -274,6 +274,14 @@ Hub state `0x0C` (`0x801CFE7C..0x801CFEA8`) does
 of the game-state window `0x80084140`. That pair is the lead party record's
 own `+0x104` / `+0x106` HP fields (`0x80084708 - 0x80084140 = 0x5C8`).
 
+The restore raises the **current** HP only, so a later leg opens hurt. The
+next leg's battle init seeds the fighter actor's two HP words from two
+different record fields - current `+0x14C` and maximum `+0x14E`, the maximum
+off record `+0x104` (`FUN_80053CB8`, `0x80053DD4..0x80053DDC`) - so the status
+plate reads `hp / max` and never `hp / hp`. The port carries the maximum into
+the leg separately from the entry HP (`MuscleDomeSession::set_hp_max`, seated
+by the door warp from `SceneHost::dome_lead_fighter`).
+
 `FUN_801D0ED8` does the wider restores. It refills HP/MP/SP to their maxima at
 contest start, and - only when `course != 0`, behind a `bnez` at `0x801D0EE8`
 - first zeroes the four equipment bytes `+0x75E`/`+0x75F`/`+0x760`/`+0x762`.

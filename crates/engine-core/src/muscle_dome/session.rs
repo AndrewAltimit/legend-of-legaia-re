@@ -163,6 +163,22 @@ impl MuscleDomeSession {
         self.f[slot].max_hp
     }
 
+    /// Seat a fighter's **maximum** HP apart from the entry HP [`Self::new`]
+    /// takes. `new` defaults the maximum to the entry HP, which is right for
+    /// a fighter that enters full (a monster, or the minigames page's fresh
+    /// fighter) and wrong for the contest's lead fighter, who carries the
+    /// previous leg's damage into the next: retail's battle init seeds the
+    /// actor's current HP `+0x14C` and maximum `+0x14E` from two different
+    /// record fields, the maximum off the record's `+0x104`
+    /// (`FUN_80053CB8`, `0x80053DD4..0x80053DDC`). The maximum never drops
+    /// below the current HP.
+    ///
+    /// REF: FUN_80053cb8
+    pub fn set_hp_max(&mut self, slot: usize, hp_max: i32) {
+        let f = &mut self.f[slot];
+        f.max_hp = hp_max.max(f.hp).max(1);
+    }
+
     /// A fighter's dealt directions.
     pub fn hand(&self, slot: usize) -> &[MuscleCard; HAND_SLOTS] {
         &self.f[slot].hand
