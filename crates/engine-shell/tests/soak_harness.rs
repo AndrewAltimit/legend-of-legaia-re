@@ -1036,9 +1036,8 @@ fn value_checks(s: &BootSession, t: &Tunables, out: &mut Vec<(&'static str, Stri
                 format!("{}/{}", hms.mp_cur, hms.mp_max),
             ));
         }
-        // `+0x130` is the retail displayed level (`CharacterRecord::level`'s
-        // `+0x100` is an engine-internal cell that retail leaves zero).
-        let lv = m.magic_rank();
+        // `+0x130` is the character level (`CharacterRecord::level`).
+        let lv = m.level();
         if lv == 0 || lv > 99 {
             out.push(("value", format!("roster.level(slot{i})"), format!("{lv}")));
         }

@@ -117,8 +117,8 @@ randomizer):
 | `+0x130` (u8) | **displayed character level** - what "LV" shows and the `Level 99` cheat targets; the applier maintains it `+1` per level-up event | `1` |
 | `+0x131` (u8) | a second per-character byte the seed also inits to `1` - **write-only, no reader on the disc** (see below) | `1` |
 
-`+0x100` stays zero and is unrelated to the level (the engine port uses it as its
-own internal level cell). The shown level is read from `+0x130` directly, **not**
+`+0x100` is unrelated to the level - it is word 3 of the ability bitfield
+`+0xF4..+0x103` ([`save-record.md`](save-record.md)). The shown level is read from `+0x130` directly, **not**
 re-derived from experience at a New Game - confirmed live: a record with level-10
 experience + stats but `+0x130 == 1` still shows LV 1.
 

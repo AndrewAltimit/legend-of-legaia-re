@@ -143,9 +143,9 @@ fn level_cheat_applies_retail_growth() {
         let after = rec.live_stats();
         assert!(after.atk > prev.atk, "member {i} ATK grew");
         assert!(after.udf > prev.udf, "member {i} UDF grew");
-        // The displayed level is `+0x130` (`+0x100` shares the ability
-        // bitfield the stat fold rewrites).
-        assert_eq!(rec.magic_rank(), 20);
+        // The level byte is `+0x130`, outside the ability bitfield the stat
+        // fold rewrites.
+        assert_eq!(rec.level(), 20);
         eprintln!(
             "[ran] member {i} Lv20: HP {} ATK {} -> {}",
             rec.hp_mp_sp().hp_max,

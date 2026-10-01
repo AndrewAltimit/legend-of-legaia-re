@@ -68,7 +68,7 @@ pub use card::{
 pub use character::{
     ABILITY_BITS_LEN, AUTO_COMMAND_STRING_A_OFFSET, AUTO_COMMAND_STRING_B_OFFSET,
     AUTO_COMMAND_STRING_LEN, AutoCommandBand, CHARACTER_RECORD_SIZE, CharacterRecord,
-    EquipmentSlots, HpMpSp, MAX_SPELLS, NAME_LEN, NAME_OFFSET, Party, SpellList,
+    EquipmentSlots, HpMpSp, LEVEL_OFFSET, MAX_SPELLS, NAME_LEN, NAME_OFFSET, Party, SpellList,
 };
 pub use ext::{
     CharSaveExt, LeaderSummary, RETAIL_ENGINE_EXT_CAPACITY, RETAIL_ENGINE_EXT_MAGIC,

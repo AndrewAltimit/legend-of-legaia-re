@@ -81,7 +81,7 @@ pub const PARTY_TEMPLATE_VA: u32 = 0x8007_8C4C;
 ///
 /// A New Game shows level 1 because the seed leaves both the cumulative-experience
 /// cell `+0x0` at `0` and the level cell `+0x130` at `1`, regardless of the seeded
-/// next-level threshold at `+0x4` (`+0x100` stays zero and is unrelated). The
+/// next-level threshold at `+0x4`. The
 /// starting-level randomizer therefore seeds **both**: the experience cell `+0x0`
 /// ([`CURRENT_XP_PRELOAD_VA`] / [`CURRENT_XP_STORE_VA`]) so the record carries
 /// in-band level-`N` experience, and the displayed level `+0x130` itself

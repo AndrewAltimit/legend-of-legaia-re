@@ -85,7 +85,7 @@ impl LegaiaRuntime {
                 let hms = rec.hp_mp_sp();
                 Some(serde_json::json!({
                     "name": w.party_name(r),
-                    "level": rec.level().max(rec.magic_rank()).max(1),
+                    "level": rec.level().max(1),
                     "hp": hms.hp_cur, "hp_max": hms.hp_max,
                     "mp": hms.mp_cur, "mp_max": hms.mp_max,
                 }))

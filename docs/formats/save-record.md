@@ -257,8 +257,12 @@ through) returns that single store, and no halfword or word access spans
 / `0x6f8`. The magic-rank counter is a different byte, capture-pinned at record
 `+0x9C` ([battle.md](../subsystems/battle.md)). The runtime accessor
 `legaia_save::CharacterRecord::magic_rank()` reads this byte, so it is in fact the
-**level** byte under a legacy name; the crate's `level()` reads `+0x100`, which is
-always zero in retail (the engine port uses it as its own internal level cell).
+**level** byte under a legacy name, and `level()` / `set_level()` read and write the
+same byte. `+0x100` is not a level cell: it is word 3 of the ability bitfield
+`+0xF4..+0x103`, which the per-frame aggregator `FUN_80042558` zeroes (the four
+`sw zero` at `0x800425EC..0x800425F8`, the last one `sw zero,0x100(s0)`) and rebuilds
+from equipment ([`accessory-passive-table.md`](accessory-passive-table.md)), so a
+level kept there reads back as `0` after the next stat refresh.
 
 ### `+0x4` is the *next-level threshold*, not cumulative XP.
 

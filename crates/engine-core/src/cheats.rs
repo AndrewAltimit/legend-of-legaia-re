@@ -135,7 +135,6 @@ impl World {
         if let Some(rec) = self.party.roster.members.get_mut(roster_slot) {
             rec.set_cumulative_xp(xp);
             rec.set_next_level_xp(next);
-            rec.set_magic_rank(cur);
             rec.set_level(cur);
         }
         self.resync_party_after_cheat();
@@ -285,6 +284,22 @@ mod tests {
         assert_eq!(w.cheat_set_level(0, 3), Some(10));
         // An empty slot is not a character.
         assert_eq!(w.cheat_set_level(3, 10), None);
+    }
+
+    #[test]
+    fn level_survives_the_ability_bitfield_rebuild() {
+        // The stat refresh zeroes and rebuilds `+0xF4..+0x103` (retail
+        // `FUN_80042558`'s `sw zero,0x100(s0)`); the level and the AP base
+        // derived from it must survive that pass.
+        let mut w = world_with_trio();
+        assert_eq!(w.cheat_set_level(0, 40), Some(40));
+        w.party.roster.members[0].set_ability_bits([0; legaia_save::ABILITY_BITS_LEN]);
+        w.seed_party_battle_stats();
+        assert_eq!(w.party.roster.members[0].level(), 40);
+        assert_eq!(
+            w.battle.ap_gauges[0].base_ap,
+            crate::ap_gauge::ap_base_for_level(40)
+        );
     }
 
     #[test]

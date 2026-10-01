@@ -21,8 +21,12 @@ pub const CHARACTER_RECORD_SIZE: usize = 0x414;
 /// Maximum spell entries the spell list at `+0x13C..0x160` can hold.
 pub const MAX_SPELLS: usize = 36;
 
-/// Length of the active-abilities bitfield at `+0xF4..0x100`.
+/// Length of the active-abilities bitfield at `+0xF4..+0x104` (four u32 words).
 pub const ABILITY_BITS_LEN: usize = 16;
+
+/// Record offset of the character level byte (`+0x130`) - the retail
+/// displayed level. See [`CharacterRecord::level`].
+pub const LEVEL_OFFSET: usize = 0x130;
 
 /// Stride between active-spell-slot entries at `+0x2B0..0x380`.
 const ACTIVE_SPELL_SLOT_STRIDE: usize = 0x14;
@@ -353,7 +357,7 @@ impl CharacterRecord {
 
     // --- Typed views -----------------------------------------------------
 
-    /// Active-abilities bitfield at `+0xF4..0x100`. The runtime ORs this
+    /// Active-abilities bitfield at `+0xF4..+0x104` (four u32 words). The runtime ORs this
     /// into the global 4×u32 mask at `0x80074358..0x80074368` per-frame
     /// via `FUN_80042558`.
     pub fn ability_bits(&self) -> [u8; ABILITY_BITS_LEN] {
@@ -362,7 +366,7 @@ impl CharacterRecord {
         out
     }
 
-    /// Replace the active-abilities bitfield at `+0xF4..0x100`.
+    /// Replace the active-abilities bitfield at `+0xF4..+0x104`.
     pub fn set_ability_bits(&mut self, bits: [u8; ABILITY_BITS_LEN]) {
         self.raw[0xF4..0xF4 + ABILITY_BITS_LEN].copy_from_slice(&bits);
     }
@@ -566,20 +570,24 @@ impl CharacterRecord {
         self.raw[0x04..0x08].copy_from_slice(&threshold.to_le_bytes());
     }
 
-    /// Byte at `+0x100` (u8). **Not the retail displayed level** - `+0x100` is zero
-    /// in retail (both card saves and live RAM); the live displayed level is at
-    /// `+0x130` (see [`Self::magic_rank`], boot-confirmed via the starting-level
-    /// randomizer). This accessor is kept as the engine port's *own* internal level
-    /// cell, written/read by its level-up sync for its LGSF saves - self-consistent
-    /// for the port, a deliberate divergence from the retail byte, not a mirror.
+    /// The character level - the retail displayed-level byte at `+0x130`
+    /// ([`LEVEL_OFFSET`]).
+    ///
+    /// This is the one level cell: the status screen's "LV", the GameShark
+    /// `Level 99` target, and what the engine's level-up sync, cheats and AP
+    /// gauge read and write. [`Self::magic_rank`] is a legacy alias of the
+    /// same byte. An earlier revision kept a separate engine-only level at
+    /// `+0x100`, but that byte is word 3 of the ability bitfield
+    /// (`+0xF4..+0x103`, see [`Self::ability_bits`]), which retail's
+    /// aggregator - and the engine's port of it - zeroes and rebuilds from
+    /// equipment on every pass, so a level stored there read back as `0`.
     pub fn level(&self) -> u8 {
-        self.raw[0x100]
+        self.raw[LEVEL_OFFSET]
     }
 
-    /// Replace the `+0x100` byte (the engine port's internal level cell - see
-    /// [`Self::level`]). The retail displayed level is [`Self::magic_rank`] (`+0x130`).
+    /// Replace the character level (`+0x130`; see [`Self::level`]).
     pub fn set_level(&mut self, level: u8) {
-        self.raw[0x100] = level;
+        self.raw[LEVEL_OFFSET] = level;
     }
 
     /// Byte at `+0x130` (u8) - the **retail displayed character level** (legacy
@@ -598,12 +606,12 @@ impl CharacterRecord {
     /// nothing reads it, while the magic-rank counter is capture-pinned at record
     /// `+0x9C`. See `docs/formats/save-record.md`.
     pub fn magic_rank(&self) -> u8 {
-        self.raw[0x130]
+        self.level()
     }
 
-    /// Replace the magic-rank field.
+    /// Replace the `+0x130` level byte (legacy alias of [`Self::set_level`]).
     pub fn set_magic_rank(&mut self, rank: u8) {
-        self.raw[0x130] = rank;
+        self.set_level(rank);
     }
 
     /// Live stats at `+0x110..+0x11B`, in `(AGL, ATK, UDF, LDF,
@@ -865,6 +873,19 @@ impl Party {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn level_survives_an_ability_bitfield_rebuild() {
+        // The aggregator zeroes and rebuilds `+0xF4..+0x104` every pass; the
+        // level must not live inside that window.
+        let mut rec = CharacterRecord::zeroed();
+        rec.set_level(37);
+        rec.set_ability_bits([0; ABILITY_BITS_LEN]);
+        rec.set_ability_bits([0xFF; ABILITY_BITS_LEN]);
+        assert_eq!(rec.level(), 37);
+        assert_eq!(rec.magic_rank(), 37);
+        assert_eq!(rec.raw[0x130], 37);
+    }
 
     #[test]
     fn cumulative_xp_round_trip() {

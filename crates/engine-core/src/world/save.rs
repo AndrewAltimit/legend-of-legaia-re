@@ -74,13 +74,12 @@ impl World {
         // from the installed records. Without this the tracker keeps its
         // default 0-XP / level-1 state even when the record has the party
         // deep into the game, and the next grant would re-run the whole
-        // curve from L1. Level prefers the engine cell (+0x100), falling
-        // back to the retail displayed-level byte (+0x130) for records
-        // lifted from retail saves.
+        // curve from L1. Level is the record's `+0x130` byte - the same cell
+        // for engine LGSF saves and records lifted from retail cards.
         for (slot, rec) in self.party.roster.members.iter().enumerate() {
             if slot < self.party.level_up_tracker.level.len() {
                 self.party.level_up_tracker.xp[slot] = rec.cumulative_xp();
-                self.party.level_up_tracker.level[slot] = rec.level().max(rec.magic_rank()).max(1);
+                self.party.level_up_tracker.level[slot] = rec.level().max(1);
             }
         }
         // Adopt each record's stored display name (`+0x2A7`) so a loaded save's
