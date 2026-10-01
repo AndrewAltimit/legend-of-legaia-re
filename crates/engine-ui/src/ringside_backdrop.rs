@@ -300,12 +300,12 @@ pub fn first_visit_hub_draw(
 /// A hub emitter sets a record's semi byte and tpage page to the variant it
 /// is called with, so a variant-1 packet carries ABR 1 (`B + F`) and a
 /// variant-2 packet ABR 2 (`B - F`) through `clut + 1`. The GPU applies
-/// that equation only to texels whose CLUT colour has STP set, and the two
-/// pages' palettes are each all-STP or STP-free: row 502 sub-palettes
-/// `0`/`2`/`6`/`8` carry STP on every non-zero colour and every other one
-/// carries none, row 503 carries none at all. So the variant-2 "subtractive
-/// shadow" and every row-503 record (the course names, the title art) draw
-/// **opaque**; only the row-502 records' own palettes blend, additively.
+/// that equation only to texels whose CLUT colour has STP set. Classify the
+/// CLUTs **as uploaded** (`legaia_asset::muscle_dome::hub_page_tims`): the
+/// arena raises the upload STP flag before loading the pages, so every
+/// non-empty palette on both rows is all-STP in VRAM even though the file
+/// carries it on four. The variant-2 pass therefore subtracts its white
+/// knockout palette and the variant-1 face adds over it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct HubPaletteStp {
     /// `[sheet][sub-palette]`, sheet `0` = tpage bit 4 clear.

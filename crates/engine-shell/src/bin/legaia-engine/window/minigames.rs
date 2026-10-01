@@ -1154,9 +1154,7 @@ impl PlayWindowApp {
         if self.muscle_hub.is_some() {
             return;
         }
-        /// PROT entry (extraction space) of the dome data container:
-        /// LZS section 0 carries the two hub-page TIMs back to back.
-        const HUB_CONTAINER_PROT_INDEX: u32 = 1220;
+        use legaia_asset::muscle_dome::HUB_CONTAINER_PROT_INDEX;
         let Some(renderer) = self.win.renderer.as_ref() else {
             return;
         };
@@ -1172,17 +1170,9 @@ impl PlayWindowApp {
                 return;
             }
         };
-        let Some((tim0, tim1)) =
-            legaia_lzs::decompress_container(&container)
-                .ok()
-                .and_then(|sections| {
-                    // Section 0 = `[12-byte header][TIM][TIM]`.
-                    let blob = sections.into_iter().next()?;
-                    let t0 = legaia_tim::parse(blob.get(0xC..)?).ok()?;
-                    let t1 = legaia_tim::parse(blob.get(0xC + t0.byte_extent()..)?).ok()?;
-                    Some((t0, t1))
-                })
-        else {
+        // Section 0 = `[12-byte header][TIM][TIM]`, decoded with the arena's
+        // upload STP applied (the VRAM CLUT words the blend classes key on).
+        let Some((tim0, tim1)) = legaia_asset::muscle_dome::hub_page_tims(&container) else {
             log::warn!("muscle hub: page TIMs did not decode from the dome container");
             return;
         };
@@ -1319,8 +1309,9 @@ impl PlayWindowApp {
     /// first visit's shade through the subtractive (`ABR 2`) sprite
     /// pipeline, between the wall tiles and the screens drawn over them, and
     /// a hub quad through its tpage's ABR wherever its palette carries STP
-    /// (`HubPaletteStp::quad_abr` - an STP-free palette draws opaque, as
-    /// retail's GPU draws it).
+    /// (`HubPaletteStp::quad_abr` over the CLUTs as the arena uploads them -
+    /// STP-set on every non-zero entry, so an STP-free palette, which draws
+    /// opaque as retail's GPU draws it, is one that is all zero).
     ///
     /// One disclosed stand-in: a packet's vertical two-stop colour gradient
     /// flattens to the stops' mean (the sprite pipeline is one-colour).
@@ -1482,9 +1473,10 @@ impl PlayWindowApp {
             else {
                 continue;
             };
-            // A semi packet blends only through STP texels: the hub's
-            // variant-2 palettes (and sheet 1's) carry none, so those
-            // packets draw opaque whatever their ABR.
+            // A semi packet blends only through STP texels. The arena
+            // uploads the hub CLUTs STP-set (`hub_page_tims`), so the
+            // variant-2 knockout palettes blend subtractively (`B - F`)
+            // under the face the variant-1 pass adds over them.
             let semi_abr = assets.palette_stp.quad_abr(q);
             let dw = (q.xy[1].0 as i32 - q.xy[0].0 as i32 + 1).max(0) as u32;
             let dh = (q.xy[2].1 as i32 - q.xy[0].1 as i32 + 1).max(0) as u32;

@@ -52,7 +52,8 @@ pub(super) const HUD_BANNER_TIM_OFFSET: usize = 0x10450;
 
 /// PROT entry (extraction space) of the dome data container
 /// (`other6.lzs` slot 0): LZS section 0 carries the two hub-page TIMs.
-pub(super) const HUD_HUB_CONTAINER_PROT_INDEX: u32 = 1220;
+pub(super) const HUD_HUB_CONTAINER_PROT_INDEX: u32 =
+    legaia_asset::muscle_dome::HUB_CONTAINER_PROT_INDEX;
 
 /// `PROT.DAT` gap offset of the small pad-button-glyph TIM (the four
 /// button circles + the R1/R2/L1/L2 labels): image -> VRAM (928, 352)
@@ -170,12 +171,10 @@ impl LegaiaMinigames {
     /// (section 0 = `[u32 tag][u32 count][u32 size]` + TIM at `0xC` + TIM
     /// immediately after).
     pub(super) fn hud_hub_tims(&self) -> Option<(legaia_tim::Tim, legaia_tim::Tim)> {
+        // The shared decoder applies the arena's upload STP, so the CLUT
+        // words here are the VRAM ones the variant passes blend against.
         let entry = entry_bytes(&self.prot, &self.entries, HUD_HUB_CONTAINER_PROT_INDEX)?;
-        let sections = legaia_lzs::decompress_container(entry).ok()?;
-        let blob = sections.first()?;
-        let t0 = legaia_tim::parse(blob.get(0xC..)?).ok()?;
-        let t1 = legaia_tim::parse(blob.get(0xC + t0.byte_extent()..)?).ok()?;
-        Some((t0, t1))
+        legaia_asset::muscle_dome::hub_page_tims(entry)
     }
 
     /// Decode a 4bpp TIM through 16-colour palette `pal` to RGBA8

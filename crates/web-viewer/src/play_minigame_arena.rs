@@ -46,7 +46,7 @@ use crate::runtime::LegaiaRuntime;
 const ARENA_OVERLAY_PROT_INDEX: u32 = md::ARENA_OVERLAY_PROT_INDEX as u32;
 /// PROT entry of the dome data container whose LZS section 0 carries the
 /// two hub-page TIMs (`other6.lzs` slot 0).
-const HUB_CONTAINER_PROT_INDEX: u32 = 1220;
+const HUB_CONTAINER_PROT_INDEX: u32 = legaia_asset::muscle_dome::HUB_CONTAINER_PROT_INDEX;
 /// The page's sheet id for the ringside still (the hub pages are `4` / `5`);
 /// its `pal` is the still variant, `0` = extraction 1221, `1` = 1222.
 const STILL_SHEET: u32 = 8;
@@ -334,18 +334,16 @@ impl LegaiaRuntime {
     }
 
     /// The two hub-page TIMs out of the dome data container (extraction
-    /// 1220, LZS section 0 = `[12-byte header][TIM][TIM]`).
+    /// 1220, LZS section 0 = `[12-byte header][TIM][TIM]`), CLUTs as uploaded.
     fn muscle_hub_tims(&self) -> Option<(legaia_tim::Tim, legaia_tim::Tim)> {
         let host = self.scene_host.as_ref()?;
         let entry = host
             .index
             .entry_bytes_extended(HUB_CONTAINER_PROT_INDEX)
             .ok()?;
-        let sections = legaia_lzs::decompress_container(&entry).ok()?;
-        let blob = sections.first()?;
-        let t0 = legaia_tim::parse(blob.get(0xC..)?).ok()?;
-        let t1 = legaia_tim::parse(blob.get(0xC + t0.byte_extent()..)?).ok()?;
-        Some((t0, t1))
+        // The shared decoder applies the arena's upload STP (the VRAM CLUT
+        // words), the same call the native window and the dome page make.
+        legaia_asset::muscle_dome::hub_page_tims(&entry)
     }
 }
 
