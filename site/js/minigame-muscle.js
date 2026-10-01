@@ -1349,6 +1349,12 @@ window.MgMuscle = (function () {
 
     function finishPlayback() {
       const state = st();
+      /* The play-out's damage numerals belong to the play-out: the last one
+       * lands 34 ticks before this and lives 46, so without this it rode
+       * over the command cluster / the INTERVAL tally that follows. Retail
+       * shows neither screen with a hit numeral still up - the INTERVAL
+       * screen is the arena hub, drawn after the battle has ended. */
+      popups = [];
       if (state.phase === 'turn_over') {
         /* A TURN ended, not a fight. Retail's battle SM writes ctx[6] = 0x14
          * and re-enters its own command cluster (ctx+6 = 0x28) - the arena hub
