@@ -1337,7 +1337,6 @@ pub(super) fn cmd_play_window_with_record(
         dance_cast_surface: Default::default(),
         dance_cast_gpu: None,
         muscle_hub: None,
-        muscle_timers: Default::default(),
         summon_actor_slot: None,
         battle_stage_mesh: None,
         battle_stage_color_mesh: None,

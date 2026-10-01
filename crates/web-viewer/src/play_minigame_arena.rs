@@ -55,8 +55,8 @@ const STILL_SHEET: u32 = 8;
 
 // ------------------------------------------------------------- Muscle Dome
 
-/// Muscle Dome presentation state: the staged opponent and the hub-screen
-/// timers the native window's `tick_muscle_hub` keeps.
+/// Muscle Dome presentation state: the staged opponent and the hub sprite
+/// table (the hub's screen timers are the world's, `MinigameState::muscle_hub`).
 #[derive(Default)]
 pub(crate) struct MuscleUi {
     /// The monster the contest's `(course, round)` stages, off the PROT 0977
@@ -65,9 +65,6 @@ pub(crate) struct MuscleUi {
     pub(crate) monster_id: Option<u16>,
     /// Player battle-file slot the fighter mesh assembles from (0 = Vahn).
     pub(crate) char_slot: u32,
-    /// The hub's screen timers - the engine kernel the native window drives
-    /// too (`legaia_engine_core::muscle_ringside::HubTimers`).
-    timers: legaia_engine_core::muscle_ringside::HubTimers,
     /// Pristine parse of the PROT 0977 sprite table; the emitters write
     /// variants back, so every frame runs over a copy.
     sprite_table: Option<Vec<HudSprite>>,
@@ -153,29 +150,15 @@ impl LegaiaRuntime {
         ui.prev_phase = phase;
     }
 
-    /// The hub-screen timers, off the world's leg / contest edges, through
-    /// the one engine kernel the native window's `tick_muscle_hub` runs too
-    /// (`muscle_ringside::HubTimers`). Runs every frame: the INTERVAL +
-    /// tally screen plays after the leg has closed.
+    /// Sound what the arena hub fired. The screen timers are the world's
+    /// own (`World::tick_muscle_hub`, run by the shared scene host every
+    /// tick, which also hands the next leg its fight), so this host - like
+    /// the native window - only drains the CD-XA line and the tally keys.
     pub(crate) fn tick_muscle_hub(&mut self) {
         let Some(host) = self.scene_host.as_mut() else {
             return;
         };
-        let pad = host.world.input.retail_pad().pressed as u16;
-        // `_DAT_80084580` off the world - a loaded save's word or the cold
-        // reset - as the native window reads it.
-        let volume_word = host.world.audio.levels.voice_volume as u32;
-        let frame = self
-            .minigame_ui
-            .muscle
-            .timers
-            .tick(&host.world, pad, volume_word);
-        // The between-legs hub has played out: the next fight starts with no
-        // trip back to the field (retail's arm-`0x16` hand-off), as on the
-        // native window.
-        if frame.next_leg {
-            host.world.begin_next_muscle_leg();
-        }
+        let frame = host.world.take_muscle_hub_sounds();
         let hub_xa = frame.xa;
         let voice_cues = frame.voice_cues;
         if let Some(c) = hub_xa {
@@ -208,6 +191,7 @@ impl LegaiaRuntime {
             return Vec::new();
         };
         let world = &host.world;
+        let timers = &world.minigames.muscle_hub;
         // A leg is open; otherwise the arena hub is between legs (or the
         // contest has handed the field back) and the INTERVAL + still screens
         // are the hub's own - the native window's same test.
@@ -219,7 +203,7 @@ impl LegaiaRuntime {
         if in_dome {
             // A first visit's frame: wall + shade behind the arm's screens,
             // through the shared kernel the native window draws with.
-            if let Some(hub) = ui.timers.first_visit {
+            if let Some(hub) = timers.first_visit {
                 use legaia_engine_ui::ringside_backdrop as rb;
                 let f = hub.frame();
                 let levels = rb::FirstVisitLevels {
@@ -240,21 +224,21 @@ impl LegaiaRuntime {
                     shade_row = Some((quads.len(), shade_json(&sh)));
                 }
                 quads.extend(d.hud);
-            } else if let Some((round, banner)) = ui.timers.round_banner {
+            } else if let Some((round, banner)) = timers.round_banner {
                 quads.extend(hud::hub_screen_quads(
                     &mut table,
                     &hud::round_banner_draws(round),
                     banner.brightness(),
                 ));
             }
-        } else if let Some(interval) = ui.timers.interval {
+        } else if let Some(interval) = timers.interval {
             let bright = interval.brightness();
             quads.extend(hud::hub_screen_quads(
                 &mut table,
                 hud::HUB_INTERVAL_HEADING,
                 bright,
             ));
-            let (values, row_bright) = match ui.timers.tally.as_ref() {
+            let (values, row_bright) = match timers.tally.as_ref() {
                 Some((ramp, tally)) => (ramp.row_values(*tally), ramp.row_brightness(bright)),
                 None => {
                     let (rows, tally) = world
@@ -269,8 +253,8 @@ impl LegaiaRuntime {
         }
         // The re-entered hub's ROUND card (arms 0x15 / 0x16) over the still.
         if !in_dome
-            && ui.timers.interval.is_none()
-            && let Some(card) = ui.timers.backdrop.and_then(|b| b.card_brightness())
+            && timers.interval.is_none()
+            && let Some(card) = timers.backdrop.and_then(|b| b.card_brightness())
         {
             let round = world
                 .minigames
@@ -305,10 +289,10 @@ impl LegaiaRuntime {
         if host.world.minigames.muscle_dome.is_some() {
             return Vec::new();
         }
-        let Some(b) = self
-            .minigame_ui
-            .muscle
-            .timers
+        let Some(b) = host
+            .world
+            .minigames
+            .muscle_hub
             .backdrop
             .filter(|b| b.visible())
         else {
@@ -336,7 +320,11 @@ impl LegaiaRuntime {
     /// covers it - the native window's `dome_battle_chrome_up`, off the same
     /// `HubTimers::covers_leg`.
     pub(crate) fn dome_battle_chrome_up(&self) -> bool {
-        self.muscle_session().is_some() && !self.minigame_ui.muscle.timers.covers_leg()
+        self.muscle_session().is_some()
+            && !self
+                .scene_host
+                .as_ref()
+                .is_some_and(|h| h.world.minigames.muscle_hub.covers_leg())
     }
 
     /// The Muscle Dome HUD rows, the engine's

@@ -1074,22 +1074,10 @@ impl PlayWindowApp {
             self.open_muscle_contest();
             self.load_muscle_hub_assets();
         }
-        // The pad edges the skippable holds read (retail's `DAT_801D1A9C`
-        // snapshot of `_DAT_8007B874 | _DAT_8007B938`).
-        let pad = self.session.host.world.input.retail_pad().pressed as u16;
-        // `_DAT_80084580`, the voice/SFX volume setting each tally cue halves:
-        // the world's mirror, a loaded save's own word or the cold reset.
-        let volume_word = self.session.host.world.audio.levels.voice_volume as u32;
-        // The screen timers are one engine kernel on both play hosts; this
-        // window only sounds what they fired.
-        let frame = self
-            .muscle_timers
-            .tick(&self.session.host.world, pad, volume_word);
-        // The between-legs hub has played out: the next fight starts with no
-        // trip back to the field (retail's arm-`0x16` hand-off).
-        if frame.next_leg {
-            self.session.host.world.begin_next_muscle_leg();
-        }
+        // The screen timers are the world's own (`World::tick_muscle_hub`,
+        // run by the shared scene host every tick, which also hands the next
+        // leg its fight); this window only sounds what they fired.
+        let frame = self.session.host.world.take_muscle_hub_sounds();
         // The first visit's two announcer lines (`FUN_8003D53C` at arms 0 and
         // 0x15), through the same XA path the battle clips use.
         if let Some(c) = frame.xa
@@ -1357,7 +1345,7 @@ impl PlayWindowApp {
             // A first visit's frame: the brick wall + shade (the backdrop
             // emitter's latch-0 arm) behind the arm's screens, all composed
             // by the shared kernel the play page draws with.
-            if let Some(hub) = self.muscle_timers.first_visit {
+            if let Some(hub) = self.session.host.world.minigames.muscle_hub.first_visit {
                 let f = hub.frame();
                 let levels = legaia_engine_render::ringside_backdrop::FirstVisitLevels {
                     backdrop: f.backdrop,
@@ -1377,14 +1365,16 @@ impl PlayWindowApp {
                 quads.extend(d.tiles);
                 shade = d.shade;
                 front.extend(d.hud);
-            } else if let Some((round, banner)) = self.muscle_timers.round_banner {
+            } else if let Some((round, banner)) =
+                self.session.host.world.minigames.muscle_hub.round_banner
+            {
                 quads.extend(hud::hub_screen_quads(
                     &mut table,
                     &hud::round_banner_draws(round),
                     banner.brightness(),
                 ));
             }
-        } else if let Some(interval) = self.muscle_timers.interval {
+        } else if let Some(interval) = self.session.host.world.minigames.muscle_hub.interval {
             let bright = interval.brightness();
             quads.extend(hud::hub_screen_quads(
                 &mut table,
@@ -1396,24 +1386,36 @@ impl PlayWindowApp {
             // lane counting down and the coin tally counting up. With no roll
             // armed the screen draws the settled values, which is where the
             // roll ends anyway.
-            let (values, row_bright) = match self.muscle_timers.tally.as_ref() {
-                Some((ramp, tally)) => (ramp.row_values(*tally), ramp.row_brightness(bright)),
-                None => {
-                    let (rows, tally) = world
-                        .minigames
-                        .muscle_contest
-                        .as_ref()
-                        .map_or((Default::default(), 0), |c| (c.rows(), c.tally()));
-                    ([0, 0, 0, rows.hp_restore(), 0, tally], [bright; 6])
-                }
-            };
+            let (values, row_bright) =
+                match self.session.host.world.minigames.muscle_hub.tally.as_ref() {
+                    Some((ramp, tally)) => (ramp.row_values(*tally), ramp.row_brightness(bright)),
+                    None => {
+                        let (rows, tally) = world
+                            .minigames
+                            .muscle_contest
+                            .as_ref()
+                            .map_or((Default::default(), 0), |c| (c.rows(), c.tally()));
+                        ([0, 0, 0, rows.hp_restore(), 0, tally], [bright; 6])
+                    }
+                };
             quads.extend(hud::score_tally_quads(&mut table, values, row_bright));
         }
         // The re-entered hub's ROUND card (arms 0x15 / 0x16) over the still.
         if !in_dome
-            && self.muscle_timers.interval.is_none()
+            && self
+                .session
+                .host
+                .world
+                .minigames
+                .muscle_hub
+                .interval
+                .is_none()
             && let Some(card) = self
-                .muscle_timers
+                .session
+                .host
+                .world
+                .minigames
+                .muscle_hub
                 .backdrop
                 .and_then(|b| b.card_brightness())
         {
@@ -1432,7 +1434,14 @@ impl PlayWindowApp {
         // The backdrop goes first: retail links the still's two packets at
         // the ordering table's far end (`OT + 0xFA0`), behind every sprite.
         if !in_dome
-            && let Some(b) = self.muscle_timers.backdrop.filter(|b| b.visible())
+            && let Some(b) = self
+                .session
+                .host
+                .world
+                .minigames
+                .muscle_hub
+                .backdrop
+                .filter(|b| b.visible())
             && let Some(&(_, still_y)) = assets.stills.iter().find(|(v, _)| *v == b.variant())
         {
             use legaia_engine_render::ringside_backdrop as rb;

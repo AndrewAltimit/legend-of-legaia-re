@@ -2216,6 +2216,9 @@ impl SceneHost {
     pub fn tick(&mut self) -> Result<SceneTickEvent> {
         let was_battle = matches!(self.world.mode, crate::world::SceneMode::Battle);
         let _ = self.world.tick();
+        // The arena hub's screens run every tick, including the ones after a
+        // leg has closed; its hand-off arms the next leg's drain below.
+        self.world.tick_muscle_hub();
         if matches!(self.world.mode, crate::world::SceneMode::Battle) {
             self.install_battle_monster_action_clips();
             self.ensure_battle_party_forms();

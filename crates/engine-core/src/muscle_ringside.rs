@@ -548,8 +548,9 @@ pub fn leg_open_raises_round_card(card_shown_round: Option<i32>, round: i32) -> 
 /// The dome hub's per-frame screen timers - the first visit, the leg-open
 /// ROUND card, the between-legs INTERVAL screen with its score tally, and
 /// the re-entered hub's backdrop - with the leg edges that arm them. One
-/// kernel both play hosts drive once a frame ([`HubTimers::tick`]); each
-/// host keeps its own instance and draws from its fields.
+/// instance lives on the world (`MinigameState::muscle_hub`), ticked once per
+/// world tick by [`crate::world::World::tick_muscle_hub`]; both play hosts
+/// draw from its fields.
 #[derive(Debug, Clone, Default)]
 pub struct HubTimers {
     /// The hub's first visit on a freshly opened contest.
@@ -580,9 +581,9 @@ pub struct HubTimersFrame {
     /// The tally lanes' voice keys (`FUN_801D1288` builds each attr set).
     pub voice_cues: Vec<crate::other_game_overlay::VoiceAttrCue>,
     /// The between-legs hub has played out (INTERVAL drained, ROUND card
-    /// gone): the host hands the next fight its start through
-    /// [`crate::world::World::begin_next_muscle_leg`] - retail's arm `0x16`
-    /// exit into `FUN_801D1510`.
+    /// gone): [`crate::world::World::tick_muscle_hub`] hands the next fight
+    /// its start through [`crate::world::World::begin_next_muscle_leg`] -
+    /// retail's arm `0x16` exit into `FUN_801D1510`.
     pub next_leg: bool,
 }
 

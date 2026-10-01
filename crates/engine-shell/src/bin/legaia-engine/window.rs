@@ -1061,10 +1061,6 @@ struct PlayWindowApp {
     dance_cast_gpu: Option<minigames::DanceCastGpu>,
     /// Muscle Dome hub-screen atlas + sprite table (see [`MuscleHubAssets`]).
     muscle_hub: Option<MuscleHubAssets>,
-    /// The dome hub's screen timers - first visit, ROUND card, INTERVAL +
-    /// tally, re-entered backdrop - the engine kernel the browser play page
-    /// drives too (`legaia_engine_core::muscle_ringside::HubTimers`).
-    muscle_timers: legaia_engine_core::muscle_ringside::HubTimers,
     /// World actor slot the spawned player-summon creature occupies (`>= 8`, so
     /// it never collides with the party/monster battle slots), or `None`.
     summon_actor_slot: Option<usize>,

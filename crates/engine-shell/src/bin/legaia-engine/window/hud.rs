@@ -2348,7 +2348,7 @@ impl PlayWindowApp {
     pub(super) fn dome_battle_chrome_up(&self) -> bool {
         self.session.host.world.mode == SceneMode::MuscleDome
             && self.session.host.world.minigames.muscle_dome.is_some()
-            && !self.muscle_timers.covers_leg()
+            && !self.session.host.world.minigames.muscle_hub.covers_leg()
     }
 
     pub(super) fn battle_command_menu_chips(&self) -> Option<CommandChips> {

@@ -315,7 +315,6 @@ fn a_won_leg_mid_ladder_stays_in_the_arena_and_stages_the_next_fight() {
 #[test]
 fn the_hub_timers_hand_the_next_leg_off_after_the_round_card() {
     use legaia_engine_core::input::PadButton;
-    use legaia_engine_core::muscle_ringside::HubTimers;
     use legaia_engine_core::world::SceneMode;
     let mut w = world_with_contest();
     w.mode = SceneMode::Field;
@@ -334,10 +333,9 @@ fn the_hub_timers_hand_the_next_leg_off_after_the_round_card() {
     s.end_selection();
     s.resolve_turn(|attacker, _| if attacker == 0 { 5 } else { 0 });
     w.enter_muscle_dome(s);
-    let mut timers = HubTimers::default();
     let mut saw_interval = false;
     let mut saw_card = false;
-    let mut handed_off = 0;
+    let mut handed_off_at = None;
     for frame in 0..4000 {
         w.set_pad(if frame == 2 {
             PadButton::Cross.mask()
@@ -345,19 +343,20 @@ fn the_hub_timers_hand_the_next_leg_off_after_the_round_card() {
             0
         });
         let _ = w.tick();
-        let out = timers.tick(&w, 0, 0);
+        // The shared scene host runs the hub right after the world tick.
+        w.tick_muscle_hub();
+        let timers = &w.minigames.muscle_hub;
         saw_interval |= timers.interval.is_some();
         saw_card |= timers
             .backdrop
             .is_some_and(|b| b.card_brightness().is_some());
-        if out.next_leg {
+        if handed_off_at.is_none() && w.minigames.pending_warp.is_some() {
             assert!(saw_interval && saw_card, "the hub played out first");
-            handed_off += 1;
-            w.begin_next_muscle_leg();
+            handed_off_at = Some(frame);
         }
     }
     assert_eq!(w.mode, SceneMode::MuscleDome);
-    assert!(handed_off >= 1, "the hub handed the next fight off");
+    assert!(handed_off_at.is_some(), "the hub handed the next fight off");
     assert!(w.minigames.pending_warp.is_some());
 }
 

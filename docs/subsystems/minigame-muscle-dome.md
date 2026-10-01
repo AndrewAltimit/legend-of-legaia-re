@@ -1441,11 +1441,14 @@ port the in-world dome's decided leg closes on Cross through
 (`leg_boundary_raises_interval`): a continuing contest sets
 `MinigameState::muscle_hub_between_legs` and keeps `SceneMode::MuscleDome`
 with no leg open (`World::muscle_hub_between_legs`); every other leg settles
-and hands the field back. The hub kernel `HubTimers` raises
+and hands the field back. The hub kernel `HubTimers` lives on the world
+(`MinigameState::muscle_hub`) and `World::tick_muscle_hub` runs it every tick,
+called by the shared scene host right after `World::tick` - so both play
+hosts and a headless harness run one hub. It raises
 `HubTimersFrame::next_leg` once its INTERVAL and backdrop arms have drained,
-and both play hosts answer it with `World::begin_next_muscle_leg`, which
-stages the next fight through the same mode-24 drain the arena door uses
-without re-arming the round trip. While the hub owns the frame neither host
+answered by `World::begin_next_muscle_leg`, which stages the next fight
+through the same mode-24 drain the arena door uses without re-arming the
+round trip. While the hub owns the frame neither host
 draws the field (no 3D, and the field party HUD is suppressed outside the
 field modes) nor battle chrome; a decided leg puts no text up - the KO is the
 battle's, and the tally is the hub's. Start between legs is the give-up arm
@@ -1509,9 +1512,10 @@ countdown `DAT_8007C338 = [0, 0x1E, 0x3C, 0x5A]` - the four "ka-ching" cues
 staggered 0 / 30 / 60 / 90 frames (`0x801CFCAC..0x801CFCEC`).
 
 Port: `engine-core::muscle_dome::HubScreen` carries the envelope,
-`engine-core::muscle_ringside::HubTimers` arms and ticks it on both play hosts
-(the native window's and the play page's `tick_muscle_hub` are each that one
-call plus the sounds it fires), and the standalone page samples the same
+`engine-core::muscle_ringside::HubTimers` arms and ticks it once per world
+tick (`World::tick_muscle_hub`, from the shared scene host; each play host's
+own `tick_muscle_hub` only sounds what it fired, via
+`World::take_muscle_hub_sounds`), and the standalone page samples the same
 kernel through `muscle_hub_screen_json` - so no host picks a count or a
 brightness of its own.
 

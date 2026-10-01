@@ -3812,13 +3812,49 @@ impl World {
             && self.mode == SceneMode::MuscleDome
     }
 
+    /// Advance the arena hub's screen timers one tick
+    /// ([`crate::muscle_ringside::HubTimers`], `FUN_801CF870`'s screen arms),
+    /// off this tick's leg / contest edges and pad. Runs every tick in every
+    /// mode - the INTERVAL screen plays after the leg has closed - and is
+    /// called by the shared scene host right after [`Self::tick`], so the
+    /// two play hosts and a headless harness all run one hub. The hub's
+    /// hand-off past arm `0x16` stages the next fight here
+    /// ([`Self::begin_next_muscle_leg`]); the sounds it fires queue for the
+    /// host ([`Self::take_muscle_hub_sounds`]).
+    pub fn tick_muscle_hub(&mut self) {
+        let pad = self.input.retail_pad().pressed as u16;
+        // `_DAT_80084580`, the voice/SFX volume each tally cue halves.
+        let volume_word = self.audio.levels.voice_volume as u32;
+        let mut timers = std::mem::take(&mut self.minigames.muscle_hub);
+        let frame = timers.tick(self, pad, volume_word);
+        self.minigames.muscle_hub = timers;
+        if frame.next_leg {
+            self.begin_next_muscle_leg();
+        }
+        let sounds = &mut self.minigames.muscle_hub_sounds;
+        if frame.xa.is_some() {
+            sounds.xa = frame.xa;
+        }
+        sounds.voice_cues.extend(frame.voice_cues);
+        // A host that never drains (a headless harness) keeps only the
+        // latest roll's keys.
+        let excess = sounds.voice_cues.len().saturating_sub(32);
+        sounds.voice_cues.drain(..excess);
+    }
+
+    /// Drain the CD-XA line and the tally voice keys the hub fired since the
+    /// last drain, for the host to sound.
+    pub fn take_muscle_hub_sounds(&mut self) -> crate::muscle_ringside::HubTimersFrame {
+        std::mem::take(&mut self.minigames.muscle_hub_sounds)
+    }
+
     /// Stage the contest's next fight once the between-legs hub has played
     /// out - the hub's hand-off past arm `0x16` (`FUN_801D1510`). The fight
     /// opens through the same mode-24 drain the arena door uses, without
     /// re-arming the round trip (the departure scene stays backed up from
     /// the door). A no-op when the hub is not between legs.
     ///
-    /// Both play hosts call it on [`crate::muscle_ringside::HubTimersFrame::next_leg`].
+    /// [`Self::tick_muscle_hub`] calls it on [`crate::muscle_ringside::HubTimersFrame::next_leg`].
     pub fn begin_next_muscle_leg(&mut self) {
         if !self.muscle_hub_between_legs() {
             return;
