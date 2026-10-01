@@ -142,7 +142,7 @@ The player actor pointer is the global `_DAT_8007c364`. Confirmed fields on the 
 | `+0x18` | world Z (`s16`) |
 | `+0x26` | heading (8-direction movement angle, set from the pad direction) |
 | `+0x5c` | clip id - `1`-based record in the bank `+0x10 & 0x1000000` selects; the settle tail stores it every frame (see [the clip base](#the-clip-base-and-the-settle-tail)) |
-| `+0x72` | per-actor speed multiplier (fixed-point, `>> 12`) |
+| `+0x72` | per-actor speed multiplier (fixed-point, `>> 12`); also the draw scale, `0` = not drawn |
 | `+0x94` | encounter-record pointer (see [encounter format](../formats/encounter.md)) |
 | `+0x98` | interaction-target actor pointer |
 
@@ -301,7 +301,9 @@ This probe is the whole trigger - no field-VM opcode opens a conversation (op `0
 
 The forced-slow arm is not just first, it is exclusive of run: `0x801D0350` `j`s to `0x801D03A4`, past the run test, so a forced walk cannot be run out of. It lands **before** the turbo test (`0x801D03A8`), which is last and overwrites whatever arm chose.
 
-`_DAT_8007B6A8` is the per-scene MAN flag `FUN_8003AEB0` copies from `MAN[1] & 1` - the same byte the pause menu's save gate reads - and it is set on exactly the three kingdom world maps. So the forced-slow step is the **overworld's** step, not a scripted slow-walk: on a kingdom map the player always takes base step `5` and never runs. Combined with the `0xC00` speed multiplier each kingdom's entry script gives the player (`CC F8 40 00 0C 00 00`), that is `(5 * 0xC00) >> 12 = 3` units per `dt`; the retail overworld runs at `dt = 3`, and the 2-unit stepper rounds the `9` up to the `10` units per tile-step the state-poll captures record. See [`world-map.md`](world-map.md#overworld-player-movement--region-keyed-encounters).
+`_DAT_8007B6A8` is the per-scene MAN flag `FUN_8003AEB0` copies from `MAN[1] & 1` - the same byte the pause menu's save gate reads - and it is set on exactly the three kingdom world maps. So the forced-slow step is the **overworld's** step, not a scripted slow-walk: on a kingdom map the player always takes base step `5` and never runs. Combined with the `0xC00` speed multiplier each kingdom's entry script gives the player (`CC F8 40 00 0C 00 00`), that is `(5 * 0xC00) >> 12 = 3` units per `dt`; the retail overworld runs at `dt = 3`, and the 2-unit stepper rounds the `9` up to the `10` units per tile-step the state-poll captures record.
+
+The port, ticking per vsync, pays that `10` out over three ticks rather than rounding a per-vsync `3` up to `4`; see [`world-map.md`](world-map.md#overworld-walk-speed-and-clip).
 
 **Run is an exclusive or, not a button.** The two inputs are the held run button (`_DAT_8007B850 &` the mask config word `0x800846DC`) and the Field Move option word `0x800846CC` (= `0x80084140 + 0x58c`, the pause menu's Walk / Run row - see [`field-menu.md`](field-menu.md#options-screen)). The paired branches encode XOR: from the button-held side (`bnez` at `0x801D0370` → `0x801D0390`) a set option jumps *past* the `$s4 = 0xc` store, and from the button-clear side it falls *into* it. So the option sets the default and the button inverts it - hold to run when Walk is selected, hold to **walk** when Run is.
 

@@ -131,6 +131,15 @@ pub struct FieldLocomotion {
     /// zero. Only touched while [`crate::world::FieldLocomotion::precise_movement`] is active with a
     /// direction held; reset when input releases.
     pub precise_move_carry: (f32, f32),
+    /// The player's `+0x72` ramps: op `4C` nibble-4 sub-0 aimed at the player
+    /// (`CC F8 40 lo hi tlo thi` with a non-zero tick count) installs a slot of
+    /// retail's generic ramp pool (`FUN_8003C5F0`, kind 2, from the live
+    /// `+0x72` to the operand) and `FUN_80036D80` lerps it each frame
+    /// ([`crate::world::World::tick_player_scale_ramp`]). Only the player's
+    /// slot lives here: it is the one `+0x72` both play hosts read
+    /// ([`crate::world::World::player_render_scale`]). Cleared at scene entry
+    /// with the rest of the pool (`FUN_8003CDA8`).
+    pub player_scale_ramps: legaia_engine_vm::ambient_motion::RampScheduler,
     /// Last frame's field position for every actor the motion detector
     /// tracks - the player (from its [`crate::vm::ActorMoveState`]) and every
     /// entry of [`crate::world::FieldNpcState::positions`]. Rewritten each field tick by
@@ -303,6 +312,7 @@ impl FieldLocomotion {
             run_button_mask: crate::world::config::FIELD_RUN_BUTTON_MASK_DEFAULT,
             forced_slow: false,
             precise_move_carry: (0.0, 0.0),
+            player_scale_ramps: legaia_engine_vm::ambient_motion::RampScheduler::new(),
             motion_prev: std::collections::HashMap::new(),
             actor_moving: std::collections::HashSet::new(),
             last_move_dir_bits: 0,

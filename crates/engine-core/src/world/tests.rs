@@ -328,6 +328,7 @@ mod move_vm_flags;
 mod party_composition;
 mod physics_steal_shop;
 mod player_clip_pick;
+mod player_scale;
 mod save_state;
 mod script_teleport;
 mod scripted_menu_press;

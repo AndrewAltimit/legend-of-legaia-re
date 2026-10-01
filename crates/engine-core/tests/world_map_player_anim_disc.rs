@@ -152,7 +152,7 @@ fn map01_player_idles_on_the_party_bank_and_walks_on_the_kingdom_bank() {
     // Walking (Up is open from the map01 seat - see map01_overworld_walk_disc).
     let before = pos(&host);
     let mut walk_poses = HashSet::new();
-    for _ in 0..10 {
+    for _ in 0..39 {
         frame(&mut host, PadButton::Up.mask(), &scene_bundle);
         walk_poses.insert(pose_key(&host));
         let anim = host.world.locomotion.player_anim.as_ref().unwrap();
@@ -163,7 +163,7 @@ fn map01_player_idles_on_the_party_bank_and_walks_on_the_kingdom_bank() {
     let after = pos(&host);
     let dist = (after.0 - before.0).abs() + (after.1 - before.1).abs();
     eprintln!(
-        "[ran] walk: {} poses, {dist} units over 10 ticks",
+        "[ran] walk: {} poses, {dist} units over 39 ticks",
         walk_poses.len()
     );
     assert!(walk_poses.len() > 1, "the overworld walk clip animates");
@@ -171,13 +171,18 @@ fn map01_player_idles_on_the_party_bank_and_walks_on_the_kingdom_bank() {
         walk_poses.is_disjoint(&idle_poses),
         "walking poses come from the kingdom clip, not the idle loop"
     );
-    // ((5 * 0xC00) >> 12) = 3 a frame, rounded up by the 2-unit stepper.
-    assert_eq!(dist, 40, "the overworld slow step at the 0xC00 multiplier");
+    // ((5 * 0xC00) >> 12) * dt 3 = 9 a retail frame, rounded up to 10 by the
+    // 2-unit stepper: the captured map01 tile crossings are 130 units every
+    // 39 vsyncs, and the port's per-vsync tick lands the same displacement.
+    assert_eq!(
+        dist, 130,
+        "the overworld slow step at the 0xC00 multiplier, retail's 130 / 39"
+    );
 
     // No run on the overworld: the forced arm skips the run test, so a held
     // run button still walks at the slow step.
     let before = after;
-    for _ in 0..10 {
+    for _ in 0..39 {
         frame(
             &mut host,
             PadButton::Up.mask() | PadButton::Cross.mask(),
@@ -186,7 +191,7 @@ fn map01_player_idles_on_the_party_bank_and_walks_on_the_kingdom_bank() {
     }
     let now = pos(&host);
     let dist = (now.0 - before.0).abs() + (now.1 - before.1).abs();
-    assert_eq!(dist, 40, "no run on the overworld");
+    assert_eq!(dist, 130, "no run on the overworld");
 
     // Release: back to the party-bank idle.
     frame(&mut host, 0, &scene_bundle);

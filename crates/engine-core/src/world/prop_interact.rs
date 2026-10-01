@@ -309,7 +309,7 @@ impl World {
                 } else {
                     &mut id.ctx
                 };
-                let step = vm::field::step(&mut host, ctx, &id.bytecode, id.pc);
+                let step = field_step_routed(&mut host, ctx, &id.bytecode, id.pc);
                 if player_target && matches!(b & 0x7F, 0x2B..=0x2D) {
                     let hint = host.world.player_clip_frames_hint();
                     host.world.props.bank.player_clip(hint).flags = player_ctx.local_flags;

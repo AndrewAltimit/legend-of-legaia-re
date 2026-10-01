@@ -1525,20 +1525,55 @@ impl World {
     /// why the overworld player stands at three quarters of its town height.
     /// Both play hosts fold this into the player's draw.
     ///
-    /// A `0` word is retail's "do not draw" (`FUN_8001B964` returns at
-    /// `0x8001B9A0`); the port has no player-hide path, so it reads as `1.0`
-    /// rather than collapsing the mesh. `1.0` with no player actor.
+    /// A `0` word is retail's "do not draw": `FUN_8001B964` tests it first
+    /// (`lhu v0,0x72(s0)` / `beq v0,zero,0x8001BE20` at `0x8001B998..0x8001B9A0`)
+    /// and returns without emitting a packet. Cutscenes hide the player that
+    /// way while a stand-in walks (`CC F8 40 00 00 00 00`, see
+    /// [`Self::player_hidden`]), so the scale is `0.0` and both hosts skip the
+    /// draw. `1.0` with no player actor.
     ///
     /// REF: FUN_8001B964
     pub fn player_render_scale(&self) -> f32 {
-        let word = self
-            .player_actor_slot
+        f32::from(self.player_scale_word()) / 4096.0
+    }
+
+    /// `true` while the player's `+0x72` is `0` - retail's animated renderer
+    /// skips the actor outright (`FUN_8001B964` at `0x8001B9A0`). Both play
+    /// hosts drop the player's draw (textured and colour halves) on it.
+    ///
+    /// REF: FUN_8001B964
+    pub fn player_hidden(&self) -> bool {
+        self.player_scale_word() == 0
+    }
+
+    /// The player's live `+0x72`, `0x1000` with no player actor.
+    fn player_scale_word(&self) -> u16 {
+        self.player_actor_slot
             .and_then(|s| self.actors.get(s as usize))
-            .map_or(0x1000, |a| a.move_state.field_72);
-        if word == 0 {
-            1.0
-        } else {
-            f32::from(word) / 4096.0
+            .map_or(0x1000, |a| a.move_state.field_72)
+    }
+
+    /// One frame of the player's `+0x72` ramps - the slots
+    /// [`crate::world::FieldLocomotion::player_scale_ramps`] holds, lerped by
+    /// retail's ramp ticker (`end + (start - end) * remaining / total`,
+    /// `remaining` down by the frame step) and stored as a halfword (kind 2).
+    /// A cutscene's `CC F8 40 00 10 64 00` grows the player back from hidden
+    /// over 100 frames this way.
+    ///
+    /// REF: FUN_80036D80
+    pub(crate) fn tick_player_scale_ramp(&mut self) {
+        if self.locomotion.player_scale_ramps.active() == 0 {
+            return;
+        }
+        let speed = self.move_vm.ramp_ratio.max(1);
+        let writes = self.locomotion.player_scale_ramps.tick(speed);
+        let Some(slot) = self.player_actor_slot.map(usize::from) else {
+            return;
+        };
+        if let Some(a) = self.actors.get_mut(slot) {
+            for w in writes {
+                a.move_state.field_72 = w.value as u16;
+            }
         }
     }
 

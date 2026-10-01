@@ -112,6 +112,7 @@ impl World {
         // REF: FUN_801D1344, FUN_801D1BA0
         self.field_settle_clip_tail();
         self.tick_field_system_channel_clip_reset();
+        self.tick_player_scale_ramp();
         self.detect_field_actor_motion();
         self.tick_field_player_anim();
 
@@ -172,10 +173,12 @@ impl World {
     /// off [`Self::field_base_step`] - and the frame writes the same clip base
     /// (idle `2` / walk `1` / run `3`) the settle tail binds
     /// ([`Self::field_settle_clip_tail`]). What differs on a kingdom map is
-    /// the multiplier: each kingdom's entry script sets the player's `+0x72`
-    /// to `0xC00` (`CC F8 40 00 0C 00 00`), so the overworld figure walks at
-    /// three quarters of the town pace (6 units a vsync, 9 running) - the
-    /// same word the per-actor draw reads as its render scale.
+    /// the multiplier and the base step: each kingdom's entry script sets the
+    /// player's `+0x72` to `0xC00` (`CC F8 40 00 0C 00 00`) - the same word
+    /// the per-actor draw reads as its render scale - and `_DAT_8007B6A8`
+    /// forces the slow step `5`, so a retail frame at the overworld's frame
+    /// step `3` walks `10` units ([`WORLD_MAP_FRAME_STEP`], paid out over
+    /// three vsync ticks through [`crate::world::WorldMapState::walk_carry`]).
     ///
     /// No-op without a live player actor, while a dialog owns the frame, in the
     /// top-view debug camera, or while the player's movement-disabled flag
@@ -255,6 +258,7 @@ impl World {
             }
         }
         if dir_bits == 0 {
+            self.world_map.walk_carry = 0;
             return;
         }
         // A held direction walks the clip even when a wall blocks the step
@@ -276,10 +280,12 @@ impl World {
                 .rem_euclid(4096) as i16;
             self.actors[slot].move_state.render_26 = heading;
         }
-        // speed = ((base_step * player[+0x72]) >> 12) * DAT_1F800393.
+        // speed = ((base_step * player[+0x72]) >> 12) * DAT_1F800393, for
+        // one retail frame at the overworld's frame step
+        // ([`WORLD_MAP_FRAME_STEP`]).
         let mult = i32::from(self.actors[slot].move_state.field_72);
-        let ratio = i32::from(self.move_vm.ramp_ratio.max(1));
-        let mut speed = ((self.field_base_step() * mult) >> 12) * ratio;
+        let dt = WORLD_MAP_FRAME_STEP;
+        let mut speed = ((self.field_base_step() * mult) >> 12) * dt;
         // Diagonal normalise: when both axes are moving, x0.75 - mirroring the
         // field controller (`FUN_801d01b0`) and the retail world-map walk
         // overlay (`speed -= speed >> 2`). `advance_with_collision` steps both
@@ -288,6 +294,21 @@ impl World {
         if dx != 0 && dz != 0 {
             speed -= speed >> 2;
         }
+        if speed <= 0 {
+            self.world_map.walk_carry = 0;
+            return;
+        }
+        // Retail commits that frame step in whole 2-unit sub-steps (the
+        // stepper loops while the remainder is positive, so `9` walks `10`),
+        // once per `dt` vsyncs. The port ticks every vsync: carry the rounded
+        // frame step in `1/dt` units and commit the sub-steps it has paid
+        // for, so the displacement over time is retail's - `10` units every
+        // `3` vsyncs, `130` per `39` - rather than `4` every vsync.
+        let frame_units = (speed + FIELD_STEP_UNIT - 1) / FIELD_STEP_UNIT * FIELD_STEP_UNIT;
+        let per_sub_step = FIELD_STEP_UNIT * dt;
+        let carry = self.world_map.walk_carry + frame_units;
+        let speed = (carry / per_sub_step) * FIELD_STEP_UNIT;
+        self.world_map.walk_carry = carry % per_sub_step;
         if speed <= 0 {
             return;
         }

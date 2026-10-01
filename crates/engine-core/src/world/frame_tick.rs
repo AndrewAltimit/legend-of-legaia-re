@@ -1686,6 +1686,7 @@ impl World {
                 // so the walk clip is selected by whether an actor moved, not
                 // by which subsystem moved it - the script paths commit a
                 // position and raise no flag of their own.
+                self.tick_player_scale_ramp();
                 self.detect_field_actor_motion();
                 // Locomotion animation: idle vs walk off the movement flag
                 // the step above just set, folded into the player's

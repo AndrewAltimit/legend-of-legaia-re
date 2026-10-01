@@ -1479,10 +1479,39 @@ The port runs that controller's pieces in the world-map tick: the base-step
 selector (`World::field_base_step`, which reads `_DAT_8007B6A8` as
 `World::party.scene_save_allowed`), the clip-base store, the settle's clip
 tail, the system channel's idle store and the clip advance into the player's
-`pose_frame`. The system-script step (`World::step_field`) lands an
-`0xF8`-aimed op's `+0x72` write on the player, and both play hosts draw the
-player at `World::player_render_scale`. Disc-gated pin:
-`engine-core/tests/world_map_player_anim_disc.rs`.
+`pose_frame`. Both play hosts draw the player at `World::player_render_scale`.
+Disc-gated pin: `engine-core/tests/world_map_player_anim_disc.rs` (130 units
+over 39 ticks).
+
+**Displacement over time.** The port ticks once per vsync, so it cannot take
+retail's frame step literally: at `dt = 1` the `3`-unit step rounds up to `4`
+every tick, 20% faster than retail's `10` every three vsyncs. The overworld
+walk instead computes the step for one retail frame at `dt = 3`
+(`WORLD_MAP_FRAME_STEP`), rounds it to whole 2-unit sub-steps as retail's
+stepper does, and pays it out over three ticks through a carry
+(`WorldMapState::walk_carry`, cleared on release) - `2, 4, 4` units, `130`
+per `39` ticks. A town needs no carry: its steps (`8` walk, `12` run at
+`0x1000`) are whole sub-steps at any frame step. The walk clip needs no
+correction either: `FUN_800204F8` multiplies its cursor step by the same
+`DAT_1F800393`, so a clip advances at one rate per vsync whatever the frame
+step.
+
+**Hiding and resizing the player.** `+0x72` is also what cutscenes use to hide
+the player: `FUN_8001B964` returns before drawing an actor whose word is `0`
+(`0x8001B9A0`), and the disc carries `CC F8 40 00 00 00 00` throughout its
+cutscene and talk scripts (a stand-in walks while the player is hidden), with
+`CC F8 40 00 10 00 00` to restore it and a few tick-counted ramps
+(`CC F8 40 00 10 64 00`, back to full size over 100 frames). The branch lands
+on the routine's shadow tail, so a hidden actor still casts its drop shadow.
+`FUN_8003C83C` resolves `0xF8` to the live player whichever script issues the
+op, so the port routes it the same way from every runner (system script,
+cutscene timeline, placement channels, inline talk, prop run): see
+`field_step_routed`. A tick-counted form installs a kind-2 slot of the generic
+ramp pool (`FUN_8003C5F0`, from the live word to the operand), which
+`World::tick_player_scale_ramp` lerps each frame; scene entry clears it with
+the rest of the pool. A `0` word is `World::player_hidden`, and
+`player_render_scale` is `0.0` - the posed mesh collapses on both hosts and the
+drop shadow stays.
 
 ### Overworld collision / walkability
 

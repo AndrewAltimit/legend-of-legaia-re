@@ -105,6 +105,18 @@ pub(crate) const FIELD_BASE_STEP_FORCED_SLOW: i32 = 5;
 /// first two globals, so the constant is recorded and the arm is not taken.
 #[allow(dead_code)]
 pub(crate) const FIELD_BASE_STEP_DEBUG_TURBO: i32 = 0x18;
+/// The frame step `DAT_1F800393` retail runs the kingdom world maps at: three
+/// vsyncs per game frame, measured off the state-poll `dt` rows of every
+/// retail overworld capture (a town runs at `1` or `2`, where every walk step
+/// is already a whole number of 2-unit sub-steps per vsync).
+///
+/// The port ticks once per vsync, so the overworld walk spreads one retail
+/// frame's displacement - `((5 * 0xC00) >> 12) * 3 = 9`, rounded up to `10`
+/// by the 2-unit stepper - across three ticks
+/// ([`crate::world::WorldMapState::walk_carry`]). Ticking at `dt = 1` instead
+/// rounds every tick's `3` up to `4`: `4` units a vsync against retail's
+/// `10 / 3`.
+pub(crate) const WORLD_MAP_FRAME_STEP: i32 = 3;
 /// Per-iteration advance of the locomotion step loop (retail commits in
 /// 2-unit increments per axis).
 pub(crate) const FIELD_STEP_UNIT: i32 = 2;

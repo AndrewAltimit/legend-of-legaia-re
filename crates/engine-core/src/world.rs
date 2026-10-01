@@ -65,7 +65,7 @@ use vm::move_vm::ActorState as MoveActorState;
 
 use vm_hosts::{
     ActorVmHostImpl, BattleHostImpl, EffectHostImpl, FieldCarrierHostImpl, FieldHostImpl,
-    MoveVmHostImpl, WorldMapEntityHostImpl,
+    MoveVmHostImpl, WorldMapEntityHostImpl, field_step_routed,
 };
 
 mod ambient_fx_state;
