@@ -45,10 +45,11 @@ fn press(world: &mut World, mask: u16) {
     step(world, 0);
 }
 
-/// Drive a match to a player win: the player throws the special, which is an
-/// unbeatable exchange win, until two rounds are taken.
+/// Drive a match to a player win: the player cycles the three throws, so
+/// every exchange is a win or a draw, and either one-shots the inert foe.
 fn play_to_player_win(world: &mut World) {
-    for _ in 0..100_000 {
+    let throws = [PadButton::Square, PadButton::Circle, PadButton::Cross];
+    for i in 0..100_000 {
         let f = world
             .minigames
             .baka_fighter
@@ -57,16 +58,15 @@ fn play_to_player_win(world: &mut World) {
         if f.match_over() {
             return;
         }
-        // Triangle = the special (type 4) in the world's pad mapping.
-        press(world, PadButton::Triangle.mask());
+        press(world, throws[i % 3].mask());
     }
     panic!("match did not terminate");
 }
 
 fn start(world: &mut World) {
     world.mode = SceneMode::Field;
-    // Player power large enough to KO in one landed special; opponent inert.
-    let fight = BakaFight::new(cfg(0, 4000, 0), cfg(1, 0, PRIZE), [0, 0], 0xBAA5EED);
+    // Player power large enough to KO in one landed hit; opponent inert.
+    let fight = BakaFight::new(cfg(0, 4000, 0), cfg(1, 0, PRIZE), 0xBAA5EED);
     world.enter_baka_fighter(fight);
 }
 
@@ -203,7 +203,7 @@ fn a_lost_match_installs_no_tally_and_pays_nothing() {
     // The player chips (power 1 nets 0 damage on a fresh streak); the CPU
     // one-shots. The CPU takes both rounds long before the chip damage adds
     // up, so this is a loss - deterministic under the fixed seed.
-    let fight = BakaFight::new(cfg(0, 1, 0), cfg(1, 4000, PRIZE), [0, 0], 0xBAA5EED);
+    let fight = BakaFight::new(cfg(0, 1, 0), cfg(1, 4000, PRIZE), 0xBAA5EED);
     world.enter_baka_fighter(fight);
     for _ in 0..100_000 {
         if world

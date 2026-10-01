@@ -104,7 +104,7 @@ fn baka_fight_for_test() -> legaia_engine_core::baka_fighter::BakaFight {
         gold_reward: 0,
         ai_pattern: Vec::new(),
     };
-    BakaFight::new(cfg(0), cfg(1), [0, 0], 0xBAA5EED)
+    BakaFight::new(cfg(0), cfg(1), 0xBAA5EED)
 }
 
 fn slot_machine_for_test() -> legaia_engine_core::slot_machine::SlotMachine {

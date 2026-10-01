@@ -18,14 +18,16 @@
 //! ([`BakaFight::from_tables`]) carries each fighter's action-record speed and
 //! strike-frame column ([`StrikeTable`]) and runs retail's frame cursor over
 //! the chosen attack ([`StrikeClock`]): the exchange is booked on the tick the
-//! winner's strike keyframe is crossed, the special's round win is its *last*
-//! strike landing, and a special with strikes left keeps playing after its
-//! first. What the port still does not model is the clip **tail** - retail
+//! winner's strike keyframe is crossed. The special (type 4) is no player
+//! choice: it is retail's auto-finisher, thrown by whoever just put the foe at
+//! 0 HP, and the round is won by its *last* strike landing - a special with
+//! strikes left keeps playing after its first. What the port still does not model is the clip **tail** - retail
 //! plays each attack clip to its ANM frame count and only then drops back to
 //! idle, while the port clears the exchange once it is booked and paces
 //! re-entry with the retail cooldown decay. A fight built from bare configs
 //! ([`BakaFight::new`]) has no strike data and resolves the tick both sides
-//! have chosen, with the special's charge standing in for its keyframe gate.
+//! have chosen; with no special clip to play, its knockout ends the round on
+//! the spot.
 //!
 //! Chain: retail `FUN_801d3468` (match resolution SM) → `FUN_801d3a14`
 //! (exchange win-condition) → `FUN_801d3b18` (damage) → `FUN_801d6660`
@@ -205,11 +207,6 @@ struct FighterState {
     cooldown: i32,
     /// CPU scripted-pattern cursor (`&DAT_801dc044[slot]`, counts DOWN).
     ai_cursor: usize,
-    /// Frames the current special has charged (host view of the retail
-    /// keyframe gate - see [`BakaFight::choose`]). Used only by a fight built
-    /// without strike tables; with them the real keyframe gate replaces it
-    /// ([`StrikeClock`]).
-    special_charge: u32,
     /// The combat tick's frame cursor over the chosen attack's action record.
     clock: StrikeClock,
 }
@@ -226,7 +223,6 @@ impl FighterState {
             crit_pending: false,
             cooldown: 0,
             ai_cursor: 0,
-            special_charge: 0,
             clock: StrikeClock::default(),
         }
     }
@@ -238,7 +234,6 @@ impl FighterState {
         self.committed = false;
         self.crit_pending = false;
         self.cooldown = COOLDOWN_RESET;
-        self.special_charge = 0;
         self.clock = StrikeClock::default();
     }
 }
@@ -488,12 +483,6 @@ pub enum MatchPhase {
     MatchOver(usize),
 }
 
-/// Frames a special must charge before it lands as a full (round-winning) hit.
-/// Host view of the retail final-keyframe gate: the special's keyframe count
-/// (action record `+0x1c`, 1..=5 corpus-wide) times the sub-keyframe frame
-/// scale; a special resolved earlier still wins the exchange but not the round.
-pub const SPECIAL_CHARGE_FRAMES_PER_KEYFRAME: u32 = 4;
-
 /// The SFX cue the duel fires when an exchange's damage lands.
 ///
 /// Retail queues sound by writing a cue id straight into the 4-entry ring at
@@ -525,9 +514,6 @@ pub struct BakaFight {
     cues: Vec<u8>,
     /// Which slots the CPU picker drives (slot 1 in retail; both for demos).
     ai_controlled: [bool; 2],
-    /// Special full-charge gate per slot, in frames (from the action set's
-    /// special keyframe count).
-    special_full_frames: [u32; 2],
     /// Round index (`DAT_801dbf20`).
     round: u32,
     /// Per-exchange settle timer (`DAT_801dbf54`). No seeder exists in the
@@ -701,23 +687,13 @@ impl BakaScoreTables {
 
 impl BakaFight {
     /// Start a best-of-3 match: `player_cfg` in slot 0 (pad-driven),
-    /// `opponent_cfg` in slot 1 (CPU picker). `special_keyframes` are the two
-    /// fighters' special keyframe counts (action record `+0x1c`).
-    pub fn new(
-        player_cfg: FighterConfig,
-        opponent_cfg: FighterConfig,
-        special_keyframes: [i32; 2],
-        seed: u32,
-    ) -> Self {
+    /// `opponent_cfg` in slot 1 (CPU picker).
+    pub fn new(player_cfg: FighterConfig, opponent_cfg: FighterConfig, seed: u32) -> Self {
         Self {
             cfg: [player_cfg, opponent_cfg],
             f: [FighterState::new(), FighterState::new()],
             cues: Vec::new(),
             ai_controlled: [false, true],
-            special_full_frames: [
-                special_keyframes[0].max(0) as u32 * SPECIAL_CHARGE_FRAMES_PER_KEYFRAME,
-                special_keyframes[1].max(0) as u32 * SPECIAL_CHARGE_FRAMES_PER_KEYFRAME,
-            ],
             round: 0,
             settle_timer: 0,
             phase: MatchPhase::Fighting,
@@ -989,11 +965,12 @@ impl BakaFight {
     /// left its duel state: the tally, the "NEXT GAME / PAY OUT" choice and
     /// the exit. While the cabinet is in the duel state the port keeps
     /// feeding zero, because that state's one pad read is the pause edge
-    /// `0x110`, and Triangle - one of its bits - is the port's special attack
-    /// button; the in-duel pause menu stays unreached on every host. The
-    /// port's cabinet stays in the duel state up to `0xB5` frames past the
-    /// deciding exchange (its round timer is its own), so gating on the
-    /// match alone let a special thrown in that window open the pause menu.
+    /// `0x110`, and Triangle - one of its bits - is the button the round
+    /// setup's cameo test reads held; the in-duel pause menu stays unreached
+    /// on every host. The port's cabinet stays in the duel state up to `0xB5`
+    /// frames past the deciding exchange (its round timer is its own), so
+    /// gating on the match alone let a Triangle pressed in that window open
+    /// the pause menu.
     pub fn set_cabinet_pad(&mut self, edge: u16) {
         self.cabinet_pad = edge;
     }
@@ -1013,8 +990,6 @@ impl BakaFight {
             && let (Some(opp), Some(act)) = (t.0.get(roster), t.1.get(roster))
         {
             self.cfg[1] = FighterConfig::from_tables(opp, act);
-            let kf = act.keyframes[legaia_asset::baka_opponents::ACTION_SPECIAL];
-            self.special_full_frames[1] = kf.max(0) as u32 * SPECIAL_CHARGE_FRAMES_PER_KEYFRAME;
             if let Some(st) = self.strike.as_mut() {
                 st[1] = StrikeTable::from_actions(act);
                 if let Some(h) = self.roster_clips.as_ref().and_then(|r| r.get(roster)) {
@@ -1118,7 +1093,7 @@ impl BakaFight {
             // The host's packed edge, but only once the match is decided and
             // the cabinet has left the duel state (see `set_cabinet_pad`): the
             // duel band's one read is the pause edge `0x110`, which overlaps
-            // the port's Triangle special, and the port's cabinet sits in the
+            // the cameo's held Triangle, and the port's cabinet sits in the
             // duel state for up to `0xB5` frames after the deciding exchange.
             pad_edge: if self.cabinet.front_end()
                 || matches!(self.phase, MatchPhase::MatchOver(_))
@@ -1180,8 +1155,6 @@ impl BakaFight {
             return;
         };
         self.cfg[0] = FighterConfig::from_tables(rec, act);
-        let kf = act.keyframes[legaia_asset::baka_opponents::ACTION_SPECIAL];
-        self.special_full_frames[0] = kf.max(0) as u32 * SPECIAL_CHARGE_FRAMES_PER_KEYFRAME;
         if let Some(st) = self.strike.as_mut() {
             st[0] = StrikeTable::from_actions(act);
             if let Some(h) = self.roster_clips.as_ref().and_then(|r| r.get(roster)) {
@@ -1248,10 +1221,6 @@ impl BakaFight {
             opponents.get(opponent_roster)?,
             actions.get(opponent_roster)?,
         );
-        let kf = [
-            actions[player_roster].keyframes[legaia_asset::baka_opponents::ACTION_SPECIAL],
-            actions[opponent_roster].keyframes[legaia_asset::baka_opponents::ACTION_SPECIAL],
-        ];
         // The cabinet's developer editor dumps these same tables, so a duel
         // built from the disc hands them straight over; the fight keeps both
         // for the between-rung installs.
@@ -1259,7 +1228,7 @@ impl BakaFight {
             StrikeTable::from_actions(&actions[player_roster]),
             StrikeTable::from_actions(&actions[opponent_roster]),
         ];
-        let mut fight = Self::new(p, o, kf, seed)
+        let mut fight = Self::new(p, o, seed)
             .with_action_tables(actions.to_vec())
             .with_strike_tables(strike);
         fight.stand_off = [
@@ -1304,6 +1273,7 @@ impl BakaFight {
     /// choice pending, cooldown elapsed).
     pub fn can_choose(&self, slot: usize) -> bool {
         self.phase == MatchPhase::Fighting
+            && self.f[slot].hp > 0
             && self.f[slot].chosen.is_none()
             && !self.f[slot].committed
             && self.f[slot].cooldown <= 0
@@ -1367,13 +1337,15 @@ impl BakaFight {
     }
 
     /// Commit an attack for `slot` this exchange. Returns `false` (ignored)
-    /// while the fighter can't act - see [`Self::can_choose`].
+    /// while the fighter can't act - see [`Self::can_choose`] - and always
+    /// for [`BakaAttack::Special`]: type 4 is not a button. Retail's combat
+    /// tick throws it on its own, as the finisher against a foe already at
+    /// 0 HP (see [`Self::finish_or_end_round`]).
     pub fn choose(&mut self, slot: usize, attack: BakaAttack) -> bool {
-        if !self.can_choose(slot) {
+        if attack == BakaAttack::Special || !self.can_choose(slot) {
             return false;
         }
         self.f[slot].chosen = Some(attack);
-        self.f[slot].special_charge = 0;
         self.commit(slot, attack);
         true
     }
@@ -1418,24 +1390,15 @@ impl BakaFight {
         self.settle_timer = 0;
         let p1 = self.f[0].chosen.map(BakaAttack::type_id).unwrap_or(0);
         let p2 = self.f[1].chosen.map(BakaAttack::type_id).unwrap_or(0);
-        // The special is an unbeatable win (fighter 0 checked first). Host
-        // pacing: a held special resolves once fully charged (the retail
-        // final-keyframe hit = the round win) or the moment the opponent
-        // commits an attack (guard-break: an ordinary exchange win).
-        //
-        // With strike tables the special wins outright, exactly as the retail
-        // resolver's first two tests do (`0x801D3A54` / `0x801D3A5C`: a type
-        // of 4 on either side returns that side before any other check); the
-        // keyframe gate in the tick is what paces it.
-        let striking = self.strike.is_some();
-        if p1 == 4
-            && (striking || self.f[0].special_charge >= self.special_full_frames[0] || p2 != 0)
-        {
+        // The special is an unbeatable win, fighter 0 checked first - the
+        // retail resolver's first two tests (`0x801D3A54` / `0x801D3A5C`: a
+        // type of 4 on either side returns that side before any other
+        // check). Only the auto-finisher ever throws it, and the keyframe
+        // gate in the tick is what paces it.
+        if p1 == 4 {
             return ExchangeOutcome::FighterWins(0);
         }
-        if p2 == 4
-            && (striking || self.f[1].special_charge >= self.special_full_frames[1] || p1 != 0)
-        {
+        if p2 == 4 {
             return ExchangeOutcome::FighterWins(1);
         }
         if p1 == 0 && p2 == 0 {
@@ -1470,21 +1433,16 @@ impl BakaFight {
         self.f[loser].hits_taken += 1;
         let winner_type = self.f[winner].chosen.map(BakaAttack::type_id).unwrap_or(0);
 
-        // Special full-hit: only a fully-charged special scores the immediate
-        // round win (retail: landed on the action's final sub-keyframe).
-        //
-        // With strike tables this is retail's own test: the winner's landed
+        // Special full-hit: the special scores the immediate round win only
+        // when it lands on the action's final sub-keyframe - the winner's landed
         // sub-keyframe (block `+0x98`) is the special record's last
         // (`record[+0x1C] - 1`, `0x801D3C00..0x801D3C0C`). The damage kernel
         // also hands the winner's strike back to the lookup (`+0x0C = 2`,
         // `0x801D3EB0`), which is what lets the special's next strike land.
-        let full_hit = match self.strike.as_ref() {
-            Some(st) => {
-                let n = st[winner].frames[legaia_asset::baka_opponents::ACTION_SPECIAL].len();
-                n > 0 && self.f[winner].clock.landed == Some(n - 1)
-            }
-            None => self.f[winner].special_charge >= self.special_full_frames[winner],
-        };
+        let full_hit = self.strike.as_ref().is_some_and(|st| {
+            let n = st[winner].frames[legaia_asset::baka_opponents::ACTION_SPECIAL].len();
+            n > 0 && self.f[winner].clock.landed == Some(n - 1)
+        });
         if self.f[winner].clock.state == StrikeState::Landed {
             self.f[winner].clock.state = StrikeState::Consumed;
         }
@@ -1518,11 +1476,11 @@ impl BakaFight {
         // opponent's HP already being 0 (`overlay_baka_fighter_801d3f44.txt`),
         // and the kernel's HP write is `hp > 0`-gated
         // (`overlay_baka_fighter_801d3b18.txt` `0x801d3e58..0x801d3e68`:
-        // `blez` skips the `subu`). The port's chargeable special (a host
-        // pacing enhancement) reaches this kernel against a live foe, where
-        // the raw arithmetic *healed* the loser by 64; the faithful HP delta
-        // for a special-won exchange is zero - its payoff is the exchange /
-        // round win, never HP.
+        // `blez` skips the `subu`). A special that wins against a foe still
+        // standing (the other fighter's special, or a test driving the
+        // resolver) would have the raw arithmetic *heal* the loser by 64;
+        // the faithful HP delta for a special-won exchange is zero - its
+        // payoff is the exchange / round win, never HP.
         if winner_type == 4 {
             dmg = 0;
         }
@@ -1556,8 +1514,31 @@ impl BakaFight {
         for s in 0..2 {
             self.f[s].chosen = None;
             self.f[s].committed = false;
-            self.f[s].special_charge = 0;
         }
+    }
+
+    /// A knockout: `winner` has just put the foe at 0 HP.
+    ///
+    /// With strike data this is retail's auto-finisher gate (own HP `!= 0`,
+    /// foe HP `== 0`, round undecided - the slot-0 and slot-1 branches of
+    /// `FUN_801d3f44` alike): the winner throws the special on its own, and
+    /// the round is credited by its last strike landing, inside the damage
+    /// kernel. A fight with no strike data, or a special with no strike
+    /// frames to land, has no finisher to play and ends the round here.
+    ///
+    /// REF: FUN_801d3f44
+    fn finish_or_end_round(&mut self, winner: usize) {
+        let has_finisher = self.f[winner].hp > 0
+            && self.strike.as_ref().is_some_and(|st| {
+                !st[winner].frames[legaia_asset::baka_opponents::ACTION_SPECIAL].is_empty()
+            });
+        if !has_finisher {
+            self.end_round(winner, false);
+            return;
+        }
+        self.end_exchange();
+        self.f[winner].chosen = Some(BakaAttack::Special);
+        self.commit(winner, BakaAttack::Special);
     }
 
     /// End the current round with `winner` (KO path credits here; a landed
@@ -1784,13 +1765,6 @@ impl BakaFight {
             }
         }
 
-        // A held special charges toward its full (round-winning) hit.
-        for s in 0..2 {
-            if self.f[s].chosen == Some(BakaAttack::Special) {
-                self.f[s].special_charge += frame_step.max(0) as u32;
-            }
-        }
-
         // The strike clocks (retail's per-fighter combat tick, which runs
         // before the resolution SM reads the `+0x0C` words it leaves).
         if let Some(st) = self.strike.as_ref() {
@@ -1894,8 +1868,8 @@ impl BakaFight {
                 });
                 if special_round_win {
                     self.end_round(w, true);
-                } else if self.f[l].hp == 0 {
-                    self.end_round(w, false);
+                } else if self.f[l].hp == 0 && self.f[w].chosen != Some(BakaAttack::Special) {
+                    self.finish_or_end_round(w);
                 }
             }
             ExchangeOutcome::Draw => {
@@ -1928,8 +1902,8 @@ impl BakaFight {
                 match (self.f[0].hp == 0, self.f[1].hp == 0) {
                     // Double KO replays the round: no round win is credited.
                     (true, true) => self.phase = MatchPhase::RoundOver(0),
-                    (true, false) => self.end_round(1, false),
-                    (false, true) => self.end_round(0, false),
+                    (true, false) => self.finish_or_end_round(1),
+                    (false, true) => self.finish_or_end_round(0),
                     (false, false) => {}
                 }
             }
@@ -2913,7 +2887,7 @@ mod tests {
     }
 
     fn fight() -> BakaFight {
-        let mut f = BakaFight::new(cfg(0, 10), cfg(1, 10), [2, 2], 1);
+        let mut f = BakaFight::new(cfg(0, 10), cfg(1, 10), 1);
         f.ai_controlled = [false, false]; // deterministic: drive both by hand
         f
     }
@@ -2923,7 +2897,7 @@ mod tests {
     /// and after each tick - so an asynchronous host has it staged in time.
     #[test]
     fn every_announcer_line_is_prestaged_before_it_fires() {
-        let mut f = BakaFight::new(cfg(0, 10), cfg(1, 10), [2, 2], 1).with_intro_card();
+        let mut f = BakaFight::new(cfg(0, 10), cfg(1, 10), 1).with_intro_card();
         f.ai_controlled = [true, true];
         let mut listed = f.take_xa_prestage();
         assert!(!listed.is_empty(), "the entry list");
@@ -3011,12 +2985,36 @@ mod tests {
         assert_eq!(f.hp(1), HP_START - 256);
     }
 
+    /// Throw the special the way the auto-finisher does (it is never a
+    /// [`BakaFight::choose`] option).
+    fn throw_special(f: &mut BakaFight, slot: usize) {
+        f.f[slot].chosen = Some(BakaAttack::Special);
+        f.commit(slot, BakaAttack::Special);
+    }
+
+    #[test]
+    fn the_special_is_not_a_choice() {
+        // Retail's type 4 has no button: a host asking for it is refused,
+        // and the exchange stays open.
+        let mut f = fight();
+        assert!(!f.choose(0, BakaAttack::Special));
+        assert_eq!(f.chosen(0), None);
+        f.tick(1);
+        assert!(f.last_exchange().is_none());
+        assert_eq!(f.round_wins(0), 0);
+    }
+
     #[test]
     fn special_beats_everything_with_fighter0_priority() {
-        let mut f = fight();
-        assert!(f.choose(0, BakaAttack::Special));
-        assert!(f.choose(1, BakaAttack::Special));
-        f.tick(1);
+        let mut f = striking_fight(16, &[2], &[1]);
+        throw_special(&mut f, 0);
+        throw_special(&mut f, 1);
+        let mut ticks = 0;
+        while f.last_exchange().is_none() {
+            f.tick(1);
+            ticks += 1;
+            assert!(ticks < 10, "the specials strike");
+        }
         let r = f.last_exchange().expect("resolved");
         assert_eq!(r.winner, 0);
         // Special power is 0: the hit itself is the combo term only.
@@ -3027,39 +3025,72 @@ mod tests {
     fn special_won_exchange_never_moves_hp_and_never_heals() {
         // The regression at the value, not just the sign. The special's action
         // record carries power 0 (all 17 fighters on the disc), so the raw
-        // kernel total for a guard-break special on a fresh combo is the bare
-        // combo term `(0-1)*0x40 = -64` - which used to be *applied*, healing
-        // the foe from 3200 to 3264 ("you hit -64"). Retail never reaches
-        // that state: type 4 is the auto-finisher against a foe already at
-        // 0 HP, and the kernel's HP write is `hp > 0`-gated
-        // (`overlay_baka_fighter_801d3b18.txt` `0x801d3e58`). A special-won
-        // exchange therefore lands exactly zero HP change.
-        let mut f = fight();
-        assert!(f.choose(0, BakaAttack::Special));
-        assert!(f.choose(1, BakaAttack::A)); // commits -> guard-break resolve
-        f.tick(1);
+        // kernel total for a special on a fresh combo is the bare combo term
+        // `(0-1)*0x40 = -64` - which used to be *applied*, healing the foe
+        // from 3200 to 3264 ("you hit -64"). The kernel's HP write is
+        // `hp > 0`-gated (`overlay_baka_fighter_801d3b18.txt` `0x801d3e58`),
+        // so a special-won exchange lands exactly zero HP change.
+        let mut f = striking_fight(16, &[9], &[1, 3]);
+        throw_special(&mut f, 0);
+        assert!(f.choose(1, BakaAttack::A));
+        let mut ticks = 0;
+        while f.last_exchange().is_none() {
+            f.tick(1);
+            ticks += 1;
+            assert!(ticks < 10, "the special's first strike lands");
+        }
         let r = f.last_exchange().expect("resolved");
         assert_eq!(r.winner, 0, "the special wins the exchange");
-        assert!(!r.special_round_win, "not fully charged - no round win");
+        assert!(!r.special_round_win, "first of two strikes - no round win");
         assert_eq!(r.damage, 0, "a special-won exchange's HP delta is zero");
         assert_eq!(f.hp(1), HP_START, "the foe is neither damaged nor healed");
         assert_eq!(f.hp(0), HP_START);
     }
 
     #[test]
-    fn charged_special_wins_the_round_outright() {
-        let mut f = fight();
-        assert!(f.choose(0, BakaAttack::Special));
-        // Charge to full (2 keyframes * 4 frames); the exchange resolves the
-        // tick the charge completes.
+    fn a_knockout_throws_the_finisher_and_its_last_strike_takes_the_round() {
+        // Attacks strike on frame 2, the special on frames 1 and 3.
+        let mut f = striking_fight(16, &[2], &[1, 3]);
+        f.f[1].hp = 1;
+        assert!(f.choose(0, BakaAttack::B)); // B beats A
+        assert!(f.choose(1, BakaAttack::A));
         let mut ticks = 0;
-        while f.last_exchange().is_none() {
+        while f.hp(1) != 0 {
             f.tick(1);
             ticks += 1;
-            assert!(ticks <= 8, "charged special resolves at full charge");
+            assert!(ticks < 10, "the knockout lands");
         }
-        let r = f.last_exchange().expect("resolved");
-        assert!(r.special_round_win);
+        // Retail's auto-finisher gate: the round is not over at the KO; the
+        // winner throws the special on its own.
+        assert_eq!(f.phase(), MatchPhase::Fighting);
+        assert_eq!(f.chosen(0), Some(BakaAttack::Special));
+        assert_eq!(f.round_wins(0), 0);
+        // The downed foe cannot act while the finisher plays.
+        assert!(!f.can_choose(1));
+        assert!(!f.choose(1, BakaAttack::C));
+        for _ in 0..40 {
+            f.tick(1);
+            if f.round_wins(0) == 1 {
+                break;
+            }
+        }
+        assert_eq!(
+            f.round_wins(0),
+            1,
+            "the finisher's last strike credits the round"
+        );
+        assert!(f.last_exchange().unwrap().special_round_win);
+        assert!(matches!(f.phase(), MatchPhase::RoundOver(0)));
+    }
+
+    #[test]
+    fn a_bare_config_knockout_ends_the_round_on_the_spot() {
+        let mut f = fight();
+        f.f[1].hp = 1;
+        assert!(f.choose(0, BakaAttack::B));
+        assert!(f.choose(1, BakaAttack::A));
+        f.tick(1);
+        assert_eq!(f.hp(1), 0);
         assert_eq!(f.round_wins(0), 1);
         assert!(matches!(f.phase(), MatchPhase::RoundOver(0)));
     }
@@ -3302,7 +3333,7 @@ mod tests {
     fn hp_tier_keying_shifts_the_multipliers() {
         let mut player = cfg(0, 10);
         player.atk_tiers = [0, 50, 100]; // stronger as HP drops
-        let mut f = BakaFight::new(player, cfg(1, 10), [2, 2], 1);
+        let mut f = BakaFight::new(player, cfg(1, 10), 1);
         f.ai_controlled = [false, false];
         // Drop fighter 0 into the low band by rigging HP directly.
         f.f[0].hp = HP_TIER_MID - 1;
@@ -3317,7 +3348,7 @@ mod tests {
     fn comeback_crit_replaces_damage_with_power_shift() {
         let mut player = cfg(0, 10);
         player.crit_chance = 100; // always
-        let mut f = BakaFight::new(player, cfg(1, 10), [2, 2], 1);
+        let mut f = BakaFight::new(player, cfg(1, 10), 1);
         f.ai_controlled = [false, false];
         // Put fighter 0 in the crit HP band and let it take a hit → rolls.
         f.f[0].hp = CRIT_HP_BAND - 1;
@@ -3341,7 +3372,7 @@ mod tests {
     fn ai_pattern_plays_backward_after_seeding() {
         let mut opp = cfg(1, 10);
         opp.ai_pattern = vec![1, 2, 3];
-        let mut f = BakaFight::new(cfg(0, 10), opp, [2, 2], 7);
+        let mut f = BakaFight::new(cfg(0, 10), opp, 7);
         // Force the seeded-pattern branch by draining picks: over many picks
         // the backward walk must appear (3 → 2 → 1 as types C, B, A).
         let mut seen_backward = false;
@@ -3666,8 +3697,8 @@ mod tests {
 
     fn striking_fight(speed: i32, frames: &[i16], special: &[i16]) -> BakaFight {
         let tab = strike_table(speed, frames, special);
-        let mut f = BakaFight::new(cfg(0, 10), cfg(1, 10), [2, 2], 1)
-            .with_strike_tables([tab.clone(), tab]);
+        let mut f =
+            BakaFight::new(cfg(0, 10), cfg(1, 10), 1).with_strike_tables([tab.clone(), tab]);
         f.ai_controlled = [false, false];
         f
     }
@@ -3733,7 +3764,7 @@ mod tests {
     fn a_special_commit_slows_the_round_and_spawns_its_afterimage() {
         let mut f = striking_fight(16, &[20], &[30, 40]);
         assert_eq!(f.rate_divisor(), STRIKE_RATE_DIVISOR);
-        assert!(f.choose(0, BakaAttack::Special));
+        throw_special(&mut f, 0);
         assert_eq!(
             f.rate_divisor(),
             crate::baka_fighter_chrome::SPECIAL_RATE_DIVISOR
@@ -3804,7 +3835,7 @@ mod tests {
     fn the_special_wins_the_round_only_on_its_last_strike() {
         // Special strikes on frames 1 and 3.
         let mut f = striking_fight(16, &[2], &[1, 3]);
-        assert!(f.choose(0, BakaAttack::Special));
+        throw_special(&mut f, 0);
         let mut first = None;
         for t in 0..10 {
             f.tick(1);

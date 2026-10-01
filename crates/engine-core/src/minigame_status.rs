@@ -142,7 +142,7 @@ pub fn baka_status_rows(f: &BakaFight) -> Vec<StatusRow> {
     vec![
         StatusRow::new(l1, PEN_STATUS, true),
         StatusRow::new(
-            format!("{status}   Square/Circle/Cross attack, Triangle special (Start = quit)"),
+            format!("{status}   Square/Circle/Cross attack (Start = quit)"),
             PEN_PROMPT,
             false,
         ),

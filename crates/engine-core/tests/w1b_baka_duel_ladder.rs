@@ -54,7 +54,7 @@ fn overlay_0976() -> Option<Vec<u8>> {
         .ok()
 }
 
-/// A fighter whose landed special ends a round outright.
+/// A fighter whose landed hit ends a round outright.
 fn cfg(roster_id: usize, power: i32, gold: u32) -> FighterConfig {
     FighterConfig {
         roster_id,
@@ -69,7 +69,7 @@ fn cfg(roster_id: usize, power: i32, gold: u32) -> FighterConfig {
 }
 
 fn fight() -> BakaFight {
-    BakaFight::new(cfg(0, 4000, 0), cfg(1, 0, PRIZE), [0, 0], 0xBAA5EED)
+    BakaFight::new(cfg(0, 4000, 0), cfg(1, 0, PRIZE), 0xBAA5EED)
 }
 
 fn world_with(fight: BakaFight) -> World {
@@ -89,10 +89,11 @@ fn press(w: &mut World, mask: u16) {
     step(w, 0);
 }
 
-/// Throw the special until the match is decided. Down is the special in the
-/// world's pad mapping, and a landed special is an unbeatable exchange.
+/// Cycle the three throws until the match is decided: every exchange is a
+/// win or a draw, and either one-shots the inert foe.
 fn play_to_player_win(w: &mut World) {
-    for _ in 0..100_000 {
+    let throws = [PadButton::Square, PadButton::Circle, PadButton::Cross];
+    for i in 0..100_000 {
         if w.minigames
             .baka_fighter
             .as_ref()
@@ -100,7 +101,7 @@ fn play_to_player_win(w: &mut World) {
         {
             return;
         }
-        press(w, PadButton::Triangle.mask()); // the special (type 4)
+        press(w, throws[i % 3].mask());
     }
     panic!("the duel never resolved");
 }

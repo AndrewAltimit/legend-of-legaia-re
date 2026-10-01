@@ -2624,9 +2624,9 @@ no `World` to tick the cabinet through (next section), which is the
 blocking capability for giving it the cabinet's ladder too.
 
 Still disclosed on the two field hosts: the in-duel pause menu (`0xBE` /
-`0xBF`) stays unreached, because the duel state's pause edge `0x110`
-includes Triangle, which the port binds to the special attack, so the
-cabinet sees a zero pad inside the duel. The digit strips are wired on both
+`0xBF`) stays unreached: the port feeds the cabinet a zero pad inside the
+duel, since the duel state's pause edge `0x110` includes Triangle, the
+button the round setup's cameo test reads held. The digit strips are wired on both
 (`baka_fighter_chrome::hud_digit_placements` under
 `ui_baka_strips::baka_digit_strip_draws_for`). The cue queue was fixed
 separately: the minigames page never drained `BakaFight::cues`, so its duel

@@ -394,8 +394,9 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           three rounds: <b>2 beats 1, 3 beats 2, 1 beats 3</b>. The opponent throws from a
           scripted pattern stored on the disc, so it can be read and predicted. Each hit you
           take feeds the combo counter behind the <em>next</em> one, and a comeback critical can
-          fire at a sliver of HP. The Special is unbeatable but slow: it wins the exchange
-          outright, or the whole <em>round</em> if it charges to full.
+          fire at a sliver of HP. There is no Special button: the Special is the finisher,
+          thrown on its own by whoever empties the other's life meter, and its last strike
+          takes the round.
         </p>
         <div class="mg-row">
           <label for="baka-char"><strong>Fight as:</strong></label>
@@ -441,7 +442,6 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           <button class="mg-btn mg-throw" type="button" data-baka="1">Throw 1<span class="mg-key" data-pad-key="Square">V</span></button>
           <button class="mg-btn mg-throw" type="button" data-baka="2">Throw 2<span class="mg-key" data-pad-key="Circle">X</span></button>
           <button class="mg-btn mg-throw" type="button" data-baka="3">Throw 3<span class="mg-key" data-pad-key="Cross">Z</span></button>
-          <button class="mg-btn mg-throw" type="button" data-baka="4">Special<span class="mg-key" data-pad-key="Triangle">C</span></button>
         </div>
         <div class="mg-hud">
           <span>Stage <b id="baka-stage">&mdash;</b></span>
@@ -454,7 +454,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         <p class="mg-controls">
           <b>Keys:</b> <kbd data-pad-key="Square">V</kbd> / <kbd data-pad-key="Circle">X</kbd> /
           <kbd data-pad-key="Cross">Z</kbd> are throws 1 / 2 / 3 - Square, Circle and Cross, the
-          buttons the cabinet reads - and <kbd data-pad-key="Triangle">C</kbd> is the Special. <em>Pot at risk</em> is everything won this run that a loss would wipe;
+          buttons the cabinet reads. <em>Pot at risk</em> is everything won this run that a loss would wipe;
           <em>Banked</em> is what PAY OUT has already kept.
         </p>
         <details class="disclosure">
@@ -3001,7 +3001,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   /* The Baka duel's own map: retail's slot-0 read is Square 0x80 -> 1,
    * Circle 0x20 -> 2, Cross 0x40 -> 3; its type 4 is an auto-finisher, so the
    * port's chargeable Special takes the one face button the duel leaves free. */
-  const BAKA_LANES = { Square: 1, Circle: 2, Cross: 3, Triangle: 4 };
+  const BAKA_LANES = { Square: 1, Circle: 2, Cross: 3 };
 
   document.addEventListener('keydown', (e) => {
     if (!api || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
@@ -3044,11 +3044,13 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         }
       } else {
         /* The cabinet reads Square / Circle / Cross as throws 1 / 2 / 3
-         * (FUN_801D3F44's slot-0 branch); Triangle is this port's Special. */
+         * (FUN_801D3F44's slot-0 branch). The Special is no button - it
+         * is the auto-finisher - so Triangle only feeds the cameo's held
+         * word. */
         const m = BAKA_LANES[b];
         if (b === 'Triangle') bakaHeld |= 0x10;
         if (m) { e.preventDefault(); bakaChoose(m); }
-        else if (n >= 1 && n <= 4) { e.preventDefault(); bakaChoose(n); }
+        else if (n >= 1 && n <= 3) { e.preventDefault(); bakaChoose(n); }
       }
     } else if (active === 'slot') {
       /* Space is the machine's advertised button (every prompt on the panel

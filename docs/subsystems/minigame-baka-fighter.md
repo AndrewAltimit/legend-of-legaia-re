@@ -419,9 +419,8 @@ but the HP write is `hp > 0`-gated (`0x801d3e58..0x801d3e68`: `blez` skips
 the `subu`), and the special only ever runs as the auto-finisher against a
 foe whose HP is already 0 (see the input section below), so the negative
 never lands. The special's whole payoff is the exchange / round win. The
-engine port's chargeable special (a host pacing enhancement that can win an
-exchange against a live foe) pins the same invariant: a special-won exchange
-applies exactly 0 damage (`legaia_engine_core::baka_fighter::apply_damage`).
+engine port pins the same invariant for any special-won exchange: it applies
+exactly 0 damage (`legaia_engine_core::baka_fighter::apply_damage`).
 
 `FUN_801d6660` is the **critical / lucky-hit roll**: `rand()%100 <`
 record-`+0x34` (a per-action critical-chance byte), only while HP is in a mid
@@ -1050,9 +1049,7 @@ of the PROT 1203 bank (display ids `0x1C` / `0x1D`), placed camera-relative
 - `FUN_8001CF50` loads the base matrix alone for an actor with `+0x52 &
 0x400` (`0x8001D018`), so its eye position is `6 * (Ry(yaw) . pose(v) +
 pos)` - and it applies the blit row the frame leaves showing to its VRAM,
-bumping its generation so each host re-uploads. The Triangle held for the
-cameo is also the port's special button, so the press that starts the hold
-also commits a special whenever the duel can take one.
+bumping its generation so each host re-uploads.
 
 ### The developer keyframe editor
 
@@ -1730,9 +1727,12 @@ built from the parsed roster + action tables
 as the suspending `SceneMode::BakaFighter` (play-window `B` key). The world
 tick reads the player's commit off the face buttons the way the slot-0 branch
 does - Square / Circle / Cross = types 1 / 2 / 3, tested in that order with
-the last edge winning - on every host, the minigames page included; Triangle
-charges the special, a port enhancement, since retail's type 4 is the
-auto-finisher and has no button. A player match
+the last edge winning - on every host, the minigames page included. No
+button throws the special: as in retail it is the auto-finisher, which
+`BakaFight` commits for whoever has just put the foe at 0 HP (the downed
+fighter can no longer act), and its last strike credits the round. A fight
+built without strike data has no finisher clip and ends the round at the
+knockout. A player match
 win installs the score tally (`BakaTally`, the `FUN_801d239c` port), which the
 world's Baka Fighter tick runs frame by frame, adding each drained step into
 the mode-24 winnings accumulator exactly as retail adds it into
@@ -1746,8 +1746,7 @@ Disc-free oracle for that path:
 `engine-core/tests/baka_minigame_real.rs` (counter-play through the world
 tick beats a real ladder opponent and banks the parsed prize). Host
 simplifications, documented in the module: exchange recovery is immediate
-(cooldowns pace re-entry) and the special's final-keyframe gate is modelled
-as a held charge.
+(cooldowns pace re-entry).
 
 One host departure is worth naming: retail's duel state only *reads* the round
 timer `DAT_801DBF88` against `0xB5` - the fight resolution SM and the actor tick
