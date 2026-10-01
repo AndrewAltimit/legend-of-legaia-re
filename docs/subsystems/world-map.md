@@ -591,6 +591,14 @@ spawns the credits record and never lets it end, shows a party readout. The
 port's `world_map_panel_host::field_hud_rearm_held` answers that term for
 both hosts.
 
+The routine is field-overlay code (PROT 0897, slot A at `0x801CE818`), so it
+draws nothing on a frame that slot holds another image. The field-to-battle
+transition is one: its overlay, PROT 0979 `field_battle_intro`, loads into
+the same slot, so no readout appears over the intro. The port's suppress
+kernel `field_hud_suppressed` carries that as a term
+(`field_battle_transition_active`, the encounter session's `Transition`
+phase).
+
 The panel's top edge is `12`, except that the player's own position is
 projected through `FUN_800195A8` first and the panel drops to `0xAA` when the
 projected screen `y` is under `0x30` - the HUD moves out from under the

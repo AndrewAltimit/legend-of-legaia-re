@@ -2372,6 +2372,9 @@ void main() {
        * VR first-person never fade (battle frames its own subjects; in
        * first-person the eye IS the player, nothing can sit between). */
       this.renderer.clearOcclusionFocus();
+      /* The renderer's sticky per-frame state, staged ahead of EVERY draw
+       * branch (see `_stageFrameState`). */
+      this._stageFrameState(rt);
       if (window.LegaiaPlayMinigames && window.LegaiaPlayMinigames.frame(rt, this, skipDraw)) {
         /* An in-world minigame (casino slots, Muscle Dome, Baka Fighter,
          * dance hall) owns the 3D frame; HUD/overlay below still run. Runs
@@ -2731,49 +2734,6 @@ void main() {
       if (fieldVp && typeof rt.play_field_fx_sync === 'function') {
         this._fieldFxDraws(rt, fieldVp, draws);
       }
-      /* Prologue colour grade + gold depth-cue ramp (the native window's
-       * per-frame set_color_grade / set_depth_cue_ramp staging). No-ops on
-       * a renderer without the uniforms (cached JS). */
-      if (this.renderer.setColorGrade) {
-        const g = this._cut && this._cut.grade;
-        this.renderer.setColorGrade(g ? g.gold : null, g ? g.strength : 0);
-        const c = this._cut && this._cut.cue;
-        this.renderer.setDepthCue(c ? c.far : null,
-          c ? c.near_z : 0, c ? c.far_z : 0, c ? c.max_ir0 : 0);
-      }
-      /* The prologue grade's PALETTE-COLLAPSE half (the native window's
-       * second staging call, `set_palette_grade`): with a prologue grade
-       * live, the shaders give the packet words the `4C E6` sepia rewrite
-       * and this carries the op-`4C 12` screen tint. The
-       * engine composed both arms already - the page just stages what
-       * `play_cutscene_state_json` hands back. Without this the tint reached
-       * the engine-built field-FX geometry and nothing else, so an ordinary
-       * town's scene-entry fade darkened the smoke puffs over a town that
-       * never faded. */
-      if (this.renderer.setPaletteGrade) {
-        const pg = this._cut && this._cut.palette_grade;
-        this.renderer.setPaletteGrade(pg ? pg.mul : null, !!(pg && pg.on));
-      }
-      /* Retail GTE NCLIP winding rejection, from the shared engine kernel
-       * (`camera_view::nclip_cull_mode`) the native window's
-       * `set_backface_cull` also reads: armed for the whole field pass
-       * (retail culls every field mesh's back faces - a sky dome's outer
-       * shell, the opdeene prologue shot's near cave wall) and for a
-       * cutscene camera on any other non-overworld mode. */
-      if (this.renderer.setNclipCull && typeof rt.play_render_nclip_mode === 'function') {
-        let mode = 0;
-        try { mode = rt.play_render_nclip_mode(); } catch (_) { mode = 0; }
-        this.renderer.setNclipCull(mode);
-      }
-      /* The overworld's per-vertex screen-Y bend (FUN_800271A8's table,
-       * applied by retail's overworld prim leaves), scaled for this frame's
-       * camera arm by the shared `overworld_curvature::frame_curve_scale`
-       * kernel the native window's `set_overworld_curvature` reads. */
-      if (this.renderer.setOverworldCurve && typeof rt.play_render_curve_scale === 'function') {
-        let scale = 0;
-        try { scale = rt.play_render_curve_scale(); } catch (_) { scale = 0; }
-        this.renderer.setOverworldCurve(scale);
-      }
       this._applySceneClear(rt);
       this._draws = draws;
       /* `skipDraw`: a VR session owns the framebuffer and re-issues this draw
@@ -3100,6 +3060,65 @@ void main() {
       this._draws = draws;
       if (!skipDraw) this.renderer.renderAssembled(draws, this._ext, this.cam);
       return true;
+    }
+
+    /* The renderer's per-frame state words: NCLIP cull, prologue colour
+     * grade + depth-cue ramp, the palette-collapse half of the grade, and
+     * the overworld curvature. Each is a value the engine decides for the
+     * current mode, and each sticks in the renderer until it is set again.
+     *
+     * Called once a frame ahead of every draw branch - field, battle and the
+     * in-world minigame venues - which is where the native window stages the
+     * same five (`set_backface_cull`, `set_color_grade`,
+     * `set_depth_cue_ramp`, `set_palette_grade`, `set_overworld_curvature`,
+     * all before its mode branches). They used to be staged inside the field
+     * branch alone, so a battle drew under whatever the last field frame
+     * left: the field's NCLIP cull armed on the stage dome (the victory
+     * orbit, whose eye leaves the dome, looked straight through a shell the
+     * native window draws), and a fight entered from the overworld under
+     * the overworld's screen-Y bend. See docs/tooling/host-drift.md. */
+    _stageFrameState(rt) {
+      /* Retail GTE NCLIP winding rejection, from the shared engine kernel
+       * (`camera_view::nclip_cull_mode`): armed for the whole field pass
+       * (retail culls every field mesh's back faces - a sky dome's outer
+       * shell, the opdeene prologue shot's near cave wall) and for a
+       * cutscene camera on any other non-overworld mode; both-sided for
+       * battle, the overworld and the minigame venues. */
+      if (this.renderer.setNclipCull && typeof rt.play_render_nclip_mode === 'function') {
+        let mode = 0;
+        try { mode = rt.play_render_nclip_mode(); } catch (_) { mode = 0; }
+        this.renderer.setNclipCull(mode);
+      }
+      /* Prologue colour grade + gold depth-cue ramp. No-ops on a renderer
+       * without the uniforms (cached JS). */
+      if (this.renderer.setColorGrade) {
+        const g = this._cut && this._cut.grade;
+        this.renderer.setColorGrade(g ? g.gold : null, g ? g.strength : 0);
+        const c = this._cut && this._cut.cue;
+        this.renderer.setDepthCue(c ? c.far : null,
+          c ? c.near_z : 0, c ? c.far_z : 0, c ? c.max_ir0 : 0);
+      }
+      /* The prologue grade's PALETTE-COLLAPSE half: with a prologue grade
+       * live, the shaders give the packet words the `4C E6` sepia rewrite
+       * and this carries the op-`4C 12` screen tint. The engine composed
+       * both arms already - the page just stages what
+       * `play_cutscene_state_json` hands back. Without it the tint reached
+       * the engine-built field-FX geometry and nothing else, so an ordinary
+       * town's scene-entry fade darkened the smoke puffs over a town that
+       * never faded. */
+      if (this.renderer.setPaletteGrade) {
+        const pg = this._cut && this._cut.palette_grade;
+        this.renderer.setPaletteGrade(pg ? pg.mul : null, !!(pg && pg.on));
+      }
+      /* The overworld's per-vertex screen-Y bend (FUN_800271A8's table,
+       * applied by retail's overworld prim leaves), scaled for this frame's
+       * camera arm by the shared `overworld_curvature::frame_curve_scale`
+       * kernel; `0` (flat) off the kingdom overworld. */
+      if (this.renderer.setOverworldCurve && typeof rt.play_render_curve_scale === 'function') {
+        let scale = 0;
+        try { scale = rt.play_render_curve_scale(); } catch (_) { scale = 0; }
+        this.renderer.setOverworldCurve(scale);
+      }
     }
 
     /* The clear colour is part of what a frame looks like, not a renderer

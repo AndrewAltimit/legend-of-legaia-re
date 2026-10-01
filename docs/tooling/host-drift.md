@@ -3619,6 +3619,94 @@ no gate compiles that program outside a browser.
   ([above](#derived-scene-point-lights-are-native-only)). It is an
   enhancement both ways, so the page is short a feature, not wrong.
 
+## A tick-locked side-by-side pass
+
+The earlier passes read the two hosts' source, or paired screenshots taken
+at roughly the same moment. This one drives both hosts with the **same pad
+script on the same world tick** and compares the frames, so any difference
+is a difference in what the hosts do, not in when the picture was taken.
+
+- **Native:** `play-window --screenshot-every N --screenshot-dir ... --pad-script ...`
+  (a `TICK:BUTTON` edge or a `A-B:BUTTON` hold per entry; file names carry
+  the world tick).
+- **Page:** a headless Chromium driver pauses the view before its first
+  frame (a setter on `window.__playView` calls `setPaused(true)` the moment
+  the page creates it), then steps exactly one tick per frame through
+  `view.step()`, writing the page's held / pulse key sets from the same
+  script and screenshotting `.play-canvas-wrap` (the GL canvas plus the
+  overlay canvas above it) on the same ticks. The page's keyboard layout is
+  `Mapping::web_default` (`X` is Circle, `V` Square, `C` Triangle), not the
+  desktop one - driving it with the native keys reads as a broken Circle.
+  A GPU-backed Chromium (`--use-angle=vulkan`) keeps the run to minutes.
+
+Two things look like drift and are not. `--seed-party` resets the story
+flags to a fresh New Game, which changes what a scene's entry script does
+(`cave01` fades in from black with it and opens lit without it); the page's
+picker has no such seed, so a fair comparison drops the flag. And the pause
+menu's play clock is wall time on both hosts (`World::tick_play_clock`), so a
+tick-stepped page and a free-running window show different `TIME` values for
+the same tick.
+
+On those terms the field walk and camera, the dialogue box (typewriter, page
+hand, row scroll), the pause menu's Items / Magic / Equip / Status / Options
+screens, the battle open (`Begin | Run`, the command ring, `Auto | Command`,
+the High / Low / Left / Right arts arm and the `Begin | Reselect` confirm),
+the swing with its numerals and `HIT` / `TOTAL` cluster, and the spoils
+banner and field return match frame for frame. Three gaps did not.
+
+### The field readout over the battle transition
+
+The page drew the party readout over the whole field-to-battle shatter and
+the black hold after it. The suppress kernel
+(`world_map_panel_host::field_hud_suppressed`) had no term for the
+transition, so both hosts produced the readout; the native window painted it
+under the intro's backdrop, which hid it by luck, and the page's overlay
+canvas sits above the GL canvas. Retail draws none: the intro is PROT 0979
+`field_battle_intro`, a slot-A overlay at `0x801CE818` - the slot the field
+overlay (0897), and so `FUN_801D0D38` itself, lives in. The kernel now
+suppresses while the encounter session sits in its `Transition` phase
+(`field_battle_transition_active`), for both hosts.
+
+### Sticky renderer state staged on one draw branch
+
+The page draws its field, battle and minigame frames through one
+`TmdRenderer`, and five of its setters store a value the renderer keeps until
+the next call: the NCLIP cull word, the prologue colour grade and depth-cue
+ramp, the palette-collapse half of the grade, and the overworld curvature.
+All five were staged inside the field branch of `_frame` only, so a battle
+drew under whatever the last field frame left:
+
+- every fight entered from the **overworld** kept the overworld's screen-Y
+  bend, which folded the mountains out of the battle backdrop and curled the
+  sky down to the ground line;
+- every battle kept the field's NCLIP cull armed on the stage dome, so the
+  victory orbit - whose eye leaves the dome - looked straight through a shell
+  the native window draws.
+
+The native window stages all five once a frame ahead of its mode branches.
+The page now does the same in `_stageFrameState`, called ahead of every
+branch. This is the [GL state word](#a-gl-state-word-the-engine-does-not-own)
+shape with a second half: the engine owned each decision and both hosts
+asked it, but one host asked on one branch. No Rust tier can see it, so
+`scripts/ci/check-js-sticky-frame-state.py` reads the two js files: every
+`TmdRenderer` `set*` method whose body makes no `gl.` call is sticky, and
+every play-page call of one must sit in `_stageFrameState` unless the setter
+is classified as branch-owned with a reason. It runs in the pre-commit hook
+when `site/` is touched and in CI.
+
+### Open from the same pass
+
+- **The intro's first frames.** The tile shatter's emitter runs about two
+  ticks ahead on the page: on the tick the native window still shows the
+  captured field frame, the page already draws the first tiles lifting. Both
+  hosts arm `BattleIntro::arm_for_battle`; the offset is in where each host
+  first steps it relative to the capture, and neither side has been checked
+  against a retail capture.
+- **The victory orbit leaves the dome on both hosts.** With the cull fixed
+  the hosts agree, and both frame a magnified shell wall for most of the
+  spoils hold (the orbit's `TR.z` reaches `24883`). Host-identical, so an
+  engine question rather than drift.
+
 ## Adding coverage
 
 - a screen appears on the surface by existing; wire it on both hosts, or waive it;
@@ -3627,6 +3715,9 @@ no gate compiles that program outside a browser.
 - a trait joins tier 4 by having a default method body and two implementers;
 - a diagnostic joins tier 6 by being declared in `DIAG_GATES` - which is not
   optional: an undeclared `LEGAIA_DIAG_*` fails the gate.
+- a renderer setter that stores frame state is staged in the play page's
+  `_stageFrameState`, or classified in
+  `check-js-sticky-frame-state.py`'s `BRANCH_OWNED` with its reason;
 - a boot install joins tier 13 by being a `world.install_*` / `world.set_*`
   call in the native boot - fold a new table into an engine install both
   boots call rather than a field assignment the tier cannot see.
