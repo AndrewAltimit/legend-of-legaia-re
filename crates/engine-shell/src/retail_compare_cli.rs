@@ -94,12 +94,15 @@ pub fn run(args: RetailCompareArgs) -> Result<()> {
     }
     if let Some(p) = args.write_baseline {
         // A filtered or display-less run measures a subset, so it updates
-        // the states and channels it measured and keeps the rest of an
-        // existing baseline rather than rewriting the file from the subset.
+        // the states it seeded and keeps the rest of an existing baseline
+        // rather than rewriting the file from the subset; a seeded state's
+        // channel set is this run's, plus the image channel a display-less
+        // run did not score.
         let prior: Option<Baseline> = std::fs::read_to_string(&p)
             .ok()
             .and_then(|t| serde_json::from_str(&t).ok());
-        let b = Baseline::from_reports(&reports).merged_over(prior);
+        let unmeasured: &[&str] = if args.images { &[] } else { &["image"] };
+        let b = Baseline::from_reports(&reports).merged_over(prior, unmeasured);
         std::fs::write(&p, serde_json::to_string_pretty(&b)? + "\n")?;
         println!("wrote baseline {}", p.display());
     }

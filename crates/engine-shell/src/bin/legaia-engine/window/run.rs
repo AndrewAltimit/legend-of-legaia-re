@@ -280,6 +280,16 @@ fn arm_requested_battle(session: &mut BootSession, spec: &str) {
         log::info!("play-window: LEGAIA_BATTLE_INFLIGHT seeds {seed:?} at the first prompt");
         world.battle.inflight_seed = Some(seed);
     }
+    // `LEGAIA_BATTLE_RNG_SEED=<u32>`: the world stream's state at the entry,
+    // so the fight does not inherit however many field draws the boot took.
+    // The retail comparison corpus pins it on both its sides
+    // (`retail_compare_battle::BATTLE_RNG_SEEDS`).
+    if let Some(seed) = std::env::var("LEGAIA_BATTLE_RNG_SEED")
+        .ok()
+        .and_then(|s| s.trim().parse::<u32>().ok())
+    {
+        world.rng_state = seed;
+    }
     if world.force_encounter(row) {
         log::info!(
             "play-window: --battle armed formation row {row} in '{}' - the fight opens through \

@@ -1208,7 +1208,8 @@ pub struct RunOptions<'a> {
     pub engine_exe: Option<&'a Path>,
     /// Where side-by-side PNGs and engine captures go (gitignored).
     pub out_dir: Option<&'a Path>,
-    /// Only states whose label contains this substring.
+    /// Only states whose label contains this substring; a comma separates
+    /// several alternatives (any one matching keeps the state).
     pub filter: Option<&'a str>,
     /// Save application order (see [`SeedOrder`]).
     pub order: SeedOrder,
@@ -1223,7 +1224,10 @@ pub fn run_corpus(opts: &RunOptions<'_>) -> Result<Vec<StateReport>> {
     let mut out = Vec::new();
     for entry in entries {
         if let Some(f) = opts.filter
-            && !entry.label.contains(f)
+            && !f
+                .split(',')
+                .filter(|alt| !alt.is_empty())
+                .any(|alt| entry.label.contains(alt))
         {
             continue;
         }
@@ -1458,14 +1462,55 @@ fn run_battle(
             return;
         }
     };
-    let engine =
-        match crate::retail_compare_battle::run_engine_battle(opts.extracted, retail, battle) {
-            Ok(e) => e,
-            Err(e) => {
-                report.unseeded = format!("seeding failed: {e:#}");
-                return;
+    // The first stream under which the fight is still on at the sample, its
+    // opening reached a prompt and the drive / replayed cast reached the
+    // capture's phase (`BATTLE_RNG_SEEDS`), first with the HP as read and
+    // then with a party swing's victims revived
+    // (`RetailBattle::action_victims`); a state nothing satisfies keeps the
+    // first run.
+    let mut first = None;
+    let mut reached = None;
+    let revive: &[bool] = if battle.action_victims().is_empty() {
+        &[false]
+    } else {
+        &[false, true]
+    };
+    'search: for &victims in revive {
+        for &seed in &crate::retail_compare_battle::BATTLE_RNG_SEEDS {
+            match crate::retail_compare_battle::run_engine_battle(
+                opts.extracted,
+                retail,
+                battle,
+                seed,
+                victims,
+            ) {
+                Ok(e)
+                    if e.mode == legaia_engine_core::world::SceneMode::Battle
+                        && e.prompt_tick.is_some()
+                        && e.driven != Some(None)
+                        && e.inflight != Some(None) =>
+                {
+                    reached = Some(e);
+                    break 'search;
+                }
+                Ok(e) => {
+                    first.get_or_insert(Ok(e));
+                }
+                Err(e) => {
+                    first.get_or_insert(Err(e));
+                    break 'search;
+                }
             }
-        };
+        }
+    }
+    let engine = match reached.map(Ok).or(first) {
+        Some(Ok(e)) => e,
+        Some(Err(e)) => {
+            report.unseeded = format!("seeding failed: {e:#}");
+            return;
+        }
+        None => unreachable!("BATTLE_RNG_SEEDS is not empty"),
+    };
     let image = battle_image(opts, entry, retail, battle, &engine, report);
     let (mut ch, mut det) = crate::retail_compare_battle::compare_battle(retail, battle, &engine);
     if let Some(img) = &image {
@@ -1512,14 +1557,17 @@ fn battle_image(
         .map(system_flag_ids)
         .unwrap_or_default();
     let extra = crate::retail_compare_battle::play_window_args(battle, row);
-    let mut env = vec![(
-        "LEGAIA_BATTLE_STAGE",
-        format!(
-            "{},{}",
-            battle.stage_variant,
-            u8::from(battle.keep_backdrop_object_1)
+    let mut env = vec![
+        (
+            "LEGAIA_BATTLE_STAGE",
+            format!(
+                "{},{}",
+                battle.stage_variant,
+                u8::from(battle.keep_backdrop_object_1)
+            ),
         ),
-    )];
+        ("LEGAIA_BATTLE_RNG_SEED", engine.rng_seed.to_string()),
+    ];
     // The idle orbit is a clock: phase-align it to the retail instant when
     // retail's own orbit owns the yaw (the battle tick's prologue store,
     // gated on these command-flow bytes - `0x801D07AC..0x801D07CC`).
@@ -1639,16 +1687,26 @@ impl Baseline {
         b
     }
 
-    /// Lay this run's measurements over a prior baseline: states and
-    /// channels this run measured replace the prior values, everything else
-    /// (states outside a `--filter`, the image channel on a run without a
-    /// display) is carried over unchanged.
-    pub fn merged_over(self, prior: Option<Baseline>) -> Self {
+    /// Lay this run's measurements over a prior baseline. A state this run
+    /// seeded takes this run's channel set: a channel the run no longer
+    /// measures on it (a class change, a channel retired) leaves the ratchet
+    /// instead of failing every later check as "not measured". The channels
+    /// in `unmeasured_by_run` (the image channel on a run without a display)
+    /// are carried over, and so is every state outside the run (a
+    /// `--filter`) or that the run could not seed.
+    pub fn merged_over(self, prior: Option<Baseline>, unmeasured_by_run: &[&str]) -> Self {
         let Some(mut out) = prior else { return self };
         out.settle_ticks = self.settle_ticks;
         out.classes.extend(self.classes);
-        for (label, chans) in self.states {
-            out.states.entry(label).or_default().extend(chans);
+        for (label, mut chans) in self.states {
+            if let Some(old) = out.states.get(&label) {
+                for (ch, v) in old {
+                    if unmeasured_by_run.contains(&ch.as_str()) {
+                        chans.entry(ch.clone()).or_insert(*v);
+                    }
+                }
+            }
+            out.states.insert(label, chans);
         }
         out
     }
@@ -1779,6 +1837,36 @@ mod tests {
         let mut ram = vec![0u8; 0x20_0000];
         ram[(MENU_SUBSCREEN & 0x1F_FFFF) as usize] = sub;
         ram
+    }
+
+    fn chans(kv: &[(&str, f64)]) -> BTreeMap<String, f64> {
+        kv.iter().map(|(k, v)| (k.to_string(), *v)).collect()
+    }
+
+    /// A re-measured state takes the run's channel set (a retired channel
+    /// leaves the ratchet), keeps the image score a display-less run did not
+    /// take, and a state outside the run is untouched.
+    #[test]
+    fn a_bless_replaces_a_measured_states_channel_set() {
+        let mut prior = Baseline::default();
+        prior.states.insert(
+            "arrival".into(),
+            chans(&[("camera", 0.9), ("footing", 0.4), ("image", 0.7)]),
+        );
+        prior
+            .states
+            .insert("elsewhere".into(), chans(&[("camera", 0.5)]));
+        let mut run = Baseline::default();
+        run.states
+            .insert("arrival".into(), chans(&[("camera", 0.8)]));
+        let display_less = run.clone().merged_over(Some(prior.clone()), &["image"]);
+        assert_eq!(
+            display_less.states["arrival"],
+            chans(&[("camera", 0.8), ("image", 0.7)])
+        );
+        assert_eq!(display_less.states["elsewhere"], chans(&[("camera", 0.5)]));
+        let full = run.merged_over(Some(prior), &[]);
+        assert_eq!(full.states["arrival"], chans(&[("camera", 0.8)]));
     }
 
     /// The sub-screen word names the screen: a root row's route, one of the

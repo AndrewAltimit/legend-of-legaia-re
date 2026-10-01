@@ -88,6 +88,31 @@ const OPENING_TICKS: u32 = 4800;
 const INFLIGHT_TICKS: u32 = 1200;
 /// The extra capture deadline a phase-gated `play-window` child gets.
 pub const INFLIGHT_DEADLINE: u64 = INFLIGHT_TICKS as u64;
+/// The world stream's state at the encounter entry, tried in order on the
+/// headless seed; the one used reaches the `play-window` child as
+/// `LEGAIA_BATTLE_RNG_SEED`.
+///
+/// A capture's RNG state at the instant its fight began is not observable,
+/// so the engine's stream at the entry is otherwise an arbitrary function of
+/// how many field draws its settle window happened to take. Every battle
+/// channel that rides the stream (monster picks, the camera and its framing,
+/// the frame) then moved whenever a field-side port changed its draw count
+/// or shape, with no change to the battle itself. Pinning the stream at the
+/// entry keeps a battle state's scores a property of the battle.
+///
+/// A capture taken on a monster's action (or on anything else a draw
+/// decides) is one realisation of the stream. When the first seed's drive or
+/// replayed cast never reaches the capture's phase, the next seed is tried,
+/// so the state is scored at the event retail showed under some stream rather
+/// than dropped for the one stream the corpus happened to hold.
+pub const BATTLE_RNG_SEEDS: [u32; 6] = [
+    0x1234_5678,
+    0x9E37_79B9,
+    0x0BAD_F00D,
+    0x7F4A_7C15,
+    0xC0FF_EE01,
+    0x2545_F491,
+];
 /// The battle projection's `H` (`FUN_8003D254`; `battle_cam_script::GTE_H`).
 const BATTLE_H: i16 = 256;
 
@@ -716,6 +741,9 @@ pub struct EngineBattle {
     /// the ticks from the first prompt to the capture's phase, `None` inside
     /// when the engine never reached it.
     pub driven: Option<Option<u32>>,
+    /// The world stream's state at the encounter entry
+    /// ([`BATTLE_RNG_SEEDS`]).
+    pub rng_seed: u32,
     /// The engine's action-SM state when sampled.
     pub action_state: u8,
     /// The engine's active seat `ctx[+0x13]` when sampled.
@@ -757,6 +785,8 @@ pub fn run_engine_battle(
     extracted: &Path,
     retail: &RetailObs,
     battle: &RetailBattle,
+    rng_seed: u32,
+    revive_victims: bool,
 ) -> Result<EngineBattle> {
     let cfg = BootConfig {
         scene: retail.scene.clone(),
@@ -854,6 +884,7 @@ pub fn run_engine_battle(
     // battle swap will find them.
     let field_word = session.host.bgm_track_word.or(director.last);
     let field_current = session.host.world.audio.current_bgm;
+    session.host.world.rng_state = rng_seed;
     if !session.host.world.force_encounter(fid) {
         bail!("force_encounter({fid}) refused ({source})");
     }
@@ -873,6 +904,21 @@ pub fn run_engine_battle(
         );
     }
     // Reconstruct the mid-fight HP / MP (the engine seeds full bars).
+    //
+    // A capture taken on a party action in flight whose target already
+    // reads `0` HP (`+0x14C`) is the swing that killed it: the drive replays
+    // that action from the prompt, and a monster seeded dead would end the
+    // fight at the first `0x5A` wipe gate before the swing ever started. Such
+    // a victim is seeded at `1` HP, so the replayed swing makes the kill the
+    // capture shows, and its HP is read at the phase rather than at the
+    // prompt. The caller asks for it ([`RetailBattle::action_victims`]) only
+    // after the capture's phase was not reached with the HP as read.
+    let pc_seed = session.host.world.party.party_count.clamp(1, 3) as usize;
+    let victims = if revive_victims {
+        battle.action_victims()
+    } else {
+        Vec::new()
+    };
     {
         let world = &mut session.host.world;
         let pc = world.party.party_count.clamp(1, 3) as usize;
@@ -885,7 +931,11 @@ pub fn run_engine_battle(
             let (Some(c), Some(a)) = (c, world.actors.get_mut(slot)) else {
                 continue;
             };
-            a.battle.hp = c.hp;
+            a.battle.hp = if slot >= pc && victims.contains(&(slot - pc)) {
+                1
+            } else {
+                c.hp
+            };
             a.battle.liveness = a.battle.hp;
             if a.battle.hp_display.is_some() {
                 a.battle.hp_display = Some(a.battle.hp);
@@ -961,6 +1011,16 @@ pub fn run_engine_battle(
             }
         }
     }
+    if matches!(driven, Some(Some(_)))
+        && let Some(snap) = pre_drive.as_mut()
+    {
+        let world = &session.host.world;
+        for &m in &victims {
+            if let (Some(c), Some(a)) = (snap.monsters.get_mut(m), world.actors.get(pc_seed + m)) {
+                c.hp = a.battle.hp;
+            }
+        }
+    }
     let snap = match pre_drive.take() {
         Some(snap) => snap,
         None => {
@@ -982,6 +1042,7 @@ pub fn run_engine_battle(
         ],
     };
     Ok(EngineBattle {
+        rng_seed,
         scene: session.host.scene.as_ref().map(|s| s.name.clone()),
         mode: snap.mode,
         formation_source: source,
@@ -1286,6 +1347,21 @@ fn menu_seat_matters(flow: BattleFlowState) -> bool {
 }
 
 impl RetailBattle {
+    /// Monster indices that read `0` HP on a capture of a **party** action in
+    /// flight: the swing's victims, which [`run_engine_battle`] can seed at
+    /// `1` HP so the replay makes the kill rather than ending the fight at
+    /// its first wipe gate.
+    pub fn action_victims(&self) -> Vec<usize> {
+        if !matches!(self.seed_plan(), SeedPlan::Action { seat, .. } if seat < 3) {
+            return Vec::new();
+        }
+        self.monsters
+            .iter()
+            .enumerate()
+            .filter_map(|(m, c)| c.filter(|c| c.hp == 0 && c.hp_max != 0).map(|_| m))
+            .collect()
+    }
+
     /// The pad drive that reaches this capture, when its plan has one.
     pub fn battle_drive(&self) -> Option<BattleDrive> {
         match self.seed_plan() {
