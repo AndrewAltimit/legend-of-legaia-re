@@ -798,6 +798,16 @@ connecting one), holds the loser's knockdown when the leg settles, and hands
 both hosts one view-projection (`DomeCamera::vp_raw`). The choreography and
 the framing are the port's, not a retail track.
 
+The browser play page draws that surface through the WebGL renderer's
+single-mesh path (`TmdRenderer.render`), on the same program the field's
+assembled pass has just used. Every scene-pass uniform that path does not
+own - the NCLIP rejection word, the prologue grade, the palette collapse
+and the depth cue - is staged to its identity there, because uniforms persist
+on a shared program: with the field's NCLIP word left at `2`, every
+front-facing shell fragment was discarded and the in-world dome drew as a
+bare dirt floor with the two fighters on it, while the native window, on
+the same surface, showed the walls, fence and lamps.
+
 The shell, the assembled fighter and the monster all upload their prims'
 baked **packet colour** on the `a_flat_rgba` attribute, because the page
 shades the retail way - `texel * colour / 128`, no light source. The dome's
