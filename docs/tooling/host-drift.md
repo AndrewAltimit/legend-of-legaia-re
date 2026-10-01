@@ -3719,6 +3719,81 @@ when `site/` is touched and in CI.
   `keikoku_chest_preload`. The page poses the leader from the world-map
   clip bank; that path belongs to the world-map walk animation work.
 
+## Shops, save points, movies and audio switching
+
+A side-by-side read of the areas the tick-locked pass did not drive: the
+shop and inn screens, the save-point menu press, the title and New Game
+flow, the world map's menus, movies, BGM / SFX switching, the level-up
+banner and the cheats panel. Closed rows:
+
+- **Shops were silent on both hosts.** Retail keys a blip for every shop
+  edge - the list kernel's cursor / confirm / buzz / cancel and the quantity
+  and recipient screens' own purchase, sale and equip cues
+  ([`shop.md`](../subsystems/shop.md#sound)). Neither host raised any, and
+  the engine's quantity and recipient events named the cues in comments
+  only. `MenuRuntime::take_ui_cue` is the decision now, and a `SIM_PAIRS`
+  row holds both hosts' shop steps to it.
+- **Start closed the pause menu outside the kernel on the page.** A
+  root-level Start called `play_menu_close` directly, so it dismissed the
+  save-point notice (which retail holds for Cross or Circle) and, under an
+  op-`0x49` kind-`0x0D` ready check, closed the menu and released the
+  parked script as answered where the kernel opens the Yes / No confirm.
+  Start reaches `tick_root_list` on the page now, as it always did natively.
+- **The scripted press's narration gate was a native-local term.** The
+  native window added "no narration crawl" beside
+  `World::scripted_menu_open_pending`; the page did not. The kernel holds it.
+- **Catch-up ticks behind a screen.** The page ran up to four field ticks a
+  frame and opened a shop or a scripted menu only at the next frame's top,
+  so the field walked, pad live, behind a screen the engine had already
+  opened. Its tick loop ends the field's run on the tick that opens one.
+- **A shop's opening edge.** The native window handed a shop opened this
+  tick the same tick's pad edge - the press that had just closed the
+  merchant's line and run the script into op `0x49` - so that one press
+  also confirmed the picker's first row. The opening step takes no edge.
+- **Late BGM events.** The native window's field-event drain dropped every
+  non-spawn event, BGM included, after the session tick's routing pass had
+  run; a dance song ending on its own queued the hall's track there, so the
+  chart loop played on over the hall. Both hosts' drains open with a late
+  routing pass, which tier 12 pairs by content.
+
+### Open from the same pass
+
+- **The movie clock is written twice.** The native window paces a movie
+  with audio off the XA cursor (`cutscene_av::due_video_frame`); the page
+  re-implements that rule in `play-fmv.js` and adds a one-second stall
+  fallback to the wall clock, which the native window lacks, so a stalled
+  cursor holds frame 0 natively. The two STR decoders also differ: the page
+  counts assembled frames and assumes 4-bit XA, the native one counts
+  decoded frames and reads the bit depth.
+- **A scene-script movie skips on the page only.** The page tests the skip
+  button on every movie; the native window only on the title attract.
+- **Paced per display frame on the page.** The game-over panel and the
+  shop step once per display frame on the page and once per sim tick
+  natively, and the boot title catches up to thirty ticks a frame where the
+  shared stepper allows four.
+- **Two copies of the menu-open body.** `play_menu.rs` re-spells
+  `BootSession::open_field_menu` and re-checks the whole open predicate, so a
+  title Continue can be refused on the page and never natively.
+- **An overworld Load arms the top-view debug chord on the page only**
+  (`enter_field_core`); the native in-game Load does not.
+- **The inn prompt freezes the field on the page.** The page freezes on
+  `MenuRuntime::is_open`, the native window on `suspends_field`, which
+  excludes an inn. `InnSession` has no production caller
+  ([`inn.md`](../subsystems/inn.md)), so no player reaches it.
+- **The shop panels' rows** (`title`, rows, gold footer per state) and the
+  inn prompt's text are written once per host over shared leaves; they agree
+  today.
+- **The level-up banner without menu chrome** draws in raw surface pixels
+  natively and stage-scaled on the page. Only a run with no system-UI atlas
+  takes that path.
+- **Cheats.** Every cheat is one `World::cheat_*` call on both hosts; the
+  hosts differ in which exist (restore HP / MP is page-only, a GameShark
+  cheat file native-only) and when they apply (the native flags once at
+  boot, the page's panel between any two ticks).
+- **Absent on both:** a dialogue text blip, a door cue and any footstep cue
+  (the page runs a footstep timer that keys nothing), and the casino prize
+  counter's cues.
+
 ## Adding coverage
 
 - a screen appears on the surface by existing; wire it on both hosts, or waive it;
