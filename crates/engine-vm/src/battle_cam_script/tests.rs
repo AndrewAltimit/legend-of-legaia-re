@@ -1763,6 +1763,7 @@ fn only_a_dead_target_reaches_the_death_reframe() {
     cam.target = Some(PostActionTarget {
         world: [200.0, 400.0, 600.0],
         live: true,
+        ..Default::default()
     });
     let (live_pose, live_z) = cam.action_end_pose();
     assert_eq!(cam.action_yaw, 0x321, "the ladder survives a live target");
@@ -1774,6 +1775,7 @@ fn only_a_dead_target_reaches_the_death_reframe() {
     cam.target = Some(PostActionTarget {
         world: [200.0, 400.0, 600.0],
         live: false,
+        ..Default::default()
     });
     let raw = cam.live_action_framing().depth_raw;
     let (dead_pose, dead_z) = cam.action_end_pose();
@@ -1786,6 +1788,7 @@ fn only_a_dead_target_reaches_the_death_reframe() {
     cam.target = Some(PostActionTarget {
         world: [200.0, 0.0, 600.0],
         live: false,
+        ..Default::default()
     });
     let (floor_pose, floor_z) = cam.action_end_pose();
     assert_eq!(floor_pose.pitch, DEATH_PITCH_FLAT as f32);
@@ -1806,6 +1809,7 @@ fn the_recover_framing_orbits_the_pair_not_one_actor() {
     let target = PostActionTarget {
         world: [200.0, 0.0, 600.0],
         live: true,
+        ..Default::default()
     };
     let f = ActionFraming::default();
     let pose = recover_framing(actor, Some(target), f, 0.0, false);
@@ -2120,4 +2124,129 @@ fn an_active_clip_commit_rezeroes_the_camera_counters() {
         cam.attack.ctx.accum,
         3 * crate::battle_attack_camera::AttackCamCtx::RAMP_SCALE
     );
+}
+
+/// **The battle-over arm's win-pose script, pinned against retail RAM.**
+/// `noa_levelup_banner` is parked in the results hold with Vahn (character
+/// `1`, seat 0) posing `0x14`: display trio `(78, -183, -15)`, heading
+/// `562`, `ctx[+0x87C] = 616`, `ctx[+0x26E] = 0xC8`. The rotation trio reads
+/// pitch `-0x20` and yaw `0x800 - 562 = 1486` exactly, the focus is the
+/// display X / Z on the floor, and TR is one tween step short of the arm's
+/// target (`(0, 941, 1830)` against `(0, 928, prescale(1126))`), walking
+/// down from the stand-off pose the load window left.
+#[test]
+fn the_battle_over_arm_reproduces_the_results_hold_capture() {
+    let vahn = BattleCamActor {
+        facing: 562,
+        world: [78.0, -183.0, -15.0],
+        height: None,
+    };
+    let f = ActionFraming {
+        battle_over: true,
+        char_id: 1,
+        anim_id: 0x14,
+        accum: 616,
+        ramp: 0xC8,
+        ..Default::default()
+    };
+    let p = action_framing(vahn, f);
+    assert_eq!(p.pitch, -32.0);
+    assert_eq!(p.yaw, 1486.0);
+    // TR.y = -5 * -183 + (616 >> 3) - 0x40; TR.z = 0x500 - (616 >> 2).
+    assert_eq!(p.tr, [0.0, 928.0, prescale_tr_z(1126)]);
+    assert_eq!(f.raw_z(), 1126);
+    assert_eq!(p.focus, [78.0, 0.0, -15.0], "display X / Z on the floor");
+    // The capture is mid-chase toward that target, from above on both.
+    assert!(941.0 > p.tr[1] && 1830.0 > p.tr[2]);
+}
+
+/// The script's dispatch edges: character `4`'s fixed arm, an unknown
+/// character or a pose outside `0x11..=0x18` editing nothing, and the one
+/// pose that skips the height floor.
+#[test]
+fn the_win_pose_script_dispatch() {
+    let ground = BattleCamActor {
+        facing: 0,
+        world: [0.0, 0.0, 0.0],
+        height: None,
+    };
+    let over = ActionFraming {
+        battle_over: true,
+        accum: 800,
+        ramp: 0x40,
+        ..Default::default()
+    };
+    // Character 4: pitch 0x80 then the floor's quarter-shortfall on top.
+    let terra = battle_over_slots(ground, ActionFraming { char_id: 4, ..over });
+    assert_eq!(terra.tr_z, 100 + 0x680);
+    assert_eq!(terra.pitch, 0x80 + 0x280 / 4);
+    assert_eq!(terra.tr_y, 0x280);
+    // Character 0 / out-of-range pose: the base and the floor only.
+    for f in [
+        ActionFraming { char_id: 0, ..over },
+        ActionFraming {
+            char_id: 1,
+            anim_id: 0x19,
+            ..over
+        },
+    ] {
+        let s = battle_over_slots(ground, f);
+        assert_eq!((s.tr_y, s.tr_z, s.pitch), (0x280, 0x500, 0xA0), "{f:?}");
+    }
+    // Character 2 posing 0x16 keeps a TR.y under the floor.
+    let noa = battle_over_slots(
+        ground,
+        ActionFraming {
+            char_id: 2,
+            anim_id: 0x16,
+            ..over
+        },
+    );
+    assert_eq!(noa.tr_y, (800 >> 3) - 0xC0, "no floor");
+    assert_eq!(noa.pitch, 0x100);
+    // Tables 2 and 3 alias their last entry to arm 1; table 1 aliases 6/7
+    // to 0/1.
+    let at = |c: u8, a: u8| {
+        battle_over_slots(
+            ground,
+            ActionFraming {
+                char_id: c,
+                anim_id: a,
+                ..over
+            },
+        )
+    };
+    assert_eq!(at(1, 0x17), at(1, 0x11));
+    assert_eq!(at(1, 0x18), at(1, 0x12));
+    assert_eq!(at(2, 0x18), at(2, 0x12));
+    assert_eq!(at(3, 0x18), at(3, 0x12));
+}
+
+/// Case 8's **stand-off** arm: a dead target whose node is gone frames the
+/// acting actor alone at `TR (0, 0x400, radius * 5 / 2)`, level, yaw from
+/// the target's heading plus the live ladder.
+#[test]
+fn a_gone_target_takes_the_stand_off_arm() {
+    let mut cam = BattleCamera::new(BattleCamPhase::ActionEnd, 0);
+    cam.set_actor(BattleCamActor {
+        facing: 562,
+        world: [78.0, -183.0, -15.0],
+        height: None,
+    });
+    cam.action_yaw = 0x10;
+    cam.attack.ctx.phase_cursor = 1;
+    cam.target = Some(PostActionTarget {
+        world: [600.0, 0.0, 800.0],
+        live: false,
+        facing: (562 + 0x800) & 0xFFF,
+        node_gone: true,
+    });
+    let (pose, raw_z) = cam.action_end_pose();
+    assert_eq!(raw_z, PARTY_BODY_RADIUS * 5 / 2);
+    assert_eq!(pose.tr, [0.0, 1024.0, prescale_tr_z(1600)]);
+    assert_eq!(pose.pitch, 0.0);
+    assert_eq!(pose.focus, [78.0, 0.0, -15.0], "the actor, not the corpse");
+    let yaw: i32 = -((562 + 0x800) & 0xFFF) - ((1 << 9) - 0x100) + 0x10;
+    assert_eq!(pose.yaw, yaw.rem_euclid(4096) as f32);
+    assert_eq!(cam.action_yaw, 0x10, "the stand-off arm keeps the ladder");
 }

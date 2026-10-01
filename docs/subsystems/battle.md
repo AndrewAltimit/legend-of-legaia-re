@@ -1507,8 +1507,8 @@ of sinking (`0x801D6494`), and between the base pose and that floor runs a
 per-character script dispatched at `0x801D5D50` (`0x801D5DAC` / `0x801D5FC0`
 / `0x801D61E8` / `0x801D6440`, rejoining at `0x801D645C`) which reads
 `actor[+0x1DB]` over the win-pose band `0x11..=0x18` (bias `-0x11`, bound
-`8`). The port carries it behind `ActionFraming::battle_over`, which no host
-raises yet. An earlier reading of `0xFE` as "the in-battle state" sent every
+`8`). The port carries it behind `ActionFraming::battle_over`, raised only by
+the battle-end sequence ([the victory camera](#the-victory-camera)). An earlier reading of `0xFE` as "the in-battle state" sent every
 party action through this arm - eye `prescale(0x500)` behind the actor, i.e.
 inside whichever combatant stood there - and is recorded in
 [re-do-not-re-walk.md](../reference/re-do-not-re-walk.md#the-case-6-party-arm-is-the-battle-over-framing).
@@ -5377,6 +5377,15 @@ for the `0x100` hold; holding it needs the record's own loop window (`+0x85..+0x
 staged - no engine bank carries `monster.snd`.
 
 An **escape** runs the sequencer's `0x67` arm: no results, the phase halfword counts up from the fade the SM's `0x66` teardown spawned, same `0x43` gate. A **party wipe** runs the annihilated arm: the same `0x100` hold and fade, every member floored at 1 HP on the fade frame (`0x8004FB94..0x8004FBA4` - a scripted loss returns to the field standing), then the MAIN INIT game-over gate `finish_battle` folds.
+
+#### The victory camera
+
+The sequencer frames its pose actor `ctx[+0x13]` on every frame it runs, in two ways:
+
+- **The load window** (the side-band hold at its head, `0x8004E5C0..0x8004E624`, and phases `0..=4`, `0x8004EE10..0x8004EE98`): it stores `ctx[+0xD] = 1`, forces a party seat's target `actor[+0x1DD]` into the monster band `3..=6` (`3` when it is not), turns that target to the pose actor's heading `+ 0x800`, and calls `FUN_801D5854(seat, 8)`. Every monster is down, and a dead monster's node is gone (`noa_levelup_banner`: each dead seat's `+4` reads zero), so case 8 takes its **stand-off arm** (`0x801D6B9C`): `TR (0, 0x400, radius * 5 / 2)` with the radius `actor[+0x22C][+0x58]` (`0x280` for every party member in that state), pitch `0`, focus the pose actor's display X / Z, yaw `-target[+0x46] - ((ctx[+0x26D] << 9) - 0x100) + ctx[+0x6DA]`.
+- **The results frame onward** (`0x8004FC80..0x8004FC90`): it stores `ctx[+0xD] = 0` and calls `FUN_801D5854(seat, 6)`. With the signal up and a party seat, case 6 takes the battle-over arm: the close-up from behind the posing character, moved by the per-character win-pose script (`battle_cam_script::battle_over_script`), which reads the close-up accumulator `ctx[+0x87C]` - zeroed by the pose clip's commit (`FUN_8004AD80`, `0x8004BF68..0x8004BF78`) and advanced `8` a frame by every framing call - so the shot keeps moving through the hold.
+
+The escape arm returns before either call (`0x8004E720`). `noa_levelup_banner` reads the results framing directly: Vahn posing `0x14` with `ctx[+0x87C] = 616`, pitch `-0x20` and yaw `0x800 - actor[+0x46]` exactly, TR one tween step short of the script's `(0, 928, prescale(1126))` and walking down toward it from the stand-off pose. The port folds both framings over the camera inputs while `World::battle.victory` is armed (`battle_cam_inputs::battle_end_cam_inputs`); before it, the camera stayed on the far framing with the idle orbit through the whole sequence. Disc-free regression: `engine-core/tests/battle_end_camera.rs`.
 
 The exit fade is a fade **to black**, not a white-out. The template's kind word (`2`) is also
 the quad's blend: the fade actor's tick `FUN_80025000` hands it to the quad emitter

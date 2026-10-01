@@ -94,7 +94,7 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
         .get(usize::from(acting_seat))
         .and_then(|a| a.battle.seat)
         .map(|(x, z)| [f32::from(x), f32::from(z)]);
-    script::BattleCamInputs {
+    let inputs = script::BattleCamInputs {
         phase,
         acting,
         target: battle_post_action_target(world, acting_slot),
@@ -113,7 +113,111 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
         action_state: world.battle_ctx.action_state,
         active_commits: world.battle_ctx.active_clip_commits,
         acting_body,
+    };
+    battle_end_cam_inputs(world, inputs, actor_at)
+}
+
+/// The battle-end sequence's framing (`FUN_8004E568`, which runs in place
+/// of the action SM once the battle-end signal `DAT_8007BD71 == 0xFE` is
+/// up), folded over the in-fight inputs. Outside the sequence, and for an
+/// escape, the inputs pass through.
+///
+/// The sequencer frames its **pose actor** `ctx[+0x13]` on every frame it
+/// runs, in one of two ways:
+///
+/// - **The load window** (phases `0..=4`, and the side-band stream hold at
+///   its head, `0x8004E5C0..0x8004E624` / `0x8004EE10..0x8004EE98`): it
+///   stores `ctx[+0xD] = 1`, forces a party seat's target `actor[+0x1DD]`
+///   into the monster band `3..=6` (`3` when it is not), and calls
+///   `FUN_801D5854(seat, 8)` - the end-of-action shot, half-turned by the
+///   style. Every monster is down by then, so case 8 takes its dead-target
+///   re-frame.
+/// - **The results frame onward** (`0x8004FC80..0x8004FC90`): it stores
+///   `ctx[+0xD] = 0` and calls `FUN_801D5854(seat, 6)`. With the signal up
+///   and a party seat, case 6 takes its **battle-over arm** - the close-up
+///   behind the posing character whose win-pose script moves the camera
+///   with the pose ([`script::battle_over_script`]). The arm reads the
+///   display trio `+0x3C / +0x3E / +0x40` and the latched pose `+0x1DB`.
+///
+/// The escape arm (`0x67`) returns before either call (`0x8004E720`), so an
+/// escape keeps whatever framing the fight left.
+///
+/// The per-art attack channel is not armed: the win pose is not an art, and
+/// the one retail capture of the results hold (`noa_levelup_banner`) reads
+/// the battle-over arm's own pose.
+fn battle_end_cam_inputs(
+    world: &World,
+    mut inputs: script::BattleCamInputs,
+    actor_at: impl Fn(u8, Option<u8>) -> Option<script::BattleCamActor>,
+) -> script::BattleCamInputs {
+    use crate::world::VictoryPhase;
+    use legaia_engine_vm::battle_action::BattleEndCause;
+    let Some(seq) = world.battle.victory else {
+        return inputs;
+    };
+    if seq.cause == BattleEndCause::Escaped {
+        return inputs;
     }
+    let seat = seq.pose_actor;
+    let party_count = usize::from(world.party.party_count);
+    let party = seat < party_count;
+    let roster = party.then(|| world.party_roster_slot(seat) as u8);
+    let mut actor = actor_at(seat as u8, roster);
+    let display = world.battle_display_trio(seat);
+    // Both arms frame the display trio `+0x3C / +0x3E / +0x40`.
+    if let (Some(a), Some(d)) = (actor.as_mut(), display) {
+        a.world = d;
+    }
+    inputs.attack = None;
+    inputs.acting_body = display.map(|d| [d[0], d[2]]);
+    inputs.action = script::ActionFraming {
+        party_slot: party,
+        battle_over: true,
+        char_id: roster.map_or(0, |r| r + 1),
+        anim_id: seq.pose_id.unwrap_or(0),
+        ..inputs.action
+    };
+    match seq.phase {
+        VictoryPhase::Loading { .. } => {
+            inputs.action.style = 1;
+            // `actor[+0x1DD]` forced into the monster band: retail slot `3`
+            // is the engine's first monster seat, right behind the party.
+            let target_seat = world
+                .actors
+                .get(seat)
+                .map(|a| usize::from(a.battle.active_target))
+                .filter(|t| (party_count..party_count + 4).contains(t))
+                .unwrap_or(party_count);
+            // The same pass turns the target to face the pose actor's back
+            // (`actor[+0x46] + 0x800` stored into the target's `+0x46`,
+            // `0x8004EE7C..0x8004EE9C`), which is the heading case 8's
+            // dead-target yaw reads.
+            let facing = actor.map_or(0, |a| (a.facing + 0x800) & 0xFFF);
+            inputs.target = world.actors.get(target_seat).map(|t| {
+                let live = t.active && t.battle.hp > 0;
+                script::PostActionTarget {
+                    world: [
+                        f32::from(t.move_state.world_x),
+                        f32::from(t.move_state.world_y),
+                        f32::from(t.move_state.world_z),
+                    ],
+                    live,
+                    facing,
+                    // A monster that is down when the battle ends has lost
+                    // its node (`noa_levelup_banner`: every dead seat's
+                    // `+4` reads zero), so case 8 takes its stand-off arm.
+                    node_gone: !live,
+                }
+            });
+            inputs.phase = script::BattleCamPhase::ActionEnd;
+        }
+        VictoryPhase::Results { .. } | VictoryPhase::Exit { .. } => {
+            inputs.action.style = 0;
+            inputs.phase = script::BattleCamPhase::Action;
+        }
+    }
+    inputs.acting = actor;
+    inputs
 }
 
 /// The live formation's X/Z bounding box - retail's case-9 min/max walk.
@@ -162,6 +266,10 @@ pub fn battle_post_action_target(
             t.move_state.world_z as f32,
         ],
         live: t.active && t.battle.hp > 0,
+        facing: i32::from(t.battle.facing_angle & 0xFFF),
+        // The engine keeps a fallen body's node for the whole fight; only
+        // the battle-end framing ([`battle_end_cam_inputs`]) reads it gone.
+        node_gone: false,
     })
 }
 
@@ -239,6 +347,12 @@ pub fn battle_action_framing(world: &World, acting_slot: u8) -> script::ActionFr
         yaw_base: 0,
         style: world.battle_ctx.camera_variant,
         char_id: if party { acting_slot + 1 } else { 0 },
+        // Read only by the battle-over arm ([`battle_end_cam_inputs`]); the
+        // counters are the camera's own.
+        anim_id: 0,
+        accum: 0,
+        ramp: 0,
+        body_radius: script::PARTY_BODY_RADIUS,
     }
 }
 
