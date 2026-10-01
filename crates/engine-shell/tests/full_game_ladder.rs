@@ -1133,10 +1133,16 @@ thread_local! {
 const HEAL_BELOW_PCT: u32 = 45;
 
 thread_local! {
-    /// The largest HP loss one member took in a single hit this battle. A
-    /// member is healed while it could not survive another such hit - the
-    /// threshold a player reads off the last big hit, not a fixed fraction.
+    /// The largest HP loss one member took between two of the party's
+    /// command windows this battle. A member is healed while it could not
+    /// survive another such stretch - the threshold a player reads off the
+    /// last bad round, not a fixed fraction. A round, not a hit: a fast foe
+    /// acts twice before the party's next input (Lu Delilas's swing then her
+    /// Plasma Strike), and a cast lands its flurry and its burst as separate
+    /// HP writes.
     static BIGGEST_HIT: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    /// Per member, the HP lost since the party's last command window.
+    static ROUND_LOSS: std::cell::Cell<[u32; 3]> = const { std::cell::Cell::new([0; 3]) };
     /// Per acting slot, the ally its last committed item was aimed at, so a
     /// later member of the same round counts that heal as already coming.
     static ITEM_TARGET: std::cell::RefCell<[Option<u8>; 3]> = const { std::cell::RefCell::new([None; 3]) };
@@ -1516,7 +1522,9 @@ fn battle_snapshot(session: &BootSession) -> String {
     let n = w.party.party_count.clamp(1, 3) as usize;
     let hp = |i: usize| format!("{}/{}", w.actors[i].battle.hp, w.actors[i].battle.max_hp);
     let party: Vec<String> = (0..n).map(hp).collect();
-    let mobs: Vec<String> = (3..w.actors.len())
+    // The engine seats monsters right behind the party, not at retail's
+    // fixed seat 3 - a lone fighter's opponent sits in slot 1.
+    let mobs: Vec<String> = (n..w.actors.len())
         .filter(|&i| w.actors[i].battle.max_hp > 0)
         .map(hp)
         .collect();
@@ -1620,6 +1628,7 @@ fn drain_battle(session: &mut BootSession) -> Option<Run> {
     NO_ITEM.with(|n| n.borrow_mut().clear());
     NO_MAGIC.with(|n| n.borrow_mut().clear());
     BIGGEST_HIT.with(|b| b.set(0));
+    ROUND_LOSS.with(|r| r.set([0; 3]));
     ITEM_TARGET.with(|t| *t.borrow_mut() = [None; 3]);
     let party_hp = |s: &BootSession| -> Vec<u16> {
         let w = &s.host.world;
@@ -1651,10 +1660,22 @@ fn drain_battle(session: &mut BootSession) -> Option<Run> {
             return Some(Run::Error(format!("{e:#}")));
         }
         let party_now = party_hp(session);
-        for (a, b) in party_prev.iter().zip(&party_now) {
-            let lost = u32::from(a.saturating_sub(*b));
-            BIGGEST_HIT.with(|h| h.set(h.get().max(lost)));
+        // A command window opening ends the stretch the foes had.
+        let window = session.host.world.battle.command.as_ref().is_some_and(|c| {
+            matches!(
+                c.phase,
+                legaia_engine_core::battle_input::CommandPhase::RoundPrompt { .. }
+            )
+        });
+        let mut run = ROUND_LOSS.with(std::cell::Cell::get);
+        if window {
+            run = [0; 3];
         }
+        for (i, (a, b)) in party_prev.iter().zip(&party_now).enumerate().take(3) {
+            run[i] += u32::from(a.saturating_sub(*b));
+            BIGGEST_HIT.with(|h| h.set(h.get().max(run[i])));
+        }
+        ROUND_LOSS.with(|r| r.set(run));
         party_prev = party_now;
         if trace_hits {
             let w = &session.host.world;
