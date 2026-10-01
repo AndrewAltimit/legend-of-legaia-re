@@ -1067,23 +1067,19 @@ void main() {
         }
       }
 
-      /* NPCs: the scene's MAN placements. The scene-entry spawn-prologue
-       * pre-run (engine-side, retail FUN_8003A1E4) can SEAT a header-parked
-       * placement into the town per story state, and can PARK a header-placed
-       * one at the off-map hide box - so upload every placement except one
-       * that is header-parked AND still parked live (the native window's
-       * upload rule), and let the per-frame draw skip anyone whose live
-       * position is the hide box. */
+      /* NPCs: the scene's MAN placements. Upload EVERY placement, parked
+       * ones included, and let the per-frame draw skip anyone whose live
+       * position is the off-map hide box - the native window's upload rule
+       * (`upload_assets`). A header-parked placement is exactly the actor a
+       * cutscene seats mid-visit (`A3 <ch> x z`, `CC <ch> 37` - Maya's first
+       * meeting in bylon, Noa / Gala materializing beside the player), long
+       * after this bind ran; skipping it here left the actor meshless for the
+       * whole visit while the engine had it standing on stage. */
       this._hideXZ = (typeof rt.field_offmap_hide_xz === 'function')
         ? rt.field_offmap_hide_xz() : 16320;
       const cat = JSON.parse(rt.play_npc_catalog_json() || 'null');
       if (cat) {
-        const nt0 = rt.play_npc_transforms();
         for (const npc of cat.npcs) {
-          const b4 = npc.i * 4;
-          const liveParked = (b4 + 3 >= nt0.length)
-            || (nt0[b4] === this._hideXZ && nt0[b4 + 2] === this._hideXZ);
-          if (npc.conditional && liveParked) continue;
           let ok = true;
           try { rt.play_npc_mesh(npc.i); } catch (e) { ok = false; }
           if (!ok) continue;

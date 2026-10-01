@@ -1159,6 +1159,20 @@ inside the *Items* screen's session builder. Sharing a panel between two
 screens surfaces that immediately - the panel wants a description, and there
 was nowhere to get one.
 
+**A bind-time filter on state that changes later.** Both hosts bind a mesh
+per field placement once, at scene entry, and both skip drawing any actor
+whose live position is the off-map hide box. The native window uploads every
+placement; the page also skipped *uploading* a placement that was
+header-parked and still parked at bind time, under a comment that called this
+the native rule. A header-parked placement is exactly the actor a cutscene
+seats mid-visit - Noa or Gala materialized beside the player (`CC <ch> 37`),
+`bylon`'s Maya stepping onto the stairs (`A3 3F 53 32`) - so on the page the
+world had the actor on stage and nothing drew it, for the whole visit. Every
+tier was green: the accessors, the hide-box predicate and the per-frame draw
+were shared; only the page's one-time filter read the same predicate at the
+wrong moment. The shape to look for is a host filter evaluated once over state
+the engine keeps changing.
+
 ## A rule spelled beside the shared predicate
 
 A second side-by-side pass, with the first pass's rows closed, found a shape
