@@ -1933,7 +1933,9 @@ Every battle-side consumer draws through `World::next_rand`: the battle-action h
 
 On the disc, every one of the corresponding routines reaches the generator by `jal 0x80056798`; the battle overlay's only other generator is `FUN_801D0290`, which feeds ribbon geometry. Where a port used to mask the raw word `& 0x7FFF` (the **low** fifteen bits, the wrong half), the shaped draw replaces it; where a port's own arithmetic differed from retail's around the draw, the retail instructions replaced it (the victory re-pick is retail's `rand() % party_count` rejection loop, and the drop roll above replaced a one-byte roll against a 1/256 rate).
 
-Three draw sites still do not sit on that stream. The field overlay's move-VM extension `FUN_801D362C` (sub-ops `0x05` / `0x30`) still hands over a raw state. The battle camera script and the camera's own shake draw from a private, already-shaped seed. The Muscle Dome session keeps a per-session seed. The engine's own step tracker (`encounter::EncounterTracker::on_step`) is not a retail port and splits one raw word into a low trigger byte and a high pick half. Minigames and pure kernels that keep a private seed use the already-shaped `psyq_rand_step` / `BiosRand`.
+The field overlay's move-VM extension `FUN_801D362C` draws on the same stream: sub-ops `0x05` (RAND_ADD, `jal 0x80056798` at `0x801D3714`) and `0x30` (RAND_PICK, `0x801D45F8`) take `World::next_rand`, and `0x05`'s modulo is retail's signed `div` by the `lh` operand, `rand % |divisor|`.
+On the raw state, `0x30`'s `rand & 1` coin flip strictly alternated.
+Two draw sites still do not sit on the world stream, and both already draw the retail shape. The battle camera script and the camera's own shake draw from a private seed through `psyq_rand_step`. The Muscle Dome session keeps a per-session seed. The engine's own step tracker (`encounter::EncounterTracker::on_step`) is not a retail port and splits one raw word into a low trigger byte and a high pick half. Minigames and pure kernels that keep a private seed use the already-shaped `psyq_rand_step` / `BiosRand`.
 
 ## Engine-side mirror - `engine-vm::battle_formulas`
 

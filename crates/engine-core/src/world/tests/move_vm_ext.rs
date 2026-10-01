@@ -300,3 +300,48 @@ fn move_vm_ext_0x2f_raises_the_frame_step_floor() {
     assert_eq!(world.clock.frame_step_floor, 3);
     assert_eq!(world.clock.frame_step, 3);
 }
+
+/// Ext sub-op `0x30` (RAND_PICK) is a coin flip on `rand() & 1` through
+/// `jal 0x80056798`. A raw LCG state's low bit strictly alternates, so a
+/// raw draw makes the pick a fixed alternation; the shaped draw does not.
+#[test]
+fn ext_rand_pick_draws_the_shaped_bios_rand() {
+    let mut world = World::new();
+    world.actors[0].active = true;
+    world.rng_state = 0x1234_5678;
+    let mut expect = World::new();
+    expect.rng_state = 0x1234_5678;
+    let mut picks = Vec::new();
+    let mut want = Vec::new();
+    for _ in 0..32 {
+        // [2F][30][a=1][b=2][dst=0] -> written to pc + 0 + 5 = word 5.
+        let bc = vec![0x002F, 0x0030, 1, 2, 0, 0xFFFF];
+        world.actors[0].move_state = Default::default();
+        world.set_move_bytecode(0, Some(bc.clone()));
+        let _ = world.step_move_vm(0, &bc);
+        picks.push(world.move_vm.bytecode[0][5]);
+        want.push(if expect.next_rand() & 1 != 0 { 1 } else { 2 });
+    }
+    assert_eq!(picks, want, "0x30 must pick on the shaped draw's low bit");
+    let alternating = picks.windows(2).all(|w| w[0] != w[1]);
+    assert!(!alternating, "a raw LCG low bit would strictly alternate");
+}
+
+/// Ext sub-op `0x05` (RAND_ADD) divides signed: `rand % |op_w(3)|`.
+#[test]
+fn ext_rand_add_divides_by_the_signed_operand() {
+    let mut world = World::new();
+    world.actors[0].active = true;
+    world.rng_state = 0xC0FF_EE01;
+    let mut expect = World::new();
+    expect.rng_state = 0xC0FF_EE01;
+    for _ in 0..16 {
+        // [2F][05][base=100][div=-7][dst=0] -> word 5.
+        let bc = vec![0x002F, 0x0005, 100, (-7i16) as u16, 0, 0];
+        world.actors[0].move_state = Default::default();
+        world.set_move_bytecode(0, Some(bc.clone()));
+        let _ = world.step_move_vm(0, &bc);
+        let want = 100 + (expect.next_rand() % 7) as u16;
+        assert_eq!(world.move_vm.bytecode[0][5], want);
+    }
+}

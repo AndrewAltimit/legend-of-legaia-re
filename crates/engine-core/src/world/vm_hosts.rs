@@ -144,9 +144,12 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
         0x10
     }
     fn ext_rand16(&mut self) -> u16 {
-        // Retail ext 0x05/0x30 call the BIOS `A(2Fh) rand`; the world RNG
-        // stands in.
-        self.world.next_rng() as u16
+        // Retail ext 0x05/0x30 call the BIOS `A(2Fh) rand` thunk
+        // `FUN_80056798` (`jal 0x80056798` at 0x801D3714 / 0x801D45F8 in
+        // `overlay_0897_801d362c.txt`), so the draw is the shaped world
+        // stream, `0..=0x7FFF` - 0x30 tests its low bit, and the raw LCG
+        // state's low bit strictly alternates.
+        self.world.next_rand() as u16
     }
 
     // --- ext-VM globals -----------------------------------------------
