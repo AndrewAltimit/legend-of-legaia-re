@@ -174,8 +174,9 @@ pub struct FieldNpcState {
     /// play hosts and the headless `BootSession` turn it on
     /// (`play-window --no-live-npcs` is the opt-out). Script-started motion
     /// is NOT gated by this flag, and neither is placement-script stepping:
-    /// a placement's script runs only inside its engaged window
-    /// ([`crate::world::World::step_field_channels`]), whatever this says.
+    /// a placement's script runs only in its spawn pre-run
+    /// ([`crate::world::World::pre_run_field_channel_prologues`]) and on a
+    /// touch, whatever this says.
     pub animate: bool,
     /// Animation cues raised by channel scripts (op `0x4B` ANIMATE):
     /// `placement_index -> (count, base_id, keyframe bytes)`. The windowed

@@ -5,6 +5,33 @@
 use super::*;
 
 impl SceneHost {
+    /// Where a save written now would resume: the loaded scene's CDNAME
+    /// label and its banner name (the scene MAN's section 2, the string
+    /// retail's `FUN_8003AEB0` installs as the entry banner and copies into
+    /// the save-state location field - `docs/formats/place-names.md`). Both
+    /// empty when no scene is loaded; the location alone is empty for a
+    /// scene whose MAN carries no printable banner (the Shift-JIS endings).
+    ///
+    /// The MAN is re-read from the PROT index rather than cached: it runs
+    /// once per save. The native session and the page's card / LGSF writers
+    /// each carried a copy of this derivation; this is the one both call.
+    pub fn current_resume(&self) -> legaia_save::SaveResume {
+        let Some(scene) = self.scene.as_ref() else {
+            return legaia_save::SaveResume::default();
+        };
+        let location = scene
+            .field_man_payload(&self.index)
+            .ok()
+            .flatten()
+            .and_then(|man| legaia_asset::place_names::scene_name(&man))
+            .map(|n| n.name)
+            .unwrap_or_default();
+        legaia_save::SaveResume {
+            scene: scene.name.clone(),
+            location,
+        }
+    }
+
     /// Build a host over an already-opened ProtIndex.
     pub fn new(index: Arc<ProtIndex>) -> Self {
         let mut world = crate::world::World::default();
@@ -296,6 +323,13 @@ impl SceneHost {
         let (tx, tz) = (quant(x), quant(z));
         if (0..=0x7F).contains(&tx) && (0..=0x7F).contains(&tz) {
             self.last_trigger_tile = Some((tx as u8, tz as u8));
+        }
+        // The overworld's portals are entity auto-engages, not walk-on
+        // records, so the stamp above does not reach them: hold the seat tile
+        // for them the same way (a walked crossing caught between its portal
+        // firing and the next scene loading stands on that portal).
+        if self.world.mode == crate::world::SceneMode::WorldMap {
+            self.world.world_map.seat_hold_tile = Some((tx, tz));
         }
         true
     }

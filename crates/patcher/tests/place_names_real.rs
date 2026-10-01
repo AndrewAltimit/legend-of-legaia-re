@@ -131,6 +131,42 @@ fn scene_banners_decode_and_the_kingdoms_name_their_continent() {
     assert_eq!(inv.scene_banners.get("Conkram (Past)"), Some(&3));
 }
 
+/// The curated scene-name table (`data/gamedata/scenes.toml`) records each
+/// scene's banner exactly as the disc spells it, and records none where the
+/// disc carries none - so the display names that cite a banner cannot drift
+/// from the game's own spelling.
+#[test]
+fn scene_name_table_banners_match_the_disc() {
+    let Some(disc) = load_disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let patcher = DiscPatcher::open(disc).expect("open disc");
+    let inv = apply::list_locations(&patcher).expect("inventory");
+    let on_disc: std::collections::BTreeMap<String, String> = inv
+        .scene_banner_entries
+        .iter()
+        .filter_map(|(_, label, name)| Some((label.clone()?, name.clone())))
+        .filter(|(_, name)| !name.is_empty())
+        .collect();
+    assert!(!on_disc.is_empty(), "no banners decoded");
+
+    let db = legaia_gamedata::Database::load();
+    for row in db.scene_names() {
+        assert_eq!(
+            row.banner.as_deref(),
+            on_disc.get(&row.id).map(String::as_str),
+            "{}: table banner vs disc section-2 name",
+            row.id
+        );
+    }
+    // Every banner the disc carries belongs to a row of the table.
+    for label in on_disc.keys() {
+        assert!(db.scene_by_id(label).is_some(), "{label}: no table row");
+    }
+    eprintln!("[ran] {} scene banners match the table", on_disc.len());
+}
+
 #[test]
 fn rename_reaches_all_three_sites_and_leaves_near_misses_alone() {
     let Some(disc) = load_disc() else {

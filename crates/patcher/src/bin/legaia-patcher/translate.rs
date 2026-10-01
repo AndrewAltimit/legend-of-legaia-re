@@ -556,6 +556,75 @@ pub(crate) fn cmd_lift_official(
     Ok(())
 }
 
+pub(crate) fn cmd_coverage(input: &Path, json: bool, verbose: bool) -> Result<()> {
+    let patcher = DiscPatcher::open(load_image(input)?).context("parse disc image")?;
+    let rep = legaia_patcher::translation::coverage::measure(&patcher)?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&rep)?);
+        return Ok(());
+    }
+    let (walked, exported, missing) = rep.totals();
+    println!("=== dialog coverage: {} ({}) ===", rep.exe, rep.codec);
+    for (name, n) in &rep.sections {
+        if *n > 0 {
+            println!("  {name:<20} {n:>6} entries");
+        }
+    }
+    println!(
+        "script-walked lines {walked}, exported {exported}, missing {missing} \
+         across {} MAN carriers",
+        rep.carriers.len()
+    );
+    let mut reasons: BTreeMap<&str, usize> = BTreeMap::new();
+    for c in &rep.carriers {
+        for (_, r) in &c.missing {
+            *reasons.entry(r).or_default() += 1;
+        }
+    }
+    for (r, n) in &reasons {
+        println!("  missing - {r}: {n}");
+    }
+    let sum = |f: fn(&legaia_patcher::translation::coverage::CarrierCoverage) -> usize| {
+        rep.carriers.iter().map(f).sum::<usize>()
+    };
+    println!(
+        "exported but not walked (quality-gated) {}; raw lines outside a MAN {}",
+        sum(|c| c.exported_unwalked),
+        rep.raw_unwalked_lines
+    );
+    println!(
+        "text-shaped lines no walk reaches {}; Japanese lines in a Latin MAN {}; \
+         shop vendor names (not exported) {}",
+        sum(|c| c.unreached_candidates),
+        sum(|c| c.foreign_lines),
+        sum(|c| c.shop_names)
+    );
+    println!(
+        "{:>5} {:<10} {:<10} {:>6} {:>6} {:>6} {:>6} {:>7} {:>5}",
+        "entry", "scene", "kind", "walked", "export", "miss", "gated", "unreach", "jp"
+    );
+    for c in &rep.carriers {
+        let interesting =
+            !c.missing.is_empty() || c.unreached_candidates > 0 || c.foreign_lines > 0;
+        if !(verbose || interesting) {
+            continue;
+        }
+        println!(
+            "{:>5} {:<10} {:<10} {:>6} {:>6} {:>6} {:>6} {:>7} {:>5}",
+            c.entry,
+            c.scene,
+            c.kind,
+            c.walked,
+            c.exported,
+            c.missing.len(),
+            c.exported_unwalked,
+            c.unreached_candidates,
+            c.foreign_lines
+        );
+    }
+    Ok(())
+}
+
 pub(crate) fn cmd_fit_report(from: &Path, target: &Path) -> Result<()> {
     let source = DiscPatcher::open(load_image(from)?).context("parse source (PAL) disc image")?;
     let usa = DiscPatcher::open(load_image(target)?).context("parse target (USA) disc image")?;
@@ -680,6 +749,12 @@ pub(crate) fn cmd_import(
             "longer names: {} executable name(s) moved to free table space, {} monster \
              record(s) grown",
             report.relocated_names, report.grown_monster_names
+        );
+    }
+    if report.relocated_strings > 0 {
+        println!(
+            "longer labels: {} menu / system string(s) moved with every reference rewritten",
+            report.relocated_strings
         );
     }
     println!(
@@ -1000,6 +1075,82 @@ fn print_scenes(r: &space::SpaceReport, with_pack: bool, verbose: bool) {
     }
 }
 
+/// The per-category capacity table, the code images behind `ui_menu` /
+/// `system_text`, and the space ledger's regions.
+fn print_categories(r: &space::SpaceReport, with_pack: bool, verbose: bool) {
+    println!("\n== room per category (bytes; free = what a longer string can still take) ==");
+    println!(
+        "  category        strings  growable  english   room  free  spare{}",
+        if with_pack { "  pack free" } else { "" }
+    );
+    for c in &r.categories {
+        println!(
+            "  {:<14}  {:>7}  {:>8}  {:>7}  {:>5}  {:>4}  {:>5}{}",
+            c.category,
+            c.strings,
+            c.growable,
+            c.english_bytes,
+            c.room_bytes,
+            c.free_english,
+            c.spare_bytes,
+            if with_pack {
+                format!("  {:>9}", opt(c.free_pack))
+            } else {
+                String::new()
+            }
+        );
+    }
+    for c in &r.categories {
+        println!(
+            "  {}: {}; reached by {}.",
+            c.category, c.carrier, c.addressing
+        );
+        println!("    longer: {}.", c.growth);
+        if verbose {
+            for m in &c.competing {
+                println!("    shares with: {m}");
+            }
+        }
+    }
+    if !r.code_images.is_empty() {
+        println!("\n== code images (ui_menu / system_text): strings that can move ==");
+        println!("  image        section      strings  movable  free  spare  pinned");
+        for c in &r.code_images {
+            let pinned: Vec<String> = c.pinned.iter().map(|(k, v)| format!("{k} {v}")).collect();
+            println!(
+                "  {:<11}  {:<11}  {:>7}  {:>7}  {:>4}  {:>5}  {}",
+                c.image,
+                c.section,
+                c.strings,
+                c.movable,
+                c.english_free,
+                c.spare,
+                pinned.join(", ")
+            );
+        }
+    }
+    if verbose && !r.spare_regions.is_empty() {
+        println!("\n== space ledger: spare regions and their owners ==");
+        for g in &r.spare_regions {
+            println!(
+                "  {:<11}  0x{:08x}..0x{:08x}  {:>5} B ({:>5} zero)  {}{}  - {}",
+                g.image,
+                g.start_va,
+                g.end_va,
+                g.end_va - g.start_va,
+                g.zero_on_disc,
+                g.owner,
+                if g.mods.is_empty() {
+                    String::new()
+                } else {
+                    format!(" {}", g.mods.join(" "))
+                },
+                g.why
+            );
+        }
+    }
+}
+
 fn print_space(r: &space::SpaceReport, verbose: bool) {
     let with_pack = r.language.is_some();
     match &r.language {
@@ -1010,6 +1161,10 @@ fn print_space(r: &space::SpaceReport, verbose: bool) {
             if r.relayout { ", relayout dry run" } else { "" }
         ),
         None => println!("space report: disc only ({} keys)", r.summary.entries),
+    }
+
+    if !r.categories.is_empty() {
+        print_categories(r, with_pack, verbose);
     }
 
     if !r.name_regions.is_empty() {

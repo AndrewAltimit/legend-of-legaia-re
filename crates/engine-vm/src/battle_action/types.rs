@@ -1027,6 +1027,28 @@ pub struct BattleActionCtx {
     /// whose gate passed). Cleared by [`crate::battle_action::done_cleanup`]
     /// via [`crate::battle_gauge_rearm::restore_anim_rates`].
     pub gauge_rearm_latch: u8,
+    /// `[+0x890]` - the battle **ambient base**, a packed `10:10:10` colour
+    /// that `FUN_80050120` ramps every frame on [`Self::gauge_rearm_latch`]
+    /// (down while it is set, back up while it is clear) and derives the
+    /// ground grid's near colour `0x8007B7B0` and far colour `0x8007BB48`
+    /// from. Kernel: [`crate::battle_ground_grid::ambient_base_step`]. Battle
+    /// init seeds [`crate::battle_ground_grid::AMBIENT_BASE_FLOOR`]; the
+    /// summon band's `0x37` exit and the capture band's `0x71` exit write
+    /// [`crate::battle_ground_grid::AMBIENT_BASE_CAST_EXIT`]. A zero here is
+    /// the port's "no battle yet", not a retail value.
+    pub ambient_base: u32,
+    /// How many clips the **active** actor has committed - a counter the
+    /// port keeps for the commit's camera-counter reset, not a retail byte.
+    /// `FUN_8004AD80`'s install path zeroes `ctx[+0x26E]` / `+0x87C` /
+    /// `+0x26F` when the committing actor is `ctx[+0x13]`
+    /// (`0x8004BF50..0x8004BF78`); the battle camera re-zeroes its copies of
+    /// those counters whenever this moves
+    /// (`BattleCamInputs::active_commits`).
+    pub active_clip_commits: u32,
+    /// The display frame of the active actor's last clip commit - the
+    /// origin the re-zeroed `ctx[+0x87C]` counts from (`8` per vsync), which
+    /// the retail comparison corpus aligns a summon `0x33` capture on.
+    pub active_clip_commit_frame: u64,
     /// `[+0x28B]` - the **Arts announcement banner**: `0` idle, `1..=4` a
     /// live banner, `5..=8` a cancel request. Raised by the staged-animation
     /// commit's SpecialStarter arm and stepped once per battle frame; see

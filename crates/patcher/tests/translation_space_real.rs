@@ -229,6 +229,49 @@ fn disc_only_report_is_not_vacuous() {
             _ => {}
         }
     }
+    // One capacity row per category a translator asks about; the menu
+    // overlay's translation region is spare room for ui_menu, zero on
+    // retail, and no mod region is offered to translation.
+    let cats: Vec<&str> = r.categories.iter().map(|c| c.category.as_str()).collect();
+    assert_eq!(
+        cats,
+        [
+            "items",
+            "monster_names",
+            "place_names",
+            "ui_menu",
+            "system_text"
+        ]
+    );
+    let ui = r
+        .categories
+        .iter()
+        .find(|c| c.category == "ui_menu")
+        .unwrap();
+    let ledger: Vec<&space::SpareSpace> = r
+        .spare_regions
+        .iter()
+        .filter(|g| g.owner == "translation")
+        .collect();
+    assert!(!ledger.is_empty());
+    for g in &ledger {
+        assert_eq!(g.zero_on_disc, (g.end_va - g.start_va) as usize, "{g:?}");
+    }
+    assert_eq!(
+        ui.spare_bytes,
+        ledger.iter().map(|g| g.zero_on_disc).sum::<usize>()
+    );
+    assert!(ui.growable > 0 && ui.growable <= ui.strings);
+    assert!(
+        r.code_images
+            .iter()
+            .all(|c| c.movable + c.pinned.values().sum::<usize>() == c.strings)
+    );
+    assert!(
+        r.entries
+            .iter()
+            .any(|e| e.room_kind == RoomKind::StringMovable)
+    );
     // The schema round-trips.
     let json = serde_json::to_string(&r).expect("serialize");
     let back: SpaceReport = serde_json::from_str(&json).expect("deserialize");
@@ -296,7 +339,7 @@ fn predicted_outcomes_match_the_import() {
     }
     assert_eq!(
         seen.get(&Outcome::Moved).copied().unwrap_or(0),
-        imp.relocated_names
+        imp.relocated_names + imp.relocated_strings
     );
     assert_eq!(
         seen.get(&Outcome::Grown).copied().unwrap_or(0),

@@ -5,7 +5,7 @@ The proportional sans-serif font used by the dialog box, the field menu, and mos
 The font has three pieces of static data, all in `SCUS_942.54`:
 
 1. A **256-byte width table** at `0x80073F1C`, indexed by character byte.
-2. A **38-entry escape-sequence table** at `0x80074050`, indexed by the byte that follows a `0xCE` runtime escape.
+2. A **38-entry escape-sequence table** at `0x80074050`, indexed by the byte that follows a `0xCE` runtime escape: controller-button and icon sprites, plus four number slots (see [Escape table](#escape-table-0x80074050)).
 3. The **glyph bitmaps**, which sit in VRAM at `(896, 0)..(960, 256)` (a 4bpp tile-page covering 256×256 source pixels). They're loaded from disc into VRAM by an overlay-resident routine.
 
 ### On-disc carrier
@@ -100,26 +100,45 @@ Triggered by byte `0xCE` in the rendered string. The byte that follows indexes a
 
 ```
 struct EscapeEntry {
-    i16  string_id;   // 0 = render runtime variable; nonzero = look up a string
+    i16  string_id;   // 0 = print a number; nonzero = sprite id for FUN_8002C488
     u8   advance_px;  // pixel advance after rendering this escape
-    i8   y_offset;    // Y offset (or variable index when string_id == 0)
+    i8   y_offset;    // sprite Y offset from the line top (or counter index when string_id == 0)
 };
 ```
 
-There are 38 entries (table indices `0x00..=0x25`).
+There are 38 entries (table indices `0x00..=0x25`). An operand past `0x25` reads whatever follows the table.
 
-| Index | `string_id` | `advance` | `y_offset` | Meaning |
-|---|---|---|---|---|
-| `0x00..=0x07` | 55..62 | 16 | -2 | Icon strings (likely controller-button glyphs / currency icon) |
-| `0x08` | 98 | 12 | +2 | String 98 |
-| `0x09..=0x0A` | 132,133 | 12 | 0 | Strings 132/133 |
-| `0x0B..=0x0E` | 0 | 32 | 0..3 | **Variable substitution** - `y_offset` is the variable index (HP/MP/gold/exp slot), renderer calls `FUN_80034B78` to format the integer |
-| `0x0F` | 137 | 38 | 0 | String 137 (longest single-shot escape - ~6 chars wide) |
-| `0x10..=0x13` | 36,34,35,37 | 12 | 0 | **Active actor name** - string IDs 34/35/36/37 align with the in-SCUS actor name strings ("Meta"/"Terra"/"Ozma"/...) |
-| `0x14..=0x1C` | 139..147 | 20 | 0 | Strings 139..147 |
-| `0x1D..=0x25` | 148..156 | 28 | 0 | Strings 148..156 |
+- **Sprite escapes** (`string_id != 0`): `FUN_80036888` calls `FUN_8002C488(x, y + y_offset, string_id)`. The `string_id` is not a string: it is a **UI-icon sprite id** into the 12-byte records at `0x800732A4` (U/V/W/H and a CLUT byte; the record layout and the CLUT-byte encoding are in [`field-menu.md`](../subsystems/field-menu.md)). None of the ids here takes the special `0x86..=0x88` / `0x8A` path.
+- **Number escapes** (`string_id == 0`): the renderer prints the signed halfword at `0x801C6460 + y_offset * 2` through `FUN_80034B78` (`0x80036A54..0x80036A94`). That array is the field VM's script-counter slot table, written by `4C CA/CB/CC` ([`script-vm-menuctrl.md`](../subsystems/script-vm-menuctrl.md)).
 
-When `string_id != 0`, the renderer calls `FUN_8002C488(x, y + y_offset, string_id)` to draw the looked-up string. When `string_id == 0`, `y_offset < 4` selects which scratch variable (the four runtime-tracked numbers) and the renderer calls `FUN_80034B78` to format and draw it.
+The sprites decode against the **system-UI sheet** at VRAM `(896, 256)`: its UVs land on the icons there and on accent-glyph cells in the font page. The sprite carries no texture page of its own, and the `DR_MODE` for the font page (tpage `0xE`) that `FUN_80036888` links at `0x800369B8` goes into the same OT slot *before* the sprite, which the slot's head insertion makes execute after it. Every texel and palette sits in the boot-resident TIMs at the head of `PROT.DAT` (the system-UI sheet at `0x018E0`, a one-palette TIM at `0x07B00` for CLUT byte `0x13`, and the four row-498..501 palette TIMs at `0x10178` / `0x100D0` / `0x10028` / `0x0FF80`). Decoder `legaia_font::escape_icons`.
+
+| Index | Sprite id | Size | Advance | `y_offset` | Draws |
+|---|---|---|---|---|---|
+| `0x00..=0x07` | 55..62 | 16x16 | 16 | -2 | Controller buttons: X, Circle, Square, Triangle, R1, R2, L1, L2 |
+| `0x08` | 98 | 12x12 | 12 | +2 | `G` gold badge |
+| `0x09` / `0x0A` | 132 / 133 | 12x12 | 12 | 0 | `I` (one target) / `A` (all targets) badges |
+| `0x0B..=0x0E` | 0 | - | 8 per digit | 0..3 | Script counter `0..3` as a number |
+| `0x0F` | 137 | 38x12 | 38 | 0 | "Ra-Seru" in Japanese kana, a text sprite |
+| `0x10..=0x13` | 36, 34, 35, 37 | 12x12 | 12 | 0 | Equip-slot icons: arms (fist), head (helmet), body (armor), legs (boot) |
+| `0x14..=0x1A` | 139..145 | 20x12 | 20 | 0 | Element plates: fire, thunder, wind, water, earth, light, dark |
+| `0x1B` | 146 | 20x12 | 20 | 0 | Monster plate |
+| `0x1C` | 147 | 12x12 | 20 | 0 | A 12 px window at U 0 of the plate row, fire palette: the fire plate's left edge (`0x14` reads from U 6) |
+| `0x1D..=0x23` | 148..154 | 28x12 | 28 | 0 | Winged element icons, same order as `0x14..=0x1A` |
+| `0x24` | 155 | 28x12 | 28 | 0 | The monster plate read 28 px wide from U 226 (`0x1B` reads 20 px from U 230), palette `0x4F` |
+| `0x25` | 156 | 28x12 | 28 | 0 | The fire plate read 28 px wide from U 0, fire palette |
+
+The advance column is the retail table's; the measurer (`legaia_font::measure`) reads it from the same table. The numeric escapes advance `8` px per digit when drawn - see [What a line measures](#what-a-line-measures).
+
+### Symbol names and aliases
+
+The translation pipeline names every entry once, in `legaia_patcher::translation::symbols::SYMBOLS`: a human name for the translation workbench's symbol palette and a readable alias a pack may type in place of the hex token (`{btn:x}` = `{ce:00}`, `{icon:fire}` = `{ce:14}`, `{num:0}` = `{ce:0b}`). The alias encodes to the same two bytes, and export always writes `{ce:NN}`; the alias list is on [the pack-format page](../tooling/translation/pack-format.md#symbols).
+
+The first list of these symbols was contributed by **Henrique Stanke Scandelari (Stann0x, [github.com/Stann0xus](https://github.com/Stann0xus))** while working on a Brazilian Portuguese translation. Checked sprite by sprite against the disc, it agrees on every icon it names; the disc adds three things it does not say:
+
+- `0x0B..=0x0E` are not empty: they print a number (a script counter), which reads as nothing in a text dump because the entry has no sprite.
+- `0x1C` is not a broken icon of its own: its record reads 12 px of the element-plate row from U 0, which catches the fire plate's left edge.
+- `0x24` and `0x25` exist (the table has 38 entries, not 36): wider reads of the monster and fire plates.
 
 ## Rendering pipeline
 
@@ -162,6 +181,7 @@ The texture page is set earlier by a separate GP0 0xE1 (DRAWMODE) primitive - it
 | Glyph U/V formula | `ghidra/scripts/funcs/80036888.txt` lines 332-335 (`*pbVar4 << 4` for U, `(bVar1 & 0xf0) - 0x20` for V) |
 | GP0 packet shape | `ghidra/scripts/funcs/8003c11c.txt` (the simpler text-actor renderer with the same packet layout) |
 | Escape table location + entry layout | `ghidra/scripts/funcs/80036888.txt` lines 282-321 |
+| Escape sprite draw + number branch | `ghidra/scripts/funcs/80036888.txt` (`0x8003696C..0x800369EC` sprite call, `0x80036A54..0x80036A94` counter read at `0x801C6460`); sprite records + CLUT byte `ghidra/scripts/funcs/8002c488.txt` |
 | CLUT base | `ghidra/scripts/funcs/80036888.txt` lines 195-196 (`addiu v1,v1,0x7f86`) |
 | Color-change escape | `ghidra/scripts/funcs/80036888.txt` lines 278-280 (case `0xCF`) |
 | Author-time `^X` preprocessor | `ghidra/scripts/funcs/80036514.txt` lines 246-249 |
@@ -248,7 +268,6 @@ The pinned budgets are the table `legaia_font::limits::TEXT_LIMITS`, one `TextLi
 
 ## What's still open
 
-- **String IDs in the escape table.** Entries `0x00..=0x07` (advance 16, `y_offset = -2`) likely render multi-character icon strings from the same string pool that backs `FUN_8002C488`. The pool itself isn't yet decoded - its index 34..37 entries match the SCUS-resident actor name strings, suggesting the pool's first ~150 entries are mostly UI strings + actor names.
 - **`0xCC` opcode.** The text-actor renderer at `FUN_80031D00` recognises a small handful of single-byte ops (`0xCC..=0xCF`) inside its glyph stream that are distinct from the dialog renderer's `0xCE/0xCF`. They're outside the dialog font's scope and tracked under the [field script VM](../subsystems/script-vm.md) docs.
 
 ## Extraction tools

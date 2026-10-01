@@ -459,9 +459,22 @@ impl LegaiaRuntime {
 
     /// Cycle the camera-distance preset (retail -> far -> farther), the
     /// native window's `T`. Returns the new preset's label.
+    ///
+    /// Steps the persisted option (`OptionsState::cycle_camera_distance`,
+    /// the kernel the native key calls) rather than the camera alone: the
+    /// options apply re-asserts the stored preset onto the camera, so a
+    /// camera-only write was undone by the next apply and never saved.
     pub fn play_camera_cycle_distance(&mut self) -> String {
-        self.camera.distance = self.camera.distance.cycle();
-        self.camera.distance.label().to_string()
+        let next = self.options_state.cycle_camera_distance();
+        self.camera.distance = next;
+        self.persist_and_apply_options();
+        next.label().to_string()
+    }
+
+    /// The follow-camera distance preset's label (`retail` / `far` /
+    /// `farther`), for the page's control to show on load.
+    pub fn play_camera_distance(&self) -> String {
+        self.options_state.camera_distance.label().to_string()
     }
 
     /// `true` while the world map's **top-view debug camera** is live - the

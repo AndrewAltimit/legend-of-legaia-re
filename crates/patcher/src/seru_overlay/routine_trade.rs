@@ -52,7 +52,7 @@ pub fn assemble_trade_dispatch_stub() -> Vec<u32> {
     w.push(lw(RA, SP, 0));
     w.push(addiu(SP, SP, 8));
     // Reset the trade-screen state for this entry. All cells live in the same
-    // 0x8007AExx page, so one `lui at` covers them. pad-prev = all-ones so the ✕ held
+    // run-C `%hi` page, so one `lui at` covers them. pad-prev = all-ones so the ✕ held
     // from confirming "Trade" in the picker isn't seen as a fresh press on frame 1.
     w.push(lui(AT, hi(TRADE_ACTIVE_VA)));
     w.push(addiu(T1, ZERO, SLIDE_START_OFF as u16));

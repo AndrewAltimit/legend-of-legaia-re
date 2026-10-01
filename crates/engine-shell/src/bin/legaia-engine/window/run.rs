@@ -240,25 +240,41 @@ fn arm_requested_battle(session: &mut BootSession, spec: &str) {
              system-flag arm is replayed with the entry"
         );
     }
-    // `LEGAIA_BATTLE_STAGE=N` stamps the battle-stage variant the fight is
-    // staged in (`_DAT_8007BD60 & 0x1F`), for a fight entered without
-    // standing on the region tile that names it - the retail comparison
-    // corpus reads it off the capture.
-    if let Some(v) = std::env::var("LEGAIA_BATTLE_STAGE")
-        .ok()
-        .and_then(|s| s.trim().parse::<u8>().ok())
-    {
-        world.seed_battle_stage_variant(v);
+    // `LEGAIA_BATTLE_STAGE=N[,K]` stamps the battle-stage variant the fight
+    // is staged in (`_DAT_8007BD60 & 0x1F`) and, with `K`, battle init's
+    // keep-object-1 byte (`_DAT_8007B64B`), for a fight entered without
+    // standing on the region tile that names them - the retail comparison
+    // corpus reads both off the capture.
+    if let Ok(s) = std::env::var("LEGAIA_BATTLE_STAGE") {
+        let mut it = s.trim().split(',');
+        if let Some(v) = it.next().and_then(|v| v.trim().parse::<u8>().ok()) {
+            world.seed_battle_stage_variant(v);
+        }
+        if let Some(k) = it.next().and_then(|k| k.trim().parse::<u8>().ok()) {
+            world.seed_battle_backdrop_keep_object_1(k != 0);
+        }
     }
-    // `LEGAIA_BATTLE_INFLIGHT=caster,spell,target`: dispatch that cast the
-    // moment the first command prompt opens - the retail comparison corpus's
-    // replay of a capture taken mid-cast (`InflightCastSeed`). A debug seam.
+    // `LEGAIA_BATTLE_INFLIGHT=caster,spell,target[;x:z,...]`: dispatch that
+    // cast the moment the first command prompt opens - the retail comparison
+    // corpus's replay of a capture taken mid-cast (`InflightCastSeed`), with
+    // each battle slot's ground (`-` keeps the seat). A debug seam.
     if let Some(seed) = std::env::var("LEGAIA_BATTLE_INFLIGHT").ok().and_then(|s| {
-        let v: Vec<u8> = s.split(',').filter_map(|p| p.trim().parse().ok()).collect();
+        let (head, ground_s) = s.split_once(';').unwrap_or((s.as_str(), ""));
+        let v: Vec<u8> = head
+            .split(',')
+            .filter_map(|p| p.trim().parse().ok())
+            .collect();
+        let mut ground = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+        for (g, tok) in ground.iter_mut().zip(ground_s.split(',')) {
+            *g = tok.split_once(':').and_then(|(x, z)| {
+                Some([x.trim().parse::<i16>().ok()?, z.trim().parse::<i16>().ok()?])
+            });
+        }
         (v.len() == 3).then(|| legaia_engine_core::world::InflightCastSeed {
             caster: v[0],
             spell_id: v[1],
             target: v[2],
+            ground,
         })
     }) {
         log::info!("play-window: LEGAIA_BATTLE_INFLIGHT seeds {seed:?} at the first prompt");
@@ -1295,8 +1311,12 @@ pub(super) fn cmd_play_window_with_record(
         baka_chrome_frame: Vec::new(),
         baka_surface: Default::default(),
         baka_gpu: None,
+        muscle_surface: Default::default(),
+        muscle_gpu: None,
         dance_venue_gpu: None,
         dance_venue_failed: None,
+        dance_cast_surface: Default::default(),
+        dance_cast_gpu: None,
         muscle_hub: None,
         muscle_timers: Default::default(),
         summon_actor_slot: None,
@@ -1305,10 +1325,12 @@ pub(super) fn cmd_play_window_with_record(
         battle_stage_shell: None,
         battle_ground_mesh: None,
         battle_ground_cue_far: None,
+        battle_ground_rgbc: legaia_engine_vm::battle_ground_grid::GRID_RGBC_SETTLED,
         battle_stage_outdoor: false,
         prev_scene_mode: None,
         monster_archive: None,
         battle_mesh_base: 0,
+        battle_rest_vmesh: std::collections::HashMap::new(),
         battle_color_mesh_base: 0,
         scene_aabb: ([f32::NEG_INFINITY; 3], [f32::INFINITY; 3]),
         pad: 0,

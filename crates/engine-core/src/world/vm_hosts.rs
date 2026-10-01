@@ -1747,6 +1747,10 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         }
         self.world.camera.state.apply_trigger = apply_trigger;
         self.world.camera.state.mode = mode;
+        // A glide arms the mover for `apply_trigger` display frames; a snap
+        // marks every live mover dead.
+        // REF: FUN_801DE084
+        self.world.camera.state.glide_frames = i32::from(apply_trigger);
         // The event still carries only THIS beat's params (the per-beat delta):
         // the `Camera` controller's `route_camera_events` applies them per-axis
         // onto its own persistent eye/look-at, matching the same retail model.
@@ -1757,6 +1761,10 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                 apply_trigger,
                 mode,
             });
+    }
+
+    fn op4c_n_c_sub_d_camera_mover_live(&mut self) -> bool {
+        self.world.camera.state.glide_frames > 0
     }
 
     fn camera_load(&mut self, payload: &[u8]) {
@@ -1777,6 +1785,9 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn camera_apply(&mut self, apply_trigger: i16, mode: u8) {
+        // APPLY composes the follow pose and glides to it over the trigger's
+        // frames, or snaps (killing the mover) on a zero trigger.
+        self.world.camera.state.glide_frames = i32::from(apply_trigger.max(0));
         self.world
             .pending_field_events
             .push(FieldEvent::CameraApply {
@@ -2575,8 +2586,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             self.world.carry_npc_run_anim(slot, move_id);
             return;
         }
-        // A live channel stepping its OWN script (an engaged
-        // `step_field_channels` slice, retail `FUN_80039B7C`):
+        // A live channel stepping its OWN script (the spawn pre-run
+        // slice, retail `FUN_80039B7C`):
         // walk the placement there as a scripted glide leg (the faithful
         // `4C 51` run dispatch plays a move clip toward the tile). Falls
         // back to a direct ctx seat when the slot has no surfaced position
@@ -2728,8 +2739,16 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// disc this *is* the retail `+3` byte; disc-free it is the port's
     /// catalog. Either way there is one price per spell in this engine, and
     /// this is where the state machine reads it.
+    ///
+    /// A capture-class special the catalog does not carry (Cort's Mystic
+    /// Circle `0xB7`) is priced off the same disc record its cast is built
+    /// from ([`World::monster_cast_def`]): retail's state `0x28` reads the
+    /// `+3` byte for every id, capture route included (`0x801E4500`).
     fn spell_mp_cost(&self, id: u8) -> u8 {
-        self.world.tables.spell_catalog.mp_cost(id)
+        if self.world.tables.spell_catalog.get(id).is_some() {
+            return self.world.tables.spell_catalog.mp_cost(id);
+        }
+        self.world.monster_cast_def(id).map_or(0, |d| d.mp_cost)
     }
     fn character_ability_bits(&self, slot: u8) -> u32 {
         let i = slot as usize;

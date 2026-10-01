@@ -71,6 +71,31 @@ pub(crate) struct ScreenshotConfig {
     /// at a fixed tick; `capture_tick` becomes the deadline, past which the
     /// run exits without a PNG. Set by the retail-compare image channel.
     pub phase_gate: Option<legaia_engine_shell::retail_compare_battle::PhaseGate>,
+    /// `LEGAIA_BATTLE_ORBIT_YAW=<yaw>`: the battle idle orbit's azimuth the
+    /// capture must show, held while the orbit owns yaw
+    /// ([`legaia_engine_vm::battle_cam_script::BattleCamera::align_orbit_yaw`]).
+    /// The orbit is a clock, so this is its phase alignment - the camera twin
+    /// of [`Self::hud_countdown`]. Set by the retail-compare image channel
+    /// from the battle state's own rotation global.
+    pub battle_orbit_yaw: Option<f32>,
+    /// `LEGAIA_SCRIPT_GATE=<flat>:<head hex>:<pc>:<wait>`: the field twin of
+    /// [`Self::phase_gate`] - capture the first frame the engine's context
+    /// for a retail capture's running record holds its PC
+    /// ([`legaia_engine_shell::retail_compare_script::ScriptGate`]), resuming
+    /// the record from its start when nothing runs it and paging its dialog
+    /// boxes on the way. `capture_tick` is the deadline.
+    pub script_gate: Option<legaia_engine_shell::retail_compare_script::ScriptGate>,
+    /// `LEGAIA_BATTLE_DRIVE=menu,<flow>,<seat>` /
+    /// `action,<seat>,<state>,<category>,<queued>`: walk the fight through
+    /// its pad path to the retail capture's phase and capture the first
+    /// frame that holds it
+    /// ([`legaia_engine_shell::retail_compare_battle::BattleDrive`]), the
+    /// same driver the headless seed runs. `capture_tick` becomes the
+    /// deadline. Set by the retail-compare image channel.
+    pub battle_drive: Option<legaia_engine_shell::retail_compare_battle::BattleDrive>,
+    /// Whether the drive's one-shot world seed has been armed (it is armed
+    /// on the first battle tick).
+    pub battle_drive_primed: std::cell::Cell<bool>,
 }
 
 /// Debug state `play-window` seeds before the first world tick, so a capture
@@ -242,6 +267,16 @@ impl ScreenshotConfig {
             phase_gate: std::env::var("LEGAIA_CAPTURE_GATE")
                 .ok()
                 .and_then(|v| legaia_engine_shell::retail_compare_battle::PhaseGate::from_env(&v)),
+            battle_orbit_yaw: std::env::var("LEGAIA_BATTLE_ORBIT_YAW")
+                .ok()
+                .and_then(|v| v.trim().parse().ok()),
+            script_gate: std::env::var("LEGAIA_SCRIPT_GATE")
+                .ok()
+                .and_then(|v| legaia_engine_shell::retail_compare_script::ScriptGate::from_env(&v)),
+            battle_drive: std::env::var("LEGAIA_BATTLE_DRIVE").ok().and_then(|v| {
+                legaia_engine_shell::retail_compare_battle::BattleDrive::from_env(&v)
+            }),
+            battle_drive_primed: std::cell::Cell::new(false),
         }))
     }
 }
@@ -830,6 +865,13 @@ struct PlayWindowApp {
     /// `meshes.len()` at battle entry: the boundary appended battle monster
     /// meshes start at, so leaving battle truncates back to it.
     battle_mesh_base: usize,
+    /// The CPU-side rest mesh of every battle body registered this battle,
+    /// keyed by its `meshes` index. A body that draws without a pose frame
+    /// draws this mesh, and when its colour word raises semi-transparency
+    /// (the capture / defeat fade, the near-camera ghost) the posed-override
+    /// builder re-uploads it with `BattleActorDrawPlan::apply_body_blend`, as
+    /// the browser page re-uploads its blended stream. Cleared on exit.
+    battle_rest_vmesh: std::collections::HashMap<usize, legaia_tmd::mesh::VramMesh>,
     /// `color_meshes.len()` at battle entry - the twin of `battle_mesh_base`
     /// for the untextured pipeline, so the backdrop shell's colour half is
     /// truncated away on battle exit alongside the textured meshes.
@@ -908,12 +950,23 @@ struct PlayWindowApp {
     /// This frame's GPU copy of that surface (see
     /// `PlayWindowApp::refresh_baka_duel_gpu`).
     baka_gpu: Option<minigames::BakaDuelGpu>,
+    /// The Muscle Dome's 3D arena surface - the engine kernel the browser
+    /// play page drives too (`legaia_engine_core::muscle_dome_scene`).
+    muscle_surface: legaia_engine_core::muscle_dome_scene::MuscleDomeSurface,
+    /// The dome surface on the GPU while a dome session is live.
+    muscle_gpu: Option<minigames::BakaDuelGpu>,
     /// The dance venue on the GPU while the dance entry's globals are staged
     /// (see `PlayWindowApp::sync_dance_venue`).
     dance_venue_gpu: Option<minigames::DanceVenueGpu>,
     /// The staging generation whose venue build failed, so a disc without
     /// the venue is not re-read every frame.
     dance_venue_failed: Option<u32>,
+    /// The dance floor's bodies (`legaia_engine_core::dance_cast_scene`):
+    /// the engine surface every dance host poses the cast through.
+    dance_cast_surface: legaia_engine_core::dance_cast_scene::DanceCastSurface,
+    /// This frame's GPU copy of that surface (see
+    /// `PlayWindowApp::refresh_dance_cast_gpu`).
+    dance_cast_gpu: Option<minigames::DanceCastGpu>,
     /// Muscle Dome hub-screen atlas + sprite table (see [`MuscleHubAssets`]).
     muscle_hub: Option<MuscleHubAssets>,
     /// The dome hub's screen timers - first visit, ROUND card, INTERVAL +
@@ -951,6 +1004,9 @@ struct PlayWindowApp {
     /// stages). Resolved per battle in `build_battle_stage`;
     /// `None` outside a stage-dome battle.
     battle_ground_cue_far: Option<[f32; 3]>,
+    /// The pre-cue vertex colour the uploaded ground grid was built with -
+    /// the battle ambient it last followed (`sync_battle_ground_ambient`).
+    battle_ground_rgbc: [u8; 3],
     /// Whether the current battle stage is on the `DAT_80078C1C` outdoor
     /// table - the tint pass's `DAT_8007BDA8` input
     /// (`World::battle_actor_draw_plan`). Resolved per battle in
@@ -1293,17 +1349,15 @@ pub(crate) use geometry::{
 // The procedural battle ground grid lives in `legaia-asset` so all three
 // hosts share one implementation (the native window, the asset-viewer and
 // the browser play page) rather than forking the kernel per host.
-pub(crate) use legaia_asset::battle_backdrop::build_ground_grid as build_battle_ground_grid;
+pub(crate) use legaia_asset::battle_backdrop::build_ground_grid_rgbc as build_battle_ground_grid;
 pub(crate) use run::cmd_play_window;
 // These two stay window-tree-private (their signatures reference the
 // `pub(super)` record types); re-exported only so the sibling submodules
 // that `use super::*` still resolve them unqualified.
 pub(in crate::window) use run::{build_window_scene_resources, cmd_play_window_with_record};
 pub(crate) use save_select_helpers::{
-    MountedCard, build_slot_info_view, confirm_dialog_slide_y, disk_port_blocks_with_card,
-    disk_save_rack_with_card, info_panel_slide_offset, read_slot_save,
-    save_select_phase_text_draws, save_select_title_word, scan_save_dir, slot_leader_char_id,
-    write_slot_save,
+    MountedCard, disk_port_blocks_with_card, disk_save_rack_with_card, read_slot_save,
+    scan_save_dir, write_slot_save,
 };
 pub(crate) use str_player::{cmd_play_str, resolve_iso_file};
 
@@ -1459,58 +1513,14 @@ struct FieldNpcDraw {
     bound_model: i16,
 }
 
-/// World-map water/CLUT-cell animation state: the disc-derived kingdom
-/// slot-5 CLUT-walk table when the bundle ships it (every retail kingdom
-/// does), or the legacy single-cell ocean-head cycle as the fallback.
-enum WaterAnim {
-    Walk(ClutWalkAnim),
-    Ocean(OceanAnim),
-}
-
-/// Table-driven CLUT-walk animator: one independent accumulator per table
-/// entry, all sharing the same game-tick clock (retail spawns one walker
-/// actor per entry, and every accumulator steps by the same per-frame
-/// `DAT_1F800393` dt, so the entries stay phase-locked to a common epoch).
-// REF: FUN_80024cfc - the per-entry actor spawn (accumulator at +0x68,
-// seeded to 100 so every entry's first copy fires at scene entry).
-struct ClutWalkAnim {
-    /// The parsed kingdom slot-5 table ([`legaia_asset::clut_walk`]).
-    table: legaia_asset::clut_walk::ClutWalkTable,
-    /// Per-entry `(accumulator vsyncs, frame index)`, indexed like
-    /// `table.entries`.
-    state: Vec<(u32, usize)>,
-    /// Vsyncs counted toward the next retail *game tick* (a game tick spans
-    /// `World::clock.frame_step` vsyncs - the retail `DAT_1F800393` adaptive
-    /// frame-skip factor written by `FUN_80016B6C`).
+/// The scene's CLUT-walk shimmer (`legaia_engine_core::clut_walk_anim`, the
+/// one stepper both hosts run) and this host's vsync count toward the next
+/// retail game tick (a game tick spans `World::clock.frame_step` vsyncs - the
+/// retail `DAT_1F800393` factor).
+struct WaterAnim {
+    anim: legaia_engine_core::clut_walk_anim::ClutWalkAnim,
     vsyncs_to_game_tick: u32,
 }
-
-/// Legacy ocean-head cycle, kept only as the fallback for a kingdom bundle
-/// without a parseable slot-5 CLUT-walk table (no retail bundle hits this;
-/// it keeps the most visible effect - the sea shimmer - alive on a modified
-/// or damaged disc rather than freezing the ocean).
-struct OceanAnim {
-    /// 13 frames × 32 bytes (16 BGR555 entries each), as decoded by
-    /// [`legaia_asset::ocean::find_ocean_assets`].
-    frames: Vec<u8>,
-    /// Current frame index (`0..frames.len()/32`).
-    cur: usize,
-    /// Vsyncs counted toward the next retail *game tick* (see
-    /// [`ClutWalkAnim::vsyncs_to_game_tick`]).
-    vsyncs_to_game_tick: u32,
-    /// Vsync accumulator toward the next frame advance; each game tick adds
-    /// `frame_step` vsyncs and the frame advances (accumulator reset to
-    /// zero, the retail walker semantic) every
-    /// [`OCEAN_ANIM_VSYNCS_PER_FRAME`].
-    vsync_accum: u32,
-}
-
-/// Fallback-path vsyncs between ocean-head frame advances: the
-/// `hold_vsyncs` of the slot-5 ocean-head entry (`(0, 506)`, hold 8 - see
-/// [`legaia_asset::clut_walk`]), so even the fallback runs the disc-derived
-/// cadence (8 banked vsyncs -> a copy every 9 vsyncs at the overworld's
-/// `dt = 3`). The table-driven path reads the per-entry holds directly.
-const OCEAN_ANIM_VSYNCS_PER_FRAME: u32 = 8;
 
 /// Map a winit `KeyCode` to the user-friendly key name used in
 /// [`legaia_engine_core::input::Mapping`]. Returns `""` for keys outside

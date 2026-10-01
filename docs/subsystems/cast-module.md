@@ -1211,6 +1211,17 @@ Circle - table word 3 at `0x801F69E4`) and phase `0x0B` (Doomsday, the arm the
 carrying `+0x16E & 4`; PROT 0938's `0xB7` body tests only `+0x14C == 0`
 (`0x801F70D0`), so Mystic Circle hits a petrified seat.
 
+**Chaos Breath spends the gauge that gated it.** Monster `0x8A`'s pick fires
+the breath once its own `+0x170` gauge passes `0x31` and clamps the gauge to
+`0x32` as it does (`FUN_801E9FD4`, `0x801EB960..0x801EB984`). The clamp alone
+would leave the gate open. What closes it is the breath's own arm 3: every
+seat the sweep hits re-arms the module timer `0x801F8040` to `0x32`
+(`0x801F7880`), and arm 3 spends that timer out of the caster's `+0x170` a
+frame step (`0x1F800393`) at a time (`0x801F793C..0x801F7978`) - so a cast
+leaves the gauge at zero, and the breath returns only after the monster has
+taken fresh damage. The port folds the whole drain at the sweep, since
+nothing reads the caster's gauge before arm 3 has spent it.
+
 **Out of range is busy, not done.** Each of these bodies seeds a saved
 register with `1` and returns it, and only a terminal arm zeroes it - so a
 phase past a `sltiu` bound still reports busy. PROT 0949's tick is the
@@ -1696,6 +1707,20 @@ first prologue at file `+0x2C`. PROT 0940's `0x50` / `0xAE` body
 is the only routine in PROT 0903..0966 that **allocates a battle seat**, and
 its `0xAC` sibling blanks `actor_table[3]`'s reaction-clip run through a
 reassigned `s0` rather than the caster's `+0x0C`.
+
+That `0xAC` arm is Cort's **Mystic Shield**, and the blank is only half of
+it. The same arm stores the handle of the effect it spawns into
+`_DAT_8007BD84` (`0x801F7678`) - the word's only non-zero writer. While the
+handle is non-null the damage finisher halves every hit on an enemy defender
+(`FUN_801DDB30`, `0x801DDB98..0x801DDBC8`), and the `0xB4` pick's Evil Seru
+Magic arm, which tests the word for null, stays shut. The shield breaks in
+the per-frame actor pass `FUN_8004CE2C` (`0x8004D534..0x8004D668`): with the
+first formation id `0x8007BD0C` at `0xB4`, once the first monster seat's HP
+falls to half its maximum, the pass restores the reaction run (`+0x1EF..+0x1F2
+= 3, 2, 4, 5`), retires the effect, fires cue `0x10D` and clears the word. So
+Cort's first form fights the first half of his HP behind a halved-damage
+shield, and his Evil Seru Magic only opens after it breaks. The engine carries
+the word as `MonsterAiState::flag_bd84` (`World::tick_mystic_shield_break`).
 
 ### The player Seru band's tick bodies are code, not data
 

@@ -50,8 +50,13 @@
  * back. `scan_textures(image, thumbMax) -> { tiers, textures }` catalogs every
  * texture the registry can reach; `decode_texture(image, tier, entry, section,
  * offset)` decodes one full-size (the path a view-only family takes);
- * `preview_texture_replace(image, tier, entry, section, offset, png, quantize)`
- * validates one swap and returns the original plus the as-encoded preview;
+ * `preview_texture_replace(image, tier, entry, section, offset, png, quantize,
+ * view?)` validates one swap and returns the original plus the as-encoded
+ * preview. A multi-palette TIM adds `texture_palette_info(...)` (palette
+ * count, per-region map when known), `decode_texture_view(..., view)` and
+ * `export_texture_as(..., format, view)` (`image` / `composite` / `strip` /
+ * `indexed`; `view` -1 = in-game palettes, k = palette k) - the upload side
+ * recognises every one of those shapes on its own;
  * `apply_texture_replacements(image, specs, progress?) -> Promise<{ data,
  * summary }>` applies the queue (chained after patch_rom's output, or run
  * alone). Change packs use
@@ -1704,8 +1709,19 @@ function setupTextureReplacer(wasm, discBytes) {
   const packForceChk = $('rom-tex-pack-force');
   const packStatus = $('rom-tex-pack-status');
   const packReport = $('rom-tex-pack-report');
+  const palPanel = $('rom-tex-palettes');
+  const viewSel = $('rom-tex-view');
+  const exportCompositeBtn = $('rom-tex-export-composite');
+  const exportStripBtn = $('rom-tex-export-strip');
+  const exportIndexedBtn = $('rom-tex-export-indexed');
+  const regionsBox = $('rom-tex-regions');
+  const regionsNote = $('rom-tex-regions-note');
+  const regionsList = $('rom-tex-regions-list');
 
   const PAGE = 60;
+  // The TIM families: the ones with real palettes the multi-palette tools
+  // (views, composite / strip / indexed downloads) apply to.
+  const isTimTier = (tier) => tier === 'raw' || tier === 'lzs';
   let rows = null; // scan result rows
   let tiers = []; // family descriptors from the registry
   let shown = 0;
@@ -1919,7 +1935,7 @@ function setupTextureReplacer(wasm, discBytes) {
   async function select(t, cell) {
     grid.querySelectorAll('.rom-tex-cell').forEach((c) => c.classList.remove('is-active'));
     if (cell) cell.classList.add('is-active');
-    sel = { row: t, origImg: null, pngBytes: null };
+    sel = { row: t, origImg: null, pngBytes: null, view: undefined, info: null };
     editor.hidden = false;
     targetDesc.textContent =
       `${texDesc(t)} · ${t.width}×${t.height} pixels · ${t.bpp} bpp · ` +
@@ -1934,7 +1950,122 @@ function setupTextureReplacer(wasm, discBytes) {
     quantizeChk.disabled = !t.replaceable;
     setVerdict('Loading the full-size original ...');
     editor.scrollIntoView({ block: 'nearest' });
+    await loadPalettes(t);
     await refresh();
+  }
+
+  // Palette views: only a TIM with more than one palette gets the selector
+  // and the extra downloads. The in-game view is offered (and chosen) only
+  // when the Rust side knows which palette each region is drawn with.
+  async function loadPalettes(t) {
+    if (!palPanel) return;
+    palPanel.hidden = true;
+    if (regionsBox) regionsBox.hidden = true;
+    if (!isTimTier(t.tier) || !(t.cluts > 1)) return;
+    try {
+      const mod = await wasm();
+      const buf = await discBytes();
+      const info = mod.texture_palette_info(buf, t.tier, t.entry, t.section, t.offset);
+      if (!sel || sel.row !== t || !(info.count > 1)) return;
+      sel.info = info;
+      viewSel.textContent = '';
+      if (info.has_map) {
+        const o = document.createElement('option');
+        o.value = '-1';
+        o.textContent = "In-game colors (each region's own palette)";
+        viewSel.appendChild(o);
+      }
+      for (let k = 0; k < info.count; k++) {
+        const o = document.createElement('option');
+        o.value = String(k);
+        o.textContent = `Palette ${k}`;
+        viewSel.appendChild(o);
+      }
+      sel.view = info.has_map ? -1 : 0;
+      viewSel.value = String(sel.view);
+      renderRegions(info);
+      palPanel.hidden = false;
+    } catch (e) {
+      // The texture still edits through palette 0 without the panel.
+      palPanel.hidden = true;
+    }
+  }
+
+  function renderRegions(info) {
+    if (!regionsBox) return;
+    regionsList.textContent = '';
+    if (!info.has_map) {
+      regionsBox.hidden = true;
+      return;
+    }
+    const bits = [`From ${info.source}.`];
+    if (info.unclaimed) {
+      bits.push(`${info.unclaimed} pixel(s) no sprite in that table uses are shown through palette 0.`);
+    }
+    (info.notes || []).forEach((n) => bits.push('Note: ' + n + '.'));
+    regionsNote.textContent = bits.join(' ');
+    info.regions.forEach((r) => {
+      const row = document.createElement('div');
+      row.className = 'rom-tex-region-row';
+      const pal = r.palette < info.count
+        ? `palette ${r.palette}`
+        : `palette ${r.subpalette} of a sibling texture (read-only here)`;
+      row.textContent = `${r.x},${r.y} ${r.w}×${r.h} - ${pal}` +
+        ` (${r.part}, widget ${r.widgets.map((w) => '0x' + w.toString(16).toUpperCase()).join(' ')})`;
+      // Hover outlines the region on the original.
+      row.addEventListener('mouseenter', () => outline(r));
+      row.addEventListener('mouseleave', () => outline(null));
+      regionsList.appendChild(row);
+    });
+    regionsBox.hidden = false;
+  }
+
+  function outline(r) {
+    if (!sel || !sel.origImg) return;
+    drawRgba(origCanvas, sel.origImg);
+    if (!r) return;
+    const ctx = origCanvas.getContext('2d');
+    ctx.strokeStyle = '#ff00ff';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+  }
+
+  if (viewSel) {
+    viewSel.addEventListener('change', async () => {
+      if (!sel) return;
+      sel.view = Number(viewSel.value);
+      await refresh();
+    });
+  }
+
+  // Multi-palette downloads: encoded by the Rust side so the file is exactly
+  // what the upload recognises.
+  async function exportAs(format) {
+    if (!sel) return;
+    const t = sel.row;
+    try {
+      const mod = await wasm();
+      const buf = await discBytes();
+      const view = sel.view === undefined ? -1 : sel.view;
+      const r = mod.export_texture_as(buf, t.tier, t.entry, t.section, t.offset, format, view);
+      const suffix = format === 'image'
+        ? (view < 0 ? '-ingame' : `-pal${view}`)
+        : format === 'indexed' ? `-indexed-pal${view < 0 ? 0 : view}` : `-${format}`;
+      downloadBlob(new Blob([r.png], { type: 'image/png' }), texFileName(t, suffix));
+      setVerdict(`Downloaded: ${r.description}. Edit it and choose it above - the page recognises it.`);
+    } catch (e) {
+      setVerdict('Error: ' + (e && e.message ? e.message : e), 'err');
+    }
+  }
+  if (exportCompositeBtn) exportCompositeBtn.addEventListener('click', () => exportAs('composite'));
+  if (exportStripBtn) exportStripBtn.addEventListener('click', () => exportAs('strip'));
+  if (exportIndexedBtn) exportIndexedBtn.addEventListener('click', () => exportAs('indexed'));
+
+  function texFileName(t, suffix) {
+    return t.tier === 'save-icon'
+      ? `legaia-save-icon-slot${t.section}.png`
+      : `legaia-tex-${t.tier}-${t.entry < 0 ? 'gap' : 'e' + t.entry}` +
+        `${t.section >= 0 ? '-s' + t.section : ''}-0x${t.offset.toString(16)}${suffix || ''}.png`;
   }
 
   // Validate + preview. With no PNG chosen the call still returns the
@@ -1957,7 +2088,8 @@ function setupTextureReplacer(wasm, discBytes) {
       }
       const png = sel.pngBytes || new Uint8Array(0);
       const r = mod.preview_texture_replace(
-        buf, t.tier, t.entry, t.section, t.offset, png, quantizeChk.checked);
+        buf, t.tier, t.entry, t.section, t.offset, png, quantizeChk.checked,
+        isTimTier(t.tier) ? sel.view : undefined);
       sel.origImg = r.original;
       drawRgba(origCanvas, r.original);
       if (!sel.pngBytes) {
@@ -1967,7 +2099,12 @@ function setupTextureReplacer(wasm, discBytes) {
       if (r.preview) drawRgba(newCanvas, r.preview);
       if (r.ok) {
         const bits = ['Valid - ready to add.'];
+        if (r.import_kind) bits.push(`Recognised as: ${r.import_kind}.`);
         if (r.new_palette_entries) bits.push(`${r.new_palette_entries} new palette color(s).`);
+        if (r.palette_entries_changed) {
+          bits.push(`${r.palette_entries_changed} palette entr${r.palette_entries_changed === 1 ? 'y' : 'ies'} ` +
+            'change in total; every other palette color stays as it is.');
+        }
         if (r.quantized_pixels) bits.push(`${r.quantized_pixels} pixel(s) folded to a nearest color.`);
         // Monster pages only: the parts of the sheet no polygon samples are
         // dead bytes, so paint there is reported rather than written. Saying
@@ -1997,16 +2134,19 @@ function setupTextureReplacer(wasm, discBytes) {
   });
   quantizeChk.addEventListener('change', refresh);
 
-  // Download the selected texture's full-size decode as an editable PNG.
+  // Download the selected texture's full-size decode as an editable PNG. A
+  // multi-palette TIM downloads through the chosen view (Rust-encoded, so the
+  // file is exactly what the upload recognises).
   exportBtn.addEventListener('click', () => {
     if (!sel || !sel.origImg) return;
+    const t = sel.row;
+    if (isTimTier(t.tier) && sel.info && sel.info.count > 1) {
+      exportAs('image');
+      return;
+    }
     const c = document.createElement('canvas');
     drawRgba(c, sel.origImg);
-    const t = sel.row;
-    const name = t.tier === 'save-icon'
-      ? `legaia-save-icon-slot${t.section}.png`
-      : `legaia-tex-${t.tier}-${t.entry < 0 ? 'gap' : 'e' + t.entry}` +
-        `${t.section >= 0 ? '-s' + t.section : ''}-0x${t.offset.toString(16)}.png`;
+    const name = texFileName(t, '');
     c.toBlob((blob) => {
       if (!blob) return;
       downloadBlob(blob, name);
@@ -2719,9 +2859,12 @@ function init() {
       const code = (v && !v.startsWith('__')) ? v : (packLanguage(resume) || 'en');
       const yaml = mod.export_lang_pack(buf, code, resume || undefined);
       const bytes = new TextEncoder().encode(yaml);
-      triggerDownload(bytes, `legaia_${code}.working.yaml`);
-      setLangStatus(`Downloaded legaia_${code}.working.yaml - fill the translation: fields and import it above. ` +
-        'It contains the game\'s English text, so keep it to yourself and share the "shareable pack" instead.', 'ok');
+      // A PAL or Japanese disc exports its own script (dialog only), stamped
+      // with its own language: name the file after it.
+      const fileCode = noPack ? (packLanguage(yaml) || code) : code;
+      triggerDownload(bytes, `legaia_${fileCode}.working.yaml`);
+      setLangStatus(`Downloaded legaia_${fileCode}.working.yaml - fill the translation: fields and import it above. ` +
+        'It contains the game\'s own text, so keep it to yourself and share the "shareable pack" instead.', 'ok');
     } catch (e) {
       setLangStatus('Error: ' + (e && e.message ? e.message : e), 'err');
     }

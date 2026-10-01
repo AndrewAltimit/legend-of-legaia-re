@@ -286,6 +286,7 @@ window.MgDance = (function () {
         flat.set(f.flat, vb * 4);
         for (const ix of f.idx) idxArr.push(ix + vb);
       }
+      const castIdxLen = idxArr.length;
       if (env) {
         pos.set(env.pos, envBase * 3);
         uvs.set(env.uvs, envBase * 2);
@@ -293,6 +294,7 @@ window.MgDance = (function () {
         flat.set(env.flat, envBase * 4);
         for (const ix of env.idx) idxArr.push(ix + envBase);
       }
+      const envIdxEnd = idxArr.length;
       if (markers) {
         pos.set(markers.pos, markerBase * 3);
         uvs.set(markers.uvs, markerBase * 2);
@@ -328,6 +330,10 @@ window.MgDance = (function () {
       const scene = {
         renderer, dancers, clips, anim, moves: cast.moves, dx, vertBases,
         markerBase: markers ? markerBase : -1,
+        /* The combined index list and where the hall's span sits in it, so
+         * a frame under the engine camera can swap the hall for the subset
+         * the PSX GPU draws (`dance_env_visible_indices`). */
+        fullIdx: idx, castIdxLen, envIdxEnd, envBase, envIdxKey: null,
         base: pos.slice(),      /* pristine object-local vertices */
         out: pos,               /* per-frame posed copy (uploaded buffer) */
         lastBeat: -1,
@@ -445,11 +451,38 @@ window.MgDance = (function () {
      * FUN_801CEF54 stages, from the engine kernel the native window draws
      * with); a drag or a wheel hands the frame to the orbit, and dblclick
      * gives it back. */
+    /* Under the engine camera the hall draws only the triangles the PSX
+     * GPU would: a polygon spanning more than 1023 x 511 screen pixels is
+     * refused whole, which is what keeps the stage-entrance curtain out of
+     * the camera track's far poses (the kernel is the native window's,
+     * `dance_venue::psx_gpu_visible_indices`). The orbit view draws it all. */
+    function indexKey(a) {
+      let h = 0x811c9dc5 ^ a.length;
+      for (let i = 0; i < a.length; i++) h = Math.imul(h ^ a[i], 0x01000193);
+      return a.length + ':' + (h >>> 0);
+    }
+
+    function setHallIndices(b, engineCamera) {
+      if (!b.env || !api.dance_env_visible_indices) return;
+      const vis = engineCamera ? api.dance_env_visible_indices() : null;
+      const key = vis ? indexKey(vis) : 'full';
+      if (key === b.envIdxKey) return;
+      b.envIdxKey = key;
+      if (!vis) { b.renderer.updateIndices(b.fullIdx); return; }
+      const tail = b.fullIdx.length - b.envIdxEnd;
+      const out = new Uint32Array(b.castIdxLen + vis.length + tail);
+      out.set(b.fullIdx.subarray(0, b.castIdxLen), 0);
+      for (let i = 0; i < vis.length; i++) out[b.castIdxLen + i] = vis[i] + b.envBase;
+      out.set(b.fullIdx.subarray(b.envIdxEnd), b.castIdxLen + vis.length);
+      b.renderer.updateIndices(out);
+    }
+
     function renderBody(b) {
       const c = b.renderer.canvas;
       const vp = (!b.cam.orbit && b.env && api.dance_venue_vp)
         ? api.dance_venue_vp(c.width / Math.max(c.height, 1)) : null;
       b.renderer.mvpOverride = vp && vp.length === 16 ? Float32Array.from(vp) : null;
+      setHallIndices(b, !!b.renderer.mvpOverride);
       /* The engine projection carries the retail screen-X mirror the orbit
        * framing does not, so its front faces wind the other way. */
       const front = b.renderer.cullFrontFace;

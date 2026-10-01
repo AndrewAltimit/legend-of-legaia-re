@@ -3105,7 +3105,7 @@ Mixed meshes (some textured + some untextured prims) now render **both** halves:
 
 ### Region story-flag gate families
 
-*Status:* resolved as structure across the chapter-2/3 regions; play order is capture-confirmed for `retona`, `dohaty`, `taiku`, the Sebucus spine, `korb3`, the `kor5` chain head and the `map03` hub latch (see the play-order captures paragraph below); the remaining play-order residual is tracked on [`open-rev-eng-threads.md`](open-rev-eng-threads.md#region-story-flag-gate-families)
+*Status:* resolved as structure across the chapter-2/3 regions; play order is capture-confirmed for `retona`, `dohaty`, `taiku`, the Sebucus spine, `korb3`, the `kor5` chain head and the `map03` hub latch (see the play-order captures paragraph below); the in-bracket order is pinned by disassembly for `rayman`, `bubu2`, retock and deroa's `0x46D`; the remaining play-order residual is tracked on [`open-rev-eng-threads.md`](open-rev-eng-threads.md#region-story-flag-gate-families)
 
 Every field scene's MAN carries one **partition-2 record** per cutscene or story beat, and each record's *header* holds two flag lists that the spawn evaluator `FUN_8003BDE0` checks before running it: a **C1** one-shot list (the record is suppressed once any listed flag is set) and a **C2** requires-all list (the record spawns only when every listed flag is set). Regional progression is expressed almost entirely through these header gates.
 
@@ -3214,6 +3214,15 @@ The poll corpus also pins the `0x7` discriminator's own SET: it latches inside t
 - **Rim Elm opening** — the `549` latch has a live organic SET at the opening commit, with `0x226` in the same beat.
 
 Regions walked in the corpus **without** an organic family SET stay play-order-unconfirmed: `retock`/`retockin` (entered with `0x357` already latched; `0x502` never fired), `doman` (only the unpinned lead `0x379` fired; `0x3FB` did not), `nilboa`/`nilboa2` and `son` (entered mid-arc from loaded states; the only nilboa flag burst is a load frame).
+
+**In-bracket write order (disassembly).** The playthrough cards place each residual family between two milestone saves; where a family writes more than once inside one bracket, the order is fixed by the scripts themselves. Counting only story SET sites (clean, not a prose alias, not a developer flag-menu arm), each case below has exactly the writers named:
+
+- **`rayman` - `0x201 -> 0x1FB -> 0x200 -> 0x1FC`, forced.** `0x201` is set by the talk record `P1[47]`; `0x1FB` by `P2[12]` (C2 `0x201`), `0x200` by `P2[18]` (C2 `0x1FB`), `0x1FC` by `P2[19]` (C2 `0x200`). No link can be written before the one its only writer requires.
+- **`bubu2` - `0x609` then `0x3D3`, one beat.** Once `0x608` is set (the bracket before), the live writer is `P2[0]` (C1 `0x3D3`, C2 `0x608`), which SETs `0x609` and `0x3D3` on adjacent instructions (body `+0x1E` / `+0x20`). `P2[2]` carries `0x608` in its C1 and `P2[3]` is retired by `P2[0]`'s `0x609`.
+- **retock - `0x502` before `0x33B`.** `0x502`'s writer is `retock P2[33]` (C1 `0x502`, C2 `0x357`), spawned only by Eliza's talk dispatch `P1[31]`, which tests `0x33B` first and diverts to her post-`0x33B` lines when it is set, then spawns `P2[33]` once `0x63C` (set by `P2[16]`, the first talk) is up. `0x33B`'s writer is `jagaroom P2[8]` (C2 `0x351`, which the `jagaroom P1[8]` actor sets when it spawns), and nothing there waits on `0x502`. So a play that latches `0x33B` first can never write `0x502`; the Dohati save holds both, so its play wrote `0x502` first. The full chain is `0x357 -> 0x63C -> 0x502 -> 0x33B -> 0x34F` (`jagaroom P2[9]`, C2 `0x33B`).
+- **deroa - `0x3E1` before `0x46D`.** `P2[4]` (C1 `0x46D`, C2 `0x3E1`); `P2[5]` / `P2[6]` carry only their own latch.
+
+`retock P1[1]` / `retockin P1[1]` also write `0x33B`, `0x502` and `0x357`, but as developer flag-menu arms (flag-op runs ending in a `JmpRel` back to the picker), not story writers. Pinned by `man_variant_carrier_census_disc.rs::region_gate_in_bracket_write_order`. The two orders no gate decides stay on the open page.
 
 ### Extraction-0874 §2 (`player.lzs`) F-variant pixels - a one-shot opening face-frame stamp, not a menu writer
 
@@ -5081,6 +5090,7 @@ has three references on the disc, all in PROT 0899, whose single writer
 
 | Thread | Status | Evidence | Answer |
 |---|---|---|---|
+| Are camera-relative move-VM parts drawn where retail draws them? | resolved (yes, to the pixel, on both arms) | `capture` | In every library state a flagged part's `+0x2C` is the full camera applied to `+0x14` on the skip arm and `S_b` times it under `0x400`, as `FUN_8001CF50` reads. Posed from the state, the hosts' kernel lands each part on that `+0x2C`, and puts the `battle_melee_hit_spark` billboards and `opdeene`'s locked quads on retail's packets within 1.5 px, at the six-fold size; flag-free and base-scaled compositions miss ([`renderer.md`](../subsystems/renderer.md#camera-relative-nodes-fun_8001cf50)). |
 | How far is the hosts' f32 camera rotation from retail's q3.12? | resolved (sub-pixel almost everywhere) | `capture` | Matrix elements differ by at most 2.44/4096. Over 392000 samples spread through the view volumes of 98 states, 0.77% move half a pixel or more; the median per-state worst case is 0.18 px, the worst 2.98 px (`ending_vignette_fullscreen`). The camera build itself is `FUN_800172C0` -> `FUN_80026988`, ported retail-exact ([`renderer.md`](../subsystems/renderer.md)). |
 | What does `FUN_80028158` build? | resolved (a Legaia TMD object of GT4 packets) | `disassembly` + `capture` | `count = packed & 0xFF`, `phase = packed >> 8`; the plane is `mode & 3`, the shape `(mode >> 3) & 0xF` through the jump table at `0x80010BC0` (0/4/5/6/7 -> `0x80028284`, 1/3 -> `0x80028310`, 2 -> `0x8002833C`), and `mode >> 8` the texture mode (shape 0 only; modes 1-4 subdivide each column four ways). Packets carry flags `0x26`, ilen 9, mode `0x3C`, closed by twenty zero words; only shapes 4 and 5 call `rand`. The port (`engine-core::effect_default_arm`) reproduces 64 of 73 captured ground-shadow blocks whole and the other 9 up to a later overwrite. [`effect-vm.md`](../subsystems/effect-vm.md#the-default-arms-draw). |
 | Why does map01's kind-4 puff column hold seven nodes in two groups? | resolved (one spawner, two children, one drifting) | `disassembly` + `capture` | One spawner re-seats itself at `(9152, -320 + rand % 160, 10432)` while flag `0x2FA` is clear; one child sets a Z velocity of `-4 << 3`, which only `FUN_80021DF4`'s motion block (`0x800228A0..0x80022B90`) applies. The port's ambient tick now runs it (`engine-core::part_motion`) and holds six to eight live nodes against retail's seven. |
@@ -5177,14 +5187,14 @@ the same tilt, which is what an authored Dutch angle looks like.
 
 | scene | what it is | PROT entry | record | roll (12-bit) | degrees |
 |---|---|---|---|---|---|
-| `edstati3` | Ending (station3) | 826 | P2[0] | `10`, `20` | 0.9, 1.8 |
-| `station3` | Karisto Station (late) | 616 | P2[0] | `30` | 2.6 |
-| `map03` | World map (Karisto) | 392 | P2[10] | `60` | 5.3 |
+| `edstati3` | Ending (station gondola) | 826 | P2[0] | `10`, `20` | 0.9, 1.8 |
+| `station3` | Karisto Station | 616 | P2[0] | `30` | 2.6 |
+| `map03` | World map (Karisto Kingdom) | 392 | P2[10] | `60` | 5.3 |
 | `nilboa` | Nivora Ravine | 638 | P2[33] | `60` | 5.3 |
-| `taiku` | Muscle Dome | 373 | P2[27] | `-120` | -10.5 |
-| `korout` | Field (korout) | 534 | P2[3] | `240` | 21.1 |
-| `juui1` | Juggernaut interior 1 | 588 | P2[0], P2[3], P2[4] | `-400` | -35.2 |
-| `juui2` | Juggernaut interior 2 | 597 | P2[0] | `-660` | -58.0 |
+| `taiku` | Zora's Floating Castle | 373 | P2[27] | `-120` | -10.5 |
+| `korout` | Sol Tower (entrance) | 534 | P2[3] | `240` | 21.1 |
+| `juui1` | Bio Castle (F) | 588 | P2[0], P2[3], P2[4] | `-400` | -35.2 |
+| `juui2` | Bio Castle (G) | 597 | P2[0] | `-660` | -58.0 |
 
 The two biggest tilts sit inside the Juggernaut, and the smallest opens an
 ending cutscene - which is where a canted camera is exactly what an author

@@ -335,6 +335,52 @@ fn pass_threshold_and_versus_grade() {
     assert!(!g.beating_rivals());
 }
 
+/// State 1 tests `0x133`, `0x134`, `0x135`, `0x428` in that order and each
+/// hit overwrites the mode, so the last flag set wins; none keeps the
+/// entry's qualifier.
+#[test]
+fn state_one_maps_the_story_flags_to_the_floor() {
+    let only = |f: u16| move |x: u16| x == f;
+    assert_eq!(dance_mode_from_flags(|_| false), DanceMode::Qualifier);
+    assert_eq!(dance_mode_from_flags(only(0x133)), DanceMode::HowTo);
+    assert_eq!(dance_mode_from_flags(only(0x134)), DanceMode::Qualifier);
+    assert_eq!(dance_mode_from_flags(only(0x135)), DanceMode::Finals);
+    assert_eq!(dance_mode_from_flags(only(0x428)), DanceMode::FreePlay);
+    assert_eq!(
+        dance_mode_from_flags(|f| f == 0x133 || f == 0x135),
+        DanceMode::Finals
+    );
+}
+
+/// The results state's grade, per mode (`0x801CFE80..0x801CFF14`): the
+/// qualifier reads slot 2, the finals slot 1, a tie keeps the pass flag, the
+/// how-to demo clears at `0x12D` and up, free play never clears.
+#[test]
+fn results_grade_clears_the_pass_flag_per_mode() {
+    let mut g = game();
+    g.mode = DanceMode::Qualifier;
+    g.dancers[0].score = 100;
+    g.dancers[1].score = 500;
+    g.dancers[2].score = 100;
+    assert!(
+        !g.results_clear_win_flag(),
+        "slot 1 is not the qualifier's rival"
+    );
+    g.dancers[2].score = 101;
+    assert!(g.results_clear_win_flag());
+    g.mode = DanceMode::Finals;
+    assert!(g.results_clear_win_flag());
+    g.dancers[1].score = 100;
+    assert!(!g.results_clear_win_flag(), "a tie keeps the flag");
+    g.mode = DanceMode::HowTo;
+    g.dancers[0].score = 0x12C;
+    assert!(!g.results_clear_win_flag());
+    g.dancers[0].score = 0x12D;
+    assert!(g.results_clear_win_flag());
+    g.mode = DanceMode::FreePlay;
+    assert!(!g.results_clear_win_flag());
+}
+
 #[test]
 fn legacy_judge_wrapper_folds_the_events() {
     let mut g = game();
@@ -1013,4 +1059,72 @@ fn the_emit_dispatch_rounds_a_negative_pair_toward_zero() {
         SpritePartEmit::Shadowed { x, y, .. } => assert_eq!((x, y), (0, 8)),
         other => panic!("a part takes the shadowed arm, got {other:?}"),
     }
+}
+
+// ---------------------------------------------------------- move clip length
+
+/// Five kinds whose clips carry distinct ids: idle `10 + k`, dance `20 + k`,
+/// move pair `p` = `100 + p` (pair 1 in the party bank).
+fn synthetic_kinds() -> Vec<legaia_asset::dance_cast::DanceKind> {
+    use legaia_asset::dance_cast::{DanceClip, DanceKind, MOVE_PAIRS};
+    let clip = |anim_id: u16, party_bank: bool| DanceClip {
+        anim_id,
+        party_bank,
+        rate: 16,
+    };
+    (0..5u16)
+        .map(|k| DanceKind {
+            model: k,
+            home: [0; 3],
+            idle: clip(10 + k, false),
+            dance: clip(20 + k, false),
+            alt: clip(0, false),
+            moves: (0..MOVE_PAIRS as u16)
+                .map(|p| clip(100 + p, p == 1))
+                .collect(),
+        })
+        .collect()
+}
+
+#[test]
+fn a_judge_move_holds_the_dancer_until_its_clip_ends() {
+    let mut g = game();
+    g.kinds = synthetic_kinds();
+    // The miss reaction (circle, pair 1) plays 40 ticks.
+    let mut ticks = std::collections::HashMap::new();
+    ticks.insert((101u16, 16u16), 40u32);
+    g.clip_ticks = Some(ticks);
+    g.advance(1);
+    assert_eq!(g.dancers[0].clip, 20, "the dance loop is bound in play");
+
+    assert_eq!(g.press(DanceDir::B), DanceEvent::Miss);
+    assert_eq!(g.dancers[0].clip, 101, "the miss reaction is bound");
+    // Well past the note latch (15 at 2 a frame), the reaction still plays
+    // and the dancer is still not judged - retail's award routine only runs
+    // while a standing loop is bound.
+    for _ in 0..20 {
+        g.advance(1);
+    }
+    assert_eq!(g.dancers[0].latch, 0, "the note latch has long expired");
+    assert_eq!(g.dancers[0].clip, 101);
+    assert!(g.dancers[0].locked(u32::MAX));
+    // The move's own end flag rebinds the loop.
+    for _ in 0..20 {
+        g.advance(1);
+    }
+    assert_eq!(g.dancers[0].clip, 20, "the loop is back at the move's end");
+    assert!(!g.dancers[0].locked(u32::MAX));
+}
+
+#[test]
+fn without_clip_lengths_the_note_latch_times_the_move() {
+    let mut g = game();
+    g.kinds = synthetic_kinds();
+    g.advance(1);
+    assert_eq!(g.press(DanceDir::B), DanceEvent::Miss);
+    assert_eq!(g.dancers[0].clip, 101);
+    for _ in 0..8 {
+        g.advance(1);
+    }
+    assert_eq!(g.dancers[0].clip, 20, "the latch fallback rebinds the loop");
 }

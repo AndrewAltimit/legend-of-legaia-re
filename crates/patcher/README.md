@@ -603,7 +603,9 @@ fully **deterministic from the seed**.
   handler, the strings, the bucket table, and the runtime cells - is hosted in the
   **menu overlay (PROT 0899)**: two byte-verified edits add the Trade row + route
   a confirm into an unused picker sub-mode, and everything else sits in 0899's
-  reference-free ~3.8 KB all-zero dead run (resident throughout the shop). Nothing
+  reference-free ~3.8 KB all-zero dead run (resident throughout the shop):
+  `0x801EA440..0x801EB340`, the save-menu atlas's blank lower band, clear of the
+  save screen's card buffers (`space_ledger::BUFFERS`). Nothing
   touches the SCUS rodata gap, so seru trading **composes with the
   bonus-equipment-drop / flee-EXP / Seru-Bell-name gap features**.
   `apply::inject_trade_full` writes each piece via `patch_prot_entry(899, …)`,
@@ -978,10 +980,13 @@ coloured arrows for the selected row and a retail-style description
 (`Super Arts. Somersault,|Cyclone, Somersault.`) - four detours into the menu
 overlay's own row loop, count reads and cursor bound
 ([`super_art_menu`](src/super_art_menu.rs)), with routines, names and
-descriptions in 0899's own reference-free dead space (read/write-watched across
-a pause-menu tour; the run `--seru-trade` shares, past its highest blob, plus a
-second one for the text), so that half costs no SCUS bytes and composes with
-everything. Names are carried because the battle art records the in-battle chase
+descriptions in 0899's own reference-free dead space (the run `--seru-trade`
+shares, past its highest blob, plus a second one for the text, both in the
+save-menu atlas's blank band `0x801EA440..0x801EB94F`), so that half costs no
+SCUS bytes and composes with everything. Neither run may sit in the save
+screen's card buffers (`0x801E5120..0x801E9120`): a pause-menu Save fills them
+and returns to the menu with the overlay still resident. `space_ledger::BUFFERS`
+lists every such span and a test rejects any ledger region overlapping one. Names are carried because the battle art records the in-battle chase
 reads are not resident in the menu.
 
 Code and tables spread over the four verified-dead SCUS regions (~600 of 652 B),
@@ -1405,7 +1410,12 @@ and writes (with a `dry_run` mode the site's preview uses), and
 browser's texture browser. The CLI loop is `tim-list` -> `tim-export`
 (decode to PNG) -> edit -> `tim-replace` (`--quantize` folds palette
 overflow; `--dry-run` validates only; `--output`/`--patch` as everywhere
-else). Full reference:
+else). `replace_texture_png` / `export_texture_png` add the multi-palette
+shapes (composite, palette strip, indexed PNG, per-region in-game view), and
+`texture_palettes` turns the per-texel palette map of the menu / battle UI
+sheet (`legaia_asset::tim_palette_context::texel_palettes`, the same kernel
+the asset viewer's in-game view reads) into this texture's palette numbers
+(`tim-palette-map` prints it). Full reference:
 [`docs/tooling/randomizer.md`](../../docs/tooling/randomizer.md#texture-replacement);
 encoder rules (alpha -> STP, palette reuse, byte-exact round trips):
 [`docs/formats/tim.md`](../../docs/formats/tim.md#encoding-png---tim-texture-replacement).
@@ -1465,9 +1475,8 @@ nothing is written.
 
 Swaps one of the 16x16 character faces the save UI draws and the memory-card
 block icon is cut from. A separate family from `tim-replace` because the
-sheet's palette is **per tile** - the generic encoder replicates a rebuilt
-palette across every CLUT row, which here would repaint all sixteen
-portraits - and because a tile is stored as 16 eight-byte runs 128 bytes
+sheet's palette is **per tile** - the generic image encoder matches the whole
+sheet against one palette, where each tile needs its own - and because a tile is stored as 16 eight-byte runs 128 bytes
 apart, so one replacement is 17 small same-size writes.
 
 The CLI loop is `save-icon-list` -> `save-icon-export` (16x16 PNG) -> edit ->
@@ -1482,7 +1491,7 @@ bytes and a shared PPF carries only the user's own edit. Format reference:
 
 `translation` module + the `legaia-patcher translate` subcommands
 (`export` / `init` / `strip` / `merge` / `stats` / `diff-disc` /
-`lift-official` / `fit-report` / `space` / `import`): community language packs. Exports every cataloged user-facing string into an editable YAML
+`lift-official` / `fit-report` / `space` / `coverage` / `import`): community language packs. Exports every cataloged user-facing string into an editable YAML
 pack - the SCUS name pools (items, item types, spells, Tactical Arts, accessory
 passives, new-game party names) and the `0x1F`-segment dialog corpus
 (scene-bundle MANs, LZS-decompressed; plus raw carriers - v12 event-script
@@ -1490,7 +1499,9 @@ prescripts and the streaming-MAN dungeon scenes). Import applies filled
 `translation:` fields as same-size in-place patches (strings re-terminated -
 budget reclaims the 4-byte-alignment zero padding, and a pointer-table name
 that still overflows moves into room the other names give up,
-`translation::name_pool`; a monster name grows its record; dialog segments space-padded
+`translation::name_pool`; a longer `ui_menu` / `system_text` string moves with
+every `lui` pair, pointer word and `$gp` form that reaches it rewritten,
+`translation::code_refs` + `translation::code_strings`; a monster name grows its record; dialog segments space-padded
 to their exact framing; a scene whose recompress overflows its LZS footprint
 rolls back its longest lines one at a time), with per-character encodability
 errors for anything outside the retail ASCII glyph set. Untranslated entries
@@ -1526,6 +1537,16 @@ grows into its own sector slack (a same-size-image write) or, under
 asset arena the entry is copied into; the importer keeps a 64 KiB headroom
 under it for the VDF morph scratch window at the arena's top.
 
+`export` is build-aware (`translation::build`, from `SYSTEM.CNF`): the USA
+disc exports every section; a PAL disc its dialog and monster names; the
+Japanese disc its dialog, whose count-led Shift-JIS lines
+(`translation::sjis`) decode to Unicode and re-encode byte-exact - a reading
+reference, since `import` refuses writes to a Japanese disc. `translate
+coverage` (`translation::coverage`) measures the export against the script
+walk per scene; disc-gated oracle `tests/translation_export_coverage_real.rs`
+(`LEGAIA_DISC_BIN`, `LEGAIA_DISC_BIN_JP`, `LEGAIA_DISC_BIN_PAL`). See
+[measuring coverage](../../docs/tooling/translation/index.md#measuring-coverage).
+
 Two pack shapes: a **working** pack carries `source:` (the game's own text - the
 translator's reference, gitignored, never committed) while a **distributable**
 pack (`translate strip`) drops the source and keeps only `key -> translation`,
@@ -1541,7 +1562,10 @@ bulk fill, `merge` recombines. Full workflow + schema:
 `translate space --input DISC [--pack P] [--section S] [--allow-relayout]
 [--scene PROT] [--json] [--verbose]` shows how much room every translatable
 string has and what uses it (`translation::space`, JSON schema
-`legaia-space-v1` in the module docs). Disc only, it lists the SCUS name
+`legaia-space-v1` in the module docs). Disc only, it opens with the room per
+category (`items`, `monster_names`, `place_names`, `ui_menu`, `system_text`:
+carrier, addressing, growable strings, free and spare bytes, competing mods)
+and the movable / pinned strings per code image, then lists the SCUS name
 compaction regions (bytes English uses per region), which names may move and
 why the rest are pinned, each monster record's in-place room and growth cap,
 the fixed-room `ui_menu` / `system_text` pools, every scene MAN's compressed

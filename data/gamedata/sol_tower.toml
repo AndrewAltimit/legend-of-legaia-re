@@ -1,21 +1,26 @@
-# Sol Tower (CDNAME `town0d`) - floor layout and side-quest catalog.
+# Sol Tower - floor layout and side-quest catalog.
 #
-# The Sol scene is structurally a tower with one floor per level (B2 .. F7
-# plus the roof). Each floor hosts a mix of vendors (covered by shops.toml),
+# Sol is structurally a tower with one floor per level (B2 .. F7 plus the
+# roof). Each floor hosts a mix of vendors (covered by shops.toml),
 # minigames (covered by casino.toml), and named side-quests that aren't
 # bound to any of the existing tables - those live here.
 #
+# On the disc Sol is not one scene but thirteen, every one bannered
+# "Sol Tower": the `kor*` stairs / underground blocks, `korout` (the
+# entrance) and the `koin*` rooms (scenes.toml names each). `town0d` is a
+# Rim Elm story-state variant, not Sol.
+#
 # Used by the site's minigames + world pages, and by the decomp side as
-# ground-truth labels for NPC scripts inside the town0d field-VM bundle.
+# ground-truth labels for NPC scripts inside the Sol field-VM bundles.
 
 [meta]
-scene_label = "town0d"
+scene_label = "kor"
 display_name = "Sol"
-# Extraction index, not the raw CDNAME `#define`. `#define town0d 347`
-# is a raw-TOC index and extraction entries run two lower
-# (`legaia_prot::cdname::block_for_extraction_index`), so the block
-# starts on town0d's own field_map at 345.
-prot_block_start = 345
+# Extraction index, not the raw CDNAME `#define`. `#define kor 483` is a
+# raw-TOC index and extraction entries run two lower
+# (`legaia_prot::cdname::block_for_extraction_index`), so the first Sol
+# block starts on kor's own field_map at 481.
+prot_block_start = 481
 notes = """
 Sol is a vertical structure with a B2 basement reachable via a service
 elevator. The Genesis Tree Seedling side-quest plants the basement; the

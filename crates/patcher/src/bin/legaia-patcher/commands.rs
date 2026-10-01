@@ -150,6 +150,17 @@ pub(crate) fn cmd_locations(input: &Path) -> Result<()> {
     for (name, count) in &inv.scene_banners {
         println!("  {count:>2}x  {name}");
     }
+
+    println!("\nScene-entry banner per scene (PROT entry, CDNAME scene id, banner)");
+    for (idx, label, name) in &inv.scene_banner_entries {
+        let label = label.as_deref().unwrap_or("?");
+        let shown = if name.is_empty() {
+            "(no banner)"
+        } else {
+            name.as_str()
+        };
+        println!("  {idx:>4}  {label:<10} {shown}");
+    }
     Ok(())
 }
 

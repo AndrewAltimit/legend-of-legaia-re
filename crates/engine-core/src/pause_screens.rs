@@ -2103,8 +2103,18 @@ pub struct EquipScreenModel {
     /// Bag count per candidate, parallel to [`Self::candidate_names`].
     pub candidate_counts: Vec<u8>,
     /// The three retail compare rows (`FUN_801D21C0`'s stat block) as
-    /// `(label, current, preview)`. Empty when nothing is previewed.
+    /// `(label, current, preview)`: the live menu block against the block
+    /// with the Best Equipment picks installed. Retail draws them only while
+    /// the slot browse's hand is on the Best Equipment row (sub-screen `0x13`,
+    /// row 0); empty everywhere else - the candidate step's compare is
+    /// window 25 ([`Self::compare`]), not this block.
     pub stat_compare: Vec<(&'static str, u16, u16)>,
+    /// The Best Equipment row's per-armament change list: `(armament row
+    /// 0..=3, candidate name)` for each armament whose pick
+    /// (`DAT_801EF0C0[i]`) differs from what the slot holds. Retail draws the
+    /// change arrow, the armament pictogram and the name on that armament's
+    /// slot row. Same gate as [`Self::stat_compare`].
+    pub best_changes: Vec<(u8, String)>,
     pub phase: EquipScreenPhase,
     /// Cursor row inside the active phase column.
     pub cursor: u16,
@@ -2121,9 +2131,7 @@ pub struct EquipScreenModel {
     /// Slot-picker cursor row, or `None` past the slot picker - what the
     /// sprite pass puts the second hand on.
     pub slot_cursor: Option<u16>,
-    /// Pictogram rows the sprite pass draws. Retail draws exactly 7; the
-    /// engine's 8th slot row stays navigable but icon-less so the column
-    /// matches the retail capture.
+    /// Pictogram rows the sprite pass draws - retail's seven browse rows.
     pub pictogram_rows: usize,
     /// Window 24's item-info panel content for the hovered candidate, or
     /// `None` outside the candidate step.
@@ -2329,7 +2337,7 @@ pub fn equip_screen_model(
         None => format!("Item {id:02X}"),
     };
     // Rows in retail's browse order (weapon, helmet, body, footwear, Goods
-    // x3), the engine's Hand Guard row last.
+    // x3); the engine's Hand Guard slot (the Ra-Seru byte) has no row.
     let order = crate::equip_session::BROWSE_SLOT_ORDER;
     let slot_labels: Vec<String> = order
         .iter()
@@ -2387,30 +2395,43 @@ pub fn equip_screen_model(
             (names, counts, considered)
         };
 
-    let stat_compare: Vec<(&'static str, u16, u16)> = match considered_id {
-        Some(id) => {
-            let neutral = crate::battle_stats::StatusModifiers::default();
-            let cur = crate::battle_stats::compute_battle_stats(
-                record,
-                session.equipment(),
-                &[],
-                &neutral,
-            );
-            let mut copy = *record;
-            copy.equip[active_slot as usize] = id;
-            let new = crate::battle_stats::compute_battle_stats(
-                &copy,
-                session.equipment(),
-                &[],
-                &neutral,
-            );
-            vec![
-                ("ATK", cur.atk, new.atk),
-                ("UDF", cur.udf, new.udf),
-                ("LDF", cur.ldf, new.ldf),
-            ]
+    // Window 22's second pass (`FUN_801D21C0`, `0x801D23BC..0x801D27F8`):
+    // gated on the settled slot-browse sub-screen (`DAT_801E46A4 ==
+    // DAT_801E46A8 == 0x13`) and on browse row 0. It walks the four
+    // armaments against the Best Equipment picks and then prints the
+    // ATK / UDF / LDF words of the live block (`0x801EF08C..94`) with the
+    // picks' block (`0x801EF0AC..B4`) beside any that differ.
+    let on_best_row = matches!(
+        session.state(),
+        EquipState::SlotPicker { cursor } if cursor == crate::equip_session::SLOT_BROWSE_BEST_ROW
+    ) && !session.slot_cursor_hidden();
+    let (stat_compare, best_changes) = if on_best_row {
+        let picks = session.best_equipment_now();
+        let mut trial = *record;
+        let mut changes = Vec::new();
+        for (row, (&slot, &pick)) in crate::equip_session::ARMAMENT_ENGINE_SLOTS
+            .iter()
+            .zip(picks.iter())
+            .enumerate()
+        {
+            if record.equip.get(slot).copied() != Some(pick) {
+                changes.push((row as u8, name_of(pick)));
+                trial.equip[slot] = pick;
+            }
         }
-        None => Vec::new(),
+        let cur = menu_stat_block(record, session.equipment(), 0, 0);
+        let new = menu_stat_block(&trial, session.equipment(), 0, 0);
+        let w = |b: &[i32; 8], i: usize| b[i].clamp(0, i32::from(u16::MAX)) as u16;
+        (
+            vec![
+                ("ATK", w(&cur, 3), w(&new, 3)),
+                ("UDF", w(&cur, 4), w(&new, 4)),
+                ("LDF", w(&cur, 5), w(&new, 5)),
+            ],
+            changes,
+        )
+    } else {
+        (Vec::new(), Vec::new())
     };
 
     // Window 24's panel: the hovered candidate's own info row, resolved
@@ -2499,6 +2520,7 @@ pub fn equip_screen_model(
         candidate_names,
         candidate_counts,
         stat_compare,
+        best_changes,
         phase,
         cursor,
         // The row the active slot draws on (its place in the browse order).
@@ -2510,7 +2532,7 @@ pub fn equip_screen_model(
             EquipState::SlotPicker { cursor } => Some(cursor as u16),
             _ => None,
         },
-        pictogram_rows: record.equip.len().min(7),
+        pictogram_rows: crate::equip_session::BROWSE_SLOT_ROWS,
     }
 }
 
@@ -3424,8 +3446,45 @@ mod tests {
     /// all print the ATK / UDF / LDF triple whatever is hovered, because
     /// `slti v0, s0, 4` at `0x801D137C` skips the category lookup for them;
     /// only the three Goods rows resolve one, and the first of them draws
-    /// MAX HP / MAX MP for an HP-boost accessory. The engine's extra Hand
-    /// Guard slot has no retail row at all, so it reports `-1`.
+    /// MAX HP / MAX MP for an HP-boost accessory. The engine's Hand Guard
+    /// slot is not a browse row at all.
+    /// Window 22's stat block is the Best Equipment row's preview only
+    /// (`FUN_801D21C0`'s second pass is gated on sub-screen `0x13`, row 0):
+    /// the candidate step's compare is window 25, so the block is empty there.
+    #[test]
+    fn the_main_window_compare_block_belongs_to_the_best_equipment_row() {
+        use crate::battle_stats::{EquipmentTable, StatRecord, StatusModifiers};
+        use crate::equip_session::{EquipInput, EquipSession};
+        let mut inv = crate::world::ItemBag::new();
+        inv.insert(1, 1);
+        let mut session = EquipSession::new(
+            StatRecord::default(),
+            inv,
+            EquipmentTable::new(),
+            StatusModifiers::default(),
+            Vec::new(),
+        );
+        let names = vec!["Vahn".to_string()];
+        let best = equip_screen_model(&session, 0, &names, &[], None, None);
+        let labels: Vec<&str> = best.stat_compare.iter().map(|r| r.0).collect();
+        assert_eq!(labels, ["ATK", "UDF", "LDF"]);
+        assert_eq!(best.pictogram_rows, 7);
+        assert_eq!(best.slot_items.len(), 7, "retail's seven browse rows");
+
+        session.input(EquipInput {
+            down: true,
+            ..Default::default()
+        });
+        let row1 = equip_screen_model(&session, 0, &names, &[], None, None);
+        assert!(row1.stat_compare.is_empty() && row1.best_changes.is_empty());
+        session.input(EquipInput {
+            cross: true,
+            ..Default::default()
+        });
+        let picker = equip_screen_model(&session, 0, &names, &[], None, None);
+        assert!(picker.stat_compare.is_empty());
+    }
+
     #[test]
     fn compare_slot_row_is_the_retail_browse_row_not_the_engine_slot() {
         use crate::battle_stats::{EquipmentTable, StatRecord, StatusModifiers};
@@ -3433,12 +3492,12 @@ mod tests {
 
         // Engine slot -> the row retail's browse column would be on. Rows
         // `>= 4` are the three Goods rows, the only ones that resolve a
-        // compare category.
-        const WANT: [(u8, i32); 8] = [
+        // compare category. Engine slot 3 (Hand Guard, the Ra-Seru byte) is
+        // not a browse row, as in retail, so no picker opens on it.
+        const WANT: [(u8, i32); 7] = [
             (0, 0), // weapon
             (1, 1), // helmet
             (2, 2), // body
-            (3, -1),
             (4, 3), // footwear - retail row 3, below the `slti 4` guard
             (5, 4), // Goods 1
             (6, 5), // Goods 2

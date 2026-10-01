@@ -113,6 +113,9 @@ use crate::cast_module_ticks::{
 // Body constants - one per (entry, body) pair, named by owner
 // ---------------------------------------------------------------------------
 
+/// The arm of [`glare_divide_blind_tick`] that raises the Mystic Shield
+/// word `_DAT_8007BD84` (`0x801F7678`) beside its reaction-run blank.
+pub const MYSTIC_SHIELD_ARM: u8 = 4;
 /// PROT 0940's `0xAC` arm - [`glare_divide_blind_tick`].
 pub const GLARE_DIVIDE_BLIND_TICK: u32 = 0x801F_7240;
 /// PROT 0940's `0x50` / `0xAE` arm - [`glare_divide_split_tick`]. Two action
@@ -491,6 +494,12 @@ fn run_chain_tick(
 ///   `0x801C9370` four instructions earlier, so the displacement `0xC` is the
 ///   table index, not a record field. A backward scan that stopped at the
 ///   prologue's `lw s0, 0(v0)` would read this as `caster[+0x0C]`;
+/// * arm `4` also raises Cort's **Mystic Shield**: it stores the handle of
+///   the effect it just spawned into `_DAT_8007BD84` (`sw v0,-0x427C(v1)` at
+///   `0x801F7678`), the word the damage finisher halves an enemy defender's
+///   hit on and the `0xB4` pick gates Evil Seru Magic on. The kernel has no
+///   global to write, so the host raises it when this arm runs
+///   ([`MYSTIC_SHIELD_ARM`]);
 /// * arm `7` is terminal - it clears `ctx[+0x0D]`, writes the framing
 ///   halfword `ctx[+0x6DA] = 0x780`, and clears the busy register, so the
 ///   body reports Done and the phase parks at `7`.

@@ -771,8 +771,11 @@ void main() {
         this._vrDrive = null;
         if (this._vrPrecise) {
           this._vrPrecise = false;
-          if (typeof this.rt.set_precise_movement === 'function') {
-            this.rt.set_precise_movement(false);
+          /* Lift the session-only override: the player's own persisted
+           * setting rules again. (Writing `false` through the persisting
+           * setter used to save "off" over whatever they had chosen.) */
+          if (typeof this.rt.set_precise_movement_override === 'function') {
+            this.rt.set_precise_movement_override(undefined);
             this.rt.set_left_stick(0, 0);
           }
         }
@@ -794,11 +797,12 @@ void main() {
       let pad = 0;
       if (d.buttons.trigger || d.buttons.a) pad |= 0x4000;  /* Cross */
       if (d.buttons.b) pad |= 0x2000;                       /* Circle */
-      const hasPrecise = typeof this.rt.set_precise_movement === 'function'
+      const hasPrecise = typeof this.rt.set_precise_movement_override === 'function'
         && typeof this.rt.set_left_stick === 'function';
       if (hasPrecise) {
         if (!this._vrPrecise) {
-          this.rt.set_precise_movement(true);
+          /* Session-only: never persisted over the player's option. */
+          this.rt.set_precise_movement_override(true);
           this._vrPrecise = true;
         }
         const clamp = (v) => Math.max(-127, Math.min(127, Math.round(v * 127)));
@@ -2290,6 +2294,17 @@ void main() {
            * engine decodes that one channel and replays the request. The
            * native window does the same read off the disc image. */
           this._serveXaStage(rt);
+          /* Re-read the presentation state the tick just moved. The read
+           * above the ticks serves the pad lock and the menu gate, which
+           * need the pre-tick value; the colour grade, the screen tint and
+           * the depth-cue ramp this frame stages are the post-tick ones,
+           * which is what the native window stages after its tick loop.
+           * Staging the pre-tick read ran the scene-entry fade and the
+           * prologue grade one frame behind on this page. */
+          if (typeof rt.play_cutscene_state_json === 'function') {
+            try { this._cut = JSON.parse(rt.play_cutscene_state_json()); }
+            catch (e) { /* keep the pre-tick read */ }
+          }
           if (entered) {
             /* The engine walked through a door: its scene swapped under us, so
              * the geometry has to swap too. A trap while rebuilding the new
@@ -2626,6 +2641,20 @@ void main() {
         fieldVp = buildWorldOrbitVp(c.width, Math.max(c.height, 1), this._ext, this.cam);
       } catch (e) { fieldVp = null; }
 
+      /* Retail's placed-object near reject (FUN_8001ADA4's draw-kind 5
+       * arm): a placed object whose origin sits within 160 units of the eye,
+       * or behind it, is not drawn at all - retail has no near-plane clip, so
+       * the port would otherwise paint the inside of a prop the camera stands
+       * in (nilboa's mist shell). Judged by the engine's
+       * `field_env::placed_origin_near_culled` kernel, the one the native
+       * window asks, and only under the engine's retail camera. */
+      if (fieldVp && this.cam.vp && !this.debugCamera
+          && typeof rt.field_placed_near_culled === 'function') {
+        const m = fieldVp;
+        draws = draws.filter(d => d.placeIdx === undefined
+          || !rt.field_placed_near_culled(m[3] * d.x + m[7] * d.y + m[11] * d.z + m[15]));
+      }
+
       /* Field party-status HUD: retail's decision kernel compares the
        * lead's PROJECTED screen Y against a band (the native window's
        * `field_hud_projected_player_y`). Project the same point the native
@@ -2921,6 +2950,27 @@ void main() {
        * fogs. The engine resolved the far colour + ramp window at battle
        * entry; the page just attaches it. */
       if (b.ground) {
+        /* Battle ambient (`0x8007B7B0`): a summon close-up ramps it down, and
+         * the grid's packet colour and cue far colour both follow it. Re-read
+         * both only when the engine's key moves - the limb-key pattern.
+         * Guarded against a cached WASM without the export. */
+        if (typeof rt.play_battle_ground_ambient_key === 'function') {
+          const ambientKey = rt.play_battle_ground_ambient_key();
+          if (ambientKey !== b.groundAmbientKey) {
+            if (b.groundAmbientKey !== undefined) {
+              this.renderer.updateSceneMeshFlat(b.ground, rt.play_battle_ground_flat_rgba());
+            }
+            try {
+              const cue = JSON.parse(rt.play_battle_ground_cue_json());
+              if (cue && cue.far) {
+                b.groundCue = {
+                  far: cue.far, nearZ: cue.near_z, farZ: cue.far_z, maxIr0: cue.max_ir0,
+                };
+              }
+            } catch (e) { /* keep the last cue */ }
+            b.groundAmbientKey = ambientKey;
+          }
+        }
         draws.push({ meshId: b.ground, x: 0, y: 0, z: 0, rotY: 0, scale: 1.0, cue: b.groundCue });
       }
       const S = b.scale;

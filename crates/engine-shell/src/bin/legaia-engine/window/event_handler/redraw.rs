@@ -28,10 +28,12 @@ fn present_target<'a>(
 impl PlayWindowApp {
     /// Whether a `LEGAIA_CAPTURE_GATE` capture's phase holds this frame.
     fn capture_phase_met(&self) -> bool {
-        self.screenshot
-            .as_ref()
-            .and_then(|sc| sc.phase_gate.as_ref())
-            .is_some_and(|g| g.met(&self.session.host.world))
+        let world = &self.session.host.world;
+        self.screenshot.as_ref().is_some_and(|sc| {
+            sc.phase_gate.as_ref().is_some_and(|g| g.met(world))
+                || sc.script_gate.as_ref().is_some_and(|g| g.met(world))
+                || sc.battle_drive.as_ref().is_some_and(|d| d.reached(world))
+        })
     }
 
     pub(super) fn handle_redraw(&mut self) {
@@ -133,7 +135,28 @@ impl PlayWindowApp {
                     .as_ref()
                     .and_then(|sc| sc.pad_script.get(&self.tick_no).copied())
                     .unwrap_or(0);
-                self.pad = scripted_pad | scripted_key_pad;
+                // A script-gated capture resumes the retail record when the
+                // entry did not start it, and pages its dialog boxes - the
+                // same drive the headless seed runs.
+                let gate = self
+                    .screenshot
+                    .as_ref()
+                    .and_then(|sc| sc.script_gate.clone());
+                let gate_pad = match &gate {
+                    Some(g) => {
+                        if self.tick_no
+                            == legaia_engine_shell::retail_compare_script::SCRIPT_RESUME_TICK
+                        {
+                            legaia_engine_shell::retail_compare_script::resume_record(
+                                &mut self.session.host,
+                                g,
+                            );
+                        }
+                        g.advance_pad(&self.session.host.world, self.tick_no)
+                    }
+                    None => 0,
+                };
+                self.pad = scripted_pad | scripted_key_pad | gate_pad;
             }
             // Party wipe: the world raises `game_over` when a battle
             // resolves to `BattleEndCause::PartyWipe`. Consume the flag and
@@ -310,6 +333,18 @@ impl PlayWindowApp {
                 .apply_to_world(&mut self.session.host.world);
             // `set_pad` also latches the run button off the same word, so
             // there is nothing host-side to keep in sync.
+            // A `LEGAIA_BATTLE_DRIVE` capture walks the fight's pad path
+            // itself, arming the drive's world seed on the first battle tick.
+            let field_pad = match self.screenshot.as_ref() {
+                Some(sc) if let Some(drive) = sc.battle_drive => {
+                    let world = &mut self.session.host.world;
+                    if world.mode == SceneMode::Battle && !sc.battle_drive_primed.replace(true) {
+                        drive.prime(world);
+                    }
+                    drive.pad_word_at(world, self.tick_no)
+                }
+                _ => field_pad,
+            };
             self.session.host.world.set_pad(field_pad);
             if field_suspended {
                 // A shop / prize exchange: the field is frozen, tail included -
@@ -567,6 +602,14 @@ impl PlayWindowApp {
         if self.screenshot.is_some() {
             self.pad_taps.clear();
         }
+        // Capture harness: phase-align the battle idle orbit to the retail
+        // state being compared (`LEGAIA_BATTLE_ORBIT_YAW`).
+        if let Some(yaw) = self.screenshot.as_ref().and_then(|sc| sc.battle_orbit_yaw)
+            && self.session.host.world.mode == SceneMode::Battle
+            && let Some(cam) = self.session.host.world.battle.camera.as_mut()
+        {
+            cam.align_orbit_yaw(yaw);
+        }
         legaia_engine_render::profile::mark("tick");
         // The scene floor-height ladder is script-animated (op `0x4C`
         // nibble-9): fold whatever the ticks above moved it by into the four
@@ -635,6 +678,9 @@ impl PlayWindowApp {
         // glides between). After `sync_battle_render` so battle entry sees
         // `battle_stage_mesh`; before the render borrow reads the pose.
         self.tick_battle_camera();
+        // Colour the ground grid from this frame's battle ambient (a summon
+        // close-up dims it); re-uploads the grid only when it moved.
+        self.sync_battle_ground_ambient();
         // Ease the in-engine cutscene camera between Camera Configure
         // beats. Done here (outside the renderer borrow below) so the
         // interpolator can take `&mut self`; while no cutscene timeline
@@ -735,6 +781,13 @@ impl PlayWindowApp {
         // The Baka duel's 3D surface: posed and uploaded here, outside the
         // renderer borrow (`window::minigames`).
         self.refresh_baka_duel_gpu();
+        // The dance floor's bodies: posed by the engine surface and uploaded
+        // here, drawn over the venue below.
+        self.refresh_dance_cast_gpu();
+        // The Muscle Dome's 3D arena, posed by its engine surface.
+        self.refresh_muscle_dome_gpu();
+        // The hall, cut to what the GPU draws under this frame's camera.
+        self.refresh_dance_venue_view();
         if let (Some(r), Some(vram), Some(atlas)) = (
             self.win.renderer.as_ref(),
             self.uploaded_vram.as_ref(),
@@ -749,7 +802,8 @@ impl PlayWindowApp {
             // A live Baka duel draws against its own VRAM.
             // So does the dance venue - the hall's own upload, never the
             // walked-in scene's.
-            let vram = match (self.baka_gpu.as_ref(), self.dance_venue_gpu.as_ref()) {
+            let duel_gpu = self.baka_gpu.as_ref().or(self.muscle_gpu.as_ref());
+            let vram = match (duel_gpu, self.dance_venue_gpu.as_ref()) {
                 (Some(g), _) => &g.vram,
                 (None, Some(d)) => &d.vram,
                 (None, None) => vram,
@@ -1178,7 +1232,7 @@ impl PlayWindowApp {
             // `npc_frames` records which frame each slot is showing *this*
             // render, so the draw pass below can look its mesh up in the cache.
             let mut npc_frames: Vec<(u8, usize)> = Vec::new();
-            if self.session.host.world.mode == SceneMode::Field {
+            if self.session.host.world.field_npc_clips_advance() {
                 // (The op-`0x4B` / `A2 F8` cue drain that re-targets these
                 // players runs per sim tick in the loop above -
                 // `Self::drain_anim_cues`.)
@@ -1286,9 +1340,12 @@ impl PlayWindowApp {
             let mut color_draws: Vec<ColorSceneDraw<'_>> = Vec::new();
             if self.boot_ui.is_active() && !game_over_hold {
                 // Boot UI is fullscreen - suppress 3D draws.
-            } else if let Some(g) = self.baka_gpu.as_ref() {
+            } else if let Some(g) = self.baka_gpu.as_ref().or(self.muscle_gpu.as_ref()) {
                 // The Baka duel owns the 3D frame: the engine-posed fighters,
-                // ghosts, walls and floor under the arena camera.
+                // ghosts, walls and floor under the arena camera. The Muscle
+                // Dome's arena surface draws the same way: the shell, the
+                // ground grid, the fighter and the monster under the dome
+                // camera.
                 if let Some(m) = g.textured.as_ref() {
                     draws.push(SceneDraw {
                         mesh: m,
@@ -1309,27 +1366,37 @@ impl PlayWindowApp {
                 // resolves through (`FieldCameraFrame::Venue`). The walked-in
                 // scene's actors and geometry are not drawn - retail's dance
                 // is a scene of its own.
-                if let Some(hf) = g.ground.as_ref() {
+                // The hall, baked in raw world coordinates and cut to the
+                // triangles the PSX GPU draws from this eye
+                // (`refresh_dance_venue_view`).
+                if let Some(mesh) = g.textured_gpu.as_ref() {
                     draws.push(SceneDraw {
-                        mesh: hf,
+                        mesh,
                         mvp: cam,
                         cue: None,
                     });
                 }
-                for (mi, model) in &g.draws {
-                    if let Some(mesh) = g.meshes.get(*mi) {
+                if let Some(mesh) = g.untextured_gpu.as_ref() {
+                    color_draws.push(ColorSceneDraw {
+                        mesh,
+                        mvp: cam,
+                        cue: None,
+                    });
+                }
+                // The floor's bodies, posed in raw world coordinates by the
+                // engine surface (`refresh_dance_cast_gpu`).
+                if let Some(c) = self.dance_cast_gpu.as_ref() {
+                    if let Some(mesh) = c.textured.as_ref() {
                         draws.push(SceneDraw {
                             mesh,
-                            mvp: cam * *model,
+                            mvp: cam,
                             cue: None,
                         });
                     }
-                }
-                for (ci, model) in &g.color_draws {
-                    if let Some(mesh) = g.color_meshes.get(*ci) {
+                    if let Some(mesh) = c.untextured.as_ref() {
                         color_draws.push(ColorSceneDraw {
                             mesh,
-                            mvp: cam * *model,
+                            mvp: cam,
                             cue: None,
                         });
                     }
@@ -1655,6 +1722,18 @@ impl PlayWindowApp {
                     // building / terrain mesh at its world transform
                     // (resolved at scene load in
                     // `resolve_field_placement_draws`).
+                    // Retail's placed-object near reject
+                    // (`field_env::placed_origin_near_culled`): an object
+                    // whose origin sits within 160 units of the eye, or
+                    // behind it, is not drawn. Judged under the retail
+                    // camera only - the `F3` debug orbit frames from a
+                    // vantage retail never had.
+                    let place_near_culled = |mvp: &Mat4| {
+                        !self.field_debug_camera
+                            && legaia_engine_core::field_env::placed_origin_near_culled(
+                                mvp.w_axis.w,
+                            )
+                    };
                     if layer_on("place") {
                         // Diag bisect: `LEGAIA_DIAG_PLACE_RANGE=a..b` draws only
                         // placement-draw slots [a, b).
@@ -1686,10 +1765,14 @@ impl PlayWindowApp {
                                 .field_morph_live
                                 .get(mesh_idx)
                                 .or_else(|| self.meshes.get(*mesh_idx));
+                            let mvp = cam * *model;
+                            if place_near_culled(&mvp) {
+                                continue;
+                            }
                             if let Some(mesh) = mesh {
                                 draws.push(SceneDraw {
                                     mesh,
-                                    mvp: cam * *model,
+                                    mvp,
                                     cue: None,
                                 });
                             }
@@ -1699,18 +1782,26 @@ impl PlayWindowApp {
                         // mesh; the ones whose clip is running were re-posed
                         // above, so the door draws mid-swing.
                         for (mesh_idx, model) in &posed_prop_baked_v {
+                            let mvp = cam * *model;
+                            if place_near_culled(&mvp) {
+                                continue;
+                            }
                             if let Some(mesh) = self.meshes.get(*mesh_idx) {
                                 draws.push(SceneDraw {
                                     mesh,
-                                    mvp: cam * *model,
+                                    mvp,
                                     cue: None,
                                 });
                             }
                         }
                         for (mesh, model) in &posed_prop_live_v {
+                            let mvp = cam * *model;
+                            if place_near_culled(&mvp) {
+                                continue;
+                            }
                             draws.push(SceneDraw {
                                 mesh,
-                                mvp: cam * *model,
+                                mvp,
                                 cue: None,
                             });
                         }
@@ -1730,27 +1821,39 @@ impl PlayWindowApp {
                             ) {
                                 continue;
                             }
+                            let mvp = cam * *model;
+                            if place_near_culled(&mvp) {
+                                continue;
+                            }
                             if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
                                 color_draws.push(ColorSceneDraw {
                                     mesh,
-                                    mvp: cam * *model,
+                                    mvp,
                                     cue: None,
                                 });
                             }
                         }
                         for (mesh_idx, model) in &posed_prop_baked_c {
+                            let mvp = cam * *model;
+                            if place_near_culled(&mvp) {
+                                continue;
+                            }
                             if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
                                 color_draws.push(ColorSceneDraw {
                                     mesh,
-                                    mvp: cam * *model,
+                                    mvp,
                                     cue: None,
                                 });
                             }
                         }
                         for (mesh, model) in &posed_prop_live_c {
+                            let mvp = cam * *model;
+                            if place_near_culled(&mvp) {
+                                continue;
+                            }
                             color_draws.push(ColorSceneDraw {
                                 mesh,
-                                mvp: cam * *model,
+                                mvp,
                                 cue: None,
                             });
                         }
@@ -1953,10 +2056,12 @@ impl PlayWindowApp {
                 // battle draw class (see the stage-scale note on the
                 // backdrop draw above): the party stands ON its own grid
                 // cell only if the cell and the actor's stage translation
-                // are lifted by the same factor. The DPCS ramp is a
-                // VIEW-depth window, so it is lifted with the geometry -
-                // otherwise the whole ramp would collapse into the near
-                // field and the floor would read as fully fogged.
+                // are lifted by the same factor. The DPCS ramp is NOT
+                // lifted: it is keyed on the vertex's view depth `SZ`, and
+                // the camera translation trio is already in view units, so
+                // the fragment depth is retail's `SZ` unscaled (see
+                // docs/subsystems/battle.md, the grid's near colour and cue
+                // depth, for the capture that pins it).
                 if in_battle
                     && let Some(gi) = self.battle_ground_mesh
                     && let Some(gmesh) = self.meshes.get(gi)
@@ -1971,7 +2076,7 @@ impl PlayWindowApp {
                             .map(|far| legaia_engine_render::DrawCue {
                                 far,
                                 near_z: 0.0,
-                                far_z: grid::grid_cue_far_z() * BATTLE_WORLD_SCALE,
+                                far_z: grid::grid_cue_far_z(),
                                 max_ir0: grid::grid_cue_max_ir0(),
                             }),
                     });
@@ -2089,33 +2194,23 @@ impl PlayWindowApp {
                         if in_battle {
                             use legaia_engine_vm::battle_action as ba;
                             let b = &actor.battle;
-                            match b.render_flag {
-                                ba::CURSOR_FLAG_SELECTED => {
-                                    let pulse = 0.30
-                                        + 0.20
-                                            * (self.session.host.world.clock.display_frames as f32
-                                                * 0.25)
-                                                .sin();
-                                    log::trace!(
-                                        "target cursor: actor {i} SELECTED pulse {pulse:.2}"
-                                    );
-                                    cue = Some(legaia_engine_render::DrawCue {
-                                        far: [1.0, 1.0, 1.0],
-                                        near_z: -1.0,
-                                        far_z: 0.0,
-                                        max_ir0: pulse,
-                                    });
-                                }
-                                ba::CURSOR_FLAG_DIMMED => {
-                                    log::trace!("target cursor: actor {i} DIMMED");
-                                    cue = Some(legaia_engine_render::DrawCue {
-                                        far: [0.0, 0.0, 0.0],
-                                        near_z: -1.0,
-                                        far_z: 0.0,
-                                        max_ir0: 0.55,
-                                    });
-                                }
-                                _ => {}
+                            // The cursor's cue is the engine's
+                            // (`battle_action::cursor_cue`), shared with the
+                            // page's `play_battle_actor_cursor`.
+                            if let Some((far, max_ir0)) = ba::cursor_cue(
+                                b.render_flag,
+                                self.session.host.world.clock.display_frames,
+                            ) {
+                                log::trace!(
+                                    "target cursor: actor {i} flag {} ir0 {max_ir0:.2}",
+                                    b.render_flag
+                                );
+                                cue = Some(legaia_engine_render::DrawCue {
+                                    far,
+                                    near_z: -1.0,
+                                    far_z: 0.0,
+                                    max_ir0,
+                                });
                             }
                             // Retail's one tint seam: `FUN_8004A908` packs
                             // the actor's `+0x04` lanes (`>> 2`) into the
@@ -2147,13 +2242,15 @@ impl PlayWindowApp {
                             // `render_flag == 2` (the capture / defeat fade,
                             // SM arm 2) also ORs `0x81000000` into the node's
                             // mode word, so the fading actor draws ABE|ABR1
-                            // additive and black = gone. The posed-mesh
-                            // builder applies that word's blend to every prim
-                            // (`battle_body_blend`, `redraw_passes.rs`), so
-                            // the fade takes its cue whenever the body is
-                            // posed and its word raises ABE; a body drawn off
-                            // its rest mesh has no blend and stays un-cued
-                            // rather than an opaque black silhouette. Once its
+                            // additive and black = gone. The override builder
+                            // applies that word's blend to every prim of the
+                            // posed mesh and the rest mesh alike
+                            // (`BattleActorDrawPlan::apply_body_blend`,
+                            // `redraw_passes.rs`), so the fade takes its cue
+                            // whenever its word raises ABE
+                            // (`BattleActorDrawPlan::tint_cue_applies`, the
+                            // page's gate too), never as an opaque black
+                            // silhouette. Once its
                             // lanes reach zero the draw plan above skips the
                             // body (`FUN_800480D8`'s word-zero arm), as it
                             // does the summon hide. The two cursor flags keep
@@ -2167,19 +2264,8 @@ impl PlayWindowApp {
                             // - a darker copy of its colour, or a brighter
                             // one on the outdoor stages - plus the status
                             // colours. `World::battle_actor_draw_plan`.
-                            let blended = battle_plan.is_some_and(|p| {
-                                actor.pose_frame.is_some()
-                                    && legaia_engine_core::battle_body_blend::draw_colour_semi_mode(
-                                        p.draw_colour,
-                                    )
-                                    .is_some()
-                            });
                             if let Some(p) = battle_plan
-                                && !matches!(
-                                    b.render_flag,
-                                    ba::CURSOR_FLAG_SELECTED | ba::CURSOR_FLAG_DIMMED
-                                )
-                                && (b.render_flag != 2 || blended)
+                                && p.tint_cue_applies(b.render_flag)
                             {
                                 cue = Some(legaia_engine_render::DrawCue {
                                     far: p.cue_far(),
@@ -2662,7 +2748,7 @@ impl PlayWindowApp {
             // The PROT-0900 screen-effect widgets sort in the same pass, by
             // their retail OT slots - the play page's single-list order.
             light_prims.extend(self.screen_fx_screen_prims());
-            screen_prims.extend(self.weapon_trail_screen_prims(r));
+            screen_prims.extend(self.weapon_trail_screen_prims());
             // The world's one live full-screen fade (the summon band's two
             // flashes, the escape white-out), drawn through the same kernel
             // the intro fades use so the ABR mode is honoured.
@@ -2715,6 +2801,10 @@ impl PlayWindowApp {
             // same residency predicate decides for both hosts whether the
             // sprite or the letterforms draw.
             screen_prims.extend(self.dance_countin_prims());
+            // The dance HUD frame (score boxes, digits, `Lv.` gauges) as
+            // retail's own quads on the same page, through the shared
+            // `ui_dance::dance_hud_prims` the browser play page emits with.
+            screen_prims.extend(self.dance_hud_prims());
             // The slot machine's paylines, off the machine's own ported pass
             // and projection - the segments both browser pages stroke.
             screen_prims.extend(self.slot_payline_screen_prims());
@@ -2764,10 +2854,12 @@ impl PlayWindowApp {
             }
             // Screenshot harness: at the target tick, read the frame back
             // offscreen and exit instead of presenting to the window.
-            let gated = self
-                .screenshot
-                .as_ref()
-                .is_some_and(|sc| sc.path.is_some() && sc.phase_gate.is_some());
+            let gated = self.screenshot.as_ref().is_some_and(|sc| {
+                sc.path.is_some()
+                    && (sc.phase_gate.is_some()
+                        || sc.script_gate.is_some()
+                        || sc.battle_drive.is_some())
+            });
             if gated
                 && !self.capture_phase_met()
                 && self
@@ -3008,6 +3100,31 @@ impl PlayWindowApp {
             art,
             ud::COUNTIN_OT,
         )
+    }
+
+    /// The dance HUD's textured quads as screen-space PSX primitives, off the
+    /// world's one predicate (`MinigameState::dance_hud_quads`: HUD up and
+    /// page resident). Empty otherwise, when `hud.rs` draws the text rows.
+    pub(super) fn dance_hud_prims(&self) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+        use legaia_engine_render::ui_dance as ud;
+        let views: Vec<ud::DanceHudQuadView> = self
+            .session
+            .host
+            .world
+            .minigames
+            .dance_hud_quads()
+            .iter()
+            .map(|q| ud::DanceHudQuadView {
+                poly_code: q.poly_code,
+                rect: (q.x0, q.y0, q.x1, q.y1),
+                uv: q.uv,
+                rgb_top: q.rgb_top,
+                rgb_bottom: q.rgb_bottom,
+                clut: q.clut,
+                tpage: q.tpage_attr,
+            })
+            .collect();
+        ud::dance_hud_prims(&views, ud::COUNTIN_OT)
     }
 
     /// The frame's floating value readout, as screen-space PSX primitives in

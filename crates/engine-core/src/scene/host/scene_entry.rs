@@ -582,6 +582,7 @@ impl SceneHost {
         // in `camera_configure`, so a stale set would leak the prior scene's
         // focus / depth into a beat that omits those slots).
         self.world.camera.state.params.clear();
+        self.world.camera.state.glide_frames = 0;
         // The op-0x34 screen effect is scene-scoped (the opening timeline's
         // between-beat black fades); retire its tween and forget the slot.
         // Retail reaches the same state through the transition sweep, which
@@ -989,12 +990,12 @@ impl SceneHost {
                 for def in cat.by_id.into_values() {
                     self.world.tables.monster_catalog.insert(def);
                 }
-                // The eleven player Seru summons' creature elements. The
-                // catalog above is the scene's own monsters, so a summon
-                // creature is not in it; the side-effect stager needs that
-                // one byte and nothing else off the creature.
+                // The player Seru summons' creature records, base and
+                // evolved blocks both. The catalog above is the scene's own
+                // monsters, so a summon creature is not in it; the summon
+                // roll reads its HP / INT / element off this record.
                 if self.world.tables.summon_creatures.is_empty() {
-                    for spell_id in crate::summon::SERU_SUMMON_IDS {
+                    for spell_id in (0..=u8::MAX).filter(|&id| crate::summon::has_summon_body(id)) {
                         let Some(cid) = crate::summon::summon_creature_id(spell_id, &archive)
                         else {
                             continue;
@@ -1009,7 +1010,7 @@ impl SceneHost {
                     }
                 }
                 if self.world.tables.summon_elements.is_empty() {
-                    for spell_id in crate::summon::SERU_SUMMON_IDS {
+                    for spell_id in (0..=u8::MAX).filter(|&id| crate::summon::has_summon_body(id)) {
                         let Some(cid) = crate::summon::summon_creature_id(spell_id, &archive)
                         else {
                             continue;

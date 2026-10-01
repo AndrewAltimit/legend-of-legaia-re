@@ -22,7 +22,19 @@ pub struct InflightCastSeed {
     pub spell_id: u8,
     /// Retail's `+0x1DD` target byte.
     pub target: u8,
+    /// Where each combatant stands, by engine battle slot (party
+    /// `0..party_count`, then the monsters): the capture's live `+0x34` /
+    /// `+0x38` pair. Retail never walks a combatant home after an action
+    /// (`docs/subsystems/battle-action.md`, "Where an action leaves its
+    /// combatants"), so a mid-fight capture's actors stand wherever earlier
+    /// actions left them - the caster included - and a fresh entry's
+    /// authored seats frame the cast somewhere else. `None` keeps the seat.
+    pub ground: [Option<[i16; 2]>; INFLIGHT_GROUND_SLOTS],
 }
+
+/// Battle slots an [`InflightCastSeed`] places: three party seats and five
+/// monster seats.
+pub const INFLIGHT_GROUND_SLOTS: usize = 8;
 
 /// Live battle session state: per-seat stat arrays, command / submenu sessions, flow + round state, tutorial, intro transition, escape timer, buffs, hit / effect queues and the end-of-battle latches.
 pub struct BattleState {
@@ -369,6 +381,14 @@ pub struct BattleState {
     /// way into a capture taken mid-cast ([`InflightCastSeed`]). `None` on
     /// every ordinary fight; consumed (taken) by the live loop.
     pub inflight_seed: Option<InflightCastSeed>,
+    /// A debug seed that makes monster seat `.0` cast spell `.1` the next
+    /// time its turn comes up, in place of the AI's pick - the retail
+    /// comparison corpus's way into a capture taken mid monster cast (the
+    /// capture holds the caster seat `ctx[+0x13]` and its queued spell id
+    /// `+0x1DF`). The capture's MP is already charged, so the cast's price
+    /// is credited back as it is taken. `None` on every ordinary fight;
+    /// consumed (taken) by the monster pick.
+    pub forced_monster_cast: Option<(u8, u8)>,
     /// The commit log's launch glide - retail's `0x35 + i` clones gliding the
     /// log off the left edge when the member leaves the ring for a sub-screen
     /// and back when they return
@@ -550,6 +570,16 @@ pub struct BattleState {
     /// as the retail per-frame call does. Hosts draw it through
     /// `legaia_engine_ui::streak_pass::clip_ribbon_quads`.
     pub clip_ribbon: Option<ClipRibbon>,
+    /// The battle ambient base as the last storing `FUN_80050120` pass left
+    /// it, 8 bits a channel - what the ground grid's near colour
+    /// `0x8007B7B0` (base `+ 0x404040`) and far colour `0x8007BB48`
+    /// (`battle_ground_grid::grid_far_colour`) are derived from. The live
+    /// ramped word is `World::battle_ctx.ambient_base`; this copy lags it
+    /// only on the frames the pass skips its stores
+    /// (`battle_ground_grid::ambient_store_skipped`). Advanced by
+    /// `World::tick_battle_ambient`; hosts read it through
+    /// `World::battle_ambient_base`.
+    pub ambient_stored: [u8; 3],
     /// The top-of-screen message line screen elements `0x59` (Seru absorbed)
     /// and `0x65` (magic level increased) carry, from the raise to the
     /// matching unload - see `world::battle::message_banner`.
@@ -630,6 +660,7 @@ impl BattleState {
             flow: crate::battle_flow::BattleFlowState::Idle,
             round_flow: crate::battle_round::RoundFlow::default(),
             inflight_seed: None,
+            forced_monster_cast: None,
             commit_log_launch: None,
             sideband: Default::default(),
             stage_id: 0,
@@ -655,6 +686,7 @@ impl BattleState {
             loot_applied: false,
             return_mode: SceneMode::Field,
             clip_ribbon: None,
+            ambient_stored: legaia_engine_vm::battle_ground_grid::GRID_FAR_BASE_NEUTRAL,
             message_banner: None,
             entry_serial: 0,
         }

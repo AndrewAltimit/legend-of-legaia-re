@@ -130,10 +130,12 @@ scene MAN's partition-2 cutscene record through the same field VM, so
 its camera path and actor moves play and the Rim Elm hand-off
 `GFLAG_SET 26` fires by execution rather than by a hard-coded cue.
 
-Alongside the timeline, `step_field_channels` runs the scene's per-actor
-script channels (`field_channels::FieldChannel`, one per MAN partition-1
-placement, port of `FUN_8003A1E4`/`FUN_8003AEB0`) - the vignette actors
-the timeline halt-acquires and pokes beat by beat. Animate cues go into
+Alongside the timeline sit the scene's per-actor script channels
+(`field_channels::FieldChannel`, one per MAN partition-1 placement, port
+of `FUN_8003A1E4`/`FUN_8003AEB0`) - the vignette actors the timeline
+halt-acquires and pokes beat by beat. A channel's own script runs only in
+the load-frame spawn pre-run (`pre_run_field_channel_prologues`); retail
+engages a placement context only on a touch, never on a poke. Animate cues go into
 `npcs.anim_cues` (drained by the windowed render to re-target each
 NPC's clip player); scripted moves go into `npcs.positions`. The
 opening white flash (op `0x34` sub-0) installs the screen-effect colour
@@ -480,6 +482,11 @@ presentation left to the host:
   between-leg HP restore, and settlement into casino coins. A leg pays
   nothing; a contest pays. Driven by `World::report_muscle_leg` /
   `World::settle_muscle_contest`.
+- `muscle_dome_scene` - the dome's 3D arena surface, `MuscleDomeSurface`:
+  the arena shell, the ground grid, the lead's assembled battle form and the
+  ladder's monster, posed off the session's turn edge and framed by
+  `DomeCamera`. Both play hosts drive it once a frame, as
+  `baka_duel_scene::BakaDuelSurface` serves the duel.
 
 ## Smaller modules worth knowing
 

@@ -377,6 +377,7 @@ WIDE_PAGES: set[str] = {
     "media",
     "world-overview",
     "reference/music-tracks",
+    "reference/scene-names",
     "tooling/rom-patcher",
     "tooling/translation-workbench",
 }
@@ -534,6 +535,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("subsystems/inventory.html",  "Inventory",                     "subsystems/inventory",       "subsystems/inventory.html"),
     ("subsystems/audio.html",      "Audio",                         "subsystems/audio",           "subsystems/audio.html"),
     ("subsystems/renderer.html",   "Renderer",                      "subsystems/renderer",        "subsystems/renderer.html"),
+    ("subsystems/shading.html",    "Shading and palettes",          "subsystems/shading",         "subsystems/shading.html"),
     ("subsystems/world-map.html",  "World map",                     "subsystems/world-map",       "subsystems/world-map.html"),
     ("subsystems/history-world-map.html","Chapter-1 hub sweep (history)","subsystems/history-world-map","subsystems/history-world-map.html"),
     ("subsystems/world-overview-viewer.html","World-overview viewer", "subsystems/world-overview-viewer","subsystems/world-overview-viewer.html"),
@@ -627,6 +629,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("reference/cheats.html",      "Cheat databases",               "reference/cheats",           "reference/cheats.html"),
     ("reference/gamedata.html",    "Curated game-data tables",      "reference/gamedata",         "reference/gamedata.html"),
     ("reference/music-tracks.html","Music-track disambiguation",     "reference/music-tracks",     "reference/music-tracks.html"),
+    ("reference/scene-names.html", "Scene names",                   "reference/scene-names",      "reference/scene-names.html"),
     ("reference/open-rev-eng-threads.html","Open RE threads",        "reference/open-rev-eng-threads","reference/open-rev-eng-threads.html"),
     ("reference/re-settled-threads.html","Settled RE threads",       "reference/re-settled-threads","reference/re-settled-threads.html"),
     ("reference/re-do-not-re-walk.html","Do not re-walk",            "reference/re-do-not-re-walk","reference/re-do-not-re-walk.html"),
@@ -634,17 +637,17 @@ PAGES: list[tuple[str, str, str, str]] = [
 
 
 # ---------------------------------------------------------------------------
-# Curated CDNAME -> category map.
+# CDNAME -> display name / category map.
 #
-# Each entry's `start` is the block's `#define <label> N` number, transcribed
-# from CDNAME.TXT verbatim so the table stays diffable against the disc.
-# Those numbers live in the **raw in-RAM PROT-TOC** index space, not the
+# Read from data/gamedata/scenes.toml, the one scene-name table (the Rust side
+# is `legaia_gamedata::Database::scene_names`; provenance and the per-scene
+# evidence live in docs/reference/scene-names.md). Each row's `cdname` is the
+# block's `#define <label> N` number: a **raw in-RAM PROT-TOC** index, not the
 # extraction space every consumer of scenes.json indexes in, so
-# `build_scenes_json` converts them (`RAW_TOC_INDEX_OFFSET`) on the way out -
-# do not pre-shift a `start` here. Coverage runs from each label's converted
-# start to the next label's converted start - 1, inclusive. The category
-# drives the asset viewer's Scene filter; the display name is the
-# walkthrough's English town/area name where one exists.
+# `build_scenes_json` converts it (`RAW_TOC_INDEX_OFFSET`) on the way out.
+# Coverage runs from each label's converted start to the next label's
+# converted start - 1, inclusive. The category drives the asset viewer's
+# Scene filter and the play page's scene picker.
 #
 # Categories:
 #   town       - visitable settlement (NPC dialog, shops, inn)
@@ -656,170 +659,25 @@ PAGES: list[tuple[str, str, str, str]] = [
 #   system     - everything else (init, gameover, level_up, card_data, ...)
 # ---------------------------------------------------------------------------
 
-CDNAME_SCENES: list[dict] = [
-    # System / boot
-    {"label": "init_data",        "start": 0,    "category": "system",    "display": "Boot init"},
-    {"label": "gameover_data",    "start": 1,    "category": "system",    "display": "Game over"},
-    # Towns + landmark fields - Karisto continent
-    {"label": "town01",           "start": 3,    "category": "town",      "display": "Rim Elm"},
-    # town0b..0e are Rim Elm story-state variants, not distinct towns: their
-    # walkability .MAP is 100 / 100 / 98.6 / 87.8 % byte-identical to town01's,
-    # and their NPCs are the Rim Elm cast (Meta / Mei / Maya / Ixis, the Wall,
-    # the Genesis Tree) on the same model pool. Confirmed from engine-decoded
-    # NPC dialogue. The old "Town (0b)" / "Sol" labels were wrong.
-    {"label": "town0b",           "start": 12,   "category": "town",      "display": "Rim Elm (under attack)"},
-    {"label": "town0c",           "start": 21,   "category": "town",      "display": "Rim Elm (after the Mist)"},
-    {"label": "izumi",            "start": 30,   "category": "town",      "display": "Hunter's Spring"},
-    {"label": "cave01",           "start": 38,   "category": "field",     "display": "Snowdrift Cave"},
-    {"label": "vell",             "start": 45,   "category": "town",      "display": "Drake Castle"},
-    {"label": "bylon",            "start": 52,   "category": "town",      "display": "Biron Monastery"},
-    {"label": "dolk",             "start": 60,   "category": "field",     "display": "Mist field (dolk)"},
-    {"label": "dolk2",            "start": 68,   "category": "field",     "display": "Mist field (dolk2)"},
-    {"label": "suimon",           "start": 77,   "category": "field",     "display": "Floodgate"},
-    {"label": "map01",            "start": 85,   "category": "world_map", "display": "World map (Drake)"},
-    {"label": "garmel",           "start": 94,   "category": "field",     "display": "Field (garmel)"},
-    {"label": "vozz",             "start": 103,  "category": "field",     "display": "Voz Forest"},
-    {"label": "keikoku",          "start": 111,  "category": "field",     "display": "Ravine (keikoku)"},
-    {"label": "rikuroa2",         "start": 120,  "category": "field",     "display": "Mt. Rikuroa (upper)"},
-    {"label": "dream",            "start": 128,  "category": "field",     "display": "Dream sequence"},
-    {"label": "jiji",             "start": 137,  "category": "field",     "display": "Elder's place"},
-    {"label": "retock",           "start": 145,  "category": "field",     "display": "Field (retock)"},
-    {"label": "rikuroa",          "start": 155,  "category": "field",     "display": "Mt. Rikuroa"},
-    {"label": "geremi",           "start": 165,  "category": "town",      "display": "Jeremi"},
-    {"label": "stone",            "start": 174,  "category": "field",     "display": "Stone field"},
-    {"label": "balden",           "start": 182,  "category": "town",      "display": "Vidna"},
-    {"label": "conc",             "start": 191,  "category": "town",      "display": "Conkram"},
-    # rayman is Octam, not Ratayu: its NPCs are "I am Hari." (Octam's ruler) and
-    # its dialogue is "fled here from the surface of Octam" / "Palace of Hari" /
-    # "go to Conkram Kingdom". Confirmed from engine-decoded NPC dialogue.
-    {"label": "rayman",           "start": 199,  "category": "town",      "display": "Octam"},
-    {"label": "ropeway",          "start": 207,  "category": "field",     "display": "Ropeway"},
-    {"label": "dohaty",           "start": 217,  "category": "field",     "display": "Dohati's Castle"},
-    {"label": "station",          "start": 226,  "category": "town",      "display": "Karisto Station"},
-    {"label": "tunnela",          "start": 235,  "category": "field",     "display": "Tunnel A"},
-    {"label": "map02",            "start": 244,  "category": "world_map", "display": "World map (Sebucus)"},
-    {"label": "tower",            "start": 254,  "category": "field",     "display": "Rogue Tower"},
-    {"label": "teien",            "start": 263,  "category": "field",     "display": "Sky Gardens"},
-    {"label": "tunnelb",          "start": 272,  "category": "field",     "display": "Tunnel B"},
-    {"label": "retockin",         "start": 281,  "category": "field",     "display": "Retock interior"},
-    {"label": "retona",           "start": 290,  "category": "field",     "display": "Mt. Letona"},
-    {"label": "jagaroom",         "start": 300,  "category": "field",     "display": "Juggernaut chamber"},
-    {"label": "tunnelc",          "start": 309,  "category": "field",     "display": "Tunnel C"},
-    {"label": "balden2",          "start": 318,  "category": "town",      "display": "Vidna (revisit)"},
-    {"label": "rayman2",          "start": 328,  "category": "town",      "display": "Octam (revisit)"},
-    {"label": "ropeway2",         "start": 337,  "category": "field",     "display": "Ropeway (revisit)"},
-    # Master continent
-    # town0d is another Rim Elm variant (.MAP 98.6% identical to town01, Rim Elm
-    # cast + "the Wall"); the old "Sol" label was wrong. The real Sol is the
-    # `kor` cluster (kor3's NPC names the "Sol 3rd Street Theater").
-    {"label": "town0d",           "start": 347,  "category": "town",      "display": "Rim Elm (revisit)"},
-    {"label": "son",              "start": 354,  "category": "field",     "display": "Field (son)"},
-    {"label": "concnow",          "start": 362,  "category": "field",     "display": "Conkram (Mist)"},
-    {"label": "taiku",            "start": 371,  "category": "field",     "display": "Muscle Dome"},
-    # Karisto naming, pinned from each scene's own MAN / event-script text
-    # (the scene a string lives in is its OWNING scene, i.e. the CDNAME block
-    # shifted -2; see docs/formats/cdname.md):
-    #   deene  - "Mt. Dhini, sacred land of Soren." (Birdman Gate) -> Mt. Dhini,
-    #            NOT Buma. `opdeene` is the opening cutscene staged on it.
-    #   bubu2  - "Welcome to Buma, the city of lakes!" + the frozen Genesis Tree
-    #            + Cara -> Buma (the pier town over the lake).
-    #   doman  - Dr./Mrs. Usha, the TimeSpace Bomb quiz, "Research Center"
-    #            -> Usha Research Center.
-    #   bubu1  - the same Buma bowl, thawed: green terraces, no ice sheet, no
-    #            MAN of its own (the post-revival stage), so it is the variant
-    #            and `bubu2` - the frozen town that carries the shops / inn /
-    #            Cara script - is the Buma you play.
-    {"label": "deene",            "start": 382,  "category": "field",     "display": "Mt. Dhini"},
-    {"label": "map03",            "start": 391,  "category": "world_map", "display": "World map (Karisto)"},
-    {"label": "doman",            "start": 399,  "category": "town",      "display": "Usha Research Center"},
-    {"label": "bubu1",            "start": 407,  "category": "town",      "display": "Buma (revived)"},
-    {"label": "bubu2",            "start": 416,  "category": "town",      "display": "Buma"},
-    {"label": "taiku2",           "start": 425,  "category": "field",     "display": "Zora's Floating Castle"},
-    {"label": "uru",              "start": 434,  "category": "field",     "display": "Uru Mais"},
-    {"label": "uru2",             "start": 444,  "category": "field",     "display": "Uru Mais (deeper)"},
-    {"label": "urudre1",          "start": 454,  "category": "field",     "display": "Uru Mais (dream 1)"},
-    {"label": "urudre2",          "start": 465,  "category": "field",     "display": "Uru Mais (dream 2)"},
-    {"label": "urudre3",          "start": 474,  "category": "field",     "display": "Uru Mais (dream 3)"},
-    {"label": "kor",              "start": 483,  "category": "field",     "display": "Field (kor)"},
-    {"label": "kor3",             "start": 492,  "category": "field",     "display": "Field (kor3)"},
-    {"label": "kor4",             "start": 501,  "category": "field",     "display": "Field (kor4)"},
-    {"label": "kor5",             "start": 509,  "category": "field",     "display": "Field (kor5)"},
-    {"label": "korb2",            "start": 517,  "category": "field",     "display": "Field (korb2)"},
-    {"label": "korb3",            "start": 524,  "category": "field",     "display": "Field (korb3)"},
-    {"label": "korout",           "start": 533,  "category": "field",     "display": "Field (korout)"},
-    # The `koin` cluster is Sol's coin-games quarter (`koin` = coin), sitting
-    # directly after the `kor` (Sol) blocks. `koin1` is the venue hub, pinned
-    # three ways: the Muscle Dome overlay (PROT 0977) carries the mastering
-    # path `h:\prot\field\koin1\efect.dat`; koin1's scripts carry the mode-24
-    # door-warps `3E 69` (Muscle Dome) and `3E 68` (Baka Fighter) at three
-    # sites each, and koin3 carries `3E 6A` (dance) at four; and its floor
-    # starts BGM id 2018 = "Sol casino". The old "Soren Camp" label was wrong.
-    {"label": "koin1",            "start": 542,  "category": "field",     "display": "Sol (coin-games venue)"},
-    {"label": "koin2",            "start": 551,  "category": "field",     "display": "Field (koin2)"},
-    {"label": "koin3",            "start": 561,  "category": "field",     "display": "Field (koin3, dance venue)"},
-    {"label": "koin4",            "start": 570,  "category": "field",     "display": "Field (koin4)"},
-    {"label": "koin6",            "start": 578,  "category": "field",     "display": "Field (koin6)"},
-    {"label": "juui1",            "start": 587,  "category": "field",     "display": "Juggernaut interior 1"},
-    {"label": "juui2",            "start": 596,  "category": "field",     "display": "Juggernaut interior 2"},
-    {"label": "deroa",            "start": 605,  "category": "field",     "display": "Field (deroa)"},
-    {"label": "station3",         "start": 615,  "category": "field",     "display": "Karisto Station (late)"},
-    {"label": "conc2",            "start": 623,  "category": "field",     "display": "Conkram (late)"},
-    {"label": "jou",              "start": 630,  "category": "field",     "display": "Castle"},
-    {"label": "nilboa",           "start": 637,  "category": "field",     "display": "Nivora Ravine"},
-    {"label": "nilboa2",          "start": 646,  "category": "field",     "display": "Nivora Ravine (deeper)"},
-    {"label": "jouina",           "start": 655,  "category": "field",     "display": "Castle interior A"},
-    {"label": "jouinb",           "start": 664,  "category": "field",     "display": "Castle interior B"},
-    {"label": "jouinc",           "start": 672,  "category": "field",     "display": "Castle interior C"},
-    {"label": "jouind",           "start": 680,  "category": "field",     "display": "Castle interior D"},
-    {"label": "jouine",           "start": 688,  "category": "field",     "display": "Castle interior E"},
-    {"label": "rugi",             "start": 696,  "category": "field",     "display": "Field (rugi)"},
-    {"label": "chitei2",          "start": 705,  "category": "field",     "display": "Underground Octam"},
-    {"label": "noaru",            "start": 716,  "category": "field",     "display": "Noaru Valley"},
-    {"label": "concend",          "start": 725,  "category": "field",     "display": "Conkram (final)"},
-    {"label": "conc3",            "start": 733,  "category": "field",     "display": "Conkram (epilogue)"},
-    {"label": "town0e",           "start": 741,  "category": "town",      "display": "Rim Elm (epilogue)"},
-    # OP cutscenes
-    {"label": "opdeene",          "start": 748,  "category": "cutscene",  "display": "Opening (Mt. Dhini)"},
-    {"label": "opstati",          "start": 753,  "category": "cutscene",  "display": "Opening (station)"},
-    {"label": "opkorout",         "start": 758,  "category": "cutscene",  "display": "Opening (korout)"},
-    {"label": "opurud",           "start": 763,  "category": "cutscene",  "display": "Opening (Uru)"},
-    {"label": "opmap01",          "start": 768,  "category": "cutscene",  "display": "Opening (map)"},
-    # `koin1`'s story-state sibling - same gate shape plus a spliced `0x00B`.
-    {"label": "koin1b",           "start": 773,  "category": "field",     "display": "Sol (coin-games venue, later)"},
-    # ED cutscenes
-    {"label": "edteien",          "start": 780,  "category": "cutscene",  "display": "Ending (Sky Gardens)"},
-    {"label": "edbylon",          "start": 785,  "category": "cutscene",  "display": "Ending (Biron)"},
-    {"label": "edbalden",         "start": 790,  "category": "cutscene",  "display": "Ending (Vidna)"},
-    {"label": "edlast",           "start": 795,  "category": "cutscene",  "display": "Ending (final)"},
-    {"label": "edretoin",         "start": 800,  "category": "cutscene",  "display": "Ending (retock)"},
-    {"label": "edkorout",         "start": 805,  "category": "cutscene",  "display": "Ending (korout)"},
-    {"label": "edbubu",           "start": 810,  "category": "cutscene",  "display": "Ending (Usha)"},
-    {"label": "eddoman",          "start": 815,  "category": "cutscene",  "display": "Ending (doman)"},
-    {"label": "edson",            "start": 820,  "category": "cutscene",  "display": "Ending (son)"},
-    {"label": "edstati3",         "start": 825,  "category": "cutscene",  "display": "Ending (station3)"},
-    # Battle data
-    {"label": "battle_data",      "start": 865,  "category": "battle",    "display": "Battle data (party/monster TMDs + textures)"},
-    {"label": "monster_data",     "start": 869,  "category": "battle",    "display": "Monster data"},
-    {"label": "sound_data",       "start": 870,  "category": "audio",     "display": "Sound data (driver outputs)"},
-    {"label": "befect_data",      "start": 872,  "category": "battle",    "display": "Battle effect data"},
-    {"label": "player_data",      "start": 876,  "category": "battle",    "display": "Player data (TMDs / arts)"},
-    {"label": "sound_data2",      "start": 877,  "category": "audio",     "display": "Sound data (dev branch)"},
-    {"label": "level_up",         "start": 891,  "category": "system",    "display": "Level-up overlay + VABs"},
-    {"label": "monster_se",       "start": 893,  "category": "audio",     "display": "Monster SFX"},
-    {"label": "card_data",        "start": 894,  "category": "system",    "display": "Card data"},
-    {"label": "bat_back_dat",     "start": 895,  "category": "battle",    "display": "Battle backgrounds"},
-    {"label": "xxx_dat",          "start": 897,  "category": "system",    "display": "Scene-scripted asset table"},
-    {"label": "move_program_no",  "start": 972,  "category": "system",    "display": "Move-program overlay"},
-    {"label": "other_game",       "start": 974,  "category": "system",    "display": "Other-game overlays"},
-    {"label": "monster_test",     "start": 980,  "category": "system",    "display": "Monster test scenes"},
-    {"label": "music_01",         "start": 990,  "category": "audio",     "display": "Music (BGM SEQs)"},
-    {"label": "vab_01",           "start": 1072, "category": "audio",     "display": "VAB sound banks"},
-    {"label": "other1",           "start": 1195, "category": "system",    "display": "Other (1)"},
-    {"label": "other4",           "start": 1200, "category": "system",    "display": "Other (4)"},
-    {"label": "other5",           "start": 1203, "category": "system",    "display": "Other (5)"},
-    {"label": "other6",           "start": 1222, "category": "system",    "display": "Other (6)"},
-    {"label": "other7",           "start": 1228, "category": "system",    "display": "Other (7)"},
-]
+def _load_scene_names() -> list[dict]:
+    """The one scene-name table: `data/gamedata/scenes.toml`.
+
+    Also compiled into `legaia_gamedata::Database::scene_names`, so the site,
+    the CLIs and the engine name a scene the same way. Rows keep the raw
+    `#define` number as `start` and the display name as `display` - the shape
+    the rest of this generator reads.
+    """
+    with (GAMEDATA / "scenes.toml").open("rb") as f:
+        rows = tomllib.load(f).get("scene", [])
+    return [
+        {"label": r["id"], "start": r["cdname"], "category": r["category"],
+         "display": r["name"], "banner": r.get("banner"),
+         "contributor": r.get("contributor"), "note": r.get("note")}
+        for r in rows
+    ]
+
+
+CDNAME_SCENES: list[dict] = _load_scene_names()
 
 
 # The boot TOC loader copies PROT.DAT verbatim - 8-byte header included - into
@@ -858,13 +716,17 @@ def build_scenes_json() -> list[dict]:
         if end < start:
             # A block whose whole window fell inside the TOC header rows.
             continue
-        out.append({
+        row = {
             "label": s["label"],
             "display": s["display"],
             "category": s["category"],
             "prot_start": start,
             "prot_end": end,
-        })
+        }
+        for k in ("banner", "contributor", "note"):
+            if s.get(k):
+                row[k] = s[k]
+        out.append(row)
     return out
 
 
@@ -939,36 +801,28 @@ def build_gamedata_json() -> tuple[dict, dict]:
                     "missing": True}
         return r
 
-    # Reverse map: walkthrough town name -> scene label + category from
-    # the curated CDNAME map. The walkthrough's town names don't perfectly
-    # match CDNAME labels (Vidna == balden, etc.), so we hand-map.
-    # Scene labels below are confirmed from engine-decoded NPC dialogue (see the
-    # CDNAME_SCENES notes). Octam is `rayman` (NPC "I am Hari."); the `town0b..0e`
-    # blocks are Rim Elm variants, so neither Sol nor Ratayu lives there.
-    #   - Sol is the `kor` city cluster (kor3 names the "Sol 3rd Street Theater").
-    #   - Ratayu (Gaza's city) is not confidently pinned to one block yet.
-    # Both are left None rather than pointed at the wrong (Rim Elm / Octam) block.
+    # Reverse map: walkthrough town name -> the scene that town's shops live
+    # in (data/gamedata/scenes.toml names every scene; this only picks which of
+    # a town's scenes the walkthrough's shop list belongs to). Each pick is the
+    # scene whose MAN carries that town's op-0x49 shop records
+    # (`asset shop-stock`), not a guess from the label.
     TOWN_TO_SCENE = {
         "Rim Elm":              "town01",
         "Hunter's Spring":      "izumi",
-        "Drake Castle":         "vell",
+        "Drake Castle":         "dolk2",
         "Biron Monastery":      "bylon",
-        "Wind Cave":            None,        # not a CDNAME scene we ID
+        "Wind Cave":            "jiji",      # banner "Ancient Wind Cave"
         "Jeremi":               "geremi",
         "Vidna":                "balden",
-        "Octam":                "rayman",
-        "Underground Octam":    "chitei2",
-        "Ratayu":               None,        # Gaza's city; block not yet pinned
-        "Karisto Station":      "station",
-        # the `kor` cluster (kor3 = Sol district); the `koin` cluster is Sol's
-        # coin-games quarter, but no single scene is the town hub yet
-        "Sol":                  None,
-        "Buma":                 "bubu2",
+        "Octam":                "ropeway",   # surface Octam after the Mist
+        "Underground Octam":    "rayman",    # Hari's underground city
+        "Ratayu":               "retock",
+        "Karisto Station":      "station3",
+        "Sol":                  "koin4",     # Sol Tower's shop floor
+        "Buma":                 "bubu1",     # the thawed town; bubu2 is frozen
         "Usha Research Center": "doman",
-        # was "koin1", which is falsified - koin1 is the Sol coin-games venue
-        # (Muscle Dome / Baka Fighter host). Soren Camp's scene is unpinned.
-        "Soren Camp":           None,
-        "Conkram":              "conc",
+        "Soren Camp":           "son",
+        "Conkram":              "conc",      # past Conkram (banner "Conkram (Past)")
     }
 
     shops_raw = _load_toml("shops.toml").get("shop", [])

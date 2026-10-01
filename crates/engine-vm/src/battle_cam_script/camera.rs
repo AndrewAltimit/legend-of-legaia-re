@@ -173,6 +173,9 @@ pub struct BattleCamera {
     /// counter's per-action seeds fire on the state **edges** the way
     /// retail's arms store them once on entry.
     pub(super) last_action_state: u8,
+    /// The acting actor's body pair `+0x3C` / `+0x40` (live pair plus the
+    /// facing-rotated pose centroid), which the summon close-up focuses.
+    pub(super) acting_body: Option<[f32; 2]>,
     /// Latch for the swing-clip commit's `ctx[+0xD] = 0`
     /// (`sb zero,0xd(v1)` at `0x8004E2B4`, in `FUN_8004E13C`'s party arm
     /// beside the `ctx[+0x6DA]` seed).
@@ -194,6 +197,10 @@ pub struct BattleCamera {
     /// which owns the camera through the summon band's `0x35` / `0x36`
     /// ([`BattleCamera::arm_module_shot`]).
     pub(super) module_glide: Option<Glide>,
+    /// The last [`BattleCamInputs::active_commits`] seen; `None` until the
+    /// first drive, so a camera created mid-action does not reset on its
+    /// first frame.
+    pub(super) last_active_commits: Option<u32>,
 }
 
 /// [`BattleCamera`]'s per-art attack-camera state - retail's `ctx[+0x26D]` /
@@ -350,6 +357,16 @@ pub struct BattleCamInputs {
     /// classifies. The camera reads it for the edges that re-seed the yaw
     /// counter `ctx[+0x6DA]` ([`BattleCamera::observe_action_state`]).
     pub action_state: u8,
+    /// The active actor's clip-commit count
+    /// (`BattleActionCtx::active_clip_commits`): a change re-zeroes the
+    /// ramp / accumulator / latch the way the commit `FUN_8004AD80` does.
+    pub active_commits: u32,
+    /// The acting actor's **body pair** `+0x3C` / `+0x40` - the live pair
+    /// plus the facing-rotated pose centroid the pose decoder `FUN_8004998C`
+    /// rewrites each drawn frame - as `(x, z)`. The summon close-up
+    /// (`FUN_801DC0A0` case `0x12`) focuses it, not the live pair. `None`
+    /// falls back to [`BattleCamActor::world`].
+    pub acting_body: Option<[f32; 2]>,
 }
 
 /// Drive one host's battle camera for a frame - the single shared entry both
@@ -394,10 +411,12 @@ pub fn drive(
     if let Some(actor) = inputs.acting {
         cam.set_actor(actor);
     }
+    cam.acting_body = inputs.acting_body;
     cam.set_post_action_target(inputs.target);
     cam.set_formation(inputs.formation);
     cam.set_action_framing(inputs.action);
     cam.observe_action_state(inputs.action_state);
+    cam.observe_active_commits(inputs.active_commits);
     cam.set_shake_amplitude(inputs.shake_amplitude);
     cam.set_attack_channels(inputs.attack, tracks);
     cam.set_phase(inputs.phase);

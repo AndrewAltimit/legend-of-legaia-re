@@ -37,7 +37,7 @@ The function is not a bytecode VM. There is no opcode table, no PC stride. It is
 | `0x28`–`0x2E` | Magic / Item flow | Item (`+0x1DE == 1`) or Magic (`+0x1DE == 2`) |
 | `0x32`–`0x38` | Summon flow | Magic with summon flag |
 | `0x3C`–`0x40` | Spirit flow | Spirit (`+0x1DE == 4`) |
-| `0x46`–`0x48` | Spirit super-arts variant | Spirit (`+0x1DE == 4` with `+0x1F9 != 0`) |
+| `0x46`–`0x48` | Spirit band | Spirit (`+0x1DE == 4`, unconditionally - `li v0,0x46` at `0x801E2F5C`) |
 | `0x50`–`0x52`, `0x5A` | Done / cleanup / end-of-action | (any) |
 | `0x64`–`0x6B` | Run / Defend / capture-fail | Flee (`+0x1DE == 5`) |
 | `0x6E`–`0x71` | Capture sequence - drives the paged [cast module](cast-module.md) | Magic with capture flag |
@@ -81,9 +81,9 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x3E` | Spirit - fire | `FUN_801D5854(actor, 6)`. Holds while `actor[+0x1D9] != 0`. Calls `func_0x800319A8(0x21)` and `FUN_801D8DE8(0x4C, 1)`. For spirit-type 4 (Originals) on party, fires `FUN_801D8DE8(0x34, 1)`. For item class 5 (gauge extension, `0x801E3E90..0x801E4018`) it raises HUD elements `0x0F` / `0x52`, draws one `rand()` (`0x801E3F2C`) for the camera variant `(rand % 2) * 2`, stages the extended gauge `min(0x120, target base * 7 / 5 + 8)` into `ctx[+0x6DC]` and the actor's spirit `+8` (`+10` with ability bit `0x200`) capped at 100 into `ctx[+0x6DE]`, a gauge extension rather than damage (`spirit::gauge_extend_fire`). Otherwise re-fires UI elements 6/0x4E/0x4F (monster effect) or 7 (party effect) per slot. Sets `ctx[+0x6D8] = 0x20` (post-cast timer). | `0x3F`. |
 | `0x3F` | Spirit - wait & fire damage | Decrements `ctx[+0x6D8]`. On expiration: calls `func_0x800402F4(actor[+0x1E8], actor[+0x1E9], target, party_id-1)` - the **damage application primitive**. Sets `ctx[+0x6D8] = 0x80` (post-damage cooldown). | `0x40`. |
 | `0x40` | Spirit - post-damage | `FUN_801D5854(target, 6)`. Iterates HP-bar widget at `ctx[+0x1080]+0xE`: ramps it toward `ctx[+0x6DC]` (target HP) by `DAT_1F800393` per frame; mirrors damage-popup widget at `_DAT_801F6968+0x10`. When `ctx[+0x6D8] < 0` and target is no longer valid (dead or out of slot), sets `actor[+0x1DE] = 0` and clears HUD. | `0x50`. |
-| `0x46` | **Spirit super-arts - entry variant** | `FUN_801D5854(actor, 6)`. Sets `actor[+0x1DC] = 2` (overrides flags). Stages anim `actor[+0x1DA] = actor[+0x1E7]`. Computes damage = `((target_HP * 7) / 5) + 8` (capped 0x120 / 100); HP-bar target = `actor[+0x170] + 0x20` (or `+0x28`/`+0x23` per ability-flag bits). | `0x47`. |
-| `0x47` | Spirit-arts - sustain | `FUN_801D5854(actor, 6)`. When `actor[+0x1D9] != 0`, clears `actor[+0x1DA]`. Decrements `ctx[+0x6D8]`. While running: ramps damage-popup HP/widget; when expired and `actor[+0x1F9] == 0` (no spirit-shield), advances HP-bar at `ctx[+0x1074]+0xE`. | `0x48` once exit-flag (`actor[+0x1DC] == 0`) and timers settle. |
-| `0x48` | Spirit-arts - flush | Final ramp of HP-bar / damage-popup. When all targets read zero AND timer expired AND anim flags clear → done. | `0x50`. |
+| `0x46` | **Spirit - entry** | `FUN_801D5854(actor, 6)`. Sets `actor[+0x1DC] = 2` (overrides flags). Stages anim `actor[+0x1DA] = actor[+0x1E7]` - the spirit clip `0x10` the Spirit commit wrote (`0x801D16A8`). Stages the bar target `ctx[+0x6DC] = min(((actor[+0x156] * 7) / 5) + 8, 0x120)` and the gauge target `ctx[+0x6DE] = min(actor[+0x170] + 0x20, 100)` (`+0x28` / `+0x23` per ability bits `0x200` / `0x100`), and arms the hold `ctx[+0x6D8] = 0x20` (`0x801E53A0`). | `0x47`. |
+| `0x47` | Spirit - sustain | `FUN_801D5854(actor, 6)`. When `actor[+0x1D9] != 0`, clears `actor[+0x1DA]`. While `ctx[+0x6D8] > 0` it steps the hold and returns (`blez` at `0x801E53E0` - level-triggered, not an edge). Then ramps the gauge element (`*0x801F6968` `+0x10`) toward `ctx[+0x6DE]` and, when `actor[+0x1F9] == 0`, the bar at `ctx[+0x1074]+0xE` toward `ctx[+0x6DC] - 6`, returning while the bar moves. | `0x48` once `actor[+0x1DC] == 0`, re-arming `ctx[+0x6D8] = 0x300` (`0x801E54E0`). |
+| `0x48` | Spirit - flush | Finishes the gauge ramp; drains `ctx[+0x6D8]` by `8 * step`, clamped at zero (`0x801E572C..0x801E5760`). Leaves when `actor[+0x1DA] == actor[+0x1D9] == 0`, the hold is out and the gauge element sits on its target. | `0x50`. |
 | `0x50` | **Done - cleanup phase** | The universal "action concluded, clean up" arm. Calls `FUN_801E6968` (the Lost Grail **Final Heal** auto-revive; engine `World::apply_final_heal_revives`), counts living party + monster actors (`+0x14C != 0 && (+0x16E & 4) == 0`); if any survivors → `FUN_801DABA4` (recompute battle ordering). Resets `actor[+0x224] = 8` (or `0x20` for spirits/`+0x1DE == 4`). Adjusts `actor[+0x170]` (HP-bar target) by ability-flag bits `0x100`/`0x200`. Clamps `actor[+0x170]` at 100. OR's `actor[+0x1DC] |= 4`. Per category: `+0x1DE == 5` (run) → screen-shake; `+0x1DE == 3` (attack) or party with dead s8 → pose 8; otherwise pose 6. Sets `ctx[+0x6D8] = 0x3C` (or `0x96` when the level-up banner byte `ctx[+0x26]` is set). If `ctx[7] == 0x50`, advances to `0x51`. | `0x51`. |
 | `0x51` | Done - fade-down | Ramps `_DAT_8007B910` back up to `_DAT_8008457C` (the configured [audio level](#the-_dat_8007b910-ramps-are-an-audio-duck)). Per-category pose updates. Calls `FUN_801E7250` (?); decrements `ctx[+0x6D8]`. When < 0 and `ctx[+0x276] == 0`: `ctx[+0x269] == 0` → `0x5A`, else `0x52`. Under `timer < 0xC`, calls `FUN_801D99BC` and unloads: `FUN_801D8DE8(actor[+0x18], 1)` (anim), `+0x4E/+0x4F` if anim was 6, `ctx[+0x26]` (the level-up banner), `+0xF/+0x52` (damage), `+0x44`; then **raises** `+0x59` (the capture banner) and unloads `+0x51` / `+0x50`, plus the multi-cast `(id, id-4)` loop off `_DAT_801F6974` - see [the sweep section](#the-sweep-the-teardown-falls-into-0x801e62180x801e6368). | `0x52` or `0x5A`. |
 | `0x52` | Done - multi-cast continuation | `FUN_801D5854(actor, 8)` (action-end pose). Decrements `ctx[+0x6D8]`. If timer > 0x13 and screen-shake active (`_DAT_8007B874 != 0`), clamps timer at 0x13. When < 0: clears `ctx[+0x269]`, advances to `0x5A`. When < 0x14 and **`ctx[+0x17]`** (the `0x51` block's own latch, not an actor byte) is non-zero: `FUN_801D99BC`, unload `0x59`, clear the latch - the close of the banner the `0x51` sweep raised. Port `done::done_multi_cast`. | `0x5A`. |
@@ -216,7 +216,26 @@ focus = -(actor[+0x3C], 0, actor[+0x40])
 A low camera beside the caster, pitched up by as much as `400` units, rising
 and swinging round as the accumulator runs; it also sets `ctx[+0x243] = 1`.
 Port: `legaia_engine_vm::battle_cam_script::summon_cast_framing`, stepped by
-the shared battle camera both hosts drive.
+the shared battle camera both hosts drive. The focus is the **body pair**
+(`lhu v0,0x3c(s2)` / `lhu v0,0x40(s2)` at `0x801DCD74..0x801DCD84`), not the
+live `+0x34` / `+0x38`: the camera input carries it as
+`BattleCamInputs::acting_body`, the engine's `BattleActor::seat`.
+
+The swing starts at the **invoke clip**, not at the action. The staged-anim
+commit `FUN_8004AD80` zeroes `ctx[+0x26E]`, `ctx[+0x87C]` and the latch
+`ctx[+0x26F]` whenever the committing actor is `ctx[+0x13]`
+(`0x8004BF50..0x8004BF78`; the death ramp `+0x270` is left alone), so when
+clip `9` commits the close-up restarts from a level, unrotated camera - a
+capture three frames in reads `ctx[+0x87C] = 72` and pitch `-144`. Port:
+`BattleCamera::observe_active_commits` on the active actor's commit count.
+
+`0x33`'s cue `actor[+0x1F5]` is that clip's **effect-script cursor**: the
+battle effect-script walker `FUN_801DEA50` bumps it as each record fires on
+its frame, and the commit zeroes it (`0x8004B060`). So the flash-in waits
+for the invoke clip's first record, well after the clip commits - on the
+captures, about `28` vsyncs in (`ctx[+0x87C] = 632` when the flash is `51` vsyncs
+old). Port: `summon_windup_cue` reads `Actor::battle_effect_cursor`; a
+caster with no effect script is cued at once.
 
 ## Inner dispatch - actor action category
 

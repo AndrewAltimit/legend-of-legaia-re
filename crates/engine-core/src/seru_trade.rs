@@ -273,6 +273,98 @@ impl SeruTradeSession {
     }
 }
 
+/// Title of the seru-trade offer list with no live session. Engine-authored:
+/// the feature is the patcher's, so retail has no string for it.
+pub const TRADE_LIST_TITLE: &str = "SHOP - TRADE SERU";
+/// The offer list's single row when this vendor has nothing to trade.
+pub const TRADE_EMPTY_ROW: &str = "(no trades offered)";
+
+/// The text of one seru-trade screen: a title and one label per row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TradeScreenText {
+    pub title: String,
+    pub rows: Vec<String>,
+}
+
+/// The seru-trade screens' text - the offer list, or the yes/no confirm when
+/// `confirming` - the one derivation both play hosts print.
+///
+/// The list's title names both sides of the bucket's standing offer, each
+/// row is one qualifying owner ("give Lv (owner) -> receive Lv"), and an
+/// empty list spells out the missing trade. `name_of` resolves a seru id
+/// (the boot executable's spell-name table, `Seru XX` without one); an
+/// owner is its party record's name, `P<slot>` for a blank one.
+pub fn trade_screen_text(
+    session: Option<&SeruTradeSession>,
+    pending: Option<&OwnerTrade>,
+    confirming: bool,
+    party: &[CharacterRecord],
+    names: Option<&legaia_asset::spell_names::SpellNameTable>,
+) -> TradeScreenText {
+    let name_of = |id: u8| -> String {
+        names
+            .and_then(|t| t.name(id))
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("Seru {id:02X}"))
+    };
+    let owner_of = |slot: u8| -> String {
+        party
+            .get(slot as usize)
+            .map(|m| m.name())
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| format!("P{slot}"))
+    };
+    if confirming {
+        let title = match pending {
+            Some(o) => format!(
+                "Trade {} for {} Lv{}?",
+                name_of(o.given_id),
+                name_of(o.received_id),
+                o.received_level,
+            ),
+            None => "Trade?".to_string(),
+        };
+        return TradeScreenText {
+            title,
+            rows: vec!["Yes".to_string(), "No".to_string()],
+        };
+    }
+    let Some(t) = session else {
+        return TradeScreenText {
+            title: TRADE_LIST_TITLE.to_string(),
+            rows: vec![TRADE_EMPTY_ROW.to_string()],
+        };
+    };
+    let title = format!(
+        "TRADE - WANTS {} / OFFERS {} LV{}",
+        name_of(t.offer.want_id),
+        name_of(t.offer.give_id),
+        t.offer.give_level,
+    );
+    let rows = if t.offers.is_empty() {
+        vec![format!(
+            "No '{}' available to trade for '{}'",
+            name_of(t.offer.want_id),
+            name_of(t.offer.give_id),
+        )]
+    } else {
+        t.offers
+            .iter()
+            .map(|o| {
+                format!(
+                    "{} Lv{} ({}) -> {} Lv{}",
+                    name_of(o.given_id),
+                    o.given_level,
+                    owner_of(o.owner_slot),
+                    name_of(o.received_id),
+                    o.received_level,
+                )
+            })
+            .collect()
+    };
+    TradeScreenText { title, rows }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -481,5 +573,15 @@ mod tests {
             }
         }
         assert!(changed, "the offer should reseed across buckets");
+    }
+
+    #[test]
+    fn trade_screen_text_spells_both_screens() {
+        let none = trade_screen_text(None, None, false, &[], None);
+        assert_eq!(none.title, TRADE_LIST_TITLE);
+        assert_eq!(none.rows, vec![TRADE_EMPTY_ROW.to_string()]);
+        let confirm = trade_screen_text(None, None, true, &[], None);
+        assert_eq!(confirm.title, "Trade?");
+        assert_eq!(confirm.rows, vec!["Yes".to_string(), "No".to_string()]);
     }
 }

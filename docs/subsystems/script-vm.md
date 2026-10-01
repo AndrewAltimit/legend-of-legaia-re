@@ -315,13 +315,22 @@ Port: `World::step_field_frame_slice` (the system-script gate,
 placement's own context and ends at its `0x21`), `World::drive_script_dialog`
 and `World::script_dialog_panel` (one box for the timeline and the helper
 contexts), and
-`CutsceneTimeline::addressed_channels` - the engine's stand-in for the
-engaged set while a timeline plays: a placement's own script steps only once
-a playing context has addressed it with a cross-context op. The free-roam
-liveliness mode (`World::npcs.animate`) drives the motion VMs and leaves this
-window alone; when it widened the window to every placement, an idle
-card-load resume ran talk bodies nobody had touched (`vell` `P1[3]`'s spawn
-walked the player away, a `koin1` placement opened its lines).
+`World::pre_run_field_channel_prologues`, the only slice in which the engine
+runs a placement channel's own script.
+
+No field-VM op engages a placement. The writers of `+0x10 |= 0x100` are the
+touch post `FUN_801D5B5C`, the record spawner `FUN_8003BDE0`
+(`0x8003C0A4`, a new partition-2 context) and the system SM `FUN_801DA51C`
+(`0x801DA7B8`); the placement install `FUN_8003A1E4` raises `0x01020000`
+(`0x8003A3A4..0x8003A3B4`) and leaves `0x100` down, and op `0x31` with bit 8
+is the `+0x26 -> +0x5A` copy, not a set. A cross-context op runs on the
+caller's slice against the target's context. So a cutscene that pokes, walks
+or places a townsperson never runs that townsperson's talk body: `dolk2`'s
+Noa (`P1[2]`) would set `0x2FE`, and the `town01` opening's `P1[10]` /
+`P1[11]` `0x20A` / `0x23D`, if it did. An engine that stepped every addressed
+placement set all three; one that stepped every placement ran talk bodies
+nobody had touched (`vell` `P1[3]`'s spawn walked the player away, a `koin1`
+placement opened its lines).
 
 ## Top-level dispatch
 
@@ -765,11 +774,31 @@ walk cycle (Mei: clip 61 walking, 60 idle). Engine port:
 NPC anim cue surfaced from `exec_move`. Dropping the walk playout is what left
 Mei out of the conversation frame for the whole beat.
 
+A walk is exclusive. The park leaves the target's halt bit `0x400` set until
+the kernel lands it, and the dispatcher prologue (`0x801DE90C..0x801DE944`)
+returns with the PC still on any cross-context op whose target carries
+`0x400` while the scene word `*(_DAT_801C6EA4) + 8` is zero, unless the
+caller's `+0x50` is `0xFB`. A spawned record never is: `FUN_8003BDE0` stamps
+its global record index there (`0x8003C094`). So a second record that pokes an
+actor another record is walking, turning or gliding waits at that op until the
+first leg ends. `dolk2`'s post-Caruban beat runs P2[12] to P2[15] at once, and
+both P2[12] (`C7 F8 48 53 23`) and P2[15] (`C7 F8 46 4C 33`) walk the player;
+the second walk starts only when the first lands. The engine keeps the same
+rule for the modal timeline and the helper contexts
+(`FieldVmState::halted_elsewhere`); without it the two walks pulled against
+each other and left the party inside a wall.
+
 The same park holds for the compass-walk ops against the **player**. `B7 F8 b0 b1`
 (op `0x37`, rate `0x80`; `0x41` is the `0x40` twin) moves the player along the
 direction `b0 & 7` names in the axis table at `0x80073F14`, for
-`(b1 & 0x3F) * (4 << sel)` speed units spent one per vsync, and the record
-resumes past the four-byte op when they are spent. `map01`'s cave-mouth record
+`(b1 & 0x3F) * (4 << sel)` speed units spent one per vsync. The arm does not
+park the record on a player target: it seats the op on the player's `+0x94`,
+raises the player's `0x400` and returns past the op (`s7 = 3` at
+`0x801DEEFC`), so the record runs on and its next cross-context op on the
+player waits in the prologue until the leg lands. `map01`'s credits record
+(`P2[40]`) shows it: retail sits on `B8 F8 82 08` at `+0x97` while the
+`C1 F8 03 C4` leg at `+0x93` still walks Vahn, and the `45 0B` camera glide
+after `+0x6E` starts with that leg, not after it. `map01`'s cave-mouth record
 walks the player out of the cave this way; the disassembler prints the op as
 `Yield (Standard)`, which is its dispatch class, not what it does. A record
 that waits for a player gesture pokes the clip and spins on its end latch

@@ -187,7 +187,41 @@ Not covered (out of scope for this pipeline):
   not exported and stays English
   ([which segments count as dialog](pack-format.md#which-segments-count-as-dialog)).
   Junk entries the scanner does export (dev-debug strings, menu-chrome labels
-  such as `=Next=`) are harmless: leave them untranslated.
+  such as `=Next=`) are harmless: leave them untranslated;
+- a shop's vendor name (the plate over the shop window), which an op-`0x49`
+  shop record carries NUL-terminated after its item ids rather than as a
+  `0x1F` line ([`shop.md`](../../subsystems/shop.md#gold-shop-stock-source));
+- blank spacer rows (`1F 20 00`), which draw nothing.
+
+### Measuring coverage
+
+The coverage rule is: **every line a scene script reaches is in the pack**.
+The denominator is the script walk, not the exporter's own scanner. For each
+scene MAN and each streaming dungeon scene's MAN chunk, every partition
+record's script is decoded from its first opcode to its end, and every
+instruction that carries a line - a bare line, an op-`0x49` sub-0 inline MES,
+an op-`0x4C` `E1` balloon - names that line. `translate coverage` compares that
+set with the keys the export writes and prints, per scene, what is missing
+and why. It also counts three things no walk decides:
+
+- text-shaped lines past the byte where a record's walk stops (what a decoder
+  gap could hide);
+- Japanese-framed lines left inside a Latin build's MAN (`other7`, `edbylon`
+  and `edretoin` carry them; the Latin text engine cannot draw them);
+- shop vendor names.
+
+On the retail discs the only missing walked lines are the blank spacer rows,
+no walk stops before its record's end, and the Japanese disc misses only a
+handful of leads the walk reaches over operand bytes. The disc-gated test
+`crates/patcher/tests/translation_export_coverage_real.rs` holds that line on
+each build it is given: `LEGAIA_DISC_BIN` (USA), `LEGAIA_DISC_BIN_JP` (the
+Japanese `SCPS_100.59` disc) and `LEGAIA_DISC_BIN_PAL` (any PAL `SCES_*`
+disc). It also checks that every Japanese source re-encodes to its disc bytes
+and that importing a pack whose translations equal their sources leaves each
+image byte-identical. Each gate skips and passes when its variable is unset.
+
+`export` works on every retail build; a PAL or Japanese export carries that
+disc's dialog only ([packs from other builds](pack-format.md#packs-from-other-builds)).
 
 ## CLI reference
 
@@ -198,12 +232,26 @@ them prints the same flags with their full descriptions.
 
 Exports every cataloged user-facing string from a disc into a working pack
 with empty `translation:` fields. The output carries the game's text: keep it
-local, never commit it.
+local, never commit it. Any retail build is accepted; a PAL or Japanese disc
+exports its dialog only ([packs from other builds](pack-format.md#packs-from-other-builds)).
 
 | Flag | Meaning |
 |---|---|
 | `--input <DISC>` | the retail disc image (`.bin`, or a `.cue` resolved to its `.bin`) |
 | `-o, --output <PACK>` | where to write the pack (YAML) |
+
+### `coverage`
+
+Measures the export against the script walk
+([measuring coverage](#measuring-coverage)): walked lines, exported lines and
+each missing line's reason, per scene. Counts and offsets only, no text, so it
+is safe to run and log. Any retail build.
+
+| Flag | Meaning |
+|---|---|
+| `--input <DISC>` | the disc image |
+| `--json` | print the full report as JSON |
+| `--verbose` | list every scene, not only those with something to report |
 
 ### `init`
 

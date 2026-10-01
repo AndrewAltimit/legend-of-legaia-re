@@ -37,17 +37,19 @@
 //! overwrite palette slots the new image no longer references. Overflow is an
 //! error listing offending pixel coordinates, unless
 //! [`EncodeOptions::quantize`] maps the least-frequent extra colors to their
-//! nearest palette entry. When any palette slot changes, the rebuilt palette
-//! is replicated into every CLUT row (multi-palette variants would otherwise
-//! recolor the new indices with stale rows); an untouched palette keeps the
-//! whole original CLUT block byte-identical.
+//! nearest palette entry. Only the palette the image is encoded against
+//! ([`EncodeOptions::palette`], palette 0 by default) is ever rewritten; every
+//! other palette of a multi-palette CLUT stays byte-identical. A texture with
+//! several palettes is several colourings of one set of indices - the game
+//! picks one per sprite - so copying the edited palette over the others would
+//! recolour every region drawn through them. Editing those regions in their
+//! own colours is [`crate::multi_palette`]'s job.
 
-use std::collections::HashMap;
 use std::fmt;
 
 use anyhow::{Context, Result};
 
-use crate::{Clut, PixelMode, Tim, bgr555_to_rgba8};
+use crate::{PixelMode, Tim, bgr555_to_rgba8};
 
 /// Options for [`encode_replacement`].
 #[derive(Debug, Clone, Copy, Default)]
@@ -57,6 +59,10 @@ pub struct EncodeOptions {
     /// of failing. Off by default: overflow is a hard error listing the
     /// offending pixels.
     pub quantize: bool,
+    /// Which of the TIM's own palettes the image was drawn through (4/8 bpp
+    /// only). Matching, new colours and the CLUT write all use this palette
+    /// and no other.
+    pub palette: usize,
 }
 
 /// One offending pixel in a [`EncodeError::TooManyColors`] report.
@@ -85,6 +91,14 @@ pub enum EncodeError {
     MissingClut { needed: usize, have: usize },
     /// `Mixed` pseudo-mode TIMs are not encodable.
     UnsupportedMode,
+    /// The requested palette does not exist.
+    NoSuchPalette { palette: usize, count: usize },
+    /// Pixels drawn through a read-only (external) palette ask for colours
+    /// that palette does not hold, and quantization is off.
+    FixedPaletteMiss {
+        colors: usize,
+        samples: Vec<ColorSample>,
+    },
     /// More distinct 15-bit colors than the palette holds and quantization is
     /// off. `needed` counts distinct colors in the new image, `capacity` the
     /// palette size; `samples` are the first pixels of colors that got no
@@ -122,6 +136,27 @@ impl fmt::Display for EncodeError {
             EncodeError::UnsupportedMode => {
                 write!(f, "mixed-mode TIMs cannot be encoded")
             }
+            EncodeError::NoSuchPalette { palette, count } => write!(
+                f,
+                "palette {palette} requested but the texture has {count} palette(s)"
+            ),
+            EncodeError::FixedPaletteMiss { colors, samples } => {
+                write!(
+                    f,
+                    "{colors} colour(s) are painted on pixels the game draws through a palette \
+                     that belongs to another texture (it is not rewritten here), and that \
+                     palette does not hold them. Use that palette's colours there, or enable \
+                     quantization. Offending pixels:"
+                )?;
+                for s in samples {
+                    write!(
+                        f,
+                        "\n  ({}, {}) rgba({}, {}, {}, {})",
+                        s.x, s.y, s.rgba[0], s.rgba[1], s.rgba[2], s.rgba[3]
+                    )?;
+                }
+                Ok(())
+            }
             EncodeError::TooManyColors {
                 capacity,
                 needed,
@@ -132,7 +167,9 @@ impl fmt::Display for EncodeError {
                     f,
                     "image uses {needed} distinct colors but the palette holds only \
                      {capacity}; {overflow} color(s) have no slot. Reduce the color \
-                     count or enable quantization. Offending pixels:"
+                     count, reuse a colour the palette already has (or recolour one of its \
+                     entries through the palette strip), or enable quantization. Offending \
+                     pixels:"
                 )?;
                 for s in samples {
                     write!(
@@ -294,9 +331,6 @@ pub fn encode_replacement(
     let px = |i: usize| -> [u8; 4] { rgba[i * 4..i * 4 + 4].try_into().unwrap() };
 
     let mut tim = original.clone();
-    let mut new_palette_entries = 0usize;
-    let mut quantized_pixels = 0usize;
-    let mut clut_rows_rewritten = false;
 
     match original.mode {
         PixelMode::Bpp16 => {
@@ -330,52 +364,23 @@ pub fn encode_replacement(
                 256
             };
             let have = original.clut.as_ref().map_or(0, |c| c.entries.len());
-            let Some(orig_pal) = original
-                .clut
-                .as_ref()
-                .and_then(|c| c.palette(original.mode, 0))
-            else {
+            let count = original.palette_count();
+            if count == 0 {
                 return Err(EncodeError::MissingClut { needed: per, have });
-            };
-            let (idx, pal, stats) =
-                index_against_palette(original, orig_pal, per, rgba, w, h, opts)?;
-            new_palette_entries = stats.new_entries;
-            quantized_pixels = stats.quantized;
-
-            // Rebuild the CLUT only when a slot changed; otherwise the whole
-            // block stays byte-identical (multi-row variants included).
-            if pal != orig_pal {
-                clut_rows_rewritten = true;
-                let clut = tim.clut.as_mut().expect("indexed TIM has a CLUT");
-                replicate_palette(clut, &pal, per);
             }
-
-            // Pack indices into the image block (row stride fb_w*2 bytes).
-            let stride = original.image.fb_w as usize * 2;
-            let mut data = vec![0u8; stride * h];
-            match original.mode {
-                PixelMode::Bpp4 => {
-                    for row in 0..h {
-                        for col in 0..w {
-                            let v = idx[row * w + col] as u8 & 0x0F;
-                            let b = &mut data[row * stride + col / 2];
-                            if col & 1 == 0 {
-                                *b |= v;
-                            } else {
-                                *b |= v << 4;
-                            }
-                        }
-                    }
-                }
-                _ => {
-                    for row in 0..h {
-                        for col in 0..w {
-                            data[row * stride + col] = idx[row * w + col] as u8;
-                        }
-                    }
-                }
+            if opts.palette >= count {
+                return Err(EncodeError::NoSuchPalette {
+                    palette: opts.palette,
+                    count,
+                });
             }
-            tim.image.data = data;
+            // One palette for every pixel: the general mapped encoder with a
+            // uniform map (only that palette can change).
+            let own = crate::multi_palette::own_palettes(original);
+            let map = crate::multi_palette::uniform_map(original, opts.palette as u16);
+            let enc =
+                crate::multi_palette::encode_mapped(original, &own, &[], &map, rgba, w, h, opts)?;
+            return Ok(enc);
         }
         PixelMode::Mixed => return Err(EncodeError::UnsupportedMode),
     }
@@ -384,205 +389,10 @@ pub fn encode_replacement(
     debug_assert_eq!(bytes.len(), original.byte_extent());
     Ok(Encoded {
         bytes,
-        new_palette_entries,
-        quantized_pixels,
-        clut_rows_rewritten,
+        new_palette_entries: 0,
+        quantized_pixels: 0,
+        clut_rows_rewritten: false,
     })
-}
-
-struct IndexStats {
-    new_entries: usize,
-    quantized: usize,
-}
-
-/// Core of the indexed-mode encode: assign every pixel a palette index,
-/// reusing the original palette / indices where the colors match and
-/// allocating freed slots for new colors. Returns `(indices, final palette,
-/// stats)`.
-fn index_against_palette(
-    original: &Tim,
-    orig_pal: &[u16],
-    per: usize,
-    rgba: &[u8],
-    w: usize,
-    h: usize,
-    opts: &EncodeOptions,
-) -> Result<(Vec<usize>, Vec<u16>, IndexStats), EncodeError> {
-    let mut pal: Vec<u16> = orig_pal.to_vec();
-    let decoded: Vec<[u8; 4]> = pal.iter().map(|&e| bgr555_to_rgba8(e)).collect();
-
-    // The original per-pixel index (same dimensions as the replacement).
-    let stride = original.image.fb_w as usize * 2;
-    let orig_index = |row: usize, col: usize| -> usize {
-        match original.mode {
-            PixelMode::Bpp4 => {
-                let byte = original.image.data[row * stride + col / 2];
-                (if col & 1 == 0 { byte & 0x0F } else { byte >> 4 }) as usize
-            }
-            _ => original.image.data[row * stride + col] as usize,
-        }
-    };
-
-    // Per-pixel target texel + its canonical decoded color (what the pixel
-    // will display). Matching runs in canonical space so 8-bit colors that
-    // round to the same 15-bit value share one entry.
-    let n = w * h;
-    let mut target = Vec::with_capacity(n);
-    let mut canon = Vec::with_capacity(n);
-    for i in 0..n {
-        let t = rgba8_to_bgr555(rgba[i * 4..i * 4 + 4].try_into().unwrap());
-        target.push(t);
-        canon.push(bgr555_to_rgba8(t));
-    }
-
-    // First entry per decoded color (first-match rule).
-    let mut first_slot: HashMap<[u8; 4], usize> = HashMap::new();
-    for (s, &d) in decoded.iter().enumerate() {
-        first_slot.entry(d).or_insert(s);
-    }
-
-    const UNSET: usize = usize::MAX;
-    let mut idx = vec![UNSET; n];
-    let mut used = vec![false; per];
-
-    // Pass A: positional reuse - a pixel already displaying the requested
-    // color keeps its original index (and thus the entry's STP bit).
-    for row in 0..h {
-        for col in 0..w {
-            let i = row * w + col;
-            let oi = orig_index(row, col);
-            if oi < per && decoded[oi] == canon[i] {
-                idx[i] = oi;
-                used[oi] = true;
-            }
-        }
-    }
-    // Pass B: first palette entry that decodes to the color.
-    for i in 0..n {
-        if idx[i] == UNSET
-            && let Some(&s) = first_slot.get(&canon[i])
-        {
-            idx[i] = s;
-            used[s] = true;
-        }
-    }
-    // Pass C: colors the original palette lacks, in first-appearance order.
-    struct Pending {
-        texel: u16,
-        first: (usize, usize), // (x, y) of first occurrence
-        first_rgba: [u8; 4],
-        pixels: Vec<usize>,
-    }
-    let mut pending: Vec<Pending> = Vec::new();
-    let mut pending_by_canon: HashMap<[u8; 4], usize> = HashMap::new();
-    for row in 0..h {
-        for col in 0..w {
-            let i = row * w + col;
-            if idx[i] != UNSET {
-                continue;
-            }
-            let k = canon[i];
-            let p = *pending_by_canon.entry(k).or_insert_with(|| {
-                pending.push(Pending {
-                    texel: target[i],
-                    first: (col, row),
-                    first_rgba: rgba[i * 4..i * 4 + 4].try_into().unwrap(),
-                    pixels: Vec::new(),
-                });
-                pending.len() - 1
-            });
-            pending[p].pixels.push(i);
-        }
-    }
-
-    let free: Vec<usize> = (0..per).filter(|&s| !used[s]).collect();
-    let mut new_entries = 0usize;
-    let mut quantized = 0usize;
-
-    if pending.len() > free.len() && !opts.quantize {
-        let matched: usize = used.iter().filter(|&&u| u).count();
-        let overflow = pending.len() - free.len();
-        // Sample the first pixel of each color that would get no slot (the
-        // least frequent ones - the same set quantization would fold).
-        let mut order: Vec<usize> = (0..pending.len()).collect();
-        order.sort_by_key(|&p| std::cmp::Reverse(pending[p].pixels.len()));
-        let samples = order[free.len()..]
-            .iter()
-            .take(8)
-            .map(|&p| ColorSample {
-                x: pending[p].first.0 as u32,
-                y: pending[p].first.1 as u32,
-                rgba: pending[p].first_rgba,
-            })
-            .collect();
-        return Err(EncodeError::TooManyColors {
-            capacity: per,
-            needed: matched + pending.len(),
-            overflow,
-            samples,
-        });
-    }
-
-    // Most frequent colors win slots; the remainder (quantize mode only) maps
-    // to the nearest live entry.
-    let mut order: Vec<usize> = (0..pending.len()).collect();
-    order.sort_by_key(|&p| std::cmp::Reverse(pending[p].pixels.len()));
-    for (rank, &p) in order.iter().enumerate() {
-        if rank < free.len() {
-            let slot = free[rank];
-            pal[slot] = pending[p].texel;
-            used[slot] = true;
-            new_entries += 1;
-            for &i in &pending[p].pixels {
-                idx[i] = slot;
-            }
-        } else {
-            // Nearest live entry, transparency class respected when possible.
-            let want = bgr555_to_rgba8(pending[p].texel);
-            let live: Vec<usize> = (0..per).filter(|&s| used[s]).collect();
-            let classed: Vec<usize> = live
-                .iter()
-                .copied()
-                .filter(|&s| (bgr555_to_rgba8(pal[s])[3] == 0) == (want[3] == 0))
-                .collect();
-            let candidates = if classed.is_empty() { &live } else { &classed };
-            let nearest = candidates
-                .iter()
-                .copied()
-                .min_by_key(|&s| {
-                    let d = bgr555_to_rgba8(pal[s]);
-                    let dr = d[0] as i32 - want[0] as i32;
-                    let dg = d[1] as i32 - want[1] as i32;
-                    let db = d[2] as i32 - want[2] as i32;
-                    dr * dr + dg * dg + db * db
-                })
-                .expect("at least one live palette slot");
-            quantized += pending[p].pixels.len();
-            for &i in &pending[p].pixels {
-                idx[i] = nearest;
-            }
-        }
-    }
-
-    debug_assert!(idx.iter().all(|&i| i < per));
-    Ok((
-        idx,
-        pal,
-        IndexStats {
-            new_entries,
-            quantized,
-        },
-    ))
-}
-
-/// Write `pal` into every palette-sized chunk of the CLUT (the flat chunk
-/// layout [`Clut::palette`] reads). A trailing partial chunk, if the CLUT's
-/// `w*h` is not a multiple of the palette size, keeps its original entries.
-fn replicate_palette(clut: &mut Clut, pal: &[u16], per: usize) {
-    let n_pal = clut.entries.len() / per;
-    for p in 0..n_pal {
-        clut.entries[p * per..(p + 1) * per].copy_from_slice(pal);
-    }
 }
 
 /// Convenience: full replacement pipeline over raw bytes. Parses `original
@@ -685,8 +495,13 @@ mod tests {
         }
     }
 
+    /// A new colour lands in a free slot of the palette the image was drawn
+    /// through, and **only** that palette is rewritten. (The encoder once
+    /// replicated the rebuilt palette into every CLUT row, which on a
+    /// multi-palette sheet recoloured every region drawn through the other
+    /// rows - the whole menu UI sheet turned the edited palette's colours.)
     #[test]
-    fn new_color_lands_in_a_free_slot_and_replicates_rows() {
+    fn new_color_lands_in_a_free_slot_and_other_rows_stay_identical() {
         let bytes = tim_4bpp_two_rows();
         let tim = parse_strict(&bytes).unwrap();
         let mut rgba = decode_rgba8(&tim, 0).unwrap();
@@ -707,9 +522,44 @@ mod tests {
             }
             assert_eq!(&out_rgba[i * 4..i * 4 + 4], &orig_rgba[i * 4..i * 4 + 4]);
         }
-        // Both CLUT rows now carry the rebuilt palette (replication).
+        // Row 1 is byte-identical to the original's row 1.
         let clut = out.clut.as_ref().unwrap();
-        assert_eq!(&clut.entries[..16], &clut.entries[16..32]);
+        let orig_clut = tim.clut.as_ref().unwrap();
+        assert_eq!(&clut.entries[16..32], &orig_clut.entries[16..32]);
+        assert_ne!(&clut.entries[..16], &orig_clut.entries[..16]);
+    }
+
+    #[test]
+    fn encoding_against_palette_one_rewrites_only_row_one() {
+        let bytes = tim_4bpp_two_rows();
+        let tim = parse_strict(&bytes).unwrap();
+        let mut rgba = decode_rgba8(&tim, 1).unwrap();
+        rgba[4..8].copy_from_slice(&[0, 255, 255, 255]);
+        let opts = EncodeOptions {
+            palette: 1,
+            ..Default::default()
+        };
+        let enc = encode_replacement(&tim, &rgba, 4, 4, &opts).unwrap();
+        let out = parse(&enc.bytes).unwrap();
+        assert_eq!(&decode_rgba8(&out, 1).unwrap()[4..8], &[0, 255, 255, 255]);
+        let (c, o) = (out.clut.as_ref().unwrap(), tim.clut.as_ref().unwrap());
+        assert_eq!(&c.entries[..16], &o.entries[..16], "palette 0 untouched");
+        // Unmodified re-encode through palette 1 is byte-exact too.
+        let rgba1 = decode_rgba8(&tim, 1).unwrap();
+        let enc = encode_replacement(&tim, &rgba1, 4, 4, &opts).unwrap();
+        assert_eq!(enc.bytes, bytes);
+        // A palette past the end is refused, not silently clamped.
+        let bad = EncodeOptions {
+            palette: 2,
+            ..Default::default()
+        };
+        assert!(matches!(
+            encode_replacement(&tim, &rgba1, 4, 4, &bad),
+            Err(EncodeError::NoSuchPalette {
+                palette: 2,
+                count: 2
+            })
+        ));
     }
 
     /// An 8x8 4bpp TIM (64 pixels - enough to overflow a 16-slot palette).
@@ -772,7 +622,10 @@ mod tests {
             &rgba_64_distinct(),
             8,
             8,
-            &EncodeOptions { quantize: true },
+            &EncodeOptions {
+                quantize: true,
+                ..Default::default()
+            },
         )
         .unwrap();
         assert!(enc.quantized_pixels > 0);

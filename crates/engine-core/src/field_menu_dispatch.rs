@@ -1100,8 +1100,15 @@ fn default_element_views() -> Vec<ElementRankView> {
     .collect()
 }
 
-/// Engine-friendly placeholder names. Engines with character-name data
-/// can override by building their own [`StatusSnapshot`] vector.
+/// The display name of each roster record, in roster order.
+///
+/// Retail draws a character's name from the record itself (`+0x2A7`, the
+/// name the player typed at the naming screen), never from a fixed table -
+/// so a save whose Vahn was renamed shows the new name on every menu and
+/// battle panel. The port's copy of that field is
+/// [`crate::world::PartyState::party_names`], which a card load fills from
+/// the records and a New Game seeds with the template names; a slot it has
+/// no name for falls back to the canonical one.
 pub fn roster_names(world: &World) -> Vec<String> {
     let canonical = ["Vahn", "Noa", "Gala"];
     world
@@ -1111,9 +1118,13 @@ pub fn roster_names(world: &World) -> Vec<String> {
         .iter()
         .enumerate()
         .map(|(i, _)| {
-            canonical
+            world
+                .party
+                .party_names
                 .get(i)
-                .map(|s| (*s).to_string())
+                .filter(|n| !n.is_empty())
+                .cloned()
+                .or_else(|| canonical.get(i).map(|s| (*s).to_string()))
                 .unwrap_or_else(|| format!("Slot {i}"))
         })
         .collect()

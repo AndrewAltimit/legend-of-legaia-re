@@ -1028,6 +1028,25 @@ orbit, the overworld top view), where there is no retail rotation to undo. The
 Baka Fighter cameo is the same `0x400` shape written as its own placement
 ([`minigame-baka-fighter.md`](minigame-baka-fighter.md)).
 
+The retail frames agree. Across the mednafen library, every flagged part-tick
+node's `+0x2C` is the scratchpad camera matrix `0x1F8003C8` (rotation and
+translation) applied to `+0x14` on the skip arm, and `S_b * (+0x14)` under
+`0x400` - the two readings above, read off retail's own RAM rather than the
+code. Two kinds of node fall outside it, both timing: a part spawned this frame
+still holds its recycled slot's `+0x2C`, and in one state the camera moved
+between the node's update and the view build. The frame half is the hit spark
+in `battle_melee_hit_spark`: twelve `0x380` parts, each one `±16` quad, under
+a camera yawed `2925`. Retail draws them as axis-aligned squares of `7` and
+`14` px for `+0x72` `0x800` and `0x1000` at depth about `3500` - the size the
+`0x6000` literal gives, where the `4x` battle base would give about `5` and
+`9`. Projecting each quad through the hosts' composition (`T(pos) * K * N`
+under the full camera, `H`, `OFX = 160`, `OFY = 114`) lands every corner on a
+packet in retail's primitive pool within 1.5 px, as it does `opdeene`'s two
+camera-locked quads, while the same parts composed flag-free or at the base
+scale miss every packet. Overworld parts are left out of the packet compare:
+the curvature table bends their `SY` after projection. Test
+`engine-ui/tests/camera_relative_retail_oracle.rs` (save-library gated).
+
 ## Frame setup + present
 
 - **`FUN_800271A8`** - the overworld's scratch init and **screen-Y curvature
@@ -1763,8 +1782,9 @@ ground heightfield, the posed props, the NPCs) are resolved once at scene load
 and submitted whole on every frame. A town is a few hundred draws of a few
 thousand triangles - the budget the port is not on is the PSX's.
 
-The one thing that can still remove geometry is the projection's own clip
-volume, so the clip planes are sized to hold an entire scene from any vantage
+Two things can still remove geometry: retail's own near reject on placed
+objects ([below](#the-placed-object-near-reject)), and the projection's clip
+volume, whose planes are sized to hold an entire scene from any vantage
 rather than to frame the current view:
 
 - [`window::SCENE_FAR`](../../crates/engine-render/src/window.rs) = `1e6` for
@@ -1837,7 +1857,39 @@ a sky dome the camera looks at from outside paints its outer shell over the
 scene - korout's and retona's did, and so did the flag-seeded frames of
 several other scenes. The world map keeps both-sided draws (its continent
 terrain's winding parity is the world-map pass's, not the field pass's), as
-do battle and the minigame venues.
+do battle and the minigame venues other than the dance hall. The dance hall is
+a field-shaped pass - game mode `0x19` is one of the three `FUN_80026CE4` runs
+the decoration pass `FUN_801F7088` for, and a live dance capture has its placed
+actors' colour words at `0x40808080` - so it is armed too; see
+[`minigame-dance.md`](minigame-dance.md#the-camera-keyframe-track) for the
+second thing that frame depends on, the GPU's polygon-size limit.
+
+### The placed-object near reject
+
+Retail has no near-plane clip on the per-prim path, and it does not need one
+for placed objects: the field actor draw walk drops the whole object first.
+`FUN_8001ADA4` runs `MVMVA` on each drawn actor's world position
+(`cop2 0x480012` at `0x8001AE20`) into `+0x2C..+0x34`, then dispatches on the
+draw kind `+0x56` through the jump table at `0x8001042C`. The placed static
+object's arm, kind `5` at `0x8001B1A8`, skips the draw when the render scale
+`+0x72` is non-zero, the view depth `+0x34` is below `0xA0`
+(`slti v0,v0,0xa0` at `0x8001B1C0`) and `+0x52` does not carry `0x20`. The
+kind-`1` and kind-`2` arms test the same depth against `0xA1`.
+
+So an object whose origin sits within 160 units of the eye, or behind it, is
+simply not drawn, while the port's projection would near-clip it per pixel and
+draw its inside. The Thunder Ravine walk-in (`nilboa`, the Delilas intro) parks
+its cutscene camera inside an additive mist shell (placement at
+`(11840, 0, 13784)`); retail holds that actor at view depth `-423`, and the
+port painted the shell's inside over the whole frame as a blue-violet wash.
+
+Both hosts ask `field_env::placed_origin_near_culled` per placed draw with the
+origin's clip `w` under the frame's retail camera - the native placed, colour
+and posed-prop passes, and the play page's placed draws through the
+`field_placed_near_culled` export. The `F3` debug orbit is exempt: it frames
+from a vantage retail never had. The per-prim handlers carry a second gate the
+port does not reproduce, an `OTZ` cut against the scratch halfword
+`0x1F80037E` (kind 15: `sub v1,s2,t4` / `bltz v1` at `0x80043D6C`).
 
 ## Coplanar surfaces: retail's ordering model, the port's depth policy
 
@@ -1872,7 +1924,7 @@ renderer and the site's WebGL viewers:
   builders stay byte-faithful) flags both copies via bit 15 of the per-vertex
   CBA attribute (unused by the PSX CBA encoding). The fragment shaders then
   discard the away-facing copy of *flagged* prims only. Outside the field
-  pass (the world map, battle, the minigame venues and the site's static
+  pass (the world map, battle, the non-dance minigame venues and the site's static
   viewers) this is the only NCLIP the port applies; the field pass also
   runs the [global back-face cull](#the-field-pass-culls-back-faces).
   Which facing is "away" depends on the view chain's
@@ -2550,6 +2602,7 @@ The detector is preserved as a signal during exploration ("this buffer contains 
 ## See also
 
 **Reference** -
+[Shading and palettes](shading.md) (the whole pixel colour chain, one page) ·
 [Legaia TMD](../formats/tmd.md) ·
 [PSX TIM](../formats/tim.md) ·
 [NPC palettes](../formats/npc-palette.md) ·

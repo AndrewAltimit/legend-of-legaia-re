@@ -550,15 +550,7 @@ impl PlayWindowApp {
     }
 
     fn shop_item_name(&self, id: u8) -> String {
-        self.session
-            .host
-            .world
-            .menu
-            .text
-            .as_ref()
-            .and_then(|t| t.item_name(id))
-            .map(str::to_string)
-            .unwrap_or_else(|| format!("item {id:02}"))
+        self.session.host.world.menu.item_label(id)
     }
 
     /// The description line window 34 draws.

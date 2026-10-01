@@ -58,6 +58,33 @@ impl LegaiaRuntime {
         }
     }
 
+    /// The dance HUD's textured quads as screen-space PSX primitives, off the
+    /// world's one predicate (`MinigameState::dance_hud_quads`: HUD up and
+    /// page resident), through the shared `ui_dance::dance_hud_prims` the
+    /// native window emits with. Empty otherwise, when the text rows draw.
+    pub(crate) fn dance_hud_prims(&self) -> Vec<legaia_engine_ui::screen_prim::ScreenPrim> {
+        use legaia_engine_ui::ui_dance as ud;
+        let Some(host) = self.scene_host.as_ref() else {
+            return Vec::new();
+        };
+        let views: Vec<ud::DanceHudQuadView> = host
+            .world
+            .minigames
+            .dance_hud_quads()
+            .iter()
+            .map(|q| ud::DanceHudQuadView {
+                poly_code: q.poly_code,
+                rect: (q.x0, q.y0, q.x1, q.y1),
+                uv: q.uv,
+                rgb_top: q.rgb_top,
+                rgb_bottom: q.rgb_bottom,
+                clut: q.clut,
+                tpage: q.tpage_attr,
+            })
+            .collect();
+        ud::dance_hud_prims(&views, ud::COUNTIN_OT)
+    }
+
     /// The dance count-in banner as screen-space PSX primitives, for the
     /// page's own prim pass.
     ///

@@ -768,6 +768,19 @@ class TmdRenderer {
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, positions);
   }
 
+  /* Replace just the index buffer of the last `uploadMesh` (the vertex
+   * streams stay). For a scene that draws a per-frame subset of its
+   * triangles - the dance hall, cut to what the PSX GPU draws from the
+   * frame's eye. */
+  updateIndices(indices) {
+    const gl = this.gl;
+    gl.bindVertexArray(this.vao);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.idxBuf);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.DYNAMIC_DRAW);
+    gl.bindVertexArray(null);
+    this.indexCount = indices.length;
+  }
+
   /* center: [cx, cy, cz]; radius: bounding-sphere half-extent;
    * distance: camera distance in unit-radius units (default 2.5);
    * panX/panY: view-space pan in unit-radius units (default 0);

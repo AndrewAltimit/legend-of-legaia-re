@@ -260,8 +260,8 @@ impl World {
         // Seed the per-actor field-VM channels from the same placement partition
         // (retail spawns one script context per placement at scene load, cutscene
         // or not - the free-roam half of `FUN_8003AEB0`). Each channel's own init
-        // opcodes then run through `step_field_channels`: scripted facings,
-        // idle/`WAIT`-loop cadence, local-flag setup. A cutscene scene re-seeds
+        // spawn section then runs in the load-frame pre-run
+        // (`pre_run_field_channel_prologues`). A cutscene scene re-seeds
         // this set through `install_cutscene_timeline_record` afterwards.
         self.seed_field_channels(man_file, man);
 
@@ -503,6 +503,15 @@ impl World {
             .as_ref()
             .is_some_and(|id| id.prop_anchor.is_some())
         {
+            return;
+        }
+
+        // Nothing opens between a battle's commit and the battle: retail's
+        // probe `FUN_801CF9F4` runs from the field frame pump, which the
+        // intro overlay pages out (see `World::step_field_locomotion`). A
+        // talk opened in the transition's last frames was dropped by battle
+        // entry half-run.
+        if !self.dialogue_owns_input() && self.field_scripts_held_for_battle() {
             return;
         }
 

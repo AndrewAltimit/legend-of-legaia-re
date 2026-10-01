@@ -224,7 +224,10 @@ fn re_importing_onto_an_already_patched_texture_is_caught() {
         &rgba,
         w,
         h,
-        &EncodeOptions { quantize: true },
+        &EncodeOptions {
+            quantize: true,
+            ..Default::default()
+        },
         false,
     )
     .expect("apply the replacement");

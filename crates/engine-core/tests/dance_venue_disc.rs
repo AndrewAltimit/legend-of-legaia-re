@@ -277,3 +277,147 @@ fn the_dance_camera_follows_the_overlay_keyframe_track() {
         assert_ne!(v, venue_camera(&e), "beat {beat}: the camera moved");
     }
 }
+
+/// The camera track's far poses carry the eye back through the stage-entrance
+/// curtain (the two-panel placed prop at `(0x1800, 0, 0x2F60)`), and retail's
+/// frame shows the stage clear throughout the pull-back: from that close,
+/// every curtain quad spans more than the GPU's `1023 x 511`-pixel limit, and
+/// the GPU refuses it. `psx_gpu_visible_indices` is that refusal; this pins it
+/// on the real hall.
+#[test]
+fn the_far_camera_poses_leave_the_curtain_to_the_gpu_limit() {
+    use legaia_engine_core::dance_venue::{
+        DanceCameraTrack, psx_gpu_visible_indices, psx_screen_xy,
+    };
+    let Some(dir) = gate() else { return };
+    let index = ProtIndex::open_extracted(&dir).expect("prot index");
+    let overlay = dance_overlay(&index);
+    let venue = DanceVenue::build(&index, Some(&overlay)).expect("venue builds");
+    let track = DanceCameraTrack::from_overlay(&overlay).expect("track parses");
+    let e = dance_scene_entry();
+
+    // Bake every draw into world space, remembering the curtain's triangles.
+    let mut positions: Vec<[f32; 3]> = Vec::new();
+    let mut indices: Vec<u32> = Vec::new();
+    let mut curtain: Vec<[u32; 3]> = Vec::new();
+    for vd in &venue.draws {
+        let d = vd.draw;
+        let rtmd = &venue.resources.tmds[d.res_tmd];
+        let offsets = (d.anim_id != 0)
+            .then(|| venue.frame0_bone_offsets(d.anim_id, rtmd.tmd.objects.len()))
+            .flatten();
+        let (vp, vi) = match &offsets {
+            Some(o) => {
+                let m = legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(&rtmd.tmd, &rtmd.raw, o);
+                (m.positions, m.indices)
+            }
+            None => {
+                let m = legaia_tmd::mesh::tmd_to_vram_mesh(&rtmd.tmd, &rtmd.raw);
+                (m.positions, m.indices)
+            }
+        };
+        // The few tilted fixtures (a pitch / roll) sit high on the walls, far
+        // from the curtain; the yaw-only bake leaves them out.
+        if (d.rot_x, d.rot_z) != (0, 0) {
+            continue;
+        }
+        let (s, c) = (f32::from(d.rot_y & 0xFFF) * std::f32::consts::TAU / 4096.0).sin_cos();
+        let base = positions.len() as u32;
+        positions.extend(vp.iter().map(|p| {
+            [
+                p[0] * c + p[2] * s + d.world_x as f32,
+                p[1] + d.world_y as f32,
+                -p[0] * s + p[2] * c + d.world_z as f32,
+            ]
+        }));
+        let is_curtain = (d.world_x, d.world_y, d.world_z) == (0x1800, 0, 0x2F60)
+            && vp.iter().any(|p| p[1] < -400.0);
+        for t in vi.as_chunks::<3>().0 {
+            let t = [t[0] + base, t[1] + base, t[2] + base];
+            indices.extend_from_slice(&t);
+            if is_curtain {
+                curtain.push(t);
+            }
+        }
+    }
+    assert!(!curtain.is_empty(), "the curtain prop is in the hall");
+
+    // A triangle reaches the frame when its screen box overlaps 320 x 240
+    // (a near panel covers the screen with every corner off it).
+    let on_screen = |v: &legaia_engine_vm::psx_camera::FieldCameraView, t: &[u32]| {
+        let s: Vec<[i64; 2]> = t
+            .iter()
+            .map(|&i| psx_screen_xy(v, positions[i as usize]))
+            .collect();
+        let lo = |a: usize| s.iter().map(|c| c[a]).min().unwrap();
+        let hi = |a: usize| s.iter().map(|c| c[a]).max().unwrap();
+        lo(0) < 320 && hi(0) >= 0 && lo(1) < 240 && hi(1) >= 0
+    };
+    // Key 1 is the far pose (`eye z = 0x1810`).
+    let far = legaia_engine_core::dance_venue::venue_camera_at(
+        &e,
+        track.key_pose(DanceMode::Qualifier, 1).unwrap(),
+    );
+    assert!(
+        far.eye()[2] < 0x2F60 as f32,
+        "the far eye is behind the curtain"
+    );
+    // Without the GPU limit the curtain is in the frame (the defect this
+    // pins against).
+    assert!(
+        curtain.iter().any(|t| on_screen(&far, t)),
+        "the unfiltered curtain covers the far frame"
+    );
+    let kept = psx_gpu_visible_indices(&far, &positions, [0.0; 3], &indices);
+    let kept_curtain = kept
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .filter(|t| curtain.contains(t))
+        .filter(|t| on_screen(&far, t.as_slice()))
+        .count();
+    assert_eq!(kept_curtain, 0, "no curtain triangle reaches the far frame");
+    // The stage itself stays: most of the hall is drawn.
+    assert!(
+        kept.len() * 10 > indices.len() * 7,
+        "kept {} of {} indices",
+        kept.len(),
+        indices.len()
+    );
+    eprintln!(
+        "[ran] far pose: {} of {} hall triangles drawn, {} curtain triangles",
+        kept.len() / 3,
+        indices.len() / 3,
+        curtain.len()
+    );
+}
+
+/// The hall's choreography bank times every descriptor clip, and a judge
+/// move outlasts the note latch the rules used to time it with - so a move
+/// plays to its last frame before the dancer is judged again.
+#[test]
+fn the_choreography_bank_times_every_judge_move() {
+    let Some(dir) = gate() else { return };
+    let index = ProtIndex::open_extracted(&dir).expect("prot index");
+    let overlay = dance_overlay(&index);
+    let bank = legaia_engine_core::dance_venue::dance_clip_bank(&index).expect("bank loads");
+    let cast = legaia_asset::dance_cast::parse(&overlay).expect("cast parses");
+    let mut game =
+        DanceGame::from_overlay_for_mode(&overlay, DanceMode::Qualifier, false).expect("run");
+    game.attach_clip_bank(&bank);
+    let latch_ticks = (legaia_engine_core::dance::NOTE_LATCH_TIMER
+        / legaia_engine_core::dance::NOTE_LATCH_DECAY) as u32
+        + 1;
+    let mut timed = 0;
+    for kind in cast.kinds.iter().take(4) {
+        for mv in &kind.moves {
+            let Some(len) = game.clip_len(mv) else {
+                continue;
+            };
+            assert!(len > latch_ticks, "move {} plays {len} ticks", mv.anim_id);
+            timed += 1;
+        }
+    }
+    assert!(timed >= 40, "only {timed} judge moves timed");
+    eprintln!("[ran] {timed} judge moves timed off the bank");
+}

@@ -1168,6 +1168,27 @@ pub fn shop_menu_rows(trading: bool) -> &'static [MenuState] {
     }
 }
 
+/// The [`MenuState::ShopMenu`] top picker's rows as both play hosts print
+/// them: one `(label, ink)` per [`shop_menu_rows`] entry.
+///
+/// The ink is retail's root command window (`shop_root_command_rows`,
+/// `FUN_801D4868`): Buy always white, and an empty bag greys **Sell and
+/// Quit together** - the ink global is cleared after the Buy row draws, so
+/// every row below it takes the grey. The engine-only Trade row sits
+/// between Sell and Quit and takes the same rule.
+pub fn shop_root_labels(trading: bool, bag_has_sellable: bool) -> Vec<(&'static str, u8)> {
+    let ink = crate::shop::shop_root_command_rows((0, 0), 0x4000, bag_has_sellable);
+    shop_menu_rows(trading)
+        .iter()
+        .map(|s| match s {
+            MenuState::ShopBuy => ("Buy", ink[0].ink),
+            MenuState::ShopSell => ("Sell", ink[1].ink),
+            MenuState::ShopTrade => ("Trade Seru", ink[1].ink),
+            _ => ("Exit", ink[2].ink),
+        })
+        .collect()
+}
+
 struct MenuRuntimeHost<'a> {
     world: &'a mut World,
     slot_count: u8,
@@ -1639,6 +1660,25 @@ pub fn load_world_from_path(world: &mut World, path: &Path) -> Result<()> {
 mod tests {
     use super::*;
     use legaia_save::{CharacterRecord, EquipmentSlots, SpellList};
+
+    #[test]
+    fn an_empty_bag_greys_every_shop_root_row_below_buy() {
+        use crate::shop::{SHOP_INK_GREY, SHOP_INK_NORMAL};
+        let full = shop_root_labels(false, true);
+        assert_eq!(
+            full,
+            vec![
+                ("Buy", SHOP_INK_NORMAL),
+                ("Sell", SHOP_INK_NORMAL),
+                ("Exit", SHOP_INK_NORMAL)
+            ]
+        );
+        let empty = shop_root_labels(true, false);
+        let labels: Vec<_> = empty.iter().map(|r| r.0).collect();
+        assert_eq!(labels, ["Buy", "Sell", "Trade Seru", "Exit"]);
+        assert_eq!(empty[0].1, SHOP_INK_NORMAL);
+        assert!(empty[1..].iter().all(|r| r.1 == SHOP_INK_GREY));
+    }
 
     fn world_with_party(n: usize) -> World {
         let members = (0..n).map(|_| CharacterRecord::zeroed()).collect();

@@ -448,9 +448,10 @@ pub struct EquipComposeView<'a> {
     pub char_slot: usize,
     /// Slot-picker cursor row, or `None` past the slot picker.
     pub slot_cursor: Option<u16>,
-    /// Pictogram rows to draw. Retail draws 7; the engine's 8th slot row
-    /// stays navigable but icon-less.
+    /// Pictogram rows to draw - retail's seven.
     pub pictogram_rows: usize,
+    /// Armament rows the Best Equipment change list draws a pictogram on.
+    pub best_rows: &'a [u8],
     /// Window 24's item-info panel content for the hovered candidate, or
     /// `None` outside the candidate step. See [`WIN_EQUIP_ITEM_INFO`].
     pub info: Option<crate::PauseItemInfo<'a>>,
@@ -814,6 +815,13 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                     ctx.origin,
                     ctx.scale,
                 ));
+                sprites.extend(crate::equip_best_change_sprites_for(
+                    rects,
+                    v.best_rows,
+                    ctx.rects.pen(window_ids::EQUIP_MAIN),
+                    ctx.origin,
+                    ctx.scale,
+                ));
             }
         }
         PauseScreen::Generic(content) => {
@@ -924,6 +932,8 @@ pub struct EquipComposeInput<'a> {
     pub candidate_counts: &'a [u8],
     /// `(label, current, preview)` rows of the main window's compare block.
     pub stat_compare: &'a [(&'static str, u16, u16)],
+    /// The Best Equipment row's change list, `(armament row, pick name)`.
+    pub best_changes: &'a [(u8, String)],
     pub phase: crate::EquipDrawPhase,
     pub cursor: u16,
     pub active_slot: u8,
@@ -971,12 +981,19 @@ pub fn equip_screen_compose(ctx: &PauseMenuCtx, input: &EquipComposeInput<'_>) -
             preview: *preview,
         })
         .collect();
+    let best_changes: Vec<(u8, &str)> = input
+        .best_changes
+        .iter()
+        .map(|(row, name)| (*row, name.as_str()))
+        .collect();
+    let best_rows: Vec<u8> = input.best_changes.iter().map(|(row, _)| *row).collect();
     let view = EquipScreenView {
         party_names: &party_names,
         party_cursor: input.char_slot,
         slots: &slots,
         candidates: &candidates,
         stat_compare: &stat_compare,
+        best_changes: &best_changes,
         phase: input.phase,
         cursor: input.cursor,
         active_slot: input.active_slot,
@@ -990,6 +1007,7 @@ pub fn equip_screen_compose(ctx: &PauseMenuCtx, input: &EquipComposeInput<'_>) -
             char_slot: input.char_slot,
             slot_cursor: input.slot_cursor,
             pictogram_rows: input.pictogram_rows,
+            best_rows: &best_rows,
             info: input.info.map(|i| crate::PauseItemInfo {
                 name: i.name,
                 count: i.count,

@@ -592,10 +592,11 @@ impl World {
         // above (reached by the SummonFlute items `0x98`/`0x99`, whose
         // `item_seed_band` stages `sub_route = 9`):
         //
-        // * `SummonFadeIn` (`0x2A`) waits on the caster's anim-cue byte, which
-        //   retail's cast-animation driver raises when the windup lands. The
-        //   port has no such driver - cue it on the frame the state is
-        //   reached.
+        // * `SummonFadeIn` (`0x33`) waits on the caster's `+0x1F5`, which is
+        //   the **effect-script cursor** of the invoke clip: the battle
+        //   effect-script walker `FUN_801DEA50` bumps it as each record fires
+        //   on its frame, so the flash-in lands when the clip's first record
+        //   does ([`summon_windup_cue`]).
         // * `SummonActorFreeze` (`0x2B`-family `0x35`) waits for the caster's
         //   invoke clip (queued id 9) to converge back to idle. With a real
         //   action-clip bank the one-shot's end converges it
@@ -609,7 +610,7 @@ impl World {
         if self.battle_ctx.action_state == ActionState::SummonFadeIn.as_byte() {
             let caster = self.battle_ctx.active_actor as usize;
             if let Some(a) = self.actors.get_mut(caster) {
-                a.battle.anim_cue = 1;
+                a.battle.anim_cue = summon_windup_cue(a);
             }
         }
         if self.battle_ctx.action_state == ActionState::SummonActorFreeze.as_byte() {
@@ -938,16 +939,20 @@ impl World {
     /// round's execution band and dispatch the seeded cast on the caster, as
     /// if its turn had come up in initiative order. Retail's `+0x1DD` target
     /// byte picks the picker row the spell's target resolution reads: `8` /
-    /// `9` are the party / enemy group codes, anything else an absolute slot.
+    /// `9` are the party / enemy group codes, anything else an absolute slot
+    /// in **retail** numbering - party `0..3`, monsters from
+    /// [`MONSTER_SLOT_FIRST`](legaia_engine_vm::battle_cue_group::MONSTER_SLOT_FIRST)
+    /// whatever the party size, where the engine seats monsters at
+    /// `party_count`.
     pub(in crate::world) fn dispatch_inflight_seed(&mut self, seed: InflightCastSeed) {
         use crate::battle_round::{PendingPartyAction, RoundPhase};
         use crate::target_picker::CursorRow;
-        let party_count = self.party.party_count.clamp(1, 3);
+        use legaia_engine_vm::battle_cue_group::MONSTER_SLOT_FIRST;
         let (target_row, target_slot) = match seed.target {
             8 => (CursorRow::Ally, 0),
             9 => (CursorRow::Enemy, 0),
-            t if t < party_count => (CursorRow::Ally, t),
-            t => (CursorRow::Enemy, t.saturating_sub(party_count)),
+            t if t < MONSTER_SLOT_FIRST => (CursorRow::Ally, t),
+            t => (CursorRow::Enemy, t - MONSTER_SLOT_FIRST),
         };
         self.battle.command = None;
         self.battle.spell_menu = None;
@@ -956,6 +961,15 @@ impl World {
         // The capture's MP is already charged (the Magic band debits at
         // `0x28`, before the summon band); credit the catalog price back so
         // the band's own debit lands on the captured figure.
+        for (slot, at) in seed.ground.iter().enumerate() {
+            if let (Some([x, z]), Some(a)) = (*at, self.actors.get_mut(slot)) {
+                a.move_state.world_x = x;
+                a.move_state.world_z = z;
+                if a.battle.seat.is_some() {
+                    a.battle.seat = Some((x, z));
+                }
+            }
+        }
         let price = u16::from(self.tables.spell_catalog.mp_cost(seed.spell_id));
         if let Some(a) = self.actors.get_mut(usize::from(seed.caster)) {
             a.battle.action_category = 2;
@@ -1803,7 +1817,7 @@ impl World {
                 attacker_element: 7, // basic attack is non-elemental
                 defender_resist,
                 defender_guarding: false,
-                enemy_defender_halve: false,
+                enemy_defender_halve: self.mystic_shield_up(),
                 bypass_party_resist: false,
                 summon_power_pct: 100,
                 floor_rand,
@@ -2533,5 +2547,29 @@ mod hp_delta_liveness_tests {
             "a statted slot at zero HP is dead on the fold path"
         );
         assert!(w.actors[1].battle.max_hp > 0 && w.actors[1].battle.hp == 0);
+    }
+}
+
+/// The caster's `+0x1F5` as the summon band's `0x33` reads it: the effect-script
+/// cursor of the committed invoke clip (`Actor::battle_effect_cursor`, which the
+/// walker `FUN_801DEA50` bumps per fired record and the anim commit
+/// `FUN_8004AD80` zeroes). Before the invoke clip commits the byte is still
+/// the previous clip's zeroed cursor, so the band waits. A caster with no
+/// effect script, or whose invoke clip carries no record to fire, cannot
+/// raise it and is cued at once (the port's clip-less stand-in).
+// REF: FUN_801DEA50 (`0x801DEC08..0x801DEC48`), FUN_8004AD80
+fn summon_windup_cue(a: &Actor) -> u8 {
+    use crate::action_effect_script::EffectRecord;
+    let Some(script) = a.battle_effect_script.as_ref() else {
+        return 1;
+    };
+    if a.battle.queued_anim != a.battle.current_anim {
+        return 0;
+    }
+    let first_fires = EffectRecord::at(script, 0).is_some_and(|r| r.frame != 0);
+    if first_fires {
+        a.battle_effect_cursor
+    } else {
+        1
     }
 }

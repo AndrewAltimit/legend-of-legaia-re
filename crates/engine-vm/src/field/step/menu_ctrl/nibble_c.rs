@@ -11,7 +11,7 @@ use super::*;
 // trigger), sub-8 (field_74 XOR), sub-9 (global-pair compare
 // gate - PC += 2 unless globals differ, then halt), sub-0xA
 // / sub-0xB / sub-0xC (slot table writes), sub-0xD
-// (script-context alloc, halt), sub-0xE (b6ac write), sub-0xF
+// (camera-glide wait), sub-0xE (b6ac write), sub-0xF
 // (position broadcast). All 16 sub-ops in nibble 0xC are now
 // handled.
 pub(super) fn op_4c_nc<H: FieldHost>(
@@ -75,11 +75,16 @@ pub(super) fn op_4c_nc<H: FieldHost>(
                 next_pc: pc + header_size + 3,
             }
         }
-        // Sub-D: 2-byte. Allocate / register a script context.
-        // Halts at PC regardless of allocation outcome.
+        // Sub-D: 2-byte. Wait for the cutscene camera mover: halt at PC
+        // while a glide is in flight, else advance past the op.
         0xD => {
-            host.op4c_n_c_sub_d_script_alloc();
-            StepResult::Halt { final_pc: pc }
+            if host.op4c_n_c_sub_d_camera_mover_live() {
+                StepResult::Halt { final_pc: pc }
+            } else {
+                StepResult::Advance {
+                    next_pc: pc + header_size + 1,
+                }
+            }
         }
         // Sub-1: 1-byte. Walk the trigger-flag record array,
         // resetting each record's byte-0 from a per-record

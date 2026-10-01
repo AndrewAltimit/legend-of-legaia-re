@@ -51,6 +51,14 @@ pub struct DanceGame {
     /// `0x801CF51C..0x801CF7D8`), when the run was started from a real
     /// overlay image.
     pub(super) camera: Option<crate::dance_venue::DanceCameraTrack>,
+    /// The how-to mode's Disco King ([`DemoDancer`]), spawned beside the
+    /// floor by `FUN_801d0190`'s mode-2 tail.
+    pub(super) demo: Option<DemoDancer>,
+    /// How long each descriptor clip plays before the clip driver raises its
+    /// end flag, keyed by `(anim id, rate)`, once the dance hall's
+    /// choreography bank is attached ([`DanceGame::attach_clip_bank`]).
+    /// `None` on a chart-only run, which falls back to the note latch.
+    pub(super) clip_ticks: Option<std::collections::HashMap<(u16, u16), u32>>,
 }
 
 impl DanceGame {
@@ -94,6 +102,8 @@ impl DanceGame {
             marker_script: Default::default(),
             markers: Default::default(),
             camera: None,
+            demo: None,
+            clip_ticks: None,
         };
         // A chart-only run still spawns its floor - the actors just stand at
         // the origin and bind no clip, because both of those come off the
@@ -172,7 +182,53 @@ impl DanceGame {
         }
         game.camera = crate::dance_venue::DanceCameraTrack::from_overlay(overlay);
         game.spawn_dancer_actors(&spawns);
+        // PORT: FUN_801d0190 (the mode-2 Disco King spawn, 0x801D0338..0x801D0390)
+        if mode == DanceMode::HowTo {
+            game.demo = Some(DemoDancer::default());
+        }
         Some(game)
+    }
+
+    /// Attach the dance hall's choreography bank (the `other7` scene's MOVE
+    /// ANM bundle, [`crate::dance_venue::dance_clip_bank`]): every descriptor
+    /// clip's length in ticks - [`crate::field_anim::clip_end_ticks`] on the
+    /// record's frame count and the rate's per-record step - so a judge move
+    /// holds the dancer for exactly as long as retail's clip driver plays it.
+    ///
+    /// `FUN_801d1358` rebinds a dancer's standing loop only when the clip
+    /// driver raises the bound clip's end flag (`+0x62 & 0x100`, tested at
+    /// `0x801D14C8`), and calls the award routine `FUN_801d1af4` only while
+    /// the bound clip **is** the idle or dance loop (`0x801D168C..0x801D16B4`).
+    /// So a move - a miss reaction included - runs to its last frame, and no
+    /// press of that dancer is judged until it has.
+    pub fn attach_clip_bank(&mut self, bank: &legaia_asset::player_anm::PlayerAnmBundle) {
+        let mut map = std::collections::HashMap::new();
+        for k in &self.kinds {
+            for c in [&k.idle, &k.dance].into_iter().chain(k.moves.iter()) {
+                let id = c.anim_id & 0x1FF;
+                let Some(rec) = id
+                    .checked_sub(1)
+                    .and_then(|r| bank.record_lenient(usize::from(r)).ok())
+                else {
+                    continue;
+                };
+                let step =
+                    crate::field_anim::clip_step(c.rate, rec.blends(), (rec.flag & 0xFF) as u8);
+                map.insert(
+                    (id, c.rate),
+                    crate::field_anim::clip_end_ticks(rec.frame_count, step).max(1),
+                );
+            }
+        }
+        self.clip_ticks = Some(map);
+    }
+
+    /// Ticks `clip` plays before its end flag, when the bank is attached.
+    pub fn clip_len(&self, clip: &legaia_asset::dance_cast::DanceClip) -> Option<u32> {
+        self.clip_ticks
+            .as_ref()?
+            .get(&(clip.anim_id & 0x1FF, clip.rate))
+            .copied()
     }
 
     /// Seed the dancer actor pool from the mode's spawn table, mirroring
@@ -600,7 +656,7 @@ impl DanceGame {
                 clip_id: a.field_5c,
                 clip_rate: a.cursor as u16,
                 clip_driver: dance_clip_driver_gate(a.field_5c, a.flags),
-                translucent: a.flags & crate::minigame_actor::FLAG_TRANSLUCENT != 0,
+                party_bank: a.flags & crate::minigame_actor::FLAG_PARTY_CLIP_BANK != 0,
             })
             .collect()
     }
@@ -708,6 +764,26 @@ impl DanceGame {
         self.score() >= WIN_THRESHOLD_SOLO
     }
 
+    /// Whether the results state clears the run's pass flag [`WIN_FLAG`]
+    /// (`FUN_801cf470` state `0x14`, `0x801CFE80..0x801CFF14`).
+    ///
+    /// Per mode: the qualifier compares the human's score against score slot
+    /// 2 (`lw v1,0x8(a1)`), the finals against slot 1 (`lw v1,0x4(a1)`), and
+    /// clears on `human < rival` (`slt`, so a tie keeps the flag). The how-to
+    /// demo clears when the score is **not** below `0x12D` (`slti` / `bne` to
+    /// the skip), and free play grades nothing.
+    // PORT: FUN_801cf470 (results-state grade)
+    pub fn results_clear_win_flag(&self) -> bool {
+        let me = self.score() as i32;
+        let slot = |i: usize| self.dancers.get(i).map_or(0, |d| d.score as i32);
+        match self.mode {
+            DanceMode::Qualifier => me < slot(2),
+            DanceMode::Finals => me < slot(1),
+            DanceMode::HowTo => me >= 0x12D,
+            DanceMode::FreePlay => false,
+        }
+    }
+
     /// The versus grade (retail modes 0/1): the human out-scores every rival on
     /// the floor. Ties go to the human - retail clears the win flag only when
     /// `human < rival`.
@@ -777,6 +853,8 @@ impl DanceGame {
         let beat = self.beat_index();
         let rows = self.chart.rows.len();
         for d in &mut self.dancers {
+            // The bound judge move plays on (the clip driver's cursor).
+            d.move_left = d.move_left.saturating_sub(frame_delta);
             // Latch decay (`timer -= 2 * delta`; at 0 the latch clears).
             if d.latch_timer > 0 {
                 d.latch_timer -= NOTE_LATCH_DECAY * frame_delta as i32;
@@ -829,11 +907,19 @@ impl DanceGame {
         }
 
         // `FUN_801d1358` rebinds a dancer's loop clip once its judge-triggered
-        // reaction / move clip has run out - the port's stand-in for the clip's
-        // own playback is the note latch, which is what the judge arms and
-        // what this frame's decay above clears.
+        // reaction / move clip raises the clip driver's end flag. With the
+        // choreography bank attached that is the move's own length; a
+        // chart-only run has no clip lengths and times it off the note latch
+        // the judge arms instead.
+        let timed = self.clip_ticks.is_some();
         for i in 0..self.dancers.len() {
-            if self.dancers[i].latch_timer == 0 {
+            let d = &self.dancers[i];
+            let free = if timed {
+                d.move_left == 0
+            } else {
+                d.latch_timer == 0
+            };
+            if free {
                 self.bind_loop_clip(i);
             }
         }
@@ -870,8 +956,10 @@ impl DanceGame {
         else {
             return;
         };
+        let len = self.clip_len(&clip).unwrap_or(0);
         if let Some(d) = self.dancers.get_mut(i) {
-            d.bind_clip(&clip);
+            d.bind_move(&clip);
+            d.move_left = len;
         }
     }
 

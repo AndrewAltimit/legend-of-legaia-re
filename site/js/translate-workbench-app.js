@@ -232,8 +232,23 @@ function roomText(e) {
     const free = r ? r.pack_free : (ri != null && S.disc ? S.disc.name_regions[ri].english_free : null);
     if (free != null) s += ` - moves if longer: ${free} free in its table`;
   }
+  if (e.rk === 'string_movable') {
+    const img = codeImageOf(e.k);
+    const free = img ? (img.pack_free ?? img.english_free + img.spare) : null;
+    if (free != null) s += ` - moves if longer: ${free} free in ${img.image}`;
+  }
   if (e.rk === 'dialog_growable') s += ' (can grow within its scene)';
   return s;
+}
+
+// The code image (executable or overlay) a ui_menu / system_text key lives in.
+function codeImageOf(key) {
+  const rep = S.report && S.report.code_images ? S.report : S.disc;
+  if (!rep || !rep.code_images) return null;
+  const m = /^ui:(\d+):/.exec(key);
+  if (m) return rep.code_images.find((c) => c.prot === +m[1]) || null;
+  if (key.startsWith('scus:str:')) return rep.code_images.find((c) => c.prot == null) || null;
+  return null;
 }
 
 function widthText(e, px) {
@@ -250,9 +265,9 @@ function outcomeText(e) {
   const o = S.outcome.get(e.k);
   if (!o || o === 'untranslated') return '';
   const label = {
-    in_place: 'fits in place', moved: 'moves to free table space', grown: 'record grows',
+    in_place: 'fits in place', moved: 'moves to free space', grown: 'record grows',
     relocated: 'fits (scene re-packed)', relayout: 'fits (scene grows)', already_applied: 'already on the disc',
-    over_budget: 'too long', no_free_run: 'no free space in the name tables', rolled_back: 'rolls back to English',
+    over_budget: 'too long', no_free_run: 'no free space it can move to', rolled_back: 'rolls back to English',
     refused: 'too long for the record', not_encodable: 'not encodable', mismatch: 'not on this disc', skipped: 'skipped',
   }[o] || o;
   const bad = ['over_budget', 'no_free_run', 'rolled_back', 'refused', 'not_encodable', 'mismatch', 'skipped'].includes(o);
@@ -511,8 +526,31 @@ function renderPools() {
       <span class="wb-bar-label">${esc(p.label)}</span>${meter(p.english_bytes, pb ?? null, p.room_bytes, pb != null && pb > p.room_bytes)}
       <span class="wb-bar-num">${p.slack} spare bytes${pb != null ? `, pack ${pb} / ${p.room_bytes}` : ''}</span></div>`;
   }
-  html += `<div class="wb-note">Each label keeps its own fixed slot; the spare bytes are padding a longer label can use one string at a time.</div>`;
+  html += `<div class="wb-note">A longer label moves, with every reference the game uses to reach it, into bytes its image's other labels free or the menu overlay's reserved spare room; a few pinned labels keep their slot. See "Room per category".</div>`;
   $('wb-pools').innerHTML = html;
+}
+
+const CATEGORY_LABELS = {
+  items: 'Item, spell, arts names', monster_names: 'Monster names', place_names: 'Place names',
+  ui_menu: 'Menu labels', system_text: 'System messages',
+};
+
+function renderCategories() {
+  if (!S.disc || !S.disc.categories) return;
+  const after = new Map();
+  if (S.report && S.report.categories) for (const c of S.report.categories) after.set(c.category, c.free_pack);
+  let html = `<tr><th>Category</th><th class="num">Strings</th><th class="num">Can grow</th>
+    <th class="num">Free</th><th class="num">Spare</th>${S.report ? '<th class="num">Left</th>' : ''}</tr>`;
+  for (const c of S.disc.categories) {
+    const tip = `${c.carrier}; reached by ${c.addressing}. Longer: ${c.growth}.` +
+      (c.competing.length ? ` Shared with: ${c.competing.join('; ')}.` : '');
+    const left = after.get(c.category);
+    html += `<tr title="${esc(tip)}"><td>${esc(CATEGORY_LABELS[c.category] || c.category)}</td>
+      <td class="num">${c.strings}</td><td class="num">${c.growable}</td>
+      <td class="num">${c.free_english}</td><td class="num">${c.spare_bytes || ''}</td>
+      ${S.report ? `<td class="num">${left ?? ''}</td>` : ''}</tr>`;
+  }
+  $('wb-categories').innerHTML = html;
 }
 
 function sceneRows() {
@@ -567,6 +605,7 @@ function renderScenes() {
 
 function renderDashboard() {
   renderCoverage();
+  renderCategories();
   renderRegions();
   renderMonsters();
   renderPools();
@@ -614,6 +653,31 @@ function renderPalette() {
     const t = drawn ? `draws in the accent font as ${c.cell}` : `folds to "${c.fold}"${c.cell ? ` (the accent font draws it as ${c.cell})` : ' (no glyph, even in the accent font)'}`;
     return `<button type="button" class="wb-pal-key ${drawn ? 'is-drawn' : ''}" data-ch="${esc(c.ch)}" title="${esc(t)}">${esc(c.ch)}</button>`;
   }).join('');
+}
+
+// The {ce:NN} symbol palette: buttons and icons drawn from the disc's own
+// sprites (names from legaia_patcher::translation::symbols). Inserts the
+// hex token the export writes; the name alias is shown as a hint.
+function renderSymbols() {
+  const el = $('wb-symbols');
+  const field = el.closest('.wb-field');
+  if (!S.wb || typeof S.wb.symbols !== 'function') { field.hidden = true; return; }
+  let syms = [];
+  try { syms = Array.from(S.wb.symbols()); } catch (e) { syms = []; }
+  field.hidden = !syms.length;
+  el.innerHTML = syms.map((s, i) => {
+    const pic = s.rgba ? `<canvas data-sym="${i}"></canvas>` : `<span>#${s.index - 0x0b}</span>`;
+    const t = `${s.name}: ${s.token}, or type ${s.alias}`;
+    return `<button type="button" class="wb-sym-key" data-ch="${esc(s.token)}" title="${esc(t)}" aria-label="${esc(s.name)}">${pic}<code>${esc(s.token.slice(4, 6))}</code></button>`;
+  }).join('');
+  for (const c of el.querySelectorAll('canvas[data-sym]')) {
+    const s = syms[+c.dataset.sym];
+    c.width = s.w;
+    c.height = s.h;
+    c.style.width = (s.w * 2) + 'px';
+    c.style.height = (s.h * 2) + 'px';
+    c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(s.rgba), s.w, s.h), 0, 0);
+  }
 }
 
 function renderCharStats() {
@@ -816,6 +880,7 @@ async function afterPackChange(msg) {
   fillSectionFilter();
   $('wb-main').hidden = false;
   renderAccents();
+  renderSymbols();
   renderDashboard();
   refilter(true);
   setStatus(msg, 'ok');
@@ -1078,6 +1143,16 @@ function init() {
     insertChar(k.dataset.ch);
   });
   $('wb-palette').addEventListener('keydown', (ev) => {
+    const k = ev.target.closest('[data-ch]');
+    if (k && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); insertChar(k.dataset.ch); }
+  });
+  $('wb-symbols').addEventListener('mousedown', (ev) => {
+    const k = ev.target.closest('[data-ch]');
+    if (!k) return;
+    ev.preventDefault();
+    insertChar(k.dataset.ch);
+  });
+  $('wb-symbols').addEventListener('keydown', (ev) => {
     const k = ev.target.closest('[data-ch]');
     if (k && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); insertChar(k.dataset.ch); }
   });

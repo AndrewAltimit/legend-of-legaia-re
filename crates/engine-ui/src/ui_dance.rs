@@ -372,6 +372,58 @@ pub fn dance_tutorial_draws_for(
     out
 }
 
+/// One dance HUD quad as `FUN_801d2f38` builds it - the fields of
+/// `legaia_engine_core::dance::DanceHudQuad`, which this crate cannot name.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DanceHudQuadView {
+    /// GP0 polygon code (`(semi << 1) | 0x3C`).
+    pub poly_code: u8,
+    /// Corners, half-open: `x0 .. x1` by `y0 .. y1`, stage pixels.
+    pub rect: (i16, i16, i16, i16),
+    /// Per-corner texture coordinates (TL, TR, BL, BR).
+    pub uv: [(u8, u8); 4],
+    /// Gouraud colours: verts 0/1 take `rgb_top`, verts 2/3 `rgb_bottom`.
+    pub rgb_top: [u8; 3],
+    pub rgb_bottom: [u8; 3],
+    /// CLUT id.
+    pub clut: u16,
+    /// Texpage attribute with the ABR folded in.
+    pub tpage: u16,
+}
+
+/// The dance HUD's textured quads (score boxes, digit runs, `Lv.` labels and
+/// gauge counters - `DanceGame::hud_draw_quads`) as screen-space PSX
+/// primitives on the staged HUD page: each one a `POLY_GT4` with its
+/// top / bottom colour pair, linked at the bucket the whole HUD shares
+/// ([`COUNTIN_OT`]). The caller draws them only while the page is resident
+/// (`World::minigames.dance_hud_art_staged`).
+///
+/// REF: FUN_801d2f38 (the emitter whose packets these are)
+pub fn dance_hud_prims(
+    quads: &[DanceHudQuadView],
+    ot_index: u32,
+) -> Vec<crate::screen_prim::ScreenPrim> {
+    let rgb = |c: [u8; 3]| (u32::from(c[0]) << 16) | (u32::from(c[1]) << 8) | u32::from(c[2]);
+    quads
+        .iter()
+        .map(|q| {
+            let (x0, y0, x1, y1) = q.rect;
+            let (top, bottom) = (rgb(q.rgb_top), rgb(q.rgb_bottom));
+            crate::screen_prim::ScreenPrim::Textured(crate::screen_prim::ScreenQuad {
+                xy: [(x0, y0), (x1, y0), (x0, y1), (x1, y1)],
+                uv: q.uv,
+                clut: q.clut,
+                tpage: q.tpage,
+                color: top,
+                gouraud: Some([top, top, bottom, bottom]),
+                semi_transparent: q.poly_code & 0x02 != 0,
+                ot_index,
+                depth: None,
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -639,5 +691,26 @@ mod tests {
         assert_eq!(q.clut, 0x7D01);
         assert_eq!(q.tpage, 0x0009 + 3 * 0x20);
         assert_eq!(i32::from(q.xy[1].0 - q.xy[0].0), 0x40);
+    }
+
+    #[test]
+    fn hud_quads_become_gouraud_prims_at_the_hud_bucket() {
+        let q = DanceHudQuadView {
+            poly_code: 0x3E,
+            rect: (10, 20, 42, 36),
+            uv: [(0, 0), (32, 0), (0, 16), (32, 16)],
+            rgb_top: [0x80, 0x40, 0x20],
+            rgb_bottom: [0x10, 0x20, 0x30],
+            clut: 0x7D00,
+            tpage: 0x2F,
+        };
+        let prims = dance_hud_prims(&[q], COUNTIN_OT);
+        let crate::screen_prim::ScreenPrim::Textured(p) = &prims[0] else {
+            panic!("textured quad");
+        };
+        assert_eq!(p.xy, [(10, 20), (42, 20), (10, 36), (42, 36)]);
+        assert_eq!(p.gouraud, Some([0x804020, 0x804020, 0x102030, 0x102030]));
+        assert!(p.semi_transparent);
+        assert_eq!(p.ot_index, COUNTIN_OT);
     }
 }

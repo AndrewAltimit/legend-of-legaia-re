@@ -9,7 +9,9 @@ sections carry them:
 - `system_text` - strings in `SCUS_942.54` outside the name tables
   (`scus:str:0x<va>` keys).
 
-Both are overwritten in place and never move; their room is described on
+Both are overwritten in place, and a string longer than its span moves with
+every instruction or pointer that reaches it rewritten; their room, and what
+pins a string in place, is described on
 [`space-and-budgets.md`](space-and-budgets.md#ui-and-system-pools).
 
 ## `ui_menu`
@@ -60,8 +62,9 @@ empty-list messages and equipment-slot names, the battle command chips, the
 level-up lines, `All Allies` / `Reselect`, battle steal / spoils result lines,
 the sparring-tutorial opener, and the equip-screen `Remove` / `Save` labels.
 They are read from pinned VA windows (`translation::ui::SCUS_STRING_POOLS`)
-and patched like the name tables (span + alignment padding), except that they
-never move.
+and patched like the name tables (span + alignment padding); a longer one
+moves by the code-string rules ([`space-and-budgets.md`](space-and-budgets.md#moving-a-label)),
+into its own pools' compaction or the name pools' free runs.
 
 ### Battle command chips
 

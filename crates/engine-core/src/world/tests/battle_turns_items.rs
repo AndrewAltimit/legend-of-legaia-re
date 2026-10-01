@@ -266,3 +266,43 @@ fn battle_item_menu_cancel_reopens_command_menu() {
     // No item was consumed on a cancel.
     assert_eq!(world.party.inventory.get(&0x01).copied(), Some(1));
 }
+
+/// The flow byte follows the player into a window: the ring's Up arm opens
+/// the item window and the byte reads `0x3C`, not the ring's `0x28` - the
+/// state retail stores as the window opens (`FUN_801D0748`'s `0x28` arms).
+#[test]
+fn opening_the_item_window_moves_the_flow_byte_onto_it() {
+    use crate::battle_flow::BattleFlowState;
+    use crate::input::PadButton;
+
+    let mut world = World {
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
+        ..World::default()
+    };
+    world.battle.player_driven = true;
+    world.mode = SceneMode::Battle;
+    world.set_item_catalog(full_test_catalog());
+    world.actors[0].battle.max_hp = 100;
+    world.actors[0].battle.hp = 100;
+    world.actors[0].battle.liveness = 1;
+    world.actors[1].battle.max_hp = 100;
+    world.actors[1].battle.hp = 100;
+    world.actors[1].battle.liveness = 1;
+    world.party.inventory.insert(0x01, 1);
+
+    world.open_battle_command(0);
+    assert_eq!(world.battle.flow, BattleFlowState::TurnPrompt);
+    for (button, want) in [
+        (PadButton::Left, BattleFlowState::CategoryMenu),
+        (PadButton::Up, BattleFlowState::ItemWindow),
+    ] {
+        world.set_pad(0);
+        world.set_pad(button.mask());
+        world.tick_battle_command();
+        assert_eq!(world.battle.flow, want, "after {button:?}");
+    }
+    assert!(world.battle.item_menu.is_some(), "the item window is open");
+}

@@ -30,6 +30,7 @@ use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;
 
 use legaia_font::accent_font::{AccentFontState, CellDraw};
+use legaia_font::escape_icons::{EscapeIcons, ICON_PROT_DAT_LEN, ICON_PROT_DAT_OFFSET};
 use legaia_font::latin;
 use legaia_font::{Font, MeasureOptions, PenItem, TextLimit, limit_for};
 use legaia_patcher::disc::DiscPatcher;
@@ -38,7 +39,7 @@ use legaia_patcher::translation::markup::{self, Target};
 use legaia_patcher::translation::space::{
     NameFitter, SpaceOptions, SpaceReport, space_report_with_export, target_for_key,
 };
-use legaia_patcher::translation::{LanguagePack, export_pack};
+use legaia_patcher::translation::{LanguagePack, export_pack, symbols};
 
 fn err(msg: impl AsRef<str>) -> JsValue {
     JsValue::from_str(msg.as_ref())
@@ -144,6 +145,7 @@ struct RowMeta {
 fn room_kind_name(v: &Value) -> &'static str {
     match v.as_str().unwrap_or("") {
         "string_fixed" => "string_fixed",
+        "string_movable" => "string_movable",
         "name_movable" => "name_movable",
         "field" => "field",
         "monster" => "monster",
@@ -226,6 +228,8 @@ pub struct Core {
     /// The disc's font with the accent font written in, for previews of an
     /// `accents: font` pack on a disc that does not carry it yet.
     accent_preview: Option<Font>,
+    /// The `{ce:NN}` escape sprites, for the preview and the symbol palette.
+    icons: Option<EscapeIcons>,
 }
 
 impl Core {
@@ -239,7 +243,7 @@ impl Core {
         let english = export_pack(&patcher)?;
         let disc_report =
             space_report_with_export(&patcher, &english, None, SpaceOptions::default())?;
-        let names = NameFitter::from_scus(scus.clone());
+        let names = NameFitter::new(&patcher)?;
         let font = patcher
             .read_prot_bytes(
                 legaia_font::FONT_TIM_PROT_DAT_OFFSET,
@@ -252,6 +256,10 @@ impl Core {
             .as_ref()
             .and_then(|f| f.patched().ok())
             .and_then(|(tim, scus, _)| Font::from_disc_tim_and_scus(&tim, &scus).ok());
+        let icons = patcher
+            .read_prot_bytes(ICON_PROT_DAT_OFFSET, ICON_PROT_DAT_LEN)
+            .ok()
+            .and_then(|head| EscapeIcons::from_disc(&head, &scus).ok());
         let mut core = Self {
             patcher,
             scus,
@@ -264,6 +272,7 @@ impl Core {
             font,
             disc_font,
             accent_preview,
+            icons,
         };
         core.build_meta();
         Ok(core)
@@ -897,8 +906,32 @@ impl Core {
                         }
                     }
                 }
-                PenItem::Escape { line, x, width } => {
+                PenItem::Escape {
+                    line,
+                    x,
+                    width,
+                    index,
+                } => {
                     let py = margin + (base + line) * ROW_PITCH;
+                    // A symbol draws its sprite where retail puts it: at the
+                    // pen, `y_offset` px from the line's top.
+                    if let Some(ic) = self.icons.as_ref().and_then(|t| t.get(index)) {
+                        let top = py as i64 + i64::from(ic.y_offset);
+                        for sy in 0..ic.h {
+                            for sx in 0..ic.w {
+                                let o = ((sy * ic.w + sx) * 4) as usize;
+                                if ic.rgba[o + 3] == 0 || top + (sy as i64) < 0 {
+                                    continue;
+                                }
+                                put(
+                                    margin + x + sx,
+                                    (top + sy as i64) as u32,
+                                    [ic.rgba[o], ic.rgba[o + 1], ic.rgba[o + 2]],
+                                );
+                            }
+                        }
+                        continue;
+                    }
                     for gx in 0..width.saturating_sub(1) {
                         put(margin + x + gx, py + 2, [0x70, 0x80, 0xA0]);
                         put(margin + x + gx, py + 12, [0x70, 0x80, 0xA0]);
@@ -1128,6 +1161,38 @@ impl Workbench {
         set("limit_px", JsValue::from_f64(r.limit_px as f64))?;
         set("unresolved", JsValue::from_f64(r.unresolved as f64))?;
         Ok(o.into())
+    }
+
+    /// The `{ce:NN}` symbol palette: one object per escape-table entry,
+    /// `{index, token, alias, name, kind, w, h, rgba}` (`rgba` a
+    /// `Uint8Array`, or `null` for a number escape or when the sprites did
+    /// not decode). Names come from
+    /// [`legaia_patcher::translation::symbols::SYMBOLS`].
+    pub fn symbols(&self) -> Result<JsValue, JsValue> {
+        let out = js_sys::Array::new();
+        for s in &symbols::SYMBOLS {
+            let o = js_sys::Object::new();
+            let set = |k: &str, v: JsValue| js_sys::Reflect::set(&o, &k.into(), &v);
+            set("index", JsValue::from_f64(s.index as f64))?;
+            set("token", format!("{{ce:{:02x}}}", s.index).into())?;
+            set("alias", format!("{{{}}}", s.alias).into())?;
+            set("name", s.name.into())?;
+            set("kind", s.kind.as_str().into())?;
+            match self.core.icons.as_ref().and_then(|t| t.get(s.index)) {
+                Some(ic) => {
+                    set("w", JsValue::from_f64(ic.w as f64))?;
+                    set("h", JsValue::from_f64(ic.h as f64))?;
+                    let arr = js_sys::Uint8Array::new_with_length(ic.rgba.len() as u32);
+                    arr.copy_from(&ic.rgba);
+                    set("rgba", arr.into())?;
+                }
+                None => {
+                    set("rgba", JsValue::NULL)?;
+                }
+            }
+            out.push(&o);
+        }
+        Ok(out.into())
     }
 }
 

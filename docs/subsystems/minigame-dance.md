@@ -41,7 +41,11 @@ Song end (state 10 only): when `DAT_801d5820` reaches the song-length limit - `0
 
 ### Mode global `DAT_801d514c`
 
-Four modes, `0..3`. The on-screen state-0 menu prints four labels top-to-bottom at y `0x50`/`0x58`/`0x60`/`0x68` (`s_yosenn`/`s_hosenn`/`s_setumei`/`s_asobi`) with the cursor at y `= value*8 + 0x54`, so value 0 = `yosenn` (予選, qualifier), 1 = `hosenn` (本選, finals), 2 = `setumei` (説明, how-to/demo), 3 = `asobi` (遊び, free play). In normal play the mode is chosen by the *caller* (a field script sets a story flag before entering): state 1 maps flag `0x134 → 0`, `0x135 → 1`, `0x133 → 2`, `0x428 → 3` then clears them. The state-0 cursor menu is the debug/test selector. **Confirmed** (value↔label from the state-0 layout + state-1 flag map; the English glosses of the romaji labels are **Inferred**). See `overlay_dance_801cf470.txt`.
+Four modes, `0..3`. The on-screen state-0 menu prints four labels top-to-bottom at y `0x50`/`0x58`/`0x60`/`0x68` (`s_yosenn`/`s_hosenn`/`s_setumei`/`s_asobi`) with the cursor at y `= value*8 + 0x54`, so value 0 = `yosenn` (予選, qualifier), 1 = `hosenn` (本選, finals), 2 = `setumei` (説明, how-to/demo), 3 = `asobi` (遊び, free play).
+
+In normal play the mode is chosen by the *caller* (a field script sets a story flag before entering): state 1 tests `0x133 → 2`, `0x134 → 0`, `0x135 → 1`, `0x428 → 3` in that order, each hit overwriting the global, so the last flag set wins and none leaves the entry's `0` (`0x801CF8F4..0x801CF94C`). It then clears `0x135` / `0x134` / `0x133` - **not** `0x428`, the standing free-play state - and sets the win flag `0x50a`.
+
+The state-0 cursor menu is the debug/test selector. **Confirmed** (value↔label from the state-0 layout + state-1 flag map; the English glosses of the romaji labels are **Inferred**). See `overlay_dance_801cf470.txt`.
 
 Per-mode behaviour, all read directly from `FUN_801cf470`:
 
@@ -51,6 +55,8 @@ Per-mode behaviour, all read directly from `FUN_801cf470`:
 | `1` hosenn | Versus. Grading compares `DAT_801d53cc` against score slot 1 `DAT_801d53d0`; a lower score clears the win flag. |
 | `2` setumei | Short how-to/demo: shorter song limit (`0x41dc` vs `0x64fc`), the [camera keyframe track](#the-camera-keyframe-track) at the head of `FUN_801cf470` is skipped, so the camera holds the entry's pose (guarded `DAT_801d514c != 2`), and state 1 routes through the load-wait state 2. Grading clears the win flag when the score exceeds `300`. |
 | `3` asobi | Free play: draws the personal-best panel (`FUN_801d2f38` + `FUN_801d32f8` over `_DAT_80084464`) and cycles a start voice via `_DAT_80084468`; the grading switch has **no** branch, so free play sets no win/lose flag. |
+
+Engine port: the door warp picks its floor through `dance::dance_mode_from_flags`, `World::enter_dance` runs state 1's flag writes, and the song's end applies `DanceGame::results_clear_win_flag` - all in `engine-core`, so every host that drains the warp gets them.
 
 The win/lose story flag is `0x50a` (a bit in the `DAT_80085758` flag bank). It is **set** on entry (state 1, `func_0x8003ce08(0x50a)`; `ce08` = set, `ce34` = clear, `ce64` = test - see `8003ce08.txt`/`8003ce34.txt`/`8003ce64.txt`) and **cleared on a loss** in grading (modes 0/1 when the human loses the score comparison; mode 2 when the score tops `300`). Downstream field script tests `0x50a`: set = passed, clear = failed. **Confirmed.**
 
@@ -303,7 +309,7 @@ Neither `mode` nor the writer of `+0x78` is pinned: no caller of `FUN_801d387c` 
 
 ### The dancer actor record
 
-`FUN_801d0190` spawns one actor per floor slot of the mode's spawn table and writes: the record's three words into `+0x14` / `+0x16` / `+0x18`, the slot index into `+0x5A`, the kind descriptor address into `+0x48`, `1` into `+0x56`, and **the kind's idle-clip anim id masked to `0x1FF` into `+0x5C`** with its rate word into `+0x6A`. Kind 0 additionally takes render scale `+0x72 = 0x1400` and the translucency bit `+0x10 |= 0x1000000`.
+`FUN_801d0190` spawns one actor per floor slot of the mode's spawn table and writes: the record's three words into `+0x14` / `+0x16` / `+0x18`, the slot index into `+0x5A`, the kind descriptor address into `+0x48`, `1` into `+0x56`, and **the kind's idle-clip anim id masked to `0x1FF` into `+0x5C`** with its rate word into `+0x6A`. Kind 0 additionally takes render scale `+0x72 = 0x1400` and the party-clip-bank bit `+0x10 |= 0x1000000` (see [The party-bank bit](#the-party-bank-bit-not-a-draw-mode)).
 
 `+0x5C` is therefore the **bound clip id**, not a spin counter - `FUN_801d1358` rewrites it with each judge-returned move pair (`andi ...,0x1ff` then `sh ...,0x5c(s0)`) and compares it against the descriptor's idle / dance-loop ids to decide whether the award routine may run at all. The groovy-move turn counter lives in the overlay global `DAT_801d564c[i]` and is not an actor field. So `FUN_801d4098`'s first arm means "this actor has a clip bound", and its `+0x10 & 0x1000` arm is the force-drive flag the field motion driver uses for the same purpose.
 
@@ -364,7 +370,7 @@ The "dance points" cheat anchor at `0x801d53cc` (see [`../reference/cheats.md`](
 | `FUN_801d231c` | Score / gauge HUD render (per-player score + groove gauge via the sprite emitter). `overlay_dance_801d231c.txt` |
 | `FUN_801d03c4` | Dancer face-pose switch driven by hit results (the eye/mouth MoveImage stamp). `overlay_dance_801d03c4.txt` |
 | `FUN_801d0190` | Dancer spawner: per-mode spawn table + kind descriptor table → actor list (see [Dancer bodies](#dancer-bodies-the-retail-cast--choreography-tables)). `overlay_dance_801d0190.txt` |
-| `FUN_801d1358` | Per-dancer actor handler: binds idle / the dance loop, applies the judge-returned move clip + translucency bit, then hands to the shared clip driver `FUN_800204F8`. `overlay_dance_801d1358.txt` |
+| `FUN_801d1358` | Per-dancer actor handler: binds idle / the dance loop, applies the judge-returned move clip + its party-clip-bank bit, then hands to the shared clip driver `FUN_800204F8`. `overlay_dance_801d1358.txt` |
 | `FUN_801d2f38` | Textured-quad sprite emitter (HUD digits / banners / gauge); the id's upper bits carry a per-draw blend mode. See [HUD widget table](#hud-widget-table-dat_801d46cc--emitter-geometry). `overlay_dance_801d2f38.txt` |
 | `FUN_801d73b8` | **Centred text/number draw** (render-track): measures the string (`func_0x80056768`), shifts x left by half its pixel width (13-unit/glyph pitch), draws via `func_0x80036888` at `(x, y + 7)`; skipped when `y >= 0xf1` (off-screen guard); returns a half-length metric. **not in this overlay** - see the alias note below. `overlay_dance_801d73b8.txt` |
 | `FUN_801d7dd8` | **Single small-digit glyph emit** (render-track): sets the glyph source column `DAT_801d8610 = digit*8 + 0x28`, then draws one sprite (tile id `6`) via the shared quad emitter `FUN_801d63b0` at `(x, y)`. Called per digit by the number renderer `FUN_801d76e0` when its style arg is 0. **not in this overlay** - see the alias note below. `overlay_dance_801d7dd8.txt` |
@@ -452,10 +458,12 @@ Three further pieces of the retail frame run in the same host
   textured-quad frame (`DanceGame::hud_draw_quads` - the `FUN_801d2f38`
   emits with the `FUN_801d32f8` / `FUN_801d3e28` glyph-U patches applied).
   The sprite page is staged on entry (see [where the HUD's texels come
-  from](#where-the-huds-texels-come-from)), so the quads have a texel source;
-  the native window's own score / gauge / track quads still materialise
-  through its flat sink and render as font text, which is the remaining half
-  of this frame.
+  from](#where-the-huds-texels-come-from)), so the quads have a texel source:
+  both hosts emit them as `POLY_GT4` screen primitives through
+  `engine-ui::ui_dance::dance_hud_prims` at the HUD's shared bucket, off
+  `MinigameState::dance_hud_quads` (HUD up and page resident). Without the
+  page the frame falls back to `DanceGame::hud_frame_rows` as font text - the
+  count-in banner's either/or, off the same flag.
 - **Effect spawns**: the human's scoring judge spawns the sequence-clear
   banner + stars (`good_banner_spawn` -> `step_mark_effect_spawn`) into the
   **run's own** part pool, inside `DanceGame::judge_press` - gameplay, not
@@ -558,7 +566,7 @@ the scene-name save / restore has nothing to copy; everything else is real:
   VAB off the record's second stream id, and frame the hall through the same
   camera (`dance_venue_vp`) until the visitor drags the view.
 
-Still open: the native window draws no dancer bodies over the hall.
+Both hosts draw the floor's bodies over the hall through one engine kernel - see [Drawing the floor](#drawing-the-floor-one-cast-surface).
 
 ### The camera keyframe track
 
@@ -617,6 +625,32 @@ its run's track in `dance_tick`, which the page does not call during its
 count-in, so there the camera starts moving with the song rather than with
 the count-in.
 
+**What the far poses draw.** Poses 1 and 3 ease the eye back to
+`z = 0x1810` in eye space, which puts it on the audience side of the
+stage-entrance curtain (the two-panel placed prop at `(0x1800, 0, 0x2F60)`,
+bound to clip 4). A live run of the qualifier - camera globals logged per
+vsync, frames captured every fifteenth - reproduces the track above value for
+value (the frame delta is `3`: the dance runs at 20 fps) and shows the stage
+clear through the whole pull-back: the curtain never reaches the frame. Two
+retail rules keep it out, and the port applies both to the hall:
+
+- **NCLIP.** The hall is drawn by the field render path (the decoration pass
+  under game mode `0x19`, the placed actors through the prim dispatcher
+  `FUN_80043390`), and the placed actors' colour words read `0x40808080` in a
+  live dance capture - no double-sided bit - so their back faces are rejected
+  (`camera_view::nclip_cull_mode` arms for `SceneMode::Dance`).
+- **The GPU's polygon-size limit.** The prim leaves hand the GPU the SXY FIFO
+  with no clip of their own, and the GPU skips any polygon whose corners lie
+  more than `1023` pixels apart horizontally or `511` vertically. From just
+  behind the curtain every one of its quads is that wide, so none is drawn.
+  `dance_venue::psx_gpu_visible_indices` is the rule (the GTE projection
+  with its divide saturation and SXY clamp, then the span test); the native
+  window re-uploads its world-space hall bake through it whenever the kept set
+  changes (`refresh_dance_venue_view`), and both browser pages swap the hall's
+  span of their index buffer for `play_mg_dance_env_visible_indices` /
+  `dance_env_visible_indices` under the engine camera. A disc-gated test pins
+  the curtain out of the key-1 frame and the rest of the hall in it.
+
 `DanceGame::press` returns the full event (Miss / Hit / Sequence with its
 points / **Groovy** with its landed flag, lock frames and remaining stock /
 NoCharge / Ignored-while-spinning) and applies the score, gauge and latch side
@@ -624,11 +658,13 @@ effects; `judge_press` folds it to the legacy three-way result for hosts that
 only want Miss/Hit/Sequence. `DanceGame::from_overlay` starts a run straight
 off the disc - chart, both scoring tables, and the qualifier cast's dancer
 kinds (disc-gated `dance_minigame_real` auto-plays the real chart end to end
-and drives a hands-off run to watch the rivals score). The one thing the rules
-layer approximates is the *length* of the input-disruption window: retail
-gates re-judging on the move clip's own playback, and the port times it off
-the dancer's spin (`lane + 1` turns at `0x80 + lane * 0x20` per frame), which
-is the same disc-derived formula for the visible move. The dance-floor / arrow
+and drives a hands-off run to watch the rivals score). Retail gates
+re-judging on the move clip's own playback, and so does the port once the
+hall's choreography bank is attached (`DanceGame::attach_clip_bank`, off
+`dance_venue::dance_clip_bank` - every play host attaches it on entry): a
+judge move holds the dancer for its clip length, see
+[the spawner's two actor kinds](#the-spawners-two-actor-kinds). A chart-only
+run has no clip lengths and falls back to the note latch. The dance-floor / arrow
 rendering (the [floor cluster](#dance-floor-rendering)) is not part of the
 rules port - it is a separate host concern.
 
@@ -726,7 +762,8 @@ six)
 at `0x801D4E1C`. Parser: [`legaia_asset::dance_cast`]. Per descriptor: `+0xC`
 mesh id, `+0x10`/`+0x14` pre-game idle anim + rate, `+0x18`/`+0x1C` the
 in-play dance-groove loop, `+0x28..+0x80` eleven `[anim | flags, rate]` **move
-pairs** the judge triggers (anim bit `0x200` = draw translucent). Kind 0's
+pairs** the judge triggers (anim bit `0x200` = the clip is in the party
+bank - see [The party-bank bit](#the-party-bank-bit-not-a-draw-mode)). Kind 0's
 mesh id is written *without* the scene TMD base `hw(0x8007B6F8)`, so it
 indexes the resident global pool; the others get the base added, so they are
 scene-pool indices in the MAN model-byte space.
@@ -765,7 +802,90 @@ timing-button step. Several choreography records carry frame data past the
 header's frame count (the retail cursor clamps at `frame_count*16 - 1`, so
 the tail never plays); `PlayerAnmBundle::record_lenient` accepts them.
 
-This is what the site's playable dance renders: the retail qualifier cast at
+#### The spawner's two actor kinds
+
+`FUN_801d0190` seats two kinds of actor. The **dancers** come off the mode's
+spawn table (one per record, `+0x48` = the kind descriptor, `+0x5C` / `+0x6A`
+= its idle clip + rate). Kind 0 - the human, Noa - is the one record whose
+model id skips the scene TMD base (`0x801D0280`), and the only one given
+`+0x72 = 0x1400` (`0x801D02B8`), the actor render scale: her field mesh draws
+at `1.25x` beside the hall's dancer NPCs. In the how-to mode alone
+(`0x801D0338..0x801D0390`) a second template at `0x801D4344` - whose tick word
+is the tutorial script `FUN_801d0750` - spawns the **Disco King**: scene model
+`base + 0x3F` (kind 4's mesh), clip `0x3B` at rate `8`, at
+`(0x1800, 0, 0x3200)`. He has no slot in the per-dancer arrays, so nothing
+judges or scores him, and his script's only actor store is its own step
+counter `+0x9C` - the one clip loops for the whole lesson. **Confirmed**
+(`overlay_dance_801d0190.txt`, `overlay_dance_801d0750.txt`).
+
+A dancer's clip returns to its loop when the clip driver raises its end flag
+(`+0x62 & 0x100`, tested at `0x801D14C8`), so a judge move plays to its last
+frame before the loop resumes from its first. The award routine `FUN_801d1af4`
+is called only while the bound clip **is** the idle or the dance loop
+(`0x801D168C..0x801D16B4`), so the same end flag is what re-opens judging: a
+move - the miss reaction included - locks its dancer's presses out for its
+whole length, far past the eight-frame note latch. The port times both off the
+clip itself: `DanceGame::attach_clip_bank` reads every descriptor clip's
+length from the hall's MOVE bundle (`field_anim::clip_end_ticks` over the
+record's frame count and the rate's per-record step - the display's own
+timing), and a bound move holds `+0x5C` and the lock until it runs out.
+
+#### Drawing the floor: one cast surface
+
+`DanceGame::body_frames` lists every body the spawner seats for the run's
+mode, each with a display track (the standing loop, the last judge move, the
+ticks since the track restarted), advanced every dance frame including the
+count-in. `legaia_engine_core::dance_cast_scene::DanceCastSurface` turns that
+into one posed vertex buffer in raw world coordinates: the meshes off the
+venue's scene TMD pool plus Noa's resident mesh (PROT 0874, capped to the ten
+live groups), the cursor through `field_anim::clip_step` /
+`clip_end_ticks` on the record's own gate and divisor, the record's
+sub-frame blend, `Rz.Ry.Rx . v + T` per object, then the render scale, the
+spin yaw and the position. The buffers rebuild when the run's model list
+changes, so the cast is the mode's - the qualifier's three, the finals' Mary
+centre, the how-to's Noa + Disco King, free play's six.
+
+The native window hands the surface the venue it builds on the staging edge
+and draws the buffers under the venue camera; the browser play page poses the
+world's run through the same call (`play_mg_dance_scene_*`) and re-bases the
+positions onto its baked hall.
+
+#### The party-bank bit, not a draw mode
+
+A descriptor anim word's bit `0x200` is not a translucent draw. `FUN_801d1358`
+folds it into actor flag `0x01000000` (`0x801D155C..0x801D1574` for a queued
+move, `0x801D171C..0x801D1748` for the award path, which also clears it when
+the bit is absent), and that flag has exactly one reader on the clip path: the
+clip selector `FUN_800204F8`, which tests it before anything else and, when it
+is set, resolves the clip id against `_DAT_8007B75C` - the resident party clip
+bank, PROT 0874 section 1 - instead of the scene's own bank
+(`0x80020530..0x80020560`). It is the same flag the field's placement seater
+raises on a party-bank actor and the ambient move-VM's op `0x0E` raises when it
+switches an actor to the second model bank. No clip in the five descriptors on
+the disc carries the bit, so on retail data every dancer clip resolves against
+the hall's bank. Kind 0's spawn raises the flag (`0x801D02C4`), but its handler
+re-derives it from the bound loop's word on its first tick on the loop, so
+Noa's clips resolve against the hall's bank too. The port names the bit for what
+it selects (`DanceClip::party_bank`, `minigame_actor::FLAG_PARTY_CLIP_BANK`)
+and, with no carrier on the disc, the cast surface holds no second bank.
+
+Under the entry camera the Disco King projects **below** the frame: he stands
+on the lower floor (`y = 0` against the dancers' `-0x80`) only `0x190` in
+front of the eye, where his vertices land at NDC `y` between `-1.4` and
+`-2.5`. That is retail's frame too. Nothing in the overlay moves the how-to
+camera: the keyframe block is gated off for mode `2`, the focus is the
+beat-clock actor's fixed position (`0x801CFF84..0x801CFFA4`), and neither the
+lesson script `FUN_801d0750` nor the entry writes the angle, eye or focus
+globals again. A live how-to run (the field reaches mode `2` through story
+flag `0x133`, which state 1 tests at `0x801CF8F4`; flags `0x134` / `0x135` /
+`0x428` pick modes `0` / `1` / `3` the same way, tested in that order, so a
+later flag wins) holds the entry pose for the whole lesson - pitch `0x3C`,
+eye `(0, 0x62C, 0xFF0)` every vsync - and its frames show Noa alone
+centre-stage: the Disco King is an off-screen voice, heard through his dialogue
+lines and never seen. The port frames the lesson the same way.
+
+The standalone minigames page runs its own qualifier-only session and poses
+it in its own script: the retail qualifier cast at
 the spawn-table offsets, textured against the `other7` scene VRAM (+ Noa's
 field atlas), playing the descriptor-named clips - idle before the run, the
 dance-groove loop synced to the beat clock, Noa's judge-triggered move on
@@ -1119,10 +1239,6 @@ stays possible and unevidenced.
   position
   (see [Dancer bodies](#dancer-bodies-the-retail-cast--choreography-tables))
   but not the facing, and the actor records are not RAM-pinned live.
-- The exact **length** of each judge-triggered move clip: it is what retail
-  really gates re-judging on (the award routine is only called while the dancer
-  is on its idle / dance loop), and the port times the window off the dancer's
-  spin instead - see [the wildcard](#the-triangle-wildcard-the-groovy-move).
 - Which of `DAT_801D514C`'s modes picks BGM 1048 vs 1054 (the branch is
   pinned, the arm-to-song mapping is not; both are short chart-sized loops -
   see the PROT-load table above).

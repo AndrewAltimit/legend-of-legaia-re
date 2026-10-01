@@ -154,11 +154,16 @@ pub(super) fn magic_cast_begin<H: BattleActionHost + ?Sized>(
         host.ui_element(0x4C, 0);
     }
 
-    // Capture-spell route?
+    // Capture-spell route? Retail stores `ctx[7] = 0x6E` for a class-`0x63`
+    // record (`0x801E4480..0x801E44FC`) and then falls through into the MP
+    // debit at `0x801E4500` - no branch skips it - so a capture-class cast
+    // pays its MP exactly as a plain one does. The earlier port returned
+    // before the debit, which left a monster casting its capture-class
+    // special for free, forever (Cort's Mystic Circle at `chitei2`).
     let spell_id = host.actor(slot).map(|a| a.params[0]).unwrap_or(0);
-    if host.is_capture_spell(spell_id) {
+    let capture = host.is_capture_spell(spell_id);
+    if capture {
         host.load_capture_archive(spell_id);
-        return transition(ctx, ActionState::MagicCaptureBranch);
     }
 
     // Compute MP cost with the character ability-bit modifier (Half 0x20 takes
@@ -172,6 +177,9 @@ pub(super) fn magic_cast_begin<H: BattleActionHost + ?Sized>(
         actor.last_mp_cost = cost;
     }
 
+    if capture {
+        return transition(ctx, ActionState::MagicCaptureBranch);
+    }
     transition(ctx, ActionState::MagicPreCastWait)
 }
 
@@ -516,5 +524,11 @@ pub(super) fn magic_capture_finalize<H: BattleActionHost + ?Sized>(
             a.render_flag = 0;
         }
     }
+    // The `0x71` exit (`0x801E5214..0x801E5248`), the capture twin of the
+    // summon band's `0x37` one: clear `ctx[+0x243]` and re-seed the ambient
+    // base one step above the floor.
+    ctx.gauge_rearm_latch = 0;
+    ctx.summon_staging_a = 0;
+    ctx.ambient_base = crate::battle_ground_grid::AMBIENT_BASE_CAST_EXIT;
     transition(ctx, ActionState::DoneCleanup)
 }

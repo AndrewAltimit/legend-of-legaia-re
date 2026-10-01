@@ -750,8 +750,7 @@ impl BootSession {
         host.set_map_resolver(Box::new(DefaultMapIdResolver::from_index(&host.index)));
         // Free-roam liveliness (NPC patrol routes + the ambient walk
         // mirror) on, as both play hosts run it: it is retail behaviour, and
-        // it never engages a placement's script (`World::step_field_channels`
-        // keeps its engaged window), so the headless drivers - ladders,
+        // it never engages a placement's script (only a touch does), so the headless drivers - ladders,
         // oracles, the retail comparison corpus - see the world a player sees.
         host.world.npcs.animate = true;
 
@@ -1743,31 +1742,11 @@ impl BootSession {
         landing
     }
 
-    /// Where a save written now would resume: the loaded scene's CDNAME
-    /// label and its banner name (the scene MAN's section 2, the string
-    /// retail's `FUN_8003AEB0` installs as the entry banner and copies into
-    /// the save-state location field - `docs/formats/place-names.md`). Both
-    /// empty when no scene is loaded; the location alone is empty for a
-    /// scene whose MAN carries no printable banner (the Shift-JIS endings).
-    ///
-    /// The MAN is re-read from the PROT index here rather than cached: it
-    /// runs once per save, and a cache would be one more thing to keep in
-    /// step with scene entry.
+    /// Where a save written now would resume
+    /// ([`legaia_engine_core::scene::SceneHost::current_resume`], the one
+    /// derivation the page's card and LGSF writers call too).
     pub fn current_resume(&self) -> legaia_save::SaveResume {
-        let Some(scene) = self.host.scene.as_ref() else {
-            return legaia_save::SaveResume::default();
-        };
-        let location = scene
-            .field_man_payload(&self.host.index)
-            .ok()
-            .flatten()
-            .and_then(|man| legaia_asset::place_names::scene_name(&man))
-            .map(|n| n.name)
-            .unwrap_or_default();
-        legaia_save::SaveResume {
-            scene: scene.name.clone(),
-            location,
-        }
+        self.host.current_resume()
     }
 
     /// Shut down the audio stream and clear the scene. Idempotent.

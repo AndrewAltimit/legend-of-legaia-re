@@ -6,9 +6,10 @@
 //! 1. entering `opdeene` (which installs the cutscene timeline) spawns one
 //!    channel per partition-1 placement record, with the retail script-id
 //!    rule `partition-0 count + record index` (`FUN_8003A1E4`);
-//! 2. ticking the world steps the channels: at least one channel executes past
-//!    its entry PC (the placement scripts are not inert);
-//! 3. channel scripts raise animate cues (op `0x4B` ANIMATE via
+//! 2. no placement channel's own script runs past the spawn pre-run: retail
+//!    runs a placement context only while a touch holds its `+0x10 & 0x100`
+//!    up (`FUN_8003BC08`), and a timeline poke does not raise it;
+//! 3. the timeline's pokes raise animate cues (op `0x4B` ANIMATE via
 //!    `World::npcs.anim_cues`) - the "characters doing things" signal the
 //!    windowed host consumes;
 //! 4. the timeline's cross-context pokes reach channel contexts (some
@@ -114,19 +115,19 @@ fn opdeene_channels_spawn_and_execute() {
     }
 
     assert!(
-        any_advanced,
-        "at least one channel executed past its entry PC (placement scripts run)"
+        !any_advanced,
+        "no placement channel runs its own script outside the spawn pre-run"
     );
     assert!(
         any_poked,
         "at least one channel context changed state (timeline pokes / own script effects land)"
     );
-    eprintln!("[opdeene] channels advanced; max simultaneous anim cues = {cue_count}");
+    eprintln!("[opdeene] channels poked; max simultaneous anim cues = {cue_count}");
     // The animate cue is the key vignette signal; report but don't hard-require
     // a specific count (the exact cue set depends on how far the timeline gets
     // within its frame cap).
     assert!(
         cue_count > 0,
-        "channel scripts raise op-0x4B animate cues for the windowed host"
+        "timeline pokes raise animate cues for the windowed host"
     );
 }

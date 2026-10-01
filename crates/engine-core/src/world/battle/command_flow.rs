@@ -34,6 +34,10 @@ pub(crate) fn ring_arm_refused(status: u16, arm: crate::battle_input::BattleComm
     }
 }
 
+/// The spirit clip a Spirit commit stages behind the action (`+0x1E7`,
+/// `li v0,0x10` at `0x801D16A8`); the item commit's is `9`.
+pub(crate) const SPIRIT_COMMIT_CLIP: u8 = 0x10;
+
 /// The entry command a saved swing byte stands for: `0x0C..=0x0F` are Left,
 /// Right, Down, Up (`legaia_art::Command::as_action`), anything else ends
 /// the string.
@@ -258,6 +262,14 @@ impl World {
                 } else {
                     self.open_arts_command_input(session.actor);
                 }
+                // The flow byte follows the player into the window: retail's
+                // arts entry stores `ctx[+0x06] = 0x50` as it opens (`sb` at
+                // `0x801D1738`, the delay slot of `jal FUN_801DA34C`), and the
+                // ring's item / magic arms store `0x3C` / `0x46` the same way
+                // (the `0x28` row of `battle.md`'s flow table). Without it the byte reads the surface the player
+                // left (`0x78` / `0x28`) for as long as the window is up.
+                // REF: FUN_801D0748 (states 0x28 / 0x78 into 0x3C / 0x46 / 0x50)
+                self.sync_battle_flow(None);
             }
             Some(Resolution::OpenSpellMenu) if crate::battle_hud::battle_raseru_forbidden(self) => {
                 // The special word forbids the Ra-Seru chip: retail's arm
@@ -271,7 +283,10 @@ impl World {
                 // player casts (turn cycles via EndOfAction) or backs out.
                 self.battle_ctx.active_actor = session.actor;
                 match self.build_battle_spell_session(session.actor) {
-                    Some(menu) => self.battle.spell_menu = Some(menu),
+                    Some(menu) => {
+                        self.battle.spell_menu = Some(menu);
+                        self.sync_battle_flow(None);
+                    }
                     // No caster record / no catalog - don't strand the SM;
                     // reopen the command menu so the player can pick again.
                     None => self.open_battle_command(session.actor),
@@ -285,6 +300,7 @@ impl World {
                 // (the command menu reopens for the same actor).
                 self.battle_ctx.active_actor = session.actor;
                 self.battle.item_menu = Some(self.build_battle_item_session());
+                self.sync_battle_flow(None);
             }
             Some(Resolution::SpiritGuard) => {
                 // Player picked Spirit: the guard stance (retail's pending
@@ -294,8 +310,13 @@ impl World {
                 // until the next round's sweep clears the category. The AP
                 // charge is the Spirit band's own, at dispatch.
                 let actor = session.actor;
+                // Retail's Spirit commit stamps category `4` and the spirit
+                // clip `+0x1E7 = 0x10` (`0x801D168C..0x801D16B0`, the store
+                // in the delay slot of `jal FUN_801DB81C`) - the clip the
+                // action SM's spirit band stages at `0x46`.
                 if let Some(a) = self.actors.get_mut(actor as usize) {
                     a.battle.action_category = 4;
+                    a.battle.queued_anim_b = SPIRIT_COMMIT_CLIP;
                 }
                 if let Some(guard) = self.battle.guarding.get_mut(actor as usize) {
                     *guard = true;
@@ -1238,8 +1259,20 @@ impl World {
                 if let Some(guard) = self.battle.guarding.get_mut(actor as usize) {
                     *guard = true;
                 }
-                self.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
-                self.cycle_battle_turn();
+                // Then the action SM plays the turn: the seed sends category
+                // `4` to the spirit band unconditionally (`li v0,0x46` at
+                // `0x801E2F5C`), which stages the committed spirit clip and
+                // holds on it (`0x46..=0x48`) before the Done band. Ending the
+                // action here instead skipped the whole band - the charge
+                // pose, its hold and the round's pacing.
+                if let Some(a) = self.actors.get_mut(actor as usize) {
+                    a.battle.action_category = 4;
+                    if a.battle.queued_anim_b == 0 {
+                        a.battle.queued_anim_b = SPIRIT_COMMIT_CLIP;
+                    }
+                }
+                self.battle_ctx.queued_action = 4;
+                self.battle_ctx.action_state = ActionState::Begin.as_byte();
             }
             Pending::Run => {
                 // Roll the escape and arm the action SM's run band (category

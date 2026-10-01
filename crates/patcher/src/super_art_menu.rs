@@ -30,9 +30,10 @@
 //! ## The shape of the injection
 //!
 //! Four detours into the overlay itself, every routine hosted in 0899's own
-//! reference-free dead space (`0x801E7FB0..0x801E83E0`, past what `--seru-trade`
-//! uses of the same run) - so this half costs no SCUS bytes and composes with
-//! every gap-based feature:
+//! reference-free dead space (`0x801EAF10..0x801EB340`, past what `--seru-trade`
+//! uses of the same run - the blank lower band of the save-menu atlas, see
+//! [`crate::seru_overlay::RUN_C_VA`]) - so this half costs no SCUS bytes and
+//! composes with every gap-based feature:
 //!
 //! - **M1 / M1b** add the performed count (record `+0x195`, top three bits) to
 //!   the two learned-count reads.
@@ -52,14 +53,15 @@
 //! Miracle-Art orange on the Super's final arrow. Names are carried because the
 //! battle art records the in-battle chase reads are not resident in the menu.
 //! Descriptions read like retail's ("Arts. A reverse somersault|kick."):
-//! `Super Arts. <first art>,|<rest of the chain>.` - and live in a second dead
-//! run (`0x801E65F4..0x801E6B43`).
+//! `Super Arts. <first art>,|<rest of the chain>.` - and live in a second run of
+//! the same band (`0x801EB400..0x801EB94F`).
 //!
-//! Both runs are all-zero in the file, referenced by nothing in the overlay or
-//! `SCUS_942.54` (literal word or `lui/addiu` pair), and read/write-watched
-//! untouched across a pause-menu tour (Items, Magic, Equip, Status incl. the
-//! Moves page with its cursor, Options, Save; the only writes are the overlay
-//! loader's own copy at menu open).
+//! Both runs are all-zero in the file, referenced by nothing in any image
+//! (literal word or `lui/addiu` pair), above both save-screen card buffers, and
+//! zero in every library capture with the overlay resident. An earlier layout
+//! sat inside those buffers, where a pause-menu Save - which returns to the
+//! root menu with the overlay still resident - overwrote the routines before
+//! the Moves page could run them.
 //!
 //! No Sony bytes are embedded: names and chain names come from
 //! [`legaia_art::SUPER_ARTS`] and the disc's own arts-name table.
@@ -121,11 +123,12 @@ const CUR_PERFORMED_OFF: u16 = 0x75D;
 
 /// Code, names, pointer tables, scratch record and glyph buffer: the tail of
 /// the run `--seru-trade` shares, past its highest blob.
-pub const MENU_RUN_VA: u32 = 0x801E_7FB0;
-pub const MENU_RUN_END_VA: u32 = 0x801E_83E0;
-/// The descriptions.
-pub const MENU_DESC_VA: u32 = 0x801E_65F4;
-pub const MENU_DESC_END_VA: u32 = 0x801E_6B43;
+pub const MENU_RUN_VA: u32 = crate::seru_overlay::RUN_C_VA + 0xAD0;
+pub const MENU_RUN_END_VA: u32 = crate::seru_overlay::TRADE_HANDLER_END;
+/// The descriptions: the same blank atlas band, past run-C.
+pub const MENU_DESC_VA: u32 = 0x801E_B400;
+pub const MENU_DESC_END_VA: u32 = MENU_DESC_VA + 0x54F;
+const _: () = assert!(MENU_DESC_VA >= crate::seru_overlay::TRADE_HANDLER_END);
 
 /// Scratch record: `+0` character, `+2` AP, `+8` glyph pointer, `+0xC` name,
 /// `+0x10` description (retail's record stride is `0x14`).

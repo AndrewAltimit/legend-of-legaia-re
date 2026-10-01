@@ -220,7 +220,9 @@ pub enum FrameEntry<'a> {
     Resume(&'a legaia_save::SaveFile),
     /// The `--scene` door entry, with these system-flag bits raised before
     /// it (`--set-flag`) so the entry scripts branch on retail's flags. The
-    /// battle half enters this way: `--battle` forces the fight off it.
+    /// battle half falls back to it when a state's save window does not lift;
+    /// otherwise it resumes like the field half and `--battle` forces the
+    /// fight off the resumed scene.
     Door(&'a [u16]),
 }
 

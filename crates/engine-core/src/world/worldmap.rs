@@ -374,6 +374,7 @@ impl World {
         tracker.set_counter(self.encounters.step_counter);
         self.world_map.region_tracker = Some(tracker);
         self.world_map.last_tile = None;
+        self.world_map.seat_hold_tile = None;
         self.refresh_encounter_rollable();
     }
 
@@ -531,6 +532,13 @@ impl World {
             return;
         };
         let (px, pz) = ((wx as i32) >> 7, (wz as i32) >> 7);
+        // A standing seat holds its tile's portals until the player leaves
+        // it (`WorldMapState::seat_hold_tile`).
+        match self.world_map.seat_hold_tile {
+            Some(hold) if hold == (px, pz) => return,
+            Some(_) => self.world_map.seat_hold_tile = None,
+            None => {}
+        }
         // An object entrance (a `.MAP` object whose bind record runs to a
         // `0x3F` on contact - `map01` P0[10], the Drake castle door) is
         // solid: its collider stops the player a probe's length short of its

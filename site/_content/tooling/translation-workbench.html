@@ -60,6 +60,12 @@
           <span class="wb-label">Characters <select id="wb-pal-lang" aria-label="Palette language"></select></span>
           <div id="wb-palette" class="wb-palette" role="toolbar" aria-label="Insert a character into the translation you are editing"></div>
         </div>
+        <div class="wb-field wb-sym-field">
+          <span class="wb-label">Symbols
+            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The buttons and icons the game draws inside text, as your disc draws them. Click one to insert its token where your cursor is; the previews show the icon in place.</p><p>A pack writes a symbol as <code>{ce:NN}</code>, the form the export uses. You may also type its name instead, such as <code>{btn:x}</code> or <code>{icon:fire}</code> (hover a symbol to see its name): it imports as the same bytes. Full list: <a href="../guides/translating.html#buttons-and-icons">buttons and icons</a>.</p></span></span>
+          </span>
+          <div id="wb-symbols" class="wb-palette wb-symbols" role="toolbar" aria-label="Insert a button or icon symbol into the translation you are editing"></div>
+        </div>
         <div id="wb-char-stats" class="wb-char-stats" role="status"></div>
       </div>
       <div class="wb-actions">
@@ -83,6 +89,10 @@
         <div class="wb-card">
           <h3>Coverage</h3>
           <table class="wb-table" id="wb-coverage"></table>
+          <h3>Room per category
+            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>How much a longer translation can take beyond each string's own slot, in bytes. "Free" is what the patch frees by packing the English tighter; "spare" is room reserved for translation that no mod ever writes (the menu overlay's spare bytes). With a checked pack, "left" is what your pack leaves.</p><p>Hover a row for where the strings live and what else uses the same room. Reference: <a href="translation.html">space and budgets</a>.</p></span></span>
+          </h3>
+          <table class="wb-table" id="wb-categories"></table>
         </div>
         <div class="wb-card">
           <h3>Name tables <span class="wb-legend"><i class="k-en"></i>English <i class="k-pack"></i>your pack <i class="k-free"></i>free</span></h3>
@@ -223,6 +233,11 @@
   .wb-pal-key { min-width: 2rem; padding: 0.25rem 0.4rem; font: inherit; font-size: 1.05em; color: var(--text-muted); background: var(--bg-code); border: 1px dashed var(--border-hi); border-radius: 5px; cursor: pointer; }
   .wb-pal-key.is-drawn { color: var(--text-bright); border-style: solid; border-color: var(--accent-line); }
   .wb-pal-key:hover, .wb-pal-key:focus-visible { border-color: var(--accent); }
+  .wb-sym-field { grid-column: 1 / -1; }
+  .wb-symbols { display: grid; grid-template-columns: repeat(auto-fill, minmax(4.2rem, 1fr)); gap: 0.3rem; }
+  .wb-sym-key { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.2rem; min-height: 3.1rem; padding: 0.3rem 0.3rem 0.2rem; font: inherit; font-size: 0.8em; color: var(--text-muted); background: var(--bg-code); border: 1px solid var(--border-hi); border-radius: 5px; cursor: pointer; }
+  .wb-sym-key canvas { display: block; max-width: 100%; image-rendering: pixelated; background: #101848; border-radius: 2px; }
+  .wb-sym-key:hover, .wb-sym-key:focus-visible { border-color: var(--accent); color: var(--text-bright); }
   .wb-char-stats { grid-column: 1 / -1; font-size: 0.86em; color: var(--text-muted); }
   .wb-preview { display: flex; flex-direction: column; align-items: flex-start; gap: 0.15rem; margin-top: 0.35rem; min-width: 0; }
   .wb-preview canvas { display: block; image-rendering: pixelated; max-width: 100%; min-width: 0; height: auto; border-radius: 3px; }

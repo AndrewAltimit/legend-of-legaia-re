@@ -424,6 +424,39 @@ fn insert_monster_specials(
     }
 }
 
+/// The cast record for a **capture-class** special (class byte `'c'`),
+/// which [`insert_monster_specials`] keeps out of the catalog: name, MP and
+/// target shape off the table, `effect_class` = the `+0x01` sub-id the
+/// capture dispatcher `FUN_801F2160` keys the module on.
+///
+/// The catalog stays free of these ids (their fold is the streamed module's,
+/// and a capture record in the catalog would read as a castable spell to
+/// every catalog consumer); `World::monster_cast_def` asks for one instead,
+/// so a cast it arms reaches the action SM's capture band `0x6E..=0x71`.
+pub fn capture_special_def(
+    table: &legaia_asset::spell_names::SpellNameTable,
+    id: u8,
+) -> Option<SpellDef> {
+    let e = table.entry(id)?;
+    if !e.is_capture_class() {
+        return None;
+    }
+    let name = e.name.as_deref().map(str::trim).unwrap_or_default();
+    Some(SpellDef {
+        id,
+        name: name.to_string(),
+        mp_cost: e.mp,
+        element: SpellElement::Neutral,
+        target: target_from_shape(e.target_shape()),
+        effect: SpellEffect::Damage {
+            base_power: u16::from(e.mp) * 2,
+            element: SpellElement::Neutral,
+        },
+        effect_class: e.sub_class,
+        ..Default::default()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

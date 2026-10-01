@@ -77,10 +77,14 @@
 //! # Wiring
 //!
 //! The drawn mesh is the shared builder `legaia_asset::battle_backdrop::
-//! build_ground_grid` (re-exported by `engine-shell`'s `play-window` as
-//! `build_battle_ground_grid` and drawn under the battle camera). This
-//! module carries the emitter's *laws* the hosts consume: the play-window
-//! battle draw fogs the grid with [`grid_cue_far_z`] / [`grid_cue_max_ir0`]
+//! build_ground_grid_rgbc` (re-exported by `engine-shell`'s `play-window` as
+//! `build_battle_ground_grid` and drawn under the battle camera), coloured
+//! with [`battle_ambient_colour`] of the live base
+//! (`World::battle_ambient_base`, ramped by [`ambient_base_step`]) - the
+//! ambient word the emitter's `RGBC` holds; [`GRID_RGBC_SETTLED`] outside a
+//! cast.
+//! This module carries the emitter's *laws* the hosts consume: both battle
+//! draws fog the grid with [`grid_cue_far_z`] / [`grid_cue_max_ir0`]
 //! and the [`grid_far_colour`] resolved through [`OutdoorCueTable`]. The
 //! visibility culls ([`classify_cell`] / [`quad_on_screen`]) stay reference
 //! kernels: under a depth-buffered projection they are visually neutral,
@@ -325,6 +329,97 @@ pub fn grid_far_colour(base: [u8; 3], outdoor: bool) -> [u8; 3] {
     })
 }
 
+/// The ambient word `0x8007B7B0` the same `FUN_80050120` pass stores beside
+/// the far colour, on every stage class: the base plus `0x404040`
+/// (`lui v0,0x40; ori v0,v0,0x4040; addu v0,s2,v0; sw v0,-0x4850(at)` at
+/// `0x800507E0..0x800507F0`). `FUN_80026CE4` copies it into scratch
+/// `0x1F800398` every frame, and that word is the `RGBC` the grid emitter
+/// cues each vertex from (`lwc2` at `0x801d05f4`) - the floor's **near**
+/// colour. Channel arithmetic saturates, as [`grid_far_colour`]'s does.
+pub fn battle_ambient_colour(base: [u8; 3]) -> [u8; 3] {
+    base.map(|c| c.saturating_add(0x40))
+}
+
+/// The grid's pre-cue vertex colour once the intro fade has settled:
+/// [`battle_ambient_colour`] of the neutral base, `0xC0` per channel. A
+/// capture of a running map01 fight holds `0x8007B7B0 = 0xC0C0C0`.
+pub const GRID_RGBC_SETTLED: [u8; 3] = [0xC0; 3];
+
+// ---------------------------------------------------------------------------
+// The live base: `ctx + 0x890` and its per-frame ramp
+// ---------------------------------------------------------------------------
+
+/// `ctx + 0x890`'s floor, packed `10:10:10` (channel `c` at bits `2 + 10c`):
+/// base `0x20` per channel. Battle init seeds it here (`lui v1,0x802;
+/// ori v1,v1,0x80; sw v1,0x890(v0)` at `0x80051C70..0x80051C84`), so every
+/// fight's floor fades in from dark, and a cast's ramp clamps down to it
+/// (`0x80050660..0x800506A4`).
+pub const AMBIENT_BASE_FLOOR: u32 = 0x0802_0080;
+
+/// `ctx + 0x890`'s ceiling: base `0x80` per channel, the settled neutral
+/// the ramp climbs back to (`0x80050714..0x8005075C`).
+pub const AMBIENT_BASE_CEIL: u32 = 0x2008_0200;
+
+/// The base the summon band's `0x37` exit (`0x801E4E8C..0x801E4EA4`) and the
+/// capture band's `0x71` exit (`0x801E5214..0x801E5248`) write while
+/// clearing `ctx + 0x243`: `0x21` per channel, one step above the floor, so
+/// the floor climbs back from dark after the creature leaves.
+pub const AMBIENT_BASE_CAST_EXIT: u32 = 0x0842_1084;
+
+/// One frame of `FUN_80050120`'s base ramp (`0x80050600..0x8005075C`).
+///
+/// While `ctx + 0x243` is set (`dimming`, `0x80050608`) the whole packed word
+/// drops by `dt * 0x20` per channel lane - `8 * dt` per 8-bit channel - and a
+/// result at or below [`AMBIENT_BASE_FLOOR`] (one unsigned word compare,
+/// `sltu v0,a0,s2`) is clamped to it; while it is clear the word rises by
+/// `dt * 8` per lane - `2 * dt` per channel - and a result above
+/// [`AMBIENT_BASE_CEIL`] is clamped to that. A word already sitting on the
+/// target is left alone (`beq s2,a0` at `0x80050668` / `0x8005071C`).
+///
+/// `dt` is the frame step `0x1F800393` - vsyncs per game frame. The port
+/// ticks once a vsync, so its callers pass `1`.
+pub fn ambient_base_step(base: u32, dimming: bool, dt: u8) -> u32 {
+    // `v1 = ((dt * 0x401) << 10 + dt) << k` - `dt` in every lane.
+    let lanes = u32::from(dt).wrapping_mul(0x0010_0401);
+    if dimming {
+        if base == AMBIENT_BASE_FLOOR {
+            return base;
+        }
+        let next = base.wrapping_sub(lanes << 5);
+        if next > AMBIENT_BASE_FLOOR {
+            next
+        } else {
+            AMBIENT_BASE_FLOOR
+        }
+    } else {
+        if base == AMBIENT_BASE_CEIL {
+            return base;
+        }
+        let next = base.wrapping_add(lanes << 3);
+        if next > AMBIENT_BASE_CEIL {
+            AMBIENT_BASE_CEIL
+        } else {
+            next
+        }
+    }
+}
+
+/// The packed `10:10:10` base as three 8-bit channels
+/// (`srl 2 / srl 4 / srl 6` + masks at `0x80050764..0x8005078C`).
+pub fn ambient_base_rgb(base: u32) -> [u8; 3] {
+    [(base >> 2) as u8, (base >> 12) as u8, (base >> 22) as u8]
+}
+
+/// Whether this frame's pass **skips** the two colour stores
+/// (`0x80050790..0x800507D4`): only once the base sits on the floor
+/// (`0x202020`), and then when `ctx + 0x278` bit 0 is set or
+/// `ctx + 0x243 == 2`. The skip also clears the "draw the backdrop" bit 3 of
+/// scratch `0x1F800394`; the ambient `0x8007B7B0` and the far colour
+/// `0x8007BB48` keep whatever the last storing frame left.
+pub fn ambient_store_skipped(base_rgb: [u8; 3], ctx_243: u8, ctx_278: u8) -> bool {
+    base_rgb == [0x20; 3] && (ctx_278 & 1 != 0 || ctx_243 == 2)
+}
+
 /// Capture-pinned settled far colour on ordinary (indoor) stages.
 pub const GRID_FAR_INDOOR: [u8; 3] = [0x40; 3];
 
@@ -462,6 +557,74 @@ impl GroundGrid {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_base_ramp_constants_decode_to_their_documented_channels() {
+        assert_eq!(ambient_base_rgb(AMBIENT_BASE_FLOOR), [0x20; 3]);
+        assert_eq!(ambient_base_rgb(AMBIENT_BASE_CEIL), [0x80; 3]);
+        assert_eq!(ambient_base_rgb(AMBIENT_BASE_CAST_EXIT), [0x21; 3]);
+    }
+
+    #[test]
+    fn a_cast_dims_eight_a_vsync_and_the_fight_recovers_two_a_vsync() {
+        let mut b = AMBIENT_BASE_CEIL;
+        let mut frames = 0;
+        while b != AMBIENT_BASE_FLOOR {
+            b = ambient_base_step(b, true, 1);
+            frames += 1;
+            assert!(frames < 100);
+        }
+        // (0x80 - 0x20) / 8.
+        assert_eq!(frames, 12);
+        assert_eq!(
+            ambient_base_rgb(ambient_base_step(AMBIENT_BASE_CEIL, true, 1)),
+            [0x78; 3]
+        );
+        // The step is `dt`-scaled: a two-vsync frame drops sixteen.
+        assert_eq!(
+            ambient_base_rgb(ambient_base_step(AMBIENT_BASE_CEIL, true, 2)),
+            [0x70; 3]
+        );
+        let mut frames = 0;
+        while b != AMBIENT_BASE_CEIL {
+            b = ambient_base_step(b, false, 1);
+            frames += 1;
+            assert!(frames < 100);
+        }
+        assert_eq!(frames, 48);
+        // The cast exit's odd seed overshoots the ceiling and is clamped.
+        let mut b = AMBIENT_BASE_CAST_EXIT;
+        for _ in 0..47 {
+            b = ambient_base_step(b, false, 1);
+        }
+        assert_eq!(ambient_base_rgb(b), [0x7F; 3]);
+        assert_eq!(ambient_base_step(b, false, 1), AMBIENT_BASE_CEIL);
+    }
+
+    #[test]
+    fn the_summon_captures_ambients_are_points_on_the_ramp() {
+        // `0x606060` / `0x686868` / `0x707070` = base `0x20` / `0x28` /
+        // `0x30` plus `0x404040`.
+        let mut seen = std::collections::BTreeSet::new();
+        let mut b = AMBIENT_BASE_CEIL;
+        for _ in 0..20 {
+            b = ambient_base_step(b, true, 2);
+            seen.insert(battle_ambient_colour(ambient_base_rgb(b))[0]);
+        }
+        assert!(seen.contains(&0x60) && seen.contains(&0x70));
+        let mut b = AMBIENT_BASE_FLOOR;
+        b = ambient_base_step(b, false, 2);
+        b = ambient_base_step(b, false, 2);
+        assert_eq!(battle_ambient_colour(ambient_base_rgb(b)), [0x68; 3]);
+    }
+
+    #[test]
+    fn the_store_skips_only_on_the_floor_under_the_two_latches() {
+        assert!(!ambient_store_skipped([0x20; 3], 1, 0));
+        assert!(ambient_store_skipped([0x20; 3], 2, 0));
+        assert!(ambient_store_skipped([0x20; 3], 0, 1));
+        assert!(!ambient_store_skipped([0x21; 3], 2, 1));
+    }
 
     #[test]
     fn origin_is_x_centred_and_z_biased_one_cell() {
@@ -637,18 +800,31 @@ mod tests {
 
     #[test]
     fn dpcs_at_the_captured_far_colours_pins_the_drawn_packet_colour() {
-        let neutral = 0x80 as f32; // the grid quads' packet colour
+        // The grid quads' pre-cue colour is the settled battle ambient
+        // (`RGBC` <- `0x1F800398` <- `0x8007B7B0`), not the neutral `0x80`.
+        let near = GRID_RGBC_SETTLED[0] as f32;
         // Indoor: full blend lands exactly on the far colour...
-        assert_eq!(dpcs(neutral, 0x40 as f32, 1.0), 0x40 as f32);
-        // ...and the far cull edge extrapolates darker (SZ = 0x6500).
-        let edge = dpcs(neutral, 0x40 as f32, grid_ir0(0x6500));
-        assert!((edge - 27.0).abs() < 1.0, "edge = {edge}");
+        assert_eq!(dpcs(near, 0x40 as f32, 1.0), 0x40 as f32);
+        // ...and the far cull edge extrapolates past it to black
+        // (SZ = 0x6500, IR0 ~ 1.58).
+        assert_eq!(dpcs(near, 0x40 as f32, grid_ir0(0x6500)), 0.0);
         // Outdoor: brightens toward 0xFE and saturates just past full
         // blend rather than overshooting.
-        assert_eq!(dpcs(neutral, 0xFE as f32, 1.0), 0xFE as f32);
-        assert_eq!(dpcs(neutral, 0xFE as f32, grid_ir0(0x6500)), 255.0);
-        // ir0 = 0 is the identity - the near edge draws unfogged.
-        assert_eq!(dpcs(neutral, 0x40 as f32, 0.0), neutral);
+        assert_eq!(dpcs(near, 0xFE as f32, 1.0), 0xFE as f32);
+        assert_eq!(dpcs(near, 0xFE as f32, grid_ir0(0x6500)), 255.0);
+        // ir0 = 0 is the identity - the near edge draws the ambient.
+        assert_eq!(dpcs(near, 0x40 as f32, 0.0), near);
+    }
+
+    #[test]
+    fn the_ambient_is_the_base_lifted_by_0x40() {
+        assert_eq!(
+            battle_ambient_colour(GRID_FAR_BASE_NEUTRAL),
+            GRID_RGBC_SETTLED
+        );
+        // The intro ramp sample base (0x0C0C0C) and a saturating channel.
+        assert_eq!(battle_ambient_colour([0x0C; 3]), [0x4C; 3]);
+        assert_eq!(battle_ambient_colour([0xF0, 0, 0x80]), [0xFF, 0x40, 0xC0]);
     }
 
     #[test]

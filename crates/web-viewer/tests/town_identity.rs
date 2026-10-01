@@ -1,5 +1,5 @@
-//! Town-identity regression: the site scene picker (`site/_gen.py`
-//! `CDNAME_SCENES`) names each CDNAME block after the town it actually loads.
+//! Town-identity regression: the scene-name table (`data/gamedata/scenes.toml`,
+//! read by `site/_gen.py`) names each CDNAME block after the town it actually loads.
 //! Two picker entries used to be mislabeled - `rayman`/"Ratayu" actually loads
 //! Octam, and `town0d`/"Sol" actually loads a Rim Elm story-variant. This test
 //! pins the ground truth the corrected labels rest on, read the same way the
@@ -71,13 +71,13 @@ fn rayman_is_octam_not_ratayu() {
     let dlg = scene_dialog(&index, "rayman");
     assert!(
         dlg.contains("Hari"),
-        "rayman (labeled Octam) should have Octam's ruler Hari in its NPC dialog"
+        "rayman (labeled Octam (Underground)) should have Octam's ruler Hari in its NPC dialog"
     );
     // rayman2 is the Octam revisit - Hari again, not Ratayu.
     let dlg2 = scene_dialog(&index, "rayman2");
     assert!(
         dlg2.contains("Hari"),
-        "rayman2 (labeled Octam revisit) should still feature Hari"
+        "rayman2 (labeled Octam (Underground, frozen)) should still feature Hari"
     );
 }
 

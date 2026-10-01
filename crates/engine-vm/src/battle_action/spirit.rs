@@ -305,8 +305,29 @@ pub(super) fn spirit_post_damage<H: BattleActionHost + ?Sized>(
     transition(ctx, ActionState::DoneCleanup)
 }
 
-// --- spirit-arts variant ----------------------------------------------------
+// --- spirit band (category 4, `0x46..=0x48`) ---------------------------------
+//
+// Retail's action seed sends category `4` here unconditionally (`li v0,0x46`
+// / `sb v0,0x7(v1)` at `0x801E2F5C`). The band stages the spirit clip the
+// commit left at `+0x1E7`, ramps the spirit gauge HUD element toward its
+// target and holds until both the clip and a timer have run out. The HUD
+// ramps (the gauge element at `*0x801F6968` `+0x10`, the bar at
+// `ctx[+0x1074]` `+0x0E`) are presentation the port draws elsewhere; the
+// timing below is the band's own.
 
+/// `0x46`'s hold before the sustain reads its exit (`li v0,0x20` /
+/// `sh v0,0x2(s7)` at `0x801E539C..0x801E53A0`, `s7 = ctx + 0x6D6`).
+pub const SPIRIT_BAND_HOLD: i16 = 0x20;
+/// `0x47`'s exit re-arms the timer for the flush (`li v0,0x300` at
+/// `0x801E54E0`), which `0x48` drains eight units a frame step.
+pub const SPIRIT_FLUSH_HOLD: i16 = 0x300;
+/// `0x48`'s per-frame drain multiplier (`sll v1,v0,0x3` at `0x801E5748`).
+pub const SPIRIT_FLUSH_STEP: i16 = 8;
+
+/// State `0x46`: stage the committed spirit clip (`+0x1DA = +0x1E7`) with the
+/// clip-running flag `+0x1DC = 2`, and arm the `0x20` hold.
+///
+/// PORT: FUN_801E295C (state `0x46`, `0x801E52A4..0x801E53B4`)
 pub(super) fn spirit_arts_entry<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
@@ -314,40 +335,69 @@ pub(super) fn spirit_arts_entry<H: BattleActionHost + ?Sized>(
     let slot = ctx.active_actor;
     host.pose(slot, Pose::Idle);
     if let Some(actor) = host.actor_mut(slot) {
-        // Override flags with ADVANCE_DONE only.
         actor.flag_bits = ActorFlags(ActorFlags::ADVANCE_DONE);
         actor.queued_anim = actor.queued_anim_b;
     }
+    ctx.frame_timer = SPIRIT_BAND_HOLD;
     transition(ctx, ActionState::SpiritArtsSustain)
 }
 
+/// State `0x47`: once the clip has committed (`+0x1D9 != 0`) the queued id is
+/// cleared so it plays once; the hold drains **level-triggered** (`lh` /
+/// `blez` at `0x801E53D8..0x801E53E0` - a positive timer steps and returns);
+/// then the band waits on the clip-running flag `+0x1DC` and leaves for the
+/// flush with the timer re-armed at `0x300`.
+///
+/// PORT: FUN_801E295C (state `0x47`, `0x801E53B8..0x801E54E8`)
 pub(super) fn spirit_arts_sustain<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
     let slot = ctx.active_actor;
     host.pose(slot, Pose::Idle);
-    let nonzero_anim = host
+    let committed = host
         .actor(slot)
         .map(|a| a.current_anim != 0)
         .unwrap_or(false);
-    if nonzero_anim && let Some(actor) = host.actor_mut(slot) {
+    if committed && let Some(actor) = host.actor_mut(slot) {
         actor.queued_anim = 0;
     }
-    let timer_done = tick_frame_timer(host, ctx);
-    let exit_clear = host
-        .actor(slot)
-        .map(|a| a.flag_bits.0 == 0)
-        .unwrap_or(false);
-    if !(timer_done && exit_clear) {
+    if ctx.frame_timer > 0 {
+        ctx.frame_timer = ctx.frame_timer.saturating_sub(host.frame_dt());
         return stay(ctx);
     }
+    let clip_running = host.actor(slot).is_some_and(|a| a.flag_bits.0 != 0);
+    if clip_running {
+        return stay(ctx);
+    }
+    ctx.frame_timer = SPIRIT_FLUSH_HOLD;
     transition(ctx, ActionState::SpiritArtsFlush)
 }
 
+/// State `0x48`: drain the `0x300` hold eight units a frame step (clamped at
+/// zero), and hand the action to the Done band once the hold is out and the
+/// actor's anim pair has settled on idle (`+0x1DA == +0x1D9 == 0`).
+///
+/// PORT: FUN_801E295C (state `0x48`, `0x801E56D0..0x801E57C4`)
 pub(super) fn spirit_arts_flush<H: BattleActionHost + ?Sized>(
-    _host: &mut H,
+    host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
+    let slot = ctx.active_actor;
+    if ctx.frame_timer > 0 {
+        let step = host.frame_dt().saturating_mul(SPIRIT_FLUSH_STEP);
+        ctx.frame_timer = if ctx.frame_timer < step {
+            0
+        } else {
+            ctx.frame_timer - step
+        };
+    }
+    host.pose(slot, Pose::Idle);
+    let settled = host
+        .actor(slot)
+        .is_none_or(|a| a.queued_anim == a.current_anim && a.queued_anim == 0);
+    if !settled || ctx.frame_timer != 0 {
+        return stay(ctx);
+    }
     transition(ctx, ActionState::DoneCleanup)
 }

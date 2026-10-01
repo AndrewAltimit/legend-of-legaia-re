@@ -47,6 +47,34 @@ pub fn pen_line_draws_for<'a>(
     out
 }
 
+/// The in-world minigame status rows' bright ink.
+pub const STATUS_ROW_INK: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+/// The in-world minigame status rows' dim ink.
+pub const STATUS_ROW_DIM_INK: [f32; 4] = [0.7, 0.85, 1.0, 1.0];
+
+/// Compose the in-world minigame status rows (`engine-core`'s
+/// `minigame_status` builders: `(text, pen, bright)` in 320x240 stage space)
+/// into text draws in **stage** space. The host applies its one stage
+/// transform afterwards, the same as every other stage-space overlay.
+pub fn status_row_draws_for<'a>(
+    font: &legaia_font::Font,
+    rows: impl IntoIterator<Item = (&'a str, (i32, i32), bool)>,
+) -> Vec<TextDraw> {
+    let mut out = Vec::new();
+    for (text, pen, bright) in rows {
+        out.extend(text_draws_for(
+            &font.layout_ascii(text),
+            pen,
+            if bright {
+                STATUS_ROW_INK
+            } else {
+                STATUS_ROW_DIM_INK
+            },
+        ));
+    }
+    out
+}
+
 /// The field floor window's marked ink (the plate set `0x58..=0x60`, the
 /// current floor).
 pub const FLOOR_WINDOW_MARKED_INK: [f32; 4] = [1.0, 0.92, 0.25, 1.0];

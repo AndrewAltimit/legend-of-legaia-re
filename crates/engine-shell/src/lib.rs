@@ -15,6 +15,7 @@ pub mod retail_compare;
 pub mod retail_compare_battle;
 pub mod retail_compare_cli;
 pub mod retail_compare_image;
+pub mod retail_compare_script;
 pub mod scenarios;
 pub mod sim_trace;
 pub mod tile_board_draws;

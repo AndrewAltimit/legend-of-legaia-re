@@ -293,13 +293,13 @@ pub const NO_TRADE_Y1: u16 = ROW_FIRST_Y + ROW_STEP_Y;
 pub const NO_TRADE_Y2: u16 = NO_TRADE_Y1 + ROW_STEP_Y;
 /// Persistent slide x-offset cell (SCUS gap, resident). The dispatch stub resets it
 /// to [`SLIDE_START_OFF`] on Trade confirm; the handler steps it toward 0 each frame.
-pub const TRADE_SLIDE_DELTA_VA: u32 = 0x801E_7E24;
+pub const TRADE_SLIDE_DELTA_VA: u32 = RUN_C_VA + 0x944;
 /// Cursor index over the per-owner trade lines (0 = first line). SCUS gap, resident;
 /// the handler nav-clamps it to `[0, line_count)` each frame.
-pub const TRADE_CURSOR_VA: u32 = 0x801E_7E28;
+pub const TRADE_CURSOR_VA: u32 = RUN_C_VA + 0x948;
 /// Previous-frame pad mask, for D-pad edge detection (one step per press, not per
 /// held frame). SCUS gap, resident.
-pub const TRADE_PAD_PREV_VA: u32 = 0x801E_7E2C;
+pub const TRADE_PAD_PREV_VA: u32 = RUN_C_VA + 0x94C;
 /// D-pad bits in [`PAD_CUR_VA`] (built by `FUN_8001822C`): Up / Down move the line
 /// cursor; Left / Right pick Yes / No in the confirm sub-state.
 pub const PAD_UP_MASK: u16 = 0x1000;
@@ -311,42 +311,42 @@ pub const PAD_CONFIRM_MASK: u16 = 0x0040;
 
 /// Confirm sub-state cell (0 = browsing the owner lines, 1 = the Yes/No prompt for
 /// the selected line). SCUS gap, resident.
-pub const TRADE_CONFIRM_VA: u32 = 0x801E_7E30;
+pub const TRADE_CONFIRM_VA: u32 = RUN_C_VA + 0x950;
 /// Yes/No selection in the confirm sub-state (0 = Yes, 1 = No). SCUS gap, resident.
-pub const TRADE_YESNO_VA: u32 = 0x801E_7E34;
+pub const TRADE_YESNO_VA: u32 = RUN_C_VA + 0x954;
 /// The current offer's give-back id, stashed by the offer compute so the per-owner
 /// loop can skip owners who already own it (a pointless trade). SCUS gap, resident.
-pub const TRADE_GIVE_ID_VA: u32 = 0x801E_7E38;
+pub const TRADE_GIVE_ID_VA: u32 = RUN_C_VA + 0x958;
 /// Selected owner's record base + want-index, stashed by the render loop when it
 /// draws the cursor's line, so the swap on ✕-Yes writes the right record without a
 /// re-scan. SCUS gap, resident.
-pub const TRADE_SEL_BASE_VA: u32 = 0x801E_7E3C;
-pub const TRADE_SEL_J_VA: u32 = 0x801E_7E40;
+pub const TRADE_SEL_BASE_VA: u32 = RUN_C_VA + 0x95C;
+pub const TRADE_SEL_J_VA: u32 = RUN_C_VA + 0x960;
 
 /// Confirm-prompt strings, embedded in 0899 above the handler (resident in-shop).
 /// Drawn only in the confirm sub-state; the selected line + reward header already
 /// show *what* is being traded, so the prompt just needs the question + choices.
-pub const CONFIRM_PROMPT_STR_VA: u32 = 0x801E_7D40;
+pub const CONFIRM_PROMPT_STR_VA: u32 = RUN_C_VA + 0x860;
 pub const CONFIRM_PROMPT_STR: &[u8] = b"@Trade?\0";
-pub const CONFIRM_YES_STR_VA: u32 = 0x801E_7D50;
+pub const CONFIRM_YES_STR_VA: u32 = RUN_C_VA + 0x870;
 pub const CONFIRM_YES_STR: &[u8] = b"@Yes\0";
-pub const CONFIRM_NO_STR_VA: u32 = 0x801E_7D58;
+pub const CONFIRM_NO_STR_VA: u32 = RUN_C_VA + 0x878;
 pub const CONFIRM_NO_STR: &[u8] = b"@No\0";
 /// Offer-header labels: the trade screen always names both sides of the offer -
 /// "Wants <want seru>" over "Offers <give seru> <lvl>" - so the player sees what
 /// the vendor is looking for even when no party member owns it. Hosted in the
 /// run-C tail past the dispatch stub.
-pub const WANTS_STR_VA: u32 = 0x801E_7F70;
+pub const WANTS_STR_VA: u32 = RUN_C_VA + 0xA90;
 pub const WANTS_STR: &[u8] = b"@Wants\0";
-pub const OFFERS_STR_VA: u32 = 0x801E_7F78;
+pub const OFFERS_STR_VA: u32 = RUN_C_VA + 0xA98;
 pub const OFFERS_STR: &[u8] = b"@Offers\0";
 /// No-trade message fragments, composed with the two seru names as
 /// `No <want> available` / `to trade for <give>` when no owner qualifies.
-pub const NO_TRADE_NO_STR_VA: u32 = 0x801E_7F80;
+pub const NO_TRADE_NO_STR_VA: u32 = RUN_C_VA + 0xAA0;
 pub const NO_TRADE_NO_STR: &[u8] = b"@No\0";
-pub const NO_TRADE_AVAIL_STR_VA: u32 = 0x801E_7F88;
+pub const NO_TRADE_AVAIL_STR_VA: u32 = RUN_C_VA + 0xAA8;
 pub const NO_TRADE_AVAIL_STR: &[u8] = b"@available\0";
-pub const NO_TRADE_FOR_STR_VA: u32 = 0x801E_7F98;
+pub const NO_TRADE_FOR_STR_VA: u32 = RUN_C_VA + 0xAB8;
 pub const NO_TRADE_FOR_STR: &[u8] = b"@to trade for\0";
 /// Confirm-prompt layout (inside the box, near its bottom): question row y, choices
 /// row y, and the Yes / No / cursor x columns.
@@ -557,30 +557,50 @@ pub const HANDLER_CANCEL_MASK: u16 = 0x0020;
 /// seru trading compatible with all of them. 0899 is resident throughout the shop
 /// (the only time these run), and the region reloads with the overlay, so the cells
 /// reset to 0 on each load and are re-initialised by the dispatch stub on entry.
-pub const TRADE_ACTIVE_VA: u32 = 0x801E_7E20;
+pub const TRADE_ACTIVE_VA: u32 = RUN_C_VA + 0x940;
 
 /// 0899 run-C VAs (all above the handler, below the run-C end; non-overlapping -
 /// asserted by `trade_0899_layout_is_disjoint`). Reached by `j` from the 0899
 /// detours / handler, so no SCUS gap is used. The entry + dispatch stubs sit in
 /// the run-C tail past the runtime cells, freeing the window between the handler
 /// and the row-4 stub for the handler body to grow into.
-pub const ENTRY_STUB_VA: u32 = 0x801E_7E50;
+pub const ENTRY_STUB_VA: u32 = RUN_C_VA + 0x970;
 /// Reorder dispatch stub (cursor 2 → Trade sub-mode, 3 → Quit, 0/1 → Buy/Sell).
-pub const TRADE_DISPATCH_STUB_VA: u32 = 0x801E_7EB0;
+pub const TRADE_DISPATCH_STUB_VA: u32 = RUN_C_VA + 0x9D0;
+/// Base of the 0899 run every seru-trade piece (and `--show-super-arts`'s menu
+/// half, past [`WANTS_STR_VA`]'s strings) lives in.
+///
+/// It is the blank lower band of the save-menu atlas TIM the overlay carries at
+/// `0x801E5120` (pixels `0x801E5340..0x801ED340`, 256x256 4bpp, uploaded to VRAM
+/// `(960, 0)` when the card screen opens): atlas rows 162..223, all-zero in the
+/// file. Nothing samples those rows (a card-screen capture's draw list reads rows
+/// 0..160 of that page, and 224..239 come from the save-icon sheet uploaded over
+/// them), no instruction in any image forms an address in them, both save-screen
+/// card buffers (`0x801E5120..0x801E9120`) end below them, and they read zero in
+/// every library capture with the overlay resident. See
+/// [`crate::space_ledger`], which also refuses any region overlapping a runtime
+/// buffer.
+///
+/// The run once sat at `0x801E74E0`, inside the save compose buffer - which a
+/// save from the pause menu fills and then returns to the root menu with the
+/// overlay still resident.
+pub const RUN_C_VA: u32 = 0x801E_A440;
+/// Length of the run.
+pub const RUN_C_LEN: u32 = 0xF00;
+// Every cell and string is reached through one shared `lui` of its page, so the
+// whole run must sit inside one `%hi` page.
+const _: () = assert!(crate::mips::hi(RUN_C_VA) == crate::mips::hi(RUN_C_VA + RUN_C_LEN - 1));
+
 /// The in-shop trade-screen handler (draws + input + swap; runs in mode 0x17).
 ///
 /// HOSTED IN THE MENU OVERLAY 0899, not the tiny SCUS rodata gap: the gap only had
 /// ~116 words free, far too little for the full screen (slide + cursor + confirm +
-/// swap). 0899 is the overlay that hosts the shop and is resident throughout it, and
-/// it carries a large reference-free zero region (run-C, file `0x18CC7`, VA
-/// `0x801E74DF`, ~0xF00 bytes) that is part of the loaded image (reloaded with the
-/// overlay) and verified all-zero across the trade screen + both slide-transition
-/// states - so the handler embeds there, resident during every shop, with ~960 words
-/// of room and no runtime CD load. The entry detour (in the SCUS gap) `j`s here.
-pub const TRADE_HANDLER_VA: u32 = 0x801E_74E0;
-/// Upper bound the handler body must stay below (end of the 0899 run-C dead region,
-/// `0x801E83E2`, rounded down with a small margin).
-pub const TRADE_HANDLER_END: u32 = 0x801E_83E0;
+/// swap). 0899 is the overlay that hosts the shop and is resident throughout it, so
+/// the handler embeds in the overlay's own run ([`RUN_C_VA`]), resident during every
+/// shop, with ~960 words of room and no runtime CD load. The entry detour `j`s here.
+pub const TRADE_HANDLER_VA: u32 = RUN_C_VA;
+/// Upper bound the handler body and everything above it must stay below.
+pub const TRADE_HANDLER_END: u32 = RUN_C_VA + RUN_C_LEN;
 /// PROT entry hosting the handler (the menu overlay - same entry the picker edits
 /// target). Its load base is [`SLOT_A_BASE`]; the handler's file offset is
 /// `TRADE_HANDLER_VA - SLOT_A_BASE`.
@@ -594,7 +614,7 @@ pub const HANDLER_OVL_PROT_INDEX: usize = PICKER_MENU_PROT_INDEX;
 /// above the dispatch stub and below the old handler end; resident always, so the
 /// 0899-hosted handler reads it by absolute address. The handler indexes it by
 /// `(play_time / `[`RESEED_PERIOD_FRAMES`]`) & `[`BUCKET_INDEX_MASK`]`, ×3`.
-pub const BUCKET_TABLE_VA: u32 = 0x801E_7D60;
+pub const BUCKET_TABLE_VA: u32 = RUN_C_VA + 0x880;
 /// Byte length of the on-disc bucket schedule (mirrors the shared kernel).
 pub const BUCKET_TABLE_LEN: usize = legaia_asset::seru_trade::BUCKET_TABLE_LEN;
 
@@ -638,7 +658,7 @@ pub const NUMBER_FN: u32 = 0x8003_4B78;
 /// "SERU TRADE" title string for the handler. Relocated to the upper row-4 gap tail
 /// (past `@Trade` at [`TRADE_STR_VA`], below the config blob) to free the
 /// `0x8007ABB0..0x8007AD00` window for the grown handler body.
-pub const TITLE_STR_VA: u32 = 0x801E_7D30;
+pub const TITLE_STR_VA: u32 = RUN_C_VA + 0x850;
 /// Title bytes ('@' format prefix like the menu strings + "SERU TRADE\0").
 pub const TITLE_STR: &[u8] = b"@SERU TRADE\0";
 
@@ -649,8 +669,8 @@ pub const HIGHLIGHT_FN: u32 = 0x8002_B994;
 /// 0899 run-C VA of the row-4 draw stub (the in-shop trade build hosts everything in
 /// 0899; `<= 0x80` bytes reserved for code before the label). Reached by `j` from the
 /// renderer's row-4 detour.
-pub const ROW4_STUB_VA: u32 = 0x801E_7C20;
+pub const ROW4_STUB_VA: u32 = RUN_C_VA + 0x740;
 /// 0899 run-C VA of the "@Trade" label (just past the row-4 stub's reserved window).
-pub const TRADE_STR_VA: u32 = 0x801E_7D20;
+pub const TRADE_STR_VA: u32 = RUN_C_VA + 0x840;
 /// The label bytes: '@' format prefix (as on "@Buy"/"@Sell"/"@Quit") + "Trade\0".
 pub const TRADE_STR: &[u8] = b"@Trade\0";

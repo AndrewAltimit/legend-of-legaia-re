@@ -57,6 +57,12 @@ pub struct WorldMapState {
     /// Player tile (`world >> 7`) at the previous overworld step check, for
     /// per-tile step detection. `None` until the first world-map tick seeds it.
     pub last_tile: Option<(i32, i32)>,
+    /// The tile a debug seat put a **standing** player on
+    /// ([`crate::scene::SceneHost::debug_seat_standing`]). Portal auto-engage
+    /// skips it until the player steps off: a capture of a player stood on a
+    /// portal tile is one whose portal has already fired, so re-engaging it on
+    /// the first tick would cross the door a second time. `None` otherwise.
+    pub seat_hold_tile: Option<(i32, i32)>,
     /// Overworld player walk speed in world units per frame (per held d-pad
     /// direction). Default [`crate::world::World::WORLD_MAP_PLAYER_SPEED`].
     pub player_speed: i16,
@@ -74,6 +80,7 @@ impl WorldMapState {
             pending_encounter: None,
             region_tracker: None,
             last_tile: None,
+            seat_hold_tile: None,
             player_speed: World::WORLD_MAP_PLAYER_SPEED,
         }
     }

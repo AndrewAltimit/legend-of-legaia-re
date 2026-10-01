@@ -291,6 +291,93 @@ pub fn venue_camera_at(e: &DanceSceneEntry, pose: DanceCameraPose) -> FieldCamer
     }
 }
 
+// --- what the GPU refuses to draw (the hall under the far poses) ---------
+
+/// The GTE screen offset (`OFX`, `OFY`) a projected corner is centred on.
+/// Only the SXY saturation below reads it, and a polygon that saturates is
+/// already wider than the screen, so the exact origin does not move a verdict
+/// on an on-screen polygon.
+const GTE_SCREEN_OFFSET: [i64; 2] = [160, 120];
+
+/// The widest polygon the PSX GPU rasterises: a primitive whose vertices lie
+/// more than `1023` pixels apart horizontally or `511` vertically is skipped
+/// by the GPU whole, before a pixel is drawn. Retail's prim leaves hand the
+/// GPU the SXY FIFO as it stands, with no clip of their own (the field quad
+/// handler `FUN_80043768` tests only NCLIP and the near `OTZ` cutoff), so a
+/// large polygon close to the eye is simply not drawn.
+pub const PSX_GPU_MAX_SPAN: [i64; 2] = [1023, 511];
+
+/// Project one world point as the GTE does under `view`: `RTPS` in the 6x
+/// world scale the dance frames through ([`VENUE_WORLD_SCALE`]), the UNR
+/// divide with its near-camera saturation, then the SXY FIFO's signed
+/// 11-bit clamp. A point behind the eye is not special - `SZ3` clamps to `0`,
+/// the quotient saturates, and the corner smears to the screen edge exactly
+/// as retail's does.
+pub fn psx_screen_xy(view: &FieldCameraView, p: [f32; 3]) -> [i64; 2] {
+    screen_xy_of(view.h, view.eye_space(p))
+}
+
+fn screen_xy_of(h: f32, eye: [f32; 3]) -> [i64; 2] {
+    let g = eye.map(|c| (c * VENUE_WORLD_SCALE) as i64);
+    let sz3 = g[2].clamp(0, 0xFFFF) as u16;
+    let (q, _) = legaia_engine_vm::gte_divide::gte_divide(h as u16, sz3);
+    let ir = [g[0].clamp(-0x8000, 0x7FFF), g[1].clamp(-0x8000, 0x7FFF)];
+    std::array::from_fn(|i| (GTE_SCREEN_OFFSET[i] + ((ir[i] * q) >> 16)).clamp(-0x400, 0x3FF))
+}
+
+/// Whether the GPU draws a triangle with these three screen corners
+/// ([`PSX_GPU_MAX_SPAN`]).
+pub fn psx_gpu_draws_triangle(sxy: [[i64; 2]; 3]) -> bool {
+    (0..2).all(|axis| {
+        let lo = sxy.iter().map(|c| c[axis]).min().unwrap_or(0);
+        let hi = sxy.iter().map(|c| c[axis]).max().unwrap_or(0);
+        hi - lo <= PSX_GPU_MAX_SPAN[axis]
+    })
+}
+
+/// The triangles of a world-space triangle list the GPU would draw under
+/// `view`: `indices` filtered to the triples [`psx_gpu_draws_triangle`]
+/// keeps, in their original order. `origin` is added to every position first,
+/// for a host that bakes its buffer in a re-based frame.
+///
+/// This is what keeps the hall's near props out of the frame on the camera
+/// track's far poses: keys that ease the eye back to `z = 0x1810` carry it
+/// through the stage-entrance curtain (placement record `117`, the two-panel
+/// prop at `(0x1800, 0, 0x2F60)`), and from behind, the curtain's quads span
+/// more than a thousand pixels - retail's GPU drops them, and retail's frame
+/// shows the stage clear through the pull-back.
+pub fn psx_gpu_visible_indices(
+    view: &FieldCameraView,
+    positions: &[[f32; 3]],
+    origin: [f32; 3],
+    indices: &[u32],
+) -> Vec<u32> {
+    let r = legaia_engine_vm::psx_camera::camera_rotation(view.pitch, view.yaw, view.roll);
+    let sxy: Vec<[i64; 2]> = positions
+        .iter()
+        .map(|p| {
+            let d = std::array::from_fn::<f32, 3, _>(|i| p[i] + origin[i] - view.focus[i]);
+            let mut e = view.tr_eye;
+            for (row, o) in e.iter_mut().enumerate() {
+                for (c, &dc) in d.iter().enumerate() {
+                    *o += r[c * 4 + row] * dc;
+                }
+            }
+            screen_xy_of(view.h, e)
+        })
+        .collect();
+    let mut out = Vec::with_capacity(indices.len());
+    for t in indices.as_chunks::<3>().0 {
+        let corner = |i: u32| sxy.get(i as usize).copied();
+        if let (Some(a), Some(b), Some(c)) = (corner(t[0]), corner(t[1]), corner(t[2]))
+            && psx_gpu_draws_triangle([a, b, c])
+        {
+            out.extend_from_slice(t);
+        }
+    }
+    out
+}
+
 /// One of the entry's resolved face stamps: which rig the selector picked
 /// and which pose it stamped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -394,6 +481,16 @@ pub fn venue_cdname_stub(e: &DanceSceneEntry) -> String {
 /// record's raw block base.
 pub fn venue_scene_name(index: &ProtIndex, e: &DanceSceneEntry) -> Option<String> {
     index.cdname_map()?.get(&e.stream_ids.0).cloned()
+}
+
+/// The dance hall's choreography bank - the venue scene's MOVE ANM bundle
+/// (PROT 1229), which every descriptor clip indexes - for
+/// [`crate::dance::DanceGame::attach_clip_bank`]. `None` when the venue block
+/// or its bundle does not resolve.
+pub fn dance_clip_bank(index: &ProtIndex) -> Option<PlayerAnmBundle> {
+    let name = venue_scene_name(index, &dance_scene_entry())?;
+    let scene = Scene::load(index, &name).ok()?;
+    crate::npc_catalog::scene_anm_bundle(&scene)
 }
 
 /// One of the venue's static draws with its cross-draw coplanar lift.
@@ -819,6 +916,63 @@ mod tests {
             (moved.focus, moved.h),
             (venue_camera(&e).focus, venue_camera(&e).h)
         );
+    }
+
+    /// A camera on the world origin looking down `+Z`, the eye `depth` world
+    /// units back.
+    fn straight_view(depth: f32) -> FieldCameraView {
+        FieldCameraView {
+            focus: [0.0; 3],
+            pitch: 0.0,
+            yaw: 0.0,
+            roll: 0.0,
+            h: 512.0,
+            tr_eye: [0.0, 0.0, depth],
+        }
+    }
+
+    #[test]
+    fn the_gpu_drops_a_polygon_wider_than_its_span_limit() {
+        // 1023 px is the widest span drawn; 1024 is refused.
+        assert!(psx_gpu_draws_triangle([[0, 0], [1023, 0], [0, 511]]));
+        assert!(!psx_gpu_draws_triangle([[0, 0], [1024, 0], [0, 10]]));
+        assert!(!psx_gpu_draws_triangle([[0, 0], [10, 0], [0, 512]]));
+    }
+
+    #[test]
+    fn a_large_quad_near_the_eye_is_dropped_and_the_same_quad_far_off_is_kept() {
+        // A 256-unit square in the z = 0 plane: one quad as two triangles.
+        let quad = [
+            [-128.0, -128.0, 0.0],
+            [128.0, -128.0, 0.0],
+            [-128.0, 128.0, 0.0],
+            [128.0, 128.0, 0.0],
+        ];
+        let idx = [0, 1, 2, 1, 3, 2];
+        // 2000 units off: 256 * 512 / 2000 = 65 px - drawn.
+        assert_eq!(
+            psx_gpu_visible_indices(&straight_view(2000.0), &quad, [0.0; 3], &idx),
+            idx
+        );
+        // 60 units off: 256 * 512 / 60 = 2184 px - saturated past both limits.
+        assert!(psx_gpu_visible_indices(&straight_view(60.0), &quad, [0.0; 3], &idx).is_empty());
+        // The re-base is applied before the projection.
+        let shifted: Vec<[f32; 3]> = quad.iter().map(|p| [p[0], p[1], p[2] - 500.0]).collect();
+        assert_eq!(
+            psx_gpu_visible_indices(&straight_view(1500.0), &shifted, [0.0, 0.0, 500.0], &idx),
+            idx
+        );
+    }
+
+    #[test]
+    fn a_corner_behind_the_eye_smears_to_the_edge_instead_of_vanishing() {
+        let v = straight_view(100.0);
+        // Behind the eye: the divide saturates and the corner lands at
+        // `OFX + 2 * IR1`, clamped to the SXY range.
+        let behind = psx_screen_xy(&v, [300.0, 0.0, -200.0]);
+        assert_eq!(behind[0], 0x3FF);
+        let ahead = psx_screen_xy(&v, [0.0, 0.0, 0.0]);
+        assert_eq!(ahead, [160, 120]);
     }
 
     #[test]

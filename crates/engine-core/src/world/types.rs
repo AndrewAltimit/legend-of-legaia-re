@@ -1210,4 +1210,13 @@ pub struct CameraState {
     pub saved: Vec<u8>,
     /// Last `camera_load` payload.
     pub loaded_payload: Vec<u8>,
+    /// Display frames left on the cutscene camera mover's glide
+    /// (`FUN_801DC0BC`): armed by an op-`0x45` beat with a non-zero apply
+    /// trigger, zeroed by a snap, counted down once per display frame. The
+    /// script-side view of the mover, which op `4C CD` waits on - the
+    /// renderer's own glide lives on `crate::camera::Camera`, which folds
+    /// the beat only after the slice that issued it, while retail allocates
+    /// the mover inside the op and a `4C CD` later in the same slice already
+    /// sees it.
+    pub glide_frames: i32,
 }

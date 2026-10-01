@@ -32,6 +32,8 @@ let total_width = layout.advance_x;
 
 `limits::TEXT_LIMITS` holds the pinned per-context budgets (`TextLimit { context, max_px, max_lines, wraps, glyph_pad, provenance }`; `limit_for`, `TextLimit::fits`). No retail surface wraps. Derivations: [`docs/formats/dialog-font.md`](../../docs/formats/dialog-font.md#line-width-and-wrapping).
 
+`escape_icons::EscapeIcons::from_disc(prot_head, scus)` decodes the sprite every `0xCE` escape draws (buttons, badges, equip-slot and element icons) off the boot-resident TIMs at the head of `PROT.DAT`, as RGBA; `Font::pen_items` reports each escape's operand so a preview can draw it. See [`docs/formats/dialog-font.md`](../../docs/formats/dialog-font.md#escape-table-0x80074050).
+
 `Font::wrap_bytes` / `layout_wrapped` are engine conveniences with no retail counterpart.
 
 The crate does **not** depend on a renderer - it only produces glyph rectangles in atlas coordinates and screen-relative offsets. Renderer integration lives in `legaia-engine-render`.

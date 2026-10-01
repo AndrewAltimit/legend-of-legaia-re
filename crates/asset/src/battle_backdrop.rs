@@ -592,6 +592,23 @@ pub fn build_ground_grid() -> legaia_tmd::mesh::VramMesh {
     build_ground_grid_sized(GRID_CELLS, GRID_CELLS)
 }
 
+/// [`build_ground_grid`] with the emitter's pre-cue vertex colour.
+///
+/// Every lattice vertex is `DPCS`-cued from the GTE `RGBC` register, which the
+/// emitter loads from scratch `0x1F800398` (`lwc2 a2, 0x84(t9)` at
+/// `0x801d05f4`, `t9 = 0x1F800314`); `FUN_80026CE4` rewrites that word every
+/// frame from the ambient word `0x8007B7B0`, and the battle backdrop's
+/// `FUN_80050120` sets the ambient to the stage base `+ 0x404040`
+/// (`0x800507E0..0x800507F0`). So in a running battle the floor's near colour
+/// is `0xC0` per channel, not the neutral `0x80` [`build_ground_grid`] draws
+/// with - the texel is lifted by half before the cue blends it toward the far
+/// colour. A battle host passes that ambient here.
+pub fn build_ground_grid_rgbc(rgbc: [u8; 3]) -> legaia_tmd::mesh::VramMesh {
+    let mut m = build_ground_grid();
+    m.colors.fill(rgbc);
+    m
+}
+
 /// [`build_ground_grid`] for a `width x height` cell field - the two words
 /// `_DAT_1F8003F8` / `_DAT_1F8003FA` the emitter reads its loop counts from.
 ///
@@ -823,6 +840,18 @@ mod ground_grid_tests {
         assert_eq!(m.normals.len(), n);
         assert_eq!(m.colors.len(), n);
         assert!(n > 0);
+    }
+
+    /// The battle hosts' variant differs only in the pre-cue colour.
+    #[test]
+    fn the_rgbc_variant_recolours_every_vertex_and_nothing_else() {
+        let plain = build_ground_grid();
+        let lit = build_ground_grid_rgbc([0xC0; 3]);
+        assert_eq!(lit.positions, plain.positions);
+        assert_eq!(lit.uvs, plain.uvs);
+        assert_eq!(lit.indices, plain.indices);
+        assert_eq!(lit.colors.len(), plain.colors.len());
+        assert!(lit.colors.iter().all(|c| *c == [0xC0; 3]));
     }
 
     #[test]

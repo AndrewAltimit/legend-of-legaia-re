@@ -203,8 +203,14 @@ fn expand(text: &[u8], opts: &MeasureOptions<'_>, unresolved: &mut Vec<(u8, u8)>
 pub enum PenItem {
     /// A glyph byte (after substitution) at pen `x` on `line`.
     Glyph { line: u32, x: u32, byte: u8 },
-    /// A `0xCE` escape occupying `width` px from pen `x` on `line`.
-    Escape { line: u32, x: u32, width: u32 },
+    /// A `0xCE` escape (operand `index`) occupying `width` px from pen `x`
+    /// on `line`.
+    Escape {
+        line: u32,
+        x: u32,
+        width: u32,
+        index: u8,
+    },
 }
 
 impl Font {
@@ -253,6 +259,7 @@ impl Font {
                         line: line_widths.len() as u32,
                         x: pen,
                         width: w,
+                        index: arg,
                     });
                     pen = pen.saturating_add(w);
                 }

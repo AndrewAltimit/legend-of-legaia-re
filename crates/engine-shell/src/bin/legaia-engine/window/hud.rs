@@ -290,6 +290,24 @@ impl PlayWindowApp {
         d
     }
 
+    /// The engine's minigame status rows (`engine-core::minigame_status`),
+    /// through the shared draw kernel and scaled onto the surface through
+    /// the one stage transform the page applies to the same rows.
+    fn stage_status_rows(
+        &self,
+        rows: &[legaia_engine_core::minigame_status::StatusRow],
+        w: u32,
+        h: u32,
+    ) -> Vec<TextDraw> {
+        let mut d = legaia_engine_render::ui_text_lines::status_row_draws_for(
+            &self.font,
+            rows.iter().map(|r| (r.text.as_str(), r.pen, r.bright)),
+        );
+        let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+        legaia_engine_render::scale_stage_text_draws(&mut d, stage_origin, stage_scale);
+        d
+    }
+
     pub(super) fn build_hud(&self, w: u32, h: u32) -> Vec<TextDraw> {
         let Some(atlas) = &self.font_atlas else {
             return Vec::new();
@@ -404,87 +422,18 @@ impl PlayWindowApp {
             && self.session.host.world.minigames.dance_status_visible()
             && let Some(g) = &self.session.host.world.minigames.dance
         {
-            let arrow = match g.required_symbol() {
-                Some(1) => "< (Square)",
-                Some(2) => "> (Circle)",
-                Some(3) => "^ (Triangle)",
-                _ => "- (rest)",
-            };
-            use legaia_engine_core::dance::Judge;
-            let judge = match self.session.host.world.minigames.dance_last_judge {
-                Some(Judge::Sequence { .. }) => "SEQUENCE!",
-                Some(Judge::Hit { .. }) => "HIT",
-                Some(Judge::Miss) => "miss",
-                None => "",
-            };
-            // The score readout goes through the retail number renderer's
-            // decimal split, so leading zeros are blank slots and a score of
-            // zero draws nothing at all - the overlay's `-1` sentinel.
-            let score_digits: String = legaia_engine_core::dance::dance_number_digits(g.score())
-                .iter()
-                .map(|d| match d {
-                    Some(v) => char::from(b'0' + v),
-                    None => ' ',
-                })
-                .collect();
-            let dl1 = format!(
-                "DANCE  score {}  gauge {}  lane {}",
-                score_digits.trim_start(),
-                g.gauge(),
-                g.lane()
-            );
-            out.extend(self.stage_status_row(&dl1, (8, 62), white, w, h));
-            let dl2 = format!("press {arrow}   {judge}   (Start = quit)");
-            out.extend(self.stage_status_row(&dl2, (8, 80), dim, w, h));
-
-            // The beat track. Two things the overlay's track renderer
-            // (`FUN_801d2524`) computes, kept distinct here because they are
-            // distinct in retail: the **displayed** combo slot uses its own
-            // level-widened beat mask and its own narrow flash window, and is
-            // NOT the judge's combo slot (`DanceGame::on_combo_slot`, mask 3
-            // over the full acceptance window) - the judged cell is not the
-            // displayed cell. And the notes scroll one 16-px cell per beat, so
-            // note `i`'s pen slides left with the intra-beat fraction.
-            use legaia_engine_core::dance::{
-                GAUGE_STEP, dance_beat_track_note_x, dance_combo_window_bright,
-            };
-            let beat = g.beat_index();
-            let frac = g.intra_beat_phase();
-            let level = g.gauge() / GAUGE_STEP;
-            let bright = dance_combo_window_bright(beat, level, frac);
-            let track_label = if bright { "COMBO" } else { "beat " };
-            let ly3 = self.font.layout_ascii(track_label);
-            out.extend(text_draws_for(
-                &ly3,
-                (8, 98),
-                if bright { white } else { dim },
+            // Score / gauge / lane, the called arrow with the last
+            // judgement, and the beat track (`FUN_801d2524`'s displayed
+            // combo slot and scrolling notes) - the engine's rows, shared
+            // with the browser page.
+            out.extend(self.stage_status_rows(
+                &legaia_engine_core::minigame_status::dance_status_rows(
+                    g,
+                    self.session.host.world.minigames.dance_last_judge.as_ref(),
+                ),
+                w,
+                h,
             ));
-            // The upcoming eight cells of the human's own chart row, drawn at
-            // the ported scroll positions. The x base is this HUD's pen, not
-            // the overlay's screen constant; the per-note offset is retail's.
-            const TRACK_BASE_X: i32 = 60;
-            if let Some(row) = g.chart_row(g.lane()) {
-                for i in 0..8u32 {
-                    let cell = row[((beat + i) % row.len() as u32) as usize];
-                    let glyph = match cell {
-                        1 => "<",
-                        2 => ">",
-                        3 => "^",
-                        _ => ".",
-                    };
-                    let x = dance_beat_track_note_x(TRACK_BASE_X, i, frac);
-                    let ly = self.font.layout_ascii(glyph);
-                    out.extend(text_draws_for(
-                        &ly,
-                        (x, 98),
-                        if i == 0 && !g.in_dead_zone() {
-                            white
-                        } else {
-                            dim
-                        },
-                    ));
-                }
-            }
 
             // The retail-coordinate HUD frame: the HUD driver's per-frame
             // list (`DanceGame::hud_draws`, FUN_801d231c) laid out at its
@@ -501,7 +450,15 @@ impl PlayWindowApp {
                 let rival_hud = g.rival_hud_visible();
                 let (stage_origin, stage_scale) = self.save_select_stage(w, h);
                 let mut stage_draws: Vec<TextDraw> = Vec::new();
-                for r in g.hud_frame_rows(rival_hud) {
+                // With the hall's HUD page resident the frame draws as
+                // retail's own quads in the screen-prim pass
+                // (`dance_hud_prims`); these rows are the fallback without it.
+                let rows = if self.session.host.world.minigames.dance_hud_art_staged {
+                    Vec::new()
+                } else {
+                    g.hud_frame_rows(rival_hud)
+                };
+                for r in rows {
                     let ly = self.font.layout_ascii(&r.text);
                     stage_draws.extend(text_draws_for(
                         &ly,
@@ -515,19 +472,6 @@ impl PlayWindowApp {
                     stage_scale,
                 );
                 out.extend(stage_draws);
-                // The quad half of the same frame (the FUN_801d2f38 emits,
-                // with the digit / gauge glyph-U patches applied): geometry +
-                // gouraud colours are computed live; without the dance sprite
-                // page resident there is no solid atlas source, so the sink
-                // materialises nothing (same degradation as the fishing
-                // gauge fills).
-                let quads = g.hud_draw_quads(rival_hud);
-                out.extend(minigame_fx::dance_quad_draws(
-                    &quads,
-                    None,
-                    stage_origin,
-                    stage_scale,
-                ));
                 // The sprite-part layer: `FUN_801d387c`'s emit dispatch over
                 // the run's own part pool (the sequence-clear banner + stars
                 // the rules engine spawns), faded by its `+0x78` prologue.
@@ -814,84 +758,22 @@ impl PlayWindowApp {
         if self.session.host.world.mode == SceneMode::SlotMachine
             && let Some(m) = &self.session.host.world.minigames.slot_machine
         {
-            use legaia_engine_core::slot_machine::SlotPhase;
-            let reels = format!(
-                "[{}] [{}] [{}]",
-                m.payline_symbol(0),
-                m.payline_symbol(1),
-                m.payline_symbol(2)
-            );
-            let feature = match m.feature_mode() {
-                6 => format!("  BONUS x{}", m.bonus_spins()),
-                0 => String::new(),
-                mode => format!("  feature {mode}"),
-            };
-            let sl1 = format!("SLOTS  {reels}  coins {}{feature}", m.balance());
-            out.extend(self.stage_status_row(&sl1, (8, 62), white, w, h));
-            let prompt = match m.phase() {
-                SlotPhase::Idle if !m.can_spin() => "not enough coins".to_string(),
-                // The cost is `SlotMachine::spin_cost()`, which is 1 in the
-                // feature modes 4..=6 and 3 otherwise - a literal `3` here
-                // mispriced every bonus spin and never warned on a thin bank.
-                SlotPhase::Idle => format!("Cross = spin ({} coins)", m.spin_cost()),
-                SlotPhase::Spinning => "spinning...".to_string(),
-                SlotPhase::Stopping => "Square/Cross/Circle = stop reels 1/2/3".to_string(),
-                SlotPhase::Payout => match m.last_result() {
-                    Some(r) if r.payout > 0 => {
-                        format!("WIN +{} coins!  (Cross = collect)", r.payout)
-                    }
-                    _ => "no win  (Cross = continue)".to_string(),
-                },
-                SlotPhase::CashedOut => "cashed out".to_string(),
-            };
-            let sl2 = format!("{prompt}   (Start = cash out + quit)");
-            out.extend(self.stage_status_row(&sl2, (8, 80), dim, w, h));
+            out.extend(self.stage_status_rows(
+                &legaia_engine_core::minigame_status::slot_status_rows(m),
+                w,
+                h,
+            ));
         }
         // Baka Fighter minigame HUD: HP bars as numbers, round pips, the
         // last-exchange readout, and the input prompt.
         if self.session.host.world.mode == SceneMode::BakaFighter
             && let Some(f) = &self.session.host.world.minigames.baka_fighter
         {
-            use legaia_engine_core::baka_fighter::MatchPhase;
-            let bl1 = format!(
-                "BAKA  you {}hp (wins {})  vs  foe {}hp (wins {})  round {}",
-                f.hp(0),
-                f.round_wins(0),
-                f.hp(1),
-                f.round_wins(1),
-                f.round() + 1
-            );
-            out.extend(self.stage_status_row(&bl1, (8, 62), white, w, h));
-            let status = match f.phase() {
-                MatchPhase::MatchOver(0) => {
-                    if f.cabinet().choice_sheet().is_some() {
-                        "NEXT GAME / PAY OUT: Left/Right, Cross confirms".to_string()
-                    } else {
-                        format!("YOU WIN the match! +{} coins", f.gold_reward())
-                    }
-                }
-                MatchPhase::MatchOver(_) => "you lose the match - GAME OVER".to_string(),
-                MatchPhase::RoundOver(0) => "round won!".to_string(),
-                MatchPhase::RoundOver(_) => "round lost".to_string(),
-                MatchPhase::Fighting => match f.last_exchange() {
-                    Some(r) => {
-                        let who = if r.draw {
-                            "trade".to_string()
-                        } else if r.winner == 0 {
-                            "you hit".to_string()
-                        } else {
-                            "foe hits".to_string()
-                        };
-                        let crit = if r.critical { " CRIT" } else { "" };
-                        let sp = if r.special_round_win { " SPECIAL" } else { "" };
-                        format!("{who} {}{crit}{sp}", r.damage)
-                    }
-                    None => "choose your attack".to_string(),
-                },
-            };
-            let bl2 =
-                format!("{status}   Square/Circle/Cross attack, Triangle special (Start = quit)");
-            out.extend(self.stage_status_row(&bl2, (8, 80), dim, w, h));
+            out.extend(self.stage_status_rows(
+                &legaia_engine_core::minigame_status::baka_status_rows(f),
+                w,
+                h,
+            ));
 
             // The duel's three number drawers, at their ported cell layouts:
             // the one-glyph round digit, the 8 px right-aligned score field,
@@ -907,11 +789,16 @@ impl PlayWindowApp {
                 f.round() as i32,
                 f.tally().map(|t| (t.total(), t.gold_remaining())),
             );
-            out.extend(
-                legaia_engine_render::ui_baka_strips::baka_digit_strip_draws_for(
-                    &self.font, &placed, dim,
-                ),
+            // The placements are 320x240 stage cells, like the rows above:
+            // drawn raw they sat top-left at a fraction of the page's size.
+            let mut cells = legaia_engine_render::ui_baka_strips::baka_digit_strip_draws_for(
+                &self.font,
+                &placed,
+                legaia_engine_render::ui_text_lines::STATUS_ROW_DIM_INK,
             );
+            let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+            legaia_engine_render::scale_stage_text_draws(&mut cells, stage_origin, stage_scale);
+            out.extend(cells);
 
             // The round chrome's resolved draws (`BakaChrome` - the intro
             // title, round banner and countdown timelines): each widget at
@@ -956,107 +843,14 @@ impl PlayWindowApp {
                 out.extend(cd);
             }
         }
-        // Muscle Dome HUD, both lines the host's own.
-        //
-        // The retail "Turns Left / HP Left" strip is deliberately NOT drawn
-        // here: its draw sites gate on formation slot 0 == 0xB6 (Koru), and
-        // the dome ladder tops out at 0xAA, so no dome round can ever raise
-        // it. A dome leg is an unbounded battle, so line 1 reports the turn
-        // reached rather than a countdown to a limit that does not exist.
-        if self.session.host.world.mode == SceneMode::MuscleDome
-            && let Some(s) = &self.session.host.world.minigames.muscle_dome
-        {
-            use legaia_engine_core::muscle_dome::MusclePhase;
-            // Line 0 is the *contest*: which leg of which course this is and
-            // what the run has banked. A leg pays nothing; the contest pays
-            // coins, so the tally is the number that matters.
-            if let Some(c) = &self.session.host.world.minigames.muscle_contest {
-                let flags = self.session.host.world.muscle_contest_flags();
-                let ml0 = format!(
-                    "Course {}  Round {}/{}   Coins banked: {}",
-                    c.course() + 1,
-                    c.round() + 1,
-                    c.staged_course_length(&flags),
-                    c.tally(),
-                );
-                let ly0 = self.font.layout_ascii(&ml0);
-                out.extend(text_draws_for(&ly0, (8, 44), white));
-            }
-            let ml1 = format!("      Turn: {}         HP Left: {}", s.turn(), s.hp_left());
-            let ly1 = self.font.layout_ascii(&ml1);
-            out.extend(text_draws_for(&ly1, (8, 62), white));
-            let status = match s.phase() {
-                // The Ra-Seru list is the ring's Right chip in retail; this
-                // host has no ring screen, so Triangle opens it. The rows and
-                // their prices are the session's, shared with the browser.
-                MusclePhase::Select if s.magic_open() => {
-                    let rows = s.spell_rows(0);
-                    let cursor = s.magic_cursor() as usize;
-                    let row = rows
-                        .get(cursor)
-                        .map(|r| {
-                            format!(
-                                "{} ({} MP){}",
-                                r.name,
-                                r.mp_cost,
-                                if r.affordable {
-                                    ""
-                                } else {
-                                    "  - not enough MP"
-                                }
-                            )
-                        })
-                        .unwrap_or_else(|| "(no Seru learned)".to_string());
-                    format!(
-                        "Ra-Seru {}/{}: {}   MP {}   (Up/Down, Cross = cast, Circle = back)",
-                        cursor + 1,
-                        rows.len().max(1),
-                        row,
-                        s.mp(0),
-                    )
-                }
-                MusclePhase::Select => {
-                    let h = s.hand(0);
-                    let chip = {
-                        use legaia_engine_core::muscle_dome::DomeRingChip;
-                        if s.chip_enabled(0, DomeRingChip::RaSeru) {
-                            "  Triangle = Ra-Seru"
-                        } else {
-                            ""
-                        }
-                    };
-                    format!(
-                        "AP L:{} R:{} U:{} D:{}  budget {}  entered {}  (Cross = fight){chip}",
-                        h[0].cost,
-                        h[1].cost,
-                        h[2].cost,
-                        h[3].cost,
-                        s.budget(0),
-                        s.queue(0).len()
-                    )
-                }
-                MusclePhase::Resolve => "resolving...".to_string(),
-                MusclePhase::TurnOver => {
-                    let [taken, dealt] = s.last_turn_damage();
-                    format!("turn: dealt {dealt}, took {taken}  (Cross = next turn)")
-                }
-                // The caption names a spell; it awards nothing. The contest's
-                // payout lands when the ladder settles.
-                MusclePhase::Won => format!(
-                    "LEG WON! caption spell {:#x}  (Cross = next leg)",
-                    s.reward_spell_id()
-                ),
-                MusclePhase::Lost => "you lose the leg  (Cross/M = leave)".to_string(),
-            };
-            let ml2 = format!(
-                "{status}   you {}hp  foe {}hp  time {}/{}   (Start = quit)",
-                s.hp(0),
-                s.hp(1),
-                s.time_meter(),
-                legaia_engine_core::muscle_dome::TIME_METER_MAX,
-            );
-            let ly2 = self.font.layout_ascii(&ml2);
-            out.extend(text_draws_for(&ly2, (8, 80), dim));
+        // Muscle Dome HUD: the engine's rows (`minigame_status`), which also
+        // carry why the retail "Turns Left / HP Left" strip is not among them.
+        if self.session.host.world.mode == SceneMode::MuscleDome {
+            out.extend(self.stage_status_rows(
+                &legaia_engine_core::minigame_status::muscle_status_rows(&self.session.host.world),
+                w,
+                h,
+            ));
         }
         // Shop / inn / prize / coin-counter overlay group, scaled through the
         // one stage transform both hosts share. Built by its own `&self`
@@ -1695,17 +1489,7 @@ impl PlayWindowApp {
                 // disc item table; the ink is the retail `_DAT_8007B454` pen
                 // from the menu-overlay window kernels.
                 let bag = MenuRuntime::inventory_items(&self.session.host.world);
-                let item_label = |id: u8| -> String {
-                    self.session
-                        .host
-                        .world
-                        .menu
-                        .text
-                        .as_ref()
-                        .and_then(|t| t.item_name(id))
-                        .map(|s| s.to_string())
-                        .unwrap_or_else(|| format!("item {id:02}"))
-                };
+                let item_label = |id: u8| -> String { self.session.host.world.menu.item_label(id) };
                 let held_of = |id: u8| -> i16 {
                     bag.iter()
                         .find(|(i, _)| *i == id)
@@ -1715,28 +1499,16 @@ impl PlayWindowApp {
                 let (title, rows_spec, show_gold): (_, Vec<(String, Option<u32>, u8)>, _) =
                     match state {
                         _ if trade_state => (label, Vec::new(), None),
-                        // Top picker: Buy / Sell / (Trade) / Exit, matching the
-                        // runtime's dynamic row layout. The Sell row's ink is
-                        // retail's bag-scan verdict.
+                        // Top picker: Buy / Sell / (Trade) / Exit - labels and
+                        // retail's bag-scan ink from
+                        // `menu_runtime::shop_root_labels`, the page's call too.
                         Some(MenuState::ShopMenu) => {
-                            let ink = legaia_engine_core::shop::shop_root_command_rows(
-                                (0, 0),
-                                0x4000,
-                                !bag.is_empty(),
-                            );
-                            let rows = legaia_engine_core::menu_runtime::shop_menu_rows(
+                            let rows = legaia_engine_core::menu_runtime::shop_root_labels(
                                 self.session.host.world.seru_trade_enabled(),
+                                !bag.is_empty(),
                             )
-                            .iter()
-                            .map(|s| {
-                                let (l, i) = match s {
-                                    MenuState::ShopBuy => ("Buy", ink[0].ink),
-                                    MenuState::ShopSell => ("Sell", ink[1].ink),
-                                    MenuState::ShopTrade => ("Trade Seru", ink[0].ink),
-                                    _ => ("Exit", ink[0].ink),
-                                };
-                                (l.to_string(), None, i)
-                            })
+                            .into_iter()
+                            .map(|(l, i)| (l.to_string(), None, i))
                             .collect();
                             (label, rows, Some(gold))
                         }
@@ -2284,21 +2056,8 @@ impl PlayWindowApp {
         &self,
         entry: &'a legaia_engine_core::name_entry::NameEntry,
     ) -> legaia_engine_render::NameEntryView<'a> {
-        use legaia_engine_core::name_entry::{CHAR_CELLS, Control, GRID, GRID_COLS};
-        let (grid_cursor, control_cursor) = if entry.cursor < CHAR_CELLS {
-            (
-                Some((entry.cursor / GRID_COLS, entry.cursor % GRID_COLS)),
-                None,
-            )
-        } else {
-            let idx = match entry.control_at(entry.cursor) {
-                Some(Control::Backspace) => Some(0),
-                Some(Control::Default) => Some(1),
-                Some(Control::End) => Some(2),
-                None => None,
-            };
-            (None, idx)
-        };
+        use legaia_engine_core::name_entry::GRID;
+        let (grid_cursor, control_cursor) = entry.cursor_cells();
         legaia_engine_render::NameEntryView {
             grid_rows: &GRID,
             name: &entry.name,
@@ -2307,9 +2066,7 @@ impl PlayWindowApp {
             control_cursor,
             confirming: entry.state == legaia_engine_core::name_entry::NameEntryState::Confirm,
             confirm_yes: entry.confirm_yes,
-            // Retail blinks the caret at 75% duty from the frame counter's
-            // `& 0x18` bits.
-            caret_on: (self.session.host.world.frame & 0x18) != 0,
+            caret_on: legaia_engine_core::name_entry::caret_on(self.session.host.world.frame),
         }
     }
 

@@ -414,12 +414,41 @@ fn auto_fill_party_queues<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut 
         ART_ACTION_BIAS, auto_fill_queue, gate_selects_auto_fill, roll_target_slot,
     };
     let party = host.party_count();
+    // The roll's modulus is `ctx[+0x01]` (`lbu v1,0x1(v1)` at `0x801F0538`),
+    // the **seated** monster count battle setup wrote - a fallen monster
+    // keeps its seat - and the seat it lands on is a retail pool slot
+    // (`+ 3` at `0x801F0570`). The host seats its monsters straight after
+    // the party, so both the liveness test and the stored target go through
+    // the same translation `World::redirect_dead_battle_target` uses.
+    // Counting only the *living* monsters here narrowed the roll onto the
+    // first seats: with the front monsters down and one standing behind
+    // them, every roll landed on a dead seat and the redirect's unbounded
+    // retry never returned.
+    const RETAIL_FIRST_MONSTER: u8 = 3;
     let monsters = (party..host.slot_count())
-        .filter(|&s| host.actor(s).is_some_and(|a| a.liveness != 0))
+        .filter(|&s| {
+            host.actor(s)
+                .is_some_and(|a| a.max_hp != 0 || a.liveness != 0)
+        })
         .count() as u8;
     let alive: Vec<bool> = (0..host.slot_count())
         .map(|s| host.actor(s).is_some_and(|a| a.liveness != 0))
         .collect();
+    let to_engine = |retail: u8| {
+        if retail >= RETAIL_FIRST_MONSTER {
+            retail - RETAIL_FIRST_MONSTER + party
+        } else {
+            retail
+        }
+    };
+    let retail_alive = |retail: u8| {
+        (retail >= RETAIL_FIRST_MONSTER || retail < party)
+            && alive
+                .get(usize::from(to_engine(retail)))
+                .copied()
+                .unwrap_or(false)
+    };
+    let monster_standing = (0..monsters).any(|m| retail_alive(RETAIL_FIRST_MONSTER + m));
     for slot in 0..party {
         let Some(status) = host.actor(slot).map(|a| a.field_flags) else {
             continue;
@@ -444,22 +473,28 @@ fn auto_fill_party_queues<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut 
         // (`jal 0x801db124` at `0x801F0574`) - a third call site for it, and
         // unlike the turn picker's two this one carries no `ctx[+0x06]`
         // command-flow gate, so the redirect is unconditional here.
-        let target = redirect_dead_target(
-            RedirectQuery {
-                target_slot: rolled,
-                category: ActionCategory::Attack.as_byte(),
-                param0: 0,
-            },
-            party,
-            monsters,
-            || host.rng() as i32,
-            |s| alive.get(s as usize).copied().unwrap_or(false),
-            |_| 0,
-        )
-        .unwrap_or(rolled);
+        // A side with nobody standing has already ended the fight; retail's
+        // retry would spin on it, the port never does.
+        let target = if monster_standing {
+            redirect_dead_target(
+                RedirectQuery {
+                    target_slot: rolled,
+                    category: ActionCategory::Attack.as_byte(),
+                    param0: 0,
+                },
+                party,
+                monsters,
+                || host.rng() as i32,
+                retail_alive,
+                |_| 0,
+            )
+            .unwrap_or(rolled)
+        } else {
+            rolled
+        };
         if let Some(actor) = host.actor_mut(slot) {
             actor.action_category = ActionCategory::Attack.as_byte();
-            actor.active_target = target;
+            actor.active_target = to_engine(target);
         }
         let char_id = host.roster_character_id(slot);
         let learned = host.learned_arts(slot);

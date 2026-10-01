@@ -1611,27 +1611,11 @@ impl World {
                 if !scripts_held {
                     self.step_spawned_record_contexts();
                 }
-                // Per-actor script channels (spawned with a cutscene
-                // timeline): each vignette actor's own placement script runs
-                // its frame slice - animate cues, scripted moves, flag
-                // handshakes with the timeline.
-                //
-                // Ungated deliberately, and that is the retail denomination,
-                // not an omission. A placement script is actor-pool work
-                // (`FUN_8002519C` -> the actor's `+0x0C` handler), so retail
-                // runs it once per game tick and credits `DAT_1F800393` frames
-                // of progress per visit - the same cadence-invariant identity
-                // the locomotion note above spells out. The engine takes the
-                // fine-grained half: one visit per vsync crediting one frame.
-                // Since a sim tick IS a vsync, calling it every tick is
-                // retail-frame paced already; a `field_frame_step` gate would
-                // be a tautology here, not a correction.
-                // Re-read: a context stepped above may have just committed a
-                // fight (`3E FF <row>`), and nothing after it runs this frame.
-                let scripts_held = scripts_held || self.field_scripts_held_for_battle();
-                if !scripts_held {
-                    self.step_field_channels();
-                }
+                // No placement channel steps here: retail runs a placement's
+                // own script only while a touch holds it engaged
+                // (`World::pre_run_field_channel_prologues` has the
+                // `+0x10 & 0x100` writers), which the engine plays as the
+                // interaction timeline.
                 let scripts_held = scripts_held || self.field_scripts_held_for_battle();
                 // The scene system script (ctx `0xFB`) gets a whole retail
                 // frame slice, not one instruction: see
@@ -1758,7 +1742,6 @@ impl World {
                 // drives playback, calling [`finish_cutscene`] when it ends.
                 if self.cutscene.active_fmv.is_none() {
                     self.step_spawned_record_contexts();
-                    self.step_field_channels();
                     self.step_field_frame_slice();
                     self.tick_field_script_arcs();
                     self.tick_field_attached_lights();
@@ -2452,6 +2435,19 @@ impl World {
         // driver of its own.
         let long_song = game.song_len() == crate::dance::SONG_LEN_LONG;
         let how_to = game.mode() == crate::dance::DanceMode::HowTo;
+        // State 1's flag writes, after it has read the mode off them: the
+        // three one-shot mode requests are cleared (`0x801CF950..0x801CF964`;
+        // the free-play flag stays) and the pass flag is raised for the
+        // results state to clear on a loss (`0x801CF968`).
+        // PORT: FUN_801cf470 (state 1's flag writes)
+        for flag in [
+            crate::dance::MODE_FLAG_FINALS,
+            crate::dance::MODE_FLAG_QUALIFIER,
+            crate::dance::MODE_FLAG_HOW_TO,
+        ] {
+            self.system_flag_clear(flag);
+        }
+        self.system_flag_set(crate::dance::WIN_FLAG);
         self.minigames.dance = Some(game);
         self.minigames.dance_last_judge = None;
         self.minigames.dance_countin = Some(crate::dance::CountIn::new());
@@ -2542,6 +2538,11 @@ impl World {
             self.mode = self.minigames.dance_return_mode;
             return;
         }
+        // Every body's clip runs every frame, count-in included: the clip
+        // driver ticks each actor whatever state the dance is in.
+        if let Some(g) = self.minigames.dance.as_mut() {
+            g.advance_body_clips(1);
+        }
         // The pre-song count-in owns the frame while it runs: the beat clock
         // does not advance and no press is judged, which is retail's
         // below-10 state band. The song starts on the frame it clears.
@@ -2584,9 +2585,14 @@ impl World {
             self.minigames.dance_last_judge = Some(game.judge_press(dir));
         }
         if game.song_over() {
-            // Song finished: restore the interrupted mode, leaving `dance`
-            // in place so the host can read the final score before clearing.
+            // Song finished: the results state grades the run into the pass
+            // flag, then the interrupted mode is restored, leaving `dance` in
+            // place so the host can read the final score before clearing.
+            let clear_win = game.results_clear_win_flag();
             self.mode = self.minigames.dance_return_mode;
+            if clear_win {
+                self.system_flag_clear(crate::dance::WIN_FLAG);
+            }
         }
         self.step_dance_tutorial();
     }

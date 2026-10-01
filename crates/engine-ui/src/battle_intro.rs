@@ -218,6 +218,23 @@ pub const INTRO_ZSF4: i32 = 0x400;
 /// `17 x 17` vertex grid.
 pub const TILE_CORNER_TABLE_VA: u32 = 0x801C_E8BC;
 
+/// The intro overlay's PROT entry (the transition styles' data tables).
+pub const INTRO_OVERLAY_PROT: u32 = 979;
+
+/// The tile seeder's corner offsets when PROT 0979 is not to hand - the
+/// values [`TILE_CORNER_TABLE_VA`] decodes to, so a disc-free host seeds the
+/// same grid.
+pub const DEFAULT_TILE_CORNERS: [i32; 4] = [0, 1, 0x11, 0x12];
+
+/// A raw PROT 0979 entry relocated to its load base, with that base - the
+/// form the two in-overlay table readers take. `None` when the static
+/// overlay map has no base for the entry or the image does not relocate.
+pub fn intro_overlay_as_loaded(raw: &[u8]) -> Option<(Vec<u8>, u32)> {
+    let rec = legaia_asset::static_overlay::overlay_map().by_prot_index(INTRO_OVERLAY_PROT)?;
+    let as_loaded = legaia_asset::static_overlay::as_loaded(raw, rec).ok()?;
+    Some((as_loaded, rec.base_va))
+}
+
 /// Read the tile corner-offset table out of a PROT 0979 image relocated to
 /// its load base. `None` when the image is too short.
 pub fn parse_tile_corner_table(as_loaded: &[u8], base_va: u32) -> Option<[i32; 4]> {
@@ -1155,6 +1172,58 @@ impl BattleIntro {
         self
     }
 
+    /// Arm the emitter for the battle about to open - the one arming both
+    /// play hosts run. The style is not a host choice: `select_intro_style`
+    /// ports the intro overlay's own init block over `inputs` (the host
+    /// resolves them through `SceneHost::battle_intro_style_inputs`).
+    ///
+    /// `overlay_0979` is the raw PROT 0979 entry: relocated to its load base
+    /// ([`intro_overlay_as_loaded`]) it carries the curtain's descriptor
+    /// table and the tile seeder's corner table, each with its disc-free
+    /// fallback ([`IntroQuadTable::neutral`], [`DEFAULT_TILE_CORNERS`]).
+    /// `field_char_textures` is the raw field-character texture pack, whose
+    /// entry 0 is the shade page the shatter's side faces sample. The
+    /// particle env and the (unused) trig seam both seed from `rng_seed`, the
+    /// world's RNG word.
+    pub fn arm_for_battle(
+        inputs: &legaia_engine_vm::battle_intro_styles::IntroStyleInputs,
+        total_duration: i32,
+        overlay_0979: Option<&[u8]>,
+        field_char_textures: Option<&[u8]>,
+        rng_seed: u32,
+    ) -> Self {
+        use legaia_engine_vm::battle_intro_particles::IntroEnv;
+        let choice = legaia_engine_vm::battle_intro_styles::select_intro_style(inputs);
+        let overlay = overlay_0979.and_then(intro_overlay_as_loaded);
+        let table = overlay
+            .as_ref()
+            .and_then(|(img, base)| IntroQuadTable::parse_overlay(img, *base))
+            .unwrap_or_else(IntroQuadTable::neutral);
+        let corners = overlay
+            .as_ref()
+            .and_then(|(img, base)| parse_tile_corner_table(img, *base))
+            .unwrap_or(DEFAULT_TILE_CORNERS);
+        let shade =
+            field_char_textures.and_then(|b| legaia_asset::field_char_textures::parse(b).ok());
+        let mut env = IntroEnv::new(rng_seed);
+        let mut trig = IntroEnv::new(rng_seed);
+        Self::new(
+            choice.style,
+            choice.sub_style,
+            total_duration,
+            table,
+            &mut env,
+            &mut trig,
+            corners,
+        )
+        .with_shade_pack(shade)
+    }
+
+    /// `DAT_801D2464`, the sub-style the emitter was armed with.
+    pub fn sub_style(&self) -> i32 {
+        self.sub_style
+    }
+
     /// The style this emitter is running.
     pub fn style(&self) -> IntroStyle {
         self.style
@@ -1848,5 +1917,24 @@ mod capture_landing_tests {
         let black = vec![0u8; 2 * 2 * 4];
         it.land_capture_rgba(&black, 2, 2, &Vram::new());
         assert!(it.refresh_captured_page().is_none(), "re-land is a no-op");
+    }
+}
+
+#[cfg(test)]
+mod arm_for_battle_tests {
+    use super::*;
+    use legaia_engine_vm::battle_intro_styles::{IntroStyleInputs, select_intro_style};
+
+    /// Disc-free, the arming lands on the selector's style with the
+    /// documented fallbacks, and the same seed arms the same emitter.
+    #[test]
+    fn arming_without_the_overlay_takes_the_selector_style_and_fallbacks() {
+        let inputs = IntroStyleInputs::default();
+        let a = BattleIntro::arm_for_battle(&inputs, 60, None, None, 0x1234);
+        let choice = select_intro_style(&inputs);
+        assert_eq!(a.style(), choice.style);
+        assert_eq!(a.sub_style(), choice.sub_style);
+        let b = BattleIntro::arm_for_battle(&inputs, 60, Some(&[]), Some(&[]), 0x1234);
+        assert_eq!(b.style(), a.style());
     }
 }

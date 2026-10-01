@@ -5,6 +5,10 @@
 
 use super::super::*;
 
+/// The 320x240 stage's aspect: every stage-projected battle pass's camera.
+const STAGE_ASPECT: f32 =
+    legaia_engine_render::BOOT_UI_STAGE_W as f32 / legaia_engine_render::BOOT_UI_STAGE_H as f32;
+
 /// Decoded cutscene camera inputs to the retail PSX GTE model:
 /// `(focus, pitch_radians, yaw_radians, roll_radians, h, tr_eye)`. See
 /// [`PlayWindowApp::cutscene_view`].
@@ -205,7 +209,33 @@ impl PlayWindowApp {
             if !actor.active {
                 continue;
             }
-            let (Some(tmd_idx), Some(pose)) = (actor.tmd_binding, &actor.pose_frame) else {
+            let Some(tmd_idx) = actor.tmd_binding else {
+                continue;
+            };
+            let Some(pose) = &actor.pose_frame else {
+                // A battle body drawn off its rest mesh still takes its
+                // colour word's blend (the capture / defeat fade, the
+                // near-camera ghost): retail's dispatcher ORs it into every
+                // packet whatever the pose. Only a blended body needs the
+                // re-upload; an opaque one draws the resident rest mesh.
+                if let Some(plan) = self.body_draw_plan(ai)
+                    && plan.semi_mode().is_some()
+                    && let Some(rest) = self.battle_rest_vmesh.get(&tmd_idx)
+                {
+                    let mut cba_tsb = rest.cba_tsb.clone();
+                    plan.apply_body_blend(&mut cba_tsb);
+                    match r.upload_vram_mesh(
+                        &rest.positions,
+                        &rest.uvs,
+                        &cba_tsb,
+                        &rest.normals,
+                        &rest.colors,
+                        &rest.indices,
+                    ) {
+                        Ok(m) => posed_overrides[tmd_idx] = Some(m),
+                        Err(e) => log::warn!("blended rest mesh upload: {e:#}"),
+                    }
+                }
                 continue;
             };
             let Some((tmd, raw)) = self.scene_tmd_data.get(tmd_idx) else {
@@ -267,10 +297,7 @@ impl PlayWindowApp {
             // them into each packet. The browser play page's twin is
             // `web-viewer::play_battle_body_blend`.
             if let Some(plan) = self.body_draw_plan(ai) {
-                legaia_engine_core::battle_body_blend::apply_body_blend(
-                    &mut vmesh.cba_tsb,
-                    legaia_engine_core::battle_body_blend::draw_colour_semi_mode(plan.draw_colour),
-                );
+                plan.apply_body_blend(&mut vmesh.cba_tsb);
             }
             if std::env::var_os("LEGAIA_DIAG_POSE").is_some() {
                 let (lo, hi) = vmesh.aabb();
@@ -650,16 +677,18 @@ impl PlayWindowApp {
     /// effect it trails. Empty outside a move.
     // PORT: FUN_801E1AB0 (per-frame emission; the packet + the projection
     // live in `legaia_engine_render::{afterimage, streak_pass}`)
-    fn move_fx_streak_quads(
-        &self,
-        r: &legaia_engine_render::Renderer,
-    ) -> Vec<legaia_engine_render::afterimage::AfterimageQuad> {
+    fn move_fx_streak_quads(&self) -> Vec<legaia_engine_render::afterimage::AfterimageQuad> {
         use legaia_engine_render::streak_pass::{
             StreakSource, clip_ribbon_quads, streak_quads_scheduled,
         };
         let world = &self.session.host.world;
-        let (w, h) = r.surface_size();
-        let mvp = self.battle_scene_mvp(w as f32 / h.max(1) as f32);
+        // The quads project into the 320x240 stage (`project_stage_point`),
+        // so the camera is the stage's 4:3 - the aspect the scene pass draws
+        // at inside its stage viewport (`scene_viewport_for`) and the page's
+        // `battle_vp` hard-codes. The surface's own aspect put the trail and
+        // the streak off the bodies on any window that is not 4:3 (the
+        // runner's 960x699 among them).
+        let mvp = self.battle_scene_mvp(STAGE_ASPECT);
         // The clip-tag ribbon (`FUN_8004CE2C` tag `0x67` ->
         // `FUN_801E1D98(&target[+0x3C], 0xC)`) is independent of the move-FX
         // scene: it rides a physical art's clip, not a staged effect.
@@ -856,7 +885,6 @@ impl PlayWindowApp {
 
     pub(super) fn weapon_trail_screen_prims(
         &self,
-        r: &legaia_engine_render::Renderer,
     ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
         use legaia_engine_render::battle_trail as bt;
         use legaia_engine_vm::battle_trail::TRAIL_POINTS;
@@ -868,8 +896,13 @@ impl PlayWindowApp {
         if draws.is_empty() {
             return Vec::new();
         }
-        let (w, h) = r.surface_size();
-        let mvp = self.battle_scene_mvp(w as f32 / h.max(1) as f32);
+        // The quads project into the 320x240 stage (`project_stage_point`),
+        // so the camera is the stage's 4:3 - the aspect the scene pass draws
+        // at inside its stage viewport (`scene_viewport_for`) and the page's
+        // `battle_vp` hard-codes. The surface's own aspect put the trail and
+        // the streak off the bodies on any window that is not 4:3 (the
+        // runner's 960x699 among them).
+        let mvp = self.battle_scene_mvp(STAGE_ASPECT);
         let mut out = Vec::new();
         for d in draws {
             let Some(actor) = world.actors.get(d.actor_slot as usize) else {
@@ -1068,7 +1101,7 @@ impl PlayWindowApp {
         r: &legaia_engine_render::Renderer,
     ) -> Option<UploadedVramMesh> {
         let mut screen_fx_tex = None;
-        let streak = self.move_fx_streak_quads(r);
+        let streak = self.move_fx_streak_quads();
         if streak.is_empty() {
             return None;
         }

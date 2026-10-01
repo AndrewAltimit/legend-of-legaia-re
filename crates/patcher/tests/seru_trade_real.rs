@@ -526,6 +526,14 @@ fn trade_flow_patches_in_shop_submode_and_reorder() {
                 && va + bytes.len() as u32 <= seru_overlay::TRADE_HANDLER_END,
             "{what} ({va:#x}) outside run-C"
         );
+        // Never inside a save-screen card buffer or other runtime data: a
+        // pause-menu save returns to the menu with 0899 still resident.
+        let hit = legaia_patcher::space_ledger::overlapping_buffer(
+            legaia_patcher::space_ledger::Image::Prot(seru_overlay::HANDLER_OVL_PROT_INDEX),
+            va,
+            va + bytes.len() as u32,
+        );
+        assert!(hit.is_none(), "{what} ({va:#x}) overlaps {hit:?}");
         assert_eq!(
             &menu[off..off + bytes.len()],
             bytes,

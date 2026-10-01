@@ -125,6 +125,7 @@ const NAV = [
       // Output
       { href: 'subsystems/audio.html',          text: 'Audio',                    key: 'subsystems/audio' },
       { href: 'subsystems/renderer.html',       text: 'Renderer',                 key: 'subsystems/renderer' },
+      { href: 'subsystems/shading.html',        text: 'Shading and palettes',     key: 'subsystems/shading', indent: true },
       { href: 'subsystems/engine.html',         text: 'Engine port plan',         key: 'subsystems/engine' },
     ],
   },
@@ -219,6 +220,7 @@ const NAV = [
       { href: 'reference/cheats.html',          text: 'Cheat databases',          key: 'reference/cheats' },
       { href: 'reference/gamedata.html',        text: 'Curated game-data tables', key: 'reference/gamedata' },
       { href: 'reference/music-tracks.html',    text: 'Music tracks',             key: 'reference/music-tracks' },
+      { href: 'reference/scene-names.html',     text: 'Scene names',              key: 'reference/scene-names' },
       { href: 'reference/open-rev-eng-threads.html', text: 'Open RE threads',     key: 'reference/open-rev-eng-threads' },
       { href: 'reference/re-settled-threads.html', text: 'Settled RE threads',   key: 'reference/re-settled-threads' },
       { href: 'reference/re-do-not-re-walk.html', text: 'Do not re-walk',        key: 'reference/re-do-not-re-walk' },

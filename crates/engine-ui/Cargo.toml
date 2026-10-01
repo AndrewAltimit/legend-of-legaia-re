@@ -17,3 +17,8 @@ legaia-font = { path = "../font" }
 legaia-tim = { path = "../tim" }
 serde.workspace = true
 serde_json.workspace = true
+
+[dev-dependencies]
+# `tests/camera_relative_retail_oracle.rs` reads retail save states (skips
+# and passes without the library).
+legaia-mednafen = { path = "../mednafen" }

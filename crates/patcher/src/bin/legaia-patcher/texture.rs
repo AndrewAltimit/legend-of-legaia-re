@@ -20,8 +20,13 @@ use legaia_patcher::battle_texture::{self, BattleTextureTarget};
 use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::monster_texture::{self, MonsterTextureTarget};
 use legaia_patcher::ppf;
-use legaia_patcher::texture::{TextureTarget, read_texture, replace_texture, texture_catalogs};
+use legaia_patcher::texture::{
+    ExportFormat, TextureTarget, export_texture_png, read_texture, replace_texture_png,
+    texture_catalogs,
+};
+use legaia_patcher::texture_palettes::texture_palettes;
 use legaia_tim::encode::{EncodeOptions, decode_png_rgba};
+use legaia_tim::multi_palette::View;
 
 use crate::cli::TimTierArg;
 use crate::util::{cue_contents, load_image, note_overwrite};
@@ -167,52 +172,173 @@ fn battle_target(entry: Option<u32>, slot: BattleTextureSlot) -> Result<BattleTe
     Ok(BattleTextureTarget { entry, slot })
 }
 
-#[allow(clippy::too_many_arguments)]
+/// A texture coordinate as the CLI takes it (one of the three addressing
+/// shapes).
+pub(crate) struct TimCoord {
+    pub(crate) entry: Option<u32>,
+    pub(crate) offset: Option<u64>,
+    pub(crate) lzs_section: Option<u32>,
+    pub(crate) battle_slot: Option<BattleTextureSlot>,
+    pub(crate) monster_id: Option<u16>,
+}
+
 pub(crate) fn cmd_tim_export(
     input: &Path,
-    entry: Option<u32>,
-    offset: Option<u64>,
-    lzs_section: Option<u32>,
-    battle_slot: Option<BattleTextureSlot>,
-    monster_id: Option<u16>,
-    clut: usize,
+    at: TimCoord,
+    clut: Option<usize>,
+    in_game: bool,
+    format: ExportFormat,
     output: &Path,
 ) -> Result<()> {
-    if let Some(slot) = battle_slot {
-        return cmd_battle_export(input, battle_target(entry, slot)?, clut, output);
+    if let Some(slot) = at.battle_slot {
+        return cmd_battle_export(
+            input,
+            battle_target(at.entry, slot)?,
+            clut.unwrap_or(0),
+            output,
+        );
     }
-    if let Some(id) = monster_id {
+    if let Some(id) = at.monster_id {
         return cmd_monster_export(input, MonsterTextureTarget { id }, output);
     }
-    let offset = offset.context(
+    let offset = at.offset.context(
         "pass --offset (the byte offset tim-list prints), --battle-slot for the battle tier, \
          or --monster-id for a monster skin",
     )?;
     let image = load_image(input)?;
     let patcher = DiscPatcher::open(image).context("parse disc image")?;
-    let t = target(entry, offset, lzs_section);
+    let t = target(at.entry, offset, at.lzs_section);
     let orig = read_texture(&patcher, &t)?;
-    let rgba = legaia_tim::decode_rgba8(&orig.tim, clut)
-        .with_context(|| format!("decode {} (clut {clut})", t))?;
-    let (w, h) = (orig.tim.pixel_width(), orig.tim.pixel_height());
-    legaia_tim::write_png(output, w, h, &rgba)?;
+    let pals = texture_palettes(&patcher, &orig.tim)?;
+    let view = match clut {
+        Some(k) if !in_game => View::Palette(k),
+        _ if in_game || pals.has_map() => View::InGame,
+        _ => View::Palette(0),
+    };
+    if let Some(k) = clut
+        && k >= orig.tim.palette_count().max(1)
+    {
+        bail!(
+            "--clut {k}: {t} has {} palette(s)",
+            orig.tim.palette_count()
+        );
+    }
+    let ex = export_texture_png(&patcher, &t, format, view)?;
+    std::fs::write(output, &ex.png).with_context(|| format!("write {}", output.display()))?;
     println!(
-        "wrote {} - {} ({}x{}, {} bpp, {} palette(s), {} bytes on disc)",
+        "wrote {} - {t}: {} ({} bpp, {} palette(s), {} bytes on disc)",
         output.display(),
-        t,
-        w,
-        h,
-        match orig.tim.mode {
-            legaia_tim::PixelMode::Bpp4 => 4,
-            legaia_tim::PixelMode::Bpp8 => 8,
-            legaia_tim::PixelMode::Bpp16 => 16,
-            legaia_tim::PixelMode::Bpp24 => 24,
-            legaia_tim::PixelMode::Mixed => 0,
-        },
+        ex.description,
+        bpp_name(&orig.tim),
         orig.tim.palette_count(),
         orig.tim_bytes.len(),
     );
-    println!("Edit it (same dimensions!) and feed it back through tim-replace.");
+    if in_game && !pals.has_map() {
+        println!(
+            "  note: no per-region palette map is known for this texture, so it was drawn \
+             through palette 0 (try --clut N, or --format composite to see every palette)"
+        );
+    }
+    if orig.tim.palette_count() > 1
+        && format == ExportFormat::Image
+        && ex.view != Some(View::InGame)
+    {
+        println!(
+            "  this texture has {} palettes; --format composite also writes every palette below \
+             the image, and tim-palette-map says which region the game draws with which",
+            orig.tim.palette_count()
+        );
+    }
+    println!(
+        "Edit it (same dimensions!) and feed it back through tim-replace - it recognises \
+         the view, a composite, a palette strip or an indexed PNG on its own."
+    );
+    Ok(())
+}
+
+fn bpp_name(tim: &legaia_tim::Tim) -> u32 {
+    match tim.mode {
+        legaia_tim::PixelMode::Bpp4 => 4,
+        legaia_tim::PixelMode::Bpp8 => 8,
+        legaia_tim::PixelMode::Bpp16 => 16,
+        legaia_tim::PixelMode::Bpp24 => 24,
+        legaia_tim::PixelMode::Mixed => 0,
+    }
+}
+
+/// `tim-palette-map` - print which palette each region is drawn through.
+pub(crate) fn cmd_tim_palette_map(
+    input: &Path,
+    entry: Option<u32>,
+    offset: u64,
+    lzs_section: Option<u32>,
+) -> Result<()> {
+    let image = load_image(input)?;
+    let patcher = DiscPatcher::open(image).context("parse disc image")?;
+    let t = target(entry, offset, lzs_section);
+    let orig = read_texture(&patcher, &t)?;
+    let pals = texture_palettes(&patcher, &orig.tim)?;
+    let n = orig.tim.palette_count();
+    println!(
+        "{t}: {}x{} {} bpp, {n} palette(s)",
+        orig.tim.pixel_width(),
+        orig.tim.pixel_height(),
+        bpp_name(&orig.tim)
+    );
+    if !pals.has_map() {
+        println!(
+            "No per-region palette map is known for this texture: the file does not say which \
+             palette a region is drawn with, the draw code does, and only the menu / battle UI \
+             sheet has its draw table decoded. Every palette is an equally valid view - use \
+             tim-export --format composite to see them all."
+        );
+        return Ok(());
+    }
+    println!("Source: {}", pals.source);
+    println!("    x    y    w    h  palette  part   widget(s)");
+    // One row per distinct (rect, palette): several records draw the same
+    // sprite (the four party slots, the two framed-window styles).
+    let mut rows: Vec<(&legaia_patcher::texture_palettes::PaletteRegion, Vec<u8>)> = Vec::new();
+    for r in &pals.regions {
+        match rows
+            .iter_mut()
+            .find(|(k, _)| k.rect == r.rect && k.palette == r.palette && k.part == r.part)
+        {
+            Some((_, ids)) => ids.push(r.widget),
+            None => rows.push((r, vec![r.widget])),
+        }
+    }
+    for (r, ids) in &rows {
+        let pal = if r.palette < n {
+            format!("{:>7}", r.palette)
+        } else {
+            format!("sub {:>3}*", r.subpalette)
+        };
+        let ids: Vec<String> = ids.iter().map(|i| format!("0x{i:02X}")).collect();
+        println!(
+            "  {:>3}  {:>3}  {:>3}  {:>3}  {pal}  {:<5}  {}",
+            r.rect.0,
+            r.rect.1,
+            r.rect.2,
+            r.rect.3,
+            format!("{:?}", r.part).to_lowercase(),
+            ids.join(" "),
+        );
+    }
+    println!(
+        "{} region(s). `sub N*` = a palette of the sibling extension TIM (PROT.DAT 0x{:X}), \
+         read-only here. {} pixel(s) no widget draws are shown through palette 0 (overlay code \
+         may draw some of them with a palette of its own). Where regions overlap, single \
+         sprites win over plates, plates over bars, bars over windows, then the smaller rect; \
+         {} pixel(s) are drawn through more than one palette.",
+        rows.len(),
+        legaia_asset::ui_widgets::SUBPALETTE_EXT_TIM_PROT_OFFSET,
+        pals.unclaimed_pixels,
+        pals.contested_pixels
+    );
+    for note in &pals.notes {
+        println!("note: {note}");
+    }
     Ok(())
 }
 
@@ -268,24 +394,29 @@ pub(crate) fn cmd_tim_replace(
     let t = target(entry, offset, lzs_section);
 
     let png_bytes = std::fs::read(png).with_context(|| format!("read {}", png.display()))?;
-    let (w, h, rgba) = decode_png_rgba(&png_bytes)?;
-
-    let opts = EncodeOptions { quantize };
-    let outcome = replace_texture(&mut patcher, &t, &rgba, w, h, &opts, dry_run)?;
+    let opts = EncodeOptions {
+        quantize,
+        ..Default::default()
+    };
+    let outcome = replace_texture_png(&mut patcher, &t, &png_bytes, &opts, dry_run)?;
 
     println!(
         "{}: {}x{} {} bpp, {} palette(s), {} bytes - encoded in place",
         t, outcome.width, outcome.height, outcome.bpp, outcome.clut_count, outcome.byte_len
     );
+    if let Some(kind) = outcome.import {
+        println!("  recognised: {kind}");
+    }
     if outcome.new_palette_entries > 0 {
         println!(
-            "  {} new palette color(s) written{}",
-            outcome.new_palette_entries,
-            if outcome.clut_rows_rewritten {
-                " (palette replicated into every CLUT row)"
-            } else {
-                ""
-            }
+            "  {} new palette color(s) written into free slot(s)",
+            outcome.new_palette_entries
+        );
+    }
+    if outcome.palette_entries_changed > 0 {
+        println!(
+            "  {} palette entr(y/ies) changed in total; every other palette entry is untouched",
+            outcome.palette_entries_changed
         );
     }
     if outcome.quantized_pixels > 0 {
@@ -305,22 +436,19 @@ pub(crate) fn cmd_tim_replace(
         return Ok(());
     }
 
-    // Verify off the patched image: the texture must read back strict-valid
-    // and (when nothing was quantized) display exactly the requested pixels.
+    // Verify off the patched image: the texture reads back strict-valid and
+    // byte-for-byte what the encoder produced from the input image's
+    // original.
     let after = read_texture(&patcher, &t).context("re-read patched texture")?;
-    if outcome.quantized_pixels == 0 {
-        let got = legaia_tim::decode_rgba8(&after.tim, 0)?;
-        let want: Vec<u8> = rgba
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .flat_map(|p| legaia_tim::bgr555_to_rgba8(legaia_tim::encode::rgba8_to_bgr555(*p)))
-            .collect();
-        if got != want {
-            bail!("verification failed: patched texture does not decode to the input image");
-        }
-        println!("verified: patched texture decodes pixel-exactly to the input image");
+    let before = read_texture(&DiscPatcher::open(original.clone())?, &t)?;
+    let pals = texture_palettes(&patcher, &before.tim)?;
+    let expected =
+        legaia_tim::multi_palette::import_png(&before.tim, &png_bytes, &pals.context, &opts)
+            .context("re-encode for verification")?;
+    if expected.encoded.bytes != after.tim_bytes {
+        bail!("verification failed: the patched texture is not what the encoder produced");
     }
+    println!("verified: the patched texture reads back exactly as encoded");
 
     let patched = patcher.into_image();
     if let Some(ppf_path) = patch {

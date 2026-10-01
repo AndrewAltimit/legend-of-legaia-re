@@ -221,14 +221,48 @@ Indexed modes must fit the palette (16 / 256 distinct 15-bit colors). Colors
 already in the original palette are free; new colors overwrite slots the new
 image no longer references. Overflow is a hard error listing the offending
 pixel coordinates + colors, or - behind an explicit quantize opt-in - the
-least-frequent extras fold to their nearest palette color. When any palette
-slot changes, the rebuilt palette is **replicated into every CLUT row**
-(multi-palette variants would otherwise recolor the new indices with stale
-rows); an untouched palette keeps the whole original CLUT block
-byte-identical.
+least-frequent extras fold to their nearest palette color. Only the palette
+the image was drawn through (`EncodeOptions::palette`, 0 by default) is ever
+rewritten; every other palette of a multi-palette CLUT stays byte-identical.
+The game picks a palette per sprite, so a multi-palette TIM is several
+colourings of one set of indices, and copying the edited palette over the
+others would recolour every region drawn through them. Editing several
+palettes at once - per-region views, the palette strip, the composite, the
+indexed PNG - is `legaia_tim::multi_palette`; the workflow is in
+[`textures-and-fonts.md`](../tooling/translation/textures-and-fonts.md#multi-palette-textures).
+
+## Why an exported palette can look wrong
+
+A TIM export decodes the image through one of the file's own CLUT rows. That is
+the colour the game shows only when three things hold, and on Legaia they
+often do not:
+
+- **Each palette recolours the whole image.** A multi-palette 4bpp sheet is one
+  grid of indices that each sprite / polygon reads through its own palette, so
+  any single palette shows most of the sheet in colours it is never drawn
+  with.
+- **The draw names a VRAM cell, not a file.** A sprite can take a palette
+  another TIM uploaded (the system-UI sheet's status badges reach the
+  CLUT-only TIM at `PROT.DAT[0x1858]`), and a later upload can overwrite a
+  TIM's own palette before anything draws it (the ASCII battle font's
+  `(0, 510)` strip, covered by the menu-glyph atlas at boot).
+- **The screen multiplies the texel.** The primitive's colour word
+  (`texel * colour / 128`) and the depth cue sit on top of the palette, so a
+  correctly exported texture still reads darker or brighter than in game.
+
+`legaia_asset::tim_palette_context` resolves the first two from the disc: the
+boot-VRAM CLUT state (`BootClutVram`), a per-rectangle palette map of the
+system-UI page from the SCUS widget table (`sheet_palette_regions`), the one
+per-texel attribution of it (`texel_palettes`), and an "as drawn" composite
+decode (`composite_rgba`). The asset viewer's TIM catalog surfaces all of it
+in its palette list and notes; the ROM patcher's texture editor reads the same
+`texel_palettes`. The whole colour chain, and
+what it means for texture editing, is on
+[`subsystems/shading.md`](../subsystems/shading.md).
 
 ## See also
 
+- [Shading and palettes](../subsystems/shading.md) - how a texel becomes a screen pixel.
 - [Legaia TMD](tmd.md) - the mesh format that references these textures.
 - [TIM-pack](tim-pack.md) - the standalone bundle of multiple TIMs.
 - [NPC palettes](npc-palette.md) - the row-479 CLUT TIMs.

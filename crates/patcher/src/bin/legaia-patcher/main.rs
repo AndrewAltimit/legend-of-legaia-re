@@ -107,17 +107,29 @@ fn main() -> Result<()> {
             battle_slot,
             monster_id,
             clut,
+            in_game,
+            format,
             output,
         } => texture::cmd_tim_export(
             &input,
+            texture::TimCoord {
+                entry,
+                offset,
+                lzs_section,
+                battle_slot,
+                monster_id,
+            },
+            clut,
+            in_game,
+            format.into(),
+            &output,
+        ),
+        Cmd::TimPaletteMap {
+            input,
             entry,
             offset,
             lzs_section,
-            battle_slot,
-            monster_id,
-            clut,
-            &output,
-        ),
+        } => texture::cmd_tim_palette_map(&input, entry, offset, lzs_section),
         Cmd::TimReplace {
             input,
             entry,
@@ -247,6 +259,11 @@ fn main() -> Result<()> {
                 language.as_deref(),
                 baseline.as_deref(),
             ),
+            cli::TranslateCmd::Coverage {
+                input,
+                json,
+                verbose,
+            } => translate::cmd_coverage(&input, json, verbose),
             cli::TranslateCmd::FitReport { from, target } => {
                 translate::cmd_fit_report(&from, &target)
             }

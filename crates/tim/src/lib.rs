@@ -30,6 +30,7 @@
 use anyhow::{Context, Result, bail};
 
 pub mod encode;
+pub mod multi_palette;
 pub mod vram;
 pub use vram::{VRAM_HEIGHT, VRAM_PIXELS, VRAM_WIDTH, Vram};
 
@@ -366,6 +367,35 @@ fn check_vram_bounds(which: &str, fb_x: u16, fb_y: u16, w: u16, h: u16) -> Resul
 /// `clut_idx` selects which CLUT row to use for indexed modes. If the TIM has
 /// no CLUT (16/24 bpp), `clut_idx` is ignored.
 pub fn decode_rgba8(tim: &Tim, clut_idx: usize) -> Result<Vec<u8>> {
+    let palette: &[u16] = match tim.mode {
+        PixelMode::Bpp4 | PixelMode::Bpp8 => {
+            let clut = tim
+                .clut
+                .as_ref()
+                .with_context(|| format!("{:?} TIM requires a CLUT", tim.mode))?;
+            clut.palette(tim.mode, clut_idx).with_context(|| {
+                format!(
+                    "palette {} out of range (entries={})",
+                    clut_idx,
+                    clut.entries.len()
+                )
+            })?
+        }
+        _ => &[],
+    };
+    decode_rgba8_with_palette(tim, palette)
+}
+
+/// Decode a TIM's pixels through a caller-supplied palette instead of one
+/// of the TIM's own CLUT rows.
+///
+/// This is the decode a texture needs when the palette the game actually
+/// draws it with is **not** in its own file: the CLUT cell a primitive (or a
+/// UI sprite record) names lives in VRAM, and VRAM holds whatever the last
+/// upload to that cell left there - often another TIM's CLUT. `palette` must
+/// carry at least 16 entries for a 4bpp TIM and 256 for an 8bpp one; it is
+/// ignored for 16/24bpp.
+pub fn decode_rgba8_with_palette(tim: &Tim, palette: &[u16]) -> Result<Vec<u8>> {
     let w = tim.pixel_width();
     let h = tim.pixel_height();
     // `w`/`h` derive from the public `fb_w`/`h` header fields, which a caller
@@ -378,20 +408,22 @@ pub fn decode_rgba8(tim: &Tim, clut_idx: usize) -> Result<Vec<u8>> {
         .checked_mul(h)
         .and_then(|p| p.checked_mul(4))
         .context("TIM output dimensions overflow")?;
+    // Every mode's rows are `fb_w` 16-bit VRAM words long; 24bpp in
+    // particular packs 1.5 words per pixel, so its row stride is NOT
+    // `w * 3` when `fb_w * 2` isn't a multiple of 3.
+    let row_bytes = tim.image.fb_w as usize * 2;
     let mut out = Vec::with_capacity(out_len);
     match tim.mode {
         PixelMode::Bpp4 => {
-            let clut = tim.clut.as_ref().context("4bpp TIM requires a CLUT")?;
-            let palette = clut.palette(tim.mode, clut_idx).with_context(|| {
-                format!(
-                    "palette {} out of range (entries={})",
-                    clut_idx,
-                    clut.entries.len()
-                )
-            })?;
+            if palette.len() < 16 {
+                bail!(
+                    "4bpp decode needs a 16-entry palette, got {}",
+                    palette.len()
+                );
+            }
             for row in 0..h {
                 for col in 0..w {
-                    let byte_off = row * (tim.image.fb_w as usize * 2) + col / 2;
+                    let byte_off = row * row_bytes + col / 2;
                     let byte = *tim.image.data.get(byte_off).with_context(|| {
                         format!(
                             "4bpp pixel ({},{}) byte offset {} past image data ({})",
@@ -401,30 +433,26 @@ pub fn decode_rgba8(tim: &Tim, clut_idx: usize) -> Result<Vec<u8>> {
                             tim.image.data.len()
                         )
                     })?;
+                    // Low nibble is the LEFT texel (PSX GPU order).
                     let nibble = if col & 1 == 0 {
                         byte & 0x0F
                     } else {
                         (byte >> 4) & 0x0F
                     };
-                    let entry = *palette.get(nibble as usize).with_context(|| {
-                        format!("nibble {} >= palette len {}", nibble, palette.len())
-                    })?;
-                    out.extend_from_slice(&bgr555_to_rgba8(entry));
+                    out.extend_from_slice(&bgr555_to_rgba8(palette[nibble as usize]));
                 }
             }
         }
         PixelMode::Bpp8 => {
-            let clut = tim.clut.as_ref().context("8bpp TIM requires a CLUT")?;
-            let palette = clut.palette(tim.mode, clut_idx).with_context(|| {
-                format!(
-                    "palette {} out of range (entries={})",
-                    clut_idx,
-                    clut.entries.len()
-                )
-            })?;
+            if palette.len() < 256 {
+                bail!(
+                    "8bpp decode needs a 256-entry palette, got {}",
+                    palette.len()
+                );
+            }
             for row in 0..h {
                 for col in 0..w {
-                    let byte_off = row * (tim.image.fb_w as usize * 2) + col;
+                    let byte_off = row * row_bytes + col;
                     let idx = *tim.image.data.get(byte_off).with_context(|| {
                         format!(
                             "8bpp pixel ({},{}) byte offset {} past image data ({})",
@@ -434,17 +462,14 @@ pub fn decode_rgba8(tim: &Tim, clut_idx: usize) -> Result<Vec<u8>> {
                             tim.image.data.len()
                         )
                     })? as usize;
-                    let entry = *palette.get(idx).with_context(|| {
-                        format!("index {} >= palette len {}", idx, palette.len())
-                    })?;
-                    out.extend_from_slice(&bgr555_to_rgba8(entry));
+                    out.extend_from_slice(&bgr555_to_rgba8(palette[idx]));
                 }
             }
         }
         PixelMode::Bpp16 => {
             for row in 0..h {
                 for col in 0..w {
-                    let byte_off = (row * w + col) * 2;
+                    let byte_off = row * row_bytes + col * 2;
                     if byte_off + 2 > tim.image.data.len() {
                         bail!("16bpp pixel ({},{}) out of range", row, col);
                     }
@@ -456,7 +481,7 @@ pub fn decode_rgba8(tim: &Tim, clut_idx: usize) -> Result<Vec<u8>> {
         PixelMode::Bpp24 => {
             for row in 0..h {
                 for col in 0..w {
-                    let byte_off = (row * w + col) * 3;
+                    let byte_off = row * row_bytes + col * 3;
                     if byte_off + 3 > tim.image.data.len() {
                         bail!("24bpp pixel ({},{}) out of range", row, col);
                     }
@@ -773,6 +798,45 @@ mod tests {
         // 16bpp: w*h*4 = 65535*65535*4 fits usize on 64-bit, so this returns the
         // short-data Err; the point is no panic on the reserve.
         assert!(decode_rgba8(&tim, 0).is_err());
+    }
+
+    #[test]
+    fn external_palette_decode_matches_own_palette_and_overrides_it() {
+        let buf = build_tim_4bpp();
+        let tim = parse(&buf).unwrap();
+        let own = tim.clut.as_ref().unwrap().entries.clone();
+        assert_eq!(
+            decode_rgba8_with_palette(&tim, &own).unwrap(),
+            decode_rgba8(&tim, 0).unwrap()
+        );
+        // A palette from elsewhere (e.g. a VRAM cell another TIM uploaded):
+        // index i -> pure green of intensity i.
+        let other: Vec<u16> = (0..16u16).map(|i| (i * 2) << 5).collect();
+        let rgba = decode_rgba8_with_palette(&tim, &other).unwrap();
+        // pixel (0,1) = index 1 -> g5 = 2.
+        assert_eq!(&rgba[4..8], &[0, 16, 0, 255]);
+        // Too-short palettes are an error, not a panic.
+        assert!(decode_rgba8_with_palette(&tim, &other[..8]).is_err());
+    }
+
+    #[test]
+    fn decode_24bpp_uses_the_vram_word_row_stride() {
+        // fb_w = 2 words = 4 bytes per row -> w = 2*2/3 = 1 pixel, with one
+        // byte of row padding. A `w * 3` stride would read row 1 from byte 3.
+        let tim = Tim {
+            flags: 3,
+            mode: PixelMode::Bpp24,
+            clut: None,
+            image: Image {
+                fb_x: 0,
+                fb_y: 0,
+                fb_w: 2,
+                h: 2,
+                data: vec![1, 2, 3, 0xEE, 4, 5, 6, 0xEE],
+            },
+        };
+        let rgba = decode_rgba8(&tim, 0).unwrap();
+        assert_eq!(rgba, vec![1, 2, 3, 255, 4, 5, 6, 255]);
     }
 
     #[test]

@@ -137,6 +137,20 @@ impl World {
         moved | copied | ambient | clut
     }
 
+    /// Whether a host advances its field-NPC clip players this tick.
+    ///
+    /// The clip players are host-side (each host keys its own pose cache or
+    /// JSON on them), but *when* they run is a world decision: only while the
+    /// field owns the frame. Field actors are not ticked under a battle, a
+    /// minigame, the world map or a movie - the field overlay that steps them
+    /// is not the one running - so an NPC walks back into the field on the
+    /// clip frame it left. The native window already held its players still
+    /// off the field while the page ran them in every mode, so an NPC came
+    /// back from a fight on a different frame per host.
+    pub fn field_npc_clips_advance(&self) -> bool {
+        self.mode == SceneMode::Field
+    }
+
     /// Drain this tick's ANIMATE cues, in every scene mode.
     ///
     /// The **player** half is applied here: a settle pick that binds from the
@@ -210,6 +224,23 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn npc_clips_run_on_the_field_only() {
+        let mut w = World::new();
+        w.mode = SceneMode::Field;
+        assert!(w.field_npc_clips_advance());
+        for mode in [
+            SceneMode::Battle,
+            SceneMode::WorldMap,
+            SceneMode::Cutscene,
+            SceneMode::Dance,
+            SceneMode::Title,
+        ] {
+            w.mode = mode;
+            assert!(!w.field_npc_clips_advance(), "{mode:?}");
+        }
+    }
 
     #[test]
     fn cue_drain_empties_both_queues_off_the_field_too() {

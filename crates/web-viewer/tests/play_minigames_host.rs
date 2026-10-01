@@ -180,23 +180,19 @@ fn arena_door_warp_draws_the_muscle_dome_and_start_leaves() {
     let g = game_json(&rt);
     let monster = g["muscle"]["monster_id"]
         .as_u64()
-        .expect("the PROT 0977 ladder must stage a monster for the opened contest")
-        as u16;
-    let char_slot = g["muscle"]["char_slot"].as_u64().unwrap_or(0) as u32;
+        .expect("the PROT 0977 ladder must stage a monster for the opened contest");
+    // The 3D arena is the engine surface the native window draws too
+    // (`MuscleDomeSurface::frame`): it seats the ladder's monster, the lead's
+    // battle form and the PROT 1225 arena.
     assert!(
-        rt.play_mg_muscle_scene_ready(monster, char_slot),
-        "monster {monster:#x} + player file {char_slot} must build a scene"
+        rt.play_mg_muscle_scene_frame() >= 0,
+        "monster {monster:#x} + the lead's player file must build the dome surface"
     );
-    assert!(!rt.play_mg_muscle_fighter_positions(char_slot).is_empty());
-    assert!(!rt.play_mg_muscle_monster_positions(monster).is_empty());
-    assert_eq!(
-        rt.play_mg_muscle_vram(monster, char_slot).len(),
-        1024 * 512 * 2
-    );
-    assert!(
-        !rt.play_mg_muscle_arena_positions().is_empty(),
-        "PROT 1225 arena"
-    );
+    let pos = rt.play_mg_muscle_scene_positions();
+    assert!(!pos.is_empty());
+    assert_eq!(rt.play_mg_muscle_scene_flat_rgba().len(), pos.len() / 3 * 4);
+    assert_eq!(rt.play_mg_muscle_scene_vram().len(), 1024 * 512 * 2);
+    assert_eq!(rt.play_mg_muscle_scene_vp(4.0 / 3.0).len(), 16);
     let st: serde_json::Value =
         serde_json::from_str(&rt.play_mg_muscle_state_json()).expect("state json");
     assert_eq!(st["live"].as_bool(), Some(true));
@@ -315,12 +311,27 @@ fn dance_door_warp_draws_the_hall_and_start_leaves() {
         "the dance status readout arms once the count-in clears"
     );
     assert_hud_rows(&mut rt, "dance");
+    // With the hall's HUD page resident the score boxes / digits / `Lv.`
+    // gauges draw as retail's own quads in the screen-prim pass.
+    assert!(
+        rt.play_screen_prim_count() > 0,
+        "the dance HUD's retail quads reach the prim pass"
+    );
     assert!(
         rt.play_mg_dance_body_ready(),
         "the dance cast + choreography must decode"
     );
-    assert!(rt.play_mg_dance_body_count() >= 1);
-    assert!(!rt.play_mg_dance_body_positions(0).is_empty());
+    // The run's floor poses through the engine cast surface: a live
+    // generation, and positions that move frame to frame.
+    let scene_gen = rt.play_mg_dance_scene_frame();
+    assert!(
+        scene_gen >= 0,
+        "the dance cast surface poses the run's floor"
+    );
+    let pos_a = rt.play_mg_dance_scene_positions();
+    assert!(!pos_a.is_empty());
+    assert_eq!(pos_a.len() / 3 * 2, rt.play_mg_dance_scene_uvs().len());
+    assert!(!rt.play_mg_dance_scene_indices().is_empty());
     assert!(
         !rt.play_mg_dance_env_positions().is_empty(),
         "the other7 hall must bake"
@@ -333,6 +344,16 @@ fn dance_door_warp_draws_the_hall_and_start_leaves() {
     tick(&mut rt, 30);
     let vp_b = rt.play_mg_dance_venue_vp(4.0 / 3.0);
     assert_ne!(vp_a, vp_b, "the dance camera holds still");
+    assert_eq!(
+        rt.play_mg_dance_scene_frame(),
+        scene_gen,
+        "a pose is not a rebuild"
+    );
+    assert_ne!(
+        pos_a,
+        rt.play_mg_dance_scene_positions(),
+        "the dancers' clips run"
+    );
     let st: serde_json::Value =
         serde_json::from_str(&rt.play_mg_dance_state_json()).expect("state json");
     assert_eq!(st["live"].as_bool(), Some(true));

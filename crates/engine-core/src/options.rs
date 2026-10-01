@@ -268,6 +268,20 @@ impl OptionsState {
         world.toggles.view_window_crop = self.retail_view_window;
     }
 
+    /// Step the follow-camera distance preset one place along its cycle and
+    /// hand the new preset back for the host to put on its camera, then
+    /// persist.
+    ///
+    /// The option is the source of truth: both hosts re-assert
+    /// [`Self::camera_distance`] onto their camera whenever options apply, so
+    /// a cycle that wrote only the camera was undone by the next apply and
+    /// never reached the store. The native window's `T` and the page's
+    /// camera-distance control both step through here.
+    pub fn cycle_camera_distance(&mut self) -> crate::camera::CameraDistance {
+        self.camera_distance = self.camera_distance.cycle();
+        self.camera_distance
+    }
+
     /// Load from a TOML file, falling back to [`Default`] if the file is
     /// absent or unparseable.
     pub fn load_or_default(path: &Path) -> Self {
@@ -711,6 +725,26 @@ pub fn options_popup_content_rect(
     (popup_x, y, popup_w, h)
 }
 
+/// The Key Config sub-screen's model: one `(button label, bound key)` per
+/// row, the cursor, and whether the session waits for a keypress.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeyRebindModel {
+    pub rows: Vec<(String, String)>,
+    pub cursor: u8,
+    pub awaiting: bool,
+}
+
+/// [`OptionsSession::screen_model`]'s result.
+#[derive(Debug, Clone)]
+pub struct OptionsScreenModel {
+    pub rows: Vec<OptionsRowView>,
+    pub cursor: u8,
+    /// Sum of the row advances above the cursor - where the hand sits.
+    pub row_y_off: i32,
+    pub popup: Option<OptionsPopup>,
+    pub rebind: Option<KeyRebindModel>,
+}
+
 #[derive(Debug, Clone)]
 pub struct OptionsSession {
     state: OptionsState,
@@ -826,6 +860,36 @@ impl OptionsSession {
             choices: setting.choices(),
             cursor: choice,
         })
+    }
+
+    /// The Options screen's model as both play hosts draw it: the display
+    /// rows with their live values, the cursor and the hand's offset (the sum
+    /// of the row advances above the cursor), the value popup, and the Key
+    /// Config sub-screen's `(button, key)` rows when it is open. A host only
+    /// borrows this into the renderer's view types and places the popup.
+    pub fn screen_model(&self) -> OptionsScreenModel {
+        let rows = self.state.rows_for(self.key_config_armed());
+        let cursor = self.cursor();
+        let row_y_off = rows.iter().take(cursor as usize).map(|r| r.advance).sum();
+        let rebind = self.key_rebind().map(|k| KeyRebindModel {
+            rows: k
+                .rows()
+                .iter()
+                .map(|r| (r.button.name().to_string(), r.key.clone()))
+                .collect(),
+            cursor: k.cursor(),
+            awaiting: matches!(
+                k.phase(),
+                crate::key_rebind::KeyRebindPhase::AwaitingKey { .. }
+            ),
+        });
+        OptionsScreenModel {
+            rows,
+            cursor,
+            row_y_off,
+            popup: self.popup(),
+            rebind,
+        }
     }
 
     /// Move `cursor` by `dir`, skipping rows the cursor cannot land on (the
@@ -1014,6 +1078,20 @@ impl OptionsState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The cycle steps the stored option - the value an options apply
+    /// re-asserts onto the camera - so a host that puts the returned preset
+    /// on its camera and persists agrees with the next apply.
+    #[test]
+    fn camera_distance_cycle_steps_the_stored_option() {
+        use crate::camera::CameraDistance;
+        let mut o = OptionsState::default();
+        assert_eq!(o.camera_distance, CameraDistance::Far);
+        assert_eq!(o.cycle_camera_distance(), CameraDistance::Farther);
+        assert_eq!(o.camera_distance, CameraDistance::Farther);
+        assert_eq!(o.cycle_camera_distance(), CameraDistance::Retail);
+        assert_eq!(o.cycle_camera_distance(), CameraDistance::Far);
+    }
 
     /// Retail's sub-area static-object windowing is the play hosts' default:
     /// the props its region box leaves out are other rooms' scenery (retona's

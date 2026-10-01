@@ -47,6 +47,8 @@ impl BattleCamera {
             action,
             action_yaw: 0,
             last_action_state: 0,
+            acting_body: None,
+            last_active_commits: None,
             strike_style_zeroed: false,
             shake: ShakeState {
                 seed: SHAKE_SEED,
@@ -138,6 +140,23 @@ impl BattleCamera {
     /// PsyQ `rand()` stream as the attack camera's column flip; retail draws
     /// both from the process-wide generator, so no particular sequence is
     /// being reproduced.
+    /// The staged-animation commit's counter reset: when the active actor
+    /// commits a clip, `FUN_8004AD80` zeroes `ctx[+0x26E]` (the ramp),
+    /// `ctx[+0x87C]` (the accumulator) and `ctx[+0x26F]` (the latch)
+    /// (`0x8004BF50..0x8004BF78`). `ctx[+0x270]` (the death ramp) is not
+    /// touched.
+    ///
+    /// REF: FUN_8004AD80
+    pub fn observe_active_commits(&mut self, commits: u32) {
+        let prev = self.last_active_commits.replace(commits);
+        if prev.is_some_and(|p| p != commits) {
+            let c = &mut self.attack.ctx;
+            c.ramp = 0;
+            c.accum = 0;
+            c.latch = 0;
+        }
+    }
+
     pub fn observe_action_state(&mut self, state: u8) {
         let prev = self.last_action_state;
         if state == prev {
@@ -290,6 +309,32 @@ impl BattleCamera {
     /// framing, mid-glide" from "action close-up, settled".
     pub fn phase(&self) -> BattleCamPhase {
         self.phase
+    }
+
+    /// Phase-align the idle orbit's clock: set the free-running azimuth to
+    /// `yaw` (12-bit units). Applies only where the orbit owns yaw - the
+    /// [`BattleCamPhase::Menu`] far framing with no yaw glide in flight - and
+    /// returns whether it did.
+    ///
+    /// The orbit is a clock (`-4` per camera step from whatever azimuth the
+    /// field left), so a comparison against one retail instant reads the
+    /// capture's timing unless the two clocks are aligned; this is the
+    /// capture harness's handle for that, the camera twin of the field HUD
+    /// countdown hold. Nothing in play calls it.
+    pub fn align_orbit_yaw(&mut self, yaw: f32) -> bool {
+        let yaw_gliding = self.glides.front().is_some_and(|g| g.yaw_glides);
+        if self.phase != BattleCamPhase::Menu || yaw_gliding {
+            return false;
+        }
+        self.pose.yaw = yaw.rem_euclid(4096.0);
+        true
+    }
+
+    /// Retail's `ctx[+0x87C]` - the close-up accumulator the framing
+    /// prologues advance by `8` a display frame and the active actor's clip
+    /// commit zeroes ([`Self::observe_active_commits`]).
+    pub fn close_up_accum(&self) -> u32 {
+        self.attack.ctx.accum
     }
 
     /// Current camera pose (12-bit angle units + eye-space TR), **with** the
@@ -703,7 +748,8 @@ impl BattleCamera {
             // calls `FUN_801D5854`, so case 6 does not run.
             if SUMMON_CAST_STATES.contains(&self.last_action_state) {
                 let c = self.attack.ctx;
-                let (target, raw_z) = summon_cast_framing(self.actor, c.accum, c.ramp);
+                let (target, raw_z) =
+                    summon_cast_framing(self.actor, self.acting_body, c.accum, c.ramp);
                 let mut from = self.pose;
                 let steps = (SUMMON_CAST_TWEEN_FRAMES / 2).max(1);
                 let g = Glide::linear(&mut from, target, raw_z, steps, true);

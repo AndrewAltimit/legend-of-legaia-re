@@ -468,8 +468,10 @@ pub struct DancerClipFrame {
     /// What [`dance_clip_driver_gate`] resolved from `+0x5C` / `+0x10`: the
     /// shared clip driver runs for this actor this frame.
     pub clip_driver: bool,
-    /// The bound clip asked for a translucent draw (anim word bit `0x200`).
-    pub translucent: bool,
+    /// The bound clip indexes the party clip bank (anim word bit `0x200`,
+    /// actor flag `0x01000000` - see
+    /// [`crate::minigame_actor::FLAG_PARTY_CLIP_BANK`]).
+    pub party_bank: bool,
 }
 
 /// One sprite part's resolved per-frame draw work.

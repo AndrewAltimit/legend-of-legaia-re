@@ -1268,9 +1268,10 @@ the id space the cross-context (`0x80`-bit) ops resolve through `FUN_8003C83C`.
 The opdeene timeline drives them: after the camera-configure opening it **halt-acquires**
 channels `0x05..0x0F` (a sweep of `4C 85` freezes = op `0x4C` n8 sub-5 against each target),
 then pokes them beat by beat - a `4C 45` (n4 sub-5) parameter write, a `4B` ANIMATE cue, an
-`A3`/`23` MoveTo. Each poked channel's own placement script responds by playing its animation /
-walking to its mark, then signalling completion via a context flag the timeline waits on
-(`B3 <id> <bit>` = cross-context `CFLAG_TST`).
+`A3`/`23` MoveTo. The poke itself does the work - the clip plays on the actor's anim clock and
+the walk kernel moves it - and the timeline waits on a context flag (`B3 <id> <bit>` =
+cross-context `CFLAG_TST`). The channel's own placement script does not respond: it runs only
+while a touch engages it.
 
 The engine mirrors this in
 [`legaia_engine_core::field_channels`](../../crates/engine-core/src/field_channels.rs):
@@ -1278,11 +1279,13 @@ The engine mirrors this in
 [`FieldChannel`](../../crates/engine-core/src/field_channels.rs) per placement (with the retail
 script-id rule), spawned alongside a cutscene timeline in
 [`World::install_cutscene_timeline_record`](../../crates/engine-core/src/world.rs).
-[`World::step_field_channels`](../../crates/engine-core/src/world.rs) runs each live channel one
-frame-slice per tick (mirroring `FUN_80039B7C`'s per-actor loop: ops until a yield, a park, or a
-`0x21` NOP - the retail frame-pacing point, which is why placement idle loops are
-`21 21 26 FE FF`), and the timeline's cross-context pokes run against the resolved channel context
-(the acquirer clears the target's halt bit - the poke from the owner is the resume signal).
+A channel's own script runs only in the load-frame spawn pre-run
+(`World::pre_run_field_channel_prologues`, one `FUN_80039B7C` slice: ops until a yield, a park, or
+a `0x21` NOP). After that it stays parked, because retail steps a placement context only while a
+touch holds its `+0x10 & 0x100` up and a poke does not raise it (see
+[`script-vm.md`](script-vm.md#engagement-and-the-system-script)). The timeline's cross-context
+pokes run against the resolved channel context (the acquirer clears the target's halt bit - the
+poke from the owner is the resume signal).
 Scripted moves write through to `World::npcs.positions` so the field render + interact probes
 follow, and `0x4B` ANIMATE cues land in `World::npcs.anim_cues` keyed by placement.
 The play-window render drains those cues each frame and **re-targets the NPC's clip player** to
@@ -1317,12 +1320,11 @@ need `≥ 5`).
 `CFLAG_TST` (`B3 <id> <bit>` = op `0x33` with the `0x80` bit, targeting a spawned channel's
 `ctx[+0x50]` id and testing `ctx.flags & (1 << bit)`) is the beat-completion wait: retail's
 `4C 85` acquire freezes the channel, a poke drives its beat, `B2 <id> 0A` resumes it, and the
-timeline **halts** at the `B3` until the channel raises its completion bit (its own placement
-script runs `0x31 CFLAG_SET` when the move/anim finishes). `step_cutscene_timeline` models that
+timeline **halts** at the `B3` until the awaited bit is set. `step_cutscene_timeline` models that
 handshake: on a failing cross-context `0x33` it **PARKS** ([`CutsceneTimeline::channel_wait`]) -
 holding the PC on the flag-test op and, each subsequent tick, re-testing the awaited channel's
-bit, resuming past the op only once it is set (`step_field_channels` steps the real channel scripts
-each tick, so a channel whose beat completes raises the bit and the park clears). The park is
+bit, resuming past the op only once it is set (a later poke or the walk kernel landing the leg raises
+it; the channel's own script does not run). The park is
 bounded by `CHANNEL_WAIT_PARK_TIMEOUT`: a channel our port cannot advance to its flag-set falls
 back to the by-width step-past (the prior behaviour) so the prologue never stalls. Bit 10 (`0x400`,
 the halt/busy bit the acquire sweep toggles) is a suspension *verify* (`B3 <id> 0A`), not a

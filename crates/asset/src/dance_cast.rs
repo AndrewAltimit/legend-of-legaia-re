@@ -44,7 +44,9 @@
 //!   Circle direction chain closed on difficulty lane `lane`),
 //! * pair `8 + lane` - **on-beat step** (the timing-button press).
 //!
-//! Anim word bit `0x200` sets the actor translucent for that clip; the rate
+//! Anim word bit `0x200` routes the clip to the resident party clip bank (actor
+//! flag `0x01000000`, read by the clip selector `FUN_800204F8`) - no clip on
+//! the disc sets it; the rate
 //! word is the cursor step in the shared clip driver's 1/16-frame units
 //! (`FUN_800204F8`; rate 8 = half a frame per tick).
 //!
@@ -101,8 +103,13 @@ pub struct DanceClip {
     /// Placement-space anim id into the scene MOVE bundle (`record = id - 1`;
     /// `0` = none).
     pub anim_id: u16,
-    /// Actor drawn translucent while this clip plays (anim word bit `0x200`).
-    pub translucent: bool,
+    /// The clip indexes the resident **party clip bank** (anim word bit
+    /// `0x200`). `FUN_801d1358` folds the bit into actor flag `0x01000000`,
+    /// and the clip selector `FUN_800204F8` reads that flag to pick the bank
+    /// the id indexes: set, `_DAT_8007B75C` (PROT 0874 section 1, the party
+    /// locomotion bundle); clear, the scene's own bank (`0x80020530..0x80020560`).
+    /// It is not a draw mode. No descriptor clip on the disc carries it.
+    pub party_bank: bool,
     /// Cursor step in 1/16-frame units per tick (`FUN_800204F8`).
     pub rate: u16,
 }
@@ -111,7 +118,7 @@ impl DanceClip {
     fn from_pair(anim_word: u32, rate_word: u32) -> Self {
         Self {
             anim_id: (anim_word & 0x1FF) as u16,
-            translucent: anim_word & 0x200 != 0,
+            party_bank: anim_word & 0x200 != 0,
             rate: rate_word as u16,
         }
     }

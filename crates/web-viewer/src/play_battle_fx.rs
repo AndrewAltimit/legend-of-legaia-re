@@ -1106,7 +1106,7 @@ impl LegaiaRuntime {
         let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.as_ref()) else {
             return Vec::new();
         };
-        let frame = host.world.clock.display_frames as f32;
+        let frame = host.world.clock.display_frames;
         let mut out = Vec::with_capacity(br.actor_slots().len() * 6);
         for actor_idx in br.actor_slots() {
             let b = host.world.actors.get(actor_idx).map(|a| &a.battle);
@@ -1125,28 +1125,20 @@ impl LegaiaRuntime {
             // black silhouette; its zero-lanes end is the draw gate in
             // `play_battle_actor_transforms`.
             if let Some(b) = b
-                && !matches!(
-                    b.render_flag,
-                    ba::CURSOR_FLAG_SELECTED | ba::CURSOR_FLAG_DIMMED
-                )
                 && let Some(p) = self.battle_draw_plan(actor_idx)
-                && (b.render_flag != 2
-                    || legaia_engine_core::battle_body_blend::draw_colour_semi_mode(p.draw_colour)
-                        .is_some())
+                && p.tint_cue_applies(b.render_flag)
             {
                 let far = p.cue_far();
                 out.extend_from_slice(&[1.0, far[0], far[1], far[2], p.cue_ir0(), 1.0]);
                 continue;
             }
-            match b.map(|b| b.render_flag) {
-                Some(ba::CURSOR_FLAG_SELECTED) => {
-                    let pulse = 0.30 + 0.20 * (frame * 0.25).sin();
-                    out.extend_from_slice(&[1.0, 1.0, 1.0, 1.0, pulse, 1.0]);
+            // The cursor's cue is the engine's (`battle_action::cursor_cue`),
+            // shared with the native draw pass.
+            match b.and_then(|b| ba::cursor_cue(b.render_flag, frame)) {
+                Some((far, max_ir0)) => {
+                    out.extend_from_slice(&[1.0, far[0], far[1], far[2], max_ir0, 1.0]);
                 }
-                Some(ba::CURSOR_FLAG_DIMMED) => {
-                    out.extend_from_slice(&[1.0, 0.0, 0.0, 0.0, 0.55, 1.0]);
-                }
-                _ => out.extend_from_slice(&[0.0, 0.0, 0.0, 0.0, 0.0, 1.0]),
+                None => out.extend_from_slice(&[0.0, 0.0, 0.0, 0.0, 0.0, 1.0]),
             }
         }
         out

@@ -64,6 +64,15 @@ const CAM_EYE: u32 = 0x8008_40B8;
 /// the view orbits, stored **negated** (`engine-core::camera`, axes 6 / 8).
 const CAM_FOCUS: u32 = 0x8008_9118;
 const BGM_ID: u32 = 0x8007_BAC8;
+/// The field BGM sound-source slot (`docs/subsystems/audio.md`).
+const BGM_SLOT: u32 = 0x8007_052C;
+/// `0x8007B708`: `1` after the slot's replay, `0` after a stop / pause.
+const BGM_PLAYING: u32 = 0x8007_B708;
+/// `0x80084540`, the **loaded** scene's raw CDNAME define. The label at
+/// `0x8007050C` is written by the scene-change packet ahead of the load, so
+/// between a door and the next field init the two disagree and this one
+/// names the scene still running (`docs/tooling/retail-compare.md`).
+const LOADED_SCENE_DEFINE: u32 = 0x8008_4540;
 /// The ambient-particle (fog pool) master gate, raised / cleared only by
 /// field-VM op `0x4C` nibble 3 (`docs/subsystems/field-ambient-fx.md`).
 const FOG_GATE: u32 = 0x8007_B854;
@@ -194,12 +203,24 @@ pub struct CameraObs {
 /// Everything read off one retail state.
 pub struct RetailObs {
     pub scene: String,
+    /// `0x80084540`: the raw CDNAME define of the scene actually loaded.
+    pub loaded_define: u16,
+    /// The label a scene-change packet had already written when the state
+    /// was taken, when it names a scene other than the loaded one
+    /// ([`RetailObs::settle_on_loaded_scene`]).
+    pub pending_scene: Option<String>,
     pub game_mode: u8,
     pub class: StateClass,
     /// `(X, footing, Z)`.
     pub player: Option<[i16; 3]>,
     pub camera: CameraObs,
     pub bgm_id: u16,
+    /// Whether the field BGM slot `0x8007052C` is attached and at a non-zero
+    /// volume: the playing word `0x8007B708` (raised by the replay primitive
+    /// `FUN_80026478`, cleared by the stop / pause / timed-release arms) and
+    /// the slot's `SsSeqSetVol` word `+0x6` (`FUN_8002657C`, zeroed by the
+    /// same arms and by the battle intro's field-voice stop).
+    pub bgm_sounding: bool,
     /// `_DAT_8007B854 != 0`.
     pub fog_gate: bool,
     /// The live game-state window lifted as a save.
@@ -217,6 +238,9 @@ pub struct RetailObs {
     /// The pause-menu screen a menu-class state shows; `Err` names why the
     /// state is not one the seed can drive to.
     pub menu: Option<std::result::Result<RetailMenu, String>>,
+    /// The field-VM contexts the state holds
+    /// ([`crate::retail_compare_script`]).
+    pub scripts: crate::retail_compare_script::RetailScripts,
 }
 
 /// A menu-class capture the seed can reproduce: a pause-menu screen, named
@@ -315,11 +339,15 @@ impl RetailObs {
         });
         Self {
             scene,
+            loaded_define: game_anchors::u16_at(ram, LOADED_SCENE_DEFINE),
+            pending_scene: None,
             game_mode,
             class,
             player,
             camera,
             bgm_id,
+            bgm_sounding: game_anchors::u16_at(ram, BGM_PLAYING) != 0
+                && game_anchors::u16_at(ram, BGM_SLOT + 6) != 0,
             fog_gate,
             save,
             hud_countdown: (class == StateClass::Field).then(|| rd16(ram, HUD_COUNTDOWN)),
@@ -327,6 +355,42 @@ impl RetailObs {
             battle: (class == StateClass::Battle)
                 .then(|| crate::retail_compare_battle::RetailBattle::from_ram(ram)),
             menu,
+            scripts: crate::retail_compare_script::RetailScripts::from_ram(ram),
+        }
+    }
+}
+
+impl RetailObs {
+    /// Name the state by the scene it is **running**, not the one a door has
+    /// queued. A walked crossing writes the destination label to
+    /// `0x8007050C` with the scene-change packet, frames before the field
+    /// init loads the block and stores its define to `0x80084540`; a
+    /// field-run capture in that window shows the outgoing scene (its frame,
+    /// its camera, its player, its track) under the incoming label. Scored
+    /// under the label, every one of those channels compares the outgoing
+    /// scene's retail values against a fresh entry of the incoming one.
+    ///
+    /// Only field-run states are re-named: a mode-`0x02` capture is the load
+    /// itself, and the title / battle / menu modes hold other words there.
+    pub fn settle_on_loaded_scene(&mut self, cdname: &legaia_prot::cdname::IndexMap) {
+        if !matches!(self.class, StateClass::Field | StateClass::WorldMap) {
+            return;
+        }
+        let label_define = cdname
+            .iter()
+            .find(|(_, name)| **name == self.scene)
+            .map(|(&define, _)| define);
+        let Some(loaded) = cdname.get(&u32::from(self.loaded_define)) else {
+            return;
+        };
+        if label_define == Some(u32::from(self.loaded_define)) || *loaded == self.scene {
+            return;
+        }
+        let pending = std::mem::replace(&mut self.scene, loaded.clone());
+        self.pending_scene = Some(pending);
+        self.class = StateClass::classify(self.game_mode, &self.scene, self.player.is_some());
+        if self.class != StateClass::Field {
+            self.hud_countdown = None;
         }
     }
 }
@@ -366,6 +430,8 @@ pub struct EngineObs {
     /// ([`legaia_engine_core::scene::SceneHost::bgm_track_word`]), else the
     /// last track the director started.
     pub bgm_id: Option<u16>,
+    /// A control op stopped or paused the track after its last start.
+    pub bgm_held: bool,
     /// The engine's fog-pool gate (`World::fog.gate`).
     pub fog_gate: bool,
     pub save: legaia_save::SaveFile,
@@ -373,28 +439,42 @@ pub struct EngineObs {
     /// (the open row's retail id, `0x01` on the root list, `0x13` for the
     /// Equip candidate step), `None` when no menu opened.
     pub menu_subscreen: Option<u8>,
+    /// On a capture inside a running script: the phase gate's outcome.
+    pub script: Option<ScriptPhase>,
 }
 
 /// Records which track the field VM starts.
 #[derive(Default)]
 pub(crate) struct RecordingDirector {
     pub(crate) last: Option<u16>,
+    /// A control op has stopped or paused the track since the last start.
+    pub(crate) held: bool,
 }
 
 impl BgmDirector for RecordingDirector {
     fn start(&mut self, bgm_id: u16, _seq: &[u8]) {
         self.last = Some(bgm_id);
+        self.held = false;
     }
     fn start_owned_vab(&mut self, bgm_id: u16, _entry: &[u8]) {
         self.last = Some(bgm_id);
+        self.held = false;
     }
     // The comparand is the id the scripts selected (retail's track-select
     // word is written by the op-0x35 start arms). A control op starts no
-    // track, so each one is overridden on purpose and keeps `last`.
-    fn pause(&mut self) {}
-    fn resume(&mut self) {}
-    fn stop(&mut self) {}
-    fn unhalt_pause(&mut self) {}
+    // track, so it keeps `last` and only moves `held`.
+    fn pause(&mut self) {
+        self.held = true;
+    }
+    fn resume(&mut self) {
+        self.held = false;
+    }
+    fn stop(&mut self) {
+        self.held = true;
+    }
+    fn unhalt_pause(&mut self) {
+        self.held = false;
+    }
 }
 
 /// Seed the engine from a retail state and sample it after [`SETTLE_TICKS`].
@@ -453,14 +533,87 @@ pub fn run_engine_with(
     {
         session.camera.zone.arm_arrival();
     }
-    for _ in 0..SETTLE_TICKS {
+    // A capture inside a running script is compared at the script's phase,
+    // not after a fixed window ([`crate::retail_compare_script::ScriptGate`]):
+    // the session runs until its own context for the record holds retail's
+    // PC and wait, up to a deadline. The settle-window sample is kept as the
+    // fallback for a gate the engine never meets.
+    let gate = (retail.menu.is_none()
+        && matches!(retail.class, StateClass::Field | StateClass::WorldMap))
+    .then(|| crate::retail_compare_script::ScriptGate::from_retail(&retail.scripts))
+    .flatten();
+    let deadline = if gate.is_some() {
+        crate::retail_compare_script::SCRIPT_GATE_DEADLINE
+    } else {
+        SETTLE_TICKS
+    };
+    let mut at_settle = None;
+    let mut met_at = None;
+    let mut resumed = false;
+    for t in 1..=deadline {
+        if let Some(g) = &gate {
+            let pad = g.advance_pad(&session.host.world, t);
+            session.host.world.input.set_pad(pad);
+        }
         session.tick()?;
         session.host.route_bgm_events(&mut director)?;
+        if let Some(g) = &gate {
+            if std::env::var_os("LEGAIA_RC_SCRIPT_TRACE").is_some() && (t % 25 == 0 || t < 5) {
+                eprintln!("script gate t={t}: {}", g.trace(&session.host.world));
+            }
+            if g.met(&session.host.world) {
+                met_at = Some(t);
+                break;
+            }
+            if t == SETTLE_TICKS {
+                at_settle = Some(sample_engine(&mut session, retail, &director, None));
+            }
+            if t == crate::retail_compare_script::SCRIPT_RESUME_TICK
+                && crate::retail_compare_script::resume_record(&mut session.host, g)
+            {
+                resumed = true;
+            }
+        }
+    }
+    session.host.world.input.set_pad(0);
+    let script = gate.as_ref().map(|g| ScriptPhase {
+        pc: g.pc,
+        wait: g.wait,
+        met_at,
+        resumed,
+    });
+    if let (Some(_), None, Some(mut obs)) = (&gate, met_at, at_settle) {
+        obs.script = script;
+        return Ok(obs);
     }
     let menu_subscreen = match &retail.menu {
         Some(Ok(menu)) => drive_pause_menu(&mut session, menu)?,
         _ => None,
     };
+    let mut obs = sample_engine(&mut session, retail, &director, menu_subscreen);
+    obs.script = script;
+    Ok(obs)
+}
+
+/// How a script-gated seed went: retail's phase and the tick the engine
+/// reached it (`None`: not within the deadline, so the settle-window sample
+/// stands).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScriptPhase {
+    pub pc: usize,
+    pub wait: i16,
+    pub met_at: Option<u64>,
+    /// The record was not running in the engine and was started from its
+    /// first opcode ([`crate::retail_compare_script::resume_record`]).
+    pub resumed: bool,
+}
+
+fn sample_engine(
+    session: &mut BootSession,
+    retail: &RetailObs,
+    director: &RecordingDirector,
+    menu_subscreen: Option<u8>,
+) -> EngineObs {
     let world = &mut session.host.world;
     let player = world.player_actor_slot.and_then(|s| {
         world.actors.get(s as usize).map(|a| {
@@ -489,17 +642,19 @@ pub fn run_engine_with(
     // The engine's `_DAT_8007BAC8`: a park-sentinel start (`0x1000`, the
     // ending scenes') reaches no director, but it is the word retail holds.
     let bgm_id = session.host.bgm_track_word.or(director.last);
-    Ok(EngineObs {
+    EngineObs {
         scene,
         mode,
         player,
         floor_at_retail,
         camera,
         bgm_id,
+        bgm_held: director.held,
         fog_gate,
         save,
         menu_subscreen,
-    })
+        script: None,
+    }
 }
 
 /// Ticks between two scripted pad edges of a menu drive: long enough for
@@ -733,18 +888,40 @@ pub(crate) fn flags_score(retail: &[u8], engine: &[u8]) -> (f64, String) {
     let n = retail.len().max(engine.len());
     let mut differ = 0u32;
     let mut union = 0u32;
+    // The first few differing bits, named: a system flag by its id (the
+    // bank at `+0x158`, MSB-first), anything below it by byte and mask;
+    // `+` is set on the engine side only, `-` on retail's only.
+    let mut named = Vec::new();
     for i in 0..n {
         let r = retail.get(i).copied().unwrap_or(0);
         let e = engine.get(i).copied().unwrap_or(0);
         differ += (r ^ e).count_ones();
         union += (r | e).count_ones();
+        for bit in 0..8u8 {
+            let m = 0x80u8 >> bit;
+            if (r ^ e) & m != 0 && named.len() < 4 {
+                let sign = if e & m != 0 { '+' } else { '-' };
+                named.push(match i.checked_sub(SYSTEM_FLAG_WINDOW) {
+                    Some(k) => format!("{sign}sys 0x{:03X}", k * 8 + usize::from(bit)),
+                    None => format!("{sign}[0x{i:03X}]&0x{m:02X}"),
+                });
+            }
+        }
     }
     let score = if union == 0 {
         1.0
     } else {
         1.0 - f64::from(differ) / f64::from(union)
     };
-    (score, format!("{differ} differing bit(s) of {union} set"))
+    let names = if named.is_empty() {
+        String::new()
+    } else {
+        format!(" ({})", named.join(", "))
+    };
+    (
+        score,
+        format!("{differ} differing bit(s) of {union} set{names}"),
+    )
 }
 
 pub(crate) fn inventory_score(
@@ -890,7 +1067,13 @@ pub fn compare(
     put(
         "bgm",
         f64::from(u8::from(engine.bgm_id == Some(retail.bgm_id))),
-        format!("retail={} engine={:?}", retail.bgm_id, engine.bgm_id),
+        format!(
+            "retail={}{} engine={:?}{}",
+            retail.bgm_id,
+            if retail.bgm_sounding { "" } else { " (held)" },
+            engine.bgm_id,
+            if engine.bgm_held { " (held)" } else { "" },
+        ),
     );
     put(
         "fog_gate",
@@ -918,6 +1101,29 @@ pub fn compare(
             "image",
             img.within,
             format!("mae={:.1} within={:.3} ({})", img.mae, img.within, img.note),
+        );
+    }
+    if let Some(p) = engine.script {
+        det.insert(
+            "script".into(),
+            match p.met_at {
+                Some(t) => format!(
+                    "retail parked at pc {} wait {}; engine reached it at tick {t}{}",
+                    p.pc,
+                    p.wait,
+                    if p.resumed {
+                        " (record resumed from its start)"
+                    } else {
+                        ""
+                    }
+                ),
+                None => format!(
+                    "retail parked at pc {} wait {}; engine did not reach it in {} ticks (sampled at the settle window)",
+                    p.pc,
+                    p.wait,
+                    crate::retail_compare_script::SCRIPT_GATE_DEADLINE
+                ),
+            },
         );
     }
     (ch, det)
@@ -1012,6 +1218,7 @@ pub struct RunOptions<'a> {
 pub fn run_corpus(opts: &RunOptions<'_>) -> Result<Vec<StateReport>> {
     let scus = std::fs::read(opts.extracted.join("SCUS_942.54"))
         .with_context(|| format!("read {}/SCUS_942.54", opts.extracted.display()))?;
+    let cdname = legaia_prot::cdname::parse(&opts.extracted.join("CDNAME.TXT"))?;
     let entries = enumerate_corpus(opts.manifest, opts.library);
     let mut out = Vec::new();
     for entry in entries {
@@ -1020,12 +1227,17 @@ pub fn run_corpus(opts: &RunOptions<'_>) -> Result<Vec<StateReport>> {
         {
             continue;
         }
-        out.push(run_one(opts, &entry, &scus));
+        out.push(run_one(opts, &entry, &scus, &cdname));
     }
     Ok(out)
 }
 
-fn run_one(opts: &RunOptions<'_>, entry: &CorpusEntry, scus: &[u8]) -> StateReport {
+fn run_one(
+    opts: &RunOptions<'_>,
+    entry: &CorpusEntry,
+    scus: &[u8],
+    cdname: &legaia_prot::cdname::IndexMap,
+) -> StateReport {
     let mut report = StateReport {
         label: entry.label.clone(),
         emulator: entry.emulator.to_string(),
@@ -1039,13 +1251,23 @@ fn run_one(opts: &RunOptions<'_>, entry: &CorpusEntry, scus: &[u8]) -> StateRepo
         score: None,
         image: None,
     };
-    let retail = match read_retail(entry, scus) {
+    let mut retail = match read_retail(entry, scus) {
         Ok(r) => r,
         Err(e) => {
             report.unseeded = format!("unreadable state: {e:#}");
             return report;
         }
     };
+    retail.settle_on_loaded_scene(cdname);
+    if let Some(pending) = &retail.pending_scene {
+        report.detail.insert(
+            "pending_scene".into(),
+            format!(
+                "label reads {pending} but define {} ({}) is loaded; scored as {}",
+                retail.loaded_define, retail.scene, retail.scene
+            ),
+        );
+    }
     report.scene = retail.scene.clone();
     report.game_mode = retail.game_mode;
     report.class = retail.class;
@@ -1094,17 +1316,44 @@ fn run_one(opts: &RunOptions<'_>, entry: &CorpusEntry, scus: &[u8]) -> StateRepo
             None
         }
         (Some(exe), Some(rf), Some([x, _, z]), Some(save)) => {
-            match crate::retail_compare_image::engine_frame(
-                exe,
-                opts.extracted,
-                &retail.scene,
-                x,
-                z,
-                opts.out_dir,
-                &entry.label,
-                save,
-                retail.hud_countdown,
-            ) {
+            // A capture the headless seed reached by its script phase is
+            // framed at that phase too: the child runs the same gate and
+            // captures the frame it holds, with the deadline as its bound.
+            let gate = engine.script.filter(|p| p.met_at.is_some()).and(
+                crate::retail_compare_script::ScriptGate::from_retail(&retail.scripts),
+            );
+            let frame = match gate {
+                Some(g) => {
+                    let mut env = vec![("LEGAIA_SCRIPT_GATE", g.to_env())];
+                    if let Some(n) = retail.hud_countdown {
+                        env.push(("LEGAIA_HUD_COUNTDOWN", n.to_string()));
+                    }
+                    crate::retail_compare_image::engine_frame_with(
+                        exe,
+                        opts.extracted,
+                        &retail.scene,
+                        Some((x, z)),
+                        &[],
+                        &env,
+                        crate::retail_compare_script::SCRIPT_GATE_DEADLINE,
+                        opts.out_dir,
+                        &entry.label,
+                        crate::retail_compare_image::FrameEntry::Resume(save),
+                    )
+                }
+                None => crate::retail_compare_image::engine_frame(
+                    exe,
+                    opts.extracted,
+                    &retail.scene,
+                    x,
+                    z,
+                    opts.out_dir,
+                    &entry.label,
+                    save,
+                    retail.hud_countdown,
+                ),
+            };
+            match frame {
                 Ok(ef) => {
                     let score = crate::retail_compare_image::score(rf, &ef);
                     if let Some(dir) = opts.out_dir {
@@ -1263,12 +1512,25 @@ fn battle_image(
         .map(system_flag_ids)
         .unwrap_or_default();
     let extra = crate::retail_compare_battle::play_window_args(battle, row);
-    let mut env = vec![("LEGAIA_BATTLE_STAGE", battle.stage_variant.to_string())];
+    let mut env = vec![(
+        "LEGAIA_BATTLE_STAGE",
+        format!(
+            "{},{}",
+            battle.stage_variant,
+            u8::from(battle.keep_backdrop_object_1)
+        ),
+    )];
+    // The idle orbit is a clock: phase-align it to the retail instant when
+    // retail's own orbit owns the yaw (the battle tick's prologue store,
+    // gated on these command-flow bytes - `0x801D07AC..0x801D07CC`).
+    if crate::retail_compare_battle::ORBIT_FLOWS.contains(&battle.flow) {
+        env.push(("LEGAIA_BATTLE_ORBIT_YAW", retail.camera.yaw.to_string()));
+    }
     // A capture taken mid-cast replays its cast and is captured on its phase
     // (the gate), with the fixed tick as the deadline.
     let mut tick = crate::retail_compare_battle::BATTLE_CAPTURE_TICK
         + u64::from(engine.prompt_tick.unwrap_or(0));
-    if let (Some(seed), Some(gate)) = (battle.inflight_cast(), battle.phase_gate()) {
+    if let (Some(seed), Some(gate)) = (battle.inflight_cast(), battle.display_phase_gate()) {
         if engine.inflight == Some(None) {
             report.detail.insert(
                 "image".into(),
@@ -1276,12 +1538,37 @@ fn battle_image(
             );
             return None;
         }
+        let ground: Vec<String> = seed
+            .ground
+            .iter()
+            .map(|g| g.map_or_else(|| "-".to_string(), |[x, z]| format!("{x}:{z}")))
+            .collect();
         env.push((
             "LEGAIA_BATTLE_INFLIGHT",
-            format!("{},{},{}", seed.caster, seed.spell_id, seed.target),
+            format!(
+                "{},{},{};{}",
+                seed.caster,
+                seed.spell_id,
+                seed.target,
+                ground.join(",")
+            ),
         ));
         env.push(("LEGAIA_CAPTURE_GATE", gate.to_env()));
         tick += crate::retail_compare_battle::INFLIGHT_DEADLINE;
+    }
+    // A menu capture or any other action in flight is walked there through
+    // the pad path, the same drive the headless seed ran, and captured the
+    // first frame it holds.
+    if let Some(drive) = battle.battle_drive() {
+        if engine.driven == Some(None) {
+            report.detail.insert(
+                "image".into(),
+                "not scored: the pad drive never reached the capture's phase headlessly".into(),
+            );
+            return None;
+        }
+        env.push(("LEGAIA_BATTLE_DRIVE", drive.to_env()));
+        tick += crate::retail_compare_battle::DRIVE_DEADLINE;
     }
     match crate::retail_compare_image::engine_frame_with(
         exe,
@@ -1293,7 +1580,15 @@ fn battle_image(
         tick,
         opts.out_dir,
         &entry.label,
-        crate::retail_compare_image::FrameEntry::Door(&flags),
+        // The card-load resume the headless side seeds with, so the frame's
+        // party is retail's (levels, equipment, HP / MP on the HUD, the
+        // assembled battle meshes) rather than the New Game template the
+        // bare door entry seeds. The door with the system flags stays the
+        // fallback for a state whose save window does not lift.
+        match retail.save.as_ref() {
+            Some(save) => crate::retail_compare_image::FrameEntry::Resume(save),
+            None => crate::retail_compare_image::FrameEntry::Door(&flags),
+        },
     ) {
         Ok(ef) => {
             if let Some(dir) = opts.out_dir {
@@ -1499,6 +1794,40 @@ mod tests {
         assert_eq!((m.row, m.equip_depth), (FieldMenuRow::Equip, 2));
         assert!(RetailMenu::from_ram(&ram_with_subscreen(0), "opdeene").is_err());
         assert!(RetailMenu::from_ram(&ram_with_subscreen(0x20), "koin1").is_err());
+    }
+
+    fn field_run_ram(label: &str, loaded_define: u16) -> Vec<u8> {
+        let mut ram = vec![0u8; 0x20_0000];
+        let at = |va: u32| (va & 0x1F_FFFF) as usize;
+        let l = at(game_anchors::SCENE_NAME_VA);
+        ram[l..l + label.len()].copy_from_slice(label.as_bytes());
+        ram[at(game_anchors::GAME_MODE_VA)] = 0x03;
+        let p = at(game_anchors::PLAYER_PTR_VA);
+        ram[p..p + 4].copy_from_slice(&0x8010_0000u32.to_le_bytes());
+        let d = at(LOADED_SCENE_DEFINE);
+        ram[d..d + 2].copy_from_slice(&loaded_define.to_le_bytes());
+        ram
+    }
+
+    /// A walked crossing caught between the scene-change packet and the next
+    /// field init reads the incoming label over the outgoing scene: the state
+    /// is scored as the scene `0x80084540` names, and a settled state keeps
+    /// its label.
+    #[test]
+    fn a_pending_door_is_scored_as_the_loaded_scene() {
+        let cdname: legaia_prot::cdname::IndexMap =
+            [(391, "map03".to_string()), (399, "doman".to_string())].into();
+        let mut obs = RetailObs::from_ram(&field_run_ram("doman", 391), None);
+        assert_eq!(obs.class, StateClass::Field);
+        obs.settle_on_loaded_scene(&cdname);
+        assert_eq!(obs.scene, "map03");
+        assert_eq!(obs.pending_scene.as_deref(), Some("doman"));
+        assert_eq!(obs.class, StateClass::WorldMap);
+
+        let mut settled = RetailObs::from_ram(&field_run_ram("doman", 399), None);
+        settled.settle_on_loaded_scene(&cdname);
+        assert_eq!(settled.scene, "doman");
+        assert_eq!(settled.pending_scene, None);
     }
 
     #[test]

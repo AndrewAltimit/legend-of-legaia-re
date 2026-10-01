@@ -627,6 +627,15 @@ fn the_menu_side_lands_in_0899_and_reads_back() {
             "menu edit at {:#x}",
             e.file_off
         );
+        // No edit lands in a save-screen card buffer or other runtime data:
+        // a pause-menu Save returns to the menu with 0899 still resident.
+        let va = MENU_BASE_VA + e.file_off as u32;
+        let hit = legaia_patcher::space_ledger::overlapping_buffer(
+            legaia_patcher::space_ledger::Image::Prot(MENU_PROT_INDEX),
+            va,
+            va + e.bytes.len() as u32,
+        );
+        assert!(hit.is_none(), "menu edit at {va:#x} overlaps {hit:?}");
     }
     for (lo, hi) in [
         (MENU_RUN_VA, MENU_RUN_END_VA),

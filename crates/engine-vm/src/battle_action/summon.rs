@@ -108,6 +108,23 @@ fn summon_hide_applies(slot: u8, party_count: u8, liveness: u16) -> bool {
     slot < party_count || liveness != 0
 }
 
+/// `FUN_801DC0A0(caster, 0x12)` - the summon close-up the `0x33` / `0x34`
+/// passes call every frame. Besides arming its camera (the host's), case
+/// `0x12` stores `ctx[+0x243] = 1` (`li v0,0x1; sb v0,0x243(v1)` at
+/// `0x801DCCF8..0x801DCCFC`) before it reads the ramp - the latch the
+/// battle ambient's per-frame ramp dims on
+/// ([`crate::battle_ground_grid::ambient_base_step`]).
+///
+/// REF: FUN_801DC0A0 (case `0x12`'s `+0x243` store)
+fn summon_close_up<H: BattleActionHost + ?Sized>(
+    host: &mut H,
+    ctx: &mut BattleActionCtx,
+    slot: u8,
+) {
+    ctx.gauge_rearm_latch = 1;
+    host.spell_anim_sustain(slot, SUMMON_CAST_EFFECT_ID);
+}
+
 // --- summon band ------------------------------------------------------------
 
 pub(super) fn summon_invoke<H: BattleActionHost + ?Sized>(
@@ -147,7 +164,7 @@ pub(super) fn summon_fade_in<H: BattleActionHost + ?Sized>(
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
     let slot = ctx.active_actor;
-    host.spell_anim_sustain(slot, 0x12);
+    summon_close_up(host, ctx, slot);
     let cued = host.actor(slot).map(|a| a.anim_cue != 0).unwrap_or(false);
     if !cued {
         return stay(ctx);
@@ -173,7 +190,7 @@ pub(super) fn summon_actor_freeze<H: BattleActionHost + ?Sized>(
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
     let slot = ctx.active_actor;
-    host.spell_anim_sustain(slot, 0x12);
+    summon_close_up(host, ctx, slot);
     let current_zero = host
         .actor(slot)
         .map(|a| a.current_anim == 0)
@@ -288,6 +305,12 @@ pub(super) fn summon_verify_alive<H: BattleActionHost + ?Sized>(
     host.pose(slot, Pose::Idle);
     // Ensure all actors are still alive (liveness != 0 AND current_anim != 0).
     // The state machine doesn't gate on this; it just records state.
+    // The exit (`0x801E4E60..0x801E4EA4`) drops the close-up latch
+    // `ctx[+0x243]` and re-seeds the ambient base one step above the
+    // floor, so the battle ambient climbs back from dark.
+    ctx.gauge_rearm_latch = 0;
+    ctx.summon_staging_a = 0;
+    ctx.ambient_base = crate::battle_ground_grid::AMBIENT_BASE_CAST_EXIT;
     transition(ctx, ActionState::SummonDone)
 }
 

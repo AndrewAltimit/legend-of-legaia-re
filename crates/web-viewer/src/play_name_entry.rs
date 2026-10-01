@@ -23,30 +23,16 @@
 
 use super::*;
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_core::name_entry::{
-    CHAR_CELLS, Control, GRID, GRID_COLS, NameEntry, NameEntryInput, NameEntryState,
-};
+use legaia_engine_core::name_entry::{Control, GRID, NameEntry, NameEntryInput, NameEntryState};
 use legaia_engine_ui::{self as ui, NameEntryView};
 
 /// Project the engine's [`NameEntry`] onto the renderer-agnostic view the
-/// shared builders consume. Mirrors the native window's `name_entry_view`;
-/// `engine-ui` deliberately does not depend on `engine-core`, so each host
-/// owns this few-line projection rather than the screen itself.
+/// shared builders consume, through the same two engine calls the native
+/// window's `name_entry_view` makes (`NameEntry::cursor_cells`,
+/// `name_entry::caret_on`); `engine-ui` deliberately does not depend on
+/// `engine-core`, so only the struct assembly is per host.
 fn name_entry_view<'a>(entry: &'a NameEntry, frame: u64) -> NameEntryView<'a> {
-    let (grid_cursor, control_cursor) = if entry.cursor < CHAR_CELLS {
-        (
-            Some((entry.cursor / GRID_COLS, entry.cursor % GRID_COLS)),
-            None,
-        )
-    } else {
-        let idx = match entry.control_at(entry.cursor) {
-            Some(Control::Backspace) => Some(0),
-            Some(Control::Default) => Some(1),
-            Some(Control::End) => Some(2),
-            None => None,
-        };
-        (None, idx)
-    };
+    let (grid_cursor, control_cursor) = entry.cursor_cells();
     NameEntryView {
         grid_rows: &GRID,
         name: &entry.name,
@@ -55,9 +41,7 @@ fn name_entry_view<'a>(entry: &'a NameEntry, frame: u64) -> NameEntryView<'a> {
         control_cursor,
         confirming: entry.state == NameEntryState::Confirm,
         confirm_yes: entry.confirm_yes,
-        // Retail blinks the caret at 75% duty off the frame counter's
-        // `& 0x18` bits.
-        caret_on: (frame & 0x18) != 0,
+        caret_on: legaia_engine_core::name_entry::caret_on(frame),
     }
 }
 

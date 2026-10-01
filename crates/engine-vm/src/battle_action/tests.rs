@@ -34,6 +34,8 @@ struct RecHost {
     /// is what a host without a disc image reports.
     spell_classes: std::collections::HashMap<u8, u8>,
     ability_bits: std::collections::HashMap<u8, u32>,
+    /// Record word one (`+0xF8`) per party slot - the auto-fill passive bit.
+    ability_bits_high: std::collections::HashMap<u8, u32>,
     ranges: std::collections::HashMap<(u8, u8), u16>,
     prev_cleared: bool,
     sound_ready: bool,
@@ -188,6 +190,9 @@ impl BattleActionHost for RecHost {
     fn character_ability_bits(&self, slot: u8) -> u32 {
         self.ability_bits.get(&slot).copied().unwrap_or(0)
     }
+    fn character_ability_bits_high(&self, slot: u8) -> u32 {
+        self.ability_bits_high.get(&slot).copied().unwrap_or(0)
+    }
     fn screen_shake(&mut self, m: u16) {
         self.record(Event::ScreenShake(m));
     }
@@ -309,6 +314,45 @@ fn begin_seeds_the_turn_cursor_from_the_formation_advantage() {
 /// `0x801D3224` each round): within a round the pass is a no-op, and once the
 /// host clears the flag at the round boundary the next pass copies the
 /// already-cleared `+0x290` over `+0x291`.
+/// The auto-fill leg rolls its target over the **seated** monsters
+/// (`rand() % ctx[+0x01] + 3`, `0x801F0538..0x801F0570`) and redirects a dead
+/// pick until it lands on a living one. With the two front monsters down and
+/// the third standing, a roll over the living count alone could only name
+/// the first seat, and the unbounded redirect never returned.
+#[test]
+fn auto_fill_target_roll_spans_the_seated_monsters() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
+    host.slot_count = 6;
+    host.ability_bits_high
+        .insert(0, crate::battle_arts_auto_combo::AUTO_FILL_ABILITY_BIT);
+    for (slot, hp) in [(3usize, 0u16), (4, 0), (5, 40)] {
+        host.actors[slot].max_hp = 40;
+        host.actors[slot].liveness = hp;
+    }
+    host.rng_seq = vec![0, 0, 1, 2];
+    round_state_zero(&mut host, &mut ctx);
+    assert_eq!(host.actors[0].active_target, 5);
+}
+
+/// With fewer than three party members the host seats its monsters straight
+/// after the party, so the retail seat the roll names is translated before
+/// it is tested and stored.
+#[test]
+fn auto_fill_target_is_stored_in_host_seating() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
+    host.party_count = 2;
+    host.slot_count = 4;
+    host.ability_bits_high
+        .insert(0, crate::battle_arts_auto_combo::AUTO_FILL_ABILITY_BIT);
+    for slot in 2..4usize {
+        host.actors[slot].max_hp = 40;
+    }
+    host.actors[2].liveness = 0;
+    host.rng_seq = vec![0, 1];
+    round_state_zero(&mut host, &mut ctx);
+    assert_eq!(host.actors[0].active_target, 3);
+}
+
 #[test]
 fn round_state_zero_runs_once_per_round_and_relatches_the_cleared_byte() {
     let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
@@ -1187,6 +1231,25 @@ fn magic_cast_begin_capture_spell_routes_to_capture_branch() {
         } if to == ActionState::MagicCaptureBranch.as_byte()
     ));
     assert!(host.take().contains(&Event::LoadCapture(0x42)));
+}
+
+/// Retail's capture route (`ctx[7] = 0x6E` at `0x801E4490`) falls through
+/// into the MP debit at `0x801E4500`: a capture-class cast pays its MP.
+#[test]
+fn magic_cast_begin_capture_spell_still_pays_its_mp() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
+    ctx.action_state = ActionState::MagicCastBegin.as_byte();
+    host.actors[1].mp = 1000;
+    host.actors[1].params[0] = 0xB7;
+    host.capture_spells.insert(0xB7);
+    host.spell_costs.insert(0xB7, 100);
+    let out = step(&mut host, &mut ctx);
+    assert!(matches!(
+        out,
+        StepOutcome::Transition { to, .. } if to == ActionState::MagicCaptureBranch.as_byte()
+    ));
+    assert_eq!(host.actors[1].mp, 900);
+    assert_eq!(host.actors[1].last_mp_cost, 100);
 }
 
 #[test]
@@ -3464,6 +3527,47 @@ fn spirit_seed_bumps_the_latch_and_folds_its_draw() {
         assert_eq!(ctx.camera_variant, expect, "draw {draw}");
         assert_eq!(ctx.spirit_action_count, 1);
     }
+}
+
+/// The spirit band stages the committed clip, holds `0x20` steps, waits on
+/// the clip, then drains the `0x300` flush eight units a step before the Done
+/// band - and a timer that went negative earlier never strands it (the hold
+/// is level-triggered, not an edge).
+#[test]
+fn the_spirit_band_holds_its_clip_and_both_timers() {
+    use super::spirit::{SPIRIT_BAND_HOLD, SPIRIT_FLUSH_HOLD, SPIRIT_FLUSH_STEP};
+    let (mut ctx, mut host) = fresh(ActionCategory::Spirit, 0);
+    host.actors[0].queued_anim_b = 0x10;
+    ctx.frame_timer = -5;
+    ctx.action_state = ActionState::SpiritArtsEntry.as_byte();
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.action_state, ActionState::SpiritArtsSustain.as_byte());
+    assert_eq!(
+        host.actors[0].queued_anim, 0x10,
+        "the committed clip is staged"
+    );
+    // The anim system commits the clip.
+    host.actors[0].current_anim = 0x10;
+    let mut steps = 0;
+    while ctx.action_state == ActionState::SpiritArtsSustain.as_byte() && steps < 200 {
+        step(&mut host, &mut ctx);
+        steps += 1;
+        if steps == 40 {
+            // The clip ends: the flag clears and the pair settles on idle.
+            host.actors[0].flag_bits = ActorFlags(0);
+            host.actors[0].current_anim = 0;
+        }
+    }
+    assert!(
+        steps > SPIRIT_BAND_HOLD as usize,
+        "held for the clip, {steps}"
+    );
+    assert_eq!(ctx.action_state, ActionState::SpiritArtsFlush.as_byte());
+    let flush_steps = (SPIRIT_FLUSH_HOLD / SPIRIT_FLUSH_STEP) as usize;
+    for _ in 0..flush_steps {
+        step(&mut host, &mut ctx);
+    }
+    assert_eq!(ctx.action_state, ActionState::DoneCleanup.as_byte());
 }
 
 /// Nothing in the dispatcher clears `ctx[+0x19]`, so it is a per-battle latch

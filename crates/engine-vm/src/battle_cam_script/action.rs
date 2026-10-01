@@ -234,7 +234,12 @@ pub const SUMMON_CAST_TWEEN_FRAMES: u32 = 3;
 /// the pose (TR.z prescaled) and the raw TR.z.
 ///
 /// REF: FUN_801DC0A0 (case `0x12`), FUN_801D829C
-pub fn summon_cast_framing(actor: BattleCamActor, accum: u32, ramp: u8) -> (BattleCamPose, i32) {
+pub fn summon_cast_framing(
+    actor: BattleCamActor,
+    body: Option<[f32; 2]>,
+    accum: u32,
+    ramp: u8,
+) -> (BattleCamPose, i32) {
     let half = |v: i64| i32::from(v as i16);
     let acc = i64::from(accum);
     let pitch = half(-(i64::from(ramp) * 2));
@@ -246,7 +251,12 @@ pub fn summon_cast_framing(actor: BattleCamActor, accum: u32, ramp: u8) -> (Batt
             pitch: pitch as f32,
             yaw: yaw.rem_euclid(4096) as f32,
             tr: [0.0, tr_y as f32, prescale_tr_z(raw_z)],
-            focus: [actor.world[0], 0.0, actor.world[2]],
+            // `lhu v0,0x3c(s2)` / `lhu v0,0x40(s2)` (`0x801DCD74..0x801DCD84`):
+            // the body pair, not the live `+0x34` / `+0x38`.
+            focus: match body {
+                Some([x, z]) => [x, 0.0, z],
+                None => [actor.world[0], 0.0, actor.world[2]],
+            },
         },
         raw_z,
     )

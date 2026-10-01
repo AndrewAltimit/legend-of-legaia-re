@@ -80,6 +80,57 @@ fn the_phase_advances_exactly_once_per_tick() {
     }
 }
 
+/// Mystic Circle and Doomsday end their choreography: table word 4 and the
+/// `0xFF` arm are the only arms that zero the busy register, and neither
+/// advances past itself. Walking on parked the capture band at `0x70`
+/// forever (Mystic Circle) or wrapped the phase back into the damage arm
+/// (Doomsday).
+#[test]
+fn mystic_circle_and_doomsday_report_done_at_their_terminal_arm() {
+    let mut c = ctx(MYSTIC_CIRCLE_DONE_ARM, 3);
+    c.ctx_0d = 1;
+    let mut seats = vec![actor(100); 3];
+    let (step, hits) = mystic_circle_tick(&mut c, &mut seats, false, |_| 10);
+    assert_eq!(step, CastTickStep::Done);
+    assert!(hits.is_empty());
+    assert_eq!(c.phase, MYSTIC_CIRCLE_DONE_ARM, "the arm holds its phase");
+    assert_eq!(c.ctx_0d, 0);
+
+    let mut c = ctx(CHOREOGRAPHY_DONE_PHASE, 3);
+    let (step, hits) = doomsday_tick(&mut c, &mut seats, false, |_| 10);
+    assert_eq!(step, CastTickStep::Done);
+    assert!(hits.is_empty());
+    assert_eq!(c.phase, CHOREOGRAPHY_DONE_PHASE, "no wrap back to arm 0");
+}
+
+/// PROT 0938's breath spends the gauge that gated it: the sweep arms the
+/// `0x32` budget (`0x801F7880`) and arm 3 drains it out of the caster's
+/// `+0x170`, so the `0x8A` pick - which clamped the gauge to `0x32` as it
+/// fired - is closed again until the monster has taken fresh damage. A sweep
+/// that hit nobody arms no budget.
+#[test]
+fn the_breath_drains_the_gauge_that_gated_it() {
+    let mut c = ctx(2, 3);
+    let mut caster = CastActorState {
+        spirit_gauge: 0x32,
+        ..actor(100)
+    };
+    let mut seats = vec![actor(100); 3];
+    let (_, hits) = chaos_breath_tick(&mut c, &mut caster, &mut seats, |_| 5, |_| (1, 1));
+    assert_eq!(hits.len(), 3);
+    assert_eq!(caster.spirit_gauge, 0, "the whole 0x32 budget is spent");
+
+    let mut c = ctx(2, 3);
+    let mut caster = CastActorState {
+        spirit_gauge: 0x32,
+        ..actor(100)
+    };
+    let mut seats = vec![actor(0); 3];
+    let (_, hits) = chaos_breath_tick(&mut c, &mut caster, &mut seats, |_| 5, |_| (1, 1));
+    assert!(hits.is_empty());
+    assert_eq!(caster.spirit_gauge, 0x32, "no hit, no budget");
+}
+
 /// The terminal arm is the only one that reports done, and PROT 0938's also
 /// undoes the rate halving its arm 0 applied.
 #[test]

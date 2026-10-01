@@ -71,7 +71,10 @@ impl World {
     ///
     /// PORT: FUN_801D5B5C (the touch-event post + engaged-flag raise)
     pub fn start_prop_interaction(&mut self, anchor: (u8, u8)) -> bool {
-        if self.dialogue_owns_input() || self.script_context_engages_player() {
+        if self.dialogue_owns_input()
+            || self.script_context_engages_player()
+            || self.field_scripts_held_for_battle()
+        {
             return false;
         }
         let Some(prop) = self.props.bank.props.get(&anchor) else {
@@ -417,7 +420,7 @@ impl World {
     /// Set / clear the player's movement-disabled flag (`+0x10 & 0x80000`) -
     /// the engaged bit `FUN_801D5B5C` raises on the touch post and the dialog
     /// SM teardown clears.
-    fn set_player_engaged(&mut self, engaged: bool) {
+    pub(crate) fn set_player_engaged(&mut self, engaged: bool) {
         if let Some(slot) = self.player_actor_slot
             && let Some(actor) = self.actors.get_mut(slot as usize)
         {

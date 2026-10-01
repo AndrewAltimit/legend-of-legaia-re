@@ -65,6 +65,15 @@ fn spirit_command_charges_ap_and_raises_the_guard_stance() {
         world.battle.command.is_none(),
         "the last commit begins the round"
     );
+    // Each Spirit turn is played by the action SM's spirit band
+    // (`0x46..=0x48`: the charge clip and its holds) before the next member
+    // dispatches, so the party's three turns take frames, not the Begin tick.
+    for _ in 0..3000 {
+        if world.battle_ctx.active_actor >= 3 {
+            break;
+        }
+        world.tick();
+    }
     for slot in 0..3 {
         assert!(
             world.battle.ap_gauges[slot].spirit_charged,

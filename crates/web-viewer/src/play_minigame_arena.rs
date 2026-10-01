@@ -31,14 +31,13 @@
 //!
 //! Start leaves any of the three (`World::poll_minigame_escape`).
 
-use legaia_engine_core::baka_fighter::MatchPhase;
-use legaia_engine_core::dance::{DanceGame, Judge};
+use legaia_engine_core::dance::DanceGame;
 use legaia_engine_core::muscle_dome::{self as md, DomeContest, MuscleDomeSession, MusclePhase};
 use legaia_engine_ui::TextDraw;
 use legaia_engine_ui::other_game_hud::{self as hud, HudQuad, HudSprite};
 use wasm_bindgen::prelude::*;
 
-use crate::play_minigames::{DIM, PEN_CONTEST, PEN_EXTRA, PEN_PROMPT, PEN_STATUS, WHITE, row};
+use crate::play_minigames::{DIM, WHITE, row};
 use crate::runtime::LegaiaRuntime;
 
 /// PROT entry of the arena roster / init overlay (course ladder, score
@@ -319,96 +318,18 @@ impl LegaiaRuntime {
             .collect()
     }
 
-    /// The native window's Muscle Dome HUD lines, with the page's bindings.
+    /// The Muscle Dome HUD rows, the engine's
+    /// (`minigame_status::muscle_status_rows`) through the shared draw kernel
+    /// the native window calls.
     pub(crate) fn muscle_status_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
-        let Some(s) = self.muscle_session() else {
-            return Vec::new();
-        };
         let Some(host) = self.scene_host.as_ref() else {
             return Vec::new();
         };
-        let mut out = Vec::new();
-        if let Some(c) = &host.world.minigames.muscle_contest {
-            let flags = host.world.muscle_contest_flags();
-            let l0 = format!(
-                "Course {}  Round {}/{}   Coins banked: {}",
-                c.course() + 1,
-                c.round() + 1,
-                c.staged_course_length(&flags),
-                c.tally(),
-            );
-            out.extend(row(font, &l0, PEN_CONTEST, WHITE));
-        }
-        let l1 = format!("      Turn: {}         HP Left: {}", s.turn(), s.hp_left());
-        out.extend(row(font, &l1, PEN_STATUS, WHITE));
-        let status = match s.phase() {
-            MusclePhase::Select if s.magic_open() => {
-                let rows = s.spell_rows(0);
-                let cursor = s.magic_cursor() as usize;
-                let line = rows
-                    .get(cursor)
-                    .map(|r| {
-                        format!(
-                            "{} ({} MP){}",
-                            r.name,
-                            r.mp_cost,
-                            if r.affordable {
-                                ""
-                            } else {
-                                "  - not enough MP"
-                            }
-                        )
-                    })
-                    .unwrap_or_else(|| "(no Seru learned)".to_string());
-                format!(
-                    "Ra-Seru {}/{}: {}   MP {}   (Up/Down, Cross = cast, Circle = back)",
-                    cursor + 1,
-                    rows.len().max(1),
-                    line,
-                    s.mp(0),
-                )
-            }
-            MusclePhase::Select => {
-                let h = s.hand(0);
-                let chip = if s.chip_enabled(0, md::DomeRingChip::RaSeru) {
-                    "  Triangle = Ra-Seru"
-                } else {
-                    ""
-                };
-                format!(
-                    "AP L:{} R:{} U:{} D:{}  budget {}  entered {}  (Cross = fight){chip}",
-                    h[0].cost,
-                    h[1].cost,
-                    h[2].cost,
-                    h[3].cost,
-                    s.budget(0),
-                    s.queue(0).len()
-                )
-            }
-            MusclePhase::Resolve => "resolving...".to_string(),
-            MusclePhase::TurnOver => {
-                let [taken, dealt] = s.last_turn_damage();
-                format!("turn: dealt {dealt}, took {taken}")
-            }
-            // The caption names a spell; it awards nothing (the contest's
-            // payout lands when the ladder settles). This host dropped the id
-            // and printed the bare banner, so the one piece of information
-            // the Won caption carries was visible on the native window only.
-            MusclePhase::Won => format!(
-                "LEG WON! caption spell {:#x}  (Cross = next leg)",
-                s.reward_spell_id()
-            ),
-            MusclePhase::Lost => "you lose the leg  (Cross = leave)".to_string(),
-        };
-        let l2 = format!(
-            "{status}   you {}hp  foe {}hp  time {}/{}   (Start = quit)",
-            s.hp(0),
-            s.hp(1),
-            s.time_meter(),
-            md::TIME_METER_MAX,
-        );
-        out.extend(row(font, &l2, PEN_PROMPT, DIM));
-        out
+        let rows = legaia_engine_core::minigame_status::muscle_status_rows(&host.world);
+        legaia_engine_ui::ui_text_lines::status_row_draws_for(
+            font,
+            rows.iter().map(|r| (r.text.as_str(), r.pen, r.bright)),
+        )
     }
 
     /// The two hub-page TIMs out of the dome data container (extraction
@@ -487,41 +408,11 @@ impl LegaiaRuntime {
         let Some(f) = self.baka_session() else {
             return Vec::new();
         };
-        let l1 = format!(
-            "BAKA  you {}hp (wins {})  vs  foe {}hp (wins {})  round {}",
-            f.hp(0),
-            f.round_wins(0),
-            f.hp(1),
-            f.round_wins(1),
-            f.round() + 1
+        let rows = legaia_engine_core::minigame_status::baka_status_rows(f);
+        let mut out = legaia_engine_ui::ui_text_lines::status_row_draws_for(
+            font,
+            rows.iter().map(|r| (r.text.as_str(), r.pen, r.bright)),
         );
-        let status = match f.phase() {
-            MatchPhase::MatchOver(0) if f.cabinet().choice_sheet().is_some() => {
-                "NEXT GAME / PAY OUT: Left/Right, Cross confirms".to_string()
-            }
-            MatchPhase::MatchOver(0) => format!("YOU WIN the match! +{} coins", f.gold_reward()),
-            MatchPhase::MatchOver(_) => "you lose the match - GAME OVER".to_string(),
-            MatchPhase::RoundOver(0) => "round won!".to_string(),
-            MatchPhase::RoundOver(_) => "round lost".to_string(),
-            MatchPhase::Fighting => match f.last_exchange() {
-                Some(r) => {
-                    let who = if r.draw {
-                        "trade"
-                    } else if r.winner == 0 {
-                        "you hit"
-                    } else {
-                        "foe hits"
-                    };
-                    let crit = if r.critical { " CRIT" } else { "" };
-                    let sp = if r.special_round_win { " SPECIAL" } else { "" };
-                    format!("{who} {}{crit}{sp}", r.damage)
-                }
-                None => "choose your attack".to_string(),
-            },
-        };
-        let l2 = format!("{status}   Square/Circle/Cross attack, Triangle special (Start = quit)");
-        let mut out = row(font, &l1, PEN_STATUS, WHITE);
-        out.extend(row(font, &l2, PEN_PROMPT, DIM));
         // The duel's three retail number drawers - the round digit, the
         // right-aligned score field and the `0x10` px "GET COIN" strip - at
         // the ported cell layout the native window draws. This page printed
@@ -534,7 +425,11 @@ impl LegaiaRuntime {
             f.tally().map(|t| (t.total(), t.gold_remaining())),
         );
         out.extend(
-            legaia_engine_ui::ui_baka_strips::baka_digit_strip_draws_for(font, &placed, DIM),
+            legaia_engine_ui::ui_baka_strips::baka_digit_strip_draws_for(
+                font,
+                &placed,
+                legaia_engine_ui::ui_text_lines::STATUS_ROW_DIM_INK,
+            ),
         );
         // The round chrome (`BakaChrome`: intro card, ROUND banner,
         // countdown) and the "NEXT GAME / PAY OUT" sheet, through the label
@@ -583,76 +478,24 @@ impl LegaiaRuntime {
     /// the beat calls for, the last judgement, and the scrolling beat track
     /// at the ported note positions.
     pub(crate) fn dance_status_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
-        use legaia_engine_core::dance::{
-            GAUGE_STEP, dance_beat_track_note_x, dance_combo_window_bright, dance_number_digits,
-        };
         let Some(g) = self.dance_session() else {
             return Vec::new();
         };
         let Some(host) = self.scene_host.as_ref() else {
             return Vec::new();
         };
-        let arrow = match g.required_symbol() {
-            Some(1) => "< (Square)",
-            Some(2) => "> (Circle)",
-            Some(3) => "^ (Triangle)",
-            _ => "- (rest)",
-        };
-        let judge = match host.world.minigames.dance_last_judge {
-            Some(Judge::Sequence { .. }) => "SEQUENCE!",
-            Some(Judge::Hit { .. }) => "HIT",
-            Some(Judge::Miss) => "miss",
-            None => "",
-        };
-        let score_digits: String = dance_number_digits(g.score())
-            .iter()
-            .map(|d| match d {
-                Some(v) => char::from(b'0' + v),
-                None => ' ',
-            })
-            .collect();
-        let l1 = format!(
-            "DANCE  score {}  gauge {}  lane {}",
-            score_digits.trim_start(),
-            g.gauge(),
-            g.lane()
+        // Score / gauge / lane, the called arrow with the last judgement and
+        // the beat track: the engine's rows
+        // (`minigame_status::dance_status_rows`), the ones the native window
+        // draws.
+        let rows = legaia_engine_core::minigame_status::dance_status_rows(
+            g,
+            host.world.minigames.dance_last_judge.as_ref(),
         );
-        let l2 = format!("press {arrow}   {judge}   (Start = quit)");
-        let mut out = row(font, &l1, PEN_STATUS, WHITE);
-        out.extend(row(font, &l2, PEN_PROMPT, DIM));
-        let beat = g.beat_index();
-        let frac = g.intra_beat_phase();
-        let level = g.gauge() / GAUGE_STEP;
-        let bright = dance_combo_window_bright(beat, level, frac);
-        out.extend(row(
+        let mut out = legaia_engine_ui::ui_text_lines::status_row_draws_for(
             font,
-            if bright { "COMBO" } else { "beat " },
-            PEN_EXTRA,
-            if bright { WHITE } else { DIM },
-        ));
-        const TRACK_BASE_X: i32 = 60;
-        if let Some(chart_row) = g.chart_row(g.lane()) {
-            for i in 0..8u32 {
-                let cell = chart_row[((beat + i) % chart_row.len() as u32) as usize];
-                let glyph = match cell {
-                    1 => "<",
-                    2 => ">",
-                    3 => "^",
-                    _ => ".",
-                };
-                let x = dance_beat_track_note_x(TRACK_BASE_X, i, frac);
-                out.extend(row(
-                    font,
-                    glyph,
-                    (x, PEN_EXTRA.1),
-                    if i == 0 && !g.in_dead_zone() {
-                        WHITE
-                    } else {
-                        DIM
-                    },
-                ));
-            }
-        }
+            rows.iter().map(|r| (r.text.as_str(), r.pen, r.bright)),
+        );
         // The retail-coordinate HUD frame - the three dancers' score
         // readouts, their box brackets, the Lv gauges and the rivals' beat
         // tracks - laid out by the engine
@@ -666,7 +509,15 @@ impl LegaiaRuntime {
         // lines above are in this page's own pen space; both go through the
         // caller's single `scale_stage_text_draws`, which is the transform
         // the native window also applies to this block.
-        for r in g.hud_frame_rows(g.rival_hud_visible()) {
+        // With the hall's HUD page resident the frame draws as retail's own
+        // quads in the prim pass (`dance_hud_prims`); these rows are the
+        // fallback without it - the same either/or the native window takes.
+        let frame_rows = if host.world.minigames.dance_hud_art_staged {
+            Vec::new()
+        } else {
+            g.hud_frame_rows(g.rival_hud_visible())
+        };
+        for r in frame_rows {
             out.extend(row(
                 font,
                 &r.text,
@@ -830,165 +681,95 @@ impl LegaiaRuntime {
         vec![t.pixel_width() as u32, t.pixel_height() as u32]
     }
 
-    /// Whether the dome scene decodes for `(monster_id, char_slot)`.
-    pub fn play_mg_muscle_scene_ready(&self, monster_id: u16, char_slot: u32) -> bool {
-        self.minigame_art()
-            .is_some_and(|a| a.muscle_scene_ready(monster_id, char_slot))
+    /// Pose the dome's 3D arena surface for this frame
+    /// (`legaia_engine_core::muscle_dome_scene::MuscleDomeSurface::frame`,
+    /// the call the native window makes too) and return its generation - or
+    /// `-1` when no dome session is live or its scene does not decode. A
+    /// generation the page has not seen means the static buffers and the
+    /// VRAM changed (a new rung seated a new monster): re-read them before
+    /// the positions.
+    pub fn play_mg_muscle_scene_frame(&mut self) -> i32 {
+        let host = self.scene_host.as_ref();
+        let world = host.map(|h| &h.world);
+        let live =
+            world.is_some_and(|w| w.mode == legaia_engine_core::world::SceneMode::MuscleDome);
+        let session = world
+            .filter(|_| live)
+            .and_then(|w| w.minigames.muscle_dome.as_ref());
+        let contest = world.and_then(|w| w.minigames.muscle_contest.as_ref());
+        let read = |i: usize| host.and_then(|h| h.index.entry_bytes(i as u32).ok());
+        let char_slot = self.minigame_ui.muscle.char_slot;
+        let surface = &mut self.minigame_ui.muscle_surface;
+        match surface.frame(read, session, contest, char_slot) {
+            Some(_) => surface.generation() as i32,
+            None => -1,
+        }
     }
 
-    pub fn play_mg_muscle_fighter_positions(&self, char_slot: u32) -> Vec<f32> {
-        self.minigame_art()
-            .map(|a| a.muscle_fighter_positions(char_slot))
+    /// This frame's posed positions, `[x, y, z]` per vertex, raw retail world
+    /// coordinates (Y down): the fighter, the monster, then the arena.
+    pub fn play_mg_muscle_scene_positions(&self) -> Vec<f32> {
+        self.minigame_ui
+            .muscle_surface
+            .scene()
+            .map(|s| s.positions.iter().flatten().copied().collect())
             .unwrap_or_default()
     }
 
-    pub fn play_mg_muscle_fighter_uvs(&self, char_slot: u32) -> Vec<i32> {
-        self.minigame_art()
-            .map(|a| a.muscle_fighter_uvs(char_slot))
+    /// Per-vertex `[u, v]`.
+    pub fn play_mg_muscle_scene_uvs(&self) -> Vec<u8> {
+        self.minigame_ui
+            .muscle_surface
+            .scene()
+            .map(|s| s.uvs.iter().flatten().copied().collect())
             .unwrap_or_default()
     }
 
-    pub fn play_mg_muscle_fighter_cba_tsb(&self, char_slot: u32) -> Vec<u32> {
-        self.minigame_art()
-            .map(|a| a.muscle_fighter_cba_tsb(char_slot))
+    /// Per-vertex `[cba, tsb]`.
+    pub fn play_mg_muscle_scene_cba_tsb(&self) -> Vec<u16> {
+        self.minigame_ui
+            .muscle_surface
+            .scene()
+            .map(|s| s.cba_tsb.iter().flatten().copied().collect())
             .unwrap_or_default()
     }
 
-    pub fn play_mg_muscle_fighter_indices(&self, char_slot: u32) -> Vec<u32> {
-        self.minigame_art()
-            .map(|a| a.muscle_fighter_indices(char_slot))
+    /// Per-vertex `[r, g, b, textured]`.
+    pub fn play_mg_muscle_scene_flat_rgba(&self) -> Vec<u8> {
+        self.minigame_ui
+            .muscle_surface
+            .scene()
+            .map(|s| s.flat_rgba.clone())
             .unwrap_or_default()
     }
 
-    pub fn play_mg_muscle_fighter_object_ids(&self, char_slot: u32) -> Vec<u32> {
-        self.minigame_art()
-            .map(|a| a.muscle_fighter_object_ids(char_slot))
+    /// Triangle indices.
+    pub fn play_mg_muscle_scene_indices(&self) -> Vec<u32> {
+        self.minigame_ui
+            .muscle_surface
+            .scene()
+            .map(|s| s.indices.clone())
             .unwrap_or_default()
     }
 
-    pub fn play_mg_muscle_fighter_flat_rgba(&self, char_slot: u32) -> Vec<u8> {
-        self.minigame_art()
-            .map(|a| a.muscle_fighter_flat_rgba(char_slot))
+    /// The seated dome's VRAM (character pool + palette, monster pool, arena
+    /// pages); empty with no scene.
+    pub fn play_mg_muscle_scene_vram(&self) -> Vec<u8> {
+        self.minigame_ui
+            .muscle_surface
+            .vram()
+            .map(|v| v.as_bytes().to_vec())
             .unwrap_or_default()
     }
 
-    pub fn play_mg_muscle_fighter_part_count(&self, char_slot: u32) -> u32 {
-        self.minigame_art()
-            .map(|a| a.muscle_fighter_part_count(char_slot))
-            .unwrap_or(0)
-    }
-
-    pub fn play_mg_muscle_fighter_anims_json(&self, char_slot: u32) -> String {
-        self.minigame_art()
-            .map(|a| a.muscle_fighter_anims_json(char_slot))
-            .unwrap_or_else(|| "[]".to_string())
-    }
-
-    pub fn play_mg_muscle_fighter_pose_frames(
-        &self,
-        char_slot: u32,
-        slot: u32,
-        target_part_count: u32,
-    ) -> Vec<i32> {
-        self.minigame_art()
-            .map(|a| a.muscle_fighter_pose_frames(char_slot, slot, target_part_count))
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_muscle_monster_positions(&self, monster_id: u16) -> Vec<f32> {
-        self.minigame_art()
-            .map(|a| a.muscle_monster_positions(monster_id))
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_muscle_monster_uvs(&self, monster_id: u16) -> Vec<i32> {
-        self.minigame_art()
-            .map(|a| a.muscle_monster_uvs(monster_id))
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_muscle_monster_cba_tsb(&self, monster_id: u16) -> Vec<u32> {
-        self.minigame_art()
-            .map(|a| a.muscle_monster_cba_tsb(monster_id))
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_muscle_monster_indices(&self, monster_id: u16) -> Vec<u32> {
-        self.minigame_art()
-            .map(|a| a.muscle_monster_indices(monster_id))
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_muscle_monster_object_ids(&self, monster_id: u16) -> Vec<u32> {
-        self.minigame_art()
-            .map(|a| a.muscle_monster_object_ids(monster_id))
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_muscle_monster_flat_rgba(&self, monster_id: u16) -> Vec<u8> {
-        self.minigame_art()
-            .map(|a| a.muscle_monster_flat_rgba(monster_id))
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_muscle_monster_part_count(&self, monster_id: u16) -> u32 {
-        self.minigame_art()
-            .map(|a| a.muscle_monster_part_count(monster_id))
-            .unwrap_or(0)
-    }
-
-    pub fn play_mg_muscle_monster_anims_json(&self, monster_id: u16) -> String {
-        self.minigame_art()
-            .map(|a| a.muscle_monster_anims_json(monster_id))
-            .unwrap_or_else(|| "[]".to_string())
-    }
-
-    pub fn play_mg_muscle_monster_pose_frames(
-        &self,
-        monster_id: u16,
-        index: u32,
-        target_part_count: u32,
-    ) -> Vec<i32> {
-        self.minigame_art()
-            .map(|a| a.muscle_monster_pose_frames(monster_id, index, target_part_count))
-            .unwrap_or_default()
-    }
-
-    /// The dome's merged VRAM (character band-0 pool + palette, the
-    /// monster's pool, the arena pages).
-    pub fn play_mg_muscle_vram(&self, monster_id: u16, char_slot: u32) -> Vec<u8> {
-        self.minigame_art()
-            .map(|a| a.muscle_vram(monster_id, char_slot))
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_muscle_arena_positions(&self) -> Vec<f32> {
-        self.minigame_art()
-            .map(|a| a.muscle_arena_positions())
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_muscle_arena_uvs(&self) -> Vec<i32> {
-        self.minigame_art()
-            .map(|a| a.muscle_arena_uvs())
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_muscle_arena_cba_tsb(&self) -> Vec<u32> {
-        self.minigame_art()
-            .map(|a| a.muscle_arena_cba_tsb())
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_muscle_arena_indices(&self) -> Vec<u32> {
-        self.minigame_art()
-            .map(|a| a.muscle_arena_indices())
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_muscle_arena_flat_rgba(&self) -> Vec<u8> {
-        self.minigame_art()
-            .map(|a| a.muscle_arena_flat_rgba())
+    /// The dome camera's view-projection for a raw (Y-down) world vertex,
+    /// column-major (`DomeCamera::vp_raw`, the matrix the native window
+    /// draws the dome with). Empty with no scene.
+    pub fn play_mg_muscle_scene_vp(&self, aspect: f32) -> Vec<f32> {
+        self.minigame_ui
+            .muscle_surface
+            .scene()
+            .map(|s| s.camera.vp_raw(aspect).to_vec())
             .unwrap_or_default()
     }
 
@@ -1267,80 +1048,80 @@ impl LegaiaRuntime {
         self.minigame_art().is_some_and(|a| a.dance_body_ready())
     }
 
-    pub fn play_mg_dance_body_count(&self) -> u32 {
-        self.minigame_art()
-            .map(|a| a.dance_body_count())
-            .unwrap_or(0)
+    /// Pose the dance floor's bodies for this frame through the engine's
+    /// cast surface (`legaia_engine_core::dance_cast_scene::DanceCastSurface::frame`
+    /// over the world's run - the call the native window makes too) and
+    /// return its generation, or `-1` when no run is live. A generation the
+    /// page has not seen means the static buffers changed (a run on another
+    /// mode seated another cast): re-read them before the positions.
+    pub fn play_mg_dance_scene_frame(&mut self) -> i32 {
+        if !self.minigame_ui.dance_surface.has_assets()
+            && let Some((assets, origin)) = self.minigame_art().and_then(|a| a.dance_cast_assets())
+        {
+            self.minigame_ui.dance_surface.set_assets(Some(assets));
+            self.minigame_ui.dance_origin = origin;
+        }
+        let game = self
+            .scene_host
+            .as_ref()
+            .and_then(|h| h.world.minigames.dance.as_ref());
+        let surface = &mut self.minigame_ui.dance_surface;
+        match surface.frame(game) {
+            Some(_) => surface.generation() as i32,
+            None => -1,
+        }
     }
 
-    pub fn play_mg_dance_body_human_index(&self) -> u32 {
-        self.minigame_art()
-            .map(|a| a.dance_body_human_index())
-            .unwrap_or(0)
-    }
-
-    pub fn play_mg_dance_cast_json(&self) -> String {
-        self.minigame_art()
-            .map(|a| a.dance_cast_json())
-            .unwrap_or_else(|| "null".to_string())
-    }
-
-    pub fn play_mg_dance_body_positions(&self, dancer: u32) -> Vec<f32> {
-        self.minigame_art()
-            .map(|a| a.dance_body_positions(dancer))
+    /// This frame's posed positions, `[x, y, z]` per vertex, in the frame the
+    /// page's baked hall is drawn in (raw retail world coordinates re-based
+    /// on the hall origin, `LegaiaMinigames::dance_venue_vp`'s frame).
+    pub fn play_mg_dance_scene_positions(&self) -> Vec<f32> {
+        let (ox, oy, oz) = self.minigame_ui.dance_origin;
+        self.minigame_ui
+            .dance_surface
+            .scene()
+            .map(|s| {
+                s.positions
+                    .iter()
+                    .flat_map(|p| [p[0] - ox, p[1] - oy, p[2] - oz])
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
-    pub fn play_mg_dance_body_uvs(&self, dancer: u32) -> Vec<i32> {
-        self.minigame_art()
-            .map(|a| a.dance_body_uvs(dancer))
+    /// Per-vertex `[u, v]`.
+    pub fn play_mg_dance_scene_uvs(&self) -> Vec<u8> {
+        self.minigame_ui
+            .dance_surface
+            .scene()
+            .map(|s| s.uvs.iter().flatten().copied().collect())
             .unwrap_or_default()
     }
 
-    pub fn play_mg_dance_body_cba_tsb(&self, dancer: u32) -> Vec<u32> {
-        self.minigame_art()
-            .map(|a| a.dance_body_cba_tsb(dancer))
+    /// Per-vertex `[cba, tsb]`.
+    pub fn play_mg_dance_scene_cba_tsb(&self) -> Vec<u16> {
+        self.minigame_ui
+            .dance_surface
+            .scene()
+            .map(|s| s.cba_tsb.iter().flatten().copied().collect())
             .unwrap_or_default()
     }
 
-    pub fn play_mg_dance_body_indices(&self, dancer: u32) -> Vec<u32> {
-        self.minigame_art()
-            .map(|a| a.dance_body_indices(dancer))
+    /// Per-vertex `[r, g, b, flag]` (the hybrid textured / fill layout).
+    pub fn play_mg_dance_scene_flat_rgba(&self) -> Vec<u8> {
+        self.minigame_ui
+            .dance_surface
+            .scene()
+            .map(|s| s.flat_rgba.clone())
             .unwrap_or_default()
     }
 
-    pub fn play_mg_dance_body_object_ids(&self, dancer: u32) -> Vec<u32> {
-        self.minigame_art()
-            .map(|a| a.dance_body_object_ids(dancer))
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_dance_body_flat_rgba(&self, dancer: u32) -> Vec<u8> {
-        self.minigame_art()
-            .map(|a| a.dance_body_flat_rgba(dancer))
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_dance_body_part_count(&self, dancer: u32) -> u32 {
-        self.minigame_art()
-            .map(|a| a.dance_body_part_count(dancer))
-            .unwrap_or(0)
-    }
-
-    pub fn play_mg_dance_body_anim_dims(&self, dancer: u32, clip: u32) -> Vec<u32> {
-        self.minigame_art()
-            .map(|a| a.dance_body_anim_dims(dancer, clip))
-            .unwrap_or_default()
-    }
-
-    pub fn play_mg_dance_body_pose_frames(
-        &self,
-        dancer: u32,
-        clip: u32,
-        target_part_count: u32,
-    ) -> Vec<i32> {
-        self.minigame_art()
-            .map(|a| a.dance_body_pose_frames(dancer, clip, target_part_count))
+    /// Triangle indices.
+    pub fn play_mg_dance_scene_indices(&self) -> Vec<u32> {
+        self.minigame_ui
+            .dance_surface
+            .scene()
+            .map(|s| s.indices.clone())
             .unwrap_or_default()
     }
 
@@ -1393,6 +1174,26 @@ impl LegaiaRuntime {
         self.minigame_art()
             .map(|a| a.dance_env_indices())
             .unwrap_or_default()
+    }
+
+    /// This frame's drawable subset of [`Self::play_mg_dance_env_indices`]:
+    /// the triangles the PSX GPU draws under the staged venue camera (the
+    /// camera [`Self::play_mg_dance_venue_vp`] frames with), through the
+    /// kernel the native window cuts its hall with
+    /// (`dance_venue::psx_gpu_visible_indices`).
+    pub fn play_mg_dance_env_visible_indices(&self) -> Vec<u32> {
+        let Some(art) = self.minigame_art() else {
+            return Vec::new();
+        };
+        let staged = self
+            .scene_host
+            .as_ref()
+            .and_then(|h| h.world.minigames.dance_venue.as_ref())
+            .map(|s| s.camera);
+        match staged {
+            Some(camera) => art.dance_env_visible_indices_with(&camera),
+            None => art.dance_env_visible_indices(),
+        }
     }
 
     pub fn play_mg_dance_env_flat_rgba(&self) -> Vec<u8> {

@@ -618,9 +618,17 @@ pub fn inject_trade_full(patcher: &mut DiscPatcher, seed: u64) -> Result<()> {
     if u16::from_le_bytes([box_h[0], box_h[1]]) != ov::BOX_H_OLD {
         anyhow::bail!("picker box-height site mismatch; refusing to patch");
     }
-    if words2(ov::ROW2_STR_LOAD_VA)? != ov::ROW2_STR_LOAD_OLD {
+    // The row-2 load is `lui a0,hi; addiu a0,a0,lo` forming "@Quit". A
+    // language pack that lengthened "@Quit" moved it and rewrote this pair
+    // (`translation::code_strings`), so the pair's shape is the guard and the
+    // address it forms is where "@Quit" lives now.
+    let row2 = words2(ov::ROW2_STR_LOAD_VA)?;
+    if row2[0] & 0xFFFF_0000 != ov::ROW2_STR_LOAD_OLD[0] & 0xFFFF_0000
+        || row2[1] & 0xFFFF_0000 != ov::ROW2_STR_LOAD_OLD[1] & 0xFFFF_0000
+    {
         anyhow::bail!("row-2 string-load site mismatch; refusing to patch");
     }
+    let quit_va = ((row2[0] & 0xFFFF) << 16).wrapping_add(row2[1] as u16 as i16 as i32 as u32);
     if words2(ov::ROW4_DETOUR_VA)? != ov::ROW4_DISPLACED {
         anyhow::bail!("renderer row-4 site mismatch; refusing to patch");
     }
@@ -678,7 +686,7 @@ pub fn inject_trade_full(patcher: &mut DiscPatcher, seed: u64) -> Result<()> {
     // (reference-free, all-zero, reloaded with the overlay). Nothing touches the SCUS
     // rodata gap, so seru trading is compatible with every gap-based feature
     // (bonus-equipment drops, flee-EXP, the Seru-Bell name). ---
-    let row4 = ov::words_to_bytes(&ov::assemble_row4_draw_stub_str(ov::QUIT_STR_VA));
+    let row4 = ov::words_to_bytes(&ov::assemble_row4_draw_stub_str(quit_va));
     let entry = ov::words_to_bytes(&ov::assemble_trade_entry_stub());
     let disp = ov::words_to_bytes(&ov::assemble_trade_dispatch_stub());
     let handler = ov::words_to_bytes(&ov::assemble_trade_handler());

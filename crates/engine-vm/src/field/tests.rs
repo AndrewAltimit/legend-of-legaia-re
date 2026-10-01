@@ -185,7 +185,8 @@ struct TestHost {
     n_c_sub_0_move_cancels: u32,
     n_c_sub_0_active: bool,
     n_c_sub_3_teleports: u32,
-    n_c_sub_d_allocs: u32,
+    n_c_sub_d_queries: u32,
+    n_c_sub_d_mover_idle: bool,
     n_c_party_flag_bits: std::collections::HashMap<u16, bool>,
     n_e_sub_4_outside: bool,
     n_e_sub_4_bboxes: std::cell::RefCell<Vec<[i16; 4]>>,
@@ -723,8 +724,9 @@ impl FieldHost for TestHost {
     fn op4c_n_c_sub_3_script_teleport(&mut self, _ctx: &mut FieldCtx) {
         self.n_c_sub_3_teleports += 1;
     }
-    fn op4c_n_c_sub_d_script_alloc(&mut self) {
-        self.n_c_sub_d_allocs += 1;
+    fn op4c_n_c_sub_d_camera_mover_live(&mut self) -> bool {
+        self.n_c_sub_d_queries += 1;
+        !self.n_c_sub_d_mover_idle
     }
     fn op4c_n_c_party_flag_test(&self, flag_idx: u16) -> bool {
         *self.n_c_party_flag_bits.get(&flag_idx).unwrap_or(&false)

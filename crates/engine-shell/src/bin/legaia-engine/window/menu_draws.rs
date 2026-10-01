@@ -293,8 +293,13 @@ impl PlayWindowApp {
                 )
             }
             FieldMenuSubsession::Config(s) => {
-                let rows = s.state().rows_for(s.key_config_armed());
-                let row_views: Vec<legaia_engine_render::OptionsRowView<'_>> = rows
+                // The screen's model is the engine's
+                // (`OptionsSession::screen_model`, the play page's call too);
+                // this host only borrows it into the renderer's views and
+                // places the popup.
+                let m = s.screen_model();
+                let row_views: Vec<legaia_engine_render::OptionsRowView<'_>> = m
+                    .rows
                     .iter()
                     .map(|r| legaia_engine_render::OptionsRowView {
                         label: r.label,
@@ -303,51 +308,29 @@ impl PlayWindowApp {
                         advance: r.advance,
                     })
                     .collect();
-                let popup = s.popup().map(|p| legaia_engine_render::OptionsPopupDraw {
+                let popup = m.popup.map(|p| legaia_engine_render::OptionsPopupDraw {
                     rect: self.options_popup_rect(&p),
                     choices: p.choices,
                     cursor: p.cursor,
                 });
-                // Selected-row pointing hand at `x-10` on the cursor row
-                // (retail's FUN_8002b994 kind-0 cursor, shared with the
-                // status party list).
-                let row_y_off: i32 = rows
+                let rebind_pairs: Vec<(&str, &str)> = m
+                    .rebind
                     .iter()
-                    .take(s.cursor() as usize)
-                    .map(|r| r.advance)
-                    .sum();
-                // Key Config sub-screen model, when it is open. The pairs
-                // are the shared session's rows, so the native window and the
-                // play page print the same button order and the same bound
-                // keys.
-                let rebind_rows: Vec<(String, String)> = s
-                    .key_rebind()
-                    .map(|k| {
-                        k.rows()
-                            .iter()
-                            .map(|r| (r.button.name().to_string(), r.key.clone()))
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                let rebind_pairs: Vec<(&str, &str)> = rebind_rows
-                    .iter()
+                    .flat_map(|k| k.rows.iter())
                     .map(|(b, k)| (b.as_str(), k.as_str()))
                     .collect();
-                let rebind = s.key_rebind().map(|k| KeyRebindView {
+                let rebind = m.rebind.as_ref().map(|k| KeyRebindView {
                     rows: &rebind_pairs,
-                    cursor: k.cursor(),
-                    awaiting: matches!(
-                        k.phase(),
-                        legaia_engine_core::key_rebind::KeyRebindPhase::AwaitingKey { .. }
-                    ),
+                    cursor: k.cursor,
+                    awaiting: k.awaiting,
                 });
                 pause_screen_draws(
                     &ctx,
                     PauseScreen::Options(OptionsScreenView {
                         rows: &row_views,
-                        cursor: s.cursor(),
+                        cursor: m.cursor,
                         popup,
-                        row_y_off,
+                        row_y_off: m.row_y_off,
                         rebind,
                     }),
                 )
@@ -369,62 +352,18 @@ impl PlayWindowApp {
     /// Not part of [`Self::field_menu_sub_draws`]'s shared composition: this
     /// screen is the **save-select** surface, and the native window reaches
     /// the same one from the boot Continue -> Load path
-    /// (`BootUiState::SaveSelect`). Both go through
-    /// `save_select_phase_text_draws` + `save_select_chrome_sprite_draws` so
-    /// the in-game and boot entries cannot drift from each other; hoisting
-    /// only the pause half would have forked them. Pre-scaled to surface
-    /// coords, so the caller must not scale it again.
+    /// (`BootUiState::SaveSelect`). Both go through `save_select_overlay`
+    /// (the shared overlay model + composition) so the in-game and boot
+    /// entries cannot drift from each other; hoisting only the pause half
+    /// would have forked them. Pre-scaled to surface coords, so the caller
+    /// must not scale it again.
     pub(super) fn field_save_sub_draws(
         &self,
         s: &legaia_engine_core::save_select::SaveSelectSession,
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<TextDraw> {
-        use legaia_engine_core::save_select::SelectPhase;
-        let rows: Vec<legaia_engine_render::SaveSelectRow<'_>> = s
-            .slots()
-            .iter()
-            .map(|snap| legaia_engine_render::SaveSelectRow {
-                label: &snap.label,
-                present: snap.present,
-                party_lv: snap.party_lv,
-                play_time_seconds: snap.play_time_seconds,
-                money: snap.money,
-                location: &snap.location,
-            })
-            .collect();
-        let cursor = match s.phase() {
-            SelectPhase::Browsing { cursor } => cursor as usize,
-            SelectPhase::NowChecking { slot, .. }
-            | SelectPhase::SlotPreview { slot }
-            | SelectPhase::ConfirmOverwrite { slot, .. }
-            | SelectPhase::ConfirmDelete { slot, .. } => slot as usize,
-            SelectPhase::Done(_) => return Vec::new(),
-        };
-        let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
-        // The title word comes from the session's MODE, not from which menu
-        // row opened it: the field menu's Load row builds the same
-        // sub-session shape as its Save row, and retail's header tab toggles
-        // its string on the same direction flag (`_DAT_801f0200`).
-        let mut out = legaia_engine_render::save_select_draws_for(
-            &self.font,
-            save_select_title_word(s),
-            &rows,
-            cursor,
-            None,
-            stage_origin,
-            stage_scale,
-            self.save_menu.is_none(),
-        );
-        out.extend(save_select_phase_text_draws(
-            &self.font,
-            s,
-            &self.save_flow,
-            stage_origin,
-            stage_scale,
-            self.save_menu.is_some(),
-        ));
-        out
+        self.save_select_overlay(s, surface_w, surface_h).texts
     }
 
     /// Build draws for the retail **Magic** screen: caster window (id 19),
@@ -882,96 +821,35 @@ impl PlayWindowApp {
         state: Option<MenuState>,
         cursor: usize,
     ) {
-        let name_of = |id: u8| -> String {
-            self.seru_names
-                .as_ref()
-                .and_then(|t| t.name(id))
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| format!("Seru {id:02X}"))
-        };
-        let owner_of = |slot: u8| -> String {
-            self.session
-                .host
-                .world
-                .party
-                .roster
-                .members
-                .get(slot as usize)
-                .map(|m| m.name())
-                .filter(|n| !n.is_empty())
-                .unwrap_or_else(|| format!("P{slot}"))
-        };
-        match state {
-            Some(MenuState::ShopTrade) => {
-                // Mirror the retail trade screen: the title names BOTH sides of
-                // the bucket's standing offer, each line is one qualifying
-                // owner, and an empty list spells out the missing trade.
-                let mut title = "SHOP - TRADE SERU".to_string();
-                let mut labels: Vec<String> = Vec::new();
-                match self.menu_runtime.trade_session.as_ref() {
-                    Some(t) => {
-                        title = format!(
-                            "TRADE - WANTS {} / OFFERS {} LV{}",
-                            name_of(t.offer.want_id),
-                            name_of(t.offer.give_id),
-                            t.offer.give_level,
-                        );
-                        if t.offers.is_empty() {
-                            labels.push(format!(
-                                "No '{}' available to trade for '{}'",
-                                name_of(t.offer.want_id),
-                                name_of(t.offer.give_id),
-                            ));
-                        } else {
-                            for o in &t.offers {
-                                labels.push(format!(
-                                    "{} Lv{} ({}) -> {} Lv{}",
-                                    name_of(o.given_id),
-                                    o.given_level,
-                                    owner_of(o.owner_slot),
-                                    name_of(o.received_id),
-                                    o.received_level,
-                                ));
-                            }
-                        }
-                    }
-                    None => labels.push("(no trades offered)".to_string()),
-                }
-                let rows: Vec<ShopRow<'_>> = labels
-                    .iter()
-                    .map(|l| ShopRow::new(l.as_str(), None))
-                    .collect();
-                out.extend(shop_draws_for(
-                    &self.font,
-                    &title,
-                    &rows,
-                    cursor,
-                    None,
-                    super::hud::SHOP_OVERLAY_PEN,
-                ));
-            }
-            Some(MenuState::ShopTradeConfirm) => {
-                let title = match self.menu_runtime.pending_trade_offer() {
-                    Some(o) => format!(
-                        "Trade {} for {} Lv{}?",
-                        name_of(o.given_id),
-                        name_of(o.received_id),
-                        o.received_level,
-                    ),
-                    None => "Trade?".to_string(),
-                };
-                let rows = vec![ShopRow::new("Yes", None), ShopRow::new("No", None)];
-                out.extend(shop_draws_for(
-                    &self.font,
-                    &title,
-                    &rows,
-                    cursor,
-                    None,
-                    super::hud::SHOP_OVERLAY_PEN,
-                ));
-            }
-            _ => {}
+        if !matches!(
+            state,
+            Some(MenuState::ShopTrade) | Some(MenuState::ShopTradeConfirm)
+        ) {
+            return;
         }
+        // The screen's text is the engine's (`seru_trade::trade_screen_text`,
+        // the browser play page's call too).
+        let pending = self.menu_runtime.pending_trade_offer();
+        let text = legaia_engine_core::seru_trade::trade_screen_text(
+            self.menu_runtime.trade_session.as_ref(),
+            pending.as_ref(),
+            state == Some(MenuState::ShopTradeConfirm),
+            &self.session.host.world.party.roster.members,
+            self.seru_names.as_ref(),
+        );
+        let rows: Vec<ShopRow<'_>> = text
+            .rows
+            .iter()
+            .map(|l| ShopRow::new(l.as_str(), None))
+            .collect();
+        out.extend(shop_draws_for(
+            &self.font,
+            &text.title,
+            &rows,
+            cursor,
+            None,
+            super::hud::SHOP_OVERLAY_PEN,
+        ));
     }
 }
 
@@ -994,6 +872,7 @@ fn equip_compose_input(
         candidate_names: &m.candidate_names,
         candidate_counts: &m.candidate_counts,
         stat_compare: &m.stat_compare,
+        best_changes: &m.best_changes,
         phase: match m.phase {
             Tag::SlotPicker => legaia_engine_render::EquipDrawPhase::SlotPicker,
             Tag::ItemPicker => legaia_engine_render::EquipDrawPhase::ItemPicker,

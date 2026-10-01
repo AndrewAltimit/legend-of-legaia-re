@@ -175,11 +175,7 @@ is not an `engine-ui` builder.** A cheap sweep that finds them is "public
 content-shaped `fn` in `engine-core` / `engine-vm` named by exactly one host's
 sources" - both shop windows surface on it. Read the hits, though, rather than
 counting them: most one-host kernels are correct, because the minigame pages
-and the native minigame screens are genuinely different screen sets, and one
-more is a *better* implementation on one side (the browser's floating-damage
-readout uses the font fallback while the native window samples the real 24x24
-cells out of VRAM, which is what the builder's own doc asks a VRAM-capable host
-to do).
+and the native minigame screens are genuinely different screen sets.
 
 ## Tier 2 - paired constants: do paired values agree?
 
@@ -1248,7 +1244,7 @@ about these is contested.
 |---|---|
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
 | derived scene lights | An enhancement the browser renderer cannot express. See [below](#derived-scene-point-lights-are-native-only). |
-| battle body blend modes | Both hosts draw a whole battle body's semi-transparency; three residues differ in scope and ordering. See [below](#a-battle-bodys-blend-mode-reaches-both-hosts-with-three-residues). |
+| battle body blend modes | Both hosts draw a whole battle body's semi-transparency; two residues differ in override keying and ordering. See [below](#a-battle-bodys-blend-mode-reaches-both-hosts-with-two-residues). |
 | save rack port 1 | The native rack's first port is an engine-format save directory; the page's two ports are both memory-card images. See [below](#the-save-racks-first-port-differs-per-host). |
 
 ### The frame loop rules are engine-side
@@ -1314,7 +1310,7 @@ fidelity: this is the one row here where the *native* host is the one running
 a non-retail path, so the page being without it is a feature gap rather than
 a correctness gap.
 
-### A battle body's blend mode reaches both hosts, with three residues
+### A battle body's blend mode reaches both hosts, with two residues
 
 Two retail writers put a whole battle body into a semi-transparent blend
 mode through the top byte of its tint colour word: the near-camera ghost
@@ -1325,16 +1321,15 @@ ABR mode into the packets' tpage bits, so every prim draws semi-transparent,
 the GPU still honouring each texel's STP bit
 ([battle.md](../subsystems/battle.md#the-near-camera-ghost-pass-fun_8004dc68)).
 
-Both hosts reproduce that through one kernel, `engine-core::battle_body_blend`,
-which rewrites a body's TSB words from the draw plan's colour word: the native
-posed-mesh builder applies it before upload
-(`event_handler/redraw_passes.rs`), and the page re-sends the stream on a
+Both hosts reproduce that through one kernel, `engine-core::battle_body_blend`
+behind `BattleActorDrawPlan::apply_body_blend`, which rewrites a body's TSB
+words from the draw plan's colour word: the native override builder applies it
+to the posed mesh and, while the word raises ABE, to a re-upload of the rest
+mesh (`event_handler/redraw_passes.rs`), and the page re-sends the stream on a
 blend-key change (`web-viewer::play_battle_body_blend`, with
 `TmdRenderer::updateSceneMeshCbaTsb` rebuilding the per-ABR semi tail). What
 still differs:
 
-- **native:** only posed bodies (the `pose_frame` path) take the blend; a body
-  drawn unposed keeps its authored TSB words;
 - **native:** the posed override is keyed by TMD index, so two bodies sharing
   one TMD share one override;
 - **page:** blend-pass ordering is per mesh, not per prim, so a blended body's
@@ -3108,31 +3103,27 @@ so the tier had nothing to pair:
 
 ### Open drift the same pass found
 
-Recorded rather than fixed; each names the host that lacks it. None is gated.
-
-- **NPC clip advance off the field.** Both hosts drain the ANIMATE cues
-  every tick, but the window advances its NPC clip players in its draw pass
-  and only in `SceneMode::Field` (the frame index keys its pose cache), while
-  the page advances them every tick in every mode.
-- **Shop tick.** The window ticks the world under an open shop with a neutral
-  pad; the page freezes the world.
-- **Sub-tick taps.** The window sets and clears its pad straight from key
-  events, so a press and release between two ticks never reaches `set_pad`;
-  the page latches it.
-- **Overworld CLUT walk.** Implemented twice (`window/field_render.rs`
-  `WaterAnim`, the page's `step_field_vram_fx`), already differing in which
-  scenes patch strip rows and which column is checked.
-- **Monster action-tag clips** are installed from each host's render path, so a
-  monster with no mesh - or a native frame's first battle ticks - reads no tag
-  table.
-- **Baka on the play page** carries no strike clock or afterimage in its JSON;
-  the minigames page does.
+Every row this pass recorded as open has since closed (below, and in
+[the third pass](#options-battle-chrome-and-minigame-huds-a-third-side-by-side-pass)).
 
 The audio rows of the same pass are closed or settled in
 [their own section](#audio-legs-one-kernel-per-decision).
 
 ### Closed from the same list
 
+- **Monster action-tag clips.** Each host used to install a monster's
+  archive-order clip table from its own render build, so a monster with no
+  mesh - or a native frame's first battle ticks - read no tag table.
+  `SceneHost::install_battle_monster_action_clips` installs them from the
+  engine tick the battle is up, for either host. The shop tick and the
+  sub-tick taps from the same list are closed in
+  [the menus section](#menus-saves-and-minigame-exits-one-call-per-decision).
+- **NPC clip advance off the field.** The window advanced its NPC clip
+  players only in `SceneMode::Field`, the page in every mode, so an NPC came
+  back from a fight on a different clip frame per host. When the players run
+  is the world's decision now, `World::field_npc_clips_advance`, which both
+  hosts ask; only where they advance (the page's per-tick step, the window's
+  draw pass keyed on its pose cache) stays per host.
 - **The field frame tail.** Three one-host tails moved onto engine kernels in
   `engine-core`'s `world/field_frame_tail.rs`, each called by both hosts:
   `World::tick_effect_scene_graphs` (summon / move-FX / field-FX),
@@ -3429,6 +3420,194 @@ loader spawns, seated by `engine-core::place_name_banner` from
 `SceneHost::load_scene` and drawn by the balloon builders both hosts already
 share. Still open, and on neither host: the world-map location labels
 ([`place-names.md`](../formats/place-names.md)).
+
+## Options, battle chrome and minigame HUDs: a third side-by-side pass
+
+A read of both hosts over the options knobs, the battle chrome and the
+minigame HUDs. Each closed row below is one engine call both hosts make now,
+or the deviating host adopting the other's behaviour.
+
+- **The camera-distance preset.** The native `T` stepped the preset and
+  persisted it; the page's export stepped only its camera, had no caller, and
+  the next options apply put the stored value back. Both step the option now
+  (`OptionsState::cycle_camera_distance`), put the returned preset on their
+  camera and persist, and the page carries a control for it.
+- **VR saved precise movement off.** The page's VR first-person drive turned
+  precise movement on and off through the persisting setter, so leaving VR
+  stored "off" over the player's own choice. It lays a session-only override
+  over the option now (`set_precise_movement_override`), which every options
+  apply re-asserts and nothing writes to the store.
+- **The occlusion gate's body centre.** The page rebuilt
+  `field_occlusion::player_body_centre` inline, half-height literal and all;
+  it calls the kernel now. The equal result today was a coincidence of two
+  constants, which is the shape tier 3 exists for, so both this and the
+  camera-distance cycle are `SIM_PAIRS` rows.
+- **The HUD over a party wipe.** Retail's frame after the wipe store is the
+  title overlay fading in, and the native window's boot-UI arm owns the whole
+  HUD for the hold. The page silenced only its post-battle list, so the party
+  strip, the plaque and the command chips stayed painted over the frozen
+  frame; its whole overlay list is empty for the hold now.
+- **The colour grade a frame late.** The native window stages the screen
+  tint, the prologue grade and the depth-cue ramp after its tick loop. The
+  page read `play_cutscene_state_json` once, before its ticks (the pad lock
+  and the menu gate need that value), and staged the same read after them,
+  so the scene-entry fade and the prologue grade ran one frame behind. It
+  re-reads after each tick now. A tier cannot see this one: both hosts reach
+  the same export, and the difference is which side of the tick the read
+  sits on - [one decision, two inputs](#one-decision-two-inputs) again.
+- **The minigame status rows.** The slot, Baka, Muscle Dome and dance
+  affordance rows were written out once per host and had drifted in wording
+  (a Muscle Dome turn boundary telling the player to press Cross, where
+  retail's turn top is automatic and `World::tick` advances it with no press;
+  the slot exit reading "quit" on one host and "leave" on the other) and in
+  space (the native window drew the Muscle Dome rows, the dance beat track and
+  the Baka digit strip in raw surface pixels, top-left at a fraction of the
+  page's size). One row builder per game lives in
+  `engine-core::minigame_status`, one draw kernel in
+  `engine-ui::ui_text_lines::status_row_draws_for`, and each host applies its
+  one stage transform; tier 1 enumerates the kernel, so a host that stops
+  calling it fails. Only fishing already had this shape
+  (`PondSession::status_rows`).
+- **A nameless item in the shop.** On a load without the executable the
+  native shop printed `item 42` and the page `Item 2A`, each spelling its own
+  fallback. Both shop label helpers read `MenuState::item_label` now, the
+  engine's `Item 2A` form, and a `SIM_PAIRS` row holds them to it.
+- **The damage numerals' font fallback on the page.** Both hosts sample
+  retail's 24x24 cells off the battle VRAM once it exists and fall back to the
+  font before. The page's fallback could never draw: its layout read the
+  battle camera through the render-gated `play_battle_camera_vp`, which
+  answers empty on exactly the frames the fallback is for. The layout now
+  reads the engine's pose (`World::battle_cam_pose`) directly.
+- **The battle trail and move-FX streak aspect.** Both passes project into
+  the 320x240 stage, and the native window built their camera at the
+  surface's aspect, so on any window that is not 4:3 (the runner's 960x699
+  included) the trail and the streak sat off the bodies. They use the stage's
+  4:3 now, the aspect the scene pass draws at inside its stage viewport and
+  the page's `battle_vp` call already used.
+- **The target cursor's cue.** The pulse toward white on the pointed-at
+  monster and the dim on the rest were hand-copied numbers in each host's
+  draw pass; both read `battle_action::cursor_cue` now, under a `SIM_PAIRS`
+  row.
+- **Baka on the play page** was listed here as carrying no strike clock or
+  afterimage. Both play hosts draw the duel through the shared
+  `BakaDuelSurface::frame`, ghosts and impact effects included, and the
+  page's `play_mg_baka_state_json` shares the minigames page's builder; the
+  row was stale.
+- **The CLUT-walk shimmer.** The overworld ocean and the field water /
+  waterfall walkers were implemented three times - the native `WaterAnim`,
+  the page's rebuild plus its `FieldSceneAnim` step, and the field-scene
+  viewer's own resolve - and the copies had drifted: the page never ran the
+  Drake-complement pass on a field scene, and tested strip coverage at column
+  0 where a source cell can sit at any x. `engine-core::clut_walk_anim` is the
+  resolve, the park (both layers), the ocean-head fallback and the per-game-
+  tick step; all three surfaces call it, and a `SIM_PAIRS` row holds both play
+  hosts' scene rebuilds to `ClutWalkAnim::install`. `legaia_asset::clut_walk`
+  stays the parser.
+- **A battle body's blend off its rest mesh.** The capture / defeat fade and
+  the near-camera ghost apply the colour word's blend to every prim retail
+  draws, posed or not. The native window applied it to posed meshes only, and
+  its cue gate asked `pose_frame` for the same reason, so a body drawn from
+  its rest mesh stayed opaque and un-cued there. Both hosts now go through
+  `BattleActorDrawPlan::apply_body_blend` (the native window keeps each battle
+  body's rest mesh CPU-side and re-uploads it blended while the word raises
+  ABE) and `BattleActorDrawPlan::tint_cue_applies`, under two `SIM_PAIRS`
+  rows.
+- **The Muscle Dome arena in 3D.** The page posed the arena, the fighter
+  and the monster in its script (swing clips picked off the turn edge, an
+  orbit framing) and the native window drew no 3D dome at all. Both play
+  hosts now drive `muscle_dome_scene::MuscleDomeSurface` - the seat, the
+  choreography, the pose and `DomeCamera::vp_raw` - and upload what it
+  returns, under two `SIM_PAIRS` rows. The standalone minigames page keeps
+  its own dome panel (`minigame-muscle.js`).
+- **The battle-intro arming.** The PROT 0979 load and relocation, the
+  curtain table and tile-corner fallbacks, the shade-pack parse and the two
+  `IntroEnv` seeds were written out on both hosts, with only the style inputs
+  shared. `BattleIntro::arm_for_battle` (`engine-ui::battle_intro`) is the
+  arming now; the page adds only its bottom-up capture flip. A `SIM_PAIRS`
+  row holds both `arm_battle_intro` sites to it.
+- **The Seru-trade screen's text.** The offer list's title, owner rows and
+  empty-list line and the confirm question were formatted once per host.
+  `seru_trade::trade_screen_text` is the text now, under a `SIM_PAIRS` row.
+- **The shop root and Options row models.** Each host mapped
+  `shop_menu_rows` onto its own label and ink table, and both left Quit
+  white where retail's root window (`FUN_801D4868`) greys it with Sell on an
+  empty bag; `menu_runtime::shop_root_labels` is the table now, and the
+  engine-only Trade row takes the same rule. The Options screen's rows, the
+  hand's row offset and the Key Config rows come from
+  `OptionsSession::screen_model`; a host only borrows them into the view
+  types and places the popup. Two `SIM_PAIRS` rows.
+- **The save-select overlay sequence.** Each host sequenced the screen's
+  overlays itself - the pills and their hand, the "Now checking" beat, the
+  preview grid and info panel or its caption, the confirm messagebox - with
+  the text and sprite halves in separate functions, and the page returned
+  before every phase overlay when the chrome atlas was absent, where the
+  native window still printed them. `SaveScreenFlow::overlay_model` is the
+  sequence and `save_select_overlay_draws` (`engine-ui`) the one composition
+  of both halves; its text half draws with or without the atlas. Both doors
+  to the screen (boot Continue -> Load, the pause menu's Load / Save rows) go
+  through it on both hosts; the `SIM_PAIRS` save-select row holds the calls.
+- **Small copies moved onto one call.** The spoils line's leader name
+  (`World::battle_spoils_leader`) and a save's resume point
+  (`SceneHost::current_resume`, behind the native session's wrapper and the
+  page's card and LGSF writers) and the name-entry view's cursor mapping and
+  caret blink (`NameEntry::cursor_cells`, `name_entry::caret_on`) were each
+  written out once per host.
+
+### Open from the same pass
+
+Recorded rather than fixed. Each names the host that lacks it or the copy
+that could drift; none is gated.
+
+- **World-map marker gates**, read and left as they are. Both hosts emit the
+  markers through `marker_quads` and differ in two predicates, neither of
+  which is drift: the player stand-in asks each host whether its own leader
+  mesh drew (the native drained spawn slots, the page's player rig), and the
+  native boot-panel gate has no page twin because no page boot panel draws
+  over a world-map frame.
+- **PSX rasterisation (native only).** `LEGAIA_PSX_RENDER` turns on vertex
+  jitter and 15-bit dither in the wgpu renderer; the page's shaders have
+  neither. Opt-in and non-default, so a feature gap rather than drift. See
+  [what the page would need](#what-the-page-needs-for-the-two-native-only-render-toggles).
+- **Dynamic lighting, whole toggle.** Beyond the derived point lights
+  ([above](#derived-scene-point-lights-are-native-only)), the native `I`
+  toggle's directional light and screen-centred light pool also have no page
+  toggle or shader path; same section.
+- **The fishing wander readout (native only), left as a debug aid.** A
+  dev-menu readout of `FUN_801d2050`'s tracked points, not a retail surface;
+  nothing a player sees depends on it, so the page's dev menu carries no twin
+  by choice.
+- **The dance HUD quads (neither host).** The native window calls
+  `DanceGame::hud_draw_quads` into an emitter that returns nothing without a
+  page upload; the page never calls it. Host-identical, so a gap rather than
+  drift.
+
+### What the page needs for the two native-only render toggles
+
+Neither toggle changes a retail frame (both default off), and neither is
+wired on the page. Assessed rather than built, because both land in
+[`site/js/webgl-shaders.js`](../../site/js/webgl-shaders.js), the one GLSL
+program every 3D page shares - a compile error there blanks the site - and
+no gate compiles that program outside a browser.
+
+- **PSX rasterisation** is the smaller of the two. The native shader carries
+  it in one `psx_params` vector (framebuffer width and height, snap on,
+  dither on): the vertex stage snaps the projected position to the
+  framebuffer's pixel grid (`psx_snap_clip` in `engine-render::shaders`), and
+  every fragment path ends in a 4x4 ordered dither down to 15-bit colour
+  (`psx_dither`, the PSX dither matrix `-4 0 -3 1 / 2 -2 3 -1 / -3 1 -4 0 /
+  3 -1 2 -2` added before the `>> 3`, then `(c5 << 3) | (c5 >> 2)` back to 8
+  bits). The page needs the same two functions in its main program, one
+  `vec4` uniform set per draw in `webgl-tmd.js` (`render` and
+  `renderAssembled`), and a toggle; a unset uniform is all zeros, which is
+  off, so the faithful path stays untouched. Native has no in-game toggle
+  either - the env var is the whole switch.
+- **Dynamic lighting** needs a lighting term the page does not have at all:
+  the `I` toggle's warm directional light and screen-centred pool (a per-draw
+  light direction + colour and a capped multiply over the baked shading), and
+  under it the derived point lights with their PCF shadow maps, which need a
+  per-frame export of the picked light set and a shadow-map pass
+  ([above](#derived-scene-point-lights-are-native-only)). It is an
+  enhancement both ways, so the page is short a feature, not wrong.
 
 ## Adding coverage
 

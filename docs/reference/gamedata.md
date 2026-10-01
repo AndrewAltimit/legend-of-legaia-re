@@ -28,7 +28,9 @@ Three GameFAQs walkthroughs supply the raw values:
   `legaia_gamedata::magic_leveling`.
 
 The music-track table is contributed directly by Stann0x rather than
-mined; see [`music-tracks.md`](music-tracks.md).
+mined; see [`music-tracks.md`](music-tracks.md). So are the scene
+identifications behind the scene-name table; see
+[`scene-names.md`](scene-names.md).
 
 Only the *factual* columns are committed (item names, prices, art
 command sequences, MP costs, monster locations, drop tables). No prose
@@ -76,6 +78,8 @@ data/gamedata/
   music.toml          - 81-track BGM disambiguation (debug id + title /
                         in-game context / OST title / relocalization);
                         contributed by Stann0x (see music-tracks.md)
+  scenes.toml         - display name per CDNAME scene + the disc's banner
+                        + Stann0x's reading (see scene-names.md)
 ```
 
 Implementation: [`crates/gamedata`](../../crates/gamedata).
@@ -391,3 +395,5 @@ records being reverse-engineered:
   Record layout the gamedata `directions` field cross-validates.
 - [Music-track disambiguation](music-tracks.md) - the sibling
   curated table this crate also exposes (the `music` accessors).
+- [Scene names](scene-names.md) - the scene-name table this crate
+  also exposes (`scene_names` / `scene_by_id`).

@@ -509,14 +509,24 @@ impl FieldCameraFrame {
 /// non-overworld mode. The world map keeps both-sided draws: its continent
 /// terrain's winding parity is the world-map pass's, not the field pass's,
 /// and the field-tuned cull would eat the ground tiles. Battle and the
-/// minigame venues keep theirs (a different per-pass parity).
+/// other minigame venues keep theirs (a different per-pass parity).
+///
+/// The **dance hall** is armed too. The dance frame draws its hall the way
+/// the field does - the render library's decoration pass (game mode `0x19`
+/// is one of the three `FUN_80026CE4` runs `FUN_801F7088` for) plus the
+/// placed objects through the same prim dispatcher - and a live dance
+/// capture has those placed actors' colour words at `0x40808080`, without
+/// the double-sided bit. The native window draws the hall in raw world
+/// coordinates under the field frame's flip, so the field parity is its
+/// parity.
 ///
 /// Shared so the two hosts cannot arm it on different frames; each passes the
 /// two values it can answer locally.
 ///
 /// REF: FUN_80043390, FUN_80043768
 pub fn nclip_cull_mode(cutscene_camera_active: bool, mode: SceneMode) -> u32 {
-    let armed = mode == SceneMode::Field || (cutscene_camera_active && mode != SceneMode::WorldMap);
+    let armed = matches!(mode, SceneMode::Field | SceneMode::Dance)
+        || (cutscene_camera_active && mode != SceneMode::WorldMap);
     u32::from(armed) * 2
 }
 

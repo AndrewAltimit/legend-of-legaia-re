@@ -136,6 +136,7 @@ use legaia_asset::man_edit::{self, TextSite};
 
 use crate::disc::DiscPatcher;
 
+use super::code_strings::CodeStrings;
 use super::export::{SceneManText, export_pack};
 use super::import::{
     ImportPhase, ImportReport, IssueKind, Key, WritePath, import_pack_phase, parse_key,
@@ -147,6 +148,7 @@ use super::name_pool::{Layout, NamePool, PinReason};
 use super::pack::{Entry, LanguagePack};
 use super::stream_man::{MAX_GROWN_FOOTPRINT, StreamManText};
 use super::ui;
+use crate::space_ledger;
 
 /// Schema tag of a serialized [`SpaceReport`].
 pub const SPACE_SCHEMA: &str = "legaia-space-v1";
@@ -256,6 +258,10 @@ impl Outcome {
 pub enum RoomKind {
     /// A string that cannot move: `room` is the hard limit.
     StringFixed,
+    /// A `ui_menu` / `system_text` string that can move with its references
+    /// ([`super::code_strings`]): `room` in place, past it the free bytes of
+    /// its image (see `code_images`).
+    StringMovable,
     /// A SCUS name: `room` in place, a free run past it.
     NameMovable,
     /// A fixed NUL-padded field.
@@ -297,6 +303,93 @@ pub struct SpaceReport {
     /// accent mode on this disc (pack only), with its key and index.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub characters: Vec<super::accents::KeyedNote>,
+    /// Capacity per translatable category - where its strings live, how
+    /// they are reached, the room they have and what else wants it.
+    #[serde(default)]
+    pub categories: Vec<CategorySpace>,
+    /// Per code image (the executable and each overlay the `ui_menu` pools
+    /// cover): how many strings can move and the room they can move into.
+    #[serde(default)]
+    pub code_images: Vec<CodeImageSpace>,
+    /// Every spare region of the [space ledger](crate::space_ledger), with
+    /// its owner and how much of it is still zero on this disc.
+    #[serde(default)]
+    pub spare_regions: Vec<SpareSpace>,
+}
+
+/// One translatable category's capacity ([`SpaceReport::categories`]).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CategorySpace {
+    /// `items`, `monster_names`, `place_names`, `ui_menu`, `system_text`.
+    pub category: String,
+    /// The pack sections it covers.
+    pub sections: Vec<String>,
+    /// Where the strings live.
+    pub carrier: String,
+    /// How the game reaches a string.
+    pub addressing: String,
+    /// Strings on the disc.
+    pub strings: usize,
+    /// Strings that can take more than their own room (move or grow).
+    pub growable: usize,
+    /// Bytes English uses (each string plus its terminator).
+    pub english_bytes: usize,
+    /// Bytes of in-place room (each string's span plus its terminator).
+    pub room_bytes: usize,
+    /// Room a longer string can take beyond its own, with English: the
+    /// free runs compaction leaves, or a record's growth headroom.
+    pub free_english: usize,
+    /// Spare bytes the space ledger reserves for this category.
+    pub spare_bytes: usize,
+    /// `free_english + spare_bytes` after the pack (pack only).
+    pub free_pack: Option<usize>,
+    /// What happens to a string longer than its room.
+    pub growth: String,
+    /// Other writers of the same room.
+    pub competing: Vec<String>,
+}
+
+/// One code image's movable strings ([`SpaceReport::code_images`]).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CodeImageSpace {
+    /// `SCUS_942.54` or `PROT nnnn`.
+    pub image: String,
+    /// The overlay's PROT entry (`None` for the executable).
+    pub prot: Option<usize>,
+    /// `ui_menu` or `system_text`.
+    pub section: String,
+    /// Strings its pools hold.
+    pub strings: usize,
+    /// Strings that can move.
+    pub movable: usize,
+    /// Pinned strings per [`super::code_strings::CodePin`] reason.
+    pub pinned: BTreeMap<String, usize>,
+    /// Free bytes the compaction of its pools leaves with English.
+    pub english_free: usize,
+    /// Spare bytes a moved string can take outside its pools: the ledger's
+    /// translation region, or (executable) the name pools' free runs.
+    pub spare: usize,
+    /// Free bytes (compaction + spare) left after the pack (pack only).
+    pub pack_free: Option<usize>,
+}
+
+/// One space-ledger region ([`SpaceReport::spare_regions`]).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpareSpace {
+    /// `SCUS_942.54` or `PROT nnnn`.
+    pub image: String,
+    /// First VA.
+    pub start_va: u32,
+    /// One past the last VA.
+    pub end_va: u32,
+    /// `translation` or `mods`.
+    pub owner: String,
+    /// The `randomize` flags that write it (mod regions).
+    pub mods: Vec<String>,
+    /// Bytes still zero on this disc (4-aligned runs).
+    pub zero_on_disc: usize,
+    /// What it is.
+    pub why: String,
 }
 
 /// Report totals.
@@ -755,6 +848,35 @@ fn build_report(
         }
     }
 
+    // --- Code images (ui_menu / system_text) ----------------------------------
+    // The executable and each overlay a `ui_menu` pool lives in, measured
+    // the way import measures them before writing.
+    let mut code: CodeImages = BTreeMap::new();
+    code.insert(
+        usize::MAX,
+        (
+            scus.clone(),
+            ui::SCUS_POOL_BASE_VA,
+            super::import::system_strings(patcher, &scus),
+        ),
+    );
+    let ui_prots: BTreeSet<usize> = ui::UI_STRING_POOLS.iter().map(|p| p.prot_index).collect();
+    for prot in ui_prots {
+        let (Ok(buf), Some(base)) = (patcher.read_entry(prot), ui::overlay_base_va(prot)) else {
+            continue;
+        };
+        let cs = super::import::overlay_strings(patcher, prot, &buf, base);
+        code.insert(prot, (buf, base, cs));
+    }
+    let movable_code: HashSet<(usize, u32)> = code
+        .iter()
+        .flat_map(|(&id, (_, _, cs))| {
+            cs.vas()
+                .filter(|&va| cs.is_movable(va))
+                .map(move |va| (id, va))
+        })
+        .collect();
+
     // --- Monsters -----------------------------------------------------------
     let mut monsters = Vec::new();
     if let Ok(archive) = patcher.read_entry(crate::disc::MONSTER_ARCHIVE_ENTRY) {
@@ -810,10 +932,21 @@ fn build_report(
                     _ => (RoomKind::StringFixed, None),
                 }
             }
-            Some(k @ (Key::ScusStr { .. } | Key::Ui { .. })) => (
-                RoomKind::StringFixed,
-                pool_index(k).map(|i| format!("pool:{i}")),
-            ),
+            Some(k @ (Key::ScusStr { .. } | Key::Ui { .. })) => {
+                let id = match *k {
+                    Key::Ui { prot, va } => (prot, va),
+                    Key::ScusStr { va } => (usize::MAX, va),
+                    _ => unreachable!(),
+                };
+                (
+                    if movable_code.contains(&id) {
+                        RoomKind::StringMovable
+                    } else {
+                        RoomKind::StringFixed
+                    },
+                    pool_index(k).map(|i| format!("pool:{i}")),
+                )
+            }
             Some(Key::ScusParty { .. }) => (RoomKind::Field, Some("party".to_string())),
             Some(Key::ScusCell { .. }) => (RoomKind::Field, Some("place".to_string())),
             Some(Key::Mon { .. }) => (RoomKind::Monster, Some("monster".to_string())),
@@ -1026,6 +1159,9 @@ fn build_report(
         }
     }
 
+    let code_images = code_image_rows(&code, dry, &summary);
+    let spare_regions = spare_rows(&code);
+    let categories = category_rows(&entries, &names, &monsters, &code_images, &summary);
     Ok(SpaceReport {
         schema: SPACE_SCHEMA.to_string(),
         language: pack.map(|p| p.language.clone()),
@@ -1039,7 +1175,281 @@ fn build_report(
         carriers,
         entries,
         characters: Vec::new(),
+        categories,
+        code_images,
+        spare_regions,
     })
+}
+
+fn image_name(id: usize) -> String {
+    if id == usize::MAX {
+        "SCUS_942.54".to_string()
+    } else {
+        format!("PROT {id:04}")
+    }
+}
+
+/// Code image id (a PROT entry, `usize::MAX` for the executable) -> its
+/// bytes, load base and code strings.
+type CodeImages = BTreeMap<usize, (Vec<u8>, u32, CodeStrings)>;
+
+/// One row per code image: movable / pinned strings, the compaction's free
+/// bytes with English, the spare room outside the pools, and what the pack
+/// leaves.
+fn code_image_rows(
+    code: &CodeImages,
+    dry: Option<&ImportReport>,
+    summary: &SpaceSummary,
+) -> Vec<CodeImageSpace> {
+    let mut out = Vec::new();
+    for (&id, (buf, base, cs)) in code {
+        let extra = if id == usize::MAX {
+            Vec::new()
+        } else {
+            space_ledger::translation_spans(space_ledger::Image::Prot(id), buf, *base)
+        };
+        let lay = cs.layout(buf, &BTreeMap::new(), &extra);
+        let english_free: usize = lay.regions.iter().map(|r| r.free).sum();
+        let spare = if id == usize::MAX {
+            summary.name_free_english
+        } else {
+            extra.iter().map(|(s, e)| (e - s) as usize).sum()
+        };
+        let mut pinned: BTreeMap<String, usize> = BTreeMap::new();
+        let mut movable = 0;
+        let mut strings = 0;
+        for va in cs.vas() {
+            strings += 1;
+            match cs.pin_reason(va) {
+                None => movable += 1,
+                Some(p) => {
+                    let name = serde_json::to_value(p)
+                        .ok()
+                        .and_then(|v| v.as_str().map(str::to_string))
+                        .unwrap_or_default();
+                    *pinned.entry(name).or_default() += 1;
+                }
+            }
+        }
+        let pack_free = dry.map(|r| match r.trace.code_layouts.get(&id) {
+            Some(l) => l.free(),
+            None if id == usize::MAX => {
+                english_free + summary.name_free_pack.unwrap_or(summary.name_free_english)
+            }
+            None => english_free + spare,
+        });
+        out.push(CodeImageSpace {
+            image: image_name(id),
+            prot: (id != usize::MAX).then_some(id),
+            section: if id == usize::MAX {
+                "system_text"
+            } else {
+                "ui_menu"
+            }
+            .to_string(),
+            strings,
+            movable,
+            pinned,
+            english_free,
+            spare,
+            pack_free,
+        });
+    }
+    out
+}
+
+/// Every ledger region, with the bytes still zero on this disc.
+fn spare_rows(code: &CodeImages) -> Vec<SpareSpace> {
+    space_ledger::REGIONS
+        .iter()
+        .map(|r| {
+            let id = match r.image {
+                space_ledger::Image::Scus => usize::MAX,
+                space_ledger::Image::Prot(p) => p,
+            };
+            let zero = code.get(&id).map_or(0, |(buf, base, _)| {
+                space_ledger::zero_spans(buf, *base, &[(r.start_va, r.end_va)])
+                    .iter()
+                    .map(|(s, e)| (e - s) as usize)
+                    .sum()
+            });
+            let (owner, mods) = match r.owner {
+                space_ledger::Owner::Translation => ("translation", Vec::new()),
+                space_ledger::Owner::Mods(m) => ("mods", m.iter().map(|s| s.to_string()).collect()),
+            };
+            SpareSpace {
+                image: image_name(id),
+                start_va: r.start_va,
+                end_va: r.end_va,
+                owner: owner.to_string(),
+                mods,
+                zero_on_disc: zero,
+                why: r.why.to_string(),
+            }
+        })
+        .collect()
+}
+
+/// The five categories a translator asks about, each summarised from the
+/// rows above.
+fn category_rows(
+    entries: &[EntrySpace],
+    names: &[NameSpace],
+    monsters: &[MonsterSpace],
+    code_images: &[CodeImageSpace],
+    summary: &SpaceSummary,
+) -> Vec<CategorySpace> {
+    let sums = |f: &dyn Fn(&EntrySpace) -> bool| {
+        let rows: Vec<&EntrySpace> = entries.iter().filter(|e| f(e)).collect();
+        let english: usize = rows
+            .iter()
+            .map(|e| e.english_len.unwrap_or(e.room) + 1)
+            .sum();
+        let room: usize = rows.iter().map(|e| e.room + 1).sum();
+        (rows.len(), english, room)
+    };
+    let landed_len = |e: &EntrySpace| match e.outcome {
+        Some(o) if o.lands() => e.pack_len.or(e.english_len),
+        _ => e.english_len,
+    };
+    let pack = summary.name_free_pack.is_some();
+    let mut out = Vec::new();
+
+    let (n, en, room) = sums(&|e| NAME_SECTIONS.contains(&e.section.as_str()));
+    out.push(CategorySpace {
+        category: "items".into(),
+        sections: NAME_SECTIONS.iter().map(|s| s.to_string()).collect(),
+        carrier: "SCUS_942.54 name pools (always resident)".into(),
+        addressing: "a pointer word in each table record".into(),
+        strings: n,
+        growable: names.iter().filter(|x| x.movable).count(),
+        english_bytes: en,
+        room_bytes: room,
+        free_english: summary.name_free_english,
+        spare_bytes: 0,
+        free_pack: summary.name_free_pack,
+        growth: "moves into the free run of any name region; the pools are compacted and the \
+                 table slots repointed"
+            .into(),
+        competing: vec![
+            "system_text: a longer system string takes the free runs the names leave".into(),
+            "--delilas-challenge: its three custom items point their name slots at code caves \
+             outside the pools (composes)"
+                .into(),
+        ],
+    });
+
+    let (n, en, room) = sums(&|e| e.section == "monster_names");
+    let head = |len: &dyn Fn(&EntrySpace) -> Option<usize>| -> usize {
+        entries
+            .iter()
+            .filter(|e| e.section == "monster_names")
+            .filter_map(|e| {
+                let cap = monsters.iter().find(|m| m.key == e.key)?.cap;
+                Some(cap.saturating_sub(len(e)?))
+            })
+            .sum()
+    };
+    out.push(CategorySpace {
+        category: "monster_names".into(),
+        sections: vec!["monster_names".into()],
+        carrier: "PROT 0867 monster archive, one record per monster".into(),
+        addressing: "the record's +0x00 block-relative offset word".into(),
+        strings: n,
+        growable: monsters.iter().filter(|m| m.cap > m.room).count(),
+        english_bytes: en,
+        room_bytes: room,
+        free_english: head(&|e| e.english_len),
+        spare_bytes: 0,
+        free_pack: pack.then(|| head(&landed_len)),
+        growth: "the record grows, up to the longest retail name".into(),
+        competing: vec![
+            "legaia-patcher monster-model: re-packs the same decoded block into the same slot"
+                .into(),
+            "--monster-stats / --enemy-stat-scale: same-size field writes in the record \
+             (compose)"
+                .into(),
+        ],
+    });
+
+    let (n, en, room) = sums(&|e| e.section == "place_names");
+    let cells = |len: &dyn Fn(&EntrySpace) -> Option<usize>| -> usize {
+        entries
+            .iter()
+            .filter(|e| e.section == "place_names")
+            .map(|e| e.room.saturating_sub(len(e).unwrap_or(e.room)))
+            .sum()
+    };
+    out.push(CategorySpace {
+        category: "place_names".into(),
+        sections: vec!["place_names".into()],
+        carrier: "SCUS_942.54 quick-travel cells (the world-map label table and each scene's \
+                  entry banner are separate carriers)"
+            .into(),
+        addressing: "fixed 0x20-byte cells indexed by landmark".into(),
+        strings: n,
+        growable: 0,
+        english_bytes: en,
+        room_bytes: room,
+        free_english: cells(&|e| e.english_len),
+        spare_bytes: 0,
+        free_pack: pack.then(|| cells(&landed_len)),
+        growth: "none needed: each cell holds 31 bytes".into(),
+        competing: vec![
+            "--rename-location: writes the same cells, the world-map labels (23 characters) \
+             and the entry banners"
+                .into(),
+        ],
+    });
+
+    for (cat, carrier, addressing, growth, competing) in [
+        (
+            "ui_menu",
+            "overlay data segments (field 0897, battle 0898, menu 0899, battle tutorial 0967, \
+             cast modules 0941 / 0954)",
+            "lui pairs and pointer words in the overlay's own code",
+            "moves with every reference into its image's compacted pools or the ledger's \
+             translation region (menu overlay)",
+            vec![
+                "--seru-trade / --show-super-arts: menu overlay run-C and the description run \
+                 (never used by translation)"
+                    .to_string(),
+                "--enemy-hp-bar / arts hooks: code in the battle overlay, outside the pools"
+                    .to_string(),
+            ],
+        ),
+        (
+            "system_text",
+            "SCUS_942.54 system pools (always resident)",
+            "pointer words (screen-element records, message tables), lui pairs, gp-relative forms",
+            "moves with every reference into its pools' compaction or the name pools' free runs",
+            vec![
+                "items: shares the name pools' free runs (names are placed first)".to_string(),
+                "every SCUS mod arena (--shiny-seru, --equipment-drops, --flee-exp, ...) is \
+                 off limits"
+                    .to_string(),
+            ],
+        ),
+    ] {
+        let (n, en, room) = sums(&|e| e.section == cat);
+        let rows: Vec<&CodeImageSpace> = code_images.iter().filter(|c| c.section == cat).collect();
+        out.push(CategorySpace {
+            category: cat.into(),
+            sections: vec![cat.into()],
+            carrier: carrier.into(),
+            addressing: addressing.into(),
+            strings: n,
+            growable: rows.iter().map(|c| c.movable).sum(),
+            english_bytes: en,
+            room_bytes: room,
+            free_english: rows.iter().map(|c| c.english_free).sum(),
+            spare_bytes: rows.iter().map(|c| c.spare).sum(),
+            free_pack: pack.then(|| rows.iter().filter_map(|c| c.pack_free).sum()),
+            growth: growth.into(),
+            competing,
+        });
+    }
+    out
 }
 
 impl SpaceReport {
@@ -1079,6 +1489,9 @@ impl SpaceReport {
             .retain(|s| groups.contains(format!("scene:{}", s.prot).as_str()));
         self.carriers
             .retain(|c| groups.contains(format!("carrier:{}", c.prot).as_str()));
+        self.categories
+            .retain(|c| c.sections.iter().any(|x| x == section));
+        self.code_images.retain(|c| c.section == section);
     }
 
     /// The row for `key`.
@@ -1191,6 +1604,9 @@ pub fn scene_fit(
 pub struct NameFitter {
     scus: Vec<u8>,
     pool: NamePool,
+    /// The executable's `system_text` strings, pinned against the overlays
+    /// the import reads ([`super::import::system_strings`]).
+    sys: Option<super::code_strings::CodeStrings>,
 }
 
 /// [`NameFitter::fit`]'s answer.
@@ -1211,13 +1627,23 @@ impl NameFitter {
         let scus = patcher
             .read_named_file("SCUS_942.54")
             .context("SCUS_942.54 not found in disc image")?;
-        Ok(Self::from_scus(scus))
+        let sys = super::import::system_strings(patcher, &scus);
+        let mut this = Self::from_scus(scus);
+        this.sys = Some(sys);
+        Ok(this)
     }
 
-    /// Measure the pools of a retail executable.
+    /// Measure the pools of a retail executable. Without the overlays a
+    /// `system_text` string cannot be proven movable, so this fitter
+    /// predicts none moving; [`Self::new`] reads them and predicts what
+    /// import does.
     pub fn from_scus(scus: Vec<u8>) -> Self {
         let pool = NamePool::build(&scus);
-        Self { scus, pool }
+        Self {
+            scus,
+            pool,
+            sys: None,
+        }
     }
 
     /// Plan every filled SCUS entry of `pack` exactly as import does, on a
@@ -1241,7 +1667,13 @@ impl NameFitter {
         }
         let mut scus = self.scus.clone();
         let mut report = ImportReport::default();
-        super::import::apply_scus_work(&mut scus, &self.pool, &work, &mut report);
+        super::import::apply_scus_work(
+            &mut scus,
+            &self.pool,
+            self.sys.as_ref(),
+            &work,
+            &mut report,
+        );
         let outcomes = Outcomes::new(&report, HashSet::new());
         let after = report.trace.name_layout.as_ref();
         let regions = english

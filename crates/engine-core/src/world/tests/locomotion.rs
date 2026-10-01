@@ -823,3 +823,49 @@ fn standing_still_is_not_motion_and_a_new_actor_is_not_a_step() {
     let _ = world.tick();
     assert!(world.locomotion.actor_moving.contains(&7), "NPC walked");
 }
+
+/// Between a battle's commit and the battle nothing field-side walks: retail
+/// raises the player's `+0x10 |= 0x80000` in the roll and pages the intro
+/// overlay over the field frame pump. A prop run the transition let the
+/// player start was dropped by battle entry with the engaged bit still up,
+/// and the field came back with the pad locked for good (`town0b`).
+#[test]
+fn locomotion_frozen_through_the_encounter_transition() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.install_field_player(0);
+    world.actors[0].move_state.world_z = 200;
+    world.install_encounter_bracket();
+    let roll = crate::encounter::EncounterRoll {
+        formation_id: 0,
+        row_index: 0,
+        roll_q8: 0,
+    };
+    assert!(
+        world
+            .encounters
+            .session
+            .as_mut()
+            .is_some_and(|s| s.trigger_with(roll))
+    );
+    assert!(world.field_scripts_held_for_battle());
+    world.set_pad(input::PadButton::Up.mask());
+    world.step_field_locomotion();
+    assert_eq!(world.actors[0].move_state.world_z, 200, "the pad is frozen");
+
+    // A prop run battle entry drops releases the engaged bit with it.
+    world.actors[0].move_state.flags |= 0x0008_0000;
+    let mut runner =
+        crate::inline_dialogue::InlineDialogue::new(std::sync::Arc::new(vec![0x21]), 0);
+    runner.prop_anchor = Some((1, 1));
+    world.dialog.inline = Some(runner);
+    let formation = crate::monster_catalog::FormationDef {
+        formation_id: 0,
+        slots: Vec::new(),
+        label: String::new(),
+        ..Default::default()
+    };
+    world.enter_battle_from_formation(&formation);
+    assert!(world.dialog.inline.is_none());
+    assert_eq!(world.actors[0].move_state.flags & 0x0008_0000, 0);
+}

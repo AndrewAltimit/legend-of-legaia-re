@@ -365,6 +365,9 @@ struct DiscGraph {
     fmv: BTreeMap<(String, String), BTreeSet<(usize, usize)>>,
     /// `(from, to)` pairs a walk-on band reaches.
     walk_on: BTreeSet<(String, String)>,
+    /// `(from, to)` -> every entry tile a `0x3F` from `from` lands on in
+    /// `to`: which side of `to` a round trip through `from` delivers to.
+    landings: BTreeMap<(String, String), BTreeSet<(u8, u8)>>,
 }
 
 /// Route cost of an edge no walk-on band reaches.
@@ -378,6 +381,7 @@ impl DiscGraph {
         let mut doors = BTreeSet::new();
         let mut fmv: BTreeMap<(String, String), BTreeSet<(usize, usize)>> = BTreeMap::new();
         let mut walk_on = BTreeSet::new();
+        let mut landings: BTreeMap<(String, String), BTreeSet<(u8, u8)>> = BTreeMap::new();
         for name in index.cdname_scene_names() {
             let Ok(scene) = Scene::load(index, &name) else {
                 continue;
@@ -391,7 +395,22 @@ impl DiscGraph {
                 for d in scene_destinations(&mf, man) {
                     if d.scene_name != name {
                         set.insert(d.scene_name.clone());
+                        landings
+                            .entry((name.clone(), d.scene_name.clone()))
+                            .or_default()
+                            .insert((d.entry_x & 0x7F, d.entry_z & 0x7F));
                         doors.insert((name.clone(), d.scene_name));
+                    }
+                }
+                // `scene_destinations` keeps one entry per destination; a
+                // scene with two exits to one map (a town's two gates) has
+                // two landings.
+                for s in legaia_asset::man_edit::scene_change_sites(man) {
+                    if s.name != name && set.contains(&s.name) {
+                        landings
+                            .entry((name.clone(), s.name.clone()))
+                            .or_default()
+                            .insert((s.entry_x & 0x7F, s.entry_z & 0x7F));
                     }
                 }
                 for partition in 1..3 {
@@ -444,6 +463,7 @@ impl DiscGraph {
             doors,
             fmv,
             walk_on,
+            landings,
         }
     }
 
@@ -987,7 +1007,17 @@ fn run(session: &mut BootSession, budget: usize, stop_on_release: bool) -> Run {
         // The naming prompt (the opening's op-0x49) takes this pad's edge
         // inside `BootSession::tick`, as it does in both play hosts.
         session.host.world.set_pad(pad);
-        match session.tick() {
+        let before = player_xz(session);
+        let site = std::env::var_os("LEGAIA_FGL_POS_TRACE").map(|_| park_site(session));
+        let r = session.tick();
+        if let Some(site) = site {
+            let after = player_xz(session);
+            let now = park_site(session);
+            if before != after || now != site {
+                eprintln!("      [pos] {before:?} -> {after:?} at {site} -> {now}");
+            }
+        }
+        match r {
             Ok(SceneTickEvent::SceneEntered { name }) => return Run::Entered(name),
             Ok(_) => {}
             Err(e) => return Run::Error(format!("{e:#}")),
@@ -1054,42 +1084,143 @@ thread_local! {
 /// Percent of max HP below which the fighter heals a member.
 const HEAL_BELOW_PCT: u32 = 45;
 
+thread_local! {
+    /// The largest HP loss one member took in a single hit this battle. A
+    /// member is healed while it could not survive another such hit - the
+    /// threshold a player reads off the last big hit, not a fixed fraction.
+    static BIGGEST_HIT: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    /// Per acting slot, the ally its last committed item was aimed at, so a
+    /// later member of the same round counts that heal as already coming.
+    static ITEM_TARGET: std::cell::RefCell<[Option<u8>; 3]> = const { std::cell::RefCell::new([None; 3]) };
+}
+
 fn party_hp_key(w: &legaia_engine_core::world::World) -> u32 {
     let n = w.party.party_count.clamp(1, 3) as usize;
     (0..n).map(|i| u32::from(w.actors[i].battle.hp)).sum()
 }
 
-/// The heal worth using now among `ids`: a revive when a member is down,
-/// else a party heal when two or more are hurt, else the largest heal.
-fn wanted_item(w: &legaia_engine_core::world::World, ids: impl Iterator<Item = u8>) -> Option<u8> {
+/// What one heal item restores on `slot`, given the HP it would have.
+fn item_restore(w: &legaia_engine_core::world::World, id: u8, slot: usize, hp: u32) -> Option<u32> {
     use legaia_engine_core::items::ItemEffect;
+    let max = u32::from(w.actors[slot].battle.max_hp);
+    let e = w.tables.item_catalog.get(id)?;
+    Some(match e.effect {
+        ItemEffect::Revive { factor } if hp == 0 => (max * u32::from(factor) / 256).max(1),
+        ItemEffect::HealAll if hp > 0 => max - hp.min(max),
+        ItemEffect::Heal { amount } if hp > 0 => u32::from(amount).min(max - hp.min(max)),
+        _ => return None,
+    })
+}
+
+/// Each member's HP once the items the round's earlier members already
+/// committed have landed - so two members never spend their turns on the
+/// same wound.
+fn projected_hp(w: &legaia_engine_core::world::World) -> Vec<u32> {
+    use legaia_engine_core::battle_round::PendingPartyAction;
     let n = w.party.party_count.clamp(1, 3) as usize;
-    let dead = (0..n).filter(|&i| w.actors[i].battle.hp == 0).count();
-    let hurt = (0..n)
-        .filter(|&i| {
-            let b = &w.actors[i].battle;
-            b.hp > 0 && u32::from(b.hp) * 100 < u32::from(b.max_hp) * HEAL_BELOW_PCT
-        })
-        .count();
-    if dead == 0 && hurt == 0 {
-        return None;
-    }
-    let mut best: Option<(u32, u8)> = None;
-    for id in ids {
-        let Some(e) = w.tables.item_catalog.get(id).filter(|e| e.usable_in_battle) else {
+    let mut hp: Vec<u32> = (0..n).map(|i| u32::from(w.actors[i].battle.hp)).collect();
+    for (actor, p) in w.battle.round_flow.pending.iter().enumerate().take(n) {
+        let Some(PendingPartyAction::Item { item_id, .. }) = p else {
             continue;
         };
-        let score = match e.effect {
-            ItemEffect::Revive { factor } if dead > 0 => 100_000 + u32::from(factor),
-            ItemEffect::HealAll if hurt >= 2 => 50_000,
-            ItemEffect::Heal { amount } if hurt > 0 => u32::from(amount),
-            _ => continue,
+        let targets: Vec<usize> = if w.tables.item_catalog.is_all_party(*item_id) {
+            (0..n).collect()
+        } else {
+            ITEM_TARGET
+                .with(|t| t.borrow()[actor])
+                .map(usize::from)
+                .filter(|&t| t < n)
+                .into_iter()
+                .collect()
         };
-        if best.is_none_or(|(b, _)| score > b) {
-            best = Some((score, id));
+        for t in targets {
+            if let Some(r) = item_restore(w, *item_id, t, hp[t]) {
+                hp[t] += r;
+            }
         }
     }
-    best.map(|(_, id)| id)
+    hp
+}
+
+/// The heal worth using now among `ids`, and the ally it is for: a revive
+/// for a member who is down, else a party heal when two or more are in
+/// danger, else the smallest single heal that lifts the worst-off member out
+/// of danger (the largest when none does). "In danger" is under
+/// [`HEAL_BELOW_PCT`] of max HP, or unable to take another hit the size of
+/// the biggest one seen this battle; heals the round's earlier members
+/// committed count as landed ([`projected_hp`]).
+fn wanted_item(
+    w: &legaia_engine_core::world::World,
+    ids: impl Iterator<Item = u8>,
+) -> Option<(u8, u8)> {
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    let hp = projected_hp(w);
+    let threat = BIGGEST_HIT.with(std::cell::Cell::get);
+    // The HP a member needs to hold to be out of danger.
+    let limit = |i: usize| {
+        let max = u32::from(w.actors[i].battle.max_hp);
+        let pct = max * HEAL_BELOW_PCT / 100;
+        let hit = (threat + threat / 8).min(max * 95 / 100);
+        pct.max(hit)
+    };
+    let danger = |i: usize| hp[i] > 0 && hp[i] < limit(i);
+    let dead: Vec<usize> = (0..n).filter(|&i| hp[i] == 0).collect();
+    let hurt: Vec<usize> = (0..n).filter(|&i| danger(i)).collect();
+    if dead.is_empty() && hurt.is_empty() {
+        return None;
+    }
+    let ids: Vec<u8> = ids
+        .filter(|&id| {
+            w.tables
+                .item_catalog
+                .get(id)
+                .is_some_and(|e| e.usable_in_battle)
+        })
+        .collect();
+    if let Some(&d) = dead.first() {
+        let revive = ids
+            .iter()
+            .filter_map(|&id| Some((item_restore(w, id, d, 0)?, id)))
+            .max();
+        if let Some((_, id)) = revive {
+            return Some((id, d as u8));
+        }
+    }
+    if hurt.is_empty() {
+        return None;
+    }
+    if hurt.len() >= 2 {
+        let party = ids
+            .iter()
+            .filter(|&&id| w.tables.item_catalog.is_all_party(id))
+            .filter_map(|&id| {
+                let total: u32 = hurt
+                    .iter()
+                    .filter_map(|&i| item_restore(w, id, i, hp[i]))
+                    .sum();
+                (total > 0).then_some((total, id))
+            })
+            .max();
+        if let Some((_, id)) = party {
+            return Some((id, hurt[0] as u8));
+        }
+    }
+    let worst = *hurt
+        .iter()
+        .min_by_key(|&&i| hp[i] * 1000 / u32::from(w.actors[i].battle.max_hp).max(1))?;
+    let singles: Vec<(u32, u8)> = ids
+        .iter()
+        .filter(|&&id| !w.tables.item_catalog.is_all_party(id))
+        .filter_map(|&id| Some((item_restore(w, id, worst, hp[worst])?, id)))
+        .filter(|&(r, _)| r > 0)
+        .collect();
+    let enough = singles
+        .iter()
+        .filter(|&&(r, _)| hp[worst] + r >= limit(worst))
+        .min();
+    enough
+        .or_else(|| singles.iter().max())
+        .map(|&(_, id)| (id, worst as u8))
 }
 
 /// The Magic row worth casting: the strongest affordable damage spell.
@@ -1121,7 +1252,12 @@ fn arts_plan(
 ) -> Vec<u8> {
     use legaia_art::queue::Command;
     const MAX_ENTRY: usize = 8;
-    let character = w.actors[usize::from(s.actor)].battle.character;
+    // The occupying character's table: the actor's `character` key is only
+    // written by the first arts commit, so before it every member reads
+    // Vahn's.
+    let character = legaia_engine_core::battle_arts::character_for_slot(
+        w.party_roster_slot(usize::from(s.actor)) as u8,
+    );
     let cost = |cmds: &[Command]| -> u16 { cmds.iter().map(|&c| s.cost_of(c)).sum() };
     let arts: Vec<&[Command]> = w
         .tables
@@ -1177,8 +1313,8 @@ fn direction_mask(b: u8) -> u16 {
 /// The pad mask a player presses this frame in a battle - every one a pad
 /// press through the engine's own battle menus, no engine call:
 ///
-/// - a member at under [`HEAL_BELOW_PCT`] of its HP, or down, gets the best
-///   heal or revive the item window lists (the ring's up arm);
+/// - a member who is down, or in danger, gets the revive or heal
+///   [`wanted_item`] picks, aimed at that member (the ring's up arm);
 /// - otherwise a member with an affordable damaging Seru spell casts the
 ///   strongest one (the right arm);
 /// - otherwise it attacks through the `Command` chip, entering the longest
@@ -1218,18 +1354,40 @@ fn fight_pad(session: &BootSession) -> u16 {
                 .copied()
         };
         let want = wanted_item(w, (0..menu.filtered_items.len()).filter_map(listed));
+        let actor = w
+            .battle
+            .command
+            .as_ref()
+            .map_or(w.battle_ctx.active_actor, |c| c.actor);
         return match &menu.state {
             InventoryUseState::Browsing { cursor } => match want {
-                Some(id) if listed(*cursor) == Some(id) => PadButton::Cross.mask(),
+                Some((id, _)) if listed(*cursor) == Some(id) => PadButton::Cross.mask(),
                 Some(_) => PadButton::Down.mask(),
                 None => {
-                    let key = (w.battle_ctx.active_actor, party_hp_key(w));
+                    let key = (actor, party_hp_key(w));
                     NO_ITEM.with(|n| n.borrow_mut().insert(key));
                     PadButton::Circle.mask()
                 }
             },
-            // The session seeds the target cursor on the ally the item helps.
-            InventoryUseState::TargetSelect { .. } => PadButton::Cross.mask(),
+            // The session seeds the cursor on the first ally the item helps;
+            // the hand steps it to the one it chose, and remembers the aim so
+            // the round's later members count the heal as coming.
+            InventoryUseState::TargetSelect { cursor, .. } => {
+                let aim = want.map(|(_, t)| t);
+                let on = menu.targets.get(*cursor).map(|t| t.slot);
+                if aim.is_none() || on == aim {
+                    if let Some(slot) = on {
+                        ITEM_TARGET.with(|t| {
+                            if let Some(a) = t.borrow_mut().get_mut(usize::from(actor)) {
+                                *a = Some(slot);
+                            }
+                        });
+                    }
+                    PadButton::Cross.mask()
+                } else {
+                    PadButton::Down.mask()
+                }
+            }
             _ => PadButton::Circle.mask(),
         };
     }
@@ -1344,16 +1502,94 @@ fn battle_snapshot(session: &BootSession) -> String {
     )
 }
 
+/// The party a traced battle starts with: each member's level, MP, equipment
+/// and spell list, and the bag's battle-usable items.
+fn party_dump(session: &BootSession) {
+    let w = &session.host.world;
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    for i in 0..n {
+        let slot = w.party_roster_slot(i);
+        let Some(m) = w.party.roster.members.get(slot) else {
+            continue;
+        };
+        let list = m.spell_list();
+        let spells: Vec<String> = list.ids[..(list.count as usize).min(list.ids.len())]
+            .iter()
+            .map(|&id| match w.tables.spell_catalog.get(id) {
+                Some(d) => format!("{id:#x} {} mp{} {:?}", d.name, d.mp_cost, d.effect),
+                None => format!("{id:#x} ?"),
+            })
+            .collect();
+        let a = &w.actors[i].battle;
+        eprintln!(
+            "    [party] #{i} char {:?} lv {} hp {}/{} mp {} equip {:?} spells [{}]",
+            a.character,
+            m.level(),
+            a.hp,
+            a.max_hp,
+            a.mp,
+            m.equipment(),
+            spells.join("; ")
+        );
+    }
+    for i in 0..n {
+        let ch = legaia_engine_core::battle_arts::character_for_slot(w.party_roster_slot(i) as u8);
+        let mut arts: Vec<String> = w
+            .tables
+            .art_records
+            .iter()
+            .filter(|((c, _), _)| *c == ch)
+            .map(|((_, a), r)| {
+                let cmds: Vec<u8> = r.commands.iter().map(|c| c.as_byte()).collect();
+                format!(
+                    "{:#x} {:?} {cmds:?} pw{}",
+                    a.as_byte(),
+                    r.name,
+                    r.power.len()
+                )
+            })
+            .collect();
+        arts.sort();
+        eprintln!("    [arts] #{i} {ch:?}: {}", arts.join("; "));
+    }
+    let bag: Vec<String> = w
+        .party
+        .inventory
+        .iter()
+        .filter(|(_, c)| **c > 0)
+        .filter_map(|(&id, &c)| {
+            let e = w.tables.item_catalog.get(id)?;
+            e.usable_in_battle
+                .then(|| format!("{id:#x} {} x{c} {:?}", e.name, e.effect))
+        })
+        .collect();
+    eprintln!("    [party] bag: {}", bag.join("; "));
+}
+
 /// Fight a battle with the pad ([`fight_pad`]). `None` when it ended and a
 /// walking mode came back.
 fn drain_battle(session: &mut BootSession) -> Option<Run> {
     NO_ITEM.with(|n| n.borrow_mut().clear());
     NO_MAGIC.with(|n| n.borrow_mut().clear());
+    BIGGEST_HIT.with(|b| b.set(0));
+    ITEM_TARGET.with(|t| *t.borrow_mut() = [None; 3]);
+    let party_hp = |s: &BootSession| -> Vec<u16> {
+        let w = &s.host.world;
+        let n = w.party.party_count.clamp(1, 3) as usize;
+        (0..n).map(|i| w.actors[i].battle.hp).collect()
+    };
+    let mut party_prev = party_hp(session);
     let mut prev = 0u16;
     let trace = std::env::var_os("LEGAIA_FGL_TRACE").is_some();
     if trace {
         eprintln!("    [battle] start: {}", battle_snapshot(session));
+        party_dump(session);
     }
+    let trace_hits = trace && std::env::var_os("LEGAIA_FGL_TRACE_HITS").is_some();
+    let hp_all =
+        |s: &BootSession| -> Vec<u16> { s.host.world.actors.iter().map(|a| a.battle.hp).collect() };
+    let mut last_cmd: [String; 3] = Default::default();
+    let mut hp_prev = hp_all(session);
     for t in 0..BATTLE_TICKS {
         if pad_budget(session).is_err() {
             break;
@@ -1365,6 +1601,38 @@ fn drain_battle(session: &mut BootSession) -> Option<Run> {
         session.host.world.set_pad(pad);
         if let Err(e) = session.tick() {
             return Some(Run::Error(format!("{e:#}")));
+        }
+        let party_now = party_hp(session);
+        for (a, b) in party_prev.iter().zip(&party_now) {
+            let lost = u32::from(a.saturating_sub(*b));
+            BIGGEST_HIT.with(|h| h.set(h.get().max(lost)));
+        }
+        party_prev = party_now;
+        if trace_hits {
+            let w = &session.host.world;
+            for (i, p) in w.battle.round_flow.pending.iter().enumerate() {
+                if let Some(p) = p {
+                    let s: String = format!("{p:?}").chars().take(70).collect();
+                    last_cmd[i] = s;
+                }
+            }
+            let hp_now = hp_all(session);
+            if hp_now != hp_prev {
+                let who = w.battle_ctx.active_actor;
+                let what = last_cmd.get(usize::from(who)).cloned().unwrap_or_default();
+                let n = w.party.party_count.clamp(1, 3) as usize;
+                let gauges: Vec<u16> = (0..n).map(|i| w.actors[i].battle.spirit_gauge).collect();
+                eprintln!(
+                    "    [hit] t={t} actor {who} ({what}) sm 0x{:02X} hp {:?} -> {:?} mob mp {} mode {} shield {} gauges {gauges:?}",
+                    w.battle_ctx.action_state,
+                    &hp_prev[..n + 1],
+                    &hp_now[..n + 1],
+                    w.actors.get(n).map_or(0, |a| a.battle.mp),
+                    w.battle.monster_ai_state.mode_flags,
+                    w.battle.monster_ai_state.flag_bd84,
+                );
+                hp_prev = hp_now;
+            }
         }
         if trace && std::env::var_os("LEGAIA_FGL_TRACE_BATTLE").is_some() && t % 1000 == 0 {
             eprintln!("    [battle] t={t}: {}", battle_snapshot(session));
@@ -1403,6 +1671,9 @@ fn drain_battle(session: &mut BootSession) -> Option<Run> {
 #[derive(Debug, Clone)]
 struct Door {
     tile: (u8, u8),
+    /// The entry tile the door's scene change lands on in `dest`, when the
+    /// door's own record names it.
+    entry: Option<(u8, u8)>,
 }
 
 /// The doors toward `dest` from the loaded scene, and - when there are none -
@@ -1416,11 +1687,15 @@ fn doors_to(session: &BootSession, graph: &DiscGraph, dest: &str) -> Result<Vec<
             .iter()
             .zip(w.world_map.entity_positions.iter())
             .filter_map(|(cfg, &(x, z))| match cfg {
-                WorldMapEntityConfig::OverworldPortal { scene_name, .. } if scene_name == dest => {
-                    Some(Door {
-                        tile: ((x >> 7) as u8, (z >> 7) as u8),
-                    })
-                }
+                WorldMapEntityConfig::OverworldPortal {
+                    scene_name,
+                    entry_x,
+                    entry_z,
+                    ..
+                } if scene_name == dest => Some(Door {
+                    tile: ((x >> 7) as u8, (z >> 7) as u8),
+                    entry: Some((*entry_x & 0x7F, *entry_z & 0x7F)),
+                }),
                 _ => None,
             })
             .collect();
@@ -1463,6 +1738,7 @@ fn doors_to(session: &BootSession, graph: &DiscGraph, dest: &str) -> Result<Vec<
         })
         .map(|s| Door {
             tile: (s.overworld_x, s.overworld_z),
+            entry: (s.scene_name == dest).then_some((s.entry_x & 0x7F, s.entry_z & 0x7F)),
         })
         .collect();
     // An FMV hop: the walk-on tiles whose partition-2 record triggers the
@@ -1476,6 +1752,7 @@ fn doors_to(session: &BootSession, graph: &DiscGraph, dest: &str) -> Result<Vec<
                 .filter(|t| t.gate == 1 && recs.contains(&(2, usize::from(t.record))))
                 .map(|t| Door {
                     tile: (t.tile_x, t.tile_z),
+                    entry: None,
                 })
                 .collect()
         })
@@ -2005,6 +2282,11 @@ thread_local! {
     /// pad hop then takes the reachable door farthest from where the player
     /// came in, instead of the nearest (which is the one it came in by).
     static FAR_DOOR: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Set while [`cross_over`] walks back out of a crossing scene whose
+    /// round trip the lattice planned: the landing tile the plan needs. The
+    /// pad hop then prefers the doors whose own record lands there.
+    static WANT_LANDING: std::cell::RefCell<Option<(i16, i16)>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 /// A detour through a **crossing scene**: `cur`'s door toward `goal` lies in
@@ -2019,9 +2301,10 @@ fn cross_over(
     graph: &DiscGraph,
     cur: &str,
     goal: &str,
+    toward: &str,
 ) -> Result<String, String> {
     let back = |x: &String| graph.edges.get(x).is_some_and(|e| e.contains(cur));
-    let cands: Vec<String> = graph
+    let mut cands: Vec<String> = graph
         .edges
         .get(cur)
         .into_iter()
@@ -2029,13 +2312,52 @@ fn cross_over(
         .filter(|x| x.as_str() != goal && x.as_str() != cur && back(x))
         .cloned()
         .collect();
+    // The crossing the lattice names goes first ([`crossing_plan`]); the
+    // rest keep their order behind it, so a chain the lattice cannot see is
+    // still found by trial.
+    let all = cands.clone();
+    let plan = |session: &BootSession, shut: &BTreeSet<String>| {
+        let open: Vec<String> = all.iter().filter(|x| !shut.contains(*x)).cloned().collect();
+        let p = crossing_plan(session, graph, &open, toward);
+        if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+            let (px, pz) = player_xz(session);
+            eprintln!(
+                "    [cross] {cur} toward {toward} from {:?}: lattice plan {p:?} (shut {shut:?})",
+                dispatch_tile(px, pz)
+            );
+        }
+        p
+    };
+    // Crossings that brought the player back to the side it left, even with
+    // their beats played: which side a crossing delivers to can be story
+    // state (`suimon`'s water gate, `0x27B`, switches the `map01` entry to
+    // the southern chamber), and the lattice cannot see it.
+    let mut shut: BTreeSet<String> = BTreeSet::new();
+    // Where the planned round trip should land, by crossing: leaving it,
+    // the pad hand takes the door whose own record lands there.
+    let mut want: HashMap<String, (i16, i16)> = HashMap::new();
+    if let Some((x, landing)) = plan(session, &shut)
+        && let Some(i) = cands.iter().position(|c| *c == x)
+    {
+        if let Some(l) = landing {
+            want.insert(x.clone(), l);
+        }
+        let x = cands.remove(i);
+        cands.insert(0, x);
+    }
     let mut tried = Vec::new();
+    let mut crossings = 0usize;
+    let mut visited: BTreeSet<String> = BTreeSet::new();
     // A crossing that brings the player back to the side it left is taken
-    // once more with its own beats played first: which side a crossing
-    // delivers to can be story state (`suimon`'s water gate, `0x27B`,
-    // switches the `map01` entry to the southern chamber).
+    // once more with its own beats played first.
     let mut queue: VecDeque<(String, bool)> = cands.into_iter().map(|x| (x, false)).collect();
     while let Some((x, again)) = queue.pop_front() {
+        if crossings >= MAX_CROSSINGS {
+            tried.push(format!("{MAX_CROSSINGS} crossings taken"));
+            break;
+        }
+        let (fx, fz) = player_xz(session);
+        let left_from = tile_of(fx, fz);
         let r = pad_hop(session, graph, &x);
         if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
             let (px, pz) = player_xz(session);
@@ -2048,35 +2370,138 @@ fn cross_over(
         }
         match r {
             Ok(entered) if entered == x => {
-                match run_while_moving(session, SCRIPT_CEILING) {
-                    Run::Entered(s) => return Ok(s),
-                    Run::Released => {}
-                    other => return Err(format!("entering crossing {x}: {other:?}")),
-                }
-                // On the second visit, play the crossing's own beats first:
-                // a sluice gate or a lever is a story beat like any other.
-                if again {
-                    let mut log = Vec::new();
-                    if let Some(s) = play_beats(session, &mut log)
-                        .map_err(|b| format!("in crossing {x}, playing beats: {b}"))?
-                    {
-                        return Ok(s);
+                crossings += 1;
+                visited.insert(x.clone());
+                let r = match run_while_moving(session, SCRIPT_CEILING) {
+                    // An arrival script that carries the party straight back
+                    // out (`rikuroa` turns a party away before its story
+                    // opens) is a crossing like any other: where it lands is
+                    // the answer.
+                    Run::Entered(s) => {
+                        if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                            eprintln!("    [cross] {x}'s arrival carried the party to {s}");
+                        }
+                        // Let the landing scene's own arrival run before the
+                        // position is read: a hand-off may land on the
+                        // parked sentinel (127, 127) and leave the seat to
+                        // the destination's script (`ropeway` P2[31] lands
+                        // in `jiji`, whose entry spawns P2[10] and its
+                        // `CC F8 51` puts the party at (67, 74)).
+                        match run_while_moving(session, SCRIPT_CEILING) {
+                            Run::Entered(s2) => Ok(s2),
+                            _ => Ok(s),
+                        }
                     }
+                    Run::Released => {
+                        // On the second visit, play the crossing's own beats
+                        // first: a sluice gate or a lever is a story beat like
+                        // any other.
+                        let mut left = None;
+                        if again {
+                            let mut log = Vec::new();
+                            left = play_beats(session, &mut log)
+                                .map_err(|b| format!("in crossing {x}, playing beats: {b}"))?;
+                        }
+                        match left {
+                            Some(s) => Ok(s),
+                            None => {
+                                FAR_DOOR.with(|f| f.set(true));
+                                let wanted = want.get(&x).copied();
+                                WANT_LANDING.with(|w| *w.borrow_mut() = wanted);
+                                let mut r = pad_hop(session, graph, cur);
+                                WANT_LANDING.with(|w| *w.borrow_mut() = None);
+                                // The planned side's door is out of reach
+                                // from where the crossing let the player in
+                                // (its halves join on story state), or the
+                                // walk there stalled: any door.
+                                if wanted.is_some() && scene_name(session) == x && r.is_err() {
+                                    r = pad_hop(session, graph, cur);
+                                }
+                                FAR_DOOR.with(|f| f.set(false));
+                                // A door whose record runs a script before
+                                // its scene change can report a release while
+                                // the change is still to come (`dolk`'s south
+                                // door): let the scene settle, and take the
+                                // scene it lands in as the answer.
+                                match r {
+                                    Err(e) => {
+                                        let settled = run(session, EXIT_TICKS, false);
+                                        if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                                            eprintln!(
+                                                "    [cross] leaving {x}: {e}; settled {settled:?} in {}",
+                                                scene_name(session)
+                                            );
+                                        }
+                                        match settled {
+                                            Run::Entered(s) => Ok(s),
+                                            _ if scene_name(session) == cur => Ok(cur.to_string()),
+                                            _ => Err(e),
+                                        }
+                                    }
+                                    r => r,
+                                }
+                            }
+                        }
+                    }
+                    other => return Err(format!("entering crossing {x}: {other:?}")),
+                };
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    let (px, pz) = player_xz(session);
+                    eprintln!(
+                        "    [cross] left {x}: {r:?}, now {} at {:?}",
+                        scene_name(session),
+                        dispatch_tile(px, pz)
+                    );
                 }
-                FAR_DOOR.with(|f| f.set(true));
-                let r = pad_hop(session, graph, cur);
-                FAR_DOOR.with(|f| f.set(false));
                 match r {
                     // Back in `cur`: done when the goal's door is now in
-                    // reach, else the next candidate from here.
+                    // reach, else the next crossing from here.
                     Ok(s) if s == cur => {
-                        if door_in_reach(session, graph, goal) {
+                        let (px, pz) = player_xz(session);
+                        if door_in_reach(session, graph, toward) {
+                            if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                                eprintln!(
+                                    "    [cross] {cur}: {toward}'s door in reach from {:?}",
+                                    dispatch_tile(px, pz)
+                                );
+                            }
                             return Ok(s);
                         }
-                        if !again {
-                            queue.push_front((x.clone(), true));
+                        let back =
+                            plan_path(session, cell_of(px, pz), left_from, &hazards(session, ""))
+                                .and_then(|p| p.last().copied())
+                                .is_none_or(|c| {
+                                    let t = tile_of(cell_center(c).0, cell_center(c).1);
+                                    i32::from((t.0 - left_from.0).abs() + (t.1 - left_from.1).abs())
+                                        <= DOOR_APPROACH_SLACK
+                                });
+                        if back && again {
+                            shut.insert(x.clone());
                         }
-                        tried.push(format!("{x}: back on the same side"));
+                        // The lattice names the next crossing from where the
+                        // player landed. A crossing taken before is taken
+                        // again with its beats played.
+                        match plan(session, &shut) {
+                            Some((y, landing)) => {
+                                match landing {
+                                    Some(l) => want.insert(y.clone(), l),
+                                    None => want.remove(&y),
+                                };
+                                let seen = visited.contains(&y);
+                                queue.retain(|(q, _)| *q != y);
+                                queue.push_front((y, seen));
+                            }
+                            None if !again => queue.push_front((x.clone(), true)),
+                            None => {}
+                        }
+                        tried.push(format!(
+                            "{x}: landed {} short of the door",
+                            if back {
+                                "back on the same side"
+                            } else {
+                                "on a new side"
+                            }
+                        ));
                     }
                     Ok(s) => return Ok(s),
                     Err(e) => return Err(format!("crossing {x} back to {cur}: {e}")),
@@ -2090,6 +2515,144 @@ fn cross_over(
         "no crossing scene reachable ({})",
         tried.join("; ")
     ))
+}
+
+/// The lattice cells of dispatch tile `t` (four 32-unit cells a side).
+fn tile_cells(t: (i16, i16)) -> impl Iterator<Item = Cell> {
+    (0..4).flat_map(move |i| (0..4).map(move |j| (t.0 * 4 + i, t.1 * 4 + j)))
+}
+
+/// The four tiles beside `t`.
+fn tile_nbrs(t: (i16, i16)) -> [(i16, i16); 4] {
+    [
+        (t.0, t.1 + 1),
+        (t.0, t.1 - 1),
+        (t.0 + 1, t.1),
+        (t.0 - 1, t.1),
+    ]
+}
+
+/// A tile, and the landing it was seeded from (when a round trip's own
+/// entry tile seeded it).
+type Seed = ((i16, i16), Option<(i16, i16)>);
+
+/// The first crossing of a chain, and the landing of its round trip.
+type FirstHop = Option<(String, Option<(i16, i16)>)>;
+
+/// Most round trips one [`cross_over`] takes.
+const MAX_CROSSINGS: usize = 8;
+
+/// Most walk components one [`crossing_plan`] floods.
+const MAX_SIDES: usize = 16;
+
+/// The crossing to take first toward `toward`'s door, read off the loaded
+/// scene's lattice. Every door of every scene is a boundary (stepping on it
+/// leaves), so the scene splits into **sides**: walk components. A
+/// candidate `x` joins each side that touches one of its door tiles to each
+/// other such side, since a round trip through `x` lands beside the door it
+/// leaves by. A breadth-first search from the player's side to one touching
+/// a door toward `toward` names the first crossing of the shortest chain:
+/// `map01`'s north half reaches Vidna's door through `suimon` and then
+/// `bylon`, while `dolk` - the nearer crossing - only opens a pocket south
+/// of the castle. `None` when the lattice shows no chain; the caller then
+/// tries every candidate in turn.
+fn crossing_plan(
+    session: &BootSession,
+    graph: &DiscGraph,
+    cands: &[String],
+    toward: &str,
+) -> FirstHop {
+    let targets: Vec<(i16, i16)> = doors_to(session, graph, toward)
+        .ok()?
+        .iter()
+        .map(|d| (i16::from(d.tile.0), i16::from(d.tile.1)))
+        .collect();
+    let xdoors: Vec<(String, Vec<(i16, i16)>)> = cands
+        .iter()
+        .filter_map(|x| {
+            let d = doors_to(session, graph, x).ok()?;
+            Some((
+                x.clone(),
+                d.iter()
+                    .map(|d| (i16::from(d.tile.0), i16::from(d.tile.1)))
+                    .collect(),
+            ))
+        })
+        .collect();
+    let avoid = hazards(session, "");
+    let w = &session.host.world;
+    let flood = |from: Cell| -> HashSet<Cell> {
+        plan_search(session, from, (-64, -64), None, &avoid)
+            .map(|(_, seen, _)| seen)
+            .unwrap_or_default()
+    };
+    let touches = |side: &HashSet<Cell>, t: (i16, i16)| {
+        tile_nbrs(t)
+            .into_iter()
+            .any(|n| tile_cells(n).any(|c| side.contains(&c)))
+    };
+    let here = scene_name(session);
+    let (px, pz) = player_xz(session);
+    let mut sides: Vec<HashSet<Cell>> = vec![flood(cell_of(px, pz))];
+    // The first crossing of the chain that reached each side, and the
+    // landing of that first round trip (when the side was seeded by one).
+    let mut first: Vec<FirstHop> = vec![None];
+    let mut i = 0;
+    while i < sides.len() {
+        if i > 0 && targets.iter().any(|&t| touches(&sides[i], t)) {
+            return first[i].clone();
+        }
+        for (x, tiles) in &xdoors {
+            if !tiles.iter().any(|&t| touches(&sides[i], t)) {
+                continue;
+            }
+            // Where the round trip lands: the entry tiles of `x`'s own
+            // scene changes back to this scene, else beside its doors here.
+            // A landing on a door tile (a portal the entry re-seats the
+            // player on) counts by its neighbours.
+            let seeds: Vec<Seed> = match graph.landings.get(&(x.clone(), here.clone())) {
+                Some(l) if !l.is_empty() => l
+                    .iter()
+                    .map(|&(lx, lz)| (i16::from(lx), i16::from(lz)))
+                    .flat_map(|t| {
+                        std::iter::once(t)
+                            .chain(tile_nbrs(t))
+                            .map(move |n| (n, Some(t)))
+                    })
+                    .collect(),
+                _ => tiles
+                    .iter()
+                    .flat_map(|&t| tile_nbrs(t))
+                    .map(|n| (n, None))
+                    .collect(),
+            };
+            for (n, landing) in seeds {
+                if sides.len() >= MAX_SIDES {
+                    break;
+                }
+                if avoid.contains(&(i32::from(n.0), i32::from(n.1)))
+                    || sides.iter().any(|s| tile_cells(n).any(|c| s.contains(&c)))
+                {
+                    continue;
+                }
+                let Some(start) = tile_cells(n).find(|&c| {
+                    let (cx, cz) = cell_center(c);
+                    !w.field_tile_is_wall(cx, cz)
+                }) else {
+                    continue;
+                };
+                let side = flood(start);
+                // A sliver of open ground inside a wall is not a side.
+                if side.len() < 16 {
+                    continue;
+                }
+                sides.push(side);
+                first.push(first[i].clone().or_else(|| Some((x.clone(), landing))));
+            }
+        }
+        i += 1;
+    }
+    None
 }
 
 /// Can the pad walk reach a door of the loaded scene toward `dest`?
@@ -2195,6 +2758,86 @@ fn plan_path(
         }
     }
     let (path, seen, reached) = plan_search(session, from, goal, None, avoid)?;
+    if !reached && std::env::var_os("LEGAIA_FGL_COMP_DEBUG").is_some() {
+        let tiles: HashSet<(i32, i32)> = seen
+            .iter()
+            .map(|&c| {
+                let (x, z) = cell_center(c);
+                dispatch_tile(x, z)
+            })
+            .collect();
+        let bl = Blockers::build(&session.host.world, |_| false);
+        eprintln!(
+            "      [comp] {} goal {goal:?} cells {}",
+            scene_name(session),
+            seen.len()
+        );
+        {
+            // The same question at wall-bit granularity: 64-unit sub-cells,
+            // a sub-cell open when its centre reads no wall, four-connected.
+            let w = &session.host.world;
+            let open = |sx: i32, sz: i32| {
+                (0..256).contains(&sx)
+                    && (0..256).contains(&sz)
+                    && !w.field_tile_is_wall((sx * 64 + 32) as i16, (sz * 64 + 32) as i16)
+            };
+            let (fx, fz) = cell_center(from);
+            let s0 = (i32::from(fx) >> 6, i32::from(fz) >> 6);
+            let mut seen2: HashSet<(i32, i32)> = HashSet::from([s0]);
+            let mut q = VecDeque::from([s0]);
+            while let Some((x, z)) = q.pop_front() {
+                for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                    let n = (x + dx, z + dz);
+                    if open(n.0, n.1) && !avoid.contains(&(n.0 >> 1, n.1 >> 1)) && seen2.insert(n) {
+                        q.push_back(n);
+                    }
+                }
+            }
+            let g = (i32::from(goal.0), i32::from(goal.1));
+            let near = seen2
+                .iter()
+                .map(|&(x, z)| ((x >> 1) - g.0).abs() + ((z >> 1) - g.1).abs())
+                .min()
+                .unwrap_or(i32::MAX);
+            eprintln!(
+                "      [comp] sub-cell flood: {} sub-cells, nearest tile to goal {near} away",
+                seen2.len()
+            );
+        }
+        let w = &session.host.world;
+        for (cfg, &(x, z)) in w
+            .world_map
+            .entity_configs
+            .iter()
+            .zip(w.world_map.entity_positions.iter())
+        {
+            eprintln!("      [comp-ent] ({},{}) {cfg:?}", x >> 7, z >> 7);
+        }
+        for tz in 0..128 {
+            let row: String = (0..128)
+                .map(|tx| {
+                    if (tx, tz) == (i32::from(goal.0), i32::from(goal.1)) {
+                        'G'
+                    } else if avoid.contains(&(tx, tz)) {
+                        'A'
+                    } else if tiles.contains(&(tx, tz)) {
+                        'o'
+                    } else if bl.0.contains_key(&(tx, tz)) {
+                        'b'
+                    } else if session
+                        .host
+                        .world
+                        .field_tile_is_wall((tx * 128 + 64) as i16, (tz * 128 + 64) as i16)
+                    {
+                        '#'
+                    } else {
+                        '.'
+                    }
+                })
+                .collect();
+            eprintln!("      [comp {tz:3}] {row}");
+        }
+    }
     if !reached && seen.len() > UNREACHED_MIN_CELLS {
         let best = path.last().copied().unwrap_or(from);
         UNREACHED.with(|u| {
@@ -2432,6 +3075,23 @@ fn pad_hop(session: &mut BootSession, graph: &DiscGraph, dest: &str) -> Result<S
         Ok(d) => d,
         // A hop no walk-on band carries is taken by talking, as a player does.
         Err(why) => return talk_hop(session, graph, dest).ok_or(why)?,
+    };
+    // Leaving a planned crossing: the doors whose record lands on the side
+    // the plan needs, when any does.
+    let doors = match WANT_LANDING.with(|w| *w.borrow()) {
+        Some(want) => {
+            let keep: Vec<Door> = doors
+                .iter()
+                .filter(|d| {
+                    d.entry.is_some_and(|(ex, ez)| {
+                        (i16::from(ex) - want.0).abs() + (i16::from(ez) - want.1).abs() <= 1
+                    })
+                })
+                .cloned()
+                .collect();
+            if keep.is_empty() { doors } else { keep }
+        }
+        None => doors,
     };
     HOP_DEST.with(|d| *d.borrow_mut() = Some(dest.to_string()));
     let avoid = hazards(session, dest);
@@ -3822,7 +4482,12 @@ fn trace_beat(session: &BootSession, before: &BTreeSet<u16>, what: impl FnOnce()
         .difference(before)
         .map(|f| format!("0x{f:03X}"))
         .collect();
-    eprintln!("    [beat] {} +{gained:?}", what());
+    let (px, pz) = player_xz(session);
+    eprintln!(
+        "    [beat] {} +{gained:?} (ends at {:?} ({px},{pz}))",
+        what(),
+        tile_of(px, pz)
+    );
 }
 
 thread_local! {
@@ -4145,11 +4810,7 @@ fn interact_at(
             || !w.field_vm.helper_contexts.is_empty()
             || w.cutscene.timeline.is_some();
         if walking(session) && !beat_follows {
-            let tile = tile_of(bx, bz);
-            session
-                .host
-                .world
-                .seat_player_at_tile(tile.0.clamp(0, 127) as u8, tile.1.clamp(0, 127) as u8);
+            restore_player_xz(session, (bx, bz));
         }
         let r = run_while_moving(session, DEEP_EXIT_TICKS);
         if !matches!(r, Run::Released) || !walking(session) {
@@ -4162,13 +4823,25 @@ fn interact_at(
         }
     }
     if walking(session) {
-        let tile = tile_of(bx, bz);
-        session
-            .host
-            .world
-            .seat_player_at_tile(tile.0.clamp(0, 127) as u8, tile.1.clamp(0, 127) as u8);
+        restore_player_xz(session, (bx, bz));
     }
     last
+}
+
+/// Put the player back on the exact spot it stood before an interaction.
+/// Re-seating on the centre of `tile_of` the spot instead moved a player
+/// standing off-centre onto the neighbouring tile, and against a wall that
+/// tile can be solid: `jiji`'s prop examine left the party at (69, 71),
+/// walled on all four sides, after starting from (9020, 9216).
+fn restore_player_xz(session: &mut BootSession, (x, z): (i16, i16)) {
+    let w = &mut session.host.world;
+    let y = w.sample_field_floor_height(i32::from(x), i32::from(z)) as i16;
+    let slot = w.player_actor_slot.unwrap_or(0) as usize;
+    if let Some(a) = w.actors.get_mut(slot) {
+        a.move_state.world_x = x;
+        a.move_state.world_y = y;
+        a.move_state.world_z = z;
+    }
 }
 
 /// Page an open conversation to its end with [`script_pad`]. `None` when it
@@ -4431,7 +5104,7 @@ fn traverse(
                     && e.contains("no walkable path")
                     && crossed.insert((cur.clone(), goal.clone())) =>
             {
-                match cross_over(session, graph, &cur, &goal) {
+                match cross_over(session, graph, &cur, &goal, &next) {
                     Ok(s) => trail.push(format!("{s}(crossing)")),
                     Err(why) => {
                         if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
@@ -4578,7 +5251,12 @@ fn run_segment(
         let res = traverse(&mut session, graph, to, false, &mut trail);
         let flags = session.host.world.flags.system_flags.clone();
         match res {
-            Ok(()) => (Tier::Progresses, None, Some(flags)),
+            Ok(()) => {
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    eprintln!("    [seated] trail {}", trail.join(">"));
+                }
+                (Tier::Progresses, None, Some(flags))
+            }
             Err(e) => (
                 tier,
                 Some(format!("{e} [trail {}]", trail.join(">"))),
@@ -4619,6 +5297,14 @@ fn run_segment(
             let opts = live_opts(true);
             seed(&mut session, from, from_anchor, &opts)?;
             PAD_DEADLINE.with(|d| d.set(session.frames + PAD_SEGMENT_FRAMES));
+            if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                eprintln!(
+                    "    [pad] seeded {} at {:?} (anchor seat {:?})",
+                    scene_name(&session),
+                    player_xz(&session),
+                    from_anchor.and_then(|a| a.seat)
+                );
+            }
             let start = session.frames;
             let mut trail = vec![scene_name(&session)];
             let r = traverse(&mut session, graph, to, true, &mut trail)

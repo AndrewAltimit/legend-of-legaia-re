@@ -69,6 +69,7 @@ The entry's first byte (`+0x00`) is a semantic **tag**, not just an index:
 | `0x0B` | block |
 | `0x0C..0x1F` | castable spell / special actions (monster AI roll space); within it `0x0D`, `0x0E`, `0x0F` are the monster's **attack moves** (each a distinct move per monster, gameplay-verified across the archive) |
 | `0x20`, `0x21`, `0x22` | attack pre-approach / close-in / knockout taunt - `0x22` plays when the monster's attack downs its target while a party member still stands, see [battle-action.md](../subsystems/battle-action.md) (monster files) |
+| `0x23` | cast clip - the entry a magic pick plays, addressed by the monster's magic **slot**, not by the spell id ([below](#a-magic-picks-cast-clip)) |
 
 At battle init the monster installer `FUN_80054CB0` scans the entry table and
 caches the **entry index** of each tag in `{2,3,4,5,0x0B}` into battle-actor
@@ -104,6 +105,21 @@ Consumers:
 - the battle-action SM (`FUN_801E295C`) resolves monster attack anims by
   **first-byte search** over the entry table (`FUN_80050E2C` with tags
   `0x20`/`1`/`0x21`/`0x22`), staging the returned *index*.
+
+### A magic pick's cast clip
+
+The monster AI picker `FUN_801E9FD4` does not look a cast's clip up by the
+spell id. Its generic magic pick counts the record's live magic slots
+(`+0x21..+0x23` at `>= 2`, `0x801EA3E0..0x801EA408`), rolls
+`k = rand() % count`, then walks the entry table from index 2 counting the
+entries tagged `0x23` (`0x801EA4C8..0x801EA4D0`). The `k`-th such entry is the
+clip, stored at `+0x1E0` behind the spell id (`sb s2,0x1e0(s4)` at
+`0x801EA540`), and the spell is magic slot `count - 1 - k` - the pairing runs
+in reverse. The action SM's `0x29` arm stages that byte into `+0x1DA` and runs
+the `0x2A` / `0x2B` animation chain on it. Gimard's lone Tail Fire `0x27`
+therefore plays entry 8, his only tag-`0x23` entry (the
+`battle_gimard_tail_fire_a` capture reads `+0x1E0 = 8`); no entry carries tag
+`0x27`. Engine: `World::monster_cast_clip`.
 
 ## Anim selection (`actor +0x1D9/+0x1DA` → entry)
 

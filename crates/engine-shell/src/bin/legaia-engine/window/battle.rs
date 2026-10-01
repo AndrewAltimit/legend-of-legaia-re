@@ -500,6 +500,7 @@ impl PlayWindowApp {
             log::warn!("play-window: flame-atlas VRAM upload skipped: {e:#}");
         }
         self.battle_mesh_base = self.meshes.len();
+        self.battle_rest_vmesh.clear();
         self.battle_color_mesh_base = self.color_meshes.len();
         // Upload the stage dome mesh (drawn as the backdrop). Its textures live
         // in the stage VRAM, so build it unfiltered (all textured prims are
@@ -569,7 +570,11 @@ impl PlayWindowApp {
                 self.battle_ground_mesh = None;
                 self.battle_ground_cue_far = None;
                 self.battle_stage_outdoor = *outdoor;
-                let grid = build_battle_ground_grid();
+                // Pre-cue colour = the settled battle ambient
+                // (`0x8007B7B0` -> `RGBC`), see `build_ground_grid_rgbc`.
+                let grid = build_battle_ground_grid(
+                    legaia_engine_vm::battle_ground_grid::GRID_RGBC_SETTLED,
+                );
                 match r.upload_vram_mesh(
                     &grid.positions,
                     &grid.uvs,
@@ -580,6 +585,8 @@ impl PlayWindowApp {
                 ) {
                     Ok(gm) => {
                         self.battle_ground_mesh = Some(self.meshes.len());
+                        self.battle_ground_rgbc =
+                            legaia_engine_vm::battle_ground_grid::GRID_RGBC_SETTLED;
                         // The grid's GTE depth cue: far colour per stage
                         // class (resolved in `build_battle_stage`), ramped
                         // by the emitter's per-vertex `SZ >> 2` law at draw
@@ -630,6 +637,7 @@ impl PlayWindowApp {
                 Ok(m) => {
                     let idx = self.meshes.len();
                     self.meshes.push(m);
+                    self.battle_rest_vmesh.insert(idx, vmesh);
                     // Keep `scene_tmd_data` length-parallel with `meshes`.
                     self.scene_tmd_data.push((tmd, mesh.tmd_bytes().to_vec()));
                     self.session.host.world.actors[actor_idx].tmd_binding = Some(idx);
@@ -718,6 +726,7 @@ impl PlayWindowApp {
                     Ok(m) => {
                         let idx = self.meshes.len();
                         self.meshes.push(m);
+                        self.battle_rest_vmesh.insert(idx, vmesh);
                         let member = form.member;
                         self.session.host.world.actors[member].tmd_binding = Some(idx);
                         registered.push(member);
@@ -886,6 +895,7 @@ impl PlayWindowApp {
         };
         let idx = self.meshes.len();
         self.meshes.push(uploaded);
+        self.battle_rest_vmesh.insert(idx, vmesh);
         self.scene_tmd_data.push((tmd, mesh.tmd_bytes().to_vec()));
         match r.upload_vram(&vram) {
             Ok(v) => {
@@ -1046,82 +1056,37 @@ impl PlayWindowApp {
     /// engine feeds it the resolved formation and the loaded scene so a given
     /// battle gets the style retail gives it.
     fn arm_battle_intro(&self, formation_id: u16, total: i32) -> BattleIntro {
-        use legaia_engine_vm::battle_intro_styles::select_intro_style;
-
         // All three selector inputs come out of one engine-side resolver
-        // (`SceneHost::battle_intro_style_inputs`), so the browser play page's
-        // own arming cannot answer them differently - it did, on
-        // `formation_slot0`, which is the input every id-keyed style override
-        // keys on.
-        let inputs = self.session.host.battle_intro_style_inputs(formation_id);
-        let (slot0, battle_flags) = (inputs.formation_slot0, inputs.battle_flags);
-        let choice = select_intro_style(&inputs);
-        let table = self
-            .intro_quad_table()
-            .unwrap_or_else(legaia_engine_render::battle_intro::IntroQuadTable::neutral);
-        log::info!(
-            "play-window: battle intro style {:?} (sub {}) for formation slot0 {slot0:#04x}, \
-             battle flags {battle_flags:#04x}",
-            choice.style,
-            choice.sub_style
-        );
-        let seed = self.session.host.world.rng_state;
-        let mut env = IntroEnv::new(seed);
-        let mut trig = IntroEnv::new(seed);
-        // The tile seeder's corner table, decoded off PROT 0979 at
-        // `0x801CE8BC`; the documented `[0, 1, 17, 18]` is the disc-free
-        // fallback, so a host without the entry seeds the same grid.
-        let corners = self
-            .intro_overlay_loaded()
-            .and_then(|(img, base)| {
-                legaia_engine_render::battle_intro::parse_tile_corner_table(&img, base)
-            })
-            .unwrap_or([0, 1, 0x11, 0x12]);
-        // The shade page the shatter's side faces sample (field-character
-        // texture pack entry 0) - parsed from the disc so the capture can
-        // land it in the transition's cloned VRAM page.
-        let shade = self
-            .session
-            .host
+        // (`SceneHost::battle_intro_style_inputs`), and the arming itself -
+        // the PROT 0979 tables with their disc-free fallbacks, the shade
+        // pack, the env seeds - is the one `BattleIntro::arm_for_battle` the
+        // browser play page calls too.
+        let host = &self.session.host;
+        let inputs = host.battle_intro_style_inputs(formation_id);
+        let overlay = host
+            .index
+            .entry_bytes_extended(legaia_engine_render::battle_intro::INTRO_OVERLAY_PROT)
+            .ok();
+        let shade = host
             .index
             .entry_bytes(legaia_asset::field_char_textures::PROT_ENTRY_INDEX)
-            .ok()
-            .and_then(|b| legaia_asset::field_char_textures::parse(&b).ok());
-        BattleIntro::new(
-            choice.style,
-            choice.sub_style,
+            .ok();
+        let intro = BattleIntro::arm_for_battle(
+            &inputs,
             total,
-            table,
-            &mut env,
-            &mut trig,
-            corners,
-        )
-        .with_shade_pack(shade)
-    }
-
-    /// The PROT 0979 intro overlay relocated to its load base, for the two
-    /// in-overlay data tables ([`IntroQuadTable`], the tile corner table).
-    fn intro_overlay_loaded(&self) -> Option<(Vec<u8>, u32)> {
-        const INTRO_OVERLAY_PROT: u32 = 979;
-        let raw = self
-            .session
-            .host
-            .index
-            .entry_bytes_extended(INTRO_OVERLAY_PROT)
-            .ok()?;
-        let rec = legaia_asset::static_overlay::overlay_map().by_prot_index(INTRO_OVERLAY_PROT)?;
-        let as_loaded = legaia_asset::static_overlay::as_loaded(&raw, rec).ok()?;
-        Some((as_loaded, rec.base_va))
-    }
-
-    /// Parse the curtain style's descriptor table out of PROT 0979.
-    ///
-    /// `None` when the entry cannot be read or the overlay map has no base for
-    /// it, in which case the emitter falls back to a neutral table - the
-    /// strips then carry the capture unmodulated instead of not drawing.
-    fn intro_quad_table(&self) -> Option<legaia_engine_render::battle_intro::IntroQuadTable> {
-        let (as_loaded, base_va) = self.intro_overlay_loaded()?;
-        legaia_engine_render::battle_intro::IntroQuadTable::parse_overlay(&as_loaded, base_va)
+            overlay.as_deref(),
+            shade.as_deref().map(Vec::as_slice),
+            host.world.rng_state,
+        );
+        log::info!(
+            "play-window: battle intro style {:?} (sub {}) for formation slot0 {:#04x}, \
+             battle flags {:#04x}",
+            intro.style(),
+            intro.sub_style(),
+            inputs.formation_slot0,
+            inputs.battle_flags
+        );
+        intro
     }
 
     /// Bring the transition's private VRAM page up to date for this frame and
@@ -1196,6 +1161,7 @@ impl PlayWindowApp {
         }
         let keep = self.battle_mesh_base.min(self.meshes.len());
         self.meshes.truncate(keep);
+        self.battle_rest_vmesh.clear();
         self.scene_tmd_data
             .truncate(keep.min(self.scene_tmd_data.len()));
         let keep_color = self.battle_color_mesh_base.min(self.color_meshes.len());
@@ -1559,6 +1525,49 @@ impl PlayWindowApp {
         self.battle_stage_shell = Some((objects, second));
     }
 
+    /// Follow the live battle ambient on the ground grid: the pre-cue vertex
+    /// colour is the ambient `0x8007B7B0` (base `+ 0x404040`) and the cue's
+    /// far colour `0x8007BB48` is derived from the same base, both of which a
+    /// summon close-up ramps down (`World::battle_ambient_base`, docs:
+    /// battle.md "A cast dims it"). The far colour is re-derived every frame;
+    /// the grid mesh bakes the near colour into its vertices, so it is rebuilt
+    /// only on the frames the ambient moves.
+    pub(super) fn sync_battle_ground_ambient(&mut self) {
+        use legaia_engine_vm::battle_ground_grid as grid;
+        let Some(gi) = self.battle_ground_mesh else {
+            return;
+        };
+        if self.session.host.world.mode != SceneMode::Battle {
+            return;
+        }
+        let base = self.session.host.world.battle_ambient_base();
+        self.battle_ground_cue_far = Some(
+            grid::grid_far_colour(base, self.battle_stage_outdoor).map(|c| f32::from(c) / 255.0),
+        );
+        let near = grid::battle_ambient_colour(base);
+        if near == self.battle_ground_rgbc {
+            return;
+        }
+        let Some(r) = self.win.renderer.as_ref() else {
+            return;
+        };
+        let g = build_battle_ground_grid(near);
+        match r.upload_vram_mesh(
+            &g.positions,
+            &g.uvs,
+            &g.cba_tsb,
+            &g.normals,
+            &g.colors,
+            &g.indices,
+        ) {
+            Ok(m) => {
+                self.meshes[gi] = m;
+                self.battle_ground_rgbc = near;
+            }
+            Err(e) => log::warn!("play-window: battle ground grid re-colour: {e:#}"),
+        }
+    }
+
     /// Residency guard: while a battle texture is expected to be GPU-resident,
     /// verify no other path re-uploaded VRAM over it this frame. The
     /// white-speckle party bug (a background CLUT animator re-uploading the
@@ -1617,7 +1626,7 @@ impl PlayWindowApp {
         let Some(banner) = self.session.host.world.battle_spoils_banner() else {
             return Vec::new();
         };
-        let leader = self.battle_spoils_leader();
+        let leader = self.session.host.world.battle_spoils_leader();
         let view = legaia_engine_render::BattleSpoilsView {
             xp: banner.xp,
             gold: banner.gold,
@@ -1631,18 +1640,6 @@ impl PlayWindowApp {
         let mut draws = legaia_engine_render::battle_spoils_draws_for(&self.font, &view, &windows);
         legaia_engine_render::scale_stage_text_draws(&mut draws, origin, scale);
         draws
-    }
-
-    /// The party leader whose name opens the spoils line.
-    fn battle_spoils_leader(&self) -> String {
-        let w = &self.session.host.world;
-        w.party
-            .roster
-            .members
-            .get(w.party_roster_slot(0))
-            .map(|m| m.name())
-            .filter(|n| !n.trim().is_empty())
-            .unwrap_or_else(|| "Vahn".to_string())
     }
 
     /// The post-battle report's window chrome - the gold nine-slice over the
@@ -1669,7 +1666,7 @@ impl PlayWindowApp {
         let Some(banner) = self.session.host.world.battle_spoils_banner() else {
             return Vec::new();
         };
-        let leader = self.battle_spoils_leader();
+        let leader = self.session.host.world.battle_spoils_leader();
         let view = legaia_engine_render::BattleSpoilsView {
             xp: banner.xp,
             gold: banner.gold,
@@ -1779,13 +1776,6 @@ impl PlayWindowApp {
         )
     }
 }
-
-// The trig / sqrt / PRNG the intro styles' seeders reach into moved to
-// `legaia_engine_vm::battle_intro_particles::IntroEnv` - the browser play
-// page arms the same emitter now, and a per-host env is exactly the drift
-// (a degenerate local LCG once stopped the tile shatter dead) the shared
-// type exists to prevent.
-use legaia_engine_vm::battle_intro_particles::IntroEnv;
 
 /// Drop the `tmd_binding` of every actor slot the battle loader did **not**
 /// just register, and report the slots dropped.

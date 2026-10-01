@@ -1,0 +1,76 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; shading</div>
+  <h1>Shading and palettes</h1>
+  <p class="lede">How Legaia turns a texture into the colour you see on screen - and why an exported texture's palettes can look wrong. A texel is an index; the colour comes out of video memory, not the file; the screen then multiplies it by a colour painted into the mesh. There is no light source anywhere.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Texel</dt><dd>A 4-bit (or 8-bit) index. 4bpp: the low nibble is the left texel.</dd>
+    <dt>Palette</dt><dd>16 (or 256) 15-bit colours plus an STP bit, read from the VRAM cell the primitive names at draw time - not from the texture's own file.</dd>
+    <dt>Transparency</dt><dd><code>0x0000</code> is never drawn; <code>0x8000</code> is opaque black.</dd>
+    <dt>Shading</dt><dd><code>out = texel &times; colour / 128</code>. <code>0x80</code> is neutral; most field surfaces sit below it, so they draw darker than their texture.</dd>
+    <dt>Light source</dt><dd>None. Only the GTE depth cue (<code>DPCS</code> / <code>DPCT</code>), which pulls the colour toward a far colour.</dd>
+    <dt>Blending</dt><dd>Per texel: STP colours of a semi-transparent primitive blend with the screen in one of four modes.</dd>
+    <dt>Output</dt><dd>15-bit framebuffer, dithered by retail (script-controlled); the port renders clean by default.</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="chain">
+  <h2>The chain, step by step</h2>
+  <ol>
+    <li><strong>Index.</strong> The GPU fetches the texel's 4-bit index from the texture page.</li>
+    <li><strong>Palette lookup.</strong> The primitive carries a CLUT address; the GPU reads 16 halfwords at VRAM <code>((CBA &amp; 0x3F) &times; 16, CBA &gt;&gt; 6)</code>. Whatever the last upload left there is the palette.</li>
+    <li><strong>Transparency key.</strong> A <code>0x0000</code> entry skips the texel.</li>
+    <li><strong>Depth cue.</strong> The primitive's colour word is blended toward the far colour: <code>c + (far &minus; c) &times; IR0 / 4096</code>. Unfogged field scenes use <code>IR0 = 0</code>.</li>
+    <li><strong>Colour multiply.</strong> <code>texel &times; colour / 128</code>, clamped at 255.</li>
+    <li><strong>Blend.</strong> STP texels of a semi-transparent primitive mix with the screen: half-and-half, add, subtract, or add a quarter.</li>
+    <li><strong>Dither and write.</strong> 4&times;4 ordered dither, cut to 5 bits a channel.</li>
+  </ol>
+</section>
+
+<section class="doc-section" id="palettes">
+  <h2>Why a texture's palettes can look wrong</h2>
+  <p>An export decodes the image through one of the file's own palettes. Three Legaia habits make that differ from the game:</p>
+  <ul>
+    <li><strong>One sheet, many palettes.</strong> A 4bpp UI or character sheet is one grid of indices that every sprite or polygon reads through <em>its own</em> palette. Each palette recolours the whole image, so in any one palette most of the sheet shows colours it is never drawn with. The status badges (Venom, Toxic, Stone...) are all different colours in game, each through its own palette.</li>
+    <li><strong>A palette from another file.</strong> A draw names a VRAM cell, and that cell can belong to a different texture: three of the status badges use palettes uploaded by a small palette-only file that sits just before the UI sheet on the disc.</li>
+    <li><strong>A palette overwritten before use.</strong> Uploads are last-write-wins. The battle ASCII font's own palette is overwritten at boot by the menu font's palette strip, so the game always draws it through menu palette 13.</li>
+  </ul>
+  <p>The <a href="../viewer.html#tim-catalog">asset viewer's TIM catalog</a> resolves these from your disc: its <strong>Palette</strong> list offers <strong>As the game draws it</strong> for the menu / battle UI sheet (every sprite through the palette the game uses for it), lists the palettes video memory really holds on the texture's row, and notes when a texture's own palette is never used or is all zeros.</p>
+</section>
+
+<section class="doc-section" id="brightness">
+  <h2>Why the game looks darker (or brighter) than the texture</h2>
+  <p>Every mesh polygon carries a colour painted by the artists, one per corner on smooth-shaded polygons. The screen multiplies the texture by it, with <code>0x80</code> meaning "unchanged". A texel of <code>(200, 100, 50)</code> under <code>0x60</code> shows as <code>(150, 75, 37)</code>; under <code>0xC0</code> it clamps to <code>(255, 150, 75)</code>. Roughly four in five colour components in the field scenes sit below <code>0x80</code>. Menu and HUD sprites are drawn at exactly <code>0x80</code>, which is why a UI sheet decoded through the right palette matches the screen and a field texture does not.</p>
+  <p>Battles add two runtime terms: an ambient that the ground grid is shaded from (it dims while a summon is on screen and fades in at the start of every fight), and a per-actor tint that darkens distant bodies and colours status ailments.</p>
+</section>
+
+<section class="doc-section" id="animated">
+  <h2>Palettes that move</h2>
+  <p>Water, waterfalls and the world-map ocean animate by copying palette frames into the live cell (a <em>palette walk</em>); some creatures pulse by cycling hue and brightness on their palette every frame; the opening prologue rewrites every palette to gold sepia. An export shows the disc state, so a palette that looks like a strip of near-identical ramps is often a set of animation frames.</p>
+</section>
+
+<section class="doc-section" id="modders">
+  <h2>Editing a texture</h2>
+  <ul>
+    <li><strong>Edit indices, not one palette's colours.</strong> The same index means a different colour in every palette; check the region in the palette the game uses before repainting it.</li>
+    <li><strong>Keep the transparency key.</strong> <code>0x0000</code> is "not drawn" everywhere; use <code>0x8000</code> for black.</li>
+    <li><strong>Don't pre-brighten.</strong> A dark look in game is the mesh colour, applied on top of your texture; brightening the file brightens every polygon that uses it.</li>
+    <li><strong>All-zero palettes are placeholders</strong> filled in video memory by another texture of the same scene.</li>
+  </ul>
+  <p>Replacing a texture on your disc is done in the <a href="../tooling/rom-patcher.html">ROM patcher</a>; the byte-level rules are on the <a href="../formats/tim.html">TIM page</a>.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="renderer.html">Renderer</a>
+    <a href="../formats/tim.html">PSX TIM</a>
+    <a href="../formats/npc-palette.html">NPC palettes</a>
+    <a href="battle.html">Battle</a>
+    <a href="../viewer.html">Asset viewer</a>
+  </div>
+</section>

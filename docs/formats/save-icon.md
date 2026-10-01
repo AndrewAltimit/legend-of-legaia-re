@@ -73,10 +73,10 @@ Every consumer uses the same pair of expressions for an index `i`:
 | Texture u coordinate | `i * 16` |
 | CLUT id | `0x40 + i` |
 
-That is why the sheet cannot go through a generic multi-palette texture
-replacer: rebuilding the palette and replicating it across CLUT rows - the
-correct behaviour for an ordinary multi-palette TIM - would repaint all
-sixteen portraits at once.
+That is why the sheet cannot go through the generic single-image texture
+replacer: it encodes the whole sheet against one palette, while each tile
+here is drawn through its own - a new colour for one portrait has to land in
+that portrait's palette and no other.
 
 ## Index rules
 

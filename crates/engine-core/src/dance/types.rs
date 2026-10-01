@@ -22,6 +22,45 @@ pub enum DanceMode {
     FreePlay,
 }
 
+/// Story flag state 1 maps to [`DanceMode::HowTo`] (`li a0,0x133` at
+/// `0x801CF8F8`).
+pub const MODE_FLAG_HOW_TO: u16 = 0x133;
+/// Story flag state 1 maps to [`DanceMode::Qualifier`] (`0x801CF910`).
+pub const MODE_FLAG_QUALIFIER: u16 = 0x134;
+/// Story flag state 1 maps to [`DanceMode::Finals`] (`0x801CF924`).
+pub const MODE_FLAG_FINALS: u16 = 0x135;
+/// Story flag state 1 maps to [`DanceMode::FreePlay`] (`0x801CF93C`). Unlike
+/// the other three it is **not** cleared on entry: it is the standing "the
+/// hall is yours to play" state, not a one-shot request.
+pub const MODE_FLAG_FREE_PLAY: u16 = 0x428;
+/// The run's pass flag: set on entry (`0x801CF968`), cleared by the results
+/// state on a loss (`0x801CFF10`), read by the hall's field script.
+pub const WIN_FLAG: u16 = 0x50A;
+
+/// Which floor the dance overlay's state 1 opens, off the story flags the
+/// calling field script raised.
+///
+/// State 1 tests the four flags in a fixed order and each hit overwrites the
+/// mode global (`0x801CF8F4..0x801CF94C`): `0x133` -> how-to, `0x134` ->
+/// qualifier, `0x135` -> finals, `0x428` -> free play - so a later flag in
+/// that order wins. With none set the global keeps the `0` the overlay's
+/// entry `FUN_801CEF54` stored at `0x801CF398`: the qualifier.
+// PORT: FUN_801cf470 (state 1's flag -> mode map)
+pub fn dance_mode_from_flags(test: impl Fn(u16) -> bool) -> DanceMode {
+    let mut mode = DanceMode::Qualifier;
+    for (flag, m) in [
+        (MODE_FLAG_HOW_TO, DanceMode::HowTo),
+        (MODE_FLAG_QUALIFIER, DanceMode::Qualifier),
+        (MODE_FLAG_FINALS, DanceMode::Finals),
+        (MODE_FLAG_FREE_PLAY, DanceMode::FreePlay),
+    ] {
+        if test(flag) {
+            mode = m;
+        }
+    }
+    mode
+}
+
 impl DanceMode {
     /// The mode global's value.
     pub fn value(self) -> u32 {
@@ -171,8 +210,20 @@ pub(super) struct Dancer {
     pub(super) clip: i16,
     /// The bound clip's cursor step (`+0x6A`), the kind descriptor's rate word.
     pub(super) clip_rate: u16,
+    /// The body's display track ([`super::DanceBodyClip`]): the standing loop
+    /// the dancer returns to ...
+    pub(super) show_loop: super::DanceBodyClip,
+    /// ... the judge-returned move playing over it, if one was bound ...
+    pub(super) show_move: Option<super::DanceBodyClip>,
+    /// ... and the ticks since the last restart of that track (the clip
+    /// driver's cursor `+0x68` before the per-record step is applied).
+    pub(super) show_ticks: u32,
+    /// Ticks the bound judge move still plays before the clip driver raises
+    /// its end flag (`0` = the standing loop is bound). Only counted when the
+    /// run has its clip lengths ([`super::DanceGame::attach_clip_bank`]).
+    pub(super) move_left: u32,
     /// The actor flag word (`+0x10`). Only the bits the dance overlay writes
-    /// are modelled: [`crate::minigame_actor::FLAG_TRANSLUCENT`] (the anim
+    /// are modelled: [`crate::minigame_actor::FLAG_PARTY_CLIP_BANK`] (the anim
     /// word's `0x200`) and [`crate::minigame_actor::FLAG_DRIVE_CLIP`].
     pub(super) flags: u32,
     /// Score (`DAT_801d53cc`), clamped to [`SCORE_MAX`].
@@ -227,13 +278,31 @@ impl Dancer {
     /// Bind a clip into the actor's `+0x5C` / `+0x6A` pair, folding the anim
     /// word's `0x200` bit into the flag word the way `FUN_801d1358` does.
     pub(super) fn bind_clip(&mut self, clip: &legaia_asset::dance_cast::DanceClip) {
-        self.clip = (clip.anim_id & 0x1FF) as i16;
-        self.clip_rate = clip.rate;
-        if clip.translucent {
-            self.flags |= crate::minigame_actor::FLAG_TRANSLUCENT;
-        } else {
-            self.flags &= !crate::minigame_actor::FLAG_TRANSLUCENT;
+        let id = (clip.anim_id & 0x1FF) as i16;
+        let show = super::DanceBodyClip::of(clip);
+        // A loop that changes while no move plays restarts; the rebind the
+        // rules run every frame does not.
+        if self.show_move.is_none() && show.id != self.show_loop.id {
+            self.show_ticks = 0;
         }
+        self.show_loop = show;
+        self.clip = id;
+        self.clip_rate = clip.rate;
+        if clip.party_bank {
+            self.flags |= crate::minigame_actor::FLAG_PARTY_CLIP_BANK;
+        } else {
+            self.flags &= !crate::minigame_actor::FLAG_PARTY_CLIP_BANK;
+        }
+    }
+
+    /// Bind a judge-returned move clip: always from its first frame, even when
+    /// the same move is still playing (a fresh judge event restarts it).
+    pub(super) fn bind_move(&mut self, clip: &legaia_asset::dance_cast::DanceClip) {
+        let standing = self.show_loop;
+        self.bind_clip(clip);
+        self.show_loop = standing;
+        self.show_move = Some(super::DanceBodyClip::of(clip));
+        self.show_ticks = 0;
     }
 
     /// The dancer's difficulty lane (`gauge / 1000`), clamped to the chart.
@@ -241,9 +310,11 @@ impl Dancer {
         (self.gauge / GAUGE_STEP).min(rows.saturating_sub(1) as u32)
     }
 
-    /// Nothing is judged for this dancer right now: mid-spin, latched, or a
-    /// press already registered on this beat.
+    /// Nothing is judged for this dancer right now: a judge move still
+    /// playing (retail calls the award routine only while the bound clip is a
+    /// standing loop), mid-spin, latched, or a press already registered on
+    /// this beat.
     pub(super) fn locked(&self, beat: u32) -> bool {
-        self.spin_turns > 0 || self.latch != 0 || self.last_beat == Some(beat)
+        self.move_left > 0 || self.spin_turns > 0 || self.latch != 0 || self.last_beat == Some(beat)
     }
 }

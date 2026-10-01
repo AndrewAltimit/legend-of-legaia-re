@@ -85,6 +85,7 @@
 /reference/open-rev-eng-threads.html
 /reference/re-do-not-re-walk.html
 /reference/re-settled-threads.html
+/reference/scene-names.html
 /robots.txt
 /scenes.json
 /search-index.json
@@ -117,6 +118,7 @@
 /subsystems/renderer.html
 /subsystems/save-screen.html
 /subsystems/script-vm.html
+/subsystems/shading.html
 /subsystems/shop.html
 /subsystems/vr-mode.html
 /subsystems/world-map.html

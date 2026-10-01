@@ -298,6 +298,16 @@ pub struct LegaiaViewer {
     /// decompressed sections lets a run of same-entry thumbnails reuse one
     /// decode instead of re-decompressing per thumbnail.
     deep_section_cache: std::cell::RefCell<Option<(u32, Vec<Vec<u8>>)>>,
+    /// VRAM after the boot-resident system-UI bundle upload (retail
+    /// `FUN_800198E0`'s flat-strip CLUT law), built at load time. Lets the
+    /// catalog say when a TIM's own palette never reaches VRAM and offer the
+    /// palettes VRAM really holds on its row. `None` when the bundle does not
+    /// parse (single-TIM loads, foreign PROT.DAT).
+    boot_cluts: Option<legaia_asset::tim_palette_context::BootClutVram>,
+    /// Per-rectangle palette map of the system-UI texture page, from the SCUS
+    /// widget-class table (full-disc loads only). Drives the catalog's
+    /// "as the game draws it" composite.
+    sheet_regions: Option<Vec<legaia_asset::tim_palette_context::SheetRegion>>,
     /// Walk-view continent ground for the currently-loaded kingdom: the
     /// procedural heightfield surface built from the walk `.MAP` floor grid,
     /// per-cell-textured from the terrain-type-keyed multi-page atlas. Built by

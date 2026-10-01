@@ -23,6 +23,10 @@ use anyhow::{Context, Result, bail};
 
 use crate::disc::DiscPatcher;
 use legaia_tim::encode::{EncodeOptions, Encoded, encode_replacement};
+use legaia_tim::multi_palette::{
+    ImportKind, View, all_sets, decode_mapped, import_png, indexed_png, own_palettes,
+    render_composite, render_strip, rgba_png, standalone_strip_geom, view_map,
+};
 use legaia_tim::{Tim, parse_strict};
 
 /// Where the target TIM lives on the disc.
@@ -194,6 +198,11 @@ pub struct ReplaceOutcome {
     pub clut_rows_rewritten: bool,
     /// Compressed-tier fit (None for raw targets).
     pub lzs: Option<LzsFit>,
+    /// What [`replace_texture_png`] recognised the PNG as (`None` from the
+    /// RGBA entry point [`replace_texture`]).
+    pub import: Option<ImportKind>,
+    /// CLUT entries that changed, across every palette of the texture.
+    pub palette_entries_changed: usize,
 }
 
 fn bpp_of(tim: &Tim) -> u32 {
@@ -221,11 +230,65 @@ pub fn replace_texture(
     let original = read_texture(patcher, target)?;
     let enc: Encoded = encode_replacement(&original.tim, rgba, width, height, opts)
         .with_context(|| format!("encode replacement for {}", target))?;
-    debug_assert_eq!(enc.bytes.len(), original.tim_bytes.len());
+    let changed = palette_entries_changed(&original.tim, &enc.bytes);
+    write_encoded(patcher, original, enc, None, changed, dry_run)
+}
 
+/// Replace a texture with a PNG in any of the shapes
+/// [`legaia_tim::multi_palette::import_png`] recognises - a plain image
+/// through any palette (or through the game's per-region palettes, when
+/// [`crate::texture_palettes`] knows them), a composite with the palette
+/// strip below it, a standalone palette strip, or an indexed PNG. The write
+/// is the same same-size in-place write [`replace_texture`] does.
+pub fn replace_texture_png(
+    patcher: &mut DiscPatcher,
+    target: &TextureTarget,
+    png: &[u8],
+    opts: &EncodeOptions,
+    dry_run: bool,
+) -> Result<ReplaceOutcome> {
+    let original = read_texture(patcher, target)?;
+    let pals = crate::texture_palettes::texture_palettes(patcher, &original.tim)?;
+    let imp = import_png(&original.tim, png, &pals.context, opts)
+        .with_context(|| format!("encode replacement for {}", target))?;
+    write_encoded(
+        patcher,
+        original,
+        imp.encoded,
+        Some(imp.kind),
+        imp.palette_entries_changed,
+        dry_run,
+    )
+}
+
+fn palette_entries_changed(original: &Tim, new_bytes: &[u8]) -> usize {
+    let Ok(after) = legaia_tim::parse_strict(new_bytes) else {
+        return 0;
+    };
+    match (&original.clut, &after.clut) {
+        (Some(a), Some(b)) => a
+            .entries
+            .iter()
+            .zip(&b.entries)
+            .filter(|(x, y)| x != y)
+            .count(),
+        _ => 0,
+    }
+}
+
+/// Write an encoded TIM back where `original` came from.
+fn write_encoded(
+    patcher: &mut DiscPatcher,
+    original: OriginalTexture,
+    enc: Encoded,
+    import: Option<ImportKind>,
+    palette_entries_changed: usize,
+    dry_run: bool,
+) -> Result<ReplaceOutcome> {
+    debug_assert_eq!(enc.bytes.len(), original.tim_bytes.len());
     let mut outcome = ReplaceOutcome {
-        width,
-        height,
+        width: original.tim.pixel_width(),
+        height: original.tim.pixel_height(),
         bpp: bpp_of(&original.tim),
         clut_count: original.tim.palette_count(),
         byte_len: enc.bytes.len(),
@@ -233,6 +296,8 @@ pub fn replace_texture(
         quantized_pixels: enc.quantized_pixels,
         clut_rows_rewritten: enc.clut_rows_rewritten,
         lzs: None,
+        import,
+        palette_entries_changed,
     };
 
     match original.kind {
@@ -282,6 +347,150 @@ pub fn replace_texture(
         }
     }
     Ok(outcome)
+}
+
+/// The download shapes [`export_texture_png`] produces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExportFormat {
+    /// The texture's own size, drawn through one view.
+    Image,
+    /// The image through one view, with every palette as a strip below it.
+    Composite,
+    /// Every palette as solid colour cells - colours only.
+    Strip,
+    /// Indexed PNG: the stored indices, one palette as the `PLTE`.
+    Indexed,
+}
+
+impl std::str::FromStr for ExportFormat {
+    type Err = String;
+    fn from_str(s: &str) -> std::result::Result<Self, String> {
+        match s {
+            "image" => Ok(Self::Image),
+            "composite" => Ok(Self::Composite),
+            "strip" | "palettes" => Ok(Self::Strip),
+            "indexed" => Ok(Self::Indexed),
+            other => Err(format!(
+                "unknown export format {other:?} (image | composite | strip | indexed)"
+            )),
+        }
+    }
+}
+
+/// A PNG ready to save, plus a one-line description of it.
+#[derive(Debug, Clone)]
+pub struct ExportedPng {
+    pub png: Vec<u8>,
+    pub width: usize,
+    pub height: usize,
+    /// The view the image half was drawn through (`None` for a strip).
+    pub view: Option<View>,
+    pub description: String,
+}
+
+/// Resolve a requested view against what is known: the in-game view needs a
+/// palette map, and a palette index must exist. Falls back to palette 0.
+pub fn resolve_view(tim: &Tim, pals: &crate::texture_palettes::TexturePalettes, v: View) -> View {
+    match v {
+        View::InGame if pals.has_map() => View::InGame,
+        View::Palette(p) if p < tim.palette_count() => View::Palette(p),
+        _ => View::Palette(0),
+    }
+}
+
+/// Decode `tim` through `view` (RGBA8, the texture's own size).
+pub fn decode_view(
+    tim: &Tim,
+    pals: &crate::texture_palettes::TexturePalettes,
+    view: View,
+) -> Result<Vec<u8>> {
+    if tim.palette_count() == 0 {
+        return legaia_tim::decode_rgba8(tim, 0);
+    }
+    let view = resolve_view(tim, pals, view);
+    let sets = all_sets(tim, &pals.context);
+    decode_mapped(tim, &sets, &view_map(tim, &pals.context, view))
+}
+
+/// Encode one texture as a downloadable PNG in `format`, drawn through
+/// `view` where the format has an image half.
+pub fn export_texture_png(
+    patcher: &DiscPatcher,
+    target: &TextureTarget,
+    format: ExportFormat,
+    view: View,
+) -> Result<ExportedPng> {
+    let original = read_texture(patcher, target)?;
+    let tim = &original.tim;
+    let pals = crate::texture_palettes::texture_palettes(patcher, tim)?;
+    let (w, h) = (tim.pixel_width(), tim.pixel_height());
+    let n = tim.palette_count();
+    if n == 0 && format != ExportFormat::Image {
+        bail!(
+            "{target} is direct colour ({} bpp) - it has no palettes",
+            bpp_of(tim)
+        );
+    }
+    let view = resolve_view(tim, &pals, view);
+    let own = own_palettes(tim);
+    Ok(match format {
+        ExportFormat::Image => {
+            let rgba = decode_view(tim, &pals, view)?;
+            ExportedPng {
+                png: rgba_png(w, h, &rgba)?,
+                width: w,
+                height: h,
+                view: Some(view),
+                description: format!("{w}x{h} image drawn through {view}"),
+            }
+        }
+        ExportFormat::Composite => {
+            let sets = all_sets(tim, &pals.context);
+            let map = view_map(tim, &pals.context, view);
+            let (cw, ch, rgba) = render_composite(tim, &sets, &map)?;
+            ExportedPng {
+                png: rgba_png(cw, ch, &rgba)?,
+                width: cw,
+                height: ch,
+                view: Some(view),
+                description: format!(
+                    "{cw}x{ch} composite: the {w}x{h} image through {view}, then {n} palette \
+                     row(s) below it"
+                ),
+            }
+        }
+        ExportFormat::Strip => {
+            let g = standalone_strip_geom(tim).context("texture has no palette strip")?;
+            let rgba = render_strip(&own, g, g.width());
+            ExportedPng {
+                png: rgba_png(g.width(), g.height(), &rgba)?,
+                width: g.width(),
+                height: g.height(),
+                view: None,
+                description: format!(
+                    "{}x{} palette strip: {n} row(s) of {} colour cells ({}x{} each)",
+                    g.width(),
+                    g.height(),
+                    g.per,
+                    g.cell_w,
+                    g.cell_h
+                ),
+            }
+        }
+        ExportFormat::Indexed => {
+            let p = match view {
+                View::Palette(p) => p,
+                View::InGame => 0,
+            };
+            ExportedPng {
+                png: indexed_png(tim, &own[p])?,
+                width: w,
+                height: h,
+                view: Some(View::Palette(p)),
+                description: format!("{w}x{h} indexed PNG, shown through palette {p}"),
+            }
+        }
+    })
 }
 
 /// Build both TIM catalogs (raw flat-scan tier + LZS deep tier) from the
@@ -564,5 +773,147 @@ mod tests {
         // Nothing was written: the original TIM still reads back.
         let after = read_texture(&patcher, &target).unwrap();
         assert_eq!(after.tim_bytes, tim);
+    }
+
+    /// A 4bpp 16x2 TIM with four palettes (CLUT 16x4), indices 0..15.
+    fn tim_4bpp_four_palettes() -> Vec<u8> {
+        let mut b = vec![];
+        b.extend_from_slice(&0x10u32.to_le_bytes());
+        b.extend_from_slice(&0x08u32.to_le_bytes());
+        b.extend_from_slice(&(12u32 + 16 * 4 * 2).to_le_bytes());
+        b.extend_from_slice(&0u16.to_le_bytes());
+        b.extend_from_slice(&480u16.to_le_bytes());
+        b.extend_from_slice(&16u16.to_le_bytes());
+        b.extend_from_slice(&4u16.to_le_bytes());
+        for p in 0..4u16 {
+            for e in 0..16u16 {
+                b.extend_from_slice(&((0x0400 * (p + 1)) | e | ((e + 3) << 5)).to_le_bytes());
+            }
+        }
+        b.extend_from_slice(&(12u32 + 4 * 2 * 2).to_le_bytes());
+        b.extend_from_slice(&128u16.to_le_bytes());
+        b.extend_from_slice(&0u16.to_le_bytes());
+        b.extend_from_slice(&4u16.to_le_bytes());
+        b.extend_from_slice(&2u16.to_le_bytes());
+        for _ in 0..2 {
+            b.extend_from_slice(&[0x10, 0x32, 0x54, 0x76, 0x98, 0xBA, 0xDC, 0xFE]);
+        }
+        b
+    }
+
+    fn four_palette_disc() -> (DiscPatcher, TextureTarget, Vec<u8>) {
+        let tim = tim_4bpp_four_palettes();
+        let disc = synth_disc(&synth_prot(&tim));
+        let target = TextureTarget {
+            entry: Some(1),
+            lzs_section: None,
+            offset: 0,
+        };
+        (DiscPatcher::open(disc).unwrap(), target, tim)
+    }
+
+    #[test]
+    fn every_export_shape_reimports_byte_identical() {
+        for format in [
+            ExportFormat::Image,
+            ExportFormat::Composite,
+            ExportFormat::Strip,
+            ExportFormat::Indexed,
+        ] {
+            for view in [View::Palette(0), View::Palette(2)] {
+                let (mut patcher, target, tim) = four_palette_disc();
+                let ex = export_texture_png(&patcher, &target, format, view).unwrap();
+                let out = replace_texture_png(
+                    &mut patcher,
+                    &target,
+                    &ex.png,
+                    &EncodeOptions::default(),
+                    false,
+                )
+                .unwrap();
+                assert_eq!(out.palette_entries_changed, 0, "{format:?} {view:?}");
+                let after = read_texture(&patcher, &target).unwrap();
+                assert_eq!(after.tim_bytes, tim, "{format:?} through {view:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_strip_edit_rewrites_one_entry_and_nothing_else() {
+        let (mut patcher, target, tim) = four_palette_disc();
+        let ex =
+            export_texture_png(&patcher, &target, ExportFormat::Strip, View::Palette(0)).unwrap();
+        let (w, h, mut rgba) = legaia_tim::encode::decode_png_rgba(&ex.png).unwrap();
+        let (cw, ch) = (w / 16, h / 4);
+        // Palette 3, entry 7 -> pure green.
+        for y in 3 * ch..4 * ch {
+            for x in 7 * cw..8 * cw {
+                rgba[(y * w + x) * 4..(y * w + x) * 4 + 4].copy_from_slice(&[0, 255, 0, 255]);
+            }
+        }
+        let png = legaia_tim::multi_palette::rgba_png(w, h, &rgba).unwrap();
+        let out = replace_texture_png(
+            &mut patcher,
+            &target,
+            &png,
+            &EncodeOptions::default(),
+            false,
+        )
+        .unwrap();
+        assert_eq!(out.import, Some(ImportKind::PaletteStrip));
+        assert_eq!(out.palette_entries_changed, 1);
+        let after = read_texture(&patcher, &target).unwrap();
+        let diff: Vec<usize> = after
+            .tim_bytes
+            .iter()
+            .zip(&tim)
+            .enumerate()
+            .filter(|(_, (a, b))| a != b)
+            .map(|(i, _)| i)
+            .collect();
+        // CLUT entries start at byte 20; palette 3 entry 7 is entry 55.
+        let at = 20 + 2 * (3 * 16 + 7);
+        assert!(diff.iter().all(|&i| i == at || i == at + 1), "{diff:?}");
+        assert_eq!(after.tim.clut.as_ref().unwrap().entries[3 * 16 + 7], 0x03E0);
+    }
+
+    #[test]
+    fn an_image_edited_through_palette_two_only_touches_palette_two() {
+        let (mut patcher, target, tim) = four_palette_disc();
+        let orig = read_texture(&patcher, &target).unwrap();
+        let mut rgba = legaia_tim::decode_rgba8(&orig.tim, 2).unwrap();
+        // Two new colours on two pixels: they need two free slots, and the
+        // image uses all sixteen indices... so free two first by repainting
+        // pixels 14/15 (indices 14/15, row 0 and row 1) with index-0's colour.
+        let c0: [u8; 4] = rgba[0..4].try_into().unwrap();
+        for i in [14usize, 15, 30, 31] {
+            rgba[i * 4..i * 4 + 4].copy_from_slice(&c0);
+        }
+        rgba[4..8].copy_from_slice(&[255, 0, 255, 255]);
+        let png = legaia_tim::multi_palette::rgba_png(16, 2, &rgba).unwrap();
+        let out = replace_texture_png(
+            &mut patcher,
+            &target,
+            &png,
+            &EncodeOptions::default(),
+            false,
+        )
+        .unwrap();
+        assert_eq!(out.import, Some(ImportKind::Image(View::Palette(2))));
+        let after = read_texture(&patcher, &target).unwrap();
+        let (a, b) = (
+            after.tim.clut.as_ref().unwrap(),
+            orig.tim.clut.as_ref().unwrap(),
+        );
+        for p in [0usize, 1, 3] {
+            assert_eq!(
+                a.entries[p * 16..(p + 1) * 16],
+                b.entries[p * 16..(p + 1) * 16],
+                "palette {p} untouched"
+            );
+        }
+        let got = legaia_tim::decode_rgba8(&after.tim, 2).unwrap();
+        assert_eq!(&got[4..8], &[255, 0, 255, 255]);
+        assert_eq!(after.tim_bytes.len(), tim.len());
     }
 }

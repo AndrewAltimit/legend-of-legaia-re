@@ -250,8 +250,31 @@ Small per-actor / per-scene writes (slot table, camera-zone query, sound trigger
 - **Sub-5/6** are 4-byte conditional-jump pair (jump-if-zero / jump-if-nonzero): both read a 16-bit flag index via [`load_u16_le`](script-vm.md#helper-functions), query the host's trigger-flag bank, and advance PC += 4 in both branches (the original's "joined" tail at `LAB_801E28C4` returns `param_2 + 4` either way).
 - **Sub-0xA/0xB/0xC** are the 5-byte slot-table writes `[4C, 0xCN, slot, lo, hi]` on the u16 array at `0x801C6460`: sub-A sets, sub-B adds, sub-C subtracts (B/C substitute the per-frame tick `_DAT_1F800393` when the literal is `0xFFFF`). The read side is op `0x4E` sub-ops 5..8 (`slot = sub - 5`; [script-vm.md](script-vm.md) op table) - together they form script-visible counters/timers (e.g. cave01's interact counter gating the `0x15D` beat-key spawn).
 - **Sub-0xF** is the **script camera-focus override**, not a "position broadcast": 4-byte `[4C, 0xCF, x, z]`, arm at `0x801E2A34`. See [below](#4c-cf-is-the-script-camera-focus-override) for where the two values go and who reads them.
+- **Sub-0xD** is the 2-byte **camera-glide wait** `[4C, 0xCD]`: it holds the script while the cutscene camera mover is live. See [below](#4c-cd-waits-for-the-camera-glide).
 - **Sub-9** is a 2-byte global-pair compare gate: PC += 2 unless `_DAT_8007BAB8 != _DAT_8007BA9C`, then halts.
 - **Sub-0xE** is the 3-byte **player clip override** `[4C, 0xCE, value]` (`0x801E2A20..0x801E2A30`): `_DAT_8007B6AC = value`, which points a party-flagged player's walk, idle and run at scene-bank records (`base + value - 1`). Scene entry zeroes it. Two scenes use it (`jagaroom`, `urudre1`); see [`field-locomotion.md`](field-locomotion.md#the-clip-base-and-the-settle-tail).
+
+##### `4C CD` waits for the camera glide
+
+The arm at `0x801E29E0` advances the PC by 2, then looks up the first node on
+actor list 0 (`_DAT_8007C34C`) whose tick word is the cutscene camera mover
+`FUN_801DC0BC` (`FUN_8003CF04`). No mover, or one whose `+0x10 & 0x8` dead
+bit is up, returns the advanced PC (`0x801E29FC` / `0x801E2A10`); a live one
+takes the restore-PC exit (`j 0x801DEE50` / `move s8,s4`), so the op re-runs
+next frame. The mover raises its dead bit the frame its progress `+0x9C`
+reaches the duration `+0x9E` (`0x801DD238..0x801DD260`), so an op-`0x45`
+glide followed by `4C CD` holds the script until the shot has landed.
+`town01`'s opening parks on it after each establishing glide, and `jouine`
+`P2[16]` after a 2200-frame pan. The earlier "script-context allocation"
+label read the lookup as an allocation.
+
+Port: `FieldHost::op4c_n_c_sub_d_camera_mover_live`, answered from the
+world-side glide countdown `CameraState::glide_frames`, which the op-`0x45`
+host hooks arm and the spawned-record stepper counts down once per display
+frame. The renderer's own mover folds a beat only after the slice that issued
+it, while retail allocates the mover inside the op, so the countdown is what
+lets a `4C CD` later in the same slice see the glide. The modal timeline keeps
+the park off its anti-hang cap, like a `0x4A` wait.
 
 ##### `4C CF` is the script camera-focus override
 

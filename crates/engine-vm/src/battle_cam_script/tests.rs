@@ -482,6 +482,22 @@ fn submenu_yaw_takes_shortest_arc() {
     assert_eq!(cam.pose().yaw, BattleCamActor::default().submenu_pose().yaw);
 }
 
+/// The capture harness's orbit alignment moves the free-running azimuth
+/// only where the orbit owns it, and the orbit keeps running from there.
+#[test]
+fn orbit_alignment_applies_only_to_the_idle_orbit() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    assert!(cam.align_orbit_yaw(4064.0 + 4096.0));
+    assert_eq!(cam.pose().yaw, 4064.0);
+    steps(&mut cam, 1);
+    assert_eq!(cam.pose().yaw, 4064.0 - ORBIT_STEP);
+    // The submenu close-up owns its own yaw: no alignment.
+    cam.set_phase(BattleCamPhase::Submenu);
+    let before = cam.pose().yaw;
+    assert!(!cam.align_orbit_yaw(100.0));
+    assert_eq!(cam.pose().yaw, before);
+}
+
 /// `phase_for` is the shared boolean mapping: dialogue outranks the
 /// submenu (retail's tutorial text draws over an open menu), and an
 /// executing action outranks only the idle far framing.
@@ -1944,6 +1960,8 @@ fn a_real_turn_films_its_done_tail_and_hands_back_at_end_of_action() {
                     shake_amplitude: 0,
                     attack: None,
                     action_state: state,
+                    active_commits: 0,
+                    acting_body: None,
                 };
                 drive(&mut slot, true, inputs, frames, None);
                 let far = slot.as_ref().map(|c| c.phase()) == Some(BattleCamPhase::Menu);
@@ -2036,7 +2054,10 @@ fn the_summon_cast_close_up_matches_a_captured_frame() {
         world: [300.0, -40.0, -800.0],
         height: None,
     };
-    let (pose, raw_z) = summon_cast_framing(actor, 649, 0xC8);
+    let (pose, raw_z) = summon_cast_framing(actor, None, 649, 0xC8);
+    // The focus is the body pair `+0x3C` / `+0x40` when one is known.
+    let (bodied, _) = summon_cast_framing(actor, Some([123.0, -456.0]), 649, 0xC8);
+    assert_eq!(bodied.focus, [123.0, 0.0, -456.0]);
     assert_eq!(pose.pitch, -400.0);
     assert_eq!((pose.pitch as i32).rem_euclid(4096), 3696);
     assert_eq!(pose.tr[1], 2066.0);
@@ -2059,11 +2080,44 @@ fn the_summon_band_frames_the_cast_close_up() {
         cam.advance_to(f * 2);
     }
     let c = cam.attack.ctx;
-    let (want, _) = summon_cast_framing(cam.actor, c.accum, c.ramp);
+    let (want, _) = summon_cast_framing(cam.actor, cam.acting_body, c.accum, c.ramp);
     let got = cam.framing_pose();
     assert_eq!(got.pitch, want.pitch);
     assert!(
         (got.tr[1] - want.tr[1]).abs() <= 32.0,
         "{got:?} vs {want:?}"
+    );
+}
+
+/// The active actor's clip commit re-zeroes the ramp, the accumulator and
+/// the latch (`FUN_8004AD80` `0x8004BF50..0x8004BF78`) - the death ramp is
+/// left alone - so the summon close-up swings from the cast clip's start.
+#[test]
+fn an_active_clip_commit_rezeroes_the_camera_counters() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Action, 0);
+    cam.observe_active_commits(4);
+    for f in 1..=40u64 {
+        cam.advance_to(f);
+    }
+    assert_eq!(
+        cam.attack.ctx.ramp,
+        crate::battle_attack_camera::AttackCamCtx::RAMP_CAP
+    );
+    let death = cam.attack.ctx.death_ramp;
+    cam.attack.ctx.latch = 3;
+    // The same count again is no commit.
+    cam.observe_active_commits(4);
+    assert_eq!(
+        cam.attack.ctx.ramp,
+        crate::battle_attack_camera::AttackCamCtx::RAMP_CAP
+    );
+    cam.observe_active_commits(5);
+    let c = cam.attack.ctx;
+    assert_eq!((c.ramp, c.accum, c.latch), (0, 0, 0));
+    assert_eq!(c.death_ramp, death);
+    cam.advance_to(43);
+    assert_eq!(
+        cam.attack.ctx.accum,
+        3 * crate::battle_attack_camera::AttackCamCtx::RAMP_SCALE
     );
 }

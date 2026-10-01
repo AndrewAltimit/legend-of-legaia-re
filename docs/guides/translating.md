@@ -13,7 +13,10 @@ it wherever you want the details.
 
 - **Your own copy of Legend of Legaia (USA)** (`SCUS-94254`) as a `.bin`
   image (Mode 2/2352), or its `.cue` sheet. The packs are keyed to the USA
-  disc, so they do not apply to the European or Japanese discs.
+  disc, so they do not apply to the European or Japanese discs. You can
+  still *export* those discs to read their script next to yours: a Japanese
+  export gives every line of the original Japanese dialog as readable text
+  ([packs from other builds](../tooling/translation/pack-format.md#packs-from-other-builds)).
 - **A text editor** that saves UTF-8, such as Notepad++, VS Code, Kate or
   TextEdit in plain-text mode. The pack is a YAML file: plain text with
   indentation.
@@ -120,7 +123,9 @@ a box for your translation, and live feedback as you type:
 An **Accents** panel sets how accented letters reach the disc (see
 [Accents](#accents)), shows how many lines still hold a character the game
 will not draw, and has a character palette per language that types into the
-line you are editing. A dashboard shows where the room is: per section, per name table, per menu
+line you are editing. Beside it, a **Symbols** palette shows every button and
+icon the game can draw inside text, taken from your own disc; click one to
+insert it (see [Buttons and icons](#buttons-and-icons)). A dashboard shows where the room is: per section, per name table, per menu
 pool, and every scene from the fullest down. Click a row to list its lines.
 *Check against my disc* runs the full check. Your edits are saved in the
 browser as you type, and the page offers to resume them next time. Download
@@ -198,10 +203,17 @@ Details: [Space and budgets](../tooling/translation/space-and-budgets.md).
 
 ### Menu and battle labels
 
-Menu commands, battle messages and system prompts sit in the game code and
-cannot move. Their budget is a hard limit, and it is tight: a translation can
-be shorter than the English but rarely much longer. Abbreviate. Details:
-[UI strings](../tooling/translation/ui-strings.md).
+Menu commands, battle messages and system prompts are reached straight from
+the game code. A translation longer than its slot **moves automatically**: the
+tools find every place in the code that points at the label and point it at
+the new copy. The room comes from other labels in the same part of the game
+that your translation made shorter, and for the pause, shop and save menus
+from a block of spare bytes kept for translations (no mod uses it). A few
+labels cannot move (the report says which and why); for those the slot is a
+hard limit, so abbreviate. `translate space` and the workbench's **Room per
+category** card show how much room each category has left. Details:
+[UI strings](../tooling/translation/ui-strings.md) and
+[space and budgets](../tooling/translation/space-and-budgets.md#moving-a-label).
 
 ### Dialog
 
@@ -307,12 +319,25 @@ working:
 | `{c1:00}` | a character's name | keep it; you may move it within the sentence |
 | `{c2:..}` `{c3:..}` `{c5:..}` | an item / magic / art name | keep it |
 | `{cf:..}` | a colour change | keep it, around the same words |
-| `{ce:..}` and other `{xx:yy}` | spacing and icons | keep it |
+| `{ce:..}` | a button, icon or number, such as `{ce:00}` = the X button | keep it, or add one; see [Buttons and icons](#buttons-and-icons) |
+| other `{xx:yy}` | spacing and control codes | keep it |
 | `{xx}` | a single special byte (`{01}` = item icon) | keep it |
 | `{7b}` / `{7d}` | a literal `{` / `}` | use these instead of typing braces |
 
 The substituted names come from the tables you are also translating, so write
 sentences that stay grammatical whichever name appears.
+
+### Buttons and icons
+
+`{ce:NN}` draws a picture inside the text: a controller button (`{ce:00}` is
+the X button), a gold or target badge, an equipment-slot icon, an element
+icon, or a number. Each has a name you can type instead, which reads better
+and imports as exactly the same bytes: `{btn:x}`, `{btn:circle}`,
+`{icon:gold}`, `{icon:legs}`, `{icon:fire}`, `{icon:fire2}`, and so on. On the
+workbench, the **Symbols** palette shows every one as your disc draws it
+(hover for its name) and inserts it where your cursor is; the dialog preview
+draws them in place. The full list, with every name, is in the
+[pack format reference](../tooling/translation/pack-format.md#symbols).
 
 ### Accents
 

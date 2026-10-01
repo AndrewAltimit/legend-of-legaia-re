@@ -1013,6 +1013,13 @@ pub fn battle_intro_names(
     if world.mode != crate::world::SceneMode::Battle || world.battle.intro_names_frames == 0 {
         return Vec::new();
     }
+    // Retail holds the command flow in `0x0B` until the expiry sweep takes
+    // the labels, so no action ever plays under them. The port does not park
+    // the flow (see `world::battle::intro_names`), so an action that starts
+    // inside the hold ends the labels here instead.
+    if battle_action_in_flight(world.battle_ctx.action_state) {
+        return Vec::new();
+    }
     let mut rows = battle_enemy_target_rows(world);
     crate::target_picker::layout_enemy_menu_rows(&mut rows, |s| {
         font.layout_ascii(s).advance_x as i16
@@ -1261,13 +1268,32 @@ fn party_member_name(world: &crate::world::World, slot: u8) -> String {
 /// A monster's catalog name by actor slot.
 fn monster_name(world: &crate::world::World, slot: u8) -> String {
     let pc = party_count(world);
-    world
-        .actors
-        .get(slot as usize)
-        .and_then(|a| a.battle_monster_id)
-        .and_then(|id| world.tables.monster_catalog.get(id))
-        .map(|d| d.name.clone())
-        .unwrap_or_else(|| format!("M{}", (slot as usize).saturating_sub(pc) + 1))
+    let catalog = |s: usize| -> Option<String> {
+        world
+            .actors
+            .get(s)
+            .and_then(|a| a.battle_monster_id)
+            .and_then(|id| world.tables.monster_catalog.get(id))
+            .map(|d| d.name.clone())
+    };
+    let Some(name) = catalog(slot as usize) else {
+        return format!("M{}", (slot as usize).saturating_sub(pc) + 1);
+    };
+    // The actor's display payload `+0x1BC` carries an instance letter when
+    // the formation seats the same monster more than once (`Skeleton A`,
+    // `Gilium Lv3 A`), lettered over the seated slots so a twin dying does
+    // not re-letter the survivor - the same rule the target rows use.
+    let twins: Vec<usize> = (pc..pc + crate::target_picker::FORMATION_SLOTS)
+        .filter(|&s| {
+            world.actors.get(s).is_some_and(|a| a.battle.max_hp != 0)
+                && catalog(s).as_deref() == Some(name.as_str())
+        })
+        .collect();
+    if twins.len() < 2 {
+        return name;
+    }
+    let ordinal = twins.iter().position(|&s| s == slot as usize).unwrap_or(0) as u8;
+    format!("{name} {}", (b'A' + ordinal) as char)
 }
 
 /// Any actor's display name by slot.
@@ -1445,9 +1471,10 @@ pub fn battle_ring_ap_plate_value(world: &crate::world::World) -> Option<u8> {
 ///   art's animation commits, so `player_steal_skeleton_pre` (`0x1E`, chain
 ///   start) has no label and `battle_melee_hit_spark` (`0x20`, mid-chain)
 ///   has `Somersault`; a plain swing never shows one;
-/// * a cast names the spell: the `0x28` arm stores the spell table's `+8`
-///   name pointer into both records before `FUN_801D8DE8(0x4C, 0)`
-///   (`0x801E4430..0x801E4458`);
+/// * a **monster** cast names the spell: the `0x28` arm stores the spell
+///   table's `+8` name pointer into both records before
+///   `FUN_801D8DE8(0x4C, 0)` (`0x801E4430..0x801E4458`), behind a seat test
+///   that skips the block for a party caster;
 /// * an item names the item (the `0x3C` arm's `(0x4C, 0)` at `0x801E3DC8`).
 pub fn battle_move_name(world: &crate::world::World) -> Option<String> {
     use legaia_engine_vm::battle_action::ActionCategory;
@@ -1472,6 +1499,13 @@ pub fn battle_move_name(world: &crate::world::World) -> Option<String> {
             .and_then(|c| legaia_art::tables::art_name(character, c))
             .map(str::to_string)
     } else if cat == ActionCategory::Magic.as_byte() {
+        // The `0x28` arm's spell-name write is gated on the caster's seat:
+        // `lbu v0,0x2(s5); sltiu v0,v0,3; bne v0,zero,0x801E4460`
+        // (`0x801E43D0..0x801E43DC`) skips it for a party caster, so a
+        // party cast - a Seru summon included - has no name label.
+        if a < pc {
+            return None;
+        }
         let id = actor.battle.params[0];
         world
             .menu

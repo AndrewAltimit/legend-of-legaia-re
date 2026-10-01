@@ -77,9 +77,9 @@ impl PlayWindowApp {
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<legaia_engine_render::SpriteDraw> {
-        let Some(assets) = self.save_menu.as_ref() else {
+        if self.save_menu.is_none() {
             return Vec::new();
-        };
+        }
         use legaia_engine_core::save_select::SaveSelectSession;
         // The save-select session (or field-menu Save sub-session) that
         // drives both pill chrome and any retail Load-mode overlays.
@@ -97,141 +97,87 @@ impl PlayWindowApp {
             }
             _ => return Vec::new(),
         };
-        let slot_count = session.slots().len().min(2);
-        let cursor_row = (session.current_slot() as usize).min(1);
-        // Retail draws every visible slot pill during Browsing and the
-        // Confirm prompts, but hides the non-selected pills once a
-        // slot has been confirmed for load (NowChecking + SlotPreview
-        // both show only the picked pill). Build the pill slice
-        // accordingly so the sprite chrome matches retail. AND retail
-        // relocates that single visible pill up under the Load panel
-        // (SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE) during Load-active.
-        // The relocation is animated - mode 2 of FUN_801E1C1C slides
-        // the slot composite linearly from screen `(136, 96)` (=
-        // param_3=0xa0 with `sVar6 -= 0x18` x-shift, param_4=0x60) to
-        // `(24, 40)` over 16 frames, driven by `DAT_801ef194`. We
-        // interpolate against `session.slide_anim_t()` so the engine
-        // matches retail's slide-in.
-        // Which pills, which cursor, which overlays - the shared decision
-        // (`save_select::phase_layout`) both hosts read, so a phase cannot
-        // mean two screens.
-        let layout = legaia_engine_core::save_select::phase_layout(session.phase());
-        let (pills, pill_anchor): (Vec<u8>, (i32, i32)) = if layout.single_pill {
-            // Slide start = the pill's Browsing position (retail mode-2
-            // start `(160, 96)` minus the `-0x18` x-shift = the Browsing
-            // pill quad, i.e. the pill slides away from where it already
-            // sat).
-            let pos = session.interpolate(
-                legaia_engine_render::SAVE_SELECT_SLOT1_POS,
-                legaia_engine_render::SAVE_SELECT_SLOT1_POS_LOAD_ACTIVE,
-            );
-            (vec![session.current_slot()], pos)
-        } else {
-            (
-                (0..slot_count as u8).collect(),
-                legaia_engine_render::SAVE_SELECT_SLOT1_POS,
-            )
+        self.save_select_overlay(session, surface_w, surface_h)
+            .sprites
+    }
+
+    /// The save-select screen - both halves - through the shared
+    /// composition: the engine's overlay sequence
+    /// (`SaveScreenFlow::overlay_model`) borrowed into `engine-ui`'s view and
+    /// composed by `save_select_overlay_draws`, the browser play page's calls
+    /// too. The text half draws with or without the system-UI atlas; the
+    /// sprite half needs it. Serves the boot Continue -> Load screen and the
+    /// pause menu's Load / Save rows alike.
+    pub(super) fn save_select_overlay(
+        &self,
+        s: &legaia_engine_core::save_select::SaveSelectSession,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> legaia_engine_render::SaveSelectOverlayDraws {
+        let Some(m) = self.save_flow.overlay_model(s) else {
+            return Default::default();
+        };
+        let rows: Vec<legaia_engine_render::SaveSelectRow<'_>> = s
+            .slots()
+            .iter()
+            .map(|snap| legaia_engine_render::SaveSelectRow {
+                label: &snap.label,
+                present: snap.present,
+                party_lv: snap.party_lv,
+                play_time_seconds: snap.play_time_seconds,
+                money: snap.money,
+                location: &snap.location,
+            })
+            .collect();
+        let cells: Vec<legaia_engine_render::SlotGridCell> = m
+            .preview
+            .iter()
+            .flat_map(|p| p.cells.iter())
+            .map(|c| legaia_engine_render::SlotGridCell {
+                present: c.present,
+                portrait_char_id: c.portrait_char_id,
+            })
+            .collect();
+        let preview = m
+            .preview
+            .as_ref()
+            .map(|p| legaia_engine_render::SaveSelectPreviewView {
+                cells: &cells,
+                cell: p.cell,
+                info: p.info.map(|b| legaia_engine_render::SlotInfoView {
+                    slot_no: b.slot.saturating_add(1),
+                    location: &b.location,
+                    play_time: &p.play_time,
+                    leader_name: &b.leader_name,
+                    leader_level: b.party_lv,
+                    leader_hp: b.leader_hp,
+                    leader_mp: b.leader_mp,
+                    leader_char_id: b.leader_char_id,
+                }),
+                caption: p.caption,
+                panel_y_offset: p.panel_y_offset,
+            });
+        let view = legaia_engine_render::SaveSelectOverlayView {
+            title: m.title,
+            rows: &rows,
+            cursor: m.cursor,
+            single_pill: m.single_pill,
+            pills: &m.pills,
+            pill_cursor: m.pill_cursor,
+            slide_t: m.slide_t,
+            info_t: m.info_t,
+            now_checking: m.now_checking,
+            preview,
+            confirm: m.confirm,
         };
         let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
-        let mut draws = legaia_engine_render::save_select_chrome_draws_for(
-            &assets.rects,
-            &pills,
-            pill_anchor,
+        legaia_engine_render::save_select_overlay_draws(
+            &self.font,
+            self.save_menu.as_ref().map(|a| &a.rects),
+            &view,
             stage_origin,
             stage_scale,
-        );
-        // Pointing-finger cursor sprite - retail's small white hand
-        // pointing at the selected slot pill, byte-pinned to CLUT row
-        // 7 of the system-UI TIM. Emit last so it draws on top of
-        // the pills. Suppressed once a card is committed: the dialog
-        // covers the pill row and the grid emits its own cursor on the
-        // focused cell.
-        if slot_count > 0 && layout.pill_cursor {
-            draws.push(legaia_engine_render::save_select_cursor_draw_for(
-                &assets.rects,
-                cursor_row,
-                stage_origin,
-                stage_scale,
-            ));
-        }
-        // Phase-specific overlays: SlotPreview shows the 5×3 grid + a
-        // bottom info panel; NowChecking shows a centered dialog box
-        // with the "Now checking. Do not remove MEMORY CARD" message.
-        match session.phase() {
-            // Every preview phase, the two confirms included - retail raises
-            // the overwrite / delete prompt FROM the preview, so the block
-            // grid and the info panel stay under the messagebox.
-            _ if layout.preview => {
-                // The grid is the picked PORT's fifteen blocks, focused by
-                // the shared flow's cursor - NOT the pill row, which in a
-                // two-stage rack lists the card ports instead.
-                let (blocks, cell) = self.save_flow.preview(session);
-                let cells: Vec<legaia_engine_render::SlotGridCell> = (0..15)
-                    .map(|i| {
-                        blocks
-                            .get(i)
-                            .map(|s| legaia_engine_render::SlotGridCell {
-                                present: s.present,
-                                portrait_char_id: if s.present {
-                                    Some(slot_leader_char_id(s))
-                                } else {
-                                    None
-                                },
-                            })
-                            .unwrap_or_default()
-                    })
-                    .collect();
-                draws.extend(legaia_engine_render::slot_preview_grid_draws_for(
-                    &assets.rects,
-                    &cells,
-                    cell,
-                    stage_origin,
-                    stage_scale,
-                ));
-                let info = build_slot_info_view(blocks, cell);
-                let view = info.as_ref().map(|i| i.as_view());
-                let panel_y_offset = info_panel_slide_offset(session);
-                draws.extend(legaia_engine_render::slot_info_panel_draws_for(
-                    &assets.rects,
-                    view.as_ref(),
-                    panel_y_offset,
-                    stage_origin,
-                    stage_scale,
-                ));
-            }
-            _ if layout.now_checking => {
-                // Slide the panel left-from-right alongside the text,
-                // matching retail mode-0's `pos = (416, 112) -> (160,
-                // 112)` interpolation.
-                let pos_x = legaia_engine_core::save_select::interpolate_anim(
-                    (legaia_engine_render::NOW_CHECKING_SLIDE_START_X, 0),
-                    (legaia_engine_render::NOW_CHECKING_SLIDE_TARGET_X, 0),
-                    session.slide_anim_t(),
-                )
-                .0;
-                let slide_offset = (pos_x - legaia_engine_render::NOW_CHECKING_SLIDE_TARGET_X, 0);
-                draws.extend(legaia_engine_render::now_checking_panel_draws_for(
-                    &assets.rects,
-                    stage_origin,
-                    stage_scale,
-                    slide_offset,
-                ));
-            }
-            _ => {}
-        }
-        // Retail raises the confirm as its own centred messagebox pair
-        // (prompt bar + stacked Yes/No box, mode 3 of FUN_801E1C1C),
-        // sliding up from below the stage ON TOP of the preview. Text half
-        // lives in `save_select_phase_text_draws`.
-        if layout.confirm {
-            draws.extend(legaia_engine_render::confirm_dialog_panel_draws_for(
-                &assets.rects,
-                confirm_dialog_slide_y(session),
-                stage_origin,
-                stage_scale,
-            ));
-        }
-        draws
+        )
     }
 
     /// Sprite half of the field pause menu and its sub-screens: the 9-slice

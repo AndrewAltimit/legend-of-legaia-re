@@ -30,6 +30,7 @@ legaia-font = { path = "../font" }
 serde.workspace = true
 serde_yaml = "0.9"
 serde_json.workspace = true
+encoding_rs = "0.8"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

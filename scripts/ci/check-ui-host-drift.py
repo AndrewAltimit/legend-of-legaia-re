@@ -494,6 +494,8 @@ NATIVE_REDRAW_PASSES = (
 )
 NATIVE_CAMERA_MOD = "crates/engine-shell/src/bin/legaia-engine/window/camera.rs"
 WEB_PLAY_CAMERA = "crates/web-viewer/src/play_camera.rs"
+NATIVE_SHOP_WINDOWS = "crates/engine-shell/src/bin/legaia-engine/window/shop_windows.rs"
+NATIVE_KEYBOARD = "crates/engine-shell/src/bin/legaia-engine/window/event_handler/keyboard.rs"
 NATIVE_BATTLE = "crates/engine-shell/src/bin/legaia-engine/window/battle.rs"
 WEB_PLAY_ARENA = "crates/web-viewer/src/play_minigame_arena.rs"
 WEB_PLAY_FISHING = "crates/web-viewer/src/play_fishing.rs"
@@ -503,6 +505,192 @@ NATIVE_TITLE_SAVE = (
 )
 
 SIM_PAIRS: list[dict[str, object]] = [
+    {
+        "what": "CLUT-walk shimmer install, native vs play page - the resolve "
+        "(type-6 table on a field scene, slot 5 on an overworld), the strip "
+        "park, the Drake complement and the ocean-head fallback were written "
+        "out once per host and had drifted in which rows a field scene parked "
+        "and which column the coverage test read. Both scene rebuilds must "
+        "install through `ClutWalkAnim::install`",
+        "sites": {
+            "native": (NATIVE_FIELD_RENDER, "resolve_ocean_anim"),
+            "web": (WEB_RUNTIME, "rebuild_render_state"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["ClutWalkAnim::install"],
+    },
+    {
+        "what": "battle target-cursor cue, native vs play page - the pulse "
+        "toward white on the pointed-at monster and the dim on the rest are "
+        "the port's readout of the stamped render flag, and their numbers "
+        "were hand-copied into each host's draw pass. Both sites must read "
+        "`battle_action::cursor_cue`",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": ("crates/web-viewer/src/play_battle_fx.rs", "play_battle_actor_cursor"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["cursor_cue"],
+    },
+    {
+        "what": "battle body whole-mesh blend, native vs play page - the "
+        "capture / defeat fade and the near-camera ghost OR the colour word's "
+        "ABE + ABR into every prim. The native window applied it to posed "
+        "meshes only, so a body drawn off its rest mesh stayed opaque there. "
+        "Both hosts' stream builders must go through "
+        "`BattleActorDrawPlan::apply_body_blend`",
+        "sites": {
+            "native": (NATIVE_REDRAW_PASSES, "build_posed_actor_overrides"),
+            "web": (
+                "crates/web-viewer/src/play_battle_body_blend.rs",
+                "play_battle_actor_blend_cba_tsb",
+            ),
+        },
+        "mode": "symbols_all",
+        "symbols": ["apply_body_blend"],
+    },
+    {
+        "what": "battle body tint-cue gate, native vs play page - which "
+        "render flags take the tint pass's cue (not the cursor's two; the "
+        "fade only while its word raises ABE). The native gate also asked "
+        "whether the body was posed. Both draw passes must ask "
+        "`BattleActorDrawPlan::tint_cue_applies`",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": ("crates/web-viewer/src/play_battle_fx.rs", "play_battle_actor_cursor"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["tint_cue_applies"],
+    },
+    {
+        "what": "Muscle Dome 3D arena, native vs play page - the page posed "
+        "the arena, the fighter and the monster in its own script (clip picks "
+        "off the turn edge, an orbit camera) while the native window drew no "
+        "3D dome at all. Both hosts must drive the engine surface "
+        "(`MuscleDomeSurface::frame`, held as `muscle_surface`)",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/bin/legaia-engine/window/minigames.rs",
+                "refresh_muscle_dome_gpu",
+            ),
+            "web": (WEB_PLAY_ARENA, "play_mg_muscle_scene_frame"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["muscle_surface"],
+    },
+    {
+        "what": "Muscle Dome camera, native vs play page - both hosts draw "
+        "the dome under the surface camera's matrix (`DomeCamera::vp_raw`), "
+        "never a host-side orbit framing",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/bin/legaia-engine/window/minigames.rs",
+                "refresh_muscle_dome_gpu",
+            ),
+            "web": (WEB_PLAY_ARENA, "play_mg_muscle_scene_vp"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["vp_raw"],
+    },
+    {
+        "what": "battle-intro arming, native vs play page - the PROT 0979 "
+        "load and relocation, the curtain table and tile-corner fallbacks, "
+        "the shade-pack parse and the two env seeds were written out once per "
+        "host, only the style inputs shared. Both arms must build the "
+        "emitter through `BattleIntro::arm_for_battle`",
+        "sites": {
+            "native": (NATIVE_BATTLE, "arm_battle_intro"),
+            "web": (WEB_PLAY_BATTLE, "arm_battle_intro"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["arm_for_battle"],
+    },
+    {
+        "what": "seru-trade screen text, native vs play page - the offer "
+        "list's title and owner rows and the confirm question were formatted "
+        "once per host (the page even kept its own copy of the title and "
+        "empty-row strings). Both trade draws must read "
+        "`seru_trade::trade_screen_text`",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/bin/legaia-engine/window/menu_draws.rs",
+                "draw_shop_trade",
+            ),
+            "web": (WEB_PLAY_SHOP, "shop_trade_draws"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["trade_screen_text"],
+    },
+    {
+        "what": "shop root picker rows, native vs play page - each host "
+        "mapped `shop_menu_rows` onto its own label + ink table (and both "
+        "left Quit white where retail greys it with Sell on an empty bag). "
+        "Both shop builders must read `menu_runtime::shop_root_labels`",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/bin/legaia-engine/window/hud.rs",
+                "shop_overlay_stage_draws",
+            ),
+            "web": (WEB_PLAY_SHOP, "shop_stage_draws"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["shop_root_labels"],
+    },
+    {
+        "what": "Options screen model, native vs play page - the rows, the "
+        "hand's row offset and the Key Config rows were derived once per "
+        "host from the session. Both Options builders must read "
+        "`OptionsSession::screen_model`",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/bin/legaia-engine/window/menu_draws.rs",
+                "field_menu_sub_draws",
+            ),
+            "web": ("crates/web-viewer/src/play_menu.rs", "build_config"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["screen_model"],
+    },
+    {
+        "what": "shop item label, native vs play page - a nameless id (a "
+        "load without the executable) printed `item 42` in the native shop "
+        "and `Item 2A` on the page, each host spelling its own fallback. Both "
+        "shop label helpers must read `MenuState::item_label`",
+        "sites": {
+            "native": (NATIVE_SHOP_WINDOWS, "shop_item_name"),
+            "web": (WEB_PLAY_SHOP, "shop_item_label"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["item_label"],
+    },
+    {
+        "what": "camera-occlusion fade gate, native vs play page - the gate "
+        "ray-casts the player's body cross from the eye, and the cross is "
+        "centred on `field_occlusion::player_body_centre` (the floor tier "
+        "under the actor lifted half a character height). The page rebuilt "
+        "that point inline with its own half-height literal, so a retune of "
+        "the kernel's constant would have moved one host's gate alone. Both "
+        "sites must read the kernel",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": (WEB_PLAY, "field_player_occluded"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["player_body_centre"],
+    },
+    {
+        "what": "camera-distance preset cycle, native vs play page - the "
+        "stored option is what every options apply re-asserts onto the "
+        "camera, so a cycle that steps the camera alone is undone by the next "
+        "apply and never persisted. The page's export did exactly that (and "
+        "had no caller). Both sites must step the option",
+        "sites": {
+            "native": (NATIVE_KEYBOARD, "handle_key"),
+            "web": (WEB_PLAY_CAMERA, "play_camera_cycle_distance"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["cycle_camera_distance", "persist_and_apply_options"],
+    },
     {
         "what": "field screen-effect washes, native vs play page - the field "
         "VM's op `0x34` sub-0 arm spawns colour-tween actors whose per-frame "
@@ -617,13 +805,17 @@ SIM_PAIRS: list[dict[str, object]] = [
         "raises the overwrite / delete prompt FROM the preview (see "
         "docs/subsystems/save-screen.md), so a confirm is a `SlotPreview` "
         "wearing a messagebox. The native window drew neither the grid nor "
-        "the panel under it. Both sites must read `save_select::phase_layout`",
+        "the panel under it. The whole overlay sequence is one model now "
+        "(`SaveScreenFlow::overlay_model`, which reads `phase_layout`) and one "
+        "composition (`save_select_overlay_draws`), whose text half draws "
+        "without the chrome atlas - the page had returned before every phase "
+        "overlay without it. Both sites must call both",
         "sites": {
-            "native": (NATIVE_TITLE_SAVE, "save_select_chrome_sprite_draws"),
+            "native": (NATIVE_TITLE_SAVE, "save_select_overlay"),
             "web": (WEB_PLAY_MENU, "build_save_select"),
         },
         "mode": "symbols_all",
-        "symbols": ["phase_layout"],
+        "symbols": ["overlay_model", "save_select_overlay_draws"],
     },
     {
         "what": "shop / inn / prize / coin overlay stage transform, native "

@@ -62,7 +62,9 @@ pub struct FieldVmState {
     /// ([`crate::world::World::install_cutscene_timeline_record`]) so the timeline's
     /// cross-context pokes (flag writes, animate cues, moves) land on real
     /// per-actor contexts - the opening prologue's vignette mechanism.
-    /// Stepped run-until-yield per frame by [`crate::world::World::step_field_channels`].
+    /// Their own scripts run only in the load-frame spawn pre-run
+    /// ([`crate::world::World::pre_run_field_channel_prologues`]); a touch
+    /// resumes one as the interaction timeline.
     pub channels: Vec<crate::field_channels::FieldChannel>,
     /// A copy of [`Self::channels`] taken when a stepping pass moves the live
     /// vector out (`std::mem::take` in the channel and spawned-record
@@ -76,7 +78,7 @@ pub struct FieldVmState {
     /// buffer base is its `record_offset` into this).
     pub channels_man: Option<std::sync::Arc<Vec<u8>>>,
     /// Placement index of the channel context currently executing (its own
-    /// slice in [`crate::world::World::step_field_channels`], or the target of a
+    /// spawn pre-run slice, or the target of a
     /// cross-context poke from the cutscene timeline), so field-VM host hooks
     /// (animate, move) can attribute the side-effect to that placement's NPC.
     /// `None` outside a channel-targeted step.
@@ -88,6 +90,16 @@ pub struct FieldVmState {
     /// the retail run settles on the op target) from the live channel
     /// stepper's own-script op (glide).
     pub in_spawned_record_slice: bool,
+    /// Actors another spawned-record context holds in an in-place park
+    /// while the one being stepped runs: a walk-to-tile, rotate or player
+    /// glide leg (`None` = the player, `Some(slot)` = an NPC placement).
+    /// Retail's park leaves the target's halt bit `0x400` set until the walk
+    /// kernel lands it, and the dispatcher refuses every cross-context op
+    /// aimed at a halted target (`0x801DE90C..0x801DE944`), so the second
+    /// context waits at its op. Written by
+    /// [`crate::world::World::step_cutscene_timeline`] and
+    /// [`crate::world::World::step_helper_contexts`] before each slice.
+    pub halted_elsewhere: Vec<Option<u8>>,
     /// Claim counter for the one shared script dialog box: each spawned
     /// record context that reaches a text segment stamps the next value into
     /// its [`crate::cutscene_timeline::CutsceneTimeline::dialog_claim`], and
@@ -139,6 +151,7 @@ impl FieldVmState {
             channels_man: None,
             executing_channel: None,
             in_spawned_record_slice: false,
+            halted_elsewhere: Vec::new(),
             dialog_claims: 0,
             object_channel_binds: Vec::new(),
             pending_record_spawns: Vec::new(),

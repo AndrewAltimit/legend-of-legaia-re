@@ -109,6 +109,14 @@ pub(crate) struct MinigameUi {
     /// The Baka duel's 3D surface - the engine cache the native window
     /// drives too (`legaia_engine_core::baka_duel_scene::BakaDuelSurface`).
     pub(crate) baka_surface: legaia_engine_core::baka_duel_scene::BakaDuelSurface,
+    /// The dance floor's bodies - the engine cache the native window drives
+    /// too (`legaia_engine_core::dance_cast_scene::DanceCastSurface`) - and
+    /// the hall origin its positions are re-based on for this page.
+    pub(crate) dance_surface: legaia_engine_core::dance_cast_scene::DanceCastSurface,
+    pub(crate) dance_origin: (f32, f32, f32),
+    /// The Muscle Dome's 3D arena surface - the engine cache the native
+    /// window drives too (`legaia_engine_core::muscle_dome_scene`).
+    pub(crate) muscle_surface: legaia_engine_core::muscle_dome_scene::MuscleDomeSurface,
 }
 
 /// The PROT entries the standalone presentation bundle reads, in extraction
@@ -479,12 +487,7 @@ impl LegaiaRuntime {
     }
 }
 
-/// Stage-space text rows at the native window's HUD pens: `(8, 44)` for a
-/// contest line, `(8, 62)` for the status line, `(8, 80)` for the prompt.
-pub(crate) const PEN_CONTEST: (i32, i32) = (8, 44);
-pub(crate) const PEN_STATUS: (i32, i32) = (8, 62);
-pub(crate) const PEN_PROMPT: (i32, i32) = (8, 80);
-pub(crate) const PEN_EXTRA: (i32, i32) = (8, 98);
+/// Stage-space row inks for this page's own status lines.
 pub(crate) const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 pub(crate) const DIM: [f32; 4] = [0.65, 0.72, 0.8, 1.0];
 

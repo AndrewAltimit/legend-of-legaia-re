@@ -415,7 +415,7 @@ impl World {
                 .get(target as usize)
                 .copied()
                 .unwrap_or(false),
-            enemy_defender_halve: false,
+            enemy_defender_halve: self.mystic_shield_up(),
             // The bypass casts are routed away above; every move that reaches
             // the shared kernel passes `param_5 = 0`.
             bypass_party_resist: false,
@@ -516,7 +516,7 @@ impl World {
                 .get(target as usize)
                 .copied()
                 .unwrap_or(false),
-            enemy_defender_halve: false,
+            enemy_defender_halve: self.mystic_shield_up(),
             bypass_party_resist: ATK_WRAPPER_BYPASSES_PARTY_RESIST,
             summon_power_pct: 100,
             floor_rand: 0,
@@ -698,7 +698,7 @@ impl World {
                 .get(target as usize)
                 .copied()
                 .unwrap_or(false),
-            enemy_defender_halve: false,
+            enemy_defender_halve: self.mystic_shield_up(),
             bypass_party_resist: INT_WRAPPER_BYPASSES_PARTY_RESIST,
             summon_power_pct: 100,
             floor_rand: 0,
@@ -929,7 +929,7 @@ impl World {
             attacker_element: summon_element,
             defender_resist: DefenderResist::default(),
             defender_guarding: false,
-            enemy_defender_halve: false,
+            enemy_defender_halve: self.mystic_shield_up(),
             bypass_party_resist: false,
             summon_power_pct,
             floor_rand: 0,
@@ -1011,7 +1011,11 @@ impl World {
     /// id isn't a summon or neither source carries the creature (disc-free /
     /// synthetic battles).
     fn summon_creature_def(&self, spell_id: u8) -> Option<&crate::monster_catalog::MonsterDef> {
-        if !crate::summon::SERU_SUMMON_IDS.contains(&spell_id) {
+        // The evolved block (`0x8C..=0x95`) summons a `battle_data` creature
+        // exactly as the base block does; gating on the base block alone sent
+        // Aluru / Gilium & co. to the MP-scaled placeholder, which a boss's
+        // magic defence floors at 1.
+        if !crate::summon::has_summon_body(spell_id) {
             return None;
         }
         // The archive-resolved summon body, installed at scene entry for

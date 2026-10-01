@@ -180,28 +180,14 @@ impl LegaiaRuntime {
         Ok(resume.scene)
     }
 
-    /// Where a save written now would resume: the loaded scene's CDNAME
-    /// label and its banner name (the scene MAN's section 2). The same
-    /// derivation as the native window's
-    /// `BootSession::current_resume`; empty with no scene loaded.
+    /// Where a save written now would resume - the engine's
+    /// `SceneHost::current_resume`, the call the native session makes;
+    /// empty with no scene loaded.
     pub(crate) fn current_resume(&self) -> SaveResume {
-        let Some(host) = self.scene_host.as_ref() else {
-            return SaveResume::default();
-        };
-        let Some(scene) = host.scene.as_ref() else {
-            return SaveResume::default();
-        };
-        let location = scene
-            .field_man_payload(&host.index)
-            .ok()
-            .flatten()
-            .and_then(|man| legaia_asset::place_names::scene_name(&man))
-            .map(|n| n.name)
-            .unwrap_or_default();
-        SaveResume {
-            scene: scene.name.clone(),
-            location,
-        }
+        self.scene_host
+            .as_ref()
+            .map(|h| h.current_resume())
+            .unwrap_or_default()
     }
 }
 

@@ -416,12 +416,45 @@ pub(crate) enum Cmd {
         monster_id: Option<u16>,
         /// Palette index to decode with (multi-palette textures only). The
         /// monster tier ignores it - each texel is decoded through the
-        /// palette the model reads it with.
-        #[arg(long, default_value_t = 0)]
-        clut: usize,
+        /// palette the model reads it with. On a TIM whose per-region
+        /// palettes are known (the menu / battle UI sheet) leaving it out
+        /// draws every region through the palette the game uses for it.
+        #[arg(long)]
+        clut: Option<usize>,
+        /// Draw every region through the palette the game uses for it (the
+        /// default when that is known and --clut is not given).
+        #[arg(long, default_value_t = false)]
+        in_game: bool,
+        /// What to write (TIM tiers only). `image`: the texture drawn through
+        /// one view. `composite`: that image with every palette as rows of
+        /// colour cells below it - edit pixels and colours in one file.
+        /// `strip`: the palettes alone, one row per palette. `indexed`: an
+        /// indexed PNG of the stored palette indices. `tim-replace`
+        /// recognises all four.
+        #[arg(long, value_enum, default_value_t = TimExportFormatArg::Image)]
+        format: TimExportFormatArg,
         /// Where to write the PNG.
         #[arg(long, short)]
         output: PathBuf,
+    },
+    /// Read-only: which palette the game draws each region of a
+    /// multi-palette texture through (known for the menu / battle UI sheet,
+    /// from the executable's widget table). Coordinates come from
+    /// `tim-list`.
+    TimPaletteMap {
+        /// Path to the user's retail disc image (`.bin`, Mode 2/2352; a `.cue`
+        /// is accepted and resolved to the `.bin` it references).
+        #[arg(long)]
+        input: PathBuf,
+        /// Owning PROT entry. Omit for a `gap`-owned texture.
+        #[arg(long)]
+        entry: Option<u32>,
+        /// Byte offset of the TIM (decimal or 0xHEX).
+        #[arg(long, value_parser = parse_u64_flexible)]
+        offset: u64,
+        /// LZS section index for a compressed-tier texture.
+        #[arg(long)]
+        lzs_section: Option<u32>,
     },
     /// Replace a texture with an edited PNG: same dimensions / bpp / CLUT
     /// layout enforced, VRAM placement preserved, same-size in-place write
@@ -455,7 +488,9 @@ pub(crate) enum Cmd {
         #[arg(long)]
         monster_id: Option<u16>,
         /// Battle tier only: which palette of the block to encode against.
-        /// The other palettes of the same block stay byte-identical.
+        /// The other palettes of the same block stay byte-identical. (TIM
+        /// tiers need no flag: `tim-replace` recognises the view, composite,
+        /// palette strip or indexed PNG `tim-export` wrote.)
         #[arg(long, default_value_t = 0)]
         clut: usize,
         /// The replacement image (PNG, any color type; must match the
@@ -537,6 +572,30 @@ pub(crate) enum Cmd {
         #[command(subcommand)]
         cmd: TranslateCmd,
     },
+}
+
+#[derive(Copy, Clone, ValueEnum)]
+pub(crate) enum TimExportFormatArg {
+    /// The texture's own size, drawn through one view.
+    Image,
+    /// The image plus every palette as colour-cell rows below it.
+    Composite,
+    /// The palettes alone (edit colours without touching pixels).
+    Strip,
+    /// An indexed PNG of the stored palette indices.
+    Indexed,
+}
+
+impl From<TimExportFormatArg> for legaia_patcher::texture::ExportFormat {
+    fn from(a: TimExportFormatArg) -> Self {
+        use legaia_patcher::texture::ExportFormat as F;
+        match a {
+            TimExportFormatArg::Image => F::Image,
+            TimExportFormatArg::Composite => F::Composite,
+            TimExportFormatArg::Strip => F::Strip,
+            TimExportFormatArg::Indexed => F::Indexed,
+        }
+    }
 }
 
 #[derive(Copy, Clone, ValueEnum)]
@@ -766,6 +825,24 @@ pub(crate) enum TranslateCmd {
         /// `translate strip` may publish it.
         #[arg(long)]
         baseline: Option<PathBuf>,
+    },
+    /// Dialog coverage of `export` on a disc: every line the scene scripts
+    /// reach (the script walk) against the lines the exported pack carries,
+    /// per scene, with the reason for each missing line. Also counts lines no
+    /// walk reaches, untranslated Japanese lines left in a Latin build, and
+    /// shop vendor names. Counts and offsets only - no text - so it is safe to
+    /// run and log.
+    Coverage {
+        /// The disc image (`.bin`, or a `.cue` resolved to its `.bin`): any
+        /// build - USA, PAL or Japanese.
+        #[arg(long)]
+        input: PathBuf,
+        /// Print the full report as JSON.
+        #[arg(long)]
+        json: bool,
+        /// List every carrier, not only the ones with missing lines.
+        #[arg(long, default_value_t = false)]
+        verbose: bool,
     },
     /// Measure how much of an official localization fits the USA target under
     /// the per-string vs per-MAN (generalized rewriter) budget, and how many

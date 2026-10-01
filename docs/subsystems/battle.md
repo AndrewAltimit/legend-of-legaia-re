@@ -930,6 +930,15 @@ differ from retail and are deliberate:
   commit hook *accepts* the taught category - one lesson per successful player
   turn, which is the same observable cadence.
 
+The recomposition has to run on the frame a window **opens**, not only while
+the command session is unresolved: the resolution that hands off to a submenu
+consumes the session, and a byte synced only from the session stayed on the
+surface the player left (`0x28`, or `0x78` for the arts entry) for as long as
+the window was up. Retail stores the window's own state as it opens - `0x50`
+at `0x801D1738`, in the delay slot of the arts preseed `jal FUN_801DA34C` -
+and the engine syncs it at the same point
+(`World::tick_battle_command`).
+
 A queued box parks the whole battle tick (`World::live_battle_tick` returns
 early), which is the port of retail returning before it reads the flow state
 while `FUN_801D9BBC` reports a box up (`ctx[+0x6B2]`). A hook that takes the
@@ -1028,6 +1037,88 @@ are copied into the packet verbatim.
 `z0 = -((h >> 1) << 9) - 0x200`. The `z` axis carries an extra cell of bias, so
 the grid is not symmetric about the origin - at the live 28×28 it spans
 `x ∈ [-7168, +7168]` but `z ∈ [-7680, +6656]`.
+
+#### The grid's near colour and cue depth
+
+Each lattice vertex is cued by `DPCS` from the GTE `RGBC` register, which the
+emitter loads from scratch `0x1F800398` (`lwc2 a2, 0x84(t9)` at `0x801d05f4`,
+`t9 = 0x1F800314`) and never writes. `FUN_80026CE4` rewrites that word every
+frame from the ambient word `0x8007B7B0`, and the backdrop pass `FUN_80050120`
+stores the ambient beside the far colour, on every stage class, as the stage
+base plus `0x404040` (`0x800507E0..0x800507F0`). Once the intro fade has
+settled the base is `0x808080`, so the floor's **near** colour is `0xC0` per
+channel - the texel is lifted by half before the cue blends it toward the far
+colour. Every catalogued battle capture outside a cast, indoor and outdoor,
+holds `0x8007B7B0 = 0xC0C0C0`.
+
+**A cast dims it.** The base is not a constant: it is `ctx+0x890`, a packed
+`10:10:10` colour (channel `c` at bits `2 + 10c`) that `FUN_80050120` ramps
+every frame on `ctx+0x243`. While the byte is set (`0x80050608`) the ramp
+subtracts `step * 0x20` per lane (`8` per 8-bit channel per vsync, `step`
+being the frame step `0x1F800393`, `0x80050670..0x800506A4`) down to the
+floor `0x08020080` - base `0x20`; while it is clear it adds `step * 8` per
+lane (`2` a vsync) back up to `0x20080200` - base `0x80`
+(`0x80050724..0x8005075C`). The ambient stored is the base plus `0x404040`,
+so a cast pulls the grid's near colour from `0xC0` toward `0x60`, and the far
+colour `0x8007BB48` is derived from the same word (`0x800507FC..0x80050834`).
+Battle init seeds the floor (`0x80051C84`), so every fight's floor fades in
+over its first 48 vsyncs.
+
+Who drives the latch: the summon close-up (`FUN_801DC0A0` case `0x12`,
+`sb v0,0x243(v1)` at `0x801DCCFC`) sets `ctx+0x243 = 1` on every `0x33` /
+`0x34` pass. The summon band's `0x37` exit (`0x801E4E8C..0x801E4EA4`) and the
+capture band's `0x71` exit (`0x801E5214..0x801E5248`) clear it together with
+`ctx+0x278` and re-seed the base at `0x08421084` (`0x21` a channel), so the
+floor climbs back from dark after the creature leaves.
+
+**The store can freeze.** Once the base sits on the floor, the pass skips
+both colour stores when `ctx+0x278` bit 0 is set or `ctx+0x243 == 2`
+(`0x80050790..0x800507D4`), and clears bit 3 of `0x1F800394` - the gate on
+`FUN_8001D058`'s call to `FUN_80026CE4`, the routine that copies the ambient
+into `RGBC`. The summon band sets `ctx+0x278 = 1` at `0x32 -> 0x33`
+(`0x801E49F8`) and clears it at the `0x34` exit (`0x801E4B14`), so through the
+close-up the grid holds its **last pre-floor** ambient. That is what the
+catalogued summon states read: the `0x34` captures hold
+`0x686868..0x787878` with the live base already at `0x20` (a `0x33` capture
+still mid-ramp holds its live base plus `0x404040`), and every `0x35` capture -
+`0x278` cleared, stores resumed - holds `0x606060`. The frozen value
+varies with the frame step, since the last pre-floor base depends on how many
+vsyncs each ramp step spans.
+
+The stage meshes do not ride the ambient. The backdrop pair
+(`ctx+0x106C` / `+0x1070`) has a parallel ramp of its own in the same pass:
+their `+0x78` depth-cue weight rises by `step << 6` while `ctx+0x243` is set,
+toward `0x800` (indoor), `0xC00` (outdoor) or `0x1000` (`ctx+0x278 > 1` or
+`ctx+0x243 > 1`), and falls back to `0` while it is clear
+(`0x800505B0..0x80050714`); `FUN_8001ADA4` case 3 hands that weight and the
+record's `+0x74` colour word (`0` from battle init) to `FUN_80043390`. A
+weight of `0x1000` switches `+0x56` to `0`, which drops the pair from that
+dispatcher entirely (`0x80050848..0x80050880`). The battle bodies are not lit
+from the ambient either; `ctx+0x243` reaches them only through the tint
+pass's plain arm ([the distance fade](#the-distance-fade)).
+
+Engine side: `legaia_engine_vm::battle_ground_grid::ambient_base_step` is the
+ramp, `BattleActionCtx::ambient_base` the word, and
+`World::tick_battle_ambient` runs it once a vsync with the store-skip test
+over the band's and the slot-B module's copies of `ctx+0x278`. Both hosts
+colour the grid from `World::battle_ambient_base`: the native window
+re-uploads the grid mesh when the ambient moves and re-derives the cue's far
+colour every frame; the play page re-reads the packet colours and the cue on
+the `play_battle_ground_ambient_key` change key. The backdrop pair's `+0x78`
+ramp is not modelled - the port's backdrop draws uncued through a cast.
+
+`IR0` is `SZ >> 2` on the vertex's own screen depth, with no scale of the
+battle world folded in. The `map01` Gobu Gobu capture's grid packets
+(`mednafen-state display-list`, the `77C0/000D` family) climb from `0xCC` per
+channel at the bottom edge through `0xE9` at mid-ground to the `0xFF` clamp at
+the horizon; the bottom edge sits roughly `0xC00` deep under the far framing,
+and `0xC0 + (0xFE - 0xC0) * SZ / 0x4000` lands there only with `SZ` unscaled.
+Engine side: both battle
+hosts build the grid with `build_ground_grid_rgbc` over the live ambient
+(`legaia_asset::battle_backdrop`, `legaia_engine_vm::battle_ground_grid`) and
+cue it over the unscaled `grid_cue_far_z`. With the neutral `0x80` and a ramp
+four times too long, the port's floor read at about two thirds of retail's
+brightness on outdoor stages and too bright on indoor ones.
 
 **The two culls.** Pass 1 transforms each cell *centre* by the view matrix
 (`cop2 0x0480012` = `MVMVA` rotation/`V0`/`+TR`/`sf=1`), reads `IR3` back, and
@@ -1728,8 +1819,11 @@ combatants - the backdrop is registered as an ordinary background actor
 through the same `FUN_80048A08` composition. The port therefore lifts the
 arena and the ground grid with the same `BATTLE_WORLD_SCALE = 4.0`
 (`PlayWindowApp::battle_stage_model` natively, `BattleMesh::stage_positions`
-in the browser upload) and scales the grid's DPCS ramp window with them,
-because that window is a view depth.
+in the browser upload). The grid's DPCS ramp window is **not** scaled with
+them: it is keyed on the vertex's view depth `SZ`, and the scale is a model
+transform under a camera whose translation trio is already in view units, so
+the port's fragment depth is retail's `SZ` as-is
+([the grid's near colour and cue depth](#the-grids-near-colour-and-cue-depth)).
 
 The camera's translation trio is authored in this scaled space: the traced
 far framing's `TR.z = 7680` is the eye distance to a formation whose seats
@@ -1803,11 +1897,17 @@ apart. The **PROT 1203 ANM (`other5`) is NOT this pose source** - its banks
 object order, which differs from the assembled tag order per character, so
 it stays the rest-pose source for the **1204 fallback mesh only** (identity
 object→bone). Pinned live + cross-pipeline in
-`crates/engine-shell/tests/battle_party_pose_live.rs`. Palette: each
-character's decoded battle palette (Vahn `parse_record` PROT 0863; Noa/Gala
-`collect_palette` 0864/0865 - the `PLAYER1..3` files) overlays the CLUT rows
-its mesh samples (`481 + slot` after relocation), so the party reads in its
-real colours (blue Vahn / pink Noa / Gala).
+`crates/engine-shell/tests/battle_party_pose_live.rs`. Palette: every
+upload block is `[CLUT struct][pixels]` and `FUN_80053B9C` writes both
+halves, so the band uploads of record[0] and the five **equipped** sections
+already put the character's palette on row `481 + slot` - the equipped
+pieces in their own colours (a Ra-Seru armour set is not the unequipped
+default). The separator-default collectors (Vahn `parse_record`, Noa/Gala
+`collect_palette`) only paint a fallback picture - a PROT 1204 mesh, or an
+assembled mesh whose pool decode failed; running them over a real band
+repaints every equipped piece in default colours. Pinned against two
+late-game captures in
+`crates/engine-core/tests/battle_party_palette_retail_capture.rs`.
 A 4th party slot is not rendered: the runtime texture band + CLUT rows cover
 party slots 0..=2 only, so Terra (player file 866, idle stream 17 parts)
 has no relocation target.
@@ -1830,8 +1930,8 @@ animator's registration. A session that drives a bare `World` with no
 calls `install_party_battle_forms` itself after `World::enter_battle`. The
 kernel falls back to PROT 1204 when the
 player file carries no idle stream - an assembled mesh with no pose source
-draws every piece at its object origin - and overlays the battle palette on
-a fallback mesh's rows too. Monsters install their texture slot and idle
+draws every piece at its object origin - and overlays the separator-default
+battle palette on a fallback mesh's rows only. Monsters install their texture slot and idle
 clip through `World::install_monster_battle_form`, and the slot a mid-battle
 summon takes is one past the highest monster slot bound
 (`battle_party_form::monster_tex_slots_used`), since repeated species share
@@ -2194,7 +2294,7 @@ The active battle context lives at `0x800EB654` (resolved at battle entry; the g
 | Offset | Type | Use |
 |---|---|---|
 | `+0x00` | u8 × 6 | Battle phase/state flags (mostly `01 01 01 00 00 00` while a turn is resolving). |
-| `+0x06` | u8 | The **command-flow byte** - the menu state machine's cursor, dispatched by `FUN_801D0748`. Value space `0x00`, `0x0A`, `0x0B`, `0x14`, `0x1E`, `0x28`, `0x32`, `0x3C`, `0x46`, `0x50`, `0x5A..0x5E`, `0x64..0x67`, `0x6E`, `0x78`, `0xFE`. See the flow table above. |
+| `+0x06` | u8 | The **command-flow byte** - the menu state machine's cursor, dispatched by `FUN_801D0748`. Value space `0xFD` (SCUS battle init's store, `FUN_80055B6C` at `0x80055FA8`, before the overlay's init), `0x00`, `0x0A`, `0x0B`, `0x0C`, `0x14`, `0x1E`, `0x28`, `0x32`, `0x3C`, `0x46`, `0x50`, `0x5A..0x5E`, `0x64..0x67`, `0x6E`, `0x78`, `0xFE`. See the flow table above. |
 | `+0x07` | u8 | Party-slot active action ID (or `0xFF`). The outer `switch((*_DAT_8007BD24)[7])` in `FUN_801E295C` keys on this. |
 | `+0x09` | u8 | Turn / phase counter. |
 | `+0x13` | u8 | Active-actor slot index - used to look up the actor pointer via `(&DAT_801C9370)[ctx[0x13]]`. |
@@ -4183,7 +4283,10 @@ The second addresses a **separate 4-wide block of CLUTs at VRAM
 `(896.., 498..501)`**, and it is the whole answer to the element-badge palette
 question - see below.
 
-Bit 7 selects the GP0 code: `0x66` (raw sprite) instead of `0x64`.
+Bit 7 selects the GP0 code: `0x66` (semi-transparent sprite) instead of `0x64`
+(opaque). Both are modulated sprites, and the packet word is `0x64808080` /
+`0x66808080` (`0x8002C4C0`, `0x8002C5C4..0x8002C5CC`) - colour `0x808080`, the
+neutral multiply, so a widget sprite shows its palette colours unchanged.
 
 ### Chains: a widget is a run of records
 
