@@ -439,9 +439,9 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           <button class="mg-btn" type="button" id="baka-payout">PAY OUT</button>
         </div>
         <div class="mg-row" id="baka-throw-row">
-          <button class="mg-btn mg-throw" type="button" data-baka="1">Throw 1<span class="mg-key" data-pad-key="Square">V</span></button>
-          <button class="mg-btn mg-throw" type="button" data-baka="2">Throw 2<span class="mg-key" data-pad-key="Circle">X</span></button>
-          <button class="mg-btn mg-throw" type="button" data-baka="3">Throw 3<span class="mg-key" data-pad-key="Cross">Z</span></button>
+          <button class="mg-btn mg-throw" type="button" data-baka="1">Throw 1<span class="mg-key">C</span></button>
+          <button class="mg-btn mg-throw" type="button" data-baka="2">Throw 2<span class="mg-key">X</span></button>
+          <button class="mg-btn mg-throw" type="button" data-baka="3">Throw 3<span class="mg-key">Z</span></button>
         </div>
         <div class="mg-hud">
           <span>Stage <b id="baka-stage">&mdash;</b></span>
@@ -452,9 +452,9 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           <span>Banked <b id="baka-bank">0</b> G</span>
         </div>
         <p class="mg-controls">
-          <b>Keys:</b> <kbd data-pad-key="Square">V</kbd> / <kbd data-pad-key="Circle">X</kbd> /
-          <kbd data-pad-key="Cross">Z</kbd> are throws 1 / 2 / 3 - Square, Circle and Cross, the
-          buttons the cabinet reads. <em>Pot at risk</em> is everything won this run that a loss would wipe;
+          <b>Keys:</b> <kbd>C</kbd> / <kbd>X</kbd> /
+          <kbd>Z</kbd> are throws 1 / 2 / 3 - Square, Circle and Cross, the
+          buttons the cabinet reads, laid out side by side. <em>Pot at risk</em> is everything won this run that a loss would wipe;
           <em>Banked</em> is what PAY OUT has already kept.
         </p>
         <details class="disclosure">
@@ -485,7 +485,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
                 traced stand-offs and play their display clips; the arena is the four walls and
                 the floor grid the overlay's epilogue draws, framed by the arena camera (the
                 round-start spin, each special's glide, the result close-up). Hold
-                <kbd data-pad-key="Triangle">C</kbd> as a round starts for the ring-girl cameo.
+                <kbd>V</kbd> (Triangle) as a round starts for the ring-girl cameo.
                 The native window and the play page draw the same surface. Your PLAYER SELECT
                 pick is your fighter's own roster record - its stats and moves, not just its
                 model.
@@ -3002,6 +3002,11 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
    * Circle 0x20 -> 2, Cross 0x40 -> 3; its type 4 is an auto-finisher, so the
    * port's chargeable Special takes the one face button the duel leaves free. */
   const BAKA_LANES = { Square: 1, Circle: 2, Cross: 3 };
+  /* The duel's own key row (C / X / Z = throws 1 / 2 / 3, V = the cameo
+   * hold), a deliberate layout override like the dance's DANCE_KEYS. */
+  const BAKA_KEYS = { KeyC: 1, KeyX: 2, KeyZ: 3, KeyV: 0 };
+  const bakaCameoKey = (e) => BAKA_KEYS[e.code] === 0
+    || (btnOf(e) === 'Triangle' && BAKA_KEYS[e.code] === undefined);
 
   document.addEventListener('keydown', (e) => {
     if (!api || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
@@ -3047,8 +3052,13 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
          * (FUN_801D3F44's slot-0 branch). The Special is no button - it
          * is the auto-finisher - so Triangle only feeds the cameo's held
          * word. */
-        const m = BAKA_LANES[b];
-        if (b === 'Triangle') bakaHeld |= 0x10;
+        /* Duel-local key row, as the dance's: C / X / Z are throws 1 / 2 / 3
+         * side by side, so C (bound to Triangle elsewhere) is a throw here
+         * and V (Square elsewhere) takes Triangle's cameo hold. Other keys
+         * and rebinds still resolve through the pad table. */
+        const row = BAKA_KEYS[e.code];
+        const m = row !== undefined ? row : BAKA_LANES[b];
+        if (bakaCameoKey(e)) bakaHeld |= 0x10;
         if (m) { e.preventDefault(); bakaChoose(m); }
         else if (n >= 1 && n <= 3) { e.preventDefault(); bakaChoose(n); }
       }
@@ -3113,7 +3123,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   });
 
   document.addEventListener('keyup', (e) => {
-    if (active === 'baka' && btnOf(e) === 'Triangle') bakaHeld &= ~0x10;
+    if (active === 'baka' && bakaCameoKey(e)) bakaHeld &= ~0x10;
     if (active !== 'fishing') return;
     const b = btnOf(e);
     if (b === 'Cross') fishHold &= ~0x40;
