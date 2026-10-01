@@ -3706,6 +3706,18 @@ when `site/` is touched and in CI.
   the hosts agree, and both frame a magnified shell wall for most of the
   spoils hold (the orbit's `TR.z` reaches `24883`). Host-identical, so an
   engine question rather than drift.
+- **The opening crawl under a screen-effect push.** Where `opdeene`'s
+  timeline runs an op-`0x34` sub-0 push to black, the native window dims the
+  crawl text with the scene and the page keeps it white. The native window
+  composites the push in its screen-prim tail, over its text overlay; the
+  page draws every screen prim under its overlay canvas. The push is
+  `FUN_80024EE4`'s `POLY_F4` at ordering-table bucket `a0` (`0` or `1`, the
+  front of the table), so which of the two is retail turns on the crawl
+  roller's own bucket, which no capture has read yet.
+- **The overworld leader** draws at roughly half the native window's size
+  on the page, and the native size matches the retail frame of
+  `keikoku_chest_preload`. The page poses the leader from the world-map
+  clip bank; that path belongs to the world-map walk animation work.
 
 ## Adding coverage
 
