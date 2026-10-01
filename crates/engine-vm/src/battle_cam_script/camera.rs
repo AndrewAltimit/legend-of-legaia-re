@@ -197,6 +197,10 @@ pub struct BattleCamera {
     /// which owns the camera through the summon band's `0x35` / `0x36`
     /// ([`BattleCamera::arm_module_shot`]).
     pub(super) module_glide: Option<Glide>,
+    /// Set once a successful flee arms its shot
+    /// ([`BattleCamera::arm_escape_shot`]): from then on the shot owns the
+    /// camera for the rest of the battle, whatever the phase or state.
+    pub(super) escape_shot: bool,
     /// The last [`BattleCamInputs::active_commits`] seen; `None` until the
     /// first drive, so a camera created mid-action does not reset on its
     /// first frame.

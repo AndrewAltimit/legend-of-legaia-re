@@ -3061,9 +3061,11 @@ void main() {
            * the battle VP carries no world negation, its trailing Y-flip
            * cancels the placement model's, so world Y goes through as-is. */
           x: tf[o] * S, y: tf[o + 1] * S, z: tf[o + 2] * S,
-          /* Enemy meshes rest facing +Z; the enemy side carries the
-           * half-turn toward the party (the native actor_model rule). */
-          rotY: tf[o + 3] > 0.5 ? Math.PI : 0,
+          /* Every mesh rests facing +Z and turns by the live battle facing
+           * `+0x46` (a seated monster's half-turn, a fleeing party's back).
+           * The engine sends glam's yaw; this placement model takes it
+           * negated (see placementModelScaledY). */
+          rotY: -tf[o + 3],
           scale: (c >= 0) ? S * cursor[c + 5] : S,
           cue: (c >= 0 && cursor[c] > 0.5)
             ? {
@@ -3100,7 +3102,7 @@ void main() {
             draws.push({
               meshId: a.ghostMeshIds[g],
               x: gh[j] * S, y: gh[j + 1] * S, z: gh[j + 2] * S,
-              rotY: tf[o + 3] > 0.5 ? Math.PI : 0,
+              rotY: -tf[o + 3],
               scale: S * gh[j + 6],
               strictDepth: true,
               cue: {

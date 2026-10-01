@@ -2250,3 +2250,29 @@ fn a_gone_target_takes_the_stand_off_arm() {
     assert_eq!(pose.yaw, yaw.rem_euclid(4096) as f32);
     assert_eq!(cam.action_yaw, 0x10, "the stand-off arm keeps the ladder");
 }
+
+#[test]
+fn escape_shot_cuts_to_the_reverse_angle_and_holds_it() {
+    let mut cam = traced_cam(BattleCamPhase::Menu);
+    cam.arm_escape_shot();
+    assert_eq!(cam.pose().yaw, ESCAPE_SNAP_YAW, "the snap lands at once");
+    // 0x30 display frames of tween, then the landed pose holds through any
+    // state the run band and the teardown pass through.
+    for f in 1..=0x30u64 {
+        cam.advance_to(f);
+    }
+    let landed = cam.pose();
+    assert_eq!(landed.yaw, 2048.0);
+    assert_eq!(landed.tr, [0.0, 1536.0, 0.0]);
+    assert_eq!(landed.focus, [0.0, 0.0, 1024.0]);
+    for (i, state) in [0x65u8, 0x66, 0x50, 0x00].into_iter().enumerate() {
+        cam.observe_action_state(state);
+        cam.advance_to(0x30 + 2 * (i as u64 + 1));
+    }
+    assert_eq!(
+        cam.pose().yaw,
+        2048.0,
+        "no framing case takes the camera back"
+    );
+    assert_eq!(cam.pose().focus, landed.focus);
+}

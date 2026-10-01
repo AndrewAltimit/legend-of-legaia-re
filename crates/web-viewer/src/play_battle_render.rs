@@ -194,10 +194,6 @@ impl BattleMesh {
 struct BattleActorRender {
     /// World actor-table slot this mesh is bound to.
     actor_idx: usize,
-    /// Enemy-side flag: the archive meshes rest facing `+Z`, so the enemy
-    /// side carries the half-turn toward the party (the native
-    /// `actor_model` battle rule).
-    monster: bool,
     mesh: BattleMesh,
     /// Per-vertex TMD object index (the rigid part each vertex hangs from);
     /// empty = the upload is already statically posed (the PROT 1204
@@ -295,10 +291,6 @@ impl BattleRender {
         self.actors.retain(|a| a.actor_idx != actor_idx);
         self.actors.push(BattleActorRender {
             actor_idx,
-            // The summon rides the enemy animation pipeline but stands on the
-            // party side; the archive meshes rest facing `+Z`, which is the
-            // direction the party already faces, so no half-turn.
-            monster: false,
             mesh: BattleMesh::textured(mesh),
             object_ids,
             rest_pose,
@@ -548,7 +540,6 @@ impl LegaiaRuntime {
             // here; the install below sets the texture slot and the idle.
             actors.push(BattleActorRender {
                 actor_idx,
-                monster: true,
                 mesh: BattleMesh::textured(vmesh),
                 object_ids,
                 rest_pose,
@@ -721,7 +712,6 @@ fn party_actor_render(
     }
     Some(BattleActorRender {
         actor_idx: form.member,
-        monster: false,
         mesh: BattleMesh::textured(vmesh),
         object_ids,
         rest_pose,
@@ -981,10 +971,15 @@ impl LegaiaRuntime {
     }
 
     /// Live world transforms of every battle actor mesh, flattened
-    /// `[x, y, z, monster_flip, active]` per actor in mesh order. Positions
+    /// `[x, y, z, yaw, active]` per actor in mesh order. Positions
     /// are RAW battle world units - the page multiplies by
     /// [`Self::play_battle_world_scale`] (retail composes the same 4x on
-    /// the actor camera).
+    /// the actor camera). `yaw` is the live battle facing `+0x46` in
+    /// radians, `f / 4096 * TAU` about Y - the angle that turns a mesh's
+    /// rest `+Z` onto the actor's travel direction `(sin f, cos f)`. Every
+    /// mesh rests facing `+Z`, so a seated monster's `0x800` is the
+    /// half-turn toward the party and a fleeing party's `0x800` turns its
+    /// back on the fight.
     ///
     /// `active` is the draw gate: it also carries the summon band's hide
     /// (`+0x21C = 0xFF`, `RENDER_FLAG_HIDDEN`) - every party seat and living
@@ -1005,7 +1000,7 @@ impl LegaiaRuntime {
                     actor.move_state.world_x as f32,
                     actor.move_state.world_y as f32,
                     actor.move_state.world_z as f32,
-                    if a.monster { 1.0 } else { 0.0 },
+                    battle_facing_yaw(actor.battle.facing_angle),
                     if actor.active
                         && actor.battle.render_flag != RENDER_FLAG_HIDDEN
                         && self.battle_draw_plan(a.actor_idx).is_none_or(|p| p.drawn)
@@ -1208,6 +1203,13 @@ impl LegaiaRuntime {
         let pose = self.battle_cam_pose();
         legaia_engine_vm::battle_cam_script::battle_vp(&pose, BATTLE_WORLD_SCALE, aspect).to_vec()
     }
+}
+
+/// A battle facing `+0x46` as a Y rotation in radians (glam's
+/// `from_rotation_y` sense: `+Z` turns onto `(sin f, cos f)`, the direction
+/// the root-motion drive moves the actor).
+fn battle_facing_yaw(facing: u16) -> f32 {
+    f32::from(facing & 0xFFF) / 4096.0 * std::f32::consts::TAU
 }
 
 impl LegaiaRuntime {

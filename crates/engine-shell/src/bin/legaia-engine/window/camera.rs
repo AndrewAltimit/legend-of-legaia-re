@@ -544,17 +544,17 @@ impl PlayWindowApp {
         // correct elevation. Yaw is unaffected either way (a Y negation
         // leaves X/Z, and thus the heading, untouched).
         if self.session.host.world.mode == SceneMode::Battle {
-            // Monster battle actors face the party (-Z from the +Z seats):
-            // the retail Tetsu dialogue close-up (camera at yaw 0 on the
-            // party side, looking +Z) shows the monster's FACE, while the
-            // archive meshes rest facing +Z - so the enemy side carries the
-            // half-turn. Party actors keep their rest orientation (already
-            // toward the enemy seats).
-            let rot = if a.battle_monster_id.is_some() {
-                Mat4::from_rotation_y(std::f32::consts::PI)
-            } else {
-                Mat4::IDENTITY
-            };
+            // Every battle mesh rests facing +Z and turns by the live facing
+            // `+0x46`, the angle the root-motion drive moves the actor along
+            // (`(sin f, cos f)`). Seated, that is the monsters' `0x800`
+            // half-turn toward the party - the retail Tetsu dialogue
+            // close-up (camera at yaw 0 on the party side, looking +Z) shows
+            // the monster's FACE - and the party's `0`; it is also what turns
+            // an approaching attacker toward its target and a fleeing party
+            // away from the fight.
+            let rot = Mat4::from_rotation_y(
+                f32::from(a.battle.facing_angle & 0xFFF) / 4096.0 * std::f32::consts::TAU,
+            );
             Mat4::from_translation(pos) * rot * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
         } else {
             let yaw = std::f32::consts::PI

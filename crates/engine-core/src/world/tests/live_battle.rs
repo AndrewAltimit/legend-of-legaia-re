@@ -442,3 +442,43 @@ fn run_in_a_no_escape_fight_rolls_and_fails() {
     assert_eq!(world.mode, SceneMode::Battle, "still in battle");
     assert!(run_band, "the member dispatched through the run band");
 }
+
+#[test]
+fn a_granted_flee_turns_the_standing_party_around_and_regroups_it() {
+    let mut world = live_battle_world_3v2();
+    world.actors[1].battle.hp = 0;
+    world.actors[1].battle.liveness = 0;
+    let downed_at = (
+        world.actors[1].move_state.world_x,
+        world.actors[1].move_state.world_z,
+        world.actors[1].battle.facing_angle,
+    );
+    world.stage_party_flee();
+    let runners = [0usize, 2];
+    for &i in &runners {
+        let b = &world.actors[i].battle;
+        assert_eq!(b.facing_angle, 0x800, "slot {i} turns its back");
+        assert_eq!(b.queued_anim, 1, "slot {i} stages the walk");
+        assert_eq!(b.active_target, 9, "slot {i} runs at no one");
+    }
+    let mean_z: i32 = runners
+        .iter()
+        .map(|&i| i32::from(world.actors[i].move_state.world_z))
+        .sum::<i32>()
+        / 2;
+    assert_eq!(mean_z, 0x400, "the group re-centres on z = 0x400");
+    let gap = (i32::from(world.actors[0].move_state.world_x)
+        - i32::from(world.actors[2].move_state.world_x))
+    .abs();
+    assert!(gap >= 199, "runners spread 200 apart, got {gap}");
+    let b = &world.actors[1];
+    assert_eq!(
+        (
+            b.move_state.world_x,
+            b.move_state.world_z,
+            b.battle.facing_angle
+        ),
+        downed_at,
+        "a downed member stays where it fell"
+    );
+}

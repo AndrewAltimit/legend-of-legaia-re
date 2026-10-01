@@ -133,6 +133,80 @@ impl World {
         )
     }
 
+    /// The success arm of the escape roll: the party turns its back on the
+    /// fight and runs (`FUN_801E791C`, `0x801E7B98..0x801E8030`). Per member:
+    ///
+    /// - staged anim `+0x1DA = 1` (the looping walk), `+0x1DC = 1`, facing
+    ///   `+0x46 = 0x800`, target `+0x1DD = 9` - the group code the range law
+    ///   reads as out of range, so the walk's root motion carries the member
+    ///   away for as long as the battle lasts;
+    /// - live `x` halved and `z` quartered (arithmetic shifts), then the group
+    ///   re-centred on `(0, 0x400)`: `x -= mean x`, `z += 0x400 - mean z`;
+    /// - every pair closer than 200 units in `x` pushed apart by half the
+    ///   shortfall each, in table order.
+    ///
+    /// Then the camera cuts to the reverse angle
+    /// ([`legaia_engine_vm::battle_cam_script::BattleCamera::arm_escape_shot`]).
+    ///
+    /// Retail stages every party slot; the port stages the members still
+    /// standing and leaves a downed one where it fell (the run band floors
+    /// its HP at 1 for the field either way), so only the living run.
+    // PORT: FUN_801E791C (`0x801E7B98..0x801E8030`, the flee staging; the
+    // record-side HP / MP write-back is the battle teardown's)
+    pub(in crate::world) fn stage_party_flee(&mut self) {
+        let party_n = (self.party.party_count as usize).min(self.actors.len());
+        let runners: Vec<usize> = (0..party_n)
+            .filter(|&i| self.actors[i].battle.hp > 0 && self.actors[i].battle.liveness != 0)
+            .collect();
+        if !runners.is_empty() {
+            let (mut sum_x, mut sum_z) = (0i16, 0i16);
+            for &i in &runners {
+                let a = &mut self.actors[i];
+                a.battle.queued_anim = 1;
+                a.battle.flag_bits = vm::battle_action::ActorFlags(1);
+                a.battle.facing_angle = 0x800;
+                a.battle.active_target = 9;
+                let ms = &mut a.move_state;
+                ms.world_x >>= 1;
+                ms.world_z >>= 2;
+                sum_x = sum_x.wrapping_add(ms.world_x);
+                sum_z = sum_z.wrapping_add(ms.world_z);
+            }
+            let n = runners.len() as i32;
+            let mean_x = (i32::from(sum_x) / n) as i16;
+            let mean_z = (i32::from(sum_z) / n) as i16;
+            for &i in &runners {
+                let ms = &mut self.actors[i].move_state;
+                ms.world_z = ms.world_z.wrapping_add(0x400).wrapping_sub(mean_z);
+                ms.world_x = ms.world_x.wrapping_sub(mean_x);
+            }
+            for &i in &runners {
+                for &j in &runners {
+                    if i == j {
+                        continue;
+                    }
+                    let xi = self.actors[i].move_state.world_x;
+                    let xj = self.actors[j].move_state.world_x;
+                    let d = (i32::from(xi) - i32::from(xj)).unsigned_abs();
+                    if d >= 200 {
+                        continue;
+                    }
+                    let half = ((200 - d) >> 1) as i16;
+                    let (ni, nj) = if xj < xi {
+                        (xi.wrapping_add(half), xj.wrapping_sub(half))
+                    } else {
+                        (xi.wrapping_sub(half), xj.wrapping_add(half))
+                    };
+                    self.actors[i].move_state.world_x = ni;
+                    self.actors[j].move_state.world_x = nj;
+                }
+            }
+        }
+        if let Some(cam) = self.battle.camera.as_mut() {
+            cam.arm_escape_shot();
+        }
+    }
+
     /// The engine's mirror of retail's seated-monster count `ctx[+1]`: the
     /// monster rows `party_count..party_count + 5` that carry a combatant
     /// (`max_hp > 0`). A downed monster still counts - retail's count is the

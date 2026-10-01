@@ -2385,14 +2385,26 @@ silently disables pre-emptive-strike escapes for the whole battle. The latch
 also runs **every round**, so round two's pass copies the `+0x290` round one
 cleared: a pre-emptive strike's unfailable escape compare lasts one round.
 
-On success the routine also stages the flee scene: every party actor is marked fleeing
-(`+0x1DA`/`+0x1DC` = 1, facing `+0x46` = `0x800`, pose byte `+0x1DD` = 9), positions are
-pulled toward the camera and spread at least 200 units apart, live HP/MP are written back to
-the character records with downed members **floored at 1 HP** (the record-side half of the
-state-`0x64` floor), and the camera move fires via `FUN_801D829C`. Ported:
-`engine-vm::battle_formulas::escape_roll` (+ `escape_party_score` / `escape_enemy_score` /
-`EscapeFlags`), rolled live by `engine-core::World::roll_battle_escape` when the command
-menu resolves Run.
+On success the routine also stages the flee scene (`0x801E7B98..0x801E8030`):
+
+- every party actor stages the looping walk (`+0x1DA = 1`, `+0x1DC = 1`), turns its back on
+  the fight (facing `+0x46 = 0x800`) and takes target `+0x1DD = 9` - a group code the range
+  law `FUN_8004E2F0` reads as out of range, so the walk's root motion carries the member
+  away until the battle ends;
+- live `x` is halved and `z` quartered, then the group is re-centred on `(0, 0x400)` and
+  every pair closer than 200 units in `x` is pushed apart by half the shortfall each;
+- live HP/MP are written back to the character records with downed members **floored at
+  1 HP** (the record-side half of the state-`0x64` floor);
+- the live camera is snapped to yaw `0xF00`, TR `(0, 0x600, 0x2000)`, focus at the origin,
+  and `FUN_801D829C` tweens it over `0x30` frames to the reverse angle: yaw `0x800`, TR
+  `(0, 0x600, 0)`, focus on the regrouped party. Nothing re-frames it before the battle
+  ends.
+
+Ported: `engine-vm::battle_formulas::escape_roll` (+ `escape_party_score` /
+`escape_enemy_score` / `EscapeFlags`), rolled live by `engine-core::World::roll_battle_escape`
+when the command menu resolves Run; the staging is `World::stage_party_flee` and the shot
+`BattleCamera::arm_escape_shot`. The port stages only the members still standing - a downed
+one stays where it fell.
 
 ### `ctx[+0x287]` is the scripted-fight flag, and `+0x288` is the counter-attack byte
 

@@ -59,6 +59,7 @@ impl BattleCamera {
                 ..Default::default()
             },
             module_glide: None,
+            escape_shot: false,
         }
     }
 
@@ -748,6 +749,13 @@ impl BattleCamera {
             self.shake.amplitude,
             &mut self.shake.seed,
         );
+        // A granted flee's shot owns the camera to the battle's end: the run
+        // band and the escape teardown frame nothing of their own.
+        if self.escape_shot {
+            self.glides.clear();
+            self.step_module_shot();
+            return;
+        }
         // Yaw: the idle orbit owns it in the Menu phase unless the active
         // glide segment glides it (submenu enter / the exit swing).
         let yaw_gliding = self.glides.front().is_some_and(|g| g.yaw_glides);

@@ -10,6 +10,11 @@ use super::*;
 /// `0x34`'s last pass, the same one that leaves for `0x35`.
 pub const SUMMON_MODULE_STATES: [u8; 2] = [0x35, 0x36];
 
+/// The yaw the escape roll's success arm snaps the live camera to before it
+/// arms the flee shot (`li v0,0xf00 ; sh v0,0x2(a1)` at `0x801E7EE0`, into
+/// `0x8007B792`).
+pub const ESCAPE_SNAP_YAW: f32 = 3840.0;
+
 impl BattleCamera {
     /// Arm one of the summon module's `FUN_801D829C` calls: a tween from the
     /// live pose to `target` over `frames` display frames, stepped on the
@@ -101,8 +106,40 @@ impl BattleCamera {
         }
     }
 
+    /// The granted-flee shot. On success the escape roll snaps the live
+    /// camera globals - pitch / roll `0`, yaw [`ESCAPE_SNAP_YAW`], TR
+    /// `(0, 0x600, 0x2000)` in the prescaled units the globals hold, focus at
+    /// the origin (`0x801E7E98..0x801E7EE4`) - and then hands
+    /// `FUN_801D829C` the reverse-angle target: yaw `0x800`, TR
+    /// `(0, 0x600, 0)`, focus `-(0, 0, -0x400)` - the regrouped party's
+    /// centre - over `0x30` frames (`0x801E7FE4..0x801E8030`). The shot then
+    /// holds until the battle ends: the run band's `0x65` / `0x66` and the
+    /// teardown hold call no framing case.
+    ///
+    /// REF: FUN_801E791C (the success arm's camera writes), FUN_801D829C
+    pub fn arm_escape_shot(&mut self) {
+        self.pose = BattleCamPose {
+            pitch: 0.0,
+            yaw: ESCAPE_SNAP_YAW,
+            tr: [0.0, 1536.0, 8192.0],
+            focus: [0.0, 0.0, 0.0],
+        };
+        let target = crate::cast_module_camera::ModuleShot {
+            angles: [0, 0x800, 0],
+            tr: [0, 0x600, 0],
+            focus: [0, 0, -0x400],
+            frames: 0x30,
+        };
+        let (pose, raw_z) = target.pose();
+        self.arm_module_shot(pose, raw_z, u32::from(target.frames));
+        self.escape_shot = true;
+    }
+
     /// Drop the module's shot on the way out of its states.
     pub(super) fn release_module_shot(&mut self, state: u8) {
+        if self.escape_shot {
+            return;
+        }
         if !SUMMON_MODULE_STATES.contains(&state) && state != 0x34 {
             self.module_glide = None;
         }

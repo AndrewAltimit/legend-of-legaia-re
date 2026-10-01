@@ -1424,9 +1424,12 @@ the draw environments' background colour is `(0, 0, 0)` in every battle
 capture, so a stage shell with no sky panel (a cave, a castle hall) shows black
 above it, never a sky (`engine-ui::battle_stage_clear`) - the real
 **assembled** battle party (see below),
-and animated monsters. Monster actors compose a half-turn so they face the
-party (`-Z` from the `+Z` seats - the retail Tetsu dialogue close-up shows the
-monster's face while the archive meshes rest facing `+Z`). The actors draw
+and animated monsters. Every actor turns by its live facing `+0x46`
+(`f / 4096 * TAU` about Y, the direction root motion moves it along) over a
+mesh that rests facing `+Z`: a seated monster's `0x800` is the half-turn that
+faces the party (the retail Tetsu dialogue close-up shows the monster's face),
+and the same rule turns an approaching attacker toward its target and a
+fleeing party away from the fight. The actors draw
 through the exact `tr.z = 7680` camera with the retail **4× actor world
 scale** composed under the rotation (see below) - the battle meshes are small
 (party 134–284 units, monsters 77–368), and the 4× base is what makes them
@@ -2660,7 +2663,7 @@ colour, the flame atlas + per-slot monster injection + assembled party bands
 land in a throwaway battle VRAM the page swaps in for the fight, and each
 actor's idle / action / swing / art-bank clips are installed on the world so
 the shared battle SM poses them (`pose_frame`, read back per frame through
-`play_battle_actor_pose`). Actor draws compose the same enemy half-turn and
+`play_battle_actor_pose`). Actor draws compose the same live-facing yaw and
 retail 4× world scale as the native window.
 
 Host differences that remain, disclosed rather than approximated silently:
