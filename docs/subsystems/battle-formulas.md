@@ -1293,6 +1293,20 @@ Guard ("enemies can't escape") - bit 54 of the 64-bit ability field, i.e.
 [`accessory-passive-table.md`](../formats/accessory-passive-table.md). Retail
 traps on a zero side count (`break 0x1C00`); the port saturates the divisors.
 
+**Both counts are the battle context's seat counts**, `ctx[+0]` (party) and
+`ctx[+1]` (monsters): the monster loop runs `ctx[+1]` pool slots from slot 3
+(`0x801EC118`) and the average divides by the same byte (`div s1,v0` at
+`0x801EC280`). A downed monster stays in the divisor, contributing nothing to
+the sum. The count is the whole safeguard bosses get here. The flag gate is a
+property of the formation row, not of the monster, and the Rim Elm sparring
+fight's row (town01 row 4) carries header byte `0`: its battle states read
+`ctx+0x287 = 0`, `DAT_8007BD60 = 0x01` and `_DAT_8007BAC0 = 0`, so neither gate
+refuses the roll. Tetsu stays because a lone 999-HP monster's average sits in
+the thousands while a starting party's roll cannot pass a few hundred. An
+engine that averages the monster side over its whole actor table instead of
+the seated count divides that score by the table size, and the sparring partner
+flees once wounded.
+
 Ported as `engine-vm::battle_formulas::monster_escape_roll` /
 `monster_escape_side_scores`; `see ghidra/scripts/funcs/overlay_battle_action_801ec0dc.txt`.
 

@@ -322,6 +322,7 @@ mod live_battle;
 mod locomotion;
 mod minigames;
 mod model_rebind;
+mod monster_flee_disc;
 mod move_vm_ext;
 mod move_vm_flags;
 mod party_composition;

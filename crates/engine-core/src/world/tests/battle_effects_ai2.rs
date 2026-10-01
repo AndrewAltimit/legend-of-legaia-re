@@ -439,8 +439,7 @@ fn advancing_the_battle_mode_drives_a_boss_to_its_next_phase() {
     world.actors[1].battle_monster_id = Some(0xb6);
     world.rng_state = 1;
     // Spend the once-per-pass flee checkpoint: this test drives the scripted
-    // phase table, and the synthetic world's preallocated empty monster slots
-    // dilute the flee roll's monster-side average enough for seed 1 to flee.
+    // phase table, not the flee roll.
     world.battle.monster_flee_attempted = true;
 
     assert_eq!(world.battle_mode(), 0, "fresh battle starts in phase 0");
@@ -519,6 +518,43 @@ fn monster_flee_checkpoint_rolls_once_and_arms_run_band() {
     world.battle.monster_flee_attempted = true;
     crate::battle_round::BattleRound::boundary(&mut world);
     assert!(!world.battle.monster_flee_attempted);
+}
+
+/// The flee roll's monster side is averaged over the **seated** monster count
+/// `ctx[+1]` (`div s1,v0` at `0x801EC280`), not over the actor table: a lone
+/// strong monster against a weak party never flees, however wounded, because
+/// the preallocated empty slots above the battle layout do not dilute its
+/// score. This is the Rim Elm sparring partner's shape (999 max HP, a
+/// level-1 party) without the disc.
+#[test]
+fn a_lone_strong_monster_is_not_diluted_by_the_empty_pool() {
+    let mut world = World {
+        party: crate::world::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
+        ..World::default()
+    };
+    world.mode = SceneMode::Battle;
+    world.actors[0].battle.max_hp = 80;
+    world.actors[0].battle.hp = 80;
+    world.actors[0].battle.liveness = 1;
+    world.battle.attack[0] = 20;
+    world.actors[1].battle.max_hp = 999;
+    world.actors[1].battle.liveness = 1;
+    world.battle.attack[1] = 30;
+    assert_eq!(world.seated_monster_slots().collect::<Vec<_>>(), vec![1]);
+    for hp in [999u16, 100, 1] {
+        for seed in 0..2_000u32 {
+            world.actors[1].battle.hp = hp;
+            world.battle.monster_flee_attempted = false;
+            world.rng_state = seed;
+            assert!(
+                !matches!(world.pick_monster_action(1), MonsterAction::Flee),
+                "seed {seed} at {hp} HP fled"
+            );
+        }
+    }
 }
 
 /// The scripted no-escape flag (`ctx+0x287`) blocks the monster flee roll

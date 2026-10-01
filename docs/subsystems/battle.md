@@ -2216,6 +2216,9 @@ wipe and one plain-formation wipe on the `map01` overworld):
    bytes walk `81 02 80 00` in the fight (`v0_1_battle_start_tetsu`) to
    `41 00 80 00` back in town01 (`v0_1_post_battle_tetsu_town`) - flag 1
    up, flag 0 consumed, flag 14 cleared - with `DAT_8007BD60 = 0x81`.
+   That `0x80` is the sparring overlay's close arm (`0x801F7358`), not the
+   formation's: in the fight itself the byte reads `0x01` and
+   `ctx+0x287 = 0`, because town01 row 4 carries header byte `0`.
    Engine port: `engine-core::battle_return_flags`, run by
    `World::finish_battle` for every ending, with the survived bit keyed on
    the end cause not being a party wipe.
