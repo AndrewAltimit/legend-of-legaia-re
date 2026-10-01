@@ -57,6 +57,9 @@ impl World {
         // The per-actor anim tick runs unconditionally (`FUN_800204F8` from
         // the actor tick) - the windmill turns during dialogs too.
         self.props.bank.tick_anims();
+        // The same tick over the NPC actors' clip cursors (a treasure
+        // chest's lid, every NPC's idle loop).
+        self.tick_npc_clips();
         self.step_prop_interaction();
         if let Some(anchor) = self.props.pending_touch.take() {
             self.start_prop_interaction(anchor);

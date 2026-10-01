@@ -457,7 +457,12 @@ impl PlayWindowApp {
                             hf.positions.len()
                         );
                         world_map_hf = Some(m);
-                        ground_src = Some(GroundSource { vmesh, flat_refs });
+                        ground_src = Some(GroundSource {
+                            vmesh,
+                            flat_refs,
+                            hf,
+                            lut_applied: None,
+                        });
                     }
                     Err(e) => log::warn!("heightfield upload skipped: {e:#}"),
                 }
@@ -1168,6 +1173,9 @@ impl PlayWindowApp {
                         if let Some(player) =
                             legaia_engine_core::field_anim::FieldClipPlayer::from_record(b, rec_idx)
                         {
+                            // The playhead is the world's: the actor's
+                            // `+0x62` word may hold or one-shot the clip.
+                            world.bind_npc_clip_cursor(p.index as u8, id, &player);
                             self.npc_clip_players.insert(p.index as u8, player);
                         }
                         b.record(rec_idx).ok().map(|rec| {

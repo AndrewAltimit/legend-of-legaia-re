@@ -672,8 +672,8 @@ reason = "The page folds its whole battle presentation frame into this one named
 native = "drain_anim_cues"
 web = "drive_npc_clips"
 native_only = []
-web_only = ["advance", "field_npc_clips_advance"]
-reason = "The cue drain is one engine kernel on both hosts; `advance` is the page stepping its NPC clip players one tick inside the same step, under the engine's `World::field_npc_clips_advance` gate. The native window advances its players in its draw pass by the sim ticks the redraw ran, behind the same `field_npc_clips_advance` gate, because the frame index keys the pose cache that pass reads - so the step and its gate sit outside this kernel natively, and both hosts hold the clips still off the field."
+web_only = ["advance", "field_npc_clips_advance", "sync_npc_clip"]
+reason = "The cue drain is one engine kernel on both hosts; `sync_npc_clip` / `advance` are the page posing its NPC clip players for this tick inside the same step, under the engine's `World::field_npc_clips_advance` gate: from the world-owned cursor `World::tick_npc_clips` steps under each actor's `+0x62` word, or free-running for a slot the world binds no cursor to. The native window does the same `sync_npc_clip`-else-`advance` in its draw pass, behind the same gate, because the pose key it yields keys the pose cache that pass reads - so the step and its gate sit outside this kernel natively, and both hosts hold the clips still off the field."
 
 [[frame_content]]
 native = "tick_dev_menu"

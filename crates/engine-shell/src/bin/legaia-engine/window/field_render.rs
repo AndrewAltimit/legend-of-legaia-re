@@ -118,6 +118,56 @@ impl PlayWindowApp {
     /// [`legaia_engine_core::field_view_window::ViewCells::stamp`] moves, and
     /// drop it when the crop is off. The browser play page re-uploads its
     /// ground indices through the same kernel on the same stamp.
+    ///
+    /// Re-resolve the walk ground through the world's **live** floor-height
+    /// ladder and re-upload it when the ladder has moved. Retail's ground
+    /// pass (PROT 0900 `FUN_801F6D48`) takes each cell's corner tiers through
+    /// the ladder every frame, so a scene whose script animates it (op `0x4C`
+    /// nibble 9: `jouina`'s pulsing path, `concnow`'s flesh pits) deforms the
+    /// ground per vertex - the shape the floor sampler already walks the
+    /// player on. Shared kernel `field_ground::live_render_positions`; the
+    /// browser play page re-uploads through it too. Drops the cropped upload
+    /// so [`Self::sync_ground_crop`] rebuilds it from the moved positions.
+    pub(super) fn sync_ground_wave(&mut self) {
+        if self.session.host.world.mode == SceneMode::WorldMap {
+            return;
+        }
+        let live = self.session.host.world.terrain.floor_height_lut;
+        let Some(src) = self.ground_src.as_mut() else {
+            return;
+        };
+        if src.lut_applied == Some(live)
+            || (src.lut_applied.is_none()
+                && src.vmesh.positions
+                    == legaia_engine_core::field_ground::live_render_positions(&src.hf, &live))
+        {
+            src.lut_applied = Some(live);
+            return;
+        }
+        src.lut_applied = Some(live);
+        src.vmesh.positions =
+            legaia_engine_core::field_ground::live_render_positions(&src.hf, &live);
+        src.flat_refs =
+            legaia_engine_core::overworld_draw_order::ground_flat_refs(&src.vmesh.positions);
+        let Some(r) = self.win.renderer.as_ref() else {
+            return;
+        };
+        let v = &src.vmesh;
+        match r.upload_vram_mesh_with_flat_refs(
+            &v.positions,
+            &v.uvs,
+            &v.cba_tsb,
+            &v.normals,
+            &v.colors,
+            &v.indices,
+            &src.flat_refs,
+        ) {
+            Ok(m) => self.ground_heightfield = Some(m),
+            Err(e) => log::warn!("live ground re-upload skipped: {e:#}"),
+        }
+        self.ground_crop = None;
+    }
+
     pub(super) fn sync_ground_crop(
         &mut self,
         cells: Option<&legaia_engine_core::field_view_window::ViewCells>,

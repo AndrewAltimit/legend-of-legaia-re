@@ -691,6 +691,7 @@ impl World {
                 ));
             self.field_vm.object_channel_binds = binds;
             self.field_vm.channels_man = Some(std::sync::Arc::new(man.to_vec()));
+            self.npcs.clip_cursors.clear();
         }
         self.npcs.anim_cues.clear();
         self.npcs.clip_current.clear();
@@ -2812,6 +2813,7 @@ impl World {
         self.field_vm.object_channel_binds.clear();
         self.npcs.anim_cues.clear();
         self.npcs.clip_current.clear();
+        self.npcs.clip_cursors.clear();
     }
 
     /// Append the `.MAP` **object-bind** channels (retail scene-init
@@ -3069,6 +3071,28 @@ impl World {
         // Expose the record's NPC slot so the host's `0x4C 0x51` NPC-run hook
         // can route the prologue's walk ops to the interacted actor.
         self.dialog.stepping_inline_npc = id.npc_slot;
+        // A talk runs on the touched actor's own context (retail's dialog SM
+        // `FUN_80039B7C` dispatches the actor's record against its own
+        // record), so its own-context `2B` / `2C` / `2D` ops read and write
+        // the actor's `+0x62` anim-control word - the word its clip cursor
+        // ticks under. That is what plays a treasure chest's lid once
+        // (`2C 01` unhold, `2B 03` clamp, `2D 08` wait for the end latch)
+        // before its item box opens. Bridged in for the slice, written back
+        // after it.
+        let npc_flag_slot = id
+            .npc_slot
+            .filter(|_| id.prop_anchor.is_none())
+            .filter(|&slot| self.npc_clip_cursor_bound(slot));
+        let npc_clip_bound = npc_flag_slot.is_some();
+        if let Some(slot) = npc_flag_slot
+            && let Some(ch) = self
+                .field_vm
+                .channels
+                .iter()
+                .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
+        {
+            id.ctx.local_flags = ch.ctx.local_flags;
+        }
         let mut host = FieldHostImpl { world: self };
         let mut budget = INLINE_DIALOGUE_STEP_BUDGET;
         while budget > 0 {
@@ -3423,8 +3447,16 @@ impl World {
                 //
                 // REF: FUN_800204F8 (the anim tick that owns the latch)
                 // REF: FUN_80039B7C (the dialog SM's per-frame re-entry)
+                // A prologue run (a box not yet opened) parks on the same
+                // spin when it waits on the end latch of the actor's own
+                // bound clip: the chest's lid plays out before its box, it
+                // does not fall through to the first segment.
                 FieldStepResult::Halt { final_pc }
-                    if (b & 0x7F) == 0x2D && id.fallback_segment_pc.is_none() =>
+                    if (b & 0x7F) == 0x2D
+                        && (id.fallback_segment_pc.is_none()
+                            || (npc_clip_bound
+                                && ext_target.is_none()
+                                && id.bytecode.get(final_pc + 1) == Some(&8))) =>
                 {
                     id.park_frames = id.park_frames.saturating_add(1);
                     id.pc = final_pc;
@@ -3452,6 +3484,15 @@ impl World {
             }
         }
         self.dialog.stepping_inline_npc = None;
+        if let Some(slot) = npc_flag_slot
+            && let Some(ch) = self
+                .field_vm
+                .channels
+                .iter_mut()
+                .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
+        {
+            ch.ctx.local_flags = id.ctx.local_flags;
+        }
         self.dialog.inline = Some(id);
     }
 

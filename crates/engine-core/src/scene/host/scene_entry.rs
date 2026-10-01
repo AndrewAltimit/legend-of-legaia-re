@@ -912,6 +912,9 @@ impl SceneHost {
             Some(Err(err)) => eprintln!("[scene] field floor-height LUT load skipped: {err:#}"),
             _ => {}
         }
+        // The installed ladder is the baseline a scripted floor wave moves
+        // from (`FieldLocomotion::ladder_seen`).
+        self.world.locomotion.ladder_seen = self.world.terrain.floor_height_lut;
         // The field initialiser's camera-window install, `FUN_80017DD4(seat >>
         // 7, ...)` at `0x801D6ECC` - after the grid marks (`0x801D6BF8`) and
         // the MAN decode that installs the floor ladder (`0x801D6DA8`), which

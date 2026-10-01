@@ -859,3 +859,27 @@ phase-1 arm decrements the tick's outer loop counter, so those phases spin
 forever. Nothing ships them: `4C 91` and `4C 92` do not occur as a byte pair
 in any of the 101 extractable scene MANs, while `4C 90` occurs 180 times
 across 19 scenes.
+
+### What a moving ladder moves
+
+Three readers see the live rungs, and each must follow them:
+
+- **The ground pass.** PROT 0900's per-cell emitter `FUN_801F6D48` takes each
+  ground cell's four corner tiers through the ladder on every frame it draws,
+  so the ground surface deforms **per vertex** - `jouina`'s pulsing path,
+  `concnow`'s flesh. The port's walk-ground heightfield keeps each vertex's
+  corner tier (`WalkHeightfield::corner_tiers`) and both hosts re-upload it
+  through `field_ground::live_render_positions` on a frame the ladder moved.
+- **The static-object pass** places each decoration and placed object at its
+  floor term once per frame, so a whole mesh rides up and down:
+  `field_env::FloorWave` folds the per-draw offset into the baked draws.
+- **The floor sampler** `FUN_80019278`, so the player walks the same shape and,
+  through the settle's every-frame glide, rides it while standing. The port's
+  snap-style footing re-reads the floor on any frame the ladder moved
+  (`FieldLocomotion::ladder_seen`).
+
+On `jouina` and `concnow` almost every moving vertex is ground: `concnow`'s
+animated rungs touch about 3500 ground vertices against about 120 translated
+draws, and `jouina`'s touch none of its translated draws at all. Pinned by
+`engine-core/tests/field_floor_wave.rs` and the disc-gated
+`engine-core/tests/field_ground_wave_disc.rs`.

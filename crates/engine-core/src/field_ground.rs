@@ -36,6 +36,39 @@ pub fn render_positions(hf: &WalkHeightfield) -> Vec<[f32; 3]> {
         .collect()
 }
 
+/// [`render_positions`] under the **live** floor-height ladder: each vertex's
+/// Y re-resolved from its corner tier
+/// ([`WalkHeightfield::corner_tiers`]) through `world_lut`, the runtime
+/// scratchpad ladder (`World::terrain.floor_height_lut`, `0x1F80035C`).
+///
+/// Retail's field ground emitter (`FUN_801F6D48`, PROT 0900) takes each
+/// cell's four corner tiers through that ladder on every frame it draws, so
+/// when the field VM animates the ladder (op `0x4C` nibble 9: `jou`'s
+/// organic floor, `jouina`'s pulsing path, `concnow`'s flesh pits) the
+/// ground surface deforms per vertex - and the floor sampler `FUN_80019278`
+/// reads the same ladder, so what the player stands on is what is drawn.
+/// The scratchpad ladder is the negation of the MAN-header one the
+/// heightfield was built from, which is the frame the built positions are
+/// already in, so the rung value is the Y directly.
+///
+/// A heightfield without tier data (an older builder) falls back to its
+/// baked positions.
+///
+/// REF: FUN_801F6D48 (the per-frame ladder read of the ground pass)
+pub fn live_render_positions(hf: &WalkHeightfield, world_lut: &[i16; 16]) -> Vec<[f32; 3]> {
+    if hf.corner_tiers.len() != hf.positions.len() {
+        return render_positions(hf);
+    }
+    hf.positions
+        .iter()
+        .zip(&hf.corner_tiers)
+        .map(|(p, &tier)| {
+            let y = f32::from(world_lut[usize::from(tier & 0x0F)]);
+            [p[0], y + crate::coplanar_draws::GROUND_SINK, p[2]]
+        })
+        .collect()
+}
+
 /// The heightfield's triangle indices as drawn: every triangle reversed
 /// (`[a, b, c]` -> `[a, c, b]`) onto the scene TMDs' winding parity. A
 /// trailing partial triangle, which a well-formed grid never has, is kept
@@ -101,7 +134,28 @@ mod tests {
             cba_tsb: vec![[0, 0]; 4],
             colors: vec![legaia_asset::field_objects::GROUND_PRIM_COLOR; 4],
             indices: vec![0, 1, 2, 1, 3, 2],
+            corner_tiers: vec![0, 0, 1, 1],
         }
+    }
+
+    #[test]
+    fn live_positions_follow_the_ladder_per_vertex() {
+        let hf = grid();
+        // The MAN ladder the grid was built from (tier 1 = 32 up), as the
+        // scratchpad holds it: negated.
+        let mut lut = [0i16; 16];
+        lut[1] = -32;
+        assert_eq!(live_render_positions(&hf, &lut), render_positions(&hf));
+        // The script swells tier 1 to 80 up: only the tier-1 corners move.
+        lut[1] = -80;
+        let live = live_render_positions(&hf, &lut);
+        let sink = crate::coplanar_draws::GROUND_SINK;
+        assert_eq!(live[0][1], sink);
+        assert_eq!(live[1][1], sink);
+        assert_eq!(live[2][1], -80.0 + sink);
+        assert_eq!(live[3][1], -80.0 + sink);
+        assert_eq!(live[2][0], 0.0);
+        assert_eq!(live[2][2], 128.0);
     }
 
     #[test]

@@ -2117,6 +2117,20 @@ void main() {
       }
     }
 
+    /* The ground surface itself under the live ladder: retail's ground pass
+     * (PROT 0900 `FUN_801F6D48`) takes each cell's four corner tiers through
+     * the ladder on every frame it draws, so the walk ground deforms per
+     * vertex - jouina's pulsing path, concnow's flesh pits - not just the
+     * meshes standing on it. `field_ground_live_positions` comes back empty
+     * on a frame the ladder did not move. */
+    _applyGroundWave(rt) {
+      if (!rt.field_ground_live_positions || !this.renderer.updateGroundPositions) return;
+      const pos = rt.field_ground_live_positions();
+      if (!pos.length) return;
+      this.renderer.updateGroundPositions(pos,
+        (typeof rt.field_ground_flat_refs === 'function') ? rt.field_ground_flat_refs() : null);
+    }
+
     _applyFloorWave(rt) {
       if (!rt.field_floor_wave_offsets) return;
       const wave = rt.field_floor_wave_offsets();
@@ -2412,6 +2426,7 @@ void main() {
        * ground undulates with the walk heightfield. Costs one WASM call per
        * frame and nothing else on a scene whose script never moves the ladder. */
       this._applyFloorWave(rt);
+      this._applyGroundWave(rt);
 
       /* A camera re-centre this frame may have re-planned the windowed
        * static-object list. */
