@@ -128,9 +128,9 @@ pub(crate) struct DebugSeeds {
     pub cheats: PlayCheats,
 }
 
-/// The `--cheat-level` / `--cheat-gold` / `--cheat-coins` / `--cheat-item`
-/// operands - the native twin of the browser play page's Cheats panel. Every
-/// write is `legaia_engine_core::cheats`'.
+/// The `--cheat-*` operands - the native twin of the browser play page's
+/// Cheats panel (its "No encounters" switch is `--no-live-loop` here, and
+/// `F7` at runtime). Every write is `legaia_engine_core::cheats`'.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct PlayCheats {
     pub level: Option<u8>,
@@ -138,13 +138,23 @@ pub(crate) struct PlayCheats {
     pub coins: Option<u32>,
     /// `ITEM[:QTY]` specs, resolved against the disc's item names.
     pub items: Vec<String>,
+    pub max_ap: bool,
+    pub seru_level: Option<u8>,
+    pub arts: bool,
+    pub max_items: bool,
 }
 
 impl PlayCheats {
     /// Apply every requested cheat to `world`, logging each outcome.
-    pub(crate) fn apply(&self, world: &mut legaia_engine_core::world::World) {
+    /// `templates` is the executable's New Game party template, which a
+    /// level below the current one is rebuilt from.
+    pub(crate) fn apply(
+        &self,
+        world: &mut legaia_engine_core::world::World,
+        templates: Option<&legaia_asset::new_game::StartingParty>,
+    ) {
         if let Some(level) = self.level {
-            let got = world.cheat_set_party_level(level);
+            let got = world.cheat_set_party_level_with(level, templates);
             log::info!("play-window: --cheat-level {level}: {got:?} (roster slot, level)");
         }
         if let Some(g) = self.gold {
@@ -154,6 +164,22 @@ impl PlayCheats {
         if let Some(c) = self.coins {
             let v = world.cheat_set_coins(u64::from(c));
             log::info!("play-window: --cheat-coins -> {v}");
+        }
+        if let Some(level) = self.seru_level {
+            let got = world.cheat_grant_seru(level);
+            log::info!("play-window: --cheat-seru {level}: {got:?}");
+        }
+        if self.arts {
+            let got = world.cheat_learn_all_arts();
+            log::info!("play-window: --cheat-arts: {got:?} (roster slot, new, known)");
+        }
+        if self.max_ap {
+            let n = world.cheat_max_ap();
+            log::info!("play-window: --cheat-max-ap: {n} member(s)");
+        }
+        if self.max_items {
+            let n = world.cheat_max_items();
+            log::info!("play-window: --cheat-max-items: {n} stack(s) raised to 99");
         }
         if self.items.is_empty() {
             return;

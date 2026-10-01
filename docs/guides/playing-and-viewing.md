@@ -203,17 +203,23 @@ Both hosts reach the same seed, `World::seed_picker_party`.
 Both hosts carry the same cheats, all written by `legaia_engine_core::cheats`
 so the state they leave is one a playthrough could reach:
 
-| Cheat | Native flag | Effect |
+| Cheat | Native | Effect |
 |---|---|---|
-| Level | `--cheat-level N` | Grants each present member the XP that reaches level `N`, so the stat gains are their own retail growth. Levels only go up. |
+| Level | `--cheat-level N` | Raising grants each present member the XP that reaches level `N`, so the stat gains are their own retail growth. Lowering rebuilds the character from its New Game stats plus the growth for the levels it keeps; stat-up items used along the way are lost. |
+| Restore | (page only) | Refills HP / MP and revives, mid-battle included. |
+| Max AP | `--cheat-max-ap`, `F6` | Fills the AP (Spirit) gauge to 100; in battle the Spirit / Super Art command opens at once. |
+| Grant Seru | `--cheat-seru N` | Teaches the 21 Seru and the member's own Ra-Seru (Vahn also the Sim-Seru and Evil Seru summons, as retail carries them), every spell at level `N` (1-9). |
+| Learn all arts | `--cheat-arts` | Every art in the member's list, Hyper and Miracle Arts included. |
+| Max items | `--cheat-max-items` | Every held item and every usable consumable to 99. Key items and equipment are left alone, so no story gate opens early. |
+| No encounters | `--no-live-loop`, `F7` | Random encounters off; story and boss fights still happen. |
 | Gold | `--cheat-gold N` | Sets the purse, capped at 9,999,999. |
 | Coins | `--cheat-coins N` | Sets the casino coin bank, capped at 9,999,999. |
 | Item | `--cheat-item ITEM[:QTY]` | Adds through the bag's own add helper: stacks cap at 99, a full bag refuses. `ITEM` is an id or a name (`healing-leaf:5`). Repeatable. |
-| Restore | (page only) | Refills HP / MP and revives, mid-battle included. |
 
 On the browser play page they sit in the collapsed **Cheats** panel under the
-canvas, beside **Battle tools** (whose **No encounters** box turns random
-fights off).
+canvas, beside **Battle tools**; the panel's **No encounters** box is the same
+switch as the one in Battle tools. Native flags apply once the scene is
+entered; `F6` and `F7` work any time.
 
 ```bash
 ./legaia-engine play-window --disc "/path/to/disc.bin" --scene vell \

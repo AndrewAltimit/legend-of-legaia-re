@@ -9,8 +9,19 @@
 //!   the party's [`crate::levelup::LevelUpTracker`], so the gains are the
 //!   retail per-character growth (`FUN_801E9504`'s tables, installed at boot
 //!   by [`World::install_retail_progression_tables`]) and the record's XP,
-//!   next-level threshold and displayed level all agree. A level can only be
-//!   raised - growth is not reversible.
+//!   next-level threshold and displayed level all agree. **Lowering** a level
+//!   re-derives the character from its New Game template
+//!   ([`crate::new_game::starting_record`]) plus the growth for the levels it
+//!   keeps ([`World::cheat_rebuild_level`]) - growth is not reversible, so the
+//!   only honest way down is to replay it from level 1.
+//! * **Seru magic** goes through retail's learn edge
+//!   ([`crate::magic_xp::learn_spell_prepend`], `FUN_801E92DC`) and the
+//!   capture log the menus list from; levels are clamped to retail's cap of 9.
+//! * **Arts** go through retail's ordered learned-art insert
+//!   (`check_and_learn_art`, `FUN_801EFBFC`) into the record's `+0x185` list
+//!   and the [`crate::tactical_arts::TacticalArtsTracker`] beside it.
+//! * **AP** is the Spirit gauge (record `+0x10E`, battle actor `spirit_gauge`)
+//!   filled to its ceiling of 100.
 //! * **Items** go through the bag's retail add helper ([`crate::world::ItemBag::add`]):
 //!   they stack to 99 and land inside the installed active window, so a full
 //!   window refuses rather than writing past it.
@@ -21,6 +32,51 @@
 
 use crate::levelup::{LevelUpTracker, MAX_LEVEL, MAX_PARTY};
 use crate::world::World;
+use legaia_asset::new_game::{StartingChar, StartingParty};
+
+/// The Spirit (AP) gauge ceiling - the value
+/// [`World::spirit_gauge_full`] tests and the battle clamps to.
+pub const AP_GAUGE_MAX: u16 = 100;
+
+/// Retail's Seru-magic level cap (`FUN_801E70BC` guards `level < 9`).
+pub const SERU_LEVEL_MAX: u8 = 9;
+
+/// The player Seru-magic block every character can learn (`0x81..=0x95`,
+/// the 21 named Seru - `docs/formats/spell-table.md`).
+pub const SERU_SPELL_IDS: std::ops::RangeInclusive<u8> = 0x81..=0x95;
+
+/// The Ra-Seru summon of roster slot `slot`: Meta (Vahn), Terra (Noa), Ozma
+/// (Gala) at `0x9E..=0xA0`; `None` for any other slot.
+pub fn ra_seru_spell_for(slot: usize) -> Option<u8> {
+    (slot < 3).then(|| 0x9E + slot as u8)
+}
+
+/// The high-block summons roster slot `slot` carries in retail: its own
+/// Ra-Seru, and for Vahn alone also the Evil Seru Magic (`0x99`) and the
+/// Sim-Seru Palma / Mule / Horn / Jedo (`0x9A..=0x9D`). Capture-grounded:
+/// across the save-state library those five ids only ever appear in slot 0's
+/// spell list, while `0x9E` / `0x9F` / `0xA0` sit in slots 0 / 1 / 2.
+pub fn summon_spells_for(slot: usize) -> Vec<u8> {
+    let mut out = Vec::new();
+    if slot == 0 {
+        out.extend(0x99..=0x9D);
+    }
+    out.extend(ra_seru_spell_for(slot));
+    out
+}
+
+/// The result of a Seru-magic grant for one character.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SeruGrant {
+    /// Roster slot granted.
+    pub slot: u8,
+    /// Spells newly learned.
+    pub learned: u8,
+    /// Spells in the list afterwards.
+    pub known: u8,
+    /// The level every listed spell sits at afterwards.
+    pub level: u8,
+}
 
 /// The result of one item grant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -144,13 +200,7 @@ impl World {
     /// [`Self::cheat_set_level`] over every present party member. Returns
     /// `(roster slot, level after)` per member that holds a character.
     pub fn cheat_set_party_level(&mut self, level: u8) -> Vec<(u8, u8)> {
-        let present: Vec<usize> = (0..usize::from(self.party.party_count.min(3)))
-            .map(|m| self.party_roster_slot(m))
-            .collect();
-        present
-            .into_iter()
-            .filter_map(|r| self.cheat_set_level(r, level).map(|l| (r as u8, l)))
-            .collect()
+        self.cheat_set_party_level_with(level, None)
     }
 
     /// Set the gold purse, clamped to `0..=`[`crate::shop::GOLD_CAP`].
@@ -199,8 +249,280 @@ impl World {
             hms.mp_cur = hms.mp_max;
             rec.set_hp_mp_sp(hms);
         }
-        for member in 0..usize::from(self.party.party_count.min(3)) {
-            let rslot = self.party_roster_slot(member);
+        self.mirror_party_records_to_actors();
+    }
+
+    /// [`Self::cheat_set_level`] for a level that may go **down**: when
+    /// `level` is below the current one and `template` (this character's New
+    /// Game template row) is given, rebuild through
+    /// [`Self::cheat_rebuild_level`]; otherwise raise as usual.
+    pub fn cheat_change_level(
+        &mut self,
+        roster_slot: usize,
+        level: u8,
+        template: Option<&StartingChar>,
+    ) -> Option<u8> {
+        let cur = *self.party.level_up_tracker.level.get(roster_slot)?;
+        match template {
+            Some(t) if level.clamp(1, MAX_LEVEL) < cur => {
+                self.cheat_rebuild_level(roster_slot, level, t)
+            }
+            _ => self.cheat_set_level(roster_slot, level),
+        }
+    }
+
+    /// Re-derive roster slot `roster_slot` at `level` from its New Game
+    /// template: the record's stat block is reset to `template`'s seed
+    /// ([`crate::new_game::starting_record`]), the tracker drops to level 1
+    /// with 0 XP, and the XP that reaches `level` is granted back through the
+    /// tracker - so the stats are the template plus the retail growth for
+    /// exactly the levels kept. Permanent stat-up items and other off-curve
+    /// stat edits are lost. Current HP / MP / AP are kept, clamped to the new
+    /// maxima. Equipment, spells, arts and the name are untouched.
+    pub fn cheat_rebuild_level(
+        &mut self,
+        roster_slot: usize,
+        level: u8,
+        template: &StartingChar,
+    ) -> Option<u8> {
+        if roster_slot >= MAX_PARTY {
+            return None;
+        }
+        let rec = self.party.roster.members.get_mut(roster_slot)?;
+        let old = rec.hp_mp_sp();
+        if old.hp_max == 0 {
+            return None;
+        }
+        let fresh = crate::new_game::starting_record(template);
+        let mut hms = fresh.hp_mp_sp();
+        hms.hp_cur = old.hp_cur;
+        hms.mp_cur = old.mp_cur;
+        hms.sp_cur = old.sp_cur;
+        rec.set_hp_mp_sp(hms);
+        rec.set_record_stats(fresh.record_stats());
+        rec.set_live_stats(fresh.live_stats());
+        rec.set_level(1);
+        rec.set_cumulative_xp(0);
+        let tracker = &mut self.party.level_up_tracker;
+        tracker.level[roster_slot] = 1;
+        tracker.xp[roster_slot] = 0;
+        let got = self.cheat_set_level(roster_slot, level)?;
+        if let Some(rec) = self.party.roster.members.get_mut(roster_slot) {
+            let mut hms = rec.hp_mp_sp();
+            hms.hp_cur = hms.hp_cur.min(hms.hp_max);
+            hms.mp_cur = hms.mp_cur.min(hms.mp_max);
+            hms.sp_cur = hms.sp_cur.min(AP_GAUGE_MAX);
+            rec.set_hp_mp_sp(hms);
+        }
+        self.mirror_party_records_to_actors();
+        Some(got)
+    }
+
+    /// [`Self::cheat_change_level`] over every present party member, each
+    /// rebuilt from its own row of `templates` (indexed by roster slot) when
+    /// lowering. Without templates a level only goes up. Returns `(roster
+    /// slot, level after)` per member that holds a character.
+    pub fn cheat_set_party_level_with(
+        &mut self,
+        level: u8,
+        templates: Option<&StartingParty>,
+    ) -> Vec<(u8, u8)> {
+        self.present_roster_slots()
+            .into_iter()
+            .filter_map(|r| {
+                let t = templates.and_then(|p| p.member(r));
+                self.cheat_change_level(r, level, t).map(|l| (r as u8, l))
+            })
+            .collect()
+    }
+
+    /// Fill every present member's AP (Spirit) gauge to [`AP_GAUGE_MAX`]: the
+    /// record's `+0x10E` (what the field Status page shows and the next
+    /// battle seeds from) and, in battle, the actor's live gauge - so the
+    /// Spirit / Super-Art command opens at once. Returns how many members
+    /// were filled.
+    pub fn cheat_max_ap(&mut self) -> usize {
+        let mut n = 0;
+        for (member, rslot) in self.present_roster_slots().into_iter().enumerate() {
+            let Some(rec) = self.party.roster.members.get_mut(rslot) else {
+                continue;
+            };
+            let mut hms = rec.hp_mp_sp();
+            if hms.hp_max == 0 {
+                continue;
+            }
+            hms.sp_cur = AP_GAUGE_MAX;
+            rec.set_hp_mp_sp(hms);
+            if let Some(a) = self.actors.get_mut(member) {
+                a.battle.spirit_gauge = AP_GAUGE_MAX;
+            }
+            n += 1;
+        }
+        n
+    }
+
+    /// The Seru-magic ids [`Self::cheat_grant_seru`] teaches roster slot
+    /// `slot`: the 21 player Seru plus [`summon_spells_for`]. With the executable's spell-name table installed, ids it
+    /// does not name are left out.
+    pub fn cheat_seru_spells_for(&self, slot: usize) -> Vec<u8> {
+        let names = self.menu.text.as_ref().and_then(|t| t.spell_names.as_ref());
+        SERU_SPELL_IDS
+            .chain(summon_spells_for(slot))
+            .filter(|&id| names.is_none_or(|n| n.name(id).is_some_and(|s| !s.is_empty())))
+            .collect()
+    }
+
+    /// Teach every present member all of its Seru magic
+    /// ([`Self::cheat_seru_spells_for`]) and set **every** listed spell's
+    /// level to `level` (clamped `1..=`[`SERU_LEVEL_MAX`]). Learning goes
+    /// through retail's prepend (`FUN_801E92DC`) plus the capture log, so
+    /// the field and battle Magic lists pick the spells up at once; each
+    /// spell's XP is set just past the threshold its level crossed, so the
+    /// next level-up check stays coherent.
+    pub fn cheat_grant_seru(&mut self, level: u8) -> Vec<SeruGrant> {
+        let level = level.clamp(1, SERU_LEVEL_MAX);
+        let thresholds = self.tables.magic_xp_thresholds;
+        let mut out = Vec::new();
+        for rslot in self.present_roster_slots() {
+            if self
+                .party
+                .roster
+                .members
+                .get(rslot)
+                .is_none_or(|r| r.hp_mp_sp().hp_max == 0)
+            {
+                continue;
+            }
+            let ids = self.cheat_seru_spells_for(rslot);
+            let mut learned = 0u8;
+            // Descending, so retail's prepend leaves the new block ascending.
+            for &id in ids.iter().rev() {
+                let rec = &mut self.party.roster.members[rslot];
+                if crate::magic_xp::spell_slot(rec, id).is_some() {
+                    continue;
+                }
+                if usize::from(rec.spell_list().count) >= legaia_save::MAX_SPELLS {
+                    break;
+                }
+                crate::magic_xp::learn_spell_prepend(rec, id);
+                learned += 1;
+                let seru = self
+                    .seru
+                    .registry
+                    .seru_for_spell(id)
+                    .map_or(u16::from(id), |d| d.id);
+                self.seru.log.mark_learned(rslot as u8, seru, id);
+            }
+            let rec = &mut self.party.roster.members[rslot];
+            let mut list = rec.spell_list();
+            let known = (list.count as usize).min(list.ids.len());
+            for l in &mut list.levels[..known] {
+                *l = level;
+            }
+            rec.set_spell_list(list);
+            let xp = match (level, thresholds) {
+                (2.., Some(t)) => u32::from(t[usize::from(level) - 2]) + 1,
+                _ => 0,
+            };
+            for slot in 0..known.min(crate::magic_xp::SPELL_SEARCH_BOUND) {
+                let off = crate::magic_xp::SPELL_XP_OFFSET + slot * 4;
+                rec.raw[off..off + 4].copy_from_slice(&xp.to_le_bytes());
+            }
+            out.push(SeruGrant {
+                slot: rslot as u8,
+                learned,
+                known: known as u8,
+                level,
+            });
+        }
+        out
+    }
+
+    /// Teach every present member every art the executable's arts table
+    /// lists for it (Miracle Art included), through retail's ordered
+    /// learned-art insert into the record's `+0x185` list and the
+    /// [`crate::tactical_arts::TacticalArtsTracker`] beside it. Returns
+    /// `(roster slot, arts newly learned, arts known)`; empty without the
+    /// table (a disc-free build).
+    pub fn cheat_learn_all_arts(&mut self) -> Vec<(u8, u8, u8)> {
+        let Some(table) = self.menu.text.as_ref().and_then(|t| t.arts.clone()) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for rslot in self.present_roster_slots() {
+            let Some(rec) = self.party.roster.members.get_mut(rslot) else {
+                continue;
+            };
+            if rec.hp_mp_sp().hp_max == 0 {
+                continue;
+            }
+            let mut list = rec.displayed_skills();
+            let mut learned = 0u8;
+            for e in table.iter().filter(|e| e.character as usize == rslot) {
+                let verdict = legaia_engine_vm::battle_action::check_and_learn_art(
+                    &mut list.count,
+                    &mut list.ids,
+                    e.index,
+                    true,
+                    0,
+                );
+                if verdict == legaia_engine_vm::battle_action::ArtUseCheck::Learned {
+                    learned += 1;
+                }
+                self.party.tactical_arts.mark_known(rslot as u8, e.index);
+            }
+            rec.set_displayed_skills(list);
+            out.push((rslot as u8, learned, list.count));
+        }
+        out
+    }
+
+    /// Raise every held stack to 99 and add 99 of every usable consumable
+    /// (an item-effect descriptor with the field or battle usability bit)
+    /// through the bag's retail add helper, so nothing lands outside the
+    /// active window. Key items and equipment are not added - a key item a
+    /// story gate tests could open it early. Returns the stacks touched.
+    pub fn cheat_max_items(&mut self) -> usize {
+        let mut ids: Vec<u8> = self.party.inventory.iter().map(|(&id, _)| id).collect();
+        if let Some(t) = self.tables.item_effects.as_ref() {
+            ids.extend(
+                (1u8..=255).filter(|&id| t.effect(id).is_some_and(|e| e.is_usable_consumable())),
+            );
+        }
+        ids.sort_unstable();
+        ids.dedup();
+        let mut touched = 0;
+        for id in ids.into_iter().filter(|&id| id != 0) {
+            let held = self.party.inventory.get(&id).copied().unwrap_or(0);
+            if held < 99
+                && self
+                    .cheat_give_item(id, 99 - held)
+                    .is_some_and(|g| g.granted > 0)
+            {
+                touched += 1;
+            }
+        }
+        touched
+    }
+
+    /// Random encounters on / off - the field roll the live loop runs
+    /// ([`crate::world::WorldToggles::live_gameplay_loop`]). Scripted and
+    /// boss fights are not affected: the battle side never reads the flag.
+    pub fn cheat_set_random_encounters(&mut self, on: bool) {
+        self.toggles.live_gameplay_loop = on;
+    }
+
+    /// Roster slots of the present party, in battle order.
+    fn present_roster_slots(&self) -> Vec<usize> {
+        (0..usize::from(self.party.party_count.min(3)))
+            .map(|m| self.party_roster_slot(m))
+            .collect()
+    }
+
+    /// Copy every present member's record HP / MP (current and max) onto its
+    /// battle actor, so a record edit shows mid-fight.
+    fn mirror_party_records_to_actors(&mut self) {
+        for (member, rslot) in self.present_roster_slots().into_iter().enumerate() {
             let Some(hms) = self.party.roster.members.get(rslot).map(|r| r.hp_mp_sp()) else {
                 continue;
             };
@@ -233,7 +555,6 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_asset::new_game::{StartingChar, StartingParty};
 
     fn tpl(name: &str, hp: u16) -> StartingChar {
         StartingChar {
@@ -374,5 +695,139 @@ mod tests {
         assert_eq!(resolve_item("healing", it()), None);
         assert_eq!(resolve_item("0", it()), None);
         assert_eq!(resolve_item("", it()), None);
+    }
+
+    fn trio_templates() -> StartingParty {
+        StartingParty::from_members(vec![tpl("Vahn", 180), tpl("Noa", 150), tpl("Gala", 220)])
+    }
+
+    #[test]
+    fn lowering_rebuilds_from_the_template_plus_growth() {
+        let mut w = world_with_trio();
+        w.party.level_up_tracker.stat_gains = [crate::levelup::StatGain {
+            atk: 2,
+            ..crate::levelup::StatGain::hp_mp(10, 5)
+        }; MAX_PARTY];
+        let t = trio_templates();
+        w.cheat_set_party_level(30);
+        // A twin raised straight to 10 is the reference a rebuild must match.
+        let mut twin = world_with_trio();
+        twin.party.level_up_tracker.stat_gains = w.party.level_up_tracker.stat_gains;
+        twin.cheat_set_party_level(10);
+        // Without templates a level never goes down.
+        assert_eq!(w.cheat_set_party_level(10), vec![(0, 30), (1, 30), (2, 30)]);
+        assert_eq!(
+            w.cheat_set_party_level_with(10, Some(&t)),
+            vec![(0, 10), (1, 10), (2, 10)]
+        );
+        for slot in 0..3 {
+            let (a, b) = (
+                &w.party.roster.members[slot],
+                &twin.party.roster.members[slot],
+            );
+            assert_eq!(a.level(), 10);
+            assert_eq!(a.cumulative_xp(), b.cumulative_xp());
+            assert_eq!(a.next_level_xp(), b.next_level_xp());
+            assert_eq!(a.record_stats(), b.record_stats());
+            assert_eq!(a.live_stats(), b.live_stats());
+            assert_eq!(a.hp_mp_sp().hp_max, b.hp_mp_sp().hp_max);
+            assert!(a.hp_mp_sp().hp_cur <= a.hp_mp_sp().hp_max);
+            assert_eq!(w.party.level_up_tracker.level[slot], 10);
+        }
+        assert_eq!(
+            w.actors[0].battle.max_hp,
+            w.party.roster.members[0].hp_mp_sp().hp_max
+        );
+    }
+
+    #[test]
+    fn max_ap_fills_record_and_battle_gauge() {
+        let mut w = world_with_trio();
+        assert_eq!(w.cheat_max_ap(), 3);
+        for slot in 0..3u8 {
+            assert_eq!(
+                w.party.roster.members[slot as usize].hp_mp_sp().sp_cur,
+                AP_GAUGE_MAX
+            );
+            assert!(w.spirit_gauge_full(slot));
+        }
+    }
+
+    #[test]
+    fn grant_seru_learns_every_spell_at_the_level() {
+        let mut w = world_with_trio();
+        let got = w.cheat_grant_seru(12);
+        assert_eq!(got.len(), 3);
+        for g in &got {
+            // 21 Seru + the high-block summons (Vahn: Evil Seru, four
+            // Sim-Seru and Meta; Noa / Gala: their own Ra-Seru).
+            let n = if g.slot == 0 { 27 } else { 22 };
+            assert_eq!((g.learned, g.known, g.level), (n, n, SERU_LEVEL_MAX));
+            let rec = &w.party.roster.members[g.slot as usize];
+            let list = rec.spell_list();
+            assert_eq!(list.ids[0], 0x81, "the block reads ascending");
+            let n = usize::from(n);
+            assert!(list.ids[..n].contains(&ra_seru_spell_for(g.slot as usize).unwrap()));
+            assert!(list.levels[..n].iter().all(|&l| l == SERU_LEVEL_MAX));
+            assert!(w.seru.log.learned_spells(g.slot).contains(&0x95));
+        }
+        // Noa never gets Meta or the Sim-Seru.
+        let noa = w.party.roster.members[1].spell_list().ids;
+        assert!(!noa.contains(&0x9E) && !noa.contains(&0x9A));
+        // Idempotent: a second grant learns nothing new and can lower levels.
+        let again = w.cheat_grant_seru(3);
+        assert!(again.iter().all(|g| g.learned == 0 && g.level == 3));
+    }
+
+    #[test]
+    fn learn_all_arts_fills_the_ordered_list() {
+        use legaia_art::arts_table::ArtTableEntry;
+        let mut w = world_with_trio();
+        let row = |c, i: u8| ArtTableEntry {
+            character: c,
+            index: i,
+            name: format!("art {i}"),
+            ap: 0,
+            commands: Vec::new(),
+            is_miracle: i == 0,
+        };
+        let text = crate::pause_screens::MenuTextTables {
+            arts: Some(vec![
+                row(legaia_art::Character::Vahn, 5),
+                row(legaia_art::Character::Vahn, 0),
+                row(legaia_art::Character::Vahn, 2),
+                row(legaia_art::Character::Noa, 1),
+            ]),
+            ..Default::default()
+        };
+        w.menu.text = Some(text);
+        let got = w.cheat_learn_all_arts();
+        assert_eq!(got, vec![(0, 3, 3), (1, 1, 1), (2, 0, 0)]);
+        let list = w.party.roster.members[0].displayed_skills();
+        assert_eq!(&list.ids[..3], &[0, 2, 5]);
+        assert!(w.party.tactical_arts.is_learned(0, 5));
+        assert_eq!(
+            w.cheat_learn_all_arts(),
+            vec![(0, 0, 3), (1, 0, 1), (2, 0, 0)]
+        );
+    }
+
+    #[test]
+    fn max_items_tops_up_held_stacks() {
+        let mut w = world_with_trio();
+        w.cheat_give_item(0x77, 3);
+        w.cheat_give_item(0x78, 99);
+        assert_eq!(w.cheat_max_items(), 1);
+        assert_eq!(w.party.inventory.get(&0x77), Some(&99));
+        assert_eq!(w.party.inventory.get(&0x78), Some(&99));
+    }
+
+    #[test]
+    fn random_encounters_toggle_the_field_roll() {
+        let mut w = world_with_trio();
+        w.cheat_set_random_encounters(true);
+        assert!(w.toggles.live_gameplay_loop);
+        w.cheat_set_random_encounters(false);
+        assert!(!w.toggles.live_gameplay_loop);
     }
 }

@@ -7,13 +7,18 @@ use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 impl LegaiaRuntime {
-    /// Raise every present party member to `level` with the retail stat
-    /// growth. Returns a one-line summary (empty roster -> a reason).
+    /// Set every present party member to `level` with the retail stat
+    /// growth: raising grants the XP, lowering rebuilds the character from
+    /// the executable's New Game template plus the growth for the levels it
+    /// keeps. Returns a one-line summary (empty roster -> a reason).
     pub fn cheat_set_party_level(&mut self, level: u8) -> String {
         let Some(h) = self.scene_host.as_mut() else {
             return "no disc loaded".to_string();
         };
-        let got = h.world.cheat_set_party_level(level);
+        let templates = h.new_game_defaults.as_ref().map(|d| d.party.clone());
+        let got = h
+            .world
+            .cheat_set_party_level_with(level, templates.as_ref());
         if got.is_empty() {
             return "no party members to level".to_string();
         }
@@ -71,7 +76,70 @@ impl LegaiaRuntime {
         }
     }
 
-    /// Snapshot for the panel: `{party:[{name,level,hp,hp_max,mp,mp_max}],
+    /// Fill every present member's AP (Spirit) gauge - record and, in battle,
+    /// the live gauge. Returns a one-line summary.
+    pub fn cheat_max_ap(&mut self) -> String {
+        match self.scene_host.as_mut().map(|h| h.world.cheat_max_ap()) {
+            None => "no disc loaded".to_string(),
+            Some(0) => "no party members".to_string(),
+            Some(n) => format!("AP full for {n} member(s)."),
+        }
+    }
+
+    /// Teach every present member all of its Seru magic at `level` (1..=9).
+    pub fn cheat_grant_seru(&mut self, level: u8) -> String {
+        let Some(h) = self.scene_host.as_mut() else {
+            return "no disc loaded".to_string();
+        };
+        let got = h.world.cheat_grant_seru(level);
+        if got.is_empty() {
+            return "no party members".to_string();
+        }
+        let parts: Vec<String> = got
+            .iter()
+            .map(|g| {
+                format!(
+                    "{} {} spells Lv {} (+{})",
+                    h.world.party_name(g.slot as usize),
+                    g.known,
+                    g.level,
+                    g.learned
+                )
+            })
+            .collect();
+        parts.join(", ")
+    }
+
+    /// Teach every present member every art the executable lists for it.
+    pub fn cheat_learn_all_arts(&mut self) -> String {
+        let Some(h) = self.scene_host.as_mut() else {
+            return "no disc loaded".to_string();
+        };
+        let got = h.world.cheat_learn_all_arts();
+        if got.is_empty() {
+            return "no arts table on this disc load".to_string();
+        }
+        let parts: Vec<String> = got
+            .iter()
+            .map(|&(slot, new, known)| {
+                format!(
+                    "{} {known} arts (+{new})",
+                    h.world.party_name(slot as usize)
+                )
+            })
+            .collect();
+        parts.join(", ")
+    }
+
+    /// Raise every held stack and every usable consumable to 99.
+    pub fn cheat_max_items(&mut self) -> String {
+        match self.scene_host.as_mut().map(|h| h.world.cheat_max_items()) {
+            None => "no disc loaded".to_string(),
+            Some(n) => format!("{n} item stack(s) raised to 99."),
+        }
+    }
+
+    /// Snapshot for the panel: `{party:[{name,level,hp,hp_max,mp,mp_max,ap}],
     /// gold, coins, items:[[id,name],...]}`.
     pub fn cheat_state_json(&self) -> String {
         let Some(h) = self.scene_host.as_ref() else {
@@ -88,6 +156,7 @@ impl LegaiaRuntime {
                     "level": rec.level().max(1),
                     "hp": hms.hp_cur, "hp_max": hms.hp_max,
                     "mp": hms.mp_cur, "mp_max": hms.mp_max,
+                    "ap": hms.sp_cur,
                 }))
             })
             .collect();

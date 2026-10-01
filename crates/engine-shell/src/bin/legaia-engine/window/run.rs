@@ -981,7 +981,14 @@ pub(super) fn cmd_play_window_with_record(
 
     // `--cheat-*`: after the roster and the present party have settled, so
     // the level cheat grows the members that will actually fight.
-    debug_seeds.cheats.apply(&mut session.host.world);
+    let templates = session
+        .host
+        .new_game_defaults
+        .as_ref()
+        .map(|d| d.party.clone());
+    debug_seeds
+        .cheats
+        .apply(&mut session.host.world, templates.as_ref());
 
     // `--battle <ROW|first>`: arm a deterministic fight. Last of the world
     // setup, so the party / cheats / New Game reset have all settled and the
