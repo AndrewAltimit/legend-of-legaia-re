@@ -617,12 +617,36 @@ impl World {
         let ctx_ptr: *mut FieldCtx = &mut self.field_ctx;
         let bc_ptr: *const Vec<u8> = &self.field_bytecode;
         let pc = self.field_pc;
+        // An op aimed at the player (`0xF8`) runs on the system context here,
+        // which stands in for the player's position (see
+        // [`Self::sync_field_ctx_player_anchor`]). Its `+0x72` must stand in
+        // too: every kingdom map's entry script sets the player's speed /
+        // render-scale word with `CC F8 40 00 0C 00 00`, and retail's
+        // `FUN_8003C83C` resolves `0xF8` to the live player object, so the
+        // write lands on the player - the `0xC00` every retail overworld
+        // state holds against a town's `0x1000`.
+        // REF: FUN_8003C83C
+        let player_slot = (vm::field::peek_extended(&self.field_bytecode, pc) == Some(0xF8))
+            .then_some(self.player_actor_slot)
+            .flatten()
+            .map(usize::from)
+            .filter(|&s| s < self.actors.len());
+        let system_72 = self.field_ctx.field_72;
+        if let Some(s) = player_slot {
+            self.field_ctx.field_72 = self.actors[s].move_state.field_72;
+        }
         let mut host = FieldHostImpl { world: self };
         // SAFETY: FieldHostImpl never borrows `world.field_ctx` or
         // `world.field_bytecode` through the borrow.
         let ctx = unsafe { &mut *ctx_ptr };
         let bc: &[u8] = unsafe { (*bc_ptr).as_slice() };
         let res = vm::field::step(&mut host, ctx, bc, pc);
+        if let Some(s) = player_slot {
+            if let Some(a) = self.actors.get_mut(s) {
+                a.move_state.field_72 = self.field_ctx.field_72;
+            }
+            self.field_ctx.field_72 = system_72;
+        }
         match &res {
             FieldStepResult::Advance { next_pc } => self.field_pc = *next_pc,
             FieldStepResult::Yield { resume_pc } => self.field_pc = *resume_pc,

@@ -22,7 +22,7 @@ below to jump within this page.
 - [Encounter-record installation](#encounter-record-installation) · [from-scratch port](#from-scratch-port---both-overworld-and-field) · [NPC dialogue text source](#npc-dialogue-text-source)
 
 **Overworld player + scenes**
-- [Player movement + region-keyed encounters](#overworld-player-movement--region-keyed-encounters) · [collision / walkability](#overworld-collision--walkability) · [not one walk component](#the-overworld-is-not-one-walk-component) · [camera-relative movement remap](#camera-relative-movement-remap) · [axis convention](#overworld-axis-convention) · [boot-path seeding](#boot-path-seeding)
+- [Player movement + region-keyed encounters](#overworld-player-movement--region-keyed-encounters) · [walk speed and clip](#overworld-walk-speed-and-clip) · [collision / walkability](#overworld-collision--walkability) · [not one walk component](#the-overworld-is-not-one-walk-component) · [camera-relative movement remap](#camera-relative-movement-remap) · [axis convention](#overworld-axis-convention) · [boot-path seeding](#boot-path-seeding)
 - [Entity / actor placement table](#entity--actor-placement-table) · [classifying the entity kind](#classifying-the-entity-kind-from-its-script) · [scene destinations](#scene-destinations) · [chapter-1 Drake hub sweep](#chapter-1-drake-hub-sweep) · [Uru Mais + `jouine` exits](#uru-mais-and-jouine-exits-carried-by-the-pch-sidecar)
 
 **Terrain + geometry**
@@ -1389,10 +1389,10 @@ movement.
 
 ### Overworld player movement + region-keyed encounters
 
-The overworld now has a moving player and a position-routed random-encounter
+The overworld has a moving player and a position-routed random-encounter
 roll. `tick_world_map` walks the player actor from the held d-pad
-(`World::step_world_map_locomotion`, direct screen-axis mapping at
-`World::WORLD_MAP_PLAYER_SPEED` units/frame) and, on each 128-unit tile the
+(`World::step_world_map_locomotion`, camera-relative, at the field
+controller's speed - [below](#overworld-walk-speed-and-clip)) and, on each 128-unit tile the
 player crosses (`World::live_world_map_tick`, mirroring the field
 `live_field_tick`), rolls the scene's region-keyed encounter table
 (`World::set_world_map_regions`). That table is the from-scratch port of
@@ -1439,6 +1439,42 @@ while the timeline runs (retail's descent shows the bare continent); a
 world-map beat record **without** camera beats (the Drake mist-wall
 force-walk bands) keeps the ordinary walk camera. Disc-gated pin:
 `engine-core/tests/map01_flyin_camera.rs`.
+
+### Overworld walk speed and clip
+
+The world-map-walk overlay's frame pump `FUN_801D1344` and pad controller
+`FUN_801D01B0` are instruction-identical to the field overlay's (compared
+from the base-tagged dumps of both loads), so the overworld player is the
+field player with two inputs changed:
+
+- **`+0x72 = 0xC00`.** Each kingdom's entry script (`P1[0]`) opens with
+  `CC F8 40 00 0C 00 00`, op `4C` nibble-4 sub-0 aimed at the player: the
+  speed multiplier the pad step folds in and the render scale the animated
+  renderer `FUN_8001B964` applies (`0x8001BA6C..0x8001BAA4`). Every retail
+  overworld state holds `0xC00`; a town holds `0x1000`. The overworld figure
+  is three quarters of its town size.
+- **`_DAT_8007B6A8 = 1`.** The per-scene MAN flag (the save-allow byte) is set
+  on the three kingdom maps only. The pad step's base-step selector then
+  forces the slow step `5` and skips the run test, and while a direction is
+  held it stores the scene-sentinel clip base `99`, which the settle
+  `FUN_801D1BA0` turns into clip `leader + 1` bound from the **scene** bank:
+  body `leader` of the kingdom's own ANM bundle
+  ([`world-map-overlay.md`](../formats/world-map-overlay.md#per-kingdom-clip-inventory)).
+  Standing stores the idle base `2`, the party-bank idle.
+
+So the overworld step is `(5 * 0xC00) >> 12 = 3` units per `dt`. Retail runs
+the overworld at `dt = 3` (the state-poll `dt` rows), and the 2-unit stepper
+rounds the `9` up to `10`: the captured tile crossings on `map01` are `130`
+units every `39` vsyncs, against a town's `128` every `16`.
+
+The port runs that controller's pieces in the world-map tick: the base-step
+selector (`World::field_base_step`, which reads `_DAT_8007B6A8` as
+`World::party.scene_save_allowed`), the clip-base store, the settle's clip
+tail, the system channel's idle store and the clip advance into the player's
+`pose_frame`. The system-script step (`World::step_field`) lands an
+`0xF8`-aimed op's `+0x72` write on the player, and both play hosts draw the
+player at `World::player_render_scale`. Disc-gated pin:
+`engine-core/tests/world_map_player_anim_disc.rs`.
 
 ### Overworld collision / walkability
 

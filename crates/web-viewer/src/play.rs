@@ -984,7 +984,27 @@ impl LegaiaRuntime {
     /// Falls back to the object-local rest geometry when no clip is installed -
     /// which is what a lead outside the Vahn / Noa / Gala trio gets, since the
     /// locomotion bundle only banks those three.
+    ///
+    /// The vertices come back at the player's render scale
+    /// (`World::player_render_scale`, `+0x72` - `0xC00` on a kingdom map),
+    /// the native window's actor-matrix scale: the page translates them to
+    /// the player's position, so scaling about the local origin is the same
+    /// composition.
     pub fn player_mesh_positions(&mut self) -> Vec<f32> {
+        let scale = self
+            .scene_host
+            .as_ref()
+            .map_or(1.0, |h| h.world.player_render_scale());
+        let mut out = self.player_mesh_positions_unscaled();
+        if scale != 1.0 {
+            for v in &mut out {
+                *v *= scale;
+            }
+        }
+        out
+    }
+
+    fn player_mesh_positions_unscaled(&mut self) -> Vec<f32> {
         let pose: Option<Vec<([i16; 3], [i16; 3])>> = self
             .scene_host
             .as_ref()

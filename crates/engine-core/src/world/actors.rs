@@ -1514,6 +1514,34 @@ impl World {
             .unwrap_or(crate::field_env::PLAYER_CLIP_STANDIN_FRAMES)
     }
 
+    /// The size the player's figure draws at, as a factor of its mesh:
+    /// the player's `+0x72` over `0x1000`.
+    ///
+    /// The animated renderer `FUN_8001B964` scales the actor matrix by
+    /// `+0x72` whenever it is not `0x1000` (`0x8001BA6C..0x8001BAA4`, the
+    /// three stores into the scale vector `0x1F800348` and `ScaleMatrix`), so
+    /// the word the pad step reads as its speed multiplier is also the
+    /// figure's size. Each kingdom's entry script sets it to `0xC00`, which is
+    /// why the overworld player stands at three quarters of its town height.
+    /// Both play hosts fold this into the player's draw.
+    ///
+    /// A `0` word is retail's "do not draw" (`FUN_8001B964` returns at
+    /// `0x8001B9A0`); the port has no player-hide path, so it reads as `1.0`
+    /// rather than collapsing the mesh. `1.0` with no player actor.
+    ///
+    /// REF: FUN_8001B964
+    pub fn player_render_scale(&self) -> f32 {
+        let word = self
+            .player_actor_slot
+            .and_then(|s| self.actors.get(s as usize))
+            .map_or(0x1000, |a| a.move_state.field_72);
+        if word == 0 {
+            1.0
+        } else {
+            f32::from(word) / 4096.0
+        }
+    }
+
     /// Is the player running this frame?
     ///
     /// Retail (`FUN_801d01b0` at `0x801D0358..0x801D03A0`) computes it as the
@@ -1542,9 +1570,17 @@ impl World {
     /// ([`crate::world::config::FIELD_BASE_STEP_DEBUG_TURBO`]) is recorded but
     /// never taken - see its doc comment for the three gates.
     ///
+    /// The forced-slow arm's byte `_DAT_8007B6A8` is the per-scene MAN flag
+    /// [`crate::world::PartyState::scene_save_allowed`] (`FUN_8003AEB0` copies
+    /// `MAN[1] & 1` into it), set on exactly the three kingdom world maps - so
+    /// the overworld player always takes the slow step and never runs, which
+    /// is what the retail overworld states measure (`10` units per `dt = 3`
+    /// frame: `(5 * 0xC00) >> 12 = 3`, times 3, rounded up by the 2-unit
+    /// stepper).
+    ///
     /// PORT: FUN_801d01b0 (base-step selector)
     pub fn field_base_step(&self) -> i32 {
-        if self.locomotion.forced_slow {
+        if self.locomotion.forced_slow || self.party.scene_save_allowed {
             return crate::world::config::FIELD_BASE_STEP_FORCED_SLOW;
         }
         if self.field_run_active() {

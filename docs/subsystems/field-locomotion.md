@@ -299,7 +299,9 @@ This probe is the whole trigger - no field-VM opcode opens a conversation (op `0
 | `0x18` | `_DAT_8007B98C != 0` **and** `_DAT_8007B868 != 0` **and** held pad `_DAT_8007B850 & 0x80` - a debug turbo | `0x801D03DC` |
 | `8` | nothing above fired - plain walk | `0x801D0334` |
 
-The forced-slow arm is not just first, it is exclusive: `0x801D0350` `j`s to `0x801D03A4`, past both the run and turbo checks. A forced walk cannot be run out of. The turbo arm is last and overwrites whatever run chose.
+The forced-slow arm is not just first, it is exclusive of run: `0x801D0350` `j`s to `0x801D03A4`, past the run test, so a forced walk cannot be run out of. It lands **before** the turbo test (`0x801D03A8`), which is last and overwrites whatever arm chose.
+
+`_DAT_8007B6A8` is the per-scene MAN flag `FUN_8003AEB0` copies from `MAN[1] & 1` - the same byte the pause menu's save gate reads - and it is set on exactly the three kingdom world maps. So the forced-slow step is the **overworld's** step, not a scripted slow-walk: on a kingdom map the player always takes base step `5` and never runs. Combined with the `0xC00` speed multiplier each kingdom's entry script gives the player (`CC F8 40 00 0C 00 00`), that is `(5 * 0xC00) >> 12 = 3` units per `dt`; the retail overworld runs at `dt = 3`, and the 2-unit stepper rounds the `9` up to the `10` units per tile-step the state-poll captures record. See [`world-map.md`](world-map.md#overworld-player-movement--region-keyed-encounters).
 
 **Run is an exclusive or, not a button.** The two inputs are the held run button (`_DAT_8007B850 &` the mask config word `0x800846DC`) and the Field Move option word `0x800846CC` (= `0x80084140 + 0x58c`, the pause menu's Walk / Run row - see [`field-menu.md`](field-menu.md#options-screen)). The paired branches encode XOR: from the button-held side (`bnez` at `0x801D0370` → `0x801D0390`) a set option jumps *past* the `$s4 = 0xc` store, and from the button-clear side it falls *into* it. So the option sets the default and the button inverts it - hold to run when Walk is selected, hold to **walk** when Run is.
 
@@ -324,7 +326,7 @@ The earlier "not pinned" reading came from the address form, not from the bytes:
 
 The mask that latch applies is `World::locomotion.run_button_mask`, and it **defaults to the retail pair** - `FIELD_RUN_BUTTON_MASK_DEFAULT` is `FIELD_RUN_BUTTON_MASK_RETAIL` (`Cross | R1`) plus Square. Square is not retail's run button; it is the debug-turbo bit `0x80` on this same selector, and for a while it was the port's only run binding. That divergence is closed: a host wanting the retail set exactly assigns `FIELD_RUN_BUTTON_MASK_RETAIL`, and `the_default_run_button_is_the_retail_pair` in `engine-core`'s locomotion tests pins the default.
 
-`World::locomotion.forced_slow` is ported but **NOT WIRED** - no host drives `_DAT_8007B6A8`'s equivalent - and the turbo arm is recorded as a constant and never taken.
+`World::field_base_step` reads `_DAT_8007B6A8` as `World::party.scene_save_allowed`, the port of the same MAN-flag copy; `World::locomotion.forced_slow` forces the arm on any scene for tests and debug drivers. The turbo arm is recorded as a constant and never taken.
 
 ### Motion-derived locomotion animation
 
@@ -355,6 +357,8 @@ The other writers of the base are the hop phase machine `FUN_801d2298` (`6` at t
 | `3` | `2` | run | pad run |
 | `6` | `5` | hop | hop take-off |
 | `7` | `6` | land | hop landing crossing |
+
+The sentinel `99` is the **overworld walk**. `_DAT_8007B6A8` is set on the three kingdom maps, so a held direction there stores `99` and the settle binds clip `leader + 1` with the party-bank bit down: record `leader` of the kingdom's own ANM bundle (`*(0x8007B888)`, slot 4 of the kingdom bundle - [`world-map-overlay.md`](../formats/world-map-overlay.md)), not the party walk. Standing stores `2` and binds the party idle as in a town. Every retail overworld state holds `_DAT_8007B6A8 = 1` and the party-bank idle `+0x5C = 2`; a town state holds `0`.
 
 Slots `0` and `1` are capture-pinned ([`anm.md`](../formats/anm.md)); `2`, `5` and `6` rest on these writers' arithmetic, and the capture below confirms the bases that select them. The run clip is the one a held **Cross or R1** reaches. The locomotion run-pin capture held Square and Circle, neither of which is in the run mask `0x48`, which is why it never saw the record change.
 

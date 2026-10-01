@@ -63,9 +63,6 @@ pub struct WorldMapState {
     /// portal tile is one whose portal has already fired, so re-engaging it on
     /// the first tick would cross the door a second time. `None` otherwise.
     pub seat_hold_tile: Option<(i32, i32)>,
-    /// Overworld player walk speed in world units per frame (per held d-pad
-    /// direction). Default [`crate::world::World::WORLD_MAP_PLAYER_SPEED`].
-    pub player_speed: i16,
 }
 
 impl WorldMapState {
@@ -81,7 +78,6 @@ impl WorldMapState {
             region_tracker: None,
             last_tile: None,
             seat_hold_tile: None,
-            player_speed: World::WORLD_MAP_PLAYER_SPEED,
         }
     }
 }

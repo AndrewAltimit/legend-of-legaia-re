@@ -92,9 +92,10 @@ pub(crate) const FIELD_BASE_STEP: i32 = 8;
 /// [`crate::world::World::field_run_active`] for the XOR that picks it.
 pub(crate) const FIELD_BASE_STEP_RUN: i32 = 0xc;
 /// Forced-slow base step (retail `0x801D0354`: `addiu $s4, $zero, 5`, in the
-/// delay slot of `beqz` on `_DAT_8007B6A8`). This arm `j`s straight past the
-/// run and turbo checks at `0x801D0350`, so a forced walk cannot be run out
-/// of - which is why the selector tests it first.
+/// delay slot of the `j 0x801D03A4` the set `_DAT_8007B6A8` arm takes). The
+/// jump lands past the run test, so a forced walk cannot be run out of; the
+/// debug-turbo test after it still runs. The byte is set on the kingdom
+/// world maps, so this is the overworld's step.
 pub(crate) const FIELD_BASE_STEP_FORCED_SLOW: i32 = 5;
 /// Debug turbo base step (retail `0x801D03DC`: `addiu $s4, $zero, 0x18`).
 ///
