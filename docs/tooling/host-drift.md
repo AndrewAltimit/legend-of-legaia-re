@@ -3652,7 +3652,7 @@ hand, row scroll), the pause menu's Items / Magic / Equip / Status / Options
 screens, the battle open (`Begin | Run`, the command ring, `Auto | Command`,
 the High / Low / Left / Right arts arm and the `Begin | Reselect` confirm),
 the swing with its numerals and `HIT` / `TOTAL` cluster, and the spoils
-banner and field return match frame for frame. Three gaps did not.
+banner and field return match frame for frame. The gaps that did not are below.
 
 ### The field readout over the battle transition
 
@@ -3694,26 +3694,40 @@ every play-page call of one must sit in `_stageFrameState` unless the setter
 is classified as branch-owned with a reason. It runs in the pre-commit hook
 when `site/` is touched and in CI.
 
+### The intro emitter stepped per draw
+
+The tile shatter ran about two ticks ahead on the page: on the tick the
+native window still showed the captured field frame, the page already drew
+the first tiles lifting. Every intro style integrates its working set once per
+`BattleIntro::tick` call, and the native window called it once per **redraw**
+- a redraw can drain several world ticks, the capture redraw first among them
+- while the page calls once per world tick. The page was right and the
+native window was behind. Both now call `BattleIntro::advance_to(elapsed)`,
+which steps once per clock unit the transition entity advanced and re-emits
+the cached frame when it has not moved, so the picture is a function of the
+clock alone (`the_frame_depends_on_the_clock_not_the_draw_cadence`). A
+shared kernel whose state advances per call is still a host-cadence
+dependency: sharing the code does not share the call rate.
+
+### The opening crawl under a screen-effect push
+
+Where `opdeene`'s timeline runs an op-`0x34` sub-0 push, the native window
+composited every push over its text overlay and the page drew every push
+under its overlay canvas. Retail decides per push: the glyphs sit at
+ordering-table bucket `1` and a push at bucket `0` draws over them, a deeper
+one under them ([cutscene.md](../subsystems/cutscene.md#a-push-in-front-of-the-text-or-behind-it)).
+Both hosts now split on `screen_prim::screen_effect_push_prims_split` (the
+`SIM_PAIRS` row names it); the page applies the over-text half to its overlay
+canvas's pixels (`play_text_layer_washes_json`).
+
 ### Open from the same pass
 
-- **The intro's first frames.** The tile shatter's emitter runs about two
-  ticks ahead on the page: on the tick the native window still shows the
-  captured field frame, the page already draws the first tiles lifting. Both
-  hosts arm `BattleIntro::arm_for_battle`; the offset is in where each host
-  first steps it relative to the capture, and neither side has been checked
-  against a retail capture.
-- **The victory orbit leaves the dome on both hosts.** With the cull fixed
-  the hosts agree, and both frame a magnified shell wall for most of the
-  spoils hold (the orbit's `TR.z` reaches `24883`). Host-identical, so an
-  engine question rather than drift.
-- **The opening crawl under a screen-effect push.** Where `opdeene`'s
-  timeline runs an op-`0x34` sub-0 push to black, the native window dims the
-  crawl text with the scene and the page keeps it white. The native window
-  composites the push in its screen-prim tail, over its text overlay; the
-  page draws every screen prim under its overlay canvas. The push is
-  `FUN_80024EE4`'s `POLY_F4` at ordering-table bucket `a0` (`0` or `1`, the
-  front of the table), so which of the two is retail turns on the crawl
-  roller's own bucket, which no capture has read yet.
+- **The victory camera** was host-identical and is fixed in the engine: the
+  battle-end sequence now frames the pose actor the way retail's results
+  sequencer does ([battle.md](../subsystems/battle.md#the-victory-camera)).
+  What still differs from retail there is the pose itself - the engine strikes
+  the win pose once and hands back to the idle loop, so the camera films the
+  character's back where retail's held pose has turned to face it.
 - **The overworld leader** draws at roughly half the native window's size
   on the page, and the native size matches the retail frame of
   `keikoku_chest_preload`. The page poses the leader from the world-map

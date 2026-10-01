@@ -2791,11 +2791,19 @@ impl PlayWindowApp {
             // drew it. Through the same shared emitter the browser play page
             // composites them with, so the ordering-table bucket, the ABR
             // equation and the GP0 channel order are decided once.
-            screen_prims.extend(
-                legaia_engine_render::screen_overlay::screen_effect_push_prims(
+            //
+            // Split at the text layer: retail links every glyph at OT bucket
+            // `1` (`TEXT_OT_BUCKET`), so a push at bucket `0` washes the
+            // text with the scene and a deeper one draws under it. The
+            // overlay text sits between this host's two lists, so the
+            // under-text pushes join `light_prims`. The browser play page
+            // makes the same split through the same kernel.
+            let (pushes_under, pushes_over) =
+                legaia_engine_render::screen_overlay::screen_effect_push_prims_split(
                     &self.session.host.world.screen_tint_push_args(),
-                ),
-            );
+                );
+            light_prims.extend(pushes_under);
+            screen_prims.extend(pushes_over);
             // The field overlay's cinematic wipe (`0x43 0C` -> `FUN_801DD784`),
             // through the same shared emitter the browser play page uses so
             // the two bars cannot drift between hosts.

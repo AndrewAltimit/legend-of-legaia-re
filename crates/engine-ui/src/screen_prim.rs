@@ -538,6 +538,82 @@ pub fn screen_effect_push_prims(pushes: &[(i16, i16, u32)]) -> Vec<ScreenPrim> {
         .collect()
 }
 
+/// OT bucket every MES text glyph is linked at: the glyph renderer
+/// `FUN_80036888` adds each sprite and its draw-mode packet at
+/// `*(0x1F8003F4) + 4` (`0x80036B88..0x80036B98`), and the opening crawl
+/// roller `FUN_80037174` - which draws its lines through that renderer - adds
+/// its clip-window packets at the same `+4` (`0x800374C8..0x800374D4`).
+///
+/// The table is cleared with `ClearOTagR` and drawn from its last entry, so a
+/// lower bucket draws **later**, on top. A screen-effect push
+/// ([`screen_effect_push_prim`]) linked at bucket `0` therefore washes over
+/// the text; one at bucket `2` or deeper draws under it.
+pub const TEXT_OT_BUCKET: i16 = 1;
+
+/// Whether a screen-effect push at `layer` draws over the text layer - the
+/// one bucket in front of [`TEXT_OT_BUCKET`] (the routine floors a negative
+/// layer to `0`).
+///
+/// A push that shares the text's own bucket is ordered by `AddPrim`
+/// sequence, which no capture has read; it is kept under the text, so this
+/// is `true` for bucket `0` only.
+pub const fn push_covers_text(layer: i16) -> bool {
+    layer < TEXT_OT_BUCKET
+}
+
+/// A frame's screen-effect pushes split at the text layer: `(under, over)`.
+/// A host that composites its text on a separate layer above the scene draws
+/// `under` beneath that layer and `over` above it; both lists keep the
+/// pool's order.
+pub fn screen_effect_push_prims_split(
+    pushes: &[(i16, i16, u32)],
+) -> (Vec<ScreenPrim>, Vec<ScreenPrim>) {
+    let (over, under): (Vec<_>, Vec<_>) = pushes
+        .iter()
+        .copied()
+        .partition(|&(layer, _, _)| push_covers_text(layer));
+    (
+        screen_effect_push_prims(&under),
+        screen_effect_push_prims(&over),
+    )
+}
+
+/// The pushes that wash over the text layer, as `(abr, [r, g, b])` - the
+/// form a host applies to a text layer it cannot draw a primitive over (the
+/// browser play page's 2D overlay canvas sits above its GL canvas, so it
+/// applies the wash to that canvas's own pixels instead). Channel order is
+/// resolved here exactly as [`screen_effect_push_prim`] resolves it.
+pub fn text_layer_washes(pushes: &[(i16, i16, u32)]) -> Vec<(u8, [u8; 3])> {
+    pushes
+        .iter()
+        .filter(|&&(layer, _, _)| push_covers_text(layer))
+        .map(|&(_, blend, packed)| {
+            (
+                (blend & 3) as u8,
+                [
+                    (packed & 0xFF) as u8,
+                    ((packed >> 8) & 0xFF) as u8,
+                    ((packed >> 16) & 0xFF) as u8,
+                ],
+            )
+        })
+        .collect()
+}
+
+/// One channel of a text pixel under a [`text_layer_washes`] entry: the PSX
+/// semi-transparency equations `0` `(B + F) / 2`, `1` `B + F`, `2` `B - F`,
+/// `3` `B + F / 4`, saturated.
+pub fn wash_channel(abr: u8, b: u8, f: u8) -> u8 {
+    let (b, f) = (i32::from(b), i32::from(f));
+    let v = match abr & 3 {
+        0 => (b + f) / 2,
+        1 => b + f,
+        2 => b - f,
+        _ => b + f / 4,
+    };
+    v.clamp(0, 255) as u8
+}
+
 /// OT bucket the cinematic bar emitter links its two quads at - retail's
 /// literal `*(0x1F8003F4) + 8`, i.e. eight buckets in front of the scene's
 /// own base, which is what puts the bars over everything.
@@ -931,6 +1007,31 @@ pub fn line_quad(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The opening's `34 05 00 00 00 D2 00` push to black is kind `0` -
+    /// bucket `0`, in front of the glyphs at bucket `1` - so it washes the
+    /// crawl; the `34 01` pushes are kind `2` and draw under it. Both hosts
+    /// split on this one predicate.
+    #[test]
+    fn the_text_layer_split_follows_the_ot_bucket() {
+        let pushes = [
+            (0i16, 2i16, 0x40_40_40u32),
+            (2, 2, 0x80_80_80),
+            (-3, 1, 0x00_00_FF),
+        ];
+        let (under, over) = screen_effect_push_prims_split(&pushes);
+        assert_eq!(under.len(), 1, "bucket 2 draws under the text");
+        assert_eq!(over.len(), 2, "bucket 0 and a floored negative wash it");
+        assert!(!push_covers_text(TEXT_OT_BUCKET), "a tie stays under");
+        let washes = text_layer_washes(&pushes);
+        assert_eq!(washes, vec![(2, [0x40, 0x40, 0x40]), (1, [0xFF, 0, 0])]);
+        // White text under the darken wash reads `255 - F`, and saturates.
+        assert_eq!(wash_channel(2, 255, 0x40), 255 - 0x40);
+        assert_eq!(wash_channel(2, 0x10, 0x40), 0);
+        assert_eq!(wash_channel(1, 200, 100), 255);
+        assert_eq!(wash_channel(0, 100, 50), 75);
+        assert_eq!(wash_channel(3, 100, 40), 110);
+    }
 
     #[test]
     fn texture_blend_truncates_to_the_framebuffer_depth() {

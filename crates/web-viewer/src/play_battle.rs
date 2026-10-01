@@ -2089,11 +2089,16 @@ impl LegaiaRuntime {
         // The field overlay's screen-effect washes (op `0x34` sub-0 ->
         // `FUN_80024EE4`): the scene-entry fade-from-black and the door
         // prologue's fade-to-black, through the same shared emitter the
-        // native window composites them with.
+        // native window composites them with. The split is the native
+        // window's too: both halves wash the scene here, and the half that
+        // also washes the text reaches the page's 2D overlay canvas through
+        // `play_text_layer_washes_json`.
         if let Some(host) = self.scene_host.as_ref() {
-            prims.extend(legaia_engine_ui::screen_prim::screen_effect_push_prims(
+            let (under, over) = legaia_engine_ui::screen_prim::screen_effect_push_prims_split(
                 &host.world.screen_tint_push_args(),
-            ));
+            );
+            prims.extend(under);
+            prims.extend(over);
         }
         // The field overlay's cinematic wipe (`0x43 0C` -> `FUN_801DD784`).
         // Same shared emitter as the native window's screen-prim pass, so
@@ -2156,9 +2161,10 @@ impl LegaiaRuntime {
             self.battle_intro = Some(self.arm_battle_intro(roll.formation_id, total));
         }
         let mut intro = self.battle_intro.take().expect("armed above");
-        // Retail's per-frame step is the display-frame delta; the page's
-        // simulation tick is one display frame, same as the native window.
-        let frame = intro.tick(entity.elapsed, 1);
+        // Stepped to the entity's clock, one step per clock unit - the same
+        // call the native window makes, whose redraws do not run one per
+        // world tick (`BattleIntro::advance_to`).
+        let frame = intro.advance_to(entity.elapsed);
         // The curtain's CPU two-pass composition (and nothing else, for the
         // other styles) changes the captured page per frame; the page
         // re-uploads through the same dirty flag the field CLUT effects use.
@@ -2372,6 +2378,33 @@ impl LegaiaRuntime {
             .as_ref()
             .map(|h| h.world.screen_tint_push_args().len() as u32)
             .unwrap_or(0)
+    }
+
+    /// This frame's screen-effect pushes that wash over the **text layer**
+    /// (`legaia_engine_ui::screen_prim::text_layer_washes`), as
+    /// `[[abr, r, g, b], ...]` in draw order; `[]` when none does.
+    ///
+    /// Retail links every glyph at OT bucket `1` and a push at bucket `0`
+    /// draws over it - the opening's `34 05` push to black dims the crawl
+    /// with the scene. The GL pass draws every push over the scene, but the
+    /// page's text is a 2D canvas above the GL canvas, so the page applies
+    /// these to that canvas's own pixels (`wash_channel`'s equations) - the
+    /// native window draws the same pushes as primitives over its text.
+    pub fn play_text_layer_washes_json(&self) -> String {
+        let washes = self
+            .scene_host
+            .as_ref()
+            .map(|h| {
+                legaia_engine_ui::screen_prim::text_layer_washes(&h.world.screen_tint_push_args())
+            })
+            .unwrap_or_default();
+        serde_json::to_string(
+            &washes
+                .iter()
+                .map(|(abr, [r, g, b])| [*abr, *r, *g, *b])
+                .collect::<Vec<_>>(),
+        )
+        .unwrap_or_else(|_| "[]".to_string())
     }
 
     /// How many screen-space PSX primitives this frame carries. `0` is the

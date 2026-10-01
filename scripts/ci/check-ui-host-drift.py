@@ -716,13 +716,15 @@ SIM_PAIRS: list[dict[str, object]] = [
         "`layer` is an ordering-table bucket and `blend` an ABR equation "
         "(two `i16`s a call site can swap), and `packed` is a GP0 colour word "
         "with red LOW, the opposite of every other kernel here. Both sites "
-        "must emit through `screen_effect_push_prims`",
+        "must emit through `screen_effect_push_prims_split`, which also "
+        "decides which pushes wash the text layer (OT bucket 0, in front of "
+        "the glyphs at bucket 1)",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
             "web": (WEB_PLAY_BATTLE, "tick_battle_intro"),
         },
         "mode": "symbols_all",
-        "symbols": ["screen_effect_push_prims"],
+        "symbols": ["screen_effect_push_prims_split"],
     },
     {
         "what": "battle-intro style inputs, native vs play page - the style "

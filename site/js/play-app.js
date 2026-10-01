@@ -1886,9 +1886,10 @@ void main() {
         if (this._menuChrome) this._menuChrome.blit(ctx, dlg.sprites);
         if (this._menuFont) this._menuFont.blit(ctx, dlg.texts);
         this._overlayActive = true;
+        this._applyTextWash(ctx, ov);
         return;
       }
-      if (overlayDrew) return;
+      if (overlayDrew) { this._applyTextWash(ctx, ov); return; }
       /* Opening-cutscene narration crawl / title card / "It was the Seru."
        * caption: font-atlas text quads + one faded image quad over the live
        * 3D prologue scene. */
@@ -1935,12 +1936,53 @@ void main() {
             cutDrew = true;
           }
         }
-        if (cutDrew) { this._overlayActive = true; return; }
+        if (cutDrew) {
+          this._overlayActive = true;
+          this._applyTextWash(ctx, ov);
+          return;
+        }
       }
       if (this._overlayActive) {
         ctx.clearRect(0, 0, ov.width, ov.height);
         this._overlayActive = false;
       }
+    }
+
+    /* The screen-effect pushes that draw OVER the text layer, applied to this
+     * frame's freshly painted overlay pixels. Retail links every glyph at OT
+     * bucket 1 and a bucket-0 push after it, so the opening's push to black
+     * dims the crawl with the scene; the GL pass already washed the scene,
+     * but this canvas sits above it. The engine resolves which pushes those
+     * are and their colours (`play_text_layer_washes_json`); the equations
+     * are the PSX ABR modes `legaia_engine_ui::screen_prim::wash_channel`
+     * names. Only called right after a branch repainted the canvas, so a
+     * wash never compounds across frames. */
+    _applyTextWash(ctx, ov) {
+      if (typeof this.rt.play_text_layer_washes_json !== 'function') return;
+      let washes = null;
+      try { washes = JSON.parse(this.rt.play_text_layer_washes_json()); }
+      catch (e) { return; }
+      if (!washes || !washes.length || !ov.width || !ov.height) return;
+      const img = ctx.getImageData(0, 0, ov.width, ov.height);
+      const px = img.data;
+      for (const [abr, fr, fg, fb] of washes) {
+        const f = [fr, fg, fb];
+        for (let i = 0; i < px.length; i += 4) {
+          if (px[i + 3] === 0) continue;
+          for (let c = 0; c < 3; c++) {
+            const b = px[i + c];
+            let v;
+            switch (abr & 3) {
+              case 0: v = (b + f[c]) >> 1; break;
+              case 1: v = b + f[c]; break;
+              case 2: v = b - f[c]; break;
+              default: v = b + (f[c] >> 2); break;
+            }
+            px[i + c] = v < 0 ? 0 : (v > 255 ? 255 : v);
+          }
+        }
+      }
+      ctx.putImageData(img, 0, 0);
     }
 
     /* ---------- loop ---------- */
