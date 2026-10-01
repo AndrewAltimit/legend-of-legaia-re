@@ -48,6 +48,19 @@ enum Cmd {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+    /// Write the GPU VRAM as raw BGR555 little-endian bytes.
+    ///
+    /// With `--display-crop`, only the on-screen rectangle (`GP1(0x05)` origin
+    /// sized by the `GP1(0x08)` resolution) is written, row-major; the
+    /// rectangle is printed as `x y w h` so a script can reshape the bytes.
+    /// The raw-blob sibling of `mednafen-state vram-dump`.
+    Vram {
+        save: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
+        #[arg(long)]
+        display_crop: bool,
+    },
 }
 
 fn parse_addr(s: &str) -> Result<u32, String> {
@@ -152,6 +165,26 @@ fn main() -> Result<()> {
                     std::io::stdout().write_all(bytes)?;
                 }
             }
+            Ok(())
+        }
+        Cmd::Vram {
+            save,
+            out,
+            display_crop,
+        } => {
+            let gpu = legaia_pcsxr::gpu::PcsxGpu::from_path(&save)?;
+            let (x, y, w, h) = if display_crop {
+                gpu.display_crop_rect()
+            } else {
+                (0, 0, 1024, 512)
+            };
+            let mut bytes = Vec::with_capacity((w * h * 2) as usize);
+            for row in y..y + h {
+                let o = ((row * 1024 + x) * 2) as usize;
+                bytes.extend_from_slice(&gpu.vram[o..o + (w * 2) as usize]);
+            }
+            std::fs::write(&out, bytes)?;
+            println!("{x} {y} {w} {h}");
             Ok(())
         }
     }
