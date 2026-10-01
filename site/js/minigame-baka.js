@@ -325,6 +325,58 @@
       r.mvpOverride = null;
     }
 
+    /* ---------------- the cabinet's front end ----------------
+     *
+     * The attract card and the PLAYER SELECT screen, run by the engine's
+     * cabinet (`engine-core::baka_cabinet`, the FUN_801CF388 port) and drawn
+     * by its duel surface: the select camera and the three-fighter lineup
+     * (`baka_duel_scene::SELECT_CAMERA` / `SELECT_LINEUP`, read off the
+     * overlay) with the cursor's fighter lit and the other two at half depth
+     * cue, the attract card's title widgets off the chrome, and the
+     * cabinet's own cells (PRESS START, PLAYER SELECT) at retail's emitter
+     * arguments. The same kernel the native window and the play page draw. */
+    loadCabinet(api) {
+      this.api = api;
+      this.ok = false;
+      if (!api.baka_presentation_ready || !api.baka_presentation_ready()) return false;
+      if (typeof api.baka_scene_frame !== 'function') return false;
+      this.widgets = JSON.parse(api.baka_hud_json());
+      if (!this.widgets.length) return false;
+      this.pageCanvases.clear();
+      if (this._quadCache) this._quadCache.clear();
+      if (!this.renderer) this.renderer = new window.TmdRenderer(this.glCanvas);
+      const gen = api.baka_scene_frame();
+      if (gen < 0 || !this._engineUpload(gen)) return false;
+      this.engine = true;
+      this._resetDuelState();
+      this.mode = 'cabinet';
+      this.ok = true;
+      return true;
+    }
+
+    /* One front-end frame: `cab` is baka_cabinet_json, `chrome` the
+     * baka_chrome_json draws (the attract title card). */
+    frameCabinet(cab, chrome) {
+      if (!this.ok || this.mode !== 'cabinet') return;
+      this._engineDraw();
+      const cv = this.hudCanvas, g = cv.getContext('2d');
+      g.setTransform(cv.width / HUD_W, 0, 0, cv.height / HUD_H, 0, 0);
+      g.clearRect(0, 0, HUD_W, HUD_H);
+      g.imageSmoothingEnabled = false;
+      /* Every widget quad goes to one ordering-table slot through AddPrim
+       * (FUN_801D5ED0 -> FUN_8003D2C4), which links each new packet AHEAD of
+       * the last: a later submit draws underneath. So the lists are painted
+       * back to front, and the cabinet's prompt - submitted before the card -
+       * lands on top of it. */
+      for (const d of (chrome || []).slice().reverse()) {
+        if (d.g != null) continue;
+        this._widget(g, d.w, d.x, d.y, Math.max(0, Math.min(1, d.b / 128)), false, d.b, d.s);
+      }
+      for (const c of ((cab && cab.cells) || []).slice().reverse()) {
+        this._widget(g, c.w, c.x, c.y, Math.max(0, Math.min(1, c.b / 128)), false, c.b, 0x1000);
+      }
+    }
+
     /* ---------------- fighter-select screen ----------------
      *
      * The retail cabinet opens on a PLAYER SELECT screen: the three party
@@ -819,7 +871,7 @@
       this._quadCache = this._quadCache || new Map();
       let q = this._quadCache.get(key);
       if (q === undefined) {
-        try { q = JSON.parse(api.baka_hud_quad_json(id, cx, cy, brightness, size, !!mirror)); }
+        try { q = JSON.parse(this.api.baka_hud_quad_json(id, cx, cy, brightness, size, !!mirror)); }
         catch (e) { q = null; }
         if (q && q.page == null) q = null;
         this._quadCache.set(key, q);
@@ -965,7 +1017,9 @@
        * it is up it owns the round framing, so the page's own round banner
        * stands down. */
       const chrome = (meta && Array.isArray(meta.chrome)) ? meta.chrome : [];
-      for (const d of chrome) {
+      /* Back to front: a later AddPrim into the same slot draws underneath
+       * (see frameCabinet). */
+      for (const d of chrome.slice().reverse()) {
         const alpha = Math.max(0, Math.min(1, d.b / 128));
         if (d.g != null) {
           /* Widget 5's strip paged to cell g. The texel column is the

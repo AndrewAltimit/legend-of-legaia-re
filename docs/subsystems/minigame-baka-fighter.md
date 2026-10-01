@@ -165,6 +165,61 @@ most of its exit paths as fake `FUN_801Dxxxx()` label-calls.
 Confidence: **Confirmed** - the branch targets, the thresholds and the
 transitions are read straight off the dispatcher's disassembly.
 
+### The front end
+
+The attract card and the player select are the cabinet's own screens, and
+what each arm draws is read straight off its body:
+
+- **Attract (`0x01`, `0x801CF6E4..0x801CF804`).** The blink phase
+  `DAT_801DC128` advances by the frame step first; its bit 4 picks the level of
+  the "PRESS START" widget (`0`) drawn at `(0xA0, 0xCC)` - `0x40` while set,
+  `0x80` while clear. The title card `FUN_801D59D4` is then called with
+  `DAT_801DBE94`, which advances after the call. The pad edge `0x844` fires cue
+  `0x20`, zeroes the blink phase, moves to `0x02` and spawns a fade actor
+  (`FUN_801D657C(1, 0, 0xFFFFFF, 0, 0x1E, 0x3E8)`).
+- **Fade-out (`0x02`, `0x801CF808..0x801CF884`).** While the blink phase is
+  below `0x1E` the prompt flashes at level `0x100` and the card is drawn; past
+  that neither is. The card's clock does **not** advance here. At `0x3D` the
+  state moves to `0x0A`.
+- **Lineup (`0x0A`, `0x801CF88C..0x801CFA60`).** The select camera - pitch
+  `0x8C`, yaw `0`, roll `0`, eye trio `(0, 0x2D0, 0x3FC0)`; the focus is left
+  alone and the parked attract state holds it at zero - then three actors off
+  the prototype at `0x801D760C`, one per party fighter: the 8-byte position
+  records at `0x801DBC04` (Vahn `(0, 0, -1000)` front and centre, Noa
+  `(350, 0, -600)` to his right, Gala `(-350, 0, -600)` to his left), yaw
+  `0x800` (facing the camera), roster `+0x5A` = the column, clip `+0x5C` =
+  `1 + 9 * column` (each fighter's idle). The stage counter re-seeds to `2`,
+  and the "PLAYER SELECT" widget (`0x0C`) spawns as an effect actor through
+  `FUN_801D6E04(0xC, 0x801DBA6C)`, re-seated at `(0xA0, 0x20)`.
+- **Select (`0x0B`).** No widget draw of its own and no cursor arrows: the
+  cursor is shown by the lineup's own tick, `FUN_801D3390`, which sets every
+  fighter's depth-cue level `+0x78` to `0` on the cursor's column and `0x800`
+  (half toward the black colour word) on the other two, and steps the idle
+  clip at its record's byte `+0x07`. `DAT_801DBF74`, the other focus id it
+  tests, is `rand % 5 + 100` - never a column. The tick retires the actor once
+  the match phase `DAT_801DBF78` is non-zero, which the confirm state `0x0C`
+  sets.
+- **Pose (`0x0E`, `0x801CFBBC..0x801CFCB4`).** The chosen fighter's duel actor
+  spawns off `0x801D763C` with the cursor as its roster id and its X at
+  `-(record[cursor] +0x44 + 200)`, and the round SM spawns.
+
+The arena pass runs from `0x0A` on (`s4`), so the lineup stands in the walled
+arena; the attract arms draw no 3D at all. **Confirmed** (disassembly; the
+attract layout against the parked `minigame_baka_fighter` state, which sits on
+`0x01` with `DAT_801DBE94 = 373` and the whole card up - the card's last
+segment has no upper bound).
+
+In the port the cabinet emits these as `CabinetFrame::widgets` /
+`title_card` / `install_player`; `BakaFight` runs no rule while
+`baka_cabinet::front_end` holds, steps the select camera
+(`baka_duel_scene::SELECT_CAMERA`) and the lineup clock, and
+`BakaDuelScene` poses the lineup (`SELECT_LINEUP`, the half depth cue as
+`SELECT_DIM_KEEP`). Every host enters the cabinet here: the scene host's
+mode-24 arm boots the fight with `BakaFight::with_attract`, and the minigames
+page opens the same cabinet (`baka_start_cabinet`). The port keeps Start as
+its minigame escape everywhere except the attract card, whose own edge reads
+it.
+
 ### The epilogue's two draw gates
 
 The dispatcher carries two draw flags in registers, both entering at `0`, and
@@ -613,7 +668,9 @@ the `play_mg_baka_scene_*` exports (`site/js/play-minigames.js`), and the
 standalone minigames page reads its own fight's surface through the
 `baka_scene_*` exports (`site/js/minigame-baka.js`). Both browser export sets
 flatten the surface through one reader (`web-viewer::minigames::duel_surface`),
-so the two pages cannot lay the same buffers out differently. The minigames
+so the two pages cannot lay the same buffers out differently. The same
+surface draws the cabinet's front end - the select camera and the lineup -
+on all three hosts. The minigames
 page also hands the duel its held Triangle (`baka_set_held_pad`) for the
 cameo, and keeps ticking it past the deciding exchange so the cabinet's tally
 runs and the result close-up and pinned win flourish draw.
@@ -1086,9 +1143,9 @@ state machine's attract arms, and those arms are the only ones that advance
 the counter it is a function of (`DAT_801DBE94`). So a host that enters
 straight into `ST_DUEL` never sees it, and a duel that plays it would be
 showing the attract screen over a fight. The port follows that: the chrome
-takes the clock from `BakaCabinet::intro_clock` while
-`BakaCabinet::in_attract` holds, and `BakaFight::with_attract` is what starts
-a session at the cabinet's own boot state.
+draws the card on exactly the frames the cabinet's attract arms call it
+(`CabinetFrame::title_card`), and `BakaFight::with_attract` is what starts a
+session at the cabinet's own boot state.
 
 **Round banner (`FUN_801d5c7c`).** Two mirrored halves converging on
 `x = 0x90`: offset `0xB4 - 6t` while `t < 30`, `0` through the hold, then
@@ -1122,12 +1179,15 @@ same and then raises the actor's retire bit once `DAT_801DBF78` is live, `2`
 draws the widget-5 glyph strip paged to `actor+0x50`, and any other mode
 draws nothing. Whatever the mode, the brightness is `actor+0x78` conditioned
 three ways first - values at or above `0x4001` are discarded to zero, the
-level rounds toward zero by `>> 4`, then clamps to `0..=0xFF`. Its sibling
-`FUN_801d3390` binds the actor's animation before the draw: it retires the
-actor outright once the match ends, otherwise sets the fade from whether
-`actor+0x5A` matches either focused fighter (`DAT_801DBF70` /
-`DAT_801DBF74`), picks the sprite bank by `actor+0x5C < 0x400`, and reads
-byte `+0x07` of the record the id's low 10 bits reach into `actor+0x6A`.
+level rounds toward zero by `>> 4`, then clamps to `0..=0xFF`.
+`FUN_801d3390` is not a banner callback: it is the tick of the prototype at
+`0x801D760C`, which only the player-select setup spawns, so it is the
+lineup's ([The front end](#the-front-end)). It retires the actor once the
+match phase is non-zero, otherwise sets the depth-cue level `+0x78` from
+whether `actor+0x5A` matches either focused id (`DAT_801DBF70` /
+`DAT_801DBF74`), picks the clip bank by `actor+0x5C < 0x400`, and reads byte
+`+0x07` of the record the id's low 10 bits reach into the clip step
+`actor+0x6A`.
 
 ### The ladder in the port
 
@@ -1199,9 +1259,11 @@ from the visitor's disc in the browser (`crates/web-viewer/src/minigames_baka.rs
 ([In the port](#in-the-port)) - the same fighters, ghosts, walls, floor grid,
 cameo, impact parts and arena camera the two play hosts draw - and the HUD is
 the widget table at the `FUN_801d2afc` positions above. Traced vs fitted is
-stated on the page: the select screen's camera and line-up and the tally
-screen's layout are fitted by eye, and the bar-frame cells fall back to an
-outline because their cell table is runtime-built.
+stated on the page: the tally screen's layout is fitted by eye, and the
+bar-frame cells fall back to an outline because their cell table is
+runtime-built. The attract card and the player select are the engine
+cabinet's ([The front end](#the-front-end)), drawn by the duel surface with
+the cabinet's own widget cells.
 
 **The PLAYER SELECT pick is a roster record, not a skin.** The round setup
 stores the select cursor `DAT_801DBF70` as slot 0's roster id
@@ -1209,13 +1271,14 @@ stores the select cursor `DAT_801DBF70` as slot 0's roster id
 record's `+0x44` stand-off (`0x801D0040..0x801D005C`), so the picked party
 fighter brings its own stats, action table, strike clips and special camera.
 The minigames page seats it that way (`baka_start_as`). **Confirmed**
-(disassembly). The world hosts enter the cabinet at the duel, past the select
-screen, and seat roster `0`.
+(disassembly). The two play hosts seat it through the cabinet's own pose state;
+the minigames page hands the pick to its ladder run.
 
-The run opens on the retail **PLAYER SELECT** screen - the three party
-fighters' battle-form models idling in front of the arena under the sheet's
-own "PLAYER SELECT" banner (widget 12) with the cursor arrows (widgets 48/49)
-picking one. On a match win the winner plays a short **victory flourish**
+The run opens on the cabinet's attract card and then its **PLAYER SELECT**
+screen - the three party fighters idling in the arena under the "PLAYER
+SELECT" banner (widget 12), the cursor's fighter lit and the other two at
+half depth cue. Retail draws no cursor arrows there; an earlier page drew
+widgets 48/49 by guess. On a match win the winner plays a short **victory flourish**
 (swings from the same attack anim slots; the slot order is the `FUN_801d3f44`
 action-id fold reading), the loser holds its knockdown frame, and the retail
 **tally menu** comes up: "NEXT GAME" / "PAY OUT" (widgets 44/45) beside
@@ -1233,7 +1296,8 @@ records' gold column, so a full 14-rung clear pays the 460-coin total
 `ladder_run_cash_out_over_real_prizes`).
 
 The **duel facing** is the retail arrangement: the player stands on the LEFT
-of the arena and faces RIGHT toward the opponent, the opponent stands on the
+of the arena and faces RIGHT toward the opponent (see
+[Which side the player stands on](#which-side-the-player-stands-on)), the opponent stands on the
 RIGHT and faces LEFT toward the player, so the two look at each other. Because
 both mesh families (the battle-form party pack and the opponent packs) are
 authored with the **same** intrinsic facing, they take **opposite** world yaws
@@ -1287,20 +1351,36 @@ sound-test index 55, see [`../reference/music-tracks.md`](../reference/music-tra
 
 ### Site presentation
 
-The minigames page plays exactly these cues, decoded from the visitor's disc in
-the browser: SCUS → the descriptor table, PROT 869 → the VAB, each descriptor →
-a one-shot through the from-scratch SPU (`crates/web-viewer/src/sfx_view.rs`,
-`site/js/legaia-sfx.js`). The page fires cues by *event name*, so the ids stay
-next to their provenance in Rust; the two events retail leaves silent but the
-page sounds anyway - a round-start sting and a match-loss sting, reusing the
-confirm / cancel blips - are flagged `"source": "site"` in the event map, as
-against `"disc"` for the four traced ones. Playback is gated on the site-wide
-`LegaiaSound` mute toggle, and the `AudioContext` is built on the first cue so
-nothing can sound before a user gesture.
+The minigames page plays exactly these cues and nothing else, from one source:
+the engine's cue drain. `baka_tick` drains `BakaFight::take_cues` (the hit from
+the damage kernel, the cabinet's menu blips and the tally ticks) into the
+page's live SPU through the catalog path the play hosts take
+(`minigame_sfx_cue`, opened inside a user gesture and gated on the site-wide
+`LegaiaSound` toggle). The page used to fire the hit a second time by event
+name through `site/js/legaia-sfx.js`, so with the SPU open every hit sounded
+twice, and it added a round-start and a match-loss sting retail never plays;
+both are gone. Its own HTML "NEXT GAME / PAY OUT" buttons key the cabinet's
+two menu cue ids through the same catalog path.
 
 The rules engine emits the hit cue itself: `BakaFight::take_cues` drains
 `BAKA_CUE_HIT`, queued from inside `apply_damage` - the same place the retail
 ring write sits (`engine-core::baka_fighter`).
+
+### Which side the player stands on
+
+The round setup stands the player actor at `X = -(stand_off + 200)` and the
+opponent at `+(stand_off + 200)` (`sh v0,0x14(a3)` at `0x801D006C` for the
+player, `sh v0,0x14(t0)` at `0x801D00F4` for the opponent). The duel camera
+settles at yaw `0`, pitch `0`, roll `0` with the focus at zero, so the camera
+rotation is the identity and eye-space X is world X plus the eye trio's
+`0xC8`; the base matrix is `0x6000` on the diagonal (no reflection, read off
+the parked state) and the GTE projects `SX = OFX + H * X / Z` with no mirror.
+So in retail the player is on the **left** of the screen. The player select
+agrees: the cursor's Right step (`0x2000`, `+1`) goes Vahn -> Noa, and Noa's
+record sits at `X = +350`, on the right of the screen under the same
+projection. The port's duel camera (`DuelCamera::vp_raw`) is that same
+projection, so it puts the player on the left as well. **Confirmed**
+(disassembly + the parked state's base matrix and focus).
 
 ## RAM state
 

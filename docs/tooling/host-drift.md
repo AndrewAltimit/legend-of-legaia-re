@@ -1451,7 +1451,7 @@ do the same two things with it: sound the announcer line it fired - the native
 window through `AudioBgmDirector::play_xa_clip`, the play page through its
 CD-XA clip path (`tick_baka_ui`) - and print its widgets through the shared
 label kernel (`baka_fighter_chrome::chrome_labels`). The minigames page plays
-no announcer line (see the Baka cabinet section below), but draws the widgets
+the same lines through its own XA output and draws the widgets
 from the duel's own art: `baka_chrome_json` carries each glyph
 draw's texel column, stamped by the same `baka_fighter_chrome::glyph_u` the
 native window resolves its draws with, and the page samples widget 5's strip
@@ -2599,11 +2599,27 @@ chrome's announcer line through their CD-XA clip path. The play page follows
 a newly seated rung by bumping its scene generation, so the opponent's mesh
 and duel VRAM are rebuilt.
 
+The **front end** reaches all three hosts through one kernel. The scene
+host's mode-24 arm boots every fight at the cabinet's attract card
+(`BakaFight::with_attract`), so the native window and the play page open on
+the title card and the player select rather than on the duel as Vahn; the
+cabinet emits its own widget cells (`BakaFight::cabinet_cells` - PRESS START,
+PLAYER SELECT, the choice sheet) which both play hosts label through the same
+`choice_sheet_labels` call, and the duel surface poses the select camera and
+lineup (`baka_duel_scene::SELECT_CAMERA` / `SELECT_LINEUP`). The standalone
+page opens the same cabinet (`baka_start_cabinet`, `baka_cabinet_pad`,
+`baka_cabinet_json`), draws it through the same surface with the sheet art,
+and hands the seated pick to its own ladder run once the cabinet leaves the
+front end. Two shapes the per-host versions had wrong: the page fitted its
+select camera and line-up by eye and drew cursor arrows retail does not
+draw; and the page fired the duel's hit a second time by event name in JS
+while `baka_tick` already drained the same cue into its SPU.
+
 The standalone minigames page keeps its own run model,
 `baka_fighter::LadderRun` behind the `baka_run_*` surface: fixed serve order
 from `baka_ladder()`, a page-drawn choice sheet at fitted positions, no
 score-gated secret rungs. It draws the engine chrome with the sheet's own
-widget art (`baka_chrome_json`), and plays no announcer line. That page has
+widget art (`baka_chrome_json`). That page has
 no `World` to tick the cabinet through (next section), which is the
 blocking capability for giving it the cabinet's ladder too.
 

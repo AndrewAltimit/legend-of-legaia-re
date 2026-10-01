@@ -1397,7 +1397,11 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   let bakaLadder = [];
   /* Run state machine. `bakaMode`:
    *   'idle'   - nothing running;
-   *   'select' - the PLAYER SELECT screen (3D view; pick Vahn/Noa/Gala);
+   *   'cabinet'- the engine cabinet's front end: the attract card, then the
+   *              PLAYER SELECT screen (engine-core::baka_cabinet, drawn by
+   *              the duel surface) - the screens every host opens on;
+   *   'select' - the page's own PLAYER SELECT, for a bundle without the
+   *              cabinet exports;
    *   'fight'  - a match in progress (ladder rung or off-ladder spar);
    *   'choice' - a ladder match was won: the retail NEXT GAME / PAY OUT
    *              tally menu is up (the pot rides or banks here).
@@ -1407,11 +1411,8 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   let bakaRunLive = false;   /* a WASM LadderRun is active */
   let bakaRunState = null;   /* last parsed baka_run_state_json */
   let bakaSel = 0;           /* PLAYER SELECT highlight (0..2) */
-  /* Cue edge-detection: the last exchange we sounded, the last round we
-   * sounded, and the match-over one-shot latch. */
-  let bakaSfxKey = '';
-  let bakaSfxRound = -1;
-  let bakaSfxOver = false;
+  let bakaCabEdge = 0;       /* packed pad edge for the cabinet's next tick */
+  let bakaCab = null;        /* last parsed baka_cabinet_json */
   let bakaChoiceSel = 0;     /* tally menu highlight: 0 NEXT GAME, 1 PAY OUT */
   let bakaFlourish = 0;      /* frames of victory flourish before the menu */
   let bakaPchar = 0;         /* the fighter picked for this run */
@@ -1421,43 +1422,27 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   let bakaView = null;
   let bakaMeta = null;
 
-  /* ---- sound (js/legaia-sfx.js) ----
+  /* ---- sound ----
    *
-   * Every cue is decoded from the visitor's disc: the SFX descriptor table
-   * out of SCUS, the class-2 sound bank out of PROT 869 (the same bank the
-   * duel overlay's init loads), rendered through the from-scratch SPU. The
-   * duel's four cue ids are the ones the retail overlay writes into the
-   * cue ring `_DAT_8007B6D8` - hit (`FUN_801D3B18`), the menu blips and the
-   * tally tick (`FUN_801D239C`). The page names events; the ids + their
-   * provenance live in Rust (crates/web-viewer/src/sfx_view.rs).
+   * One source: the engine's cue drain. The rules kernel queues the hit cue
+   * from inside its damage kernel (FUN_801D3B18) and the cabinet queues its
+   * menu blips and tally ticks, exactly where retail writes the cue ring
+   * `_DAT_8007B6D8`; `baka_tick` drains them into the page's live SPU
+   * (`minigame_sfx_cue`, the same catalog path the play hosts take). The
+   * page used to fire the same hit again by event name through
+   * js/legaia-sfx.js, plus two stings retail never plays (a round start and
+   * a match loss) - with the SPU open, every hit sounded twice.
    *
-   * Rendering the cues needs the disc bytes again, so it runs off the
-   * RomCache copy - lazily, and never blocking the game. */
-  let bakaSfxPromise = null;
+   * What still fires from here is only the page's own NEXT GAME / PAY OUT
+   * menu, which is HTML rather than the cabinet's: its blips key the same
+   * catalog ids the cabinet uses (baka_fighter::BAKA_CUE_CONFIRM / _CURSOR). */
+  const BAKA_PAGE_CUES = { confirm: 0x20, cursor: 0x21 };
   function bakaSfxLoad() {
-    if (bakaSfxPromise) return bakaSfxPromise;
-    if (!window.LegaiaSfx || !window.RomCache) return Promise.resolve(null);
-    if (LegaiaSfx.ready()) return (bakaSfxPromise = Promise.resolve(LegaiaSfx.info()));
-    const p = (async () => {
-      const rec = await RomCache.get();
-      if (!rec || !rec.blob) { bakaSfxPromise = null; return null; }  /* retry later */
-      const mod = await import('./wasm/legaia_web_viewer.js');
-      await mod.default();                    /* idempotent - already booted */
-      const bytes = new Uint8Array(await rec.blob.arrayBuffer());
-      return LegaiaSfx.init(mod, bytes);
-    })().catch((err) => {
-      console.warn('baka: cue decode failed -', err);
-      return null;
-    });
-    bakaSfxPromise = p;
-    return p;
+    return Promise.resolve(!!(window.MgSpu && MgSpu.ready(api)));
   }
-
-  /* Fire one duel cue by event name. Silent (and harmless) until the cues
-   * have rendered, when the disc has no cache entry, or when sound is off. */
   function bakaSfx(event) {
-    if (window.LegaiaSfx && LegaiaSfx.ready()) LegaiaSfx.play('baka', event);
-    else bakaSfxLoad();
+    const id = BAKA_PAGE_CUES[event];
+    if (id != null && window.MgSpu) MgSpu.cue(api, id);
   }
 
   function bakaName(id) {
@@ -1533,9 +1518,6 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     }
     bakaLive = true;
     bakaMode = 'fight';
-    bakaSfxKey = '';
-    bakaSfxRound = -1;
-    bakaSfxOver = false;
     /* The duel overlay starts its own BGM at init (FUN_801CF00C loads the
      * boss-overture music_01 entry) - so the track runs from the first fight
      * through the tally menu, and stops when the run ends. */
@@ -1598,8 +1580,73 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     bakaSfx('cursor');
   }
 
+  /* Open the engine cabinet at its boot state: the attract card, then the
+   * PLAYER SELECT screen, then the first rung - drawn by the engine's duel
+   * surface. False when this bundle predates the cabinet exports or the
+   * surface did not build; the caller falls back to the page's own select. */
+  function bakaOpenCabinet() {
+    if (typeof api.baka_start_cabinet !== 'function' || !window.MinigameBakaView) return false;
+    const seed = (Math.random() * 0xFFFFFFFF) >>> 0;
+    if (!api.baka_start_cabinet(seed)) return false;
+    let ok = false;
+    try {
+      if (!bakaView) bakaView = new MinigameBakaView($('baka-gl'), $('baka-hud'));
+      ok = bakaView.loadCabinet(api);
+    } catch (err) {
+      console.warn('baka cabinet view failed:', err);
+      ok = false;
+    }
+    if (!ok) return false;
+    bakaMode = 'cabinet';
+    bakaLive = false;
+    bakaCab = null;
+    bakaCabEdge = 0;
+    $('baka-duel').hidden = false;
+    $('baka-choice-row').hidden = true;
+    $('baka-start').textContent = 'Press start';
+    /* The cabinet's cold entry arms the minigame track (state 0x00). */
+    MgBgm.start('baka');
+    verdict($('baka-verdict'),
+      'Start or Cross on the title card; then Left / Right picks a fighter and Cross confirms.', '');
+    return true;
+  }
+
+  /* The cabinet reads the packed pad word (Legaia's layout). */
+  const BAKA_PACKED = { Left: 0x8000, Right: 0x2000, Cross: 0x40, Start: 0x800 };
+
+  /* One front-end frame: hand the cabinet its edge, tick, draw, and hand
+   * the pick over to the ladder once the cabinet leaves the select. */
+  function bakaCabinetFrame() {
+    if (typeof api.baka_cabinet_pad === 'function') api.baka_cabinet_pad(bakaCabEdge);
+    bakaCabEdge = 0;
+    api.baka_tick(1);
+    const cab = JSON.parse(api.baka_cabinet_json());
+    bakaCab = cab;
+    let chrome = [];
+    try { chrome = JSON.parse(api.baka_chrome_json()); } catch (e) { chrome = []; }
+    if (bakaView && bakaView.ok) bakaView.frameCabinet(cab, chrome);
+    if (cab.lineup) {
+      bakaSel = cab.lineup[0];
+      $('baka-char').value = String(bakaSel);
+      $('baka-start').textContent = 'Confirm fighter';
+    }
+    if (cab.live && !cab.front_end) {
+      /* The select seated the pick as the player's roster record; the
+       * ladder (LadderRun, the "Start at" rung) takes it from here. */
+      bakaPchar = cab.player;
+      $('baka-char').value = String(cab.player);
+      bakaBeginRun();
+    }
+  }
+
   function bakaStart() {
+    if (window.MgSpu) MgSpu.ready(api);   /* inside the gesture */
+    if (bakaMode === 'cabinet') {         /* the button is the cabinet's Cross */
+      bakaCabEdge |= BAKA_PACKED.Cross;
+      return;
+    }
     bakaPchar = parseInt($('baka-char').value, 10) || 0;
+    if (bakaMode !== 'select' && bakaOpenCabinet()) return;
     if (bakaMode === 'select') {          /* confirm the selection */
       bakaSfx('confirm');
       bakaPchar = bakaSel;
@@ -1719,13 +1766,6 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     if (bakaMode !== 'choice') return;
     bakaSfx('confirm');
     const banked = api.baka_run_pay_out();
-    /* The retail tally drains the pot into your gold one counter step at a
-     * time, ticking cue 0x21 per step (FUN_801D239C). The page has no
-     * animated counter, so it plays the tick run the drain would make. */
-    const ticks = Math.max(2, Math.min(8, Math.round(banked / 40)));
-    if (window.LegaiaSfx) {
-      for (let i = 0; i < ticks; i++) LegaiaSfx.playIn('baka', 'tally', 120 + i * 110);
-    }
     bakaPersistBank(banked);
     bakaRunState = JSON.parse(api.baka_run_state_json());
     if (bakaView && bakaView.ok) bakaView.setChoice(null);
@@ -1753,6 +1793,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   const THROW_NAME = { 1: 'Throw 1', 2: 'Throw 2', 3: 'Throw 3', 4: 'Special' };
 
   function bakaFrame() {
+    if (bakaMode === 'cabinet') { bakaCabinetFrame(); return; }
     /* The PLAYER SELECT screen owns the whole frame. */
     if (bakaMode === 'select') {
       if (bakaView && bakaView.ok) bakaView.frameSelect(bakaSel, bakaNames);
@@ -1800,29 +1841,11 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     $('baka-combo').textContent = st.combo[0];
     $('baka-gold').textContent = st.gold;
 
-    /* Sound. Retail queues cue 9 from inside the damage kernel
-     * (FUN_801D3B18), so it fires once per damage application: once on a
-     * decided exchange, twice on a same-type draw (both fighters are hit).
-     * The round banners and the KO are silent in retail - the only other
-     * cues the overlay writes are the menu blips - so the round-start /
-     * match-loss stings below are the page's own pick, flagged as such in
-     * the Rust event table. */
-    if (st.last && bakaSfxKey !== `${JSON.stringify(st.last)}:${st.round}`) {
-      bakaSfxKey = `${JSON.stringify(st.last)}:${st.round}`;
-      bakaSfx('hit');
-      if (st.last.draw) bakaSfx('hit');
-    }
-    if (st.round !== bakaSfxRound) {
-      if (bakaSfxRound >= 0) bakaSfx('round_start');
-      bakaSfxRound = st.round;
-    }
-    if (st.phase === 'match_over' && !bakaSfxOver) {
-      bakaSfxOver = true;
-      if (st.winner !== 0) {
-        bakaSfx('match_lose');
-        /* A loss ends the run - the mode (and its BGM) is over. */
-        if (MgBgm.playing() === 'baka') MgBgm.stop();
-      }
+    /* Sound comes from the engine's cue drain inside baka_tick (the hit is
+     * queued from the damage kernel, FUN_801D3B18, once per damage
+     * application). A loss ends the run - the mode (and its BGM) is over. */
+    if (st.phase === 'match_over' && st.winner !== 0 && MgBgm.playing() === 'baka') {
+      MgBgm.stop();
     }
 
     if (bakaLive && st.last) {
@@ -1842,10 +1865,22 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   /* PLAYER SELECT: a click on a fighter's third picks it; clicking the
    * picked one confirms. (Keyboard: arrows + Enter.) */
   $('baka-gl').addEventListener('click', (e) => {
-    if (bakaMode !== 'select') return;
     const r = e.currentTarget.getBoundingClientRect();
     const xf = (e.clientX - r.left) / r.width;
     const col = xf < 0.36 ? 0 : (xf > 0.64 ? 2 : 1);
+    if (bakaMode === 'cabinet') {
+      if (window.MgSpu) MgSpu.ready(api);
+      /* The lineup stands Gala left, Vahn centre, Noa right
+       * (baka_duel_scene::SELECT_LINEUP); Right steps the cursor one place
+       * right on screen (wrapping), Left one place left. */
+      const lineup = bakaCab && bakaCab.lineup;
+      if (!lineup) { bakaCabEdge |= BAKA_PACKED.Cross; return; }
+      const SCREEN_COL = [1, 2, 0];
+      const d = (col - SCREEN_COL[lineup[0]] + 3) % 3;
+      bakaCabEdge |= d === 0 ? BAKA_PACKED.Cross : (d === 1 ? BAKA_PACKED.Right : BAKA_PACKED.Left);
+      return;
+    }
+    if (bakaMode !== 'select') return;
     if (col === bakaSel) bakaStart();       /* confirm */
     else bakaSelMove(col);
   });
@@ -2984,7 +3019,14 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       if (m) { e.preventDefault(); dancePress(m); }
       else if (n >= 1 && n <= 3) { e.preventDefault(); dancePress(n); }
     } else if (active === 'baka') {
-      if (bakaMode === 'select') {
+      if (bakaMode === 'cabinet') {
+        const m = BAKA_PACKED[b];
+        if (m) {
+          e.preventDefault();
+          if (window.MgSpu) MgSpu.ready(api);
+          bakaCabEdge |= m;
+        }
+      } else if (bakaMode === 'select') {
         if (b === 'Left' || b === 'Right') {
           e.preventDefault();
           bakaSelMove(bakaSel + (b === 'Left' ? 2 : 1));
@@ -3699,11 +3741,10 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
                          mode: () => bakaMode,
                          fightOn: bakaFightOn, payOut: bakaPayOut,
                          view: () => bakaView,
+                         cabinet: () => bakaCab,
                          sfxLoad: bakaSfxLoad,
                          sfx: (e) => bakaSfx(e),
-                         sfxReady: () => !!(window.LegaiaSfx && LegaiaSfx.ready()),
-                         sfxInfo: () => window.LegaiaSfx && LegaiaSfx.info(),
-                         sfxLog: () => (window.LegaiaSfx ? LegaiaSfx.log() : []) };
+                         sfxReady: () => !!(window.MgSpu && api && api.minigame_audio_ready()) };
   window.__mgSlot    = { reset: slotReset,
                          press: slotPress,
                          state: () => api && JSON.parse(api.slot_state_json()) };
