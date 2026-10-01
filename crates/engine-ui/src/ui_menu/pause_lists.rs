@@ -238,6 +238,11 @@ fn list_page_header_draws(
 ) -> Vec<TextDraw> {
     let (lx, ly) = pen;
     let mut out = Vec::new();
+    // Retail draws no header for an empty list (`beq a0,zero` on the row
+    // count at `0x80032e18` of `FUN_80032A44`); a zero page total is that.
+    if pages == 0 {
+        return out;
+    }
     // Header ink tops at content y - 1 on the captures; pen y - 3. The
     // "PAGE" label + fraction digits are small-cap sprite glyphs in
     // retail - dialog-font stand-ins hold their measured columns

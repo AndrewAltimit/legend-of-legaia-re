@@ -1319,6 +1319,11 @@ fraction (digit sprites ICO `0x7A..0x83`, slash `0x79`) from
 `WX+W-0x20`, ending flush at the content right edge. Blink-gated page
 triangles (ICO `0x27`/`0x28`) mark further pages - the right one at the
 capture-pinned `(WX+0x84, WY+0x53)` (`PAGE 1 / 6` in the capture).
+The total is `ceil(rows / 12)` over the **occupied** rows - the builder
+skips an empty slot (`beq s0,zero` at `0x8003089C`) and the kernel steps
+pages up to the row count - so the capture's six pages are that save's
+item count, not the bag's capacity: one held item reads `PAGE 1 / 1`
+with no right triangle, and an empty list draws no header.
 
 **Info window (id 17, `FUN_801DCB60`)** - draws only while an item id is
 staged in `DAT_801E46B0`: the 2-digit bag count (CLUT 6) at
