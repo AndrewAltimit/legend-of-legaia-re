@@ -874,9 +874,38 @@ impl LegaiaMinigames {
         if player >= legaia_engine_core::baka_cabinet::SELECT_OPTIONS as usize {
             return false;
         }
-        let Some((opponents, actions)) = self.baka_tables.as_ref() else {
-            return false;
-        };
+        match self.baka_fight_for(player, opponent, seed) {
+            Some(f) => {
+                self.baka = Some(f);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Start the cabinet at its **boot** state: the attract card, then the
+    /// player select, then the first rung - the front end the native window
+    /// and the play page enter the cabinet on
+    /// ([`BakaFight::with_attract`]). The pad reaches it through
+    /// [`Self::baka_cabinet_pad`]; [`Self::baka_cabinet_json`] reports where
+    /// it is and what it draws.
+    pub fn baka_start_cabinet(&mut self, seed: u32) -> bool {
+        let first = legaia_engine_core::baka_fighter::first_rung_roster();
+        match self.baka_fight_for(0, first, seed) {
+            Some(f) => {
+                self.baka = Some(f.with_attract());
+                true
+            }
+            None => false,
+        }
+    }
+}
+
+impl LegaiaMinigames {
+    /// The fight every start path seats: the parsed tables plus every
+    /// roster's clip headers, the special cameras and the impact templates.
+    fn baka_fight_for(&self, player: usize, opponent: usize, seed: u32) -> Option<BakaFight> {
+        let (opponents, actions) = self.baka_tables.as_ref()?;
         match BakaFight::from_tables(opponents, actions, player, opponent, seed) {
             Some(f) => {
                 // Every roster fighter's clip headers, off the same banks this
@@ -901,16 +930,18 @@ impl LegaiaMinigames {
                 let f = f
                     .with_roster_clip_headers(headers)
                     .with_special_cameras(cameras);
-                self.baka = Some(match img.as_deref() {
+                Some(match img.as_deref() {
                     Some(i) => f.with_impact_overlay(i),
                     None => f,
-                });
-                true
+                })
             }
-            None => false,
+            None => None,
         }
     }
+}
 
+#[wasm_bindgen]
+impl LegaiaMinigames {
     /// Advance the duel one frame's worth of `frame_step` (the retail SM's
     /// per-frame delta; `1` is a normal frame).
     ///

@@ -24,10 +24,9 @@
 //! ## What this ladder does not claim
 //!
 //! Nothing here reaches the duel through the **door**. `minigame_replay` owns
-//! that, and its entry (`scene/host/minigame_warp.rs`) neither hands the
-//! score tables over nor enters the cabinet at boot - so on that path rungs 1
-//! and 2 are still unreached in production. Both are one call each and both
-//! are named in this module's report rather than papered over here.
+//! that; its entry (`scene/host/minigame_warp.rs`) enters the cabinet at boot
+//! (`with_attract`), so rung 1's card runs in production, but it does not
+//! hand the score tables over, so rung 2 is still unreached there.
 
 use legaia_engine_core::baka_fighter::{
     BakaFight, BakaScoreTables, FighterConfig, HP_START, MatchPhase, TALLY_COUNTERS,
@@ -150,7 +149,7 @@ fn rung1_a_cabinet_entered_at_boot_animates_the_intro_title_card() {
 }
 
 /// The card is the **cabinet's**, so a fight entered mid-duel - which is what
-/// every shipped host does today - must not run it. Asserting the negative is
+/// the standalone minigames page does for a ladder rung - must not run it. Asserting the negative is
 /// what keeps rung 1 from being a tautology about a flag this file sets.
 #[test]
 fn a_duel_entered_mid_cabinet_runs_no_title_card() {

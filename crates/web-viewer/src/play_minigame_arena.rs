@@ -421,10 +421,16 @@ impl LegaiaRuntime {
         // showed the same numbers in different places and at different
         // strides. Layout from `baka_fighter_chrome::hud_digit_placements`,
         // quads from `ui_baka_strips`, both shared.
-        let placed = legaia_engine_core::baka_fighter_chrome::hud_digit_placements(
-            f.round() as i32,
-            f.tally().map(|t| (t.total(), t.gold_remaining())),
-        );
+        // The attract card and the player select draw no duel HUD
+        // (`baka_cabinet::draws_hud` is false across the front end).
+        let placed = if f.cabinet().front_end() {
+            Vec::new()
+        } else {
+            legaia_engine_core::baka_fighter_chrome::hud_digit_placements(
+                f.round() as i32,
+                f.tally().map(|t| (t.total(), t.gold_remaining())),
+            )
+        };
         out.extend(
             legaia_engine_ui::ui_baka_strips::baka_digit_strip_draws_for(
                 font,
@@ -443,14 +449,16 @@ impl LegaiaRuntime {
                 WHITE,
             ),
         );
-        if let Some(cells) = f.cabinet().choice_sheet() {
-            out.extend(
-                legaia_engine_ui::ui_baka_strips::baka_widget_label_draws_for(
-                    font,
-                    &bcab::choice_sheet_labels(&cells),
-                    WHITE,
-                ),
-            );
+        // The cabinet's own widgets: the attract prompt, the "PLAYER
+        // SELECT" banner and the "NEXT GAME / PAY OUT" sheet.
+        out.extend(
+            legaia_engine_ui::ui_baka_strips::baka_widget_label_draws_for(
+                font,
+                &bcab::choice_sheet_labels(&f.cabinet_cells()),
+                WHITE,
+            ),
+        );
+        if f.cabinet().choice_sheet().is_some() {
             let pot = self
                 .scene_host
                 .as_ref()

@@ -275,6 +275,15 @@ fn duel_door_warp_draws_baka_fighter_and_start_leaves() {
         serde_json::from_str(&rt.play_mg_baka_state_json()).expect("state json");
     assert_eq!(st["live"].as_bool(), Some(true));
     assert_eq!(st["phase"].as_str(), Some("fighting"));
+    // The cabinet boots on its attract card, whose own "press start" edge
+    // (`0x844`) takes Start: the first press begins, and from the fade-out
+    // on Start quits as in every other game.
+    press(&mut rt, START);
+    assert_eq!(
+        rt.scene_mode(),
+        "BakaFighter",
+        "Start begins on the attract card"
+    );
     assert_start_exits(&mut rt, "baka");
 }
 

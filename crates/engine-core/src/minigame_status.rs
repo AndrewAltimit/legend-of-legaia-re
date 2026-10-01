@@ -92,6 +92,21 @@ pub fn slot_status_rows(m: &SlotMachine) -> Vec<StatusRow> {
 /// The Baka Fighter duel's two rows: both fighters' HP / round wins, then the
 /// last exchange or the match outcome.
 pub fn baka_status_rows(f: &BakaFight) -> Vec<StatusRow> {
+    if f.cabinet().front_end() {
+        // The cabinet's attract card and player select: no duel yet, so the
+        // rows name the screen and its keys instead of the fight's numbers.
+        let line = match f.select_lineup() {
+            Some((cursor, _)) => format!(
+                "PLAYER SELECT  {}   Left/Right pick, Cross confirms",
+                ["Vahn", "Noa", "Gala"].get(cursor).copied().unwrap_or("?")
+            ),
+            None if f.cabinet().state() == crate::baka_cabinet::ST_ATTRACT => {
+                "BAKA FIGHTER   Start or Cross to begin".to_string()
+            }
+            None => "BAKA FIGHTER".to_string(),
+        };
+        return vec![StatusRow::new(line, PEN_PROMPT, false)];
+    }
     let l1 = format!(
         "BAKA  you {}hp (wins {})  vs  foe {}hp (wins {})  round {}",
         f.hp(0),

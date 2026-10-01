@@ -203,9 +203,14 @@ impl SceneHost {
     /// PROT 0976's roster + action tables -> a live
     /// [`crate::baka_fighter::BakaFight`].
     ///
-    /// Roster `0` is the player-side default; the opponent is the cabinet's
-    /// first rung ([`crate::baka_fighter::first_rung_roster`]), and the
-    /// cabinet climbs the ladder from there. The RNG seed is frame-derived,
+    /// The cabinet boots at its attract card ([`BakaFight::with_attract`]),
+    /// exactly as retail's sub-id-4 init leaves it at state `0x00`: the
+    /// player select seats the picked party fighter, the opponent is the
+    /// cabinet's first rung ([`crate::baka_fighter::first_rung_roster`]), and
+    /// the cabinet climbs the ladder from there. Roster `0` only holds the
+    /// player seat until the pick replaces it.
+    ///
+    /// [`BakaFight::with_attract`]: crate::baka_fighter::BakaFight::with_attract The RNG seed is frame-derived,
     /// so a replayed pad stream stays deterministic.
     fn enter_baka_from_overlay(&mut self, loaded: &[u8]) -> bool {
         let Some(opponents) = legaia_asset::baka_opponents::parse(loaded) else {
@@ -228,7 +233,8 @@ impl SceneHost {
                 index.entry_bytes(i as u32).ok().map(|b| b.to_vec())
             }))
             .with_special_cameras(crate::baka_duel_scene::parse_special_cameras(loaded))
-            .with_impact_overlay(loaded);
+            .with_impact_overlay(loaded)
+            .with_attract();
         self.world.enter_baka_fighter(fight);
         true
     }

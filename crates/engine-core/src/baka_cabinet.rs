@@ -231,6 +231,35 @@ pub fn draws_hud(state: u32) -> bool {
     )
 }
 
+/// The attract + player-select band: every state before the first opponent
+/// install (`0x00`..`0x0E`).
+pub fn front_end(state: u32) -> bool {
+    state < ST_OPPONENT_INSTALL
+}
+
+/// Whether the three player-select fighters are on stage. They spawn in
+/// `0x0A` from the template at `0x801D760C`, whose tick `FUN_801D3390`
+/// raises the retire bit once the match phase `DAT_801DBF78` is non-zero -
+/// which the confirm state `0x0C` sets.
+pub fn lineup_live(state: u32) -> bool {
+    matches!(state, ST_SELECT_SETUP | ST_SELECT)
+}
+
+/// The "PLAYER SELECT" banner at the pen state `0x0A` parks it on.
+///
+/// The banner is an effect actor (`FUN_801D6E04(0xC, 0x801DBA6C)`), so its
+/// level is the actor's own; the port draws it at the descriptor's colour
+/// (`0x80`) for as long as the cursor screen runs - an inference, since the
+/// effect script's fade is not ported.
+fn player_select_banner() -> SheetCell {
+    SheetCell {
+        widget: WIDGET_PLAYER_SELECT,
+        x: PLAYER_SELECT_PEN.0,
+        y: PLAYER_SELECT_PEN.1,
+        brightness: 0x80,
+    }
+}
+
 // ---------------------------------------------------------------- constants
 
 /// Per-fighter starting HP the round setup writes (`0xC80`).
@@ -735,6 +764,19 @@ pub struct SheetCell {
     pub brightness: i32,
 }
 
+/// "PRESS START" cell (widget `0x00`) - the attract card's blinking prompt.
+pub const WIDGET_PRESS_START: u8 = 0x00;
+/// "PLAYER SELECT" banner (widget `0x0C`).
+pub const WIDGET_PLAYER_SELECT: u8 = 0x0C;
+/// Where the attract arms draw [`WIDGET_PRESS_START`]
+/// (`FUN_801D5ED0(0xA0, 0xCC, 0, level, 0x1000)` at `0x801CF778` /
+/// `0x801CF830`).
+pub const PRESS_START_PEN: (i32, i32) = (0xA0, 0xCC);
+/// Where state `0x0A` parks the [`WIDGET_PLAYER_SELECT`] banner actor: the
+/// spawn wrapper `FUN_801D6E04` seats it at the screen centre and the
+/// cabinet rewrites `+0x14` / `+0x16` to `(0xA0, 0x20)` (`0x801CFA4C..0x801CFA60`).
+pub const PLAYER_SELECT_PEN: (i32, i32) = (0xA0, 0x20);
+
 /// "NEXT GAME" cell (widget `0x2C`).
 pub const WIDGET_NEXT_GAME: u8 = 0x2C;
 /// "PAY OUT" cell (widget `0x2D`).
@@ -805,6 +847,8 @@ pub fn sheet_label(widget: u8) -> &'static str {
         WIDGET_PAY_OUT => "PAY OUT",
         WIDGET_GET_COIN => "GET COIN",
         WIDGET_ARROW_LIT | WIDGET_ARROW_DIM => "<>",
+        WIDGET_PRESS_START => "PRESS START",
+        WIDGET_PLAYER_SELECT => "PLAYER SELECT",
         _ => "?",
     }
 }
@@ -863,6 +907,16 @@ pub struct CabinetFrame {
     pub forfeit: Option<u32>,
     /// The developer dump the editor state produced.
     pub action_dump: Option<String>,
+    /// The front end's own widget draws this frame: the attract card's
+    /// "PRESS START" prompt and the "PLAYER SELECT" banner. Same shape as the
+    /// tally sheet's cells, so a host draws both through one path.
+    pub widgets: Vec<SheetCell>,
+    /// The clock the attract arms called the title card `FUN_801D59D4` with
+    /// this frame (`DAT_801DBE94` before its increment), or `None` when no
+    /// arm called it.
+    pub title_card: Option<i32>,
+    /// Roster id the player-select pose state seated (`DAT_801DBF70`).
+    pub install_player: Option<i32>,
 }
 
 /// Per-frame inputs the cabinet reads out of shared globals.
@@ -1012,6 +1066,13 @@ impl BakaCabinet {
         self
     }
 
+    /// Back to the boot state ([`Self::new`]), keeping the installed action
+    /// tables.
+    pub fn reboot(&mut self) {
+        let tables = std::mem::take(&mut self.action_tables);
+        *self = Self::new().with_action_tables(tables);
+    }
+
     /// Drop the cabinet straight into the duel, the way a host that owns the
     /// fight itself enters: state [`ST_DUEL`], match phase active.
     pub fn enter_duel(&mut self) {
@@ -1038,6 +1099,19 @@ impl BakaCabinet {
     pub fn in_attract(&self) -> bool {
         matches!(self.state, ST_BOOT | ST_ATTRACT | ST_ATTRACT_OUT)
     }
+    /// The cabinet's **front end**: the attract card and the player select,
+    /// every state before the first opponent install. No fight runs here -
+    /// retail spawns the round SM only at `0x0E`.
+    pub fn front_end(&self) -> bool {
+        front_end(self.state)
+    }
+
+    /// `DAT_801DBF70` - the player-select cursor (the roster id the pick
+    /// seats).
+    pub fn select_cursor(&self) -> i32 {
+        self.select_cursor
+    }
+
     /// `DAT_801DBF78` - `0` teardown, `1` paused, `2` active.
     pub fn match_phase(&self) -> i32 {
         self.match_phase
@@ -1136,8 +1210,22 @@ impl BakaCabinet {
                 self.state = ST_ATTRACT;
             }
             ST_ATTRACT => {
-                self.intro_timer += step;
+                // `0x801CF6E4..0x801CF7AC`: the blink phase `DAT_801DC128`
+                // advances first and its bit 4 picks the prompt's level; the
+                // title card is called with the clock, which advances after.
                 self.scene_timer += step;
+                f.widgets.push(SheetCell {
+                    widget: WIDGET_PRESS_START,
+                    x: PRESS_START_PEN.0,
+                    y: PRESS_START_PEN.1,
+                    brightness: if self.scene_timer & 0x10 != 0 {
+                        0x40
+                    } else {
+                        0x80
+                    },
+                });
+                f.title_card = Some(self.intro_timer);
+                self.intro_timer += step;
                 if edge & CABINET_START != 0 {
                     f.cues.push(crate::baka_fighter::BAKA_CUE_CONFIRM);
                     self.scene_timer = 0;
@@ -1145,17 +1233,34 @@ impl BakaCabinet {
                 }
             }
             ST_ATTRACT_OUT => {
-                self.intro_timer += step;
+                // `0x801CF808..0x801CF864`: for the first `0x1E` steps the
+                // prompt flashes at `0x100` over the card; the card's clock
+                // does not advance here, only the blink phase does.
+                if self.scene_timer < 0x1E {
+                    f.widgets.push(SheetCell {
+                        widget: WIDGET_PRESS_START,
+                        x: PRESS_START_PEN.0,
+                        y: PRESS_START_PEN.1,
+                        brightness: 0x100,
+                    });
+                    f.title_card = Some(self.intro_timer);
+                }
                 self.scene_timer += step;
                 if self.scene_timer >= 0x3D {
                     self.state = ST_SELECT_SETUP;
                 }
             }
             ST_SELECT_SETUP => {
+                // `0x801CF88C..0x801CFA60`: the three party fighters spawn
+                // (their lineup is `baka_duel_scene::SELECT_LINEUP`), the
+                // stage counter re-seeds to `2`, and the banner actor spawns.
                 self.high_score = 0;
                 self.match_phase = 0;
                 self.round = 0;
+                self.stage = 2;
+                self.stage_display = 0;
                 self.state = ST_SELECT;
+                f.widgets.push(player_select_banner());
             }
             ST_SELECT => {
                 let mask = edge | input.pad_edge_alt;
@@ -1170,6 +1275,7 @@ impl BakaCabinet {
                 if moved {
                     f.cues.push(crate::baka_fighter::BAKA_CUE_CURSOR);
                 }
+                f.widgets.push(player_select_banner());
                 if edge & CABINET_CONFIRM != 0 {
                     f.cues.push(crate::baka_fighter::BAKA_CUE_CONFIRM);
                     self.state = ST_SELECT_DONE;
@@ -1192,6 +1298,10 @@ impl BakaCabinet {
                 self.state_timer += step;
             }
             ST_SELECT_POSE => {
+                // `0x801CFBBC..0x801CFCB4`: the chosen fighter's actor spawns
+                // with the cursor as its roster id (`+0x5A`) and stands at
+                // `-(record[cursor] +0x44 + 200)`; the round SM spawns too.
+                f.install_player = Some(self.select_cursor);
                 self.state = ST_OPPONENT_INSTALL;
             }
             ST_OPPONENT_INSTALL => {
@@ -1831,6 +1941,68 @@ mod tests {
         assert_eq!(f.cues, vec![crate::baka_fighter::BAKA_CUE_CONFIRM]);
         run(&mut cab, 0x40, &idle);
         assert_eq!(cab.state(), ST_SELECT);
+    }
+
+    #[test]
+    fn the_front_end_draws_its_prompt_banner_and_seats_the_pick() {
+        let mut cab = BakaCabinet::new();
+        let idle = CabinetInput {
+            frame_step: 1,
+            win_target: 2,
+            ..Default::default()
+        };
+        cab.tick(&idle); // boot -> attract
+        // The prompt blinks on bit 4 of the post-increment phase, and the
+        // card is called with the clock before its increment.
+        let levels: Vec<i32> = (0..0x20)
+            .map(|_| {
+                let f = cab.tick(&idle);
+                assert_eq!(f.widgets.len(), 1);
+                assert_eq!(f.widgets[0].widget, WIDGET_PRESS_START);
+                f.widgets[0].brightness
+            })
+            .collect();
+        assert_eq!(levels[0], 0x80); // phase 1
+        assert_eq!(levels[15], 0x40); // phase 16
+        assert_eq!(cab.intro_clock(), 0x20);
+        let start = CabinetInput {
+            pad_edge: CABINET_START,
+            ..idle
+        };
+        assert_eq!(cab.tick(&start).title_card, Some(0x20));
+        // The fade-out flashes the prompt at 0x100 for 0x1E steps, then
+        // stops calling the card; its clock no longer advances.
+        let flashed = (0..0x3D)
+            .map(|_| cab.tick(&idle))
+            .take_while(|f| f.title_card.is_some())
+            .inspect(|f| assert_eq!(f.widgets[0].brightness, 0x100))
+            .count();
+        assert_eq!(flashed, 0x1E);
+        assert_eq!(cab.intro_clock(), 0x21);
+        while cab.state() != ST_SELECT {
+            cab.tick(&idle);
+        }
+        let right = CabinetInput {
+            pad_edge: CABINET_RIGHT,
+            ..idle
+        };
+        let f = cab.tick(&right);
+        assert!(
+            f.widgets
+                .iter()
+                .any(|c| c.widget == WIDGET_PLAYER_SELECT && (c.x, c.y) == PLAYER_SELECT_PEN)
+        );
+        assert_eq!(cab.select_cursor(), 1);
+        let confirm = CabinetInput {
+            pad_edge: CABINET_CONFIRM,
+            ..idle
+        };
+        cab.tick(&confirm);
+        let seated = (0..0x40)
+            .find_map(|_| cab.tick(&idle).install_player)
+            .expect("the pose state seats the pick");
+        assert_eq!(seated, 1);
+        assert!(!cab.front_end());
     }
 
     #[test]

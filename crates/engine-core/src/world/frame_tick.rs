@@ -3003,6 +3003,18 @@ impl World {
             SceneMode::SlotMachine => {
                 self.exit_slot_machine();
             }
+            // The attract card reads Start itself (its `0x844` edge is
+            // Start, Cross or L1), so there Start begins rather than quits;
+            // from the player select on it quits as everywhere else.
+            SceneMode::BakaFighter
+                if self
+                    .minigames
+                    .baka_fighter
+                    .as_ref()
+                    .is_some_and(|f| f.cabinet().state() == crate::baka_cabinet::ST_ATTRACT) =>
+            {
+                return;
+            }
             SceneMode::BakaFighter => {
                 self.exit_baka_fighter();
             }
@@ -3276,6 +3288,18 @@ impl World {
             self.mode = self.minigames.baka_return_mode;
             return;
         };
+        if fight.cabinet().front_end() {
+            // The attract card and the player select: the cabinet reads the
+            // packed edge itself (start `0x844`, cursor `0x8000` / `0x2000`,
+            // confirm `0x44`) and no fight runs until the pick is seated.
+            let edge = crate::dev_menu::retail_packed(self.input.pad() & !self.input.pad_prev());
+            if let Some(f) = self.minigames.baka_fighter.as_mut() {
+                f.set_cabinet_pad(edge);
+                f.tick(1);
+            }
+            self.queue_baka_xa_prestage();
+            return;
+        }
         if fight.match_over() {
             // The result screen: run the score tally, banking each drained
             // step into the mode-24 winnings accumulator exactly as retail's

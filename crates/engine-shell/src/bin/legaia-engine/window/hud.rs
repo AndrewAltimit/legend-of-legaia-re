@@ -785,10 +785,16 @@ impl PlayWindowApp {
             // index a sprite page no host uploads, so each cell draws as a
             // font glyph at its ported x: the layout is retail's, the glyph
             // source is not.
-            let placed = legaia_engine_core::baka_fighter_chrome::hud_digit_placements(
-                f.round() as i32,
-                f.tally().map(|t| (t.total(), t.gold_remaining())),
-            );
+            // The attract card and the player select draw no duel HUD
+            // (`baka_cabinet::draws_hud` is false across the front end).
+            let placed = if f.cabinet().front_end() {
+                Vec::new()
+            } else {
+                legaia_engine_core::baka_fighter_chrome::hud_digit_placements(
+                    f.round() as i32,
+                    f.tally().map(|t| (t.total(), t.gold_remaining())),
+                )
+            };
             // The placements are 320x240 stage cells, like the rows above:
             // drawn raw they sat top-left at a fraction of the page's size.
             let mut cells = legaia_engine_render::ui_baka_strips::baka_digit_strip_draws_for(
@@ -810,7 +816,8 @@ impl PlayWindowApp {
             // (`baka_fighter_chrome::chrome_labels`, `ui_baka_strips`), the
             // same the browser play page draws.
             let sheet = f.cabinet().choice_sheet();
-            if !self.baka_chrome_frame.is_empty() || sheet.is_some() {
+            let cabinet_cells = f.cabinet_cells();
+            if !self.baka_chrome_frame.is_empty() || !cabinet_cells.is_empty() {
                 let (stage_origin, stage_scale) = self.save_select_stage(w, h);
                 let draws: Vec<_> = self.baka_chrome_frame.iter().map(|(d, _)| *d).collect();
                 let mut cd = legaia_engine_render::ui_baka_strips::baka_widget_label_draws_for(
@@ -818,17 +825,19 @@ impl PlayWindowApp {
                     &legaia_engine_core::baka_fighter_chrome::chrome_labels(&draws),
                     [1.0; 4],
                 );
-                // The "NEXT GAME / PAY OUT" sheet (`FUN_801CF388` state
-                // `0x68`) and its pot numeral off the live accumulator.
-                if let Some(cells) = sheet {
-                    use legaia_engine_core::baka_cabinet as bcab;
-                    cd.extend(
-                        legaia_engine_render::ui_baka_strips::baka_widget_label_draws_for(
-                            &self.font,
-                            &bcab::choice_sheet_labels(&cells),
-                            [1.0; 4],
-                        ),
-                    );
+                // The cabinet's own widgets (`FUN_801CF388`): the attract
+                // prompt, the "PLAYER SELECT" banner and the "NEXT GAME /
+                // PAY OUT" sheet, plus the sheet's pot numeral off the live
+                // accumulator.
+                use legaia_engine_core::baka_cabinet as bcab;
+                cd.extend(
+                    legaia_engine_render::ui_baka_strips::baka_widget_label_draws_for(
+                        &self.font,
+                        &bcab::choice_sheet_labels(&cabinet_cells),
+                        [1.0; 4],
+                    ),
+                );
+                if sheet.is_some() {
                     cd.extend(
                         legaia_engine_render::ui_baka_strips::baka_digit_strip_draws_for(
                             &self.font,

@@ -778,6 +778,51 @@ impl LegaiaMinigames {
             f.set_held_pad(packed);
         }
     }
+
+    /// Hand the cabinet this frame's **packed** pad edge (Legaia's layout:
+    /// `0x8000` left, `0x2000` right, `0x40` Cross, `0x800` Start) for the
+    /// next [`Self::baka_tick`] - the edge the attract card, the player
+    /// select and the "NEXT GAME / PAY OUT" sheet read
+    /// ([`legaia_engine_core::baka_fighter::BakaFight::set_cabinet_pad`]).
+    pub fn baka_cabinet_pad(&mut self, packed_edge: u16) {
+        if let Some(f) = self.baka.as_mut() {
+            f.set_cabinet_pad(packed_edge);
+        }
+    }
+
+    /// Where the cabinet is and what it draws this frame:
+    ///
+    /// ```json
+    /// { "state": 11, "front_end": true, "lineup": [1, 42],
+    ///   "player": 0, "opponent": 5,
+    ///   "cells": [ { "w": 12, "x": 160, "y": 32, "b": 128 } ] }
+    /// ```
+    ///
+    /// `lineup` is the player-select cursor and the lineup's idle clock
+    /// (`null` off that screen); `cells` are the cabinet's own widget draws
+    /// (the attract "PRESS START" prompt, the "PLAYER SELECT" banner, the
+    /// "NEXT GAME / PAY OUT" sheet) at retail's emitter arguments - the list
+    /// the two play hosts label (`BakaFight::cabinet_cells`).
+    pub fn baka_cabinet_json(&self) -> String {
+        let Some(f) = self.baka.as_ref() else {
+            return r#"{"live":false}"#.to_string();
+        };
+        let cells: Vec<serde_json::Value> = f
+            .cabinet_cells()
+            .iter()
+            .map(|c| serde_json::json!({ "w": c.widget, "x": c.x, "y": c.y, "b": c.brightness }))
+            .collect();
+        serde_json::json!({
+            "live": true,
+            "state": f.cabinet().state(),
+            "front_end": f.cabinet().front_end(),
+            "lineup": f.select_lineup().map(|(c, t)| [c as i32, t]),
+            "player": f.player_roster(),
+            "opponent": f.opponent_roster(),
+            "cells": cells,
+        })
+        .to_string()
+    }
 }
 
 // ------------------------------------------------------------ announcer XA
