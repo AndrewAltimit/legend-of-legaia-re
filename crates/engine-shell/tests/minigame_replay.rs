@@ -538,17 +538,23 @@ fn play_minigame(host: &mut SceneHost, slot: MinigameSubId) -> Result<String, St
                 .as_ref()
                 .map(|s| s.turn())
                 .ok_or("dome session absent")?;
-            // Left/Right/Up/Down commit hand slots 0..3; Cross confirms.
+            // The selection is the battle's command flow (ring -> Attack ->
+            // Command -> entry -> review -> Begin); the session names the
+            // press that walks it.
             let mut commits = 0usize;
             for _ in 0..80 {
                 commits += 1;
-                for b in [
-                    PadButton::Left,
-                    PadButton::Right,
-                    PadButton::Up,
-                    PadButton::Down,
-                ] {
-                    tap(host, b);
+                for _ in 0..24 {
+                    let press = host
+                        .world
+                        .minigames
+                        .muscle_dome
+                        .as_ref()
+                        .and_then(|s| s.scripted_press());
+                    match press {
+                        Some(b) => tap(host, b),
+                        None => break,
+                    }
                 }
                 tap(host, PadButton::Cross);
                 let Some(s) = host.world.minigames.muscle_dome.as_ref() else {

@@ -57,6 +57,9 @@ pub struct MuscleDomeSession {
     /// [`DomeMagic`] carried, which is also what makes the Item chip gate for
     /// a fighter with **no** magic loadout at all.
     pub(super) special: u32,
+    /// The selection screen that owns the player's pad
+    /// ([`MuscleDomeSession::select_input`], `menu.rs`).
+    pub(super) menu: DomeMenu,
 }
 
 impl MuscleDomeSession {
@@ -88,6 +91,7 @@ impl MuscleDomeSession {
             magic_open: false,
             magic_cursor: 0,
             special: 0,
+            menu: DomeMenu::default(),
         }
     }
 
@@ -152,6 +156,11 @@ impl MuscleDomeSession {
     /// A fighter's current HP.
     pub fn hp(&self, slot: usize) -> i32 {
         self.f[slot].hp
+    }
+
+    /// A fighter's maximum HP.
+    pub fn hp_max(&self, slot: usize) -> i32 {
+        self.f[slot].max_hp
     }
 
     /// A fighter's dealt directions.
@@ -741,79 +750,6 @@ impl MuscleDomeSession {
         }
     }
 
-    /// One frame of edge-triggered pad for the player's selection, shared by
-    /// both dome hosts so neither can grow an input rule of its own.
-    ///
-    /// Two surfaces live under [`MusclePhase::Select`], exactly as retail's
-    /// `ctx+6` keeps them apart:
-    ///
-    /// * the **Ra-Seru list** (`ctx+6 = 0x46`) while [`Self::magic_open`] -
-    ///   up / down walk the rows, confirm commits the cast, cancel backs out;
-    /// * the **direction input** (`ctx+6 = 0x50`) otherwise - the four
-    ///   directions commit their dealt slot under the AP budget, and confirm
-    ///   closes the turn.
-    ///
-    /// `pad.magic` is the surface that opens the list. Retail reaches it from
-    /// the ring's Right chip (`0x801D1400`), which the port's collapsed
-    /// selection cannot spare - the four directions are the input screen's -
-    /// so each host binds it to a button of its own and both land here.
-    ///
-    /// Returns `true` when the player's selection closed this frame (the host
-    /// then runs the opponent and resolves).
-    pub fn select_input(&mut self, pad: DomeSelectPad) -> bool {
-        if self.phase != MusclePhase::Select {
-            return false;
-        }
-        if self.magic_open {
-            if pad.cancel {
-                self.close_magic();
-                return false;
-            }
-            if pad.up {
-                self.move_magic_cursor(0, -1);
-            }
-            if pad.down {
-                self.move_magic_cursor(0, 1);
-            }
-            if pad.confirm {
-                // A refusal leaves the list open, which is retail's answer to
-                // an unaffordable pick (`0x8007BB94` is cleared and the arm
-                // returns without committing).
-                if self.confirm_magic(0).is_err() {
-                    return false;
-                }
-                self.ai_commit_all(1);
-                self.end_selection();
-                return true;
-            }
-            return false;
-        }
-        if pad.magic {
-            let _ = self.open_magic(0);
-            return false;
-        }
-        let card = if pad.left {
-            Some(0)
-        } else if pad.right {
-            Some(1)
-        } else if pad.up {
-            Some(2)
-        } else if pad.down {
-            Some(3)
-        } else {
-            None
-        };
-        if let Some(card) = card {
-            self.commit_card(0, card);
-        }
-        if pad.confirm {
-            self.ai_commit_all(1);
-            self.end_selection();
-            return true;
-        }
-        false
-    }
-
     /// Install the shared [`DomeDamageModel`] so the turn can resolve through
     /// the **retail** battle formulas instead of a host stand-in.
     pub fn install_damage_model(&mut self, model: DomeDamageModel) {
@@ -881,6 +817,7 @@ impl MuscleDomeSession {
         self.cast = [None, None];
         self.magic_open = false;
         self.magic_cursor = 0;
+        self.menu = DomeMenu::default();
         self.phase = MusclePhase::Select;
     }
 }

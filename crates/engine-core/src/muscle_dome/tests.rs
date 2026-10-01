@@ -212,27 +212,171 @@ fn a_sealed_or_forbidden_fighter_cannot_open_the_list() {
     assert!(!s.magic_open());
 }
 
+fn pad(f: fn(&mut DomeSelectPad)) -> DomeSelectPad {
+    let mut p = DomeSelectPad::default();
+    f(&mut p);
+    p
+}
+
+fn is_ring(s: &MuscleDomeSession) -> bool {
+    matches!(
+        s.menu(),
+        DomeMenu::Command(c) if matches!(c.phase, crate::battle_input::CommandPhase::Menu { .. })
+    )
+}
+
+fn is_confirm(s: &MuscleDomeSession) -> bool {
+    matches!(
+        s.menu(),
+        DomeMenu::Command(c)
+            if matches!(c.phase, crate::battle_input::CommandPhase::CommitConfirm { .. })
+    )
+}
+
+/// The dome selection is the battle's: ring -> Auto | Command -> entry ->
+/// review -> Begin | Reselect, and only Begin closes the turn. A direction
+/// on the ring picks a ring arm; it never commits a swing.
 #[test]
-fn the_shared_select_input_drives_the_list_on_both_hosts() {
+fn the_selection_walks_the_battle_screens_and_only_begin_fights() {
+    let mut s = session();
+    assert!(is_ring(&s), "a turn opens on the command ring");
+    // Up on the ring is the Item arm, not a swing.
+    assert_eq!(s.select_input(pad(|p| p.up = true)), DomeMenuEvent::Refused);
+    assert!(s.queue(0).is_empty(), "a ring press commits nothing");
+    assert!(is_ring(&s));
+    // Left takes Attack -> the Auto | Command prompt.
+    s.select_input(pad(|p| p.left = true));
+    assert!(matches!(
+        s.menu(),
+        DomeMenu::Command(c) if matches!(c.phase, crate::battle_input::CommandPhase::AttackMode { .. })
+    ));
+    assert_eq!(s.arts_input_view().map(|v| v.buffer.len()), None);
+    // Right takes Command -> the direction entry over the fighter's budget.
+    assert_eq!(
+        s.select_input(pad(|p| p.right = true)),
+        DomeMenuEvent::Confirm
+    );
+    let v = s.arts_input_view().expect("the entry is up");
+    assert_eq!(v.pool, 100);
+    // Entry order is (Left, Right, Down, Up) = ids 0xC..0xF, priced off the
+    // deal (0xC 30, 0xF 42, 0xE 42, 0xD 30).
+    assert_eq!(v.costs, [0x1E, 0x1E, 0x2A, 0x2A]);
+    // Up commits command 0xF into the dome queue, debiting the budget.
+    s.select_input(pad(|p| p.up = true));
+    assert_eq!(s.queue(0), &[0x0F]);
+    assert_eq!(s.budget(0), 100 - 0x2A);
+    s.select_input(pad(|p| p.left = true));
+    assert_eq!(s.queue(0), &[0x0F, 0x0C]);
+    // 28 left: nothing is affordable, so the entry auto-ends into review.
+    assert!(s.selection_exhausted(0));
+    assert_eq!(
+        s.arts_input_view().map(|v| v.phase),
+        Some(crate::arts_command_input::ArtsInputScreen::Review)
+    );
+    // Any press on the review commits -> Begin | Reselect.
+    assert_eq!(
+        s.select_input(pad(|p| p.confirm = true)),
+        DomeMenuEvent::Confirm
+    );
+    assert!(is_confirm(&s));
+    assert_eq!(s.phase(), MusclePhase::Select, "not fighting yet");
+    // Begin (Left on the pair) closes both selections.
+    assert_eq!(s.select_input(pad(|p| p.left = true)), DomeMenuEvent::Fight);
+    assert_eq!(s.phase(), MusclePhase::Resolve);
+    assert_eq!(s.queue(0), &[0x0F, 0x0C]);
+    assert!(!s.queue(1).is_empty(), "the opponent committed too");
+}
+
+#[test]
+fn reselect_throws_the_string_away_and_reopens_the_ring() {
+    let mut s = session();
+    s.select_input(pad(|p| p.left = true));
+    s.select_input(pad(|p| p.right = true));
+    s.select_input(pad(|p| p.left = true));
+    s.select_input(pad(|p| p.confirm = true)); // end entry -> review
+    s.select_input(pad(|p| p.confirm = true)); // review -> confirm
+    assert!(is_confirm(&s));
+    s.select_input(pad(|p| p.right = true)); // Reselect
+    assert!(is_ring(&s));
+    assert!(s.queue(0).is_empty());
+    assert_eq!(s.budget(0), 100);
+}
+
+#[test]
+fn an_empty_entry_backs_out_to_the_attack_mode_prompt() {
+    let mut s = session();
+    s.select_input(pad(|p| p.left = true));
+    s.select_input(pad(|p| p.right = true));
+    assert!(s.arts_input_view().is_some());
+    s.select_input(pad(|p| p.cancel = true));
+    assert!(matches!(
+        s.menu(),
+        DomeMenu::Command(c)
+            if matches!(c.phase, crate::battle_input::CommandPhase::AttackMode { cursor: 1 })
+    ));
+}
+
+#[test]
+fn a_rotted_attack_chip_refuses_the_arm() {
+    let mut s = session();
+    let mut m = magic(60);
+    m.ring.status = STATUS_ATTACK_BLOCKED;
+    s.install_magic(0, m);
+    assert_eq!(
+        s.select_input(pad(|p| p.left = true)),
+        DomeMenuEvent::Refused
+    );
+    assert!(is_ring(&s));
+    assert!(s.ring_marks().attack_rotted);
+}
+
+#[test]
+fn the_ring_s_right_arm_opens_the_ra_seru_list_and_a_cast_reaches_begin() {
     let mut s = session();
     s.install_magic(0, magic(60));
-    let pad = |f: fn(&mut DomeSelectPad)| {
-        let mut p = DomeSelectPad::default();
-        f(&mut p);
-        p
-    };
-    assert!(!s.select_input(pad(|p| p.magic = true)));
+    assert_eq!(
+        s.select_input(pad(|p| p.right = true)),
+        DomeMenuEvent::Confirm
+    );
     assert!(s.magic_open());
-    assert!(!s.select_input(pad(|p| p.down = true)));
+    assert!(matches!(s.menu(), DomeMenu::Magic));
+    s.select_input(pad(|p| p.down = true));
     assert_eq!(s.magic_cursor(), 1);
-    // Row 1 costs 30 of the 60-MP gauge, so the confirm commits and the
-    // turn closes for both fighters.
-    assert!(s.select_input(pad(|p| p.confirm = true)));
-    assert_eq!(s.phase(), MusclePhase::Resolve);
+    // Row 1 costs 30 of the 60-MP gauge: the cast commits, then Begin.
+    s.select_input(pad(|p| p.confirm = true));
+    assert!(is_confirm(&s));
     assert_eq!(s.queued_cast(0), Some(0x82));
+    s.select_input(pad(|p| p.confirm = true));
+    assert_eq!(s.phase(), MusclePhase::Resolve);
 
-    // A fresh session: with the list shut a direction press still commits
-    // a card, and a turn boundary clears any cast the last one carried.
+    // No loadout: the arm refuses and the ring stays up.
+    let mut s = session();
+    assert_eq!(
+        s.select_input(pad(|p| p.right = true)),
+        DomeMenuEvent::Refused
+    );
+    assert!(is_ring(&s));
+}
+
+#[test]
+fn the_ring_chips_project_through_the_battle_cluster() {
+    use crate::battle_hud::CommandChipPhase;
+    let mut s = session();
+    s.set_special_word(SPECIAL_ITEM_FORBIDDEN);
+    let chips = s.command_chips("Meta", ["Begin", "Reselect"]).unwrap();
+    assert_eq!(chips.phase, CommandChipPhase::CommandRing);
+    let labels: Vec<&str> = chips.chips.iter().map(|(l, _)| l.as_str()).collect();
+    assert_eq!(labels, ["Item", "Attack", "Meta", "Spirit"]);
+    assert!(!chips.chips[0].1, "the course forbids items");
+    assert!(s.ring_marks().item_forbidden);
+    s.select_input(pad(|p| p.left = true));
+    let chips = s.command_chips("Meta", ["Begin", "Reselect"]).unwrap();
+    assert_eq!(chips.phase, CommandChipPhase::AttackMode);
+    assert!(!s.ring_marks().item_forbidden, "marks ride the ring only");
+}
+
+#[test]
+fn a_turn_boundary_clears_the_cast_and_reopens_the_ring() {
     let mut s = session();
     s.install_magic(0, magic(60));
     s.commit_cast(0, 0x81).expect("affordable");
@@ -246,8 +390,7 @@ fn the_shared_select_input_drives_the_list_on_both_hosts() {
     );
     s.next_turn();
     assert_eq!(s.queued_cast(0), None, "a new turn clears the cast");
-    assert!(!s.select_input(pad(|p| p.left = true)));
-    assert_eq!(s.queue(0).len(), 1);
+    assert!(is_ring(&s));
 }
 
 #[test]

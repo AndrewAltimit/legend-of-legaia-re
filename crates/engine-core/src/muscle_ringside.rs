@@ -582,6 +582,14 @@ pub struct HubTimersFrame {
 }
 
 impl HubTimers {
+    /// Whether a hub screen is up over an open leg - the first visit or the
+    /// leg-open ROUND card. Retail runs those arms in the arena (mode `0x18`)
+    /// before the round driver puts its command cluster up, so a host draws
+    /// no battle chrome under them.
+    pub fn covers_leg(&self) -> bool {
+        self.first_visit.is_some() || self.round_banner.is_some()
+    }
+
     /// One frame. `pad` is the packed pad edge the skippable holds read
     /// (retail's `DAT_801D1A9C` snapshot), `volume_word` the voice-volume
     /// setting each tally cue halves.

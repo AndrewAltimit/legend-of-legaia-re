@@ -109,6 +109,7 @@ mod contest;
 mod course;
 mod damage;
 mod hub;
+mod menu;
 mod ring;
 mod session;
 
@@ -116,6 +117,7 @@ pub use contest::*;
 pub use course::*;
 pub use damage::*;
 pub use hub::*;
+pub use menu::*;
 pub use ring::*;
 pub use session::*;
 

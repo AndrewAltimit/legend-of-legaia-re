@@ -886,12 +886,10 @@ its bit is never raised by a dome round
 ported rules resolve each queued command as a basic strike" - is closed:
 see [the queue the dome resolves](#the-queue-the-dome-resolves-is-the-tokenizers).
 
-The two hosts reach the chip from different buttons, and that is the one
-disclosed difference: retail opens the list from the ring's **Right** chip,
-which the port's collapsed selection cannot spare (the four directions are
-the input screen's), so the browser minigames page - which keeps a ring
-screen - binds Right, and the native `play-window` binds **Triangle**. Both
-land in `MuscleDomeSession::select_input`, so the rules are one.
+The in-world dome (the `koin1` arena door, on the native `play-window` and
+the browser play page) runs the selection as the battle's own command flow
+and draws it with the battle HUD - see
+[The selection is the battle's command flow](#the-selection-is-the-battles-command-flow).
 
 ## HUD chrome texture sources (capture-pinned)
 
@@ -1242,11 +1240,11 @@ both screens read the equipped set's `+0x74` bytes through
 `legaia_asset::battle_char_assembly::swing_command_costs`
 ([`arts-command-gauge.md`](arts-command-gauge.md#reading-it)).
 
-What is still *not* unified is the session object: the dome keeps its own
-`MuscleDomeSession` budget / spent / queue triple while the battle runs
-`engine_core::arts_command_input`. The two model the same retail state
-(`ctx+0x6dc`, `ctx+0x6d8`, `actor+0x1df`) in the same units, so the seam is
-a refactor rather than a question.
+The session object is shared too: the dome's command flow embeds the
+battle's `engine_core::arts_command_input` entry session and mirrors its
+buffer into `MuscleDomeSession`'s budget / spent / queue triple after every
+press - the same retail state (`ctx+0x6dc`, `ctx+0x6d8`, `actor+0x1df`) in
+the same units.
 
 ### Three marks for "you cannot pick this", and the gates that raise them
 
@@ -1362,6 +1360,38 @@ page has no save and latches the word from the `unlock` mask its own
 `muscle_contest_start` is handed (`muscle_special_word` reads it back). A page
 that opens a standalone leg without a contest keeps the word at `0`, which
 forbids nothing.
+
+### The selection is the battle's command flow
+
+A dome round is a round of the battle overlay's own driver, so the port runs
+its selection through the battle's sessions rather than a dome-only input
+rule: `muscle_dome::DomeMenu` holds a `battle_input::BattleCommandSession`
+for the ring (`0x28`), the `Auto | Command` prompt (`0x78`) and the
+`Begin | Reselect` confirm (`0x6E`), an `arts_command_input` entry session for
+the direction entry (`0x50`) and its review (`0x5A`), or the Ra-Seru list
+(`0x46`, off the ring's right arm). `MuscleDomeSession::select_input` steps
+whichever owns the pad; only `Begin` closes the turn. The review's commit goes
+straight to the confirm - the captured dome chain has no target cursor
+between `0x5A` and `0x6E`, and a dome round fields one opponent.
+
+The HUD is the battle's for the same reason. During a leg
+`battle_hud::battle_command_chips`, `battle_ring_marks`,
+`World::arts_input_view` and `sync_battle_hud_rows` answer from the dome
+session (`battle_hud_phase` reads its selection as command entry), so both
+play hosts draw the chips, the cross-out / Rot / Curse marks, the entry
+chrome, the readout bar and the AP plate through the builders a battle uses.
+They hold the chrome while a hub screen covers the leg
+(`muscle_ringside::HubTimers::covers_leg` - the first visit and the leg-open
+ROUND card run in the arena before the round driver raises its cluster).
+
+Disclosed host models inside the flow: the ring's Item arm refuses (the
+session carries no bag; every unlocked course forbids items anyway), Auto
+fills the string greedily in deal order rather than reloading the saved
+string ([the Auto arm](#the-auto-arm-reloads-a-saved-string-and-the-round-rebuilds-it)),
+and Spirit commits an empty string. The Ra-Seru list itself stays a text
+stand-in: its window's pieces are not pinned. The standalone minigames page
+still drives the session's commit / cast calls from its own page-side
+screen sequence.
 
 ### The command cluster is the battle cluster
 
@@ -1992,14 +2022,15 @@ clears the direction string and leaves the AP budget alone, because retail's
 arm never reads `ctx+0x6D8` / `ctx+0x6DC`), and the debit lands at the
 play-out, where the shared band's `0x28` charges it. The outcome runs through
 `engine-core::spells::cast_spell` - the same rule an ordinary battle's cast
-band folds with. `select_input` is the one selection surface both hosts drive;
+band folds with. `select_input` is the one selection surface both world hosts drive
+([the battle's command flow](#the-selection-is-the-battles-command-flow));
 the loadout comes from `magic_loadout_for`, the door both native dome entry
 paths install through. See
 [What makes a Ra-Seru chip render](#what-makes-a-ra-seru-chip-render).
 
 The world hosts the contest as the suspending `SceneMode::MuscleDome`
-(play-window `M` key; Left/Right/Up/Down enter the four directions, Triangle
-opens the Ra-Seru list (Circle closes it), Cross confirms/continues). A KO of the opponent inside
+(play-window `M` key, or the arena door; the selection is the battle's
+command screens, Cross confirms/continues). A KO of the opponent inside
 the limit credits the reward Seru through the engine's capture kernel.
 
 The opponent is the disc's own: both hosts resolve `(course, round)` through

@@ -368,6 +368,11 @@ impl LegaiaRuntime {
                 self.battle_hud
                     .sync_status(slot, &host.world.battle.status_effects);
             }
+        } else if host.world.mode == SceneMode::MuscleDome {
+            // A dome leg is a battle on the same HUD: the shared fold seats
+            // the lead fighter's row off the dome session, as the native
+            // window's does.
+            sync_battle_hud_rows(&mut self.battle_hud, &host.world);
         }
         self.battle_hud.tick();
         // Age the encounter-transition banner one frame; drop it at zero.
@@ -522,6 +527,9 @@ impl LegaiaRuntime {
             return empty;
         };
         if bw.dialogue_owns_input() {
+            return empty;
+        }
+        if bw.mode == SceneMode::MuscleDome && !self.dome_battle_chrome_up() {
             return empty;
         }
         let Some(view) = bw.arts_input_view() else {
@@ -751,10 +759,18 @@ impl LegaiaRuntime {
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<ui::SpriteDraw> {
-        let in_battle = self
+        let in_dome = self
             .scene_host
             .as_ref()
-            .is_some_and(|h| h.world.mode == SceneMode::Battle);
+            .is_some_and(|h| h.world.mode == SceneMode::MuscleDome);
+        if in_dome && !self.dome_battle_chrome_up() {
+            return Vec::new();
+        }
+        let in_battle = in_dome
+            || self
+                .scene_host
+                .as_ref()
+                .is_some_and(|h| h.world.mode == SceneMode::Battle);
         if !in_battle {
             let (Some(rects), Some(message)) =
                 (assets.chrome_rects(), self.battle_banner_message(assets))
@@ -840,6 +856,35 @@ impl LegaiaRuntime {
         let Some(bw) = self.scene_host.as_ref().map(|h| &h.world) else {
             return Vec::new();
         };
+        // Muscle Dome leg: the battle HUD's text half - the status plate and
+        // the command cluster's labels - off the same builders a battle
+        // draws, fed by the dome session's command flow. The native window
+        // makes the same two calls.
+        if bw.mode == SceneMode::MuscleDome {
+            if !self.dome_battle_chrome_up() {
+                return Vec::new();
+            }
+            let mut out = self
+                .battle_hud_frame_draws(assets, surface_w, surface_h)
+                .text;
+            if let Some((chips, cursor, phase)) = self.battle_command_menu_chips() {
+                use legaia_engine_ui::battle_command_ui as bcu;
+                let (origin, scale) =
+                    crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
+                let views = bcu::command_chip_views(&chips);
+                out.extend(bcu::battle_command_chip_text(
+                    assets.font_ref(),
+                    &bcu::BattleCommandMenuFrame {
+                        chips: &views,
+                        cursor: Some(cursor),
+                        phase,
+                    },
+                    origin,
+                    scale,
+                ));
+            }
+            return out;
+        }
         if bw.mode != SceneMode::Battle {
             return Vec::new();
         }

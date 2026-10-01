@@ -3698,12 +3698,11 @@ impl World {
         let confirm = self.input.just_pressed(input::PadButton::Cross);
         match phase {
             MusclePhase::Select => {
-                // The whole selection surface - the direction input and the
-                // Ra-Seru list over it - is the session's, so the browser
-                // minigames page runs the identical rule.
-                // Triangle is this host's binding for the ring's Right chip:
-                // the port's selection has no ring screen, so the four
-                // directions stay the input screen's.
+                // The whole selection - the command ring, the Auto |
+                // Command prompt, the direction entry and its review, the
+                // Ra-Seru list and the Begin | Reselect confirm - is the
+                // session's command flow, which runs the battle's own
+                // command and entry sessions (`muscle_dome::DomeMenu`).
                 let pad = crate::muscle_dome::DomeSelectPad {
                     left: self.input.just_pressed(input::PadButton::Left),
                     right: self.input.just_pressed(input::PadButton::Right),
@@ -3711,7 +3710,8 @@ impl World {
                     down: self.input.just_pressed(input::PadButton::Down),
                     confirm,
                     cancel: self.input.just_pressed(input::PadButton::Circle),
-                    magic: self.input.just_pressed(input::PadButton::Triangle),
+                    triangle: self.input.just_pressed(input::PadButton::Triangle),
+                    select_attack: self.toggles.select_attack,
                 };
                 if let Some(s) = self.minigames.muscle_dome.as_mut() {
                     s.select_input(pad);

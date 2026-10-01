@@ -130,14 +130,10 @@ fn real_hand_tables_drive_a_decided_contest() {
     world.enter_muscle_dome(session);
     assert_eq!(world.mode, SceneMode::MuscleDome);
 
-    // Commit cards through the pad until the budget rejects, confirm, and
-    // play rounds until the contest decides.
-    let directions = [
-        PadButton::Left.mask(),
-        PadButton::Right.mask(),
-        PadButton::Up.mask(),
-        PadButton::Down.mask(),
-    ];
+    // Drive the battle command flow through the pad: ring -> Attack ->
+    // Command -> the entry (the cheapest still-affordable direction until
+    // nothing fits, which auto-ends it) -> review -> Begin, and play turns
+    // until the contest decides.
     let mut frames = 0u32;
     loop {
         frames += 1;
@@ -156,17 +152,7 @@ fn real_hand_tables_drive_a_decided_contest() {
             0
         } else {
             match s.phase() {
-                MusclePhase::Select => {
-                    // Enter the cheapest still-affordable direction; confirm
-                    // once nothing more fits.
-                    let pick = (0..4)
-                        .filter(|&c| s.can_commit(0, c))
-                        .min_by_key(|&c| s.hand(0)[c].cost);
-                    match pick {
-                        Some(c) => directions[c],
-                        None => PadButton::Cross.mask(),
-                    }
-                }
+                MusclePhase::Select => s.scripted_press().map_or(0, |b| b.mask()),
                 MusclePhase::Resolve => 0,
                 MusclePhase::TurnOver | MusclePhase::Won | MusclePhase::Lost => {
                     PadButton::Cross.mask()

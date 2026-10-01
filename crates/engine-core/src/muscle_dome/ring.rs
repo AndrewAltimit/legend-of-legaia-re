@@ -307,13 +307,11 @@ pub enum DomeTurnAction {
 }
 
 /// One frame of edge-triggered pad for a dome selection, in the shape both
-/// hosts can build.
-///
-/// `magic` is the surface that opens the Ra-Seru list. Retail takes it off
-/// the ring's Right chip; the port's selection has no ring screen, so each
-/// host binds it separately (native `play-window`: Triangle; the browser
-/// minigames page: the ring's Right chip) and both reach
-/// [`MuscleDomeSession::select_input`].
+/// hosts can build. The dome's command flow is the battle's
+/// ([`MuscleDomeSession::select_input`]), so this carries what the battle's
+/// command and entry sessions read: the four directions, the configured
+/// confirm / cancel masks, Triangle (the entry screen's arts list) and the
+/// "Select Attack" option word.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DomeSelectPad {
     pub left: bool,
@@ -324,8 +322,11 @@ pub struct DomeSelectPad {
     pub confirm: bool,
     /// Cancel / back (Circle).
     pub cancel: bool,
-    /// Open the Ra-Seru list.
-    pub magic: bool,
+    /// Triangle - the entry screen's learned-arts list.
+    pub triangle: bool,
+    /// The "Select Attack" option word `0x800846C4` the ring's Attack arm
+    /// reads.
+    pub select_attack: crate::options::SelectAttackOpt,
 }
 
 /// One dealt slot: a direction-command id + its per-fighter AP cost.

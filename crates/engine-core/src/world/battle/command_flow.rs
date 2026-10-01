@@ -623,7 +623,15 @@ impl World {
     /// Renderer-agnostic view of the open Arts command input, or `None`
     /// when no session is up. Both hosts build the pinned chrome from
     /// this and nothing else.
+    ///
+    /// A Muscle Dome leg runs the same entry screen (its command flow embeds
+    /// the battle's entry session, `muscle_dome::DomeMenu`), so during one
+    /// this is the dome fighter's entry - one view, one chrome, both kinds of
+    /// fight.
     pub fn arts_input_view(&self) -> Option<crate::arts_command_input::ArtsInputView<'_>> {
+        if self.mode == crate::world::SceneMode::MuscleDome {
+            return self.minigames.muscle_dome.as_ref()?.arts_input_view();
+        }
         let s = self.battle.arts_input.as_ref()?;
         Some(crate::arts_command_input::ArtsInputView {
             buffer: &s.buffer,

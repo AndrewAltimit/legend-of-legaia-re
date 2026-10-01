@@ -218,6 +218,10 @@ impl PlayWindowApp {
                 self.battle_hud
                     .sync_status(slot, &self.session.host.world.battle.status_effects);
             }
+        } else if self.session.host.world.mode == SceneMode::MuscleDome {
+            // A dome leg is a battle on the same HUD: the shared fold seats
+            // the lead fighter's row off the dome session.
+            self.sync_battle_hud_rows();
         }
         self.battle_hud.tick();
 

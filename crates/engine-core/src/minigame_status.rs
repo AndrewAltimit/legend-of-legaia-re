@@ -20,7 +20,7 @@ use crate::dance::{
     DanceGame, GAUGE_STEP, Judge, dance_beat_track_note_x, dance_combo_window_bright,
     dance_number_digits,
 };
-use crate::muscle_dome::{DomeRingChip, MusclePhase, TIME_METER_MAX};
+use crate::muscle_dome::{MusclePhase, TIME_METER_MAX};
 use crate::slot_machine::{SlotMachine, SlotPhase};
 use crate::world::World;
 
@@ -156,10 +156,19 @@ pub fn baka_status_rows(f: &BakaFight) -> Vec<StatusRow> {
 /// sites gate on formation slot 0 == `0xB6` (Koru), and the dome ladder tops
 /// out at `0xAA`, so no dome round raises it. A dome leg is an unbounded
 /// battle, so the turn line reports the turn reached.
+///
+/// During the selection the battle chrome owns the screen - the command
+/// cluster, the direction entry, the status and AP plates, all drawn by the
+/// shared battle HUD builders off the session's command flow - so the only
+/// text left is the Ra-Seru list, whose retail window (`ctx+6 = 0x46`) is not
+/// piece-pinned and stays a text stand-in.
 pub fn muscle_status_rows(world: &World) -> Vec<StatusRow> {
     let Some(s) = world.minigames.muscle_dome.as_ref() else {
         return Vec::new();
     };
+    if s.phase() == MusclePhase::Select && !s.magic_open() {
+        return Vec::new();
+    }
     let mut out = Vec::new();
     if let Some(c) = world.minigames.muscle_contest.as_ref() {
         let flags = world.muscle_contest_flags();
@@ -181,8 +190,7 @@ pub fn muscle_status_rows(world: &World) -> Vec<StatusRow> {
         true,
     ));
     let status = match s.phase() {
-        // The Ra-Seru list is the ring's Right chip in retail; the hosts have
-        // no ring screen, so Triangle opens it.
+        // The Ra-Seru list, opened from the ring's Right chip.
         MusclePhase::Select if s.magic_open() => {
             let rows = s.spell_rows(0);
             let cursor = s.magic_cursor() as usize;
@@ -209,23 +217,8 @@ pub fn muscle_status_rows(world: &World) -> Vec<StatusRow> {
                 s.mp(0),
             )
         }
-        MusclePhase::Select => {
-            let h = s.hand(0);
-            let chip = if s.chip_enabled(0, DomeRingChip::RaSeru) {
-                "  Triangle = Ra-Seru"
-            } else {
-                ""
-            };
-            format!(
-                "AP L:{} R:{} U:{} D:{}  budget {}  entered {}  (Cross = fight){chip}",
-                h[0].cost,
-                h[1].cost,
-                h[2].cost,
-                h[3].cost,
-                s.budget(0),
-                s.queue(0).len()
-            )
-        }
+        // The ring, the entry and the confirm draw as battle chrome.
+        MusclePhase::Select => String::new(),
         MusclePhase::Resolve => "resolving...".to_string(),
         // Retail's turn top is automatic (`World::tick` calls `next_turn`
         // with no press), so this row names no button.

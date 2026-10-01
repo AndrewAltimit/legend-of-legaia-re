@@ -5,9 +5,11 @@
 //!
 //! The rules engines run in the engine's `World` off the routed pad word:
 //!
-//! - **Muscle Dome** (`World::tick_muscle_dome`): the four direction chips
-//!   commit swings under the AP budget, Cross fights, Triangle opens the
-//!   Ra-Seru list, Circle cancels; a decided leg is reported to the open
+//! - **Muscle Dome** (`World::tick_muscle_dome`): the selection is the
+//!   battle's command flow (`muscle_dome::DomeMenu` - the ring, Auto |
+//!   Command, the direction entry under the AP budget, the review, Begin |
+//!   Reselect, the Ra-Seru list off the ring's right arm), drawn through the
+//!   battle HUD builders the page's fights use; a decided leg is reported to the open
 //!   contest on Cross and a finished ladder settles into the coin bank. The
 //!   door warp opens **no contest** (the scene host stages stand-ins), so
 //!   this host opens one on entry from the arena overlay's course ladder and
@@ -317,6 +319,14 @@ impl LegaiaRuntime {
                 }))
             })
             .collect()
+    }
+
+    /// Whether a Muscle Dome leg's battle chrome is on screen: the leg is
+    /// open and no hub screen (the first visit, the leg-open ROUND card)
+    /// covers it - the native window's `dome_battle_chrome_up`, off the same
+    /// `HubTimers::covers_leg`.
+    pub(crate) fn dome_battle_chrome_up(&self) -> bool {
+        self.muscle_session().is_some() && !self.minigame_ui.muscle.timers.covers_leg()
     }
 
     /// The Muscle Dome HUD rows, the engine's
