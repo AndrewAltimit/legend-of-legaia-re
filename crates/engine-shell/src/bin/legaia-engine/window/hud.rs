@@ -2346,7 +2346,9 @@ impl PlayWindowApp {
     /// ROUND card) covers it. Retail runs those hub arms before the round
     /// driver raises its command cluster.
     pub(super) fn dome_battle_chrome_up(&self) -> bool {
-        self.session.host.world.mode == SceneMode::MuscleDome && !self.muscle_timers.covers_leg()
+        self.session.host.world.mode == SceneMode::MuscleDome
+            && self.session.host.world.minigames.muscle_dome.is_some()
+            && !self.muscle_timers.covers_leg()
     }
 
     pub(super) fn battle_command_menu_chips(&self) -> Option<CommandChips> {

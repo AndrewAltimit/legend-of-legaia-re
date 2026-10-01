@@ -1390,6 +1390,10 @@ impl PlayWindowApp {
                         cue: None,
                     });
                 }
+            } else if self.session.host.world.muscle_hub_between_legs() {
+                // The arena hub between two legs: retail runs it in arena
+                // mode `0x18` with no 3D scene - the ringside still and the
+                // INTERVAL / ROUND screens are the whole frame.
             } else if let Some(g) = self.dance_venue_gpu.as_ref() {
                 // The dance venue owns the 3D frame: the `other7` hall the
                 // dance entry loads, under the venue camera the frame

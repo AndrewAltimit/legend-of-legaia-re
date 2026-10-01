@@ -1430,6 +1430,29 @@ draws no hub screen and where the shared verdict lives. Both hosts run each
 screen on the hub controllers' own counters - see
 [the hub screen envelopes](#the-hub-screens-are-envelopes-not-frame-counts).
 
+### Between legs the arena keeps the frame
+
+A survived leg with the course not exhausted never leaves the arena: the
+battle exits to arena mode `0x18`, the re-entered hub runs `0x0A..0x0C` (the
+INTERVAL tally over the ringside still) and `0x14..0x16` (the ROUND card), and
+the end of arm `0x16` starts the next fight itself (`FUN_801D1510`). In the
+port the in-world dome's decided leg closes on Cross through
+`World::tick_muscle_dome`, which reports it and asks the shared verdict
+(`leg_boundary_raises_interval`): a continuing contest sets
+`MinigameState::muscle_hub_between_legs` and keeps `SceneMode::MuscleDome`
+with no leg open (`World::muscle_hub_between_legs`); every other leg settles
+and hands the field back. The hub kernel `HubTimers` raises
+`HubTimersFrame::next_leg` once its INTERVAL and backdrop arms have drained,
+and both play hosts answer it with `World::begin_next_muscle_leg`, which
+stages the next fight through the same mode-24 drain the arena door uses
+without re-arming the round trip. While the hub owns the frame neither host
+draws the field (no 3D, and the field party HUD is suppressed outside the
+field modes) nor battle chrome; a decided leg puts no text up - the KO is the
+battle's, and the tally is the hub's. Start between legs is the give-up arm
+(the contest ends and the tally is void). Locked by
+`engine-core/tests/muscle_contest_world.rs` and
+`web-viewer/tests/play_ringside_still_disc.rs`.
+
 ### The hub screens are envelopes, not frame counts
 
 A hub screen is not "up for N frames at full brightness". Each is a **fade-in

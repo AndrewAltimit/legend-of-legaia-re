@@ -1122,9 +1122,9 @@
     const info = parse(() => rt.play_mg_game_json());
     if (!info || !info.game) {
       if (S.game) teardown(rt, view);
-      /* The arena hub outlives the leg: the INTERVAL + tally screen and the
-       * re-entered hub's ringside still play after the dome has handed the
-       * field back, so they are drawn over it here. */
+      /* Between legs the arena keeps the frame (the engine stays in the
+       * dome mode, so `muscleFrame` draws the hub over a cleared view); this
+       * only clears a hub layer left up when the field comes back. */
       drawHubQuads(rt, view);
       if (typeof rt.play_mg_take_vram_restore === 'function' && rt.play_mg_take_vram_restore()
           && view.renderer && typeof rt.field_vram_bytes === 'function') {

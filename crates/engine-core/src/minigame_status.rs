@@ -169,6 +169,13 @@ pub fn muscle_status_rows(world: &World) -> Vec<StatusRow> {
     if s.phase() == MusclePhase::Select && !s.magic_open() {
         return Vec::new();
     }
+    // A decided leg is the battle's KO: retail puts no text up over it, and
+    // what follows is the arena hub's INTERVAL tally (a survived, unfinished
+    // course) or the hand-back to the field. The confirm that closes the leg
+    // is the pad's alone.
+    if s.decided() {
+        return Vec::new();
+    }
     let mut out = Vec::new();
     if let Some(c) = world.minigames.muscle_contest.as_ref() {
         let flags = world.muscle_contest_flags();
@@ -226,13 +233,7 @@ pub fn muscle_status_rows(world: &World) -> Vec<StatusRow> {
             let [taken, dealt] = s.last_turn_damage();
             format!("turn: dealt {dealt}, took {taken}")
         }
-        // The caption names a spell; it awards nothing. The contest's payout
-        // lands when the ladder settles.
-        MusclePhase::Won => format!(
-            "LEG WON! caption spell {:#x}  (Cross = next leg)",
-            s.reward_spell_id()
-        ),
-        MusclePhase::Lost => "you lose the leg  (Cross = leave)".to_string(),
+        MusclePhase::Won | MusclePhase::Lost => String::new(),
     };
     out.push(StatusRow::new(
         format!(

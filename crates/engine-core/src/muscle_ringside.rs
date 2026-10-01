@@ -533,9 +533,9 @@ impl FirstVisitHub {
 /// entered from `0x14` on either visit - the first visit reaches `0x14` from
 /// arm `6`'s battle-load kick (`0x801CFC88..0x801CFC94`), a re-entered hub
 /// from the INTERVAL arms. The port's re-entered hub plays those arms
-/// ([`HubBackdrop`]), but the leg itself only opens later, when the player
-/// walks back through the dome door - so a host that raised the card again
-/// at that edge showed it twice. `card_shown_round` is the round a
+/// ([`HubBackdrop`]) and only then opens the leg
+/// ([`HubTimersFrame::next_leg`]) - so a host that raised the card again at
+/// that edge showed it twice. `card_shown_round` is the round a
 /// [`HubBackdrop`] last drew its card for (`None` when no re-entered hub ran
 /// since the last leg); the leg-open card is owed only when that is not the
 /// round now opening.
@@ -579,6 +579,11 @@ pub struct HubTimersFrame {
     pub xa: Option<HubXaCue>,
     /// The tally lanes' voice keys (`FUN_801D1288` builds each attr set).
     pub voice_cues: Vec<crate::other_game_overlay::VoiceAttrCue>,
+    /// The between-legs hub has played out (INTERVAL drained, ROUND card
+    /// gone): the host hands the next fight its start through
+    /// [`crate::world::World::begin_next_muscle_leg`] - retail's arm `0x16`
+    /// exit into `FUN_801D1510`.
+    pub next_leg: bool,
 }
 
 impl HubTimers {
@@ -690,6 +695,10 @@ impl HubTimers {
                 self.tally = None;
             }
         }
+        out.next_leg = world.muscle_hub_between_legs()
+            && self.interval.is_none()
+            && self.backdrop.is_none()
+            && self.first_visit.is_none();
         self.prev_leg_open = leg_open;
         self.prev_contest_open = contest_open;
         out

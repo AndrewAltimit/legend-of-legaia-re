@@ -1085,6 +1085,11 @@ impl PlayWindowApp {
         let frame = self
             .muscle_timers
             .tick(&self.session.host.world, pad, volume_word);
+        // The between-legs hub has played out: the next fight starts with no
+        // trip back to the field (retail's arm-`0x16` hand-off).
+        if frame.next_leg {
+            self.session.host.world.begin_next_muscle_leg();
+        }
         // The first visit's two announcer lines (`FUN_8003D53C` at arms 0 and
         // 0x15), through the same XA path the battle clips use.
         if let Some(c) = frame.xa
@@ -1330,7 +1335,11 @@ impl PlayWindowApp {
             return (Vec::new(), Vec::new());
         };
         let world = &self.session.host.world;
-        let in_dome = world.mode == SceneMode::MuscleDome;
+        // A leg is open (the first visit / the leg-open ROUND card draw over
+        // it); otherwise the arena hub is between legs, or the contest has
+        // handed the field back, and the INTERVAL + still screens are the
+        // hub's own.
+        let in_dome = world.mode == SceneMode::MuscleDome && world.minigames.muscle_dome.is_some();
         // The retail emitters mutate the shared table (variant write-back),
         // so run them over a per-frame copy of the pristine parse.
         let mut table = assets.table.clone();

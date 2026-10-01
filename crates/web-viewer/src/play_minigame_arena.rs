@@ -158,7 +158,7 @@ impl LegaiaRuntime {
     /// (`muscle_ringside::HubTimers`). Runs every frame: the INTERVAL +
     /// tally screen plays after the leg has closed.
     pub(crate) fn tick_muscle_hub(&mut self) {
-        let Some(host) = self.scene_host.as_ref() else {
+        let Some(host) = self.scene_host.as_mut() else {
             return;
         };
         let pad = host.world.input.retail_pad().pressed as u16;
@@ -170,6 +170,12 @@ impl LegaiaRuntime {
             .muscle
             .timers
             .tick(&host.world, pad, volume_word);
+        // The between-legs hub has played out: the next fight starts with no
+        // trip back to the field (retail's arm-`0x16` hand-off), as on the
+        // native window.
+        if frame.next_leg {
+            host.world.begin_next_muscle_leg();
+        }
         let hub_xa = frame.xa;
         let voice_cues = frame.voice_cues;
         if let Some(c) = hub_xa {
@@ -202,7 +208,11 @@ impl LegaiaRuntime {
             return Vec::new();
         };
         let world = &host.world;
-        let in_dome = world.mode == legaia_engine_core::world::SceneMode::MuscleDome;
+        // A leg is open; otherwise the arena hub is between legs (or the
+        // contest has handed the field back) and the INTERVAL + still screens
+        // are the hub's own - the native window's same test.
+        let in_dome = world.mode == legaia_engine_core::world::SceneMode::MuscleDome
+            && world.minigames.muscle_dome.is_some();
         let mut table = table.clone();
         let mut quads = Vec::new();
         let mut shade_row: Option<(usize, serde_json::Value)> = None;
@@ -292,7 +302,7 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.as_ref() else {
             return Vec::new();
         };
-        if host.world.mode == legaia_engine_core::world::SceneMode::MuscleDome {
+        if host.world.minigames.muscle_dome.is_some() {
             return Vec::new();
         }
         let Some(b) = self
