@@ -73,7 +73,10 @@ fn items_screen_resolves_disc_names_counts_and_descriptions() {
     s.input_pad_edge(PadButton::Cross.mask());
     let m = items_screen_model(&s);
     assert!(m.focus_list);
-    assert_eq!(m.pages, 6, "retail 72-slot bag = 6 list pages");
+    assert_eq!(
+        m.pages, 1,
+        "page total is ceil(occupied rows / 12): two rows = one page"
+    );
     let info = m.info.expect("hovered row staged");
     assert_eq!(info.name, "Healing Leaf");
     assert_eq!(info.count, 9);
