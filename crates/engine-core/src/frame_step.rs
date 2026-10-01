@@ -113,7 +113,7 @@ pub fn camera_before_world_tick(
     azimuth_override: Option<u16>,
 ) {
     camera.reset_for_free_roam(world);
-    let az = azimuth_override.unwrap_or_else(|| camera.compass_azimuth_units());
+    let az = azimuth_override.unwrap_or_else(|| camera.compass_azimuth_units_for(world));
     world.locomotion.camera_azimuth = az % 4096;
 }
 

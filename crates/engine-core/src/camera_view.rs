@@ -180,6 +180,29 @@ fn lead_actor_xz(world: &World) -> Option<(f32, f32)> {
 ///
 /// REF: FUN_801DBE9C, FUN_801DAB90
 pub fn field_follow_view(cam: &Camera, world: &World) -> Option<FieldCameraView> {
+    follow_view_with_knobs(
+        cam,
+        world,
+        cam.manual_orbit,
+        cam.manual_tilt,
+        cam.manual_zoom,
+    )
+}
+
+/// [`field_follow_view`] with the three user follow knobs passed explicitly
+/// rather than read off the camera. The overworld walk arm passes identity:
+/// the knobs are field-only ([`Camera::follow_knobs_live`]), so a tilt or
+/// zoom banked in a town must not frame the kingdom map, where the page can
+/// neither see nor undo it. It used to - a town tilt tipped the walk camera
+/// toward top-down or under the terrain, and the curvature bend then
+/// indexed off that eye.
+fn follow_view_with_knobs(
+    cam: &Camera,
+    world: &World,
+    manual_orbit: f32,
+    manual_tilt: f32,
+    manual_zoom: f32,
+) -> Option<FieldCameraView> {
     let (wx, wz) = lead_actor_xz(world)?;
     let floor_y = world.sample_field_floor_height(wx as i32, wz as i32) as f32;
     let s = CUTSCENE_WORLD_SCALE;
@@ -251,7 +274,7 @@ pub fn field_follow_view(cam: &Camera, world: &World) -> Option<FieldCameraView>
         pitch: to_rad(pitch_units),
         // PSX camera yaw is the compass negation, so a positive manual orbit
         // subtracts from the render yaw.
-        yaw: to_rad(yaw_units) - cam.manual_orbit,
+        yaw: to_rad(yaw_units) - manual_orbit,
         // The field follow camera never rolls: `FUN_80025C24` seeds the roll
         // global to `0` on scene entry and only an op-`0x45` beat writes it,
         // and the follow ease's descriptor list has no roll entry. Measured
@@ -267,7 +290,7 @@ pub fn field_follow_view(cam: &Camera, world: &World) -> Option<FieldCameraView>
         },
         tr_eye,
     };
-    if cam.manual_tilt == 0.0 && cam.manual_zoom == 1.0 {
+    if manual_tilt == 0.0 && manual_zoom == 1.0 {
         // Both knobs at identity: the retail pose, bit for bit.
         return Some(retail);
     }
@@ -287,8 +310,8 @@ pub fn field_follow_view(cam: &Camera, world: &World) -> Option<FieldCameraView>
         focus: pivot,
         // The scene's pitch plus the user's tilt, clamped so the lens stays
         // above the floor and short of top-down.
-        pitch: crate::camera::follow_knobs::composed_pitch(retail.pitch, cam.manual_tilt),
-        tr_eye: q.map(|c| c * cam.manual_zoom),
+        pitch: crate::camera::follow_knobs::composed_pitch(retail.pitch, manual_tilt),
+        tr_eye: q.map(|c| c * manual_zoom),
         ..retail
     })
 }
@@ -573,8 +596,10 @@ pub fn resolve_field_camera(
         // The retail walk camera is the field zone camera (see
         // `camera::zone_camera_scene`): the pose the kingdom MAN's
         // section-3 records compose for the player's tile, eased per region.
+        // The user's follow knobs stay out of it (see
+        // `follow_view_with_knobs`).
         if cam.zone.active
-            && let Some(v) = field_follow_view(cam, world)
+            && let Some(v) = follow_view_with_knobs(cam, world, 0.0, 0.0, 1.0)
         {
             return FieldCameraFrame::WorldMapWalk {
                 view: world_map_view_from_follow(&v, az),
@@ -971,5 +996,34 @@ mod tests {
             panic!("expected the walk frame");
         };
         assert_eq!(view, world_map_walk_view(0, 0));
+    }
+
+    /// The follow knobs are field-only, so a tilt / zoom / orbit banked in a
+    /// town must not reach the overworld walk frame: the walk pose with every
+    /// knob set equals the walk pose with none, and the d-pad compass agrees.
+    #[test]
+    fn overworld_walk_frame_ignores_banked_follow_knobs() {
+        let mut w = world_with_player(8266, 8700);
+        w.mode = SceneMode::WorldMap;
+        let mut cam = Camera::default();
+        cam.zone.active = true;
+        cam.globals.0[0] = 370;
+        cam.globals.0[3] = -69;
+        cam.globals.0[4] = 776;
+        cam.globals.0[5] = 8875;
+        cam.globals.0[9] = 368;
+        let clean = resolve_field_camera(&w, &cam, None, [0.0, 0.0]);
+        let clean_az = cam.compass_azimuth_units_for(&w);
+        cam.manual_orbit = 0.7;
+        cam.manual_tilt = 0.5;
+        cam.manual_zoom = 1.8;
+        assert_eq!(resolve_field_camera(&w, &cam, None, [0.0, 0.0]), clean);
+        assert_eq!(cam.compass_azimuth_units_for(&w), clean_az);
+        // Back in the field the same knobs still steer.
+        w.mode = SceneMode::Field;
+        assert_ne!(
+            resolve_field_camera(&w, &cam, None, [0.0, 0.0]).field_view(),
+            clean.field_view()
+        );
     }
 }
