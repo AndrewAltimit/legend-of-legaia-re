@@ -368,6 +368,12 @@ impl World {
     /// itself, and the entry decode then picks its first screen off the kind
     /// byte ([`crate::pause_screens::menu_entry_subscreen`]).
     ///
+    /// Not under the opening narration crawl or a title card: the timeline
+    /// owns the scene there and the press waits for it to end. Both halves
+    /// live here so every host asks the same question - the native window
+    /// once added the crawl term beside this call and the browser page did
+    /// not.
+    ///
     /// Only the field-run modes the menu can open in. The player's
     /// engagement does **not** refuse it, unlike the Start path: the press
     /// comes from the interaction the dialog SM is running, and the
@@ -383,6 +389,7 @@ impl World {
             && !s.scripted_menu_opened
             && self.scene_mode_takes_menu_open()
             && self.cutscene.card.is_none()
+            && !self.cutscene_narration_active()
     }
 
     /// Spend the pending scripted menu press: a host opened the menu for it.

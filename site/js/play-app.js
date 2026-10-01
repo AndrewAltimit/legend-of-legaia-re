@@ -1413,34 +1413,35 @@ void main() {
         }
         return false;
       }
-      /* Menu up: Start toggles it shut - but only from the ROOT row list.
-       * The native window never lets Start reach the close: while a
-       * sub-screen owns the pad its session gets the raw mask and the root
-       * list is not ticked at all, so Start there is the sub-screen's own
-       * business and at most walks back to the root. Closing the whole menu
-       * from inside one threw away a half-typed rebind or a staged equip
-       * pick on a button that is inert in the window. Guarded so a cached
-       * WASM without the export keeps the old behaviour rather than
-       * trapping. */
+      /* Menu up: every edge, Start included, goes to the engine's menu step.
+       * What Start does is the shared picker's rule
+       * (`FieldMenuSession::tick`, via `tick_root_list`): on the root list it
+       * closes the menu, on the save point notice it does nothing, and under
+       * an op-0x49 kind-0x0D ready check it opens the Yes / No confirm
+       * instead of closing. Inside a sub-screen it is the sub-screen's own
+       * edge. The page used to close the menu itself on any root-level
+       * Start, which skipped all three rules and released a parked ready
+       * check as answered - the native window has always handed Start to
+       * the kernel. Guarded so a cached WASM without the export keeps a
+       * sensible blip rather than trapping. */
       let inSubScreen = false;
       try {
         inSubScreen = typeof rt.play_menu_sub_is_open === 'function'
           && rt.play_menu_sub_is_open();
       } catch (e) {}
-      if (startEdge && !inSubScreen) {
-        try { rt.play_menu_close(); } catch (e) {}
-        this.menuBlip(padMaskOf(p), true);
-      } else {
+      {
         let edge = 0;
         edge |= padMaskOf(p);
         /* Cue the engine's own blip off this frame's edges. Which edge fires
          * which cue (a direction a cursor move, Cross a confirm, Circle a
-         * cancel; Start inside a sub-screen nothing) is the engine's rule, and
-         * so are the ids - the page never spells either. The engine counts
-         * every request (`menu_cue_requests` in `play_sfx_state_json`), so the
-         * wiring stays measurable. See `play_sfx::CUE_MENU_CURSOR` for the one
-         * inexactness left, which is a bank choice rather than a pitch. */
-        if (edge) this.menuBlip(edge, false);
+         * cancel; Start a cancel on the root list, nothing inside a
+         * sub-screen) is the engine's rule, and so are the ids - the page
+         * never spells either. `!inSubScreen` is the native window's
+         * `start_closes_menu = sub.is_none()`. The engine counts every request
+         * (`menu_cue_requests` in `play_sfx_state_json`), so the wiring stays
+         * measurable. See `play_sfx::CUE_MENU_CURSOR` for the one inexactness
+         * left, which is a bank choice rather than a pitch. */
+        if (edge) this.menuBlip(edge, !inSubScreen);
         /* Tick EVERY frame, edge or not, and tick at 60 Hz.
          *
          * The menu is not purely input-driven: the save screen's "Now
@@ -1580,6 +1581,22 @@ void main() {
       this.pulse.clear();
       this._repack();
       try { return rt.play_shop_is_open(); } catch (e) { return false; }
+    }
+
+    /* Did the tick just run open a screen that suspends the field? The
+     * shop / prize counter (`play_shop_is_open`, the engine's
+     * `MenuRuntime::is_open`) or a pending scripted menu press
+     * (`play_menu_scripted_open_pending`). Both are engine answers. */
+    _modalOpenedThisTick() {
+      const rt = this.rt;
+      try {
+        if (typeof rt.play_shop_is_open === 'function' && rt.play_shop_is_open()) return true;
+      } catch (e) { /* fall through */ }
+      try {
+        if (typeof rt.play_menu_scripted_open_pending === 'function'
+            && rt.play_menu_scripted_open_pending()) return true;
+      } catch (e) { /* fall through */ }
+      return false;
     }
 
     /* Whether Start opens the menu right now.
@@ -2329,6 +2346,16 @@ void main() {
              * already charged their wall time, so breaking here dropped up
              * to three ticks per door. */
           }
+          /* A tick that opened a modal screen - a merchant's shop or prize
+           * counter (op 0x49, drained inside `tick_frame`), or a save point's
+           * scripted menu press - ends the field's run for this frame. The
+           * native window suspends the field on the very next tick
+           * (`MenuRuntime::suspends_field`, the scripted-press arm ahead of
+           * its scene tick); running the frame's catch-up ticks here walked
+           * the field, pad live, for up to three more ticks behind a shop
+           * the engine had already opened. The screens' own steps above pick
+           * them up next frame. */
+          if (this._modalOpenedThisTick()) break;
         }
       } else {
         /* Keep the sim clock current while paused so unpausing doesn't dump the

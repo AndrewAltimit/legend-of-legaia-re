@@ -506,6 +506,20 @@ NATIVE_TITLE_SAVE = (
 
 SIM_PAIRS: list[dict[str, object]] = [
     {
+        "what": "shop blips, native vs play page - the shop's cursor / "
+        "confirm / buzz / cancel cues and the quantity and recipient "
+        "screens' purchase / sale / equip cues are the engine's decision "
+        "(`MenuRuntime::take_ui_cue`, retail's list kernel `FUN_80032A44` "
+        "and the shop sub-screens' own ring writes). Both hosts dropped "
+        "them; each host's shop step must take and key the cue",
+        "sites": {
+            "native": (NATIVE_REDRAW, "tick_menu_runtime_session"),
+            "web": ("crates/web-viewer/src/play_shop.rs", "play_shop_input"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["take_ui_cue"],
+    },
+    {
         "what": "CLUT-walk shimmer install, native vs play page - the resolve "
         "(type-6 table on a field scene, slot 5 on an overworld), the strip "
         "park, the Drake complement and the ocean-head fallback were written "

@@ -1178,12 +1178,6 @@ impl LegaiaRuntime {
         // where the native window's redraw loop ticks its own, off the same
         // world pad words. A no-op while the opt-in is off.
         self.tick_dev_menu();
-        // Route any BGM event the frame's own steps raised since the routing
-        // pass above (a battle-presentation or minigame swap) - the scene
-        // tick's own events went there. The drain below drops whatever is
-        // left, so a late event routes here rather than being lost.
-        #[cfg(target_arch = "wasm32")]
-        self.route_bgm_wasm();
         // Drain every field-VM event the BGM router handed back (and, with
         // audio off, the BGM ones too) - the browser twin of the native
         // `drain_and_route_field_events`. `World::pending_field_events` is
@@ -2164,6 +2158,12 @@ impl LegaiaRuntime {
     /// world's own state instead (the cutscene camera params, the dialog box).
     pub(crate) fn drain_and_route_field_events_web(&mut self) {
         use legaia_engine_core::field_events::FieldEvent;
+        // Route any BGM event the frame's own steps raised since the routing
+        // pass after the scene tick (a battle-presentation or minigame swap,
+        // a dance song ending) before the drain below drops whatever is left.
+        // The native `drain_and_route_field_events` opens with the same pass.
+        #[cfg(target_arch = "wasm32")]
+        self.route_bgm_wasm();
         let Some(host) = self.scene_host.as_mut() else {
             self.world.drain_field_events();
             return;

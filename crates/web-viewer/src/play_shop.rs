@@ -1190,6 +1190,12 @@ impl LegaiaRuntime {
         if let Some(host) = self.scene_host.as_mut() {
             menu.tick(&mut host.world, input);
         }
+        // The shop's own blip (`MenuRuntime::take_ui_cue`), keyed through
+        // the page's SFX channel - the native window keys the same one off
+        // `tick_menu_runtime_session`.
+        if let Some(cue) = self.menu.take_ui_cue() {
+            self.play_sfx(u32::from(cue));
+        }
         if self.menu.shop_session.is_none()
             && let Some(host) = self.scene_host.as_mut()
             && host.world.shops.shop_open
