@@ -162,10 +162,14 @@ pub mod field_actor_reflect;
 pub mod field_actor_timers;
 pub mod field_helpers;
 pub mod field_ledge_hop_arc;
-pub mod field_party_cursor;
 pub mod field_passive_hud;
 pub mod field_player_clip;
 pub mod field_state_pick;
+pub mod field_subsystem_enter;
+/// Former name of [`field_subsystem_enter`], from when `FUN_801F1278` was read
+/// as a party picker. Kept so existing intra-doc links resolve.
+#[doc(hidden)]
+pub use field_subsystem_enter as field_party_cursor;
 pub mod field_warp_tile;
 pub mod gameover_banner;
 pub mod gte_divide;

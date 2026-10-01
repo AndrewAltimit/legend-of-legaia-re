@@ -31,7 +31,7 @@ scene's MAN - use `legaia-engine man-scripts` instead.
 - [`psx_camera` - the shared retail GTE camera](#psx_camera---the-shared-retail-gte-camera)
 - [`battle_actor_tick` / `battle_actor_tint` - `FUN_800480D8` / `FUN_8004A908`](#battle_actor_tick--battle_actor_tint---fun_800480d8--fun_8004a908)
 - [Battle-overlay leaves outside the action SM](#battle-overlay-leaves-outside-the-action-sm)
-- [`field_party_cursor` - `FUN_801F1278`](#field_party_cursor---fun_801f1278)
+- [`field_subsystem_enter` - `FUN_801F1278`](#field_subsystem_enter---fun_801f1278)
 - [`battle_formulas`](#battle_formulas)
 - [Other modules](#other-modules)
 - [See also](#see-also)
@@ -367,12 +367,14 @@ own length (or, for `FUN_801DBB8C`, is a four-instruction label slice and not a
 function). Reproduce with `scripts/ghidra-analysis/disasm-overlay-fn.py` at base
 `0x801CE818`.
 
-## `field_party_cursor` - `FUN_801F1278`
+## `field_subsystem_enter` - `FUN_801F1278`
 
-The field VM's op-`0x49` party-member picker, enter half: the context-flag and
-pad-latch writes, the roster resolve, and the three-cell portrait seed. The one
-behaviour worth knowing is that the picker is **centre-weighted** - a one-member
-party lands in the middle cell and a two-member party takes the outer two.
+The installer of the field subsystem actor that op `0x49` and the menu button
+both spawn: input suspend, the context-flag and pad-latch writes, the roster
+resolve and three-cell roster seed, and the handler install. Its default handler
+id `7` is the state pick `FUN_801F1F4C` (`field_state_pick`), which hands on to
+the pause-menu session - it is not a party picker. A one-member party lands in
+the middle roster cell and a two-member party takes the outer two.
 
 ## `battle_formulas`
 

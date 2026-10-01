@@ -1010,7 +1010,8 @@ first monster) and `+0x1DE = 0` (Martial Arts), writes each portrait cell as
 | 3 | `0x0C` | `0x72` |
 
 A solo member sits centred and a pair splits outward - the same centring rule
-the field VM's member picker `FUN_801F1278` uses, arrived at independently.
+the field subsystem installer `FUN_801F1278` uses for its three roster cells, arrived at
+independently.
 
 **The name pointer confirms the save record.** Both arms resolve a member's name
 as `0x8008459B + id * 0x414`, which is exactly
