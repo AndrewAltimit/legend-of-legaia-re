@@ -3171,6 +3171,11 @@ fn pad_hop(session: &mut BootSession, graph: &DiscGraph, dest: &str) -> Result<S
             scene_name(session)
         );
         let w = &session.host.world;
+        if let Some(t) = w.world_map.region_tracker.as_ref() {
+            for r in t.table().active_regions() {
+                eprintln!("      [region] {r:?}");
+            }
+        }
         let (px, pz) = player_xz(session);
         let me = dispatch_tile(px, pz);
         let warps = teleports(session);
@@ -3441,6 +3446,130 @@ fn unwedge(session: &BootSession, from: Cell) -> Vec<Cell> {
     Vec::new()
 }
 
+/// The overworld's encounter step is a change of 128-unit tile, and a change
+/// of one tile on **both** axes at once is one step, not two
+/// (`FUN_801D9E1C` caches the tile and reads a region only when the new one
+/// differs by at most one on each axis - `slti 0x2` at `0x801D9EF0` /
+/// `0x801D9F08`; engine `region_encounter::is_region_step`). A player who
+/// walks a diagonal through tile corners therefore drains the encounter
+/// counter about half as fast as one who walks the staircase a four-way
+/// lattice plans. On a crossing worn down to a lone member that is the
+/// difference between two fights and three.
+///
+/// This is the tile route for that walk: eight-connected over tiles whose
+/// four wall sub-cells are all open (a diagonal also needs both tiles it
+/// cuts the corner of), every move costing one step, ending on the open
+/// tile nearest `goal`. The lattice planner finishes from there.
+fn overworld_tile_route(
+    session: &BootSession,
+    goal: (i16, i16),
+    avoid: &HashSet<(i32, i32)>,
+) -> Vec<(i32, i32)> {
+    let w = &session.host.world;
+    let open = |t: (i32, i32)| {
+        (0..128).contains(&t.0)
+            && (0..128).contains(&t.1)
+            && !avoid.contains(&t)
+            && [(32, 32), (96, 32), (32, 96), (96, 96)]
+                .iter()
+                .all(|&(dx, dz)| {
+                    !w.field_tile_is_wall((t.0 * 128 + dx) as i16, (t.1 * 128 + dz) as i16)
+                })
+    };
+    let (px, pz) = player_xz(session);
+    let start = dispatch_tile(px, pz);
+    if !open(start) {
+        return Vec::new();
+    }
+    let g = (i32::from(goal.0), i32::from(goal.1));
+    let far = |t: (i32, i32)| (t.0 - g.0).abs() + (t.1 - g.1).abs();
+    let mut parent: HashMap<(i32, i32), (i32, i32)> = HashMap::from([(start, start)]);
+    let mut q = VecDeque::from([start]);
+    let mut best = start;
+    while let Some(t) = q.pop_front() {
+        if far(t) < far(best) {
+            best = t;
+        }
+        for dz in -1..=1 {
+            for dx in -1..=1 {
+                let n = (t.0 + dx, t.1 + dz);
+                if (dx, dz) == (0, 0) || parent.contains_key(&n) || !open(n) {
+                    continue;
+                }
+                if dx != 0 && dz != 0 && !(open((t.0 + dx, t.1)) && open((t.0, t.1 + dz))) {
+                    continue;
+                }
+                parent.insert(n, t);
+                q.push_back(n);
+            }
+        }
+    }
+    let mut route = Vec::new();
+    let mut t = best;
+    while t != start {
+        route.push(t);
+        t = parent[&t];
+    }
+    route.reverse();
+    route
+}
+
+/// The pad for one tick of an [`overworld_tile_route`] move from the tile the
+/// player stands on to the adjacent `next`. A diagonal move is held only once
+/// both axes are the same number of 2-unit sub-steps from their tile edge, so
+/// both edges fall in one sub-step and the reader sees one step; until then
+/// the axis further from its edge is walked alone - in single sub-steps when
+/// close, by tapping (a released pad zeroes the overworld walk carry, so the
+/// next pressed tick commits exactly one sub-step). `None` when the camera
+/// gives no pad for the move's world direction.
+fn overworld_corner_pad(session: &BootSession, next: (i32, i32), tapped: bool) -> Option<u16> {
+    let (px, pz) = player_xz(session);
+    let t = dispatch_tile(px, pz);
+    let (dx, dz) = (next.0 - t.0, next.1 - t.1);
+    let need = |p: i16, tile: i32, d: i32| -> i32 {
+        if d > 0 {
+            128 * (tile + 1) - i32::from(p)
+        } else {
+            i32::from(p) - 128 * tile + 1
+        }
+    };
+    let pad_for = |sx: i32, sz: i32| -> Option<u16> {
+        let pad = pad_for_step(session, sx as i16, sz as i16);
+        let az = session
+            .host
+            .world
+            .world_map
+            .ctrl
+            .as_ref()
+            .map_or(0, |c| c.azimuth);
+        let sx_pad = i32::from(pad & PadButton::Right.mask() != 0)
+            - i32::from(pad & PadButton::Left.mask() != 0);
+        let sy_pad = i32::from(pad & PadButton::Up.mask() != 0)
+            - i32::from(pad & PadButton::Down.mask() != 0);
+        let b = world_map_camera_relative_bits(az, sx_pad, sy_pad);
+        let got = (
+            i32::from(b & 0x2000 != 0) - i32::from(b & 0x8000 != 0),
+            i32::from(b & 0x1000 != 0) - i32::from(b & 0x4000 != 0),
+        );
+        (got == (sx, sz)).then_some(pad)
+    };
+    if dx == 0 || dz == 0 {
+        return pad_for(dx, dz);
+    }
+    let sx = (need(px, t.0, dx) + 1) / 2;
+    let sz = (need(pz, t.1, dz) + 1) / 2;
+    let (axis, gap) = match sx.cmp(&sz) {
+        std::cmp::Ordering::Equal => return pad_for(dx, dz),
+        std::cmp::Ordering::Greater => ((dx, 0), sx - sz),
+        std::cmp::Ordering::Less => ((0, dz), sz - sx),
+    };
+    if gap < 3 && tapped {
+        Some(0)
+    } else {
+        pad_for(axis.0, axis.1)
+    }
+}
+
 /// Walk with the pad until the player's dispatch tile is within `within`
 /// tiles of `goal`. Random encounters on the way are fled; a scripted
 /// sequence the walk sets off (a band's record, a talk) is paged through.
@@ -3553,8 +3682,28 @@ fn pad_walk(
     let mut planned_from = None;
     let mut scripted_next = session.host.world.encounters.scripted_formation_pending;
     let mut path = Vec::new();
+    // The overworld's corner-crossing walk ([`overworld_tile_route`]).
+    let mut corner_route: Vec<(i32, i32)> = Vec::new();
+    let (mut corner_planned, mut corner_failed, mut corner_tapped) = (false, false, false);
+    let mut corner_last: Option<(i16, i16)> = None;
+    let mut corner_stuck = 0u32;
+    let mut traced_tile = None;
     for _ in 0..PAD_LEG_FRAMES {
         pad_budget(session)?;
+        // Per overworld tile: the encounter step counter it left behind.
+        if std::env::var_os("LEGAIA_FGL_WALK_DEBUG").is_some()
+            && session.host.world.mode == SceneMode::WorldMap
+        {
+            let (x, z) = player_xz(session);
+            let t = dispatch_tile(x, z);
+            if traced_tile != Some(t) {
+                traced_tile = Some(t);
+                eprintln!(
+                    "      [step] tile {t:?} counter {}",
+                    session.host.world.encounters.step_counter
+                );
+            }
+        }
         if session.host.world.mode == SceneMode::Battle {
             let trace = std::env::var_os("LEGAIA_FGL_TRACE").is_some();
             let f0 = flags_of_world(session);
@@ -3644,6 +3793,46 @@ fn pad_walk(
             None => tile_center(goal),
         };
         let mut pad = pad_for_step(session, (tx - wx).signum(), (tz - wz).signum());
+        if walking_mode == SceneMode::WorldMap && !corner_failed {
+            let t = dispatch_tile(wx, wz);
+            if corner_route.is_empty() && !corner_planned {
+                corner_route = overworld_tile_route(session, goal, &doors);
+                corner_planned = true;
+            }
+            if let Some(i) = corner_route.iter().position(|&r| r == t) {
+                corner_route.drain(..=i);
+            }
+            match corner_route.first() {
+                Some(&n) if (n.0 - t.0).abs() <= 1 && (n.1 - t.1).abs() <= 1 => {
+                    match overworld_corner_pad(session, n, corner_tapped) {
+                        Some(p) => {
+                            corner_tapped = p != 0;
+                            pad = p;
+                        }
+                        None => corner_failed = true,
+                    }
+                }
+                // Off the route (a slide, a script's seat): plan it again
+                // from here.
+                Some(_) => {
+                    corner_route.clear();
+                    corner_planned = false;
+                }
+                None => {}
+            }
+            // Pressing without moving: the tile route met something the
+            // wall bits do not show; the lattice takes over.
+            if pad != 0 && corner_last == Some((wx, wz)) {
+                corner_stuck += 1;
+                if corner_stuck > 8 {
+                    corner_failed = true;
+                    corner_route.clear();
+                }
+            } else {
+                corner_stuck = 0;
+            }
+            corner_last = Some((wx, wz));
+        }
         // Held against something that will not give: a player tries the
         // action button (a door that opens on a press, not on contact), and
         // the route is planned afresh (an NPC walked into it).
