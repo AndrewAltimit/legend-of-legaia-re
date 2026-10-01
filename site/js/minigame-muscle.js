@@ -2085,20 +2085,23 @@ window.MgMuscle = (function () {
       text(mp + '/' + mp, 230, 222, 8, '#f2f4fa');
     }
 
-    /* Defender name chip (playback): right-aligned blue chip. Capture (the
-     * HYPER ARTS!! moment): body ends at x=304, plate at y=188 with the
-     * status plate hidden; outside the banner it sits one row above the
-     * plate (fitted seat between two captured states). */
-    function drawFoeChip(state) {
+    /* Opponent name chip: right-aligned blue chip, body ending at x=304.
+     * `y` is the seat: the review screen's target-select row (168), or the
+     * bar's row (188) during playback - the battle's target plaque
+     * (placement record 81), which rises to the status plate's own row and
+     * takes it over while the fighter is the one attacking (captured at the
+     * HYPER ARTS!! moment; `engine-core::battle_hud::battle_target_plaque`).
+     * The playback seat used to be a fitted y=168, which put the plate
+     * under the TOTAL tally row (value cells at y=168..183). */
+    function drawFoeChip(state, y) {
       const name = state.names[1] || '';
       if (!name) return;
       if (hudOk()) {
-        const y = artsBanner ? 188 : 168;
         rChip(name, 304 - hudTextW(name), y, 'blue');
         return;
       }
       const w = Math.max(44, name.length * 7 + 12);
-      chip(310 - w, 196, w, 13, 'blue', name);
+      chip(310 - w, y + 8, w, 13, 'blue', name);
     }
 
     /* Attacker name chip, top-left gold (retail arts-playback header). */
@@ -2318,13 +2321,16 @@ window.MgMuscle = (function () {
     }
 
     /* The retail play-out damage tally: the etim TOTAL word + the big
-     * orange numerals, at the captured seat (word at (184, 170), 16x15
-     * digit cells ending at x=304 - run5 packet listing). */
+     * orange numerals, at the battle overlay's own combo-cluster seats
+     * (`legaia_engine_vm::battle_value_readout`: COMBO_TOTAL_LABEL_SEAT
+     * (216, 170), 16-px value cells ending at x=304 on row 168 - the
+     * frame-oracle-pinned seats every battle draws the cluster at; the
+     * dome reuses the battle overlay wholesale). */
     function drawTally() {
       if (!tally || !tally.total) return;
       if (hudOk()) {
         const num = String(tally.total);
-        hudWord('word_total', 184, 170);
+        hudWord('word_total', 216, 170);
         hudBigDigits(num, 304 - num.length * 16, 168);
         return;
       }
@@ -2472,7 +2478,7 @@ window.MgMuscle = (function () {
         } else if (selectSub === 'review' || selectSub === 'confirm') {
           if (selectSub === 'review') {
             drawHeaderChips(state, true);
-            drawFoeChip(state);
+            drawFoeChip(state, 168);
           } else {
             /* Retail's 0x6e screen keeps a lone Begin chip top-left. */
             if (hudOk()) rChip('Begin', 16, 8, 'gold');
@@ -2484,10 +2490,13 @@ window.MgMuscle = (function () {
         }
       } else if (mode === 'playback') {
         drawAttackerChip(state.names[tally ? tally.attacker : 0] || state.names[0]);
-        drawFoeChip(state);
-        /* Retail hides the AP plate during playback and the status plate
-         * while the arts banner is up (both captured states). */
-        if (!artsBanner) drawStatusPlate(state);
+        /* The bar's row carries one plate at a time, as in any battle's
+         * action phase: the opponent's plaque while the fighter attacks it
+         * (the readout bar is parked - `battle_readout_bar_slot` opens it
+         * only for a party *target*), and the fighter's status plate while
+         * the opponent attacks. Retail hides the AP plate during playback. */
+        if (tally && tally.attacker === 0) drawFoeChip(state, 188);
+        else if (!artsBanner) drawStatusPlate(state);
         drawTally();
         drawArtsBanner();
       } else if (mode === 'interval') {
