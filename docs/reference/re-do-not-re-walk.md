@@ -145,7 +145,7 @@ prim-dispatch family at all. See
 | `FUN_801DBC30` blits the party panels' name plate | falsified (its page + CLUT resolve to the `etim` red cross-out X) | [details ↓](#fun_801dbc30-is-not-the-battle-name-plate) |
 | The retail party HUD carries HP / MP gauge bars | falsified (no bar primitive in either readout's packet run) | [details](../subsystems/battle.md#the-party-status-readout---and-it-has-no-gauge) |
 | Screen-element kinds named by what sits at their seat (`0x32`/`0x33` = "the roster panels") | falsified (naming by seat named the wrong record) | [details ↓](#a-kind-named-by-its-seat-can-name-the-wrong-record) |
-| The battle message banner is "a gold border over a blue interior" | falsified (border only - no fill primitive under it) | [details ↓](#the-battle-message-banner-has-no-interior-fill) |
+| The battle message banner (and every class-0 frame) has no interior fill | falsified (a `POLY_GT4` marbled fill covers the frame; only a `SPRT`-only sweep misses it) | [details ↓](#the-battle-message-banner-has-no-interior-fill) |
 | `FUN_801E2524` / `FUN_801E2650` are a full-screen flash / fade ramp | falsified (they are the **Arts announcement banner**) | [details ↓](#the-flash-ramp-is-the-arts-announcement-banner) |
 | The battle per-actor draw `FUN_80048A08` runs **35-64x per frame** during a summon | falsified (once per live actor per rendered frame) | [details ↓](#the-summon-draw-runs-35-64-times-a-frame) |
 | The slot-B cast band applies damage with **one** shape, seat-0 hardcoded | falsified (true of PROT 0958 / 0959 / 0960 only) | The seat-0 write is real, and reading it as the band's law is the natural generalisation from the three Delilas modules where it is the whole damage path. But the band splits: the capture-class ticks read the caster's own `+0x1DF` through the `0x801CF56C` trampoline and clamp per victim, and two images apply damage to a **row** of seats rather than one. The rule to carry is per-module, not per-band - [cast-module.md](../subsystems/cast-module.md#the-seat-0-hardcode-and-where-it-does-not-hold). |
@@ -314,17 +314,24 @@ sheet layout: [`effect.md`](../formats/effect.md#the-battle-value-readouts-glyph
 
 ### The battle message banner has no interior fill
 
-Two live frames carrying the banner - `rim_elm_gimard_seru_capture_after` (the
-mid-battle Seru "captured!" line) and `noa_levelup_banner` - draw the class-0
-9-slice border sprites and the glyph run and **nothing else**. No textured
-fill, no flat quad, no semi-transparent rect anywhere inside the frame rect.
-The scene shows through.
+This reading was itself recorded here once, as the falsification of "a gold
+border over a blue interior": a walk of the `rim_elm_gimard_seru_capture_after`
+and `noa_levelup_banner` display lists found the class-0 border sprites and the
+glyph run and nothing else inside the frame rect, so the scene was taken to
+show through. Both hosts drew the banner - and the battle-intro enemy-name
+labels, which share the frame - hollow on that authority.
 
-What made "a gold border over a blue interior" the natural reading is that the
-framed-window widget records (`0x03` / `0x04` / `0x44`) carry a 32x32
-blue-marbled patch at texels `(128, 0)` as their own sprite rect, and the
-framed *menu* windows do fill with it - so the art exists, and the battle
-banner simply does not use it. Geometry:
+It was wrong because the walk only kept `SPRT` packets. The same two states
+carry, ahead of the border, a run of opaque gouraud textured quads
+(`POLY_GT4`, code `0x3C`) over the whole frame rect: widget record `3`'s
+32x32 blue-marbled patch at texels `(128, 0)` on CLUT `(32, 511)`, tiled in
+32-pixel columns from the frame origin, grey `0x40` at the top edge and
+`0x88` at the bottom. The emitter is `FUN_8002BDC4`, called for every
+class-0 node from `0x8002D7E8`, and each state's framebuffer shows the navy
+fill under the text. The original "blue interior" reading was right; the
+lesson is that a primitive-type filter on an ordering-table walk is a claim
+about which primitives exist, and "nothing else" needs every GP0 code
+checked. Geometry and the band law:
 [`battle.md`](../subsystems/battle.md#the-full-width-message-banner).
 
 ### A kind named by its seat can name the wrong record

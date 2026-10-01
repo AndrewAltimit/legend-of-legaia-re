@@ -4331,14 +4331,29 @@ The top-of-screen banner every battle message uses is a class-0 window on the
 same seat, and it is packet-pinned mid-fight (the `rim_elm_gimard_seru_capture_after`
 and `noa_levelup_banner` states). Content pen `(16, 12)`, frame origin
 `(8, 4)`, left / right border columns 4 wide, interior 20 tall - so the frame
-is 28 tall and its right column starts at `16 + measured_width`. The top and
-bottom edges tile 24 wide from `x = 12` with the final tile clipped, exactly
-as a plate run clips its last body tile.
+is 28 tall. Its width is **not** measured from the message: every record that
+raises a message (`0x45..=0x4B`, `0x59`, `0x65`, `0x66`, kind `3` on seat
+`(16, 14)`) carries a fixed `280 x 12` content box, and both captures frame
+`(8, 4)..(304, 32)` whatever their text. The class-0 law is the content box
+grown by 4 on each side for the interior (`w + 8`) and by 4 more for the
+border, so the right column starts at `pen.x + w + 4`. The top and bottom
+edges tile 24 wide from `x = 12` with the final tile clipped, exactly as a
+plate run clips its last body tile.
 
-Retail draws **no interior fill** under it: the display list carries the
-border sprites and the glyph run and nothing else, so the scene shows
-through. The 32x32 blue-marbled patch records `0x03` / `0x04` carry as their
-own rect is a fill the framed *menu* windows use, not this banner.
+**The frame is filled.** Ahead of the border sprites the display list
+carries a run of opaque gouraud textured quads (`POLY_GT4`, code `0x3C`)
+covering the whole frame rect: the 32x32 blue-marbled patch widget record `3`
+carries as its own rect, texels `(128, 0)` on CLUT `(32, 511)`, tiled in
+32-pixel columns from the frame origin with the last one clipped (eight full
+columns and an 8-wide one for the 296-wide frame), texels 1:1 with pixels,
+and the vertex grey `0x40` along the top edge and `0x88` along the bottom.
+The emitter is `FUN_8002BDC4`, which the layout dispatcher calls for every
+class-0 node (`jal` at `0x8002D7E8`): it steps columns by the record's `w`
+and bands by its `h`, restarts the texture at each band, and ramps the grey
+`0x900 / height` per band, so a taller frame - the 58-tall window under the
+same `noa_levelup_banner` frame - is two bands, `0x40 -> 0x67` and
+`0x67 -> 0x88`. An ordering-table walk that keeps only `SPRT` packets cannot
+see the fill, which is how this banner was once recorded as hollow.
 
 The same frames catch the actor-name plaque parked: a gold plate run at
 `(8, -30)` with a 27-pixel interior (cap, one 16-wide body tile, one clipped
@@ -4347,8 +4362,11 @@ disc-side parked seat `(16, -24)` through the pen and bias law above, and it
 is the clip rule and the plate arithmetic confirmed in one packet run.
 
 **Port.** [`engine-ui::battle_hud_chrome`](../../crates/engine-ui/src/battle_hud_chrome.rs)
-carries the geometry (`banner_frame` / `banner_interior`, the tiled-edge
-emit, no fill) and the HUD builder draws it in place of the plaque. What
+carries the geometry (`banner_frame` / `banner_interior`, the fixed
+`BANNER_BOX_W`, the tiled-edge emit, and the fill `class0_fill_draws_at`,
+which draws a one-band frame from the gradient-baked interior tile and a
+taller one as tinted rows of the raw tile) and the HUD builder draws it in
+place of the plaque. What
 feeds it is the port's two battle messages, level-up and Seru-capture - the
 `noa_levelup_banner` state is one of the two the geometry came from. The port
 raises both a mode-tick **after** the fight has handed the frame back to the
@@ -4381,13 +4399,16 @@ intro wears [the message banner](#the-full-width-message-banner)'s frame, and
 an ordering-table walk of a live intro frame
 ([`widget-draw-sweep.py`](../../scripts/mednafen/widget-draw-sweep.py) over a
 save state the probe below writes on the banner's own frames) says it draws
-exactly that and nothing else: per label a 4x4 corner pair from texels
-`(160, 0)` and `(188, 0)`, 24-wide top and bottom edges from `origin + 4` with
-the last tile clipped, 4x20 side columns, every piece on CLUT `(32, 511)` - and
-no fill sprite anywhere in the frame. Frame origin is the pen less `(8, 8)` and
+exactly that: per label a 4x4 corner pair from texels `(160, 0)` and
+`(188, 0)`, 24-wide top and bottom edges from `origin + 4` with the last tile
+clipped, 4x20 side columns, every piece on CLUT `(32, 511)`, over the same
+[marbled fill](#the-full-width-message-banner) - three `POLY_GT4` columns per
+label, the last clipped (`(78, 40)` 32 / 32 / 18 wide for `Moldy Worm`), which
+a `SPRT`-only sweep does not list. Frame origin is the pen less `(8, 8)` and
 the right column lands at `pen.x + width + 4`, so `Moldy Worm` on pen
 `(86, 48)` 66 wide frames `(78, 40)` to `(159, 67)` with its top edge tiled at
-x `82` / `106` / `130` and clipped to 2 pixels at `154`. None of those tiles
+x `82` / `106` / `130` and clipped to 2 pixels at `154`. The labels are white
+glyphs on that fill, and the port draws them so on both hosts. None of those tiles
 matches a widget record's own rect, because a class-0 frame's eight quads come
 from the tile-set pool at `0x80073A00` rather than from the record.
 
@@ -4426,8 +4447,11 @@ of `target_picker::layout_enemy_menu_rows`, both `FUN_801D9D3C`), measured with
 the host's `legaia-font`; `engine-core::world::battle::intro_names` owns the
 `ctx[+0x6D6]` timer, armed beside the formation banner and drained by the
 frame step; and `engine-ui`'s battle HUD builder draws each label on the
-class-0 frame (`battle_hud_chrome::class0_frame_draws_at`) at `(x, 48)`. Both
-hosts pass the labels through `BattleHudFrame::intro_names`. The X each group
+class-0 frame (`battle_hud_chrome::class0_frame_draws_at`, fill included) at
+`(x, 48)`. Both hosts pass the labels through `BattleHudFrame::intro_names`,
+and the builder drops them once any command surface past the round prompt is
+open (the ring, a picker, a submenu, the Begin / Reselect confirm), none of
+which retail can reach while they are up. The X each group
 averages is the monster actor's `+0x34` (`lhu a0,0x34(v0)` at `0x801D9E00` /
 `0x801D9ED4`), its battle **world** X, laid out as `(avg >> 3) - width / 2 +
 0xA0` - so a label sits over its group's seat. The port reads it off the live
