@@ -325,42 +325,90 @@ pub const PLASMA_STRIKE_CONFIRM_PHASE: u8 = 5;
 /// `caster[+0x1D9]` at `0x801F7B64`).
 pub const PLASMA_STRIKE_CONFIRM_CLIP: u8 = 0x0D;
 
+/// PROT 0960's arm that lands the flurry (`ctx+0x279 == 0x0C`,
+/// `0x801F801C..0x801F80C8`).
+pub const PLASMA_STRIKE_LAND_ARM: u8 = 0x0C;
+/// PROT 0960's burst arm (`ctx+0x279 == 0x0D`, `0x801F80CC`): the baked
+/// `0x1C0` roll, then the caster's closing clip and the victim's knockdown.
+pub const PLASMA_STRIKE_BURST_ARM: u8 = 0x0D;
+/// The caster's closing clip the burst arm stages (`li v0,0xF` /
+/// `sb v0,0x1da(s2)` at `0x801F8214`).
+pub const PLASMA_STRIKE_CLOSE_CLIP: u8 = 0x0F;
+/// Phase arms the head dispatches on: `0..=0x10`, then the terminal `0xFF`
+/// (`0x801F85E4`, the only arm that returns `0`). Arm `0x10` stores `0xFF`
+/// (`0x801F8584` / `0x801F85C0`), so the band runs `0x11` arms before it
+/// reports done.
+pub const PLASMA_STRIKE_ARMS: u16 = 0x11;
+
 /// PROT 0960 (Plasma Strike, Lu Delilas) tick body.
 ///
-/// A `beq`/`slti` chain head (widest compare `slti v1, 9`), one
-/// `FUN_801DD6B4` site at `0x801F8168` with the baked `0x1C0` burst, the
-/// shape-A clamp at `0x801F818C`, six `+0x1DA` stages, five restage bumps and
-/// three phase stores through `$s4 = ctx+0x279`.
+/// The head is a `beq`/`slti` tree over `ctx+0x279` (`0x801F7570..
+/// 0x801F7648`) whose arms run `0..=0x10` plus the terminal `0xFF`; every arm
+/// but `0xFF` returns busy. Lu's chain stages `0x0E` (arm 0), `0x0C` (arm 4),
+/// `0x0D` (arm 5) and closes on `0x0F` (arm `0x0D`).
 ///
-/// Its phase-5 arm is the documented paired stage/confirm gate: it stages id
-/// `0x0D` every tick and holds until `caster[+0x1D9]` equals the same
-/// literal, ANDed with a progress check - so that arm does **not** advance
-/// the phase until the confirm passes. An edit that remaps the stage without
-/// the compare stalls phase 5 forever, which is the softlock the module docs
-/// record.
+/// * Arm 5 is the documented paired stage/confirm gate: it stages id `0x0D`
+///   every tick and holds until `caster[+0x1D9]` equals the same literal,
+///   ANDed with a progress check - so that arm does **not** advance the phase
+///   until the confirm passes. An edit that remaps the stage without the
+///   compare stalls phase 5 forever, which is the softlock the module docs
+///   record.
+/// * Arm `0x0C` lands the flurry. The flurry clips' hit events only
+///   accumulate (the action's strike cursor is not parked during a cast), so
+///   the victim's combo total `+0x00` is clamped to live HP, subtracted from
+///   `+0x14C` and zeroed here (`lw a0,0x0(s3)` .. `sh v0,0x14c(s3)` at
+///   `0x801F8098..0x801F80C8`). Without it the bar drains the flurry while HP
+///   keeps it, and the action SM's `0x51` settle gate (`FUN_801E7250`,
+///   `+0x14C != +0x172`) never opens.
+/// * Arm `0x0D` is the `FUN_801DD6B4(0x1C0)` burst at `0x801F8168` with the
+///   shape-A clamp at `0x801F818C`, then the caster's close
+///   ([`PLASMA_STRIKE_CLOSE_CLIP`]) and the victim's knockdown from its
+///   reaction map. `hit` is that roll; the engine folds the cast's outcome at
+///   the band seam instead and passes `None`.
+///
+/// The per-arm countdowns (`0x801F8E50` minus the frame scalar), arm 6's
+/// loop-window hold and the camera / packet / sound arms are not ported: an
+/// arm with no modelled write advances on its first tick. In retail those
+/// waits put arm `0x0C` past the flurry's last hit; the port instead holds
+/// arm `0x0C` while the caster's clip still has hits to fire
+/// ([`CastActorState::hits_pending`]), which keeps the same order.
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F74E4 (phase machine + damage/staging + the phase-5 confirm
-/// gate; packet + camera arms unported)
+/// gate + the arm-`0x0C` combo landing; packet, camera and countdown arms
+/// unported)
 pub fn plasma_strike_tick(
     ctx: &mut CastModuleCtx,
     caster: &mut CastActorState,
     victim: &mut CastActorState,
     hit: Option<i32>,
 ) -> CastTickStep {
-    run_tick(ctx, 9, |c| {
-        if c.phase == PLASMA_STRIKE_CONFIRM_PHASE {
+    run_tick(ctx, PLASMA_STRIKE_ARMS, |c| match c.phase {
+        PLASMA_STRIKE_CONFIRM_PHASE => {
             stage_clip(caster, PLASMA_STRIKE_CONFIRM_CLIP);
             // Hold the phase until the commit mirrors the id into `+0x1D9`.
-            return caster.playing_anim != PLASMA_STRIKE_CONFIRM_CLIP;
+            caster.playing_anim != PLASMA_STRIKE_CONFIRM_CLIP
         }
-        if let Some(roll) = hit {
-            apply_hit_floor_zero(victim, roll);
+        // Held while the flurry clip still has hits to fire (see above):
+        // landing mid-flurry would strand the later hits on the bar.
+        PLASMA_STRIKE_LAND_ARM if caster.hits_pending => true,
+        PLASMA_STRIKE_LAND_ARM => {
+            let total = victim.combo_total.min(u32::from(victim.hp));
+            victim.combo_total = 0;
+            victim.hp -= total as u16;
+            false
+        }
+        PLASMA_STRIKE_BURST_ARM => {
+            if let Some(roll) = hit {
+                apply_hit_floor_zero(victim, roll);
+            }
             let knockdown = victim.knockdown_anim;
             stage_clip(victim, knockdown);
+            stage_clip(caster, PLASMA_STRIKE_CLOSE_CLIP);
+            false
         }
-        false
+        _ => false,
     })
 }
 

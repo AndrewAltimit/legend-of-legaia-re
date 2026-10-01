@@ -186,6 +186,10 @@ pub struct AiCast {
     /// (`FUN_801E9FD4`). `None` for every other override (they don't touch the
     /// gauge). Draws no RNG, so it never perturbs the determinism stream.
     pub spirit_gauge_writeback: Option<u16>,
+    /// The arm writes `+0x1DE` / `+0x1DF` only and leaves the target byte
+    /// `+0x1DD` the generic core already stored, so the caller keeps its own
+    /// `target_class` and ignores [`Self::target_class`].
+    pub keep_target: bool,
 }
 
 impl AiCast {
@@ -195,6 +199,15 @@ impl AiCast {
             target_class,
             category: 2,
             spirit_gauge_writeback: None,
+            keep_target: false,
+        }
+    }
+
+    /// A cast whose arm stores no target byte (see [`Self::keep_target`]).
+    fn magic_core_target(spell_id: u8) -> Self {
+        Self {
+            keep_target: true,
+            ..Self::magic(spell_id, 0)
         }
     }
 }
@@ -299,6 +312,7 @@ pub fn decide(
                     target_class: (rng() % pc as u32) as u8,
                     category: 3,
                     spirit_gauge_writeback: None,
+                    keep_target: false,
                 });
             }
         }
@@ -420,9 +434,14 @@ pub fn decide(
                 }
             }
         }
+        // The Delilas siblings' specials (`0x79` / `0x7A` / `0x7B`). The arm
+        // (`0x801EB7C0..0x801EB81C`) stores `+0x1DE = 2` and
+        // `+0x1DF = id - 0x29` and nothing else: the target byte stays the
+        // generic core's party pick. Aiming the cast at the caster itself
+        // made PROT 0960's tick read its own seat as the victim.
         0xa2 | 0xa3 | 0xa4 => {
             if mode_flags % 3 == 2 {
-                return Some(AiCast::magic(id.wrapping_sub(0x29), self_slot));
+                return Some(AiCast::magic_core_target(id.wrapping_sub(0x29)));
             }
         }
         0xa6 => {
@@ -493,9 +512,11 @@ pub fn decide(
         }
         0xb6 => {
             return Some(match mode_flags {
-                0 => AiCast::magic(0xa2, self_slot),
-                1 => AiCast::magic(0xa3, self_slot),
-                2 => AiCast::magic(0xa4, self_slot),
+                // `0x801EB568..0x801EB5A0`: id only, no `+0x1DD` store
+                // (mode 3's `0xA5` arm is the one that writes `3`).
+                0 => AiCast::magic_core_target(0xa2),
+                1 => AiCast::magic_core_target(0xa3),
+                2 => AiCast::magic_core_target(0xa4),
                 3 => AiCast::magic(0xa5, 3),
                 _ => cast_all_enemies(0xa1),
             });
@@ -664,6 +685,32 @@ mod tests {
         assert_eq!(phase(2), 0xa4, "mode 2 -> phase III");
         assert_eq!(phase(3), 0xa5, "mode 3 -> smite a party slot");
         assert_eq!(phase(4), 0xa1, "mode 4+ -> all-enemy nova");
+    }
+
+    /// The Delilas specials and `0xB6`'s first three phases store the spell
+    /// id only (`0x801EB7C0..0x801EB81C`, `0x801EB568..0x801EB5A0`): the
+    /// target stays the generic core's party pick, never the caster's seat.
+    /// Lu's Plasma Strike aimed at herself used to park the cast band.
+    #[test]
+    fn delilas_specials_keep_the_core_target() {
+        for (id, spell) in [(0xa2, 0x79), (0xa3, 0x7a), (0xa4, 0x7b)] {
+            let mut s = MonsterAiState::new();
+            s.mode_flags = 2;
+            let cast = decide(&ctx(id, 200, 200, 250), &mut s, &mut || 0u32).expect("special");
+            assert_eq!(cast.spell_id, spell);
+            assert!(cast.keep_target, "{id:#x} stores no +0x1DD");
+        }
+        for mode in 0..3 {
+            let mut s = MonsterAiState::new();
+            s.mode_flags = mode;
+            let cast = decide(&ctx(0xb6, 200, 200, 250), &mut s, &mut || 0u32).unwrap();
+            assert!(cast.keep_target, "0xB6 mode {mode}");
+        }
+        let mut s = MonsterAiState::new();
+        s.mode_flags = 3;
+        let smite = decide(&ctx(0xb6, 200, 200, 250), &mut s, &mut || 0u32).unwrap();
+        assert!(!smite.keep_target);
+        assert_eq!(smite.target_class, 3, "mode 3 writes +0x1DD = 3");
     }
 
     #[test]

@@ -103,6 +103,75 @@ pub struct CastActorState {
     /// `+0x1F2` - the gate that picks [`CastActorState::knockdown_anim`]
     /// over [`CastActorState::reaction_alt`].
     pub reaction_gate: u8,
+    /// `+0x00` - the combo damage accumulator
+    /// ([`BattleActor::damage_accum`](crate::battle_action::BattleActor::damage_accum)).
+    /// A cast clip's hit events add to it without touching HP; PROT 0960's
+    /// arm `0x0C` lands it.
+    pub combo_total: u32,
+    /// Read-only: the actor's playing clip still has hit events to fire (its
+    /// per-clip hit index `+0x1F4` has not run off the entry's `+0x10..+0x13`
+    /// list). The port's stand-in for the per-arm countdowns it does not
+    /// model - see [`crate::cast_module_ticks::plasma_strike_tick`].
+    pub hits_pending: bool,
+}
+
+impl CastActorState {
+    /// Fold `view`'s writes onto `self`: every field `view` changed from
+    /// `orig` (the state both were read from) takes `view`'s value, and every
+    /// other field keeps `self`'s.
+    ///
+    /// A routine's caster and victim are two pointers into one actor table,
+    /// so a self-targeted cast (`victim = table[caster+0x1DD]` with
+    /// `+0x1DD` the caster's own seat) writes through both into the **same**
+    /// actor. The port hands a tick two separate views; writing them back
+    /// whole would let the second view's stale copy undo the first's stores
+    /// (PROT 0960's phase-5 stage on the caster, PROT 0942's AGL buff).
+    /// Folding each view's diff onto the slot reproduces the aliased writes.
+    pub fn fold_writes(&mut self, orig: &Self, view: &Self) {
+        macro_rules! fold {
+            ($($f:ident),* $(,)?) => {
+                $(if view.$f != orig.$f {
+                    self.$f = view.$f;
+                })*
+            };
+        }
+        fold!(
+            root_speed,
+            hp_bar_delta,
+            hp,
+            flags,
+            playing_anim,
+            staged_anim,
+            restage,
+            target_code,
+            knockdown_anim,
+            render_flag,
+            anim_rate,
+            agl,
+            agl_base,
+            atk,
+            atk_base,
+            udf,
+            udf_base,
+            ldf,
+            ldf_base,
+            spd,
+            spd_base,
+            intel,
+            intel_base,
+            spirit_gauge,
+            init_key,
+            action_category,
+            queued_action,
+            reaction_alt,
+            reaction_alt2,
+            present_04,
+            render_21f,
+            render_225,
+            reaction_gate,
+            combo_total,
+        );
+    }
 }
 
 /// The battle-context bytes a slot-B routine drives (`ctx` is

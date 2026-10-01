@@ -314,3 +314,97 @@ fn every_tick_shape_names_a_band_entry() {
     assert!(!tick_shape_for(0x801F_74E4).unwrap().table_head);
     assert!(tick_shape_for(0x801F_9999).is_none());
 }
+
+/// A self-targeted cast hands the tick two views of one actor. Folding each
+/// view's writes keeps both: the caster's phase-5 stage of PROT 0960 and a
+/// knockdown staged on the victim view land together, and an untouched view
+/// changes nothing.
+#[test]
+fn fold_writes_keeps_both_views_of_an_aliased_actor() {
+    let orig = actor(500);
+    let mut caster = orig;
+    let mut victim = orig;
+    let mut ctx = CastModuleCtx {
+        phase: PLASMA_STRIKE_CONFIRM_PHASE,
+        ..Default::default()
+    };
+    assert_eq!(
+        plasma_strike_tick(&mut ctx, &mut caster, &mut victim, None),
+        CastTickStep::Busy
+    );
+    victim.hp = 420;
+    let mut live = orig;
+    live.fold_writes(&orig, &caster);
+    live.fold_writes(&orig, &victim);
+    assert_eq!(
+        live.staged_anim, PLASMA_STRIKE_CONFIRM_CLIP,
+        "caster's stage kept"
+    );
+    assert_eq!(live.hp, 420, "victim's write kept");
+
+    // A stale whole-view copy would have undone the stage; a fold of an
+    // unchanged view is a no-op.
+    let before = live;
+    live.fold_writes(&orig, &orig);
+    assert_eq!(live, before);
+}
+
+/// PROT 0960 runs arms `0..=0x10` (the terminal `0xFF` is the only done
+/// return), and arm `0x0C` lands the flurry's combo total on live HP - the
+/// write that brings `+0x14C` down to the bar the flurry's hit events
+/// already drained.
+#[test]
+fn plasma_strike_lands_the_flurry_total_and_runs_to_arm_0x10() {
+    let mut caster = actor(9500);
+    let mut victim = actor(972);
+    victim.combo_total = 61;
+    let mut ctx = CastModuleCtx {
+        phase: 9,
+        ..Default::default()
+    };
+    // Arms 9..=0x0B have no modelled writes and advance.
+    for _ in 0..3 {
+        assert_eq!(
+            plasma_strike_tick(&mut ctx, &mut caster, &mut victim, None),
+            CastTickStep::Busy
+        );
+    }
+    assert_eq!(ctx.phase, PLASMA_STRIKE_LAND_ARM);
+    // Held while the flurry clip still has hits to fire.
+    caster.hits_pending = true;
+    plasma_strike_tick(&mut ctx, &mut caster, &mut victim, None);
+    assert_eq!((ctx.phase, victim.hp), (PLASMA_STRIKE_LAND_ARM, 972));
+    caster.hits_pending = false;
+    plasma_strike_tick(&mut ctx, &mut caster, &mut victim, None);
+    assert_eq!(victim.hp, 911);
+    assert_eq!(victim.combo_total, 0);
+
+    // The burst arm closes the caster and knocks the victim down.
+    assert_eq!(ctx.phase, PLASMA_STRIKE_BURST_ARM);
+    plasma_strike_tick(&mut ctx, &mut caster, &mut victim, Some(100));
+    assert_eq!(victim.hp, 811);
+    assert_eq!(caster.staged_anim, PLASMA_STRIKE_CLOSE_CLIP);
+    assert_eq!(victim.staged_anim, victim.knockdown_anim);
+
+    // Arms 0x0E..=0x10 still busy; the band reports done past them.
+    for _ in 0x0E..=0x10 {
+        assert_eq!(
+            plasma_strike_tick(&mut ctx, &mut caster, &mut victim, None),
+            CastTickStep::Busy
+        );
+    }
+    assert_eq!(
+        plasma_strike_tick(&mut ctx, &mut caster, &mut victim, None),
+        CastTickStep::Done
+    );
+
+    // The landing clamps an over-large total to live HP.
+    let mut v = actor(30);
+    v.combo_total = 500;
+    let mut ctx = CastModuleCtx {
+        phase: PLASMA_STRIKE_LAND_ARM,
+        ..Default::default()
+    };
+    plasma_strike_tick(&mut ctx, &mut caster, &mut v, None);
+    assert_eq!(v.hp, 0);
+}

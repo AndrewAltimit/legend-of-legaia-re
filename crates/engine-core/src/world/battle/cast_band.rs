@@ -1128,6 +1128,18 @@ impl World {
             reaction_alt: a.battle.params.get(0x1EF - 0x1DF).copied().unwrap_or(0),
             reaction_alt2: a.battle.params.get(0x1F0 - 0x1DF).copied().unwrap_or(0),
             reaction_gate: a.battle.params.get(0x1F2 - 0x1DF).copied().unwrap_or(0),
+            combo_total: a.battle.damage_accum,
+            hits_pending: a.battle_staged_anim.is_some()
+                && a.battle_animation
+                    .as_ref()
+                    .and_then(|p| p.hit_source())
+                    .is_some_and(|src| {
+                        let in_band = src.power_run[0]
+                            .wrapping_sub(vm::battle_action::HIT_POWER_BASE)
+                            < vm::battle_action::HIT_POWER_SPAN;
+                        let next = src.event_frames.get(usize::from(a.battle.input_cursor));
+                        in_band && next.is_some_and(|&f| f != 0)
+                    }),
         }
     }
 
@@ -1236,6 +1248,7 @@ impl World {
         a.battle.init_key = st.init_key;
         a.battle.spirit_gauge = st.spirit_gauge;
         a.battle.action_category = st.action_category;
+        a.battle.damage_accum = st.combo_total;
         // ...and back into the mirrors the rest of the engine reads, so a
         // five-stat debuff is visible to turn order and the accuracy seed
         // rather than only to the next module tick.
@@ -1544,6 +1557,7 @@ impl World {
         let mut caster = self.cast_actor_state(caster_slot);
         let mut victim = self.cast_actor_state(victim_slot);
         let mut seat = self.cast_actor_state(seat_slot);
+        let (caster_orig, victim_orig, seat_orig) = (caster, victim, seat);
         let mut run = CastModuleCodeRun {
             prot_entry: entry,
             busy: true,
@@ -1639,12 +1653,25 @@ impl World {
                         agl_record,
                     ))
                 }
-                (960, Some(ticks::PLASMA_STRIKE_TICK)) => Some(ticks::plasma_strike_tick(
-                    &mut ctx,
-                    &mut caster,
-                    &mut victim,
-                    None,
-                )),
+                (960, Some(ticks::PLASMA_STRIKE_TICK)) => {
+                    // The burst arm's `0x1C0` roll. Retail aims it at
+                    // `0x801C9370[0]` - seat 0, not the derived victim - so
+                    // it rides the victim view only when the two coincide;
+                    // the arm's other writes (the close, the knockdown) are
+                    // the victim's either way.
+                    let hit = if ctx.phase == ticks::PLASMA_STRIKE_BURST_ARM && victim_slot == 0 {
+                        ticks::damage_shape_for(960)
+                            .and_then(|sh| self.capture_module_roll(sh, caster_slot, 0))
+                    } else {
+                        None
+                    };
+                    Some(ticks::plasma_strike_tick(
+                        &mut ctx,
+                        &mut caster,
+                        &mut victim,
+                        hit,
+                    ))
+                }
                 (957, Some(ticks::SUMMON_EFFECT_TICK_B)) => {
                     Some(ticks::summon_effect_tick_b(&mut ctx, &mut victim))
                 }
@@ -2216,9 +2243,21 @@ impl World {
             run.tick_ported = true;
         }
 
-        self.write_cast_actor_state(caster_slot, &caster);
-        self.write_cast_actor_state(victim_slot, &victim);
-        self.write_cast_actor_state(seat_slot, &seat);
+        // Each view writes back only what the tick changed in it, folded onto
+        // the slot's live state: the three views can name one actor (a
+        // self-targeted cast's victim is its caster), and a whole-view write
+        // of the second would undo the first's stores - PROT 0960's phase-5
+        // stage of clip `0x0D` on Lu Delilas, read back as never staged,
+        // held the band in `0x70` for good.
+        for (slot, view, orig) in [
+            (caster_slot, &caster, &caster_orig),
+            (victim_slot, &victim, &victim_orig),
+            (seat_slot, &seat, &seat_orig),
+        ] {
+            let mut live = self.cast_actor_state(slot);
+            live.fold_writes(orig, view);
+            self.write_cast_actor_state(slot, &live);
+        }
         self.casting.module_ctx_278 = ctx.ctx_278;
         self.casting.module_phase = ctx.phase;
         // The turn-steal arms bump `ctx[+0x1A]`; it is a context byte, so it

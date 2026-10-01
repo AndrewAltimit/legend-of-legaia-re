@@ -266,6 +266,27 @@ caster-literal gate (its `+0x2134` gate is victim `+0x1D9` vs `+0x1F1`,
 and the shared-tail gates compare the settle id `8`, which no cast
 stages).
 
+**The flurry lands in the module, not in the hit kernel.** A cast clip's
+hit events run the damage kernel `FUN_801EC3E4` like any swing, but the
+kernel only *applies* the combo total once the strike cursor `ctx[+0x15]`
+is parked at `0xFF`, and during a cast it is not (it reads `0` in a
+captured mid-cast Plasma Strike state). So each hit adds to the victim's
+combo accumulator `+0x00` and to the bar's `+0x10`, and live HP keeps the
+damage. 960's arm `0x0C` (`0x801F8098..0x801F80C8`) is what lands it:
+`total = victim[+0x00]` clamped to `+0x14C`, `+0x14C -= total`,
+`+0x00 = 0`. Arm `0x0D` then fires the `0x1C0` burst at seat 0. A port
+that stops 960's arms short of `0x0C` leaves the bar below live HP, and
+the action SM's `0x51` settle gate (`FUN_801E7250`, a plain `+0x14C` vs
+`+0x172` compare) never opens. 960's dispatcher reaches arms `0..=0x10`
+before the terminal `0xFF`.
+
+**The victim is the core's target, not the caster.** The monster AI's
+Delilas arms (`FUN_801E9FD4`, `0x801EB7C0..0x801EB81C`) store only
+`+0x1DE = 2` and `+0x1DF = id - 0x29`; `+0x1DD` keeps the generic core's
+party pick (`0` in the captured state), so the tick's derived victim is a
+party seat. A port that aims the cast at the caster's own seat makes the
+caster and victim views one actor.
+
 ## Damage shape
 
 Each hit is one call into a roll wrapper with a **baked per-hit power

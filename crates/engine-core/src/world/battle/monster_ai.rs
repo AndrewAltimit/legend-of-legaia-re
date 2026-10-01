@@ -963,7 +963,9 @@ impl World {
             if let Some(cast) = crate::monster_ai::decide(&ctx, &mut ai, &mut || self.next_rand()) {
                 category = cast.category;
                 spell_id = cast.spell_id;
-                target_class = cast.target_class;
+                if !cast.keep_target {
+                    target_class = cast.target_class;
+                }
                 spirit_writeback = cast.spirit_gauge_writeback;
             }
             // The 0x8A charge gate clamps the caster's own gauge as it fires
