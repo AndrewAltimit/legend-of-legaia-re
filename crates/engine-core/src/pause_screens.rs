@@ -1046,7 +1046,9 @@ pub fn magic_screen_model(s: &SpellMenuSession, text: Option<&MenuTextTables>) -
         .get(caster_idx)
         .map(|c| c.spells.clone())
         .unwrap_or_default();
-    let pages = spells.len().div_ceil(LIST_PAGE_ROWS).max(1) as u16;
+    // `0` for a caster with no spells: the list kernel draws no PAGE header
+    // at a zero row count (`FUN_80032A44`, `beq a0,zero` at `0x80032e18`).
+    let pages = spells.len().div_ceil(LIST_PAGE_ROWS) as u16;
     // In caster focus the hovered caster's list previews from page 1; the
     // list cursor only exists in list focus.
     let cursor = if focus_list { list_cursor } else { 0 };
@@ -2875,6 +2877,27 @@ mod tests {
         assert_eq!(m.casters[1].3, 80);
         assert!(m.info.is_none());
         assert_eq!(m.page_rows.len(), 2);
+        assert_eq!((m.page, m.pages), (1, 1));
+    }
+
+    /// A caster with no spells has a zero-row list, which retail's list
+    /// kernel draws with no PAGE header at all: the page total is `0`.
+    #[test]
+    fn magic_model_empty_list_has_no_page_total() {
+        let party = vec![CasterSlot {
+            slot: 0,
+            name: "Gala".into(),
+            hp: 60,
+            mp: 30,
+            hp_max: 100,
+            mp_max: 120,
+            level: 7,
+            ..Default::default()
+        }];
+        let s = SpellMenuSession::new(party, Vec::new(), SpellCatalog::vanilla());
+        let m = magic_screen_model(&s, None);
+        assert_eq!(m.pages, 0);
+        assert!(m.page_rows.is_empty());
     }
 
     /// List focus: rows grey (focus_list), the hovered spell stages into
