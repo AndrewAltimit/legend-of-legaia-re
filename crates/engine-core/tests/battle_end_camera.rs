@@ -99,3 +99,44 @@ fn the_victory_frames_the_pose_actor_not_the_far_orbit() {
     }
     assert!(saw_load && saw_results, "the sequence ran both framings");
 }
+
+/// The battle-over close-up sits right behind the pose actor, so the
+/// near-camera ghost pass (`FUN_8004DC68`) reaches it - and retail spares it
+/// because the pass's acting slot `ctx[+0x13]` **is** the pose actor
+/// (`noa_levelup_banner`: `ctx[+0x13] == 0`, seat 0's `+0x8` clear, seat 0
+/// filling the foreground opaque). The engine's acting mirror keeps the last
+/// actor of the fight, so a win landed by another seat used to fade the
+/// framed leader to a giant `B + F/4` ghost.
+#[test]
+fn the_pose_actor_stays_solid_under_its_own_close_up() {
+    const GHOST: u32 = 0x8300_0000;
+    let mut w = world_in_a_battle();
+    assert!(w.trigger_scripted_battle(0) || w.trigger_scripted_battle(1));
+    for _ in 0..200 {
+        if w.mode == SceneMode::Battle {
+            break;
+        }
+        w.tick();
+    }
+    assert_eq!(w.mode, SceneMode::Battle);
+    let mut checked = 0;
+    for _ in 0..20_000 {
+        if w.battle.victory.is_some() {
+            // The killing blow came from the last seat.
+            w.battle_ctx.active_actor = 2;
+        }
+        w.tick();
+        if w.mode != SceneMode::Battle {
+            break;
+        }
+        let Some(seq) = w.battle.victory else {
+            continue;
+        };
+        if matches!(seq.phase, VictoryPhase::Results { hold } if hold > 40) {
+            let word = w.actors[seq.pose_actor].battle.flag_word;
+            assert_eq!(word & GHOST, 0, "pose actor ghosted: {word:#010x}");
+            checked += 1;
+        }
+    }
+    assert!(checked > 0, "the results hold ran");
+}

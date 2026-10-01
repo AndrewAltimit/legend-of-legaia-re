@@ -83,7 +83,19 @@ impl World {
                 flag_word: a.battle.flag_word,
             };
         }
-        let acting_e = self.battle_ctx.active_actor;
+        // `ctx[+0x13]`. Through the end-of-battle sequence it is the pose
+        // actor - the one field both the sequencer's framing and this pass
+        // read (`noa_levelup_banner`: `ctx[+0x13] == 0`, the posing leader's
+        // `+0x8` clear while the battle-over close-up fills the frame with
+        // it). The engine's acting mirror keeps the fight's last actor, so
+        // without this a win landed by another seat ghosts the framed leader.
+        // An escape skips the framing (`0x8004E720`) and keeps the mirror.
+        let acting_e = match self.battle.victory {
+            Some(seq) if seq.cause != vm::battle_action::BattleEndCause::Escaped => {
+                seq.pose_actor as u8
+            }
+            _ => self.battle_ctx.active_actor,
+        };
         let (target_e, category) = self.actors.get(usize::from(acting_e)).map_or((0, 0), |a| {
             (a.battle.active_target, a.battle.action_category)
         });

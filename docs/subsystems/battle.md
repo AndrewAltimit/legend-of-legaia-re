@@ -3355,9 +3355,22 @@ waits run the rest of the 80-vsync load hold (`autorun_victory_timeline.lua`,
 columns `req26b` / `prog26c`). So bodies near the camera ghost again for the
 last 52 vsyncs of the hold, and the engine raises the byte for exactly its
 first 28 (`VictorySequence::side_band_request_up`). The `gp[+0x330]` gate has no
-engine twin because the engine has no load stage. Neither host draws a body
-with a per-draw blend override yet, so the ghost is carried to the draw plan
-and not rendered - the same gap as the capture / defeat fade above.
+engine twin because the engine has no load stage. Both hosts draw the ghost:
+`engine-core::battle_body_blend` ORs the word's ABE / ABR into the body's TSB
+words, as `FUN_80043390` does into its packets.
+
+**The pose actor is the acting slot.** The battle-over close-up sits right
+behind the posing character, well inside `dist / 4`, and retail keeps that body
+solid only because the pass's acting slot `ctx[+0x13]` is the same field the
+results sequencer frames (`noa_levelup_banner`: `ctx[+0x13] == 0`, seat 0's
+`+0x8` clear and filling the foreground opaque, the dead monster in slot 3 the
+only body near `P`). The engine's acting mirror keeps the fight's last actor,
+so while a non-escape `VictorySequence` is armed `tick_battle_camera_ghost`
+feeds the pass the pose actor instead; otherwise a win landed by another seat
+fades the framed leader to a screen-filling `B + F/4` ghost. Other party
+members near the close-up still ghost, as retail's pass would. The field's
+camera-occlusion fade is a separate mechanism and never arms in battle
+(`field_occlusion::fade_armed` requires `SceneMode::Field`).
 
 ## Per-frame actor maintenance (`FUN_8004CE2C`)
 
