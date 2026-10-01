@@ -549,8 +549,8 @@ impl PlayWindowApp {
             return;
         }
         // `B`: toggle the Baka Fighter duel minigame - Square / Circle /
-        // Cross throw the three attacks, Triangle commits the chargeable
-        // special (`World::tick_baka_fighter`); after a decided match the
+        // Cross throw the three attacks (`World::tick_baka_fighter`; the
+        // special is retail's auto-finisher, no button); after a decided match the
         // cabinet takes Left / Right (NEXT GAME / PAY OUT) and Cross.
         // Pressing B again aborts (no coins on an abort). Launched
         // through the mode-24 door warp like `M` above, so the overture swap
@@ -577,9 +577,7 @@ impl PlayWindowApp {
                 self.session.host.world.request_minigame_warp(
                     legaia_engine_core::minigame_entry::MinigameSubId::BakaFighter.sub_id(),
                 );
-                log::info!(
-                    "baka: door warp armed - Square/Circle/Cross attack, Triangle special, B to leave"
-                );
+                log::info!("baka: door warp armed - Square/Circle/Cross attack, B to leave");
             }
             return;
         }

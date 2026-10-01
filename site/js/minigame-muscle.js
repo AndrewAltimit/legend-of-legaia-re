@@ -624,10 +624,12 @@ window.MgMuscle = (function () {
     }
 
     /* The Sol arena backdrop (PROT 1225): the fenced dirt ring's own TMD,
-     * world-fixed at raw coordinates exactly as the retail battle renderer
-     * draws a stage dome (one instance, no mirror - docs/subsystems/
-     * battle.md). Its texture pages ride in muscle_vram. Null when the entry
-     * doesn't decode. */
+     * world-fixed at raw coordinates and drawn twice the way the retail
+     * battle renderer draws every stage shell - copy A raw, copy B
+     * half-turned about Y, closing the half-stage into the full ring
+     * (engine-core muscle_dome_scene::arena_ring; docs/subsystems/
+     * battle.md "Two actors, one registered mesh"). Its texture pages ride
+     * in muscle_vram. Null when the entry doesn't decode. */
     function arenaBuffers() {
       if (!api.muscle_arena_positions) return null;
       const pos = api.muscle_arena_positions();

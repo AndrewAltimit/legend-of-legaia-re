@@ -298,6 +298,17 @@ pub struct CutsceneTimeline {
     /// this way (`B7 F8 00 81`: one tile along `-Z` over sixteen vsyncs).
     // REF: FUN_8003774C (the 0x37 / 0x41 arm interpreted in place)
     pub player_glide: Option<TimelinePlayerGlide>,
+    /// Compass walks this timeline armed against **NPC** placements
+    /// (`B7 <id> <b0> <b1>` / `C1 <id> ..` on a placement channel). The same
+    /// arm as [`Self::player_glide`]: retail seats the op on the target's
+    /// `+0x94`, raises its `0x400` and advances the record past the op
+    /// (`s7 = 3`, taken for every target), so the record runs on and its
+    /// next cross-context op on that actor waits until the leg lands.
+    /// bylon's first Maya meeting (`P2[9]`) walks her down from the shrine
+    /// stairs this way (`B7 3F 00 84`: 512 units along `-Z`) before she
+    /// speaks.
+    // REF: FUN_801DE840 (0x801DEE90..0x801DEF1C), FUN_8003774C (the 0x37 / 0x41 arm)
+    pub npc_glides: Vec<TimelineNpcGlide>,
     /// Ticks left on the **scene-bank** clip the timeline last poked onto the
     /// player (`A2 F8 <move_id>` with the party-bank bit down): the clip's
     /// end-latch length at its own step ([`crate::field_anim::clip_end_ticks`]).
@@ -352,6 +363,24 @@ pub struct TimelinePlayerGlide {
     pub frames: u32,
 }
 
+/// State of an NPC compass walk (see [`CutsceneTimeline::npc_glides`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TimelineNpcGlide {
+    /// Placement slot of the gliding NPC.
+    pub slot: u8,
+    /// The walk leg: position seeded from the NPC, `op_accum` the spent
+    /// units (`+0x54`), `speed` 1 (one unit per vsync).
+    pub state: legaia_engine_vm::motion_vm::MotionState,
+    /// Direction / divisor-selector byte.
+    pub body0: u8,
+    /// Length / divisor-selector byte.
+    pub body1: u8,
+    /// `0x80` for op `0x37`, `0x40` for op `0x41`.
+    pub rate: i32,
+    /// Ticks the leg has played, bounded by the walk park timeout.
+    pub frames: u32,
+}
+
 /// State of a parked cross-context rotate yield (see
 /// [`CutsceneTimeline::facing_wait`]): one motion-VM `0x38` RotateToAngle leg
 /// stepped once per timeline tick against the target NPC's render heading.
@@ -392,7 +421,7 @@ pub struct TimelineWalk {
 impl CutsceneTimeline {
     /// The actors this context's in-place park is moving: its walk-to-tile
     /// leg (`C7 <id|F8> ..`), rotate leg (`B8 <id> ..`) or player compass
-    /// glide (`B7 F8 ..` / `C1 F8 ..`). `None` is the player, `Some(slot)` an
+    /// glide (`B7 F8 ..` / `C1 F8 ..`) or NPC compass glides (`B7 <id> ..`). `None` is the player, `Some(slot)` an
     /// NPC placement. Retail's park leaves the target's halt bit `0x400` set
     /// until the walk kernel lands it.
     pub fn halted_targets(&self) -> impl Iterator<Item = Option<u8>> + '_ {
@@ -403,6 +432,7 @@ impl CutsceneTimeline {
         [walk, facing, glide]
             .into_iter()
             .flatten()
+            .chain(self.npc_glides.iter().map(|g| Some(g.slot)))
             .filter(move |_| live)
     }
 
@@ -440,6 +470,7 @@ impl CutsceneTimeline {
             walk_wait: None,
             facing_wait: None,
             player_glide: None,
+            npc_glides: Vec::new(),
             player_clip_ticks: 0,
             player_clip_wait: None,
             stepped: false,

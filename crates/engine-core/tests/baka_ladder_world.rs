@@ -55,13 +55,15 @@ fn world_with(f: BakaFight) -> World {
     w
 }
 
-/// Throw the special until the match is decided.
+/// Cycle the three throws until the match is decided: every exchange is a
+/// win or a draw, and either one-shots the inert foe.
 fn play_out(w: &mut World) {
-    for _ in 0..100_000 {
+    let throws = [PadButton::Square, PadButton::Circle, PadButton::Cross];
+    for i in 0..100_000 {
         if fight(w).match_over() {
             return;
         }
-        press(w, PadButton::Triangle.mask());
+        press(w, throws[i % 3].mask());
     }
     panic!("the duel never resolved");
 }
@@ -83,12 +85,7 @@ fn idle_to_state(w: &mut World, state: u32) {
 
 #[test]
 fn next_game_keeps_the_pot_at_risk_and_pay_out_banks_it() {
-    let mut w = world_with(BakaFight::new(
-        cfg(0, 4000, 0),
-        cfg(1, 0, PRIZE),
-        [0, 0],
-        0xBAA5EED,
-    ));
+    let mut w = world_with(BakaFight::new(cfg(0, 4000, 0), cfg(1, 0, PRIZE), 0xBAA5EED));
     play_out(&mut w);
     assert_eq!(fight(&w).winner(), Some(0));
     idle_to_state(&mut w, ST_CHOICE);
@@ -136,17 +133,12 @@ fn next_game_keeps_the_pot_at_risk_and_pay_out_banks_it() {
     assert_eq!(w.minigames.casino_coins, 2 * PRIZE, "both rungs banked");
 }
 
-/// Specials thrown after the deciding exchange - while the port's cabinet is
-/// still in its duel state - must not open the in-duel pause menu (`0x110`
-/// includes Triangle); the run still reaches the choice.
+/// Triangle pressed after the deciding exchange - while the port's cabinet
+/// is still in its duel state - must not open the in-duel pause menu
+/// (`0x110` includes Triangle); the run still reaches the choice.
 #[test]
-fn late_specials_do_not_open_the_pause_menu() {
-    let mut w = world_with(BakaFight::new(
-        cfg(0, 4000, 0),
-        cfg(1, 0, PRIZE),
-        [0, 0],
-        0xBAA5EED,
-    ));
+fn late_triangles_do_not_open_the_pause_menu() {
+    let mut w = world_with(BakaFight::new(cfg(0, 4000, 0), cfg(1, 0, PRIZE), 0xBAA5EED));
     play_out(&mut w);
     for _ in 0..0x100 {
         press(&mut w, PadButton::Triangle.mask());
@@ -158,12 +150,7 @@ fn late_specials_do_not_open_the_pause_menu() {
 #[test]
 fn a_lost_rung_forfeits_the_pot_on_the_way_out() {
     // The player cannot hurt the opponent; the opponent one-shots.
-    let mut w = world_with(BakaFight::new(
-        cfg(0, 0, 0),
-        cfg(1, 4000, PRIZE),
-        [0, 0],
-        0xBAA5EED,
-    ));
+    let mut w = world_with(BakaFight::new(cfg(0, 0, 0), cfg(1, 4000, PRIZE), 0xBAA5EED));
     // A pot carried in from earlier rungs.
     w.minigames.winnings = 70;
     for _ in 0..100_000 {

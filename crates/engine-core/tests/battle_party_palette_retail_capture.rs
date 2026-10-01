@@ -101,7 +101,7 @@ fn party_clut_rows_are_the_equipped_sections_palettes() {
             })
             .collect();
         let mut log = VramWriteLog::default();
-        let sources = PartyFormSources::load(&index, &mut log).expect("PROT 1204 fallback pack");
+        let sources = PartyFormSources::load(&index).expect("PROT 1204 fallback pack");
         for member in 0..3usize {
             let form = build_party_battle_form(&index, &world, &sources, &mut log, member)
                 .expect("battle form");

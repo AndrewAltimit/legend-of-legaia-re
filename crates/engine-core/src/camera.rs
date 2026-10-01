@@ -1368,6 +1368,22 @@ impl Camera {
     /// sees, including after a drag-orbit. All three terms default to `0`,
     /// so headless hosts keep the historical `yaw`-only feed bit-identical.
     pub fn compass_azimuth_units(&self) -> u16 {
+        self.compass_azimuth_with_orbit(self.manual_orbit)
+    }
+
+    /// [`Self::compass_azimuth_units`] for `world`'s mode: the kingdom
+    /// overworld frames its walk camera without the user's orbit
+    /// (`camera_view::resolve_field_camera`), so the d-pad remap there must
+    /// not turn by it either, or "up" stops walking up-screen.
+    pub fn compass_azimuth_units_for(&self, world: &World) -> u16 {
+        if world.mode == crate::world::SceneMode::WorldMap {
+            self.compass_azimuth_with_orbit(0.0)
+        } else {
+            self.compass_azimuth_units()
+        }
+    }
+
+    fn compass_azimuth_with_orbit(&self, manual_orbit: f32) -> u16 {
         // A host that renders the retail follow view declares it through a
         // non-zero `render_yaw_bias`; while the zone camera composes that
         // view, the bias it actually sees is the live follow yaw's negation
@@ -1378,7 +1394,7 @@ impl Camera {
             }
             _ => self.render_yaw_bias,
         };
-        let az = (self.yaw + self.manual_orbit + bias) / std::f32::consts::TAU * 4096.0;
+        let az = (self.yaw + manual_orbit + bias) / std::f32::consts::TAU * 4096.0;
         az.rem_euclid(4096.0) as u16
     }
 

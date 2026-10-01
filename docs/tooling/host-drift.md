@@ -1159,6 +1159,20 @@ inside the *Items* screen's session builder. Sharing a panel between two
 screens surfaces that immediately - the panel wants a description, and there
 was nowhere to get one.
 
+**A bind-time filter on state that changes later.** Both hosts bind a mesh
+per field placement once, at scene entry, and both skip drawing any actor
+whose live position is the off-map hide box. The native window uploads every
+placement; the page also skipped *uploading* a placement that was
+header-parked and still parked at bind time, under a comment that called this
+the native rule. A header-parked placement is exactly the actor a cutscene
+seats mid-visit - Noa or Gala materialized beside the player (`CC <ch> 37`),
+`bylon`'s Maya stepping onto the stairs (`A3 3F 53 32`) - so on the page the
+world had the actor on stage and nothing drew it, for the whole visit. Every
+tier was green: the accessors, the hide-box predicate and the per-frame draw
+were shared; only the page's one-time filter read the same predicate at the
+wrong moment. The shape to look for is a host filter evaluated once over state
+the engine keeps changing.
+
 ## A rule spelled beside the shared predicate
 
 A second side-by-side pass, with the first pass's rows closed, found a shape
@@ -2624,9 +2638,9 @@ no `World` to tick the cabinet through (next section), which is the
 blocking capability for giving it the cabinet's ladder too.
 
 Still disclosed on the two field hosts: the in-duel pause menu (`0xBE` /
-`0xBF`) stays unreached, because the duel state's pause edge `0x110`
-includes Triangle, which the port binds to the special attack, so the
-cabinet sees a zero pad inside the duel. The digit strips are wired on both
+`0xBF`) stays unreached: the port feeds the cabinet a zero pad inside the
+duel, since the duel state's pause edge `0x110` includes Triangle, the
+button the round setup's cameo test reads held. The digit strips are wired on both
 (`baka_fighter_chrome::hud_digit_placements` under
 `ui_baka_strips::baka_digit_strip_draws_for`). The cue queue was fixed
 separately: the minigames page never drained `BakaFight::cues`, so its duel

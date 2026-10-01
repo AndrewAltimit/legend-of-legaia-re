@@ -1295,6 +1295,9 @@ impl World {
                 // word. Retail rolls it inside the run band (`0x801E57C8`),
                 // once per party member that dispatches with category 5.
                 let escaped = self.roll_battle_escape();
+                if escaped {
+                    self.stage_party_flee();
+                }
                 if let Some(a) = self.actors.get_mut(actor as usize) {
                     a.battle.action_category = 5; // Run band
                 }

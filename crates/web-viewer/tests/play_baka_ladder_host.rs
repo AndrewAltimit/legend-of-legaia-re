@@ -13,7 +13,8 @@
 use legaia_web_viewer::runtime::LegaiaRuntime;
 
 const CROSS: u16 = 0x4000;
-const TRIANGLE: u16 = 0x1000;
+const CIRCLE: u16 = 0x2000;
+const SQUARE: u16 = 0x8000;
 const SUB_BAKA: u8 = 4;
 
 fn tick(rt: &mut LegaiaRuntime, n: usize) {
@@ -91,13 +92,16 @@ fn the_play_page_cabinet_climbs_or_exits_by_itself() {
     tick(&mut rt, 0x40);
 
     let mut over = false;
-    for _ in 0..20_000 {
+    // The three throws in turn (the special is the auto-finisher, not a
+    // button).
+    let throws = [SQUARE, CIRCLE, CROSS];
+    for i in 0..20_000 {
         let st = json(rt.play_mg_baka_state_json());
         if st["phase"].as_str() == Some("match_over") {
             over = true;
             break;
         }
-        press(&mut rt, TRIANGLE);
+        press(&mut rt, throws[i % 3]);
     }
     assert!(over, "the duel never resolved");
     let st = json(rt.play_mg_baka_state_json());

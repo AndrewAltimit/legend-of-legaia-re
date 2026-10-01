@@ -496,14 +496,13 @@ fn play_minigame(host: &mut SceneHost, slot: MinigameSubId) -> Result<String, St
                 .map(|f| f.round())
                 .ok_or("baka session absent")?;
             // Square / Circle / Cross = attacks A/B/C (retail's face-button
-            // read), Triangle = the port's chargeable special.
+            // read); the special is the auto-finisher, not a button.
             let mut resolved = false;
             for i in 0..400 {
-                let b = match i % 4 {
+                let b = match i % 3 {
                     0 => PadButton::Square,
                     1 => PadButton::Circle,
-                    2 => PadButton::Cross,
-                    _ => PadButton::Triangle,
+                    _ => PadButton::Cross,
                 };
                 tap(host, b);
                 let Some(f) = host.world.minigames.baka_fighter.as_ref() else {

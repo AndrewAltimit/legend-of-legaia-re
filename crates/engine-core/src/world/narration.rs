@@ -1057,6 +1057,26 @@ impl World {
         !done && glide.frames < WALK_PARK_TIMEOUT
     }
 
+    /// One vsync of an NPC compass-walk leg (`B7 <id>` / `C1 <id>`): the
+    /// walk kernel's spend against the placement's live position. `true`
+    /// while the leg still has units left (and the park timeout has not run
+    /// out).
+    // REF: FUN_8003774C (the 0x37 / 0x41 arm)
+    fn step_npc_glide(&mut self, glide: &mut crate::cutscene_timeline::TimelineNpcGlide) -> bool {
+        glide.frames += 1;
+        let Some(&(x, z)) = self.npcs.positions.get(&glide.slot) else {
+            return false;
+        };
+        glide.state.world_x = x;
+        glide.state.world_z = z;
+        let done =
+            vm::motion_vm::compass_walk(&mut glide.state, glide.body0, glide.body1, glide.rate);
+        self.npcs
+            .positions
+            .insert(glide.slot, (glide.state.world_x, glide.state.world_z));
+        !done && glide.frames < WALK_PARK_TIMEOUT
+    }
+
     fn run_spawned_record_slice(
         &mut self,
         tl: &mut crate::cutscene_timeline::CutsceneTimeline,
@@ -1241,6 +1261,17 @@ impl World {
                 tl.player_glide = Some(glide);
             }
             glide_hold = true;
+        }
+        // NPC compass walks (`B7 <id> ..` / `C1 <id> ..`): the same in-place
+        // kernel against a placement. A leg that lands this frame keeps its
+        // actor held for the script until the next one, like `glide_hold`.
+        // REF: FUN_8003774C (the 0x37 / 0x41 arm), FUN_8003BC08
+        let mut npc_glide_hold: Vec<u8> = Vec::new();
+        for mut glide in std::mem::take(&mut tl.npc_glides) {
+            npc_glide_hold.push(glide.slot);
+            if self.step_npc_glide(&mut glide) {
+                tl.npc_glides.push(glide);
+            }
         }
         // Player end-latch spin (`AD F8 08`): held while the scene-bank clip
         // the record poked onto the player is still playing; retail's clip
@@ -1455,7 +1486,21 @@ impl World {
                     && (tl.player_glide.is_some() || glide_hold)
                     && vm::field::peek_extended(&tl.bytecode, pc) == Some(0xF8)
                     && !(opcode_byte & 0x7F == 0x32 && tl.bytecode.get(pc + 2) == Some(&0x0A));
-                if halted_target || own_glide_target {
+                // The NPC legs this context armed hold their actors the
+                // same way (the `s7 = 3` advance is taken for every target).
+                let own_npc_glide_target = opcode_byte & 0x80 != 0
+                    && (!tl.npc_glides.is_empty() || !npc_glide_hold.is_empty())
+                    && !(opcode_byte & 0x7F == 0x32 && tl.bytecode.get(pc + 2) == Some(&0x0A))
+                    && vm::field::peek_extended(&tl.bytecode, pc)
+                        .filter(|&t| t != 0xF8 && t != 0xFB)
+                        .and_then(|t| crate::field_channels::resolve_target(&channels, t))
+                        .filter(|&ci| !channels[ci].object_bind)
+                        .is_some_and(|ci| {
+                            let slot = channels[ci].placement_index as u8;
+                            npc_glide_hold.contains(&slot)
+                                || tl.npc_glides.iter().any(|g| g.slot == slot)
+                        });
+                if halted_target || own_glide_target || own_npc_glide_target {
                     tl.frames = tl.frames.saturating_sub(1);
                     break;
                 }
@@ -1597,6 +1642,55 @@ impl World {
                         });
                         break;
                     }
+                }
+                // Cross-context compass walk on an NPC (`B7 <id> <b0> <b1>` /
+                // `C1 <id> ..` = op 0x37 / 0x41 against a placement channel):
+                // retail's arm seats the op on the target's `+0x94`, raises
+                // its `0x400` and advances the record past the op - the same
+                // `s7 = 3` exit the player target takes - so arm the leg and
+                // run on; the record's next op on this actor waits for it
+                // (the refusal above). The leg replaces any walk the actor
+                // had in flight: retail overwrites `+0x94`. Dropping it left
+                // bylon's Maya at the top of the shrine stairs, out of frame,
+                // for her whole first conversation.
+                // REF: FUN_801DE840 (0x801DEE90..0x801DEF1C), FUN_8003774C (the 0x37 / 0x41 arm)
+                if matches!(opcode_byte & 0x7F, 0x37 | 0x41)
+                    && opcode_byte & 0x80 != 0
+                    && let (Some(&body0), Some(&body1)) =
+                        (tl.bytecode.get(pc + 2), tl.bytecode.get(pc + 3))
+                    && let Some((_, ci)) = target
+                    && !channels[ci].object_bind
+                {
+                    let slot = channels[ci].placement_index as u8;
+                    if pc < tl.visited.len() {
+                        tl.visited[pc] = true;
+                    }
+                    host.world.npcs.motions.remove(&slot);
+                    let mut glide = crate::cutscene_timeline::TimelineNpcGlide {
+                        slot,
+                        state: vm::motion_vm::MotionState {
+                            speed: 1,
+                            ..Default::default()
+                        },
+                        body0,
+                        body1,
+                        rate: if opcode_byte & 0x7F == 0x37 {
+                            0x80
+                        } else {
+                            0x40
+                        },
+                        frames: 0,
+                    };
+                    // Retail's kernel runs after the script in the same actor
+                    // tick, so the leg spends its first unit on the arming
+                    // frame (the player arm does the same).
+                    tl.npc_glides.retain(|g| g.slot != slot);
+                    if host.world.step_npc_glide(&mut glide) {
+                        tl.npc_glides.push(glide);
+                    }
+                    npc_glide_hold.push(slot);
+                    tl.pc = pc + 4;
+                    continue;
                 }
                 // Cross-context facing op (`B8 <id> <op0> <op1>` = op 0x38
                 // CAM_CFG against a spawned NPC channel).
@@ -4172,6 +4266,55 @@ mod tests {
         assert!(
             w.cutscene.timeline.as_ref().unwrap().pc > 4,
             "the next frame runs the player op"
+        );
+    }
+
+    /// `B7 40 00 84` against an NPC channel walks that placement 512 units
+    /// along `-Z` (64 speed units, `div 16`, one per tick, rate `0x80`) - the
+    /// arm bylon's Maya meeting opens on. The record runs on past the op and
+    /// holds at its next op on the same actor (`B2 40 18`) until the frame
+    /// after the leg lands, exactly as the player arm does.
+    #[test]
+    fn cutscene_timeline_npc_compass_walk_moves_the_placement_while_the_record_waits() {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        use crate::field_channels::FieldChannel;
+        use legaia_engine_vm::field::FieldCtx;
+        let bc = vec![
+            0xB7, 0x40, 0x00, 0x84, // compass walk: dir 0 (-Z), 4 x div 16
+            0xB2, 0x40, 0x18, // next op on the same actor
+            0x4A, 0xFF, 0x7F, // WaitFrames (keeps the timeline installed)
+        ];
+        let mut w = World::new();
+        w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
+        w.field_vm.channels = vec![FieldChannel {
+            placement_index: 4,
+            ctx: FieldCtx {
+                script_id: 0x40,
+                ..FieldCtx::default()
+            },
+            record_offset: 0,
+            pc: 0,
+            done: false,
+            object_bind: false,
+        }];
+        w.npcs.positions.insert(4, (0x29C0, 0x1940));
+        let mut ticks = 0;
+        loop {
+            w.step_cutscene_timeline();
+            ticks += 1;
+            let tl = w.cutscene.timeline.as_ref().unwrap();
+            assert_eq!(tl.pc, 4, "past the walk, held on the actor's next op");
+            if tl.npc_glides.is_empty() {
+                break;
+            }
+            assert!(ticks < 200, "the leg lands");
+        }
+        assert_eq!(ticks, 64, "sixty-four speed units at one per tick");
+        assert_eq!(w.npcs.positions.get(&4), Some(&(0x29C0, 0x1940 - 512)));
+        w.step_cutscene_timeline();
+        assert!(
+            w.cutscene.timeline.as_ref().unwrap().pc > 4,
+            "the next frame runs the actor op"
         );
     }
 

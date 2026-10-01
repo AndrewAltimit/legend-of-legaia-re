@@ -3343,8 +3343,6 @@ impl World {
             Some(BakaAttack::B)
         } else if self.input.just_pressed(input::PadButton::Square) {
             Some(BakaAttack::A)
-        } else if self.input.just_pressed(input::PadButton::Triangle) {
-            Some(BakaAttack::Special)
         } else {
             None
         };

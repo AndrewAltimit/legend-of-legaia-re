@@ -347,10 +347,13 @@ impl LegaiaRuntime {
     }
 
     /// The compass azimuth the engine camera is publishing this tick
-    /// (`Camera::compass_azimuth_units`), for the page's diagnostics and the
-    /// compass oracle.
+    /// (`Camera::compass_azimuth_units_for` the live world), for the page's
+    /// diagnostics and the compass oracle.
     pub fn debug_compass_azimuth(&self) -> u16 {
-        self.camera.compass_azimuth_units()
+        match self.scene_host.as_ref() {
+            Some(h) => self.camera.compass_azimuth_units_for(&h.world),
+            None => self.camera.compass_azimuth_units(),
+        }
     }
 
     /// The zone-driven follow camera's live `(pitch, yaw)` in PSX 12-bit units

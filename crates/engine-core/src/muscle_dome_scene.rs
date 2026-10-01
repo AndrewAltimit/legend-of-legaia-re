@@ -326,6 +326,25 @@ pub fn arena_hybrid(buf: &[u8]) -> Option<(VramMesh, Vec<u8>)> {
     Some(filter_mesh(&mesh, &flat, &keep))
 }
 
+/// The arena as retail draws it: [`arena_hybrid`]'s half-shell twice.
+/// `FUN_800513F0` registers the backdrop TMD once and spawns two backdrop
+/// actors from it - copy A at raw coordinates, copy B under
+/// [`ARENA_SECOND_COPY`] - which closes the half-stage into the full ring.
+/// One copy alone leaves the whole `-X` half of the arena open. Every dome
+/// host draws this mesh.
+pub fn arena_ring(buf: &[u8]) -> Option<(VramMesh, Vec<u8>)> {
+    let (half, flat) = arena_hybrid(buf)?;
+    let mut ring = half.clone();
+    let mut ring_flat = flat.clone();
+    append(
+        &mut ring,
+        &mut ring_flat,
+        &second_copy(&half, ARENA_SECOND_COPY),
+        &flat,
+    );
+    Some((ring, ring_flat))
+}
+
 fn filter_mesh(mesh: &VramMesh, flat: &[u8], keep: &[bool]) -> (VramMesh, Vec<u8>) {
     let mut out = empty_mesh();
     let mut remap = vec![u32::MAX; keep.len()];
@@ -349,6 +368,36 @@ fn filter_mesh(mesh: &VramMesh, flat: &[u8], keep: &[bool]) -> (VramMesh, Vec<u8
         }
     }
     (out, flat2)
+}
+
+/// The transform the arena's second backdrop copy takes.
+///
+/// Retail picks it from the `SCUS_942.54` mirror list at `DAT_80078B50`,
+/// keyed by `word[0x80084540] + byte[0x8007BD60]`. The dome contest leaves
+/// both at `3` (the retail `minigame_muscle_dome` state), and backdrop id `6`
+/// is not on the list, so the copy takes the default half turn. The shell
+/// is open toward `-X` and only about a third of it is symmetric in `z`, so
+/// the two transforms put the furniture in visibly different places.
+pub const ARENA_SECOND_COPY: legaia_asset::battle_backdrop::SecondCopy =
+    legaia_asset::battle_backdrop::SecondCopy::HalfTurn;
+
+/// `mesh` under a backdrop second-copy transform, its winding restored when
+/// the transform reflects.
+fn second_copy(mesh: &VramMesh, copy: legaia_asset::battle_backdrop::SecondCopy) -> VramMesh {
+    let k = copy.scale();
+    let mut out = mesh.clone();
+    for p in &mut out.positions {
+        *p = [p[0] * k[0], p[1] * k[1], p[2] * k[2]];
+    }
+    for n in &mut out.normals {
+        *n = [n[0] * k[0], n[1] * k[1], n[2] * k[2]];
+    }
+    if copy.flips_winding() {
+        for t in out.indices.as_chunks_mut::<3>().0 {
+            t.swap(1, 2);
+        }
+    }
+    out
 }
 
 /// Append `src` (with its `flat` stream) onto `dst`.
@@ -552,7 +601,7 @@ impl MuscleDomeAssets {
         let mut statics = empty_mesh();
         let mut statics_flat = Vec::new();
         let arena_buf = read_prot(ARENA_BACKDROP_PROT_INDEX);
-        let arena = arena_buf.as_deref().and_then(|b| arena_hybrid(b));
+        let arena = arena_buf.as_deref().and_then(|b| arena_ring(b));
         if let Some(buf) = arena_buf.as_deref()
             && arena.is_some()
         {

@@ -1067,23 +1067,19 @@ void main() {
         }
       }
 
-      /* NPCs: the scene's MAN placements. The scene-entry spawn-prologue
-       * pre-run (engine-side, retail FUN_8003A1E4) can SEAT a header-parked
-       * placement into the town per story state, and can PARK a header-placed
-       * one at the off-map hide box - so upload every placement except one
-       * that is header-parked AND still parked live (the native window's
-       * upload rule), and let the per-frame draw skip anyone whose live
-       * position is the hide box. */
+      /* NPCs: the scene's MAN placements. Upload EVERY placement, parked
+       * ones included, and let the per-frame draw skip anyone whose live
+       * position is the off-map hide box - the native window's upload rule
+       * (`upload_assets`). A header-parked placement is exactly the actor a
+       * cutscene seats mid-visit (`A3 <ch> x z`, `CC <ch> 37` - Maya's first
+       * meeting in bylon, Noa / Gala materializing beside the player), long
+       * after this bind ran; skipping it here left the actor meshless for the
+       * whole visit while the engine had it standing on stage. */
       this._hideXZ = (typeof rt.field_offmap_hide_xz === 'function')
         ? rt.field_offmap_hide_xz() : 16320;
       const cat = JSON.parse(rt.play_npc_catalog_json() || 'null');
       if (cat) {
-        const nt0 = rt.play_npc_transforms();
         for (const npc of cat.npcs) {
-          const b4 = npc.i * 4;
-          const liveParked = (b4 + 3 >= nt0.length)
-            || (nt0[b4] === this._hideXZ && nt0[b4 + 2] === this._hideXZ);
-          if (npc.conditional && liveParked) continue;
           let ok = true;
           try { rt.play_npc_mesh(npc.i); } catch (e) { ok = false; }
           if (!ok) continue;
@@ -3061,9 +3057,11 @@ void main() {
            * the battle VP carries no world negation, its trailing Y-flip
            * cancels the placement model's, so world Y goes through as-is. */
           x: tf[o] * S, y: tf[o + 1] * S, z: tf[o + 2] * S,
-          /* Enemy meshes rest facing +Z; the enemy side carries the
-           * half-turn toward the party (the native actor_model rule). */
-          rotY: tf[o + 3] > 0.5 ? Math.PI : 0,
+          /* Every mesh rests facing +Z and turns by the live battle facing
+           * `+0x46` (a seated monster's half-turn, a fleeing party's back).
+           * The engine sends glam's yaw; this placement model takes it
+           * negated (see placementModelScaledY). */
+          rotY: -tf[o + 3],
           scale: (c >= 0) ? S * cursor[c + 5] : S,
           cue: (c >= 0 && cursor[c] > 0.5)
             ? {
@@ -3100,7 +3098,7 @@ void main() {
             draws.push({
               meshId: a.ghostMeshIds[g],
               x: gh[j] * S, y: gh[j + 1] * S, z: gh[j + 2] * S,
-              rotY: tf[o + 3] > 0.5 ? Math.PI : 0,
+              rotY: -tf[o + 3],
               scale: S * gh[j + 6],
               strictDepth: true,
               cue: {

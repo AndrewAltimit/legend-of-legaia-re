@@ -791,7 +791,18 @@ whole capture - the field handoff `FUN_801D9E1C` never runs on the arena's path,
 nothing sets bit 5 and the dust decal is not drawn. The mist-free frame capture and
 the site panel's omission of the decal both agree with the mechanism.
 
-Site consumer: the minigames page's dome panel draws the shell + the retail
+**The shell is drawn twice.** Like every battle stage, the arena is two
+backdrop actors over the one registered TMD
+([`battle.md` § Two actors, one registered mesh](battle.md#two-actors-one-registered-mesh)):
+copy A at raw coordinates, copy B half-turned about Y, which closes the
+`X >= 0` half-stage into the full ring. The half turn is the default arm of
+the `DAT_80078B50` mirror list: the dome contest leaves `_DAT_80084540` and
+`DAT_8007BD60` at `3` each (the retail `minigame_muscle_dome` state), and
+backdrop id `6` is not on the list. The choice is visible here - only about a
+third of the shell's vertices are symmetric in `z`. Kernel
+`engine-core::muscle_dome_scene::arena_ring`, shared by every dome host.
+
+Site consumer: the minigames page's dome panel draws the ring + the retail
 ground grid through `legaia_web_viewer` (`muscle_arena_*` / `muscle_vram`),
 with the shell's ABE lamp glows routed through the renderer's two-pass PSX
 blend (`site/js/minigame-muscle.js`, `semiTwoPass`) and the object-1 dust

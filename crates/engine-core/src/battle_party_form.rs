@@ -59,10 +59,18 @@ pub struct PartyFormSources {
 }
 
 impl PartyFormSources {
-    /// Parse the fallback pack and its rest poses, and upload the eight
-    /// Baka Fighter authoring atlases the fallback meshes sample at their
-    /// declared rects. `None` when the pack does not parse.
-    pub fn load(index: &ProtIndex, vram: &mut impl VramSink) -> Option<Self> {
+    /// Parse the fallback pack and its rest poses. `None` when the pack does
+    /// not parse.
+    ///
+    /// Nothing is uploaded here. The pack's eight atlases are the Baka
+    /// Fighter's: retail's battle loader never reads PROT 1205, and their
+    /// declared rects are not free in a battle - atlas 7 sits at
+    /// `(448, 256)`, monster texture slot 2's page
+    /// (`monster_archive::monster_page_origin(2)`), so uploading them at
+    /// every battle entry wrote Baka Fighter art over the third enemy. A
+    /// member that really falls back uploads all eight then
+    /// ([`build_party_battle_form`]).
+    pub fn load(index: &ProtIndex) -> Option<Self> {
         let mesh = index
             .entry_bytes(legaia_asset::battle_char_pack::PROT_ENTRY_INDEX)
             .ok()?;
@@ -70,11 +78,6 @@ impl PartyFormSources {
             .entry_bytes(legaia_asset::battle_char_pack::ATLAS_PROT_ENTRY_INDEX)
             .ok()?;
         let pack = legaia_asset::battle_char_pack::parse(&mesh, &atlas).ok()?;
-        for a in &pack.atlases {
-            if let Ok(tim) = legaia_tim::parse(&a.tim_bytes) {
-                vram.upload_tim(&tim);
-            }
-        }
         let fallback_poses = index
             .entry_bytes_extended(FALLBACK_POSE_PROT_INDEX)
             .ok()
@@ -230,7 +233,7 @@ pub fn install_party_battle_forms(
     if party_count == 0 {
         return out;
     }
-    let Some(sources) = PartyFormSources::load(index, &mut out.vram_writes) else {
+    let Some(sources) = PartyFormSources::load(index) else {
         log::warn!("battle party: PROT 1204 fallback pack unavailable; no battle forms");
         return out;
     };
@@ -319,7 +322,7 @@ pub fn build_party_battle_form(
     let (form, band_palette) = raw
         .as_deref()
         .and_then(|raw| assemble(index, sources, vram, raw, &equipped, member, cslot))
-        .or_else(|| fallback(sources, member, cslot).map(|f| (f, false)))?;
+        .or_else(|| fallback(sources, vram, member, cslot).map(|f| (f, false)))?;
     // A real band already carries retail's palette: each upload block is
     // `[CLUT struct][pixels]` and `FUN_80053B9C` writes both, for record[0]
     // and the five *equipped* sections. The collector below reads the
@@ -464,9 +467,22 @@ fn assemble(
 }
 
 /// The static PROT 1204 slot, posed from its PROT 1203 bank.
-fn fallback(sources: &PartyFormSources, member: usize, cslot: usize) -> Option<PartyBattleForm> {
+/// The PROT 1204 mesh for a member that does not assemble. Its prims sample
+/// the pack's Baka Fighter atlases at their declared rects, so those go into
+/// the battle VRAM here, and only here - the one path that draws them.
+fn fallback(
+    sources: &PartyFormSources,
+    vram: &mut impl VramSink,
+    member: usize,
+    cslot: usize,
+) -> Option<PartyBattleForm> {
     let slot = sources.pack.slot(cslot)?;
     let tmd = legaia_tmd::parse(&slot.tmd_bytes).ok()?;
+    for a in &sources.pack.atlases {
+        if let Ok(tim) = legaia_tim::parse(&a.tim_bytes) {
+            vram.upload_tim(&tim);
+        }
+    }
     let rest_pose = match (&sources.fallback_poses, FALLBACK_POSE_BANKS.get(cslot)) {
         (Some(b), Some(&rec)) => (0..tmd.objects.len())
             .map(|o| match b.bone_transform(rec, 0, o) {

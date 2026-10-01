@@ -1099,6 +1099,11 @@ palette** - what the Baka Fighter minigame renders with directly. A normal
 battle does **not** use them: it relocates the mesh to rows 481..483 and uploads
 a different, battle-allocated party palette there (see
 [§ Battle render: load-time TSB/CBA relocation](#battle-render-load-time-tsbcba-relocation)).
+The atlas **images** are Baka Fighter VRAM too, and their rects collide with
+the battle's own: atlas 7 lands at `(448, 256)`, monster texture slot 2's page.
+The engine uploads them in a battle only for a member that falls back to the
+1204 mesh (`engine-core::battle_party_form`); uploading them at every battle
+entry drew Baka Fighter art over the third enemy of a three-monster formation.
 The streaming chunk type `0x09`
 (TMD2) is recognized in [`AssetType`](../../crates/asset/src/lib.rs) as a
 distinct dispatcher tag from the regular TMD (type `0x02`); the TMD body shape

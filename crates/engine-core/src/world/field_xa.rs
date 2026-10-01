@@ -232,7 +232,7 @@ mod tests {
     #[test]
     fn entering_the_duel_queues_the_announcer_prestage() {
         let mut w = World::default();
-        let fight = crate::baka_fighter::BakaFight::new(duel_cfg(0), duel_cfg(1), [2, 2], 1);
+        let fight = crate::baka_fighter::BakaFight::new(duel_cfg(0), duel_cfg(1), 1);
         w.enter_baka_fighter(fight);
         let listed = w.drain_field_xa_prestage();
         let want: Vec<crate::sfx_cue::XaVoiceClip> =

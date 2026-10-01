@@ -809,6 +809,17 @@ timeline and on concurrent helpers alike (both hold the pad, as retail's
 engaged bit does); the length accounting and the pad rule are in
 [`field-locomotion.md`](field-locomotion.md#where-the-294-vsyncs-go).
 
+An **NPC** target takes the same arm. The run-on exit is not a player
+special case: `0x801DEEDC..0x801DEF00` seats the op on whatever context the
+target byte resolved to and leaves `s7 = 3` for every target; only the extra
+halt on the caller (`0x801DEF04..0x801DEF14`) is player-only. So
+`B7 <id> b0 b1` glides a placement while the record runs on, and the record's
+next cross-context op on that actor waits for the leg. `bylon`'s first Maya
+meeting (`P2[9]`) opens this way: `A3 3F 53 32` seats Maya (channel `0x3F`,
+placement 28) at the top of the shrine stairs and `B7 3F 00 84` walks her
+512 units down into the room before her first line. Engine port:
+`CutsceneTimeline::npc_glides`.
+
 #### 0x39 GIVE_ITEM
 
 `[39, item_id]` - adds one of inline item `item_id` to the inventory: `func_0x8004313C()` (select the active inventory window/page bounds) then `func_0x800421D4(item_id, 1)` (the capacity-checked add-item-by-id primitive). PC advances by 2 (`addiu s8,s8,0x2` at `0x801E044C`; `lbu a0,0(s6)` reads the inline id at `0x801E0450`). This is the **treasure-chest item-give** path - the **granted** item is this single inline operand byte, **not** a per-scene table. `FUN_800421D4` is the inventory adder, so the earlier `PLAY_SFX` label was wrong. (`FUN_801D71F0` is not a second add-item site: that VA is a mis-based print of the equip applier [`FUN_801E5A08`](field-menu.md#manual-equip-applier-fun_801e5a08), whose `FUN_800421D4` call is a refund;

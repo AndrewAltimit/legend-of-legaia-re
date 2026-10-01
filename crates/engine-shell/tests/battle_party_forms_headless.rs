@@ -101,6 +101,51 @@ fn assert_vahn_form_installed(session: &BootSession) {
     );
 }
 
+/// The party forms' recorded VRAM writes leave the monster texture slots
+/// alone: pages `((5 + slot) * 64, 256)` for slots `0..=2` and CLUT rows
+/// `484..=486`. The PROT 1205 Baka Fighter atlases used to be uploaded at
+/// every battle entry, and atlas 7's rect is `(448, 256)` - slot 2's page -
+/// so the third enemy of any three-monster formation drew Baka Fighter art.
+fn assert_monster_slots_untouched(session: &BootSession) {
+    use legaia_asset::monster_archive::{MONSTER_CLUT_ROW_BASE, monster_page_origin};
+    let forms = session.host.battle_party_forms().expect("party forms");
+    let mut vram = legaia_tim::Vram::new();
+    let sentinel = 0x5A5Au16;
+    let (x0, y0) = monster_page_origin(0);
+    let (x2, _) = monster_page_origin(2);
+    let w = usize::from(x2 + 64 - x0);
+    let block: Vec<u8> = std::iter::repeat_n(sentinel.to_le_bytes(), w * 256)
+        .flatten()
+        .collect();
+    vram.write_block(x0, y0, w as u16, 256, &block);
+    let row: Vec<u8> = std::iter::repeat_n(sentinel.to_le_bytes(), 256)
+        .flatten()
+        .collect();
+    for slot in 0..3 {
+        vram.write_clut_row(0, MONSTER_CLUT_ROW_BASE + slot, &row);
+    }
+    forms.vram_writes.replay(&mut vram);
+    for y in 0..256usize {
+        for x in 0..w {
+            let px = vram.pixel(usize::from(x0) + x, usize::from(y0) + y);
+            assert_eq!(
+                px,
+                sentinel,
+                "party-form write over the monster page window at ({}, {})",
+                usize::from(x0) + x,
+                usize::from(y0) + y
+            );
+        }
+    }
+    for slot in 0..3u16 {
+        let y = usize::from(MONSTER_CLUT_ROW_BASE + slot);
+        assert!(
+            (0..256).all(|x| vram.pixel(x, y) == sentinel),
+            "party-form write over monster CLUT row {y}"
+        );
+    }
+}
+
 #[test]
 fn headless_battle_entry_installs_party_forms() {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
@@ -132,6 +177,7 @@ fn headless_battle_entry_installs_party_forms() {
 
     enter_training_battle(&mut session);
     assert_vahn_form_installed(&session);
+    assert_monster_slots_untouched(&session);
     let first = session.host.world.battle.entry_serial;
     eprintln!(
         "[ran] battle {first}: {} party form(s) installed headless",
