@@ -3572,6 +3572,26 @@ impl World {
         std::mem::take(&mut self.locomotion.player_rig_dirty)
     }
 
+    /// The scene-record one-shot a script ExecMove on the player
+    /// (`A2 F8 <id>`) queues for the hosts to draw over idle / walk: the
+    /// picked clip id, when the pick binds the **scene** bank. `None` with the
+    /// party-bank bit up - the id then strides into the leader's locomotion
+    /// bank (`FUN_800204F8`'s party arm), which the settle tail's slot pick
+    /// plays; queueing scene record `id - 1` there played a clip of another
+    /// skeleton over the hero, and the body came apart. Clips `1` / `2` (the
+    /// walk / idle moves) never queue.
+    ///
+    /// REF: FUN_800204F8 (`0x80020524..0x800205A8`, the bank select)
+    pub(crate) fn player_move_cue(
+        &self,
+        pick: &vm::field_player_clip::SettleClipPick,
+    ) -> Option<u8> {
+        let Some((vm::field_player_clip::ClipBank::Scene, _)) = pick.bound() else {
+            return None;
+        };
+        u8::try_from(pick.clip).ok().filter(|&id| id > 2)
+    }
+
     /// A script aiming a clip at the **player**: op `0x22` `EXEC_MOVE`
     /// (`0x801DE998..0x801DEAB8`) and the player arm of op `4C 51`
     /// (`0x801E1954..0x801E1A3C`) both test the context against the player

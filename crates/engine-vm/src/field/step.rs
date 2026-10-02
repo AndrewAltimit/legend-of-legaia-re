@@ -324,6 +324,8 @@ pub fn step<H: FieldHost>(
                 return StepResult::Unknown { opcode, pc };
             };
             if op1 & 0x7F == 0 {
+                let player = extended && bytecode.get(pc + 1) == Some(&0xF8);
+                host.face_compass(ctx, op0 & 0x0F, player);
                 if let Some(value) = host.cam_cfg_lookup(op0 & 0x0F) {
                     ctx.field_26 = value;
                 }

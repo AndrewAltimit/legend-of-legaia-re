@@ -383,11 +383,12 @@ pub struct TimelineNpcGlide {
 
 /// State of a parked cross-context rotate yield (see
 /// [`CutsceneTimeline::facing_wait`]): one motion-VM `0x38` RotateToAngle leg
-/// stepped once per timeline tick against the target NPC's render heading.
+/// stepped once per timeline tick against the target's render heading.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TimelineFacing {
-    /// Placement slot of the turning NPC.
-    pub slot: u8,
+    /// Placement slot of the turning NPC, or `None` for the player
+    /// (`B8 F8 ..`).
+    pub slot: Option<u8>,
     /// The parked rotate leg: yaw seeded from the NPC's current heading,
     /// speed 1 (the engine ticks the timeline once per retail display frame,
     /// so the operand budget maps 1:1 to parked ticks).
@@ -427,7 +428,7 @@ impl CutsceneTimeline {
     pub fn halted_targets(&self) -> impl Iterator<Item = Option<u8>> + '_ {
         let live = !self.done;
         let walk = self.walk_wait.as_ref().map(|w| w.slot);
-        let facing = self.facing_wait.as_ref().map(|f| Some(f.slot));
+        let facing = self.facing_wait.as_ref().map(|f| f.slot);
         let glide = self.player_glide.as_ref().map(|_| None);
         [walk, facing, glide]
             .into_iter()

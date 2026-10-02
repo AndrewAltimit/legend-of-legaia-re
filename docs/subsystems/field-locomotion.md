@@ -421,6 +421,24 @@ A frame that moved the player without the pad step (a script walk) still keeps t
 
 The field VM hands every `0xF8`-targeted `0x31` / `0x32` to the host (`FieldHost::player_cflag`), and the port routes bit `24` to `World::locomotion.player_party_bank` (`World::field_player_cflag`) - on the cutscene timeline, the field channels and the scene script alike. The disc census finds the player's other bits written the same way (`0x01`, `0x0A`, `0x0D`, `0x13`, `0x15`, `0x1D`, `0x1F`); those stay on the caller's context, because the port has no single player `+0x10` word their readers consult.
 
+A script ExecMove on the player (`A2 F8 <id>`) runs the same pick at once. Only a pick that binds the **scene** bank also queues the scene-record one-shot the hosts draw over idle / walk (`World::player_move_cue`). With the party-bank bit up the id strides into the leader's own bank, and the settle's slot pick already plays it there. The drain refuses a one-shot whose bone count differs from the player's clips.
+
+### Party members in story beats
+
+Vahn, Noa and Gala appear in field events as MAN placements with a party model (`>= 0xF0`), and the bank rule above applies to them as actors in their own right. The placement seater `FUN_8003A1E4` seats every partition-1 actor with the class bit `0x20000` and, for a party model, the party-bank bit `0x01000000` too: `sltiu v0,v0,0xf0` at `0x8003A2DC` selects `lui s3,0x100`, ORed into `+0x10` at `0x8003A3A4..0x8003A3B4`. The story scripts then bracket each gesture with the bit. `B2 <id> 18` drops it, so `A2 <id> <clip>` binds scene-bundle record `clip - 1`. `B1 <id> 18` raises it again for the walk and idle clips. Across the disc's scene MANs, party placements receive about 5,600 such bit writes against about 5,600 ExecMoves.
+
+The port seeds both bits in `field_channels::spawn_channels`. `World::drain_field_anim_cues` picks each placement's bank from the channel's **live** bit (`World::npc_party_bank`), and the host's spawn-model answer stands in only for a slot no channel carries. Binding by spawn model alone resolved every gesture out of the locomotion bundle, which gave three failures:
+
+- the wrong clip;
+- no clip, for an id past the bundle's end;
+- a two- or three-bone save-crystal record on a ten-bone hero.
+
+The last of these is the "body comes apart" shape. A re-target whose bone count differs from the clip the slot was first bound with is refused, because both hosts cut the actor's mesh to that count (`FieldNpcState::clip_bones`).
+
+Because a party placement now carries the bit, the port's VM no longer infers "this is the player" from it. Retail's `0x23` and `4C 51` player arms compare the context **pointer** against `_DAT_8007C364` (`bne s5,v0` at `0x801E1954`), so the host treats a context stepped as a placement channel, its own script or a poke on it, as never the player. That test is `FieldHostImpl::ctx_is_player`.
+
+Disc-gated test: `crates/engine-core/tests/field_party_gesture_bank_disc.rs`. It spawns every story record that drops a party member's bit, ticks it, and asserts that every party re-target is a ten-bone hero pose.
+
 ### Wall-slide resolution (`FUN_80046494`)
 
 Step 3's "direction decode" is really a **wall-slide resolver**. The

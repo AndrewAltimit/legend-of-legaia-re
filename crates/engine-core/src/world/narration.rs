@@ -692,6 +692,7 @@ impl World {
             self.field_vm.object_channel_binds = binds;
             self.field_vm.channels_man = Some(std::sync::Arc::new(man.to_vec()));
             self.npcs.clip_cursors.clear();
+            self.npcs.clip_bones.clear();
         }
         self.npcs.anim_cues.clear();
         self.npcs.clip_current.clear();
@@ -1310,7 +1311,7 @@ impl World {
             if fw.state.yaw_written {
                 // Raw write-back (`yaw` may sit outside 0..0xFFF mid-ramp,
                 // exactly as retail's `+0x26` does); render consumers mask.
-                self.npcs.headings.insert(fw.slot, fw.state.yaw as i16);
+                self.set_timeline_facing(fw.slot, fw.state.yaw as i16);
             }
             if r != vm::motion_vm::StepResult::Done && fw.frames < WALK_PARK_TIMEOUT {
                 tl.facing_wait = Some(fw);
@@ -1707,14 +1708,23 @@ impl World {
                 //   budgets 0x12..0x20). Arm the rotate park; the pre-step
                 //   gate plays it out and resumes past the yield.
                 // REF: FUN_801DE840 (case 0x38), FUN_8003774C (case 0x38)
+                //
+                // The player (`B8 F8 ..`, `FUN_8003C83C` resolving `0xF8` to
+                // the player object) takes both paths the same way, on its
+                // own heading - every story beat turns the hero with these.
+                let facing_target = match target {
+                    Some((_, ci)) if !channels[ci].object_bind => {
+                        Some(Some(channels[ci].placement_index as u8))
+                    }
+                    None if vm::field::peek_extended(&tl.bytecode, pc) == Some(0xF8) => Some(None),
+                    _ => None,
+                };
                 if opcode_byte & 0x7F == 0x38
                     && opcode_byte & 0x80 != 0
                     && let (Some(&op0), Some(&op1)) =
                         (tl.bytecode.get(pc + 2), tl.bytecode.get(pc + 3))
-                    && let Some((_, ci)) = target
-                    && !channels[ci].object_bind
+                    && let Some(slot) = facing_target
                 {
-                    let slot = channels[ci].placement_index as u8;
                     if pc < tl.visited.len() {
                         tl.visited[pc] = true;
                     }
@@ -1722,21 +1732,15 @@ impl World {
                         if let Some(h) =
                             crate::man_field_scripts::facing_index_to_engine_heading(op0 & 0xF)
                         {
-                            host.world.npcs.headings.insert(slot, h);
+                            host.world.set_timeline_facing(slot, h);
                         }
                         tl.pc = pc + 4;
                         continue;
                     }
-                    // Seed from the NPC's live heading (retail reads the
+                    // Seed from the target's live heading (retail reads the
                     // live `+0x26`); a never-posed NPC stands at the retail
                     // spawn default 0 = engine 0x800.
-                    let cur = host
-                        .world
-                        .npcs
-                        .headings
-                        .get(&slot)
-                        .copied()
-                        .unwrap_or(0x800);
+                    let cur = host.world.timeline_facing(slot).unwrap_or(0x800);
                     tl.facing_wait = Some(crate::cutscene_timeline::TimelineFacing {
                         slot,
                         state: vm::motion_vm::MotionState {
@@ -1820,8 +1824,13 @@ impl World {
                         // it once over idle/walk (live-pinned: the town01
                         // post-naming `A2 F8 30`/`31` land the retail anim
                         // pointer on scene records 47/48 for one playthrough
-                        // each).
-                        host.world.locomotion.player_move_cues.push(move_id);
+                        // each). Only a pick that binds the scene bank plays
+                        // a scene record: with the party-bank bit up the id
+                        // strides into the leader's own bank, which the
+                        // settle's slot pick already plays.
+                        if let Some(id) = host.world.player_move_cue(&pick) {
+                            host.world.locomotion.player_move_cues.push(id);
+                        }
                         tl.player_move_frames = CHANNEL_WAIT_PARK_TIMEOUT;
                         if pc < tl.visited.len() {
                             tl.visited[pc] = true;
@@ -2209,6 +2218,36 @@ impl World {
         self.cutscene.in_timeline = false;
         self.field_vm.in_spawned_record_slice = false;
         true
+    }
+
+    /// Write a timeline rotate's heading onto its target: a placement's
+    /// render heading, or the player's `render_26` for `None`.
+    fn set_timeline_facing(&mut self, slot: Option<u8>, heading: i16) {
+        match slot {
+            Some(slot) => {
+                self.npcs.headings.insert(slot, heading);
+            }
+            None => {
+                if let Some(a) = self
+                    .player_actor_slot
+                    .and_then(|s| self.actors.get_mut(usize::from(s)))
+                {
+                    a.move_state.render_26 = heading;
+                }
+            }
+        }
+    }
+
+    /// The live heading a timeline rotate starts from - see
+    /// [`Self::set_timeline_facing`].
+    fn timeline_facing(&self, slot: Option<u8>) -> Option<i16> {
+        match slot {
+            Some(slot) => self.npcs.headings.get(&slot).copied(),
+            None => self
+                .player_actor_slot
+                .and_then(|s| self.actors.get(usize::from(s)))
+                .map(|a| a.move_state.render_26),
+        }
     }
 
     /// Post-slice bookkeeping for the **modal** cutscene timeline: apply the
@@ -2814,6 +2853,7 @@ impl World {
         self.npcs.anim_cues.clear();
         self.npcs.clip_current.clear();
         self.npcs.clip_cursors.clear();
+        self.npcs.clip_bones.clear();
     }
 
     /// Append the `.MAP` **object-bind** channels (retail scene-init
@@ -3971,6 +4011,79 @@ mod tests {
         );
         let tl = w.cutscene.timeline.as_ref().expect("timeline installed");
         assert!(tl.facing_wait.is_none(), "no park on the simple path");
+    }
+
+    /// A timeline whose record turns the **player** (`B8 F8 <op0> <op1>`,
+    /// `0xF8` resolving to the player object), then waits so it stays
+    /// installed. The player starts at engine heading `start`.
+    fn timeline_with_player_facing_op(op0: u8, op1: u8, start: i16) -> World {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        let mut w = World {
+            mode: crate::world::SceneMode::Field,
+            ..World::default()
+        };
+        w.spawn_actor(0);
+        w.player_actor_slot = Some(0);
+        w.actors[0].move_state.render_26 = start;
+        let bc = vec![0xB8, 0xF8, op0, op1, 0x4A, 0xFF, 0x7F];
+        w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
+        w
+    }
+
+    /// `B8 F8 <dir> 00` snaps the player to the compass entry - the story
+    /// beats' "Vahn turns to face ..." - rather than writing the timeline's
+    /// own context, where no renderer reads it.
+    #[test]
+    fn cutscene_timeline_player_facing_simple_path_snaps_the_player() {
+        let mut w = timeline_with_player_facing_op(0x02, 0x00, 0x000);
+        w.step_cutscene_timeline();
+        assert_eq!(w.actors[0].move_state.render_26, 0x0C00, "LUT index 2 (-X)");
+        let tl = w.cutscene.timeline.as_ref().expect("timeline installed");
+        assert!(tl.facing_wait.is_none(), "no park on the simple path");
+    }
+
+    /// The budgeted player turn ramps on the same rotate leg an NPC's does,
+    /// one parked tick per budget frame, ending exactly on the compass entry.
+    #[test]
+    fn cutscene_timeline_player_facing_ramp_turns_the_player() {
+        let mut w = timeline_with_player_facing_op(0x06, 0x12, 0xE00);
+        w.step_cutscene_timeline();
+        let parked = |w: &World| {
+            w.cutscene
+                .timeline
+                .as_ref()
+                .and_then(|tl| tl.facing_wait.as_ref())
+                .map(|f| f.slot)
+        };
+        assert_eq!(parked(&w), Some(None), "parked on the player's rotate leg");
+        for _ in 0..18 {
+            w.step_cutscene_timeline();
+        }
+        assert_eq!(w.actors[0].move_state.render_26, 0x0400);
+        let tl = w.cutscene.timeline.as_ref().expect("timeline installed");
+        assert!(tl.facing_wait.is_none(), "ramp done: park released");
+        assert_eq!(tl.pc, 4, "record resumed past the 4-byte yield op");
+    }
+
+    /// A player ExecMove queues the scene-record one-shot only when its pick
+    /// binds the scene bank. With the party-bank bit up the id strides into
+    /// the leader's own bank; a scene record there is another skeleton's
+    /// clip, and drawing it over the hero tore the body apart.
+    #[test]
+    fn a_player_exec_move_queues_a_scene_clip_only_off_the_party_bank() {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        for (bit_op, queued) in [(0xB1u8, Vec::<u8>::new()), (0xB2, vec![5])] {
+            let mut w = World {
+                mode: crate::world::SceneMode::Field,
+                ..World::default()
+            };
+            w.spawn_actor(0);
+            w.player_actor_slot = Some(0);
+            let bc = vec![bit_op, 0xF8, 0x18, 0xA2, 0xF8, 0x05, 0x4A, 0xFF, 0x7F];
+            w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
+            w.step_cutscene_timeline();
+            assert_eq!(w.locomotion.player_move_cues, queued, "{bit_op:#X}");
+        }
     }
 
     /// Build a timeline whose record drives the **player-anchor channel**

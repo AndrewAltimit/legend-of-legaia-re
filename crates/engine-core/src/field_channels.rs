@@ -107,6 +107,9 @@ impl FieldChannel {
 /// spawns at the placement's tile-centre world position with the placement's
 /// anim id in `move_id`'s sibling slot (`+0x5C` in retail; the engine's NPC
 /// clip players key off the placement record instead).
+/// The placement class bit `FUN_8003A1E4` ORs into every actor it seats.
+pub const PLACEMENT_CLASS_BIT: u32 = 0x0002_0000;
+
 // PORT: FUN_8003A1E4
 // REF: FUN_8003AEB0 (the per-record spawn loop + script-id base)
 pub fn spawn_channels(man_file: &ManFile, man: &[u8]) -> Vec<FieldChannel> {
@@ -116,6 +119,20 @@ pub fn spawn_channels(man_file: &ManFile, man: &[u8]) -> Vec<FieldChannel> {
         .into_iter()
         .map(|p| {
             let ctx = FieldCtx {
+                // The class word `FUN_8003A1E4` seats every placement with
+                // (`0x8003A3A4..0x8003A3B4`): the placement class bit
+                // `0x20000`, plus the party-bank bit `0x01000000` for a
+                // `>= 0xF0` party model (`sltiu v0,v0,0xf0` at `0x8003A2DC`
+                // selecting `lui s3,0x100`). That bit routes the actor's clip
+                // ids into the party locomotion bank (`FUN_800204F8`), and the
+                // story scripts drop and raise it around every scene-bank
+                // gesture (`B2 <id> 18` .. `B1 <id> 18`).
+                flags: PLACEMENT_CLASS_BIT
+                    | if p.model_index >= 0xF0 {
+                        legaia_engine_vm::field_player_clip::PARTY_BANK_FLAG
+                    } else {
+                        0
+                    },
                 script_id: (p0_count + p.index) as u16,
                 world_x: p.world_x as u16,
                 world_z: p.world_z as u16,
