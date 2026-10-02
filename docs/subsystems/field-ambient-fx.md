@@ -645,6 +645,15 @@ byte layout):
 | `FUN_8003F3FC` | SCUS | **Per-particle update + draw.** Kills a record outside the walk box; brightness ramps `0..0xFF` over age `0..0x400`, holds to `0xC00`, then fades and kills; colour is `grey * tint * brightness >> 15` per channel with the tint the op `0x4C 0x12` global multiply (`_DAT_8007BCB8..BA`, `0x80` neutral); drift and age advance by `DAT_1F800393`; the player's `+-0x180 / +-0x80 / +-0x80` box ages it again, three times more with a d-pad bit held; then two halves through `FUN_8003F86C`, and a record whose two halves both cull is freed (`FUN_8001FA68`). |
 | `FUN_8003F86C` | SCUS | **Half-sheet emitter.** One `POLY_FT4` (tag `0x09` words, command `0x2E`: textured, semi-transparent, texture-blended), a **view-space billboard** at the particle's depth - see [the sheet is a billboard](#the-sheet-is-a-view-space-billboard); culled when both corners are off the `[-8, 0x148)` columns, both above row `0`, or both below row `0x190`; kept but not drawn between rows `0xF0` and `0x190`; NCLIP-culled at a signed area past `0x1F40` quarter-pixels; linked at OT bucket `SZ >> 5`. On the overworld it also drops a half nearer than `SZ 0x310`, links at `(SZ - 0x10) >> 5` and adds the curvature table's `SY` term. |
 
+A raised gate does not by itself put fog on screen: the region a tile falls
+in must also be **enabled**, and that byte is script state. Op `4C C1`
+rewrites every region's `+0` from its story flag (`+9..+10`, set means off;
+[menu-ctrl](script-vm-menuctrl.md#0x4c-nibble-0xc00xcf---small-per-actor--per-scene-writes)),
+and most scene entry scripts run it. Retail's `retock` inn states hold the
+gate raised, all three regions off under flag `0x51C` and an empty pool;
+`rikuroa` and `garmel` key their spent regions on `0x007`. An engine that
+left the MAN's own bytes in place drew a full fog field over the inn.
+
 The half-width is `(0x180 + (age >> 4)) >> 1`. Retail adds a byte from
 `FUN_8003F838` here, but it seeds that PRNG's state with the record's age
 rate first, and the step `v = state * 12 + 2; state = (v << 16) + (v >> 16)`

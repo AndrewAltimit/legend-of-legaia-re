@@ -2456,6 +2456,31 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.locomotion.clip_override = u32::from(value);
     }
 
+    /// Op `4C C1` - re-derive every fog region's enable byte from its story
+    /// flag: for each record of the `_DAT_80073ED8` table (count
+    /// `DAT_80073EDC`, stride `0xB`), `FUN_8003CE64(rec[9] | rec[10] << 8)`
+    /// and `rec[0] = flag set ? 0 : 1` (`0x801E2674..0x801E26EC`). The fog
+    /// spawner ends its region search on the first box holding the tile and
+    /// spawns nothing when that record's byte 0 is clear, so this is what
+    /// keeps a region's fog off once its story beat has passed: retail's
+    /// `retock` inn (flag `0x51C`), `rikuroa` (`0x007`) and `garmel`
+    /// (`0x007`) all hold the reset result, with an empty pool where every
+    /// covering region is off.
+    ///
+    /// PORT: FUN_801DE840 (the nibble-C sub-`1` arm)
+    fn op4c_n_c_sub_1_flag_loop_reset(&mut self, _flags: &[u8]) {
+        let enables: Vec<bool> = self
+            .world
+            .fog
+            .regions
+            .iter()
+            .map(|r| !self.world.system_flag_test(r.flag_index))
+            .collect();
+        for (r, on) in self.world.fog.regions.iter_mut().zip(enables) {
+            r.enabled = on;
+        }
+    }
+
     /// Op `0x4C 0x61` - scripted CLUT-cell effect (one-shot cell write /
     /// cross-fade spawn). Decodes the 14-byte operand payload and queues the
     /// effect on the world; [`World::step_clut_fx`] applies it against the

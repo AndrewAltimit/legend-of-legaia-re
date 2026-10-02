@@ -315,6 +315,7 @@ mod field_npc_motion;
 mod field_records;
 mod field_timer_actors;
 mod flash_limiter;
+mod fog_region_reset;
 mod game_over_hold;
 mod inline_dialogue;
 mod item_bag_steal;
