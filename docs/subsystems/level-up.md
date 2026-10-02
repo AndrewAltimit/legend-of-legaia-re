@@ -622,6 +622,13 @@ one battle:
   `<leader>'s team won the battle!` and `Gained N Experience and M G.` with
   both figures right-aligned inside the sentence, plus a line per drop.
 
+  `N` is **one member's share**, not the battle's EXP: `FUN_8004E568` stores
+  the share `s6` (the pool scaled by 3/4, ceiling-divided among the living
+  members, `0` in a no-reward fight) into `gp+0xA04` at `0x8004F684` and
+  hands that word to the number draw `FUN_8003563C`. A 48-EXP monster beaten
+  by a party of three reads `12` (`noa_levelup_banner`). The port carries the
+  figure as `BattleRewards::xp_share`.
+
   The two window rects, the text pen and the two numeral columns come from
   the `noa_levelup_banner` capture at 320x240, measured off the gold frame
   band - a capture citation, not an engine invention. What produced that band

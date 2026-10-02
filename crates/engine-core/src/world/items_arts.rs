@@ -1273,6 +1273,10 @@ impl World {
             xp_total = 0;
         }
 
+        let alive = (0..usize::from(self.party.party_count))
+            .filter(|&i| self.actors.get(i).is_some_and(|a| a.battle.hp > 0))
+            .count() as u32;
+        let xp_share = vm::battle_formulas::victory_exp_per_member(xp_total, alive);
         let level_ups = if xp_total > 0 {
             self.apply_battle_xp(xp_total)
         } else {
@@ -1290,6 +1294,7 @@ impl World {
         // set the flag. See `SceneHost::tick`'s battle-return arm.
         BattleRewards {
             xp: xp_total,
+            xp_share,
             gold: gold_credited,
             level_ups,
             drops,

@@ -8,6 +8,8 @@ use super::*;
 /// resolved against the world's item catalog / roster.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct BattleSpoilsBanner {
+    /// The per-member EXP share ([`crate::world::BattleRewards::xp_share`]) -
+    /// what retail's result window prints, not the pool.
     pub xp: u32,
     pub gold: u32,
     /// `"<name> drop"` lines - one per item the loot roll surfaced.
@@ -104,7 +106,7 @@ impl World {
             })
             .collect();
         Some(BattleSpoilsBanner {
-            xp: r.xp,
+            xp: r.xp_share,
             gold: r.gold,
             drops,
             level_ups,

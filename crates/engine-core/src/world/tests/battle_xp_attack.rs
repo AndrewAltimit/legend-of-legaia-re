@@ -623,3 +623,33 @@ fn any_battle_speed_requires_a_living_carrier() {
     world.actors[3].battle.liveness = 1;
     assert!(world.any_battle_speed());
 }
+
+/// The result window prints each living member's share, not the pool:
+/// `FUN_8004E568` stores the share `s6` into `gp+0xA04` (`0x8004F684`) and
+/// draws that word. `noa_levelup_banner` reads `12` for a 48-EXP monster
+/// over a party of three - three quarters of 48, a third each.
+#[test]
+fn the_result_window_prints_the_per_member_share() {
+    use crate::monster_catalog::{FormationDef, FormationSlot, MonsterCatalog, MonsterDef};
+    let mut cat = MonsterCatalog::new();
+    let mut def = MonsterDef::new(4, "Gobu Gobu", 10, 5);
+    def.exp = 48;
+    cat.insert(def);
+    let formation = FormationDef::new(1000, vec![FormationSlot::new(4)]);
+    let mut world = World {
+        party: crate::world::PartyState {
+            party_count: 3,
+            ..Default::default()
+        },
+        ..World::default()
+    };
+    for i in 0..3 {
+        world.actors[i].battle.hp = 100;
+    }
+    let r = world.apply_battle_loot(&formation, &cat);
+    assert_eq!((r.xp, r.xp_share), (48, 12));
+    // A downed member is not in the divisor: two living members split 36.
+    world.actors[2].battle.hp = 0;
+    let r = world.apply_battle_loot(&formation, &cat);
+    assert_eq!(r.xp_share, 18);
+}
