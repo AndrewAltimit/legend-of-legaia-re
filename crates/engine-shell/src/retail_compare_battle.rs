@@ -1035,6 +1035,17 @@ pub fn run_engine_battle(
             combat_snapshot(&mut session.host.world, track)
         }
     };
+    // The idle orbit's yaw is a clock (`-4` a camera step from whatever
+    // azimuth the field left): on a capture whose flow byte hands the frame
+    // to the orbit, phase-align it to retail's reading, as the image child
+    // does (`LEGAIA_BATTLE_ORBIT_YAW`), so the channel scores the framing
+    // rather than the instant. `align_orbit_yaw` refuses unless the orbit
+    // really owns the yaw (the far framing, no yaw glide in flight).
+    if ORBIT_FLOWS.contains(&battle.flow)
+        && let Some(cam) = session.host.world.battle.camera.as_mut()
+    {
+        cam.align_orbit_yaw(f32::from(retail.camera.yaw));
+    }
     let world = &session.host.world;
     let pose = world.battle_cam_pose();
     let camera = CameraObs {
@@ -1169,6 +1180,16 @@ pub fn engine_seat(seat: u8, party_count: u8) -> u8 {
 
 /// Ticks the pad path may take to reach a menu capture's surface.
 const MENU_DRIVE_TICKS: u32 = 600;
+/// Ticks a menu capture's surface is held, with no input, before it is
+/// sampled. A retail menu capture is a surface the player was sitting on,
+/// so its camera has finished whatever transition opened it: the case-`0`
+/// glide onto a member (`FUN_801D829C`, `a3 = 0xC`: 12 display frames), or
+/// the submenu-exit swing and return to the far framing that the commit
+/// confirm opens on (6 + 7 camera steps, 26 frames). The drive reaches the
+/// surface on the tick it opens, so sampling then reads the transition's
+/// first step - a clock reading, not the framing. Once the camera is in the
+/// hold changes nothing: the surface waits for input.
+pub const MENU_HOLD_TICKS: u32 = 32;
 /// Ticks the pad path may take to reach an in-flight capture's action-SM
 /// state: long enough for several rounds, since the seat's turn comes up in
 /// initiative order.
@@ -1242,6 +1263,16 @@ impl BattleDrive {
         match self {
             Self::Menu { .. } => MENU_DRIVE_TICKS,
             Self::Action { .. } => ACTION_DRIVE_TICKS,
+        }
+    }
+
+    /// Ticks the reached phase is held before it is sampled
+    /// ([`MENU_HOLD_TICKS`]); an action phase moves on by itself, so it is
+    /// sampled the tick it is reached.
+    pub fn hold_ticks(&self) -> u32 {
+        match self {
+            Self::Menu { .. } => MENU_HOLD_TICKS,
+            Self::Action { .. } => 0,
         }
     }
 
@@ -1393,16 +1424,27 @@ fn run_drive(
 ) -> Result<Option<u32>> {
     drive.prime(&mut session.host.world);
     let mut reached = None;
+    let mut held = 0;
     for t in 0..drive.budget() {
         let world = &session.host.world;
         if drive.reached(world) {
-            reached = Some(t);
+            reached.get_or_insert(t);
+            if held >= drive.hold_ticks() {
+                break;
+            }
+            held += 1;
+        } else if reached.is_some() {
+            // The surface closed under the hold: sample where it stands.
             break;
         }
         if world.mode != SceneMode::Battle {
             break;
         }
-        let pad = drive.pad_word_at(world, u64::from(t));
+        let pad = if reached.is_some() {
+            0
+        } else {
+            drive.pad_word_at(world, u64::from(t))
+        };
         session.host.world.input.set_pad(pad);
         session.tick()?;
         session.host.route_bgm_events(director)?;

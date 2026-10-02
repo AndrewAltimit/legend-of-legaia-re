@@ -358,6 +358,14 @@ round is executing and the same seat holds the same `ctx[+0x07]`. The drive
 gives up after its budget or when the fight ends, and the `phase` detail then
 reads `driven by pad, never reached`.
 
+A menu surface, once reached, is **held** with no input for
+`MENU_HOLD_TICKS` before it is sampled, on both the headless seed and the image
+child. A retail menu capture is a surface the player sat on, so its camera has
+finished the transition that opened it - the case-`0` glide onto the member,
+or the submenu-exit swing back to the far framing on the commit confirm - and
+the drive reaches the surface on the tick it opens; sampled then, `camera`
+reads the transition's first step.
+
 A drive plays rounds the retail history did not, so a driven capture's
 combatant, bag, flag and track channels are read at the first prompt, before
 the drive - where the seed placed them - and only `phase` and `camera` at the
@@ -502,11 +510,12 @@ too, since the module places the creature relative to caster and victim.
 
 **The idle orbit.** The orbit's
 yaw is a clock (`-4` per camera step from whatever azimuth the field left), so
-on a prompt state the yaw part of `camera` reads the capture instant. The frame
-does not: when retail's command-flow byte is one the battle tick's orbit runs on
-(`0x1E` / `0x32` / `0x6E` / `0xFE`, `FUN_801D0748` at `0x801D0784..0x801D07A4`)
-the child gets retail's yaw as `LEGAIA_BATTLE_ORBIT_YAW` and holds its own orbit
-there while the orbit owns the yaw (`BattleCamera::align_orbit_yaw`) - the
+an unaligned prompt sample reads the capture instant. When retail's command-flow
+byte is one the battle tick's orbit runs on (`0x1E` / `0x32` / `0x6E` / `0xFE`,
+`FUN_801D0748` at `0x801D0784..0x801D07A4`) both sides align it: the headless
+seed sets its orbit to retail's yaw before it samples `camera`, and the image
+child gets the yaw as `LEGAIA_BATTLE_ORBIT_YAW` and holds its orbit there, each
+only while the orbit owns the yaw (`BattleCamera::align_orbit_yaw`) - the
 camera twin of the field HUD countdown hold. Unaligned, an orbit sample
 hundreds of units off put the formation on the other side of the frame and
 scored the clock rather than the scene. A party whose

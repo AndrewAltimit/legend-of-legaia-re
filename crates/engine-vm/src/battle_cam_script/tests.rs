@@ -1470,15 +1470,14 @@ fn menu_framing_keeps_the_formation_on_screen() {
     }
 }
 
-/// **The top-level command chooser keeps the far framing.**
+/// **The round prompt keeps the far framing.**
 ///
 /// The retail battle menu driver `FUN_801D388C` arms case `0` *and* case
-/// `9`, so "a menu is open" does not select the close-up on its own; two
-/// retail framebuffers separate them (a Begin/Run save reads case 9's
-/// `TR (0, 1280, 7680)` over `+-800` seats, an arts-input save reads case
-/// 0's `TR (-512, 1152, 2457)`). The port used to fold every battle menu
-/// into `Submenu`, which put the camera behind the acting character with
-/// the enemy **behind the eye** for the whole command phase.
+/// `9`, so "a menu is open" does not select the close-up on its own; the
+/// retail captures separate them (a Begin/Run save reads case 9's
+/// `TR (0, 1280, 7680)` over `+-800` seats, a ring or arts-input save reads
+/// case 0's `TR (-512, 1152, 2457)`). Folding the round prompt into
+/// `Submenu` put the enemy **behind the eye** while the party chose.
 #[test]
 fn only_the_input_pickers_take_the_close_up() {
     assert_eq!(

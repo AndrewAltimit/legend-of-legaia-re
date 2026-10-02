@@ -32,7 +32,9 @@ impl PlayWindowApp {
         self.screenshot.as_ref().is_some_and(|sc| {
             sc.phase_gate.as_ref().is_some_and(|g| g.met(world))
                 || sc.script_gate.as_ref().is_some_and(|g| g.met(world))
-                || sc.battle_drive.as_ref().is_some_and(|d| d.reached(world))
+                || sc.battle_drive.as_ref().is_some_and(|d| {
+                    d.reached(world) && sc.battle_drive_held.get() >= d.hold_ticks()
+                })
         })
     }
 
@@ -352,7 +354,13 @@ impl PlayWindowApp {
                     if world.mode == SceneMode::Battle && !sc.battle_drive_primed.replace(true) {
                         drive.prime(world);
                     }
-                    drive.pad_word_at(world, self.tick_no)
+                    // A reached phase is held with no input until it is
+                    // sampled (`BattleDrive::hold_ticks`).
+                    if drive.reached(world) {
+                        0
+                    } else {
+                        drive.pad_word_at(world, self.tick_no)
+                    }
                 }
                 _ => field_pad,
             };
@@ -396,6 +404,16 @@ impl PlayWindowApp {
                 }
                 Ok(_) => {}
                 Err(e) => log::error!("session tick: {e:#}"),
+            }
+            if let Some(sc) = self.screenshot.as_ref()
+                && let Some(drive) = sc.battle_drive
+            {
+                let held = if drive.reached(&self.session.host.world) {
+                    sc.battle_drive_held.get() + 1
+                } else {
+                    0
+                };
+                sc.battle_drive_held.set(held);
             }
             // The Field <-> Battle mode edge, latched on the tick that
             // crossed it. The battle load it runs installs gameplay state as

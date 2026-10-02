@@ -33,9 +33,12 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
         .as_ref()
         .map(|c| c.actor)
         .unwrap_or(world.battle_ctx.active_actor);
-    // The **input** pickers own the close-up; the top-level command chooser
-    // keeps the far framing (`script::phase_for_state` carries the two retail
-    // framebuffers that separate them).
+    // The per-member surfaces own the close-up: the command ring (`0x28`),
+    // the item / magic windows (`0x3C` / `0x46`) and the arts input (`0x50`,
+    // `world.battle.arts_input` - the saved-chain list `arts_menu` is a
+    // different session). Only the round's Begin / Run prompt keeps the far
+    // framing (`script::phase_for_state` carries the retail captures that
+    // separate them).
     // The sparring caption is a dialogue close-up too: the side-band's
     // stage-1 arm aims the camera at the first monster seat through
     // `FUN_801D829C` with `TR (0, 0x500, 0x400)` (`0x80056324..0x80056364`) -
@@ -44,9 +47,7 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
         && world.battle.sideband.hold != 0;
     let phase = script::phase_for_state(
         world.dialog.current.is_some() || world.dialog.inline.is_some() || caption_up,
-        world.battle.arts_menu.is_some()
-            || world.battle.spell_menu.is_some()
-            || world.battle.item_menu.is_some(),
+        member_surface_open(world),
         world.battle_ctx.action_state,
         battle_done_band(world, acting_slot),
     );
@@ -86,7 +87,14 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
         .map_or(acting_slot, |c| c.actor);
     let acting = match world.battle.command.as_ref() {
         Some(c) => actor_at(c.actor, Some(c.party_slot)),
-        None => actor_at(acting_slot, None),
+        // A member's submenu outlives its ring session: the arts input and
+        // the magic / arts windows carry the member themselves, and a party
+        // seat's actor slot is its party row, so the per-character height
+        // keys the same way the ring's does.
+        None => match submenu_member(world) {
+            Some(m) => actor_at(m, Some(m)),
+            None => actor_at(acting_slot, None),
+        },
     };
     // The body pair `+0x3C` / `+0x40` (`World::refresh_battle_body_pairs`).
     let acting_body = world
@@ -115,6 +123,48 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
         acting_body,
     };
     battle_end_cam_inputs(world, inputs, actor_at)
+}
+
+/// Whether a per-member command surface is up - the surfaces retail films
+/// with the case-`0` over-the-shoulder close-up (`FUN_801D5854(slot, 0)`
+/// from the menu driver `FUN_801D388C`).
+///
+/// Every retail battle capture with the command-flow byte `ctx[+0x06]` on
+/// the ring (`0x28`) or the arts input (`0x50`) reads the case-`0` pose -
+/// pitch `0x20`, `TR (-0x200, height[char], prescale(0x600) = 2457)`, yaw
+/// `0x8F0 - actor[+0x46]`, focus on the member - while every capture on the
+/// round prompt (`0x1E`) reads case `9`'s far framing. The item and magic
+/// windows (`0x3C` / `0x46`) are pickers of the same member and keep its
+/// close-up.
+fn member_surface_open(world: &World) -> bool {
+    use crate::battle_input::CommandPhase;
+    let b = &world.battle;
+    b.arts_menu.is_some()
+        || b.arts_input.is_some()
+        || b.spell_menu.is_some()
+        || b.item_menu.is_some()
+        || b.command.as_ref().is_some_and(|c| {
+            matches!(
+                c.phase,
+                CommandPhase::Menu { .. }
+                    | CommandPhase::StepBack
+                    | CommandPhase::OpenItemMenu
+                    | CommandPhase::OpenSpellMenu
+                    | CommandPhase::OpenArtsMenu
+            )
+        })
+}
+
+/// The party seat whose submenu is open when no ring session is, if any.
+fn submenu_member(world: &World) -> Option<u8> {
+    let b = &world.battle;
+    let m = b
+        .arts_input
+        .as_ref()
+        .map(|s| s.actor)
+        .or_else(|| b.arts_menu.as_ref().map(|s| s.actor))
+        .or_else(|| b.spell_menu.as_ref().map(|s| s.actor))?;
+    (m < world.party.party_count).then_some(m)
 }
 
 /// The battle-end sequence's framing (`FUN_8004E568`, which runs in place
@@ -397,5 +447,37 @@ impl World {
             .as_ref()
             .map(|c| c.pose())
             .unwrap_or(script::BOOT_POSE)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::battle_input::BattleCommandSession;
+    use crate::world::SceneMode;
+    use script::BattleCamPhase;
+
+    /// Every retail capture on a member's command ring (`ctx[+0x06] = 0x28`)
+    /// or arts input (`0x50`) reads case 0's close-up; every capture on the
+    /// round's Begin / Run prompt (`0x1E`) reads case 9's far framing.
+    #[test]
+    fn the_ring_and_the_arts_input_take_the_close_up_the_round_prompt_does_not() {
+        let mut world = World {
+            mode: SceneMode::Battle,
+            ..World::default()
+        };
+        world.party.party_count = 3;
+        world.battle.command = Some(BattleCommandSession::new_round_open(1, 1, false));
+        assert_eq!(battle_cam_inputs(&world).phase, BattleCamPhase::Menu);
+
+        world.battle.command = Some(BattleCommandSession::new(1, 1));
+        assert_eq!(battle_cam_inputs(&world).phase, BattleCamPhase::Submenu);
+
+        world.battle.command = None;
+        world.battle.arts_input = Some(crate::arts_command_input::ArtsCommandInputSession::new(
+            1, 1, 100, [0; 4], 1,
+        ));
+        assert_eq!(battle_cam_inputs(&world).phase, BattleCamPhase::Submenu);
+        assert_eq!(submenu_member(&world), Some(1), "framed on the member");
     }
 }

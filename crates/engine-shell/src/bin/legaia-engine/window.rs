@@ -96,6 +96,10 @@ pub(crate) struct ScreenshotConfig {
     /// Whether the drive's one-shot world seed has been armed (it is armed
     /// on the first battle tick).
     pub battle_drive_primed: std::cell::Cell<bool>,
+    /// Ticks the drive's phase has held so far; the capture waits for
+    /// [`legaia_engine_shell::retail_compare_battle::BattleDrive::hold_ticks`]
+    /// of them, as the headless seed does.
+    pub battle_drive_held: std::cell::Cell<u32>,
 }
 
 /// Debug state `play-window` seeds before the first world tick, so a capture
@@ -369,6 +373,7 @@ impl ScreenshotConfig {
                 legaia_engine_shell::retail_compare_battle::BattleDrive::from_env(&v)
             }),
             battle_drive_primed: std::cell::Cell::new(false),
+            battle_drive_held: std::cell::Cell::new(0),
         }))
     }
 }
