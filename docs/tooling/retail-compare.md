@@ -201,8 +201,11 @@ retail PC with at least the retail wait and at most the retail glide left,
 or has just executed the op retail is parked on (the engine clears some
 parks inside one slice that retail holds across frames: a channel flag
 already up, a walk already at its tile). A text segment is met once the
-engine's box has typed its page and waits for the press, the frame every
-such capture shows. The run has a deadline of 9000 ticks; a gate it never
+engine's box has typed its page and waits for the press - the press that
+turns the page, or on the last page the press that closes the box - the
+frame every such capture shows. Counting only the page-turn wait missed
+every capture on a closing page (`garmel`'s Songi taunt), and the run
+sampled the settle window instead. The run has a deadline of 9000 ticks; a gate it never
 meets keeps the settle-window sample, and the `script` detail says which
 it was.
 
