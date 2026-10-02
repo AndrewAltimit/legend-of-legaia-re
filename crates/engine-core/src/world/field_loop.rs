@@ -811,33 +811,64 @@ impl World {
         }
     }
 
-    /// Run the just-loaded scene-entry system script (ctx `0xFB`) up to its
-    /// first yield / wait / halt, bounded.
+    /// Run the just-loaded scene-entry system script (ctx `0xFB`) through the
+    /// passes retail runs before the scene's cutscene record takes the player.
     ///
-    /// Retail's per-frame context loop runs every live context until it
-    /// yields, so the entry script's whole prologue - flag routing, tile
-    /// walls, BGM, and the `0x52F` arrival-fade arm (`4C 12 00 00 00 00 00`
-    /// instant black + `4C 12 80 80 80 44 00` ramp to neutral) - executes
-    /// within the scene-load frame, BEFORE the first rendered frame. The
-    /// engine's per-tick driver steps the field VM one op per tick, which
-    /// would smear those load-frame ops over seconds (and flash the scene
-    /// full-bright before the fade op is reached); this pre-run restores the
-    /// load-frame semantics. The budget bounds a mis-decoded stream; a
-    /// script parked on a wait/yield resumes on the normal per-tick step.
+    /// Retail's install (`FUN_8003AB2C`, `0x8003AD3C..0x8003AD88`) calls the
+    /// dispatcher `FUN_801DE840` op after op and leaves after the op it ran
+    /// was `0x21` (`beq s0,s4`, `s4 = 0x21`, at `0x8003AD58`), on a PC that did
+    /// not move (`0x8003AD68`), or on a text byte (`0x8003AD84`). Each later
+    /// frame the system SM `FUN_801DA51C` runs one more `0x21`-bounded pass,
+    /// until a context holds the player - here, the opening's cutscene record,
+    /// which the entry script itself spawns with op `0x44`: `opstati` inside
+    /// the install slice, `opurud` on the second pass, `opdeene` on the third
+    /// (after its body has run the `0x52F` arrival-fade arm and the one-hot
+    /// region selector `0x19B..0x1AA` at the arrival tile).
     ///
-    /// REF: FUN_8003AB2C (system-script frame slice)
+    /// The engine installs those records as the cutscene timeline at scene
+    /// entry, so the timeline would hold the player from the first tick and
+    /// the passes before the spawn would never run. This runs them in the
+    /// load frame instead: whole `0x21`-bounded passes, ending with the pass
+    /// that executes the spawn, which leaves the system context where
+    /// retail's sits once the record has taken over (`opdeene`: PC `0x99`, the
+    /// pass closed). Without the pass boundary the run went on through the
+    /// per-frame loop until its step budget, re-evaluating the region
+    /// selector and ending mid-pass with the pass open - so the next tick
+    /// finished the pass at whatever seat it then saw.
+    ///
+    /// REF: FUN_8003AB2C (system-script install slice), FUN_801DA51C (system
+    /// SM pass gate)
     pub fn pre_run_entry_script(&mut self) {
         const ENTRY_SCRIPT_STEP_BUDGET: usize = 2048;
+        // Passes retail runs at most before the spawn (opdeene's three), with
+        // headroom; a script that never spawns stops here.
+        const ENTRY_SCRIPT_PASS_LIMIT: usize = 8;
         self.sync_field_ctx_player_anchor();
+        let mut passes = 0usize;
+        let mut spawned = false;
         for _ in 0..ENTRY_SCRIPT_STEP_BUDGET {
-            match self.step_field() {
+            let op = self.field_bytecode.get(self.field_pc).copied();
+            let result = self.step_field();
+            if op == Some(0x44) {
+                spawned = true;
+            }
+            if op == Some(0x21) {
+                // The executed `0x21` ends the pass.
+                self.field_vm.system_pass_open = false;
+                passes += 1;
+                if spawned || passes >= ENTRY_SCRIPT_PASS_LIMIT {
+                    break;
+                }
+                self.field_vm.system_pass_open = true;
+            }
+            match result {
                 // Continue through `Yield` as well as `Advance`: several
                 // dispatcher arms exit via retail's `addiu s8, s8, N` PC-delta
                 // idiom (e.g. the nibble-7 tile-wall ops), which the VM models
-                // as a yield even though retail continues the same frame - the
-                // opdeene fade arm sits past three of them. Real frame parks
-                // stop the pre-run: `WaitFrames` mid-wait reports `Halt` at
-                // PC, and unimplemented / text ops report Pending / Unknown.
+                // as a yield even though retail continues the same frame.
+                // Real parks stop the run: `WaitFrames` mid-wait reports
+                // `Halt` at PC, and unimplemented / text ops report Pending /
+                // Unknown.
                 Some(FieldStepResult::Advance { .. } | FieldStepResult::Yield { .. }) => continue,
                 _ => break,
             }

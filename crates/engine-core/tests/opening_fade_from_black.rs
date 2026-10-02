@@ -151,3 +151,50 @@ fn opdeene_timeline_fires_between_beat_black_fades() {
         "the effect tint recovers to identity after the between-beat black fade"
     );
 }
+
+/// The entry script's load-frame run ends where retail's system context
+/// stands once the opening record has taken the player.
+///
+/// Retail runs the install slice to the first executed `0x21`
+/// (`FUN_8003AB2C`), then one `0x21`-bounded pass per frame until the record
+/// the body spawns (`44 23`) holds the player. The `s1_newgame_field` capture
+/// (a cold New Game in `opdeene`) holds the system context at PC `0x99` - just
+/// past the spawning pass's `0x21` - with one bit of the region selector
+/// `0x19B..0x1AA` up, the one the body set at the arrival tile. The engine
+/// installs the opening as its timeline at scene entry, so it runs those
+/// passes in the load frame; running on through the per-frame loop instead
+/// left the pass open mid-selector, and the next tick re-evaluated it
+/// wherever the player then stood.
+///
+/// Which bit is not pinned here: retail's is `0x1A2` (region type 7, tiles
+/// `x 8..=35, z 89..=115`), while the engine stands the New Game player on
+/// tile `(56, 19)` (type 3, `0x19E`) before the opening moves him.
+#[test]
+fn new_game_opdeene_entry_run_stops_where_retail_parks() {
+    let Some(mut host) = skip_or_host() else {
+        return;
+    };
+    let opdeene = legaia_asset::new_game::OPENING_CUTSCENE_SCENE;
+    host.world.begin_new_game();
+    host.enter_field_scene(opdeene, 0).expect("enter opdeene");
+    assert_eq!(host.world.field_pc, 0x99, "system PC after the load frame");
+    assert!(!host.world.field_vm.system_pass_open, "the pass is closed");
+    assert!(
+        host.world.system_flag_test(0x566),
+        "the opening spawn latch"
+    );
+    let band: Vec<u16> = (0x19B..=0x1AA)
+        .filter(|&f| host.world.system_flag_test(f))
+        .collect();
+    assert_eq!(band.len(), 1, "one region-selector bit: {band:x?}");
+    // The opening holds the player from here: the system loop sits out and
+    // the selector stays put.
+    for _ in 0..30 {
+        let _ = host.tick();
+    }
+    assert_eq!(host.world.field_pc, 0x99);
+    let after: Vec<u16> = (0x19B..=0x1AA)
+        .filter(|&f| host.world.system_flag_test(f))
+        .collect();
+    assert_eq!(after, band, "the selector holds while the opening runs");
+}

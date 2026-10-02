@@ -1570,12 +1570,14 @@ impl SceneHost {
         // shop-open path offers real per-scene items at real prices instead of a
         // hand-authored list. Cheap when the scene has no merchant.
         self.populate_scene_shops();
-        // Run the entry system script's load-frame slice (to its first
-        // yield/wait): retail executes the ctx-0xFB prologue - flag routing,
-        // walls, BGM cue, and the 0x52F arrival-fade arm (fade-in from
-        // black) - within the scene-load frame, before the first rendered
-        // frame. Placed at the end of entry so every host hook the script
-        // fires sees the fully-installed scene (channels, props, shops).
+        // Run the entry system script's passes up to the one that spawns the
+        // opening record (`World::pre_run_entry_script`): retail runs them
+        // over the first frames, before that record takes the player - flag
+        // routing, walls, BGM cue, the region selector and the 0x52F
+        // arrival-fade arm (fade-in from black). The engine installs the
+        // record at entry, so they run in the load frame here. Placed at the
+        // end of entry so every host hook the script fires sees the
+        // fully-installed scene (channels, props, shops).
         // Scoped to the opening prologue cutscene scenes (the same gate as
         // `scene_color_grade`): their `P1[0]` is pure choreography setup, so
         // the linear load-frame run is safe, and it is what puts the fade
