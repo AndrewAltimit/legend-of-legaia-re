@@ -60,6 +60,11 @@ pub struct MuscleDomeSession {
     /// The selection screen that owns the player's pad
     /// ([`MuscleDomeSession::select_input`], `menu.rs`).
     pub(super) menu: DomeMenu,
+    /// The opponent's display name - the monster record's own name, which
+    /// the action plaque shows while the opponent's plays act out
+    /// ([`Self::set_opponent_name`]). `None` when the host staged a
+    /// stand-in.
+    pub(super) opponent_name: Option<String>,
 }
 
 impl MuscleDomeSession {
@@ -92,7 +97,19 @@ impl MuscleDomeSession {
             magic_cursor: 0,
             special: 0,
             menu: DomeMenu::default(),
+            opponent_name: None,
         }
+    }
+
+    /// Name the opponent (its PROT 867 monster record's name) for the action
+    /// plaque.
+    pub fn set_opponent_name(&mut self, name: impl Into<String>) {
+        self.opponent_name = Some(name.into());
+    }
+
+    /// The opponent's display name, when the host named it.
+    pub fn opponent_name(&self) -> Option<&str> {
+        self.opponent_name.as_deref()
     }
 
     /// Seed the leg's [`special`](Self::special) word - the value retail's

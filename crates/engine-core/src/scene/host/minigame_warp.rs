@@ -336,6 +336,7 @@ impl SceneHost {
             }
             None => (DOME_STANDIN_COMBATANT, DOME_STANDIN_HP, DOME_STANDIN_BUDGET),
         };
+        let opponent_name = opponent_record.as_ref().map(|r| r.name.clone());
         let hp = [lead.hp, opponent_hp];
         let mut session = MuscleDomeSession::new(
             hand,
@@ -347,6 +348,9 @@ impl SceneHost {
         // The plate's maximum is the record's, not the entry HP: a leg
         // entered hurt shows `hp / max`, never `hp / hp`.
         session.set_hp_max(0, lead.hp_max);
+        if let Some(name) = opponent_name.filter(|n| !n.is_empty()) {
+            session.set_opponent_name(name);
+        }
         let seed = 0x4D55_5343 ^ self.world.frame as u32;
         if let Some(model) =
             DomeDamageModel::from_battle_overlay(&raw, [lead.profile, opponent], hp, seed)

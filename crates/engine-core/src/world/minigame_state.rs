@@ -121,6 +121,12 @@ pub struct MinigameState {
     /// hub's INTERVAL / ROUND screens play before the next fight opens
     /// ([`crate::world::World::begin_next_muscle_leg`]).
     pub muscle_hub_between_legs: bool,
+    /// Ticks left of the resolved turn's **playback** - retail's action
+    /// phases `0xFE` / `0xFF`, during which the queued plays animate before
+    /// the round driver returns to its command cluster. The leg holds at
+    /// [`crate::muscle_dome::MusclePhase::TurnOver`] until it drains
+    /// ([`crate::world::World::muscle_playback_frames`]).
+    pub muscle_playback_frames: u32,
     /// The arena hub's screen timers - the first visit, the leg-open ROUND
     /// card, the INTERVAL tally and the re-entered hub's backdrop - ticked by
     /// [`crate::world::World::tick_muscle_hub`]; both play hosts draw from
@@ -292,6 +298,7 @@ impl MinigameState {
             muscle_settlement: None,
             muscle_ringside_still: None,
             muscle_hub_between_legs: false,
+            muscle_playback_frames: 0,
             muscle_hub: Default::default(),
             muscle_hub_sounds: Default::default(),
             casino_coins: 0,

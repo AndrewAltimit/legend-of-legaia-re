@@ -48,6 +48,14 @@ pub const PLAY_CADENCE_TICKS: u32 = 34;
 /// Ticks into a connecting swing at which the defender flinches.
 pub const FLINCH_DELAY_TICKS: u32 = 12;
 
+/// How long a resolved turn of `plays` plays out on the dome surface: one
+/// play every [`PLAY_CADENCE_TICKS`], the last given a full cadence to land
+/// its swing and the defender's flinch. A turn with no plays (an empty
+/// queue on both sides) has nothing to show and holds for nothing.
+pub fn playback_ticks(plays: usize) -> u32 {
+    (plays as u32).saturating_mul(PLAY_CADENCE_TICKS)
+}
+
 /// Player battle-form clip slots the dome plays.
 const P_IDLE: u32 = 0;
 const P_HIT: u32 = 2;

@@ -308,3 +308,72 @@ fn the_sprite_glide_kernel_eases_and_deactivates_but_has_no_producer() {
     assert_eq!(g.total, 0, "an arrived handle deactivates");
     assert_eq!(g.step(1), GlideStep::Idle);
 }
+
+/// A resolved turn plays out before the next command cluster: the leg holds
+/// at `TurnOver` for the surface's replay of the turn's plays (retail's
+/// action phases `0xFE` / `0xFF` run every queued action before the round
+/// driver re-enters `0x14`), and the play-out tally names the acting side and
+/// its running damage. The turn top that follows is still automatic.
+#[test]
+fn a_resolved_turn_holds_for_its_playback_and_tallies_it() {
+    let Some(t) = disc_tables() else { return };
+    let mut w = World::new();
+    w.mode = SceneMode::Field;
+    w.enter_muscle_dome(session_from(&t));
+    // Drive the selection by pad until the turn resolves.
+    let mut frames = 0u32;
+    while w.minigames.muscle_dome.as_ref().unwrap().phase() != MusclePhase::TurnOver {
+        frames += 1;
+        assert!(frames < 2_000, "the first turn never resolved");
+        let s = w.minigames.muscle_dome.as_ref().unwrap();
+        let pad = if frames.is_multiple_of(2) || s.phase() != MusclePhase::Select {
+            0
+        } else {
+            s.scripted_press().map_or(0, |b| b.mask())
+        };
+        w.input.set_pad(pad);
+        let _ = w.tick();
+    }
+    w.input.set_pad(0);
+    let plays = w
+        .minigames
+        .muscle_dome
+        .as_ref()
+        .unwrap()
+        .last_turn_plays()
+        .len();
+    assert!(plays > 0, "the turn queued plays");
+    let hold = legaia_engine_core::muscle_dome_scene::playback_ticks(plays);
+    assert_eq!(w.muscle_playback_frames(), hold);
+    let (attacker, _) = w
+        .muscle_playback_tally()
+        .expect("a tally while playing out");
+    assert!(attacker <= 1);
+    // The play-out is an action frame to the shared HUD kernels both hosts
+    // read: the command cluster is down and the acting side's plaque is up.
+    use legaia_engine_core::battle_hud as bh;
+    assert_eq!(bh::battle_hud_phase(&w), bh::BattleHudPhase::Action);
+    if attacker == 0 {
+        assert!(
+            bh::battle_active_actor(&w).is_some(),
+            "the fighter's plaque"
+        );
+    }
+    for _ in 0..hold {
+        assert_eq!(
+            w.minigames.muscle_dome.as_ref().unwrap().phase(),
+            MusclePhase::TurnOver,
+            "the leg holds through the play-out"
+        );
+        let _ = w.tick();
+    }
+    let _ = w.tick();
+    assert_eq!(w.muscle_playback_frames(), 0);
+    assert!(w.muscle_playback_tally().is_none());
+    let s = w.minigames.muscle_dome.as_ref().unwrap();
+    assert!(
+        s.decided() || s.phase() == MusclePhase::Select,
+        "the turn top is automatic once the play-out ends"
+    );
+    eprintln!("[ran] {plays} plays held {hold} ticks");
+}

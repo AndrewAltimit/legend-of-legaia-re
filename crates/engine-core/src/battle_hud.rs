@@ -1170,8 +1170,15 @@ pub fn battle_hud_phase(world: &crate::world::World) -> BattleHudPhase {
         // A dome leg is a battle whose only command surfaces are the
         // fighter's selection screens (`muscle_dome::DomeMenu`); the play-out
         // has no battle-action band behind it.
+        // The resolved turn's play-out is that band's stand-in: while the
+        // leg holds for it the frame is an action frame.
         return match world.minigames.muscle_dome.as_ref().map(|s| s.phase()) {
             Some(crate::muscle_dome::MusclePhase::Select) => BattleHudPhase::CommandEntry,
+            Some(crate::muscle_dome::MusclePhase::TurnOver)
+                if world.muscle_playback_tally().is_some() =>
+            {
+                BattleHudPhase::Action
+            }
             _ => BattleHudPhase::Idle,
         };
     }
@@ -1411,6 +1418,23 @@ pub fn battle_active_actor(world: &crate::world::World) -> Option<(u8, String)> 
             let slot = command_entry_actor(world)?;
             Some((slot, actor_name(world, slot)))
         }
+        BattleHudPhase::Action if world.mode == crate::world::SceneMode::MuscleDome => {
+            // A dome play-out: the plaque names the side whose play is
+            // acting out (the capture-pinned rule: the acting fighter's
+            // plate holds the top-left seat once actions play).
+            let (attacker, _) = world.muscle_playback_tally()?;
+            let name = if attacker == 0 {
+                party_member_name(world, 0)
+            } else {
+                world
+                    .minigames
+                    .muscle_dome
+                    .as_ref()?
+                    .opponent_name()?
+                    .to_string()
+            };
+            Some((attacker as u8, name))
+        }
         BattleHudPhase::Action => {
             let slot = world.battle_ctx.active_actor;
             let actor = world.actors.get(slot as usize)?;
@@ -1465,6 +1489,7 @@ pub fn battle_panels_visible(world: &crate::world::World) -> bool {
         // The `t2 == 8` arm sits on the `0x0C` seed, which the attack and
         // magic arms reach; an item or spirit action pre-arms through
         // `0x3C` instead and opens the bar for its actor, never the panels.
+        BattleHudPhase::Action if world.mode == crate::world::SceneMode::MuscleDome => false,
         BattleHudPhase::Action => world
             .actors
             .get(world.battle_ctx.active_actor as usize)
@@ -1507,6 +1532,12 @@ pub fn battle_readout_bar_slot(world: &crate::world::World) -> Option<u8> {
             }
             _ => None,
         },
+        // A dome play-out raises the fighter's bar while the opponent's
+        // play lands on it - the seed `0x0C` opens record 7 for a party
+        // target - and parks it while the fighter is the one acting.
+        BattleHudPhase::Action if world.mode == crate::world::SceneMode::MuscleDome => world
+            .muscle_playback_tally()
+            .and_then(|(attacker, _)| (attacker == 1).then_some(0)),
         BattleHudPhase::Action => {
             let a = world.battle_ctx.active_actor;
             let actor = world.actors.get(a as usize)?;
@@ -1564,7 +1595,10 @@ pub fn battle_ring_ap_plate_value(world: &crate::world::World) -> Option<u8> {
 /// * an item names the item (the `0x3C` arm's `(0x4C, 0)` at `0x801E3DC8`).
 pub fn battle_move_name(world: &crate::world::World) -> Option<String> {
     use legaia_engine_vm::battle_action::ActionCategory;
-    if battle_hud_phase(world) != BattleHudPhase::Action {
+    // A dome play-out has no battle-action record behind it to name.
+    if battle_hud_phase(world) != BattleHudPhase::Action
+        || world.mode == crate::world::SceneMode::MuscleDome
+    {
         return None;
     }
     let a = world.battle_ctx.active_actor;
@@ -1640,6 +1674,14 @@ pub fn battle_target_plaque(world: &crate::world::World) -> Option<(String, Opti
     use legaia_engine_vm::battle_action::ActionCategory;
     if battle_hud_phase(world) != BattleHudPhase::Action {
         return None;
+    }
+    // A dome play-out: the fighter's plays name the opponent here, the
+    // opponent's plays raise the fighter's bar instead
+    // ([`battle_readout_bar_slot`]) - the party-attack-only rule above.
+    if world.mode == crate::world::SceneMode::MuscleDome {
+        let (attacker, _) = world.muscle_playback_tally()?;
+        let name = world.minigames.muscle_dome.as_ref()?.opponent_name()?;
+        return (attacker == 0).then(|| (name.to_string(), None));
     }
     let a = world.battle_ctx.active_actor;
     let pc = party_count(world) as u8;
@@ -2190,7 +2232,11 @@ pub fn battle_commit_log(world: &crate::world::World) -> Vec<CommitLogRow> {
 /// styles are read off those frames' display lists, not off a dispatch.
 pub fn battle_combo_style(world: &crate::world::World) -> Option<ComboStyle> {
     use legaia_engine_vm::battle_action::ActionCategory;
-    if battle_hud_phase(world) != BattleHudPhase::Action {
+    // The dome's play-out tally rides the status rows, not the battle
+    // popup stream this cluster counts.
+    if battle_hud_phase(world) != BattleHudPhase::Action
+        || world.mode == crate::world::SceneMode::MuscleDome
+    {
         return None;
     }
     let a = world.battle_ctx.active_actor;
@@ -2367,6 +2413,10 @@ pub fn subdraw_step(image: &[u8], base_va: u32, step: usize) -> Option<SubdrawSt
 /// gets no badge either way - the captured plaques that carry one are the
 /// monster frames (`Gimard`), and the party ones (`Vahn`, `Noa`) do not.
 pub fn battle_plaque_element_badge(world: &crate::world::World) -> Option<u8> {
+    // A dome plaque's slot is a fighter seat, not a battle actor.
+    if world.mode == crate::world::SceneMode::MuscleDome {
+        return None;
+    }
     let (slot, _) = battle_active_actor(world)?;
     let pc = (world.party.party_count.clamp(1, 3) as usize).min(world.actors.len());
     if (slot as usize) < pc {
