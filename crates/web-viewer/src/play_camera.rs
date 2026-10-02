@@ -54,9 +54,7 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.as_ref() else {
             return false;
         };
-        let world = &host.world;
-        world.cutscene_timeline_active()
-            && (world.mode != SceneMode::WorldMap || !world.camera.state.params.is_empty())
+        camera_view::cutscene_owns_camera(&host.world)
     }
 
     /// The scene AABB the world map's top-view debug camera frames: the
@@ -91,10 +89,10 @@ impl LegaiaRuntime {
 
     /// This frame's resolved camera, with the cutscene glide advanced.
     ///
-    /// The cutscene gate is the native window's: a running timeline owns the
-    /// camera, except on the world map, where it only takes it when a beat
-    /// actually staged a param (a world-map beat record with no camera beats -
-    /// the Drake mist-wall force-walk bands - keeps the walk camera).
+    /// The cutscene gate is the native window's
+    /// ([`camera_view::cutscene_owns_camera`]): a running timeline owns the
+    /// camera once a beat has staged a param; a record with no camera beats
+    /// keeps the field (or overworld walk) camera.
     ///
     /// Read-only sibling: [`Self::cutscene_owns_frame`] answers the gate
     /// alone, for the exports that need the answer without advancing the

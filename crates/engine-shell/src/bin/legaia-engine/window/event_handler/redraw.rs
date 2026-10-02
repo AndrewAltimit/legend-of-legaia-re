@@ -740,72 +740,79 @@ impl PlayWindowApp {
         // three op-0x45 beats in map01's opening record (snap to the high
         // aerial shot, then the `45 0B .. apply 900` ease-out descent), driven
         // through the same camera globals as the field cutscenes. Gate on a
-        // staged param so a world-map beat record WITHOUT camera beats (the
-        // Drake mist-wall force-walk bands) keeps the ordinary walk camera.
-        let cutscene_cam = if self.session.host.world.cutscene_timeline_active()
-            && (self.session.host.world.mode != SceneMode::WorldMap
-                || !self.session.host.world.camera.state.params.is_empty())
-        {
-            let (focus, pitch, yaw, roll, h, tr_eye) = self.cutscene_view();
-            // Glide pacing from the op-`0x45` `apply_trigger` (retail
-            // `FUN_801DE084` → `FUN_801DB510`): a Configure with `apply == 0`
-            // commits its camera targets IMMEDIATELY (snap cut), while
-            // `apply > 0` stages them and the per-frame mover glides the live
-            // globals there over exactly `apply` frames - the mover law
-            // (curve per mode nibble, 1 apply unit = 1 sim tick) is
-            // capture-pinned; see `CutsceneCameraInterp`. opdeene's beats mix
-            // both: the entry shot snaps (`apply 0`), the mid-prologue grove
-            // drift glides (`apply 840`, paired with a 760-frame WaitFrames),
-            // and the crater-rim tableau dolly glides (`apply 480`) WHILE the
-            // narration text scrolls - the "3D keeps playing under the
-            // crawl" retail behaviour. The interp arms glides PER COMPONENT
-            // on target change (see `CutsceneCameraInterp::glide`), so the
-            // H-only re-poke one frame after the tableau beat cannot snap
-            // the in-flight dolly (the earlier whole-tuple ease-rate model
-            // did exactly that, tele-porting the eye into the crater-rim
-            // geometry - the "opening shot buried in a gold wall" report).
-            //
-            // Advanced in RETAIL DISPLAY-FRAME time, not render-frame or
-            // sim-tick time, through the shared kernel
-            // (`frame_step::CutsceneGlide`): retail's mover (`FUN_801DC0BC`)
-            // credits one unit per display frame, so `apply` is a duration in
-            // display frames and a redraw on which no tick ran advances the
-            // glide by nothing. The kernel also replays this frame's snap
-            // beats first (retail order: the mover snaps to an `apply 0` beat,
-            // then glides from there when a same-tick follow-up beat
-            // re-stages - the map01 fly-in pair).
-            let target = legaia_engine_vm::psx_camera::FieldCameraView {
-                focus,
-                pitch,
-                yaw,
-                roll,
-                h,
-                tr_eye,
-            };
-            let v = self.cutscene_glide.advance(
-                &self.session.host.world,
-                &mut self.session.camera,
-                target,
-            );
-            let out = (v.focus, v.pitch, v.yaw, v.roll, v.h, v.tr_eye);
-            let apply = self.session.host.world.camera.state.apply_trigger;
-            if std::env::var_os("LEGAIA_DIAG_CUTCAM").is_some() {
-                let w = &self.session.host.world;
-                eprintln!(
-                    "DIAG cutcam: frame {} apply {} target focus={focus:?} pitch={pitch:.3} \
+        // staged param (`camera_view::cutscene_owns_camera`) so a beat record
+        // WITHOUT camera beats - a field taunt, the Drake mist-wall
+        // force-walk bands - keeps the ordinary field / walk camera.
+        let cutscene_cam =
+            if legaia_engine_core::camera_view::cutscene_owns_camera(&self.session.host.world) {
+                let (focus, pitch, yaw, roll, h, tr_eye) = self.cutscene_view();
+                // Glide pacing from the op-`0x45` `apply_trigger` (retail
+                // `FUN_801DE084` → `FUN_801DB510`): a Configure with `apply == 0`
+                // commits its camera targets IMMEDIATELY (snap cut), while
+                // `apply > 0` stages them and the per-frame mover glides the live
+                // globals there over exactly `apply` frames - the mover law
+                // (curve per mode nibble, 1 apply unit = 1 sim tick) is
+                // capture-pinned; see `CutsceneCameraInterp`. opdeene's beats mix
+                // both: the entry shot snaps (`apply 0`), the mid-prologue grove
+                // drift glides (`apply 840`, paired with a 760-frame WaitFrames),
+                // and the crater-rim tableau dolly glides (`apply 480`) WHILE the
+                // narration text scrolls - the "3D keeps playing under the
+                // crawl" retail behaviour. The interp arms glides PER COMPONENT
+                // on target change (see `CutsceneCameraInterp::glide`), so the
+                // H-only re-poke one frame after the tableau beat cannot snap
+                // the in-flight dolly (the earlier whole-tuple ease-rate model
+                // did exactly that, tele-porting the eye into the crater-rim
+                // geometry - the "opening shot buried in a gold wall" report).
+                //
+                // Advanced in RETAIL DISPLAY-FRAME time, not render-frame or
+                // sim-tick time, through the shared kernel
+                // (`frame_step::CutsceneGlide`): retail's mover (`FUN_801DC0BC`)
+                // credits one unit per display frame, so `apply` is a duration in
+                // display frames and a redraw on which no tick ran advances the
+                // glide by nothing. The kernel also replays this frame's snap
+                // beats first (retail order: the mover snaps to an `apply 0` beat,
+                // then glides from there when a same-tick follow-up beat
+                // re-stages - the map01 fly-in pair).
+                let target = legaia_engine_vm::psx_camera::FieldCameraView {
+                    focus,
+                    pitch,
+                    yaw,
+                    roll,
+                    h,
+                    tr_eye,
+                };
+                let v = self.cutscene_glide.advance(
+                    &self.session.host.world,
+                    &mut self.session.camera,
+                    target,
+                );
+                let out = (v.focus, v.pitch, v.yaw, v.roll, v.h, v.tr_eye);
+                let apply = self.session.host.world.camera.state.apply_trigger;
+                if std::env::var_os("LEGAIA_DIAG_CUTCAM").is_some() {
+                    let w = &self.session.host.world;
+                    eprintln!(
+                        "DIAG cutcam: frame {} apply {} target focus={focus:?} pitch={pitch:.3} \
                      yaw={yaw:.3} roll={roll:.3} h={h} tr_eye={tr_eye:?} | eased focus={:?} \
                      pitch={:.3} yaw={:.3} roll={:.3} h={} tr_eye={:?} | params={:?}",
-                    w.frame, apply, out.0, out.1, out.2, out.3, out.4, out.5, w.camera.state.params
-                );
-            }
-            Some(out)
-        } else {
-            // Nothing is interpolating this frame, so a banked snap would
-            // move a pose no draw reads - drop them rather than let them
-            // land on the next shot.
-            self.cutscene_glide.idle(&mut self.session.camera);
-            None
-        };
+                        w.frame,
+                        apply,
+                        out.0,
+                        out.1,
+                        out.2,
+                        out.3,
+                        out.4,
+                        out.5,
+                        w.camera.state.params
+                    );
+                }
+                Some(out)
+            } else {
+                // Nothing is interpolating this frame, so a banked snap would
+                // move a pose no draw reads - drop them rather than let them
+                // land on the next shot.
+                self.cutscene_glide.idle(&mut self.session.camera);
+                None
+            };
         // VDF vertex morphs (jou's flesh-ground pulse, rikuroa's generator
         // sacs): rebuild the pack meshes whose morph deltas moved this frame
         // (collected outside the renderer borrow; uploaded inside it below).

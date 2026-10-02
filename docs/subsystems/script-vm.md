@@ -985,6 +985,15 @@ the staged shot and go cinematic" freezes such a scene's camera on the
 terrain-less fallback pose (`H = 512`, the zone-miss depth) instead of the
 region's own shot.
 
+A record that issues **no** `0x45` leaves the camera globals where the field
+camera put them, so its frame is the follow shot. The engine's scripted
+camera (`camera_view::cutscene_view`) therefore owns a frame only once some
+beat has staged a slot (`camera_view::cutscene_owns_camera`, the gate both
+hosts use): a running timeline alone is not enough. `garmel`'s Songi taunt
+(`P2[62]`: three BGM ops and the text) is captured on the walk framing;
+a host that switched to the per-slot fallbacks with nothing staged framed an
+invented low shot across the room.
+
 Reading that `s16` as an absolute jump target is what kept `urudre2` one-way in
 the port: the room's only door record carries `45 C0 00 00` about `0x670` bytes
 before its `0x3F` -> `map01` tail, and a target of zero restarted the record.
