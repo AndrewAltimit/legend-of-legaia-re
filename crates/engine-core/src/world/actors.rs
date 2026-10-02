@@ -683,6 +683,11 @@ impl World {
             b.render_color = next.color;
             b.render_blend = next.blend;
             b.impact_state = next.selector;
+            if fx.mode_semi_transparent {
+                // Arm 2 ORs `0x81000000` into the mode word `+0x08`
+                // (`0x80050230..0x80050244`): the fading body draws additive.
+                b.flag_word |= 0x8100_0000;
+            }
             if fx.party_fade_done {
                 // `0x80050344..0x80050354`: state 0, staged anim 0, the
                 // `+0x1DC` fade-done bit, blend `0x800` (already in `next`).

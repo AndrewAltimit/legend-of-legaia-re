@@ -686,6 +686,18 @@ mid-fade keeps `0xFF` forever because the `0x36` clear is gated on liveness.
 `engine-vm`'s `battle_target_group` module doc carries the full comparison and
 why seeding `+0x4` without also porting the tween would be worse than the twin.
 
+**The defeat fade is the one zero the port does model.** The monster-death arm
+of the commit (`0x8004B66C`, `sb v1,0x21c(s1)` with `v1 = 2`) puts a fallen
+monster into arm 2 of `FUN_80050120`, which steps each lane `8` per frame to
+black while the body holds its knockdown (after the get-up, when a Seru is
+staged) and ORs `0x81000000` into `+0x8`. A body whose word reaches zero is
+not drawn, and its zero is what case 8's node test `actor_table[t][+4] &
+0xFFFFFF` reads: `rim_elm_gimard_seru_capture_after` frames Vahn on the
+stand-off arm at `0x52` because the absorbed Gimard has faded out. The port
+arms `render_flag = 2` from the neutral word in the same arm
+(`World::finish_battle_reaction`), and `battle_post_action_target` reports
+`node_gone` for a body in that state whose lanes have reached zero.
+
 ## The `0x51` exit gate and the HP-bar settle invariant
 
 State `0x51` (done / fade-down) leaves the action band only when

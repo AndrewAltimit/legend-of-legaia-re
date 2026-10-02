@@ -17,6 +17,7 @@
 
 use crate::world::World;
 use legaia_engine_vm::battle_cam_script as script;
+use legaia_engine_vm::battle_formulas as vm_formulas;
 
 /// Derive the shared battle-camera drive inputs from the live world state -
 /// phase, acting actor, formation box.
@@ -317,9 +318,12 @@ pub fn battle_post_action_target(
         ],
         live: t.active && t.battle.hp > 0,
         facing: i32::from(t.battle.facing_angle & 0xFFF),
-        // The engine keeps a fallen body's node for the whole fight; only
-        // the battle-end framing ([`battle_end_cam_inputs`]) reads it gone.
-        node_gone: false,
+        // Retail's node test reads the low 24 bits of the colour word `+0x4`
+        // (`0x801D6AA8..0x801D6AC0`): a body the defeat fade (`+0x21C = 2`)
+        // has walked to black reads gone. The engine's resting word `0` is
+        // the neutral colour, so only the fade's zero counts.
+        node_gone: t.battle.render_flag == vm_formulas::STATE_DEFEAT_FADE
+            && t.battle.render_color & 0x00FF_FFFF == 0,
     })
 }
 

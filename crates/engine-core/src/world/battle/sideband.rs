@@ -478,7 +478,11 @@ impl World {
             .battle
             .ui_strings
             .get(legaia_asset::battle_ui_strings::BattleUiLabel::SparringIntro)
-            .map(str::to_string)
+            // The SCUS string carries the text engine's `'|'` hard break; the
+            // box queue holds newlines (`ActiveTutorialBox::text`), and its
+            // line count sizes the rect - left as `'|'` the two-line caption
+            // registered a one-line box, 14 px short and 14 px low.
+            .map(|s| s.replace('|', "\n"))
         else {
             self.battle.sideband.phase = 2;
             self.battle.sideband.hold = 0;
