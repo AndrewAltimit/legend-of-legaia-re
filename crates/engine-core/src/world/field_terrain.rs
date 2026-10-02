@@ -110,6 +110,13 @@ pub struct FieldTerrain {
     /// `None` until the first field tick records a tile. Managed by the live
     /// loop.
     pub last_tile: Option<(i16, i16)>,
+    /// Player tile the region encounter reader last compared, sampled only
+    /// on the actor game tick ([`crate::world::FrameClock::game_tick_fired`]):
+    /// retail's `FUN_801D9E1C` tile cache (the entity's `+0x8E` / `+0x8F`),
+    /// which its caller `FUN_801DA51C` refreshes once per game tick. Kept
+    /// apart from [`crate::world::FieldTerrain::last_tile`], which the
+    /// per-tile region refresh samples every vsync.
+    pub step_tile: Option<(i16, i16)>,
     /// Region-keyed random-encounter state for the current FIELD scene (the
     /// same [`crate::region_encounter`] `FUN_801D9E1C` port the overworld
     /// uses, [`crate::world::WorldMapState::region_tracker`]). When set,
@@ -146,6 +153,7 @@ impl FieldTerrain {
             elevation_overrides: Vec::new(),
             floor_tier_bobs: Vec::new(),
             last_tile: None,
+            step_tile: None,
             region_tracker: None,
             static_window: Default::default(),
         }

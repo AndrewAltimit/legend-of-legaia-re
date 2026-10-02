@@ -917,3 +917,70 @@ fn the_incense_wear_off_notice_raises_on_the_overworld() {
     );
     assert_eq!(now, at, "the notice locks the walk");
 }
+
+/// The region reader samples the player's tile once per **game tick**
+/// (`FUN_801DA51C` state 0 calls `FUN_801D9E1C` at `0x801DA5B0`, one pass in
+/// every `frame_step` vsyncs - three on the overworld), so a diagonal whose X
+/// and Z tile boundaries fall on different vsyncs of one game tick is one
+/// step, the same as a straight one. Sampling per vsync made it two.
+#[test]
+fn a_diagonal_split_across_one_game_tick_drains_one_step() {
+    use crate::region_encounter::{EncounterRegion, RegionEncounterTable};
+
+    let mut world = World::default();
+    world.toggles.live_gameplay_loop = true;
+    world.enter_world_map();
+    world.install_field_player(0);
+    let mut table = RegionEncounterTable::new("test");
+    table.regions.push(EncounterRegion {
+        tile_x_min: 0,
+        tile_z_min: 0,
+        tile_x_max: 60,
+        tile_z_max: 60,
+        rate_increment: 1,
+        formation_base: 5,
+        formation_count: 1,
+        setup: Default::default(),
+    });
+    world.set_world_map_regions(table);
+    world.set_encounter_step_counter(100_000);
+    // The overworld's cadence, which scene entry pins on a real `mapNN`.
+    world.clock.frame_step = 3;
+
+    let seat = |w: &mut World, tx: i16, tz: i16| {
+        w.actors[0].move_state.world_x = tx * 0x80 + 0x40;
+        w.actors[0].move_state.world_z = tz * 0x80 + 0x40;
+    };
+    // Run to a game-tick boundary with the player parked on (10, 10), so
+    // the reader's cache holds that tile.
+    seat(&mut world, 10, 10);
+    let mut guard = 0;
+    loop {
+        let _ = world.tick();
+        guard += 1;
+        if world.clock.game_tick_fired && guard > 3 {
+            break;
+        }
+    }
+    let c0 = world.encounter_step_counter();
+    // One straight step, held across a whole game tick.
+    seat(&mut world, 11, 10);
+    for _ in 0..3 {
+        let _ = world.tick();
+    }
+    let straight = c0 - world.encounter_step_counter();
+    assert!(straight > 0, "a straight step drains the counter");
+    // A diagonal: X on the first vsync of the next game tick, Z on the
+    // second, the reader running on the third.
+    let c1 = world.encounter_step_counter();
+    seat(&mut world, 12, 10);
+    let _ = world.tick();
+    seat(&mut world, 12, 11);
+    let _ = world.tick();
+    let _ = world.tick();
+    assert_eq!(
+        c1 - world.encounter_step_counter(),
+        straight,
+        "the split diagonal is one step"
+    );
+}

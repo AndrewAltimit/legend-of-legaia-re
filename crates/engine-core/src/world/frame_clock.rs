@@ -80,6 +80,16 @@ pub struct FrameClock {
     ///
     /// REF: FUN_80016B6C (cadence resolver), FUN_801D6704 (field floor = 2)
     pub actor_vsync_accum: u8,
+    /// Whether the **actor game tick** fired on the current world tick - the
+    /// one pass in every [`crate::world::FrameClock::frame_step`] vsyncs on
+    /// which retail runs the actor pool. Consumers that retail reaches from an
+    /// actor handler rather than from the vsync-rate frame pump sample on it:
+    /// the region encounter reader `FUN_801D9E1C` is called from the entity
+    /// handler `FUN_801DA51C`'s state 0 (`jal 0x801D9E1C` at `0x801DA5B0`), so
+    /// it sees the player's tile once per game tick, never per vsync.
+    ///
+    /// REF: FUN_801DA51C
+    pub game_tick_fired: bool,
     /// Monotonic count of sim ticks that ran, advanced once per
     /// [`crate::world::World::tick`]. It is the world's cheapest "a frame actually ran"
     /// witness - the mode driver's frame-begin-skip test probes it to tell an
@@ -130,6 +140,7 @@ impl FrameClock {
             frame_begin_skip: false,
             frame_step_telemetry: vm::actor_tick::FrameStepTelemetry::new(),
             actor_vsync_accum: 0,
+            game_tick_fired: false,
             // Every sim tick is a retail display frame under the 1:1
             // denomination, so there is no phase to prime: a world that ticks
             // exactly once advances the roller and the retail-frame-paced

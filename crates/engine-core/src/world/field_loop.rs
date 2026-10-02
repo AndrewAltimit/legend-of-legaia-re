@@ -16,7 +16,8 @@ impl World {
     /// flow the retail field loop runs:
     ///
     /// 1. **Step detection.** A "step" is the player actor crossing into a
-    ///    new 128-unit collision tile (`pos >> 7`). Each step drives one
+    ///    new 128-unit collision tile (`pos >> 7`), sampled once per actor
+    ///    game tick ([`crate::world::FrameClock::game_tick_fired`]). Each step drives one
     ///    [`Self::on_field_step`] roll - matching the retail per-step
     ///    counter rather than rolling every frame.
     /// 2. **Timers.** [`Self::tick_encounter`] advances the session's
@@ -31,26 +32,43 @@ impl World {
             && let Some(actor) = self.actors.get(slot as usize)
         {
             let tile = (actor.move_state.world_x >> 7, actor.move_state.world_z >> 7);
+            // Per-tile region refresh (the `FUN_800180EC` / `FUN_801DBA20`
+            // grain - retail re-runs the region scan when the player tile
+            // changes).
             match self.terrain.last_tile {
                 Some(prev) if prev != tile => {
                     self.terrain.last_tile = Some(tile);
-                    // Per-tile region refresh (the `FUN_800180EC` /
-                    // `FUN_801DBA20` grain - retail re-runs the region scan
-                    // when the player tile changes).
                     self.refresh_field_regions();
-                    // A jump of two or more tiles (a script seating the
-                    // player, a warp landing) is not a step to the region
-                    // reader; a forced scripted formation still fires.
-                    let step = crate::region_encounter::is_region_step(
-                        (i32::from(prev.0), i32::from(prev.1)),
-                        (i32::from(tile.0), i32::from(tile.1)),
-                    );
-                    if step || self.encounters.scripted_formation_pending {
-                        self.on_field_step();
-                    }
                 }
                 None => self.terrain.last_tile = Some(tile),
                 _ => {}
+            }
+            // The encounter step is sampled on the actor game tick only.
+            // Retail reaches the region reader from an actor handler
+            // (`FUN_801DA51C` state 0, `jal 0x801D9E1C` at `0x801DA5B0`), so
+            // it compares the player's tile once every `frame_step` vsyncs
+            // (2 in a field scene). Sampling per vsync counted a diagonal
+            // that crosses its X and Z boundaries on different vsyncs of one
+            // game tick as two steps where retail sees one.
+            if self.clock.game_tick_fired {
+                match self.terrain.step_tile {
+                    Some(prev) if prev != tile => {
+                        self.terrain.step_tile = Some(tile);
+                        // A jump of two or more tiles (a script seating the
+                        // player, a warp landing) is not a step to the
+                        // region reader; a forced scripted formation still
+                        // fires.
+                        let step = crate::region_encounter::is_region_step(
+                            (i32::from(prev.0), i32::from(prev.1)),
+                            (i32::from(tile.0), i32::from(tile.1)),
+                        );
+                        if step || self.encounters.scripted_formation_pending {
+                            self.on_field_step();
+                        }
+                    }
+                    None => self.terrain.step_tile = Some(tile),
+                    _ => {}
+                }
             }
         }
         // (2) advance transition / grace timers.

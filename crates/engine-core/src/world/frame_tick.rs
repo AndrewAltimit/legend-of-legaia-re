@@ -1356,6 +1356,7 @@ impl World {
         }
         let cadence = self.clock.frame_step.max(1);
         let actor_tick_fired = self.clock.actor_vsync_accum >= cadence && runs_master_driver;
+        self.clock.game_tick_fired = actor_tick_fired;
         if actor_tick_fired {
             self.clock.actor_vsync_accum = 0;
             self.tick_actor_physics();

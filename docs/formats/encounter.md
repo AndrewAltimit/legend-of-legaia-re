@@ -464,8 +464,14 @@ arms. Random encounters use a separate path:
 
 **Roll function.** `FUN_801D9E1C` (in the world_map overlay; also paged
 in by dance / fishing / slot-machine / cutscene_mapview / dialog_typing /
-debug_menu overlays - same code each time) runs once per movement
-update. It first caches the player's tile (`world >> 7`) in the entity's
+debug_menu overlays - same code each time) runs once per **game tick**: its
+caller is the entity handler `FUN_801DA51C`, whose state 0 calls it at
+`0x801DA5B0` (after a `DAT_8007B604` countdown and a non-zero rate setting
+`DAT_8007B5F8`), and the actor pool that runs the handler fires once every
+`DAT_1F800393` vsyncs - 2 in a field scene, 3 on the overworld. So the tile
+it compares is sampled at that cadence, not per display frame: a diagonal
+whose X and Z boundaries fall on different vsyncs of one game tick is one
+step (engine `FrameClock::game_tick_fired`). It first caches the player's tile (`world >> 7`) in the entity's
 `+0x8E` / `+0x8F` and leaves unless the new tile differs from the cached one
 by at most one on each axis (`slti 0x2` at `0x801D9EF0` / `0x801D9F08`), so a
 script seating the player across the map or a warp landing is not a step: it

@@ -382,6 +382,7 @@ impl World {
         // Reset step tracking so the post-battle position doesn't count as a
         // step on the next field tick.
         self.terrain.last_tile = None;
+        self.terrain.step_tile = None;
     }
 
     /// Complete the field restore [`Self::finish_battle`]'s party-wipe arm
@@ -405,6 +406,7 @@ impl World {
         self.mode = self.battle.return_mode;
         self.battle.return_mode = SceneMode::Field;
         self.terrain.last_tile = None;
+        self.terrain.step_tile = None;
     }
 
     /// Active enemy actors in the current battle as `(actor_index,
