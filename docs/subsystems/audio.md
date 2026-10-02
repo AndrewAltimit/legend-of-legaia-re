@@ -491,6 +491,16 @@ pinned by `engine-core/tests/battle_bank_bgm_disc.rs`); the evolved-Cort fight
 selects `8`. `World::swap_to_battle_bgm` follows the set: no swap and no stash
 for `-1`, the bank's track for `N > 0`, the configured theme for `0`.
 
+A direct entry into a scripted row (`play-window --battle <row>`, the retail
+comparison corpus's battle seed) runs the fight without the record that
+picks its music, so it replays the record's op-`0x35` words through the
+field VM's own handler (`World::replay_scripted_battle_score`): the last
+track start before the record's `3E FF <row>` with the control words after
+it, then the last sound-set selection
+(`man_field_scripts::walk_battle_entry_scores`). The Gaza, first-Nivora and
+evolved-Cort fights then play their event's theme instead of the scene
+entry's track and the default battle theme.
+
 Retail BGM changes are **hard cuts** (or short `SsSeqSetVol` ramps), so
 `start_inner` swaps tracks the faithful way: when a track is already playing it
 calls `AudioOut::swap_bgm`, which key-offs the outgoing sequencer (its notes

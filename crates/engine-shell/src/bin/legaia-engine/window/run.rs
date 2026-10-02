@@ -240,6 +240,14 @@ fn arm_requested_battle(session: &mut BootSession, spec: &str) {
              system-flag arm is replayed with the entry"
         );
     }
+    // The same record's op-0x35 words pick the fight's music - a scripted
+    // boss's event starts its theme and selects the battle sound set just
+    // before the entry op - so `--battle` replays them as well.
+    if world.replay_scripted_battle_score(row) {
+        log::info!(
+            "play-window: --battle {row} replays its record's BGM words (track start + sound set)"
+        );
+    }
     // `LEGAIA_BATTLE_STAGE=N[,K]` stamps the battle-stage variant the fight
     // is staged in (`_DAT_8007BD60 & 0x1F`) and, with `K`, battle init's
     // keep-object-1 byte (`_DAT_8007B64B`), for a fight entered without

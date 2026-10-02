@@ -97,6 +97,8 @@ impl World {
         // still resynchronising and the clean bit is structurally false.
         self.scene_battle_entry_arms =
             crate::man_field_scripts::walk_battle_entry_arms(man_file, man);
+        self.scene_battle_entry_scores =
+            crate::man_field_scripts::walk_battle_entry_scores(man_file, man);
         if !self.scene_battle_entry_arms.is_empty() {
             let arms: Vec<String> = self
                 .scene_battle_entry_arms

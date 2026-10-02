@@ -273,7 +273,8 @@ them. Both come from the region reader, and the second is not decoration:
 nilboa's Thunder Ravine region keeps the backdrop shell's object 1, the
 horizon mist ribbon, which a replay seeded with the variant alone dropped. `World::force_encounter` then arms the row through the
 ordinary transition - the path `play-window --battle` takes, including the
-scripted carrier's replayed tutorial arm. When the mode flips, the retail
+scripted carrier's replayed tutorial arm and the carrier's replayed BGM
+words ([below](#the-track-word-in-battle)). When the mode flips, the retail
 combatants' live HP / MP are written over the engine's, and the session is
 placed at the capture's phase.
 
@@ -532,18 +533,28 @@ so its copy of the word reads the battle theme; the comparand is the track the
 engine stashed to resume (`World::audio.field_bgm_resume`), or its word itself
 when the fight took no swap (a battle sound set of `-1`).
 
-The word is **script progress**, so a forced fight often cannot match it. A
-scripted boss's event starts its theme with op `0x35` sub-op `9` just before
-the fight (`korb3`'s Gaza event starts `2028`, then selects sound set `-1`;
-`jouine`'s Cort event starts `2071`), and the retail word holds that theme.
-The seed enters the scene fresh and forces the formation without running the
-event, so the engine's word is the scene *entry*'s choice - `korb3` parks at
-`0x1000`, `nilboa` picks `4096` or `2028` by which duel flags are up. The
-sound set is the same kind of word: `jouine`'s entry selects `-1` and the
-Cort event (`P2[5]`) re-selects `8`, and `nilboa`'s Gi duel selects `4`
-(`P2[23]`), so the fight retail swapped to bank `8` / `4` the forced seed
-plays unswapped or on the default theme. Those `bgm` misses are this limit,
-not a stash defect; see
+The word is **script progress**: a scripted boss's event starts its theme
+with op `0x35` sub-op `9` just before the fight and selects the battle sound
+set with sub-op `7` (`korb3`'s Gaza record starts `2028` and selects `-1`;
+`jouine`'s Cort record `P2[5]` starts `2071` and selects `8`), and the retail
+word holds that theme. The seed enters the scene fresh and forces the
+formation without running the event, so it replays the record's words
+instead: the last start before the record's `3E FF <row>`, the control words
+after it, and the last sound-set selection
+(`World::replay_scripted_battle_score`, read off the MAN by
+`man_field_scripts::walk_battle_entry_scores`; `play-window --battle` replays
+the same words). Each goes through the field VM's own op-`0x35` handler.
+
+What the replay cannot reach is a word an *earlier* beat chose. `nilboa`'s
+entry picks its track by which duel-return marker is up (`0x477` /
+`0x478` -> `4096`, `0x479` -> `2028`, `0x47A` -> stop), clears it and spawns
+the post-duel record; each duel record raises its own marker immediately
+before its `3E FF`. A battle capture therefore holds the marker of the fight
+in progress, and the seed's entry consumes it as if returning from that
+fight: `nivora_duel_mid_blazing_slash` (Gi duel, row `31`, marker `0x479`)
+reads `2028` where retail's word is the `4096` an earlier return parked.
+The duel record itself starts no track (it selects sound set `4`, which the
+replay does carry), so there is no start to replay. See
 [audio](../subsystems/audio.md#the-battle-sound-set-picks-the-fights-track).
 
 ## Menu states

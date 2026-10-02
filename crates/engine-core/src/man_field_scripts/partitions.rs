@@ -703,6 +703,94 @@ fn battle_entry_row_after(body: &[u8], pc: usize) -> Option<u8> {
         })
 }
 
+/// The op-`0x35` BGM words a field-VM record runs **on its way into a
+/// scripted battle**: the record's last track start (sub-op `1` or `9`) and
+/// the control words after it (pause `2` / `3`, re-attach `4`, commit `0xA`),
+/// then its last battle sound-set selection (sub-op `7`), each up to the
+/// `3E FF <row>` battle-entry op that hands formation-table row `row` to the
+/// entity SM.
+///
+/// A scripted boss's event picks the fight's music itself: `korb3`'s Gaza
+/// record starts `2028` with sub-op `9`, commits it, selects sound set `-1`
+/// (`35 FF FF 07`) and enters row `15`, so the fight plays on that theme and
+/// the track word `0x8007BAC8` names it for the whole battle
+/// (`docs/subsystems/audio.md`, "The battle sound set picks the fight's track").
+/// A direct entry into the row (`--battle <row>`, the retail comparison
+/// corpus's battle seed) runs the entry without the record; these are the
+/// words it replays (`World::replay_scripted_battle_score`).
+///
+/// The walk is linear in byte order, so a record that branches between two
+/// starts contributes the later one; a sub-op `5` timed release is not
+/// carried, because the record issues it on the occupant its own sub-op `9`
+/// is about to displace (the commit `0xA` releases that occupant).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BattleEntryScore {
+    /// Partition the carrying record lives in (`0..3`).
+    pub partition: usize,
+    /// Record index within the partition.
+    pub record: usize,
+    /// The formation-table row the record's `3E FF <row>` enters.
+    pub row: u8,
+    /// The op-`0x35` words to replay, in record order: `(operand, sub_op)`.
+    pub words: Vec<(u16, u8)>,
+}
+
+/// Every [`BattleEntryScore`] in `man`, across all three partitions: one per
+/// `3E FF <row>` scripted-battle entry op whose record ran at least one BGM
+/// word before it.
+pub fn walk_battle_entry_scores(man_file: &ManFile, man: &[u8]) -> Vec<BattleEntryScore> {
+    let mut out = Vec::new();
+    for partition in 0..3 {
+        let count = man_file
+            .header
+            .partition_counts
+            .get(partition)
+            .copied()
+            .unwrap_or(0)
+            .max(0) as usize;
+        for index in 0..count {
+            let Some((script_start, pc0, body_len)) =
+                partition_record_span(man_file, man, partition, index)
+            else {
+                continue;
+            };
+            let body = &man[script_start..script_start + body_len];
+            let mut start_run: Vec<(u16, u8)> = Vec::new();
+            let mut sound_set: Option<(u16, u8)> = None;
+            for insn in LinearWalker::new(body, pc0).flatten() {
+                match insn.info {
+                    InsnInfo::Bgm { text_id, sub_op } => match sub_op {
+                        1 | 9 => start_run = vec![(text_id, sub_op)],
+                        2 | 3 | 4 | 0xA if !start_run.is_empty() => {
+                            start_run.push((text_id, sub_op));
+                        }
+                        7 => sound_set = Some((text_id, sub_op)),
+                        _ => {}
+                    },
+                    InsnInfo::WarpOrInteract {
+                        op0: 0xFF,
+                        op1,
+                        is_warp: false,
+                    } => {
+                        let mut words = start_run.clone();
+                        words.extend(sound_set);
+                        if !words.is_empty() {
+                            out.push(BattleEntryScore {
+                                partition,
+                                record: index,
+                                row: op1,
+                                words,
+                            });
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    out
+}
+
 /// One walkable MAN payload resolved for a scene - either the scene's
 /// asset-table **bundle** MAN (what [`Scene::field_man_payload`] returns) or
 /// a **variant** MAN carried as a type-3 chunk of a standalone DATA_FIELD

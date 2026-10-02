@@ -824,6 +824,11 @@ pub fn run_engine_battle(
             // arm on the way into the fight (the sparring tutorial's `50 19`);
             // the forced entry replays it, as `play-window --battle` does.
             world.replay_scripted_battle_arm(row);
+            // The same record's op-0x35 words pick the fight's music: a
+            // scripted boss's event starts its theme and selects the battle
+            // sound set before the entry op (korb3's Gaza: `2028`, set
+            // `-1`), so the forced entry replays them too.
+            world.replay_scripted_battle_score(row);
             row
         }
         None => {
@@ -876,6 +881,8 @@ pub fn run_engine_battle(
         .host
         .world
         .seed_battle_backdrop_keep_object_1(battle.keep_backdrop_object_1);
+    // Hand any replayed BGM words to the director before reading the word.
+    session.host.route_bgm_events(&mut director)?;
     let seats = retail_roster_slots(battle);
     if !seats.is_empty() && seats != session.host.world.party.active_party {
         session.host.world.set_active_party(seats);
