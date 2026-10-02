@@ -315,7 +315,13 @@ intro timer (`battle::intro_names` - the round prompt opens with the names
 still up, which the recorded replays pace off), so an ordinary fight holds its
 prompt already at the flip and an opening capture of one reads `phase` `0`.
 The corpus's opening captures are all the sparring fight, whose opening the
-tutorial holds back.
+tutorial holds back. Their `camera` reads a battle-entry sweep the port does
+not model: `v0_1_battle_loading_tetsu` (`0xFD`) holds pitch `60`,
+`TR (0, 1472, 6912)` and `s5_tetsu_battle` (`0x00`) pitch `16`,
+`TR (0, 2010, 3552)`, both on the formation centre, where the engine snaps
+to the tutorial's dialogue close-up `TR (0, 1280, 1638)` at the flip. Which
+routine writes the sweep is not traced; the battle tick's `0x0A` / `0x0B`
+arms write no camera word.
 
 A battle state whose RAM does not describe a seedable fight (the context
 pointer not yet resident, counts out of range, an empty cell) is kept with a
