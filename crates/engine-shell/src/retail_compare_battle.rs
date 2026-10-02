@@ -180,8 +180,8 @@ pub struct RetailBattle {
     /// cleared when `0x52` leaves.
     pub absorbed_seru: u8,
     /// The battle-end sequence's position, when the capture is past the end
-    /// signal ([`EndGate`]).
-    pub end_gate: EndGate,
+    /// signal ([`SpanGate`]).
+    pub span_gate: SpanGate,
     /// Each pool slot's live `+0x34` / `+0x38` pair (party `0..=2`,
     /// monsters `3..=7`), `None` for an empty slot.
     pub ground: Vec<Option<[i16; 2]>>,
@@ -644,18 +644,23 @@ const END_PHASE_WORD: u32 = 0x8007_BD2C;
 /// The results hold `gp+0xA54`.
 const END_RESULTS_HOLD: u32 = 0x8007_BD6C;
 
-/// Read the [`EndGate`] off a capture.
-fn end_gate(ram: &[u8], ctx: u32) -> EndGate {
+/// Read the [`SpanGate`] off a capture.
+fn span_gate(ram: &[u8], ctx: u32) -> SpanGate {
     if game_anchors::u8_at(ram, END_SIGNAL) != 0xFE {
-        return EndGate::None;
+        if game_anchors::u8_at(ram, ctx + 7) == 0x52 {
+            return SpanGate::DoneHold {
+                timer: game_anchors::u16_at(ram, ctx + 0x6D8) as i16,
+            };
+        }
+        return SpanGate::None;
     }
     let half = game_anchors::u16_at(ram, ctx + 0x6CE);
     match (game_anchors::u32_at(ram, END_PHASE_WORD), half) {
-        (_, h) if h >= 2 => EndGate::Exit { phase: h },
-        (5, 1) => EndGate::Results {
+        (_, h) if h >= 2 => SpanGate::Exit { phase: h },
+        (5, 1) => SpanGate::Results {
             hold: game_anchors::u32_at(ram, END_RESULTS_HOLD) as u16,
         },
-        _ => EndGate::Loading,
+        _ => SpanGate::Loading,
     }
 }
 
@@ -735,7 +740,7 @@ impl RetailBattle {
             caster_clip: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1D9)),
             walk_yaw_base: game_anchors::u16_at(ram, ctx + 0x6DA),
             absorbed_seru: game_anchors::u8_at(ram, ctx + 0x269),
-            end_gate: end_gate(ram, ctx),
+            span_gate: span_gate(ram, ctx),
             module_phase: game_anchors::u8_at(ram, ctx + 0x279),
             ground: (0..8u32)
                 .map(|slot| {
@@ -1238,6 +1243,18 @@ pub const DRIVE_DEADLINE: u64 = ACTION_DRIVE_TICKS as u64;
 /// them onto the engine's seating.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BattleDrive {
+    /// An opening capture ([`SeedPlan::Opening`]): nothing is pressed, and
+    /// the frame is the first one in battle mode - the instant the headless
+    /// seed samples. Retail's opening holds the fight on its intro (the
+    /// tutorial's first speech, the formation reveal) while the engine's
+    /// round prompt opens with it, so a frame taken past the prompt shows a
+    /// surface retail had not reached.
+    ///
+    /// `swept` is set for a capture whose flow byte is past the intro timer
+    /// (`0x0C` / `0x14`): the enemy-name labels `0x0B` sweeps are gone there,
+    /// so the frame waits for the engine's own intro names to clear
+    /// (`World::battle.intro_names_frames`).
+    Opening { swept: bool },
     /// A command-selection surface on party seat `seat`: members ahead of
     /// it commit a plain Attack, the seat itself takes the arm that leads
     /// to `flow`.
@@ -1267,13 +1284,19 @@ pub enum BattleDrive {
         queued: u8,
         spare: bool,
         absorbed: u8,
-        end: EndGate,
+        end: SpanGate,
     },
 }
 
-/// Where in the battle-end sequence a capture sits, for a capture taken
-/// after the `0x5A` gate raised the end signal (`DAT_8007BD71 == 0xFE`).
+/// Where inside a state that spans many frames a capture sits.
 ///
+/// **The Done band's continuation `0x52`** holds for its own countdown
+/// `ctx[+0x6D8]` (`0xB4` frames when a Seru absorb stages it), and the engine
+/// enters it at the top: the capture's countdown places it, the drive holding
+/// until the engine's has run down to it.
+///
+/// **The battle-end sequence**, for a capture taken after the `0x5A` gate
+/// raised the end signal (`DAT_8007BD71 == 0xFE`):
 /// Retail stops stepping the action SM on the signal and runs the results
 /// sequencer `FUN_8004E568` instead, so `ctx[+0x07]` stays `0x5A` (and
 /// `ctx[+0x13]` on the pose actor) through the whole load hold, results
@@ -1283,7 +1306,7 @@ pub enum BattleDrive {
 /// the phase word `_DAT_8007BD2C`, the phase halfword `ctx[+0x6CE]` and the
 /// results hold `gp+0xA54` (`0x8007BD6C`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum EndGate {
+pub enum SpanGate {
     /// No end signal: the action SM's own state places the capture.
     #[default]
     None,
@@ -1294,15 +1317,18 @@ pub enum EndGate {
     Results { hold: u16 },
     /// `ctx[+0x6CE] >= 2`: the exit fade, at that phase halfword.
     Exit { phase: u16 },
+    /// Action-SM state `0x52`, its countdown `ctx[+0x6D8]` down to `timer`.
+    DoneHold { timer: i16 },
 }
 
-impl EndGate {
+impl SpanGate {
     fn to_env(self) -> (u8, u16) {
         match self {
             Self::None => (0, 0),
             Self::Loading => (1, 0),
             Self::Results { hold } => (2, hold),
             Self::Exit { phase } => (3, phase),
+            Self::DoneHold { timer } => (4, timer as u16),
         }
     }
 
@@ -1313,8 +1339,19 @@ impl EndGate {
             "1" => Self::Loading,
             "2" => Self::Results { hold: value },
             "3" => Self::Exit { phase: value },
+            "4" => Self::DoneHold {
+                timer: value as i16,
+            },
             _ => return None,
         })
+    }
+
+    /// Whether a gate past the end signal.
+    fn is_end(self) -> bool {
+        matches!(
+            self,
+            Self::Loading | Self::Results { .. } | Self::Exit { .. }
+        )
     }
 
     /// Whether the engine's battle-end sequence holds this gate.
@@ -1337,6 +1374,7 @@ impl BattleDrive {
     /// `action,<seat>,<state>,<category>,<queued>[,<spare>,<absorbed>[,<end kind>,<end value>]]`.
     pub fn to_env(&self) -> String {
         match *self {
+            Self::Opening { swept } => format!("opening,{}", u8::from(swept)),
             Self::Menu { flow, seat } => format!("menu,{},{seat}", flow.raw()),
             Self::Action {
                 seat,
@@ -1357,11 +1395,16 @@ impl BattleDrive {
     }
 
     pub fn from_env(s: &str) -> Option<Self> {
+        match s.trim() {
+            "opening" | "opening,0" => return Some(Self::Opening { swept: false }),
+            "opening,1" => return Some(Self::Opening { swept: true }),
+            _ => {}
+        }
         let fields: Vec<&str> = s.split(',').collect();
         if fields.len() == 9 && fields[0].trim() == "action" {
             let mut d = Self::from_env(&fields[..7].join(","))?;
             if let Self::Action { end, .. } = &mut d {
-                *end = EndGate::from_env(fields[7], fields[8])?;
+                *end = SpanGate::from_env(fields[7], fields[8])?;
             }
             return Some(d);
         }
@@ -1382,7 +1425,7 @@ impl BattleDrive {
                 queued,
                 spare: false,
                 absorbed: 0,
-                end: EndGate::None,
+                end: SpanGate::None,
             }),
             ("action", &[seat, state, category, queued, spare, absorbed]) => Some(Self::Action {
                 seat,
@@ -1391,7 +1434,7 @@ impl BattleDrive {
                 queued,
                 spare: spare != 0,
                 absorbed,
-                end: EndGate::None,
+                end: SpanGate::None,
             }),
             _ => None,
         }
@@ -1400,6 +1443,7 @@ impl BattleDrive {
     /// The tick budget the drive gets past the first prompt.
     pub fn budget(&self) -> u32 {
         match self {
+            Self::Opening { .. } => 0,
             Self::Menu { .. } => MENU_DRIVE_TICKS,
             Self::Action { .. } => ACTION_DRIVE_TICKS,
         }
@@ -1450,11 +1494,52 @@ impl BattleDrive {
         }
         let pc = world.party.party_count.clamp(1, 3);
         match *self {
+            // The first frame whose monsters are drawable: the bodies bind
+            // a few ticks after the mode flip.
+            Self::Opening { swept } => {
+                let ok = (!swept || world.battle.intro_names_frames == 0)
+                    && world.actors.iter().enumerate().all(|(i, a)| {
+                        a.battle_monster_id.is_none()
+                            || !a.active
+                            || a.tmd_binding.is_some()
+                                && world
+                                    .battle_actor_draw_plan(i, None, 4.0, false)
+                                    .is_none_or(|p| p.drawn)
+                    });
+                if std::env::var_os("LEGAIA_RC_DRIVE_TRACE").is_some() {
+                    for (i, a) in world.actors.iter().enumerate().take(8) {
+                        eprintln!(
+                            "[op] {i} mon={:?} act={} bind={:?} rf={} rc={:#x} plan={:?} anim={} pose={} cam={:?} pos={:?}",
+                            a.battle_monster_id,
+                            a.active,
+                            a.tmd_binding,
+                            a.battle.render_flag,
+                            a.battle.render_color,
+                            world
+                                .battle_actor_draw_plan(i, None, 4.0, false)
+                                .map(|p| p.drawn),
+                            a.battle_animation.is_some(),
+                            a.battle_pose.is_some(),
+                            world
+                                .battle
+                                .camera
+                                .as_ref()
+                                .map(|_| world.battle_cam_pose().tr),
+                            (
+                                a.move_state.world_x,
+                                a.move_state.world_y,
+                                a.move_state.world_z
+                            )
+                        );
+                    }
+                }
+                ok
+            }
             Self::Menu { flow, seat } => {
                 world.battle.flow == flow
                     && (!menu_seat_matters(flow) || world.battle_ctx.active_actor == seat)
             }
-            Self::Action { seat, end, .. } if end != EndGate::None => {
+            Self::Action { seat, end, .. } if end.is_end() => {
                 // The sequencer frames its pose actor `ctx[+0x13]`.
                 end.met(world)
                     && world
@@ -1462,11 +1547,17 @@ impl BattleDrive {
                         .victory
                         .is_some_and(|v| v.pose_actor == usize::from(engine_seat(seat, pc)))
             }
-            Self::Action { seat, state, .. } => {
+            Self::Action {
+                seat, state, end, ..
+            } => {
                 world.battle.flow == BattleFlowState::Idle
                     && world.battle.command.is_none()
                     && world.battle_ctx.active_actor == engine_seat(seat, pc)
                     && world.battle_ctx.action_state == state
+                    && match end {
+                        SpanGate::DoneHold { timer } => world.battle_ctx.frame_timer <= timer,
+                        _ => true,
+                    }
             }
         }
     }
@@ -1479,7 +1570,7 @@ impl BattleDrive {
     ) -> Option<legaia_engine_core::input::PadButton> {
         use legaia_engine_core::battle_input::CommandPhase;
         use legaia_engine_core::input::PadButton;
-        if world.mode != SceneMode::Battle {
+        if world.mode != SceneMode::Battle || matches!(self, Self::Opening { .. }) {
             return None;
         }
         // A battle message box parks the whole battle until it is dismissed.
@@ -1488,6 +1579,7 @@ impl BattleDrive {
         }
         let cmd = world.battle.command.as_ref()?;
         match *self {
+            Self::Opening { .. } => None,
             Self::Menu { flow, seat } => {
                 let ours = cmd.actor == seat && flow != BattleFlowState::CommitBegin;
                 match cmd.phase {
@@ -1600,7 +1692,10 @@ impl RetailBattle {
                 queued: self.queued_action,
                 spare: !self.action_victims().is_empty(),
                 absorbed: if seat < 3 { self.absorbed_seru } else { 0 },
-                end: self.end_gate,
+                end: self.span_gate,
+            }),
+            SeedPlan::Opening => Some(BattleDrive::Opening {
+                swept: matches!(self.flow, 0x0C | 0x14),
             }),
             _ => None,
         }
@@ -1635,12 +1730,19 @@ fn run_drive(
         if std::env::var_os("LEGAIA_RC_DRIVE_TRACE").is_some() {
             let hp: Vec<u16> = world.actors.iter().take(8).map(|a| a.battle.hp).collect();
             eprintln!(
-                "[rc] t={t} mode={:?} flow={:?} cmd={} act={} st=0x{:02X} hp={hp:?}",
+                "[rc] t={t} mode={:?} flow={:?} cmd={} act={} st=0x{:02X} hp={hp:?} cam={:?} tint={:?}",
                 world.mode,
                 world.battle.flow,
                 world.battle.command.is_some(),
                 world.battle_ctx.active_actor,
-                world.battle_ctx.action_state
+                world.battle_ctx.action_state,
+                world.battle.camera.as_ref().map(|c| c.phase()),
+                world
+                    .actors
+                    .iter()
+                    .take(8)
+                    .map(|a| (a.battle.render_flag, a.battle.render_color))
+                    .collect::<Vec<_>>()
             );
         }
         let pad = if reached.is_some() {
@@ -1767,8 +1869,8 @@ pub fn compare_battle(
         _ => true,
     };
     // Past the end signal the action SM is parked and the drive's own gate
-    // ([`EndGate`]: the sequencer phase on the pose actor) is the phase.
-    let end_held = battle.end_gate != EndGate::None && matches!(engine.driven, Some(Some(_)));
+    // ([`SpanGate`]: the sequencer phase on the pose actor) is the phase.
+    let end_held = battle.span_gate.is_end() && matches!(engine.driven, Some(Some(_)));
     let phase_ok = end_held
         || engine.flow == want
             && (!replayed || engine.action_state == battle.action_state)
@@ -1781,10 +1883,9 @@ pub fn compare_battle(
     let driven = match (plan, engine.driven) {
         (_, None) if plan == SeedPlan::Opening => "; sampled at the battle-mode flip".to_string(),
         (_, None) => String::new(),
-        (_, Some(Some(t))) if battle.end_gate != EndGate::None => format!(
-            "; driven by pad, battle-end {:?} reached at +{t}",
-            battle.end_gate
-        ),
+        (_, Some(Some(t))) if battle.span_gate != SpanGate::None => {
+            format!("; driven by pad, {:?} reached at +{t}", battle.span_gate)
+        }
         (_, Some(Some(t))) => format!("; driven by pad, reached at +{t}"),
         (_, Some(None)) => "; driven by pad, never reached".to_string(),
     };
@@ -1994,6 +2095,7 @@ mod tests {
     #[test]
     fn the_battle_drive_round_trips_through_its_env_form() {
         for d in [
+            BattleDrive::Opening { swept: true },
             BattleDrive::Menu {
                 flow: BattleFlowState::ArtsCommandEntry,
                 seat: 2,
@@ -2009,7 +2111,7 @@ mod tests {
                 queued: 0x7A,
                 spare: false,
                 absorbed: 0,
-                end: EndGate::Exit { phase: 3 },
+                end: SpanGate::Exit { phase: 3 },
             },
             BattleDrive::Action {
                 seat: 0,
@@ -2018,7 +2120,7 @@ mod tests {
                 queued: 0x0F,
                 spare: true,
                 absorbed: 1,
-                end: EndGate::None,
+                end: SpanGate::DoneHold { timer: -1 },
             },
             BattleDrive::Action {
                 seat: 0,
@@ -2027,7 +2129,7 @@ mod tests {
                 queued: 0x0D,
                 spare: true,
                 absorbed: 0,
-                end: EndGate::Results { hold: 80 },
+                end: SpanGate::Results { hold: 80 },
             },
         ] {
             assert_eq!(BattleDrive::from_env(&d.to_env()), Some(d));

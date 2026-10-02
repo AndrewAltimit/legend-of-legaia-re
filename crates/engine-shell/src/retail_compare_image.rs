@@ -334,6 +334,11 @@ pub fn engine_frame_with(
         }
     }
     let out = cmd.output().context("spawn play-window")?;
+    // `LEGAIA_RC_CHILD_LOG=1` keeps the child's stderr beside its frame, for
+    // the trace hooks the capture gates carry.
+    if std::env::var_os("LEGAIA_RC_CHILD_LOG").is_some() {
+        let _ = std::fs::write(shot.with_extension("stderr.log"), &out.stderr);
+    }
     if !shot.exists() {
         let tail: String = String::from_utf8_lossy(&out.stderr)
             .lines()

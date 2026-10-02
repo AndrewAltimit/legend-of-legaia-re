@@ -309,7 +309,11 @@ overlay's init writes `0x00`), `0x0A` / `0x0B` the intro timer, `0x0C` the boss
 stage module's baton, `0x14` the one-frame turn setup
 ([battle](../subsystems/battle.md#the-battle-open-flow---ctx0x06-from-the-intro-timer-to-the-first-swing)).
 Every value decodes to the engine's `Idle`, so an opening capture is compared
-with the engine before its own opening has run. That comparison is only as
+with the engine before its own opening has run, and its frame is taken there
+too (`BattleDrive::Opening`): the first battle frame whose monsters are bound,
+and for a capture past the intro timer (`0x0C` / `0x14`) the first one whose
+enemy-name labels have cleared, rather than a fixed tick past the round
+prompt - a surface retail had not reached. That comparison is only as
 good as the engine's opening: the port does not park its command flow on the
 intro timer (`battle::intro_names` - the round prompt opens with the names
 still up, which the recorded replays pace off), so an ordinary fight holds its
@@ -437,10 +441,13 @@ into the item / magic / arts windows ([battle](../subsystems/battle.md#how-the-e
   the action SM is no longer stepped: `ctx[+0x07]` reads `0x5A` and
   `ctx[+0x13]` the pose actor through the whole results sequence, so the
   state names a span of several hundred vsyncs. Such a capture is placed by
-  the sequencer's own words instead (`EndGate`): the phase word
+  the sequencer's own words instead (`SpanGate`): the phase word
   `_DAT_8007BD2C`, the phase halfword `ctx[+0x6CE]` and the results hold
   `gp+0xA54`, against `World::battle.victory` on the same pose actor
   ([battle](../subsystems/battle.md#battle-end-retails-way---the-results-sequencer)).
+  The Done band's continuation `0x52` is a span of the same kind - it holds
+  for its countdown `ctx[+0x6D8]`, `0xB4` frames after an absorb - so a `0x52`
+  capture also waits for the engine's countdown to run down to retail's.
 - **Seat and timing.** A pick no seed reproduces (a monster's plain strike on
   a given seat) can run out of budget or end the fight first.
 
