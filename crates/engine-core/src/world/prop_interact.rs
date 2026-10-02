@@ -372,6 +372,7 @@ impl World {
             id.park_frames = 0;
         }
         if id.done {
+            self.restore_owed_player_scale(&id.bytecode, id.pc, &id.visited);
             self.finish_prop_interaction(&mut id, anchor);
         } else {
             self.dialog.inline = Some(id);

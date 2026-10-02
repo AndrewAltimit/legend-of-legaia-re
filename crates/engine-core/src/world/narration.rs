@@ -890,6 +890,7 @@ impl World {
             if tl.done {
                 let restore = tl.restore_hidden_on_complete;
                 self.release_interaction_context(&tl);
+                self.restore_owed_player_scale(&tl.bytecode, tl.pc, &tl.visited);
                 self.cutscene.timeline = None;
                 if restore {
                     self.restore_hidden_field_npcs();
@@ -2293,6 +2294,7 @@ impl World {
             // from the cutscene camera to normal field gameplay.
             let restore = tl.restore_hidden_on_complete;
             self.release_interaction_context(&tl);
+            self.restore_owed_player_scale(&tl.bytecode, tl.pc, &tl.visited);
             self.cutscene.timeline = None;
             // The town01 OPENING choreography `MoveTo`s the townsfolk to the
             // off-map hide box to clear the establishing shot. Nothing
@@ -2410,6 +2412,9 @@ impl World {
         }
         self.field_vm.halted_elsewhere.clear();
         let dropped = contexts.iter().any(|tl| tl.done);
+        for tl in contexts.iter().filter(|tl| tl.done) {
+            self.restore_owed_player_scale(&tl.bytecode, tl.pc, &tl.visited);
+        }
         contexts.retain(|tl| !tl.done);
         self.field_vm.helper_contexts = contexts;
         // Stranded-player rescue: a spawned record can `MoveTo` the PLAYER as
@@ -3532,6 +3537,9 @@ impl World {
                 .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
         {
             ch.ctx.local_flags = id.ctx.local_flags;
+        }
+        if id.done {
+            self.restore_owed_player_scale(&id.bytecode, id.pc, &id.visited);
         }
         self.dialog.inline = Some(id);
     }

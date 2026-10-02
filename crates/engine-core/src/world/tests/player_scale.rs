@@ -134,3 +134,32 @@ fn overworld_walk_moves_ten_units_every_three_vsyncs() {
     let _ = w.tick();
     assert_eq!(w.world_map.walk_carry, 0);
 }
+
+/// A talk the runner ends before it reaches its own `CC F8 40 00 10` restore
+/// does not leave the player hidden (undrawn and, through the same word,
+/// unable to walk): the restore the record still owes lands at teardown.
+#[test]
+fn a_talk_cut_before_its_player_restore_still_shows_the_player() {
+    let mut w = field_world();
+    // Hide, a terminator the runner stops on, then the restore it never ran.
+    w.start_inline_dialogue(vec![
+        0xCC, 0xF8, 0x40, 0x00, 0x00, 0x00, 0x00, //
+        0x00, //
+        0xCC, 0xF8, 0x40, 0x00, 0x10, 0x00, 0x00,
+    ]);
+    w.step_inline_dialogue(false, false, false);
+    assert!(w.dialog.inline.as_ref().is_some_and(|id| id.done));
+    assert_eq!(w.actors[0].move_state.field_72, 0x1000);
+    assert!(!w.player_hidden());
+}
+
+/// The rescue never invents a restore: a record that hides the player and
+/// carries no later restore leaves it hidden, as retail would.
+#[test]
+fn a_talk_with_no_pending_restore_leaves_the_player_hidden() {
+    let mut w = field_world();
+    w.start_inline_dialogue(vec![0xCC, 0xF8, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]);
+    w.step_inline_dialogue(false, false, false);
+    assert!(w.dialog.inline.as_ref().is_some_and(|id| id.done));
+    assert!(w.player_hidden());
+}
