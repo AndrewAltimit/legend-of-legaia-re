@@ -821,6 +821,23 @@ impl MuscleDomeSession {
         false
     }
 
+    /// [`Self::resolve_turn_or_zero`] on a lent `rand()` stream: the damage
+    /// kernel's draws come off `rng` (the world's `rng_state`) and the
+    /// advanced state is written back. Retail's dome rolls call the one
+    /// process-wide BIOS `rand()`, so a private dome stream would interleave
+    /// them differently from every other draw the tick makes. With no
+    /// damage model installed nothing draws and `rng` is untouched.
+    pub fn resolve_turn_on_stream(&mut self, rng: &mut u32) -> bool {
+        if let Some(m) = self.damage.as_mut() {
+            m.set_rng_seed(*rng);
+        }
+        let retail = self.resolve_turn_or_zero();
+        if let Some(m) = self.damage.as_ref() {
+            *rng = m.rng_seed();
+        }
+        retail
+    }
+
     /// Start the next turn after a non-terminal resolution: reseed the
     /// budgets from the pools, clear the queues. No-op once a KO has decided
     /// the leg.

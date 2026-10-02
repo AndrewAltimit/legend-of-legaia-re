@@ -1005,10 +1005,7 @@ impl World {
     /// [`Self::next_rand`]. The raw word's low bits have short periods.
     pub fn next_rng(&mut self) -> u32 {
         // Numerical Recipes LCG. Cheap, deterministic.
-        self.rng_state = self
-            .rng_state
-            .wrapping_mul(1_664_525)
-            .wrapping_add(1_013_904_223);
+        self.rng_state = legaia_engine_vm::battle_formulas::world_lcg_step(self.rng_state);
         self.rng_state
     }
 
@@ -3764,8 +3761,10 @@ impl World {
                 if let Some(s) = self.minigames.muscle_dome.as_mut() {
                     // With no disc tables staged this closes the turn without
                     // damage rather than substituting invented numbers - and
-                    // rather than parking the leg in `Resolve` forever.
-                    s.resolve_turn_or_zero();
+                    // rather than parking the leg in `Resolve` forever. The
+                    // damage rolls draw on the world stream (retail's one
+                    // `rand()` seed).
+                    s.resolve_turn_on_stream(&mut self.rng_state);
                 }
             }
             MusclePhase::TurnOver => {

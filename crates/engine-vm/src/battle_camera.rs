@@ -70,7 +70,7 @@
 
 // REF: FUN_80021248 (the arming routine that signs this builder's records
 // and hands them to the per-frame walker)
-use crate::battle_formulas::psyq_rand_step;
+use crate::battle_formulas::world_rand;
 
 /// The camera rotation/shake/focus trios `FUN_801D829C` tweens. Mirrors the
 /// nine 16-bit globals paired against the caller-provided targets:
@@ -219,8 +219,7 @@ pub fn build_camera_angle_tween(
 ///
 /// The previous offsets are first subtracted back out of the accumulators and
 /// zeroed. When `amplitude != 0`, two LCG samples are drawn (retail RNG
-/// `FUN_80056798`, the PsyQ 15-bit `rand()` - reused here via
-/// [`psyq_rand_step`]) and masked with
+/// `FUN_80056798`, the 15-bit BIOS `rand()`) and masked with
 /// `0xFFFFFF >> ((0x15 - amplitude) & 0x1F)` - i.e. `(1 << (amplitude + 3)) - 1`
 /// for `1 <= amplitude <= 0x15`. NB the dump uses this **right-shift-of-
 /// `0xFFFFFF`** form (`srav` of the `0xFFFFFF` constant); the
@@ -229,6 +228,12 @@ pub fn build_camera_angle_tween(
 ///
 /// - X offset: `(rand & mask) - ((mask + 1) >> 1)` - centered around zero.
 /// - Y offset: `-(rand & (mask >> 1))` - half-range, upward only (negated).
+///
+/// `seed` is a lent copy of the world `rand()` stream ([`world_rand`]):
+/// retail draws both samples from the one process-wide seed, so a caller
+/// copies `World::rng_state` in and writes it back after the call. A rest
+/// state (`amplitude == 0`) draws nothing, so an un-shaken camera never moves
+/// the stream.
 ///
 /// The fresh offsets are then added into the accumulators. `amplitude == 0`
 /// therefore clears the jitter contribution entirely.
@@ -247,9 +252,9 @@ pub fn apply_shake(accum: &mut [i32; 2], offset: &mut [i32; 2], amplitude: u32, 
     offset[1] = 0;
     if amplitude != 0 {
         let mask = 0xFF_FFFFu32 >> (0x15u32.wrapping_sub(amplitude) & 0x1F);
-        let r0 = u32::from(psyq_rand_step(seed));
+        let r0 = world_rand(seed);
         offset[0] = (r0 & mask) as i32 - ((mask as i32 + 1) >> 1);
-        let r1 = u32::from(psyq_rand_step(seed));
+        let r1 = world_rand(seed);
         offset[1] = -((r1 & (mask >> 1)) as i32);
     }
     accum[0] += offset[0];
@@ -386,8 +391,8 @@ mod tests {
         // Two draws happen: the seed must have advanced twice.
         let (accum, offset, seed) = run();
         let mut check = 0xDEAD_BEEFu32;
-        psyq_rand_step(&mut check);
-        psyq_rand_step(&mut check);
+        world_rand(&mut check);
+        world_rand(&mut check);
         assert_eq!(seed, check);
         assert_eq!(accum, offset); // fresh offsets fold straight into accum
     }

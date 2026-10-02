@@ -419,12 +419,16 @@ impl World {
         let inputs = battle_cam_inputs(self);
         let tracks = battle_attack_tracks(self);
         let frames = self.clock.display_frames;
-        script::drive(
+        // The camera's draws (shake pair, strike-loop yaw coin, per-art
+        // track column) are retail `rand()` calls on the one process-wide
+        // seed, so they draw on the world stream in tick order.
+        script::drive_on_stream(
             &mut self.battle.camera,
             active,
             inputs,
             frames,
             tracks.as_ref(),
+            &mut self.rng_state,
         );
     }
 

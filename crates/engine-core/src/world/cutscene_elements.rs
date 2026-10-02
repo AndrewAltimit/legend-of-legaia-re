@@ -59,7 +59,7 @@ impl WorldRng {
     /// The same LCG step [`World::next_rng`] runs. Named `step` rather than
     /// `next` so it cannot be mistaken for an iterator.
     pub fn step(&mut self) -> u32 {
-        self.0 = self.0.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        self.0 = legaia_engine_vm::battle_formulas::world_lcg_step(self.0);
         self.0
     }
 
