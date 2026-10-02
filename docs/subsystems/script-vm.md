@@ -1867,7 +1867,7 @@ happens to precede the site within the resync window. Triage rules that follow f
 
 Hand-checks that applied these rules: the "chapter-wide readers" the census reports for `0x32C` (~50
 scenes) and `0x461` (~30 scenes) are the `s,` / `ta` bigrams in NPC dialogue - both flags are real but
-scene-local (see [open-rev-eng-threads](../reference/open-rev-eng-threads.md#region-story-flag-gate-families));
+scene-local (see [re-settled-threads](../reference/re-settled-threads.md#region-story-flag-gate-families));
 the Nivora successor gate `0x370` shows the context-window rule cutting **both ways inside one record**
 (`doman` variant `P1[15]`): three `Sp` = `53 70` sites are the "Time**Sp**ace Bomb" dialogue (rejected),
 but the fourth, at MAN offset `0x06397` (`+0x3018`), sits in a choreography run (`WaitFrames` / `MoveTo` /

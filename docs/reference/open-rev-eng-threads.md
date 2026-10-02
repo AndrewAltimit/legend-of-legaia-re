@@ -113,7 +113,6 @@ cheapest place to look for a claim that is still wrong.
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Region story-flag gate families (record-header C1/C2 gates) | partial - structure settled; every residual family bracketed between two retail milestone saves, and the order inside a bracket pinned wherever a gate fixes it; open is doman's `0x3FB` against bubu2's pair and deroa's walk-on latches | [details ↓](#region-story-flag-gate-families) |
 
 **Who sets a field NPC's moving-class bit** closed by disassembly and capture:
 the placement seater `FUN_8003A1E4` ORs `0x20000` into every partition-1
@@ -323,123 +322,6 @@ gate object's own script paints. See
 [`re-settled-threads.md` § Rim Elm's south gate](re-settled-threads.md#rim-elms-south-gate),
 and the force-walk reading it falsified in
 [`re-do-not-re-walk.md`](re-do-not-re-walk.md#the-reachable-bands-record-force-walks-the-player-through-the-wall).
-
-### Region story-flag gate families
-
-*Status:* structure resolved and settled; every residual family bracketed between two retail milestone saves; the in-bracket order is pinned by disassembly for rayman, bubu2, retock and deroa's `0x46D`; residual = the two orders no gate decides
-
-The per-region C1/C2 gate families - the partition-2 record-header flag lists
-the spawn evaluator `FUN_8003BDE0` checks - are decoded across the chapter-2/3
-regions and the Rim Elm variants, with every family's exact lists pinned by
-census-file anchor tests. The full structure (Sebucus spokes, Rim Elm
-opening/revisit/final bands, Uru Mais, Nivora Ravine, Karisto castle depth,
-Conkram, and the `0x7`/`0xF` variant-discriminator pattern) lives on
-[`re-settled-threads.md` § Region story-flag gate families](re-settled-threads.md#region-story-flag-gate-families).
-
-**Residual.** Poll-tier playthrough captures
-(`captures/state_poll/2026-07-29T20-20-05Z` / `2026-07-29T22-21-04Z` /
-`2026-07-29T22-53-56Z`, mined with save-state-load frames screened out by
-their mode-churn + inventory-rewrite signature) confirm live play order for
-`retona`, `dohaty`, `taiku`, the Sebucus teien→tower→geremi spine, `korb3`,
-the `kor5` chain head (`0x43A → 0x436`) and the `map03` hub latch — the
-observed orders live in the settled page's play-order-captures paragraph,
-alongside the earlier organic `ropeway`/`ropeway2`/`jiji` walks and Nivora's
-`0x370` SET. Still owed:
-
-- **arrival measured, family SETs unplayed:** `rayman`, `station`, `station3`,
-  `bubu1` / `bubu2` and `deroa` have each been entered from a card-boot state
-  ([`script-vm.md`](../subsystems/script-vm.md#what-arriving-in-a-spoke-writes)).
-  No gate family fires on arrival: each spoke writes only its own arrival
-  latch in `0x491..0x49C` at entry-script `+0x18`, `map03` keeps a one-hot
-  story-stage word in `0x56D..0x570`, and every entry clears the band
-  `0x526..0x52E`. The chains themselves - `rayman`'s `0x201 -> 0x1FB -> 0x200 ->
-  0x1FC`, `bubu2`'s requires-all list, `station` / `station3` behind `taiku`'s
-  `0x38F`, `deroa`'s `0x3E1`-gated descent - fire only on walk-on and talk
-  beats, which need a human play-forward; `rayman2` also needs flag `0x1D5`,
-  which every ladder save from Mt. Letona on carries. Read any firehose over these with the `chitei2`
-  lesson in hand: a flag written every other frame from an entry script's
-  per-frame body is a one-hot selector, not a progress latch;
-- **walked without an organic family SET** (the beats were already latched in
-  the loaded state, or the region was entered mid-arc): `retock`/`retockin`
-  (`0x502` never fired - its writer hangs off Eliza's talk loop, unhidden by
-  `jagaroom`'s `0x33B`; `0x357` pre-latched). `doman`'s `0x3FB` (P2[4]),
-  `son`'s arrival family and the `kor5` tail's `0x6C4` (P2[8]) have since been
-  captured, `kor5` with its `0x436` input poked rather than played; the
-  retock / doman / nilboa entry families are measured
-  ([settled](re-settled-threads.md#field--locomotion)).
-
-**Card brackets place every residual family between two milestones.** The
-two playthrough cards hold one retail save per story milestone, so a flag
-clear in one save and set in the next was written by the play between them.
-Every residual family lands inside one such bracket: `rayman`'s whole chain
-(`0x201`, `0x1FB`, `0x200`, `0x1FC`) between Sky Gardens and the Fire Path;
-`0x1D5` between the Fire Path and Mt. Letona; retock's `0x357` between Mt.
-Letona and Ratayu, and `0x33B` with `0x502` between Ratayu and Dohati's
-Castle; `bubu2`'s `0x608` between Dohati and Sol Tower and its `0x3D3` /
-`0x609` with doman's `0x3FB` between the Sol Tower B2 and Usha saves; the
-`kor5` tail between the two Sol Tower saves; `0x370` between Usha and Nivora;
-`0x378`, `0x3A6` and `0x60D` between Nivora and Zora; `0x38F` and `0x3A7`
-between Zora and Conkram; deroa's `0x3E1` / `0x46D..0x46F` between Rogue's
-Tower and Jette's Fortress. Pinned by `region_gate_card_brackets` (save
-library gated). So the order *between* families is settled by retail saves.
-
-**Inside a bracket, the gates decide most of the order.** Where a family has
-more than one write in a bracket, the story SET sites (clean, not a prose
-alias, not a developer flag menu) and the record gates fix it
-([settled](re-settled-threads.md#region-story-flag-gate-families)):
-`rayman`'s chain runs `0x201 -> 0x1FB -> 0x200 -> 0x1FC` because each link has
-one writer and each writer's C2 is the link before; `bubu2`'s `0x609` and
-`0x3D3` are one beat, adjacent SETs in `P2[0]`; retock's `0x502` precedes
-`0x33B`, because Eliza's talk dispatch spawns the `0x502` writer only while
-`0x33B` is clear; and deroa's `0x46D` waits on `0x3E1`. Two orders are not
-script facts, and they are what is still owed:
-
-- **doman's `0x3FB` against bubu2's pair.** `doman P2[4]` carries only its own
-  C1 latch, and no clean site anywhere tests `0x3FB`, so which fires first is
-  the route the player takes between the two scenes;
-- **deroa's `0x46E` / `0x46F` against `0x46D`.** `P2[5]` and `P2[6]` carry only
-  their own C1 latch and no op `0x44` in deroa spawns them, so a walk-on tile
-  does, and their order is where the player walks.
-
-Both need a play-forward capture of the bracket, not more disassembly.
-
-The generic C1/C2 seeder already drives every family. One more session from
-an early-enough save (before the retock/doman/nilboa beats) closes the
-walked-but-latched set. The never-walked set is now a question of whether a
-card block exists for each spoke rather than of whether a probe can reach one:
-`retock`, `doman`, `nilboa`, `son` and the `kor5` tail are all walkable from a
-catalogued card block, and the residual spokes are the ones no card has.
-
-**A door no longer needs a walk.** A walk-on door is an exact tile match in the
-`.MAP` kind-1 trigger table, so writing the player object's position onto a
-door tile crosses it in about ninety vsyncs
-([`autorun_w5a_poke_walk.lua`](../../scripts/pcsx-redux/autorun_w5a_poke_walk.lua);
-door tiles come from each `.MAP`'s `+0x10000` / `+0x12000` gate rows), and a
-door that opens a Yes/No picker takes one confirm press on top. Paired with the
-single-flag write watch
-([`autorun_w5a_flag_watch.lua`](../../scripts/pcsx-redux/autorun_w5a_flag_watch.lua)),
-that turns each residual spoke into one run from a card block that reaches its
-region. It measures arrival, never the walk. Read what it logs with the `conc`
-lesson in hand: a flag written every other frame from an entry script's
-per-frame body is a position predicate, not a beat
-([`script-vm.md`](../subsystems/script-vm.md#a-system-flag-can-be-a-live-position-test-not-progress)).
-
-*What this needs is capture time, not a new instrument.*
-[`scripts/pcsx-redux/autorun_flag_firehose.lua`](../../scripts/pcsx-redux/autorun_flag_firehose.lua)
-is already the right probe and already logs exactly what the residual asks
-for: an exec breakpoint on the flag SET / CLEAR entry points with the writer's
-`ra`, plus a per-VSync scene-name and game-mode poll, so a single play-forward
-through a region emits the region's own SET order with the scene each write
-happened in. It is designed for whole-playthrough runs, so the four unwalked
-regions can be covered in one session rather than four.
-
-Two operating notes that apply to any run of it, both already bitten:
-PCSX-Redux probes **do not exit on their own** - kill on a timeout or the
-process hangs indefinitely
-([`pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md)) - and the
-process-matching helpers in
-[`shell-observer-traps.md`](../tooling/shell-observer-traps.md) exist because
-`pgrep -f` matches the caller's own command line.
 
 ## Battle / rendering
 

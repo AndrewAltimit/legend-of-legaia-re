@@ -2428,7 +2428,7 @@ produced zero writes. Probe `autorun_w4d_cort_flow_writer.lua`; see
 | `init_data` UI-tile page residency; the map03 terrain column | resolved (both premises falsified) | `capture` | [details ↓](#init_data-ui-tile-pages---journey-dependent-residency-resolved-map03-texture-column-resolved---not-uploaded-premise-falsified) |
 | What transitions retail into game over? | resolved | `capture` + `disassembly` | Retail has **no** mode-`0x12` transition. A wipe exits battle to mode 2; MAIN INIT `FUN_8003AEB0`'s back-from-battle arm stores `game_mode = 0x16` (CARD INIT) + `_DAT_8007BB00 = 1` at `0x8003B5D4`, landing on the **title screen** - no GAME OVER art, no menu. Three more sites carry the identical pair (`FUN_8003C7EC`, `FUN_801D84B4`, the STR attract exit `0x801CF048`). Mode 18/19 + PROT 0902 are an unreachable dev harness. The port's three-row panel is **deleted**; both hosts hold, draw nothing, hand to the title. [details](../subsystems/battle.md#party-wipe--the-game-over-overlay) |
 | Mid-visit NPC re-arrangement beats (dolk2 market crowd; garmel pre-Zeto staging) | resolved | `disassembly` + `capture` | dolk2: the swap is `P2[11]`, spawned by the `.MAP` fallback walk-on-trigger rows (C1=[`0x27C`], C2=[`0x142`]) - eight `CC <crowd> E3 <day>` seats (op `4C` nE sub-3, `0x801E3108`) put P1[53..60] on the day cohort's tiles and `A3` parks the day cohort at `(127,127)`. garmel: the Zeto stager `P2[12]` materializes P1[3]/P1[4] beside the player (n3 sub-7 player-coord copy `0x801E0FB0`); post-battle re-entries run `P1[0]`'s flag-consume arms. See [script-vm.md](../subsystems/script-vm.md#mid-visit-npc-re-arrangement-beats-dolk2-market-swap--garmel-boss-staging); pinned by `engine-core/tests/man_midvisit_rearrangement_disc.rs`. |
-| Region story-flag gate families (record-header C1/C2 gates) | resolved as structure (play-order residual on the open page) | `capture` | [details ↓](#region-story-flag-gate-families) |
+| Region story-flag gate families (record-header C1/C2 gates) | resolved (structure, play order by milestone brackets, the two undecided orders unobservable) | `capture` + `disassembly` | [details ↓](#region-story-flag-gate-families) |
 | Extraction-0874 §2 (`player.lzs`) F-variant pixels | resolved - installing event named | `capture` + `disassembly` | [details ↓](#extraction-0874-2-playerlzs-f-variant-pixels---a-one-shot-opening-face-frame-stamp-not-a-menu-writer) |
 | Which chapter-1 scenes the engine can load, script, walk and leave | resolved as a per-scene verdict; four of the five late "one-way" rooms now leave in-engine | `disassembly` + `capture` | [details ↓](#chapter-1-scene-frontier) |
 | How a player leaves the Uru Mais chain (`uru`, `urudre1..3`) and `jouine` | resolved (all five have walk-on exits carried by the scene's `.PCH` trigger sidecar) | `disassembly` + `capture` | [details ↓](#the-uru-mais-chain-and-jouine-exits) |
@@ -3106,7 +3106,7 @@ Mixed meshes (some textured + some untextured prims) now render **both** halves:
 
 ### Region story-flag gate families
 
-*Status:* resolved as structure across the chapter-2/3 regions; play order is capture-confirmed for `retona`, `dohaty`, `taiku`, the Sebucus spine, `korb3`, the `kor5` chain head and the `map03` hub latch (see the play-order captures paragraph below); the in-bracket order is pinned by disassembly for `rayman`, `bubu2`, retock and deroa's `0x46D`; the remaining play-order residual is tracked on [`open-rev-eng-threads.md`](open-rev-eng-threads.md#region-story-flag-gate-families)
+*Status:* resolved as structure across the chapter-2/3 regions; play order is capture-confirmed for `retona`, `dohaty`, `taiku`, the Sebucus spine, `korb3`, the `kor5` chain head and the `map03` hub latch (see the play-order captures paragraph below); the in-bracket order is pinned by disassembly for `rayman`, `bubu2`, retock and deroa's `0x46D`; the two orders no gate decides (doman's `0x3FB` against bubu2's pair, deroa's `0x46E` / `0x46F` against `0x46D`) have no reader that sees both flags, so they are unobservable (see [the play-order residual](#the-play-order-residual) below)
 
 Every field scene's MAN carries one **partition-2 record** per cutscene or story beat, and each record's *header* holds two flag lists that the spawn evaluator `FUN_8003BDE0` checks before running it: a **C1** one-shot list (the record is suppressed once any listed flag is set) and a **C2** requires-all list (the record spawns only when every listed flag is set). Regional progression is expressed almost entirely through these header gates.
 
@@ -3224,6 +3224,110 @@ Regions walked in the corpus **without** an organic family SET stay play-order-u
 - **deroa - `0x3E1` before `0x46D`.** `P2[4]` (C1 `0x46D`, C2 `0x3E1`); `P2[5]` / `P2[6]` carry only their own latch.
 
 `retock P1[1]` / `retockin P1[1]` also write `0x33B`, `0x502` and `0x357`, but as developer flag-menu arms (flag-op runs ending in a `JmpRel` back to the picker), not story writers. Pinned by `man_variant_carrier_census_disc.rs::region_gate_in_bracket_write_order`. The two orders no gate decides stay on the open page.
+
+
+#### The play-order residual
+
+**Live play order.** Poll-tier playthrough captures
+(`captures/state_poll/2026-07-29T20-20-05Z` / `2026-07-29T22-21-04Z` /
+`2026-07-29T22-53-56Z`, mined with save-state-load frames screened out by
+their mode-churn + inventory-rewrite signature) confirm live play order for
+`retona`, `dohaty`, `taiku`, the Sebucus teien→tower→geremi spine, `korb3`,
+the `kor5` chain head (`0x43A → 0x436`) and the `map03` hub latch — the
+observed orders live in the play-order-captures paragraph above,
+alongside the earlier organic `ropeway`/`ropeway2`/`jiji` walks and Nivora's
+`0x370` SET. The rest are bracketed by saves rather than played:
+
+- **arrival measured, family SETs unplayed:** `rayman`, `station`, `station3`,
+  `bubu1` / `bubu2` and `deroa` have each been entered from a card-boot state
+  ([`script-vm.md`](../subsystems/script-vm.md#what-arriving-in-a-spoke-writes)).
+  No gate family fires on arrival: each spoke writes only its own arrival
+  latch in `0x491..0x49C` at entry-script `+0x18`, `map03` keeps a one-hot
+  story-stage word in `0x56D..0x570`, and every entry clears the band
+  `0x526..0x52E`. The chains themselves - `rayman`'s `0x201 -> 0x1FB -> 0x200 ->
+  0x1FC`, `bubu2`'s requires-all list, `station` / `station3` behind `taiku`'s
+  `0x38F`, `deroa`'s `0x3E1`-gated descent - fire only on walk-on and talk
+  beats, which need a human play-forward; `rayman2` also needs flag `0x1D5`,
+  which every ladder save from Mt. Letona on carries. Read any firehose over these with the `chitei2`
+  lesson in hand: a flag written every other frame from an entry script's
+  per-frame body is a one-hot selector, not a progress latch;
+- **walked without an organic family SET** (the beats were already latched in
+  the loaded state, or the region was entered mid-arc): `retock`/`retockin`
+  (`0x502` never fired - its writer hangs off Eliza's talk loop, unhidden by
+  `jagaroom`'s `0x33B`; `0x357` pre-latched). `doman`'s `0x3FB` (P2[4]),
+  `son`'s arrival family and the `kor5` tail's `0x6C4` (P2[8]) have since been
+  captured, `kor5` with its `0x436` input poked rather than played; the
+  retock / doman / nilboa entry families are measured
+  ([field / locomotion](#field--locomotion)).
+
+**Card brackets place every residual family between two milestones.** The
+two playthrough cards hold one retail save per story milestone, so a flag
+clear in one save and set in the next was written by the play between them.
+Every residual family lands inside one such bracket: `rayman`'s whole chain
+(`0x201`, `0x1FB`, `0x200`, `0x1FC`) between Sky Gardens and the Fire Path;
+`0x1D5` between the Fire Path and Mt. Letona; retock's `0x357` between Mt.
+Letona and Ratayu, and `0x33B` with `0x502` between Ratayu and Dohati's
+Castle; `bubu2`'s `0x608` between Dohati and Sol Tower and its `0x3D3` /
+`0x609` with doman's `0x3FB` between the Sol Tower B2 and Usha saves; the
+`kor5` tail between the two Sol Tower saves; `0x370` between Usha and Nivora;
+`0x378`, `0x3A6` and `0x60D` between Nivora and Zora; `0x38F` and `0x3A7`
+between Zora and Conkram; deroa's `0x3E1` / `0x46D..0x46F` between Rogue's
+Tower and Jette's Fortress. Pinned by `region_gate_card_brackets` (save
+library gated). So the order *between* families is settled by retail saves.
+
+**Inside a bracket, the gates decide most of the order.** Where a family has
+more than one write in a bracket, the story SET sites (clean, not a prose
+alias, not a developer flag menu) and the record gates fix it (above):
+`rayman`'s chain runs `0x201 -> 0x1FB -> 0x200 -> 0x1FC` because each link has
+one writer and each writer's C2 is the link before; `bubu2`'s `0x609` and
+`0x3D3` are one beat, adjacent SETs in `P2[0]`; retock's `0x502` precedes
+`0x33B`, because Eliza's talk dispatch spawns the `0x502` writer only while
+`0x33B` is clear; and deroa's `0x46D` waits on `0x3E1`. Two orders are not
+script facts:
+
+- **doman's `0x3FB` against bubu2's pair.** `doman P2[4]` carries only its own
+  C1 latch, so which fires first is the route the player takes between the
+  two scenes;
+- **deroa's `0x46E` / `0x46F` against `0x46D`.** `P2[5]` and `P2[6]` carry only
+  their own C1 latch and no op `0x44` in deroa spawns them, so a walk-on tile
+  does, and their order is where the player walks.
+
+**Neither order is observable, so neither needs a capture.** Every reader of
+the three flags reads that one flag and nothing else, and none reads two of
+them together. `0x3FB` has no field-VM `TEST` anywhere; its only C1 holders
+are its writer `doman P2[4]` and the two ending epilogues `edbalden` /
+`eddoman` `P2[3]`, each listing `[0x3FB]` alone. `0x46E`'s one reader is
+`deroa P2[8]`, whose whole body is that test in front of `[4C 38]` (the
+camera-region query at the player's tile) and an idle loop. `0x46F`'s two
+readers are deroa's scene objects: `P0[0]` parks its object at `MoveTo 7F 7F`
+when the flag is set, and `P0[5]` takes `[4C 42]` target `-600` when it is
+set and `-1500` when it is clear. No record lists any of the three in a C2
+gate, and the SCUS and overlay images carry no literal call of the flag
+helpers `FUN_8003CE08` / `_CE34` / `_CE64` with these ids. Each flag's value
+is observable, and the milestone saves pin it on both sides of the bracket.
+The order the route writes them in reaches nothing. Pinned by
+`region_gate_unordered_flags_have_no_joint_reader`.
+
+The generic C1/C2 seeder already drives every family. One more session from
+an early-enough save (before the retock/doman/nilboa beats) closes the
+walked-but-latched set. The never-walked set is now a question of whether a
+card block exists for each spoke rather than of whether a probe can reach one:
+`retock`, `doman`, `nilboa`, `son` and the `kor5` tail are all walkable from a
+catalogued card block, and the residual spokes are the ones no card has.
+
+**A door no longer needs a walk.** A walk-on door is an exact tile match in the
+`.MAP` kind-1 trigger table, so writing the player object's position onto a
+door tile crosses it in about ninety vsyncs
+([`autorun_w5a_poke_walk.lua`](../../scripts/pcsx-redux/autorun_w5a_poke_walk.lua);
+door tiles come from each `.MAP`'s `+0x10000` / `+0x12000` gate rows), and a
+door that opens a Yes/No picker takes one confirm press on top. Paired with the
+single-flag write watch
+([`autorun_w5a_flag_watch.lua`](../../scripts/pcsx-redux/autorun_w5a_flag_watch.lua)),
+that turns each residual spoke into one run from a card block that reaches its
+region. It measures arrival, never the walk. Read what it logs with the `conc`
+lesson in hand: a flag written every other frame from an entry script's
+per-frame body is a position predicate, not a beat
+([`script-vm.md`](../subsystems/script-vm.md#a-system-flag-can-be-a-live-position-test-not-progress)).
 
 ### Extraction-0874 §2 (`player.lzs`) F-variant pixels - a one-shot opening face-frame stamp, not a menu writer
 
