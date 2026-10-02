@@ -166,9 +166,10 @@ fn opdeene_timeline_fires_between_beat_black_fades() {
 /// left the pass open mid-selector, and the next tick re-evaluated it
 /// wherever the player then stood.
 ///
-/// Which bit is not pinned here: retail's is `0x1A2` (region type 7, tiles
-/// `x 8..=35, z 89..=115`), while the engine stands the New Game player on
-/// tile `(56, 19)` (type 3, `0x19E`) before the opening moves him.
+/// The bit is `0x1A2` (region type 7, tiles `x 8..=35, z 89..=115`): the
+/// body evaluates it at the New Game's entry seat, tile `(28, 91)`
+/// (`NEW_GAME_ENTRY_SEAT`, written by the seed `FUN_80034A6C`), before the
+/// opening record moves the player.
 #[test]
 fn new_game_opdeene_entry_run_stops_where_retail_parks() {
     let Some(mut host) = skip_or_host() else {
@@ -186,7 +187,13 @@ fn new_game_opdeene_entry_run_stops_where_retail_parks() {
     let band: Vec<u16> = (0x19B..=0x1AA)
         .filter(|&f| host.world.system_flag_test(f))
         .collect();
-    assert_eq!(band.len(), 1, "one region-selector bit: {band:x?}");
+    assert_eq!(band, vec![0x1A2], "retail's region-selector bit");
+    let seat = &host.world.actors[0].move_state;
+    assert_eq!(
+        (seat.world_x, seat.world_z),
+        legaia_asset::new_game::NEW_GAME_ENTRY_SEAT,
+        "the New Game's entry operand seats the player"
+    );
     // The opening holds the player from here: the system loop sits out and
     // the selector stays put.
     for _ in 0..30 {

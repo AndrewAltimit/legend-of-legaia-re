@@ -391,3 +391,50 @@ fn starting_item_seed_region_is_the_documented_ten_instructions() {
          so the reclaimable length is wrong"
     );
 }
+
+/// The New Game's entry seat is a pair of absolute word stores off a
+/// `lui $at, 0x8007` (`0x80073EF4` = X, `0x80073EF8` = Z), each fed by an
+/// `addiu rt, $zero, imm` literal. Decode them out of the routine and require
+/// [`new_game::NEW_GAME_ENTRY_SEAT`] to be what they store.
+#[test]
+fn new_game_entry_seat_matches_the_routines_absolute_stores() {
+    let Some(scus) = gated() else { return };
+    let Some(off) = new_game::scus_file_offset(&scus, WORLD_SEED_VA) else {
+        eprintln!("[skip] SCUS_942.54 is not a PSX-EXE we can map");
+        return;
+    };
+    let Some(code) = scus.get(off..off + WORLD_SEED_LEN) else {
+        eprintln!("[skip] world-state seed runs past the image");
+        return;
+    };
+    let mut regs = [0u32; 32];
+    let mut absolute = Vec::new();
+    for chunk in code.as_chunks::<4>().0 {
+        let word = u32::from_le_bytes(*chunk);
+        let op = word >> 26;
+        let rs = ((word >> 21) & 0x1F) as usize;
+        let rt = ((word >> 16) & 0x1F) as usize;
+        let imm = word & 0xFFFF;
+        let simm = imm as i16 as i32 as u32;
+        match op {
+            0x0F => regs[rt] = imm << 16,
+            0x09 if rs == 0 => regs[rt] = simm,
+            0x09 => regs[rt] = regs[rs].wrapping_add(simm),
+            // sw rt, imm($at)
+            0x2B if rs == 1 => absolute.push((regs[1].wrapping_add(simm), regs[rt])),
+            _ => {}
+        }
+    }
+    let stored = |va: u32| {
+        absolute
+            .iter()
+            .find(|(a, _)| *a == va)
+            .map(|(_, v)| *v)
+            .unwrap_or_else(|| panic!("no absolute store to {va:#x}: {absolute:x?}"))
+    };
+    let (x, z) = new_game::NEW_GAME_ENTRY_SEAT;
+    assert_eq!(stored(0x8007_3EF4), x as u32, "entry seat X");
+    assert_eq!(stored(0x8007_3EF8), z as u32, "entry seat Z");
+    assert_eq!(stored(0x8007_3EFC), 0, "entry seat third word");
+    eprintln!("[ran] entry seat ({x:#x}, {z:#x})");
+}

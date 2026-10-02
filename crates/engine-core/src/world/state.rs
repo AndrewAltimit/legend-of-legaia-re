@@ -585,6 +585,10 @@ impl World {
         self.cutscene.entering_town01_opening = false;
         self.field_vm.pending_record_spawns.clear();
         self.cutscene.opening_chain_active = false;
+        // The seed's entry operand (`0x80073EF4` / `0x80073EF8`): the prologue
+        // scene's entry seats the player here, and its region selector reads
+        // the seat before the opening record moves him.
+        self.cutscene.new_game_entry_seat = Some(legaia_asset::new_game::NEW_GAME_ENTRY_SEAT);
         // Arm the arrival side of the scene-transition fade handshake
         // (`0x52F`/`0x530`/`0x531`, the shared `P1[0]` idiom): with `0x52F`
         // set, the destination entry script's arrival arm fires `4C 12 00 00

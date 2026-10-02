@@ -698,7 +698,13 @@ impl SceneHost {
         // in the scene's main region (it keeps `0xA40` wherever that already
         // qualifies, so town01's New Game opening is unchanged).
         // PORT: FUN_801D6704 (the entry seat)
-        let operand = self.pending_entry_seat.take();
+        // A New Game's seed operand stands in for a host-armed one on the
+        // prologue scene's entry (a host-armed operand is the later write and
+        // wins), and is spent by whichever entry comes first.
+        let new_game_seat = self.world.cutscene.new_game_entry_seat.take();
+        let operand = self.pending_entry_seat.take().or_else(|| {
+            new_game_seat.filter(|_| name == legaia_asset::new_game::OPENING_CUTSCENE_SCENE)
+        });
         let cold = crate::mode_entry_init::field_spawn(
             crate::mode_entry_init::FieldEntryMode::Cold,
             operand.unwrap_or((0, 0)),
