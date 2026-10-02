@@ -4073,6 +4073,22 @@ winged `v = 208` strip is a separate set of eight 28x12 records on its own
 CLUT block. Both are pinned in
 [the element-badge section](#the-element-badges-and-their-per-badge-palette).
 
+**The breadcrumb trail.** From the command ring on, the plaque sits behind
+the round prompt's `Begin` chip, which has glided to `(16, 14)` as a gold tab
+(record 1); the plaque (record `0x1A`) rests at `(68, 14)`. Choosing a ring
+arm glides that arm's chip onto the trail as a third tab abutting the
+plaque, at `x = width(name) + 0x54`: record `0x0D` (`Attack`, SCUS
+`0x8007B674`) from the attack-mode prompt (`0x78`) through the target cursor
+(`0x5A`) and the arts entry (`0x50`) - the `arts_bar_*` captures read
+`Begin | Vahn | Attack` over the direction chips - and record `0x0E`, the
+magic arm whose label `FUN_801D8DE8` case `0xE` points at the member's
+Ra-Seru name, through the spell window and its target step. The seat stores
+are `0x801D39A0..0x801D39AC` (`0x0D`) and `0x801D3968..0x801D3974` (`0x0E`);
+both records carry interior `w = 0x30`. The item window's trail ends in
+record `0x0C` (`Item`) and is drawn by its own builder. Port:
+`engine-core::battle_hud::battle_breadcrumb_third_tab`, drawn by
+`engine-ui::ui_overlay` on both hosts.
+
 ### The party status readout - and it has no gauge
 
 Two mutually exclusive surfaces, and **neither draws a bar**. There is no HP

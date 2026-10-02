@@ -1886,6 +1886,7 @@ impl PlayWindowApp {
             buffer: view.buffer,
             spent: view.spent,
             chip_costs: view.costs,
+            chip_icons: view.chip_icons,
             pool: view.pool,
             pool_max: view.pool_max,
             plate_value: view.plate_value,
@@ -2240,6 +2241,7 @@ impl PlayWindowApp {
         // this host and the browser page cannot disagree about which
         // surface is up.
         let plaque = bh::battle_active_actor(w_ref);
+        let third_tab = bh::battle_breadcrumb_third_tab(w_ref);
         let target_plaque = bh::battle_target_plaque(w_ref);
         let target_select = bh::battle_target_select_plaque(w_ref);
         let move_name = bh::battle_move_name(w_ref);
@@ -2296,6 +2298,7 @@ impl PlayWindowApp {
                 active_slot: bh::battle_readout_bar_slot(w_ref),
                 panels_parked: !bh::battle_panels_visible(w_ref),
                 begin_tab: bh::battle_begin_tab_visible(w_ref),
+                third_tab: third_tab.as_deref(),
                 move_name: move_name.as_deref(),
                 target_plaque: target_plaque.as_ref().map(|(n, b)| (n.as_str(), *b)),
                 target_select: target_select.as_ref().map(|(n, b)| (n.as_str(), *b)),

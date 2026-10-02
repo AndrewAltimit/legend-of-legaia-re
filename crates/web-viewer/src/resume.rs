@@ -90,6 +90,9 @@ impl LegaiaRuntime {
             // Landed on the running scene (or nowhere): the save applies over
             // it, with no entry - the native `resume_save` order.
             self.world_mut().load_full(parked.save);
+            if let Some(h) = self.scene_host.as_mut() {
+                h.refresh_party_battle_inputs();
+            }
         }
         crate::console_log(&format!(
             "resume: landed {} ({:?})",

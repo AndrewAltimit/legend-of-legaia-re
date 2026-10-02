@@ -250,6 +250,20 @@ impl SceneHost {
             .install_cast_effect_pool(std::sync::Arc::new(pool));
     }
 
+    /// Re-read the party's per-equipment battle inputs - the swing costs and
+    /// the Auto attack's pool-arm inputs - from the player battle files.
+    ///
+    /// Scene entry runs this, which is when retail selects the equipment
+    /// sections. A card load whose save is applied **after** the scene entry
+    /// (both hosts' resume order: enter, then hydrate) calls it once more,
+    /// so the loaded equipment is what prices the arts input - retail's
+    /// card load hydrates first and then loads the scene, so the sections it
+    /// selects are the save's own.
+    pub fn refresh_party_battle_inputs(&mut self) {
+        self.refresh_battle_swing_costs();
+        self.refresh_battle_auto_combo_inputs();
+    }
+
     /// Refresh [`crate::world::BattleState::swing_costs`] from the player
     /// battle files: for each roster character (Vahn / Noa / Gala = PROT
     /// 863 / 864 / 865), splice that character's *equipped* sections and

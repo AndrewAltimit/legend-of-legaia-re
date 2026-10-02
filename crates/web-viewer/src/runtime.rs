@@ -857,6 +857,9 @@ impl LegaiaRuntime {
             && let Some(host) = self.scene_host.as_mut()
         {
             host.world.load_full(sf);
+            // The save's equipment prices the arts input - the same refresh
+            // the native `BootSession::resume_save` runs.
+            host.refresh_party_battle_inputs();
         }
         // A deliberate scene boot restages BGM from scratch: clear the dedupe
         // latch, so the scene's own op-`0x35` start is honoured (and re-stages

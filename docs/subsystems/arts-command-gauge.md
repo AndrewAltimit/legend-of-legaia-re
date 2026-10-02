@@ -114,6 +114,24 @@ overlay and their texture sources - is packet-pinned in
 (the dome runs the standard battle input verbatim, so the decomposition
 there is the battle one).
 
+**The chip words.** The two arm chips do not read `Left` / `Right`: each
+chip's window record (`0x80076E98 + seat*0x18`, seats Left, High, Low,
+Right) carries an icon id at `+0x0E` / `+0x0F`, an index into SCUS's
+12-byte icon table `0x800732A4` (`(u, v)` at `+4`), whose ids `0x0C..=0x11`
+are the label-strip words `RaSeru`, `Arms`, `Right`, `Left`, `High`, `Low`.
+The entry opener's seat loop (`FUN_801D388C`, `0x801D3A48..0x801D3BCC`)
+stamps them from the overlay table `DAT_801F4B94 = [0x0D, 0x10, 0x11,
+0x0C]`, so the Left chip reads `Arms` and the Right chip `RaSeru`.
+Character id `2` (Noa) swaps the two arm seats - her record holds the
+Ra-Seru in equipment index 2 and the weapon in index 3 - and an arm whose
+equipment byte is empty (index 2 for the Left seat, index 3 for the Right,
+keyed by the unswapped seat command `DAT_801F4B8C`) takes the seat's id
+`+ 2`, the plain direction word. A committed pennant copies its chip's id
+`+ 6` (`0x801D3D1C..0x801D3D38`), the same six words repeated at
+`0x12..=0x17`, so the bar reads `RaSeru` / `Arms` too. Port:
+`engine-core::arts_command_input::retail_chip_icons`, drawn by
+`engine-ui::arts_input` on both hosts.
+
 The **enemy analogue** is the AGL action-budget in `FUN_801E9FD4`: a monster fills its per-turn action queue by rolling candidate moves and paying each move's `+0x74` cost out of the per-round AGL gauge (`actor[+0x154]`), the same "wider cost = fewer commands" mechanic on the AI side - see [`battle-action.md` § Enemy AGL action-budget](battle-action.md#enemy-agl-action-budget-fun_801e9fd4).
 
 > A separate `+2` in the same case (`icon = DAT_801F4B94[i] + 2`, gated on an *empty* equip slot, `equip[cmd] == 0`) is an empty-slot icon tweak, **not** the class penalty - a fully-equipped off-class character still shows the widened arm via the `+0x74` cost above.

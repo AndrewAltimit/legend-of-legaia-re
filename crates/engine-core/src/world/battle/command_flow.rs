@@ -639,6 +639,17 @@ impl World {
             pool: s.pool,
             pool_max: s.pool_max,
             costs: s.costs,
+            chip_icons: {
+                let roster = self.party_roster_slot(s.actor as usize);
+                let equip = self
+                    .party
+                    .roster
+                    .members
+                    .get(roster)
+                    .map(|r| r.equipment().slots)
+                    .unwrap_or_default();
+                crate::arts_command_input::retail_chip_icons(roster as u8 + 1, &equip)
+            },
             // The right-hand plate reads the caster's **Spirit** gauge and
             // never moves during entry - the entry budget's visible form is
             // the bar. Without a live Spirit value the pool stands in.

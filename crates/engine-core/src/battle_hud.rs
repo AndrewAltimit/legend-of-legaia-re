@@ -1455,8 +1455,11 @@ pub fn battle_active_actor(world: &crate::world::World) -> Option<(u8, String)> 
 /// `(104, 88)` to `(16, 14)`, the gold plate class) and drops the plaque
 /// (record 26) in beside it; every later menu step keeps both with a snap
 /// (`01/3 1A/3`). The item window continues the trail as `Begin | <name>
-/// | Item` through its own breadcrumb builder, and the arts-entry screen
-/// draws its own surface, so both are excluded here.
+/// | Item` through its own breadcrumb builder, so it is excluded here.
+///
+/// The arts-entry screen (`0x50`, step 9: `01/3 .. 1A/3`) keeps both, with
+/// the `Attack` tab after them ([`battle_breadcrumb_third_tab`]) - the
+/// `arts_bar_*` captures read `Begin | Vahn | Attack` over the chips.
 pub fn battle_begin_tab_visible(world: &crate::world::World) -> bool {
     matches!(
         battle_command_surface(world),
@@ -1464,10 +1467,43 @@ pub fn battle_begin_tab_visible(world: &crate::world::World) -> bool {
             CommandSurface::Ring
                 | CommandSurface::AttackMode
                 | CommandSurface::Targeting
+                | CommandSurface::ArtsInput
+                | CommandSurface::ArtsList
                 | CommandSurface::SpellBrowse
                 | CommandSurface::SpellTarget(_)
         )
     )
+}
+
+/// The third breadcrumb tab behind `Begin | <name>`, or `None`.
+///
+/// Choosing a ring arm glides that arm's chip onto the trail: record `0x0D`
+/// (`Attack`, the SCUS label `0x8007B674`) opens at the attack-mode prompt
+/// (`0x78`, step `0x30`: `0D/0`) and stays through the target cursor
+/// (`0x5A`: `0D/3`) and the arts entry (`0x50`: `0D/0`); record `0x0E` (the
+/// magic arm, whose label case `0xE` of `FUN_801D8DE8` points at the
+/// member's Ra-Seru name) opens with the spell window (`0x46`, step 7:
+/// `0E/0`) and stays through its target step. Both rest at
+/// `x = width(name) + 0x54` (`0x801D39A0..0x801D39AC` for `0x0D`,
+/// `0x801D3968..0x801D3974` for `0x0E`), i.e. abutting the plaque. The item
+/// window draws its own trail (record `0x0C`), so it is not named here.
+pub fn battle_breadcrumb_third_tab(world: &crate::world::World) -> Option<String> {
+    use crate::battle_input::BattleCommand;
+    match battle_command_surface(world)? {
+        CommandSurface::AttackMode
+        | CommandSurface::Targeting
+        | CommandSurface::ArtsInput
+        | CommandSurface::ArtsList => Some(BattleCommand::Attack.label().to_string()),
+        // The dome's Ra-Seru list is its own projection (`dome_command_chips`
+        // carries its arm word); the battle's resolver is not its source.
+        CommandSurface::SpellBrowse | CommandSurface::SpellTarget(_)
+            if world.mode != crate::world::SceneMode::MuscleDome =>
+        {
+            let slot = command_entry_actor(world)?;
+            Some(battle_magic_chip(world, slot).0)
+        }
+        _ => None,
+    }
 }
 
 /// Are the resting roster panels (records 6 / 78 / 79) on screen this
@@ -3227,7 +3263,45 @@ mod tests {
         assert_eq!(battle_readout_bar_slot(&w), Some(0));
         assert_eq!(battle_active_actor(&w).map(|(s, _)| s), Some(0));
         assert!(battle_begin_tab_visible(&w));
+        assert_eq!(battle_breadcrumb_third_tab(&w), None, "no arm chosen yet");
         assert_eq!(battle_ring_ap_plate_value(&w), Some(37));
+    }
+
+    /// The arts entry (`0x50`) keeps the trail the attack-mode prompt built,
+    /// `Begin | <name> | Attack`, and its chips wear the retail words: the
+    /// weapon arm `Arms`, the Ra-Seru arm `RaSeru`, an empty arm its plain
+    /// direction word.
+    #[test]
+    fn the_arts_entry_keeps_the_attack_trail_and_names_its_arm_chips() {
+        use crate::arts_command_input::{ArtsCommandInputSession, chip_icon};
+        let mut w = battle_world(1);
+        w.battle.arts_input = Some(ArtsCommandInputSession::new(0, 0, 100, [30; 4], 0));
+        assert_eq!(battle_command_surface(&w), Some(CommandSurface::ArtsInput));
+        assert!(battle_begin_tab_visible(&w));
+        assert_eq!(battle_active_actor(&w).map(|(s, _)| s), Some(0));
+        assert_eq!(battle_breadcrumb_third_tab(&w).as_deref(), Some("Attack"));
+        // Nothing equipped: both arms read their direction words.
+        let view = w.arts_input_view().expect("entry view");
+        assert_eq!(
+            view.chip_icons,
+            [
+                chip_icon::LEFT,
+                chip_icon::RIGHT,
+                chip_icon::LOW,
+                chip_icon::HIGH
+            ]
+        );
+        let mut eq = w.party.roster.members[0].equipment();
+        eq.slots[2] = 0x1B;
+        eq.slots[3] = 0x09;
+        w.party.roster.members[0].set_equipment(eq);
+        let view = w.arts_input_view().expect("entry view");
+        assert_eq!(
+            view.chip_icons[0],
+            chip_icon::ARMS,
+            "Vahn's Left is the weapon arm"
+        );
+        assert_eq!(view.chip_icons[1], chip_icon::RASERU);
     }
 
     #[test]
@@ -3353,6 +3427,7 @@ mod tests {
         assert!(!battle_panels_visible(&w));
         assert!(battle_begin_tab_visible(&w));
         assert!(battle_active_actor(&w).is_some());
+        assert_eq!(battle_breadcrumb_third_tab(&w).as_deref(), Some("Attack"));
         assert_eq!(battle_ring_ap_plate_value(&w), None);
         assert_eq!(
             battle_command_chips(&w).map(|c| c.phase),

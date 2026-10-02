@@ -1710,6 +1710,7 @@ impl BootSession {
     ) -> Result<SceneMode> {
         self.enter_scene_live(scene, opts)?;
         self.host.world.load_full(save);
+        self.host.refresh_party_battle_inputs();
         log::info!("seeded world from save ({} party records)", {
             self.host.world.party.party_count
         });
@@ -1749,6 +1750,9 @@ impl BootSession {
                 entered
             });
         self.host.world.load_full(save);
+        // The save's equipment prices the arts input, as retail's card load
+        // (hydrate, then scene load) selects it.
+        self.host.refresh_party_battle_inputs();
         log::info!(
             "resume: landed {} ({:?}); seeded world from save ({} party records)",
             landing.kind(),

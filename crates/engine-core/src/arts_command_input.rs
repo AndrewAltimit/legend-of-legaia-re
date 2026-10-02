@@ -465,6 +465,66 @@ impl From<&ArtsInputPhase> for ArtsInputScreen {
     }
 }
 
+/// Chip-label icon ids of the arts-entry direction chips: an index into the
+/// SCUS window-icon table `0x800732A4` (12-byte records, sheet `(u, v)` at
+/// `+4`) that every chip's window record carries at `+0x0E` / `+0x0F`.
+/// `0x0C` = `RaSeru`, `0x0D` = `Arms`, `0x0E` = `Right`, `0x0F` = `Left`,
+/// `0x10` = `High`, `0x11` = `Low`; a committed pennant takes its chip's id
+/// `+ 6` (`0x801D3D1C..0x801D3D38`), the same word on the pennant variant.
+pub mod chip_icon {
+    pub const RASERU: u8 = 0x0C;
+    pub const ARMS: u8 = 0x0D;
+    pub const RIGHT: u8 = 0x0E;
+    pub const LEFT: u8 = 0x0F;
+    pub const HIGH: u8 = 0x10;
+    pub const LOW: u8 = 0x11;
+}
+
+/// The plain direction words (Left, Right, Down, Up order) - what the chips
+/// read for a fighter with neither arm slot filled.
+pub const PLAIN_CHIP_ICONS: [u8; 4] = [
+    chip_icon::LEFT,
+    chip_icon::RIGHT,
+    chip_icon::LOW,
+    chip_icon::HIGH,
+];
+
+/// The retail chip words for one caster, in Command-byte order (Left,
+/// Right, Down, Up).
+///
+/// The entry opener's per-seat loop (`FUN_801D388C`, `0x801D3A48..0x801D3BCC`)
+/// stamps each chip record's icon from the seat table `DAT_801F4B94 =
+/// [0x0D, 0x10, 0x11, 0x0C]` (seats Left, High, Low, Right): Left reads
+/// `Arms`, Right `RaSeru`. Character id `2` (Noa) swaps the two arm seats,
+/// because her record carries the Ra-Seru in equipment index 2 and the
+/// weapon in index 3. An arm whose equipment byte is empty - index 2
+/// (`+0x198`) for the Left seat, index 3 (`+0x199`) for the Right, keyed by
+/// the **unswapped** seat command `DAT_801F4B8C` - instead reads the plain
+/// direction word, the seat's own id `+ 2` (`Left` / `Right`).
+///
+/// `equip` is the record's equipment bytes from `+0x196`.
+///
+/// PORT: FUN_801D388C (arts-entry chip-icon seat loop, `0x801D3A48..0x801D3B08`)
+pub fn retail_chip_icons(character_id: u8, equip: &[u8]) -> [u8; 4] {
+    let swap = character_id == 2;
+    let filled = |i: usize| equip.get(i).is_some_and(|&b| b != 0);
+    let left = if !filled(2) {
+        chip_icon::LEFT
+    } else if swap {
+        chip_icon::RASERU
+    } else {
+        chip_icon::ARMS
+    };
+    let right = if !filled(3) {
+        chip_icon::RIGHT
+    } else if swap {
+        chip_icon::ARMS
+    } else {
+        chip_icon::RASERU
+    };
+    [left, right, chip_icon::LOW, chip_icon::HIGH]
+}
+
 /// Renderer-agnostic snapshot of an open input session - everything the
 /// pinned chrome needs and nothing else. Built by
 /// `World::arts_input_view`, consumed by
@@ -481,6 +541,9 @@ pub struct ArtsInputView<'a> {
     pub pool_max: u16,
     /// Per-direction press costs (Left, Right, Down, Up).
     pub costs: [u16; 4],
+    /// Per-direction chip-label icon ids (Left, Right, Down, Up) -
+    /// [`retail_chip_icons`]; the pennants reuse their chip's word.
+    pub chip_icons: [u8; 4],
     /// Value the right-hand AP plate shows. Retail reads the caster's
     /// Spirit gauge here and it does **not** drain during entry.
     pub plate_value: u8,
@@ -588,6 +651,29 @@ pub fn resolve_entered_commands(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The seat loop's table `[0x0D, 0x10, 0x11, 0x0C]` plus Noa's swap and
+    /// the empty-arm `+ 2`: Vahn / Gala read `Arms | RaSeru`, Noa
+    /// `RaSeru | Arms` - the `arts_bar_*` captures - and an empty arm its
+    /// direction word.
+    #[test]
+    fn chip_icons_follow_the_seat_table_the_noa_swap_and_empty_arms() {
+        use chip_icon::*;
+        let full = [0, 0, 1, 1, 0];
+        assert_eq!(retail_chip_icons(1, &full), [ARMS, RASERU, LOW, HIGH]);
+        assert_eq!(retail_chip_icons(3, &full), [ARMS, RASERU, LOW, HIGH]);
+        assert_eq!(retail_chip_icons(2, &full), [RASERU, ARMS, LOW, HIGH]);
+        // The empty check keys on the unswapped seat: index 2 for Left.
+        assert_eq!(
+            retail_chip_icons(1, &[0, 0, 0, 1]),
+            [LEFT, RASERU, LOW, HIGH]
+        );
+        assert_eq!(
+            retail_chip_icons(2, &[0, 0, 1, 0]),
+            [RASERU, RIGHT, LOW, HIGH]
+        );
+        assert_eq!(retail_chip_icons(1, &[]), PLAIN_CHIP_ICONS);
+    }
 
     #[test]
     fn rot_blocks_each_limb_s_directions() {

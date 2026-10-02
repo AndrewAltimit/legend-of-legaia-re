@@ -668,6 +668,13 @@ pub struct BattleHudFrame<'a> {
     /// (`engine-core::battle_hud::battle_begin_tab_visible`). Without it the
     /// plaque takes its action seat `(16, 12)` (record 68).
     pub begin_tab: bool,
+    /// The third breadcrumb tab behind `Begin | <name>` - the chosen ring
+    /// arm's chip glided onto the trail (record `0x0D` `Attack` from the
+    /// attack-mode prompt through the arts entry, record `0x0E` the Ra-Seru
+    /// name through the spell window;
+    /// `engine-core::battle_hud::battle_breadcrumb_third_tab`). Drawn only
+    /// with [`Self::begin_tab`], abutting the plaque's right cap.
+    pub third_tab: Option<&'a str>,
     /// The art / spell / item name retail draws under the action
     /// (placement records 76 / 77): centred on `x = 0xA0` by
     /// [`crate::battle_name_banner::banner_x`], pen row `148`.
@@ -831,6 +838,9 @@ const BEGIN_TAB_INTERIOR_W: i32 = 36;
 /// The tab's word - the round prompt's own `Begin` chip label (record 1
 /// keeps the chip's string pointer).
 const BEGIN_TAB_LABEL: &str = "Begin";
+/// Interior width of the third breadcrumb tab - records `0x0D` / `0x0E`
+/// carry `w = 0x30`. A wider engine-font label widens its own tab.
+const THIRD_TAB_INTERIOR_W: i32 = 0x30;
 /// Pen row of the move-name label (placement records 76 / 77 at `y = 150`,
 /// glyph pen two rows up).
 const MOVE_NAME_Y: i32 = 148;
@@ -1607,6 +1617,31 @@ pub fn battle_hud_draws_for(
             stage_sprite(&mut sprites, src, content_x, content_y);
         }
         stage_text(&mut text, font, name, content_x + lead, content_y, white);
+        // The chosen arm's chip rests at `width(name) + 0x54`: content
+        // `0x54 - 0x44 = 16` px past the plaque's own content run, i.e. its
+        // plate starts where the plaque's right cap ends.
+        if frame.begin_tab
+            && let Some(label) = frame.third_tab.filter(|l| !l.is_empty())
+        {
+            let tab_x = content_x + lead + name_w + PLATE_CAP_W;
+            let label_w = font.layout_ascii(label).advance_x as i32;
+            plate_run(
+                &mut text,
+                &mut sprites,
+                tab_x,
+                PLAQUE_Y,
+                THIRD_TAB_INTERIOR_W.max(label_w),
+                true,
+            );
+            stage_text(
+                &mut text,
+                font,
+                label,
+                tab_x + PLATE_CAP_W,
+                PLAQUE_Y + PLAQUE_CONTENT_DY,
+                white,
+            );
+        }
     }
 
     // ---- The move-name label ----

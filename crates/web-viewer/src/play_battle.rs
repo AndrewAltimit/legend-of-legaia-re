@@ -539,6 +539,7 @@ impl LegaiaRuntime {
             buffer: view.buffer,
             spent: view.spent,
             chip_costs: view.costs,
+            chip_icons: view.chip_icons,
             pool: view.pool,
             pool_max: view.pool_max,
             plate_value: view.plate_value,
@@ -627,6 +628,7 @@ impl LegaiaRuntime {
         // this page and the native window cannot disagree about which
         // surface is up.
         let plaque = world.and_then(battle_active_actor);
+        let third_tab = world.and_then(bh::battle_breadcrumb_third_tab);
         let target_plaque = world.and_then(bh::battle_target_plaque);
         let target_select = world.and_then(bh::battle_target_select_plaque);
         let move_name = world.and_then(bh::battle_move_name);
@@ -683,6 +685,7 @@ impl LegaiaRuntime {
                 active_slot: world.and_then(bh::battle_readout_bar_slot),
                 panels_parked: !world.is_some_and(bh::battle_panels_visible),
                 begin_tab: world.is_some_and(bh::battle_begin_tab_visible),
+                third_tab: third_tab.as_deref(),
                 move_name: move_name.as_deref(),
                 target_plaque: target_plaque.as_ref().map(|(n, b)| (n.as_str(), *b)),
                 target_select: target_select.as_ref().map(|(n, b)| (n.as_str(), *b)),
