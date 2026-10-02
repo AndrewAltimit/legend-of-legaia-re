@@ -438,8 +438,8 @@ impl World {
     /// Bind a cross-context `A2 F8 <clip>` ExecMove onto the player: the
     /// bank's player cursor (what a following `AD F8 08` end-latch spin
     /// waits on), the player's script clip, and the gesture cue the windowed
-    /// and browser hosts draw (moves 1/2 are the locomotion clips their own
-    /// controller already animates).
+    /// and browser hosts draw when the pick binds a scene-bank record
+    /// ([`Self::player_move_cue`]).
     ///
     /// REF: FUN_800204F8
     pub(crate) fn bind_player_script_clip(&mut self, move_id: u8) {
@@ -447,9 +447,9 @@ impl World {
         self.props
             .bank
             .bind_actor_clip(crate::field_env::PLAYER_ANCHOR_TARGET, move_id, fallback);
-        self.field_player_script_clip(move_id);
-        if move_id > 2 {
-            self.locomotion.player_move_cues.push(move_id);
+        let pick = self.field_player_script_clip(move_id);
+        if let Some(id) = self.player_move_cue(&pick) {
+            self.locomotion.player_move_cues.push(id);
         }
     }
 

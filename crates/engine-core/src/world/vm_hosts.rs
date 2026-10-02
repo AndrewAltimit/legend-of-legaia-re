@@ -698,6 +698,26 @@ pub(super) struct FieldHostImpl<'a> {
     pub(super) world: &'a mut World,
 }
 
+impl FieldHostImpl<'_> {
+    /// Whether `ctx` is the **player** for an arm whose retail form compares
+    /// the executing context against the player object `_DAT_8007C364`
+    /// (`0x23` at `0x801DEC7C`, `4C 51` at `0x801E1954`) rather than testing
+    /// a flag. The port has no context pointers, so it reads the party-bank
+    /// bit `0x01000000` the player context carries - but a placement seated
+    /// with a `>= 0xF0` party model carries that bit too (`FUN_8003A1E4` ORs
+    /// it in at `0x8003A2DC..0x8003A3B4`, and scripts toggle it on every
+    /// gesture). A context stepped as a placement channel - its own script,
+    /// a cross-context poke on it, or the scene-entry pre-run - is never the
+    /// player, whatever its bit says.
+    ///
+    /// REF: FUN_801DE840 (the player-identity compares), FUN_8003A1E4
+    fn ctx_is_player(&self, ctx: &FieldCtx) -> bool {
+        ctx.flags & vm::field_player_clip::PARTY_BANK_FLAG != 0
+            && self.world.field_vm.executing_channel.is_none()
+            && !self.world.field_vm.entry_prerun
+    }
+}
+
 impl<'a> FieldHost for FieldHostImpl<'a> {
     fn player_cflag(&mut self, bit: u8, set: bool) -> bool {
         self.world.field_player_cflag(bit, set)
@@ -705,6 +725,34 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
 
     fn player_set_model(&mut self, value: i16) -> bool {
         self.world.field_player_set_model(value)
+    }
+
+    // Op `0x38` simple path: the compass-LUT heading lands on the resolved
+    // actor's `+0x26`. The extended `0xF8` (and a context that is the player)
+    // turns the player; a placement channel stepping - its own script or a
+    // poke on it - turns that placement; the inline talk runner turns the NPC
+    // whose record it runs. A context that is none of those (the system
+    // channel, a prop) has no actor heading the renderer reads.
+    // REF: FUN_801DE840 (case 0x38), FUN_8003C83C
+    fn face_compass(&mut self, ctx: &mut FieldCtx, index: u8, player: bool) {
+        let Some(heading) = crate::man_field_scripts::facing_index_to_engine_heading(index) else {
+            return;
+        };
+        let channel = self.world.field_vm.executing_channel;
+        if player
+            || (channel.is_none()
+                && ctx.script_id == u16::from(crate::field_env::PLAYER_ANCHOR_TARGET))
+        {
+            if let Some(slot) = self.world.player_actor_slot
+                && let Some(actor) = self.world.actors.get_mut(slot as usize)
+            {
+                actor.move_state.render_26 = heading;
+            }
+            return;
+        }
+        if let Some(slot) = channel.or(self.world.dialog.stepping_inline_npc) {
+            self.world.npcs.headings.insert(slot, heading);
+        }
     }
 
     fn global_flags(&self) -> u32 {
@@ -1622,7 +1670,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // Retail's `a0` is the executing context itself - `FUN_801DE840`'s
         // third argument - so the script that issues the op is the mirror
         // image, and the operand byte names what it reflects.
-        let ctx_is_player = ctx.flags & 0x0100_0000 != 0;
+        let ctx_is_player = self.ctx_is_player(ctx);
         self.world
             .spawn_reflection_controller(ctx_is_player, source_id, words)
             .is_some()
@@ -1664,7 +1712,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// off whichever seat it resolves the ctx to.
     fn op43_sub9_tween(&mut self, ctx: &mut FieldCtx, x: u16, y: u16, z: u16, ticks: u16) {
         use crate::world::{EasedMoveTarget, FieldEasedMove};
-        let is_player = ctx.flags & 0x0100_0000 != 0;
+        let is_player = self.ctx_is_player(ctx);
         let (target, start) = if is_player {
             let slot = self.world.player_actor_slot;
             let seat = slot
@@ -2253,6 +2301,8 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn move_to(&mut self, ctx: &mut FieldCtx, world_x: u16, world_z: u16, is_player: bool) {
+        // The VM's `is_player` is the bit; retail's is an identity compare.
+        let is_player = is_player && self.ctx_is_player(ctx);
         // Scene-entry spawn-prologue pre-run: the record seats ITS OWN actor
         // (the VM already wrote the channel ctx position; the pre-run's
         // write-through surfaces it). Never yank the player from here - a
@@ -2564,6 +2614,9 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         move_id: u8,
         is_player: bool,
     ) {
+        // The VM's `is_player` is the bit; retail's is an identity compare
+        // (`0x801E1954`).
+        let is_player = is_player && self.ctx_is_player(ctx);
         // Scene-entry spawn-prologue pre-run
         // ([`World::pre_run_field_channel_prologues`]): the record's own
         // `4C 51` is the actor's initial SEAT - retail's install pre-run

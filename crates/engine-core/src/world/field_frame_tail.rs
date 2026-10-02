@@ -161,11 +161,22 @@ impl World {
     /// queue is emptied whether or not a bundle is present, as retail's poke
     /// is consumed whether or not it binds.
     ///
-    /// The **NPC** half (op `0x4B`) is resolved and handed back:
-    /// `npc_bundle(slot)` answers whether the host animates that slot and, if
-    /// so, whether it poses from the party locomotion bundle (`Some(true)`) or
-    /// the scene's own (`Some(false)`); a cue's anim id names record `id - 1`
-    /// of that bundle, the same space the placement's own anim byte uses.
+    /// The **NPC** half (op `0x4B`, a cross-context ExecMove, a `4C 51` run's
+    /// move id) is resolved and handed back: `npc_bundle(slot)` answers
+    /// whether the host animates that slot and, if so, which bundle it spawned
+    /// posing from - the party locomotion bundle (`Some(true)`) or the scene's
+    /// own (`Some(false)`). A cue's anim id names record `id - 1` of the bank
+    /// the actor's **live** party-bank bit selects
+    /// ([`Self::npc_party_bank`]), as `FUN_800204F8` binds it - the host's
+    /// spawn answer stands in only for a slot no channel carries. A party
+    /// member's story beats drop that bit to play a scene-bank gesture and
+    /// raise it again after, so binding by spawn class played the gesture's
+    /// id out of the locomotion bundle: the wrong clip, no clip, or a
+    /// two-bone save-crystal record on a ten-bone body.
+    ///
+    /// A clip whose bone count differs from the one the slot was bound with
+    /// is refused: the hosts cut the actor's mesh to that count, and a pose
+    /// for another skeleton tears it apart.
     pub fn drain_field_anim_cues(
         &mut self,
         scene_bundle: Option<&PlayerAnmBundle>,
@@ -183,8 +194,9 @@ impl World {
                 if id <= 2 {
                     continue;
                 }
-                if let Some(clip) = FieldClipPlayer::from_record(bundle, id as usize - 1)
-                    && let Some(anim) = self.locomotion.player_anim.as_mut()
+                if let Some(anim) = self.locomotion.player_anim.as_mut()
+                    && let Some(clip) = FieldClipPlayer::from_record(bundle, id as usize - 1)
+                        .filter(|c| c.bone_count() == anim.idle.bone_count())
                 {
                     anim.push_scripted(clip);
                 }
@@ -208,14 +220,20 @@ impl World {
         cues.sort_unstable();
         cues.into_iter()
             .filter_map(|(slot, base_id)| {
-                let special = npc_bundle(slot)?;
-                let bundle = if special {
+                let spawn_party = npc_bundle(slot)?;
+                let bundle = if self.npc_party_bank(slot).unwrap_or(spawn_party) {
                     locomotion_bundle
                 } else {
                     scene_bundle
                 }?;
                 let record = (base_id as usize).checked_sub(1)?;
                 FieldClipPlayer::from_record(bundle, record)
+                    .filter(|p| {
+                        self.npcs
+                            .clip_bones
+                            .get(&slot)
+                            .is_none_or(|&b| p.bone_count() == b)
+                    })
                     .map(|player| (slot, base_id, NpcClipRetarget { slot, player }))
             })
             .collect::<Vec<_>>()
@@ -236,6 +254,10 @@ impl World {
     ///
     /// PORT: FUN_800204F8 (binder half)
     pub fn bind_npc_clip_cursor(&mut self, slot: u8, anim_id: u8, player: &FieldClipPlayer) {
+        self.npcs
+            .clip_bones
+            .entry(slot)
+            .or_insert_with(|| player.bone_count());
         let frames = u16::try_from(player.frame_count())
             .unwrap_or(u16::MAX)
             .max(1);
@@ -254,6 +276,19 @@ impl World {
             cursor.flags = flags;
         }
         self.npcs.clip_cursors.insert(slot, cursor);
+    }
+
+    /// Whether NPC `slot`'s actor carries the party-bank bit `0x01000000` -
+    /// the bit `FUN_800204F8` routes its clip ids through the party
+    /// locomotion bank on - read off its placement channel's live flag word.
+    /// `None` when no placement channel carries the slot.
+    ///
+    /// REF: FUN_800204F8 (`0x8002053C`), FUN_8003A1E4 (the spawn seed)
+    pub fn npc_party_bank(&self, slot: u8) -> Option<bool> {
+        self.channel_view()
+            .iter()
+            .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
+            .map(|c| c.ctx.flags & legaia_engine_vm::field_player_clip::PARTY_BANK_FLAG != 0)
     }
 
     /// The `+0x62` anim-control word of NPC `slot`'s spawned context, if a
@@ -322,6 +357,7 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use legaia_engine_vm as vm;
 
     #[test]
     fn npc_clips_run_on_the_field_only() {
@@ -389,5 +425,69 @@ mod tests {
         let mut vram = legaia_tim::Vram::new();
         assert!(!w.step_field_vram_effects(&mut vram, false));
         assert_eq!(w.ambient.clut_pending_game_ticks, 9);
+    }
+
+    fn party_channel(slot: usize, flags: u32) -> crate::field_channels::FieldChannel {
+        crate::field_channels::FieldChannel {
+            placement_index: slot,
+            ctx: legaia_engine_vm::field::FieldCtx {
+                flags,
+                ..Default::default()
+            },
+            record_offset: 0,
+            pc: 0,
+            done: false,
+            object_bind: false,
+        }
+    }
+
+    /// A party member's gesture binds from the bank its **live** party-bank
+    /// bit names, not the one its spawn model implied: the story scripts drop
+    /// the bit (`B2 <id> 18`) to play a scene-bank gesture.
+    #[test]
+    fn an_npc_cue_binds_from_the_bank_the_live_party_bit_names() {
+        // Locomotion record 4 is a 10-bone clip, scene record 4 a 10-bone
+        // clip of another length - the two banks are told apart by frames.
+        let loco = crate::field_anim::synth_anm_bundle(&[(10, 2); 5]);
+        let mut scene_recs = vec![(10, 2); 4];
+        scene_recs.push((10, 7));
+        let scene = crate::field_anim::synth_anm_bundle(&scene_recs);
+        let mut w = World::new();
+        w.mode = SceneMode::Field;
+        let party = vm::field_player_clip::PARTY_BANK_FLAG;
+        w.field_vm.channels.push(party_channel(3, party));
+
+        w.npcs.anim_cues.insert(3, (1, 5, Vec::new()));
+        let out = w.drain_field_anim_cues(Some(&scene), Some(&loco), |_| Some(true));
+        assert_eq!(
+            out[0].player.frame_count(),
+            2,
+            "bit up: the locomotion bank"
+        );
+
+        w.field_vm.channels[0].ctx.flags &= !party;
+        w.npcs.anim_cues.insert(3, (1, 5, Vec::new()));
+        let out = w.drain_field_anim_cues(Some(&scene), Some(&loco), |_| Some(true));
+        assert_eq!(out[0].player.frame_count(), 7, "bit down: the scene bank");
+    }
+
+    /// A clip for another skeleton never replaces a bound one: the hosts cut
+    /// the actor's mesh to the bound clip's bone count.
+    #[test]
+    fn an_npc_cue_for_another_skeleton_is_refused() {
+        let loco = crate::field_anim::synth_anm_bundle(&[(10, 2), (2, 3)]);
+        let mut w = World::new();
+        w.mode = SceneMode::Field;
+        w.field_vm
+            .channels
+            .push(party_channel(3, vm::field_player_clip::PARTY_BANK_FLAG));
+        let ten = FieldClipPlayer::from_record(&loco, 0).unwrap();
+        w.bind_npc_clip_cursor(3, 1, &ten);
+        w.npcs.anim_cues.insert(3, (1, 2, Vec::new()));
+        let out = w.drain_field_anim_cues(None, Some(&loco), |_| Some(true));
+        assert!(out.is_empty(), "the two-bone record is not a hero pose");
+        w.npcs.anim_cues.insert(3, (1, 1, Vec::new()));
+        let out = w.drain_field_anim_cues(None, Some(&loco), |_| Some(true));
+        assert_eq!(out.len(), 1);
     }
 }

@@ -97,6 +97,19 @@ pub trait FieldHost {
         None
     }
 
+    /// Op `0x38` simple path, the actor-facing half: the compass-LUT entry
+    /// `index` (`op0 & 0xF`) lands in the **resolved actor's** `+0x26` - the
+    /// heading its renderer draws it at. `player` is `true` for the extended
+    /// target `0xF8`, which retail's prologue resolves to the player object
+    /// (`FUN_8003C83C`) rather than to the context the caller passed. The
+    /// actor is host state, so the host owns the write; called before
+    /// [`Self::cam_cfg_lookup`]'s context write.
+    ///
+    /// REF: FUN_801DE840 (case 0x38), FUN_8003C83C
+    fn face_compass(&mut self, ctx: &mut FieldCtx, index: u8, player: bool) {
+        let _ = (ctx, index, player);
+    }
+
     /// Give the player one of inline item `item_id` (op 0x39 `GIVE_ITEM` - the
     /// treasure-chest / scripted-gift item-give). The original calls
     /// `func_0x8004313C()` (HUD/inventory window-bounds setup - writes the

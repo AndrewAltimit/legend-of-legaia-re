@@ -557,6 +557,7 @@ impl SceneHost {
         self.world.field_vm.channels_man = None;
         self.world.npcs.anim_cues.clear();
         self.world.npcs.clip_current.clear();
+        self.world.npcs.clip_bones.clear();
         // An in-flight ledge hop is scene-scoped, and its steering lock is
         // one-way: `start_field_ledge_hop` ORs `0x0008_0000` into the player's
         // `move_state.flags` (retail `0x801D25A8..0x801D25B8` on the player

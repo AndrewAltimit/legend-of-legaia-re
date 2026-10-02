@@ -205,6 +205,11 @@ pub struct FieldNpcState {
     /// poses that way instead of looping. Bound by
     /// [`crate::world::World::bind_npc_clip_cursor`].
     pub clip_cursors: std::collections::BTreeMap<u8, crate::field_env::PropAnim>,
+    /// The bone count each animated NPC's clip was first bound with, keyed
+    /// by placement slot - the count the hosts cut its mesh to. A re-target
+    /// to a clip of another count is refused
+    /// ([`crate::world::World::drain_field_anim_cues`]).
+    pub clip_bones: std::collections::HashMap<u8, usize>,
     /// The Y of each field NPC on the **glide** height arm, keyed by
     /// placement slot: retail's `+0x16` while the actor's flag word carries
     /// `0x2000`, which `FUN_8003BC08` steps toward the floor by at most
@@ -241,6 +246,7 @@ impl FieldNpcState {
             anim_cues: std::collections::HashMap::new(),
             clip_current: std::collections::HashMap::new(),
             clip_cursors: std::collections::BTreeMap::new(),
+            clip_bones: std::collections::HashMap::new(),
             glide_y: std::collections::HashMap::new(),
             cull_view: None,
         }
