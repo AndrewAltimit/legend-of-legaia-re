@@ -156,7 +156,11 @@ while a round still gains flags, since each unlocks the other:
   pad, so the locomotion's own touch dispatch posts the contact. `town01`
   P0[29], Vahn's front door, spawns the P2[5] night beat that sets `0x227`
   once `0x226` is up - the flag the spar's post-fight branch in P1[10] tests.
-- **Props.** A placed prop whose own bind record cleanly SETs a wanted flag.
+- **Props.** A placed prop whose own bind record cleanly SETs a wanted flag,
+  or spawns a partition-2 record that does (op `0x44`, three levels) - the
+  latch rule below applies to the prop's record as to a talk's. `rikuroa`
+  P0[2], the Genesis Tree, is the spawn case: examining it after Caruban
+  spawns P2[53], which raises `0x28A` and carries the party down to `map01`.
   An interact-gated one (the cupboard class, contact result bit `1`) is
   examined the way a talk is: stand beside it, face it so the prop arm of the
   facing probe lands on its box, press Cross and page what opens - `chitei2`
@@ -205,10 +209,20 @@ map as its street:
   probe points reach its contact box, including through the wall the door is
   set in. A second door leaf beside the contact counts as open for the same
   reason.
+- a **ledge hop** - a gate-1 walk-on tile whose partition-2 record the live
+  flags let spawn and whose body arcs the player to one landing tile (op
+  `0x43` sub-0/1/A/B on the `0xF8` channel) - is an edge like a teleport. A
+  mountain joins its terraces this way: the way down from `rikuroa`'s summit
+  is a kind-0 teleport into the west strip and then the P2[6..25] hops. A
+  record that hops more than once, or box-tests the player first, is left
+  out: its landing is not one place.
 
 The follower presses a teleport waypoint until the jump lands, backs out of a
 diagonal-wall notch where all four lattice steps read blocked, and, held
-against something for a second, tries the action button. Walks avoid the live
+against something for a second, tries the action button. A script that runs
+on the way and changes nothing - no flag, no cell, no scene (an examined prop
+with nothing to say) - leaves the route as it was rather than re-planning the
+walk component. Walks avoid the live
 walk-on bands (a band whose record's story gates shut it is walkable) unless
 one is the only way through.
 
@@ -282,7 +296,11 @@ and after that it is left out of the plan: which side it delivers to is story
 state the lattice cannot see (`suimon`'s two chambers join only once its water
 gate is drained). Candidates the lattice cannot place are still tried in
 turn behind the planned one. An arrival script that carries the party
-straight back out counts as a round trip, landing and all.
+straight back out counts as a round trip, landing and all. A detour that ends
+in a third scene leaves the player on another side of the scene it set out
+from, and a further detour is taken from there (up to three per hop): from
+`rim_elm_restored`, `rikuroa` turns the party away and the walk out lands by
+`cave01`, on the side of `map01` that holds `keikoku`'s west mouth.
 
 In both passes a scripted sequence gets Cross on a press-2-release-14 duty
 cycle, the naming prompt's Yes/No confirm gets Up first (it opens on No), and a
@@ -447,6 +465,11 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   is drained (the controller, P1[4], wants `0x26F`, the Water Gate key, whose
   one clean setter is `dolk2` P2[7], after Caruban), and `rikuroa`'s first
   arrival (P2[43]) turns the party back and `map01` P2[14] carries it to
-  `cave01`, a later milestone. The chapter-1 anchors come from separate
-  sessions (the `rim_elm_restored` state has not entered `dolk`), so the
-  story state that opened the way in the retail run is not in the seed.
+  `cave01`, a later milestone. From there the one crossing left is
+  `keikoku`'s west mouth, and its west lane is held: P2[7] at `(42, 89)`
+  walks the party back until `0x142`, the Caruban beat, is set. No walk
+  opened the way in the retail run either: the anchor, `vell_fog_field`, was
+  made by poking the `vell` door tile from a state standing outside Rim Elm
+  at `(96, 25)` (the scenario catalogue says so), and its flags over that
+  state are `vell`'s own entry script's. The milestone is a seated-tier
+  waypoint, not a place a pad can reach at that story point.

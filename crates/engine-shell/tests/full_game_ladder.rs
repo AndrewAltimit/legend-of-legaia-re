@@ -2191,6 +2191,82 @@ thread_local! {
     /// scene they were read from: trigger dispatch tile -> landing cell.
     static TELEPORTS: std::cell::RefCell<(String, WarpMap)> =
         std::cell::RefCell::new((String::new(), HashMap::new()));
+    /// The loaded field scene's **ledge hops**, decoded once per scene: see
+    /// [`ledge_hops`].
+    static LEDGE_HOPS: std::cell::RefCell<(String, Vec<LedgeHop>)> =
+        const { std::cell::RefCell::new((String::new(), Vec::new())) };
+}
+
+/// One ledge hop: trigger tile, landing cell, and the record's C1 / C2
+/// story gates (retail `FUN_8003BDE0`).
+type LedgeHop = ((i32, i32), Cell, Vec<u16>, Vec<u16>);
+
+/// The loaded field scene's **ledge hops** under the live flags: gate-1
+/// walk-on tiles whose partition-2 record the flags let spawn and whose
+/// body arcs the player to a landing tile (op `0x43` sub-0/1/A/B on the
+/// `0xF8` channel, `FUN_801DE840` case `0x43`) - trigger tile -> landing
+/// cell. A mountain joins its terraces with these the way a town joins its
+/// rooms with kind-0 teleports (`rikuroa` P2[6..25]). A record that hops
+/// more than once, or tests where the player stands first, is left out: its
+/// landing is not one place.
+fn ledge_hops(session: &BootSession) -> WarpMap {
+    use legaia_asset::field_disasm::{ActorCtrlKind, InsnInfo, LinearWalker};
+    use legaia_engine_core::man_field_scripts::{partition_record_span, partition2_record_gates};
+    if session.host.world.mode != SceneMode::Field {
+        return HashMap::new();
+    }
+    let name = scene_name(session);
+    LEDGE_HOPS.with(|t| {
+        let mut t = t.borrow_mut();
+        if t.0 != name {
+            let mut hops = Vec::new();
+            if let Some((mf, man, triggers)) = scene_man_and_triggers(session) {
+                for tr in triggers.iter().filter(|t| t.gate == 1) {
+                    let rec = usize::from(tr.record);
+                    let Some((start, pc0, len)) = partition_record_span(&mf, &man, 2, rec) else {
+                        continue;
+                    };
+                    let mut lands = Vec::new();
+                    let mut branches = false;
+                    for insn in LinearWalker::new(&man[start..start + len], pc0).flatten() {
+                        match insn.info {
+                            InsnInfo::ActorCtrl {
+                                kind: ActorCtrlKind::ArcJump { tile_x, tile_z, .. },
+                                ..
+                            } if insn.extended == Some(0xF8) && (tile_x, tile_z) != (0, 0) => {
+                                lands.push((tile_x, tile_z));
+                            }
+                            InsnInfo::BBoxTest { .. } => branches = true,
+                            _ => {}
+                        }
+                    }
+                    if let [(x, z)] = lands[..]
+                        && !branches
+                    {
+                        let at = |b: u8| {
+                            i16::from(b & 0x7F) * 128 + 0x40 + if b & 0x80 != 0 { 0x40 } else { 0 }
+                        };
+                        let (c1, c2) = partition2_record_gates(&mf, &man, rec).unwrap_or_default();
+                        hops.push((
+                            (i32::from(tr.tile_x), i32::from(tr.tile_z)),
+                            cell_of(at(x), at(z)),
+                            c1,
+                            c2,
+                        ));
+                    }
+                }
+            }
+            *t = (name, hops);
+        }
+        let w = &session.host.world;
+        let mut map = HashMap::new();
+        for (tile, land, c1, c2) in &t.1 {
+            if w.p2_record_gates_pass(c1, c2) {
+                map.entry(*tile).or_insert(*land);
+            }
+        }
+        map
+    })
 }
 
 /// The loaded field scene's kind-0 intra-scene teleports (`.MAP` trigger
@@ -2221,7 +2297,11 @@ fn teleports(session: &BootSession) -> WarpMap {
             }
             *t = (name, map);
         }
-        t.1.clone()
+        let mut warps = t.1.clone();
+        for (k, v) in ledge_hops(session) {
+            warps.entry(k).or_insert(v);
+        }
+        warps
     })
 }
 
@@ -2608,6 +2688,9 @@ type Seed = ((i16, i16), Option<(i16, i16)>);
 /// The first crossing of a chain, and the landing of its round trip.
 type FirstHop = Option<(String, Option<(i16, i16)>)>;
 
+/// Most [`cross_over`] detours one [`traverse`] takes per (scene, goal).
+const MAX_CROSS_OVERS: usize = 3;
+
 /// Most round trips one [`cross_over`] takes.
 const MAX_CROSSINGS: usize = 8;
 
@@ -2621,9 +2704,9 @@ const MAX_SIDES: usize = 16;
 /// other such side, since a round trip through `x` lands beside the door it
 /// leaves by. A breadth-first search from the player's side to one touching
 /// a door toward `toward` names the first crossing of the shortest chain:
-/// `map01`'s north half reaches Vidna's door through `suimon` and then
-/// `bylon`, while `dolk` - the nearer crossing - only opens a pocket south
-/// of the castle. `None` when the lattice shows no chain; the caller then
+/// once its water gate is drained, `map01`'s north half reaches the `vell`
+/// door through `suimon` and then `bylon`, while `dolk` - the nearer
+/// crossing - only opens a pocket south of the castle. `None` when the lattice shows no chain; the caller then
 /// tries every candidate in turn.
 fn crossing_plan(
     session: &BootSession,
@@ -3855,6 +3938,15 @@ fn pad_walk(
         let w = &session.host.world;
         if w.cutscene_timeline_active() || w.dialogue_owns_input() || w.active_fmv().is_some() {
             let site = format!("{} at {}", holder(session), park_site(session));
+            // A script that changes nothing - an examined prop with nothing
+            // to say (`ropeway`'s `21 26 FE FF` bind, which the stalled
+            // follower's action tap keeps opening) - leaves the route as it
+            // was: re-planning the whole walk component after each one costs
+            // more than the walk.
+            let before = (
+                flags_of_world(session),
+                cell_of(player_xz(session).0, player_xz(session).1),
+            );
             let r = run_while_moving(session, DEEP_EXIT_TICKS);
             if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
                 eprintln!(
@@ -3868,8 +3960,11 @@ fn pad_walk(
                 Run::Released => {}
                 other => return Err(format!("scripted sequence on the walk: {other:?}")),
             }
-            planned_from = None;
-            path.clear();
+            let (px, pz) = player_xz(session);
+            if before != (flags_of_world(session), cell_of(px, pz)) {
+                planned_from = None;
+                path.clear();
+            }
         }
         let d = dist(here(session));
         if d <= within {
@@ -4652,7 +4747,12 @@ fn object_door_beats(
 type PropBeat = ((u8, u8), (i32, i32), bool);
 
 /// The props of the loaded field scene whose own bind record cleanly SETs a
-/// still-clear flag the next anchor carries.
+/// still-clear flag the next anchor carries, or spawns a partition-2 record
+/// that does, itself or through what it spawns (op `0x44`, three levels).
+/// `rikuroa` P0[2], the Genesis Tree, is examined after Caruban: its body
+/// spawns P2[53], which raises `0x28A` and `0x2C2` and carries the party
+/// down to `map01`, where the latter plays the tree's revival. A prop whose
+/// record overreaches (sets a latch the next anchor lacks) is left alone.
 fn prop_beats(
     session: &BootSession,
     mf: &legaia_asset::man_section::ManFile,
@@ -4660,25 +4760,39 @@ fn prop_beats(
 ) -> Vec<PropBeat> {
     use legaia_engine_core::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
     let w = &session.host.world;
-    let setters0: BTreeSet<usize> = walk_partition_gflag_sites(mf, man, 0)
-        .iter()
-        .filter(|s| {
-            s.bank == FlagBank::System
-                && s.kind == FlagKind::Set
-                && s.clean
-                && !s.text_alias
-                && !s.debug_menu
-                && !w.system_flag_test(s.flag)
-                && next_anchor_has(s.flag)
-        })
-        .map(|s| s.record)
-        .collect();
+    let wanted = |part: usize| -> BTreeSet<usize> {
+        walk_partition_gflag_sites(mf, man, part)
+            .iter()
+            .filter(|s| {
+                s.bank == FlagBank::System
+                    && s.kind == FlagKind::Set
+                    && s.clean
+                    && !s.text_alias
+                    && !s.debug_menu
+                    && !w.system_flag_test(s.flag)
+                    && next_anchor_has(s.flag)
+            })
+            .map(|s| s.record)
+            .collect()
+    };
+    let setters0 = wanted(0);
+    let setters2 = wanted(2);
+    let over0 = overreaching_records(mf, man, 0);
+    let n0 = mf.partitions.first().map_or(0, Vec::len);
+    let n1 = mf.partitions.get(1).map_or(0, Vec::len);
+    let sets_wanted = |rec: usize| {
+        setters0.contains(&rec)
+            || (!over0.contains(&rec)
+                && spawned_p2(mf, man, 0, rec, n0 + n1, 3)
+                    .iter()
+                    .any(|r| setters2.contains(r)))
+    };
     w.props
         .bank
         .props
         .iter()
         .filter(|(_, p)| !p.collision_exempt())
-        .filter(|(_, p)| setters0.contains(&p.record))
+        .filter(|(_, p)| sets_wanted(p.record))
         .map(|(&a, p)| {
             let at = if p.moving_box() { p.world } else { p.collider };
             (a, at, p.interact_gated())
@@ -5277,7 +5391,12 @@ fn traverse(
     trail: &mut Vec<String>,
 ) -> Result<(), String> {
     let mut beaten: BTreeSet<String> = BTreeSet::new();
-    let mut crossed: BTreeSet<(String, String)> = BTreeSet::new();
+    // Crossing detours taken per (scene, goal). A detour that ends in a
+    // third scene (`rikuroa` turns the party away and the walk out lands
+    // by `cave01`) leaves the player on another side of `cur`, from which
+    // a further crossing is the way on (`keikoku`'s west mouth); a detour
+    // that came back to `cur`, or found no crossing at all, is not retried.
+    let mut crossed: BTreeMap<(String, String), usize> = BTreeMap::new();
     // Both tiers play the same beats and waypoints; the pad tier plays them
     // with pad input only ([`PAD_HAND`]).
     PAD_HAND.with(|h| h.set(pad));
@@ -5363,19 +5482,29 @@ fn traverse(
         match hop {
             Ok(entered) => trail.push(entered),
             Err(e)
-                if pad
-                    && e.contains("no walkable path")
-                    && crossed.insert((cur.clone(), goal.clone())) =>
+                if pad && e.contains("no walkable path") && {
+                    let n = crossed.entry((cur.clone(), goal.clone())).or_insert(0);
+                    *n += 1;
+                    *n <= MAX_CROSS_OVERS
+                } =>
             {
                 match cross_over(session, graph, &cur, &goal, &next) {
-                    Ok(s) => trail.push(format!("{s}(crossing)")),
+                    Ok(s) => {
+                        // Only a detour that ended in a third scene earns
+                        // another: one that came back to `cur` already
+                        // played every crossing its lattice named.
+                        if s == cur {
+                            crossed.insert((cur.clone(), goal.clone()), MAX_CROSS_OVERS);
+                        }
+                        trail.push(format!("{s}(crossing)"));
+                    }
                     Err(why) => {
                         if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
                             eprintln!("    [cross] {e}; {why}");
                         }
                         // Try the scene's beats next, as for any failed hop.
                         beaten.remove(&cur);
-                        crossed.insert((cur.clone(), goal.clone()));
+                        crossed.insert((cur.clone(), goal.clone()), MAX_CROSS_OVERS);
                         continue;
                     }
                 }
