@@ -127,6 +127,15 @@ pub struct AudioState {
     /// (`FUN_8002657C` + `FUN_80064370`), which the engine replaces with its
     /// own voice pool - so the port surfaces the *event*, not the teardown.
     pub pending_sound_release: bool,
+    /// Retail's sound-flag bit 0 (`_DAT_8007B750`): a script-owned track
+    /// start is pending its commit. Op-`0x35` sub-op `9` raises it
+    /// (`0x801E0260`); the sub-op `0xA` commit and the scene loader
+    /// `FUN_8003AEB0` end it. While it is up the swap poller `FUN_800243F0`
+    /// leaves the **outgoing** track in the BGM slot, so a sub-op `5` timed
+    /// release that expires inside the window releases that outgoing track.
+    /// The port starts the incoming track at sub-op `9` already, so such an
+    /// expiry has nothing of the port's to release ([`crate::world::World::tick`]).
+    pub start_pending_commit: bool,
     /// The five `gp` cells retail's **arm** half writes alongside
     /// [`crate::world::AudioState::sound_release`] (`gp+0x80C`/`0x810`), latched by
     /// [`crate::world::World::arm_sound_release`]. `None` until the field VM's BGM op
@@ -209,6 +218,7 @@ impl AudioState {
             minigame_bgm_active: false,
             sound_release: crate::sound_state::SoundReleaseTimer::default(),
             pending_sound_release: false,
+            start_pending_commit: false,
             sound_arm: None,
             levels: legaia_save::card::RetailAudioLevels::COLD_RESET,
             sfx_cue_delays: crate::scus_leaf_kernels::SfxCueDelays::new(

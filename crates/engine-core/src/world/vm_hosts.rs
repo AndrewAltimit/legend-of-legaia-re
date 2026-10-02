@@ -1322,6 +1322,17 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // alone, so none of them clears `current_bgm` either.
         if sub_op == 1 || sub_op == 9 {
             self.world.audio.current_bgm = Some(text_id);
+            // Sub-op 9 also raises the script-owned start bit 0 of
+            // `_DAT_8007B750` (`0x801E0260`): the poller holds the outgoing
+            // track in the slot until the sub-op 0xA commit.
+            if sub_op == 9 {
+                self.world.audio.start_pending_commit = true;
+            }
+        } else if sub_op == 0xA {
+            // The commit (`0x801E0264`) sets the release-ack bit 4, on which
+            // the poller installs the incoming track and clears bit 0
+            // (`0x8002472C`).
+            self.world.audio.start_pending_commit = false;
         } else if sub_op == 7 {
             // Sub-7 stores the next fight's battle sound set `_DAT_8007B880`
             // and makes no sequencer call: `lbu v1,0x1(s6)` tests the

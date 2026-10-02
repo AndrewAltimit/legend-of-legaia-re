@@ -1277,11 +1277,22 @@ impl World {
                 // `DAT_8007B708 = 0` - behind the same `_DAT_8007B868` gate.
                 // `FUN_800266E0` is BGM sub-op 2's primitive, so the expiry
                 // reaches both hosts' BGM routing as that pause.
-                self.pending_field_events
-                    .push(crate::field_events::FieldEvent::Bgm {
-                        text_id: 0,
-                        sub_op: 2,
-                    });
+                //
+                // Except inside a sub-op 9 -> 0xA swap: there the slot still
+                // holds the *outgoing* track (the poller `FUN_800243F0`
+                // stalls its install on the commit), and that is what the
+                // release stops - a cutscene's `9 · 5 · 0xA` fades the old
+                // score out under the new one's load. The port started the
+                // incoming track at sub-op 9, so pausing here would silence
+                // the new score for good (the commit then releases the paused
+                // source).
+                if !self.audio.start_pending_commit {
+                    self.pending_field_events
+                        .push(crate::field_events::FieldEvent::Bgm {
+                            text_id: 0,
+                            sub_op: 2,
+                        });
+                }
             }
         }
         // Step the active full-screen fade. A template with a hold countdown

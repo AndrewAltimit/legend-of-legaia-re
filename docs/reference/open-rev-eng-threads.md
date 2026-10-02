@@ -650,9 +650,18 @@ that faults may be SCUS walking the wrong caster, not the arm.
 
 ## Audio / BGM
 
-| Thread | Status | Next step |
-|---|---|---|
-| Is a field track the script left running audible under a mid-game movie's XA? | mostly resolved - yes, where the script left it sounding; town0d and jouine unmeasured | Captured with the trigger's two stores poked: town01 fmv 1 and chitei2 fmv 3 keep a sounding BGM voice in 81 and 83 of 84 samples (master `0x3FFF`, SPUCNT `0xC081`), while taiku's stop (sub-op 2) and garmel play over silence (0 of 85, 0 of 90). The port's default is now retail layering (`MovieScore::new`; ducking is `MovieScore::ducking`). Left: town0d (sub-ops 9, 5, A) and jouine (9, A, 5, 9, A), whose sub-op `0xA` waits on a loader flag and which no state reaches ([`audio.md`](../subsystems/audio.md)). |
+No audio thread is open.
+
+**Is a field track the script left running audible under a mid-game movie's XA**
+closed as yes, wherever the script left it sounding - `town0d` and `jouine`
+included, by their records' own words. The movie path makes no sequencer call,
+so the town01 / chitei2 captures (a sounding voice in 81 and 83 of 84 samples)
+against taiku's stop and garmel's silence decide it per record; both open
+records end on a commit that attaches a fresh track (`town0d` `9 · 5 · 0xA`,
+`jouine` `9 · 0xA · 5 · 9 · 0xA`) a few beats before the trigger. Reading those
+words found an engine defect: a sub-op `5` expiry inside a `9 · 0xA` window
+silenced the new track for good ([settled](re-settled-threads.md#audio),
+[`audio.md`](../subsystems/audio.md#the-timed-release-is-a-scheduled-bgm-pause)).
 
 **What does the field init's slot-10 load serve** closed as the credits theme, by disassembly and capture. The load is not a cue bank: `FUN_801D6704`'s two-part arm (`0x801D71A0..0x801D72D0`) stages the score from raw `0x428` (extraction 1062, one SEQ chunk) and its instruments from raw `0x422` (extraction 1056, a VAB-only bank), starts the sequence with `FUN_80026478(0x800705BC)` and sets the latch `0x8007B9B8`, while which `FUN_800243F0` returns at once (`0x8002440C`) - so the ordinary BGM loader stands aside for the credits. The ending states hold extraction 1062's SEQ chunk in slot 10's sequence buffer byte for byte ([settled](re-settled-threads.md#audio)).
 
