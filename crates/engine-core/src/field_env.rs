@@ -1392,9 +1392,17 @@ pub struct PropAnimBank {
 }
 
 impl PropAnimBank {
-    /// Build the bank for a scene: one entry per posed placement (`anim_id !=
-    /// 0`), with its bind record's program run through the spawn prologue so
-    /// the prop starts in its authored rest state.
+    /// Build the bank for a scene: one entry per bound placement, with its
+    /// bind record's program run through the spawn prologue so the prop
+    /// starts in its authored rest state.
+    ///
+    /// An unposed bind (`anim_id == 0`) gets an entry too. `FUN_8003A55C`
+    /// spawns an actor for every bound cell and only copies the header's
+    /// anim byte into `+0x5C` (`0x8003A8DC`) - it never branches on it - so
+    /// such an object is still a touch / interact target for its record:
+    /// `rikuroa` P0[2], the Genesis Tree, has no clip, and examining it
+    /// after Caruban is what spawns the P2[53] revival. Its stand-in clip
+    /// never draws: both hosts pose only `anim_id != 0` placements.
     ///
     /// `clip` resolves an anim id to `(frame_count, scaled_step, step_div)`
     /// from the scene's ANM bundle (record `anim_id - 1`); a prop whose clip
@@ -1425,9 +1433,6 @@ impl PropAnimBank {
             let Some(bind) = binds.get(&anchor) else {
                 continue;
             };
-            if bind.anim_id == 0 {
-                continue;
-            }
             let (frames, scaled, div) = bank.clip_meta(bind.anim_id).unwrap_or((1, false, 0));
             let Some((record, pc0)) = partition0_record(man_file, man, bind.record as usize) else {
                 continue;
