@@ -422,11 +422,27 @@ into the item / magic / arts windows ([battle](../subsystems/battle.md#how-the-e
   the search runs again with each such victim at `1` HP
   (`RetailBattle::action_victims`), so the replayed swing makes the kill; the
   victim's HP is then read at the phase, not at the prompt.
+  The other members then commit Spirit rather than Attack
+  (`BattleDrive::Action`'s `spare`): the victim at `1` HP dies to any swing,
+  so a plain Attack ahead of the seat in initiative order made the kill on
+  the wrong seat.
+- **An absorbed Seru.** A capture on the Done band's multi-cast continuation
+  `0x52` carries the Seru the killing blow absorbed in `ctx[+0x269]`, and the
+  grant before it already prepended spell `seru + 0x80` to the acting
+  character's list - so the lifted save knows the spell, and the replayed
+  kill's absorb lookup answered "known" and staged nothing, leaving `0x51`
+  for `0x5A`. The drive takes the spell back off that list on its first
+  battle tick (`absorbed`), the twin of crediting a cast's MP back.
+- **Past the end signal.** Once the `0x5A` gate raises `DAT_8007BD71 = 0xFE`
+  the action SM is no longer stepped: `ctx[+0x07]` reads `0x5A` and
+  `ctx[+0x13]` the pose actor through the whole results sequence, so the
+  state names a span of several hundred vsyncs. Such a capture is placed by
+  the sequencer's own words instead (`EndGate`): the phase word
+  `_DAT_8007BD2C`, the phase halfword `ctx[+0x6CE]` and the results hold
+  `gp+0xA54`, against `World::battle.victory` on the same pose actor
+  ([battle](../subsystems/battle.md#battle-end-retails-way---the-results-sequencer)).
 - **Seat and timing.** A pick no seed reproduces (a monster's plain strike on
-  a given seat, a victory banner on the seat retail's kill was made from)
-  can run out of budget or end the fight first. A capture on the Done band's
-  multi-cast continuation `0x52` after a Seru capture is not reached: the
-  engine's `0x51` hands on to `0x5A` there.
+  a given seat) can run out of budget or end the fight first.
 
 ### Replayed casts
 

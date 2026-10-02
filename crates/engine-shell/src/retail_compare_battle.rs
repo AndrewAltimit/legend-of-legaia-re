@@ -175,6 +175,13 @@ pub struct RetailBattle {
     pub caster_clip: u8,
     /// `ctx[+0x6DA]` - the yaw base a module walk arm swings.
     pub walk_yaw_base: u16,
+    /// `ctx[+0x269]` - the Seru a killing blow absorbed this action, staged
+    /// for the Done band's grant (`sb v0,0x269(a0)` at `0x801EE2E8`) and
+    /// cleared when `0x52` leaves.
+    pub absorbed_seru: u8,
+    /// The battle-end sequence's position, when the capture is past the end
+    /// signal ([`EndGate`]).
+    pub end_gate: EndGate,
     /// Each pool slot's live `+0x34` / `+0x38` pair (party `0..=2`,
     /// monsters `3..=7`), `None` for an empty slot.
     pub ground: Vec<Option<[i16; 2]>>,
@@ -629,6 +636,29 @@ impl RetailBattle {
     }
 }
 
+/// The battle-end signal byte the `0x5A` wipe gate raises.
+const END_SIGNAL: u32 = 0x8007_BD71;
+/// The results sequencer's phase word (`_DAT_8007BD2C`; the wipe cause at
+/// the signal).
+const END_PHASE_WORD: u32 = 0x8007_BD2C;
+/// The results hold `gp+0xA54`.
+const END_RESULTS_HOLD: u32 = 0x8007_BD6C;
+
+/// Read the [`EndGate`] off a capture.
+fn end_gate(ram: &[u8], ctx: u32) -> EndGate {
+    if game_anchors::u8_at(ram, END_SIGNAL) != 0xFE {
+        return EndGate::None;
+    }
+    let half = game_anchors::u16_at(ram, ctx + 0x6CE);
+    match (game_anchors::u32_at(ram, END_PHASE_WORD), half) {
+        (_, h) if h >= 2 => EndGate::Exit { phase: h },
+        (5, 1) => EndGate::Results {
+            hold: game_anchors::u32_at(ram, END_RESULTS_HOLD) as u16,
+        },
+        _ => EndGate::Loading,
+    }
+}
+
 fn in_ram(p: u32) -> bool {
     (0x8000_0000..0x8020_0000).contains(&p)
 }
@@ -704,6 +734,8 @@ impl RetailBattle {
             cam_accum: game_anchors::u32_at(ram, ctx + 0x87C),
             caster_clip: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1D9)),
             walk_yaw_base: game_anchors::u16_at(ram, ctx + 0x6DA),
+            absorbed_seru: game_anchors::u8_at(ram, ctx + 0x269),
+            end_gate: end_gate(ram, ctx),
             module_phase: game_anchors::u8_at(ram, ctx + 0x279),
             ground: (0..8u32)
                 .map(|slot| {
@@ -1215,16 +1247,94 @@ pub enum BattleDrive {
     /// the action SM holds `state` on `seat`. A monster seat that was
     /// casting (`category == 2`) casts the capture's spell `queued` on its
     /// next turn ([`legaia_engine_core::world::BattleState::forced_monster_cast`]).
+    ///
+    /// `spare` is set on a killing-blow capture
+    /// ([`RetailBattle::action_victims`]): the victim is replayed at `1` HP,
+    /// so any member's swing would kill it, and the members other than the
+    /// capture's seat commit Spirit instead of Attack - the kill is then the
+    /// seat's own, whatever order initiative put them in.
+    ///
+    /// `absorbed` is the Seru a capture on the Done band already staged
+    /// (`ctx[+0x269]`, [`RetailBattle::absorbed_seru`]). Retail's grant ran
+    /// before the capture, so the lifted save's spell list already holds
+    /// spell `absorbed + 0x80` - and the replayed kill's absorb lookup would
+    /// answer "known" and stage nothing. [`Self::prime`] takes it back off
+    /// the seat's list, the twin of crediting a cast's MP back.
     Action {
         seat: u8,
         state: u8,
         category: u8,
         queued: u8,
+        spare: bool,
+        absorbed: u8,
+        end: EndGate,
     },
 }
 
+/// Where in the battle-end sequence a capture sits, for a capture taken
+/// after the `0x5A` gate raised the end signal (`DAT_8007BD71 == 0xFE`).
+///
+/// Retail stops stepping the action SM on the signal and runs the results
+/// sequencer `FUN_8004E568` instead, so `ctx[+0x07]` stays `0x5A` (and
+/// `ctx[+0x13]` on the pose actor) through the whole load hold, results
+/// hold and exit fade. The action-SM state then names a span of several
+/// hundred vsyncs; the sequencer's own words place the capture in it
+/// ([`legaia_engine_core::world::VictoryPhase`] is the engine's twin):
+/// the phase word `_DAT_8007BD2C`, the phase halfword `ctx[+0x6CE]` and the
+/// results hold `gp+0xA54` (`0x8007BD6C`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EndGate {
+    /// No end signal: the action SM's own state places the capture.
+    #[default]
+    None,
+    /// Phases `0..=4`, the CD loads (`ctx[+0x6CE] == 0`).
+    Loading,
+    /// Phase 5 with `ctx[+0x6CE] == 1`: the results frame onward, `hold`
+    /// vsyncs into the hold.
+    Results { hold: u16 },
+    /// `ctx[+0x6CE] >= 2`: the exit fade, at that phase halfword.
+    Exit { phase: u16 },
+}
+
+impl EndGate {
+    fn to_env(self) -> (u8, u16) {
+        match self {
+            Self::None => (0, 0),
+            Self::Loading => (1, 0),
+            Self::Results { hold } => (2, hold),
+            Self::Exit { phase } => (3, phase),
+        }
+    }
+
+    fn from_env(kind: &str, value: &str) -> Option<Self> {
+        let value: u16 = value.trim().parse().ok()?;
+        Some(match kind.trim() {
+            "0" => Self::None,
+            "1" => Self::Loading,
+            "2" => Self::Results { hold: value },
+            "3" => Self::Exit { phase: value },
+            _ => return None,
+        })
+    }
+
+    /// Whether the engine's battle-end sequence holds this gate.
+    fn met(self, world: &legaia_engine_core::world::World) -> bool {
+        use legaia_engine_core::world::VictoryPhase;
+        let Some(seq) = world.battle.victory else {
+            return false;
+        };
+        match (self, seq.phase) {
+            (Self::Loading, VictoryPhase::Loading { .. }) => true,
+            (Self::Results { hold }, VictoryPhase::Results { hold: h }) => h == hold,
+            (Self::Exit { phase }, VictoryPhase::Exit { phase: p }) => p == phase,
+            _ => false,
+        }
+    }
+}
+
 impl BattleDrive {
-    /// `menu,<flow>,<seat>` or `action,<seat>,<state>,<category>,<queued>`.
+    /// `menu,<flow>,<seat>` or
+    /// `action,<seat>,<state>,<category>,<queued>[,<spare>,<absorbed>[,<end kind>,<end value>]]`.
     pub fn to_env(&self) -> String {
         match *self {
             Self::Menu { flow, seat } => format!("menu,{},{seat}", flow.raw()),
@@ -1233,11 +1343,28 @@ impl BattleDrive {
                 state,
                 category,
                 queued,
-            } => format!("action,{seat},{state},{category},{queued}"),
+                spare,
+                absorbed,
+                end,
+            } => {
+                let (kind, value) = end.to_env();
+                format!(
+                    "action,{seat},{state},{category},{queued},{},{absorbed},{kind},{value}",
+                    u8::from(spare)
+                )
+            }
         }
     }
 
     pub fn from_env(s: &str) -> Option<Self> {
+        let fields: Vec<&str> = s.split(',').collect();
+        if fields.len() == 9 && fields[0].trim() == "action" {
+            let mut d = Self::from_env(&fields[..7].join(","))?;
+            if let Self::Action { end, .. } = &mut d {
+                *end = EndGate::from_env(fields[7], fields[8])?;
+            }
+            return Some(d);
+        }
         let parts: Vec<u8> = s
             .split(',')
             .skip(1)
@@ -1253,6 +1380,18 @@ impl BattleDrive {
                 state,
                 category,
                 queued,
+                spare: false,
+                absorbed: 0,
+                end: EndGate::None,
+            }),
+            ("action", &[seat, state, category, queued, spare, absorbed]) => Some(Self::Action {
+                seat,
+                state,
+                category,
+                queued,
+                spare: spare != 0,
+                absorbed,
+                end: EndGate::None,
             }),
             _ => None,
         }
@@ -1276,9 +1415,19 @@ impl BattleDrive {
         }
     }
 
-    /// Arm the drive's one-shot world seed (a monster cast to replay).
-    /// Idempotent while the seed is unconsumed.
+    /// Arm the drive's one-shot world seed (a monster cast to replay, an
+    /// absorbed Seru to take back off the seat's spell list). Called once,
+    /// on the first battle tick.
     pub fn prime(&self, world: &mut legaia_engine_core::world::World) {
+        if let Self::Action { seat, absorbed, .. } = *self
+            && absorbed != 0
+            && seat < 3
+        {
+            let roster = world.party_roster_slot(usize::from(seat));
+            if let Some(rec) = world.party.roster.members.get_mut(roster) {
+                unlearn_spell(rec, absorbed.wrapping_add(0x80));
+            }
+        }
         if let Self::Action {
             seat,
             category: 2,
@@ -1304,6 +1453,14 @@ impl BattleDrive {
             Self::Menu { flow, seat } => {
                 world.battle.flow == flow
                     && (!menu_seat_matters(flow) || world.battle_ctx.active_actor == seat)
+            }
+            Self::Action { seat, end, .. } if end != EndGate::None => {
+                // The sequencer frames its pose actor `ctx[+0x13]`.
+                end.met(world)
+                    && world
+                        .battle
+                        .victory
+                        .is_some_and(|v| v.pose_actor == usize::from(engine_seat(seat, pc)))
             }
             Self::Action { seat, state, .. } => {
                 world.battle.flow == BattleFlowState::Idle
@@ -1354,8 +1511,14 @@ impl BattleDrive {
                     _ => None,
                 }
             }
-            Self::Action { seat, category, .. } => Some(match cmd.phase {
+            Self::Action {
+                seat,
+                category,
+                spare,
+                ..
+            } => Some(match cmd.phase {
                 CommandPhase::Menu { .. } if cmd.actor == seat && category == 4 => PadButton::Down,
+                CommandPhase::Menu { .. } if cmd.actor != seat && spare => PadButton::Down,
                 CommandPhase::RoundPrompt { .. }
                 | CommandPhase::Menu { .. }
                 | CommandPhase::AttackMode { .. } => PadButton::Left,
@@ -1372,6 +1535,32 @@ impl BattleDrive {
         }
         self.press(world).map_or(0, |b| b.mask())
     }
+}
+
+/// Take spell `spell_id` back off a record's list - the inverse of the
+/// Done band's prepend (`legaia_engine_core::magic_xp::learn_spell_prepend`):
+/// ids, levels and the parallel XP words above it shift down one. A list
+/// without the spell is left alone.
+fn unlearn_spell(record: &mut legaia_save::CharacterRecord, spell_id: u8) {
+    const SPELL_XP_OFFSET: usize = 0x8;
+    let mut list = record.spell_list();
+    let count = usize::from(list.count).min(list.ids.len());
+    let Some(at) = list.ids[..count].iter().position(|&id| id == spell_id) else {
+        return;
+    };
+    for i in at..count - 1 {
+        list.ids[i] = list.ids[i + 1];
+        list.levels[i] = list.levels[i + 1];
+        let src = SPELL_XP_OFFSET + (i + 1) * 4;
+        let dst = SPELL_XP_OFFSET + i * 4;
+        record.raw.copy_within(src..src + 4, dst);
+    }
+    list.ids[count - 1] = 0;
+    list.levels[count - 1] = 0;
+    let last = SPELL_XP_OFFSET + (count - 1) * 4;
+    record.raw[last..last + 4].fill(0);
+    list.count -= 1;
+    record.set_spell_list(list);
 }
 
 /// Whether a menu surface belongs to one member (the ring, a submenu, the
@@ -1409,6 +1598,9 @@ impl RetailBattle {
                 state,
                 category: self.queued_category,
                 queued: self.queued_action,
+                spare: !self.action_victims().is_empty(),
+                absorbed: if seat < 3 { self.absorbed_seru } else { 0 },
+                end: self.end_gate,
             }),
             _ => None,
         }
@@ -1439,6 +1631,17 @@ fn run_drive(
         }
         if world.mode != SceneMode::Battle {
             break;
+        }
+        if std::env::var_os("LEGAIA_RC_DRIVE_TRACE").is_some() {
+            let hp: Vec<u16> = world.actors.iter().take(8).map(|a| a.battle.hp).collect();
+            eprintln!(
+                "[rc] t={t} mode={:?} flow={:?} cmd={} act={} st=0x{:02X} hp={hp:?}",
+                world.mode,
+                world.battle.flow,
+                world.battle.command.is_some(),
+                world.battle_ctx.active_actor,
+                world.battle_ctx.action_state
+            );
         }
         let pad = if reached.is_some() {
             0
@@ -1563,8 +1766,13 @@ pub fn compare_battle(
         }
         _ => true,
     };
-    let phase_ok =
-        engine.flow == want && (!replayed || engine.action_state == battle.action_state) && seat_ok;
+    // Past the end signal the action SM is parked and the drive's own gate
+    // ([`EndGate`]: the sequencer phase on the pose actor) is the phase.
+    let end_held = battle.end_gate != EndGate::None && matches!(engine.driven, Some(Some(_)));
+    let phase_ok = end_held
+        || engine.flow == want
+            && (!replayed || engine.action_state == battle.action_state)
+            && seat_ok;
     let inflight = match engine.inflight {
         None => String::new(),
         Some(Some(t)) => format!("; cast replayed, phase reached at +{t}"),
@@ -1573,6 +1781,10 @@ pub fn compare_battle(
     let driven = match (plan, engine.driven) {
         (_, None) if plan == SeedPlan::Opening => "; sampled at the battle-mode flip".to_string(),
         (_, None) => String::new(),
+        (_, Some(Some(t))) if battle.end_gate != EndGate::None => format!(
+            "; driven by pad, battle-end {:?} reached at +{t}",
+            battle.end_gate
+        ),
         (_, Some(Some(t))) => format!("; driven by pad, reached at +{t}"),
         (_, Some(None)) => "; driven by pad, never reached".to_string(),
     };
@@ -1795,11 +2007,51 @@ mod tests {
                 state: 0x6F,
                 category: 2,
                 queued: 0x7A,
+                spare: false,
+                absorbed: 0,
+                end: EndGate::Exit { phase: 3 },
+            },
+            BattleDrive::Action {
+                seat: 0,
+                state: 0x52,
+                category: 3,
+                queued: 0x0F,
+                spare: true,
+                absorbed: 1,
+                end: EndGate::None,
+            },
+            BattleDrive::Action {
+                seat: 0,
+                state: 0x5A,
+                category: 3,
+                queued: 0x0D,
+                spare: true,
+                absorbed: 0,
+                end: EndGate::Results { hold: 80 },
             },
         ] {
             assert_eq!(BattleDrive::from_env(&d.to_env()), Some(d));
         }
         assert_eq!(BattleDrive::from_env("menu,40"), None);
+    }
+
+    /// Taking an absorbed Seru back off a list undoes the Done band's
+    /// prepend exactly - ids, levels and the XP words - and leaves a list
+    /// without it alone.
+    #[test]
+    fn unlearning_undoes_the_absorb_grant() {
+        use legaia_engine_core::magic_xp::learn_spell_prepend;
+        let mut rec = legaia_save::CharacterRecord::zeroed();
+        learn_spell_prepend(&mut rec, 0x83);
+        learn_spell_prepend(&mut rec, 0x85);
+        rec.raw[0x8..0xC].copy_from_slice(&7u32.to_le_bytes());
+        rec.raw[0xC..0x10].copy_from_slice(&9u32.to_le_bytes());
+        let before = rec.raw.clone();
+        learn_spell_prepend(&mut rec, 0x81);
+        unlearn_spell(&mut rec, 0x81);
+        assert_eq!(rec.raw, before);
+        unlearn_spell(&mut rec, 0x8A);
+        assert_eq!(rec.raw, before);
     }
 
     /// The seed plan follows the flow byte: the entry band opens, a cast in
