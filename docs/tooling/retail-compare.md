@@ -839,6 +839,13 @@ overworld ([above](#the-corpus)), where the word, the gate and the camera
 agree; scored under the label, every one of those channels had compared the
 overworld against the town.
 
+One bit still differs on `s2_rimelm_town01`: the engine holds flag `0x528`,
+retail none of `0x526..0x531`. That band is the entry script's own: each
+pass of `map01`'s per-frame body clears `0x527..0x52E` and sets `0x528` while
+the player stands in the map, so the engine's freshly entered `map01` raises
+it, while retail's state is a door already under way with the band down. It
+is the same capture timing as the word and the gate, on the flag bank.
+
 ### A held track
 
 The word says which track a script selected, not whether it sounds. Retail's
