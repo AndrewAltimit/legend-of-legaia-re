@@ -753,6 +753,47 @@ impl PlayWindowApp {
             .collect();
     }
 
+    /// Whether this frame draws the Baka cabinet / round-chrome widgets as
+    /// retail quads: a duel is up, its VRAM is on the GPU, and that VRAM
+    /// carries the PROT 1203 pages the widget table samples
+    /// (`BakaDuelSurface::hud_art_resident`). `hud.rs` falls back to the
+    /// text labels when it does not hold.
+    pub(super) fn baka_hud_art_drawn(&self) -> bool {
+        self.session.host.world.mode == SceneMode::BakaFighter
+            && self.baka_gpu.is_some()
+            && self.baka_surface.hud_art_resident()
+    }
+
+    /// The Baka cabinet's and round chrome's widgets as screen-space PSX
+    /// primitives against the duel VRAM: the shared quad kernel
+    /// (`BakaDuelSurface::hud_quads`, the retail emitter `FUN_801d5ed0`)
+    /// through the shared builder (`ui_baka_strips::baka_hud_prims`) - the
+    /// browser play page makes the same two calls. Empty unless
+    /// [`Self::baka_hud_art_drawn`].
+    pub(super) fn baka_hud_prims(&self) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+        if !self.baka_hud_art_drawn() {
+            return Vec::new();
+        }
+        let Some(f) = self.session.host.world.minigames.baka_fighter.as_ref() else {
+            return Vec::new();
+        };
+        let views: Vec<legaia_engine_render::ui_dance::DanceHudQuadView> = self
+            .baka_surface
+            .hud_quads(f)
+            .iter()
+            .map(|q| legaia_engine_render::ui_dance::DanceHudQuadView {
+                poly_code: q.poly_code,
+                rect: (q.x0, q.y0, q.x1, q.y1),
+                uv: q.uv,
+                rgb_top: q.rgb_top,
+                rgb_bottom: q.rgb_bottom,
+                clut: q.clut,
+                tpage: q.tpage_attr,
+            })
+            .collect();
+        legaia_engine_render::ui_baka_strips::baka_hud_prims(&views)
+    }
+
     /// PROT 0976's HUD widget table in its loaded form, or `None` when the
     /// overlay does not resolve.
     fn baka_overlay_hud_widgets(&self) -> Option<Vec<legaia_asset::baka_opponents::BakaHudWidget>> {

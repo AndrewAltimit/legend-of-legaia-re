@@ -819,24 +819,34 @@ impl PlayWindowApp {
             let cabinet_cells = f.cabinet_cells();
             if !self.baka_chrome_frame.is_empty() || !cabinet_cells.is_empty() {
                 let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+                // With the duel VRAM's HUD pages resident the widgets draw as
+                // retail quads in the prim pass (`baka_hud_prims`); these
+                // labels are the fallback without them.
+                let quads = self.baka_hud_art_drawn();
                 let draws: Vec<_> = self.baka_chrome_frame.iter().map(|(d, _)| *d).collect();
-                let mut cd = legaia_engine_render::ui_baka_strips::baka_widget_label_draws_for(
-                    &self.font,
-                    &legaia_engine_core::baka_fighter_chrome::chrome_labels(&draws),
-                    [1.0; 4],
-                );
+                let mut cd = if quads {
+                    Vec::new()
+                } else {
+                    legaia_engine_render::ui_baka_strips::baka_widget_label_draws_for(
+                        &self.font,
+                        &legaia_engine_core::baka_fighter_chrome::chrome_labels(&draws),
+                        [1.0; 4],
+                    )
+                };
                 // The cabinet's own widgets (`FUN_801CF388`): the attract
                 // prompt, the "PLAYER SELECT" banner and the "NEXT GAME /
                 // PAY OUT" sheet, plus the sheet's pot numeral off the live
                 // accumulator.
                 use legaia_engine_core::baka_cabinet as bcab;
-                cd.extend(
-                    legaia_engine_render::ui_baka_strips::baka_widget_label_draws_for(
-                        &self.font,
-                        &bcab::choice_sheet_labels(&cabinet_cells),
-                        [1.0; 4],
-                    ),
-                );
+                if !quads {
+                    cd.extend(
+                        legaia_engine_render::ui_baka_strips::baka_widget_label_draws_for(
+                            &self.font,
+                            &bcab::choice_sheet_labels(&cabinet_cells),
+                            [1.0; 4],
+                        ),
+                    );
+                }
                 if sheet.is_some() {
                     cd.extend(
                         legaia_engine_render::ui_baka_strips::baka_digit_strip_draws_for(

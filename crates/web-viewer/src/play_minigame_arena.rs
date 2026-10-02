@@ -410,6 +410,45 @@ impl LegaiaRuntime {
         }
     }
 
+    /// Whether this frame draws the Baka cabinet / round-chrome widgets as
+    /// retail quads: a duel is posed and its VRAM - which the page uploads
+    /// off `play_mg_baka_scene_vram` - carries the PROT 1203 pages the
+    /// widget table samples (`BakaDuelSurface::hud_art_resident`). The
+    /// native window's `baka_hud_art_drawn` twin.
+    pub(crate) fn baka_hud_art_drawn(&self) -> bool {
+        self.baka_session().is_some() && self.minigame_ui.baka_surface.hud_art_resident()
+    }
+
+    /// The Baka cabinet's and round chrome's widgets as screen-space PSX
+    /// primitives against the duel VRAM: the shared quad kernel
+    /// (`BakaDuelSurface::hud_quads`, retail `FUN_801d5ed0`) through the
+    /// shared builder (`ui_baka_strips::baka_hud_prims`), the same two calls
+    /// the native window makes. Empty unless [`Self::baka_hud_art_drawn`].
+    pub(crate) fn baka_hud_prims(&self) -> Vec<legaia_engine_ui::screen_prim::ScreenPrim> {
+        if !self.baka_hud_art_drawn() {
+            return Vec::new();
+        }
+        let Some(f) = self.baka_session() else {
+            return Vec::new();
+        };
+        let views: Vec<legaia_engine_ui::ui_dance::DanceHudQuadView> = self
+            .minigame_ui
+            .baka_surface
+            .hud_quads(f)
+            .iter()
+            .map(|q| legaia_engine_ui::ui_dance::DanceHudQuadView {
+                poly_code: q.poly_code,
+                rect: (q.x0, q.y0, q.x1, q.y1),
+                uv: q.uv,
+                rgb_top: q.rgb_top,
+                rgb_bottom: q.rgb_bottom,
+                clut: q.clut,
+                tpage: q.tpage_attr,
+            })
+            .collect();
+        legaia_engine_ui::ui_baka_strips::baka_hud_prims(&views)
+    }
+
     /// The native window's Baka Fighter HUD lines.
     pub(crate) fn baka_status_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
         let Some(f) = self.baka_session() else {
@@ -447,23 +486,27 @@ impl LegaiaRuntime {
         // The round chrome (`BakaChrome`: intro card, ROUND banner,
         // countdown) and the "NEXT GAME / PAY OUT" sheet, through the label
         // kernels the native window draws with.
+        // With the duel VRAM's HUD pages resident both draw as retail quads
+        // in the prim pass (`baka_hud_prims`); the labels are the fallback.
         use legaia_engine_core::{baka_cabinet as bcab, baka_fighter_chrome as bc};
-        out.extend(
-            legaia_engine_ui::ui_baka_strips::baka_widget_label_draws_for(
-                font,
-                &bc::chrome_labels(&f.chrome_frame().draws),
-                WHITE,
-            ),
-        );
-        // The cabinet's own widgets: the attract prompt, the "PLAYER
-        // SELECT" banner and the "NEXT GAME / PAY OUT" sheet.
-        out.extend(
-            legaia_engine_ui::ui_baka_strips::baka_widget_label_draws_for(
-                font,
-                &bcab::choice_sheet_labels(&f.cabinet_cells()),
-                WHITE,
-            ),
-        );
+        if !self.baka_hud_art_drawn() {
+            out.extend(
+                legaia_engine_ui::ui_baka_strips::baka_widget_label_draws_for(
+                    font,
+                    &bc::chrome_labels(&f.chrome_frame().draws),
+                    WHITE,
+                ),
+            );
+            // The cabinet's own widgets: the attract prompt, the "PLAYER
+            // SELECT" banner and the "NEXT GAME / PAY OUT" sheet.
+            out.extend(
+                legaia_engine_ui::ui_baka_strips::baka_widget_label_draws_for(
+                    font,
+                    &bcab::choice_sheet_labels(&f.cabinet_cells()),
+                    WHITE,
+                ),
+            );
+        }
         if f.cabinet().choice_sheet().is_some() {
             let pot = self
                 .scene_host

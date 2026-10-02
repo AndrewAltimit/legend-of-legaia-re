@@ -2873,6 +2873,10 @@ impl PlayWindowApp {
             // retail's own quads on the same page, through the shared
             // `ui_dance::dance_hud_prims` the browser play page emits with.
             screen_prims.extend(self.dance_hud_prims());
+            // The Baka cabinet's and round chrome's widgets on the duel
+            // VRAM's PROT 1203 pages (`baka_hud_prims`), the browser play
+            // page's twin.
+            screen_prims.extend(self.baka_hud_prims());
             // The slot machine's paylines, off the machine's own ported pass
             // and projection - the segments both browser pages stroke.
             screen_prims.extend(self.slot_payline_screen_prims());

@@ -886,8 +886,8 @@ pub fn choice_sheet(menu_cursor: i32, blink: i32) -> [SheetCell; 5] {
 }
 
 /// The text a glyph-less host draws for a sheet widget. The cells index the
-/// PROT 1203 tally page, which only the standalone minigames page uploads;
-/// the native window and the play page print the cell's words at its
+/// PROT 1203 tally page; a play host without the duel VRAM resident
+/// prints the cell's words at its
 /// centre instead.
 pub fn sheet_label(widget: u8) -> &'static str {
     match widget {

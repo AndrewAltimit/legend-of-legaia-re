@@ -82,6 +82,25 @@ pub fn baka_widget_label_draws_for(
     out
 }
 
+/// Ordering-table bucket every Baka Fighter HUD emit links at: retail's
+/// emitter `FUN_801d5ed0` links each packet into `_DAT_801DBEBC` and bumps
+/// that slot to `3`.
+pub const BAKA_HUD_OT: u32 = 3;
+
+/// The cabinet's and the round chrome's widget quads
+/// (`engine_core::baka_fighter_chrome::hud_widget_quads`, one per
+/// `FUN_801d5ed0` call) as screen-space PSX primitives against the duel
+/// VRAM, linked at [`BAKA_HUD_OT`]. The view is the dance HUD's, because the
+/// two emitters build the same `POLY_GT4`: packet corners, per-corner UVs,
+/// a top / bottom colour pair, CLUT and the ABR-folded texpage.
+///
+/// REF: FUN_801d5ed0
+pub fn baka_hud_prims(
+    quads: &[crate::ui_dance::DanceHudQuadView],
+) -> Vec<crate::screen_prim::ScreenPrim> {
+    crate::ui_dance::dance_hud_prims(quads, BAKA_HUD_OT)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
