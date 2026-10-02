@@ -3608,14 +3608,10 @@ that could drift; none is gated.
   mesh drew (the native drained spawn slots, the page's player rig), and the
   native boot-panel gate has no page twin because no page boot panel draws
   over a world-map frame.
-- **PSX rasterisation (native only).** `LEGAIA_PSX_RENDER` turns on vertex
-  jitter and 15-bit dither in the wgpu renderer; the page's shaders have
-  neither. Opt-in and non-default, so a feature gap rather than drift. See
-  [what the page would need](#what-the-page-needs-for-the-two-native-only-render-toggles).
-- **Dynamic lighting, whole toggle.** Beyond the derived point lights
-  ([above](#derived-scene-point-lights-are-native-only)), the native `I`
-  toggle's directional light and screen-centred light pool also have no page
-  toggle or shader path; same section.
+- **The two opt-in render toggles** - PSX rasterisation and the dynamic
+  light's directional term and pool - reach the page now; only the derived
+  point lights under them stay native-only. See
+  [the render toggles on the page](#the-two-opt-in-render-toggles-on-the-page).
 - **The fishing wander readout (native only), left as a debug aid.** A
   dev-menu readout of `FUN_801d2050`'s tracked points, not a retail surface;
   nothing a player sees depends on it, so the page's dev menu carries no twin
@@ -3625,33 +3621,50 @@ that could drift; none is gated.
   page upload; the page never calls it. Host-identical, so a gap rather than
   drift.
 
-### What the page needs for the two native-only render toggles
+### The two opt-in render toggles on the page
 
-Neither toggle changes a retail frame (both default off), and neither is
-wired on the page. Assessed rather than built, because both land in
+The play page carries both of the native window's opt-in render toggles as
+checkboxes, each off by default. Both land in
 [`site/js/webgl-shaders.js`](../../site/js/webgl-shaders.js), the one GLSL
-program every 3D page shares - a compile error there blanks the site - and
-no gate compiles that program outside a browser.
+program every 3D page shares, and both are the identity when off: the shader
+gates each on a uniform that stays zero unless the play page stages it, and an
+off frame of `town01` reads back byte-identical to the frame before the
+toggles existed.
 
-- **PSX rasterisation** is the smaller of the two. The native shader carries
-  it in one `psx_params` vector (framebuffer width and height, snap on,
-  dither on): the vertex stage snaps the projected position to the
-  framebuffer's pixel grid (`psx_snap_clip` in `engine-render::shaders`), and
-  every fragment path ends in a 4x4 ordered dither down to 15-bit colour
-  (`psx_dither`, the PSX dither matrix `-4 0 -3 1 / 2 -2 3 -1 / -3 1 -4 0 /
-  3 -1 2 -2` added before the `>> 3`, then `(c5 << 3) | (c5 >> 2)` back to 8
-  bits). The page needs the same two functions in its main program, one
-  `vec4` uniform set per draw in `webgl-tmd.js` (`render` and
-  `renderAssembled`), and a toggle; a unset uniform is all zeros, which is
-  off, so the faithful path stays untouched. Native has no in-game toggle
-  either - the env var is the whole switch.
-- **Dynamic lighting** needs a lighting term the page does not have at all:
-  the `I` toggle's warm directional light and screen-centred pool (a per-draw
-  light direction + colour and a capped multiply over the baked shading), and
-  under it the derived point lights with their PCF shadow maps, which need a
-  per-frame export of the picked light set and a shadow-map pass
-  ([above](#derived-scene-point-lights-are-native-only)). It is an
-  enhancement both ways, so the page is short a feature, not wrong.
+- **PSX rasterisation** is the native `psx_params` word as one `u_psx` vector
+  (framebuffer width and height, snap on, dither on), staged by
+  `TmdRenderer._applyRenderToggles` from both `render` and `renderAssembled`.
+  The vertex stage snaps the projected position to the framebuffer's pixel
+  grid after the overworld bend (`psxSnapClip`, twin of `psx_snap_clip`); the
+  fragment stage ends in the PSX 4x4 ordered dither down to 15-bit colour
+  (`psx_dither`). The page dithers where native does - both passes of an
+  untextured prim, the opaque pass of a textured one, never the textured
+  blend pass (a raw texel) or the after-image ghost. Two orientation details
+  hold the hosts together: `gl_FragCoord` counts rows from the bottom where
+  wgpu's position builtin counts from the top, so the dither row and the light
+  pool both read `frag_top_px`; and the page snaps its untextured prims too,
+  where native's colour-mesh vertex stage does not (the page draws both
+  halves of a hybrid mesh in one program, and snapping one half would open
+  cracks between them).
+- **Dynamic lighting** is the native `dyn_light` with the point-light gain at
+  zero: a warm directional `|N.L|` term and a screen-centred light pool,
+  capped at 1.3x over the baked shading, applied after the texel modulate and
+  before the grade and cue. Textured prims light off smoothed per-vertex
+  normals that `computeSmoothNormals` (`webgl-math.js`, the twin of
+  `legaia_tmd::mesh::compute_smooth_normals`) derives on the CPU - only while
+  the toggle is on, and again after a posed mesh's positions change, as
+  native's posed mesh build does. Untextured prims and the ground light off
+  the facet normal, as native's colour mesh and heightfield do. The light's
+  constants are JS values interpolated into the GLSL, paired with their
+  native twins by `check-ui-host-drift.py`'s constant table (as is the dither
+  matrix).
+
+What stays native-only is the
+[derived point lights](#derived-scene-point-lights-are-native-only) and their
+PCF shadow maps, which need a per-frame export of the picked light set and a
+shadow-map pass the page does not have. Native has no in-game PSX toggle - the
+`LEGAIA_PSX_RENDER` environment variable is its whole switch - so the page's
+checkbox is the one interactive control for it.
 
 ## A tick-locked side-by-side pass
 

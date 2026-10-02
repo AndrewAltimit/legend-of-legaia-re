@@ -3165,6 +3165,11 @@ void main() {
      * native window draws), and a fight entered from the overworld under
      * the overworld's screen-Y bend. See docs/tooling/host-drift.md. */
     _stageFrameState(rt) {
+      /* The two opt-in render toggles (PSX rasterisation, dynamic light):
+       * page-wide presentation choices, so every branch draws under the
+       * checkbox state. Both off unless the player ticked them. */
+      if (this.renderer.setPsxMode) this.renderer.setPsxMode(!!this.psxRender);
+      if (this.renderer.setDynamicLighting) this.renderer.setDynamicLighting(!!this.dynLighting);
       /* Retail GTE NCLIP winding rejection, from the shared engine kernel
        * (`camera_view::nclip_cull_mode`): armed for the whole field pass
        * (retail culls every field mesh's back faces - a sky dome's outer
@@ -3488,6 +3493,20 @@ void main() {
         this._occlStrength = 0;
         if (this.renderer) this.renderer.clearOcclusionFocus();
       }
+    }
+
+    /* The two opt-in render toggles the native window carries
+     * (LEGAIA_PSX_RENDER and the `I` key / --dynamic-lighting): PSX
+     * rasterisation (vertex snap + 15-bit dither) and the dynamic light.
+     * Both default off and both are the identity when off; the page's
+     * checkboxes drive them and re-apply on every view rebuild; the
+     * renderer picks them up in `_stageFrameState`. */
+    setPsxRender(on) {
+      this.psxRender = !!on;
+    }
+
+    setDynamicLighting(on) {
+      this.dynLighting = !!on;
     }
 
     /* Stage this frame's camera.

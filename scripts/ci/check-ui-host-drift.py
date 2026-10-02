@@ -371,6 +371,9 @@ WEB_BGM = "crates/web-viewer/src/play_bgm.rs"
 # which is what lets one checker cover both.
 NATIVE_OCCL = "crates/engine-render/src/occlusion_fade.rs"
 WEB_SHADERS = "site/js/webgl-shaders.js"
+NATIVE_PSX_DITHER = "crates/engine-render/src/psx_dither.rs"
+NATIVE_RENDER_STATE = "crates/engine-render/src/renderer/state.rs"
+NATIVE_DYN_LIGHT = "crates/engine-render/src/dyn_light.rs"
 
 # Geometry constants that exist once per host and must agree. See the module
 # docstring for the scope of the claim: equal values, nothing about use.
@@ -468,6 +471,45 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
         "native": (NATIVE_OCCL, "OCCL_DEPTH_MARGIN"),
         "web": (WEB_SHADERS, "OCCL_DEPTH_MARGIN"),
     },
+    # The two opt-in render toggles (PSX rasterisation, dynamic lighting) are
+    # hand-written twin shaders too: the page interpolates these JS constants
+    # into its GLSL, so pairing them pairs the shader model.
+    {
+        "what": "PSX ordered-dither matrix - the 15-bit dither each host's "
+        "PSX-rasterisation toggle adds before truncating to 5 bits",
+        "native": (NATIVE_PSX_DITHER, "DITHER_MATRIX"),
+        "web": (WEB_SHADERS, "PSX_DITHER_MATRIX"),
+    },
+    {
+        "what": "dynamic-light direction (object space, |N.L| term)",
+        "native": (NATIVE_RENDER_STATE, "DYN_LIGHT_DIR"),
+        "web": (WEB_SHADERS, "DYN_LIGHT_DIR"),
+    },
+    {
+        "what": "dynamic-light warm tint on the diffuse + pool terms",
+        "native": (NATIVE_RENDER_STATE, "DYN_LIGHT_TINT"),
+        "web": (WEB_SHADERS, "DYN_LIGHT_TINT"),
+    },
+    {
+        "what": "dynamic-light ambient floor",
+        "native": (NATIVE_RENDER_STATE, "DYN_LIGHT_AMBIENT"),
+        "web": (WEB_SHADERS, "DYN_LIGHT_AMBIENT"),
+    },
+] + [
+    {
+        "what": f"dynamic-light model constant {native}",
+        "native": (NATIVE_DYN_LIGHT, native),
+        "web": (WEB_SHADERS, web),
+    }
+    for native, web in (
+        ("DIFFUSE", "DYN_DIFFUSE"),
+        ("POOL", "DYN_POOL"),
+        ("MAX_GAIN", "DYN_MAX_GAIN"),
+        ("LAMBERT_FALLBACK", "DYN_LAMBERT_FALLBACK"),
+        ("POOL_CENTER", "DYN_POOL_CENTER"),
+        ("POOL_INNER", "DYN_POOL_INNER"),
+        ("POOL_OUTER", "DYN_POOL_OUTER"),
+    )
 ]
 
 # Simulation injection sites that must agree across hosts. See the module
