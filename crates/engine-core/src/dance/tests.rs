@@ -1128,3 +1128,50 @@ fn without_clip_lengths_the_note_latch_times_the_move() {
     }
     assert_eq!(g.dancers[0].clip, 20, "the latch fallback rebinds the loop");
 }
+
+/// The HUD quad frame keeps retail's emission order: every score digit run
+/// before every box frame. One ordering-table bucket holds the whole HUD and
+/// `AddPrim` prepends, so whatever is emitted first draws last - the digits
+/// over the boxes' opaque interiors. With the frames emitted first the boxes
+/// covered every score on both hosts.
+#[test]
+fn hud_digits_are_emitted_before_their_score_boxes() {
+    use legaia_asset::dance_art::DanceWidget;
+    let mut g = game();
+    // A synthetic widget table: each record's cell row `v` is its own index,
+    // so a quad's source widget reads straight off its UVs.
+    g.widgets = (0..=0x21u8)
+        .map(|i| {
+            (
+                DanceWidget {
+                    scale: 0x1000,
+                    tpage: 0x0008,
+                    clut: 0x7D00,
+                    u: 0,
+                    v: i,
+                    w: 16,
+                    h: 16,
+                    rgb_top: [0x80; 3],
+                    rgb_bottom: [0x80; 3],
+                    semi: 0,
+                },
+                0,
+            )
+        })
+        .collect();
+    for (i, d) in g.dancers.iter_mut().enumerate() {
+        d.score = 40 + i as u32;
+    }
+    let quads = g.hud_draw_quads(false);
+    let src = |q: &DanceHudQuad| q.uv[0].1;
+    let digit_at: Vec<usize> = (0..quads.len()).filter(|&i| src(&quads[i]) == 1).collect();
+    let box_at: Vec<usize> = (0..quads.len())
+        .filter(|&i| u32::from(src(&quads[i])) == DANCE_SCORE_BOX_WIDGET)
+        .collect();
+    assert_eq!(digit_at.len(), 6, "two digits per score, three scores");
+    assert_eq!(box_at.len(), 3, "one frame per score box");
+    assert!(
+        digit_at.iter().max() < box_at.iter().min(),
+        "every digit run precedes every box frame: digits {digit_at:?}, boxes {box_at:?}"
+    );
+}

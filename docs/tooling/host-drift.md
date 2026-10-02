@@ -2488,16 +2488,13 @@ stage-less battle renders with stays a draw-side question.
 
 ### The sink was already dead
 
-The dance HUD's *quad* half reads as a native-only layer, and the native's own
-materialiser opens with `let Some(src) = solid_src else { return Vec::new() }`
-- and the one call site passes `None`, because no host stages the dance 4bpp
-page into an atlas source. So the layer draws nothing on the host that has it.
-Wiring it into the second host would have produced a second empty list and a
-green row.
-
-The blocking capability is the art, not the draw: a dance sprite page resident
-in a host atlas, with a solid-texel rect to point `solid_src` at. Until that
-exists this is one disclosure, not two.
+The dance HUD's *quad* half once read as a native-only layer while the
+native's own materialiser returned an empty list - no host staged the dance
+4bpp page, so the layer drew nothing on the host that had it, and wiring it
+into the second host would have produced a second empty list and a green row.
+What closed it was the art, not the draw: both hosts now stage the page and
+publish one residency claim (`World::minigames.dance_hud_art_staged`) that
+both draw paths read.
 
 The Muscle Dome hub has the same shape one level up. `HUB_TITLE_ART` and
 `HubScreen::opponent_card()` read as minigames-page-only features, and both
@@ -3616,10 +3613,16 @@ that could drift; none is gated.
   dev-menu readout of `FUN_801d2050`'s tracked points, not a retail surface;
   nothing a player sees depends on it, so the page's dev menu carries no twin
   by choice.
-- **The dance HUD quads (neither host).** The native window calls
-  `DanceGame::hud_draw_quads` into an emitter that returns nothing without a
-  page upload; the page never calls it. Host-identical, so a gap rather than
-  drift.
+- **The dance HUD quads draw on both hosts.** Both stage the hall's HUD page
+  and emit `MinigameState::dance_hud_quads` through the shared
+  `ui_dance::dance_hud_prims` (the play page from its battle prim pass); a
+  side-by-side of the two shows the same score boxes and `Lv.` readout. What
+  the pair still hid was host-identical: the quad list emitted the box frames
+  before the digit runs, and since one ordering-table bucket holds the whole
+  HUD and retail's `AddPrim` prepends, the opaque frames covered every score
+  on both hosts. `DanceGame::hud_draw_quads` emits in `FUN_801d231c`'s order
+  now - digits, then frames, then gauges
+  ([minigame-dance](../subsystems/minigame-dance.md#hud-render-driver-fun_801d231c)).
 
 ### The two opt-in render toggles on the page
 
