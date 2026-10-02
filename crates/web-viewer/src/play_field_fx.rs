@@ -169,10 +169,18 @@ impl LegaiaRuntime {
     /// bucket's depth exactly as the native window's does. Empty with no
     /// ground.
     pub fn field_ground_flat_refs(&self) -> Vec<f32> {
-        let Some(hf) = self.field.as_ref().and_then(|f| f.ground.as_ref()) else {
+        let Some(f) = self.field.as_ref() else {
             return Vec::new();
         };
-        let positions = legaia_engine_core::field_ground::render_positions(hf);
+        let Some(hf) = f.ground.as_ref() else {
+            return Vec::new();
+        };
+        // Over the positions currently drawn: re-resolved through the live
+        // ladder once `field_ground_live_positions` has moved them.
+        let positions = match f.ground_lut_applied.as_ref() {
+            Some(lut) => legaia_engine_core::field_ground::live_render_positions(hf, lut),
+            None => legaia_engine_core::field_ground::render_positions(hf),
+        };
         legaia_engine_core::overworld_draw_order::ground_flat_refs(&positions)
             .into_iter()
             .flatten()

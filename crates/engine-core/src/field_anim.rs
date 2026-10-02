@@ -87,6 +87,11 @@ pub struct FieldClipPlayer {
     /// The record's blend gate ([`legaia_asset::player_anm::PlayerAnmRecord::blends`]):
     /// set, a cursor that falls inside a frame poses between it and the next.
     blend: bool,
+    /// The clamp bit (`actor+0x62 & 8`) the frame blender reads on the last
+    /// frame: set, a fraction there blends toward the frame itself instead of
+    /// wrapping to frame 0. Only a cursor driven by [`Self::set_cursor`] (an
+    /// actor whose script parks or one-shots the clip) ever sets it.
+    hold_at_end: bool,
 }
 
 impl FieldClipPlayer {
@@ -119,6 +124,7 @@ impl FieldClipPlayer {
             cursor: 0,
             step: u32::from(clip_step(CLIP_RATE, blend, (rec.flag & 0xFF) as u8)),
             blend,
+            hold_at_end: false,
         })
     }
 
@@ -179,7 +185,23 @@ impl FieldClipPlayer {
     /// on, since [`Self::frame`] alone would alias the blended in-between
     /// poses onto their keyframe.
     pub fn pose_key(&self) -> usize {
-        self.frame() * 16 + self.sub_frame() as usize
+        let held = self.hold_at_end && self.sub_frame() != 0;
+        self.frame() * 16 + self.sub_frame() as usize + (usize::from(held) << 20)
+    }
+
+    /// The raw frame cursor (`actor+0x68`, 1/16-frame units).
+    pub fn cursor(&self) -> u32 {
+        self.cursor
+    }
+
+    /// Pose from an externally ticked cursor - the world-owned
+    /// [`crate::field_env::PropAnim`] an NPC actor's `+0x62` word drives
+    /// ([`crate::world::World::sync_npc_clip`]) - instead of this player's own
+    /// free-running loop. `clamp` is the cursor's clamp bit (`+0x62 & 8`).
+    pub fn set_cursor(&mut self, cursor: u32, clamp: bool) {
+        let span = (self.frames.len() as u32 * 16).max(1);
+        self.cursor = cursor.min(span - 1);
+        self.hold_at_end = clamp && self.frame() + 1 >= self.frames.len();
     }
 
     /// Restart the clip at frame 0 (called on an idle↔walk switch so the
@@ -212,7 +234,13 @@ impl FieldClipPlayer {
         let bone_outputs = if frac == 0 {
             self.frames[frame].clone()
         } else {
-            let next = &self.frames[(frame + 1) % self.frames.len()];
+            // The blender's next-entry rule: wrap to frame 0 after the last,
+            // unless the clamp bit holds the clip there.
+            let next = if self.hold_at_end && frame + 1 == self.frames.len() {
+                &self.frames[frame]
+            } else {
+                &self.frames[(frame + 1) % self.frames.len()]
+            };
             self.frames[frame]
                 .iter()
                 .zip(next)
@@ -243,6 +271,7 @@ impl FieldClipPlayer {
         if n == 0 || self.frames.is_empty() {
             return;
         }
+        self.hold_at_end = false;
         let step = self.step.max(1);
         let period = u64::from(self.loop_ticks().max(1));
         let k = (u64::from(self.cursor / step) + u64::from(n)) % period;

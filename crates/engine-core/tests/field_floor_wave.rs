@@ -9,12 +9,14 @@
 //! `jou`'s organic Seru interior undulates; `4C 90` occurs 180 times across 19
 //! scenes.
 //!
-//! The port resolves its environment draws once per scene, against the scene's
-//! MAN-header ladder, so the wave was invisible: only the walk heightfield
-//! (`World::sample_field_floor_height`, which reads the live array) moved. These
-//! tests pin the kernel that closes that gap -
-//! [`legaia_engine_core::field_env::FloorWave`] - end to end through the real
-//! field VM.
+//! The port resolves its environment draws and its walk-ground heightfield
+//! once per scene, against the scene's MAN-header ladder, so the wave was
+//! invisible: only the floor sampler (`World::sample_field_floor_height`, which
+//! reads the live array) moved. These tests pin the two kernels that close that
+//! gap - [`legaia_engine_core::field_env::FloorWave`] for the translated env
+//! draws and [`legaia_engine_core::field_ground::live_render_positions`] for the
+//! per-vertex ground (PROT 0900's ground pass `FUN_801F6D48`) - end to end
+//! through the real field VM.
 //!
 //! The **sign** is the trap. `Scene::field_floor_height_lut` returns the MAN
 //! header's sixteen shorts; `FUN_8003AEB0` installs their **negation** into the
@@ -212,4 +214,55 @@ fn op_4c_9e_reinstalls_the_ladder_and_the_draws_follow() {
     // The install writes `-words[i]` into the scratchpad, i.e. `words[i]` in
     // the MAN frame, so rung 2's draw height goes from `0` to `-(2 * 0x20)`.
     assert_eq!(wave.offset(&d[0].floor), -(2 * 0x20));
+}
+
+/// The ground surface follows the wave **per vertex**: a cell whose corners
+/// sit on the armed rung lifts and drops, its neighbour on another rung stays,
+/// and a cell straddling both tilts - the drawn ground the floor sampler walks.
+#[test]
+fn op_4c_90_deforms_the_ground_heightfield_per_vertex() {
+    use legaia_asset::field_objects::{GROUND_PRIM_COLOR, WalkHeightfield};
+    let mut man = [0i16; 16];
+    man[4] = 0x40;
+    man[5] = 0x80;
+    // Two cells side by side: corners on tiers 4 | 4/5 straddle | 5.
+    let tiers = [4u8, 4, 4, 4, 4, 5, 4, 5];
+    let hf = WalkHeightfield {
+        positions: tiers
+            .iter()
+            .enumerate()
+            .map(|(i, &t)| [(i % 2) as f32 * 128.0, -f32::from(man[t as usize]), 0.0])
+            .collect(),
+        tile_ids: vec![0; 8],
+        uvs: vec![[0, 0]; 8],
+        cba_tsb: vec![[0, 0]; 8],
+        colors: vec![GROUND_PRIM_COLOR; 8],
+        indices: vec![0, 1, 2, 1, 3, 2, 4, 5, 6, 5, 7, 6],
+        corner_tiers: tiers.to_vec(),
+    };
+    let baked = legaia_engine_core::field_ground::render_positions(&hf);
+    let mut world = world_on_ladder(man, arm_rung(4));
+    assert_eq!(
+        legaia_engine_core::field_ground::live_render_positions(
+            &hf,
+            &world.terrain.floor_height_lut
+        ),
+        baked,
+        "the live ladder at entry reproduces the baked ground"
+    );
+    let mut moved = [false; 8];
+    for _ in 0..128 {
+        let _ = world.tick();
+        let live = legaia_engine_core::field_ground::live_render_positions(
+            &hf,
+            &world.terrain.floor_height_lut,
+        );
+        for (i, (l, b)) in live.iter().zip(&baked).enumerate() {
+            assert_eq!((l[0], l[2]), (b[0], b[2]), "only Y moves");
+            moved[i] |= l[1] != b[1];
+        }
+    }
+    for (i, &t) in tiers.iter().enumerate() {
+        assert_eq!(moved[i], t == 4, "vertex {i} on tier {t}");
+    }
 }

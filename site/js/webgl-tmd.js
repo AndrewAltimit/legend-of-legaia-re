@@ -1104,6 +1104,7 @@ class TmdRenderer {
 
     const haveRefs = !!(flatRefs && flatRefs.length === (positions.length / 3) * 8
       && this.locGroundRefXz >= 0 && this.locGroundRefY >= 0);
+    g.hasRefs = haveRefs;
     if (haveRefs) {
       gl.bindBuffer(gl.ARRAY_BUFFER, g.refBuf);
       gl.bufferData(gl.ARRAY_BUFFER, flatRefs, gl.STATIC_DRAW);
@@ -1135,6 +1136,23 @@ class TmdRenderer {
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.DYNAMIC_DRAW);
     gl.bindVertexArray(null);
     g.indexCount = indices.length;
+  }
+
+  /* Rewrite the ground's vertex positions (and its flat bucket-depth refs,
+   * which carry the cell corner heights) in place - same vertex count, same
+   * order as the `uploadGround` stream. The live floor-height ladder moves
+   * the ground per frame on the scenes whose script animates it. */
+  updateGroundPositions(positions, flatRefs) {
+    const g = this.ground;
+    if (!g || !positions || positions.length === 0) return;
+    const gl = this.gl;
+    gl.bindBuffer(gl.ARRAY_BUFFER, g.posBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, positions);
+    if (g.hasRefs && flatRefs && flatRefs.length === (positions.length / 3) * 8) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, g.refBuf);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, flatRefs);
+    }
+    g.aabb = computeAabb(positions);
   }
 
   /* Return the ground heightfield AABB (null until uploadGround has run). */

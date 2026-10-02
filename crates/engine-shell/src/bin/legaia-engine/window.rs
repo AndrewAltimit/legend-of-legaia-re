@@ -459,6 +459,12 @@ pub(crate) fn write_capture_png(path: &Path, img: &CaptureImage) -> Result<()> {
 pub(crate) struct GroundSource {
     pub(crate) vmesh: legaia_tmd::mesh::VramMesh,
     pub(crate) flat_refs: Vec<[f32; 8]>,
+    /// The heightfield the mesh was built from - its per-vertex corner tiers
+    /// are what the live floor-height ladder re-resolves.
+    pub(crate) hf: legaia_asset::field_objects::WalkHeightfield,
+    /// The live (scratchpad-frame) ladder `vmesh.positions` were last
+    /// re-resolved against; `None` while they are the baked build.
+    pub(crate) lut_applied: Option<[i16; 16]>,
 }
 
 /// The uploaded mesh slots of one **posed** static-object placement: the

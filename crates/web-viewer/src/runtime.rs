@@ -1873,6 +1873,15 @@ impl LegaiaRuntime {
             if let Some(player) =
                 legaia_engine_core::field_anim::FieldClipPlayer::from_record(b, rec)
             {
+                // The playhead is the world's: the actor's `+0x62` word may
+                // hold or one-shot the clip (a treasure chest's lid).
+                if let Some(host) = self.scene_host.as_mut() {
+                    host.world.bind_npc_clip_cursor(
+                        e.placement.index as u8,
+                        e.placement.anim_id,
+                        &player,
+                    );
+                }
                 self.npc_clips.insert(
                     e.placement.index as u8,
                     NpcClip {
@@ -1916,9 +1925,14 @@ impl LegaiaRuntime {
         }
         // The playheads run only while the field owns the frame - the
         // world's decision, shared with the native draw pass.
+        // A slot the world drives poses off its own cursor (the actor's
+        // `+0x62` word, ticked in the world's field frame); anything else
+        // free-runs.
         if host.world.field_npc_clips_advance() {
-            for clip in self.npc_clips.values_mut() {
-                clip.player.advance(1);
+            for (slot, clip) in self.npc_clips.iter_mut() {
+                if !host.world.sync_npc_clip(*slot, &mut clip.player) {
+                    clip.player.advance(1);
+                }
             }
         }
     }

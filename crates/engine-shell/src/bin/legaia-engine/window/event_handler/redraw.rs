@@ -677,6 +677,7 @@ impl PlayWindowApp {
             legaia_engine_core::field_view_window::framing_is_retail(&self.session.camera)
                 && !self.field_debug_camera,
         );
+        self.sync_ground_wave();
         self.sync_ground_crop(view_cells.as_ref());
         // A tick this frame may have flipped the world into
         // SceneMode::Cutscene (field-VM FMV-trigger op). Start
@@ -1270,10 +1271,15 @@ impl PlayWindowApp {
                 let cache = &mut self.npc_pose_cache;
                 let verify_poses = &mut self.npc_pose_verify;
                 let srcs = &self.npc_anim_srcs;
+                let world = &self.session.host.world;
                 for (slot, player) in self.npc_clip_players.iter_mut() {
                     let Some((tmd, raw)) = srcs.get(slot) else {
                         continue;
                     };
+                    // A slot the world drives poses off its own cursor (the
+                    // actor's `+0x62` word holds a chest lid shut / open);
+                    // anything else free-runs as before.
+                    let world_driven = world.sync_npc_clip(*slot, player);
                     // `pose_key()` is the pose this redraw shows (`frame * 16`
                     // plus the sub-frame a blend-gated clip poses in between);
                     // take it as the cache key and read its pose WITHOUT moving
@@ -1282,7 +1288,9 @@ impl PlayWindowApp {
                     // each frame for the same wall-clock time a 60 Hz one does).
                     let key = (*slot, player.pose_key());
                     let pose = player.current_pose();
-                    player.advance(field_tail_ticks);
+                    if !world_driven {
+                        player.advance(field_tail_ticks);
+                    }
                     npc_frames.push(key);
                     if cache.contains_key(&key) {
                         // `LEGAIA_POSE_CACHE_VERIFY=1`: the pose behind a hit

@@ -1718,6 +1718,22 @@ model to it and plays the placement's scene-bundle ANM clip per frame
 (`FieldClipPlayer` over the `anim_id - 1` record, the same posed-rebuild path
 as the player's idle/walk pair).
 
+The clip's **playhead is the world's, not the host's**. Each bound NPC clip
+has a cursor in `World::npcs.clip_cursors` (a `PropAnim`, the
+`FUN_800204F8` port the placed props use), and `World::tick_npc_clips` steps
+it once per field frame under the actor's own `+0x62` anim-control word - the
+spawned channel's `ctx.local_flags` - writing the end latch back to the
+channel; both hosts pose their `FieldClipPlayer` from that cursor
+(`World::sync_npc_clip`). An actor whose word is the template's looping state
+plays exactly as a free-running loop. One whose script holds or one-shots
+the clip poses that way instead, and a talk runs on the actor's own `+0x62`,
+so its `2D 08` end-latch spin waits for the clip. The **treasure chest** is the
+common case: a partition-1 actor (`宝箱N`, player-bank model `0xF4`) whose
+spawn script binds the lid clip (`22 17`), then branches on its opened flag
+to `4C 35` (held shut) or `4C 36` (held open); its touch body unholds and
+clamps the clip and spins on `2D 08` before the item box opens. Pinned by
+`engine-core/tests/field_chest_lid_disc.rs`.
+
 ## Intra-scene doorways - the walk-touch teleport family
 
 Walking into a town house is **not** a scene change. The scene name buffers

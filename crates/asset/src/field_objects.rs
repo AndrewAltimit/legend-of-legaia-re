@@ -764,6 +764,12 @@ pub struct WalkHeightfield {
     pub colors: Vec<[u8; 3]>,
     /// Triangle indices (two triangles per visible cell quad).
     pub indices: Vec<u32>,
+    /// Per-vertex floor-elevation tier (`0..16`, the corner tile's `+0x4000`
+    /// low nibble) the vertex's Y was resolved through. The ladder those
+    /// tiers index is script-animated (field-VM op `0x4C` nibble 9), and
+    /// retail's ground emitter re-reads it every frame, so a drawn ground
+    /// re-resolves its Y from these against the live ladder.
+    pub corner_tiers: Vec<u8>,
 }
 
 /// The GP0 modulation colour every retail ground primitive carries: neutral
@@ -835,17 +841,18 @@ pub fn build_ground_heightfield(
     let Some(obj_grid) = field_map.get(OBJECT_GRID_OFFSET..) else {
         return hf;
     };
-    // Corner height (pre-Y-flip) from the floor nibble of tile (c, r), clamped
-    // to the grid edge so border cells stay watertight.
-    let corner_y = |c: usize, r: usize| -> f32 {
+    // Corner floor tier of tile (c, r), clamped to the grid edge so border
+    // cells stay watertight.
+    let corner_tier = |c: usize, r: usize| -> u8 {
         let cc = c.min(GRID_DIM - 1);
         let rr = r.min(GRID_DIM - 1);
-        let nib = field_map
+        field_map
             .get(COLLISION_GRID_OFFSET + rr * GRID_DIM + cc)
-            .map(|b| (b & 0x0F) as usize)
-            .unwrap_or(0);
-        -(lut[nib] as f32)
+            .map(|b| b & 0x0F)
+            .unwrap_or(0)
     };
+    // Corner height (pre-Y-flip) through the LUT.
+    let corner_y = |c: usize, r: usize| -> f32 { -(lut[corner_tier(c, r) as usize] as f32) };
     for row in 0..GRID_DIM {
         for col in 0..GRID_DIM {
             let cell_off = (row * GRID_DIM + col) * 2;
@@ -879,6 +886,12 @@ pub fn build_ground_heightfield(
             hf.positions.push([x1, corner_y(col + 1, row), z0]);
             hf.positions.push([x0, corner_y(col, row + 1), z1]);
             hf.positions.push([x1, corner_y(col + 1, row + 1), z1]);
+            hf.corner_tiers.extend([
+                corner_tier(col, row),
+                corner_tier(col + 1, row),
+                corner_tier(col, row + 1),
+                corner_tier(col + 1, row + 1),
+            ]);
             // Per-cell atlas tile from +0x14: the 8x8 atlas places tile `id` at
             // `(u, v) = ((id % 8) * 32, (id / 8) * 32)`. Compute in a wide type
             // and clamp to the u8 page extent: the bottom-right tile origin is

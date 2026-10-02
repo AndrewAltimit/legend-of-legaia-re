@@ -65,6 +65,14 @@ pub struct FieldRender {
     /// the field VM animates per frame (op `0x4C` nibble-9) - can be folded
     /// back in through [`field_env::FloorWave`] without re-walking the map.
     pub floor_lut: Option<[i16; 16]>,
+    /// The live (scratchpad-frame) ladder [`Self::ground`]'s drawn positions
+    /// were last re-resolved against by
+    /// [`LegaiaRuntime::field_ground_live_positions`]; `None` until the first
+    /// re-resolve, and always `None` on the overworld, whose ground does not
+    /// follow the field ladder.
+    pub ground_lut_applied: Option<[i16; 16]>,
+    /// Whether this is a kingdom overworld (its ground is not re-resolved).
+    pub is_world_map: bool,
     /// Cached built env mesh: `((slot, anim_id), mesh, flat_rgba)`.
     /// `anim_id != 0` is the frame-0 posed variant of the slot's mesh.
     #[allow(clippy::type_complexity)]
@@ -294,6 +302,8 @@ pub fn build_field_render(
         terrain,
         ground,
         floor_lut,
+        ground_lut_applied: None,
+        is_world_map,
         cur: None,
         occluders,
         coplanar_offsets,
@@ -903,6 +913,39 @@ impl LegaiaRuntime {
             return Vec::new();
         };
         legaia_engine_core::field_ground::render_positions(hf)
+            .into_iter()
+            .flatten()
+            .collect()
+    }
+
+    /// The walk-ground heightfield's drawn positions re-resolved through the
+    /// world's **live** floor-height ladder
+    /// ([`legaia_engine_core::field_ground::live_render_positions`]), when it
+    /// has moved since the last call - empty when nothing changed, so the
+    /// page re-uploads only on a frame the ladder actually moved. Field VM op
+    /// `0x4C` nibble 9 animates the ladder (`jouina`'s pulsing path,
+    /// `concnow`'s flesh pits), and the floor sampler the player stands on
+    /// reads the same ladder, so the drawn ground and the collision surface
+    /// stay one shape. The native window re-uploads through the same kernel.
+    pub fn field_ground_live_positions(&mut self) -> Vec<f32> {
+        let Some(live) = self
+            .scene_host
+            .as_ref()
+            .map(|h| h.world.terrain.floor_height_lut)
+        else {
+            return Vec::new();
+        };
+        let Some(f) = self.field.as_mut() else {
+            return Vec::new();
+        };
+        let Some(hf) = f.ground.as_ref() else {
+            return Vec::new();
+        };
+        if f.is_world_map || f.ground_lut_applied == Some(live) {
+            return Vec::new();
+        }
+        f.ground_lut_applied = Some(live);
+        legaia_engine_core::field_ground::live_render_positions(hf, &live)
             .into_iter()
             .flatten()
             .collect()

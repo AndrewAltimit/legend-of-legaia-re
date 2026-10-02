@@ -3162,8 +3162,12 @@ The audio rows of the same pass are closed or settled in
   players only in `SceneMode::Field`, the page in every mode, so an NPC came
   back from a fight on a different clip frame per host. When the players run
   is the world's decision now, `World::field_npc_clips_advance`, which both
-  hosts ask; only where they advance (the page's per-tick step, the window's
-  draw pass keyed on its pose cache) stays per host.
+  hosts ask. So is the playhead itself: `World::tick_npc_clips` steps a
+  world-owned cursor under each actor's `+0x62` word and both hosts pose from
+  it (`World::sync_npc_clip`), where each used to free-loop its own player -
+  which looped every treasure chest's lid. Only where they pose (the page's
+  per-tick step, the window's draw pass keyed on its pose cache) stays per
+  host.
 - **The field frame tail.** Three one-host tails moved onto engine kernels in
   `engine-core`'s `world/field_frame_tail.rs`, each called by both hosts:
   `World::tick_effect_scene_graphs` (summon / move-FX / field-FX),

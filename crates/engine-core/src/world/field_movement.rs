@@ -3322,8 +3322,22 @@ impl World {
         // The `+0x8E` mirror arm comes first and jumps past both ground arms
         // - see [`Self::field_actor_mirrored_y`]. A scripted eased move that
         // carries the flag holds the actor's Y outright; no glide, no sample.
+        let ladder_moved = self.terrain.floor_height_lut != self.locomotion.ladder_seen;
+        self.locomotion.ladder_seen = self.terrain.floor_height_lut;
         if let Some(mirror) = self.field_actor_mirrored_y(slot) {
             self.actors[slot].move_state.world_y = mirror;
+        } else if self.locomotion.follow_terrain_height && ladder_moved {
+            // The snap's standing-still half: the field VM moved the floor
+            // ladder under the player (op `0x4C` nibble 9), so the footing
+            // follows it - what retail's glide converges to, at a per-frame
+            // wave step well inside the glide's rate.
+            let (x, z) = {
+                let ms = &self.actors[slot].move_state;
+                (ms.world_x as i32, ms.world_z as i32)
+            };
+            let floor = self.sample_field_floor_height(x, z);
+            self.actors[slot].move_state.world_y =
+                floor.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
         } else if self.locomotion.vertical_settle && !self.locomotion.follow_terrain_height {
             let (x, z, y) = {
                 let ms = &self.actors[slot].move_state;

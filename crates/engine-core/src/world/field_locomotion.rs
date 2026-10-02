@@ -205,6 +205,14 @@ pub struct FieldLocomotion {
     /// The ledge-hop trigger is **not** gated on this - a hop is posted off
     /// the step delta whether or not the settle runs.
     pub vertical_settle: bool,
+    /// The live floor-height ladder (`World::terrain.floor_height_lut`) as
+    /// [`crate::world::World::step_field_vertical`] last saw it. Under the
+    /// snap ([`Self::follow_terrain_height`]) a frame on which the ladder
+    /// moved re-reads the floor under a standing player, since nothing else
+    /// will: the snap otherwise runs only on a committed step, and retail's
+    /// every-frame glide carries the player on a script-animated floor
+    /// (`jouina`'s pulsing path) whether or not they walk.
+    pub ladder_seen: [i16; 16],
     /// The ledge hop [`crate::world::World::try_field_ledge_hop`] posted this frame, if any
     /// (retail hands the same triple to `FUN_801d2404`). `None` on every
     /// frame that did not start a hop.
@@ -318,6 +326,7 @@ impl FieldLocomotion {
             last_move_dir_bits: 0,
             step_delta: (0, 0),
             vertical_settle: false,
+            ladder_seen: [0; 16],
             ledge_hop: None,
             eased_mirror_y: None,
             player_move_cues: Vec::new(),

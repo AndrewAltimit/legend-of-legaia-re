@@ -194,6 +194,17 @@ pub struct FieldNpcState {
     /// cue to the hosts; an op-`0x4B` sequence cue removes the entry, since
     /// what then plays is not one move. Cleared with the cue queue.
     pub clip_current: std::collections::HashMap<u8, u8>,
+    /// Each animated NPC actor's live clip cursor (`actor+0x68`) under its
+    /// own `+0x62` control word, keyed by placement slot. The hosts own the
+    /// decoded clip frames ([`crate::field_anim::FieldClipPlayer`]) but not
+    /// the playhead: [`crate::world::World::tick_npc_clips`] advances these
+    /// through the retail anim tick once per field frame, reading and writing
+    /// the slot's channel `ctx.local_flags`, so an actor whose script holds
+    /// or one-shots its clip - a treasure chest's `4C 35` closed hold, its
+    /// touch's play-once-and-clamp lid, the `4C 36` already-opened snap -
+    /// poses that way instead of looping. Bound by
+    /// [`crate::world::World::bind_npc_clip_cursor`].
+    pub clip_cursors: std::collections::BTreeMap<u8, crate::field_env::PropAnim>,
     /// The Y of each field NPC on the **glide** height arm, keyed by
     /// placement slot: retail's `+0x16` while the actor's flag word carries
     /// `0x2000`, which `FUN_8003BC08` steps toward the floor by at most
@@ -229,6 +240,7 @@ impl FieldNpcState {
             animate: false,
             anim_cues: std::collections::HashMap::new(),
             clip_current: std::collections::HashMap::new(),
+            clip_cursors: std::collections::BTreeMap::new(),
             glide_y: std::collections::HashMap::new(),
             cull_view: None,
         }

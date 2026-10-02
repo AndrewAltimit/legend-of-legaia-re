@@ -29,6 +29,7 @@ use legaia_asset::player_anm::PlayerAnmBundle;
 
 use super::{SceneMode, World};
 use crate::field_anim::FieldClipPlayer;
+use crate::field_env::{ANIM_CLAMP, PropAnim};
 
 /// The anim-speed step every host ticks the effect scene-graphs at - the
 /// per-part wait-timer drain `0x0400` both hosts already passed by hand.
@@ -215,9 +216,106 @@ impl World {
                 }?;
                 let record = (base_id as usize).checked_sub(1)?;
                 FieldClipPlayer::from_record(bundle, record)
-                    .map(|player| NpcClipRetarget { slot, player })
+                    .map(|player| (slot, base_id, NpcClipRetarget { slot, player }))
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|(slot, base_id, r)| {
+                self.bind_npc_clip_cursor(slot, base_id, &r.player);
+                r
             })
             .collect()
+    }
+
+    /// Bind NPC `slot`'s world-owned clip cursor to `player`'s clip (anim id
+    /// `anim_id`) - the binder half of `FUN_800204F8`: the cursor restarts at
+    /// frame 0 and the actor's `+0x62` word is left alone, and re-binding the
+    /// id already playing is a no-op (`+0x5C == +0x5E`). Hosts call this when
+    /// they build a slot's clip player at scene entry;
+    /// [`Self::drain_field_anim_cues`] calls it for every re-target.
+    ///
+    /// PORT: FUN_800204F8 (binder half)
+    pub fn bind_npc_clip_cursor(&mut self, slot: u8, anim_id: u8, player: &FieldClipPlayer) {
+        let frames = u16::try_from(player.frame_count())
+            .unwrap_or(u16::MAX)
+            .max(1);
+        let rate = i16::try_from(player.step()).unwrap_or(i16::MAX).max(1);
+        if let Some(c) = self.npcs.clip_cursors.get_mut(&slot)
+            && c.anim_id == anim_id
+            && c.frames == frames
+        {
+            return;
+        }
+        // The step is the player's own (`clip_step` of the record header);
+        // the ungated arm of the tick's step select passes it through as-is.
+        let mut cursor = PropAnim::cross_context(anim_id.max(1), frames);
+        cursor.rate = rate;
+        if let Some(flags) = self.npc_channel_local_flags(slot) {
+            cursor.flags = flags;
+        }
+        self.npcs.clip_cursors.insert(slot, cursor);
+    }
+
+    /// The `+0x62` anim-control word of NPC `slot`'s spawned context, if a
+    /// placement channel carries it.
+    fn npc_channel_local_flags(&self, slot: u8) -> Option<u16> {
+        self.field_vm
+            .channels
+            .iter()
+            .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
+            .map(|c| c.ctx.local_flags)
+    }
+
+    /// One field frame of the per-actor anim tick over every bound NPC clip
+    /// cursor: the slot's channel `+0x62` goes in, the tick consumes a restart
+    /// request, steps unless held, wraps or clamps, latches the end bit, and
+    /// the word goes back to the channel - where the actor's own script (or a
+    /// talk running on it) reads the latch. An actor whose word is the
+    /// template's looping state plays exactly as a free-running clip.
+    ///
+    /// PORT: FUN_800204F8 (advance half, NPC actors)
+    pub fn tick_npc_clips(&mut self) {
+        if !self.field_npc_clips_advance() {
+            return;
+        }
+        let slots: Vec<u8> = self.npcs.clip_cursors.keys().copied().collect();
+        for slot in slots {
+            let flags = self.npc_channel_local_flags(slot);
+            let Some(c) = self.npcs.clip_cursors.get_mut(&slot) else {
+                continue;
+            };
+            if let Some(f) = flags {
+                c.flags = f;
+            }
+            c.tick();
+            let out = c.flags;
+            if flags.is_some()
+                && let Some(ch) = self
+                    .field_vm
+                    .channels
+                    .iter_mut()
+                    .find(|ch| !ch.object_bind && ch.placement_index == usize::from(slot))
+            {
+                ch.ctx.local_flags = out;
+            }
+        }
+    }
+
+    /// Pose `player` from NPC `slot`'s world-owned cursor. `false` when the
+    /// world has no cursor for the slot - the host then free-runs the player
+    /// itself.
+    pub fn sync_npc_clip(&self, slot: u8, player: &mut FieldClipPlayer) -> bool {
+        let Some(c) = self.npcs.clip_cursors.get(&slot) else {
+            return false;
+        };
+        player.set_cursor(c.cursor.max(0) as u32, c.flags & ANIM_CLAMP != 0);
+        true
+    }
+
+    /// Whether NPC `slot` has a world-owned clip cursor - i.e. something
+    /// will latch its `+0x62` end bit.
+    pub fn npc_clip_cursor_bound(&self, slot: u8) -> bool {
+        self.npcs.clip_cursors.contains_key(&slot)
     }
 }
 

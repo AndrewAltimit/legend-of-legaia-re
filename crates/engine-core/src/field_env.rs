@@ -126,7 +126,9 @@ pub struct EnvDraw {
 /// terrain emitters re-read the scratchpad ladder every frame, so the drawn
 /// ground moves with it; the port bakes its draw list once at scene entry, so
 /// it keeps the rungs each draw used and re-resolves the height per frame
-/// through [`FloorWave`] instead of re-walking the map.
+/// through [`FloorWave`] instead of re-walking the map. The walk-ground
+/// heightfield is the per-vertex half of the same wave
+/// ([`crate::field_ground::live_render_positions`]).
 ///
 /// This mirrors exactly what [`Placement::world_y`] consumes: a terrain /
 /// decoration cell's four corner tiles, or a placed object's single
