@@ -619,7 +619,7 @@ measured channels.
 | `scene` | 1 when the engine landed in retail's scene |
 | `mode` | 1 when the engine's mode is `Field` (field class) / `WorldMap` (overworld class) / `Battle` (battle class) |
 | `position` | player `(X, Z)` after settling: 1 within 4 units, linear to 0 at 256 |
-| `footing` | engine floor sample at retail's `(X, Z)` vs retail's footing: 1 within 2, 0 at 128 (field class only) |
+| `footing` | engine floor sample at retail's `(X, Z)` vs retail's footing: 1 within 2, 0 at 128 (field class only; not scored while a script holds retail's player height, [below](#a-script-held-height-is-not-a-footing)) |
 | `camera` | mean of eight parts: pitch and yaw (1 within 16, 0 at 256, wrapped), `H` (1 within 4, 0 at 128), each eye word and each focus word (1 within 16, 0 at 1024) |
 | `bgm` | 1 when the engine's track-select word (`SceneHost::bgm_track_word`, the park sentinel `0x1000` included) equals retail's; the detail marks a held track on either side ([below](#a-held-track)) |
 | `fog_gate` | 1 when the engine's fog-pool gate equals retail's |
@@ -750,11 +750,60 @@ Shapes the corpus separates, each with what it indicates:
 | effect missing in the engine frame (save-point crystals, spell glows) | an actor or effect the fresh entry does not spawn, or one the port does not draw |
 | camera and dialogue off together, `script` detail says the gate was not met | a record the phase gate could not bring the engine to ([above](#mid-script-states)) |
 | flags `+sys` bits only the engine has, on a gated state | a placement the record poked ran its talk body in the engine ([above](#mid-script-states)) |
+| flags `+sys` / `-sys` one bit apart inside `0x19B..0x1AA` | the entry script's one-hot region selector, re-evaluated at the seat ([below](#the-region-selector-band-and-the-entry-order)) |
+| `fog_gate` and flag `0x01F` up in the engine only (`rikuroa_post_genesis_tree`) | script progress a card load undoes ([below](#a-flag-the-entry-raises-on-every-load)) |
 | player seated exactly, camera focus thousands of units away (`kor5_post_43a_checkpoint`: player Z `5312`, focus Z `11840`) | script progress: a scene script aimed the retail camera at another part of the map; the engine's follow camera frames the player |
 | a town label over the overworld's `H`, word `2000` and fog gate | a door caught before the town's field init ran; scored as the overworld `0x80084540` names ([below](#arrival-states-are-captured-before-the-town-runs)) |
 | retail word held by a flag the entry script already consumed (`garmel`'s `0x196`, `rikuroa`'s `0x289`) | script progress: the track was started by a beat that has since cleared its trigger flag, so a card load would not restart it |
 | camera depth and position off on an ending vignette (`ending_vignette_rimelm_walkaway`) | a residue of about a dozen frames of the credits walk against the camera glide ([below](#ending-vignettes-are-mid-script)) |
 | camera exact, frame aimed at another part of the room; retail focus `0x80089118/20` is not `-player` | a probe-poked capture ([below](#a-poked-player-keeps-the-arrival-focus)) |
+
+### A script-held height is not a footing
+
+Op `0x4C` nibble-4 sub-2 ramps an actor's `+0x8E` and, while the actor's
+`+0x10 & 0x20000000` is up, writes `world_y = -value` over whatever the floor
+says. `cort_evolved_approach_cutscene` is caught inside `jouind P2[4]` after
+`CC F8 42 5D 02 0A 00` lifted Vahn to `Y = -605`, on tiles whose floor tier is
+`0` - the floor under him is `0` in both games. The corpus reads the bit and
+`+0x8E` off the state and leaves `footing` unscored for such a state, with
+the held height in the detail, because the channel measures the floor model
+and retail's `Y` there is not a floor reading.
+
+### The region selector band and the entry order
+
+A field entry script typically carries a one-hot **region selector** in
+`0x19B..0x1AA`: its init clears the band, and each pass of its per-frame body
+walks op `0x42` mode 0 over the region-type mask `_DAT_8007B8F4` and, on a
+region whose bit is not yet the selected one, clears the band, sets that
+region's bit and re-applies its view window (op `0x46`) and camera region.
+The bit therefore records where the player stood the last time the system
+loop ran a pass - and the system SM `FUN_801DA51C` runs no pass while a
+record holds the player ([script-vm](../subsystems/script-vm.md#engagement-and-the-system-script)).
+
+`cort_evolved_approach_cutscene` holds `0x19F` while `jouind P2[4]` has Vahn
+on region type 3, where the body would select `0x19E`: retail chose `0x19F` at
+the arrival tile and has sat out every pass since. The engine's seed enters,
+hydrates and seats before its first tick, and in a scene the engine does not
+pre-run (every scene but the three opening legs) the entry script's install
+slice runs on that first tick - after the seat - so the band is cleared and
+re-selected at the seat. Retail runs the install slice in the load frame
+(`FUN_8003AB2C`, to the first executed `0x21`). Moving every scene's install
+slice into the load frame closes this bit but runs the entry's BGM cue and fog
+op before the seed's flags exist, and the corpus `bgm` channel fell by a
+fifth (by a tenth even with `--flags-first`), so the order stands and the
+bit is a seeding limit. The opening legs are pre-run already, and there the run
+stops where retail's does (`World::pre_run_entry_script`), so the two
+`opdeene` states carry retail's selector through the seed.
+
+### A flag the entry raises on every load
+
+`rikuroa`'s entry script raises the fog gate and sets flag `0x01F` on every
+load (`4C 30`, `50 1F` at `P1[0]` `+0x47`); the Genesis Tree beat `P2[54]`
+lowers both (`4C 31`, `60 1F` at `+0x1FC`). `rikuroa_post_genesis_tree` was
+taken after that beat in the same visit, so retail holds both down, and no
+record is running. A card load of that save runs the entry script again and
+raises both, which is what the engine's seed does: the divergence is history
+the save does not carry.
 
 ### A poked player keeps the arrival focus
 

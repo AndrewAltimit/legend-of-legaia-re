@@ -76,6 +76,9 @@ const LOADED_SCENE_DEFINE: u32 = 0x8008_4540;
 /// The ambient-particle (fog pool) master gate, raised / cleared only by
 /// field-VM op `0x4C` nibble 3 (`docs/subsystems/field-ambient-fx.md`).
 const FOG_GATE: u32 = 0x8007_B854;
+/// The actor `+0x10` bit under which op `0x4C` nibble-4 sub-2 writes the
+/// script height `+0x8E` into `world_y`.
+const PLAYER_SCRIPT_HEIGHT: u32 = 0x2000_0000;
 /// `_DAT_801F348C`, the field party HUD's idle countdown (`FUN_801D0D38`).
 const HUD_COUNTDOWN: u32 = 0x801F_348C;
 /// `DAT_801E46A4`, the menu overlay's current sub-screen id
@@ -213,6 +216,12 @@ pub struct RetailObs {
     pub class: StateClass,
     /// `(X, footing, Z)`.
     pub player: Option<[i16; 3]>,
+    /// The height a script holds the player at, when one does: the
+    /// player's `+0x8E` while `+0x10 & 0x20000000` is up. Op `0x4C` nibble-4
+    /// sub-2 ramps `+0x8E` and, with that bit set, writes `world_y = -value`
+    /// over the floor, so the `Y` above is the script's and not a floor
+    /// sample (`docs/subsystems/script-vm.md`, the actor `+0x8E` row).
+    pub script_height: Option<i16>,
     pub camera: CameraObs,
     pub bgm_id: u16,
     /// Whether the field BGM slot `0x8007052C` is attached and at a non-zero
@@ -312,6 +321,9 @@ impl RetailObs {
                 rd16(ram, p + 0x18),
             ]
         });
+        let script_height = game_anchors::player_ptr(ram)
+            .filter(|&p| game_anchors::u32_at(ram, p + 0x10) & PLAYER_SCRIPT_HEIGHT != 0)
+            .map(|p| rd16(ram, p + 0x8E));
         let class = StateClass::classify(game_mode, &scene, player.is_some());
         let menu = (class == StateClass::Menu).then(|| RetailMenu::from_ram(ram, &scene));
         let camera = CameraObs {
@@ -344,6 +356,7 @@ impl RetailObs {
             game_mode,
             class,
             player,
+            script_height,
             camera,
             bgm_id,
             bgm_sounding: game_anchors::u16_at(ram, BGM_PLAYING) != 0
@@ -995,6 +1008,7 @@ pub fn compare(
 ) -> (BTreeMap<String, f64>, BTreeMap<String, String>) {
     let mut ch = BTreeMap::new();
     let mut det = BTreeMap::new();
+    let mut footing_note = None;
     let mut put = |name: &str, score: f64, detail: String| {
         ch.insert(name.to_string(), round3(score));
         det.insert(name.to_string(), detail);
@@ -1055,12 +1069,24 @@ pub fn compare(
     if retail.class == StateClass::Field
         && let (Some(r), Some(floor)) = (retail.player, engine.floor_at_retail)
     {
-        let d = f64::from(floor - i32::from(r[1]));
-        put(
-            "footing",
-            falloff(d, 2.0, 128.0),
-            format!("retail footing={} engine floor={floor}", r[1]),
-        );
+        match retail.script_height {
+            // A script holds the player's height: retail's `Y` is that, not
+            // the floor, so there is no floor reading to score against.
+            Some(h) => {
+                footing_note = Some(format!(
+                    "not scored: retail Y={} is script-held (+0x8E={h}); engine floor={floor}",
+                    r[1]
+                ));
+            }
+            None => {
+                let d = f64::from(floor - i32::from(r[1]));
+                put(
+                    "footing",
+                    falloff(d, 2.0, 128.0),
+                    format!("retail footing={} engine floor={floor}", r[1]),
+                );
+            }
+        }
     }
     let (s, d) = camera_score(&retail.camera, &engine.camera);
     put("camera", s, d);
@@ -1125,6 +1151,9 @@ pub fn compare(
                 ),
             },
         );
+    }
+    if let Some(note) = footing_note {
+        det.insert("footing".to_string(), note);
     }
     (ch, det)
 }

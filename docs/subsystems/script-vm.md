@@ -309,6 +309,17 @@ releases him (the village gathering, which raises `0x231`); the elder's
 sets `0x141` and changes to `map01`. The south gate stays painted shut
 (`P1[0]`'s `4C 71` rectangles while `0x147` is set and `0x141` clear).
 
+The **install slice** comes first. When the scene loads, `FUN_8003AB2C`
+runs `P1[0]` straight through the dispatcher (only when its first byte is
+`0x24` / `0x25`) and leaves after the op it ran was `0x21`
+(`0x8003AD58`), on a PC that did not move (`0x8003AD68`), or on a text byte
+(`0x8003AD84`). Everything after that `0x21` - an entry's per-frame body, the
+region selector `0x19B..0x1AA`, an op-`0x44` spawn placed in the body - waits
+for the SM's passes. The engine installs the three opening legs' cutscene
+records at scene entry, so `World::pre_run_entry_script` runs those legs'
+passes in the load frame up to the one that spawns the record (`opdeene`
+ends at PC `0x99`, as the `s1_newgame_field` capture does).
+
 Port: `World::step_field_frame_slice` (the system-script gate,
 `FieldVmState::system_pass_open`), `World::field_scripts_held_for_battle`,
 `CutsceneTimeline::interaction_slot` (a boss-stager touch resumes the
