@@ -318,6 +318,13 @@ impl BattleCamera {
         self.phase
     }
 
+    /// Whether a glide is still carrying the camera toward its framing - the
+    /// capture harness's "settled" test, since a retail capture of a menu is
+    /// taken on a camera that has long arrived.
+    pub fn is_gliding(&self) -> bool {
+        !self.glides.is_empty()
+    }
+
     /// Phase-align the idle orbit's clock: set the free-running azimuth to
     /// `yaw` (12-bit units). Applies only where the orbit owns yaw - the
     /// [`BattleCamPhase::Menu`] far framing with no yaw glide in flight - and

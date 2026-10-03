@@ -1455,7 +1455,7 @@ impl BattleDrive {
     pub fn hold_ticks(&self) -> u32 {
         match self {
             Self::Menu { .. } => MENU_HOLD_TICKS,
-            Self::Action { .. } => 0,
+            Self::Action { .. } | Self::Opening { .. } => 0,
         }
     }
 
