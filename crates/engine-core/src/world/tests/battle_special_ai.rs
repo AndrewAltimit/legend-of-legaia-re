@@ -1413,3 +1413,61 @@ fn a_monster_strike_never_targets_a_fallen_party_member() {
         "non-vacuous: the picker alone does choose the fallen member"
     );
 }
+
+/// The same redirect covers a monster's **cast**: the turn picker's
+/// `jal 0x801DB124` at `0x801DAF50` has no category gate in front of it, and
+/// the kernel's Magic arm re-rolls a fallen single target whenever the
+/// spell's class byte is at or above `0x0A`. So a single-target spell never
+/// leaves aimed at a party member at zero HP while another stands. Property
+/// over many seeds with the fallen member's liveness halfword left stale, so
+/// the picker itself can still name it.
+#[test]
+fn a_monster_cast_never_targets_a_fallen_party_member() {
+    use crate::monster_catalog::vanilla_monster_catalog;
+    use crate::spells::SpellCatalog;
+    let mut casts = 0;
+    let mut chose_fallen_before_redirect = false;
+    for seed in 0..400u32 {
+        let mut world = World {
+            party: crate::world::PartyState {
+                party_count: 2,
+                ..Default::default()
+            },
+            ..World::default()
+        };
+        world.mode = SceneMode::Battle;
+        world.set_spell_catalog(SpellCatalog::vanilla());
+        world.tables.monster_catalog = vanilla_monster_catalog();
+        world.actors[0].battle.max_hp = 200;
+        world.actors[0].battle.hp = 0;
+        world.actors[0].battle.liveness = 1;
+        world.actors[1].battle.max_hp = 200;
+        world.actors[1].battle.hp = 200;
+        world.actors[1].battle.liveness = 1;
+        // Bandit Boss (id 5): two single-target spells, MP for either.
+        world.actors[2].battle.max_hp = 120;
+        world.actors[2].battle.hp = 120;
+        world.actors[2].battle.mp = 10;
+        world.actors[2].battle.liveness = 1;
+        world.actors[2].battle_monster_id = Some(5);
+        world.set_battle_magic(2, 40);
+        world.rng_state = seed.wrapping_mul(0x9E37_79B9) | 1;
+        world.take_monster_turn(2);
+        let Some(cast) = world.casting.pending_cast.as_ref() else {
+            continue;
+        };
+        casts += 1;
+        // The anti-repeat ring records the pick before the redirect runs.
+        chose_fallen_before_redirect |= world.battle.monster_ai_state.recent_targets[0] == 0;
+        assert_eq!(
+            cast.targets,
+            vec![1],
+            "seed {seed}: the cast re-rolled onto the standing member"
+        );
+    }
+    assert!(casts > 0, "non-vacuous: some seeds cast");
+    assert!(
+        chose_fallen_before_redirect,
+        "non-vacuous: the picker alone does choose the fallen member"
+    );
+}

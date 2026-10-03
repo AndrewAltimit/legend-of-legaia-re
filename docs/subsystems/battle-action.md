@@ -2892,9 +2892,17 @@ seats at the origin, and the cursor falls back to a plain slot-order scan.
   brings a dead target into reach. The picker's monster arm calls it too,
   unconditionally, straight after the AI picker (`jal 0x801E9FD4` then
   `jal 0x801DB124` at `0x801DAF48..0x801DAF50`), which is what stops a monster
-  whose picked party member has since fallen from walking at the corpse. The
-  engine runs it at each party dispatch and on a monster's physical pick
-  (`World::redirect_dead_battle_target`, called from `take_monster_turn`).
+  whose picked party member has since fallen from walking at the corpse. That
+  arm has no category gate, so it reaches a monster's single-target **cast**
+  too (category `2`, spell id in `+0x1DF`). The Magic arm's "class byte" is
+  the spell record's cast class `+0` (`0x800754C8[id * 12]`), and every real
+  class (`0x14` / `0x32` / `0x63`) clears `0xA`, so a cast at a fallen hero
+  re-rolls onto a standing one; only the class-`0` records (the internal
+  `0x00..=0x24` tiers and the monster attacks `0x2E` / `0x2F`) keep a dead
+  party target. An all-side target code (`8` / `9`) fails the `< 8` test and
+  is left alone. The engine runs it at each party dispatch and on a
+  monster's strike and single-target cast (`World::redirect_dead_battle_target`,
+  called from `take_monster_turn`).
 
 ### Per-frame action-effect update helpers
 

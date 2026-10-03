@@ -1200,6 +1200,16 @@ impl World {
             (retail >= RETAIL_FIRST_MONSTER || retail < party_count)
                 && alive.get(usize::from(s)).copied().unwrap_or(false)
         };
+        // The Magic arm keys on the cast's spell-table class byte `+0`
+        // (`0x800754C8[param0 * 12]`, `sltiu v0,v0,0xa` at `0x801DB1C8`).
+        // Without the table (a disc-free fixture) the cast reads as a plain
+        // `0x14` cast: every record a monster can pick (`0x25..=0x7F` and the
+        // `'c'` capture class) carries a class at or above `0x0A`.
+        let cast_class = if category == 2 {
+            self.spell_table_class(param0).unwrap_or(0x14)
+        } else {
+            0
+        };
         let mut rng = || (self.next_rand() & 0x7FFF) as i32;
         vm::battle_action::redirect_dead_target(
             vm::battle_action::RedirectQuery {
@@ -1211,7 +1221,7 @@ impl World {
             monster_count,
             &mut rng,
             is_alive,
-            |_| 0,
+            |_| cast_class,
         )
         .map_or(target, to_engine)
     }
