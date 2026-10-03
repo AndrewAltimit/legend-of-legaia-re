@@ -483,6 +483,10 @@ impl Renderer {
                             rp.draw_indexed(start..start + count, 0, 0..1);
                         });
                     }
+                    // The volumetric ground-fog enhancement: after every 3D
+                    // draw (depth-tested against them, writing none), before
+                    // every screen-space layer and the HUD.
+                    self.draw_fog_volume(&mut rp);
                     // The composited prims that sit UNDER the 2D overlays
                     // (`SceneWithScreenPrims::under_overlay`): the field
                     // attached-light pools, which retail draws beneath the

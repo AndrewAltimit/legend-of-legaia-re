@@ -27,6 +27,14 @@ pub struct WorldToggles {
     /// [`crate::options::OptionsState::retail_view_window`]. Default on; it
     /// only takes effect at retail framing.
     pub view_window_crop: bool,
+    /// The volumetric ground-fog **enhancement**
+    /// ([`crate::fog_volume`], stepped by `World::tick`), from
+    /// [`crate::options::OptionsState::volumetric_fog`]. Default **off** here
+    /// so headless hosts (replays, oracles) carry no enhancement; the play
+    /// hosts push their option (default on) through
+    /// [`crate::options::OptionsState::apply_to_world`]. Off resets the bank,
+    /// so every host draws exactly what it drew without the feature.
+    pub volumetric_fog: bool,
     // --- live gameplay loop (Field <-> Battle round trip) -----------------
     /// Master opt-in for the **field side** of the in-`tick` Field <-> Battle
     /// round trip: the step-driven random-encounter roll.
@@ -100,6 +108,7 @@ impl WorldToggles {
             entry_pulse_enabled: true,
             reduce_flashing: true,
             view_window_crop: true,
+            volumetric_fog: false,
             live_gameplay_loop: false,
             smarter_monster_targeting: false,
             use_vm_dialogue: false,

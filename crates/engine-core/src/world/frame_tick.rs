@@ -1094,6 +1094,9 @@ impl World {
         // The near-camera ghost pass reads the pose this tick settled
         // (`FUN_80046A20` calls `FUN_8004DC68` after its camera update).
         self.tick_battle_camera_ghost();
+        // The volumetric ground-fog enhancement steps on the tick this frame
+        // settled, after every actor moved (`crate::fog_volume`).
+        self.tick_fog_volume();
         outcome
     }
 

@@ -1382,6 +1382,8 @@ impl Renderer {
         let depth_view = create_depth_view(&device, config.width, config.height);
 
         Ok(Self {
+            fog_volume_pass: std::cell::RefCell::new(None),
+            fog_volume_active: std::cell::Cell::new(false),
             surface,
             device,
             queue,

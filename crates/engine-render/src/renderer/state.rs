@@ -44,6 +44,12 @@ pub(super) struct OcclFocus {
 }
 
 pub struct Renderer {
+    /// The volumetric ground-fog enhancement pass, built on the first frame
+    /// a host stages a bank ([`Renderer::set_fog_volume`]); `None` until
+    /// then, so a renderer that never sees one builds nothing.
+    pub(super) fog_volume_pass: std::cell::RefCell<Option<fog_volume::FogVolumePass>>,
+    /// Whether this frame has a bank staged.
+    pub(super) fog_volume_active: std::cell::Cell<bool>,
     pub(super) surface: wgpu::Surface<'static>,
     pub(super) device: wgpu::Device,
     pub(super) queue: wgpu::Queue,

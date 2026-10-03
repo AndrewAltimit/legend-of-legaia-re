@@ -222,6 +222,13 @@ pub struct OptionsState {
     /// for retail's frustum, so a farther or re-aimed camera draws the whole
     /// map instead of opening black edges. Off draws the whole map always.
     pub retail_view_window: bool,
+    /// Volumetric ground fog (engine-only, non-retail): a low drifting mist
+    /// bank over the scenes that read as misty or night, parted by the
+    /// characters walking through it ([`crate::fog_volume`]). Mirrors into
+    /// [`crate::world::WorldToggles::volumetric_fog`]. **Default on**; off is
+    /// the frame without the feature, pixel for pixel. Presentation only -
+    /// the bank reads the actors and never writes back.
+    pub volumetric_fog: bool,
 }
 
 impl Default for OptionsState {
@@ -245,6 +252,7 @@ impl Default for OptionsState {
             reduce_flashing: true,
             retail_static_window: true,
             retail_view_window: true,
+            volumetric_fog: true,
         }
     }
 }
@@ -266,6 +274,7 @@ impl OptionsState {
         world.toggles.select_attack = self.battle_select_attack;
         world.terrain.static_window.retail_windowing = self.retail_static_window;
         world.toggles.view_window_crop = self.retail_view_window;
+        world.toggles.volumetric_fog = self.volumetric_fog;
     }
 
     /// Step the follow-camera distance preset one place along its cycle and
