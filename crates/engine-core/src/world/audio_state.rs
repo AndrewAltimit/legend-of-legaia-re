@@ -195,6 +195,10 @@ pub struct AudioState {
     /// side-band teardown's `FUN_800653C8(0x17)` / `(0x16)`), drained by
     /// [`crate::world::World::take_sfx_voice_stops`].
     pub sfx_voice_stops: Vec<u8>,
+    /// SPU voices a minigame keyed directly this tick (`FUN_80065034` with
+    /// no ring descriptor - the slot machine's reel motor), drained by
+    /// [`crate::world::World::take_sfx_voice_keys`].
+    pub sfx_voice_keys: Vec<crate::other_game_overlay::VoiceAttrCue>,
     /// The two audio-level words the live-state window (and so every save)
     /// carries: the configured level `_DAT_8008457C` - the reference the MAN
     /// loader resets the live level `_DAT_8007B910` to on every scene load
@@ -247,6 +251,7 @@ impl AudioState {
             sound_detach: crate::sound_state::SoundDetachLatch::default(),
             residency: crate::world::SfxBankResidency::default(),
             sfx_voice_stops: Vec::new(),
+            sfx_voice_keys: Vec::new(),
         }
     }
 }
@@ -286,6 +291,10 @@ pub enum SfxRingOp {
     /// `FUN_80035BD0(id)` - overwrite the last-written slot's id, zero its
     /// countdown, leave the cursor.
     ReplaceLast(i16),
+    /// A producer that stores straight into one slot (`sh id,
+    /// DAT_8007B6D8[slot]`) without the cursor pair or the slot's countdown -
+    /// the slot machine overlay's every cue.
+    WriteSlot(u8, i16),
 }
 
 /// Where a side-band bank request lands: the VAB slot `FUN_800243F0` installs
@@ -402,10 +411,16 @@ impl World {
     /// slot), everywhere else the field scene's prescript record 0
     /// ([`crate::world::FieldPropState::stager_bytes`]). Both hosts mirror
     /// this into their runtime-row resolver every tick.
+    /// The slot machine overlay's init points the slot at the machine's own
+    /// `efect.dat` (extraction PROT 1199), which the scene host stages on the
+    /// warp ([`crate::world::MinigameState::slot_sfx_bundle`]).
     // REF: FUN_8001FA88, FUN_8001F7C0
     pub fn runtime_sfx_bundle(&self) -> &[u8] {
         match (&self.mode, self.audio.battle_sfx_bank.as_deref()) {
             (SceneMode::Battle, Some(bank)) => bank,
+            (SceneMode::SlotMachine, _) if !self.minigames.slot_sfx_bundle.is_empty() => {
+                &self.minigames.slot_sfx_bundle
+            }
             _ => &self.props.stager_bytes,
         }
     }

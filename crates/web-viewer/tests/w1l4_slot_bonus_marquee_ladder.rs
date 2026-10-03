@@ -331,6 +331,9 @@ fn the_rounds_payout_caption_spells_the_product_on_the_disc_bank() {
     }
     let product: u32 = numbers.iter().product();
     assert_eq!(m.phase(), SlotPhase::Payout);
+    // The payout state's first frame starts the caption clock (it is `0` on
+    // the evaluation frame, `0x801CF868`, and state 4 advances it).
+    m.tick();
 
     // Frame 1 of the caption: it starts 12 rows above the matrix, and only the
     // unsigned destination clip keeps those rows off the strip.

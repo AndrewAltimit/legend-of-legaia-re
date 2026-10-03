@@ -1203,9 +1203,14 @@ impl LegaiaMinigames {
         let Some(m) = self.slot.as_mut() else {
             return 0;
         };
+        // What the spin owes before this tick's timed tally moves any of it,
+        // so the credit reported is the whole win however it reaches the
+        // balance.
+        let owed = m.payout_left();
         m.tick();
         let credited = if m.phase() == SlotPhase::Payout {
-            m.collect()
+            m.collect();
+            owed
         } else {
             0
         };

@@ -507,6 +507,12 @@ impl SfxScheduler {
         self.ring.push_cue(id)
     }
 
+    /// Store `id` straight into ring slot `slot`
+    /// ([`crate::sfx_ring::SfxCueRing::write_id`]).
+    pub fn write_ring_slot(&mut self, slot: usize, id: i16) {
+        self.ring.write_id(slot, id);
+    }
+
     /// Set the delay (vsyncs) of the slot the last [`Self::push_ring_cue`]
     /// wrote ([`crate::sfx_ring::SfxCueRing::set_last_delay`]).
     pub fn set_ring_cue_delay(&mut self, delay: i16) {

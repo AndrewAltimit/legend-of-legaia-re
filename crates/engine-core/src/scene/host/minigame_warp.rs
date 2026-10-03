@@ -196,6 +196,13 @@ impl SceneHost {
         let balance = self.world.minigames.casino_coins as i32;
         let paylines =
             legaia_asset::minigame_slot_scene::parse_paylines(loaded).unwrap_or_default();
+        // The init's `efect.dat` load (raw TOC `0x4B1`): the runtime SFX
+        // descriptor bank every cue the machine raises resolves through.
+        self.world.minigames.slot_sfx_bundle = self
+            .index
+            .entry_bytes_extended(legaia_asset::minigame_sfx::SLOT_SFX_BANK_PROT_INDEX as u32)
+            .map(|b| b.to_vec())
+            .unwrap_or_default();
         self.world.enter_slot_machine(
             crate::slot_machine::SlotMachine::new(payouts, SLOT_RNG_SEED, balance)
                 .with_paylines(paylines),

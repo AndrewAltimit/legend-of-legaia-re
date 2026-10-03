@@ -1351,6 +1351,21 @@ impl BootSession {
                 .ok()
         });
         bgm.stop_sfx_voices(&self.host.world.take_sfx_voice_stops());
+        // A minigame's directly keyed voices (the slot machine's reel motor),
+        // after the stops so a release and a re-key in one tick end keyed.
+        for k in self.host.world.take_sfx_voice_keys() {
+            let keyed = bgm.key_on_voice_attr(legaia_engine_audio::VoiceAttr::from_cue_words(
+                k.voice,
+                k.vab_program_tone,
+                k.note_and_fine,
+                k.volume,
+            ));
+            log::debug!(
+                "direct voice {:#04x} {:?} keyed: {keyed}",
+                k.voice,
+                k.vab_program_tone
+            );
+        }
     }
 
     /// The session-side half of a scene swap under the host: the camera

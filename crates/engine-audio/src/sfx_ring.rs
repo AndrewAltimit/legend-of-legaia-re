@@ -206,6 +206,17 @@ impl SfxCueRing {
         }
     }
 
+    /// Store `id` into `slot` and nothing else - the bare
+    /// `sh id, DAT_8007B6D8[slot]` a producer that owns its slots issues (the
+    /// slot machine overlay). The cursor pair and the slot's countdown are
+    /// untouched, so a slot whose countdown is still running fires the new
+    /// id when it expires.
+    pub fn write_id(&mut self, slot: usize, id: i16) {
+        if let Some(s) = self.slots.get_mut(slot) {
+            s.id = id;
+        }
+    }
+
     /// Clear one slot outright.
     pub fn clear_slot(&mut self, slot: usize) {
         if let Some(s) = self.slots.get_mut(slot) {

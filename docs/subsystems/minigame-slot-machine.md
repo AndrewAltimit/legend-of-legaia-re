@@ -966,20 +966,37 @@ class]` - starting at the `u16` at `bank + 2`. The block yields exactly **11**
 class-2 records over 2 programs (4 tones + 7), and the PROT 1198 VAB declares
 exactly 2 programs and 11 tones: the agreement is what pins the table offset.
 
-| Event | Cue | Site |
-|---|---|---|
-| reel stop (once per reel) | `0x20A` | `FUN_801CF0D8` case 3 |
-| payout tally tick | `0x209` | `FUN_801CF0D8` case 4 |
-| reach / anticipation | `0x201` / `0x202` | `FUN_801CF0D8` |
-| second jackpot symbol sighted | `0x200` | `FUN_801D1AF4` |
-| confirm / cursor / cancel | `0x20` / `0x21` / `0x37` | static table, class-0 VAB (PROT 0868) |
+Every cue is a bare store into one ring slot (`DAT_8007B6D8[slot] = id`) - the
+overlay never goes through the cursor producer `FUN_80035B50`:
 
-The reel-spin *loop* is not a ring cue: it is a voice driven straight through
-`FUN_80065034` - the reel SM calls `func_0x80065034(0x13, 2, 1, 0, 0x3C, 0x40,
-0x28, 0x28)` (voice `0x13`, class-2 VAB, program 1, tone 0, note `0x3C`,
-volume `0x28`) as the reels start, and releases the voice on all-reels-stop.
-Decode it with `SfxCueBank::decode_tone` (constants
-`minigame_sfx::SLOT_SPIN_*`).
+| Event | Cue | Slot | Site |
+|---|---|---|---|
+| reel stop, once per Stop press taken | `0x20A` | 0 | `FUN_801CF0D8` state 3 (`0x801CF74C`, `0x801CF794`, `0x801CF7DC`) |
+| payout tally, once per transfer | `0x209` | 0 | state 4 (`0x801CF900..0x801CF90C`) |
+| spin start in feature mode 1 / 2 | `0x201` / `0x202` | 2 | state 1 after the roll (`0x801CF5C0` / `0x801CF5DC`) |
+| two landed bonus symbols, once per spin | `0x200` | 2 | `FUN_801D1AF4` (`0x801D2050`, guard `DAT_801d3ca8`) |
+| cash-out menu confirm / cursor / cancel | `0x20` / `0x21` / `0x37` | 0 | states 1 / `0x32`.. (static table, class-0 VAB) |
+
+The reel motor is not a ring cue: the bet charge keys voice `0x13` directly -
+`FUN_80065034(0x13, 2, 1, 0, 0x3C, 0x40, 0x28, 0x28)` (class-2 VAB, program 1,
+tone 0) - the scanner re-keys the same voice on tone `1` with its sting (the
+reach loop), and the evaluation releases it (`FUN_800653C8(0x13)` at
+`0x801CF878`).
+
+The payout state tallies over time rather than at once: it advances its
+caption timer every frame (`0` on a win, `0x6B` on a loss), moves `11` coins
+per odd frame while more than `20` are owed and `1` otherwise, ticking `0x209`
+for each move, and returns to idle with the winning line cleared once nothing
+is owed and the timer reaches `0x79`.
+
+Ported in `SlotMachine` (`take_sounds`, the `CUE_*` constants, `tick_payout`);
+the world routes the stores as `SfxRingOp::WriteSlot` and the motor through its
+direct voice-key / voice-stop queues, and both play hosts resolve the runtime
+rows through `World::runtime_sfx_bundle` - the machine's own `efect.dat`
+(PROT 1199) while it is up - against the PROT 1198 bank the residency stages in
+slot 2. A host press still collects at once (`SlotMachine::collect`, the rest of
+the tally). The cash-out menu's cues are not ported because the engine has no
+cash-out menu; the `O` hotkey cashes out directly.
 
 The slot machine starts **no BGM** - it inherits the host scene's, and the host
 scene is authored disc script, so the track is readable without a capture.

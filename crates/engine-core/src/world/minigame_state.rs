@@ -84,6 +84,10 @@ pub struct MinigameState {
     /// The scene mode to restore when the slot-machine minigame ends
     /// ([`crate::world::World::enter_slot_machine`] snapshots the interrupted mode).
     pub slot_return_mode: SceneMode,
+    /// The slot machine's runtime SFX descriptor bank (`efect.dat`, the raw
+    /// extraction PROT 1199 the overlay init loads), staged by the scene host
+    /// on the warp - see [`crate::world::World::runtime_sfx_bundle`].
+    pub slot_sfx_bundle: Vec<u8>,
     /// Baka Fighter duel state. `Some` while `mode ==
     /// SceneMode::BakaFighter`; the exchange / round / match state machine
     /// runs each tick. See [`crate::baka_fighter::BakaFight`] and
@@ -290,6 +294,7 @@ impl MinigameState {
             fishing_hub_text: None,
             slot_machine: None,
             slot_return_mode: SceneMode::Field,
+            slot_sfx_bundle: Vec::new(),
             baka_fighter: None,
             baka_return_mode: SceneMode::Field,
             muscle_dome: None,

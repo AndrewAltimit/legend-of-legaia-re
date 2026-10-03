@@ -1009,8 +1009,11 @@ impl LegaiaRuntime {
                 }
                 SfxRingOp::SetLastDelay(d) => self.sfx.sched.set_ring_cue_delay(d),
                 SfxRingOp::ReplaceLast(id) => self.sfx.sched.replace_ring_cue(id),
+                SfxRingOp::WriteSlot(slot, id) => self.sfx.sched.write_ring_slot(slot.into(), id),
             }
         }
+        // The runtime rows' bundle - the scene prescript in the field, a
+        // minigame's own `efect.dat` while one is up.
         if self.sfx.runtime_bundle.as_slice() != host.world.runtime_sfx_bundle() {
             self.sfx.runtime_bundle = host.world.runtime_sfx_bundle().to_vec();
         }
@@ -1024,6 +1027,7 @@ impl LegaiaRuntime {
             .filter(|b| b.slot != 6);
         let _stops = host.world.take_sfx_voice_stops();
         let monster_banks = host.world.battle_monster_sound_banks();
+        let voice_keys = host.world.take_sfx_voice_keys();
         // The field init `FUN_801D6704` closes slot 11 (`0x801D68B4`): a
         // parked reward bank does not outlive the battle it was staged for.
         if field_family {
@@ -1046,6 +1050,17 @@ impl LegaiaRuntime {
             if mask != 0 {
                 out.with_spu(|spu| spu.key_off_mask(mask));
             }
+        }
+        // A minigame's directly keyed voices (the slot machine's reel
+        // motor), after the stops so a release and a re-key of one voice in
+        // the same tick end keyed.
+        for k in voice_keys {
+            self.key_on_voice_attr(legaia_engine_audio::VoiceAttr::from_cue_words(
+                k.voice,
+                k.vab_program_tone,
+                k.note_and_fine,
+                k.volume,
+            ));
         }
         for xa in &field_xa_prestage {
             self.prestage_xa_clip(xa.clip, xa.channel, xa.duration_sectors);
