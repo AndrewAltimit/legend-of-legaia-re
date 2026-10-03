@@ -233,6 +233,11 @@ const SC_RAM_BASE: u32 = 0x8008_4140;
 const SC_LEN: usize = 0x2000;
 /// SC offset of the play-time counter (`0x80084570`).
 const SC_PLAY_TIME: usize = 0x430;
+/// SC offset of the pause menu's Field Move word (`0x800846CC`, Walk `0` /
+/// Run non-zero). The run selector XORs it with the held run button
+/// (`docs/subsystems/field-locomotion.md`), and it is inside the window a
+/// card load restores, so the anchor's player walks or runs by it.
+const SC_FIELD_MOVE: usize = 0x58C;
 /// SC offset of the system-flag bank (`0x80085758`) and its full extent up
 /// to the item window at `0x80085958`.
 const SC_SYSTEM_FLAGS: usize = 0x1618;
@@ -605,6 +610,12 @@ fn seed(
     // resume path runs (which applies the save again over the landing, and
     // seats the party at the save's position unless a live one is armed).
     session.host.world.load_full(sf.clone());
+    // The save's Field Move option. The engine keeps it as a host setting
+    // rather than save data, so the seed carries it the way the card load
+    // carries it in retail: a timed script (`jouind`'s two-switch gate gives
+    // 50 vsyncs of free walk between the switches) is paced for the player
+    // the anchor recorded, who had Run on.
+    session.host.world.locomotion.run_default = i32_at(&a.sc, SC_FIELD_MOVE) != 0;
     if let Some((x, z)) = a.seat {
         session.host.set_entry_seat(x, z);
     }
@@ -3781,6 +3792,9 @@ fn pad_walk(
     let mut corner_last: Option<(i16, i16)> = None;
     let mut corner_stuck = 0u32;
     let mut traced_tile = None;
+    // Where the player stood when the previous walk frame was pressed.
+    let mut pressed_at: Option<(i16, i16)> = None;
+    let mut tap_owed = false;
     for _ in 0..PAD_LEG_FRAMES {
         pad_budget(session)?;
         // Per overworld tile: the encounter step counter it left behind.
@@ -3929,13 +3943,31 @@ fn pad_walk(
         // Held against something that will not give: a player tries the
         // action button (a door that opens on a press, not on contact), and
         // the route is planned afresh (an NPC walked into it).
+        //
+        // `since` also counts a frame that moved without improving (a run
+        // step that stays inside one cell), and a tap there drops the held
+        // direction for a frame - no player stops to press while still
+        // walking. In a field the tap waits for a frame the player did not
+        // move: standing still for one frame of every few cost a timed
+        // script its window (`jouind`'s switch pair is 50 vsyncs of free walk
+        // apart).
+        let moved = pressed_at.is_some_and(|p| p != (wx, wz));
+        if since == 0 {
+            tap_owed = false;
+        }
         if since > 0 && since.is_multiple_of(60) {
             path.clear();
             planned_from = None;
             pad = 0;
-        } else if since > 0 && since % 60 == 1 {
-            pad = PadButton::Cross.mask();
+            tap_owed = false;
+        } else {
+            tap_owed |= since % 60 == 1;
+            if tap_owed && !(moved && walking_mode == SceneMode::Field) {
+                pad = PadButton::Cross.mask();
+                tap_owed = false;
+            }
         }
+        pressed_at = Some((wx, wz));
         session.host.world.set_pad(pad);
         match session.tick() {
             Ok(SceneTickEvent::SceneEntered { name }) => return Ok(Walk::Entered(name)),
