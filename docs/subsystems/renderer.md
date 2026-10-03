@@ -1493,6 +1493,17 @@ so it needs retail's behaviour. `BuildOptions { upload_all_tims: true }` switche
 is written to its header destination - images first as sequential DMA, then CLUTs
 with merge-zeros to preserve the row-479 palette split.
 
+A kingdom overworld is the exception. Its slot-0 atlas is a known, ordered DMA
+list, not an over-collected sweep, and retail's `LoadImage` replaces every word
+of each CLUT block, the transparent zeros included. After the merge pass the
+build therefore re-writes the atlas's CLUT blocks in pack order, last write
+wins. Under merge-zeros a boot-resident `init_data` row survived beneath a
+kingdom CLUT's entry 0: on `map03` the row-484 slot at `x = 240`, the palette
+of the trees' base quads, kept `0x8023` (an opaque near-black) where retail's
+VRAM holds `0x0000`, so every tree stood on a dark square. Both hosts build the
+overworld VRAM through this one kernel. Test:
+`engine-core/tests/world_map_kingdom_clut_overwrite.rs`.
+
 On town01 this lifts oracle coverage from ~4% (targeted) to ~38% of the runtime
 texture region, with wrong (engine-only) texels dropping from ~11.5k to ~250. The
 flag defaults `false`, so the render path is unchanged.

@@ -896,9 +896,14 @@ impl SceneResources {
         // town load path. See [`docs/formats/scene-bundles.md`].
         let mut tim_bufs: Vec<Vec<u8>> = Vec::new();
         let mut tim_parse_failures = 0usize;
+        // Indices into `tim_bufs` of the kingdom bundle's slot-0 atlas, whose
+        // CLUT blocks are re-written last-write-wins after the merge pass
+        // below (see the comment there).
+        let mut kingdom_tims: Vec<usize> = Vec::new();
         let collect_tim_bufs = |s: &Scene,
                                 tim_bufs: &mut Vec<Vec<u8>>,
                                 tim_parse_failures: &mut usize,
+                                kingdom_tims: &mut Vec<usize>,
                                 is_main: bool| {
             // The shared `player_data` block (the raw-876 character pack,
             // extraction 0874) feeds the TMD pool head, but its §2 texture
@@ -931,6 +936,7 @@ impl SceneResources {
                     let mut added = 0usize;
                     for tslice in &tim_slices {
                         if legaia_tim::parse(tslice).is_ok() {
+                            kingdom_tims.push(tim_bufs.len());
                             tim_bufs.push(tslice.to_vec());
                             added += 1;
                         }
@@ -1022,10 +1028,22 @@ impl SceneResources {
             }
         };
         for shared in shared_scenes {
-            collect_tim_bufs(shared, &mut tim_bufs, &mut tim_parse_failures, false);
+            collect_tim_bufs(
+                shared,
+                &mut tim_bufs,
+                &mut tim_parse_failures,
+                &mut kingdom_tims,
+                false,
+            );
         }
         let shared_tim_count = tim_bufs.len();
-        collect_tim_bufs(scene, &mut tim_bufs, &mut tim_parse_failures, true);
+        collect_tim_bufs(
+            scene,
+            &mut tim_bufs,
+            &mut tim_parse_failures,
+            &mut kingdom_tims,
+            true,
+        );
         let tim_count = tim_bufs.len();
 
         let (mut vram, upload_stats) = if options.upload_all_tims {
@@ -1040,6 +1058,21 @@ impl SceneResources {
                 &needs,
             )
         };
+
+        // The kingdom atlas is a known, ordered DMA list - the slot-0 pack
+        // retail uploads member by member over the boot-resident rows - so
+        // its CLUT blocks replace every word they cover, the zeros included,
+        // as `LoadImage` does. The merge-zeros pass above exists for the
+        // field sweep's over-collected TIMs and would otherwise keep a
+        // boot-resident `init_data` word under a kingdom CLUT's transparent
+        // entry 0: on `map03` the row-484 slot at `x = 240` (the tree-base
+        // quads' CLUT) kept `0x8023`, an opaque near-black, where retail's
+        // VRAM holds `0x0000`, and every tree stood on a dark square.
+        for &i in &kingdom_tims {
+            if let Ok(tim) = legaia_tim::parse(&tim_bufs[i]) {
+                vram.upload_tim_partial(&tim, false, true);
+            }
+        }
 
         // Synthetic CLUT pass: for every `battle_data` pack entry in the
         // scene's CDNAME block (and any shared block), surface CLUT-row
