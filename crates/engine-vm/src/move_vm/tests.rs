@@ -1915,3 +1915,111 @@ fn draw_channels_integrate_in_modes_2_and_6_only() {
     integrate_draw_channels(&mut s, 8);
     assert_eq!(s.actor_u16(0xC8), 8);
 }
+
+/// Op `0x3C` (`0x80023CA4`) seats a keyframe pose: mode `6`, the cursor
+/// cleared, each part's six operands as both current and target keyframe.
+/// Op `0x3D` (`0x80023D64`) sets the cursor rate `+0xD0`, latches the PC at
+/// `+0xCE` and loads new targets; once a keyframe is latched, the next `0x3D`
+/// first moves every current keyframe to where the cursor blended it.
+#[test]
+fn op3c_seats_and_op3d_retargets_the_keyframe_pose() {
+    let mut host = TestHost::default();
+    let mut s = ActorState::new();
+    s.y_rot = 0x123;
+    let bc = program(&[
+        0x3C,
+        2, //
+        0,
+        0x10,
+        0x20,
+        100,
+        0,
+        200, //
+        0,
+        0,
+        0,
+        (-100i16) as u16,
+        0,
+        0, //
+        0x3D,
+        0x0C,
+        2, //
+        0,
+        0,
+        0,
+        300,
+        0,
+        400, //
+        0,
+        0,
+        0,
+        100,
+        0,
+        0, //
+        0x3D,
+        0x0C,
+        2, //
+        0,
+        0,
+        0,
+        0,
+        0,
+        0, //
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]);
+    assert_eq!(step(&mut host, &mut s, &bc), StepResult::Advance);
+    assert_eq!(s.pc, 14);
+    assert_eq!(s.move_submode, 6);
+    assert_eq!(s.y_rot, 0, "op 0x3C clears the cursor");
+    assert_eq!(s.keyframe_pose.len(), 2);
+    assert_eq!(&s.keyframe_pose[0][..6], &s.keyframe_pose[0][6..]);
+    assert_eq!(s.keyframe_pose[1][3], -100);
+
+    step(&mut host, &mut s, &bc);
+    assert_eq!(s.pc, 29);
+    assert_eq!(s.actor_u16(0xD0), 0x0C, "cursor rate");
+    assert_eq!(s.actor_u16(0xCE), 14, "the latch is this op's PC");
+    assert_eq!(s.keyframe_pose[0][3], 100, "no bake before a latch");
+    assert_eq!(s.keyframe_pose[0][9], 300, "new X target");
+
+    // Half way through the blend, the next 0x3D bakes it into `cur`.
+    s.y_rot = 0x800;
+    step(&mut host, &mut s, &bc);
+    assert_eq!(s.keyframe_pose[0][3], 200, "100 + (300 - 100) / 2");
+    assert_eq!(s.keyframe_pose[0][5], 300, "200 + (400 - 200) / 2");
+    assert_eq!(s.keyframe_pose[1][3], 0, "-100 + (100 + 100) / 2");
+    assert_eq!(s.y_rot, 0);
+    assert_eq!(s.actor_u16(0xCC), 14, "the previous latch moves to +0xCC");
+    assert_eq!(s.actor_u16(0xD2), 1);
+}
+
+/// The part tick steps the cursor by `+0xD0 * frame step`
+/// (`0x80021E50..0x80021E74`), and the mode-6 tail packs each part's blended
+/// keyframe into the clip entry `FUN_8001BE80` decodes
+/// (`0x80022EFC..0x8002303C`): halfwords 3 / 4 / 5 as 12-bit X / Y / Z,
+/// halfword 1 `>> 4` as the X and Z angle bytes, halfword 2 `>> 4` as Y.
+#[test]
+fn the_keyframe_cursor_steps_and_the_mode_6_tail_packs_the_pose() {
+    let mut s = ActorState::new();
+    s.set_actor_u16(0xD0, 0x0C);
+    advance_keyframe_cursor(&mut s, 2);
+    assert_eq!(s.y_rot, 0x18);
+    s.keyframe_pose = vec![[0, 0x100, 0x200, -862, 5, 454, 0, 0x100, 0x200, -862, 5, 454]];
+    assert!(keyframe_pose_entries(&s).is_empty(), "mode 6 only");
+    s.move_submode = 6;
+    let e = keyframe_pose_entries(&s);
+    // X = -862 = 0xCA2, Y = 5, Z = 454 = 0x1C6.
+    assert_eq!(e, vec![[0xA2, 0x05, 0x0C, 0xC6, 0x01, 0x10, 0x20, 0x10]]);
+    // Blended half way toward a target.
+    s.keyframe_pose[0][9] = -862 + 200;
+    s.y_rot = 0x800;
+    assert_eq!(
+        keyframe_pose_entries(&s)[0][0],
+        ((-762i32) as u32 & 0xFF) as u8
+    );
+}

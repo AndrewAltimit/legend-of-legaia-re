@@ -3342,14 +3342,30 @@ first move-VM run); the ambient install `FUN_800252EC` and op `0x25`'s child
 spawn both pass `0x1000`. A part seated with `+0x72 = 0` collapses every
 corner onto the node, which is how the port drew nothing here.
 
-Retail's frame draws more sheets than it has nodes. The walked table of
-`keikoku_chest_preload` holds 52 page-`0x26` packets from the nine live
-nodes, in rows at one depth spread across the screen (`x` from `31` to
-`509`), and each node's model list `+0x44` holds eight slots, all pointed at
-the one built quad (`0x8001B08C..0x8001B0B4`). The per-slot draw loop
-(`0x8001B40C..0x8001B5D4`) sets no per-slot transform in the path the port
-reads, so what spreads the eight copies is not yet traced; the port draws
-one sheet per node.
+Each node draws **eight** sheets, spread along the ridge line. Both
+children run move-VM op `0x3C` with a count of `8` right after their sprite
+op: it sets the model list's count word to `8`, switches the node to the
+keyframe-mesh mode `+0x5A = 6`, and seats an eight-part keyframe pose
+behind `+0x4C`; op `0x3D` then gives every part a target and the cursor
+rate `+0xD0 = 0x0C`, which the part tick adds to the blend cursor `+0x22`
+each frame ([move-vm.md](move-vm.md#keyframe-pose-ops-0x3c--0x3d)). The
+draw dispatcher's case 4 points all eight slots of the list at the one
+built quad (`0x8001B08C..0x8001B0B4`) and then, at `0x8001B160`, hands a
+`+0x5A == 6` node to the animated renderer `FUN_8001B964` with `+0x4C` as a
+one-frame clip, so slot `i` is the quad translated by part `i`'s blended
+keyframe. The puffs' keyframes are pure X / Z translations - the sheets open
+out from about `±256` to `±1280` units either side of the node over a
+puff's life.
+
+The walked table of `keikoku_chest_preload` holds 52 page-`0x26` packets:
+seven nodes with a pose block (two more hold none and are drawn nowhere),
+eight slots each, less four off screen. Their colours (`0x7F`, `0x5C`,
+`0x1F`) are the depth cue of each node's fade level `+0x78`. Each packet
+adds its texel to the frame (ABR `1`), and later opaque terrain in the
+ordering table paints over the lower part of the band; what remains is a
+white band along the far ridge, most of it under the party HUD.
+`engine-core::effect_sprite_arm::sprite_arm_draws` draws one quad per posed
+part on both hosts.
 
 ### Gate-arm chain - `FUN_801D1344` -> `FUN_801D8258`
 

@@ -525,6 +525,10 @@ impl World {
             {
                 let st = &mut self.ambient.fx[idx].state;
                 move_vm::decrement_wait_timer(st, drain);
+                // The keyframe cursor `+0x22` steps by the op-`0x3D` rate
+                // `+0xD0` (`0x80021E50..0x80021E74`): what spreads `map01`'s
+                // puff sheets apart over a puff's life.
+                move_vm::advance_keyframe_cursor(st, self.clock.frame_step.max(1));
                 move_vm::integrate_draw_channels(st, drain);
                 if crate::part_motion::runs_motion_block(st) {
                     crate::part_motion::motion_block(st, drain);
@@ -545,15 +549,15 @@ impl World {
     }
 
     /// The live ambient parts that are `0x4000` sprite-arm nodes (move-VM
-    /// op `0x23`), each as its one-quad mesh
-    /// ([`crate::effect_sprite_arm::sprite_arm_draw`]). Part of
+    /// op `0x23`), each as its quad - one per posed part on a keyframe-pose
+    /// node ([`crate::effect_sprite_arm::sprite_arm_draws`]). Part of
     /// [`World::active_effect_kind4_draws`].
     pub fn ambient_sprite_arm_draws(&self) -> Vec<crate::effect_ribbon::RibbonDraw> {
         self.ambient
             .fx
             .iter()
             .filter(|p| !p.finished)
-            .filter_map(|p| crate::effect_sprite_arm::sprite_arm_draw(&p.state))
+            .flat_map(|p| crate::effect_sprite_arm::sprite_arm_draws(&p.state))
             .collect()
     }
 

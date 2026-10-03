@@ -650,13 +650,13 @@ impl SummonScene {
 
     /// The live `0x4000` sprite-arm nodes (move-VM op `0x23`) this scene
     /// holds, each as its one-quad mesh
-    /// ([`crate::effect_sprite_arm::sprite_arm_draw`]). Like ribbons they are
+    /// ([`crate::effect_sprite_arm::sprite_arm_draws`]). Like ribbons they are
     /// transform nodes, so [`Self::part_draws`] never lists them.
     pub fn sprite_arm_draws(&self) -> Vec<crate::effect_ribbon::RibbonDraw> {
         self.parts
             .iter()
             .filter(|p| !p.finished)
-            .filter_map(|p| crate::effect_sprite_arm::sprite_arm_draw(&p.state))
+            .flat_map(|p| crate::effect_sprite_arm::sprite_arm_draws(&p.state))
             .collect()
     }
 

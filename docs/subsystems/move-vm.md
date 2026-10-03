@@ -242,9 +242,9 @@ Absolute `actor[+0x24..+0x28] = v1..v3`.
 
 `actor[+0x10] |= 2` / `actor[+0x10] &= ~2`.
 
-### 0x3C - `SCRATCH_WRITE` (size ?)
+### 0x3C - `KEYFRAME_SEAT` (size `2 + 6*count`)
 
-Writes `(int)(short)v1` into `*actor[+0x44]` (the indirect scratch slot).
+Seats a keyframe pose; see [keyframe-pose ops](#keyframe-pose-ops-0x3c--0x3d).
 
 ### 0x40 - `MOVE_IMAGE` (size 7)
 
@@ -306,9 +306,9 @@ carrying structure are called out below the table.
 | `0x29` | 2 | `+0x96 = v1` (tween scale X, no shift) |
 | `0x2A` | 2 | `+0x9A = v1 << 3` (tween scale Z) |
 | `0x2B` | 4 | `+0x90 = v1; +0x92 = v2; +0x94 = v3` (the three rates, absolute) |
-| `0x3D` | 3 + 6*count | keyframe-mesh LERP + load - see below |
-| `0x3E` | 2 | `+0x22 = v1` (morph interpolation cursor, 12-bit) |
-| `0x3F` | 2 | `+0xD0 = v1` |
+| `0x3D` | 3 + 6*count | keyframe-pose retarget - see [keyframe-pose ops](#keyframe-pose-ops-0x3c--0x3d) |
+| `0x3E` | 2 | `+0x22 = v1` (the keyframe blend cursor, 12-bit) |
+| `0x3F` | 2 | `+0xD0 = v1` (the cursor rate) |
 | `0x41` | 2 | `+0xB2 = v1` |
 | `0x42` | 0xF | draw-kind-4 node on the `0x2000` ribbon arm - see [draw-kind-4 setup ops](#draw-kind-4-setup-ops-0x13-0x23-0x42) |
 | `0x43` | 1 | `+0x86 \|= 0x2000` |
@@ -345,13 +345,43 @@ the live body to the **battle overlay (0898)** (563 instructions; the
 is field-resident-only. The two escapes are symmetric: `0x2F` → field ext VM,
 `0x17` → battle ext VM.
 
-**`0x3D` keyframe-mesh interpolation.** `0x3D` is the per-tick driver: when a prior keyframe is armed (`+0xCE != 0`) it LERPs the vertex
-buffer at `+0x4C` toward the next keyframe by the 12-bit cursor `+0x22`
-(`a + ((b - a) * cursor >> 12)`, six components per vertex), then latches the new
-keyframe (`+0xCE = PC`) and copies `count` vertices' worth of operand data in
-(size `3 + 6*count`). This is the move-VM authoring side of the mode-6
-keyframe-mesh blend the [part render-tail](#part-render-tail-the-0x5a-render-modes-fun_80021df4)
-consumes.
+### Keyframe-pose ops (`0x3C` / `0x3D`)
+
+`0x3C` (`0x80023CA4..0x80023D60`) seats a per-part pose for the actor's
+model list. `count = (short)v1` goes to the list's count word
+`*actor[+0x44]`; `+0x5A = 6` (the keyframe-mesh render mode); the cursor
+`+0x22`, `+0x68` and `+0x5C` clear; a `count << 5 | 8`-byte block is
+allocated into `+0x4C` if it is empty (`FUN_80017888`); `+0xCC = PC` and
+`+0xCE = +0xD0 = +0xD2 = 0`. The block is an 8-byte clip header, `count`
+packed 8-byte clip entries, then `count` 24-byte keyframe records - six
+halfwords of the current keyframe and six of the target - and each part's
+six operands seed both halves.
+
+`0x3D` (`0x80023D64..0x80023F18`, size `3 + 6*count`) retargets it.
+`+0xD0 = v1` is the cursor rate and `v2` the part count. When a keyframe is
+already latched (`+0xCE != 0`), every part's current keyframe first moves to
+where the cursor has blended it (`cur += (tgt - cur) * +0x22 >> 12`, all six
+halfwords) with `+0xCC = +0xCE`, `+0xD2 = 1`. Then the cursor clears,
+`+0xCE = PC`, and the operands become the new targets. `0x3F` writes the
+rate `+0xD0` alone.
+
+The part tick advances the cursor in every mode, right after the wait drain:
+`+0x22 += (short)+0xD0 * DAT_1F800393` (`0x80021E50..0x80021E74`, the frame
+step without the speed scalar). Its mode-`6` tail (`0x80022EFC..0x8002303C`)
+blends each part, `cur + (tgt - cur) * +0x22 >> 12`, and packs it into the
+clip entry `FUN_8001BE80` decodes: halfwords 3 / 4 / 5 are the 12-bit X / Y / Z
+translation, halfword 1 `>> 4` is both the X and the Z rotation byte,
+halfword 2 `>> 4` the Y rotation byte, and halfword 0 is blended but never
+packed; the header is stamped `count` parts, one frame, rate 1. The draw
+dispatcher sends a `+0x5A == 6` actor to the animated renderer
+`FUN_8001B964` (`0x8001B160`), which poses list slot `i` by entry `i`. On a
+draw-kind-4 sprite-arm node every slot is the one built quad, so the pose
+places `count` copies of it - `map01`'s mist puffs
+([world-map.md](world-map.md#per-actor-render-dispatcher---fun_8001ada4)).
+
+Port: `move_vm::step` (ops), `advance_keyframe_cursor`,
+`keyframe_pose_entries`; the draw is
+`engine-core::effect_sprite_arm::sprite_arm_draws`.
 
 ### Draw-kind-4 setup ops (`0x13`, `0x23`, `0x42`)
 
@@ -589,9 +619,10 @@ visual node at all**.
 
 After the mode dispatch the tick calls the move VM
 (`if +0x54 >= 0 || (FUN_80023070() ran && !(flags & 8))`), then the mode-`4`/`7`
-draw and the mode-`6` keyframe-mesh interpolation run: for each of `*(+0x44)`
-vertices it LERPs two keyframes by the 12-bit cursor `+0x22`
-(`a + ((b - a) * cursor >> 12)`) into the GTE-packed output buffer at `+0x4C`.
+draw and the mode-`6` keyframe-pose pack run: for each of the `*(+0x44)`
+model-list parts it LERPs two keyframes by the 12-bit cursor `+0x22`
+(`a + ((b - a) * cursor >> 12)`) into a one-frame clip entry at `+0x4C`
+([keyframe-pose ops](#keyframe-pose-ops-0x3c--0x3d)).
 
 #### Mode 3's `FUN_80019D50` is an HSV recolour, not a particle spawner
 
