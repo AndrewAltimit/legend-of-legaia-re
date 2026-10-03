@@ -323,10 +323,13 @@ tick for tick, and three things used to put it on another one:
   bars it seeded reach the child on the same first battle tick
   (`LEGAIA_BATTLE_BARS`).
 
-A settled field also carries its script state into the fight. A scripted
-duel whose dialogue was open when the encounter is forced (the Nivora Che /
-Gala duel) keeps the box on the battle frame, on both sides; the frame now
-shows what the state channels already scored. What still parts the two is
+A settled field also carries its script state into the fight. In `nilboa`
+the settle leaves the Nivora duel's dialogue parked on a text page when the
+encounter is forced. Retail cannot show that box over a fight: its pager
+`FUN_801D84D0` lives in the field overlay (PROT 0897, slot A), which the
+battle overlay replaces, so the parked context keeps its park and nothing
+draws it. The engine matches - `World::script_dialog_panel`, which both
+hosts draw the box from, answers `None` in battle mode. What still parts the two is
 render-coupled: a battle clip's end is read off
 the window's pose sampling, so an effect-script spawn can land a few ticks
 apart (the Delilas Spirit band `0x47`). Comparing a per-tick trace of
@@ -1042,6 +1045,30 @@ The phase gate resumes record 6 and replays that staging, which puts the
 camera exactly on retail's shot and the player on retail's `(5952, 12992)`.
 An engine that stepped the placements the record pokes left the player at
 `(6208, 13120)`; no poke engages a placement, so none runs.
+
+### An attack-face capture frames the shot the state before it armed
+
+The three `super_queue_replace_*` states are one base capture with a
+RAM-injected action queue, so they carry the same camera words: `ctx[7]` is
+`0x14`, `ctx[+0xD] = 3`, `DAT_8007BD71 = 0xFF`, eye `(0, 972, 2867)` at pitch
+`0x80`. State `0x14` lasts one frame on both sides: its body (`0x801E305C`)
+calls `FUN_801D5854(seat, 6)` and leaves for `0x19` or `0x1E` before it
+returns. So the shot on screen is the one the `0x0C` seed armed, and both
+sides take case 6's in-fight arm. The engine's framing is not the gap. The gap
+is where the glide starts from:
+
+- Retail's depth `2867` is `prescale(0x700)`, exactly one sixth of the way
+  from the arts-entry close-up `prescale(0x600)` toward case 6's
+  `prescale(0xC00)`. The acting member came straight out of its own arts
+  entry. In the engine's round the monster acts first, and the pad drive takes
+  Auto at the attack-mode prompt, so the engine's glide starts from the
+  monster's end-of-action shot.
+- The style is a draw. Retail's `3` would add the half-turn, but the captured
+  yaw `3205` has none: it is the engine's style-`2` yaw (`3202`). A stream
+  that rolls `3` flips the engine's yaw, and the camera channel falls.
+
+Pitch `0x80` already reached and `TR.y = 972` do not fit a single glide step,
+so the capture's own glide history is not fully explained either.
 
 ## See also
 

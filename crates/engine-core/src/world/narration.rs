@@ -782,7 +782,18 @@ impl World {
     /// it has one, else the first concurrent helper's. Retail has one shared
     /// box, so hosts draw exactly this one
     /// ([`Self::drive_script_dialog`] routes the pad the same way).
+    ///
+    /// `None` while a battle runs. The box is drawn by the field overlay's
+    /// pager (`FUN_801D84D0`, PROT 0897 at slot A `0x801CE818`), and the
+    /// battle overlay (PROT 0898) is loaded over the same slot, so a context
+    /// still parked on a text page when its fight starts keeps its park - the
+    /// field contexts are frozen, not torn down - but nothing draws its box
+    /// on the battle frame.
+    // REF: FUN_801D84D0
     pub fn script_dialog_panel(&self) -> Option<&crate::dialog::OwnedDialogPanel> {
+        if self.mode == SceneMode::Battle {
+            return None;
+        }
         self.cutscene
             .timeline
             .as_ref()
@@ -4870,6 +4881,28 @@ mod tests {
             "dismissing the box resumes the helper past the segment"
         );
         assert!(w.script_dialog_panel().is_none());
+    }
+
+    #[test]
+    fn a_parked_box_is_not_drawn_over_a_battle() {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        // The field pager lives in the field overlay, which the battle
+        // overlay replaces: a context parked on its text across a forced
+        // fight keeps its park, but no box is drawn until the field returns.
+        let bc = vec![0x1F, b'H', b'i', 0x00, 0x4A, 0x40, 0x00];
+        let mut w = World::new();
+        w.field_vm
+            .helper_contexts
+            .push(CutsceneTimeline::new(bc, 0));
+        w.step_helper_contexts();
+        assert!(w.script_dialog_panel().is_some());
+        w.mode = crate::world::SceneMode::Battle;
+        assert!(w.script_dialog_panel().is_none(), "no box over the fight");
+        w.mode = crate::world::SceneMode::Field;
+        assert!(
+            w.script_dialog_panel().is_some(),
+            "the park survives the fight"
+        );
     }
 
     #[test]
