@@ -496,7 +496,16 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   any of those reads as a wipe.
 - The pad planner finds a crossing scene by trial, not by reading which side
   each of its doors lands on, and a crossing whose side is story state
-  (`suimon`'s water gate `0x27B`) needs that beat played first.
+  (`suimon`'s water gate `0x27B`) needs that beat played first. The talk
+  beats count a **hand-off** as a story beat: a talk that sets a flag the
+  live state lacks and changes scene to one whose entry script tests it.
+  `suimon`'s Water Gate Controller (`P1[4]`) sets `0x2C6` and enters `map01`
+  at `(0, 0)`, which is retail's own landing for a cutscene visit: `map01`'s
+  `P1[0]` spawns the drain (`P2[15]`, `0x2C6` -> `0x2C7`), which returns the
+  party to the drained chamber, where `suimon`'s `P1[0]` sets `0x27B`. None
+  of those flags but the last is in the next anchor, so a flag-reach test
+  alone never picks the controller. A crossing whose beat changed scene lets
+  the landing's arrival run before the position is read.
 - The pad hand heals only with items it already carries and with a free
   or affordable rest in a scene that rolls no encounters; it does not buy
   items or use magic.
