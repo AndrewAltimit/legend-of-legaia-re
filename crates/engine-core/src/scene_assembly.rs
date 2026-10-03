@@ -141,6 +141,13 @@ pub fn assemble_field_scene(index: &ProtIndex, name: &str) -> Result<AssembledSc
             .ok()
             .flatten()
             .unwrap_or_default();
+        // Story-hidden landmarks (bind prologue parked the actor at the hide
+        // box - map01's sea dome and second river bridge), staged at the
+        // scene's canonical free-roam visit like the field branch below.
+        if let Ok(Some(binds)) = scene.field_object_binds(index) {
+            let hidden = field_env::story_hidden_records_for_scene(&scene, index);
+            field_env::retain_visible_landmark_placements(&mut tiles, &binds, &hidden);
+        }
         if let Ok(Some(deco)) = scene.walk_decoration_placements(index) {
             tiles.extend(deco);
         }

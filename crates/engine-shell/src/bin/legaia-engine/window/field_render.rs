@@ -797,10 +797,20 @@ impl PlayWindowApp {
         // depth-cues each decoration by its origin's depth
         // (`legaia_engine_core::overworld_ground_cue::decoration_draw_cue`),
         // the landmarks it skips take no cue from it.
-        let landmarks = match scene.walk_object_placements(&self.session.host.index) {
+        let mut landmarks = match scene.walk_object_placements(&self.session.host.index) {
             Ok(Some(t)) => t,
             _ => Vec::new(),
         };
+        // Story-hidden landmarks: a placed record whose bind prologue parked
+        // its actor at the hide box draws nothing (map01's sea dome south of
+        // Rim Elm, the river bridge's second stamp).
+        if let Ok(Some(binds)) = scene.field_object_binds(&self.session.host.index) {
+            legaia_engine_core::field_env::retain_visible_landmark_placements(
+                &mut landmarks,
+                &binds,
+                &self.session.host.world.hidden_object_records(),
+            );
+        }
         let deco = match scene.walk_decoration_placements(&self.session.host.index) {
             Ok(Some(t)) => t,
             _ => Vec::new(),

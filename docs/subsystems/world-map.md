@@ -2311,6 +2311,19 @@ stamps - record 441 is a plain decoration at the road crossing
 grid cell over the river at `(10688, 5312)`) is spawn-scripted and does not
 rest at its grid cell; retail shows a single bridge, at the record-441 site.
 
+**A landmark whose prologue parks it draws nothing.** Record 349's bind
+record and record 414's (pack mesh 31, cell `(96, 20)` in the sea south of
+Rim Elm's gate) both open with `23 7F 7F`, the move to the off-map hide box.
+A retail capture standing at the gate holds both actors at
+`(0x3FC0, 0x3FC0)` with their meshes resolved, so the overworld draws
+neither. The port pre-runs the same prologues at scene entry
+(`World::hidden_object_records`, map01 hides partition-0 records 9 and 11).
+Before resolving the landmark layer, all three hosts drop each placed record
+whose bind is hidden
+(`legaia_engine_core::field_env::retain_visible_landmark_placements`). The
+decoration sweep runs no script and is never filtered. map02 and map03 park
+no landmark on a cold entry.
+
 #### Placing the continent terrain (engine port)
 
 The kingdom slot-1 meshes are object-local, so the continent must be assembled

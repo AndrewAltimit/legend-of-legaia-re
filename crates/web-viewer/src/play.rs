@@ -189,6 +189,25 @@ fn pose_into(
     }
 }
 
+/// The overworld's placed landmarks minus the story-hidden ones (bind prologue
+/// parked the actor at the hide box), the same filter the native window's
+/// `resolve_world_map_terrain_draws` applies.
+fn world_map_landmarks(
+    index: &ProtIndex,
+    scene: &Scene,
+    hidden_records: &std::collections::HashSet<usize>,
+) -> Vec<legaia_asset::field_objects::Placement> {
+    let mut landmarks = scene
+        .walk_object_placements(index)
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    if let Ok(Some(binds)) = scene.field_object_binds(index) {
+        field_env::retain_visible_landmark_placements(&mut landmarks, &binds, hidden_records);
+    }
+    landmarks
+}
+
 /// Resolve the scene's env-pack + placement / terrain / ground layers from the
 /// resources the host already built. The engine-parity core of the play page's
 /// static map - the same resolver calls the native play-window makes:
@@ -215,11 +234,7 @@ pub fn build_field_render(
         // (trees, mountain groups) the native window's world-map branch
         // appends (`field_render.rs`); the page used to draw the first
         // layer only, so every kingdom lost its forests and ranges.
-        let mut tiles = scene
-            .walk_object_placements(index)
-            .ok()
-            .flatten()
-            .unwrap_or_default();
+        let mut tiles = world_map_landmarks(index, scene, hidden_records);
         if let Ok(Some(deco)) = scene.walk_decoration_placements(index) {
             tiles.extend(deco);
         }
@@ -252,11 +267,7 @@ pub fn build_field_render(
     // `None` on the overworld, so the landmark count is what they resolve to
     // on their own (and the retain below never runs there).
     let decoration_start = if is_world_map {
-        let landmarks = scene
-            .walk_object_placements(index)
-            .ok()
-            .flatten()
-            .unwrap_or_default();
+        let landmarks = world_map_landmarks(index, scene, hidden_records);
         field_env::resolve_placed_env_draws(&env_tmds, &landmarks, floor_lut, None)
             .0
             .len()

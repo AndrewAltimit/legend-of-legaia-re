@@ -568,6 +568,38 @@ pub fn retain_visible_placed_draws(
     });
 }
 
+/// Drop the overworld's story-hidden **placed landmarks** before they resolve
+/// to draws: the walk `.MAP`'s placed-flag records whose object-bind channel
+/// the spawn prologue parked at the off-map hide box.
+///
+/// The overworld draws its placed landmarks and its decoration sweep as one
+/// bind-less layer (no posing, no window ownership), so the draw-level
+/// [`retain_visible_placed_draws`] never runs there - but retail spawns the
+/// landmarks through the same `FUN_8003A55C` bind + prologue pre-run as a
+/// town, and draws the actor, not the table. map01's record 414 (pack mesh
+/// 31, the dome in the sea south of Rim Elm's gate) and record 349 (the
+/// golden bridge's second stamp, over the river) both open with `23 7F 7F`:
+/// a retail capture at the gate holds both actors at `(0x3FC0, 0x3FC0)`.
+///
+/// Only placed-flag records are tested; the decoration sweep (`FUN_801F69D8`)
+/// spawns no actor and runs no script, so it is never filtered.
+// REF: FUN_8003A55C (bind-time prologue seats the object's actor)
+pub fn retain_visible_landmark_placements(
+    placements: &mut Vec<Placement>,
+    binds: &HashMap<(u8, u8), ObjectBind>,
+    hidden_records: &HashSet<usize>,
+) {
+    if hidden_records.is_empty() {
+        return;
+    }
+    placements.retain(|p| {
+        p.flags & legaia_asset::field_objects::FLAG_PLACED == 0
+            || binds
+                .get(&(p.anchor_col, p.anchor_row))
+                .is_none_or(|b| !hidden_records.contains(&(b.record as usize)))
+    });
+}
+
 /// Per-draw uniform render scale of a placed-object list (parallel to
 /// `draws`): the bind record's `actor[+0x72]` as a factor (`0x1000` = `1.0`),
 /// `1.0` for a draw with no bind or no listed scale.
