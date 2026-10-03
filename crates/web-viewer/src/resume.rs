@@ -19,7 +19,7 @@
 //! Both return the landing as JSON; the page rebuilds its render state when
 //! `entered` is set and otherwise leaves the scene it has up.
 
-use legaia_engine_core::resume::{ResumeLanding, enter_new_game, land_save};
+use legaia_engine_core::resume::{CardLoadHost, ResumeLanding, enter_new_game, resume_card_load};
 use legaia_save::SaveFile;
 use wasm_bindgen::prelude::*;
 
@@ -34,18 +34,22 @@ pub(crate) struct ParkedResume {
 }
 
 impl LegaiaRuntime {
-    /// Land a loaded save in the world **now** (so a menu frame drawn before
-    /// the landing reads the loaded party) and park it for
-    /// [`Self::play_resume_save`], which re-applies it after the scene entry.
-    /// Every Load and import on this host parks through here - including a
-    /// save that names no scene, which then lands on the running scene
-    /// rather than being dropped.
+    /// Park a loaded save for [`Self::play_resume_save`], which lands it
+    /// through the shared card-load kernel. Every Load and import on this
+    /// host parks through here - including a save that names no scene, which
+    /// then lands on the running scene rather than being dropped.
+    ///
+    /// The park leaves the world alone. It used to apply the whole save at
+    /// once, ahead of the landing's entry, and a party record raised its
+    /// actor slot off a field: a four-member save landed on `uru` from the
+    /// title drew the scene-pack meshes pre-bound to slots 1..3. The kernel
+    /// seeds only the story flags ahead of the entry and the whole save after
+    /// it, as the native window does.
     pub(crate) fn park_loaded_save(&mut self, save: SaveFile, scene: &str) {
         self.pending_card_resume = Some(ParkedResume {
-            save: save.clone(),
+            save,
             scene: scene.to_string(),
         });
-        self.world_mut().load_full(save);
     }
 
     /// The CDNAME label of the scene the host has loaded, if any.
@@ -63,37 +67,10 @@ impl LegaiaRuntime {
         // A picked resume is never the next leg of an opening chain the
         // player was in: abandon it the way a scene pick does.
         self.play_abandon_opening_chain();
-        let current = self.running_scene();
-        let mut landed_with_save = false;
-        let landing = land_save(&parked.scene, current.as_deref(), |scene| {
-            // The saved scene is entered at the save's own position, as
-            // retail's card load seats it - the same arm the native
-            // `BootSession::resume_save` takes (`SceneHost::arm_resume_seat`).
-            let armed = self
-                .scene_host
-                .as_mut()
-                .is_some_and(|h| h.arm_resume_seat(&parked.save, &parked.scene, scene));
-            // The entry re-applies the save after the swap and skips the
-            // picker's free-roam story baseline (a resume is not a visit).
-            let entered = self
-                .enter_field_core(scene, Some(parked.save.clone()))
-                .map(|_| landed_with_save = true);
-            if entered.is_err()
-                && armed
-                && let Some(h) = self.scene_host.as_mut()
-            {
-                h.disarm_entry_seat();
-            }
-            entered
-        });
-        if !landed_with_save {
-            // Landed on the running scene (or nowhere): the save applies over
-            // it, with no entry - the native `resume_save` order.
-            self.world_mut().load_full(parked.save);
-            if let Some(h) = self.scene_host.as_mut() {
-                h.refresh_party_battle_inputs();
-            }
-        }
+        // The order (story flags, landing, whole save) is the shared
+        // kernel's - `resume_card_load`, which the native
+        // `BootSession::resume_save` runs too.
+        let landing = resume_card_load(&mut PageCardLoad(self), parked.save, &parked.scene);
         crate::console_log(&format!(
             "resume: landed {} ({:?})",
             landing.kind(),
@@ -107,7 +84,7 @@ impl LegaiaRuntime {
         self.pending_card_resume = None;
         self.play_abandon_opening_chain();
         self.begin_new_game();
-        enter_new_game(|scene| self.enter_field_core(scene, None).map(|_| ()))
+        enter_new_game(|scene| self.enter_field_core(scene, false).map(|_| ()))
     }
 
     fn landing_json(&self, kind: &str, scene: Option<&str>, entered: bool) -> String {
@@ -120,6 +97,50 @@ impl LegaiaRuntime {
             "state": state,
         })
         .to_string()
+    }
+}
+
+/// The play page's half of a card load
+/// ([`legaia_engine_core::resume::resume_card_load`]).
+struct PageCardLoad<'a>(&'a mut LegaiaRuntime);
+
+impl CardLoadHost for PageCardLoad<'_> {
+    fn card_load_world(&mut self) -> &mut legaia_engine_core::world::World {
+        self.0.world_mut()
+    }
+
+    fn card_load_running_scene(&self) -> Option<String> {
+        self.0.running_scene()
+    }
+
+    fn card_load_enter(
+        &mut self,
+        scene: &str,
+        save: &SaveFile,
+        save_scene: &str,
+    ) -> Result<(), String> {
+        // The saved scene is entered at the save's own position, as retail's
+        // card load seats it (`SceneHost::arm_resume_seat`); the entry skips
+        // the picker's free-roam story baseline (a resume is not a visit).
+        let rt = &mut *self.0;
+        let armed = rt
+            .scene_host
+            .as_mut()
+            .is_some_and(|h| h.arm_resume_seat(save, save_scene, scene));
+        let entered = rt.enter_field_core(scene, true).map(|_| ());
+        if entered.is_err()
+            && armed
+            && let Some(h) = rt.scene_host.as_mut()
+        {
+            h.disarm_entry_seat();
+        }
+        entered
+    }
+
+    fn card_load_hydrated(&mut self) {
+        if let Some(h) = self.0.scene_host.as_mut() {
+            h.refresh_party_battle_inputs();
+        }
     }
 }
 
@@ -260,6 +281,46 @@ mod tests {
         assert_eq!(rt.running_scene().as_deref(), Some("town0b"));
         assert_eq!(rt.world_mut().party.money, 888);
         eprintln!("[ok] page resume: opening town / saved / current / saved");
+    }
+
+    /// A four-member card load onto a field raises no actor but the
+    /// player's - the page twin of the native
+    /// `resume_landing::a_four_member_resume_on_uru_raises_only_the_player_and_keeps_the_ground`.
+    /// Both from a cold runtime (a title Continue) and from a field already
+    /// running (an in-canvas Load), the slots `uru` pre-binds to scene-pack
+    /// meshes stay idle.
+    #[test]
+    fn a_four_member_resume_on_uru_raises_only_the_player() {
+        let Some(mut rt) = disc_runtime() else { return };
+        let save = SaveFile {
+            party: legaia_save::Party::zeroed(4),
+            ..Default::default()
+        };
+        for pass in ["cold", "over town01"] {
+            if pass != "cold" {
+                rt.enter_field_core("town01", false).expect("enter town01");
+            }
+            rt.park_loaded_save(save.clone(), "uru");
+            assert_eq!(
+                rt.resume_parked_save(),
+                Some(ResumeLanding::SavedScene("uru".into()))
+            );
+            let world = rt.world_mut();
+            assert_eq!(world.party.roster.members.len(), 4);
+            let player = usize::from(world.player_actor_slot.expect("a field player"));
+            assert!(
+                (1..4).any(|s| world.actors[s].tmd_binding.is_some()),
+                "uru pre-binds scene-pack meshes onto slots 1..3"
+            );
+            for slot in 0..4 {
+                assert_eq!(
+                    world.actor_slot_drawn(slot, false),
+                    slot == player,
+                    "{pass}: actor {slot} drawn after the page resume"
+                );
+            }
+        }
+        eprintln!("[ran] page four-member resume on uru: player-only actors");
     }
 
     /// A New Game after a resumed save takes the seeded slate and the

@@ -938,13 +938,16 @@ SIM_PAIRS: list[dict[str, object]] = [
         "used to choreograph it in play.html callbacks gated on its own "
         "scene-picker list, and a title Continue naming a scene that list "
         "did not carry fell through to a New Game over the loaded save. Both "
-        "hosts' resume entries must reach the shared kernel",
+        "hosts' resume entries must reach the shared kernel, which also "
+        "owns the hydrate order (story flags before the entry, the whole "
+        "save after it; the page used to apply the whole save at park and "
+        "raised the scene's pre-bound actor slots)",
         "sites": {
             "native": (NATIVE_BOOT, "resume_save"),
             "web": ("crates/web-viewer/src/resume.rs", "resume_parked_save"),
         },
         "mode": "symbols_all",
-        "symbols": ["land_save"],
+        "symbols": ["resume_card_load"],
     },
     {
         "what": "starting a New Game, native vs play page - the seeded slate "

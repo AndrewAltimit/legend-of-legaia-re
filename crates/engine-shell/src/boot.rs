@@ -1717,12 +1717,13 @@ impl BootSession {
         Ok(self.host.world.mode)
     }
 
-    /// Resume a loaded save the way both hosts resume one: seed the saved
+    /// Resume a loaded save the way both hosts resume one,
+    /// [`legaia_engine_core::resume::resume_card_load`]: seed the saved
     /// story flags, land it through
     /// [`legaia_engine_core::resume::land_save`] (the save's own scene, else
     /// the scene already running, else the opening town - never a New Game),
-    /// entering scenes through [`Self::enter_scene_live`], then hydrate again
-    /// over the landing.
+    /// entering scenes through [`Self::enter_scene_live`], then hydrate the
+    /// whole save over the landing.
     ///
     /// `save_scene` is the save's resume label ([`legaia_save::SaveResume::scene`],
     /// empty for a file that carries none). The caller rebuilds its
@@ -1736,32 +1737,16 @@ impl BootSession {
         save_scene: &str,
         opts: &FieldLiveOpts,
     ) -> legaia_engine_core::resume::ResumeLanding {
-        let current = self.host.scene.as_ref().map(|s| s.name.clone());
-        // Retail's card load copies the save block over the live game-state
-        // window before the field init runs, so the landing scene's entry
-        // scripts and bind-time prologues read the saved story flags - a
-        // `rikuroa` loaded after the Genesis tree's revival (flag `0x142`)
-        // must not re-arm the withered tree's morph lanes. Only the flags go
-        // in ahead: the party records raise actor slots, which the entry
-        // owns. The whole save is applied after the landing, as before.
-        self.host.world.load_story_flags(&save);
-        let landing =
-            legaia_engine_core::resume::land_save(save_scene, current.as_deref(), |scene| {
-                // The saved scene is entered at the save's own position, as
-                // retail's card load seats it (`SceneHost::arm_resume_seat`).
-                let armed = self.host.arm_resume_seat(&save, save_scene, scene);
-                let entered = self
-                    .enter_scene_live(scene, opts)
-                    .and_then(|_| self.confirm_scene_landed(scene));
-                if entered.is_err() && armed {
-                    self.host.disarm_entry_seat();
-                }
-                entered
-            });
-        self.host.world.load_full(save);
-        // The save's equipment prices the arts input, as retail's card load
-        // (hydrate, then scene load) selects it.
-        self.host.refresh_party_battle_inputs();
+        // The order (story flags, landing, whole save) is the shared
+        // kernel's - `resume_card_load`, which the browser page runs too.
+        let landing = legaia_engine_core::resume::resume_card_load(
+            &mut NativeCardLoad {
+                session: self,
+                opts,
+            },
+            save,
+            save_scene,
+        );
         log::info!(
             "resume: landed {} ({:?}); seeded world from save ({} party records)",
             landing.kind(),
@@ -1790,6 +1775,48 @@ impl BootSession {
 impl Drop for BootSession {
     fn drop(&mut self) {
         self.shutdown();
+    }
+}
+
+/// The native window's half of a card load
+/// ([`legaia_engine_core::resume::resume_card_load`]).
+struct NativeCardLoad<'a> {
+    session: &'a mut BootSession,
+    opts: &'a FieldLiveOpts,
+}
+
+impl legaia_engine_core::resume::CardLoadHost for NativeCardLoad<'_> {
+    fn card_load_world(&mut self) -> &mut legaia_engine_core::world::World {
+        &mut self.session.host.world
+    }
+
+    fn card_load_running_scene(&self) -> Option<String> {
+        self.session.host.scene.as_ref().map(|s| s.name.clone())
+    }
+
+    fn card_load_enter(
+        &mut self,
+        scene: &str,
+        save: &legaia_save::SaveFile,
+        save_scene: &str,
+    ) -> Result<(), String> {
+        // The saved scene is entered at the save's own position, as retail's
+        // card load seats it (`SceneHost::arm_resume_seat`).
+        let armed = self.session.host.arm_resume_seat(save, save_scene, scene);
+        let entered = self
+            .session
+            .enter_scene_live(scene, self.opts)
+            .and_then(|_| self.session.confirm_scene_landed(scene));
+        if entered.is_err() && armed {
+            self.session.host.disarm_entry_seat();
+        }
+        entered.map(|_| ()).map_err(|e| format!("{e:#}"))
+    }
+
+    fn card_load_hydrated(&mut self) {
+        // The save's equipment prices the arts input, as retail's card load
+        // (hydrate, then scene load) selects it.
+        self.session.host.refresh_party_battle_inputs();
     }
 }
 

@@ -14,9 +14,12 @@
 //! already running.
 //!
 //! The functions here own the order and the fallbacks. A host supplies only
-//! the one thing it owns - how to enter a scene - as a closure, then applies
-//! the save itself after the landing ([`crate::World::load_full`] runs
-//! *after* the entry, because scene entry resets per-scene world state).
+//! what it owns - its world, its running scene, and how to enter a scene -
+//! through [`CardLoadHost`], and [`resume_card_load`] runs the card load:
+//! the saved story flags ahead of the entry (retail's card load fills the
+//! game-state window before the field init), the landing, then the whole
+//! save ([`crate::world::World::load_full`] runs *after* the entry, because scene
+//! entry resets per-scene world state).
 //!
 //! # Resume order
 //!
@@ -136,10 +139,62 @@ pub fn saved_entry_seat(
     save.ext_v2.field_position
 }
 
+/// What a host lends [`resume_card_load`]: its world, the scene it has
+/// running, and how it enters one scene for a resume.
+pub trait CardLoadHost {
+    /// The live world the save hydrates.
+    fn card_load_world(&mut self) -> &mut crate::world::World;
+    /// The CDNAME label of the scene the host has running, if any.
+    fn card_load_running_scene(&self) -> Option<String>;
+    /// Enter `scene` for a resume of `save` (whose own resume label is
+    /// `save_scene`): the host arms the save's seat
+    /// ([`crate::scene::SceneHost::arm_resume_seat`]) and runs its scene
+    /// entry. The kernel hydrates the world afterwards - an implementation
+    /// does not apply the save itself.
+    fn card_load_enter(
+        &mut self,
+        scene: &str,
+        save: &legaia_save::SaveFile,
+        save_scene: &str,
+    ) -> Result<(), String>;
+    /// Host-side state the hydrated save re-prices (the arts input's
+    /// equipment inputs, `SceneHost::refresh_party_battle_inputs`).
+    fn card_load_hydrated(&mut self);
+}
+
+/// A card load, the order both hosts run it in: the saved **story flags**
+/// first, then the landing ([`land_save`]), then the **whole save** over the
+/// landing.
+///
+/// Retail's card load copies the save block over the live game-state window
+/// before the field init runs, so the landing scene's entry scripts and
+/// bind-time prologues read the saved story (a `rikuroa` loaded after the
+/// Genesis tree's revival, flag `0x142`, does not re-arm the withered tree's
+/// morph lanes). Only the flags go in ahead
+/// ([`crate::world::World::load_story_flags`]): the party records raise actor
+/// slots off a field ([`crate::world::World::load_party`]), and a slot raised
+/// before the entry survives it - a four-member save landed on `uru` drew
+/// the scene-pack meshes pre-bound to slots 1..3. The full
+/// [`crate::world::World::load_full`] follows the landing, whatever the landing.
+pub fn resume_card_load(
+    host: &mut impl CardLoadHost,
+    save: legaia_save::SaveFile,
+    save_scene: &str,
+) -> ResumeLanding {
+    host.card_load_world().load_story_flags(&save);
+    let current = host.card_load_running_scene();
+    let landing = land_save(save_scene, current.as_deref(), |scene| {
+        host.card_load_enter(scene, &save, save_scene)
+    });
+    host.card_load_world().load_full(save);
+    host.card_load_hydrated();
+    landing
+}
+
 /// Enter the New Game's first scene through `enter`, trying
 /// [`NEW_GAME_SCENES`] in order. Returns the scene entered, or `None` when
 /// none would enter. The caller has already reset and seeded the world
-/// ([`crate::World::begin_new_game`] + the starting-party seed).
+/// ([`crate::world::World::begin_new_game`] + the starting-party seed).
 pub fn enter_new_game<E: std::fmt::Display>(
     mut enter: impl FnMut(&str) -> Result<(), E>,
 ) -> Option<&'static str> {
@@ -163,6 +218,87 @@ mod tests {
             } else {
                 Err(format!("no scene {s}"))
             }
+        }
+    }
+
+    /// A host that records what the world held when the landing entered.
+    struct ProbeHost {
+        world: crate::world::World,
+        running: Option<String>,
+        enterable: &'static [&'static str],
+        /// `(flag 0x142 set, roster length, money)` at each entry.
+        seen_at_entry: Vec<(bool, usize, i32)>,
+        hydrated: bool,
+    }
+
+    impl CardLoadHost for ProbeHost {
+        fn card_load_world(&mut self) -> &mut crate::world::World {
+            &mut self.world
+        }
+        fn card_load_running_scene(&self) -> Option<String> {
+            self.running.clone()
+        }
+        fn card_load_enter(
+            &mut self,
+            scene: &str,
+            _save: &legaia_save::SaveFile,
+            _save_scene: &str,
+        ) -> Result<(), String> {
+            self.seen_at_entry.push((
+                self.world.system_flag_test(0x142),
+                self.world.party.roster.members.len(),
+                self.world.party.money,
+            ));
+            self.enterable
+                .contains(&scene)
+                .then_some(())
+                .ok_or_else(|| format!("no scene {scene}"))
+        }
+        fn card_load_hydrated(&mut self) {
+            self.hydrated = true;
+        }
+    }
+
+    /// The card load seeds the story flags ahead of the entry and nothing
+    /// else - no party record, no gold - then the whole save after it,
+    /// whatever the landing.
+    #[test]
+    fn card_load_seeds_flags_before_the_entry_and_the_save_after_it() {
+        let mut src = crate::world::World::default();
+        src.system_flag_set(0x142);
+        src.party.money = 4321;
+        let mut save = src.save_full();
+        save.party = legaia_save::Party::zeroed(4);
+
+        for (enterable, running, want) in [
+            (
+                &["rikuroa"][..],
+                None,
+                ResumeLanding::SavedScene("rikuroa".into()),
+            ),
+            (
+                &[][..],
+                Some("town01"),
+                ResumeLanding::CurrentScene("town01".into()),
+            ),
+        ] {
+            let mut host = ProbeHost {
+                world: crate::world::World::default(),
+                running: running.map(String::from),
+                enterable,
+                seen_at_entry: Vec::new(),
+                hydrated: false,
+            };
+            let landing = resume_card_load(&mut host, save.clone(), "rikuroa");
+            assert_eq!(landing, want);
+            assert_eq!(host.seen_at_entry.len(), 1);
+            let (flag, roster, money) = host.seen_at_entry[0];
+            assert!(flag, "the entry reads the saved story flags");
+            assert_eq!(roster, 0, "no party record goes in ahead of the entry");
+            assert_ne!(money, 4321, "nor the gold");
+            assert_eq!(host.world.party.roster.members.len(), 4);
+            assert_eq!(host.world.party.money, 4321);
+            assert!(host.hydrated);
         }
     }
 

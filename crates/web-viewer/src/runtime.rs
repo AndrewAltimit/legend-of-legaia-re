@@ -762,20 +762,17 @@ impl LegaiaRuntime {
     /// Returns the same JSON as [`Self::state_json`]. Throws when the disc isn't
     /// loaded or the label is unknown.
     pub fn enter_field(&mut self, name: &str) -> Result<String, JsValue> {
-        self.enter_field_core(name, None)
+        self.enter_field_core(name, false)
             .map_err(|e| JsValue::from_str(&e))
     }
 }
 
 impl LegaiaRuntime {
-    /// JsValue-free body of [`Self::enter_field`]. `resumed_save` is the save
-    /// a resume lands after the entry ([`crate::resume`]); `None` for a
-    /// picker / door / opening-chain entry.
-    pub(crate) fn enter_field_core(
-        &mut self,
-        name: &str,
-        resumed_save: Option<legaia_save::SaveFile>,
-    ) -> Result<String, String> {
+    /// JsValue-free body of [`Self::enter_field`]. `resume` marks a card
+    /// load's entry ([`crate::resume`]), whose save the shared kernel
+    /// applies after this returns; `false` for a picker / door /
+    /// opening-chain entry.
+    pub(crate) fn enter_field_core(&mut self, name: &str, resume: bool) -> Result<String, String> {
         let host = self
             .scene_host
             .as_mut()
@@ -795,7 +792,7 @@ impl LegaiaRuntime {
         // `--scene` entry. The opening chain's legs and the prologue skip's
         // `town01` re-enter through here too, and a card Load's resume is not
         // a picker visit either.
-        host.world.stage_picker_entry(name, resumed_save.is_some());
+        host.world.stage_picker_entry(name, resume);
         let world_map = legaia_engine_core::scene::is_world_map_scene(name);
         if world_map {
             host.enter_world_map_scene(name)
@@ -854,18 +851,6 @@ impl LegaiaRuntime {
         if !in_opening {
             self.seat_player();
         }
-        // The card Load's save lands after the scene swap, as the native
-        // window lands it (`BootSession::resume_save`): scene
-        // entry resets per-scene world state, the save then restores the
-        // party, purses, bag and flags over it.
-        if let Some(sf) = resumed_save
-            && let Some(host) = self.scene_host.as_mut()
-        {
-            host.world.load_full(sf);
-            // The save's equipment prices the arts input - the same refresh
-            // the native `BootSession::resume_save` runs.
-            host.refresh_party_battle_inputs();
-        }
         // A deliberate scene boot restages BGM from scratch: clear the dedupe
         // latch, so the scene's own op-`0x35` start is honoured (and re-stages
         // its track's bank) even if it names the track already playing. No
@@ -878,9 +863,10 @@ impl LegaiaRuntime {
         {
             self.bgm_last_started = None;
         }
-        // A card Load's score hand-off lands here, after the save: the native
-        // order is enter + load, then stop + restore the save's track, so the
-        // scene's own start of that track finds it already sounding.
+        // A card Load's score hand-off lands here: stop whatever was
+        // sounding (the title theme), then restore the track the entry
+        // started, so the scene's own start of that track finds it already
+        // sounding.
         self.run_pending_bgm_handoff();
         Ok(self.state_json())
     }

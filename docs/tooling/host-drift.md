@@ -1295,8 +1295,8 @@ The SFX scheduler steps once per sim tick under the pause menu and a shop on bot
 Where a Load lands and how a New Game starts are one engine entry per host
 (`engine-core::resume`, reached by native `BootSession::resume_save` /
 `start_new_game` and the page's `play_resume_save` / `play_new_game`; the
-two `check-ui-host-drift.py` pairs on `land_save` and `enter_new_game` pin
-it), and both hosts open every title through `TitleSession::for_front_end`
+two `check-ui-host-drift.py` pairs on `resume_card_load` and
+`enter_new_game` pin it), and both hosts open every title through `TitleSession::for_front_end`
 with a fresh rack scan - see
 [`save-screen.md`](../subsystems/save-screen.md#where-a-load-lands-and-when-continue-is-live).
 
@@ -3226,8 +3226,9 @@ The audio rows of the same pass are closed or settled in
 - **Card load order.** The page loaded a card save and then entered its scene,
   whose picker story baseline cleared system flags `0x141` / `0x147` in every
   resumed save. The runtime now parks the loaded save, skips the baseline for
-  that entry and re-applies the save after the swap - the native
-  `BootSession::resume_save` order
+  that entry and lands it through the shared card-load kernel
+  (`resume::resume_card_load`: story flags, entry, whole save) the native
+  `BootSession::resume_save` calls
   (`cards.rs`, `a_card_load_keeps_the_saves_story_flags_across_the_scene_entry`).
 - **The op-`0x35` timed release.** Its expiry set a flag no host read. The
   expiry arm is `FUN_800266E0`'s body on the field-BGM slot - sub-op `2`'s
