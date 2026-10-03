@@ -13,7 +13,8 @@
  * `load()` is re-entrant, so swapping scenes doesn't leak GL objects or stack
  * event listeners.
  *
- * Requires webgl-math.js + webgl-shaders.js + webgl-tmd.js to be loaded first.
+ * Requires webgl-math.js + webgl-shaders.js + webgl-tmd.js + field-actors.js to
+ * be loaded first.
  *
  *   const view = new FieldSceneView(wasmViewer, canvasEl);
  *   const st = view.load('town01');   // throws on failure
@@ -66,6 +67,9 @@
    * *in* the town at human height. See docs/subsystems/vr-mode.md. */
   const VR_UNITS_PER_METER = 76;
 
+  /* Mesh-id space of the actor layer (the play page's NPC_MESH_BASE). */
+  const NPC_MESH_BASE = 910000;
+
   class FieldSceneView {
     /* `viewer` is the WASM LegaiaViewer; `canvas` an existing <canvas> already
      * in the DOM (it must not have been used for a 2D context - a canvas can
@@ -106,6 +110,12 @@
        * animation sources for the loaded scene; null otherwise. */
       this.anim = null;
       this.spawn = { x: 0, y: 0, z: 0 };
+      /* The scene's MAN-placed actors (NPCs, chests, story actors), drawn
+       * through the play page's own actor path (js/field-actors.js) over the
+       * live world. `showActors` is the page's toggle. */
+      this.actors = [];
+      this.actorApi = null;
+      this.showActors = o.showActors != null ? !!o.showActors : true;
       /* VR: present this scene in a headset. The button is always visible;
        * without an immersive-vr device it reads "VR unavailable" and click /
        * hover explain why (secure context, runtime, browser). */
@@ -115,7 +125,7 @@
         renderer: () => this.renderer,
         cam: () => this.cam,
         extent: () => this.ext,
-        draw: () => { this.stepAnim(); this.renderer.renderAssembled(this.draws, this.ext, this.cam); },
+        draw: () => { this.stepAnim(); this.renderer.renderAssembled(this.frameDraws(), this.ext, this.cam); },
         /* Stand in the middle of the built-up area, on its floor, facing the
          * way the flat camera faces. */
         start: () => ({ x: this.spawn.x, y: this.spawn.y, z: this.spawn.z }),
@@ -340,8 +350,20 @@
       };
       this.spawn = { x: med('x'), y: med('y'), z: med('z') };
 
+      /* The actor layer: uploaded once per scene (every catalogued
+       * placement, parked ones included - the per-frame draw skips anyone at
+       * the off-map hide box), posed each frame off the live world. */
+      this.actors = [];
+      this.actorApi = null;
+      if (window.LegaiaFieldActors && typeof v.field_scene_npc_catalog_json === 'function'
+          && this.anim && this.anim.live) {
+        this.actorApi = window.LegaiaFieldActors.api(v, 'field_scene_npc_');
+        this.actors = window.LegaiaFieldActors.upload(this.renderer, this.actorApi, NPC_MESH_BASE);
+      }
+
       this.state = {
         label, packCount, status, draws, hasGround, skyDrawsHidden,
+        actors: this.actors.length,
         drawn: new Set(draws.map(d => d.meshId)).size,
         drawnSlots: Array.from(new Set(draws.map(d => d.meshId))).sort((a, b) => a - b),
         emptySlots: Array.from(empty).sort((a, b) => a - b),
@@ -373,7 +395,7 @@
       if (this.vr && this.vr.isActive()) return;
       const tick = () => {
         this.stepAnim();
-        this.renderer.renderAssembled(this.draws, this.ext, this.cam);
+        this.renderer.renderAssembled(this.frameDraws(), this.ext, this.cam);
         this.raf = requestAnimationFrame(tick);
       };
       this.raf = requestAnimationFrame(tick);
@@ -478,6 +500,22 @@
       }
     }
 
+    /* This frame's draw list: the static map plus, when shown, the actor
+     * layer posed and placed off the live world. */
+    frameDraws() {
+      if (!this.showActors || !this.actors.length || !this.actorApi) return this.draws;
+      const out = this.draws.slice();
+      window.LegaiaFieldActors.rebind(this.renderer, this.actorApi, this.actors);
+      window.LegaiaFieldActors.frame(this.renderer, this.actorApi, this.actors, out,
+        { advance: true });
+      return out;
+    }
+
+    /* Show / hide the actor layer. */
+    setShowActors(on) {
+      this.showActors = !!on;
+    }
+
     /* One-line summary of the loaded scene, for a status bar. */
     summary() {
       const s = this.state;
@@ -488,7 +526,8 @@
       const anim = this.anim
         ? ` · animated (${this.anim.live ? 'live scene, ' : ''}${this.anim.walker_entries} CLUT walkers, ${this.anim.ambient_parts} ambient fx)`
         : '';
-      return `${s.packCount} environment meshes (${s.drawn} drawn) · ${s.status.placements} placements`
+      const actors = s.actors ? ` · ${s.actors} actors` : '';
+      return `${s.packCount} environment meshes (${s.drawn} drawn) · ${s.status.placements} placements${actors}`
         + ` · ${s.status.terrain} terrain tiles · ${s.status.ground_quads} ground quads${sky}${anim}`;
     }
 

@@ -70,6 +70,13 @@ pub struct FieldScenePack {
     /// ([`legaia_engine_core::field_env::placed_window_key`]): which spawn
     /// sweep owns each placed object, and so which ladder it stands on.
     pub window_keys: Vec<Option<legaia_engine_core::field_env::PlacedWindowKey>>,
+    /// The PROT 0874 locomotion bundle - the clips the party / global-pool
+    /// actors pose from.
+    pub locomotion_anm: Option<legaia_asset::player_anm::PlayerAnmBundle>,
+    /// The scene's MAN-placed actors over the live world
+    /// ([`crate::field_actors::FieldActors`], the play page's own actor
+    /// layer), exported as `field_scene_npc_*`.
+    pub(crate) actors: crate::field_actors::FieldActors,
 }
 
 /// The bundle type-6 **CLUT-walk table** runner (`legaia_asset::clut_walk`,
@@ -129,6 +136,8 @@ pub fn build_field_scene(index: &ProtIndex, name: &str) -> Result<FieldScenePack
         scene_anm: None,
         ground_lut_applied: None,
         window_keys: Vec::new(),
+        locomotion_anm: None,
+        actors: Default::default(),
     })
 }
 
@@ -143,11 +152,11 @@ pub fn build_field_scene_anim(
     let is_world_map = legaia_engine_core::scene::is_world_map_scene(&pack.name);
     let frame_step: u8 = if is_world_map { 3 } else { 2 };
     // Resolved and parked by the engine kernel the play hosts call
-    // (`ClutWalkAnim::install`).
+    // (`ClutWalkAnim::install`), into the VRAM the page draws.
     let clut = legaia_engine_core::clut_walk_anim::ClutWalkAnim::install(
         &scene,
         index,
-        &mut pack.res.vram,
+        pack.display_vram_mut(),
     )?
     .anim;
     Some(FieldSceneAnim {
@@ -158,9 +167,10 @@ pub fn build_field_scene_anim(
 }
 
 /// Enter the pack's scene live and headless
-/// ([`legaia_engine_core::scene_live::LiveScene`]) and resolve the scene ANM
-/// bundle its placed props pose from. The live scene is `None` for the
-/// overworld (not previewed live) or a scene the host refuses.
+/// ([`legaia_engine_core::scene_live::LiveScene`]), resolve the pose banks its
+/// props and actors use, build the actor layer over the live world, and
+/// install the CLUT walker into the VRAM the page draws. The live scene is
+/// `None` for the overworld (not previewed live) or a scene the host refuses.
 pub fn build_field_scene_live(index: Arc<ProtIndex>, pack: &mut FieldScenePack) {
     let scene = Scene::load(&index, &pack.name).ok();
     pack.scene_anm = scene
@@ -175,13 +185,66 @@ pub fn build_field_scene_live(index: Arc<ProtIndex>, pack: &mut FieldScenePack) 
         .map(|d| legaia_engine_core::field_env::placed_window_key(d, binds.as_ref()))
         .collect();
     pack.ground_lut_applied = None;
-    pack.live = legaia_engine_core::scene_live::LiveScene::enter(index, &pack.name)
+    pack.locomotion_anm = index
+        .entry_bytes(legaia_asset::character_pack::PROT_ENTRY_INDEX)
+        .ok()
+        .and_then(|b| legaia_asset::character_pack::field_locomotion_anm(&b).ok());
+    pack.live = legaia_engine_core::scene_live::LiveScene::enter(index.clone(), &pack.name)
         .map_err(|e| console_log(&format!("field scene {}: not live: {e}", pack.name)))
         .ok()
         .map(Box::new);
+    let FieldScenePack {
+        live,
+        actors,
+        scene_anm,
+        locomotion_anm,
+        ..
+    } = pack;
+    match live.as_mut() {
+        Some(live) => actors.rebuild(
+            &mut live.host,
+            crate::field_actors::ActorBanks {
+                scene_anm: scene_anm.as_ref(),
+                locomotion_anm: locomotion_anm.as_ref(),
+            },
+        ),
+        None => actors.clear(),
+    }
+    // After the live scene: the walker parks into the VRAM the page draws.
+    pack.anim = build_field_scene_anim(&index, pack);
 }
 
 impl FieldScenePack {
+    /// The VRAM the page draws: the live scene host's when the scene runs
+    /// live - it carries what the world uploads at entry (the party /
+    /// global-pool actors' pages) and is what the world's VRAM effects write -
+    /// else the static assembly's.
+    pub fn display_vram(&self) -> &legaia_tim::Vram {
+        self.live
+            .as_ref()
+            .and_then(|l| l.host.resources.as_ref())
+            .map_or(&self.res.vram, |r| &r.vram)
+    }
+
+    /// The actor layer's `[x, y, z, facing, ...]` per catalog entry and its
+    /// `[pose, generation, ...]` clip states - what the page's actor draw
+    /// reads each frame (`field_scene_npc_transforms` /
+    /// `field_scene_npc_clip_states`). Empty while the scene is not live.
+    pub fn actor_frame_state(&self) -> (Vec<f32>, Vec<i32>) {
+        match self.live.as_ref() {
+            Some(l) => (self.actors.transforms(&l.host), self.actors.clip_states()),
+            None => (Vec::new(), Vec::new()),
+        }
+    }
+
+    /// Mutable [`Self::display_vram`].
+    pub fn display_vram_mut(&mut self) -> &mut legaia_tim::Vram {
+        match self.live.as_mut().and_then(|l| l.host.resources.as_mut()) {
+            Some(r) => &mut r.vram,
+            None => &mut self.res.vram,
+        }
+    }
+
     /// Per-draw Y offsets (retail frame, +Y down) of the terrain draws then
     /// the placement draws under the live floor-height ladder
     /// ([`legaia_engine_core::field_env::FloorWave`]). Empty while the
@@ -249,23 +312,44 @@ impl FieldScenePack {
 /// `true` when VRAM texels changed.
 pub fn tick_field_scene_vsync(pack: &mut FieldScenePack) -> bool {
     let mut wrote = false;
-    if let Some(live) = pack.live.as_mut() {
-        live.tick();
-    }
-    if let Some(anim) = pack.anim.as_mut() {
-        if let Some(live) = pack.live.as_ref() {
-            anim.set_frame_step(live.host.world.clock.frame_step);
+    let FieldScenePack {
+        live,
+        anim,
+        res,
+        actors,
+        scene_anm,
+        locomotion_anm,
+        ..
+    } = pack;
+    let Some(live) = live.as_mut() else {
+        // No live world: the CLUT walker alone, on the static VRAM.
+        if let Some(anim) = anim.as_mut() {
+            wrote |= anim.tick(1, &mut res.vram);
         }
-        wrote |= anim.tick(1, &mut pack.res.vram);
+        return wrote;
+    };
+    live.tick();
+    if live.is_live() {
+        // The actor layer's clip step, in the play runtime's place for it
+        // (after the world tick).
+        actors.drive(
+            &mut live.host,
+            crate::field_actors::ActorBanks {
+                scene_anm: scene_anm.as_ref(),
+                locomotion_anm: locomotion_anm.as_ref(),
+            },
+        );
     }
-    if let Some(live) = pack.live.as_mut()
-        && live.is_live()
-    {
-        wrote |= live
-            .host
-            .world
-            .step_field_vram_effects(&mut pack.res.vram, false);
+    let frame_step = live.host.world.clock.frame_step;
+    let host = &mut live.host;
+    let Some(hres) = host.resources.as_mut() else {
+        return wrote;
+    };
+    if let Some(anim) = anim.as_mut() {
+        anim.set_frame_step(frame_step);
+        wrote |= anim.tick(1, &mut hres.vram);
     }
+    wrote |= host.world.step_field_vram_effects(&mut hres.vram, false);
     wrote
 }
 
@@ -511,7 +595,7 @@ impl LegaiaViewer {
     pub fn field_scene_vram_bytes(&self) -> Vec<u8> {
         self.field_scene
             .as_ref()
-            .map(|f| f.res.vram.as_bytes().to_vec())
+            .map(|f| f.display_vram().as_bytes().to_vec())
             .unwrap_or_default()
     }
 
@@ -532,7 +616,6 @@ impl LegaiaViewer {
         let Some(pack) = self.field_scene.as_mut() else {
             return Err(JsValue::from_str("field_scene_anim_init: no field scene"));
         };
-        pack.anim = build_field_scene_anim(&index, pack);
         build_field_scene_live(index, pack);
         let walker = pack.anim.as_ref().map_or(0, |a| a.walker_entries());
         let ambient = pack
@@ -898,5 +981,171 @@ impl LegaiaViewer {
             .and_then(|f| f.ground.as_ref())
             .map(|hf| hf.quad_count() as u32)
             .unwrap_or(0)
+    }
+}
+
+/// The map viewer's actor exports: the loaded scene's MAN-placed actors over
+/// its live world, through [`crate::field_actors::FieldActors`] - the play
+/// page's own actor layer, whose `play_npc_*` exports these mirror one for
+/// one (`site/js/field-actors.js` draws both). Every export answers empty /
+/// `-1` / `null` while no scene runs live.
+#[wasm_bindgen]
+impl LegaiaViewer {
+    pub fn field_scene_npc_catalog_json(&self) -> String {
+        self.field_scene
+            .as_ref()
+            .filter(|p| p.live.is_some())
+            .map_or_else(|| "null".to_string(), |p| p.actors.catalog_json())
+    }
+
+    pub fn field_scene_npc_mesh(&mut self, i: u32) -> Result<u32, JsValue> {
+        let pack = self
+            .field_scene
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("field_scene_npc_mesh: no scene"))?;
+        let FieldScenePack {
+            live,
+            actors,
+            scene_anm,
+            locomotion_anm,
+            ..
+        } = pack;
+        let live = live
+            .as_ref()
+            .ok_or_else(|| JsValue::from_str("field_scene_npc_mesh: not live"))?;
+        actors
+            .build_mesh(
+                &live.host,
+                crate::field_actors::ActorBanks {
+                    scene_anm: scene_anm.as_ref(),
+                    locomotion_anm: locomotion_anm.as_ref(),
+                },
+                i,
+            )
+            .map_err(|e| JsValue::from_str(&e))?;
+        Ok(i)
+    }
+
+    pub fn field_scene_npc_mesh_positions(&self) -> Vec<f32> {
+        self.npc_actors()
+            .map(|a| a.mesh_positions())
+            .unwrap_or_default()
+    }
+
+    pub fn field_scene_npc_mesh_uvs(&self) -> Vec<u8> {
+        self.npc_actors().map(|a| a.mesh_uvs()).unwrap_or_default()
+    }
+
+    pub fn field_scene_npc_mesh_cba_tsb(&self) -> Vec<u16> {
+        self.npc_actors()
+            .map(|a| a.mesh_cba_tsb())
+            .unwrap_or_default()
+    }
+
+    pub fn field_scene_npc_mesh_indices(&self) -> Vec<u32> {
+        self.npc_actors()
+            .map(|a| a.mesh_indices())
+            .unwrap_or_default()
+    }
+
+    pub fn field_scene_npc_mesh_object_ids(&self) -> Vec<u32> {
+        self.npc_actors()
+            .map(|a| a.mesh_object_ids())
+            .unwrap_or_default()
+    }
+
+    pub fn field_scene_npc_mesh_flat_rgba(&self) -> Vec<u8> {
+        self.npc_actors()
+            .map(|a| a.mesh_flat_rgba())
+            .unwrap_or_default()
+    }
+
+    pub fn field_scene_npc_mesh_cut(&self, i: u32) -> i32 {
+        self.npc_ctx().map_or(-1, |(a, h, b)| a.mesh_cut(h, b, i))
+    }
+
+    pub fn field_scene_npc_live_model(&self, i: u32) -> i32 {
+        self.npc_ctx().map_or(-1, |(a, h, _)| a.live_model(h, i))
+    }
+
+    pub fn field_scene_npc_pose_frames(&self, i: u32) -> Vec<i32> {
+        self.npc_ctx()
+            .map(|(a, h, b)| a.pose_frames(h, b, i))
+            .unwrap_or_default()
+    }
+
+    pub fn field_scene_npc_pose_dims(&self, i: u32) -> Vec<u32> {
+        self.npc_ctx()
+            .map_or_else(|| vec![0, 0], |(a, h, b)| a.pose_dims(h, b, i))
+    }
+
+    pub fn field_scene_npc_transforms(&self) -> Vec<f32> {
+        self.npc_ctx()
+            .map(|(a, h, _)| a.transforms(h))
+            .unwrap_or_default()
+    }
+
+    pub fn field_scene_npc_tilts(&self) -> Vec<f32> {
+        self.npc_ctx()
+            .map(|(a, h, _)| a.tilts(h))
+            .unwrap_or_default()
+    }
+
+    pub fn field_scene_npc_clip_states(&self) -> Vec<i32> {
+        self.npc_actors()
+            .map(|a| a.clip_states())
+            .unwrap_or_default()
+    }
+
+    pub fn field_scene_npc_live_bones(&self, i: u32) -> Vec<i32> {
+        self.npc_actors()
+            .map(|a| a.live_bones(i))
+            .unwrap_or_default()
+    }
+
+    pub fn field_scene_npc_morph_states(&self) -> Vec<i32> {
+        self.npc_actors()
+            .map(|a| a.morph_states())
+            .unwrap_or_default()
+    }
+
+    pub fn field_scene_npc_morph_base(&self, i: u32) -> Vec<f32> {
+        self.npc_ctx()
+            .map(|(a, h, b)| a.morph_base(h, b, i))
+            .unwrap_or_default()
+    }
+
+    /// The off-map hide-box coordinate the actor draw skips.
+    pub fn field_offmap_hide_xz(&self) -> i32 {
+        legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ as i32
+    }
+}
+
+impl LegaiaViewer {
+    fn npc_actors(&self) -> Option<&crate::field_actors::FieldActors> {
+        self.field_scene
+            .as_ref()
+            .filter(|p| p.live.is_some())
+            .map(|p| &p.actors)
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn npc_ctx(
+        &self,
+    ) -> Option<(
+        &crate::field_actors::FieldActors,
+        &legaia_engine_core::scene::SceneHost,
+        crate::field_actors::ActorBanks<'_>,
+    )> {
+        let p = self.field_scene.as_ref()?;
+        let live = p.live.as_ref()?;
+        Some((
+            &p.actors,
+            &live.host,
+            crate::field_actors::ActorBanks {
+                scene_anm: p.scene_anm.as_ref(),
+                locomotion_anm: p.locomotion_anm.as_ref(),
+            },
+        ))
     }
 }

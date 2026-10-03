@@ -2342,12 +2342,16 @@ headless, and the viewer reads it through the play page's own kernels
 (`FloorWave`, `World::placed_floor_offsets`, `field_ground::live_render_positions`,
 `PropAnimBank::pose_key` with `field_env::posed_prop_offsets`,
 `World::step_field_vram_effects`, `World::morphed_env_tmd`). Its private
-ambient spawn is gone. The gate is behavioural, not textual: the disc-gated
+ambient spawn is gone. Its actors are the play page's too: the
+`play_npc_*` state and answers live in one type,
+`web-viewer::field_actors::FieldActors`, which both pages hold over their own
+world, and `site/js/field-actors.js` is the one JS path that poses and places
+them. The gate is behavioural, not textual: the disc-gated
 `crates/web-viewer/tests/field_scene_anim.rs` runs the viewer and
 `LegaiaRuntime` side by side and requires the floor-wave offsets, the ground
-positions, every prop's pose key and every VRAM texel the animation writes to
-agree tick for tick. VRAM is compared as the **written** set, not the image:
-the play page's VRAM also carries party and effect pages the map never loads,
+positions, every prop's pose key, every actor's transform and clip state, and
+every VRAM texel the animation writes to agree tick for tick. VRAM is compared as the **written** set, not the image:
+the play runtime uploads pages of its own over the scene-host VRAM the viewer draws,
 so the two images differ before the first tick.
 
 ## Five shapes a side-by-side read finds that no tier fails on

@@ -710,6 +710,7 @@ through the play page's own kernels, so there is no second animation path:
 | `field_scene_placement_anim_ids` / `_frames`, `field_scene_mesh_posed` / `_posed_frame_positions` | `PropAnimBank::pose_key`, `field_env::posed_prop_offsets` | clip-bound props, posed (multi-object props assemble instead of heaping on the origin) and re-posed per frame |
 | `field_scene_anim_tick` | `World::step_field_vram_effects`, `clut_walk_anim` | the VRAM effects and the CLUT walker |
 | `field_scene_morph_slots` / `_positions` | `World::morphed_env_tmd` | VDF morphs |
+| `field_scene_npc_*` | `web-viewer::field_actors::FieldActors` | the MAN-placed actors (NPCs, chests, story actors): posed off the world's clip cursors, placed at its live positions, re-bound and re-cut as the scripts direct |
 
 A ladder is a property of the **camera region**, not of the map: `concnow`'s
 system script installs a different ladder in each region block (each opened
@@ -717,6 +718,11 @@ by a `46 24` view-window write), and retail only ever draws the region the
 player stands in. A whole-map view applies the entry region's ladder to every
 room, so a room whose own region keeps its rungs low shows them raised here,
 over placed objects that stand at that room's own height.
+
+The actor layer is the play page's own: `FieldActors` is the type
+`LegaiaRuntime` holds for its `play_npc_*` exports, and `site/js/field-actors.js`
+is the one JS draw path both pages run over the two export families. The
+game-world page's **actors** button hides it.
 
 The overworld is not run live (its ground does not follow the field ladder;
 its animation is the CLUT walker). The disc-gated

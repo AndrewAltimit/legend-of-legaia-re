@@ -17,7 +17,7 @@
 use legaia_engine_core::scene::ProtIndex;
 use legaia_web_viewer::disc::{extract_cdname_txt, extract_prot_dat};
 use legaia_web_viewer::field_scene::{
-    build_field_scene, build_field_scene_anim, build_field_scene_live, tick_field_scene_vsync,
+    build_field_scene, build_field_scene_live, tick_field_scene_vsync,
 };
 use std::env;
 use std::fs;
@@ -41,9 +41,8 @@ fn jou_and_garmel_animate_in_the_viewer_or_skip() {
 
     // jou: the live scene's ambient move-VM tree only.
     let mut pack = build_field_scene(&index, "jou").expect("build jou");
-    pack.anim = build_field_scene_anim(&index, &mut pack);
-    assert!(pack.anim.is_none(), "jou has no walker table");
     build_field_scene_live(index.clone(), &mut pack);
+    assert!(pack.anim.is_none(), "jou has no walker table");
     let ambient = pack
         .live
         .as_ref()
@@ -54,7 +53,7 @@ fn jou_and_garmel_animate_in_the_viewer_or_skip() {
         .fx
         .len();
     assert!(ambient >= 20, "jou ambient fan-out ({ambient})");
-    let before = pack.res.vram.as_bytes().to_vec();
+    let before = pack.display_vram().as_bytes().to_vec();
     let mut wrote = false;
     for _ in 0..16 {
         wrote |= tick_field_scene_vsync(&mut pack);
@@ -62,16 +61,15 @@ fn jou_and_garmel_animate_in_the_viewer_or_skip() {
     assert!(wrote, "jou ambient tick reports VRAM changes");
     assert_ne!(
         before,
-        pack.res.vram.as_bytes(),
+        pack.display_vram().as_bytes(),
         "jou VRAM texels actually changed"
     );
 
     // garmel: 1-entry walker table.
     let mut pack = build_field_scene(&index, "garmel").expect("build garmel");
-    pack.anim = build_field_scene_anim(&index, &mut pack);
+    build_field_scene_live(index.clone(), &mut pack);
     let walkers = pack.anim.as_ref().expect("garmel walker").walker_entries();
     assert_eq!(walkers, 1, "garmel walker entries");
-    build_field_scene_live(index.clone(), &mut pack);
     let mut wrote = false;
     for _ in 0..32 {
         wrote |= tick_field_scene_vsync(&mut pack);
@@ -111,7 +109,6 @@ fn the_map_viewer_animates_what_the_play_page_animates_or_skip() {
         rt.enter_field(scene).expect("enter");
 
         let mut pack = build_field_scene(&index, scene).expect("build");
-        pack.anim = build_field_scene_anim(&index, &mut pack);
         build_field_scene_live(index.clone(), &mut pack);
         assert!(pack.live.is_some(), "{scene}: the viewer runs it live");
 
@@ -119,8 +116,16 @@ fn the_map_viewer_animates_what_the_play_page_animates_or_skip() {
         // carries the party / effect pages the map has no use for), so the
         // comparand is what the animation WROTE: the same texels, to the
         // same values.
-        let (v0, p0) = (pack.res.vram.as_bytes().to_vec(), rt.field_vram_bytes());
+        let (v0, p0) = (
+            pack.display_vram().as_bytes().to_vec(),
+            rt.field_vram_bytes(),
+        );
         let mut moved = (false, 0usize, false);
+        let mut moved_actors = false;
+        assert!(
+            !pack.actor_frame_state().0.is_empty() || scene == "jou",
+            "{scene}: the viewer catalogues the scene's actors"
+        );
         for t in 0..ticks {
             rt.tick_frame().expect("tick");
             tick_field_scene_vsync(&mut pack);
@@ -133,11 +138,25 @@ fn the_map_viewer_animates_what_the_play_page_animates_or_skip() {
             );
             assert_eq!(gv, gp, "{scene} t{t}: ground under the live ladder");
             moved.1 += usize::from(!gv.is_empty());
+            // The actor layer: positions / headings / heights and each clip's
+            // pose key + re-target generation, entry by entry.
+            let (at, ac) = pack.actor_frame_state();
+            assert_eq!(
+                at,
+                rt.play_npc_transforms(),
+                "{scene} t{t}: actor transforms"
+            );
+            assert_eq!(
+                ac,
+                rt.play_npc_clip_states(),
+                "{scene} t{t}: actor clip states"
+            );
+            moved_actors |= ac.chunks(2).any(|c| c[0] > 0);
             let (fv, fp) = (pack.placement_frames(), rt.field_placement_frames());
             assert_eq!(fv, fp, "{scene} t{t}: placed-prop pose keys");
             moved.2 |= fv.iter().any(|&k| k > 0);
         }
-        let (v1, p1) = (pack.res.vram.as_bytes(), rt.field_vram_bytes());
+        let (v1, p1) = (pack.display_vram().as_bytes(), rt.field_vram_bytes());
         let mut written = 0usize;
         for i in 0..v1.len() {
             let (vw, pw) = (v0[i] != v1[i], p0[i] != p1[i]);
@@ -164,7 +183,10 @@ fn the_map_viewer_animates_what_the_play_page_animates_or_skip() {
         match scene {
             "concnow" => assert!(moved.0 && moved.1 > 1, "concnow's ladder moves"),
             "jouina" => assert!(moved.1 > 1, "jouina's ground pulses"),
-            "town01" => assert!(moved.2, "town01's windmill turns"),
+            "town01" => assert!(
+                moved.2 && moved_actors,
+                "town01's windmill turns and its villagers animate"
+            ),
             _ => {}
         }
     }

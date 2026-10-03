@@ -49,7 +49,6 @@
    * without the engine clip-state API. The live path reads each clip's
    * current frame from the engine, whose playhead advances in sim-tick time
    * (60 Hz ticks, 2 ticks per clip frame = 30 clip fps, the retail cadence). */
-  const NPC_CLIP_FPS   = 15;
   /* VR world scale - same anchor as the full-map view: the ~130-unit character
    * mesh is a 1.7 m human, so a metre is ~76 world units and the headset stands
    * in the town at human height. See docs/subsystems/vr-mode.md. */
@@ -217,58 +216,10 @@
     return true;
   }
 
-  /* Pose an object-local mesh into `out` from one frame of a clip: per bone,
-   * `Rz . Ry . Rx . v + T`. Identical to the WASM-side player pose (and the
-   * monster / character pages' animators) - a character TMD's vertices are
-   * relative to their own joint, so without this the parts pile on the origin. */
-  function poseInto(out, base, objectIds, frames, partCount, frameIdx) {
-    const ff = ((frameIdx % (frames.length / (partCount * 6))) + (frames.length / (partCount * 6)))
-      % (frames.length / (partCount * 6));
-    const sin = new Float32Array(partCount * 3);
-    const cos = new Float32Array(partCount * 3);
-    const tr  = new Float32Array(partCount * 3);
-    for (let p = 0; p < partCount; p++) {
-      const o = (ff * partCount + p) * 6;
-      for (let k = 0; k < 3; k++) {
-        const a = frames[o + 3 + k] * A2R;
-        sin[p * 3 + k] = Math.sin(a);
-        cos[p * 3 + k] = Math.cos(a);
-        tr[p * 3 + k]  = frames[o + k];
-      }
-    }
-    const n = base.length / 3;
-    for (let v = 0; v < n; v++) {
-      const o = objectIds[v];
-      /* An object past the clip's bone count is not drawn: retail draws as
-       * many objects as the clip has bones. The engine cuts the mesh to that
-       * count (`play_npc_mesh_cut`, re-uploaded by `_rebindLiveNpcModels`
-       * when a cue binds a clip), so this only guards a pose read in the
-       * frame between a cue and the re-upload: surplus objects collapse to a
-       * point rather than litter the actor's feet. */
-      if (partCount > 0 && o >= partCount) {
-        out[v * 3] = 0;
-        out[v * 3 + 1] = 0;
-        out[v * 3 + 2] = 0;
-        continue;
-      }
-      if (o >= partCount) {
-        out[v * 3] = base[v * 3];
-        out[v * 3 + 1] = base[v * 3 + 1];
-        out[v * 3 + 2] = base[v * 3 + 2];
-        continue;
-      }
-      const sx = sin[o * 3],     cxx = cos[o * 3];
-      const sy = sin[o * 3 + 1], cyy = cos[o * 3 + 1];
-      const sz = sin[o * 3 + 2], czz = cos[o * 3 + 2];
-      let x = base[v * 3], y = base[v * 3 + 1], z = base[v * 3 + 2];
-      let ny = y * cxx - z * sx, nz = y * sx + z * cxx; y = ny; z = nz;
-      let nx = x * cyy + z * sy;  nz = -x * sy + z * cyy; x = nx; z = nz;
-      nx = x * czz - y * sz;      ny = x * sz + y * czz;  x = nx; y = ny;
-      out[v * 3]     = x + tr[o * 3];
-      out[v * 3 + 1] = y + tr[o * 3 + 1];
-      out[v * 3 + 2] = z + tr[o * 3 + 2];
-    }
-  }
+  /* Pose an object-local mesh into `out` from one frame of a clip - the
+   * shared actor animator (js/field-actors.js), the one the map viewer's
+   * actor layer runs too. */
+  const poseInto = window.LegaiaFieldActors.poseInto;
 
   /* ------------------------------------------------------------------ */
   /* Screen-space PSX primitive pass (2D `POLY_FT4` / `POLY_GT4` quads).   */
@@ -1087,40 +1038,11 @@ void main() {
        * meeting in bylon, Noa / Gala materializing beside the player), long
        * after this bind ran; skipping it here left the actor meshless for the
        * whole visit while the engine had it standing on stage. */
-      this._hideXZ = (typeof rt.field_offmap_hide_xz === 'function')
-        ? rt.field_offmap_hide_xz() : 16320;
-      const cat = JSON.parse(rt.play_npc_catalog_json() || 'null');
-      if (cat) {
-        for (const npc of cat.npcs) {
-          let ok = true;
-          try { rt.play_npc_mesh(npc.i); } catch (e) { ok = false; }
-          if (!ok) continue;
-          const base = rt.play_npc_mesh_positions();
-          const idx = rt.play_npc_mesh_indices();
-          if (!base.length || !idx.length) continue;
-          const flat = rt.play_npc_mesh_flat_rgba();
-          const meshId = NPC_MESH_BASE + npc.i;
-          this.renderer.uploadSceneMesh(meshId, base, rt.play_npc_mesh_uvs(),
-            rt.play_npc_mesh_cba_tsb(), idx, flat.length ? flat : null);
-          const frames = rt.play_npc_pose_frames(npc.i);
-          const dims = rt.play_npc_pose_dims(npc.i);
-          const rec = {
-            i: npc.i, slot: npc.slot, meshId, base,
-            meshCut: (typeof rt.play_npc_mesh_cut === 'function')
-              ? rt.play_npc_mesh_cut(npc.i) : -1,
-            objectIds: rt.play_npc_mesh_object_ids(),
-            frames, frameCount: dims[0], partCount: dims[1],
-            out: new Float32Array(base.length), lastFrame: -1, lastGen: -1,
-          };
-          /* Pose to frame 0 immediately: an unposed multi-object character is a
-           * heap of limbs at the origin, which is worse than not drawing it. */
-          if (rec.frameCount > 0) {
-            poseInto(rec.out, rec.base, rec.objectIds, rec.frames, rec.partCount, 0);
-            this.renderer.updateSceneMeshPositions(meshId, rec.out);
-          }
-          this.npcs.push(rec);
-        }
-      }
+      /* The shared actor draw path (js/field-actors.js) over this page's
+       * `play_npc_*` exports - the same path, over the same Rust actor layer,
+       * the map viewer runs. */
+      this._actorApi = window.LegaiaFieldActors.api(rt, 'play_npc_');
+      this.npcs = window.LegaiaFieldActors.upload(this.renderer, this._actorApi, NPC_MESH_BASE);
 
       /* Frame the camera on the player straight away so the first painted frame
        * is already looking at them. */
@@ -2182,33 +2104,8 @@ void main() {
      * cue (rikuroa's party Noa) was built uncut - the native window cuts it
      * at pose time. */
     _rebindLiveNpcModels(rt) {
-      if (!rt.play_npc_live_model || !this.npcs) return;
-      const hasCut = typeof rt.play_npc_mesh_cut === 'function';
-      for (const rec of this.npcs) {
-        const id = rt.play_npc_live_model(rec.i);
-        const modelMoved = id >= 0 && id !== rec.liveModel;
-        const cut = hasCut ? rt.play_npc_mesh_cut(rec.i) : rec.meshCut;
-        if (!modelMoved && cut === rec.meshCut) continue;
-        if (modelMoved) rec.liveModel = id;
-        rec.meshCut = cut;
-        let ok = true;
-        try { rt.play_npc_mesh(rec.i); } catch (e) { ok = false; }
-        if (!ok) continue;
-        const base = rt.play_npc_mesh_positions();
-        const idx = rt.play_npc_mesh_indices();
-        if (!base.length || !idx.length) continue;
-        const flat = rt.play_npc_mesh_flat_rgba();
-        this.renderer.uploadSceneMesh(rec.meshId, base, rt.play_npc_mesh_uvs(),
-          rt.play_npc_mesh_cba_tsb(), idx, flat.length ? flat : null);
-        /* The pose buffers are sized by the mesh, so they go with it. */
-        rec.base = base;
-        rec.objectIds = rt.play_npc_mesh_object_ids();
-        rec.out = new Float32Array(base.length);
-        rec.lastFrame = -1;
-        rec.lastGen = -1;
-        /* A morph staged on the old base must be re-read onto the new one. */
-        rec.morphGen = undefined;
-      }
+      if (!this._actorApi) this._actorApi = window.LegaiaFieldActors.api(rt, 'play_npc_');
+      window.LegaiaFieldActors.rebind(this.renderer, this._actorApi, this.npcs);
     }
 
     _frame(skipDraw) {
@@ -2644,110 +2541,21 @@ void main() {
        * syncing after it would leave the exclusion set one frame stale, which
        * is exactly one frame of ghosted tiles per board install. */
       if (typeof rt.play_tile_actor_slots === 'function') this._syncTileBoard(rt);
-      const nt = rt.play_npc_transforms();
-      /* Pitch / roll per catalogued actor (retail `actor+0x24` / `+0x28`, the
-       * `0x15` / `0x16` tweens). Almost always all-zero - the disc-wide census
-       * finds `0x15` authored nowhere and `0x16` only in `juui1` - so the draw
-       * below keeps the cheap yaw-only record unless this pair is non-zero. */
-      const ntilt = (typeof rt.play_npc_tilts === 'function')
-        ? rt.play_npc_tilts() : null;
-      const clipStates = (typeof rt.play_npc_clip_states === 'function')
-        ? rt.play_npc_clip_states() : null;
-      /* Field-VM op 0x4B VDF morphs on placed NPCs: a per-entry generation
-       * that moves whenever the slot's staged deltas do. On a move the
-       * entry's object-local base is swapped for the engine's morphed one
-       * (`play_npc_morph_base`, the shared `World::npc_morphed_tmd` kernel
-       * the native window re-poses from) and re-posed below - the morph is
-       * staged before the bone transform, as retail's `FUN_8001C604` runs
-       * per group ahead of the draw. `-1` = the slot never armed one. */
-      const morphStates = (typeof rt.play_npc_morph_states === 'function')
-        ? rt.play_npc_morph_states() : null;
-      const clipFrame = Math.floor(performance.now() / 1000 * NPC_CLIP_FPS);
-      for (let k = 0; k < this.npcs.length; k++) {
-        const n = this.npcs[k];
-        const base = n.i * 4;
-        if (base + 3 >= nt.length) continue;
-        /* Story-parked actor (spawn-prologue MoveTo to the off-map hide box,
-         * or a cutscene hide): not drawn - retail parks despawned actors at
-         * the far-corner sentinel tile precisely so they never render. */
-        if (nt[base] === this._hideXZ && nt[base + 2] === this._hideXZ) continue;
-        /* Board-owned actor: it draws once per board cell through the tile
-         * pass below, and its own transform holds only the last repositioned
-         * cell - drawing it here too ghosts a tile at whichever cell the
-         * refresh touched last. The native redraw pass skips the same slots
-         * (`is_tile_actor_slot`). */
-        if (this.tileActorSlots.has(n.slot | 0)) continue;
-        let morphMoved = false;
-        if (morphStates && n.i < morphStates.length) {
-          const mg = morphStates[n.i];
-          if (mg >= 0 && mg !== n.morphGen) {
-            const mb = rt.play_npc_morph_base(n.i);
-            if (mb.length === n.base.length) {
-              n.base = mb;
-              morphMoved = true;
-            }
-            n.morphGen = mg;
-          }
-        }
-        let posed = false;
-        if (clipStates && n.i * 2 + 1 < clipStates.length) {
-          const f = clipStates[n.i * 2], gen = clipStates[n.i * 2 + 1];
-          if (f >= 0 && (morphMoved || f !== n.lastFrame || gen !== n.lastGen)) {
-            const bones = rt.play_npc_live_bones(n.i);
-            if (bones.length) {
-              poseInto(n.out, n.base, n.objectIds, bones, bones.length / 6, 0);
-              this.renderer.updateSceneMeshPositions(n.meshId, n.out);
-              n.lastFrame = f; n.lastGen = gen;
-              posed = true;
-            }
-          }
-        } else if ((advance || morphMoved) && n.frameCount > 1) {
-          const f = clipFrame % n.frameCount;
-          if (morphMoved || f !== n.lastFrame) {
-            poseInto(n.out, n.base, n.objectIds, n.frames, n.partCount, f);
-            this.renderer.updateSceneMeshPositions(n.meshId, n.out);
-            n.lastFrame = f;
-            posed = true;
-          }
-        }
-        /* A clip-less entry: its frame-0 rest pose (or its bare object-local
-         * mesh) re-staged with the morphed base. */
-        if (morphMoved && !posed) {
-          if (n.frameCount > 0) {
-            poseInto(n.out, n.base, n.objectIds, n.frames, n.partCount, 0);
-            this.renderer.updateSceneMeshPositions(n.meshId, n.out);
-          } else {
-            this.renderer.updateSceneMeshPositions(n.meshId, n.base);
-          }
-        }
-        const actorDraw = {
-          meshId: n.meshId,
-          x: nt[base], y: -nt[base + 1], z: nt[base + 2],
-          rotY: -(nt[base + 3] + 2048) * A2R,
-          scale: 1.0,
-          /* Actor draw: exempt from the occlusion fade, like the player. */
-          noOccl: true,
-        };
-        /* An actor the scripted-motion VM tilted carries all three of retail's
-         * authored angles, and the dispatcher composes them together
-         * (`addiu a0,s0,0x24` / `jal 0x80026988` in `FUN_8001ADA4`, which reads
-         * X at `+0`, Y at `+2`, Z at `+4`). The yaw-only builder cannot express
-         * that - its negated yaw is a cancellation specific to Ry (see
-         * webgl-math.js) - so a tilted actor takes the whole `Rx * Ry * Rz`
-         * model, the same composition the native window's NPC pass applies
-         * through `battle_intro::placement_rotation`. */
-        const tb = n.i * 2;
-        const rotX = (ntilt && tb + 1 < ntilt.length) ? ntilt[tb] : 0;
-        const rotZ = (ntilt && tb + 1 < ntilt.length) ? ntilt[tb + 1] : 0;
-        if (rotX || rotZ) {
-          actorDraw.rotX = rotX * A2R;
-          actorDraw.rotZ = rotZ * A2R;
-          actorDraw.model = placementModelEuler(
-            actorDraw.x, actorDraw.y, actorDraw.z,
-            actorDraw.rotX, (nt[base + 3] + 2048) * A2R, actorDraw.rotZ, 1.0);
-        }
-        draws.push(actorDraw);
-      }
+      /* The actor layer through the shared draw path (js/field-actors.js):
+       * each clip's CURRENT engine frame (the playhead advances one step per
+       * SIM tick in `tick_frame`, so clip cadence is the retail rate however
+       * fast the display refreshes), op-0x4B morphs, the world's live
+       * position / heading / tilt, the off-map hide skip. Board-owned actors
+       * draw once per board cell through the tile pass below - drawing them
+       * here too ghosts a tile at whichever cell the refresh touched last
+       * (the native redraw skips the same slots, `is_tile_actor_slot`). */
+      if (!this._actorApi) this._actorApi = window.LegaiaFieldActors.api(rt, 'play_npc_');
+      window.LegaiaFieldActors.frame(this.renderer, this._actorApi, this.npcs, draws, {
+        advance,
+        skipSlot: (slot) => this.tileActorSlots.has(slot),
+        /* Actor draw: exempt from the occlusion fade, like the player. */
+        extra: { noOccl: true },
+      });
 
       /* Tile board (field-VM op 0x49). A board is installed at RUNTIME by the
        * scene's script, not at scene load, so the upload is checked here per
