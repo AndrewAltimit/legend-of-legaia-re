@@ -63,3 +63,28 @@ fn the_grunt_and_sting_banks_stage_with_their_retail_interleave() {
     );
     assert_eq!(cut, 70 * STEREO_FRAMES_PER_SECTOR);
 }
+
+/// The animation cue tracks' party voice band lands on the per-character
+/// banks `XA1` / `XA3` / `XA5` and `XA27` / `XA28` / `XA29`; Vahn's Spirit
+/// clip (art-bank record 0) opens with cue `0xC8` -> `0x100` -> clip slot `0`
+/// channel `0`, so `XA1` channel 0 must be staged with audio.
+#[test]
+fn the_spirit_voice_bank_stages() {
+    let Some(disc) = disc() else {
+        eprintln!("skip: LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let bank = read_battle_xa_clip_bank(&disc).expect("battle XA banks demux off the disc");
+    for slot in [0u8, 2, 4, 26, 27, 28] {
+        assert!(bank.channel_count(slot) > 0, "clip slot {slot} staged");
+    }
+    let spirit = bank.clip(0, 0).expect("XA1 channel 0 decoded");
+    eprintln!(
+        "[ran] XA1: {} channels, ch0 {} frames stereo={} rate={}",
+        bank.channel_count(0),
+        spirit.frames(),
+        spirit.stereo,
+        spirit.sample_rate
+    );
+    assert!(spirit.frames() > 0, "the Spirit voice has audio");
+}

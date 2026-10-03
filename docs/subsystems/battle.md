@@ -214,6 +214,21 @@ sparring fight. The hook table and every prompt string address are resident in
 `0898` carries them - which is why porting the battle SM alone never produces
 the boxes.
 
+**Who fights the spar.** Retail has no party override for it. Battle init
+seats one actor per non-zero id in the present-party list `DAT_8007BD10`
+(`FUN_80052FA0` counts them into `ctx[+0]`, `FUN_800513F0` loads each), and
+neither routine reads the stage id while doing so; the spar is Vahn against
+Tetsu only because the story's party is Vahn alone at that point. The port
+makes it a rule: `World::enter_battle_from_formation` seats Vahn's record
+alone whenever the fight is the spar (`World::sparring_fight_pending` - the
+disc's arm flag or a forced tutorial), whatever the field party holds - a
+`--party` debug party or a save with a fuller one - and
+`World::finish_battle` hands the field composition back. The lessons walk
+one member's command flow, so a fuller party would sit idle through prompts
+that never address it. No disc patch is needed for the randomizer: no
+`legaia-patcher` feature edits the party composition, so a patched disc
+reaches the spar with the retail party.
+
 **The machine's exclusivity is byte-anchored.** `FUN_801F6B70` is entry 967 file
 `+0x198`, and `0x801F69D8 + 0x198` reproduces the printed VA exactly, so the
 needle can be taken straight out of the image rather than hand-assembled.
@@ -1725,6 +1740,18 @@ opponent behind the eye. Engine side: `battle_cam_inputs`'s
 `member_surface_open`, which keys the phase on the ring session as well as
 on the submenu sessions.
 
+**The close-up follows the ring from member to member.** A commit lands on
+the next member's ring (`0x28`) or on the commit confirm (`0x6E`), never on
+the round prompt, so between two members the camera never passes through
+the far framing - the phase is case 0 on both sides of the hand-off. What
+moves it is the menu driver re-arming case 0 with `a0 = ctx[+0x13]`, the
+member now commanding (`lbu a0,0x2(s4)` with `s4 = ctx + 0x11`, at
+`0x801D4758` and `0x801D53B4`), over the case's own 6-step glide. A port that
+re-arms only on a phase change keeps the first member framed while the rest
+of the party chooses. Engine side: `BattleCamera::set_actor` re-arms the
+close-up when the actor changes under it; the item window, which carries no
+member of its own, frames the member whose ring opened it.
+
 ### Case 9 is re-derived every pass, so the depth follows the formation
 
 The far framing is not armed once and left. `FUN_801D0748` re-arms it per tick
@@ -1805,7 +1832,7 @@ host pin the shared derivation to the same literal pose.
 **Screen shake.** `FUN_801D9D30` jitters the same translation pair
 (`0x800840B8/BC`) by two LCG samples masked to `0xFFFFFF >> (0x15 − amplitude)`,
 where the amplitude is `_DAT_8007B630`. That global has exactly one retail
-writer - the field-VM opcode `0x4C` outer-nibble `8` sub-`4`
+non-zero writer (the scene reset `FUN_8003A024` zeroes it) - the field-VM opcode `0x4C` outer-nibble `8` sub-`4`
 (`[4C, 84, amplitude]`, arm `0x801E2134`, jump-table slot `0x801CEF58`) - and
 `FUN_801D9D30`'s only callers are the field-family overlay's per-frame camera
 updaters (`0x801D1344` and siblings), so in retail the shake is a *field*

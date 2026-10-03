@@ -1345,6 +1345,11 @@ impl Camera {
             let (x0, z0, x1, z1) = crate::mode_entry_init::field_draw_context().view_window;
             [x0, z0, x1, z1]
         };
+        // The shake jitter pair lives in the scene control block (`+0x18` /
+        // `+0x1C`), which the scene reset `FUN_8003A024` zeroes. The eye trio
+        // was just re-seeded, so a pair left over from the departing scene
+        // must not be subtracted back out of it on the next ease.
+        self.zone.shake_offset = [0, 0];
         // The arrival actor (`FUN_801DBE9C`) re-pins the focus and snaps the
         // composed shot in on the first frame of the new scene.
         self.zone.arm_arrival();

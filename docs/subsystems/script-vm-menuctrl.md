@@ -150,7 +150,7 @@ Large multi-purpose dispatcher (party-slot full heal, conditional jump on `+0x68
 - **Sub-1** (round 18, 9-byte) sets actor model + animation frame: `[4C, 0x81, m0..m2, anim_lo, anim_hi, frames_lo, frames_hi]` decodes via [`load_u24_le`](script-vm.md#helper-functions) + `load_u16_le×2`; host applies the immediate-or-tween path based on its actor pool state.
 - **Sub-6** (15-byte) is `[4C, 0x86, w0..w5, actor_id]` - it **spawns the reflection controller**, not a transform write; see [below](#4c-86--4c-87-are-the-reflection-controllers-install-and-teardown). PC always += 15 (the `addiu s8,s8,0xf` sits in the resolve's delay slot, so an unresolved actor advances too).
 - **Sub-7** (2-byte) is sub-6's **teardown**: `FUN_8003CF40(_DAT_8007C34C, 0x801E5154)` retires every reflection controller, then PC += 2. Not a registration and not a halt - see [below](#4c-86--4c-87-are-the-reflection-controllers-install-and-teardown).
-- **Sub-4** (3-byte) is `[4C, 0x84, amplitude]` - **the screen-shake amplitude**. The whole arm is five instructions at `0x801E2134` (jump-table slot `0x801CEF58`): `addiu s8,s8,0x3` / `lbu v1,0x1(s6)` / `lui v0,0x8008` / `j 0x801e3624` / `_sw v1,-0x49d0(v0)`, i.e. `_DAT_8007B630 = operand` as a zero-extended word. That global is the only input to the LCG camera jitter `FUN_801D9D30` (`0` = no shake, `1..=0x15` widens the sample window) and this opcode is its only writer, which makes the field script the sole source of a camera shake. Port: [`FieldHost::op4c_n8_sub4_set_b630`]; engine sink `World::camera.shake_amplitude`.
+- **Sub-4** (3-byte) is `[4C, 0x84, amplitude]` - **the screen-shake amplitude**. The whole arm is five instructions at `0x801E2134` (jump-table slot `0x801CEF58`): `addiu s8,s8,0x3` / `lbu v1,0x1(s6)` / `lui v0,0x8008` / `j 0x801e3624` / `_sw v1,-0x49d0(v0)`, i.e. `_DAT_8007B630 = operand` as a zero-extended word. That global is the only input to the LCG camera jitter `FUN_801D9D30` (`0` = no shake, `1..=0x15` widens the sample window) and this opcode is its only non-zero writer, which makes the field script the sole source of a camera shake. The scene reset `FUN_8003A024` zeroes it on every scene load (`0x8003A07C`), so a shake a script leaves running ends at the door. Port: [`FieldHost::op4c_n8_sub4_set_b630`]; engine sink `World::camera.shake_amplitude`.
 - **Sub-9** writes `_DAT_80073F00 = i16(operand[1..3])` and advances by 4. The word is the dialog pager's **automatic press**: while it is positive each `0x19` call of `FUN_801D84D0` subtracts the frame step, and the call that reaches zero clears it and presses confirm (`0x801D8F4C..0x801D8F88`); this op is its only writer, at 37 sites in 12 scenes. Engine: the seat `DialogState::auto_press`, counted by `OwnedDialogPanel::tick_at_auto`. The dump's "FUN_801E3620 dispatch" was Ghidra mis-rendering an internal `goto code_r0x801e3620` label; see the gotcha note below.
 - **Sub-B** (round 18, 5-byte) is a conditional jump: `[4C, 0x8B, type_byte, target_lo, target_hi]` jumps to absolute u16 if any actor of `type_byte` is active, else PC += 5.
 - **Sub-D** (round 18, 6-byte) is a tristate per-character actor-search: `[4C, 0x8D, char_idx, marker, target_lo, target_hi]` returns one of [`ActorSearchResult::EmptySlot`](../../crates/engine-vm/src/field.rs) (advance 6), `Found` (jump to u16 at +3..=4), or `NoMatch` (halt).
@@ -249,6 +249,8 @@ Small per-actor / per-scene writes (slot table, camera-zone query, sound trigger
 - **Sub-3** is a 2-byte script-table teleport (resolves `func_0x8003C8F0(field_50, 0)` then writes `world_x/z` via the standard tile-center `b * 0x80 + 0x40` formula).
 - **Sub-5/6** are 4-byte conditional-jump pair (jump-if-zero / jump-if-nonzero): both read a 16-bit flag index via [`load_u16_le`](script-vm.md#helper-functions), query the host's trigger-flag bank, and advance PC += 4 in both branches (the original's "joined" tail at `LAB_801E28C4` returns `param_2 + 4` either way).
 - **Sub-0xA/0xB/0xC** are the 5-byte slot-table writes `[4C, 0xCN, slot, lo, hi]` on the u16 array at `0x801C6460`: sub-A sets, sub-B adds, sub-C subtracts (B/C substitute the per-frame tick `_DAT_1F800393` when the literal is `0xFFFF`). The read side is op `0x4E` sub-ops 5..8 (`slot = sub - 5`; [script-vm.md](script-vm.md) op table) - together they form script-visible counters/timers (e.g. cave01's interact counter gating the `0x15D` beat-key spawn).
+  Nothing else in retail writes or clears the table, so it survives scene loads; the port keeps it as `FieldVmState::slot_table`.
+  `tunnelc`'s hammer tremor is the clearest timer: while system flag `0x360` is set, the scene-entry loop adds the frame tick to slot `1`, raises the shake (`4C 84 02`) on counts `1..=10`, drops it on `11..=30` and wraps by `-30`; Xain's script starts it with the slot at `30` and stops it by writing `80`, which the loop's `79 < slot` exit turns into a flag clear. Read as always-zero, the same loop shakes every frame and never exits.
 - **Sub-0xF** is the **script camera-focus override**, not a "position broadcast": 4-byte `[4C, 0xCF, x, z]`, arm at `0x801E2A34`. See [below](#4c-cf-is-the-script-camera-focus-override) for where the two values go and who reads them.
 - **Sub-0xD** is the 2-byte **camera-glide wait** `[4C, 0xCD]`: it holds the script while the cutscene camera mover is live. See [below](#4c-cd-waits-for-the-camera-glide).
 - **Sub-9** is a 2-byte global-pair compare gate: PC += 2 unless `_DAT_8007BAB8 != _DAT_8007BA9C`, then halts.
@@ -843,7 +845,12 @@ from the MAN header, `FUN_80019278` interpolates for ground height, and
 `FUN_8003A55C` adds to every placed object's Y
 ([`field-locomotion.md`](field-locomotion.md#where-the-collision-grid-comes-from)).
 Sub-`0xE` writes the same sixteen entries directly, which is what makes the
-three sub-ops one family rather than three.
+three sub-ops one family rather than three. Its loop (`0x801E24F8..0x801E2538`)
+also stores each raw word into the MAN-header ladder at `*(_DAT_8007B898) + 2`,
+the copy the camera composer `FUN_801DAB90` swaps in around its floor sample -
+so an installed ladder moves the follow camera, while an oscillator, which
+writes the live rungs alone, does not. `concnow`'s entry script installs a
+ladder about a thousand units off the one its MAN header ships.
 
 `jou`'s scene-entry script is the clean example. `P1[0]` installs the linear
 ramp `i * 0x20` with `4C 9E`, sweeps with `4C 9F`, re-installs a second ramp,
@@ -870,9 +877,27 @@ Three readers see the live rungs, and each must follow them:
   `concnow`'s flesh. The port's walk-ground heightfield keeps each vertex's
   corner tier (`WalkHeightfield::corner_tiers`) and both hosts re-upload it
   through `field_ground::live_render_positions` on a frame the ladder moved.
-- **The static-object pass** places each decoration and placed object at its
-  floor term once per frame, so a whole mesh rides up and down:
-  `field_env::FloorWave` folds the per-draw offset into the baked draws.
+- **The decoration sweep** (`FUN_801F7088`) places each terrain /
+  decoration cell at its corner-block floor term once per frame, so a whole
+  mesh rides up and down: `field_env::FloorWave` folds the per-draw offset
+  into the baked draws. The sweep skips every `flags & 4` record
+  (`0x801F7580..0x801F758C`), so **placed objects are not on it**.
+
+A placed object is an actor, and its Y is written once. `FUN_8003A55C` (the
+bound ones, at scene init) and the window sweep `FUN_801D7B50` (the rest, on
+every re-plan) both store `ladder[nibble] + y_off` into the spawn record
+(`0x8003A62C..0x8003A64C`, `0x801D7CF4..0x801D7D14`). Their template at
+`0x80073E70` (handler `FUN_8003BC08`, flags `0x8082`) sets neither of the
+height-arm bits `0x20200` that make the per-frame driver re-sample the floor,
+so the actor keeps that Y. `concnow` shows what follows: its system script's
+first region block installs a ladder that lifts rungs 1..3 by up to about
+1300 units after the init sweep has run, and the bound objects on those rungs
+stay where they were spawned. The port routes the placed layer through
+`World::placed_floor_offsets` (the init ladder for a bound draw, the last
+re-plan's for a window-owned one) on all three hosts; only the terrain cells
+and the walk ground take the live rungs. Pinned by
+`a_placed_object_keeps_its_spawn_ladder` in
+`engine-core/tests/field_floor_wave.rs`.
 - **The floor sampler** `FUN_80019278`, so the player walks the same shape and,
   through the settle's every-frame glide, rides it while standing. The port's
   snap-style footing re-reads the floor on any frame the ladder moved

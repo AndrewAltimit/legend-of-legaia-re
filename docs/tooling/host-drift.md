@@ -875,13 +875,13 @@ labels, the party HUD block's content and pen, the title card's bands and
 its glyph-atlas menu rows, and the field scene's geometry, textures and
 player placement.
 
-One row the pair makes visible rather than settles: **C11, the dimmed title
-art behind the boot save-select.** The native draws the Load frame and the
-SLOT pills over the title card at reduced brightness; the page draws the
-same frame and pills over black, because it drops its title session on
-`TitleOutcome::Continue` (`crates/web-viewer/src/boot_title.rs`). The two
-screens are otherwise identical, which is exactly why no gate fails: the
-backdrop is a session the page released, not a draw it spells differently.
+One row the pair made visible: **C11, the dimmed title art behind the boot
+save-select.** The native draws the Load frame and the SLOT pills over the
+title card at reduced brightness; the page used to draw them over black,
+because it dropped its title session on `TitleOutcome::Continue`. The page now
+parks that session as the backdrop (`boot_title_backdrop_draws_json` in
+`crates/web-viewer/src/boot_title.rs`, held to the native output by
+`title_backdrop_parity`), so both hosts compose the screen the same way.
 
 The yellow strips the pair raised - in the battle command phase the page
 carried a run of **flat yellow strips** along the ground and a grass-and-gravel
@@ -955,12 +955,15 @@ The pass also left two rows open. The first has since closed:
   The shape to look for: a texture upload one host's resource builder makes
   and the other's does not reads as "the draw is broken", because the quads
   are there and only the texels are missing.
-- **The native minigame hotkeys open sessions, not scenes.** `O` and `B` run
-  the slot machine and Baka Fighter over the field with status text only,
-  and `L` puts the fishing camera on whatever field the player stands in;
-  the standalone minigames page draws the cabinet, the arena and the pond.
-  Blocking capability: the native window has no pass for either minigame
-  scene (the slot cabinet mesh and reels, the Baka arena and fighters).
+- **The native minigame hotkeys opened sessions, not scenes.** `O` and `B`
+  ran the slot machine and Baka Fighter over the field with status text only,
+  while the standalone minigames page drew the cabinet and the arena. Both
+  have since closed on the native side: the duel draws the engine's
+  `baka_duel_scene` surface, and the slot machine draws its own cabinet scene
+  against its art-pack VRAM (`engine-ui::ui_slot_cabinet`, see
+  [`minigame-slot-machine.md`](../subsystems/minigame-slot-machine.md#who-draws-the-machine)),
+  the same builder the play page's screen-prim pass and the standalone
+  page's CPU rasteriser now draw it with.
 
 That pass also named a third: 3D that has to line up with the 2D stage did
 not, at a window size that is not a stage multiple (the naming screen's actor
@@ -1540,8 +1543,10 @@ sampling it, because its duel HUD has no textured-quad surface.
 (`FUN_801D3380`) and projects both endpoints through the machine's fitted
 projection; both browser pages stroke those segments (`sa` / `sb` in the prims
 JSON) and the native window draws them as one-pixel flat quads through
-`engine-ui::ui_slot_paylines`. The native window still draws no cabinet mesh
-around them.
+`engine-ui::ui_slot_paylines`. Around them all three hosts draw the machine
+itself through `engine-ui::ui_slot_cabinet` - the standalone minigames page
+by rasterising the same list on the CPU (`engine-ui::screen_prim_raster`),
+because its slot panel is a 2D canvas.
 
 ### A `web-ahead` builder is not by itself a gap
 
@@ -2320,6 +2325,39 @@ plausible number.
 The generalisation: when two hosts share a builder whose output *degrades*
 rather than errors, the honest oracle runs the builder twice - once the right
 way, once the suspected wrong way - and asserts they differ.
+
+## The map viewer animates off a live world, not a bake
+
+The site's game-world page and the asset viewer's full-map button draw a field
+scene through `web-viewer::field_scene`. Every tier above treats it as a
+render surface (tier 7 derives it), and every one stayed green while it showed
+a different scene from the play hosts: it baked the draw lists once, against
+the floor-height ladder the MAN header ships, and ran its own copy of the
+ambient-tree spawn in a private `World` beside them. What the scene's scripts
+move on the world tick never reached it - the ladder waves (`jouina`,
+`tunnela`, Rim Elm's tide), `concnow`'s entry-time ladder replacement (its
+flesh mounds stood flat), the prop bank's clips (the Rim Elm windmill, whose
+parts the viewer did not even pose at rest, so they heaped on its hub), and the
+op-driven VRAM effects only a running world issues. No gate could see it: the
+missing input was a world, not a call.
+
+The viewer now owns a world: `engine-core::scene_live::LiveScene` enters the
+scene through `SceneHost` the way the play pages' picker does and ticks it
+headless, and the viewer reads it through the play page's own kernels
+(`FloorWave`, `World::placed_floor_offsets`, `field_ground::live_render_positions`,
+`PropAnimBank::pose_key` with `field_env::posed_prop_offsets`,
+`World::step_field_vram_effects`, `World::morphed_env_tmd`). Its private
+ambient spawn is gone. Its actors are the play page's too: the
+`play_npc_*` state and answers live in one type,
+`web-viewer::field_actors::FieldActors`, which both pages hold over their own
+world, and `site/js/field-actors.js` is the one JS path that poses and places
+them. The gate is behavioural, not textual: the disc-gated
+`crates/web-viewer/tests/field_scene_anim.rs` runs the viewer and
+`LegaiaRuntime` side by side and requires the floor-wave offsets, the ground
+positions, every prop's pose key, every actor's transform and clip state, and
+every VRAM texel the animation writes to agree tick for tick. VRAM is compared as the **written** set, not the image:
+the play runtime uploads pages of its own over the scene-host VRAM the viewer draws,
+so the two images differ before the first tick.
 
 ## Five shapes a side-by-side read finds that no tier fails on
 

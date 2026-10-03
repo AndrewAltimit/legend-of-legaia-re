@@ -233,6 +233,11 @@ const SC_RAM_BASE: u32 = 0x8008_4140;
 const SC_LEN: usize = 0x2000;
 /// SC offset of the play-time counter (`0x80084570`).
 const SC_PLAY_TIME: usize = 0x430;
+/// SC offset of the pause menu's Field Move word (`0x800846CC`, Walk `0` /
+/// Run non-zero). The run selector XORs it with the held run button
+/// (`docs/subsystems/field-locomotion.md`), and it is inside the window a
+/// card load restores, so the anchor's player walks or runs by it.
+const SC_FIELD_MOVE: usize = 0x58C;
 /// SC offset of the system-flag bank (`0x80085758`) and its full extent up
 /// to the item window at `0x80085958`.
 const SC_SYSTEM_FLAGS: usize = 0x1618;
@@ -605,6 +610,12 @@ fn seed(
     // resume path runs (which applies the save again over the landing, and
     // seats the party at the save's position unless a live one is armed).
     session.host.world.load_full(sf.clone());
+    // The save's Field Move option. The engine keeps it as a host setting
+    // rather than save data, so the seed carries it the way the card load
+    // carries it in retail: a timed script (`jouind`'s two-switch gate gives
+    // 50 vsyncs of free walk between the switches) is paced for the player
+    // the anchor recorded, who had Run on.
+    session.host.world.locomotion.run_default = i32_at(&a.sc, SC_FIELD_MOVE) != 0;
     if let Some((x, z)) = a.seat {
         session.host.set_entry_seat(x, z);
     }
@@ -2552,7 +2563,14 @@ fn cross_over(
                                 .map_err(|b| format!("in crossing {x}, playing beats: {b}"))?;
                         }
                         match left {
-                            Some(s) => Ok(s),
+                            // A beat that changed scene may land on a
+                            // cutscene that carries the party on (`suimon`'s
+                            // water gate drains on `map01` at `(0, 0)` and
+                            // returns to the drained chamber): let it run.
+                            Some(s) => match run_while_moving(session, SCRIPT_CEILING) {
+                                Run::Entered(s2) => Ok(s2),
+                                _ => Ok(s),
+                            },
                             None => {
                                 FAR_DOOR.with(|f| f.set(true));
                                 let wanted = want.get(&x).copied();
@@ -3781,6 +3799,9 @@ fn pad_walk(
     let mut corner_last: Option<(i16, i16)> = None;
     let mut corner_stuck = 0u32;
     let mut traced_tile = None;
+    // Where the player stood when the previous walk frame was pressed.
+    let mut pressed_at: Option<(i16, i16)> = None;
+    let mut tap_owed = false;
     for _ in 0..PAD_LEG_FRAMES {
         pad_budget(session)?;
         // Per overworld tile: the encounter step counter it left behind.
@@ -3929,13 +3950,31 @@ fn pad_walk(
         // Held against something that will not give: a player tries the
         // action button (a door that opens on a press, not on contact), and
         // the route is planned afresh (an NPC walked into it).
+        //
+        // `since` also counts a frame that moved without improving (a run
+        // step that stays inside one cell), and a tap there drops the held
+        // direction for a frame - no player stops to press while still
+        // walking. In a field the tap waits for a frame the player did not
+        // move: standing still for one frame of every few cost a timed
+        // script its window (`jouind`'s switch pair is 50 vsyncs of free walk
+        // apart).
+        let moved = pressed_at.is_some_and(|p| p != (wx, wz));
+        if since == 0 {
+            tap_owed = false;
+        }
         if since > 0 && since.is_multiple_of(60) {
             path.clear();
             planned_from = None;
             pad = 0;
-        } else if since > 0 && since % 60 == 1 {
-            pad = PadButton::Cross.mask();
+            tap_owed = false;
+        } else {
+            tap_owed |= since % 60 == 1;
+            if tap_owed && !(moved && walking_mode == SceneMode::Field) {
+                pad = PadButton::Cross.mask();
+                tap_owed = false;
+            }
         }
+        pressed_at = Some((wx, wz));
         session.host.world.set_pad(pad);
         match session.tick() {
             Ok(SceneTickEvent::SceneEntered { name }) => return Ok(Walk::Entered(name)),
@@ -5193,11 +5232,13 @@ fn talk_beats(
         .filter(|&s| {
             // The talk's own record writes a wanted flag, or a partition-2
             // record it spawns does (`station`'s ticket seller spawns the
-            // P2[19] departure that latches `0x36B`).
+            // P2[19] departure that latches `0x36B`), or it hands a flag to
+            // another scene's entry script (`suimon`'s water gate).
             setters1.contains(&usize::from(s))
                 || spawned_p2(mf, man, 1, usize::from(s), n0 + n1, 3)
                     .iter()
                     .any(|r| setters2.contains(r))
+                || hands_off_to_entry_script(session, mf, man, usize::from(s))
         })
         .collect();
     slots.sort_unstable();
@@ -5214,6 +5255,73 @@ fn talk_beats(
         });
     }
     slots
+}
+
+/// Whether talk record `P1[rec]` is a **hand-off**: it sets a system flag
+/// the live state does not carry and changes scene, and the destination's
+/// scene-entry script (its `P1[0]`) tests that flag. Such a talk is a story
+/// beat whose effect lands in another scene, so no flag it writes itself is
+/// one the next anchor shows: `suimon`'s Water Gate Controller (`P1[4]`)
+/// sets `0x2C6` and enters `map01` at `(0, 0)`; `map01`'s `P1[0]` sees
+/// `0x2C6` and spawns the drain cutscene `P2[15]`, which trades it for
+/// `0x2C7` and returns the party to the drained chamber, where `suimon`'s
+/// `P1[0]` trades that for `0x27B` - the flag that joins the two chambers.
+fn hands_off_to_entry_script(
+    session: &BootSession,
+    mf: &legaia_asset::man_section::ManFile,
+    man: &[u8],
+    rec: usize,
+) -> bool {
+    use legaia_asset::field_disasm::{InsnInfo, LinearWalker, scene_change_name};
+    use legaia_engine_core::man_field_scripts::{
+        FlagBank, partition_record_span, walk_partition_gflag_sites,
+    };
+    let w = &session.host.world;
+    let sets: BTreeSet<u16> = walk_partition_gflag_sites(mf, man, 1)
+        .iter()
+        .filter(|s| {
+            s.record == rec
+                && s.bank == FlagBank::System
+                && s.kind == FlagKind::Set
+                && s.clean
+                && !s.text_alias
+                && !s.debug_menu
+                && !w.system_flag_test(s.flag)
+        })
+        .map(|s| s.flag)
+        .collect();
+    if sets.is_empty() {
+        return false;
+    }
+    let Some((start, pc0, len)) = partition_record_span(mf, man, 1, rec) else {
+        return false;
+    };
+    let body = &man[start..start + len];
+    let here = scene_name(session);
+    let dests: BTreeSet<String> = LinearWalker::new(body, pc0)
+        .flatten()
+        .filter(|i| matches!(i.info, InsnInfo::SceneChange { .. }))
+        .filter_map(|i| scene_change_name(body, &i))
+        .filter(|d| *d != here)
+        .collect();
+    let index = &session.host.index;
+    dests.iter().any(|d| {
+        let Some(dman) = Scene::load(index, d)
+            .ok()
+            .and_then(|sc| sc.field_man_payload(index).ok().flatten())
+        else {
+            return false;
+        };
+        let Ok(dmf) = legaia_asset::man_section::parse(&dman) else {
+            return false;
+        };
+        walk_partition_gflag_sites(&dmf, &dman, 1).iter().any(|s| {
+            s.record == 0
+                && s.bank == FlagBank::System
+                && s.kind == FlagKind::Test
+                && sets.contains(&s.flag)
+        })
+    })
 }
 
 /// The partition-2 records `(part, rec)` spawns through op `0x44`

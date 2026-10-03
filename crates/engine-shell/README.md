@@ -78,6 +78,7 @@ authoritative list; the broad groups are:
 | Group | Subcommands | What they do |
 |---|---|---|
 | Scene inspection | `info`, `list-scenes`, `clut-trace`, `man-scripts`, `xa-cue`, `config dump-cutscene-map` | Headless reports on a scene's resolved asset chain / dropped CLUTs / MAN field-VM scripts / XA voice-cue slots, plus the CDNAME→`MV*` map as an editable TOML. |
+| Launch | *(no subcommand)* | First-run launcher: asks for the disc image once (native picker, drag-and-drop, typed path), remembers it, boots `play-window --boot-ui`. |
 | Run | `play`, `play-window`, `play-str`, `record` | Boot a scene headless (`play`) or in a wgpu window (`play-window`); play an MDEC movie (`play-str`); capture pad input to a replay (`record`). |
 | Asset export | `export-glb` | Bake a scene (or `--all-scenes`) into textured world / NPC / animated-prop `.glb`s + a placement manifest for Unity/VRChat or Blender; `--items` exports every equipment item as animated item-alone / with-limb `.glb`s ([`docs/tooling/vrchat-world-export.md`](../../docs/tooling/vrchat-world-export.md)). |
 | Save / config | `save`, `load`, `config` | Disk-save smoke round-trip + the keyboard→pad input mapping. The window's own Save writes `saves/slot_NN.bin` with the loaded scene as its resume point (LGSF `LGX5`), and Continue / Load re-enter that scene before hydrating the world, as retail does; a file without one loads onto the current scene. `load --card <image>` reads a block out of a real PSX memory-card image instead ([below](#memory-card-images)). |
@@ -174,6 +175,11 @@ root `src/bin/legaia-engine.rs` keeps only `main` + the clap dispatch):
   `minigames`, `shop_windows`) and the `play-str` movie player
   (`str_player`), plus their geometry / asset helpers.
 - `shared.rs` - helpers both halves use.
+- `launcher_window.rs` - the no-subcommand launcher's picker window (engine
+  text overlay + `rfd` native file dialog). Its settings / validation /
+  decision logic is the library module `launcher` (`src/launcher.rs`), unit
+  tested without a display or a disc; the user-facing description is
+  [`playing-and-viewing.md`](../../docs/guides/playing-and-viewing.md#0-the-launcher).
 
 ## Tests
 

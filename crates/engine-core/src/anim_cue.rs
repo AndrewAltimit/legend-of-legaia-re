@@ -1,34 +1,24 @@
 //! Per-frame **animation cue track** walker - the producer that turns a battle
 //! action's baked `(frame, cue_id)` list into arts-voice XA requests and SPU
-//! ring cues.
+//! ring cues. This is what a swing, a footstep, a knockdown and a monster's
+//! attack sound like: the track rides the committed action entry itself.
 //!
 //! PORT: FUN_800508dc - the walker itself.
 //!
-//! NOT WIRED: nothing on the engine's frame path owns the two inputs this
-//! needs. The track lives at `entry + 0x54` of a **playing battle action
-//! entry** (the LZS-decoded per-character `data\battle\PLAYERn` record the
-//! battle-form assembler seats, see `docs/formats/battle-data-pack.md`), and
-//! the cursor is a field of the retail battle actor (`+0x1F6`). Neither the
-//! entry nor the actor is modelled in `legaia-engine-audio`, and the engine's
-//! battle actor (`legaia_engine_core`) carries neither field - so there is no
-//! value to pass. Two things close the gap, both outside this crate:
-//!
-//! * the battle-form assembler keeping the playing entry's cue track alongside
-//!   the mesh it already splices, and
-//! * the battle actor growing the `+0x1F6` cursor so [`AnimCueState`] can be
-//!   ticked once per animation frame.
-//!
-//! The arithmetic here is the part that is reused unchanged once those exist;
-//! [`AnimCueEmit::xa_shout`] already lands on the same `(clip_slot, channel)`
-//! pair [`crate::ArtsShoutBank`] is keyed on, and [`AnimCueEmit::Dispatch`]
-//! lands on [`crate::classify_cue`].
+//! Engine seat: `World::tick_battle_animations` walks each battle actor's
+//! committed clip once per animation frame, beside the effect-script stepper
+//! (retail `FUN_80047430` calls the two with the same `(slot, entry, frame)`
+//! arguments). The track is read off the committed entry head the effect
+//! stepper already holds (`Actor::battle_effect_script`, `entry+0x00..+0x88`),
+//! the cursor is `Actor::battle_anim_cue_cursor` (retail `+0x1F6`, zeroed by
+//! the anim commit `FUN_8004AD80`), and every [`AnimCueEmit::Route`] goes
+//! through [`crate::sfx_cue::route_sfx_cue`] (`FUN_8004FE5C`).
 //!
 //! REF: FUN_8004fe5c - the battle SFX-cue router a [`AnimCueEmit::Route`]
-//! feeds (ported as `legaia_engine_core::sfx_cue`; it is the arm that splits
-//! `id >= 0x100` off to the CD-XA clip player and everything below it into the
-//! 4-slot ring).
+//! feeds (it is the arm that splits `id >= 0x100` off to the CD-XA clip player
+//! and everything below it into the 4-slot ring).
 //! REF: FUN_8004fcc8 - the menu-cue / voice dispatcher an
-//! [`AnimCueEmit::Dispatch`] feeds ([`crate::classify_cue`]).
+//! [`AnimCueEmit::Dispatch`] feeds.
 //! REF: FUN_80056798 - the BIOS `rand()` thunk; injected here as a closure so
 //! the *consumption* of the draw is what is ported, not the BIOS LCG.
 //!
@@ -94,6 +84,9 @@ pub struct AnimCueSlot {
     /// Cue id; `0` terminates the track.
     pub cue: u16,
 }
+
+/// Offset of the cue track inside a per-action entry (`entry + 0x54`).
+pub const ANIM_CUE_TRACK_OFFSET: usize = 0x54;
 
 /// Retail track length - the walker refuses to advance past cursor `8`.
 pub const ANIM_CUE_TRACK_LEN: u8 = 8;
@@ -179,6 +172,17 @@ impl AnimCueEmit {
             other => other,
         };
         Some((clip, (id & 7) as u8))
+    }
+}
+
+/// The ring id `FUN_8004FCC8` enqueues for a [`AnimCueEmit::Dispatch`] id:
+/// `id - 1` below `0x40`, `id` itself below `0x100`; `None` for the
+/// `>= 0x100` voice arm (which this walker never dispatches).
+pub fn dispatch_ring_id(id: u16) -> Option<u16> {
+    match id {
+        0..0x40 => Some(id.wrapping_sub(1)),
+        0x40..0x100 => Some(id),
+        _ => None,
     }
 }
 
@@ -317,13 +321,9 @@ impl AnimCueState {
     /// Tick one animation frame, storing the walk's cursor back the way retail
     /// does (only when the walk committed one).
     ///
-    /// Named `tick_cues` rather than `tick` on purpose, and for the same reason
-    /// `FootstepCadence::tick_cadence` is: this crate's `lib.rs` re-exports
-    /// [`AnimCueState`], which makes `lib.rs` a file that "names the type", so
-    /// the reachability graph's receiver gate passes any `.tick(` written there
-    /// onto this method - and `render_bgm_to_pcm` writes `spu.tick()`. That one
-    /// edge reported this whole module live and its `NOT WIRED` disclosure
-    /// stale. See `docs/tooling/stale-not-wired-triage.md`.
+    /// Named `tick_cues` rather than `tick`, so the reachability graph's
+    /// receiver gate cannot bind an unrelated `.tick(` call to it (see
+    /// `docs/tooling/stale-not-wired-triage.md`).
     pub fn tick_cues(
         &mut self,
         actor: &AnimCueActor,
@@ -483,14 +483,14 @@ mod tests {
     }
 
     #[test]
-    fn cd_busy_fallback_is_reachable_through_classify_cue() {
-        // The Dispatch arm's whole point is that it lands on FUN_8004FCC8.
+    fn cd_busy_fallback_is_a_ring_cue() {
+        // The Dispatch arm's whole point is that it lands on FUN_8004FCC8's
+        // ring arm, unchanged (every fallback id sits in `0x40..0x100`).
         for &id in &SHOUT_RING_FALLBACK {
-            match crate::classify_cue(u32::from(id)) {
-                crate::CueDispatch::Ring { .. } => {}
-                other => panic!("{id:#x} should be a ring cue, got {other:?}"),
-            }
+            assert_eq!(dispatch_ring_id(id), Some(id));
         }
+        assert_eq!(dispatch_ring_id(0x1A), Some(0x19));
+        assert_eq!(dispatch_ring_id(0x10F), None);
     }
 
     #[test]

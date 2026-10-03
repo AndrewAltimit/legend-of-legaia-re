@@ -26,7 +26,7 @@ Four things, all usable today. Everything browser-side reads your disc image loc
 - [**Asset viewer**](https://andrewaltimit.github.io/legend-of-legaia-re/viewer.html) and [**media browser**](https://andrewaltimit.github.io/legend-of-legaia-re/media.html) - textures, 3D models, dialog, music, sound banks, and the FMVs, decoded in the tab.
 - **Data tables with 3D model views** for [enemies](https://andrewaltimit.github.io/legend-of-legaia-re/monsters.html), [characters](https://andrewaltimit.github.io/legend-of-legaia-re/characters.html) and [NPCs](https://andrewaltimit.github.io/legend-of-legaia-re/npcs.html), plus [shops](https://andrewaltimit.github.io/legend-of-legaia-re/shops.html), [Tactical Arts](https://andrewaltimit.github.io/legend-of-legaia-re/arts.html), and the [whole world in 3D](https://andrewaltimit.github.io/legend-of-legaia-re/world-overview.html).
 
-**Native tools and engine.** Prebuilt binaries for Linux and Windows on the [Releases page](https://github.com/AndrewAltimit/legend-of-legaia-re/releases), or `cargo build --release`. `legaia-extract` turns a disc into PNG / WAV / OBJ / JSON; `legaia-engine play-window` is the windowed engine (field scenes, the full menu stack, shops, level-ups, a battle harness, and MDEC cutscene playback with synced XA audio); `asset-viewer` browses every format interactively; plus `save-tool`, `legaia-patcher`, and a CLI per format.
+**Native tools and engine.** Prebuilt binaries for Linux, Windows and macOS on the [Releases page](https://github.com/AndrewAltimit/legend-of-legaia-re/releases), or `cargo build --release`. To play, start `legaia-engine` with no arguments (double-click it, or the macOS app): it asks for your disc image once, remembers it, and opens the title screen. `legaia-extract` turns a disc into PNG / WAV / OBJ / JSON; `legaia-engine play-window` is the windowed engine (field scenes, the full menu stack, shops, level-ups, a battle harness, and MDEC cutscene playback with synced XA audio); `asset-viewer` browses every format interactively; plus `save-tool`, `legaia-patcher`, and a CLI per format.
 
 **Modding and translation.** [`legaia-patcher`](docs/tooling/randomizer.md) patches your own `.bin` in place or emits a PPF: it shuffles drops, encounters, chests, steals, arts, doors, shops, casino prizes, prices, equipment, starting items and level, and battle tuning - several features are hand-assembled MIPS hooks injected into dead space - plus content mods: the Delilas party swap, custom monster models and skins, and the Super-Arts move list. Its [`translate`](docs/tooling/translation/index.md) subcommands export the game's dialog and UI text to editable YAML and reimport it in place, the basis for community language packs; [`translate lift-official`](docs/tooling/pal-localizations.md) re-keys another disc's text (official PAL, or fan-patched) onto the USA disc where it fits.
 
@@ -146,6 +146,11 @@ with a release archive the same binaries sit in the unpacked directory, so run
 `./<bin>` (or `<bin>.exe` on Windows) instead. The highlights:
 
 ```bash
+# Play: with no subcommand the engine runs its launcher - it asks for the disc
+# image once (native file picker, drag-and-drop, or a typed path), remembers it
+# in the platform config dir, and boots the title screen.
+./target/release/legaia-engine
+
 # What did the scene host actually resolve for a scene? TIMs uploaded to VRAM,
 # TMDs parsed, MES presence, SEQ / VAB / event-script counts.
 # `--disc` reads PROT.DAT + CDNAME.TXT straight off the image, so this works

@@ -367,6 +367,11 @@ struct SceneLightsU {
     // `crate::occlusion_fade` constants (radius/feather scaled to the
     // viewport height). Only read while `occl_focus.w` is set.
     occl_params: vec4<f32>,
+    // Feet-line rule: .xy = the player's projected feet (framebuffer
+    // pixels), .zw = the lift axis (`crate::occlusion_fade::lift_axis`) -
+    // `dot(frag - feet, axis)` is 0 on the feet line and 1 where the fade
+    // reaches full strength. A zero axis switches the rule off.
+    occl_lift: vec4<f32>,
     lights: array<ScenePointLightU, 8u>,
 };
 
@@ -403,9 +408,10 @@ fn scene_light_shadow(idx: u32, world_pos: vec3<f32>) -> f32 {
 
 // Camera-occlusion fade keep probability for one fragment - 1.0 = keep
 // unconditionally (the identity while the enable is off). A fragment
-// fades only when it is BOTH nearer the camera than the player by more
-// than the depth margin AND within the screen-space fade circle around
-// the player's projected centre; the keep ramps from 1.0 at the rim to
+// fades only when it is nearer the camera than the player by more than
+// the depth margin, within the screen-space fade circle around the
+// player's projected centre, AND above the player's feet on screen; the
+// keep ramps from 1.0 at the rim to
 // `min_keep` at the centre. The caller discards when
 // `occl_bayer(frag) >= keep` (screen-door transparency - no blend state,
 // depth writes intact). CPU mirror: `crate::occlusion_fade::
@@ -429,8 +435,18 @@ fn occl_keep(frag_px: vec2<f32>, frag_w: f32) -> f32 {
     if (d >= r) {
         return 1.0;
     }
+    // Feet-line rule: a fragment at or below the player's feet on screen
+    // cannot be hiding them (the floor in front of the character, the foot
+    // of the wall that hides them) - see `crate::occlusion_fade::lift_factor`.
+    var lift = 1.0;
+    if (any(sl.occl_lift.zw != vec2<f32>(0.0))) {
+        lift = clamp(dot(frag_px - sl.occl_lift.xy, sl.occl_lift.zw), 0.0, 1.0);
+    }
+    if (lift <= 0.0) {
+        return 1.0;
+    }
     let t = smoothstep(r - sl.occl_params.w, r, d);
-    return mix(1.0, mix(sl.occl_params.y, 1.0, t), s);
+    return mix(1.0, mix(sl.occl_params.y, 1.0, t), s * lift);
 }
 
 // Summed point-light gain for one fragment (the `point_gain` argument of

@@ -639,6 +639,29 @@ impl World {
         Some(self.morph_deltas_for(&lanes, group, n_verts))
     }
 
+    /// Env-pack slot `pack_slot`'s TMD with every group's live morph deltas
+    /// ([`Self::current_morph_deltas`]) staged onto its vertices - the mesh a
+    /// host re-builds when [`Self::take_morph_dirty_slots`] names the slot
+    /// (the `FUN_8001C604` render substitution). `None` when no lane targets
+    /// any group of the slot (the mesh draws its rest pose). The rest TMD is
+    /// never mutated.
+    pub fn morphed_env_tmd(
+        &self,
+        pack_slot: usize,
+        rtmd: &crate::scene_resources::ResolvedTmd,
+    ) -> Option<crate::scene_resources::ResolvedTmd> {
+        let mut morphed: Option<crate::scene_resources::ResolvedTmd> = None;
+        for (group, obj) in rtmd.tmd.objects.iter().enumerate() {
+            if let Some(deltas) =
+                self.current_morph_deltas(pack_slot, group as u32, obj.vertices.len())
+            {
+                let base = morphed.take().unwrap_or_else(|| rtmd.clone());
+                morphed = Some(base.with_group_deltas(group as u32, &deltas));
+            }
+        }
+        morphed
+    }
+
     /// Drain the `(pack_slot, group)` pairs whose morph deltas changed
     /// since the last call - the renderer re-stages just those meshes'
     /// positions (`current_morph_deltas` + the authored vertices).

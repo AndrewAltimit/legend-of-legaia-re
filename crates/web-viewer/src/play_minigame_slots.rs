@@ -33,6 +33,11 @@ pub(crate) struct SlotUi {
     pub(crate) credited_bonus: bool,
     /// Frame counter for the marquee's attract sweep + blink.
     pub(crate) tick: u32,
+    /// The marquee's legend / blink counters for the shared cabinet builder
+    /// - the native window's `slot_marquee_clock` twin.
+    pub(crate) clock: legaia_engine_ui::ui_slot_cabinet::SlotMarqueeClock,
+    /// This frame's composed dot buffer.
+    pub(crate) dots: Vec<u8>,
 }
 
 impl LegaiaRuntime {
@@ -71,14 +76,82 @@ impl LegaiaRuntime {
             ui.credited_bonus = r.bonus_spin;
         }
         ui.prev_phase = phase;
+        // The marquee's dot buffer for the shared cabinet builder, off the
+        // same `SlotMachine::marquee` state the native window composes from.
+        let marquee = self.slot_session().map(|m| (m.marquee(), m.anticipation()));
+        let messages = self
+            .minigame_art()
+            .and_then(|a| a.slot_cabinet.as_ref())
+            .map(|c| c.scene.messages.clone());
+        let ui = &mut self.minigame_ui.slot;
+        ui.dots = match (marquee, messages) {
+            (Some((f, reach)), Some(msgs)) => ui.clock.frame(&f, reach, &msgs),
+            _ => Vec::new(),
+        };
+    }
+
+    /// The whole machine as screen primitives through the shared
+    /// `ui_slot_cabinet::slot_cabinet_prims` - the native window's
+    /// `slot_cabinet_screen_prims` twin. Empty outside a session.
+    pub(crate) fn slot_cabinet_prims(&self) -> Vec<legaia_engine_ui::screen_prim::ScreenPrim> {
+        use legaia_engine_ui::ui_slot_cabinet as usc;
+        let (Some(m), Some(c)) = (
+            self.slot_session(),
+            self.minigame_art().and_then(|a| a.slot_cabinet.as_ref()),
+        ) else {
+            return Vec::new();
+        };
+        let strips = m.strips();
+        let clear;
+        let dots: &[u8] = if self.minigame_ui.slot.dots.is_empty() {
+            clear = legaia_asset::minigame_slot_scene::clear_dots();
+            &clear
+        } else {
+            &self.minigame_ui.slot.dots
+        };
+        let mut prims = usc::slot_cabinet_prims(&usc::SlotCabinetInput {
+            scene: &c.scene,
+            cabinet: c.cabinet.as_ref(),
+            hud: &c.hud,
+            reel_pos: core::array::from_fn(|r| m.reel_pos(r)),
+            strips: [&strips[0], &strips[1], &strips[2]],
+            stop_open: core::array::from_fn(|r| m.reel_stop_open(r)),
+            winning_line: m.winning_line_word(),
+            dots,
+            blink: self.minigame_ui.slot.clock.blink,
+            balance: m.balance(),
+        });
+        // The paylines over it: the machine's own ported pass + projection
+        // (`SlotMachine::payline_segments`) through the shared
+        // `ui_slot_paylines` builder - the native window's
+        // `slot_payline_screen_prims` twin. The 2D-canvas fallback strokes
+        // them itself, so they join the prim pass only with the cabinet.
+        use legaia_engine_ui::ui_slot_paylines as usp;
+        let segments: Vec<usp::PaylineSegment> = m
+            .payline_segments()
+            .iter()
+            .map(|l| usp::PaylineSegment {
+                a: [l.a.0, l.a.1],
+                b: [l.b.0, l.b.1],
+                rgb: [l.prim.color.0, l.prim.color.1, l.prim.color.2],
+                semi: l.prim.code & 0x02 != 0,
+            })
+            .collect();
+        prims.extend(usp::payline_screen_prims(&segments));
+        prims
     }
 
     /// The slot HUD rows, the engine's (`minigame_status::slot_status_rows`)
-    /// through the shared draw kernel the native window calls.
+    /// through the shared draw kernel the native window calls. Like the
+    /// window, only while the machine itself is not drawn: its own marquee,
+    /// lamps and coin readout carry all of it.
     pub(crate) fn slot_status_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
         let Some(m) = self.slot_session() else {
             return Vec::new();
         };
+        if self.play_mg_slot_cabinet_ready() {
+            return Vec::new();
+        }
         let rows = legaia_engine_core::minigame_status::slot_status_rows(m);
         legaia_engine_ui::ui_text_lines::status_row_draws_for(
             font,
@@ -89,6 +162,23 @@ impl LegaiaRuntime {
 
 #[wasm_bindgen]
 impl LegaiaRuntime {
+    /// Whether the machine's resident set decoded, so the page draws the
+    /// cabinet through the shared screen-prim pass (and its VRAM through
+    /// [`Self::play_mg_slot_vram`]) instead of its 2D-canvas composition.
+    pub fn play_mg_slot_cabinet_ready(&self) -> bool {
+        self.minigame_art()
+            .is_some_and(|a| a.slot_cabinet.is_some())
+    }
+
+    /// The machine's VRAM - the art pack at its own framebuffer
+    /// destinations - for the page's renderer while the machine is up.
+    pub fn play_mg_slot_vram(&self) -> Vec<u8> {
+        self.minigame_art()
+            .and_then(|a| a.slot_cabinet.as_ref())
+            .map(|c| c.vram.as_bytes().to_vec())
+            .unwrap_or_default()
+    }
+
     /// Is the in-world slot session live?
     pub fn play_mg_slot_active(&self) -> bool {
         self.slot_session().is_some()

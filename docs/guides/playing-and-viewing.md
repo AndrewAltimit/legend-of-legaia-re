@@ -12,6 +12,45 @@ required to play. Without `--disc`, tools read an `extracted/` tree
 directory) produced by `legaia-extract`
 ([getting-started.md](getting-started.md)).
 
+## 0. The launcher
+
+Started with **no subcommand** - a double-click, a desktop shortcut, the macOS
+app - `legaia-engine` runs a small launcher instead of printing help:
+
+```bash
+./legaia-engine
+```
+
+On the first start a window asks for your Legend of Legaia (USA) disc image.
+Press `Enter` or click to open the system file dialog, drag the `.bin` (or
+`.cue`) onto the window, or type its path and press `Enter`; `Esc` quits. On
+Linux the dialog goes through the desktop's file-chooser portal; where no
+portal runs, the drag-and-drop and typed-path routes still work.
+
+The chosen image is checked before it is accepted, through the same reader the
+game boots from: a `.cue` resolves to its `.bin`, the image must be raw
+Mode 2/2352, its `SYSTEM.CNF` must boot `SCUS_942.54`, and `PROT.DAT` must be
+present. A PAL or Japanese disc is refused with the executable it boots; a
+randomized or translated USA disc is accepted, since it still boots the USA
+executable. The check reads a few sectors, not the whole image - it is not the
+SHA-256 fingerprint `disc-extract verify` computes.
+
+A disc that passes is remembered in `launcher.toml` in the platform config
+directory (`~/.config/legaia-engine` on Linux, `%APPDATA%\legaia-engine` on
+Windows, `~/Library/Application Support/legaia-engine` on macOS), and the game
+opens on the title screen (`play-window --disc <bin> --boot-ui`). Later starts
+skip the window entirely. It comes back only when the remembered file is gone
+or no longer validates, and then says which. To switch discs, delete
+`launcher.toml`, or run `play-window --disc` directly.
+
+A launcher start runs the game from the per-user data directory
+(`~/.local/share/legaia-engine` on Linux; the same folder as the settings on
+Windows and macOS), so key bindings (`legaia-input.toml`), options
+(`legaia-options.toml`) and `saves/` stay in one place however the binary was
+started. `LEGAIA_ENGINE_CONFIG_DIR` and `LEGAIA_ENGINE_DATA_DIR` override the
+two directories. Every subcommand below behaves exactly as before; the
+launcher only answers the no-argument case.
+
 ## 1. Boot the engine
 
 ```bash

@@ -64,6 +64,12 @@ impl PondSession {
         self.venue_map = Some(venue);
     }
 
+    /// The venue the lure casts into (the pond's `.MAP` floor buffer), when
+    /// one is attached.
+    pub fn venue_map(&self) -> Option<&PondVenue> {
+        self.venue_map.as_ref()
+    }
+
     /// The live cast lure, from the cast lock until the line is reeled in.
     pub fn lure_actor(&self) -> Option<crate::fishing_actors::LureActor> {
         self.lure_actor

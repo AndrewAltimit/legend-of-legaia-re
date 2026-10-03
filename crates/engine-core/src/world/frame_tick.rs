@@ -2964,6 +2964,10 @@ impl World {
         let mut machine = self.minigames.slot_machine.take();
         if let Some(m) = machine.as_mut() {
             self.minigames.casino_coins = m.cash_out().max(0) as u32;
+            // Leaving mid-spin must not strand the reel motor.
+            self.audio
+                .sfx_voice_stops
+                .push(crate::slot_machine::SPIN_VOICE);
         }
         machine
     }
@@ -3198,6 +3202,27 @@ impl World {
                 self.mode = self.minigames.slot_return_mode;
             }
         }
+        self.route_slot_sounds();
+    }
+
+    /// Hand the machine's sound writes to the audio side: its ring stores
+    /// as [`SfxRingOp::WriteSlot`] (resolved against
+    /// [`World::runtime_sfx_bundle`]), its motor voice through the direct
+    /// key / release queues both hosts drain.
+    ///
+    /// [`SfxRingOp::WriteSlot`]: crate::world::SfxRingOp::WriteSlot
+    fn route_slot_sounds(&mut self) {
+        let Some(m) = self.minigames.slot_machine.as_mut() else {
+            return;
+        };
+        let sounds = m.take_sounds();
+        for (slot, id) in sounds.ring {
+            self.audio
+                .sfx_ring_ops
+                .push(crate::world::SfxRingOp::WriteSlot(slot, id));
+        }
+        self.audio.sfx_voice_keys.extend(sounds.voice_on);
+        self.audio.sfx_voice_stops.extend(sounds.voice_off);
     }
 
     /// Enter the Baka Fighter duel on `fight`, suspending the current scene

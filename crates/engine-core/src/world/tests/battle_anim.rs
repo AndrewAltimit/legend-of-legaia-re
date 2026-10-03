@@ -1218,3 +1218,57 @@ fn a_downed_actor_does_not_tween_or_step() {
     assert_eq!(zs, vec![32, 64, 64, 64]);
     assert_eq!(world.actors[0].move_state.world_z, z0);
 }
+
+/// A clip whose entry head carries an animation cue track at `+0x54`
+/// (`(frame, cue)` pairs, `FUN_800508DC`).
+fn cue_track_clip(action_id: u8, track: &[(u16, u16)]) -> MonsterAnimation {
+    let mut clip = pose_test_clip(action_id, 8, 0);
+    let mut head = vec![0u8; legaia_asset::monster_archive::EFFECT_SCRIPT_HEAD_BYTES];
+    for (k, &(frame, cue)) in track.iter().enumerate() {
+        let o = crate::anim_cue::ANIM_CUE_TRACK_OFFSET + k * 4;
+        head[o..o + 2].copy_from_slice(&frame.to_le_bytes());
+        head[o + 2..o + 4].copy_from_slice(&cue.to_le_bytes());
+    }
+    clip.effect_script = head;
+    clip
+}
+
+/// A party swing's cue track reaches the SFX ring through the battle sound
+/// funnel: `0x1A` takes the low leg (`id - 1`), `0xA7` the high leg - ring id
+/// `0x243` after its `bse.dat` row's `+4` category is written with the
+/// literal `2` a party cue `>= 0xA7` gets. Each cue fires once, on its frame.
+#[test]
+fn a_committed_swing_plays_its_animation_cue_track() {
+    use crate::world::SfxRingOp;
+    let mut world = World::new();
+    world.enter_battle(1, 1);
+    // A `bse.dat`-shaped bank: `[tag 1][body_offset 4]` + rows; row `0x43`
+    // (`0x243 - 0x200`) is the one the swing's `0xA7` lands on.
+    let mut bse = vec![0u8; 4 + 0x50 * 8];
+    bse[0] = 1;
+    bse[2] = 4;
+    world.install_battle_sfx_bank(&bse);
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 16];
+    clips[0] = Some(pose_test_clip(0, 2, 0));
+    clips[0x0C] = Some(cue_track_clip(0x0C, &[(0, 0xA7), (3, 0x1A)]));
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    world.actors[0].battle.queued_anim = 0x0C;
+    world.commit_staged_battle_anim(0);
+    assert_eq!(world.actors[0].battle_anim_cue_cursor, 0);
+
+    let mut ops = Vec::new();
+    for _ in 0..12 {
+        world.tick_battle_animations();
+        ops.extend(world.take_sfx_ring_ops());
+    }
+    assert_eq!(
+        ops,
+        vec![SfxRingOp::Push(0x243), SfxRingOp::Push(0x19)],
+        "each cue once, in track order"
+    );
+    assert_eq!(world.actors[0].battle_anim_cue_cursor, 2);
+    let row = world
+        .runtime_sfx_descriptor(0x243)
+        .expect("battle bank row");
+    assert_eq!(row[4], 2, "the party literal category");
+}

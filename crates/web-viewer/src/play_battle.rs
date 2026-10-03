@@ -2123,6 +2123,10 @@ impl LegaiaRuntime {
         // The Baka cabinet's and round chrome's widgets on the duel VRAM's
         // PROT 1203 pages, the native window's `baka_hud_prims` twin.
         prims.extend(self.baka_hud_prims());
+        // The slot machine itself - cabinet, reels, furniture, dot matrix,
+        // coin HUD - on its own art-pack VRAM, through the shared
+        // `ui_slot_cabinet` builder the native window draws it with.
+        prims.extend(self.slot_cabinet_prims());
         // The overworld's entity + player markers, through the shared
         // `world_map_markers` kernel the native window draws them with
         // (`crate::play_world_map_markers`).

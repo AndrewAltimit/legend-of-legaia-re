@@ -695,6 +695,15 @@ pub struct Actor {
     /// reaction's natural end (`world::battle::clip_ladder`).
     pub battle_reaction_next: Option<u8>,
 
+    /// The `+0x1F7` **juggle window** byte as the anim tick last wrote it
+    /// (`FUN_80047430` `0x80047E28..0x80047E54`, once per tick for every
+    /// node, after the cursor advance): up while the playing clip is before
+    /// its first listed beat. The melee kernel reads the byte, not the clip,
+    /// so a clip committed between two ticks - a block the previous hit of
+    /// the same combo staged - does not move it until the next tick.
+    /// Written by [`crate::world::World::tick_battle_animations`].
+    pub battle_juggle_window: bool,
+
     /// Per-character **art-animation bank** clips (the player file's
     /// record[0] `+0x58` bank, each record's keyframe stream resolved
     /// through its `readef.DAT` `"ME"` archive and expanded so channel `i`
@@ -732,6 +741,14 @@ pub struct Actor {
     /// (engine cadence choice so a walk clip's footstep effects refire per
     /// cycle).
     pub battle_effect_cursor: u8,
+
+    /// Animation cue-track cursor - the engine mirror of actor `+0x1F6`, the
+    /// resume point of the per-frame `FUN_800508DC` walk over the committed
+    /// entry's `+0x54` `(frame, cue)` track ([`crate::anim_cue`]). Zeroed by
+    /// the anim commit (`FUN_8004AD80`, `0x8004AFD0`); unlike the effect
+    /// cursor it does **not** rewind when a looping clip wraps - retail never
+    /// rewinds it there.
+    pub battle_anim_cue_cursor: u8,
 
     /// Per-frame battle pose **history ring** - the engine mirror of the
     /// retail rings `FUN_80047430` shifts every frame (position `+0x4C`,

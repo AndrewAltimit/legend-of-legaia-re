@@ -640,18 +640,16 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
               </p>
               <p>
                 <b>The pond is the real place:</b> the venue's own field-scene bundle assembled
-                in WebGL, with the lead's actual field model standing on the shore in his own
-                idle animation.
+                in WebGL, with Vahn, Noa and Gala standing on the shore where the fishing
+                overlay seats them, each in the animation it plays there, seen through the
+                venue's own camera from behind the party.
               </p>
               <p>
-                <b>Fitted rather than traced:</b> the camera framing and the shore anchor (the
-                retail camera lives in runtime globals), the line / bobber / ripple overlay, the
+                <b>Fitted rather than traced:</b> the line / bobber / ripple overlay, the
                 exact strike-denominator ladder, the fight's reel-in rates, and the
                 fish-behaviour branch order (its pull / dart / sink formulas are per-species disc
                 data). The HUD glyph atlas is the one undecoded fishing asset, so its icons draw
-                as labelled text. The venue bundle carries two pond areas - the fenced fishing
-                deck and the rocky-shore pool - and which pond each venue plays at is a fitted
-                assignment; the line-snap loss is an engine-side reading.
+                as labelled text. The line-snap loss is an engine-side reading.
               </p>
             </div>
           </div>
@@ -2665,6 +2663,20 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     g.imageSmoothingEnabled = false;
     g.fillStyle = '#000000';
     g.fillRect(0, 0, cv.width, cv.height);
+
+    /* The machine's resident set decoded: the engine draws the frame - the
+     * same `ui_slot_cabinet` primitive list the native window and the play
+     * page draw on their GPUs, rasterised onto the 640x240 framebuffer
+     * (`slot_frame_rgba`). The composition below is the fallback for a bundle
+     * without that export. */
+    if (typeof api.slot_cabinet_ready === 'function' && api.slot_cabinet_ready()) {
+      const px = api.slot_frame_rgba(cv.width, cv.height);
+      if (px.length === cv.width * cv.height * 4) {
+        g.putImageData(new ImageData(new Uint8ClampedArray(px.buffer, px.byteOffset, px.length),
+          cv.width, cv.height), 0, 0);
+        return;
+      }
+    }
 
     if (!slotArt || !slotScene) {
       /* No art / no scene on this disc: say so, and show the ids. Never fake it. */

@@ -529,13 +529,25 @@ pub fn read_arts_shout_bank(disc: &Path) -> Option<legaia_engine_audio::ArtsShou
     bank.has_clips().then_some(bank)
 }
 
-/// Clip slots the battle's one-shot CD-XA cues address, as `(slot, file)`:
-/// `26` = `XA27.XA` (the eight stereo attack stings the melee kernel's
-/// `0x10C` cue resolves to through the sound funnel's voice leg) and `0x1D`
-/// = `XA30.XA` (the ten mono per-character grunts the same kernel fires
-/// directly). Slot `i` is `XA<i+1>.XA` by the boot-built clip table's own
-/// construction (`docs/subsystems/audio.md`).
-pub const BATTLE_XA_CLIP_SLOTS: &[(u8, &str)] = &[(26, "XA27.XA"), (0x1D, "XA30.XA")];
+/// Clip slots the battle's one-shot CD-XA cues address, as `(slot, file)`.
+/// The animation cue tracks' party voice band (`0xC8..=0xFF` re-based
+/// `+0x38`, `FUN_800508DC` -> `FUN_8004FE5C`) lands on `(id - 0x100) >> 3`
+/// with the `1 / 3 / 5 -> 26 / 27 / 28` remap: Vahn's `0xC8..=0xD7` on
+/// slots `0` / `26`, Noa's `0xD8..=0xE7` on `2` / `27`, Gala's
+/// `0xE8..=0xF7` on `4` / `28` - Vahn's Spirit clip opens with `0xC8`,
+/// `XA1.XA` channel 0. `26` also carries the melee kernel's `0x10C` sting
+/// and `0x1D` = `XA30.XA` the per-character block grunt. Slot `i` is
+/// `XA<i+1>.XA` by the boot-built clip table's own construction
+/// (`docs/subsystems/audio.md`).
+pub const BATTLE_XA_CLIP_SLOTS: &[(u8, &str)] = &[
+    (0, "XA1.XA"),
+    (2, "XA3.XA"),
+    (4, "XA5.XA"),
+    (26, "XA27.XA"),
+    (27, "XA28.XA"),
+    (28, "XA29.XA"),
+    (0x1D, "XA30.XA"),
+];
 
 /// Demux + decode the battle **one-shot clip** banks from a disc image into
 /// a generic `(clip_slot, channel)` bank: the files in
@@ -1322,7 +1334,7 @@ impl BootSession {
         // carries it.
         let side_band = side_band.filter(|b| b.slot != 6);
         bgm.sync_field_sfx(
-            &world.props.stager_bytes,
+            world.runtime_sfx_bundle(),
             field_family,
             side_band,
             |entry| index.entry_bytes_extended(entry).ok(),
@@ -1331,7 +1343,29 @@ impl BootSession {
         // field, the class-2 bank in battle, a minigame's own in its mode.
         let shared = self.host.world.sync_sfx_residency();
         bgm.sync_shared_region(shared, |entry| index.entry_bytes_extended(entry).ok());
+        // The battle's two monster.snd banks (VAB slots 7 / 8).
+        let monster_banks = self.host.world.battle_monster_sound_banks();
+        bgm.sync_battle_monster_banks(&monster_banks, || {
+            index
+                .entry_bytes_extended(legaia_asset::vab_multi_bank::MONSTER_SND_PROT_INDEX as u32)
+                .ok()
+        });
         bgm.stop_sfx_voices(&self.host.world.take_sfx_voice_stops());
+        // A minigame's directly keyed voices (the slot machine's reel motor),
+        // after the stops so a release and a re-key in one tick end keyed.
+        for k in self.host.world.take_sfx_voice_keys() {
+            let keyed = bgm.key_on_voice_attr(legaia_engine_audio::VoiceAttr::from_cue_words(
+                k.voice,
+                k.vab_program_tone,
+                k.note_and_fine,
+                k.volume,
+            ));
+            log::debug!(
+                "direct voice {:#04x} {:?} keyed: {keyed}",
+                k.voice,
+                k.vab_program_tone
+            );
+        }
     }
 
     /// The session-side half of a scene swap under the host: the camera

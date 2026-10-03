@@ -267,6 +267,11 @@ impl World {
         // `current_anim` / cleared `ADVANCE_DONE` for clip-less actors and
         // sees in-flight staged clips otherwise.
         self.commit_staged_battle_anims();
+        // A new action opens: the previous action's cast-module scene does not
+        // carry into it ([`Self::retire_cast_scene_at_action_begin`]).
+        if self.battle_ctx.action_state == vm::battle_action::ActionState::Begin.as_byte() {
+            self.retire_cast_scene_at_action_begin();
+        }
         // Step against a clone of the context, then write it back. The
         // previous raw-pointer alias required that no host method ever
         // touch `world.battle_ctx`; `BattleActionHost::ui_element` now
@@ -275,9 +280,11 @@ impl World {
         // Host methods still must not WRITE `world.battle_ctx` - the
         // write-back would clobber it.
         let mut ctx = self.battle_ctx.clone();
+        let pre_state = ctx.action_state;
         let mut host = BattleHostImpl { world: self };
         let out = vm::battle_action::step(&mut host, &mut ctx);
         self.battle_ctx = ctx;
+        self.track_block_approach_terms(pre_state, &out);
         // The strike chain's exit re-arms the steal latch: the arm that
         // writes `0x1F` into the action state at `0x801E3A7C` clears
         // `ctx[+0x27]` in its jump's delay slot (`sb zero, 0x16(s5)` at

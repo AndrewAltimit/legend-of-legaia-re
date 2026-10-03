@@ -597,3 +597,54 @@ fn muscle_arts_list_rows_come_from_the_scus_table() {
     );
     assert_eq!(state["queue"][0].as_array().unwrap().len(), 0);
 }
+
+#[test]
+fn the_interval_screen_draws_the_ringside_still() {
+    let Some((mut mg, _)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    assert!(
+        mg.muscle_contest_start(0, 0),
+        "the arena overlay's ladder decodes"
+    );
+    // The still sheet: the 320x256 image, either variant.
+    let hud: serde_json::Value = serde_json::from_str(&mg.muscle_hud_json()).unwrap();
+    assert_eq!(hud["sheets"]["still"], serde_json::json!([320, 256]));
+    for v in 0..2 {
+        assert_eq!(
+            mg.muscle_hud_sheet_rgba(7, v).len(),
+            320 * 256 * 4,
+            "variant {v}"
+        );
+    }
+    let at = |mg: &LegaiaMinigames, t: i32, hp: u32| -> serde_json::Value {
+        serde_json::from_str(&mg.muscle_interval_still_json(t, hp, 1000)).unwrap()
+    };
+    // Tick 0: the hub init zeroes the level, so nothing draws yet.
+    assert_eq!(at(&mg, 0, 1000)["quads"].as_array().unwrap().len(), 0);
+    // The INTERVAL fade-in raises it to neutral: two packets that tile one
+    // 320x240 image at screen (0,-20)-(320,220).
+    let m = at(&mg, 32, 1000);
+    eprintln!("[ran] still at tick 32: {m}");
+    let q = m["quads"].as_array().unwrap();
+    assert_eq!(q.len(), 2);
+    assert_eq!(m["level"].as_i64(), Some(0x80));
+    let spans: Vec<(i64, i64, i64)> = q
+        .iter()
+        .map(|r| {
+            (
+                r["x"].as_i64().unwrap(),
+                r["y"].as_i64().unwrap(),
+                r["dw"].as_i64().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(spans, vec![(0, -20, 192), (192, -20, 128)]);
+    assert_eq!(m["variant"].as_u64(), Some(0));
+    // Below half HP the loader picks int2.tim.
+    assert_eq!(at(&mg, 32, 499)["variant"].as_u64(), Some(1));
+    // Later in the screen the level has dimmed toward half.
+    let late = at(&mg, 400, 1000)["level"].as_i64().unwrap();
+    assert!((0x40..=0x80).contains(&late), "{late}");
+}

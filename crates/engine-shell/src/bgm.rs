@@ -886,6 +886,7 @@ impl AudioBgmDirector {
                 }
                 SfxRingOp::SetLastDelay(d) => self.sfx_sched.set_ring_cue_delay(d),
                 SfxRingOp::ReplaceLast(id) => self.sfx_sched.replace_ring_cue(id),
+                SfxRingOp::WriteSlot(slot, id) => self.sfx_sched.write_ring_slot(slot.into(), id),
             }
         }
     }
@@ -948,6 +949,53 @@ impl AudioBgmDirector {
                 want.request,
                 want.prot_entry
             ),
+        }
+    }
+
+    /// Keep the battle's `monster.snd` banks staged - `want` is
+    /// [`legaia_engine_core::world::World::battle_monster_sound_banks`]
+    /// (`(VAB slot, bank index)`, empty outside battle), `read_archive` reads
+    /// PROT 891. Retail's battle scene loader `FUN_800520F0` streams them into
+    /// slots `7` / `8` at their own SPU bases; the port parks them behind the
+    /// BGM like the reward bank, and drops them when the battle ends. A
+    /// request that does not fit is not re-read until the free tail moves.
+    // REF: FUN_800520F0, FUN_8003E104
+    pub fn sync_battle_monster_banks(
+        &mut self,
+        want: &[(u8, u16)],
+        read_archive: impl FnOnce() -> Option<Vec<u8>>,
+    ) {
+        self.observe_track();
+        let parked = self.tail.monsters().map(|(k, _)| k.clone());
+        if parked.as_deref() == Some(want) {
+            return;
+        }
+        if parked.is_some() {
+            for slot in self.tail.drop_monsters() {
+                self.sfx_vabs.remove(&slot);
+            }
+        }
+        let key: legaia_engine_audio::bgm_tail::MonsterBankKey = want.to_vec();
+        if key.is_empty() || !self.tail.begin_monster_attempt(&key) {
+            return;
+        }
+        let Some(archive) = read_archive() else {
+            log::debug!("monster.snd (PROT 891) unreadable");
+            return;
+        };
+        for &(slot, bank) in want {
+            let Some(bytes) = legaia_asset::vab_multi_bank::bank_bytes(&archive, usize::from(bank))
+            else {
+                log::debug!("monster.snd bank {bank} absent");
+                continue;
+            };
+            match self.park_tail_bank(slot, bytes) {
+                Some(borrow) => {
+                    self.tail.commit_monster(&key, borrow);
+                    log::debug!("monster.snd bank {bank} staged in slot {slot} behind the BGM");
+                }
+                None => log::debug!("monster.snd bank {bank} does not fit behind the BGM"),
+            }
         }
     }
 

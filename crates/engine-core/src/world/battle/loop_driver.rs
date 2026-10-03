@@ -1351,6 +1351,7 @@ impl World {
                 {
                     a.battle.input_cursor = 0;
                     a.battle_effect_cursor = 0;
+                    a.battle_anim_cue_cursor = 0;
                 }
             }
             let frame_u8 = frame.clamp(0, 255) as u8;
@@ -1778,6 +1779,28 @@ impl World {
                 attack = attack.saturating_add(fold);
             }
         }
+        // The block roll runs ahead of the damage rolls (`0x801EC5A8..
+        // 0x801EC878` before the `0x801ECB84` fold), and a blocked hit skips
+        // the whole damage body: `bne s7,zero,0x801EE6D4` at `0x801ECB60`.
+        let blocked = self.roll_block(attacker, target, power_byte);
+        // `0x801EC888` (block) / `0x801EE3C4` (hit): the first hit through
+        // the kernel spends the approach terms.
+        self.battle.attack_ramp = 0;
+        self.battle.guard_ramp = 0;
+        if let Some(block_entry) = blocked {
+            // `0x801EE6D4..0x801EE6F8`: the attacker's anim cue cursor steps
+            // over one cue - the impact sound a landed hit would have made.
+            if let Some(a) = self.actors.get_mut(attacker_i) {
+                a.battle_anim_cue_cursor =
+                    (a.battle_anim_cue_cursor + 1).min(crate::anim_cue::ANIM_CUE_TRACK_LEN);
+            }
+            // The sound tail is reached through the apply arm only, and the
+            // grunt compares the committed pose against `+0x1F3`.
+            self.fire_melee_impact_cue(attacker, target, kill_check.then_some(block_entry));
+            // `0x801EEC30..0x801EEC6C`: the defender commits its block entry.
+            self.commit_battle_reaction_entry(target_i, block_entry);
+            return 0;
+        }
         let defense = self.physical_defense_of(target, power_byte);
         // Spirit guard stance on the defender (a party slot that picked
         // Spirit and hasn't started its next turn).
@@ -1873,14 +1896,174 @@ impl World {
         if class < crate::move_power::IMPACT_CLASS_LIMIT {
             self.arm_impact_tint(target_i, class);
         }
+        // The reaction this strike commits on the defender (retail's `s7`,
+        // committed to the defender's `+0x1DA`); the grunt below compares it
+        // against the defender's block entry.
+        let committed_reaction = if dmg > 0 {
+            self.battle_reaction_entry_for(target_i, survives)
+        } else {
+            None
+        };
         // ... and its sound.
-        self.fire_melee_impact_cue(attacker, target);
+        self.fire_melee_impact_cue(attacker, target, committed_reaction);
         // The flinch is staged for a target still standing on the accumulated
         // total (`target[+0x0] < hp`, `0x801EEC18..0x801EEC30`).
-        if dmg > 0 {
-            self.queue_battle_reaction(target_i, survives);
+        if let Some(entry) = committed_reaction {
+            self.commit_battle_reaction_entry(target_i, entry);
         }
         dmg
+    }
+
+    /// The melee kernel's block decision for one hit: `Some(block entry)`
+    /// when the defender blocks it. The roll itself is
+    /// [`vm::battle_formulas::block_roll`]; around it sit the routine's own
+    /// gates, in its order:
+    ///
+    /// * no roll (and no draw) without a block entry or once the
+    ///   accumulated total has reached the defender's HP (`0x801EC5BC`,
+    ///   `0x801EC5CC..0x801EC5DC`);
+    /// * a defender already holding its block pose with the reaction timer
+    ///   running keeps blocking (`0x801EC93C..0x801EC984`), and one mid-way
+    ///   through any other reaction cannot block - the juggle arm clears
+    ///   `s7` (`0x801ECA20..0x801ECA68`). Both read the defender's `+0x1F7`
+    ///   juggle window as the last anim tick wrote it
+    ///   ([`crate::world::Actor::battle_juggle_window`]);
+    /// * a party attacker carrying ability bit `0x4000` cancels the block
+    ///   after the verdict (`0x801ECAFC..0x801ECB5C`).
+    ///
+    /// The approach terms `ctx[+0x6D2]` / `+0x6D4` are
+    /// [`crate::world::BattleState::attack_ramp`] / `guard_ramp`
+    /// ([`Self::track_block_approach_terms`]); the damage roll still reads
+    /// them as zero.
+    /// The Mystic Shield arm (`0x801ECA84..0x801ECAF8`, `s7 = 1` while
+    /// `_DAT_8007BD84` is up) is not taken here.
+    ///
+    /// PORT: FUN_801EC3E4 (`0x801EC5A8..0x801ECB60`, the block gates)
+    fn roll_block(&mut self, attacker: u8, target: u8, power_byte: u8) -> Option<u8> {
+        use vm::battle_formulas::{ABILITY_BLOCK_BREAK, BlockRoll, BlockSide, block_roll};
+        let ti = usize::from(target);
+        let block_entry = self.battle_reaction_map(ti)?[4];
+        if block_entry == 0 {
+            return None;
+        }
+        let t = self.actors.get(ti)?;
+        if t.battle.damage_accum >= u32::from(t.battle.hp) {
+            return None;
+        }
+        let reacting = t.battle_juggle_window;
+        let in_block = t.battle_reaction_entry == Some(block_entry);
+        let side = |w: &Self, slot: u8| -> BlockSide {
+            let i = usize::from(slot);
+            let own = w.actors.get(i).map(|a| a.battle.spd).unwrap_or(0);
+            let spd = if own != 0 {
+                own
+            } else {
+                w.battle.speed.get(i).copied().unwrap_or(0)
+            };
+            BlockSide {
+                spd,
+                atk: w.battle.attack.get(i).copied().unwrap_or(0),
+                status: w.raw_status_word(slot),
+                ability: (slot < w.party.party_count).then(|| w.party_ability_word(i)),
+            }
+        };
+        let roll = BlockRoll {
+            attacker: side(self, attacker),
+            defender: side(self, target),
+            attack_ramp: self.battle.attack_ramp,
+            guard_ramp: self.battle.guard_ramp,
+            power_byte,
+            defender_spirit: self.battle.guarding.get(ti).copied().unwrap_or(false),
+            attacker_art_slot: self
+                .actors
+                .get(usize::from(attacker))
+                .is_some_and(|a| a.battle.current_anim == vm::anim_vm::DYNAMIC_ART_SLOT_B),
+        };
+        let mut blocked = block_roll(&roll, &mut || self.next_rand());
+        if in_block && reacting {
+            blocked = true;
+        } else if reacting {
+            blocked = false;
+        }
+        if blocked
+            && roll
+                .attacker
+                .ability
+                .is_some_and(|ab| ab & ABILITY_BLOCK_BREAK != 0)
+        {
+            blocked = false;
+        }
+        blocked.then_some(block_entry)
+    }
+
+    /// The defender's `+0x1F7` byte - the **juggle window**. Its one writer
+    /// is the anim tick (`FUN_80047430` `0x80047E28..0x80047E54`), every
+    /// tick for every actor: `+0x1F7 = (cursor >> 4) < entry[0x10 + idx]`,
+    /// `idx` from `FUN_80050E00(entry + 0x10)` - the first event frame of
+    /// the clip the actor is playing whenever its list has a zero in
+    /// `+0x11..+0x13` ([`vm::battle_action::event_commit_gate_frame`]). So
+    /// it is up only before the playing clip's first listed beat, and down
+    /// for a clip whose list starts at `0` (every block clip) - not "a
+    /// reaction is playing". A four-slot list (address-dependent in retail)
+    /// reads as down.
+    // REF: FUN_80047430, FUN_80050E00
+    pub(in crate::world) fn juggle_window_open(a: &crate::world::Actor) -> bool {
+        let (Some(player), Some(head)) =
+            (a.battle_animation.as_ref(), a.battle_effect_script.as_ref())
+        else {
+            return false;
+        };
+        let Some(list) = head.get(0x10..0x14) else {
+            return false;
+        };
+        let list = [list[0], list[1], list[2], list[3]];
+        vm::battle_action::event_commit_gate_frame(&list)
+            .is_some_and(|gate| player.current_frame() < i16::from(gate))
+    }
+
+    /// Keep the block roll's two approach terms in step with the action SM.
+    /// State `0x14` seeds `ctx[+0x6D2]` from the facings it just set
+    /// (`0x801E3068..0x801E30C8`), and every tick state `0x19` spends
+    /// walking adds the frame step to `ctx[+0x6D4]` (`0x801E35DC..
+    /// 0x801E35EC`, the stall arm).
+    pub(in crate::world) fn track_block_approach_terms(
+        &mut self,
+        pre_state: u8,
+        out: &vm::battle_action::StepOutcome,
+    ) {
+        use vm::battle_action::{ActionState, StepOutcome};
+        if pre_state == ActionState::AttackFace.as_byte() {
+            let slot = usize::from(self.battle_ctx.active_actor);
+            let Some(a) = self.actors.get(slot) else {
+                return;
+            };
+            let target = usize::from(a.battle.active_target);
+            let Some(t) = self.actors.get(target) else {
+                return;
+            };
+            let diff = a.battle.facing_angle.wrapping_sub(t.battle.facing_angle) & 0xFFF;
+            let folded = if diff < 0x800 { diff } else { 0x1000 - diff };
+            self.battle.attack_ramp = folded as i16 - 0x800;
+        } else if pre_state == ActionState::AttackShortStep.as_byte()
+            && !matches!(out, StepOutcome::Transition { .. })
+        {
+            let step = i16::from(self.clock.frame_step.max(1));
+            self.battle.guard_ramp = self.battle.guard_ramp.wrapping_add(step);
+        }
+    }
+
+    /// A party member's ability word - the character record's `+0xF4` u32,
+    /// the bitfield `FUN_801EC3E4` reads as `0x80084140 + id*0x414 + 0x6BC`.
+    fn party_ability_word(&self, member: usize) -> u32 {
+        self.party
+            .roster
+            .members
+            .get(self.party_roster_slot(member))
+            .map(|r| {
+                let b = r.ability_bits();
+                u32::from_le_bytes([b[0], b[1], b[2], b[3]])
+            })
+            .unwrap_or(0)
     }
 
     /// Land the accumulated combo total on `target`'s live HP - retail's one
@@ -1913,7 +2096,7 @@ impl World {
     /// (`0x801EEA80..0x801EEBEC`), **one** of two emissions, selected by the
     /// `_DAT_8007BD84` word:
     ///
-    /// * **zero** - every ordinary swing: the battle-start sweep
+    /// * **zero** - every ordinary battle: the battle-start sweep
     ///   `FUN_80055B6C` and the round reset `FUN_8004CE2C` both store zero
     ///   there and no dumped routine stores anything else - takes the
     ///   per-character **grunt**, `FUN_8003D53C(0x1D, chan, dur)` at
@@ -1925,19 +2108,29 @@ impl World {
     /// * **non-zero**: `bne v0,zero,0x801EEB70` at `0x801EEAC8` jumps over
     ///   the grunt into the cue path - `0x10C` through the battle overlay's
     ///   one sound funnel `FUN_8004FE5C` ([`crate::sfx_cue::route_sfx_cue`])
-    ///   with the **attacker's actor-table index as the category**
-    ///   (`0x801EEBD8`), so the two sides sound different by construction: a
-    ///   party attacker takes the CD-XA voice leg (`XA27` channel 4, an
-    ///   attack sting), a monster the element-tinted ring leg (`0x2A8`).
+    ///   with the **target's actor-table index as the category**
+    ///   (`0x801EEBD8`, `s4 = attacker[+0x1DD]`), so the two sides sound
+    ///   different by construction: a struck party member takes the CD-XA
+    ///   voice leg (`XA27` channel 4), a struck monster the runtime ring leg
+    ///   (`0x2A8`).
     ///
     /// The engine mirrors the word as `MonsterAiState::flag_bd84` - the same
     /// cell the damage finisher reads as the enemy-defender halve and the
-    /// `0xB4` boss-intro cast gates on. Two grunt gates are not modelled -
-    /// the per-strike latch `s7` (`0x801EEA84`, matched against the target's
-    /// `+0x1F3`) and the voice pass's in-flight counter `_DAT_8007BC20 < 2`
-    /// (`0x801EEAB4`) - so the port grunts on every party strike the word
-    /// leaves to the grunt arm. The cue arm keeps its retail gates: the
-    /// target playing a plain action-table clip (`+0x1D9 < 0x10`,
+    /// `0xB4` boss-intro cast gates on.
+    ///
+    /// The grunt is the **block** grunt, not a swing sound: it goes out only
+    /// when the reaction the strike commits on the defender (`s7`, the pose
+    /// byte stored to the defender's `+0x1DA`) is non-zero and equals the
+    /// defender's `+0x1F3` - its block entry (tag `0x0B`) -
+    /// `0x801EEA88..0x801EEAA0`. `committed_reaction` is that byte; `None`
+    /// when the strike commits no reaction. An ordinary swing commits the
+    /// `+0x1EF` flinch or the `+0x1F1` knockdown and is silent here (a
+    /// capture of four party swings took the skip every time, see
+    /// `docs/subsystems/battle-action.md`). Firing it on every strike was the
+    /// port's repeated "block" sound. The voice pass's in-flight counter
+    /// `_DAT_8007BC20 < 2` (`0x801EEAB4`, the `xa_flag` debug counter) is
+    /// not modelled. The cue arm keeps its retail gates: the
+    /// attacker playing a plain action-table clip (`+0x1D9 < 0x10`,
     /// `0x801EEB88`) and, inside the funnel, the drive being idle
     /// (`FUN_8003DE7C(1) == 0` at `0x8004FE9C`, modelled as
     /// [`crate::world::AudioState::battle_xa_busy_frames`]).
@@ -1949,13 +2142,20 @@ impl World {
     /// maintains - so a stored ring would sit at zero and dedupe nothing.
     ///
     /// PORT: FUN_801EC3E4 (`0x801EEA80..0x801EEBEC`, the two sound sites)
-    fn fire_melee_impact_cue(&mut self, attacker: u8, target: u8) {
+    fn fire_melee_impact_cue(&mut self, attacker: u8, target: u8, committed_reaction: Option<u8>) {
         let category = self.retail_actor_category(attacker);
         if self.battle.monster_ai_state.flag_bd84 == 0 {
             // The grunt arm. `XA30` channel + read span per character id
             // (`DAT_8007BD10[seat]`, 1-based); a monster seat names no
             // character and falls out of the switch silent (`0x801EEAFC`).
-            if category < 3 {
+            // Gated on the strike committing the defender's block entry
+            // (`s7 != 0 && s7 == defender[+0x1F3]`).
+            let block_entry = self
+                .battle_reaction_map(target as usize)
+                .map(|m| m[4])
+                .unwrap_or(0);
+            let blocked = committed_reaction.is_some_and(|r| r != 0 && r == block_entry);
+            if category < 3 && blocked {
                 let char_id = self.party_roster_slot(attacker as usize) as u8 + 1;
                 let grunt = match char_id {
                     1 => Some((0u32, 0x26u32)),
@@ -1973,63 +2173,30 @@ impl World {
             }
             return;
         }
-        // The cue arm: `0x10C` through the funnel.
-        let target_anim = self
+        // The cue arm: `0x10C` through the funnel, gated on the **attacker**
+        // playing a plain action-table clip (`lbu v0,0x1d9(v0)` off
+        // `0x801C9370[s6]`, `0x801EEB88`), with the **target's** index as the
+        // category (`andi s1,s4,0xff` / `move a1,s1`, `s4 = attacker[+0x1DD]`
+        // loaded at `0x801EC450`). The funnel switches legs on that index, in
+        // retail's actor-table space (party `0..=2`, monsters `3..=7`): a
+        // struck party member raises the `XA27` sting, a struck monster the
+        // `0x2A8` runtime row keyed through its own render-node category.
+        let attacker_anim = self
             .actors
-            .get(target as usize)
+            .get(attacker as usize)
             .map(|a| a.battle.current_anim)
             .unwrap_or(0);
-        if target_anim >= 0x10 {
+        if attacker_anim >= 0x10 {
             return;
         }
-        // The funnel switches legs on `category < 3`, which is retail's
-        // **actor-table** index space (party `0..=2`, monsters `3..=7`). The
-        // engine compacts seating to `party_count..`, so the slot has to be
-        // re-based first or a monster seated at index 1 takes the party leg
-        // and the fight goes silent from the wrong side.
-        let element_of = |cat: u8| {
-            let slot = self.engine_slot_of_retail_category(cat);
-            self.battle_slot_element(slot).unwrap_or(NEUTRAL_ELEMENT)
-        };
-        let durations = self.audio.xa_cue_durations.as_deref();
-        let xa_duration_raw = |n: u32| {
-            durations
-                .and_then(|t| t.get(n as usize).copied())
-                .unwrap_or(0)
-        };
-        let src = crate::sfx_cue::SfxCueSources {
-            element_of: &element_of,
-            xa_duration_raw: &xa_duration_raw,
-            // `ctx+0x276` is the side-band applier stage, and the engine's
-            // side-band is resident rather than streamed: the window is
-            // zero frames wide. (It was read as a tutorial flag before, which
-            // silenced the sting in tutorial battles where retail plays it.)
-            side_band_streaming: false,
-            cd_read_busy: self.audio.battle_xa_busy_frames > 0,
-        };
-        let mut ring = crate::sfx_cue::SfxCueRing::default();
-        let out = crate::sfx_cue::route_sfx_cue(&mut ring, MELEE_IMPACT_CUE, category, &src);
-        if let Some(id) = out.enqueued {
-            self.audio
-                .battle_sfx_cues
-                .push(crate::battle_events::BattleSfxCue {
-                    kind: id,
-                    timing_frames: 0,
-                    actor_slot: attacker,
-                    target_slot: target,
-                });
-        }
-        if let Some(xa) = out.xa
-            && xa.duration_sectors > 0
-        {
-            self.push_battle_xa_cue(xa);
-        }
+        let target_category = self.retail_actor_category(target);
+        self.route_battle_cue(MELEE_IMPACT_CUE as u16, target_category);
     }
 
     /// Queue one CD-XA clip start and hold the modelled drive busy for its
     /// read span (`dur` vsyncs - see [`crate::world::AudioState::battle_xa_busy_frames`]).
     /// REF: FUN_8003D53C
-    fn push_battle_xa_cue(&mut self, cue: crate::sfx_cue::XaVoiceClip) {
+    pub(in crate::world) fn push_battle_xa_cue(&mut self, cue: crate::sfx_cue::XaVoiceClip) {
         self.audio.battle_xa_busy_frames = cue.duration_sectors.min(u16::MAX as u32) as u16;
         self.audio.battle_xa_cues.push(cue);
     }
@@ -2038,7 +2205,7 @@ impl World {
     /// `0..=2`, monsters `3..=7`. The engine compacts monster seating to
     /// `party_count..`, so any retail kernel that switches on "is this index a
     /// party slot" needs the re-based value, not the seat.
-    fn retail_actor_category(&self, slot: u8) -> u8 {
+    pub(in crate::world) fn retail_actor_category(&self, slot: u8) -> u8 {
         let pc = self.party.party_count.min(3);
         if slot < pc {
             slot
@@ -2048,7 +2215,7 @@ impl World {
     }
 
     /// Inverse of [`Self::retail_actor_category`].
-    fn engine_slot_of_retail_category(&self, category: u8) -> u8 {
+    pub(in crate::world) fn engine_slot_of_retail_category(&self, category: u8) -> u8 {
         let pc = self.party.party_count.min(3);
         if category < 3 {
             category
@@ -2281,8 +2448,13 @@ mod melee_cue_tests {
         t
     }
 
+    /// An ordinary party swing commits the defender's flinch / knockdown, not
+    /// its block entry, so the grunt gate (`s7 == defender[+0x1F3]`,
+    /// `0x801EEA88..0x801EEAA0`) skips it - the retail capture of four party
+    /// swings took the skip every time. The port used to grunt on every
+    /// strike.
     #[test]
-    fn an_ordinary_party_swing_grunts_and_requests_no_sting() {
+    fn an_ordinary_party_swing_is_silent() {
         let mut w = duel();
         w.audio.xa_cue_durations = Some(durations_with_melee_entry());
         w.battle_ctx.active_actor = 0; // the party member attacks
@@ -2294,13 +2466,25 @@ mod melee_cue_tests {
             let atk = w.battle_ctx.active_actor;
             w.land_melee_hit(atk, 1 - atk, BASIC_ATTACK_COMMAND, 0, false, true);
         }
-        assert!(
-            w.drain_battle_sfx_cues().is_empty(),
-            "the grunt arm submits nothing to the SPU ring"
-        );
+        assert!(w.drain_battle_sfx_cues().is_empty());
+        assert!(w.drain_battle_xa_cues().is_empty(), "no grunt, no sting");
+    }
+
+    /// A strike that commits the defender's **block** entry (`+0x1F3`, tag
+    /// `0x0B`) takes the grunt: `FUN_8003D53C(0x1D, 0, 0x26)` for Vahn.
+    #[test]
+    fn a_blocked_party_swing_grunts() {
+        let mut w = duel();
+        w.audio.xa_cue_durations = Some(durations_with_melee_entry());
+        // A clip-carrying defender has a reaction map; an actor with no
+        // monster id reads the hardcoded party family, block entry `0x0B`.
+        w.actors[1].battle_action_clips = Some(std::sync::Arc::new(vec![None; 12]));
+        w.fire_melee_impact_cue(0, 1, Some(0x02));
+        assert!(w.drain_battle_xa_cues().is_empty(), "a flinch is silent");
+        w.fire_melee_impact_cue(0, 1, Some(0x0B));
+        assert!(w.drain_battle_sfx_cues().is_empty());
         let xa = w.drain_battle_xa_cues();
-        assert_eq!(xa.len(), 1, "one swing, one grunt, no sting: {xa:?}");
-        // `FUN_8003D53C(0x1D, 0, 0x26)` - Vahn's `XA30` channel + read span.
+        assert_eq!(xa.len(), 1, "one block, one grunt: {xa:?}");
         assert_eq!(
             (xa[0].clip, xa[0].channel, xa[0].duration_sectors),
             (0x1D, 0, 0x26)
@@ -2327,19 +2511,19 @@ mod melee_cue_tests {
     }
 
     #[test]
-    fn a_flagged_monster_swing_enqueues_the_melee_impact_cue() {
+    fn a_flagged_swing_on_a_monster_enqueues_the_runtime_row() {
         let mut w = duel();
         // Non-zero word: `bne v0,zero,0x801EEB70` at `0x801EEAC8` takes the
         // cue arm.
         w.battle.monster_ai_state.flag_bd84 = 1;
-        w.battle_ctx.active_actor = 1; // the monster attacks
-        w.land_melee_hit(1, 0, BASIC_ATTACK_COMMAND, 0, false, true);
-        let cues = w.drain_battle_sfx_cues();
-        assert_eq!(cues.len(), 1, "one swing, one cue: {cues:?}");
-        // The funnel's element-tinted high leg: `0x10C + 0x19C`.
-        assert_eq!(cues[0].kind, 0x2A8);
-        assert_eq!(cues[0].actor_slot, 1);
-        assert_eq!(cues[0].target_slot, 0);
+        w.battle_ctx.active_actor = 0; // the party member attacks
+        w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, true);
+        // The funnel's category is the **target's** index (`s4`): a struck
+        // monster takes the high leg, `0x10C + 0x19C`, on the SFX ring.
+        assert_eq!(
+            w.take_sfx_ring_ops(),
+            vec![crate::world::SfxRingOp::Push(0x2A8)]
+        );
         assert!(
             w.drain_battle_xa_cues().is_empty(),
             "no grunt on the cue arm"
@@ -2347,15 +2531,15 @@ mod melee_cue_tests {
     }
 
     #[test]
-    fn a_flagged_party_swing_takes_the_xa_leg_and_enqueues_nothing() {
+    fn a_flagged_swing_on_a_party_member_takes_the_xa_leg() {
         let mut w = duel();
         w.battle.monster_ai_state.flag_bd84 = 1;
         w.audio.xa_cue_durations = Some(durations_with_melee_entry());
-        w.battle_ctx.active_actor = 0; // the party member attacks
-        w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, true);
+        w.battle_ctx.active_actor = 1; // the monster attacks
+        w.land_melee_hit(1, 0, BASIC_ATTACK_COMMAND, 0, false, true);
         assert!(
-            w.drain_battle_sfx_cues().is_empty(),
-            "a party attacker's `0x10C` is a CD-XA voice request, not a ring id"
+            w.take_sfx_ring_ops().is_empty(),
+            "a struck party member's `0x10C` is a CD-XA voice request, not a ring id"
         );
         let xa = w.drain_battle_xa_cues();
         assert_eq!(xa.len(), 1, "the sting, and no grunt: {xa:?}");
@@ -2367,32 +2551,147 @@ mod melee_cue_tests {
     }
 
     #[test]
-    fn a_flagged_party_swing_is_dropped_while_the_drive_is_busy() {
+    fn a_flagged_sting_is_dropped_while_the_drive_is_busy() {
         let mut w = duel();
         w.battle.monster_ai_state.flag_bd84 = 1;
         w.audio.xa_cue_durations = Some(durations_with_melee_entry());
-        w.battle_ctx.active_actor = 0;
+        w.battle_ctx.active_actor = 1;
         // `FUN_8003DE7C(1) != 0` at `0x8004FE9C`: a read in flight drops the
         // voice leg's request.
         w.audio.battle_xa_busy_frames = 5;
-        {
-            let atk = w.battle_ctx.active_actor;
-            w.land_melee_hit(atk, 1 - atk, BASIC_ATTACK_COMMAND, 0, false, true);
-        }
-        assert!(w.drain_battle_sfx_cues().is_empty());
+        w.land_melee_hit(1, 0, BASIC_ATTACK_COMMAND, 0, false, true);
+        assert!(w.take_sfx_ring_ops().is_empty());
         assert!(w.drain_battle_xa_cues().is_empty());
     }
 
+    /// Seat a playing clip on `slot` whose event-frame list (`+0x10..`)
+    /// starts at `first_beat` - the input of the `+0x1F7` juggle window.
+    fn play_clip_with_beat(w: &mut World, slot: usize, first_beat: u8) {
+        use legaia_asset::monster_archive::{MonsterAnimation, PartPose};
+        let mut head = vec![0u8; legaia_asset::monster_archive::EFFECT_SCRIPT_HEAD_BYTES];
+        head[0x10] = first_beat;
+        let clip = MonsterAnimation {
+            action_id: 2,
+            rate: 2,
+            attach_key: 0,
+            solo_flag: 0,
+            impact_class: 0,
+            effect_script: head.clone(),
+            part_count: 1,
+            frame_count: 12,
+            frames: vec![vec![PartPose::default()]; 12],
+        };
+        let a = &mut w.actors[slot];
+        a.battle_animation = crate::battle_anim::MonsterAnimPlayer::new_one_shot(&clip);
+        a.battle_effect_script = Some(head);
+        // The anim tick's `+0x1F7` write for the seated clip.
+        a.battle_juggle_window = World::juggle_window_open(a);
+    }
+
+    /// A blocked hit skips the damage body (`bne s7,zero,0x801EE6D4`): no
+    /// damage, no accumulation, no popup, and the attacker's anim cue cursor
+    /// steps over one cue. Driven through the real roll: the first seed
+    /// whose roll blocks is the hit under test.
     #[test]
-    fn a_target_playing_an_art_bank_clip_is_silent() {
+    fn a_blocked_hit_lands_no_damage() {
+        let mut found = false;
+        let setup = |seed: u32| {
+            let mut w = duel();
+            w.actors[0].battle_action_clips = Some(std::sync::Arc::new(vec![None; 12]));
+            w.battle.speed[0] = 200;
+            w.battle.guarding[0] = true;
+            w.rng_state = seed;
+            w
+        };
+        for seed in 1..400u32 {
+            if setup(seed).roll_block(1, 0, BASIC_ATTACK_COMMAND).is_none() {
+                continue;
+            }
+            let mut w = setup(seed);
+            found = true;
+            let before = w.actors[0].battle.hp;
+            let dmg = w.land_melee_hit(1, 0, BASIC_ATTACK_COMMAND, 0, false, true);
+            assert_eq!(dmg, 0);
+            assert_eq!(w.actors[0].battle.damage_accum, 0);
+            assert_eq!(w.actors[0].battle.hp, before);
+            assert_eq!(w.actors[1].battle_anim_cue_cursor, 1);
+            assert!(w.drain_battle_hit_fx().is_empty(), "no popup for a block");
+            break;
+        }
+        assert!(found, "some seed blocks");
+        // A defender with no clips has no block entry: the hit connects.
+        let mut w = duel();
+        let dmg = w.land_melee_hit(1, 0, BASIC_ATTACK_COMMAND, 0, false, true);
+        assert!(dmg > 0);
+    }
+
+    /// The `+0x1F7` window: a defender before its playing clip's first beat
+    /// cannot block (the juggle arm clears `s7`), and after it the block
+    /// pose no longer latches - a block clip's list starts at `0`, so its
+    /// window is never open and a block never repeats on its own.
+    #[test]
+    fn the_juggle_window_gates_the_block() {
+        let mut w = duel();
+        w.actors[0].battle_action_clips = Some(std::sync::Arc::new(vec![None; 12]));
+        w.battle.speed[0] = 999;
+        w.set_battle_attack(0, 999);
+        play_clip_with_beat(&mut w, 0, 6);
+        w.actors[0].battle_reaction_entry = Some(2);
+        assert!(World::juggle_window_open(&w.actors[0]), "frame 0 < beat 6");
+        for _ in 0..20 {
+            assert_eq!(w.roll_block(1, 0, BASIC_ATTACK_COMMAND), None);
+        }
+        // Block pose with a zero first beat: the window is shut, so the
+        // verdict is the roll's alone - it is not forced to `Some`.
+        let mut w = duel();
+        w.actors[0].battle_action_clips = Some(std::sync::Arc::new(vec![None; 12]));
+        play_clip_with_beat(&mut w, 0, 0);
+        w.actors[0].battle_reaction_entry = Some(0x0B);
+        assert!(!World::juggle_window_open(&w.actors[0]));
+        let blocks = (0..200)
+            .filter(|_| w.roll_block(1, 0, BASIC_ATTACK_COMMAND).is_some())
+            .count();
+        assert!(
+            blocks < 200,
+            "the block pose does not latch: {blocks} / 200"
+        );
+    }
+
+    /// The kernel reads `+0x1F7` as the anim tick last wrote it. A block
+    /// pose committed since that tick - by the previous hit of the same
+    /// combo - plays a clip whose live window is open (frame 0 < beat 6),
+    /// but the byte still holds the tick's value, so the pose does not
+    /// latch onto the next hit: the verdict stays the roll's.
+    #[test]
+    fn a_block_committed_since_the_last_tick_reads_the_ticks_window() {
+        let mut w = duel();
+        w.actors[0].battle_action_clips = Some(std::sync::Arc::new(vec![None; 12]));
+        play_clip_with_beat(&mut w, 0, 6);
+        w.actors[0].battle_reaction_entry = Some(0x0B);
+        w.actors[0].battle_juggle_window = false;
+        assert!(World::juggle_window_open(&w.actors[0]), "live window open");
+        let blocks = (0..200)
+            .filter(|_| w.roll_block(1, 0, BASIC_ATTACK_COMMAND).is_some())
+            .count();
+        assert!(blocks < 200, "the fresh block pose latched: {blocks} / 200");
+        // With the tick's byte up as well, the pose holds.
+        w.actors[0].battle_juggle_window = true;
+        assert!(
+            (0..20).all(|_| w.roll_block(1, 0, BASIC_ATTACK_COMMAND).is_some()),
+            "a held block pose inside the window keeps blocking"
+        );
+    }
+
+    #[test]
+    fn an_attacker_playing_an_art_bank_clip_is_silent() {
         let mut w = duel();
         w.battle.monster_ai_state.flag_bd84 = 1;
-        w.battle_ctx.active_actor = 1;
-        // Retail gate `0x801EEB88`: the cue is submitted only while the target
-        // is playing a plain action-table clip.
+        w.battle_ctx.active_actor = 0;
+        // Retail gate `0x801EEB88` reads the **attacker's** `+0x1D9`: the cue
+        // is submitted only while it plays a plain action-table clip.
         w.actors[0].battle.current_anim = 0x11;
-        w.land_melee_hit(1, 0, BASIC_ATTACK_COMMAND, 0, false, true);
-        assert!(w.drain_battle_sfx_cues().is_empty());
+        w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, true);
+        assert!(w.take_sfx_ring_ops().is_empty());
     }
 }
 

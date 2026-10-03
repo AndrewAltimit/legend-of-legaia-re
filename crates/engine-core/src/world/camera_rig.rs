@@ -9,9 +9,13 @@ use super::*;
 pub struct CameraRig {
     /// Screen-shake amplitude - retail `_DAT_8007B630`.
     ///
-    /// Written by exactly one thing in retail: the field-VM opcode
+    /// Raised by exactly one thing in retail: the field-VM opcode
     /// `0x4C` outer-nibble `8` sub-`4` (`[4C, 0x84, amplitude]`), ported at
-    /// [`legaia_engine_vm::field::FieldHost::op4c_n8_sub4_set_b630`]. Two
+    /// [`legaia_engine_vm::field::FieldHost::op4c_n8_sub4_set_b630`]. The
+    /// scene reset `FUN_8003A024` zeroes it on every scene load
+    /// (`0x8003A07C`, ported in
+    /// [`crate::world::World::reset_scene_control_block`]), so a tremor a
+    /// script leaves running ends at the door. Two
     /// routines read it: the LCG camera jitter `FUN_801D9D30` and the camera
     /// follow-ease `FUN_801DB510` (`lw a0,-0x49d0(v0)` at `0x801DB850`), whose
     /// tail (`0x801DB864..0x801DB8D4`) draws the same two masked `rand()`

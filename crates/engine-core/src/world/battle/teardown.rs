@@ -344,6 +344,14 @@ impl World {
         self.battle.clut_stages.clear();
         self.battle.effect_spawns.clear();
         self.audio.battle_shout_cues.clear();
+        // Every battle effect dies with the battle: retail's mode switch back
+        // to the field resets the whole actor pool (`FUN_8001E1B4`), and the
+        // `efect.dat` walker is battle-overlay code. A wipe to the title holds
+        // the frozen battle frame, so its effects come down with the hold
+        // instead ([`Self::resolve_game_over_hold`]).
+        if !wipe_to_title {
+            self.teardown_battle_effects();
+        }
         // Post-battle grace + suppression on the session.
         self.end_encounter_battle();
         // Persist the battle's party HP / MP into the roster records BEFORE the
@@ -369,6 +377,9 @@ impl World {
         // the just-persisted HP / MP back onto the restored party actors so the
         // field-side mirrors agree with the records (the clone carries the
         // pre-battle values).
+        if let Some(active) = self.battle.solo_spar_restore.take() {
+            self.party.active_party = active;
+        }
         if let Some(ret) = self.field_return.take() {
             self.actors = ret.actors;
             self.player_actor_slot = ret.player_actor_slot;
@@ -399,6 +410,10 @@ impl World {
             return;
         }
         self.game_over_hold = false;
+        if let Some(active) = self.battle.solo_spar_restore.take() {
+            self.party.active_party = active;
+        }
+        self.teardown_battle_effects();
         if let Some(ret) = self.field_return.take() {
             self.actors = ret.actors;
             self.player_actor_slot = ret.player_actor_slot;

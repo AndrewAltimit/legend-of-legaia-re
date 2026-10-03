@@ -198,6 +198,10 @@ pub struct SceneHost {
     /// serves every scene. Populated on the first field entry that needs
     /// real monster stats. See [`legaia_asset::monster_archive`].
     monster_archive_cache: Option<Arc<Vec<u8>>>,
+    /// The battle runtime SFX bank `bse.dat` (PROT 888), read once per host
+    /// (`Some(empty)` records a failed read so it is not retried) and copied
+    /// onto the world at every battle entry.
+    bse_bank_cache: Option<Arc<Vec<u8>>>,
     /// Tracks whether the move-power table install was attempted, so the disc
     /// read (PROT 0898) only happens once per host even when it fails.
     move_power_loaded: bool,

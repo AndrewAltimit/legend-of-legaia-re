@@ -474,7 +474,8 @@ impl PlayWindowApp {
         // gate (fewer than 3 coins cannot spin); the cabinet record's
         // coin-bank compare that refuses an empty bank at the door is the
         // walked door's script, which the field VM runs on both hosts.
-        // Cross spins / stops / collects; pressing O again cashes the
+        // Cross spins / collects, Square / Cross / Circle stop reels 0 / 1 / 2;
+        // pressing O again cashes the
         // balance out into the coin bank and leaves.
         if matches!(code, KeyCode::KeyO)
             && state == ElementState::Pressed
@@ -494,7 +495,7 @@ impl PlayWindowApp {
                     legaia_engine_core::minigame_entry::MinigameSubId::SlotMachine.sub_id(),
                 );
                 log::info!(
-                    "slots: door warp armed (bank {} coins) - Cross spins/stops/collects, O to cash out",
+                    "slots: door warp armed (bank {} coins) - Cross spins/collects, Square/Cross/Circle stop reels 0/1/2, O to cash out",
                     self.session.host.world.minigames.casino_coins
                 );
             }

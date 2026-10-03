@@ -338,6 +338,7 @@ mod seru_side_effect_live_disc;
 mod shiny;
 mod slide;
 mod sound_stream_gates;
+mod sparring_solo;
 mod summon_final_heal;
 mod take_item;
 mod tile_board;

@@ -72,6 +72,14 @@ impl World {
         true
     }
 
+    /// Whether the next [`World::enter_battle`] is the sparring tutorial: the
+    /// disc's one-shot arm flag is up (not consumed - the entry consumes it)
+    /// or a host forced it with [`Self::prime_battle_tutorial`].
+    pub fn sparring_fight_pending(&self) -> bool {
+        self.battle.tutorial_pending
+            || self.system_flag_test(crate::battle_tutorial::TUTORIAL_ARM_FLAG)
+    }
+
     /// Force the sparring tutorial onto the next [`World::enter_battle`],
     /// regardless of the disc condition, and install `script`.
     ///

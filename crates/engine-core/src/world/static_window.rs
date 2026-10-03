@@ -61,6 +61,12 @@ pub struct StaticObjectWindow {
     /// sub-area pop-in). Off on a bare `World`; both play hosts push
     /// `OptionsState::retail_static_window` (default on) onto it.
     pub retail_windowing: bool,
+    /// The ladder (scratchpad frame) the last rebuild spawned its actors
+    /// against: `FUN_801D7B50` stores `ladder[nibble] + y_off` into each
+    /// actor's Y once (`0x801D7CF4..0x801D7D14`), and nothing re-samples it,
+    /// so a window-owned object sits on the ladder of its last re-plan.
+    /// `None` until the scene's first rebuild.
+    pub spawn_lut: Option<[i16; 16]>,
     /// The drawn actors' identities, the set [`Self::draws`] answers from.
     drawn: HashSet<PlacedWindowKey>,
 }
@@ -73,7 +79,8 @@ impl StaticObjectWindow {
     }
 
     /// Replace the list with a fresh plan (the free + respawn of one rebuild).
-    fn replace(&mut self, window: [u8; 4], spawns: Vec<WindowSpawn>) {
+    fn replace(&mut self, window: [u8; 4], spawns: Vec<WindowSpawn>, lut: [i16; 16]) {
+        self.spawn_lut = Some(lut);
         self.drawn = spawns
             .iter()
             .filter(|s| s.drawn())
@@ -89,6 +96,7 @@ impl StaticObjectWindow {
     fn clear(&mut self) {
         self.descriptors.clear();
         self.window = None;
+        self.spawn_lut = None;
         self.spawns.clear();
         self.drawn.clear();
         self.spawn_count = 0;
@@ -163,7 +171,67 @@ impl World {
                 t.floor_height_lut,
             )
         };
-        t.static_window.replace(window, spawns);
+        let lut = t.floor_height_lut;
+        t.static_window.replace(window, spawns, lut);
+    }
+
+    /// Per-draw Y offsets (retail frame) of a placed layer baked against
+    /// `scene_lut` (the MAN-header ladder), each under the ladder its actor
+    /// was spawned on ([`Self::placed_floor_lut`]) - not the live rungs.
+    /// `floors` are the draws' [`crate::field_env::FloorAnchor`]s and `keys`
+    /// their [`crate::field_env::placed_window_key`]s, parallel (a missing key
+    /// is a bound draw). The one kernel every host folds into its placed
+    /// layer.
+    pub fn placed_floor_offsets<'a>(
+        &self,
+        scene_lut: Option<[i16; 16]>,
+        floors: impl IntoIterator<Item = &'a crate::field_env::FloorAnchor>,
+        keys: &[Option<PlacedWindowKey>],
+    ) -> Vec<i32> {
+        let bound = crate::field_env::FloorWave::from_scene_and_world(
+            scene_lut,
+            &self.placed_floor_lut(None),
+        );
+        let windowed = crate::field_env::FloorWave::from_scene_and_world(
+            scene_lut,
+            &self
+                .terrain
+                .static_window
+                .spawn_lut
+                .unwrap_or(self.terrain.placed_spawn_lut),
+        );
+        floors
+            .into_iter()
+            .enumerate()
+            .map(|(i, floor)| {
+                let wave = match keys.get(i) {
+                    Some(Some(_)) => windowed,
+                    _ => bound,
+                };
+                wave.map_or(0, |w| w.offset(floor))
+            })
+            .collect()
+    }
+
+    /// The floor-height ladder (scratchpad frame) a placed draw's actor was
+    /// spawned against - what its drawn Y follows, since nothing re-samples a
+    /// placed object's height after spawn
+    /// ([`crate::world::FieldTerrain::placed_spawn_lut`]). `key` is the draw's
+    /// [`crate::field_env::placed_window_key`]: `None` for a bound placement
+    /// (the scene-init sweep's ladder), `Some` for a window-owned one (the
+    /// ladder of the window's last rebuild, falling back to the scene-init
+    /// one before the first). A host folds
+    /// `FloorWave::from_scene_and_world(scene_lut, &this)` into the placed
+    /// layer instead of the live ladder; only the terrain / decoration cells
+    /// and the walk ground follow the live rungs.
+    ///
+    /// REF: FUN_8003A55C, FUN_801D7B50
+    pub fn placed_floor_lut(&self, key: Option<&PlacedWindowKey>) -> [i16; 16] {
+        let t = &self.terrain;
+        match key {
+            Some(_) => t.static_window.spawn_lut.unwrap_or(t.placed_spawn_lut),
+            None => t.placed_spawn_lut,
+        }
     }
 
     /// Re-centre on the player's own position (`world >> 7`), the tile form

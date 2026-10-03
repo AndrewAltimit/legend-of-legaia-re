@@ -450,6 +450,73 @@ pub struct SlotMachine {
     /// The five payline segments' model-space geometry (`DAT_801d3680`), when
     /// the host staged it ([`Self::with_paylines`]).
     paylines: Vec<legaia_asset::minigame_slot_scene::PayLine>,
+    /// The bonus-anticipation latch (`DAT_801d3ca4`): `1` while two landed
+    /// reels show a punch (`9`) pair on any payline, `2` for a kick (`8`)
+    /// pair, `0` otherwise - see [`Self::anticipation`].
+    anticipation: i32,
+    /// The scanner's once-per-spin guard (`DAT_801d3ca8`) over its sting and
+    /// its loop swap.
+    anticipation_sounded: bool,
+    /// `DAT_801d3d38`: the coins the payout state still has to tally into the
+    /// balance.
+    payout_left: i32,
+    /// `DAT_801d3c8c`: the winning-line word the lamps and the payline pass
+    /// compare against; `-1` lights nothing.
+    win_line: i32,
+    /// The overlay's free-running frame counter whose parity paces the tally
+    /// (`DAT_801d3c9c`, advanced by the reel renderer's tail).
+    frame: u32,
+    /// The sounds this machine raised since the host last took them.
+    sounds: SlotSounds,
+}
+
+/// One frame's worth of the machine's sound writes, as retail issues them:
+/// stores straight into a cue-ring slot (`DAT_8007B6D8[slot] = id` - the
+/// overlay never goes through the cursor producer), and the reel-motor voice
+/// it keys and releases itself through `FUN_80065034` / `FUN_800653C8`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SlotSounds {
+    /// `(ring slot, cue id)` stores, in order.
+    pub ring: Vec<(u8, i16)>,
+    /// Voices keyed on (`FUN_80065034`).
+    pub voice_on: Vec<crate::other_game_overlay::VoiceAttrCue>,
+    /// Voices released (`FUN_800653C8`).
+    pub voice_off: Vec<u8>,
+}
+
+/// The SPU voice the reel motor loop keys (`FUN_80065034`'s `a0 = 0x13`).
+pub const SPIN_VOICE: u8 = 0x13;
+/// Reel stop click - one store into ring slot 0 per Stop press taken
+/// (`0x801CF74C` / `0x801CF794` / `0x801CF7DC`).
+pub const CUE_REEL_STOP: i16 = 0x20A;
+/// Payout tally tick - one store into ring slot 0 per transfer
+/// (`0x801CF900..0x801CF90C`).
+pub const CUE_PAYOUT_TICK: i16 = 0x209;
+/// The reach sting the scanner fires once per spin (`0x801D2050`).
+pub const CUE_REACH: i16 = 0x200;
+/// The spin-start stings of feature modes `1` / `2`, into ring slot 2
+/// (`0x801CF5C0` / `0x801CF5DC`).
+pub const CUE_FEATURE_1: i16 = 0x201;
+pub const CUE_FEATURE_2: i16 = 0x202;
+/// Caption timer the payout state starts at on a losing spin
+/// (`li v0,0x6b` at `0x801CF85C`), so the state lasts
+/// [`PAYOUT_HOLD_FRAMES`]` - 0x6B` frames.
+pub const LOSING_PAYOUT_TIMER: i32 = 0x6B;
+/// Caption timer at which a fully tallied payout state returns to idle
+/// (`slti v0,v0,0x79` at `0x801CF918`).
+pub const PAYOUT_HOLD_FRAMES: i32 = 0x79;
+
+/// The reel motor's voice-attr call: `FUN_80065034(0x13, 2, 1, tone, 0x3C,
+/// 0x40, 0x28, 0x28)` - class-2 VAB, program 1, tone `0` for the spin loop
+/// (`0x801CF558`) and tone `1` for the reach loop the scanner swaps in
+/// (`FUN_801D1AF4`, `0x801D2070`).
+fn spin_voice(tone: i32) -> crate::other_game_overlay::VoiceAttrCue {
+    crate::other_game_overlay::VoiceAttrCue {
+        voice: u32::from(SPIN_VOICE),
+        vab_program_tone: (2, 1, tone),
+        note_and_fine: (0x3C, 0x40),
+        volume: (0x28, 0x28),
+    }
 }
 
 /// Spin-up frames before the reels may be stopped (visual pacing constant;
@@ -510,6 +577,12 @@ impl SlotMachine {
             caption_payout: 0,
             caption_frame: 0,
             paylines: Vec::new(),
+            anticipation: 0,
+            anticipation_sounded: false,
+            payout_left: 0,
+            win_line: -1,
+            frame: 0,
+            sounds: SlotSounds::default(),
         }
     }
 
@@ -527,9 +600,17 @@ impl SlotMachine {
     /// The winning-line word the payline pass compares against
     /// (`DAT_801d3c8c`): the last spin's line, or `-1` - which lights none.
     pub fn winning_line_word(&self) -> i32 {
-        self.last_result
-            .and_then(|r| r.line)
-            .map_or(-1, |l| l as i32)
+        self.win_line
+    }
+
+    /// Take the sounds raised since the last call ([`SlotSounds`]).
+    pub fn take_sounds(&mut self) -> SlotSounds {
+        std::mem::take(&mut self.sounds)
+    }
+
+    /// Coins the payout state still has to tally (`DAT_801d3d38`).
+    pub fn payout_left(&self) -> i32 {
+        self.payout_left
     }
 
     /// This frame's paylines, built by the ported pass and projected onto the
@@ -668,6 +749,66 @@ impl SlotMachine {
         self.reel_pos[reel]
     }
 
+    /// Whether `reel`'s stop is still open - the per-reel flag
+    /// `DAT_801d3d00[reel]`, which the bet charge sets and the reel's Stop
+    /// press clears (`FUN_801d2114`). The furniture pass `FUN_801d08e4` reads
+    /// it to light that reel's pedestal and, ORed over the three, to brighten
+    /// the medallions and marquee while any stop is still to be taken.
+    // REF: FUN_801d08e4 (the pedestal pass that reads the flag)
+    pub fn reel_stop_open(&self, reel: usize) -> bool {
+        matches!(self.phase, SlotPhase::Spinning | SlotPhase::Stopping)
+            && self.stopped.get(reel).is_some_and(|s| s.is_none())
+    }
+
+    /// The bonus-anticipation latch (`DAT_801d3ca4`): `1` while two landed
+    /// reels show a punch pair, `2` for a kick pair, `0` otherwise. Read by
+    /// the marquee's legend tail, which scrolls message `4` / `5` for it
+    /// ([`legaia_asset::minigame_slot_scene::attract_legend`]).
+    pub fn anticipation(&self) -> i32 {
+        self.anticipation
+    }
+
+    /// The bonus-symbol scanner (`FUN_801d1af4`), run while exactly two stops
+    /// are in: on each of the five paylines it compares the three reel pairs
+    /// `(0,1)`, `(1,2)`, `(0,2)`, each only when both reels have landed
+    /// (`DAT_801d3d10[r]`, ANDed per pair), and notes an equal pair of `9`s
+    /// (punch) or `8`s (kick). A punch pair anywhere wins: the latch reads
+    /// `1`, else `2` for a kick pair, else nothing is written (`0`, the state
+    /// frame's clear). The scanner's rows are retail's `+0x11 / +0x10 / +0x0F`
+    /// and the two diagonals - [`PAYLINE_ROW_OFFSETS`] around the payline row.
+    ///
+    /// The scanner also raises SFX cue `0x200` and calls `FUN_80065034`
+    /// once per spin behind the guard `DAT_801d3ca8`; the engine's machine
+    /// emits no audio, so that half has no counterpart here.
+    ///
+    /// [`PAYLINE_ROW_OFFSETS`]: legaia_asset::minigame_slot_scene::PAYLINE_ROW_OFFSETS
+    // PORT: FUN_801d1af4
+    fn anticipation_scan(&self) -> i32 {
+        use legaia_asset::slot_payout::{KICK_SYMBOL_ID, PUNCH_SYMBOL_ID};
+        let landed: [bool; REEL_COUNT] = core::array::from_fn(|r| self.stopped[r].is_some());
+        let (mut punch, mut kick) = (false, false);
+        for offs in legaia_asset::minigame_slot_scene::PAYLINE_ROW_OFFSETS.iter() {
+            let v = |r: usize| {
+                let row = (self.payline_row(r) as isize + offs[r] as isize)
+                    .rem_euclid(STRIP_LEN as isize) as usize;
+                self.strips[r][row]
+            };
+            for (a, b) in [(0, 1), (1, 2), (0, 2)] {
+                if landed[a] && landed[b] && v(a) == v(b) {
+                    punch |= v(a) == PUNCH_SYMBOL_ID;
+                    kick |= v(a) == KICK_SYMBOL_ID;
+                }
+            }
+        }
+        if punch {
+            1
+        } else if kick {
+            2
+        } else {
+            0
+        }
+    }
+
     /// How many reels are stopped this spin (`DAT_801d3d2c`).
     pub fn reels_stopped(&self) -> usize {
         self.stopped.iter().filter(|s| s.is_some()).count()
@@ -747,7 +888,21 @@ impl SlotMachine {
         self.spin_timer = self.next_spin_up_frames();
         self.bonus_just_ended = false;
         self.last_result = None;
+        // State 2 clears the latch and its one-shot guard on entry
+        // (`0x801CF600` / `0x801CF608`).
+        self.anticipation = 0;
+        self.anticipation_sounded = false;
+        self.win_line = -1;
+        self.payout_left = 0;
         self.phase = SlotPhase::Spinning;
+        // The bet charge keys the reel motor and, in the two reach modes the
+        // roll just entered, stores their sting into ring slot 2.
+        self.sounds.voice_on.push(spin_voice(0));
+        match self.feature_mode {
+            1 => self.sounds.ring.push((2, CUE_FEATURE_1)),
+            2 => self.sounds.ring.push((2, CUE_FEATURE_2)),
+            _ => {}
+        }
         true
     }
 
@@ -805,8 +960,8 @@ impl SlotMachine {
         // The caption's slide-in clock. It only runs while a caption is up, and
         // the composer reads `min(frame - PAYOUT_SLIDE_ROWS, 0)` off it, so
         // without this advance the caption would sit one row short forever.
-        if self.caption_frame != 0 {
-            self.caption_frame += 1;
+        if self.phase == SlotPhase::Payout {
+            self.tick_payout();
         }
         for reel in 0..REEL_COUNT {
             if self.stopped[reel].is_none() {
@@ -820,12 +975,55 @@ impl SlotMachine {
                 self.phase = SlotPhase::Stopping;
             }
         }
+        // State 3 zeroes the latch every frame (the store sits in the delay
+        // slot of the Stop-0 test at `0x801CF71C`, so it runs whatever the
+        // pad says), then re-runs the scanner while exactly two stops are in
+        // (the `DAT_801d3d2c == 2` test at `0x801CF7EC`).
+        if self.phase == SlotPhase::Stopping {
+            self.anticipation = if self.reels_stopped() == 2 {
+                self.anticipation_scan()
+            } else {
+                0
+            };
+            // The first sighting per spin stings (ring slot 2) and swaps the
+            // motor voice onto the reach loop, behind `DAT_801d3ca8`.
+            if self.anticipation != 0 && !self.anticipation_sounded {
+                self.anticipation_sounded = true;
+                self.sounds.ring.push((2, CUE_REACH));
+                self.sounds.voice_on.push(spin_voice(1));
+            }
+        }
         // The display-strip refill, after the advance - as in retail's tail.
         let source = *self.active_source();
         let rows: [usize; REEL_COUNT] =
             core::array::from_fn(|r| (self.payline_row(r) + DISPLAY_REFRESH_LEAD) % STRIP_LEN);
         for ((display, src), &row) in self.strips.iter_mut().zip(source.iter()).zip(rows.iter()) {
             display[row] = src[row];
+        }
+        self.frame = self.frame.wrapping_add(1);
+    }
+
+    /// State 4, one frame (`0x801CF888..0x801CF940`): advance the caption
+    /// timer; while coins are owed, transfer a chunk into the balance on
+    /// every odd frame - `11` while more than `20` remain, else `1` - with
+    /// one tally tick into ring slot 0 per transfer; once nothing is owed
+    /// and the timer reaches [`PAYOUT_HOLD_FRAMES`], drop back to idle with
+    /// the winning line cleared.
+    // PORT: FUN_801cf0d8 state 4 (the timed tally)
+    fn tick_payout(&mut self) {
+        self.caption_frame += 1;
+        if self.payout_left > 0 {
+            if self.frame & 1 == 0 {
+                return;
+            }
+            let chunk = if self.payout_left > 20 { 11 } else { 1 };
+            self.payout_left -= chunk;
+            self.balance = (self.balance + chunk).min(BALANCE_CAP);
+            self.sounds.ring.push((0, CUE_PAYOUT_TICK));
+        } else if self.caption_frame >= PAYOUT_HOLD_FRAMES {
+            self.phase = SlotPhase::Idle;
+            self.win_line = -1;
+            self.caption_frame = 0;
         }
     }
 
@@ -865,7 +1063,11 @@ impl SlotMachine {
         // reel locks. The +1 is retail's, and it is what makes the tally's
         // "unclaimed" state (`0`) distinguishable from a landed value of `0`.
         self.claimed[reel] = self.strips[reel][row] as i32 + 1;
+        self.sounds.ring.push((0, CUE_REEL_STOP));
         if self.reels_stopped() == REEL_COUNT {
+            // The third stop leaves the scanner's two-stop window; retail's
+            // next state-3 frame zeroes the latch before the payout state.
+            self.anticipation = 0;
             let result = self.evaluate_spin();
             self.last_result = Some(result);
             self.phase = SlotPhase::Payout;
@@ -873,7 +1075,17 @@ impl SlotMachine {
             // the caption on the figure being non-zero, so a losing spin leaves
             // the matrix to the tally / attract strip.
             self.caption_payout = result.payout;
-            self.caption_frame = i32::from(result.payout != 0);
+            // The payout state's timer starts at 0 on a win and at
+            // `0x6B` on a loss (`0x801CF850..0x801CF868`); the motor voice
+            // is released (`FUN_800653C8(0x13)` at `0x801CF878`).
+            self.caption_frame = if result.payout != 0 {
+                0
+            } else {
+                LOSING_PAYOUT_TIMER
+            };
+            self.payout_left = result.payout;
+            self.win_line = result.line.map_or(-1, |l| l as i32);
+            self.sounds.voice_off.push(SPIN_VOICE);
         }
         true
     }
@@ -985,9 +1197,13 @@ impl SlotMachine {
         if self.phase != SlotPhase::Payout {
             return 0;
         }
-        let credit = self.last_result.map(|r| r.payout).unwrap_or(0);
+        // The rest of the tally at once; what the timed tally already moved
+        // is in the balance.
+        let credit = self.payout_left;
         self.balance = (self.balance + credit).min(BALANCE_CAP);
+        self.payout_left = 0;
         self.phase = SlotPhase::Idle;
+        self.win_line = -1;
         // The caption comes down with the tally it was captioning.
         self.caption_payout = 0;
         self.caption_frame = 0;
@@ -1300,7 +1516,7 @@ pub struct PaylinePrim {
 /// endpoint on its own through `FUN_8003d368` and links the packet at
 /// [`payline_ot_depth`] of the **second** endpoint's returned depth.
 // REF: FUN_8003d368 (the SCUS RTPS wrapper each endpoint goes through; the
-// browser pages run its equivalent caller-side, over the fitted projection)
+// browser pages run its equivalent caller-side, over the same projection)
 // PORT: FUN_801d3380 (payline 3D line segments)
 //
 // Wired on all three hosts through one projection, [`projected_paylines`]:
@@ -1350,7 +1566,7 @@ pub struct ProjectedPayline {
 
 /// The projection pass [`payline_prims`] leaves caller-side, run once for
 /// every host: each endpoint goes through
-/// [`legaia_asset::minigame_slot_scene::project`] - the machine's fitted
+/// [`legaia_asset::minigame_slot_scene::project`] - the machine's captured
 /// projection (the stand-in for `FUN_8003D368`'s `RTPS` under the camera the
 /// overlay installs) that the rest of the cabinet is drawn with.
 ///
@@ -1700,6 +1916,40 @@ mod tests {
             stop_plan(&mut rng, FEATURE_MODE_BONUS, 4, Some(6)),
             (0, None)
         );
+    }
+
+    /// `FUN_801d1af4`: two landed reels showing a punch pair on a payline
+    /// raise the latch to `1`, a kick pair to `2`; one landed reel, or a pair
+    /// on a reel still spinning, raises nothing; the third stop clears it.
+    #[test]
+    fn two_landed_bonus_symbols_raise_the_anticipation_latch() {
+        let mut m = SlotMachine::new(payouts(), 42, 50);
+        assert!(m.spin());
+        for _ in 0..SPIN_UP_FRAMES {
+            m.tick();
+        }
+        assert_eq!(m.phase(), SlotPhase::Stopping);
+        let plant = |m: &mut SlotMachine, sym: u8| {
+            for r in 0..REEL_COUNT {
+                m.reel_pos[r] = 0;
+                m.strips[r] = [r as u8; STRIP_LEN];
+            }
+            // Top row (line 0, `+1`) of reels 0 and 2 - the `(0,2)` pair.
+            m.strips[0][1] = sym;
+            m.strips[2][1] = sym;
+        };
+        plant(&mut m, legaia_asset::slot_payout::PUNCH_SYMBOL_ID);
+        m.stopped = [Some(0), None, None];
+        m.tick();
+        assert_eq!(m.anticipation(), 0, "one landed reel is not a pair");
+        m.stopped = [Some(0), None, Some(0)];
+        m.tick();
+        assert_eq!(m.anticipation(), 1, "a punch pair");
+        plant(&mut m, legaia_asset::slot_payout::KICK_SYMBOL_ID);
+        m.tick();
+        assert_eq!(m.anticipation(), 2, "a kick pair");
+        assert!(m.stop_reel(1));
+        assert_eq!(m.anticipation(), 0, "the third stop clears it");
     }
 
     #[test]
@@ -2081,6 +2331,13 @@ mod tests {
         win_on(&mut m, 6);
         let payout = m.last_result().unwrap().payout;
         assert_eq!(payout, 14, "synthetic table pays (6+1)*2");
+        // The payout state starts its caption timer at 0 and advances it on
+        // its first frame (`0x801CF850..0x801CF868`, then `0x801CF898`).
+        assert!(
+            m.marquee_placements().is_empty(),
+            "no caption on the eval frame"
+        );
+        m.tick();
 
         let p = m.marquee_placements();
         let at = |col: usize| {
@@ -2110,6 +2367,50 @@ mod tests {
         );
     }
 
+    /// The machine's sound writes, in retail's order: the bet keys the reel
+    /// motor, each stop stores the click into ring slot 0, the evaluation
+    /// releases the motor, and the timed tally ticks once per transfer into
+    /// slot 0 - `11` coins while more than `20` are owed, else `1`, on odd
+    /// frames - before the state drops back to idle on its own.
+    #[test]
+    fn a_paying_spin_sounds_and_tallies_like_the_overlay() {
+        let mut m = SlotMachine::new(payouts(), 42, 200);
+        win_on(&mut m, 6);
+        let s = m.take_sounds();
+        assert_eq!(
+            s.voice_on.first().map(|v| v.voice),
+            Some(u32::from(SPIN_VOICE))
+        );
+        assert_eq!(s.voice_on[0].vab_program_tone, (2, 1, 0));
+        assert_eq!(
+            s.ring.iter().filter(|r| **r == (0, CUE_REEL_STOP)).count(),
+            3,
+            "one click per stop: {:?}",
+            s.ring
+        );
+        assert_eq!(s.voice_off, vec![SPIN_VOICE]);
+        let before = m.balance();
+        let owed = m.payout_left();
+        assert_eq!(owed, 14);
+        let mut ticks = 0;
+        for _ in 0..PAYOUT_HOLD_FRAMES + 40 {
+            m.tick();
+            ticks += m
+                .take_sounds()
+                .ring
+                .iter()
+                .filter(|r| **r == (0, CUE_PAYOUT_TICK))
+                .count();
+            if m.phase() == SlotPhase::Idle {
+                break;
+            }
+        }
+        assert_eq!(m.balance(), before + owed, "the tally pays the whole win");
+        assert_eq!(ticks, 14, "14 coins under 20 owed: one-coin transfers");
+        assert_eq!(m.phase(), SlotPhase::Idle, "the payout state ends itself");
+        assert_eq!(m.winning_line_word(), -1, "and clears the lit line");
+    }
+
     /// The caption slides in over its first frames, and the clock that moves it
     /// is the machine's own tick. A caption that never advances is the failure
     /// this pins: every row would stay clipped above the matrix.
@@ -2119,6 +2420,7 @@ mod tests {
 
         let mut m = SlotMachine::new(payouts(), 42, 200);
         win_on(&mut m, 6);
+        m.tick();
 
         // Frame 1 of the caption: 12 rows above the matrix.
         let first = m.marquee_placements()[0].row;

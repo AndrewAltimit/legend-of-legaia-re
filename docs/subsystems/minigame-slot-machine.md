@@ -479,7 +479,9 @@ over-read tail - mode 0 actually loads the debug-menu overlay PROT 971. See [`sc
 
 The engine-side reconstructions (each marked at its site): the spin-up pacing constants, the BIOS-`rand` stream substituted with a deterministic LCG, and feature modes 3/5 folded to the normal landing plan.
 
-Runtime wiring: a suspending scene mode (`SceneMode::SlotMachine`; `World::enter_slot_machine` / `tick_slot_machine` / `exit_slot_machine`, which performs the state-100 bank commit into `World::minigames.casino_coins` = `_DAT_800845A4`). The `play-window` viewer's `O` key arms the mode-24 door warp with sub-id 3 (`World::request_minigame_warp`, the call the browser page's `play_mg_debug_warp` makes), so the session is the one a cabinet installs, its balance assigned from the coin bank; Cross spins / stops / collects.
+Runtime wiring: a suspending scene mode (`SceneMode::SlotMachine`; `World::enter_slot_machine` / `tick_slot_machine` / `exit_slot_machine`, which performs the state-100 bank commit into `World::minigames.casino_coins` = `_DAT_800845A4`). The `play-window` viewer's `O` key arms the mode-24 door warp with sub-id 3 (`World::request_minigame_warp`, the call the browser page's `play_mg_debug_warp` makes), so the session is the one a cabinet installs, its balance assigned from the coin bank. Cross spins and collects; the three stops are Square / Cross / Circle for reels 0 / 1 / 2, the pad bits `0x80` / `0x40` / `0x20` retail's state-3 arms test, which is also the glyph each reel's pedestal carries.
+
+Exercising a whole spin on a host needs coins in the bank, and both play hosts have the grant: `play-window --cheat-coins N` (with `--key-script 60:O` to warp in and `--pad-script` for the presses) and the play page's Cheats panel (`cheat_set_coins`). The standalone minigames page racks its own 60.
 
 A launcher is the `0x3E` arm, not the cabinet record around it: the coin-bank compare that refuses an empty bank at the door is that record's script, which the field VM runs on a walked door on both hosts, and a bank below three coins that does reach the machine meets its own state-1 gate. The coin-exchange counter is not an entry path either; it is its own field-VM screen ([above](#the-coin-exchange-counter-is-a-field-overlay-screen)). Disc-gated `slot_minigame_real` drives real-table spins through the World pad path.
 
@@ -586,15 +588,17 @@ Ported as `legaia_engine_core::slot_machine::payline_prims` +
 `payline_ot_depth`; the geometry comes from the parsed table
 (`legaia_asset::minigame_slot_scene::SlotScene::paylines`). The projection runs
 once for every host, in `slot_machine::projected_paylines`: each endpoint goes
-through the machine's fitted projection
+through the machine's projection
 (`legaia_asset::minigame_slot_scene::project`, the one the medallions and lamps
 are drawn with). Both browser pages stroke those projected segments in the
 prim's colour, half-blended for the `0x43` code (`sa` / `sb` in
 `slot_payline_prims_json` / `play_mg_slot_payline_prims_json`). The native
 window stages the geometry on the machine itself (`SlotMachine::with_paylines`)
 and draws the same segments as one-pixel flat quads through
-`engine-ui::ui_slot_paylines`; it still draws no cabinet mesh around them. OT
-linkage stays caller-side: all three hosts draw the lines over the reels.
+`engine-ui::ui_slot_paylines` - as the play page does too whenever it draws
+the machine through the shared builder - over the machine
+([who draws the machine](#who-draws-the-machine)). OT linkage stays
+caller-side: all three hosts draw the lines over the reels.
 
 ### The furniture is billboards - `FUN_801d08e4`
 
@@ -619,10 +623,15 @@ the overlay's load base is `0x801C_E818`, so `file = VA - 0x801C_E818`):
   lights.
 - **Reel-stop pedestals** (positions computed, not tabled: `x = -0x180 + r *
   0x180`, `y = 0x1E0`, `z = -800`): page `0x1C`, half `0x230 x 0x120`, 32x32 cell
-  on row `v = 0x80 + r * 0x20`. While the reel spins it draws `u = 0x60` with CLUT
-  `0x7B03 + r`; once the reel is stopped the palette swaps to `0x7B06 + r` **and
-  the cell slides left to `u = 0`** - the stop branch overrides only the `U`s, so
-  the pedestal stays on its own row. That swap is how retail shows a taken stop.
+  on row `v = 0x80 + r * 0x20`. The branch reads `DAT_801d3d00[r]`, the reel's
+  **stop-still-open** flag: the bet charge sets all three (`0x801CF4DC..0x801CF4E4`),
+  the reel's Stop press clears it (`FUN_801d2114`), and the state-3 Stop tests
+  accept a press only while it is set (`0x801CF724`). While it is open the
+  pedestal draws `u = 0` with CLUT `0x7B06 + r` - the "press now" button;
+  otherwise (before a spin, and once that stop is taken) `u = 0x60` with CLUT
+  `0x7B03 + r`. The branch overrides only the `U`s, so the pedestal stays on its
+  own row. The medallion and marquee passes OR the three flags
+  (`0x801D0A58..0x801D0A68`) and brighten to `0xA0` while any stop is open.
 - **Marquee panel + mascots**: page `0x1C`, CLUT `0x7B00 + clut_off`; each record
   carries its own view-space half-extent and its own texture cell. The panel's
   interior is palette index 0 - **transparent**: the navy behind the legend is the
@@ -691,6 +700,34 @@ re-read `DAT_801d3d3c`, while the digit values come off a remainder chain that
 runs whether or not its own place drew. So `405` prints `4`, `0`, `5` - an
 interior zero is kept - and `7` prints a bare `7` in the units column.
 
+When neither occupant is up, the tail (`0x801D038C..0x801D0538`) puts the
+**attract legend** on the strip, outside feature modes `4..=6` only. A raised
+bonus-anticipation latch `DAT_801d3ca4` (`FUN_801d1af4` writes `1` / `2`)
+scrolls message `4` / `5` at source column `counter % 200 - 100`; otherwise the
+feature mode indexes a 7-entry jump table at `0x801CEC58`: mode `0` places
+message `0` still at column `0`, modes `1..=3` scroll message `1..=3` at
+`counter % 168 - 84`, and the other entries draw nothing. `counter` is
+`DAT_801d3ca0`, which the reel renderer's tail advances once a frame
+(`0x801CFF00..0x801CFF24`, beside the `DAT_801d3c9c` blink counter), and
+`FUN_801d069c` resets it to `100` - and scrolls from column `0` that call - the
+frame the message id differs from the last one it drew (`DAT_801d3c88`).
+Ported as `minigame_slot_scene::attract_legend` plus the reset in
+`engine-ui::ui_slot_cabinet::SlotMarqueeClock`, with the latch from
+`SlotMachine::anticipation`.
+
+The latch's writer is the bonus-symbol scanner `FUN_801d1af4`, which state 3
+calls only while exactly two stops are in (the `DAT_801d3d2c == 2` test at
+`0x801CF7EC`). On each of the five paylines it tests the reel pairs
+`(0,1)`, `(1,2)`, `(0,2)`, each only when both reels have landed (the landed
+flags `DAT_801d3d10[r]`, set by `FUN_801d0554` and ANDed per pair), for an equal
+pair of `9`s (punch) or `8`s (kick). A punch pair writes `1`, else a kick pair
+writes `2`; the first sighting per spin also raises SFX cue `0x200` behind the
+guard `DAT_801d3ca8`. State 3 zeroes the latch every frame before the scanner
+runs - the store sits in the delay slot of the Stop-0 test at `0x801CF71C`, so
+it runs whatever the pad holds - and state 2 clears latch and guard on entry
+(`0x801CF600` / `0x801CF608`). Ported as `SlotMachine::anticipation_scan`; the
+cue is not, because the engine's machine emits no audio.
+
 ### The two screen-space draws - `FUN_801d2cc0`
 
 The **only** things on the machine that do not go through the GTE. The 3-record
@@ -715,18 +752,31 @@ Parser [`legaia_asset::minigame_slot_scene`]; art [`legaia_asset::minigame_art`]
 
 ### The projection
 
-The scene's screen mapping on the retail 640x240 framebuffer. Its **shape** is
-derived - a perspective divide of a view-space point whose x:y scale ratio is
-exactly 2, read out of the camera matrix. Its four **scalars** are *fitted* to a
-retail framebuffer captured at the machine (the `minigame_slot_machine` capture),
-because the GTE control words (`OFX` / `OFY` / `H`) live in COP2, not in main RAM,
-and so are not in a save state.
+The scene's screen mapping on the retail 640x240 framebuffer is the GTE's own,
+read out of the `minigame_slot_machine` mednafen state: its `GTE` section
+carries the COP2 register file. While the machine draws, the rotation matrix
+is `diag(0x6000, 0x3000, 0x3000)` (the init's `_DAT_8007bf10` scale), the
+translation `TR = (-1440, 20, 24480)`, `OFX = 320`, `OFY = 114` and `H = 1024`:
 
-The fit is over-determined and independently checked: it was solved on the five
-payline lamps alone, and then **predicted** - to about a pixel each - the
-on-screen rect of every other element, none of which entered the fit (the
-medallion column, the marquee panel, the two mascots, the three reel windows, the
-reel-stop pedestals, and the dot-matrix grid).
+```text
+view   = (6x - 1440, 3y + 20, 3z + 24480)
+screen = (320 + 1024 * vx / vz, 114 + 1024 * vy / vz)
+```
+
+Every path reduces to it. The reel renderer and the cabinet's actor renderer
+project under the camera matrix; the billboard projector `FUN_800195a8`
+transforms the centre with `MVMVA` (`FUN_8003D344`), loads an identity matrix
+with a zero translation (`FUN_8003D178`), and projects the view-space corners,
+so a billboard's half-extent is `H * half / vz` on both axes.
+
+An earlier projection was fitted to the same frame on the five payline lamps
+(`OFX 253`, `OFY 118.5`, `z0 9324`, `sx0 0.2547`), on the premise that the
+control words were not in a save state. It reproduced x to a pixel but sat
+`3.6` rows low, and it drew the cabinet three rows low and two columns left
+because the fitted perspective differs from the real one away from the glass
+plane. The fitted constants remain only for the exporters that still emit them
+(`asset slot-art`, the VRChat kit). Ported as
+`legaia_asset::minigame_slot_scene::project` / `billboard_half` (`GTE_*`).
 
 ### The cabinet is a mesh - PROT 1200 descriptor 1
 
@@ -764,9 +814,17 @@ all of them and nothing else is the cabinet.
 The colour families are the same four the capture-measured composition uses, and
 one lands quantitatively: the measured navy `rgb(0, 0, 72)` sits between the
 mesh's two navy corners, which is what a gouraud span across them gives.
-Absolute values are **not** asserted to match - the capture's greys read darker
-than the mesh's `#6F6F6F`, so a shading term sits between the packet colour and
-the framebuffer, and reconciling them needs that pass rather than the mesh.
+The capture's greys read darker than `#6F6F6F` because the grey prims are
+**gouraud ramps**: each frame and band quad runs from `#6F6F6F` at one edge to
+`#080808` at the other, so a sampled pixel sits somewhere on that ramp. No
+shading term sits between the packet colour and the framebuffer. Drawing the
+baked words with no depth cue (`IR0 = 0`, the identity - see
+[`shading.md`](shading.md#step-5-the-depth-cue-and-fog)) and comparing against
+the `minigame_slot_machine` display crop, region means over the left frame,
+the red face either side of the reels, the right frame and the bottom band
+land within a few levels of retail in both directions (no region is
+systematically lighter), and the red face's centre reads `(143, 55, 55)`
+against retail's 5-bit `(132..140, 49, 49)`.
 
 The install chain, all of it outside the slot overlay's own draw code:
 
@@ -804,6 +862,41 @@ renderer ([`renderer.md`](renderer.md)) is **Inferred** - it is the only
 consumer of an actor part array, and it is the same path the battle backdrop
 takes, but no frame has been traced from `actor+0x44` to a GP0 word at the
 machine.
+
+### Who draws the machine
+
+Both play hosts draw the whole frame from the emitters above, through one
+builder, `engine-ui::ui_slot_cabinet::slot_cabinet_prims` (the native window
+from its slot frame, the browser play page through its screen-prim pass with
+the art pack uploaded as the renderer's VRAM for the visit): the cabinet mesh
+(PROT 1200's `TMD` descriptor, decoded by
+`minigame_slot_scene::parse_cabinet`, back faces culled), the reel faces with
+their per-edge depth-cue shade, the four furniture passes with their tints (any
+open stop `0xA0`, the record matching the winning-line word `0xE0`), all 1014
+dots including the unlit ones, and the two `FUN_801d2cc0` widgets plus the coin
+digits. Every quad samples the art pack uploaded at its own framebuffer
+destinations, so palettes, the 8bpp panel page and the per-texel STP blend come
+from VRAM rather than from per-sprite decodes, and every projected element is
+linked at a bucket proportional to its depth. The walked-in casino floor is not
+drawn while the machine is up.
+
+Residuals: corners are snapped to the 320-wide display space every screen
+primitive is authored in, so a dot lands to the nearest even framebuffer
+column; and the reel faces and cabinet are drawn without retail's 15-bit
+dither, the port's clean-rasterisation default. The cabinet body lands on the
+capture's rows `15..214` and columns `22..486` through the captured
+projection (the actor sits at the origin: the init zeroes its position and
+rotation, `0x801CEEB8..0x801CEECC`).
+
+The standalone minigames page draws the same primitive list too. Its slot
+panel is a 2D canvas with no GPU pass, so the list is rasterised on the CPU
+onto the 640x240 framebuffer (`engine-ui::screen_prim_raster`, the GPU
+screen-prim pass's per-pixel rules: ordering-table walk, affine UV, VRAM CLUT
+fetch, the 5-bit texture blend, the ABR equations) and put into the canvas
+(`slot_frame_rgba`). Both pages keep their old canvas composition only as the
+fallback for a bundle without the cabinet exports. The standalone page
+collects a resolved spin on the frame it lands, which drops the machine's own
+payout caption, so it holds the caption itself for the marquee.
 
 ## Art pack (PROT 1200)
 
@@ -884,20 +977,37 @@ class]` - starting at the `u16` at `bank + 2`. The block yields exactly **11**
 class-2 records over 2 programs (4 tones + 7), and the PROT 1198 VAB declares
 exactly 2 programs and 11 tones: the agreement is what pins the table offset.
 
-| Event | Cue | Site |
-|---|---|---|
-| reel stop (once per reel) | `0x20A` | `FUN_801CF0D8` case 3 |
-| payout tally tick | `0x209` | `FUN_801CF0D8` case 4 |
-| reach / anticipation | `0x201` / `0x202` | `FUN_801CF0D8` |
-| second jackpot symbol sighted | `0x200` | `FUN_801D1AF4` |
-| confirm / cursor / cancel | `0x20` / `0x21` / `0x37` | static table, class-0 VAB (PROT 0868) |
+Every cue is a bare store into one ring slot (`DAT_8007B6D8[slot] = id`) - the
+overlay never goes through the cursor producer `FUN_80035B50`:
 
-The reel-spin *loop* is not a ring cue: it is a voice driven straight through
-`FUN_80065034` - the reel SM calls `func_0x80065034(0x13, 2, 1, 0, 0x3C, 0x40,
-0x28, 0x28)` (voice `0x13`, class-2 VAB, program 1, tone 0, note `0x3C`,
-volume `0x28`) as the reels start, and releases the voice on all-reels-stop.
-Decode it with `SfxCueBank::decode_tone` (constants
-`minigame_sfx::SLOT_SPIN_*`).
+| Event | Cue | Slot | Site |
+|---|---|---|---|
+| reel stop, once per Stop press taken | `0x20A` | 0 | `FUN_801CF0D8` state 3 (`0x801CF74C`, `0x801CF794`, `0x801CF7DC`) |
+| payout tally, once per transfer | `0x209` | 0 | state 4 (`0x801CF900..0x801CF90C`) |
+| spin start in feature mode 1 / 2 | `0x201` / `0x202` | 2 | state 1 after the roll (`0x801CF5C0` / `0x801CF5DC`) |
+| two landed bonus symbols, once per spin | `0x200` | 2 | `FUN_801D1AF4` (`0x801D2050`, guard `DAT_801d3ca8`) |
+| cash-out menu confirm / cursor / cancel | `0x20` / `0x21` / `0x37` | 0 | states 1 / `0x32`.. (static table, class-0 VAB) |
+
+The reel motor is not a ring cue: the bet charge keys voice `0x13` directly -
+`FUN_80065034(0x13, 2, 1, 0, 0x3C, 0x40, 0x28, 0x28)` (class-2 VAB, program 1,
+tone 0) - the scanner re-keys the same voice on tone `1` with its sting (the
+reach loop), and the evaluation releases it (`FUN_800653C8(0x13)` at
+`0x801CF878`).
+
+The payout state tallies over time rather than at once: it advances its
+caption timer every frame (`0` on a win, `0x6B` on a loss), moves `11` coins
+per odd frame while more than `20` are owed and `1` otherwise, ticking `0x209`
+for each move, and returns to idle with the winning line cleared once nothing
+is owed and the timer reaches `0x79`.
+
+Ported in `SlotMachine` (`take_sounds`, the `CUE_*` constants, `tick_payout`);
+the world routes the stores as `SfxRingOp::WriteSlot` and the motor through its
+direct voice-key / voice-stop queues, and both play hosts resolve the runtime
+rows through `World::runtime_sfx_bundle` - the machine's own `efect.dat`
+(PROT 1199) while it is up - against the PROT 1198 bank the residency stages in
+slot 2. A host press still collects at once (`SlotMachine::collect`, the rest of
+the tally). The cash-out menu's cues are not ported because the engine has no
+cash-out menu; the `O` hotkey cashes out directly.
 
 The slot machine starts **no BGM** - it inherits the host scene's, and the host
 scene is authored disc script, so the track is readable without a capture.

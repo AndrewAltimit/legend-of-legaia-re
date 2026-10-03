@@ -26,9 +26,10 @@
 //!   native reader does, into a [`ArtsShoutBank`] whose per-art candidate
 //!   pools come from the `SCUS_942.54` cue tables (`FUN_8004C140`'s data,
 //!   `legaia_art::arts_voice::ArtsVoiceTable`).
-//! * **Clips** - [`BATTLE_XA_CLIP_SLOTS`]: `XA27.XA` (slot 26, the eight
-//!   stereo attack stings) and `XA30.XA` (slot `0x1D`, the ten mono
-//!   per-character grunts), every 4-bit channel decoded into a
+//! * **Clips** - [`BATTLE_XA_CLIP_SLOTS`]: the per-character voice banks
+//!   the animation cue tracks address (`XA1` / `XA3` / `XA5` and `XA27` /
+//!   `XA28` / `XA29` - Vahn's Spirit is `XA1` channel 0) and `XA30.XA` (slot
+//!   `0x1D`, the ten mono block grunts), every 4-bit channel decoded into a
 //!   [`XaClipBank`] keyed `(slot, channel)` - the raw space the retail clip
 //!   starter `FUN_8003D53C(clip_slot, channel, duration_sectors)` takes.
 //!
@@ -54,15 +55,27 @@ use wasm_bindgen::prelude::*;
 /// One raw Mode 2 sector as the page slices it out of the disc bytes.
 pub(crate) const RAW_SECTOR_BYTES: usize = 2352;
 
-/// Clip slots the battle's one-shot CD-XA cues address, as `(slot, file)`:
-/// `26` = `XA27.XA` (the eight stereo attack stings the melee kernel's
-/// `0x10C` cue resolves to through the sound funnel's voice leg) and `0x1D`
-/// = `XA30.XA` (the ten mono per-character grunts the same kernel fires
-/// directly). Slot `i` is `XA<i+1>.XA` by the boot-built clip table's own
-/// construction (`docs/subsystems/audio.md`). The same table the native
+/// Clip slots the battle's one-shot CD-XA cues address, as `(slot, file)`.
+/// The animation cue tracks' party voice band (`0xC8..=0xFF` re-based
+/// `+0x38`, `FUN_800508DC` -> `FUN_8004FE5C`) lands on `(id - 0x100) >> 3`
+/// with the `1 / 3 / 5 -> 26 / 27 / 28` remap: Vahn's `0xC8..=0xD7` on
+/// slots `0` / `26`, Noa's `0xD8..=0xE7` on `2` / `27`, Gala's
+/// `0xE8..=0xF7` on `4` / `28` - Vahn's Spirit clip opens with `0xC8`,
+/// `XA1.XA` channel 0. `26` also carries the melee kernel's `0x10C` sting
+/// and `0x1D` = `XA30.XA` the per-character block grunt. Slot `i` is
+/// `XA<i+1>.XA` by the boot-built clip table's own construction
+/// (`docs/subsystems/audio.md`). The same table the native
 /// boot's `BATTLE_XA_CLIP_SLOTS` carries; `engine-shell` is not a dependency
 /// of this crate, so it is restated here and pinned by a test.
-pub(crate) const BATTLE_XA_CLIP_SLOTS: &[(u8, &str)] = &[(26, "XA27.XA"), (0x1D, "XA30.XA")];
+pub(crate) const BATTLE_XA_CLIP_SLOTS: &[(u8, &str)] = &[
+    (0, "XA1.XA"),
+    (2, "XA3.XA"),
+    (4, "XA5.XA"),
+    (26, "XA27.XA"),
+    (27, "XA28.XA"),
+    (28, "XA29.XA"),
+    (0x1D, "XA30.XA"),
+];
 
 /// Unity XA gain (Q1.14), what both native XA players pass.
 pub(crate) const XA_GAIN_UNITY: u16 = 0x4000;
@@ -721,12 +734,14 @@ mod tests {
     fn wanted_files_are_the_native_staging_set() {
         assert_eq!(
             wanted_files(),
-            vec!["XA2.XA", "XA4.XA", "XA6.XA", "XA27.XA", "XA30.XA"]
+            vec![
+                "XA2.XA", "XA4.XA", "XA6.XA", "XA1.XA", "XA3.XA", "XA5.XA", "XA27.XA", "XA28.XA",
+                "XA29.XA", "XA30.XA"
+            ]
         );
         for &(slot, file) in BATTLE_XA_CLIP_SLOTS {
             assert_eq!(file, format!("XA{}.XA", u32::from(slot) + 1));
         }
-        assert_eq!(BATTLE_XA_CLIP_SLOTS, &[(26, "XA27.XA"), (0x1D, "XA30.XA")]);
     }
 
     /// The in-memory demux groups sectors per channel, honours the

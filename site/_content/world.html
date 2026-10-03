@@ -109,6 +109,7 @@ canvas.world-canvas {
         <div class="world-stage-head">
           <span class="world-stage-title" id="world-stage-title">-</span>
           <div class="world-stage-btns">
+            <button id="world-actors-btn" type="button" aria-pressed="true" title="Show or hide the scene's characters, chests and story actors">actors: on</button>
             <button id="world-glb-btn" type="button" title="Download the assembled map as a textured .glb">&#11015; .glb</button>
             <a id="world-viewer-link" href="viewer.html">assets &rarr;</a>
           </div>
@@ -203,6 +204,7 @@ canvas.world-canvas {
 <script src="js/webgl-math.js"></script>
 <script src="js/webgl-tmd.js"></script>
 <!-- Assembled full-map view, shared with the asset viewer's full-map button. -->
+<script src="js/field-actors.js"></script>
 <script src="js/field-scene-view.js"></script>
 <script>
 /* ------------------------------------------------------------------
@@ -232,6 +234,20 @@ canvas.world-canvas {
   const stageTitle= document.getElementById('world-stage-title');
   const factsEl   = document.getElementById('world-facts');
   const glbBtn    = document.getElementById('world-glb-btn');
+  const actorsBtn = document.getElementById('world-actors-btn');
+  let showActors = true;
+  try { showActors = localStorage.getItem('legaia.world.actors') !== '0'; } catch (e) { /* storage blocked */ }
+  const paintActorsBtn = () => {
+    actorsBtn.textContent = `actors: ${showActors ? 'on' : 'off'}`;
+    actorsBtn.setAttribute('aria-pressed', showActors ? 'true' : 'false');
+  };
+  paintActorsBtn();
+  actorsBtn.addEventListener('click', () => {
+    showActors = !showActors;
+    try { localStorage.setItem('legaia.world.actors', showActors ? '1' : '0'); } catch (e) { /* storage blocked */ }
+    paintActorsBtn();
+    if (fsView) fsView.setShowActors(showActors);
+  });
   const viewerLink= document.getElementById('world-viewer-link');
 
   let viewer = null;      /* WASM LegaiaViewer */
@@ -343,6 +359,7 @@ canvas.world-canvas {
        * canvas's parent - the default mount would overlay the viewport edge. */
       if (!fsView) fsView = new window.FieldSceneView(viewer, canvas, {
         vrMount: document.querySelector('.world-stage-btns'),
+        showActors,
       });
       fsView.load(label);
       mapStatus.innerHTML = `<b>${label}</b> · ${fsView.summary()} · drag pan / right-drag pivot / wheel zoom`;

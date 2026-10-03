@@ -509,8 +509,14 @@ impl crate::world::World {
     /// ([`SCENE_RESET_CLEARED_GLOBALS`]) rather than the raw words. `0x8007B450`
     /// is the tile-descriptor pointer the field VM's op `0x49` installs a tile
     /// board into (`docs/subsystems/tile-board.md`), so clearing it is what
-    /// stops a board surviving a scene change; `0x8007B630` is the scene-scoped
-    /// scratch word, which the engine has no field for.
+    /// stops a board surviving a scene change; `0x8007B630` is the camera
+    /// **shake amplitude** field-VM `[4C 84 amp]` raises
+    /// ([`crate::world::CameraRig::shake_amplitude`]), so clearing it is what
+    /// stops a tremor a script left running from following the player into
+    /// the next scene. The block's own `+0x18` / `+0x1C` - the jitter pair
+    /// the follow ease last added into the eye - are zeroed in the same run
+    /// of stores; the engine keeps that pair on the camera
+    /// (`ZoneFollow::shake_offset`), whose scene-entry reset clears it.
     ///
     /// PORT: FUN_8003A024
     pub fn reset_scene_control_block(&mut self) {
@@ -523,6 +529,8 @@ impl crate::world::World {
         self.board.armed = false;
         self.board.actor_slots = [None; crate::tile_board::TILE_ACTOR_TABLE_LEN];
         self.board.draw_list.clear();
+        // `sw zero, -0x49d0(v0)` at `0x8003A07C`: `_DAT_8007B630 = 0`.
+        self.camera.shake_amplitude = 0;
     }
 }
 

@@ -8,7 +8,11 @@
 //! - the battle-end **reward** bank (PROT 0889, cue `0x50`, VAB slot `11`),
 //!   staged when the results frame queues its cue;
 //! - the field **side-band** bank a script selects (op `0x36` sub `1`, VAB
-//!   slot `3`), staged while the world is in a field-family mode.
+//!   slot `3`), staged while the world is in a field-family mode;
+//! - the battle's two **monster** banks (`monster.snd`, VAB slots `7` / `8`),
+//!   staged while a battle is on screen - retail's battle scene loader
+//!   `FUN_800520F0` streams them per battle (`FUN_8003E104`) at slot 7's and
+//!   slot 8's own bases (`0x65010` / `0x6C810`).
 //!
 //! # The residency rule
 //!
@@ -52,6 +56,11 @@ use legaia_vab::VabReport;
 /// `li a0,0xb` at `0x8004EDB8` for the open).
 pub const REWARD_SLOT: u8 = 11;
 
+/// A battle's monster-bank request: `(VAB slot, monster.snd bank index)`
+/// pairs, slot `7` first - the shape
+/// `legaia_engine_core::world::World::battle_monster_sound_banks` returns.
+pub type MonsterBankKey = Vec<(u8, u16)>;
+
 /// One bank parked in the BGM region's tail: its VAB slot and the SPU span
 /// its samples occupy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,6 +82,8 @@ pub struct BgmTail<K> {
     reward: Option<TailBorrow>,
     side_band: Option<(K, TailBorrow)>,
     side_band_attempt: Option<(K, u64)>,
+    monsters: Option<(MonsterBankKey, Vec<TailBorrow>)>,
+    monster_attempt: Option<(MonsterBankKey, u64)>,
 }
 
 impl<K> Default for BgmTail<K> {
@@ -83,6 +94,8 @@ impl<K> Default for BgmTail<K> {
             reward: None,
             side_band: None,
             side_band_attempt: None,
+            monsters: None,
+            monster_attempt: None,
         }
     }
 }
@@ -140,7 +153,54 @@ impl<K: Copy + PartialEq> BgmTail<K> {
         {
             dropped.extend(self.drop_side_band());
         }
+        if self
+            .monsters
+            .as_ref()
+            .is_some_and(|(_, bs)| bs.iter().any(|b| bgm_end > b.base))
+        {
+            dropped.extend(self.drop_monsters());
+        }
         dropped
+    }
+
+    /// The monster banks' request key and spans, while they are parked.
+    pub fn monsters(&self) -> Option<&(MonsterBankKey, Vec<TailBorrow>)> {
+        self.monsters.as_ref()
+    }
+
+    /// Record one monster bank as parked under request `key` (appended to
+    /// the set already parked under the same key, replacing any other).
+    pub fn commit_monster(&mut self, key: &MonsterBankKey, borrow: TailBorrow) {
+        match self.monsters.as_mut() {
+            Some((k, bs)) if k == key => bs.push(borrow),
+            _ => self.monsters = Some((key.clone(), vec![borrow])),
+        }
+    }
+
+    /// Forget the monster banks; their slots.
+    pub fn drop_monsters(&mut self) -> Vec<u8> {
+        let Some((_, bs)) = self.monsters.take() else {
+            return Vec::new();
+        };
+        self.generation = self.generation.wrapping_add(1);
+        bs.iter().map(|b| b.slot).collect()
+    }
+
+    /// Whether to attempt staging monster request `key` now - the
+    /// [`Self::begin_side_band_attempt`] memo for the battle banks.
+    pub fn begin_monster_attempt(&mut self, key: &MonsterBankKey) -> bool {
+        if self.monsters.as_ref().is_some_and(|(k, _)| k == key) {
+            return false;
+        }
+        if self
+            .monster_attempt
+            .as_ref()
+            .is_some_and(|(k, g)| k == key && *g == self.generation)
+        {
+            return false;
+        }
+        self.monster_attempt = Some((key.clone(), self.generation));
+        true
     }
 
     /// Where a borrower of `body_bytes` for `slot` goes: above the track and
@@ -151,6 +211,7 @@ impl<K: Copy + PartialEq> BgmTail<K> {
             .reward
             .iter()
             .chain(self.side_band.iter().map(|(_, b)| b))
+            .chain(self.monsters.iter().flat_map(|(_, bs)| bs.iter()))
             .filter(|b| b.slot != slot)
             .map(|b| b.end);
         let base = others.fold(self.bgm_end, u32::max).div_ceil(16) * 16;
@@ -192,6 +253,7 @@ impl<K: Copy + PartialEq> BgmTail<K> {
         self.drop_reward()
             .into_iter()
             .chain(self.drop_side_band())
+            .chain(self.drop_monsters())
             .collect()
     }
 
@@ -213,6 +275,23 @@ impl<K: Copy + PartialEq> BgmTail<K> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn monster_banks_stack_and_drop_with_the_track() {
+        let mut t = BgmTail::<i32>::default();
+        t.observe_bgm_end(0x30000);
+        let key: MonsterBankKey = vec![(7, 11), (8, 40)];
+        assert!(t.begin_monster_attempt(&key));
+        let a = t.place(7, 0x1000).unwrap();
+        t.commit_monster(&key, b(7, a, a + 0x1000));
+        let c = t.place(8, 0x800).unwrap();
+        assert_eq!(c, a + 0x1000, "the second bank stacks above the first");
+        t.commit_monster(&key, b(8, c, c + 0x800));
+        assert!(!t.begin_monster_attempt(&key), "already parked");
+        // A track reaching the first bank overwrites both.
+        assert_eq!(t.observe_bgm_end(a + 0x10), vec![7, 8]);
+        assert!(t.monsters().is_none());
+    }
 
     fn b(slot: u8, base: u32, end: u32) -> TailBorrow {
         TailBorrow { slot, base, end }

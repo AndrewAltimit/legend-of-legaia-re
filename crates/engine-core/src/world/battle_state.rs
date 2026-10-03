@@ -269,6 +269,20 @@ pub struct BattleState {
     /// the damage finisher's guard-halve stage
     /// ([`legaia_engine_vm::battle_formulas::DamageFinish::defender_guarding`]).
     pub guarding: [bool; 3],
+    /// `ctx[+0x6D2]` - the **attack-angle** term the melee kernel's block
+    /// roll adds to the attacker's sum. Seeded by the attack band's state
+    /// `0x14` (`0x801E3068..0x801E30C8`): the attacker's new facing minus the
+    /// target's, folded into `0..=0x800`, minus `0x800` - `0` face-on,
+    /// negative otherwise. Added unsigned, a term larger than the attacker's
+    /// sum wraps it past every defender sum, so an off-axis opening strike is
+    /// rarely blocked. Zeroed by the first hit that lands or is blocked
+    /// (`0x801EE3C4` / `0x801EC888`).
+    pub attack_ramp: i16,
+    /// `ctx[+0x6D4]` - the **approach** term added to the defender's sum:
+    /// the frame step accumulated each tick the attacker spends walking in
+    /// (state `0x19`, `0x801E35DC..0x801E35EC`). Zeroed with
+    /// [`Self::attack_ramp`].
+    pub guard_ramp: i16,
     /// Per-party-slot Fury Boost state for the current battle: `Some(delta)` is
     /// the AP added to that slot's gauge by the class-5 Fury Boost item (retail
     /// actor `+0x1F9` flag). Reverted wholesale at battle end (`finish_battle`),
@@ -481,6 +495,12 @@ pub struct BattleState {
     /// [`crate::world::World::prime_battle_tutorial`]; the engine's stand-in for retail's
     /// per-formation battle-stage id.
     pub tutorial_pending: bool,
+    /// The field party composition the sparring fight set aside, restored
+    /// when the battle returns to the field ([`crate::world::World::finish_battle`]).
+    /// `Some` only between a Tetsu-spar entry that seated Vahn alone over a
+    /// larger party and its teardown - see
+    /// [`crate::world::World::sparring_fight_pending`].
+    pub solo_spar_restore: Option<Vec<u8>>,
     /// Active stat buffs / debuffs applied by battle Magic, one entry per
     /// `(slot, stat)`. Each holds the exact delta written into the per-slot
     /// scalar so expiry can undo it, plus the remaining turn count (decremented
@@ -638,6 +658,8 @@ impl BattleState {
             status_effects: vm::status_effects::StatusEffectTracker::new(),
             ap_gauges: [crate::ap_gauge::ApGauge::default(); 3],
             guarding: [false; 3],
+            attack_ramp: 0,
+            guard_ramp: 0,
             fury_boost: [None; 3],
             buffs: Vec::new(),
             escaped: false,
@@ -679,6 +701,7 @@ impl BattleState {
             ui_strings: legaia_asset::battle_ui_strings::BattleUiStrings::default(),
             spell_anim_pairs: legaia_asset::spell_anim_pairs::SpellAnimPairs::default(),
             tutorial_pending: false,
+            solo_spar_restore: None,
             active_formation: None,
             last_rewards: None,
             spoils_frames: 0,

@@ -166,6 +166,9 @@ pub(super) struct SceneLightsUniform {
     /// [`crate::occlusion_fade`] constants with radius/feather scaled to
     /// the viewport height. Only read while `occl_focus[3]` is set.
     pub(super) occl_params: [f32; 4],
+    /// Feet-line rule: `[0..2]` = the player's projected feet pixel,
+    /// `[2..4]` = [`crate::occlusion_fade::lift_axis`]. Zero = rule off.
+    pub(super) occl_lift: [f32; 4],
     pub(super) lights: [ScenePointLightUniform; crate::scene_lights::MAX_SCENE_LIGHTS],
 }
 

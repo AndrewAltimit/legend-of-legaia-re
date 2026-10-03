@@ -145,6 +145,7 @@ class TmdRenderer {
     this.locOcclFocus  = gl.getUniformLocation(this.program, 'u_occl_focus');
     this.locOcclParams = gl.getUniformLocation(this.program, 'u_occl_params');
     this.locOcclAllow  = gl.getUniformLocation(this.program, 'u_occl_allow');
+    this.locOcclLift   = gl.getUniformLocation(this.program, 'u_occl_lift');
     this.locPsx      = gl.getUniformLocation(this.program, 'u_psx');
     this.locDynDir   = gl.getUniformLocation(this.program, 'u_dyn_dir');
     this.locDynColor = gl.getUniformLocation(this.program, 'u_dyn_color');
@@ -601,14 +602,18 @@ class TmdRenderer {
    * view-projection and screen-doors scene fragments that sit between the
    * camera and this point (GLSL `occl_keep`/`occl_bayer`; the native twin
    * is engine-render's occlusion_fade module). Call per frame; stale foci
-   * would fade the wrong screen region. */
-  setOcclusionFocus(worldPos, strength) {
+   * would fade the wrong screen region. `feetPos` (same frame) is the
+   * floor point under the character: only fragments above its projection
+   * fade (the feet-line rule - see OCCL_LIFT_FEATHER_FRAC); omitted, the
+   * rule is off. */
+  setOcclusionFocus(worldPos, strength, feetPos) {
     if (!worldPos || !(strength > 0)) {
       this.occlFocus = null;
       return;
     }
     this.occlFocus = {
       pos: [worldPos[0], worldPos[1], worldPos[2]],
+      feet: feetPos ? [feetPos[0], feetPos[1], feetPos[2]] : null,
       strength: Math.min(strength, 1.0),
     };
   }
@@ -644,10 +649,26 @@ class TmdRenderer {
         gl.uniform4f(this.locOcclParams,
           radius, OCCL_MIN_KEEP,
           OCCL_DEPTH_MARGIN, radius * OCCL_FEATHER_FRAC_OF_RADIUS);
+        /* Feet-line rule: project the floor point under the character and
+         * stage the feet -> centre lift axis (zero = rule off). */
+        let lift = [0, 0, 0, 0];
+        const q = f.feet;
+        if (q) {
+          const fx = vp[0] * q[0] + vp[4] * q[1] + vp[8] * q[2] + vp[12];
+          const fy = vp[1] * q[0] + vp[5] * q[1] + vp[9] * q[2] + vp[13];
+          const fw = vp[3] * q[0] + vp[7] * q[1] + vp[11] * q[2] + vp[15];
+          if (fw > 1e-3) {
+            const feet = [(fx / fw * 0.5 + 0.5) * w, (fy / fw * 0.5 + 0.5) * h];
+            const axis = occlLiftAxis(feet, [px, py]);
+            lift = [feet[0], feet[1], axis[0], axis[1]];
+          }
+        }
+        if (this.locOcclLift) gl.uniform4f(this.locOcclLift, lift[0], lift[1], lift[2], lift[3]);
         return;
       }
     }
     gl.uniform4f(this.locOcclFocus, 0, 0, 0, 0);
+    if (this.locOcclLift) gl.uniform4f(this.locOcclLift, 0, 0, 0, 0);
   }
 
   /* Set the per-kingdom ocean tint + enable flag. `color` is `{ r, g, b }`

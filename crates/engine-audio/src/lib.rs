@@ -22,7 +22,6 @@ use std::sync::{Arc, Mutex};
 use anyhow::{Context, Result, anyhow};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
-pub mod anim_cue;
 pub mod battle_voice;
 pub mod bgm_tail;
 pub mod duck;
@@ -44,9 +43,6 @@ mod webaudio;
 pub mod xa_clip_bank;
 pub mod xa_transport;
 
-pub use anim_cue::{
-    AnimCueActor, AnimCueEmit, AnimCueSlot, AnimCueState, AnimCueWalk, walk_anim_cues,
-};
 pub use battle_voice::{
     BattleVoiceAction, BattleVoiceCtx, BattleVoiceStep, BattleVoiceTables, NO_CLIP,
     battle_voice_step,

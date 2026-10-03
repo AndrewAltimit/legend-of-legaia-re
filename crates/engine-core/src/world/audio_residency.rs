@@ -297,6 +297,13 @@ impl World {
     pub fn take_sfx_voice_stops(&mut self) -> Vec<u8> {
         std::mem::take(&mut self.audio.sfx_voice_stops)
     }
+
+    /// Drain the voices a minigame keyed directly this tick
+    /// ([`crate::world::AudioState::sfx_voice_keys`]). Each host keys them
+    /// through its explicit voice-attr door (`key_on_voice_attr`).
+    pub fn take_sfx_voice_keys(&mut self) -> Vec<crate::other_game_overlay::VoiceAttrCue> {
+        std::mem::take(&mut self.audio.sfx_voice_keys)
+    }
 }
 
 #[cfg(test)]

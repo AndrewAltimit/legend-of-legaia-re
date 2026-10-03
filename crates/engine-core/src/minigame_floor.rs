@@ -153,6 +153,12 @@ impl<'a> FloorGrid<'a> {
         Self { buf }
     }
 
+    /// The step-layer record for grid cell `(gx, gz)` in this buffer
+    /// ([`step_patch_lookup`]).
+    pub fn step_patch(&self, gx: i32, gz: i32) -> Option<StepPatch> {
+        step_patch_lookup(self.buf, gx, gz)
+    }
+
     fn u16_at(&self, off: usize) -> u16 {
         match self.buf.get(off..off + 2) {
             Some(b) => u16::from_le_bytes([b[0], b[1]]),
@@ -245,6 +251,58 @@ pub struct StepPatch {
     pub step: i8,
     /// `+0x03` - four 2-bit sub-cell biases, scaled by `0x10`.
     pub quadrants: u8,
+}
+
+/// The sub-table kind the step-layer lookup names (`li a0,0x2` at
+/// `0x801D6148`).
+pub const STEP_LAYER_KIND: usize = 2;
+
+/// Record stride of [`STEP_LAYER_KIND`]: the resident byte `DAT_8007B31A`
+/// (the per-kind stride table at `0x8007B318` reads `04 04 04 08 ..` in the
+/// library states; kind `3`'s `8` is
+/// [`crate::field_regions::REGION_RECORD_STRIDE`]).
+pub const STEP_RECORD_STRIDE: usize = 4;
+
+/// Find the step-layer record for grid cell `(gx, gz)` in one layer block
+/// (the `.MAP` buffer from `+0x10000`, or from `+0x12000`).
+///
+/// The block opens with per-kind sub-table descriptors, `kind * 4` bytes in:
+/// an `i16` body offset at `+2` and an `i16` record count at `+4`. The scan is
+/// linear over `[cx, cz, step, quadrants]` records and returns the first
+/// whose first two bytes are `(gx, gz)`; `None` when none matches (retail
+/// returns null). The coordinates compare as bytes, so a negative or
+/// over-`0xFF` grid index never matches.
+// PORT: FUN_801d79e0
+pub fn step_patch_in_layer(layer: &[u8], gx: i32, gz: i32) -> Option<StepPatch> {
+    let hdr = STEP_LAYER_KIND * 4;
+    let i16_at = |o: usize| -> Option<i16> {
+        Some(i16::from_le_bytes([*layer.get(o)?, *layer.get(o + 1)?]))
+    };
+    let body = i16_at(hdr + 2)?;
+    let count = i16_at(hdr + 4)?;
+    if body < 0 || count <= 0 {
+        return None;
+    }
+    let (gx, gz) = (u8::try_from(gx).ok()?, u8::try_from(gz).ok()?);
+    (0..count as usize).find_map(|i| {
+        let r = layer
+            .get(body as usize + i * STEP_RECORD_STRIDE..)?
+            .get(..4)?;
+        (r[0] == gx && r[1] == gz).then_some(StepPatch {
+            step: r[2] as i8,
+            quadrants: r[3],
+        })
+    })
+}
+
+/// The step-layer lookup [`ground_height`] takes, over a floor buffer laid
+/// out as retail installs it behind `_DAT_1F8003EC`: the `+0x10000` layer
+/// first, then `+0x12000` (`0x801D6168` / `0x801D6198`). A buffer too short to
+/// reach a layer simply has no record there.
+pub fn step_patch_lookup(buf: &[u8], gx: i32, gz: i32) -> Option<StepPatch> {
+    [0x10000usize, 0x12000]
+        .into_iter()
+        .find_map(|base| step_patch_in_layer(buf.get(base..)?, gx, gz))
 }
 
 /// What [`ground_height`] resolves for one actor.
@@ -883,6 +941,29 @@ mod tests {
             })
         });
         assert_eq!(s2.height, ((0x20 + 0x40) >> 2) - 3 * 0x10 - 0x20);
+    }
+
+    #[test]
+    fn the_step_layer_lookup_scans_kind_two_records() {
+        // A `+0x10000` layer: kind-2 descriptor at +8 (body 0x20, count 2).
+        let mut buf = vec![0u8; 0x10000 + 0x40];
+        let l = 0x10000;
+        buf[l + 0xA..l + 0xC].copy_from_slice(&0x20i16.to_le_bytes());
+        buf[l + 0xC..l + 0xE].copy_from_slice(&2i16.to_le_bytes());
+        buf[l + 0x20..l + 0x24].copy_from_slice(&[5, 6, 1, 0]);
+        buf[l + 0x24..l + 0x28].copy_from_slice(&[7, 8, 4, 0b11]);
+        let g = FloorGrid::new(&buf);
+        assert_eq!(
+            g.step_patch(7, 8),
+            Some(StepPatch {
+                step: 4,
+                quadrants: 0b11
+            })
+        );
+        assert_eq!(g.step_patch(5, 6).map(|p| p.step), Some(1));
+        assert_eq!(g.step_patch(6, 5), None);
+        assert_eq!(g.step_patch(-1, 6), None, "a negative index never matches");
+        assert_eq!(FloorGrid::new(&buf[..0x100]).step_patch(5, 6), None);
     }
 
     #[test]

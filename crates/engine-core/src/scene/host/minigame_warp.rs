@@ -126,7 +126,7 @@ impl SceneHost {
             .as_ref()
             .map(|sc| sc.start + legaia_prot::cdname::RAW_TOC_INDEX_OFFSET)
             .map_or(0, |id| crate::fishing::venue_for_departure_scene(id, 0));
-        let venue_map = self.fishing_venue_map(0);
+        let venue_map = self.fishing_venue_map(venue);
         self.world.enter_fishing_session(&tables, venue, venue_map);
         // The point-exchange venue pages ride the same overlay image. Decoded
         // here, on the entry the door warp shares, rather than by each host's
@@ -152,28 +152,31 @@ impl SceneHost {
     /// The venue the cast lure lands in: the fishing venue scene's (`other1`,
     /// the bundle whose overlay slot is PROT 0972) `.MAP` extended footprint,
     /// which is the `_DAT_1F8003EC` floor buffer, plus its `+0x10000` region block,
-    /// anchored at [`crate::fishing_actors::VENUE_ANCHOR`] and cast along
-    /// `facing`. `None` when the bundle does not resolve; the session then
+    /// anchored on the lead angler's seat for `venue`
+    /// ([`crate::fishing_venue::lead_spawn`]) and cast along his rest facing
+    /// `0x800` - retail's lure spawn reads the lead actor's `+0x14` / `+0x18`
+    /// and `+0x26` (`0x801CFC78..0x801CFC98`). `None` when the bundle does not
+    /// resolve; the session then
     /// runs with no water class, as the far-band ladder does.
     ///
     /// One builder for the warp and both play hosts' launchers, and the same
     /// scene the minigames page reads its lure venue from, so the lure's
     /// walk-grid drift and water class come off the same bytes on every host
     /// whichever scene the session was opened from.
-    pub fn fishing_venue_map(&self, facing: i16) -> Option<crate::fishing::PondVenue> {
-        /// CDNAME label of the fishing venue bundle.
-        const FISHING_VENUE_SCENE: &str = "other1";
-        let scene = crate::scene::Scene::load(&self.index, FISHING_VENUE_SCENE).ok()?;
+    pub fn fishing_venue_map(&self, venue: usize) -> Option<crate::fishing::PondVenue> {
+        let scene =
+            crate::scene::Scene::load(&self.index, crate::fishing_scene::FISHING_VENUE_SCENE)
+                .ok()?;
         let idx = scene.field_map_index(&self.index)?;
         let map = self.index.entry_bytes_extended(idx).ok()?;
         let region_block = scene.field_map_region_block(&self.index).ok().flatten();
-        let (anchor_x, anchor_z) = crate::fishing_actors::VENUE_ANCHOR;
+        let lead = crate::fishing_venue::party_placements(venue)[0];
         Some(crate::fishing::PondVenue {
             map,
             region_block,
-            anchor_x,
-            anchor_z,
-            facing,
+            anchor_x: lead.x,
+            anchor_z: lead.z,
+            facing: lead.facing,
             rod_mesh: crate::fishing_actors::RodMesh::from_scene(&scene),
         })
     }
@@ -193,6 +196,13 @@ impl SceneHost {
         let balance = self.world.minigames.casino_coins as i32;
         let paylines =
             legaia_asset::minigame_slot_scene::parse_paylines(loaded).unwrap_or_default();
+        // The init's `efect.dat` load (raw TOC `0x4B1`): the runtime SFX
+        // descriptor bank every cue the machine raises resolves through.
+        self.world.minigames.slot_sfx_bundle = self
+            .index
+            .entry_bytes_extended(legaia_asset::minigame_sfx::SLOT_SFX_BANK_PROT_INDEX as u32)
+            .map(|b| b.to_vec())
+            .unwrap_or_default();
         self.world.enter_slot_machine(
             crate::slot_machine::SlotMachine::new(payouts, SLOT_RNG_SEED, balance)
                 .with_paylines(paylines),

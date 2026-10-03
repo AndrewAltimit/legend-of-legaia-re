@@ -693,16 +693,22 @@ impl PlayWindowApp {
                 field_terrain_color_draws,
                 field_placement_draws,
                 field_placement_color_draws,
+                field_placement_window_keys,
+                field_placement_color_window_keys,
                 session,
                 ..
             } = self;
             field_floor_wave.apply(
-                &session.host.world.terrain.floor_height_lut,
+                &session.host.world,
                 [
                     field_terrain_draws,
                     field_terrain_color_draws,
                     field_placement_draws,
                     field_placement_color_draws,
+                ],
+                [
+                    field_placement_window_keys,
+                    field_placement_color_window_keys,
                 ],
             );
         }
@@ -866,6 +872,12 @@ impl PlayWindowApp {
         self.refresh_dance_cast_gpu();
         // The Muscle Dome's 3D arena, posed by its engine surface.
         self.refresh_muscle_dome_gpu();
+        // The fishing pond + seated party, posed by its engine surface.
+        self.refresh_fishing_gpu();
+        // The slot machine's own VRAM (its art pack), resident while the
+        // machine is on screen.
+        self.refresh_slot_cabinet_gpu();
+        let slot_prims = self.slot_cabinet_screen_prims();
         // The hall, cut to what the GPU draws under this frame's camera.
         self.refresh_dance_venue_view();
         if let (Some(r), Some(vram), Some(atlas)) = (
@@ -882,11 +894,21 @@ impl PlayWindowApp {
             // A live Baka duel draws against its own VRAM.
             // So does the dance venue - the hall's own upload, never the
             // walked-in scene's.
-            let duel_gpu = self.baka_gpu.as_ref().or(self.muscle_gpu.as_ref());
-            let vram = match (duel_gpu, self.dance_venue_gpu.as_ref()) {
-                (Some(g), _) => &g.vram,
-                (None, Some(d)) => &d.vram,
-                (None, None) => vram,
+            let duel_gpu = self
+                .baka_gpu
+                .as_ref()
+                .or(self.muscle_gpu.as_ref())
+                .or(self.fishing_gpu.as_ref());
+            // And the slot machine: every quad it draws samples its art pack.
+            let vram = match (
+                duel_gpu,
+                self.dance_venue_gpu.as_ref(),
+                self.slot_gpu.as_ref(),
+            ) {
+                (Some(g), _, _) => &g.vram,
+                (None, Some(d), _) => &d.vram,
+                (None, None, Some(v)) => v,
+                (None, None, None) => vram,
             };
             // Upload (or drop) the opdeene "It was the Seru." caption sprite
             // atlas to track World state. The caption image is present only
@@ -1119,7 +1141,13 @@ impl PlayWindowApp {
                     let scale_y = legaia_engine_render::occlusion_fade::view_proj_scale_y(
                         &cam.to_cols_array(),
                     );
-                    r.set_occlusion_focus(clip.to_array(), s, scale_y);
+                    // The floor point under the character anchors the
+                    // feet-line rule: nothing below it on screen fades.
+                    let feet =
+                        legaia_engine_core::field_occlusion::player_feet(&self.session.host.world)
+                            .unwrap_or(centre);
+                    let feet_clip = cam * Vec4::new(feet[0], feet[1], feet[2], 1.0);
+                    r.set_occlusion_focus(clip.to_array(), feet_clip.to_array(), s, scale_y);
                     occl_staged = true;
                 }
             } else {
@@ -1477,7 +1505,12 @@ impl PlayWindowApp {
             let mut color_draws: Vec<ColorSceneDraw<'_>> = Vec::new();
             if self.boot_ui.is_active() && !game_over_hold {
                 // Boot UI is fullscreen - suppress 3D draws.
-            } else if let Some(g) = self.baka_gpu.as_ref().or(self.muscle_gpu.as_ref()) {
+            } else if let Some(g) = self
+                .baka_gpu
+                .as_ref()
+                .or(self.muscle_gpu.as_ref())
+                .or(self.fishing_gpu.as_ref())
+            {
                 // The Baka duel owns the 3D frame: the engine-posed fighters,
                 // ghosts, walls and floor under the arena camera. The Muscle
                 // Dome's arena surface draws the same way: the shell, the
@@ -1497,6 +1530,10 @@ impl PlayWindowApp {
                         cue: None,
                     });
                 }
+            } else if self.slot_gpu.is_some() {
+                // The slot machine: the overlay's whole frame is its own
+                // cabinet scene, drawn as screen primitives below - the
+                // walked-in casino floor is not on screen.
             } else if self.session.host.world.muscle_hub_between_legs() {
                 // The arena hub between two legs: retail runs it in arena
                 // mode `0x18` with no 3D scene - the ringside still and the
@@ -2965,6 +3002,9 @@ impl PlayWindowApp {
             screen_prims.extend(self.baka_hud_prims());
             // The slot machine's paylines, off the machine's own ported pass
             // and projection - the segments both browser pages stroke.
+            // The machine itself - cabinet, reels, furniture, dot matrix and
+            // coin HUD - under the paylines (`ui_slot_cabinet`).
+            screen_prims.extend(slot_prims);
             screen_prims.extend(self.slot_payline_screen_prims());
             // The fishing line, latched above: the same kernel and builder
             // the browser play page uses.

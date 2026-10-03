@@ -25,7 +25,21 @@
 //!      projected through the frame's own camera ([`radius_px`]) - it is
 //!      sized in the space the character lives in, not in screen space, so
 //!      it keeps hugging them as the camera pushes in and pulls out.
-//! 3. The fade is a **screen-door discard** against a 4x4 Bayer threshold
+//! 3. ...and its framebuffer position lies **above the player's feet** on
+//!    screen. The host stages a second point, the floor under the
+//!    character ([`set_occlusion_focus`](crate::Renderer::set_occlusion_focus)'s
+//!    `feet_clip`); the screen vector feet -> body centre is the character's
+//!    projected up axis, and a fragment's fade is scaled by how far along
+//!    that axis it sits ([`lift_factor`]): nothing at or below the feet line,
+//!    full fade from [`OCCL_LIFT_FEATHER_FRAC`] of the way to the centre up.
+//!    A ray from the lens through a fragment below that line meets the
+//!    player's depth below their feet, so the fragment cannot be hiding
+//!    them - it is the floor in front of the character, or the lower face of
+//!    the wall that hides them. Without this rule those fragments satisfied
+//!    "nearer than the player, inside the circle" and dissolved too, and
+//!    since nothing is modelled under a floor tile or inside a rock, what
+//!    showed through was a black band from the feet down.
+//! 4. The fade is a **screen-door discard** against a 4x4 Bayer threshold
 //!    matrix ([`bayer_threshold`], the WGSL twin is `occl_bayer`): the keep
 //!    probability ramps from 1.0 at the circle's rim down to
 //!    [`OCCL_MIN_KEEP`] at the centre over an [`OCCL_FEATHER_FRAC_OF_RADIUS`]
@@ -105,6 +119,53 @@ pub const OCCL_MIN_KEEP: f32 = 0.25;
 /// occluders fades" report. WGSL twin: `occl_params.z`.
 pub const OCCL_DEPTH_MARGIN: f32 = 16.0;
 
+/// Width of the feet-line ramp, as a fraction of the screen span from the
+/// player's feet to their body centre (half a character height): the fade
+/// is zero at and below the feet line and reaches full strength this far up
+/// the character. `0.5` puts full strength at roughly knee height - enough
+/// slack that a bumpy floor tile just in front of the feet does not catch
+/// the fade, while everything that can hide the character's upper body
+/// opens fully. WGSL/GLSL twin: folded into the staged `occl_lift` axis
+/// ([`lift_axis`]), so neither shader carries the number.
+pub const OCCL_LIFT_FEATHER_FRAC: f32 = 0.5;
+
+/// The screen-space **lift axis** for the feet-line rule: the vector from
+/// the player's projected feet to their projected body centre, scaled so
+/// that `dot(frag_px - feet_px, axis)` reads `0.0` on the feet line and
+/// `1.0` at [`OCCL_LIFT_FEATHER_FRAC`] of the way to the centre.
+///
+/// Derived from the two projected points rather than assumed to be screen
+/// "up", so a rolled camera and the browser's mirrored screen X need no
+/// special case. A degenerate span (a camera looking straight down the
+/// character, where feet and centre project to the same pixel) returns
+/// `[0, 0]`, which [`lift_factor`] reads as "no feet-line rule": from
+/// directly above nothing can sit between the lens and the feet but the
+/// geometry over the head.
+///
+/// JS twin: `occlLiftAxis` in `site/js/webgl-shaders.js`.
+pub fn lift_axis(feet_px: [f32; 2], centre_px: [f32; 2]) -> [f32; 2] {
+    let u = [centre_px[0] - feet_px[0], centre_px[1] - feet_px[1]];
+    let len2 = u[0] * u[0] + u[1] * u[1];
+    if !len2.is_finite() || len2 < 0.25 {
+        return [0.0, 0.0];
+    }
+    let k = 1.0 / (len2 * OCCL_LIFT_FEATHER_FRAC);
+    [u[0] * k, u[1] * k]
+}
+
+/// How much of the fade a fragment at `frag_px` may receive under the
+/// feet-line rule: `0.0` at or below the player's feet on screen, ramping
+/// to `1.0` [`OCCL_LIFT_FEATHER_FRAC`] of the way up to the body centre.
+/// `axis` comes from [`lift_axis`]; the zero axis means the rule is off.
+/// WGSL / GLSL twin: the `lift` term of `occl_keep`.
+pub fn lift_factor(frag_px: [f32; 2], feet_px: [f32; 2], axis: [f32; 2]) -> f32 {
+    if axis == [0.0, 0.0] {
+        return 1.0;
+    }
+    let t = (frag_px[0] - feet_px[0]) * axis[0] + (frag_px[1] - feet_px[1]) * axis[1];
+    t.clamp(0.0, 1.0)
+}
+
 /// The projection's vertical scale `P[1][1]` (`1 / tan(fov_y / 2)`),
 /// recovered from a **column-major** view-projection - glam's
 /// `Mat4::to_cols_array`, and the same flat layout `site/js/webgl-math.js`
@@ -177,7 +238,9 @@ pub fn bayer_threshold(x: u32, y: u32) -> f32 {
 /// `feather_px` arguments come from the functions of the same names.
 /// `strength` (0..1) is the host's eased visibility-gate output: the
 /// geometric keep blends toward the identity by it, so the screen-door
-/// dissolves in and out instead of popping.
+/// dissolves in and out instead of popping. `feet_px` / `lift_axis` are the
+/// feet-line rule's inputs ([`lift_axis`], [`lift_factor`]); they scale the
+/// same blend, so a fragment below the feet line keeps unconditionally.
 #[allow(clippy::too_many_arguments)]
 pub fn keep_probability(
     frag_px: [f32; 2],
@@ -189,6 +252,8 @@ pub fn keep_probability(
     min_keep: f32,
     depth_margin: f32,
     strength: f32,
+    feet_px: [f32; 2],
+    lift_axis: [f32; 2],
 ) -> f32 {
     if strength < 0.004 {
         return 1.0;
@@ -206,9 +271,15 @@ pub fn keep_probability(
     }
     // Radial feather: min_keep at the centre, 1.0 at the rim; then the
     // strength blend toward the identity.
+    // Feet-line rule: below the player's feet on screen nothing can be
+    // hiding them.
+    let lift = lift_factor(frag_px, feet_px, lift_axis);
+    if lift <= 0.0 {
+        return 1.0;
+    }
     let t = smoothstep(radius_px - feather_px, radius_px, d);
     let k = min_keep + (1.0 - min_keep) * t;
-    1.0 - strength * (1.0 - k)
+    1.0 - strength * lift * (1.0 - k)
 }
 
 /// WGSL-equivalent `smoothstep` (identical clamped Hermite).
@@ -293,6 +364,8 @@ mod tests {
             OCCL_MIN_KEEP,
             OCCL_DEPTH_MARGIN,
             1.0,
+            FOCUS,
+            [0.0, 0.0],
         )
     }
 
@@ -414,6 +487,8 @@ mod tests {
                 OCCL_MIN_KEEP,
                 OCCL_DEPTH_MARGIN,
                 s,
+                FOCUS,
+                [0.0, 0.0],
             )
         };
         assert_eq!(at(0.0), 1.0);
@@ -474,5 +549,153 @@ mod tests {
             keep_at([FOCUS[0] + (r() - f()), FOCUS[1]], z),
             OCCL_MIN_KEEP
         );
+    }
+
+    /// The feet-line axis reads 0 on the feet, 1 at the feather fraction
+    /// of the way to the centre, and is orientation-free: a rolled or
+    /// mirrored screen gives the same readings along its own up axis.
+    #[test]
+    fn lift_axis_measures_along_the_projected_body() {
+        let feet = [400.0, 500.0];
+        let centre = [400.0, 400.0]; // framebuffer y grows downward
+        let axis = lift_axis(feet, centre);
+        assert_eq!(lift_factor(feet, feet, axis), 0.0);
+        assert_eq!(lift_factor([400.0, 560.0], feet, axis), 0.0);
+        let full = [400.0, 500.0 - 100.0 * OCCL_LIFT_FEATHER_FRAC];
+        assert!((lift_factor(full, feet, axis) - 1.0).abs() < 1e-5);
+        assert_eq!(lift_factor([400.0, 100.0], feet, axis), 1.0);
+        // A sideways offset does not move the reading.
+        assert_eq!(
+            lift_factor([700.0, 450.0], feet, axis),
+            lift_factor([400.0, 450.0], feet, axis)
+        );
+        // Rolled 90 degrees: up is screen +x now.
+        let rolled = lift_axis([100.0, 300.0], [200.0, 300.0]);
+        assert_eq!(lift_factor([50.0, 300.0], [100.0, 300.0], rolled), 0.0);
+        assert_eq!(lift_factor([190.0, 300.0], [100.0, 300.0], rolled), 1.0);
+        // Degenerate span (camera straight above): the rule is off.
+        let none = lift_axis(feet, [400.2, 500.1]);
+        assert_eq!(none, [0.0, 0.0]);
+        assert_eq!(lift_factor([400.0, 900.0], feet, none), 1.0);
+    }
+
+    /// A camera above and behind a standing character, in a Y-up world:
+    /// project world points the way the hosts do and run the full keep
+    /// rule with the fade fully armed.
+    struct Rig {
+        vp: glam::Mat4,
+        focus_px: [f32; 2],
+        focus_z: f32,
+        feet_px: [f32; 2],
+        axis: [f32; 2],
+        radius: f32,
+    }
+
+    const RIG_W: f32 = 960.0;
+    const RIG_H: f32 = 720.0;
+    const BODY_HALF: f32 = 65.0;
+
+    fn project(vp: glam::Mat4, p: glam::Vec3) -> ([f32; 2], f32) {
+        let c = vp * p.extend(1.0);
+        let px = (c.x / c.w * 0.5 + 0.5) * RIG_W;
+        let py = (0.5 - c.y / c.w * 0.5) * RIG_H;
+        ([px, py], c.w)
+    }
+
+    fn rig(eye: glam::Vec3) -> Rig {
+        use glam::{Mat4, Vec3};
+        let centre = Vec3::new(0.0, BODY_HALF, 0.0);
+        let proj = Mat4::perspective_rh(60f32.to_radians(), RIG_W / RIG_H, 1.0, 20_000.0);
+        let vp = proj * Mat4::look_at_rh(eye, centre, Vec3::Y);
+        let (focus_px, focus_z) = project(vp, centre);
+        let (feet_px, _) = project(vp, Vec3::ZERO);
+        let radius = radius_px(focus_z, view_proj_scale_y(&vp.to_cols_array()), RIG_H);
+        Rig {
+            vp,
+            focus_px,
+            focus_z,
+            feet_px,
+            axis: lift_axis(feet_px, focus_px),
+            radius,
+        }
+    }
+
+    fn rig_keep(r: &Rig, p: glam::Vec3) -> f32 {
+        let (px, z) = project(r.vp, p);
+        keep_probability(
+            px,
+            z,
+            r.focus_px,
+            r.focus_z,
+            r.radius,
+            feather_px(r.radius),
+            OCCL_MIN_KEEP,
+            OCCL_DEPTH_MARGIN,
+            1.0,
+            r.feet_px,
+            r.axis,
+        )
+    }
+
+    /// The reported defect: a flat floor between the camera and the
+    /// character - the ground in front of and around their feet - must never
+    /// fade, at any follow-camera pitch. Every sampled floor point is nearer
+    /// the lens than the body centre and most sit inside the fade circle, so
+    /// the depth + circle rule alone dissolved all of them.
+    #[test]
+    fn flat_floor_in_front_of_the_player_never_fades() {
+        use glam::Vec3;
+        for eye in [
+            Vec3::new(0.0, 600.0, 900.0),
+            Vec3::new(0.0, 300.0, 1100.0),
+            Vec3::new(400.0, 900.0, 500.0),
+            Vec3::new(-250.0, 160.0, 800.0),
+        ] {
+            let r = rig(eye);
+            let mut circle_hits = 0;
+            for xi in -12..=12 {
+                for zi in -4..=30 {
+                    let p = Vec3::new(xi as f32 * 25.0, 0.0, zi as f32 * 25.0);
+                    let (px, z) = project(r.vp, p);
+                    let dx = px[0] - r.focus_px[0];
+                    let dy = px[1] - r.focus_px[1];
+                    if z < r.focus_z - OCCL_DEPTH_MARGIN && (dx * dx + dy * dy).sqrt() < r.radius {
+                        circle_hits += 1;
+                    }
+                    assert_eq!(rig_keep(&r, p), 1.0, "eye {eye:?}: floor {p:?} faded");
+                }
+            }
+            // Non-vacuity: the floor really is inside the old fade region.
+            assert!(
+                circle_hits > 20,
+                "eye {eye:?}: only {circle_hits} floor points in range"
+            );
+        }
+    }
+
+    /// The other half: a wall standing between the lens and the character
+    /// still opens around their upper body, and its lower face - below the
+    /// feet line, where nothing of the character can be behind it - stays
+    /// solid rather than dissolving onto the void under the floor.
+    #[test]
+    fn wall_between_camera_and_player_still_fades() {
+        use glam::Vec3;
+        let eye = Vec3::new(0.0, 600.0, 900.0);
+        let r = rig(eye);
+        let wall_z = 300.0;
+        // Where the eye -> head / chest rays cross the wall plane.
+        for target_y in [BODY_HALF, BODY_HALF + 40.0, BODY_HALF * 2.0 - 5.0] {
+            let target = Vec3::new(0.0, target_y, 0.0);
+            let t = (wall_z - eye.z) / (target.z - eye.z);
+            let hit = eye + (target - eye) * t;
+            assert_eq!(
+                rig_keep(&r, hit),
+                OCCL_MIN_KEEP,
+                "wall point {hit:?} hiding the body must fade fully"
+            );
+        }
+        // The wall's foot (on the floor, in front of the character) is
+        // below the feet line on screen: kept.
+        assert_eq!(rig_keep(&r, Vec3::new(0.0, 0.0, wall_z)), 1.0);
     }
 }

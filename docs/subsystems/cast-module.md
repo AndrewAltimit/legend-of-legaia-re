@@ -1071,6 +1071,30 @@ trampoline `0x801F9BA8` picks between them on the caster's queued action id -
 `0x76` to `0x801F798C`, `0x77` to `0x801F6A14`, anything else to the epilogue.
 The port routes on the same two ids.
 
+### Staged records end with their action
+
+Staging every record at once is where the DATA half parts from retail. In the
+module image the records are spawned by the tick body phase by phase, and the
+same tick body is what halts the long-lived ones; the engine's scene has no
+such owner. Ticked alone, roughly half of the band's modules carry at least
+one record that never halts - an emitter loop or a held glow (PROT 0905, 0917,
+0918, the whole evolved / high-summon run 0927..0934, and most of the
+trampoline-reached 0938..0966) - so the scene used to stay up after the cast,
+through every later round, out of the battle and into the next scenes.
+
+Two retail facts bound a record's life. The band leaves `0x70` only on the
+module tick's zero return, i.e. once the module reports its choreography done
+(`0x801E50C8`), and a record's move-VM bytecode lives in the slot-B image,
+which the next cast re-pages. `World::step_battle` therefore retires the
+staged scene when the action SM opens the next action (state `0x00`) - the
+latest point both facts allow, which keeps every finite record's own tail and
+cuts only the loops. The bound is an `inference`; the module code's own halt
+sites are not captured. Cort's Mystic Shield (PROT 0940's `0xAC` arm) is the
+one module effect retail keeps alive across actions, behind `_DAT_8007BD84`;
+the engine stages no visual for it. Everything else in the battle's effect
+state comes down with the actor-pool reset at the mode switch
+([`effect-vm.md`](effect-vm.md#battle-effects-die-with-the-battle)).
+
 ### The trampolines are their own port, and one cell holds six spells
 
 The capture-class arm shape above is a routine in its own right, and **21 of
@@ -1248,6 +1272,16 @@ register with `1` and returns it, and only a terminal arm zeroes it - so a
 phase past a `sltiu` bound still reports busy. PROT 0949's tick is the
 clearest case: its out-of-bound `beqz` at `0x801F6AA4` targets `0x801F758C`,
 one instruction *past* the `move s7, zero` at `0x801F7588`.
+
+The converse matters as much: a terminal arm is **in** range and stores no
+phase, so the walk never reaches the out-of-range hold. PROT 0951's Chaos
+Flare (arm 11, `0x801F76F4`) and Scythe Wind (arm 5, `0x801F801C`) and PROT
+0952's Bloody Horns (arm 6, `0x801F79DC`) each end on the last word of their
+table: they spend the module countdown, test the victim's settle state, then
+clear the busy register and `ctx[+0x0D]` and return without touching
+`ctx[+0x279]` (`0x801F77A0`, `0x801F8138`, `0x801F7AF4`). A port that
+advanced through that arm walked off the table into the hold, and an enemy
+casting any of the three parked the band - and the battle - for good.
 
 #### The four PROT 0955 bodies that write no damage
 

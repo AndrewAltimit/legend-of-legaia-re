@@ -14,8 +14,11 @@
  *     scoring into the persistent point pool;
  *   - the 3D STAGE is the fishing venue's own field scene (the `other1`
  *     bundle: the pond, pier and shore props assembled through the shared
- *     field-scene kernel) with the lead's real field body standing on the
- *     shore, posed by his standing-idle locomotion clip (PROT 0874);
+ *     field-scene kernel) with the party's real field bodies on the shore
+ *     where the overlay's setup seats them (engine-core
+ *     fishing_venue::party_placements: the lead playing his party-bank
+ *     idle, the other two their venue-bank clips), framed through the
+ *     venue camera the same kernel composes (venue_camera_view);
  *   - the HUD layout is the ported overlay draw list
  *     (engine-ui::ui_fishing): the persistent best/points rows, the catch
  *     readouts, the depth/tension/power gauge bars with the retail fill
@@ -23,9 +26,8 @@
  *     traced slide/hold/fade ramps.
  *
  * Approximated (the page's note says so): the fishing sprite page (the HUD
- * glyph atlas) is undecoded, so glyph ids draw as labelled text; the retail
- * camera framing and the angler's shore anchor are fitted against the
- * scene's own bounds; the lure/ripple overlay is drawn as projected 2D
+ * glyph atlas) is undecoded, so glyph ids draw as labelled text; the
+ * lure/ripple overlay is drawn as projected 2D
  * geometry. The LINE is the engine's: `fishing_line_json` hands back
  * retail's packet (the rod end is the rod actor's projected tip, the pair is
  * clipped by the ported FUN_801D56E4, the Gouraud end colours are the
@@ -64,35 +66,45 @@ window.MgFishing = (function () {
 
     /* ------------- the 3D stage ------------- */
 
-    /* Fitted shore anchors, tuned against the assembled venue map. The
-     * `other1` bundle carries TWO pond areas: the fenced fishing deck on
-     * the grassy pond (mountains backdrop, the authored fishing platform)
-     * and the rocky-shore blue pond. Which pond each venue id plays is a
-     * fitted assignment - retail's spot / camera live in runtime globals
-     * (see minigames_fishing_scene.rs). `yaw` spins the angler's rest
-     * facing (-Z) toward the water; facing = (-sin yaw, -cos yaw). */
-    const VENUE_ANCHORS = [
-      { x: 4370, z: 10280, yaw: Math.PI },  /* venue 0: the fenced deck */
-      { x: 6000, z: 8000, yaw: 0 },         /* venue 1: the rocky shore */
-    ];
-
+    /* The shore party and its camera are retail's own: the overlay's setup
+     * spawns three actors on the venue's anchor tile (the lead, the second
+     * member 0x60 to his right, the third 0x60 to his left and 0x40 nearer
+     * the camera), and frames them through the venue camera - behind the
+     * party, looking with them across the water. The seats come from
+     * `fishing_party_json` (engine-core fishing_venue::party_placements) and
+     * the frame from `fishing_venue_vp` (venue_camera_view). A drag hands the
+     * frame to the orbit; dblclick gives it back. */
     function facingOf(anchor) {
       return [-Math.sin(anchor.yaw || 0), -Math.cos(anchor.yaw || 0)];
     }
 
-    /* Re-anchor the angler + camera for a venue (also the initial framing). */
+    /* Re-seat the party + camera for a venue (also the initial framing). */
     function applyVenue(venue) {
       const b = scene;
       if (!b) return;
       b.venue = venue;
-      const a = VENUE_ANCHORS[venue & 1];
-      b.anchor = { x: a.x, z: a.z, yaw: a.yaw,
-                   y: api.fishing_scene_height_at(a.x, a.z) };
+      /* The sky backdrop follows the venue camera (FUN_801D24EC's strip,
+       * engine-core fishing_scene::sky_mesh). */
+      if (b.skyBase >= 0 && api.fishing_sky_positions) {
+        const sp = api.fishing_sky_positions(venue);
+        if (sp.length) {
+          b.base.set(sp, b.skyBase * 3);
+          b.out.set(sp, b.skyBase * 3);
+          b.renderer.updatePositions(b.out);
+        }
+      }
+      let seats = [];
+      try { seats = JSON.parse(api.fishing_party_json(venue)) || []; } catch (_) { seats = []; }
+      for (let i = 0; i < b.members.length; i++) {
+        const s = seats[i];
+        if (!s) continue;
+        b.members[i].anchor = { x: s.x, y: s.y, z: s.z, yaw: s.facing * A2R };
+        b.members[i].rate = s.rate || 16;
+      }
+      const lead = b.members.length ? b.members[0].anchor : { x: 0, y: 0, z: 0, yaw: 0 };
+      b.anchor = Object.assign({}, lead);
       const [fx, fz] = facingOf(b.anchor);
-      /* Camera behind the angler, looking with him across the water: the
-       * orbit centre sits a short way out over the water so the angler stays
-       * in the lower third of the frame. */
-      b.defCam = { yaw: a.yaw, pitch: 0.22, distance: 0.55 };
+      b.defCam = { yaw: lead.yaw, pitch: 0.22, distance: 0.55, orbit: false };
       b.cam = Object.assign({}, b.defCam);
       b.center = [
         b.anchor.x + fx * 700,
@@ -116,36 +128,58 @@ window.MgFishing = (function () {
       };
       if (!env.pos.length) return null;
 
-      const player = info.player ? {
-        pos: api.fishing_player_positions(),
-        uvs: api.fishing_player_uvs(),
-        ct: api.fishing_player_cba_tsb(),
-        idx: api.fishing_player_indices(),
-        oid: api.fishing_player_object_ids(),
-        flat: api.fishing_player_flat_rgba(),
-        parts: api.fishing_player_part_count(),
-      } : null;
-      const dims = api.fishing_player_idle_dims();
-      const idle = (player && dims[0] && dims[1])
-        ? { frames: api.fishing_player_idle_frames(), parts: dims[0], frameCount: dims[1], rate: 8 }
-        : null;
+      /* The shore party, lead first: each member's body + the clip it plays
+       * (the lead his party-bank idle, the other two their venue-bank clips). */
+      const count = api.fishing_party_count ? api.fishing_party_count() : 0;
+      const bodies = [];
+      for (let m = 0; m < count; m++) {
+        const dims = api.fishing_player_idle_dims(m);
+        bodies.push({
+          pos: api.fishing_player_positions(m),
+          uvs: api.fishing_player_uvs(m),
+          ct: api.fishing_player_cba_tsb(m),
+          idx: api.fishing_player_indices(m),
+          oid: api.fishing_player_object_ids(m),
+          flat: api.fishing_player_flat_rgba(m),
+          clip: (dims[0] && dims[1])
+            ? { frames: api.fishing_player_idle_frames(m), parts: dims[0], frameCount: dims[1] }
+            : null,
+        });
+      }
 
-      /* Combined buffer: [player verts][env verts]; only the player half is
-       * re-posed per frame. */
-      const pCount = player ? player.pos.length / 3 : 0;
+      /* Combined buffer: [member verts...][env verts]; only the member spans
+       * are re-posed per frame. */
+      let pCount = 0;
+      for (const bd of bodies) pCount += bd.pos.length / 3;
       const eCount = env.pos.length / 3;
-      const total = pCount + eCount;
+      /* The sky backdrop: retail's screen-space strip as world-space
+       * stand-ins behind the whole venue (engine-core fishing_scene). */
+      const sky = api.fishing_sky_positions ? {
+        pos: api.fishing_sky_positions(0),
+        uvs: api.fishing_sky_uvs(),
+        ct: api.fishing_sky_cba_tsb(),
+        flat: api.fishing_sky_flat_rgba(),
+        idx: api.fishing_sky_indices(),
+      } : null;
+      const sCount = sky && sky.pos.length ? sky.pos.length / 3 : 0;
+      const total = pCount + eCount + sCount;
       const pos = new Float32Array(total * 3);
       const uvs = new Uint8Array(total * 2);
       const ct = new Uint16Array(total * 2);
       const flat = new Uint8Array(total * 4);
       const idxArr = [];
-      if (player) {
-        pos.set(player.pos, 0);
-        uvs.set(player.uvs, 0);
-        ct.set(player.ct, 0);
-        flat.set(player.flat, 0);
-        for (const ix of player.idx) idxArr.push(ix);
+      const members = [];
+      let base = 0;
+      for (const bd of bodies) {
+        const n = bd.pos.length / 3;
+        pos.set(bd.pos, base * 3);
+        uvs.set(bd.uvs, base * 2);
+        ct.set(bd.ct, base * 2);
+        flat.set(bd.flat, base * 4);
+        for (const ix of bd.idx) idxArr.push(ix + base);
+        members.push({ base, count: n, oid: bd.oid, clip: bd.clip, cursor: 0,
+                       rate: 16, anchor: { x: 0, y: 0, z: 0, yaw: 0 } });
+        base += n;
       }
       pos.set(env.pos, pCount * 3);
       uvs.set(env.uvs, pCount * 2);
@@ -153,6 +187,14 @@ window.MgFishing = (function () {
       if (env.flat.length) flat.set(env.flat, pCount * 4);
       else flat.fill(255, pCount * 4);
       for (const ix of env.idx) idxArr.push(ix + pCount);
+      const skyBase = sCount ? pCount + eCount : -1;
+      if (sCount) {
+        pos.set(sky.pos, skyBase * 3);
+        uvs.set(sky.uvs, skyBase * 2);
+        ct.set(sky.ct, skyBase * 2);
+        flat.set(sky.flat, skyBase * 4);
+        for (const ix of sky.idx) idxArr.push(ix + skyBase);
+      }
       const idx = new Uint32Array(idxArr);
 
       const renderer = new window.TmdRenderer(glCanvas);
@@ -169,19 +211,17 @@ window.MgFishing = (function () {
         renderer,
         base: pos.slice(),
         out: pos,
-        playerCount: pCount,
-        parts: player ? player.parts : 0,
-        oid: player ? player.oid : null,
-        idle,
-        cursor: 0,
+        members,
+        skyBase,
         anchor: { x: 0, y: 0, z: 0, yaw: 0 },
         venue: -1,
         aabb: info.aabb,
-        defCam: { yaw: 0, pitch: 0.22, distance: 0.55 },
-        cam: { yaw: 0, pitch: 0.22, distance: 0.55 },
+        defCam: { yaw: 0, pitch: 0.22, distance: 0.55, orbit: false },
+        cam: { yaw: 0, pitch: 0.22, distance: 0.55, orbit: false },
         center: [0, 0, 0],
         radius,
         fov: 0.8,
+        vp: null,
       };
       attachOrbit(scene_);
       return scene_;
@@ -198,20 +238,42 @@ window.MgFishing = (function () {
       return !!(api.fishing_pond_ready && api.fishing_pond_ready());
     }
 
-    /* Pose the angler at the shore anchor with his idle clip, then render. */
+    /* The venue camera's view-projection for this canvas, or null while the
+     * visitor orbits. */
+    function engineVp() {
+      const b = scene;
+      if (!b || b.cam.orbit || !api.fishing_venue_vp) return null;
+      const c = glCanvas;
+      const vp = api.fishing_venue_vp(b.venue < 0 ? 0 : b.venue,
+                                      c.width / Math.max(c.height, 1));
+      return vp && vp.length === 16 ? Float32Array.from(vp) : null;
+    }
+
+    /* Pose each member at its seat with its clip, then render. */
     function render3D(st) {
       const b = scene;
       if (!b) return;
-      if (b.idle && b.oid) {
-        const c = b.idle;
-        const frame = Math.min(b.cursor >> 4, c.frameCount - 1);
-        b.cursor += c.rate;
-        if (b.cursor > c.frameCount * 16 - 1) b.cursor = 0;
-        poseWorld(b.out, b.base, b.oid, c, frame, b.anchor);
-        b.renderer.updatePositions(b.out);
+      let posed = false;
+      for (const m of b.members) {
+        if (!m.clip || !m.oid) continue;
+        const c = m.clip;
+        const frame = Math.min(m.cursor >> 4, c.frameCount - 1);
+        m.cursor += m.rate;
+        if (m.cursor > c.frameCount * 16 - 1) m.cursor = 0;
+        poseWorld(b.out, b.base, m.oid, c, frame, m.anchor, m.base);
+        posed = true;
       }
+      if (posed) b.renderer.updatePositions(b.out);
+      b.vp = engineVp();
+      b.renderer.mvpOverride = b.vp;
+      /* The engine projection carries the retail screen-X mirror the orbit
+       * framing does not, so its front faces wind the other way. */
+      const front = b.renderer.cullFrontFace;
+      if (b.vp) b.renderer.cullFrontFace = front === 'ccw' ? 'cw' : 'ccw';
       b.renderer.render(b.cam.yaw, b.cam.pitch, b.cam.distance,
                         0, 0, b.center, b.radius, b.fov);
+      b.renderer.cullFrontFace = front;
+      b.renderer.mvpOverride = null;
     }
 
     function attachOrbit(sc) {
@@ -226,6 +288,7 @@ window.MgFishing = (function () {
       });
       c.addEventListener('pointermove', (e) => {
         if (!drag) return;
+        sc.cam.orbit = true;
         sc.cam.yaw -= (e.clientX - lx) * 0.006;
         sc.cam.pitch = Math.max(-1.0, Math.min(1.2,
           sc.cam.pitch - (e.clientY - ly) * 0.006));
@@ -234,6 +297,7 @@ window.MgFishing = (function () {
       c.addEventListener('dblclick', () => { sc.cam = Object.assign({}, sc.defCam); });
       c.addEventListener('wheel', (e) => {
         e.preventDefault();
+        sc.cam.orbit = true;
         sc.cam.distance = Math.max(0.4, Math.min(6,
           sc.cam.distance * (e.deltaY > 0 ? 1.1 : 0.9)));
       }, { passive: false });
@@ -244,7 +308,7 @@ window.MgFishing = (function () {
     function project(p) {
       const b = scene;
       if (!b) return null;
-      const m = buildMvp(b.cam.yaw, b.cam.pitch, b.cam.distance, 0, 0,
+      const m = b.vp || buildMvp(b.cam.yaw, b.cam.pitch, b.cam.distance, 0, 0,
                          b.center, b.radius, canvas.width, canvas.height, b.fov);
       const x = p[0], y = p[1], z = p[2];
       const cx = m[0] * x + m[4] * y + m[8] * z + m[12];
@@ -584,26 +648,22 @@ window.MgFishing = (function () {
       camInfo() {
         return scene
           ? { cam: Object.assign({}, scene.cam), center: scene.center.slice(),
-              radius: scene.radius, anchor: Object.assign({}, scene.anchor) }
+              radius: scene.radius, anchor: Object.assign({}, scene.anchor),
+              engineCamera: !!scene.vp,
+              party: scene.members.map((m) => Object.assign({}, m.anchor)) }
           : null;
       },
       setCam(c) { if (scene && c) Object.assign(scene.cam, c); },
-      setAnchor(a) {
-        if (!scene || !a) return;
-        Object.assign(scene.anchor, a);
-        if (a.x !== undefined || a.z !== undefined) {
-          scene.anchor.y = api.fishing_scene_height_at(scene.anchor.x, scene.anchor.z);
-        }
-      },
       setCenter(c) { if (scene && c) scene.center = c.slice(); },
     };
   }
 
-  /* Pose `base` (combined buffer, angler in verts [0, oid.length)) through
-   * the idle clip at `frame`, then translate the whole figure to the shore
-   * `anchor` (+ yaw about Y). Same per-object composition as the dance /
-   * baka posers (R . v + T per bone, world transform on top). */
-  function poseWorld(out, base, oids, clip, frame, anchor) {
+  /* Pose one member's span of `base` (combined buffer, the member's verts
+   * at [first, first + oid.length)) through its clip at `frame`, then
+   * translate the figure to its shore seat `anchor` (+ yaw about Y). Same
+   * per-object composition as the dance / baka posers (R . v + T per bone,
+   * world transform on top). */
+  function poseWorld(out, base, oids, clip, frame, anchor, first) {
     const pc = clip.parts, f = clip.frames;
     const ff = ((frame % clip.frameCount) + clip.frameCount) % clip.frameCount;
     const sin = new Float32Array(pc * 3), cos = new Float32Array(pc * 3);
@@ -620,8 +680,9 @@ window.MgFishing = (function () {
     const wy = anchor.yaw || 0;
     const wsin = Math.sin(wy), wcos = Math.cos(wy);
     const n = oids.length;
+    const v0 = first || 0;
     for (let v = 0; v < n; v++) {
-      const vi = v * 3;
+      const vi = (v0 + v) * 3;
       const o = oids[v];
       let x = base[vi], y = base[vi + 1], z = base[vi + 2];
       if (o < pc) {

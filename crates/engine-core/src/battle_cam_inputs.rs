@@ -164,7 +164,13 @@ fn submenu_member(world: &World) -> Option<u8> {
         .as_ref()
         .map(|s| s.actor)
         .or_else(|| b.arts_menu.as_ref().map(|s| s.actor))
-        .or_else(|| b.spell_menu.as_ref().map(|s| s.actor))?;
+        .or_else(|| b.spell_menu.as_ref().map(|s| s.actor))
+        // The item window carries no member of its own; it is the picker of
+        // the member whose ring opened it, which `open_battle_command` left
+        // in `active_actor`. Without this the window fell back to the
+        // un-keyed height, and the close-up - which now re-arms on any change
+        // of its actor - would glide off the member's own height.
+        .or_else(|| b.item_menu.as_ref().map(|_| world.battle_ctx.active_actor))?;
     (m < world.party.party_count).then_some(m)
 }
 
@@ -487,5 +493,39 @@ mod tests {
         ));
         assert_eq!(battle_cam_inputs(&world).phase, BattleCamPhase::Submenu);
         assert_eq!(submenu_member(&world), Some(1), "framed on the member");
+    }
+
+    /// The command phase hands the ring from member to member with no far
+    /// framing between; the live camera has to end on the member now
+    /// commanding, not stay on the first one.
+    #[test]
+    fn the_command_camera_frames_each_commanding_member() {
+        let mut world = World {
+            mode: SceneMode::Battle,
+            ..World::default()
+        };
+        world.party.party_count = 3;
+        if world.actors.len() < 8 {
+            world.actors.resize_with(8, Default::default);
+        }
+        for (slot, x) in [(0usize, 0i16), (1, -700), (2, 700)] {
+            let a = &mut world.actors[slot];
+            a.move_state.world_x = x;
+            a.move_state.world_z = -800;
+        }
+        for member in 0u8..3 {
+            world.battle_ctx.active_actor = member;
+            world.battle.command = Some(BattleCommandSession::new(member, member));
+            for _ in 0..16 {
+                world.clock.display_frames += 2;
+                world.tick_battle_camera();
+            }
+            let want = f32::from(world.actors[usize::from(member)].move_state.world_x);
+            assert_eq!(
+                world.battle_cam_pose().focus[0],
+                want,
+                "member {member}'s ring frames member {member}"
+            );
+        }
     }
 }

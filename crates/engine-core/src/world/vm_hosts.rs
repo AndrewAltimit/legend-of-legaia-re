@@ -1778,9 +1778,19 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// **negated** shorts on scene entry. `jou`'s entry script installs the
     /// linear ramp `i * 0x20` here and then sets rungs `4..` oscillating -
     /// the undulating organic floor.
+    ///
+    /// Both stores are in the arm's one loop (`0x801E24F8..0x801E2538`:
+    /// `sh v0, 2(MAN + i*2)` then `sh -v0, 0x48(0x1F800314 + i*2)`), so the
+    /// MAN-header ladder the camera composer swaps in around its floor
+    /// sample follows the install too. Only the oscillators write the live
+    /// rungs alone. Updating the live rungs without the mirror left the
+    /// follow camera framing `concnow`'s pre-install ladder while the player
+    /// walked the installed one - the eye sank under the raised floor.
     fn op4c_n9_sub_e_table_copy(&mut self, words: [i16; 16]) {
-        for (rung, w) in self.world.terrain.floor_height_lut.iter_mut().zip(words) {
-            *rung = w.wrapping_neg();
+        let terrain = &mut self.world.terrain;
+        for (i, w) in words.into_iter().enumerate() {
+            terrain.floor_height_lut[i] = w.wrapping_neg();
+            terrain.floor_height_lut_static[i] = w.wrapping_neg();
         }
     }
 
@@ -2459,6 +2469,35 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// REF: FUN_801DE840 (the nibble-C sub-`0xE` arm)
     fn op4c_n_c_sub_e_set_b6ac(&mut self, value: u8) {
         self.world.locomotion.clip_override = u32::from(value);
+    }
+
+    /// Op `4C CA <slot> <u16>` - store into the script-counter slot table
+    /// `0x801C6460` (`sh v0, 0(v1)` at `0x801E2954`). See
+    /// [`crate::world::FieldVmState::slot_table`].
+    ///
+    /// REF: FUN_801DE840 (the nibble-C sub-`0xA` arm)
+    fn op4c_n_c_sub_a_set_slot(&mut self, slot: u8, value: i16) {
+        self.world.field_vm.slot_table[usize::from(slot)] = value;
+    }
+
+    /// Op `4C CB` / `4C CC <slot> <u16>` - add to / subtract from a slot
+    /// (`lhu` / `addu` or `subu` / `sh` at `0x801E2988..0x801E29DC`): a
+    /// 16-bit wrapping update. The VM has already substituted the frame tick
+    /// for a `0xFFFF` literal.
+    ///
+    /// REF: FUN_801DE840 (the nibble-C sub-`0xB` / sub-`0xC` arms)
+    fn op4c_n_c_sub_bc_adjust_slot(&mut self, slot: u8, delta: i16, subtract: bool) {
+        let cell = &mut self.world.field_vm.slot_table[usize::from(slot)];
+        *cell = if subtract {
+            cell.wrapping_sub(delta)
+        } else {
+            cell.wrapping_add(delta)
+        };
+    }
+
+    /// Op `0x4E` sub-ops `5..=8` - the signed slot read (`0x801E0B0C`).
+    fn slot_table_read(&self, slot: u8) -> i16 {
+        self.world.field_vm.slot_table[usize::from(slot)]
     }
 
     /// Op `4C C1` - re-derive every fog region's enable byte from its story

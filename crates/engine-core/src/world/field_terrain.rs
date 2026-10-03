@@ -50,16 +50,28 @@ pub struct FieldTerrain {
     /// [`crate::world::World::sample_field_floor_height`] (the port of `FUN_80019278`). All
     /// zero until a field scene supplies it.
     pub floor_height_lut: [i16; 16],
-    /// The **pristine** copy of the same ladder, as the scene's MAN header
-    /// carries it (`*(_DAT_8007B898) + 2`, sixteen negated `short`s). The
-    /// live rungs above are what op `0x4C` nibble-9 sub-`0..2` oscillators
-    /// and sub-`E`'s whole-ladder install write; this copy is never
-    /// rewritten after scene entry, and it is what the camera composer
+    /// The **MAN-header** copy of the same ladder (`*(_DAT_8007B898) + 2`,
+    /// sixteen negated `short`s). The live rungs above are what op `0x4C`
+    /// nibble-9 sub-`0..2` oscillators write; this copy is not. Sub-`E`'s
+    /// whole-ladder install writes both (`0x801E24F8..0x801E2538`), so this
+    /// is the scene's *installed* ladder without the oscillation. It is
+    /// what the camera composer
     /// samples the floor through - `FUN_801DAB90` swaps it into scratchpad
     /// `0x1F80035C` around its `FUN_80019278` call and restores the live
     /// rungs afterwards, so a scripted floor bob never shakes the camera.
     /// See [`crate::world::World::sample_field_floor_height_static`].
     pub floor_height_lut_static: [i16; 16],
+    /// The ladder the scene-init sweep `FUN_8003A55C` spawned the **bound**
+    /// placed objects against (scratchpad frame). A placed object is an actor
+    /// whose Y is `ladder[nibble] + y_off` stored once into `+0x16` at spawn
+    /// (`0x8003A62C..0x8003A64C`); its template (`0x80073E70`: handler
+    /// `FUN_8003BC08`, flags `0x8082`) carries neither height-arm bit, so the
+    /// per-frame driver never re-samples it, and the per-cell decoration
+    /// sweep that does re-read the ladder skips every `flags & 4` record
+    /// (`0x801F7580..0x801F758C`). So a ladder the scene's script installs
+    /// after entry moves the terrain under a bound object, not the object.
+    /// See [`crate::world::World::placed_floor_lut`].
+    pub placed_spawn_lut: [i16; 16],
     /// The `.MAP` **object-grid** cell words (`+0x8000`, one `u16` per tile,
     /// `0x80 x 0x80`). [`crate::world::World::sample_field_floor_height`] tests each tile's
     /// [`crate::world::CELL_ELEVATION_OVERRIDE`] (`0x800`) bit to pick the
@@ -148,6 +160,7 @@ impl FieldTerrain {
             zone_record: None,
             floor_height_lut: [0i16; 16],
             floor_height_lut_static: [0i16; 16],
+            placed_spawn_lut: [0i16; 16],
             object_cells: Vec::new(),
             floor_cell_bit: legaia_asset::field_objects::CELL_WALK_VISIBLE,
             elevation_overrides: Vec::new(),

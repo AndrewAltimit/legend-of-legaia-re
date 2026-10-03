@@ -525,10 +525,12 @@ fn the_slot_machines_3d_scene_decodes_and_projects_onto_the_retail_frame() {
     assert_eq!(arts[3], arts[4], "the two ±336 medallions share a palette");
 
     // The projection must land the scene on the retail 640x240 frame where a
-    // capture at the machine has it. These targets were measured off that frame
-    // and none of them entered the fit (which was solved on the lamps alone).
+    // capture at the machine has it. The lamp centres are the midpoints of
+    // each lamp's dark outline rows in the `minigame_slot_machine` display
+    // crop (83..92, 110..119, 137..146); the projection is the GTE register
+    // file captured in the same state, so none of these entered it.
     let proj = |x: i32, y: i32, z: i32| sc::project(x, y, z);
-    for (i, want_y) in [(0usize, 91.5f32), (1, 118.5), (2, 145.5)] {
+    for (i, want_y) in [(0usize, 87.5f32), (1, 114.5), (2, 141.5)] {
         let p = &lamps[i]["pos"];
         let (_, sy) = proj(
             p[0].as_i64().unwrap() as i32,

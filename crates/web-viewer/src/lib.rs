@@ -15,6 +15,7 @@ mod catalog;
 mod character;
 pub mod disc;
 pub mod equipment_view;
+mod field_actors;
 pub mod field_npc;
 pub mod field_scene;
 pub mod fog_lut;

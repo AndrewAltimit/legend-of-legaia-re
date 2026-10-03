@@ -211,6 +211,14 @@ impl World {
                 self.clear_action_stream(slot);
                 self.battle_ctx.queued_action = 3;
                 self.battle_ctx.action_state = ActionState::Begin.as_byte();
+                // The turn picker's monster arm runs the dead-target redirect
+                // straight after the AI picker, unconditionally
+                // (`jal 0x801E9FD4` then `jal 0x801DB124` at `0x801DAF48..
+                // 0x801DAF50`): a strike aimed at a party member who has
+                // fallen since the pick re-rolls a living one, so the
+                // approach never walks at a corpse (the short step `0x19`
+                // has no timeout).
+                let target = self.redirect_dead_battle_target(target, 3, 0);
                 if let Some(a) = self.actors.get_mut(slot as usize) {
                     a.battle.active_target = target;
                     a.battle.action_category = 3;
@@ -1125,7 +1133,7 @@ impl World {
     /// `FUN_801E9FD4` and `FUN_801E7320`. `None` only when the whole party is
     /// down. The deterministic LCG cycles every value, so the re-roll loop
     /// always terminates once one member is alive.
-    fn random_living_party_member(&mut self, party_count: u8) -> Option<u8> {
+    pub(in crate::world) fn random_living_party_member(&mut self, party_count: u8) -> Option<u8> {
         let pc = party_count.max(1);
         let any_alive = (0..pc).any(|i| {
             self.actors

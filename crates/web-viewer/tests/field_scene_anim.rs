@@ -1,11 +1,12 @@
 //! Disc-gated: the browser field-scene animation runner
-//! (`field_scene::build_field_scene_anim` / `FieldSceneAnim::tick`) animates
-//! the two mechanism families end-to-end against the real disc, exactly as
-//! the site page drives it (init after assembly, one vsync per rendered
-//! frame, VRAM re-upload on change).
+//! (`field_scene::build_field_scene_anim` + `build_field_scene_live` /
+//! `tick_field_scene_vsync`) animates end-to-end against the real disc,
+//! exactly as the site page drives it (init after assembly, one vsync per
+//! elapsed retail vsync, VRAM re-upload on change), and animates what the
+//! play page animates.
 //!
-//!  - `jou`: no walker table, but the ambient move-VM tree spawns (the
-//!    pulsating-flesh palette cyclers) and ticking rewrites VRAM texels.
+//!  - `jou`: no walker table, but the live scene's ambient move-VM tree (the
+//!    pulsating-flesh palette cyclers) rewrites VRAM texels.
 //!  - `garmel`: a 1-entry walker table (water shimmer) whose `MoveImage`
 //!    fires change the dest CLUT cell.
 //!
@@ -15,9 +16,12 @@
 
 use legaia_engine_core::scene::ProtIndex;
 use legaia_web_viewer::disc::{extract_cdname_txt, extract_prot_dat};
-use legaia_web_viewer::field_scene::{build_field_scene, build_field_scene_anim};
+use legaia_web_viewer::field_scene::{
+    build_field_scene, build_field_scene_live, tick_field_scene_vsync,
+};
 use std::env;
 use std::fs;
+use std::sync::Arc;
 
 fn index() -> Option<ProtIndex> {
     let disc_path = env::var_os("LEGAIA_DISC_BIN")?;
@@ -33,35 +37,159 @@ fn jou_and_garmel_animate_in_the_viewer_or_skip() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
         return;
     };
+    let index = Arc::new(index);
 
-    // jou: ambient move-VM tree only.
+    // jou: the live scene's ambient move-VM tree only.
     let mut pack = build_field_scene(&index, "jou").expect("build jou");
-    let mut anim = build_field_scene_anim(&index, &mut pack).expect("jou has animation sources");
-    let (walkers, ambient) = anim.status();
-    assert_eq!(walkers, 0, "jou has no walker table");
+    build_field_scene_live(index.clone(), &mut pack);
+    assert!(pack.anim.is_none(), "jou has no walker table");
+    let ambient = pack
+        .live
+        .as_ref()
+        .expect("jou runs live")
+        .host
+        .world
+        .ambient
+        .fx
+        .len();
     assert!(ambient >= 20, "jou ambient fan-out ({ambient})");
-    let before = pack.res.vram.as_bytes().to_vec();
+    let before = pack.display_vram().as_bytes().to_vec();
     let mut wrote = false;
     for _ in 0..16 {
-        wrote |= anim.tick(1, &mut pack.res.vram);
+        wrote |= tick_field_scene_vsync(&mut pack);
     }
     assert!(wrote, "jou ambient tick reports VRAM changes");
     assert_ne!(
         before,
-        pack.res.vram.as_bytes(),
+        pack.display_vram().as_bytes(),
         "jou VRAM texels actually changed"
     );
 
     // garmel: 1-entry walker table.
     let mut pack = build_field_scene(&index, "garmel").expect("build garmel");
-    let mut anim = build_field_scene_anim(&index, &mut pack).expect("garmel has animation sources");
-    let (walkers, _) = anim.status();
+    build_field_scene_live(index.clone(), &mut pack);
+    let walkers = pack.anim.as_ref().expect("garmel walker").walker_entries();
     assert_eq!(walkers, 1, "garmel walker entries");
     let mut wrote = false;
     for _ in 0..32 {
-        wrote |= anim.tick(1, &mut pack.res.vram);
+        wrote |= tick_field_scene_vsync(&mut pack);
     }
     assert!(wrote, "garmel walker fires MoveImage copies");
+}
+
+/// Host-drift gate for the map viewer: the viewer and the play page run one
+/// scene side by side, and every animated quantity the play page reads off
+/// its world - the floor-wave offsets of the terrain + placed draws, the
+/// ground under the live ladder, each placed prop's pose key, and the field
+/// VRAM the CLUT walker / ambient tree / scripted effects write - comes out
+/// identical tick for tick. A viewer that bakes any of them (or runs a
+/// second animation path) diverges here.
+///
+/// - `concnow`: the entry script installs a new ladder and keeps it moving.
+/// - `jouina`: the travelling ground wave.
+/// - `town01`: the windmill's clip.
+/// - `jou`: the ambient palette cyclers in VRAM.
+#[test]
+fn the_map_viewer_animates_what_the_play_page_animates_or_skip() {
+    let Some(disc_path) = env::var_os("LEGAIA_DISC_BIN") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    };
+    let bytes = fs::read(&disc_path).expect("disc image");
+    let index = Arc::new(index().expect("index"));
+    for (scene, ticks) in [
+        ("concnow", 240),
+        ("jouina", 120),
+        ("town01", 100),
+        ("jou", 64),
+    ] {
+        let mut rt = legaia_web_viewer::runtime::LegaiaRuntime::new();
+        rt.load_disc(bytes.clone(), String::new())
+            .expect("load disc");
+        rt.enter_field(scene).expect("enter");
+
+        let mut pack = build_field_scene(&index, scene).expect("build");
+        build_field_scene_live(index.clone(), &mut pack);
+        assert!(pack.live.is_some(), "{scene}: the viewer runs it live");
+
+        // The two hosts' VRAM differs before any tick (the play page also
+        // carries the party / effect pages the map has no use for), so the
+        // comparand is what the animation WROTE: the same texels, to the
+        // same values.
+        let (v0, p0) = (
+            pack.display_vram().as_bytes().to_vec(),
+            rt.field_vram_bytes(),
+        );
+        let mut moved = (false, 0usize, false);
+        let mut moved_actors = false;
+        assert!(
+            !pack.actor_frame_state().0.is_empty() || scene == "jou",
+            "{scene}: the viewer catalogues the scene's actors"
+        );
+        for t in 0..ticks {
+            rt.tick_frame().expect("tick");
+            tick_field_scene_vsync(&mut pack);
+            let (wv, wp) = (pack.floor_wave_offsets(), rt.field_floor_wave_offsets());
+            assert_eq!(wv, wp, "{scene} t{t}: floor-wave offsets");
+            moved.0 |= wv.iter().any(|&o| o != 0.0);
+            let (gv, gp) = (
+                pack.ground_live_positions(),
+                rt.field_ground_live_positions(),
+            );
+            assert_eq!(gv, gp, "{scene} t{t}: ground under the live ladder");
+            moved.1 += usize::from(!gv.is_empty());
+            // The actor layer: positions / headings / heights and each clip's
+            // pose key + re-target generation, entry by entry.
+            let (at, ac) = pack.actor_frame_state();
+            assert_eq!(
+                at,
+                rt.play_npc_transforms(),
+                "{scene} t{t}: actor transforms"
+            );
+            assert_eq!(
+                ac,
+                rt.play_npc_clip_states(),
+                "{scene} t{t}: actor clip states"
+            );
+            moved_actors |= ac.chunks(2).any(|c| c[0] > 0);
+            let (fv, fp) = (pack.placement_frames(), rt.field_placement_frames());
+            assert_eq!(fv, fp, "{scene} t{t}: placed-prop pose keys");
+            moved.2 |= fv.iter().any(|&k| k > 0);
+        }
+        let (v1, p1) = (pack.display_vram().as_bytes(), rt.field_vram_bytes());
+        let mut written = 0usize;
+        for i in 0..v1.len() {
+            let (vw, pw) = (v0[i] != v1[i], p0[i] != p1[i]);
+            assert!(
+                vw == pw && (!vw || v1[i] == p1[i]),
+                "{scene}: VRAM byte {i} (row {}, x {}) after {ticks} ticks: \
+                 viewer {:#04x}->{:#04x}, play {:#04x}->{:#04x}",
+                i / 2048,
+                (i % 2048) / 2,
+                v0[i],
+                v1[i],
+                p0[i],
+                p1[i]
+            );
+            written += usize::from(vw);
+        }
+        if scene == "jou" {
+            assert!(written > 0, "jou's palette cyclers write VRAM");
+        }
+        eprintln!(
+            "[ran] {scene}: wave={} ground={} props={}",
+            moved.0, moved.1, moved.2
+        );
+        match scene {
+            "concnow" => assert!(moved.0 && moved.1 > 1, "concnow's ladder moves"),
+            "jouina" => assert!(moved.1 > 1, "jouina's ground pulses"),
+            "town01" => assert!(
+                moved.2 && moved_actors,
+                "town01's windmill turns and its villagers animate"
+            ),
+            _ => {}
+        }
+    }
 }
 
 /// The **play** page's path: `LegaiaRuntime::tick_frame` drains the same two

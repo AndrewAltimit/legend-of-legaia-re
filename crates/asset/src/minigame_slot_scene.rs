@@ -41,19 +41,13 @@
 //!
 //! ## Projection
 //!
-//! [`project`] is the screen mapping, on the retail 640x240 framebuffer. Its
-//! **shape** is derived (a perspective divide of a view-space point whose x:y
-//! scale ratio is exactly 2, read out of the camera matrix); its four
-//! **scalars** are *fitted* to a retail framebuffer captured at the machine
-//! (the `minigame_slot_machine` capture), because the GTE control words
-//! (`OFX` / `OFY` / `H`) do not live in main RAM and so are not in the save
-//! state.
-//!
-//! The fit is over-determined and independently checked: it was solved on the
-//! five payline lamps alone, and then *predicted* - to about a pixel each - the
-//! on-screen rect of every other element, none of which entered the fit: the
-//! medallion column, the marquee panel, the two mascots, the three reel windows,
-//! the reel-stop pedestals, and the dot-matrix grid.
+//! [`project`] is the screen mapping, on the retail 640x240 framebuffer: the
+//! GTE's own, with the register file read out of the `minigame_slot_machine`
+//! mednafen state (its `GTE` section carries COP2) - rotation
+//! `diag(6, 3, 3)`, translation `(-1440, 20, 24480)`, `OFX 320`, `OFY 114`,
+//! `H 1024` ([`GTE_OFX`] and siblings). An earlier projection fitted to the
+//! same frame sat `3.6` rows low; its constants ([`PROJ_OFX`] and siblings)
+//! remain only for the exporters that still emit them.
 //!
 //! ## Provenance
 //!
@@ -209,21 +203,15 @@ pub fn cos_4096(angle: i32) -> i32 {
 /// Model-space `y` of the reel cylinder at `angle` (`FUN_801d0fa8`).
 // PORT: FUN_801d0fa8 (reel cylinder y: sin(a) * -0x249 >> 12)
 //
-// The gap here is a *renderer*, not a caller, so this is deliberately not
-// an inert-port disclosure - `asset slot-scene` calls it from `fn main` to print the
-// fixed-point table. What no Rust host does is *draw* the slot cabinet. The
-// browser play page is the only host that renders the machine as the 3D scene
-// it is, and it does the cylinder maths in JavaScript: `slot_marquee_json`
-// exports this module's *constants* (REEL_Y_RADIUS, REEL_Z_SHIFT,
-// REEL_SHADE_*, ANGLE_FULL, PROJ_*) and `slotDrawReels` in
-// site/_content/minigames.html recomputes y / z / shade from them. The native
-// window has no cabinet at all - its slot HUD is three lines of text. So this
-// is reimplemented rather than unused, and the reimplementation is NOT
-// equivalent: the JS works in floats, while this carries retail's fixed-point
-// round-toward-zero biases (`(v + 0xFFF) >> 12`, `(v + 7) >> 3`). The CLI table
-// is what lets the two be compared instead of assumed equal; a renderer wants a
-// Rust-side reel vertex emitter, either in the native window or by the web page
-// taking its vertices from WASM.
+// The native window draws the cylinders through this kernel
+// (`engine-ui::ui_slot_cabinet::slot_cabinet_prims`, from the play-window's
+// slot-machine frame). The browser pages still do the cylinder maths in
+// JavaScript: `slot_marquee_json` exports this module's *constants*
+// (REEL_Y_RADIUS, REEL_Z_SHIFT, REEL_SHADE_*, ANGLE_FULL, PROJ_*) and
+// `slotDrawReels` in site/_content/minigames.html recomputes y / z / shade in
+// floats, without retail's fixed-point round-toward-zero biases
+// (`(v + 0xFFF) >> 12`, `(v + 7) >> 3`). `asset slot-scene` prints the
+// fixed-point table so the two can be compared instead of assumed equal.
 pub fn reel_y(angle: i32) -> i32 {
     let v = sin_4096(angle) * -REEL_Y_RADIUS;
     // Retail biases negatives before the arithmetic shift (round toward zero).
@@ -232,8 +220,8 @@ pub fn reel_y(angle: i32) -> i32 {
 
 /// Model-space `z` of the reel cylinder at `angle` (`FUN_801d0fa8`).
 // PORT: FUN_801d0fa8 (reel cylinder z: cos(a) >> 3)
-// Same renderer gap as `reel_y` above, and undisclosed for the same reason: `asset slot-scene` calls it from `fn main`, while the only
-// host that *draws* the cabinet recomputes this in floating-point JavaScript.
+// Drawn natively through `ui_slot_cabinet`; the browser pages recompute it
+// in floating-point JavaScript (see `reel_y`).
 pub fn reel_z(angle: i32) -> i32 {
     let v = cos_4096(angle);
     if v < 0 {
@@ -246,8 +234,8 @@ pub fn reel_z(angle: i32) -> i32 {
 /// The depth-cued gouraud shade of a reel vertex at model-space `z`, clamped to
 /// `0 ..= 0xB4` (`FUN_801d0fa8`). Feed it to a `texel * shade / 128` blend.
 // PORT: FUN_801d0fa8 (reel depth-cue shade)
-// Same renderer gap as `reel_y` above, and undisclosed for the same reason: `asset slot-scene` calls it from `fn main`, while the only
-// host that *draws* the cabinet recomputes this in floating-point JavaScript.
+// Drawn natively through `ui_slot_cabinet`; the browser pages recompute it
+// in floating-point JavaScript (see `reel_y`).
 pub fn reel_shade(z: i32) -> i32 {
     let v = (z + REEL_SHADE_Z_BIAS) * REEL_SHADE_Z_GAIN;
     let v = if v < 0 { (v + 0x1FF) >> 9 } else { v >> 9 };
@@ -289,28 +277,36 @@ pub const LAMP_HALF: (i32, i32) = (0xB4, 0xA0);
 pub const PEDESTAL_PAGE: usize = 2;
 /// Pedestal cell size (32x32).
 pub const PEDESTAL_SIZE: u8 = 32;
-/// `V` of pedestal `r`'s cell: `PEDESTAL_V0 + r * PEDESTAL_V_STEP`. Both the
-/// spinning and the stopped cell sit on this row - the stop branch of
-/// `FUN_801d08e4` overrides **only the `U`s**, which is exactly the trap: the
-/// pedestals stay on their own row and slide left to the "taken" column.
+/// `V` of pedestal `r`'s cell: `PEDESTAL_V0 + r * PEDESTAL_V_STEP`. Both
+/// cells sit on this row - the open branch of `FUN_801d08e4` overrides **only
+/// the `U`s**, so a pedestal slides along its own row rather than changing row.
 pub const PEDESTAL_V0: u8 = 0x80;
 /// Row step of the pedestal cell, per reel.
 pub const PEDESTAL_V_STEP: u8 = 0x20;
-/// `U` of the pedestal cell while the reel spins.
-pub const PEDESTAL_U_SPINNING: u8 = 0x60;
-/// `U` of the pedestal cell once the reel is stopped.
-pub const PEDESTAL_U_STOPPED: u8 = 0x00;
-/// CLUT base while spinning (`+ reel`).
-pub const PEDESTAL_CLUT_SPINNING: u16 = 0x7B03;
-/// CLUT base once stopped (`+ reel`).
-pub const PEDESTAL_CLUT_STOPPED: u16 = 0x7B06;
+/// `U` of the pedestal cell while its stop is **not** open: before a spin,
+/// and once that reel's stop has been taken.
+pub const PEDESTAL_U_IDLE: u8 = 0x60;
+/// `U` of the pedestal cell while its stop is open.
+pub const PEDESTAL_U_OPEN: u8 = 0x00;
+/// CLUT base of the idle cell (`+ reel`).
+pub const PEDESTAL_CLUT_IDLE: u16 = 0x7B03;
+/// CLUT base of the open cell (`+ reel`).
+pub const PEDESTAL_CLUT_OPEN: u16 = 0x7B06;
 
 /// The cell pedestal `reel` draws, as `(u, v, w, h)`.
-pub fn pedestal_cell(reel: usize, stopped: bool) -> (u8, u8, u8, u8) {
-    let u = if stopped {
-        PEDESTAL_U_STOPPED
+///
+/// `open` is the reel's "stop still open" flag `DAT_801d3d00[reel]`: the bet
+/// charge sets all three to `1` (`0x801CF4DC..0x801CF4E4`), a Stop press on
+/// that reel clears it (`FUN_801d2114`: `DAT_801d3d00[reel] = 0`), and the
+/// state-3 Stop tests accept a press only while it is set
+/// (`0x801CF724`). So the swapped cell (`u = 0`, CLUT `0x7B06 + reel`) is the
+/// "press now" pedestal of a still-spinning reel, and a taken stop returns to
+/// the idle cell.
+pub fn pedestal_cell(reel: usize, open: bool) -> (u8, u8, u8, u8) {
+    let u = if open {
+        PEDESTAL_U_OPEN
     } else {
-        PEDESTAL_U_SPINNING
+        PEDESTAL_U_IDLE
     };
     (
         u,
@@ -451,44 +447,82 @@ pub const SCREEN_W: f32 = 640.0;
 /// Height of the retail framebuffer.
 pub const SCREEN_H: f32 = 240.0;
 
-/// Screen x of the machine's model-space origin. **Fitted.** The machine sits
-/// left of centre to clear the coin panel the HUD rasteriser draws at x 560.
+/// The GTE's screen offset `OFX` while the machine draws, in pixels (the
+/// control word reads `0x01400000`, 16.16). **Captured**: the
+/// `minigame_slot_machine` mednafen state carries the COP2 register file in
+/// its `GTE` section, and every value below is read from it.
+pub const GTE_OFX: f32 = 320.0;
+/// The GTE's screen offset `OFY` (`0x00720000`).
+pub const GTE_OFY: f32 = 114.0;
+/// The GTE's projection-plane distance `H`.
+pub const GTE_H: f32 = 1024.0;
+/// The rotation matrix's diagonal, `diag(0x6000, 0x3000, 0x3000)` in 4.12 -
+/// the scale the init writes to `_DAT_8007bf10`. The 2:1 x:y ratio is the
+/// 640-wide hi-res mode's pixel aspect.
+pub const GTE_SCALE: [i32; 3] = [6, 3, 3];
+/// The translation vector `TR` - `(-1440, 20, 24480)`.
+pub const GTE_TR: [i32; 3] = [-1440, 20, 24480];
+
+/// The fitted screen x of the model origin the projection used before the
+/// GTE registers were read. Kept for the exporters that still emit the fitted
+/// parameters (`asset slot-art`, the VRChat kit); [`project`] does not use it.
+/// The fit reproduced x to a pixel but sat `3.6` rows low.
 pub const PROJ_OFX: f32 = 253.0;
-/// Screen y of the machine's model-space origin. **Fitted.**
+/// The fitted screen y of the model origin - see [`PROJ_OFX`].
 pub const PROJ_OFY: f32 = 118.5;
-/// View-space depth offset. **Fitted** from the ratio of the on-screen scale at
-/// `z = -800` (the glass) to that at `z = -512` (the reel's payline face).
+/// The fitted view-depth offset - see [`PROJ_OFX`].
 pub const PROJ_Z0: f32 = 9324.0;
-/// Screen x scale at `z = 0`. **Fitted.**
+/// The fitted x scale at `z = 0` - see [`PROJ_OFX`].
 pub const PROJ_SX0: f32 = 0.2547;
-/// x:y scale ratio. **Derived**, not fitted: the camera matrix the init writes
-/// to `_DAT_8007bf10` is `diag(6, 3, 3)`.
+/// x:y scale ratio of [`GTE_SCALE`].
 pub const PROJ_ASPECT: f32 = 2.0;
-/// The camera matrix's x scale. A billboard's view-space half-extent divides by
-/// this to reach screen pixels: `FUN_800195a8` builds the corners *after* the
-/// matrix multiply, so they carry no model scale.
+/// The camera matrix's x scale ([`GTE_SCALE`]`[0]`). A billboard's view-space
+/// half-extent carries no model scale: `FUN_800195a8` builds the corners
+/// *after* the matrix multiply.
 pub const PROJ_X_SCALE: f32 = 6.0;
 
-/// Screen x-scale at model-space depth `z` (`-z` is toward the viewer).
-pub fn view_scale(z: i32) -> f32 {
-    PROJ_SX0 * PROJ_Z0 / (PROJ_Z0 + z as f32)
-}
-
-/// Project a model-space point onto the retail 640x240 framebuffer.
-pub fn project(x: i32, y: i32, z: i32) -> (f32, f32) {
-    let s = view_scale(z);
+/// A model-space point in view space: `MVMVA` with the machine's camera
+/// (`R * v >> 12 + TR`, `cop2 0x480012` in `FUN_8003D344`).
+pub fn view_point(x: i32, y: i32, z: i32) -> (f32, f32, f32) {
     (
-        PROJ_OFX + s * x as f32,
-        PROJ_OFY + (s / PROJ_ASPECT) * y as f32,
+        (GTE_SCALE[0] * x + GTE_TR[0]) as f32,
+        (GTE_SCALE[1] * y + GTE_TR[1]) as f32,
+        (GTE_SCALE[2] * z + GTE_TR[2]) as f32,
     )
 }
 
+/// View depth of model-space depth `z` (`-z` is toward the viewer).
+pub fn view_depth(z: i32) -> f32 {
+    (GTE_SCALE[2] * z + GTE_TR[2]) as f32
+}
+
+/// Screen x-scale at model-space depth `z`.
+pub fn view_scale(z: i32) -> f32 {
+    GTE_SCALE[0] as f32 * GTE_H / view_depth(z)
+}
+
+/// Project a view-space point the way `RTPS` does: `OF + H * v / vz`.
+pub fn project_view(vx: f32, vy: f32, vz: f32) -> (f32, f32) {
+    (GTE_OFX + GTE_H * vx / vz, GTE_OFY + GTE_H * vy / vz)
+}
+
+/// Project a model-space point onto the retail 640x240 framebuffer through
+/// the captured camera - the transform the cabinet's actor renderer, the
+/// reel renderer (`RotTransPers4` under the camera matrix) and the billboard
+/// centres (`MVMVA`, then `RTPS` under an identity matrix) all reduce to.
+pub fn project(x: i32, y: i32, z: i32) -> (f32, f32) {
+    let (vx, vy, vz) = view_point(x, y, z);
+    project_view(vx, vy, vz)
+}
+
 /// Screen half-extent of a billboard whose view-space half-extent is `(hw, hh)`
-/// and whose centre is at depth `z`. Both axes divide by the same `H / vz`, so a
-/// billboard is *not* aspect-corrected: a 2:1 view-space extent is a 2:1 screen
-/// extent, which on the half-width hi-res pixel grid renders square.
+/// and whose centre is at depth `z`. `FUN_800195a8` loads an identity matrix
+/// with a zero translation (`FUN_8003D178`) before projecting the corners, so
+/// both axes divide by the same `H / vz`: a billboard is *not*
+/// aspect-corrected, and a 2:1 view-space extent renders square on the
+/// half-width hi-res pixel grid.
 pub fn billboard_half(hw: i32, hh: i32, z: i32) -> (f32, f32) {
-    let k = view_scale(z) / PROJ_X_SCALE;
+    let k = GTE_H / view_depth(z);
     (hw as f32 * k, hh as f32 * k)
 }
 
@@ -696,16 +730,11 @@ pub fn parse_messages(overlay: &[u8], page3: &[u8], page3_w: usize) -> Result<Ve
 /// message stays unlit, which is what makes the message scroll in and out.
 // PORT: FUN_801d069c (marquee dot-buffer composer)
 //
-// Same renderer gap as the reel kernels above, and deliberately not
-// an inert-port disclosure: `asset slot-scene` walks the composer and the rasteriser over a
-// real overlay from `fn main`, so the chain has a real non-test caller and is
-// checkable end to end. What is missing is a *host that owns a dot buffer*. No
-// Rust host draws the dot matrix: `SlotMachine::marquee_placements`
-// (engine-core) wraps this and nothing on a frame path calls *it*, the browser
-// play page exports the 21 message bitmaps as JSON and blits them in
-// JavaScript, and the native window's slot HUD is text-only. Closing it means
-// either the native cabinet renderer, or the web page moving composition into
-// WASM and taking a rasterised buffer instead of the raw bitmap bank.
+// The native window owns the dot buffer: `ui_slot_cabinet::SlotMarqueeClock`
+// composes it every frame (the attract legend through this scroll, the
+// caption / tally through `render_marquee`) and the dot pass rasterises it.
+// The browser play page still exports the 21 message bitmaps as JSON and
+// blits them in JavaScript.
 pub fn compose_marquee(msg: &MarqueeMessage, x: i32, y: i32) -> Vec<u8> {
     let mut buf = vec![0u8; DOT_COLS * DOT_STRIDE];
     for row in 0..DOT_ROWS {
@@ -732,9 +761,8 @@ pub fn compose_marquee(msg: &MarqueeMessage, x: i32, y: i32) -> Vec<u8> {
 /// composer opens with exactly that call, so the marquee is rebuilt from scratch
 /// every frame rather than diffed against the previous one.
 // PORT: FUN_801d069c (negative-id clear path)
-// Same renderer gap as `compose_marquee` above, and undisclosed for the same
-// reason: `asset slot-scene` calls it from `fn main` as the blank buffer
-// every composed frame starts from.
+// The blank buffer every composed frame starts from, natively through
+// `ui_slot_cabinet::SlotMarqueeClock`.
 pub fn clear_dots() -> Vec<u8> {
     vec![0u8; DOT_COLS * DOT_STRIDE]
 }
@@ -760,9 +788,8 @@ pub fn clear_dots() -> Vec<u8> {
 /// sub-rect already tightened to `w`, so indexing by `w` reads the same texels -
 /// the equivalence [`compose_marquee`] already relies on.
 // PORT: FUN_801d3230 (dot-buffer placement blit)
-// Same renderer gap as `compose_marquee` above, and undisclosed for the same
-// reason: `asset slot-scene` exercises this blit on its own from
-// `fn main`, so the composed and placed views can be compared.
+// Reached natively through `render_marquee` from
+// `ui_slot_cabinet::SlotMarqueeClock`.
 pub fn place_message(buf: &mut [u8], msg: &MarqueeMessage, col: i32, row: i32) {
     for r in 0..msg.h as i32 {
         let dr = row + r;
@@ -825,9 +852,8 @@ pub struct MarqueePlacement {
 /// re-read `DAT_801d3d3c` - while the digit *values* come off a remainder chain
 /// that runs whether or not its own place was drawn.
 // PORT: FUN_801cfff0 (per-frame marquee composition)
-// Same renderer gap as `compose_marquee` above, and undisclosed for the same
-// reason: `asset slot-scene` drives it from `fn main` over a tour of the
-// six overlay globals it reads.
+// The caption / tally half; the attract-legend tail is [`attract_legend`].
+// Composed natively every frame by `ui_slot_cabinet::SlotMarqueeClock`.
 pub fn compose_marquee_frame(frame: &MarqueeFrame) -> Vec<MarqueePlacement> {
     let mut out = Vec::new();
     if frame.payout != 0 && frame.payout_frame != 0 {
@@ -920,6 +946,136 @@ pub fn render_marquee(placements: &[MarqueePlacement], messages: &[MarqueeMessag
 /// The CLUT the medallion whose record carries `art` samples.
 pub fn medallion_clut(art: i16) -> ClutId {
     ClutId(MEDALLION_CLUT_BASE.wrapping_add(art as u16))
+}
+
+// ---------------------------------------------------------------------------
+// The attract legend - the dot matrix outside the caption and the tally
+// ---------------------------------------------------------------------------
+
+/// What the legend counter `DAT_801d3ca0` is reset to the frame the legend's
+/// message id changes (`FUN_801d069c`, `0x801D06F8..0x801D0704`: `li v0,0x64`;
+/// the same call also scrolls from source column `0`, not from the counter).
+pub const LEGEND_COUNTER_RESET: i32 = 0x64;
+
+/// The scrolling legend `FUN_801cfff0` puts on the dot matrix when neither the
+/// payout caption nor the tally strip owns it: `(message id, source column)`
+/// for one `FUN_801d069c` scroll call, or `None` when that frame's matrix is
+/// left clear.
+///
+/// The tail runs only outside the tally modes (`feature_mode` not in `4..=6`,
+/// the `sltiu 3` gate at `0x801D027C`). It first reads the bonus-anticipation
+/// latch `DAT_801d3ca4` (`FUN_801d1af4` writes `1` / `2` when an `8` / `9`
+/// pair lines up while the reels settle): a raised latch scrolls message `4` /
+/// `5` at `counter % 200 - 100` (`0x801D04BC..0x801D0530`). Otherwise the
+/// feature mode indexes a 7-entry jump table at `0x801CEC58`: mode `0` places
+/// message `0` still at column `0`, modes `1..=3` scroll message `1..=3` at
+/// `counter % 168 - 84`, and every other entry is the function's epilogue.
+///
+/// `counter` is the free-running `DAT_801d3ca0`, which the reel renderer's
+/// tail (`0x801CFF00..0x801CFF24`) advances once a frame; a caller also owns
+/// the reset to [`LEGEND_COUNTER_RESET`] on a message change.
+// PORT: FUN_801cfff0 (the attract-legend tail, 0x801D038C..0x801D0538)
+pub fn attract_legend(feature_mode: u8, anticipation: i32, counter: i32) -> Option<(usize, i32)> {
+    if MARQUEE_TALLY_MODES.contains(&feature_mode) {
+        return None;
+    }
+    match anticipation {
+        1 => return Some((4, counter % 200 - 100)),
+        2 => return Some((5, counter % 200 - 100)),
+        0 => {}
+        _ => return None,
+    }
+    match feature_mode {
+        0 => Some((0, 0)),
+        1..=3 => Some((feature_mode as usize, counter % 168 - 84)),
+        _ => None,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The cabinet mesh (PROT 1200 descriptor 1)
+// ---------------------------------------------------------------------------
+
+/// One triangle of the cabinet mesh, in the machine's model space.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CabinetTri {
+    /// The three corners.
+    pub pos: [Pos3; 3],
+    /// Per-corner packet colour (a flat prim repeats its one colour).
+    pub rgb: [[u8; 3]; 3],
+    /// The group's ABE bit: the prim blends.
+    pub semi: bool,
+}
+
+/// The machine's body: every prim of the untextured cabinet TMD the slot
+/// init installs into the model bank and draws as an ordinary actor (see
+/// `docs/subsystems/minigame-slot-machine.md`, "The cabinet is a mesh"). Quads
+/// are split into two triangles with the TMD walker's `[0,1,2, 1,3,2]`
+/// winding.
+#[derive(Debug, Clone, Default)]
+pub struct SlotCabinetMesh {
+    pub tris: Vec<CabinetTri>,
+}
+
+/// Asset type byte of a TMD descriptor.
+const TYPE_TMD: u8 = 0x02;
+
+/// Decode the cabinet mesh out of a **raw** PROT entry 1200 - the art pack's
+/// container, whose first `TMD` descriptor is the machine's body.
+pub fn parse_cabinet(entry: &[u8]) -> Result<SlotCabinetMesh> {
+    use anyhow::Context;
+    if entry.len() < 8 {
+        bail!("art entry too small ({}b) for a container", entry.len());
+    }
+    let count = u32::from_le_bytes(entry[0..4].try_into().unwrap()) as usize;
+    if count == 0 || count > 16 {
+        bail!("implausible descriptor count {count} in art entry");
+    }
+    let container = crate::parse_player_lzs(entry, count)?;
+    let desc = container
+        .descriptors
+        .iter()
+        .find(|d| d.type_byte == TYPE_TMD)
+        .context("art entry carries no TMD descriptor")?;
+    // The descriptor LZS-decodes to a one-member `asset::pack` whose member is
+    // the TMD (`[count = 1][word offset 2]`, magic at byte 8).
+    let is_tmd = |b: &[u8]| b.len() >= 4 && b[0..4] == 0x8000_0002u32.to_le_bytes();
+    let decoded = crate::decode(entry, desc, crate::DecodeMode::Lzs)?;
+    let body = if is_tmd(&decoded) {
+        decoded
+    } else {
+        crate::pack::extract_pack(&decoded)
+            .ok()
+            .and_then(|members| members.into_iter().find(|m| is_tmd(m)))
+            .map(|m| m.to_vec())
+            .context("cabinet descriptor does not decode to a Legaia TMD")?
+    };
+    let tmd = legaia_tmd::parse(&body).context("parsing the cabinet TMD")?;
+    let mesh = legaia_tmd::mesh::tmd_to_color_mesh(&tmd, &body);
+    let pos = |i: u32| {
+        let p = mesh.positions[i as usize];
+        Pos3 {
+            x: p[0] as i16,
+            y: p[1] as i16,
+            z: p[2] as i16,
+        }
+    };
+    let tris = mesh
+        .indices
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .map(|t| CabinetTri {
+            pos: [pos(t[0]), pos(t[1]), pos(t[2])],
+            rgb: [
+                mesh.colors[t[0] as usize],
+                mesh.colors[t[1] as usize],
+                mesh.colors[t[2] as usize],
+            ],
+            semi: mesh.blend[t[0] as usize] & 0x8000 != 0,
+        })
+        .collect();
+    Ok(SlotCabinetMesh { tris })
 }
 
 #[cfg(test)]
@@ -1147,13 +1303,15 @@ mod tests {
 
     #[test]
     fn the_projection_puts_the_reels_where_retail_does() {
-        // Reel centres measured off the retail framebuffer: 150 / 253 / 357.
-        for (r, want) in [(0usize, 149.5f32), (1, 253.0), (2, 356.5)] {
-            let cx = reel_x(r) + REEL_WIDTH / 2;
-            let (sx, _) = project(cx, 0, reel_z(0x800));
+        // Each reel's payline face starts at the column the
+        // `minigame_slot_machine` display crop has its first lit face pixel
+        // on (118 / 221 / 324). The old fitted projection put these three to
+        // four columns left; the captured GTE registers land them.
+        for (r, want) in [(0usize, 118.0f32), (1, 221.0), (2, 324.0)] {
+            let (sx, _) = project(reel_x(r), 0, reel_z(0x800));
             assert!(
                 (sx - want).abs() < 1.5,
-                "reel {r} centre projected to {sx}, retail has it at {want}"
+                "reel {r} left edge projected to {sx}, retail has it at {want}"
             );
         }
     }

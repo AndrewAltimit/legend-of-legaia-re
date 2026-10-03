@@ -131,7 +131,20 @@ fn casino_door_warp_draws_the_slot_machine_and_start_leaves() {
     assert!(game_json(&rt)["game"].is_null());
     warp_into(&mut rt, SUB_SLOT, "SlotMachine", "slot");
     assert!(rt.play_mg_slot_active());
-    assert_hud_rows(&mut rt, "slot");
+    // The machine draws itself - cabinet, reels, furniture, the 1014-dot
+    // matrix and the coin HUD - through the shared screen-prim builder on its
+    // own art-pack VRAM, so it carries no status-text rows (the native
+    // window's frame too).
+    assert!(
+        rt.play_mg_slot_cabinet_ready(),
+        "the machine's resident set must decode"
+    );
+    assert_eq!(rt.play_mg_slot_vram().len(), 1024 * 512 * 2);
+    assert!(
+        rt.play_screen_prim_count() > 1014,
+        "the screen-prim pass must carry the machine: {}",
+        rt.play_screen_prim_count()
+    );
 
     // The retail machine's presentation off the disc.
     assert!(

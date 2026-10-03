@@ -104,9 +104,12 @@ fn a_still_ladder_is_no_wave() {
     assert!(FloorWave::from_scene_and_world(Some(man), &man).is_some());
 }
 
-/// End to end through the field VM: `4C 90` on one rung moves every draw
-/// standing on that rung, in both the terrain (corner-average) and the placed
-/// (single-nibble) flavours, and leaves every other rung's draws alone.
+/// End to end through the field VM: `4C 90` on one rung moves every anchor
+/// standing on that rung through the [`FloorWave`] kernel, in both the
+/// corner-average and the single-nibble flavours, and leaves every other
+/// rung's anchors alone. (Which layer a host folds the live wave into is a
+/// separate rule: a placed object stands on its spawn ladder instead - see
+/// `a_placed_object_keeps_its_spawn_ladder`.)
 #[test]
 fn op_4c_90_moves_the_drawn_ground_under_the_rung_it_arms() {
     let mut man = [0i16; 16];
@@ -150,7 +153,7 @@ fn op_4c_90_moves_the_drawn_ground_under_the_rung_it_arms() {
     );
     assert!(
         span[1].1 > span[1].0,
-        "so must the placed object on rung 4: {:?}",
+        "so must the single-nibble anchor on rung 4: {:?}",
         span[1]
     );
     assert_eq!(
@@ -265,4 +268,46 @@ fn op_4c_90_deforms_the_ground_heightfield_per_vertex() {
     for (i, &t) in tiers.iter().enumerate() {
         assert_eq!(moved[i], t == 4, "vertex {i} on tier {t}");
     }
+}
+
+/// A placed object is an actor whose Y `FUN_8003A55C` (or the window sweep
+/// `FUN_801D7B50`) stores once at spawn, from the ladder live at that moment,
+/// and nothing re-samples it: the per-cell decoration sweep that re-reads the
+/// ladder every frame skips `flags & 4` records. So under a moving rung the
+/// terrain cell swings and the placed object on the same rung does not -
+/// until a window re-plan re-spawns a window-owned one on the new rungs.
+#[test]
+fn a_placed_object_keeps_its_spawn_ladder() {
+    let mut man = [0i16; 16];
+    man[4] = 0x40;
+    let d = draws(&[terrain([4, 4, 4, 4]), placed(4)], man);
+    let mut world = world_on_ladder(man, arm_rung(4));
+    world.terrain.placed_spawn_lut = world.terrain.floor_height_lut;
+    let key = legaia_engine_core::field_env::PlacedWindowKey::of_draw(&d[1]);
+    let (mut terrain_moved, mut bound_moved, mut windowed_moved) = (false, false, false);
+    for _ in 0..64 {
+        let _ = world.tick();
+        let wave = FloorWave::from_scene_and_world(Some(man), &world.terrain.floor_height_lut);
+        terrain_moved |= wave.is_some_and(|w| w.offset(&d[0].floor) != 0);
+        let off =
+            world.placed_floor_offsets(Some(man), [&d[1].floor, &d[1].floor], &[None, Some(key)]);
+        bound_moved |= off[0] != 0;
+        windowed_moved |= off[1] != 0;
+    }
+    assert!(terrain_moved, "the terrain cell rides the rung");
+    assert!(!bound_moved, "the bound object stays on its spawn ladder");
+    assert!(
+        !windowed_moved,
+        "and so does a window-owned one until a re-plan"
+    );
+    // A re-plan spawns the window-owned object on the rungs live at that moment.
+    world.rebuild_static_object_window([0, 0, 1, 1]);
+    let live = FloorWave::from_scene_and_world(Some(man), &world.terrain.floor_height_lut)
+        .map_or(0, |w| w.offset(&d[1].floor));
+    let off = world.placed_floor_offsets(Some(man), [&d[1].floor, &d[1].floor], &[None, Some(key)]);
+    assert_eq!(
+        off,
+        vec![0, live],
+        "the re-plan's ladder, the bound one's unchanged"
+    );
 }

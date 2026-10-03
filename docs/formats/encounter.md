@@ -960,8 +960,8 @@ arms the same query-conform-snap the retail seat path runs in code, and the per-
 re-query honours scratchpad flag bit `22`
 ([`script-vm-menuctrl.md`](../subsystems/script-vm-menuctrl.md#0x4c-nibble-0x380x3e---the-camera-zone-arms)).
 Nothing re-queries on a bare tile crossing. The composer samples the floor through the
-MAN's pristine ladder, as `FUN_801DAB90` does, so a scripted floor-tier bob never shakes
-the camera; the composed eye trio is fed to the view divided by the base matrix's `6x`
+MAN-header ladder, as `FUN_801DAB90` does, so a scripted floor-tier bob never shakes
+the camera (a `4C 9E` whole-ladder install writes that copy too, so the camera does follow it); the composed eye trio is fed to the view divided by the base matrix's `6x`
 world scale ([`renderer.md`](../subsystems/renderer.md#the-field-view-matrix-where-tr-comes-from));
 and the focus edge clamp `FUN_801DAA50` runs after the ease or snap, with its script
 override `_DAT_8007B628` / `_DAT_8007B62A` still unwired (no port-side writer).

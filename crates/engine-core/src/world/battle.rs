@@ -19,6 +19,7 @@ mod clip_ladder;
 mod command_flow;
 mod commit_log_launch;
 mod effect_route;
+mod effect_teardown;
 mod formation_span;
 mod initiative;
 mod intro_names;
@@ -73,8 +74,3 @@ pub(in crate::world) const MELEE_IMPACT_CUE: u32 = 0x10C;
 /// Clip slot of the per-character melee grunt bank - `XA30.XA` (`li a0,0x1d`
 /// at `0x801EEB18` / `0x801EEB28` / `0x801EEB38` of `FUN_801EC3E4`).
 pub(in crate::world) const GRUNT_CLIP_SLOT: u32 = 0x1D;
-
-/// Attacker element the SFX funnel's tinted leg writes when the engine can
-/// resolve none - retail's non-elemental id, the same `7` the melee damage
-/// path passes as `attacker_element`.
-pub(in crate::world) const NEUTRAL_ELEMENT: u8 = 7;

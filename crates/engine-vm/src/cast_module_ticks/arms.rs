@@ -323,6 +323,14 @@ pub fn chaos_flare_tick(
             // Out of the table's range: retail's `beqz` lands past the busy
             // register's only clearing store, so the tick still reports busy.
             CastArmStep::Hold
+        } else if u16::from(c.phase) == CHAOS_FLARE_ARMS - 1 {
+            // Arm 11 (`0x801F76F4`) is terminal: it never advances the phase,
+            // and once the module countdown runs out it clears the busy
+            // register and `ctx[+0x0D]` (`0x801F77A0` / `0x801F77A4`).
+            // Advancing past it walked off the table into the hold above,
+            // which parked the band - and the battle - for good.
+            c.ctx_0d = 0;
+            CastArmStep::Finish
         } else {
             CastArmStep::Advance
         }
@@ -366,6 +374,12 @@ pub fn scythe_wind_tick(
         }
         if u16::from(c.phase) >= SCYTHE_WIND_ARMS {
             CastArmStep::Hold
+        } else if u16::from(c.phase) == SCYTHE_WIND_ARMS - 1 {
+            // Arm 5 (`0x801F801C`) is terminal: no phase store, and once the
+            // countdown runs out and the victim has settled it clears the
+            // busy register and `ctx[+0x0D]` (`0x801F8138` / `0x801F813C`).
+            c.ctx_0d = 0;
+            CastArmStep::Finish
         } else {
             CastArmStep::Advance
         }
@@ -417,6 +431,12 @@ pub fn bloody_horns_tick(
         }
         if u16::from(c.phase) >= BLOODY_HORNS_ARMS {
             CastArmStep::Hold
+        } else if u16::from(c.phase) == BLOODY_HORNS_ARMS - 1 {
+            // Arm 6 (`0x801F79DC`) is terminal: no phase store, and once the
+            // countdown runs out and the victim has settled it clears the
+            // busy register and `ctx[+0x0D]` (`0x801F7AF4` / `0x801F7AF8`).
+            c.ctx_0d = 0;
+            CastArmStep::Finish
         } else {
             CastArmStep::Advance
         }

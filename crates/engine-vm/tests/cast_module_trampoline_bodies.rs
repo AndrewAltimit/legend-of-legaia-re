@@ -66,6 +66,39 @@ fn an_unnamed_phase_reports_busy_not_done() {
     assert_eq!(c.phase, 0x40, "and out of range it holds instead");
 }
 
+/// PROT 0951's two bodies and PROT 0952's `0x5C` body each end on a terminal
+/// arm - the last table word (`0x801F76F4`, `0x801F801C`, `0x801F79DC`) - that
+/// stores no phase and clears the busy register. Walking the phase from zero
+/// therefore reaches **done**, never the out-of-range hold: an enemy casting
+/// one of these used to park the band, and the battle, for good.
+#[test]
+fn the_0951_0952_bodies_finish_on_their_terminal_arm() {
+    fn walk(mut tick: impl FnMut(&mut CastModuleCtx) -> CastTickStep, arms: u16) {
+        let mut c = ctx(0, 7);
+        c.ctx_0d = 1;
+        for _ in 0..arms - 1 {
+            assert_eq!(tick(&mut c), CastTickStep::Busy);
+        }
+        assert_eq!(u16::from(c.phase), arms - 1);
+        assert_eq!(
+            tick(&mut c),
+            CastTickStep::Done,
+            "terminal arm reports done"
+        );
+        assert_eq!(u16::from(c.phase), arms - 1, "and stores no phase");
+        assert_eq!(c.ctx_0d, 0, "and clears ctx[+0x0D]");
+    }
+    let mut v = actor(100);
+    walk(|c| chaos_flare_tick(c, &mut v, None), CHAOS_FLARE_ARMS);
+    let mut v = actor(100);
+    walk(|c| scythe_wind_tick(c, &mut v, None), SCYTHE_WIND_ARMS);
+    let (mut caster, mut v) = (actor(100), actor(100));
+    walk(
+        |c| bloody_horns_tick(c, &mut caster, &mut v, None),
+        BLOODY_HORNS_ARMS,
+    );
+}
+
 /// One `ctx[+0x279] += 1` per tick, never two - the property that makes the
 /// module phase walk one step per frame.
 #[test]

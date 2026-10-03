@@ -358,18 +358,20 @@ pub(crate) fn slot_art_cmd(overlay: &Path, art: &Path, out: &Path) -> Result<()>
         written += 1;
     }
     for reel in 0..slot::REEL_COUNT {
-        for (tag, stopped) in [("spin", false), ("stop", true)] {
-            let clut = if stopped {
-                slot::PEDESTAL_CLUT_STOPPED
+        // "spin" = the reel's stop is open (`DAT_801d3d00[reel]` set), "stop"
+        // = taken (or no spin running) - see `pedestal_cell`.
+        for (tag, open) in [("spin", true), ("stop", false)] {
+            let clut = if open {
+                slot::PEDESTAL_CLUT_OPEN
             } else {
-                slot::PEDESTAL_CLUT_SPINNING
+                slot::PEDESTAL_CLUT_IDLE
             } + reel as u16;
             let page = minigame_art::slot_page(
                 &tims,
                 slot::PEDESTAL_PAGE,
                 minigame_art::ClutId(clut).palette_index(),
             )?;
-            let (u, v, w, h) = slot::pedestal_cell(reel, stopped);
+            let (u, v, w, h) = slot::pedestal_cell(reel, open);
             let rgba = crop_rgba(&page, u as usize, v as usize, w as usize, h as usize);
             write_rgba_png(
                 &furn_dir.join(format!("pedestal_{reel}_{tag}.png")),

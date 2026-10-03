@@ -223,7 +223,10 @@ map as its street:
 
 The follower presses a teleport waypoint until the jump lands, backs out of a
 diagonal-wall notch where all four lattice steps read blocked, and, held
-against something for a second, tries the action button. A script that runs
+against something for a second, tries the action button. In a field the tap
+waits for a frame the player did not move: the stall counter also counts a run
+step that stays inside one cell, and a tap there stood the player still for a
+frame of every few. A script that runs
 on the way and changes nothing - no flag, no cell, no scene (an examined prop
 with nothing to say) - leaves the route as it was rather than re-planning the
 walk component. Walks avoid the live
@@ -462,7 +465,15 @@ whole system-flag bank up to the item array at `0x80085958`, the party count
 at `0x80084594` and the roster at `0x80084598`, and the field position
 snapshot at `0x80084568` / `0x8008456C`, where the resume seats the party.
 
-The one thing the ladder adds is for a **state** anchor taken mid-field: its
+The anchor's **Field Move** word (`0x800846CC`, SC `+0x58C`) goes onto
+`World::locomotion.run_default`: the engine keeps it as a host option rather
+than save data, but retail restores it with the block, and the ladder's player
+runs or walks as the anchor's player did. Timed scripts are paced for it -
+`jouind`'s switch pair resets unless the second switch is reached within 50
+vsyncs of free walk (system script slot `0`, `4C CB 00 FF FF` against
+`4E 00 50 32`), which a walking pad hand misses by a few frames.
+
+The other thing the ladder adds is for a **state** anchor taken mid-field: its
 live position is not the snapshot, so the ladder arms
 `SceneHost::set_entry_seat` with the live one. A card save seats from its own
 snapshot, as a card load does.
@@ -485,7 +496,16 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   any of those reads as a wipe.
 - The pad planner finds a crossing scene by trial, not by reading which side
   each of its doors lands on, and a crossing whose side is story state
-  (`suimon`'s water gate `0x27B`) needs that beat played first.
+  (`suimon`'s water gate `0x27B`) needs that beat played first. The talk
+  beats count a **hand-off** as a story beat: a talk that sets a flag the
+  live state lacks and changes scene to one whose entry script tests it.
+  `suimon`'s Water Gate Controller (`P1[4]`) sets `0x2C6` and enters `map01`
+  at `(0, 0)`, which is retail's own landing for a cutscene visit: `map01`'s
+  `P1[0]` spawns the drain (`P2[15]`, `0x2C6` -> `0x2C7`), which returns the
+  party to the drained chamber, where `suimon`'s `P1[0]` sets `0x27B`. None
+  of those flags but the last is in the next anchor, so a flag-reach test
+  alone never picks the controller. A crossing whose beat changed scene lets
+  the landing's arrival run before the position is read.
 - The pad hand heals only with items it already carries and with a free
   or affordable rest in a scene that rolls no encounters; it does not buy
   items or use magic.

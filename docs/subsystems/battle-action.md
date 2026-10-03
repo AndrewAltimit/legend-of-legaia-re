@@ -2889,8 +2889,12 @@ seats at the origin, and the cursor falls back to a plain slot-order scan.
   (`FUN_801DABA4`'s party arm, `0x801DAF14`, gated on `ctx[+0x06] == 0xFF`)
   is what stops a member whose target died earlier in the round from walking
   at the corpse: the short step `0x19` has no timeout, and the range law never
-  brings a dead target into reach. The engine runs it at each party dispatch
-  (`World::redirect_dead_battle_target`).
+  brings a dead target into reach. The picker's monster arm calls it too,
+  unconditionally, straight after the AI picker (`jal 0x801E9FD4` then
+  `jal 0x801DB124` at `0x801DAF48..0x801DAF50`), which is what stops a monster
+  whose picked party member has since fallen from walking at the corpse. The
+  engine runs it at each party dispatch and on a monster's physical pick
+  (`World::redirect_dead_battle_target`, called from `take_monster_turn`).
 
 ### Per-frame action-effect update helpers
 
@@ -3486,16 +3490,16 @@ The negative speeds in the player files are the reactions' - knockdown, block, s
 
 ### The sound a melee swing makes, and which half of it the port has
 
-A physical swing's whole sound is one call: `li a0,0x10c` / `jal 0x8004fe5c` at `0x801EEBD8`, the only submit to the battle overlay's sound funnel anywhere in the melee kernel `FUN_801EC3E4`. Its second argument is the **attacker's actor-table index**, and because [`FUN_8004FE5C`](#engine-port) switches legs on `category < 3` the two sides of a fight sound different by construction:
+The melee kernel `FUN_801EC3E4` makes one submit to the battle overlay's sound funnel: `li a0,0x10c` / `jal 0x8004fe5c` at `0x801EEBD8`. Its second argument is the **target's** actor-table index - `move a1,s1` with `s1 = s4 & 0xFF`, and `s4` is the ticked attacker's `+0x1DD` (`0x801EC450`) - and because [`FUN_8004FE5C`](#engine-port) switches legs on `category < 3` the two sides of a fight sound different by construction:
 
-| Attacker | Leg | Result |
+| Target | Leg | Result |
 |---|---|---|
 | Party (`category < 3`) | CD-XA voice | `0x10C` → clip `26`, channel `4` - i.e. `XA27` |
-| Monster (`category >= 3`) | element-tinted high leg | ring id `0x10C + 0x19C = 0x2A8`, plus the attacker's element byte into that id's runtime-bank descriptor |
+| Monster (`category >= 3`) | high leg | ring id `0x10C + 0x19C = 0x2A8`, plus the struck monster's render-node `+0x80` byte (its `monster.snd` VAB slot, `7` or `8`) into that row's `+4` category |
 
-Two gates guard the submit. The target must be playing a plain action-table clip (`+0x1D9 < 0x10`, `0x801EEB88`), so a hit landing during an art-bank animation is silent. And `_DAT_8007BD84` selects between this cue and the per-character `XA30` grunt immediately above it (`FUN_8003D53C(0x1D, ch, dur)` at `0x801EEB18..0x801EEB44`, channel and duration keyed on `DAT_8007BD10[slot]`). That cell is a **pointer**, not a mode word - an effect-instance handle whose only non-zero writer on the disc is the Cort "Mystic Shield" stager (PROT 0940 file `+0xCA0` = `0x801F7678`), dereferenced and released by `FUN_8004CE2C`; every caller here is testing it for null. Census in [`audio.md`](audio.md#what-a-normal-attack-sounds-like).
+Two gates guard the submit. The **attacker** must be playing a plain action-table clip (`lbu v0,0x1d9(v0)` off `0x801C9370[s6]`, `+0x1D9 < 0x10`, `0x801EEB88`), so a swing out of an art-bank animation is silent. And `_DAT_8007BD84` selects between this cue and the per-character `XA30` grunt immediately above it (`FUN_8003D53C(0x1D, ch, dur)` at `0x801EEB18..0x801EEB44`, channel and duration keyed on `DAT_8007BD10[slot]`). That cell is a **pointer**, not a mode word - an effect-instance handle whose only non-zero writer on the disc is the Cort "Mystic Shield" stager (PROT 0940 file `+0xCA0` = `0x801F7678`), dereferenced and released by `FUN_8004CE2C`; every caller here is testing it for null. Census in [`audio.md`](audio.md#what-a-normal-attack-sounds-like).
 
-The port's live gameplay loop resolves melee damage inline rather than through the art-strike event, so nothing downstream of `World::fold_battle_event` used to see a swing at all and a whole fight produced **zero** cues. `World::land_melee_hit` runs the funnel at retail's site - once per resolved hit event - which is what makes `sfx_cue::route_sfx_cue` a live port rather than a caller-less one. The engine's compacted monster seating has to be re-based into retail's `0..=2` / `3..=7` index space first, or a monster seated at index 1 takes the party leg.
+Neither site is what an ordinary swing sounds like. The whoosh, the impact and the target's knockdown ride the committed clips' own cue tracks, walked per animation frame by `FUN_800508DC` ([audio.md](audio.md#the-second-shout-trigger---the-animation-cue-track-fun_800508dc)); the port walks them in `World::step_actor_anim_cues`. `World::land_melee_hit` runs the kernel's two sites once per resolved hit event. The engine's compacted monster seating has to be re-based into retail's `0..=2` / `3..=7` index space first, or a monster seated at index 1 takes the party leg.
 
 **Which half that is.** The cue site is one of the kernel's two sound emissions, and
 `_DAT_8007BD84` picks which. While the word is zero the routine takes the per-character
@@ -3508,7 +3512,7 @@ staged pose byte this routine commits to `+0x1DA` at `0x801EEC6C`; of the fourte
 that reach the compare only `0x801EC884` loads `+0x1F3`, so the condition really can fail. The
 re-read at `0x801EEB60` then skips the cue. While the word is
 non-zero, `bne v0,zero,0x801EEB70` at `0x801EEAC8` jumps over the grunt into the `0x10C` cue,
-gated on the target clip test and, inside the funnel, on the drive being idle
+gated on the attacker clip test and, inside the funnel, on the drive being idle
 (`FUN_8003DE7C(1) == 0`, `0x8004FE9C`). The word's only dumped stores are zeros (the
 battle-start sweep `FUN_80055B6C`, the round reset `FUN_8004CE2C`), so the grunt is the
 unflagged leg and the `XA27` channel-4 sting is the flagged case.
@@ -3539,6 +3543,44 @@ commits the `+0x1F3` reaction, and an ordinary directional swing that commits
 ordinary swing grunts"; it does not pin the `s0` / `s1` threshold that opens the
 `+0x1F3` arm.
 
+**The block roll.** The `+0x1F3` arm is a contest between the two actors, run
+before any damage (`0x801EC5A8..0x801EC878`) and only when the defender has a
+block entry and still stands on the accumulated total - so a defender with no
+block clip draws no randomness. Each side sums SPD (`+0x164`), four fifths of
+the unfolded ATK (`+0x158`) and an approach term (`ctx[+0x6D2]` / `+0x6D4`);
+the attacker's sum is raised to the defender's if lower, then the attacker adds
+`(rand() % s0) * table[(pb - 0x0C) % 5] / 2` with the 0898 table `0x801F64E4` =
+`[6, 4, 4, 4, 2]`, and the defender `rand() % s1`. Spirit on the defender and the
+attacker's art slot `0x11` scale by 3/2, status `+0x16E & 0x1000` by 8/10, the
+`+0xF4` ability bits `0x80000` / `0x100000` / `0x200000` double, raise or pin a
+side, and `+0x16E & 0x400` disables blocking. The defender blocks when the
+attacker's total is the smaller (`sltu s0,s1`). Two overrides follow: a defender
+already holding its block pose with its reaction timer running keeps blocking
+(`0x801EC93C..0x801EC984`), and one mid-way through any other reaction cannot
+block (`0x801ECA20..0x801ECA68`); a party attacker with ability `0x4000` cancels
+the block (`0x801ECB44`). A blocked hit jumps over the whole damage body (`bne
+s7,zero,0x801EE6D4` at `0x801ECB60`): no damage, no combo accumulation, no
+Spirit accrual, no tint - and the attacker's anim cue cursor `+0x1F6` steps over
+one cue, the impact sound a landed hit would have made. The approach terms
+decide most opening strikes: state `0x14` seeds `+0x6D2` as the folded facing
+difference minus `0x800` - `0` face-on, down to `-0x800` - and `addu` adds it
+unsigned, so an off-axis opener usually wraps the attacker's sum past any
+defender sum and cannot be blocked; `+0x6D4` grows by the frame step each tick
+the attacker walks in. Both are spent by the first hit, so the rest of a chain
+rolls with neither. The `+0x1F7` window is not "a reaction is playing": the anim
+tick sets it every frame for every actor as "the playing clip is before its
+first listed beat" (`0x80047E28..0x80047E54`), so it is shut for an idle body
+and for a block clip whose list starts at `0`. The kernel reads the byte, so a
+block pose a hit commits does not move the window the next hit of the same
+combo sees: that waits for the next anim tick. Port: `battle_formulas::block_roll`
+and `World::roll_block`, wired ahead of the damage roll in
+`World::land_melee_hit`; the terms are `BattleState::attack_ramp` / `guard_ramp`
+(`World::track_block_approach_terms`), the window is `Actor::battle_juggle_window`,
+written by `World::tick_battle_animations` from `World::juggle_window_open`
+after each cursor advance. The damage roll still reads the two terms as zero,
+and the blocked branch's own apply-mode walk (`0x801EE720..0x801EE918`) is the
+port's ordinary apply mode.
+
 **The third gate is not a character level.** `slti v0,v0,0x2` at `0x801EEAB8` reads
 `_DAT_8007BC20`, which the executable itself prints as the **`xa_flag`** debug
 counter - `FUN_80016B6C` loads it at `0x80016EB8` and passes it straight to the
@@ -3547,18 +3589,22 @@ debug printf at `0x80016EC0` whose format string is at `0x80010238` - and which
 open a voice clip once the streamer is past level 1", not "mute at level 2". The
 capture read it as `2` in one fight and `0` in the other.
 
-The port carries both halves now. `World::fire_melee_impact_cue` selects on
+The port carries both halves. `World::fire_melee_impact_cue` selects on
 `MonsterAiState::flag_bd84` (the port's mirror of the word - the damage finisher's
-enemy-defender halve): the grunt goes out as a `(clip, channel, dur)` request on
-`World::audio.battle_xa_cues`, and the cue arm routes `0x10C` through `route_sfx_cue` with a modelled
-drive-busy flag (`dur` vsyncs after any clip start: `dur * 2.5` sectors at 150/s is `dur / 60`
-s) and the `0x800788B8` duration table parsed off the user's SCUS (`legaia_asset::xa_cue_table`). The native window plays the requests off a boot-staged
-`XaClipBank` (`XA27` / `XA30` demuxed + decoded, `crate::boot::read_battle_xa_clip_bank`)
-through the same XA mixing path as the arts shouts. The browser play page reaches the same
-banks: `web-viewer`'s `play_xa` demuxes the raw sectors the page slices out of the visitor's
-own disc bytes and plays the cut clip through `WebAudioOut::play_xa_shout`, so the requests
-sound on both hosts. The monster leg's `0x2A8` is still a runtime-bank id no engine bank
-models, so it reaches the hosts' scheduler and resolves nothing.
+enemy-defender halve). The grunt is gated on the strike committing the defender's
+`+0x1F3` block entry, so an ordinary swing - which commits the flinch or the
+knockdown - raises none; it goes out as a `(clip, channel, dur)` request on
+`World::audio.battle_xa_cues`. The cue arm routes `0x10C` through the shared funnel
+seat `World::route_battle_cue` with a modelled drive-busy flag (`dur` vsyncs after
+any clip start: `dur * 2.5` sectors at 150/s is `dur / 60` s) and the `0x800788B8`
+duration table parsed off the user's SCUS (`legaia_asset::xa_cue_table`). The native
+window plays the clip requests off a boot-staged `XaClipBank` (`XA27` / `XA30`
+demuxed + decoded, `crate::boot::read_battle_xa_clip_bank`) through the same XA
+mixing path as the arts shouts; the browser play page's `play_xa` demuxes the raw
+sectors the page slices out of the visitor's own disc bytes and plays the cut clip
+through `WebAudioOut::play_xa_shout`. The monster leg's `0x2A8` goes out on the SFX
+ring and resolves against the battle's `bse.dat` row, keyed through the struck
+monster's `monster.snd` slot, which both hosts stage per battle.
 
 ### Three readings the port already satisfied
 

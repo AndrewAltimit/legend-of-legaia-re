@@ -120,7 +120,7 @@
     "battle_gaza2_park_0x19_summon_melee": {
       "battle_party": 1.0,
       "bgm": 1.0,
-      "camera": 0.656,
+      "camera": 0.658,
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 0.995,
@@ -133,7 +133,7 @@
     "battle_gaza2_park_0x19_target_vahn": {
       "battle_party": 1.0,
       "bgm": 1.0,
-      "camera": 0.75,
+      "camera": 0.842,
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 0.995,
@@ -185,7 +185,7 @@
     "battle_melee_hit_spark": {
       "battle_party": 1.0,
       "bgm": 1.0,
-      "camera": 0.744,
+      "camera": 0.658,
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 0.926,
@@ -211,7 +211,7 @@
     "battle_vahn_tri_somersault_super": {
       "battle_party": 1.0,
       "bgm": 1.0,
-      "camera": 0.779,
+      "camera": 0.708,
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
@@ -736,7 +736,7 @@
     "evil_medallion_rage_battle": {
       "battle_party": 1.0,
       "bgm": 1.0,
-      "camera": 0.423,
+      "camera": 0.394,
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
@@ -1273,7 +1273,7 @@
     "minigame_fishing_pcsx": {
       "bgm": 1.0,
       "camera": 0.988,
-      "flags": 1.0,
+      "flags": 0.999,
       "fog_gate": 1.0,
       "inventory": 1.0,
       "mode": 1.0,
@@ -1425,7 +1425,7 @@
     "nivora_duel_pre_plasma_strike": {
       "battle_party": 1.0,
       "bgm": 1.0,
-      "camera": 0.784,
+      "camera": 0.713,
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 0.995,
@@ -1475,7 +1475,7 @@
     "noa_levelup_fight_pre": {
       "battle_party": 1.0,
       "bgm": 1.0,
-      "camera": 0.532,
+      "camera": 0.627,
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
@@ -1642,7 +1642,7 @@
     "player_steal_skeleton_banner": {
       "battle_party": 1.0,
       "bgm": 1.0,
-      "camera": 0.37,
+      "camera": 0.369,
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
@@ -1719,7 +1719,7 @@
     },
     "retona_field_card_boot": {
       "bgm": 1.0,
-      "camera": 0.969,
+      "camera": 1.0,
       "flags": 1.0,
       "fog_gate": 1.0,
       "footing": 1.0,
@@ -1772,7 +1772,7 @@
     "rim_elm_gimard_seru_capture_after": {
       "battle_party": 1.0,
       "bgm": 1.0,
-      "camera": 0.848,
+      "camera": 0.85,
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 0.967,
@@ -1785,7 +1785,7 @@
     "rim_elm_gimard_seru_capture_before": {
       "battle_party": 1.0,
       "bgm": 1.0,
-      "camera": 0.641,
+      "camera": 0.631,
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 0.967,
@@ -2025,7 +2025,7 @@
     "super_queue_replace_gala_back_punch": {
       "battle_party": 1.0,
       "bgm": 1.0,
-      "camera": 0.736,
+      "camera": 0.681,
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
@@ -2038,7 +2038,7 @@
     "super_queue_replace_noa_triple_lizard": {
       "battle_party": 1.0,
       "bgm": 1.0,
-      "camera": 0.736,
+      "camera": 0.681,
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
@@ -2051,7 +2051,7 @@
     "super_queue_replace_vahn_rolling_combo": {
       "battle_party": 1.0,
       "bgm": 1.0,
-      "camera": 0.736,
+      "camera": 0.681,
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
@@ -2385,7 +2385,7 @@
     "zora_glare_petrify_post": {
       "battle_party": 1.0,
       "bgm": 1.0,
-      "camera": 0.819,
+      "camera": 0.813,
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 0.818,

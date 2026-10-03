@@ -292,7 +292,26 @@ impl World {
         &mut self,
         formation: &crate::monster_catalog::FormationDef,
     ) {
-        let party_count = self.party.party_count.clamp(1, 3);
+        // **The Tetsu spar is Vahn alone** - an engine rule, not a port.
+        // Retail seats whoever is in the present-party list `DAT_8007BD10`
+        // (`FUN_80052FA0` counts its non-zero ids into `ctx[+0]`,
+        // `FUN_800513F0` loads one actor per id) and has no stage-keyed
+        // override; the spar is solo only because the story's party is. The
+        // prompt machine is written for one fighter (its lessons walk one
+        // member's command flow), so a fuller party - `--party`, a save, a
+        // debug force - would sit two idle members through a tutorial that
+        // never addresses them. The field composition comes back at
+        // [`World::finish_battle`].
+        // Vahn is roster record 0 (char id 1, `0x80084708`).
+        const VAHN_ROSTER_SLOT: u8 = 0;
+        let mut party_count = self.party.party_count.clamp(1, 3);
+        if self.sparring_fight_pending() && party_count > 1 {
+            self.battle.solo_spar_restore = Some(std::mem::replace(
+                &mut self.party.active_party,
+                vec![VAHN_ROSTER_SLOT],
+            ));
+            party_count = 1;
+        }
         let monster_count = formation.slots.len().min(5) as u8;
         // Drop any field dialogue left open across the transition. The
         // engage conversation already played in the field; a leftover

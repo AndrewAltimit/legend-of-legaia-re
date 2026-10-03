@@ -183,6 +183,15 @@ fn read_bank(buf: &[u8], index: usize, start: u32, end: u32) -> Option<Bank> {
     })
 }
 
+/// Bank `index`'s whole sector span - the bytes `FUN_8003E104(index, ..)`
+/// streams (`table[index]..table[index + 1]` sectors, `0x8003E1C8..
+/// 0x8003E28C`): chunk 0 at `+0`, the `pBAV` header at `+4`. `None` past the
+/// table or for a bank that is not a two-chunk VAB stream.
+pub fn bank_bytes(buf: &[u8], index: usize) -> Option<&[u8]> {
+    let b = detect(buf)?.banks.into_iter().find(|b| b.index == index)?;
+    buf.get(b.offset()..b.offset() + b.span())
+}
+
 pub fn detect(buf: &[u8]) -> Option<VabMultiBank> {
     if buf.len() < 12 {
         return None;

@@ -60,6 +60,9 @@ pub(crate) enum ActiveGame {
     Baka,
     Muscle,
     Dance,
+    /// The fishing pond (`legaia_engine_core::fishing_scene`); its HUD rides
+    /// `play_fishing`, so this screen only owns the 3D view.
+    Fishing,
 }
 
 impl ActiveGame {
@@ -69,6 +72,7 @@ impl ActiveGame {
             SceneMode::BakaFighter => Some(Self::Baka),
             SceneMode::MuscleDome => Some(Self::Muscle),
             SceneMode::Dance => Some(Self::Dance),
+            SceneMode::Fishing => Some(Self::Fishing),
             _ => None,
         }
     }
@@ -80,6 +84,7 @@ impl ActiveGame {
             Self::Baka => "baka",
             Self::Muscle => "muscle",
             Self::Dance => "dance",
+            Self::Fishing => "fishing",
         }
     }
 }
@@ -117,6 +122,9 @@ pub(crate) struct MinigameUi {
     /// The Muscle Dome's 3D arena surface - the engine cache the native
     /// window drives too (`legaia_engine_core::muscle_dome_scene`).
     pub(crate) muscle_surface: legaia_engine_core::muscle_dome_scene::MuscleDomeSurface,
+    /// The fishing pond surface - the engine cache the native window drives
+    /// too (`legaia_engine_core::fishing_scene`).
+    pub(crate) fishing_surface: legaia_engine_core::fishing_scene::FishingSurface,
 }
 
 /// The PROT entries the standalone presentation bundle reads, in extraction
@@ -301,7 +309,7 @@ impl LegaiaRuntime {
             Some(ActiveGame::Slot) => self.tick_slot_ui(),
             Some(ActiveGame::Baka) => self.tick_baka_ui(),
             Some(ActiveGame::Muscle) => self.tick_muscle_ui(),
-            Some(ActiveGame::Dance) | None => {}
+            Some(ActiveGame::Dance) | Some(ActiveGame::Fishing) | None => {}
         }
         // Publish the dance's VRAM residency claim (see `play_dance_art`), so
         // the count-in banner's sprite-or-placeholder choice is the same
@@ -320,16 +328,20 @@ impl LegaiaRuntime {
             ActiveGame::Slot => self.enter_slot_ui(),
             ActiveGame::Baka => self.enter_baka_ui(),
             ActiveGame::Muscle => self.enter_muscle_ui(),
-            ActiveGame::Dance => {}
+            ActiveGame::Dance | ActiveGame::Fishing => {}
         }
     }
 
     fn on_minigame_exit(&mut self, game: ActiveGame) {
         match game {
-            // The slot machine draws on the page's own 2D layer; the field
-            // VRAM was never replaced.
-            ActiveGame::Slot => {}
-            ActiveGame::Baka | ActiveGame::Muscle | ActiveGame::Dance => {
+            // The slot machine replaces the VRAM texture with its art pack
+            // whenever its resident set decoded (the shared cabinet pass);
+            // a restore is harmless when it drew on the 2D layer instead.
+            ActiveGame::Slot
+            | ActiveGame::Baka
+            | ActiveGame::Muscle
+            | ActiveGame::Dance
+            | ActiveGame::Fishing => {
                 self.minigame_ui.vram_restore_pending = true;
             }
         }
@@ -361,7 +373,7 @@ impl LegaiaRuntime {
             Some(ActiveGame::Muscle) => self.muscle_status_draws(font),
             Some(ActiveGame::Dance) if !dance_status => Vec::new(),
             Some(ActiveGame::Dance) => self.dance_status_draws(font),
-            None => Vec::new(),
+            Some(ActiveGame::Fishing) | None => Vec::new(),
         };
         if self.minigame_ui.game == Some(ActiveGame::Dance) {
             texts.extend(self.dance_countin_and_tutorial_draws(font));

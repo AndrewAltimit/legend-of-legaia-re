@@ -353,12 +353,19 @@ impl World {
             } else {
                 None
             };
+            // `+0x1F7`, written for every node right after its cursor
+            // advance (`0x80047E28..0x80047E54`).
+            // PORT: FUN_80047430 (`0x80047E1C..0x80047E54`, the juggle window)
+            self.actors[i].battle_juggle_window = Self::juggle_window_open(&self.actors[i]);
             // Per-frame effect-script walk for the committed record - the
             // engine seat of retail's `FUN_80047430` -> `FUN_801DEA50` call
             // pair (frame argument = the node's 12.4 anim cursor in whole
             // keyframes, which is `MonsterAnimPlayer::current_frame`).
             if let Some(frame) = frame {
                 self.step_actor_effect_script(i, frame);
+                // ... and its third call, the animation cue track
+                // (`FUN_800508DC`, same arguments).
+                self.step_actor_anim_cues(i, frame);
             }
         }
         // The move-FX streak counter walk (retail `FUN_801E09F8` phase 1):
@@ -473,6 +480,194 @@ impl World {
         if let Some(actor) = self.actors.get_mut(i) {
             actor.battle_effect_cursor = cursor;
         }
+    }
+
+    /// Walk actor `i`'s committed clip's **animation cue track** for one
+    /// frame - the engine seat of retail's `FUN_80047430` -> `FUN_800508DC`
+    /// call (`0x800478E4` / `0x80047C34`, the same `(slot, entry, frame)`
+    /// arguments the effect-script stepper takes). The track is the entry's
+    /// `+0x54` `(frame, cue)` run, read off the committed entry head
+    /// ([`Actor::battle_effect_script`]); the cursor is
+    /// [`Actor::battle_anim_cue_cursor`].
+    ///
+    /// Every fired cue goes through the battle sound funnel `FUN_8004FE5C`
+    /// ([`crate::sfx_cue::route_sfx_cue`]) with the actor's **retail**
+    /// actor-table index as the category: the `>= 0x100` party arm starts a
+    /// CD-XA clip ([`AudioState::battle_xa_cues`]), everything else lands in
+    /// the SFX ring both hosts drain ([`World::take_sfx_ring_ops`]) - a
+    /// runtime-bank id (`>= 0x200`) after its `bse.dat` row's `+4` category
+    /// has been written. That category is the actor's render-node `+0x80`
+    /// byte ([`Self::battle_sound_category`]), the literal `2` for a party
+    /// cue `>= 0xA7`.
+    ///
+    /// This is what an ordinary swing, a footstep, a knockdown and a
+    /// monster's attack sound like: none of those sounds is emitted by the
+    /// battle-action SM or the melee kernel.
+    // REF: FUN_80047430 (the retail caller this substitutes for)
+    fn step_actor_anim_cues(&mut self, i: usize, frame: i16) {
+        use crate::anim_cue::{AnimCueActor, AnimCueEmit, AnimCueSlot, walk_anim_cues};
+        let Some(actor) = self.actors.get(i) else {
+            return;
+        };
+        let Some(head) = actor.battle_effect_script.as_ref() else {
+            return;
+        };
+        let track: Vec<AnimCueSlot> = (0..usize::from(crate::anim_cue::ANIM_CUE_TRACK_LEN))
+            .map_while(|k| {
+                let o = crate::anim_cue::ANIM_CUE_TRACK_OFFSET + k * 4;
+                let b = head.get(o..o + 4)?;
+                Some(AnimCueSlot {
+                    frame: u16::from_le_bytes([b[0], b[1]]),
+                    cue: u16::from_le_bytes([b[2], b[3]]),
+                })
+            })
+            .collect();
+        if track.first().is_none_or(|s| s.cue == 0) {
+            return;
+        }
+        let cursor = actor.battle_anim_cue_cursor;
+        let anim_id = head.get(0x77).copied().unwrap_or(0);
+        let category = self.retail_actor_category(i as u8);
+        let party = category < 3;
+        let char_id = if party {
+            self.party_roster_slot(i) as u8 + 1
+        } else {
+            0
+        };
+        // Record `+0xF8 & 0x2000` - bit `32 + 13` of the ability bitfield
+        // at `+0xF4`.
+        let voice_muted = party
+            && self
+                .party
+                .roster
+                .members
+                .get(self.party_roster_slot(i))
+                .is_some_and(|r| r.ability_bits()[5] & 0x20 != 0);
+        let cue_actor = AnimCueActor {
+            slot: category,
+            char_id,
+            anim_id,
+            voice_muted,
+            cd_busy: self.audio.battle_xa_busy_frames > 0,
+        };
+        let key = u8::try_from(frame.max(0)).unwrap_or(u8::MAX);
+        let walk = walk_anim_cues(&cue_actor, &track, cursor, key, &mut || {
+            self.next_rand() as i32
+        });
+        if walk.cursor_committed
+            && let Some(a) = self.actors.get_mut(i)
+        {
+            a.battle_anim_cue_cursor = walk.cursor;
+        }
+        for emit in walk.emits {
+            match emit {
+                AnimCueEmit::Route { id, slot } => self.route_battle_cue(id, slot),
+                AnimCueEmit::Dispatch { id } => {
+                    if let Some(rid) = crate::anim_cue::dispatch_ring_id(id) {
+                        self.audio.sfx_ring_ops.push(SfxRingOp::Push(rid as i16));
+                    }
+                }
+                AnimCueEmit::Suppressed { .. } => {}
+            }
+        }
+    }
+
+    /// One call into the battle sound funnel `FUN_8004FE5C(id, category)`
+    /// ([`crate::sfx_cue::route_sfx_cue`]), with its two outputs placed where
+    /// both hosts read them: the CD-XA leg on
+    /// [`AudioState::battle_xa_cues`], the ring id on the SFX ring ops - after
+    /// the runtime row's `+4` category write the funnel makes first.
+    // REF: FUN_8004FE5C
+    pub(in crate::world) fn route_battle_cue(&mut self, id: u16, category: u8) {
+        let cats: Vec<u8> = (0..8u8).map(|c| self.battle_sound_category(c)).collect();
+        let element_of = |c: u8| cats.get(usize::from(c)).copied().unwrap_or(7);
+        let durations = self.audio.xa_cue_durations.as_deref();
+        let xa_duration_raw = |n: u32| {
+            durations
+                .and_then(|t| t.get(n as usize).copied())
+                .unwrap_or(0)
+        };
+        let src = crate::sfx_cue::SfxCueSources {
+            element_of: &element_of,
+            xa_duration_raw: &xa_duration_raw,
+            side_band_streaming: false,
+            cd_read_busy: self.audio.battle_xa_busy_frames > 0,
+        };
+        let mut ring = crate::sfx_cue::SfxCueRing::default();
+        let out = crate::sfx_cue::route_sfx_cue(&mut ring, u32::from(id), category, &src);
+        if let Some(xa) = out.xa
+            && xa.duration_sectors > 0
+        {
+            self.push_battle_xa_cue(xa);
+        }
+        if let Some(rid) = out.enqueued {
+            if let Some(cat) = out.element_write {
+                self.write_battle_sfx_category(rid, cat);
+            }
+            self.audio.sfx_ring_ops.push(SfxRingOp::Push(rid as i16));
+        }
+    }
+
+    /// The byte the cue funnel writes into a runtime row's `+4` category for
+    /// a cue fired by **retail** actor-table index `category` - the actor's
+    /// render node `+0x80` byte (`*(0x801C9370[cat] + 0x22C) + 0x80`). It is
+    /// a VAB slot, not an element: battle init `FUN_800513F0` seeds every
+    /// node with `7` (`0x80051548`), and the battle scene loader
+    /// `FUN_800520F0` re-seeds the monsters - `7` for every present monster
+    /// (`0x8005225C`, slot 7 then takes `monster.snd` bank `min id - 1`),
+    /// then `8` for the monsters carrying the largest id when the formation
+    /// mixes ids (`0x8005234C`, slot 8 takes bank `max id - 1`). Slots 7 / 8
+    /// are the battle's two `monster.snd` banks (`docs/formats/sfx-table.md`).
+    // REF: FUN_800513F0, FUN_800520F0
+    /// The `monster.snd` banks this battle opens, as `(VAB slot, bank
+    /// index)`: slot `7` takes bank `min id - 1`, and - when the formation
+    /// mixes monster ids - slot `8` takes bank `max id - 1`. Empty outside
+    /// battle or with no monster seated. Both hosts stage these while the
+    /// battle is on screen, which is what makes the monster-side runtime cues
+    /// ([`Self::battle_sound_category`]) audible.
+    ///
+    /// Read off the battle scene loader `FUN_800520F0`: the first pass
+    /// (`0x80052218..0x80052288`) keeps the smallest non-zero id of the four
+    /// `DAT_8007BD0C` bytes and calls `FUN_8003E104(min - 1, 7, ..)`
+    /// (`0x80052288..0x80052294`); the second (`0x800522B8..0x80052308`)
+    /// keeps the largest and counts ids that differ from it on the way, and
+    /// only a non-zero count reaches `FUN_8003E104(max - 1, 8, ..)`
+    /// (`0x80052360..0x8005236C`). `FUN_8003E104` indexes the archive's
+    /// sector table with that bank number directly.
+    // REF: FUN_800520F0, FUN_8003E104
+    pub fn battle_monster_sound_banks(&self) -> Vec<(u8, u16)> {
+        let ids: Vec<u16> = self
+            .battle_monster_slots()
+            .into_iter()
+            .map(|(_, id, _)| id)
+            .filter(|&id| id != 0)
+            .collect();
+        let (Some(&min), Some(&max)) = (ids.iter().min(), ids.iter().max()) else {
+            return Vec::new();
+        };
+        let mut out = vec![(7u8, min - 1)];
+        if min != max {
+            out.push((8, max - 1));
+        }
+        out
+    }
+
+    pub(in crate::world) fn battle_sound_category(&self, category: u8) -> u8 {
+        if category < 3 {
+            return 7;
+        }
+        let ids: Vec<u16> = self
+            .battle_monster_slots()
+            .into_iter()
+            .map(|(_, id, _)| id)
+            .collect();
+        let slot = usize::from(self.engine_slot_of_retail_category(category));
+        let Some(id) = self.actors.get(slot).and_then(|a| a.battle_monster_id) else {
+            return 7;
+        };
+        let max = ids.iter().copied().max().unwrap_or(id);
+        let mixed = ids.iter().any(|&x| x != ids[0]);
+        if mixed && id == max { 8 } else { 7 }
     }
 
     /// The move-FX streak block the effect script's terminator installs -
@@ -1044,6 +1239,7 @@ impl World {
                 p.rewind();
             }
             actor.battle_effect_cursor = 0;
+            actor.battle_anim_cue_cursor = 0;
             actor.battle.input_cursor = 0;
             actor.battle.flag_bits.clear(ActorFlags::ADVANCE_DONE);
             return;
@@ -1253,6 +1449,7 @@ impl World {
                     .map(|c| c.effect_script.clone())
                     .filter(|s| !s.is_empty());
                 a.battle_effect_cursor = 0;
+                a.battle_anim_cue_cursor = 0;
             }
             None => {
                 // No usable clip: a zero-length swing - nothing plays, the
@@ -1276,9 +1473,20 @@ impl World {
     // a surviving no-get-up target, else `+0x1DA = +0x1F1`; the `+0x1EF..
     // +0x1F3` tag->entry map is built by FUN_80054CB0 / FUN_80053CB8).
     pub fn queue_battle_reaction(&mut self, slot: usize, survives: bool) {
-        let Some(map) = self.battle_reaction_map(slot) else {
-            return;
-        };
+        if let Some(entry) = self.battle_reaction_entry_for(slot, survives) {
+            self.commit_battle_reaction_entry(slot, entry);
+        }
+    }
+
+    /// The reaction entry [`Self::queue_battle_reaction`] would commit on
+    /// actor `slot` - the `+0x1EF` flinch for a survivor without a get-up
+    /// entry, the `+0x1F1` knockdown otherwise. `None` without clips.
+    pub(in crate::world) fn battle_reaction_entry_for(
+        &self,
+        slot: usize,
+        survives: bool,
+    ) -> Option<u8> {
+        let map = self.battle_reaction_map(slot)?;
         let has_getup = map[3] != 0
             && self
                 .actors
@@ -1287,12 +1495,11 @@ impl World {
                 .and_then(|c| c.get(usize::from(map[3])))
                 .and_then(|c| c.as_ref())
                 .is_some_and(|c| c.frame_count > 0);
-        let entry = if survives && !has_getup {
+        Some(if survives && !has_getup {
             map[0]
         } else {
             map[2]
-        };
-        self.commit_battle_reaction_entry(slot, entry);
+        })
     }
 
     /// The action **tag** of every installed action clip of the monster in
@@ -1440,6 +1647,7 @@ impl World {
             actor.battle_pose = Some(pose_id);
             actor.battle_effect_script = script;
             actor.battle_effect_cursor = 0;
+            actor.battle_anim_cue_cursor = 0;
         }
     }
 
@@ -1988,8 +2196,11 @@ impl World {
         // retail's battle-loader init call (stage `0xE`, `0x80052670`): a
         // fresh pool is exactly the state `FUN_801DE914(0x1000, 0xA00)`
         // leaves, so `Pool::init_head` carries `REPLACED-BY` naming this line.
+        // The rest of the battle-effect state goes with it - the mode switch
+        // into battle runs the same actor-pool reset (`FUN_8001E1B4`) the
+        // exit does.
         // REF: FUN_801DE914
-        self.effect_pool = vm::effect_vm::Pool::new();
+        self.teardown_battle_effects();
         // Sparring fight: resolve the battle-stage id exactly as retail's
         // battle-entry tail does - default 0, and raise it to the tutorial
         // stage only when the disc's one-shot arm flag is set, consuming the

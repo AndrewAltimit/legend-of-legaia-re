@@ -839,6 +839,98 @@ impl PlayWindowApp {
         usp::payline_screen_prims(&segments)
     }
 
+    /// Advance the slot machine's marquee one frame and compose its dot
+    /// buffer (`SlotMarqueeClock::frame`), off the live machine's own
+    /// marquee state. Clears the clock whenever no machine is on screen, so a
+    /// fresh visit starts its legend the way retail's init leaves it.
+    pub(super) fn tick_slot_marquee(&mut self) {
+        let world = &self.session.host.world;
+        let live = world.mode == SceneMode::SlotMachine;
+        let (Some(m), Some(Some(assets)), true) = (
+            world.minigames.slot_machine.as_ref(),
+            self.slot_cabinet_assets.as_ref(),
+            live,
+        ) else {
+            self.slot_marquee_clock = Default::default();
+            self.slot_dots.clear();
+            return;
+        };
+        // The bonus-anticipation latch (`DAT_801d3ca4`, `FUN_801d1af4`)
+        // picks the two "reach" legends.
+        self.slot_dots =
+            self.slot_marquee_clock
+                .frame(&m.marquee(), m.anticipation(), &assets.scene.messages);
+    }
+
+    /// Put the slot machine's VRAM on the GPU while the machine is on
+    /// screen, decoding its data on first sight; drop it otherwise. The
+    /// machine draws against this VRAM in place of the walked-in scene's -
+    /// the overlay replaces the field, it is not a layer over it.
+    pub(super) fn refresh_slot_cabinet_gpu(&mut self) {
+        if self.session.host.world.mode != SceneMode::SlotMachine {
+            self.slot_gpu = None;
+            return;
+        }
+        if self.slot_cabinet_assets.is_none() {
+            let index = self.session.host.index.clone();
+            let read = |i: usize| index.entry_bytes(i as u32).ok().map(|b| b.to_vec());
+            let loaded = legaia_engine_render::ui_slot_cabinet::SlotCabinetAssets::load(read)
+                .map_err(|e| log::warn!("slots: {e}"))
+                .ok();
+            self.slot_cabinet_assets = Some(loaded.map(std::sync::Arc::new));
+        }
+        if self.slot_gpu.is_some() {
+            return;
+        }
+        let (Some(r), Some(Some(assets))) = (
+            self.win.renderer.as_ref(),
+            self.slot_cabinet_assets.as_ref(),
+        ) else {
+            return;
+        };
+        match r.upload_vram(&assets.vram) {
+            Ok(v) => self.slot_gpu = Some(v),
+            Err(e) => log::warn!("slots: vram upload failed: {e:#}"),
+        }
+    }
+
+    /// The whole machine as screen primitives - cabinet, reels, furniture,
+    /// dot matrix and coin HUD - through the shared
+    /// `ui_slot_cabinet::slot_cabinet_prims` builder. Empty outside the slot
+    /// machine or before its VRAM is resident.
+    pub(super) fn slot_cabinet_screen_prims(
+        &self,
+    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+        use legaia_engine_render::ui_slot_cabinet as usc;
+        if self.slot_gpu.is_none() || self.session.host.world.mode != SceneMode::SlotMachine {
+            return Vec::new();
+        }
+        let (Some(m), Some(Some(assets))) = (
+            self.session.host.world.minigames.slot_machine.as_ref(),
+            self.slot_cabinet_assets.as_ref(),
+        ) else {
+            return Vec::new();
+        };
+        let strips = m.strips();
+        let dots = if self.slot_dots.is_empty() {
+            legaia_asset::minigame_slot_scene::clear_dots()
+        } else {
+            self.slot_dots.clone()
+        };
+        usc::slot_cabinet_prims(&usc::SlotCabinetInput {
+            scene: &assets.scene,
+            cabinet: assets.cabinet.as_ref(),
+            hud: &assets.hud,
+            reel_pos: core::array::from_fn(|r| m.reel_pos(r)),
+            strips: [&strips[0], &strips[1], &strips[2]],
+            stop_open: core::array::from_fn(|r| m.reel_stop_open(r)),
+            winning_line: m.winning_line_word(),
+            dots: &dots,
+            blink: self.slot_marquee_clock.blink,
+            balance: m.balance(),
+        })
+    }
+
     /// The fishing rod and line as screen primitives: the rod model the rod
     /// actor posed this frame (`PondSession::rod_faces`, wrapped by the shared
     /// `ui_fishing_rod` builder), then the session's line for this frame
@@ -858,7 +950,10 @@ impl PlayWindowApp {
             (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
         ];
         let world = &mut self.session.host.world;
-        let view = resolve_field_camera(world, &self.session.camera, None, center).field_view();
+        // The pond draws under the venue camera; the line projects through it.
+        let view = legaia_engine_core::fishing_venue::venue_view(&world.minigames).or_else(|| {
+            resolve_field_camera(world, &self.session.camera, None, center).field_view()
+        });
         // The rod model first: its actor runs ahead of the lure tick, so in a
         // shared bucket its packets are the earlier `AddPrim`s.
         let mut prims: Vec<_> = world
@@ -972,6 +1067,86 @@ impl PlayWindowApp {
         });
     }
 
+    /// Pose the fishing pond - the `other1` venue with the party on its
+    /// shore seats (`legaia_engine_core::fishing_scene::FishingSurface`, the
+    /// kernel the browser play page drives too) - and put it on the GPU. The
+    /// redraw draws it in place of the walked-in field, which stays loaded
+    /// underneath and is shown again unchanged when the session ends.
+    pub(super) fn refresh_fishing_gpu(&mut self) {
+        let world = &self.session.host.world;
+        let live = world.mode == SceneMode::Fishing;
+        let generation_before = self.fishing_surface.generation();
+        if self
+            .fishing_surface
+            .frame(&self.session.host.index, &world.minigames, live)
+            .is_none()
+        {
+            self.fishing_gpu = None;
+            return;
+        }
+        let (Some(r), Some(scene)) = (self.win.renderer.as_ref(), self.fishing_surface.scene())
+        else {
+            return;
+        };
+        let generation = self.fishing_surface.generation();
+        let (sw, sh) = r.surface_size();
+        let (_, aspect) = super::geometry::scene_viewport_for(sw, sh);
+        let mvp = Mat4::from_cols_array(&scene.vp_raw(aspect));
+        let normals = vec![[0.0f32; 3]; scene.positions.len()];
+        let textured = r
+            .upload_vram_mesh(
+                &scene.positions,
+                &scene.uvs,
+                &scene.cba_tsb,
+                &normals,
+                &scene.colors,
+                &scene.textured_indices,
+            )
+            .map_err(|e| log::warn!("fishing pond: textured upload failed: {e:#}"))
+            .ok();
+        let fill: Vec<[u8; 3]> = scene
+            .flat_rgba
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|c| [c[0], c[1], c[2]])
+            .collect();
+        let untextured = (!scene.untextured_indices.is_empty())
+            .then(|| {
+                r.upload_color_mesh(&scene.positions, &fill, &scene.untextured_indices)
+                    .map_err(|e| log::warn!("fishing pond: untextured upload failed: {e:#}"))
+                    .ok()
+            })
+            .flatten();
+        let stale = generation != generation_before
+            || self
+                .fishing_gpu
+                .as_ref()
+                .is_none_or(|g| g.generation != generation);
+        let vram = if stale {
+            match self.fishing_surface.vram().map(|v| r.upload_vram(v)) {
+                Some(Ok(v)) => v,
+                Some(Err(e)) => {
+                    log::warn!("fishing pond: vram upload failed: {e:#}");
+                    return;
+                }
+                None => return,
+            }
+        } else {
+            match self.fishing_gpu.take() {
+                Some(g) => g.vram,
+                None => return,
+            }
+        };
+        self.fishing_gpu = Some(BakaDuelGpu {
+            generation,
+            vram,
+            textured,
+            untextured,
+            mvp,
+        });
+    }
+
     /// Pose the Muscle Dome's 3D arena surface for this frame and put it on
     /// the GPU.
     ///
@@ -1075,6 +1250,7 @@ impl PlayWindowApp {
         self.tick_fishing_actors();
         self.tick_baka_chrome();
         self.tick_muscle_hub();
+        self.tick_slot_marquee();
     }
 
     /// Advance the Muscle Dome hub-screen timers one frame, off the world's

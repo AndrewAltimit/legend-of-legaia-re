@@ -41,8 +41,9 @@ count-4 table variant (`[1, 2, 6, 0x14]`).
 Parsers: `legaia_asset::clut_walk::{from_scene_bundle, scene_park_strips}`
 (disc-gated `crates/asset/tests/field_anim_tables_real.rs` pins the carrier
 set). Engine consumers: the play-window water animator (field scenes now
-resolve their own bundle's table) and the site field-scene viewer
-(`web-viewer::field_scene::FieldSceneAnim`).
+resolve their own bundle's table), the site play page and the site
+field-scene viewer (`web-viewer::field_scene::FieldSceneAnim`), all through
+`engine-core::clut_walk_anim`.
 
 ## Mechanism 2 - the ambient move-VM effect tree
 
@@ -594,10 +595,13 @@ during its cutscene set pieces. Scenes with retail arming are untouched
   the palette fx (see the mechanism-3 section): the play-window
   substitutes rebuilt meshes into its draw lists, the two web surfaces
   re-upload just the dirty meshes' position streams.
-- The site field-scene viewer runs both mechanisms in the browser:
-  `field_scene_anim_init` / `field_scene_anim_tick` on the WASM viewer,
-  with `site/js/field-scene-view.js` re-uploading the VRAM texture on
-  change - jou's ground palette pulses and flashes in the assembled view.
+- The site field-scene viewer runs the scene **live**: `field_scene_anim_init`
+  enters it headless through `engine-core::scene_live::LiveScene` (a
+  `SceneHost` picker entry, so the entry-time ambient spawn is the host's),
+  and `field_scene_anim_tick` drains the same `World::step_field_vram_effects`
+  the play page drains, beside the CLUT walker. `site/js/field-scene-view.js`
+  re-uploads the VRAM texture on change - jou's ground palette pulses and
+  flashes in the assembled view.
 - The site **play** page runs them through the live engine instead: the
   scene host spawns the ambient tree at scene entry, and
   `LegaiaRuntime::tick_frame` drains it (plus the scripted CLUT fx and a

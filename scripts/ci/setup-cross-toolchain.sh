@@ -12,6 +12,13 @@
 #
 #   <host triple>                  Nothing beyond the default toolchain.
 #
+#   universal-apple-darwin         Not a rustc triple: the release name for a
+#                                  macOS universal (arm64 + x86_64) build. Run
+#                                  on a macOS host, where Apple's toolchain
+#                                  links both slices natively; this adds the
+#                                  two std targets and checks for `lipo`,
+#                                  which release-build.sh uses to fuse them.
+#
 #   x86_64-pc-windows-gnu          The mingw-w64 cross toolchain, from apt:
 #                                      sudo apt install mingw-w64
 #                                  Provides x86_64-w64-mingw32-gcc, which
@@ -59,6 +66,27 @@ CACHE="${LEGAIA_RELEASE_CACHE:-$HOME/.cache/legaia-release}"
 HOST_TRIPLE="$(rustc -vV | awk '/^host: /{print $2}')"
 
 log() { printf '[setup-cross] %s\n' "$*"; }
+
+# --- macOS universal: two real targets, fused later by lipo ----------------
+if [[ "$TARGET" == "universal-apple-darwin" ]]; then
+    if [[ "$(uname -s)" != "Darwin" ]]; then
+        printf '[setup-cross] ERROR: %s builds on a macOS host only\n' "$TARGET" >&2
+        exit 1
+    fi
+    if ! command -v lipo >/dev/null 2>&1; then
+        printf '[setup-cross] ERROR: lipo not found (install the Xcode command line tools)\n' >&2
+        exit 1
+    fi
+    for t in aarch64-apple-darwin x86_64-apple-darwin; do
+        if rustup target list --installed | grep -qx "$t"; then
+            log "rust std for $t already installed"
+        else
+            log "adding rust std for $t"
+            rustup target add "$t"
+        fi
+    done
+    exit 0
+fi
 
 # --- Rust standard library for the target ----------------------------------
 if rustup target list --installed | grep -qx "$TARGET"; then

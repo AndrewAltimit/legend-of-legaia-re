@@ -85,7 +85,15 @@ fn xa_lane_wants_the_native_staging_set_and_every_file_is_on_the_disc() {
                 .unwrap_or(p)
         })
         .collect();
-    assert_eq!(names, ["XA2.XA", "XA4.XA", "XA6.XA", "XA27.XA", "XA30.XA"]);
+    // Shouts, then the battle clip banks: the anim cue tracks' per-character
+    // voice banks (Vahn's Spirit is `XA1` channel 0) and the block grunts.
+    assert_eq!(
+        names,
+        [
+            "XA2.XA", "XA4.XA", "XA6.XA", "XA1.XA", "XA3.XA", "XA5.XA", "XA27.XA", "XA28.XA",
+            "XA29.XA", "XA30.XA"
+        ]
+    );
     for f in &wanted {
         let ext = rt.disc_file_extent_json(f);
         assert_ne!(ext, "null", "{f} must resolve to an ISO extent");

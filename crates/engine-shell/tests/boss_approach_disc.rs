@@ -104,8 +104,10 @@ fn fight_pad(session: &BootSession) -> u16 {
 const APPROACH_HOLD_LIMIT: u32 = 900;
 /// Tick budget for the whole fight. Every swing plays its real clip length
 /// (the engine installs the party's battle forms at battle entry), so a
-/// padded-HP party's fight to a wipe runs past sixty thousand ticks.
-const BATTLE_TICKS: u32 = 120_000;
+/// padded-HP party's fight to a wipe runs past sixty thousand ticks - and
+/// past a hundred thousand once defenders block (`FUN_801EC3E4`'s block
+/// roll: a blocked hit lands no damage, so the boss's HP falls slower).
+const BATTLE_TICKS: u32 = 240_000;
 /// No battle position leaves this box (the stage is a few thousand units
 /// across; the parked fights had members at +-17000).
 const STAGE_BOUND: i16 = 6000;

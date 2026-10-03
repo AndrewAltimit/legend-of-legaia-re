@@ -231,9 +231,33 @@ impl BattleCamera {
     /// Point the submenu close-up at the acting battle actor. Retail
     /// rebuilds the framing from the actor record on every submenu open
     /// (`FUN_801D5854` case `0`), so hosts should call this as the active
-    /// seat changes; an already-armed glide is left alone.
+    /// seat changes.
+    ///
+    /// While the close-up is up, a **different** actor re-arms it. The
+    /// command flow hands the ring straight from one member to the next -
+    /// every commit ends on the ring (`0x28`) for the next member owing a
+    /// command or on the commit confirm (`0x6E`) - with no far framing in
+    /// between, and the menu driver `FUN_801D388C` re-arms case `0` with
+    /// `a0 = ctx[+0x13]`, the member now commanding (`0x801D4758..0x801D4760`,
+    /// `0x801D53B4..0x801D53BC`). So the close-up glides over to the new
+    /// member on the case's own `a3 = 0xC` (6 camera steps). Without the
+    /// re-arm the phase never changes (`Submenu` to `Submenu`) and the camera
+    /// stays on the first member for the whole command phase.
     pub fn set_actor(&mut self, actor: BattleCamActor) {
+        let changed = actor != self.actor;
         self.actor = actor;
+        if changed && self.phase == BattleCamPhase::Submenu {
+            let mut from = self.pose;
+            self.glides.clear();
+            self.glides.push_back(Glide::linear(
+                &mut from,
+                self.actor.submenu_pose(),
+                SUBMENU_TR_Z_RAW,
+                SUBMENU_ENTER_STEPS,
+                true,
+            ));
+            self.pose = from;
+        }
     }
 
     /// Install the acting actor's target, which cases `7` and `8` frame

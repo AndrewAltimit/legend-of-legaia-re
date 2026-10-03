@@ -1611,8 +1611,55 @@ u16 cue)` pairs, terminated by `cue == 0` - which `FUN_800508DC` walks once per
 animation frame, resuming from a persistent cursor in the battle actor at
 `+0x1F6`. Each call fires every cue whose trigger frame the clip has reached and
 parks on the first it has not. Everything it fires goes out through the cue router
-`FUN_8004FE5C`. Port: `legaia_engine_audio::anim_cue` (`walk_anim_cues`,
-`AnimCueState`).
+`FUN_8004FE5C`. Port: `legaia_engine_core::anim_cue` (`walk_anim_cues`),
+called per animation frame by `World::step_actor_anim_cues` beside the
+effect-script stepper - retail's `FUN_80047430` makes the two calls with the
+same `(slot, entry, frame)` arguments (`0x800478B8` / `0x800478E4`).
+
+The shout band is the smallest part of the track. Most of what a fight sounds
+like rides it: a party swing's entry carries `(0, 0xA7)` / `(0, 0x51)`,
+`(3, 0x1A)`, `(7, 0x08)`, a walk cycle `(5, 0x12)` / `(0xB, 0x12)`, a
+knockdown `(0, 0x56)`, `(5, 0x17)`, `(7, 0x17)`, a monster's knockdown
+`(1, 0xF8)`. Neither the action SM nor the melee kernel emits any of these;
+without the walk, a fight is silent but for the
+[melee kernel's two rare sites](#what-a-normal-attack-sounds-like).
+
+What the funnel does with each id decides where it sounds. Below `0x48` (party,
+or below `0x1B`) the id enqueues as `id - 1`, a static
+[`sfx-table.md`](../formats/sfx-table.md) row; `0x48..0x64` enqueues unchanged;
+`0x64` and up enqueue as `id + 0x19C`, a row of the battle runtime bank
+[`bse.dat`](../formats/bse-dat.md), after the funnel writes that row's `+4`
+category. The category is the firing actor's render-node `+0x80` byte, which
+is a **VAB slot**, not an element: battle init seeds it `7` on every node
+(`FUN_800513F0`, `0x80051548`) and the battle scene loader re-seeds monsters
+`7` / `8` by monster id (`FUN_800520F0`, `0x8005225C` / `0x8005234C`) - the
+two `monster.snd` banks. A party cue `>= 0xA7` takes the literal `2`, the
+class-2 battle bank. So a swing's `0xA7` keys PROT 0869 and a monster's
+`0xF8` keys its own `monster.snd` bank.
+
+Both hosts receive the routed ids on the field SFX ring
+(`World::take_sfx_ring_ops`) and resolve ring ids `>= 0x200` against
+`World::runtime_sfx_bundle`, which is `bse.dat` in battle (installed fresh per
+battle by `SceneHost`, PROT 888) and the scene's prescript record 0 elsewhere.
+The `monster.snd` slots `7` / `8` are staged per battle on both hosts:
+`World::battle_monster_sound_banks` reads the bank choice off `FUN_800520F0`
+(slot 7 = bank `min id - 1`, slot 8 = bank `max id - 1` when the formation
+mixes ids, each through `FUN_8003E104`'s sector table), and the native
+director and the browser page park the banks behind the BGM like the reward
+bank (`BgmTail`'s monster borrower), dropping them when the battle ends.
+Retail gives the two slots their own SPU bases (`0x65010` / `0x6C810`); the
+port's SPU map has no room reserved there.
+
+The voice band is per character in blocks of sixteen - Vahn `0xC8..=0xD7`,
+Noa `0xD8..=0xE7`, Gala `0xE8..=0xF7`, each block ending on that character's
+shout - so after the `+0x38` re-base each block lands on two clip slots:
+`0` / `26` (`XA1` / `XA27`), `2` / `27` (`XA3` / `XA28`) and `4` / `28`
+(`XA5` / `XA29`). The **Spirit** command's sound is this path: the commit
+stages art-bank record 0 (`0x10`, installed at dynamic slot `0x11`), whose
+track opens `(0, 0xC8)` - `XA1.XA` channel 0 - and whose effect script
+spawns the aura (`0x07`, `0x08` and the direct `0x14`) on its first frame.
+Both hosts stage those six banks with `XA30` as the battle clip set
+(`BATTLE_XA_CLIP_SLOTS` in `engine-shell::boot` and `web-viewer::play_xa`).
 
 On a **party** seat (battle slot `< 3`) the cue-id band `0xC8..=0xFF`, minus the
 single hole at `0xFA`, is the arts voice: the id is re-based by `+0x38`, which is
@@ -1852,7 +1899,7 @@ two** emissions from one routine, selected by the `_DAT_8007BD84` word.
   shout banks use. `XA30.XA` is a ten-channel mono 37.8 kHz bank of ~1.5 s
   clips; `dur` cuts Vahn's to `0x26` vsyncs. The seat here is `s6`
   (`0x801EEA70 andi a0,s6,0xff`), not the `s4` seat the sting uses. Taken
-  while `_DAT_8007BD84` is **zero** - every ordinary swing, see the writer
+  while `_DAT_8007BD84` is **zero** - every ordinary battle, see the writer
   census below - and further gated on the voice pass's in-flight level
   (`0x801EEAB8 slti v0,v0,0x2` over `_DAT_8007BC20`, so a level of `2` mutes
   the grunt while `1` does not) and on a per-strike equality: `s7` must be
@@ -1860,25 +1907,32 @@ two** emissions from one routine, selected by the `_DAT_8007BD84` word.
   `s7` is the staged pose byte the routine later commits to `+0x1DA`
   (`0x801EEC6C`); fourteen definitions reach the compare and only one of them
   (`0x801EC884`) loads `+0x1F3`, so this is a real per-strike condition and
-  not a latch that always passes.
+  not a latch that always passes. `+0x1F3` is the defender's **block** entry
+  (tag `0x0B`, [monster-animation.md](../formats/monster-animation.md#action-tags-and-the-0x1ef-reaction-map)),
+  so the grunt is the sound of a strike being blocked: a swing that commits
+  the flinch or the knockdown is silent here, which is what a capture of
+  ordinary swings measured
+  ([battle-action.md](battle-action.md#the-sound-a-melee-swing-makes-and-which-half-of-it-the-port-has)).
   Tabulated under the [one-shot cue census](#one-shot-cue-census-fun_8003d53c).
-- `FUN_8004FE5C(0x10C, cat)` at `0x801EEBE8`, the cue router. `0x10C` is above
-  `0x100`, so for a party attacker it takes the router's **XA voice** leg -
-  clip `(0x0C >> 3) = 1` remapped to `26`, channel `0x0C & 7 = 4`, i.e.
-  `XA27.XA` channel 4 (an eight-channel *stereo* bank of 2.4-4.5 s attack
-  stings; the duration table entry `373` covers the whole clip) - and for a
-  non-party attacker the high element-tinted ring leg (`id + 0x19C = 0x2A8`).
-  Taken while `_DAT_8007BD84` is **non-zero** (`bne v0,zero,0x801EEB70` at
-  `0x801EEAC8` jumps over the grunt), and further gated on the target's clip
-  being a plain action-table entry and - inside the router - the drive being
-  idle (`FUN_8003DE7C(1) == 0`, `0x8004FE9C`).
+- `FUN_8004FE5C(0x10C, cat)` at `0x801EEBE8`, the cue router, with the
+  **target's** index as `cat` (`s4`, the attacker's `+0x1DD`). `0x10C` is
+  above `0x100`, so for a party target it takes the router's **XA voice**
+  leg - clip `(0x0C >> 3) = 1` remapped to `26`, channel `0x0C & 7 = 4`, i.e.
+  `XA27.XA` channel 4 (an eight-channel *stereo* bank of 2.4-4.5 s clips; the
+  duration table entry `373` covers the whole clip) - and for a monster target
+  the high ring leg (`id + 0x19C = 0x2A8`). Taken while `_DAT_8007BD84` is
+  **non-zero** (`bne v0,zero,0x801EEB70` at `0x801EEAC8` jumps over the
+  grunt), and further gated on the attacker's clip being a plain action-table
+  entry and - inside the router - the drive being idle (`FUN_8003DE7C(1) ==
+  0`, `0x8004FE9C`).
 
 Both are `see ghidra/scripts/funcs/overlay_0898_801ec3e4.txt` (disassembly,
 not the C). The word decides, never the order: after the grunt the routine
 re-reads `_DAT_8007BD84` at `0x801EEB60` and, still zero, skips the cue at
-`0x801EEB68`, so one strike never attempts both. Note what that makes
-retail's ordinary impact sound: a **streamed CD-XA clip** (the grunt), not
-an SPU descriptor one-shot.
+`0x801EEB68`, so one strike never attempts both. Neither is the ordinary
+impact sound: an unblocked swing reaches neither site. What a swing sounds
+like is the playing clip's own cue track - see
+[the animation cue track](#the-second-shout-trigger---the-animation-cue-track-fun_800508dc).
 
 **`_DAT_8007BD84` is a pointer, and its writers are enumerable.** A sweep in
 every reference form (`lui`-absolute, `lui`+`addiu`/`ori` materialise, literal
@@ -1908,9 +1962,9 @@ same XA path as the arts shouts. The browser play page has the same lane:
 `web-viewer`'s `play_xa` demuxes the raw sectors the page slices out of the
 visitor's own disc bytes into the same two banks and plays them through
 `WebAudioOut::play_xa_shout`, so both hosts sound the melee cue and the arts
-shout. One gap remains here - the monster leg's `0x2A8` is a runtime-bank id
-no engine bank models (the per-scene record-0 descriptor bank plus the
-`monster.snd` slots 7 / 8) - and one more sits beside it: the **cast** voice
+shout. The monster leg's `0x2A8` resolves to a `bse.dat` row keyed through
+the struck monster's `monster.snd` slot (7 / 8), which both hosts stage per
+battle. One gap sits beside it: the **cast** voice
 leg, declined on both hosts for want of a staged clip file
 ([`host-drift.md`](../tooling/host-drift.md#the-cast-voice-leg)).
 
