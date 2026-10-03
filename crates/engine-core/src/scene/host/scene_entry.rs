@@ -6,6 +6,10 @@ use super::*;
 
 use crate::cutscene::FmvHandoff;
 
+/// Extraction index of `bse.dat`, the battle runtime SFX descriptor bank (raw
+/// TOC `0x37A`, `docs/formats/bse-dat.md`).
+const BSE_BANK_PROT_ENTRY: u32 = 888;
+
 impl SceneHost {
     /// Install the placed-prop collision + interaction layer for the current
     /// field scene: one [`crate::world::FieldPropCollider`] per placed `.MAP`
@@ -89,6 +93,33 @@ impl SceneHost {
                 }
             })
             .collect();
+    }
+
+    /// Copy the battle runtime SFX bank `bse.dat` (PROT 888) onto the world -
+    /// battle init `FUN_800513F0` -> `FUN_8001FA88`, which reloads it into the
+    /// current-bundle slot on every battle (so a fresh copy also discards the
+    /// last battle's `+4` category writes). Read once per host.
+    ///
+    /// REF: FUN_8001FA88
+    fn install_battle_sfx_bank(&mut self) {
+        if self.bse_bank_cache.is_none() {
+            let bytes = match self.index.entry_bytes(BSE_BANK_PROT_ENTRY) {
+                Ok(b) if legaia_asset::bse_bank::detect(&b).is_some() => b.to_vec(),
+                Ok(_) => {
+                    eprintln!("[scene] PROT {BSE_BANK_PROT_ENTRY} is not a bse bank");
+                    Vec::new()
+                }
+                Err(err) => {
+                    eprintln!("[scene] bse.dat (PROT {BSE_BANK_PROT_ENTRY}) load skipped: {err:#}");
+                    Vec::new()
+                }
+            };
+            self.bse_bank_cache = Some(Arc::new(bytes));
+        }
+        if let Some(bank) = self.bse_bank_cache.as_ref().filter(|b| !b.is_empty()) {
+            let bank = Arc::clone(bank);
+            self.world.install_battle_sfx_bank(&bank);
+        }
     }
 
     /// Lazily load + cache the monster stat archive (PROT 867, extended
@@ -2258,6 +2289,9 @@ impl SceneHost {
         // leg has closed; its hand-off arms the next leg's drain below.
         self.world.tick_muscle_hub();
         if matches!(self.world.mode, crate::world::SceneMode::Battle) {
+            if !was_battle || self.world.audio.battle_sfx_bank.is_none() {
+                self.install_battle_sfx_bank();
+            }
             self.install_battle_monster_action_clips();
             self.ensure_battle_party_forms();
         } else {

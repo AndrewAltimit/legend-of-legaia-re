@@ -1591,7 +1591,6 @@ that half is disclosed at its tag and waived by the drift gate.
 
 | module | n | bucket | reach | addresses |
 |---|---|---|---|---|
-| `anim_cue.rs` | 1 | (c) | disclosed | `800508dc` |
 | `sfx.rs` | 1 | (a) | the Muscle Dome interval tally's key-on; its producer `801d1288` is entered and it is not - see [the harness-blind table](#no-ladder-harness-blind) | `80065034` |
 
 The footstep cadence and the SFX delay ring left this table through the

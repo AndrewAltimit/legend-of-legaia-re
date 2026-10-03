@@ -51,6 +51,7 @@ impl SceneHost {
             frame_time: crate::FrameTime::new(),
             map_resolver: Box::new(NullMapIdResolver),
             monster_archive_cache: None,
+            bse_bank_cache: None,
             move_power_loaded: false,
             battle_tutorial_loaded: false,
             cast_effect_pool_loaded: false,

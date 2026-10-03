@@ -733,6 +733,14 @@ pub struct Actor {
     /// cycle).
     pub battle_effect_cursor: u8,
 
+    /// Animation cue-track cursor - the engine mirror of actor `+0x1F6`, the
+    /// resume point of the per-frame `FUN_800508DC` walk over the committed
+    /// entry's `+0x54` `(frame, cue)` track ([`crate::anim_cue`]). Zeroed by
+    /// the anim commit (`FUN_8004AD80`, `0x8004AFD0`); unlike the effect
+    /// cursor it does **not** rewind when a looping clip wraps - retail never
+    /// rewinds it there.
+    pub battle_anim_cue_cursor: u8,
+
     /// Per-frame battle pose **history ring** - the engine mirror of the
     /// retail rings `FUN_80047430` shifts every frame (position `+0x4C`,
     /// anim cursor `+0x17A`, clip `+0x234`, committed anim id `+0x1FB`;

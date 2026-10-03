@@ -246,6 +246,7 @@ impl World {
         // (retail `sb zero,0x1f5` on every commit).
         actor.battle_effect_script = Some(clip.effect_script).filter(|s| !s.is_empty());
         actor.battle_effect_cursor = 0;
+        actor.battle_anim_cue_cursor = 0;
         true
     }
 

@@ -36,6 +36,15 @@ pub struct AudioState {
     /// inside one read span collapse to the first. Counted down once per
     /// battle tick.
     pub battle_xa_busy_frames: u16,
+    /// The battle's runtime SFX descriptor bank - `bse.dat` (PROT 888), the
+    /// rows behind ring ids `>= 0x200` while a battle is on screen
+    /// (`docs/formats/bse-dat.md`). A fresh copy is installed at every battle
+    /// entry (retail reloads it in battle init `FUN_800513F0`), and the cue
+    /// router writes each enqueued row's `+4` category through it
+    /// (`gp+0x678`, [`crate::sfx_cue::route_sfx_cue`]'s `element_write`), so
+    /// a host resolving a runtime ring id reads the category the firing actor
+    /// chose. `None` outside battle or on a disc-free boot.
+    pub battle_sfx_bank: Option<Vec<u8>>,
     /// CD-XA one-shot clip requests the **field** raised this tick - the
     /// field VM's op `0x36` bit-15-clear arm (`FUN_8003D53C(arg >> 3,
     /// arg & 7, sel)` at `0x801E0420`) and the scripted-scene programs' voice
@@ -204,6 +213,7 @@ impl AudioState {
             battle_xa_cues: Vec::new(),
             battle_xa_prestage: Vec::new(),
             battle_xa_busy_frames: 0,
+            battle_sfx_bank: None,
             field_xa_cues: Vec::new(),
             field_xa_prestage: Vec::new(),
             field_xa_busy_frames: 0,
@@ -383,7 +393,51 @@ impl World {
     /// there, the port declines to.
     // REF: FUN_80016B6C
     pub fn runtime_sfx_descriptor(&self, id: i16) -> Option<[u8; 8]> {
-        runtime_sfx_descriptor_in(&self.props.stager_bytes, id)
+        runtime_sfx_descriptor_in(self.runtime_sfx_bundle(), id)
+    }
+
+    /// The bundle the drainer resolves ring ids `>= 0x200` against - retail's
+    /// current-bundle slot `gp+0x5B8`. In battle that is `bse.dat`
+    /// ([`AudioState::battle_sfx_bank`], which battle init loads over the
+    /// slot), everywhere else the field scene's prescript record 0
+    /// ([`crate::world::FieldPropState::stager_bytes`]). Both hosts mirror
+    /// this into their runtime-row resolver every tick.
+    // REF: FUN_8001FA88, FUN_8001F7C0
+    pub fn runtime_sfx_bundle(&self) -> &[u8] {
+        match (&self.mode, self.audio.battle_sfx_bank.as_deref()) {
+            (SceneMode::Battle, Some(bank)) => bank,
+            _ => &self.props.stager_bytes,
+        }
+    }
+
+    /// Install a fresh copy of the battle's runtime SFX bank (`bse.dat`) -
+    /// retail's per-battle reload in `FUN_800513F0` -> `FUN_8001FA88`, which
+    /// also discards the previous battle's `+4` category writes.
+    pub fn install_battle_sfx_bank(&mut self, bse_dat: &[u8]) {
+        self.audio.battle_sfx_bank = Some(bse_dat.to_vec());
+    }
+
+    /// Write a runtime row's `+4` category - the router's `gp+0x678` store
+    /// (`FUN_8004FE5C` `0x8004FFEC` / `0x80050084`). `ring_id` is the
+    /// enqueued id (`>= 0x200`); a row past the bank, or no bank, is skipped.
+    // REF: FUN_8004FE5C
+    pub(in crate::world) fn write_battle_sfx_category(&mut self, ring_id: u16, category: u8) {
+        let Some(bank) = self.audio.battle_sfx_bank.as_mut() else {
+            return;
+        };
+        let Some(row) = ring_id.checked_sub(0x200) else {
+            return;
+        };
+        let Some(hdr) = bank.get(2..4).map(|b| i16::from_le_bytes([b[0], b[1]])) else {
+            return;
+        };
+        let Ok(rec0) = usize::try_from((hdr / 2) * 2) else {
+            return;
+        };
+        let at = rec0 + usize::from(row) * 8 + 4;
+        if let Some(b) = bank.get_mut(at) {
+            *b = category;
+        }
     }
 
     /// The side-band bank the driver holds for the current request pair.

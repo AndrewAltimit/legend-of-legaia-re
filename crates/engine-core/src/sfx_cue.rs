@@ -35,10 +35,14 @@
 //! **Wrap**: after any append, a counter `> 3` resets to 0 - the ring
 //! really is 4 slots.
 //!
-//! The element byte itself comes from the attacker's battle actor:
-//! `*(actor_table[category] + 0x22C) + 0x80` with the actor-pointer table
-//! at `0x801C9370` - the caller supplies it through [`SfxCueSources`],
-//! keeping this module free of battle-actor layout.
+//! The "element" byte (the field keeps its historical name) is not an
+//! element: it is the firing actor's render-node `+0x80` byte,
+//! `*(actor_table[category] + 0x22C) + 0x80` with the actor-pointer table at
+//! `0x801C9370` - a **VAB slot** that lands in the runtime row's `+4`
+//! category column. Battle init seeds `7` on every node and the battle scene
+//! loader re-seeds monsters `7` / `8` (the two `monster.snd` banks); see
+//! `World::battle_sound_category`. The caller supplies it through
+//! [`SfxCueSources`], keeping this module free of battle-actor layout.
 
 /// Runtime-bank cue ids start here; ids below are static-table cues
 /// (`docs/formats/sfx-table.md`).
@@ -60,8 +64,8 @@ pub struct XaVoiceClip {
 pub struct SfxCueOutcome {
     /// Ring id appended this call (`None` = dropped or XA leg).
     pub enqueued: Option<u16>,
-    /// Element byte written into the runtime-bank descriptor (`+4`) of the
-    /// enqueued id.
+    /// Category (VAB slot) byte written into the runtime-bank descriptor
+    /// (`+4`) of the enqueued id.
     pub element_write: Option<u8>,
     /// XA voice clip started this call.
     pub xa: Option<XaVoiceClip>,
@@ -69,7 +73,7 @@ pub struct SfxCueOutcome {
 
 /// Host-supplied inputs the router reads.
 pub struct SfxCueSources<'a> {
-    /// Attacker element byte per category slot
+    /// Render-node `+0x80` byte (a VAB slot) per category slot
     /// (`*(0x801C9370[cat] + 0x22C) + 0x80`).
     pub element_of: &'a dyn Fn(u8) -> u8,
     /// Per-clip raw duration (`u16` table at `0x800788B8`, index

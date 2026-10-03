@@ -3486,16 +3486,16 @@ The negative speeds in the player files are the reactions' - knockdown, block, s
 
 ### The sound a melee swing makes, and which half of it the port has
 
-A physical swing's whole sound is one call: `li a0,0x10c` / `jal 0x8004fe5c` at `0x801EEBD8`, the only submit to the battle overlay's sound funnel anywhere in the melee kernel `FUN_801EC3E4`. Its second argument is the **attacker's actor-table index**, and because [`FUN_8004FE5C`](#engine-port) switches legs on `category < 3` the two sides of a fight sound different by construction:
+The melee kernel `FUN_801EC3E4` makes one submit to the battle overlay's sound funnel: `li a0,0x10c` / `jal 0x8004fe5c` at `0x801EEBD8`. Its second argument is the **target's** actor-table index - `move a1,s1` with `s1 = s4 & 0xFF`, and `s4` is the ticked attacker's `+0x1DD` (`0x801EC450`) - and because [`FUN_8004FE5C`](#engine-port) switches legs on `category < 3` the two sides of a fight sound different by construction:
 
-| Attacker | Leg | Result |
+| Target | Leg | Result |
 |---|---|---|
 | Party (`category < 3`) | CD-XA voice | `0x10C` → clip `26`, channel `4` - i.e. `XA27` |
-| Monster (`category >= 3`) | element-tinted high leg | ring id `0x10C + 0x19C = 0x2A8`, plus the attacker's element byte into that id's runtime-bank descriptor |
+| Monster (`category >= 3`) | high leg | ring id `0x10C + 0x19C = 0x2A8`, plus the struck monster's render-node `+0x80` byte (its `monster.snd` VAB slot, `7` or `8`) into that row's `+4` category |
 
-Two gates guard the submit. The target must be playing a plain action-table clip (`+0x1D9 < 0x10`, `0x801EEB88`), so a hit landing during an art-bank animation is silent. And `_DAT_8007BD84` selects between this cue and the per-character `XA30` grunt immediately above it (`FUN_8003D53C(0x1D, ch, dur)` at `0x801EEB18..0x801EEB44`, channel and duration keyed on `DAT_8007BD10[slot]`). That cell is a **pointer**, not a mode word - an effect-instance handle whose only non-zero writer on the disc is the Cort "Mystic Shield" stager (PROT 0940 file `+0xCA0` = `0x801F7678`), dereferenced and released by `FUN_8004CE2C`; every caller here is testing it for null. Census in [`audio.md`](audio.md#what-a-normal-attack-sounds-like).
+Two gates guard the submit. The **attacker** must be playing a plain action-table clip (`lbu v0,0x1d9(v0)` off `0x801C9370[s6]`, `+0x1D9 < 0x10`, `0x801EEB88`), so a swing out of an art-bank animation is silent. And `_DAT_8007BD84` selects between this cue and the per-character `XA30` grunt immediately above it (`FUN_8003D53C(0x1D, ch, dur)` at `0x801EEB18..0x801EEB44`, channel and duration keyed on `DAT_8007BD10[slot]`). That cell is a **pointer**, not a mode word - an effect-instance handle whose only non-zero writer on the disc is the Cort "Mystic Shield" stager (PROT 0940 file `+0xCA0` = `0x801F7678`), dereferenced and released by `FUN_8004CE2C`; every caller here is testing it for null. Census in [`audio.md`](audio.md#what-a-normal-attack-sounds-like).
 
-The port's live gameplay loop resolves melee damage inline rather than through the art-strike event, so nothing downstream of `World::fold_battle_event` used to see a swing at all and a whole fight produced **zero** cues. `World::land_melee_hit` runs the funnel at retail's site - once per resolved hit event - which is what makes `sfx_cue::route_sfx_cue` a live port rather than a caller-less one. The engine's compacted monster seating has to be re-based into retail's `0..=2` / `3..=7` index space first, or a monster seated at index 1 takes the party leg.
+Neither site is what an ordinary swing sounds like. The whoosh, the impact and the target's knockdown ride the committed clips' own cue tracks, walked per animation frame by `FUN_800508DC` ([audio.md](audio.md#the-second-shout-trigger---the-animation-cue-track-fun_800508dc)); the port walks them in `World::step_actor_anim_cues`. `World::land_melee_hit` runs the kernel's two sites once per resolved hit event. The engine's compacted monster seating has to be re-based into retail's `0..=2` / `3..=7` index space first, or a monster seated at index 1 takes the party leg.
 
 **Which half that is.** The cue site is one of the kernel's two sound emissions, and
 `_DAT_8007BD84` picks which. While the word is zero the routine takes the per-character
@@ -3508,7 +3508,7 @@ staged pose byte this routine commits to `+0x1DA` at `0x801EEC6C`; of the fourte
 that reach the compare only `0x801EC884` loads `+0x1F3`, so the condition really can fail. The
 re-read at `0x801EEB60` then skips the cue. While the word is
 non-zero, `bne v0,zero,0x801EEB70` at `0x801EEAC8` jumps over the grunt into the `0x10C` cue,
-gated on the target clip test and, inside the funnel, on the drive being idle
+gated on the attacker clip test and, inside the funnel, on the drive being idle
 (`FUN_8003DE7C(1) == 0`, `0x8004FE9C`). The word's only dumped stores are zeros (the
 battle-start sweep `FUN_80055B6C`, the round reset `FUN_8004CE2C`), so the grunt is the
 unflagged leg and the `XA27` channel-4 sting is the flagged case.
@@ -3547,18 +3547,22 @@ debug printf at `0x80016EC0` whose format string is at `0x80010238` - and which
 open a voice clip once the streamer is past level 1", not "mute at level 2". The
 capture read it as `2` in one fight and `0` in the other.
 
-The port carries both halves now. `World::fire_melee_impact_cue` selects on
+The port carries both halves. `World::fire_melee_impact_cue` selects on
 `MonsterAiState::flag_bd84` (the port's mirror of the word - the damage finisher's
-enemy-defender halve): the grunt goes out as a `(clip, channel, dur)` request on
-`World::audio.battle_xa_cues`, and the cue arm routes `0x10C` through `route_sfx_cue` with a modelled
-drive-busy flag (`dur` vsyncs after any clip start: `dur * 2.5` sectors at 150/s is `dur / 60`
-s) and the `0x800788B8` duration table parsed off the user's SCUS (`legaia_asset::xa_cue_table`). The native window plays the requests off a boot-staged
-`XaClipBank` (`XA27` / `XA30` demuxed + decoded, `crate::boot::read_battle_xa_clip_bank`)
-through the same XA mixing path as the arts shouts. The browser play page reaches the same
-banks: `web-viewer`'s `play_xa` demuxes the raw sectors the page slices out of the visitor's
-own disc bytes and plays the cut clip through `WebAudioOut::play_xa_shout`, so the requests
-sound on both hosts. The monster leg's `0x2A8` is still a runtime-bank id no engine bank
-models, so it reaches the hosts' scheduler and resolves nothing.
+enemy-defender halve). The grunt is gated on the strike committing the defender's
+`+0x1F3` block entry, so an ordinary swing - which commits the flinch or the
+knockdown - raises none; it goes out as a `(clip, channel, dur)` request on
+`World::audio.battle_xa_cues`. The cue arm routes `0x10C` through the shared funnel
+seat `World::route_battle_cue` with a modelled drive-busy flag (`dur` vsyncs after
+any clip start: `dur * 2.5` sectors at 150/s is `dur / 60` s) and the `0x800788B8`
+duration table parsed off the user's SCUS (`legaia_asset::xa_cue_table`). The native
+window plays the clip requests off a boot-staged `XaClipBank` (`XA27` / `XA30`
+demuxed + decoded, `crate::boot::read_battle_xa_clip_bank`) through the same XA
+mixing path as the arts shouts; the browser play page's `play_xa` demuxes the raw
+sectors the page slices out of the visitor's own disc bytes and plays the cut clip
+through `WebAudioOut::play_xa_shout`. The monster leg's `0x2A8` goes out on the SFX
+ring and resolves against the battle's `bse.dat` row, keyed through a `monster.snd`
+slot neither host stages - so it is routed and silent.
 
 ### Three readings the port already satisfied
 

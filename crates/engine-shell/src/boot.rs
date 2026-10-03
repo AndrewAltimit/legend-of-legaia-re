@@ -1322,7 +1322,7 @@ impl BootSession {
         // carries it.
         let side_band = side_band.filter(|b| b.slot != 6);
         bgm.sync_field_sfx(
-            &world.props.stager_bytes,
+            world.runtime_sfx_bundle(),
             field_family,
             side_band,
             |entry| index.entry_bytes_extended(entry).ok(),

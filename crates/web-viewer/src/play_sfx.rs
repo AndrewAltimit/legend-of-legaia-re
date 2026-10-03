@@ -1011,8 +1011,8 @@ impl LegaiaRuntime {
                 SfxRingOp::ReplaceLast(id) => self.sfx.sched.replace_ring_cue(id),
             }
         }
-        if self.sfx.runtime_bundle != host.world.props.stager_bytes {
-            self.sfx.runtime_bundle = host.world.props.stager_bytes.clone();
+        if self.sfx.runtime_bundle.as_slice() != host.world.runtime_sfx_bundle() {
+            self.sfx.runtime_bundle = host.world.runtime_sfx_bundle().to_vec();
         }
         // A slot-6 side-band bank is not a tail borrower: retail streams it
         // over the field bank in the shared region, and the residency carries

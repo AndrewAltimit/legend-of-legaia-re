@@ -8,6 +8,7 @@
 pub mod accessory_passives;
 pub mod actor_alloc_host;
 pub mod actor_handler;
+pub mod anim_cue;
 pub mod ap_gauge;
 pub mod art_strike;
 pub mod arts_command_input;
