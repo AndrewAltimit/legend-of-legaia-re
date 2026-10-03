@@ -124,7 +124,11 @@ Tree, raises actor `0x06`'s clamp, clears the latch and spins on it before the
 scene goes on). A spin on such a resolved cursor parks even before the talk's
 first box opens. The gate reads the live purse through `FieldHost::party_bank_value`,
 the debit is the record's own `ADD_MONEY`, and the restore is its own
-`4C 82 <slot>` ops (`FieldHost::op4c_n8_sub2_restore_party_slot`). Disc-gated
+`4C 82 <slot>` ops (`FieldHost::op4c_n8_sub2_restore_party_slot`). Retail's
+record is the only copy of a member's pools; the port also keeps them on the
+party actor, which a battle seats from and `World::save_party` writes back
+over the record, so the restore projects the record onto that actor as every
+field heal does - a rest that skipped it was undone by the next fight. Disc-gated
 oracle: `crates/engine-core/tests/inn_stay_field_vm_disc.rs`, which drives the
 real record from the interact call and asserts the gold delta and the pools on
 the Yes, No and can't-afford branches.

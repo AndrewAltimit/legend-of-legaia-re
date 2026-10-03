@@ -2565,6 +2565,10 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         hms.hp_cur = hms.hp_max;
         hms.mp_cur = hms.mp_max;
         member.set_hp_mp_sp(hms);
+        // The record is retail's only copy; the port's party actor mirrors
+        // it, and a battle seats (and `save_party` writes back) from the
+        // mirror - so a rest that left it stale healed nobody.
+        self.world.mirror_roster_hp_mp(usize::from(slot));
     }
 
     /// `[4C, 0x84, amplitude]` - the screen-shake amplitude `_DAT_8007B630`.
