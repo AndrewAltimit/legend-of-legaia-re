@@ -1532,7 +1532,15 @@ pub(super) fn cmd_play_window_with_record(
         }
     );
 
-    event_loop.run_app(&mut app).context("event loop")?;
+    // On demand, not `run_app`: only `run_app_on_demand` clears the exit
+    // request a phase-1 movie left on this loop. Through `run_app` the game
+    // would see that stale exit and quit on its first iteration.
+    {
+        use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
+        event_loop
+            .run_app_on_demand(&mut app)
+            .context("event loop")?;
+    }
     // After the event loop returns, flush any pending record log. The
     // Escape / CloseRequested handlers also flush proactively so a
     // mid-run crash still produces a partial replay file - the trailing
