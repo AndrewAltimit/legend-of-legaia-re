@@ -799,9 +799,17 @@ all of them and nothing else is the cabinet.
 The colour families are the same four the capture-measured composition uses, and
 one lands quantitatively: the measured navy `rgb(0, 0, 72)` sits between the
 mesh's two navy corners, which is what a gouraud span across them gives.
-Absolute values are **not** asserted to match - the capture's greys read darker
-than the mesh's `#6F6F6F`, so a shading term sits between the packet colour and
-the framebuffer, and reconciling them needs that pass rather than the mesh.
+The capture's greys read darker than `#6F6F6F` because the grey prims are
+**gouraud ramps**: each frame and band quad runs from `#6F6F6F` at one edge to
+`#080808` at the other, so a sampled pixel sits somewhere on that ramp. No
+shading term sits between the packet colour and the framebuffer. Drawing the
+baked words with no depth cue (`IR0 = 0`, the identity - see
+[`shading.md`](shading.md#step-5-the-depth-cue-and-fog)) and comparing against
+the `minigame_slot_machine` display crop, region means over the left frame,
+the red face either side of the reels, the right frame and the bottom band
+land within a few levels of retail in both directions (no region is
+systematically lighter), and the red face's centre reads `(143, 55, 55)`
+against retail's 5-bit `(132..140, 49, 49)`.
 
 The install chain, all of it outside the slot overlay's own draw code:
 
@@ -859,9 +867,13 @@ drawn while the machine is up.
 
 Two residuals: corners are snapped to the 320-wide display space every screen
 primitive is authored in, so a dot lands to the nearest even framebuffer
-column; and the cabinet draws its raw packet colours, which read lighter than
-the capture's greys (the shading term named in
-[the cabinet section](#the-cabinet-is-a-mesh---prot-1200-descriptor-1)).
+column; and the cabinet body projects about three rows lower and two columns
+further left than the capture places it (rows `18..218` against `15..214`,
+same height), while every billboard lands on its fitted position. The
+cabinet is drawn through the fitted projection with the actor at the origin
+(the init zeroes its position and rotation, `0x801CEEB8..0x801CEECC`); the
+actor renderer's own camera composition, which the fit never saw, is the
+unmeasured leg.
 
 The standalone minigames page draws the same primitive list too. Its slot
 panel is a 2D canvas with no GPU pass, so the list is rasterised on the CPU
