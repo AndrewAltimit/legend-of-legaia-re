@@ -20,8 +20,8 @@
 
 [headline]
 contiguous_progresses = 35
-contiguous_pad = 5
-tier_sum = 123
+contiguous_pad = 6
+tier_sum = 124
 
 [segments]
 rim_elm = 4
@@ -29,7 +29,7 @@ tetsu_spar = 4
 mist_rim_elm = 4
 hunters_spring = 4
 drake_castle = 4
-rim_elm_restored = 3
+rim_elm_restored = 4
 vidna = 3
 ravine = 4
 snowdrift_cave = 4
