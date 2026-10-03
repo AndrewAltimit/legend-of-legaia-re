@@ -79,12 +79,15 @@ fn npc_catalog_only_lists_assemblable_actors() {
     }
 }
 
-/// Mt. Rikuroa is the scene that ships **no** ANM bundle while still placing
-/// multi-object story actors. It's the reason the unposable guard exists, so
-/// pin it: the guard must fire (the loop above asserts nothing multi-object
-/// survived into the catalog).
+/// Mt. Rikuroa ships its scene clip bank as the type-`0x05` chunk of a
+/// DATA_FIELD stream (PROT 157, the stream that carries its MAN) rather than
+/// as a player-LZS container section. The catalog used to find no bundle
+/// there and withheld its multi-object story actors as unposable, and the
+/// play hosts drew a party member whose clip named the scene bank unposed -
+/// Noa buried to the neck. The resolver now reads the stream form too, so the
+/// scene poses from it and nothing posable is withheld.
 #[test]
-fn rikuroa_unposable_actors_are_withheld() {
+fn rikuroa_poses_from_its_streamed_bundle() {
     let Some(index) = index() else {
         eprintln!("LEGAIA_DISC_BIN unset; skipping rikuroa unposable pin");
         return;
@@ -92,13 +95,14 @@ fn rikuroa_unposable_actors_are_withheld() {
     let pack = build_field_scene(&index, "rikuroa").expect("rikuroa field scene");
     let npcs = build_npc_catalog(&index, "rikuroa", &pack).expect("rikuroa NPC catalog");
 
-    assert!(
-        npcs.anm_prot.is_none(),
-        "rikuroa: expected no scene ANM bundle (the premise of this pin)"
+    assert_eq!(
+        npcs.anm_prot,
+        Some(157),
+        "rikuroa: the scene bank is PROT 157's DATA_FIELD ANM chunk"
     );
-    assert!(
-        npcs.unposable_count > 0,
-        "rikuroa: expected its multi-object story actors to be withheld as unposable"
+    assert_eq!(
+        npcs.unposable_count, 0,
+        "rikuroa: with its bank resolved, no multi-object story actor is withheld"
     );
 }
 

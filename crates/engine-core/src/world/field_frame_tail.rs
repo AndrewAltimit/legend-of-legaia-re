@@ -221,7 +221,7 @@ impl World {
         cues.into_iter()
             .filter_map(|(slot, base_id)| {
                 let spawn_party = npc_bundle(slot)?;
-                let bundle = if self.npc_party_bank(slot).unwrap_or(spawn_party) {
+                let bundle = if self.npc_clip_party_bank(slot, spawn_party) {
                     locomotion_bundle
                 } else {
                     scene_bundle
@@ -289,6 +289,24 @@ impl World {
             .iter()
             .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
             .map(|c| c.ctx.flags & legaia_engine_vm::field_player_clip::PARTY_BANK_FLAG != 0)
+    }
+
+    /// Whether NPC `slot`'s clip ids name records of the party locomotion
+    /// bank (`true`) or of the scene's own bank (`false`): the live
+    /// party-bank bit ([`Self::npc_party_bank`]), and the spawn class
+    /// (`spawn_party`, a global-pool party model) only for a slot no
+    /// placement channel carries.
+    ///
+    /// Both the clip a host binds when it uploads the scene's NPCs and every
+    /// later re-target resolve through this. The spawn binding used to pick
+    /// by spawn class alone, so a party model whose spawn prologue had
+    /// already dropped the bit for a scene-bank gesture (`B2 <id> 18`, then
+    /// `A2 <id> <move>`) bound the id out of the locomotion bank - a different
+    /// record, or none when the locomotion bank is shorter than the id.
+    ///
+    /// REF: FUN_800204F8 (`0x8002053C`)
+    pub fn npc_clip_party_bank(&self, slot: u8, spawn_party: bool) -> bool {
+        self.npc_party_bank(slot).unwrap_or(spawn_party)
     }
 
     /// The `+0x62` anim-control word of NPC `slot`'s spawned context, if a

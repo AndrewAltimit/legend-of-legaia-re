@@ -1378,6 +1378,19 @@ impl PlayWindowApp {
                     // cache entries (`take_npc_morph_rebuilds`).
                     let morphed = world.npc_morphed_tmd(*slot, tmd);
                     let tmd = morphed.as_ref().unwrap_or(tmd);
+                    // The retail count-equality contract: an actor draws as
+                    // many objects as its clip has bones. A slot bound at
+                    // upload was already cut; one whose first clip came from
+                    // a later cue is cut here.
+                    let cut;
+                    let tmd = if tmd.objects.len() > pose.bone_outputs.len() {
+                        let mut t = tmd.clone();
+                        t.objects.truncate(pose.bone_outputs.len());
+                        cut = t;
+                        &cut
+                    } else {
+                        tmd
+                    };
                     let vmesh =
                         legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(tmd, raw, &pose.bone_outputs);
                     let cmesh =

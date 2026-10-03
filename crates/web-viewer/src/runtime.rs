@@ -1725,17 +1725,11 @@ impl LegaiaRuntime {
             &host.world.hidden_object_records(),
             &host.world.object_render_scales(),
         ));
-        // Pose sources, resolved the way the native window's
-        // `find_scene_anm_bundle` does (entry-major, desc-seed minor). The
-        // scene bundle poses the MAN NPCs and the bound placed props; the
+        // Pose sources, through the one resolver the native window's
+        // `find_scene_anm_bundle` calls too (`npc_catalog::scene_anm_bundle`).
+        // The scene bundle poses the MAN NPCs and the bound placed props; the
         // locomotion bundle poses the global-pool specials.
-        self.scene_anm = scene.entries.iter().find_map(|e| {
-            [3usize, 5, 6, 7].into_iter().find_map(|desc| {
-                legaia_asset::player_anm::find_in_entry(&e.bytes, desc)
-                    .into_iter()
-                    .next()
-            })
-        });
+        self.scene_anm = legaia_engine_core::npc_catalog::scene_anm_bundle(scene);
         self.locomotion_anm = host
             .index
             .entry_bytes(legaia_asset::character_pack::PROT_ENTRY_INDEX)
@@ -1855,11 +1849,9 @@ impl LegaiaRuntime {
             return;
         };
         for e in &n.pack.entries {
-            let bundle = if e.special {
-                self.locomotion_anm.as_ref()
-            } else {
-                self.scene_anm.as_ref()
-            };
+            // The bank the clip id names is the live party-bank bit's
+            // (`World::npc_clip_party_bank`), as the native window binds it.
+            let bundle = self.npc_clip_bank(e.placement.index as u8, e.special);
             let (Some(b), Some(rec)) = (bundle, (e.placement.anim_id as usize).checked_sub(1))
             else {
                 continue;
@@ -1881,7 +1873,6 @@ impl LegaiaRuntime {
                     NpcClip {
                         player,
                         generation: 0,
-                        special: e.special,
                     },
                 );
             }
@@ -1905,16 +1896,41 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.as_mut() else {
             return;
         };
-        let clips = &self.npc_clips;
+        // Every catalogued placement is a clip target, not only the ones
+        // that spawned with a clip: a placement whose live anim id was still
+        // `0` at the rebuild takes its first clip from a cue (the native
+        // window registers every drawn placement the same way).
+        let spawn_party: std::collections::HashMap<u8, bool> = self
+            .npcs
+            .as_ref()
+            .map(|n| {
+                n.pack
+                    .entries
+                    .iter()
+                    .map(|e| (e.placement.index as u8, e.special))
+                    .collect()
+            })
+            .unwrap_or_default();
         let retargets = host.world.drain_field_anim_cues(
             self.scene_anm.as_ref(),
             self.locomotion_anm.as_ref(),
-            |slot| clips.get(&slot).map(|c| c.special),
+            |slot| spawn_party.get(&slot).copied(),
         );
         for r in retargets {
-            if let Some(clip) = self.npc_clips.get_mut(&r.slot) {
-                clip.player = r.player;
-                clip.generation = clip.generation.wrapping_add(1);
+            match self.npc_clips.get_mut(&r.slot) {
+                Some(clip) => {
+                    clip.player = r.player;
+                    clip.generation = clip.generation.wrapping_add(1);
+                }
+                None => {
+                    self.npc_clips.insert(
+                        r.slot,
+                        NpcClip {
+                            player: r.player,
+                            generation: 1,
+                        },
+                    );
+                }
             }
         }
         // Op-`0x4B` morphs whose staged deltas moved this tick: bump the

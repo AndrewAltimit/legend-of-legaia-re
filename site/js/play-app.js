@@ -239,6 +239,18 @@
     const n = base.length / 3;
     for (let v = 0; v < n; v++) {
       const o = objectIds[v];
+      /* An object past the clip's bone count is not drawn: retail draws as
+       * many objects as the clip has bones. The mesh is cut to that count
+       * when the placement spawned with a clip; one whose first clip came
+       * from a later ANIMATE cue keeps its full table, so its surplus
+       * objects (equipment-swap templates) collapse to a point here rather
+       * than litter the actor's feet - the native window cuts the mesh. */
+      if (partCount > 0 && o >= partCount) {
+        out[v * 3] = 0;
+        out[v * 3 + 1] = 0;
+        out[v * 3 + 2] = 0;
+        continue;
+      }
       if (o >= partCount) {
         out[v * 3] = base[v * 3];
         out[v * 3 + 1] = base[v * 3 + 1];

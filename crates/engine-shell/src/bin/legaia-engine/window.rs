@@ -827,9 +827,11 @@ struct PlayWindowApp {
     /// Per-NPC looping ANM clip players (the scene-bundle record named by the
     /// placement's anim byte), keyed by placement slot - drives live clip
     /// playback for the placed NPCs (idle sway / walk cycles). Rebuilt with
-    /// `field_npc_draws`; `npc_anim_srcs` holds each animated NPC's truncated
-    /// TMD + raw bytes for the per-frame posed re-upload (the same rebuild
-    /// path the player's idle/walk pair uses).
+    /// `field_npc_draws`; `npc_anim_srcs` holds every drawn NPC's TMD + raw
+    /// bytes (cut to its spawn clip's bone count when it spawned with one)
+    /// for the per-frame posed re-upload (the same rebuild path the player's
+    /// idle/walk pair uses) - a slot with no spawn clip takes its first one
+    /// from an ANIMATE cue.
     npc_clip_players:
         std::collections::HashMap<u8, legaia_engine_core::field_anim::FieldClipPlayer>,
     npc_anim_srcs: std::collections::HashMap<u8, (legaia_tmd::Tmd, Vec<u8>)>,

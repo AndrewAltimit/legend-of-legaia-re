@@ -136,9 +136,6 @@ pub(crate) struct NpcClip {
     /// Bumped on every ANIMATE-cue re-target, so the page knows the pose
     /// stream behind the frame index changed and must be re-read.
     pub generation: u32,
-    /// Clip resolves from the PROT 0874 locomotion bundle (global-pool
-    /// special) rather than the scene's own ANM bundle.
-    pub special: bool,
 }
 
 /// Compose `Rz . Ry . Rx . v + T` for every vertex, keyed by its bone
@@ -341,16 +338,33 @@ impl LegaiaRuntime {
         self.npcs.as_ref()?.pack.cur.as_ref()
     }
 
-    /// Bone count of the clip a catalogued NPC placement names (`anim_id - 1`
-    /// in the scene bundle, or the locomotion bundle for a global-pool
-    /// special). `None` when the placement has no clip or the bundle is
-    /// unavailable - the mesh then keeps its full object table.
-    fn npc_clip_bone_count(&self, anim_id: u8, special: bool) -> Option<usize> {
-        let bundle = if special {
-            self.locomotion_anm.as_ref()?
+    /// The bank NPC `slot`'s clip ids name: the PROT 0874 locomotion bundle
+    /// when the slot's live party-bank bit is up, else the scene's own
+    /// (`World::npc_clip_party_bank`; `special`, the spawn class, only for a
+    /// slot no channel carries) - the native window's bundle split.
+    pub(crate) fn npc_clip_bank(
+        &self,
+        slot: u8,
+        special: bool,
+    ) -> Option<&legaia_asset::player_anm::PlayerAnmBundle> {
+        let party_bank = self
+            .scene_host
+            .as_ref()
+            .map_or(special, |h| h.world.npc_clip_party_bank(slot, special));
+        if party_bank {
+            self.locomotion_anm.as_ref()
         } else {
-            self.scene_anm.as_ref()?
-        };
+            self.scene_anm.as_ref()
+        }
+    }
+
+    /// Bone count of the clip a catalogued NPC placement names (`anim_id - 1`
+    /// in the bank the slot's live party-bank bit selects -
+    /// `World::npc_clip_party_bank`, the spawn class `special` only for a
+    /// slot no channel carries). `None` when the placement has no clip or the
+    /// bundle is unavailable - the mesh then keeps its full object table.
+    fn npc_clip_bone_count(&self, slot: u8, anim_id: u8, special: bool) -> Option<usize> {
+        let bundle = self.npc_clip_bank(slot, special)?;
         let rec_idx = (anim_id as usize).checked_sub(1)?;
         let rec = bundle.record(rec_idx).ok()?;
         (rec.bone_count > 0).then_some(rec.bone_count as usize)
@@ -1200,7 +1214,9 @@ impl LegaiaRuntime {
                 .ok_or_else(|| JsValue::from_str("play_npc_mesh: model out of range"))?;
             (t.tmd.clone(), t.raw.clone())
         };
-        if let Some(bones) = self.npc_clip_bone_count(e.placement.anim_id, e.special) {
+        if let Some(bones) =
+            self.npc_clip_bone_count(e.placement.index as u8, e.placement.anim_id, e.special)
+        {
             tmd.objects.truncate(bones);
         }
         Ok((tmd, raw))
@@ -1356,10 +1372,9 @@ impl LegaiaRuntime {
     /// Catalog entry `i`'s clip, decoded to the pose format the JS animator
     /// consumes: `6` entries per bone per frame (`[tx, ty, tz, rx, ry, rz]`,
     /// absolute). Empty when the placement names no clip or its bundle is
-    /// unavailable. An NPC's clip is its placement `anim_id - 1` in the
-    /// scene's own ANM bundle (`docs/formats/anm.md` § per-scene bundle); a
-    /// global-pool special's indexes the PROT 0874 locomotion bundle instead
-    /// (the native window's bundle split).
+    /// unavailable. An NPC's clip is its placement `anim_id - 1` in the bank
+    /// [`Self::npc_clip_bank`] selects (`docs/formats/anm.md` § per-scene
+    /// bundle).
     pub fn play_npc_pose_frames(&self, i: u32) -> Vec<i32> {
         let Some(n) = self.npcs.as_ref() else {
             return Vec::new();
@@ -1367,11 +1382,7 @@ impl LegaiaRuntime {
         let Some(e) = n.pack.entries.get(i as usize) else {
             return Vec::new();
         };
-        let bundle = if e.special {
-            self.locomotion_anm.as_ref()
-        } else {
-            self.scene_anm.as_ref()
-        };
+        let bundle = self.npc_clip_bank(e.placement.index as u8, e.special);
         let (Some(b), Some(rec_idx)) = (bundle, (e.placement.anim_id as usize).checked_sub(1))
         else {
             return Vec::new();
@@ -1390,11 +1401,7 @@ impl LegaiaRuntime {
         let Some(e) = n.pack.entries.get(i as usize) else {
             return vec![0, 0];
         };
-        let bundle = if e.special {
-            self.locomotion_anm.as_ref()
-        } else {
-            self.scene_anm.as_ref()
-        };
+        let bundle = self.npc_clip_bank(e.placement.index as u8, e.special);
         let (Some(b), Some(rec_idx)) = (bundle, (e.placement.anim_id as usize).checked_sub(1))
         else {
             return vec![0, 0];

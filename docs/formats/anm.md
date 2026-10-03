@@ -431,7 +431,14 @@ header anim `0` and its prologue sets `22` - the locomotion bundle's savepoint
 clip, record 21 - which a retail `conc_field_card_boot` capture shows at the
 crystal actor's `+0x5C` with draw kind `1`. Both play hosts therefore pose a
 placement from the live word (`World::field_npc_live_anim`) and fall back to
-the header byte only when no channel owns the slot. The crystal's mesh is the
+the header byte only when no channel owns the slot. A placement whose live
+word is still `0` when the host binds it takes its first clip from a later
+ANIMATE cue (`rikuroa`'s party Noa, posed by a cutscene's `A2 10 18`), so
+both hosts keep every drawn placement as a clip target and cut its mesh to
+the cue's clip bone count then; a host that dropped the cue drew the raw
+TMD, every part at the actor origin. The bank a clip id names - at the
+spawn binding as at every cue - is the actor's live party-bank bit
+(`World::npc_clip_party_bank`), not its spawn class. The crystal's mesh is the
 player bank's slot 3 (`0xF3 - 0xF0`), the three-object PROT 0874 §0 member,
 which the engine keeps in `World::field_head_pool` apart from the shared
 global pool whose slots `3..=32` it fills with the battle effect-model
@@ -442,6 +449,22 @@ torch-like aux props at `+0x64 = 4`, `+0x5C = 23`. The bundle is a
 table (labeled "MOVE" in `AssetType`, see [`docs/formats/asset-type.md`
 ](asset-type.md)) but the actual content LZS-decodes to a canonical ANM
 container with `marker_1 = 0x080C` records.
+
+A scene whose MAN arrives in a DATA_FIELD stream rather than a bundle can
+ship its clip bank the same way: as the stream's type-`0x05` chunk, stored
+raw (the stream walker hands every chunk to the dispatcher with
+`copy_only = 1`). `rikuroa` is the case - its 72-record bank is the
+type-`0x05` chunk of PROT 157, between the MAN (type `0x03`) and the
+type-`0x07` chunk, and no entry of its block holds a container with an ANM
+section. A retail `rikuroa` capture holds the same table at the scene-bank
+pointer `FUN_800204F8` reads for a clip id below `0x400` with the party-bank
+bit clear (`_DAT_8007B888`; the party bank is `_DAT_8007B75C`, ids
+`>= 0x400` `_DAT_8007B840`). One resolver serves every host
+(`legaia_asset::player_anm::find_scene_bundle`, through
+`engine-core::npc_catalog::scene_anm_bundle`): the container sections
+first, entry-major, then a stream chunk. Without the stream form every
+`rikuroa` clip id went unresolved and its multi-object actors were
+withheld from the catalog.
 
 The mismatch between the asset type byte (`0x05` = "MOVE") and the
 `ghidra/scripts/funcs/8001f05c.txt` (which

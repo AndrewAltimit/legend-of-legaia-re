@@ -16,15 +16,11 @@ impl PlayWindowApp {
     pub(super) fn find_scene_anm_bundle(
         &self,
     ) -> Option<legaia_asset::player_anm::PlayerAnmBundle> {
-        self.session.host.scene.as_ref().and_then(|s| {
-            s.entries.iter().find_map(|e| {
-                [3usize, 5, 6, 7].into_iter().find_map(|desc| {
-                    legaia_asset::player_anm::find_in_entry(&e.bytes, desc)
-                        .into_iter()
-                        .next()
-                })
-            })
-        })
+        self.session
+            .host
+            .scene
+            .as_ref()
+            .and_then(legaia_engine_core::npc_catalog::scene_anm_bundle)
     }
 
     /// Materialise one **scene-bank** model's mesh out of the loaded scene,
@@ -1153,7 +1149,11 @@ impl PlayWindowApp {
                     );
                     continue;
                 };
-                let bundle = if p.special_model {
+                // The bank the clip id names is the live party-bank bit's
+                // (`World::npc_clip_party_bank`), not the spawn class: a
+                // spawn prologue may already have dropped the bit for a
+                // scene-bank gesture.
+                let bundle = if world.npc_clip_party_bank(p.index as u8, p.special_model) {
                     locomotion_bundle.as_ref()
                 } else {
                     scene_bundle.as_ref()
@@ -1253,12 +1253,22 @@ impl PlayWindowApp {
                 if mesh_idx.is_none() && color_idx.is_none() {
                     continue;
                 }
-                if self.npc_clip_players.contains_key(&(p.index as u8)) {
-                    self.npc_anim_srcs
-                        .insert(p.index as u8, (tmd.clone(), raw.clone()));
-                    self.npc_bundle_special
-                        .insert(p.index as u8, p.special_model);
-                } else {
+                // Every drawn placement is a clip target, not only the ones
+                // that spawned with a clip: a placement whose live anim id is
+                // still `0` here (rikuroa's party Noa, posed later by a
+                // cutscene's `A2 10 18`) takes its first clip from an ANIMATE
+                // cue, and a slot with no pose source dropped that cue and
+                // drew the raw TMD - every part at the actor origin, the head
+                // poking out of the ground. The redraw cuts the mesh to the
+                // clip's bone count, as the spawn binding does.
+                self.npc_anim_srcs
+                    .insert(p.index as u8, (tmd.clone(), raw.clone()));
+                self.npc_bundle_special
+                    .insert(p.index as u8, p.special_model);
+                // A clip-less slot also keeps its rest source: an op-`0x4B`
+                // morph change rebuilds its static mesh from it
+                // (`take_npc_morph_rebuilds`).
+                if !self.npc_clip_players.contains_key(&(p.index as u8)) {
                     self.npc_rest_srcs
                         .insert(p.index as u8, (tmd.clone(), raw.clone(), pose.clone()));
                 }

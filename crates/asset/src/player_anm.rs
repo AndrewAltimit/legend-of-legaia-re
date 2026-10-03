@@ -730,6 +730,66 @@ pub fn find_in_entry(bytes: &[u8], descriptor_count: usize) -> Vec<PlayerAnmBund
     out
 }
 
+/// Every ANM bundle carried as a type-[`SCENE_ANM_TYPE_BYTE`] chunk of a
+/// DATA_FIELD stream ([`crate::parse_streaming`]) - the other way a scene
+/// ships its NPC clip bank. A stream's chunks are stored raw (the walker
+/// hands each to the dispatcher with `copy_only = 1`), so the chunk body is
+/// the bundle itself, no LZS step.
+///
+/// `rikuroa` is the case that needs it: its scene bank (72 records) is the
+/// type-`0x05` chunk of PROT 157, the stream that also carries the scene
+/// MAN, and no entry of its block holds a [`parse_player_lzs`] container
+/// with an ANM section - so [`find_in_entry`] finds nothing and every NPC
+/// clip id the scene names went unresolved. A retail `rikuroa` capture
+/// holds the same 72-record table at the scene-bank pointer `FUN_800204F8`
+/// reads (`_DAT_8007B888`).
+pub fn find_in_stream(bytes: &[u8]) -> Vec<PlayerAnmBundle> {
+    let Ok(report) = crate::parse_streaming(bytes, 4096) else {
+        return Vec::new();
+    };
+    report
+        .chunks
+        .iter()
+        .filter(|c| c.type_byte == SCENE_ANM_TYPE_BYTE)
+        .filter_map(|c| {
+            let start = c.header_offset + 4;
+            let body = bytes.get(start..start + c.size as usize)?;
+            parse(body).ok()
+        })
+        .collect()
+}
+
+/// The player-LZS descriptor counts a scene entry's container is tried at,
+/// in order (town01 resolves at 3; the prologue scenes only at >= 5).
+pub const SCENE_BUNDLE_DESCRIPTOR_COUNTS: [usize; 4] = [3, 5, 6, 7];
+
+/// A scene's NPC clip bank out of its PROT entries, with the index of the
+/// entry it came from: the first type-`0x05` section of a [`parse_player_lzs`]
+/// container (entry-major, [`SCENE_BUNDLE_DESCRIPTOR_COUNTS`] minor), else
+/// the first type-`0x05` chunk of a DATA_FIELD stream ([`find_in_stream`]).
+/// The stream form is the fallback so a scene the container scan already
+/// resolves keeps its bundle.
+pub fn find_scene_bundle<'a>(
+    entries: impl IntoIterator<Item = (u32, &'a [u8])> + Clone,
+) -> Option<(u32, PlayerAnmBundle)> {
+    entries
+        .clone()
+        .into_iter()
+        .find_map(|(idx, bytes)| {
+            SCENE_BUNDLE_DESCRIPTOR_COUNTS.into_iter().find_map(|desc| {
+                find_in_entry(bytes, desc)
+                    .into_iter()
+                    .next()
+                    .map(|b| (idx, b))
+            })
+        })
+        .or_else(|| {
+            entries
+                .into_iter()
+                .find_map(|(idx, bytes)| find_in_stream(bytes).into_iter().next().map(|b| (idx, b)))
+        })
+}
+
 /// Parse one fully-decoded player-ANM bundle (the LZS-decompressed bytes of
 /// a type-0x05 section). Returns `Err` if the container header / offset
 /// table / first record's marker_1 don't validate.
