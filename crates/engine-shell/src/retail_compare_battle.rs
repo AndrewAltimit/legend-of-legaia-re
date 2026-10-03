@@ -1263,7 +1263,10 @@ pub enum BattleDrive {
     /// capture's own seat Spirit when that is what it had committed) until
     /// the action SM holds `state` on `seat`. A monster seat that was
     /// casting (`category == 2`) casts the capture's spell `queued` on its
-    /// next turn ([`legaia_engine_core::world::BattleState::forced_monster_cast`]).
+    /// next turn ([`legaia_engine_core::world::BattleState::forced_monster_cast`]);
+    /// the party commits Spirit throughout, so the caster is still standing
+    /// when that turn comes (Zeto's captures sit in a party able to kill him
+    /// in two swings).
     ///
     /// `spare` is set on a killing-blow capture
     /// ([`RetailBattle::action_victims`]): the victim is replayed at `1` HP,
@@ -1614,6 +1617,11 @@ impl BattleDrive {
             } => Some(match cmd.phase {
                 CommandPhase::Menu { .. } if cmd.actor == seat && category == 4 => PadButton::Down,
                 CommandPhase::Menu { .. } if cmd.actor != seat && spare => PadButton::Down,
+                // A capture mid monster cast: the party commits Spirit, so no
+                // swing lands on the caster before its replayed turn comes up
+                // (a strong party otherwise kills it first, and the cast the
+                // seed names is never taken).
+                CommandPhase::Menu { .. } if seat >= 3 && category == 2 => PadButton::Down,
                 CommandPhase::RoundPrompt { .. }
                 | CommandPhase::Menu { .. }
                 | CommandPhase::AttackMode { .. } => PadButton::Left,

@@ -373,7 +373,11 @@ Attack every round, except that the capture's seat takes Spirit when its
 committed category `+0x1DE` is `4`, and a monster seat that was casting
 (`+0x1DE = 2`) casts the capture's spell id `+0x1DF` on its next turn
 (`BattleState::forced_monster_cast`, with the capture's already-debited MP
-credited back). Monster seats are translated from retail's fixed pool slots
+credited back). On such a monster-cast drive the whole party commits Spirit
+instead of Attack, so the caster is still standing when its turn comes - a
+party that kills it first ends the fight with the seeded cast never taken
+(Zeto's two mid-cast captures sit in a party that does it in two swings).
+Monster seats are translated from retail's fixed pool slots
 `3..` onto the engine's seating straight after the party. A message box on
 screen takes Cross.
 
