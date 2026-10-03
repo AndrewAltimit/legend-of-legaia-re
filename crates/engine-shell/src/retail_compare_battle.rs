@@ -658,7 +658,9 @@ fn span_gate(ram: &[u8], ctx: u32) -> SpanGate {
                 accum: game_anchors::u32_at(ram, ctx + 0x87C).min(u32::from(u16::MAX)) as u16,
             };
         }
-        return SpanGate::None;
+        return SpanGate::Age {
+            accum: game_anchors::u32_at(ram, ctx + 0x87C).min(u32::from(u16::MAX)) as u16,
+        };
     }
     let half = game_anchors::u16_at(ram, ctx + 0x6CE);
     match (game_anchors::u32_at(ram, END_PHASE_WORD), half) {
@@ -794,6 +796,11 @@ pub struct EngineBattle {
     /// is not in the history the capture's HP / MP were read from
     /// ([`RetailBattle::seed_plan`] other than the opening).
     pub surprise_opening: bool,
+    /// For a [`SpanGate::Age`] drive whose state the engine left before it
+    /// was as old as retail's: the engine accumulator on its last tick
+    /// there, which a re-run gates on instead (and which the re-run's own
+    /// result carries as the gate it was sampled on).
+    pub age_short: Option<u16>,
     /// The engine's action-SM state when sampled.
     pub action_state: u8,
     /// The engine's active seat `ctx[+0x13]` when sampled.
@@ -1049,6 +1056,7 @@ pub fn run_engine_battle(
     // are read at the first prompt, before the drive - the moment the seed
     // placed them - and only phase and camera at the phase itself.
     let mut pre_drive = None;
+    let mut age_short = None;
     match (plan, battle.phase_gate()) {
         (SeedPlan::Opening, _) => {}
         (SeedPlan::Cast, Some(gate)) if prompt_tick.is_some() => {
@@ -1065,7 +1073,12 @@ pub fn run_engine_battle(
             if let Some(drive) = battle.battle_drive() {
                 let track = session.host.bgm_track_word.or(director.last);
                 pre_drive = Some(combat_snapshot(&mut session.host.world, track));
-                driven = Some(run_drive(&mut session, &mut director, drive)?);
+                driven = Some(run_drive(
+                    &mut session,
+                    &mut director,
+                    drive,
+                    &mut age_short,
+                )?);
             }
         }
         _ => {
@@ -1119,6 +1132,7 @@ pub fn run_engine_battle(
     Ok(EngineBattle {
         rng_seed,
         surprise_opening,
+        age_short,
         scene: session.host.scene.as_ref().map(|s| s.name.clone()),
         mode: snap.mode,
         formation_source: source,
@@ -1363,6 +1377,18 @@ pub enum SpanGate {
     /// engine's polls busy ([`BattleDrive::steer`]) until its own words
     /// have run as far.
     CaptureFade { height: u16, accum: u16 },
+    /// Any other action-SM state, `accum` (`ctx[+0x87C]`) into it.
+    ///
+    /// The action SM's states span frames, and the drive reaches each on
+    /// its first tick, while a retail capture sits wherever the save was
+    /// made. The close-up accumulator places it: the acting actor's clip
+    /// commit zeroes it (`FUN_8004AD80`) and every framing call adds
+    /// `8 * frame_step` (`FUN_801D5854`, `0x801D5900..0x801D5920`), so it is
+    /// the frames since the actor's last clip commit. The drive takes the
+    /// first tick in the state whose engine accumulator has run as far; a
+    /// state the engine leaves sooner is re-run to its last tick
+    /// ([`EngineBattle::age_short`]).
+    Age { accum: u16 },
 }
 
 /// The capture band's states placed by its CD holds
@@ -1404,6 +1430,7 @@ impl SpanGate {
             Self::Exit { phase } => (3, phase),
             Self::DoneHold { timer } => (4, timer as u16),
             Self::CaptureFade { .. } => (5, 0),
+            Self::Age { accum } => (6, accum),
         }
     }
 
@@ -1433,6 +1460,7 @@ impl SpanGate {
             "4" => Self::DoneHold {
                 timer: value as i16,
             },
+            "6" => Self::Age { accum: value },
             _ => return None,
         })
     }
@@ -1657,9 +1685,27 @@ impl BattleDrive {
                         SpanGate::CaptureFade { height, .. } if state == 0x6F => {
                             capture_ramp_done(world, height)
                         }
+                        SpanGate::Age { accum } => world
+                            .battle
+                            .camera
+                            .as_ref()
+                            .is_none_or(|c| c.close_up_accum() >= u32::from(accum)),
                         _ => true,
                     }
             }
+        }
+    }
+
+    /// Whether the engine sits in an [`SpanGate::Age`] action phase's state
+    /// at all, whatever its age.
+    fn in_aged_state(&self, world: &legaia_engine_core::world::World) -> bool {
+        let mut base = *self;
+        match &mut base {
+            Self::Action { end, .. } if matches!(end, SpanGate::Age { .. }) => {
+                *end = SpanGate::None;
+                base.reached(world)
+            }
+            _ => false,
         }
     }
 
@@ -1838,12 +1884,26 @@ fn run_drive(
     session: &mut BootSession,
     director: &mut crate::retail_compare::RecordingDirector,
     drive: BattleDrive,
+    age_short: &mut Option<u16>,
 ) -> Result<Option<u32>> {
     drive.prime(&mut session.host.world);
     let mut reached = None;
     let mut held = 0;
+    // The engine accumulator on the last tick an `Age` phase's state held
+    // short of its age.
+    let mut aged = None;
     for t in 0..drive.budget() {
         let world = &session.host.world;
+        if reached.is_none() {
+            if drive.in_aged_state(world) {
+                aged = world.battle.camera.as_ref().map(|c| c.close_up_accum());
+            } else if let Some(a) = aged.take() {
+                // The state ended before it was as old as retail's: the
+                // re-run samples its last tick.
+                *age_short = Some(a.min(u32::from(u16::MAX)) as u16);
+                break;
+            }
+        }
         if drive.reached(world) {
             reached.get_or_insert(t);
             if held >= drive.hold_ticks() {
@@ -2279,6 +2339,15 @@ mod tests {
                     height: 0xFF40,
                     accum: 344,
                 },
+            },
+            BattleDrive::Action {
+                seat: 3,
+                state: 0x19,
+                category: 3,
+                queued: 0x08,
+                spare: false,
+                absorbed: 0,
+                end: SpanGate::Age { accum: 552 },
             },
         ] {
             assert_eq!(BattleDrive::from_env(&d.to_env()), Some(d));

@@ -496,6 +496,15 @@ into the item / magic / arts windows ([battle](../subsystems/battle.md#how-the-e
   reads is the cast module's own shot (Cort's Ultra Charge pulls out to
   `TR (0, 3072, 7315)`), which the capture-class modules arm and the port
   does not model.
+- **How far into the state.** Every other action-SM state spans frames too,
+  and the drive reaches each on its first tick while a retail capture sits
+  wherever the save was made - a monster's approach `0x19` or a Spirit band
+  `0x47` scored the glide onto the actor rather than its framing. The
+  close-up accumulator `ctx[+0x87C]` places the capture: the acting actor's
+  clip commit zeroes it and every framing call adds `8 * frame_step`. The
+  drive takes the first tick in the state whose engine accumulator has run
+  as far (`SpanGate::Age`); a state the engine leaves sooner is re-run on
+  the same stream and sampled on its last tick (`EngineBattle::age_short`).
 - **Seat and timing.** A pick no seed reproduces (a monster's plain strike on
   a given seat) can run out of budget or end the fight first.
 

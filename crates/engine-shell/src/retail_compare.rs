@@ -1513,13 +1513,33 @@ fn run_battle(
     };
     'search: for &victims in revive {
         for &seed in &crate::retail_compare_battle::BATTLE_RNG_SEEDS {
-            match crate::retail_compare_battle::run_engine_battle(
+            let mut run = crate::retail_compare_battle::run_engine_battle(
                 opts.extracted,
                 retail,
                 battle,
                 seed,
                 victims,
-            ) {
+            );
+            // An aged action state the engine left younger than retail's:
+            // the same stream again, sampled on that state's last tick.
+            if let Ok(e) = &run
+                && let Some(accum) = e.age_short
+            {
+                let mut aged = battle.clone();
+                aged.span_gate = crate::retail_compare_battle::SpanGate::Age { accum };
+                run = crate::retail_compare_battle::run_engine_battle(
+                    opts.extracted,
+                    retail,
+                    &aged,
+                    seed,
+                    victims,
+                )
+                .map(|mut e| {
+                    e.age_short = Some(accum);
+                    e
+                });
+            }
+            match run {
                 Ok(e)
                     if e.mode == legaia_engine_core::world::SceneMode::Battle
                         && e.prompt_tick.is_some()
@@ -1547,6 +1567,18 @@ fn run_battle(
             return;
         }
         None => unreachable!("BATTLE_RNG_SEEDS is not empty"),
+    };
+    // A re-run sampled on a shorter age: the image child walks the same
+    // drive, and the detail names the gate the run used.
+    let aged;
+    let battle = match engine.age_short {
+        Some(accum) => {
+            let mut b = battle.clone();
+            b.span_gate = crate::retail_compare_battle::SpanGate::Age { accum };
+            aged = b;
+            &aged
+        }
+        None => battle,
     };
     let image = battle_image(opts, entry, retail, battle, &engine, report);
     let (mut ch, mut det) = crate::retail_compare_battle::compare_battle(retail, battle, &engine);
