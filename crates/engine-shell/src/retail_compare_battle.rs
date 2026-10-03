@@ -770,6 +770,10 @@ impl RetailBattle {
 
 /// What the engine shows after the battle seed.
 pub struct EngineBattle {
+    /// The mid-fight HP / MP this run seeded on its first battle tick
+    /// ([`apply_bar_seeds`]); the image child seeds the same bars
+    /// (`LEGAIA_BATTLE_BARS`).
+    pub hp_seed: Vec<BarSeed>,
     pub scene: Option<String>,
     pub mode: SceneMode,
     /// How the formation was reached: `man row N` or `synthesized`.
@@ -840,6 +844,57 @@ fn matching_row(world: &legaia_engine_core::world::World, ids: &[u8]) -> Option<
     })
 }
 
+/// One combatant's mid-fight bars as the capture read them: engine actor
+/// slot, HP, MP.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BarSeed {
+    pub slot: u8,
+    pub hp: u16,
+    pub mp: u16,
+}
+
+/// Seed the capture's HP / MP onto the engine actors (the engine enters a
+/// fight on full bars). Run on the first battle tick by the headless seed and
+/// by the `play-window` image child alike: the monster AI's picks and every
+/// kill read these bars, so a child on full bars plays a different fight
+/// from the one its seed scored.
+pub fn apply_bar_seeds(world: &mut legaia_engine_core::world::World, seeds: &[BarSeed]) {
+    for s in seeds {
+        let Some(a) = world.actors.get_mut(usize::from(s.slot)) else {
+            continue;
+        };
+        a.battle.hp = s.hp;
+        a.battle.liveness = a.battle.hp;
+        if a.battle.hp_display.is_some() {
+            a.battle.hp_display = Some(a.battle.hp);
+        }
+        a.battle.mp = s.mp;
+    }
+}
+
+/// `slot:hp:mp,...` for `LEGAIA_BATTLE_BARS`.
+pub fn bar_seeds_to_env(seeds: &[BarSeed]) -> String {
+    seeds
+        .iter()
+        .map(|s| format!("{}:{}:{}", s.slot, s.hp, s.mp))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// The inverse of [`bar_seeds_to_env`]; malformed entries are skipped.
+pub fn bar_seeds_from_env(v: &str) -> Vec<BarSeed> {
+    v.split(',')
+        .filter_map(|e| {
+            let mut it = e.trim().split(':');
+            Some(BarSeed {
+                slot: it.next()?.parse().ok()?,
+                hp: it.next()?.parse().ok()?,
+                mp: it.next()?.parse().ok()?,
+            })
+        })
+        .collect()
+}
+
 /// Seed the engine into `retail`'s battle and sample it.
 pub fn run_engine_battle(
     extracted: &Path,
@@ -871,6 +926,7 @@ pub fn run_engine_battle(
     // scene's entry scripts start its track and raise its entry state first.
     for _ in 0..crate::retail_compare::SETTLE_TICKS {
         session.tick()?;
+        session.fog_render_tick();
         session.host.route_bgm_events(&mut director)?;
     }
 
@@ -958,6 +1014,7 @@ pub fn run_engine_battle(
     let mut entered = false;
     for _ in 0..ENTRY_TICKS {
         session.tick()?;
+        session.fog_render_tick();
         session.host.route_bgm_events(&mut director)?;
         if session.host.world.mode == SceneMode::Battle {
             entered = true;
@@ -993,30 +1050,30 @@ pub fn run_engine_battle(
     } else {
         Vec::new()
     };
-    {
-        let world = &mut session.host.world;
+    let hp_seed: Vec<BarSeed> = {
+        let world = &session.host.world;
         let pc = world.party.party_count.clamp(1, 3) as usize;
-        let seeds = battle
+        battle
             .party
             .iter()
             .enumerate()
-            .chain(battle.monsters.iter().enumerate().map(|(m, c)| (pc + m, c)));
-        for (slot, c) in seeds {
-            let (Some(c), Some(a)) = (c, world.actors.get_mut(slot)) else {
-                continue;
-            };
-            a.battle.hp = if slot >= pc && victims.contains(&(slot - pc)) {
-                1
-            } else {
-                c.hp
-            };
-            a.battle.liveness = a.battle.hp;
-            if a.battle.hp_display.is_some() {
-                a.battle.hp_display = Some(a.battle.hp);
-            }
-            a.battle.mp = c.mp;
-        }
-    }
+            .chain(battle.monsters.iter().enumerate().map(|(m, c)| (pc + m, c)))
+            .filter_map(|(slot, c)| {
+                let c = c.as_ref()?;
+                let hp = if slot >= pc && victims.contains(&(slot - pc)) {
+                    1
+                } else {
+                    c.hp
+                };
+                Some(BarSeed {
+                    slot: u8::try_from(slot).ok()?,
+                    hp,
+                    mp: c.mp,
+                })
+            })
+            .collect()
+    };
+    apply_bar_seeds(&mut session.host.world, &hp_seed);
     // Place the engine at the capture's phase ([`SeedPlan`]).
     //
     // An opening capture is sampled at the battle-mode flip. Everything else
@@ -1049,6 +1106,7 @@ pub fn run_engine_battle(
                 break;
             }
             session.tick()?;
+            session.fog_render_tick();
             session.host.route_bgm_events(&mut director)?;
         }
     }
@@ -1069,6 +1127,7 @@ pub fn run_engine_battle(
                     break;
                 }
                 session.tick()?;
+                session.fog_render_tick();
                 session.host.route_bgm_events(&mut director)?;
             }
         }
@@ -1087,6 +1146,7 @@ pub fn run_engine_battle(
         _ => {
             for _ in 0..BATTLE_SETTLE_TICKS {
                 session.tick()?;
+                session.fog_render_tick();
                 session.host.route_bgm_events(&mut director)?;
             }
         }
@@ -1133,6 +1193,7 @@ pub fn run_engine_battle(
         ],
     };
     Ok(EngineBattle {
+        hp_seed,
         rng_seed,
         surprise_opening,
         age_short,
@@ -1994,6 +2055,7 @@ fn run_drive(
         session.host.world.input.set_pad(pad);
         drive.steer(&mut session.host.world);
         session.tick()?;
+        session.fog_render_tick();
         session.host.route_bgm_events(director)?;
     }
     session.host.world.input.set_pad(0);
@@ -2332,6 +2394,24 @@ mod tests {
         ] {
             assert_eq!(PhaseGate::from_env(&g.to_env()), Some(g));
         }
+    }
+
+    #[test]
+    fn bar_seeds_round_trip_through_the_child_env() {
+        let seeds = vec![
+            BarSeed {
+                slot: 0,
+                hp: 412,
+                mp: 37,
+            },
+            BarSeed {
+                slot: 4,
+                hp: 1,
+                mp: 0,
+            },
+        ];
+        assert_eq!(bar_seeds_from_env(&bar_seeds_to_env(&seeds)), seeds);
+        assert!(bar_seeds_from_env("").is_empty());
     }
 
     #[test]

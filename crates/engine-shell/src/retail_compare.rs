@@ -1649,6 +1649,14 @@ fn battle_image(
             ),
         ),
         ("LEGAIA_BATTLE_RNG_SEED", engine.rng_seed.to_string()),
+        // The headless seed settles the landed field before it seeds the
+        // stream and arms the fight (`run_engine_battle`); so does the child.
+        ("LEGAIA_BATTLE_SETTLE", SETTLE_TICKS.to_string()),
+        // The mid-fight bars the headless seed put on its first battle tick.
+        (
+            "LEGAIA_BATTLE_BARS",
+            crate::retail_compare_battle::bar_seeds_to_env(&engine.hp_seed),
+        ),
     ];
     // The idle orbit is a clock: phase-align it to the retail instant when
     // retail's own orbit owns the yaw (the battle tick's prologue store,

@@ -300,6 +300,33 @@ still on, its opening reached a prompt, and the drive or replayed cast
 reached the capture's phase is the one scored; a state no seed satisfies
 keeps the first seed's run, `never reached`.
 
+**The image child plays the same fight.** The frame is only evidence about
+the state the channels scored if the `play-window` child replays that fight
+tick for tick, and three things used to put it on another one:
+
+- the headless seed settles the landed field for `SETTLE_TICKS` before it
+  sets the stream and arms the encounter, and the child armed at boot. The
+  encounter transition then owned the child's first tick, so the scene's
+  entry scripts never ran - on an overworld that left the ambient-particle
+  gate clear, and the emitter that draws the stream once a frame never drew.
+  The child now settles the same ticks first (`LEGAIA_BATTLE_SETTLE`);
+- the fog pool's render step is not presentation-only (it writes the live
+  count and depth view the next tick's spawns read, and a spawn draws the
+  stream), and the headless seed renders nothing. It now runs the step the
+  hosts' draw pass runs after every tick (`BootSession::fog_render_tick`),
+  and the child is tick-locked - one tick per redraw - so its draw passes
+  land on the same ticks;
+- the mid-fight HP / MP were written on the headless side only, so the child
+  fought on full bars and its monster AI picked from a different table. The
+  bars it seeded reach the child on the same first battle tick
+  (`LEGAIA_BATTLE_BARS`).
+
+What still parts the two is render-coupled: a battle clip's end is read off
+the window's pose sampling, so an effect-script spawn can land a few ticks
+apart (the Delilas Spirit band `0x47`). Comparing a per-tick trace of
+`World::rng_state` and the action SM from both sides is how such a split is
+found.
+
 A seed whose entry rolled a formation advantage (`ctx+0x290` / its latch
 `+0x291`: a back attack or a pre-emptive strike) is passed over too, except
 on an opening capture. A capture of a running fight is not its opening round,
@@ -752,9 +779,10 @@ directory whose options file pins `camera_distance = "retail"`. The window's
 interactive default frames the field further out than retail, and a frame
 compared at that distance scores the zoom rather than the scene.
 
-The image channel is sensitive to machine load: fog and ambient animation
-are wall-clock paced in the window, so a run that overlaps a heavy build can
-read a few hundredths low. Check the image ratchet on an idle machine.
+A `--screenshot` child is tick-locked - exactly one world tick per redraw,
+whatever the wall clock did - because the draw pass feeds the simulation (the
+fog step above). A wall-paced capture ran fogged scenes on a stream that
+moved with machine load, which is what made image runs load-sensitive.
 
 The report writes `retail | engine | |diff|` side by side for every scored
 state. **Those PNGs are retail pixels**; the report directory must stay

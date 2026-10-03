@@ -100,6 +100,12 @@ pub(crate) struct ScreenshotConfig {
     /// [`legaia_engine_shell::retail_compare_battle::BattleDrive::hold_ticks`]
     /// of them, as the headless seed does.
     pub battle_drive_held: std::cell::Cell<u32>,
+    /// `LEGAIA_BATTLE_BARS=slot:hp:mp,...`: the capture's mid-fight HP / MP,
+    /// seeded on the first battle tick as the headless seed seeds them
+    /// ([`legaia_engine_shell::retail_compare_battle::apply_bar_seeds`]).
+    pub battle_bars: Vec<legaia_engine_shell::retail_compare_battle::BarSeed>,
+    /// Whether [`Self::battle_bars`] have been seeded.
+    pub battle_bars_seeded: std::cell::Cell<bool>,
 }
 
 /// Debug state `play-window` seeds before the first world tick, so a capture
@@ -374,6 +380,10 @@ impl ScreenshotConfig {
             }),
             battle_drive_primed: std::cell::Cell::new(false),
             battle_drive_held: std::cell::Cell::new(0),
+            battle_bars: std::env::var("LEGAIA_BATTLE_BARS")
+                .map(|v| legaia_engine_shell::retail_compare_battle::bar_seeds_from_env(&v))
+                .unwrap_or_default(),
+            battle_bars_seeded: std::cell::Cell::new(false),
         }))
     }
 }

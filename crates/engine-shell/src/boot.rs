@@ -937,6 +937,35 @@ impl BootSession {
         self.queue_marks = HostQueueMarks::default();
     }
 
+    /// The fog pool's render step the play hosts run from their draw pass
+    /// (`World::fog_render_step` through the field follow frame), for a
+    /// headless driver that renders nothing but must keep the world in step
+    /// with a host that does.
+    ///
+    /// The step is not presentation-only: it ages the pool and writes the
+    /// live count (`_DAT_8007BCA8`) and the depth view the ambient emitter's
+    /// fog spawner reads on the next tick (`FogPool::spawn`'s cap and
+    /// overworld depth test), and each spawn that passes draws the world
+    /// `rand()` stream. A driver that skips it runs a fogged scene on a
+    /// different stream from the window. Same guard as the hosts: nothing
+    /// runs outside game mode 3 or while the script gate is clear. The
+    /// centre is only the frame resolver's no-camera fallback.
+    pub fn fog_render_tick(&mut self) {
+        let world = &mut self.host.world;
+        if !legaia_engine_core::world::World::fog_mode(world.mode) || !world.fog.gate {
+            return;
+        }
+        let frame = legaia_engine_core::camera_view::resolve_field_camera(
+            world,
+            &self.camera,
+            None,
+            [0.0, 0.0],
+        );
+        if let Some(view) = frame.field_view() {
+            let _ = world.fog_render_step(&view);
+        }
+    }
+
     /// Begin a New Game: clear the world to a fresh slate
     /// ([`legaia_engine_core::world::World::begin_new_game`]) and seed the
     /// starting party (Vahn) from the boot source's `SCUS_942.54` template.

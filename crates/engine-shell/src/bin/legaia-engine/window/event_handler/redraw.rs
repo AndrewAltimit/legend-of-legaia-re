@@ -50,6 +50,14 @@ impl PlayWindowApp {
         // ticks, at most four a frame, and a backlog past four dropped rather
         // than carried - the browser page drains through the same kernel.
         let ticks = self.sim_stepper.drain(dt.as_secs_f64());
+        // A `--screenshot` capture is tick-locked: one tick per redraw,
+        // whatever the wall clock did. The draw pass is not inert - the fog
+        // pool's render step ages the pool the next tick's spawns read, and
+        // those spawns draw the world `rand()` stream - so a wall-paced
+        // capture ran a fogged scene on a stream that moved with machine
+        // load, and the retail comparison's frame landed on a different
+        // fight from its headless seed (`BootSession::fog_render_tick`).
+        let ticks = if self.screenshot.is_some() { 1 } else { ticks };
         // In-flow windowed cutscene: when the field VM's FMV-trigger
         // op flips the world into SceneMode::Cutscene and the STR has
         // decoded, suspend world ticks and play the video in-window.
@@ -348,6 +356,18 @@ impl PlayWindowApp {
             // there is nothing host-side to keep in sync.
             // A `LEGAIA_BATTLE_DRIVE` capture walks the fight's pad path
             // itself, arming the drive's world seed on the first battle tick.
+            // The capture's mid-fight bars, on the first battle tick - the
+            // point the headless seed puts them on.
+            if let Some(sc) = self.screenshot.as_ref()
+                && self.session.host.world.mode == SceneMode::Battle
+                && !sc.battle_bars.is_empty()
+                && !sc.battle_bars_seeded.replace(true)
+            {
+                legaia_engine_shell::retail_compare_battle::apply_bar_seeds(
+                    &mut self.session.host.world,
+                    &sc.battle_bars,
+                );
+            }
             let field_pad = match self.screenshot.as_ref() {
                 Some(sc) if let Some(drive) = sc.battle_drive => {
                     let world = &mut self.session.host.world;

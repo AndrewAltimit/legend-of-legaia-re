@@ -1024,6 +1024,31 @@ pub(super) fn cmd_play_window_with_record(
         } else if session.host.world.mode == legaia_engine_core::world::SceneMode::Battle {
             log::warn!("play-window: --battle skipped - a battle is already open");
         } else {
+            // `LEGAIA_BATTLE_SETTLE=N`: tick the landed field N frames with
+            // no input before the fight is armed - the retail comparison
+            // corpus's headless seed enters every battle from a field that
+            // settled `retail_compare::SETTLE_TICKS` first, and seeds the
+            // world stream after it. Armed at boot instead, the encounter
+            // transition owned the very first tick, so the scene's entry
+            // scripts (the overworld's ambient-particle gate among them)
+            // never ran and the two sides entered the same fight on
+            // different `rand()` streams. The ticks run here, before the
+            // window loop, with the session draining its own queues and
+            // running the fog pool's render step as the headless seed does.
+            if let Some(n) = std::env::var("LEGAIA_BATTLE_SETTLE")
+                .ok()
+                .and_then(|s| s.trim().parse::<u32>().ok())
+            {
+                session.set_host_drains_queues(false);
+                for _ in 0..n {
+                    if let Err(e) = session.tick() {
+                        log::error!("play-window: LEGAIA_BATTLE_SETTLE tick: {e:#}");
+                        break;
+                    }
+                    session.fog_render_tick();
+                }
+                session.set_host_drains_queues(true);
+            }
             arm_requested_battle(&mut session, spec);
         }
     }
