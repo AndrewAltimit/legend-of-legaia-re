@@ -146,11 +146,12 @@ pub struct LegaiaRuntime {
     /// owns a copy of the rule.
     pub(crate) mode_seat: legaia_engine_core::mode::ModeSeat,
     /// The model id [`crate::play`]'s cached NPC mesh was built from, as
-    /// `play_npc_live_model` reports it (`-1` = the placement's spawn model).
-    /// Half of that cache's key: a scripted mesh re-bind leaves the catalog
-    /// entry index where it was, so the entry alone cannot tell a swapped
-    /// actor from an unswapped one.
-    pub(crate) npc_bound_model: Option<i32>,
+    /// `play_npc_live_model` reports it (`-1` = the placement's spawn model),
+    /// and the object count it was cut to (`play_npc_mesh_cut`). With the
+    /// entry index, that cache's key: a scripted mesh re-bind or a cue that
+    /// binds a clip leaves the catalog entry index where it was, so the entry
+    /// alone cannot tell the rebuilt mesh from the stale one.
+    pub(crate) npc_bound_model: Option<(i32, i32)>,
     /// Field party-status HUD driver (`FUN_801D0D38`): the idle countdown and
     /// the cached player position its decision kernel reads. The same state
     /// the native window holds - retail keeps it in overlay globals, so every

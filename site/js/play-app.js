@@ -240,11 +240,11 @@
     for (let v = 0; v < n; v++) {
       const o = objectIds[v];
       /* An object past the clip's bone count is not drawn: retail draws as
-       * many objects as the clip has bones. The mesh is cut to that count
-       * when the placement spawned with a clip; one whose first clip came
-       * from a later ANIMATE cue keeps its full table, so its surplus
-       * objects (equipment-swap templates) collapse to a point here rather
-       * than litter the actor's feet - the native window cuts the mesh. */
+       * many objects as the clip has bones. The engine cuts the mesh to that
+       * count (`play_npc_mesh_cut`, re-uploaded by `_rebindLiveNpcModels`
+       * when a cue binds a clip), so this only guards a pose read in the
+       * frame between a cue and the re-upload: surplus objects collapse to a
+       * point rather than litter the actor's feet. */
       if (partCount > 0 && o >= partCount) {
         out[v * 3] = 0;
         out[v * 3 + 1] = 0;
@@ -1106,6 +1106,8 @@ void main() {
           const dims = rt.play_npc_pose_dims(npc.i);
           const rec = {
             i: npc.i, slot: npc.slot, meshId, base,
+            meshCut: (typeof rt.play_npc_mesh_cut === 'function')
+              ? rt.play_npc_mesh_cut(npc.i) : -1,
             objectIds: rt.play_npc_mesh_object_ids(),
             frames, frameCount: dims[0], partCount: dims[1],
             out: new Float32Array(base.length), lastFrame: -1, lastGen: -1,
@@ -2172,13 +2174,23 @@ void main() {
      * carries the bound id, so asking for an unswapped NPC costs one call and
      * hands back the same mesh. The native window's twin is
      * `rebind_live_npc_models` in its asset uploader - same world field, same
-     * `SceneModelBank` resolve. */
+     * `SceneModelBank` resolve.
+     *
+     * The same re-upload follows a move in the mesh's object cut
+     * (`play_npc_mesh_cut`): retail draws as many objects as the actor's clip
+     * has bones, and a placement whose first clip came from a later ANIMATE
+     * cue (rikuroa's party Noa) was built uncut - the native window cuts it
+     * at pose time. */
     _rebindLiveNpcModels(rt) {
       if (!rt.play_npc_live_model || !this.npcs) return;
+      const hasCut = typeof rt.play_npc_mesh_cut === 'function';
       for (const rec of this.npcs) {
         const id = rt.play_npc_live_model(rec.i);
-        if (id < 0 || id === rec.liveModel) continue;
-        rec.liveModel = id;
+        const modelMoved = id >= 0 && id !== rec.liveModel;
+        const cut = hasCut ? rt.play_npc_mesh_cut(rec.i) : rec.meshCut;
+        if (!modelMoved && cut === rec.meshCut) continue;
+        if (modelMoved) rec.liveModel = id;
+        rec.meshCut = cut;
         let ok = true;
         try { rt.play_npc_mesh(rec.i); } catch (e) { ok = false; }
         if (!ok) continue;

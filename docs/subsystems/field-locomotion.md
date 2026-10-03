@@ -433,7 +433,7 @@ The port seeds both bits in `field_channels::spawn_channels`. `World::drain_fiel
 - no clip, for an id past the bundle's end;
 - a two- or three-bone save-crystal record on a ten-bone hero.
 
-The last of these is the "body comes apart" shape. A re-target whose bone count differs from the clip the slot was first bound with is refused, because both hosts cut the actor's mesh to that count (`FieldNpcState::clip_bones`).
+The last of these is the "body comes apart" shape. A re-target whose bone count differs from the clip the slot was first bound with is refused, because both hosts cut the actor's mesh to that count (`FieldNpcState::clip_bones`). A placement that spawns clip-less and takes its first clip from a cue (rikuroa's party Noa, `A2 10 18`) is cut when the clip binds: the native window at pose time, the play page by re-uploading the mesh when `play_npc_mesh_cut` moves.
 
 Because a party placement now carries the bit, the port's VM no longer infers "this is the player" from it. Retail's `0x23` and `4C 51` player arms compare the context **pointer** against `_DAT_8007C364` (`bne s5,v0` at `0x801E1954`), so the host treats a context stepped as a placement channel, its own script or a poke on it, as never the player. That test is `FieldHostImpl::ctx_is_player`.
 

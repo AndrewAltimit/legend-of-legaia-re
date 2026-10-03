@@ -1225,12 +1225,39 @@ impl LegaiaRuntime {
                 .ok_or_else(|| JsValue::from_str("play_npc_mesh: model out of range"))?;
             (t.tmd.clone(), t.raw.clone())
         };
-        if let Some(bones) =
-            self.npc_clip_bone_count(e.placement.index as u8, e.placement.anim_id, e.special)
-        {
+        if let Some(bones) = self.npc_mesh_cut(e) {
             tmd.objects.truncate(bones);
         }
         Ok((tmd, raw))
+    }
+
+    /// The object count catalog entry `e`'s mesh is cut to: the bone count of
+    /// the slot's **live** clip when it has one - including a clip its first
+    /// ANIMATE cue bound after the spawn (rikuroa's party Noa, posed by
+    /// `A2 10 18`) - else the bone count of the placement's spawn clip.
+    /// `None` = no clip, keep the whole object table.
+    ///
+    /// Retail draws as many objects as the clip has bones; the native
+    /// window cuts the same way at pose time (`redraw.rs`, the
+    /// count-equality cut).
+    fn npc_mesh_cut(&self, e: &legaia_engine_core::npc_catalog::NpcEntry) -> Option<usize> {
+        let slot = e.placement.index as u8;
+        match self.npc_clips.get(&slot) {
+            Some(c) => Some(c.player.bone_count()).filter(|&b| b > 0),
+            None => self.npc_clip_bone_count(slot, e.placement.anim_id, e.special),
+        }
+    }
+
+    /// The object count catalog entry `i`'s mesh is cut to right now
+    /// ([`Self::npc_mesh_cut`]), or `-1` for an uncut mesh. The page re-builds
+    /// an NPC's mesh when this moves - the clip a later cue bound carries a
+    /// different bone count than the spawn mesh was cut to.
+    pub fn play_npc_mesh_cut(&self, i: u32) -> i32 {
+        self.npcs
+            .as_ref()
+            .and_then(|n| n.pack.entries.get(i as usize))
+            .and_then(|e| self.npc_mesh_cut(e))
+            .map_or(-1, |b| b as i32)
     }
 
     /// Per catalog entry, the generation of its op-`0x4B` VDF morph
@@ -1297,7 +1324,7 @@ impl LegaiaRuntime {
         // hand back the spawn mesh forever.
         if let Some(n) = self.npcs.as_ref()
             && n.pack.cur.as_ref().map(|c| c.0) == Some(idx)
-            && self.npc_bound_model == Some(live)
+            && self.npc_bound_model == Some((live, self.play_npc_mesh_cut(i)))
         {
             return Ok(i);
         }
@@ -1308,7 +1335,7 @@ impl LegaiaRuntime {
         if let Some(n) = self.npcs.as_mut() {
             n.pack.cur = Some((idx, mesh, object_ids, flat));
         }
-        self.npc_bound_model = Some(live);
+        self.npc_bound_model = Some((live, self.play_npc_mesh_cut(i)));
         Ok(i)
     }
 
