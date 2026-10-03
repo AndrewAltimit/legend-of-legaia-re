@@ -341,6 +341,13 @@ seed failure.
 | `phase` | 1 when the engine's command-flow state equals retail's `ctx[+0x06]` decoded to the engine's band - and, for a replayed or driven action, the same action-SM state on the same seat; for a driven menu, the same member |
 | `bgm` | retail's track word against the field track the engine will resume ([below](#the-track-word-in-battle)) |
 
+A state the manifest tags with a `resident_patch` was made on a patched disc
+and replays that build's executable; its `enemy_hp` / `battle_party` details
+say so, since what the patch writes into a combatant is not retail behaviour.
+The three `shiny_refactor_gimard_*` states read `enemy_hp` `0.5` for exactly
+that reason: their monster's maxima are the shiny-Seru boost's `x135/100`
+(`133` over the disc's `99`, `27` over `20`).
+
 `scene`, `mode` (engine `Battle`), `camera`, `flags`, `inventory` and `image`
 keep their field meaning. HP / MP current values are seeded, so their misses
 are what the settle window changed; the max values are the real check
@@ -364,7 +371,10 @@ screen takes Cross.
 
 The phase is **held** when the engine's flow state equals the capture's and -
 for a per-member surface - the member is the same; an action phase when the
-round is executing and the same seat holds the same `ctx[+0x07]`. The drive
+round is executing and the same seat holds the same `ctx[+0x07]`. A menu
+surface also waits for the battle camera's glide to land
+(`BattleCamera::is_gliding`): retail's capture is a surface the player sat
+on, and a frame taken the tick the flow byte changes scores the glide. The drive
 gives up after its budget or when the fight ends, and the `phase` detail then
 reads `driven by pad, never reached`.
 

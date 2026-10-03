@@ -1535,9 +1535,12 @@ impl BattleDrive {
                 }
                 ok
             }
+            // A menu capture is a surface the player sat on: the camera has
+            // arrived at its framing, so the frame waits out the glide.
             Self::Menu { flow, seat } => {
                 world.battle.flow == flow
                     && (!menu_seat_matters(flow) || world.battle_ctx.active_actor == seat)
+                    && !world.battle.camera.as_ref().is_some_and(|c| c.is_gliding())
             }
             Self::Action { seat, end, .. } if end.is_end() => {
                 // The sequencer frames its pose actor `ctx[+0x13]`.

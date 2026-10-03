@@ -161,6 +161,9 @@ pub struct CorpusEntry {
     pub path: PathBuf,
     /// The scenario's `backup_fingerprint`.
     pub fingerprint: String,
+    /// The scenario's `resident_patch` - the patch family whose executable
+    /// the state replays, when it was made on a patched disc.
+    pub resident_patch: Option<String>,
 }
 
 /// Enumerate every scenario with a library backup on disk, deduplicated by
@@ -183,6 +186,7 @@ pub fn enumerate_corpus(manifest: &ScenarioManifest, library: &Path) -> Vec<Corp
                     emulator,
                     path,
                     fingerprint: fp.to_string(),
+                    resident_patch: sc.resident_patch.clone(),
                 });
             }
         }
@@ -1548,6 +1552,19 @@ fn run_battle(
             "image".into(),
             format!("mae={:.1} within={:.3} ({})", img.mae, img.within, img.note),
         );
+    }
+    // A state made on a patched disc replays that build's executable: what
+    // the patch writes into a combatant (the shiny-Seru boost's `x135/100`
+    // on a monster's maxima) is not retail behaviour, and a channel that
+    // reads it says so instead of reading as an engine miss.
+    if let Some(patch) = entry.resident_patch.as_deref() {
+        for key in ["enemy_hp", "battle_party"] {
+            if let Some(d) = det.get_mut(key) {
+                d.push_str(&format!(
+                    "; retail ran a patched executable (resident patch: {patch})"
+                ));
+            }
+        }
     }
     report.image = image;
     report.detail.extend(det);
