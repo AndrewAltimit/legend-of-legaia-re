@@ -1516,7 +1516,7 @@ pub struct PaylinePrim {
 /// endpoint on its own through `FUN_8003d368` and links the packet at
 /// [`payline_ot_depth`] of the **second** endpoint's returned depth.
 // REF: FUN_8003d368 (the SCUS RTPS wrapper each endpoint goes through; the
-// browser pages run its equivalent caller-side, over the fitted projection)
+// browser pages run its equivalent caller-side, over the same projection)
 // PORT: FUN_801d3380 (payline 3D line segments)
 //
 // Wired on all three hosts through one projection, [`projected_paylines`]:
@@ -1566,7 +1566,7 @@ pub struct ProjectedPayline {
 
 /// The projection pass [`payline_prims`] leaves caller-side, run once for
 /// every host: each endpoint goes through
-/// [`legaia_asset::minigame_slot_scene::project`] - the machine's fitted
+/// [`legaia_asset::minigame_slot_scene::project`] - the machine's captured
 /// projection (the stand-in for `FUN_8003D368`'s `RTPS` under the camera the
 /// overlay installs) that the rest of the cabinet is drawn with.
 ///

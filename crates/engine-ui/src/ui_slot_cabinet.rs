@@ -3,7 +3,7 @@
 //! the coin HUD, each sampling the machine's own art pages in VRAM.
 //!
 //! Every element is the emitter the overlay runs, projected through the
-//! machine's fitted projection (`legaia_asset::minigame_slot_scene::project`)
+//! machine's camera (`legaia_asset::minigame_slot_scene::project`, the GTE registers captured at the machine)
 //! and linked at a depth-derived ordering-table bucket, so the painter's order
 //! is retail's OT order rather than a hand-picked layer stack:
 //!
@@ -143,7 +143,8 @@ fn disp(p: (f32, f32)) -> (i16, i16) {
 /// Depth-derived OT bucket for model-space depth `z` (`-z` is toward the
 /// viewer): proportional to the view-space depth the GTE's `OTZ` reads.
 fn depth_ot(z: f32) -> u32 {
-    SCENE_OT_BASE + ((sc::PROJ_Z0 + z).max(0.0) as u32 >> 2)
+    let vz = sc::GTE_SCALE[2] as f32 * z + sc::GTE_TR[2] as f32;
+    SCENE_OT_BASE + (vz.max(0.0) as u32 >> 2)
 }
 
 fn shade_word(s: i32) -> u32 {

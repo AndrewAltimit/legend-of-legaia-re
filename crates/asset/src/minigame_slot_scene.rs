@@ -453,44 +453,82 @@ pub const SCREEN_W: f32 = 640.0;
 /// Height of the retail framebuffer.
 pub const SCREEN_H: f32 = 240.0;
 
-/// Screen x of the machine's model-space origin. **Fitted.** The machine sits
-/// left of centre to clear the coin panel the HUD rasteriser draws at x 560.
+/// The GTE's screen offset `OFX` while the machine draws, in pixels (the
+/// control word reads `0x01400000`, 16.16). **Captured**: the
+/// `minigame_slot_machine` mednafen state carries the COP2 register file in
+/// its `GTE` section, and every value below is read from it.
+pub const GTE_OFX: f32 = 320.0;
+/// The GTE's screen offset `OFY` (`0x00720000`).
+pub const GTE_OFY: f32 = 114.0;
+/// The GTE's projection-plane distance `H`.
+pub const GTE_H: f32 = 1024.0;
+/// The rotation matrix's diagonal, `diag(0x6000, 0x3000, 0x3000)` in 4.12 -
+/// the scale the init writes to `_DAT_8007bf10`. The 2:1 x:y ratio is the
+/// 640-wide hi-res mode's pixel aspect.
+pub const GTE_SCALE: [i32; 3] = [6, 3, 3];
+/// The translation vector `TR` - `(-1440, 20, 24480)`.
+pub const GTE_TR: [i32; 3] = [-1440, 20, 24480];
+
+/// The fitted screen x of the model origin the projection used before the
+/// GTE registers were read. Kept for the exporters that still emit the fitted
+/// parameters (`asset slot-art`, the VRChat kit); [`project`] does not use it.
+/// The fit reproduced x to a pixel but sat `3.6` rows low.
 pub const PROJ_OFX: f32 = 253.0;
-/// Screen y of the machine's model-space origin. **Fitted.**
+/// The fitted screen y of the model origin - see [`PROJ_OFX`].
 pub const PROJ_OFY: f32 = 118.5;
-/// View-space depth offset. **Fitted** from the ratio of the on-screen scale at
-/// `z = -800` (the glass) to that at `z = -512` (the reel's payline face).
+/// The fitted view-depth offset - see [`PROJ_OFX`].
 pub const PROJ_Z0: f32 = 9324.0;
-/// Screen x scale at `z = 0`. **Fitted.**
+/// The fitted x scale at `z = 0` - see [`PROJ_OFX`].
 pub const PROJ_SX0: f32 = 0.2547;
-/// x:y scale ratio. **Derived**, not fitted: the camera matrix the init writes
-/// to `_DAT_8007bf10` is `diag(6, 3, 3)`.
+/// x:y scale ratio of [`GTE_SCALE`].
 pub const PROJ_ASPECT: f32 = 2.0;
-/// The camera matrix's x scale. A billboard's view-space half-extent divides by
-/// this to reach screen pixels: `FUN_800195a8` builds the corners *after* the
-/// matrix multiply, so they carry no model scale.
+/// The camera matrix's x scale ([`GTE_SCALE`]`[0]`). A billboard's view-space
+/// half-extent carries no model scale: `FUN_800195a8` builds the corners
+/// *after* the matrix multiply.
 pub const PROJ_X_SCALE: f32 = 6.0;
 
-/// Screen x-scale at model-space depth `z` (`-z` is toward the viewer).
-pub fn view_scale(z: i32) -> f32 {
-    PROJ_SX0 * PROJ_Z0 / (PROJ_Z0 + z as f32)
-}
-
-/// Project a model-space point onto the retail 640x240 framebuffer.
-pub fn project(x: i32, y: i32, z: i32) -> (f32, f32) {
-    let s = view_scale(z);
+/// A model-space point in view space: `MVMVA` with the machine's camera
+/// (`R * v >> 12 + TR`, `cop2 0x480012` in `FUN_8003D344`).
+pub fn view_point(x: i32, y: i32, z: i32) -> (f32, f32, f32) {
     (
-        PROJ_OFX + s * x as f32,
-        PROJ_OFY + (s / PROJ_ASPECT) * y as f32,
+        (GTE_SCALE[0] * x + GTE_TR[0]) as f32,
+        (GTE_SCALE[1] * y + GTE_TR[1]) as f32,
+        (GTE_SCALE[2] * z + GTE_TR[2]) as f32,
     )
 }
 
+/// View depth of model-space depth `z` (`-z` is toward the viewer).
+pub fn view_depth(z: i32) -> f32 {
+    (GTE_SCALE[2] * z + GTE_TR[2]) as f32
+}
+
+/// Screen x-scale at model-space depth `z`.
+pub fn view_scale(z: i32) -> f32 {
+    GTE_SCALE[0] as f32 * GTE_H / view_depth(z)
+}
+
+/// Project a view-space point the way `RTPS` does: `OF + H * v / vz`.
+pub fn project_view(vx: f32, vy: f32, vz: f32) -> (f32, f32) {
+    (GTE_OFX + GTE_H * vx / vz, GTE_OFY + GTE_H * vy / vz)
+}
+
+/// Project a model-space point onto the retail 640x240 framebuffer through
+/// the captured camera - the transform the cabinet's actor renderer, the
+/// reel renderer (`RotTransPers4` under the camera matrix) and the billboard
+/// centres (`MVMVA`, then `RTPS` under an identity matrix) all reduce to.
+pub fn project(x: i32, y: i32, z: i32) -> (f32, f32) {
+    let (vx, vy, vz) = view_point(x, y, z);
+    project_view(vx, vy, vz)
+}
+
 /// Screen half-extent of a billboard whose view-space half-extent is `(hw, hh)`
-/// and whose centre is at depth `z`. Both axes divide by the same `H / vz`, so a
-/// billboard is *not* aspect-corrected: a 2:1 view-space extent is a 2:1 screen
-/// extent, which on the half-width hi-res pixel grid renders square.
+/// and whose centre is at depth `z`. `FUN_800195a8` loads an identity matrix
+/// with a zero translation (`FUN_8003D178`) before projecting the corners, so
+/// both axes divide by the same `H / vz`: a billboard is *not*
+/// aspect-corrected, and a 2:1 view-space extent renders square on the
+/// half-width hi-res pixel grid.
 pub fn billboard_half(hw: i32, hh: i32, z: i32) -> (f32, f32) {
-    let k = view_scale(z) / PROJ_X_SCALE;
+    let k = GTE_H / view_depth(z);
     (hw as f32 * k, hh as f32 * k)
 }
 
@@ -1271,13 +1309,15 @@ mod tests {
 
     #[test]
     fn the_projection_puts_the_reels_where_retail_does() {
-        // Reel centres measured off the retail framebuffer: 150 / 253 / 357.
-        for (r, want) in [(0usize, 149.5f32), (1, 253.0), (2, 356.5)] {
-            let cx = reel_x(r) + REEL_WIDTH / 2;
-            let (sx, _) = project(cx, 0, reel_z(0x800));
+        // Each reel's payline face starts at the column the
+        // `minigame_slot_machine` display crop has its first lit face pixel
+        // on (118 / 221 / 324). The old fitted projection put these three to
+        // four columns left; the captured GTE registers land them.
+        for (r, want) in [(0usize, 118.0f32), (1, 221.0), (2, 324.0)] {
+            let (sx, _) = project(reel_x(r), 0, reel_z(0x800));
             assert!(
                 (sx - want).abs() < 1.5,
-                "reel {r} centre projected to {sx}, retail has it at {want}"
+                "reel {r} left edge projected to {sx}, retail has it at {want}"
             );
         }
     }

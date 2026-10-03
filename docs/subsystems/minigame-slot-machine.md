@@ -588,7 +588,7 @@ Ported as `legaia_engine_core::slot_machine::payline_prims` +
 `payline_ot_depth`; the geometry comes from the parsed table
 (`legaia_asset::minigame_slot_scene::SlotScene::paylines`). The projection runs
 once for every host, in `slot_machine::projected_paylines`: each endpoint goes
-through the machine's fitted projection
+through the machine's projection
 (`legaia_asset::minigame_slot_scene::project`, the one the medallions and lamps
 are drawn with). Both browser pages stroke those projected segments in the
 prim's colour, half-blended for the `0x43` code (`sa` / `sb` in
@@ -752,18 +752,31 @@ Parser [`legaia_asset::minigame_slot_scene`]; art [`legaia_asset::minigame_art`]
 
 ### The projection
 
-The scene's screen mapping on the retail 640x240 framebuffer. Its **shape** is
-derived - a perspective divide of a view-space point whose x:y scale ratio is
-exactly 2, read out of the camera matrix. Its four **scalars** are *fitted* to a
-retail framebuffer captured at the machine (the `minigame_slot_machine` capture),
-because the GTE control words (`OFX` / `OFY` / `H`) live in COP2, not in main RAM,
-and so are not in a save state.
+The scene's screen mapping on the retail 640x240 framebuffer is the GTE's own,
+read out of the `minigame_slot_machine` mednafen state: its `GTE` section
+carries the COP2 register file. While the machine draws, the rotation matrix
+is `diag(0x6000, 0x3000, 0x3000)` (the init's `_DAT_8007bf10` scale), the
+translation `TR = (-1440, 20, 24480)`, `OFX = 320`, `OFY = 114` and `H = 1024`:
 
-The fit is over-determined and independently checked: it was solved on the five
-payline lamps alone, and then **predicted** - to about a pixel each - the
-on-screen rect of every other element, none of which entered the fit (the
-medallion column, the marquee panel, the two mascots, the three reel windows, the
-reel-stop pedestals, and the dot-matrix grid).
+```text
+view   = (6x - 1440, 3y + 20, 3z + 24480)
+screen = (320 + 1024 * vx / vz, 114 + 1024 * vy / vz)
+```
+
+Every path reduces to it. The reel renderer and the cabinet's actor renderer
+project under the camera matrix; the billboard projector `FUN_800195a8`
+transforms the centre with `MVMVA` (`FUN_8003D344`), loads an identity matrix
+with a zero translation (`FUN_8003D178`), and projects the view-space corners,
+so a billboard's half-extent is `H * half / vz` on both axes.
+
+An earlier projection was fitted to the same frame on the five payline lamps
+(`OFX 253`, `OFY 118.5`, `z0 9324`, `sx0 0.2547`), on the premise that the
+control words were not in a save state. It reproduced x to a pixel but sat
+`3.6` rows low, and it drew the cabinet three rows low and two columns left
+because the fitted perspective differs from the real one away from the glass
+plane. The fitted constants remain only for the exporters that still emit them
+(`asset slot-art`, the VRChat kit). Ported as
+`legaia_asset::minigame_slot_scene::project` / `billboard_half` (`GTE_*`).
 
 ### The cabinet is a mesh - PROT 1200 descriptor 1
 
@@ -867,15 +880,13 @@ from VRAM rather than from per-sprite decodes, and every projected element is
 linked at a bucket proportional to its depth. The walked-in casino floor is not
 drawn while the machine is up.
 
-Two residuals: corners are snapped to the 320-wide display space every screen
+Residuals: corners are snapped to the 320-wide display space every screen
 primitive is authored in, so a dot lands to the nearest even framebuffer
-column; and the cabinet body projects about three rows lower and two columns
-further left than the capture places it (rows `18..218` against `15..214`,
-same height), while every billboard lands on its fitted position. The
-cabinet is drawn through the fitted projection with the actor at the origin
-(the init zeroes its position and rotation, `0x801CEEB8..0x801CEECC`); the
-actor renderer's own camera composition, which the fit never saw, is the
-unmeasured leg.
+column; and the reel faces and cabinet are drawn without retail's 15-bit
+dither, the port's clean-rasterisation default. The cabinet body lands on the
+capture's rows `15..214` and columns `22..486` through the captured
+projection (the actor sits at the origin: the init zeroes its position and
+rotation, `0x801CEEB8..0x801CEECC`).
 
 The standalone minigames page draws the same primitive list too. Its slot
 panel is a 2D canvas with no GPU pass, so the list is rasterised on the CPU
