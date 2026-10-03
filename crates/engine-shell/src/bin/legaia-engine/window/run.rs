@@ -484,22 +484,26 @@ pub(super) fn cmd_play_window_with_record(
     // the ISO and play it with its interleaved XA audio (read raw 2352-byte
     // sectors). Otherwise we fall back to the filesystem (video only).
     //
+    // winit allows one event loop per process, so the movie and the scene
+    // share this one: the movie runs on it on demand and hands it back, then
+    // the scene window runs on it to the end.
+    //
     // Screenshot mode skips the *auto-resolved* STR (an explicit `--str-file`
-    // is still honoured): winit event loops cannot be recreated in-process, so
-    // a phase-1 video window would make the scene window - and therefore the
-    // screenshot - impossible. The real boot flow enters the prologue 3D scene
-    // with no FMV anyway; the prepended STR is a preview-harness convenience.
+    // is still honoured) so a capture is not held behind a movie. The real
+    // boot flow enters the prologue 3D scene with no FMV anyway; the
+    // prepended STR is a preview-harness convenience.
+    let mut event_loop = EventLoop::new().context("create event loop")?;
     let skip_auto_str = screenshot.is_some() && str_file.is_none();
     if skip_auto_str {
         // No phase-1 window; fall through to the scene window.
     } else if let Some(str_path) = resolved_str {
-        cmd_play_str(str_path, None, 640, 480)?;
+        play_str_in(&mut event_loop, str_path, None, 640, 480)?;
     } else if let (Some(disc_path), None) = (disc, str_file) {
         // Disc mode, no explicit file: resolve the scene's MV*.STR via the
         // cutscene map / heuristic and play it from the disc with audio.
         if let Some(rel) = cutscene_map.resolve(scene) {
             let iso_path = Path::new(&rel);
-            match cmd_play_str(iso_path, Some(disc_path), 640, 480) {
+            match play_str_in(&mut event_loop, iso_path, Some(disc_path), 640, 480) {
                 Ok(()) => {}
                 Err(e) => {
                     eprintln!("info: scene '{scene}' STR '{rel}' not played from disc ({e:#})")
@@ -1528,7 +1532,6 @@ pub(super) fn cmd_play_window_with_record(
         }
     );
 
-    let event_loop = EventLoop::new().context("create event loop")?;
     event_loop.run_app(&mut app).context("event loop")?;
     // After the event loop returns, flush any pending record log. The
     // Escape / CloseRequested handlers also flush proactively so a

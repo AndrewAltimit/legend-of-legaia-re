@@ -1496,7 +1496,7 @@ pub(crate) use save_select_helpers::{
     MountedCard, disk_port_blocks_with_card, disk_save_rack_with_card, read_slot_save,
     scan_save_dir, write_slot_save,
 };
-pub(crate) use str_player::{cmd_play_str, resolve_iso_file};
+pub(crate) use str_player::{cmd_play_str, play_str_in, resolve_iso_file};
 
 impl PlayWindowApp {
     /// Maximum number of battle-event log lines kept in the HUD ring.
