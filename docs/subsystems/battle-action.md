@@ -3539,6 +3539,31 @@ commits the `+0x1F3` reaction, and an ordinary directional swing that commits
 ordinary swing grunts"; it does not pin the `s0` / `s1` threshold that opens the
 `+0x1F3` arm.
 
+**The block roll.** The `+0x1F3` arm is a contest between the two actors, run
+before any damage (`0x801EC5A8..0x801EC878`) and only when the defender has a
+block entry and still stands on the accumulated total - so a defender with no
+block clip draws no randomness. Each side sums SPD (`+0x164`), four fifths of
+the unfolded ATK (`+0x158`) and an approach term (`ctx[+0x6D2]` / `+0x6D4`);
+the attacker's sum is raised to the defender's if lower, then the attacker adds
+`(rand() % s0) * table[(pb - 0x0C) % 5] / 2` with the 0898 table `0x801F64E4` =
+`[6, 4, 4, 4, 2]`, and the defender `rand() % s1`. Spirit on the defender and the
+attacker's art slot `0x11` scale by 3/2, status `+0x16E & 0x1000` by 8/10, the
+`+0xF4` ability bits `0x80000` / `0x100000` / `0x200000` double, raise or pin a
+side, and `+0x16E & 0x400` disables blocking. The defender blocks when the
+attacker's total is the smaller (`sltu s0,s1`). Two overrides follow: a defender
+already holding its block pose with its reaction timer running keeps blocking
+(`0x801EC93C..0x801EC984`), and one mid-way through any other reaction cannot
+block (`0x801ECA20..0x801ECA68`); a party attacker with ability `0x4000` cancels
+the block (`0x801ECB44`). A blocked hit jumps over the whole damage body (`bne
+s7,zero,0x801EE6D4` at `0x801ECB60`): no damage, no combo accumulation, no
+Spirit accrual, no tint - and the attacker's anim cue cursor `+0x1F6` steps over
+one cue, the impact sound a landed hit would have made. Port:
+`battle_formulas::block_roll` and `World::roll_block`, wired ahead of the damage
+roll in `World::land_melee_hit`. The approach terms are zero in the port (as they
+are for its damage roll), the reaction timer `+0x1F7` is read as "a reaction clip
+is playing", and the blocked branch's own apply-mode walk
+(`0x801EE720..0x801EE918`) is the port's ordinary apply mode.
+
 **The third gate is not a character level.** `slti v0,v0,0x2` at `0x801EEAB8` reads
 `_DAT_8007BC20`, which the executable itself prints as the **`xa_flag`** debug
 counter - `FUN_80016B6C` loads it at `0x80016EB8` and passes it straight to the

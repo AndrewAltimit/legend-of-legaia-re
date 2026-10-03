@@ -1779,6 +1779,23 @@ impl World {
                 attack = attack.saturating_add(fold);
             }
         }
+        // The block roll runs ahead of the damage rolls (`0x801EC5A8..
+        // 0x801EC878` before the `0x801ECB84` fold), and a blocked hit skips
+        // the whole damage body: `bne s7,zero,0x801EE6D4` at `0x801ECB60`.
+        if let Some(block_entry) = self.roll_block(attacker, target, power_byte) {
+            // `0x801EE6D4..0x801EE6F8`: the attacker's anim cue cursor steps
+            // over one cue - the impact sound a landed hit would have made.
+            if let Some(a) = self.actors.get_mut(attacker_i) {
+                a.battle_anim_cue_cursor =
+                    (a.battle_anim_cue_cursor + 1).min(crate::anim_cue::ANIM_CUE_TRACK_LEN);
+            }
+            // The sound tail is reached through the apply arm only, and the
+            // grunt compares the committed pose against `+0x1F3`.
+            self.fire_melee_impact_cue(attacker, target, kill_check.then_some(block_entry));
+            // `0x801EEC30..0x801EEC6C`: the defender commits its block entry.
+            self.commit_battle_reaction_entry(target_i, block_entry);
+            return 0;
+        }
         let defense = self.physical_defense_of(target, power_byte);
         // Spirit guard stance on the defender (a party slot that picked
         // Spirit and hasn't started its next turn).
@@ -1890,6 +1907,100 @@ impl World {
             self.commit_battle_reaction_entry(target_i, entry);
         }
         dmg
+    }
+
+    /// The melee kernel's block decision for one hit: `Some(block entry)`
+    /// when the defender blocks it. The roll itself is
+    /// [`vm::battle_formulas::block_roll`]; around it sit the routine's own
+    /// gates, in its order:
+    ///
+    /// * no roll (and no draw) without a block entry or once the
+    ///   accumulated total has reached the defender's HP (`0x801EC5BC`,
+    ///   `0x801EC5CC..0x801EC5DC`);
+    /// * a defender already holding its block pose with the reaction timer
+    ///   running keeps blocking (`0x801EC93C..0x801EC984`), and one mid-way
+    ///   through any other reaction cannot block - the juggle arm clears
+    ///   `s7` (`0x801ECA20..0x801ECA68`). The engine reads the retail
+    ///   `+0x1F7` timer as "a reaction clip is playing"
+    ///   (`Actor::battle_reaction`);
+    /// * a party attacker carrying ability bit `0x4000` cancels the block
+    ///   after the verdict (`0x801ECAFC..0x801ECB5C`).
+    ///
+    /// The approach terms `ctx[+0x6D2]` / `+0x6D4` are zero, as the damage
+    /// roll's are (the port does not model the approach angle / distance).
+    /// The Mystic Shield arm (`0x801ECA84..0x801ECAF8`, `s7 = 1` while
+    /// `_DAT_8007BD84` is up) is not taken here.
+    ///
+    /// PORT: FUN_801EC3E4 (`0x801EC5A8..0x801ECB60`, the block gates)
+    fn roll_block(&mut self, attacker: u8, target: u8, power_byte: u8) -> Option<u8> {
+        use vm::battle_formulas::{ABILITY_BLOCK_BREAK, BlockRoll, BlockSide, block_roll};
+        let ti = usize::from(target);
+        let block_entry = self.battle_reaction_map(ti)?[4];
+        if block_entry == 0 {
+            return None;
+        }
+        let t = self.actors.get(ti)?;
+        if t.battle.damage_accum >= u32::from(t.battle.hp) {
+            return None;
+        }
+        let reacting = t.battle_reaction.is_some();
+        let in_block = t.battle_reaction_entry == Some(block_entry);
+        let side = |w: &Self, slot: u8| -> BlockSide {
+            let i = usize::from(slot);
+            let own = w.actors.get(i).map(|a| a.battle.spd).unwrap_or(0);
+            let spd = if own != 0 {
+                own
+            } else {
+                w.battle.speed.get(i).copied().unwrap_or(0)
+            };
+            BlockSide {
+                spd,
+                atk: w.battle.attack.get(i).copied().unwrap_or(0),
+                status: w.raw_status_word(slot),
+                ability: (slot < w.party.party_count).then(|| w.party_ability_word(i)),
+            }
+        };
+        let roll = BlockRoll {
+            attacker: side(self, attacker),
+            defender: side(self, target),
+            attack_ramp: 0,
+            guard_ramp: 0,
+            power_byte,
+            defender_spirit: self.battle.guarding.get(ti).copied().unwrap_or(false),
+            attacker_art_slot: self
+                .actors
+                .get(usize::from(attacker))
+                .is_some_and(|a| a.battle.current_anim == vm::anim_vm::DYNAMIC_ART_SLOT_B),
+        };
+        let mut blocked = block_roll(&roll, &mut || self.next_rand());
+        if in_block && reacting {
+            blocked = true;
+        } else if reacting {
+            blocked = false;
+        }
+        if blocked
+            && roll
+                .attacker
+                .ability
+                .is_some_and(|ab| ab & ABILITY_BLOCK_BREAK != 0)
+        {
+            blocked = false;
+        }
+        blocked.then_some(block_entry)
+    }
+
+    /// A party member's ability word - the character record's `+0xF4` u32,
+    /// the bitfield `FUN_801EC3E4` reads as `0x80084140 + id*0x414 + 0x6BC`.
+    fn party_ability_word(&self, member: usize) -> u32 {
+        self.party
+            .roster
+            .members
+            .get(self.party_roster_slot(member))
+            .map(|r| {
+                let b = r.ability_bits();
+                u32::from_le_bytes([b[0], b[1], b[2], b[3]])
+            })
+            .unwrap_or(0)
     }
 
     /// Land the accumulated combo total on `target`'s live HP - retail's one
@@ -2388,6 +2499,46 @@ mod melee_cue_tests {
         w.land_melee_hit(1, 0, BASIC_ATTACK_COMMAND, 0, false, true);
         assert!(w.take_sfx_ring_ops().is_empty());
         assert!(w.drain_battle_xa_cues().is_empty());
+    }
+
+    /// A defender holding its block pose keeps blocking
+    /// (`0x801EC93C..0x801EC984`), and a blocked hit skips the damage body
+    /// (`bne s7,zero,0x801EE6D4`): no damage, no accumulation, and the
+    /// attacker's anim cue cursor steps over one cue.
+    #[test]
+    fn a_blocked_hit_lands_no_damage() {
+        let mut w = duel();
+        w.actors[0].battle_action_clips = Some(std::sync::Arc::new(vec![None; 12]));
+        w.actors[0].battle_reaction = Some(0x0B);
+        w.actors[0].battle_reaction_entry = Some(0x0B);
+        let before = w.actors[0].battle.hp;
+        let dmg = w.land_melee_hit(1, 0, BASIC_ATTACK_COMMAND, 0, false, true);
+        assert_eq!(dmg, 0);
+        assert_eq!(w.actors[0].battle.damage_accum, 0);
+        assert_eq!(w.actors[0].battle.hp, before);
+        assert_eq!(w.actors[1].battle_anim_cue_cursor, 1);
+        assert!(w.drain_battle_hit_fx().is_empty(), "no popup for a block");
+        // Without the block pose the same hit connects (the roll itself can
+        // still block; a defender with no clips has no block entry at all).
+        let mut w = duel();
+        let dmg = w.land_melee_hit(1, 0, BASIC_ATTACK_COMMAND, 0, false, true);
+        assert!(dmg > 0);
+    }
+
+    /// A defender mid-way through another reaction cannot block - the juggle
+    /// arm clears `s7` (`0x801ECA20..0x801ECA68`) whatever the roll said.
+    #[test]
+    fn a_reacting_defender_cannot_block() {
+        let mut w = duel();
+        w.actors[0].battle_action_clips = Some(std::sync::Arc::new(vec![None; 12]));
+        w.actors[0].battle_reaction = Some(2);
+        w.actors[0].battle_reaction_entry = Some(2);
+        // An overwhelming defender: the roll alone would block every time.
+        w.battle.speed[0] = 999;
+        w.set_battle_attack(0, 999);
+        for _ in 0..20 {
+            assert_eq!(w.roll_block(1, 0, BASIC_ATTACK_COMMAND), None);
+        }
     }
 
     #[test]
