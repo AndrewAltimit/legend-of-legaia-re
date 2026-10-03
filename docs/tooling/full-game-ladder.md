@@ -203,7 +203,11 @@ map as its street:
 
 - a **kind-0 teleport** tile is an edge to its landing cell. A closed door prop
   standing over one reads solid from every side, and the planner counts it
-  open: pressing into it is the touch that opens it (`31 00`).
+  open: pressing into it is the touch that opens it (`31 00`). A leaf is
+  over the teleport when its box centre lies within the tile's half-tile
+  margin or its anchor tile is one step from it - `dolk`'s inn stair door
+  is anchored at (76, 121) in front of the (76, 122) teleport, its box
+  centre short of the margin.
 - an **object door** - a walk-touch placement whose record, resolved against
   the live flags, moves the player - is an edge wherever the leading actor
   probe points reach its contact box, including through the wall the door is
@@ -237,7 +241,13 @@ The pad hand's beats are the seated tier's, played as a player plays them:
   to fights it instead of fleeing it;
 - before a boss, and whenever the weakest member is below half HP, the hand
   heals through the pause menu: Start, Items, Use, the first HP restorative,
-  the weakest member, Circle back out.
+  the weakest member, Circle back out;
+- leaving a scene that rolls no encounters with the weakest member still
+  below half HP and nothing in the bag to heal it, the hand **rests**: it
+  walks onto a live walk-on band whose partition-2 record runs the `4C 82`
+  restore (a bed), or talks to an NPC whose record or a record it spawns
+  does (an innkeeper; the gold gate is the record's own). In a scene that
+  rolls, the walk to the bed costs what the walk out does, so it heads out.
 
 A pad segment has a frame budget (`PAD_SEGMENT_FRAMES`); a segment the hand
 cannot finish inside it stalls with `pad frame budget (N) spent` rather than holding
@@ -370,7 +380,9 @@ cargo test -p legaia-engine-shell --profile release-test \
 `LEGAIA_DISC_BIN` must be set; without it, or without either tree, both parts
 print `[skip]` and pass. `LEGAIA_FGL_ONLY=<id>,...` runs only the segments
 ending at those milestones and does not assert the baseline;
-`LEGAIA_FGL_NO_PAD=1` skips the pad tier. `LEGAIA_SCUS` defaults to the
+`LEGAIA_FGL_NO_PAD=1` skips the pad tier, and `LEGAIA_FGL_RNG_SEED=<u32>`
+re-seeds the world rand stream once a pad segment is seeded, dealing it
+another hand. `LEGAIA_SCUS` defaults to the
 extracted tree's `SCUS_942.54`. Two part-A diagnostics:
 `LEGAIA_FGL_EDGES=<scene>,...` prints each named scene's out- and in-edges
 (`*` marks a scripted one), and `LEGAIA_FGL_GAINED=<id>,...` prints every flag
@@ -426,6 +438,21 @@ first command, and the fight's opening formation and HP read off the
 `[battle] start` line. If the draws are retail's, the move is the route's
 fragility, not a regression.
 
+`LEGAIA_FGL_RNG_SEED` measures that fragility directly: run the segment
+under a spread of seeds and count the wipes. `rim_elm_restored` is the
+standing case. Its seed, `player_steal_skeleton_pre`, is a mid-battle state
+whose SC block holds Vahn alone at 17 of 219 HP with an empty bag, in a
+mist-era `dolk` whose every region rolls (`0x142` clear). With 17 HP one
+caught Run against a pair is a wipe, and the escape roll weighs the enemy
+side's summed SPD against one member's, so a pair catches him often. Over
+the default stream and seeds 1..20, walking straight out clears the pad
+tier on 18 of 21 hands; the default one is among the three that wipe on the
+first `map01` pair. The one rest in reach, `dolk` P2[9] (the bed behind the
+inn's stair door), is the wrong answer: the walk to it crosses the castle's
+rolling regions at 17 HP and wiped on 14 of 21. Nothing on that route
+heals without a fight first, so the segment's pad tier is a draw on this
+anchor, not a defect to fix in the hand.
+
 ## Seeding
 
 The seed goes through the host's own resume path,
@@ -459,8 +486,9 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
 - The pad planner finds a crossing scene by trial, not by reading which side
   each of its doors lands on, and a crossing whose side is story state
   (`suimon`'s water gate `0x27B`) needs that beat played first.
-- The pad hand heals only with items it already carries; it does not buy
-  them, rest at an inn, or use magic.
+- The pad hand heals only with items it already carries and with a free
+  or affordable rest in a scene that rolls no encounters; it does not buy
+  items or use magic.
 - Routes follow `0x3F` names and FMV hand-offs, and prefer walk-on bands. A
   transport an entry script spawns on a story flag (`map01`'s P1[0] spawns
   the P2[31] / P2[32] flights on `0x2C3` / `0x2C5`; `station`'s spawns the

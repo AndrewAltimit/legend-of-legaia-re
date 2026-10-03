@@ -3055,6 +3055,12 @@ fn plan_search(
             && (warps.keys().any(|&(tx, tz)| {
                 let (lx, lz) = (tx * 128 - 64, tz * 128 - 64);
                 (lx..lx + 256).contains(&c.center.0) && (lz..lz + 256).contains(&c.center.1)
+                    // A leaf anchored on the tile in front of the teleport
+                    // (`dolk`'s inn stair door: anchor (76, 121), box
+                    // centre z 121.3 tiles, teleport tile (76, 122)).
+                    || c.anchor.is_some_and(|(ax, az)| {
+                        (i32::from(ax) - tx).abs() + (i32::from(az) - tz).abs() <= 1
+                    })
             }) || doors.iter().any(|&((x, z), _)| {
                 (c.center.0 - i32::from(x)).abs() <= 128 && (c.center.1 - i32::from(z)).abs() <= 128
             }))
@@ -3223,6 +3229,10 @@ fn hazards(session: &BootSession, dest: &str) -> HashSet<(i32, i32)> {
 /// Walk to a door toward `dest` with the pad only. `Ok(entered)` on a scene
 /// change (which may not be `dest`; the caller checks).
 fn pad_hop(session: &mut BootSession, graph: &DiscGraph, dest: &str) -> Result<String, String> {
+    // A party too worn for the road rests first, where the scene offers it.
+    if let Some(s) = pad_rest(session)? {
+        return Ok(s);
+    }
     let doors = match doors_to(session, graph, dest) {
         Ok(d) => d,
         // A hop no walk-on band carries is taken by talking, as a player does.
@@ -4262,6 +4272,164 @@ fn pad_field_heal(session: &mut BootSession, threshold: u32) -> usize {
         );
     }
     used
+}
+
+thread_local! {
+    /// Scenes the pad hand has tried to rest in this segment: a rest that
+    /// did not lift the party is not walked again on the next hop.
+    static RESTED: std::cell::RefCell<BTreeSet<String>> =
+        const { std::cell::RefCell::new(BTreeSet::new()) };
+}
+
+/// Does the record body carry the restore - op `4C 82 <slot>`, the
+/// per-party-slot HP/MP refill (`FieldHost::op4c_n8_sub2_restore_party_slot`)
+/// every bed and inn stay ends in - at a clean decode boundary?
+fn record_restores(
+    mf: &legaia_asset::man_section::ManFile,
+    man: &[u8],
+    part: usize,
+    rec: usize,
+) -> bool {
+    use legaia_asset::field_disasm::{OpKey, clean_hit_offsets};
+    use legaia_engine_core::man_field_scripts::partition_record_span;
+    let Some((start, pc0, len)) = partition_record_span(mf, man, part, rec) else {
+        return false;
+    };
+    let key = OpKey {
+        opcode: 0x4C,
+        sub: Some(0x82),
+    };
+    !clean_hit_offsets(&man[start..start + len], pc0, key).is_empty()
+}
+
+/// Rest before setting out, as a player with an empty bag does: when the
+/// weakest member is still below half HP after [`pad_field_heal`], walk to
+/// the scene's rest - a bed's walk-on band, or an NPC whose talk (or a
+/// record it spawns) runs the `4C 82` restore - and take it. An inn's gold
+/// gate is the record's own: a stay the purse cannot pay refuses itself.
+/// `Ok(Some(scene))` when the rest's script left the scene.
+///
+/// Only where the walk to it is safe: in a scene that rolls encounters the
+/// way to the bed is as dangerous as the way out. `dolk`'s mist-era bed
+/// (P2[9], behind the inn's stair door) sits across a castle whose every
+/// region rolls; a lone member at 17/219 walking to it wiped on 14 of 21
+/// dealt streams (`LEGAIA_FGL_RNG_SEED`), against 3 of 21 walking straight
+/// out to `map01`.
+fn pad_rest(session: &mut BootSession) -> Result<Option<String>, String> {
+    use legaia_engine_core::man_field_scripts::partition2_record_gates;
+    if session.host.world.mode != SceneMode::Field
+        || session.host.world.scene_can_roll_encounters()
+        || !walking(session)
+        || !released(session)
+        || party_hp_permille(session) >= 500
+    {
+        return Ok(None);
+    }
+    pad_field_heal(session, 500);
+    if party_hp_permille(session) >= 500 {
+        return Ok(None);
+    }
+    let name = scene_name(session);
+    if !RESTED.with(|r| r.borrow_mut().insert(name.clone())) {
+        return Ok(None);
+    }
+    let Some((mf, man, triggers)) = scene_man_and_triggers(session) else {
+        return Ok(None);
+    };
+    let trace = std::env::var_os("LEGAIA_FGL_TRACE").is_some();
+    let doors: BTreeSet<u8> = overworld_portal_sites(&mf, &man, &triggers)
+        .iter()
+        .map(|s| s.record)
+        .collect();
+    // Walk-on rests: the first tile of each gate-1 band whose live
+    // partition-2 record restores.
+    let mut beds: BTreeMap<u8, (u8, u8)> = BTreeMap::new();
+    for t in triggers.iter().filter(|t| t.gate == 1) {
+        let owner = triggers
+            .iter()
+            .find(|u| (u.tile_x, u.tile_z) == (t.tile_x, t.tile_z));
+        if owner.is_none_or(|u| u.record != t.record || u.gate != 1) || doors.contains(&t.record) {
+            continue;
+        }
+        let rec = usize::from(t.record);
+        let open = partition2_record_gates(&mf, &man, rec)
+            .is_some_and(|(c1, c2)| session.host.world.p2_record_gates_pass(&c1, &c2));
+        if open && record_restores(&mf, &man, 2, rec) {
+            beds.entry(t.record).or_insert((t.tile_x, t.tile_z));
+        }
+    }
+    // Talk rests: an innkeeper's record restores itself or spawns one that
+    // does.
+    let n0 = mf.partitions.first().map_or(0, Vec::len);
+    let n1 = mf.partitions.get(1).map_or(0, Vec::len);
+    let w = &session.host.world;
+    let keepers: Vec<u8> = w
+        .npcs
+        .positions
+        .keys()
+        .copied()
+        .filter(|s| w.npcs.dialog.contains_key(s) || w.npcs.dialog_prologue.contains_key(s))
+        .filter(|&s| {
+            record_restores(&mf, &man, 1, usize::from(s))
+                || spawned_p2(&mf, &man, 1, usize::from(s), n0 + n1, 3)
+                    .iter()
+                    .any(|&r| record_restores(&mf, &man, 2, r))
+        })
+        .collect();
+    if trace {
+        eprintln!(
+            "    [rest] {name}: weakest {} per-mille; beds {beds:?}; keepers {keepers:?}",
+            party_hp_permille(session)
+        );
+    }
+    for (rec, tile) in beds {
+        let r = match pad_step_onto(session, tile) {
+            Ok(Walk::Entered(s)) => Run::Entered(s),
+            Ok(Walk::Arrived) => run_while_moving(session, DEEP_EXIT_TICKS),
+            Err(e) => Run::Parked(e),
+        };
+        if let Some(w) = wiped(session) {
+            return Err(w);
+        }
+        if trace {
+            eprintln!(
+                "    [rest] {name} bed P2[{rec}] at {tile:?} -> {r:?}; weakest now {} per-mille",
+                party_hp_permille(session)
+            );
+        }
+        match r {
+            Run::Entered(s) => return Ok(Some(s)),
+            Run::Battle(b) => return Err(format!("rest P2[{rec}]: {b}")),
+            Run::Error(e) => return Err(e),
+            Run::Released | Run::Parked(_) => {}
+        }
+        if party_hp_permille(session) >= 500 {
+            // A rest that worked may be taken again after the next fights.
+            RESTED.with(|r| r.borrow_mut().remove(&name));
+            return Ok(None);
+        }
+    }
+    for slot in keepers {
+        let r = talk_to(session, slot);
+        if trace {
+            eprintln!(
+                "    [rest] {name} talk P1[{slot}] -> {r:?}; weakest now {} per-mille",
+                party_hp_permille(session)
+            );
+        }
+        match r {
+            Run::Entered(s) => return Ok(Some(s)),
+            Run::Battle(b) => return Err(format!("rest talk P1[{slot}]: {b}")),
+            Run::Error(e) => return Err(e),
+            Run::Released | Run::Parked(_) => {}
+        }
+        if party_hp_permille(session) >= 500 {
+            // A rest that worked may be taken again after the next fights.
+            RESTED.with(|r| r.borrow_mut().remove(&name));
+            return Ok(None);
+        }
+    }
+    Ok(None)
 }
 
 // ---------------------------------------------------------------------------
@@ -5400,6 +5568,7 @@ fn traverse(
     // Both tiers play the same beats and waypoints; the pad tier plays them
     // with pad input only ([`PAD_HAND`]).
     PAD_HAND.with(|h| h.set(pad));
+    RESTED.with(|r| r.borrow_mut().clear());
     let mut via = 0usize;
     let vias: &[String] = &target.via;
     // Edges whose hop failed even after the scene's beats ran: the ladder
@@ -5689,6 +5858,18 @@ fn run_segment(
             let opts = live_opts(true);
             seed(&mut session, from, from_anchor, &opts)?;
             PAD_DEADLINE.with(|d| d.set(session.frames + PAD_SEGMENT_FRAMES));
+            // `LEGAIA_FGL_RNG_SEED=<u32>`: deal the pad tier another hand.
+            // Every random draw it meets comes off the world rand stream, so
+            // a re-seeded run is how a pad route is checked for depending on
+            // one stream's luck (see "A pad wipe that moves with an
+            // unrelated change" in the ladder docs).
+            if let Some(s) = std::env::var("LEGAIA_FGL_RNG_SEED").ok().and_then(|s| {
+                let s = s.trim();
+                s.strip_prefix("0x")
+                    .map_or_else(|| s.parse().ok(), |h| u32::from_str_radix(h, 16).ok())
+            }) {
+                session.host.world.rng_state = s;
+            }
             if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
                 eprintln!(
                     "    [pad] seeded {} at {:?} (anchor seat {:?})",
