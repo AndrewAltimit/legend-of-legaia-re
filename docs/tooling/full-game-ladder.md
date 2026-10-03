@@ -407,6 +407,25 @@ has that the engine never set, each with the disc sites that SET it
 (scene, partition, record) from the system-flag census. That is the "which
 flag was never set" answer, and usually names the record to look at next.
 
+### A pad wipe that moves with an unrelated change
+
+The pad tier is deterministic, but every random draw it meets - the
+encounter step, the formation roll, the escape roll, enemy targeting - comes
+off the one world rand stream, and so does any field system that draws per
+frame (the fog spawner `FUN_801D629C` draws only once its region gate
+passes). A change that alters how many draws happen before a fight -
+gating a fog region off, say - deals every later fight a different hand.
+Where a segment is seeded with a lone member near death and an empty bag,
+that hand decides the tier: a back attack plus one caught Run is a wipe.
+
+So a `party wiped` stall that appears or disappears with a change that does
+not touch battle is first a rand-stream question. Trace it with
+`LEGAIA_FGL_TRACE=1 LEGAIA_FGL_TRACE_HITS=1` (each HP change with its actor
+and action state): a back attack shows as an enemy hit before the party's
+first command, and the fight's opening formation and HP read off the
+`[battle] start` line. If the draws are retail's, the move is the route's
+fragility, not a regression.
+
 ## Seeding
 
 The seed goes through the host's own resume path,
