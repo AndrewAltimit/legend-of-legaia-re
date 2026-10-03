@@ -471,6 +471,14 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
         "native": (NATIVE_OCCL, "OCCL_DEPTH_MARGIN"),
         "web": (WEB_SHADERS, "OCCL_DEPTH_MARGIN"),
     },
+    {
+        "what": "occlusion-fade feet-line ramp, as a fraction of the feet -> "
+        "body-centre screen span - nothing at or below the player's feet on "
+        "screen fades, so the floor in front of them never dissolves "
+        "(folded into each host's lift axis, lift_axis / occlLiftAxis)",
+        "native": (NATIVE_OCCL, "OCCL_LIFT_FEATHER_FRAC"),
+        "web": (WEB_SHADERS, "OCCL_LIFT_FEATHER_FRAC"),
+    },
     # The two opt-in render toggles (PSX rasterisation, dynamic lighting) are
     # hand-written twin shaders too: the page interpolates these JS constants
     # into its GLSL, so pairing them pairs the shader model.
@@ -835,7 +843,7 @@ SIM_PAIRS: list[dict[str, object]] = [
             "web": (WEB_PLAY_CAMERA, "play_occlusion_focus"),
         },
         "mode": "symbols_all",
-        "symbols": ["player_body_centre"],
+        "symbols": ["player_body_centre", "player_feet"],
     },
     {
         "what": "`apply == 0` Camera Configure snap beats, native vs play "

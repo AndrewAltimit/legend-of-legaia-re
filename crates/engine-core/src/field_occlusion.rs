@@ -76,6 +76,19 @@ pub fn player_body_centre(world: &World) -> Option<[f32; 3]> {
     Some([wx as f32, floor_y as f32 - HALF_CHAR_HEIGHT, wz as f32])
 }
 
+/// The floor point under the player - their **feet** - in raw retail
+/// Y-down world coordinates: [`player_body_centre`] lowered by
+/// [`HALF_CHAR_HEIGHT`], i.e. the same floor-tier sample.
+///
+/// The fade's second anchor. A host stages it beside the body centre so the
+/// renderer can draw the feet line: a fragment that projects at or below the
+/// character's feet on screen cannot be hiding them, so the floor in front
+/// of the character and the foot of the wall that hides them never dissolve
+/// (`engine-render::occlusion_fade::lift_factor`).
+pub fn player_feet(world: &World) -> Option<[f32; 3]> {
+    player_body_centre(world).map(|c| [c[0], c[1] + HALF_CHAR_HEIGHT, c[2]])
+}
+
 /// Vertical half-extent of the sample cross (world units): head/hip samples
 /// sit this far above/below the body centre. The character mesh is ~130
 /// units tall; sampling slightly inside the extremes keeps a grazing floor

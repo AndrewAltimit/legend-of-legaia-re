@@ -33,6 +33,9 @@ pub const DYN_LIGHT_AMBIENT: f32 = 0.55;
 pub(super) struct OcclFocus {
     /// The player's clip-space position under the frame's scene camera.
     pub(super) clip: [f32; 4],
+    /// The floor point under the player (their feet), same camera - the
+    /// feet-line rule's anchor ([`crate::occlusion_fade::lift_axis`]).
+    pub(super) feet_clip: [f32; 4],
     /// The host's eased visibility-gate output, 0..1.
     pub(super) strength: f32,
     /// That camera's vertical projection scale `P[1][1]`, which turns the
@@ -390,8 +393,9 @@ impl Renderer {
     /// faithful path does. When on AND a focus is staged
     /// ([`Self::set_occlusion_focus`]), scene fragments that sit between
     /// the camera and the player - nearer by more than
-    /// [`crate::occlusion_fade::OCCL_DEPTH_MARGIN`] and within the
-    /// screen-space fade circle around the player's projected centre -
+    /// [`crate::occlusion_fade::OCCL_DEPTH_MARGIN`], within the
+    /// screen-space fade circle around the player's projected centre and
+    /// above the player's projected feet -
     /// dissolve to a 4x4-Bayer screen-door at
     /// [`crate::occlusion_fade::OCCL_MIN_KEEP`] density, so the character
     /// stays visible behind walls / roofs / props. Pure presentation:
@@ -423,9 +427,22 @@ impl Renderer {
     /// uniform. Call every field frame; stale foci would fade the wrong
     /// screen region, so clear on mode changes
     /// ([`Self::clear_occlusion_focus`]).
-    pub fn set_occlusion_focus(&self, clip_pos: [f32; 4], strength: f32, proj_scale_y: f32) {
+    ///
+    /// `feet_clip` is the floor point under the character under the same
+    /// camera: the fade only reaches fragments above the line through it
+    /// (the character's projected feet), so the ground in front of them and
+    /// the foot of a wall never dissolve - see
+    /// [`crate::occlusion_fade::lift_factor`].
+    pub fn set_occlusion_focus(
+        &self,
+        clip_pos: [f32; 4],
+        feet_clip: [f32; 4],
+        strength: f32,
+        proj_scale_y: f32,
+    ) {
         self.occl_focus.set(Some(OcclFocus {
             clip: clip_pos,
+            feet_clip,
             strength: strength.clamp(0.0, 1.0),
             proj_scale_y,
         }));

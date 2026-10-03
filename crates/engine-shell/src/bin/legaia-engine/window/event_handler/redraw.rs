@@ -1119,7 +1119,13 @@ impl PlayWindowApp {
                     let scale_y = legaia_engine_render::occlusion_fade::view_proj_scale_y(
                         &cam.to_cols_array(),
                     );
-                    r.set_occlusion_focus(clip.to_array(), s, scale_y);
+                    // The floor point under the character anchors the
+                    // feet-line rule: nothing below it on screen fades.
+                    let feet =
+                        legaia_engine_core::field_occlusion::player_feet(&self.session.host.world)
+                            .unwrap_or(centre);
+                    let feet_clip = cam * Vec4::new(feet[0], feet[1], feet[2], 1.0);
+                    r.set_occlusion_focus(clip.to_array(), feet_clip.to_array(), s, scale_y);
                     occl_staged = true;
                 }
             } else {

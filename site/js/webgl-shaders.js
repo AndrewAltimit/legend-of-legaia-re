@@ -165,6 +165,29 @@ function occlRadiusPx(viewZ, projScaleY, h) {
   return Math.min(Math.max(r, lo), hi);
 }
 
+/* Feet-line rule: the fade reaches only fragments above the player's
+ * projected feet. A ray from the lens through a fragment below that line
+ * meets the player's depth under their feet, so it cannot be hiding them -
+ * it is the floor in front of the character, or the foot of the wall that
+ * hides them, and with nothing modelled under a floor tile what showed
+ * through was a black band from the feet down. The keep ramps in over this
+ * fraction of the feet -> body-centre screen span (0.5 = about knee height).
+ * Rust twin: occlusion_fade::OCCL_LIFT_FEATHER_FRAC. */
+const OCCL_LIFT_FEATHER_FRAC = 0.5;
+
+/* The lift axis: feet -> centre screen vector, scaled so dot(frag - feet,
+ * axis) reads 0 on the feet line and 1 at OCCL_LIFT_FEATHER_FRAC of the way
+ * up. A degenerate span (camera straight above) returns [0, 0], which the
+ * shader reads as "rule off". Rust twin: occlusion_fade::lift_axis. */
+function occlLiftAxis(feetPx, centrePx) {
+  const ux = centrePx[0] - feetPx[0];
+  const uy = centrePx[1] - feetPx[1];
+  const len2 = ux * ux + uy * uy;
+  if (!(len2 >= 0.25) || !isFinite(len2)) return [0, 0];
+  const k = 1 / (len2 * OCCL_LIFT_FEATHER_FRAC);
+  return [ux * k, uy * k];
+}
+
 /* Dynamic-lighting enhancement (NON-RETAIL, default off) - the page twin of
  * the native renderer's opt-in `dyn_light` (crates/engine-render/src/
  * dyn_light.rs for the model constants, renderer/state.rs for the light
@@ -474,6 +497,9 @@ uniform vec4 u_occl_focus;
 /* (radius_px, min_keep, depth_margin, feather_px); only read while
  * u_occl_focus.w is set. */
 uniform vec4 u_occl_params;
+/* Feet-line rule: xy = the player's projected feet (gl_FragCoord space),
+ * zw = occlLiftAxis. A zero axis (the GL default) switches the rule off. */
+uniform vec4 u_occl_lift;
 /* Per-draw occlusion-fade permission: 1 on environment draws (terrain /
  * placements / ground), 0 (the GL default) on actor draws - the player and
  * NPCs must never dissolve - and on every page that never stages a focus. */
@@ -638,8 +664,9 @@ float occl_bayer(vec2 frag) {
 }
 
 /* Keep probability for the occlusion fade - 1.0 = keep unconditionally.
- * A fragment fades only when it is BOTH nearer the camera than the player
- * by more than the depth margin AND inside the screen-space fade circle;
+ * A fragment fades only when it is nearer the camera than the player by
+ * more than the depth margin, inside the screen-space fade circle, AND
+ * above the player's feet on screen;
  * the keep feathers from 1.0 at the rim to min_keep at the centre.
  * frag_w is gl_FragCoord.w = 1/clip_w, so 1/frag_w is the fragment's
  * view depth - the same recovery the native WGSL uses. */
@@ -654,8 +681,15 @@ float occl_keep(vec2 frag_px, float frag_w) {
   float d = distance(frag_px, u_occl_focus.xy);
   float r = u_occl_params.x;
   if (d >= r) return 1.0;
+  /* Feet-line rule: at or below the player's feet on screen nothing can be
+   * hiding them - same law as the native WGSL. */
+  float lift = 1.0;
+  if (u_occl_lift.z != 0.0 || u_occl_lift.w != 0.0) {
+    lift = clamp(dot(frag_px - u_occl_lift.xy, u_occl_lift.zw), 0.0, 1.0);
+  }
+  if (lift <= 0.0) return 1.0;
   float t = smoothstep(r - u_occl_params.w, r, d);
-  return mix(1.0, mix(u_occl_params.y, 1.0, t), s);
+  return mix(1.0, mix(u_occl_params.y, 1.0, t), s * lift);
 }
 
 /* World-overview distance haze, applied to BOTH prim families: retail's

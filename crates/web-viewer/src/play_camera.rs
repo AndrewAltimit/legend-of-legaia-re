@@ -266,6 +266,11 @@ impl LegaiaRuntime {
     /// character. The host's own terms (its master toggle, a pause menu or
     /// name-entry overlay owning the screen, the `F3` debug vantage, a VR
     /// first-person eye) stay on the page.
+    ///
+    /// Six floats: the body centre, then the floor point under it
+    /// ([`legaia_engine_core::field_occlusion::player_feet`]) - the anchor of
+    /// the feet-line rule that keeps the ground in front of the character
+    /// from dissolving.
     pub fn play_occlusion_focus(&self) -> Vec<f32> {
         let cutscene = self.cutscene_owns_frame();
         let Some(host) = self.scene_host.as_ref() else {
@@ -274,10 +279,14 @@ impl LegaiaRuntime {
         if !legaia_engine_core::field_occlusion::fade_armed(&host.world, cutscene) {
             return Vec::new();
         }
-        match legaia_engine_core::field_occlusion::player_body_centre(&host.world) {
+        let w = &host.world;
+        match (
+            legaia_engine_core::field_occlusion::player_body_centre(w),
+            legaia_engine_core::field_occlusion::player_feet(w),
+        ) {
             // Retail Y-down -> the page's Y-up draw frame.
-            Some(c) => vec![c[0], -c[1], c[2]],
-            None => Vec::new(),
+            (Some(c), Some(f)) => vec![c[0], -c[1], c[2], f[0], -f[1], f[2]],
+            _ => Vec::new(),
         }
     }
 

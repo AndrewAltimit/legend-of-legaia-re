@@ -2319,7 +2319,7 @@ veil regression.
 
 **The per-fragment rule** (`occl_keep` in the scene-lights WGSL layer; CPU
 lockstep mirror + tunables in `crates/engine-render/src/occlusion_fade.rs`).
-A fragment fades only when all three hold:
+A fragment fades only when all four hold:
 
 - its draw is **environment geometry**: the host stages a per-frame draw
   watermark (`Renderer::set_occlusion_env_draws` -> `MeshUniforms.flags[2]`)
@@ -2333,7 +2333,31 @@ A fragment fades only when all three hold:
   and stacked occluders all open at once since the Bayer pattern is
   screen-aligned across layers); and
 - it lies within the **fade circle** around the player's projected centre,
-  so only the patch of wall near the character opens up.
+  so only the patch of wall near the character opens up; and
+- it lies **above the player's feet** on screen (the feet-line rule, below).
+
+**The feet-line rule.** The host stages a second point beside the body
+centre: the floor under the character (`field_occlusion::player_feet`, the
+same floor-tier sample lowered half a character height). The screen vector
+from the projected feet to the projected centre is the character's up axis
+on screen (`occlusion_fade::lift_axis`, JS twin `occlLiftAxis` - derived from
+the two points, so a rolled camera or the page's mirrored screen X needs no
+special case), and a fragment's fade is scaled by how far along it the
+fragment sits (`lift_factor`): zero at and below the feet line, full from
+`OCCL_LIFT_FEATHER_FRAC` (0.5, about knee height) of the way to the centre.
+A ray from the lens through a fragment below that line meets the player's
+depth under their feet, so it cannot be hiding them - it is the floor in
+front of the character, or the foot of the wall or rock that hides them.
+Without the rule those fragments passed the depth and circle tests and
+dissolved too, and since nothing is modelled under a floor tile or inside a
+rock, what showed through was a black band from the feet to the bottom of
+the circle. With it the lower face of an occluder stays solid and the hole
+opens over the character's upper body; the shins of a character standing
+behind a wall stay partly behind it, which is the trade the knee-height ramp
+makes for a bumpy floor tile just in front of the feet never catching the
+fade. `flat_floor_in_front_of_the_player_never_fades` and
+`wall_between_camera_and_player_still_fades` pin both halves against a real
+perspective camera at several pitches.
 
 The circle is sized in **world units** (`OCCL_RADIUS_WORLD` = 250, about two
 character heights) and projected to pixels per frame at the focus's own view
@@ -2387,7 +2411,8 @@ the fade circle.
 "See-through walls" checkbox): `occl_keep` / `occl_bayer` GLSL twins in
 `site/js/webgl-shaders.js` (tunables mirrored at the top of that file -
 keep them in lockstep with `occlusion_fade.rs`), staged through
-`TmdRenderer.setOcclusionFocus(world_pos, strength)` - `renderAssembled`
+`TmdRenderer.setOcclusionFocus(world_pos, strength, feet_pos)` (both points
+from the engine's `play_occlusion_focus` export) - `renderAssembled`
 projects the focus with the same view-projection it builds for the scene
 draws, so the page never duplicates camera math - and the per-draw actor
 exemption rides the `u_occl_allow` uniform (`noOccl` on the player / NPC

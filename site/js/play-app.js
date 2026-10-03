@@ -2548,11 +2548,16 @@ void main() {
       const occlHostOk = this.occlusionFade && !fpLive && !this.debugCamera
         && !menuOpen && !shopOpen && !namingOpen;
       let occlFocus = null;
+      /* The floor point under the character (the feet-line rule's anchor):
+       * the engine's `player_feet`, the same floor-tier sample as the focus.
+       * A bundle predating it hands back 3 floats - the rule stays off. */
+      let occlFeet = null;
       if (occlHostOk) {
         if (typeof rt.play_occlusion_focus === 'function') {
           try {
             const f = rt.play_occlusion_focus();
-            if (f && f.length === 3) occlFocus = [f[0], f[1], f[2]];
+            if (f && f.length >= 3) occlFocus = [f[0], f[1], f[2]];
+            if (f && f.length >= 6) occlFeet = [f[3], f[4], f[5]];
           } catch (_) { occlFocus = null; }
         } else {
           /* Cached-bundle fallback: the actor origin, which is the reading
@@ -2576,7 +2581,7 @@ void main() {
            * is why it arrives from the engine rather than being rebuilt
            * here. Staging the fade at a different height than the gate proved
            * occluded put the hole ~37px above the character's body centre. */
-          this.renderer.setOcclusionFocus(occlFocus, this._occlStrength);
+          this.renderer.setOcclusionFocus(occlFocus, this._occlStrength, occlFeet);
         }
       } else {
         this._occlStrength = 0;

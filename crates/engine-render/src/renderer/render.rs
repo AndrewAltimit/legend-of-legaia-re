@@ -762,6 +762,17 @@ impl Renderer {
                 of::OCCL_DEPTH_MARGIN,
                 of::feather_px(radius),
             ];
+            // Feet-line rule: the feet pixel + the feet -> centre lift axis.
+            // Feet behind the lens leave the rule off (zero axis).
+            let fc = f.feet_clip;
+            if fc[3] > 1e-3 {
+                let feet = [
+                    (fc[0] / fc[3] * 0.5 + 0.5) * vw,
+                    (0.5 - fc[1] / fc[3] * 0.5) * vh,
+                ];
+                let axis = of::lift_axis(feet, [px, py]);
+                u.occl_lift = [feet[0], feet[1], axis[0], axis[1]];
+            }
         }
         let light_vps: Vec<Mat4> = lights[..n].iter().map(light_view_proj).collect();
         for (i, l) in lights[..n].iter().enumerate() {
