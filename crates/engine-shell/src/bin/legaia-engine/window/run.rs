@@ -596,6 +596,11 @@ pub(super) fn cmd_play_window_with_record(
             Some(session.host.world.mode)
         }
     };
+    // The overworld's per-placement entity markers are a port debug overlay
+    // (`WorldToggles::overworld_marker_overlay`, off by default): retail
+    // draws nothing over a town entrance.
+    session.host.world.toggles.overworld_marker_overlay =
+        std::env::var_os("LEGAIA_WORLD_MAP_MARKERS").is_some();
     let world_map = match resumed {
         Some(mode) => mode == legaia_engine_core::world::SceneMode::WorldMap,
         None => world_map,

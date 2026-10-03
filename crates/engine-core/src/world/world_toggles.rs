@@ -84,6 +84,14 @@ pub struct WorldToggles {
     /// `0x801D15E0..0x801D1650`. Hosts mirror their `OptionsState` onto this
     /// the way they mirror [`crate::world::FieldLocomotion::run_default`].
     pub select_attack: crate::options::SelectAttackOpt,
+    /// Draw the overworld's per-placement **entity markers**
+    /// ([`crate::world_map_markers`]: a cyan post at each portal, green at
+    /// each NPC, red at each encounter zone). A port debug overlay, not a
+    /// retail draw - a retail frame at a town entrance shows the town's own
+    /// mesh and nothing over it - so it is off by default; the native window
+    /// raises it under `LEGAIA_WORLD_MAP_MARKERS=1`. The player's stand-in
+    /// marker (drawn only when the leader's mesh is missing) is not gated.
+    pub overworld_marker_overlay: bool,
 }
 
 impl WorldToggles {
@@ -97,6 +105,7 @@ impl WorldToggles {
             use_vm_dialogue: false,
             use_damage_finish: true,
             select_attack: crate::options::SelectAttackOpt::default(),
+            overworld_marker_overlay: false,
         }
     }
 }

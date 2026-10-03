@@ -2856,7 +2856,13 @@ every segment through the resolved frame's `camera_view::frame_vp` at the
 display's 4:3 and emits it as a one-pixel-wide quad on the 320x240 display;
 the native window and the browser play page both put those quads on their
 shared screen-primitive pass (`screen_prim::world_map_marker_prim`). These
-markers are the port's, not retail's.
+markers are the port's, not retail's, so the entity markers are a debug
+overlay (`WorldToggles::overworld_marker_overlay`, off by default; the
+native window raises it under `LEGAIA_WORLD_MAP_MARKERS=1`). A retail frame
+at a town entrance (`overworld_into_town_man_load`) shows the town's own
+mesh and nothing over it; drawn by default, the portal's post stood through
+the player at every overworld door. The player's stand-in marker is not
+gated.
 
 Retail's placements are actor models sorted into the ordering table with the
 terrain, so a mountain between the camera and a portal hides it. A
