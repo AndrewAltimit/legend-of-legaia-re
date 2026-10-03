@@ -162,6 +162,17 @@ prim dispatcher with the colour word `+0x74` and level `+0x78` (ABE and ABR
 ORed into the packet, the colour depth-cued toward the word's far colour).
 Its builder is SCUS code, so unlike the ribbon it draws in every mode.
 
+The scale is seated by the spawn, not the record: `FUN_80021B04` stores its
+fourth argument at `+0x72` (`sh s4,0x72(s0)` at `0x80021DAC`) before the
+part's first move-VM run, and the pool wrapper `FUN_80050ED4` forwards its own
+`$a3` unchanged. Every seater passes `0x1000` at nearly every call: the battle
+stagers of the slot-B band (`0903..0966`) and PROT 0898's effect-prototype
+spawns load `li a3,0x1000`, as do the two ambient seaters. A few calls pass
+another immediate (`0x400`, `0x800`, `0x2000`) or forward a parent's `+0x72`.
+The engine seats every staged part at `0x1000`
+(`summon::SPAWN_RENDER_SCALE`, the ambient install likewise); its part set is
+keyed by record rather than by call, so those per-call scales are not carried.
+
 Both hosts draw it: `engine-core::effect_sprite_arm` turns every live
 sprite-arm node of the summon, move-FX, effect-script and field ambient parts
 into a one-quad mesh, `World::active_effect_kind4_draws` lists them with the

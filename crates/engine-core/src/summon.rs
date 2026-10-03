@@ -704,6 +704,12 @@ impl SummonScene {
     }
 }
 
+/// The render scale (`+0x72`) a battle stager's spawn call seats a part at:
+/// `0x1000` = 1.0. The few call sites that pass another immediate (`0x400`,
+/// `0x800`, `0x2000`, ...) or forward a parent's `+0x72` are not carried by
+/// the record set, which is keyed by record rather than by call.
+pub const SPAWN_RENDER_SCALE: u16 = 0x1000;
+
 /// Seed one part's runtime from its record. Returns `None` if the record offset
 /// is past the buffer.
 fn seed_part(p: &SummonPart, record_bytes: &[u8], origin: [i16; 3]) -> Option<SummonPartRuntime> {
@@ -724,6 +730,15 @@ fn seed_part(p: &SummonPart, record_bytes: &[u8], origin: [i16; 3]) -> Option<Su
     state.world_y_mirror = origin[1];
     // Negative wait-timer so the gate runs the VM on the first frame.
     state.wait_timer = -1;
+    // The render scale `+0x72`: `FUN_80021B04` stores its fourth argument
+    // there (`sh s4,0x72(s0)` at `0x80021DAC`) before the part's first
+    // move-VM run, and the pool wrapper `FUN_80050ED4` forwards its own
+    // `$a3` unchanged. The battle stagers' spawn calls load `li a3,0x1000`
+    // at all but a handful of sites (the slot-B band 0903..0966 and PROT
+    // 0898's effect-prototype spawns alike). Left at zero, a draw-kind-4
+    // sprite node (`effect_sprite_arm`, op `0x23`) collapses to a point and
+    // a default-arm mesh (`effect_default_arm`) to nothing.
+    state.field_72 = SPAWN_RENDER_SCALE;
     Some(SummonPartRuntime {
         model_sel: p.model_sel,
         reserved: p.reserved,
@@ -911,6 +926,19 @@ mod tests {
 
     struct H;
     impl MoveHost for H {}
+
+    /// Every part is seated at the spawn call's render scale before its first
+    /// VM run: `FUN_80021B04` stores `$a3` at `+0x72` (`0x80021DAC`), and the
+    /// stagers pass `0x1000`. A zero scale draws a sprite-arm sheet as a point.
+    #[test]
+    fn parts_seat_at_the_spawn_render_scale() {
+        let (bytes, overlay) = synthetic();
+        let scene = SummonScene::spawn_parts(&overlay.parts, &bytes, 0, [0, 0, 0]);
+        assert!(!scene.parts.is_empty());
+        for p in &scene.parts {
+            assert_eq!(p.state.field_72, SPAWN_RENDER_SCALE);
+        }
+    }
 
     /// A ribbon carrier (a `model_sel -1` node that runs move-VM op `0x42`)
     /// keeps its emitter arguments across ticks and reaches the ribbon draw
