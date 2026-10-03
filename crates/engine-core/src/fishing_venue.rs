@@ -36,8 +36,132 @@ use crate::world::MinigameState;
 /// with the same word, so a fixed input stream retargets identically.
 pub const VENUE_RNG_SEED: u32 = 0x1234_5678;
 
-/// Where the wander actor spawns, `(x, y, z)` world units.
-pub const WANDER_SPAWN: (i16, i16, i16) = (0x400, 0, 0x400);
+/// The party's anchor **tile** per venue, `(x, z)` in 128-unit `.MAP` tiles:
+/// venue `0` (Buma) `(0x25, 0x54)`, venue `1` (Vidna) `(0x2E, 0x23)`. The
+/// driver's setup state picks the pair on `DAT_801D90D0`
+/// (`0x801CF5F8..0x801CF62C`) and shifts both by `7` into the three party
+/// actors' `+0x14` / `+0x18`.
+pub const PARTY_ANCHOR_TILE: [(i16, i16); 2] = [(0x25, 0x54), (0x2E, 0x23)];
+
+/// GTE `H` the fishing setup installs (`li v0,0x140` / `sh v0,-0x490c(v1)`
+/// = `_DAT_8007B6F4` at `0x801CF760..0x801CF764`), in place of the field's
+/// `0x200`.
+pub const VENUE_GTE_H: i32 = 0x140;
+
+/// One of the three party actors the fishing setup spawns on the shore.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FishingPartyMember {
+    /// Global model-pool slot (the spawn record's `+0x04`, copied into the
+    /// actor's model word): the party member in that slot.
+    pub model: u8,
+    /// World `+0x14` / `+0x18`. `+0x16` is `0` at spawn; the floor solver
+    /// settles it.
+    pub x: i16,
+    pub z: i16,
+    /// `+0x26` facing (`0x800` faces the water, +Z).
+    pub facing: i16,
+    /// Bound clip id `+0x5C`.
+    pub clip: u16,
+    /// Whether the clip resolves against the resident party clip bank
+    /// (actor flag `0x01000000`) rather than the venue scene's own ANM bank.
+    pub party_bank: bool,
+    /// Clip rate `+0x6A` (sixteenths of a frame per tick; `0` keeps the
+    /// allocator's default, `0x10`).
+    pub rate: u16,
+}
+
+/// The three shore actors the fishing setup spawns (`FUN_801CF3BC`,
+/// `0x801CF66C..0x801CF79C`, three `FUN_80020DE0` calls):
+///
+/// | spawn | record | model `+0x04` | `+0x14` | `+0x18` | `+0x26` | `+0x5C` | `+0x6A` | flag `0x01000000` |
+/// |---|---|---|---|---|---|---|---|---|
+/// | lead | `0x801D8FAC` (tick `FUN_801D2050`) | `0` | `tx << 7` | `tz << 7` | `0x800` | `2` | - | set |
+/// | 2nd | `0x801D8FC4` (tick `FUN_801D70EC`) | `1` | `(tx << 7) + 0x60` | `tz << 7` | `0x680` | `0xB` | `8` | cleared |
+/// | 3rd | `0x801D8FC4` | `2` | `(tx << 7) - 0x60` | `(tz << 7) - 0x40` | `0x600` | `0xC` | `8` | cleared |
+///
+/// The lead plays its party-bank idle; the other two play clips `0xB` / `0xC`
+/// of the venue scene's own bank. The library state `minigame_fishing` holds
+/// exactly these three actors at `(4736, 10752)`, `(4832, 10752)` and
+/// `(4640, 10688)` on venue `0`.
+pub fn party_placements(venue: usize) -> [FishingPartyMember; 3] {
+    let (tx, tz) = PARTY_ANCHOR_TILE[venue & 1];
+    let (x, z) = (tx << 7, tz << 7);
+    [
+        FishingPartyMember {
+            model: 0,
+            x,
+            z,
+            facing: 0x800,
+            clip: 2,
+            party_bank: true,
+            rate: 0,
+        },
+        FishingPartyMember {
+            model: 1,
+            x: x + 0x60,
+            z,
+            facing: 0x680,
+            clip: 0xB,
+            party_bank: false,
+            rate: 8,
+        },
+        FishingPartyMember {
+            model: 2,
+            x: x - 0x60,
+            z: z - 0x40,
+            facing: 0x600,
+            clip: 0xC,
+            party_bank: false,
+            rate: 8,
+        },
+    ]
+}
+
+/// The fishing venue's camera for the lead at `(x, y, z)` facing `facing`:
+/// the setup's reset (angles `0`, `TR.x = 0`, `TR.z = 0x974`), the lead
+/// tick's publish ([`fa::fish_camera`]: yaw off the facing, `TR.y = 0x400 -
+/// 6 y`, focus on the lead with a zero `Y`) and the setup's `H`
+/// ([`VENUE_GTE_H`]). The eye trio reduces by the 6x world scale retail folds
+/// into its rotation, as the field follow camera's does.
+///
+/// The library state `minigame_fishing` reads exactly these globals: angles
+/// `(0, 0, 0)`, eye `(0, 0x700, 0x974)`, focus `(-4736, 0, -10752)`, `H`
+/// `0x140`.
+pub fn venue_camera_view(
+    x: i16,
+    y: i16,
+    z: i16,
+    facing: i16,
+) -> legaia_engine_vm::psx_camera::FieldCameraView {
+    let reset = fc::venue_camera_reset();
+    let publish = fa::fish_camera(x, y, z, facing);
+    let s = crate::camera_view::CUTSCENE_WORLD_SCALE;
+    let to_rad = |u: i32| u as f32 * (std::f32::consts::TAU / 4096.0);
+    legaia_engine_vm::psx_camera::FieldCameraView {
+        focus: [
+            -publish.translation.0 as f32,
+            publish.translation.1 as f32,
+            -publish.translation.2 as f32,
+        ],
+        pitch: to_rad(i32::from(reset.rot[0])),
+        yaw: to_rad(i32::from(publish.yaw)),
+        roll: to_rad(i32::from(reset.rot[2])),
+        h: VENUE_GTE_H as f32,
+        tr_eye: [
+            reset.tr_x as f32 / s,
+            publish.pitch_term as f32 / s,
+            reset.tr_z as f32 / s,
+        ],
+    }
+}
+
+/// Where the lead's actor spawns for `venue`, `(x, y, z)` world units - the
+/// actor [`fa::FishWander`] models (the lead's tick `FUN_801D2050` /
+/// `FUN_801D2278`, whose actor pointer `DAT_801D928C` is the lead's).
+pub fn lead_spawn(venue: usize) -> (i16, i16, i16) {
+    let lead = party_placements(venue)[0];
+    (lead.x, 0, lead.z)
+}
 
 /// The venue actors' state across frames. Lives on
 /// [`MinigameState::fishing_venue`] so every host reads the same actors.
@@ -157,7 +281,7 @@ pub fn tick_fishing_venue(
     // One-time venue arm: the wander actor, the floor buffer, and the venue
     // camera reset.
     if v.wander.is_none() {
-        let (x, y, z) = WANDER_SPAWN;
+        let (x, y, z) = lead_spawn(session.venue);
         v.wander = Some(fa::FishWander::new(x, y, z));
         v.floor = floor();
         out.reset = Some(fc::venue_camera_reset());
@@ -180,9 +304,11 @@ pub fn tick_fishing_venue(
             })
         });
         v.rng = rng;
-        if rolled.is_some()
-            && let Some(w) = v.wander.as_ref()
-            && let Some(r) = fc::ripple_spawn(w.x, w.z, 0)
+        // Retail spawns the ripple at the rolled point (the on-stack copy
+        // the roll offsets, `FUN_80021B04(sp+0x10, ..)` at `0x801D23FC`);
+        // the actor itself never moves.
+        if let Some(t) = rolled
+            && let Some(r) = fc::ripple_spawn(t.x as i16, t.z as i16, 0)
         {
             mg.fx.spawn_ripple(&r);
         }
@@ -386,6 +512,66 @@ mod tests {
             }
         }
         assert!(burst, "the catch celebration spawned no burst");
+    }
+
+    #[test]
+    fn the_party_stands_where_the_capture_has_it() {
+        // `minigame_fishing` (venue 0): lead (4736, 10752) facing 0x800,
+        // second (4832, 10752) 0x680, third (4640, 10688) 0x600.
+        let p = party_placements(0);
+        assert_eq!(
+            p.map(|m| (m.model, m.x, m.z, m.facing, m.clip)),
+            [
+                (0, 4736, 10752, 0x800, 2),
+                (1, 4832, 10752, 0x680, 0xB),
+                (2, 4640, 10688, 0x600, 0xC),
+            ]
+        );
+        assert!(p[0].party_bank && !p[1].party_bank && !p[2].party_bank);
+        let v = party_placements(1);
+        assert_eq!((v[0].x, v[0].z), (0x2E << 7, 0x23 << 7));
+        assert_eq!(lead_spawn(0), (4736, 0, 10752));
+    }
+
+    #[test]
+    fn the_venue_camera_frames_the_party_from_behind() {
+        // The captured globals: angles 0, eye (0, 0x700, 0x974), H 0x140,
+        // with the lead on the floor at y = -128.
+        let view = venue_camera_view(4736, -128, 10752, 0x800);
+        assert_eq!(view.h, 320.0);
+        assert_eq!(view.tr_eye[1] * 6.0, 1792.0);
+        assert_eq!(view.tr_eye[2] * 6.0, 2420.0);
+        let screen = |p: [f32; 3]| {
+            let e = view.eye_space(p);
+            (160.0 + view.h * e[0] / e[2], 120.0 + view.h * e[1] / e[2])
+        };
+        // The lead's head (~130 units above his feet) sits on the centre
+        // column in the lower half, his feet below the frame.
+        let (hx, hy) = screen([4736.0, -128.0 - 130.0, 10752.0]);
+        assert!(
+            (hx - 160.0).abs() < 0.5 && (130.0..200.0).contains(&hy),
+            "{hx} {hy}"
+        );
+        let (_, fy) = screen([4736.0, -128.0, 10752.0]);
+        assert!(fy > 240.0, "feet should fall below the frame: {fy}");
+        // The second member stands right of him, the third left (and nearer).
+        let (nx, _) = screen([4832.0, -258.0, 10752.0]);
+        let (gx, _) = screen([4640.0, -258.0, 10688.0]);
+        assert!(nx > 200.0 && gx < 120.0, "{nx} {gx}");
+    }
+
+    #[test]
+    fn the_lead_spawns_on_the_shore_and_holds_his_place() {
+        let mut mg = MinigameState::new();
+        mg.fishing = Some(session());
+        tick_fishing_venue(&mut mg, true, 0, || None);
+        let w = mg.fishing_venue.wander.as_ref().unwrap();
+        assert_eq!((w.x, w.z), (4736, 10752));
+        for _ in 0..600 {
+            tick_fishing_venue(&mut mg, true, 0, || None);
+        }
+        let w = mg.fishing_venue.wander.as_ref().unwrap();
+        assert_eq!((w.x, w.z), (4736, 10752));
     }
 
     #[test]

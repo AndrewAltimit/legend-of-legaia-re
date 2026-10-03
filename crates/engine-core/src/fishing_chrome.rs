@@ -309,7 +309,9 @@ pub fn float_actor_tick(
     ramp: &[i16],
 ) -> FloatActorTick {
     let solved =
-        crate::minigame_floor::ground_height(grid, world_x, world_z, flags, ramp, |_, _| None);
+        crate::minigame_floor::ground_height(grid, world_x, world_z, flags, ramp, |gx, gz| {
+            grid.step_patch(gx, gz)
+        });
     FloatActorTick {
         y: solved.height as i16,
         flags: solved.flags & !ACTOR_FLAG_TICK,

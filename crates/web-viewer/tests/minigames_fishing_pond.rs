@@ -85,18 +85,42 @@ fn fishing_scene_and_player_decode() {
     assert_eq!(mg.fishing_scene_flat_rgba().len() / 4, pos.len() / 3);
     assert_eq!(mg.fishing_scene_vram().len(), 1024 * 512 * 2);
 
-    // The angler body: a posed field mesh with a matching idle stream.
-    let ppos = mg.fishing_player_positions();
-    let parts = mg.fishing_player_part_count();
-    assert!(!ppos.is_empty() && parts > 0);
-    assert_eq!(mg.fishing_player_object_ids().len(), ppos.len() / 3);
-    let dims = mg.fishing_player_idle_dims();
-    assert_eq!(dims.len(), 2);
-    assert_eq!(dims[0], parts, "idle clip bones == posed TMD objects");
-    assert_eq!(
-        mg.fishing_player_idle_frames().len() as u32,
-        dims[0] * dims[1] * 6
-    );
+    // The shore party: the setup's three spawns, each a posed field mesh
+    // with a clip stream on its own rig.
+    assert_eq!(mg.fishing_party_count(), 3, "lead + two flanking members");
+    for m in 0..3 {
+        let ppos = mg.fishing_player_positions(m);
+        let parts = mg.fishing_player_part_count(m);
+        assert!(!ppos.is_empty() && parts > 0, "member {m}");
+        assert_eq!(mg.fishing_player_object_ids(m).len(), ppos.len() / 3);
+        let dims = mg.fishing_player_idle_dims(m);
+        assert_eq!(dims.len(), 2);
+        assert_eq!(
+            dims[0], parts,
+            "member {m}: clip bones == posed TMD objects"
+        );
+        assert_eq!(
+            mg.fishing_player_idle_frames(m).len() as u32,
+            dims[0] * dims[1] * 6
+        );
+        eprintln!("[ran] member {m}: {}", mg.fishing_player_clip_json(m));
+    }
+    // The seats are the setup's spawn words; the lead stands on the shore
+    // floor the capture reads (`+0x16 = -128`).
+    let seats: serde_json::Value =
+        serde_json::from_str(&mg.fishing_party_json(0)).expect("party json");
+    let xz: Vec<(i64, i64)> = (0..3)
+        .map(|i| {
+            (
+                seats[i]["x"].as_i64().unwrap(),
+                seats[i]["z"].as_i64().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(xz, vec![(4736, 10752), (4832, 10752), (4640, 10688)]);
+    eprintln!("[ran] lead floor y = {}", seats[0]["y"]);
+    assert_eq!(seats[0]["y"].as_f64(), Some(-128.0));
+    assert_eq!(mg.fishing_venue_vp(0, 4.0 / 3.0).len(), 16);
 
     // Ground queries return finite heights inside the AABB.
     let lo = &info["aabb"][0];

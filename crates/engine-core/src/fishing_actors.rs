@@ -265,14 +265,19 @@ pub fn fish_camera(x: i16, y: i16, z: i16, facing: i16) -> FishCamera {
     }
 }
 
-/// The free-swimming fish actor as one advancing object: the `+0x14/+0x18`
-/// world pair, the `+0x26` facing word, the dwell counter and the rolled
-/// destination, stepped one call per idle/cast frame through the ported
-/// kernels ([`step_facing`], [`roll_wander_target`], [`fish_camera`]).
+/// The lead angler's actor as one object: the `+0x14/+0x18` world pair, the
+/// `+0x26` facing word and the dwell counter, stepped one call per idle/cast
+/// frame through the ported kernels ([`step_facing`], [`roll_wander_target`],
+/// [`fish_camera`]).
 ///
-/// The per-frame drift *rate* toward the rolled destination is host glue (the
-/// retail chase constant is not pinned here); the roll, the facing step and
-/// the camera publish are the ported arithmetic.
+/// The name is historical: the tick (`FUN_801D2050` -> `FUN_801D2278`) was
+/// read as a free-swimming fish, but its actor pointer `DAT_801D928C` is the
+/// lead party member the setup spawns on the shore
+/// ([`crate::fishing_venue::party_placements`]) - the library state
+/// `minigame_fishing` holds the same pointer as the lead at `(4736, 10752)`.
+/// The D-pad aims him within `0x700..=0x900`, the camera follows him, and the
+/// dwell roll only places an ambient ripple out in the water; the actor
+/// itself never moves.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FishWander {
     /// World position (`+0x14` / `+0x16` / `+0x18`).
@@ -283,8 +288,6 @@ pub struct FishWander {
     pub facing: i16,
     /// Frames left on the current dwell.
     dwell: i32,
-    /// The rolled destination the actor drifts toward.
-    target: (i32, i32),
 }
 
 impl FishWander {
@@ -297,7 +300,6 @@ impl FishWander {
             z,
             facing: 0x800,
             dwell: 0,
-            target: (x as i32, z as i32),
         }
     }
 
@@ -312,13 +314,12 @@ impl FishWander {
         if self.dwell <= 0 {
             let t = roll_wander_target(self.x as i32, self.z as i32, rand);
             self.dwell = t.dwell;
-            self.target = (t.x, t.z);
             rolled = Some(t);
         }
-        // Host glue: drift toward the rolled destination a few units a frame.
-        let step = |v: i16, t: i32| -> i16 { v + (t - v as i32).clamp(-4, 4) as i16 };
-        self.x = step(self.x, self.target.0);
-        self.z = step(self.z, self.target.1);
+        // The roll offsets an on-stack *copy* of the position and spawns the
+        // ripple there (`FUN_80021B04(sp+0x10, ..)`, `0x801D23FC`); nothing
+        // in `FUN_801D2278` writes `+0x14` / `+0x18` back, so the actor -
+        // the lead angler on the shore - holds its place.
         rolled
     }
 
@@ -2014,7 +2015,7 @@ mod tests {
     }
 
     #[test]
-    fn the_wander_actor_rolls_on_dwell_expiry_and_drifts() {
+    fn the_wander_actor_rolls_on_dwell_expiry_and_holds_its_place() {
         let mut w = FishWander::new(0x400, 0, 0x400);
         // First tick: the dwell is due, so the roll happens immediately.
         let draws = [0u32, 50, 0, 6, 1];
@@ -2027,11 +2028,11 @@ mod tests {
             })
             .expect("first tick re-rolls");
         assert_eq!(rolled.ripple_variant, 1);
-        // The dwell now holds; no re-roll, and the actor drifts toward the
-        // target (z gains its 0x400 bias, so it moves +4 a frame).
-        let z0 = w.z;
+        // The dwell now holds; no re-roll, and the actor stays put - the
+        // roll names a ripple point, it does not move the angler.
+        let (x0, z0) = (w.x, w.z);
         assert!(w.tick(0, || 0).is_none());
-        assert_eq!(w.z, z0 + 4);
+        assert_eq!((w.x, w.z), (x0, z0));
         // The facing steps + clamps off the held packed pad.
         let f0 = w.facing;
         w.tick(PACK_RIGHT, || 0);
