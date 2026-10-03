@@ -315,10 +315,20 @@ fn world_map_scenes_include_the_walk_decoration_layer() {
         let floor_lut = scene.field_floor_height_lut(&index).ok().flatten();
 
         // Engine side, resolved exactly the way the native window does.
-        let landmarks = scene
+        let mut landmarks = scene
             .walk_object_placements(&index)
             .expect("walk_object_placements")
             .unwrap_or_else(|| panic!("{name}: no walk landmarks"));
+        // Landmarks whose bind prologue parks the actor at the hide box
+        // (map01's sea dome and second river bridge) are not drawn by
+        // either host, so the assembly drops them before the concatenation.
+        if let Some(binds) = scene
+            .field_object_binds(&index)
+            .expect("field_object_binds")
+        {
+            let hidden = field_env::story_hidden_records_for_scene(&scene, &index);
+            field_env::retain_visible_landmark_placements(&mut landmarks, &binds, &hidden);
+        }
         let deco = scene
             .walk_decoration_placements(&index)
             .expect("walk_decoration_placements")
