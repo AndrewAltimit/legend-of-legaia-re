@@ -181,6 +181,43 @@ impl World {
         Some(self.morph_deltas_for(&lanes, group, n_verts))
     }
 
+    /// Whether placement `slot` carries a live morph lane (armed, envelope
+    /// up, some weight non-zero) - the cheap test a host runs before asking
+    /// for [`Self::npc_morphed_tmd`].
+    pub fn npc_morph_live(&self, slot: u8) -> bool {
+        self.live_morph_lanes(MorphOwner::Placement(slot)).is_some()
+    }
+
+    /// Placement `slot`'s live morph staged onto a copy of its mesh - the
+    /// `FUN_8001C604` substitution for an NPC: each TMD object (group) takes
+    /// its weighted deltas in object-local space, so the caller poses the
+    /// returned mesh exactly as it would the authored one (the bone transform
+    /// runs on the substituted vertices, as retail's per-group draw does).
+    /// `None` when the slot carries no live lane - the authored mesh draws.
+    ///
+    /// The one staging kernel both hosts' NPC draws go through: the native
+    /// play-window re-poses its clip / rest mesh from it, the browser play
+    /// page rebuilds the catalog entry's base positions from it.
+    // REF: FUN_8001C604, FUN_8005B038
+    pub fn npc_morphed_tmd(&self, slot: u8, tmd: &legaia_tmd::Tmd) -> Option<legaia_tmd::Tmd> {
+        let lanes = self.live_morph_lanes(MorphOwner::Placement(slot))?;
+        let mut out = tmd.clone();
+        let mut any = false;
+        for (group, obj) in out.objects.iter_mut().enumerate() {
+            let deltas = self.morph_deltas_for(&lanes, group as u32, obj.vertices.len());
+            for (v, d) in obj.vertices.iter_mut().zip(deltas.iter()) {
+                if *d == [0, 0, 0] {
+                    continue;
+                }
+                v.x = v.x.wrapping_add(d[0]);
+                v.y = v.y.wrapping_add(d[1]);
+                v.z = v.z.wrapping_add(d[2]);
+                any = true;
+            }
+        }
+        any.then_some(out)
+    }
+
     /// The live lanes of every placed-object morph whose bound draws use
     /// env-pack slot `pack_slot` - folded into
     /// [`Self::current_morph_deltas`] beside the ambient parts'.

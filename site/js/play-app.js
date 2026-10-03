@@ -2182,6 +2182,8 @@ void main() {
         rec.out = new Float32Array(base.length);
         rec.lastFrame = -1;
         rec.lastGen = -1;
+        /* A morph staged on the old base must be re-read onto the new one. */
+        rec.morphGen = undefined;
       }
     }
 
@@ -2622,6 +2624,15 @@ void main() {
         ? rt.play_npc_tilts() : null;
       const clipStates = (typeof rt.play_npc_clip_states === 'function')
         ? rt.play_npc_clip_states() : null;
+      /* Field-VM op 0x4B VDF morphs on placed NPCs: a per-entry generation
+       * that moves whenever the slot's staged deltas do. On a move the
+       * entry's object-local base is swapped for the engine's morphed one
+       * (`play_npc_morph_base`, the shared `World::npc_morphed_tmd` kernel
+       * the native window re-poses from) and re-posed below - the morph is
+       * staged before the bone transform, as retail's `FUN_8001C604` runs
+       * per group ahead of the draw. `-1` = the slot never armed one. */
+      const morphStates = (typeof rt.play_npc_morph_states === 'function')
+        ? rt.play_npc_morph_states() : null;
       const clipFrame = Math.floor(performance.now() / 1000 * NPC_CLIP_FPS);
       for (let k = 0; k < this.npcs.length; k++) {
         const n = this.npcs[k];
@@ -2637,22 +2648,47 @@ void main() {
          * refresh touched last. The native redraw pass skips the same slots
          * (`is_tile_actor_slot`). */
         if (this.tileActorSlots.has(n.slot | 0)) continue;
+        let morphMoved = false;
+        if (morphStates && n.i < morphStates.length) {
+          const mg = morphStates[n.i];
+          if (mg >= 0 && mg !== n.morphGen) {
+            const mb = rt.play_npc_morph_base(n.i);
+            if (mb.length === n.base.length) {
+              n.base = mb;
+              morphMoved = true;
+            }
+            n.morphGen = mg;
+          }
+        }
+        let posed = false;
         if (clipStates && n.i * 2 + 1 < clipStates.length) {
           const f = clipStates[n.i * 2], gen = clipStates[n.i * 2 + 1];
-          if (f >= 0 && (f !== n.lastFrame || gen !== n.lastGen)) {
+          if (f >= 0 && (morphMoved || f !== n.lastFrame || gen !== n.lastGen)) {
             const bones = rt.play_npc_live_bones(n.i);
             if (bones.length) {
               poseInto(n.out, n.base, n.objectIds, bones, bones.length / 6, 0);
               this.renderer.updateSceneMeshPositions(n.meshId, n.out);
               n.lastFrame = f; n.lastGen = gen;
+              posed = true;
             }
           }
-        } else if (advance && n.frameCount > 1) {
+        } else if ((advance || morphMoved) && n.frameCount > 1) {
           const f = clipFrame % n.frameCount;
-          if (f !== n.lastFrame) {
+          if (morphMoved || f !== n.lastFrame) {
             poseInto(n.out, n.base, n.objectIds, n.frames, n.partCount, f);
             this.renderer.updateSceneMeshPositions(n.meshId, n.out);
             n.lastFrame = f;
+            posed = true;
+          }
+        }
+        /* A clip-less entry: its frame-0 rest pose (or its bare object-local
+         * mesh) re-staged with the morphed base. */
+        if (morphMoved && !posed) {
+          if (n.frameCount > 0) {
+            poseInto(n.out, n.base, n.objectIds, n.frames, n.partCount, 0);
+            this.renderer.updateSceneMeshPositions(n.meshId, n.out);
+          } else {
+            this.renderer.updateSceneMeshPositions(n.meshId, n.base);
           }
         }
         const actorDraw = {

@@ -63,6 +63,10 @@ pub struct LegaiaRuntime {
     /// [`Self::tick_frame`] (the sim clock, not the render clock) and
     /// re-targeted by drained clip cues (`A2` ExecMove, `4C 51`).
     pub(crate) npc_clips: std::collections::HashMap<u8, NpcClip>,
+    /// Per placement slot, a counter bumped whenever the slot's op-`0x4B`
+    /// VDF morph moves (`World::take_npc_morph_dirty`, drained once per sim
+    /// tick) - read by the page through `play_npc_morph_states`.
+    pub(crate) npc_morph_gen: std::collections::HashMap<u8, u32>,
     /// The scene's ANM bundle (the pose source for scene NPCs **and** placed
     /// props), resolved once per scene the way the native window's
     /// `find_scene_anm_bundle` does: entry-major, descriptor-count seed
@@ -405,6 +409,7 @@ impl LegaiaRuntime {
             tile_mesh: None,
             npcs: None,
             npc_clips: std::collections::HashMap::new(),
+            npc_morph_gen: std::collections::HashMap::new(),
             scene_anm: None,
             locomotion_anm: None,
             field_vram_anim: None,
@@ -1925,6 +1930,15 @@ impl LegaiaRuntime {
                 clip.player = r.player;
                 clip.generation = clip.generation.wrapping_add(1);
             }
+        }
+        // Op-`0x4B` morphs whose staged deltas moved this tick: bump the
+        // slot's generation so the page re-reads its morphed base (the
+        // native window drops the slot's pose-cache entries instead). Kept
+        // across scenes - a stale slot only costs one re-read of the
+        // authored base.
+        for slot in host.world.take_npc_morph_dirty() {
+            let g = self.npc_morph_gen.entry(slot).or_insert(0);
+            *g = g.wrapping_add(1);
         }
         // The playheads run only while the field owns the frame - the
         // world's decision, shared with the native draw pass.

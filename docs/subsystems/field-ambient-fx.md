@@ -530,9 +530,21 @@ them at `0` and draws the full tree. Engine: `World::arm_field_morph` /
 placement slot or a bound object's flat record. A bound object's lanes reach
 its placed draws' env-pack meshes through `current_morph_deltas`, so both
 hosts' existing pack-mesh substitution draws them
-(`crates/engine-core/tests/npc_morph_rikuroa_disc.rs`). A placement's
-(NPC's) lanes are armed and ticked, but neither host re-stages an NPC mesh
-from them yet.
+(`crates/engine-core/tests/npc_morph_rikuroa_disc.rs`).
+
+A placement's (NPC's) lanes stage onto its own model through one kernel,
+`World::npc_morphed_tmd`: the weighted deltas land per TMD object in
+object-local space, ahead of the bone transform, as `FUN_8001C604` runs per
+group before the draw. A slot whose deltas move is marked dirty
+(`take_npc_morph_dirty`). The native window drops that slot's pose-cache
+entries so the clip pass re-skins from the morphed mesh, and re-stages a
+clip-less slot's static mesh. The browser play page bumps a per-slot
+generation (`play_npc_morph_states`) and swaps the entry's base positions
+for `play_npc_morph_base` before posing. Rim Elm's Genesis tree is the worked
+example on this side: placement `P1[50]` in `town01`, clip-less, holds
+sub-entries `3..=6` at peak until the tree revives, which is the withered
+tree the `first_town_interactive` capture draws over an authored mesh that
+is the revived one (`crates/engine-core/tests/npc_morph_placement_disc.rs`).
 
 Engine: kernels in `engine-vm::vdf_morph` (record walk, GPF blend,
 ActorState envelope bridge), envelope on armed ambient parts in

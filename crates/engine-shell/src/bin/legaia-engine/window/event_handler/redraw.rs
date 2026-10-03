@@ -817,6 +817,9 @@ impl PlayWindowApp {
         // sacs): rebuild the pack meshes whose morph deltas moved this frame
         // (collected outside the renderer borrow; uploaded inside it below).
         let field_morph_rebuilds = self.take_field_morph_rebuilds();
+        // Op-`0x4B` morphs on placed NPCs: the clip-less slots' re-staged
+        // static meshes (the clip-driven ones re-skin in the pose pass).
+        let npc_morph_rebuilds = self.take_npc_morph_rebuilds();
         // Field-to-battle intro: advance the transition emitter and take both
         // it and its screen-space primitives out of `self`, before the
         // renderer borrow below - the same borrow-window pattern as the morph
@@ -1258,6 +1261,37 @@ impl PlayWindowApp {
                     self.field_morph_live.insert(*mesh_idx, m);
                 }
             }
+            for (slot, halves) in npc_morph_rebuilds {
+                let Some((vmesh, cmesh)) = halves else {
+                    self.npc_morph_static.remove(&slot);
+                    continue;
+                };
+                let vm = (!vmesh.indices.is_empty())
+                    .then(|| {
+                        r.upload_vram_mesh(
+                            &vmesh.positions,
+                            &vmesh.uvs,
+                            &vmesh.cba_tsb,
+                            &vmesh.normals,
+                            &vmesh.colors,
+                            &vmesh.indices,
+                        )
+                        .ok()
+                    })
+                    .flatten();
+                let cm = (!cmesh.is_empty())
+                    .then(|| {
+                        r.upload_color_mesh_blended(
+                            &cmesh.positions,
+                            &cmesh.colors,
+                            &cmesh.indices,
+                            &cmesh.blend,
+                        )
+                        .ok()
+                    })
+                    .flatten();
+                self.npc_morph_static.insert(slot, (vm, cm));
+            }
 
             // Field-NPC clip playback: advance each placed NPC's looping ANM
             // clip and draw its posed mesh halves.
@@ -1337,6 +1371,12 @@ impl PlayWindowApp {
                     if verify {
                         verify_poses.insert(key, pose.bone_outputs.clone());
                     }
+                    // An op-`0x4B` morph re-stages the mesh before the
+                    // skin (`FUN_8001C604` runs per group ahead of the
+                    // bone transform); a morph change drops the slot's
+                    // cache entries (`take_npc_morph_rebuilds`).
+                    let morphed = world.npc_morphed_tmd(*slot, tmd);
+                    let tmd = morphed.as_ref().unwrap_or(tmd);
                     let vmesh =
                         legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(tmd, raw, &pose.bone_outputs);
                     let cmesh =
@@ -2022,7 +2062,12 @@ impl PlayWindowApp {
                             },
                         };
                         let model = Mat4::from_translation(Vec3::new(x as f32, y, z as f32)) * rot;
-                        let posed = npc_posed.get(&d.slot);
+                        // A clip-less NPC's op-`0x4B` morph re-stages
+                        // its static mesh (`npc_morph_static`).
+                        let posed = npc_posed
+                            .get(&d.slot)
+                            .copied()
+                            .or_else(|| self.npc_morph_static.get(&d.slot));
                         match (posed.and_then(|p| p.0.as_ref()), d.mesh_idx) {
                             (Some(mesh), _) => draws.push(SceneDraw {
                                 mesh,

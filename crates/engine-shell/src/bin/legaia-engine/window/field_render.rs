@@ -540,6 +540,60 @@ impl PlayWindowApp {
         rebuilds
     }
 
+    /// Field-VM op-`0x4B` morphs on placed NPCs (`World::npc_morphed_tmd`),
+    /// collected outside the renderer borrow. Drains the world's NPC dirty
+    /// set: a clip-driven slot's pose-cache entries are dropped, so the pose
+    /// pass re-skins it from the morphed mesh; a clip-less slot's static mesh
+    /// is re-staged here (`Some` = morphed halves to upload, `None` = the
+    /// lanes went dead, draw the rest upload again). A slot whose lanes are
+    /// live but has no re-staged mesh yet (a scene re-upload cleared it) is
+    /// re-staged too, so a HOLD-ed morph survives `upload_assets`.
+    ///
+    /// REF: FUN_8001C604
+    #[allow(clippy::type_complexity)]
+    pub(super) fn take_npc_morph_rebuilds(
+        &mut self,
+    ) -> Vec<(
+        u8,
+        Option<(legaia_tmd::mesh::VramMesh, legaia_tmd::mesh::ColorMesh)>,
+    )> {
+        let world = &mut self.session.host.world;
+        let mut slots: std::collections::BTreeSet<u8> =
+            world.take_npc_morph_dirty().into_iter().collect();
+        for &s in &slots {
+            self.npc_pose_cache.retain(|(k, _), _| *k != s);
+            self.npc_pose_verify.retain(|(k, _), _| *k != s);
+        }
+        let world = &self.session.host.world;
+        for &s in self.npc_rest_srcs.keys() {
+            if world.npc_morph_live(s) != self.npc_morph_static.contains_key(&s) {
+                slots.insert(s);
+            }
+        }
+        let mut out = Vec::new();
+        for s in slots {
+            let Some((tmd, raw, pose)) = self.npc_rest_srcs.get(&s) else {
+                continue;
+            };
+            let Some(morphed) = world.npc_morphed_tmd(s, tmd) else {
+                out.push((s, None));
+                continue;
+            };
+            let (vmesh, cmesh) = match pose {
+                Some(p) => (
+                    legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(&morphed, raw, p),
+                    legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(&morphed, raw, p),
+                ),
+                None => (
+                    legaia_tmd::mesh::tmd_to_vram_mesh(&morphed, raw),
+                    legaia_tmd::mesh::tmd_to_color_mesh(&morphed, raw),
+                ),
+            };
+            out.push((s, Some((vmesh, cmesh))));
+        }
+        out
+    }
+
     /// Build this frame's posed-prop draws. A prop resting on frame 0 replays
     /// its baked rest mesh (the cheap path - and where every prop sits until it
     /// is touched); one whose clip has moved is re-posed from the raw TMD at its

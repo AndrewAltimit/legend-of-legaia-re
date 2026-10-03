@@ -1159,6 +1159,100 @@ impl LegaiaRuntime {
         .to_string()
     }
 
+    /// Catalog entry `i`'s mesh source: the TMD (object table truncated to
+    /// the clip's bone count) and its raw bytes. A scripted mesh re-bind
+    /// (motion-VM op `0x0E`) replaces the placement's own model; a special
+    /// (`model >= 0xF0`) resolves out of the world's global pool.
+    fn npc_entry_tmd(&self, i: u32) -> Result<(legaia_tmd::Tmd, Vec<u8>), JsValue> {
+        let idx = i as usize;
+        let live = self.play_npc_live_model(i);
+        let live_src = (live >= 0)
+            .then(|| self.live_npc_mesh_bytes(live as i16))
+            .flatten();
+        let n = self
+            .npcs
+            .as_ref()
+            .ok_or_else(|| JsValue::from_str("play_npc_mesh: no catalog"))?;
+        let e = n
+            .pack
+            .entries
+            .get(idx)
+            .ok_or_else(|| JsValue::from_str(&format!("play_npc_mesh: no entry {idx}")))?;
+        let (mut tmd, raw) = if let Some(m) = live_src {
+            m
+        } else if e.special {
+            let slot = (e.placement.model_index - 0xF0) as usize;
+            let g = self
+                .scene_host
+                .as_ref()
+                .and_then(|h| h.world.field_head_pool.get(slot))
+                .and_then(|s| s.as_ref())
+                .ok_or_else(|| JsValue::from_str("play_npc_mesh: no global-pool mesh"))?;
+            (g.tmd.clone(), g.raw.clone())
+        } else {
+            let model = e.placement.model_index as usize;
+            let res = self
+                .res()
+                .ok_or_else(|| JsValue::from_str("play_npc_mesh: no resources"))?;
+            let t = res
+                .tmds
+                .get(model)
+                .ok_or_else(|| JsValue::from_str("play_npc_mesh: model out of range"))?;
+            (t.tmd.clone(), t.raw.clone())
+        };
+        if let Some(bones) = self.npc_clip_bone_count(e.placement.anim_id, e.special) {
+            tmd.objects.truncate(bones);
+        }
+        Ok((tmd, raw))
+    }
+
+    /// Per catalog entry, the generation of its op-`0x4B` VDF morph
+    /// (`World::npc_morphed_tmd`): `-1` for an entry whose slot never armed
+    /// one, else a counter that moves whenever the slot's staged deltas do
+    /// (including dropping back to the authored mesh). The page re-reads
+    /// [`Self::play_npc_morph_base`] when it moves - the browser twin of the
+    /// native window's pose-cache eviction + static re-stage.
+    pub fn play_npc_morph_states(&self) -> Vec<i32> {
+        let Some(n) = self.npcs.as_ref() else {
+            return Vec::new();
+        };
+        n.pack
+            .entries
+            .iter()
+            .map(|e| {
+                self.npc_morph_gen
+                    .get(&(e.placement.index as u8))
+                    .map_or(-1, |&g| g as i32)
+            })
+            .collect()
+    }
+
+    /// Catalog entry `i`'s **object-local** base positions with its live
+    /// morph staged (`World::npc_morphed_tmd`, the shared `FUN_8001C604`
+    /// kernel), in the vertex order [`Self::play_npc_mesh_positions`] uses -
+    /// the page poses them exactly as it poses the authored base. The
+    /// authored positions come back when the slot carries no live lane.
+    pub fn play_npc_morph_base(&self, i: u32) -> Vec<f32> {
+        let Ok((tmd, raw)) = self.npc_entry_tmd(i) else {
+            return Vec::new();
+        };
+        let Some(slot) = self
+            .npcs
+            .as_ref()
+            .and_then(|n| n.pack.entries.get(i as usize))
+            .map(|e| e.placement.index as u8)
+        else {
+            return Vec::new();
+        };
+        let morphed = self
+            .scene_host
+            .as_ref()
+            .and_then(|h| h.world.npc_morphed_tmd(slot, &tmd));
+        let tmd = morphed.as_ref().unwrap_or(&tmd);
+        let (mesh, _, _) = legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(tmd, &raw);
+        mesh.positions.iter().flatten().copied().collect()
+    }
+
     /// Build catalog entry `i`'s mesh (hybrid: textured + vertex-colour prims,
     /// with per-vertex bone ids). Returns `i`.
     ///
@@ -1170,57 +1264,17 @@ impl LegaiaRuntime {
     /// litter the actor's feet with raw parts).
     pub fn play_npc_mesh(&mut self, i: u32) -> Result<u32, JsValue> {
         let idx = i as usize;
-        // A scripted mesh re-bind (motion-VM op `0x0E`) replaces the source
-        // for this catalog entry. Resolved before the catalog borrow because
-        // it reads the scene host; `None` = the placement's own model, which
-        // is every entry until a script swaps one.
         let live = self.play_npc_live_model(i);
-        let live_src = (live >= 0)
-            .then(|| self.live_npc_mesh_bytes(live as i16))
-            .flatten();
-        let (mut tmd, raw, anim_id, special) = {
-            let n = self
-                .npcs
-                .as_ref()
-                .ok_or_else(|| JsValue::from_str("play_npc_mesh: no catalog"))?;
-            // The cache key is `(entry, bound model)`, not the entry alone:
-            // a re-bind leaves the entry index where it was, so keying on it
-            // would hand back the spawn mesh forever.
-            if n.pack.cur.as_ref().map(|c| c.0) == Some(idx) && self.npc_bound_model == Some(live) {
-                return Ok(i);
-            }
-            let e = n
-                .pack
-                .entries
-                .get(idx)
-                .ok_or_else(|| JsValue::from_str(&format!("play_npc_mesh: no entry {idx}")))?;
-            let (tmd, raw) = if let Some(m) = live_src {
-                m
-            } else if e.special {
-                let slot = (e.placement.model_index - 0xF0) as usize;
-                let g = self
-                    .scene_host
-                    .as_ref()
-                    .and_then(|h| h.world.field_head_pool.get(slot))
-                    .and_then(|s| s.as_ref())
-                    .ok_or_else(|| JsValue::from_str("play_npc_mesh: no global-pool mesh"))?;
-                (g.tmd.clone(), g.raw.clone())
-            } else {
-                let model = e.placement.model_index as usize;
-                let res = self
-                    .res()
-                    .ok_or_else(|| JsValue::from_str("play_npc_mesh: no resources"))?;
-                let t = res
-                    .tmds
-                    .get(model)
-                    .ok_or_else(|| JsValue::from_str("play_npc_mesh: model out of range"))?;
-                (t.tmd.clone(), t.raw.clone())
-            };
-            (tmd, raw, e.placement.anim_id, e.special)
-        };
-        if let Some(bones) = self.npc_clip_bone_count(anim_id, special) {
-            tmd.objects.truncate(bones);
+        // The cache key is `(entry, bound model)`, not the entry alone: a
+        // re-bind leaves the entry index where it was, so keying on it would
+        // hand back the spawn mesh forever.
+        if let Some(n) = self.npcs.as_ref()
+            && n.pack.cur.as_ref().map(|c| c.0) == Some(idx)
+            && self.npc_bound_model == Some(live)
+        {
+            return Ok(i);
         }
+        let (tmd, raw) = self.npc_entry_tmd(i)?;
         let (mesh, object_ids, shading) =
             legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&tmd, &raw);
         let flat = crate::packet_color::hybrid(&mesh, &shading);

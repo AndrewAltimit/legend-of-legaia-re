@@ -1055,6 +1055,8 @@ impl PlayWindowApp {
         self.field_npc_draws.clear();
         self.npc_clip_players.clear();
         self.npc_anim_srcs.clear();
+        self.npc_rest_srcs.clear();
+        self.npc_morph_static.clear();
         // The posed-mesh memo is keyed by `(slot, clip frame)`; the incoming
         // scene reuses both, so it must not survive the clip-player rebuild.
         self.npc_pose_cache.clear();
@@ -1256,6 +1258,9 @@ impl PlayWindowApp {
                         .insert(p.index as u8, (tmd.clone(), raw.clone()));
                     self.npc_bundle_special
                         .insert(p.index as u8, p.special_model);
+                } else {
+                    self.npc_rest_srcs
+                        .insert(p.index as u8, (tmd.clone(), raw.clone(), pose.clone()));
                 }
                 // Light-emitter samples from this prop's meshes at its
                 // spawn transform - the interior candle sconces / wall

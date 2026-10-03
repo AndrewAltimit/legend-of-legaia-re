@@ -661,6 +661,10 @@ struct MuscleHubAssets {
 /// Either can be absent when the source TMD carries no prims of that class.
 type NpcPosedHalves = (Option<UploadedVramMesh>, Option<UploadedColorMesh>);
 
+/// A clip-less NPC's TMD, raw bytes and frame-0 rest pose (when its anim
+/// record names one). See [`PlayWindowApp::npc_rest_srcs`].
+type NpcRestSrc = (legaia_tmd::Tmd, Vec<u8>, Option<Vec<([i16; 3], [i16; 3])>>);
+
 /// `(placement slot, clip frame) -> skinned mesh`. See
 /// [`PlayWindowApp::npc_pose_cache`].
 type NpcPoseCache = std::collections::HashMap<(u8, usize), NpcPosedHalves>;
@@ -829,6 +833,14 @@ struct PlayWindowApp {
     npc_clip_players:
         std::collections::HashMap<u8, legaia_engine_core::field_anim::FieldClipPlayer>,
     npc_anim_srcs: std::collections::HashMap<u8, (legaia_tmd::Tmd, Vec<u8>)>,
+    /// The mesh source + rest pose of every NPC **without** a clip player,
+    /// kept so an op-`0x4B` VDF morph on it (`World::npc_morphed_tmd`) can
+    /// re-stage its static mesh. Clip-driven NPCs morph through the pose
+    /// pass off `npc_anim_srcs` instead.
+    npc_rest_srcs: std::collections::HashMap<u8, NpcRestSrc>,
+    /// The re-staged static meshes of clip-less NPCs whose morph lanes are
+    /// live, keyed by placement slot; drawn in place of the rest upload.
+    npc_morph_static: std::collections::HashMap<u8, NpcPosedHalves>,
     /// Memoised posed NPC meshes, keyed by `(placement slot, clip frame)`.
     ///
     /// An NPC's clip is a short **loop** over a fixed set of poses, so the

@@ -1389,6 +1389,8 @@ pub(super) fn cmd_play_window_with_record(
         field_npc_draws: Vec::new(),
         npc_clip_players: std::collections::HashMap::new(),
         npc_anim_srcs: std::collections::HashMap::new(),
+        npc_rest_srcs: std::collections::HashMap::new(),
+        npc_morph_static: std::collections::HashMap::new(),
         npc_pose_cache: std::collections::HashMap::new(),
         npc_pose_verify: std::collections::HashMap::new(),
         npc_anim_bundles: (None, None),
