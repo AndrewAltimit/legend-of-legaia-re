@@ -175,6 +175,9 @@ pub struct ArtsCommandInputSession {
     /// case `0xB` zeroes the sixteen queue bytes when the committed count
     /// is `0` (`0x801D3BE4..0x801D3C24`) - and so does the review's cancel.
     pub preseed: Vec<u8>,
+    /// AP each [`Self::preseed`] command would cost, parallel to it - the
+    /// pennant seats of the preseeded bar ([`Self::bar_spent`]).
+    pub preseed_spent: Vec<u16>,
     /// Set when the confirm on an empty entry took [`Self::preseed`] as the
     /// turn's string (`0x801D1FA0..0x801D2044`). The resolved session then
     /// commits the preseed rather than [`Self::buffer`].
@@ -210,6 +213,7 @@ impl ArtsCommandInputSession {
             list_pages,
             list_page: None,
             preseed: Vec::new(),
+            preseed_spent: Vec::new(),
             replay: false,
             phase: ArtsInputPhase::Entering,
         }
@@ -217,9 +221,62 @@ impl ArtsCommandInputSession {
 
     /// The entry with the character's auto command string preseeded
     /// ([`Self::preseed`]).
-    pub fn with_preseed(mut self, preseed: Vec<u8>) -> Self {
+    ///
+    /// The gauge build that opens the entry (`FUN_801D388C` case `0x2C`,
+    /// `0x801D4DC8..0x801D5070`) walks the preseeded window when its first
+    /// byte is non-zero: from a pool seeded off `+0x154` it draws one
+    /// pennant per command (window `0x20 + i` through `FUN_801D8DE8`, its
+    /// chip's word `+ 6`, seated `cost` further right each time) and debits
+    /// the command's cost, and at the first command the remaining pool
+    /// cannot pay (`slt` at `0x801D4E90`) it zeroes that byte
+    /// (`sb zero,0x1df(a1)` at `0x801D4DC4`) and stops - so the string
+    /// keeps only the prefix one full pool affords, for the bar and for a
+    /// replay alike. The pool and the pennant seat are then reset to the
+    /// full gauge (`0x801D503C..0x801D5068`): drawing the preseed charges
+    /// nothing.
+    pub fn with_preseed(mut self, mut preseed: Vec<u8>) -> Self {
+        let mut pool = self.pool_max;
+        let mut spent = Vec::with_capacity(preseed.len());
+        for &b in &preseed {
+            let cost = Command::from_byte(b).map_or(u16::MAX, |c| self.cost_of(c));
+            if cost > pool {
+                break;
+            }
+            pool -= cost;
+            spent.push(cost);
+        }
+        preseed.truncate(spent.len());
         self.preseed = preseed;
+        self.preseed_spent = spent;
         self
+    }
+
+    /// Drop the preseeded string (and its pennants).
+    fn clear_preseed(&mut self) {
+        self.preseed.clear();
+        self.preseed_spent.clear();
+    }
+
+    /// The commands the pennant bar shows: the entered buffer, or - while
+    /// nothing is entered - the preseeded string the gauge build drew. The
+    /// first press closes those pennants with the wipe (case `0xB`'s count-`0`
+    /// arm retires the bar's text windows, kinds `5..=0xD`, at
+    /// `0x801D3C2C..0x801D3C94`).
+    pub fn bar_commands(&self) -> &[u8] {
+        if self.buffer.is_empty() {
+            &self.preseed
+        } else {
+            &self.buffer
+        }
+    }
+
+    /// AP per [`Self::bar_commands`] entry - the pennant seats and widths.
+    pub fn bar_spent(&self) -> &[u16] {
+        if self.buffer.is_empty() {
+            &self.preseed_spent
+        } else {
+            &self.spent
+        }
     }
 
     /// The command string a resolved session commits: the replayed preseed
@@ -306,7 +363,7 @@ impl ArtsCommandInputSession {
                     // (case `0xB`'s count-`0` arm zeroes all sixteen queue
                     // bytes before the affordability test).
                     if self.buffer.is_empty() {
-                        self.preseed.clear();
+                        self.clear_preseed();
                     }
                     let cost = self.cost_of(cmd);
                     if cost <= self.pool {
@@ -379,7 +436,7 @@ impl ArtsCommandInputSession {
                     // the sixteen queue bytes and, for an entry opened from
                     // the arts input, returns to it (`0x50`, case `0xF`).
                     // The wipe takes a replayed preseed with it.
-                    self.preseed.clear();
+                    self.clear_preseed();
                     self.replay = false;
                     self.buffer.clear();
                     self.spent.clear();
@@ -536,6 +593,12 @@ pub struct ArtsInputView<'a> {
     /// AP paid per entered command - the pennant seat law is
     /// `x = 7 + sum(spent[..n])`.
     pub spent: &'a [u16],
+    /// The commands the pennant bar draws - [`Self::buffer`], or the
+    /// preseeded auto command string while nothing is entered
+    /// ([`ArtsCommandInputSession::bar_commands`]).
+    pub pennants: &'a [u8],
+    /// AP per [`Self::pennants`] entry ([`ArtsCommandInputSession::bar_spent`]).
+    pub pennant_spent: &'a [u16],
     /// Remaining / seeded entry pool (drives the bar length).
     pub pool: u16,
     pub pool_max: u16,
@@ -832,15 +895,13 @@ mod tests {
     /// press wipes it, and so does the review's cancel.
     #[test]
     fn a_bare_confirm_replays_the_preseed_without_a_charge() {
-        let mut s = ArtsCommandInputSession::new(0, 0, 60, [30; 4], 0).with_preseed(vec![4, 3, 1]);
+        let mut s = ArtsCommandInputSession::new(0, 0, 60, [30; 4], 0).with_preseed(vec![4, 3]);
         s.input(press("c"), party3(), one_monster());
         assert!(matches!(s.phase, ArtsInputPhase::Review));
         assert!(s.replay);
-        assert_eq!(s.committed_string(), &[4, 3, 1]);
+        assert_eq!(s.committed_string(), &[4, 3]);
         assert_eq!(s.pool, 60, "no press was charged");
         assert!(s.spent.is_empty());
-        // A string dearer than the pool replays all the same.
-        assert!(3 * 30 > s.pool_max);
 
         // The review's cancel wipes the window: back to a plain entry.
         s.input(press("o"), party3(), one_monster());
@@ -860,6 +921,33 @@ mod tests {
         assert!(matches!(t.phase, ArtsInputPhase::Review));
         assert!(!t.replay);
         assert_eq!(t.committed_string(), &[1]);
+    }
+
+    /// The gauge build draws the preseed as pennants and cuts it at the
+    /// first command one full pool cannot pay (case `0x2C`,
+    /// `0x801D4E90` / `0x801D4DC4`) - Gala's off-class capture: a `42`-AP
+    /// arm, a `197` pool, and a saved `Right Right Left Left Left Up` that
+    /// opens as five pennants.
+    #[test]
+    fn the_gauge_build_draws_the_affordable_preseed_prefix() {
+        let s = ArtsCommandInputSession::new(0, 0, 197, [42, 30, 30, 30], 0)
+            .with_preseed(vec![2, 2, 1, 1, 1, 4]);
+        assert_eq!(s.preseed, [2, 2, 1, 1, 1], "the unaffordable Up is cut");
+        assert_eq!(s.bar_commands(), [2, 2, 1, 1, 1]);
+        assert_eq!(s.bar_spent(), [30, 30, 42, 42, 42]);
+        assert_eq!(s.pool, 197, "drawing the preseed charges nothing");
+
+        // A bare confirm replays the cut string.
+        let mut r = s.clone();
+        r.input(press("c"), party3(), one_monster());
+        assert_eq!(r.committed_string(), &[2, 2, 1, 1, 1]);
+        assert_eq!(r.bar_commands(), [2, 2, 1, 1, 1], "the review keeps them");
+
+        // The first press closes the preseeded pennants.
+        let mut t = s;
+        t.input(press("U"), party3(), one_monster());
+        assert_eq!(t.bar_commands(), [4]);
+        assert_eq!(t.bar_spent(), [30]);
     }
 
     #[test]

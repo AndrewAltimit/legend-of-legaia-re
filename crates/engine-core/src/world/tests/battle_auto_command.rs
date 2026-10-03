@@ -81,13 +81,17 @@ fn the_arts_entry_opens_on_the_parked_string_and_replays_it() {
     w.actors[0].battle.params = [0u8; vm::battle_action::ACTION_PARAM_BYTES];
 
     w.open_arts_command_input(0);
+    // The zeroed record has no AGL, so the entry seeds the default 100-AP
+    // pool: three 30-AP arrows fit, and the gauge build (`FUN_801D388C`
+    // case `0x2C`) cuts the window at the fourth, zeroing that byte.
     assert_eq!(
-        &w.actors[0].battle.params[..4],
-        &SWINGS,
+        &w.actors[0].battle.params[..3],
+        &SWINGS[..3],
         "the window is preseeded as the entry opens (0x801D1734)"
     );
+    assert_eq!(w.actors[0].battle.params[3], 0, "cut at 0x801D4DC4");
     let s = w.battle.arts_input.as_ref().expect("entry open");
-    assert_eq!(s.preseed, ARROWS);
+    assert_eq!(s.preseed, ARROWS[..3]);
     let pool = s.pool;
 
     w.input.set_pad(0);
@@ -96,7 +100,7 @@ fn the_arts_entry_opens_on_the_parked_string_and_replays_it() {
     let s = w.battle.arts_input.as_ref().expect("review up");
     assert!(s.replay);
     assert_eq!(s.pool, pool, "the replay charges no press");
-    assert_eq!(s.committed_string(), &ARROWS);
+    assert_eq!(s.committed_string(), &ARROWS[..3]);
 }
 
 #[test]

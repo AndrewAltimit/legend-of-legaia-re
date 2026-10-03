@@ -536,8 +536,8 @@ impl LegaiaRuntime {
             return empty;
         };
         let frame = ai::ArtsInputFrame {
-            buffer: view.buffer,
-            spent: view.spent,
+            buffer: view.pennants,
+            spent: view.pennant_spent,
             chip_costs: view.costs,
             chip_icons: view.chip_icons,
             pool: view.pool,

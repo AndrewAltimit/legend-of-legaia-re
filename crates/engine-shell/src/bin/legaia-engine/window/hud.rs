@@ -1883,8 +1883,8 @@ impl PlayWindowApp {
         };
         let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
         let frame = ai::ArtsInputFrame {
-            buffer: view.buffer,
-            spent: view.spent,
+            buffer: view.pennants,
+            spent: view.pennant_spent,
             chip_costs: view.costs,
             chip_icons: view.chip_icons,
             pool: view.pool,

@@ -465,6 +465,8 @@ impl MuscleDomeSession {
         Some(crate::arts_command_input::ArtsInputView {
             buffer: &s.buffer,
             spent: &s.spent,
+            pennants: s.bar_commands(),
+            pennant_spent: s.bar_spent(),
             pool: s.pool,
             pool_max: s.pool_max,
             costs: s.costs,

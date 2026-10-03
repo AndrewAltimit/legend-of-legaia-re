@@ -636,6 +636,8 @@ impl World {
         Some(crate::arts_command_input::ArtsInputView {
             buffer: &s.buffer,
             spent: &s.spent,
+            pennants: s.bar_commands(),
+            pennant_spent: s.bar_spent(),
             pool: s.pool,
             pool_max: s.pool_max,
             costs: s.costs,
@@ -703,9 +705,22 @@ impl World {
         // string as the entry opens (`jal FUN_801DA34C` at `0x801D1734`, the
         // `sb 0x50` phase store in its delay slot); a bare confirm replays it.
         let preseed = self.preseed_arts_entry_string(actor);
-        self.battle.arts_input = Some(
-            ArtsCommandInputSession::new(actor, actor, pool, costs, pages).with_preseed(preseed),
-        );
+        let loaded = preseed.len();
+        let session =
+            ArtsCommandInputSession::new(actor, actor, pool, costs, pages).with_preseed(preseed);
+        // The gauge build cuts the window at the first command one full pool
+        // cannot pay, zeroing that one byte (`sb zero,0x1df(a1)` at
+        // `0x801D4DC4`).
+        let kept = session.preseed.len();
+        if kept < loaded
+            && let Some(b) = self
+                .actors
+                .get_mut(usize::from(actor))
+                .and_then(|a| a.battle.params.get_mut(kept))
+        {
+            *b = 0;
+        }
+        self.battle.arts_input = Some(session);
     }
 
     /// Load `actor`'s auto command string into its `+0x1DF` window
