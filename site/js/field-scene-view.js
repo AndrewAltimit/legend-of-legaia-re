@@ -135,17 +135,24 @@
       const packCount = v.set_scene_field(label);
       const status = JSON.parse(v.field_scene_status_json());
 
-      /* Live VRAM animation: the bundle's CLUT-walk table (water/waterfall
-       * shimmer) + the scene-entry ambient move-VM tree (jou's pulsating
-       * flesh-palette cyclers and lightning). Init parks the walker source
-       * strips into the WASM-side VRAM, so it must run BEFORE the first
-       * texture upload. The render loop then ticks the animation and
-       * re-uploads the VRAM texture whenever texels changed. */
+      /* Animation: the bundle's CLUT-walk table (water/waterfall shimmer)
+       * plus the scene itself, entered live and headless through the
+       * engine's scene host (engine-core `scene_live::LiveScene`). Its world
+       * runs the scene's scripts, so everything the play page animates
+       * moves here off the same world state: the floor-height ladder (the
+       * placed / terrain draws and the walk ground follow it - concnow's
+       * entry script installs a whole new one), the placed-prop clips (the
+       * windmill), the ambient move-VM tree and scripted VRAM effects, and
+       * the VDF vertex morphs. Init parks the walker source strips into the
+       * WASM-side VRAM, so it must run BEFORE the first texture upload. */
       this.anim = null;
+      this._animLast = undefined;
+      this._animAccum = 0;
+      this._floorWaveLive = false;
       if (typeof v.field_scene_anim_init === 'function') {
         try {
           const a = JSON.parse(v.field_scene_anim_init());
-          if (a.walker_entries > 0 || a.ambient_parts > 0) this.anim = a;
+          if (a.walker_entries > 0 || a.ambient_parts > 0 || a.live) this.anim = a;
         } catch (e) { /* animation is optional; the static map still renders */ }
       }
       this.renderer.uploadVram(v.field_scene_vram_bytes());
@@ -189,13 +196,40 @@
         return true;
       };
 
+      /* A placed prop whose object bind names a clip is a multi-object mesh
+       * whose parts are that clip's bones (windmill sails on their hub,
+       * cupboard doors on the cabinet): it gets its own mesh instance,
+       * uploaded at the clip's rest pose and re-posed per frame from the live
+       * world's prop cursor - the play page's ANIM_PROP_BASE scheme. */
+      const ANIM_PROP_BASE = 800000;
+      const hasPosed = typeof v.field_scene_mesh_posed === 'function';
+      const uploadPosed = (meshId, slot, anim) => {
+        try { v.field_scene_mesh_posed(slot, anim); } catch (e) { return false; }
+        const positions = v.field_scene_mesh_positions();
+        const indices = v.field_scene_mesh_indices();
+        if (!positions.length || !indices.length) return false;
+        const flat = v.field_scene_mesh_flat_rgba();
+        this.renderer.uploadSceneMesh(meshId, positions, v.field_scene_mesh_uvs(),
+          v.field_scene_mesh_cba_tsb(), indices, flat.length ? flat : null);
+        return true;
+      };
       const skySlots = new Set();
       let skyDrawsHidden = 0;
       const draws = [];
-      const pushDraws = (slots, pos, rots, rotsX, rotsZ) => {
+      this.animProps = [];
+      /* `floorBase` is where this list starts inside the engine's
+       * concatenated floor-wave offset array (terrain draws, then
+       * placements), so a draw skipped below does not shift later rungs. */
+      const pushDraws = (slots, pos, rots, rotsX, rotsZ, anims, floorBase) => {
         for (let i = 0; i < slots.length; i++) {
-          const ms = slots[i];
-          if (!ensureMesh(ms)) continue;
+          const anim = (anims && hasPosed) ? anims[i] : 0;
+          let ms = slots[i];
+          if (anim) {
+            ms = ANIM_PROP_BASE + i;
+            if (!uploadPosed(ms, slots[i], anim)) continue;
+          } else if (!ensureMesh(ms)) {
+            continue;
+          }
           if (isSkyMesh(this.renderer.getMeshAabb(ms),
                         this.renderer.getMeshVertexCount
                           ? this.renderer.getMeshVertexCount(ms) : 0)) {
@@ -217,6 +251,11 @@
             x: pos[i * 3], y: -pos[i * 3 + 1], z: pos[i * 3 + 2],
             rotY: rots ? -(rots[i] & 0xFFF) * Math.PI / 2048 : 0,
             scale: 1.0,
+            /* The env-pack slot + clip, for the .glb baker. */
+            slot: slots[i], anim,
+            /* Floor-wave bookkeeping: this draw's index into the offset
+             * array and the Y the shipped ladder gave it. */
+            floorIdx: floorBase + i, baseY: -pos[i * 3 + 1],
           };
           /* A placement with an authored X/Z tilt cannot go through the
            * yaw-only path above: that builder's negated-yaw convention is a
@@ -235,6 +274,7 @@
               rx * A2R, (rots ? rots[i] & 0xFFF : 0) * A2R, rz * A2R, 1.0);
           }
           draws.push(draw);
+          if (anim) this.animProps.push({ meshId: ms, i, slot: slots[i], anim, lastFrame: 0 });
         }
       };
 
@@ -244,15 +284,19 @@
        * still draws (unrotated). */
       const hasRot = typeof v.field_scene_placement_rot_y === 'function';
       const hasTilt = typeof v.field_scene_placement_rot_x === 'function';
-      pushDraws(v.field_scene_terrain_slots(), v.field_scene_terrain_positions(),
+      const terrainSlots = v.field_scene_terrain_slots();
+      pushDraws(terrainSlots, v.field_scene_terrain_positions(),
         hasRot ? v.field_scene_terrain_rot_y() : null,
         hasTilt ? v.field_scene_terrain_rot_x() : null,
-        hasTilt ? v.field_scene_terrain_rot_z() : null);
+        hasTilt ? v.field_scene_terrain_rot_z() : null,
+        null, 0);
       const terrainCount = draws.length;
       pushDraws(v.field_scene_placement_slots(), v.field_scene_placement_positions(),
         hasRot ? v.field_scene_placement_rot_y() : null,
         hasTilt ? v.field_scene_placement_rot_x() : null,
-        hasTilt ? v.field_scene_placement_rot_z() : null);
+        hasTilt ? v.field_scene_placement_rot_z() : null,
+        hasPosed ? v.field_scene_placement_anim_ids() : null,
+        terrainSlots.length);
 
       /* Frame the camera on the assembled geometry (ground AABB if present,
        * else the draw cluster). */
@@ -372,6 +416,66 @@
           if (pos.length) this.renderer.updateSceneMeshPositions(slots[i], pos);
         }
       }
+      this._applyFloorWave();
+      this._applyGroundWave();
+      this._applyPropFrames();
+    }
+
+    /* The floor-height ladder the scene's scripts animate (field-VM op 0x4C
+     * nibble 9). Every terrain / placed draw was resolved against the ladder
+     * the scene ships; the engine hands back a per-draw Y offset under the
+     * live one (`field_scene_floor_wave_offsets`, the play page's kernel),
+     * empty while the two agree. The page frame negates retail Y. */
+    _applyFloorWave() {
+      const v = this.viewer;
+      if (typeof v.field_scene_floor_wave_offsets !== 'function') return;
+      const wave = v.field_scene_floor_wave_offsets();
+      if (!wave.length) {
+        if (!this._floorWaveLive) return;
+        for (const d of this.draws) {
+          if (d.floorIdx === undefined) continue;
+          d.y = d.baseY;
+          if (d.model) d.model[13] = d.y;
+        }
+        this._floorWaveLive = false;
+        return;
+      }
+      for (const d of this.draws) {
+        if (d.floorIdx === undefined || d.floorIdx >= wave.length) continue;
+        d.y = d.baseY - wave[d.floorIdx];
+        if (d.model) d.model[13] = d.y;
+      }
+      this._floorWaveLive = true;
+    }
+
+    /* The walk ground under the same live ladder: retail's ground pass takes
+     * each cell's corner tiers through it every frame (jouina's pulsing
+     * path, concnow's flesh pits). Empty on a frame the ladder did not
+     * move. */
+    _applyGroundWave() {
+      const v = this.viewer;
+      if (typeof v.field_scene_ground_live_positions !== 'function'
+          || !this.renderer.updateGroundPositions || !this.state || !this.state.hasGround) return;
+      const pos = v.field_scene_ground_live_positions();
+      if (pos.length) this.renderer.updateGroundPositions(pos, null);
+    }
+
+    /* Animated props: re-pose each to the live world's prop-bank cursor when
+     * its frame changed (the windmill's sails turn). */
+    _applyPropFrames() {
+      const v = this.viewer;
+      if (!this.animProps || !this.animProps.length
+          || typeof v.field_scene_placement_frames !== 'function') return;
+      const pf = v.field_scene_placement_frames();
+      for (const p of this.animProps) {
+        const f = (p.i < pf.length) ? pf[p.i] : -1;
+        if (f < 0 || f === p.lastFrame) continue;
+        const posed = v.field_scene_mesh_posed_frame_positions(p.slot, p.anim, f);
+        if (posed.length) {
+          this.renderer.updateSceneMeshPositions(p.meshId, posed);
+          p.lastFrame = f;
+        }
+      }
     }
 
     /* One-line summary of the loaded scene, for a status bar. */
@@ -382,7 +486,7 @@
         ? ` · ${s.skyDrawsHidden} sky-backdrop draw${s.skyDrawsHidden > 1 ? 's' : ''} hidden`
         : '';
       const anim = this.anim
-        ? ` · animated (${this.anim.walker_entries} CLUT walkers, ${this.anim.ambient_parts} ambient fx)`
+        ? ` · animated (${this.anim.live ? 'live scene, ' : ''}${this.anim.walker_entries} CLUT walkers, ${this.anim.ambient_parts} ambient fx)`
         : '';
       return `${s.packCount} environment meshes (${s.drawn} drawn) · ${s.status.placements} placements`
         + ` · ${s.status.terrain} terrain tiles · ${s.status.ground_quads} ground quads${sky}${anim}`;
@@ -409,7 +513,10 @@
       for (const d of s.draws) {
         let mi = handles.get(d.meshId);
         if (mi === undefined) {
-          try { v.field_scene_mesh(d.meshId); } catch (e) { continue; }
+          try {
+            if (d.anim) v.field_scene_mesh_posed(d.slot, d.anim);
+            else v.field_scene_mesh(d.meshId);
+          } catch (e) { continue; }
           mi = v.scene_export_add_mesh(
             'mesh_' + d.meshId,
             v.field_scene_mesh_positions(), v.field_scene_mesh_uvs(),

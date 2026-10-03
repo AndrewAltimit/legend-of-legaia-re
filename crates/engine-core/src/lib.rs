@@ -169,6 +169,7 @@ pub mod scene;
 pub mod scene_assembly;
 pub mod scene_assets;
 pub mod scene_bundle;
+pub mod scene_live;
 pub mod scene_name_sync;
 pub mod scene_resources;
 pub mod screen_fx;

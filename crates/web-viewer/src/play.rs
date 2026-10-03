@@ -408,18 +408,8 @@ impl LegaiaRuntime {
         key: PropPoseKey,
     ) -> Option<Vec<([i16; 3], [i16; 3])>> {
         let bundle = self.scene_anm.as_ref()?;
-        let rec_idx = (anim_id as usize).checked_sub(1)?;
-        let rec = bundle.record(rec_idx).ok()?;
-        let bones = rec.bone_count as usize;
         let objects = self.res()?.tmds.get(res_idx)?.tmd.objects.len();
-        if bones != objects {
-            crate::console_log(&format!(
-                "play: ANM record {rec_idx} has {bones} bones but env mesh (res {res_idx}) \
-                 has {objects} objects - not posing"
-            ));
-            return None;
-        }
-        field_env::prop_bone_offsets(bundle, anim_id, key, bones)
+        field_env::posed_prop_offsets(bundle, anim_id, key, objects)
     }
 }
 
@@ -567,17 +557,7 @@ impl LegaiaRuntime {
         let Some(rtmd) = res.tmds.get(res_idx) else {
             return Vec::new();
         };
-        let mut morphed: Option<legaia_engine_core::scene_resources::ResolvedTmd> = None;
-        for (group, obj) in rtmd.tmd.objects.iter().enumerate() {
-            if let Some(deltas) =
-                host.world
-                    .current_morph_deltas(s, group as u32, obj.vertices.len())
-            {
-                let base = morphed.take().unwrap_or_else(|| rtmd.clone());
-                morphed = Some(base.with_group_deltas(group as u32, &deltas));
-            }
-        }
-        let Some(m) = morphed else {
+        let Some(m) = host.world.morphed_env_tmd(s, rtmd) else {
             return Vec::new();
         };
         let (mesh, _) = crate::field_scene::build_hybrid_env_mesh(&m, &res.vram);

@@ -2321,6 +2321,35 @@ The generalisation: when two hosts share a builder whose output *degrades*
 rather than errors, the honest oracle runs the builder twice - once the right
 way, once the suspected wrong way - and asserts they differ.
 
+## The map viewer animates off a live world, not a bake
+
+The site's game-world page and the asset viewer's full-map button draw a field
+scene through `web-viewer::field_scene`. Every tier above treats it as a
+render surface (tier 7 derives it), and every one stayed green while it showed
+a different scene from the play hosts: it baked the draw lists once, against
+the floor-height ladder the MAN header ships, and ran its own copy of the
+ambient-tree spawn in a private `World` beside them. What the scene's scripts
+move on the world tick never reached it - the ladder waves (`jouina`,
+`tunnela`, Rim Elm's tide), `concnow`'s entry-time ladder replacement (its
+flesh mounds stood flat), the prop bank's clips (the Rim Elm windmill, whose
+parts the viewer did not even pose at rest, so they heaped on its hub), and the
+op-driven VRAM effects only a running world issues. No gate could see it: the
+missing input was a world, not a call.
+
+The viewer now owns a world: `engine-core::scene_live::LiveScene` enters the
+scene through `SceneHost` the way the play pages' picker does and ticks it
+headless, and the viewer reads it through the play page's own kernels
+(`FloorWave`, `field_ground::live_render_positions`,
+`PropAnimBank::pose_key` with `field_env::posed_prop_offsets`,
+`World::step_field_vram_effects`, `World::morphed_env_tmd`). Its private
+ambient spawn is gone. The gate is behavioural, not textual: the disc-gated
+`crates/web-viewer/tests/field_scene_anim.rs` runs the viewer and
+`LegaiaRuntime` side by side and requires the floor-wave offsets, the ground
+positions, every prop's pose key and every VRAM texel the animation writes to
+agree tick for tick. VRAM is compared as the **written** set, not the image:
+the play page's VRAM also carries party and effect pages the map never loads,
+so the two images differ before the first tick.
+
 ## Five shapes a side-by-side read finds that no tier fails on
 
 A domain-by-domain read of the three hosts' per-frame steps *and* draw passes,

@@ -1076,6 +1076,27 @@ pub fn prop_bone_offsets(
     )
 }
 
+/// [`prop_bone_offsets`] under retail's **count-equality contract**: the draw
+/// walker (`FUN_8001B964`) refuses to pose a prop whose mesh chain and clip
+/// disagree on the part count, so `None` - draw the raw mesh - unless scene
+/// ANM record `anim_id - 1` has exactly `object_count` bones. The one gate
+/// every host's posed-prop build goes through.
+///
+/// REF: FUN_8001B964
+pub fn posed_prop_offsets(
+    bundle: &legaia_asset::player_anm::PlayerAnmBundle,
+    anim_id: u8,
+    key: PropPoseKey,
+    object_count: usize,
+) -> Option<Vec<([i16; 3], [i16; 3])>> {
+    let rec = bundle.record((anim_id as usize).checked_sub(1)?).ok()?;
+    let bones = rec.bone_count as usize;
+    if bones != object_count {
+        return None;
+    }
+    prop_bone_offsets(bundle, anim_id, key, bones)
+}
+
 /// One animation command a placed prop's bind script issues against `+0x62` /
 /// `+0x6A`. The field VM's whole animation surface, as the retail prop records
 /// use it.

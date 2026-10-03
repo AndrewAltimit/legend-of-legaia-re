@@ -685,6 +685,39 @@ in retail. `load()` is re-entrant, so a navigator swap releases the previous
 scene's GL meshes rather than leaking them. Disc-gated parity test:
 `tests/field_scene_assembly.rs` (incl. the colour-only prop recovery).
 
+### The map is live
+
+A baked map is not the scene the game shows. The scene's own scripts move
+it on every world tick: the field VM animates the floor-height ladder (op
+`0x4C` nibble 9 - `jouina`'s travelling path wave, `tunnela`'s pulsing
+cells, Rim Elm's tide), and some entry scripts replace the shipped ladder
+outright (`concnow`'s `4C 9E` raises its flesh mounds, so its baked heights
+are never shown at all); the prop bank ticks every placed prop's clip (the
+Rim Elm windmill); the ambient move-VM tree and scripted CLUT effects write
+VRAM; VDF morphs move vertices.
+
+So `field_scene_anim_init` enters the scene **live and headless** through
+`engine-core::scene_live::LiveScene` - an ordinary `SceneHost` entered the
+way the play pages' scene picker enters it, ticked once per retail vsync
+with no pad, never following the scene out (a door or scripted battle
+re-enters it; repeated exits stop the ticking). The page reads that world
+through the play page's own kernels, so there is no second animation path:
+
+| accessor | kernel | what moves |
+|---|---|---|
+| `field_scene_floor_wave_offsets` | `field_env::FloorWave` | terrain + placed draws on the live ladder |
+| `field_scene_ground_live_positions` | `field_ground::live_render_positions` | the walk ground, per vertex |
+| `field_scene_placement_anim_ids` / `_frames`, `field_scene_mesh_posed` / `_posed_frame_positions` | `PropAnimBank::pose_key`, `field_env::posed_prop_offsets` | clip-bound props, posed (multi-object props assemble instead of heaping on the origin) and re-posed per frame |
+| `field_scene_anim_tick` | `World::step_field_vram_effects`, `clut_walk_anim` | the VRAM effects and the CLUT walker |
+| `field_scene_morph_slots` / `_positions` | `World::morphed_env_tmd` | VDF morphs |
+
+The overworld is not run live (its ground does not follow the field ladder;
+its animation is the CLUT walker). The disc-gated
+`tests/field_scene_anim.rs` runs the viewer and the play runtime side by side
+on `concnow`, `jouina`, `town01` and `jou` and requires every one of these
+quantities - and every VRAM texel the animation writes - to agree tick for
+tick.
+
 ## Field-NPC catalog (`field_npc`)
 
 `LegaiaViewer::set_scene_npcs(name)` loads the field scene (for its TMD pool
