@@ -129,7 +129,7 @@ pub use field_prop_state::FieldPropState;
 pub use field_script_actor_state::{
     FieldAttachedLight, FieldScriptActorState, FieldScriptArc, ScriptActorRef,
 };
-pub use field_terrain::FieldTerrain;
+pub use field_terrain::{FieldTerrain, step_floor_ladder};
 pub use field_vm_state::FieldVmState;
 pub use frame_clock::FrameClock;
 pub use item_bag::{BagEntry, ItemBag};

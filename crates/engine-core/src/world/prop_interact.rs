@@ -50,18 +50,28 @@ use super::*;
 const PROP_RUN_PARK_TIMEOUT: u32 = 1800;
 
 impl World {
-    /// Advance the placed-prop layer one field tick: step the clips, step an
-    /// in-flight prop record run, and start a run for a movement touch posted
-    /// by this tick's locomotion.
-    pub fn tick_prop_interactions(&mut self) {
-        // The per-actor anim tick runs unconditionally (`FUN_800204F8` from
-        // the actor tick) - the windmill turns during dialogs too.
+    /// One frame of the per-actor anim tick over every placed prop and MAN
+    /// actor. It runs unconditionally (`FUN_800204F8` from the actor tick) -
+    /// the windmill turns during dialogs too - and on the overworld as in a
+    /// town: a kingdom map is a field-run scene whose actors play the
+    /// bundle's slot-4 clips through the same tick
+    /// (`docs/formats/world-map-overlay.md`).
+    ///
+    /// REF: FUN_800204F8
+    pub fn tick_actor_anims(&mut self) {
         self.props.bank.tick_anims();
         // The same tick over the NPC actors: the morph envelope first
         // (`FUN_800204F8` runs `FUN_80020740` before its cursor step), then
         // the clip cursors (a treasure chest's lid, every NPC's idle loop).
         self.tick_npc_morphs();
         self.tick_npc_clips();
+    }
+
+    /// Advance the placed-prop layer one field tick: step the clips, step an
+    /// in-flight prop record run, and start a run for a movement touch posted
+    /// by this tick's locomotion.
+    pub fn tick_prop_interactions(&mut self) {
+        self.tick_actor_anims();
         self.step_prop_interaction();
         if let Some(anchor) = self.props.pending_touch.take() {
             self.start_prop_interaction(anchor);

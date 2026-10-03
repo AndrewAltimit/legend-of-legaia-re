@@ -69,6 +69,55 @@ pub fn live_render_positions(hf: &WalkHeightfield, world_lut: &[i16; 16]) -> Vec
         .collect()
 }
 
+/// The tile `(col, row)` of each heightfield vertex's cell: read off each
+/// quad's lowest vertex (the builder places it at `(col * 128, _, row *
+/// 128)` and gives every cell its own four corners), `None` for a vertex no
+/// quad references.
+pub fn vertex_cells(hf: &WalkHeightfield) -> Vec<Option<(i32, i32)>> {
+    let mut out = vec![None; hf.positions.len()];
+    for quad in hf.indices.chunks(6) {
+        let Some(&base) = quad.iter().min() else {
+            continue;
+        };
+        let Some(p) = hf.positions.get(base as usize) else {
+            continue;
+        };
+        let cell = ((p[0] / 128.0).floor() as i32, (p[2] / 128.0).floor() as i32);
+        for &i in quad {
+            if let Some(c) = out.get_mut(i as usize) {
+                *c = Some(cell);
+            }
+        }
+    }
+    out
+}
+
+/// [`live_render_positions`] with a ladder **per cell**: vertex `i` resolves
+/// through `lut_of(cells[i])` ([`vertex_cells`]). A whole-map view draws
+/// every room at once, and a scene whose rooms each install their own ladder
+/// (`concnow`'s system script re-installs it per region) shows each room on
+/// the ladder it would hold with the player standing in it. A vertex with no
+/// cell takes `lut_of(None)`.
+pub fn live_render_positions_by_cell<'a>(
+    hf: &WalkHeightfield,
+    cells: &[Option<(i32, i32)>],
+    lut_of: impl Fn(Option<(i32, i32)>) -> &'a [i16; 16],
+) -> Vec<[f32; 3]> {
+    if hf.corner_tiers.len() != hf.positions.len() {
+        return render_positions(hf);
+    }
+    hf.positions
+        .iter()
+        .zip(&hf.corner_tiers)
+        .enumerate()
+        .map(|(i, (p, &tier))| {
+            let lut = lut_of(cells.get(i).copied().flatten());
+            let y = f32::from(lut[usize::from(tier & 0x0F)]);
+            [p[0], y + crate::coplanar_draws::GROUND_SINK, p[2]]
+        })
+        .collect()
+}
+
 /// The heightfield's triangle indices as drawn: every triangle reversed
 /// (`[a, b, c]` -> `[a, c, b]`) onto the scene TMDs' winding parity. A
 /// trailing partial triangle, which a well-formed grid never has, is kept

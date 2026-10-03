@@ -276,13 +276,11 @@ impl World {
         // which the port declines to do.
         if !self.terrain.floor_tier_bobs.is_empty() {
             let mut bobs = std::mem::take(&mut self.terrain.floor_tier_bobs);
-            for bob in bobs.iter_mut() {
-                if let Some(height) = bob.step(frame_delta)
-                    && let Some(rung) = self.terrain.floor_height_lut.get_mut(bob.slot as usize)
-                {
-                    *rung = height;
-                }
-            }
+            crate::world::step_floor_ladder(
+                &mut bobs,
+                &mut self.terrain.floor_height_lut,
+                frame_delta,
+            );
             bobs.append(&mut self.terrain.floor_tier_bobs);
             self.terrain.floor_tier_bobs = bobs;
         }
@@ -1781,6 +1779,11 @@ impl World {
                 // the ambient-particle gate (`4C 30`) that puts fog over the
                 // continent. Same frame slice as the field arm.
                 self.step_field_frame_slice();
+                // The per-actor anim tick: the overworld's MAN actors play
+                // the kingdom bundle's slot-4 clips through `FUN_800204F8`
+                // exactly as a town's do (a live `map01` actor list holds
+                // four clip-bound actors resolving into that bank).
+                self.tick_actor_anims();
                 // Clock a committed overworld encounter's field-to-battle
                 // transition (the intro overlay rides this phase) and open
                 // the fight when it elapses - the world-map twin of the
