@@ -299,7 +299,8 @@ impl LegaiaMinigames {
             fx: Default::default(),
             fishing_prizes: Default::default(),
             fishing_scene: None,
-            fishing_angler_facing: 0,
+            // The lead's rest facing (`0x800`, into the water).
+            fishing_angler_facing: 0x800,
             item_names: None,
             muscle: None,
             muscle_run: None,

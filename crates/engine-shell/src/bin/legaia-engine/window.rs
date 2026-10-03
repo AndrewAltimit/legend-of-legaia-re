@@ -1082,6 +1082,10 @@ struct PlayWindowApp {
     muscle_surface: legaia_engine_core::muscle_dome_scene::MuscleDomeSurface,
     /// The dome surface on the GPU while a dome session is live.
     muscle_gpu: Option<minigames::BakaDuelGpu>,
+    /// The fishing pond surface (`legaia_engine_core::fishing_scene`) and its
+    /// GPU copy while a fishing session is up.
+    fishing_surface: legaia_engine_core::fishing_scene::FishingSurface,
+    fishing_gpu: Option<minigames::BakaDuelGpu>,
     /// The dance venue on the GPU while the dance entry's globals are staged
     /// (see `PlayWindowApp::sync_dance_venue`).
     dance_venue_gpu: Option<minigames::DanceVenueGpu>,

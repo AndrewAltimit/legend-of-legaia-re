@@ -858,7 +858,10 @@ impl PlayWindowApp {
             (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
         ];
         let world = &mut self.session.host.world;
-        let view = resolve_field_camera(world, &self.session.camera, None, center).field_view();
+        // The pond draws under the venue camera; the line projects through it.
+        let view = legaia_engine_core::fishing_venue::venue_view(&world.minigames).or_else(|| {
+            resolve_field_camera(world, &self.session.camera, None, center).field_view()
+        });
         // The rod model first: its actor runs ahead of the lure tick, so in a
         // shared bucket its packets are the earlier `AddPrim`s.
         let mut prims: Vec<_> = world
@@ -964,6 +967,86 @@ impl PlayWindowApp {
             }
         };
         self.baka_gpu = Some(BakaDuelGpu {
+            generation,
+            vram,
+            textured,
+            untextured,
+            mvp,
+        });
+    }
+
+    /// Pose the fishing pond - the `other1` venue with the party on its
+    /// shore seats (`legaia_engine_core::fishing_scene::FishingSurface`, the
+    /// kernel the browser play page drives too) - and put it on the GPU. The
+    /// redraw draws it in place of the walked-in field, which stays loaded
+    /// underneath and is shown again unchanged when the session ends.
+    pub(super) fn refresh_fishing_gpu(&mut self) {
+        let world = &self.session.host.world;
+        let live = world.mode == SceneMode::Fishing;
+        let generation_before = self.fishing_surface.generation();
+        if self
+            .fishing_surface
+            .frame(&self.session.host.index, &world.minigames, live)
+            .is_none()
+        {
+            self.fishing_gpu = None;
+            return;
+        }
+        let (Some(r), Some(scene)) = (self.win.renderer.as_ref(), self.fishing_surface.scene())
+        else {
+            return;
+        };
+        let generation = self.fishing_surface.generation();
+        let (sw, sh) = r.surface_size();
+        let (_, aspect) = super::geometry::scene_viewport_for(sw, sh);
+        let mvp = Mat4::from_cols_array(&scene.vp_raw(aspect));
+        let normals = vec![[0.0f32; 3]; scene.positions.len()];
+        let textured = r
+            .upload_vram_mesh(
+                &scene.positions,
+                &scene.uvs,
+                &scene.cba_tsb,
+                &normals,
+                &scene.colors,
+                &scene.textured_indices,
+            )
+            .map_err(|e| log::warn!("fishing pond: textured upload failed: {e:#}"))
+            .ok();
+        let fill: Vec<[u8; 3]> = scene
+            .flat_rgba
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|c| [c[0], c[1], c[2]])
+            .collect();
+        let untextured = (!scene.untextured_indices.is_empty())
+            .then(|| {
+                r.upload_color_mesh(&scene.positions, &fill, &scene.untextured_indices)
+                    .map_err(|e| log::warn!("fishing pond: untextured upload failed: {e:#}"))
+                    .ok()
+            })
+            .flatten();
+        let stale = generation != generation_before
+            || self
+                .fishing_gpu
+                .as_ref()
+                .is_none_or(|g| g.generation != generation);
+        let vram = if stale {
+            match self.fishing_surface.vram().map(|v| r.upload_vram(v)) {
+                Some(Ok(v)) => v,
+                Some(Err(e)) => {
+                    log::warn!("fishing pond: vram upload failed: {e:#}");
+                    return;
+                }
+                None => return,
+            }
+        } else {
+            match self.fishing_gpu.take() {
+                Some(g) => g.vram,
+                None => return,
+            }
+        };
+        self.fishing_gpu = Some(BakaDuelGpu {
             generation,
             vram,
             textured,

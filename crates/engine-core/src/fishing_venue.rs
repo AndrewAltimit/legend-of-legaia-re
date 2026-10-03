@@ -155,6 +155,16 @@ pub fn venue_camera_view(
     }
 }
 
+/// The venue camera over the live lead actor (his position, floor and D-pad
+/// aim), while a fishing session is up: the view both play hosts draw the
+/// pond with and project the fishing line through. `None` before the venue
+/// has armed.
+pub fn venue_view(mg: &MinigameState) -> Option<legaia_engine_vm::psx_camera::FieldCameraView> {
+    mg.fishing.as_ref()?;
+    let w = mg.fishing_venue.wander.as_ref()?;
+    Some(venue_camera_view(w.x, w.y, w.z, w.facing))
+}
+
 /// Where the lead's actor spawns for `venue`, `(x, y, z)` world units - the
 /// actor [`fa::FishWander`] models (the lead's tick `FUN_801D2050` /
 /// `FUN_801D2278`, whose actor pointer `DAT_801D928C` is the lead's).
@@ -414,6 +424,18 @@ pub fn project_to_retail_screen(
 /// `+0x4000`, cell grid at `+0x8000`). `None` when the current scene carries
 /// no field map.
 pub fn venue_floor_bytes(host: &crate::scene::SceneHost) -> Option<Vec<u8>> {
+    // The pond's own `.MAP` (the session's venue), as retail installs the
+    // fishing scene's buffer behind `_DAT_1F8003EC`; the departure field's
+    // only as a fallback for a session opened with no venue.
+    if let Some(v) = host
+        .world
+        .minigames
+        .fishing
+        .as_ref()
+        .and_then(|s| s.venue_map())
+    {
+        return Some(v.map.clone());
+    }
     let scene = host.scene.as_ref()?;
     let idx = scene.field_map_index(&host.index)?;
     host.index.entry_bytes_extended(idx).ok()
