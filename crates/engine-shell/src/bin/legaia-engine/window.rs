@@ -838,7 +838,7 @@ struct PlayWindowApp {
     /// buffers. Bounded by `NPCs × clip length` (tens of small meshes).
     ///
     /// Invalidated wholesale when `upload_assets` rebuilds `npc_clip_players`
-    /// (scene change), and per-slot when a channel op-`0x4B` ANIMATE cue swaps
+    /// (scene change), and per-slot when a channel clip cue (`A2` ExecMove / `4C 51` run) swaps
     /// that slot's clip - a new clip reuses the same low frame indices, so its
     /// entries must not alias the outgoing clip's.
     npc_pose_cache: NpcPoseCache,
@@ -853,7 +853,7 @@ struct PlayWindowApp {
     /// clips. Empty (and free) when the env var is unset.
     npc_pose_verify: NpcPoseVerify,
     /// The ANM bundles the placements resolved their clips through,
-    /// retained past scene load so channel op-`0x4B` ANIMATE cues
+    /// retained past scene load so channel clip cues (`A2` / `4C 51`)
     /// (`World::npcs.anim_cues`) can re-target an NPC's clip player
     /// mid-scene (the prologue-vignette "characters doing things" beats).
     /// `.0` = the per-scene bundle, `.1` = the party locomotion bundle

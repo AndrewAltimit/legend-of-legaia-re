@@ -1278,7 +1278,7 @@ retail data either way.
 | 0x46 | `VIEW_WINDOW` | Camera visible-tile-window setter (`0x1F8003E8..EB`, signed `[nearX, nearZ, farX, farZ]` tile offsets from the camera tile - see [`encounter.md`](../formats/encounter.md#the-scratchpad-window-0x1f8003e8eb)). Long form `46 24 n0 n1 f0 f1` writes the four bytes directly; short form `46 a b` builds a window of half-width `a >> 1` in X about offset `-1` and `b >> 1` in Z about `+2`. Not fog. |
 | 0x49 | `STATE_RESUME` | Tristate state machine on `_DAT_8007B450`, sub-cases 0..0xD. [Detail](#0x49-state_resume). |
 | 0x4A | `WAIT_FRAMES` | `ctx[+0x54] += scratch_delta; if (sum < operand) return; else PC += default`. Frame timer. |
-| 0x4B | `ANIMATE` | Multi-keyframe setup. Writes `ctx[+0xB0+N] / +0xB8 / +0xC8`, sets `+0x10` bit 0x1000 (animation flag). PC += 3 + count*4. |
+| 0x4B | `ANIMATE` | **VDF morph-lane arm** - the field sibling of move-VM op `0x0A`, not a clip select. Writes sub-entry `base + N` to `ctx[+0xB0+N]`, the up / down ramp velocities to `+0xB8` / `+0xC8`, weight 0 to `+0xA0`; sets `+0x10` bit 0x1000, `+0x62 = (+0x62 \| 0x1000) & 0xD3FF`, `+0x6C = count`. PC += 3 + count*4. See [field-ambient-fx](field-ambient-fx.md#the-vdf-vertex-morph-chain). |
 | 0x4C | `MENU_CTRL` | Outer-nibble-dispatched (16 sub-dispatchers). See [`script-vm-menuctrl.md`](script-vm-menuctrl.md). |
 | 0x4D | `BBOX_TEST` | Inside-box advances PC by 7; outside-box jumps to `pc + header_size + 4 + LE_u16(operand[4..6])` via `FUN_801E3614`. |
 | 0x4E | `INVENTORY_CMP` | Compare-and-jump on party state; every sub-op 0..9 is the 7-byte compare-and-skip. [Detail](#0x4e-inventory_cmp). |

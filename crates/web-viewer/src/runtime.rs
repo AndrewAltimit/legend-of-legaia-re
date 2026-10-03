@@ -61,7 +61,7 @@ pub struct LegaiaRuntime {
     /// Live NPC clip players keyed by placement slot - the browser twin of
     /// the native window's `npc_clip_players`. Advanced one tick per
     /// [`Self::tick_frame`] (the sim clock, not the render clock) and
-    /// re-targeted by drained op-`0x4B` ANIMATE cues.
+    /// re-targeted by drained clip cues (`A2` ExecMove, `4C 51`).
     pub(crate) npc_clips: std::collections::HashMap<u8, NpcClip>,
     /// The scene's ANM bundle (the pose source for scene NPCs **and** placed
     /// props), resolved once per scene the way the native window's
@@ -1897,7 +1897,7 @@ impl LegaiaRuntime {
         }
     }
 
-    /// One sim tick of NPC clip playback: drain this tick's op-`0x4B` ANIMATE
+    /// One sim tick of NPC clip playback: drain this tick's `A2` / `4C 51` clip
     /// cues (re-targeting the cued slots' players - the cue's anim id names a
     /// bundle record the same way the placement anim byte does, `record =
     /// id - 1`, against whichever bundle the placement resolved through), then
@@ -1909,7 +1909,7 @@ impl LegaiaRuntime {
         // Both ANIMATE-cue queues drain through the shared frame-tail kernel
         // (`World::drain_field_anim_cues`) the native window calls every sim
         // tick: the player's `A2 F8` gestures land on the world's clip
-        // player, and each op-`0x4B` NPC re-target comes back resolved
+        // player, and each NPC re-target comes back resolved
         // against the bundle the slot poses from.
         let Some(host) = self.scene_host.as_mut() else {
             return;

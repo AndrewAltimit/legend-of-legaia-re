@@ -618,6 +618,9 @@ impl World {
         if let Some(pulse) = self.ambient.entry_vdf_pulse.as_ref() {
             lanes.extend(pulse.lanes_for(pack_slot, group));
         }
+        // Placed objects whose bind record armed lanes with op `0x4B`
+        // (`crate::world::npc_morph`).
+        lanes.extend(self.object_morph_lanes_for(pack_slot));
         if lanes.is_empty() {
             return None;
         }

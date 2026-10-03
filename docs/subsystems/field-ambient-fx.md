@@ -511,6 +511,29 @@ scaled by the lane weight (`FUN_8005B038`: `dst += delta * weight >>
 scratch for that draw, and the caller restores the authored pointer
 afterwards - the rest pose is never mutated.
 
+**Field actors arm the same lanes through field-VM op `0x4B`**
+(`0x801E0820..0x801E08C0` in `FUN_801DE840`): `[4B count base (up:u16
+down:u16) x count]` writes sub-entry `base + i` to `+0xB0 + i`, the two
+velocities to `+0xB8` / `+0xC8`, a zero weight to `+0xA0`, raises
+`+0x10 & 0x1000` and rewrites `+0x62 = (+0x62 | 0x1000) & 0xD3FF` - nothing
+there selects a clip, and the actor tick's anim step `FUN_800204F8` runs the
+envelope before its cursor work. A census over the disc's MAN scripts finds
+the op in most towns and dungeons, as a placement's own prologue or as a
+cutscene's cross-context poke. `rikuroa`'s Genesis tree is the worked
+example: three `.MAP` placed objects bound to `P0[2..4]`, whose bind-time
+prologues arm `4B 07 00 ..` / `4B 01 08 ..` / `4B 01 07 ..` while story flag
+`0x142` is clear and raise HOLD (`2B 0A`) behind it, so the envelope primes
+every lane to `0x1000` and the tree draws withered. `rikuroa_pre_caruban`
+holds those weights with `+0x62 = 0x415`; `rikuroa_post_genesis_tree` holds
+them at `0` and draws the full tree. Engine: `World::arm_field_morph` /
+`tick_npc_morphs` (`engine-core::world::npc_morph`), keyed by owner - a
+placement slot or a bound object's flat record. A bound object's lanes reach
+its placed draws' env-pack meshes through `current_morph_deltas`, so both
+hosts' existing pack-mesh substitution draws them
+(`crates/engine-core/tests/npc_morph_rikuroa_disc.rs`). A placement's
+(NPC's) lanes are armed and ticked, but neither host re-stages an NPC mesh
+from them yet.
+
 Engine: kernels in `engine-vm::vdf_morph` (record walk, GPF blend,
 ActorState envelope bridge), envelope on armed ambient parts in
 `World::tick_ambient_part`, morph surface

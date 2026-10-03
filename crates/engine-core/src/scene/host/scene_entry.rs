@@ -570,6 +570,9 @@ impl SceneHost {
         self.world.field_vm.stepping_view.clear();
         self.world.field_vm.channels_man = None;
         self.world.npcs.anim_cues.clear();
+        self.world.npcs.morphs.clear();
+        self.world.npcs.object_pack_slots.clear();
+        self.world.npcs.morph_dirty.clear();
         self.world.npcs.clip_current.clear();
         self.world.npcs.clip_bones.clear();
         // An in-flight ledge hop is scene-scoped, and its steering lock is
@@ -1245,6 +1248,19 @@ impl SceneHost {
                             })
                             .collect(),
                     };
+                    // The pack meshes each bound record's placed draws use,
+                    // so an op-`0x4B` morph a bind's prologue arms reaches
+                    // them (`World::arm_field_morph`).
+                    if let Some(scene) = self.scene.as_ref()
+                        && let (Ok(Some(placements)), Ok(Some(binds))) = (
+                            scene.field_object_placements(&self.index),
+                            scene.field_object_binds(&self.index),
+                        )
+                    {
+                        self.world.set_object_morph_targets(
+                            crate::field_env::object_record_pack_slots(&placements, &binds),
+                        );
+                    }
                     self.world
                         .seed_object_channels(&man_file, &man_bytes, &object_binds);
                     // Boss-stager placements (chapter-1: Mt. Rikuroa's Caruban

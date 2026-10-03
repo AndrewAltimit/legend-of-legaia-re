@@ -178,10 +178,25 @@ pub struct FieldNpcState {
     /// ([`crate::world::World::pre_run_field_channel_prologues`]) and on a
     /// touch, whatever this says.
     pub animate: bool,
-    /// Animation cues raised by channel scripts (op `0x4B` ANIMATE):
-    /// `placement_index -> (count, base_id, keyframe bytes)`. The windowed
-    /// host drains these each frame and re-targets the NPC's clip player.
+    /// Clip re-target cues raised by channel scripts - a cross-context
+    /// `A2` ExecMove or a `4C 51` run's move-anim id, each an actor `+0x5C`
+    /// write: `placement_index -> (count, move_id, extra bytes)`. The hosts
+    /// drain these each frame and re-target the NPC's clip player.
     pub anim_cues: std::collections::HashMap<u8, (u8, u8, Vec<u8>)>,
+    /// Each field actor's op-`0x4B` VDF morph lanes and ramp envelope, keyed
+    /// by owner (a placement slot or a bound object's flat record), in the
+    /// retail actor layout (`+0x6C` count, `+0xA0` weights, `+0xB0`
+    /// sub-entry indices, `+0xB8` / `+0xC8` velocities, `+0x7C` done mask) -
+    /// see [`crate::world::World::arm_field_morph`].
+    pub morphs:
+        std::collections::BTreeMap<crate::world::MorphOwner, legaia_engine_vm::move_vm::ActorState>,
+    /// `.MAP` placed-object binds: flat MAN record -> the env-pack slots of
+    /// the placed draws whose anchor tile binds it
+    /// ([`crate::world::World::set_object_morph_targets`]).
+    pub object_pack_slots: std::collections::BTreeMap<u16, Vec<usize>>,
+    /// Placement slots whose morph deltas moved since a host last drained
+    /// them ([`crate::world::World::take_npc_morph_dirty`]).
+    pub morph_dirty: std::collections::BTreeSet<u8>,
     /// The move id each NPC's clip player last took from a single-move cue
     /// (`(1, id, [])` - a `+0x5C` write), keyed by placement slot: retail's
     /// `actor+0x5E`, the "clip now playing" half of the move-table
@@ -244,6 +259,9 @@ impl FieldNpcState {
             ambient: std::collections::BTreeMap::new(),
             animate: false,
             anim_cues: std::collections::HashMap::new(),
+            morphs: std::collections::BTreeMap::new(),
+            object_pack_slots: std::collections::BTreeMap::new(),
+            morph_dirty: std::collections::BTreeSet::new(),
             clip_current: std::collections::HashMap::new(),
             clip_cursors: std::collections::BTreeMap::new(),
             clip_bones: std::collections::HashMap::new(),

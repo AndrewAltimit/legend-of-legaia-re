@@ -126,7 +126,7 @@ pub(crate) struct NpcRender {
 /// play-window's `npc_clip_players` map: a [`FieldClipPlayer`] per placement
 /// slot, advanced in **sim-tick** time (one [`LegaiaRuntime::tick_frame`] =
 /// one 60 Hz tick) so the clip plays at the retail cadence regardless of the
-/// display refresh rate, and re-targeted by channel op-`0x4B` ANIMATE cues
+/// display refresh rate, and re-targeted by channel clip cues (`A2` ExecMove, `4C 51`)
 /// (drained from `World::npcs.anim_cues`) so scripted actors perform
 /// their beats instead of looping the placement clip.
 ///

@@ -631,7 +631,7 @@ impl PlayWindowApp {
             // is still mutable; the `&self` draw passes read the committed
             // pen/rect off the record.
             self.sync_text_balloon();
-            // ANIMATE cues (op `0x4B` for NPCs, `A2 F8` ExecMove for the
+            // clip cues (`A2` / `4C 51` for NPCs, `A2 F8` ExecMove for the
             // player), drained every tick in every mode through the shared
             // kernel. This used to run inside the draw pass and only in
             // `SceneMode::Field`, so a cue raised anywhere else waited in the
@@ -1289,7 +1289,7 @@ impl PlayWindowApp {
             // render, so the draw pass below can look its mesh up in the cache.
             let mut npc_frames: Vec<(u8, usize)> = Vec::new();
             if self.session.host.world.field_npc_clips_advance() {
-                // (The op-`0x4B` / `A2 F8` cue drain that re-targets these
+                // (The `A2` / `4C 51` cue drain that re-targets these
                 // players runs per sim tick in the loop above -
                 // `Self::drain_anim_cues`.)
                 let verify = std::env::var_os("LEGAIA_POSE_CACHE_VERIFY").is_some();

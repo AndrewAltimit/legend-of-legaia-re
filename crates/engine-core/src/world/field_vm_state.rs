@@ -83,6 +83,11 @@ pub struct FieldVmState {
     /// (animate, move) can attribute the side-effect to that placement's NPC.
     /// `None` outside a channel-targeted step.
     pub executing_channel: Option<u8>,
+    /// The flat MAN record of the `.MAP` object-bind context currently
+    /// executing (its bind-time prologue, or the target of a cross-context
+    /// poke) - the object twin of [`Self::executing_channel`], which never
+    /// names an object bind. `None` outside such a step.
+    pub executing_object: Option<u16>,
     /// `true` while [`crate::world::World::run_spawned_record_slice`] is stepping a spawned
     /// partition-2 record context (the modal cutscene timeline or a
     /// concurrent helper context). Host hooks use it to distinguish a
@@ -150,6 +155,7 @@ impl FieldVmState {
             stepping_view: Vec::new(),
             channels_man: None,
             executing_channel: None,
+            executing_object: None,
             in_spawned_record_slice: false,
             halted_elsewhere: Vec::new(),
             dialog_claims: 0,

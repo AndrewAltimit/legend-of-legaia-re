@@ -293,6 +293,30 @@ pub fn object_binds(
     out
 }
 
+/// Flat MAN record -> the env-pack slots of every placed object whose
+/// footprint-anchor tile binds it: the meshes a bound object's op-`0x4B`
+/// morph lanes ([`crate::world::World::arm_field_morph`]) reach. One record
+/// can bind several placements (`rikuroa`'s Genesis tree is three objects on
+/// three records, each its own mesh).
+// REF: FUN_8003A55C
+pub fn object_record_pack_slots(
+    placements: &[Placement],
+    binds: &HashMap<(u8, u8), ObjectBind>,
+) -> std::collections::BTreeMap<u16, Vec<usize>> {
+    let mut out: std::collections::BTreeMap<u16, Vec<usize>> = Default::default();
+    for p in placements {
+        let (Some(pack), Some(bind)) = (p.pack_index, binds.get(&(p.anchor_col, p.anchor_row)))
+        else {
+            continue;
+        };
+        let slots = out.entry(u16::from(bind.record)).or_default();
+        if !slots.contains(&(pack as usize)) {
+            slots.push(pack as usize);
+        }
+    }
+    out
+}
+
 /// The animation id in MAN partition-0 record `index`'s header
 /// (`[u8 n][n*2 name bytes][u8 anim_id]`). `None` when the record or its header
 /// runs past the buffer.

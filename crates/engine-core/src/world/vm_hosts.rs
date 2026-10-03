@@ -1831,16 +1831,21 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn setup_animation(&mut self, _ctx: &mut FieldCtx, count: u8, base_id: u8, frames: &[u8]) {
-        // A per-actor channel script animating its own NPC (op `0x4B`
-        // ANIMATE): retail installs the sequence `base_id + k` into the
-        // actor's anim-slot array (`+0xB0`, `FUN_801DE840` case 0x4B) with two
-        // u16 params per entry. Raise a cue keyed by the placement so the
-        // windowed host re-targets that NPC's clip player.
-        if let Some(placement) = self.world.field_vm.executing_channel {
-            self.world
-                .npcs
-                .anim_cues
-                .insert(placement, (count, base_id, frames.to_vec()));
+        // Op `0x4B` on a placement's own context: its VDF morph lanes
+        // (`World::arm_npc_morph`), not a clip - the arm writes the `+0xB0`
+        // sub-entry bytes and the `+0xB8` / `+0xC8` ramp velocities and
+        // touches neither `+0x5C` nor the clip pointer.
+        // PORT: FUN_801DE840 (the op-`0x4B` arm)
+        let owner = match (
+            self.world.field_vm.executing_channel,
+            self.world.field_vm.executing_object,
+        ) {
+            (Some(slot), _) => Some(crate::world::MorphOwner::Placement(slot)),
+            (None, Some(record)) => Some(crate::world::MorphOwner::Object(record)),
+            (None, None) => None,
+        };
+        if let Some(owner) = owner {
+            self.world.arm_field_morph(owner, count, base_id, frames);
         }
         self.world
             .pending_field_events

@@ -1296,8 +1296,8 @@ impl PlayWindowApp {
                     bound_model,
                 });
             }
-            // Retain the bundles for runtime clip re-targeting (op-0x4B
-            // ANIMATE cues from channel scripts).
+            // Retain the bundles for runtime clip re-targeting (`A2` ExecMove / `4C 51`
+            // clip cues from channel scripts).
             self.npc_anim_bundles = (scene_bundle, locomotion_bundle);
             if !self.field_npc_draws.is_empty() {
                 log::info!(

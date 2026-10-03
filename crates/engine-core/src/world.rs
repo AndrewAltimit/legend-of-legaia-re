@@ -201,6 +201,8 @@ mod handler_actors;
 pub use handler_actors::TransitionSweepReport;
 mod items_arts;
 mod narration;
+mod npc_morph;
+pub use npc_morph::MorphOwner;
 pub mod pause_session;
 mod prop_interact;
 mod retail_progression;

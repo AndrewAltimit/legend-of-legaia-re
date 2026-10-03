@@ -1934,6 +1934,9 @@ impl World {
                     // seat write-throughs) to them.
                     host.world.field_vm.executing_channel =
                         (!channels[ci].object_bind).then_some(channels[ci].placement_index as u8);
+                    host.world.field_vm.executing_object = channels[ci]
+                        .object_bind
+                        .then_some(channels[ci].ctx.script_id);
                     // The timeline is the acquirer: it halt-acquired these
                     // channels earlier (the `4C 85` freeze sweep) and now
                     // drives them beat by beat. A poke from the owner is the
@@ -1952,6 +1955,7 @@ impl World {
                         pc,
                     );
                     host.world.field_vm.executing_channel = None;
+                    host.world.field_vm.executing_object = None;
                     // A poke that moved the actor (`A3 <id>` seat, `CC <id> 37`
                     // copy-from-player, ...) lands on retail's `+0x14`/`+0x18`
                     // at once; surface it now rather than at the slice's end,
@@ -2718,6 +2722,9 @@ impl World {
                 let self_target = ext.is_some_and(|t| {
                     crate::field_channels::resolve_target(&channels, t) == Some(i)
                 });
+                self.field_vm.executing_object = target
+                    .filter(|&ci| channels[ci].object_bind)
+                    .map(|ci| channels[ci].ctx.script_id);
                 self.field_vm.executing_channel = match target {
                     // Object-bind targets carry a flat record index, not a
                     // placement slot - no placement-keyed attribution.
@@ -2752,6 +2759,7 @@ impl World {
                     }
                 };
                 self.field_vm.executing_channel = None;
+                self.field_vm.executing_object = None;
                 match result {
                     FieldStepResult::Advance { next_pc } => {
                         let stalled = next_pc == pc;
@@ -2931,10 +2939,14 @@ impl World {
                     // Dialog byte: the retail pre-run loop stops here.
                     break;
                 }
+                // The bind's own context is the one executing: an op-`0x4B`
+                // here arms the bound object's morph lanes.
+                self.field_vm.executing_object = Some(c.ctx.script_id);
                 let result = {
                     let mut host = FieldHostImpl { world: self };
                     field_step_routed(&mut host, &mut c.ctx, bc, pc)
                 };
+                self.field_vm.executing_object = None;
                 match result {
                     FieldStepResult::Advance { next_pc } => {
                         if next_pc == pc {
