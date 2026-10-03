@@ -309,7 +309,9 @@ tick for tick, and three things used to put it on another one:
   encounter transition then owned the child's first tick, so the scene's
   entry scripts never ran - on an overworld that left the ambient-particle
   gate clear, and the emitter that draws the stream once a frame never drew.
-  The child now settles the same ticks first (`LEGAIA_BATTLE_SETTLE`);
+  The child now settles the same ticks first (`LEGAIA_BATTLE_SETTLE`) and,
+  like the seed, installs the fight's roster after the settle, since a
+  scripted duel's entry can re-seat the party;
 - the fog pool's render step is not presentation-only (it writes the live
   count and depth view the next tick's spawns read, and a spawn draws the
   stream), and the headless seed renders nothing. It now runs the step the
@@ -321,7 +323,11 @@ tick for tick, and three things used to put it on another one:
   bars it seeded reach the child on the same first battle tick
   (`LEGAIA_BATTLE_BARS`).
 
-What still parts the two is render-coupled: a battle clip's end is read off
+A settled field also carries its script state into the fight. A scripted
+duel whose dialogue was open when the encounter is forced (the Nivora Che /
+Gala duel) keeps the box on the battle frame, on both sides; the frame now
+shows what the state channels already scored. What still parts the two is
+render-coupled: a battle clip's end is read off
 the window's pose sampling, so an effect-script spawn can land a few ticks
 apart (the Delilas Spirit band `0x47`). Comparing a per-tick trace of
 `World::rng_state` and the action SM from both sides is how such a split is

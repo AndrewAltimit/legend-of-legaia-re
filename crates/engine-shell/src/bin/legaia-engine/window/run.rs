@@ -1048,6 +1048,14 @@ pub(super) fn cmd_play_window_with_record(
                     session.fog_render_tick();
                 }
                 session.set_host_drains_queues(true);
+                // The settle can run a script that re-seats the present
+                // party (a scripted duel's entry); the headless seed installs
+                // the fight's roster after its settle, so the child does too.
+                if let Some(slots) = party.and_then(|p| parse_party_spec(p).ok())
+                    && slots != session.host.world.party.active_party
+                {
+                    session.host.world.set_active_party(slots);
+                }
             }
             arm_requested_battle(&mut session, spec);
         }
