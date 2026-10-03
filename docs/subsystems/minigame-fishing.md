@@ -435,15 +435,54 @@ The run loop drives a small pool of per-frame actor handlers reached through the
 
 - `FUN_801d0f5c` (`overlay_fishing_801d0f5c.txt`) - the **rod / lure select screen**: input *and* render. It counts owned rods (item ids `0xa0`..`0xa2`), moves the select cursor `DAT_801d90dc` on the D-pad edge (`0x1000` / `0x4000`), wraps it against `owned+2`, and on the accept edge (`0x44`) equips the highlighted entry - a lure (`DAT_801d90dc < 3`, item `0x9d`+cursor) writes the persistent lure index `_DAT_80084450`, a rod (cursor `>= 3`, item `0xa0`+) writes the persistent rod stat `_DAT_80084454` (the value that scales the [tension change](#tension--reeling-mechanic)). Cancel / confirm (`0x21`) sets the leave SFX and jumps `DAT_801d926c` to `100`. The tail renders each rod / lure row with its owned count and a highlight (`_DAT_8007b454 = 7`).
 - `FUN_801d1c5c` (`overlay_fishing_801d1c5c.txt`) - the **rod actor**: the first-person rod model, posed in view space, bent by a VDF morph, and the source of the fishing line's rod end. A swing SM on `DAT_801d91ac` (state `1` dips the pitch term `DAT_801d9134` at `-0x40 * step` down to `-700`, state `10` raises it at `+0x40 * step` up to `0x400`, then latches `0x14` and retires), then the pose and the tip projection described in [The fishing line](#the-fishing-line).
-- `FUN_801d2050` (`overlay_fishing_801d2050.txt`) - the **pre-hook swimming-fish tick + fish-sprite spawn**: an init-once latch installs the per-frame callback `FUN_801d7c30` into `_DAT_8007ba2c` and records the actor pointer in `DAT_801d928c`; when `DAT_801d9294` steps it spawns the fish sprite keyed on species `DAT_801d91cc` (special-casing id `8`). It delegates motion to `FUN_801d2278` and `FUN_801d6028`.
-- `FUN_801d2278` (`overlay_fishing_801d2278.txt`) - the **free-swim wander**: decrements the re-target timer `DAT_801d9060`, and on expiry re-rolls a random destination / duration (BIOS `rand`) and spawns a ripple effect; in the idle / cast state (`DAT_801d926c == 0xc`) it also reads the D-pad (`0x8000` / `0x2000`) to nudge the fish-facing angle clamped `0x700`..`0x900`.
-- `FUN_801d70ec` (`overlay_fishing_801d70ec.txt`) - a **minimal swimming-fish idle tick** (the reduced sibling of `FUN_801d2050`'s non-spawn path: refresh `+0x16` from `FUN_801d6028`, clear the draw-skip bit, submit).
+- `FUN_801d2050` (`overlay_fishing_801d2050.txt`) - the **lead angler's tick + fish-sprite spawn** (the handler of spawn record `0x801D8FAC`, see [The shore party](#the-shore-party-and-the-venue-camera)): an init-once latch installs the per-frame callback `FUN_801d7c30` into `_DAT_8007ba2c` and records the actor pointer in `DAT_801d928c`; when `DAT_801d9294` steps it spawns the fish sprite keyed on species `DAT_801d91cc` (special-casing id `8`). It delegates motion to `FUN_801d2278` and `FUN_801d6028`.
+- `FUN_801d2278` (`overlay_fishing_801d2278.txt`) - the **lead's aim, camera and ambient ripple**: writes `TR.y = 0x400 - 6 * (+0x16)`, decrements the timer `DAT_801d9060`, and on expiry rolls a dwell and a point out in the water (BIOS `rand`) - an offset of an **on-stack copy** of the actor's position, `z + 0x400` plus a jitter - and spawns a ripple there (`FUN_80021B04(sp+0x10, ..)`, `0x801D23FC`); nothing writes the position back, so the lead stands still. In the idle / cast state (`DAT_801d926c == 0xc`) the D-pad (`0x8000` / `0x2000`) turns his facing `+0x26` in `0x40` steps clamped `0x700`..`0x900`, and the camera yaw and focus follow him.
+- `FUN_801d70ec` (`overlay_fishing_801d70ec.txt`) - the **flanking party members' tick** (the handler of spawn record `0x801D8FC4`; the reduced sibling of `FUN_801d2050`'s non-spawn path: refresh `+0x16` from `FUN_801d6028`, clear the draw-skip bit, submit).
 - `FUN_801d4948` (`overlay_fishing_801d4948.txt`) - the **reeling-line / hooked-lure actor**: a sub-state machine on `DAT_801d91c8` (`0`→arm, `1`→attach to the hooked-fish actor `+0x48`, `2`→track) that positions the line end from `DAT_801d9174` / `DAT_801d9178` / `DAT_801d917c`, applies an orbit offset via `FUN_801d7bb8`, and raises the hook SFX cue `_DAT_8007b6da = 0x3a`.
 - `FUN_801d67bc` (`overlay_fishing_801d67bc.txt`) - the **caught-fish 3D mesh render**: GTE rotate (`+0x24` / `+0x26` / `+0x28` Euler angles), matrix push, per-fish tint from the actor `+0x72` colour word, and a subdivided-primitive draw. Render-track: a scope row in the `mesh_submit` section of `scripts/ci/port-catalog-ignore.toml`, because `engine-render` submits a mesh with a model matrix and a tint rather than pushing a GTE matrix and emitting subdivided primitives.
 - `FUN_801d24ec` (`overlay_fishing_801d24ec.txt`) - the **water reflection / shadow strip**: a run of textured quads written straight into the GTE packet list `_DAT_1f8003a0`. Render-track: a scope row in the `prim_builder` section of the same file - the engine has no packet list to write into.
 - `FUN_801d6bbc` (`overlay_fishing_801d6bbc.txt`) - the **scene floor pass** invoked from the driver tail (`FUN_801cf3bc`): it walks the live actor list (transform + submit + free) and then spawns one tile actor per drawn cell of the scene floor grid at `_DAT_1f8003ec`. This is **not** the field-VM tile board of [`tile-board.md`](tile-board.md) - that is a `width x height` byte cell array installed by script op `0x49`, where this reads the per-scene floor buffer's `u16` cell grid. See [The scene floor buffer](#the-scene-floor-buffer).
 - `FUN_801d78c0` (`overlay_fishing_801d78c0.txt`) - the **fishing camera-scroll reset**: `_DAT_800840b8 = 0`, `_DAT_800840c0 = 0x974`, and the scroll trio `_DAT_8007b790` / `_DAT_8007b792` / `_DAT_8007b794 = 0`.
-- `FUN_801d79e0` (`overlay_fishing_801d79e0.txt`) - a **cell-record lookup** used by the fish-placement path (reached through `FUN_801d6028`): a linear scan of a per-cell record table matching a `(x, y)` cell against each record's first two bytes, returning the record pointer or null.
+- `FUN_801d79e0` (`overlay_fishing_801d79e0.txt`) - the **step-layer lookup** the ground solver `FUN_801d6028` runs for a cell carrying bit `0x800`: sub-table kind `a0 = 2` of a floor layer (`i16` body offset at `kind * 4 + 2`, `i16` count at `+4`, record stride the resident byte `0x8007B318 + kind` = `4`), scanned linearly for the record whose first two bytes are the grid `(x, z)`; returns the record pointer or null. Port `minigame_floor::step_patch_in_layer` / `step_patch_lookup`.
+
+### The shore party and the venue camera
+
+The driver's setup state (`FUN_801cf3bc`, `0x801CF59C..0x801CF7D8`) picks an
+anchor tile on the venue word `DAT_801d90d0` - `(0x25, 0x54)` for Buma,
+`(0x2E, 0x23)` for Vidna - and spawns three actors on it through
+`FUN_80020DE0`, the spawn record's `+0x04` half (the model word) set to `0`,
+`1`, `2` before each call:
+
+| Spawn | Record (tick) | Model | `+0x14` | `+0x18` | `+0x26` | Clip `+0x5C` | `+0x6A` | Flag `0x01000000` |
+|---|---|---|---|---|---|---|---|---|
+| lead | `0x801D8FAC` (`FUN_801d2050`) | `0` | `tx << 7` | `tz << 7` | `0x800` | `2` | - | set |
+| second | `0x801D8FC4` (`FUN_801d70ec`) | `1` | `(tx << 7) + 0x60` | `tz << 7` | `0x680` | `0xB` | `8` | cleared |
+| third | `0x801D8FC4` | `2` | `(tx << 7) - 0x60` | `(tz << 7) - 0x40` | `0x600` | `0xC` | `8` | cleared |
+
+The models are the global pool's party slots, so the three are the party in
+order - Vahn in the middle, the second member to his right, the third to his
+left and a step nearer the camera. The lead's clip resolves against the
+resident party clip bank (his standing idle); the other two play records
+`0xA` / `0xB` of the venue scene's own ANM bank, whose rigs match their field
+bodies bone for bone. The `minigame_fishing` library state holds exactly
+these three actors at `(4736, -128, 10752)`, `(4832, -128, 10752)` and
+`(4640, -128, 10688)`; the `-128` is the ground solver's step layer.
+
+The same state reads the camera the setup and the lead's tick compose:
+angles `(0, 0, 0)` and `TR.x = 0`, `TR.z = 0x974` from `FUN_801d78c0`;
+`TR.y = 0x400 - 6 * y = 0x700`, yaw `-((facing + 0x800) & 0xFFF)` and the
+focus `(-x, 0, -z)` from `FUN_801d2278`; and `H = 0x140`, which the setup
+stores at `0x801CF764` in place of the field's `0x200`. Under the field's 6x
+world scale that is a level camera behind the party, the lead's head just
+below the centre of the frame and the three cut off at the waist.
+
+Port: `fishing_venue::party_placements` (the table above),
+`venue_camera_view` (the camera) and `lead_spawn`. The standalone minigames
+page seats all three bodies and frames them through that camera
+(`fishing_party_json` / `fishing_venue_vp`). The two play hosts do not load
+the venue scene: the door warp keeps the departure field loaded, so they run
+the session and its HUD over that field and draw neither the venue nor the
+party - the open gap on those hosts.
 
 ### The scene floor buffer
 
@@ -824,9 +863,9 @@ Fishing-specific globals (overlay-resident unless noted; `_DAT_8008xxxx` live in
 | `0x801d9064` | `s32` | Last decoded reel button (`0` idle / `1` reel A / `2` reel B), for the `FUN_801d3db4` cadence recogniser. |
 | `0x801d91dc` | `u32` | Reel-cadence ring-buffer write index (mod 16); reset by `FUN_801d746c`. |
 | `0x801d91e4` | `u64[16]` | Reel-cadence ring buffer - sixteen `{button, held-frames}` entries walked against the templates at `DAT_801d87d4`. |
-| `0x801d9060` | `s32` | Free-swim fish re-target timer (`FUN_801d2278`). |
+| `0x801d9060` | `s32` | The lead's ambient-ripple dwell timer (`FUN_801d2278`). |
 | `0x801d9294` | `u32` | Fish-sprite spawn step latch (`FUN_801d2050`). |
-| `0x801d928c` | `u32` | Hooked-fish actor pointer, saved by `FUN_801d2050`, read by `FUN_801d4948`. |
+| `0x801d928c` | `u32` | The lead angler's actor pointer, saved by `FUN_801d2050` (the library state holds the lead at `(4736, 10752)`), read by `FUN_801d4948`. |
 | `0x801d91c8` | `u32` | Reeling-line actor sub-state (`FUN_801d4948`, `0`/`1`/`2`). |
 | `0x801d91ac` | `u32` | Rod actor swing state (`FUN_801d1c5c`): `1` cast, `2` hold, `10` recover, `0x14` done. |
 | `0x801d9134` | `s16` | Rod swing pitch term, `-700` .. `0x400`. |
@@ -950,15 +989,17 @@ actors on `World::minigames.fishing_venue`); each host's
 `tick_fishing_actors` is that call plus applying the returned venue-camera
 writes to its own engine camera:
 
-- a free-swimming fish (`fishing_actors::FishWander` - the `FUN_801d2278`
-  facing step / wander re-roll / camera publish as one advancing object),
-  steered by the held D-pad while the cast is idle and spawning its
-  retarget ripple (`fishing_chrome::ripple_spawn`) into the shared minigame
-  effect pool (`engine-core::minigame_fx`, on `World::minigames.fx`);
+- the lead angler (`fishing_actors::FishWander` - the `FUN_801d2278`
+  facing step / ripple roll / camera publish as one object, spawned on the
+  lead's seat by `fishing_venue::lead_spawn`), aimed by the held D-pad while
+  the cast is idle and spawning the rolled ripple
+  (`fishing_chrome::ripple_spawn`) into the shared minigame effect pool
+  (`engine-core::minigame_fx`, on `World::minigames.fx`);
 - the venue floor solve: the scene's `.MAP` extended footprint is read at
   entry (the `_DAT_1F8003EC` buffer) and the actor settles onto it each
   frame through `fishing_chrome::float_actor_tick` ->
-  `minigame_floor::ground_height` with the `height_ramp` table;
+  `minigame_floor::ground_height` with the `height_ramp` table and the
+  step-layer lookup;
 - the camera: `venue_camera_reset` on entry and the per-frame `fish_camera`
   publish, both folded into the engine camera's retail global trios
   (`Camera::globals` - the same `_DAT_8007B790..` / `_DAT_800840B8..` /
