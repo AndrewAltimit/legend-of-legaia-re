@@ -113,8 +113,13 @@ displayed frame by one rule.
 
 **State channels** are measured headlessly. The engine is opened on the
 state's scene and seeded through its own card-load path,
-`BootSession::resume_save` over the lifted save (enter the scene, then
-hydrate party, flags, bag, gold). The player is then seated on retail's
+`BootSession::resume_save` over the lifted save (seed the story flags;
+enter the scene; hydrate party, flags, bag, gold over whatever the entry
+reset). Seeding the flags first is retail's order - the card load copies the save block over
+the live game-state window before the field init runs - and it is what lets
+an entry script or a bind-time prologue read the saved story: `rikuroa`'s
+Genesis-tree objects arm their withered morph only while flag `0x142` is
+clear. The player is then seated on retail's
 `(X, Z)` with the floor-sampled `Y` (`SceneHost::debug_seat_standing` over
 `World::debug_seat_player`, the kernel behind `LEGAIA_SEAT`; on a field scene
 it is a warp landing and re-centres the region box and the windowed
@@ -176,10 +181,10 @@ engine verdict:
   (`world_map_panel_host::hud_phase_hold`). A state whose countdown has
   expired (`0`) scores the readout on both sides.
 
-`--flags-first` is a diagnostic arm for the headless side: hydrate, enter,
-hydrate again, so the entry scripts see retail's flags. Comparing its report
-with the default shows how much of a channel's divergence the card-load
-ordering explains.
+`--flags-first` is a diagnostic arm for the headless side: hydrate, enter
+through `enter_scene_live` directly (no resume landing, no saved seat),
+hydrate again. Comparing its report with the default isolates what the
+landing itself contributes.
 
 ## Mid-script states
 

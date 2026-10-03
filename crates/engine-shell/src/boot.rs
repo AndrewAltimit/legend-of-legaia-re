@@ -1717,11 +1717,12 @@ impl BootSession {
         Ok(self.host.world.mode)
     }
 
-    /// Resume a loaded save the way both hosts resume one: land it through
+    /// Resume a loaded save the way both hosts resume one: seed the saved
+    /// story flags, land it through
     /// [`legaia_engine_core::resume::land_save`] (the save's own scene, else
     /// the scene already running, else the opening town - never a New Game),
-    /// entering scenes through [`Self::enter_scene_live`], then hydrate the
-    /// world from `save` over the landing.
+    /// entering scenes through [`Self::enter_scene_live`], then hydrate again
+    /// over the landing.
     ///
     /// `save_scene` is the save's resume label ([`legaia_save::SaveResume::scene`],
     /// empty for a file that carries none). The caller rebuilds its
@@ -1736,6 +1737,14 @@ impl BootSession {
         opts: &FieldLiveOpts,
     ) -> legaia_engine_core::resume::ResumeLanding {
         let current = self.host.scene.as_ref().map(|s| s.name.clone());
+        // Retail's card load copies the save block over the live game-state
+        // window before the field init runs, so the landing scene's entry
+        // scripts and bind-time prologues read the saved story flags - a
+        // `rikuroa` loaded after the Genesis tree's revival (flag `0x142`)
+        // must not re-arm the withered tree's morph lanes. Only the flags go
+        // in ahead: the party records raise actor slots, which the entry
+        // owns. The whole save is applied after the landing, as before.
+        self.host.world.load_story_flags(&save);
         let landing =
             legaia_engine_core::resume::land_save(save_scene, current.as_deref(), |scene| {
                 // The saved scene is entered at the save's own position, as
