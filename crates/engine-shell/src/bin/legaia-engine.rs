@@ -1,6 +1,9 @@
 //! Top-level engine driver. The "single command" that turns extracted-disc
 //! bytes into a runtime view of any CDNAME scene.
 //!
+//! With no subcommand it runs the first-run launcher (`launcher_window`):
+//! ask for the disc image once, remember it, then boot `play-window`.
+//!
 //! Subcommands:
 //!
 //! - `info` - headless one-line summary of a scene's resolved asset chain.
@@ -14,6 +17,8 @@
 mod cli;
 #[path = "legaia-engine/commands.rs"]
 mod commands;
+#[path = "legaia-engine/launcher_window.rs"]
+mod launcher_window;
 #[path = "legaia-engine/shared.rs"]
 mod shared;
 #[path = "legaia-engine/window.rs"]
@@ -46,7 +51,19 @@ fn main() -> Result<()> {
     reset_sigpipe();
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let cli = Cli::parse();
-    match cli.cmd {
+    // No subcommand (a double-click): the first-run launcher picks the disc,
+    // then boots `play-window` on it - in this process when no picker window
+    // was needed, otherwise in a child it already ran.
+    let cmd = match cli.cmd {
+        Some(cmd) => cmd,
+        None => match launcher_window::run()? {
+            Some(args) => Cli::parse_from(args)
+                .cmd
+                .expect("launcher play args name a subcommand"),
+            None => return Ok(()),
+        },
+    };
+    match cmd {
         Cmd::RetailCompare(args) => legaia_engine_shell::retail_compare_cli::run(args),
         Cmd::Info {
             scene,

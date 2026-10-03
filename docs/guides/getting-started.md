@@ -2,7 +2,14 @@
 
 This guide is for someone who downloaded a release archive from the project's
 GitHub Releases page: a directory of prebuilt command-line binaries, the two
-license files, and a short `README.txt`. No Rust toolchain, no source checkout.
+license files, `README-PLAY.txt` and a short `README.txt`. No Rust toolchain,
+no source checkout.
+
+**Just want to play?** Start `legaia-engine` with no arguments - double-click
+it (`legaia-engine.exe` on Windows, `Legend of Legaia.app` on macOS). A window
+asks for your disc image once, remembers it, and opens the title screen; see
+[the launcher](playing-and-viewing.md#0-the-launcher). The rest of this guide
+is about the extraction tools.
 
 One rule shapes everything here: **the project ships no Sony-owned bytes.**
 The archive contains only the project's own compiled tools. Every tool operates
@@ -24,6 +31,9 @@ manifest (see [releases.md](../tooling/releases.md) for how they are built):
 - `legaia-tools-<version>-x86_64-unknown-linux-gnu.tar.gz` (Linux, glibc 2.28+)
 - `legaia-tools-<version>-aarch64-unknown-linux-gnu.tar.gz` (Linux on ARM)
 - `legaia-tools-<version>-x86_64-pc-windows-gnu.zip` (Windows)
+- `legaia-tools-<version>-universal-apple-darwin.tar.gz` (macOS 11+, Apple
+  silicon and Intel in one binary; on a Mac verify with
+  `shasum -a 256 -c SHA256SUMS --ignore-missing`)
 
 Verify and unpack:
 

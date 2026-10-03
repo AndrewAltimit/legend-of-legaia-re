@@ -41,6 +41,12 @@ serde = { version = "1", features = ["derive"] }
 serde_json.workspace = true
 toml = "0.8"
 sha2 = "0.10"
+# First-run launcher (`legaia-engine` with no subcommand): the platform config
+# dir for the remembered disc path, and a native file picker. rfd's Linux
+# backend here is the xdg-desktop-portal (D-Bus, no GTK link), which keeps the
+# zig-cross x86_64 Linux release build free of a GTK sysroot.
+dirs = "6"
+rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
 
 # SIGPIPE reset in the bin's main() so piping stdout into `head` exits
 # quietly instead of panicking on a broken pipe.
