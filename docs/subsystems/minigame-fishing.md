@@ -479,10 +479,24 @@ below the centre of the frame and the three cut off at the waist.
 Port: `fishing_venue::party_placements` (the table above),
 `venue_camera_view` (the camera) and `lead_spawn`. The standalone minigames
 page seats all three bodies and frames them through that camera
-(`fishing_party_json` / `fishing_venue_vp`). The two play hosts do not load
-the venue scene: the door warp keeps the departure field loaded, so they run
-the session and its HUD over that field and draw neither the venue nor the
-party - the open gap on those hosts.
+(`fishing_party_json` / `fishing_venue_vp`).
+
+Both play hosts draw the same frame through one engine surface,
+`engine-core::fishing_scene::FishingSurface`: the `other1` venue (its
+environment pack instanced by the `.MAP` placements and terrain layers, plus
+the walk ground), the three seated bodies on their clips, and the venue camera
+over the venue's lead actor, so the D-pad aim turns him and the view
+together. The native window uploads it into its minigame 3D slot
+(`refresh_fishing_gpu`); the browser play page draws it as its `fishing`
+screen (`play_mg_fishing_scene_*`). The rod and line project through the same
+camera (`fishing_venue::venue_view`). Retail swaps the field out for the
+fishing scene and the return warp brings the backed-up field back; the port
+keeps the departure field loaded underneath and never touches its render
+state while the pond is up, so leaving shows that field exactly as it was,
+the player where he stood. The venue floor the lead settles on is the pond's
+own `.MAP` (the session's venue), and the cast lure anchors on the lead's seat
+at his rest facing `0x800`, as retail's lure spawn reads the lead actor's
+`+0x14` / `+0x18` / `+0x26` (`0x801CFC78..0x801CFC98`).
 
 ### The scene floor buffer
 
@@ -995,8 +1009,8 @@ writes to its own engine camera:
   the cast is idle and spawning the rolled ripple
   (`fishing_chrome::ripple_spawn`) into the shared minigame effect pool
   (`engine-core::minigame_fx`, on `World::minigames.fx`);
-- the venue floor solve: the scene's `.MAP` extended footprint is read at
-  entry (the `_DAT_1F8003EC` buffer) and the actor settles onto it each
+- the venue floor solve: the pond scene's `.MAP` extended footprint is read
+  at entry (the `_DAT_1F8003EC` buffer) and the actor settles onto it each
   frame through `fishing_chrome::float_actor_tick` ->
   `minigame_floor::ground_height` with the `height_ramp` table and the
   step-layer lookup;

@@ -638,6 +638,49 @@
     drawHubQuads(rt, view);
   }
 
+  /* ================================================================== */
+  /* Fishing: the pond scene (`other1`) with the party on its shore seats,
+   * framed by the venue camera - the engine's FishingSurface, the kernel
+   * the native window draws too. The HUD, rod and line ride play_fishing's
+   * own passes over it. */
+  function fishingUpload(rt, view, gen) {
+    const pos = rt.play_mg_fishing_scene_positions();
+    if (!pos.length) return null;
+    const buf = {
+      pos,
+      uvs: rt.play_mg_fishing_scene_uvs(),
+      ct: rt.play_mg_fishing_scene_cba_tsb(),
+      flat: rt.play_mg_fishing_scene_flat_rgba(),
+      idx: rt.play_mg_fishing_scene_indices(),
+    };
+    /* The pond's water sheets are semi-transparent (ABE) prims. */
+    if (!takeRenderer(view, rt.play_mg_fishing_scene_vram(), buf, { semiTwoPass: true })) return null;
+    return { kind: 'fishing', gen };
+  }
+
+  function fishingFrame(rt, view, skipDraw) {
+    const gen = typeof rt.play_mg_fishing_scene_frame === 'function'
+      ? rt.play_mg_fishing_scene_frame() : -1;
+    if (gen >= 0 && (!S.scene || S.scene.gen !== gen)) S.scene = fishingUpload(rt, view, gen);
+    if (skipDraw) return;
+    const r = view.renderer;
+    if (gen < 0 || !S.scene || !r) {
+      clearGl(view);
+      return;
+    }
+    r.updatePositions(rt.play_mg_fishing_scene_positions());
+    const c = r.canvas;
+    const vp = rt.play_mg_fishing_scene_vp(c.width / Math.max(c.height, 1));
+    r.mvpOverride = vp.length === 16 ? Float32Array.from(vp) : null;
+    /* The venue camera carries the retail screen-X mirror, so its front
+     * faces wind the other way (as the dance hall's engine camera does). */
+    const front = r.cullFrontFace;
+    if (r.mvpOverride) r.cullFrontFace = front === 'ccw' ? 'cw' : 'ccw';
+    r.render(0, 0, 1, 0, 0, [0, 0, 0], 1);
+    r.cullFrontFace = front;
+    r.mvpOverride = null;
+  }
+
   /* The PROT 0977 hub screens: engine-placed quads over the two hub page
    * sheets, blitted at retail 320x240 coordinates scaled to the layer. */
   function hubSheet(rt, sheet, pal) {
@@ -1104,6 +1147,8 @@
     S.hubSheets = {};
     S.hubDims = {};
     if (info.game === 'slot') { slotLoad(rt); return; }
+    /* The pond builds off the scene host's own disc index, not the art. */
+    if (info.game === 'fishing') return;
     if (!info.art) return;
     try {
       if (info.game === 'muscle') S.scene = muscleBuild(rt, view);
@@ -1141,6 +1186,7 @@
       else if (info.game === 'muscle') muscleFrame(rt, view, skipDraw);
       else if (info.game === 'baka') bakaFrame(rt, view, skipDraw);
       else if (info.game === 'dance') danceFrame(rt, view, skipDraw);
+      else if (info.game === 'fishing') fishingFrame(rt, view, skipDraw);
     } catch (e) {
       try { console.warn('play-minigames: frame failed', e); } catch (_) { /* no console */ }
       if (!skipDraw) clearGl(view);

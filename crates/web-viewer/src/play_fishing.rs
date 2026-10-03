@@ -138,13 +138,11 @@ impl LegaiaRuntime {
         if world.mode != legaia_engine_core::world::SceneMode::Fishing {
             return Vec::new();
         }
-        let view = legaia_engine_core::camera_view::resolve_field_camera(
-            world,
-            &self.camera,
-            None,
-            centre,
-        )
-        .field_view();
+        // The pond draws under the venue camera; the line projects through it.
+        let view = legaia_engine_core::fishing_venue::venue_view(&world.minigames).or_else(|| {
+            legaia_engine_core::camera_view::resolve_field_camera(world, &self.camera, None, centre)
+                .field_view()
+        });
         // The rod model first, as the native window orders it: the rod actor
         // runs ahead of the lure tick, so its packets are the earlier
         // `AddPrim`s in a shared bucket.

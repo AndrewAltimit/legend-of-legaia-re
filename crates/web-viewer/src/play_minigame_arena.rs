@@ -831,6 +831,92 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
+    // ---------------------------------------------------------- Fishing
+
+    /// Pose the fishing pond surface for this frame
+    /// (`legaia_engine_core::fishing_scene::FishingSurface::frame`, the call
+    /// the native window makes too) and return its generation - or `-1`
+    /// outside a fishing session or when the pond does not decode. A new
+    /// generation means the static buffers and the VRAM changed.
+    pub fn play_mg_fishing_scene_frame(&mut self) -> i32 {
+        let Some(host) = self.scene_host.as_ref() else {
+            return -1;
+        };
+        let live = host.world.mode == legaia_engine_core::world::SceneMode::Fishing;
+        let surface = &mut self.minigame_ui.fishing_surface;
+        match surface.frame(&host.index, &host.world.minigames, live) {
+            Some(_) => surface.generation() as i32,
+            None => -1,
+        }
+    }
+
+    /// This frame's posed positions, `[x, y, z]` per vertex, raw retail world
+    /// coordinates (Y down): the three seated bodies, then the pond.
+    pub fn play_mg_fishing_scene_positions(&self) -> Vec<f32> {
+        self.minigame_ui
+            .fishing_surface
+            .scene()
+            .map(|s| s.positions.iter().flatten().copied().collect())
+            .unwrap_or_default()
+    }
+
+    /// Per-vertex `[u, v]`.
+    pub fn play_mg_fishing_scene_uvs(&self) -> Vec<u8> {
+        self.minigame_ui
+            .fishing_surface
+            .scene()
+            .map(|s| s.uvs.iter().flatten().copied().collect())
+            .unwrap_or_default()
+    }
+
+    /// Per-vertex `[cba, tsb]`.
+    pub fn play_mg_fishing_scene_cba_tsb(&self) -> Vec<u16> {
+        self.minigame_ui
+            .fishing_surface
+            .scene()
+            .map(|s| s.cba_tsb.iter().flatten().copied().collect())
+            .unwrap_or_default()
+    }
+
+    /// Per-vertex `[r, g, b, textured]`.
+    pub fn play_mg_fishing_scene_flat_rgba(&self) -> Vec<u8> {
+        self.minigame_ui
+            .fishing_surface
+            .scene()
+            .map(|s| s.flat_rgba.clone())
+            .unwrap_or_default()
+    }
+
+    /// Triangle indices.
+    pub fn play_mg_fishing_scene_indices(&self) -> Vec<u32> {
+        self.minigame_ui
+            .fishing_surface
+            .scene()
+            .map(|s| s.indices.clone())
+            .unwrap_or_default()
+    }
+
+    /// The pond's VRAM (the venue upload + the field-character atlases);
+    /// empty with no scene.
+    pub fn play_mg_fishing_scene_vram(&self) -> Vec<u8> {
+        self.minigame_ui
+            .fishing_surface
+            .vram()
+            .map(|v| v.as_bytes().to_vec())
+            .unwrap_or_default()
+    }
+
+    /// The venue camera's view-projection for a raw (Y-down) world vertex,
+    /// column-major (`FishingScene::vp_raw`, the matrix the native window
+    /// draws the pond with). Empty with no scene.
+    pub fn play_mg_fishing_scene_vp(&self, aspect: f32) -> Vec<f32> {
+        self.minigame_ui
+            .fishing_surface
+            .scene()
+            .map(|s| s.vp_raw(aspect).to_vec())
+            .unwrap_or_default()
+    }
+
     // ----------------------------------------------------- Baka Fighter
 
     /// The live duel's state, through the one builder the standalone page's
