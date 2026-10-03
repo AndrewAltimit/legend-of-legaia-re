@@ -1273,6 +1273,16 @@ phase past a `sltiu` bound still reports busy. PROT 0949's tick is the
 clearest case: its out-of-bound `beqz` at `0x801F6AA4` targets `0x801F758C`,
 one instruction *past* the `move s7, zero` at `0x801F7588`.
 
+The converse matters as much: a terminal arm is **in** range and stores no
+phase, so the walk never reaches the out-of-range hold. PROT 0951's Chaos
+Flare (arm 11, `0x801F76F4`) and Scythe Wind (arm 5, `0x801F801C`) and PROT
+0952's Bloody Horns (arm 6, `0x801F79DC`) each end on the last word of their
+table: they spend the module countdown, test the victim's settle state, then
+clear the busy register and `ctx[+0x0D]` and return without touching
+`ctx[+0x279]` (`0x801F77A0`, `0x801F8138`, `0x801F7AF4`). A port that
+advanced through that arm walked off the table into the hold, and an enemy
+casting any of the three parked the band - and the battle - for good.
+
 #### The four PROT 0955 bodies that write no damage
 
 "Damage: none" is not "writes nothing". Four of the six-spell cell's bodies

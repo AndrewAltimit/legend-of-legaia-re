@@ -12,8 +12,10 @@
 //! scene is forced through the ordinary encounter path and fought with
 //! Attack / Auto pad presses to its end. On the first frame back on the field
 //! [`World::battle_effect_residue`] must be empty, and again after a scene
-//! load. The run also records which effect families the battles spawned, so
-//! a green run is not a run in which nothing was ever live.
+//! load, and every fight must end - a cast band that never reports done
+//! parks the battle with its effects up. The run also records which effect
+//! families the battles spawned, so a green run is not a run in which nothing
+//! was ever live.
 //!
 //! Skip-passes without `LEGAIA_DISC_BIN`, an extracted tree or the save
 //! library.
@@ -198,6 +200,14 @@ fn no_battle_effect_survives_battle_exit_or_scene_load() {
             }
             if resolved {
                 battles += 1;
+            } else if session.host.world.mode == SceneMode::Battle {
+                // A cast band that never reports done parks the battle - and
+                // its effects - for good (PROT 0951 / 0952's terminal arms).
+                failures.push(format!(
+                    "{scene} F{fid}: battle unresolved after {BATTLE_TICKS} ticks (state {:#04x})",
+                    session.host.world.battle_ctx.action_state
+                ));
+                break;
             }
             eprintln!("[case] {scene} F{fid}: resolved={resolved}");
         }
