@@ -357,6 +357,45 @@ pub fn substitute_kind_key(kind: legaia_mes::SubstituteKind) -> u8 {
     }
 }
 
+/// Map key for the `0xCE` **number** escapes in [`PanelSubstitutions`]:
+/// `(SCRIPT_COUNTER_KEY, operand)` holds the digits a `0xCE 0x0B..=0x0E`
+/// pair prints. Distinct from every [`substitute_kind_key`] value.
+pub const SCRIPT_COUNTER_KEY: u8 = 0xCE;
+
+/// The `0xCE` operands that print a script counter instead of a sprite:
+/// escape-table rows `0x0B..=0x0E` carry `string_id == 0` and `y_offset`
+/// `0..=3`, and the renderer reads that `y_offset` as the counter index
+/// (`docs/formats/dialog-font.md`).
+pub const SCRIPT_COUNTER_ESCAPES: std::ops::RangeInclusive<u8> = 0x0B..=0x0E;
+
+/// The counter a number escape prints: operand `0x0B + i` reads slot `i` of
+/// the field VM's script-counter table `0x801C6460`. `None` for any other
+/// operand.
+pub fn script_counter_slot(operand: u8) -> Option<usize> {
+    SCRIPT_COUNTER_ESCAPES
+        .contains(&operand)
+        .then(|| usize::from(operand - *SCRIPT_COUNTER_ESCAPES.start()))
+}
+
+/// The glyph bytes a number escape prints for counter `value`.
+///
+/// The dialog renderer's number arm (`FUN_80036888`, `0x80036A54..0x80036A94`)
+/// loads the counter with `lh` and calls `FUN_80034B78(value, 0, x, y)`. That
+/// writer peels each decimal digit by repeated subtraction of the paired
+/// `4 * 10^k` / `10^k` powers at `0x80073DCC`, suppresses leading zeros, and
+/// always draws the units digit - so a value that never reaches the first
+/// power, which is every value `<= 0`, prints a single `0`. A positive value
+/// prints its plain decimal form (a signed halfword tops out at five digits).
+///
+/// REF: FUN_80036888, FUN_80034B78
+pub fn script_counter_digits(value: i16) -> Vec<u8> {
+    if value <= 0 {
+        b"0".to_vec()
+    } else {
+        value.to_string().into_bytes()
+    }
+}
+
 impl OwnedDialogPanel {
     /// Build a panel over `bytes` starting at `pc` (the offset returned by
     /// [`crate::scene_assets::SceneMes::message_offset`]).
@@ -557,7 +596,22 @@ impl OwnedDialogPanel {
                         }
                     }
                 }
-                Some(MesEvent::Spacing(_)) => units += 1,
+                Some(MesEvent::Spacing(arg)) => {
+                    // A number escape prints the script counter the host
+                    // resolved at open; the whole number is one reveal unit,
+                    // like the escape it replaces (`FUN_80036044` counts the
+                    // `0xCE` pair once).
+                    if let Some(digits) = self
+                        .substitutions
+                        .as_ref()
+                        .and_then(|subs| subs.get(&(SCRIPT_COUNTER_KEY, arg)))
+                    {
+                        for &b in digits {
+                            out.push((glyph(b), units));
+                        }
+                    }
+                    units += 1;
+                }
                 Some(MesEvent::Truncated(_)) => {}
             }
         }
@@ -1044,6 +1098,19 @@ impl OwnedDialogPanel {
                 self.waiting_for_input = true;
                 self.state = PanelState::PageBreak;
             }
+            MesEvent::Spacing(arg) => {
+                // A number escape: the digits the host resolved at open.
+                if let Some(subs) = self.substitutions.as_ref()
+                    && let Some(digits) = subs.get(&(SCRIPT_COUNTER_KEY, arg))
+                {
+                    for &b in digits {
+                        self.page.push(PanelGlyph {
+                            byte: b,
+                            clut: self.current_clut,
+                        });
+                    }
+                }
+            }
             MesEvent::Substitute { kind, arg } => {
                 // Resolve through the host-installed name table (item /
                 // character names). An absent entry emits nothing - the
@@ -1234,6 +1301,41 @@ mod tests {
         // the last glyph shows.
         assert_eq!(panel.tick(), PanelState::Typing);
         assert_eq!(panel.tick(), PanelState::Done);
+    }
+
+    /// A `0xCE 0x0B` number escape prints the script counter the host
+    /// resolved, as one reveal unit; without a resolution it prints nothing.
+    #[test]
+    fn a_number_escape_prints_the_resolved_script_counter() {
+        let inline = vec![0x1F, b'N', 0xCE, 0x0B, b'x', 0x00];
+        let run = |subs: Option<PanelSubstitutions>| {
+            let mut panel = OwnedDialogPanel::from_inline_dialog(&inline).unwrap();
+            panel.substitutions = subs;
+            for _ in 0..16 {
+                if panel.tick() == PanelState::Done {
+                    break;
+                }
+            }
+            panel.page_bytes()
+        };
+        let mut map = std::collections::HashMap::new();
+        map.insert((SCRIPT_COUNTER_KEY, 0x0B), script_counter_digits(0x2A));
+        assert_eq!(run(Some(Arc::new(map))), b"N42x".to_vec());
+        assert_eq!(run(None), b"Nx".to_vec(), "unresolved = the escape alone");
+    }
+
+    /// `FUN_80034B78` with min-digits `0`: leading zeros suppressed, the units
+    /// digit always drawn, so a value at or below zero prints one `0`.
+    #[test]
+    fn script_counter_digits_follow_the_number_writer() {
+        assert_eq!(script_counter_digits(0), b"0".to_vec());
+        assert_eq!(script_counter_digits(-5), b"0".to_vec());
+        assert_eq!(script_counter_digits(7), b"7".to_vec());
+        assert_eq!(script_counter_digits(i16::MAX), b"32767".to_vec());
+        assert_eq!(script_counter_slot(0x0A), None);
+        assert_eq!(script_counter_slot(0x0B), Some(0));
+        assert_eq!(script_counter_slot(0x0E), Some(3));
+        assert_eq!(script_counter_slot(0x0F), None);
     }
 
     /// No `0x1F` lead marker = nothing renderable; the caller falls back to the

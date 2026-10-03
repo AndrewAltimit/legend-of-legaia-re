@@ -326,7 +326,9 @@ terms.
 
 ## Rows
 
-None open.
+| addr | site | verdict | fix |
+|---|---|---|---|
+| `801da6b4` | `engine-vm/src/battle_action/target_cursor.rs` | FALSE-EDGE, coarse module anchor | The `PORT:` / `REPLACED-BY:` pair sits on the module (`//!`), and the module is live through items that are not the port: the cursor constants the live `World::apply_target_cursor_tint` imports and `cursor_cue`, which both battle hosts call. The kernel itself, `target_cursor_highlight`, has no non-test caller, and the replacement verdict for it stands. The fix is the [granularity recipe](#anchor-granularity): move the `PORT:` and `REPLACED-BY:` lines onto `target_cursor_highlight`. Owned by the battle-targeting work, so recorded here rather than edited. |
 
 ## How the recorded rows were closed
 
@@ -370,6 +372,7 @@ so a recurrence is recognisable rather than re-derived.
 | `801d0e54` | `engine-vm/src/battle_intro_tiles.rs` | STALE-TAG | Same shape: `step_tile` cited `tick_tile_grid`, which by then read `WIRED, without a draw`. |
 | `801d1a20` | `engine-vm/src/battle_intro_swirl.rs` | STALE-TAG | Same shape: `swirl_band_draw` cited `tick_swirl`, likewise already `WIRED, without a draw`. |
 | `801e1934` | `engine-core/src/card_flow.rs` | FALSE-EDGE | `save_title_digits` renamed `block_title_digits`; the live copy is `legaia_save::card::save_title_digits`, which the browser card rack writes through. A duplicate free-function name across two crates, never receiver-gated. Its own caller `save_block_summary` has no non-test call site. |
+| `8003cda8` | `engine-vm/src/ambient_motion.rs` | STALE-TAG | `reset_pool` carried `REPLACED-BY:` ("a fresh scheduler per scene") after `World::install_field_player` started resetting the world-owned `player_scale_ramps`, the one scheduler that outlives a scene. The tag came off for a plain note. Retail has no reference to `0x8003CDA8` in SCUS or any PROT entry, so the engine's seat is its own and the note says so. |
 
 The `world_map_overlay.rs` rows are the worked example of the whole granularity
 shape: a genuinely wired item made a module blanket false, and through the

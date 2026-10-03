@@ -391,20 +391,19 @@ impl RampScheduler {
         }
     }
 
-    // REPLACED-BY: per-scene reconstruction in `World::seed_field_npc_ambient`,
-    // which clears the ambient map and constructs a fresh `AmbientMotion` -
-    // and so a fresh [`RampScheduler`] - per placement on every scene entry.
-    // The pool is per-channel ([`AmbientMotion::ramps`]) and never crosses a
-    // scene boundary, so retail's arena reset has no boundary left to sit on:
-    // the engine drops the arena instead of clearing it.
+    // Live: `World::install_field_player` calls this on the world-owned
+    // `locomotion.player_scale_ramps` scheduler, which - unlike the
+    // per-placement schedulers `World::seed_field_npc_ambient` rebuilds - does
+    // outlive a scene, so the reset has a real boundary to sit on and a ramp
+    // the last scene left running cannot resize the player on this one.
     //
-    // No host is owed rather than none has got round to it. [`RampScheduler::new`]
-    // and this reset leave **byte-identical** state - `slots = [None; RAMP_SLOTS]`,
-    // `overflow = 0` - so a scene-entry call site would change nothing a player
-    // or a test could see: the definition of a fake wire. The body stays because
-    // it is the byte-exact record of retail's asymmetric last store (see below),
-    // and a host that ever does recycle schedulers across scenes needs exactly
-    // it - that would be a representation change, not a call insertion.
+    // That seat is the engine's, not a transcription of a retail call site:
+    // `find-address-word-refs.py --prot 8003cda8` finds no reference of any
+    // form (`jal`, `j`, branch, word, `lui` pair) to `0x8003CDA8` in SCUS or
+    // in any PROT entry, and the instruction before it is the previous
+    // routine's `jr ra` delay slot, so nothing falls into it either. The
+    // routine is shipped but unreferenced; "scene-entry reset" names what it
+    // does, not who calls it.
     /// PORT: FUN_8003CDA8 - the scene-entry pool reset.
     ///
     /// Retail zeroes the busy word `+0x1E` of all **64** raw slots, clears

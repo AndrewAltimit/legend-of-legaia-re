@@ -165,8 +165,12 @@ impl SceneHost {
         // text when present, falling back to the MES `text_id` lookup (used by
         // the message-table dialogue paths).
         if !req.inline.is_empty()
-            && let Some(panel) = crate::dialog::OwnedDialogPanel::from_inline_dialog(&req.inline)
+            && let Some(mut panel) =
+                crate::dialog::OwnedDialogPanel::from_inline_dialog(&req.inline)
         {
+            // The same name / number escape resolution the VM-dialogue
+            // panels take (`World::dialog_substitutions`).
+            panel.substitutions = self.world.dialog_substitutions(&req.inline);
             return Some(panel.opening_menu_at_wait());
         }
         let mes = self.assets.as_ref()?.mes.as_ref()?;

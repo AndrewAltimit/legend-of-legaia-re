@@ -780,8 +780,12 @@ rewritten, so this is a straight lerp off the install-time endpoints rather
 than an incremental accumulation. The heading channel is `kind == 2` (`sh`).
 A slot whose owning actor has `+0x10 & 8` set is freed unticked; an install
 with no free slot bumps the `DAT_80073ED0` overflow counter and is dropped.
-Installers are `FUN_8003C5F0` and this op's inlined copy; the pool is reset
-by `FUN_8003CDA8` at scene entry.
+Installers are `FUN_8003C5F0` and this op's inlined copy. `FUN_8003CDA8`
+resets the pool, but nothing on the disc calls it: an address-reference scan
+over SCUS and every PROT entry finds no `jal`, jump, branch, word or `lui`
+pair naming `0x8003CDA8`, so "scene-entry reset" describes the body, not a
+caller. The port runs it on the player's scale-ramp scheduler at
+`World::install_field_player`, the one scheduler that outlives a scene.
 
 The reset is worth reading for one asymmetric store. It zeroes the busy word
 `+0x1E` of all **64** raw slots and clears slot 0's `+0x1A` / `+0x1C`, then
