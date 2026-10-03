@@ -1725,6 +1725,18 @@ opponent behind the eye. Engine side: `battle_cam_inputs`'s
 `member_surface_open`, which keys the phase on the ring session as well as
 on the submenu sessions.
 
+**The close-up follows the ring from member to member.** A commit lands on
+the next member's ring (`0x28`) or on the commit confirm (`0x6E`), never on
+the round prompt, so between two members the camera never passes through
+the far framing - the phase is case 0 on both sides of the hand-off. What
+moves it is the menu driver re-arming case 0 with `a0 = ctx[+0x13]`, the
+member now commanding (`lbu a0,0x2(s4)` with `s4 = ctx + 0x11`, at
+`0x801D4758` and `0x801D53B4`), over the case's own 6-step glide. A port that
+re-arms only on a phase change keeps the first member framed while the rest
+of the party chooses. Engine side: `BattleCamera::set_actor` re-arms the
+close-up when the actor changes under it; the item window, which carries no
+member of its own, frames the member whose ring opened it.
+
 ### Case 9 is re-derived every pass, so the depth follows the formation
 
 The far framing is not armed once and left. `FUN_801D0748` re-arms it per tick

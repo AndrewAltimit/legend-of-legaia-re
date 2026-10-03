@@ -278,6 +278,47 @@ fn non_vahn_seats_frame_differently() {
     assert_eq!(gala.yaw.rem_euclid(4096.0), (0x8F0 - 3584 + 4096) as f32);
 }
 
+/// The ring passes from one member to the next with no far framing in
+/// between (a commit lands on the next member's `0x28`), so the close-up has
+/// to follow the member now commanding: `FUN_801D388C` re-arms case 0 with
+/// `ctx[+0x13]`. Before the re-arm the phase stayed `Submenu` across the
+/// hand-off and the camera stayed on Vahn while Noa and Gala chose.
+#[test]
+fn the_close_up_follows_the_ring_to_the_next_member() {
+    let vahn = BattleCamActor {
+        facing: 0,
+        height: Some(1152.0),
+        world: [0.0, 0.0, -800.0],
+    };
+    let noa = BattleCamActor {
+        facing: 512,
+        height: Some(960.0),
+        world: [-700.0, 0.0, -900.0],
+    };
+    let mut cam = traced_cam(BattleCamPhase::Menu);
+    cam.set_actor(vahn);
+    cam.set_phase(BattleCamPhase::Submenu);
+    steps(&mut cam, SUBMENU_ENTER_STEPS as u64);
+    assert_eq!(cam.pose().focus, vahn.world);
+    // Vahn commits; Noa's ring opens on the same phase.
+    cam.set_actor(noa);
+    cam.set_phase(BattleCamPhase::Submenu);
+    steps(&mut cam, 3);
+    let mid = cam.pose().focus;
+    assert!(mid[0] < 0.0 && mid[0] > -700.0, "pans, not cuts: {mid:?}");
+    steps(&mut cam, SUBMENU_ENTER_STEPS as u64 - 3);
+    let want = noa.submenu_pose();
+    assert_eq!(cam.pose().focus, want.focus);
+    assert_eq!(cam.pose().tr, want.tr);
+    assert_eq!(cam.pose().yaw.rem_euclid(4096.0), want.yaw);
+    // Re-supplying the same member every frame does not restart the glide.
+    for _ in 0..4 {
+        cam.set_actor(noa);
+        steps(&mut cam, 1);
+    }
+    assert_eq!(cam.pose().focus, want.focus);
+}
+
 /// The submenu-exit swing stays on the acting actor (retail case 1) and
 /// only the return segment pulls the focus back to the formation centre.
 #[test]
