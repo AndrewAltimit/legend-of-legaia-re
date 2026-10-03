@@ -10,6 +10,51 @@ use super::*;
 /// the lead); the browser play page seats the same.
 pub(super) const MUSCLE_DOME_CHAR_SLOT: u32 = 0;
 
+/// The casino slot machine's resident data: what the overlay init
+/// `FUN_801CEC94` loads before the reel state machine runs - the five-TIM art
+/// pack and the cabinet mesh (PROT 1200), and the scene graph + HUD widget
+/// table out of the overlay's own rodata (PROT 0975) - plus the VRAM the art
+/// pack uploads into, which is the whole texture set the machine samples.
+pub(super) struct SlotCabinetAssets {
+    pub(super) scene: legaia_asset::minigame_slot_scene::SlotScene,
+    pub(super) cabinet: Option<legaia_asset::minigame_slot_scene::SlotCabinetMesh>,
+    pub(super) hud: Vec<legaia_asset::minigame_art::SlotHudWidget>,
+    pub(super) vram: legaia_tim::Vram,
+}
+
+impl SlotCabinetAssets {
+    /// Decode the machine's data off the disc; `None` (logged) when the art
+    /// pack or the scene graph does not decode. The cabinet mesh is optional:
+    /// without it the reels and furniture still draw.
+    pub(super) fn load(read: impl Fn(usize) -> Option<Vec<u8>>) -> Option<Self> {
+        use legaia_asset::minigame_art as art;
+        use legaia_asset::minigame_slot_scene as sc;
+        let art_raw = read(art::SLOT_ART_PROT_INDEX)?;
+        let overlay = read(legaia_asset::slot_payout::SLOT_OVERLAY_PROT_INDEX)?;
+        let tims = art::parse_art_pack(&art_raw)
+            .map_err(|e| log::warn!("slots: art pack (PROT 1200) did not decode: {e:#}"))
+            .ok()?;
+        let (idx, w, _) = art::slot_page_indices(&tims, sc::DOT_PAGE).ok()?;
+        let scene = sc::parse_scene(&overlay, &idx, w)
+            .map_err(|e| log::warn!("slots: scene graph (PROT 0975) did not decode: {e:#}"))
+            .ok()?;
+        let hud = art::parse_slot_hud(&overlay).unwrap_or_default();
+        let cabinet = sc::parse_cabinet(&art_raw)
+            .map_err(|e| log::warn!("slots: cabinet mesh did not decode: {e:#}"))
+            .ok();
+        let mut vram = legaia_tim::Vram::new();
+        for t in &tims {
+            vram.upload_tim(t);
+        }
+        Some(Self {
+            scene,
+            cabinet,
+            hud,
+            vram,
+        })
+    }
+}
+
 pub(super) struct BakaDuelGpu {
     pub(super) generation: u32,
     pub(super) vram: UploadedVram,
@@ -839,6 +884,96 @@ impl PlayWindowApp {
         usp::payline_screen_prims(&segments)
     }
 
+    /// Advance the slot machine's marquee one frame and compose its dot
+    /// buffer (`SlotMarqueeClock::frame`), off the live machine's own
+    /// marquee state. Clears the clock whenever no machine is on screen, so a
+    /// fresh visit starts its legend the way retail's init leaves it.
+    pub(super) fn tick_slot_marquee(&mut self) {
+        let world = &self.session.host.world;
+        let live = world.mode == SceneMode::SlotMachine;
+        let (Some(m), Some(Some(assets)), true) = (
+            world.minigames.slot_machine.as_ref(),
+            self.slot_cabinet_assets.as_ref(),
+            live,
+        ) else {
+            self.slot_marquee_clock = Default::default();
+            self.slot_dots.clear();
+            return;
+        };
+        // The bonus-anticipation latch (`DAT_801d3ca4`, `FUN_801d1af4`) is
+        // not modelled by the engine's machine, so its two legends never
+        // scroll.
+        self.slot_dots = self
+            .slot_marquee_clock
+            .frame(&m.marquee(), 0, &assets.scene.messages);
+    }
+
+    /// Put the slot machine's VRAM on the GPU while the machine is on
+    /// screen, decoding its data on first sight; drop it otherwise. The
+    /// machine draws against this VRAM in place of the walked-in scene's -
+    /// the overlay replaces the field, it is not a layer over it.
+    pub(super) fn refresh_slot_cabinet_gpu(&mut self) {
+        if self.session.host.world.mode != SceneMode::SlotMachine {
+            self.slot_gpu = None;
+            return;
+        }
+        if self.slot_cabinet_assets.is_none() {
+            let index = self.session.host.index.clone();
+            let read = |i: usize| index.entry_bytes(i as u32).ok().map(|b| b.to_vec());
+            self.slot_cabinet_assets = Some(SlotCabinetAssets::load(read).map(std::sync::Arc::new));
+        }
+        if self.slot_gpu.is_some() {
+            return;
+        }
+        let (Some(r), Some(Some(assets))) = (
+            self.win.renderer.as_ref(),
+            self.slot_cabinet_assets.as_ref(),
+        ) else {
+            return;
+        };
+        match r.upload_vram(&assets.vram) {
+            Ok(v) => self.slot_gpu = Some(v),
+            Err(e) => log::warn!("slots: vram upload failed: {e:#}"),
+        }
+    }
+
+    /// The whole machine as screen primitives - cabinet, reels, furniture,
+    /// dot matrix and coin HUD - through the shared
+    /// `ui_slot_cabinet::slot_cabinet_prims` builder. Empty outside the slot
+    /// machine or before its VRAM is resident.
+    pub(super) fn slot_cabinet_screen_prims(
+        &self,
+    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+        use legaia_engine_render::ui_slot_cabinet as usc;
+        if self.slot_gpu.is_none() || self.session.host.world.mode != SceneMode::SlotMachine {
+            return Vec::new();
+        }
+        let (Some(m), Some(Some(assets))) = (
+            self.session.host.world.minigames.slot_machine.as_ref(),
+            self.slot_cabinet_assets.as_ref(),
+        ) else {
+            return Vec::new();
+        };
+        let strips = m.strips();
+        let dots = if self.slot_dots.is_empty() {
+            legaia_asset::minigame_slot_scene::clear_dots()
+        } else {
+            self.slot_dots.clone()
+        };
+        usc::slot_cabinet_prims(&usc::SlotCabinetInput {
+            scene: &assets.scene,
+            cabinet: assets.cabinet.as_ref(),
+            hud: &assets.hud,
+            reel_pos: core::array::from_fn(|r| m.reel_pos(r)),
+            strips: [&strips[0], &strips[1], &strips[2]],
+            stopped: core::array::from_fn(|r| m.reel_stopped(r)),
+            winning_line: m.winning_line_word(),
+            dots: &dots,
+            blink: self.slot_marquee_clock.blink,
+            balance: m.balance(),
+        })
+    }
+
     /// The fishing rod and line as screen primitives: the rod model the rod
     /// actor posed this frame (`PondSession::rod_faces`, wrapped by the shared
     /// `ui_fishing_rod` builder), then the session's line for this frame
@@ -1158,6 +1293,7 @@ impl PlayWindowApp {
         self.tick_fishing_actors();
         self.tick_baka_chrome();
         self.tick_muscle_hub();
+        self.tick_slot_marquee();
     }
 
     /// Advance the Muscle Dome hub-screen timers one frame, off the world's

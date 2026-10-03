@@ -874,6 +874,10 @@ impl PlayWindowApp {
         self.refresh_muscle_dome_gpu();
         // The fishing pond + seated party, posed by its engine surface.
         self.refresh_fishing_gpu();
+        // The slot machine's own VRAM (its art pack), resident while the
+        // machine is on screen.
+        self.refresh_slot_cabinet_gpu();
+        let slot_prims = self.slot_cabinet_screen_prims();
         // The hall, cut to what the GPU draws under this frame's camera.
         self.refresh_dance_venue_view();
         if let (Some(r), Some(vram), Some(atlas)) = (
@@ -895,10 +899,16 @@ impl PlayWindowApp {
                 .as_ref()
                 .or(self.muscle_gpu.as_ref())
                 .or(self.fishing_gpu.as_ref());
-            let vram = match (duel_gpu, self.dance_venue_gpu.as_ref()) {
-                (Some(g), _) => &g.vram,
-                (None, Some(d)) => &d.vram,
-                (None, None) => vram,
+            // And the slot machine: every quad it draws samples its art pack.
+            let vram = match (
+                duel_gpu,
+                self.dance_venue_gpu.as_ref(),
+                self.slot_gpu.as_ref(),
+            ) {
+                (Some(g), _, _) => &g.vram,
+                (None, Some(d), _) => &d.vram,
+                (None, None, Some(v)) => v,
+                (None, None, None) => vram,
             };
             // Upload (or drop) the opdeene "It was the Seru." caption sprite
             // atlas to track World state. The caption image is present only
@@ -1520,6 +1530,10 @@ impl PlayWindowApp {
                         cue: None,
                     });
                 }
+            } else if self.slot_gpu.is_some() {
+                // The slot machine: the overlay's whole frame is its own
+                // cabinet scene, drawn as screen primitives below - the
+                // walked-in casino floor is not on screen.
             } else if self.session.host.world.muscle_hub_between_legs() {
                 // The arena hub between two legs: retail runs it in arena
                 // mode `0x18` with no 3D scene - the ringside still and the
@@ -2988,6 +3002,9 @@ impl PlayWindowApp {
             screen_prims.extend(self.baka_hud_prims());
             // The slot machine's paylines, off the machine's own ported pass
             // and projection - the segments both browser pages stroke.
+            // The machine itself - cabinet, reels, furniture, dot matrix and
+            // coin HUD - under the paylines (`ui_slot_cabinet`).
+            screen_prims.extend(slot_prims);
             screen_prims.extend(self.slot_payline_screen_prims());
             // The fishing line, latched above: the same kernel and builder
             // the browser play page uses.

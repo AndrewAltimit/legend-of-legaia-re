@@ -755,7 +755,11 @@ impl PlayWindowApp {
         }
         // Slot-machine minigame HUD: the three payline symbols, the balance /
         // bet readout, and the phase-specific prompt.
+        // Only while the machine itself is not on screen: once its art is
+        // resident the cabinet's own marquee, lamps and coin readout carry
+        // all of this.
         if self.session.host.world.mode == SceneMode::SlotMachine
+            && self.slot_gpu.is_none()
             && let Some(m) = &self.session.host.world.minigames.slot_machine
         {
             out.extend(self.stage_status_rows(

@@ -187,6 +187,14 @@ pub struct SlotHudWidget {
     /// `+0x0A` cell size.
     pub w: u8,
     pub h: u8,
+    /// `+0x0C` top-edge packet colour (scaled by the call's brightness).
+    pub rgb_top: [u8; 3],
+    /// `+0x0F` the quad blends (`POLY_GT4` code `0x3C | semi << 1`).
+    pub semi: bool,
+    /// `+0x10` bottom-edge packet colour.
+    pub rgb_bottom: [u8; 3],
+    /// `+0x13` ABR blend mode, added into the texpage as `abr << 5`.
+    pub abr: u8,
 }
 
 /// Parse the 3 HUD widget descriptors out of the **raw** slot overlay entry
@@ -213,6 +221,10 @@ pub fn parse_slot_hud(overlay: &[u8]) -> Result<Vec<SlotHudWidget>> {
                 v: overlay[o + 9],
                 w: overlay[o + 0x0A],
                 h: overlay[o + 0x0B],
+                rgb_top: [overlay[o + 0x0C], overlay[o + 0x0D], overlay[o + 0x0E]],
+                semi: overlay[o + 0x0F] != 0,
+                rgb_bottom: [overlay[o + 0x10], overlay[o + 0x11], overlay[o + 0x12]],
+                abr: overlay[o + 0x13],
             }
         })
         .collect())

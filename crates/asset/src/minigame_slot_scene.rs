@@ -209,21 +209,15 @@ pub fn cos_4096(angle: i32) -> i32 {
 /// Model-space `y` of the reel cylinder at `angle` (`FUN_801d0fa8`).
 // PORT: FUN_801d0fa8 (reel cylinder y: sin(a) * -0x249 >> 12)
 //
-// The gap here is a *renderer*, not a caller, so this is deliberately not
-// an inert-port disclosure - `asset slot-scene` calls it from `fn main` to print the
-// fixed-point table. What no Rust host does is *draw* the slot cabinet. The
-// browser play page is the only host that renders the machine as the 3D scene
-// it is, and it does the cylinder maths in JavaScript: `slot_marquee_json`
-// exports this module's *constants* (REEL_Y_RADIUS, REEL_Z_SHIFT,
-// REEL_SHADE_*, ANGLE_FULL, PROJ_*) and `slotDrawReels` in
-// site/_content/minigames.html recomputes y / z / shade from them. The native
-// window has no cabinet at all - its slot HUD is three lines of text. So this
-// is reimplemented rather than unused, and the reimplementation is NOT
-// equivalent: the JS works in floats, while this carries retail's fixed-point
-// round-toward-zero biases (`(v + 0xFFF) >> 12`, `(v + 7) >> 3`). The CLI table
-// is what lets the two be compared instead of assumed equal; a renderer wants a
-// Rust-side reel vertex emitter, either in the native window or by the web page
-// taking its vertices from WASM.
+// The native window draws the cylinders through this kernel
+// (`engine-ui::ui_slot_cabinet::slot_cabinet_prims`, from the play-window's
+// slot-machine frame). The browser pages still do the cylinder maths in
+// JavaScript: `slot_marquee_json` exports this module's *constants*
+// (REEL_Y_RADIUS, REEL_Z_SHIFT, REEL_SHADE_*, ANGLE_FULL, PROJ_*) and
+// `slotDrawReels` in site/_content/minigames.html recomputes y / z / shade in
+// floats, without retail's fixed-point round-toward-zero biases
+// (`(v + 0xFFF) >> 12`, `(v + 7) >> 3`). `asset slot-scene` prints the
+// fixed-point table so the two can be compared instead of assumed equal.
 pub fn reel_y(angle: i32) -> i32 {
     let v = sin_4096(angle) * -REEL_Y_RADIUS;
     // Retail biases negatives before the arithmetic shift (round toward zero).
@@ -232,8 +226,8 @@ pub fn reel_y(angle: i32) -> i32 {
 
 /// Model-space `z` of the reel cylinder at `angle` (`FUN_801d0fa8`).
 // PORT: FUN_801d0fa8 (reel cylinder z: cos(a) >> 3)
-// Same renderer gap as `reel_y` above, and undisclosed for the same reason: `asset slot-scene` calls it from `fn main`, while the only
-// host that *draws* the cabinet recomputes this in floating-point JavaScript.
+// Drawn natively through `ui_slot_cabinet`; the browser pages recompute it
+// in floating-point JavaScript (see `reel_y`).
 pub fn reel_z(angle: i32) -> i32 {
     let v = cos_4096(angle);
     if v < 0 {
@@ -246,8 +240,8 @@ pub fn reel_z(angle: i32) -> i32 {
 /// The depth-cued gouraud shade of a reel vertex at model-space `z`, clamped to
 /// `0 ..= 0xB4` (`FUN_801d0fa8`). Feed it to a `texel * shade / 128` blend.
 // PORT: FUN_801d0fa8 (reel depth-cue shade)
-// Same renderer gap as `reel_y` above, and undisclosed for the same reason: `asset slot-scene` calls it from `fn main`, while the only
-// host that *draws* the cabinet recomputes this in floating-point JavaScript.
+// Drawn natively through `ui_slot_cabinet`; the browser pages recompute it
+// in floating-point JavaScript (see `reel_y`).
 pub fn reel_shade(z: i32) -> i32 {
     let v = (z + REEL_SHADE_Z_BIAS) * REEL_SHADE_Z_GAIN;
     let v = if v < 0 { (v + 0x1FF) >> 9 } else { v >> 9 };
@@ -696,16 +690,11 @@ pub fn parse_messages(overlay: &[u8], page3: &[u8], page3_w: usize) -> Result<Ve
 /// message stays unlit, which is what makes the message scroll in and out.
 // PORT: FUN_801d069c (marquee dot-buffer composer)
 //
-// Same renderer gap as the reel kernels above, and deliberately not
-// an inert-port disclosure: `asset slot-scene` walks the composer and the rasteriser over a
-// real overlay from `fn main`, so the chain has a real non-test caller and is
-// checkable end to end. What is missing is a *host that owns a dot buffer*. No
-// Rust host draws the dot matrix: `SlotMachine::marquee_placements`
-// (engine-core) wraps this and nothing on a frame path calls *it*, the browser
-// play page exports the 21 message bitmaps as JSON and blits them in
-// JavaScript, and the native window's slot HUD is text-only. Closing it means
-// either the native cabinet renderer, or the web page moving composition into
-// WASM and taking a rasterised buffer instead of the raw bitmap bank.
+// The native window owns the dot buffer: `ui_slot_cabinet::SlotMarqueeClock`
+// composes it every frame (the attract legend through this scroll, the
+// caption / tally through `render_marquee`) and the dot pass rasterises it.
+// The browser play page still exports the 21 message bitmaps as JSON and
+// blits them in JavaScript.
 pub fn compose_marquee(msg: &MarqueeMessage, x: i32, y: i32) -> Vec<u8> {
     let mut buf = vec![0u8; DOT_COLS * DOT_STRIDE];
     for row in 0..DOT_ROWS {
@@ -732,9 +721,8 @@ pub fn compose_marquee(msg: &MarqueeMessage, x: i32, y: i32) -> Vec<u8> {
 /// composer opens with exactly that call, so the marquee is rebuilt from scratch
 /// every frame rather than diffed against the previous one.
 // PORT: FUN_801d069c (negative-id clear path)
-// Same renderer gap as `compose_marquee` above, and undisclosed for the same
-// reason: `asset slot-scene` calls it from `fn main` as the blank buffer
-// every composed frame starts from.
+// The blank buffer every composed frame starts from, natively through
+// `ui_slot_cabinet::SlotMarqueeClock`.
 pub fn clear_dots() -> Vec<u8> {
     vec![0u8; DOT_COLS * DOT_STRIDE]
 }
@@ -760,9 +748,8 @@ pub fn clear_dots() -> Vec<u8> {
 /// sub-rect already tightened to `w`, so indexing by `w` reads the same texels -
 /// the equivalence [`compose_marquee`] already relies on.
 // PORT: FUN_801d3230 (dot-buffer placement blit)
-// Same renderer gap as `compose_marquee` above, and undisclosed for the same
-// reason: `asset slot-scene` exercises this blit on its own from
-// `fn main`, so the composed and placed views can be compared.
+// Reached natively through `render_marquee` from
+// `ui_slot_cabinet::SlotMarqueeClock`.
 pub fn place_message(buf: &mut [u8], msg: &MarqueeMessage, col: i32, row: i32) {
     for r in 0..msg.h as i32 {
         let dr = row + r;
@@ -825,9 +812,8 @@ pub struct MarqueePlacement {
 /// re-read `DAT_801d3d3c` - while the digit *values* come off a remainder chain
 /// that runs whether or not its own place was drawn.
 // PORT: FUN_801cfff0 (per-frame marquee composition)
-// Same renderer gap as `compose_marquee` above, and undisclosed for the same
-// reason: `asset slot-scene` drives it from `fn main` over a tour of the
-// six overlay globals it reads.
+// The caption / tally half; the attract-legend tail is [`attract_legend`].
+// Composed natively every frame by `ui_slot_cabinet::SlotMarqueeClock`.
 pub fn compose_marquee_frame(frame: &MarqueeFrame) -> Vec<MarqueePlacement> {
     let mut out = Vec::new();
     if frame.payout != 0 && frame.payout_frame != 0 {
@@ -920,6 +906,136 @@ pub fn render_marquee(placements: &[MarqueePlacement], messages: &[MarqueeMessag
 /// The CLUT the medallion whose record carries `art` samples.
 pub fn medallion_clut(art: i16) -> ClutId {
     ClutId(MEDALLION_CLUT_BASE.wrapping_add(art as u16))
+}
+
+// ---------------------------------------------------------------------------
+// The attract legend - the dot matrix outside the caption and the tally
+// ---------------------------------------------------------------------------
+
+/// What the legend counter `DAT_801d3ca0` is reset to the frame the legend's
+/// message id changes (`FUN_801d069c`, `0x801D06F8..0x801D0704`: `li v0,0x64`;
+/// the same call also scrolls from source column `0`, not from the counter).
+pub const LEGEND_COUNTER_RESET: i32 = 0x64;
+
+/// The scrolling legend `FUN_801cfff0` puts on the dot matrix when neither the
+/// payout caption nor the tally strip owns it: `(message id, source column)`
+/// for one `FUN_801d069c` scroll call, or `None` when that frame's matrix is
+/// left clear.
+///
+/// The tail runs only outside the tally modes (`feature_mode` not in `4..=6`,
+/// the `sltiu 3` gate at `0x801D027C`). It first reads the bonus-anticipation
+/// latch `DAT_801d3ca4` (`FUN_801d1af4` writes `1` / `2` when an `8` / `9`
+/// pair lines up while the reels settle): a raised latch scrolls message `4` /
+/// `5` at `counter % 200 - 100` (`0x801D04BC..0x801D0530`). Otherwise the
+/// feature mode indexes a 7-entry jump table at `0x801CEC58`: mode `0` places
+/// message `0` still at column `0`, modes `1..=3` scroll message `1..=3` at
+/// `counter % 168 - 84`, and every other entry is the function's epilogue.
+///
+/// `counter` is the free-running `DAT_801d3ca0`, which the reel renderer's
+/// tail (`0x801CFF00..0x801CFF24`) advances once a frame; a caller also owns
+/// the reset to [`LEGEND_COUNTER_RESET`] on a message change.
+// PORT: FUN_801cfff0 (the attract-legend tail, 0x801D038C..0x801D0538)
+pub fn attract_legend(feature_mode: u8, anticipation: i32, counter: i32) -> Option<(usize, i32)> {
+    if MARQUEE_TALLY_MODES.contains(&feature_mode) {
+        return None;
+    }
+    match anticipation {
+        1 => return Some((4, counter % 200 - 100)),
+        2 => return Some((5, counter % 200 - 100)),
+        0 => {}
+        _ => return None,
+    }
+    match feature_mode {
+        0 => Some((0, 0)),
+        1..=3 => Some((feature_mode as usize, counter % 168 - 84)),
+        _ => None,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The cabinet mesh (PROT 1200 descriptor 1)
+// ---------------------------------------------------------------------------
+
+/// One triangle of the cabinet mesh, in the machine's model space.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CabinetTri {
+    /// The three corners.
+    pub pos: [Pos3; 3],
+    /// Per-corner packet colour (a flat prim repeats its one colour).
+    pub rgb: [[u8; 3]; 3],
+    /// The group's ABE bit: the prim blends.
+    pub semi: bool,
+}
+
+/// The machine's body: every prim of the untextured cabinet TMD the slot
+/// init installs into the model bank and draws as an ordinary actor (see
+/// `docs/subsystems/minigame-slot-machine.md`, "The cabinet is a mesh"). Quads
+/// are split into two triangles with the TMD walker's `[0,1,2, 1,3,2]`
+/// winding.
+#[derive(Debug, Clone, Default)]
+pub struct SlotCabinetMesh {
+    pub tris: Vec<CabinetTri>,
+}
+
+/// Asset type byte of a TMD descriptor.
+const TYPE_TMD: u8 = 0x02;
+
+/// Decode the cabinet mesh out of a **raw** PROT entry 1200 - the art pack's
+/// container, whose first `TMD` descriptor is the machine's body.
+pub fn parse_cabinet(entry: &[u8]) -> Result<SlotCabinetMesh> {
+    use anyhow::Context;
+    if entry.len() < 8 {
+        bail!("art entry too small ({}b) for a container", entry.len());
+    }
+    let count = u32::from_le_bytes(entry[0..4].try_into().unwrap()) as usize;
+    if count == 0 || count > 16 {
+        bail!("implausible descriptor count {count} in art entry");
+    }
+    let container = crate::parse_player_lzs(entry, count)?;
+    let desc = container
+        .descriptors
+        .iter()
+        .find(|d| d.type_byte == TYPE_TMD)
+        .context("art entry carries no TMD descriptor")?;
+    // The descriptor LZS-decodes to a one-member `asset::pack` whose member is
+    // the TMD (`[count = 1][word offset 2]`, magic at byte 8).
+    let is_tmd = |b: &[u8]| b.len() >= 4 && b[0..4] == 0x8000_0002u32.to_le_bytes();
+    let decoded = crate::decode(entry, desc, crate::DecodeMode::Lzs)?;
+    let body = if is_tmd(&decoded) {
+        decoded
+    } else {
+        crate::pack::extract_pack(&decoded)
+            .ok()
+            .and_then(|members| members.into_iter().find(|m| is_tmd(m)))
+            .map(|m| m.to_vec())
+            .context("cabinet descriptor does not decode to a Legaia TMD")?
+    };
+    let tmd = legaia_tmd::parse(&body).context("parsing the cabinet TMD")?;
+    let mesh = legaia_tmd::mesh::tmd_to_color_mesh(&tmd, &body);
+    let pos = |i: u32| {
+        let p = mesh.positions[i as usize];
+        Pos3 {
+            x: p[0] as i16,
+            y: p[1] as i16,
+            z: p[2] as i16,
+        }
+    };
+    let tris = mesh
+        .indices
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .map(|t| CabinetTri {
+            pos: [pos(t[0]), pos(t[1]), pos(t[2])],
+            rgb: [
+                mesh.colors[t[0] as usize],
+                mesh.colors[t[1] as usize],
+                mesh.colors[t[2] as usize],
+            ],
+            semi: mesh.blend[t[0] as usize] & 0x8000 != 0,
+        })
+        .collect();
+    Ok(SlotCabinetMesh { tris })
 }
 
 #[cfg(test)]

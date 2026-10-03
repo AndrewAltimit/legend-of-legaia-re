@@ -668,6 +668,13 @@ impl SlotMachine {
         self.reel_pos[reel]
     }
 
+    /// Whether `reel`'s stop has been accepted this spin - the per-reel flag
+    /// (`DAT_801d3d00[reel]`) the furniture pass `FUN_801d08e4` reads to swap
+    /// that reel's pedestal onto its "taken" cell.
+    pub fn reel_stopped(&self, reel: usize) -> bool {
+        self.stopped.get(reel).is_some_and(|s| s.is_some())
+    }
+
     /// How many reels are stopped this spin (`DAT_801d3d2c`).
     pub fn reels_stopped(&self) -> usize {
         self.stopped.iter().filter(|s| s.is_some()).count()

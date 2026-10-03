@@ -593,8 +593,9 @@ prim's colour, half-blended for the `0x43` code (`sa` / `sb` in
 `slot_payline_prims_json` / `play_mg_slot_payline_prims_json`). The native
 window stages the geometry on the machine itself (`SlotMachine::with_paylines`)
 and draws the same segments as one-pixel flat quads through
-`engine-ui::ui_slot_paylines`; it still draws no cabinet mesh around them. OT
-linkage stays caller-side: all three hosts draw the lines over the reels.
+`engine-ui::ui_slot_paylines`, over the machine it draws around them
+([who draws the machine](#who-draws-the-machine)). OT linkage stays
+caller-side: all three hosts draw the lines over the reels.
 
 ### The furniture is billboards - `FUN_801d08e4`
 
@@ -690,6 +691,21 @@ figure** at each of its four places, not the running remainder: all four guards
 re-read `DAT_801d3d3c`, while the digit values come off a remainder chain that
 runs whether or not its own place drew. So `405` prints `4`, `0`, `5` - an
 interior zero is kept - and `7` prints a bare `7` in the units column.
+
+When neither occupant is up, the tail (`0x801D038C..0x801D0538`) puts the
+**attract legend** on the strip, outside feature modes `4..=6` only. A raised
+bonus-anticipation latch `DAT_801d3ca4` (`FUN_801d1af4` writes `1` / `2`)
+scrolls message `4` / `5` at source column `counter % 200 - 100`; otherwise the
+feature mode indexes a 7-entry jump table at `0x801CEC58`: mode `0` places
+message `0` still at column `0`, modes `1..=3` scroll message `1..=3` at
+`counter % 168 - 84`, and the other entries draw nothing. `counter` is
+`DAT_801d3ca0`, which the reel renderer's tail advances once a frame
+(`0x801CFF00..0x801CFF24`, beside the `DAT_801d3c9c` blink counter), and
+`FUN_801d069c` resets it to `100` - and scrolls from column `0` that call - the
+frame the message id differs from the last one it drew (`DAT_801d3c88`).
+Ported as `minigame_slot_scene::attract_legend` plus the reset in
+`engine-ui::ui_slot_cabinet::SlotMarqueeClock`; the engine's machine does not
+model the anticipation latch, so messages `4` / `5` never scroll in the port.
 
 ### The two screen-space draws - `FUN_801d2cc0`
 
@@ -804,6 +820,31 @@ renderer ([`renderer.md`](renderer.md)) is **Inferred** - it is the only
 consumer of an actor part array, and it is the same path the battle backdrop
 takes, but no frame has been traced from `actor+0x44` to a GP0 word at the
 machine.
+
+### Who draws the machine
+
+The native window draws the whole frame from the emitters above, through one
+builder, `engine-ui::ui_slot_cabinet::slot_cabinet_prims`: the cabinet mesh
+(PROT 1200's `TMD` descriptor, decoded by
+`minigame_slot_scene::parse_cabinet`, back faces culled), the reel faces with
+their per-edge depth-cue shade, the four furniture passes with their tints (any
+taken stop `0xA0`, the record matching the winning-line word `0xE0`), all 1014
+dots including the unlit ones, and the two `FUN_801d2cc0` widgets plus the coin
+digits. Every quad samples the art pack uploaded at its own framebuffer
+destinations, so palettes, the 8bpp panel page and the per-texel STP blend come
+from VRAM rather than from per-sprite decodes, and every projected element is
+linked at a bucket proportional to its depth. The walked-in casino floor is not
+drawn while the machine is up.
+
+Two residuals: corners are snapped to the 320-wide display space every screen
+primitive is authored in, so a dot lands to the nearest even framebuffer
+column; and the cabinet draws its raw packet colours, which read lighter than
+the capture's greys (the shading term named in
+[the cabinet section](#the-cabinet-is-a-mesh---prot-1200-descriptor-1)).
+
+The browser pages still compose the machine in a 2D canvas (`slotRender` in
+`site/js/play-minigames.js` and `site/_content/minigames.html`), with the
+cabinet painted as a measured composition.
 
 ## Art pack (PROT 1200)
 

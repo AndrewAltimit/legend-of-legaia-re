@@ -95,6 +95,7 @@ pub mod ui_menu_window_painters;
 mod ui_menu_window_painters_large;
 mod ui_overlay;
 pub mod ui_prize_exchange;
+pub mod ui_slot_cabinet;
 pub mod ui_slot_paylines;
 pub mod ui_text_lines;
 mod ui_title_save;

@@ -1086,6 +1086,15 @@ struct PlayWindowApp {
     /// GPU copy while a fishing session is up.
     fishing_surface: legaia_engine_core::fishing_scene::FishingSurface,
     fishing_gpu: Option<minigames::BakaDuelGpu>,
+    /// The slot machine's disc data, decoded on the first visit (`Some(None)`
+    /// remembers a disc it did not decode on).
+    slot_cabinet_assets: Option<Option<std::sync::Arc<minigames::SlotCabinetAssets>>>,
+    /// The machine's VRAM on the GPU while it is on screen.
+    slot_gpu: Option<UploadedVram>,
+    /// The marquee's legend / blink counters.
+    slot_marquee_clock: legaia_engine_render::ui_slot_cabinet::SlotMarqueeClock,
+    /// This frame's composed dot buffer.
+    slot_dots: Vec<u8>,
     /// The dance venue on the GPU while the dance entry's globals are staged
     /// (see `PlayWindowApp::sync_dance_venue`).
     dance_venue_gpu: Option<minigames::DanceVenueGpu>,
