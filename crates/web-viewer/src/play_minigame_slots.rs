@@ -78,14 +78,14 @@ impl LegaiaRuntime {
         ui.prev_phase = phase;
         // The marquee's dot buffer for the shared cabinet builder, off the
         // same `SlotMachine::marquee` state the native window composes from.
-        let marquee = self.slot_session().map(|m| m.marquee());
+        let marquee = self.slot_session().map(|m| (m.marquee(), m.anticipation()));
         let messages = self
             .minigame_art()
             .and_then(|a| a.slot_cabinet.as_ref())
             .map(|c| c.scene.messages.clone());
         let ui = &mut self.minigame_ui.slot;
         ui.dots = match (marquee, messages) {
-            (Some(f), Some(msgs)) => ui.clock.frame(&f, 0, &msgs),
+            (Some((f, reach)), Some(msgs)) => ui.clock.frame(&f, reach, &msgs),
             _ => Vec::new(),
         };
     }
@@ -115,7 +115,7 @@ impl LegaiaRuntime {
             hud: &c.hud,
             reel_pos: core::array::from_fn(|r| m.reel_pos(r)),
             strips: [&strips[0], &strips[1], &strips[2]],
-            stopped: core::array::from_fn(|r| m.reel_stopped(r)),
+            stop_open: core::array::from_fn(|r| m.reel_stop_open(r)),
             winning_line: m.winning_line_word(),
             dots,
             blink: self.minigame_ui.slot.clock.blink,

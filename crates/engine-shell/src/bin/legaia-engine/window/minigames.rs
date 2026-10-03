@@ -855,12 +855,11 @@ impl PlayWindowApp {
             self.slot_dots.clear();
             return;
         };
-        // The bonus-anticipation latch (`DAT_801d3ca4`, `FUN_801d1af4`) is
-        // not modelled by the engine's machine, so its two legends never
-        // scroll.
-        self.slot_dots = self
-            .slot_marquee_clock
-            .frame(&m.marquee(), 0, &assets.scene.messages);
+        // The bonus-anticipation latch (`DAT_801d3ca4`, `FUN_801d1af4`)
+        // picks the two "reach" legends.
+        self.slot_dots =
+            self.slot_marquee_clock
+                .frame(&m.marquee(), m.anticipation(), &assets.scene.messages);
     }
 
     /// Put the slot machine's VRAM on the GPU while the machine is on
@@ -924,7 +923,7 @@ impl PlayWindowApp {
             hud: &assets.hud,
             reel_pos: core::array::from_fn(|r| m.reel_pos(r)),
             strips: [&strips[0], &strips[1], &strips[2]],
-            stopped: core::array::from_fn(|r| m.reel_stopped(r)),
+            stop_open: core::array::from_fn(|r| m.reel_stop_open(r)),
             winning_line: m.winning_line_word(),
             dots: &dots,
             blink: self.slot_marquee_clock.blink,

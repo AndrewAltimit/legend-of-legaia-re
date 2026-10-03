@@ -621,10 +621,15 @@ the overlay's load base is `0x801C_E818`, so `file = VA - 0x801C_E818`):
   lights.
 - **Reel-stop pedestals** (positions computed, not tabled: `x = -0x180 + r *
   0x180`, `y = 0x1E0`, `z = -800`): page `0x1C`, half `0x230 x 0x120`, 32x32 cell
-  on row `v = 0x80 + r * 0x20`. While the reel spins it draws `u = 0x60` with CLUT
-  `0x7B03 + r`; once the reel is stopped the palette swaps to `0x7B06 + r` **and
-  the cell slides left to `u = 0`** - the stop branch overrides only the `U`s, so
-  the pedestal stays on its own row. That swap is how retail shows a taken stop.
+  on row `v = 0x80 + r * 0x20`. The branch reads `DAT_801d3d00[r]`, the reel's
+  **stop-still-open** flag: the bet charge sets all three (`0x801CF4DC..0x801CF4E4`),
+  the reel's Stop press clears it (`FUN_801d2114`), and the state-3 Stop tests
+  accept a press only while it is set (`0x801CF724`). While it is open the
+  pedestal draws `u = 0` with CLUT `0x7B06 + r` - the "press now" button;
+  otherwise (before a spin, and once that stop is taken) `u = 0x60` with CLUT
+  `0x7B03 + r`. The branch overrides only the `U`s, so the pedestal stays on its
+  own row. The medallion and marquee passes OR the three flags
+  (`0x801D0A58..0x801D0A68`) and brighten to `0xA0` while any stop is open.
 - **Marquee panel + mascots**: page `0x1C`, CLUT `0x7B00 + clut_off`; each record
   carries its own view-space half-extent and its own texture cell. The panel's
   interior is palette index 0 - **transparent**: the navy behind the legend is the
@@ -705,8 +710,21 @@ message `0` still at column `0`, modes `1..=3` scroll message `1..=3` at
 `FUN_801d069c` resets it to `100` - and scrolls from column `0` that call - the
 frame the message id differs from the last one it drew (`DAT_801d3c88`).
 Ported as `minigame_slot_scene::attract_legend` plus the reset in
-`engine-ui::ui_slot_cabinet::SlotMarqueeClock`; the engine's machine does not
-model the anticipation latch, so messages `4` / `5` never scroll in the port.
+`engine-ui::ui_slot_cabinet::SlotMarqueeClock`, with the latch from
+`SlotMachine::anticipation`.
+
+The latch's writer is the bonus-symbol scanner `FUN_801d1af4`, which state 3
+calls only while exactly two stops are in (the `DAT_801d3d2c == 2` test at
+`0x801CF7EC`). On each of the five paylines it tests the reel pairs
+`(0,1)`, `(1,2)`, `(0,2)`, each only when both reels have landed (the landed
+flags `DAT_801d3d10[r]`, set by `FUN_801d0554` and ANDed per pair), for an equal
+pair of `9`s (punch) or `8`s (kick). A punch pair writes `1`, else a kick pair
+writes `2`; the first sighting per spin also raises SFX cue `0x200` behind the
+guard `DAT_801d3ca8`. State 3 zeroes the latch every frame before the scanner
+runs - the store sits in the delay slot of the Stop-0 test at `0x801CF71C`, so
+it runs whatever the pad holds - and state 2 clears latch and guard on entry
+(`0x801CF600` / `0x801CF608`). Ported as `SlotMachine::anticipation_scan`; the
+cue is not, because the engine's machine emits no audio.
 
 ### The two screen-space draws - `FUN_801d2cc0`
 
@@ -831,7 +849,7 @@ the art pack uploaded as the renderer's VRAM for the visit): the cabinet mesh
 (PROT 1200's `TMD` descriptor, decoded by
 `minigame_slot_scene::parse_cabinet`, back faces culled), the reel faces with
 their per-edge depth-cue shade, the four furniture passes with their tints (any
-taken stop `0xA0`, the record matching the winning-line word `0xE0`), all 1014
+open stop `0xA0`, the record matching the winning-line word `0xE0`), all 1014
 dots including the unlit ones, and the two `FUN_801d2cc0` widgets plus the coin
 digits. Every quad samples the art pack uploaded at its own framebuffer
 destinations, so palettes, the 8bpp panel page and the per-texel STP blend come

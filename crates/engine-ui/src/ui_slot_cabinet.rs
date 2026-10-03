@@ -122,8 +122,9 @@ pub struct SlotCabinetInput<'a> {
     pub reel_pos: [i32; 3],
     /// Each reel's display strip.
     pub strips: [&'a [u8]; 3],
-    /// Each reel's per-spin "stop accepted" flag (`DAT_801d3d00[r]`).
-    pub stopped: [bool; 3],
+    /// Each reel's "stop still open" flag (`DAT_801d3d00[r]`): set by the bet
+    /// charge, cleared by that reel's Stop press.
+    pub stop_open: [bool; 3],
     /// The winning-line word (`DAT_801d3c8c`); `-1` lights nothing.
     pub winning_line: i32,
     /// The dot buffer, `buf[col * DOT_STRIDE + row]` = palette nibble.
@@ -290,7 +291,7 @@ fn billboard(
 
 /// The glass furniture (`FUN_801d08e4`), in its four passes.
 fn furniture_prims(input: &SlotCabinetInput<'_>, out: &mut Vec<ScreenPrim>) {
-    // Pass 1: the reel-stop pedestals. A taken stop swaps the palette and
+    // Pass 1: the reel-stop pedestals. An open stop swaps the palette and
     // slides the cell left on its own row.
     for r in 0..sc::REEL_COUNT {
         let pos = sc::Pos3 {
@@ -298,29 +299,30 @@ fn furniture_prims(input: &SlotCabinetInput<'_>, out: &mut Vec<ScreenPrim>) {
             y: sc::PEDESTAL_Y as i16,
             z: sc::GLASS_Z as i16,
         };
-        let stopped = input.stopped[r];
-        let clut = if stopped {
-            sc::PEDESTAL_CLUT_STOPPED
+        let open = input.stop_open[r];
+        let clut = if open {
+            sc::PEDESTAL_CLUT_OPEN
         } else {
-            sc::PEDESTAL_CLUT_SPINNING
+            sc::PEDESTAL_CLUT_IDLE
         } + r as u16;
         out.push(billboard(
             pos,
             sc::PEDESTAL_HALF,
-            sc::pedestal_cell(r, stopped),
+            sc::pedestal_cell(r, open),
             clut,
             FURNITURE_TPAGE,
             NEUTRAL,
         ));
     }
-    // Any stop taken brightens the medallions and the marquee (`0xA0`); the
+    // Any stop still open brightens the medallions and the marquee (`0xA0`,
+    // the OR of `DAT_801d3d00[0..3]` at `0x801D0A58..0x801D0A68`); the
     // record whose index is the winning-line word brightens further (`0xE0`).
     // The marquee pass compares its own index against the same word.
-    let any_stopped = input.stopped.iter().any(|&s| s);
+    let any_open = input.stop_open.iter().any(|&s| s);
     let tint = |i: usize| {
         if i as i32 == input.winning_line {
             0x00E0_E0E0
-        } else if any_stopped {
+        } else if any_open {
             0x00A0_A0A0
         } else {
             NEUTRAL
@@ -498,8 +500,8 @@ impl SlotMarqueeClock {
     /// Advance one frame, then compose this frame's dot buffer: the payout
     /// caption or the tally strip when the machine's state puts one up
     /// ([`sc::compose_marquee_frame`]), else the attract legend
-    /// ([`sc::attract_legend`]). The bonus-anticipation latch `DAT_801d3ca4`
-    /// is the caller's (`anticipation`, `0` when it is not modelled).
+    /// ([`sc::attract_legend`]). `anticipation` is the machine's
+    /// bonus-anticipation latch `DAT_801d3ca4` (`SlotMachine::anticipation`).
     pub fn frame(
         &mut self,
         marquee: &sc::MarqueeFrame,
@@ -559,7 +561,7 @@ mod tests {
             hud: &[],
             reel_pos: [7 * 0x100, 0, 0],
             strips: [&strip, &strip, &strip],
-            stopped: [false; 3],
+            stop_open: [false; 3],
             winning_line: -1,
             dots: &dots,
             blink: 0,
@@ -589,7 +591,7 @@ mod tests {
             hud: &[],
             reel_pos: [0; 3],
             strips: [&strip, &strip, &strip],
-            stopped: [false; 3],
+            stop_open: [false; 3],
             winning_line: -1,
             dots: &dots,
             blink: 0,

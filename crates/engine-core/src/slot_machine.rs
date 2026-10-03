@@ -450,6 +450,10 @@ pub struct SlotMachine {
     /// The five payline segments' model-space geometry (`DAT_801d3680`), when
     /// the host staged it ([`Self::with_paylines`]).
     paylines: Vec<legaia_asset::minigame_slot_scene::PayLine>,
+    /// The bonus-anticipation latch (`DAT_801d3ca4`): `1` while two landed
+    /// reels show a punch (`9`) pair on any payline, `2` for a kick (`8`)
+    /// pair, `0` otherwise - see [`Self::anticipation`].
+    anticipation: i32,
 }
 
 /// Spin-up frames before the reels may be stopped (visual pacing constant;
@@ -510,6 +514,7 @@ impl SlotMachine {
             caption_payout: 0,
             caption_frame: 0,
             paylines: Vec::new(),
+            anticipation: 0,
         }
     }
 
@@ -668,12 +673,64 @@ impl SlotMachine {
         self.reel_pos[reel]
     }
 
-    /// Whether `reel`'s stop has been accepted this spin - the per-reel flag
-    /// (`DAT_801d3d00[reel]`) the furniture pass `FUN_801d08e4` reads to swap
-    /// that reel's pedestal onto its "taken" cell.
+    /// Whether `reel`'s stop is still open - the per-reel flag
+    /// `DAT_801d3d00[reel]`, which the bet charge sets and the reel's Stop
+    /// press clears (`FUN_801d2114`). The furniture pass `FUN_801d08e4` reads
+    /// it to light that reel's pedestal and, ORed over the three, to brighten
+    /// the medallions and marquee while any stop is still to be taken.
     // REF: FUN_801d08e4 (the pedestal pass that reads the flag)
-    pub fn reel_stopped(&self, reel: usize) -> bool {
-        self.stopped.get(reel).is_some_and(|s| s.is_some())
+    pub fn reel_stop_open(&self, reel: usize) -> bool {
+        matches!(self.phase, SlotPhase::Spinning | SlotPhase::Stopping)
+            && self.stopped.get(reel).is_some_and(|s| s.is_none())
+    }
+
+    /// The bonus-anticipation latch (`DAT_801d3ca4`): `1` while two landed
+    /// reels show a punch pair, `2` for a kick pair, `0` otherwise. Read by
+    /// the marquee's legend tail, which scrolls message `4` / `5` for it
+    /// ([`legaia_asset::minigame_slot_scene::attract_legend`]).
+    pub fn anticipation(&self) -> i32 {
+        self.anticipation
+    }
+
+    /// The bonus-symbol scanner (`FUN_801d1af4`), run while exactly two stops
+    /// are in: on each of the five paylines it compares the three reel pairs
+    /// `(0,1)`, `(1,2)`, `(0,2)`, each only when both reels have landed
+    /// (`DAT_801d3d10[r]`, ANDed per pair), and notes an equal pair of `9`s
+    /// (punch) or `8`s (kick). A punch pair anywhere wins: the latch reads
+    /// `1`, else `2` for a kick pair, else nothing is written (`0`, the state
+    /// frame's clear). The scanner's rows are retail's `+0x11 / +0x10 / +0x0F`
+    /// and the two diagonals - [`PAYLINE_ROW_OFFSETS`] around the payline row.
+    ///
+    /// The scanner also raises SFX cue `0x200` and calls `FUN_80065034`
+    /// once per spin behind the guard `DAT_801d3ca8`; the engine's machine
+    /// emits no audio, so that half has no counterpart here.
+    ///
+    /// [`PAYLINE_ROW_OFFSETS`]: legaia_asset::minigame_slot_scene::PAYLINE_ROW_OFFSETS
+    // PORT: FUN_801d1af4
+    fn anticipation_scan(&self) -> i32 {
+        use legaia_asset::slot_payout::{KICK_SYMBOL_ID, PUNCH_SYMBOL_ID};
+        let landed: [bool; REEL_COUNT] = core::array::from_fn(|r| self.stopped[r].is_some());
+        let (mut punch, mut kick) = (false, false);
+        for offs in legaia_asset::minigame_slot_scene::PAYLINE_ROW_OFFSETS.iter() {
+            let v = |r: usize| {
+                let row = (self.payline_row(r) as isize + offs[r] as isize)
+                    .rem_euclid(STRIP_LEN as isize) as usize;
+                self.strips[r][row]
+            };
+            for (a, b) in [(0, 1), (1, 2), (0, 2)] {
+                if landed[a] && landed[b] && v(a) == v(b) {
+                    punch |= v(a) == PUNCH_SYMBOL_ID;
+                    kick |= v(a) == KICK_SYMBOL_ID;
+                }
+            }
+        }
+        if punch {
+            1
+        } else if kick {
+            2
+        } else {
+            0
+        }
     }
 
     /// How many reels are stopped this spin (`DAT_801d3d2c`).
@@ -755,6 +812,9 @@ impl SlotMachine {
         self.spin_timer = self.next_spin_up_frames();
         self.bonus_just_ended = false;
         self.last_result = None;
+        // State 2 clears the latch and its one-shot guard on entry
+        // (`0x801CF600` / `0x801CF608`).
+        self.anticipation = 0;
         self.phase = SlotPhase::Spinning;
         true
     }
@@ -828,6 +888,17 @@ impl SlotMachine {
                 self.phase = SlotPhase::Stopping;
             }
         }
+        // State 3 zeroes the latch every frame (the store sits in the delay
+        // slot of the Stop-0 test at `0x801CF71C`, so it runs whatever the
+        // pad says), then re-runs the scanner while exactly two stops are in
+        // (the `DAT_801d3d2c == 2` test at `0x801CF7EC`).
+        if self.phase == SlotPhase::Stopping {
+            self.anticipation = if self.reels_stopped() == 2 {
+                self.anticipation_scan()
+            } else {
+                0
+            };
+        }
         // The display-strip refill, after the advance - as in retail's tail.
         let source = *self.active_source();
         let rows: [usize; REEL_COUNT] =
@@ -874,6 +945,9 @@ impl SlotMachine {
         // "unclaimed" state (`0`) distinguishable from a landed value of `0`.
         self.claimed[reel] = self.strips[reel][row] as i32 + 1;
         if self.reels_stopped() == REEL_COUNT {
+            // The third stop leaves the scanner's two-stop window; retail's
+            // next state-3 frame zeroes the latch before the payout state.
+            self.anticipation = 0;
             let result = self.evaluate_spin();
             self.last_result = Some(result);
             self.phase = SlotPhase::Payout;
@@ -1708,6 +1782,40 @@ mod tests {
             stop_plan(&mut rng, FEATURE_MODE_BONUS, 4, Some(6)),
             (0, None)
         );
+    }
+
+    /// `FUN_801d1af4`: two landed reels showing a punch pair on a payline
+    /// raise the latch to `1`, a kick pair to `2`; one landed reel, or a pair
+    /// on a reel still spinning, raises nothing; the third stop clears it.
+    #[test]
+    fn two_landed_bonus_symbols_raise_the_anticipation_latch() {
+        let mut m = SlotMachine::new(payouts(), 42, 50);
+        assert!(m.spin());
+        for _ in 0..SPIN_UP_FRAMES {
+            m.tick();
+        }
+        assert_eq!(m.phase(), SlotPhase::Stopping);
+        let plant = |m: &mut SlotMachine, sym: u8| {
+            for r in 0..REEL_COUNT {
+                m.reel_pos[r] = 0;
+                m.strips[r] = [r as u8; STRIP_LEN];
+            }
+            // Top row (line 0, `+1`) of reels 0 and 2 - the `(0,2)` pair.
+            m.strips[0][1] = sym;
+            m.strips[2][1] = sym;
+        };
+        plant(&mut m, legaia_asset::slot_payout::PUNCH_SYMBOL_ID);
+        m.stopped = [Some(0), None, None];
+        m.tick();
+        assert_eq!(m.anticipation(), 0, "one landed reel is not a pair");
+        m.stopped = [Some(0), None, Some(0)];
+        m.tick();
+        assert_eq!(m.anticipation(), 1, "a punch pair");
+        plant(&mut m, legaia_asset::slot_payout::KICK_SYMBOL_ID);
+        m.tick();
+        assert_eq!(m.anticipation(), 2, "a kick pair");
+        assert!(m.stop_reel(1));
+        assert_eq!(m.anticipation(), 0, "the third stop clears it");
     }
 
     #[test]
