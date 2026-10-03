@@ -1641,8 +1641,14 @@ Both hosts receive the routed ids on the field SFX ring
 (`World::take_sfx_ring_ops`) and resolve ring ids `>= 0x200` against
 `World::runtime_sfx_bundle`, which is `bse.dat` in battle (installed fresh per
 battle by `SceneHost`, PROT 888) and the scene's prescript record 0 elsewhere.
-The `monster.snd` slots `7` / `8` are not staged by either host, so the
-monster-side runtime cues are routed and silent.
+The `monster.snd` slots `7` / `8` are staged per battle on both hosts:
+`World::battle_monster_sound_banks` reads the bank choice off `FUN_800520F0`
+(slot 7 = bank `min id - 1`, slot 8 = bank `max id - 1` when the formation
+mixes ids, each through `FUN_8003E104`'s sector table), and the native
+director and the browser page park the banks behind the BGM like the reward
+bank (`BgmTail`'s monster borrower), dropping them when the battle ends.
+Retail gives the two slots their own SPU bases (`0x65010` / `0x6C810`); the
+port's SPU map has no room reserved there.
 
 The voice band is per character in blocks of sixteen - Vahn `0xC8..=0xD7`,
 Noa `0xD8..=0xE7`, Gala `0xE8..=0xF7`, each block ending on that character's
@@ -1956,9 +1962,9 @@ same XA path as the arts shouts. The browser play page has the same lane:
 `web-viewer`'s `play_xa` demuxes the raw sectors the page slices out of the
 visitor's own disc bytes into the same two banks and plays them through
 `WebAudioOut::play_xa_shout`, so both hosts sound the melee cue and the arts
-shout. One gap remains here - the monster leg's `0x2A8` resolves to a
-`bse.dat` row keyed through a `monster.snd` slot (7 / 8) neither host stages -
-and one more sits beside it: the **cast** voice
+shout. The monster leg's `0x2A8` resolves to a `bse.dat` row keyed through
+the struck monster's `monster.snd` slot (7 / 8), which both hosts stage per
+battle. One gap sits beside it: the **cast** voice
 leg, declined on both hosts for want of a staged clip file
 ([`host-drift.md`](../tooling/host-drift.md#the-cast-voice-leg)).
 

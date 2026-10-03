@@ -615,6 +615,39 @@ impl World {
     /// mixes ids (`0x8005234C`, slot 8 takes bank `max id - 1`). Slots 7 / 8
     /// are the battle's two `monster.snd` banks (`docs/formats/sfx-table.md`).
     // REF: FUN_800513F0, FUN_800520F0
+    /// The `monster.snd` banks this battle opens, as `(VAB slot, bank
+    /// index)`: slot `7` takes bank `min id - 1`, and - when the formation
+    /// mixes monster ids - slot `8` takes bank `max id - 1`. Empty outside
+    /// battle or with no monster seated. Both hosts stage these while the
+    /// battle is on screen, which is what makes the monster-side runtime cues
+    /// ([`Self::battle_sound_category`]) audible.
+    ///
+    /// Read off the battle scene loader `FUN_800520F0`: the first pass
+    /// (`0x80052218..0x80052288`) keeps the smallest non-zero id of the four
+    /// `DAT_8007BD0C` bytes and calls `FUN_8003E104(min - 1, 7, ..)`
+    /// (`0x80052288..0x80052294`); the second (`0x800522B8..0x80052308`)
+    /// keeps the largest and counts ids that differ from it on the way, and
+    /// only a non-zero count reaches `FUN_8003E104(max - 1, 8, ..)`
+    /// (`0x80052360..0x8005236C`). `FUN_8003E104` indexes the archive's
+    /// sector table with that bank number directly.
+    // REF: FUN_800520F0, FUN_8003E104
+    pub fn battle_monster_sound_banks(&self) -> Vec<(u8, u16)> {
+        let ids: Vec<u16> = self
+            .battle_monster_slots()
+            .into_iter()
+            .map(|(_, id, _)| id)
+            .filter(|&id| id != 0)
+            .collect();
+        let (Some(&min), Some(&max)) = (ids.iter().min(), ids.iter().max()) else {
+            return Vec::new();
+        };
+        let mut out = vec![(7u8, min - 1)];
+        if min != max {
+            out.push((8, max - 1));
+        }
+        out
+    }
+
     pub(in crate::world) fn battle_sound_category(&self, category: u8) -> u8 {
         if category < 3 {
             return 7;

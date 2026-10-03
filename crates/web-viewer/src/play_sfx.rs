@@ -1023,12 +1023,15 @@ impl LegaiaRuntime {
             .flatten()
             .filter(|b| b.slot != 6);
         let _stops = host.world.take_sfx_voice_stops();
+        let monster_banks = host.world.battle_monster_sound_banks();
         // The field init `FUN_801D6704` closes slot 11 (`0x801D68B4`): a
         // parked reward bank does not outlive the battle it was staged for.
         if field_family {
             self.drop_reward_bank();
         }
         self.sync_side_band(want);
+        // The battle's two monster.snd banks (VAB slots 7 / 8).
+        self.sync_battle_monster_banks(monster_banks);
         // The slot-2 / slot-6 region follows the mode.
         if self.sfx.bank_bytes_loaded {
             self.sync_shared_region();
@@ -1122,6 +1125,89 @@ impl LegaiaRuntime {
                     end: u32::MAX,
                 },
             );
+        }
+    }
+
+    /// Keep the battle's `monster.snd` banks (VAB slots `7` / `8`) staged
+    /// behind the BGM - the browser twin of the native director's
+    /// `sync_battle_monster_banks`, over the same [`BgmTail`] model. `want` is
+    /// `World::battle_monster_sound_banks` (empty outside battle, which drops
+    /// them). Off wasm the banks are recorded but not uploaded.
+    // REF: FUN_800520F0, FUN_8003E104
+    fn sync_battle_monster_banks(&mut self, want: Vec<(u8, u16)>) {
+        self.observe_track();
+        let parked = self.sfx.tail.monsters().map(|(k, _)| k.clone());
+        if parked.as_ref() == Some(&want) {
+            return;
+        }
+        if parked.is_some() {
+            for slot in self.sfx.tail.drop_monsters() {
+                self.forget_tail_slot(slot);
+            }
+        }
+        if want.is_empty() || !self.sfx.tail.begin_monster_attempt(&want) {
+            return;
+        }
+        let Some(archive) = self.scene_host.as_ref().and_then(|h| {
+            h.index
+                .entry_bytes_extended(legaia_asset::vab_multi_bank::MONSTER_SND_PROT_INDEX as u32)
+                .ok()
+        }) else {
+            return;
+        };
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.stage_sfx_vab();
+            if self.bgm_bank_used_end().is_none() {
+                return;
+            }
+        }
+        for &(slot, bank) in &want {
+            let Some(bytes) = legaia_asset::vab_multi_bank::bank_bytes(&archive, usize::from(bank))
+            else {
+                continue;
+            };
+            let Some((report, vab_offset)) = [4usize, 0]
+                .into_iter()
+                .find_map(|o| legaia_vab::parse(bytes, o).ok().map(|r| (r, o)))
+            else {
+                continue;
+            };
+            #[cfg(target_arch = "wasm32")]
+            {
+                let Some(base) = self.sfx.tail.place_report(slot, &report) else {
+                    continue;
+                };
+                let Some(out) = self.audio_out.as_ref() else {
+                    return;
+                };
+                let vab = out.with_spu(|spu| {
+                    legaia_engine_audio::bgm_tail::upload_at(
+                        spu,
+                        base,
+                        &report,
+                        &bytes[vab_offset..],
+                    )
+                });
+                let end = legaia_engine_audio::spu_layout::bank_used_end(&vab).unwrap_or(base);
+                self.sfx_vabs.insert(slot, vab);
+                self.sfx
+                    .tail
+                    .commit_monster(&want, TailBorrow { slot, base, end });
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                // No SPU: recorded above any track, so the routing is testable.
+                let _ = (report, vab_offset);
+                self.sfx.tail.commit_monster(
+                    &want,
+                    TailBorrow {
+                        slot,
+                        base: u32::MAX,
+                        end: u32::MAX,
+                    },
+                );
+            }
         }
     }
 

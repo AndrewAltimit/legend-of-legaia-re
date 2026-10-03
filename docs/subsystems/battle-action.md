@@ -3561,8 +3561,8 @@ demuxed + decoded, `crate::boot::read_battle_xa_clip_bank`) through the same XA
 mixing path as the arts shouts; the browser play page's `play_xa` demuxes the raw
 sectors the page slices out of the visitor's own disc bytes and plays the cut clip
 through `WebAudioOut::play_xa_shout`. The monster leg's `0x2A8` goes out on the SFX
-ring and resolves against the battle's `bse.dat` row, keyed through a `monster.snd`
-slot neither host stages - so it is routed and silent.
+ring and resolves against the battle's `bse.dat` row, keyed through the struck
+monster's `monster.snd` slot, which both hosts stage per battle.
 
 ### Three readings the port already satisfied
 

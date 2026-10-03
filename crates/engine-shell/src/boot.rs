@@ -1343,6 +1343,13 @@ impl BootSession {
         // field, the class-2 bank in battle, a minigame's own in its mode.
         let shared = self.host.world.sync_sfx_residency();
         bgm.sync_shared_region(shared, |entry| index.entry_bytes_extended(entry).ok());
+        // The battle's two monster.snd banks (VAB slots 7 / 8).
+        let monster_banks = self.host.world.battle_monster_sound_banks();
+        bgm.sync_battle_monster_banks(&monster_banks, || {
+            index
+                .entry_bytes_extended(legaia_asset::vab_multi_bank::MONSTER_SND_PROT_INDEX as u32)
+                .ok()
+        });
         bgm.stop_sfx_voices(&self.host.world.take_sfx_voice_stops());
     }
 
