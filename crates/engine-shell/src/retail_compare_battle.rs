@@ -925,11 +925,16 @@ pub fn run_engine_battle(
     // The fight is entered from a settled field, as retail's was: the
     // scene's entry scripts start its track and raise its entry state first.
     for _ in 0..crate::retail_compare::SETTLE_TICKS {
+        // The settle is seeding, not elapsed game time: the script timers
+        // hold the counts retail's field had when the fight began (the battle
+        // does not run the field VM, so the capture's slot table is the
+        // field's), else a short timer runs out inside the window and fires
+        // an arm retail had not reached (`jouind`'s spawn delay, 24 of 50).
+        crate::retail_compare::hold_slot_table(&mut session, retail);
         session.tick()?;
         session.fog_render_tick();
         session.host.route_bgm_events(&mut director)?;
     }
-
     let world = &mut session.host.world;
     let source;
     let man_row = matching_row(world, &battle.monster_ids);

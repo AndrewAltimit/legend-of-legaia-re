@@ -254,6 +254,12 @@ pub struct RetailObs {
     /// The field-VM contexts the state holds
     /// ([`crate::retail_compare_script`]).
     pub scripts: crate::retail_compare_script::RetailScripts,
+    /// The field VM's script-counter slot table (`0x801C6460`, signed
+    /// halfwords). It sits outside the save window, so the card-load seed
+    /// cannot restore it; scripts keep timers in it (the door-fade
+    /// handshake's frame count, `jouind`'s spawn delay), and a timer seeded
+    /// at `0` instead of its captured count fires on a different frame.
+    pub slot_table: Option<[i16; 256]>,
 }
 
 /// A menu-class capture the seed can reproduce: a pause-menu screen, named
@@ -373,7 +379,30 @@ impl RetailObs {
                 .then(|| crate::retail_compare_battle::RetailBattle::from_ram(ram)),
             menu,
             scripts: crate::retail_compare_script::RetailScripts::from_ram(ram),
+            slot_table: {
+                let lo = (SLOT_TABLE_VA & 0x1F_FFFF) as usize;
+                ram.get(lo..lo + 0x200)
+                    .map(|b| std::array::from_fn(|i| i16::from_le_bytes([b[i * 2], b[i * 2 + 1]])))
+            },
         }
+    }
+}
+
+/// The field VM's script-counter slot table
+/// (`legaia_engine_core::world::FieldVmState::slot_table`).
+const SLOT_TABLE_VA: u32 = 0x801C_6460;
+
+/// Re-assert the capture's script timers before a seeding tick.
+///
+/// The slot table is RAM outside the save window, so the card-load seed
+/// cannot restore it, and the settle window is a warm-up, not elapsed game
+/// time: a timer left to run would fire inside the window an arm retail is
+/// still counting towards (a door-fade handshake 36 frames into its 46, a
+/// spawn delay 24 into its 50) and score that as an engine miss. Holding the
+/// captured counts keeps every timer where retail's was.
+pub(crate) fn hold_slot_table(session: &mut BootSession, retail: &RetailObs) {
+    if let Some(slots) = retail.slot_table {
+        session.host.world.field_vm.slot_table = slots;
     }
 }
 
@@ -572,6 +601,7 @@ pub fn run_engine_with(
             let pad = g.advance_pad(&session.host.world, t);
             session.host.world.input.set_pad(pad);
         }
+        hold_slot_table(&mut session, retail);
         session.tick()?;
         session.host.route_bgm_events(&mut director)?;
         if let Some(g) = &gate {
