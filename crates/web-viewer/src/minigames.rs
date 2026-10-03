@@ -106,6 +106,13 @@ pub struct LegaiaMinigames {
     /// (`legaia_engine_ui::ui_slot_cabinet`): art-pack VRAM, scene graph,
     /// HUD records and the cabinet mesh - what the native window draws from.
     pub(crate) slot_cabinet: Option<legaia_engine_ui::ui_slot_cabinet::SlotCabinetAssets>,
+    /// The marquee's counters for this page's own machine (the play hosts'
+    /// `SlotMarqueeClock` twin), the dot buffer they composed this frame, and
+    /// the payout caption this page holds after its auto-collect (see
+    /// [`Self::slot_tick`]): `(figure, frames up)`.
+    slot_clock: legaia_engine_ui::ui_slot_cabinet::SlotMarqueeClock,
+    slot_dots: Vec<u8>,
+    slot_caption: Option<(i32, i32)>,
     /// The slot machine's own SFX cue bank (descriptors from PROT 1199, samples
     /// from the PROT 1198 VAB).
     slot_sfx: Option<SfxCueBank>,
@@ -290,6 +297,9 @@ impl LegaiaMinigames {
             slot_hud: None,
             slot_scene: None,
             slot_cabinet: None,
+            slot_clock: Default::default(),
+            slot_dots: Vec::new(),
+            slot_caption: None,
             slot_sfx: None,
             baka_names: None,
             dance_pres: None,
@@ -1161,7 +1171,14 @@ impl LegaiaMinigames {
         let Some(payouts) = self.slot_payouts.clone() else {
             return false;
         };
-        self.slot = Some(SlotMachine::new(payouts, seed, balance));
+        let paylines = self
+            .slot_scene
+            .as_ref()
+            .map(|s| s.paylines.clone())
+            .unwrap_or_default();
+        self.slot = Some(SlotMachine::new(payouts, seed, balance).with_paylines(paylines));
+        self.slot_clock = Default::default();
+        self.slot_caption = None;
         true
     }
 
@@ -1187,11 +1204,86 @@ impl LegaiaMinigames {
             return 0;
         };
         m.tick();
-        if m.phase() == SlotPhase::Payout {
+        let credited = if m.phase() == SlotPhase::Payout {
             m.collect()
         } else {
             0
+        };
+        // The marquee. The auto-collect above drops the machine's own payout
+        // caption the frame it rises, so this page holds it itself - the
+        // figure and its slide-in clock - until it has been up as long as the
+        // play page's (`SLOT_CAPTION_FRAMES`) or the next spin is charged.
+        if credited > 0 {
+            self.slot_caption = Some((credited, 1));
+        } else if let Some((_, f)) = self.slot_caption.as_mut() {
+            *f += 1;
         }
+        if m.phase() == SlotPhase::Spinning || self.slot_caption.is_some_and(|(_, f)| f > 110) {
+            self.slot_caption = None;
+        }
+        let mut frame = m.marquee();
+        if let Some((payout, f)) = self.slot_caption {
+            frame.payout = payout;
+            frame.payout_frame = f;
+        }
+        if let Some(c) = self.slot_cabinet.as_ref() {
+            self.slot_dots = self
+                .slot_clock
+                .frame(&frame, m.anticipation(), &c.scene.messages);
+        }
+        credited
+    }
+
+    /// Whether the machine's resident set decoded, so the page draws the
+    /// machine as [`Self::slot_frame_rgba`] - the play hosts' cabinet scene,
+    /// rasterised - rather than its own canvas composition.
+    pub fn slot_cabinet_ready(&self) -> bool {
+        self.slot_cabinet.is_some()
+    }
+
+    /// The whole machine for this frame as a `w x h` RGBA8 image: the shared
+    /// `ui_slot_cabinet` builder (cabinet, reels, furniture, dot matrix, coin
+    /// HUD) plus the `ui_slot_paylines` quads, rasterised on the CPU over the
+    /// art pack's VRAM (`screen_prim_raster`) - the same primitive list the
+    /// native window and the play page draw on their GPUs. Empty without a
+    /// session or the resident set.
+    pub fn slot_frame_rgba(&self, w: u32, h: u32) -> Vec<u8> {
+        use legaia_engine_ui::{ui_slot_cabinet as usc, ui_slot_paylines as usp};
+        let (Some(m), Some(c)) = (self.slot.as_ref(), self.slot_cabinet.as_ref()) else {
+            return Vec::new();
+        };
+        let strips = m.strips();
+        let clear;
+        let dots: &[u8] = if self.slot_dots.is_empty() {
+            clear = slot_scene::clear_dots();
+            &clear
+        } else {
+            &self.slot_dots
+        };
+        let mut prims = usc::slot_cabinet_prims(&usc::SlotCabinetInput {
+            scene: &c.scene,
+            cabinet: c.cabinet.as_ref(),
+            hud: &c.hud,
+            reel_pos: core::array::from_fn(|r| m.reel_pos(r)),
+            strips: [&strips[0], &strips[1], &strips[2]],
+            stop_open: core::array::from_fn(|r| m.reel_stop_open(r)),
+            winning_line: m.winning_line_word(),
+            dots,
+            blink: self.slot_clock.blink,
+            balance: m.balance(),
+        });
+        let segments: Vec<usp::PaylineSegment> = m
+            .payline_segments()
+            .iter()
+            .map(|l| usp::PaylineSegment {
+                a: [l.a.0, l.a.1],
+                b: [l.b.0, l.b.1],
+                rgb: [l.prim.color.0, l.prim.color.1, l.prim.color.2],
+                semi: l.prim.code & 0x02 != 0,
+            })
+            .collect();
+        prims.extend(usp::payline_screen_prims(&segments));
+        legaia_engine_ui::screen_prim_raster::rasterize_rgba(&prims, c.vram.as_u16(), w, h)
     }
 
     /// Stop the leftmost still-spinning reel. `false` when stopping isn't

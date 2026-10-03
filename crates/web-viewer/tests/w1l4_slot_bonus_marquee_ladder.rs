@@ -545,3 +545,37 @@ fn the_minigames_page_drives_its_machine_into_a_bonus_round() {
             .collect::<Vec<_>>()
     );
 }
+
+/// The standalone page draws the machine as the shared cabinet builder's
+/// primitive list rasterised on the CPU: a framebuffer-sized image, mostly
+/// covered (the cabinet, reels and panel), and it changes once a spin turns
+/// the reels.
+#[test]
+fn the_minigames_page_rasterises_the_shared_cabinet() {
+    let Some(disc_path) = std::env::var("LEGAIA_DISC_BIN").ok() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let Ok(bytes) = std::fs::read(&disc_path) else {
+        eprintln!("[skip] disc image unreadable (disc-gated)");
+        return;
+    };
+    let mut mg = LegaiaMinigames::new();
+    mg.load_disc(bytes).expect("load_disc");
+    assert!(mg.slot_start(SEED, BALANCE), "the machine racks");
+    assert!(mg.slot_cabinet_ready(), "the resident set decodes");
+    mg.slot_tick();
+    let idle = mg.slot_frame_rgba(640, 240);
+    assert_eq!(idle.len(), 640 * 240 * 4);
+    let lit = idle.chunks(4).filter(|p| p[..3] != [0, 0, 0]).count();
+    assert!(
+        lit > 640 * 240 / 2,
+        "the machine covers the frame: {lit} lit px"
+    );
+    assert!(mg.slot_spin(), "a spin is charged");
+    for _ in 0..10 {
+        mg.slot_tick();
+    }
+    assert_ne!(mg.slot_frame_rgba(640, 240), idle, "the reels turned");
+    eprintln!("[ran] cabinet raster: {lit} lit px");
+}

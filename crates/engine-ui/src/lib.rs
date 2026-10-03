@@ -78,6 +78,7 @@ pub mod other_game_hud;
 pub mod pause_menu;
 pub mod ringside_backdrop;
 pub mod screen_prim;
+pub mod screen_prim_raster;
 pub mod streak_pass;
 mod text_balloon_box;
 mod tile_board_prompt;

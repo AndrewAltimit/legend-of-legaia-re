@@ -863,10 +863,15 @@ column; and the cabinet draws its raw packet colours, which read lighter than
 the capture's greys (the shading term named in
 [the cabinet section](#the-cabinet-is-a-mesh---prot-1200-descriptor-1)).
 
-The standalone minigames page still composes the machine in a 2D canvas
-(`slotRender` in `site/_content/minigames.html`), with the cabinet painted as
-a measured composition; the play page keeps the same canvas path only as the
-fallback for a bundle without the cabinet exports.
+The standalone minigames page draws the same primitive list too. Its slot
+panel is a 2D canvas with no GPU pass, so the list is rasterised on the CPU
+onto the 640x240 framebuffer (`engine-ui::screen_prim_raster`, the GPU
+screen-prim pass's per-pixel rules: ordering-table walk, affine UV, VRAM CLUT
+fetch, the 5-bit texture blend, the ABR equations) and put into the canvas
+(`slot_frame_rgba`). Both pages keep their old canvas composition only as the
+fallback for a bundle without the cabinet exports. The standalone page
+collects a resolved spin on the frame it lands, which drops the machine's own
+payout caption, so it holds the caption itself for the marquee.
 
 ## Art pack (PROT 1200)
 
