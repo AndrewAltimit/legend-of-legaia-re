@@ -280,9 +280,11 @@ impl World {
         // Host methods still must not WRITE `world.battle_ctx` - the
         // write-back would clobber it.
         let mut ctx = self.battle_ctx.clone();
+        let pre_state = ctx.action_state;
         let mut host = BattleHostImpl { world: self };
         let out = vm::battle_action::step(&mut host, &mut ctx);
         self.battle_ctx = ctx;
+        self.track_block_approach_terms(pre_state, &out);
         // The strike chain's exit re-arms the steal latch: the arm that
         // writes `0x1F` into the action state at `0x801E3A7C` clears
         // `ctx[+0x27]` in its jump's delay slot (`sb zero, 0x16(s5)` at

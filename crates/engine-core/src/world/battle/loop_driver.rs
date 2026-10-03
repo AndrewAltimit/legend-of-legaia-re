@@ -1782,7 +1782,12 @@ impl World {
         // The block roll runs ahead of the damage rolls (`0x801EC5A8..
         // 0x801EC878` before the `0x801ECB84` fold), and a blocked hit skips
         // the whole damage body: `bne s7,zero,0x801EE6D4` at `0x801ECB60`.
-        if let Some(block_entry) = self.roll_block(attacker, target, power_byte) {
+        let blocked = self.roll_block(attacker, target, power_byte);
+        // `0x801EC888` (block) / `0x801EE3C4` (hit): the first hit through
+        // the kernel spends the approach terms.
+        self.battle.attack_ramp = 0;
+        self.battle.guard_ramp = 0;
+        if let Some(block_entry) = blocked {
             // `0x801EE6D4..0x801EE6F8`: the attacker's anim cue cursor steps
             // over one cue - the impact sound a landed hit would have made.
             if let Some(a) = self.actors.get_mut(attacker_i) {
@@ -1920,14 +1925,15 @@ impl World {
     /// * a defender already holding its block pose with the reaction timer
     ///   running keeps blocking (`0x801EC93C..0x801EC984`), and one mid-way
     ///   through any other reaction cannot block - the juggle arm clears
-    ///   `s7` (`0x801ECA20..0x801ECA68`). The engine reads the retail
-    ///   `+0x1F7` timer as "a reaction clip is playing"
-    ///   (`Actor::battle_reaction`);
+    ///   `s7` (`0x801ECA20..0x801ECA68`). Both read the defender's `+0x1F7`
+    ///   juggle window ([`Self::juggle_window_open`]);
     /// * a party attacker carrying ability bit `0x4000` cancels the block
     ///   after the verdict (`0x801ECAFC..0x801ECB5C`).
     ///
-    /// The approach terms `ctx[+0x6D2]` / `+0x6D4` are zero, as the damage
-    /// roll's are (the port does not model the approach angle / distance).
+    /// The approach terms `ctx[+0x6D2]` / `+0x6D4` are
+    /// [`crate::world::BattleState::attack_ramp`] / `guard_ramp`
+    /// ([`Self::track_block_approach_terms`]); the damage roll still reads
+    /// them as zero.
     /// The Mystic Shield arm (`0x801ECA84..0x801ECAF8`, `s7 = 1` while
     /// `_DAT_8007BD84` is up) is not taken here.
     ///
@@ -1943,7 +1949,7 @@ impl World {
         if t.battle.damage_accum >= u32::from(t.battle.hp) {
             return None;
         }
-        let reacting = t.battle_reaction.is_some();
+        let reacting = Self::juggle_window_open(t);
         let in_block = t.battle_reaction_entry == Some(block_entry);
         let side = |w: &Self, slot: u8| -> BlockSide {
             let i = usize::from(slot);
@@ -1963,8 +1969,8 @@ impl World {
         let roll = BlockRoll {
             attacker: side(self, attacker),
             defender: side(self, target),
-            attack_ramp: 0,
-            guard_ramp: 0,
+            attack_ramp: self.battle.attack_ramp,
+            guard_ramp: self.battle.guard_ramp,
             power_byte,
             defender_spirit: self.battle.guarding.get(ti).copied().unwrap_or(false),
             attacker_art_slot: self
@@ -1987,6 +1993,62 @@ impl World {
             blocked = false;
         }
         blocked.then_some(block_entry)
+    }
+
+    /// The defender's `+0x1F7` byte - the **juggle window**. Its one writer
+    /// is the anim tick (`FUN_80047430` `0x80047E28..0x80047E54`), every
+    /// tick for every actor: `+0x1F7 = (cursor >> 4) < entry[0x10 + idx]`,
+    /// `idx` from `FUN_80050E00(entry + 0x10)` - the first event frame of
+    /// the clip the actor is playing whenever its list has a zero in
+    /// `+0x11..+0x13` ([`vm::battle_action::event_commit_gate_frame`]). So
+    /// it is up only before the playing clip's first listed beat, and down
+    /// for a clip whose list starts at `0` (every block clip) - not "a
+    /// reaction is playing". A four-slot list (address-dependent in retail)
+    /// reads as down.
+    // REF: FUN_80047430, FUN_80050E00
+    fn juggle_window_open(a: &crate::world::Actor) -> bool {
+        let (Some(player), Some(head)) =
+            (a.battle_animation.as_ref(), a.battle_effect_script.as_ref())
+        else {
+            return false;
+        };
+        let Some(list) = head.get(0x10..0x14) else {
+            return false;
+        };
+        let list = [list[0], list[1], list[2], list[3]];
+        vm::battle_action::event_commit_gate_frame(&list)
+            .is_some_and(|gate| player.current_frame() < i16::from(gate))
+    }
+
+    /// Keep the block roll's two approach terms in step with the action SM.
+    /// State `0x14` seeds `ctx[+0x6D2]` from the facings it just set
+    /// (`0x801E3068..0x801E30C8`), and every tick state `0x19` spends
+    /// walking adds the frame step to `ctx[+0x6D4]` (`0x801E35DC..
+    /// 0x801E35EC`, the stall arm).
+    pub(in crate::world) fn track_block_approach_terms(
+        &mut self,
+        pre_state: u8,
+        out: &vm::battle_action::StepOutcome,
+    ) {
+        use vm::battle_action::{ActionState, StepOutcome};
+        if pre_state == ActionState::AttackFace.as_byte() {
+            let slot = usize::from(self.battle_ctx.active_actor);
+            let Some(a) = self.actors.get(slot) else {
+                return;
+            };
+            let target = usize::from(a.battle.active_target);
+            let Some(t) = self.actors.get(target) else {
+                return;
+            };
+            let diff = a.battle.facing_angle.wrapping_sub(t.battle.facing_angle) & 0xFFF;
+            let folded = if diff < 0x800 { diff } else { 0x1000 - diff };
+            self.battle.attack_ramp = folded as i16 - 0x800;
+        } else if pre_state == ActionState::AttackShortStep.as_byte()
+            && !matches!(out, StepOutcome::Transition { .. })
+        {
+            let step = i16::from(self.clock.frame_step.max(1));
+            self.battle.guard_ramp = self.battle.guard_ramp.wrapping_add(step);
+        }
     }
 
     /// A party member's ability word - the character record's `+0xF4` u32,
@@ -2501,44 +2563,95 @@ mod melee_cue_tests {
         assert!(w.drain_battle_xa_cues().is_empty());
     }
 
-    /// A defender holding its block pose keeps blocking
-    /// (`0x801EC93C..0x801EC984`), and a blocked hit skips the damage body
-    /// (`bne s7,zero,0x801EE6D4`): no damage, no accumulation, and the
-    /// attacker's anim cue cursor steps over one cue.
+    /// Seat a playing clip on `slot` whose event-frame list (`+0x10..`)
+    /// starts at `first_beat` - the input of the `+0x1F7` juggle window.
+    fn play_clip_with_beat(w: &mut World, slot: usize, first_beat: u8) {
+        use legaia_asset::monster_archive::{MonsterAnimation, PartPose};
+        let mut head = vec![0u8; legaia_asset::monster_archive::EFFECT_SCRIPT_HEAD_BYTES];
+        head[0x10] = first_beat;
+        let clip = MonsterAnimation {
+            action_id: 2,
+            rate: 2,
+            attach_key: 0,
+            solo_flag: 0,
+            impact_class: 0,
+            effect_script: head.clone(),
+            part_count: 1,
+            frame_count: 12,
+            frames: vec![vec![PartPose::default()]; 12],
+        };
+        let a = &mut w.actors[slot];
+        a.battle_animation = crate::battle_anim::MonsterAnimPlayer::new_one_shot(&clip);
+        a.battle_effect_script = Some(head);
+    }
+
+    /// A blocked hit skips the damage body (`bne s7,zero,0x801EE6D4`): no
+    /// damage, no accumulation, no popup, and the attacker's anim cue cursor
+    /// steps over one cue. Driven through the real roll: the first seed
+    /// whose roll blocks is the hit under test.
     #[test]
     fn a_blocked_hit_lands_no_damage() {
-        let mut w = duel();
-        w.actors[0].battle_action_clips = Some(std::sync::Arc::new(vec![None; 12]));
-        w.actors[0].battle_reaction = Some(0x0B);
-        w.actors[0].battle_reaction_entry = Some(0x0B);
-        let before = w.actors[0].battle.hp;
-        let dmg = w.land_melee_hit(1, 0, BASIC_ATTACK_COMMAND, 0, false, true);
-        assert_eq!(dmg, 0);
-        assert_eq!(w.actors[0].battle.damage_accum, 0);
-        assert_eq!(w.actors[0].battle.hp, before);
-        assert_eq!(w.actors[1].battle_anim_cue_cursor, 1);
-        assert!(w.drain_battle_hit_fx().is_empty(), "no popup for a block");
-        // Without the block pose the same hit connects (the roll itself can
-        // still block; a defender with no clips has no block entry at all).
+        let mut found = false;
+        let setup = |seed: u32| {
+            let mut w = duel();
+            w.actors[0].battle_action_clips = Some(std::sync::Arc::new(vec![None; 12]));
+            w.battle.speed[0] = 200;
+            w.battle.guarding[0] = true;
+            w.rng_state = seed;
+            w
+        };
+        for seed in 1..400u32 {
+            if setup(seed).roll_block(1, 0, BASIC_ATTACK_COMMAND).is_none() {
+                continue;
+            }
+            let mut w = setup(seed);
+            found = true;
+            let before = w.actors[0].battle.hp;
+            let dmg = w.land_melee_hit(1, 0, BASIC_ATTACK_COMMAND, 0, false, true);
+            assert_eq!(dmg, 0);
+            assert_eq!(w.actors[0].battle.damage_accum, 0);
+            assert_eq!(w.actors[0].battle.hp, before);
+            assert_eq!(w.actors[1].battle_anim_cue_cursor, 1);
+            assert!(w.drain_battle_hit_fx().is_empty(), "no popup for a block");
+            break;
+        }
+        assert!(found, "some seed blocks");
+        // A defender with no clips has no block entry: the hit connects.
         let mut w = duel();
         let dmg = w.land_melee_hit(1, 0, BASIC_ATTACK_COMMAND, 0, false, true);
         assert!(dmg > 0);
     }
 
-    /// A defender mid-way through another reaction cannot block - the juggle
-    /// arm clears `s7` (`0x801ECA20..0x801ECA68`) whatever the roll said.
+    /// The `+0x1F7` window: a defender before its playing clip's first beat
+    /// cannot block (the juggle arm clears `s7`), and after it the block
+    /// pose no longer latches - a block clip's list starts at `0`, so its
+    /// window is never open and a block never repeats on its own.
     #[test]
-    fn a_reacting_defender_cannot_block() {
+    fn the_juggle_window_gates_the_block() {
         let mut w = duel();
         w.actors[0].battle_action_clips = Some(std::sync::Arc::new(vec![None; 12]));
-        w.actors[0].battle_reaction = Some(2);
-        w.actors[0].battle_reaction_entry = Some(2);
-        // An overwhelming defender: the roll alone would block every time.
         w.battle.speed[0] = 999;
         w.set_battle_attack(0, 999);
+        play_clip_with_beat(&mut w, 0, 6);
+        w.actors[0].battle_reaction_entry = Some(2);
+        assert!(World::juggle_window_open(&w.actors[0]), "frame 0 < beat 6");
         for _ in 0..20 {
             assert_eq!(w.roll_block(1, 0, BASIC_ATTACK_COMMAND), None);
         }
+        // Block pose with a zero first beat: the window is shut, so the
+        // verdict is the roll's alone - it is not forced to `Some`.
+        let mut w = duel();
+        w.actors[0].battle_action_clips = Some(std::sync::Arc::new(vec![None; 12]));
+        play_clip_with_beat(&mut w, 0, 0);
+        w.actors[0].battle_reaction_entry = Some(0x0B);
+        assert!(!World::juggle_window_open(&w.actors[0]));
+        let blocks = (0..200)
+            .filter(|_| w.roll_block(1, 0, BASIC_ATTACK_COMMAND).is_some())
+            .count();
+        assert!(
+            blocks < 200,
+            "the block pose does not latch: {blocks} / 200"
+        );
     }
 
     #[test]

@@ -3561,12 +3561,22 @@ block (`0x801ECA20..0x801ECA68`); a party attacker with ability `0x4000` cancels
 the block (`0x801ECB44`). A blocked hit jumps over the whole damage body (`bne
 s7,zero,0x801EE6D4` at `0x801ECB60`): no damage, no combo accumulation, no
 Spirit accrual, no tint - and the attacker's anim cue cursor `+0x1F6` steps over
-one cue, the impact sound a landed hit would have made. Port:
-`battle_formulas::block_roll` and `World::roll_block`, wired ahead of the damage
-roll in `World::land_melee_hit`. The approach terms are zero in the port (as they
-are for its damage roll), the reaction timer `+0x1F7` is read as "a reaction clip
-is playing", and the blocked branch's own apply-mode walk
-(`0x801EE720..0x801EE918`) is the port's ordinary apply mode.
+one cue, the impact sound a landed hit would have made. The approach terms
+decide most opening strikes: state `0x14` seeds `+0x6D2` as the folded facing
+difference minus `0x800` - `0` face-on, down to `-0x800` - and `addu` adds it
+unsigned, so an off-axis opener usually wraps the attacker's sum past any
+defender sum and cannot be blocked; `+0x6D4` grows by the frame step each tick
+the attacker walks in. Both are spent by the first hit, so the rest of a chain
+rolls with neither. The `+0x1F7` window is not "a reaction is playing": the anim
+tick sets it every frame for every actor as "the playing clip is before its
+first listed beat" (`0x80047E28..0x80047E54`), so it is shut for an idle body
+and for a block clip whose list starts at `0`. Port: `battle_formulas::block_roll`
+and `World::roll_block`, wired ahead of the damage roll in
+`World::land_melee_hit`; the terms are `BattleState::attack_ramp` / `guard_ramp`
+(`World::track_block_approach_terms`), the window is
+`World::juggle_window_open`. The damage roll still reads the two terms as zero,
+and the blocked branch's own apply-mode walk (`0x801EE720..0x801EE918`) is the
+port's ordinary apply mode.
 
 **The third gate is not a character level.** `slti v0,v0,0x2` at `0x801EEAB8` reads
 `_DAT_8007BC20`, which the executable itself prints as the **`xa_flag`** debug

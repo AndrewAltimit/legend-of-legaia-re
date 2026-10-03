@@ -12,6 +12,7 @@
 //!
 //! ```text
 //! s0 = A.SPD + A.ATK*4/5 + ctx[+0x6D2]          ; attacker (+0x164, +0x158)
+//!                                               ; 0x6D2 <= 0, added unsigned
 //! s1 = D.SPD + D.ATK*4/5 + ctx[+0x6D4]          ; defender
 //! s0 = max(s0, s1)
 //! s0 += (rand() % s0) * BLOCK_SCALARS[(pb - 0x0C) % 5] >> 1
@@ -223,6 +224,28 @@ mod tests {
             );
         }
         assert!(b > a, "{a} -> {b}");
+    }
+
+    /// Property: an off-axis opening strike is rarely blocked. The angle
+    /// term is `<= 0` and added unsigned (`addu`, compared `sltu`): once it
+    /// outweighs the attacker's sum, the sum wraps past every defender sum,
+    /// and only a later wrap of the attacker's own random add can bring it
+    /// back under. Face-on (`0`) the even match blocks routinely.
+    #[test]
+    fn an_off_axis_opening_strike_is_rarely_blocked() {
+        let count = |ramp: i16| {
+            (0..2000u32)
+                .filter(|&seed| {
+                    let mut r = even(20, 20);
+                    r.attack_ramp = ramp;
+                    block_roll(&r, &mut lcg(seed))
+                })
+                .count()
+        };
+        let face_on = count(0);
+        let off_axis = count(-0x400);
+        assert!(face_on > 100, "face-on blocks: {face_on}");
+        assert!(off_axis * 10 < face_on, "{off_axis} vs {face_on}");
     }
 
     /// Exactly two draws, and none on a zero sum.
