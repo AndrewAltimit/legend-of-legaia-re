@@ -505,6 +505,12 @@ into the item / magic / arts windows ([battle](../subsystems/battle.md#how-the-e
   drive takes the first tick in the state whose engine accumulator has run
   as far (`SpanGate::Age`); a state the engine leaves sooner is re-run on
   the same stream and sampled on its last tick (`EngineBattle::age_short`).
+  While the engine holds the capture's state, the acting action's framing
+  style `ctx[+0xD]` - a draw the action seed rolls, which the post-strike
+  cases fork on - is set to retail's, the camera twin of the orbit-yaw
+  alignment. Not inside the capture band: `0x70` pins the style to `1`
+  without re-arming a framing, so the camera a band capture shows was placed
+  under the rolled style.
 - **Seat and timing.** A pick no seed reproduces (a monster's plain strike on
   a given seat) can run out of budget or end the fight first.
 

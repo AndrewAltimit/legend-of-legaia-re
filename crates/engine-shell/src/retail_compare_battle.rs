@@ -175,6 +175,8 @@ pub struct RetailBattle {
     pub caster_clip: u8,
     /// `ctx[+0x6DA]` - the yaw base a module walk arm swings.
     pub walk_yaw_base: u16,
+    /// `ctx[+0xD]` - the acting action's framing style.
+    pub cam_style: u8,
     /// `ctx[+0x269]` - the Seru a killing blow absorbed this action, staged
     /// for the Done band's grant (`sb v0,0x269(a0)` at `0x801EE2E8`) and
     /// cleared when `0x52` leaves.
@@ -747,6 +749,7 @@ impl RetailBattle {
             cam_accum: game_anchors::u32_at(ram, ctx + 0x87C),
             caster_clip: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1D9)),
             walk_yaw_base: game_anchors::u16_at(ram, ctx + 0x6DA),
+            cam_style: game_anchors::u8_at(ram, ctx + 0xD),
             absorbed_seru: game_anchors::u8_at(ram, ctx + 0x269),
             span_gate: span_gate(ram, ctx),
             module_phase: game_anchors::u8_at(ram, ctx + 0x279),
@@ -1315,6 +1318,14 @@ pub enum BattleDrive {
     /// spell `absorbed + 0x80` - and the replayed kill's absorb lookup would
     /// answer "known" and stage nothing. [`Self::prime`] takes it back off
     /// the seat's list, the twin of crediting a cast's MP back.
+    ///
+    /// `style` is the capture's framing style `ctx[+0xD]`, a draw the action
+    /// seed rolls per action (`rand() % 2 * 2`, `rand() % 4`, ...). A
+    /// replay on another stream rolls its own, and the post-strike cases
+    /// fork on it (pitch `0x80` / `TR.y 0x400` against level, a half-turn),
+    /// so [`Self::steer`] sets the acting seat's style to retail's while it
+    /// holds the capture's state (outside the capture band, [`CAPTURE_BAND`])
+    /// - the camera twin of the orbit-yaw alignment.
     Action {
         seat: u8,
         state: u8,
@@ -1323,6 +1334,7 @@ pub enum BattleDrive {
         spare: bool,
         absorbed: u8,
         end: SpanGate,
+        style: Option<u8>,
     },
 }
 
@@ -1390,6 +1402,12 @@ pub enum SpanGate {
     /// ([`EngineBattle::age_short`]).
     Age { accum: u16 },
 }
+
+/// The capture band `0x6E..=0x71`. `0x70` pins the style to `1`
+/// (`sb v0,0xd(v1)` at `0x801E50CC`) without re-arming a framing, so a
+/// capture there reads `1` over a camera the rolled style placed; the style
+/// is not aligned in the band.
+const CAPTURE_BAND: std::ops::RangeInclusive<u8> = 0x6E..=0x71;
 
 /// The capture band's states placed by its CD holds
 /// ([`SpanGate::CaptureFade`]).
@@ -1503,13 +1521,18 @@ impl BattleDrive {
                 spare,
                 absorbed,
                 end,
+                style,
             } => {
                 let (kind, _) = end.to_env();
                 let value = end.env_value();
-                format!(
+                let mut s = format!(
                     "action,{seat},{state},{category},{queued},{},{absorbed},{kind},{value}",
                     u8::from(spare)
-                )
+                );
+                if let Some(style) = style {
+                    s.push_str(&format!(",{style}"));
+                }
+                s
             }
         }
     }
@@ -1521,6 +1544,13 @@ impl BattleDrive {
             _ => {}
         }
         let fields: Vec<&str> = s.split(',').collect();
+        if fields.len() == 10 && fields[0].trim() == "action" {
+            let mut d = Self::from_env(&fields[..9].join(","))?;
+            if let Self::Action { style, .. } = &mut d {
+                *style = Some(fields[9].trim().parse().ok()?);
+            }
+            return Some(d);
+        }
         if fields.len() == 9 && fields[0].trim() == "action" {
             let mut d = Self::from_env(&fields[..7].join(","))?;
             if let Self::Action { end, .. } = &mut d {
@@ -1546,6 +1576,7 @@ impl BattleDrive {
                 spare: false,
                 absorbed: 0,
                 end: SpanGate::None,
+                style: None,
             }),
             ("action", &[seat, state, category, queued, spare, absorbed]) => Some(Self::Action {
                 seat,
@@ -1555,6 +1586,7 @@ impl BattleDrive {
                 spare: spare != 0,
                 absorbed,
                 end: SpanGate::None,
+                style: None,
             }),
             _ => None,
         }
@@ -1717,7 +1749,9 @@ impl BattleDrive {
     pub fn steer(&self, world: &mut legaia_engine_core::world::World) {
         let Self::Action {
             seat,
-            end: SpanGate::CaptureFade { height, accum },
+            state: want,
+            end,
+            style,
             ..
         } = *self
         else {
@@ -1727,6 +1761,16 @@ impl BattleDrive {
         let ours = world.mode == SceneMode::Battle
             && world.battle_ctx.active_actor == engine_seat(seat, pc);
         let state = world.battle_ctx.action_state;
+        if let Some(style) = style
+            && ours
+            && state == want
+            && !CAPTURE_BAND.contains(&state)
+        {
+            world.battle_ctx.camera_variant = style;
+        }
+        let SpanGate::CaptureFade { height, accum } = end else {
+            return;
+        };
         world.audio.sound_bank_ready =
             !(ours && state == 0x6E && !capture_accum_done(world, height, accum));
         world.battle.prev_action_cleared =
@@ -1869,6 +1913,7 @@ impl RetailBattle {
                 spare: !self.action_victims().is_empty(),
                 absorbed: if seat < 3 { self.absorbed_seru } else { 0 },
                 end: self.span_gate,
+                style: Some(self.cam_style),
             }),
             SeedPlan::Opening => Some(BattleDrive::Opening {
                 swept: matches!(self.flow, 0x0C | 0x14),
@@ -2309,6 +2354,7 @@ mod tests {
                 spare: false,
                 absorbed: 0,
                 end: SpanGate::Exit { phase: 3 },
+                style: None,
             },
             BattleDrive::Action {
                 seat: 0,
@@ -2318,6 +2364,7 @@ mod tests {
                 spare: true,
                 absorbed: 1,
                 end: SpanGate::DoneHold { timer: -1 },
+                style: None,
             },
             BattleDrive::Action {
                 seat: 0,
@@ -2327,6 +2374,7 @@ mod tests {
                 spare: true,
                 absorbed: 0,
                 end: SpanGate::Results { hold: 80 },
+                style: None,
             },
             BattleDrive::Action {
                 seat: 3,
@@ -2339,6 +2387,7 @@ mod tests {
                     height: 0xFF40,
                     accum: 344,
                 },
+                style: None,
             },
             BattleDrive::Action {
                 seat: 3,
@@ -2348,6 +2397,7 @@ mod tests {
                 spare: false,
                 absorbed: 0,
                 end: SpanGate::Age { accum: 552 },
+                style: Some(3),
             },
         ] {
             assert_eq!(BattleDrive::from_env(&d.to_env()), Some(d));
