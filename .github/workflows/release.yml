@@ -51,7 +51,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing tag to build, e.g. v0.1.0'
+        description: 'Tag to build, e.g. v0.1.0. A build-only dry run (publish unchecked) also takes a branch or commit.'
         required: true
         type: string
       publish:
@@ -118,6 +118,8 @@ jobs:
         run: |
           tag="${RELEASE_TAG}"
           version="${tag#v}"
+          # A dry run may name a branch; keep the archive name one path segment.
+          version="${version//\//-}"
           if [ -z "$version" ]; then
             echo "ERROR: could not derive a version from tag '$tag'" >&2
             exit 1
@@ -173,6 +175,7 @@ jobs:
         run: |
           tag="${RELEASE_TAG}"
           version="${tag#v}"
+          version="${version//\//-}"
           if [ -z "$version" ]; then
             echo "ERROR: could not derive a version from tag '$tag'" >&2
             exit 1
@@ -256,6 +259,18 @@ jobs:
             echo 'Every archive carries every workspace binary; README-PLAY.txt says how to start the game.'
             echo 'See docs/tooling/releases.md.'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Refuse to publish a non-tag
+        # A dispatch may build a branch as a dry run, but publishing one would
+        # make action-gh-release mint a new tag. Only an existing tag publishes.
+        if: github.event_name == 'workflow_dispatch' && inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" >/dev/null; then
+            echo "ERROR: '${RELEASE_TAG}' is not an existing tag; refusing to publish" >&2
+            exit 1
+          fi
 
       - name: Attach to GitHub release
         # Tag pushes always publish. workflow_dispatch publishes only when

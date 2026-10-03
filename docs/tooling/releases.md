@@ -44,8 +44,13 @@ gate is green. A tag containing `-` (say `v0.2.0-rc1`) is
 marked as a prerelease.
 
 To rehearse without touching a release, use the `workflow_dispatch` trigger
-with an existing tag. It builds and packages but **does not publish** unless
-the `publish` input is checked, so the dispatch path is a safe dry run.
+(Actions tab, or `gh workflow run release.yml -f tag=<ref>`). It runs every job
+- gate, all four builds, checksum aggregation - and leaves the archives as
+workflow artifacts, but **does not publish** unless the `publish` input is
+checked, so the dispatch path is a safe dry run. A dry run takes any ref, a
+branch included (a `/` in it becomes `-` in the archive names); publishing
+takes only an existing tag, and `publish` refuses anything else before the
+release step, since the release action would otherwise mint a new tag.
 
 ## Target matrix
 
@@ -55,7 +60,7 @@ cross-compiles - including the x86_64 Linux one.
 | Target | Toolchain | Contents |
 |---|---|---|
 | `aarch64-unknown-linux-gnu` | Native | Every workspace binary |
-| `x86_64-pc-windows-gnu` | mingw-w64 cross | Every workspace binary |
+| `x86_64-pc-windows-gnu` | mingw-w64 cross | Every workspace binary, plus `Legend of Legaia.exe` |
 | `x86_64-unknown-linux-gnu` | `cargo-zigbuild` cross + amd64 ALSA sysroot, glibc pinned to 2.28 | Every workspace binary |
 | `universal-apple-darwin` | Native on a macOS runner: `aarch64-apple-darwin` + `x86_64-apple-darwin`, fused by `lipo` | Every workspace binary, plus `Legend of Legaia.app` |
 
@@ -77,7 +82,12 @@ cpal's macOS backend is CoreAudio, so there is no ALSA question here.
 The archive additionally carries `Legend of Legaia.app`, a minimal bundle
 (an `Info.plist` and a copy of `legaia-engine`) so a Finder user double-clicks
 an app. Started without arguments the engine runs its launcher, which needs no
-terminal. The bundle is **ad-hoc signed** (`codesign --sign -`): arm64 macOS
+terminal. `CFBundleVersion` takes the version with any prerelease suffix cut
+(macOS wants dot-separated integers there); `CFBundleShortVersionString` keeps
+the full string. The script lints the `Info.plist` with `plutil` and verifies
+the seal with `codesign --verify --deep --strict` after signing, so a malformed
+bundle fails on the runner. The bundle is **ad-hoc signed**
+(`codesign --sign -`): arm64 macOS
 refuses to run unsigned code at all, and an ad-hoc seal satisfies that. It is
 not notarised - that needs a paid Apple Developer identity - so Gatekeeper
 asks the user to confirm the first launch; `README-PLAY.txt` gives the steps.
@@ -86,6 +96,38 @@ The script stays inside bash 3.2 and BSD userland on this path: archives are
 written with plain `tar -czf` when the host tar is not GNU tar (the GNU
 normalising flags do not exist on BSD tar), and checksums fall back to
 `shasum -a 256`, which writes the same `hash  name` lines as `sha256sum`.
+
+### Windows: the console window
+
+`legaia-engine.exe` is a **console** program, and a console program started
+from Explorer gets a console window of its own. The Windows archive therefore
+also carries `Legend of Legaia.exe` - the `legaia-launch` binary renamed at
+staging - a `windows`-subsystem stub that starts `legaia-engine.exe` beside it
+with `CREATE_NO_WINDOW` and returns its exit status. Being a GUI program, the
+stub never gets a console, and the engine (and the game process its launcher
+spawns, which inherits the engine's hidden console) never shows one. A failure
+to start the engine, or a non-zero exit, is reported in a message box, since
+the stub has nowhere to print. `README-PLAY.txt` points players at the stub.
+
+The alternative - `#![windows_subsystem = "windows"]` on the engine itself,
+plus `AttachConsole(ATTACH_PARENT_PROCESS)` to reach the terminal for CLI use
+- was rejected because it breaks the terminal contract every subcommand
+relies on: `cmd.exe` does not wait for a GUI-subsystem program, so output lands
+after the next prompt and `%ERRORLEVEL%` is lost, and the engine's trace
+subcommands are pipe-heavy. A second full GUI build of the engine would double
+the archive's largest file. The stub costs a few hundred kilobytes.
+
+A double-click on `legaia-engine.exe` itself is covered too: with no
+subcommand, when the engine is its console's only process (Explorer made the
+console for it), it calls `FreeConsole` and starts the game child with
+`CREATE_NO_WINDOW`. That leaves a brief flash, which is why the stub exists;
+`LEGAIA_KEEP_CONSOLE` keeps the console for debugging. Started from a
+terminal, the console is shared and stays.
+
+`release-build.sh` reads the PE optional header of both staged files and fails
+unless the stub is subsystem 2 (Windows GUI) and the engine subsystem 3
+(console), so a build change cannot quietly bring the console back or take the
+terminal away.
 
 ### Why Windows is `-gnu` rather than `-msvc`
 

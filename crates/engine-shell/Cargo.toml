@@ -8,6 +8,12 @@ license.workspace = true
 name = "legaia-engine"
 path = "src/bin/legaia-engine.rs"
 
+# Windows double-click entry (shipped as "Legend of Legaia.exe"): a
+# GUI-subsystem stub that starts legaia-engine without a console window.
+[[bin]]
+name = "legaia-launch"
+path = "src/bin/legaia-launch.rs"
+
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true

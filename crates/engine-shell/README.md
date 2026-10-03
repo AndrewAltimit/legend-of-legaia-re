@@ -180,6 +180,15 @@ root `src/bin/legaia-engine.rs` keeps only `main` + the clap dispatch):
   decision logic is the library module `launcher` (`src/launcher.rs`), unit
   tested without a display or a disc; the user-facing description is
   [`playing-and-viewing.md`](../../docs/guides/playing-and-viewing.md#0-the-launcher).
+  On a Wayland session the picker opens through XWayland (winit has no
+  Wayland drag-and-drop); on Windows a double-clicked engine frees the console
+  Explorer gave it.
+
+A second binary, `legaia-launch` (`src/bin/legaia-launch.rs`), is the Windows
+double-click entry: a `windows`-subsystem stub that starts `legaia-engine`
+beside it with no console window. The Windows release archive ships it as
+`Legend of Legaia.exe`; [`releases.md`](../../docs/tooling/releases.md#windows-the-console-window)
+says why it is a stub rather than a subsystem switch on the engine.
 
 ## Tests
 

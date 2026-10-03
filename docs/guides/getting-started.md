@@ -6,7 +6,7 @@ license files, `README-PLAY.txt` and a short `README.txt`. No Rust toolchain,
 no source checkout.
 
 **Just want to play?** Start `legaia-engine` with no arguments - double-click
-it (`legaia-engine.exe` on Windows, `Legend of Legaia.app` on macOS). A window
+it (`Legend of Legaia.exe` on Windows, `Legend of Legaia.app` on macOS). A window
 asks for your disc image once, remembers it, and opens the title screen; see
 [the launcher](playing-and-viewing.md#0-the-launcher). The rest of this guide
 is about the extraction tools.

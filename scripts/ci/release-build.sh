@@ -72,7 +72,8 @@ case "$TARGET" in
         BUILD_MODE="workspace"
         ;;
     x86_64-pc-windows-gnu)
-        BINS=("${CLI_BINS[@]}" "${GUI_BINS[@]}")
+        # legaia-launch is staged as "Legend of Legaia.exe" (see below).
+        BINS=("${CLI_BINS[@]}" "${GUI_BINS[@]}" legaia-launch)
         BIN_EXT=".exe"
         ARCHIVE_KIND="zip"
         BUILD_MODE="workspace"
@@ -187,6 +188,36 @@ for b in "${BINS[@]}"; do
     cp "$src" "$STAGE/"
 done
 
+# Windows: legaia-engine.exe is a console program (its CLI subcommands need
+# the ordinary terminal contract), so a double-click on it opens a console
+# window. The double-click entry is the GUI-subsystem stub legaia-launch,
+# shipped under the name a player looks for; it starts legaia-engine.exe with
+# no console. Assert the subsystem from the PE header (2 = Windows GUI, 3 =
+# console) so a build change cannot quietly bring the console back.
+if [[ "$TARGET" == *-windows-* ]]; then
+    mv "$STAGE/legaia-launch.exe" "$STAGE/Legend of Legaia.exe"
+    pe_subsystem() {
+        python3 - "$1" <<'PY'
+import struct, sys
+b = open(sys.argv[1], "rb").read()
+pe = struct.unpack_from("<I", b, 0x3C)[0]
+assert b[pe:pe + 4] == b"PE\0\0", "not a PE image"
+# COFF header is 20 bytes; Subsystem sits at +68 in the optional header.
+print(struct.unpack_from("<H", b, pe + 4 + 20 + 68)[0])
+PY
+    }
+    if command -v python3 >/dev/null 2>&1; then
+        gui="$(pe_subsystem "$STAGE/Legend of Legaia.exe")"
+        cli="$(pe_subsystem "$STAGE/legaia-engine.exe")"
+        if [[ "$gui" != 2 || "$cli" != 3 ]]; then
+            printf '[release-build] ERROR: PE subsystems wrong: launcher=%s (want 2), engine=%s (want 3)\n' \
+                "$gui" "$cli" >&2
+            exit 1
+        fi
+        log "PE subsystems hold: Legend of Legaia.exe = GUI, legaia-engine.exe = console"
+    fi
+fi
+
 # The glibc pin is a promise to users on older distros, and the ALSA sysroot
 # link is exactly the kind of change that could quietly break it. Verify the
 # real symbol table rather than trusting the target suffix.
@@ -218,18 +249,22 @@ if [[ "$TARGET" == *-apple-darwin ]]; then
     APP="$STAGE/Legend of Legaia.app"
     mkdir -p "$APP/Contents/MacOS"
     cp "$STAGE/legaia-engine" "$APP/Contents/MacOS/legaia-engine"
+    # CFBundleVersion must be dot-separated integers; a prerelease tag's
+    # suffix (0.2.0-rc1) stays in the display string only.
+    BUNDLE_VERSION="${VERSION%%-*}"
     cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
     <key>CFBundleName</key><string>Legend of Legaia</string>
     <key>CFBundleDisplayName</key><string>Legend of Legaia</string>
     <key>CFBundleIdentifier</key><string>io.github.andrewaltimit.legaia-engine</string>
     <key>CFBundleExecutable</key><string>legaia-engine</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-    <key>CFBundleVersion</key><string>${VERSION}</string>
+    <key>CFBundleVersion</key><string>${BUNDLE_VERSION}</string>
     <key>LSMinimumSystemVersion</key><string>${MACOSX_DEPLOYMENT_TARGET}</string>
     <key>NSHighResolutionCapable</key><true/>
 </dict>
@@ -237,8 +272,12 @@ if [[ "$TARGET" == *-apple-darwin ]]; then
 PLIST
     # Ad-hoc signature: no Apple identity, but a consistent bundle seal, which
     # arm64 macOS requires before it will run the app at all.
+    if command -v plutil >/dev/null 2>&1; then
+        plutil -lint "$APP/Contents/Info.plist"
+    fi
     if command -v codesign >/dev/null 2>&1; then
         codesign --force --deep --sign - "$APP"
+        codesign --verify --deep --strict "$APP"
     fi
 fi
 
@@ -253,7 +292,11 @@ cp LICENSE-MIT "$STAGE/LICENSE-MIT"
     printf 'TO PLAY\n\n'
     case "$TARGET" in
         *-windows-*)
-            printf '    Double-click legaia-engine.exe.\n\n' ;;
+            printf '    Double-click "Legend of Legaia.exe".\n\n'
+            printf '    It starts legaia-engine.exe without a console window. Keep the\n'
+            printf '    two files in the same folder. legaia-engine.exe is the same game\n'
+            printf '    plus every command-line option; run it from a command prompt to\n'
+            printf '    see its log.\n\n' ;;
         *-apple-darwin)
             printf '    Double-click "Legend of Legaia.app" (or run ./legaia-engine).\n\n'
             printf '    The app is not notarised by Apple. The first time, right-click it\n'
@@ -317,6 +360,9 @@ cp LICENSE-MIT "$STAGE/LICENSE-MIT"
     printf '    font-extract    dialog font -> glyph atlas + widths\n'
     printf 'Play + view\n'
     printf '    legaia-engine   the from-scratch engine: play-window, play-str, record/replay\n'
+    if [[ "$TARGET" == *-windows-* ]]; then
+        printf '    Legend of Legaia.exe  double-click entry: legaia-engine without a console\n'
+    fi
     printf '    asset-viewer    windowed viewer: textures, meshes, audio, scenes\n'
     printf 'Mod + translate\n'
     printf '    legaia-patcher    disc patcher: randomizer, "translate" language packs, manual edits\n'

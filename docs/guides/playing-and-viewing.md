@@ -27,6 +27,19 @@ Press `Enter` or click to open the system file dialog, drag the `.bin` (or
 Linux the dialog goes through the desktop's file-chooser portal; where no
 portal runs, the drag-and-drop and typed-path routes still work.
 
+On a Wayland desktop the launcher window opens through XWayland, because the
+windowing library has no Wayland drag-and-drop; the compositor carries a drag
+from a Wayland file manager across, so dropping works there too. Without
+XWayland (`DISPLAY` unset), or with `LEGAIA_LAUNCHER_WAYLAND=1`, the window is
+native Wayland and only the file dialog and the typed path take a disc. The
+game itself always opens on the desktop's default backend.
+
+On Windows, double-click `Legend of Legaia.exe`: it starts `legaia-engine.exe`
+with no console window. `legaia-engine.exe` is a console program so its
+subcommands behave normally in a terminal; double-clicked directly, it closes
+the console it was given (a brief flash) unless `LEGAIA_KEEP_CONSOLE` is set,
+and run from a command prompt it keeps printing its log there.
+
 The chosen image is checked before it is accepted, through the same reader the
 game boots from: a `.cue` resolves to its `.bin`, the image must be raw
 Mode 2/2352, its `SYSTEM.CNF` must boot `SCUS_942.54`, and `PROT.DAT` must be
