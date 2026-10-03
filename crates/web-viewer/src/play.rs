@@ -891,15 +891,28 @@ impl LegaiaRuntime {
         let Some(h) = self.scene_host.as_ref() else {
             return Vec::new();
         };
-        let Some(wave) = field_env::FloorWave::from_scene_and_world(
+        // The terrain / decoration cells follow the live rungs; a placed
+        // object stands on the ladder its actor was spawned against
+        // (`World::placed_floor_offsets`).
+        let wave = field_env::FloorWave::from_scene_and_world(
             f.floor_lut,
             &h.world.terrain.floor_height_lut,
-        ) else {
+        );
+        let placed = h.world.placed_floor_offsets(
+            f.floor_lut,
+            f.placements.iter().map(|d| &d.floor),
+            &f.window_keys,
+        );
+        if wave.is_none() && placed.iter().all(|&o| o == 0) {
             return Vec::new();
-        };
+        }
         let mut out = Vec::with_capacity(f.terrain.len() + f.placements.len());
-        out.extend(f.terrain.iter().map(|d| wave.offset(&d.floor) as f32));
-        out.extend(f.placements.iter().map(|d| wave.offset(&d.floor) as f32));
+        out.extend(
+            f.terrain
+                .iter()
+                .map(|d| wave.map_or(0, |w| w.offset(&d.floor)) as f32),
+        );
+        out.extend(placed.into_iter().map(|o| o as f32));
         out
     }
 

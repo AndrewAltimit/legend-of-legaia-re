@@ -2339,7 +2339,7 @@ missing input was a world, not a call.
 The viewer now owns a world: `engine-core::scene_live::LiveScene` enters the
 scene through `SceneHost` the way the play pages' picker does and ticks it
 headless, and the viewer reads it through the play page's own kernels
-(`FloorWave`, `field_ground::live_render_positions`,
+(`FloorWave`, `World::placed_floor_offsets`, `field_ground::live_render_positions`,
 `PropAnimBank::pose_key` with `field_env::posed_prop_offsets`,
 `World::step_field_vram_effects`, `World::morphed_env_tmd`). Its private
 ambient spawn is gone. The gate is behavioural, not textual: the disc-gated

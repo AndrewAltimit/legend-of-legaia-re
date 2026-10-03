@@ -705,11 +705,18 @@ through the play page's own kernels, so there is no second animation path:
 
 | accessor | kernel | what moves |
 |---|---|---|
-| `field_scene_floor_wave_offsets` | `field_env::FloorWave` | terrain + placed draws on the live ladder |
+| `field_scene_floor_wave_offsets` | `field_env::FloorWave`, `World::placed_floor_offsets` | terrain cells on the live ladder; placed objects on the ladder they spawned on |
 | `field_scene_ground_live_positions` | `field_ground::live_render_positions` | the walk ground, per vertex |
 | `field_scene_placement_anim_ids` / `_frames`, `field_scene_mesh_posed` / `_posed_frame_positions` | `PropAnimBank::pose_key`, `field_env::posed_prop_offsets` | clip-bound props, posed (multi-object props assemble instead of heaping on the origin) and re-posed per frame |
 | `field_scene_anim_tick` | `World::step_field_vram_effects`, `clut_walk_anim` | the VRAM effects and the CLUT walker |
 | `field_scene_morph_slots` / `_positions` | `World::morphed_env_tmd` | VDF morphs |
+
+A ladder is a property of the **camera region**, not of the map: `concnow`'s
+system script installs a different ladder in each region block (each opened
+by a `46 24` view-window write), and retail only ever draws the region the
+player stands in. A whole-map view applies the entry region's ladder to every
+room, so a room whose own region keeps its rungs low shows them raised here,
+over placed objects that stand at that room's own height.
 
 The overworld is not run live (its ground does not follow the field ladder;
 its animation is the CLUT walker). The disc-gated

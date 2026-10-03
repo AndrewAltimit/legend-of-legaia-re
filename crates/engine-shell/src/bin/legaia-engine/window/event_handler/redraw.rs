@@ -693,16 +693,22 @@ impl PlayWindowApp {
                 field_terrain_color_draws,
                 field_placement_draws,
                 field_placement_color_draws,
+                field_placement_window_keys,
+                field_placement_color_window_keys,
                 session,
                 ..
             } = self;
             field_floor_wave.apply(
-                &session.host.world.terrain.floor_height_lut,
+                &session.host.world,
                 [
                     field_terrain_draws,
                     field_terrain_color_draws,
                     field_placement_draws,
                     field_placement_color_draws,
+                ],
+                [
+                    field_placement_window_keys,
+                    field_placement_color_window_keys,
                 ],
             );
         }

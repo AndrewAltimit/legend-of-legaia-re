@@ -959,6 +959,10 @@ impl SceneHost {
                 // The camera composer reads this pristine copy, never the
                 // live rungs the floor-tier oscillators write.
                 self.world.terrain.floor_height_lut_static = self.world.terrain.floor_height_lut;
+                // The ladder `FUN_8003A55C` spawns the bound placed objects
+                // against: the one just installed (the system script that may
+                // replace it runs after the sweep).
+                self.world.terrain.placed_spawn_lut = self.world.terrain.floor_height_lut;
             }
             Some(Err(err)) => eprintln!("[scene] field floor-height LUT load skipped: {err:#}"),
             _ => {}

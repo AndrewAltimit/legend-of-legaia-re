@@ -66,6 +66,10 @@ pub struct FieldScenePack {
     /// The live ladder the ground's drawn positions were last re-resolved
     /// against ([`LegaiaViewer::field_scene_ground_live_positions`]).
     pub ground_lut_applied: Option<[i16; 16]>,
+    /// Per-placement windowed-list identity
+    /// ([`legaia_engine_core::field_env::placed_window_key`]): which spawn
+    /// sweep owns each placed object, and so which ladder it stands on.
+    pub window_keys: Vec<Option<legaia_engine_core::field_env::PlacedWindowKey>>,
 }
 
 /// The bundle type-6 **CLUT-walk table** runner (`legaia_asset::clut_walk`,
@@ -124,6 +128,7 @@ pub fn build_field_scene(index: &ProtIndex, name: &str) -> Result<FieldScenePack
         live: None,
         scene_anm: None,
         ground_lut_applied: None,
+        window_keys: Vec::new(),
     })
 }
 
@@ -157,9 +162,18 @@ pub fn build_field_scene_anim(
 /// bundle its placed props pose from. The live scene is `None` for the
 /// overworld (not previewed live) or a scene the host refuses.
 pub fn build_field_scene_live(index: Arc<ProtIndex>, pack: &mut FieldScenePack) {
-    pack.scene_anm = Scene::load(&index, &pack.name)
-        .ok()
-        .and_then(|scene| legaia_engine_core::npc_catalog::scene_anm_bundle(&scene));
+    let scene = Scene::load(&index, &pack.name).ok();
+    pack.scene_anm = scene
+        .as_ref()
+        .and_then(legaia_engine_core::npc_catalog::scene_anm_bundle);
+    let binds = scene
+        .as_ref()
+        .and_then(|s| s.field_object_binds(&index).ok().flatten());
+    pack.window_keys = pack
+        .placements
+        .iter()
+        .map(|d| legaia_engine_core::field_env::placed_window_key(d, binds.as_ref()))
+        .collect();
     pack.ground_lut_applied = None;
     pack.live = legaia_engine_core::scene_live::LiveScene::enter(index, &pack.name)
         .map_err(|e| console_log(&format!("field scene {}: not live: {e}", pack.name)))
@@ -172,14 +186,27 @@ impl FieldScenePack {
     /// the placement draws under the live floor-height ladder
     /// ([`legaia_engine_core::field_env::FloorWave`]). Empty while the
     /// ladder sits where the scene shipped it.
+    ///
+    /// The terrain / decoration cells follow the live rungs; a placed object
+    /// stands on the ladder its actor was spawned against
+    /// (`World::placed_floor_offsets`) - the play page's split.
     pub fn floor_wave_offsets(&self) -> Vec<f32> {
-        let Some(wave) = self.live.as_ref().and_then(|l| l.floor_wave()) else {
+        let Some(live) = self.live.as_ref() else {
             return Vec::new();
         };
+        let wave = live.floor_wave();
+        let placed = live.host.world.placed_floor_offsets(
+            live.scene_floor_lut(),
+            self.placements.iter().map(|d| &d.floor),
+            &self.window_keys,
+        );
+        if wave.is_none() && placed.iter().all(|&o| o == 0) {
+            return Vec::new();
+        }
         self.terrain
             .iter()
-            .chain(&self.placements)
-            .map(|d| wave.offset(&d.floor) as f32)
+            .map(|d| wave.map_or(0, |w| w.offset(&d.floor)) as f32)
+            .chain(placed.into_iter().map(|o| o as f32))
             .collect()
     }
 

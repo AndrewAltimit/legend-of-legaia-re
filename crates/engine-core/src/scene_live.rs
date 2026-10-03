@@ -9,8 +9,9 @@
 //!
 //! - the **floor-height ladder** (field-VM op `0x4C` nibble 9): `jouina`'s
 //!   pulsing path, `concnow`'s flesh pits - and `concnow`'s entry script
-//!   replaces the whole ladder (`4C 9E`), so its baked heights are not the
-//!   heights the scene is ever shown at;
+//!   replaces the whole ladder (`4C 9E`), so its baked terrain heights are not
+//!   the heights the scene is ever shown at (its placed objects keep theirs:
+//!   they were spawned before the install);
 //! - **placed-prop clips** (the prop bank's cursors, retail `FUN_800204F8`):
 //!   the Rim Elm windmill's sails;
 //! - the **ambient move-VM tree** and the scripted VRAM effects (palette
@@ -21,7 +22,9 @@
 //! ([`crate::world::World::stage_picker_entry`] then
 //! [`SceneHost::enter_field_scene`]), stepped by [`SceneHost::tick`], and
 //! read through the same kernels the play hosts call -
-//! [`FloorWave`] for the placed / terrain draws,
+//! [`FloorWave`] for the terrain / decoration cells (the live rungs) and
+//! [`crate::world::World::placed_floor_offsets`] for placed objects (the
+//! ladder their actors spawned on),
 //! [`crate::field_ground::live_render_positions`] for the walk ground,
 //! [`crate::field_env::PropAnimBank::pose_key`] for props and
 //! [`crate::world::World::step_field_vram_effects`] for VRAM.
@@ -147,9 +150,11 @@ impl LiveScene {
         FloorWave::from_scene_and_world(self.scene_lut, &self.host.world.terrain.floor_height_lut)
     }
 
-    /// Per-draw Y offsets (retail frame) of `draws` - resolved against the
-    /// shipped ladder - under the live one. `None` while the ladder sits
-    /// where the scene shipped it.
+    /// Per-draw Y offsets (retail frame) of terrain / decoration `draws` -
+    /// resolved against the shipped ladder - under the live one. `None` while
+    /// the ladder sits where the scene shipped it. Placed objects do not
+    /// follow the live rungs; see
+    /// [`crate::world::World::placed_floor_offsets`].
     pub fn floor_wave_offsets(&self, draws: &[EnvDraw]) -> Option<Vec<i32>> {
         self.floor_wave().map(|w| w.offsets(draws))
     }

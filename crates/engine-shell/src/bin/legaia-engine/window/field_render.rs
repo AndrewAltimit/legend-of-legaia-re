@@ -31,12 +31,19 @@ pub(super) type PlacedDrawList = (
 /// matrix's Y whenever the live ladder moves. Nothing happens - not even an
 /// iteration - while the live ladder equals the one the lists were baked
 /// against, which is every frame of every scene whose script leaves it alone.
+/// The ladders a [`FieldFloorWave`] last folded in: (live, bound-spawn,
+/// window-spawn), all scratchpad frame.
+type SeenLadders = ([i16; 16], [i16; 16], Option<[i16; 16]>);
+
 #[derive(Default)]
 pub(super) struct FieldFloorWave {
     /// MAN-frame ladder the four lists' `world_y` were resolved against.
     base: Option<[i16; 16]>,
-    /// MAN-frame ladder currently folded into those matrices.
-    applied: [i16; 16],
+    /// The ladders last folded in: (live, bound-spawn, window-spawn), all
+    /// scratchpad frame. Nothing is re-derived while they hold.
+    seen: Option<SeenLadders>,
+    /// Per-draw Y offset currently folded into each list's matrices.
+    applied: [Vec<i32>; 4],
     /// Anchors parallel to `field_terrain_draws`.
     pub(super) terrain: Vec<FloorAnchor>,
     /// Anchors parallel to `field_terrain_color_draws`.
@@ -60,7 +67,13 @@ impl FieldFloorWave {
     ) -> Self {
         FieldFloorWave {
             base,
-            applied: base.unwrap_or([0i16; 16]),
+            seen: None,
+            applied: [
+                vec![0; terrain.len()],
+                vec![0; terrain_color.len()],
+                vec![0; placement.len()],
+                vec![0; placement_color.len()],
+            ],
             terrain,
             terrain_color,
             placement,
@@ -68,41 +81,52 @@ impl FieldFloorWave {
         }
     }
 
-    /// Fold the world's live ladder into the four lists' Y translations.
-    ///
-    /// `world_lut` is `World::terrain.floor_height_lut` - the runtime
-    /// **scratchpad** frame, the negation of the MAN frame held here.
+    /// Fold the world's ladders into the four lists' Y translations: the two
+    /// terrain lists follow the **live** rungs (`World::terrain.
+    /// floor_height_lut`, scratchpad frame) as retail's per-cell sweep does;
+    /// the two placed lists stand on the ladder their actors were spawned
+    /// against (`World::placed_floor_offsets` - a placed object's Y is set
+    /// once at spawn). `placement_keys` are the placed lists' window keys.
     /// Returns the number of draw matrices moved this frame.
     pub(super) fn apply(
         &mut self,
-        world_lut: &[i16; 16],
+        world: &legaia_engine_core::world::World,
         lists: [&mut Vec<(usize, Mat4)>; 4],
+        placement_keys: [&[Option<legaia_engine_core::field_env::PlacedWindowKey>]; 2],
     ) -> usize {
         if self.base.is_none() {
             return 0;
         }
-        let live = world_lut.map(i16::wrapping_neg);
-        if live == self.applied {
+        let t = &world.terrain;
+        let seen = (
+            t.floor_height_lut,
+            t.placed_spawn_lut,
+            t.static_window.spawn_lut,
+        );
+        if self.seen == Some(seen) {
             return 0;
         }
-        // The step is `live - applied`, not `live - base`: the matrices already
-        // carry whatever the last frame folded in.
-        let Some(step) = FloorWave::between(self.applied, live) else {
-            return 0;
+        self.seen = Some(seen);
+        let live = FloorWave::from_scene_and_world(self.base, &t.floor_height_lut);
+        let terrain_offsets = |anchors: &[FloorAnchor]| -> Vec<i32> {
+            anchors
+                .iter()
+                .map(|f| live.map_or(0, |w| w.offset(f)))
+                .collect()
         };
-        self.applied = live;
-        let anchors = [
-            &self.terrain,
-            &self.terrain_color,
-            &self.placement,
-            &self.placement_color,
+        let targets = [
+            terrain_offsets(&self.terrain),
+            terrain_offsets(&self.terrain_color),
+            world.placed_floor_offsets(self.base, &self.placement, placement_keys[0]),
+            world.placed_floor_offsets(self.base, &self.placement_color, placement_keys[1]),
         ];
         let mut moved = 0;
-        for (list, anchors) in lists.into_iter().zip(anchors) {
-            for ((_, model), floor) in list.iter_mut().zip(anchors) {
-                let dy = step.offset(floor);
+        for ((list, applied), target) in lists.into_iter().zip(&mut self.applied).zip(targets) {
+            for (((_, model), was), now) in list.iter_mut().zip(applied.iter_mut()).zip(target) {
+                let dy = now - *was;
                 if dy != 0 {
                     model.w_axis.y += dy as f32;
+                    *was = now;
                     moved += 1;
                 }
             }

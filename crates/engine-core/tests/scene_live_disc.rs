@@ -61,6 +61,39 @@ fn concnow_is_shown_on_its_installed_ladder() {
         "the entry script's ladder moves the terrain off its shipped heights"
     );
     assert!(varied, "and the ladder keeps animating");
+    // The bound placed objects do not ride it: `FUN_8003A55C` stored their Y
+    // at scene init, before the system script's install, and nothing
+    // re-samples a placed actor's height. Several stand on the very rungs the
+    // install raised (nibbles 1..3), so a lift here would be visible.
+    let binds = legaia_engine_core::scene::Scene::load(&live.host.index, "concnow")
+        .unwrap()
+        .field_object_binds(&live.host.index)
+        .unwrap();
+    let keys: Vec<_> = a
+        .placements
+        .iter()
+        .map(|d| legaia_engine_core::field_env::placed_window_key(d, binds.as_ref()))
+        .collect();
+    let bound_on_raised = a
+        .placements
+        .iter()
+        .zip(&keys)
+        .filter(|(d, k)| k.is_none() && matches!(d.floor.nibble, Some(1..=3)))
+        .count();
+    assert!(
+        bound_on_raised > 0,
+        "concnow binds objects on the raised rungs"
+    );
+    let placed = live.host.world.placed_floor_offsets(
+        live.scene_floor_lut(),
+        a.placements.iter().map(|d| &d.floor),
+        &keys,
+    );
+    for ((d, k), o) in a.placements.iter().zip(&keys).zip(&placed) {
+        if k.is_none() {
+            assert_eq!(*o, 0, "bound object at {:?} keeps its spawn Y", d.cell);
+        }
+    }
     eprintln!(
         "concnow: {moved} of {} terrain draws off their shipped Y",
         a.terrain.len()

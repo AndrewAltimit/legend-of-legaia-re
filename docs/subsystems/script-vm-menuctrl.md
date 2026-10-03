@@ -877,9 +877,27 @@ Three readers see the live rungs, and each must follow them:
   `concnow`'s flesh. The port's walk-ground heightfield keeps each vertex's
   corner tier (`WalkHeightfield::corner_tiers`) and both hosts re-upload it
   through `field_ground::live_render_positions` on a frame the ladder moved.
-- **The static-object pass** places each decoration and placed object at its
-  floor term once per frame, so a whole mesh rides up and down:
-  `field_env::FloorWave` folds the per-draw offset into the baked draws.
+- **The decoration sweep** (`FUN_801F7088`) places each terrain /
+  decoration cell at its corner-block floor term once per frame, so a whole
+  mesh rides up and down: `field_env::FloorWave` folds the per-draw offset
+  into the baked draws. The sweep skips every `flags & 4` record
+  (`0x801F7580..0x801F758C`), so **placed objects are not on it**.
+
+A placed object is an actor, and its Y is written once. `FUN_8003A55C` (the
+bound ones, at scene init) and the window sweep `FUN_801D7B50` (the rest, on
+every re-plan) both store `ladder[nibble] + y_off` into the spawn record
+(`0x8003A62C..0x8003A64C`, `0x801D7CF4..0x801D7D14`). Their template at
+`0x80073E70` (handler `FUN_8003BC08`, flags `0x8082`) sets neither of the
+height-arm bits `0x20200` that make the per-frame driver re-sample the floor,
+so the actor keeps that Y. `concnow` shows what follows: its system script's
+first region block installs a ladder that lifts rungs 1..3 by up to about
+1300 units after the init sweep has run, and the bound objects on those rungs
+stay where they were spawned. The port routes the placed layer through
+`World::placed_floor_offsets` (the init ladder for a bound draw, the last
+re-plan's for a window-owned one) on all three hosts; only the terrain cells
+and the walk ground take the live rungs. Pinned by
+`a_placed_object_keeps_its_spawn_ladder` in
+`engine-core/tests/field_floor_wave.rs`.
 - **The floor sampler** `FUN_80019278`, so the player walks the same shape and,
   through the settle's every-frame glide, rides it while standing. The port's
   snap-style footing re-reads the floor on any frame the ladder moved
