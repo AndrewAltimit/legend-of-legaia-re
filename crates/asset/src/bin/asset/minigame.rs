@@ -485,10 +485,20 @@ pub(crate) fn slot_art_cmd(overlay: &Path, art: &Path, out: &Path) -> Result<()>
         "reel_shade_gain": slot::REEL_SHADE_Z_GAIN,
         "glass_z": slot::GLASS_Z,
         "dot_z": slot::DOT_Z,
-        // The retail projection (minigame_slot_scene): -z toward the viewer,
-        // scale z0/(z0+z) about the model origin; billboards' half-extents
-        // are VIEW space (divide by xscale, and by xscale/aspect for y, to
-        // reach model units); the paytable is a raw screen-space draw.
+        // The retail projection - the GTE registers captured at the machine
+        // (minigame_slot_scene::project), rearranged: -z toward the viewer,
+        // scale k = z0/(z0+z) about the VANISHING POINT (vanish_x, vanish_y),
+        // which is not the model origin; billboards' half-extents are VIEW
+        // space (divide by xscale, and by xscale/aspect for y, to reach model
+        // units); the paytable is a raw screen-space draw. The raw registers
+        // ride along for a consumer that would rather run the GTE form.
+        "gte_scale": slot::GTE_SCALE,
+        "gte_tr": slot::GTE_TR,
+        "gte_ofx": slot::GTE_OFX,
+        "gte_ofy": slot::GTE_OFY,
+        "gte_h": slot::GTE_H,
+        "proj_vanish_x": slot::PROJ_VANISH.0,
+        "proj_vanish_y": slot::PROJ_VANISH.1,
         "proj_z0": slot::PROJ_Z0,
         "proj_sx0": slot::PROJ_SX0,
         "proj_ofx": slot::PROJ_OFX,

@@ -768,6 +768,10 @@ impl PlayWindowApp {
                 h,
             ));
         }
+        // The machine's rules pages are its one text draw.
+        if self.slot_gpu.is_some() {
+            out.extend(self.slot_rules_text_draws(w, h));
+        }
         // Baka Fighter minigame HUD: HP bars as numbers, round pips, the
         // last-exchange readout, and the input prompt.
         if self.session.host.world.mode == SceneMode::BakaFighter

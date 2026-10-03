@@ -166,7 +166,13 @@ fn casino_door_warp_draws_the_slot_machine_and_start_leaves() {
     let st: serde_json::Value =
         serde_json::from_str(&rt.play_mg_slot_state_json()).expect("state json");
     assert_eq!(st["live"].as_bool(), Some(true));
-    assert_eq!(st["phase"].as_str(), Some("idle"));
+    // An empty bank meets retail's state-1 coin gate, which raises the
+    // not-enough-coins prompt (state `0x5A`) instead of refusing a spin.
+    let broke = st["balance"].as_i64().is_some_and(|b| b < 3);
+    assert_eq!(
+        st["phase"].as_str(),
+        Some(if broke { "no_coins" } else { "idle" })
+    );
 
     // Cross reaches the engine's session: the reels spin.
     if st["can_spin"].as_bool() == Some(true) {

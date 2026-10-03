@@ -70,14 +70,16 @@ pub fn slot_status_rows(m: &SlotMachine) -> Vec<StatusRow> {
     let prompt = match m.phase() {
         SlotPhase::Idle if !m.can_spin() => "not enough coins".to_string(),
         // `spin_cost` is 1 in the feature modes 4..=6 and 3 otherwise.
-        SlotPhase::Idle => format!("Cross = spin ({} coins)", m.spin_cost()),
+        SlotPhase::Idle => format!("Cross = spin ({} coins)  Triangle = menu", m.spin_cost()),
         SlotPhase::Spinning => "spinning...".to_string(),
         SlotPhase::Stopping => "Square/Cross/Circle = stop reels 1/2/3".to_string(),
         SlotPhase::Payout => match m.last_result() {
             Some(r) if r.payout > 0 => format!("WIN +{} coins!  (Cross = collect)", r.payout),
             _ => "no win  (Cross = continue)".to_string(),
         },
-        SlotPhase::CashedOut => "cashed out".to_string(),
+        SlotPhase::Menu => "Up/Down = row  Cross = take  Circle = back".to_string(),
+        SlotPhase::NoCoins => "out of coins - any button leaves".to_string(),
+        SlotPhase::Leaving | SlotPhase::CashedOut => "cashed out".to_string(),
     };
     vec![
         StatusRow::new(l1, PEN_STATUS, true),

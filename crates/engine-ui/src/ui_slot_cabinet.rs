@@ -77,6 +77,11 @@ pub struct SlotCabinetAssets {
     pub cabinet: Option<legaia_asset::minigame_slot_scene::SlotCabinetMesh>,
     pub hud: Vec<legaia_asset::minigame_art::SlotHudWidget>,
     pub vram: legaia_tim::Vram,
+    /// The two rules pages' text and chart order (the overlay's own rodata).
+    pub rules: Option<legaia_asset::minigame_slot_scene::SlotRules>,
+    /// The per-symbol line payouts the second rules page charts
+    /// (`DAT_801d3598`, [`legaia_asset::slot_payout`]).
+    pub payouts: [u8; 10],
 }
 
 impl SlotCabinetAssets {
@@ -97,6 +102,10 @@ impl SlotCabinetAssets {
             .map_err(|e| format!("scene graph (PROT 0975) did not decode: {e:#}"))?;
         let hud = art::parse_slot_hud(&overlay).unwrap_or_default();
         let cabinet = sc::parse_cabinet(&art_raw).ok();
+        let rules = sc::parse_rules(&overlay).ok();
+        let payouts = legaia_asset::slot_payout::parse(&overlay)
+            .map(|t| t.payouts)
+            .unwrap_or_default();
         let mut vram = legaia_tim::Vram::new();
         for t in &tims {
             vram.upload_tim(t);
@@ -106,6 +115,8 @@ impl SlotCabinetAssets {
             cabinet,
             hud,
             vram,
+            rules,
+            payouts,
         })
     }
 }
@@ -403,16 +414,23 @@ fn dot_prims(input: &SlotCabinetInput<'_>, out: &mut Vec<ScreenPrim>) {
     }
 }
 
-/// One `FUN_801d2cc0` widget, centred on `(x, y)` (the anchor mode `0` both
-/// of `FUN_801cfff0`'s calls use) at brightness `0x80` and unit scale.
+/// One `FUN_801d2cc0` widget, centred on `(x, y)` (the anchor mode `0` every
+/// call uses) at brightness `0x80` and unit scale.
 fn hud_widget(w: &SlotHudWidget, x: i32, y: i32, ot: u32) -> ScreenPrim {
+    hud_widget_scaled(w, x, y, (0x1000, 0x1000), ot)
+}
+
+/// [`hud_widget`] at the call's own `(sx, sy)` scale (4.12): the size is
+/// `(base * record.scale) >> 12`, then `* s >> 12`, each toward zero.
+fn hud_widget_scaled(w: &SlotHudWidget, x: i32, y: i32, s: (i32, i32), ot: u32) -> ScreenPrim {
     let scale = |c: u8| (c as u32 * 0x80) >> 8;
     let word = |c: [u8; 3]| (scale(c[0]) << 16) | (scale(c[1]) << 8) | scale(c[2]);
     let (top, bot) = (word(w.rgb_top), word(w.rgb_bottom));
     // `(base * scale) >> 12` twice, each with retail's toward-zero bias, then
     // halved toward zero for the centred anchor.
-    let ww = ((w.w as i32 * w.scale) >> 12) / 2;
-    let hh = ((w.h as i32 * w.scale) >> 12) / 2;
+    let fx = |v: i32| if v < 0 { (v + 0xFFF) >> 12 } else { v >> 12 };
+    let ww = fx(fx(w.w as i32 * w.scale) * s.0) / 2;
+    let hh = fx(fx(w.h as i32 * w.scale) * s.1) / 2;
     let (x0, x1, y0, y1) = (
         (x - ww) as f32,
         (x + ww) as f32,
@@ -480,6 +498,238 @@ pub fn slot_cabinet_prims(input: &SlotCabinetInput<'_>) -> Vec<ScreenPrim> {
     coin_digit_prims(input.balance, &mut out);
     if let Some(w) = input.hud.first() {
         out.push(hud_widget(w, 0x230, 0x80, PANEL_OT));
+    }
+    out
+}
+
+// --- The cash-out flow --------------------------------------------------------
+
+/// OT bucket every cash-out draw links at (`*(0x1F8003F4) + 4`).
+pub const MENU_OT: u32 = 1;
+/// The picker's box sits one bucket behind its words and cursor.
+const MENU_BOX_OT: u32 = 2;
+
+/// Interior of one `FUN_8002C69C` box over the centre rect `(x, y, w, h)`:
+/// the two stacked semi-transparent (`B/2 + F/2`) `POLY_G4` passes, top
+/// `(0x18, 0x18, 0x28)` to bottom `(0x40, 0x40, 0xA0)`, over the centre rect
+/// inflated by 4. `half_x` halves x for the 640-wide mode. The skin's border
+/// tiles sample the resident system-UI sheet, which the machine's VRAM here
+/// does not carry, so only the fill is drawn.
+fn box_fill(rect: (i32, i32, i32, i32), half_x: bool, ot: u32, out: &mut Vec<ScreenPrim>) {
+    let (x, y, w, h) = (rect.0 - 4, rect.1 - 4, rect.2 + 8, rect.3 + 8);
+    let sx = |v: i32| {
+        if half_x {
+            (v as f32 * 0.5).round() as i16
+        } else {
+            v as i16
+        }
+    };
+    let (x0, x1, y0, y1) = (sx(x), sx(x + w), y as i16, (y + h) as i16);
+    let top = [0x18, 0x18, 0x28, 0xFF];
+    let bot = [0x40, 0x40, 0xA0, 0xFF];
+    for _ in 0..2 {
+        out.push(ScreenPrim::Flat(FlatQuad {
+            xy: [(x0, y0), (x1, y0), (x0, y1), (x1, y1)],
+            color: top,
+            gouraud: Some([top, top, bot, bot]),
+            semi_transparent: true,
+            abr_mode: 0,
+            ot_index: ot,
+            depth: None,
+        }));
+    }
+}
+
+/// A `0x2C` `POLY_FT4` at `(x, y)` sized `(w, h)` sampling `(u, v, uw, vh)` -
+/// the shape `FUN_801D317C` / `FUN_801D32C8` / `FUN_801D2AA4` emit. `mode_320`
+/// marks coordinates of the 320-wide mode (the rules pages); otherwise they
+/// are the machine's 640-wide framebuffer's.
+fn ft4(
+    xy: (i32, i32, i32, i32),
+    uv: (u8, u8, u8, u8),
+    clut: u16,
+    tpage: u16,
+    mode_320: bool,
+) -> ScreenPrim {
+    let (x, y, w, h) = xy;
+    // `textured` halves x (640 -> 320); a 320-mode coordinate is doubled in.
+    let k = if mode_320 { 2.0 } else { 1.0 };
+    let (x0, x1) = (x as f32 * k, (x + w) as f32 * k);
+    let (y0, y1) = (y as f32, (y + h) as f32);
+    let (u0, v0) = (uv.0, uv.1);
+    let (u1, v1) = (u0.saturating_add(uv.2), v0.saturating_add(uv.3));
+    textured(
+        [(x0, y0), (x1, y0), (x0, y1), (x1, y1)],
+        [(u0, v0), (u1, v0), (u0, v1), (u1, v1)],
+        clut,
+        tpage,
+        NEUTRAL,
+        None,
+        false,
+        MENU_OT,
+    )
+}
+
+/// The cash-out flow's screen primitives for this frame, drawn over the
+/// machine's own list ([`slot_cabinet_prims`]) - or, on a rules page, over a
+/// black screen in its place - plus the state's screen fade.
+///
+/// - the picker (state `0x32`): the box `FUN_8002C69C(0xDC, 0x68, 0xD2, 0x27)`,
+///   the 80x48 words image `FUN_801D317C(0xEC, 0x62)` (page `(832, 256)`,
+///   `uv (0, 160)`, CLUT `0x7B43`, stretched to 168 framebuffer columns) and
+///   the cursor, HUD widget 2 at `(0xDC, row * 0x10 + 0x6C)` doubled across;
+/// - the not-enough-coins prompt (state `0x5A`): one 256x48 `SPRT` at
+///   `(192, 100)` off page `(768, 0)`, `uv (0, 208)`, CLUT `0x7A8D`;
+/// - rules page 1 (`FUN_801D2AA4(0)` / `(1)`): two columns of five chart rows,
+///   each three 32x32 symbol faces and the symbol's payout in the 16x16
+///   digits `FUN_801D32C8` draws (page `(832, 256)`, `uv (d * 16, 112)`);
+/// - the screen fade `FUN_80024EE4(0, 2, level * 0x10101)`, a subtractive
+///   full-screen quad.
+///
+/// The rules pages' text is a host text draw ([`slot_rules_text_draws_for`]).
+pub fn slot_menu_prims(
+    assets: &SlotCabinetAssets,
+    screen: sc::SlotScreen,
+    fade: i32,
+) -> Vec<ScreenPrim> {
+    let mut out = Vec::new();
+    match screen {
+        sc::SlotScreen::Machine => {}
+        sc::SlotScreen::Picker { row } => {
+            out.push(ft4(
+                (0xEC, 0x62, 0xA8, 0x30),
+                (0x00, 0xA0, 0x50, 0x30),
+                0x7B43,
+                0x1D,
+                false,
+            ));
+            if let Some(w) = assets.hud.get(2) {
+                out.push(hud_widget_scaled(
+                    w,
+                    0xDC,
+                    row as i32 * 0x10 + 0x6C,
+                    (0x2000, 0x1000),
+                    MENU_OT,
+                ));
+            }
+            box_fill((0xDC, 0x68, 0xD2, 0x27), true, MENU_BOX_OT, &mut out);
+        }
+        sc::SlotScreen::NoCoins => {
+            // `SPRT` 256x48: the last texel column / row is the u8 edge.
+            out.push(textured(
+                [
+                    (192.0, 100.0),
+                    (448.0, 100.0),
+                    (192.0, 148.0),
+                    (448.0, 148.0),
+                ],
+                [(0, 0xD0), (0xFF, 0xD0), (0, 0xFF), (0xFF, 0xFF)],
+                0x7A8D,
+                REEL_TPAGE,
+                NEUTRAL,
+                None,
+                false,
+                MENU_OT,
+            ));
+        }
+        sc::SlotScreen::Instructions { page } => {
+            if page == 1 {
+                for col in 0..2usize {
+                    chart_column(assets, col, &mut out);
+                }
+            }
+            box_fill((0, 0, 0x140, 0xF0), false, MENU_BOX_OT, &mut out);
+            out.push(ScreenPrim::Flat(FlatQuad {
+                xy: [(0, 0), (320, 0), (0, 240), (320, 240)],
+                color: [0, 0, 0, 0xFF],
+                gouraud: None,
+                semi_transparent: false,
+                abr_mode: 0,
+                ot_index: MENU_BOX_OT + 1,
+                depth: None,
+            }));
+        }
+    }
+    if fade > 0 {
+        let f = fade.clamp(0, 0xFF) as u8;
+        out.push(crate::screen_prim::screen_fade_prim([f, f, f], 2, 0));
+    }
+    out
+}
+
+/// One column of the second rules page (`FUN_801D2AA4(col)`), in the
+/// 320-wide mode's coordinates.
+fn chart_column(assets: &SlotCabinetAssets, col: usize, out: &mut Vec<ScreenPrim>) {
+    let Some(rules) = assets.rules.as_ref() else {
+        return;
+    };
+    let x_start = if col == 0 { 8 } else { 0xA8 };
+    for row in 0..5usize {
+        let id = rules.chart[col * 5 + row];
+        let y = 8 + row as i32 * 0x28;
+        let u0 = (id & 3) << 6;
+        let v0 = (id << 4) & 0xC0;
+        for k in 0..3 {
+            out.push(ft4(
+                (x_start + k * 0x20, y, 0x20, 0x20),
+                (u0, v0, 0x3F, 0x3F),
+                SLOT_SYMBOL_CLUT_BASE + u16::from(id & 0xF),
+                REEL_TPAGE,
+                true,
+            ));
+        }
+        let pay = assets.payouts.get(id as usize).copied().unwrap_or(0);
+        let x = x_start + 0x60;
+        let digit = |d: u8, dx: i32| {
+            ft4(
+                (x + dx, y + 0x10, 0x10, 0x10),
+                (d * 0x10, 0x70, 0x10, 0x10),
+                0x7B42,
+                0x1D,
+                true,
+            )
+        };
+        if pay > 9 {
+            out.push(digit(pay / 10, 8));
+        }
+        out.push(digit(pay % 10, 0x18));
+    }
+}
+
+/// The rules pages' text in 320x240 stage pixels (the host scales it with
+/// `scale_stage_text_draws`): page 0 is the fourteen attract lines
+/// `FUN_801D30F8(0x10, 0x10)` steps `0xD` apart, page 1 none; each page's
+/// footer sits at `(0xE8, 0xCC)`. Nothing while a fade is up (the text would
+/// otherwise sit over the black).
+pub fn slot_rules_text_draws_for(
+    font: &legaia_font::Font,
+    rules: &sc::SlotRules,
+    screen: sc::SlotScreen,
+    fade: i32,
+) -> Vec<crate::TextDraw> {
+    let sc::SlotScreen::Instructions { page } = screen else {
+        return Vec::new();
+    };
+    if fade > 0 {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    let mut put = |line: &[u8], pen: (i32, i32)| {
+        if !line.is_empty() {
+            out.extend(crate::text_draws_for(
+                &font.layout(line),
+                pen,
+                crate::MENU_TEXT_WHITE,
+            ));
+        }
+    };
+    if page == 0 {
+        for (i, line) in rules.lines.iter().enumerate() {
+            put(line, (0x10, 0x10 + i as i32 * 0xD));
+        }
+        put(&rules.next, (0xE8, 0xCC));
+    } else {
+        put(&rules.end, (0xE8, 0xCC));
     }
     out
 }
@@ -649,5 +899,64 @@ mod tests {
             unreachable!()
         };
         assert_eq!(q.xy[0], (293, 0xA8));
+    }
+
+    fn menu_assets() -> SlotCabinetAssets {
+        SlotCabinetAssets {
+            scene: scene(),
+            cabinet: None,
+            hud: Vec::new(),
+            vram: legaia_tim::Vram::new(),
+            rules: Some(sc::SlotRules {
+                chart: [3, 4, 5, 6, 7, 0, 1, 2, 8, 9],
+                ..Default::default()
+            }),
+            payouts: [10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
+        }
+    }
+
+    /// The picker's words land where `FUN_801D317C(0xEC, 0x62)` puts them
+    /// (framebuffer `236..404`, display `118..202`), over the two box passes.
+    #[test]
+    fn the_picker_draws_its_words_over_the_box() {
+        let a = menu_assets();
+        let p = slot_menu_prims(&a, sc::SlotScreen::Picker { row: 1 }, 0);
+        let ScreenPrim::Textured(words) = p[0] else {
+            panic!("words first")
+        };
+        assert_eq!(words.xy[0], (118, 0x62));
+        assert_eq!(words.xy[3], (202, 0x62 + 0x30));
+        assert_eq!((words.clut, words.tpage), (0x7B43, 0x1D));
+        let fills = p
+            .iter()
+            .filter(|q| matches!(q, ScreenPrim::Flat(f) if f.semi_transparent))
+            .count();
+        assert_eq!(fills, 2, "FUN_8002C69C's two fill passes");
+        assert!(p.iter().all(|q| q.ot_index() <= MENU_BOX_OT));
+    }
+
+    /// The second rules page charts ten symbols three abreast, with the
+    /// payout's tens digit only from 10 up; a fade adds one subtractive quad.
+    #[test]
+    fn the_chart_page_draws_three_faces_and_the_payout_per_row() {
+        let a = menu_assets();
+        let p = slot_menu_prims(&a, sc::SlotScreen::Instructions { page: 1 }, 0x40);
+        let faces = p
+            .iter()
+            .filter(|q| matches!(q, ScreenPrim::Textured(t) if t.tpage == REEL_TPAGE))
+            .count();
+        assert_eq!(faces, 30);
+        let digits = p
+            .iter()
+            .filter(|q| matches!(q, ScreenPrim::Textured(t) if t.clut == 0x7B42))
+            .count();
+        // Only symbol 0 pays 10, so one row draws two digits.
+        assert_eq!(digits, 11);
+        // Column 1 starts at 320-mode x 0xA8 = display 168.
+        assert!(p.iter().any(|q| matches!(
+            q,
+            ScreenPrim::Textured(t) if t.tpage == REEL_TPAGE && t.xy[0] == (0xA8, 8)
+        )));
+        assert!(matches!(p.last(), Some(ScreenPrim::Flat(f)) if f.abr_mode == 2));
     }
 }

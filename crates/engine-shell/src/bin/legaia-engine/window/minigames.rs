@@ -826,6 +826,13 @@ impl PlayWindowApp {
         let Some(m) = self.session.host.world.minigames.slot_machine.as_ref() else {
             return Vec::new();
         };
+        // A rules page replaces the machine, paylines included.
+        if matches!(
+            m.screen(),
+            legaia_engine_core::slot_machine::SlotScreen::Instructions { .. }
+        ) {
+            return Vec::new();
+        }
         let segments: Vec<usp::PaylineSegment> = m
             .payline_segments()
             .iter()
@@ -911,13 +918,23 @@ impl PlayWindowApp {
         ) else {
             return Vec::new();
         };
+        // The cash-out flow over the machine (the picker, the prompt, the
+        // fade) - or, on a rules page, in its place. The browser play page
+        // composes the same pair (`play_minigame_slots.rs`).
+        let menu = usc::slot_menu_prims(assets, m.screen(), m.fade_level());
+        if matches!(
+            m.screen(),
+            legaia_engine_core::slot_machine::SlotScreen::Instructions { .. }
+        ) {
+            return menu;
+        }
         let strips = m.strips();
         let dots = if self.slot_dots.is_empty() {
             legaia_asset::minigame_slot_scene::clear_dots()
         } else {
             self.slot_dots.clone()
         };
-        usc::slot_cabinet_prims(&usc::SlotCabinetInput {
+        let mut prims = usc::slot_cabinet_prims(&usc::SlotCabinetInput {
             scene: &assets.scene,
             cabinet: assets.cabinet.as_ref(),
             hud: &assets.hud,
@@ -928,7 +945,36 @@ impl PlayWindowApp {
             dots: &dots,
             blink: self.slot_marquee_clock.blink,
             balance: m.balance(),
-        })
+        });
+        prims.extend(menu);
+        prims
+    }
+
+    /// The slot machine's rules-page text (`ui_slot_cabinet::
+    /// slot_rules_text_draws_for`) in surface pixels; empty off a rules page.
+    /// The browser play page draws the same list (`slot_status_draws`).
+    pub(super) fn slot_rules_text_draws(&self, w: u32, h: u32) -> Vec<TextDraw> {
+        if self.session.host.world.mode != SceneMode::SlotMachine {
+            return Vec::new();
+        }
+        let (Some(m), Some(Some(assets))) = (
+            self.session.host.world.minigames.slot_machine.as_ref(),
+            self.slot_cabinet_assets.as_ref(),
+        ) else {
+            return Vec::new();
+        };
+        let Some(rules) = assets.rules.as_ref() else {
+            return Vec::new();
+        };
+        let mut d = legaia_engine_render::ui_slot_cabinet::slot_rules_text_draws_for(
+            &self.font,
+            rules,
+            m.screen(),
+            m.fade_level(),
+        );
+        let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+        legaia_engine_render::scale_stage_text_draws(&mut d, stage_origin, stage_scale);
+        d
     }
 
     /// The fishing rod and line as screen primitives: the rod model the rod

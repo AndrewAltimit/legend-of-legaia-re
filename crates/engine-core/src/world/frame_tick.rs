@@ -3175,10 +3175,26 @@ impl World {
         ]
         .iter()
         .any(|&b| self.input.just_pressed(b));
+        let packed = crate::slot_machine::packed_edges(self.input.pad(), self.input.pad_prev());
         let Some(m) = self.minigames.slot_machine.as_mut() else {
             return;
         };
         m.tick();
+        // The cash-out submenu, its rules pages, the not-enough-coins prompt
+        // and the leave fade own the pad when they are up; state 1 tests the
+        // submenu edge before any spin input.
+        if m.cash_out_input(packed) {
+            if m.phase() == SlotPhase::CashedOut {
+                // State 100's tail: the bank commit and the return warp
+                // (`FUN_80026018`), the same pair the Start escape runs.
+                self.route_slot_sounds();
+                self.exit_slot_machine();
+                self.close_minigame_round_trip();
+                return;
+            }
+            self.route_slot_sounds();
+            return;
+        }
         m.latch_spin_up(face_edge);
         match phase {
             SlotPhase::Idle => {
@@ -3204,6 +3220,8 @@ impl World {
                 // session out via [`World::exit_slot_machine`]).
                 self.mode = self.minigames.slot_return_mode;
             }
+            // Owned by `cash_out_input` above.
+            SlotPhase::Menu | SlotPhase::NoCoins | SlotPhase::Leaving => {}
         }
         self.route_slot_sounds();
     }

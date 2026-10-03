@@ -36,13 +36,69 @@ The machine is a single per-frame handler, `FUN_801cf0d8` (`overlay_slot_machine
 | `DAT_801d3c84` | Role |
 |---|---|
 | `0` | **init**: reseed (`func_0x80056798`), build the three reel strips, clone them into the display copy, fade in |
-| `1` | **attract / idle**: wait for input; pressing a face button (`_DAT_8007b874 & 0xe0`) charges the flat bet (3 coins, or 1 in feature modes 4..6) and advances to spin; the menu/select edge (`& 0x110`) routes to state `0x32` (cash-out) |
+| `1` | **attract / idle**: wait for input. The submenu edge is tested first - Triangle or Select (`_DAT_8007b874 & 0x110`) routes to state `0x32` (cash-out); then a balance under 3 routes to `0x5a`; then a face button (`& 0xe0`) charges the flat bet (3 coins, or 1 in feature modes 4..6) and advances to spin |
 | `2` | **spin-up**: ramp the three reel velocities (`DAT_801d3cd0..` added into the reel positions `DAT_801d3cc0..` each frame, wrapping mod `0x1400`) until the spin timer `DAT_801d3c90` expires; a face-button edge meanwhile raises the [spin-up press latch](#the-spin-up-press-latch) |
 | `3` | **stopping**: each Stop input (pad bits `0x80`/`0x40`/`0x20` → reels 0/1/2) calls `FUN_801d2114` to choose where that reel lands; once all three reels are stopped (`DAT_801d3d2c == 3`) it runs `FUN_801d13e8` (win eval) and advances to `4` |
 | `4` | **payout tally**: animates the credited win (`DAT_801d3d38`) ticking from the win counter into the player balance `DAT_801d4114`; on completion returns to `1` |
-| `0x32`..`0x39` | **cash-out / quit submenu**: a 3-option picker (`DAT_801d4110 % 3`) with fade-in/out states; option `1` commits the balance (route to state `100`), the others return to play or leave |
-| `0x5a` | **not-enough-coins** prompt (reached from state `1` when `DAT_801d4114 < 3`) |
-| `100` | **commit + exit**: fades out, writes `_DAT_800845A4 = DAT_801d4114`, returns to the casino field |
+| `0x32`..`0x39` | **cash-out submenu**: the 3-row picker (`0x32`, cursor `DAT_801d4110`) and the two rules pages behind its third row (`0x33`..`0x39`) - see [the cash-out submenu](#the-cash-out-submenu) |
+| `0x5a` | **not-enough-coins** prompt (reached from state `1` when `DAT_801d4114 < 3`): any face button (`& 0xf0`) leaves through state `100` |
+| `100` | **commit + exit**: fades out `0x10` a frame, and at full black writes `_DAT_800845A4 = DAT_801d4114` and runs the return warp `FUN_80026018` |
+
+### The cash-out submenu
+
+State `0x32` is a picker of three rows drawn over the running machine. Its
+input, read off the packed edge word (`0x801CF944..0x801CFA9C`):
+
+| Edge | Bits | Effect | Cue (ring slot 0) |
+|---|---|---|---|
+| Up / Down | `0x1000` / `0x4000` | cursor `-1` / `+1` | `0x21` |
+| Circle / L2 | `0x21` | back to state `1` | `0x37` |
+| Cross / L1 | `0x44` | take the row | `0x20` |
+
+The cursor is reduced `% 3` by a `multu` with `0xAAAAAAAB`, an **unsigned**
+remainder, so Up on row `0` (`0xFFFFFFFF % 3 = 0`) stays on row `0` while Down
+on row `2` wraps to row `0`. The rows are row `0` = back to play (state `1`),
+row `1` = quit (state `100`), row `2` = the rules (state `0x33`). Opening the
+picker stores the confirm cue `0x20` too (`0x801CF418`). The cancel test runs
+before the confirm test and the confirm arms add to whatever state the cancel
+just wrote, so a frame pressing both on row `2` lands in state `2` - a spin-up
+with no bet charged. The port does not reproduce that collision.
+
+The picker draws three things each frame:
+
+- the **row words** - one 80x48 4bpp image, not text: `FUN_801D317C(0xEC,
+  0x62)` emits a `POLY_FT4` over framebuffer `(236, 98)..(404, 146)` sampling
+  page `(832, 256)` at `uv (0, 160)` under CLUT `0x7B43`;
+- the **cursor** - HUD widget 2 through `FUN_801D2CC0(0, 0xDC, row * 0x10 +
+  0x6C, 2, 0x80, 0x2000, 0x1000)`, its x scale doubled for the 640-wide mode;
+- the **box** - `FUN_8002C69C(0xDC, 0x68, 0xD2, 0x27)` with the skin record
+  `gp+0x14C` holds, which the `minigame_slot_machine` capture reads as `0x44`
+  (the dialog skin): the two semi-transparent gouraud fill passes and the
+  border tiles of the resident system-UI sheet. The port draws the fill; the
+  border tiles sample a sheet the machine's VRAM does not carry.
+
+The rules row (states `0x33..0x39`) fades to black `0x10` a frame
+(`FUN_80024EE4(0, 2, level * 0x10101)`), switches the display to 320 wide
+(`FUN_8001DAF8(0x140)`) and shows two pages in a full-screen box:
+
+| State | Page | Leaves on |
+|---|---|---|
+| `0x35` | the fourteen attract lines (`FUN_801D30F8(0x10, 0x10)`, pointer table `0x801D34B8`, `0xD` apart) and a footer string at `(0xE8, 0xCC)` | Cross / L1 once faded in, cue `0x21` |
+| `0x36` | the payout chart: `FUN_801D2AA4(0)` and `(1)`, two columns of five rows, each three 32x32 reel faces in the order `0x801D3784` lists and that symbol's line payout in the 16x16 digits `FUN_801D32C8` draws (page `(832, 256)`, `uv (d * 16, 112)`, CLUT `0x7B42`) | Cross / L1, cue `0x37` |
+
+`0x38` fades back to black on the chart, restores the 640 mode and `0x39` fades
+in on the machine before state `1`. State `0x37` is never entered (`0x36` adds
+2).
+
+The not-enough-coins prompt (`0x5a`) is one 256x48 `SPRT` at `(192, 100)` off
+page `(768, 0)`, `uv (0, 208)`, CLUT `0x7A8D`. It takes no other input: an
+empty machine can only leave.
+
+Ported as `SlotMachine::cash_out_input` (the states, the cursor arithmetic, the
+cues, the fades), `SlotMachine::screen` / `fade_level` (what a host draws), and
+`engine-ui::ui_slot_cabinet::slot_menu_prims` / `slot_rules_text_draws_for`
+(the draws), with the rules text and chart order read by
+`legaia_asset::minigame_slot_scene::parse_rules`.
 
 The tail of `FUN_801cf0d8` (after the switch) always advances the three reel positions, redraws the visible symbols via `FUN_801d0fa8`, and refreshes the marquee/HUD. There is **no bet-line selection anywhere in the machine** - every spin plays all five paylines for the flat cost (the earlier "bet-line selector" reading of `DAT_801d4110` conflated it with the cash-out submenu cursor, which is that word's only role).
 
@@ -479,7 +535,11 @@ over-read tail - mode 0 actually loads the debug-menu overlay PROT 971. See [`sc
 
 The engine-side reconstructions (each marked at its site): the spin-up pacing constants, the BIOS-`rand` stream substituted with a deterministic LCG, and feature modes 3/5 folded to the normal landing plan.
 
-Runtime wiring: a suspending scene mode (`SceneMode::SlotMachine`; `World::enter_slot_machine` / `tick_slot_machine` / `exit_slot_machine`, which performs the state-100 bank commit into `World::minigames.casino_coins` = `_DAT_800845A4`). The `play-window` viewer's `O` key arms the mode-24 door warp with sub-id 3 (`World::request_minigame_warp`, the call the browser page's `play_mg_debug_warp` makes), so the session is the one a cabinet installs, its balance assigned from the coin bank. Cross spins and collects; the three stops are Square / Cross / Circle for reels 0 / 1 / 2, the pad bits `0x80` / `0x40` / `0x20` retail's state-3 arms test, which is also the glyph each reel's pedestal carries.
+Runtime wiring: a suspending scene mode (`SceneMode::SlotMachine`; `World::enter_slot_machine` / `tick_slot_machine` / `exit_slot_machine`, which performs the state-100 bank commit into `World::minigames.casino_coins` = `_DAT_800845A4`).
+
+`tick_slot_machine` hands the machine the packed edge word first (`SlotMachine::cash_out_input`), so Triangle / Select open the cash-out submenu on both play hosts, and a quit or an empty machine's leave runs the bank commit and the return warp when the fade completes.
+
+The `play-window` viewer's `O` key arms the mode-24 door warp with sub-id 3 (`World::request_minigame_warp`, the call the browser page's `play_mg_debug_warp` makes), so the session is the one a cabinet installs, its balance assigned from the coin bank. Cross spins and collects; the three stops are Square / Cross / Circle for reels 0 / 1 / 2, the pad bits `0x80` / `0x40` / `0x20` retail's state-3 arms test, which is also the glyph each reel's pedestal carries.
 
 Exercising a whole spin on a host needs coins in the bank, and both play hosts have the grant: `play-window --cheat-coins N` (with `--key-script 60:O` to warp in and `--pad-script` for the presses) and the play page's Cheats panel (`cheat_set_coins`). The standalone minigames page racks its own 60.
 
@@ -726,7 +786,7 @@ guard `DAT_801d3ca8`. State 3 zeroes the latch every frame before the scanner
 runs - the store sits in the delay slot of the Stop-0 test at `0x801CF71C`, so
 it runs whatever the pad holds - and state 2 clears latch and guard on entry
 (`0x801CF600` / `0x801CF608`). Ported as `SlotMachine::anticipation_scan`; the
-cue is not, because the engine's machine emits no audio.
+sting and the reach-loop key ride `SlotMachine::tick` behind the same guard.
 
 ### The two screen-space draws - `FUN_801d2cc0`
 
@@ -774,8 +834,13 @@ An earlier projection was fitted to the same frame on the five payline lamps
 control words were not in a save state. It reproduced x to a pixel but sat
 `3.6` rows low, and it drew the cabinet three rows low and two columns left
 because the fitted perspective differs from the real one away from the glass
-plane. The fitted constants remain only for the exporters that still emit them
-(`asset slot-art`, the VRChat kit). Ported as
+plane. Nothing emits the fitted constants. The exporters (`asset slot-art`'s
+manifest, the VRChat kit) carry the GTE form rearranged around its vanishing
+point - `k = z0 / (z0 + z)` with `z0 = TRz / Sz = 8160`,
+scaling about model `(-TRx / Sx, -TRy / Sy) = (240, -20/3)`, not the model
+origin (`PROJ_Z0` / `PROJ_SX0` / `PROJ_VANISH`) - and the minigames page
+draws the engine's primitive list rather than a canvas composition of its own.
+Ported as
 `legaia_asset::minigame_slot_scene::project` / `billboard_half` (`GTE_*`).
 
 ### The cabinet is a mesh - PROT 1200 descriptor 1
@@ -986,7 +1051,7 @@ overlay never goes through the cursor producer `FUN_80035B50`:
 | payout tally, once per transfer | `0x209` | 0 | state 4 (`0x801CF900..0x801CF90C`) |
 | spin start in feature mode 1 / 2 | `0x201` / `0x202` | 2 | state 1 after the roll (`0x801CF5C0` / `0x801CF5DC`) |
 | two landed bonus symbols, once per spin | `0x200` | 2 | `FUN_801D1AF4` (`0x801D2050`, guard `DAT_801d3ca8`) |
-| cash-out menu confirm / cursor / cancel | `0x20` / `0x21` / `0x37` | 0 | states 1 / `0x32`.. (static table, class-0 VAB) |
+| cash-out menu confirm / cursor / cancel | `0x20` / `0x21` / `0x37` | 0 | states 1, `0x32`..`0x36`, `0x5a` (static table, class-0 VAB) - see [the cash-out submenu](#the-cash-out-submenu) |
 
 The reel motor is not a ring cue: the bet charge keys voice `0x13` directly -
 `FUN_80065034(0x13, 2, 1, 0, 0x3C, 0x40, 0x28, 0x28)` (class-2 VAB, program 1,
@@ -1006,8 +1071,10 @@ direct voice-key / voice-stop queues, and both play hosts resolve the runtime
 rows through `World::runtime_sfx_bundle` - the machine's own `efect.dat`
 (PROT 1199) while it is up - against the PROT 1198 bank the residency stages in
 slot 2. A host press still collects at once (`SlotMachine::collect`, the rest of
-the tally). The cash-out menu's cues are not ported because the engine has no
-cash-out menu; the `O` hotkey cashes out directly.
+the tally). The cash-out menu's three cues ride the same `WriteSlot` stores; being
+static-table ids (`< 0x200`), they resolve through the class-0 bank rather than
+the machine's own, and the minigames page keys them through its static-cue path
+(`slot_pad`).
 
 The slot machine starts **no BGM** - it inherits the host scene's, and the host
 scene is authored disc script, so the track is readable without a capture.
@@ -1070,18 +1137,11 @@ in practice. Parser [`legaia_asset::minigame_sfx`].
   machine by a debug warp from `town01`; a RAM TMD census over it finds town01's
   env meshes resident, 56 of 114 body-slice matches, and effectively none of any
   `koin*` bundle's, yet both framebuffers carry the fully-drawn cabinet).
-- The site's minigames page still **draws** the cabinet as a composition
-  measured off the capture's framebuffer rather than as the decoded mesh, and
-  says so. This is open **work**, not an open question, and the work is one
-  specific thing: the page's slot panel is a `getContext('2d')` canvas
-  (`#slot-canvas` in `site/_content/minigames.html`), so it has no surface the
-  mesh can be drawn into. The mesh itself needs nothing further - it is PROT
-  1200 descriptor 1 and `legaia_asset::minigame_slot_scene` already returns it.
-  Closing it means either giving that panel a WebGL context (the site's 3D
-  pages already carry `site/js/webgl-tmd.js` + `webgl-shaders.js`) or
-  software-rasterising the mesh into the existing 2D canvas
-  (`legaia_asset::mesh_raster`, which the WASM viewer already uses). Nothing
-  about retail is unknown here.
+- ~~The site's minigames page draws the cabinet as a measured composition~~
+  **resolved**: the page's slot panel shows `slot_frame_rgba`, the engine's
+  `ui_slot_cabinet` primitive list (the decoded cabinet mesh included)
+  rasterised over the art pack's VRAM by `screen_prim_raster` - the list both
+  play hosts draw. The page keeps no projection or composition of its own.
 
 ## See also
 

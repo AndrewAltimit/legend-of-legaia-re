@@ -1492,7 +1492,8 @@ no casino coin bank to cash out to).
    because that mirror reverses winding), flattens z to millimetres of
    relief (overlay order comes from a material renderQueue ladder, not
    the flattened z gaps), and applies the retail projection in software
-   (`k = z0/(z0-z)` about the model origin, z0 = 9324; the behaviour
+   (`k = z0/(z0-z)` about the vanishing point `(240, -20/3)`, z0 = 8160 -
+   the GTE registers captured at the machine, rearranged; the behaviour
    applies the same k to the 8 drum faces per frame). Billboard
    half-extents are view-space in the disc tables and divide by the
    camera matrix's x scale (and gain the aspect in y) to reach model

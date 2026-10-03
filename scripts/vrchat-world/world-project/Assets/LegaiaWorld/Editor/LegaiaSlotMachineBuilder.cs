@@ -89,14 +89,17 @@ namespace LegaiaWorld
         bool matchWorldShading = true;
 
         // The retail projection, read from the manifest at build time
-        // (minigame_slot_scene constants; defaults match the USA disc).
-        // The composition frame is isotropic: the aspect-2 y term exactly
-        // cancels the 640x240 framebuffer's 1:2 pixels, so only x needs a
-        // scale and y follows.
-        float projZ0 = 9324f;
-        float projSx0 = 0.2547f;
-        float projOfx = 253f;
-        float projOfy = 118.5f;
+        // (minigame_slot_scene PROJ_* - the GTE registers captured at the
+        // machine, rearranged; defaults match the USA disc). The composition
+        // frame is isotropic: the aspect-2 y term exactly cancels the 640x240
+        // framebuffer's 1:2 pixels, so only x needs a scale and y follows.
+        // Depth scales about the VANISHING POINT (projVanish, composition
+        // frame: y already flipped), not the model origin.
+        float projZ0 = 8160f;
+        float projSx0 = 1024f * 6f / 24480f;
+        float projOfx = 320f;
+        float projOfy = 114f;
+        Vector2 projVanish = new Vector2(240f, 20f / 3f);
         float projAspect = 2f;
         float projXScale = 6f;
         float screenPxW = 640f;
@@ -209,21 +212,23 @@ namespace LegaiaWorld
             LegaiaWorldBuilder.EnsureUdonProgramAssets();
 
             // The retail projection (see minigame_slot_scene): scale
-            // z0/(z0 - z_comp) about the model ORIGIN. The visible screen
+            // z0/(z0 - z_comp) about the vanishing point. The visible screen
             // window (what the 640x240 framebuffer showed) is derived from
             // the same constants - it is not centred on the origin.
-            projZ0 = MiniJson.GetNum(m, "proj_z0", 9324f);
-            projSx0 = MiniJson.GetNum(m, "proj_sx0", 0.2547f);
-            projOfx = MiniJson.GetNum(m, "proj_ofx", 253f);
-            projOfy = MiniJson.GetNum(m, "proj_ofy", 118.5f);
+            projZ0 = MiniJson.GetNum(m, "proj_z0", projZ0);
+            projSx0 = MiniJson.GetNum(m, "proj_sx0", projSx0);
+            projOfx = MiniJson.GetNum(m, "proj_ofx", projOfx);
+            projOfy = MiniJson.GetNum(m, "proj_ofy", projOfy);
+            projVanish = new Vector2(
+                MiniJson.GetNum(m, "proj_vanish_x", projVanish.x),
+                -MiniJson.GetNum(m, "proj_vanish_y", -projVanish.y));
             projAspect = MiniJson.GetNum(m, "proj_aspect", 2f);
             projXScale = MiniJson.GetNum(m, "proj_xscale", 6f);
             screenPxW = MiniJson.GetNum(m, "screen_w", 640f);
             screenPxH = MiniJson.GetNum(m, "screen_h", 240f);
             viewHalfWidth = screenPxW * 0.5f / projSx0;
-            viewCenter = new Vector2(
-                (screenPxW * 0.5f - projOfx) / projSx0,
-                -((screenPxH * 0.5f - projOfy) / (projSx0 / projAspect)));
+            Vector3 centre = ScreenPx(screenPxW * 0.5f, screenPxH * 0.5f, 0f);
+            viewCenter = new Vector2(centre.x, centre.y);
 
             // Replace an existing rig in place.
             Transform parent = cabinet != null ? cabinet.transform : null;
@@ -394,6 +399,7 @@ namespace LegaiaWorld
             W("dotCols", (int)dotCols);
             W("dotRows", (int)dotRows);
             W("projectionDistance", projZ0);
+            W("projectionVanishing", projVanish);
             // The bank: the world's persistent coin purse, when the common
             // prefabs pass has already built it. Left null the machine
             // resolves it by path in its own Start, and failing that keeps
@@ -421,12 +427,16 @@ namespace LegaiaWorld
         }
 
         /// Project a composition-frame position: x/y scaled by k(z) about
-        /// the model ORIGIN (the retail vanishing point - NOT the screen
-        /// centre); z kept (the composition root's scale flattens it).
+        /// the retail vanishing point (the GTE translation's x/y over the
+        /// camera scale - NOT the model origin, NOT the screen centre); z
+        /// kept (the composition root's scale flattens it).
         Vector3 Proj(Vector3 p)
         {
             float k = ProjK(p.z);
-            return new Vector3(p.x * k, p.y * k, p.z);
+            return new Vector3(
+                projVanish.x + (p.x - projVanish.x) * k,
+                projVanish.y + (p.y - projVanish.y) * k,
+                p.z);
         }
 
         /// A retail screen-space pixel (the paytable / HUD draws) into the
@@ -434,8 +444,8 @@ namespace LegaiaWorld
         Vector3 ScreenPx(float px, float py, float z)
         {
             return new Vector3(
-                (px - projOfx) / projSx0,
-                -((py - projOfy) / (projSx0 / projAspect)),
+                projVanish.x + (px - projOfx) / projSx0,
+                projVanish.y - (py - projOfy) / (projSx0 / projAspect),
                 z);
         }
 
@@ -505,9 +515,12 @@ namespace LegaiaWorld
             float yC = (yT + yB) * 0.5f;
             float zC = (zT + zB) * 0.5f;
             float k = ProjK(zC);
-            // Projection about the model origin; the pivot itself sits
-            // unprojected on the z=0 plane.
-            face.localPosition = new Vector3(pivotX * (k - 1f), yC * k, zC);
+            // Projection about the vanishing point; the pivot itself sits
+            // unprojected on the z=0 plane, at y = 0.
+            face.localPosition = new Vector3(
+                (pivotX - projVanish.x) * (k - 1f),
+                projVanish.y + (yC - projVanish.y) * k,
+                zC);
             face.localRotation = Quaternion.LookRotation(
                 new Vector3(0f, -dz, dy), new Vector3(0f, dy, dz));
             face.localScale =

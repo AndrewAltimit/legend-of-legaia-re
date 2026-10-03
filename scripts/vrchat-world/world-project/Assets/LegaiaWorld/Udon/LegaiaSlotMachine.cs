@@ -118,8 +118,10 @@ namespace LegaiaWorld
         public float legendScrollSpeed = 20f;
 
         [Header("Screen projection")]
-        [Tooltip("Retail view-space depth z0 (minigame_slot_scene PROJ_Z0): the per-face scale is z0/(z0 - z), about the model origin. The builder bakes the same projection into the static quads.")]
-        public float projectionDistance = 9324f;
+        [Tooltip("Retail view-space depth z0 (minigame_slot_scene PROJ_Z0): the per-face scale is z0/(z0 - z), about projectionVanishing. The builder bakes the same projection into the static quads.")]
+        public float projectionDistance = 8160f;
+        [Tooltip("The composition-frame point every depth scales about (minigame_slot_scene PROJ_VANISH, y flipped) - the GTE translation over the camera scale, not the model origin.")]
+        public Vector2 projectionVanishing = new Vector2(240f, 20f / 3f);
 
         [Tooltip("Metres from the machine beyond which the per-frame visual updates pause (the last-drawn frame stays up).")]
         public float visualsActiveDistance = 14f;
@@ -947,7 +949,7 @@ namespace LegaiaWorld
                 // Software perspective: the composition sits flattened on the
                 // cabinet's screen face, so each face applies the retail
                 // projection itself - scale and shift by k = z0 / (z0 - z)
-                // about the MODEL ORIGIN (the retail vanishing point). The
+                // about projectionVanishing (the retail vanishing point). The
                 // pivot itself sits unprojected on the z=0 (payline) plane.
                 float pivotX = reelPivots[r].localPosition.x;
 
@@ -971,8 +973,10 @@ namespace LegaiaWorld
                     float yC = (yT + yB) * 0.5f;
                     float zC = (zT + zB) * 0.5f;
                     float k = projectionDistance / (projectionDistance - zC);
-                    face.localPosition =
-                        new Vector3(pivotX * (k - 1f), yC * k, zC);
+                    face.localPosition = new Vector3(
+                        (pivotX - projectionVanishing.x) * (k - 1f),
+                        projectionVanishing.y + (yC - projectionVanishing.y) * k,
+                        zC);
                     // Quad +Z = the outward chord normal, +Y = up the edge.
                     // The composition root's z flatten squashes the rotated
                     // quad to the foreshortened chord height on screen.

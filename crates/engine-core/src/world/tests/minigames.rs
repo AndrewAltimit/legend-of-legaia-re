@@ -592,6 +592,46 @@ fn slot_machine_spins_stops_and_collects_through_the_pad() {
     assert_eq!(m.balance(), before + result.payout);
 }
 
+/// The cash-out submenu through the World pad path: Triangle opens it, Down
+/// picks the quit row, Cross takes it, and the leave fade commits the
+/// balance into the coin bank and drops back to the interrupted mode - with
+/// the submenu's cues in ring slot 0.
+#[test]
+fn slot_machine_cash_out_menu_quits_through_the_pad() {
+    use crate::slot_machine::{CUE_MENU_CONFIRM, CUE_MENU_CURSOR, SlotPhase};
+    let mut world = World::new();
+    let before = world.mode;
+    world.enter_slot_machine(slot_test_machine(41));
+    let press = |world: &mut World, b: input::PadButton| {
+        world.set_pad(0);
+        let _ = world.tick();
+        world.set_pad(b.mask());
+        let _ = world.tick();
+    };
+    world.audio.sfx_ring_ops.clear();
+    press(&mut world, input::PadButton::Triangle);
+    let m = world.minigames.slot_machine.as_ref().unwrap();
+    assert_eq!(m.phase(), SlotPhase::Menu);
+    press(&mut world, input::PadButton::Down);
+    press(&mut world, input::PadButton::Cross);
+    let ring = std::mem::take(&mut world.audio.sfx_ring_ops);
+    use crate::world::SfxRingOp::WriteSlot;
+    assert!(ring.contains(&WriteSlot(0, CUE_MENU_CONFIRM)));
+    assert!(ring.contains(&WriteSlot(0, CUE_MENU_CURSOR)));
+    assert_eq!(
+        world.minigames.slot_machine.as_ref().unwrap().phase(),
+        SlotPhase::Leaving,
+        "Cross never spun the reels on the menu"
+    );
+    for _ in 0..20 {
+        world.set_pad(0);
+        let _ = world.tick();
+    }
+    assert!(world.minigames.slot_machine.is_none(), "the machine left");
+    assert_eq!(world.mode, before);
+    assert_eq!(world.minigames.casino_coins, 41);
+}
+
 #[test]
 fn slot_machine_spin_accrues_the_net_take() {
     use crate::slot_machine::NET_TAKE_NORMAL_SPIN;
