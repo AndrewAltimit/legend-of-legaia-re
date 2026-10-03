@@ -336,6 +336,27 @@ impl World {
         }
     }
 
+    /// The running clip of the field NPC a cross-context op's `target` byte
+    /// names (the channel whose script id is `target`, retail's
+    /// `FUN_8003C83C` resolution): `Some(Some(cursor))` when the world owns a
+    /// cursor for that placement, `Some(None)` for an NPC without one, `None`
+    /// when `target` is no live NPC channel.
+    pub(crate) fn npc_live_clip_for_target(
+        &self,
+        target: u8,
+    ) -> Option<Option<crate::field_env::PropAnim>> {
+        let chans = if self.field_vm.channels.is_empty() {
+            &self.field_vm.stepping_view
+        } else {
+            &self.field_vm.channels
+        };
+        let ch = chans
+            .iter()
+            .find(|c| !c.object_bind && c.ctx.script_id == u16::from(target))?;
+        let slot = u8::try_from(ch.placement_index).ok()?;
+        Some(self.npcs.clip_cursors.get(&slot).copied())
+    }
+
     /// Pose `player` from NPC `slot`'s world-owned cursor. `false` when the
     /// world has no cursor for the slot - the host then free-runs the player
     /// itself.

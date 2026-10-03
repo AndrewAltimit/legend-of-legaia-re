@@ -770,6 +770,15 @@ pub const PLAYER_ANCHOR_TARGET: u8 = 0xF8;
 /// end-latch spin waits, and a headless world has no clip to watch anyway.
 pub const PLAYER_CLIP_STANDIN_FRAMES: u16 = 15;
 
+/// The clip id a field NPC's cross-context cursor carries when a script
+/// reaches its `+0x62` before poking a clip and the world tracks no running
+/// clip for it (a headless world binds none). It is not a real move: any
+/// non-zero id makes [`PropAnim::tick`] advance the cursor, so the end latch
+/// lands once per wrap as the actor's looping idle clip would latch it, and
+/// a later `A2 <target> <clip>` poke always rebinds (the binder skips only an
+/// unchanged id).
+pub const NPC_CLIP_STANDIN_ID: u8 = 0xFF;
+
 /// The move id the player actor's `+0x5C` carries while the locomotion
 /// controller owns the clip. Ids `1`/`2` are the walk moves the field
 /// controller animates itself; a scripted gesture pokes a higher id, and
@@ -1396,13 +1405,16 @@ impl PropAnimBank {
     /// bind record's program run through the spawn prologue so the prop
     /// starts in its authored rest state.
     ///
-    /// An unposed bind (`anim_id == 0`) gets an entry too. `FUN_8003A55C`
-    /// spawns an actor for every bound cell and only copies the header's
-    /// anim byte into `+0x5C` (`0x8003A8DC`) - it never branches on it - so
-    /// such an object is still a touch / interact target for its record:
-    /// `rikuroa` P0[2], the Genesis Tree, has no clip, and examining it
-    /// after Caruban is what spawns the P2[53] revival. Its stand-in clip
-    /// never draws: both hosts pose only `anim_id != 0` placements.
+    /// An unposed bind (`anim_id == 0`) of the interact-gated class gets an
+    /// entry too. `FUN_8003A55C` spawns an actor for every bound cell and only
+    /// copies the header's anim byte into `+0x5C` (`0x8003A8DC`) - it never
+    /// branches on it - so such an object is still examined for its record:
+    /// `rikuroa` P0[2], the Genesis Tree, has no clip, and examining it after
+    /// Caruban is what spawns the P2[53] revival. Its stand-in clip never
+    /// draws: both hosts pose only `anim_id != 0` placements. An unposed
+    /// touch-class object stays with the walk-touch dispatch
+    /// ([`crate::world::FieldPropState::walk_touch`]), which resolves its
+    /// record's arm against the live flags at contact time.
     ///
     /// `clip` resolves an anim id to `(frame_count, scaled_step, step_div)`
     /// from the scene's ANM bundle (record `anim_id - 1`); a prop whose clip
@@ -1438,6 +1450,12 @@ impl PropAnimBank {
                 continue;
             };
             let program = decode_prop_program(record, pc0);
+            // An unposed bind enters as an examine target only: the touch
+            // class of a clip-less object (a door marker) is the walk-touch
+            // dispatch's, which resolves its record against the live flags.
+            if bind.anim_id == 0 && program.spawn_cflags & 0x4002_0000 == 0 {
+                continue;
+            }
             let mut anim = PropAnim::spawned(bind.anim_id, frames, scaled, div);
             for c in &program.spawn {
                 c.apply(&mut anim);
@@ -1538,6 +1556,26 @@ impl PropAnimBank {
         self.actor_clips
             .entry(PLAYER_ANCHOR_TARGET)
             .or_insert_with(|| PropAnim::cross_context(LOCOMOTION_MOVE_ID, locomotion_frames))
+    }
+
+    /// The cursor of a cross-context `target` that is not the player, created
+    /// on first use from `live` - the actor's own running clip, when the
+    /// world tracks one - else in the actor-template state over
+    /// `fallback_frames`, under [`NPC_CLIP_STANDIN_ID`]. Every spawned actor
+    /// loops its clip from the template `+0x62`, so its end latch lands once
+    /// per wrap and a script may clear and wait on it without poking a clip
+    /// first: `vozz` P1[7], the Genesis Tree talk, raises actor `0x06`'s clamp
+    /// (`AB 06 03`), clears its latch and spins on it before the scene goes
+    /// on.
+    pub fn actor_clip_or_live(
+        &mut self,
+        target: u8,
+        live: Option<PropAnim>,
+        fallback_frames: u16,
+    ) -> &mut PropAnim {
+        self.actor_clips.entry(target).or_insert_with(|| {
+            live.unwrap_or_else(|| PropAnim::cross_context(NPC_CLIP_STANDIN_ID, fallback_frames))
+        })
     }
 
     /// Bind a cross-context clip poke - `A2 <target> <clip>`, retail's op-`0x22`

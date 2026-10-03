@@ -3203,6 +3203,9 @@ impl World {
             } else {
                 None
             };
+            if b == 0x44 {
+                id.spawned = true;
+            }
             // Inside a halt window the player carries `0x400`, and the
             // dispatcher's halted-target early-out (`0x801DE90C..0x801DE940`)
             // returns an extended op aimed at it at its own PC: the dialog SM
@@ -3241,16 +3244,28 @@ impl World {
             // own flag word and its `AD F8 08` would wait on a bit nothing
             // writes.
             //
-            // A target the port has no cursor for (never poked with a clip)
-            // falls through to the record's own word - the op has to land
-            // somewhere, and the spin's timeout net covers the rest.
+            // A field NPC never poked with a clip gets its cursor on first use
+            // ([`crate::field_env::PropAnimBank::actor_clip_or_live`]). Any
+            // other target the port has no cursor for falls through to the
+            // record's own word - the op has to land somewhere, and the
+            // spin's timeout net covers the rest.
             let saved_local_flags = id.ctx.local_flags;
             let bound = ext_target
                 .filter(|_| matches!(b & 0x7F, 0x2B..=0x2D))
                 .filter(|&target| {
+                    let hint = host.world.player_clip_frames_hint();
                     let flags = if target == crate::field_env::PLAYER_ANCHOR_TARGET {
-                        let hint = host.world.player_clip_frames_hint();
                         Some(host.world.props.bank.player_clip(hint).flags)
+                    } else if let Some(live) = host.world.npc_live_clip_for_target(target) {
+                        // A field NPC never poked with a clip: its own
+                        // looping cursor stands in, as the player's does.
+                        Some(
+                            host.world
+                                .props
+                                .bank
+                                .actor_clip_or_live(target, live, hint)
+                                .flags,
+                        )
                     } else {
                         host.world.props.bank.actor_clip(target).map(|a| a.flags)
                     };
@@ -3419,7 +3434,9 @@ impl World {
                     // as conversation end. Raw compare only - an extended
                     // `0xA1` NOP runs through like any other op.
                     if b == 0x21 {
-                        if let Some(fb) = id.fallback_segment_pc.take() {
+                        if !id.spawned
+                            && let Some(fb) = id.fallback_segment_pc.take()
+                        {
                             id.pc = fb;
                             continue;
                         }
@@ -3495,10 +3512,15 @@ impl World {
                 // A prologue run (a box not yet opened) parks on the same
                 // spin when it waits on the end latch of the actor's own
                 // bound clip: the chest's lid plays out before its box, it
-                // does not fall through to the first segment.
+                // does not fall through to the first segment. So does one
+                // whose cross-context target resolved to a ticking cursor:
+                // the Genesis Tree talk (`vozz` P1[7]) plays the player's
+                // reach (`A2 F8 01` / `AD F8 08`) before its first box, and
+                // falling through skipped the `0x00B` raise behind it.
                 FieldStepResult::Halt { final_pc }
                     if (b & 0x7F) == 0x2D
                         && (id.fallback_segment_pc.is_none()
+                            || bound.is_some()
                             || (npc_clip_bound
                                 && ext_target.is_none()
                                 && id.bytecode.get(final_pc + 1) == Some(&8))) =>

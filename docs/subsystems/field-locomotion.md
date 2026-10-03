@@ -1481,15 +1481,18 @@ close-on-dismiss sequencing are the script's own. The play-window keeps the
 baked frame-0 mesh for every prop at rest and re-poses only the ones whose
 clip is running.
 
-The bank holds **every** bound placement, posed or not. `FUN_8003A55C`
+The bank also holds the **unposed** interact-gated binds. `FUN_8003A55C`
 spawns an actor for each bound cell and copies the record header's anim byte
 into `+0x5C` (`0x8003A8DC`) without ever branching on it, so a bind whose
-anim byte is `0` is still a touch / interact target for its record. The one
-that matters is `rikuroa` P0[2], the Genesis Tree: it has no clip, its body
-polls `0x28A` / `0x142`, and examining it after Caruban spawns P2[53], the
-revival that carries the party down to `map01`. An unposed entry gets a
-one-frame stand-in clip that never draws - both hosts pose only `anim_id != 0`
-placements. Disc-gated coverage:
+anim byte is `0` is still examined for its record. The one that matters is
+`rikuroa` P0[2], the Genesis Tree: it has no clip, its body polls `0x28A` /
+`0x142`, and examining it after Caruban spawns P2[53], the revival that
+carries the party down to `map01`. An unposed entry gets a one-frame
+stand-in clip that never draws - both hosts pose only `anim_id != 0`
+placements. An unposed touch-class object (a door marker) stays with the
+walk-touch dispatch, which resolves its record's arm against the live flags
+at contact time; running such a record from its parked cursor instead lands
+Rim Elm's doors on the wrong arm. Disc-gated coverage:
 `crates/engine-core/tests/field_prop_anim_disc.rs`. Raw record evidence:
 `cargo run -p legaia-engine-core --example dump_prop_scripts -- town01`.
 
