@@ -214,6 +214,21 @@ sparring fight. The hook table and every prompt string address are resident in
 `0898` carries them - which is why porting the battle SM alone never produces
 the boxes.
 
+**Who fights the spar.** Retail has no party override for it. Battle init
+seats one actor per non-zero id in the present-party list `DAT_8007BD10`
+(`FUN_80052FA0` counts them into `ctx[+0]`, `FUN_800513F0` loads each), and
+neither routine reads the stage id while doing so; the spar is Vahn against
+Tetsu only because the story's party is Vahn alone at that point. The port
+makes it a rule: `World::enter_battle_from_formation` seats Vahn's record
+alone whenever the fight is the spar (`World::sparring_fight_pending` - the
+disc's arm flag or a forced tutorial), whatever the field party holds - a
+`--party` debug party or a save with a fuller one - and
+`World::finish_battle` hands the field composition back. The lessons walk
+one member's command flow, so a fuller party would sit idle through prompts
+that never address it. No disc patch is needed for the randomizer: no
+`legaia-patcher` feature edits the party composition, so a patched disc
+reaches the spar with the retail party.
+
 **The machine's exclusivity is byte-anchored.** `FUN_801F6B70` is entry 967 file
 `+0x198`, and `0x801F69D8 + 0x198` reproduces the printed VA exactly, so the
 needle can be taken straight out of the image rather than hand-assembled.

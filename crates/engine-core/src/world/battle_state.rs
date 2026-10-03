@@ -481,6 +481,12 @@ pub struct BattleState {
     /// [`crate::world::World::prime_battle_tutorial`]; the engine's stand-in for retail's
     /// per-formation battle-stage id.
     pub tutorial_pending: bool,
+    /// The field party composition the sparring fight set aside, restored
+    /// when the battle returns to the field ([`crate::world::World::finish_battle`]).
+    /// `Some` only between a Tetsu-spar entry that seated Vahn alone over a
+    /// larger party and its teardown - see
+    /// [`crate::world::World::sparring_fight_pending`].
+    pub solo_spar_restore: Option<Vec<u8>>,
     /// Active stat buffs / debuffs applied by battle Magic, one entry per
     /// `(slot, stat)`. Each holds the exact delta written into the per-slot
     /// scalar so expiry can undo it, plus the remaining turn count (decremented
@@ -679,6 +685,7 @@ impl BattleState {
             ui_strings: legaia_asset::battle_ui_strings::BattleUiStrings::default(),
             spell_anim_pairs: legaia_asset::spell_anim_pairs::SpellAnimPairs::default(),
             tutorial_pending: false,
+            solo_spar_restore: None,
             active_formation: None,
             last_rewards: None,
             spoils_frames: 0,

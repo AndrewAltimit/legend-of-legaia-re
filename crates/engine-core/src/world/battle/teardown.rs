@@ -369,6 +369,9 @@ impl World {
         // the just-persisted HP / MP back onto the restored party actors so the
         // field-side mirrors agree with the records (the clone carries the
         // pre-battle values).
+        if let Some(active) = self.battle.solo_spar_restore.take() {
+            self.party.active_party = active;
+        }
         if let Some(ret) = self.field_return.take() {
             self.actors = ret.actors;
             self.player_actor_slot = ret.player_actor_slot;
@@ -399,6 +402,9 @@ impl World {
             return;
         }
         self.game_over_hold = false;
+        if let Some(active) = self.battle.solo_spar_restore.take() {
+            self.party.active_party = active;
+        }
         if let Some(ret) = self.field_return.take() {
             self.actors = ret.actors;
             self.player_actor_slot = ret.player_actor_slot;
