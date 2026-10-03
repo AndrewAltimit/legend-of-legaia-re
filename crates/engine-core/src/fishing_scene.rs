@@ -320,6 +320,182 @@ fn bake_env(
     (out, flat_out)
 }
 
+/// The sky strip's texture pages: two 8bpp pages side by side at VRAM
+/// `(512, 0)` / `(576, 0)` (`addiu a2,s0,0x88` at `0x801D25F8`, `s0` = the
+/// column's parity).
+pub const SKY_TPAGE: [u16; 2] = [0x88, 0x89];
+
+/// The sky strip's CLUT word: row 501, x 0 (`li v0,0x7d40` at `0x801D2618`).
+pub const SKY_CLUT: u16 = 0x7D40;
+
+/// The fishing frame's clear colour, the `r0 / g0 / b0` bytes the backdrop
+/// emitter stores into both draw environments (`0x801D24F8..0x801D2544`).
+pub const SKY_CLEAR_RGB: [u8; 3] = [0x17, 0x50, 0xA0];
+
+/// GTE screen centre the backdrop projects through (`OFX`, `OFY`).
+const SKY_OFX: f32 = 160.0;
+const SKY_OFY: f32 = legaia_engine_vm::battle_cam_script::GTE_OFY;
+
+/// Eye-space depths the backdrop's world-space stand-ins sit at: far behind
+/// any venue geometry, inside the projection's far plane, the clear colour
+/// behind the strip.
+const SKY_DEPTH: f32 = 400_000.0;
+const SKY_CLEAR_DEPTH: f32 = 450_000.0;
+
+/// One screen-space backdrop quad: corners in retail 320x240 screen pixels
+/// (`xy0`, `xy1`, `xy2`, `xy3` - top-left, top-right, bottom-left,
+/// bottom-right), its texels and texture words.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SkyQuad {
+    pub xy: [[f32; 2]; 4],
+    pub uv: [[u8; 2]; 4],
+    pub clut: u16,
+    pub tpage: u16,
+}
+
+/// The fishing sky strip, as `FUN_801D24EC` emits it every frame.
+///
+/// The routine zeroes the yaw global, rebuilds the view (`FUN_800172C0`),
+/// loads the eye trio as `TR` and projects the view-space point
+/// `(0, 0, 0x1000)` (`FUN_8003D368`) - a point straight ahead at the camera's
+/// pitch, so its screen `y` is the horizon. The strip spans `0x100` rows from
+/// `sy - 0x74` to `sy + 0x8C`. Horizontally it scrolls with the camera: the
+/// start column is `((sx + (focus_x_stored / 64) + yaw) & 0xFF) - 0xFF`, with
+/// `focus_x_stored = -x` (rounded toward zero) and `yaw` the saved
+/// `_DAT_8007B792`; six 128-wide `POLY_FT4`s follow from there, alternating
+/// the two 8bpp pages, `u 0..0x80`, `v 0..0xFF`, colour `0x80`, CLUT row
+/// 501, linked at OT word `0x400` - behind the whole venue.
+///
+/// `view` is the venue camera, `lead_x` the lead's world `x` (the focus) and
+/// `yaw_units` the camera yaw global (`-((facing + 0x800) & 0xFFF)`).
+///
+/// PORT: FUN_801d24ec
+pub fn sky_quads(view: &FieldCameraView, lead_x: i16, yaw_units: i16) -> [SkyQuad; 6] {
+    // The horizon point, projected with the yaw zeroed.
+    let flat = FieldCameraView { yaw: 0.0, ..*view };
+    let ahead = [flat.focus[0], flat.focus[1], flat.focus[2] + 4096.0];
+    // Retail's eye point is `6 R (0, 0, 0x1000) + TR` (the rotation carries
+    // the 6x world scale); the port's eye trio is `TR / 6`, so
+    // `R (0, 0, 0x1000) + tr` is the same point at a sixth of the scale - the
+    // same screen position.
+    let e = flat.eye_space(ahead);
+    let (sx, sy) = if e[2] > 0.0 {
+        (
+            (SKY_OFX + flat.h * e[0] / e[2]).round() as i32,
+            (SKY_OFY + flat.h * e[1] / e[2]).round() as i32,
+        )
+    } else {
+        (SKY_OFX as i32, SKY_OFY as i32)
+    };
+    let focus_stored = -i32::from(lead_x);
+    let biased = if focus_stored < 0 {
+        focus_stored + 0x3F
+    } else {
+        focus_stored
+    };
+    let start = ((sx + (biased >> 6) + i32::from(yaw_units)) & 0xFF) - 0xFF;
+    let (top, bottom) = ((sy - 0x74) as f32, (sy + 0x8C) as f32);
+    std::array::from_fn(|i| {
+        let (row, col) = (i / 2, i % 2);
+        let x = (start + (row as i32) * 0x100 + (col as i32) * 0x80) as f32;
+        SkyQuad {
+            xy: [[x, top], [x + 128.0, top], [x, bottom], [x + 128.0, bottom]],
+            uv: [[0, 0], [0x80, 0], [0, 0xFF], [0x80, 0xFF]],
+            clut: SKY_CLUT,
+            tpage: SKY_TPAGE[col],
+        }
+    })
+}
+
+/// A retail screen point at eye-space depth `z`, back into raw world
+/// coordinates under `view` - the inverse of the GTE projection, so a
+/// world-space quad built from these corners lands on the screen rect the
+/// retail packet covers, behind everything the venue draws.
+fn unproject(view: &FieldCameraView, x: f32, y: f32, z: f32) -> [f32; 3] {
+    let h = view.h.max(1.0);
+    let e = [(x - SKY_OFX) * z / h, (y - SKY_OFY) * z / h, z];
+    let d = [
+        e[0] - view.tr_eye[0],
+        e[1] - view.tr_eye[1],
+        e[2] - view.tr_eye[2],
+    ];
+    let r = legaia_engine_vm::psx_camera::camera_rotation(view.pitch, view.yaw, view.roll);
+    // `R^T d`; column-major `r[c*4 + row]` stores `R[row][c]`.
+    let mut out = view.focus;
+    for (i, o) in out.iter_mut().enumerate() {
+        for (j, &dj) in d.iter().enumerate() {
+            *o += r[i * 4 + j] * dj;
+        }
+    }
+    out
+}
+
+/// The backdrop as world-space geometry under `view`: the clear-colour
+/// plate (untextured, [`SKY_CLEAR_RGB`], the whole frame) behind the six
+/// strip quads (textured, neutral modulation), `4 * 7` vertices. Hosts move
+/// it every frame through [`sky_positions`].
+pub fn sky_mesh(view: &FieldCameraView, lead_x: i16, yaw_units: i16) -> (VramMesh, Vec<u8>) {
+    let mut m = empty_mesh();
+    let mut flat = Vec::new();
+    let mut push = |m: &mut VramMesh,
+                    corners: [[f32; 3]; 4],
+                    uv: [[u8; 2]; 4],
+                    ct: [u16; 2],
+                    rgba: [u8; 4]| {
+        let base = m.positions.len() as u32;
+        m.positions.extend_from_slice(&corners);
+        m.uvs.extend_from_slice(&uv);
+        for _ in 0..4 {
+            m.cba_tsb.push(ct);
+            m.normals.push([0.0, 0.0, -1.0]);
+            m.colors.push([rgba[0], rgba[1], rgba[2]]);
+            flat.extend_from_slice(&rgba);
+        }
+        m.indices
+            .extend_from_slice(&[base, base + 1, base + 2, base + 1, base + 3, base + 2]);
+    };
+    let [r, g, b] = SKY_CLEAR_RGB;
+    push(
+        &mut m,
+        sky_positions_clear(view),
+        [[0, 0]; 4],
+        [0, 0],
+        [r, g, b, 0],
+    );
+    for q in sky_quads(view, lead_x, yaw_units) {
+        let n = crate::packet_color::NEUTRAL;
+        push(
+            &mut m,
+            q.xy.map(|p| unproject(view, p[0], p[1], SKY_DEPTH)),
+            q.uv,
+            [q.clut, q.tpage],
+            [n, n, n, 255],
+        );
+    }
+    (m, flat)
+}
+
+fn sky_positions_clear(view: &FieldCameraView) -> [[f32; 3]; 4] {
+    // Well past the 320x240 frame on every side, so any aspect the host
+    // letterboxes to is covered.
+    [
+        [-640.0, -480.0],
+        [960.0, -480.0],
+        [-640.0, 720.0],
+        [960.0, 720.0],
+    ]
+    .map(|p| unproject(view, p[0], p[1], SKY_CLEAR_DEPTH))
+}
+
+/// This frame's backdrop vertex positions (the layout [`sky_mesh`] builds).
+pub fn sky_positions(view: &FieldCameraView, lead_x: i16, yaw_units: i16) -> Vec<[f32; 3]> {
+    let mut out = sky_positions_clear(view).to_vec();
+    for q in sky_quads(view, lead_x, yaw_units) {
+        out.extend(q.xy.map(|p| unproject(view, p[0], p[1], SKY_DEPTH)));
+    }
+    out
+}
+
 /// The posed pond for one frame (raw retail Y-down world coordinates):
 /// the bodies first, then the map.
 #[derive(Debug, Clone)]
@@ -339,6 +515,8 @@ pub struct FishingScene {
     pub camera: FieldCameraView,
     /// Vertex offset of each body.
     pub bases: Vec<usize>,
+    /// Vertex offset of the backdrop ([`sky_mesh`]), the last span.
+    pub sky_base: usize,
 }
 
 impl FishingScene {
@@ -349,6 +527,11 @@ impl FishingScene {
         use legaia_engine_vm::psx_camera::{WORLD_FLIP, mat4_mul};
         mat4_mul(&self.camera.vp(aspect), &WORLD_FLIP)
     }
+}
+
+/// The camera yaw global a lead facing publishes (`_DAT_8007B792`).
+fn fa_yaw(facing: i16) -> i16 {
+    crate::fishing_actors::fish_camera(0, 0, 0, facing).yaw
 }
 
 /// Pose a body's `base` into `out` at clip frame `frame`, then place it at
@@ -466,6 +649,10 @@ impl FishingSurface {
                 append(&mut m, &mut flat, &b.mesh, &b.flat);
             }
             append(&mut m, &mut flat, &assets.env, &assets.env_flat);
+            let sky_base = m.positions.len();
+            let cam = venue_camera_view(seats[0].x, 0, seats[0].z, seats[0].facing);
+            let (sky, sky_flat) = sky_mesh(&cam, seats[0].x, fa_yaw(seats[0].facing));
+            append(&mut m, &mut flat, &sky, &sky_flat);
             let (mut tex, mut untex) = (Vec::new(), Vec::new());
             for t in m.indices.as_chunks::<3>().0 {
                 let textured = flat.get(t[0] as usize * 4 + 3).is_some_and(|&a| a != 0);
@@ -480,8 +667,9 @@ impl FishingSurface {
                 indices: m.indices,
                 textured_indices: tex,
                 untextured_indices: untex,
-                camera: venue_camera_view(seats[0].x, 0, seats[0].z, seats[0].facing),
+                camera: cam,
                 bases,
+                sky_base,
             }
         });
         self.cursors.resize(assets.bodies.len(), 0);
@@ -526,6 +714,9 @@ impl FishingSurface {
         }
         let (x, y, z, facing) = lead_pose.unwrap_or((seats[0].x, 0, seats[0].z, seats[0].facing));
         scene.camera = venue_camera_view(x, y, z, facing);
+        let sky = sky_positions(&scene.camera, x, fa_yaw(facing));
+        let base = scene.sky_base;
+        scene.positions[base..base + sky.len()].copy_from_slice(&sky);
         self.scene.as_ref()
     }
 
@@ -543,5 +734,38 @@ impl FishingSurface {
     pub fn vram(&self) -> Option<&legaia_tim::Vram> {
         self.scene.as_ref()?;
         Some(self.assets.as_ref()?.vram())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_sky_strip_lands_where_the_capture_draws_it() {
+        // `minigame_fishing`: six 128x256 packets from x = -169, y 19..275,
+        // pages alternating 0x88 / 0x89, CLUT 0x7D40.
+        let view = venue_camera_view(4736, -128, 10752, 0x800);
+        let q = sky_quads(&view, 4736, fa_yaw(0x800));
+        let xs: Vec<f32> = q.iter().map(|q| q.xy[0][0]).collect();
+        assert_eq!(xs, vec![-169.0, -41.0, 87.0, 215.0, 343.0, 471.0]);
+        assert!(q.iter().all(|q| q.xy[0][1] == 19.0 && q.xy[2][1] == 275.0));
+        assert_eq!(q.map(|q| q.tpage), [0x88, 0x89, 0x88, 0x89, 0x88, 0x89]);
+        assert!(q.iter().all(|q| q.clut == SKY_CLUT));
+    }
+
+    #[test]
+    fn the_sky_stand_ins_project_back_onto_their_screen_rects() {
+        let view = venue_camera_view(4736, -128, 10752, 0x780);
+        let q = sky_quads(&view, 4736, fa_yaw(0x780));
+        let pos = sky_positions(&view, 4736, fa_yaw(0x780));
+        for (i, q) in q.iter().enumerate() {
+            for (k, p) in pos[4 + i * 4..8 + i * 4].iter().enumerate() {
+                let e = view.eye_space(*p);
+                let sx = SKY_OFX + view.h * e[0] / e[2];
+                let sy = SKY_OFY + view.h * e[1] / e[2];
+                assert!((sx - q.xy[k][0]).abs() < 0.05 && (sy - q.xy[k][1]).abs() < 0.05);
+            }
+        }
     }
 }

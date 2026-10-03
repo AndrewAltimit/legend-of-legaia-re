@@ -83,6 +83,16 @@ window.MgFishing = (function () {
       const b = scene;
       if (!b) return;
       b.venue = venue;
+      /* The sky backdrop follows the venue camera (FUN_801D24EC's strip,
+       * engine-core fishing_scene::sky_mesh). */
+      if (b.skyBase >= 0 && api.fishing_sky_positions) {
+        const sp = api.fishing_sky_positions(venue);
+        if (sp.length) {
+          b.base.set(sp, b.skyBase * 3);
+          b.out.set(sp, b.skyBase * 3);
+          b.renderer.updatePositions(b.out);
+        }
+      }
       let seats = [];
       try { seats = JSON.parse(api.fishing_party_json(venue)) || []; } catch (_) { seats = []; }
       for (let i = 0; i < b.members.length; i++) {
@@ -142,7 +152,17 @@ window.MgFishing = (function () {
       let pCount = 0;
       for (const bd of bodies) pCount += bd.pos.length / 3;
       const eCount = env.pos.length / 3;
-      const total = pCount + eCount;
+      /* The sky backdrop: retail's screen-space strip as world-space
+       * stand-ins behind the whole venue (engine-core fishing_scene). */
+      const sky = api.fishing_sky_positions ? {
+        pos: api.fishing_sky_positions(0),
+        uvs: api.fishing_sky_uvs(),
+        ct: api.fishing_sky_cba_tsb(),
+        flat: api.fishing_sky_flat_rgba(),
+        idx: api.fishing_sky_indices(),
+      } : null;
+      const sCount = sky && sky.pos.length ? sky.pos.length / 3 : 0;
+      const total = pCount + eCount + sCount;
       const pos = new Float32Array(total * 3);
       const uvs = new Uint8Array(total * 2);
       const ct = new Uint16Array(total * 2);
@@ -167,6 +187,14 @@ window.MgFishing = (function () {
       if (env.flat.length) flat.set(env.flat, pCount * 4);
       else flat.fill(255, pCount * 4);
       for (const ix of env.idx) idxArr.push(ix + pCount);
+      const skyBase = sCount ? pCount + eCount : -1;
+      if (sCount) {
+        pos.set(sky.pos, skyBase * 3);
+        uvs.set(sky.uvs, skyBase * 2);
+        ct.set(sky.ct, skyBase * 2);
+        flat.set(sky.flat, skyBase * 4);
+        for (const ix of sky.idx) idxArr.push(ix + skyBase);
+      }
       const idx = new Uint32Array(idxArr);
 
       const renderer = new window.TmdRenderer(glCanvas);
@@ -184,6 +212,7 @@ window.MgFishing = (function () {
         base: pos.slice(),
         out: pos,
         members,
+        skyBase,
         anchor: { x: 0, y: 0, z: 0, yaw: 0 },
         venue: -1,
         aabb: info.aabb,

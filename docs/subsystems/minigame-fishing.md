@@ -440,7 +440,7 @@ The run loop drives a small pool of per-frame actor handlers reached through the
 - `FUN_801d70ec` (`overlay_fishing_801d70ec.txt`) - the **flanking party members' tick** (the handler of spawn record `0x801D8FC4`; the reduced sibling of `FUN_801d2050`'s non-spawn path: refresh `+0x16` from `FUN_801d6028`, clear the draw-skip bit, submit).
 - `FUN_801d4948` (`overlay_fishing_801d4948.txt`) - the **reeling-line / hooked-lure actor**: a sub-state machine on `DAT_801d91c8` (`0`→arm, `1`→attach to the hooked-fish actor `+0x48`, `2`→track) that positions the line end from `DAT_801d9174` / `DAT_801d9178` / `DAT_801d917c`, applies an orbit offset via `FUN_801d7bb8`, and raises the hook SFX cue `_DAT_8007b6da = 0x3a`.
 - `FUN_801d67bc` (`overlay_fishing_801d67bc.txt`) - the **caught-fish 3D mesh render**: GTE rotate (`+0x24` / `+0x26` / `+0x28` Euler angles), matrix push, per-fish tint from the actor `+0x72` colour word, and a subdivided-primitive draw. Render-track: a scope row in the `mesh_submit` section of `scripts/ci/port-catalog-ignore.toml`, because `engine-render` submits a mesh with a model matrix and a tint rather than pushing a GTE matrix and emitting subdivided primitives.
-- `FUN_801d24ec` (`overlay_fishing_801d24ec.txt`) - the **water reflection / shadow strip**: a run of textured quads written straight into the GTE packet list `_DAT_1f8003a0`. Render-track: a scope row in the `prim_builder` section of the same file - the engine has no packet list to write into.
+- `FUN_801d24ec` (`overlay_fishing_801d24ec.txt`) - the **sky backdrop**: the clear colour and the scrolling sky strip behind the whole venue; see [The sky backdrop](#the-sky-backdrop).
 - `FUN_801d6bbc` (`overlay_fishing_801d6bbc.txt`) - the **scene floor pass** invoked from the driver tail (`FUN_801cf3bc`): it walks the live actor list (transform + submit + free) and then spawns one tile actor per drawn cell of the scene floor grid at `_DAT_1f8003ec`. This is **not** the field-VM tile board of [`tile-board.md`](tile-board.md) - that is a `width x height` byte cell array installed by script op `0x49`, where this reads the per-scene floor buffer's `u16` cell grid. See [The scene floor buffer](#the-scene-floor-buffer).
 - `FUN_801d78c0` (`overlay_fishing_801d78c0.txt`) - the **fishing camera-scroll reset**: `_DAT_800840b8 = 0`, `_DAT_800840c0 = 0x974`, and the scroll trio `_DAT_8007b790` / `_DAT_8007b792` / `_DAT_8007b794 = 0`.
 - `FUN_801d79e0` (`overlay_fishing_801d79e0.txt`) - the **step-layer lookup** the ground solver `FUN_801d6028` runs for a cell carrying bit `0x800`: sub-table kind `a0 = 2` of a floor layer (`i16` body offset at `kind * 4 + 2`, `i16` count at `+4`, record stride the resident byte `0x8007B318 + kind` = `4`), scanned linearly for the record whose first two bytes are the grid `(x, z)`; returns the record pointer or null. Port `minigame_floor::step_patch_in_layer` / `step_patch_lookup`.
@@ -497,6 +497,39 @@ the player where he stood. The venue floor the lead settles on is the pond's
 own `.MAP` (the session's venue), and the cast lure anchors on the lead's seat
 at his rest facing `0x800`, as retail's lure spawn reads the lead actor's
 `+0x14` / `+0x18` / `+0x26` (`0x801CFC78..0x801CFC98`).
+
+### The sky backdrop
+
+The sky is not geometry. `FUN_801d24ec` draws it as a screen-space strip
+every frame, at OT word `0x400` behind the whole venue:
+
+- it stores `(0x17, 0x50, 0xA0)` into the `r0 / g0 / b0` clear-colour bytes
+  of both draw environments (`0x801D24F8..0x801D2544`) - the blue above the
+  strip;
+- it saves the yaw global `_DAT_8007B792`, zeroes it, rebuilds the view
+  (`FUN_800172C0`), loads the eye trio as `TR` (`FUN_8003D1EC`) and projects
+  the view-space point `(0, 0, 0x1000)` (`FUN_8003D368`): straight ahead at
+  the camera's pitch, so its `(sx, sy)` is the horizon;
+- the strip spans `sy - 0x74 .. sy + 0x8C` (256 rows) and starts at column
+  `((sx + focus_x / 64 + yaw) & 0xFF) - 0xFF`, with `focus_x` the stored
+  (negated) focus `_DAT_80089118`, rounded toward zero, and `yaw` the saved
+  global - so it scrolls as the lead aims and differs between the two
+  ponds;
+- six 128 x 256 `POLY_FT4`s follow, two per 256-pixel step, alternating the
+  8bpp pages `0x88` / `0x89` (VRAM `(512, 0)` / `(576, 0)`), `u 0..0x80`,
+  `v 0..0xFF`, CLUT `0x7D40` (row 501), colour `0x80`; then the yaw is put
+  back and the view rebuilt.
+
+The `minigame_fishing` library state's ordering table holds exactly these
+six packets, from `x = -169`, `y 19..275`. The texture is part of the pond
+bundle's own TIM upload.
+
+Port: `fishing_scene::sky_quads` (the strip), and `sky_mesh` /
+`sky_positions`, which unproject each screen corner through the venue camera
+to a far eye-space depth, so the strip and the clear-colour plate draw as
+world-space geometry that lands on the retail screen rects behind the venue
+on every host. The surface moves them every frame with the lead's aim; the
+minigames page seats them per venue (`fishing_sky_*`).
 
 ### The scene floor buffer
 

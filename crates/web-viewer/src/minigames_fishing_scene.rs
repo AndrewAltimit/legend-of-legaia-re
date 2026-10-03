@@ -674,6 +674,70 @@ impl LegaiaMinigames {
         .to_vec()
     }
 
+    /// The pond's sky backdrop for `venue` under the venue camera (the
+    /// shared [`legaia_engine_core::fishing_scene::sky_mesh`] - retail's
+    /// `FUN_801D24EC` strip plus the clear colour, as world-space stand-ins
+    /// that project onto the retail screen rects). Positions follow the
+    /// camera; the other streams are fixed.
+    fn fishing_sky(&self, venue: u32) -> Option<(legaia_tmd::mesh::VramMesh, Vec<u8>)> {
+        let s = self.fishing_scene.as_ref()?;
+        let lead = legaia_engine_core::fishing_venue::party_placements(venue as usize)[0];
+        let y = s.seat_floor(lead.x, lead.z);
+        let view = legaia_engine_core::fishing_venue::venue_camera_view(
+            lead.x,
+            y as i16,
+            lead.z,
+            lead.facing,
+        );
+        let yaw = legaia_engine_core::fishing_actors::fish_camera(0, 0, 0, lead.facing).yaw;
+        Some(legaia_engine_core::fishing_scene::sky_mesh(
+            &view, lead.x, yaw,
+        ))
+    }
+
+    /// Sky backdrop vertex positions for `venue` (world space, Y down).
+    pub fn fishing_sky_positions(&self, venue: u32) -> Vec<f32> {
+        self.fishing_sky(venue)
+            .map(|(m, _)| m.positions.iter().flatten().copied().collect())
+            .unwrap_or_default()
+    }
+
+    /// Sky backdrop `[u, v]` per vertex.
+    pub fn fishing_sky_uvs(&self) -> Vec<i32> {
+        self.fishing_sky(0)
+            .map(|(m, _)| {
+                m.uvs
+                    .iter()
+                    .flat_map(|uv| [uv[0] as i32, uv[1] as i32])
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Sky backdrop `[cba, tsb]` per vertex.
+    pub fn fishing_sky_cba_tsb(&self) -> Vec<u32> {
+        self.fishing_sky(0)
+            .map(|(m, _)| {
+                m.cba_tsb
+                    .iter()
+                    .flat_map(|c| [c[0] as u32, c[1] as u32])
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Sky backdrop `[r, g, b, textured]` per vertex.
+    pub fn fishing_sky_flat_rgba(&self) -> Vec<u8> {
+        self.fishing_sky(0).map(|(_, f)| f).unwrap_or_default()
+    }
+
+    /// Sky backdrop triangle indices (local to its own vertices).
+    pub fn fishing_sky_indices(&self) -> Vec<u32> {
+        self.fishing_sky(0)
+            .map(|(m, _)| m.indices)
+            .unwrap_or_default()
+    }
+
     /// Member body vertex positions (object-local; the clip pose assembles
     /// them). Empty for a member that did not decode.
     pub fn fishing_player_positions(&self, member: u32) -> Vec<f32> {
