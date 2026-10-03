@@ -1088,7 +1088,8 @@ struct PlayWindowApp {
     fishing_gpu: Option<minigames::BakaDuelGpu>,
     /// The slot machine's disc data, decoded on the first visit (`Some(None)`
     /// remembers a disc it did not decode on).
-    slot_cabinet_assets: Option<Option<std::sync::Arc<minigames::SlotCabinetAssets>>>,
+    slot_cabinet_assets:
+        Option<Option<std::sync::Arc<legaia_engine_render::ui_slot_cabinet::SlotCabinetAssets>>>,
     /// The machine's VRAM on the GPU while it is on screen.
     slot_gpu: Option<UploadedVram>,
     /// The marquee's legend / blink counters.

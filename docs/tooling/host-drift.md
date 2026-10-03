@@ -961,9 +961,8 @@ The pass also left two rows open. The first has since closed:
   have since closed on the native side: the duel draws the engine's
   `baka_duel_scene` surface, and the slot machine draws its own cabinet scene
   against its art-pack VRAM (`engine-ui::ui_slot_cabinet`, see
-  [`minigame-slot-machine.md`](../subsystems/minigame-slot-machine.md#who-draws-the-machine)).
-  The slot builder is native-only for now - the pages keep their 2D-canvas
-  composition - which is the reverse of the gap the pass found.
+  [`minigame-slot-machine.md`](../subsystems/minigame-slot-machine.md#who-draws-the-machine)),
+  the same builder the play page's screen-prim pass now draws it with.
 
 That pass also named a third: 3D that has to line up with the 2D stage did
 not, at a window size that is not a stage multiple (the naming screen's actor
@@ -1543,9 +1542,9 @@ sampling it, because its duel HUD has no textured-quad surface.
 (`FUN_801D3380`) and projects both endpoints through the machine's fitted
 projection; both browser pages stroke those segments (`sa` / `sb` in the prims
 JSON) and the native window draws them as one-pixel flat quads through
-`engine-ui::ui_slot_paylines`. Around them the native window draws the
-machine itself through `engine-ui::ui_slot_cabinet`, while both browser pages
-still compose it in a 2D canvas - one kernel, not yet two hosts.
+`engine-ui::ui_slot_paylines`. Around them both play hosts draw the machine
+itself through `engine-ui::ui_slot_cabinet`; only the standalone minigames
+page still composes it in a 2D canvas.
 
 ### A `web-ahead` builder is not by itself a gap
 

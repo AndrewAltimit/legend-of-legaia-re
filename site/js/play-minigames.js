@@ -569,6 +569,21 @@
   function slotFrame(rt, view, skipDraw) {
     const st = parse(() => rt.play_mg_slot_state_json());
     if (!st || !st.live) return;
+    /* The machine's resident set decoded: the engine draws the whole retail
+     * frame (cabinet mesh, reels, furniture, dot matrix, coin HUD) through
+     * the shared `ui_slot_cabinet` builder into the screen-prim pass - the
+     * native window's draw - sampling the art pack, which goes up as the
+     * renderer's VRAM once per visit. The 2D-canvas composition below is the
+     * fallback for a bundle predating the exports. */
+    if (typeof rt.play_mg_slot_cabinet_ready === 'function' && rt.play_mg_slot_cabinet_ready()) {
+      const r = view.renderer;
+      if (r && !S.slotVram) {
+        try { r.uploadVram(rt.play_mg_slot_vram()); S.slotVram = true; } catch (e) { /* keep going */ }
+      }
+      showLayer(view, false);
+      if (!skipDraw) clearGl(view);
+      return;
+    }
     const bonus = parse(() => rt.play_mg_slot_bonus_json());
     if (S.slot) S.slot.tick = (st.tick | 0);
     /* A bonus round just paid: hold its finished tally, then the caption. */
@@ -1132,7 +1147,8 @@
   /* ================================================================== */
 
   function teardown(rt, view) {
-    if (S.game && S.game !== 'slot') releaseRenderer(rt, view);
+    if (S.game && (S.game !== 'slot' || S.slotVram)) releaseRenderer(rt, view);
+    S.slotVram = false;
     S.game = null;
     S.gen = -1;
     S.scene = null;

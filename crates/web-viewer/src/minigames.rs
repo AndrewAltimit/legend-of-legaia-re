@@ -102,6 +102,10 @@ pub struct LegaiaMinigames {
     /// The machine's 3D scene graph: paylines, medallions, lamps, marquee
     /// billboards and the dot-matrix message bank (PROT 0975 + art page 3).
     slot_scene: Option<SlotScene>,
+    /// The machine's whole resident set for the shared screen-prim builder
+    /// (`legaia_engine_ui::ui_slot_cabinet`): art-pack VRAM, scene graph,
+    /// HUD records and the cabinet mesh - what the native window draws from.
+    pub(crate) slot_cabinet: Option<legaia_engine_ui::ui_slot_cabinet::SlotCabinetAssets>,
     /// The slot machine's own SFX cue bank (descriptors from PROT 1199, samples
     /// from the PROT 1198 VAB).
     slot_sfx: Option<SfxCueBank>,
@@ -285,6 +289,7 @@ impl LegaiaMinigames {
             slot_art: None,
             slot_hud: None,
             slot_scene: None,
+            slot_cabinet: None,
             slot_sfx: None,
             baka_names: None,
             dance_pres: None,
@@ -485,6 +490,12 @@ impl LegaiaMinigames {
             let (idx, w, _h) = minigame_art::slot_page_indices(art, slot_scene::DOT_PAGE).ok()?;
             slot_scene::parse_scene(overlay, &idx, w).ok()
         })();
+
+        // --- the machine's resident set for the shared screen-prim builder ---
+        self.slot_cabinet = legaia_engine_ui::ui_slot_cabinet::SlotCabinetAssets::load(|i| {
+            entry_bytes(&self.prot, &self.entries, i as u32).map(<[u8]>::to_vec)
+        })
+        .ok();
 
         // --- slot SFX cue bank (descriptors PROT 1199 + samples PROT 1198) ---
         // The reel-stop click, payout tick and reach sting are all runtime-bank

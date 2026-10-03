@@ -334,10 +334,14 @@ impl LegaiaRuntime {
 
     fn on_minigame_exit(&mut self, game: ActiveGame) {
         match game {
-            // The slot machine draws on the page's own 2D layer; the field
-            // VRAM was never replaced.
-            ActiveGame::Slot => {}
-            ActiveGame::Baka | ActiveGame::Muscle | ActiveGame::Dance | ActiveGame::Fishing => {
+            // The slot machine replaces the VRAM texture with its art pack
+            // whenever its resident set decoded (the shared cabinet pass);
+            // a restore is harmless when it drew on the 2D layer instead.
+            ActiveGame::Slot
+            | ActiveGame::Baka
+            | ActiveGame::Muscle
+            | ActiveGame::Dance
+            | ActiveGame::Fishing => {
                 self.minigame_ui.vram_restore_pending = true;
             }
         }

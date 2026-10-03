@@ -593,7 +593,8 @@ prim's colour, half-blended for the `0x43` code (`sa` / `sb` in
 `slot_payline_prims_json` / `play_mg_slot_payline_prims_json`). The native
 window stages the geometry on the machine itself (`SlotMachine::with_paylines`)
 and draws the same segments as one-pixel flat quads through
-`engine-ui::ui_slot_paylines`, over the machine it draws around them
+`engine-ui::ui_slot_paylines` - as the play page does too whenever it draws
+the machine through the shared builder - over the machine
 ([who draws the machine](#who-draws-the-machine)). OT linkage stays
 caller-side: all three hosts draw the lines over the reels.
 
@@ -823,8 +824,10 @@ machine.
 
 ### Who draws the machine
 
-The native window draws the whole frame from the emitters above, through one
-builder, `engine-ui::ui_slot_cabinet::slot_cabinet_prims`: the cabinet mesh
+Both play hosts draw the whole frame from the emitters above, through one
+builder, `engine-ui::ui_slot_cabinet::slot_cabinet_prims` (the native window
+from its slot frame, the browser play page through its screen-prim pass with
+the art pack uploaded as the renderer's VRAM for the visit): the cabinet mesh
 (PROT 1200's `TMD` descriptor, decoded by
 `minigame_slot_scene::parse_cabinet`, back faces culled), the reel faces with
 their per-edge depth-cue shade, the four furniture passes with their tints (any
@@ -842,9 +845,10 @@ column; and the cabinet draws its raw packet colours, which read lighter than
 the capture's greys (the shading term named in
 [the cabinet section](#the-cabinet-is-a-mesh---prot-1200-descriptor-1)).
 
-The browser pages still compose the machine in a 2D canvas (`slotRender` in
-`site/js/play-minigames.js` and `site/_content/minigames.html`), with the
-cabinet painted as a measured composition.
+The standalone minigames page still composes the machine in a 2D canvas
+(`slotRender` in `site/_content/minigames.html`), with the cabinet painted as
+a measured composition; the play page keeps the same canvas path only as the
+fallback for a bundle without the cabinet exports.
 
 ## Art pack (PROT 1200)
 

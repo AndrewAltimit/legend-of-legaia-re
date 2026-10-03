@@ -10,51 +10,6 @@ use super::*;
 /// the lead); the browser play page seats the same.
 pub(super) const MUSCLE_DOME_CHAR_SLOT: u32 = 0;
 
-/// The casino slot machine's resident data: what the overlay init
-/// `FUN_801CEC94` loads before the reel state machine runs - the five-TIM art
-/// pack and the cabinet mesh (PROT 1200), and the scene graph + HUD widget
-/// table out of the overlay's own rodata (PROT 0975) - plus the VRAM the art
-/// pack uploads into, which is the whole texture set the machine samples.
-pub(super) struct SlotCabinetAssets {
-    pub(super) scene: legaia_asset::minigame_slot_scene::SlotScene,
-    pub(super) cabinet: Option<legaia_asset::minigame_slot_scene::SlotCabinetMesh>,
-    pub(super) hud: Vec<legaia_asset::minigame_art::SlotHudWidget>,
-    pub(super) vram: legaia_tim::Vram,
-}
-
-impl SlotCabinetAssets {
-    /// Decode the machine's data off the disc; `None` (logged) when the art
-    /// pack or the scene graph does not decode. The cabinet mesh is optional:
-    /// without it the reels and furniture still draw.
-    pub(super) fn load(read: impl Fn(usize) -> Option<Vec<u8>>) -> Option<Self> {
-        use legaia_asset::minigame_art as art;
-        use legaia_asset::minigame_slot_scene as sc;
-        let art_raw = read(art::SLOT_ART_PROT_INDEX)?;
-        let overlay = read(legaia_asset::slot_payout::SLOT_OVERLAY_PROT_INDEX)?;
-        let tims = art::parse_art_pack(&art_raw)
-            .map_err(|e| log::warn!("slots: art pack (PROT 1200) did not decode: {e:#}"))
-            .ok()?;
-        let (idx, w, _) = art::slot_page_indices(&tims, sc::DOT_PAGE).ok()?;
-        let scene = sc::parse_scene(&overlay, &idx, w)
-            .map_err(|e| log::warn!("slots: scene graph (PROT 0975) did not decode: {e:#}"))
-            .ok()?;
-        let hud = art::parse_slot_hud(&overlay).unwrap_or_default();
-        let cabinet = sc::parse_cabinet(&art_raw)
-            .map_err(|e| log::warn!("slots: cabinet mesh did not decode: {e:#}"))
-            .ok();
-        let mut vram = legaia_tim::Vram::new();
-        for t in &tims {
-            vram.upload_tim(t);
-        }
-        Some(Self {
-            scene,
-            cabinet,
-            hud,
-            vram,
-        })
-    }
-}
-
 pub(super) struct BakaDuelGpu {
     pub(super) generation: u32,
     pub(super) vram: UploadedVram,
@@ -920,7 +875,10 @@ impl PlayWindowApp {
         if self.slot_cabinet_assets.is_none() {
             let index = self.session.host.index.clone();
             let read = |i: usize| index.entry_bytes(i as u32).ok().map(|b| b.to_vec());
-            self.slot_cabinet_assets = Some(SlotCabinetAssets::load(read).map(std::sync::Arc::new));
+            let loaded = legaia_engine_render::ui_slot_cabinet::SlotCabinetAssets::load(read)
+                .map_err(|e| log::warn!("slots: {e}"))
+                .ok();
+            self.slot_cabinet_assets = Some(loaded.map(std::sync::Arc::new));
         }
         if self.slot_gpu.is_some() {
             return;

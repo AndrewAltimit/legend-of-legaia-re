@@ -67,6 +67,49 @@ const DOTS_CLUT_ROW: u16 = 0x7B40;
 /// Neutral texture modulation (`0x80` = texel unchanged).
 const NEUTRAL: u32 = 0x0080_8080;
 
+/// The casino slot machine's resident data: what the overlay init
+/// `FUN_801CEC94` loads before the reel state machine runs - the five-TIM art
+/// pack and the cabinet mesh (PROT 1200), and the scene graph + HUD widget
+/// table out of the overlay's own rodata (PROT 0975) - plus the VRAM the art
+/// pack uploads into, which is the whole texture set the machine samples.
+pub struct SlotCabinetAssets {
+    pub scene: legaia_asset::minigame_slot_scene::SlotScene,
+    pub cabinet: Option<legaia_asset::minigame_slot_scene::SlotCabinetMesh>,
+    pub hud: Vec<legaia_asset::minigame_art::SlotHudWidget>,
+    pub vram: legaia_tim::Vram,
+}
+
+impl SlotCabinetAssets {
+    /// Decode the machine's data off the disc through `read` (an extraction
+    /// PROT index to its raw bytes). `Err` names the half that did not
+    /// decode - the art pack or the scene graph; the cabinet mesh is
+    /// optional, and without it the reels and furniture still draw.
+    pub fn load(read: impl Fn(usize) -> Option<Vec<u8>>) -> Result<Self, String> {
+        use legaia_asset::minigame_art as art;
+        let art_raw = read(art::SLOT_ART_PROT_INDEX).ok_or("art pack (PROT 1200) unreadable")?;
+        let overlay = read(legaia_asset::slot_payout::SLOT_OVERLAY_PROT_INDEX)
+            .ok_or("slot overlay (PROT 0975) unreadable")?;
+        let tims = art::parse_art_pack(&art_raw)
+            .map_err(|e| format!("art pack (PROT 1200) did not decode: {e:#}"))?;
+        let (idx, w, _) = art::slot_page_indices(&tims, sc::DOT_PAGE)
+            .map_err(|e| format!("dot page did not decode: {e:#}"))?;
+        let scene = sc::parse_scene(&overlay, &idx, w)
+            .map_err(|e| format!("scene graph (PROT 0975) did not decode: {e:#}"))?;
+        let hud = art::parse_slot_hud(&overlay).unwrap_or_default();
+        let cabinet = sc::parse_cabinet(&art_raw).ok();
+        let mut vram = legaia_tim::Vram::new();
+        for t in &tims {
+            vram.upload_tim(t);
+        }
+        Ok(Self {
+            scene,
+            cabinet,
+            hud,
+            vram,
+        })
+    }
+}
+
 /// Everything one frame of the machine draws from.
 pub struct SlotCabinetInput<'a> {
     /// The scene graph off the overlay's rodata.
