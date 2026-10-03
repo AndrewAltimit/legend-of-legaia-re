@@ -76,6 +76,9 @@ const LOADED_SCENE_DEFINE: u32 = 0x8008_4540;
 /// The ambient-particle (fog pool) master gate, raised / cleared only by
 /// field-VM op `0x4C` nibble 3 (`docs/subsystems/field-ambient-fx.md`).
 const FOG_GATE: u32 = 0x8007_B854;
+/// The actor `+0x10` bit under which op `0x4C` nibble-4 sub-2 writes the
+/// script height `+0x8E` into `world_y`.
+const PLAYER_SCRIPT_HEIGHT: u32 = 0x2000_0000;
 /// `_DAT_801F348C`, the field party HUD's idle countdown (`FUN_801D0D38`).
 const HUD_COUNTDOWN: u32 = 0x801F_348C;
 /// `DAT_801E46A4`, the menu overlay's current sub-screen id
@@ -158,6 +161,9 @@ pub struct CorpusEntry {
     pub path: PathBuf,
     /// The scenario's `backup_fingerprint`.
     pub fingerprint: String,
+    /// The scenario's `resident_patch` - the patch family whose executable
+    /// the state replays, when it was made on a patched disc.
+    pub resident_patch: Option<String>,
 }
 
 /// Enumerate every scenario with a library backup on disk, deduplicated by
@@ -180,6 +186,7 @@ pub fn enumerate_corpus(manifest: &ScenarioManifest, library: &Path) -> Vec<Corp
                     emulator,
                     path,
                     fingerprint: fp.to_string(),
+                    resident_patch: sc.resident_patch.clone(),
                 });
             }
         }
@@ -213,6 +220,12 @@ pub struct RetailObs {
     pub class: StateClass,
     /// `(X, footing, Z)`.
     pub player: Option<[i16; 3]>,
+    /// The height a script holds the player at, when one does: the
+    /// player's `+0x8E` while `+0x10 & 0x20000000` is up. Op `0x4C` nibble-4
+    /// sub-2 ramps `+0x8E` and, with that bit set, writes `world_y = -value`
+    /// over the floor, so the `Y` above is the script's and not a floor
+    /// sample (`docs/subsystems/script-vm.md`, the actor `+0x8E` row).
+    pub script_height: Option<i16>,
     pub camera: CameraObs,
     pub bgm_id: u16,
     /// Whether the field BGM slot `0x8007052C` is attached and at a non-zero
@@ -312,6 +325,9 @@ impl RetailObs {
                 rd16(ram, p + 0x18),
             ]
         });
+        let script_height = game_anchors::player_ptr(ram)
+            .filter(|&p| game_anchors::u32_at(ram, p + 0x10) & PLAYER_SCRIPT_HEIGHT != 0)
+            .map(|p| rd16(ram, p + 0x8E));
         let class = StateClass::classify(game_mode, &scene, player.is_some());
         let menu = (class == StateClass::Menu).then(|| RetailMenu::from_ram(ram, &scene));
         let camera = CameraObs {
@@ -344,6 +360,7 @@ impl RetailObs {
             game_mode,
             class,
             player,
+            script_height,
             camera,
             bgm_id,
             bgm_sounding: game_anchors::u16_at(ram, BGM_PLAYING) != 0
@@ -995,6 +1012,7 @@ pub fn compare(
 ) -> (BTreeMap<String, f64>, BTreeMap<String, String>) {
     let mut ch = BTreeMap::new();
     let mut det = BTreeMap::new();
+    let mut footing_note = None;
     let mut put = |name: &str, score: f64, detail: String| {
         ch.insert(name.to_string(), round3(score));
         det.insert(name.to_string(), detail);
@@ -1055,12 +1073,24 @@ pub fn compare(
     if retail.class == StateClass::Field
         && let (Some(r), Some(floor)) = (retail.player, engine.floor_at_retail)
     {
-        let d = f64::from(floor - i32::from(r[1]));
-        put(
-            "footing",
-            falloff(d, 2.0, 128.0),
-            format!("retail footing={} engine floor={floor}", r[1]),
-        );
+        match retail.script_height {
+            // A script holds the player's height: retail's `Y` is that, not
+            // the floor, so there is no floor reading to score against.
+            Some(h) => {
+                footing_note = Some(format!(
+                    "not scored: retail Y={} is script-held (+0x8E={h}); engine floor={floor}",
+                    r[1]
+                ));
+            }
+            None => {
+                let d = f64::from(floor - i32::from(r[1]));
+                put(
+                    "footing",
+                    falloff(d, 2.0, 128.0),
+                    format!("retail footing={} engine floor={floor}", r[1]),
+                );
+            }
+        }
     }
     let (s, d) = camera_score(&retail.camera, &engine.camera);
     put("camera", s, d);
@@ -1125,6 +1155,9 @@ pub fn compare(
                 ),
             },
         );
+    }
+    if let Some(note) = footing_note {
+        det.insert("footing".to_string(), note);
     }
     (ch, det)
 }
@@ -1463,13 +1496,16 @@ fn run_battle(
         }
     };
     // The first stream under which the fight is still on at the sample, its
-    // opening reached a prompt and the drive / replayed cast reached the
+    // opening reached a prompt without a surprise round the capture's own
+    // history does not hold (`EngineBattle::surprise_opening`; an opening
+    // capture is that round), and the drive / replayed cast reached the
     // capture's phase (`BATTLE_RNG_SEEDS`), first with the HP as read and
     // then with a party swing's victims revived
     // (`RetailBattle::action_victims`); a state nothing satisfies keeps the
     // first run.
     let mut first = None;
     let mut reached = None;
+    let opening = battle.seed_plan() == crate::retail_compare_battle::SeedPlan::Opening;
     let revive: &[bool] = if battle.action_victims().is_empty() {
         &[false]
     } else {
@@ -1477,16 +1513,37 @@ fn run_battle(
     };
     'search: for &victims in revive {
         for &seed in &crate::retail_compare_battle::BATTLE_RNG_SEEDS {
-            match crate::retail_compare_battle::run_engine_battle(
+            let mut run = crate::retail_compare_battle::run_engine_battle(
                 opts.extracted,
                 retail,
                 battle,
                 seed,
                 victims,
-            ) {
+            );
+            // An aged action state the engine left younger than retail's:
+            // the same stream again, sampled on that state's last tick.
+            if let Ok(e) = &run
+                && let Some(accum) = e.age_short
+            {
+                let mut aged = battle.clone();
+                aged.span_gate = crate::retail_compare_battle::SpanGate::Age { accum };
+                run = crate::retail_compare_battle::run_engine_battle(
+                    opts.extracted,
+                    retail,
+                    &aged,
+                    seed,
+                    victims,
+                )
+                .map(|mut e| {
+                    e.age_short = Some(accum);
+                    e
+                });
+            }
+            match run {
                 Ok(e)
                     if e.mode == legaia_engine_core::world::SceneMode::Battle
                         && e.prompt_tick.is_some()
+                        && (!e.surprise_opening || opening)
                         && e.driven != Some(None)
                         && e.inflight != Some(None) =>
                 {
@@ -1511,6 +1568,18 @@ fn run_battle(
         }
         None => unreachable!("BATTLE_RNG_SEEDS is not empty"),
     };
+    // A re-run sampled on a shorter age: the image child walks the same
+    // drive, and the detail names the gate the run used.
+    let aged;
+    let battle = match engine.age_short {
+        Some(accum) => {
+            let mut b = battle.clone();
+            b.span_gate = crate::retail_compare_battle::SpanGate::Age { accum };
+            aged = b;
+            &aged
+        }
+        None => battle,
+    };
     let image = battle_image(opts, entry, retail, battle, &engine, report);
     let (mut ch, mut det) = crate::retail_compare_battle::compare_battle(retail, battle, &engine);
     if let Some(img) = &image {
@@ -1519,6 +1588,19 @@ fn run_battle(
             "image".into(),
             format!("mae={:.1} within={:.3} ({})", img.mae, img.within, img.note),
         );
+    }
+    // A state made on a patched disc replays that build's executable: what
+    // the patch writes into a combatant (the shiny-Seru boost's `x135/100`
+    // on a monster's maxima) is not retail behaviour, and a channel that
+    // reads it says so instead of reading as an engine miss.
+    if let Some(patch) = entry.resident_patch.as_deref() {
+        for key in ["enemy_hp", "battle_party"] {
+            if let Some(d) = det.get_mut(key) {
+                d.push_str(&format!(
+                    "; retail ran a patched executable (resident patch: {patch})"
+                ));
+            }
+        }
     }
     report.image = image;
     report.detail.extend(det);
@@ -1567,6 +1649,14 @@ fn battle_image(
             ),
         ),
         ("LEGAIA_BATTLE_RNG_SEED", engine.rng_seed.to_string()),
+        // The headless seed settles the landed field before it seeds the
+        // stream and arms the fight (`run_engine_battle`); so does the child.
+        ("LEGAIA_BATTLE_SETTLE", SETTLE_TICKS.to_string()),
+        // The mid-fight bars the headless seed put on its first battle tick.
+        (
+            "LEGAIA_BATTLE_BARS",
+            crate::retail_compare_battle::bar_seeds_to_env(&engine.hp_seed),
+        ),
     ];
     // The idle orbit is a clock: phase-align it to the retail instant when
     // retail's own orbit owns the yaw (the battle tick's prologue store,

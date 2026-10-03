@@ -156,7 +156,11 @@ while a round still gains flags, since each unlocks the other:
   pad, so the locomotion's own touch dispatch posts the contact. `town01`
   P0[29], Vahn's front door, spawns the P2[5] night beat that sets `0x227`
   once `0x226` is up - the flag the spar's post-fight branch in P1[10] tests.
-- **Props.** A placed prop whose own bind record cleanly SETs a wanted flag.
+- **Props.** A placed prop whose own bind record cleanly SETs a wanted flag,
+  or spawns a partition-2 record that does (op `0x44`, three levels) - the
+  latch rule below applies to the prop's record as to a talk's. `rikuroa`
+  P0[2], the Genesis Tree, is the spawn case: examining it after Caruban
+  spawns P2[53], which raises `0x28A` and carries the party down to `map01`.
   An interact-gated one (the cupboard class, contact result bit `1`) is
   examined the way a talk is: stand beside it, face it so the prop arm of the
   facing probe lands on its box, press Cross and page what opens - `chitei2`
@@ -199,16 +203,30 @@ map as its street:
 
 - a **kind-0 teleport** tile is an edge to its landing cell. A closed door prop
   standing over one reads solid from every side, and the planner counts it
-  open: pressing into it is the touch that opens it (`31 00`).
+  open: pressing into it is the touch that opens it (`31 00`). A leaf is
+  over the teleport when its box centre lies within the tile's half-tile
+  margin or its anchor tile is one step from it - `dolk`'s inn stair door
+  is anchored at (76, 121) in front of the (76, 122) teleport, its box
+  centre short of the margin.
 - an **object door** - a walk-touch placement whose record, resolved against
   the live flags, moves the player - is an edge wherever the leading actor
   probe points reach its contact box, including through the wall the door is
   set in. A second door leaf beside the contact counts as open for the same
   reason.
+- a **ledge hop** - a gate-1 walk-on tile whose partition-2 record the live
+  flags let spawn and whose body arcs the player to one landing tile (op
+  `0x43` sub-0/1/A/B on the `0xF8` channel) - is an edge like a teleport. A
+  mountain joins its terraces this way: the way down from `rikuroa`'s summit
+  is a kind-0 teleport into the west strip and then the P2[6..25] hops. A
+  record that hops more than once, or box-tests the player first, is left
+  out: its landing is not one place.
 
 The follower presses a teleport waypoint until the jump lands, backs out of a
 diagonal-wall notch where all four lattice steps read blocked, and, held
-against something for a second, tries the action button. Walks avoid the live
+against something for a second, tries the action button. A script that runs
+on the way and changes nothing - no flag, no cell, no scene (an examined prop
+with nothing to say) - leaves the route as it was rather than re-planning the
+walk component. Walks avoid the live
 walk-on bands (a band whose record's story gates shut it is walkable) unless
 one is the only way through.
 
@@ -223,7 +241,13 @@ The pad hand's beats are the seated tier's, played as a player plays them:
   to fights it instead of fleeing it;
 - before a boss, and whenever the weakest member is below half HP, the hand
   heals through the pause menu: Start, Items, Use, the first HP restorative,
-  the weakest member, Circle back out.
+  the weakest member, Circle back out;
+- leaving a scene that rolls no encounters with the weakest member still
+  below half HP and nothing in the bag to heal it, the hand **rests**: it
+  walks onto a live walk-on band whose partition-2 record runs the `4C 82`
+  restore (a bed), or talks to an NPC whose record or a record it spawns
+  does (an innkeeper; the gold gate is the record's own). In a scene that
+  rolls, the walk to the bed costs what the walk out does, so it heads out.
 
 A pad segment has a frame budget (`PAD_SEGMENT_FRAMES`); a segment the hand
 cannot finish inside it stalls with `pad frame budget (N) spent` rather than holding
@@ -282,7 +306,11 @@ and after that it is left out of the plan: which side it delivers to is story
 state the lattice cannot see (`suimon`'s two chambers join only once its water
 gate is drained). Candidates the lattice cannot place are still tried in
 turn behind the planned one. An arrival script that carries the party
-straight back out counts as a round trip, landing and all.
+straight back out counts as a round trip, landing and all. A detour that ends
+in a third scene leaves the player on another side of the scene it set out
+from, and a further detour is taken from there (up to three per hop): from
+`rim_elm_restored`, `rikuroa` turns the party away and the walk out lands by
+`cave01`, on the side of `map01` that holds `keikoku`'s west mouth.
 
 In both passes a scripted sequence gets Cross on a press-2-release-14 duty
 cycle, the naming prompt's Yes/No confirm gets Up first (it opens on No), and a
@@ -352,7 +380,9 @@ cargo test -p legaia-engine-shell --profile release-test \
 `LEGAIA_DISC_BIN` must be set; without it, or without either tree, both parts
 print `[skip]` and pass. `LEGAIA_FGL_ONLY=<id>,...` runs only the segments
 ending at those milestones and does not assert the baseline;
-`LEGAIA_FGL_NO_PAD=1` skips the pad tier. `LEGAIA_SCUS` defaults to the
+`LEGAIA_FGL_NO_PAD=1` skips the pad tier, and `LEGAIA_FGL_RNG_SEED=<u32>`
+re-seeds the world rand stream once a pad segment is seeded, dealing it
+another hand. `LEGAIA_SCUS` defaults to the
 extracted tree's `SCUS_942.54`. Two part-A diagnostics:
 `LEGAIA_FGL_EDGES=<scene>,...` prints each named scene's out- and in-edges
 (`*` marks a scripted one), and `LEGAIA_FGL_GAINED=<id>,...` prints every flag
@@ -389,6 +419,40 @@ has that the engine never set, each with the disc sites that SET it
 (scene, partition, record) from the system-flag census. That is the "which
 flag was never set" answer, and usually names the record to look at next.
 
+### A pad wipe that moves with an unrelated change
+
+The pad tier is deterministic, but every random draw it meets - the
+encounter step, the formation roll, the escape roll, enemy targeting - comes
+off the one world rand stream, and so does any field system that draws per
+frame (the fog spawner `FUN_801D629C` draws only once its region gate
+passes). A change that alters how many draws happen before a fight -
+gating a fog region off, say - deals every later fight a different hand.
+Where a segment is seeded with a lone member near death and an empty bag,
+that hand decides the tier: a back attack plus one caught Run is a wipe.
+
+So a `party wiped` stall that appears or disappears with a change that does
+not touch battle is first a rand-stream question. Trace it with
+`LEGAIA_FGL_TRACE=1 LEGAIA_FGL_TRACE_HITS=1` (each HP change with its actor
+and action state): a back attack shows as an enemy hit before the party's
+first command, and the fight's opening formation and HP read off the
+`[battle] start` line. If the draws are retail's, the move is the route's
+fragility, not a regression.
+
+`LEGAIA_FGL_RNG_SEED` measures that fragility directly: run the segment
+under a spread of seeds and count the wipes. `rim_elm_restored` is the
+standing case. Its seed, `player_steal_skeleton_pre`, is a mid-battle state
+whose SC block holds Vahn alone at 17 of 219 HP with an empty bag, in a
+mist-era `dolk` whose every region rolls (`0x142` clear). With 17 HP one
+caught Run against a pair is a wipe, and the escape roll weighs the enemy
+side's summed SPD against one member's, so a pair catches him often. Over
+the default stream and seeds 1..20, walking straight out clears the pad
+tier on 18 of 21 hands; the default one is among the three that wipe on the
+first `map01` pair. The one rest in reach, `dolk` P2[9] (the bed behind the
+inn's stair door), is the wrong answer: the walk to it crosses the castle's
+rolling regions at 17 HP and wiped on 14 of 21. Nothing on that route
+heals without a fight first, so the segment's pad tier is a draw on this
+anchor, not a defect to fix in the hand.
+
 ## Seeding
 
 The seed goes through the host's own resume path,
@@ -422,8 +486,9 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
 - The pad planner finds a crossing scene by trial, not by reading which side
   each of its doors lands on, and a crossing whose side is story state
   (`suimon`'s water gate `0x27B`) needs that beat played first.
-- The pad hand heals only with items it already carries; it does not buy
-  them, rest at an inn, or use magic.
+- The pad hand heals only with items it already carries and with a free
+  or affordable rest in a scene that rolls no encounters; it does not buy
+  items or use magic.
 - Routes follow `0x3F` names and FMV hand-offs, and prefer walk-on bands. A
   transport an entry script spawns on a story flag (`map01`'s P1[0] spawns
   the P2[31] / P2[32] flights on `0x2C3` / `0x2C5`; `station`'s spawns the
@@ -447,6 +512,11 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   is drained (the controller, P1[4], wants `0x26F`, the Water Gate key, whose
   one clean setter is `dolk2` P2[7], after Caruban), and `rikuroa`'s first
   arrival (P2[43]) turns the party back and `map01` P2[14] carries it to
-  `cave01`, a later milestone. The chapter-1 anchors come from separate
-  sessions (the `rim_elm_restored` state has not entered `dolk`), so the
-  story state that opened the way in the retail run is not in the seed.
+  `cave01`, a later milestone. From there the one crossing left is
+  `keikoku`'s west mouth, and its west lane is held: P2[7] at `(42, 89)`
+  walks the party back until `0x142`, the Caruban beat, is set. No walk
+  opened the way in the retail run either: the anchor, `vell_fog_field`, was
+  made by poking the `vell` door tile from a state standing outside Rim Elm
+  at `(96, 25)` (the scenario catalogue says so), and its flags over that
+  state are `vell`'s own entry script's. The milestone is a seated-tier
+  waypoint, not a place a pad can reach at that story point.

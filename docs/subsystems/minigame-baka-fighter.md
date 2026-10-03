@@ -819,12 +819,18 @@ the same `(widget, x, y, brightness, size)` tuple, and both hosts consume
 those. The `POLY_GT4` assembly on top -
 `engine-core::baka_fighter::hud_widget_quad` - reaches the **browser** duel page
 through `LegaiaMinigames::baka_hud_quad_json`, which is what supplies that
-page's widget corners and its inclusive UV span. The play window still draws
-each `ChromeDraw` as font text, because no PROT 1203 art page is resident in
-engine VRAM; the blocker there is a texel source, not a quad sink
-(`engine-ui::screen_prim::ScreenQuad` carries POLY_GT4 corners, per-vertex
-gouraud, CLUT/texpage, ABR and an ordering-table bucket, and both hosts already
-draw its `build_geometry` output).
+page's widget corners and its inclusive UV span. The two play hosts (the
+native window and the browser play page) draw the same quads against the
+**duel VRAM**, which already carries the PROT 1203 art pages
+(`BakaDuelAssets::vram`): `BakaDuelSurface::hud_quads` runs every cabinet
+cell (`FUN_801D5ED0(x, y, widget, brightness, 0x1000)` - the attract prompt,
+"PLAYER SELECT", the "NEXT GAME / PAY OUT" sheet) and every `ChromeDraw` (the
+title card, the ROUND banner, the countdown, glyph draws paged through
+`glyph_u` on a copy of widget 5) through `hud_widget_quad`, and
+`engine-ui::ui_baka_strips::baka_hud_prims` links them at OT bucket `3` as
+screen primitives. Font labels (`chrome_labels`, `choice_sheet_labels`)
+remain only as the fallback for a frame whose duel VRAM is not resident. The
+duel HUD's digit strips are still font glyphs at the ported pens.
 
 The emitter's half-extent is `((cell * scale) >> 13) * size >> 12` with **both**
 shifts rounding toward zero, over the span `x - hw ..= x + hw - 1`. A host that

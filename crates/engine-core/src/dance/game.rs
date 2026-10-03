@@ -516,20 +516,46 @@ impl DanceGame {
         out
     }
 
-    /// The full per-frame HUD **quad** list: the score-box frames
-    /// ([`DanceGame::hud_quads`]) plus, per [`DanceGame::hud_draws`] element,
-    /// the style-A digit run for each score readout and the `Lv.` label +
-    /// digit pair (with the style-B narrow gauge counter beside it) for each
-    /// gauge readout. This is the textured-quad half of the HUD driver frame;
-    /// which glyph each quad samples is carried in its patched `uv`, so a host
-    /// without the dance sprite page resident still receives the retail
-    /// geometry + gouraud colours.
+    /// The full per-frame HUD **quad** list, in retail's emission order: per
+    /// [`DanceGame::hud_draws`] element, the style-A digit run for each score
+    /// readout, the score-box frame for each box ([`DanceGame::hud_quads`]'s
+    /// quad), and the `Lv.` label + digit pair (with the style-B narrow gauge
+    /// counter beside it) for each gauge readout. This is the textured-quad
+    /// half of the HUD driver frame; which glyph each quad samples is carried
+    /// in its patched `uv`, so a host without the dance sprite page resident
+    /// still receives the retail geometry + gouraud colours.
+    ///
+    /// The order is load-bearing. `FUN_801d231c` emits the three digit runs
+    /// (`jal 0x801d32f8` at `0x801D23D0..0x801D2428`) **before** the three box
+    /// frames (`jal 0x801d2f38` at `0x801D2440..0x801D247C`), and the widget
+    /// emitter links every quad into one ordering-table bucket with `AddPrim`
+    /// (`jal 0x8003d2c4` at `0x801D32D8`), which prepends - so the frames draw
+    /// first and the digits land on top of their opaque interiors. Emitting
+    /// the frames first, as this list once did, hid every score under its box
+    /// on both hosts.
     pub fn hud_draw_quads(&self, rival_hud: bool) -> Vec<DanceHudQuad> {
-        let mut out = self.hud_quads(rival_hud);
+        let boxed = self
+            .widgets
+            .get(DANCE_SCORE_BOX_WIDGET as usize)
+            .map(|(w, a)| (*w, *a));
+        let mut out = Vec::new();
         for d in self.hud_draws(rival_hud) {
             match d {
                 DanceHudDraw::Score { x, y, value, .. } => {
                     out.extend(self.number_quads(false, value, x, y));
+                }
+                DanceHudDraw::ScoreBox { x, y } => {
+                    if let Some((w, abr)) = boxed {
+                        out.push(dance_hud_widget_quad(
+                            &w,
+                            abr,
+                            x,
+                            y,
+                            DANCE_SCORE_BOX_WIDGET,
+                            DANCE_HUD_BRIGHTNESS,
+                            0x1000,
+                        ));
+                    }
                 }
                 DanceHudDraw::Gauge { x, y, value, .. } => {
                     out.extend(self.gauge_readout_quads(value, x, y));

@@ -156,17 +156,12 @@ fn play_render_state_matches_native_field_pipeline() {
         );
 
         // The scene-ANM bundle the poses come from must be the one the native
-        // window resolves (entry-major, descriptor-seed [3,5,6,7] minor).
-        let native_bundle = scene.entries.iter().find_map(|e| {
-            [3usize, 5, 6, 7].into_iter().find_map(|desc| {
-                legaia_asset::player_anm::find_in_entry(&e.bytes, desc)
-                    .into_iter()
-                    .next()
-                    .map(|b| (e.idx, desc, b))
-            })
-        });
+        // window resolves (`find_scene_anm_bundle`, over the shared
+        // `npc_catalog::scene_anm_bundle`: container sections entry-major,
+        // then a DATA_FIELD chunk).
+        let native_bundle = legaia_engine_core::npc_catalog::scene_anm_prot(scene);
         match (&native_bundle, npcs.anm_prot) {
-            (Some((idx, _, _)), Some(prot)) => assert_eq!(
+            (Some(idx), Some(prot)) => assert_eq!(
                 *idx, prot,
                 "{name}: catalog resolves the ANM bundle from a different PROT \
                  entry than the native window"

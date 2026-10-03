@@ -543,10 +543,11 @@ fn the_cupboard_opens_on_interact_grants_once_and_closes_on_dismiss() {
     }
 }
 
-/// A prop whose bind names no animation (`anim_id == 0`) has no entry in the
-/// bank at all, so the cheap unposed draw path is unchanged; and a prop whose
-/// spawn pass holds it and whose body plays nothing (the locked drawer, the
-/// clock) never leaves frame 0 no matter how long the clips tick.
+/// A prop whose spawn pass holds it and whose body plays nothing (the locked
+/// drawer, the clock) never leaves frame 0 no matter how long the clips tick.
+/// An unposed bind (`anim_id == 0`) is in this set too - it is in the bank as
+/// a touch / interact target with a one-frame clip, and both hosts' draw
+/// paths pose only `anim_id != 0` placements.
 #[test]
 fn held_props_with_no_play_command_never_move() {
     let Some(index) = gate() else { return };
@@ -589,7 +590,11 @@ fn a_prop_whose_spawn_pass_does_not_hold_it_loops() {
         .bank
         .props
         .iter()
-        .filter(|(_, s)| s.anim.flags & ANIM_HOLD == 0 && !s.program.animates())
+        // Posed props only: an unposed bind (`anim_id == 0`) is in the bank
+        // as a touch / interact target, with a one-frame stand-in clip.
+        .filter(|(_, s)| {
+            s.anim.anim_id != 0 && s.anim.flags & ANIM_HOLD == 0 && !s.program.animates()
+        })
         .map(|(a, _)| *a)
         .collect();
     assert!(

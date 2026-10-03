@@ -32,7 +32,9 @@ impl PlayWindowApp {
         self.screenshot.as_ref().is_some_and(|sc| {
             sc.phase_gate.as_ref().is_some_and(|g| g.met(world))
                 || sc.script_gate.as_ref().is_some_and(|g| g.met(world))
-                || sc.battle_drive.as_ref().is_some_and(|d| d.reached(world))
+                || sc.battle_drive.as_ref().is_some_and(|d| {
+                    d.reached(world) && sc.battle_drive_held.get() >= d.hold_ticks()
+                })
         })
     }
 
@@ -48,6 +50,14 @@ impl PlayWindowApp {
         // ticks, at most four a frame, and a backlog past four dropped rather
         // than carried - the browser page drains through the same kernel.
         let ticks = self.sim_stepper.drain(dt.as_secs_f64());
+        // A `--screenshot` capture is tick-locked: one tick per redraw,
+        // whatever the wall clock did. The draw pass is not inert - the fog
+        // pool's render step ages the pool the next tick's spawns read, and
+        // those spawns draw the world `rand()` stream - so a wall-paced
+        // capture ran a fogged scene on a stream that moved with machine
+        // load, and the retail comparison's frame landed on a different
+        // fight from its headless seed (`BootSession::fog_render_tick`).
+        let ticks = if self.screenshot.is_some() { 1 } else { ticks };
         // In-flow windowed cutscene: when the field VM's FMV-trigger
         // op flips the world into SceneMode::Cutscene and the STR has
         // decoded, suspend world ticks and play the video in-window.
@@ -346,13 +356,32 @@ impl PlayWindowApp {
             // there is nothing host-side to keep in sync.
             // A `LEGAIA_BATTLE_DRIVE` capture walks the fight's pad path
             // itself, arming the drive's world seed on the first battle tick.
+            // The capture's mid-fight bars, on the first battle tick - the
+            // point the headless seed puts them on.
+            if let Some(sc) = self.screenshot.as_ref()
+                && self.session.host.world.mode == SceneMode::Battle
+                && !sc.battle_bars.is_empty()
+                && !sc.battle_bars_seeded.replace(true)
+            {
+                legaia_engine_shell::retail_compare_battle::apply_bar_seeds(
+                    &mut self.session.host.world,
+                    &sc.battle_bars,
+                );
+            }
             let field_pad = match self.screenshot.as_ref() {
                 Some(sc) if let Some(drive) = sc.battle_drive => {
                     let world = &mut self.session.host.world;
                     if world.mode == SceneMode::Battle && !sc.battle_drive_primed.replace(true) {
                         drive.prime(world);
                     }
-                    drive.pad_word_at(world, self.tick_no)
+                    drive.steer(world);
+                    // A reached phase is held with no input until it is
+                    // sampled (`BattleDrive::hold_ticks`).
+                    if drive.reached(world) {
+                        0
+                    } else {
+                        drive.pad_word_at(world, self.tick_no)
+                    }
                 }
                 _ => field_pad,
             };
@@ -396,6 +425,16 @@ impl PlayWindowApp {
                 }
                 Ok(_) => {}
                 Err(e) => log::error!("session tick: {e:#}"),
+            }
+            if let Some(sc) = self.screenshot.as_ref()
+                && let Some(drive) = sc.battle_drive
+            {
+                let held = if drive.reached(&self.session.host.world) {
+                    sc.battle_drive_held.get() + 1
+                } else {
+                    0
+                };
+                sc.battle_drive_held.set(held);
             }
             // The Field <-> Battle mode edge, latched on the tick that
             // crossed it. The battle load it runs installs gameplay state as
@@ -613,7 +652,7 @@ impl PlayWindowApp {
             // is still mutable; the `&self` draw passes read the committed
             // pen/rect off the record.
             self.sync_text_balloon();
-            // ANIMATE cues (op `0x4B` for NPCs, `A2 F8` ExecMove for the
+            // clip cues (`A2` / `4C 51` for NPCs, `A2 F8` ExecMove for the
             // player), drained every tick in every mode through the shared
             // kernel. This used to run inside the draw pass and only in
             // `SceneMode::Field`, so a cue raised anywhere else waited in the
@@ -722,76 +761,86 @@ impl PlayWindowApp {
         // three op-0x45 beats in map01's opening record (snap to the high
         // aerial shot, then the `45 0B .. apply 900` ease-out descent), driven
         // through the same camera globals as the field cutscenes. Gate on a
-        // staged param so a world-map beat record WITHOUT camera beats (the
-        // Drake mist-wall force-walk bands) keeps the ordinary walk camera.
-        let cutscene_cam = if self.session.host.world.cutscene_timeline_active()
-            && (self.session.host.world.mode != SceneMode::WorldMap
-                || !self.session.host.world.camera.state.params.is_empty())
-        {
-            let (focus, pitch, yaw, roll, h, tr_eye) = self.cutscene_view();
-            // Glide pacing from the op-`0x45` `apply_trigger` (retail
-            // `FUN_801DE084` → `FUN_801DB510`): a Configure with `apply == 0`
-            // commits its camera targets IMMEDIATELY (snap cut), while
-            // `apply > 0` stages them and the per-frame mover glides the live
-            // globals there over exactly `apply` frames - the mover law
-            // (curve per mode nibble, 1 apply unit = 1 sim tick) is
-            // capture-pinned; see `CutsceneCameraInterp`. opdeene's beats mix
-            // both: the entry shot snaps (`apply 0`), the mid-prologue grove
-            // drift glides (`apply 840`, paired with a 760-frame WaitFrames),
-            // and the crater-rim tableau dolly glides (`apply 480`) WHILE the
-            // narration text scrolls - the "3D keeps playing under the
-            // crawl" retail behaviour. The interp arms glides PER COMPONENT
-            // on target change (see `CutsceneCameraInterp::glide`), so the
-            // H-only re-poke one frame after the tableau beat cannot snap
-            // the in-flight dolly (the earlier whole-tuple ease-rate model
-            // did exactly that, tele-porting the eye into the crater-rim
-            // geometry - the "opening shot buried in a gold wall" report).
-            //
-            // Advanced in RETAIL DISPLAY-FRAME time, not render-frame or
-            // sim-tick time, through the shared kernel
-            // (`frame_step::CutsceneGlide`): retail's mover (`FUN_801DC0BC`)
-            // credits one unit per display frame, so `apply` is a duration in
-            // display frames and a redraw on which no tick ran advances the
-            // glide by nothing. The kernel also replays this frame's snap
-            // beats first (retail order: the mover snaps to an `apply 0` beat,
-            // then glides from there when a same-tick follow-up beat
-            // re-stages - the map01 fly-in pair).
-            let target = legaia_engine_vm::psx_camera::FieldCameraView {
-                focus,
-                pitch,
-                yaw,
-                roll,
-                h,
-                tr_eye,
-            };
-            let v = self.cutscene_glide.advance(
-                &self.session.host.world,
-                &mut self.session.camera,
-                target,
-            );
-            let out = (v.focus, v.pitch, v.yaw, v.roll, v.h, v.tr_eye);
-            let apply = self.session.host.world.camera.state.apply_trigger;
-            if std::env::var_os("LEGAIA_DIAG_CUTCAM").is_some() {
-                let w = &self.session.host.world;
-                eprintln!(
-                    "DIAG cutcam: frame {} apply {} target focus={focus:?} pitch={pitch:.3} \
+        // staged param (`camera_view::cutscene_owns_camera`) so a beat record
+        // WITHOUT camera beats - a field taunt, the Drake mist-wall
+        // force-walk bands - keeps the ordinary field / walk camera.
+        let cutscene_cam =
+            if legaia_engine_core::camera_view::cutscene_owns_camera(&self.session.host.world) {
+                let (focus, pitch, yaw, roll, h, tr_eye) = self.cutscene_view();
+                // Glide pacing from the op-`0x45` `apply_trigger` (retail
+                // `FUN_801DE084` → `FUN_801DB510`): a Configure with `apply == 0`
+                // commits its camera targets IMMEDIATELY (snap cut), while
+                // `apply > 0` stages them and the per-frame mover glides the live
+                // globals there over exactly `apply` frames - the mover law
+                // (curve per mode nibble, 1 apply unit = 1 sim tick) is
+                // capture-pinned; see `CutsceneCameraInterp`. opdeene's beats mix
+                // both: the entry shot snaps (`apply 0`), the mid-prologue grove
+                // drift glides (`apply 840`, paired with a 760-frame WaitFrames),
+                // and the crater-rim tableau dolly glides (`apply 480`) WHILE the
+                // narration text scrolls - the "3D keeps playing under the
+                // crawl" retail behaviour. The interp arms glides PER COMPONENT
+                // on target change (see `CutsceneCameraInterp::glide`), so the
+                // H-only re-poke one frame after the tableau beat cannot snap
+                // the in-flight dolly (the earlier whole-tuple ease-rate model
+                // did exactly that, tele-porting the eye into the crater-rim
+                // geometry - the "opening shot buried in a gold wall" report).
+                //
+                // Advanced in RETAIL DISPLAY-FRAME time, not render-frame or
+                // sim-tick time, through the shared kernel
+                // (`frame_step::CutsceneGlide`): retail's mover (`FUN_801DC0BC`)
+                // credits one unit per display frame, so `apply` is a duration in
+                // display frames and a redraw on which no tick ran advances the
+                // glide by nothing. The kernel also replays this frame's snap
+                // beats first (retail order: the mover snaps to an `apply 0` beat,
+                // then glides from there when a same-tick follow-up beat
+                // re-stages - the map01 fly-in pair).
+                let target = legaia_engine_vm::psx_camera::FieldCameraView {
+                    focus,
+                    pitch,
+                    yaw,
+                    roll,
+                    h,
+                    tr_eye,
+                };
+                let v = self.cutscene_glide.advance(
+                    &self.session.host.world,
+                    &mut self.session.camera,
+                    target,
+                );
+                let out = (v.focus, v.pitch, v.yaw, v.roll, v.h, v.tr_eye);
+                let apply = self.session.host.world.camera.state.apply_trigger;
+                if std::env::var_os("LEGAIA_DIAG_CUTCAM").is_some() {
+                    let w = &self.session.host.world;
+                    eprintln!(
+                        "DIAG cutcam: frame {} apply {} target focus={focus:?} pitch={pitch:.3} \
                      yaw={yaw:.3} roll={roll:.3} h={h} tr_eye={tr_eye:?} | eased focus={:?} \
                      pitch={:.3} yaw={:.3} roll={:.3} h={} tr_eye={:?} | params={:?}",
-                    w.frame, apply, out.0, out.1, out.2, out.3, out.4, out.5, w.camera.state.params
-                );
-            }
-            Some(out)
-        } else {
-            // Nothing is interpolating this frame, so a banked snap would
-            // move a pose no draw reads - drop them rather than let them
-            // land on the next shot.
-            self.cutscene_glide.idle(&mut self.session.camera);
-            None
-        };
+                        w.frame,
+                        apply,
+                        out.0,
+                        out.1,
+                        out.2,
+                        out.3,
+                        out.4,
+                        out.5,
+                        w.camera.state.params
+                    );
+                }
+                Some(out)
+            } else {
+                // Nothing is interpolating this frame, so a banked snap would
+                // move a pose no draw reads - drop them rather than let them
+                // land on the next shot.
+                self.cutscene_glide.idle(&mut self.session.camera);
+                None
+            };
         // VDF vertex morphs (jou's flesh-ground pulse, rikuroa's generator
         // sacs): rebuild the pack meshes whose morph deltas moved this frame
         // (collected outside the renderer borrow; uploaded inside it below).
         let field_morph_rebuilds = self.take_field_morph_rebuilds();
+        // Op-`0x4B` morphs on placed NPCs: the clip-less slots' re-staged
+        // static meshes (the clip-driven ones re-skin in the pose pass).
+        let npc_morph_rebuilds = self.take_npc_morph_rebuilds();
         // Field-to-battle intro: advance the transition emitter and take both
         // it and its screen-space primitives out of `self`, before the
         // renderer borrow below - the same borrow-window pattern as the morph
@@ -1233,6 +1282,37 @@ impl PlayWindowApp {
                     self.field_morph_live.insert(*mesh_idx, m);
                 }
             }
+            for (slot, halves) in npc_morph_rebuilds {
+                let Some((vmesh, cmesh)) = halves else {
+                    self.npc_morph_static.remove(&slot);
+                    continue;
+                };
+                let vm = (!vmesh.indices.is_empty())
+                    .then(|| {
+                        r.upload_vram_mesh(
+                            &vmesh.positions,
+                            &vmesh.uvs,
+                            &vmesh.cba_tsb,
+                            &vmesh.normals,
+                            &vmesh.colors,
+                            &vmesh.indices,
+                        )
+                        .ok()
+                    })
+                    .flatten();
+                let cm = (!cmesh.is_empty())
+                    .then(|| {
+                        r.upload_color_mesh_blended(
+                            &cmesh.positions,
+                            &cmesh.colors,
+                            &cmesh.indices,
+                            &cmesh.blend,
+                        )
+                        .ok()
+                    })
+                    .flatten();
+                self.npc_morph_static.insert(slot, (vm, cm));
+            }
 
             // Field-NPC clip playback: advance each placed NPC's looping ANM
             // clip and draw its posed mesh halves.
@@ -1264,7 +1344,7 @@ impl PlayWindowApp {
             // render, so the draw pass below can look its mesh up in the cache.
             let mut npc_frames: Vec<(u8, usize)> = Vec::new();
             if self.session.host.world.field_npc_clips_advance() {
-                // (The op-`0x4B` / `A2 F8` cue drain that re-targets these
+                // (The `A2` / `4C 51` cue drain that re-targets these
                 // players runs per sim tick in the loop above -
                 // `Self::drain_anim_cues`.)
                 let verify = std::env::var_os("LEGAIA_POSE_CACHE_VERIFY").is_some();
@@ -1312,6 +1392,25 @@ impl PlayWindowApp {
                     if verify {
                         verify_poses.insert(key, pose.bone_outputs.clone());
                     }
+                    // An op-`0x4B` morph re-stages the mesh before the
+                    // skin (`FUN_8001C604` runs per group ahead of the
+                    // bone transform); a morph change drops the slot's
+                    // cache entries (`take_npc_morph_rebuilds`).
+                    let morphed = world.npc_morphed_tmd(*slot, tmd);
+                    let tmd = morphed.as_ref().unwrap_or(tmd);
+                    // The retail count-equality contract: an actor draws as
+                    // many objects as its clip has bones. A slot bound at
+                    // upload was already cut; one whose first clip came from
+                    // a later cue is cut here.
+                    let cut;
+                    let tmd = if tmd.objects.len() > pose.bone_outputs.len() {
+                        let mut t = tmd.clone();
+                        t.objects.truncate(pose.bone_outputs.len());
+                        cut = t;
+                        &cut
+                    } else {
+                        tmd
+                    };
                     let vmesh =
                         legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(tmd, raw, &pose.bone_outputs);
                     let cmesh =
@@ -1997,7 +2096,12 @@ impl PlayWindowApp {
                             },
                         };
                         let model = Mat4::from_translation(Vec3::new(x as f32, y, z as f32)) * rot;
-                        let posed = npc_posed.get(&d.slot);
+                        // A clip-less NPC's op-`0x4B` morph re-stages
+                        // its static mesh (`npc_morph_static`).
+                        let posed = npc_posed
+                            .get(&d.slot)
+                            .copied()
+                            .or_else(|| self.npc_morph_static.get(&d.slot));
                         match (posed.and_then(|p| p.0.as_ref()), d.mesh_idx) {
                             (Some(mesh), _) => draws.push(SceneDraw {
                                 mesh,
@@ -2855,6 +2959,10 @@ impl PlayWindowApp {
             // retail's own quads on the same page, through the shared
             // `ui_dance::dance_hud_prims` the browser play page emits with.
             screen_prims.extend(self.dance_hud_prims());
+            // The Baka cabinet's and round chrome's widgets on the duel
+            // VRAM's PROT 1203 pages (`baka_hud_prims`), the browser play
+            // page's twin.
+            screen_prims.extend(self.baka_hud_prims());
             // The slot machine's paylines, off the machine's own ported pass
             // and projection - the segments both browser pages stroke.
             screen_prims.extend(self.slot_payline_screen_prims());

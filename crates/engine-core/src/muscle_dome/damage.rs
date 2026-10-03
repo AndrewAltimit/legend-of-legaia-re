@@ -127,6 +127,12 @@ impl DomeDamageModel {
         self.rng
     }
 
+    /// Replace the `rand()` cursor - how a host lends its own stream in
+    /// ([`MuscleDomeSession::resolve_turn_on_stream`]).
+    pub fn set_rng_seed(&mut self, state: u32) {
+        self.rng = state;
+    }
+
     /// The last resolved turn's play-by-play.
     pub fn plays(&self) -> &[DomePlay] {
         &self.log
@@ -180,9 +186,9 @@ impl DomeDamageModel {
         let damage = {
             let rng = &mut self.rng;
             let rng3 = [
-                psyq_rand_step(rng),
-                psyq_rand_step(rng),
-                psyq_rand_step(rng),
+                world_rand(rng) as u16,
+                world_rand(rng) as u16,
+                world_rand(rng) as u16,
             ];
             let (att_roll, def_roll) = arts_physical_predamage_lazy(
                 power,
@@ -190,7 +196,7 @@ impl DomeDamageModel {
                 &actor(defender),
                 affinity_pct,
                 rng3,
-                || [psyq_rand_step(rng), psyq_rand_step(rng)],
+                || [world_rand(rng) as u16, world_rand(rng) as u16],
             );
             let finish = DamageFinish {
                 predamage: att_roll.saturating_sub(def_roll),
@@ -204,7 +210,7 @@ impl DomeDamageModel {
                 summon_power_pct: 100,
                 floor_rand: 0,
             };
-            damage_finish_lazy(&finish, || psyq_rand_step(rng)) as i32
+            damage_finish_lazy(&finish, || world_rand(rng) as u16) as i32
         };
         self.hp[defender] = (self.hp[defender] - damage).max(0);
         self.spirit[defender] = spirit_gauge_fill(

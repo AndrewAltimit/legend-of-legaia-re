@@ -424,6 +424,10 @@ pub struct BakaDuelAssets {
     pub cameo_bank: Option<legaia_asset::player_anm::PlayerAnmBundle>,
     /// The overlay's two-record blit table (`&DAT_801DBE84`), the wink.
     pub blit_rects: Vec<bo::BakaBlitRect>,
+    /// The overlay's 51-record HUD widget table (`DAT_801D7160`), which the
+    /// cabinet's and the round chrome's quads index
+    /// ([`crate::baka_fighter_chrome::hud_widget_quads`]).
+    pub hud_widgets: Vec<bo::BakaHudWidget>,
     /// The stage pack's TMDs `1` and `2` - the impact pair's mesh parts
     /// ([`crate::baka_impact_fx`] template B), by `model - 1`.
     pub impact_models: [Option<(legaia_tmd::Tmd, Vec<u8>)>; 2],
@@ -462,6 +466,7 @@ impl BakaDuelAssets {
             && let Ok(img) = legaia_asset::static_overlay::as_loaded(&raw, rec)
         {
             out.blit_rects = bo::parse_blit_rects(&img).unwrap_or_default();
+            out.hud_widgets = bo::parse_baka_hud(&img).unwrap_or_default();
         }
         let party_slots = read_prot(legaia_asset::battle_char_pack::PROT_ENTRY_INDEX as usize)
             .and_then(|raw| legaia_asset::battle_char_pack::parse_slots(&raw).ok());
@@ -1330,6 +1335,38 @@ impl BakaDuelSurface {
     /// The live scene, as the last [`Self::frame`] posed it.
     pub fn scene(&self) -> Option<&BakaDuelScene> {
         self.scene.as_ref()
+    }
+
+    /// Whether the duel VRAM ([`Self::vram`]) carries the HUD art the widget
+    /// table samples: a live scene, the PROT 1203 art pages decoded and the
+    /// overlay's widget table parsed. A host that draws against the duel
+    /// VRAM draws [`Self::hud_quads`] while this holds and its text labels
+    /// otherwise.
+    pub fn hud_art_resident(&self) -> bool {
+        self.scene.is_some()
+            && self
+                .assets
+                .as_ref()
+                .is_some_and(|a| !a.art.is_empty() && !a.hud_widgets.is_empty())
+    }
+
+    /// This frame's cabinet and round-chrome widget quads for `fight`
+    /// ([`crate::baka_fighter_chrome::hud_widget_quads`]), empty while the
+    /// art is not resident ([`Self::hud_art_resident`]). Both play hosts
+    /// turn them into screen primitives against the duel VRAM, which is
+    /// where the PROT 1203 pages the widgets index sit.
+    pub fn hud_quads(&self, fight: &BakaFight) -> Vec<crate::baka_fighter::HudWidgetQuad> {
+        if !self.hud_art_resident() {
+            return Vec::new();
+        }
+        let Some(assets) = self.assets.as_ref() else {
+            return Vec::new();
+        };
+        crate::baka_fighter_chrome::hud_widget_quads(
+            &assets.hud_widgets,
+            &fight.chrome_frame().draws,
+            &fight.cabinet_cells(),
+        )
     }
 
     /// The duel VRAM for the seated opponent.

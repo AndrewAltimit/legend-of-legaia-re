@@ -30,6 +30,26 @@ pub fn bios_rand_shape(state: u32) -> u32 {
     (state >> 16) & 0x7FFF
 }
 
+/// One raw step of the engine's **world** generator - the single stream
+/// `World::next_rng` advances and every engine stand-in for a retail
+/// `jal 0x80056798` draws from. Retail's `rand()` has one kernel seed shared
+/// by SCUS and every overlay, so a subsystem that keeps a private seed
+/// interleaves its draws differently from retail; lending this state in and
+/// out (see [`world_rand`]) is how a subsystem that cannot hold `&mut World`
+/// still draws in order on the one stream.
+pub fn world_lcg_step(state: u32) -> u32 {
+    state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223)
+}
+
+/// One retail-shaped `rand()` draw on a lent copy of the world stream:
+/// advance `state` by [`world_lcg_step`] and shape it through
+/// [`bios_rand_shape`] (`0..=0x7FFF`). The caller writes `state` back to the
+/// world after its draws.
+pub fn world_rand(state: &mut u32) -> u32 {
+    *state = world_lcg_step(*state);
+    bios_rand_shape(*state)
+}
+
 /// Spirit super-art damage. Hard-coded per battle-action state 0x3E / 0x46:
 /// `damage = ((target_hp * 7) / 5) + 8`, capped.
 ///

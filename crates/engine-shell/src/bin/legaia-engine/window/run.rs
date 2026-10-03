@@ -240,6 +240,14 @@ fn arm_requested_battle(session: &mut BootSession, spec: &str) {
              system-flag arm is replayed with the entry"
         );
     }
+    // The same record's op-0x35 words pick the fight's music - a scripted
+    // boss's event starts its theme and selects the battle sound set just
+    // before the entry op - so `--battle` replays them as well.
+    if world.replay_scripted_battle_score(row) {
+        log::info!(
+            "play-window: --battle {row} replays its record's BGM words (track start + sound set)"
+        );
+    }
     // `LEGAIA_BATTLE_STAGE=N[,K]` stamps the battle-stage variant the fight
     // is staged in (`_DAT_8007BD60 & 0x1F`) and, with `K`, battle init's
     // keep-object-1 byte (`_DAT_8007B64B`), for a fight entered without
@@ -588,6 +596,11 @@ pub(super) fn cmd_play_window_with_record(
             Some(session.host.world.mode)
         }
     };
+    // The overworld's per-placement entity markers are a port debug overlay
+    // (`WorldToggles::overworld_marker_overlay`, off by default): retail
+    // draws nothing over a town entrance.
+    session.host.world.toggles.overworld_marker_overlay =
+        std::env::var_os("LEGAIA_WORLD_MAP_MARKERS").is_some();
     let world_map = match resumed {
         Some(mode) => mode == legaia_engine_core::world::SceneMode::WorldMap,
         None => world_map,
@@ -1011,6 +1024,39 @@ pub(super) fn cmd_play_window_with_record(
         } else if session.host.world.mode == legaia_engine_core::world::SceneMode::Battle {
             log::warn!("play-window: --battle skipped - a battle is already open");
         } else {
+            // `LEGAIA_BATTLE_SETTLE=N`: tick the landed field N frames with
+            // no input before the fight is armed - the retail comparison
+            // corpus's headless seed enters every battle from a field that
+            // settled `retail_compare::SETTLE_TICKS` first, and seeds the
+            // world stream after it. Armed at boot instead, the encounter
+            // transition owned the very first tick, so the scene's entry
+            // scripts (the overworld's ambient-particle gate among them)
+            // never ran and the two sides entered the same fight on
+            // different `rand()` streams. The ticks run here, before the
+            // window loop, with the session draining its own queues and
+            // running the fog pool's render step as the headless seed does.
+            if let Some(n) = std::env::var("LEGAIA_BATTLE_SETTLE")
+                .ok()
+                .and_then(|s| s.trim().parse::<u32>().ok())
+            {
+                session.set_host_drains_queues(false);
+                for _ in 0..n {
+                    if let Err(e) = session.tick() {
+                        log::error!("play-window: LEGAIA_BATTLE_SETTLE tick: {e:#}");
+                        break;
+                    }
+                    session.fog_render_tick();
+                }
+                session.set_host_drains_queues(true);
+                // The settle can run a script that re-seats the present
+                // party (a scripted duel's entry); the headless seed installs
+                // the fight's roster after its settle, so the child does too.
+                if let Some(slots) = party.and_then(|p| parse_party_spec(p).ok())
+                    && slots != session.host.world.party.active_party
+                {
+                    session.host.world.set_active_party(slots);
+                }
+            }
             arm_requested_battle(&mut session, spec);
         }
     }
@@ -1381,6 +1427,8 @@ pub(super) fn cmd_play_window_with_record(
         field_npc_draws: Vec::new(),
         npc_clip_players: std::collections::HashMap::new(),
         npc_anim_srcs: std::collections::HashMap::new(),
+        npc_rest_srcs: std::collections::HashMap::new(),
+        npc_morph_static: std::collections::HashMap::new(),
         npc_pose_cache: std::collections::HashMap::new(),
         npc_pose_verify: std::collections::HashMap::new(),
         npc_anim_bundles: (None, None),

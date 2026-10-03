@@ -1990,8 +1990,9 @@ pub trait FieldHost {
         let _ = (text_buf, script_id);
     }
 
-    /// Op 0x4C outer-nibble-C sub-1 - reset every entry in the global
-    /// "trigger flag" array based on per-record flags.
+    /// Op 0x4C outer-nibble-C sub-1 - reset every fog region's enable byte
+    /// from its story flag (the MAN section-4 table the fog spawner
+    /// `FUN_801D629C` searches).
     ///
     /// 1-byte instruction `[4C, 0xC1]`. The original walks the
     /// `_DAT_80073ED8` record array (count `DAT_80073EDC`, stride `0xB`):

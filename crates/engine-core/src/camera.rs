@@ -417,9 +417,11 @@ pub struct ZoneFollow {
     /// globals (retail's scene control block `+0x18` / `+0x1C`,
     /// `*(0x801C6EA4)`), subtracted back out at the top of the next ease.
     pub shake_offset: [i32; 2],
-    /// PsyQ `rand()` state for the follow ease's shake draws. Retail draws
-    /// from the one global `rand` stream; the port keeps the camera's draws
-    /// on their own stream so a shake never perturbs gameplay RNG.
+    /// The `rand()` state the follow ease's shake draws from. Retail draws
+    /// from the one process-wide BIOS seed, so [`Camera::tick_on_stream`]
+    /// lends `World::rng_state` in here and takes it back after the tick;
+    /// only a bare [`Camera::tick`] (a test, a preview) draws on this copy
+    /// alone. A rest shake (`amplitude == 0`) draws nothing.
     shake_seed: u32,
     /// The focus pair (`_DAT_80089118` / `_DAT_80089120`) this follow
     /// camera left at the end of its previous tick. A mode-5 fixed shot
@@ -749,6 +751,16 @@ impl Camera {
         // load in this frame's `tick` reaches the emitter one frame later.
         world.fog.view_window = Some(self.zone.view_window);
         applied
+    }
+
+    /// [`Self::tick`] on the world's `rand()` stream: the follow ease's shake
+    /// pair draws from `World::rng_state` in tick order, as retail's
+    /// `FUN_801DB510` draws from the one BIOS seed. The shared
+    /// [`crate::frame_step::camera_after_world_tick`] runs this one.
+    pub fn tick_on_stream(&mut self, world: &mut World) {
+        self.zone.shake_seed = world.rng_state;
+        self.tick(world);
+        world.rng_state = self.zone.shake_seed;
     }
 
     /// Per-frame tick. Reads the world to update `eye` / `look_at` based on

@@ -293,6 +293,30 @@ pub fn object_binds(
     out
 }
 
+/// Flat MAN record -> the env-pack slots of every placed object whose
+/// footprint-anchor tile binds it: the meshes a bound object's op-`0x4B`
+/// morph lanes ([`crate::world::World::arm_field_morph`]) reach. One record
+/// can bind several placements (`rikuroa`'s Genesis tree is three objects on
+/// three records, each its own mesh).
+// REF: FUN_8003A55C
+pub fn object_record_pack_slots(
+    placements: &[Placement],
+    binds: &HashMap<(u8, u8), ObjectBind>,
+) -> std::collections::BTreeMap<u16, Vec<usize>> {
+    let mut out: std::collections::BTreeMap<u16, Vec<usize>> = Default::default();
+    for p in placements {
+        let (Some(pack), Some(bind)) = (p.pack_index, binds.get(&(p.anchor_col, p.anchor_row)))
+        else {
+            continue;
+        };
+        let slots = out.entry(u16::from(bind.record)).or_default();
+        if !slots.contains(&(pack as usize)) {
+            slots.push(pack as usize);
+        }
+    }
+    out
+}
+
 /// The animation id in MAN partition-0 record `index`'s header
 /// (`[u8 n][n*2 name bytes][u8 anim_id]`). `None` when the record or its header
 /// runs past the buffer.
@@ -544,6 +568,38 @@ pub fn retain_visible_placed_draws(
     });
 }
 
+/// Drop the overworld's story-hidden **placed landmarks** before they resolve
+/// to draws: the walk `.MAP`'s placed-flag records whose object-bind channel
+/// the spawn prologue parked at the off-map hide box.
+///
+/// The overworld draws its placed landmarks and its decoration sweep as one
+/// bind-less layer (no posing, no window ownership), so the draw-level
+/// [`retain_visible_placed_draws`] never runs there - but retail spawns the
+/// landmarks through the same `FUN_8003A55C` bind + prologue pre-run as a
+/// town, and draws the actor, not the table. map01's record 414 (pack mesh
+/// 31, the dome in the sea south of Rim Elm's gate) and record 349 (the
+/// golden bridge's second stamp, over the river) both open with `23 7F 7F`:
+/// a retail capture at the gate holds both actors at `(0x3FC0, 0x3FC0)`.
+///
+/// Only placed-flag records are tested; the decoration sweep (`FUN_801F69D8`)
+/// spawns no actor and runs no script, so it is never filtered.
+// REF: FUN_8003A55C (bind-time prologue seats the object's actor)
+pub fn retain_visible_landmark_placements(
+    placements: &mut Vec<Placement>,
+    binds: &HashMap<(u8, u8), ObjectBind>,
+    hidden_records: &HashSet<usize>,
+) {
+    if hidden_records.is_empty() {
+        return;
+    }
+    placements.retain(|p| {
+        p.flags & legaia_asset::field_objects::FLAG_PLACED == 0
+            || binds
+                .get(&(p.anchor_col, p.anchor_row))
+                .is_none_or(|b| !hidden_records.contains(&(b.record as usize)))
+    });
+}
+
 /// Per-draw uniform render scale of a placed-object list (parallel to
 /// `draws`): the bind record's `actor[+0x72]` as a factor (`0x1000` = `1.0`),
 /// `1.0` for a draw with no bind or no listed scale.
@@ -769,6 +825,15 @@ pub const PLAYER_ANCHOR_TARGET: u8 = 0xF8;
 /// stand-in. It only has to be finite: what it bounds is how long a script's
 /// end-latch spin waits, and a headless world has no clip to watch anyway.
 pub const PLAYER_CLIP_STANDIN_FRAMES: u16 = 15;
+
+/// The clip id a field NPC's cross-context cursor carries when a script
+/// reaches its `+0x62` before poking a clip and the world tracks no running
+/// clip for it (a headless world binds none). It is not a real move: any
+/// non-zero id makes [`PropAnim::tick`] advance the cursor, so the end latch
+/// lands once per wrap as the actor's looping idle clip would latch it, and
+/// a later `A2 <target> <clip>` poke always rebinds (the binder skips only an
+/// unchanged id).
+pub const NPC_CLIP_STANDIN_ID: u8 = 0xFF;
 
 /// The move id the player actor's `+0x5C` carries while the locomotion
 /// controller owns the clip. Ids `1`/`2` are the walk moves the field
@@ -1392,9 +1457,20 @@ pub struct PropAnimBank {
 }
 
 impl PropAnimBank {
-    /// Build the bank for a scene: one entry per posed placement (`anim_id !=
-    /// 0`), with its bind record's program run through the spawn prologue so
-    /// the prop starts in its authored rest state.
+    /// Build the bank for a scene: one entry per bound placement, with its
+    /// bind record's program run through the spawn prologue so the prop
+    /// starts in its authored rest state.
+    ///
+    /// An unposed bind (`anim_id == 0`) of the interact-gated class gets an
+    /// entry too. `FUN_8003A55C` spawns an actor for every bound cell and only
+    /// copies the header's anim byte into `+0x5C` (`0x8003A8DC`) - it never
+    /// branches on it - so such an object is still examined for its record:
+    /// `rikuroa` P0[2], the Genesis Tree, has no clip, and examining it after
+    /// Caruban is what spawns the P2[53] revival. Its stand-in clip never
+    /// draws: both hosts pose only `anim_id != 0` placements. An unposed
+    /// touch-class object stays with the walk-touch dispatch
+    /// ([`crate::world::FieldPropState::walk_touch`]), which resolves its
+    /// record's arm against the live flags at contact time.
     ///
     /// `clip` resolves an anim id to `(frame_count, scaled_step, step_div)`
     /// from the scene's ANM bundle (record `anim_id - 1`); a prop whose clip
@@ -1425,14 +1501,17 @@ impl PropAnimBank {
             let Some(bind) = binds.get(&anchor) else {
                 continue;
             };
-            if bind.anim_id == 0 {
-                continue;
-            }
             let (frames, scaled, div) = bank.clip_meta(bind.anim_id).unwrap_or((1, false, 0));
             let Some((record, pc0)) = partition0_record(man_file, man, bind.record as usize) else {
                 continue;
             };
             let program = decode_prop_program(record, pc0);
+            // An unposed bind enters as an examine target only: the touch
+            // class of a clip-less object (a door marker) is the walk-touch
+            // dispatch's, which resolves its record against the live flags.
+            if bind.anim_id == 0 && program.spawn_cflags & 0x4002_0000 == 0 {
+                continue;
+            }
             let mut anim = PropAnim::spawned(bind.anim_id, frames, scaled, div);
             for c in &program.spawn {
                 c.apply(&mut anim);
@@ -1533,6 +1612,26 @@ impl PropAnimBank {
         self.actor_clips
             .entry(PLAYER_ANCHOR_TARGET)
             .or_insert_with(|| PropAnim::cross_context(LOCOMOTION_MOVE_ID, locomotion_frames))
+    }
+
+    /// The cursor of a cross-context `target` that is not the player, created
+    /// on first use from `live` - the actor's own running clip, when the
+    /// world tracks one - else in the actor-template state over
+    /// `fallback_frames`, under [`NPC_CLIP_STANDIN_ID`]. Every spawned actor
+    /// loops its clip from the template `+0x62`, so its end latch lands once
+    /// per wrap and a script may clear and wait on it without poking a clip
+    /// first: `vozz` P1[7], the Genesis Tree talk, raises actor `0x06`'s clamp
+    /// (`AB 06 03`), clears its latch and spins on it before the scene goes
+    /// on.
+    pub fn actor_clip_or_live(
+        &mut self,
+        target: u8,
+        live: Option<PropAnim>,
+        fallback_frames: u16,
+    ) -> &mut PropAnim {
+        self.actor_clips.entry(target).or_insert_with(|| {
+            live.unwrap_or_else(|| PropAnim::cross_context(NPC_CLIP_STANDIN_ID, fallback_frames))
+        })
     }
 
     /// Bind a cross-context clip poke - `A2 <target> <clip>`, retail's op-`0x22`

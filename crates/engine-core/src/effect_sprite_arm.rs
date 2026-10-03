@@ -72,6 +72,14 @@ pub fn sprite_arm_vram_mesh(s: &ActorState) -> Option<legaia_tmd::mesh::VramMesh
 
 /// The sprite-arm draw of a part, in the same `(world_pos, rot)` form a
 /// ribbon or a mesh part takes ([`crate::effect_ribbon::RibbonDraw`]).
+///
+/// The node's matrix is its rotation banks `+0x24 / +0x26 / +0x28` alone
+/// (`FUN_80026988` on `actor + 0x24`); `+0x22` is not a rotation here - on a
+/// keyframe-pose node it is the blend cursor.
+///
+/// This is the single-quad draw of a node on the ordinary model path. A node
+/// in the keyframe-mesh mode draws one quad per posed part instead
+/// ([`sprite_arm_draws`]).
 pub fn sprite_arm_draw(s: &ActorState) -> Option<crate::effect_ribbon::RibbonDraw> {
     const A: f32 = std::f32::consts::TAU / 4096.0;
     let mesh = sprite_arm_vram_mesh(s)?;
@@ -80,11 +88,66 @@ pub fn sprite_arm_draw(s: &ActorState) -> Option<crate::effect_ribbon::RibbonDra
         world_pos: [s.world_x as f32, s.world_y as f32, s.world_z as f32],
         rot: [
             (s.render_24 as f32) * A,
-            (s.y_rot.wrapping_add(s.render_26) as f32) * A,
+            (s.render_26 as f32) * A,
             (s.render_28 as f32) * A,
         ],
         flags_52: s.field_52,
     })
+}
+
+/// Every quad a sprite-arm node draws.
+///
+/// Case 4 points **every** slot of the node's model list at the one built
+/// quad (`0x8001B08C..0x8001B0B4`), and on falling into the model draw it
+/// tests `+0x5A == 6` (`0x8001B160`): a node in the keyframe-mesh mode -
+/// seated by move-VM op `0x3C`, which also sets the list's count - is drawn
+/// by the animated renderer `FUN_8001B964` with `+0x4C` as its clip, so slot
+/// `i` is the quad posed by part `i`'s blended keyframe
+/// ([`legaia_engine_vm::move_vm::keyframe_pose_entries`], decoded as
+/// `FUN_8001BE80` does): rotated `Rz * Ry * Rx` about its own centre, then
+/// translated, all under the node's render scale. `map01`'s mist puffs are
+/// this shape - eight sheets per node, spread across the ridge line by the
+/// keyframes, where the ordinary path would stack them on the node.
+///
+/// A keyframe-mesh node without a seated pose block draws nothing (retail's
+/// renderer refuses a clip whose part count is not the list's). Any other
+/// sprite-arm node is the one quad of [`sprite_arm_draw`].
+///
+/// PORT: FUN_8001ADA4 (`0x8001B160..0x8001B19C`, the `+0x5A == 6` hand-off
+/// to the animated renderer)
+/// PORT: FUN_8001B964 (the per-part pose of a sprite-arm node's slots)
+pub fn sprite_arm_draws(s: &ActorState) -> Vec<crate::effect_ribbon::RibbonDraw> {
+    let Some(base) = sprite_arm_draw(s) else {
+        return Vec::new();
+    };
+    if s.move_submode != 6 {
+        return vec![base];
+    }
+    const A: f32 = std::f32::consts::TAU / 4096.0;
+    let k = f32::from(s.field_72) / 4096.0;
+    legaia_engine_vm::move_vm::keyframe_pose_entries(s)
+        .iter()
+        .map(|entry| {
+            let t = legaia_asset::player_anm::BoneTransform::decode(entry);
+            let (sx, cx) = ((t.r_x as f32) * A).sin_cos();
+            let (sy, cy) = ((t.r_y as f32) * A).sin_cos();
+            let (sz, cz) = ((t.r_z as f32) * A).sin_cos();
+            let mut d = base.clone();
+            for p in &mut d.mesh.positions {
+                let [x, y, z] = *p;
+                // Rx, then Ry, then Rz (the product `Rz * Ry * Rx`).
+                let (y, z) = (y * cx - z * sx, y * sx + z * cx);
+                let (x, z) = (x * cy + z * sy, -x * sy + z * cy);
+                let (x, y) = (x * cz - y * sz, x * sz + y * cz);
+                *p = [
+                    x + t.t_x as f32 * k,
+                    y + t.t_y as f32 * k,
+                    z + t.t_z as f32 * k,
+                ];
+            }
+            d
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -133,6 +196,31 @@ mod tests {
         // `+0x78` bit 0 is forced on a non-zero mode byte, so the cue moves
         // the colour by less than one step toward black.
         assert_eq!(m.colors[0], [0x7F, 0x7F, 0x7F]);
+    }
+
+    #[test]
+    fn a_keyframe_pose_node_draws_one_quad_per_posed_part() {
+        let mut s = node();
+        s.field_72 = 0x1000;
+        assert_eq!(sprite_arm_draws(&s).len(), 1, "the ordinary path");
+        s.move_submode = 6;
+        assert!(
+            sprite_arm_draws(&s).is_empty(),
+            "mode 6 without a pose block draws nothing"
+        );
+        // Two parts, X = -256 and +128, no rotation.
+        s.keyframe_pose = vec![
+            [0, 0, 0, -256, 0, 64, 0, 0, 0, -256, 0, 64],
+            [0, 0, 0, 128, 0, 0, 0, 0, 0, 128, 0, 0],
+        ];
+        let d = sprite_arm_draws(&s);
+        assert_eq!(d.len(), 2);
+        assert_eq!(d[0].mesh.positions[0], [-256.0 - 32.0, -16.0, 64.0]);
+        assert_eq!(d[1].mesh.positions[3], [128.0 + 32.0, 16.0, 0.0]);
+        // The node's own matrix is its rotation banks; the blend cursor
+        // `+0x22` is not a rotation.
+        s.y_rot = 0x400;
+        assert_eq!(d[0].rot, sprite_arm_draws(&s)[0].rot);
     }
 
     #[test]

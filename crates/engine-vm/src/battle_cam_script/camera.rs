@@ -205,6 +205,13 @@ pub struct BattleCamera {
     /// first drive, so a camera created mid-action does not reset on its
     /// first frame.
     pub(super) last_active_commits: Option<u32>,
+    /// The camera's copy of the `rand()` stream. Retail draws the shake pair
+    /// (`FUN_801D9D30`), the strike-loop yaw coin (`FUN_8004E13C`'s party arm)
+    /// and the per-art track column (`ctx[+0x26D] = rand() % 2`) from the one
+    /// process-wide BIOS seed; [`drive_on_stream`] lends the world's state in
+    /// before the camera steps and takes it back after, so those draws land
+    /// on the world stream in the order the tick makes them.
+    pub(super) rand_state: u32,
 }
 
 /// [`BattleCamera`]'s per-art attack-camera state - retail's `ctx[+0x26D]` /
@@ -218,10 +225,6 @@ pub(super) struct AttackChannel {
     pub(super) ctx: crate::battle_attack_camera::AttackCamCtx,
     /// The acting actor's channels this frame.
     pub(super) actor: Option<AttackCamChannels>,
-    /// The `rand()` state the per-action cursor coin flip draws from.
-    /// Retail's `FUN_8004E13C` draws from the process-wide PsyQ `rand()`; the
-    /// engine keeps its own so a battle is reproducible.
-    pub(super) seed: u32,
 }
 
 /// The `FUN_801D9D30` shake, as the engine holds it.
@@ -243,19 +246,12 @@ pub(super) struct ShakeState {
     pub(super) offset: [i32; 2],
     /// Retail `_DAT_8007B630`.
     pub(super) amplitude: u32,
-    /// PsyQ `rand()` state (retail `FUN_80056798`'s seed).
-    pub(super) seed: u32,
 }
 
-/// Seed the shake RNG with something other than zero so the very first roll
-/// is not degenerate. Any constant works - retail's seed is the process-wide
-/// `rand()` state, which the engine does not share.
-pub(super) const SHAKE_SEED: u32 = 0x0BAD_5EED;
-
-/// Sibling seed for the per-action camera-track coin flip (retail's
-/// `FUN_8004E13C` draws it from the same shared `rand()`; the engine keeps a
-/// second stream so a shake and a swing angle are independently reproducible).
-pub(super) const ATTACK_CURSOR_SEED: u32 = 0x0CA3_5EED;
+/// The `rand()` state a camera holds when no world lends it one ([`drive`]
+/// rather than [`drive_on_stream`]): a disc-free preview or unit test. Any
+/// non-zero constant works.
+pub(super) const STANDALONE_RAND_SEED: u32 = 0x0BAD_5EED;
 
 /// One **measured** sample of retail's free-running battle azimuth, in 12-bit
 /// units - the yaw a mednafen battle save state reads while the fight idles at
@@ -400,6 +396,24 @@ pub fn drive(
     frames: u64,
     tracks: Option<&legaia_asset::battle_attack_camera_table::AttackCameraTracks>,
 ) {
+    let mut own = slot.as_ref().map_or(STANDALONE_RAND_SEED, |c| c.rand_state);
+    drive_on_stream(slot, active, inputs, frames, tracks, &mut own);
+}
+
+/// [`drive`] on a lent `rand()` stream: `rng` is copied into the camera before
+/// it steps and the advanced state is written back, so every camera draw is
+/// one draw on the caller's stream ([`crate::battle_formulas::world_rand`]).
+/// The world's battle tick passes `World::rng_state` here - retail has one
+/// `rand()` seed, and a private camera stream would interleave the battle's
+/// own draws differently from retail.
+pub fn drive_on_stream(
+    slot: &mut Option<BattleCamera>,
+    active: bool,
+    inputs: BattleCamInputs,
+    frames: u64,
+    tracks: Option<&legaia_asset::battle_attack_camera_table::AttackCameraTracks>,
+    rng: &mut u32,
+) {
     if !active {
         *slot = None;
         return;
@@ -412,6 +426,7 @@ pub fn drive(
     let cam = slot.get_or_insert_with(|| {
         BattleCamera::new_with_formation(entry, inputs.formation, inputs.entry_yaw, frames)
     });
+    cam.rand_state = *rng;
     if let Some(actor) = inputs.acting {
         cam.set_actor(actor);
     }
@@ -425,4 +440,5 @@ pub fn drive(
     cam.set_attack_channels(inputs.attack, tracks);
     cam.set_phase(inputs.phase);
     cam.advance_to(frames);
+    *rng = cam.rand_state;
 }

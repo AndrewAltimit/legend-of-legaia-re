@@ -97,8 +97,42 @@ fn map01_puff_column_matches_the_retail_population_and_drift() {
             still_seen |= z == SPAWN_Z;
             drift_seen |= z < SPAWN_Z - 400;
         }
-        // Everything the tree draws is on the draw-kind-4 list.
-        assert_eq!(world.ambient_sprite_arm_draws().len(), nodes.len());
+        // Everything the tree draws is on the draw-kind-4 list, eight sheets a
+        // node: op `0x3C` seats an eight-part keyframe pose, and the
+        // dispatcher hands a `+0x5A == 6` node to the animated renderer,
+        // which draws the one built quad once per part, posed (retail's
+        // walked table: eight page-`0x26` packets per live node).
+        let draws = world.ambient_sprite_arm_draws();
+        assert_eq!(draws.len(), nodes.len() * 8);
+        // At retail's size: the record's `1024 x 256` sheet (`+0xB4 / +0xB6`)
+        // at the seater's render scale `+0x72 = 0x1000`. A part seated with a
+        // zero scale collapses every corner onto the node and draws nothing.
+        let span = |d: &legaia_engine_core::effect_ribbon::RibbonDraw, axis: usize| {
+            let (lo, hi) = d
+                .mesh
+                .positions
+                .iter()
+                .fold((f32::MAX, f32::MIN), |(lo, hi), p| {
+                    (lo.min(p[axis]), hi.max(p[axis]))
+                });
+            (hi - lo, (hi + lo) / 2.0)
+        };
+        for d in &draws {
+            assert_eq!(
+                (span(d, 0).0, span(d, 1).0),
+                (1024.0, 256.0),
+                "puff sheet size"
+            );
+        }
+        // The eight sheets of a node stand apart along the ridge line, not
+        // stacked on the node: the pose's X keyframes run hundreds of units
+        // either side of it.
+        for node in draws.chunks(8) {
+            let xs: Vec<f32> = node.iter().map(|d| span(d, 0).1).collect();
+            let lo = xs.iter().copied().fold(f32::MAX, f32::min);
+            let hi = xs.iter().copied().fold(f32::MIN, f32::max);
+            assert!(hi - lo >= 256.0, "a node's sheets span only {}", hi - lo);
+        }
     }
     eprintln!(
         "[ok] map01 puff column: {min_n}..={max_n} live sprite-arm puffs (retail capture: 7)"

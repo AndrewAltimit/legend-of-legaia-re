@@ -59,7 +59,7 @@ impl WorldRng {
     /// The same LCG step [`World::next_rng`] runs. Named `step` rather than
     /// `next` so it cannot be mistaken for an iterator.
     pub fn step(&mut self) -> u32 {
-        self.0 = self.0.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        self.0 = legaia_engine_vm::battle_formulas::world_lcg_step(self.0);
         self.0
     }
 
@@ -420,6 +420,15 @@ impl World {
                     }
                     el.done = t.done;
                 }
+                // The emitter's handler (`FUN_801D6058`) is field-overlay code
+                // (PROT 0897, slot A at `0x801CE818`), and battle loads PROT
+                // 0898 over the same window: nothing runs it during a fight.
+                // It is parked, not retired - the field it belongs to comes
+                // back after the battle, and a return from battle is not the
+                // cold entry that would spawn a fresh one. Stepping it here
+                // drew the world `rand()` stream once a frame for the whole
+                // fight whenever the scene's script had raised the gate.
+                ElementKind::AmbientEmitter { .. } if self.mode == SceneMode::Battle => {}
                 ElementKind::AmbientEmitter { emitter, scene } => {
                     scene.dense = overworld;
                     // The burst span is the live visible-tile window, read
@@ -616,6 +625,39 @@ mod tests {
         // A second cold entry replaces rather than stacks.
         w.install_field_scene_elements(FieldEntryMode::Cold, span);
         assert_eq!(w.cutscene.elements.len(), 1);
+    }
+
+    #[test]
+    fn a_battle_parks_the_ambient_emitter_without_drawing_rand() {
+        let mut w = world();
+        w.spawn_ambient_emitter(AmbientScene {
+            enabled: true,
+            dense: false,
+            span: crate::cutscene_script_elements::SceneSpan {
+                x_min: -100,
+                x_max: 100,
+                y_min: -60,
+                y_max: 60,
+            },
+            camera_x: 0,
+            camera_y: 0,
+        });
+        w.mode = SceneMode::Battle;
+        let mut draws = 0u32;
+        for _ in 0..64 {
+            w.tick_cutscene_elements(1, || {
+                draws += 1;
+                0
+            });
+        }
+        assert_eq!(draws, 0, "field-overlay code does not run in a fight");
+        assert_eq!(w.cutscene.elements.len(), 1, "parked, not retired");
+        w.mode = SceneMode::Field;
+        w.tick_cutscene_elements(1, || {
+            draws += 1;
+            0
+        });
+        assert!(draws > 0, "the field it belongs to resumes it");
     }
 
     #[test]

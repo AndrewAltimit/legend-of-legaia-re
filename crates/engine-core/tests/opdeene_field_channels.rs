@@ -9,9 +9,9 @@
 //! 2. no placement channel's own script runs past the spawn pre-run: retail
 //!    runs a placement context only while a touch holds its `+0x10 & 0x100`
 //!    up (`FUN_8003BC08`), and a timeline poke does not raise it;
-//! 3. the timeline's pokes raise animate cues (op `0x4B` ANIMATE via
-//!    `World::npcs.anim_cues`) - the "characters doing things" signal the
-//!    windowed host consumes;
+//! 3. the timeline's op-`0x4B` pokes arm the poked actors' VDF morph lanes
+//!    (`World::npcs.morphs`) - the arm writes the `+0xB0` sub-entry bytes and
+//!    ramp velocities, never a clip, so it raises no clip re-target cue;
 //! 4. the timeline's cross-context pokes reach channel contexts (some
 //!    channel's flag word / local flags / position differs from spawn state).
 //!
@@ -95,13 +95,13 @@ fn opdeene_channels_spawn_and_execute() {
     // 2..4. Tick through the prologue and observe channel activity.
     let mut any_advanced = false;
     let mut any_poked = false;
-    let mut cue_count = 0usize;
+    let mut morph_count = 0usize;
     for _ in 0..2000 {
         if !host.world.cutscene_timeline_active() {
             break;
         }
         let _ = host.world.tick();
-        cue_count = cue_count.max(host.world.npcs.anim_cues.len());
+        morph_count = morph_count.max(host.world.npcs.morphs.len());
         for (c, s) in host.world.field_vm.channels.iter().zip(&spawn_state) {
             if c.pc != s.0 {
                 any_advanced = true;
@@ -122,12 +122,9 @@ fn opdeene_channels_spawn_and_execute() {
         any_poked,
         "at least one channel context changed state (timeline pokes / own script effects land)"
     );
-    eprintln!("[opdeene] channels poked; max simultaneous anim cues = {cue_count}");
-    // The animate cue is the key vignette signal; report but don't hard-require
-    // a specific count (the exact cue set depends on how far the timeline gets
-    // within its frame cap).
+    eprintln!("[opdeene] channels poked; morph-armed actors = {morph_count}");
     assert!(
-        cue_count > 0,
-        "timeline pokes raise animate cues for the windowed host"
+        morph_count > 0,
+        "the timeline's op-0x4B pokes arm the poked actors' morph lanes"
     );
 }

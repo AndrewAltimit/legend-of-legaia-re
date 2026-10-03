@@ -397,12 +397,17 @@ cover that side:
   level ramp on the next scene's entry.
 
 So each movie inherits the score's state: running, it plays on; stopped, the
-movie plays over silence. The records `town0d` (sub-ops 9, 5, `0xA`) and
-`jouine` (9, `0xA`, 5, 9, `0xA`) are not captured: sub-op 5 is
-`FUN_800267A8(0, n)` (arm `0x801E01A8`), which arms a timed ramp through
-`FUN_80062004`, and sub-op `0xA` waits on `_DAT_8007B750` bit 3 before it stops
-and releases the slot. Emulating that wait by hand is not the op, and no
-library state sits in either scene.
+movie plays over silence. The records `town0d` and `jouine` are not
+captured - no library state sits in `town0d`, and `jouine`'s trigger is the
+post-Cort record `P2[16]`, past every `jouine` state - but their words settle
+which side each lands on. `town0d`'s Songi record `P2[31]` runs `9` (`2034`),
+`5` (`120`), `0xA`, then a long scene before `fmv_id 6`; `jouine`'s `P2[16]`
+runs `9` (`2040`), `0xA`, `5` (`60`), then `9` (`2069`), a 60-frame wait, `0xA`,
+a 20-frame wait and `fmv_id 8`. In both the last word before the trigger is a
+commit that attaches a fresh track (the timed release fades and stops the
+track before it - [the timed release](#the-timed-release-is-a-scheduled-bgm-pause)),
+which is the `town01` shape the captures above measured sounding: both
+movies play over the score.
 
 The title attract is the exception. The attract underflow arm of the title
 tick releases the slot - `FUN_800266E0` + `FUN_80026520` at `0x801DDD7C` /
@@ -491,6 +496,16 @@ pinned by `engine-core/tests/battle_bank_bgm_disc.rs`); the evolved-Cort fight
 selects `8`. `World::swap_to_battle_bgm` follows the set: no swap and no stash
 for `-1`, the bank's track for `N > 0`, the configured theme for `0`.
 
+A direct entry into a scripted row (`play-window --battle <row>`, the retail
+comparison corpus's battle seed) runs the fight without the record that
+picks its music, so it replays the record's op-`0x35` words through the
+field VM's own handler (`World::replay_scripted_battle_score`): the last
+track start before the record's `3E FF <row>` with the control words after
+it, then the last sound-set selection
+(`man_field_scripts::walk_battle_entry_scores`). The Gaza, first-Nivora and
+evolved-Cort fights then play their event's theme instead of the scene
+entry's track and the default battle theme.
+
 Retail BGM changes are **hard cuts** (or short `SsSeqSetVol` ramps), so
 `start_inner` swaps tracks the faithful way: when a track is already playing it
 calls `AudioOut::swap_bgm`, which key-offs the outgoing sequencer (its notes
@@ -520,6 +535,28 @@ as exactly that: `World::tick` pushes a sub-op `2` BGM event on the expiry
 frame, and `SceneHost::route_bgm_events` hands it to either host's director.
 The raw expiry flag (`World::take_pending_sound_release`) stays for the mode
 seat's own reader.
+
+The arm half also starts the fade the stop finishes: `FUN_800267A8` hands the
+slot's sequence handle (`lh 0x536` = slot `+0xA`), the audio level
+`_DAT_8007B910` halved (`sll 15` / `sra 16`) and `deadline | 1` to
+`FUN_80062004` (`0x800267E4`), the `SsSeqSetVol`-ramp shim. So sub-op `5`
+fades the slot's occupant over the deadline and then stops it.
+
+Which track that is depends on the swap window. A cutscene's commonest
+music change is `9 · 5 · 0xA`: sub-op `9` raises sound-flag bit 0, the poller
+keeps the **outgoing** track in the slot until the `0xA` commit
+([above](#the-track-swap-handshake-fun_800243f0--op-0x35-sub-op-0xa)), and
+the release fades that outgoing score out while the new one loads. Most
+sub-op `9` starts on the disc are committed inside their own record, and a
+large share of those run a sub-op `5` before the commit. The port starts the
+incoming track at sub-op `9`, so it keeps retail's bit 0 as
+`AudioState::start_pending_commit` (raised by sub-op `9`, ended by `0xA` and
+by the scene load) and drops an expiry that lands inside the window: the
+track it would release is already gone. Without that, the expiry paused the
+new score and the commit then released the paused source, so every such
+cutscene - `korb3`'s Gaza event among them - went silent from the commit on.
+An expiry after the commit (`jouine`'s `9 · 0xA · 5`) stops the new track,
+as retail's does.
 
 ### Sub-op 8 replays an empty record
 

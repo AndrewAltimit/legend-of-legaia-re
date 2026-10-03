@@ -239,6 +239,18 @@
     const n = base.length / 3;
     for (let v = 0; v < n; v++) {
       const o = objectIds[v];
+      /* An object past the clip's bone count is not drawn: retail draws as
+       * many objects as the clip has bones. The engine cuts the mesh to that
+       * count (`play_npc_mesh_cut`, re-uploaded by `_rebindLiveNpcModels`
+       * when a cue binds a clip), so this only guards a pose read in the
+       * frame between a cue and the re-upload: surplus objects collapse to a
+       * point rather than litter the actor's feet. */
+      if (partCount > 0 && o >= partCount) {
+        out[v * 3] = 0;
+        out[v * 3 + 1] = 0;
+        out[v * 3 + 2] = 0;
+        continue;
+      }
       if (o >= partCount) {
         out[v * 3] = base[v * 3];
         out[v * 3 + 1] = base[v * 3 + 1];
@@ -1094,6 +1106,8 @@ void main() {
           const dims = rt.play_npc_pose_dims(npc.i);
           const rec = {
             i: npc.i, slot: npc.slot, meshId, base,
+            meshCut: (typeof rt.play_npc_mesh_cut === 'function')
+              ? rt.play_npc_mesh_cut(npc.i) : -1,
             objectIds: rt.play_npc_mesh_object_ids(),
             frames, frameCount: dims[0], partCount: dims[1],
             out: new Float32Array(base.length), lastFrame: -1, lastGen: -1,
@@ -2160,13 +2174,23 @@ void main() {
      * carries the bound id, so asking for an unswapped NPC costs one call and
      * hands back the same mesh. The native window's twin is
      * `rebind_live_npc_models` in its asset uploader - same world field, same
-     * `SceneModelBank` resolve. */
+     * `SceneModelBank` resolve.
+     *
+     * The same re-upload follows a move in the mesh's object cut
+     * (`play_npc_mesh_cut`): retail draws as many objects as the actor's clip
+     * has bones, and a placement whose first clip came from a later ANIMATE
+     * cue (rikuroa's party Noa) was built uncut - the native window cuts it
+     * at pose time. */
     _rebindLiveNpcModels(rt) {
       if (!rt.play_npc_live_model || !this.npcs) return;
+      const hasCut = typeof rt.play_npc_mesh_cut === 'function';
       for (const rec of this.npcs) {
         const id = rt.play_npc_live_model(rec.i);
-        if (id < 0 || id === rec.liveModel) continue;
-        rec.liveModel = id;
+        const modelMoved = id >= 0 && id !== rec.liveModel;
+        const cut = hasCut ? rt.play_npc_mesh_cut(rec.i) : rec.meshCut;
+        if (!modelMoved && cut === rec.meshCut) continue;
+        if (modelMoved) rec.liveModel = id;
+        rec.meshCut = cut;
         let ok = true;
         try { rt.play_npc_mesh(rec.i); } catch (e) { ok = false; }
         if (!ok) continue;
@@ -2182,6 +2206,8 @@ void main() {
         rec.out = new Float32Array(base.length);
         rec.lastFrame = -1;
         rec.lastGen = -1;
+        /* A morph staged on the old base must be re-read onto the new one. */
+        rec.morphGen = undefined;
       }
     }
 
@@ -2622,6 +2648,15 @@ void main() {
         ? rt.play_npc_tilts() : null;
       const clipStates = (typeof rt.play_npc_clip_states === 'function')
         ? rt.play_npc_clip_states() : null;
+      /* Field-VM op 0x4B VDF morphs on placed NPCs: a per-entry generation
+       * that moves whenever the slot's staged deltas do. On a move the
+       * entry's object-local base is swapped for the engine's morphed one
+       * (`play_npc_morph_base`, the shared `World::npc_morphed_tmd` kernel
+       * the native window re-poses from) and re-posed below - the morph is
+       * staged before the bone transform, as retail's `FUN_8001C604` runs
+       * per group ahead of the draw. `-1` = the slot never armed one. */
+      const morphStates = (typeof rt.play_npc_morph_states === 'function')
+        ? rt.play_npc_morph_states() : null;
       const clipFrame = Math.floor(performance.now() / 1000 * NPC_CLIP_FPS);
       for (let k = 0; k < this.npcs.length; k++) {
         const n = this.npcs[k];
@@ -2637,22 +2672,47 @@ void main() {
          * refresh touched last. The native redraw pass skips the same slots
          * (`is_tile_actor_slot`). */
         if (this.tileActorSlots.has(n.slot | 0)) continue;
+        let morphMoved = false;
+        if (morphStates && n.i < morphStates.length) {
+          const mg = morphStates[n.i];
+          if (mg >= 0 && mg !== n.morphGen) {
+            const mb = rt.play_npc_morph_base(n.i);
+            if (mb.length === n.base.length) {
+              n.base = mb;
+              morphMoved = true;
+            }
+            n.morphGen = mg;
+          }
+        }
+        let posed = false;
         if (clipStates && n.i * 2 + 1 < clipStates.length) {
           const f = clipStates[n.i * 2], gen = clipStates[n.i * 2 + 1];
-          if (f >= 0 && (f !== n.lastFrame || gen !== n.lastGen)) {
+          if (f >= 0 && (morphMoved || f !== n.lastFrame || gen !== n.lastGen)) {
             const bones = rt.play_npc_live_bones(n.i);
             if (bones.length) {
               poseInto(n.out, n.base, n.objectIds, bones, bones.length / 6, 0);
               this.renderer.updateSceneMeshPositions(n.meshId, n.out);
               n.lastFrame = f; n.lastGen = gen;
+              posed = true;
             }
           }
-        } else if (advance && n.frameCount > 1) {
+        } else if ((advance || morphMoved) && n.frameCount > 1) {
           const f = clipFrame % n.frameCount;
-          if (f !== n.lastFrame) {
+          if (morphMoved || f !== n.lastFrame) {
             poseInto(n.out, n.base, n.objectIds, n.frames, n.partCount, f);
             this.renderer.updateSceneMeshPositions(n.meshId, n.out);
             n.lastFrame = f;
+            posed = true;
+          }
+        }
+        /* A clip-less entry: its frame-0 rest pose (or its bare object-local
+         * mesh) re-staged with the morphed base. */
+        if (morphMoved && !posed) {
+          if (n.frameCount > 0) {
+            poseInto(n.out, n.base, n.objectIds, n.frames, n.partCount, 0);
+            this.renderer.updateSceneMeshPositions(n.meshId, n.out);
+          } else {
+            this.renderer.updateSceneMeshPositions(n.meshId, n.base);
           }
         }
         const actorDraw = {
@@ -3165,6 +3225,11 @@ void main() {
      * native window draws), and a fight entered from the overworld under
      * the overworld's screen-Y bend. See docs/tooling/host-drift.md. */
     _stageFrameState(rt) {
+      /* The two opt-in render toggles (PSX rasterisation, dynamic light):
+       * page-wide presentation choices, so every branch draws under the
+       * checkbox state. Both off unless the player ticked them. */
+      if (this.renderer.setPsxMode) this.renderer.setPsxMode(!!this.psxRender);
+      if (this.renderer.setDynamicLighting) this.renderer.setDynamicLighting(!!this.dynLighting);
       /* Retail GTE NCLIP winding rejection, from the shared engine kernel
        * (`camera_view::nclip_cull_mode`): armed for the whole field pass
        * (retail culls every field mesh's back faces - a sky dome's outer
@@ -3488,6 +3553,20 @@ void main() {
         this._occlStrength = 0;
         if (this.renderer) this.renderer.clearOcclusionFocus();
       }
+    }
+
+    /* The two opt-in render toggles the native window carries
+     * (LEGAIA_PSX_RENDER and the `I` key / --dynamic-lighting): PSX
+     * rasterisation (vertex snap + 15-bit dither) and the dynamic light.
+     * Both default off and both are the identity when off; the page's
+     * checkboxes drive them and re-apply on every view rebuild; the
+     * renderer picks them up in `_stageFrameState`. */
+    setPsxRender(on) {
+      this.psxRender = !!on;
+    }
+
+    setDynamicLighting(on) {
+      this.dynLighting = !!on;
     }
 
     /* Stage this frame's camera.

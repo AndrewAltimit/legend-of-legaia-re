@@ -224,17 +224,19 @@ pub const fn done_band_phase(done: DoneBandInputs) -> BattleCamPhase {
 ///
 /// Two things this resolves that the three-boolean [`phase_for`] cannot.
 ///
-/// **The top-level command chooser is the FAR framing, not a close-up.**
-/// Retail's battle menu driver `FUN_801D388C` arms *both* case `0` and case
-/// `9` (`0x801D475C` / `0x801D53B8` pass `a1 = 0`; `0x801D4908` /
-/// `0x801D5688` pass `a1 = 9`), so "a menu is open" does not by itself pick
-/// the close-up. Two retail framebuffers separate them: a save with the
-/// **Begin / Run** chooser up reads `pitch 32, TR (0, 1280, 7680), focus
-/// origin` - case 9's `max(span*3, 0x800)` over `+-800` seats, exactly - and
-/// frames both fighters; a save with the **arts input** panel up reads
-/// `TR (-512, 1152, 2457)` and `yaw = 0x8F0 - actor[+0x46]` - case 0 - with
-/// the enemy projecting off the left edge behind the panel. So the close-up
-/// belongs to the *input* pickers; the command chooser keeps the far shot.
+/// **The round prompt is the FAR framing; a member's surfaces are the
+/// close-up.** Retail's battle menu driver `FUN_801D388C` arms *both* case
+/// `0` and case `9` (`0x801D475C` / `0x801D53B8` pass `a1 = 0`;
+/// `0x801D4908` / `0x801D5688` pass `a1 = 9`), so "a menu is open" does not
+/// by itself pick the close-up. The library's battle captures separate them
+/// on the command-flow byte: every save on the **Begin / Run** prompt
+/// (`0x1E`) reads `pitch 32, TR (0, 1280, 7680), focus origin` - case 9's
+/// `max(span*3, 0x800)` over `+-800` seats, exactly - and frames both
+/// fighters; every save on a member's command ring (`0x28`) or arts input
+/// (`0x50`) reads `TR (-512, height[char], 2457)` and `yaw = 0x8F0 -
+/// actor[+0x46]` - case 0 - framed on that member. `input_menu_open` is the
+/// caller's "a member's surface is up" (the engine's
+/// `battle_cam_inputs::member_surface_open`).
 ///
 /// **The post-strike band is case 7 / case 8, not case 6.** See
 /// [`RECOVER_STATES`] and [`ACTION_END_STATES`].

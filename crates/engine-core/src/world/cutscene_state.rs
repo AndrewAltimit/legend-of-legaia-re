@@ -142,6 +142,15 @@ pub struct CutsceneState {
     /// prologue cutscene scene is entered; cleared by the skip or by the
     /// `town01` opening entry.
     pub opening_chain_active: bool,
+    /// The New Game's destination-entry operand
+    /// ([`legaia_asset::new_game::NEW_GAME_ENTRY_SEAT`]), armed by
+    /// [`crate::world::World::begin_new_game`] - retail's seed
+    /// `FUN_80034A6C` writes `_DAT_80073EF4` / `_DAT_80073EF8` - and taken by
+    /// the next field entry, which seats the player on it when that entry is
+    /// the prologue scene. Any other entry drops it: only the engine's
+    /// fallback (`town01` when `opdeene` will not load) enters another scene
+    /// straight off a New Game, and retail never does.
+    pub new_game_entry_seat: Option<(i16, i16)>,
 }
 
 impl CutsceneState {
@@ -167,6 +176,7 @@ impl CutsceneState {
             caption_alpha: 0.0,
             caption_shown_frames: 0,
             opening_chain_active: false,
+            new_game_entry_seat: None,
         }
     }
 }

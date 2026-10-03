@@ -683,6 +683,11 @@ impl World {
             b.render_color = next.color;
             b.render_blend = next.blend;
             b.impact_state = next.selector;
+            if fx.mode_semi_transparent {
+                // Arm 2 ORs `0x81000000` into the mode word `+0x08`
+                // (`0x80050230..0x80050244`): the fading body draws additive.
+                b.flag_word |= 0x8100_0000;
+            }
             if fx.party_fade_done {
                 // `0x80050344..0x80050354`: state 0, staged anim 0, the
                 // `+0x1DC` fade-done bit, blend `0x800` (already in `next`).
@@ -1544,6 +1549,65 @@ impl World {
     /// REF: FUN_8001B964
     pub fn player_hidden(&self) -> bool {
         self.player_scale_word() == 0
+    }
+
+    /// Un-hide the player a script context left hidden because the **port**
+    /// ended it before it reached its own restore.
+    ///
+    /// Cutscenes and talks hide the player with `CC F8 40 00 00 ..` and show
+    /// it again with `CC F8 40 00 10 ..` (op `4C` nibble-4 sub-0 aimed at the
+    /// player anchor `0xF8`; see [`Self::player_render_scale`]). Retail's
+    /// runner (`FUN_80039B7C`) only lets go of a context on the context's own
+    /// terminal bytes, so a record that hides the player always reaches the
+    /// restore it carries. The port's runners also end a context on their
+    /// anti-hang nets - a frame cap, a park timeout, a loop with no box, an
+    /// op they cannot advance - and a context cut that way left `+0x72` at
+    /// `0`: the player undrawn **and** unable to move, because the same word
+    /// is the pad step's speed multiplier, until the next scene entry
+    /// re-seated it.
+    ///
+    /// The rescue is keyed on the record's own bytes, so it never invents a
+    /// restore: it fires only while the player is hidden, no ramp is in
+    /// flight, and the record holds a non-zero `CC F8 40` write at or after
+    /// the PC the run stopped on (`end_pc`) that the run never executed
+    /// (`visited`). The player takes that op's target value - the value the
+    /// script would have written. A record with no pending restore leaves the
+    /// player hidden, as retail would. Returns whether it restored.
+    ///
+    /// REF: FUN_80039B7C, FUN_8001B964
+    pub(crate) fn restore_owed_player_scale(
+        &mut self,
+        bytecode: &[u8],
+        end_pc: usize,
+        visited: &[bool],
+    ) -> bool {
+        if !self.player_hidden() || self.locomotion.player_scale_ramps.active() != 0 {
+            return false;
+        }
+        let owed = (end_pc..bytecode.len().saturating_sub(4)).find_map(|p| {
+            if visited.get(p).copied().unwrap_or(false)
+                || !crate::world::vm_hosts::is_player_scale_op(bytecode, p)
+            {
+                return None;
+            }
+            let v = u16::from_le_bytes([bytecode[p + 3], bytecode[p + 4]]);
+            (v != 0).then_some(v)
+        });
+        let Some(value) = owed else {
+            return false;
+        };
+        let Some(a) = self
+            .player_actor_slot
+            .and_then(|s| self.actors.get_mut(s as usize))
+        else {
+            return false;
+        };
+        log::info!(
+            "script context ended before its player restore; +0x72 0 -> {value:#06x} \
+             (end pc {end_pc:#06x})"
+        );
+        a.move_state.field_72 = value;
+        true
     }
 
     /// The player's live `+0x72`, `0x1000` with no player actor.

@@ -114,6 +114,24 @@ overlay and their texture sources - is packet-pinned in
 (the dome runs the standard battle input verbatim, so the decomposition
 there is the battle one).
 
+**The chip words.** The two arm chips do not read `Left` / `Right`: each
+chip's window record (`0x80076E98 + seat*0x18`, seats Left, High, Low,
+Right) carries an icon id at `+0x0E` / `+0x0F`, an index into SCUS's
+12-byte icon table `0x800732A4` (`(u, v)` at `+4`), whose ids `0x0C..=0x11`
+are the label-strip words `RaSeru`, `Arms`, `Right`, `Left`, `High`, `Low`.
+The entry opener's seat loop (`FUN_801D388C`, `0x801D3A48..0x801D3BCC`)
+stamps them from the overlay table `DAT_801F4B94 = [0x0D, 0x10, 0x11,
+0x0C]`, so the Left chip reads `Arms` and the Right chip `RaSeru`.
+Character id `2` (Noa) swaps the two arm seats - her record holds the
+Ra-Seru in equipment index 2 and the weapon in index 3 - and an arm whose
+equipment byte is empty (index 2 for the Left seat, index 3 for the Right,
+keyed by the unswapped seat command `DAT_801F4B8C`) takes the seat's id
+`+ 2`, the plain direction word. A committed pennant copies its chip's id
+`+ 6` (`0x801D3D1C..0x801D3D38`), the same six words repeated at
+`0x12..=0x17`, so the bar reads `RaSeru` / `Arms` too. Port:
+`engine-core::arts_command_input::retail_chip_icons`, drawn by
+`engine-ui::arts_input` on both hosts.
+
 The **enemy analogue** is the AGL action-budget in `FUN_801E9FD4`: a monster fills its per-turn action queue by rolling candidate moves and paying each move's `+0x74` cost out of the per-round AGL gauge (`actor[+0x154]`), the same "wider cost = fewer commands" mechanic on the AI side - see [`battle-action.md` § Enemy AGL action-budget](battle-action.md#enemy-agl-action-budget-fun_801e9fd4).
 
 > A separate `+2` in the same case (`icon = DAT_801F4B94[i] + 2`, gated on an *empty* equip slot, `equip[cmd] == 0`) is an empty-slot icon tweak, **not** the class penalty - a fully-equipped off-class character still shows the widened arm via the `+0x74` cost above.
@@ -445,15 +463,32 @@ per press (the direction table `0x801F4B8C` reads `0C 0F 0E 0D` for Left / Up
 `FUN_801DA34C` has two call sites in `FUN_801D0748`, and the second is the
 arts entry itself. When the attack-mode prompt (`0x78`) takes Command, the
 jump at `0x801D1734` preseeds the window with the `sb 0x50` phase store in its
-delay slot, and case `0x2C` of `FUN_801D388C` builds the gauge - which reads
-the costs and seeds the pool from `+0x154` but never reads the window, so the
-entry opens with an empty bar over a full one. Two things then happen to the
-preseed, both in the entry arm:
+delay slot, and case `0x2C` of `FUN_801D388C` builds the gauge.
+
+**The gauge build draws the preseed.** With `+0x1DF[0]` non-zero, case `0x2C`
+(`0x801D4DC8..0x801D5070`) seeds a scratch pool from `+0x154` and walks the
+window: each command's cost (`ctx+0x14 + seat`, the seat from the
+`0x801F4B84` byte map) is tested against the pool (`slt` at `0x801D4E90`),
+then a pennant is registered and drawn exactly as a typed press draws one -
+window `0x20 + i` through `FUN_801D8DE8`, its chip's word `+ 6`, seated
+`cost` further right - and the cost is debited. At the first command the pool
+cannot pay, the walk zeroes that byte (`sb zero,0x1df(a1)` at `0x801D4DC4`)
+and stops, so the window keeps only the prefix one full pool affords. Then
+the pool and the pennant seat are reset to the full gauge
+(`0x801D503C..0x801D5068`) and `ctx+0x1B` is raised: the entry opens with the
+string's pennants over a full bar. A capture of Gala's off-class entry shows
+it - a saved `Right Right Left Left Left Up` under a `197` pool with a `42`-AP
+arm opens as five pennants (`RaSeru RaSeru Arms Arms Arms`), the window
+cut to `0D 0D 0C 0C 0C` and the committed count `ctx+0x19` still `0`.
+
+Two things then happen to the preseed, both in the entry arm:
 
 - **The first press wipes it.** Case `0xB` of `FUN_801D388C`, with the
   committed count `ctx+0x19` at `0`, zeroes all sixteen window bytes before it
-  tests the pool or stores the press (`0x801D3BE4..0x801D3C24`). The pad does
-  not edit the preseed; it replaces it.
+  tests the pool or stores the press (`0x801D3BE4..0x801D3C24`), and retires
+  the preseeded pennants - the text windows of kinds `5..=0xD` in the
+  forty-slot window table (`0x801D3C2C..0x801D3C94`). The pad does not edit
+  the preseed; it replaces it.
 - **A bare confirm replays it.** With no direction this frame, the arm at
   `0x801D1FA0..0x801D2044` checks the staging byte `DAT_8007BD04`, a zero
   count, a non-zero `+0x1DF[0]` and the confirm mask `0x800846D0`; it then
@@ -461,17 +496,20 @@ preseed, both in the entry arm:
   enters `0x5A` through case `0xC`, the same way a typed confirm does.
 
 **Preseeded presses cost no AP again.** The replay never runs case `0xB`, so
-the entry pool `ctx+0x6DC` is neither debited nor even compared with the
-string's cost: a string saved under a raised gauge replays in full. The band
-choice is the only budget guard, because the primary band is written and read
-only while the live gauge exceeds its base. The **Spirit** cost of the arts
+the entry pool `ctx+0x6DC` is not debited: the gauge build only measured the
+string against one full pool and cut what that pool could not pay. The band
+choice keeps a string saved under a raised gauge from replaying under the
+base one, because the primary band is written and read only while the live
+gauge exceeds its base. The **Spirit** cost of the arts
 the string performs is charged again, though. The builder re-tokenizes the
 raw arrows at the dispatch and accrues their art bodies into `actor[+0x224]`,
 as for any typed string.
 
 Port: `ArtsCommandInputSession::preseed` / `replay` / `committed_string`,
 filled by `World::open_arts_command_input` through
-`preseed_auto_command_string`. `World::run_battle_art` stages the arrows as
+`preseed_auto_command_string`; `with_preseed` runs the gauge build's cut, and
+`bar_commands` / `bar_spent` hand the preseeded pennants to the shared
+`engine-ui::arts_input` bar on both hosts. `World::run_battle_art` stages the arrows as
 swing bytes and runs the write-back at the commit, and the Attack dispatch
 sends a preseeded string through `build_arts_action_queue` and
 `charge_art_spirit`, as the arts dispatch does. The engine's named chain

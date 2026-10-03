@@ -334,6 +334,44 @@ fn a_group_heal_skips_the_picker_and_heals_the_whole_party() {
     assert_eq!(world.party.roster.members[0].hp_mp_sp().mp_cur, 12 - 8);
 }
 
+/// A menu cast's record writes reach the party actors that mirror them: a
+/// battle seats from the actor copy and `save_party` writes it back over the
+/// record, so a record-only heal (and MP debit) was undone by the next fight
+/// or save.
+#[test]
+fn a_menu_cast_reaches_the_party_actor_mirrors() {
+    let mut world = fresh_world();
+    world.party.party_count = 3;
+    assert!(world.actors.len() >= 3);
+    let mut spells = world.party.roster.members[0].spell_list();
+    spells.count = 1;
+    spells.ids[0] = 0x11;
+    world.party.roster.members[0].set_spell_list(spells);
+    let mut sub = build(FieldMenuRow::Magic, &world, &OptionsState::default());
+    sub.tick_pad_edge(PadButton::Cross.mask());
+    sub.tick_pad_edge(PadButton::Cross.mask());
+    sub.tick_pad_edge(PadButton::Cross.mask());
+    let FieldMenuSubsession::Spells(s) = &sub else {
+        panic!("expected Spells sub");
+    };
+    assert!(s.is_done());
+    apply_spell_outcome(s, &mut world);
+    for member in 0..3 {
+        let rec = world.party.roster.members[world.party_roster_slot(member)].hp_mp_sp();
+        let a = &world.actors[member].battle;
+        assert_eq!(
+            a.hp, rec.hp_cur,
+            "member {member} actor HP mirrors the record"
+        );
+        assert_eq!(
+            a.mp, rec.mp_cur,
+            "member {member} actor MP mirrors the record"
+        );
+    }
+    assert_eq!(world.actors[0].battle.hp, 100);
+    assert_eq!(world.actors[0].battle.mp, 12 - 8);
+}
+
 /// The menu-cast leveling arm (`FUN_800402F4` HP-heal arms): a full-power
 /// menu heal accrues +12 spell XP into the caster record's `+0x8` array,
 /// crosses the `0x8007656C` threshold, bumps the `+0x161` level byte and

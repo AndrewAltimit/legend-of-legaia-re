@@ -125,7 +125,7 @@ pub fn camera_before_world_tick(
 /// REF: FUN_80025C24
 pub fn camera_after_world_tick(camera: &mut Camera, world: &mut World, scene_entered: bool) {
     camera.route_camera_events(world);
-    camera.tick(world);
+    camera.tick_on_stream(world);
     if scene_entered {
         camera.reset_globals_for_scene_entry();
     }

@@ -465,9 +465,13 @@ impl MuscleDomeSession {
         Some(crate::arts_command_input::ArtsInputView {
             buffer: &s.buffer,
             spent: &s.spent,
+            pennants: s.bar_commands(),
+            pennant_spent: s.bar_spent(),
             pool: s.pool,
             pool_max: s.pool_max,
             costs: s.costs,
+            // The dome capture's chips read the plain direction words.
+            chip_icons: crate::arts_command_input::PLAIN_CHIP_ICONS,
             // The right-hand plate reads the fighter's Spirit gauge, which
             // never moves during entry.
             plate_value: self.spirit(0).min(100) as u8,

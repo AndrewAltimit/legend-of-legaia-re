@@ -142,7 +142,15 @@ impl World {
     /// argument triples rather than resolving them to a framebuffer operation,
     /// because which quad each `(kind, blend)` pair draws is the renderer's
     /// business.
+    ///
+    /// None in a battle: the colour-tween actor's handler is field-overlay
+    /// code and battle loads PROT 0898 over that window, so nothing pushes
+    /// while a fight runs. A field wash still live at the encounter - the
+    /// night tint of `town0b` - is the field's, and it comes back with it.
     pub fn screen_tint_pushes(&self) -> Vec<ScreenTintPush> {
+        if self.mode == SceneMode::Battle {
+            return Vec::new();
+        }
         self.actors
             .iter()
             .filter(|a| a.active)
@@ -741,6 +749,30 @@ mod tests {
                 .iter()
                 .any(|a| a.active && a.state_54 == SCENE_ACTOR_REQUESTED_STATE)
         );
+    }
+
+    #[test]
+    fn a_battle_draws_no_field_screen_wash() {
+        let mut w = World::default();
+        let t = crate::field_actor_kernels::tween_from_fade_template(
+            &FadeTemplate {
+                kind: 2,
+                duration: 64,
+                start_rgb: [0, 0, 0x40],
+                end_rgb: [0, 0, 0x40],
+                mode: [0, 2, 0],
+            },
+            1,
+        );
+        w.spawn_colour_tween(t).expect("pool had room");
+        w.tick_handler_actors(1);
+        assert!(!w.screen_tint_pushes().is_empty(), "the field wash pushes");
+        w.mode = SceneMode::Battle;
+        assert!(
+            w.screen_tint_pushes().is_empty(),
+            "no field push in a fight"
+        );
+        assert!(w.screen_tint_push_args().is_empty());
     }
 
     #[test]

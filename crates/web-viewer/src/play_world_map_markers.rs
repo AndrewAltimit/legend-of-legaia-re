@@ -1,8 +1,10 @@
 //! The overworld's entity and player markers on the play page.
 //!
 //! A port marker, not a retail draw: retail binds each world-map placement to
-//! its own actor model, which is still open, so both hosts draw a kind-coded
-//! post + cross at each placement and a facing-ticked post for the player.
+//! its own actor model, which is still open, so both hosts can draw a
+//! kind-coded post + cross at each placement (a debug overlay,
+//! `WorldToggles::overworld_marker_overlay`, off by default) and a
+//! facing-ticked post for the player when the leader's mesh is missing.
 //! The geometry, colours, sizing and projection all come out of
 //! `legaia_engine_core::world_map_markers`; this file only wraps its quads
 //! through `legaia_engine_ui::screen_prim::world_map_marker_prim` onto the

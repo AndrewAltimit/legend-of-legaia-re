@@ -3,10 +3,17 @@
 //! Not retail. Retail binds each world-map placement to its own actor model;
 //! that per-entity mesh resolution is still open (see
 //! `docs/subsystems/world-map.md`, "Rendering the placed entities"), so the
-//! port draws a kind-coded upright marker at each placement instead - a post,
-//! a base cross, and for the player a facing tick. This module is the whole
-//! marker: which segments exist, their colours and sizes, and where each one
-//! lands on the 320x240 display.
+//! port can draw a kind-coded upright marker at each placement instead - a
+//! post, a base cross, and for the player a facing tick. This module is the
+//! whole marker: which segments exist, their colours and sizes, and where
+//! each one lands on the 320x240 display.
+//!
+//! The entity markers are a debug overlay
+//! ([`crate::world::WorldToggles::overworld_marker_overlay`], off by
+//! default): a retail frame at a town entrance shows the town's mesh and no
+//! post over it, so drawing one by default put a cyan stick through the
+//! player on every overworld door. The player's marker is a stand-in for a
+//! missing leader mesh and stays on.
 //!
 //! It emits **quads** rather than lines because the browser play page has no
 //! line primitive - its screen-space surface is the shared `screen_prim`
@@ -159,9 +166,11 @@ pub fn player_segments(p: &WorldMapPlayerMarker) -> [MarkerSegment; 4] {
     ]
 }
 
-/// Every marker segment this frame: one set per placed entity, plus the
-/// player's when `draw_player` (a host passes `false` while it draws the
-/// party leader's real mesh, which the marker would otherwise stab through).
+/// Every marker segment this frame: one set per placed entity while the
+/// debug overlay is up ([`crate::world::WorldToggles::overworld_marker_overlay`]),
+/// plus the player's when `draw_player` (a host passes `false` while it draws
+/// the party leader's real mesh, which the marker would otherwise stab
+/// through).
 ///
 /// Each entity marker stands on the ground under it: with the scene's
 /// collision grid loaded its `y` is the floor height sampled at the
@@ -173,7 +182,12 @@ pub fn player_segments(p: &WorldMapPlayerMarker) -> [MarkerSegment; 4] {
 pub fn marker_segments(world: &World, draw_player: bool) -> Vec<MarkerSegment> {
     let mut out = Vec::new();
     let grounded = !world.terrain.collision_grid.is_empty();
-    for mut m in world.world_map_entity_markers() {
+    let entities = if world.toggles.overworld_marker_overlay {
+        world.world_map_entity_markers()
+    } else {
+        Vec::new()
+    };
+    for mut m in entities {
         if grounded {
             m.world_pos[1] = world
                 .sample_field_floor_height(m.world_pos[0] as i32, m.world_pos[2] as i32)
@@ -353,6 +367,21 @@ mod tests {
             [0.0, 0.0],
         );
         assert!(marker_quads(&w, &frame, AABB, false).is_empty());
+    }
+
+    /// The per-placement entity markers are a debug overlay: a placed portal
+    /// draws nothing until the toggle raises it, and three segments after.
+    #[test]
+    fn entity_markers_draw_only_under_the_debug_toggle() {
+        let mut w = world_map_world();
+        w.world_map.entity_positions = vec![(1200, 2100)];
+        assert_eq!(w.world_map_entity_markers().len(), 1);
+        assert!(
+            marker_segments(&w, false).is_empty(),
+            "no entity marker by default - retail draws none"
+        );
+        w.toggles.overworld_marker_overlay = true;
+        assert_eq!(marker_segments(&w, false).len(), 3);
     }
 
     #[test]

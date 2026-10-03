@@ -285,6 +285,15 @@ impl World {
         // It runs whatever bit 2 staged - it re-installs the entry itself.
         if playing == 4 && hp_zero && !is_party {
             a.battle.flag_bits.set(ANIM_FLAG_ROOT_LATCH);
+            // `sb v1,0x21c(s1)` with `v1 = 2` at `0x8004B66C`: the body enters
+            // the defeat fade, whose lanes step to black while the actor holds
+            // its knockdown (or idle) frame - after the get-up, when a Seru is
+            // staged. The engine's resting colour word is `0` for neutral, so
+            // the fade starts from the neutral word it stands for.
+            a.battle.render_flag = vm::battle_formulas::STATE_DEFEAT_FADE;
+            if a.battle.render_color == 0 {
+                a.battle.render_color = vm::battle_formulas::TINT_NEUTRAL;
+            }
             if slot >= party {
                 self.resolve_monster_death_spoils(slot);
             }
@@ -406,6 +415,35 @@ mod tests {
         let eight = commit_tag_ladder(inputs(8));
         assert_eq!(eight.next, None);
         assert_eq!(eight.flags, AnimFlagWrite::Or(0x08));
+    }
+
+    /// The monster-death arm puts the body into the defeat fade
+    /// (`+0x21C = 2` at `0x8004B66C`), from the neutral word the engine's
+    /// resting `0` stands for, so the tint SM walks it to black and the
+    /// body drops - the "node gone" retail's case 8 tests.
+    #[test]
+    fn a_dead_monster_enters_the_defeat_fade() {
+        let mut world = World {
+            party: crate::world::PartyState {
+                party_count: 1,
+                ..Default::default()
+            },
+            ..World::default()
+        };
+        let m = &mut world.actors[1];
+        m.active = true;
+        m.battle_monster_id = Some(10);
+        m.battle_action_clips = Some(std::sync::Arc::new(vec![None; 8]));
+        m.battle.hp = 0;
+        world.finish_battle_reaction(1, 4);
+        let b = &world.actors[1].battle;
+        assert_eq!(b.render_flag, vm::battle_formulas::STATE_DEFEAT_FADE);
+        assert_eq!(b.render_color, vm::battle_formulas::TINT_NEUTRAL);
+        // A living monster's knockdown end does not.
+        world.actors[1].battle.render_flag = 0;
+        world.actors[1].battle.hp = 5;
+        world.finish_battle_reaction(1, 4);
+        assert_eq!(world.actors[1].battle.render_flag, 0);
     }
 
     #[test]

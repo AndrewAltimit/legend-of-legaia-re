@@ -359,6 +359,12 @@ impl World {
     /// deterministic source, drawn only on the trigger branch, so replays stay
     /// bit-identical. No-op without a player actor or region tracker.
     fn live_world_map_tick(&mut self) {
+        // The region reader runs from the entity handler `FUN_801DA51C`, once
+        // per actor game tick (every 3rd vsync on the overworld), so the tile
+        // it compares is the one the player stands on at that tick.
+        if !self.clock.game_tick_fired {
+            return;
+        }
         let Some(slot) = self.player_actor_slot else {
             return;
         };

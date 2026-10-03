@@ -1186,7 +1186,16 @@ pub struct DialogRequest {
 /// carries the item ids the loot roll surfaced from each fallen monster.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct BattleRewards {
+    /// The battle's summed monster EXP, before retail's 3/4 scale.
     pub xp: u32,
+    /// The EXP each living member is credited - the summed EXP scaled by 3/4
+    /// and ceiling-divided among the living members
+    /// ([`legaia_engine_vm::battle_formulas::victory_exp_per_member`]), `0`
+    /// in a no-reward fight. This is the figure the result window prints:
+    /// `FUN_8004E568` stores the share `s6` into `gp+0xA04` (`0x8004F684`)
+    /// and hands that word to the number draw `FUN_8003563C`, so a party of
+    /// three reads a third of three quarters of the pool.
+    pub xp_share: u32,
     pub gold: u32,
     pub level_ups: Vec<LevelUpResult>,
     /// Item drops the post-battle loot roll surfaced: at most one entry, the

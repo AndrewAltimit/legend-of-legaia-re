@@ -160,6 +160,38 @@ impl World {
         true
     }
 
+    /// Replay the op-`0x35` BGM words the record that enters formation row
+    /// `formation_id` runs before its `3E FF <row>` battle-entry op - its
+    /// last track start with the control words after it, then its battle
+    /// sound-set selection ([`crate::man_field_scripts::BattleEntryScore`]),
+    /// for a direct entry into that row, which runs the entry without the
+    /// record.
+    ///
+    /// Each word goes through the field VM's own op-`0x35` handler, so the
+    /// track word, the battle sound set and the host's BGM events are what
+    /// the record would have left: `korb3`'s Gaza row starts `2028` and
+    /// selects set `-1`, so the fight plays on that theme rather than on the
+    /// scene's parked entry track and the default battle theme. A row two
+    /// records enter replays the first. Returns `true` when it replayed.
+    ///
+    /// The faithful path needs none of this: the field VM executing the
+    /// record runs the words itself.
+    pub fn replay_scripted_battle_score(&mut self, formation_id: u16) -> bool {
+        let Some(words) = self
+            .scene_battle_entry_scores
+            .iter()
+            .find(|s| u16::from(s.row) == formation_id)
+            .map(|s| s.words.clone())
+        else {
+            return false;
+        };
+        let mut host = crate::world::vm_hosts::FieldHostImpl { world: self };
+        for (text_id, sub_op) in words {
+            legaia_engine_vm::field::FieldHost::bgm(&mut host, text_id, sub_op);
+        }
+        true
+    }
+
     /// The lesson the sparring fight is currently teaching, when armed.
     pub fn battle_tutorial_lesson(&self) -> Option<TutorialLesson> {
         self.battle.tutorial.as_ref().map(BattleTutorial::lesson)

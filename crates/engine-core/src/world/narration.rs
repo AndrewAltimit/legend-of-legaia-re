@@ -782,7 +782,18 @@ impl World {
     /// it has one, else the first concurrent helper's. Retail has one shared
     /// box, so hosts draw exactly this one
     /// ([`Self::drive_script_dialog`] routes the pad the same way).
+    ///
+    /// `None` while a battle runs. The box is drawn by the field overlay's
+    /// pager (`FUN_801D84D0`, PROT 0897 at slot A `0x801CE818`), and the
+    /// battle overlay (PROT 0898) is loaded over the same slot, so a context
+    /// still parked on a text page when its fight starts keeps its park - the
+    /// field contexts are frozen, not torn down - but nothing draws its box
+    /// on the battle frame.
+    // REF: FUN_801D84D0
     pub fn script_dialog_panel(&self) -> Option<&crate::dialog::OwnedDialogPanel> {
+        if self.mode == SceneMode::Battle {
+            return None;
+        }
         self.cutscene
             .timeline
             .as_ref()
@@ -890,6 +901,7 @@ impl World {
             if tl.done {
                 let restore = tl.restore_hidden_on_complete;
                 self.release_interaction_context(&tl);
+                self.restore_owed_player_scale(&tl.bytecode, tl.pc, &tl.visited);
                 self.cutscene.timeline = None;
                 if restore {
                     self.restore_hidden_field_npcs();
@@ -1933,6 +1945,9 @@ impl World {
                     // seat write-throughs) to them.
                     host.world.field_vm.executing_channel =
                         (!channels[ci].object_bind).then_some(channels[ci].placement_index as u8);
+                    host.world.field_vm.executing_object = channels[ci]
+                        .object_bind
+                        .then_some(channels[ci].ctx.script_id);
                     // The timeline is the acquirer: it halt-acquired these
                     // channels earlier (the `4C 85` freeze sweep) and now
                     // drives them beat by beat. A poke from the owner is the
@@ -1951,6 +1966,7 @@ impl World {
                         pc,
                     );
                     host.world.field_vm.executing_channel = None;
+                    host.world.field_vm.executing_object = None;
                     // A poke that moved the actor (`A3 <id>` seat, `CC <id> 37`
                     // copy-from-player, ...) lands on retail's `+0x14`/`+0x18`
                     // at once; surface it now rather than at the slice's end,
@@ -2293,6 +2309,7 @@ impl World {
             // from the cutscene camera to normal field gameplay.
             let restore = tl.restore_hidden_on_complete;
             self.release_interaction_context(&tl);
+            self.restore_owed_player_scale(&tl.bytecode, tl.pc, &tl.visited);
             self.cutscene.timeline = None;
             // The town01 OPENING choreography `MoveTo`s the townsfolk to the
             // off-map hide box to clear the establishing shot. Nothing
@@ -2410,6 +2427,9 @@ impl World {
         }
         self.field_vm.halted_elsewhere.clear();
         let dropped = contexts.iter().any(|tl| tl.done);
+        for tl in contexts.iter().filter(|tl| tl.done) {
+            self.restore_owed_player_scale(&tl.bytecode, tl.pc, &tl.visited);
+        }
         contexts.retain(|tl| !tl.done);
         self.field_vm.helper_contexts = contexts;
         // Stranded-player rescue: a spawned record can `MoveTo` the PLAYER as
@@ -2713,6 +2733,9 @@ impl World {
                 let self_target = ext.is_some_and(|t| {
                     crate::field_channels::resolve_target(&channels, t) == Some(i)
                 });
+                self.field_vm.executing_object = target
+                    .filter(|&ci| channels[ci].object_bind)
+                    .map(|ci| channels[ci].ctx.script_id);
                 self.field_vm.executing_channel = match target {
                     // Object-bind targets carry a flat record index, not a
                     // placement slot - no placement-keyed attribution.
@@ -2747,6 +2770,7 @@ impl World {
                     }
                 };
                 self.field_vm.executing_channel = None;
+                self.field_vm.executing_object = None;
                 match result {
                     FieldStepResult::Advance { next_pc } => {
                         let stalled = next_pc == pc;
@@ -2926,10 +2950,14 @@ impl World {
                     // Dialog byte: the retail pre-run loop stops here.
                     break;
                 }
+                // The bind's own context is the one executing: an op-`0x4B`
+                // here arms the bound object's morph lanes.
+                self.field_vm.executing_object = Some(c.ctx.script_id);
                 let result = {
                     let mut host = FieldHostImpl { world: self };
                     field_step_routed(&mut host, &mut c.ctx, bc, pc)
                 };
+                self.field_vm.executing_object = None;
                 match result {
                     FieldStepResult::Advance { next_pc } => {
                         if next_pc == pc {
@@ -3198,6 +3226,9 @@ impl World {
             } else {
                 None
             };
+            if b == 0x44 {
+                id.spawned = true;
+            }
             // Inside a halt window the player carries `0x400`, and the
             // dispatcher's halted-target early-out (`0x801DE90C..0x801DE940`)
             // returns an extended op aimed at it at its own PC: the dialog SM
@@ -3236,16 +3267,28 @@ impl World {
             // own flag word and its `AD F8 08` would wait on a bit nothing
             // writes.
             //
-            // A target the port has no cursor for (never poked with a clip)
-            // falls through to the record's own word - the op has to land
-            // somewhere, and the spin's timeout net covers the rest.
+            // A field NPC never poked with a clip gets its cursor on first use
+            // ([`crate::field_env::PropAnimBank::actor_clip_or_live`]). Any
+            // other target the port has no cursor for falls through to the
+            // record's own word - the op has to land somewhere, and the
+            // spin's timeout net covers the rest.
             let saved_local_flags = id.ctx.local_flags;
             let bound = ext_target
                 .filter(|_| matches!(b & 0x7F, 0x2B..=0x2D))
                 .filter(|&target| {
+                    let hint = host.world.player_clip_frames_hint();
                     let flags = if target == crate::field_env::PLAYER_ANCHOR_TARGET {
-                        let hint = host.world.player_clip_frames_hint();
                         Some(host.world.props.bank.player_clip(hint).flags)
+                    } else if let Some(live) = host.world.npc_live_clip_for_target(target) {
+                        // A field NPC never poked with a clip: its own
+                        // looping cursor stands in, as the player's does.
+                        Some(
+                            host.world
+                                .props
+                                .bank
+                                .actor_clip_or_live(target, live, hint)
+                                .flags,
+                        )
                     } else {
                         host.world.props.bank.actor_clip(target).map(|a| a.flags)
                     };
@@ -3414,7 +3457,9 @@ impl World {
                     // as conversation end. Raw compare only - an extended
                     // `0xA1` NOP runs through like any other op.
                     if b == 0x21 {
-                        if let Some(fb) = id.fallback_segment_pc.take() {
+                        if !id.spawned
+                            && let Some(fb) = id.fallback_segment_pc.take()
+                        {
                             id.pc = fb;
                             continue;
                         }
@@ -3490,10 +3535,15 @@ impl World {
                 // A prologue run (a box not yet opened) parks on the same
                 // spin when it waits on the end latch of the actor's own
                 // bound clip: the chest's lid plays out before its box, it
-                // does not fall through to the first segment.
+                // does not fall through to the first segment. So does one
+                // whose cross-context target resolved to a ticking cursor:
+                // the Genesis Tree talk (`vozz` P1[7]) plays the player's
+                // reach (`A2 F8 01` / `AD F8 08`) before its first box, and
+                // falling through skipped the `0x00B` raise behind it.
                 FieldStepResult::Halt { final_pc }
                     if (b & 0x7F) == 0x2D
                         && (id.fallback_segment_pc.is_none()
+                            || bound.is_some()
                             || (npc_clip_bound
                                 && ext_target.is_none()
                                 && id.bytecode.get(final_pc + 1) == Some(&8))) =>
@@ -3532,6 +3582,9 @@ impl World {
                 .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
         {
             ch.ctx.local_flags = id.ctx.local_flags;
+        }
+        if id.done {
+            self.restore_owed_player_scale(&id.bytecode, id.pc, &id.visited);
         }
         self.dialog.inline = Some(id);
     }
@@ -4828,6 +4881,28 @@ mod tests {
             "dismissing the box resumes the helper past the segment"
         );
         assert!(w.script_dialog_panel().is_none());
+    }
+
+    #[test]
+    fn a_parked_box_is_not_drawn_over_a_battle() {
+        use crate::cutscene_timeline::CutsceneTimeline;
+        // The field pager lives in the field overlay, which the battle
+        // overlay replaces: a context parked on its text across a forced
+        // fight keeps its park, but no box is drawn until the field returns.
+        let bc = vec![0x1F, b'H', b'i', 0x00, 0x4A, 0x40, 0x00];
+        let mut w = World::new();
+        w.field_vm
+            .helper_contexts
+            .push(CutsceneTimeline::new(bc, 0));
+        w.step_helper_contexts();
+        assert!(w.script_dialog_panel().is_some());
+        w.mode = crate::world::SceneMode::Battle;
+        assert!(w.script_dialog_panel().is_none(), "no box over the fight");
+        w.mode = crate::world::SceneMode::Field;
+        assert!(
+            w.script_dialog_panel().is_some(),
+            "the park survives the fight"
+        );
     }
 
     #[test]

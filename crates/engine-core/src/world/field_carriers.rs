@@ -67,6 +67,9 @@ impl World {
         // scene entry (`sw zero,-0x4780(v0)` at `0x8003B4F8`), before the
         // scene's scripts can select one with op-`0x35` sub-op `7`.
         self.audio.battle_sound_set = 0;
+        // ... and clears the sound flags' script-owned start bit 0, so a
+        // start a cutscene left uncommitted does not outlive its scene.
+        self.audio.start_pending_commit = false;
         let derived = crate::man_field_scripts::derive_field_carriers(man_file, man);
         let sparring_idx = derived
             .iter()
@@ -97,6 +100,8 @@ impl World {
         // still resynchronising and the clean bit is structurally false.
         self.scene_battle_entry_arms =
             crate::man_field_scripts::walk_battle_entry_arms(man_file, man);
+        self.scene_battle_entry_scores =
+            crate::man_field_scripts::walk_battle_entry_scores(man_file, man);
         if !self.scene_battle_entry_arms.is_empty() {
             let arms: Vec<String> = self
                 .scene_battle_entry_arms

@@ -1773,6 +1773,19 @@ that cell, so the draw is the one Koru's fight makes.
   show the strip, the plate shows only in action frames, and no frame
   shows both.
 
+In the port a leg resolves its turn in one tick, so the round driver's
+action band has a stand-in: after `Resolve` the leg holds at `TurnOver`
+for the dome surface's replay of the turn's plays
+(`muscle_dome_scene::playback_ticks`, one play every `PLAY_CADENCE_TICKS`;
+`World::muscle_playback_frames`), and the turn top that follows stays
+automatic. The shared HUD kernels read that hold as an action frame
+(`battle_hud::battle_hud_phase`): the acting side's plaque holds the
+top-left seat, a fighter play names the opponent on the target plaque, an
+opponent play raises the fighter's bar, and the running tally of the side
+acting (`World::muscle_playback_tally`) rides the status rows. Both play
+hosts draw all of it through those kernels. The tally is text, not the
+`etim` TOTAL cells: the dome VRAM carries no `(448, 0)` page.
+
 ## What ends a leg: a knockout, and nothing else
 
 The arena has no battle loop of its own, so it has nothing to bound. It picks

@@ -1470,15 +1470,14 @@ fn menu_framing_keeps_the_formation_on_screen() {
     }
 }
 
-/// **The top-level command chooser keeps the far framing.**
+/// **The round prompt keeps the far framing.**
 ///
 /// The retail battle menu driver `FUN_801D388C` arms case `0` *and* case
-/// `9`, so "a menu is open" does not select the close-up on its own; two
-/// retail framebuffers separate them (a Begin/Run save reads case 9's
-/// `TR (0, 1280, 7680)` over `+-800` seats, an arts-input save reads case
-/// 0's `TR (-512, 1152, 2457)`). The port used to fold every battle menu
-/// into `Submenu`, which put the camera behind the acting character with
-/// the enemy **behind the eye** for the whole command phase.
+/// `9`, so "a menu is open" does not select the close-up on its own; the
+/// retail captures separate them (a Begin/Run save reads case 9's
+/// `TR (0, 1280, 7680)` over `+-800` seats, a ring or arts-input save reads
+/// case 0's `TR (-512, 1152, 2457)`). Folding the round prompt into
+/// `Submenu` put the enemy **behind the eye** while the party chose.
 #[test]
 fn only_the_input_pickers_take_the_close_up() {
     assert_eq!(
@@ -2275,4 +2274,31 @@ fn escape_shot_cuts_to_the_reverse_angle_and_holds_it() {
         "no framing case takes the camera back"
     );
     assert_eq!(cam.pose().focus, landed.focus);
+}
+
+/// The camera's draws land on the stream the caller lends it: a live shake
+/// takes exactly two `world_rand` draws per camera step off `rng`, and a
+/// shake at rest takes none. Retail draws them from the one BIOS `rand()`
+/// seed (`FUN_801D9D30`'s two `jal 0x80056798`), so a private camera stream
+/// would interleave them differently from every other draw in the tick.
+#[test]
+fn drive_on_stream_draws_the_shake_off_the_lent_stream() {
+    let at = |amp| BattleCamInputs {
+        phase: BattleCamPhase::Menu,
+        shake_amplitude: amp,
+        ..Default::default()
+    };
+    let mut slot: Option<BattleCamera> = None;
+    let mut rng = 0x1357_9BDFu32;
+    drive_on_stream(&mut slot, true, at(0), 0, None, &mut rng);
+    let rest = rng;
+    // At rest, steps draw nothing.
+    drive_on_stream(&mut slot, true, at(0), 8, None, &mut rng);
+    assert_eq!(rng, rest, "a shake at rest never moves the stream");
+    // Live: one camera step (two display frames) = two draws.
+    drive_on_stream(&mut slot, true, at(4), 10, None, &mut rng);
+    let mut check = rest;
+    crate::battle_formulas::world_rand(&mut check);
+    crate::battle_formulas::world_rand(&mut check);
+    assert_eq!(rng, check, "one live step = two world draws");
 }

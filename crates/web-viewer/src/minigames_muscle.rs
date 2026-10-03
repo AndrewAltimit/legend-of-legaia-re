@@ -251,6 +251,10 @@ pub(crate) struct MuscleContest {
     monster_id: u16,
     char_slot: usize,
     level: u32,
+    /// The contest's `rand()` stream. The native host lends the world's
+    /// `rng_state` to [`MuscleDomeSession::resolve_turn_on_stream`]; this page
+    /// has no world, so the contest holds the stream it lends instead.
+    rng: u32,
 }
 
 #[cfg(test)]

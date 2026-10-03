@@ -170,6 +170,7 @@ impl LegaiaMinigames {
             monster_id,
             char_slot,
             level,
+            rng: seed,
         });
         true
     }
@@ -199,6 +200,10 @@ impl LegaiaMinigames {
     /// resolves through the same kernel; this method holds no damage rule of
     /// its own. No-op unless the turn is in the resolve phase.
     ///
+    /// The draws come off the contest's own stream through the same entry the
+    /// native world uses ([`MuscleDomeSession::resolve_turn_on_stream`]); the
+    /// page has no world, so it lends the stream it holds.
+    ///
     /// The kernel-absent arm is shared too
     /// ([`MuscleDomeSession::resolve_turn_or_zero`]): with no disc tables
     /// installed the turn still closes, at zero damage. Dropping that arm on
@@ -206,7 +211,7 @@ impl LegaiaMinigames {
     /// `MusclePhase::Resolve` forever while the window's advanced.
     pub fn muscle_resolve(&mut self) {
         if let Some(c) = self.muscle.as_mut() {
-            c.session.resolve_turn_or_zero();
+            c.session.resolve_turn_on_stream(&mut c.rng);
         }
     }
 

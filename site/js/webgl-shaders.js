@@ -3,7 +3,8 @@
  * file modularity; consumed by webgl-tmd.js's TmdRenderer class.
  *
  * Loads as a classic global script - exposes: VRAM_W, VRAM_H,
- * FOG_LUT_SIZE, OCEAN_VS_SRC, OCEAN_FS_SRC, VS_SRC, FS_SRC.
+ * FOG_LUT_SIZE, OCEAN_VS_SRC, OCEAN_FS_SRC, VS_SRC, FS_SRC, the DYN_*
+ * dynamic-lighting constants and glslFloat.
  * Must be loaded before webgl-tmd.js.
  */
 
@@ -164,6 +165,37 @@ function occlRadiusPx(viewZ, projScaleY, h) {
   return Math.min(Math.max(r, lo), hi);
 }
 
+/* Dynamic-lighting enhancement (NON-RETAIL, default off) - the page twin of
+ * the native renderer's opt-in `dyn_light` (crates/engine-render/src/
+ * dyn_light.rs for the model constants, renderer/state.rs for the light
+ * itself). Interpolated into FS_SRC below, and paired by name with their
+ * native twins in scripts/ci/check-ui-host-drift.py, so the two hosts cannot
+ * light the same frame differently without the gate saying so. */
+const DYN_LIGHT_DIR = [0.32, -0.89, 0.31];
+const DYN_LIGHT_TINT = [1.0, 0.93, 0.80];
+const DYN_LIGHT_AMBIENT = 0.55;
+const DYN_DIFFUSE = 0.55;
+const DYN_POOL = 0.35;
+const DYN_MAX_GAIN = 1.3;
+const DYN_LAMBERT_FALLBACK = 0.6;
+const DYN_POOL_CENTER = [0.5, 0.45];
+const DYN_POOL_INNER = 0.15;
+const DYN_POOL_OUTER = 0.75;
+
+/* The PSX GPU's signed 4x4 ordered-dither offsets, row-major (row = pixel
+ * y & 3) - paired with engine-render's psx_dither::DITHER_MATRIX. */
+const PSX_DITHER_MATRIX = [
+  -4, 0, -3, 1,
+  2, -2, 3, -1,
+  -3, 1, -4, 0,
+  3, -1, 2, -2,
+];
+
+/* A JS number as a GLSL float literal (`1` would be an int constant). */
+function glslFloat(x) {
+  return Number.isInteger(x) ? x.toFixed(1) : String(x);
+}
+
 const VS_SRC = `#version 300 es
 precision highp float;
 precision highp int;
@@ -189,6 +221,26 @@ uniform int u_fog_enable;    /* 0 = no fog; mirrors gp-0x2D1 & 0x10 gate */
  * clip.w-to-SZ factor (play_render_curve_scale -> setOverworldCurve);
  * 0.0 - every page but the play page on an overworld - is the identity. */
 uniform float u_curve;
+
+/* PSX rasterisation (opt-in, NON-default - the GLSL twin of the native
+ * renderer's psx_params, Renderer::set_psx_mode / LEGAIA_PSX_RENDER):
+ * x, y = framebuffer width and height in pixels (staged on every draw, since
+ * the dynamic light's screen pool reads them too), z = vertex snap on,
+ * w = 15-bit dither on. All zeros - the GL default - is off, so every draw
+ * that never stages it renders exactly as before. Shared by both stages. */
+uniform vec4 u_psx;
+
+/* Snap a clip-space position to the nearest integer pixel of a vp_w x vp_h
+ * framebuffer - the GTE's integer screen coordinates, i.e. the "vertex
+ * jitter". Twin of engine-render's psx_snap_clip; z and w are preserved. */
+vec4 psxSnapClip(vec4 clip, float vp_w, float vp_h) {
+  if (vp_w <= 0.0 || vp_h <= 0.0 || clip.w <= 0.0) return clip;
+  float px = (clip.x / clip.w * 0.5 + 0.5) * vp_w;
+  float py = (clip.y / clip.w * 0.5 + 0.5) * vp_h;
+  float nx = (floor(px + 0.5) / vp_w) * 2.0 - 1.0;
+  float ny = (floor(py + 0.5) / vp_h) * 2.0 - 1.0;
+  return vec4(nx * clip.w, ny * clip.w, clip.z, clip.w);
+}
 
 int overworldCurveEntry(int i) {
   if (i < 2) return 0;
@@ -272,12 +324,20 @@ in vec4 a_flat_rgba;
  * generic-attribute default (0, 0, 0, 1): x1 <= x0, per-pixel depth. */
 in vec4 a_ground_ref_xz;
 in vec4 a_ground_ref_y;
+/* Smoothed per-vertex normal (object space) for the opt-in dynamic light -
+ * the twin of the native VRAM mesh's normal stream (legaia_tmd::mesh::
+ * compute_smooth_normals; JS twin computeSmoothNormals in webgl-tmd.js).
+ * Bound only while dynamic lighting is on; unbound it reads the generic
+ * default (0, 0, 0), which the light treats as "use the facet normal". */
+in vec3 a_normal;
 
 out vec2 v_uv;          /* interpolated linearly across the triangle */
 flat out uvec2 v_cba_tsb;
 out float v_fog_t;     /* 0..1, fraction of u_fog_far_ref */
 out vec4 v_flat_rgba;
 out float v_view_z;    /* perspective view depth (clip w) for the depth cue */
+out vec3 v_normal;     /* object-space smoothed normal (dynamic light only) */
+out vec3 v_obj_pos;    /* object-space position: the facet-normal fallback */
 
 void main() {
   vec4 world_pos = u_model * vec4(a_position, 1.0);
@@ -305,7 +365,12 @@ void main() {
   }
   gl_Position = overworldFlatDepth(overworldCurve(u_mvp * world_pos), u_mvp * u_model,
                                    a_ground_ref_xz, a_ground_ref_y);
+  /* After the overworld bend, as native snaps after its curve: retail bends
+   * SY before the packet is written. Identity while u_psx.z is 0. */
+  if (u_psx.z >= 0.5) gl_Position = psxSnapClip(gl_Position, u_psx.x, u_psx.y);
   v_view_z = gl_Position.w;
+  v_normal = a_normal;
+  v_obj_pos = a_position;
 }
 `;
 
@@ -413,14 +478,80 @@ uniform vec4 u_occl_params;
  * placements / ground), 0 (the GL default) on actor draws - the player and
  * NPCs must never dissolve - and on every page that never stages a focus. */
 uniform int u_occl_allow;
+/* PSX rasterisation word, shared with the vertex stage (see there):
+ * xy = framebuffer size, w = 15-bit dither on. */
+uniform vec4 u_psx;
+/* Dynamic lighting (opt-in enhancement, NON-RETAIL - the GLSL twin of the
+ * native renderer's MeshUniforms.light_dir / light_color, staged from
+ * DYN_LIGHT_DIR / DYN_LIGHT_TINT / DYN_LIGHT_AMBIENT below):
+ * u_dyn_dir = (x, y, z, enable), u_dyn_color = (tint rgb, ambient).
+ * enable 0 - the GL default - is the identity. */
+uniform vec4 u_dyn_dir;
+uniform vec4 u_dyn_color;
 
 in vec2 v_uv;
 flat in uvec2 v_cba_tsb;
 in float v_fog_t;
 in vec4 v_flat_rgba;
 in float v_view_z;
+in vec3 v_normal;
+in vec3 v_obj_pos;
 
 out vec4 o_color;
+
+/* The fragment's pixel in the native renderer's frame (origin top-left):
+ * gl_FragCoord counts from the bottom, wgpu's position builtin from the
+ * top, and both the dither matrix row and the light pool's centre are
+ * authored top-down. */
+vec2 frag_top_px() {
+  return vec2(gl_FragCoord.x, u_psx.y - gl_FragCoord.y);
+}
+
+/* PSX 24-bit -> 15-bit ordered dither (opt-in; identity while u_psx.w is 0).
+ * Twin of engine-render's psx_dither: the signed 4x4 PSX matrix is added to
+ * each 8-bit component before the truncation to 5 bits, then expanded back
+ * as (c5 << 3) | (c5 >> 2). Retail dithers shading arithmetic only, so the
+ * textured blend pass (a raw texel) never calls this. */
+vec3 psx_dither(vec3 rgb) {
+  if (u_psx.w < 0.5) return rgb;
+  float dm[16] = float[16](${PSX_DITHER_MATRIX.map(glslFloat).join(', ')});
+  vec2 f = frag_top_px();
+  int xi = int(f.x) & 3;
+  int yi = int(f.y) & 3;
+  float d = dm[yi * 4 + xi];
+  vec3 c8 = clamp(rgb * 255.0 + d, 0.0, 255.0);
+  vec3 c5 = floor(c8 / 8.0);
+  return (c5 * 8.0 + floor(c5 / 4.0)) / 255.0;
+}
+
+/* Dynamic-lighting tunables, from the JS constants above the shader. */
+const float DYN_DIFFUSE = ${glslFloat(DYN_DIFFUSE)};
+const float DYN_POOL = ${glslFloat(DYN_POOL)};
+const float DYN_MAX_GAIN = ${glslFloat(DYN_MAX_GAIN)};
+const float DYN_LAMBERT_FALLBACK = ${glslFloat(DYN_LAMBERT_FALLBACK)};
+const vec2 DYN_POOL_CENTER = vec2(${glslFloat(DYN_POOL_CENTER[0])}, ${glslFloat(DYN_POOL_CENTER[1])});
+const float DYN_POOL_INNER = ${glslFloat(DYN_POOL_INNER)};
+const float DYN_POOL_OUTER = ${glslFloat(DYN_POOL_OUTER)};
+
+/* Twin of engine-render's dyn_light with the point-light gain at zero (the
+ * derived candle lights and their shadow maps are native-only): a soft
+ * |N.L| directional term plus a screen-centred pool, capped at
+ * DYN_MAX_GAIN over the baked colour. vn = the smoothed vertex normal
+ * (zero = none), gn = the facet normal. Identity while u_dyn_dir.w is 0. */
+vec3 dyn_light(vec3 rgb, vec3 vn, vec3 gn) {
+  if (u_dyn_dir.w < 0.5) return rgb;
+  float lambert = DYN_LAMBERT_FALLBACK;
+  vec3 n = dot(vn, vn) < 1e-8 ? gn : vn;
+  float n_len = length(n);
+  if (n_len > 1e-6) lambert = abs(dot(n / n_len, normalize(u_dyn_dir.xyz)));
+  float pool = 0.0;
+  if (u_psx.x > 0.0 && u_psx.y > 0.0) {
+    float d = distance(frag_top_px() / u_psx.xy, DYN_POOL_CENTER);
+    pool = 1.0 - smoothstep(DYN_POOL_INNER, DYN_POOL_OUTER, d);
+  }
+  vec3 base = u_dyn_color.w + (DYN_DIFFUSE * lambert + DYN_POOL * pool) * u_dyn_color.rgb;
+  return clamp(rgb * min(base, vec3(DYN_MAX_GAIN)), vec3(0.0), vec3(1.0));
+}
 
 /* Decode BGR555 R/G/B in 0..1 linear. Used for VRAM texture samples. */
 vec3 bgr555_to_rgb(uint c) {
@@ -563,6 +694,10 @@ vec3 apply_distance_fog(vec3 lit) {
 }
 
 void main() {
+  /* Facet normal for the dynamic light, taken before any discard so the
+   * derivatives sit in uniform control flow. Its sign follows the
+   * framebuffer's Y direction, which the light's abs() makes irrelevant. */
+  vec3 geo_n = cross(dFdx(v_obj_pos), dFdy(v_obj_pos));
   uint cba = v_cba_tsb.x;
   uint tsb = v_cba_tsb.y;
   /* Double-sided pair copies: draw only the copy facing the camera under
@@ -622,13 +757,18 @@ void main() {
     if (flat_palette) {
       flat_base = prologue_sepia_word(max(flat_base.r, max(flat_base.g, flat_base.b)));
     }
+    /* Native's colour-mesh format carries no normals, so its untextured
+     * prims light off the facet normal alone - same here. */
+    flat_base = dyn_light(flat_base, vec3(0.0), geo_n);
     vec3 flat_lit = apply_distance_fog(flat_base);
     if (flat_palette) {
-      o_color = vec4(flat_lit * u_palette.rgb, 1.0);
+      o_color = vec4(psx_dither(flat_lit * u_palette.rgb), 1.0);
       return;
     }
     flat_lit = grade_near(flat_lit);
-    o_color = vec4(mix(flat_lit, u_cue_far, cue_ir0(v_view_z)), 1.0);
+    /* An untextured prim's colour is shading arithmetic in both passes, so
+     * it dithers in both (native COLOR_MESH fs_main and blend_pass_color). */
+    o_color = vec4(psx_dither(mix(flat_lit, u_cue_far, cue_ir0(v_view_z))), 1.0);
     return;
   }
 
@@ -714,6 +854,9 @@ void main() {
                                : v_flat_rgba.rgb;
   vec3 lit = clamp(color.rgb * prim_color * (255.0 / 128.0),
                    vec3(0.0), vec3(1.0));
+  /* Opt-in dynamic light over the baked shading (identity when off), at
+   * native's point in the chain: after the modulate, before grade and cue. */
+  lit = dyn_light(lit, v_normal, geo_n);
 
   lit = apply_distance_fog(lit);
 
@@ -747,6 +890,8 @@ void main() {
     return;
   }
 
-  o_color = vec4(lit, 1.0);
+  /* 15-bit dither on the opaque pass only: the textured blend pass's
+   * foreground is a raw texel, which retail never dithers. */
+  o_color = vec4(u_semi_pass == 1 ? lit : psx_dither(lit), 1.0);
 }
 `;

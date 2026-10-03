@@ -1776,12 +1776,71 @@ pub fn hud_digit_placements(round: i32, tally: Option<(i32, i32)>) -> Vec<(i32, 
     out
 }
 
+/// The cabinet's widget draws and the round chrome's, as the retail
+/// emitter's `POLY_GT4` packets.
+///
+/// Each `cells` entry is one `FUN_801D5ED0(x, y, widget, brightness, 0x1000)`
+/// call of the cabinet (the attract "PRESS START" prompt, the "PLAYER
+/// SELECT" banner, the "NEXT GAME / PAY OUT" sheet - `0x1000` is the size
+/// literal the attract arm stores at `0x801CF760`); each `draws` entry is one
+/// call of the round chrome ([`ChromeDraw`]: the intro title card, the ROUND
+/// banner, the countdown). A glyph draw first pages the [`GLYPH_WIDGET`]
+/// strip, `u = glyph_u(n)` - the byte store at [`GLYPH_U_VA`] retail makes
+/// before it emits - on a copy of the record, so the table stays pristine.
+/// Cells come first: the attract arm draws its prompt before it calls the
+/// title card. A widget id past the table is skipped.
+///
+/// The quads sample the PROT 1203 art pages through the widget's own
+/// texpage / CLUT words, so a host draws them only while those pages are
+/// resident - which the duel VRAM makes them
+/// ([`crate::baka_duel_scene::BakaDuelSurface::hud_quads`]).
+///
+/// REF: FUN_801d5ed0, FUN_801cf388, FUN_801d59d4
+pub fn hud_widget_quads(
+    widgets: &[legaia_asset::baka_opponents::BakaHudWidget],
+    draws: &[ChromeDraw],
+    cells: &[crate::baka_cabinet::SheetCell],
+) -> Vec<crate::baka_fighter::HudWidgetQuad> {
+    const CELL_SIZE: i32 = 0x1000;
+    let mut out = Vec::with_capacity(cells.len() + draws.len());
+    for c in cells {
+        if let Some(w) = widgets.get(usize::from(c.widget)) {
+            out.push(crate::baka_fighter::hud_widget_quad(
+                w,
+                c.x as i16,
+                c.y as i16,
+                c.brightness,
+                CELL_SIZE,
+                false,
+            ));
+        }
+    }
+    for d in draws {
+        let Some(w) = widgets.get(usize::from(d.widget)) else {
+            continue;
+        };
+        let mut w = *w;
+        if let Some(n) = d.glyph {
+            w.u = glyph_u(n);
+        }
+        out.push(crate::baka_fighter::hud_widget_quad(
+            &w,
+            d.x,
+            d.y,
+            d.brightness,
+            d.size,
+            false,
+        ));
+    }
+    out
+}
+
 /// The round chrome's draws as `(centre x, centre y, brightness, text)` rows
 /// for a glyph-less host: a glyph draw shows its paged cell's digit, any
-/// other widget its id. The HUD sprite page these widgets index is uploaded
-/// by the standalone minigames page only, so the native window and the play
-/// page print the draw where retail puts the quad - one label kernel, so the
-/// two hosts cannot drift on what the chrome says.
+/// other widget its id. The play hosts draw [`hud_widget_quads`] instead
+/// whenever the duel VRAM carries the HUD pages; these labels are the
+/// fallback for a frame without them - one label kernel, so the two hosts
+/// cannot drift on what the chrome says.
 pub fn chrome_labels(draws: &[ChromeDraw]) -> Vec<(i32, i32, i32, String)> {
     draws
         .iter()
@@ -1798,6 +1857,59 @@ pub fn chrome_labels(draws: &[ChromeDraw]) -> Vec<(i32, i32, i32, String)> {
 #[cfg(test)]
 mod hud_strip_tests {
     use super::*;
+
+    fn widget(u: u8) -> legaia_asset::baka_opponents::BakaHudWidget {
+        legaia_asset::baka_opponents::BakaHudWidget {
+            scale: 0x1000,
+            texpage: 5,
+            clut: 0x7780,
+            u,
+            v: 16,
+            w: 24,
+            h: 16,
+            rgb_top: [0x80; 3],
+            semi: 1,
+            rgb_bottom: [0x80; 3],
+            abr: 1,
+        }
+    }
+
+    /// Cells draw first at the cabinet's fixed size, then the chrome's
+    /// draws; a glyph draw pages widget 5's `u` on a copy, and an id past
+    /// the table is dropped rather than indexed.
+    #[test]
+    fn widget_quads_page_glyphs_and_keep_call_order() {
+        let table: Vec<_> = (0..8).map(|i| widget(i * 2)).collect();
+        let cells = [crate::baka_cabinet::SheetCell {
+            widget: 0,
+            x: 0xA0,
+            y: 0xCC,
+            brightness: 0x80,
+        }];
+        let draws = [
+            ChromeDraw {
+                widget: GLYPH_WIDGET,
+                x: 100,
+                y: 50,
+                brightness: 0x80,
+                size: 0x1000,
+                glyph: Some(3),
+            },
+            ChromeDraw::plain(40, 0, 0, 0x80, 0x1000),
+        ];
+        let q = hud_widget_quads(&table, &draws, &cells);
+        assert_eq!(q.len(), 2, "the out-of-table widget is skipped");
+        // Cell: 24x16 centred on (0xA0, 0xCC).
+        assert_eq!((q[0].x0, q[0].y0, q[0].x1, q[0].y1), (148, 196, 171, 211));
+        assert_eq!(q[0].uv[0], (0, 16));
+        // Glyph: u paged to 3 * 24.
+        assert_eq!(q[1].uv[0], (glyph_u(3), 16));
+        assert_eq!(q[1].tpage_attr, 5 + 0x20, "ABR folds into the texpage");
+        assert_eq!(
+            table[GLYPH_WIDGET as usize].u, 10,
+            "the table stays pristine"
+        );
+    }
 
     #[test]
     fn without_a_tally_only_the_round_digit_is_placed() {

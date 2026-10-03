@@ -196,7 +196,28 @@ base in `$s0` for the whole routine (`lui $s0, 0x8008` / `addiu $s0, $s0, 0x4140
 | `+0x590` / `+0x594` / `+0x598` / `+0x59C` | `sw` | `0x44` / `0x21` / `0x10` / `0x48` |
 
 Three further `sw`s are absolute rather than `SC`-relative and so are not part of
-this set: `0x80073EF4 = 0xE40`, `0x80073EF8 = 0x2DC0`, `0x80073EFC = 0`.
+this set: `0x80073EF4 = 0xE40`, `0x80073EF8 = 0x2DC0`, `0x80073EFC = 0`, each
+off a `lui $at, 0x8007`.
+
+### The entry seat
+
+Those three words are the field initialiser's **destination-entry operand**,
+the pair a door's `0x3F` or the world-map arrival kernel writes before a scene
+change. The first scene a New Game enters is the prologue `opdeene`, so the
+seed seats the player there, at world `(0xE40, 0x2DC0)` - tile `(28, 91)`.
+`opdeene`'s entry script reads the seat once: the per-frame body's region
+selector (system flags `0x19B..0x1AA`, op `0x42` mode 0 over the region-type
+mask) runs in the pass before the one that spawns the opening record (`44 23`),
+so it lands on region type 7 and sets `0x1A2` - the bit the cold-boot
+`s1_newgame_field` capture holds - and re-applies that region's view window
+(op `0x46`). The opening record then moves the player on.
+
+The port arms the seat in `World::begin_new_game`
+(`legaia_asset::new_game::NEW_GAME_ENTRY_SEAT`); the next field entry takes it
+and seats the player on it when that entry is `opdeene`. A host-armed operand
+(a resume or a capture seed) is the later write and wins. The disc-gated
+`new_game_seed_disc::new_game_entry_seat_matches_the_routines_absolute_stores`
+re-decodes the three stores.
 
 After the expander returns, the routine writes the starting-item pair at
 `SC + 0x1818` (above) and then clears `SC + 0x1618..0x1817` - `0x200` bytes of

@@ -294,6 +294,56 @@ function computeAabb(positions) {
   };
 }
 
+/* Per-vertex smoothed normals for the opt-in dynamic light - the JS twin of
+ * legaia_tmd::mesh::compute_smooth_normals, which builds the native VRAM
+ * mesh's normal stream. Every triangle's unnormalised face normal (its
+ * cross product, so the weight is the triangle's area) accumulates into a
+ * bin keyed by the integer-truncated position, so prims that share a vertex
+ * of the TMD's vertex table share a normal; each vertex then takes its bin's
+ * normalised sum, or zero for a degenerate bin (the shader's cue to fall
+ * back to the facet normal). `positions` is f32 x3 per vertex, `indices` u32
+ * triangles. Returns a Float32Array the length of `positions`. */
+function computeSmoothNormals(positions, indices) {
+  const n = (positions.length / 3) | 0;
+  const keys = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const o = i * 3;
+    keys[i] = Math.trunc(positions[o]) + ',' + Math.trunc(positions[o + 1]) + ','
+      + Math.trunc(positions[o + 2]);
+  }
+  const bins = new Map();
+  const triCount = (indices.length / 3) | 0;
+  for (let t = 0; t < triCount; t++) {
+    const a = indices[t * 3], b = indices[t * 3 + 1], c = indices[t * 3 + 2];
+    if (a >= n || b >= n || c >= n) continue;
+    const ax = positions[a * 3], ay = positions[a * 3 + 1], az = positions[a * 3 + 2];
+    const abx = positions[b * 3] - ax, aby = positions[b * 3 + 1] - ay;
+    const abz = positions[b * 3 + 2] - az;
+    const acx = positions[c * 3] - ax, acy = positions[c * 3 + 1] - ay;
+    const acz = positions[c * 3 + 2] - az;
+    const nx = aby * acz - abz * acy;
+    const ny = abz * acx - abx * acz;
+    const nz = abx * acy - aby * acx;
+    for (const v of [a, b, c]) {
+      let bin = bins.get(keys[v]);
+      if (!bin) { bin = [0, 0, 0]; bins.set(keys[v], bin); }
+      bin[0] += nx; bin[1] += ny; bin[2] += nz;
+    }
+  }
+  const out = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const bin = bins.get(keys[i]);
+    if (!bin) continue;
+    const len = Math.hypot(bin[0], bin[1], bin[2]);
+    if (len > 1e-6) {
+      out[i * 3] = bin[0] / len;
+      out[i * 3 + 1] = bin[1] / len;
+      out[i * 3 + 2] = bin[2] / len;
+    }
+  }
+  return out;
+}
+
 /* Top-down orthographic view-projection.
  *
  * Camera looks straight down (-Y) by default; `cam.pitch` tilts it toward

@@ -695,9 +695,9 @@ off the run's own live scores and gauges and `DanceGame::hud_quads` resolves the
 score-box frames through the emitter.
 
 Both hosts lay the frame out through them every dance frame
-(`DanceGame::hud_frame_rows`, gated by `DanceGame::rival_hud_visible`); the
-native window also builds the textured quads (`hud_draw_quads`) against the
-HUD page the entry stages - see the Retail-coordinate HUD item above. A
+(`DanceGame::hud_frame_rows`, gated by `DanceGame::rival_hud_visible`); both
+hosts also build the textured quads (`hud_draw_quads`) against the HUD page
+the entry stages - see the Retail-coordinate HUD item above. A
 disc-gated oracle pins both against the real widget table.
 
 ## Assets: the overlay loads none - the entry path stages PROT 1230
@@ -1052,7 +1052,7 @@ choose between the sprite and the placeholder.
 ### HUD render driver (`FUN_801d231c`)
 
 `FUN_801d231c` is the per-frame driver over the pieces above, called from the
-main play state. Per frame it draws the three score readouts and their box
+main play state. Per frame it draws the three score readouts and then their box
 frames, then the human's groove gauge (`FUN_801d3e28`) and beat track
 (`FUN_801d2524`), then - **only while `_DAT_8007B6D0` is set** - the two rivals'
 gauges and tracks at `(0xDC, 0x40)` / `(0xDC, 0xD4)` and `(0x50, 0x40)` /
@@ -1079,6 +1079,13 @@ the human always lands in the centre box:
 | `0` yosenn | `0` | `1` | `2` |
 | `1` hosenn | `1` | `2` | `0` |
 | `2` setumei / `3` asobi | `0` | `2` | `1` |
+
+That order decides what is visible. Every widget quad links into one
+ordering-table bucket through `AddPrim` (`jal 0x8003d2c4` at `0x801D32D8` in
+`FUN_801d2f38`), which prepends, so the digit runs - emitted first
+(`0x801D23D0..0x801D2428`) - draw last, over the box frames' opaque interiors
+(emitted at `0x801D2440..0x801D247C`). `DanceGame::hud_draw_quads` keeps that
+emission order for the port's LIFO screen-primitive pass.
 
 Mode `3` (free play) skips both side boxes and both side digit runs - it draws
 the centre box only. The digit runs go through `FUN_801d32f8(style, x, y, value,

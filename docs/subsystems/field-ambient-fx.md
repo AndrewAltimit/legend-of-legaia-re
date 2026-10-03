@@ -511,6 +511,41 @@ scaled by the lane weight (`FUN_8005B038`: `dst += delta * weight >>
 scratch for that draw, and the caller restores the authored pointer
 afterwards - the rest pose is never mutated.
 
+**Field actors arm the same lanes through field-VM op `0x4B`**
+(`0x801E0820..0x801E08C0` in `FUN_801DE840`): `[4B count base (up:u16
+down:u16) x count]` writes sub-entry `base + i` to `+0xB0 + i`, the two
+velocities to `+0xB8` / `+0xC8`, a zero weight to `+0xA0`, raises
+`+0x10 & 0x1000` and rewrites `+0x62 = (+0x62 | 0x1000) & 0xD3FF` - nothing
+there selects a clip, and the actor tick's anim step `FUN_800204F8` runs the
+envelope before its cursor work. A census over the disc's MAN scripts finds
+the op in most towns and dungeons, as a placement's own prologue or as a
+cutscene's cross-context poke. `rikuroa`'s Genesis tree is the worked
+example: three `.MAP` placed objects bound to `P0[2..4]`, whose bind-time
+prologues arm `4B 07 00 ..` / `4B 01 08 ..` / `4B 01 07 ..` while story flag
+`0x142` is clear and raise HOLD (`2B 0A`) behind it, so the envelope primes
+every lane to `0x1000` and the tree draws withered. `rikuroa_pre_caruban`
+holds those weights with `+0x62 = 0x415`; `rikuroa_post_genesis_tree` holds
+them at `0` and draws the full tree. Engine: `World::arm_field_morph` /
+`tick_npc_morphs` (`engine-core::world::npc_morph`), keyed by owner - a
+placement slot or a bound object's flat record. A bound object's lanes reach
+its placed draws' env-pack meshes through `current_morph_deltas`, so both
+hosts' existing pack-mesh substitution draws them
+(`crates/engine-core/tests/npc_morph_rikuroa_disc.rs`).
+
+A placement's (NPC's) lanes stage onto its own model through one kernel,
+`World::npc_morphed_tmd`: the weighted deltas land per TMD object in
+object-local space, ahead of the bone transform, as `FUN_8001C604` runs per
+group before the draw. A slot whose deltas move is marked dirty
+(`take_npc_morph_dirty`). The native window drops that slot's pose-cache
+entries so the clip pass re-skins from the morphed mesh, and re-stages a
+clip-less slot's static mesh. The browser play page bumps a per-slot
+generation (`play_npc_morph_states`) and swaps the entry's base positions
+for `play_npc_morph_base` before posing. Rim Elm's Genesis tree is the worked
+example on this side: placement `P1[50]` in `town01`, clip-less, holds
+sub-entries `3..=6` at peak until the tree revives, which is the withered
+tree the `first_town_interactive` capture draws over an authored mesh that
+is the revived one (`crates/engine-core/tests/npc_morph_placement_disc.rs`).
+
 Engine: kernels in `engine-vm::vdf_morph` (record walk, GPF blend,
 ActorState envelope bridge), envelope on armed ambient parts in
 `World::tick_ambient_part`, morph surface
@@ -644,6 +679,15 @@ byte layout):
 | `FUN_8003F348` | SCUS | **Walk.** Called only from the render pass's gated site (`0x80026F24`); pushes the matrix stack, folds `RotMatrixX(0x400)` into the camera rotation, then runs the update on every one of the 80 records whose alive byte is set. |
 | `FUN_8003F3FC` | SCUS | **Per-particle update + draw.** Kills a record outside the walk box; brightness ramps `0..0xFF` over age `0..0x400`, holds to `0xC00`, then fades and kills; colour is `grey * tint * brightness >> 15` per channel with the tint the op `0x4C 0x12` global multiply (`_DAT_8007BCB8..BA`, `0x80` neutral); drift and age advance by `DAT_1F800393`; the player's `+-0x180 / +-0x80 / +-0x80` box ages it again, three times more with a d-pad bit held; then two halves through `FUN_8003F86C`, and a record whose two halves both cull is freed (`FUN_8001FA68`). |
 | `FUN_8003F86C` | SCUS | **Half-sheet emitter.** One `POLY_FT4` (tag `0x09` words, command `0x2E`: textured, semi-transparent, texture-blended), a **view-space billboard** at the particle's depth - see [the sheet is a billboard](#the-sheet-is-a-view-space-billboard); culled when both corners are off the `[-8, 0x148)` columns, both above row `0`, or both below row `0x190`; kept but not drawn between rows `0xF0` and `0x190`; NCLIP-culled at a signed area past `0x1F40` quarter-pixels; linked at OT bucket `SZ >> 5`. On the overworld it also drops a half nearer than `SZ 0x310`, links at `(SZ - 0x10) >> 5` and adds the curvature table's `SY` term. |
+
+A raised gate does not by itself put fog on screen: the region a tile falls
+in must also be **enabled**, and that byte is script state. Op `4C C1`
+rewrites every region's `+0` from its story flag (`+9..+10`, set means off;
+[menu-ctrl](script-vm-menuctrl.md#0x4c-nibble-0xc00xcf---small-per-actor--per-scene-writes)),
+and most scene entry scripts run it. Retail's `retock` inn states hold the
+gate raised, all three regions off under flag `0x51C` and an empty pool;
+`rikuroa` and `garmel` key their spent regions on `0x007`. An engine that
+left the MAN's own bytes in place drew a full fog field over the inn.
 
 The half-width is `(0x180 + (age >> 4)) >> 1`. Retail adds a byte from
 `FUN_8003F838` here, but it seeds that PRNG's state with the record's age

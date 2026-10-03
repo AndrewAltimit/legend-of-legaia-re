@@ -898,8 +898,19 @@ resume through it (native `BootSession::resume_save`, page
 3. otherwise, with no scene running, the opening town.
 
 A resume never becomes a New Game, and "can the host enter this label" is
-answered by entering it, not by a host's scene-picker list. The save is
-applied after the entry, whatever the landing. A New Game is the sibling
+answered by entering it, not by a host's scene-picker list.
+
+The hydrate order around the landing is the same kernel's,
+`resume::resume_card_load`, which both hosts' resume entries call. Retail's
+card load copies the save block over the live game-state window before the
+field init runs, so the saved **story flags** go in ahead of the entry and
+the landing scene's entry scripts and bind-time prologues read them. The
+**whole save** - party records, gold, bag, purses - is applied after the
+entry, whatever the landing: the engine's party load raises a record's actor
+slot when the world is off a field, and a slot raised before the entry
+survives it, so a four-member save resumed from the title drew the scene-pack
+meshes `uru` pre-binds to slots 1..3. A page Load or import only parks the
+save; nothing reaches the world until its resume call. A New Game is the sibling
 entry (`resume::enter_new_game`: the seeded slate, then `opdeene`, else
 `town01`; native `BootSession::start_new_game`, page `play_new_game`), and it
 is the only thing the title's New Game row - from the cold boot or after a

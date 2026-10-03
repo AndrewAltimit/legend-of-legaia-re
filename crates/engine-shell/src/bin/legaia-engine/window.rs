@@ -96,6 +96,16 @@ pub(crate) struct ScreenshotConfig {
     /// Whether the drive's one-shot world seed has been armed (it is armed
     /// on the first battle tick).
     pub battle_drive_primed: std::cell::Cell<bool>,
+    /// Ticks the drive's phase has held so far; the capture waits for
+    /// [`legaia_engine_shell::retail_compare_battle::BattleDrive::hold_ticks`]
+    /// of them, as the headless seed does.
+    pub battle_drive_held: std::cell::Cell<u32>,
+    /// `LEGAIA_BATTLE_BARS=slot:hp:mp,...`: the capture's mid-fight HP / MP,
+    /// seeded on the first battle tick as the headless seed seeds them
+    /// ([`legaia_engine_shell::retail_compare_battle::apply_bar_seeds`]).
+    pub battle_bars: Vec<legaia_engine_shell::retail_compare_battle::BarSeed>,
+    /// Whether [`Self::battle_bars`] have been seeded.
+    pub battle_bars_seeded: std::cell::Cell<bool>,
 }
 
 /// Debug state `play-window` seeds before the first world tick, so a capture
@@ -369,6 +379,11 @@ impl ScreenshotConfig {
                 legaia_engine_shell::retail_compare_battle::BattleDrive::from_env(&v)
             }),
             battle_drive_primed: std::cell::Cell::new(false),
+            battle_drive_held: std::cell::Cell::new(0),
+            battle_bars: std::env::var("LEGAIA_BATTLE_BARS")
+                .map(|v| legaia_engine_shell::retail_compare_battle::bar_seeds_from_env(&v))
+                .unwrap_or_default(),
+            battle_bars_seeded: std::cell::Cell::new(false),
         }))
     }
 }
@@ -656,6 +671,10 @@ struct MuscleHubAssets {
 /// Either can be absent when the source TMD carries no prims of that class.
 type NpcPosedHalves = (Option<UploadedVramMesh>, Option<UploadedColorMesh>);
 
+/// A clip-less NPC's TMD, raw bytes and frame-0 rest pose (when its anim
+/// record names one). See [`PlayWindowApp::npc_rest_srcs`].
+type NpcRestSrc = (legaia_tmd::Tmd, Vec<u8>, Option<Vec<([i16; 3], [i16; 3])>>);
+
 /// `(placement slot, clip frame) -> skinned mesh`. See
 /// [`PlayWindowApp::npc_pose_cache`].
 type NpcPoseCache = std::collections::HashMap<(u8, usize), NpcPosedHalves>;
@@ -818,12 +837,22 @@ struct PlayWindowApp {
     /// Per-NPC looping ANM clip players (the scene-bundle record named by the
     /// placement's anim byte), keyed by placement slot - drives live clip
     /// playback for the placed NPCs (idle sway / walk cycles). Rebuilt with
-    /// `field_npc_draws`; `npc_anim_srcs` holds each animated NPC's truncated
-    /// TMD + raw bytes for the per-frame posed re-upload (the same rebuild
-    /// path the player's idle/walk pair uses).
+    /// `field_npc_draws`; `npc_anim_srcs` holds every drawn NPC's TMD + raw
+    /// bytes (cut to its spawn clip's bone count when it spawned with one)
+    /// for the per-frame posed re-upload (the same rebuild path the player's
+    /// idle/walk pair uses) - a slot with no spawn clip takes its first one
+    /// from an ANIMATE cue.
     npc_clip_players:
         std::collections::HashMap<u8, legaia_engine_core::field_anim::FieldClipPlayer>,
     npc_anim_srcs: std::collections::HashMap<u8, (legaia_tmd::Tmd, Vec<u8>)>,
+    /// The mesh source + rest pose of every NPC **without** a clip player,
+    /// kept so an op-`0x4B` VDF morph on it (`World::npc_morphed_tmd`) can
+    /// re-stage its static mesh. Clip-driven NPCs morph through the pose
+    /// pass off `npc_anim_srcs` instead.
+    npc_rest_srcs: std::collections::HashMap<u8, NpcRestSrc>,
+    /// The re-staged static meshes of clip-less NPCs whose morph lanes are
+    /// live, keyed by placement slot; drawn in place of the rest upload.
+    npc_morph_static: std::collections::HashMap<u8, NpcPosedHalves>,
     /// Memoised posed NPC meshes, keyed by `(placement slot, clip frame)`.
     ///
     /// An NPC's clip is a short **loop** over a fixed set of poses, so the
@@ -833,7 +862,7 @@ struct PlayWindowApp {
     /// buffers. Bounded by `NPCs × clip length` (tens of small meshes).
     ///
     /// Invalidated wholesale when `upload_assets` rebuilds `npc_clip_players`
-    /// (scene change), and per-slot when a channel op-`0x4B` ANIMATE cue swaps
+    /// (scene change), and per-slot when a channel clip cue (`A2` ExecMove / `4C 51` run) swaps
     /// that slot's clip - a new clip reuses the same low frame indices, so its
     /// entries must not alias the outgoing clip's.
     npc_pose_cache: NpcPoseCache,
@@ -848,7 +877,7 @@ struct PlayWindowApp {
     /// clips. Empty (and free) when the env var is unset.
     npc_pose_verify: NpcPoseVerify,
     /// The ANM bundles the placements resolved their clips through,
-    /// retained past scene load so channel op-`0x4B` ANIMATE cues
+    /// retained past scene load so channel clip cues (`A2` / `4C 51`)
     /// (`World::npcs.anim_cues`) can re-target an NPC's clip player
     /// mid-scene (the prologue-vignette "characters doing things" beats).
     /// `.0` = the per-scene bundle, `.1` = the party locomotion bundle

@@ -1267,9 +1267,9 @@ base becomes the context's bytecode buffer (`actor[+0x90]`), its first opcode th
 the id space the cross-context (`0x80`-bit) ops resolve through `FUN_8003C83C`.
 The opdeene timeline drives them: after the camera-configure opening it **halt-acquires**
 channels `0x05..0x0F` (a sweep of `4C 85` freezes = op `0x4C` n8 sub-5 against each target),
-then pokes them beat by beat - a `4C 45` (n4 sub-5) parameter write, a `4B` ANIMATE cue, an
-`A3`/`23` MoveTo. The poke itself does the work - the clip plays on the actor's anim clock and
-the walk kernel moves it - and the timeline waits on a context flag (`B3 <id> <bit>` =
+then pokes them beat by beat - a `4C 45` (n4 sub-5) parameter write, a `4B` morph-lane arm, an
+`A3`/`23` MoveTo. The poke itself does the work - the morph envelope runs on the actor's anim
+clock and the walk kernel moves it - and the timeline waits on a context flag (`B3 <id> <bit>` =
 cross-context `CFLAG_TST`). The channel's own placement script does not respond: it runs only
 while a touch engages it.
 
@@ -1287,12 +1287,12 @@ touch holds its `+0x10 & 0x100` up and a poke does not raise it (see
 pokes run against the resolved channel context (the acquirer clears the target's halt bit - the
 poke from the owner is the resume signal).
 Scripted moves write through to `World::npcs.positions` so the field render + interact probes
-follow, and `0x4B` ANIMATE cues land in `World::npcs.anim_cues` keyed by placement.
-The play-window render drains those cues each frame and **re-targets the NPC's clip player** to
-the cued bundle record (`record = anim id - 1`, the same rule as the placement anim byte), so the
-vignette actors perform their scripted beats instead of looping the placement clip. Simplified:
-the cue's per-keyframe parameter words are not modelled - the cued record plays as a loop until
-the next cue.
+follow. A `0x4B` poke is not a clip cue: the arm writes the actor's VDF morph lanes (the sub-entry
+bytes at `+0xB0`, the ramp velocities at `+0xB8` / `+0xC8`) and never touches `+0x5C`, so it lands
+on `World::npcs.morphs` ([`field-ambient-fx`](field-ambient-fx.md#the-vdf-vertex-morph-chain)).
+The clip re-targets the hosts play come from the `A2` ExecMove pokes and the `4C 51` run's
+move-anim id (`World::npcs.anim_cues`, `record = anim id - 1`, the same rule as the placement
+anim byte).
 Channels are cutscene-scoped: they drop when the timeline completes, so normal field NPC behaviour
 (the decoded-waypoint motion substitute) is untouched outside cutscenes.
 Disc-gated `crates/engine-core/tests/opdeene_field_channels.rs` cold-boots `opdeene`, asserts 13

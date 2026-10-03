@@ -117,9 +117,18 @@ into the executing context around each cross-context `2B`/`2C`/`2D`, mirrors
 it back, and parks on the clip-end spin until the player's clip cursor
 (`field_env::PropAnimBank::actor_clips`, advanced by the `FUN_800204F8` port
 `PropAnim::tick`) latches the end itself - the runner writes no latch of its
-own. The gate reads the live purse through `FieldHost::party_bank_value`,
+own. A field NPC a talk reaches before any `A2 <id> <clip>` poke gets a cursor
+on first use, as the player does: every spawned actor loops its clip from the
+template `+0x62`, so its latch lands once per wrap (`vozz` P1[7], the Genesis
+Tree, raises actor `0x06`'s clamp, clears the latch and spins on it before the
+scene goes on). A spin on such a resolved cursor parks even before the talk's
+first box opens. The gate reads the live purse through `FieldHost::party_bank_value`,
 the debit is the record's own `ADD_MONEY`, and the restore is its own
-`4C 82 <slot>` ops (`FieldHost::op4c_n8_sub2_restore_party_slot`). Disc-gated
+`4C 82 <slot>` ops (`FieldHost::op4c_n8_sub2_restore_party_slot`). Retail's
+record is the only copy of a member's pools; the port also keeps them on the
+party actor, which a battle seats from and `World::save_party` writes back
+over the record, so the restore projects the record onto that actor as every
+field heal does - a rest that skipped it was undone by the next fight. Disc-gated
 oracle: `crates/engine-core/tests/inn_stay_field_vm_disc.rs`, which drives the
 real record from the interact call and asserts the gold delta and the pools on
 the Yes, No and can't-afford branches.

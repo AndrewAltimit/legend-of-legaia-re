@@ -2311,6 +2311,19 @@ stamps - record 441 is a plain decoration at the road crossing
 grid cell over the river at `(10688, 5312)`) is spawn-scripted and does not
 rest at its grid cell; retail shows a single bridge, at the record-441 site.
 
+**A landmark whose prologue parks it draws nothing.** Record 349's bind
+record and record 414's (pack mesh 31, cell `(96, 20)` in the sea south of
+Rim Elm's gate) both open with `23 7F 7F`, the move to the off-map hide box.
+A retail capture standing at the gate holds both actors at
+`(0x3FC0, 0x3FC0)` with their meshes resolved, so the overworld draws
+neither. The port pre-runs the same prologues at scene entry
+(`World::hidden_object_records`, map01 hides partition-0 records 9 and 11).
+Before resolving the landmark layer, all three hosts drop each placed record
+whose bind is hidden
+(`legaia_engine_core::field_env::retain_visible_landmark_placements`). The
+decoration sweep runs no script and is never filtered. map02 and map03 park
+no landmark on a cold entry.
+
 #### Placing the continent terrain (engine port)
 
 The kingdom slot-1 meshes are object-local, so the continent must be assembled
@@ -2856,7 +2869,13 @@ every segment through the resolved frame's `camera_view::frame_vp` at the
 display's 4:3 and emits it as a one-pixel-wide quad on the 320x240 display;
 the native window and the browser play page both put those quads on their
 shared screen-primitive pass (`screen_prim::world_map_marker_prim`). These
-markers are the port's, not retail's.
+markers are the port's, not retail's, so the entity markers are a debug
+overlay (`WorldToggles::overworld_marker_overlay`, off by default; the
+native window raises it under `LEGAIA_WORLD_MAP_MARKERS=1`). A retail frame
+at a town entrance (`overworld_into_town_man_load`) shows the town's own
+mesh and nothing over it; drawn by default, the portal's post stood through
+the player at every overworld door. The player's stand-in marker is not
+gated.
 
 Retail's placements are actor models sorted into the ordering table with the
 terrain, so a mountain between the camera and a portal hides it. A
@@ -3312,6 +3331,41 @@ of them drifting - once the ambient tick runs the part tick's motion block
 that the drifting half stood still at the spawn point, and a probe that never
 drove the ambient tick saw only the two nodes the scene-entry first run leaves.
 `crates/engine-core/tests/overworld_puff_column_disc.rs` pins both.
+
+Each puff is a `1024 x 256` sheet (`+0xB4 / +0xB6`) on texture page `0x26`
+(VRAM `(384, 0)`, ABR `1` additive), texels `(0, 0x40)..(0x3F, 0x5F)`
+through CLUT `0x774A` (`(160, 477)`, a grey ramp with `STP` set): together
+they are the white band retail shows above the ridges of `map01`. The
+sprite arm scales the sheet by the render scale `+0x72`, which the seater
+`FUN_80021B04` stores from its fourth argument (`0x80021DAC`, before the
+first move-VM run); the ambient install `FUN_800252EC` and op `0x25`'s child
+spawn both pass `0x1000`. A part seated with `+0x72 = 0` collapses every
+corner onto the node, which is how the port drew nothing here.
+
+Each node draws **eight** sheets, spread along the ridge line. Both
+children run move-VM op `0x3C` with a count of `8` right after their sprite
+op: it sets the model list's count word to `8`, switches the node to the
+keyframe-mesh mode `+0x5A = 6`, and seats an eight-part keyframe pose
+behind `+0x4C`; op `0x3D` then gives every part a target and the cursor
+rate `+0xD0 = 0x0C`, which the part tick adds to the blend cursor `+0x22`
+each frame ([move-vm.md](move-vm.md#keyframe-pose-ops-0x3c--0x3d)). The
+draw dispatcher's case 4 points all eight slots of the list at the one
+built quad (`0x8001B08C..0x8001B0B4`) and then, at `0x8001B160`, hands a
+`+0x5A == 6` node to the animated renderer `FUN_8001B964` with `+0x4C` as a
+one-frame clip, so slot `i` is the quad translated by part `i`'s blended
+keyframe. The puffs' keyframes are pure X / Z translations - the sheets open
+out from about `±256` to `±1280` units either side of the node over a
+puff's life.
+
+The walked table of `keikoku_chest_preload` holds 52 page-`0x26` packets:
+seven nodes with a pose block (two more hold none and are drawn nowhere),
+eight slots each, less four off screen. Their colours (`0x7F`, `0x5C`,
+`0x1F`) are the depth cue of each node's fade level `+0x78`. Each packet
+adds its texel to the frame (ABR `1`), and later opaque terrain in the
+ordering table paints over the lower part of the band; what remains is a
+white band along the far ridge, most of it under the party HUD.
+`engine-core::effect_sprite_arm::sprite_arm_draws` draws one quad per posed
+part on both hosts.
 
 ### Gate-arm chain - `FUN_801D1344` -> `FUN_801D8258`
 

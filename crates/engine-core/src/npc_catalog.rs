@@ -88,29 +88,28 @@ fn dialog_label(inline: &[u8]) -> Option<String> {
     Some(line.chars().take(64).collect())
 }
 
-/// Locate the scene's ANM bundle the way the play-window does: the type-0x05
-/// section of one of the scene's PROT slots. The descriptor-count seed varies
-/// per scene (town01 resolves at 3; the prologue scenes only at >= 5), so try
-/// the spread and take the first hit.
+/// The PROT entry the scene's ANM bundle comes from
+/// ([`scene_anm_bundle`]'s source).
 pub fn scene_anm_prot(scene: &Scene) -> Option<u32> {
-    scene.entries.iter().find_map(|e| {
-        let found = [3usize, 5, 6, 7]
-            .into_iter()
-            .any(|desc| !legaia_asset::player_anm::find_in_entry(&e.bytes, desc).is_empty());
-        found.then_some(e.idx)
-    })
+    scene_anm_bundle_with_prot(scene).map(|(idx, _)| idx)
 }
 
-/// The scene's decoded ANM bundle itself (the same spread-scan as
-/// [`scene_anm_prot`], returning the first decodable bundle).
+/// The scene's NPC clip bank - the bundle every host poses the scene's
+/// placements and bound props from. One resolver for every caller
+/// ([`legaia_asset::player_anm::find_scene_bundle`]): the type-`0x05`
+/// section of a player-LZS container in one of the scene's PROT slots (the
+/// descriptor-count seed varies per scene, so the spread is tried), else the
+/// type-`0x05` chunk of a DATA_FIELD stream (`rikuroa`).
 pub fn scene_anm_bundle(scene: &Scene) -> Option<legaia_asset::player_anm::PlayerAnmBundle> {
-    scene.entries.iter().find_map(|e| {
-        [3usize, 5, 6, 7].into_iter().find_map(|desc| {
-            legaia_asset::player_anm::find_in_entry(&e.bytes, desc)
-                .into_iter()
-                .next()
-        })
-    })
+    scene_anm_bundle_with_prot(scene).map(|(_, b)| b)
+}
+
+fn scene_anm_bundle_with_prot(
+    scene: &Scene,
+) -> Option<(u32, legaia_asset::player_anm::PlayerAnmBundle)> {
+    legaia_asset::player_anm::find_scene_bundle(
+        scene.entries.iter().map(|e| (e.idx, e.bytes.as_slice())),
+    )
 }
 
 /// Catalog every NPC / actor the scene's MAN places. `play_pool` is `Some`

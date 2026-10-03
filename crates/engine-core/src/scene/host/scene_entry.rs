@@ -43,11 +43,7 @@ impl SceneHost {
         };
         // The scene ANM bundle resolves each posed prop's clip metadata
         // (frame count + step scaling) for the bank's end-latch timing.
-        let bundle = scene.entries.iter().find_map(|e| {
-            [3usize, 5, 6, 7]
-                .into_iter()
-                .find_map(|d| legaia_asset::player_anm::find_in_entry(&e.bytes, d).pop())
-        });
+        let bundle = crate::npc_catalog::scene_anm_bundle(scene);
         let clip = |anim: u8| -> Option<(u16, bool, u8)> {
             let b = bundle.as_ref()?;
             let r = b.record(anim.checked_sub(1)? as usize).ok()?;
@@ -248,6 +244,20 @@ impl SceneHost {
         }
         self.world
             .install_cast_effect_pool(std::sync::Arc::new(pool));
+    }
+
+    /// Re-read the party's per-equipment battle inputs - the swing costs and
+    /// the Auto attack's pool-arm inputs - from the player battle files.
+    ///
+    /// Scene entry runs this, which is when retail selects the equipment
+    /// sections. A card load whose save is applied **after** the scene entry
+    /// (both hosts' resume order: enter, then hydrate) calls it once more,
+    /// so the loaded equipment is what prices the arts input - retail's
+    /// card load hydrates first and then loads the scene, so the sections it
+    /// selects are the save's own.
+    pub fn refresh_party_battle_inputs(&mut self) {
+        self.refresh_battle_swing_costs();
+        self.refresh_battle_auto_combo_inputs();
     }
 
     /// Refresh [`crate::world::BattleState::swing_costs`] from the player
@@ -556,6 +566,9 @@ impl SceneHost {
         self.world.field_vm.stepping_view.clear();
         self.world.field_vm.channels_man = None;
         self.world.npcs.anim_cues.clear();
+        self.world.npcs.morphs.clear();
+        self.world.npcs.object_pack_slots.clear();
+        self.world.npcs.morph_dirty.clear();
         self.world.npcs.clip_current.clear();
         self.world.npcs.clip_bones.clear();
         // An in-flight ledge hop is scene-scoped, and its steering lock is
@@ -684,7 +697,13 @@ impl SceneHost {
         // in the scene's main region (it keeps `0xA40` wherever that already
         // qualifies, so town01's New Game opening is unchanged).
         // PORT: FUN_801D6704 (the entry seat)
-        let operand = self.pending_entry_seat.take();
+        // A New Game's seed operand stands in for a host-armed one on the
+        // prologue scene's entry (a host-armed operand is the later write and
+        // wins), and is spent by whichever entry comes first.
+        let new_game_seat = self.world.cutscene.new_game_entry_seat.take();
+        let operand = self.pending_entry_seat.take().or_else(|| {
+            new_game_seat.filter(|_| name == legaia_asset::new_game::OPENING_CUTSCENE_SCENE)
+        });
         let cold = crate::mode_entry_init::field_spawn(
             crate::mode_entry_init::FieldEntryMode::Cold,
             operand.unwrap_or((0, 0)),
@@ -1225,6 +1244,19 @@ impl SceneHost {
                             })
                             .collect(),
                     };
+                    // The pack meshes each bound record's placed draws use,
+                    // so an op-`0x4B` morph a bind's prologue arms reaches
+                    // them (`World::arm_field_morph`).
+                    if let Some(scene) = self.scene.as_ref()
+                        && let (Ok(Some(placements)), Ok(Some(binds))) = (
+                            scene.field_object_placements(&self.index),
+                            scene.field_object_binds(&self.index),
+                        )
+                    {
+                        self.world.set_object_morph_targets(
+                            crate::field_env::object_record_pack_slots(&placements, &binds),
+                        );
+                    }
                     self.world
                         .seed_object_channels(&man_file, &man_bytes, &object_binds);
                     // Boss-stager placements (chapter-1: Mt. Rikuroa's Caruban
@@ -1570,12 +1602,14 @@ impl SceneHost {
         // shop-open path offers real per-scene items at real prices instead of a
         // hand-authored list. Cheap when the scene has no merchant.
         self.populate_scene_shops();
-        // Run the entry system script's load-frame slice (to its first
-        // yield/wait): retail executes the ctx-0xFB prologue - flag routing,
-        // walls, BGM cue, and the 0x52F arrival-fade arm (fade-in from
-        // black) - within the scene-load frame, before the first rendered
-        // frame. Placed at the end of entry so every host hook the script
-        // fires sees the fully-installed scene (channels, props, shops).
+        // Run the entry system script's passes up to the one that spawns the
+        // opening record (`World::pre_run_entry_script`): retail runs them
+        // over the first frames, before that record takes the player - flag
+        // routing, walls, BGM cue, the region selector and the 0x52F
+        // arrival-fade arm (fade-in from black). The engine installs the
+        // record at entry, so they run in the load frame here. Placed at the
+        // end of entry so every host hook the script fires sees the
+        // fully-installed scene (channels, props, shops).
         // Scoped to the opening prologue cutscene scenes (the same gate as
         // `scene_color_grade`): their `P1[0]` is pure choreography setup, so
         // the linear load-frame run is safe, and it is what puts the fade

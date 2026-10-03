@@ -112,6 +112,12 @@ pub struct Scenario {
     /// `backup_fingerprint` field `scripts/manage-states.py` reads.
     #[serde(default)]
     pub backup_fingerprint: Option<String>,
+    /// The patch family whose executable the state holds resident, when it
+    /// was made on a patched disc (`scripts/pcsx-redux/patch_taint_audit.py`
+    /// tags it). Loading such a state replays that build's `SCUS_942.54`, so
+    /// anything the patch writes is not retail behaviour.
+    #[serde(default)]
+    pub resident_patch: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

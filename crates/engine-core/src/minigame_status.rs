@@ -229,10 +229,18 @@ pub fn muscle_status_rows(world: &World) -> Vec<StatusRow> {
         MusclePhase::Resolve => "resolving...".to_string(),
         // Retail's turn top is automatic (`World::tick` calls `next_turn`
         // with no press), so this row names no button.
-        MusclePhase::TurnOver => {
-            let [taken, dealt] = s.last_turn_damage();
-            format!("turn: dealt {dealt}, took {taken}")
-        }
+        // The turn's play-out: the acting side and its running damage tally,
+        // held for as long as the surface replays the plays.
+        MusclePhase::TurnOver => match world.muscle_playback_tally() {
+            Some((attacker, total)) => format!(
+                "{} attack  TOTAL {total}",
+                if attacker == 0 { "Your" } else { "Foe's" }
+            ),
+            None => {
+                let [taken, dealt] = s.last_turn_damage();
+                format!("turn: dealt {dealt}, took {taken}")
+            }
+        },
         MusclePhase::Won | MusclePhase::Lost => String::new(),
     };
     out.push(StatusRow::new(

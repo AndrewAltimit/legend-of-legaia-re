@@ -510,6 +510,10 @@ fn rung3_items_use_opens_the_target_panel_over_a_hurt_party() {
     rt.play_menu_input(CROSS);
     settle_card_read(&mut rt);
     rt.play_menu_input(CROSS);
+    // The page lands the parked save the frame the Load commits
+    // (`play_menu_take_load`, then `play_resume_save` via `onCardLoad`).
+    assert!(rt.play_menu_take_load(), "the Load parked its save");
+    rt.play_resume_save().expect("resume the parked save");
     for _ in 0..8 {
         rt.play_menu_input(0);
     }

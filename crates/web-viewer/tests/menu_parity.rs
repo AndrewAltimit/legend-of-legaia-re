@@ -325,16 +325,18 @@ fn load_screen_walks_the_retail_card_flow_off_an_inserted_card() {
          (got {filled_texts} vs {empty_cell_texts} on an empty block)"
     );
 
-    // Confirm cell 2 = block 3: the card's save lands in the live world.
+    // Confirm cell 2 = block 3: the card's save is parked, and the page's
+    // resume call (`play_resume_save`) lands it in the live world.
     rt.play_menu_input(CROSS);
+    assert!(
+        !rt.play_menu_take_load_scene().is_empty(),
+        "a card load reports the scene the save was written in"
+    );
+    rt.play_resume_save().expect("the Load parked its save");
     assert_eq!(
         session_money(&mut rt),
         1234,
         "the card's save is now the live session"
-    );
-    assert!(
-        !rt.play_menu_take_load_scene().is_empty(),
-        "a card load reports the scene the save was written in"
     );
 }
 

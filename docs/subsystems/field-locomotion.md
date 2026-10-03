@@ -184,7 +184,7 @@ The cold-only `func_0x80024c88` call at `0x801d6fd8` spawns template `0x801F271C
 
 The **player's** seat is written on both arms, from the stack anchor, at `0x801d6f64` (`+0x14`) and `0x801d6f7c` (`+0x18`), with `+0x16` zeroed between them. `FUN_8003AEB0` fills that anchor from `_DAT_80073EF4` / `_DAT_80073EF8` (`0x8003b7b0..0x8003b7d4`) - the **destination entry coordinates** the field VM's `0x3F` scene change writes ([`script-vm.md`](script-vm.md)), and that the new-game data init seeds for `town01` at `0x80034ad4`. So a cold entry lands on the door's operand, a warp lands where the party left.
 
-**Falsified:** "cold entry only ever happens for the New Game opening scene, every other scene change is a warp, so `(0xA40, 0xA40)` is effectively Vahn's authored opening spawn." All three clauses fail. The epilogue clears the word and no field-side routine writes it, so *every* ordinary scene change enters with `0` and takes the cold arm; PROT 0970's FMV exit has two arms that zero it deliberately alongside a scene-name / scene-id write, i.e. retail asks for a cold entry into a named scene by hand; and `town01`'s New Game seat is `_DAT_80073EF4/EF8 = 0xE40 / 0x2DC0` ([`new-game-table.md`](../formats/new-game-table.md)), not `(0xA40, 0xA40)`.
+**Falsified:** "cold entry only ever happens for the New Game opening scene, every other scene change is a warp, so `(0xA40, 0xA40)` is effectively Vahn's authored opening spawn." All three clauses fail. The epilogue clears the word and no field-side routine writes it, so *every* ordinary scene change enters with `0` and takes the cold arm; PROT 0970's FMV exit has two arms that zero it deliberately alongside a scene-name / scene-id write, i.e. retail asks for a cold entry into a named scene by hand; and the New Game's seat is `_DAT_80073EF4/EF8 = 0xE40 / 0x2DC0`, taken by the prologue scene `opdeene` ([`new-game-table.md`](../formats/new-game-table.md)), not `(0xA40, 0xA40)`.
 
 **The sub-tile remainders are still dead code**, for the reason the earlier reading gave: they are computed under `== 2` at `0x801d6e1c..0x801d6e78` and the only registers holding them are read under `!= 0` at `0x801d6fc8` / `0x801d6fd0`, and on that arm both are zero.
 
@@ -433,7 +433,7 @@ The port seeds both bits in `field_channels::spawn_channels`. `World::drain_fiel
 - no clip, for an id past the bundle's end;
 - a two- or three-bone save-crystal record on a ten-bone hero.
 
-The last of these is the "body comes apart" shape. A re-target whose bone count differs from the clip the slot was first bound with is refused, because both hosts cut the actor's mesh to that count (`FieldNpcState::clip_bones`).
+The last of these is the "body comes apart" shape. A re-target whose bone count differs from the clip the slot was first bound with is refused, because both hosts cut the actor's mesh to that count (`FieldNpcState::clip_bones`). A placement that spawns clip-less and takes its first clip from a cue (rikuroa's party Noa, `A2 10 18`) is cut when the clip binds: the native window at pose time, the play page by re-uploading the mesh when `play_npc_mesh_cut` moves.
 
 Because a party placement now carries the bit, the port's VM no longer infers "this is the player" from it. Retail's `0x23` and `4C 51` player arms compare the context **pointer** against `_DAT_8007C364` (`bne s5,v0` at `0x801E1954`), so the host treats a context stepped as a placement channel, its own script or a poke on it, as never the player. That test is `FieldHostImpl::ctx_is_player`.
 
@@ -1479,7 +1479,20 @@ interact dispatch runs the record itself through the field VM
 bullet list above), so the search body, the collision drop and the
 close-on-dismiss sequencing are the script's own. The play-window keeps the
 baked frame-0 mesh for every prop at rest and re-poses only the ones whose
-clip is running. Disc-gated coverage:
+clip is running.
+
+The bank also holds the **unposed** interact-gated binds. `FUN_8003A55C`
+spawns an actor for each bound cell and copies the record header's anim byte
+into `+0x5C` (`0x8003A8DC`) without ever branching on it, so a bind whose
+anim byte is `0` is still examined for its record. The one that matters is
+`rikuroa` P0[2], the Genesis Tree: it has no clip, its body polls `0x28A` /
+`0x142`, and examining it after Caruban spawns P2[53], the revival that
+carries the party down to `map01`. An unposed entry gets a one-frame
+stand-in clip that never draws - both hosts pose only `anim_id != 0`
+placements. An unposed touch-class object (a door marker) stays with the
+walk-touch dispatch, which resolves its record's arm against the live flags
+at contact time; running such a record from its parked cursor instead lands
+Rim Elm's doors on the wrong arm. Disc-gated coverage:
 `crates/engine-core/tests/field_prop_anim_disc.rs`. Raw record evidence:
 `cargo run -p legaia-engine-core --example dump_prop_scripts -- town01`.
 

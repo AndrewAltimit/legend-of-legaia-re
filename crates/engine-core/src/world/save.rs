@@ -353,7 +353,7 @@ impl World {
     /// [`LevelUpTracker::level`] from each loaded record's `+0x100` byte
     /// so reloads don't silently reset every party slot to level 1.
     pub fn load_full(&mut self, sf: legaia_save::SaveFile) {
-        self.load_party(sf.party);
+        self.load_party(sf.party.clone());
         // Restore the present-party composition. The full-roster identity
         // order (what `save_full` writes when no composition is installed)
         // stays the identity default rather than a 3-cap reorder, so legacy
@@ -377,8 +377,19 @@ impl World {
         } else {
             self.party.active_party.clear();
         }
+        self.load_story_flags(&sf);
+        self.party.money = sf.ext.money;
+        self.load_full_tail(sf);
+    }
+
+    /// Restore only the story-flag state of a [`legaia_save::SaveFile`]: the
+    /// flag bitmap and the live system-flag bank seeded from it - the part of
+    /// [`Self::load_full`] a scene's entry scripts and bind-time prologues
+    /// read. A card load hydrates these before the landing scene's field
+    /// init, as retail's card load fills the game-state window first.
+    pub fn load_story_flags(&mut self, sf: &legaia_save::SaveFile) {
         self.flags.story_flags = sf.ext.story_flags;
-        self.flags.story_flag_bits = sf.ext.story_flag_bits;
+        self.flags.story_flag_bits = sf.ext.story_flag_bits.clone();
         // Seed the live system-flag bank from the saved bitmap's `+0x158`
         // window (the retail overlap `save_full` mirrors into) so partition-2
         // record gates - story-progression one-shots, door cutscene beats -
@@ -394,7 +405,10 @@ impl World {
             let window = self.flags.story_flag_bits[SYSTEM_FLAG_WINDOW..].to_vec();
             self.flags.system_flags = window;
         }
-        self.party.money = sf.ext.money;
+    }
+
+    /// [`Self::load_full`] past the party, flags and gold.
+    fn load_full_tail(&mut self, sf: legaia_save::SaveFile) {
         // The configured audio level and the voice volume ride in the same
         // live-state window as the gold; retail's card load restores them with
         // it and the next MAN load re-applies the level. A save naming no

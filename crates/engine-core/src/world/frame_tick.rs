@@ -1005,10 +1005,7 @@ impl World {
     /// [`Self::next_rand`]. The raw word's low bits have short periods.
     pub fn next_rng(&mut self) -> u32 {
         // Numerical Recipes LCG. Cheap, deterministic.
-        self.rng_state = self
-            .rng_state
-            .wrapping_mul(1_664_525)
-            .wrapping_add(1_013_904_223);
+        self.rng_state = legaia_engine_vm::battle_formulas::world_lcg_step(self.rng_state);
         self.rng_state
     }
 
@@ -1277,11 +1274,22 @@ impl World {
                 // `DAT_8007B708 = 0` - behind the same `_DAT_8007B868` gate.
                 // `FUN_800266E0` is BGM sub-op 2's primitive, so the expiry
                 // reaches both hosts' BGM routing as that pause.
-                self.pending_field_events
-                    .push(crate::field_events::FieldEvent::Bgm {
-                        text_id: 0,
-                        sub_op: 2,
-                    });
+                //
+                // Except inside a sub-op 9 -> 0xA swap: there the slot still
+                // holds the *outgoing* track (the poller `FUN_800243F0`
+                // stalls its install on the commit), and that is what the
+                // release stops - a cutscene's `9 · 5 · 0xA` fades the old
+                // score out under the new one's load. The port started the
+                // incoming track at sub-op 9, so pausing here would silence
+                // the new score for good (the commit then releases the paused
+                // source).
+                if !self.audio.start_pending_commit {
+                    self.pending_field_events
+                        .push(crate::field_events::FieldEvent::Bgm {
+                            text_id: 0,
+                            sub_op: 2,
+                        });
+                }
             }
         }
         // Step the active full-screen fade. A template with a hold countdown
@@ -1348,6 +1356,7 @@ impl World {
         }
         let cadence = self.clock.frame_step.max(1);
         let actor_tick_fired = self.clock.actor_vsync_accum >= cadence && runs_master_driver;
+        self.clock.game_tick_fired = actor_tick_fired;
         if actor_tick_fired {
             self.clock.actor_vsync_accum = 0;
             self.tick_actor_physics();
@@ -3399,6 +3408,7 @@ impl World {
         }
         self.minigames.muscle_dome = Some(session);
         self.minigames.muscle_hub_between_legs = false;
+        self.minigames.muscle_playback_frames = 0;
         self.mode = SceneMode::MuscleDome;
         // The hub's announcer lines, staged ahead of the first visit's arms.
         self.queue_xa_prestage(crate::muscle_ringside::hub_xa_prestage());
@@ -3753,8 +3763,16 @@ impl World {
                 if let Some(s) = self.minigames.muscle_dome.as_mut() {
                     // With no disc tables staged this closes the turn without
                     // damage rather than substituting invented numbers - and
-                    // rather than parking the leg in `Resolve` forever.
-                    s.resolve_turn_or_zero();
+                    // rather than parking the leg in `Resolve` forever. The
+                    // damage rolls draw on the world stream (retail's one
+                    // `rand()` seed).
+                    s.resolve_turn_on_stream(&mut self.rng_state);
+                    // The turn's plays now animate (the dome surface replays
+                    // them one every `PLAY_CADENCE_TICKS`); the leg holds at
+                    // `TurnOver` for that long, as retail's action phases do
+                    // before the round driver re-enters the command cluster.
+                    self.minigames.muscle_playback_frames =
+                        crate::muscle_dome_scene::playback_ticks(s.last_turn_plays().len());
                 }
             }
             MusclePhase::TurnOver => {
@@ -3766,7 +3784,9 @@ impl World {
                 // executing during a leg, so a confirm gate here was a silent
                 // one-press stall with nothing on screen to explain it.
                 // REF: FUN_801e295c (turn-top arm)
-                if let Some(s) = self.minigames.muscle_dome.as_mut() {
+                if self.minigames.muscle_playback_frames > 0 {
+                    self.minigames.muscle_playback_frames -= 1;
+                } else if let Some(s) = self.minigames.muscle_dome.as_mut() {
                     s.next_turn();
                 }
             }
@@ -3799,6 +3819,43 @@ impl World {
                 }
             }
         }
+    }
+
+    /// Ticks left of the resolved turn's playback: while non-zero the leg
+    /// sits at `TurnOver` and the turn's plays animate, so the hosts show the
+    /// turn's damage rather than the next command cluster. Retail's round
+    /// driver reaches its command phase only after the action phases
+    /// `0xFE` / `0xFF` have played every queued action; the port times that
+    /// span with the dome surface's own replay cadence
+    /// ([`crate::muscle_dome_scene::playback_ticks`]).
+    pub fn muscle_playback_frames(&self) -> u32 {
+        self.minigames.muscle_playback_frames
+    }
+
+    /// The play the dome surface is replaying this tick and its attacker's
+    /// running damage total: `(attacker slot, total)`. The surface replays
+    /// play `i` from `i * PLAY_CADENCE_TICKS` into the playback; the total
+    /// sums that attacker's landed damage up to and including the current
+    /// play, which is the tally retail's play-out counts up
+    /// ("TOTAL n"). `None` outside a playback.
+    pub fn muscle_playback_tally(&self) -> Option<(usize, i32)> {
+        let left = self.minigames.muscle_playback_frames;
+        if left == 0 {
+            return None;
+        }
+        let s = self.minigames.muscle_dome.as_ref()?;
+        let plays = s.last_turn_plays();
+        let total = crate::muscle_dome_scene::playback_ticks(plays.len());
+        let elapsed = total.saturating_sub(left);
+        let i = ((elapsed / crate::muscle_dome_scene::PLAY_CADENCE_TICKS) as usize)
+            .min(plays.len().checked_sub(1)?);
+        let attacker = plays[i].attacker.min(1);
+        let sum = plays[..=i]
+            .iter()
+            .filter(|p| p.attacker.min(1) == attacker)
+            .map(|p| p.damage.max(0))
+            .sum();
+        Some((attacker, sum))
     }
 
     /// Whether the arena hub is between two legs of an open contest: the

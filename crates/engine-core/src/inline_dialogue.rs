@@ -118,6 +118,14 @@ pub struct InlineDialogue {
     /// halt window: the player and the talking actor both carry `0x400`, and
     /// a cross-context op aimed at the player parks until it closes.
     pub face_ramp: Option<TalkFaceRamp>,
+    /// This pass has spawned a record (an own-context op `0x44`). A raw
+    /// `0x21` after that is the conversation's real end, not a prologue that
+    /// failed to reach its box: the talk's effect was the spawn. `vozz`
+    /// P1[7], the Genesis Tree, spawns the P2[13] approach and ends on
+    /// `+0x4F`'s `0x21`; falling back to its first segment ran the closing
+    /// scene's text and tail instead (`0x2C3` and the `map01` hand-off)
+    /// without the `0x2AC` / `0x193` arm the next talk takes.
+    pub spawned: bool,
 }
 
 /// The walk-kernel leg a talk's `CC F8 85|8E|8F <lo> <hi> <id>` halt-acquire
@@ -258,6 +266,7 @@ impl InlineDialogue {
             visited,
             parked_pc: None,
             face_ramp: None,
+            spawned: false,
         }
     }
 
@@ -290,6 +299,7 @@ impl InlineDialogue {
             visited,
             parked_pc: None,
             face_ramp: None,
+            spawned: false,
         }
     }
 

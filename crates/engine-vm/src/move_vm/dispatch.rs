@@ -567,43 +567,80 @@ pub fn step<H: MoveHost + ?Sized>(
             state.flags &= !2u32;
             size = 1;
         }
-        // 0x3C - SCRATCH_WRITE. size 2 (the original branches out via the
-        // alloc-on-first-use path; we keep the simple shape and leave the
-        // alloc-call to the host via keyframe_alloc).
+        // 0x3C - keyframe-pose seat, size `2 + count * 6`
+        // (`0x80023CA4..0x80023D60`: the part count goes to the model list's
+        // count word (`*(+0x44)`, here the pose's length), `+0x5A = 6` (the
+        // keyframe-mesh mode), the cursor `+0x22`, `+0x68` and `+0x5C` clear,
+        // the pose block behind `+0x4C` is allocated once (`count << 5 | 8`
+        // bytes) and `+0xCC = PC`, `+0xCE = +0xD0 = +0xD2 = 0`. Each part's
+        // six operands seed both its current and its target keyframe.
+        //
+        // PORT: FUN_80023070 (op `0x3C`, `0x80023CA4..0x80023D60`)
         0x3C => {
             state.move_submode = 6;
             state.y_rot = 0;
             state.field_68 = 0;
             state.field_5c = 0;
-            // NB: full opcode body iterates `count` slots of 6 u16s each;
-            // we surface the count and let hosts that need the inner loop
-            // read it from anim_block themselves. The safe forward-progress
-            // size is 2 + count * 6 worst-case; the runtime does this in a
-            // double-loop body. For port correctness we mirror the original
-            // PC advance, walking the operand stream.
-            let count = read(1) as i16 as i32;
-            // The original allocates a buffer if `actor[+0x4C] == 0`; we
-            // fold into keyframe_alloc with `bytes = count << 5 | 8`.
-            if state.field_a8 == 0 && count > 0 {
-                state.field_a8 = host.keyframe_alloc(count.wrapping_shl(5) | 8);
-            }
-            state.anim_block_u16_set(0x18, state.pc as u16); // mirror +0xCC = pc
-            size = 2 + count.max(0) as i16 * 6;
+            let count = (read(1) as i16).max(0) as usize;
+            state.set_actor_u16(0xCC, state.pc as u16);
+            state.set_actor_u16(0xCE, 0);
+            state.set_actor_u16(0xD0, 0);
+            state.set_actor_u16(0xD2, 0);
+            state.keyframe_pose = (0..count)
+                .map(|t| {
+                    let mut kf = [0i16; 12];
+                    for k in 0..6 {
+                        let v = read(2 + t * 6 + k) as i16;
+                        kf[k] = v;
+                        kf[6 + k] = v;
+                    }
+                    kf
+                })
+                .collect();
+            size = 2 + count as i16 * 6;
         }
-        // 0x3D - anim interpolate. size 3 (variable sub-loops in original).
+        // 0x3D - next keyframe (`0x80023D64..0x80023F18`). `+0xD0` takes the
+        // cursor rate `op[1]`; when a keyframe is already latched
+        // (`+0xCE != 0`) every part's current keyframe is first moved to
+        // where the cursor has blended it (`cur += (tgt - cur) * +0x22 >> 12`,
+        // all six halfwords) and `+0xCC = +0xCE`, `+0xD2 = 1`. Then the
+        // cursor clears, `+0xCE = PC`, and the `op[2]` parts' six operands
+        // become their new targets.
+        //
+        // PORT: FUN_80023070 (op `0x3D`, `0x80023D64..0x80023F18`)
         0x3D => {
+            state.set_actor_u16(0xD0, read(1));
+            let count = (read(2) as i16).max(0) as usize;
+            if state.actor_u16(0xCE) != 0 {
+                state.set_actor_u16(0xCC, state.actor_u16(0xCE));
+                state.set_actor_u16(0xD2, 1);
+                let cursor = i32::from(state.y_rot);
+                for kf in state.keyframe_pose.iter_mut().take(count) {
+                    for k in 0..6 {
+                        let d =
+                            (i32::from(kf[6 + k]) - i32::from(kf[k])).wrapping_mul(cursor) >> 12;
+                        kf[k] = kf[k].wrapping_add(d as i16);
+                    }
+                }
+            }
             state.y_rot = 0;
-            state.anim_block_u16_set(0x1A, state.pc as u16); // +0xCE = pc
-            size = 3 + (read(2) as i16).max(0) * 6;
+            state.set_actor_u16(0xCE, state.pc as u16);
+            for (t, kf) in state.keyframe_pose.iter_mut().take(count).enumerate() {
+                for k in 0..6 {
+                    kf[6 + k] = read(3 + t * 6 + k) as i16;
+                }
+            }
+            size = 3 + count as i16 * 6;
         }
         // 0x3E - write +0x22. size 2.
         0x3E => {
             state.y_rot = read(1) as i16;
             size = 2;
         }
-        // 0x3F - write anim_block +0xD0 slot. size 2.
+        // 0x3F - the keyframe cursor rate `+0xD0` (`sh v0,0x50(s1)` with
+        // `s1 = actor + 0x80`, `0x80023F2C`). size 2.
         0x3F => {
-            state.anim_block_u16_set(0x1C, read(1));
+            state.set_actor_u16(0xD0, read(1));
             size = 2;
         }
         // 0x40 - VRAM MoveImage strip-frame copy (FUN_80058490). size 7.
@@ -858,6 +895,61 @@ pub fn integrate_draw_channels(state: &mut ActorState, delta: u16) {
     if (state.actor_u16(0xC8) as i16) < 0 {
         state.set_actor_u16(0xC8, 0);
     }
+}
+
+/// The part tick's keyframe-cursor step, right after the wait drain and ahead
+/// of the mode dispatch, in every mode: `+0x22 += (s16)+0xD0 * DAT_1F800393`
+/// (the frame step alone, not the speed product the drain uses). `+0xD0` is
+/// the rate ops `0x3D` / `0x3F` set; it is zero on any part that never issues
+/// one, so the step is a no-op there.
+///
+/// PORT: FUN_80021DF4 (`0x80021E50..0x80021E74`, the `+0x22` step)
+pub fn advance_keyframe_cursor(state: &mut ActorState, frame_step: u8) {
+    let step = i32::from(state.actor_u16(0xD0) as i16).wrapping_mul(i32::from(frame_step));
+    state.y_rot = state.y_rot.wrapping_add(step as i16);
+}
+
+/// The part tick's mode-`6` render tail: each part of the op-`0x3C` pose
+/// block blended between its current and target keyframe by the cursor
+/// `+0x22` (`cur + ((tgt - cur) * cursor >> 12)`) and packed into the 8-byte
+/// clip entry the animated renderer `FUN_8001B964` decodes (`FUN_8001BE80`):
+/// halfwords 3 / 4 / 5 are the 12-bit X / Y / Z translation, halfword 1
+/// `>> 4` is the X **and** Z rotation byte, halfword 2 `>> 4` the Y rotation
+/// byte; halfword 0 is blended by op `0x3D` but never packed. Retail also
+/// stamps the block's header (part count, one frame, rate 1), which is what
+/// makes `+0x4C` a one-frame clip of the model list's part count.
+///
+/// Empty unless `+0x5A == 6` and the pose block is seated (the tail's own
+/// `+0x4C != 0` gate).
+///
+/// PORT: FUN_80021DF4 (`0x80022EFC..0x8002303C`, the mode-`6` pack)
+pub fn keyframe_pose_entries(state: &ActorState) -> Vec<[u8; 8]> {
+    if state.move_submode != 6 {
+        return Vec::new();
+    }
+    let cursor = i32::from(state.y_rot);
+    state
+        .keyframe_pose
+        .iter()
+        .map(|kf| {
+            let c = |k: usize| -> i32 {
+                let (cur, tgt) = (i32::from(kf[k]), i32::from(kf[6 + k]));
+                cur + ((tgt - cur).wrapping_mul(cursor) >> 12)
+            };
+            let (r_xz, r_y) = (c(1) >> 4, c(2) >> 4);
+            let (x, y, z) = (c(3), c(4), c(5));
+            [
+                x as u8,
+                y as u8,
+                (((x >> 8) & 0xF) + ((y >> 4) & 0xF0)) as u8,
+                z as u8,
+                ((z >> 8) & 0xF) as u8,
+                r_xz as u8,
+                r_y as u8,
+                r_xz as u8,
+            ]
+        })
+        .collect()
 }
 
 /// The 24-bit packed word ops `0x13` / `0x23` / `0x42` build from three

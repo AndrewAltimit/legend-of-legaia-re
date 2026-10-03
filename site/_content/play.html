@@ -348,6 +348,14 @@
                  title="Precise (free-angle) movement: the movement vector follows the camera azimuth at full angular resolution instead of retail's quantised 8-way remap (the native window's R toggle, persisted like its other options). Simulation knob - off keeps the retail decode.">
             <input type="checkbox" id="play-precise-move"> Precise movement
           </label>
+          <label class="play-dev-menu"
+                 title="PSX rasterisation: snap every vertex to the framebuffer's pixel grid (the PS1's integer screen coordinates - the vertex jitter) and dither each shaded pixel down to 15-bit colour with the PSX 4x4 matrix (the native window's LEGAIA_PSX_RENDER). Off draws the clean render; presentation only.">
+            <input type="checkbox" id="play-psx-render"> PSX rasterisation
+          </label>
+          <label class="play-dev-menu"
+                 title="Dynamic lighting: a soft warm directional light and a screen-centred light pool over the baked shading (the native window's I toggle). Not retail - the game's own render has no light source. Presentation only.">
+            <input type="checkbox" id="play-dyn-light"> Dynamic lighting
+          </label>
           <button id="play-camera-distance" type="button"
                   title="Cycle the follow camera's distance preset (retail, far, farther) - the native window's T key, persisted with the other options. Framing only - the simulation never changes.">Camera: far</button>
         </div>
@@ -937,6 +945,7 @@
         /* Honour the See-through-walls checkbox state at view creation (it
          * may have been unchecked before the first scene was entered). */
         if (window.__playApplySeeThrough) window.__playApplySeeThrough();
+        if (window.__playApplyRenderToggles) window.__playApplyRenderToggles();
       }
       const st = run(view);
       if (st && st.scene) { active = st.scene; renderList(searchEl.value); }
@@ -1879,6 +1888,20 @@
   }
   seeThroughEl.addEventListener('change', () => { applySeeThrough(); canvas.focus(); });
   window.__playApplySeeThrough = applySeeThrough;
+
+  /* The native window's two opt-in render toggles, both off by default:
+   * PSX rasterisation (LEGAIA_PSX_RENDER) and dynamic lighting (`I`).
+   * Presentation only; re-applied on every view rebuild. */
+  const psxRenderEl = document.getElementById('play-psx-render');
+  const dynLightEl = document.getElementById('play-dyn-light');
+  function applyRenderToggles() {
+    if (!view) return;
+    view.setPsxRender(!!psxRenderEl.checked);
+    view.setDynamicLighting(!!dynLightEl.checked);
+  }
+  psxRenderEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
+  dynLightEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
+  window.__playApplyRenderToggles = applyRenderToggles;
 
   /* Precise (free-angle) movement - the native window's `R` toggle. The
    * engine persists it with the rest of the options, so the box reflects the

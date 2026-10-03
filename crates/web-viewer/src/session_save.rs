@@ -289,10 +289,11 @@ impl LegaiaRuntime {
         Ok(summary.to_string())
     }
 
-    /// Land an imported save the way the in-canvas card Load does: in the
-    /// world now, and parked for the page's [`Self::play_resume_save`], which
-    /// enters the save's scene and re-applies it after the swap (the native
-    /// `BootSession::resume_save` order). See [`crate::resume`].
+    /// Land an imported save the way the in-canvas card Load does: parked
+    /// for the page's [`Self::play_resume_save`], which lands it through the
+    /// shared card-load kernel (story flags, the save's scene, then the whole
+    /// save - the native `BootSession::resume_save` order). See
+    /// [`crate::resume`].
     fn land_imported_save(&mut self, sf: SaveFile, scene: &str) {
         self.park_loaded_save(sf, scene);
     }
@@ -380,6 +381,8 @@ mod tests {
         let mut rt2 = roundtrip_runtime();
         let summary = rt2.import_save_core(&bytes).expect("import");
         assert!(summary.contains("\"money\":777"), "{summary}");
+        // The import parks; the page's resume call lands it.
+        rt2.resume_parked_save().expect("a parked save");
         assert_eq!(rt2.world_mut().party.money, 777);
         assert_eq!(rt2.world_mut().party.inventory.get(&0x77).copied(), Some(5));
     }
@@ -405,7 +408,13 @@ mod tests {
             rt2.pending_card_resume.is_some(),
             "a save naming its scene is parked for that scene's entry"
         );
-        assert_eq!(rt2.world_mut().party.money, 55, "and lands now as well");
+        assert_ne!(
+            rt2.world_mut().party.money,
+            55,
+            "the park leaves the world to the landing"
+        );
+        rt2.resume_parked_save().expect("a parked save");
+        assert_eq!(rt2.world_mut().party.money, 55, "the landing applies it");
 
         // A trailer-less file names no scene; it still parks, and its
         // landing is the running scene (`resume::land_save`), never a drop.
@@ -519,6 +528,7 @@ mod tests {
         let summary = rt.import_card_save_core(&patched, 1).expect("card import");
         assert!(summary.contains("\"kind\":\"card\""), "{summary}");
         assert!(summary.contains("\"coins\":1234"), "{summary}");
+        rt.resume_parked_save().expect("a parked save");
         assert_eq!(rt.world_mut().party.money, 900);
         assert_eq!(rt.world_mut().party.roster.members.len(), 1);
     }

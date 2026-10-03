@@ -322,6 +322,21 @@ fn follow_view_with_knobs(
 /// screen point through both.
 pub const FOLLOW_PIVOT_LIFT: f32 = 64.0;
 
+/// Whether a scripted shot owns this frame's camera: a cutscene timeline is
+/// running **and** some op-`0x45` beat has staged a camera slot.
+///
+/// Retail keeps one set of camera globals. A record that issues no camera
+/// beat leaves them where the field camera put them, so its frame is the
+/// field camera's - `garmel`'s Songi taunt (`P2[62]`, three BGM ops and
+/// the text) is captured on the follow framing, pitch / yaw / `H` / eye trio
+/// unchanged from the walk. A host that switched to [`cutscene_view`]'s
+/// per-slot fallbacks with nothing staged framed an invented shot. Both
+/// hosts gate on this one kernel; the world map has always been gated this
+/// way (its Drake mist-wall force-walk bands carry no camera beats).
+pub fn cutscene_owns_camera(world: &World) -> bool {
+    world.cutscene_timeline_active() && !world.camera.state.params.is_empty()
+}
+
 /// The **op-`0x45` cutscene shot**'s inputs, decoded from the camera state the
 /// field VM staged.
 ///
@@ -900,6 +915,27 @@ mod tests {
         // Positive (zoom-in) and past-the-far zooms clamp onto the pins.
         assert_eq!(world_map_walk_view(0, 40).tr_eye, near.tr_eye);
         assert_eq!(world_map_walk_view(0, -400).tr_eye, far.tr_eye);
+    }
+
+    /// A running record owns the camera only once a beat staged a slot: a
+    /// taunt with no op-`0x45` (garmel's Songi `P2[62]`) keeps the field
+    /// camera on both hosts.
+    #[test]
+    fn a_timeline_owns_the_camera_only_after_a_camera_beat() {
+        use legaia_engine_vm::field::CameraParam;
+        let mut w = world_with_player(700, 800);
+        assert!(!cutscene_owns_camera(&w), "no timeline");
+        w.cutscene.timeline = Some(crate::cutscene_timeline::CutsceneTimeline::new(
+            vec![0x4A, 0xFF, 0x7F],
+            0,
+        ));
+        assert!(w.cutscene_timeline_active());
+        assert!(!cutscene_owns_camera(&w), "timeline, nothing staged");
+        w.camera.state.params = vec![CameraParam {
+            slot: 0,
+            value: 300,
+        }];
+        assert!(cutscene_owns_camera(&w), "timeline + a staged slot");
     }
 
     /// The op-`0x45` slot decode: focus X/Z come back **negated** out of the

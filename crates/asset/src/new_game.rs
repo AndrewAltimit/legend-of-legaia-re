@@ -274,6 +274,19 @@ pub const WARP_SEED_LEN: usize = 16;
 /// the `new_game_cutscene_intro_a` save state. Hands off to [`OPENING_SCENE`].
 pub const OPENING_CUTSCENE_SCENE: &str = "opdeene";
 
+/// The **destination-entry operand** a New Game hands the field initialiser:
+/// world `(x, z)` = `(0xE40, 0x2DC0)`, tile `(28, 91)`.
+///
+/// `FUN_80034A6C` stores it with three absolute `sw`s (`0x80073EF4 = 0xE40`,
+/// `0x80073EF8 = 0x2DC0`, `0x80073EFC = 0`), the same pair a door's `0x3F` or
+/// the world-map arrival kernel writes before a scene change, and the field
+/// initialiser seats the player there on [`OPENING_CUTSCENE_SCENE`]'s entry.
+/// The prologue scene's entry script reads that seat once: its region
+/// selector (system flags `0x19B..0x1AA`) lands on `0x1A2` for this tile, the
+/// bit the cold-boot `s1_newgame_field` capture holds. The opening record the
+/// entry spawns then moves the player on.
+pub const NEW_GAME_ENTRY_SEAT: (i16, i16) = (0xE40, 0x2DC0);
+
 /// CDNAME label of the interactive opening scene a New Game reaches after the
 /// prologue cutscene ([`OPENING_CUTSCENE_SCENE`]) - Rim Elm.
 pub const OPENING_SCENE: &str = "town01";
@@ -753,8 +766,8 @@ pub const STORY_FLAGS_LEN: u32 = 0x200;
 /// this whole table from the instruction encodings on every run.
 ///
 /// Not modelled here, because they are not `SC`-relative: the three absolute
-/// `sw`s `0x80073EF4 = 0xE40`, `0x80073EF8 = 0x2DC0`, `0x80073EFC = 0`, and the
-/// `_DAT_8007B868` tail branch. The two stores the decompiler renders as the
+/// `sw`s `0x80073EF4 = 0xE40`, `0x80073EF8 = 0x2DC0`, `0x80073EFC = 0` (the
+/// entry seat, [`NEW_GAME_ENTRY_SEAT`]), and the `_DAT_8007B868` tail branch. The two stores the decompiler renders as the
 /// absolute globals `DAT_80085958 = 0x77` / `DAT_80085959 = 5` are in fact
 /// `sb $v0, 0x1818($s0)` / `sb $v0, 0x1819($s0)` - the starting-item seed at
 /// [`INVENTORY_SC_OFFSET`], and they run *after* the template expander, so they

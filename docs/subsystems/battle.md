@@ -9,7 +9,7 @@ from-scratch engine systems. Use the contents below to jump to a section.
 
 **Retail scene + render**
 - [Battle scene loader (`FUN_800520F0`)](#battle-scene-loader-fun_800520f0) - [stage-overlay dispatch](#stage-overlay-dispatch-the-0x47-loader-band) · [sparring-tutorial prompts](#the-sparring-tutorial-prompt-machine-overlay-967) · [the two boss-stage modules](#what-the-two-boss-stage-modules-do-overlays-968--969) · [command-flow byte](#the-command-flow-byte-ctx0x06---what-the-hook-table-indexes) · [the round loop](#the-round-loop---what-re-arms-0x1e) · [`s2` + commit](#s2-is-not-the-pad-and-how-a-command-commits) · [commit confirm](#the-commit-confirm-screen-0x6e)
-- [Battle background](#battle-background) - [ground grid](#backdrop-ground---a-procedural-flat-grid-func_0x801d02c0) · [stage stream per scene](#which-stage-stream-a-scene-fights-in) · [backdrop shell](#backdrop-shell---two-copies-of-one-mesh) · [camera](#battle-camera-exact) · [post-strike two-shot](#the-post-strike-two-shot-fun_801d5854-cases-7-and-8) · [menu vs input framing](#the-command-chooser-is-the-far-framing-the-arts-input-is-the-close-up) · [resting yaw](#the-resting-yaw-is-the-orbit-and-a-battle-inherits-it) · [party meshes](#battle-party-meshes-assembled) · [display list](#the-battle-display-list-is-the-registration-set-not-active) · [staged-anim channel](#one-staged-anim-channel-actor0x1da)
+- [Battle background](#battle-background) - [ground grid](#backdrop-ground---a-procedural-flat-grid-func_0x801d02c0) · [stage stream per scene](#which-stage-stream-a-scene-fights-in) · [backdrop shell](#backdrop-shell---two-copies-of-one-mesh) · [camera](#battle-camera-exact) · [post-strike two-shot](#the-post-strike-two-shot-fun_801d5854-cases-7-and-8) · [menu vs input framing](#the-round-prompt-is-the-far-framing-a-members-surfaces-are-the-close-up) · [resting yaw](#the-resting-yaw-is-the-orbit-and-a-battle-inherits-it) · [party meshes](#battle-party-meshes-assembled) · [display list](#the-battle-display-list-is-the-registration-set-not-active) · [staged-anim channel](#one-staged-anim-channel-actor0x1da)
 
 **Retail battle logic + data**
 - [Battle action state machine (`FUN_801E295C`)](#battle-action-state-machine-fun_801e295c)
@@ -1697,21 +1697,33 @@ by the `Recover` / `ActionEnd` phases. `0x51` is deliberately left idle - see
 the Done-band note above; the port's residency there is unbounded where
 retail's is `ctx[+0x6D8] = 0x3C` frames.
 
-### The command chooser is the far framing, the arts input is the close-up
+### The round prompt is the far framing, a member's surfaces are the close-up
 
 "A battle menu is open" does not select the close-up. The battle menu driver
 `FUN_801D388C` arms **both** cases: `0x801D475C` / `0x801D53B8` pass `a1 = 0`
 and `0x801D4908` / `0x801D5688` pass `a1 = 9`, and the battle tick
-`FUN_801D0748` arms case `9` itself at `0x801D0E98`. Two retail save states
-separate them, framebuffer and RAM together: with the **Begin / Run** chooser
-up the rotation/translation trios read `pitch 32`, `TR (0, 1280, 7680)`, focus
-at the origin - case 9's `max(span * 3, 0x800)` over the `+-800` seats,
-prescaled, exactly - and the framebuffer shows both fighters; with the **arts
-input** panel up they read `TR (-512, 1152, 2457)` and `yaw = 0x8F0 -
-actor[+0x46]` (`2119` against a facing of `169`), which projects the enemy off
-the left edge behind the panel. So the close-up belongs to the input pickers,
-and a host that folds the command chooser into it puts the opponent behind the
-eye for the whole command phase.
+`FUN_801D0748` arms case `9` itself at `0x801D0E98`. Which surface takes which
+is read off the library's battle captures, keyed on the command-flow byte
+`ctx[+0x06]`, framebuffer and RAM together:
+
+| `ctx[+0x06]` | Surface | Framing every capture reads |
+|---|---|---|
+| `0x1E` | the round's **Begin / Run** prompt | case 9: `pitch 32`, `TR (0, 1280, max(span * 3, 0x800))` prescaled, focus at the formation centre - both rows in frame |
+| `0x28` | the member's command **ring** | case 0: `pitch 32`, `TR (-512, height[char], 2457)`, `yaw = 0x8F0 - actor[+0x46]`, focus on the member |
+| `0x50` | the member's **arts input** | case 0, the same pose |
+| `0x6E` | the commit confirm | case 9 again, after the submenu-exit swing |
+
+The case-0 captures span Vahn, Noa and Gala and two Delilas fighters on
+seats 0, 1 and 2, each on its own per-character height (`1152`, `960`,
+`1408`) and its own seat as focus, so the pose is the member's, not a seat
+constant. So the close-up belongs to the member - from the ring through the
+pickers it opens (the item and magic windows `0x3C` / `0x46` are the same
+member's) - and only the party-wide prompt films the formation. A host that
+keeps the far framing on the ring films the whole command phase from the
+wrong place; one that folds the round prompt into the close-up puts the
+opponent behind the eye. Engine side: `battle_cam_inputs`'s
+`member_surface_open`, which keys the phase on the ring session as well as
+on the submenu sessions.
 
 ### Case 9 is re-derived every pass, so the depth follows the formation
 
@@ -4060,6 +4072,22 @@ record's own palette byte, `0x40 + index`, decoded two-dimensionally; the
 winged `v = 208` strip is a separate set of eight 28x12 records on its own
 CLUT block. Both are pinned in
 [the element-badge section](#the-element-badges-and-their-per-badge-palette).
+
+**The breadcrumb trail.** From the command ring on, the plaque sits behind
+the round prompt's `Begin` chip, which has glided to `(16, 14)` as a gold tab
+(record 1); the plaque (record `0x1A`) rests at `(68, 14)`. Choosing a ring
+arm glides that arm's chip onto the trail as a third tab abutting the
+plaque, at `x = width(name) + 0x54`: record `0x0D` (`Attack`, SCUS
+`0x8007B674`) from the attack-mode prompt (`0x78`) through the target cursor
+(`0x5A`) and the arts entry (`0x50`) - the `arts_bar_*` captures read
+`Begin | Vahn | Attack` over the direction chips - and record `0x0E`, the
+magic arm whose label `FUN_801D8DE8` case `0xE` points at the member's
+Ra-Seru name, through the spell window and its target step. The seat stores
+are `0x801D39A0..0x801D39AC` (`0x0D`) and `0x801D3968..0x801D3974` (`0x0E`);
+both records carry interior `w = 0x30`. The item window's trail ends in
+record `0x0C` (`Item`) and is drawn by its own builder. Port:
+`engine-core::battle_hud::battle_breadcrumb_third_tab`, drawn by
+`engine-ui::ui_overlay` on both hosts.
 
 ### The party status readout - and it has no gauge
 

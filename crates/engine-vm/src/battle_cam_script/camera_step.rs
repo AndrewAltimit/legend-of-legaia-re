@@ -50,14 +50,9 @@ impl BattleCamera {
             acting_body: None,
             last_active_commits: None,
             strike_style_zeroed: false,
-            shake: ShakeState {
-                seed: SHAKE_SEED,
-                ..Default::default()
-            },
-            attack: AttackChannel {
-                seed: ATTACK_CURSOR_SEED,
-                ..Default::default()
-            },
+            shake: ShakeState::default(),
+            attack: AttackChannel::default(),
+            rand_state: STANDALONE_RAND_SEED,
             module_glide: None,
             escape_shot: false,
         }
@@ -187,8 +182,8 @@ impl BattleCamera {
             self.strike_style_zeroed = false;
         }
         if state == STRIKE_LOOP_STATE && self.action.party_slot {
-            let coin = crate::battle_formulas::psyq_rand_step(&mut self.attack.seed) & 1;
-            self.action_yaw = i32::from(coin) * 0x800 + 0x280;
+            let coin = crate::battle_formulas::world_rand(&mut self.rand_state) & 1;
+            self.action_yaw = (coin as i32) * 0x800 + 0x280;
             self.strike_style_zeroed = true;
         }
     }
@@ -323,6 +318,13 @@ impl BattleCamera {
         self.phase
     }
 
+    /// Whether a glide is still carrying the camera toward its framing - the
+    /// capture harness's "settled" test, since a retail capture of a menu is
+    /// taken on a camera that has long arrived.
+    pub fn is_gliding(&self) -> bool {
+        !self.glides.is_empty()
+    }
+
     /// Phase-align the idle orbit's clock: set the free-running azimuth to
     /// `yaw` (12-bit units). Applies only where the orbit owns yaw - the
     /// [`BattleCamPhase::Menu`] far framing with no yaw glide in flight - and
@@ -433,7 +435,7 @@ impl BattleCamera {
                 // track column (`ctx[+0x26D] = rand() % 2`) and the ramps
                 // restart from zero, so the swing frames from one of the
                 // table's two columns.
-                let coin = crate::battle_formulas::psyq_rand_step(&mut self.attack.seed) & 1 != 0;
+                let coin = crate::battle_formulas::world_rand(&mut self.rand_state) & 1 != 0;
                 self.attack.ctx.begin_action(coin);
                 // Retail re-arms case 6 on the state change and tweens over
                 // its own `a3 = 0xC` (6 camera steps), yaw included.
@@ -747,7 +749,7 @@ impl BattleCamera {
             &mut self.shake.accum,
             &mut self.shake.offset,
             self.shake.amplitude,
-            &mut self.shake.seed,
+            &mut self.rand_state,
         );
         // A granted flee's shot owns the camera to the battle's end: the run
         // band and the escape teardown frame nothing of their own.

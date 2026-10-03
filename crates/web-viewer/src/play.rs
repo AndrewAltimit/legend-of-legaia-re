@@ -126,7 +126,7 @@ pub(crate) struct NpcRender {
 /// play-window's `npc_clip_players` map: a [`FieldClipPlayer`] per placement
 /// slot, advanced in **sim-tick** time (one [`LegaiaRuntime::tick_frame`] =
 /// one 60 Hz tick) so the clip plays at the retail cadence regardless of the
-/// display refresh rate, and re-targeted by channel op-`0x4B` ANIMATE cues
+/// display refresh rate, and re-targeted by channel clip cues (`A2` ExecMove, `4C 51`)
 /// (drained from `World::npcs.anim_cues`) so scripted actors perform
 /// their beats instead of looping the placement clip.
 ///
@@ -136,9 +136,6 @@ pub(crate) struct NpcClip {
     /// Bumped on every ANIMATE-cue re-target, so the page knows the pose
     /// stream behind the frame index changed and must be re-read.
     pub generation: u32,
-    /// Clip resolves from the PROT 0874 locomotion bundle (global-pool
-    /// special) rather than the scene's own ANM bundle.
-    pub special: bool,
 }
 
 /// Compose `Rz . Ry . Rx . v + T` for every vertex, keyed by its bone
@@ -192,6 +189,25 @@ fn pose_into(
     }
 }
 
+/// The overworld's placed landmarks minus the story-hidden ones (bind prologue
+/// parked the actor at the hide box), the same filter the native window's
+/// `resolve_world_map_terrain_draws` applies.
+fn world_map_landmarks(
+    index: &ProtIndex,
+    scene: &Scene,
+    hidden_records: &std::collections::HashSet<usize>,
+) -> Vec<legaia_asset::field_objects::Placement> {
+    let mut landmarks = scene
+        .walk_object_placements(index)
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    if let Ok(Some(binds)) = scene.field_object_binds(index) {
+        field_env::retain_visible_landmark_placements(&mut landmarks, &binds, hidden_records);
+    }
+    landmarks
+}
+
 /// Resolve the scene's env-pack + placement / terrain / ground layers from the
 /// resources the host already built. The engine-parity core of the play page's
 /// static map - the same resolver calls the native play-window makes:
@@ -218,11 +234,7 @@ pub fn build_field_render(
         // (trees, mountain groups) the native window's world-map branch
         // appends (`field_render.rs`); the page used to draw the first
         // layer only, so every kingdom lost its forests and ranges.
-        let mut tiles = scene
-            .walk_object_placements(index)
-            .ok()
-            .flatten()
-            .unwrap_or_default();
+        let mut tiles = world_map_landmarks(index, scene, hidden_records);
         if let Ok(Some(deco)) = scene.walk_decoration_placements(index) {
             tiles.extend(deco);
         }
@@ -255,11 +267,7 @@ pub fn build_field_render(
     // `None` on the overworld, so the landmark count is what they resolve to
     // on their own (and the retain below never runs there).
     let decoration_start = if is_world_map {
-        let landmarks = scene
-            .walk_object_placements(index)
-            .ok()
-            .flatten()
-            .unwrap_or_default();
+        let landmarks = world_map_landmarks(index, scene, hidden_records);
         field_env::resolve_placed_env_draws(&env_tmds, &landmarks, floor_lut, None)
             .0
             .len()
@@ -341,16 +349,33 @@ impl LegaiaRuntime {
         self.npcs.as_ref()?.pack.cur.as_ref()
     }
 
-    /// Bone count of the clip a catalogued NPC placement names (`anim_id - 1`
-    /// in the scene bundle, or the locomotion bundle for a global-pool
-    /// special). `None` when the placement has no clip or the bundle is
-    /// unavailable - the mesh then keeps its full object table.
-    fn npc_clip_bone_count(&self, anim_id: u8, special: bool) -> Option<usize> {
-        let bundle = if special {
-            self.locomotion_anm.as_ref()?
+    /// The bank NPC `slot`'s clip ids name: the PROT 0874 locomotion bundle
+    /// when the slot's live party-bank bit is up, else the scene's own
+    /// (`World::npc_clip_party_bank`; `special`, the spawn class, only for a
+    /// slot no channel carries) - the native window's bundle split.
+    pub(crate) fn npc_clip_bank(
+        &self,
+        slot: u8,
+        special: bool,
+    ) -> Option<&legaia_asset::player_anm::PlayerAnmBundle> {
+        let party_bank = self
+            .scene_host
+            .as_ref()
+            .map_or(special, |h| h.world.npc_clip_party_bank(slot, special));
+        if party_bank {
+            self.locomotion_anm.as_ref()
         } else {
-            self.scene_anm.as_ref()?
-        };
+            self.scene_anm.as_ref()
+        }
+    }
+
+    /// Bone count of the clip a catalogued NPC placement names (`anim_id - 1`
+    /// in the bank the slot's live party-bank bit selects -
+    /// `World::npc_clip_party_bank`, the spawn class `special` only for a
+    /// slot no channel carries). `None` when the placement has no clip or the
+    /// bundle is unavailable - the mesh then keeps its full object table.
+    fn npc_clip_bone_count(&self, slot: u8, anim_id: u8, special: bool) -> Option<usize> {
+        let bundle = self.npc_clip_bank(slot, special)?;
         let rec_idx = (anim_id as usize).checked_sub(1)?;
         let rec = bundle.record(rec_idx).ok()?;
         (rec.bone_count > 0).then_some(rec.bone_count as usize)
@@ -1159,6 +1184,129 @@ impl LegaiaRuntime {
         .to_string()
     }
 
+    /// Catalog entry `i`'s mesh source: the TMD (object table truncated to
+    /// the clip's bone count) and its raw bytes. A scripted mesh re-bind
+    /// (motion-VM op `0x0E`) replaces the placement's own model; a special
+    /// (`model >= 0xF0`) resolves out of the world's global pool.
+    fn npc_entry_tmd(&self, i: u32) -> Result<(legaia_tmd::Tmd, Vec<u8>), JsValue> {
+        let idx = i as usize;
+        let live = self.play_npc_live_model(i);
+        let live_src = (live >= 0)
+            .then(|| self.live_npc_mesh_bytes(live as i16))
+            .flatten();
+        let n = self
+            .npcs
+            .as_ref()
+            .ok_or_else(|| JsValue::from_str("play_npc_mesh: no catalog"))?;
+        let e = n
+            .pack
+            .entries
+            .get(idx)
+            .ok_or_else(|| JsValue::from_str(&format!("play_npc_mesh: no entry {idx}")))?;
+        let (mut tmd, raw) = if let Some(m) = live_src {
+            m
+        } else if e.special {
+            let slot = (e.placement.model_index - 0xF0) as usize;
+            let g = self
+                .scene_host
+                .as_ref()
+                .and_then(|h| h.world.field_head_pool.get(slot))
+                .and_then(|s| s.as_ref())
+                .ok_or_else(|| JsValue::from_str("play_npc_mesh: no global-pool mesh"))?;
+            (g.tmd.clone(), g.raw.clone())
+        } else {
+            let model = e.placement.model_index as usize;
+            let res = self
+                .res()
+                .ok_or_else(|| JsValue::from_str("play_npc_mesh: no resources"))?;
+            let t = res
+                .tmds
+                .get(model)
+                .ok_or_else(|| JsValue::from_str("play_npc_mesh: model out of range"))?;
+            (t.tmd.clone(), t.raw.clone())
+        };
+        if let Some(bones) = self.npc_mesh_cut(e) {
+            tmd.objects.truncate(bones);
+        }
+        Ok((tmd, raw))
+    }
+
+    /// The object count catalog entry `e`'s mesh is cut to: the bone count of
+    /// the slot's **live** clip when it has one - including a clip its first
+    /// ANIMATE cue bound after the spawn (rikuroa's party Noa, posed by
+    /// `A2 10 18`) - else the bone count of the placement's spawn clip.
+    /// `None` = no clip, keep the whole object table.
+    ///
+    /// Retail draws as many objects as the clip has bones; the native
+    /// window cuts the same way at pose time (`redraw.rs`, the
+    /// count-equality cut).
+    fn npc_mesh_cut(&self, e: &legaia_engine_core::npc_catalog::NpcEntry) -> Option<usize> {
+        let slot = e.placement.index as u8;
+        match self.npc_clips.get(&slot) {
+            Some(c) => Some(c.player.bone_count()).filter(|&b| b > 0),
+            None => self.npc_clip_bone_count(slot, e.placement.anim_id, e.special),
+        }
+    }
+
+    /// The object count catalog entry `i`'s mesh is cut to right now
+    /// ([`Self::npc_mesh_cut`]), or `-1` for an uncut mesh. The page re-builds
+    /// an NPC's mesh when this moves - the clip a later cue bound carries a
+    /// different bone count than the spawn mesh was cut to.
+    pub fn play_npc_mesh_cut(&self, i: u32) -> i32 {
+        self.npcs
+            .as_ref()
+            .and_then(|n| n.pack.entries.get(i as usize))
+            .and_then(|e| self.npc_mesh_cut(e))
+            .map_or(-1, |b| b as i32)
+    }
+
+    /// Per catalog entry, the generation of its op-`0x4B` VDF morph
+    /// (`World::npc_morphed_tmd`): `-1` for an entry whose slot never armed
+    /// one, else a counter that moves whenever the slot's staged deltas do
+    /// (including dropping back to the authored mesh). The page re-reads
+    /// [`Self::play_npc_morph_base`] when it moves - the browser twin of the
+    /// native window's pose-cache eviction + static re-stage.
+    pub fn play_npc_morph_states(&self) -> Vec<i32> {
+        let Some(n) = self.npcs.as_ref() else {
+            return Vec::new();
+        };
+        n.pack
+            .entries
+            .iter()
+            .map(|e| {
+                self.npc_morph_gen
+                    .get(&(e.placement.index as u8))
+                    .map_or(-1, |&g| g as i32)
+            })
+            .collect()
+    }
+
+    /// Catalog entry `i`'s **object-local** base positions with its live
+    /// morph staged (`World::npc_morphed_tmd`, the shared `FUN_8001C604`
+    /// kernel), in the vertex order [`Self::play_npc_mesh_positions`] uses -
+    /// the page poses them exactly as it poses the authored base. The
+    /// authored positions come back when the slot carries no live lane.
+    pub fn play_npc_morph_base(&self, i: u32) -> Vec<f32> {
+        let Ok((tmd, raw)) = self.npc_entry_tmd(i) else {
+            return Vec::new();
+        };
+        let Some(slot) = self
+            .npcs
+            .as_ref()
+            .and_then(|n| n.pack.entries.get(i as usize))
+            .map(|e| e.placement.index as u8)
+        else {
+            return Vec::new();
+        };
+        let morphed = self
+            .scene_host
+            .as_ref()
+            .and_then(|h| h.world.npc_morphed_tmd(slot, &tmd));
+        let tmd = morphed.as_ref().unwrap_or(&tmd);
+        let (mesh, _, _) = legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(tmd, &raw);
+        mesh.positions.iter().flatten().copied().collect()
+    }
+
     /// Build catalog entry `i`'s mesh (hybrid: textured + vertex-colour prims,
     /// with per-vertex bone ids). Returns `i`.
     ///
@@ -1170,64 +1318,24 @@ impl LegaiaRuntime {
     /// litter the actor's feet with raw parts).
     pub fn play_npc_mesh(&mut self, i: u32) -> Result<u32, JsValue> {
         let idx = i as usize;
-        // A scripted mesh re-bind (motion-VM op `0x0E`) replaces the source
-        // for this catalog entry. Resolved before the catalog borrow because
-        // it reads the scene host; `None` = the placement's own model, which
-        // is every entry until a script swaps one.
         let live = self.play_npc_live_model(i);
-        let live_src = (live >= 0)
-            .then(|| self.live_npc_mesh_bytes(live as i16))
-            .flatten();
-        let (mut tmd, raw, anim_id, special) = {
-            let n = self
-                .npcs
-                .as_ref()
-                .ok_or_else(|| JsValue::from_str("play_npc_mesh: no catalog"))?;
-            // The cache key is `(entry, bound model)`, not the entry alone:
-            // a re-bind leaves the entry index where it was, so keying on it
-            // would hand back the spawn mesh forever.
-            if n.pack.cur.as_ref().map(|c| c.0) == Some(idx) && self.npc_bound_model == Some(live) {
-                return Ok(i);
-            }
-            let e = n
-                .pack
-                .entries
-                .get(idx)
-                .ok_or_else(|| JsValue::from_str(&format!("play_npc_mesh: no entry {idx}")))?;
-            let (tmd, raw) = if let Some(m) = live_src {
-                m
-            } else if e.special {
-                let slot = (e.placement.model_index - 0xF0) as usize;
-                let g = self
-                    .scene_host
-                    .as_ref()
-                    .and_then(|h| h.world.field_head_pool.get(slot))
-                    .and_then(|s| s.as_ref())
-                    .ok_or_else(|| JsValue::from_str("play_npc_mesh: no global-pool mesh"))?;
-                (g.tmd.clone(), g.raw.clone())
-            } else {
-                let model = e.placement.model_index as usize;
-                let res = self
-                    .res()
-                    .ok_or_else(|| JsValue::from_str("play_npc_mesh: no resources"))?;
-                let t = res
-                    .tmds
-                    .get(model)
-                    .ok_or_else(|| JsValue::from_str("play_npc_mesh: model out of range"))?;
-                (t.tmd.clone(), t.raw.clone())
-            };
-            (tmd, raw, e.placement.anim_id, e.special)
-        };
-        if let Some(bones) = self.npc_clip_bone_count(anim_id, special) {
-            tmd.objects.truncate(bones);
+        // The cache key is `(entry, bound model)`, not the entry alone: a
+        // re-bind leaves the entry index where it was, so keying on it would
+        // hand back the spawn mesh forever.
+        if let Some(n) = self.npcs.as_ref()
+            && n.pack.cur.as_ref().map(|c| c.0) == Some(idx)
+            && self.npc_bound_model == Some((live, self.play_npc_mesh_cut(i)))
+        {
+            return Ok(i);
         }
+        let (tmd, raw) = self.npc_entry_tmd(i)?;
         let (mesh, object_ids, shading) =
             legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&tmd, &raw);
         let flat = crate::packet_color::hybrid(&mesh, &shading);
         if let Some(n) = self.npcs.as_mut() {
             n.pack.cur = Some((idx, mesh, object_ids, flat));
         }
-        self.npc_bound_model = Some(live);
+        self.npc_bound_model = Some((live, self.play_npc_mesh_cut(i)));
         Ok(i)
     }
 
@@ -1302,10 +1410,9 @@ impl LegaiaRuntime {
     /// Catalog entry `i`'s clip, decoded to the pose format the JS animator
     /// consumes: `6` entries per bone per frame (`[tx, ty, tz, rx, ry, rz]`,
     /// absolute). Empty when the placement names no clip or its bundle is
-    /// unavailable. An NPC's clip is its placement `anim_id - 1` in the
-    /// scene's own ANM bundle (`docs/formats/anm.md` § per-scene bundle); a
-    /// global-pool special's indexes the PROT 0874 locomotion bundle instead
-    /// (the native window's bundle split).
+    /// unavailable. An NPC's clip is its placement `anim_id - 1` in the bank
+    /// [`Self::npc_clip_bank`] selects (`docs/formats/anm.md` § per-scene
+    /// bundle).
     pub fn play_npc_pose_frames(&self, i: u32) -> Vec<i32> {
         let Some(n) = self.npcs.as_ref() else {
             return Vec::new();
@@ -1313,11 +1420,7 @@ impl LegaiaRuntime {
         let Some(e) = n.pack.entries.get(i as usize) else {
             return Vec::new();
         };
-        let bundle = if e.special {
-            self.locomotion_anm.as_ref()
-        } else {
-            self.scene_anm.as_ref()
-        };
+        let bundle = self.npc_clip_bank(e.placement.index as u8, e.special);
         let (Some(b), Some(rec_idx)) = (bundle, (e.placement.anim_id as usize).checked_sub(1))
         else {
             return Vec::new();
@@ -1336,11 +1439,7 @@ impl LegaiaRuntime {
         let Some(e) = n.pack.entries.get(i as usize) else {
             return vec![0, 0];
         };
-        let bundle = if e.special {
-            self.locomotion_anm.as_ref()
-        } else {
-            self.scene_anm.as_ref()
-        };
+        let bundle = self.npc_clip_bank(e.placement.index as u8, e.special);
         let (Some(b), Some(rec_idx)) = (bundle, (e.placement.anim_id as usize).checked_sub(1))
         else {
             return vec![0, 0];

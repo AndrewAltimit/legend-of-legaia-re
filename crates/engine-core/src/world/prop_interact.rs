@@ -57,8 +57,10 @@ impl World {
         // The per-actor anim tick runs unconditionally (`FUN_800204F8` from
         // the actor tick) - the windmill turns during dialogs too.
         self.props.bank.tick_anims();
-        // The same tick over the NPC actors' clip cursors (a treasure
-        // chest's lid, every NPC's idle loop).
+        // The same tick over the NPC actors: the morph envelope first
+        // (`FUN_800204F8` runs `FUN_80020740` before its cursor step), then
+        // the clip cursors (a treasure chest's lid, every NPC's idle loop).
+        self.tick_npc_morphs();
         self.tick_npc_clips();
         self.step_prop_interaction();
         if let Some(anchor) = self.props.pending_touch.take() {
@@ -372,6 +374,7 @@ impl World {
             id.park_frames = 0;
         }
         if id.done {
+            self.restore_owed_player_scale(&id.bytecode, id.pc, &id.visited);
             self.finish_prop_interaction(&mut id, anchor);
         } else {
             self.dialog.inline = Some(id);

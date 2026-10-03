@@ -321,13 +321,7 @@ impl LegaiaMinigames {
 
         // The scene's own ANM bundle (for posed placements), when it carries
         // one - optional, unlike the dance's choreography bank.
-        let anm = scene.entries.iter().find_map(|e| {
-            [3usize, 5, 6, 7].into_iter().find_map(|desc| {
-                legaia_asset::player_anm::find_in_entry(&e.bytes, desc)
-                    .into_iter()
-                    .next()
-            })
-        });
+        let anm = legaia_engine_core::npc_catalog::scene_anm_bundle(&scene);
 
         let (env, ground) = bake_env(&index, &scene, &res, anm.as_ref());
         if env.is_empty() {

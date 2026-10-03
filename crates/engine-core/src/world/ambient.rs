@@ -257,6 +257,14 @@ impl World {
         state.world_z = origin[2];
         state.world_y_mirror = origin[1];
         state.wait_timer = -1;
+        // The render scale `+0x72`: `FUN_80021B04` stores its fourth argument
+        // there (`sh s4,0x72(s0)` at `0x80021DAC`, before the first move-VM
+        // run), and both ambient seaters pass `0x1000` - the scene install
+        // `FUN_800252EC` (`li a3,0x1000` at `0x80025330`) and op `0x25`'s child
+        // spawn (`0x80023900`). Left at zero, a draw-kind-4 sprite node built
+        // from it (`effect_sprite_arm`) collapses to a point: `map01`'s mist
+        // puff column drew nothing.
+        state.field_72 = 0x1000;
         self.ambient.fx.push(AmbientPart {
             record_off,
             model_sel: rec.model_sel,
@@ -517,6 +525,10 @@ impl World {
             {
                 let st = &mut self.ambient.fx[idx].state;
                 move_vm::decrement_wait_timer(st, drain);
+                // The keyframe cursor `+0x22` steps by the op-`0x3D` rate
+                // `+0xD0` (`0x80021E50..0x80021E74`): what spreads `map01`'s
+                // puff sheets apart over a puff's life.
+                move_vm::advance_keyframe_cursor(st, self.clock.frame_step.max(1));
                 move_vm::integrate_draw_channels(st, drain);
                 if crate::part_motion::runs_motion_block(st) {
                     crate::part_motion::motion_block(st, drain);
@@ -537,15 +549,15 @@ impl World {
     }
 
     /// The live ambient parts that are `0x4000` sprite-arm nodes (move-VM
-    /// op `0x23`), each as its one-quad mesh
-    /// ([`crate::effect_sprite_arm::sprite_arm_draw`]). Part of
+    /// op `0x23`), each as its quad - one per posed part on a keyframe-pose
+    /// node ([`crate::effect_sprite_arm::sprite_arm_draws`]). Part of
     /// [`World::active_effect_kind4_draws`].
     pub fn ambient_sprite_arm_draws(&self) -> Vec<crate::effect_ribbon::RibbonDraw> {
         self.ambient
             .fx
             .iter()
             .filter(|p| !p.finished)
-            .filter_map(|p| crate::effect_sprite_arm::sprite_arm_draw(&p.state))
+            .flat_map(|p| crate::effect_sprite_arm::sprite_arm_draws(&p.state))
             .collect()
     }
 
@@ -618,6 +630,9 @@ impl World {
         if let Some(pulse) = self.ambient.entry_vdf_pulse.as_ref() {
             lanes.extend(pulse.lanes_for(pack_slot, group));
         }
+        // Placed objects whose bind record armed lanes with op `0x4B`
+        // (`crate::world::npc_morph`).
+        lanes.extend(self.object_morph_lanes_for(pack_slot));
         if lanes.is_empty() {
             return None;
         }

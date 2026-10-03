@@ -110,6 +110,12 @@ fn retock_world() -> Option<(World, u32, u8)> {
         m.set_hp_mp_sp(h);
     }
     world.party.party_count = PARTY_SLOTS as u8;
+    // The party actors mirror the records, as a seeded party's do.
+    for a in world.actors.iter_mut().take(PARTY_SLOTS) {
+        a.battle.hp = HURT_HP;
+        a.battle.max_hp = FULL_HP;
+        a.battle.mp = HURT_MP;
+    }
     Some((world, cost, slot))
 }
 
@@ -207,6 +213,28 @@ fn inn_stay_charges_the_scripted_gold_and_restores_the_party() {
         pools(&world),
         vec![(FULL_HP, FULL_MP); PARTY_SLOTS],
         "the stay's scripted HP/MP restore did not run"
+    );
+    // ... and reaches the party actors' mirrors, which a battle seats from
+    // and `save_party` writes back over the records: a rest that left them
+    // stale was undone by the next fight or save.
+    let mirrors: Vec<(u16, u16)> = world
+        .actors
+        .iter()
+        .take(PARTY_SLOTS)
+        .map(|a| (a.battle.hp, a.battle.mp))
+        .collect();
+    assert_eq!(
+        mirrors,
+        vec![(FULL_HP, FULL_MP); PARTY_SLOTS],
+        "the restore wrote the records but left the party actors' HP/MP stale"
+    );
+    let saved = world.save_party();
+    assert!(
+        saved
+            .members
+            .iter()
+            .all(|m| (m.hp_mp_sp().hp_cur, m.hp_mp_sp().mp_cur) == (FULL_HP, FULL_MP)),
+        "save_party wrote the stale mirrors back over the rested records"
     );
 }
 

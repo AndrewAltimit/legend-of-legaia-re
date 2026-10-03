@@ -1322,6 +1322,17 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         // alone, so none of them clears `current_bgm` either.
         if sub_op == 1 || sub_op == 9 {
             self.world.audio.current_bgm = Some(text_id);
+            // Sub-op 9 also raises the script-owned start bit 0 of
+            // `_DAT_8007B750` (`0x801E0260`): the poller holds the outgoing
+            // track in the slot until the sub-op 0xA commit.
+            if sub_op == 9 {
+                self.world.audio.start_pending_commit = true;
+            }
+        } else if sub_op == 0xA {
+            // The commit (`0x801E0264`) sets the release-ack bit 4, on which
+            // the poller installs the incoming track and clears bit 0
+            // (`0x8002472C`).
+            self.world.audio.start_pending_commit = false;
         } else if sub_op == 7 {
             // Sub-7 stores the next fight's battle sound set `_DAT_8007B880`
             // and makes no sequencer call: `lbu v1,0x1(s6)` tests the
@@ -1820,16 +1831,21 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     }
 
     fn setup_animation(&mut self, _ctx: &mut FieldCtx, count: u8, base_id: u8, frames: &[u8]) {
-        // A per-actor channel script animating its own NPC (op `0x4B`
-        // ANIMATE): retail installs the sequence `base_id + k` into the
-        // actor's anim-slot array (`+0xB0`, `FUN_801DE840` case 0x4B) with two
-        // u16 params per entry. Raise a cue keyed by the placement so the
-        // windowed host re-targets that NPC's clip player.
-        if let Some(placement) = self.world.field_vm.executing_channel {
-            self.world
-                .npcs
-                .anim_cues
-                .insert(placement, (count, base_id, frames.to_vec()));
+        // Op `0x4B` on a placement's own context: its VDF morph lanes
+        // (`World::arm_npc_morph`), not a clip - the arm writes the `+0xB0`
+        // sub-entry bytes and the `+0xB8` / `+0xC8` ramp velocities and
+        // touches neither `+0x5C` nor the clip pointer.
+        // PORT: FUN_801DE840 (the op-`0x4B` arm)
+        let owner = match (
+            self.world.field_vm.executing_channel,
+            self.world.field_vm.executing_object,
+        ) {
+            (Some(slot), _) => Some(crate::world::MorphOwner::Placement(slot)),
+            (None, Some(record)) => Some(crate::world::MorphOwner::Object(record)),
+            (None, None) => None,
+        };
+        if let Some(owner) = owner {
+            self.world.arm_field_morph(owner, count, base_id, frames);
         }
         self.world
             .pending_field_events
@@ -2445,6 +2461,31 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         self.world.locomotion.clip_override = u32::from(value);
     }
 
+    /// Op `4C C1` - re-derive every fog region's enable byte from its story
+    /// flag: for each record of the `_DAT_80073ED8` table (count
+    /// `DAT_80073EDC`, stride `0xB`), `FUN_8003CE64(rec[9] | rec[10] << 8)`
+    /// and `rec[0] = flag set ? 0 : 1` (`0x801E2674..0x801E26EC`). The fog
+    /// spawner ends its region search on the first box holding the tile and
+    /// spawns nothing when that record's byte 0 is clear, so this is what
+    /// keeps a region's fog off once its story beat has passed: retail's
+    /// `retock` inn (flag `0x51C`), `rikuroa` (`0x007`) and `garmel`
+    /// (`0x007`) all hold the reset result, with an empty pool where every
+    /// covering region is off.
+    ///
+    /// PORT: FUN_801DE840 (the nibble-C sub-`1` arm)
+    fn op4c_n_c_sub_1_flag_loop_reset(&mut self, _flags: &[u8]) {
+        let enables: Vec<bool> = self
+            .world
+            .fog
+            .regions
+            .iter()
+            .map(|r| !self.world.system_flag_test(r.flag_index))
+            .collect();
+        for (r, on) in self.world.fog.regions.iter_mut().zip(enables) {
+            r.enabled = on;
+        }
+    }
+
     /// Op `0x4C 0x61` - scripted CLUT-cell effect (one-shot cell write /
     /// cross-fade spawn). Decodes the 14-byte operand payload and queues the
     /// effect on the world; [`World::step_clut_fx`] applies it against the
@@ -2524,6 +2565,10 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         hms.hp_cur = hms.hp_max;
         hms.mp_cur = hms.mp_max;
         member.set_hp_mp_sp(hms);
+        // The record is retail's only copy; the port's party actor mirrors
+        // it, and a battle seats (and `save_party` writes back) from the
+        // mirror - so a rest that left it stale healed nobody.
+        self.world.mirror_roster_hp_mp(usize::from(slot));
     }
 
     /// `[4C, 0x84, amplitude]` - the screen-shake amplitude `_DAT_8007B630`.

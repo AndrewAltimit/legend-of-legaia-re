@@ -937,6 +937,35 @@ impl BootSession {
         self.queue_marks = HostQueueMarks::default();
     }
 
+    /// The fog pool's render step the play hosts run from their draw pass
+    /// (`World::fog_render_step` through the field follow frame), for a
+    /// headless driver that renders nothing but must keep the world in step
+    /// with a host that does.
+    ///
+    /// The step is not presentation-only: it ages the pool and writes the
+    /// live count (`_DAT_8007BCA8`) and the depth view the ambient emitter's
+    /// fog spawner reads on the next tick (`FogPool::spawn`'s cap and
+    /// overworld depth test), and each spawn that passes draws the world
+    /// `rand()` stream. A driver that skips it runs a fogged scene on a
+    /// different stream from the window. Same guard as the hosts: nothing
+    /// runs outside game mode 3 or while the script gate is clear. The
+    /// centre is only the frame resolver's no-camera fallback.
+    pub fn fog_render_tick(&mut self) {
+        let world = &mut self.host.world;
+        if !legaia_engine_core::world::World::fog_mode(world.mode) || !world.fog.gate {
+            return;
+        }
+        let frame = legaia_engine_core::camera_view::resolve_field_camera(
+            world,
+            &self.camera,
+            None,
+            [0.0, 0.0],
+        );
+        if let Some(view) = frame.field_view() {
+            let _ = world.fog_render_step(&view);
+        }
+    }
+
     /// Begin a New Game: clear the world to a fresh slate
     /// ([`legaia_engine_core::world::World::begin_new_game`]) and seed the
     /// starting party (Vahn) from the boot source's `SCUS_942.54` template.
@@ -1710,17 +1739,20 @@ impl BootSession {
     ) -> Result<SceneMode> {
         self.enter_scene_live(scene, opts)?;
         self.host.world.load_full(save);
+        self.host.refresh_party_battle_inputs();
         log::info!("seeded world from save ({} party records)", {
             self.host.world.party.party_count
         });
         Ok(self.host.world.mode)
     }
 
-    /// Resume a loaded save the way both hosts resume one: land it through
+    /// Resume a loaded save the way both hosts resume one,
+    /// [`legaia_engine_core::resume::resume_card_load`]: seed the saved
+    /// story flags, land it through
     /// [`legaia_engine_core::resume::land_save`] (the save's own scene, else
     /// the scene already running, else the opening town - never a New Game),
     /// entering scenes through [`Self::enter_scene_live`], then hydrate the
-    /// world from `save` over the landing.
+    /// whole save over the landing.
     ///
     /// `save_scene` is the save's resume label ([`legaia_save::SaveResume::scene`],
     /// empty for a file that carries none). The caller rebuilds its
@@ -1734,21 +1766,16 @@ impl BootSession {
         save_scene: &str,
         opts: &FieldLiveOpts,
     ) -> legaia_engine_core::resume::ResumeLanding {
-        let current = self.host.scene.as_ref().map(|s| s.name.clone());
-        let landing =
-            legaia_engine_core::resume::land_save(save_scene, current.as_deref(), |scene| {
-                // The saved scene is entered at the save's own position, as
-                // retail's card load seats it (`SceneHost::arm_resume_seat`).
-                let armed = self.host.arm_resume_seat(&save, save_scene, scene);
-                let entered = self
-                    .enter_scene_live(scene, opts)
-                    .and_then(|_| self.confirm_scene_landed(scene));
-                if entered.is_err() && armed {
-                    self.host.disarm_entry_seat();
-                }
-                entered
-            });
-        self.host.world.load_full(save);
+        // The order (story flags, landing, whole save) is the shared
+        // kernel's - `resume_card_load`, which the browser page runs too.
+        let landing = legaia_engine_core::resume::resume_card_load(
+            &mut NativeCardLoad {
+                session: self,
+                opts,
+            },
+            save,
+            save_scene,
+        );
         log::info!(
             "resume: landed {} ({:?}); seeded world from save ({} party records)",
             landing.kind(),
@@ -1777,6 +1804,48 @@ impl BootSession {
 impl Drop for BootSession {
     fn drop(&mut self) {
         self.shutdown();
+    }
+}
+
+/// The native window's half of a card load
+/// ([`legaia_engine_core::resume::resume_card_load`]).
+struct NativeCardLoad<'a> {
+    session: &'a mut BootSession,
+    opts: &'a FieldLiveOpts,
+}
+
+impl legaia_engine_core::resume::CardLoadHost for NativeCardLoad<'_> {
+    fn card_load_world(&mut self) -> &mut legaia_engine_core::world::World {
+        &mut self.session.host.world
+    }
+
+    fn card_load_running_scene(&self) -> Option<String> {
+        self.session.host.scene.as_ref().map(|s| s.name.clone())
+    }
+
+    fn card_load_enter(
+        &mut self,
+        scene: &str,
+        save: &legaia_save::SaveFile,
+        save_scene: &str,
+    ) -> Result<(), String> {
+        // The saved scene is entered at the save's own position, as retail's
+        // card load seats it (`SceneHost::arm_resume_seat`).
+        let armed = self.session.host.arm_resume_seat(save, save_scene, scene);
+        let entered = self
+            .session
+            .enter_scene_live(scene, self.opts)
+            .and_then(|_| self.session.confirm_scene_landed(scene));
+        if entered.is_err() && armed {
+            self.session.host.disarm_entry_seat();
+        }
+        entered.map(|_| ()).map_err(|e| format!("{e:#}"))
+    }
+
+    fn card_load_hydrated(&mut self) {
+        // The save's equipment prices the arts input, as retail's card load
+        // (hydrate, then scene load) selects it.
+        self.session.host.refresh_party_battle_inputs();
     }
 }
 

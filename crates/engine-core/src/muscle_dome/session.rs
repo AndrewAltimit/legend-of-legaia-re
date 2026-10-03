@@ -60,6 +60,11 @@ pub struct MuscleDomeSession {
     /// The selection screen that owns the player's pad
     /// ([`MuscleDomeSession::select_input`], `menu.rs`).
     pub(super) menu: DomeMenu,
+    /// The opponent's display name - the monster record's own name, which
+    /// the action plaque shows while the opponent's plays act out
+    /// ([`Self::set_opponent_name`]). `None` when the host staged a
+    /// stand-in.
+    pub(super) opponent_name: Option<String>,
 }
 
 impl MuscleDomeSession {
@@ -92,7 +97,19 @@ impl MuscleDomeSession {
             magic_cursor: 0,
             special: 0,
             menu: DomeMenu::default(),
+            opponent_name: None,
         }
+    }
+
+    /// Name the opponent (its PROT 867 monster record's name) for the action
+    /// plaque.
+    pub fn set_opponent_name(&mut self, name: impl Into<String>) {
+        self.opponent_name = Some(name.into());
+    }
+
+    /// The opponent's display name, when the host named it.
+    pub fn opponent_name(&self) -> Option<&str> {
+        self.opponent_name.as_deref()
     }
 
     /// Seed the leg's [`special`](Self::special) word - the value retail's
@@ -819,6 +836,23 @@ impl MuscleDomeSession {
         }
         self.resolve_turn(|_, _| 0);
         false
+    }
+
+    /// [`Self::resolve_turn_or_zero`] on a lent `rand()` stream: the damage
+    /// kernel's draws come off `rng` (the world's `rng_state`) and the
+    /// advanced state is written back. Retail's dome rolls call the one
+    /// process-wide BIOS `rand()`, so a private dome stream would interleave
+    /// them differently from every other draw the tick makes. With no
+    /// damage model installed nothing draws and `rng` is untouched.
+    pub fn resolve_turn_on_stream(&mut self, rng: &mut u32) -> bool {
+        if let Some(m) = self.damage.as_mut() {
+            m.set_rng_seed(*rng);
+        }
+        let retail = self.resolve_turn_or_zero();
+        if let Some(m) = self.damage.as_ref() {
+            *rng = m.rng_seed();
+        }
+        retail
     }
 
     /// Start the next turn after a non-terminal resolution: reseed the

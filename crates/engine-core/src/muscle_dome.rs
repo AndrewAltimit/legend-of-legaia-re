@@ -102,7 +102,7 @@ use legaia_asset::element_affinity::ElementAffinity;
 use legaia_asset::move_power::{self, MoveRecord};
 use legaia_engine_vm::battle_formulas::{
     DamageFinish, DefenderResist, SummonRollActor, arts_physical_predamage_lazy,
-    damage_finish_lazy, psyq_rand_step, spirit_gauge_fill,
+    damage_finish_lazy, spirit_gauge_fill, world_rand,
 };
 
 mod contest;

@@ -145,6 +145,13 @@ class TmdRenderer {
     this.locOcclFocus  = gl.getUniformLocation(this.program, 'u_occl_focus');
     this.locOcclParams = gl.getUniformLocation(this.program, 'u_occl_params');
     this.locOcclAllow  = gl.getUniformLocation(this.program, 'u_occl_allow');
+    this.locPsx      = gl.getUniformLocation(this.program, 'u_psx');
+    this.locDynDir   = gl.getUniformLocation(this.program, 'u_dyn_dir');
+    this.locDynColor = gl.getUniformLocation(this.program, 'u_dyn_color');
+    /* The two native-only render toggles, both OFF by default and both the
+     * identity when off (see setPsxMode / setDynamicLighting). */
+    this.psxMode = false;
+    this.dynLighting = false;
     /* What the 3D pass clears to, as linear RGBA. The default is the dark
      * ground every viewer page draws on; the play page overwrites it per
      * frame from the engine (`play_scene_clear_color`), because in a battle
@@ -182,6 +189,8 @@ class TmdRenderer {
      * the unused attributes. */
     this.locGroundRefXz = gl.getAttribLocation(this.program, 'a_ground_ref_xz');
     this.locGroundRefY  = gl.getAttribLocation(this.program, 'a_ground_ref_y');
+    /* Smoothed normals for the dynamic light; -1 if the driver dropped it. */
+    this.locNormal = gl.getAttribLocation(this.program, 'a_normal');
 
     /* Field-character hybrid mode: when set, draws bind the per-vertex
      * a_flat_rgba colours and the FS uses them for untextured prims. Off for
@@ -474,6 +483,67 @@ class TmdRenderer {
     this.overworldCurve = scale > 0 ? +scale : 0;
   }
 
+  /* PSX rasterisation (the native renderer's `set_psx_mode`, which the
+   * native window turns on with LEGAIA_PSX_RENDER): vertex positions snap to
+   * the framebuffer's integer pixel grid and every shaded fragment takes the
+   * PSX 4x4 ordered dither down to 15-bit colour. Off by default; off is the
+   * untouched faithful path (the shader gates on a uniform that stays 0). */
+  setPsxMode(on) {
+    this.psxMode = !!on;
+  }
+
+  /* Dynamic lighting (the native renderer's `set_dynamic_lighting`, the
+   * native window's `I` / `--dynamic-lighting`): a soft warm directional
+   * light off smoothed normals plus a screen-centred light pool, capped at
+   * 1.3x over the baked shading. Off by default and the identity when off.
+   * The native layer's derived per-scene point lights (and their shadow
+   * maps) are not part of the page's toggle. */
+  setDynamicLighting(on) {
+    this.dynLighting = !!on;
+  }
+
+  /* Stage the two toggles on the bound main program for a `w` x `h` frame.
+   * The framebuffer size goes up regardless: it is the light pool's
+   * viewport too, and the native `psx_params.xy` carries it the same way. */
+  _applyRenderToggles(w, h) {
+    const gl = this.gl;
+    if (this.locPsx) {
+      const on = this.psxMode ? 1 : 0;
+      gl.uniform4f(this.locPsx, w, h, on, on);
+    }
+    if (this.locDynDir) {
+      const d = DYN_LIGHT_DIR;
+      gl.uniform4f(this.locDynDir, d[0], d[1], d[2], this.dynLighting ? 1 : 0);
+      const t = DYN_LIGHT_TINT;
+      gl.uniform4f(this.locDynColor, t[0], t[1], t[2], DYN_LIGHT_AMBIENT);
+    }
+  }
+
+  /* Bind (computing on first use or after a position update) the smoothed
+   * normal stream of one mesh record into its VAO - only while dynamic
+   * lighting is on, so the default path never pays for it. `rec` is a scene
+   * mesh, the ground, or the single-mesh record; it carries `vao`,
+   * `cpuPositions`, `cpuIndices` and `normalsDirty`. A record with no CPU
+   * copy (the ground: native leaves its normals at the zero sentinel too)
+   * keeps the attribute unbound and lights off the facet normal. */
+  _ensureNormals(rec) {
+    if (!this.dynLighting || this.locNormal < 0 || !rec) return;
+    if (!rec.normalsDirty && rec.normBuf) return;
+    const gl = this.gl;
+    const pos = rec.cpuPositions;
+    const idx = rec.cpuIndices;
+    if (!pos || !idx || pos.length === 0) return;
+    const normals = computeSmoothNormals(pos, idx);
+    if (!rec.normBuf) rec.normBuf = gl.createBuffer();
+    gl.bindVertexArray(rec.vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, rec.normBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, normals, gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(this.locNormal);
+    gl.vertexAttribPointer(this.locNormal, 3, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
+    rec.normalsDirty = false;
+  }
+
   /* Set the context-global `a_flat_rgba` constant that a draw with no bound
    * colour stream reads.
    *
@@ -756,6 +826,11 @@ class TmdRenderer {
     this.indexCount = indices.length;
     this.posByteLength = positions.byteLength;
     gl.bindVertexArray(null);
+    /* The single-mesh path's normal record (see _ensureNormals). */
+    if (!this.single) this.single = { vao: this.vao, normBuf: null };
+    this.single.cpuPositions = positions;
+    this.single.cpuIndices = indices;
+    this.single.normalsDirty = true;
   }
 
   /* Replace just the position buffer in-place (DYNAMIC_DRAW). For animation:
@@ -766,6 +841,10 @@ class TmdRenderer {
     if (positions.byteLength !== this.posByteLength) return;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuf);
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, positions);
+    if (this.single) {
+      this.single.cpuPositions = positions;
+      this.single.normalsDirty = true;
+    }
   }
 
   /* Replace just the index buffer of the last `uploadMesh` (the vertex
@@ -779,6 +858,10 @@ class TmdRenderer {
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.DYNAMIC_DRAW);
     gl.bindVertexArray(null);
     this.indexCount = indices.length;
+    if (this.single) {
+      this.single.cpuIndices = indices;
+      this.single.normalsDirty = true;
+    }
   }
 
   /* center: [cx, cy, cz]; radius: bounding-sphere half-extent;
@@ -850,6 +933,9 @@ class TmdRenderer {
     /* Occlusion fade OFF on the single-mesh inspector path (uniforms
      * persist on the shared program; a play-page focus must not leak). */
     gl.uniform4f(this.locOcclFocus, 0, 0, 0, 0);
+    /* PSX rasterisation + dynamic light (identity unless a page opted in). */
+    this._applyRenderToggles(w, h);
+    this._ensureNormals(this.single);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
     gl.uniform1i(this.locVram, 0);
@@ -987,6 +1073,11 @@ class TmdRenderer {
     /* Kept so a CBA/TSB re-upload can rebuild the semi tail. */
     m.baseIndices = indices;
     gl.bindVertexArray(null);
+    /* The dynamic light's normal source (computed lazily, see
+     * _ensureNormals); the semi tail repeats triangles, so the base list. */
+    m.cpuPositions = positions;
+    m.cpuIndices = indices;
+    m.normalsDirty = true;
   }
 
   /* Re-upload just the per-vertex CBA/TSB words of an already-registered
@@ -1026,6 +1117,10 @@ class TmdRenderer {
     gl.bindBuffer(gl.ARRAY_BUFFER, m.posBuf);
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, positions);
     m.aabb = computeAabb(positions);
+    /* A posed mesh re-derives its normals, as native's posed VRAM mesh
+     * build does - lazily, and only while dynamic lighting is on. */
+    m.cpuPositions = positions;
+    m.normalsDirty = true;
   }
 
   /* Re-upload just the per-vertex packet colours of an already-registered
@@ -1050,6 +1145,7 @@ class TmdRenderer {
       gl.deleteBuffer(m.ctBuf);
       if (m.flatBuf) gl.deleteBuffer(m.flatBuf);
       gl.deleteBuffer(m.idxBuf);
+      if (m.normBuf) gl.deleteBuffer(m.normBuf);
     }
     this.sceneMeshes.clear();
   }
@@ -1295,6 +1391,9 @@ class TmdRenderer {
      * this frame; uniforms persist through the opaque + blend passes so
      * semi-transparent wall patches open up too). */
     this._applyOcclusionFade(vp, w, h);
+    /* PSX rasterisation + dynamic light (identity unless the play page
+     * opted in); uniforms persist through the opaque + blend passes. */
+    this._applyRenderToggles(w, h);
     /* Cutout discard ON (retail semantics): texel 0 with STP 0 is fully
      * transparent, which is what makes the crossed-quad billboard trees
      * read as foliage instead of solid star-shaped slabs. The old
@@ -1379,6 +1478,7 @@ class TmdRenderer {
         gl.uniform1i(this.locUseFlatColors, wantFlat ? 1 : 0);
         flatColorsOn = wantFlat;
       }
+      this._ensureNormals(m);
       gl.bindVertexArray(m.vao);
       for (const p of list) {
         const model = this._placementModel(p, m);

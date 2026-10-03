@@ -156,6 +156,14 @@ pub struct ActorState {
     pub anim_block: AnimBlock,
     /// `+0xCA` - duration slot (op 0x1C, `v << 3`).
     pub field_ca: u16,
+    /// The keyframe-pose block ops `0x3C` / `0x3D` keep behind the heap
+    /// pointer `+0x4C`: one entry per model-list part, six halfwords of the
+    /// current keyframe then six of the target (`[cur; 6] ++ [tgt; 6]`,
+    /// retail's `0x18`-byte record after the `8 + count * 8` packed-entry
+    /// head). Empty until op `0x3C` seats it.
+    /// [`crate::move_vm::keyframe_pose_entries`] is the render tail that
+    /// blends it into the per-part poses the animated renderer draws.
+    pub keyframe_pose: Vec<[i16; 12]>,
 }
 
 impl ActorState {

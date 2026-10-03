@@ -61,8 +61,12 @@ pub struct LegaiaRuntime {
     /// Live NPC clip players keyed by placement slot - the browser twin of
     /// the native window's `npc_clip_players`. Advanced one tick per
     /// [`Self::tick_frame`] (the sim clock, not the render clock) and
-    /// re-targeted by drained op-`0x4B` ANIMATE cues.
+    /// re-targeted by drained clip cues (`A2` ExecMove, `4C 51`).
     pub(crate) npc_clips: std::collections::HashMap<u8, NpcClip>,
+    /// Per placement slot, a counter bumped whenever the slot's op-`0x4B`
+    /// VDF morph moves (`World::take_npc_morph_dirty`, drained once per sim
+    /// tick) - read by the page through `play_npc_morph_states`.
+    pub(crate) npc_morph_gen: std::collections::HashMap<u8, u32>,
     /// The scene's ANM bundle (the pose source for scene NPCs **and** placed
     /// props), resolved once per scene the way the native window's
     /// `find_scene_anm_bundle` does: entry-major, descriptor-count seed
@@ -142,11 +146,12 @@ pub struct LegaiaRuntime {
     /// owns a copy of the rule.
     pub(crate) mode_seat: legaia_engine_core::mode::ModeSeat,
     /// The model id [`crate::play`]'s cached NPC mesh was built from, as
-    /// `play_npc_live_model` reports it (`-1` = the placement's spawn model).
-    /// Half of that cache's key: a scripted mesh re-bind leaves the catalog
-    /// entry index where it was, so the entry alone cannot tell a swapped
-    /// actor from an unswapped one.
-    pub(crate) npc_bound_model: Option<i32>,
+    /// `play_npc_live_model` reports it (`-1` = the placement's spawn model),
+    /// and the object count it was cut to (`play_npc_mesh_cut`). With the
+    /// entry index, that cache's key: a scripted mesh re-bind or a cue that
+    /// binds a clip leaves the catalog entry index where it was, so the entry
+    /// alone cannot tell the rebuilt mesh from the stale one.
+    pub(crate) npc_bound_model: Option<(i32, i32)>,
     /// Field party-status HUD driver (`FUN_801D0D38`): the idle countdown and
     /// the cached player position its decision kernel reads. The same state
     /// the native window holds - retail keeps it in overlay globals, so every
@@ -405,6 +410,7 @@ impl LegaiaRuntime {
             tile_mesh: None,
             npcs: None,
             npc_clips: std::collections::HashMap::new(),
+            npc_morph_gen: std::collections::HashMap::new(),
             scene_anm: None,
             locomotion_anm: None,
             field_vram_anim: None,
@@ -757,20 +763,17 @@ impl LegaiaRuntime {
     /// Returns the same JSON as [`Self::state_json`]. Throws when the disc isn't
     /// loaded or the label is unknown.
     pub fn enter_field(&mut self, name: &str) -> Result<String, JsValue> {
-        self.enter_field_core(name, None)
+        self.enter_field_core(name, false)
             .map_err(|e| JsValue::from_str(&e))
     }
 }
 
 impl LegaiaRuntime {
-    /// JsValue-free body of [`Self::enter_field`]. `resumed_save` is the save
-    /// a resume lands after the entry ([`crate::resume`]); `None` for a
-    /// picker / door / opening-chain entry.
-    pub(crate) fn enter_field_core(
-        &mut self,
-        name: &str,
-        resumed_save: Option<legaia_save::SaveFile>,
-    ) -> Result<String, String> {
+    /// JsValue-free body of [`Self::enter_field`]. `resume` marks a card
+    /// load's entry ([`crate::resume`]), whose save the shared kernel
+    /// applies after this returns; `false` for a picker / door /
+    /// opening-chain entry.
+    pub(crate) fn enter_field_core(&mut self, name: &str, resume: bool) -> Result<String, String> {
         let host = self
             .scene_host
             .as_mut()
@@ -790,7 +793,7 @@ impl LegaiaRuntime {
         // `--scene` entry. The opening chain's legs and the prologue skip's
         // `town01` re-enter through here too, and a card Load's resume is not
         // a picker visit either.
-        host.world.stage_picker_entry(name, resumed_save.is_some());
+        host.world.stage_picker_entry(name, resume);
         let world_map = legaia_engine_core::scene::is_world_map_scene(name);
         if world_map {
             host.enter_world_map_scene(name)
@@ -849,15 +852,6 @@ impl LegaiaRuntime {
         if !in_opening {
             self.seat_player();
         }
-        // The card Load's save lands after the scene swap, as the native
-        // window lands it (`BootSession::resume_save`): scene
-        // entry resets per-scene world state, the save then restores the
-        // party, purses, bag and flags over it.
-        if let Some(sf) = resumed_save
-            && let Some(host) = self.scene_host.as_mut()
-        {
-            host.world.load_full(sf);
-        }
         // A deliberate scene boot restages BGM from scratch: clear the dedupe
         // latch, so the scene's own op-`0x35` start is honoured (and re-stages
         // its track's bank) even if it names the track already playing. No
@@ -870,9 +864,10 @@ impl LegaiaRuntime {
         {
             self.bgm_last_started = None;
         }
-        // A card Load's score hand-off lands here, after the save: the native
-        // order is enter + load, then stop + restore the save's track, so the
-        // scene's own start of that track finds it already sounding.
+        // A card Load's score hand-off lands here: stop whatever was
+        // sounding (the title theme), then restore the track the entry
+        // started, so the scene's own start of that track finds it already
+        // sounding.
         self.run_pending_bgm_handoff();
         Ok(self.state_json())
     }
@@ -1731,17 +1726,11 @@ impl LegaiaRuntime {
             &host.world.hidden_object_records(),
             &host.world.object_render_scales(),
         ));
-        // Pose sources, resolved the way the native window's
-        // `find_scene_anm_bundle` does (entry-major, desc-seed minor). The
-        // scene bundle poses the MAN NPCs and the bound placed props; the
+        // Pose sources, through the one resolver the native window's
+        // `find_scene_anm_bundle` calls too (`npc_catalog::scene_anm_bundle`).
+        // The scene bundle poses the MAN NPCs and the bound placed props; the
         // locomotion bundle poses the global-pool specials.
-        self.scene_anm = scene.entries.iter().find_map(|e| {
-            [3usize, 5, 6, 7].into_iter().find_map(|desc| {
-                legaia_asset::player_anm::find_in_entry(&e.bytes, desc)
-                    .into_iter()
-                    .next()
-            })
-        });
+        self.scene_anm = legaia_engine_core::npc_catalog::scene_anm_bundle(scene);
         self.locomotion_anm = host
             .index
             .entry_bytes(legaia_asset::character_pack::PROT_ENTRY_INDEX)
@@ -1861,11 +1850,9 @@ impl LegaiaRuntime {
             return;
         };
         for e in &n.pack.entries {
-            let bundle = if e.special {
-                self.locomotion_anm.as_ref()
-            } else {
-                self.scene_anm.as_ref()
-            };
+            // The bank the clip id names is the live party-bank bit's
+            // (`World::npc_clip_party_bank`), as the native window binds it.
+            let bundle = self.npc_clip_bank(e.placement.index as u8, e.special);
             let (Some(b), Some(rec)) = (bundle, (e.placement.anim_id as usize).checked_sub(1))
             else {
                 continue;
@@ -1887,14 +1874,13 @@ impl LegaiaRuntime {
                     NpcClip {
                         player,
                         generation: 0,
-                        special: e.special,
                     },
                 );
             }
         }
     }
 
-    /// One sim tick of NPC clip playback: drain this tick's op-`0x4B` ANIMATE
+    /// One sim tick of NPC clip playback: drain this tick's `A2` / `4C 51` clip
     /// cues (re-targeting the cued slots' players - the cue's anim id names a
     /// bundle record the same way the placement anim byte does, `record =
     /// id - 1`, against whichever bundle the placement resolved through), then
@@ -1906,22 +1892,56 @@ impl LegaiaRuntime {
         // Both ANIMATE-cue queues drain through the shared frame-tail kernel
         // (`World::drain_field_anim_cues`) the native window calls every sim
         // tick: the player's `A2 F8` gestures land on the world's clip
-        // player, and each op-`0x4B` NPC re-target comes back resolved
+        // player, and each NPC re-target comes back resolved
         // against the bundle the slot poses from.
         let Some(host) = self.scene_host.as_mut() else {
             return;
         };
-        let clips = &self.npc_clips;
+        // Every catalogued placement is a clip target, not only the ones
+        // that spawned with a clip: a placement whose live anim id was still
+        // `0` at the rebuild takes its first clip from a cue (the native
+        // window registers every drawn placement the same way).
+        let spawn_party: std::collections::HashMap<u8, bool> = self
+            .npcs
+            .as_ref()
+            .map(|n| {
+                n.pack
+                    .entries
+                    .iter()
+                    .map(|e| (e.placement.index as u8, e.special))
+                    .collect()
+            })
+            .unwrap_or_default();
         let retargets = host.world.drain_field_anim_cues(
             self.scene_anm.as_ref(),
             self.locomotion_anm.as_ref(),
-            |slot| clips.get(&slot).map(|c| c.special),
+            |slot| spawn_party.get(&slot).copied(),
         );
         for r in retargets {
-            if let Some(clip) = self.npc_clips.get_mut(&r.slot) {
-                clip.player = r.player;
-                clip.generation = clip.generation.wrapping_add(1);
+            match self.npc_clips.get_mut(&r.slot) {
+                Some(clip) => {
+                    clip.player = r.player;
+                    clip.generation = clip.generation.wrapping_add(1);
+                }
+                None => {
+                    self.npc_clips.insert(
+                        r.slot,
+                        NpcClip {
+                            player: r.player,
+                            generation: 1,
+                        },
+                    );
+                }
             }
+        }
+        // Op-`0x4B` morphs whose staged deltas moved this tick: bump the
+        // slot's generation so the page re-reads its morphed base (the
+        // native window drops the slot's pose-cache entries instead). Kept
+        // across scenes - a stale slot only costs one re-read of the
+        // authored base.
+        for slot in host.world.take_npc_morph_dirty() {
+            let g = self.npc_morph_gen.entry(slot).or_insert(0);
+            *g = g.wrapping_add(1);
         }
         // The playheads run only while the field owns the frame - the
         // world's decision, shared with the native draw pass.

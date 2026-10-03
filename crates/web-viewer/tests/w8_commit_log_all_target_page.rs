@@ -75,30 +75,67 @@ fn all_target_spell(scus: &[u8]) -> Option<(u8, u8, SpellTargetShape)> {
         .min_by_key(|&(_, mp, _)| mp)
 }
 
-/// Glyph quads on the commit log's first row, provided one starts on the
-/// row's name pen (`NAME_X`) - the name / command / target triple's seat.
+/// Glyph quads on the commit log's first row: a text line within a few
+/// pixels of the row's pen whose **leftmost** glyph starts on the name pen
+/// (`NAME_X`) - the name / command / target triple's seat. Keyed per line,
+/// not per band: the spell list's rows and the round prompt's help line
+/// share the band with glyphs that cross the pen column mid-line.
 fn commit_row_glyphs(rt: &mut LegaiaRuntime) -> usize {
     let v: serde_json::Value =
         serde_json::from_str(&rt.play_overlay_draws_json(960, 720)).expect("overlay json");
     let pen_y = (i64::from(ROW_Y_LOWER) - 2) * SCALE;
     let pen_x = i64::from(NAME_X) * SCALE;
-    let row: Vec<i64> = v["texts"]
-        .as_array()
-        .map(|t| {
-            t.iter()
-                .filter(|q| {
-                    let y = q["dst"][1].as_i64().unwrap_or(-1);
-                    (pen_y - 3 * SCALE..=pen_y + 3 * SCALE).contains(&y)
-                })
-                .filter_map(|q| q["dst"][0].as_i64())
-                .collect()
-        })
-        .unwrap_or_default();
-    if row.iter().any(|&x| (pen_x..pen_x + 2 * SCALE).contains(&x)) {
-        row.len()
-    } else {
-        0
+    let band = pen_y - 3 * SCALE..=pen_y + 3 * SCALE;
+    let mut lines: std::collections::BTreeMap<i64, Vec<i64>> = Default::default();
+    for q in v["texts"].as_array().into_iter().flatten() {
+        if let (Some(x), Some(y)) = (q["dst"][0].as_i64(), q["dst"][1].as_i64())
+            && band.contains(&y)
+        {
+            lines.entry(y).or_default().push(x);
+        }
     }
+    lines
+        .values()
+        .filter(|xs| {
+            xs.iter()
+                .min()
+                .is_some_and(|&x| (pen_x..pen_x + 2 * SCALE).contains(&x))
+        })
+        .map(Vec::len)
+        .max()
+        .unwrap_or(0)
+}
+
+/// The command ring is up: its Up arm's plate, a 20-px-tall (60 surface px)
+/// quad on the command cluster's top row, which no other chip cluster uses.
+fn ring_plates_drawn(rt: &mut LegaiaRuntime) -> bool {
+    use legaia_engine_ui::battle_command_ui as bcu;
+    let v: serde_json::Value =
+        serde_json::from_str(&rt.play_overlay_draws_json(960, 720)).expect("overlay json");
+    let (_, up_y) = bcu::CLUSTER_COMMAND.plate_origin(bcu::ChipSeat::Up);
+    v["sprites"].as_array().is_some_and(|s| {
+        s.iter().any(|q| {
+            q["dst"][3].as_i64() == Some(60)
+                && q["dst"][1].as_i64() == Some(i64::from(up_y) * SCALE)
+        })
+    })
+}
+
+/// `W8_TRACE`: the frame's text quads grouped by row.
+fn dump_rows(rt: &mut LegaiaRuntime, f: u32, pad: u16) {
+    let v: serde_json::Value =
+        serde_json::from_str(&rt.play_overlay_draws_json(960, 720)).expect("overlay json");
+    let mut rows: std::collections::BTreeMap<i64, Vec<i64>> = Default::default();
+    for q in v["texts"].as_array().into_iter().flatten() {
+        if let (Some(x), Some(y)) = (q["dst"][0].as_i64(), q["dst"][1].as_i64()) {
+            rows.entry(y).or_default().push(x);
+        }
+    }
+    let summary: Vec<String> = rows
+        .iter()
+        .map(|(y, xs)| format!("{y}:{}@{}", xs.len(), xs.iter().min().unwrap_or(&0)))
+        .collect();
+    eprintln!("f={f} pad={pad:#06x} rows {}", summary.join(" "));
 }
 
 #[test]
@@ -137,40 +174,65 @@ fn an_all_target_spell_commit_lands_the_row_label_on_the_page() {
     assert!(rt.learn_spell(0, spell), "the lead has a roster record");
     assert!(rt.debug_force_battle(-1), "map01 arms a fight");
 
-    // Walk the command session with the pad: Begin at the round prompt
-    // (Left), the Magic arm on the ring (Right), and row 0 of the spell list
-    // (the spell just learned is prepended).
+    // Walk the command session with the pad, keyed on what the page shows
+    // rather than on frame counts: the opening's formation roll draws on the
+    // shared rand stream, so a pre-emptive banner or a back attack moves the
+    // round prompt by a varying number of frames. Begin (Left) is answered
+    // until the command ring draws; then the Magic arm (Right), then Cross on
+    // row 0 of the spell list (the spell just learned is prepended). A
+    // whole-row spell opens no target cursor, so the commit lands at once
+    // and the log draws the row while the next member's ring is up.
+    let trace = std::env::var_os("W8_TRACE").is_some();
     let mut best = 0usize;
-    let mut g = 0u32;
-    for _ in 0..4800u32 {
+    let mut pre_commit = 0usize;
+    let mut ring_at: Option<u32> = None;
+    let mut commit_at: Option<u32> = None;
+    for f in 0..4800u32 {
         let active = rt.play_battle_active();
+        let mut pad = 0u16;
         if active {
-            g += 1;
+            match (ring_at, commit_at) {
+                (None, _) => {
+                    if ring_plates_drawn(&mut rt) {
+                        ring_at = Some(f);
+                    } else if f % 20 == 19 {
+                        pad = PadButton::Left.mask();
+                    }
+                }
+                (Some(r), None) if f == r + 10 => pad = PadButton::Right.mask(),
+                (Some(r), None) if f == r + 30 => {
+                    pad = PadButton::Cross.mask();
+                    commit_at = Some(f);
+                }
+                _ => {}
+            }
         }
-        // Frames since the fight opened: Begin, the Magic arm (the press
-        // commits the arm), then Cross on the spell row - a whole-row spell
-        // opens no target cursor, so the commit lands at once and the log
-        // draws the row while the next member's ring is up. No row may draw
-        // before that commit (the probe runs from the Magic press on).
-        let pad = match g {
-            40 => PadButton::Left.mask(),
-            60 => PadButton::Right.mask(),
-            80 | 100 | 120 => PadButton::Cross.mask(),
-            _ => 0,
-        };
         rt.set_pad(pad);
         rt.tick_frame().expect("tick");
-        if active && g > 60 {
-            let n = commit_row_glyphs(&mut rt);
-            if std::env::var_os("W8_TRACE").is_some() {
-                eprintln!("g={g} row glyphs={n}");
-            }
-            best = best.max(n);
+        if trace && active {
+            dump_rows(&mut rt, f, pad);
         }
-        if best > 0 || g > 140 {
+        if let Some(r) = ring_at {
+            let n = commit_row_glyphs(&mut rt);
+            if commit_at.is_some() {
+                best = best.max(n);
+            } else if f > r {
+                pre_commit = pre_commit.max(n);
+            }
+        }
+        if best > 0 || commit_at.is_some_and(|c| f > c + 60) {
             break;
         }
     }
+    assert!(
+        ring_at.is_some(),
+        "the map01 fight never opened the command ring"
+    );
+    assert!(commit_at.is_some(), "the spell row was never committed");
+    assert_eq!(
+        pre_commit, 0,
+        "a row drew on the commit log's pen before the spell commit"
+    );
     assert!(
         best > 0,
         "no commit-log row drew for the all-target spell {spell:#04x}"

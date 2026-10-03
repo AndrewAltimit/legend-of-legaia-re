@@ -265,6 +265,37 @@ impl ArtsInputAtlasRects {
     pub fn label(&self, dir: ChipDirection) -> (u32, u32, u32, u32) {
         (self.label_u, dir.label_v(), self.label_w, self.label_h)
     }
+
+    /// Source sub-rect of the word a chip-label icon id names
+    /// ([`chip_icon_label_v`]); `fallback` is used for an id outside the
+    /// six chip words.
+    pub fn label_for_icon(&self, icon: u8, fallback: ChipDirection) -> (u32, u32, u32, u32) {
+        let v = chip_icon_label_v(icon).unwrap_or(fallback.label_v());
+        (self.label_u, v, self.label_w, self.label_h)
+    }
+}
+
+/// Sheet `v` of the word a chip's window record names by its `+0x0E` icon
+/// id: SCUS's icon table `0x800732A4` (12-byte records, `(u, v)` at `+4`;
+/// the stride is the `idx * 12 + 0x800732A4` of `0x8002C7A0..0x8002C7AC`)
+/// carries the six words at ids `0x0C..=0x11` in the order RaSeru, Arms,
+/// Right, Left, High, Low, and repeats them for the pennant ids
+/// `0x12..=0x17` (a pennant takes its chip's id `+ 6`). `None` for any
+/// other id.
+pub fn chip_icon_label_v(icon: u8) -> Option<u32> {
+    let word = match icon {
+        0x0C..=0x11 => icon - 0x0C,
+        0x12..=0x17 => icon - 0x12,
+        _ => return None,
+    };
+    Some(match word {
+        0 => title_pak::OVERLAY_SYSTEM_UI_ARTS_LABEL_V_RASERU,
+        1 => title_pak::OVERLAY_SYSTEM_UI_ARTS_LABEL_V_ARMS,
+        2 => title_pak::OVERLAY_SYSTEM_UI_ARTS_LABEL_V_RIGHT,
+        3 => title_pak::OVERLAY_SYSTEM_UI_ARTS_LABEL_V_LEFT,
+        4 => title_pak::OVERLAY_SYSTEM_UI_ARTS_LABEL_V_HIGH,
+        _ => title_pak::OVERLAY_SYSTEM_UI_ARTS_LABEL_V_LOW,
+    })
 }
 
 // ------------------------------------------------------------------ frame
@@ -299,6 +330,12 @@ pub struct ArtsInputFrame<'a> {
     /// [`ArtsInputFrame::FAVORED_CHIP_COSTS`] is the all-30 case a host with
     /// no cost table can pass.
     pub chip_costs: [u16; 4],
+    /// Each direction's chip-label icon id, in the same Command-byte order
+    /// as [`Self::chip_costs`] - `legaia_engine_core`'s `retail_chip_icons`
+    /// (the weapon arm reads `Arms`, the Ra-Seru arm `RaSeru`, an empty arm
+    /// its plain direction word). A committed pennant wears its chip's word.
+    /// [`ArtsInputFrame::PLAIN_CHIP_ICONS`] is the all-direction-words row.
+    pub chip_icons: [u8; 4],
     /// Remaining AP (unused by the bar, which sizes off `pool_max`).
     pub pool: u16,
     /// Seeded AP pool - the bar's length.
@@ -372,6 +409,19 @@ impl ArtsInputFrame<'_> {
     /// The all-30 cost row - a favored-weapon caster, and the shape every
     /// captured screen was read at.
     pub const FAVORED_CHIP_COSTS: [u16; 4] = [30; 4];
+
+    /// The plain direction words (Left, Right, Low, High) - icon ids
+    /// `0x0F`, `0x0E`, `0x11`, `0x10`.
+    pub const PLAIN_CHIP_ICONS: [u8; 4] = [0x0F, 0x0E, 0x11, 0x10];
+
+    /// The atlas sub-rect of `dir`'s chip word for this caster.
+    pub fn chip_label(
+        &self,
+        rects: &ArtsInputAtlasRects,
+        dir: ChipDirection,
+    ) -> (u32, u32, u32, u32) {
+        rects.label_for_icon(self.chip_icons[dir.command_index()], dir)
+    }
 }
 
 // --------------------------------------------------------------- builders
@@ -454,7 +504,7 @@ pub fn arts_input_chrome_draws(
             rects.pennant_cap_l.2,
             rects.pennant_cap_l.3,
         );
-        let label = rects.label(dir);
+        let label = frame.chip_label(rects, dir);
         push(label, px + cap_w, BAR_Y, strip_w as u32, label.3);
         push(
             rects.pennant_cap_r,
@@ -493,7 +543,7 @@ pub fn arts_input_chrome_draws(
                 rects.chip_cap_r.2,
                 rects.chip_cap_r.3,
             );
-            let label = rects.label(dir);
+            let label = frame.chip_label(rects, dir);
             push(label, bx, by + 4, body_w as u32, label.3);
             push(
                 rects.diamond_l,
@@ -668,12 +718,52 @@ mod tests {
             buffer,
             spent,
             chip_costs: ArtsInputFrame::FAVORED_CHIP_COSTS,
+            chip_icons: ArtsInputFrame::PLAIN_CHIP_ICONS,
             pool: 40,
             pool_max: 100,
             plate_value: 68,
             list_page: None,
             phase: ArtsInputScreen::Entering,
         }
+    }
+
+    /// The icon table's six words in id order, and the pennant ids `+ 6`
+    /// naming the same words; a caster's `Arms` / `RaSeru` row reaches both
+    /// the chips and the pennants.
+    #[test]
+    fn chip_icons_name_the_retail_words_on_chips_and_pennants() {
+        use title_pak::*;
+        let words = [
+            OVERLAY_SYSTEM_UI_ARTS_LABEL_V_RASERU,
+            OVERLAY_SYSTEM_UI_ARTS_LABEL_V_ARMS,
+            OVERLAY_SYSTEM_UI_ARTS_LABEL_V_RIGHT,
+            OVERLAY_SYSTEM_UI_ARTS_LABEL_V_LEFT,
+            OVERLAY_SYSTEM_UI_ARTS_LABEL_V_HIGH,
+            OVERLAY_SYSTEM_UI_ARTS_LABEL_V_LOW,
+        ];
+        for (i, &v) in words.iter().enumerate() {
+            assert_eq!(chip_icon_label_v(0x0C + i as u8), Some(v));
+            assert_eq!(chip_icon_label_v(0x12 + i as u8), Some(v));
+        }
+        assert_eq!(chip_icon_label_v(0x0B), None);
+        // The plain row reproduces the per-direction words.
+        let f = frame(&[], &[]);
+        let r = ArtsInputAtlasRects::SHEET;
+        for dir in [
+            ChipDirection::Left,
+            ChipDirection::Right,
+            ChipDirection::Low,
+            ChipDirection::High,
+        ] {
+            assert_eq!(f.chip_label(&r, dir), r.label(dir));
+        }
+        // Vahn's row: the Left chip and a committed Left pennant both read Arms.
+        let mut f = frame(&[1], &[30]);
+        f.chip_icons = [0x0D, 0x0C, 0x11, 0x10];
+        let draws = arts_input_chrome_draws(&r, &f, (0, 0), 1);
+        let arms = (r.label_u, OVERLAY_SYSTEM_UI_ARTS_LABEL_V_ARMS);
+        let n = draws.iter().filter(|d| (d.src.0, d.src.1) == arms).count();
+        assert_eq!(n, 2, "the Left chip and its pennant");
     }
 
     fn frame_costs<'a>(buffer: &'a [u8], spent: &'a [u16], costs: [u16; 4]) -> ArtsInputFrame<'a> {

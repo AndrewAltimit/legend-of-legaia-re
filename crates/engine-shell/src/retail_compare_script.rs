@@ -288,6 +288,14 @@ impl ScriptGate {
         })
     }
 
+    /// A dialog box with its page typed and the prompt glyph on: a page
+    /// waiting for the press that turns it, or the last page waiting for the
+    /// press that closes it (`is_done` - the box stays up until that press,
+    /// the same pair the window's prompt glyph keys on).
+    fn page_up(d: &legaia_engine_core::dialog::OwnedDialogPanel) -> bool {
+        d.is_waiting_for_input() || d.is_done()
+    }
+
     /// Whether the engine's context for the record is on the gate's PC, at
     /// least as far into its wait - or has already executed the op there.
     /// Retail's capture is parked on the op (a halt, a wait, a walk); the
@@ -304,7 +312,7 @@ impl ScriptGate {
                 && ((tl.pc == self.pc
                     && tl.ctx.wait_accum >= self.wait
                     && glide_landed
-                    && (!text || tl.dialog.as_ref().is_some_and(|d| d.is_waiting_for_input())))
+                    && (!text || tl.dialog.as_ref().is_some_and(Self::page_up)))
                     || (tl.pc != self.pc && tl.visited.get(self.pc).copied().unwrap_or(false)))
         };
         if world.cutscene.timeline.as_ref().is_some_and(passed)
@@ -345,14 +353,14 @@ impl ScriptGate {
         let c = self.context(world).map(|c| (c.kind, c.pc, c.wait, c.done));
         let parks = world.cutscene.timeline.as_ref().map(|tl| {
             format!(
-                "walk={:?} chan={:?} player={:?} facing={} glide={} clip={:?} dialog={} frames={}",
+                "walk={:?} chan={:?} player={:?} facing={} glide={} clip={:?} dialog={:?} frames={}",
                 tl.walk_wait,
                 tl.channel_wait,
                 tl.player_wait,
                 tl.facing_wait.is_some(),
                 tl.player_glide.is_some(),
                 tl.player_clip_wait,
-                tl.dialog.is_some(),
+                tl.dialog.as_ref().map(|d| d.state()),
                 tl.frames
             )
         });

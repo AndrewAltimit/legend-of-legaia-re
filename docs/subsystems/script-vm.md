@@ -309,6 +309,17 @@ releases him (the village gathering, which raises `0x231`); the elder's
 sets `0x141` and changes to `map01`. The south gate stays painted shut
 (`P1[0]`'s `4C 71` rectangles while `0x147` is set and `0x141` clear).
 
+The **install slice** comes first. When the scene loads, `FUN_8003AB2C`
+runs `P1[0]` straight through the dispatcher (only when its first byte is
+`0x24` / `0x25`) and leaves after the op it ran was `0x21`
+(`0x8003AD58`), on a PC that did not move (`0x8003AD68`), or on a text byte
+(`0x8003AD84`). Everything after that `0x21` - an entry's per-frame body, the
+region selector `0x19B..0x1AA`, an op-`0x44` spawn placed in the body - waits
+for the SM's passes. The engine installs the three opening legs' cutscene
+records at scene entry, so `World::pre_run_entry_script` runs those legs'
+passes in the load frame up to the one that spawns the record (`opdeene`
+ends at PC `0x99`, as the `s1_newgame_field` capture does).
+
 Port: `World::step_field_frame_slice` (the system-script gate,
 `FieldVmState::system_pass_open`), `World::field_scripts_held_for_battle`,
 `CutsceneTimeline::interaction_slot` (a boss-stager touch resumes the
@@ -974,6 +985,15 @@ the staged shot and go cinematic" freezes such a scene's camera on the
 terrain-less fallback pose (`H = 512`, the zone-miss depth) instead of the
 region's own shot.
 
+A record that issues **no** `0x45` leaves the camera globals where the field
+camera put them, so its frame is the follow shot. The engine's scripted
+camera (`camera_view::cutscene_view`) therefore owns a frame only once some
+beat has staged a slot (`camera_view::cutscene_owns_camera`, the gate both
+hosts use): a running timeline alone is not enough. `garmel`'s Songi taunt
+(`P2[62]`: three BGM ops and the text) is captured on the walk framing;
+a host that switched to the per-slot fallbacks with nothing staged framed an
+invented low shot across the room.
+
 Reading that `s16` as an absolute jump target is what kept `urudre2` one-way in
 the port: the room's only door record carries `45 C0 00 00` about `0x670` bytes
 before its `0x3F` -> `map01` tail, and a target of zero restarted the record.
@@ -1258,7 +1278,7 @@ retail data either way.
 | 0x46 | `VIEW_WINDOW` | Camera visible-tile-window setter (`0x1F8003E8..EB`, signed `[nearX, nearZ, farX, farZ]` tile offsets from the camera tile - see [`encounter.md`](../formats/encounter.md#the-scratchpad-window-0x1f8003e8eb)). Long form `46 24 n0 n1 f0 f1` writes the four bytes directly; short form `46 a b` builds a window of half-width `a >> 1` in X about offset `-1` and `b >> 1` in Z about `+2`. Not fog. |
 | 0x49 | `STATE_RESUME` | Tristate state machine on `_DAT_8007B450`, sub-cases 0..0xD. [Detail](#0x49-state_resume). |
 | 0x4A | `WAIT_FRAMES` | `ctx[+0x54] += scratch_delta; if (sum < operand) return; else PC += default`. Frame timer. |
-| 0x4B | `ANIMATE` | Multi-keyframe setup. Writes `ctx[+0xB0+N] / +0xB8 / +0xC8`, sets `+0x10` bit 0x1000 (animation flag). PC += 3 + count*4. |
+| 0x4B | `ANIMATE` | **VDF morph-lane arm** - the field sibling of move-VM op `0x0A`, not a clip select. Writes sub-entry `base + N` to `ctx[+0xB0+N]`, the up / down ramp velocities to `+0xB8` / `+0xC8`, weight 0 to `+0xA0`; sets `+0x10` bit 0x1000, `+0x62 = (+0x62 \| 0x1000) & 0xD3FF`, `+0x6C = count`. PC += 3 + count*4. See [field-ambient-fx](field-ambient-fx.md#the-vdf-vertex-morph-chain). |
 | 0x4C | `MENU_CTRL` | Outer-nibble-dispatched (16 sub-dispatchers). See [`script-vm-menuctrl.md`](script-vm-menuctrl.md). |
 | 0x4D | `BBOX_TEST` | Inside-box advances PC by 7; outside-box jumps to `pc + header_size + 4 + LE_u16(operand[4..6])` via `FUN_801E3614`. |
 | 0x4E | `INVENTORY_CMP` | Compare-and-jump on party state; every sub-op 0..9 is the 7-byte compare-and-skip. [Detail](#0x4e-inventory_cmp). |
@@ -1867,7 +1887,7 @@ happens to precede the site within the resync window. Triage rules that follow f
 
 Hand-checks that applied these rules: the "chapter-wide readers" the census reports for `0x32C` (~50
 scenes) and `0x461` (~30 scenes) are the `s,` / `ta` bigrams in NPC dialogue - both flags are real but
-scene-local (see [open-rev-eng-threads](../reference/open-rev-eng-threads.md#region-story-flag-gate-families));
+scene-local (see [re-settled-threads](../reference/re-settled-threads.md#region-story-flag-gate-families));
 the Nivora successor gate `0x370` shows the context-window rule cutting **both ways inside one record**
 (`doman` variant `P1[15]`): three `Sp` = `53 70` sites are the "Time**Sp**ace Bomb" dialogue (rejected),
 but the fourth, at MAN offset `0x06397` (`+0x3018`), sits in a choreography run (`WaitFrames` / `MoveTo` /

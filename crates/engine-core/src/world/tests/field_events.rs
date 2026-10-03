@@ -689,3 +689,56 @@ fn field_op_3d_emptied_list_then_3c_fights_alone() {
     assert_eq!(world.party.active_party, vec![1]);
     assert_eq!(world.party.party_leader_slot, Some(1));
 }
+
+/// Count the sub-op 2 pauses `World::tick` queues over `ticks` frames.
+fn release_pauses(world: &mut World, ticks: usize) -> usize {
+    let mut pauses = 0;
+    for _ in 0..ticks {
+        world.tick();
+        pauses += world
+            .drain_field_events()
+            .into_iter()
+            .filter(|e| matches!(e, FieldEvent::Bgm { sub_op: 2, .. }))
+            .count();
+    }
+    pauses
+}
+
+/// A cutscene's `35 <id> 09 · 35 <n> 05 · 35 00 0A` (korb3's Gaza record,
+/// nilboa's duel records, town0d's Songi beat): the timed release armed
+/// inside the swap window releases the **outgoing** track, which retail's
+/// poller still holds in the slot. The port started the incoming track at
+/// sub-op 9, so the expiry must not pause it - otherwise the commit releases
+/// the paused source and the new score never sounds.
+#[test]
+fn a_timed_release_inside_a_pending_swap_does_not_pause_the_new_track() {
+    use legaia_engine_vm::field::FieldHost;
+
+    let mut world = World::new();
+    {
+        let mut host = crate::world::vm_hosts::FieldHostImpl { world: &mut world };
+        host.bgm(2028, 9);
+        host.bgm(4, 5);
+    }
+    assert!(world.audio.start_pending_commit);
+    world.drain_field_events();
+    assert_eq!(
+        release_pauses(&mut world, 40),
+        0,
+        "the expiry released the old track"
+    );
+    {
+        let mut host = crate::world::vm_hosts::FieldHostImpl { world: &mut world };
+        host.bgm(0, 0xA);
+    }
+    assert!(!world.audio.start_pending_commit);
+
+    // Contrast: once committed (jouine's `9 · 0xA · 5`), the release stops
+    // the slot's occupant - the new track - as retail's does.
+    {
+        let mut host = crate::world::vm_hosts::FieldHostImpl { world: &mut world };
+        host.bgm(4, 5);
+    }
+    world.drain_field_events();
+    assert_eq!(release_pauses(&mut world, 40), 1);
+}

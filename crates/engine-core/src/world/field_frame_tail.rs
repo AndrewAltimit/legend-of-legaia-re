@@ -221,7 +221,7 @@ impl World {
         cues.into_iter()
             .filter_map(|(slot, base_id)| {
                 let spawn_party = npc_bundle(slot)?;
-                let bundle = if self.npc_party_bank(slot).unwrap_or(spawn_party) {
+                let bundle = if self.npc_clip_party_bank(slot, spawn_party) {
                     locomotion_bundle
                 } else {
                     scene_bundle
@@ -291,6 +291,24 @@ impl World {
             .map(|c| c.ctx.flags & legaia_engine_vm::field_player_clip::PARTY_BANK_FLAG != 0)
     }
 
+    /// Whether NPC `slot`'s clip ids name records of the party locomotion
+    /// bank (`true`) or of the scene's own bank (`false`): the live
+    /// party-bank bit ([`Self::npc_party_bank`]), and the spawn class
+    /// (`spawn_party`, a global-pool party model) only for a slot no
+    /// placement channel carries.
+    ///
+    /// Both the clip a host binds when it uploads the scene's NPCs and every
+    /// later re-target resolve through this. The spawn binding used to pick
+    /// by spawn class alone, so a party model whose spawn prologue had
+    /// already dropped the bit for a scene-bank gesture (`B2 <id> 18`, then
+    /// `A2 <id> <move>`) bound the id out of the locomotion bank - a different
+    /// record, or none when the locomotion bank is shorter than the id.
+    ///
+    /// REF: FUN_800204F8 (`0x8002053C`)
+    pub fn npc_clip_party_bank(&self, slot: u8, spawn_party: bool) -> bool {
+        self.npc_party_bank(slot).unwrap_or(spawn_party)
+    }
+
     /// The `+0x62` anim-control word of NPC `slot`'s spawned context, if a
     /// placement channel carries it.
     fn npc_channel_local_flags(&self, slot: u8) -> Option<u16> {
@@ -334,6 +352,27 @@ impl World {
                 ch.ctx.local_flags = out;
             }
         }
+    }
+
+    /// The running clip of the field NPC a cross-context op's `target` byte
+    /// names (the channel whose script id is `target`, retail's
+    /// `FUN_8003C83C` resolution): `Some(Some(cursor))` when the world owns a
+    /// cursor for that placement, `Some(None)` for an NPC without one, `None`
+    /// when `target` is no live NPC channel.
+    pub(crate) fn npc_live_clip_for_target(
+        &self,
+        target: u8,
+    ) -> Option<Option<crate::field_env::PropAnim>> {
+        let chans = if self.field_vm.channels.is_empty() {
+            &self.field_vm.stepping_view
+        } else {
+            &self.field_vm.channels
+        };
+        let ch = chans
+            .iter()
+            .find(|c| !c.object_bind && c.ctx.script_id == u16::from(target))?;
+        let slot = u8::try_from(ch.placement_index).ok()?;
+        Some(self.npcs.clip_cursors.get(&slot).copied())
     }
 
     /// Pose `player` from NPC `slot`'s world-owned cursor. `false` when the

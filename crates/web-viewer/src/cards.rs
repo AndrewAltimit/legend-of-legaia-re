@@ -607,6 +607,8 @@ mod tests {
     fn load_from_card_lifts_the_block_into_the_world() {
         let mut rt = rt_with_card(1, card_with_save(2, "Gala", 555));
         rt.load_session_from_card(1, 2).expect("load");
+        // The Load parks; the page's resume call lands it.
+        rt.resume_parked_save().expect("a parked save");
         assert_eq!(rt.world_mut().party.money, 555);
         assert_eq!(rt.world_mut().party.roster.members.len(), 1);
         assert_eq!(rt.world_mut().party.roster.members[0].name(), "Gala");
