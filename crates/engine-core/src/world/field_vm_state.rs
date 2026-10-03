@@ -138,6 +138,22 @@ pub struct FieldVmState {
     /// [`crate::world::World::step_field_frame_slice`].
     // REF: FUN_801DA51C
     pub system_pass_open: bool,
+    /// The script-counter **slot table** at `0x801C6460` (signed halfwords).
+    ///
+    /// Written by field-VM `4C CA` (set), `4C CB` (add) and `4C CC`
+    /// (subtract), the last two substituting the frame tick `_DAT_1F800393`
+    /// for a `0xFFFF` literal (`0x801E2930..0x801E29DC`); read by op `0x4E`
+    /// sub-ops `5..=8` (`0x801E0B0C`, slots `0..=3`) and by the dialog
+    /// renderer's number escape (`0x80036A7C`). Scripts build timers and
+    /// counters out of it - `tunnelc`'s hammer tremor cycles slot `1`.
+    ///
+    /// Indexed by the op's raw slot byte, so it spans all 256 values; the
+    /// shipped scripts use the low few. Nothing in retail clears it: a
+    /// reference sweep finds only the VM arms above, the number escape, a
+    /// debug print in the field overlay and the dance overlay's results
+    /// copy. It therefore survives scene loads, and the engine keeps it on
+    /// the world for the session.
+    pub slot_table: [i16; 256],
 }
 
 impl FieldVmState {
@@ -162,6 +178,7 @@ impl FieldVmState {
             object_channel_binds: Vec::new(),
             pending_record_spawns: Vec::new(),
             system_pass_open: true,
+            slot_table: [0; 256],
         }
     }
 }

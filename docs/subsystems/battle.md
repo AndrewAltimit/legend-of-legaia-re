@@ -1805,7 +1805,7 @@ host pin the shared derivation to the same literal pose.
 **Screen shake.** `FUN_801D9D30` jitters the same translation pair
 (`0x800840B8/BC`) by two LCG samples masked to `0xFFFFFF >> (0x15 − amplitude)`,
 where the amplitude is `_DAT_8007B630`. That global has exactly one retail
-writer - the field-VM opcode `0x4C` outer-nibble `8` sub-`4`
+non-zero writer (the scene reset `FUN_8003A024` zeroes it) - the field-VM opcode `0x4C` outer-nibble `8` sub-`4`
 (`[4C, 84, amplitude]`, arm `0x801E2134`, jump-table slot `0x801CEF58`) - and
 `FUN_801D9D30`'s only callers are the field-family overlay's per-frame camera
 updaters (`0x801D1344` and siblings), so in retail the shake is a *field*

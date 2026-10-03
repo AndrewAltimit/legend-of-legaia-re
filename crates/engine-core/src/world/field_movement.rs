@@ -351,7 +351,7 @@ impl World {
         self.sample_field_floor_height_with(world_x, world_z, &self.terrain.floor_height_lut)
     }
 
-    /// The same sample taken through the scene's **pristine** ladder
+    /// The same sample taken through the scene's **MAN-header** ladder
     /// ([`crate::world::FieldTerrain::floor_height_lut_static`]) instead of
     /// the live one.
     ///
@@ -361,9 +361,10 @@ impl World {
     /// (`*(_DAT_8007B898) + 2`, sixteen negated `short`s - the same source
     /// `FUN_8003AEB0` installs at scene entry), calls `FUN_80019278`, and
     /// restores the live rungs (`0x801DAC40..0x801DACA0`). So a floor-tier
-    /// oscillator raised by op `0x4C` nibble-9 sub-`0..2`, or a whole ladder
-    /// replaced by sub-`E`, moves the terrain and the actors standing on it
-    /// but never the camera.
+    /// oscillator raised by op `0x4C` nibble-9 sub-`0..2` moves the terrain
+    /// and the actors standing on it but never the camera. A whole ladder
+    /// installed by sub-`E` is different: that arm writes the MAN copy as
+    /// well, so the camera follows it.
     ///
     /// REF: FUN_801DAB90
     pub fn sample_field_floor_height_static(&self, world_x: i32, world_z: i32) -> i32 {
