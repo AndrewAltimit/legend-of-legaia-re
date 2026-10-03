@@ -529,13 +529,25 @@ pub fn read_arts_shout_bank(disc: &Path) -> Option<legaia_engine_audio::ArtsShou
     bank.has_clips().then_some(bank)
 }
 
-/// Clip slots the battle's one-shot CD-XA cues address, as `(slot, file)`:
-/// `26` = `XA27.XA` (the eight stereo attack stings the melee kernel's
-/// `0x10C` cue resolves to through the sound funnel's voice leg) and `0x1D`
-/// = `XA30.XA` (the ten mono per-character grunts the same kernel fires
-/// directly). Slot `i` is `XA<i+1>.XA` by the boot-built clip table's own
-/// construction (`docs/subsystems/audio.md`).
-pub const BATTLE_XA_CLIP_SLOTS: &[(u8, &str)] = &[(26, "XA27.XA"), (0x1D, "XA30.XA")];
+/// Clip slots the battle's one-shot CD-XA cues address, as `(slot, file)`.
+/// The animation cue tracks' party voice band (`0xC8..=0xFF` re-based
+/// `+0x38`, `FUN_800508DC` -> `FUN_8004FE5C`) lands on `(id - 0x100) >> 3`
+/// with the `1 / 3 / 5 -> 26 / 27 / 28` remap: Vahn's `0xC8..=0xD7` on
+/// slots `0` / `26`, Noa's `0xD8..=0xE7` on `2` / `27`, Gala's
+/// `0xE8..=0xF7` on `4` / `28` - Vahn's Spirit clip opens with `0xC8`,
+/// `XA1.XA` channel 0. `26` also carries the melee kernel's `0x10C` sting
+/// and `0x1D` = `XA30.XA` the per-character block grunt. Slot `i` is
+/// `XA<i+1>.XA` by the boot-built clip table's own construction
+/// (`docs/subsystems/audio.md`).
+pub const BATTLE_XA_CLIP_SLOTS: &[(u8, &str)] = &[
+    (0, "XA1.XA"),
+    (2, "XA3.XA"),
+    (4, "XA5.XA"),
+    (26, "XA27.XA"),
+    (27, "XA28.XA"),
+    (28, "XA29.XA"),
+    (0x1D, "XA30.XA"),
+];
 
 /// Demux + decode the battle **one-shot clip** banks from a disc image into
 /// a generic `(clip_slot, channel)` bank: the files in

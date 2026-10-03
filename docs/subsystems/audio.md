@@ -1644,6 +1644,17 @@ battle by `SceneHost`, PROT 888) and the scene's prescript record 0 elsewhere.
 The `monster.snd` slots `7` / `8` are not staged by either host, so the
 monster-side runtime cues are routed and silent.
 
+The voice band is per character in blocks of sixteen - Vahn `0xC8..=0xD7`,
+Noa `0xD8..=0xE7`, Gala `0xE8..=0xF7`, each block ending on that character's
+shout - so after the `+0x38` re-base each block lands on two clip slots:
+`0` / `26` (`XA1` / `XA27`), `2` / `27` (`XA3` / `XA28`) and `4` / `28`
+(`XA5` / `XA29`). The **Spirit** command's sound is this path: the commit
+stages art-bank record 0 (`0x10`, installed at dynamic slot `0x11`), whose
+track opens `(0, 0xC8)` - `XA1.XA` channel 0 - and whose effect script
+spawns the aura (`0x07`, `0x08` and the direct `0x14`) on its first frame.
+Both hosts stage those six banks with `XA30` as the battle clip set
+(`BATTLE_XA_CLIP_SLOTS` in `engine-shell::boot` and `web-viewer::play_xa`).
+
 On a **party** seat (battle slot `< 3`) the cue-id band `0xC8..=0xFF`, minus the
 single hole at `0xFA`, is the arts voice: the id is re-based by `+0x38`, which is
 exactly what lifts `0xC8` to `0x100` and so puts the whole band in the `>= 0x100`
