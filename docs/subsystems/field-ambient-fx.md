@@ -1081,7 +1081,7 @@ disc-wide census of the gate-raising scripts and the two oracles are
 ## Related
 
 - [`cutscene.md`](cutscene.md) - the element channel the particle emitter
-  shares with the position tween and the teardown.
+  runs on, and why its two template-table neighbours are the hop-arc pair.
 - [`world-map.md`](world-map.md) - the kingdom walker table (ocean).
 - [`move-vm.md`](move-vm.md) / [`move-vm-overlay-ext.md`](move-vm-overlay-ext.md) -
   the opcode set the ambient records run on.

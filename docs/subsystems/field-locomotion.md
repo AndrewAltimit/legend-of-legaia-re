@@ -1589,9 +1589,10 @@ fractional sum down by `sra 12` and shifts once more. That is exactly
 world Y is routinely negative.
 
 That evaluator is shared, and elsewhere in these docs it is described as a
-**linear blend** - the [cutscene position tween](cutscene.md) and the move-VM's
-[ext sub-ops `0x0E` / `0x12`](move-vm-overlay-ext.md) both call it a midpoint
-helper. Both readings are correct and are the same routine's degenerate case:
+**linear blend** - the move-VM's
+[ext sub-ops `0x0E` / `0x12`](move-vm-overlay-ext.md) call it a midpoint
+helper, and an earlier reading of the hop's own tick `FUN_801D5C08` as a
+[cutscene position tween](cutscene.md) did too. Both readings are correct and are the same routine's degenerate case:
 `a0` arrives holding the control point, so a caller that seeds it with the
 plain midpoint gets exactly `(1-t)*P0 + t*P2` back. The hop is the caller that
 **overwrites the Y midpoint** with the apex-corrected control point, and that

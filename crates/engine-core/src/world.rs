@@ -156,7 +156,7 @@ mod drop_shadow_render;
 mod fog_render;
 pub use cutscene_elements::{
     AMBIENT_EMITTER_SCENE_ARM, AMBIENT_EMITTER_TEMPLATE_VA, CutsceneElement, ElementFrame,
-    ElementKind, ElementLink, WorldRng,
+    ElementKind, WorldRng,
 };
 mod assets_events;
 pub use assets_events::vdf_entry;
