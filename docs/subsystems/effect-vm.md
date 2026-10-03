@@ -279,6 +279,42 @@ countdown) is retired; the dev-only `World::spawn_debug_effect*` helpers
 keep a fixed budget, but they live outside the pool
 (`World::debug_effects`) so the walker never sees them.
 
+### Battle effects die with the battle
+
+Retail never tears an effect down one by one at a battle's end; it drops the
+whole actor pool. The mode initialiser `FUN_8001DCF8` calls the per-stage init
+`FUN_8001E1B4` (`jal` at `0x8001E020`) on every mode switch - into battle, back
+to the field, into the next scene - and that init re-seeds the 143-slot actor
+free stack (`FUN_800203EC` at `0x8001E324`) and re-pops the seven actor-list
+sentinels (`FUN_80020424` x7, `0x8001E32C..0x8001E364`), each left pointing at
+itself. Every effect actor still on a list - a move-FX part, an effect-script
+table-form record, a cast module's spawn record - is unlinked with no walk
+(`see ghidra/scripts/funcs/8001e1b4.txt`). The `efect.dat` pool needs no reset
+of its own on the way out: its walker is battle-overlay code behind the
+pool-ready byte, and the battle loader re-initialises it on the way in
+(`FUN_801DE914`, stage `0xE`).
+
+The port's `World` outlives every mode switch, and both play hosts draw the
+pool's billboards and the move-VM scene-graphs with no mode test, so it drops
+the same state by name: `World::teardown_battle_effects` runs at battle entry,
+at battle exit (`World::finish_battle`, or `World::resolve_game_over_hold` when
+a wipe holds the frozen frame) and at every scene load
+(`SceneHost::load_scene`). It resets the `efect.dat` pool and every
+battle-scoped member of `World::casting` - the summon / cast-module, move-FX
+and effect-script scene-graphs, the streak block and its trail texpage, the
+cast band's pending requests and stager - keeping only the installed
+cast-effect data pool. `World::battle_effect_residue` names whatever of that is
+still live; the soak harness's `effect_residue` detector and
+`engine-shell/tests/battle_effect_teardown_disc.rs` read it on the first frame
+past each exit and scene load.
+
+One teardown is earlier than the mode switch. The engine stages a cast
+module's spawn records as data and runs its tick body separately
+([`cast-module.md`](cast-module.md#staged-records-end-with-their-action)), so
+nothing halts a record the module code would have halted, and many records are
+infinite loops. `World::step_battle` retires that scene when the action SM
+opens the next action (state `0x00`).
+
 ### Catalog load
 
 The runtime effect catalog (PROT 0873 `efect.dat`) loads at scene entry via `EffectCatalog::from_efect_dat_bytes` (the 2-pack parser - see [`formats/effect.md`](../formats/effect.md)), staying resident on `World::effect_catalog` across field/battle transitions. So the effect-script walk's spawn requests (`FUN_801DEA50` → `FUN_801DFDF0`, routed by `World::route_battle_effect_spawns` into `World::try_spawn_effect`) resolve to real effect scripts. The action SM's `ui_element` raises do **not** spawn here: `FUN_801D8DE8` is the HUD screen-element spawner and calls no effect routine ([`battle-action.md`](battle-action.md#fun_801dfdf8---effect-bundle-public-spawn-api)). The catalog carries the pack1 effect scripts + per-child descriptors, the pack0 animation batches, and the inline sprite atlas.

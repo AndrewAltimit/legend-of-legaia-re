@@ -19,6 +19,7 @@ mod clip_ladder;
 mod command_flow;
 mod commit_log_launch;
 mod effect_route;
+mod effect_teardown;
 mod formation_span;
 mod initiative;
 mod intro_names;

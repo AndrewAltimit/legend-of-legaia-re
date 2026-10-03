@@ -97,6 +97,7 @@ on one frame and neutral on the next.
 | `non_finite` | a camera float or the caption alpha is NaN or infinite |
 | `value` | roster HP / MP over max, a level outside `1..=99`, battle HP over max, money out of range, a bag stack over 99, a count on a free slot, or two stacks of one id inside the active window |
 | `unbounded_growth` | an engine queue grows past a cap |
+| `effect_residue` | on the first field or world-map frame after a battle exit or a scene load, `World::battle_effect_residue` names a battle effect still live (the `efect.dat` pool, a move-FX / effect-script / summon scene-graph, the streak block, a cast-band request) - retail resets the whole actor pool at both points ([`effect-vm.md`](../subsystems/effect-vm.md#battle-effects-die-with-the-battle)) |
 | `save_roundtrip` | in a `+rt` run, the save taken after a resume disagrees with the save it resumed; the location names the first differing field (`party[i]+offset`, `ext.money`, `ext_v2.field_position`, ...) |
 
 The **progress digest** hashes everything a player could see move: mode and

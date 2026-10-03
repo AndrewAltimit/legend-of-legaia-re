@@ -1988,8 +1988,11 @@ impl World {
         // retail's battle-loader init call (stage `0xE`, `0x80052670`): a
         // fresh pool is exactly the state `FUN_801DE914(0x1000, 0xA00)`
         // leaves, so `Pool::init_head` carries `REPLACED-BY` naming this line.
+        // The rest of the battle-effect state goes with it - the mode switch
+        // into battle runs the same actor-pool reset (`FUN_8001E1B4`) the
+        // exit does.
         // REF: FUN_801DE914
-        self.effect_pool = vm::effect_vm::Pool::new();
+        self.teardown_battle_effects();
         // Sparring fight: resolve the battle-stage id exactly as retail's
         // battle-entry tail does - default 0, and raise it to the tutorial
         // stage only when the disc's one-shot arm flag is set, consuming the

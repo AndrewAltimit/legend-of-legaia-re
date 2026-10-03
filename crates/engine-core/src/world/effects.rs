@@ -267,6 +267,11 @@ impl World {
         // `current_anim` / cleared `ADVANCE_DONE` for clip-less actors and
         // sees in-flight staged clips otherwise.
         self.commit_staged_battle_anims();
+        // A new action opens: the previous action's cast-module scene does not
+        // carry into it ([`Self::retire_cast_scene_at_action_begin`]).
+        if self.battle_ctx.action_state == vm::battle_action::ActionState::Begin.as_byte() {
+            self.retire_cast_scene_at_action_begin();
+        }
         // Step against a clone of the context, then write it back. The
         // previous raw-pointer alias required that no host method ever
         // touch `world.battle_ctx`; `BattleActionHost::ui_element` now

@@ -1252,6 +1252,7 @@ fn run_one(
     let mut menu_open_since: Option<u64> = None;
     let mut battle_since: Option<u64> = None;
     let mut prev_mode = session.host.world.mode;
+    let mut prev_scene = session.host.world.active_scene_label.clone();
     let mut reported: BTreeSet<String> = BTreeSet::new();
     let mut traced_scripts: BTreeSet<u64> = BTreeSet::new();
     let mut battle_sites: BTreeMap<String, u32> = BTreeMap::new();
@@ -1521,6 +1522,34 @@ fn run_one(
         if w.game_over || w.game_over_hold {
             stats.wiped = true;
             break;
+        }
+        // Effect residue: a battle-scoped effect (the `efect.dat` pool, a
+        // move-FX / effect-script / summon scene-graph, the streak block)
+        // still live on the first frame past a battle exit or a scene load.
+        // Retail drops every one of them with the actor-pool reset of its
+        // per-stage init (`FUN_8001E1B4`); both play hosts draw them with no
+        // mode test, so a survivor is on screen in the field.
+        let left_battle = prev_mode == SceneMode::Battle
+            && matches!(w.mode, SceneMode::Field | SceneMode::WorldMap);
+        let scene_changed = w.active_scene_label != prev_scene;
+        if (left_battle || scene_changed) && w.mode != SceneMode::Battle {
+            let residue = w.battle_effect_residue();
+            if !residue.is_empty() {
+                findings.push(mk(
+                    &session,
+                    "effect_residue",
+                    frame,
+                    if left_battle {
+                        "after:battle-exit".into()
+                    } else {
+                        "after:scene-change".into()
+                    },
+                    format!("battle effects still live: {}", residue.join(",")),
+                ));
+            }
+        }
+        if scene_changed {
+            prev_scene = w.active_scene_label.clone();
         }
         // Mode edges.
         if w.mode != prev_mode {

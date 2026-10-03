@@ -1071,6 +1071,30 @@ trampoline `0x801F9BA8` picks between them on the caster's queued action id -
 `0x76` to `0x801F798C`, `0x77` to `0x801F6A14`, anything else to the epilogue.
 The port routes on the same two ids.
 
+### Staged records end with their action
+
+Staging every record at once is where the DATA half parts from retail. In the
+module image the records are spawned by the tick body phase by phase, and the
+same tick body is what halts the long-lived ones; the engine's scene has no
+such owner. Ticked alone, roughly half of the band's modules carry at least
+one record that never halts - an emitter loop or a held glow (PROT 0905, 0917,
+0918, the whole evolved / high-summon run 0927..0934, and most of the
+trampoline-reached 0938..0966) - so the scene used to stay up after the cast,
+through every later round, out of the battle and into the next scenes.
+
+Two retail facts bound a record's life. The band leaves `0x70` only on the
+module tick's zero return, i.e. once the module reports its choreography done
+(`0x801E50C8`), and a record's move-VM bytecode lives in the slot-B image,
+which the next cast re-pages. `World::step_battle` therefore retires the
+staged scene when the action SM opens the next action (state `0x00`) - the
+latest point both facts allow, which keeps every finite record's own tail and
+cuts only the loops. The bound is an `inference`; the module code's own halt
+sites are not captured. Cort's Mystic Shield (PROT 0940's `0xAC` arm) is the
+one module effect retail keeps alive across actions, behind `_DAT_8007BD84`;
+the engine stages no visual for it. Everything else in the battle's effect
+state comes down with the actor-pool reset at the mode switch
+([`effect-vm.md`](effect-vm.md#battle-effects-die-with-the-battle)).
+
 ### The trampolines are their own port, and one cell holds six spells
 
 The capture-class arm shape above is a routine in its own right, and **21 of

@@ -152,6 +152,12 @@ impl SceneHost {
         // PORT: FUN_8003A024 (live wiring; the reset image itself is
         // `crate::scus_leaf_kernels::SCENE_CONTROL_BLOCK_RESET`)
         self.world.reset_scene_control_block();
+        // A scene load is a mode switch in retail, and the mode initialiser's
+        // per-stage init resets the whole actor pool (`FUN_8001E1B4`,
+        // `0x8001E324..0x8001E364`): no battle effect - nor a dev spawn left
+        // in the move-FX / summon seats - rides into the next scene.
+        // REF: FUN_8001E1B4
+        self.world.teardown_battle_effects();
         let scene = Scene::load(&self.index, name)?;
         // `_DAT_80084540`: the scene's raw CDNAME define (the `block_range`
         // start, before the extraction-frame shift `Scene::start` carries).
