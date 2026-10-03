@@ -10,7 +10,7 @@ pipeline may change that - the same rule that governs the rest of the repo.
 
 | Piece | Lives in | Role |
 |---|---|---|
-| Release workflow | [`.github/workflows/release.yml`](../../.github/workflows/release.yml) | Tag trigger, test gate, publish |
+| Release workflow | [`.github/workflows/release.yml`](../../.github/workflows/release.yml) | Tag trigger, test gate, the two build jobs, publish |
 | Toolchain provisioning | [`scripts/ci/setup-cross-toolchain.sh`](../../scripts/ci/setup-cross-toolchain.sh) | Per-target cross toolchain, idempotent |
 | Build + package | [`scripts/ci/release-build.sh`](../../scripts/ci/release-build.sh) | Per-target build, staging, archive, checksum |
 
@@ -23,7 +23,24 @@ git push origin v0.2.0
 
 That is the whole procedure. The workflow runs the test gate, builds each
 target, and creates the release for the tag if it does not already exist,
-attaching the archives to it. A tag containing `-` (say `v0.2.0-rc1`) is
+attaching the archives to it.
+
+The workflow has four jobs:
+
+| Job | Runner | Does |
+|---|---|---|
+| `verify` | self-hosted | `cargo fmt --check`, `clippy -D warnings`, `cargo test --workspace` |
+| `build-cross` | self-hosted (arm64 Linux) | the two Linux targets and Windows; uploads the archives as a workflow artifact |
+| `build-macos` | GitHub-hosted `macos-14` | the universal macOS archive; uploads it as a workflow artifact |
+| `publish` | GitHub-hosted `ubuntu-latest` | `needs` all three; checks every archive's hash, writes `SHA256SUMS`, makes the one release edit |
+
+The build jobs never touch the release. Only `publish` does, and it waits for
+the test gate and for **both** build jobs, so a release never appears with a
+platform missing and `SHA256SUMS` always covers every archive. `publish` also
+fails if any of the four expected archive names is absent. `build-macos` runs
+in parallel with `verify` rather than after it: the repo is public, so the
+hosted macOS minutes are free, and nothing it builds is published until the
+gate is green. A tag containing `-` (say `v0.2.0-rc1`) is
 marked as a prerelease.
 
 To rehearse without touching a release, use the `workflow_dispatch` trigger
@@ -40,10 +57,35 @@ cross-compiles - including the x86_64 Linux one.
 | `aarch64-unknown-linux-gnu` | Native | Every workspace binary |
 | `x86_64-pc-windows-gnu` | mingw-w64 cross | Every workspace binary |
 | `x86_64-unknown-linux-gnu` | `cargo-zigbuild` cross + amd64 ALSA sysroot, glibc pinned to 2.28 | Every workspace binary |
+| `universal-apple-darwin` | Native on a macOS runner: `aarch64-apple-darwin` + `x86_64-apple-darwin`, fused by `lipo` | Every workspace binary, plus `Legend of Legaia.app` |
 
 The per-target binary list is declared explicitly in `release-build.sh`, and
 the script fails if an expected binary is missing from the build output, so a
 target can never quietly drop one.
+
+### macOS
+
+Apple's SDK cannot be redistributed onto a Linux runner, so macOS builds on a
+GitHub-hosted macOS runner instead. `universal-apple-darwin` is not a rustc
+triple; it is the release's name for "both macOS slices in one file".
+`release-build.sh` builds the workspace for `aarch64-apple-darwin` and
+`x86_64-apple-darwin`, then `lipo -create` fuses each binary into
+`target/universal-apple-darwin/release/`, and the rest of the script stages it
+like any other target. The deployment target is macOS 11, the arm64 floor.
+cpal's macOS backend is CoreAudio, so there is no ALSA question here.
+
+The archive additionally carries `Legend of Legaia.app`, a minimal bundle
+(an `Info.plist` and a copy of `legaia-engine`) so a Finder user double-clicks
+an app. Started without arguments the engine runs its launcher, which needs no
+terminal. The bundle is **ad-hoc signed** (`codesign --sign -`): arm64 macOS
+refuses to run unsigned code at all, and an ad-hoc seal satisfies that. It is
+not notarised - that needs a paid Apple Developer identity - so Gatekeeper
+asks the user to confirm the first launch; `README-PLAY.txt` gives the steps.
+
+The script stays inside bash 3.2 and BSD userland on this path: archives are
+written with plain `tar -czf` when the host tar is not GNU tar (the GNU
+normalising flags do not exist on BSD tar), and checksums fall back to
+`shasum -a 256`, which writes the same `hash  name` lines as `sha256sum`.
 
 ### Why Windows is `-gnu` rather than `-msvc`
 
@@ -122,19 +164,32 @@ Each target produces one archive plus an entry in a single aggregate
 legaia-tools-<version>-aarch64-unknown-linux-gnu.tar.gz
 legaia-tools-<version>-x86_64-pc-windows-gnu.zip
 legaia-tools-<version>-x86_64-unknown-linux-gnu.tar.gz
+legaia-tools-<version>-universal-apple-darwin.tar.gz
 SHA256SUMS
 ```
 
 `<version>` is the tag with its leading `v` stripped, so `v0.2.0` yields
-`legaia-tools-0.2.0-x86_64-pc-windows-gnu.zip`. Linux targets ship `.tar.gz`,
-Windows ships `.zip`.
+`legaia-tools-0.2.0-x86_64-pc-windows-gnu.zip`. Linux and macOS ship
+`.tar.gz`, Windows ships `.zip`.
 
 Every archive contains a single top-level
 `legaia-tools-<version>-<target>/` directory - extracting one never scatters
 files across the working directory. Inside it: the binaries, `LICENSE` and
-`LICENSE-MIT` (the project is `MIT OR Unlicense`), and a generated
-`README.txt` naming the target, listing the binaries actually present, and
-restating that the user supplies their own disc image.
+`LICENSE-MIT` (the project is `MIT OR Unlicense`), and two generated text
+files:
+
+- `README-PLAY.txt` - the file a player needs: start `legaia-engine` (or the
+  macOS app) with no arguments, pick your own Legend of Legaia (USA) disc
+  image once, and play. It restates that no game data is included and where
+  settings and saves live. The launcher itself is described in
+  [`playing-and-viewing.md`](../guides/playing-and-viewing.md#0-the-launcher).
+- `README.txt` - the target, every binary present with a one-line role, and
+  the same bring-your-own-disc rule.
+
+A build smoke-runs `legaia-engine --version` from the staged archive
+whenever the build host can execute it (the native Linux row and the
+universal macOS row), so a binary that cannot start fails the release rather
+than a user.
 
 Verify a download against the published manifest:
 
@@ -182,7 +237,7 @@ added signal.
 The release stays test-gated regardless: `release.yml`'s `verify` job
 reproduces the same `cargo fmt --check`, `cargo clippy -D warnings` and
 `cargo test --workspace --profile release-test` gates that `main-ci.yml` runs, and the
-build job `needs` it. Disc-gated tests skip in `verify` exactly as they do in
+`publish` job `needs` it. Disc-gated tests skip in `verify` exactly as they do in
 CI, because `LEGAIA_DISC_BIN` is not set there.
 
 ## Local rehearsal
@@ -195,8 +250,15 @@ scripts/ci/setup-cross-toolchain.sh x86_64-pc-windows-gnu
 scripts/ci/release-build.sh 0.0.0-test x86_64-pc-windows-gnu
 ```
 
+On a Mac the same pair works for the macOS row:
+
+```bash
+scripts/ci/setup-cross-toolchain.sh universal-apple-darwin
+scripts/ci/release-build.sh 0.0.0-test universal-apple-darwin
+```
+
 The archive and its `.sha256` land in `target/dist/`, which is inside the
 already-gitignored `target/`, so a rehearsal leaves no untracked files behind.
 Pass a third argument to choose a different output directory. The workflow's
-only extra step is folding the per-archive `.sha256` files into the aggregate
-`SHA256SUMS`.
+only extra step is `publish` folding the per-archive `.sha256` files into the
+aggregate `SHA256SUMS`.

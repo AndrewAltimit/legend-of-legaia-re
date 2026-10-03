@@ -5,24 +5,38 @@
 # SHA256SUMS file to that tag's GitHub release (creating the release if it
 # does not exist yet).
 #
-# Runs entirely on the self-hosted runner, which is arm64 Linux. That makes
-# *both* non-native targets cross-compiles:
+# Four jobs:
+#
+#   verify          self-hosted   fmt + clippy + test gate
+#   build-cross     self-hosted   the three Linux-hosted targets below
+#   build-macos     macos-14      universal-apple-darwin (arm64 + x86_64, lipo)
+#   publish         ubuntu-latest SHA256SUMS over every archive + one release edit
+#
+# The self-hosted runner is arm64 Linux, which makes both of its non-native
+# targets cross-compiles:
 #
 #   aarch64-unknown-linux-gnu   native            every workspace binary
 #   x86_64-pc-windows-gnu       mingw-w64 cross   every workspace binary
 #   x86_64-unknown-linux-gnu    zig cross         every workspace binary
 #
-# Every archive carries every binary, GUI ones included. The x86_64 Linux
-# GUI binaries link cpal -> alsa-sys against a hand-unpacked amd64 ALSA
-# sysroot (setup-cross-toolchain.sh), since the runner only carries the
-# arm64 libasound. docs/tooling/releases.md covers the reasoning and the
-# runner provisioning.
+# macOS cannot be cross-built from Linux without Apple's SDK, so it builds on
+# a GitHub-hosted macOS runner (free for this public repo), where both slices
+# link natively and `lipo` fuses them into one universal binary per tool.
+#
+# Every archive carries every binary, GUI ones included, plus README-PLAY.txt
+# (start `legaia-engine` with no arguments; it asks for the user's own disc).
+# The x86_64 Linux GUI binaries link cpal -> alsa-sys against a hand-unpacked
+# amd64 ALSA sysroot (setup-cross-toolchain.sh). docs/tooling/releases.md
+# covers the reasoning and the runner provisioning.
+#
+# The two build jobs only upload workflow artifacts; `publish` waits for both
+# AND for `verify`, folds every per-archive .sha256 into one SHA256SUMS, and
+# performs the single release edit -- so a release never appears with a
+# platform missing, and never ahead of the test gate.
 #
 # The tag event is owned by this workflow alone: main-ci.yml deliberately
 # does not trigger on tags, so a release does not race a duplicate full-CI
-# run for the same commit on the same single runner. The verify job below
-# reproduces main-ci's gates (fmt + clippy + test) so the release is still
-# test-gated.
+# run for the same commit on the same single runner.
 #
 # Artifacts are our own compiled binaries and our own text files only. No
 # step reads a disc image and no game data is packaged -- this repo ships no
@@ -83,13 +97,11 @@ jobs:
       - name: Test
         run: cargo test --workspace --profile release-test
 
-  # -- Build, package, publish ------------------------------------------------
-  # Deliberately one job rather than a per-target matrix: the three builds
-  # share a checkout and a cargo target dir on the single self-hosted runner,
-  # and a single job produces one aggregate SHA256SUMS and performs exactly one
-  # release-edit -- a matrix would race on creating the same release.
-  release:
-    name: Build + Release
+  # -- Linux-hosted targets ---------------------------------------------------
+  # One job rather than a per-target matrix: the three builds share a checkout
+  # and a cargo target dir on the single self-hosted runner.
+  build-cross:
+    name: Build (Linux + Windows)
     needs: [verify]
     runs-on: self-hosted
     timeout-minutes: 120
@@ -131,13 +143,100 @@ jobs:
               "${{ steps.version.outputs.version }}" "$t" target/dist
           done
 
+      - name: Upload archives
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-cross
+          path: |
+            target/dist/*.tar.gz
+            target/dist/*.zip
+            target/dist/*.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  # -- macOS ------------------------------------------------------------------
+  # GitHub-hosted (arm64). Runs alongside `verify`: nothing is published until
+  # `publish`, which needs `verify`, so a red gate still blocks the release.
+  build-macos:
+    name: Build (macOS universal)
+    runs-on: macos-14
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+
+      - name: Derive version
+        id: version
+        run: |
+          tag="${RELEASE_TAG}"
+          version="${tag#v}"
+          if [ -z "$version" ]; then
+            echo "ERROR: could not derive a version from tag '$tag'" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Provision targets
+        run: scripts/ci/setup-cross-toolchain.sh universal-apple-darwin
+
+      - name: Build + package
+        run: |
+          rm -rf target/dist
+          scripts/ci/release-build.sh \
+            "${{ steps.version.outputs.version }}" universal-apple-darwin target/dist
+
+      - name: Upload archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-macos
+          path: |
+            target/dist/*.tar.gz
+            target/dist/*.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  # -- Checksums + publish ----------------------------------------------------
+  # Waits for every build and the test gate. A single job performs exactly one
+  # release edit -- a per-platform publish would race on creating the release.
+  publish:
+    name: Checksums + Release
+    needs: [verify, build-cross, build-macos]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Download archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+
       - name: Aggregate SHA256SUMS
-        working-directory: target/dist
+        working-directory: dist
         run: |
           rm -f SHA256SUMS
-          # Fold the per-archive .sha256 files into one manifest, then drop them.
+          # Each build verifies its own archive hash here before it is folded
+          # into the one manifest, so a corrupted transfer fails the release.
+          sha256sum -c ./*.sha256
           cat ./*.sha256 > SHA256SUMS
           rm -f ./*.sha256
+          for want in aarch64-unknown-linux-gnu.tar.gz \
+                      x86_64-unknown-linux-gnu.tar.gz \
+                      x86_64-pc-windows-gnu.zip \
+                      universal-apple-darwin.tar.gz; do
+            if ! grep -q -- "-${want}\$" SHA256SUMS; then
+              echo "ERROR: no archive for ${want}" >&2
+              exit 1
+            fi
+          done
           sha256sum -c SHA256SUMS
           echo "--- SHA256SUMS ---"
           cat SHA256SUMS
@@ -149,12 +248,12 @@ jobs:
             echo ""
             echo "| Artifact | Size |"
             echo "|---|---|"
-            for f in target/dist/*.tar.gz target/dist/*.zip; do
+            for f in dist/*.tar.gz dist/*.zip; do
               [ -f "$f" ] || continue
               echo "| \`$(basename "$f")\` | $(du -h "$f" | cut -f1) |"
             done
             echo ""
-            echo 'Every archive carries every workspace binary.'
+            echo 'Every archive carries every workspace binary; README-PLAY.txt says how to start the game.'
             echo 'See docs/tooling/releases.md.'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -170,6 +269,6 @@ jobs:
           prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
           fail_on_unmatched_files: true
           files: |
-            target/dist/*.tar.gz
-            target/dist/*.zip
-            target/dist/SHA256SUMS
+            dist/*.tar.gz
+            dist/*.zip
+            dist/SHA256SUMS
