@@ -1370,3 +1370,46 @@ fn the_pre_emptive_escape_latch_lasts_one_round() {
     w.run_round_state_zero();
     assert_eq!(w.battle_formation_latched(), FormationAdvantage::None);
 }
+
+/// The turn picker's monster arm runs the dead-target redirect after the AI
+/// pick (`FUN_801DABA4` `0x801DAF48..0x801DAF50` -> `FUN_801DB124`): whatever
+/// the picker chose, a physical strike never leaves aimed at a party member
+/// at zero HP while another stands. Property over many RNG seeds, with the
+/// fallen member's liveness halfword left stale so the picker itself can
+/// still choose it.
+#[test]
+fn a_monster_strike_never_targets_a_fallen_party_member() {
+    let mut chose_fallen_before_redirect = false;
+    for seed in 0..200u32 {
+        let mut world = World {
+            party: crate::world::PartyState {
+                party_count: 2,
+                ..Default::default()
+            },
+            ..World::default()
+        };
+        world.mode = SceneMode::Battle;
+        // Slot 0 has fallen (HP 0) but its liveness halfword is still up.
+        world.actors[0].battle.max_hp = 200;
+        world.actors[0].battle.hp = 0;
+        world.actors[0].battle.liveness = 1;
+        world.actors[1].battle.max_hp = 200;
+        world.actors[1].battle.hp = 200;
+        world.actors[1].battle.liveness = 1;
+        world.actors[2].battle.max_hp = 120;
+        world.actors[2].battle.hp = 120;
+        world.actors[2].battle.liveness = 1;
+        world.rng_state = seed.wrapping_mul(0x9E37_79B9) | 1;
+        let probe = world.random_living_party_member(2);
+        chose_fallen_before_redirect |= probe == Some(0);
+        world.take_monster_turn(2);
+        assert_eq!(
+            world.actors[2].battle.active_target, 1,
+            "seed {seed}: the strike re-rolled onto the standing member"
+        );
+    }
+    assert!(
+        chose_fallen_before_redirect,
+        "non-vacuous: the picker alone does choose the fallen member"
+    );
+}

@@ -2889,8 +2889,12 @@ seats at the origin, and the cursor falls back to a plain slot-order scan.
   (`FUN_801DABA4`'s party arm, `0x801DAF14`, gated on `ctx[+0x06] == 0xFF`)
   is what stops a member whose target died earlier in the round from walking
   at the corpse: the short step `0x19` has no timeout, and the range law never
-  brings a dead target into reach. The engine runs it at each party dispatch
-  (`World::redirect_dead_battle_target`).
+  brings a dead target into reach. The picker's monster arm calls it too,
+  unconditionally, straight after the AI picker (`jal 0x801E9FD4` then
+  `jal 0x801DB124` at `0x801DAF48..0x801DAF50`), which is what stops a monster
+  whose picked party member has since fallen from walking at the corpse. The
+  engine runs it at each party dispatch and on a monster's physical pick
+  (`World::redirect_dead_battle_target`, called from `take_monster_turn`).
 
 ### Per-frame action-effect update helpers
 
