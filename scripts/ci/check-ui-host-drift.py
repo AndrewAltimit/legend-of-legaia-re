@@ -1150,9 +1150,10 @@ SIM_PAIRS: list[dict[str, object]] = [
         "where the four scenes that script a re-bind keep all of their models",
         "sites": {
             "native": (NATIVE_ASSETS, "upload_assets"),
-            # The page asks through its own export, which is the body that
-            # reads the world field; `play_npc_mesh` calls that export.
-            "web": (WEB_PLAY, "play_npc_live_model"),
+            # The page's actor layer (`web-viewer::field_actors`, shared
+            # with the map viewer) is the body that reads the world field;
+            # `play_npc_live_model` and the mesh build both go through it.
+            "web": ("crates/web-viewer/src/field_actors.rs", "live_model"),
         },
         "mode": "symbols_all",
         "symbols": ["field_npc_live_model"],
@@ -3997,6 +3998,12 @@ CONTENT_PUB_FN_RE = re.compile(
 CONTENT_FN_RE = re.compile(r"\bfn\s+([a-z_][a-z_0-9]*)")
 METHOD_CALL_RE = re.compile(r"[.:]\s*([a-z_][a-z_0-9]*)\s*\(")
 SELF_METHOD_RE = re.compile(r"\bself\.([a-z_][a-z_0-9]*)\s*\(")
+# A helper reached through the page's actor layer (`self.actors.drive(`): the
+# delegate is the host's own code (`web-viewer::field_actors`, shared with the
+# map viewer), so the subtree it reaches is the kernel's. Named field only - a
+# general `self.<field>.<method>(` edge would follow every engine-type field
+# into same-named host fns.
+SELF_FIELD_METHOD_RE = re.compile(r"\bself\.actors\.([a-z_][a-z_0-9]*)\s*\(")
 
 # How far a host helper chain is followed out of a kernel body.
 CONTENT_DEPTH = 8
@@ -4061,7 +4068,7 @@ def kernel_engine_calls(
             for c in METHOD_CALL_RE.findall(body):
                 if c in api and c not in own:
                     calls.add(c)
-            for c in SELF_METHOD_RE.findall(body):
+            for c in SELF_METHOD_RE.findall(body) + SELF_FIELD_METHOD_RE.findall(body):
                 if c in own:
                     stack.append((c, depth + 1))
     return calls, len(seen), found

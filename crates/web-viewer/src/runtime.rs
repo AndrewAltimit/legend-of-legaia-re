@@ -28,7 +28,7 @@ use legaia_engine_core::world::{SceneMode, World};
 use legaia_engine_vm::menu::{MenuInput, open as menu_open};
 use wasm_bindgen::prelude::*;
 
-use crate::play::{FieldRender, NpcClip, NpcRender, PlayerRig};
+use crate::play::{FieldRender, PlayerRig};
 
 /// Default BGM output gain for the play page, parked on
 /// [`legaia_engine_audio::WebAudioOut`]'s post-mixer `GainNode` at
@@ -56,17 +56,11 @@ pub struct LegaiaRuntime {
     /// (`crate::play_tile_board`). Board cells all draw the same handful of
     /// template meshes, so the page uploads each slot once per scene.
     pub(crate) tile_mesh: Option<crate::play_tile_board::StagedTileMesh>,
-    /// The scene's MAN-placed NPC catalog.
-    pub(crate) npcs: Option<NpcRender>,
-    /// Live NPC clip players keyed by placement slot - the browser twin of
-    /// the native window's `npc_clip_players`. Advanced one tick per
-    /// [`Self::tick_frame`] (the sim clock, not the render clock) and
-    /// re-targeted by drained clip cues (`A2` ExecMove, `4C 51`).
-    pub(crate) npc_clips: std::collections::HashMap<u8, NpcClip>,
-    /// Per placement slot, a counter bumped whenever the slot's op-`0x4B`
-    /// VDF morph moves (`World::take_npc_morph_dirty`, drained once per sim
-    /// tick) - read by the page through `play_npc_morph_states`.
-    pub(crate) npc_morph_gen: std::collections::HashMap<u8, u32>,
+    /// The scene's MAN-placed actor layer (catalog, live clip players, morph
+    /// generations, built mesh) - [`crate::field_actors::FieldActors`], the
+    /// one implementation the map viewer runs too. Driven one tick per
+    /// [`Self::tick_frame`] (the sim clock, not the render clock).
+    pub(crate) actors: crate::field_actors::FieldActors,
     /// The scene's ANM bundle (the pose source for scene NPCs **and** placed
     /// props), resolved once per scene the way the native window's
     /// `find_scene_anm_bundle` does: entry-major, descriptor-count seed
@@ -145,13 +139,6 @@ pub struct LegaiaRuntime {
     /// same two seat entry points the native session calls, so neither host
     /// owns a copy of the rule.
     pub(crate) mode_seat: legaia_engine_core::mode::ModeSeat,
-    /// The model id [`crate::play`]'s cached NPC mesh was built from, as
-    /// `play_npc_live_model` reports it (`-1` = the placement's spawn model),
-    /// and the object count it was cut to (`play_npc_mesh_cut`). With the
-    /// entry index, that cache's key: a scripted mesh re-bind or a cue that
-    /// binds a clip leaves the catalog entry index where it was, so the entry
-    /// alone cannot tell the rebuilt mesh from the stale one.
-    pub(crate) npc_bound_model: Option<(i32, i32)>,
     /// Field party-status HUD driver (`FUN_801D0D38`): the idle countdown and
     /// the cached player position its decision kernel reads. The same state
     /// the native window holds - retail keeps it in overlay globals, so every
@@ -408,9 +395,7 @@ impl LegaiaRuntime {
             field: None,
             player: None,
             tile_mesh: None,
-            npcs: None,
-            npc_clips: std::collections::HashMap::new(),
-            npc_morph_gen: std::collections::HashMap::new(),
+            actors: Default::default(),
             scene_anm: None,
             locomotion_anm: None,
             field_vram_anim: None,
@@ -439,7 +424,6 @@ impl LegaiaRuntime {
             battle_vram: Default::default(),
             disc_files: Vec::new(),
             mode_seat: legaia_engine_core::mode::ModeSeat::new_at_boot(),
-            npc_bound_model: None,
             battle_intro_geom: None,
             field_party_hud: Default::default(),
             field_party_hud_scene: None,
@@ -710,7 +694,7 @@ impl LegaiaRuntime {
         self.scene_host = Some(host);
         self.field = None;
         self.player = None;
-        self.npcs = None;
+        self.actors.clear();
         self.battle_render = None;
         // A new disc means a new PROT: drop any cached menu chrome / open menu /
         // title art.
@@ -1274,7 +1258,7 @@ impl LegaiaRuntime {
             "frame": w.frame,
             "mode": format!("{:?}", w.mode),
             "actors": w.actors.iter().filter(|a| a.active).count(),
-            "npcs": self.npcs.as_ref().map(|n| n.pack.entries.len()).unwrap_or(0),
+            "npcs": self.actors.npcs.as_ref().map(|n| n.pack.entries.len()).unwrap_or(0),
             "player": player,
             "dialog": self.dialog_value(),
             "bgm": self.bgm_value(),
@@ -1703,8 +1687,7 @@ impl LegaiaRuntime {
         self.dynamic_mesh_cur = None;
         self.field = None;
         self.player = None;
-        self.npcs = None;
-        self.npc_clips.clear();
+        self.actors.clear();
         self.scene_anm = None;
         self.locomotion_anm = None;
         self.field_vram_anim = None;
@@ -1736,29 +1719,9 @@ impl LegaiaRuntime {
             .entry_bytes(legaia_asset::character_pack::PROT_ENTRY_INDEX)
             .ok()
             .and_then(|b| legaia_asset::character_pack::field_locomotion_anm(&b).ok());
-        // The NPC catalog resolves against the same TMD pool + VRAM, plus the
+        // The actor layer resolves against the same TMD pool + VRAM, plus the
         // world's global pool for the `model >= 0xF0` specials - everything
         // the native play-window draws.
-        match crate::field_npc::build_npc_catalog_play(
-            &host.index,
-            &name,
-            res,
-            &host.world.field_head_pool,
-        ) {
-            Ok(mut pack) => {
-                // The live clip id (actor `+0x5C` after the spawn prologue)
-                // wins over the header byte, as in the native window: a save
-                // crystal ships header anim 0 and its prologue sets the
-                // savepoint clip.
-                for e in &mut pack.entries {
-                    if let Some(a) = host.world.field_npc_live_anim(e.placement.index) {
-                        e.placement.anim_id = a;
-                    }
-                }
-                self.npcs = Some(NpcRender { pack });
-            }
-            Err(e) => crate::console_log(&format!("play: NPC catalog for {name}: {e}")),
-        }
         self.build_npc_clips();
         self.build_player_rig();
         // CLUT-walk shimmer (water / waterfall scenes): parse the bundle's
@@ -1839,122 +1802,31 @@ impl LegaiaRuntime {
         self.field_vram_dirty |= dirty;
     }
 
-    /// Build one [`NpcClip`] per catalogued placement that names a clip - the
-    /// native window's `npc_clip_players` rebuild. The clip is the placement's
-    /// `anim_id - 1` in the scene's own ANM bundle (a global-pool special
-    /// indexes the PROT 0874 locomotion bundle instead); ANIMATE cues
-    /// re-target it live in [`Self::drive_npc_clips`].
+    /// Rebuild the actor layer over the entered scene
+    /// ([`crate::field_actors::FieldActors::rebuild`]).
     fn build_npc_clips(&mut self) {
-        self.npc_clips.clear();
-        let Some(n) = self.npcs.as_ref() else {
+        let Some(host) = self.scene_host.as_mut() else {
+            self.actors.clear();
             return;
         };
-        for e in &n.pack.entries {
-            // The bank the clip id names is the live party-bank bit's
-            // (`World::npc_clip_party_bank`), as the native window binds it.
-            let bundle = self.npc_clip_bank(e.placement.index as u8, e.special);
-            let (Some(b), Some(rec)) = (bundle, (e.placement.anim_id as usize).checked_sub(1))
-            else {
-                continue;
-            };
-            if let Some(player) =
-                legaia_engine_core::field_anim::FieldClipPlayer::from_record(b, rec)
-            {
-                // The playhead is the world's: the actor's `+0x62` word may
-                // hold or one-shot the clip (a treasure chest's lid).
-                if let Some(host) = self.scene_host.as_mut() {
-                    host.world.bind_npc_clip_cursor(
-                        e.placement.index as u8,
-                        e.placement.anim_id,
-                        &player,
-                    );
-                }
-                self.npc_clips.insert(
-                    e.placement.index as u8,
-                    NpcClip {
-                        player,
-                        generation: 0,
-                    },
-                );
-            }
-        }
+        let banks = crate::field_actors::ActorBanks {
+            scene_anm: self.scene_anm.as_ref(),
+            locomotion_anm: self.locomotion_anm.as_ref(),
+        };
+        self.actors.rebuild(host, banks);
     }
 
-    /// One sim tick of NPC clip playback: drain this tick's `A2` / `4C 51` clip
-    /// cues (re-targeting the cued slots' players - the cue's anim id names a
-    /// bundle record the same way the placement anim byte does, `record =
-    /// id - 1`, against whichever bundle the placement resolved through), then
-    /// advance every player by exactly one tick. The render side reads
-    /// [`crate::play::NpcClip`] state without moving the playhead
-    /// (`current_pose`), so clip cadence is tied to the 60 Hz sim clock, not
-    /// the display refresh - the native window's sim-tick anim contract.
+    /// One sim tick of the actor layer's clip playback
+    /// ([`crate::field_actors::FieldActors::drive`]).
     fn drive_npc_clips(&mut self) {
-        // Both ANIMATE-cue queues drain through the shared frame-tail kernel
-        // (`World::drain_field_anim_cues`) the native window calls every sim
-        // tick: the player's `A2 F8` gestures land on the world's clip
-        // player, and each NPC re-target comes back resolved
-        // against the bundle the slot poses from.
         let Some(host) = self.scene_host.as_mut() else {
             return;
         };
-        // Every catalogued placement is a clip target, not only the ones
-        // that spawned with a clip: a placement whose live anim id was still
-        // `0` at the rebuild takes its first clip from a cue (the native
-        // window registers every drawn placement the same way).
-        let spawn_party: std::collections::HashMap<u8, bool> = self
-            .npcs
-            .as_ref()
-            .map(|n| {
-                n.pack
-                    .entries
-                    .iter()
-                    .map(|e| (e.placement.index as u8, e.special))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let retargets = host.world.drain_field_anim_cues(
-            self.scene_anm.as_ref(),
-            self.locomotion_anm.as_ref(),
-            |slot| spawn_party.get(&slot).copied(),
-        );
-        for r in retargets {
-            match self.npc_clips.get_mut(&r.slot) {
-                Some(clip) => {
-                    clip.player = r.player;
-                    clip.generation = clip.generation.wrapping_add(1);
-                }
-                None => {
-                    self.npc_clips.insert(
-                        r.slot,
-                        NpcClip {
-                            player: r.player,
-                            generation: 1,
-                        },
-                    );
-                }
-            }
-        }
-        // Op-`0x4B` morphs whose staged deltas moved this tick: bump the
-        // slot's generation so the page re-reads its morphed base (the
-        // native window drops the slot's pose-cache entries instead). Kept
-        // across scenes - a stale slot only costs one re-read of the
-        // authored base.
-        for slot in host.world.take_npc_morph_dirty() {
-            let g = self.npc_morph_gen.entry(slot).or_insert(0);
-            *g = g.wrapping_add(1);
-        }
-        // The playheads run only while the field owns the frame - the
-        // world's decision, shared with the native draw pass.
-        // A slot the world drives poses off its own cursor (the actor's
-        // `+0x62` word, ticked in the world's field frame); anything else
-        // free-runs.
-        if host.world.field_npc_clips_advance() {
-            for (slot, clip) in self.npc_clips.iter_mut() {
-                if !host.world.sync_npc_clip(*slot, &mut clip.player) {
-                    clip.player.advance(1);
-                }
-            }
-        }
+        let banks = crate::field_actors::ActorBanks {
+            scene_anm: self.scene_anm.as_ref(),
+            locomotion_anm: self.locomotion_anm.as_ref(),
+        };
+        self.actors.drive(host, banks);
     }
 
     /// Put the player somewhere they can actually stand.
