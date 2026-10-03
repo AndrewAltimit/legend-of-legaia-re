@@ -230,7 +230,12 @@ first in the hub's list, then the ROUND banner over it on arms `0x15` /
 pages** (`StillDraw::from_quad`), and the sheet is laid down band by band at
 the loader's own rects (`still_sheet_rgba` over `backread_slice_rect`): the
 native window bakes both stills into its hub atlas, and the play page serves
-them as hub sheet `8`. The frame-sliced read schedule itself is not ported as a
+them as hub sheet `8`. The standalone minigames page draws the same pair under
+its INTERVAL screen (HUD sheet `7`, `muscle_interval_still_json`): it replays a
+`HubBackdrop` beside the INTERVAL envelope and the tally roll to the screen's
+tick, picks the variant through `still_prot_index` over the fighter's HP as
+the leg ended, and blacks out the arena behind it, since the hub draws no
+arena. The frame-sliced read schedule itself is not ported as a
 schedule - the port reads the whole entry at once.
 
 The pick reads the lead record the way the loader does: the dome door warp

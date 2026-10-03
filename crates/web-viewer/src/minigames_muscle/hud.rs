@@ -55,6 +55,10 @@ pub(super) const HUD_BANNER_TIM_OFFSET: usize = 0x10450;
 pub(super) const HUD_HUB_CONTAINER_PROT_INDEX: u32 =
     legaia_asset::muscle_dome::HUB_CONTAINER_PROT_INDEX;
 
+/// HUD sheet id of the ringside still (`int.tim` / `int2.tim`, extraction
+/// 1221 / 1222, 320x256 BGR555); its `palette` is the still variant.
+pub(crate) const HUD_STILL_SHEET: u32 = 7;
+
 /// `PROT.DAT` gap offset of the small pad-button-glyph TIM (the four
 /// button circles + the R1/R2/L1/L2 labels): image -> VRAM (928, 352)
 /// (page (896,256) local texels (128,96)..(192,128)), own 16-entry CLUT ->
@@ -467,6 +471,78 @@ impl LegaiaMinigames {
         serde_json::json!({ "ok": true, "arm": arm, "done": hub.done(), "rows": rows }).to_string()
     }
 
+    /// The re-entered hub's **ringside still** under the INTERVAL screen,
+    /// `tick` ticks into that screen: `{ ok, quads: [...] }` with two rows on
+    /// sheet `7` (`pal` = the still variant, `0` = extraction 1221 / `int.tim`,
+    /// `1` = 1222 / `int2.tim`) and `bright` the packet colour (`0x80` =
+    /// neutral modulation). `quads` is empty while the level is zero.
+    ///
+    /// The level is retail's `*(0x801D1A7C)` across hub arms `0x0A..0x0C`
+    /// ([`legaia_engine_core::muscle_ringside::HubBackdrop`]), replayed to
+    /// `tick` beside the INTERVAL envelope and the tally roll the same way
+    /// the play hosts' `HubTimers` steps them; once the screen has drained it
+    /// holds at the level the backdrop climbs back to (this page's own ROUND
+    /// banner follows on its key, not on retail's arm `0x15`). The variant is
+    /// the loader's pick over the fighter's HP as the leg ended
+    /// ([`legaia_engine_core::muscle_ringside::still_prot_index`]: below half
+    /// of `hp_max` selects `int2.tim`). The quads are
+    /// [`legaia_engine_ui::ringside_backdrop::ringside_still_quads`]
+    /// resolved onto the sheet through their texture pages
+    /// (`StillDraw::from_quad`).
+    pub fn muscle_interval_still_json(&self, tick: i32, hp_cur: u32, hp_max: u32) -> String {
+        use legaia_engine_core::muscle_dome as md;
+        use legaia_engine_core::muscle_ringside::{BackdropStage, HubBackdrop};
+        use legaia_engine_ui::ringside_backdrop as rb;
+        let Some(run) = self.muscle_run.as_ref() else {
+            return r#"{"ok":false}"#.to_string();
+        };
+        let still = legaia_engine_core::muscle_ringside::still_prot_index(
+            hp_cur.min(0xFFFF) as u16,
+            hp_max.min(0xFFFF) as u16,
+        );
+        let variant = still.saturating_sub(legaia_asset::ringside_still::PROT_INDEX_DEFAULT);
+        let roll =
+            md::HUB_TALLY_ROLL_LEAD_TICKS + *md::HUB_TALLY_CUE_STAGGER.last().unwrap_or(&0) as i32;
+        let mut interval = Some(md::HubScreen::interval(roll));
+        let (mut ramp, _) = run.tally_roll();
+        let mut backdrop = HubBackdrop::reentry(still);
+        let volume_word = legaia_engine_core::new_game::GAME_STATE_COLD_RESET.voice_volume as u32;
+        for _ in 0..tick.max(0) {
+            if backdrop.stage() == BackdropStage::Card {
+                break;
+            }
+            let lane0_full = ramp.fade[0] >= legaia_engine_core::other_game_overlay::LANE_FADE_FULL;
+            backdrop.tick(1, 0, interval.map(|i| i.stage()), lane0_full);
+            if let Some(i) = interval.as_mut() {
+                i.tick(1, 0);
+                ramp.tick(1, false, volume_word);
+                if i.done() {
+                    interval = None;
+                }
+            }
+        }
+        let level = backdrop.level();
+        let rows: Vec<serde_json::Value> = if level > 0 {
+            rb::ringside_still_quads(level)
+                .iter()
+                .filter_map(|q| {
+                    let d = rb::StillDraw::from_quad(q)?;
+                    Some(serde_json::json!({
+                        "sheet": HUD_STILL_SHEET,
+                        "pal": variant,
+                        "u": d.src.0, "v": d.src.1, "w": d.src.2, "h": d.src.3,
+                        "x": d.dst.0, "y": d.dst.1, "dw": d.dst.2, "dh": d.dst.3,
+                        "bright": d.level,
+                    }))
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        serde_json::json!({ "ok": true, "level": level, "variant": variant, "quads": rows })
+            .to_string()
+    }
+
     /// One PROT 0977 **hub screen** as retail-placed quads.
     ///
     /// `screen`: 0 = intro card, 1 = course-title art, 2 = INTERVAL
@@ -552,10 +628,20 @@ impl LegaiaMinigames {
     /// sub-palette `palette`), 1 = ASCII battle font (through the
     /// menu-glyph atlas bank sub-palette `palette`), 2 = menu-glyph atlas,
     /// 3 = `etim` banner page (CLUT-row sub-palette), 4/5 = dome hub pages
-    /// (320,0)/(320,256), 6 = the pad-button-glyph TIM (own CLUT). Empty
+    /// (320,0)/(320,256), 6 = the pad-button-glyph TIM (own CLUT), 7 = the
+    /// ringside still (`palette` = the variant, [`HUD_STILL_SHEET`]). Empty
     /// when the source doesn't decode on this image. Sheet dimensions ride
     /// in [`Self::muscle_hud_json`].
     pub fn muscle_hud_sheet_rgba(&self, source: u32, palette: u32) -> Vec<u8> {
+        if source == HUD_STILL_SHEET {
+            return entry_bytes(
+                &self.prot,
+                &self.entries,
+                legaia_asset::ringside_still::PROT_INDEX_DEFAULT + palette.min(1),
+            )
+            .and_then(legaia_engine_ui::ringside_backdrop::still_sheet_rgba)
+            .unwrap_or_default();
+        }
         let pal_idx = palette as usize;
         let (tim, pal_tim) = match source {
             0 => {
@@ -648,6 +734,10 @@ impl LegaiaMinigames {
                 "hub0": dims(&hub.as_ref().map(|(a, _)| a.clone())),
                 "hub1": dims(&hub.as_ref().map(|(_, b)| b.clone())),
                 "button": dims(&button),
+                "still": [
+                    legaia_asset::ringside_still::WIDTH,
+                    legaia_asset::ringside_still::HEIGHT,
+                ],
             },
             // Capture-pinned piece rects: [u, v, w, h] on the named sheet,
             // "pal" = the sub-palette observed in the live packets.

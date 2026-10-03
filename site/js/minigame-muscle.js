@@ -96,8 +96,9 @@
  * reaction family), the small art-name caption + hint lines (page aids),
  * the banner speed-line rays (polygonal in retail, procedural here), the
  * SUPER/MIRACLE banner word composition (atlas layout, only the HYPER
- * strip's draw is packet-pinned), the interval panel's info layout (only
- * its INTERVAL/ROUND headings are the retail art), the glide-in motion
+ * strip's draw is packet-pinned), the interval panel's caption and key
+ * hint (its heading, six tally rows and ringside-still backdrop are the
+ * retail emitters'), the glide-in motion
  * (retail slides chips between the element table's two endpoints; the page
  * draws them parked at the arrived endpoint), the pennant spawn anchor +
  * pennant width off the captured 30-cost pitch, the Auto picker (greedy
@@ -184,6 +185,7 @@ window.MgMuscle = (function () {
     let pennantFx = [];        /* committed-pennant glides {cmd,slot,x,y,t,life} */
     let introT = 0;            /* ticks into the intro card */
     let intervalT = 0;         /* ticks into the INTERVAL + tally screen */
+    let intervalHp = [0, 0];   /* [hp, hp_max] the leg ended on (still pick) */
     let tick = 0;
     let banner = null;         /* {text, sub, t, life, cls} */
     let popups = [];           /* {text, x, y, t, life, color} */
@@ -321,7 +323,7 @@ window.MgMuscle = (function () {
      * note for the per-sheet disc sources. */
     let hudMeta;               /* undefined until asked; null = unavailable */
     const hudSheets = {};      /* "src:pal" -> canvas (null = failed) */
-    const SHEET_NAMES = ['widget', 'font', 'atlas', 'banner', 'hub0', 'hub1', 'button'];
+    const SHEET_NAMES = ['widget', 'font', 'atlas', 'banner', 'hub0', 'hub1', 'button', 'still'];
 
     function hudOk() {
       if (hudMeta === undefined) {
@@ -1401,6 +1403,10 @@ window.MgMuscle = (function () {
              * as a short beat over the KO and expires into the hub screen. */
             mode = 'interval';
             intervalT = 0;
+            /* The leg's closing HP picks the ringside still the hub shows
+             * (int.tim, or int2.tim below half HP) - latched here, as
+             * retail's loader reads it once at the battle end. */
+            intervalHp = [state.hp[0], state.hp_max[0]];
             /* A fresh INTERVAL screen rolls its lanes again, so the engine's
              * "already voiced up to step N" high-water mark has to drop with
              * the tick it counts. */
@@ -2244,7 +2250,36 @@ window.MgMuscle = (function () {
      * (`score_tally_quads`) - the four lanes FUN_801D1184 computes, then the
      * running tally and the coin bank they drain into. The native window draws
      * this screen through the same two builders. */
+    /* The re-entered hub's backdrop: the party's ringside still (PROT 1221 /
+     * 1222, the 320x256 16bpp image the battle end streams into VRAM
+     * (384, 0)) as retail's two FUN_801D00F8 quads, at the hub's backdrop
+     * level - the engine replays both (`muscle_interval_still_json`: the
+     * HubBackdrop arms 0x0A..0x0C beside the INTERVAL envelope). The hub
+     * draws no arena, so the frame is black around it. Returns whether the
+     * still drew. */
+    function drawIntervalStill() {
+      if (!api.muscle_interval_still_json || !hudOk()) return false;
+      let m = null;
+      try {
+        m = JSON.parse(api.muscle_interval_still_json(intervalT, intervalHp[0], intervalHp[1]));
+      } catch (e) { m = null; }
+      if (!m || !m.ok) return false;
+      g.fillStyle = '#000';
+      g.fillRect(0, 0, 320 * 2, 240 * 2);
+      for (const q of m.quads || []) {
+        if (!blit(q.sheet, q.pal, q.u, q.v, q.w, q.h, q.x, q.y, q.dw, q.dh, null)) return false;
+        /* An opaque packet modulated by its level (`texel * c / 128`): below
+         * neutral that is the image darkened toward black. */
+        if (typeof q.bright === 'number' && q.bright < 128) {
+          g.fillStyle = 'rgba(0,0,0,' + (1 - q.bright / 128) + ')';
+          g.fillRect(q.x * 2, q.y * 2, q.dw * 2, q.dh * 2);
+        }
+      }
+      return true;
+    }
+
     function drawInterval(state) {
+      drawIntervalStill();
       const env = hubEnv(3, intervalT);
       const heading = hudOk() && hubQuads(2, 0, env.brightness);
       /* Screen 4 takes the interval tick as its argument: the six rows are
