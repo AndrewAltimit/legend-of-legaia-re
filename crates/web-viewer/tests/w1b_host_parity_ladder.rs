@@ -68,7 +68,15 @@ fn occlusion_focus_is_the_shared_body_centre_and_drops_under_a_scripted_shot() {
     };
     rt.enter_field("town01").expect("enter town01");
     let focus = rt.play_occlusion_focus();
-    assert_eq!(focus.len(), 3, "free-roam field has a focus");
+    assert_eq!(focus.len(), 6, "free-roam field has a focus + feet point");
+    // The feet-line anchor: the same floor-tier sample, half a character
+    // height below the centre (Y-up draw frame), straight under it.
+    let half = legaia_engine_core::field_occlusion::HALF_CHAR_HEIGHT;
+    assert_eq!((focus[3], focus[5]), (focus[0], focus[2]));
+    assert!(
+        (focus[1] - focus[4] - half).abs() < 1e-3,
+        "feet sit under the centre"
+    );
     let pt = rt.player_transform();
     assert!(
         (focus[0] - pt[0]).abs() < 1e-3 && (focus[2] - pt[2]).abs() < 1e-3,
