@@ -354,6 +354,7 @@ impl PlayWindowApp {
                     if world.mode == SceneMode::Battle && !sc.battle_drive_primed.replace(true) {
                         drive.prime(world);
                     }
+                    drive.steer(world);
                     // A reached phase is held with no input until it is
                     // sampled (`BattleDrive::hold_ticks`).
                     if drive.reached(world) {

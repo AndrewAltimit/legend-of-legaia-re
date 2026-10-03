@@ -300,6 +300,14 @@ still on, its opening reached a prompt, and the drive or replayed cast
 reached the capture's phase is the one scored; a state no seed satisfies
 keeps the first seed's run, `never reached`.
 
+A seed whose entry rolled a formation advantage (`ctx+0x290` / its latch
+`+0x291`: a back attack or a pre-emptive strike) is passed over too, except
+on an opening capture. A capture of a running fight is not its opening round,
+and a surprise opening hands one side a round of swings - the monsters' on the
+party, or the party's on the monsters - between the HP / MP the seed wrote and
+the replayed action, so a replayed cast read the engine's extra damage as an
+HP miss (`EngineBattle::surprise_opening`).
+
 **Placing the phase.** The capture's command-flow byte `ctx[+0x06]` picks one
 of five plans (`SeedPlan`):
 
@@ -470,6 +478,24 @@ into the item / magic / arts windows ([battle](../subsystems/battle.md#how-the-e
   The Done band's continuation `0x52` is a span of the same kind - it holds
   for its countdown `ctx[+0x6D8]`, `0xB4` frames after an absorb - so a `0x52`
   capture also waits for the engine's countdown to run down to retail's.
+- **A monster's capture-class cast mid-load.** The capture band's `0x6E`
+  and `0x6F` wait on the disc - `0x6E` on the CD-ready poll
+  `FUN_8003DE7C(1)` (`0x801E4F08`), `0x6F` on `FUN_8003F2B8(1)`
+  (`0x801E5024`) while the cast module streams in - and the engine's polls
+  are always ready, so it crossed both in a tick each and a `0x6F` / `0x70`
+  capture was sampled a few ticks into the case-6 glide onto the caster.
+  Retail's own words say how long the reads took: every frame of either
+  state calls `FUN_801D5854(ctx[+0x13], 6)`, whose prologue adds
+  `8 * frame_step` to `ctx[+0x87C]`, and `0x6F` ramps `ctx[+0x6D0]` down by
+  `16 * frame_step`, a word `0x70` leaves alone. The drive holds the
+  engine's polls busy (`SpanGate::CaptureFade`, `BattleDrive::steer`) until
+  its depth has come down to retail's and its accumulator has run as far
+  through `0x6E` as retail's, less what the `0x6F` frames still to come add.
+  Held so, the engine lands where every such capture is framed - pitch `0`,
+  `TR y = 0x500`, focus on the caster's seat. What a `0x70` capture still
+  reads is the cast module's own shot (Cort's Ultra Charge pulls out to
+  `TR (0, 3072, 7315)`), which the capture-class modules arm and the port
+  does not model.
 - **Seat and timing.** A pick no seed reproduces (a monster's plain strike on
   a given seat) can run out of budget or end the fight first.
 

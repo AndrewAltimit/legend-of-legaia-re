@@ -1496,13 +1496,16 @@ fn run_battle(
         }
     };
     // The first stream under which the fight is still on at the sample, its
-    // opening reached a prompt and the drive / replayed cast reached the
+    // opening reached a prompt without a surprise round the capture's own
+    // history does not hold (`EngineBattle::surprise_opening`; an opening
+    // capture is that round), and the drive / replayed cast reached the
     // capture's phase (`BATTLE_RNG_SEEDS`), first with the HP as read and
     // then with a party swing's victims revived
     // (`RetailBattle::action_victims`); a state nothing satisfies keeps the
     // first run.
     let mut first = None;
     let mut reached = None;
+    let opening = battle.seed_plan() == crate::retail_compare_battle::SeedPlan::Opening;
     let revive: &[bool] = if battle.action_victims().is_empty() {
         &[false]
     } else {
@@ -1520,6 +1523,7 @@ fn run_battle(
                 Ok(e)
                     if e.mode == legaia_engine_core::world::SceneMode::Battle
                         && e.prompt_tick.is_some()
+                        && (!e.surprise_opening || opening)
                         && e.driven != Some(None)
                         && e.inflight != Some(None) =>
                 {

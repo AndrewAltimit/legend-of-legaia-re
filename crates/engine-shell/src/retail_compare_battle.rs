@@ -652,6 +652,12 @@ fn span_gate(ram: &[u8], ctx: u32) -> SpanGate {
                 timer: game_anchors::u16_at(ram, ctx + 0x6D8) as i16,
             };
         }
+        if CAPTURE_FADE_STATES.contains(&game_anchors::u8_at(ram, ctx + 7)) {
+            return SpanGate::CaptureFade {
+                height: game_anchors::u16_at(ram, ctx + 0x6D0),
+                accum: game_anchors::u32_at(ram, ctx + 0x87C).min(u32::from(u16::MAX)) as u16,
+            };
+        }
         return SpanGate::None;
     }
     let half = game_anchors::u16_at(ram, ctx + 0x6CE);
@@ -781,6 +787,13 @@ pub struct EngineBattle {
     /// The world stream's state at the encounter entry
     /// ([`BATTLE_RNG_SEEDS`]).
     pub rng_seed: u32,
+    /// The formation advantage the entry rolled (`ctx+0x290`) was a back
+    /// attack or a pre-emptive strike. A capture of a running fight is not
+    /// its opening round, so such an opening hands one side a round - the
+    /// monsters' swings on the party, or the party's on the monsters - that
+    /// is not in the history the capture's HP / MP were read from
+    /// ([`RetailBattle::seed_plan`] other than the opening).
+    pub surprise_opening: bool,
     /// The engine's action-SM state when sampled.
     pub action_state: u8,
     /// The engine's active seat `ctx[+0x13]` when sampled.
@@ -947,6 +960,13 @@ pub fn run_engine_battle(
             session.host.world.mode
         );
     }
+    // Read on the latch as well: the entry's own round-one Begin may have
+    // run already and moved `+0x290` into `+0x291`.
+    let surprise_opening = {
+        let w = &session.host.world;
+        let none = legaia_engine_vm::battle_formulas::FormationAdvantage::None;
+        w.battle_formation() != none || w.battle_formation_latched() != none
+    };
     // Reconstruct the mid-fight HP / MP (the engine seeds full bars).
     //
     // A capture taken on a party action in flight whose target already
@@ -1098,6 +1118,7 @@ pub fn run_engine_battle(
     };
     Ok(EngineBattle {
         rng_seed,
+        surprise_opening,
         scene: session.host.scene.as_ref().map(|s| s.name.clone()),
         mode: snap.mode,
         formation_source: source,
@@ -1322,6 +1343,56 @@ pub enum SpanGate {
     Exit { phase: u16 },
     /// Action-SM state `0x52`, its countdown `ctx[+0x6D8]` down to `timer`.
     DoneHold { timer: i16 },
+    /// The capture band's CD holds `0x6E` / `0x6F` (or the module tick
+    /// `0x70` they lead to), with retail's framing depth `ctx[+0x6D0]` at
+    /// `height` and its close-up accumulator `ctx[+0x87C]` at `accum`.
+    ///
+    /// Both holds wait on the disc, not on a counter: `0x6E` on the CD-ready
+    /// poll `FUN_8003DE7C(1)` (`0x801E4F08`), `0x6F` on `FUN_8003F2B8(1)`
+    /// (`0x801E5024`). Every frame of either first calls
+    /// `FUN_801D5854(ctx[+0x13], 6)`, whose prologue adds
+    /// `8 * frame_step` to `ctx[+0x87C]` (`0x801D5900..0x801D5920`), and
+    /// `0x6F` also ramps `ctx[+0x6D0]` down by `16 * frame_step`
+    /// (`0x801E4FFC..0x801E5014`); `0x70` does not write the depth, and the
+    /// `0x71` store re-seeds it. So the depth counts `0x6F`'s frames and
+    /// the accumulator, less half the depth's ramp, counts `0x6E`'s since
+    /// the caster's last clip commit zeroed it - clocks of how long
+    /// retail's reads took, a disc-timing property the engine, whose polls
+    /// are always ready, does not have. Through them the case-6 glide onto
+    /// the caster has landed in every such capture. The drive holds the
+    /// engine's polls busy ([`BattleDrive::steer`]) until its own words
+    /// have run as far.
+    CaptureFade { height: u16, accum: u16 },
+}
+
+/// The capture band's states placed by its CD holds
+/// ([`SpanGate::CaptureFade`]).
+pub const CAPTURE_FADE_STATES: [u8; 3] = [0x6E, 0x6F, 0x70];
+
+/// How far the engine's `0x6F` depth ramp still has to come down to reach
+/// retail's `height` (`ctx[+0x6D0]`, an unsigned halfword the ramp wraps),
+/// `0` once it is there.
+fn capture_ramp_left(world: &legaia_engine_core::world::World, height: u16) -> u16 {
+    ((world.battle.camera_frame_height as u16).wrapping_sub(height) as i16).max(0) as u16
+}
+
+/// Whether the engine's close-up accumulator has run as far through `0x6E`
+/// as retail's `accum` (`ctx[+0x87C]`) says retail's did: the capture's
+/// value less what the `0x6F` frames still to come will add (half the depth
+/// ramp left, `8` against `16` per frame step).
+fn capture_accum_done(world: &legaia_engine_core::world::World, height: u16, accum: u16) -> bool {
+    let want = accum.saturating_sub(capture_ramp_left(world, height) / 2);
+    world
+        .battle
+        .camera
+        .as_ref()
+        .is_none_or(|c| c.close_up_accum() >= u32::from(want))
+}
+
+/// Whether the engine's `0x6F` pull-in has come down at least as far as
+/// retail's `height` (`ctx[+0x6D0]`, an unsigned halfword the ramp wraps).
+fn capture_ramp_done(world: &legaia_engine_core::world::World, height: u16) -> bool {
+    capture_ramp_left(world, height) == 0
 }
 
 impl SpanGate {
@@ -1332,10 +1403,27 @@ impl SpanGate {
             Self::Results { hold } => (2, hold),
             Self::Exit { phase } => (3, phase),
             Self::DoneHold { timer } => (4, timer as u16),
+            Self::CaptureFade { .. } => (5, 0),
+        }
+    }
+
+    /// The env value field: one number, or `height/accum` for a capture
+    /// hold.
+    fn env_value(self) -> String {
+        match self {
+            Self::CaptureFade { height, accum } => format!("{height}/{accum}"),
+            _ => self.to_env().1.to_string(),
         }
     }
 
     fn from_env(kind: &str, value: &str) -> Option<Self> {
+        if kind.trim() == "5" {
+            let (h, a) = value.trim().split_once('/')?;
+            return Some(Self::CaptureFade {
+                height: h.parse().ok()?,
+                accum: a.parse().ok()?,
+            });
+        }
         let value: u16 = value.trim().parse().ok()?;
         Some(match kind.trim() {
             "0" => Self::None,
@@ -1388,7 +1476,8 @@ impl BattleDrive {
                 absorbed,
                 end,
             } => {
-                let (kind, value) = end.to_env();
+                let (kind, _) = end.to_env();
+                let value = end.env_value();
                 format!(
                     "action,{seat},{state},{category},{queued},{},{absorbed},{kind},{value}",
                     u8::from(spare)
@@ -1562,10 +1651,40 @@ impl BattleDrive {
                     && world.battle_ctx.action_state == state
                     && match end {
                         SpanGate::DoneHold { timer } => world.battle_ctx.frame_timer <= timer,
+                        SpanGate::CaptureFade { height, accum } if state == 0x6E => {
+                            capture_accum_done(world, height, accum)
+                        }
+                        SpanGate::CaptureFade { height, .. } if state == 0x6F => {
+                            capture_ramp_done(world, height)
+                        }
                         _ => true,
                     }
             }
         }
+    }
+
+    /// Per-tick world steering the drive owns besides the pad: a
+    /// [`SpanGate::CaptureFade`] capture holds the engine's capture-band CD
+    /// polls busy while its acting seat sits in `0x6E` with the close-up
+    /// accumulator short of retail's, or in `0x6F` with the pull-in not yet
+    /// down to retail's depth, and releases them otherwise.
+    pub fn steer(&self, world: &mut legaia_engine_core::world::World) {
+        let Self::Action {
+            seat,
+            end: SpanGate::CaptureFade { height, accum },
+            ..
+        } = *self
+        else {
+            return;
+        };
+        let pc = world.party.party_count.clamp(1, 3);
+        let ours = world.mode == SceneMode::Battle
+            && world.battle_ctx.active_actor == engine_seat(seat, pc);
+        let state = world.battle_ctx.action_state;
+        world.audio.sound_bank_ready =
+            !(ours && state == 0x6E && !capture_accum_done(world, height, accum));
+        world.battle.prev_action_cleared =
+            !(ours && state == 0x6F && !capture_ramp_done(world, height));
     }
 
     /// The press that walks the engine one step toward the phase, or `None`
@@ -1741,13 +1860,19 @@ fn run_drive(
         if std::env::var_os("LEGAIA_RC_DRIVE_TRACE").is_some() {
             let hp: Vec<u16> = world.actors.iter().take(8).map(|a| a.battle.hp).collect();
             eprintln!(
-                "[rc] t={t} mode={:?} flow={:?} cmd={} act={} st=0x{:02X} hp={hp:?} cam={:?} tint={:?}",
+                "[rc] t={t} mode={:?} flow={:?} cmd={} act={} st=0x{:02X} hp={hp:?} cam={:?} depth={} acc={:?} tint={:?}",
                 world.mode,
                 world.battle.flow,
                 world.battle.command.is_some(),
                 world.battle_ctx.active_actor,
                 world.battle_ctx.action_state,
                 world.battle.camera.as_ref().map(|c| c.phase()),
+                world.battle.camera_frame_height as u16,
+                world
+                    .battle
+                    .camera
+                    .as_ref()
+                    .map(|c| (c.close_up_accum(), c.is_gliding())),
                 world
                     .actors
                     .iter()
@@ -1762,6 +1887,7 @@ fn run_drive(
             drive.pad_word_at(world, u64::from(t))
         };
         session.host.world.input.set_pad(pad);
+        drive.steer(&mut session.host.world);
         session.tick()?;
         session.host.route_bgm_events(director)?;
     }
@@ -2141,6 +2267,18 @@ mod tests {
                 spare: true,
                 absorbed: 0,
                 end: SpanGate::Results { hold: 80 },
+            },
+            BattleDrive::Action {
+                seat: 3,
+                state: 0x6F,
+                category: 2,
+                queued: 0xAD,
+                spare: false,
+                absorbed: 0,
+                end: SpanGate::CaptureFade {
+                    height: 0xFF40,
+                    accum: 344,
+                },
             },
         ] {
             assert_eq!(BattleDrive::from_env(&d.to_env()), Some(d));
