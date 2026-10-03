@@ -3570,11 +3570,14 @@ the attacker walks in. Both are spent by the first hit, so the rest of a chain
 rolls with neither. The `+0x1F7` window is not "a reaction is playing": the anim
 tick sets it every frame for every actor as "the playing clip is before its
 first listed beat" (`0x80047E28..0x80047E54`), so it is shut for an idle body
-and for a block clip whose list starts at `0`. Port: `battle_formulas::block_roll`
+and for a block clip whose list starts at `0`. The kernel reads the byte, so a
+block pose a hit commits does not move the window the next hit of the same
+combo sees: that waits for the next anim tick. Port: `battle_formulas::block_roll`
 and `World::roll_block`, wired ahead of the damage roll in
 `World::land_melee_hit`; the terms are `BattleState::attack_ramp` / `guard_ramp`
-(`World::track_block_approach_terms`), the window is
-`World::juggle_window_open`. The damage roll still reads the two terms as zero,
+(`World::track_block_approach_terms`), the window is `Actor::battle_juggle_window`,
+written by `World::tick_battle_animations` from `World::juggle_window_open`
+after each cursor advance. The damage roll still reads the two terms as zero,
 and the blocked branch's own apply-mode walk (`0x801EE720..0x801EE918`) is the
 port's ordinary apply mode.
 

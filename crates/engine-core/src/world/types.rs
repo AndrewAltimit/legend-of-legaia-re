@@ -695,6 +695,15 @@ pub struct Actor {
     /// reaction's natural end (`world::battle::clip_ladder`).
     pub battle_reaction_next: Option<u8>,
 
+    /// The `+0x1F7` **juggle window** byte as the anim tick last wrote it
+    /// (`FUN_80047430` `0x80047E28..0x80047E54`, once per tick for every
+    /// node, after the cursor advance): up while the playing clip is before
+    /// its first listed beat. The melee kernel reads the byte, not the clip,
+    /// so a clip committed between two ticks - a block the previous hit of
+    /// the same combo staged - does not move it until the next tick.
+    /// Written by [`crate::world::World::tick_battle_animations`].
+    pub battle_juggle_window: bool,
+
     /// Per-character **art-animation bank** clips (the player file's
     /// record[0] `+0x58` bank, each record's keyframe stream resolved
     /// through its `readef.DAT` `"ME"` archive and expanded so channel `i`

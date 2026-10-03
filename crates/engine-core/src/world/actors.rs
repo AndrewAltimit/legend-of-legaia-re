@@ -353,6 +353,10 @@ impl World {
             } else {
                 None
             };
+            // `+0x1F7`, written for every node right after its cursor
+            // advance (`0x80047E28..0x80047E54`).
+            // PORT: FUN_80047430 (`0x80047E1C..0x80047E54`, the juggle window)
+            self.actors[i].battle_juggle_window = Self::juggle_window_open(&self.actors[i]);
             // Per-frame effect-script walk for the committed record - the
             // engine seat of retail's `FUN_80047430` -> `FUN_801DEA50` call
             // pair (frame argument = the node's 12.4 anim cursor in whole

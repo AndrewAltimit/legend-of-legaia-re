@@ -1926,7 +1926,8 @@ impl World {
     ///   running keeps blocking (`0x801EC93C..0x801EC984`), and one mid-way
     ///   through any other reaction cannot block - the juggle arm clears
     ///   `s7` (`0x801ECA20..0x801ECA68`). Both read the defender's `+0x1F7`
-    ///   juggle window ([`Self::juggle_window_open`]);
+    ///   juggle window as the last anim tick wrote it
+    ///   ([`crate::world::Actor::battle_juggle_window`]);
     /// * a party attacker carrying ability bit `0x4000` cancels the block
     ///   after the verdict (`0x801ECAFC..0x801ECB5C`).
     ///
@@ -1949,7 +1950,7 @@ impl World {
         if t.battle.damage_accum >= u32::from(t.battle.hp) {
             return None;
         }
-        let reacting = Self::juggle_window_open(t);
+        let reacting = t.battle_juggle_window;
         let in_block = t.battle_reaction_entry == Some(block_entry);
         let side = |w: &Self, slot: u8| -> BlockSide {
             let i = usize::from(slot);
@@ -2006,7 +2007,7 @@ impl World {
     /// reaction is playing". A four-slot list (address-dependent in retail)
     /// reads as down.
     // REF: FUN_80047430, FUN_80050E00
-    fn juggle_window_open(a: &crate::world::Actor) -> bool {
+    pub(in crate::world) fn juggle_window_open(a: &crate::world::Actor) -> bool {
         let (Some(player), Some(head)) =
             (a.battle_animation.as_ref(), a.battle_effect_script.as_ref())
         else {
@@ -2583,6 +2584,8 @@ mod melee_cue_tests {
         let a = &mut w.actors[slot];
         a.battle_animation = crate::battle_anim::MonsterAnimPlayer::new_one_shot(&clip);
         a.battle_effect_script = Some(head);
+        // The anim tick's `+0x1F7` write for the seated clip.
+        a.battle_juggle_window = World::juggle_window_open(a);
     }
 
     /// A blocked hit skips the damage body (`bne s7,zero,0x801EE6D4`): no
@@ -2651,6 +2654,31 @@ mod melee_cue_tests {
         assert!(
             blocks < 200,
             "the block pose does not latch: {blocks} / 200"
+        );
+    }
+
+    /// The kernel reads `+0x1F7` as the anim tick last wrote it. A block
+    /// pose committed since that tick - by the previous hit of the same
+    /// combo - plays a clip whose live window is open (frame 0 < beat 6),
+    /// but the byte still holds the tick's value, so the pose does not
+    /// latch onto the next hit: the verdict stays the roll's.
+    #[test]
+    fn a_block_committed_since_the_last_tick_reads_the_ticks_window() {
+        let mut w = duel();
+        w.actors[0].battle_action_clips = Some(std::sync::Arc::new(vec![None; 12]));
+        play_clip_with_beat(&mut w, 0, 6);
+        w.actors[0].battle_reaction_entry = Some(0x0B);
+        w.actors[0].battle_juggle_window = false;
+        assert!(World::juggle_window_open(&w.actors[0]), "live window open");
+        let blocks = (0..200)
+            .filter(|_| w.roll_block(1, 0, BASIC_ATTACK_COMMAND).is_some())
+            .count();
+        assert!(blocks < 200, "the fresh block pose latched: {blocks} / 200");
+        // With the tick's byte up as well, the pose holds.
+        w.actors[0].battle_juggle_window = true;
+        assert!(
+            (0..20).all(|_| w.roll_block(1, 0, BASIC_ATTACK_COMMAND).is_some()),
+            "a held block pose inside the window keeps blocking"
         );
     }
 
