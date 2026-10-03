@@ -98,7 +98,21 @@ fn map01_puff_column_matches_the_retail_population_and_drift() {
             drift_seen |= z < SPAWN_Z - 400;
         }
         // Everything the tree draws is on the draw-kind-4 list.
-        assert_eq!(world.ambient_sprite_arm_draws().len(), nodes.len());
+        let draws = world.ambient_sprite_arm_draws();
+        assert_eq!(draws.len(), nodes.len());
+        // At retail's size: the record's `1024 x 256` sheet (`+0xB4 / +0xB6`)
+        // at the seater's render scale `+0x72 = 0x1000`. A part seated with a
+        // zero scale collapses every corner onto the node and draws nothing.
+        for d in &draws {
+            let extent = |axis: usize| {
+                d.mesh
+                    .positions
+                    .iter()
+                    .map(|p| p[axis].abs())
+                    .fold(0.0f32, f32::max)
+            };
+            assert_eq!((extent(0), extent(1)), (512.0, 128.0), "puff sheet size");
+        }
     }
     eprintln!(
         "[ok] map01 puff column: {min_n}..={max_n} live sprite-arm puffs (retail capture: 7)"

@@ -257,6 +257,14 @@ impl World {
         state.world_z = origin[2];
         state.world_y_mirror = origin[1];
         state.wait_timer = -1;
+        // The render scale `+0x72`: `FUN_80021B04` stores its fourth argument
+        // there (`sh s4,0x72(s0)` at `0x80021DAC`, before the first move-VM
+        // run), and both ambient seaters pass `0x1000` - the scene install
+        // `FUN_800252EC` (`li a3,0x1000` at `0x80025330`) and op `0x25`'s child
+        // spawn (`0x80023900`). Left at zero, a draw-kind-4 sprite node built
+        // from it (`effect_sprite_arm`) collapses to a point: `map01`'s mist
+        // puff column drew nothing.
+        state.field_72 = 0x1000;
         self.ambient.fx.push(AmbientPart {
             record_off,
             model_sel: rec.model_sel,

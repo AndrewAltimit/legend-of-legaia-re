@@ -3313,6 +3313,25 @@ that the drifting half stood still at the spawn point, and a probe that never
 drove the ambient tick saw only the two nodes the scene-entry first run leaves.
 `crates/engine-core/tests/overworld_puff_column_disc.rs` pins both.
 
+Each puff is a `1024 x 256` sheet (`+0xB4 / +0xB6`) on texture page `0x26`
+(VRAM `(384, 0)`, ABR `1` additive), texels `(0, 0x40)..(0x3F, 0x5F)`
+through CLUT `0x774A` (`(160, 477)`, a grey ramp with `STP` set): together
+they are the white band retail shows above the ridges of `map01`. The
+sprite arm scales the sheet by the render scale `+0x72`, which the seater
+`FUN_80021B04` stores from its fourth argument (`0x80021DAC`, before the
+first move-VM run); the ambient install `FUN_800252EC` and op `0x25`'s child
+spawn both pass `0x1000`. A part seated with `+0x72 = 0` collapses every
+corner onto the node, which is how the port drew nothing here.
+
+Retail's frame draws more sheets than it has nodes. The walked table of
+`keikoku_chest_preload` holds 52 page-`0x26` packets from the nine live
+nodes, in rows at one depth spread across the screen (`x` from `31` to
+`509`), and each node's model list `+0x44` holds eight slots, all pointed at
+the one built quad (`0x8001B08C..0x8001B0B4`). The per-slot draw loop
+(`0x8001B40C..0x8001B5D4`) sets no per-slot transform in the path the port
+reads, so what spreads the eight copies is not yet traced; the port draws
+one sheet per node.
+
 ### Gate-arm chain - `FUN_801D1344` -> `FUN_801D8258`
 
 The one-shot gate `_DAT_801F351C` is armed by a 40-byte trigger
