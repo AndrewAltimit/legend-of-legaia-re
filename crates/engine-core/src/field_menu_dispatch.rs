@@ -552,6 +552,10 @@ pub fn apply_spell_outcome(
         hms.mp_cur = hms.mp_cur.saturating_sub(mp_cost);
         caster.set_hp_mp_sp(hms);
     }
+    // Every record write is projected onto the party actor that mirrors it
+    // (`World::mirror_roster_hp_mp`): a battle seats from that copy and
+    // `save_party` writes it back, so a record-only write is undone.
+    world.mirror_roster_hp_mp(caster_slot as usize);
     // Menu-cast spell-XP arm: only the HP-heal effect classes accrue
     // (FUN_800402F4's revive / cure / MP arms carry no `+0x5D0` code).
     //
@@ -576,6 +580,7 @@ pub fn apply_spell_outcome(
                 hms.hp_cur = hms.hp_cur.saturating_add(*amount).min(hms.hp_max);
                 member.set_hp_mp_sp(hms);
             }
+            world.mirror_roster_hp_mp(*slot as usize);
             total += crate::magic_xp::menu_heal_xp_gain(true, *amount == nominal);
         }
         if total == 0 {
@@ -598,6 +603,7 @@ pub fn apply_spell_outcome(
             }
             target.set_hp_mp_sp(hms);
         }
+        world.mirror_roster_hp_mp(target_slot as usize);
         let healed = healed?;
         let (nominal, group_cast) = nominal_heal?;
         crate::magic_xp::menu_heal_xp_gain(group_cast, healed == nominal)
