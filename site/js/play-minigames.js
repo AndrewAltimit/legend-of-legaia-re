@@ -7,24 +7,24 @@
  *
  * Everything drawn here is decoded off the visitor's own disc by the engine
  * (`crates/web-viewer/src/play_minigame*.rs`), through the same presentation
- * bundle the standalone minigames page uses; the renderers below are the
- * standalone page's (`site/_content/minigames.html` slotRender,
- * `minigame-muscle.js` / `minigame-baka.js` / `minigame-dance.js` scene
- * builders) re-pointed at the play runtime's `play_mg_*` exports. The rules
+ * bundle the standalone minigames page uses; the 3D renderers below are the
+ * standalone page's (`minigame-muscle.js` / `minigame-baka.js` /
+ * `minigame-dance.js` scene builders) re-pointed at the play runtime's
+ * `play_mg_*` exports, and the slot machine is the engine's own screen-prim
+ * frame. The rules
  * run in the engine off the pad word the page already routes - this file
  * reads state and draws; it binds no key.
  *
  * Layers: the 3D games draw through the page's own TmdRenderer (its
  * single-mesh `uploadMesh` / `render` path, the field's assembled scene
- * meshes untouched underneath); the slot machine and the dome's hub
- * screens draw on a 2D layer canvas this script inserts between the GL
+ * meshes untouched underneath); the dome's hub screens draw on a 2D layer
+ * canvas this script inserts between the GL
  * view and the page's text overlay, so the engine's HUD lines
  * (`minigame_overlay_draws`) still read on top. */
 (function () {
   'use strict';
 
   const A2R = (Math.PI * 2) / 4096;   /* PSX angle units -> radians */
-  const SYM_PX = 64;                  /* a reel symbol cell, in texels */
   const HUD_W = 320, HUD_H = 240;     /* retail stage */
 
   const S = {
@@ -32,9 +32,7 @@
     gen: -1,
     layer: null,       /* the 2D layer canvas */
     layerCtx: null,
-    slot: null,        /* decoded slot art + scene */
-    slotCaption: null,
-    slotFrame: null,   /* 640x240 offscreen framebuffer */
+    slotVram: false,   /* the slot art pack is the renderer's VRAM */
     scene: null,       /* the live 3D scene for muscle / baka / dance */
     savedFlags: null,  /* TmdRenderer flags to restore on exit */
     hubSheets: {},     /* "sheet:pal" -> canvas */
@@ -223,385 +221,25 @@
   }
 
   /* ================================================================== */
-  /* Slot machine: the standalone page's 2D renderer of the retail 3D scene
-   * (GTE projection replicated; every position / cell / palette read off the
-   * overlay's rodata and PROT 1200 through the engine). */
-
-  function slotLoad(rt) {
-    S.slot = null;
-    S.slotCaption = null;
-    if (!rt.play_mg_slot_art_ready || !rt.play_mg_slot_art_ready()) return;
-    const symbols = [];
-    for (let s = 0; s < 10; s++) symbols.push(rgbaCanvas(rt.play_mg_slot_symbol_rgba(s), SYM_PX, SYM_PX));
-    const numbers = [];
-    for (let n = 1; n <= 10; n++) numbers.push(rgbaCanvas(rt.play_mg_slot_bonus_number_rgba(n), SYM_PX, SYM_PX));
-    const pages = {};
-    const page = (p, pal) => {
-      const k = p + ':' + pal;
-      if (!(k in pages)) {
-        const w = rt.play_mg_slot_page_width(p) || 256;
-        pages[k] = rgbaCanvas(rt.play_mg_slot_page_rgba(p, pal), w, 256);
-      }
-      return pages[k];
-    };
-    const scene = rt.play_mg_slot_scene_ready() ? parse(() => rt.play_mg_slot_scene_json()) : null;
-    S.slot = {
-      symbols, numbers,
-      digits: rgbaCanvas(rt.play_mg_slot_digits_rgba(), 64 + 10 * 16, 16),
-      panel: rgbaCanvas(rt.play_mg_slot_panel_rgba(), 127, 239),
-      page,
-      scene: scene && scene.ok ? scene : null,
-      marquee: parse(() => rt.play_mg_slot_marquee_json()),
-      tick: 0,
-    };
-    if (!S.slotFrame) {
-      S.slotFrame = document.createElement('canvas');
-      S.slotFrame.width = 640; S.slotFrame.height = 240;
-    }
-  }
-
-  const BONUS_VALUE_BASE = 0x10;
-  function slotFaceFor(value) {
-    const a = S.slot;
-    return value >= BONUS_VALUE_BASE ? a.numbers[value - BONUS_VALUE_BASE] : a.symbols[value];
-  }
-  function slotScale(z) {
-    const P = S.slot.scene.proj;
-    return P.sx0 * P.z0 / (P.z0 + z);
-  }
-  function slotProject(x, y, z) {
-    const P = S.slot.scene.proj, s = slotScale(z);
-    return [P.ofx + s * x, P.ofy + (s / P.aspect) * y];
-  }
-  function slotBillboard(hw, hh, z) {
-    const k = slotScale(z) / S.slot.scene.proj.xscale;
-    return [hw * k, hh * k];
-  }
-  function slotDrawBillboard(g, img, cell, pos, half, alpha) {
-    if (!img) return;
-    const [cx, cy] = slotProject(pos[0], pos[1], pos[2]);
-    const [hw, hh] = slotBillboard(half[0], half[1], pos[2]);
-    g.globalAlpha = alpha === undefined ? 1 : alpha;
-    g.drawImage(img, cell[0], cell[1], cell[2], cell[3], cx - hw, cy - hh, hw * 2, hh * 2);
-    g.globalAlpha = 1;
-  }
-  function slotTexTri(g, img, s0, s1, s2, t0, t1, t2) {
-    g.save();
-    g.beginPath();
-    const cx = (s0[0] + s1[0] + s2[0]) / 3, cy = (s0[1] + s1[1] + s2[1]) / 3;
-    const gr = (p) => [cx + (p[0] - cx) * 1.02, cy + (p[1] - cy) * 1.02];
-    const [a, b, c] = [gr(s0), gr(s1), gr(s2)];
-    g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.lineTo(c[0], c[1]); g.closePath();
-    g.clip();
-    const d = (t1[0] - t0[0]) * (t2[1] - t0[1]) - (t2[0] - t0[0]) * (t1[1] - t0[1]);
-    if (Math.abs(d) > 1e-6) {
-      const m11 = ((s1[0] - s0[0]) * (t2[1] - t0[1]) - (s2[0] - s0[0]) * (t1[1] - t0[1])) / d;
-      const m12 = ((s1[1] - s0[1]) * (t2[1] - t0[1]) - (s2[1] - s0[1]) * (t1[1] - t0[1])) / d;
-      const m21 = ((s2[0] - s0[0]) * (t1[0] - t0[0]) - (s1[0] - s0[0]) * (t2[0] - t0[0])) / d;
-      const m22 = ((s2[1] - s0[1]) * (t1[0] - t0[0]) - (s1[1] - s0[1]) * (t2[0] - t0[0])) / d;
-      g.transform(m11, m12, m21, m22,
-        s0[0] - m11 * t0[0] - m21 * t0[1],
-        s0[1] - m12 * t0[0] - m22 * t0[1]);
-      g.drawImage(img, 0, 0);
-    }
-    g.restore();
-  }
-
-  /* The reel cylinders, as FUN_801d0fa8 builds them (see the standalone
-   * page for the derivation of the payline face + shade). */
-  function slotDrawReels(g, positions, strips) {
-    const R = S.slot.scene.reels;
-    const FULL = R.angle_full;
-    const sinT = (a) => Math.sin(((a % FULL + FULL) % FULL) / FULL * Math.PI * 2);
-    const cosT = (a) => Math.cos(((a % FULL + FULL) % FULL) / FULL * Math.PI * 2);
-    const ry = (a) => (4096 * sinT(a) * -R.y_radius) / 4096;
-    const rz = (a) => (4096 * cosT(a)) / (1 << R.z_shift);
-    const shade = (z) => Math.max(0, Math.min(R.shade_max,
-      R.shade_max - Math.floor((z + R.shade_bias) * R.shade_gain / 512)));
-    let paylineFace = 0, nearest = Infinity;
-    for (let f = 0; f < R.faces; f++) {
-      const z = rz(R.angle_base + f * R.angle_step + R.angle_step / 2);
-      if (z < nearest) { nearest = z; paylineFace = f; }
-    }
-    for (let r = 0; r < 3; r++) {
-      const pos = positions[r];
-      const row0 = Math.floor(((pos >> 8) % R.strip_len + R.strip_len) % R.strip_len);
-      const frac = ((pos % 256) + 256) % 256;
-      const strip = strips[r];
-      if (!strip || !strip.length) continue;
-      const x0 = R.x[r], x1 = x0 + R.w;
-      for (let f = 0; f < R.faces; f++) {
-        const aTop = R.angle_base + frac + f * R.angle_step;
-        const aBot = aTop + R.angle_step;
-        const zT = rz(aTop), zB = rz(aBot);
-        const sT = shade(zT), sB = shade(zB);
-        const yT = ry(aTop), yB = ry(aBot);
-        const p00 = slotProject(x0, yT, zT), p10 = slotProject(x1, yT, zT);
-        const p01 = slotProject(x0, yB, zB), p11 = slotProject(x1, yB, zB);
-        const idx = ((row0 + paylineFace - f) % R.strip_len + R.strip_len) % R.strip_len;
-        const sym = slotFaceFor(strip[idx]);
-        if (!sym) continue;
-        slotTexTri(g, sym, p00, p10, p01, [0, 0], [SYM_PX, 0], [0, SYM_PX]);
-        slotTexTri(g, sym, p10, p11, p01, [SYM_PX, 0], [SYM_PX, SYM_PX], [0, SYM_PX]);
-        g.save();
-        g.beginPath();
-        g.moveTo(p00[0], p00[1]); g.lineTo(p10[0], p10[1]);
-        g.lineTo(p11[0], p11[1]); g.lineTo(p01[0], p01[1]); g.closePath();
-        g.clip();
-        const mT = Math.min(1, sT / R.shade_neutral), mB = Math.min(1, sB / R.shade_neutral);
-        const grad = g.createLinearGradient(0, (p00[1] + p10[1]) / 2, 0, (p01[1] + p11[1]) / 2);
-        const lvl = (m) => `rgb(${Math.round(m * 255)},${Math.round(m * 255)},${Math.round(m * 255)})`;
-        grad.addColorStop(0, lvl(mT));
-        grad.addColorStop(1, lvl(mB));
-        g.globalCompositeOperation = 'multiply';
-        g.fillStyle = grad;
-        g.fill();
-        if (sT > R.shade_neutral || sB > R.shade_neutral) {
-          const bT = Math.max(0, (sT - R.shade_neutral) / R.shade_neutral);
-          const bB = Math.max(0, (sB - R.shade_neutral) / R.shade_neutral);
-          const gb = g.createLinearGradient(0, (p00[1] + p10[1]) / 2, 0, (p01[1] + p11[1]) / 2);
-          gb.addColorStop(0, `rgba(255,255,255,${bT * 0.35})`);
-          gb.addColorStop(1, `rgba(255,255,255,${bB * 0.35})`);
-          g.globalCompositeOperation = 'lighter';
-          g.fillStyle = gb;
-          g.fill();
-        }
-        g.restore();
-      }
-    }
-  }
-
-  function slotMsgBits(id) {
-    const sc = S.slot.scene;
-    const bits = sc.msgBits || (sc.msgBits = sc.messages.map(m => m.bitmap.split(',').map(Number)));
-    return bits[id];
-  }
-  function slotBlitMsg(buf, id, col, row) {
-    const m = S.slot.scene.messages[id];
-    if (!m) return;
-    const bm = slotMsgBits(id), D = S.slot.scene.dots;
-    for (let r = 0; r < m.h; r++) {
-      const dr = row + r;
-      if (dr < 0 || dr >= D.rows) continue;
-      for (let c = 0; c < m.w; c++) {
-        const dc = col + c;
-        if (dc < 0 || dc >= D.cols) continue;
-        buf[dc * D.rows + dr] = bm[r * m.w + c];
-      }
-    }
-  }
-  function slotBlitScroll(buf, id, sx) {
-    const m = S.slot.scene.messages[id];
-    if (!m) return;
-    const bm = slotMsgBits(id), D = S.slot.scene.dots;
-    for (let col = 0; col < D.cols; col++) {
-      const mc = sx + col;
-      if (mc < 0 || mc >= m.w) continue;
-      for (let row = 0; row < Math.min(D.rows, m.h); row++) {
-        buf[col * D.rows + row] = bm[row * m.w + mc];
-      }
-    }
-  }
-  /* FUN_801cfff0's message pass: tally / payout caption / round pips /
-   * attract legend, in retail's branch order. */
-  function slotMarqueeBuffer(st, bonus, tick) {
-    const D = S.slot.scene.dots, M = S.slot.marquee;
-    const buf = new Uint8Array(D.cols * D.rows);
-    if (!M) return buf;
-    const tallyRow = (tally) => {
-      for (let r = 0; r < 3; r++) slotBlitMsg(buf, M.number_base + tally[r], M.tally_cols[r], 0);
-      slotBlitMsg(buf, M.times, M.times_cols[0], 0);
-      slotBlitMsg(buf, M.times, M.times_cols[1], 0);
-    };
-    const cap = S.slotCaption;
-    if (cap) {
-      if (cap.age < 0) { tallyRow(cap.tally); return buf; }
-      const n = cap.payout;
-      const row = Math.min(cap.age - M.payout_slide_rows, 0);
-      const d = M.number_base;
-      if (n > 999) slotBlitMsg(buf, d + Math.floor(n / 1000), M.payout_digit_cols[0], row);
-      if (n > 99) slotBlitMsg(buf, d + Math.floor((n % 1000) / 100), M.payout_digit_cols[1], row);
-      if (n > 9) slotBlitMsg(buf, d + Math.floor((n % 100) / 10), M.payout_digit_cols[2], row);
-      slotBlitMsg(buf, d + (n % 10), M.payout_digit_cols[3], row);
-      slotBlitMsg(buf, M.coins, M.payout_coins_col, row);
-      return buf;
-    }
-    if (bonus && bonus.active) {
-      if (st.phase === 'stopping' || st.phase === 'payout') {
-        tallyRow(bonus.tally);
-      } else {
-        const left = bonus.rounds_left;
-        for (let i = 0; i < 3; i++) {
-          slotBlitMsg(buf, left > (2 - i) ? M.pip_on : M.pip_off, M.pip_cols[i], 0);
-        }
-      }
-      return buf;
-    }
-    slotBlitScroll(buf, 0, (tick % 0x94) - 0x4a);
-    return buf;
-  }
-  function slotDrawMarqueeDots(g, buf, tick) {
-    const D = S.slot.scene.dots;
-    const swatch = S.slot.page(D.page, D.blink_palettes[tick & 1]);
-    if (!swatch) return;
-    for (let col = 0; col < D.cols; col++) {
-      for (let row = 0; row < D.rows; row++) {
-        const nib = buf[col * D.rows + row];
-        if (!nib) continue;
-        const [px, py] = slotProject(D.x0 + col * D.dx, D.y0 + row * D.dy, D.z);
-        g.drawImage(swatch, nib * D.u_per_nibble, 0, D.size, D.size, Math.round(px), Math.round(py), 2, 2);
-      }
-    }
-  }
-  function slotDrawCoins(g, value) {
-    const a = S.slot;
-    if (!a || !a.digits) return;
-    g.drawImage(a.digits, 0, 0, 64, 16, 560 - 32, 160 - 8, 64, 16);
-    const s = String(Math.max(0, Math.min(99999, value))).padStart(5, '0');
-    let dx = 546 + (s.length - 1) * 10 - (s.length - 1) * 16;
-    for (const ch of s) {
-      const d = ch.charCodeAt(0) - 48;
-      g.drawImage(a.digits, 64 + d * 16, 0, 16, 16, dx, 168, 16, 16);
-      dx += 16;
-    }
-  }
-  /* The cabinet body: the measured composition (the mesh is PROT 1200
-   * descriptor 1; the standalone page paints it the same way and says so). */
-  function slotDrawCabinet(g) {
-    g.fillStyle = '#2c2c2c';
-    g.fillRect(28, 19, 460, 199);
-    let gr = g.createLinearGradient(28, 0, 488, 0);
-    gr.addColorStop(0, '#505050'); gr.addColorStop(0.5, '#888888'); gr.addColorStop(1, '#505050');
-    g.fillStyle = gr; g.fillRect(28, 19, 460, 7);
-    gr = g.createLinearGradient(28, 0, 488, 0);
-    gr.addColorStop(0, '#2a2a2a'); gr.addColorStop(0.5, '#383838'); gr.addColorStop(1, '#2a2a2a');
-    g.fillStyle = gr; g.fillRect(28, 26, 460, 40);
-    g.fillStyle = 'rgb(0,0,72)'; g.fillRect(116, 24, 274, 34);
-    gr = g.createLinearGradient(0, 66, 0, 197);
-    gr.addColorStop(0, 'rgb(40,32,32)'); gr.addColorStop(0.37, 'rgb(136,48,48)');
-    gr.addColorStop(0.75, 'rgb(56,24,24)'); gr.addColorStop(1, 'rgb(24,24,24)');
-    g.fillStyle = gr; g.fillRect(36, 66, 434, 131);
-    g.fillStyle = '#383838'; g.fillRect(28, 66, 8, 131);
-    g.fillStyle = '#404040'; g.fillRect(470, 66, 18, 131);
-    gr = g.createLinearGradient(0, 197, 0, 218);
-    gr.addColorStop(0, 'rgb(16,16,16)'); gr.addColorStop(1, 'rgb(96,96,96)');
-    g.fillStyle = gr; g.fillRect(28, 197, 460, 21);
-  }
-
-  const SLOT_TALLY_HOLD = 26, SLOT_CAPTION_FRAMES = 110;
-
-  function slotRender(rt, st, bonus) {
-    const cv = S.slotFrame, g = cv.getContext('2d');
-    g.imageSmoothingEnabled = false;
-    g.fillStyle = '#000000';
-    g.fillRect(0, 0, cv.width, cv.height);
-    const a = S.slot;
-    if (!a || !a.scene) {
-      g.fillStyle = '#8a8a99';
-      g.font = '12px monospace';
-      g.fillText(a ? 'the scene graph (PROT 0975) did not decode - symbol ids only'
-                   : 'art pack (PROT 1200) did not decode - symbol ids only', 14, 20);
-      for (let r = 0; r < 3; r++) for (let row = 0; row < 3; row++) {
-        g.fillStyle = row === 1 ? '#e8e8f0' : '#6a6a78';
-        g.font = (row === 1 ? 'bold ' : '') + '20px monospace';
-        g.fillText('#' + st.window[r][row], 190 + r * 90, 90 + row * 45);
-      }
-      return;
-    }
-    const C = a.scene.cells;
-    const winLine = (st.last && st.last.line != null) ? st.last.line : null;
-    slotDrawCabinet(g);
-    const winTop = 54, winBot = 197;
-    g.fillStyle = '#000000';
-    const R = a.scene.reels;
-    for (let r = 0; r < 3; r++) {
-      const [rx0] = slotProject(R.x[r], 0, -512);
-      const [rx1] = slotProject(R.x[r] + R.w, 0, -512);
-      g.fillRect(rx0 - 3, winTop, rx1 - rx0 + 6, winBot - winTop);
-    }
-    g.save();
-    g.beginPath();
-    g.rect(112, winTop, 336, winBot - winTop);
-    g.clip();
-    const strips = [0, 1, 2].map(r => rt.play_mg_slot_strip(r));
-    slotDrawReels(g, rt.play_mg_slot_reel_pos(), strips);
-    g.restore();
-    /* The paylines: the engine's ported payline pass (FUN_801d3380) picks
-     * each line's colour, lit state and semi-transparency; the page runs the
-     * RTPS projection it leaves caller-side and strokes the segment. */
-    let lines = [];
-    try { lines = JSON.parse(rt.play_mg_slot_payline_prims_json(winLine == null ? -1 : winLine)); }
-    catch (e) { lines = []; }
-    for (const l of lines) {
-      /* Endpoints projected by the engine (slot_machine::projected_paylines),
-       * the same segments the native window draws; the page-side projection
-       * is only the fallback for a bundle that predates the fields. */
-      const p = l.sa || slotProject(l.a[0], l.a[1], l.a[2]);
-      const q = l.sb || slotProject(l.b[0], l.b[1], l.b[2]);
-      g.strokeStyle = `rgba(${l.rgb[0]},${l.rgb[1]},${l.rgb[2]},${l.semi ? 0.5 : 1})`;
-      g.lineWidth = l.lit ? 2 : 1;
-      g.beginPath(); g.moveTo(p[0], p[1]); g.lineTo(q[0], q[1]); g.stroke();
-    }
-    a.scene.medallions.forEach((m) => {
-      const img = a.page(C.medallion_page, (C.medallion_clut_base + m.art) & 0x3F);
-      slotDrawBillboard(g, img, C.medallion, m.pos, C.medallion_half);
-    });
-    a.scene.lamps.forEach((m, i) => {
-      const img = a.page(C.lamp_page, C.lamp_palette);
-      slotDrawBillboard(g, img, i === winLine ? C.lamp_lit : C.lamp_unlit, m.pos, C.lamp_half);
-    });
-    a.scene.pedestals.forEach((p, r) => {
-      const stopped = st.stopped > r;
-      const pal = (stopped ? C.pedestal_clut_stopped : C.pedestal_clut_spinning) + r;
-      const img = a.page(C.pedestal_page, pal & 0x3F);
-      const cell = (stopped ? C.pedestal_cells_stopped : C.pedestal_cells)[r];
-      slotDrawBillboard(g, img, cell, p.pos, C.pedestal_half);
-    });
-    a.scene.marquee.forEach((m) => {
-      const img = a.page(C.marquee_page, m.clut);
-      slotDrawBillboard(g, img, m.cell, m.pos, m.half);
-    });
-    slotDrawMarqueeDots(g, slotMarqueeBuffer(st, bonus, a.tick), a.tick);
-    if (a.panel) g.drawImage(a.panel, 560 - 63, 128 - 119);
-    slotDrawCoins(g, st.balance);
-  }
+  /* Slot machine. The engine draws the whole frame - cabinet mesh, reels,
+   * furniture, dot matrix, coin HUD and paylines - through the shared
+   * `ui_slot_cabinet` builder into the page's screen-prim pass, the same
+   * primitive list the native window draws, sampling the machine's art pack.
+   * This file only puts that art pack up as the renderer's VRAM for the
+   * visit (the teardown hands the field's back) and clears the 3D view. A
+   * disc whose resident set does not decode draws the engine's status rows
+   * over a cleared view instead; there is no second, hand-composed machine. */
 
   function slotFrame(rt, view, skipDraw) {
     const st = parse(() => rt.play_mg_slot_state_json());
     if (!st || !st.live) return;
-    /* The machine's resident set decoded: the engine draws the whole retail
-     * frame (cabinet mesh, reels, furniture, dot matrix, coin HUD) through
-     * the shared `ui_slot_cabinet` builder into the screen-prim pass - the
-     * native window's draw - sampling the art pack, which goes up as the
-     * renderer's VRAM once per visit. The 2D-canvas composition below is the
-     * fallback for a bundle predating the exports. */
-    if (typeof rt.play_mg_slot_cabinet_ready === 'function' && rt.play_mg_slot_cabinet_ready()) {
-      const r = view.renderer;
-      if (r && !S.slotVram) {
-        try { r.uploadVram(rt.play_mg_slot_vram()); S.slotVram = true; } catch (e) { /* keep going */ }
-      }
-      showLayer(view, false);
-      if (!skipDraw) clearGl(view);
-      return;
+    showLayer(view, false);
+    const ready = typeof rt.play_mg_slot_cabinet_ready === 'function' && rt.play_mg_slot_cabinet_ready();
+    const r = view.renderer;
+    if (ready && r && !S.slotVram) {
+      try { r.uploadVram(rt.play_mg_slot_vram()); S.slotVram = true; } catch (e) { /* keep going */ }
     }
-    const bonus = parse(() => rt.play_mg_slot_bonus_json());
-    if (S.slot) S.slot.tick = (st.tick | 0);
-    /* A bonus round just paid: hold its finished tally, then the caption. */
-    if (st.credited > 0 && st.credited_bonus && bonus) {
-      S.slotCaption = { payout: st.credited, tally: bonus.tally.slice(), age: -SLOT_TALLY_HOLD };
-    } else if (S.slotCaption) {
-      S.slotCaption.age++;
-      if (S.slotCaption.age > SLOT_CAPTION_FRAMES || st.phase === 'spinning') S.slotCaption = null;
-    }
-    if (skipDraw) return;
-    clearGl(view);
-    const layer = showLayer(view, true);
-    if (!layer || !S.slotFrame) return;
-    slotRender(rt, st, bonus);
-    const g = S.layerCtx;
-    g.imageSmoothingEnabled = false;
-    g.clearRect(0, 0, layer.width, layer.height);
-    g.drawImage(S.slotFrame, 0, 0, 640, 240, 0, 0, layer.width, layer.height);
+    if (!skipDraw) clearGl(view);
   }
 
   /* ================================================================== */
@@ -1152,7 +790,6 @@
     S.game = null;
     S.gen = -1;
     S.scene = null;
-    S.slotCaption = null;
     showLayer(view, false);
   }
 
@@ -1162,7 +799,7 @@
     S.scene = null;
     S.hubSheets = {};
     S.hubDims = {};
-    if (info.game === 'slot') { slotLoad(rt); return; }
+    if (info.game === 'slot') return;
     /* The pond builds off the scene host's own disc index, not the art. */
     if (info.game === 'fishing') return;
     if (!info.art) return;
