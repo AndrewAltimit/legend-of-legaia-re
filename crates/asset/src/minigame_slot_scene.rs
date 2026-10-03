@@ -41,19 +41,13 @@
 //!
 //! ## Projection
 //!
-//! [`project`] is the screen mapping, on the retail 640x240 framebuffer. Its
-//! **shape** is derived (a perspective divide of a view-space point whose x:y
-//! scale ratio is exactly 2, read out of the camera matrix); its four
-//! **scalars** are *fitted* to a retail framebuffer captured at the machine
-//! (the `minigame_slot_machine` capture), because the GTE control words
-//! (`OFX` / `OFY` / `H`) do not live in main RAM and so are not in the save
-//! state.
-//!
-//! The fit is over-determined and independently checked: it was solved on the
-//! five payline lamps alone, and then *predicted* - to about a pixel each - the
-//! on-screen rect of every other element, none of which entered the fit: the
-//! medallion column, the marquee panel, the two mascots, the three reel windows,
-//! the reel-stop pedestals, and the dot-matrix grid.
+//! [`project`] is the screen mapping, on the retail 640x240 framebuffer: the
+//! GTE's own, with the register file read out of the `minigame_slot_machine`
+//! mednafen state (its `GTE` section carries COP2) - rotation
+//! `diag(6, 3, 3)`, translation `(-1440, 20, 24480)`, `OFX 320`, `OFY 114`,
+//! `H 1024` ([`GTE_OFX`] and siblings). An earlier projection fitted to the
+//! same frame sat `3.6` rows low; its constants ([`PROJ_OFX`] and siblings)
+//! remain only for the exporters that still emit them.
 //!
 //! ## Provenance
 //!
