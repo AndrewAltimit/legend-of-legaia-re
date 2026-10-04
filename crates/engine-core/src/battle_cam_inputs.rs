@@ -339,6 +339,7 @@ fn battle_end_cam_inputs(
                     // its node (`noa_levelup_banner`: every dead seat's
                     // `+4` reads zero), so case 8 takes its stand-off arm.
                     node_gone: !live,
+                    ..script::PostActionTarget::default()
                 }
             });
             inputs.phase = script::BattleCamPhase::ActionEnd;
@@ -391,12 +392,33 @@ pub fn battle_post_action_target(
         return None;
     }
     let t = world.actors.get(usize::from(slot))?;
+    // Both cases read the body pair `+0x3C` / `+0x40` for X / Z and the
+    // live `+0x36` for Y; the live-target arm sizes TR.y off the display
+    // height `+0x3E`.
+    let (bx, bz) = t
+        .battle
+        .seat
+        .unwrap_or((t.move_state.world_x, t.move_state.world_z));
+    let display_y = world
+        .battle_display_trio(usize::from(slot))
+        .map_or(t.move_state.world_y as f32, |d| d[1]);
+    let party = usize::from(slot) < world.party.party_count as usize;
     Some(script::PostActionTarget {
-        world: [
-            t.move_state.world_x as f32,
-            t.move_state.world_y as f32,
-            t.move_state.world_z as f32,
-        ],
+        world: [f32::from(bx), t.move_state.world_y as f32, f32::from(bz)],
+        display_y,
+        party,
+        height: party
+            .then(|| {
+                world
+                    .tables
+                    .battle_camera_heights
+                    .as_ref()
+                    .and_then(|h| h.height_for_char_id(slot + 1))
+                    .map(|h| h as f32)
+            })
+            .flatten(),
+        monster_id: t.battle_monster_id.map_or(0, |id| id as u8),
+        animating: world.battle_current_anim(usize::from(slot)) != 0,
         live: t.active && t.battle.hp > 0,
         facing: i32::from(t.battle.facing_angle & 0xFFF),
         // Retail's node test reads the low 24 bits of the colour word `+0x4`
@@ -420,7 +442,21 @@ pub fn battle_done_band(world: &World, acting_slot: u8) -> script::DoneBandInput
             .map_or(0, |a| a.battle.action_category),
         party_slot: usize::from(acting_slot) < world.party.party_count as usize,
         target_dead: battle_post_action_target(world, acting_slot).is_some_and(|t| !t.live),
+        target_knocked: battle_target_slot(world, acting_slot)
+            .is_some_and(|t| world.battle_on_knockdown(t)),
+        target_death_clip: battle_target_slot(world, acting_slot)
+            .is_some_and(|t| matches!(world.battle_current_anim(t), 7 | 8)),
     }
+}
+
+/// The acting actor's target seat `actor[+0x1DD]`, when it names one.
+fn battle_target_slot(world: &World, acting_slot: u8) -> Option<usize> {
+    let slot = world
+        .actors
+        .get(usize::from(acting_slot))?
+        .battle
+        .active_target;
+    (usize::from(slot) < 8).then_some(usize::from(slot))
 }
 
 /// The per-art attack camera's track table, re-read from the battle-action
@@ -452,6 +488,17 @@ pub fn battle_attack_channels(world: &World, acting_slot: u8) -> Option<script::
         return None;
     }
     if !cam::outer_gate(0, a.battle.active_target) {
+        return None;
+    }
+    // `FUN_801D71B8`'s first test: the target's live HP `+0x14C`
+    // (`0x801D71E8..0x801D7208`). A swing that has killed its target hands
+    // the frame back to the case `FUN_801D5854` armed - case 8's death
+    // re-frame on the post-strike band.
+    if world
+        .actors
+        .get(usize::from(a.battle.active_target))
+        .is_none_or(|t| t.battle.hp == 0)
+    {
         return None;
     }
     let character = cam::character_arm(acting_slot + 1)?;

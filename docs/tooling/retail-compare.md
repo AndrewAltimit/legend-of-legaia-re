@@ -546,7 +546,30 @@ into the item / magic / arts windows ([battle](../subsystems/battle.md#how-the-e
   cases fork on - is set to retail's, the camera twin of the orbit-yaw
   alignment. Not inside the capture band: `0x70` pins the style to `1`
   without re-arming a framing, so the camera a band capture shows was placed
-  under the rolled style.
+  under the rolled style. The yaw counter `ctx[+0x6DA]` carries a draw too:
+  a party attacker's first swing-clip commit re-seeds it to
+  `(rand() % 2) * 0x800 + 0x280` (`FUN_8004E13C`), and cases 6 to 8 film
+  from the side that coin picks. From the seat's seed pass to the capture's
+  state the drive keeps the engine's counter on retail's half-turn
+  (`BattleCamera::align_action_yaw_half`), leaving the drift to the engine.
+- **Ahead of the seed pass.** `0x00`, `0x0A` and `0x0B` run before the seed
+  pass copies the next actor into `ctx[+0x13]` from `ctx[+0x274]`
+  (`0x801E2C50..0x801E2C5C`), so a capture there reads the previous actor -
+  at a round's start, the last ring member - in `ctx[+0x13]`. The capture's
+  seat is `ctx[+0x274]` instead. `0x0A` waits on the CD
+  (`FUN_8003F2B8(1)`) for as long as the actor's data takes, which the
+  engine's always-ready poll does not, and a capture whose tween table
+  (`ctx[+0x118C]`) reads every stepped component at its endpoint has sat
+  there long enough for the far framing to land: the drive holds the
+  engine's wait until its own glide lands (`SpanGate::Landed`), and the yaw -
+  which case 9 passes through and nothing in `0x0A` writes - is aligned as
+  an orbit clock. `evil_medallion_rage_battle` is one.
+- **The killing blow's body.** On a killing-blow capture whose target is a
+  victim, the phase is held only with the acting seat on that target
+  (`ActionSteer::target`). Seeded at its read HP of `0`, the victim is no
+  target at all, the auto-target picks the next standing monster, and the
+  run held the right state against the wrong body; the search moves on to
+  the `1`-HP re-run that makes the kill.
 - **Seat and timing.** A pick no seed reproduces (a monster's plain strike on
   a given seat) can run out of budget or end the fight first.
 
@@ -1063,9 +1086,11 @@ is where the glide starts from:
   entry. In the engine's round the monster acts first, and the pad drive takes
   Auto at the attack-mode prompt, so the engine's glide starts from the
   monster's end-of-action shot.
-- The style is a draw. Retail's `3` would add the half-turn, but the captured
-  yaw `3205` has none: it is the engine's style-`2` yaw (`3202`). A stream
-  that rolls `3` flips the engine's yaw, and the camera channel falls.
+- The captured yaw `3205` is mid-glide, not a framing. The capture's tween
+  table (`ctx[+0x118C]`) holds the endpoint `4062` = `0x800 + 0x800 -
+  actor[+0x46]`: the seed pass's `ctx[+0x6DA] = 0x800` with style `3`'s
+  half-turn, armed two frames before the save, which the counter's `0x200`
+  (the Attack branch's store) has not yet re-armed.
 
 Pitch `0x80` already reached and `TR.y = 972` do not fit a single glide step,
 so the capture's own glide history is not fully explained either.

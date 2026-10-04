@@ -1636,6 +1636,7 @@ fn the_post_strike_states_arm_the_two_shot() {
         category: DONE_CATEGORY_ATTACK,
         party_slot: true,
         target_dead: false,
+        ..DoneBandInputs::default()
     };
     let run = DoneBandInputs {
         category: DONE_CATEGORY_RUN,
@@ -1645,11 +1646,13 @@ fn the_post_strike_states_arm_the_two_shot() {
         category: 2,
         party_slot: false,
         target_dead: false,
+        ..DoneBandInputs::default()
     };
     let party_over_corpse = DoneBandInputs {
         category: 1,
         party_slot: true,
         target_dead: true,
+        ..DoneBandInputs::default()
     };
     let monster_over_corpse = DoneBandInputs {
         party_slot: false,
@@ -1698,6 +1701,7 @@ fn a_monster_spell_done_tail_reads_the_zora_capture() {
         category: 2,
         party_slot: false,
         target_dead: false,
+        ..DoneBandInputs::default()
     };
     assert_eq!(
         phase_for_state(false, false, 0x51, done),
@@ -1807,7 +1811,11 @@ fn only_a_dead_target_reaches_the_death_reframe() {
     });
     let (live_pose, live_z) = cam.action_end_pose();
     assert_eq!(cam.action_yaw, 0x321, "the ladder survives a live target");
-    assert_eq!(live_z, cam.live_action_framing().depth_raw);
+    // ...and takes the live-target arm, whose monster depth is `7z/10`.
+    assert_eq!(
+        live_z,
+        live_target_depth(0, cam.live_action_framing().depth_raw)
+    );
     assert_ne!(live_pose.tr[1], (DEATH_TR_Y - 0xC8) as f32);
 
     // The same target dead, still above the floor: the ramped pose, and
@@ -1857,9 +1865,21 @@ fn the_recover_framing_orbits_the_pair_not_one_actor() {
     // Case 8 frames the target alone, on the stage floor.
     let end = action_end_framing(actor, Some(target), f, 0.0);
     assert_eq!(end.focus, [200.0, 0.0, 600.0]);
-    // A dead / out-of-range target falls back to the acting actor
-    // (retail's `0x801D6870` arm).
-    let dead = action_end_framing(
+    // A target whose node is gone falls back to the acting actor (retail's
+    // `0x801D6870` arm). The fork reads the node word, not the HP: a target
+    // killed but still drawn stays framed (`player_steal_skeleton_banner`).
+    let gone = action_end_framing(
+        actor,
+        Some(PostActionTarget {
+            live: false,
+            node_gone: true,
+            ..target
+        }),
+        f,
+        0.0,
+    );
+    assert_eq!(gone.focus, [0.0, 0.0, -800.0]);
+    let killed = action_end_framing(
         actor,
         Some(PostActionTarget {
             live: false,
@@ -1868,7 +1888,7 @@ fn the_recover_framing_orbits_the_pair_not_one_actor() {
         f,
         0.0,
     );
-    assert_eq!(dead.focus, [0.0, 0.0, -800.0]);
+    assert_eq!(killed.focus, [200.0, 0.0, 600.0]);
     // No target at all degenerates case 7 to the acting actor.
     assert_eq!(
         recover_framing(actor, None, f, 0.0, false).focus,
@@ -1986,6 +2006,7 @@ fn a_real_turn_films_its_done_tail_and_hands_back_at_end_of_action() {
         category: DONE_CATEGORY_ATTACK,
         party_slot: true,
         target_dead: false,
+        ..DoneBandInputs::default()
     };
     let mut slot: Option<BattleCamera> = None;
     let mut frames = 0u64;
@@ -2281,6 +2302,7 @@ fn a_gone_target_takes_the_stand_off_arm() {
         live: false,
         facing: (562 + 0x800) & 0xFFF,
         node_gone: true,
+        ..PostActionTarget::default()
     });
     let (pose, raw_z) = cam.action_end_pose();
     assert_eq!(raw_z, PARTY_BODY_RADIUS * 5 / 2);
@@ -2416,4 +2438,153 @@ fn the_cursor_shot_glides_in_and_hands_back_to_the_far_framing() {
     run(&mut slot, BattleCamPhase::Menu, None, 7);
     let p = slot.as_ref().unwrap().pose();
     assert_eq!(p.pitch, 32.0, "back on the far framing's pitch");
+}
+
+/// The strike loop `0x1E` arms case 7 on every pass with no fork
+/// (`0x801E36E4..0x801E36EC`); `0x1F` / `0x20` fork to case 8 when the
+/// target is on its knockdown / get-up, and `0x20` alone also when a party
+/// seat faces a target in a death clip.
+#[test]
+fn the_post_strike_band_forks_on_the_target_reaction() {
+    let plain = DoneBandInputs {
+        category: DONE_CATEGORY_ATTACK,
+        party_slot: true,
+        ..DoneBandInputs::default()
+    };
+    let knocked = DoneBandInputs {
+        target_knocked: true,
+        ..plain
+    };
+    let dying = DoneBandInputs {
+        target_death_clip: true,
+        ..plain
+    };
+    let phase = |s, d| phase_for_state(false, false, s, d);
+    assert_eq!(phase(0x1E, knocked), BattleCamPhase::Recover);
+    assert_eq!(phase(0x1E, dying), BattleCamPhase::Recover);
+    for s in [0x1F, 0x20] {
+        assert_eq!(phase(s, plain), BattleCamPhase::Recover);
+        assert_eq!(phase(s, knocked), BattleCamPhase::ActionEnd);
+    }
+    assert_eq!(phase(0x1F, dying), BattleCamPhase::Recover);
+    assert_eq!(phase(0x20, dying), BattleCamPhase::ActionEnd);
+    let monster_dying = DoneBandInputs {
+        party_slot: false,
+        ..dying
+    };
+    assert_eq!(phase(0x20, monster_dying), BattleCamPhase::Recover);
+}
+
+/// **Capture pin for case 8's live-target arm.** `battle_melee_hit_spark`
+/// (`ctx[7] == 0x20`, style `0`, `ctx[+0x6D0] = 0xC00`) holds Vahn's swing on
+/// monster `0x0A`, which is on its knockdown (`+0x1D9 = +0x1F1 = 3`) at
+/// display height `+0x3E = -461`. Its tween table targets `TR.z 3440` -
+/// `prescale(7 * 0xC00 / 10)` exactly - and `TR.y 1550`, the arm's
+/// `-7y/2` over the height the table was built from a few frames earlier
+/// (`-443`); the capture's own height gives `1613`.
+#[test]
+fn the_live_target_arm_reads_the_melee_hit_spark_capture() {
+    let target = PostActionTarget {
+        live: true,
+        monster_id: 0x0A,
+        animating: true,
+        display_y: -461.0,
+        ..PostActionTarget::default()
+    };
+    let mut pose = BattleCamPose {
+        pitch: 0.0,
+        ..BOOT_POSE
+    };
+    let raw_z = apply_live_target_reframe(&mut pose, target, 0xC00, BOOT_POSE);
+    assert_eq!(raw_z, 0x866);
+    assert_eq!(pose.tr[2], 3440.0);
+    assert_eq!(pose.tr[1], 1613.0);
+    assert_eq!(pose.pitch, 0.0);
+    let built = PostActionTarget {
+        display_y: -443.0,
+        ..target
+    };
+    let mut pose = BattleCamPose {
+        pitch: 0.0,
+        ..BOOT_POSE
+    };
+    apply_live_target_reframe(&mut pose, built, 0xC00, BOOT_POSE);
+    assert_eq!(pose.tr[1], 1550.0);
+    // A grounded target floors at `0x300` and tilts the pitch by a quarter
+    // of the shortfall; an idle one holds the live camera's TR.y / pitch.
+    let mut low = BattleCamPose {
+        pitch: 0.0,
+        ..BOOT_POSE
+    };
+    let grounded = PostActionTarget {
+        display_y: -100.0,
+        ..target
+    };
+    apply_live_target_reframe(&mut low, grounded, 0xC00, BOOT_POSE);
+    assert_eq!(low.tr[1], 0x300 as f32);
+    assert_eq!(low.pitch, ((0x300 - 350) >> 2) as f32);
+    let mut held = BattleCamPose {
+        pitch: 0.0,
+        ..BOOT_POSE
+    };
+    let idle = PostActionTarget {
+        animating: false,
+        ..target
+    };
+    let live = BattleCamPose {
+        pitch: 77.0,
+        tr: [0.0, 999.0, 1.0],
+        ..BOOT_POSE
+    };
+    apply_live_target_reframe(&mut held, idle, 0xC00, live);
+    assert_eq!((held.pitch, held.tr[1]), (77.0, 999.0));
+    // The monster-id ladder.
+    assert_eq!(live_target_depth(0xB4, 0xC00), 9 * 0xC00 / 10);
+    assert_eq!(live_target_depth(0xA7, 0xC00), 0xC00);
+    assert_eq!(live_target_depth(0x20, 0xC00), 8 * 0xC00 / 10);
+}
+
+/// **Capture pin for the post-strike death re-frame.**
+/// `player_steal_skeleton_banner` (`ctx[7] == 0x20`, style `2`, death ramp
+/// `ctx[+0x270]` at its `0xC8` cap) holds Vahn over a skeleton that is on its
+/// knockdown (`+0x1D9 = +0x1F1 = 5`) at HP `0`, still airborne (`+0x36 =
+/// 183`), facing `2595`, with the per-action coin `ctx[+0x26D] = 0`. Its tween
+/// table targets pitch `84`, yaw `1757`, `TR (0, 568, 3635)` - case 8's death
+/// re-frame at the cap - and `ctx[+0x6DA]` reads the `0` the arm stores.
+#[test]
+fn a_kill_on_the_return_reads_the_steal_banner_capture() {
+    let done = DoneBandInputs {
+        category: DONE_CATEGORY_ATTACK,
+        party_slot: true,
+        target_dead: true,
+        target_knocked: true,
+        ..DoneBandInputs::default()
+    };
+    assert_eq!(
+        phase_for_state(false, false, 0x20, done),
+        BattleCamPhase::ActionEnd
+    );
+    let mut cam = BattleCamera::new(BattleCamPhase::ActionEnd, 0);
+    cam.set_actor(BattleCamActor {
+        facing: 548,
+        world: [279.0, 0.0, 245.0],
+        height: None,
+    });
+    cam.action.style = 2;
+    cam.action.depth_raw = 0xC00;
+    cam.action_yaw = 0x218;
+    cam.attack.ctx.death_ramp = 0xC8;
+    cam.target = Some(PostActionTarget {
+        world: [957.0, 183.0, 857.0],
+        live: false,
+        facing: 2595,
+        ..PostActionTarget::default()
+    });
+    let (pose, raw_z) = cam.action_end_pose();
+    assert_eq!(pose.pitch, 84.0);
+    assert_eq!(pose.yaw, 1757.0);
+    assert_eq!(pose.tr, [0.0, 568.0, 3635.0]);
+    assert_eq!(raw_z, 0xC00 - 0x320);
+    assert_eq!(pose.focus, [957.0, 0.0, 857.0]);
+    assert_eq!(cam.action_yaw, 0);
 }

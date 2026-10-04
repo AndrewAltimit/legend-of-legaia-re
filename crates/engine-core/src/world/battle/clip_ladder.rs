@@ -176,6 +176,26 @@ impl World {
             .map_or(0, |(_, id, _)| id as u8)
     }
 
+    /// Actor `slot`'s current anim `+0x1D9`: the reaction channel's entry
+    /// while a reaction plays, else the action channel's id.
+    pub fn battle_current_anim(&self, slot: usize) -> u8 {
+        self.actors.get(slot).map_or(0, |a| {
+            a.battle_reaction_entry.unwrap_or(a.battle.current_anim)
+        })
+    }
+
+    /// Whether actor `slot` is on its knockdown `+0x1F1`, or on its get-up
+    /// `+0x1F2` when that is non-zero - the test the post-strike arms
+    /// `0x1F` / `0x20` fork the camera to case `8` on
+    /// (`0x801E3A88..0x801E3AC4` / `0x801E5660..0x801E5684`).
+    pub fn battle_on_knockdown(&self, slot: usize) -> bool {
+        let Some(map) = self.battle_reaction_map(slot) else {
+            return false;
+        };
+        let cur = self.battle_current_anim(slot);
+        cur == map[2] || (cur == map[3] && cur != 0)
+    }
+
     /// Actor `slot`'s `+0x1EF..+0x1F3` reaction map; `None` without clips.
     pub(in crate::world) fn battle_reaction_map(&self, slot: usize) -> Option<[u8; 5]> {
         let actor = self.actors.get(slot)?;

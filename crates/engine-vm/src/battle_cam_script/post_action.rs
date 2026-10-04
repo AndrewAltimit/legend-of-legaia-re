@@ -36,8 +36,27 @@ pub const POST_ACTION_STEPS: u32 = 6;
 /// its `0x801D6870` arm, which frames the actor.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct PostActionTarget {
-    /// The framed target's world position (retail `actor[+0x3C/+0x3E/+0x40]`).
+    /// The framed target's position as both cases read it: X / Z from the
+    /// body pair `+0x3C` / `+0x40` (`lh v1,0x3c(v1)` at `0x801D6620`,
+    /// `lhu v0,0x3c(v1)` at `0x801D683C`) and Y from the live height `+0x36`
+    /// (`lh v1,0x36(v1)` at `0x801D6650`, the case-7 midpoint's only Y and
+    /// the death re-frame's falling test).
     pub world: [f32; 3],
+    /// The display height `+0x3E` - the live `+0x36` raised by the pose
+    /// centroid - which case 8's live-target arm sizes `TR.y` from.
+    pub display_y: f32,
+    /// The target seat is a party one (`actor[+0x1DD] < 3`,
+    /// `0x801D6C04`): the live-target arm's two halves.
+    pub party: bool,
+    /// A party target's per-character height `0x801F4D2C[char - 1]`, the
+    /// live-target arm's `TR.y` when the target is not animating.
+    pub height: Option<f32>,
+    /// A monster target's formation id `0x8007BD0C[slot - 3]`, which scales
+    /// the live-target arm's depth ([`live_target_depth`]).
+    pub monster_id: u8,
+    /// The target's current anim `+0x1D9` is non-zero (`0x801D6C2C` /
+    /// `0x801D6DDC`).
+    pub animating: bool,
     /// `actor[+0x1DD] < 8 && actor_table[target][+4] != 0` - case 8's test for
     /// "the target slot is real and its node is live" (`0x801D6808`,
     /// `0x801D682C`). False takes the arm that frames the actor instead.
@@ -199,7 +218,10 @@ pub fn action_end_framing(
         pitch += ACTION_STYLE_PITCH;
     }
     let framed = match target {
-        Some(t) if t.live => t.world,
+        // The focus fork tests the target's node word `+0x4`
+        // (`0x801D682C`), not its HP: a target killed on the return is
+        // still drawn, and the death re-frame looks at it.
+        Some(t) if t.live || !t.node_gone => t.world,
         _ => actor.world,
     };
     BattleCamPose {
@@ -210,6 +232,108 @@ pub fn action_end_framing(
         // is pinned to the stage floor, not to the framed actor's own Y.
         focus: [framed[0], 0.0, framed[2]],
     }
+}
+
+/// A monster target's depth in case 8's live-target arm
+/// (`0x801D6D1C..0x801D6DBC`), from the formation id of the framed seat:
+/// `0xB4` pulls out to `9z/10`, `0xA2` / `0xA7` keep `z`, `0x1F..=0x21` take
+/// `8z/10` and every other monster `7z/10`. The divides are retail's
+/// `0x66666667` multiply-high, which truncates toward zero.
+pub fn live_target_depth(monster_id: u8, depth_raw: i32) -> i32 {
+    let z = i32::from(depth_raw as i16);
+    let tenths = |n: i32| (n * z) / 10;
+    match monster_id {
+        0xB4 => tenths(9),
+        0xA2 | 0xA7 => z,
+        0x1F..=0x21 => tenths(8),
+        _ => tenths(7),
+    }
+}
+
+/// Raw TR.z of the live-target arm on a party target (`li v0,0x600` at
+/// `0x801D6C0C`).
+pub const LIVE_PARTY_TARGET_TR_Z: i32 = 0x600;
+/// The live-target arm's `TR.y` floor on a party target (`slti v0,v1,0x281`).
+pub const LIVE_PARTY_TARGET_FLOOR: i32 = 0x280;
+/// The live-target arm's `TR.y` floor on a monster target (`slti v0,v1,0x301`).
+pub const LIVE_MONSTER_TARGET_FLOOR: i32 = 0x300;
+
+/// Case 8's **live-target** arm (`0x801D6BFC..0x801D6E80`): the end-of-action
+/// shot of a target that is still standing, re-aimed by how the target
+/// stands. Applied over [`action_end_framing`]'s base; `live` is the camera's
+/// own pose (`_DAT_8007B790` / `_DAT_800840BC`), whose pitch and `TR.y` the
+/// arm holds when a monster target is not animating. Returns the raw TR.z.
+///
+/// ```text
+/// party target (slot < 3):   TR.z = 0x600
+///   animating:   TR.y = pitch == 0 ? -4 * y : -7 * y / 2      (y = +0x3E)
+///   else:        TR.y = height[char] - (pitch == 0 ? 0x140 : 0xC0)
+///   floor 0x280: TR.y <= 0x280 -> pitch += (0x280 - TR.y) >> 2, TR.y = 0x280
+/// monster target:            TR.z = live_target_depth(id, ctx[+0x6D0])
+///   animating or _DAT_8007BD84 != 0:
+///                TR.y = pitch == 0 ? -7 * y / 2 : -3 * y
+///                floor 0x300 (same law)
+///   else:        TR.y, pitch = the live camera's
+/// ```
+///
+/// The pitch tested is the staged one, after the `ctx[+0xD]` style tweak.
+/// `_DAT_8007BD84` is the Mystic Shield effect handle, which this arm does
+/// not carry; it reads null outside Cort's fight, so the port takes the
+/// animating test alone.
+///
+/// The `battle_melee_hit_spark` capture (`ctx[7] == 0x20`, Vahn's swing on a
+/// monster held on its knockdown) reads this arm's tween targets: raw depth
+/// `7 * 0xC00 / 10 = 0x866` (`TR.z 3440`) and `TR.y` within a few units of
+/// `-7 * y / 2` over the target's display height.
+///
+/// PORT: FUN_801D5854 (case 8's live-target arm)
+pub fn apply_live_target_reframe(
+    pose: &mut BattleCamPose,
+    t: PostActionTarget,
+    depth_raw: i32,
+    live: BattleCamPose,
+) -> i32 {
+    let y = i32::from(t.display_y as i16);
+    let pitch = pose.pitch as i32;
+    let half = |v: i32| i32::from(v as i16);
+    let floored = |pose: &mut BattleCamPose, tr_y: i32, floor: i32| {
+        if tr_y <= floor {
+            pose.pitch = half(pose.pitch as i32 + ((floor - tr_y) >> 2)) as f32;
+            pose.tr[1] = floor as f32;
+        } else {
+            pose.tr[1] = tr_y as f32;
+        }
+    };
+    if t.party {
+        let raw_z = LIVE_PARTY_TARGET_TR_Z;
+        pose.tr[2] = prescale_tr_z(raw_z);
+        let tr_y = if t.animating {
+            if pitch == 0 {
+                half(-4 * y)
+            } else {
+                half((-7 * y) / 2)
+            }
+        } else {
+            let h = t.height.unwrap_or(SUBMENU_HEIGHT_FALLBACK) as i32;
+            half(h - if pitch == 0 { 0x140 } else { 0xC0 })
+        };
+        floored(pose, tr_y, LIVE_PARTY_TARGET_FLOOR);
+        return raw_z;
+    }
+    let raw_z = live_target_depth(t.monster_id, depth_raw);
+    pose.tr[2] = prescale_tr_z(raw_z);
+    if t.animating {
+        let tr_y = if pitch == 0 {
+            half((-7 * y) / 2)
+        } else {
+            half(-3 * y)
+        };
+        floored(pose, tr_y, LIVE_MONSTER_TARGET_FLOOR);
+    } else {
+        pose.tr[1] = live.tr[1];
+        pose.pitch = live.pitch;
+    }
+    raw_z
 }
 
 /// `TR.y` the death re-frame seeds before the ramp (`li v0,0x300`).

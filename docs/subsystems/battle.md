@@ -1553,7 +1553,8 @@ inside whichever combatant stood there - and is recorded in
 [re-do-not-re-walk.md](../reference/re-do-not-re-walk.md#the-case-6-party-arm-is-the-battle-over-framing).
 **Which states hand it the camera is a band, not a byte list.** `FUN_801E295C`
 arms per band: the setup band (`0x00`, `0x0B`) arms nothing and runs the
-prologue orbit, the seed (`0x0C`) and action (`0x14..=0x48`) bands arm case
+prologue orbit, the seed (`0x0C`) and action (`0x14..=0x48`, less the strike band
+`0x1E..=0x20`) bands arm case
 `6`, the Run band (`0x64..=0x67`) arms case `9` plus the orbit itself, and the
 Done band (`0x50..=0x52`) arms case `6`/`8` **per category** under a
 **bounded** tail - retail seeds `ctx[+0x6D8] = 0x3C` in the `0x50` arm and
@@ -1599,8 +1600,9 @@ writer alone.
 
 **Case 6 is re-armed every pass, so the framing chases the actor.** Each of
 the action states calls `FUN_801D5854(actor, 6)` before it does anything else
-- `0x0C`, `0x14`, `0x1F`, `0x20`, `0x32`, `0x37`, `0x3C`..`0x40`, `0x46`,
-`0x47` - so the three tween-target vectors are rebuilt out of the live actor
+- `0x0C`, `0x14`..`0x19`, `0x32`, `0x37`, `0x3C`..`0x40`, `0x46`,
+`0x47` (the strike band `0x1E`..`0x20` arms cases 7 / 8 instead,
+[below](#the-post-strike-two-shot-fun_801d5854-cases-7-and-8)) - so the three tween-target vectors are rebuilt out of the live actor
 record each display frame and `FUN_801D829C` re-emits the step table. The
 target is not frozen at the state change, and the difference is not cosmetic:
 `0x14` stages the approach walk and `0x19` runs it, so a party member crosses
@@ -1714,22 +1716,54 @@ body lands. Engine side the ramp lives on
 `battle_attack_camera::AttackCamCtx::death_ramp`.
 
 What stays out of the port is the counter-attack fork above it (`ctx[+0x287]` /
-`ctx[+0x288]` / `_DAT_8007BD0D` at `0x801D6AC8`) and the live-target arm's own
-re-aim at `0x801D6BFC` - those read channels the engine's battle actor does not
-carry.
+`ctx[+0x288]` / `_DAT_8007BD0D` at `0x801D6AC8`), which reads channels the
+engine's battle actor does not carry. Case 8's focus fork tests the target's
+node word `+0x4` (`0x801D682C`), not its HP, so a target killed but still drawn
+stays framed; both cases read the body pair `+0x3C` / `+0x40` for X / Z (the
+live `+0x36` for case 7's Y), not the live pair case 6 reads.
+
+#### The live-target arm (`0x801D6BFC`)
+
+A target still standing takes its own re-aim, sized by how it stands:
+
+| target | `TR.z` (raw) | `TR.y` | floor |
+|---|---|---|---|
+| party seat, animating (`+0x1D9 != 0`) | `0x600` | `-4y` level, `-7y/2` tilted | `0x280` |
+| party seat, idle | `0x600` | `height[char] - 0x140` level, `- 0xC0` tilted | `0x280` |
+| monster, animating (or `_DAT_8007BD84` set) | by formation id: `0xB4` `9z/10`, `0xA2` / `0xA7` `z`, `0x1F..=0x21` `8z/10`, else `7z/10` | `-7y/2` level, `-3y` tilted | `0x300` |
+| monster, idle | as above | the live camera's `TR.y` and pitch, held | - |
+
+`y` is the target's display height `+0x3E`, `z` is `ctx[+0x6D0]`, tilted
+is a non-zero staged pitch (the style-2/3 tweak), and a floor raises `TR.y` to
+itself while adding a quarter of the shortfall to the pitch. The
+`battle_melee_hit_spark` capture (a swing on a monster held on its knockdown)
+reads it: tween target `TR.z` `prescale(0x866)` = `3440` exactly, `TR.y`
+within a few units of `-7y/2`. Engine: `battle_cam_script::apply_live_target_reframe`.
 
 Which states arm them is `FUN_801E295C`'s own fork, not an inference. The
-attack chain's recovery-wait and return (`0x1F`, `0x20`) share one arm at
-`0x801E5660..0x801E56C0` whose **default** is `li a1,0x7`; it takes mode `8`
-only when the target's live anim id matches its counter-trigger bytes
-(`s8[+0x1F1]` / `+0x1F2`) or a party slot faces a target already in a death
-clip. The Done cleanup (`0x50`) forks on the action category at
+strike loop `0x1E` (jump-table entry `0x801E35F0`) arms mode `7` on every
+pass with no fork (`li a1,0x7` at `0x801E36EC`). The recovery wait `0x1F`
+(`0x801E3A88`) and the return `0x20` (`0x801E54EC`, fork at
+`0x801E5660..0x801E56C0`) default to `li a1,0x7` and take mode `8` when the
+target's current anim `+0x1D9` is its knockdown `+0x1F1` or its non-zero
+get-up `+0x1F2`; `0x20` alone also takes `8` when a party slot faces a
+target in a death clip (anim `7` / `8`). `player_steal_skeleton_pre`
+(`0x1E`) reads case 7's tween targets, `player_steal_skeleton_banner` (`0x20`,
+the skeleton on its knockdown at HP `0`) case 8's death re-frame at the ramp
+cap.
+
+The per-art attack camera `FUN_801D71B8` hangs off `FUN_801D5854`'s shared
+tail, so it overrides cases 7 and 8 as it does case 6 - which matters now
+that the strike loop, where most art swings are filmed, is case 7. Its first
+test is the target's live HP (`0x801D71E8..0x801D7208`), so a death re-frame
+is never overridden. The Done cleanup (`0x50`) forks on the action category at
 `0x801E5FC0..0x801E6018` - `actor[+0x1DE] == 3` (Attack) and "party slot whose
 target's live-HP halfword reached zero" branch to `li a1,0x8`, everything else
 to `li a1,0x6` - and `0x52` / `0xFD` arm `8` unconditionally (`0x801E5F74`).
 
 Engine side: `battle_cam_script::recover_framing` / `action_end_framing`, armed
-by the `Recover` / `ActionEnd` phases. `0x51` is deliberately left idle - see
+by the `Recover` / `ActionEnd` phases (`post_strike_phase` runs the fork, on
+`World::battle_on_knockdown` / `battle_current_anim`). `0x51` is deliberately left idle - see
 the Done-band note above; the port's residency there is unbounded where
 retail's is `ctx[+0x6D8] = 0x3C` frames.
 
