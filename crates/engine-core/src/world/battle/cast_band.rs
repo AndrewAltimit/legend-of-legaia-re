@@ -85,6 +85,15 @@ pub const SUMMON_STRIKE_BEHIND: i16 = 1064;
 const SUMMON_IDLE_FRAMES: u16 = 30;
 /// Walk speed, world units per frame.
 const SUMMON_WALK_STEP: i16 = 12;
+/// A directed walk arm's creature speed, world units per display frame,
+/// along its heading onto the victim. Measured off `gimard_burning_attack`
+/// (PROT 0903 arm 11): the yaw base has swung `0x5D9 - 0x200 = 985` at
+/// `6 * scalar` (`48`) a display frame - 20.5 frames into the walk - and the
+/// creature stands 670 units on from its arm-3 seat (`z -2276 -> -1606`),
+/// `32.7` a frame. The walk is the clip's root motion, which the engine does
+/// not integrate for the creature, so the speed is carried as the measured
+/// constant.
+const SUMMON_DIRECTED_WALK_STEP: i32 = 32;
 /// Frames the creature stands at the strike point after the outcome.
 const SUMMON_LINGER_FRAMES: u16 = 40;
 /// A host with no creature to seat (a headless driver) still owes the
@@ -1157,13 +1166,32 @@ impl World {
             return true;
         }
         let (vx, vz) = self.battle_seat_of(usize::from(victim));
-        let y = a.move_state.world_y;
         // `FUN_80019B28(victim, creature) + 0x800` (`0x801F73A4..0x801F73C4`).
         let bearing = vm::battle_action::bearing_12bit_approx(vz, vx, pos.1, pos.0);
+        let facing = bearing.wrapping_add(0x800) & 0xFFF;
         if let Some(a) = self.actors.get_mut(usize::from(slot)) {
-            a.battle.facing_angle = bearing.wrapping_add(0x800) & 0xFFF;
+            a.battle.facing_angle = facing;
+            if a.battle.queued_anim != 1 {
+                a.battle.queued_anim = 1;
+            }
+            let ms = &mut a.move_state;
+            let (dx, dz) = (
+                i32::from(vx) - i32::from(ms.world_x),
+                i32::from(vz) - i32::from(ms.world_z),
+            );
+            if dx.abs() + dz.abs() <= SUMMON_DIRECTED_WALK_STEP {
+                ms.world_x = vx;
+                ms.world_z = vz;
+            } else {
+                let (sin, cos) = vm::battle_action::motion::trig12(facing);
+                ms.world_x = (i32::from(ms.world_x)
+                    + ((i32::from(sin) * SUMMON_DIRECTED_WALK_STEP) >> 12))
+                    as i16;
+                ms.world_z = (i32::from(ms.world_z)
+                    + ((i32::from(cos) * SUMMON_DIRECTED_WALK_STEP) >> 12))
+                    as i16;
+            }
         }
-        self.summon_walk_step(usize::from(slot), [vx, y, vz]);
         let Some(a) = self.actors.get(usize::from(slot)) else {
             return true;
         };
