@@ -659,11 +659,11 @@ pub const SPAWNED_CONTEXT_SLOTS: usize = 8;
 /// [`World::step_cutscene_timeline`] and
 /// [`crate::cutscene_timeline::ChannelWait`]).
 ///
-/// Retail's halt-acquire / state-resume protocol parks the timeline at the
-/// flag-test until the poked channel raises the completion bit - normally a
-/// handful of frames while the channel's own script plays its beat and sets the
-/// flag (`0x31 CFLAG_SET`). This bound caps that wait so a channel our port
-/// cannot advance to its flag-set can't stall the timeline: on expiry the
+/// Retail's op-`0x33` arm parks the timeline at the flag-test while the poked
+/// channel's bit is set and releases it once the bit is clear - normally a
+/// handful of frames while the channel's own script plays its beat. This
+/// bound caps that wait so a channel our port never clears can't stall the
+/// timeline: on expiry the
 /// timeline falls back to the by-width step-past (the pre-handshake behaviour),
 /// keeping the prologue flowing. Sized to a couple of beat-lengths, well under
 /// the [`CUTSCENE_TIMELINE_MAX_FRAMES`] / [`PROLOGUE_TIMELINE_MAX_FRAMES`] caps

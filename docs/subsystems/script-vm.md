@@ -445,7 +445,7 @@ The cleanest group - three separate 1-bit-flag banks each with set / clear / tes
 | 0x30 | `GFLAG_TST` | `[30, bit]` | If `_DAT_1F800394 & (1 << bit)` is 0, return; else continue. |
 | 0x31 | `CFLAG_SET` | `[31, bit]` | `ctx[+0x10] \|= 1 << (bit & 0x1F)`. Ctx flag word (32 bits). **Bit 8 special case**: copies `ctx[+0x26] → ctx[+0x5A]`, returns immediately. |
 | 0x32 | `CFLAG_CLR` | `[32, bit]` | `ctx[+0x10] &= ~(1 << (bit & 0x1F))`. The bit-0x400 form is the only opcode that bypasses the dispatch-prelude halt check on extended opcodes. |
-| 0x33 | `CFLAG_TST` | `[33, bit]` | If `ctx[+0x10] & (1 << bit)` is 0, return; else continue. |
+| 0x33 | `CFLAG_TST` | `[33, bit]` | Busy-wait: hold the PC while `ctx[+0x10] & (1 << bit)` is set, advance once it is clear (`0x801DEE2C..0x801DEE54`: `s8 += 2`, `beq` on a zero mask takes it, a set bit restores the entry PC `s4`). |
 
 The three banks line up with conventional event-script roles:
 - **`ctx[+0x62]`** - per-script local flags (sub-routine state, conditional dialog branches).

@@ -103,23 +103,24 @@ pub struct NarrationSite {
     pub kind: legaia_asset::cutscene_text::NarrationKind,
 }
 
-/// A cross-context channel-completion wait the timeline is PARKED on.
+/// A cross-context channel wait the timeline is PARKED on.
 ///
 /// The retail opdeene timeline halt-acquires its vignette channels (a `4C 85`
-/// freeze sweep), pokes each beat by beat, then waits on a per-channel
-/// completion flag via `B3 <id> <bit>` = op `0x33` (CFLAG_TST) with the
-/// cross-context (`0x80`) bit set, targeting the channel's `ctx[+0x50]` id and
-/// testing `ctx.flags & (1 << bit)`. When that bit is clear the caller HALTS at
-/// the flag-test PC - the halt-acquire / state-resume handshake - and only
-/// resumes once the poked channel raises the bit (its own placement script
-/// runs `0x31 CFLAG_SET` when its move/anim beat completes).
+/// freeze sweep), pokes each beat by beat, then waits on a per-channel flag
+/// via `B3 <id> <bit>` = op `0x33` (CFLAG_TST) with the cross-context (`0x80`)
+/// bit set, targeting the channel's `ctx[+0x50]` id and testing
+/// `ctx.flags & (1 << bit)`. The arm holds the caller at the flag-test PC
+/// **while the bit is SET** and advances once it is clear: it bumps `s8` by 2
+/// at `0x801DEE2C`, takes that advanced PC on a zero mask (`beq` at
+/// `0x801DEE44`) and otherwise restores the entry PC `s4` (`0x801DEE4C`). So
+/// the wait is on a busy bit dropping, not on a completion bit rising.
 ///
 /// [`crate::world::World::step_cutscene_timeline`] models that park with this
 /// record instead of stepping past the flag-test by instruction width: it
 /// leaves the PC on the op and, each subsequent tick, re-tests the awaited
-/// channel's flag, resuming past the op only once the completion bit is set
-/// (bounded by [`crate::world::CHANNEL_WAIT_PARK_TIMEOUT`] so a channel our
-/// port can't advance to its flag-set falls back to the by-width step-past).
+/// channel's flag, resuming past the op once the bit is clear (bounded by
+/// [`crate::world::CHANNEL_WAIT_PARK_TIMEOUT`] so a channel our port never
+/// clears falls back to the by-width step-past).
 ///
 /// Bit 10 (`0x400`, the halt/busy bit the acquire sweep toggles) is excluded -
 /// a `B3 <id> 0A` is a suspension *verify*, not a completion wait, and keeps
@@ -221,10 +222,10 @@ pub struct CutsceneTimeline {
     /// looping as a *parallel* context; the engine's modal timeline
     /// completes there instead so control returns to the player.
     pub visited: Vec<bool>,
-    /// `Some` while the timeline is PARKED on a cross-context channel-completion
+    /// `Some` while the timeline is PARKED on a cross-context channel
     /// handshake (`B3 <id> <bit>` CFLAG_TST); see [`ChannelWait`]. The stepper
-    /// leaves the PC on the flag-test op and resumes past it only once the
-    /// awaited channel raises the completion bit (or the park times out).
+    /// leaves the PC on the flag-test op and resumes past it once the awaited
+    /// channel's bit is clear (or the park times out).
     pub channel_wait: Option<ChannelWait>,
     /// Frames remaining on an in-flight **player-channel move**: armed when
     /// the timeline executes an ExecMove against the player-anchor target

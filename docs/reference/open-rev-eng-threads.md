@@ -113,6 +113,42 @@ cheapest place to look for a claim that is still wrong.
 
 | Thread | Status | What would close it |
 |---|---|---|
+| Why `opdeene` runs long after its `apply 4800` camera move | `partial` | Clip lengths and loop behaviour for timeline-poked NPC clips checked against retail, then the NPC-turn and clip-wait models landed together. [details ↓](#opdeene-runs-long-after-its-apply-4800-camera-move) |
+
+### `opdeene` runs long after its `apply 4800` camera move
+
+*Status:* `partial`, evidence grade `disassembly` + `capture`.
+
+Aligned against the frame-tagged recomp camera trace of the zero-input
+opening, the engine reaches `opdeene`'s `apply 4800` beat about on time and
+then takes roughly 2580 ticks to the scene change where retail takes about
+2345; the leg as a whole runs long. Two mechanisms are pinned, and neither is
+in the engine yet.
+
+- **NPC turns do not park the record.** The op-`0x38` budget arm advances by
+  3 for every target (`li s7,3` in the delay slot at `0x801DEEFC`) and parks
+  the caller only for the player (`0x801DEF04..0x801DEF14`), exactly as the
+  op-`0x47` walk arm does. The engine parks the timeline on every budgeted
+  NPC turn, about twenty of them in `opdeene`. Letting them run brings the
+  leg from 9.5 % to 2.8 % long - but it also makes the engine reach the
+  retail-captured PC `0x6F6` of `new_game_cutscene_intro_a` about 218 frames
+  early against the dolly, so the retail-compare state drops (camera 0.962,
+  flags 0.800), and the change is held back.
+- **NPC clip end-latch spins are stepped past.** `AD <ch> 08` after an
+  `A2 <ch> <clip>` waits on the clip's end latch (`FUN_800204F8`); the
+  timeline steps every `0x2D` past by width, so `0x68F`..`0x6D5` take no time
+  where retail waits. Binding the channel's clip cursor and holding the spin
+  closes most of the 218-frame gap at `0x6F6`, but on its own it lengthens
+  `opdeene` to 12 % and costs three full-game-ladder segments
+  (`bio_castle`, `noaru_valley`, `zeto_dungeon`) and four retail-compare
+  scores - so the cursor lengths or loop behaviour on this path are not
+  retail's yet.
+
+What closes it: pin the timeline-poked NPC clip lengths against retail (a
+per-frame capture of `+0x62` / `+0x68` on a vignette channel across one
+`A2` / `AD 08` pair), then land both changes together and re-measure the
+pacing oracle, the ladder and the retail-compare corpus.
+
 
 **Who sets a field NPC's moving-class bit** closed by disassembly and capture:
 the placement seater `FUN_8003A1E4` ORs `0x20000` into every partition-1
