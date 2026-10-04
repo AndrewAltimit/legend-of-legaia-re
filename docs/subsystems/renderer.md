@@ -2577,7 +2577,12 @@ determinism, the wake, the refill, the teleport rule and the recentre.
 reads as mist or night - `town0b` (Rim Elm under the Mist, a night scene),
 `dolk`, `vell`, `vozz`, `keikoku` - and a default style for any other field
 scene whose retail fog pool is live (gate `_DAT_8007B854` raised with an
-enabled section-4 region). A battle keeps the style of the field scene it was
+enabled section-4 region). Following the live pool is what keeps the bank off
+where the story has lifted the Mist: the region enables are rewritten from
+the area's Mist-lift flag at every entry, so a thawed town such as `bubu1`
+raises no bank once its flag is set - and a picker entry stages that flag
+([field ambient fx](field-ambient-fx.md#the-fog-pool-spawner-records-render-pass)).
+A battle keeps the style of the field scene it was
 entered from and runs its own grid in raw battle-stage units, centred on the
 arena. A new scene label starts a new bank; a style eases in and out over about
 a second and a half.

@@ -313,6 +313,31 @@ pub struct World {
     pub carriers: FieldCarrierState,
 }
 
+/// The story-twin scenes a free-roam picker entry stages at their canonical
+/// visit, with the system flags each one seeds
+/// ([`World::seed_free_roam_story_baseline`]). A twin is a scene the game
+/// only enters once a story event has run - the event's flag is part of what
+/// the scene *is*, so a picker visit without it shows a world no playthrough
+/// can reach.
+///
+/// - `town0c`: post-Mist Rim Elm - `0x147` seats the blown-gate rubble and
+///   `0x141` cuts the doorway open (the gate script tests both).
+/// - `bubu1` / `nilboa2`: thawed Buma and its Nilboa twin. `map03`'s doors
+///   pick them over `bubu2` / `nilboa` only while `0x378` is set (`P2[2]` /
+///   `P2[3]`, `SysFlag.Test 0x378`), and the thaw that leads into them sets
+///   `0x51F` (`P2[12]`, its only setter, before its `SceneChange` into
+///   `bubu1`) and `0x378` (`P2[15]`, before its `SceneChange` into
+///   `nilboa2`). `0x51F` is also the flag the Mist's fog-pool regions in
+///   both scenes key on (MAN section 4, `+9..+10`; set = off under op
+///   `4C C1`) - every region of `bubu1`, the scene-wide one of `nilboa2` -
+///   so a cold entry drew the frozen town's Mist over the thawed one. Every
+///   retail card save carries the two flags together.
+pub const FREE_ROAM_TWIN_SEEDS: &[(&str, &[u16])] = &[
+    ("town0c", &[0x147, 0x141]),
+    ("bubu1", &[0x378, 0x51F]),
+    ("nilboa2", &[0x378, 0x51F]),
+];
+
 impl Default for World {
     fn default() -> Self {
         Self::new()
@@ -439,8 +464,10 @@ impl World {
     /// - **Story-twin scenes present the wrong world event.** `town0c` is
     ///   post-Mist Rim Elm: flag `0x147` seats the blown-gate rock debris
     ///   and parks the intact wall/doorway pieces (the same records exist in
-    ///   `town01` - the flag decides, not the scene). Curated per-scene
-    ///   seeds below stage each twin at its canonical visit.
+    ///   `town01` - the flag decides, not the scene). Thawed Buma (`bubu1`)
+    ///   drew the frozen town's Mist: its fog-pool regions key on the thaw
+    ///   flag. The curated per-scene seeds in [`FREE_ROAM_TWIN_SEEDS`] stage
+    ///   each twin at its canonical visit.
     ///
     /// # The south gate takes TWO flags, not one
     ///
@@ -474,15 +501,17 @@ impl World {
     pub fn seed_free_roam_story_baseline(&mut self, scene: &str) {
         self.field_vm.free_roam_staging = true;
         self.field_vm.free_roam_entry_frame = self.clock.display_frames;
-        // Managed story-event flags (reset-then-seed).
-        self.system_flag_clear(0x147);
-        self.system_flag_clear(0x141);
-        if scene == "town0c" {
-            // Juggernaut blew the south gate: rocks out, intact door parked,
-            // and - with the second half of the gate script's `and` - the
-            // doorway itself actually cut open.
-            self.system_flag_set(0x147);
-            self.system_flag_set(0x141);
+        // Managed story-event flags (reset-then-seed): every flag any twin
+        // seeds is cleared first, then the picked scene's own set is raised.
+        for &(_, flags) in FREE_ROAM_TWIN_SEEDS {
+            for &f in flags {
+                self.system_flag_clear(f);
+            }
+        }
+        if let Some((_, flags)) = FREE_ROAM_TWIN_SEEDS.iter().find(|(s, _)| *s == scene) {
+            for &f in *flags {
+                self.system_flag_set(f);
+            }
         }
     }
 
