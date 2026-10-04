@@ -612,22 +612,13 @@ impl PlayWindowApp {
                 .into_iter()
                 .chain(self.session.host.world.active_move_fx_part_draws());
             for sp in part_draws {
-                // A part with armed VDF morph lanes draws its morphed mesh
-                // (`World::morphed_part_tmd` - the Spirit aura's cones); the
-                // browser play page resolves the same mesh.
-                let world = &self.session.host.world;
-                let Some(gtmd) = world
-                    .morphed_part_tmd(&sp)
-                    .map(std::sync::Arc::new)
-                    .or_else(|| {
-                        world
-                            .global_tmd(sp.model_index as i16)
-                            .map(std::sync::Arc::clone)
-                    })
-                else {
+                // The part's morphed or rest mesh with its render scale and
+                // colour word applied (`World::part_draw_vram_mesh` - the
+                // Spirit aura's cones grow, spin and fade through it); the
+                // browser play page draws the same kernel.
+                let Some(vmesh) = self.session.host.world.part_draw_vram_mesh(&sp) else {
                     continue;
                 };
-                let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(&gtmd.tmd, &gtmd.raw);
                 if vmesh.indices.is_empty() {
                     continue;
                 }

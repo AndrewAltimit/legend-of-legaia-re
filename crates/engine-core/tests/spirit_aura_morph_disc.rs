@@ -99,3 +99,64 @@ fn the_spirit_aura_prototypes_hold_and_draw_their_morphed_cone() {
         "vdf.dat entry 12 grows the cone: rest extent {rest}, morphed {morphed}"
     );
 }
+
+/// The aura's growth, fade and spin against the two retail mid-Spirit
+/// captures that hold it (the morph lane `+0xA0`, level `+0x78` and Y bank
+/// `+0x26` of the live part beside its wait `+0x54`): `7` frames in, weight
+/// `0x2CA`, level `0xC80`; `28` frames in, weight `0xB28`, level `0x200`. The
+/// lane grows `0x66` a frame from the frame after the spawn, the level falls
+/// `0x80` a frame (op `0x0D`'s `-0x80 << 3` rate through the part tick's
+/// level block) toward `0` - black under an additive word, so the cone fades
+/// **in** - and the bank turns `0x222` a frame.
+#[test]
+fn the_spirit_aura_grows_and_fades_at_the_captured_rates() {
+    let Some(dir) = extracted() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
+        return;
+    };
+    let mut archive = Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
+    let overlay = entry(
+        &mut archive,
+        legaia_asset::move_power::BATTLE_ACTION_OVERLAY_PROT_INDEX,
+    );
+    let mut world = World::new();
+    world.mode = SceneMode::Battle;
+    world.tables.move_power = Some(MovePowerCatalog::from_overlay_0898(&overlay).expect("catalog"));
+    world.tables.move_power_overlay = Some(Arc::from(overlay.as_slice()));
+    world.tables.battle_vdf = Some(Arc::from(entry(&mut archive, 872).as_slice()));
+    assert!(world.spawn_action_table_effect(0x07, [0, 0, -800]));
+    let mut seen = Vec::new();
+    for _ in 0..40 {
+        world.tick_move_fx(legaia_engine_core::world::EFFECT_SCENE_GRAPH_STEP);
+        let part = &world.casting.active_action_fx[0].parts[0];
+        let s = &part.state;
+        let weight = legaia_engine_vm::vdf_morph::actor_morph_lanes(s)
+            .first()
+            .map(|l| l.1)
+            .unwrap_or(0);
+        seen.push((s.wait_timer, weight, s.field_78, s.render_26));
+        let draw = world.active_move_fx_part_draws()[0];
+        assert!(draw.colour.semi && draw.colour.abr == 1, "an additive word");
+        assert_eq!(
+            draw.colour.ir0,
+            (s.field_78 | 1).min(0x1000),
+            "the level is the cue"
+        );
+        assert!(!draw.draws_rest_mesh());
+    }
+    let at = |wait: i16| {
+        seen.iter()
+            .find(|e| e.0 == wait)
+            .copied()
+            .unwrap_or_else(|| panic!("no tick at wait {wait}: {seen:?}"))
+    };
+    let (_, w7, l7, r7) = at(576);
+    assert_eq!((w7, l7), (0x2CA, 0xC80), "7 frames in");
+    let (_, w28, l28, r28) = at(408);
+    assert_eq!((w28, l28), (0xB28, 0x200), "28 frames in");
+    assert_eq!(
+        r28.wrapping_sub(r7),
+        0x222 * 21,
+        "the bank spins 0x222 a frame"
+    );
+}

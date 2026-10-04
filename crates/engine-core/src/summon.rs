@@ -492,6 +492,60 @@ pub struct SummonPartDraw {
     /// resolves the morphed mesh with
     /// [`crate::world::World::morphed_part_tmd`].
     pub morph: PartMorph,
+    /// The part's render scale `+0x72` (`0x1000` = unit). The model draw at
+    /// `0x8001B160` scales the mesh by `+0x72 / 0x1000` when it is not
+    /// `0x1000` (`0x8001B240..0x8001B2C4`).
+    pub scale: u16,
+    /// The colour word `+0x74` and depth-cue level `+0x78` the model draw
+    /// hands the prim dispatcher `FUN_80043390`: ABE / ABR ORed into every
+    /// packet, each packet colour cued toward the word's far colour by the
+    /// level. A black far colour under an additive ABR is how a part fades:
+    /// the Spirit aura's op `0x0D` ramps the level from `0x1000` (black) to
+    /// `0` and back.
+    pub colour: crate::baka_impact_fx::ColourWord,
+}
+
+impl SummonPartDraw {
+    /// Whether the draw renders its pool mesh untouched: no morph lane, unit
+    /// scale and a colour word that changes no packet. A host that keeps the
+    /// pool meshes resident can draw such a part by index; any other part
+    /// needs [`crate::world::World::part_draw_vram_mesh`].
+    pub fn draws_rest_mesh(&self) -> bool {
+        self.morph.count == 0
+            && self.scale == SPAWN_RENDER_SCALE
+            && !self.colour.semi
+            && self.colour.abr == 0
+            && self.colour.ir0 == 0
+    }
+
+    /// Apply the model draw's per-part render state to a local-space mesh:
+    /// the render scale, then each packet's colour through the colour word's
+    /// depth cue with its ABE / ABR ORed into the TSB (the dispatcher ORs
+    /// both into the packets it writes, `0x80043504..0x80043510`).
+    pub fn apply_render_state(&self, mesh: &mut legaia_tmd::mesh::VramMesh) {
+        if self.scale != SPAWN_RENDER_SCALE {
+            let k = f32::from(self.scale) / 4096.0;
+            for p in &mut mesh.positions {
+                *p = p.map(|v| v * k);
+            }
+        }
+        if self.colour.ir0 != 0 {
+            for c in &mut mesh.colors {
+                *c = self.colour.cue(*c);
+            }
+        }
+        let abr = u16::from(self.colour.abr) << 5;
+        let semi = if self.colour.semi {
+            legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT
+        } else {
+            0
+        };
+        if abr | semi != 0 {
+            for ct in &mut mesh.cba_tsb {
+                ct[1] |= abr | semi;
+            }
+        }
+    }
 }
 
 /// A part's live morph lanes, carried by value on [`SummonPartDraw`] (the
@@ -608,6 +662,11 @@ impl SummonScene {
                 // the VM call: `+0x3C..+0x40` are velocities integrated into
                 // `+0x14..+0x18`, never offsets from a spawn origin.
                 crate::part_motion::motion_block(&mut part.state, self.channel_delta);
+            } else if crate::part_motion::runs_motion_block(&part.state) {
+                // The block's rotation / scale / level channels run for
+                // every part; only the position terms stay with the glide
+                // below.
+                crate::part_motion::level_block(&mut part.state, self.channel_delta);
             }
             match move_vm::actor_tick(host, &mut part.state, &part.buf, SUMMON_PART_BUDGET) {
                 ActorTickOutcome::Halted | ActorTickOutcome::EndOfBuffer { .. } => {
@@ -626,6 +685,7 @@ impl SummonScene {
                 // offset.
                 crate::part_motion::clamp_levels(&mut part.state);
             } else {
+                crate::part_motion::clamp_levels(&mut part.state);
                 apply_translation_update(&mut part.state, self.origin, frame_delta);
             }
         }
@@ -657,6 +717,8 @@ impl SummonScene {
                     ],
                     flags_52: s.field_52,
                     morph: PartMorph::of(s),
+                    scale: s.field_72,
+                    colour: crate::baka_impact_fx::ColourWord::of(s),
                 }
             })
             .collect()

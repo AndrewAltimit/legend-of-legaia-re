@@ -140,8 +140,13 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
         (s, c)
     }
     fn keyframe_curve_multiplier(&self) -> u8 {
-        // Default mirrors retail's startup-time write of `DAT_1F80037D`.
-        0x10
+        // `DAT_1F80037D`, the game-speed rate byte op `0x0A` scales its
+        // lane velocities by. SCUS plants `8` at boot (`addiu v0,zero,8` /
+        // `sb v0,0x37d(at)`, `0x80055FB4` / `0x80055FBC`); only the Baka
+        // Fighter and DEBUG MODE overlays write another value
+        // (`docs/subsystems/move-vm.md`). Mid-Spirit captures confirm it on
+        // the aura lane: authored `0x66`, gaining `0x66` a frame.
+        crate::summon::RETAIL_CHANNEL_DELTA as u8
     }
     fn ext_rand16(&mut self) -> u16 {
         // Retail ext 0x05/0x30 call the BIOS `A(2Fh) rand` thunk

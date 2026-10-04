@@ -922,8 +922,22 @@ impl World {
             // bit `0x1000` - the same gate the field ambient tree takes. It
             // is what moves the lane weights [`Self::morphed_part_tmd`]
             // blends at.
-            let step = self.clock.frame_step.max(1);
-            for part in &mut scene.parts {
+            // The envelope steps by `DAT_1F800393` alone (`+0xA0 +=
+            // +0xB8 * DAT_1F800393`, `FUN_80020740`) - the frame byte, whose
+            // stand-in is the move-VM ramp ratio the channel delta is built
+            // from, not the field cadence `frame_step`. Mid-Spirit captures
+            // pin it: the aura lane gains `0x66` per frame while the wait
+            // drains `8`, so the cone takes `0x28` frames to open.
+            //
+            // The envelope tail `FUN_800204F8` belongs to the per-frame part
+            // tick (`jal` at `0x80022EF4`, after the VM call); the spawn's
+            // own first VM run has no tail. So the spawn tick - the engine's
+            // first tick of a table-form scene, which runs that first VM
+            // step - grows nothing: the captures read `0x66 * N` at wait
+            // `0x278 - 8 * N`.
+            let step = self.move_vm.ramp_ratio.max(1);
+            let spawn_tick = scene.frame <= 1;
+            for part in scene.parts.iter_mut().filter(|_| !spawn_tick) {
                 if !part.finished
                     && part.state.flags & vm::move_buffer::STATUS_FLAG_ENVELOPE_ACTIVE != 0
                 {
@@ -1023,6 +1037,28 @@ impl World {
             tmd,
             raw: rest.raw.clone(),
         })
+    }
+
+    /// The local-space mesh a summon / move-FX part draw renders: its
+    /// morphed or rest mesh ([`Self::morphed_part_tmd`], else the pool
+    /// TMD) with the part's render scale and colour word applied
+    /// ([`crate::summon::SummonPartDraw::apply_render_state`]) - the model
+    /// draw `0x8001B160` hands every part through. `None` when the part's
+    /// mesh is not in the pool. Both hosts draw every part whose
+    /// [`crate::summon::SummonPartDraw::draws_rest_mesh`] is false through
+    /// this kernel: it is what fades the Spirit aura in and out.
+    pub fn part_draw_vram_mesh(
+        &self,
+        draw: &crate::summon::SummonPartDraw,
+    ) -> Option<legaia_tmd::mesh::VramMesh> {
+        let morphed = self.morphed_part_tmd(draw);
+        let g = match morphed.as_ref() {
+            Some(g) => g,
+            None => self.global_tmd(draw.model_index as i16)?.as_ref(),
+        };
+        let mut mesh = legaia_tmd::mesh::tmd_to_vram_mesh(&g.tmd, &g.raw);
+        draw.apply_render_state(&mut mesh);
+        Some(mesh)
     }
 
     /// This frame's effect ribbons - every draw-kind-4 ribbon node (move-VM op

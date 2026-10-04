@@ -561,13 +561,15 @@ impl LegaiaRuntime {
                     ),
                 ),
             );
-            // A part with armed VDF morph lanes (the Spirit aura's cones)
-            // draws its morphed mesh, `World::morphed_part_tmd` - the mesh
-            // the native part pass uploads. The page's model list addresses
-            // pool meshes by index, so a per-frame shape is baked into the
-            // billboard stream instead, like the draw-kind-4 meshes below.
-            if let Some(g) = world.morphed_part_tmd(&sp) {
-                let m = legaia_tmd::mesh::tmd_to_vram_mesh(&g.tmd, &g.raw);
+            // A part with armed VDF morph lanes, a render scale or a colour
+            // word (the Spirit aura's cones grow, spin and fade) draws
+            // `World::part_draw_vram_mesh` - the mesh the native part pass
+            // uploads. The page's model list addresses pool meshes by
+            // index, so a per-frame mesh is baked into the billboard stream
+            // instead, like the draw-kind-4 meshes below.
+            if !sp.draws_rest_mesh()
+                && let Some(m) = world.part_draw_vram_mesh(&sp)
+            {
                 let base = (frame.positions.len() / 3) as u32;
                 for (i, p) in m.positions.iter().enumerate() {
                     let w = [
@@ -827,10 +829,32 @@ impl LegaiaRuntime {
             if world.global_tmd(sp.model_index as i16).is_none() {
                 continue;
             }
+            let model = part_model(sp.flags_52, sp.world_pos, sp.rot);
+            // A morphed / scaled / colour-worded part bakes its per-frame
+            // mesh (`World::part_draw_vram_mesh`), as the battle frame does.
+            if !sp.draws_rest_mesh()
+                && let Some(m) = world.part_draw_vram_mesh(&sp)
+            {
+                let base = (frame.positions.len() / 3) as u32;
+                for (i, p) in m.positions.iter().enumerate() {
+                    let w = [
+                        model[0] * p[0] + model[4] * p[1] + model[8] * p[2] + model[12],
+                        model[1] * p[0] + model[5] * p[1] + model[9] * p[2] + model[13],
+                        model[2] * p[0] + model[6] * p[1] + model[10] * p[2] + model[14],
+                    ];
+                    frame.positions.extend_from_slice(&w);
+                    frame.uvs.extend_from_slice(&m.uvs[i]);
+                    frame.cba_tsb.extend_from_slice(&m.cba_tsb[i]);
+                    let c = m.colors[i];
+                    frame.flat.extend_from_slice(&[c[0], c[1], c[2], 255]);
+                }
+                frame.indices.extend(m.indices.iter().map(|&ix| base + ix));
+                continue;
+            }
             frame.models.push(FxModelDraw {
                 tmd_index: sp.model_index,
                 source: FxModelSource::GlobalPool,
-                model: part_model(sp.flags_52, sp.world_pos, sp.rot),
+                model,
             });
         }
         // Field move-VM stager parts resolve against the SCENE's TMD pack
