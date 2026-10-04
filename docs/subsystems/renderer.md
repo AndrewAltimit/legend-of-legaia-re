@@ -2474,22 +2474,38 @@ a second and a half.
 bytes, the sheet mesh's floor heights (a 48 x 48 quad grid sampled from the
 live walk-ground floor, re-sent only when it moves), the colour (folded with
 the scripted screen tint, so a fade to black takes the fog with it), the
-opacity and the accumulated drift. Both hosts draw it as twelve instanced
-horizontal sheets stacked from the floor to the bank's height, alpha-blended,
-depth-tested against the finished scene and writing no depth - after every 3D
-draw and before the screen-primitive layer and the HUD. A fragment's opacity is
-the density grid's (bilinear) times two value-noise octaves drifting with the
-wind, a slow third octave that rolls the bank's top, a vertical profile that
-thins it toward that top, and a radial fade at the sheet mesh's rim. The native
-pass is `renderer/fog_volume.rs` (WGSL, built lazily on the first staged
-frame); the browser play page's is `site/js/webgl-fog-volume.js`, a GLSL
-transcription of the same recipe that reads its numbers from the frame header
-(`fog_volume::FogSpace::shader_constants`), not from constants of its own. The world
-map, the boot UI and the minigame venues draw none.
+opacity, the accumulated drift and the soft-intersection distance. Both hosts
+draw it as twelve instanced horizontal sheets packed toward the floor
+(quadratic spacing), alpha-blended, writing no depth - after every 3D draw and
+before the screen-primitive layer and the HUD. A fragment's opacity is:
 
-The sheets cannot soften against the scene's depth (neither host can sample its
-depth buffer in that pass), so where a sheet meets a wall or a leg the cut is a
-hard line; twelve thin sheets keep each step faint. A VR session draws no bank.
+- **structure** - three domain-warped value-noise octaves, each drifting at
+  its own rate, plus a slow bank octave, gated through a smoothstep into bright
+  crests and clear gaps, so ground shows between banks;
+- **height** - each crest has its own soft top and a steep profile under it,
+  so the bank is thick at the ankles and gone by the knees;
+- **disturbance** - the density grid (bilinear), which is where the wakes show;
+- **soft intersection** - the sheet fades over a view-depth span as it nears
+  the scene surface behind it, so walls, ledges and legs blend into the bank
+  instead of cutting it. The scene's stored depth is turned back into view
+  depth through the frame matrix's own mapping `ndc = A + B / w`, read off its
+  third and fourth rows;
+- **slope** - a sheet draped down a cliff between two floor tiers fades by its
+  screen-space normal, and a radial fade hides the sheet mesh's rim.
+
+Reading the scene depth is the part the two hosts do differently. The native
+renderer splits its scene pass in two around a fog pass that attaches the depth
+target read-only and samples it as a texture (the target carries
+`TEXTURE_BINDING` and is stored only on frames with a bank). The page cannot
+sample its default framebuffer's depth, so it blits it into a depth texture
+each frame (the format is probed once; a driver that refuses the copy draws
+without the fade). The native pass is `renderer/fog_volume.rs` (WGSL, built
+lazily on the first staged frame); the page's is `site/js/webgl-fog-volume.js`,
+a GLSL transcription of the same recipe that reads its numbers from the frame
+header (`fog_volume::FogSpace::shader_constants`, `FogSpace::soft_distance`),
+not from constants of its own. A battle's bank is denser, deeper and drawn with
+a higher gain: its low, close framing looks through it at a grazing angle. The
+world map, the boot UI, the minigame venues and a VR session draw none.
 
 ### `set_semi_blend` - semi-transparency blend modes
 

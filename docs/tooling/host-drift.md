@@ -1979,8 +1979,10 @@ recipe's numbers ride the frame (`FogSpace::shader_constants`, the header's
 tail), so the GLSL carries no constant of its own to drift; the shader *body*
 is the residue no gate reads - the two must be edited together. Both draw
 after the 3D scene and before the screen-primitive layer, and neither draws
-over a minigame venue. Neither can sample its depth buffer in that pass, so
-the sheets cut hard against walls on both alike.
+over a minigame venue. The soft intersection is the one step that differs by
+construction: the native renderer samples its depth target in a pass split out
+of the scene pass, the page blits its default framebuffer's depth into a
+texture - same inversion of the frame matrix's depth mapping on both.
 
 #### The field screen-effect wash had a producer and no consumer
 
