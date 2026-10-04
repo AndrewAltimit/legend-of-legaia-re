@@ -38,6 +38,11 @@ pub struct CaptureCamArm {
     /// The arm's countdown gate holds: the body's phase chain must not run
     /// this pass (retail's arm returns busy before any of its writes).
     pub hold: bool,
+    /// For a body whose phase chain is **not** ported, the phase a passing
+    /// arm moves to (`None` on the arm that finishes). The director then
+    /// owns the module phase, the way a camera-only player director does; a
+    /// ported body ignores it.
+    pub next: Option<u8>,
 }
 
 /// One capture body's camera arms, by the module phase `ctx[+0x279]` the
@@ -52,6 +57,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
     match (entry, body) {
         (940, MYSTIC_SHIELD_BODY) => Some(mystic_shield_camera),
         (944, GUILTY_CROSS_BODY) => Some(guilty_cross_camera),
+        (962, ULTRA_CHARGE_BODY) => Some(ultra_charge_camera),
         _ => None,
     }
 }
@@ -63,6 +69,7 @@ pub fn capture_countdown_va(action: u8) -> Option<u32> {
     match action {
         0xAC => Some(MYSTIC_SHIELD_COUNTDOWN),
         0x37 => Some(GUILTY_CROSS_COUNTDOWN),
+        0xA5 => Some(ULTRA_CHARGE_COUNTDOWN),
         _ => None,
     }
 }
@@ -125,6 +132,7 @@ pub fn mystic_shield_camera(
                 }),
                 drift: None,
                 hold: false,
+                next: None,
             }
         }
         1..=7 => {
@@ -136,6 +144,7 @@ pub fn mystic_shield_camera(
                 shot: None,
                 drift,
                 hold,
+                next: None,
             }
         }
         _ => CaptureCamArm::default(),
@@ -192,6 +201,7 @@ pub fn guilty_cross_camera(
             shot: Some(behind_caster(0x20)),
             drift: None,
             hold: false,
+            next: None,
         };
     }
     let drift = match phase {
@@ -224,5 +234,71 @@ pub fn guilty_cross_camera(
             _ => {}
         }
     }
-    CaptureCamArm { shot, drift, hold }
+    CaptureCamArm {
+        shot,
+        drift,
+        hold,
+        next: None,
+    }
+}
+
+/// PROT 0962's `0xA5` body (evolved Cort's Ultra Charge).
+pub const ULTRA_CHARGE_BODY: u32 = 0x801F_69D8;
+/// PROT 0962's `0xA5` countdown word (`lui 0x8020` / `-0x7654`).
+pub const ULTRA_CHARGE_COUNTDOWN: u32 = 0x801F_89AC;
+
+/// **Ultra Charge** (PROT 0962, body `0x801F69D8`, a `beq` chain over
+/// `{0, 1, 0xFF}`):
+///
+/// - arm 0 (`0x801F6A78`) - a shot behind the caster: pitch `0x10`, yaw
+///   `0x800 - caster[+0x46]`, TR `(0, h, 0xC00)` over `0xC` frames, `h` being
+///   `0xC00` when the formation's first monster is `0xB5` and `0x240`
+///   otherwise; the countdown `= scalar * 0x180`;
+/// - arm 1 (`0x801F6C1C`) - TR z drifts out by `scalar * delta` a pass while
+///   the countdown, drained by the same product, stays positive; then
+///   `0xFF`.
+///
+/// The `cort_evolved_ultra_charge_mid_cast` capture is in arm 1, on the
+/// `0xB5` framing (TR y `0xC00`), its TR z `2400` drifted past the shot's.
+///
+/// The body's phase chain is not ported elsewhere, so this director also
+/// owns its phase ([`CaptureCamArm::next`]): `0 -> 1 -> 0xFF`, finishing on
+/// `0xFF`.
+///
+/// PORT: FUN_801F69D8 (PROT 0962 `0xA5`; the camera arms, the countdown and
+/// the phase chain)
+pub fn ultra_charge_camera(
+    st: &mut ModuleCamState,
+    phase: u8,
+    seats: ModuleCamSeats,
+) -> CaptureCamArm {
+    let c = seats.caster;
+    match phase {
+        0 => {
+            st.countdown.0 = SPEED_SCALAR * 0x180;
+            let h = if seats.first_monster == 0xB5 {
+                0xC00
+            } else {
+                0x240
+            };
+            CaptureCamArm {
+                shot: Some(ModuleShot {
+                    angles: [0x10, yaw_from(0x800, c.facing), 0],
+                    tr: [0, h, 0xC00],
+                    focus: focus_on(c),
+                    frames: 0xC,
+                }),
+                drift: None,
+                hold: false,
+                next: Some(1),
+            }
+        }
+        1 => CaptureCamArm {
+            shot: None,
+            drift: Some(drift(0, 0, 0, super::MODULE_DRAIN_PER_TICK as i16)),
+            hold: st.countdown.drain_above(0),
+            next: Some(0xFF),
+        },
+        _ => CaptureCamArm::default(),
+    }
 }

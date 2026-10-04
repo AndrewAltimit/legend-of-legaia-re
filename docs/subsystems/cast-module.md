@@ -2001,6 +2001,14 @@ run; a holding gate withholds the body's pass. The battle camera holds in
   begin points at its target, so the replay is steered onto the capture's
   target too ([retail-compare](../tooling/retail-compare.md#driving-to-the-phase)).
 
+- **PROT 0962 `0xA5` (evolved Cort's Ultra Charge, body `0x801F69D8`)** -
+  arm 0's `0xC`-frame shot behind the caster (TR y `0xC00` when the
+  formation's first monster is `0xB5`, `0x240` otherwise; TR z `0xC00`) and
+  arm 1's TR z drift of `scalar * delta` while the countdown `0x801F89AC`
+  (seeded `scalar * 0x180`) runs. The body's phase chain has no other port, so
+  this director also owns it (`0 -> 1 -> 0xFF`), the way a camera-only player
+  director does.
+
 A body with no director keeps the held pose.
 
 ### The band has eight stat-block writers, not one

@@ -1478,6 +1478,7 @@ impl World {
             caster: seat(caster_slot),
             victim: seat(victim_slot),
             band_timer: i32::from(self.battle_ctx.frame_timer),
+            first_monster: self.battle_first_monster_byte(),
         }
     }
 
@@ -1634,6 +1635,7 @@ impl World {
         };
         run.camera_shot = direction.and_then(|d| d.shot);
         let mut capture_held = false;
+        let mut capture_arm = None;
         // A capture-class body's camera arms, on the phase it is about to
         // run (they make no gate of their own: the body's port does).
         if has_trampoline
@@ -1647,6 +1649,7 @@ impl World {
             run.camera_shot = arm.shot;
             run.capture_drift = arm.drift;
             capture_held = arm.hold;
+            capture_arm = Some(arm);
         }
         run.camera_follow = direction.and_then(|d| d.follow);
         run.camera_nudge = direction.and_then(|d| d.nudge);
@@ -2270,6 +2273,14 @@ impl World {
         if let Some(step) = step {
             run.busy = step == ticks::CastTickStep::Busy;
             run.tick_ported = true;
+        } else if let Some(arm) = capture_arm {
+            // A capture director over a body with no port (a ported body, or
+            // a holding arm, has already produced a step) owns its phase.
+            run.tick_ported = true;
+            run.busy = arm.next.is_some();
+            if let Some(next) = arm.next {
+                ctx.phase = next;
+            }
         }
 
         // Each view writes back only what the tick changed in it, folded onto

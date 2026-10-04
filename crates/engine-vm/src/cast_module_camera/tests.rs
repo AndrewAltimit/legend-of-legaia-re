@@ -15,6 +15,7 @@ fn seats() -> ModuleCamSeats {
             facing: 0x800,
         },
         band_timer: 0,
+        first_monster: 0,
     }
 }
 

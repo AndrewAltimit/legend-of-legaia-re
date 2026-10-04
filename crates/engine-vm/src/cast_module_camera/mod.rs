@@ -122,6 +122,9 @@ pub struct ModuleCamSeats {
     /// `ctx[+0x6D8]` - the summon band's own frame timer, which the actor
     /// freeze `0x34` arms and the sustain `0x35` counts down.
     pub band_timer: i32,
+    /// The formation's first monster id `0x8007BD0C`, which a capture body
+    /// can fork its framing on (PROT 0962's `0xA5` arm 0).
+    pub first_monster: u8,
 }
 
 /// The module-resident state the camera arms carry between ticks: the

@@ -169,7 +169,7 @@ pub fn monster_reaction_map(tags: &[u8]) -> [u8; 5] {
 impl World {
     /// The battle's first monster id as the one byte retail's
     /// `0x8007BD0C` holds (`0` when there is none).
-    fn battle_first_monster_byte(&self) -> u8 {
+    pub(in crate::world) fn battle_first_monster_byte(&self) -> u8 {
         self.battle_monster_slots()
             .into_iter()
             .find(|&(_, _, slot)| slot == 0)
