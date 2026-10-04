@@ -356,6 +356,10 @@
                  title="Dynamic lighting: a soft warm directional light and a screen-centred light pool over the baked shading (the native window's I toggle). Not retail - the game's own render has no light source. Presentation only.">
             <input type="checkbox" id="play-dyn-light"> Dynamic lighting
           </label>
+          <label class="play-dev-menu"
+                 title="Ground fog: a low drifting mist bank over the scenes that read as misty or night (Rim Elm under the Mist, Drake Castle, the Voz forests, the Ravine, and any scene whose own fog puffs are live), parted by every character walking through it; a battle inherits its scene's bank (the native window's F9, persisted like its other options). Not retail - the game draws only its fog puffs. Presentation only.">
+            <input type="checkbox" id="play-ground-fog" checked> Ground fog
+          </label>
           <button id="play-camera-distance" type="button"
                   title="Cycle the follow camera's distance preset (retail, far, farther) - the native window's T key, persisted with the other options. Framing only - the simulation never changes.">Camera: far</button>
         </div>
@@ -622,6 +626,7 @@
 <script src="js/webgl-shaders.js"></script>
 <script src="js/webgl-math.js"></script>
 <script src="js/webgl-tmd.js"></script>
+<script src="js/webgl-fog-volume.js"></script>
 <script src="js/pad-bindings.js"></script>
 <script src="js/field-actors.js"></script>
 <script src="js/play-app.js"></script>
@@ -784,6 +789,7 @@
       /* The precise-movement box reflects the engine's persisted option;
        * the battle tools are session-only and start at the engine defaults. */
       if (typeof window.__playSyncPreciseMove === 'function') window.__playSyncPreciseMove();
+      if (typeof window.__playSyncGroundFog === 'function') window.__playSyncGroundFog();
       if (typeof window.__playSyncCameraDistance === 'function') window.__playSyncCameraDistance();
       setSaveUi(true);
       /* The disc is up: re-render the save bar so it decodes the party
@@ -1270,6 +1276,7 @@
       window.__playRuntime = runtime;
       if (typeof window.__playApplyDevMenu === 'function') window.__playApplyDevMenu();
       if (typeof window.__playApplyPreciseMove === 'function') window.__playApplyPreciseMove();
+      if (typeof window.__playApplyGroundFog === 'function') window.__playApplyGroundFog();
       if (typeof window.__playApplyBattleTools === 'function') window.__playApplyBattleTools();
       installXaBanks();
 
@@ -1923,6 +1930,27 @@
   preciseEl.addEventListener('change', () => { applyPreciseMove(); canvas.focus(); });
   window.__playApplyPreciseMove = applyPreciseMove;
   window.__playSyncPreciseMove = syncPreciseMove;
+
+  /* Ground fog - the native window's `F9`. The engine owns the setting
+   * (`OptionsState::volumetric_fog`, persisted with the other options) and
+   * the bank; the page only draws what the engine hands it, so the box is a
+   * mirror of the stored option, re-applied on every rebuild. */
+  const groundFogEl = document.getElementById('play-ground-fog');
+  function applyGroundFog() {
+    const rt = window.__playRuntime;
+    if (rt && typeof rt.set_volumetric_fog === 'function') {
+      try { rt.set_volumetric_fog(!!groundFogEl.checked); } catch (e) {}
+    }
+  }
+  function syncGroundFog() {
+    const rt = window.__playRuntime;
+    if (rt && typeof rt.volumetric_fog === 'function') {
+      try { groundFogEl.checked = !!rt.volumetric_fog(); } catch (e) {}
+    }
+  }
+  groundFogEl.addEventListener('change', () => { applyGroundFog(); canvas.focus(); });
+  window.__playApplyGroundFog = applyGroundFog;
+  window.__playSyncGroundFog = syncGroundFog;
 
   /* Camera-distance preset - the native window's `T`. The engine steps and
    * persists the option (`OptionsState::cycle_camera_distance`); the button

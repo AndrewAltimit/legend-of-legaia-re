@@ -15,6 +15,65 @@ const STAGE_ASPECT: f32 =
 pub(in crate::window) type CutsceneCam = ([f32; 3], f32, f32, f32, f32, [f32; 3]);
 
 impl PlayWindowApp {
+    /// Stage this frame's volumetric ground-fog bank on the renderer, or
+    /// clear it - the browser play page's `_drawFogVolume` twin.
+    ///
+    /// The bank is the engine's (`World::fog_volume_frame`, `None` with the
+    /// toggle down or outside a field scene / battle); this host owns only
+    /// the matrix of the bank's space. A field bank is in retail Y-down world
+    /// units, which `cam` already maps (it carries the field frame's Y
+    /// negation); a battle bank is in raw stage units, which every battle
+    /// draw maps through `cam * battle_stage_model()`. The boot UI, the world
+    /// map and the in-world minigame venues (their own VRAM and camera) draw
+    /// none; a scripted shot and the `F3` debug vantage do - the bank is world
+    /// geometry, and `cam` is that frame's own matrix.
+    pub(in crate::window) fn stage_fog_volume(
+        &self,
+        r: &legaia_engine_render::Renderer,
+        cam: Mat4,
+        in_world_map: bool,
+    ) {
+        use legaia_engine_core::fog_volume::{FOG_LAYERS, FogSpace, MESH_DIM, SIM_DIM};
+        let world = &self.session.host.world;
+        let venue = self.baka_gpu.is_some()
+            || self.muscle_gpu.is_some()
+            || self.fishing_gpu.is_some()
+            || self.dance_venue_gpu.is_some()
+            || self.slot_gpu.is_some();
+        let frame = if self.boot_ui.is_active() || in_world_map || venue {
+            None
+        } else {
+            world.fog_volume_frame()
+        };
+        let Some(f) = frame else {
+            r.set_fog_volume(None);
+            return;
+        };
+        let world_to_clip = match f.space {
+            FogSpace::Field => cam,
+            FogSpace::Battle => cam * Self::battle_stage_model(),
+        };
+        let positions = f.mesh_positions();
+        r.set_fog_volume(Some(&legaia_engine_render::FogVolumeDraw {
+            world_to_clip,
+            sim_origin: f.sim_origin,
+            sim_cell: f.sim_cell,
+            sim_dim: SIM_DIM as u32,
+            density: &f.density,
+            mesh_origin: f.mesh_origin,
+            mesh_cell: f.mesh_cell,
+            mesh_dim: MESH_DIM as u32,
+            mesh_positions: &positions,
+            ground_gen: f.ground_gen,
+            color: f.color,
+            opacity: f.opacity,
+            height: f.height,
+            layers: FOG_LAYERS,
+            drift: f.drift,
+            shader_constants: f.space.shader_constants(),
+        }));
+    }
+
     /// This frame's scene camera, raw retail Y-down world frame.
     ///
     /// **Which camera owns the frame is the shared resolver's answer**

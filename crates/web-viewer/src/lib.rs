@@ -44,6 +44,7 @@ pub mod play_field_fx;
 pub mod play_field_hud;
 pub mod play_fishing;
 pub mod play_fmv;
+pub mod play_fog_volume;
 pub mod play_frame_step;
 pub mod play_host_parity;
 pub mod play_menu;

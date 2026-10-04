@@ -676,6 +676,28 @@ impl PlayWindowApp {
             );
             return;
         }
+        // `F9`: toggle the volumetric ground-fog enhancement (the
+        // `--no-volumetric-fog` flag's runtime twin, the play page's "Ground
+        // fog" box). Default ON: misty / night scenes carry a drifting mist
+        // bank the characters part. The setting is the engine's option
+        // (`OptionsState::volumetric_fog` -> `WorldToggles::volumetric_fog`),
+        // persisted like `R`; off resets the bank and draws the frame
+        // without it. Like `F4`, an F-key so no pad binding can shadow it.
+        if matches!(code, KeyCode::F9) && state == ElementState::Pressed {
+            let on = !self.options_state.volumetric_fog;
+            self.options_state.volumetric_fog = on;
+            self.session.host.world.toggles.volumetric_fog = on;
+            self.persist_and_apply_options();
+            log::info!(
+                "render: volumetric ground fog {}",
+                if on {
+                    "ON (enhancement - not retail)"
+                } else {
+                    "off (retail fog puffs only)"
+                }
+            );
+            return;
+        }
         // `F6`: cheat - fill the party's AP (Spirit) gauge (the play page's
         // Cheats -> Max AP). `F7`: cheat - random encounters on / off (the
         // play page's "No encounters", `--no-live-loop` at launch). F-keys,

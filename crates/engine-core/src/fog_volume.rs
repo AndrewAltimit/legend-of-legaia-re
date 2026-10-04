@@ -65,9 +65,11 @@ const VELOCITY_MAX: f32 = 10.0;
 /// Carve rate for a mover standing still (it slowly opens a pocket) and the
 /// extra a full stride adds.
 const CARVE_IDLE: f32 = 0.02;
-const CARVE_MOVE: f32 = 0.38;
+const CARVE_MOVE: f32 = 0.5;
+/// How deep a standing mover's pocket gets at its centre (`0..=1`).
+const IDLE_POCKET: f32 = 0.35;
 /// A stride's speed (units per tick) at which the carve saturates.
-const STRIDE_FULL: f32 = 6.0;
+const STRIDE_FULL: f32 = 5.0;
 /// How much of a mover's own velocity it hands the cells under it, and how
 /// hard it shoves them outward per unit of speed.
 const PUSH_ALONG: f32 = 0.30;
@@ -86,7 +88,7 @@ const STRENGTH_STEP: f32 = 1.0 / 90.0;
 /// [2] per-sheet alpha gain (the summed opacity of all sheets at the floor)
 /// [3] vertical profile exponent
 /// ```
-pub const FOG_SHADER_CONSTANTS: [f32; 4] = [1.0 / 420.0, 1.0 / 1500.0, 2.4, 1.6];
+pub const FOG_SHADER_CONSTANTS: [f32; 4] = [1.0 / 360.0, 1.0 / 1300.0, 5.0, 1.2];
 
 /// The coordinate space a bank lives in: the field's world units, or the
 /// battle stage's raw units (the frame both battle hosts draw the stage
@@ -102,7 +104,7 @@ impl FogSpace {
     pub fn sim_cell(self) -> f32 {
         match self {
             FogSpace::Field => 40.0,
-            FogSpace::Battle => 48.0,
+            FogSpace::Battle => 64.0,
         }
     }
     /// World units per sheet-mesh quad.
@@ -116,7 +118,25 @@ impl FogSpace {
     pub fn mover_radius(self) -> f32 {
         match self {
             FogSpace::Field => 64.0,
-            FogSpace::Battle => 90.0,
+            FogSpace::Battle => 180.0,
+        }
+    }
+    /// Bank depth relative to a style's (field-unit) height: the battle
+    /// forms stand several times taller in stage units than the field forms
+    /// do in world units, so the same knee-to-waist bank is deeper there.
+    /// [`FOG_SHADER_CONSTANTS`] for this space: the noise scales follow the
+    /// bank's size ([`Self::height_scale`]), so a battle arena shows as many
+    /// wisps across it as a field screen does.
+    pub fn shader_constants(self) -> [f32; 4] {
+        let k = self.height_scale();
+        let c = FOG_SHADER_CONSTANTS;
+        [c[0] / k, c[1] / k, c[2], c[3]]
+    }
+
+    pub fn height_scale(self) -> f32 {
+        match self {
+            FogSpace::Field => 1.0,
+            FogSpace::Battle => 2.5,
         }
     }
 }
@@ -146,8 +166,8 @@ const SCENE_STYLES: &[(&str, FogStyle)] = &[
     (
         "town0b",
         FogStyle {
-            color: [0.47, 0.51, 0.66],
-            density: 0.78,
+            color: [0.70, 0.74, 0.88],
+            density: 0.55,
             height: 120.0,
             wind: [0.55, 0.22],
         },
@@ -156,7 +176,7 @@ const SCENE_STYLES: &[(&str, FogStyle)] = &[
         "dolk",
         FogStyle {
             color: [0.52, 0.49, 0.60],
-            density: 0.72,
+            density: 0.50,
             height: 130.0,
             wind: [0.35, -0.45],
         },
@@ -165,7 +185,7 @@ const SCENE_STYLES: &[(&str, FogStyle)] = &[
         "vell",
         FogStyle {
             color: [0.56, 0.62, 0.58],
-            density: 0.58,
+            density: 0.42,
             height: 100.0,
             wind: [0.40, 0.30],
         },
@@ -174,7 +194,7 @@ const SCENE_STYLES: &[(&str, FogStyle)] = &[
         "vozz",
         FogStyle {
             color: [0.56, 0.62, 0.58],
-            density: 0.58,
+            density: 0.42,
             height: 100.0,
             wind: [-0.30, 0.40],
         },
@@ -183,7 +203,7 @@ const SCENE_STYLES: &[(&str, FogStyle)] = &[
         "keikoku",
         FogStyle {
             color: [0.62, 0.63, 0.70],
-            density: 0.70,
+            density: 0.50,
             height: 140.0,
             wind: [0.60, 0.10],
         },
@@ -194,7 +214,7 @@ const SCENE_STYLES: &[(&str, FogStyle)] = &[
 /// raised and at least one region enabled) but which has no tuned entry.
 pub const POOL_STYLE: FogStyle = FogStyle {
     color: [0.58, 0.60, 0.68],
-    density: 0.48,
+    density: 0.34,
     height: 100.0,
     wind: [0.45, 0.20],
 };
@@ -500,7 +520,14 @@ impl FogVolume {
                     let q = 1.0 - dist2 / (r * r);
                     let falloff = q * q;
                     let i = Self::idx(x as usize, z as usize);
-                    self.density[i] *= 1.0 - carve * falloff;
+                    // A stride clears toward zero; standing still only
+                    // opens a shallow pocket ([`IDLE_POCKET`]), so a
+                    // character who waits keeps the bank about its legs.
+                    let floor = (1.0 - stride) * (1.0 - IDLE_POCKET * falloff);
+                    let d = &mut self.density[i];
+                    if *d > floor {
+                        *d -= (*d - floor) * carve * falloff;
+                    }
                     if speed > 0.0 {
                         let dist = dist2.sqrt();
                         let (rx, rz) = if dist > 1.0e-3 {
@@ -610,7 +637,7 @@ impl FogVolume {
                 style.color[2] * t[2],
             ],
             opacity: style.density * self.strength,
-            height: style.height,
+            height: style.height * self.space.height_scale(),
             drift: self.drift,
             ticks: self.ticks,
         })
@@ -666,7 +693,7 @@ pub mod header {
     pub const GROUND_GEN: usize = 16;
     /// `0` field, `1` battle.
     pub const SPACE: usize = 17;
-    /// [`super::FOG_SHADER_CONSTANTS`] start here.
+    /// [`super::FogSpace::shader_constants`] start here.
     pub const SHADER_CONSTANTS: usize = 18;
     pub const LEN: usize = 22;
 }
@@ -700,7 +727,7 @@ impl FogVolumeFrame<'_> {
             FogSpace::Battle => 1.0,
         };
         h[header::SHADER_CONSTANTS..header::SHADER_CONSTANTS + 4]
-            .copy_from_slice(&FOG_SHADER_CONSTANTS);
+            .copy_from_slice(&self.space.shader_constants());
         h
     }
 

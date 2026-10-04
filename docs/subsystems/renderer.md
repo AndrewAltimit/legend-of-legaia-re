@@ -2152,6 +2152,7 @@ different default:
 | `Renderer::set_dynamic_lighting` | **off** | *off* is retail, pixel-identical to the faithful render | the opt-in soft-light enhancement |
 | `Renderer::set_dyn_shadows` | **on** | inert while `set_dynamic_lighting` is off | the point-light + shadow sub-layer of dynamic lighting |
 | `Renderer::set_occlusion_fade` | **off** in the renderer, **on** in `play-window` | *off* is retail, pixel-identical to the faithful render | the see-through-walls camera-occlusion fade |
+| `Renderer::set_fog_volume` | nothing staged in the renderer; the engine's bank is **on** in `play-window` + the browser play page | nothing staged is retail, pixel-identical to the faithful render | the [volumetric ground fog](#volumetric-ground-fog-enhancement) |
 
 Two things routinely get mis-stated about this table, so they are worth saying
 plainly:
@@ -2435,6 +2436,60 @@ shader set - but it lives only in `MESH_SHADER_SRC`, the bare-geometry **preview
 pipeline behind the asset-viewer's raw-TMD view. Those meshes carry neither
 texture nor colour, so there is nothing of the game's own shading to show; the
 light is a viewer aid, not a claim about retail, and no game path uses it.
+
+### Volumetric ground fog (enhancement)
+
+Retail's only fog is the `fog_set` puff pool ([field fog sheets](#field-fog-sheets-fun_8003f348)),
+additive billboards that drift on fixed per-region headings and ignore every
+actor. The port layers a low mist bank over it on the scenes that read as misty
+or night, and lets the characters part it. Nothing in it is retail, and it
+never touches the puff pool.
+
+**Simulation** ([`engine-core::fog_volume`](../../crates/engine-core/src/fog_volume.rs),
+`World::tick_fog_volume`). A 64 x 64 disturbance grid, recentred on the player
+in whole-cell steps, holds a density multiplier (`1.0` = undisturbed bank) and
+a 2D velocity per cell; everything outside it reads as an undisturbed bank, so
+a recentre scrolls the field instead of restarting it. Once per sim tick,
+after every actor has moved, each mover carves the density around its feet
+(harder with a full stride, a slow pocket standing still) and hands the cells
+its stride plus an outward shove; the grid is then advected semi-Lagrangian
+through that velocity plus the scene's drift, diffused, damped, and refilled
+toward the undisturbed bank, so a wake opens behind a walker and closes over a
+few seconds. The movers are the drop-shadow population - the player and every
+placed field channel with a position - and every active body in battle. The
+step uses only `f32` basic operations and `sqrt`, so it is deterministic across
+hosts, and it is tied to the tick, never to the frame rate. Unit tests pin the
+determinism, the wake, the refill, the teleport rule and the recentre.
+
+**Which scenes.** A tuned style per CDNAME label for the scenes whose own art
+reads as mist or night - `town0b` (Rim Elm under the Mist, a night scene),
+`dolk`, `vell`, `vozz`, `keikoku` - and a default style for any other field
+scene whose retail fog pool is live (gate `_DAT_8007B854` raised with an
+enabled section-4 region). A battle keeps the style of the field scene it was
+entered from and runs its own grid in raw battle-stage units, centred on the
+arena. A new scene label starts a new bank; a style eases in and out over about
+a second and a half.
+
+**Drawing.** The frame (`World::fog_volume_frame`) carries the density grid as
+bytes, the sheet mesh's floor heights (a 48 x 48 quad grid sampled from the
+live walk-ground floor, re-sent only when it moves), the colour (folded with
+the scripted screen tint, so a fade to black takes the fog with it), the
+opacity and the accumulated drift. Both hosts draw it as twelve instanced
+horizontal sheets stacked from the floor to the bank's height, alpha-blended,
+depth-tested against the finished scene and writing no depth - after every 3D
+draw and before the screen-primitive layer and the HUD. A fragment's opacity is
+the density grid's (bilinear) times two value-noise octaves drifting with the
+wind, a slow third octave that rolls the bank's top, a vertical profile that
+thins it toward that top, and a radial fade at the sheet mesh's rim. The native
+pass is `renderer/fog_volume.rs` (WGSL, built lazily on the first staged
+frame); the browser play page's is `site/js/webgl-fog-volume.js`, a GLSL
+transcription of the same recipe that reads its numbers from the frame header
+(`fog_volume::FogSpace::shader_constants`), not from constants of its own. The world
+map, the boot UI and the minigame venues draw none.
+
+The sheets cannot soften against the scene's depth (neither host can sample its
+depth buffer in that pass), so where a sheet meets a wall or a leg the cut is a
+hard line; twelve thin sheets keep each step faint. A VR session draws no bank.
 
 ### `set_semi_blend` - semi-transparency blend modes
 

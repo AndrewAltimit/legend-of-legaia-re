@@ -347,6 +347,7 @@ fn main() -> Result<()> {
             no_dyn_shadows,
             no_entry_pulse,
             no_occlusion_fade,
+            no_volumetric_fog,
             learn_spell,
             set_flag,
             resume_save,
@@ -396,6 +397,7 @@ fn main() -> Result<()> {
             !no_dyn_shadows,
             !no_entry_pulse,
             !no_occlusion_fade,
+            !no_volumetric_fog,
             window::DebugSeeds::from_args(&learn_spell, &set_flag, resume_save)?.with_cheats(
                 window::PlayCheats {
                     level: cheat_level,

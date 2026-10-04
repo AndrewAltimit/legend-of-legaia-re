@@ -27,7 +27,13 @@ impl World {
                 let pool_live = self.fog.gate && self.fog.regions.iter().any(|r| r.enabled);
                 scene_style(&self.active_scene_label, pool_live)
             }
-            SceneMode::Battle => self.fog_volume.last_style,
+            // The bank the field scene raised; a fight opened before that
+            // scene drew a single field tick (a forced encounter at entry)
+            // still takes the scene's tuned style.
+            SceneMode::Battle => self
+                .fog_volume
+                .last_style
+                .or_else(|| scene_style(&self.active_scene_label, false)),
             _ => None,
         }
     }

@@ -1015,6 +1015,13 @@ impl PlayWindowApp {
             // uses the orbit camera.
             let in_world_map = self.session.host.world.mode == SceneMode::WorldMap;
             let cam = self.compute_scene_camera(aspect, in_world_map, cutscene_cam);
+            // The volumetric ground-fog enhancement (`engine-core::fog_volume`,
+            // `F9` / `--no-volumetric-fog`): the engine's bank for this tick,
+            // drawn after the 3D scene and before the HUD. Its space is the
+            // field's retail Y-down world (`cam` already carries the field
+            // frame's Y negation) or the raw battle stage (the stage model's
+            // scale + Y-flip). Staged every frame; `None` stages nothing.
+            self.stage_fog_volume(r, cam, in_world_map);
             // Stage the derived scene point lights (the dynamic-lighting
             // enhancement's candle / wall-light layer) with this frame's
             // camera so the renderer can recover world space from the

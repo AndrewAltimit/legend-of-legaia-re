@@ -307,13 +307,21 @@ pub fn engine_frame_with(
     for (k, v) in env {
         cmd.env(k, v);
     }
-    cmd.args(["play-window", "--no-audio", "--scene", scene])
-        .args(extra)
-        .arg("--extracted-root")
-        .arg(&extracted)
-        .arg("--screenshot")
-        .arg(&shot)
-        .args(["--screenshot-tick", &tick.to_string()]);
+    // The comparison is against retail: the volumetric ground-fog
+    // enhancement (default on in the window) stays off.
+    cmd.args([
+        "play-window",
+        "--no-audio",
+        "--no-volumetric-fog",
+        "--scene",
+        scene,
+    ])
+    .args(extra)
+    .arg("--extracted-root")
+    .arg(&extracted)
+    .arg("--screenshot")
+    .arg(&shot)
+    .args(["--screenshot-tick", &tick.to_string()]);
     match entry {
         FrameEntry::Resume(save) => {
             let file = work.join(format!("{label}.lgsf"));

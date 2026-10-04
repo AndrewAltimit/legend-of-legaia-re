@@ -105,7 +105,7 @@ fn vs_main(@location(0) p: vec3<f32>, @builtin(instance_index) inst: u32) -> VOu
 fn fog_hash(i: vec2<i32>) -> f32 {
     let x = u32(i.x & 0xffff);
     let y = u32(i.y & 0xffff);
-    var h = x * 0x8da6b343u ^ y * 0xd8163841u;
+    var h = (x * 0x8da6b343u) ^ (y * 0xd8163841u);
     h = (h ^ (h >> 13u)) * 0x85ebca6bu;
     h = h ^ (h >> 16u);
     return f32(h & 0xffffu) / 65535.0;
@@ -136,7 +136,7 @@ fn fs_main(in: VOut) -> @location(0) vec4<f32> {
     // toward that top.
     let top = 0.55 + 0.65 * nb;
     let profile = pow(clamp(1.0 - t / top, 0.0, 1.0), u.consts.w);
-    let shape = clamp(0.2 + 1.0 * nb, 0.0, 1.0) * (0.5 + 0.5 * (0.65 * n1 + 0.35 * n2));
+    let shape = clamp(0.35 + 0.9 * nb, 0.0, 1.0) * (0.35 + 0.65 * (0.65 * n1 + 0.35 * n2));
     // Disturbance: the sim grid's density, undisturbed outside it.
     let uv = (in.xz - u.sim.xy) / (u.sim.z * u.sim.w);
     var d = 1.0;
@@ -461,5 +461,39 @@ impl Renderer {
         if let Some(pass) = self.fog_volume_pass.borrow().as_ref() {
             pass.draw(rp);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The fog WGSL parses and validates - the GPU-free guard, since the
+    /// pipeline itself only builds on a device.
+    #[test]
+    fn fog_shader_parses_and_validates() {
+        use wgpu::naga;
+        let module = naga::front::wgsl::parse_str(FOG_SHADER_SRC)
+            .unwrap_or_else(|e| panic!("fog shader failed to parse: {e:?}"));
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .unwrap_or_else(|e| panic!("fog shader failed to validate: {e:?}"));
+    }
+
+    /// The uniform block is the size the WGSL struct declares
+    /// (a mat4 and five vec4s).
+    #[test]
+    fn uniform_block_matches_the_wgsl_struct() {
+        assert_eq!(std::mem::size_of::<FogUniforms>(), 64 + 5 * 16);
+    }
+
+    #[test]
+    fn mesh_indices_cover_every_quad() {
+        let idx = mesh_indices(3);
+        assert_eq!(idx.len(), 3 * 3 * 6);
+        assert_eq!(*idx.iter().max().unwrap(), 15);
     }
 }

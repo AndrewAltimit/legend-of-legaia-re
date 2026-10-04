@@ -386,15 +386,22 @@ impl PlayWindowApp {
             } else {
                 "  occl-fade off (F4)"
             };
+            // Volumetric ground fog is default-on too (`F9` toggles).
+            let fog_str = if self.options_state.volumetric_fog {
+                ""
+            } else {
+                "  ground-fog off (F9)"
+            };
             let line2 = format!(
-                "t {:.1}s  {}{}{}{}{}{}  arrows=dpad Z=X drag=orbit",
+                "t {:.1}s  {}{}{}{}{}{}{}  arrows=dpad Z=X drag=orbit",
                 self.win.elapsed_secs(),
                 audio_str,
                 bgm_str,
                 light_str,
                 cam_str,
                 precise_str,
-                occl_str
+                occl_str,
+                fog_str
             );
             let layout2 = self.font.layout_ascii(&line2);
             out.extend(text_draws_for(&layout2, (8, 26), dim));

@@ -2389,6 +2389,10 @@ void main() {
       /* The renderer's sticky per-frame state, staged ahead of EVERY draw
        * branch (see `_stageFrameState`). */
       this._stageFrameState(rt);
+      /* The volumetric ground fog draws over the field and battle frames
+       * only - never over a minigame venue, which owns its own VRAM and
+       * camera. Raised by the two branches below after their scene draw. */
+      this._fogFrameOk = false;
       if (window.LegaiaPlayMinigames && window.LegaiaPlayMinigames.frame(rt, this, skipDraw)) {
         /* An in-world minigame (casino slots, Muscle Dome, Baka Fighter,
          * dance hall) owns the 3D frame; HUD/overlay below still run. Runs
@@ -2703,6 +2707,7 @@ void main() {
       /* `skipDraw`: a VR session owns the framebuffer and re-issues this draw
        * once per eye with the XR view matrices. */
       if (!skipDraw) this.renderer.renderAssembled(this._draws, this._ext, this.cam);
+      this._fogFrameOk = true;
       }
       } catch (e) {
         this._onEngineTrap('engine draw', e);
@@ -2735,6 +2740,10 @@ void main() {
        * the shared `screen_prim` builder. Outside the try/catch above
        * only in the sense that it has its own: a shader link failure on some
        * driver must not take the whole play loop down with it. */
+      /* Volumetric ground fog (the engine's `fog_volume` bank, an
+       * enhancement - the native renderer's fog pass twin): over the
+       * finished 3D frame, under the screen-prim layer and the HUD canvas. */
+      if (!skipDraw && this._fogFrameOk) this._drawFogVolume(rt);
       if (!skipDraw) this._drawScreenPrims(rt);
 
       /* FPS + HUD, sampled twice a second. */
@@ -2787,6 +2796,31 @@ void main() {
       } catch (e) {
         this._screenPrimBroken = true;
         try { console.warn('screen-prim pass disabled:', e); } catch (_) { /* no console */ }
+      }
+    }
+
+    /* One frame of the volumetric ground fog. The engine owns the bank and
+     * the toggle (`rt.set_volumetric_fog`, persisted with the options); an
+     * empty header is "no bank this frame". The matrix is the one
+     * `renderAssembled` just drew with (`buildWorldOrbitVp` hands back
+     * `cam.vp` when the engine camera is staged). Guarded against a cached
+     * WASM without the exports and a driver that cannot link the pass:
+     * either way the page keeps playing without fog for the session. */
+    _drawFogVolume(rt) {
+      if (this._fogBroken) return;
+      if (typeof rt.play_fog_volume_header !== 'function'
+          || typeof window.LegaiaFogVolumePass !== 'function') return;
+      try {
+        const c = this.renderer.canvas;
+        const vp = (this.cam && this.cam.yaw != null)
+          ? buildWorldOrbitVp(c.width, c.height, this._ext, this.cam)
+          : null;
+        if (!vp) return;
+        if (!this._fogPass) this._fogPass = new window.LegaiaFogVolumePass(this.renderer.gl);
+        this._fogPass.draw(rt, vp, this._battle ? this._battle.scale : 4.0);
+      } catch (e) {
+        this._fogBroken = true;
+        try { console.warn('fog volume pass disabled:', e); } catch (_) { /* no console */ }
       }
     }
 
@@ -3025,6 +3059,7 @@ void main() {
       this._applySceneClear(rt);
       this._draws = draws;
       if (!skipDraw) this.renderer.renderAssembled(draws, this._ext, this.cam);
+      this._fogFrameOk = true;
       return true;
     }
 
@@ -3429,6 +3464,7 @@ void main() {
       window.removeEventListener('keydown', this._onDebugCam);
       window.removeEventListener('blur', this._onBlur);
       if (this._screenPrims) { this._screenPrims.dispose(); this._screenPrims = null; }
+      if (this._fogPass) { this._fogPass.dispose(); this._fogPass = null; }
       if (this.renderer) { this.renderer.dispose(); this.renderer = null; }
     }
   }

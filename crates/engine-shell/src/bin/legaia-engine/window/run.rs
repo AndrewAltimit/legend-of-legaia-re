@@ -110,6 +110,7 @@ pub(crate) fn cmd_play_window(
     dyn_shadows: bool,
     entry_pulse: bool,
     occlusion_fade: bool,
+    volumetric_fog: bool,
     debug_seeds: super::DebugSeeds,
 ) -> Result<()> {
     cmd_play_window_with_record(
@@ -142,6 +143,7 @@ pub(crate) fn cmd_play_window(
         dyn_shadows,
         entry_pulse,
         occlusion_fade,
+        volumetric_fog,
         debug_seeds,
         None,
     )
@@ -461,6 +463,7 @@ pub(super) fn cmd_play_window_with_record(
     dyn_shadows: bool,
     entry_pulse: bool,
     occlusion_fade: bool,
+    volumetric_fog: bool,
     debug_seeds: super::DebugSeeds,
     record_to: Option<RecordTarget>,
 ) -> Result<()> {
@@ -1494,6 +1497,12 @@ pub(super) fn cmd_play_window_with_record(
         app.menu_runtime.retail_equipment_buy = true;
     }
 
+    // `--no-volumetric-fog` (and a recording, which stays on the faithful
+    // render) lowers the volumetric ground-fog option for this session only:
+    // the window never writes the override back unless `F9` is pressed.
+    if !volumetric_fog {
+        app.options_state.volumetric_fog = false;
+    }
     // Push the loaded options into their live consumers (audio downmix)
     // before the loop starts.
     app.apply_options_side_effects();

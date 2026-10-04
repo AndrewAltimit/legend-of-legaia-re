@@ -556,6 +556,22 @@ NATIVE_TITLE_SAVE = (
 
 SIM_PAIRS: list[dict[str, object]] = [
     {
+        "what": "volumetric ground fog, native vs play page - the bank is "
+        "simulated once per tick inside `World::tick` "
+        "(`engine-core::fog_volume`); each host's draw site must take "
+        "this frame's bank from `World::fog_volume_frame` rather than "
+        "keep a bank (or a scene table) of its own",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/bin/legaia-engine/window/event_handler/redraw_passes.rs",
+                "stage_fog_volume",
+            ),
+            "web": ("crates/web-viewer/src/play_fog_volume.rs", "fog_volume_frame"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["fog_volume_frame"],
+    },
+    {
         "what": "shop blips, native vs play page - the shop's cursor / "
         "confirm / buzz / cancel cues and the quantity and recipient "
         "screens' purchase / sale / equip cues are the engine's decision "
