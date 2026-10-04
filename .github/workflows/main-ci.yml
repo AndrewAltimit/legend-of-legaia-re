@@ -117,6 +117,11 @@ jobs:
       - name: Play page sticky frame state
         run: python3 scripts/ci/check-js-sticky-frame-state.py
 
+      # The play page's scene writes log2(w) depth; a depth-tested fragment
+      # shader that keeps the rasterised depth fails the test against it.
+      - name: Play page fragment depth space
+        run: python3 scripts/ci/check-js-depth-space.py
+
       # `_gen.py` never reads `docs/`, so a `site/_content/` mirror of a docs
       # page drifts silently: it keeps building and keeps passing the link
       # checker while whole areas of its source stop appearing on the public

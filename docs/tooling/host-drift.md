@@ -3847,6 +3847,27 @@ every play-page call of one must sit in `_stageFrameState` unless the setter
 is classified as branch-owned with a reason. It runs in the pre-commit hook
 when `site/` is touched and in CI.
 
+### A second program in the scene's depth buffer, in another depth space
+
+The page's mesh program writes `log2(w) / LOG_DEPTH_RANGE` to `gl_FragDepth`
+on its perspective frames (`LOG_DEPTH_GLSL` in
+[`site/js/webgl-shaders.js`](../../site/js/webgl-shaders.js)), because WebGL2
+cannot select the native renderer's float reversed-Z buffer. The
+enhanced-lighting glow program - the lamp halos and light shafts - is drawn
+into the same buffer with the depth test on, and kept the rasterised
+`gl_FragCoord.z`: about 0.99 at field distances against a scene written near
+0.4, so LEQUAL rejected nearly every halo fragment. The night Genesis Tree
+bloomed on the native window and barely glowed on the page; nothing failed,
+the shader compiled, linked and drew into a test it lost. The glow program
+now writes the same log depth under the same flag.
+
+[`scripts/ci/check-js-depth-space.py`](../../scripts/ci/check-js-depth-space.py)
+reads every GLSL fragment source under `site/js/` and requires a
+`gl_FragDepth` write, unless the shader is waived with the reason its depth
+never meets the log buffer (the overworld sea backdrop, which draws first; a
+replay script no page loads). It runs in the pre-commit hook when `site/` is
+touched and in CI.
+
 ### The intro emitter stepped per draw
 
 The tile shatter ran about two ticks ahead on the page: on the tick the
