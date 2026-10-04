@@ -1937,6 +1937,13 @@ directors so far, each read off its own tick's disassembly:
   module's countdown. The creature's clip-paced strike (arms 6..10) is not
   directed.
 
+- **PROT 0913 (Nova)** - **camera-beside**: Nova's tick body is ported, so
+  its director reads the phase the body is about to run and never holds it.
+  It covers arm 0's cut behind the caster (pitch `0x400`, yaw `0x900 -
+  caster[+0x46]`, TR `(0, 0, 0x400)`) and the `(scalar * delta) / 4` TR z
+  drift of the stream-request and CD-poll arms 1 and 2; the creature's
+  framings after the read are not directed.
+
 - **The summon creatures PROT 0914, 0915, 0917, 0920, 0923, 0928, 0930,
   0931** - their tick bodies are not ported, so their directors are
   **camera-only**: each covers the opening arms the sustain `0x35` runs (the

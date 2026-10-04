@@ -1653,7 +1653,7 @@ impl World {
         let held = direction.is_some_and(|d| d.hold) || capture_held;
         // A camera-only director owns the phase of a module whose tick body
         // is unported: its pass advances it, and it claims no tick.
-        let camera_only = profile.is_some_and(|p| !p.paces_band());
+        let camera_only = profile.is_some_and(|p| !p.paces_band() && p.owns_phase);
         if camera_only && !held {
             ctx.phase = ctx.phase.wrapping_add(1);
         }

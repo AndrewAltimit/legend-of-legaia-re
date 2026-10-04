@@ -342,3 +342,36 @@ pub fn jedo_direct(_st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) 
         _ => ArmDirection::PARK,
     }
 }
+
+/// PROT 0913 (Nova, the player Seru whose module opens with a creature
+/// stream read): a cut at arm 0 behind the caster - pitch `0x400`, yaw
+/// `0x900 - caster[+0x46]`, TR `(0, 0, 0x400)`, focus the caster, one frame
+/// (`0x801F6BCC..0x801F6C54`) - then a TR z drift of `(scalar * delta) / 4`
+/// a pass through arm 1 (the stream request, `0x801F6C64`) and arm 2 (the CD
+/// poll `FUN_8003F2B8(1)`, `0x801F6CD0`). Retail sits in arm 2 for as long
+/// as the read takes, drifting. Nova's tick body is ported
+/// (`cast_seru_ticks_b`), so this director runs beside it
+/// ([`ModuleProfile::camera_beside`]) and holds nothing; the engine's read is
+/// always ready, and the later framings (arm 2's `0x40`-frame shot on the
+/// creature once the read lands, and on) are not directed. The
+/// `nova_summon_mid_cast` capture is in arm 2 on arm 0's cut, `48` units of
+/// drift out.
+///
+/// PORT: FUN_801F69F0 (PROT 0913; camera arm 0 and the arm 1/2 drift)
+pub fn nova_direct(_st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
+    let c = seats.caster;
+    let drift = ModuleNudge {
+        tr_z: (MODULE_DRAIN_PER_TICK / 4) as i16,
+        ..Default::default()
+    };
+    match phase {
+        0 => ArmDirection::shot(ModuleShot {
+            angles: [0x400, yaw_from(0x900, c.facing), 0],
+            tr: [0, 0, 0x400],
+            focus: focus_on(c),
+            frames: 1,
+        }),
+        1 | 2 => ArmDirection::PASS.nudged(drift),
+        _ => ArmDirection::PASS,
+    }
+}

@@ -319,6 +319,11 @@ pub struct ModuleProfile {
     /// through [`ModuleCamState::creature_arrived`]. A module with none keeps
     /// its creature where it seated it.
     pub walk_arm: Option<u8>,
+    /// Whether a camera-only director owns the module phase. `false` for a
+    /// director that runs **beside** a ported tick body
+    /// ([`ModuleProfile::camera_beside`]): it reads the phase the body is
+    /// about to run, never holds it, and only arms the camera.
+    pub owns_phase: bool,
 }
 
 /// The directed profile of a player-Seru module, by owning PROT entry.
@@ -330,16 +335,19 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
             direct: gimard_direct,
             hit_arm: Some(GIMARD_WALK_ARM),
             walk_arm: Some(GIMARD_WALK_ARM),
+            owns_phase: true,
         }),
         905 => Some(ModuleProfile {
             direct: vera_direct,
             hit_arm: Some(VERA_RESTORE_ARM),
             walk_arm: None,
+            owns_phase: true,
         }),
         908 => Some(ModuleProfile {
             direct: zenoir_direct,
             hit_arm: Some(ZENOIR_FINISH_ARM),
             walk_arm: None,
+            owns_phase: true,
         }),
         914 => Some(ModuleProfile::camera_only(gola_gola_direct)),
         915 => Some(ModuleProfile::camera_only(mushura_direct)),
@@ -349,6 +357,7 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
         928 => Some(ModuleProfile::camera_only(palma_direct)),
         930 => Some(ModuleProfile::camera_only(horn_direct)),
         931 => Some(ModuleProfile::camera_only(jedo_direct)),
+        913 => Some(ModuleProfile::camera_beside(nova_direct)),
         _ => None,
     }
 }
@@ -359,6 +368,16 @@ impl ModuleProfile {
             direct,
             hit_arm: None,
             walk_arm: None,
+            owns_phase: true,
+        }
+    }
+
+    const fn camera_beside(direct: ModuleDirector) -> Self {
+        Self {
+            direct,
+            hit_arm: None,
+            walk_arm: None,
+            owns_phase: false,
         }
     }
 
