@@ -57,8 +57,12 @@ const MONSTERS: u8 = 1;
 /// The monster seat: the first row above the party.
 const CASTER: u8 = PARTY;
 
-/// Frames to drive before giving up on the monster taking its turn.
-const MAX_FRAMES: usize = 1200;
+/// Frames to drive before giving up on the monster casting. Each of its
+/// turns rolls Attack against its magic list (`roll % (1 + magic count)`) on
+/// the one shared `rand()` stream, which every party swing commit also draws
+/// from (`FUN_8004E13C`'s camera re-seed, `jal 0x80056798` at `0x8004E288`),
+/// so the window spans several monster turns rather than betting on the first.
+const MAX_FRAMES: usize = 6000;
 
 /// Fixed RNG seed, so both halves of the contrast draw the same stream.
 const SEED: u32 = 0x00C0_FFEE;
