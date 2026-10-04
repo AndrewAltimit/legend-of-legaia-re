@@ -309,6 +309,17 @@ pub struct CutsceneTimeline {
     /// speaks.
     // REF: FUN_801DE840 (0x801DEE90..0x801DEF1C), FUN_8003774C (the 0x37 / 0x41 arm)
     pub npc_glides: Vec<TimelineNpcGlide>,
+    /// Placement slots of the **NPC walk-to-tile legs** this context armed
+    /// (`C7 <id> <tx> <tz> <mode>` against a placement channel) and that are
+    /// still walking. Retail's op-`0x47` arm (`0x801DEFC0..0x801DF054`) seats
+    /// the op on the target's `+0x94`, raises its `0x400` and advances the
+    /// record past the op - `li s7,4` sits in the delay slot at `0x801DF030`,
+    /// so the advance is taken for every target, and only a **player**
+    /// target also parks the caller (`0x801DF034..0x801DF044`). The record
+    /// therefore runs on while the NPC walks; its next cross-context op on
+    /// that actor waits for the leg to land (the halted-target refusal).
+    // REF: FUN_801DE840 (0x801DEFC0..0x801DF054), FUN_8003774C (case 0x47)
+    pub npc_walks: Vec<u8>,
     /// Ticks left on the **scene-bank** clip the timeline last poked onto the
     /// player (`A2 F8 <move_id>` with the party-bank bit down): the clip's
     /// end-latch length at its own step ([`crate::field_anim::clip_end_ticks`]).
@@ -434,6 +445,7 @@ impl CutsceneTimeline {
             .into_iter()
             .flatten()
             .chain(self.npc_glides.iter().map(|g| Some(g.slot)))
+            .chain(self.npc_walks.iter().map(|&s| Some(s)))
             .filter(move |_| live)
     }
 
@@ -472,6 +484,7 @@ impl CutsceneTimeline {
             facing_wait: None,
             player_glide: None,
             npc_glides: Vec::new(),
+            npc_walks: Vec::new(),
             player_clip_ticks: 0,
             player_clip_wait: None,
             stepped: false,

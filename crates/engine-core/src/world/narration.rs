@@ -1292,6 +1292,16 @@ impl World {
                 tl.npc_glides.push(glide);
             }
         }
+        // NPC walk-to-tile legs (`C7 <id> ..`) run on the motion VM
+        // (`tick_field_npc_motions` drops the leg on arrival); the actor stays
+        // held for the script while its leg is live and on the landing frame.
+        // REF: FUN_801DE840 (0x801DEFC0..0x801DF054)
+        for slot in std::mem::take(&mut tl.npc_walks) {
+            npc_glide_hold.push(slot);
+            if self.npcs.motions.contains_key(&slot) {
+                tl.npc_walks.push(slot);
+            }
+        }
         // Player end-latch spin (`AD F8 08`): held while the scene-bank clip
         // the record poked onto the player is still playing; retail's clip
         // tick latches `+0x62 & 0x100` on its last frame and the spin falls
@@ -1641,6 +1651,13 @@ impl World {
                                     m.state.speed = speed;
                                     m.route_cursor = None;
                                 }
+                                // The record runs on past an NPC walk (`li
+                                // s7,4` in the delay slot at `0x801DF030`);
+                                // only a player target parks the caller.
+                                tl.npc_walks.retain(|&w| w != s);
+                                tl.npc_walks.push(s);
+                                tl.pc = pc + 5;
+                                continue;
                             } else {
                                 // No surfaced live position to glide from:
                                 // seat directly (the pre-park fallback).

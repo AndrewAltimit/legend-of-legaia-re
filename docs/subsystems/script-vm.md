@@ -770,10 +770,16 @@ decode differs per op:
 walk kernel reads. See [`motion-vm.md`](motion-vm.md).
 
 The **cross-context form** (`0x80`-flagged op + target byte, e.g.
-`C7 <id> <tx> <tz> <mode>`) parks the *poking record* while the walk kernel
-moves the **target** actor: the dispatcher saves the yield-op pointer into the
-target's `+0x94`, sets its `0x400` walk bit, and the record resumes only when
-the target arrives at the decoded tile. This is how a partition-2 beat
+`C7 <id> <tx> <tz> <mode>`) hands the walk to the **target** actor: the
+dispatcher saves the yield-op pointer into the target's `+0x94` and sets its
+`0x400` walk bit (`0x801DEFC0..0x801DF054`). Whether the *poking record* waits
+depends on the target. `li s7,4` sits in the delay slot at `0x801DF030`, so
+the record advances past the op for every target; only a **player** target
+also parks the caller (`0x801DF034..0x801DF044`), which then resumes when the
+player arrives. A record that walks an NPC runs on, and its next cross-context
+op on that NPC waits at the dispatcher's halted-target refusal until the leg
+lands - `opurud`'s Seru-tamer beat starts four channel walks back to back and
+they overlap. This is how a partition-2 beat
 choreographs its cast - the town01 post-naming Mei beat (`P2[4]`) drives
 `C7 46 11 1B 33` / `C7 46 11 1A 33` to walk Mei (channel `0x46`, placement 34)
 from her door seat to the conversation tile `(17,26)`, and `C7 F8 12 1A 33` to
