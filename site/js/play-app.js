@@ -993,15 +993,21 @@ void main() {
           }
           /* Placed layer only: the index into the engine's per-placement
            * live mask (`_syncStaticWindow`). */
-          if (placed) draw.placeIdx = i;
-          /* Overworld decorations (the placed list past the landmarks):
-           * retail's decoration sweep hazes each one toward 0xD0 by its
-           * origin's camera depth - staged per draw by renderAssembled
-           * (`decoCue`, the native `world_map_deco_start` twin). */
-          if (placed && decoStart !== undefined && i >= decoStart) draw.decoCue = true;
-          /* Terrain layer only: the index into the engine's visible-tile
-           * crop mask (`_syncViewWindow`). */
-          else draw.terrainIdx = i;
+          if (placed) {
+            draw.placeIdx = i;
+            /* Overworld decorations (the placed list past the landmarks):
+             * retail's decoration sweep hazes each one toward 0xD0 by its
+             * origin's camera depth - staged per draw by renderAssembled
+             * (`decoCue`, the native `world_map_deco_start` twin). */
+            if (decoStart !== undefined && i >= decoStart) draw.decoCue = true;
+          } else {
+            /* Terrain layer only: the index into the engine's visible-tile
+             * crop mask (`_syncViewWindow`). This was the `else` of the
+             * decoration test, so every non-decoration PLACED draw took a
+             * terrain index too, and at retail framing the crop hid
+             * placements by the mask entry of an unrelated terrain tile. */
+            draw.terrainIdx = i;
+          }
           this.staticDraws.push(draw);
           if (animRec) this.animProps.push(animRec);
         }

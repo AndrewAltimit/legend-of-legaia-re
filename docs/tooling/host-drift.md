@@ -1176,6 +1176,18 @@ were shared; only the page's one-time filter read the same predicate at the
 wrong moment. The shape to look for is a host filter evaluated once over state
 the engine keeps changing.
 
+**One mask applied to two index spaces.** The page keeps its terrain and
+placed draws in one list and gates each against its own engine mask: placed
+draws by `field_placement_live`, terrain draws by the visible-tile crop
+`field_terrain_live`. The tag that chose the second was the `else` of the
+overworld-decoration test, not of the placed test, so every non-decoration
+placed draw carried a terrain index too. At retail framing the crop then hid
+placements by the mask entry of whichever terrain tile shared their index -
+`town01` lost 30 of its 35 placed draws to it. Both masks came from shared
+kernels and the native window asks each for its own layer; only the page's
+tagging crossed them. The shape to look for is a mask whose index is
+assigned by a branch that was written for a different property.
+
 ## A rule spelled beside the shared predicate
 
 A second side-by-side pass, with the first pass's rows closed, found a shape
