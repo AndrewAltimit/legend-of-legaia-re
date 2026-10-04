@@ -718,7 +718,12 @@ fn battle_depth_ladder() {
         confirm_target(&mut session);
         let mut spawned = false;
         for _ in 0..SETTLE_TICKS {
-            if session.host.world.take_pending_summon_spawn().is_some() {
+            // The session's frame tail seats the request it raised
+            // (`World::seat_summon_creature_unrendered`), so the spawn reads
+            // as a seated creature as often as a pending request.
+            if session.host.world.take_pending_summon_spawn().is_some()
+                || session.host.world.casting.summon_actor_slot.is_some()
+            {
                 spawned = true;
                 break;
             }

@@ -618,8 +618,11 @@ vsync, before the commit. A capture inside PROT 0903's walk arm (`11`) is
 placed by the yaw base `ctx[+0x6DA]` the arm swings `6 * scalar` a vsync
 from `0x200` (the `y<yaw>` suffix), since the phase byte only names the
 arm's entry; an engine walk that arrives sooner leaves the arm first, and
-its exit is then the frame taken. The headless seed seats no creature, so
-its walk arm passes at once.
+its exit is then the frame taken. The headless seed seats the creature
+unrendered (`World::seat_summon_creature_unrendered`, from the session's frame
+tail): with no creature seated the walk arm passed on its first tick and
+folded the hit there, so a capture mid-walk (`gimard_burning_attack`, victim
+still at full HP) read the victim dead.
 
 The frame and the RAM are not the same instant. Retail double-buffers its
 packet pools, so while the CPU builds frame `N` the display scans out

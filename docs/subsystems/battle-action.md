@@ -458,15 +458,21 @@ states):
 |---|---|---|---|
 | `0x33` | clip `9`, `+0x1F5 = 0` | empty | drawn |
 | `0x36`, `ctx[+0x279] = 6` | hidden (`+0x21C = 0xFF`, prim word `0`) | `x=185, z=-2272` (the caster sits at `82, -542`), facing `0xFD9` = the caster's, idle clip, `+0x21D = 2` | party + living monsters hidden |
-| `0x36`, `ctx[+0x279] = 11` | hidden | `x=143, z=-1606`, clip `1` (the walk), `+0x21D = 4` | hidden; the flame parts live, the damage numeral up |
+| `0x36`, `ctx[+0x279] = 11` | hidden | `x=143, z=-1606`, clip `1` (the walk), `+0x21D = 4` | hidden; the flame parts live, the victim still at full HP (`+0x10 = 0`) |
 
 So the creature is seated about `1730` units **behind the party**, facing the
-enemy, and walks in toward the target while its effect parts play; the outcome
-lands mid-walk. The engine stager requests the namesake-creature spawn at that
-point (`pending_summon_spawn`, the hosts seat it and hand the seat back
-through `World::seat_summon_actor`), idles it, stages clip `1` and glides it
-to `1064` behind the caster, folds the outcome there, lingers, and despawns
-it. The per-summon effect parts (the `0x180C` move-VM records) are not
+enemy, and walks in toward the target while its effect parts play. The walk
+arm holds on the range poll `FUN_8004E2F0(7, victim)` (`bne v0,zero` at
+`0x801F7418`) and lands the hit on the pass the poll reads `0`, so the outcome
+lands when the creature reaches the victim - the phase-11 capture is the walk
+in flight, not its end. The engine stager requests the namesake-creature spawn
+at that point (`pending_summon_spawn`, the hosts seat it and hand the seat back
+through `World::seat_summon_actor`; a headless session seats it unrendered),
+idles it, stages clip `1` and walks it onto the victim until the same range
+metric reads in range (`World::creature_range_metric`, the creature's live
+pair against the victim's seat), folds the outcome there, lingers, and
+despawns it. A module with no directed walk arm keeps a fixed goal `1064`
+behind the caster. The walk speed is the engine's. The per-summon effect parts (the `0x180C` move-VM records) are not
 staged; the frame counts are the engine's, chosen to land the strike inside
 the band's `0x78`-frame sustain. The two flashes ride `World::presentation.fade`
 (`FadeState`, which honours the templates' start delay and `-1` hold) and both

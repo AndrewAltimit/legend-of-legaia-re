@@ -42,16 +42,19 @@
 //!   [`SUMMON_SPAWN_BEHIND`] units **behind** the caster on the party side
 //!   (`x=185, z=-2272` against the caster's `x=82, z=-542`), wearing the
 //!   caster's facing (`0xFD9`), on its idle clip.
-//! * `0x36`, stager phase 11 - the creature closer in (`z=-1606`,
-//!   [`SUMMON_STRIKE_BEHIND`] behind the caster) on clip `1`, the walk, with
-//!   the flame part-actors live and the damage numeral up.
+//! * `0x36`, stager phase 11 - the creature closer in (`z=-1606`) on clip
+//!   `1`, the walk, with the flame part-actors live and the victim still at
+//!   full HP: the walk arm holds on the range poll `FUN_8004E2F0(7, victim)`
+//!   and lands the hit only once the creature reaches the victim.
 //!
-//! So the retail creature walks **in from behind the party** toward the
-//! target while its effect parts play, and the damage lands mid-walk. The
+//! So the retail creature walks **in from behind the party** onto the target
+//! while its effect parts play, and the damage lands when it arrives. The
 //! stager here does the same with the pieces the engine has: it requests the
 //! namesake creature spawn ([`crate::world::CastFxState::pending_summon_spawn`]) at the spawn
-//! point, idles it, stages the walk clip and glides it to the strike point,
-//! folds the outcome there, lingers, and despawns it.
+//! point, idles it, stages the walk clip and walks it onto the victim until
+//! the range metric reads in range (a module with no directed walk arm glides
+//! it to the fixed strike point [`SUMMON_STRIKE_BEHIND`] instead), folds the
+//! outcome there, lingers, and despawns it.
 //!
 //! The per-summon effect parts are staged with it. They used to be the open
 //! half here ("the `0x180C` move-VM records are not staged"); the module's
@@ -74,8 +77,9 @@ use vm::battle_action::{ActionCategory, ActionState, StepOutcome};
 /// How far behind the caster (toward negative Z, the party side) the
 /// creature is seated - the capture's `-2272 - (-542)`.
 pub const SUMMON_SPAWN_BEHIND: i16 = 1730;
-/// Where the walk ends and the outcome lands - the capture's
-/// `-1606 - (-542)`.
+/// Where an undirected module's walk ends and the outcome lands. A directed
+/// walk arm walks onto the victim instead (`summon_walk_to_victim`); this is
+/// the `gimard_burning_attack` capture's mid-walk `-1606 - (-542)`.
 pub const SUMMON_STRIKE_BEHIND: i16 = 1064;
 /// Frames the creature idles at its spawn point before the walk.
 const SUMMON_IDLE_FRAMES: u16 = 30;
@@ -629,6 +633,37 @@ impl World {
         a.battle.current_anim = 0;
     }
 
+    /// The seat half of a summon spawn request for a host that draws
+    /// nothing: take [`crate::world::CastFxState::pending_summon_spawn`] and
+    /// seat an unrendered creature at the hosts' slot (`8 + party_count`),
+    /// through the same [`Self::seat_summon_actor`] the play hosts call
+    /// after binding the mesh.
+    ///
+    /// The seat is not presentation-only. A directed module's walk arm
+    /// (PROT 0903's arm 11) walks the seated creature and lands the hit when
+    /// it reaches the victim; with no creature seated the arm passes on its
+    /// first tick, so a headless run folded the outcome hundreds of frames
+    /// before either play host would. Returns `true` when a creature was
+    /// seated.
+    pub fn seat_summon_creature_unrendered(&mut self) -> bool {
+        if self.mode != SceneMode::Battle {
+            return false;
+        }
+        if self.take_pending_summon_spawn().is_none() {
+            return false;
+        }
+        let slot = self
+            .casting
+            .summon_actor_slot
+            .map_or(8 + usize::from(self.party.party_count), usize::from);
+        let Some(a) = self.actors.get_mut(slot) else {
+            return false;
+        };
+        a.active = true;
+        self.seat_summon_actor(slot);
+        true
+    }
+
     /// Install the cast-effect pool - the DATA half of the slot-B cast-module
     /// band (PROT 0903..0966), parsed off the disc by the scene host (which
     /// holds the PROT index; `World` is index-agnostic, the same split
@@ -836,9 +871,19 @@ impl World {
                     Some(p) => p.walk_arm.is_some_and(|w| module_phase >= w),
                     None => st.frames > SUMMON_IDLE_FRAMES,
                 };
-                let walked = match seat {
-                    Some(slot) => may_walk && self.summon_walk_step(slot as usize, st.goal),
-                    None => st.frames >= SUMMON_UNSEATED_GRACE,
+                // A directed walk arm walks the creature onto the **victim**
+                // and holds on the range poll `FUN_8004E2F0(7, victim)`
+                // (PROT 0903's arm 11, `bne v0,zero` at `0x801F7418`); the
+                // engine's fixed goal stands in only where no module walks.
+                let victim = profile
+                    .filter(|p| p.walk_arm.is_some())
+                    .map(|_| self.actors.get(st.caster as usize))
+                    .and_then(|c| c.map(|c| c.battle.active_target))
+                    .filter(|&v| self.actors.get(usize::from(v)).is_some_and(|a| a.active));
+                let walked = match (seat, victim) {
+                    (Some(slot), Some(v)) => may_walk && self.summon_walk_to_victim(slot, v),
+                    (Some(slot), None) => may_walk && self.summon_walk_step(slot as usize, st.goal),
+                    (None, _) => st.frames >= SUMMON_UNSEATED_GRACE,
                 };
                 st.walked = walked;
                 let strike = match directed_hit {
@@ -959,6 +1004,35 @@ impl World {
         ms.world_x = (i32::from(ms.world_x) + dx.clamp(-step, step)) as i16;
         ms.world_z = (i32::from(ms.world_z) + dz.clamp(-step, step)) as i16;
         false
+    }
+
+    /// A directed walk arm's step: stage the walk clip, glide the creature
+    /// one step toward `victim`'s seat, and report arrival on the range poll
+    /// retail's arm holds on - `FUN_8004E2F0(7, victim)` reading `0`. Retail
+    /// turns the creature onto the victim every pass (`sh v0,0x46(s3)` at
+    /// `0x801F73C4`); the creature's own `+0x1F` reads `0` in the
+    /// `gimard_burning_attack` capture, so the size class is the victim's.
+    fn summon_walk_to_victim(&mut self, slot: u8, victim: u8) -> bool {
+        let Some(a) = self.actors.get(usize::from(slot)) else {
+            return true;
+        };
+        let pos = (a.move_state.world_x, a.move_state.world_z);
+        if self.creature_range_metric(pos, 0, victim) == 0 {
+            return true;
+        }
+        let (vx, vz) = self.battle_seat_of(usize::from(victim));
+        let y = a.move_state.world_y;
+        // `FUN_80019B28(victim, creature) + 0x800` (`0x801F73A4..0x801F73C4`).
+        let bearing = vm::battle_action::bearing_12bit_approx(vz, vx, pos.1, pos.0);
+        if let Some(a) = self.actors.get_mut(usize::from(slot)) {
+            a.battle.facing_angle = bearing.wrapping_add(0x800) & 0xFFF;
+        }
+        self.summon_walk_step(usize::from(slot), [vx, y, vz]);
+        let Some(a) = self.actors.get(usize::from(slot)) else {
+            return true;
+        };
+        let pos = (a.move_state.world_x, a.move_state.world_z);
+        self.creature_range_metric(pos, 0, victim) == 0 || pos == (vx, vz)
     }
 
     /// Retire the summon creature: the seat goes inactive so both hosts
