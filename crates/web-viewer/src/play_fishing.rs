@@ -178,16 +178,31 @@ impl LegaiaRuntime {
     /// The phase / prompt status rows the native window prints above the retail
     /// HUD, so a player can tell which phase the session is in before the
     /// sprite page exists. The text is the engine's (`PondSession::status_rows`);
-    /// the key names are this page's default bindings for Circle / Cross /
-    /// Square.
+    /// the key names are read from the page's **live** binding table
+    /// ([`crate::pad_bindings::live_mapping`]), so a rebind shows here. The
+    /// trailing affordances are the ones the native window lists (menu, quit,
+    /// prizes): Triangle opens the venue hub, Start is the engine's minigame
+    /// escape, and the prize exchange is this page's button beside the frame
+    /// (the native window's `P` key).
     fn fishing_status_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
         let Some(s) = self.fishing_session() else {
             return Vec::new();
         };
         let white = [1.0, 1.0, 1.0, 1.0];
         let dim = [0.65, 0.72, 0.8, 1.0];
-        let (line, hint) = s.status_rows("X", "Z", "V");
-        let hint = format!("{hint}  (Triangle = menu)");
+        let mapping = crate::pad_bindings::live_mapping();
+        let key = |button: &'static str| -> String {
+            mapping
+                .key_label_for_button(button)
+                .unwrap_or(button)
+                .to_string()
+        };
+        let (line, hint) = s.status_rows(&key("Circle"), &key("Cross"), &key("Square"));
+        let hint = format!(
+            "{hint}  ({} = menu, {} = quit, Prize exchange button = prizes)",
+            key("Triangle"),
+            key("Start")
+        );
         let mut out = ui::text_draws_for(&font.layout_ascii(&line), STATUS_PEN, white);
         out.extend(ui::text_draws_for(&font.layout_ascii(&hint), HINT_PEN, dim));
         out
