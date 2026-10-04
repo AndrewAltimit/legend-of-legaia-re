@@ -245,9 +245,12 @@ impl World {
     /// The monster twin of [`Self::arm_player_cast`]. A monster's stream
     /// carries its cast clip behind the spell id (`params[1]`, the `+0x1E0`
     /// byte the `0x29` arm stages into `+0x1DA` - see
-    /// [`Self::monster_cast_clip`]), terminated at `params[2]`; a monster
-    /// with no such clip installed stages the terminator at once and the
-    /// band ends the action after the wait.
+    /// [`Self::monster_cast_clip`]), then its opening camera shot
+    /// (`params[2]`, `+0x1E1`, a case of the cast-effect driver - see
+    /// `SpellAnimPairs::opening_shot`), terminated at `params[3]`
+    /// (`FUN_801E9FD4`, `0x801EA53C..0x801EA588`); a monster with no such
+    /// clip installed stages the terminator at once and the band ends the
+    /// action after the wait.
     pub(in crate::world) fn arm_monster_cast(
         &mut self,
         slot: u8,
@@ -256,13 +259,21 @@ impl World {
     ) {
         let code = self.cast_target_code(def, &targets, slot);
         let clip = self.monster_cast_clip(slot, def.id).unwrap_or(0xFF);
+        // A table that was not read stages the terminator in the shot's
+        // place, the stream the port carried before the shot existed.
+        let shot = self
+            .battle
+            .spell_anim_pairs
+            .opening_shot(def.id)
+            .unwrap_or(0xFF);
         self.clear_action_stream(slot);
         if let Some(a) = self.actors.get_mut(slot as usize) {
             a.battle.active_target = code;
             a.battle.action_category = ActionCategory::Magic.as_byte();
             a.battle.params[0] = def.id;
             a.battle.params[1] = clip;
-            a.battle.params[2] = 0xFF;
+            a.battle.params[2] = shot;
+            a.battle.params[3] = 0xFF;
             a.battle.sub_route = 0;
         }
         self.casting.pending_cast = Some(PendingCast {

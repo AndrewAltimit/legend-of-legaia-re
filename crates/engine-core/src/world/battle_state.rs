@@ -498,6 +498,11 @@ pub struct BattleState {
     /// the host next to [`Self::ui_strings`]. Empty without a disc read, in
     /// which case a spell id below `0x25` stages no clip and folds at once.
     pub spell_anim_pairs: legaia_asset::spell_anim_pairs::SpellAnimPairs,
+    /// The cast-effect driver's call this frame (`FUN_801DC0A0`, made from
+    /// the magic band's `0x2A..=0x2D` arms) as the battle camera reads it;
+    /// cleared after every camera step
+    /// (`crate::battle_cam_inputs::spell_cam_inputs`).
+    pub spell_cam: Option<legaia_engine_vm::battle_cam_script::SpellCamInputs>,
     /// The next [`crate::world::World::enter_battle`] is the sparring fight and should arm
     /// [`crate::world::BattleState::tutorial`]. Set by
     /// [`crate::world::World::prime_battle_tutorial`]; the engine's stand-in for retail's
@@ -709,6 +714,7 @@ impl BattleState {
             tutorial_boxes: std::collections::VecDeque::new(),
             ui_strings: legaia_asset::battle_ui_strings::BattleUiStrings::default(),
             spell_anim_pairs: legaia_asset::spell_anim_pairs::SpellAnimPairs::default(),
+            spell_cam: None,
             tutorial_pending: false,
             solo_spar_restore: None,
             active_formation: None,

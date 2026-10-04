@@ -49,6 +49,7 @@ impl BattleCamera {
             action_yaw: 0,
             last_action_state: 0,
             acting_body: None,
+            spell_cam: None,
             last_active_commits: None,
             last_swing_seeds: None,
             option: CAMERA_OPTION_CLOSE,
@@ -935,6 +936,27 @@ impl BattleCamera {
                 self.step_module_shot();
                 return;
             }
+            // The magic band's `0x2A..=0x2E` call no `FUN_801D5854` case: the
+            // cast-effect driver's shot is the camera, re-armed on every pass
+            // that calls it, and a pass that does not leaves the last tween
+            // to land.
+            if SPELL_CAM_STATES.contains(&self.last_action_state) {
+                if let Some(mut si) = self.spell_cam.take() {
+                    si.accum = self.attack.ctx.accum;
+                    si.live_yaw = self.pose.yaw;
+                    si.frame_step = SPELL_CAM_FRAME_STEP;
+                    if let Some(shot) = spell_cam_case(&si).shot {
+                        let mut from = self.pose;
+                        let steps = (shot.frames / 2).max(1);
+                        let g = Glide::linear(&mut from, shot.pose, shot.raw_z, steps, true);
+                        self.pose = from;
+                        self.glides.clear();
+                        self.glides.push_back(g);
+                    }
+                }
+                self.step_front_glide();
+                return;
+            }
             // `0x70` re-arms no framing: hold, or walk the module's shot.
             if self.last_action_state == CAPTURE_MODULE_STATE {
                 self.glides.clear();
@@ -979,6 +1001,11 @@ impl BattleCamera {
             BattleCamPhase::Menu => self.retarget_menu_glide(),
             _ => {}
         }
+        self.step_front_glide();
+    }
+
+    /// Step the front glide segment once, popping it when it lands.
+    pub(super) fn step_front_glide(&mut self) {
         let Some(g) = self.glides.front().copied() else {
             return;
         };

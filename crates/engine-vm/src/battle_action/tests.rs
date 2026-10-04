@@ -2508,8 +2508,10 @@ fn full_magic_flow_round_trips() {
 
     // Set spell ID + MP cost so MagicCastBegin doesn't crash on division.
     host.actors[1].params[0] = 0x10;
+    // One `(clip, shot)` pair, as every retail stream carries them.
     host.actors[1].params[1] = 0x21; // first chain anim
-    host.actors[1].params[2] = 0xFF; // chain terminator
+    host.actors[1].params[2] = 0x07; // its shot
+    host.actors[1].params[3] = 0xFF; // chain terminator
     host.actors[1].mp = 100;
     host.spell_costs.insert(0x10, 20);
     host.actors[1].sub_route = 0; // not summon
@@ -2537,8 +2539,8 @@ fn full_magic_flow_round_trips() {
     assert_eq!(host.actors[1].queued_anim, 0x21, "0x29 stages params[1]");
     assert_eq!(host.actors[1].strike_index, 2);
 
-    // MagicAnimChain reads `params[strike_index]`: the terminator, so the
-    // chain transitions on its first step.
+    // MagicAnimChain looks one past the cursor (`params[3]`): the
+    // terminator, so the chain transitions on its first step.
     step(&mut host, &mut ctx);
     assert_eq!(ctx.action_state, ActionState::MagicSustain.as_byte());
 

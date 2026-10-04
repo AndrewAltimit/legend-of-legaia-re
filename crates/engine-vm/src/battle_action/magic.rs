@@ -223,6 +223,10 @@ pub(super) fn magic_pre_cast_wait<H: BattleActionHost + ?Sized>(
     // `0x801E45EC`).
     let sub_route = host.actor(slot).map(|a| a.sub_route).unwrap_or(0);
     if sub_route == 9 {
+        // `0x801E45F8..0x801E4604`: the summon route frames the caster at
+        // the near `0x600` depth.
+        ctx.camera_frame_height = super::summon::SUMMON_ROUTE_FRAME_HEIGHT;
+        host.camera_frame_height(super::summon::SUMMON_ROUTE_FRAME_HEIGHT);
         return transition(ctx, ActionState::SummonInvoke);
     }
 
@@ -276,38 +280,78 @@ pub(super) fn magic_pre_cast_wait<H: BattleActionHost + ?Sized>(
     transition(ctx, ActionState::MagicAnimChain)
 }
 
+/// The queue byte `+0x1DF + i`, or the `0xFF` sentinel past the stream.
+fn queue_byte<H: BattleActionHost + ?Sized>(host: &H, slot: u8, i: usize) -> u8 {
+    host.actor(slot)
+        .and_then(|a| a.params.get(i).copied())
+        .unwrap_or(0xFF)
+}
+
+/// State `0x2A` - the cast's anim chain (`0x801E475C..0x801E47F8`).
+///
+/// The queue past the spell id is `(clip, shot)` pairs: the clip is staged
+/// at `+0x1DA`, the shot is the case byte the cast-effect driver
+/// `FUN_801DC0A0` films it with. Each pass looks one byte **past** the
+/// cursor `ctx[+0x15]` (`addiu a0,v0,0x1` at `0x801E4764`):
+///
+/// * `0xFF` - the chain is done: `0x2B`, and with the cursor still on the
+///   first pair's shot (`2`) the clip latch `+0x1FA` is raised and `+0x1DC`
+///   gains bit `4` (`0x801E478C..0x801E47A0`, `0x801E4860`). A longer chain
+///   leaves both alone.
+/// * anything else - while the latch is clear, the next pair is taken: the
+///   cursor steps onto its clip, stages it, steps onto its shot and raises
+///   the latch (`0x801E47B4..0x801E47DC`). Then, latch or not, the driver
+///   is called with the byte two **behind** the cursor (`lbu a1,0x1dd(v0)`
+///   at `0x801E47EC`) and the state holds.
+///
+/// PORT: FUN_801E295C (`0x801E475C..0x801E47F8`)
 pub(super) fn magic_anim_chain<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
     let slot = ctx.active_actor;
-    let next_byte = host.actor(slot).map(|a| a.read_param(0)).unwrap_or(0xFF);
-    if next_byte != 0xFF {
-        if let Some(actor) = host.actor_mut(slot) {
-            actor.queued_anim = next_byte;
+    let cursor = host.actor(slot).map_or(0, |a| usize::from(a.strike_index));
+    if queue_byte(host, slot, cursor + 1) == 0xFF {
+        if cursor == 2
+            && let Some(actor) = host.actor_mut(slot)
+        {
             actor.spell_iter = 1;
-            actor.strike_index = actor.strike_index.saturating_add(1);
+            actor.flag_bits.set(ActorFlags::EXIT);
         }
-        host.spell_anim_sustain(slot, next_byte);
-        return stay(ctx);
+        return transition(ctx, ActionState::MagicSustain);
     }
-    // Terminator hit.
-    if let Some(actor) = host.actor_mut(slot) {
-        if actor.strike_index == 2 {
-            actor.spell_iter = 1;
-        }
-        actor.flag_bits.set(ActorFlags::EXIT);
+    if let Some(actor) = host.actor_mut(slot)
+        && actor.spell_iter == 0
+    {
+        actor.strike_index = actor.strike_index.saturating_add(1);
+        actor.queued_anim = actor.read_param(0);
+        actor.strike_index = actor.strike_index.saturating_add(1);
+        actor.spell_iter = 1;
     }
-    transition(ctx, ActionState::MagicSustain)
+    let cursor = host.actor(slot).map_or(0, |a| usize::from(a.strike_index));
+    let shot = queue_byte(host, slot, cursor.wrapping_sub(2));
+    host.spell_anim_sustain(slot, shot);
+    stay(ctx)
 }
 
+/// State `0x2B` - the cast's sustain (`0x801E4800..0x801E4868`): the driver
+/// on the first pair's shot `+0x1E1` while the cursor sits on it, otherwise
+/// on the byte two behind the cursor, until the clip latch `+0x1FA` drops;
+/// then `0x2C` with `+0x1DC` bit `4`.
+///
+/// PORT: FUN_801E295C (`0x801E4800..0x801E4868`)
 pub(super) fn magic_sustain<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
     let slot = ctx.active_actor;
-    let queued = host.actor(slot).map(|a| a.queued_anim).unwrap_or(0);
-    host.spell_anim_sustain(slot, queued);
+    let cursor = host.actor(slot).map_or(0, |a| usize::from(a.strike_index));
+    let shot = if cursor == 2 {
+        queue_byte(host, slot, 2)
+    } else {
+        queue_byte(host, slot, cursor.wrapping_sub(2))
+    };
+    host.spell_anim_sustain(slot, shot);
     let iter_done = host.actor(slot).map(|a| a.spell_iter == 0).unwrap_or(false);
     if !iter_done {
         return stay(ctx);
@@ -318,13 +362,19 @@ pub(super) fn magic_sustain<H: BattleActionHost + ?Sized>(
     transition(ctx, ActionState::MagicHitLoop)
 }
 
+/// State `0x2C` - the hit loop (`0x801E486C..0x801E48C8`): the driver on the
+/// byte under the cursor, until the current anim reads `0` or the hit counter
+/// `ctx[+0x24C]` reaches a non-zero bound `+0x21B`.
+///
+/// PORT: FUN_801E295C (`0x801E486C..0x801E48C8`)
 pub(super) fn magic_hit_loop<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
     let slot = ctx.active_actor;
-    let queued = host.actor(slot).map(|a| a.queued_anim).unwrap_or(0);
-    host.spell_anim_sustain(slot, queued);
+    let cursor = host.actor(slot).map_or(0, |a| usize::from(a.strike_index));
+    let shot = queue_byte(host, slot, cursor);
+    host.spell_anim_sustain(slot, shot);
     // Exit when current anim is 0 OR hit_counter >= bound (and bound != 0).
     let (current, bound) = host
         .actor(slot)
@@ -341,10 +391,15 @@ pub(super) fn magic_recovery<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
+    let slot = ctx.active_actor;
     if ctx.magic_recovery_gate != 0 {
+        // `0x801E48D8..0x801E4918`: while an effect child is live, the
+        // driver keeps filming on the byte under the cursor.
+        let cursor = host.actor(slot).map_or(0, |a| usize::from(a.strike_index));
+        let shot = queue_byte(host, slot, cursor);
+        host.spell_anim_sustain(slot, shot);
         return stay(ctx);
     }
-    let slot = ctx.active_actor;
     if let Some(actor) = host.actor_mut(slot) {
         // Clear actor[+0x176] - modeled as resetting hit_count_bound + a
         // dummy field. Engines that need finer modeling can override the

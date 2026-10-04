@@ -3324,10 +3324,37 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     fn summon_stager_tick(&mut self) -> bool {
         self.world.summon_stager_tick()
     }
+    /// `FUN_801DC0A0(actor, case)`: the cast-effect driver's camera script.
+    /// The case's shot goes to the battle camera when the magic band's
+    /// `0x2A..=0x2D` arms made the call (they arm no `FUN_801D5854` case),
+    /// and its hand-off is written back over the queue byte under the cursor
+    /// (`s3 = actor + 0x1DF + ctx[+0x15]`), which the next pass reads.
+    ///
+    /// Not modelled: case `1`'s `ctx[+0x24C] = 0xFD` (a host cannot write
+    /// the context the step writes back) and case `0x13`'s `+0x21C` /
+    /// `+0x21F` render stores.
+    ///
+    /// REF: FUN_801DC0A0
     fn spell_anim_sustain(&mut self, actor_id: u8, anim_id: u8) {
         self.world
             .pending_battle_events
             .push(BattleEvent::SpellAnimSustain { actor_id, anim_id });
+        let inputs = crate::battle_cam_inputs::spell_cam_inputs(self.world, actor_id, anim_id);
+        let step = vm::battle_cam_script::spell_cam_case(&inputs);
+        if let Some(a) = self.world.actors.get_mut(usize::from(actor_id)) {
+            if let Some(next) = step.next_case {
+                let i = usize::from(a.battle.strike_index);
+                if let Some(b) = a.battle.params.get_mut(i) {
+                    *b = next;
+                }
+            }
+            if step.clear_hit_bound {
+                a.battle.hit_count_bound = 0;
+            }
+        }
+        if vm::battle_cam_script::SPELL_CAM_STATES.contains(&self.world.battle_ctx.action_state) {
+            self.world.battle.spell_cam = Some(inputs);
+        }
     }
     fn apply_damage(&mut self, icon: u8, page: u8, target_slot: u8, party_slot: u8) {
         self.world

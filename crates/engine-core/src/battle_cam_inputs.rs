@@ -139,6 +139,7 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
         ),
         acting_body,
         cursor,
+        spell_cam: world.battle.spell_cam,
     };
     battle_end_cam_inputs(world, inputs, actor_at)
 }
@@ -519,6 +520,127 @@ pub fn battle_attack_channels(world: &World, acting_slot: u8) -> Option<script::
     })
 }
 
+/// What `FUN_801DC0A0(slot, case)` reads, off the live world.
+///
+/// The effect slot `ctx[+0x1144]` is the move-FX block's launch point
+/// (`CastFxState::move_fx_streak`); the engine does not fly it
+/// (`FUN_801E09F8`'s homing is render-track), so a projectile shot frames
+/// the launch rather than the flame in flight, and the caster's own pair
+/// stands in before any terminator. The target's body radius is the party
+/// value; the monster pick's `+0x21` first magic slot is the catalog's first
+/// live one.
+///
+/// REF: FUN_801DC0A0, FUN_801DCEAC, FUN_801F0348
+pub fn spell_cam_inputs(world: &World, slot: u8, case: u8) -> script::SpellCamInputs {
+    use legaia_engine_vm::battle_target_group::{GroupSlot, RENDER_FLAG_HIDDEN, target_group_aim};
+    let pc = world.party.party_count;
+    let Some(a) = world.actors.get(usize::from(slot)) else {
+        return script::SpellCamInputs {
+            case,
+            ..Default::default()
+        };
+    };
+    let world_of = |x: i16, y: i16, z: i16| [f32::from(x), f32::from(y), f32::from(z)];
+    let actor = script::BattleCamActor {
+        facing: i32::from(a.battle.facing_angle & 0xFFF),
+        world: world_of(
+            a.move_state.world_x,
+            a.move_state.world_y,
+            a.move_state.world_z,
+        ),
+        height: None,
+    };
+    let code = a.battle.active_target;
+    let target = if usize::from(code) < 8 {
+        world
+            .actors
+            .get(usize::from(code))
+            .map_or(script::SpellCamTarget::None, |t| {
+                script::SpellCamTarget::Slot {
+                    world: [
+                        f32::from(t.move_state.world_x),
+                        f32::from(t.move_state.world_z),
+                    ],
+                    radius: script::PARTY_BODY_RADIUS,
+                }
+            })
+    } else {
+        // `FUN_801DCEAC` walks retail numbering (party `0..3`, monsters
+        // `3..7`); the engine seats monsters straight after the party.
+        let mut slots = [GroupSlot {
+            live: false,
+            x: 0,
+            z: 0,
+        }; 8];
+        for (retail, out) in slots.iter_mut().enumerate() {
+            let retail = retail as u8;
+            let engine = if retail < 3 {
+                if retail >= pc {
+                    continue;
+                }
+                retail
+            } else {
+                pc + (retail - 3)
+            };
+            let Some(t) = world.actors.get(usize::from(engine)) else {
+                continue;
+            };
+            let live = retail < 3
+                || (t.battle_monster_id.is_some() && t.battle.render_flag != RENDER_FLAG_HIDDEN);
+            *out = GroupSlot {
+                live,
+                x: t.move_state.world_x,
+                z: t.move_state.world_z,
+            };
+        }
+        target_group_aim(code, &slots).map_or(script::SpellCamTarget::None, |g| {
+            script::SpellCamTarget::Group {
+                centroid: [-f32::from(g.centroid_x), -f32::from(g.centroid_z)],
+                extent: i32::from(g.extent),
+            }
+        })
+    };
+    let streak = &world.casting.move_fx_streak;
+    let fx_position = streak
+        .launch
+        .map_or([actor.world[0], actor.world[2]], |(x, _, z)| {
+            [x as f32, z as f32]
+        });
+    let monster = slot >= pc;
+    let first_magic_3a = monster
+        && a.battle_monster_id
+            .and_then(|id| world.tables.monster_catalog.get(id))
+            .and_then(|d| d.magic_attacks.first().copied())
+            == Some(0x3A);
+    script::SpellCamInputs {
+        case,
+        actor,
+        char_id: if monster {
+            0
+        } else {
+            world.party_roster_slot(usize::from(slot)) as u8 + 1
+        },
+        monster_seat: monster,
+        first_magic_3a,
+        group_target: code >= 8,
+        target,
+        fx_position,
+        live_yaw: 0.0,
+        frame_step: script::SPELL_CAM_FRAME_STEP,
+        fx_timer: streak.counter_word as i16,
+        fx_children: world.battle_ctx.magic_recovery_gate,
+        fx_phase: streak.phase,
+        accum: 0,
+        depth_raw: world.battle.camera_frame_height as i32,
+        anim_cursor: a
+            .battle_animation
+            .as_ref()
+            .map_or(0, |p| p.current_frame().saturating_mul(16)),
+        hit_bound: a.battle.hit_count_bound,
+        current_anim: world.battle_current_anim(usize::from(slot)),
+    }
+}
+
 /// The `FUN_801D5854` case-6 context inputs for the acting slot: `party_slot`
 /// is retail's `ctx[+0x13] < 3`, `char_id` its `DAT_8007BD10[slot]`,
 /// `depth_raw` `ctx[+0x6D0]` (what `camera_height_for_frame` last computed),
@@ -567,6 +689,7 @@ impl World {
             tracks.as_ref(),
             &mut self.rng_state,
         );
+        self.battle.spell_cam = None;
     }
 
     /// The battle camera's current pose, or the shared boot pose before the

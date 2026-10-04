@@ -318,6 +318,10 @@ pub(super) fn spirit_post_damage<H: BattleActionHost + ?Sized>(
 /// `0x46`'s hold before the sustain reads its exit (`li v0,0x20` /
 /// `sh v0,0x2(s7)` at `0x801E539C..0x801E53A0`, `s7 = ctx + 0x6D6`).
 pub const SPIRIT_BAND_HOLD: i16 = 0x20;
+
+/// The framing depth `ctx[+0x6D0]` `0x46` stores on entry (`li v0,0x800` at
+/// `0x801E52AC`), below `FUN_801F0348`'s `0xC00` floor.
+pub const SPIRIT_BAND_FRAME_HEIGHT: i16 = 0x800;
 /// `0x47`'s exit re-arms the timer for the flush (`li v0,0x300` at
 /// `0x801E54E0`), which `0x48` drains eight units a frame step.
 pub const SPIRIT_FLUSH_HOLD: i16 = 0x300;
@@ -333,6 +337,13 @@ pub(super) fn spirit_arts_entry<H: BattleActionHost + ?Sized>(
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
     let slot = ctx.active_actor;
+    // `li v0,0x800` / `sh v0,0x6d0(v1)` at `0x801E52AC..0x801E52B0`, ahead of
+    // the arm's case-6 call: the Spirit band frames its member at the near
+    // depth, whatever `FUN_801F0348` sized the seed to, and the Done band
+    // that follows keeps it (`nivora_duel_pre_megaton_press` reads
+    // `ctx[+0x6D0] = 0x800`, eye depth `prescale(0x800)`, in `0x51`).
+    ctx.camera_frame_height = SPIRIT_BAND_FRAME_HEIGHT;
+    host.camera_frame_height(SPIRIT_BAND_FRAME_HEIGHT);
     host.pose(slot, Pose::Idle);
     if let Some(actor) = host.actor_mut(slot) {
         actor.flag_bits = ActorFlags(ActorFlags::ADVANCE_DONE);

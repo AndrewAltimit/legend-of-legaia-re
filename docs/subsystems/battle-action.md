@@ -64,10 +64,10 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x20` | Attack - return | Opens on the **attacker's** committed id: while `actor[+0x1D9] != 0` (`0x801E54EC`) it only re-poses and holds - the wait for the last swing's clip to end, since `0x1F`'s gate opens when that clip *commits* and its hit events (and the combo-total apply) all land after. Then decides if combat continues by inspecting target liveness (`s8[+0x14C] != 0` for monster-slot, plus `s8[+0x1D9]` == `0` or `8`, plus `actor[*0x22C][+0x74] & 0xFFFFFF`), and counter-attack trigger flags (`ctx[+0x287] != 0 && DAT_8007BD0D == 0 && ctx[+0x288] != 0`). If combat ended → `0x50`. Else loops `FUN_801D5854(actor, 7 or 8)` per liveness. | `0x50` (done) or stays. |
 | `0x28` | **Magic / Item - cast begin** | Resolves bearing + facing, sets the cast timer, looks up the spell-name HUD label, and deducts the (ability-bit-scaled) MP cost; capture-class spells route to `0x6E`. Full step body: [Magic / Item - cast begin (`0x28`)](#magic--item---cast-begin-0x28). | `0x29` (or `0x6E` for capture). |
 | `0x29` | Magic - pre-cast wait | Decrements `ctx[+0x6D8]` by the frame dt. When negative: party_id < 3 → `FUN_801DBF9C(party, spell_id)` ([the cast trigger](#the-party-cast-trigger-fun_801dbf9c) - anim stream, not outcome). `actor[+0x1E0] == 9` → `0x32` (summon). Then **bumps the stream cursor before reading** (`0x801E4644..0x801E4650`) and stages the byte at `+0x1DA` (`0x801E4664`) - the first anim byte is `+0x1E0`, behind the spell id; a `-1` there clears the stage → `0x50`. Else if spell_id < 0x81: a second bump, `FUN_801DC0A0(party, byte)` (the cast-effect driver), and the id-keyed cues (`0x14C / 0x144 / 0x15E` for ids `0x3F / 0x2C / 0x6A`). | `0x2A`, or `0x32` (summon), or `0x50` (done). |
-| `0x2A` | Magic - animation chain | Reads next byte from `actor[+0x1DF + +0x15]`. If not terminator: stages `actor[+0x1DA] = next_byte`, calls `FUN_801DC0A0`, sets `actor[+0x1FA] = 1`. On terminator (`-1`): if `actor[+0x15] == 2` sets `actor[+0x1FA] = 1` and OR's `actor[+0x1DC] |= 4`. | `0x2B`. |
-| `0x2B` | Magic - sustained anim | Continues `FUN_801DC0A0` calls; checks `actor[+0x1FA] == 0`. | `0x2C` (and OR's `actor[+0x1DC] |= 4`). |
-| `0x2C` | Magic - hit-frame loop | `FUN_801DC0A0` per frame; condition: `actor[+0x1D9] == 0` OR `(ctx[+0x24C] >= actor[+0x21B] && actor[+0x21B] != 0)` (hit-counter reaches script bound). | `0x2D`. |
-| `0x2D` | Magic - recovery | If `ctx[+0x24D] == 0`: clears `actor[+0x176]` and `actor[+0x21B]`. Item-class spells (target == 9) set `DAT_8007B64C = 0x78` (UI flash). | `0x2E` once `+0x24D == 0`. |
+| `0x2A` | Magic - animation chain | Looks one byte **past** the cursor, `actor[+0x1DF + ctx[+0x15] + 1]` (the queue is `(clip, shot)` pairs). Not the terminator: while the clip latch `+0x1FA` is clear, steps the cursor onto the clip, stages it at `+0x1DA`, steps onto its shot and raises the latch; then calls `FUN_801DC0A0` with the byte two behind the cursor and holds. Terminator (`-1`): if the cursor is `2`, raises `+0x1FA` and `+0x1DC |= 4`. | `0x2B`. |
+| `0x2B` | Magic - sustained anim | `FUN_801DC0A0` on `+0x1E1` while the cursor is `2` (else two behind it), until the commit `FUN_8004AD80` counts `+0x1FA` down at the clip's boundary. | `0x2C` (and OR's `actor[+0x1DC] |= 4`). |
+| `0x2C` | Magic - hit-frame loop | `FUN_801DC0A0` per frame on the byte under the cursor; condition: `actor[+0x1D9] == 0` OR `(ctx[+0x24C] >= actor[+0x21B] && actor[+0x21B] != 0)` (hit-counter reaches script bound). | `0x2D`. |
+| `0x2D` | Magic - recovery | While `ctx[+0x24D] != 0`, `FUN_801DC0A0` on the byte under the cursor. Once `0`: clears `actor[+0x176]` and `actor[+0x21B]`. Item-class spells (target == 9) set `DAT_8007B64C = 0x78` (UI flash). | `0x2E` once `+0x24D == 0`. |
 | `0x2E` | Magic - exit | Gated on `ctx[+0x249] == 0`. Resets screen-shake (`_DAT_8007B790` if > 400, sets to 0; `_DAT_800840BC = 0x500`). | `0x50`. |
 | `0x32` | Summon - invoke | `FUN_801D5854(actor, 6)` + waits on `func_0x8003DE7C(1)` (sound bank ready). When ready, computes summon-frame index `bVar5` from `actor[+0x1DF]` (if < 0x9A: `(actor[+0x1DF] + 0x7F) * 3 + 0x80`, else `actor[+0x1DF] * 4 + 99`); writes `ctx[+0x277] = bVar5`, `ctx[+0x276] = 1`, `ctx[+0x278] = 1`. Sets `actor[+0x1DA] = 9`, `actor[+0x1DC] |= 1`, `actor[+0x1FA]++`. | `0x33`. |
 | `0x33` | Summon - fade in | `FUN_801DC0A0(party, 0x12)` - the cast-effect driver on the `0x12` the trigger staged, while the caster stays on clip `9`; its case `0x12` also arms the summon cast close-up camera (see [below](#the-summon-cast-close-up-camera)). When `actor[+0x1F5] != 0` (anim cue): writes the flash-in template at `DAT_801C9070` (kind `1` = additive, ramp `0x14`, black → white, start delay `0x14`, hold `-1`), spawns it with id `1` via `func_0x80024E80`, then fires cue `0x63` through `FUN_8004FCC8` (`0x801E4AA8`). The `-1` hold is why the white persists until `0x34` kills the actor. | `0x34`. |
@@ -195,6 +195,33 @@ The full step body for state `0x28`:
 - Reads MP cost from the spell record's `+3` byte (`lbu s0,0x3(v1)` at `0x801E451C`, record base `DAT_800754C8 + spell_id*0xC`, loaded at `0x801E4464`; `DAT_800754D0` is the same table viewed `+8`, which is how the name lookup reaches the record's `name_ptr`). Reduces it by half (`cost - cost>>1`) if the character's ability bitmask has `0x20` ("MP-half"), else by a quarter (`cost - cost>>2`) if `0x10` ("MP-quarter") - `0x20` is tested first and wins when both are set (`0x801E4568`). Stores the applied cost at `actor[+0x178]` and subtracts it from `actor[+0x150]` (MP).
 - **Which copy is which.** The identical fold is inlined twice, and the two are easy to swap: `0x801E4568` is *this* state, immediately after the capture-archive `jal 0x8003EC70` at `0x801E44EC`; `0x801E3D0C` is state `0x3C`'s copy, immediately after that state's Pomander (`+0x1DF == 0xFE`) special case at `0x801E3C4C`. Behaviour is the same either way - only the state label differs.
 
+
+## The cast-effect driver's camera script
+
+`0x2A..0x2D` call no `FUN_801D5854` case: the camera of a non-Seru cast (every
+monster spell) is `FUN_801DC0A0`'s, a 20-way jump table (`0x801CECAC`) keyed on
+the queue byte the arm passes. The monster pick `FUN_801E9FD4` stages that byte
+behind the clip: `+0x1DF` spell id, `+0x1E0` clip, `+0x1E1` opening shot, then
+`0xFF` (`0x801EA53C..0x801EA588`) - case `7` below id `0x25`, else the byte at
+`0x801F66D8 + id - 0x25` in PROT 0898 (`legaia_asset::spell_anim_pairs`).
+
+Each case may rewrite the queue byte it was called with
+(`s3 = actor + 0x1DF + ctx[+0x15]`), so the selector is a state machine the
+effect drives: the caster close-ups `7` / `0xA` / `0xC` / `0xE` hand on to the
+projectile shot `8` (`9` / `0xB` for a group target, `0xF` for a monster whose
+first magic slot is `0x3A`) on the first frame an effect child is live
+(`ctx[+0x24D] != 0`); the spins `3` / `5` hand on to `4` once the move-FX
+counter `ctx[+0x6C6]` drops below `0x21`. `battle_gimard_tail_fire_a` holds
+`[0x27, 8, 8, 0xFF]` - Tail Fire's table byte `7`, already rewritten to `8` by
+the live flame - and its camera reads case 8 exactly: pitch `0x40`,
+`TR (0, 0x400, 0x800)`, yaw `0x200 - actor[+0x46]`, focus the flame's position
+`ctx[+0x1144]`. Port: `legaia_engine_vm::battle_cam_script::spell_cam_case`
+(the nineteen non-summon cases), fed by `engine-core`'s
+`battle_cam_inputs::spell_cam_inputs` from the host's `spell_anim_sustain`.
+The engine flies no effect slot (`FUN_801E09F8`'s homing is render-track), so
+no flame child raises `ctx[+0x24D]` and the Tail Fire capture's engine camera
+stays on case 7's close-up, short of the hand-off; a projectile shot that does
+run frames the launch point rather than the flame in flight.
 
 ## The summon cast close-up camera
 

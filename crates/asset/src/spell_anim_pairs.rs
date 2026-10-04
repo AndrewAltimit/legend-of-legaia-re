@@ -15,8 +15,16 @@
 //! `0xFF` one past the last pair (`0x801DC048..0x801DC060`). Record `0` is the
 //! empty list, so an id whose index byte is `0` stages nothing.
 //!
-//! The table is disc data read off the user's own image; nothing here
-//! carries its bytes. Consumer: `legaia_engine_core`'s `spell_anim_trigger`.
+//! A third table in the same image belongs to the **monster** pick
+//! `FUN_801E9FD4`, which stages a cast's opening camera shot at `+0x1E1`,
+//! behind its clip: case `7` for an id below `0x25`, otherwise the byte at
+//! `0x801F66D8 + id - 0x25` (`0x801EA548..0x801EA574`). The byte is a case of
+//! the cast-effect driver `FUN_801DC0A0`
+//! (`legaia_engine_vm::battle_cam_script::spell_cam_case`).
+//!
+//! The tables are disc data read off the user's own image; nothing here
+//! carries their bytes. Consumers: `legaia_engine_core`'s
+//! `spell_anim_trigger` and the monster cast staging.
 
 /// Overlay VA of the per-id index (`id` `0` reads one byte before the base the
 /// reader forms).
@@ -29,11 +37,18 @@ pub const RECORD_STRIDE: usize = 8;
 pub const LIST_ID_END: u8 = 0x25;
 /// The list terminator.
 pub const END: u8 = 0xFF;
+/// Overlay VA of the monster casts' opening-shot table, indexed `id - 0x25`
+/// (`addiu v0,v0,0x66d8` / `lbu v0,-0x25(v1)` at `0x801EA560..0x801EA568`).
+pub const OPENING_SHOT_VA: u32 = 0x801F_66D8;
+/// Spell ids the opening-shot table covers: `0x25` up to the player Seru
+/// block, the ids a monster pick stages (`0x25..0x81`).
+pub const OPENING_SHOT_IDS: std::ops::Range<u8> = LIST_ID_END..0x81;
 
 /// The pair lists for spell ids `0..0x25`, read off one battle-overlay image.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SpellAnimPairs {
     lists: Vec<Vec<(u8, u8)>>,
+    opening_shots: Vec<u8>,
 }
 
 impl SpellAnimPairs {
@@ -63,7 +78,26 @@ impl SpellAnimPairs {
             }
             lists.push(pairs);
         }
-        Self { lists }
+        let opening_shots = at(OPENING_SHOT_VA)
+            .and_then(|o| bytes.get(o..o + OPENING_SHOT_IDS.len()))
+            .map(<[u8]>::to_vec)
+            .unwrap_or_default();
+        Self {
+            lists,
+            opening_shots,
+        }
+    }
+
+    /// The opening camera shot the monster pick stages at `+0x1E1` for
+    /// `spell_id`: `7` below `0x25`, the table's byte above. `None` past the
+    /// table or when it was not read.
+    pub fn opening_shot(&self, spell_id: u8) -> Option<u8> {
+        if spell_id < LIST_ID_END {
+            return Some(7);
+        }
+        self.opening_shots
+            .get(usize::from(spell_id - LIST_ID_END))
+            .copied()
     }
 
     /// The `(anim, effect)` pairs for `spell_id`, or `None` for an id the
@@ -96,5 +130,22 @@ mod tests {
         assert_eq!(t.pairs(1), Some(&[][..]));
         assert_eq!(t.pairs(LIST_ID_END), None);
         assert!(SpellAnimPairs::parse(&b[..16], base).is_empty());
+    }
+
+    #[test]
+    fn opening_shot_is_seven_below_the_table_and_the_byte_above() {
+        let base = 0x801C_E818;
+        let mut b = vec![0u8; (OPENING_SHOT_VA - base) as usize + 0x60];
+        let o = (OPENING_SHOT_VA - base) as usize;
+        b[o + (0x27 - 0x25)] = 0x07;
+        b[o + (0x2A - 0x25)] = 0x0C;
+        let t = SpellAnimPairs::parse(&b, base);
+        assert_eq!(t.opening_shot(0x10), Some(7));
+        assert_eq!(t.opening_shot(0x27), Some(7));
+        assert_eq!(t.opening_shot(0x2A), Some(0x0C));
+        assert_eq!(t.opening_shot(0x81), None);
+        // An image too short for the table answers nothing above `0x25`.
+        let short = SpellAnimPairs::parse(&b[..o], base);
+        assert_eq!(short.opening_shot(0x27), None);
     }
 }

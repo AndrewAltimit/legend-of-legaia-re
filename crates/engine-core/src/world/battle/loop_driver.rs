@@ -593,10 +593,29 @@ impl World {
         // stopped dead, which is most real encounters. Retire it on the frame
         // the state is reached, exactly as the recovery edge above retires
         // `ADVANCE_DONE`.
-        if self.battle_ctx.action_state == ActionState::MagicSustain.as_byte() {
+        //
+        // Retail's counter-down is the anim commit `FUN_8004AD80`
+        // (`0x8004B06C..0x8004B07C`, `+0x1FA -= 1` when non-zero), which runs
+        // at a clip boundary: the latch `0x2A` raises drops when the cast
+        // clip it staged re-commits at its end, so `0x2B` lasts the clip and
+        // the cast-effect driver films it all that while
+        // (`battle_gimard_tail_fire_a` is parked there). The retire waits for
+        // that boundary: no one-shot clip still in flight on the caster.
+        // `MagicAnimChain` (`0x2A`) takes its next `(clip, shot)` pair only
+        // once the same latch is down, so a chain longer than one pair
+        // parks there the same way.
+        if self.battle_ctx.action_state == ActionState::MagicSustain.as_byte()
+            || self.battle_ctx.action_state == ActionState::MagicAnimChain.as_byte()
+        {
             let caster = self.battle_ctx.active_actor as usize;
             if let Some(a) = self.actors.get_mut(caster) {
-                a.battle.spell_iter = 0;
+                let clip_in_flight = a
+                    .battle_animation
+                    .as_ref()
+                    .is_some_and(|p| !p.finished() && !p.is_looping());
+                if !clip_in_flight {
+                    a.battle.spell_iter = 0;
+                }
             }
         }
 
