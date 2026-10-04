@@ -31,6 +31,45 @@ use crate::*;
 /// The reading box's row pitch (`0xF`, the draw loop's `addiu s2,s2,0xf`).
 pub const DIALOG_ROW_PITCH: i32 = 0xF;
 
+/// First code point of the private-use block [`dialog_page_string`] parks a
+/// non-ASCII page byte in.
+const PAGE_BYTE_CHAR_BASE: u32 = 0xE000;
+
+/// A panel's typed page bytes as the `|`-joined string both hosts snapshot:
+/// printable ASCII as itself, every other byte - a `0xCE` escape and its
+/// operand, an accented glyph - parked at `U+E000 + byte`, so
+/// [`dialog_reading_box_text_draws_for`] hands the font the original bytes
+/// and an escape draws its sprite instead of a `?`.
+pub fn dialog_page_string(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|&b| {
+            if (0x20..=0x7E).contains(&b) {
+                b as char
+            } else {
+                char::from_u32(PAGE_BYTE_CHAR_BASE + u32::from(b)).unwrap_or('?')
+            }
+        })
+        .collect()
+}
+
+/// The page bytes back out of one [`dialog_page_string`] row (any other
+/// non-ASCII character becomes `?`).
+pub fn dialog_page_bytes(line: &str) -> Vec<u8> {
+    line.chars()
+        .map(|c| {
+            let u = c as u32;
+            if u < 0x80 {
+                u as u8
+            } else if (PAGE_BYTE_CHAR_BASE..PAGE_BYTE_CHAR_BASE + 0x100).contains(&u) {
+                (u - PAGE_BYTE_CHAR_BASE) as u8
+            } else {
+                b'?'
+            }
+        })
+        .collect()
+}
+
 /// Rows the reading box is tall for a snapshot: the pager window's height
 /// when the panel has one (`box_rows`, three), else the page's own row count
 /// (the plain-MES panel's box grows with its page), clamped to `3..=4`.
@@ -57,7 +96,7 @@ pub fn dialog_reading_box_text_draws_for(
     let mut out = Vec::new();
     for (i, line) in page.split('|').enumerate() {
         let pen = (bx, by + scroll_px + i as i32 * DIALOG_ROW_PITCH);
-        for d in text_draws_for(&font.layout_ascii(line), pen, MENU_TEXT_WHITE) {
+        for d in text_draws_for(&font.layout(&dialog_page_bytes(line)), pen, MENU_TEXT_WHITE) {
             match band {
                 None => out.push(d),
                 Some((top, bottom)) => out.extend(crop_rows(d, top, bottom)),
@@ -89,6 +128,34 @@ fn crop_rows(d: TextDraw, top: i32, bottom: i32) -> Option<TextDraw> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A page carrying a `0xCE` escape survives the host snapshot string and
+    /// reaches the font as bytes: with the sprite attached, the row draws it
+    /// untinted between its neighbours.
+    #[test]
+    fn an_escape_in_the_page_draws_its_sprite() {
+        use legaia_font::escape_icons::{EscapeIcon, EscapeIcons};
+        let bytes = [b'A', 0xCE, 0x01, b'B', 0x7C, 0xE9];
+        let page = dialog_page_string(&bytes);
+        assert_eq!(page.split('|').count(), 2);
+        let rows: Vec<Vec<u8>> = page.split('|').map(dialog_page_bytes).collect();
+        assert_eq!(rows, vec![vec![b'A', 0xCE, 0x01, b'B'], vec![0xE9]]);
+        let icon = EscapeIcon {
+            index: 1,
+            w: 16,
+            h: 16,
+            y_offset: -2,
+            advance: 18,
+            rgba: vec![0xFF; 16 * 16 * 4],
+        };
+        let font = legaia_font::synthetic_for_tests().with_escape_icons(&EscapeIcons {
+            icons: vec![None, Some(icon)],
+        });
+        let d = dialog_reading_box_text_draws_for(&font, &page, (10, 20), 0, None);
+        let sprite = d.iter().find(|t| t.dst.2 == 16).expect("the sprite draws");
+        assert_eq!(sprite.dst.1, 18, "y_offset -2 from the row pen");
+        assert_eq!(sprite.color, [1.0, 1.0, 1.0, MENU_TEXT_WHITE[3]]);
+    }
 
     fn quad(y: i32, h: u32) -> TextDraw {
         TextDraw {

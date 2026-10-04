@@ -596,11 +596,14 @@ impl OwnedDialogPanel {
                         }
                     }
                 }
+                // A number escape prints the script counter the host
+                // resolved at open; the whole number is one reveal unit, like
+                // the escape it replaces (`FUN_80036044` counts the `0xCE`
+                // pair once). Any other `0xCE` escape is one typewriter unit
+                // and, when the font has its sprite, one drawn icon
+                // (`FUN_80036888`): keep the pair in the page so the layout
+                // can place it.
                 Some(MesEvent::Spacing(arg)) => {
-                    // A number escape prints the script counter the host
-                    // resolved at open; the whole number is one reveal unit,
-                    // like the escape it replaces (`FUN_80036044` counts the
-                    // `0xCE` pair once).
                     if let Some(digits) = self
                         .substitutions
                         .as_ref()
@@ -609,6 +612,9 @@ impl OwnedDialogPanel {
                         for &b in digits {
                             out.push((glyph(b), units));
                         }
+                    } else {
+                        out.push((glyph(0xCE), units));
+                        out.push((glyph(arg), units));
                     }
                     units += 1;
                 }
@@ -1321,7 +1327,11 @@ mod tests {
         let mut map = std::collections::HashMap::new();
         map.insert((SCRIPT_COUNTER_KEY, 0x0B), script_counter_digits(0x2A));
         assert_eq!(run(Some(Arc::new(map))), b"N42x".to_vec());
-        assert_eq!(run(None), b"Nx".to_vec(), "unresolved = the escape alone");
+        assert_eq!(
+            run(None),
+            vec![b'N', 0xCE, 0x0B, b'x'],
+            "unresolved = the raw escape pair, left for the layout"
+        );
     }
 
     /// `FUN_80034B78` with min-digits `0`: leading zeros suppressed, the units
