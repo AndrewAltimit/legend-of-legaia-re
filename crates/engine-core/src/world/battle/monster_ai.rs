@@ -886,7 +886,14 @@ impl World {
             && let Some(def) = self.monster_cast_def(spell_id)
         {
             let class = self.monster_cast_target_class(slot, &def);
-            let targets = self.resolve_class_to_slots(slot, class);
+            let mut targets = self.resolve_class_to_slots(slot, class);
+            if targets.len() == 1
+                && let Some(t) = self.battle.forced_monster_target.take()
+                && t < pc
+                && self.actors.get(t as usize).is_some_and(|a| a.battle.hp > 0)
+            {
+                targets = vec![t];
+            }
             if !targets.is_empty() {
                 if let Some(a) = self.actors.get_mut(slot as usize) {
                     a.battle.action_category = 2;

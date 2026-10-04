@@ -168,3 +168,40 @@ fn mystic_shield_arms_its_shot_and_gates_on_its_countdown() {
     assert_eq!((drift.yaw, drift.tr_z), (-16, -6));
     assert_eq!(capture_countdown_va(0xAC), Some(MYSTIC_SHIELD_COUNTDOWN));
 }
+
+/// Guilty Cross's arm 0 frames from behind the caster; arm 2's exit cuts to
+/// the victim; arm 3 drifts eight times as fast as arms 1 / 2 / 5.
+#[test]
+fn guilty_cross_cuts_from_caster_to_victim() {
+    let mut st = ModuleCamState::default();
+    let seats = ModuleCamSeats {
+        caster: ModuleSeat {
+            x: 0,
+            y: 0,
+            z: 813,
+            facing: 2285,
+        },
+        victim: ModuleSeat {
+            x: -600,
+            y: 0,
+            z: -762,
+            facing: 0,
+        },
+        ..Default::default()
+    };
+    let a0 = guilty_cross_camera(&mut st, 0, seats).shot.unwrap();
+    assert_eq!(a0.angles[1], ((0x800 - 2285) & 0xFFF) as i16);
+    assert_eq!((a0.tr, a0.frames), ([0, 0x600, 0x800], 0x20));
+    st.countdown.0 = 1;
+    let a2 = guilty_cross_camera(&mut st, 2, seats);
+    assert!(!a2.hold);
+    let cut = a2.shot.unwrap();
+    assert_eq!(
+        (cut.tr, cut.focus, cut.frames),
+        ([0, 0x400, 0xA00], [600, 0, 762], 1)
+    );
+    assert_eq!(
+        guilty_cross_camera(&mut st, 3, seats).drift.unwrap().tr_z,
+        32
+    );
+}

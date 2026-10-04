@@ -406,6 +406,11 @@ pub struct BattleState {
     /// is credited back as it is taken. `None` on every ordinary fight;
     /// consumed (taken) by the monster pick.
     pub forced_monster_cast: Option<(u8, u8)>,
+    /// The same seed's target: the party seat the capture's caster had
+    /// aimed its cast at (`+0x1DD`). A single-target cast replayed off
+    /// [`Self::forced_monster_cast`] lands on it when it is standing,
+    /// instead of on a fresh roll. `None` on every ordinary fight.
+    pub forced_monster_target: Option<u8>,
     /// The commit log's launch glide - retail's `0x35 + i` clones gliding the
     /// log off the left edge when the member leaves the ring for a sub-screen
     /// and back when they return
@@ -686,6 +691,7 @@ impl BattleState {
             round_flow: crate::battle_round::RoundFlow::default(),
             inflight_seed: None,
             forced_monster_cast: None,
+            forced_monster_target: None,
             commit_log_launch: None,
             sideband: Default::default(),
             stage_id: 0,

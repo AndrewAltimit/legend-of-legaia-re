@@ -1499,7 +1499,10 @@ pub enum BattleDrive {
 /// the right state against the wrong body scored the camera of a different
 /// shot (`player_steal_skeleton_banner` framed the live skeleton where
 /// retail's case 8 frames the falling one), so the search moves on to the
-/// `1`-HP re-run that makes the kill.
+/// `1`-HP re-run that makes the kill. On a monster's cast it is the party
+/// seat the cast aimed at, which the replayed cast is steered onto
+/// (`BattleState::forced_monster_target`): the caster turns to face its
+/// target as the cast begins, and the module's shots frame from that facing.
 ///
 /// `yaw` is the capture's yaw counter `ctx[+0x6DA]`. A party attacker's
 /// first swing-clip commit re-seeds it to `(rand() % 2) * 0x800 + 0x280`
@@ -1832,6 +1835,14 @@ impl BattleDrive {
         }
     }
 
+    /// An action drive's steering facts.
+    fn steering(&self) -> Option<ActionSteer> {
+        match *self {
+            Self::Action { steer, .. } => Some(steer),
+            _ => None,
+        }
+    }
+
     /// The tick budget the drive gets past the first prompt.
     pub fn budget(&self) -> u32 {
         match self {
@@ -1875,6 +1886,8 @@ impl BattleDrive {
             let seat = engine_seat(seat, pc);
             if seat >= pc {
                 world.battle.forced_monster_cast = Some((seat, queued));
+                world.battle.forced_monster_target =
+                    self.steering().and_then(|s| s.target).filter(|&t| t < 3);
             }
         }
     }
@@ -2206,12 +2219,15 @@ impl RetailBattle {
                 end: self.span_gate,
                 style: Some(self.cam_style),
                 steer: ActionSteer {
-                    target: (seat < 3
+                    // A party killing blow on its victim, or a monster
+                    // cast on the party seat it aimed at.
+                    target: ((seat < 3
                         && self.target_code >= 3
                         && self
                             .action_victims()
                             .contains(&usize::from(self.target_code - 3)))
-                    .then_some(self.target_code),
+                        || (seat >= 3 && self.queued_category == 2 && self.target_code < 3))
+                        .then_some(self.target_code),
                     yaw: Some(self.walk_yaw_base),
                 },
             }),

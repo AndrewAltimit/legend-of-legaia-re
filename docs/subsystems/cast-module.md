@@ -1993,6 +1993,14 @@ run; a holding gate withholds the body's pass. The battle camera holds in
   `<< 6` / `* 0xC0` as each gate passes). The `cort_mystic_shield_mid_cast`
   capture sits in arm 1 with `496` of the word left, 34 vsyncs into the shot.
 
+- **PROT 0944 \`0x37\` (Cort's Guilty Cross, body \`0x801F6A04\`)** - arm 0's
+  \`0x20\`-frame shot behind the caster (TR \`(0, 0x600, 0x800)\`), arm 2's cut to
+  the victim (pitch \`0x100\`, TR \`(0, 0x400, 0xA00)\`), arm 4's cut back, the TR z
+  drift of arms 1 / 2 / 5 (\`+4\`) and 3 (\`+32\`), and the countdown \`0x801F8360\`
+  gating arms 1..5. Its framings turn on the caster's facing, which the cast
+  begin points at its target, so the replay is steered onto the capture's
+  target too ([retail-compare](../tooling/retail-compare.md#driving-to-the-phase)).
+
 A body with no director keeps the held pose.
 
 ### The band has eight stat-block writers, not one

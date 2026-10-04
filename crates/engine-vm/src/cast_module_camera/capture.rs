@@ -51,6 +51,7 @@ pub type CaptureCamDirector = fn(&mut ModuleCamState, u8, ModuleCamSeats) -> Cap
 pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirector> {
     match (entry, body) {
         (940, MYSTIC_SHIELD_BODY) => Some(mystic_shield_camera),
+        (944, GUILTY_CROSS_BODY) => Some(guilty_cross_camera),
         _ => None,
     }
 }
@@ -61,6 +62,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
 pub fn capture_countdown_va(action: u8) -> Option<u32> {
     match action {
         0xAC => Some(MYSTIC_SHIELD_COUNTDOWN),
+        0x37 => Some(GUILTY_CROSS_COUNTDOWN),
         _ => None,
     }
 }
@@ -147,4 +149,80 @@ fn drift(pitch: i16, yaw: i16, tr_y: i16, tr_z: i16) -> CaptureDrift {
         tr_y,
         tr_z,
     }
+}
+
+/// PROT 0944's `0x37` body (Cort's Guilty Cross).
+pub const GUILTY_CROSS_BODY: u32 = 0x801F_6A04;
+/// PROT 0944's countdown word (`lui 0x8020` / `-0x7CA0`).
+pub const GUILTY_CROSS_COUNTDOWN: u32 = 0x801F_8360;
+
+/// Cort's **Guilty Cross** (PROT 0944, body `0x801F6A04`, six arms off the
+/// table at the image head), every arm from 1 on gated on the countdown
+/// `0x801F8360` (drained `scalar * delta`):
+///
+/// | arm | camera | countdown as it passes |
+/// |---|---|---|
+/// | 0 (`0x801F6AC8`) | shot: pitch `0`, yaw `0x800 - caster[+0x46]`, TR `(0, 0x600, 0x800)`, focus the caster, `0x20` frames | `= scalar << 7` |
+/// | 1 (`0x801F6CC4`) | drift TR z `+4` | `+= scalar << 7` |
+/// | 2 (`0x801F6E04`) | drift TR z `+4`; then a cut: pitch `0x100`, yaw `0x800 - victim[+0x46]`, TR `(0, 0x400, 0xA00)`, focus the victim | `+= scalar << 7` |
+/// | 3 (`0x801F6FD4`) | drift TR z `+32` | `+= scalar << 8` |
+/// | 4 (`0x801F7238`) | a cut back to arm 0's framing | `+= scalar * 0xC0` |
+/// | 5 (`0x801F7378`) | drift TR z `+4` | - (the body finishes) |
+///
+/// The `cort_guilty_cross_mid_cast` capture sits in arm 1 with `456` of the
+/// word left, on arm 0's framing.
+///
+/// PORT: FUN_801F6A04 (PROT 0944; the camera arms and the countdown gates)
+pub fn guilty_cross_camera(
+    st: &mut ModuleCamState,
+    phase: u8,
+    seats: ModuleCamSeats,
+) -> CaptureCamArm {
+    let c = seats.caster;
+    let v = seats.victim;
+    let behind_caster = |frames: u16| ModuleShot {
+        angles: [0, yaw_from(0x800, c.facing), 0],
+        tr: [0, 0x600, 0x800],
+        focus: focus_on(c),
+        frames,
+    };
+    if phase == 0 {
+        st.countdown.0 = SPEED_SCALAR << 7;
+        return CaptureCamArm {
+            shot: Some(behind_caster(0x20)),
+            drift: None,
+            hold: false,
+        };
+    }
+    let drift = match phase {
+        1 | 2 | 5 => Some(drift(0, 0, 0, 4)),
+        3 => Some(drift(0, 0, 0, 32)),
+        _ => None,
+    };
+    if !(1..=5).contains(&phase) {
+        return CaptureCamArm::default();
+    }
+    let hold = st.countdown.drain_above(0);
+    let mut shot = None;
+    if !hold {
+        match phase {
+            1 => st.countdown.add(1 << 7),
+            2 => {
+                st.countdown.add(1 << 7);
+                shot = Some(ModuleShot {
+                    angles: [0x100, yaw_from(0x800, v.facing), 0],
+                    tr: [0, 0x400, 0xA00],
+                    focus: focus_on(v),
+                    frames: 1,
+                });
+            }
+            3 => st.countdown.add(1 << 8),
+            4 => {
+                st.countdown.add(0xC0);
+                shot = Some(behind_caster(1));
+            }
+            _ => {}
+        }
+    }
+    CaptureCamArm { shot, drift, hold }
 }
