@@ -73,15 +73,32 @@
 //!
 //! ## NOT WIRED
 //!
-//! The engine does not transition scenes through a staging buffer. Its
-//! scene change is [`crate::scene::Scene`] resource loading driven by
-//! `BootSession::enter_field_live`, so there is no `_DAT_8007B85C` buffer to
-//! stream a raw `.LZS` bundle into and no actor pool node to tick between
-//! the fade-out and MAIN INIT. What has to exist first is a staged-bundle
-//! scene loader - a host that takes [`SceneTransitionEffect::StreamBundleByPath`]
-//! and parks the bytes where the descriptor walker
-//! ([`crate::scene_bundle`]) reads them - rather than a caller for this
-//! state machine.
+//! The retail call site is known and singular. An address-reference scan
+//! (`find-address-word-refs.py --prot 80021934`) finds exactly one reference
+//! to the handler: the template word at `0x8007073C`, i.e. descriptor
+//! `0x80070734 + 8`. That descriptor is spawned by the scene-change packet
+//! `FUN_8001FD44`, whose port is `FieldHostImpl::scene_transition_named`
+//! (`world/vm_hosts.rs`) - and that port parks the destination for
+//! `SceneHost::tick`, which loads it as a [`crate::scene::Scene`] on the same
+//! tick. So the streaming half of this machine (the `.LZS` stream into
+//! `_DAT_8007B85C`, the name-buffer rotation, the mode-2 hand-off) is done by
+//! the `Scene` load, and has no buffer to fill here.
+//!
+//! What the drain does **not** reproduce is the machine's visible half, the
+//! [`TRANSITION_COUNTDOWN`] hold: retail keeps the departing scene running for
+//! `0x46` frames (plus the stream) before MAIN INIT, measured as 78 vsyncs
+//! between the packet and the destination's entry stamp on a `map01` ->
+//! `town0c` door ([`encounter.md`](../../../docs/formats/encounter.md#the-window-is-not-cleared-with-the-scene)).
+//! The departing record's exit fade - `34 05 FF FF FF 41 00`, a `0x41`-frame
+//! ramp issued just before the `0x3F` on most doors - plays inside that hold,
+//! so the port cuts a door before its exit fade lands.
+//!
+//! The prerequisite is therefore a **deferred drain**, not a staging buffer:
+//! `SceneHost` holding a parked transition while this machine counts down,
+//! with the departing scene still ticking and the player and the walk-on
+//! dispatch held. It moves every door by `0x46` frames, so every pad-driven
+//! fixture that crosses a door has to be re-blessed with it - a decision for
+//! whoever owns those baselines, which is why it is not taken here.
 
 /// States the machine dispatches. `actor+0x1A` values at or above this fall
 /// through to the epilogue (`sltiu v0, a0, 0x5` at `0x80021964`).
@@ -188,12 +205,12 @@ impl SceneTransitionActor {
     ///
     /// PORT: FUN_80021934
     ///
-    /// NOT WIRED: the engine loads scenes as [`crate::scene::Scene`]
-    /// resources, not by streaming a raw `.LZS` bundle into a shared staging
-    /// buffer, so there is no `_DAT_8007B85C` equivalent for
-    /// [`SceneTransitionEffect::StreamBundleByPath`] to fill and no
-    /// transition-time actor pool to tick this from. A staged-bundle scene
-    /// loader is the prerequisite; see the module docs.
+    /// NOT WIRED: the sole retail spawner (`FUN_8001FD44`, ported as
+    /// `FieldHostImpl::scene_transition_named`) hands the destination to
+    /// `SceneHost::tick`, which loads it as a [`crate::scene::Scene`] on the
+    /// same tick, so nothing runs this countdown. The missing capability is a
+    /// deferred drain that holds the parked transition for the `0x46`-frame
+    /// countdown with the departing scene still ticking; see the module docs.
     pub fn tick(&mut self, input: SceneTransitionInput<'_>) -> Vec<SceneTransitionEffect> {
         use SceneTransitionEffect as E;
         let mut out = vec![E::ClearTransitionScratch];
