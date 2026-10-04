@@ -104,8 +104,9 @@ pub fn color_prim_glows(blend: u16, color: [u8; 3]) -> bool {
 pub enum CuratedTexels {
     /// Every prim.
     All,
-    /// Textured prims whose mean texel colour is green-dominant
-    /// ([`texels_green`]) - a glowing tree's foliage, not its trunk or the
+    /// Prims whose drawn colour is green-dominant ([`texels_green`] over
+    /// the mean texel times the prim's modulation, or the fill of an
+    /// untextured prim) - a glowing tree's foliage, not its trunk or the
     /// ground it stands on.
     Green,
 }
@@ -131,23 +132,60 @@ pub struct EmissiveMesh {
 /// The curated emissive surfaces. Small on purpose - the blend-mode rule
 /// above finds the authored glow; this lists only what it cannot.
 ///
-/// The Genesis Tree is Rim Elm's scene-actor prop (the same model in every
-/// Rim Elm variant and Vahn's dream of it): drawn with opaque prims and no
-/// glow blend, yet it is the village's light - the story's living Seru tree.
-pub const EMISSIVE_MESHES: &[EmissiveMesh] = &[EmissiveMesh {
-    signature: 0x8747_ffe1_c761_fd8d,
-    label: "Genesis Tree (Rim Elm)",
-    texels: CuratedTexels::Green,
-    light: [0.45, 1.0, 0.55],
-    radius: 1500.0,
-}];
+/// The Genesis Tree is Rim Elm's plaza tree - a MAN scene-actor prop drawn
+/// with opaque prims and no glow blend, yet the village's light: the
+/// story's living Seru tree. It ships as two models, the plaza prop and the
+/// full-grown tree with its ring of roots the story stages later; both are
+/// listed.
+pub const EMISSIVE_MESHES: &[EmissiveMesh] = &[
+    EmissiveMesh {
+        signature: 0x02c8_7921_de1b_8a44,
+        label: "Genesis Tree (Rim Elm plaza)",
+        texels: CuratedTexels::All,
+        light: [0.45, 1.0, 0.55],
+        radius: 1300.0,
+    },
+    EmissiveMesh {
+        signature: 0x741a_6022_0bde_804a,
+        label: "Genesis Tree (full-grown, with its roots)",
+        texels: CuratedTexels::Green,
+        light: [0.45, 1.0, 0.55],
+        radius: 1600.0,
+    },
+];
 
-/// FNV-1a 64 over a TMD's raw bytes - the key [`EMISSIVE_MESHES`] matches.
-pub fn tmd_signature(raw: &[u8]) -> u64 {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for &b in raw {
+fn fnv1a(mut h: u64, bytes: &[u8]) -> u64 {
+    for &b in bytes {
         h ^= u64::from(b);
         h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    h
+}
+
+/// FNV-1a 64 offset basis.
+pub const SIGNATURE_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+
+/// The key [`EMISSIVE_MESHES`] matches: FNV-1a 64 over a TMD's **model
+/// content** - each object's header counts and its vertex coordinates, as
+/// parsed. Hashing the content rather than the raw slice keeps the key
+/// stable across the ways one model reaches a host: a scan slice that runs
+/// past the TMD's end, an exact copy out of a scene's model bank, a VDF
+/// morph (applied to a parsed copy, never to these bytes). A buffer that
+/// does not parse hashes as its raw bytes.
+pub fn tmd_signature(raw: &[u8]) -> u64 {
+    let Ok(tmd) = legaia_tmd::parse(raw) else {
+        return fnv1a(SIGNATURE_BASIS, raw);
+    };
+    let mut h = fnv1a(SIGNATURE_BASIS, &(tmd.objects.len() as u32).to_le_bytes());
+    for o in &tmd.objects {
+        h = fnv1a(h, &o.header.n_vert.to_le_bytes());
+        h = fnv1a(h, &o.header.n_normal.to_le_bytes());
+        h = fnv1a(h, &o.header.n_primitive.to_le_bytes());
+        for v in &o.vertices {
+            h = fnv1a(h, &v.x.to_le_bytes());
+            h = fnv1a(h, &v.y.to_le_bytes());
+            h = fnv1a(h, &v.z.to_le_bytes());
+        }
     }
     h
 }
@@ -226,16 +264,29 @@ pub fn texels_green(mean: [f32; 3]) -> bool {
 }
 
 /// Whether one prim of a curated mesh glows under its [`CuratedTexels`]
-/// rule. `textured` is `Some((vram, cba, tsb, uvs))` for a textured prim.
+/// rule. `color` is the prim's colour word (modulation for a textured prim,
+/// fill for an untextured one); `textured` is `Some((vram, cba, tsb, uvs))`
+/// for a textured prim.
 fn curated_prim_glows(
     rule: CuratedTexels,
+    color: [u8; 3],
     textured: Option<(&legaia_tim::Vram, u16, u16, &[[u8; 2]])>,
 ) -> bool {
     match rule {
         CuratedTexels::All => true,
-        CuratedTexels::Green => textured
-            .and_then(|(vram, cba, tsb, uvs)| prim_mean_texel(vram, cba & 0x7FFF, tsb, uvs))
-            .is_some_and(texels_green),
+        CuratedTexels::Green => {
+            let c = color.map(|v| f32::from(v) / 128.0);
+            let drawn = match textured {
+                Some((vram, cba, tsb, uvs)) => {
+                    let Some(m) = prim_mean_texel(vram, cba & 0x7FFF, tsb, uvs) else {
+                        return false;
+                    };
+                    [m[0] * c[0], m[1] * c[1], m[2] * c[2]]
+                }
+                None => c,
+            };
+            texels_green(drawn)
+        }
     }
 }
 
@@ -302,7 +353,7 @@ pub fn tag_emissive_vram(
                 .iter()
                 .filter_map(|&i| uvs.get(i as usize).copied())
                 .collect();
-            curated_prim_glows(e.texels, Some((vram, cba, tsb, &corner)))
+            curated_prim_glows(e.texels, c, Some((vram, cba, tsb, &corner)))
         });
         if by_curated {
             bounds.add(positions, tri);
@@ -332,7 +383,7 @@ pub fn tag_emissive_color(
         let (Some(&w), Some(&c)) = (blend.get(i0), colors.get(i0)) else {
             continue;
         };
-        let by_curated = curated.is_some_and(|e| curated_prim_glows(e.texels, None));
+        let by_curated = curated.is_some_and(|e| curated_prim_glows(e.texels, c, None));
         if by_curated {
             bounds.add(positions, tri);
         }
@@ -434,7 +485,7 @@ pub fn tag_emissive_hybrid(
         let (by_curated, by_blend) = if untextured {
             let c = [flat[i0 * 4], flat[i0 * 4 + 1], flat[i0 * 4 + 2]];
             (
-                curated.is_some_and(|e| curated_prim_glows(e.texels, None)),
+                curated.is_some_and(|e| curated_prim_glows(e.texels, c, None)),
                 color_prim_glows(tsb, c),
             )
         } else {
@@ -442,9 +493,11 @@ pub fn tag_emissive_hybrid(
                 .iter()
                 .filter_map(|&i| mesh.uvs.get(i as usize).copied())
                 .collect();
+            let c = mesh.colors.get(i0).copied().unwrap_or([0x80; 3]);
             (
-                curated
-                    .is_some_and(|e| curated_prim_glows(e.texels, Some((vram, cba, tsb, &corner)))),
+                curated.is_some_and(|e| {
+                    curated_prim_glows(e.texels, c, Some((vram, cba, tsb, &corner)))
+                }),
                 mesh.colors
                     .get(i0)
                     .is_some_and(|&c| textured_prim_glows(tsb, c)),
@@ -1488,7 +1541,7 @@ mod tests {
                 assert_ne!(a.signature, b.signature);
             }
         }
-        assert_eq!(tmd_signature(b""), 0xcbf2_9ce4_8422_2325);
+        assert_eq!(tmd_signature(b""), SIGNATURE_BASIS);
     }
 
     /// Nearby samples merge into one light; the cap keeps the strongest.
