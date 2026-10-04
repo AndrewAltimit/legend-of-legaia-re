@@ -252,6 +252,12 @@ pub struct ScriptGate {
     /// a capture parked on the PC while the shot moves (a `4C CD` wait, a
     /// beat's `0x4A`) is met once the engine's glide has as little left.
     pub glide_left: Option<i32>,
+    /// Kept by [`Self::met`]: `.0` while the engine's context for the record
+    /// still runs and the gate PC is the one right after a `0x3F` scene
+    /// change, `.1` once that context retired into a held transition. The
+    /// engine retires a record the tick it executes that op, so the park
+    /// retail is caught on is never a PC the engine holds.
+    pub scene_change_armed: std::cell::Cell<(bool, bool)>,
 }
 
 impl ScriptGate {
@@ -264,6 +270,7 @@ impl ScriptGate {
             wait: s.wait.max(0),
             op: s.op,
             glide_left: scripts.glide_left,
+            scene_change_armed: std::cell::Cell::new((false, false)),
         })
     }
 
@@ -304,6 +311,7 @@ impl ScriptGate {
             wait,
             op,
             glide_left,
+            scene_change_armed: std::cell::Cell::new((false, false)),
         })
     }
 
@@ -321,7 +329,29 @@ impl ScriptGate {
     /// engine can clear the same op inside one slice where retail held it
     /// across frames (a channel flag already up, a walk already at its
     /// tile), so the first tick past it is the nearest the engine comes.
+    ///
+    /// A capture parked on the PC right after the record's `0x3F` scene
+    /// change - the departing scene held behind the streaming actor
+    /// (`FUN_8001FD44`), the record spinning on its `26 FF FF` tail - is met
+    /// on the tick the engine executes that `0x3F`: the engine retires the
+    /// record there, so its context is gone with the transition held
+    /// (`map03 P2[13]`, the `son` portal cutscene, ends this way, and
+    /// `son_arrival_from_doman` is caught inside its hold), and then held
+    /// while the glide still has more left than retail's.
     pub fn met(&self, world: &legaia_engine_core::world::World) -> bool {
+        let held =
+            world.scene_transition_hold.is_some() || world.pending_named_scene_transition.is_some();
+        let (armed, passed) = self.scene_change_armed.get();
+        let passed = held && (passed || (armed && self.context(world).is_none()));
+        self.scene_change_armed
+            .set((self.after_scene_change(world), passed));
+        if passed
+            && self
+                .glide_left
+                .is_none_or(|g| world.camera.state.glide_frames <= g)
+        {
+            return true;
+        }
         let text = self.op & 0x7F < 0x20;
         let glide_landed = self
             .glide_left
@@ -360,6 +390,38 @@ impl ScriptGate {
                 && c.pc == self.pc
                 && c.wait >= self.wait
         })
+    }
+
+    /// The engine runs the gate's record on the timeline or a concurrent
+    /// context, and the gate PC directly follows a `0x3F` scene change in it.
+    fn after_scene_change(&self, world: &legaia_engine_core::world::World) -> bool {
+        let follows_3f = |bc: &[u8]| {
+            head_of(bc) == self.head
+                && (self.pc.saturating_sub(64)..self.pc).any(|p| {
+                    bc.get(p) == Some(&0x3F)
+                        && legaia_asset::field_disasm::decode(bc, p).is_ok_and(|i| {
+                            matches!(
+                                i.info,
+                                legaia_asset::field_disasm::InsnInfo::SceneChange { .. }
+                            ) && p + i.size == self.pc
+                        })
+                })
+        };
+        world
+            .cutscene
+            .timeline
+            .iter()
+            .filter(|tl| !tl.done)
+            .map(|tl| tl.bytecode.as_slice())
+            .chain(
+                world
+                    .field_vm
+                    .helper_contexts
+                    .iter()
+                    .filter(|h| !h.done)
+                    .map(|h| h.bytecode.as_slice()),
+            )
+            .any(follows_3f)
     }
 
     /// The pad word a gated seed holds on `tick`: from
@@ -545,6 +607,7 @@ mod tests {
             wait: 48,
             op: 0x4A,
             glide_left: None,
+            scene_change_armed: std::cell::Cell::new((false, false)),
         };
         assert_eq!(ScriptGate::from_env(&g.to_env()), Some(g.clone()));
         let g = ScriptGate {

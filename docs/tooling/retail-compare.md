@@ -218,6 +218,18 @@ sampled the settle window instead. The run has a deadline of 9000 ticks; a gate 
 meets keeps the settle-window sample, and the `script` detail says which
 it was.
 
+A capture parked on the PC right after a record's `0x3F` scene change is
+inside the departing scene's transition hold: the record spins on its
+`26 FF FF` tail while the streaming actor (`FUN_8001FD44`) holds the old
+scene. The engine retires the record on the tick it executes the `0x3F`, so
+that PC is never one it holds; the gate is met once the record's context has
+retired into a held transition, and then once the camera glide has no more
+left than retail's. `son_arrival_from_doman` is such a capture: `map03`
+`P2[13]`, the `son` portal cutscene, stages its shots with op `0x45`
+configures (the last a 299-frame glide to pitch `814`, `H` `252`), and the
+state is caught on its tail with that glide almost landed - the overworld's
+"entry" camera there is that record's, not the zone camera's.
+
 Three drives get the engine there without changing the retail state it
 started from:
 
