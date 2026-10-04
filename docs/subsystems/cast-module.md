@@ -2021,8 +2021,10 @@ run; a holding gate withholds the body's pass. The battle camera holds in
   keys on the action id): Call Wave cuts to `(0, 0x600, 2z)` and pans to
   `z/2` then `z` (arms 1..3), Big Wave cuts to `z/2` and pans to `2z` over
   `0x100` frames (arms 4, 5), `z` being `ctx[+0x6D0]`; countdown
-  `0x801F7F20`. Arms 6..8 of Big Wave are not directed; the body has no other
-  port, so the director owns its phase and finishes the module there.
+  `0x801F7F20`. Big Wave then cuts to pitch `0x180`, yaw `0xF00 - facing`,
+  TR `(0, 0x600, 3z/2)` (arm 6) and spins the yaw `delta * scalar / 4` a frame
+  through arms 7 and 8. The body has no other port, so the director owns its
+  phase and finishes the module at arm 8.
 
 A body with no director keeps the held pose.
 

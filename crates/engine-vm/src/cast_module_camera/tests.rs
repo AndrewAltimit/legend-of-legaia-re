@@ -208,3 +208,44 @@ fn guilty_cross_cuts_from_caster_to_victim() {
         32
     );
 }
+
+/// Big Wave runs on past its pan: arm 5 hands to arm 6's cut (pitch
+/// `0x180`, yaw `0xF00 - facing`, `TR.z = 3z/2`), arms 7 and 8 spin the yaw
+/// a quarter scalar a vsync through their gates, and arm 8 finishes.
+#[test]
+fn big_wave_arms_6_to_8_cut_spin_and_finish() {
+    let mut st = ModuleCamState::default();
+    let seats = ModuleCamSeats {
+        caster: ModuleSeat {
+            x: 0,
+            y: 0,
+            z: 813,
+            facing: 0x800,
+        },
+        action: 0x56,
+        depth_raw: 0xA80,
+        ..Default::default()
+    };
+    st.countdown.0 = 1;
+    let a5 = wave_camera(&mut st, 5, seats);
+    assert_eq!((a5.hold, a5.next), (false, Some(6)));
+    assert_eq!(
+        st.countdown.0,
+        1 - MODULE_DRAIN_PER_TICK + SPEED_SCALAR * 0xC0
+    );
+    st.countdown.0 = 1;
+    let a6 = wave_camera(&mut st, 6, seats);
+    assert_eq!(a6.next, Some(7));
+    let shot = a6.shot.expect("arm 6 cuts");
+    assert_eq!(shot.angles, [0x180, 0x700, 0]);
+    assert_eq!(shot.tr, [0, 0x600, 0xA80 * 3 / 2]);
+    let a7 = wave_camera(&mut st, 7, seats);
+    assert!(a7.hold);
+    assert_eq!(a7.drift.unwrap().yaw, (SPEED_SCALAR / 4) as i16);
+    st.countdown.0 = 1;
+    assert_eq!(wave_camera(&mut st, 7, seats).next, Some(8));
+    st.countdown.0 = 1;
+    let a8 = wave_camera(&mut st, 8, seats);
+    assert_eq!((a8.hold, a8.next), (false, None));
+    assert!(a8.drift.is_some());
+}

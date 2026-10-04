@@ -407,15 +407,19 @@ pub const WAVE_COUNTDOWN: u32 = 0x801F_7F20;
 /// | 2 (`0x801F6D9C`) | gate; then pitch `0`, TR `(0, 0x600, z)` over `0x40`; `+= scalar * 0x60` | - |
 /// | 3 (`0x801F6E48`) | gate; the body finishes | - |
 /// | 4 (`0x801F6E90`) | - | pan: pitch `0x20`, TR `(0, 0x600, 2z)` over `0x100`; `+= scalar << 6` |
-/// | 5 (`0x801F6F30`) | - | gate; `+= scalar << 7` |
+/// | 5 (`0x801F6F30`) | - | gate; the wave's effects; `+= scalar * 0xC0` (`3 << 6`); to arm 6 |
+/// | 6 (`0x801F7104`) | - | gate; cut: pitch `0x180`, yaw `0xF00 - caster[+0x46]`, TR `(0, 0x600, 3z/2)`; `+= scalar * 0x60`; to arm 7 |
+/// | 7 (`0x801F72DC`) | - | yaw `+= delta * scalar / 4` every pass; gate; the party's hits; `+= scalar * 0xA0`; to arm 8 |
+/// | 8 (`0x801F74E4`) | - | the same yaw spin; gate; the body finishes |
 ///
-/// Every shot is behind the caster (yaw `0x800 - caster[+0x46]`, focus the
-/// caster) and `z` is `ctx[+0x6D0]`. Arms 6..8 of Big Wave are not ported; the
-/// body has no other port, so this director owns its phase and finishes the
-/// module there. The `zeto_call_wave_mid_cast` capture is in arm 2 on arm 1's
+/// Arms 0..5's shots are behind the caster (yaw `0x800 - caster[+0x46]`,
+/// focus the caster) and `z` is `ctx[+0x6D0]`. The body has no other port, so
+/// this director owns its phase and finishes the module at arm 8 (retail's
+/// own exit also waits on every party member's clip, which the countdown
+/// outlasts). The `zeto_call_wave_mid_cast` capture is in arm 2 on arm 1's
 /// pan, `zeto_big_wave_mid_cast` in arm 5 on arm 4's.
 ///
-/// PORT: FUN_801F69FC (PROT 0946; the camera arms 0..5, their countdown and
+/// PORT: FUN_801F69FC (PROT 0946; the camera arms 0..8, their countdown and
 /// phase chain)
 pub fn wave_camera(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> CaptureCamArm {
     let c = seats.caster;
@@ -471,8 +475,47 @@ pub fn wave_camera(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             if gate(st) {
                 return held;
             }
-            st.countdown.add(1 << 7);
-            pass(None, None)
+            // `3 * scalar << 6` (`0x801F6F78..0x801F6F94`).
+            st.countdown.add(0xC0);
+            pass(None, Some(6))
+        }
+        6 => {
+            if gate(st) {
+                return held;
+            }
+            // `3 * scalar << 5` (`0x801F71C8..0x801F71EC`), then the cut at
+            // `0x801F7258..0x801F72CC`: `TR.z = 3 * ctx[+0x6D0] / 2`.
+            st.countdown.add(0x60);
+            let s = ModuleShot {
+                angles: [0x180, yaw_from(0xF00, c.facing), 0],
+                tr: [0, 0x600, (z * 3 / 2) as i16],
+                focus: focus_on(c),
+                frames: 1,
+            };
+            pass(Some(s), Some(7))
+        }
+        7 | 8 => {
+            // `_DAT_8007B792 += (delta * scalar) / 4` ahead of the gate
+            // (`0x801F7318..0x801F7368`, `0x801F74E4..0x801F7528`): per
+            // vsync, a quarter of the scalar.
+            let spin = Some(drift(0, (super::SPEED_SCALAR / 4) as i16, 0, 0));
+            if gate(st) {
+                return CaptureCamArm {
+                    drift: spin,
+                    ..held
+                };
+            }
+            let next = if phase == 7 {
+                // `5 * scalar << 5` (`0x801F74AC..0x801F74CC`).
+                st.countdown.add(0xA0);
+                Some(8)
+            } else {
+                None
+            };
+            CaptureCamArm {
+                drift: spin,
+                ..pass(None, next)
+            }
         }
         _ => pass(None, None),
     }
