@@ -547,4 +547,14 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   made by poking the `vell` door tile from a state standing outside Rim Elm
   at `(96, 25)` (the scenario catalogue says so), and its flags over that
   state are `vell`'s own entry script's. The milestone is a seated-tier
-  waypoint, not a place a pad can reach at that story point.
+  waypoint, not a place a pad can reach at that story point - and not the
+  story point the playthrough reached it at. `vell`'s entry writes `0x489`,
+  whose only other setter is `map02` P2[13]; the flag is clear in every
+  anchor through `dolk2_market_noa` and set in every card save from
+  `PRO-01` on, so the first visit falls between `drake_castle_revisited`
+  and `voz_forest`, after `0x142` and `0x26F`. Moved there, the seated tier
+  reaches it from `dolk2` and the segment before it, `rim_elm_restored` to
+  `ravine`, clears at the pad tier. The pad tier from `dolk2` still stalls:
+  the crossing lattice plans `dolk2` for a landing at `map01` `(65, 50)`,
+  but both of `dolk2`'s walk-on exits, `(48..50, 46)` and `(67..73, 72)`,
+  land on the side the party entered from.

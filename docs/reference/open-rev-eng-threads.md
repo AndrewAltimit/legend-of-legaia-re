@@ -385,8 +385,10 @@ the actor's feet and `FUN_8001C394` links four textured quads over it, and the
 rebuilt packets match retail's 12 of 12 on `town01` and 4 of 4 on each of
 `map01` / `map03` ([settled](re-settled-threads.md#rendering--camera),
 [`renderer.md`](../subsystems/renderer.md#the-field-drop-shadow-fun_8001c394)).
-The port shadows every clip-bearing placement, where retail also skips an
-actor with `+0x10` bit `0x2` set.
+The gate's second test is the actor's `+0x10 & 0x200000` (`lui v1, 0x20` at
+`0x8001BE30`), the jump take-off / scripted-vanish bit, and the port reads the
+same bit off the player's move state and each placement's channel flags, so
+no shadow residual remains.
 
 Three more rows closed here. **The overworld camera** is the field zone
 camera: the overworld is a mode-`0x03` field-run scene, and on all three
@@ -769,6 +771,21 @@ a coincidence of the pad byte plus the mask table's first three entries
 |---|---|---|
 | Which save-state library entries still hold a patched executable? | open (narrowed) - audited and tagged; the rest need human play | A state made on a patched disc keeps that build's `SCUS_942.54` in RAM on every later load. `patch_taint_audit.py states` tags each library state's `resident_patch`; the S1..S5 anchors, `first_town_interactive` and `teien_field_run` are re-shot retail, and every capture-graded claim re-checked against its family stands ([`pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md#patched-disc-taint)). The `rikuroa_*`, `dolk2_market_noa`, `cort_evolved_*`, `minigame_*_pcsx`, `battle_gaza2_*` states and the mednafen `overworld_battle_bg_angle_*` states re-shot on an unpatched image close it. |
 
+**Where the ladder's `vidna` milestone belongs** closed by capture, and the
+milestone is out of story order rather than unreachable. Its scene is `vell`,
+West Voz Forest, whose entry writes `0x489` - a flag clear in every anchor
+through `dolk2_market_noa` and set in every card save from `PRO-01` on - so the
+playthrough first enters it between `drake_castle_revisited` and `voz_forest`;
+the anchor sits after `rim_elm_restored` only because it is a door-tile poke
+from a Rim Elm-era state ([settled](re-settled-threads.md#measurement--corpus),
+[`full-game-ladder.md`](../tooling/full-game-ladder.md#what-it-cannot-measure)).
+With it, **`rim_elm_restored`'s pad pass** stopped being a draw: its anchor is
+now the frame after Vahn's killing blow steals an Incense, the pad hand burns
+it, and no region rolls between `dolk` and Rim Elm. Doing so through the pause
+menu found a port defect - one Incense could be confirmed up to the window cap
+in a single visit, where retail takes the copy at the confirm
+([settled](re-settled-threads.md#field--locomotion)).
+
 **Which live ports cover only part of their routine** closed: every residue
 the audit named as still changing behaviour is ported - the last three were
 Baka Fighter's display clip (all three hosts pose from it), the victory load
@@ -830,7 +847,9 @@ attached light's keyframe script, reached by a `jal` from `FUN_801E4470` and
 live in the port; `0x801E5338`'s only materialiser `FUN_801E5834` has no
 reference of any form, so it is filed `[unreferenced]` with no port
 ([settled](re-settled-threads.md#world-map--kingdom-bundles)); `0x801E4D8C` is
-unchanged.
+the CLUT blend fade field-VM `4C DB` spawns through `FUN_801E57F0` from
+descriptor `0x801F2930`, live in the port as `world::effects`' blend-fade arm
+([settled](re-settled-threads.md#field--locomotion)).
 
 **Do the camera-snap and ocean-only kernels run on any host** closed in two
 halves: `Camera::take_camera_snap_beats` was a ladder gap and is entered now
