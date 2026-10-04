@@ -505,6 +505,11 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
         ("POOL_CENTER", "DYN_POOL_CENTER"),
         ("POOL_INNER", "DYN_POOL_INNER"),
         ("POOL_OUTER", "DYN_POOL_OUTER"),
+        # Lit windows: the glass test and the pane colour of `shade_window`.
+        ("WINDOW_GLASS_MIN_BLUE", "DYN_WIN_GLASS_MIN_BLUE"),
+        ("WINDOW_RGB", "DYN_WIN_RGB"),
+        ("WINDOW_FLOOR", "DYN_WIN_FLOOR"),
+        ("WINDOW_GLASS_BLACK_MAX", "DYN_WIN_GLASS_BLACK_MAX"),
     )
 ] + [
     # The point lights' shadow maps: the page's depth-array pass

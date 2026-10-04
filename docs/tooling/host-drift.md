@@ -3765,7 +3765,9 @@ pixels against the pre-lighting shaders on the same bundle).
   screen-centred pool, capped at 1.3x over the baked shading, plus up to eight
   point lights (half-Lambert wrap, `(1 - (d/r)^2)^2` attenuation) up to 1.9x,
   applied after the texel modulate and before the grade and cue; an emissive
-  prim (TSB / blend bit 13) draws at the emissive gain plus its light.
+  prim (TSB / blend bit 13) draws at the emissive gain plus its light, and a
+  lit-window prim (TSB bit 12) turns its glass texels to lamp light by the
+  mood's window glow (`dyn_window`, after `dyn_light` on both hosts).
   Textured prims light off smoothed per-vertex normals that
   `computeSmoothNormals` (`webgl-math.js`, the twin of
   `legaia_tmd::mesh::compute_smooth_normals`) derives on the CPU - only while

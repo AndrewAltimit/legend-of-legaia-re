@@ -2318,6 +2318,41 @@ morph, posed props). Two rules set it:
   test (`crates/web-viewer/tests/scene_lighting_real.rs`) pins every entry
   against the disc.
 
+**Lit windows.** A glazed window is an opaque prim on a wall tile, painted
+in daylight; neither rule above can find it, and blue texels alone also
+match sky sheets, water and slate. So the windows are curated by **art**:
+`LIT_WINDOWS` lists each glazed-window rectangle of a town atlas as its
+CLUT word, texture page, UV rectangle and an FNV-1a hash of the rectangle's
+decoded texels (`window_art_hash`) - coordinates and a hash, no disc bytes.
+A textured prim whose UVs sit inside an entry's rectangle on the same CLUT
+and page, with VRAM hashing to the entry's key, is tagged with TSB bit 12
+(`WINDOW_BIT`, free like bit 13) by the same `tag_emissive_*` calls. The
+content key is what makes the table scene-independent: Rim Elm's story
+revisits load the same art and match without entries of their own, while a
+different texture in the same atlas slot never does. The table covers Rim
+Elm's two glazed arts and Vidna's four (two outdoor, two interior).
+
+The shader lights only the **glass** of a tagged prim, per texel:
+
+```text
+glass = (texel.b - texel.r >= WINDOW_GLASS_MIN_BLUE && texel.b >= texel.g)
+     || max(texel) <= WINDOW_GLASS_BLACK_MAX
+pane  = WINDOW_RGB * (WINDOW_FLOOR + (1 - WINDOW_FLOOR) * texel.b)
+out   = glass ? mix(lit, pane, window_glow) : lit
+```
+
+The art paints panes either as saturated blue (night sky, sky reflection)
+or as near-black voids; frames, mullions, shutters and the wall around them
+are greys, wood and plaster that fail both tests, so the window keeps its
+structure and only the panes turn to lamp light. `window_glow` is a mood
+field (0 by day and in the enclosed mood, 0.6 at dusk, 1 at night), staged
+as the scene-lights block's `params.w` natively and as the fourth mood word
+of the page's lighting packet; the single-mesh pipelines' stub reads 0. The
+CPU mirror is `scene_lighting::shade_window`. The grey lower panes some art
+paints (a reflection of the sill) fail the glass test and stay as painted.
+Windows cast no point light of their own: the light list is derived once per
+scene, while the glow depends on the time of day.
+
 **Point lights.** What the player reads as candles, lamps and the glowing tree
 is that same emissive geometry, so the lights come from it: each glowing
 triangle small enough to be a prop (`EMIT_MAX_TRI_AREA`) is a sample at its

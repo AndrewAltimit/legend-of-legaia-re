@@ -203,6 +203,14 @@ const DYN_LAMBERT_FALLBACK = 0.6;
 const DYN_POOL_CENTER = [0.5, 0.45];
 const DYN_POOL_INNER = 0.15;
 const DYN_POOL_OUTER = 0.75;
+/* Lit windows (scene_lighting::LIT_WINDOWS / shade_window): a prim tagged
+ * TSB bit 12 samples a curated window art; its glass texels (blue clearly
+ * above red and dominant, or near-black) blend toward a warm lamp colour by
+ * the mood's window glow (u_dyn_window, from the engine's lighting packet). */
+const DYN_WIN_GLASS_MIN_BLUE = 0.19;
+const DYN_WIN_GLASS_BLACK_MAX = 0.1;
+const DYN_WIN_RGB = [1.0, 0.72, 0.4];
+const DYN_WIN_FLOOR = 0.6;
 
 /* The PSX GPU's signed 4x4 ordered-dither offsets, row-major (row = pixel
  * y & 3) - paired with engine-render's psx_dither::DITHER_MATRIX. */
@@ -597,6 +605,9 @@ uniform vec4 u_psx;
 uniform vec4 u_dyn_dir;
 uniform vec4 u_dyn_color;
 uniform vec4 u_dyn_ambient;
+/* The mood's window glow (LightingMood::window_word.x); 0 - the GL default
+ * - leaves every window as painted. */
+uniform float u_dyn_window;
 uniform int u_light_count;
 uniform vec4 u_light_pr[8];
 uniform vec4 u_light_col[8];
@@ -660,6 +671,10 @@ const float DYN_LAMBERT_FALLBACK = ${glslFloat(DYN_LAMBERT_FALLBACK)};
 const vec2 DYN_POOL_CENTER = vec2(${glslFloat(DYN_POOL_CENTER[0])}, ${glslFloat(DYN_POOL_CENTER[1])});
 const float DYN_POOL_INNER = ${glslFloat(DYN_POOL_INNER)};
 const float DYN_POOL_OUTER = ${glslFloat(DYN_POOL_OUTER)};
+const float DYN_WIN_GLASS_MIN_BLUE = ${glslFloat(DYN_WIN_GLASS_MIN_BLUE)};
+const float DYN_WIN_GLASS_BLACK_MAX = ${glslFloat(DYN_WIN_GLASS_BLACK_MAX)};
+const vec3 DYN_WIN_RGB = vec3(${DYN_WIN_RGB.map(glslFloat).join(', ')});
+const float DYN_WIN_FLOOR = ${glslFloat(DYN_WIN_FLOOR)};
 
 /* Twin of engine-render's scene_light_shadow: 3x3 PCF visibility of the
  * fragment from light i (0 = fully shadowed, 1 = lit). Out-of-cone and
@@ -741,6 +756,19 @@ vec3 dyn_light(vec3 rgb, vec3 vn, vec3 gn, bool emissive) {
   vec3 base = u_dyn_ambient.rgb + (DYN_DIFFUSE * lambert + u_dyn_color.w * pool) * u_dyn_color.rgb;
   return clamp(rgb * min(min(base, vec3(DYN_MAX_GAIN)) + pg, vec3(DYN_TOTAL_MAX_GAIN)),
                vec3(0.0), vec3(1.0));
+}
+
+/* Twin of engine-render's dyn_window: a window prim's (TSB bit 12) glass
+ * texel - saturated blue, or near-black - turns toward lamp light by
+ * the mood's window glow. texel = the raw decoded texel. Identity while the
+ * enhancement is off or the glow is 0. */
+vec3 dyn_window(vec3 lit, vec3 texel, bool window) {
+  if (u_dyn_dir.w < 0.5 || !window || u_dyn_window <= 0.0) return lit;
+  bool blue = texel.b - texel.r >= DYN_WIN_GLASS_MIN_BLUE && texel.b >= texel.g;
+  bool black = max(texel.r, max(texel.g, texel.b)) <= DYN_WIN_GLASS_BLACK_MAX;
+  if (!blue && !black) return lit;
+  vec3 pane = DYN_WIN_RGB * (DYN_WIN_FLOOR + (1.0 - DYN_WIN_FLOOR) * texel.b);
+  return clamp(mix(lit, pane, clamp(u_dyn_window, 0.0, 1.0)), vec3(0.0), vec3(1.0));
 }
 
 /* Decode BGR555 R/G/B in 0..1 linear. Used for VRAM texture samples. */
@@ -1055,7 +1083,8 @@ void main() {
                    vec3(0.0), vec3(1.0));
   /* Opt-in dynamic light over the baked shading (identity when off), at
    * native's point in the chain: after the modulate, before grade and cue. */
-  lit = dyn_light(lit, v_normal, geo_n, (tsb & 0x2000u) != 0u);
+  lit = dyn_window(dyn_light(lit, v_normal, geo_n, (tsb & 0x2000u) != 0u),
+                   color.rgb, (tsb & 0x1000u) != 0u);
 
   lit = apply_distance_fog(lit);
 

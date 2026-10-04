@@ -271,6 +271,14 @@ const DYN_LAMBERT_FALLBACK: f32 = 0.6; // orientation term when no normal exists
 const DYN_POOL_CENTER: vec2<f32> = vec2<f32>(0.5, 0.45); // pool centre, 0..1
 const DYN_POOL_INNER: f32 = 0.15; // pool full-strength radius (screen frac)
 const DYN_POOL_OUTER: f32 = 0.75; // pool fade-out radius (screen frac)
+// Lit windows (`scene_lighting::LIT_WINDOWS` / `shade_window`): a prim
+// tagged TSB bit 12 samples a curated window art; its glass texels (blue
+// clearly above red and dominant, or near-black) blend toward a warm lamp
+// colour by the mood's window glow.
+const WIN_GLASS_MIN_BLUE: f32 = 0.19;
+const WIN_GLASS_BLACK_MAX: f32 = 0.1;
+const WIN_RGB: vec3<f32> = vec3<f32>(1.0, 0.72, 0.4);
+const WIN_FLOOR: f32 = 0.6;
 
 // 4x4 Bayer threshold in [0, 1) for the camera-occlusion fade's
 // screen-door discard (see `occl_keep` in the scene-lights layer). CPU
@@ -304,6 +312,26 @@ fn dyn_far(far_rgb: vec3<f32>, light_dir: vec4<f32>, light_color: vec4<f32>) -> 
     let amb = mood_ambient();
     let g = min(amb.rgb + 0.5 * DYN_DIFFUSE * light_color.xyz, vec3<f32>(DYN_MAX_GAIN));
     return clamp(far_rgb * g, vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
+// Lit windows (NON-RETAIL, part of enhanced lighting): a window prim's
+// glass texel turns toward lamp light by the mood's window glow
+// (`mood_window`). `texel` is the raw decoded texel, `lit` the shaded
+// colour. Identity while the enhancement is off, the glow is zero, the prim
+// is not a window, or the texel is not glass. CPU mirror:
+// `scene_lighting::shade_window`.
+fn dyn_window(lit: vec3<f32>, texel: vec3<f32>, light_dir: vec4<f32>, window: bool) -> vec3<f32> {
+    let glow = mood_window();
+    if (light_dir.w < 0.5 || !window || glow <= 0.0) {
+        return lit;
+    }
+    let blue = texel.b - texel.r >= WIN_GLASS_MIN_BLUE && texel.b >= texel.g;
+    let black = max(texel.r, max(texel.g, texel.b)) <= WIN_GLASS_BLACK_MAX;
+    if (!blue && !black) {
+        return lit;
+    }
+    let pane = WIN_RGB * (WIN_FLOOR + (1.0 - WIN_FLOOR) * texel.b);
+    return clamp(mix(lit, pane, clamp(glow, 0.0, 1.0)), vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
 fn dyn_light(
@@ -386,7 +414,8 @@ struct ScenePointLightU {
 
 struct SceneLightsU {
     // x = active light count (0 = layer off), y = shadow-map texel size
-    // (1 / dimension), z = depth-compare bias, w reserved.
+    // (1 / dimension), z = depth-compare bias, w = the mood's window glow
+    // (`LightingMood::window_word`, read by `dyn_window`).
     params: vec4<f32>,
     // Camera-occlusion fade (opt-in see-through-walls enhancement,
     // NON-RETAIL - see `crate::occlusion_fade`): .xy = the player's
@@ -423,6 +452,11 @@ fn prim_near_params() -> vec4<f32> {
 // The mood's (ambient rgb, emissive gain) for `dyn_light`.
 fn mood_ambient() -> vec4<f32> {
     return sl.ambient;
+}
+
+// The mood's window glow for `dyn_window`.
+fn mood_window() -> f32 {
+    return sl.params.w;
 }
 @group(2) @binding(1) var t_shadow: texture_depth_2d_array;
 @group(2) @binding(2) var s_shadow: sampler_comparison;
@@ -555,6 +589,11 @@ fn scene_point_gain(
 // light under the daylight mood (`scene_lighting::LightingMood::DAY`).
 fn mood_ambient() -> vec4<f32> {
     return vec4<f32>(0.7, 0.7, 0.7, 1.15);
+}
+
+// Window-glow stub: daylight - no window glows.
+fn mood_window() -> f32 {
+    return 0.0;
 }
 
 // Camera-occlusion fade stub: the single-mesh pipelines carry no scene
@@ -1228,9 +1267,12 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     let lit = psx_modulate(color.rgb, prim);
     let geo_n = cross(dpdx(in.world_pos), dpdy(in.world_pos));
     let pg = scene_point_gain(in.world_w, in.normal, geo_n);
-    let enhanced = dyn_light(
-        lit, in.normal, geo_n, in.clip_pos.xy, u.psx_params.xy, u.light_dir, u.light_color, pg,
-        (tsb & 0x2000u) != 0u,
+    let enhanced = dyn_window(
+        dyn_light(
+            lit, in.normal, geo_n, in.clip_pos.xy, u.psx_params.xy, u.light_dir, u.light_color, pg,
+            (tsb & 0x2000u) != 0u,
+        ),
+        color.rgb, u.light_dir, (tsb & 0x1000u) != 0u,
     );
     // Retail order: DPCS blends the PACKET COLOUR toward the far colour, then
     // the GPU multiplies the texel by the result - so the far term reaches the
@@ -1311,9 +1353,12 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
     let lit = psx_modulate(color.rgb, prim);
     let geo_n = cross(dpdx(in.world_pos), dpdy(in.world_pos));
     let pg = scene_point_gain(in.world_w, in.normal, geo_n);
-    let enhanced = dyn_light(
-        lit, in.normal, geo_n, in.clip_pos.xy, u.psx_params.xy, u.light_dir, u.light_color, pg,
-        (tsb & 0x2000u) != 0u,
+    let enhanced = dyn_window(
+        dyn_light(
+            lit, in.normal, geo_n, in.clip_pos.xy, u.psx_params.xy, u.light_dir, u.light_color, pg,
+            (tsb & 0x2000u) != 0u,
+        ),
+        color.rgb, u.light_dir, (tsb & 0x1000u) != 0u,
     );
     // Same grade-then-cue order as the opaque pass (see fs_main): the far
     // term is the texel-modulated far colour, un-tinted.

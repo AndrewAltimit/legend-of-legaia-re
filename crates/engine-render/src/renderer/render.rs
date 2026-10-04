@@ -833,15 +833,16 @@ impl Renderer {
             0
         };
         let mut u = SceneLightsUniform::zeroed();
+        // The enhanced-lighting mood's ambient floor + emissive gain - read
+        // by `dyn_light` only while the enhancement is on - and its window
+        // glow (`params.w`, read by `dyn_window` under the same gate).
+        let mood = self.lighting_mood.get();
         u.params = [
             n as f32,
             1.0 / SHADOW_MAP_DIM as f32,
             SHADOW_COMPARE_BIAS,
-            0.0,
+            mood.window_word()[0],
         ];
-        // The enhanced-lighting mood's ambient floor + emissive gain - read
-        // by `dyn_light` only while the enhancement is on.
-        let mood = self.lighting_mood.get();
         u.ambient = mood.uniforms(true)[2];
         u.prim_near = self.prim_near.get();
         // Camera-occlusion fade focus: project the host-staged player clip

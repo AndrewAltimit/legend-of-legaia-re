@@ -47,6 +47,15 @@
 //! words never use (a TSB uses bits 0..=8, a blend word bits 5..=6 and 15,
 //! the double-sided flag bit 14) - and every shader masks it out of every
 //! decode. Shaders read it only while the enhancement is on.
+//!
+//! # Lit windows
+//!
+//! A glazed town window is an opaque prim on a wall tile, so neither rule
+//! above finds it. [`LIT_WINDOWS`] curates the window *art* (CLUT, page,
+//! UV rectangle, texel hash); a prim sampling one carries [`WINDOW_BIT`]
+//! (TSB bit 12), and the shaders turn its glass texels ([`window_glass`])
+//! to lamp light by the mood's [`LightingMood::window_glow`]
+//! ([`shade_window`]).
 
 use glam::{Mat4, Vec3};
 
@@ -425,6 +434,9 @@ pub fn tag_emissive_meshes(
         &cmesh.indices,
         curated,
     );
+    tag_windows(&mut vmesh.cba_tsb, &vmesh.uvs, &vmesh.indices, vram, |_| {
+        false
+    });
     let entry = curated?;
     Some(CuratedHit {
         entry,
@@ -448,6 +460,9 @@ pub fn tag_emissive_vram_mesh(
         &vmesh.indices,
         curated.map(|e| (e, vram)),
     );
+    tag_windows(&mut vmesh.cba_tsb, &vmesh.uvs, &vmesh.indices, vram, |_| {
+        false
+    });
 }
 
 /// [`tag_emissive_meshes`] for a lone untextured half.
@@ -510,10 +525,261 @@ pub fn tag_emissive_hybrid(
             set_emissive(&mut mesh.cba_tsb, tri);
         }
     }
+    tag_windows(&mut mesh.cba_tsb, &mesh.uvs, &mesh.indices, vram, |i0| {
+        flat.get(i0 * 4 + 3) == Some(&0)
+    });
     Some(CuratedHit {
         entry: curated?,
         center: bounds.center()?,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Lit windows
+// ---------------------------------------------------------------------------
+
+/// Bit 12 of a per-vertex TSB word: the prim samples a curated
+/// [`LIT_WINDOWS`] art, so its **glass** texels ([`window_glass`]) glow
+/// warm under a mood with [`LightingMood::window_glow`] above zero. Free
+/// for the same reason as [`EMISSIVE_BIT`] (a retail TSB uses bits 0..=8);
+/// every shader decode masks it out. WGSL / GLSL twin: `0x1000u`.
+pub const WINDOW_BIT: u16 = 0x1000;
+
+/// Glass test on a raw texel (0..=1, before the packet-colour modulation),
+/// first half: blue at least this far above red, and blue the dominant
+/// channel. Most of the town window art paints its panes as saturated blue
+/// (night sky, sky reflection); the frame, the shutters and the wall around
+/// them are greys, wood and plaster that fail it. WGSL twin
+/// `WIN_GLASS_MIN_BLUE`, GLSL twin `DYN_WIN_GLASS_MIN_BLUE`.
+pub const WINDOW_GLASS_MIN_BLUE: f32 = 0.19;
+
+/// Glass test, second half: a near-black texel (every channel at most
+/// this) is glass too - the art that paints its panes as dark voids
+/// (Vidna's stone houses), whose mullions and frames are greys well above
+/// it. WGSL twin `WIN_GLASS_BLACK_MAX`, GLSL twin `DYN_WIN_GLASS_BLACK_MAX`.
+pub const WINDOW_GLASS_BLACK_MAX: f32 = 0.1;
+
+/// The warm lamp-light colour a lit pane draws at (0..=1). WGSL twin
+/// `WIN_RGB`, GLSL twin `DYN_WIN_RGB`.
+pub const WINDOW_RGB: [f32; 3] = [1.0, 0.72, 0.4];
+
+/// The pane's brightness floor: a lit pane draws at `WINDOW_RGB * (floor +
+/// (1 - floor) * texel_blue)`, so the art's pane gradient (darker at the
+/// top, sky-bright at the sill) survives as a gradient of lamp light. WGSL
+/// twin `WIN_FLOOR`, GLSL twin `DYN_WIN_FLOOR`.
+pub const WINDOW_FLOOR: f32 = 0.6;
+
+/// One curated window art: a rectangle of one texture page under one CLUT
+/// that paints a glazed window. Keyed by where the art sits in VRAM **and**
+/// a content hash of its decoded texels ([`window_art_hash`]), so the same
+/// atlas slot holding different art in another scene never matches, and
+/// every scene that loads this art (a town and its story revisits) does.
+/// The table holds coordinates and hashes only - no disc bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WindowArt {
+    /// What it is (documentation only).
+    pub label: &'static str,
+    /// The CLUT word (`cba & 0x7FFF`).
+    pub cba: u16,
+    /// The texture-page word (`tsb & 0x1FF`).
+    pub tpage: u16,
+    /// Inclusive UV rectangle `[u0, v0, u1, v1]` the art occupies. A prim
+    /// matches when its UV bounding box lies inside.
+    pub rect: [u8; 4],
+    /// [`window_art_hash`] of the rectangle.
+    pub hash: u64,
+}
+
+/// The curated glazed-window arts. Picked by eye from each town's atlases
+/// (the blend rule cannot find these: a window is an opaque prim on a wall
+/// tile, and blue texels alone also match sky sheets, water and slate).
+pub const LIT_WINDOWS: &[WindowArt] = &[
+    WindowArt {
+        label: "Rim Elm: arched window with shutters",
+        cba: 0x7ACE,
+        tpage: 0x01C,
+        rect: [160, 64, 199, 111],
+        hash: 0x13a4_bf6e_d22c_98e4,
+    },
+    WindowArt {
+        label: "Rim Elm: plaster wall with a mullioned window",
+        cba: 0x7ACB,
+        tpage: 0x01C,
+        rect: [64, 192, 127, 255],
+        hash: 0xcf50_1d3e_57a7_eae1,
+    },
+    WindowArt {
+        label: "Vidna: stone wall with a six-pane window",
+        cba: 0x7A41,
+        tpage: 0x01A,
+        rect: [128, 0, 191, 95],
+        hash: 0x6d0b_45ae_52dd_4a8c,
+    },
+    WindowArt {
+        label: "Vidna: stone wall with a curtained window",
+        cba: 0x7A46,
+        tpage: 0x01A,
+        rect: [0, 0, 63, 95],
+        hash: 0x34ea_d49c_14d8_a5d8,
+    },
+    WindowArt {
+        label: "Vidna (interiors): plaster wall with four-pane windows",
+        cba: 0x7AC0,
+        tpage: 0x00B,
+        rect: [0, 0, 95, 80],
+        hash: 0xe62d_54d5_b1fb_49d3,
+    },
+    WindowArt {
+        label: "Vidna (interiors): narrow window",
+        cba: 0x7ACE,
+        tpage: 0x00B,
+        rect: [224, 0, 255, 47],
+        hash: 0xf3e1_7cd4_bf67_4500,
+    },
+];
+
+/// One decoded 15-bit texel word of a page under a CLUT (`0` outside VRAM),
+/// exactly as the shaders decode it.
+pub fn page_texel(vram: &legaia_tim::Vram, cba: u16, tsb: u16, u: usize, v: usize) -> u16 {
+    let cx = ((cba & 0x3F) * 16) as usize;
+    let cy = ((cba >> 6) & 0x1FF) as usize;
+    let tx = ((tsb & 0xF) * 64) as usize;
+    let ty = (((tsb >> 4) & 1) * 256) as usize;
+    let px = |x: usize, y: usize| -> u16 {
+        if x >= legaia_tim::VRAM_WIDTH || y >= legaia_tim::VRAM_HEIGHT {
+            0
+        } else {
+            vram.pixel(x, y)
+        }
+    };
+    match (tsb >> 7) & 0x3 {
+        0 => {
+            let w = px(tx + (u >> 2), ty + v);
+            px(cx + ((w >> ((u & 3) * 4)) & 0xF) as usize, cy)
+        }
+        1 => {
+            let w = px(tx + (u >> 1), ty + v);
+            px(cx + ((w >> ((u & 1) * 8)) & 0xFF) as usize, cy)
+        }
+        _ => px(tx + u, ty + v),
+    }
+}
+
+/// FNV-1a 64 over the decoded texel words of `rect` (row-major) - the
+/// [`WindowArt::hash`] key.
+pub fn window_art_hash(vram: &legaia_tim::Vram, cba: u16, tpage: u16, rect: [u8; 4]) -> u64 {
+    let mut h = SIGNATURE_BASIS;
+    for v in rect[1]..=rect[3] {
+        for u in rect[0]..=rect[2] {
+            h = fnv1a(
+                h,
+                &page_texel(vram, cba, tpage, u as usize, v as usize).to_le_bytes(),
+            );
+        }
+    }
+    h
+}
+
+/// The curated window art a textured prim samples, if any: same CLUT and
+/// page, its UV box inside the art's rectangle, and the rectangle's texels
+/// hashing to the entry's key in this VRAM.
+pub fn prim_window_art(
+    vram: &legaia_tim::Vram,
+    cba: u16,
+    tsb: u16,
+    uvs: &[[u8; 2]],
+) -> Option<&'static WindowArt> {
+    LIT_WINDOWS
+        .iter()
+        .find(|w| prim_samples_art(w, vram, cba, tsb, uvs))
+}
+
+/// Whether a textured prim (`cba`, `tsb`, corner `uvs`) samples `art` in
+/// this VRAM - the [`prim_window_art`] test for one entry.
+pub fn prim_samples_art(
+    art: &WindowArt,
+    vram: &legaia_tim::Vram,
+    cba: u16,
+    tsb: u16,
+    uvs: &[[u8; 2]],
+) -> bool {
+    let (cba, tpage) = (cba & 0x7FFF, tsb & 0x1FF);
+    if uvs.is_empty() || art.cba != cba || art.tpage != tpage {
+        return false;
+    }
+    let inside = uvs.iter().all(|uv| {
+        (art.rect[0]..=art.rect[2]).contains(&uv[0]) && (art.rect[1]..=art.rect[3]).contains(&uv[1])
+    });
+    inside && window_art_hash(vram, cba, tpage, art.rect) == art.hash
+}
+
+/// Set [`WINDOW_BIT`] on every corner of each textured prim (`tri`s of
+/// `indices`) that samples a [`LIT_WINDOWS`] art; `untextured(i0)` skips a
+/// hybrid stream's colour prims. Returns the number of triangles tagged.
+fn tag_windows(
+    cba_tsb: &mut [[u16; 2]],
+    uvs: &[[u8; 2]],
+    indices: &[u32],
+    vram: &legaia_tim::Vram,
+    untextured: impl Fn(usize) -> bool,
+) -> usize {
+    let mut n = 0;
+    for tri in indices.as_chunks::<3>().0 {
+        let i0 = tri[0] as usize;
+        if untextured(i0) {
+            continue;
+        }
+        let Some(&[cba, tsb]) = cba_tsb.get(i0) else {
+            continue;
+        };
+        let corner: Vec<[u8; 2]> = tri
+            .iter()
+            .filter_map(|&i| uvs.get(i as usize).copied())
+            .collect();
+        if prim_window_art(vram, cba, tsb, &corner).is_some() {
+            for &i in tri {
+                if let Some(ct) = cba_tsb.get_mut(i as usize) {
+                    ct[1] |= WINDOW_BIT;
+                }
+            }
+            n += 1;
+        }
+    }
+    n
+}
+
+/// Glass test on a raw texel: saturated blue ([`WINDOW_GLASS_MIN_BLUE`])
+/// or near-black ([`WINDOW_GLASS_BLACK_MAX`]).
+pub fn window_glass(texel: [f32; 3]) -> bool {
+    let blue = texel[2] - texel[0] >= WINDOW_GLASS_MIN_BLUE && texel[2] >= texel[1];
+    let black = texel[0].max(texel[1]).max(texel[2]) <= WINDOW_GLASS_BLACK_MAX;
+    blue || black
+}
+
+/// CPU mirror of the shaders' `dyn_window`: a [`WINDOW_BIT`] prim's glass
+/// texel blends from its lit colour toward the warm pane colour by the
+/// mood's window glow; every other texel (and every texel while the
+/// enhancement is off or the glow is zero) keeps `lit`.
+///
+/// ```text
+/// glass = (texel.b - texel.r >= WINDOW_GLASS_MIN_BLUE && texel.b >= texel.g)
+///      || max(texel) <= WINDOW_GLASS_BLACK_MAX
+/// pane  = WINDOW_RGB * (WINDOW_FLOOR + (1 - WINDOW_FLOOR) * texel.b)
+/// out   = window && glass ? mix(lit, pane, window_glow) : lit
+/// ```
+pub fn shade_window(
+    lit: [f32; 3],
+    texel: [f32; 3],
+    uniforms: [[f32; 4]; 3],
+    window_glow: f32,
+    window: bool,
+) -> [f32; 3] {
+    if uniforms[0][3] < 0.5 || !window || window_glow <= 0.0 || !window_glass(texel) {
+        return lit;
+    }
+    let k = WINDOW_FLOOR + (1.0 - WINDOW_FLOOR) * texel[2];
+    let t = window_glow.clamp(0.0, 1.0);
+    [0, 1, 2].map(|i| (lit[i] + (WINDOW_RGB[i] * k - lit[i]) * t).clamp(0.0, 1.0))
 }
 
 // ---------------------------------------------------------------------------
@@ -976,6 +1242,9 @@ pub struct LightingMood {
     pub emissive_gain: f32,
     /// Strength of the glow sprites (halos + shafts) 0..=1; 0 draws none.
     pub glow: f32,
+    /// How far the [`LIT_WINDOWS`] panes have turned to lamp light, 0..=1
+    /// ([`shade_window`]); 0 leaves every window as painted.
+    pub window_glow: f32,
 }
 
 impl LightingMood {
@@ -990,6 +1259,7 @@ impl LightingMood {
         point_scale: 0.35,
         emissive_gain: 1.15,
         glow: 0.25,
+        window_glow: 0.0,
     };
     /// Dusk: low amber sun, cooling shadows, lamps coming on.
     pub const DUSK: Self = Self {
@@ -1001,6 +1271,7 @@ impl LightingMood {
         point_scale: 0.85,
         emissive_gain: 1.30,
         glow: 0.65,
+        window_glow: 0.6,
     };
     /// Night: moonlit blue ambient, every lamp and window carries the scene.
     pub const NIGHT: Self = Self {
@@ -1012,6 +1283,7 @@ impl LightingMood {
         point_scale: 1.35,
         emissive_gain: 1.45,
         glow: 1.0,
+        window_glow: 1.0,
     };
     /// Enclosed spaces (caves, dungeons, interiors): dim neutral ambient,
     /// the authored lamps and torches doing the lighting.
@@ -1024,6 +1296,7 @@ impl LightingMood {
         point_scale: 1.2,
         emissive_gain: 1.35,
         glow: 0.8,
+        window_glow: 0.0,
     };
 
     /// The mood a scene is lit under when the player has not picked a time
@@ -1056,11 +1329,18 @@ impl LightingMood {
         ]
     }
 
+    /// The fourth shader word: `(window_glow, 0, 0, 0)`. Native rides the
+    /// scene-lights block's `params.w`; the play page's lighting packet
+    /// carries it after the three [`Self::uniforms`] words.
+    pub fn window_word(&self) -> [f32; 4] {
+        [self.window_glow.clamp(0.0, 1.0), 0.0, 0.0, 0.0]
+    }
+
     /// The mood as a small JSON object (the browser play page's staging).
     pub fn to_json(&self) -> String {
         let [d, c, a] = self.uniforms(true);
         format!(
-            "{{\"name\":\"{}\",\"dir\":[{},{},{}],\"key\":[{},{},{},{}],\"ambient\":[{},{},{},{}],\"point_scale\":{},\"glow\":{}}}",
+            "{{\"name\":\"{}\",\"dir\":[{},{},{}],\"key\":[{},{},{},{}],\"ambient\":[{},{},{},{}],\"point_scale\":{},\"glow\":{},\"window_glow\":{}}}",
             self.name,
             d[0],
             d[1],
@@ -1074,7 +1354,8 @@ impl LightingMood {
             a[2],
             a[3],
             self.point_scale,
-            self.glow
+            self.glow,
+            self.window_glow
         )
     }
 }
@@ -1814,5 +2095,109 @@ mod tests {
         let mut none = LightingMood::NIGHT;
         none.glow = 0.0;
         assert!(glow_sprites(&[l], &none).is_empty());
+    }
+
+    /// The window tag rides a TSB bit no retail word and no other engine
+    /// tag uses.
+    #[test]
+    fn window_bit_is_free() {
+        const TSB_USED: u16 = 0x01FF;
+        assert_eq!(
+            WINDOW_BIT & (TSB_USED | SEMI_BIT | EMISSIVE_BIT | 0x4000),
+            0
+        );
+    }
+
+    /// Every curated window art is a non-empty rectangle on a real CLUT /
+    /// page word, and no two entries share a key.
+    #[test]
+    fn lit_window_table_is_well_formed() {
+        for (i, w) in LIT_WINDOWS.iter().enumerate() {
+            assert!(
+                w.rect[0] <= w.rect[2] && w.rect[1] <= w.rect[3],
+                "{}",
+                w.label
+            );
+            assert_eq!(w.cba & 0x8000, 0, "{}", w.label);
+            assert_eq!(w.tpage & !0x1FF, 0, "{}", w.label);
+            for o in &LIT_WINDOWS[i + 1..] {
+                assert_ne!(
+                    (w.cba, w.tpage, w.rect, w.hash),
+                    (o.cba, o.tpage, o.rect, o.hash)
+                );
+            }
+        }
+    }
+
+    /// A prim matches an art only on the same CLUT + page, inside the
+    /// rectangle, and only while VRAM holds the hashed texels.
+    #[test]
+    fn window_art_match_keys_on_place_and_content() {
+        let mut vram = legaia_tim::Vram::new();
+        // A 4bpp page at x=0 with a CLUT at (0, 480): paint index 1 blue.
+        let clut: Vec<u8> = [0u16, 0x7C00, 0x001F]
+            .iter()
+            .flat_map(|w| w.to_le_bytes())
+            .collect();
+        vram.write_clut_row(0, 480, &clut);
+        vram.write_block(0, 0, 4, 16, &[0x11; 4 * 2 * 16]);
+        let cba = 480 << 6;
+        let tsb = 0x0000;
+        let mut art = WindowArt {
+            label: "test",
+            cba,
+            tpage: 0,
+            rect: [0, 0, 15, 15],
+            hash: 0,
+        };
+        art.hash = window_art_hash(&vram, cba, 0, art.rect);
+        let inside = [[1, 1], [14, 1], [1, 14]];
+        assert!(prim_samples_art(&art, &vram, cba, tsb, &inside));
+        assert!(!prim_samples_art(
+            &art,
+            &vram,
+            cba,
+            tsb,
+            &[[1, 1], [20, 1], [1, 14]]
+        ));
+        assert!(!prim_samples_art(&art, &vram, cba + 1, tsb, &inside));
+        assert!(!prim_samples_art(&art, &vram, cba, tsb | 1, &inside));
+        vram.write_block(0, 0, 1, 1, &[0x22, 0x22]);
+        assert!(
+            !prim_samples_art(&art, &vram, cba, tsb, &inside),
+            "content changed"
+        );
+    }
+
+    /// The pane law: identity while off, at day, off a window prim or on a
+    /// non-glass texel; at night a glass texel draws as warm lamp light.
+    #[test]
+    fn window_glass_glows_only_at_night_and_only_on_glass() {
+        let glass = [0.06, 0.16, 0.42];
+        let frame = [0.55, 0.5, 0.48];
+        let shutter = [0.45, 0.48, 0.58];
+        let lit = [0.1, 0.12, 0.2];
+        let night = LightingMood::NIGHT;
+        let on = night.uniforms(true);
+        let off = night.uniforms(false);
+        let g = night.window_word()[0];
+        assert_eq!(shade_window(lit, glass, off, g, true), lit);
+        assert_eq!(shade_window(lit, glass, on, g, false), lit);
+        assert_eq!(shade_window(lit, frame, on, g, true), lit);
+        assert_eq!(shade_window(lit, shutter, on, g, true), lit);
+        let day = LightingMood::DAY;
+        assert_eq!(
+            shade_window(lit, glass, day.uniforms(true), day.window_word()[0], true),
+            lit
+        );
+        let void = [0.03, 0.03, 0.06];
+        let mullion = [0.19, 0.19, 0.23];
+        assert_eq!(shade_window(lit, mullion, on, g, true), lit);
+        assert_ne!(shade_window(lit, void, on, g, true), lit);
+        let out = shade_window(lit, glass, on, g, true);
+        assert!(out[0] > out[2] && out[0] > 0.6, "{out:?}");
+        let dusk = LightingMood::DUSK;
+        let mid = shade_window(lit, glass, dusk.uniforms(true), dusk.window_word()[0], true);
+        assert!(mid[0] > lit[0] && mid[0] < out[0], "{mid:?}");
     }
 }

@@ -115,6 +115,10 @@ const SHADOW_NEAR_FRAC = 0.04;
 const SHADOW_NEAR_MIN = 24.0;
 /* The texture unit the shadow array lives on for the program's life. */
 const SHADOW_TEX_UNIT = 4;
+/* Words of mood at the head of the engine's lighting packet
+ * (`play_lighting_frame`): the three `LightingMood::uniforms` words, then
+ * `window_word` (the window glow). The light and glow counts follow. */
+const MOOD_WORDS = 16;
 
 class TmdRenderer {
   constructor(canvas) {
@@ -166,12 +170,13 @@ class TmdRenderer {
     this.lastLogDepth = false;
     this.locDynColor = gl.getUniformLocation(this.program, 'u_dyn_color');
     this.locDynAmbient = gl.getUniformLocation(this.program, 'u_dyn_ambient');
+    this.locDynWindow = gl.getUniformLocation(this.program, 'u_dyn_window');
     this.locLightCount = gl.getUniformLocation(this.program, 'u_light_count');
     this.locLightPr  = gl.getUniformLocation(this.program, 'u_light_pr');
     this.locLightCol = gl.getUniformLocation(this.program, 'u_light_col');
     /* Enhanced lighting's per-frame state, staged by the play page through
      * `lightingProvider(right, up)` (which asks the engine's
-     * `play_lighting_frame`): the mood's three shader words, the picked
+     * `play_lighting_frame`): the mood's four shader words, the picked
      * point lights in this page's frame, and the glow-sprite quads. null on
      * every other page - and the enable word stays 0, the identity. */
     this.lightingProvider = null;
@@ -683,6 +688,7 @@ class TmdRenderer {
         gl.uniform4f(this.locDynDir, m[0], m[1], m[2], 1);
         gl.uniform4f(this.locDynColor, m[4], m[5], m[6], m[7]);
         gl.uniform4f(this.locDynAmbient, m[8], m[9], m[10], m[11]);
+        if (this.locDynWindow) gl.uniform1f(this.locDynWindow, m[12] || 0);
         gl.uniform1i(this.locLightCount, f.count);
         if (f.count > 0) {
           gl.uniform4fv(this.locLightPr, f.pr);
@@ -721,18 +727,18 @@ class TmdRenderer {
     let pkt;
     try { pkt = this.lightingProvider([r[0], -r[1], r[2]], [u[0], -u[1], u[2]]); }
     catch (_) { pkt = null; }
-    if (!pkt || pkt.length < 14) return;
-    const mood = pkt.slice(0, 12);
-    const n = pkt[12] | 0;
-    const nv = pkt[13] | 0;
+    if (!pkt || pkt.length < MOOD_WORDS + 2) return;
+    const mood = pkt.slice(0, MOOD_WORDS);
+    const n = pkt[MOOD_WORDS] | 0;
+    const nv = pkt[MOOD_WORDS + 1] | 0;
     const pr = new Float32Array(32);
     const col = new Float32Array(32);
-    let o = 14;
+    let o = MOOD_WORDS + 2;
     for (let i = 0; i < n && i < 8; i++, o += 7) {
       pr.set([pkt[o], -pkt[o + 1], pkt[o + 2], pkt[o + 3]], i * 4);
       col.set([pkt[o + 4], pkt[o + 5], pkt[o + 6], 0], i * 4);
     }
-    o = 14 + n * 7;
+    o = MOOD_WORDS + 2 + n * 7;
     const glow = nv > 0 ? Float32Array.from(pkt.slice(o, o + nv * 9)) : null;
     this.lightFrame = { mood, count: Math.min(n, 8), pr, col, glow, glowCount: nv };
   }

@@ -154,7 +154,8 @@ pub(super) struct ScenePointLightUniform {
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub(super) struct SceneLightsUniform {
     /// x = active light count, y = shadow-map texel size, z = compare
-    /// bias, w reserved.
+    /// bias, w = the enhanced-lighting mood's window glow
+    /// (`scene_lighting::LightingMood::window_word`).
     pub(super) params: [f32; 4],
     /// Camera-occlusion fade (see [`crate::occlusion_fade`]): `[0..2]` =
     /// the player's projected framebuffer pixel, `[2]` = the player's
