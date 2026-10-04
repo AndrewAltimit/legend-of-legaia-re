@@ -71,34 +71,33 @@
 //! `0x80084558 <- 0x80084548 <- 0x800915C8` - so the previous scene name is
 //! preserved one slot back while the pending one moves into the active slot.
 //!
-//! ## NOT WIRED
+//! ## Where it runs
 //!
 //! The retail call site is known and singular. An address-reference scan
 //! (`find-address-word-refs.py --prot 80021934`) finds exactly one reference
 //! to the handler: the template word at `0x8007073C`, i.e. descriptor
 //! `0x80070734 + 8`. That descriptor is spawned by the scene-change packet
 //! `FUN_8001FD44`, whose port is `FieldHostImpl::scene_transition_named`
-//! (`world/vm_hosts.rs`) - and that port parks the destination for
-//! `SceneHost::tick`, which loads it as a [`crate::scene::Scene`] on the same
-//! tick. So the streaming half of this machine (the `.LZS` stream into
-//! `_DAT_8007B85C`, the name-buffer rotation, the mode-2 hand-off) is done by
-//! the `Scene` load, and has no buffer to fill here.
+//! (`world/vm_hosts.rs`).
 //!
-//! What the drain does **not** reproduce is the machine's visible half, the
-//! [`TRANSITION_COUNTDOWN`] hold: retail keeps the departing scene running for
-//! `0x46` frames (plus the stream) before MAIN INIT, measured as 78 vsyncs
-//! between the packet and the destination's entry stamp on a `map01` ->
-//! `town0c` door ([`encounter.md`](../../../docs/formats/encounter.md#the-window-is-not-cleared-with-the-scene)).
-//! The departing record's exit fade - `34 05 FF FF FF 41 00`, a `0x41`-frame
-//! ramp issued just before the `0x3F` on most doors - plays inside that hold,
-//! so the port cuts a door before its exit fade lands.
+//! The port seats the actor in [`SceneTransitionHold`]: `SceneHost::tick`
+//! parks every named transition and every overworld-portal crossing there,
+//! ticks the actor once per world tick with the frame step while the
+//! departing scene keeps running, and commits the switch on the tick the
+//! actor writes the mode-2 hand-off. The streaming half (the `.LZS` stream
+//! into `_DAT_8007B85C`, the name-buffer rotation) is done by the
+//! [`crate::scene::Scene`] load the commit runs, so those effects are read
+//! and dropped.
 //!
-//! The prerequisite is therefore a **deferred drain**, not a staging buffer:
-//! `SceneHost` holding a parked transition while this machine counts down,
-//! with the departing scene still ticking and the player and the walk-on
-//! dispatch held. It moves every door by `0x46` frames, so every pad-driven
-//! fixture that crosses a door has to be re-blessed with it - a decision for
-//! whoever owns those baselines, which is why it is not taken here.
+//! The hold is what makes a door look like retail. Retail keeps the
+//! departing scene running for `0x46` frames (plus the stream) before MAIN
+//! INIT - measured as 78 vsyncs between the packet and the destination's
+//! entry stamp on a `map01` -> `town0c` door
+//! ([`encounter.md`](../../../docs/formats/encounter.md#the-window-is-not-cleared-with-the-scene)).
+//! The departing record's exit fade (`34 05 FF FF FF 41 00`, a
+//! `0x41`-frame ramp issued just before the `0x3F` on most doors) plays
+//! inside it. Without the hold the port cut every door before its exit fade
+//! landed.
 
 /// States the machine dispatches. `actor+0x1A` values at or above this fall
 /// through to the epilogue (`sltiu v0, a0, 0x5` at `0x80021964`).
@@ -205,12 +204,8 @@ impl SceneTransitionActor {
     ///
     /// PORT: FUN_80021934
     ///
-    /// NOT WIRED: the sole retail spawner (`FUN_8001FD44`, ported as
-    /// `FieldHostImpl::scene_transition_named`) hands the destination to
-    /// `SceneHost::tick`, which loads it as a [`crate::scene::Scene`] on the
-    /// same tick, so nothing runs this countdown. The missing capability is a
-    /// deferred drain that holds the parked transition for the `0x46`-frame
-    /// countdown with the departing scene still ticking; see the module docs.
+    /// Run by [`SceneTransitionHold::tick`], which `SceneHost::tick` drives
+    /// for every parked scene change on both hosts.
     pub fn tick(&mut self, input: SceneTransitionInput<'_>) -> Vec<SceneTransitionEffect> {
         use SceneTransitionEffect as E;
         let mut out = vec![E::ClearTransitionScratch];
@@ -261,6 +256,95 @@ impl SceneTransitionActor {
             }
         }
         out
+    }
+}
+
+/// World ticks a [`SceneTransitionHold`] parks a transition for at a frame
+/// step of `1` (every engine tick is one display frame): state 0 plus three
+/// one-tick states, then state 4 until the [`TRANSITION_COUNTDOWN`] goes
+/// negative. A fixture that crosses a door budgets this on top of what the
+/// door record itself takes.
+pub const HOLD_TICKS: usize = 72;
+
+/// What a held transition will do when the hold releases: the request the
+/// scene-change packet (`FUN_8001FD44`) parked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HeldTransition {
+    /// A named scene change (field-VM op `0x3F`, or a travel art):
+    /// `(scene, entry_x, entry_z, dir)`, the
+    /// [`crate::world::World::pending_named_scene_transition`] shape.
+    Named(String, u8, u8, u8),
+    /// An overworld portal crossing: `(dest_index, entity slot)`, the
+    /// `FieldEvent::WorldMapTransition` shape. Retail runs the entrance's
+    /// partition-2 record there, whose `0x3F` is the same packet.
+    Portal(u16, u8),
+}
+
+impl HeldTransition {
+    /// The destination label the packet wrote, for the actor's path build
+    /// (`None` for a portal, whose name lives in the entity config).
+    fn scene_name(&self) -> &str {
+        match self {
+            HeldTransition::Named(name, ..) => name,
+            HeldTransition::Portal(..) => "",
+        }
+    }
+}
+
+/// A scene change parked behind the streaming actor's countdown - the seat
+/// [`SceneTransitionActor`] runs on.
+///
+/// Retail's scene-change packet spawns the actor and returns; the departing
+/// scene keeps running under it while state 0 seeds the [`TRANSITION_COUNTDOWN`]
+/// and state 4 waits for it to go negative, and only then does MAIN INIT
+/// load the destination. `crate::scene::SceneHost::tick` parks every
+/// transition here, ticks the actor once per world tick with the frame step,
+/// and commits the switch on the tick the actor writes the mode-2 hand-off.
+/// While a hold is parked the departing scene's player is engaged
+/// (`World::script_context_engages_player`), as retail's parked door record
+/// keeps it.
+///
+/// The CD-queue and index-arm inputs are fixed at their retail-boot values
+/// (`stream_busy = false`, `index_mode = false`): the engine's `Scene` load is
+/// synchronous, so the hold is the countdown plus the machine's own four
+/// state steps.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SceneTransitionHold {
+    /// The actor.
+    pub actor: SceneTransitionActor,
+    /// The parked request.
+    pub request: HeldTransition,
+    /// World ticks spent parked so far.
+    pub ticks: u32,
+}
+
+impl SceneTransitionHold {
+    /// Park `request` behind a fresh actor (state 0).
+    pub fn new(request: HeldTransition) -> Self {
+        Self {
+            actor: SceneTransitionActor::default(),
+            request,
+            ticks: 0,
+        }
+    }
+
+    /// One world tick at frame step `dt`. `true` on the tick the actor writes
+    /// [`SceneTransitionEffect::EnterGameMode`] - the switch commits then.
+    ///
+    /// REF: FUN_80021934
+    pub fn tick(&mut self, dt: u8) -> bool {
+        self.ticks += 1;
+        let out = self.actor.tick(SceneTransitionInput {
+            dt,
+            start_gate: 0,
+            index_mode: false,
+            stream_busy: false,
+            staged_index: 0,
+            pending_index: 0,
+            scene_name: self.request.scene_name(),
+        });
+        out.iter()
+            .any(|e| matches!(e, SceneTransitionEffect::EnterGameMode(_)))
     }
 }
 
@@ -467,5 +551,35 @@ mod tests {
     fn staged_byte_size_converts_sectors_to_bytes() {
         assert_eq!(staged_byte_size(1), 2048);
         assert_eq!(staged_byte_size(0x54), 0x54 * 2048);
+    }
+
+    /// The hold is the countdown plus the machine's four state steps: state 0
+    /// seeds `0x46`, states 1..3 take a tick each, and state 4 releases on
+    /// the tick the countdown goes negative - 72 ticks at a frame step of 1,
+    /// half that at the field's usual 2.
+    #[test]
+    fn a_hold_releases_after_the_countdown_and_four_state_steps() {
+        for (dt, want) in [(1u8, HOLD_TICKS as u32), (2, 37)] {
+            let mut h = SceneTransitionHold::new(HeldTransition::Named("town01".into(), 1, 2, 0));
+            let mut released_at = None;
+            for t in 1..=200u32 {
+                if h.tick(dt) {
+                    released_at = Some(t);
+                    break;
+                }
+            }
+            assert_eq!(released_at, Some(want), "dt {dt}");
+            assert_eq!(h.ticks, want);
+        }
+    }
+
+    /// A parked transition engages the player the way the parked door record
+    /// does, so the pad cannot walk the player out of a held door.
+    #[test]
+    fn a_parked_transition_engages_the_player() {
+        let mut w = crate::world::World::new();
+        assert!(!w.script_context_engages_player());
+        w.scene_transition_hold = Some(SceneTransitionHold::new(HeldTransition::Portal(3, 1)));
+        assert!(w.script_context_engages_player());
     }
 }

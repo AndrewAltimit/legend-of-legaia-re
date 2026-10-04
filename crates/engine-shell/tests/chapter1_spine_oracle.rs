@@ -412,7 +412,8 @@ fn part_b_leg2_map01_portal_to_keikoku() {
             .seat_player_at_tile(keikoku_tile.0, keikoku_tile.1);
         host.world.set_pad(0);
         let mut entered = None;
-        for _ in 0..8 {
+        // + the scene-change hold (`FUN_80021934`'s countdown).
+        for _ in 0..8 + legaia_engine_core::scene_transition_actor::HOLD_TICKS {
             if let SceneTickEvent::SceneEntered { name } = host.tick().expect("tick") {
                 entered = Some(name);
                 break;
@@ -560,22 +561,22 @@ fn build_chain_trace() -> Option<Vec<ModeTraceFrame>> {
     };
     // Frame 0: fresh town01 field.
     push(&host, &mut fi);
-    // Step onto the south gate, then tick the town segment (frames 1..=11): the
+    // Step onto the south gate, then tick the town segment (frames 1..=83, the hold included): the
     // walk-on trigger fires, its P2 record runs to the 0x3F, and map01 enters
     // (WorldMap) within a few ticks; the tail idles on the overworld.
     host.world
         .seat_player_at_tile(TOWN01_SOUTH_GATE.0, TOWN01_SOUTH_GATE.1);
-    for _ in 0..11 {
+    for _ in 0..11 + legaia_engine_core::scene_transition_actor::HOLD_TICKS {
         host.tick().expect("tick");
         push(&host, &mut fi);
     }
     // Step onto the keikoku overworld portal, then tick the overworld segment
-    // (frames 12..=23): the entity SM emits WorldMapTransition, the host drain
+    // (frames 84..=167): the entity SM emits WorldMapTransition, the host drain
     // loads keikoku (Field), and the tail idles inside the dungeon.
     let keikoku_tile = find_portal_tile(&host, "keikoku").expect("keikoku portal on map01");
     host.world
         .seat_player_at_tile(keikoku_tile.0, keikoku_tile.1);
-    for _ in 0..12 {
+    for _ in 0..12 + legaia_engine_core::scene_transition_actor::HOLD_TICKS {
         host.tick().expect("tick");
         push(&host, &mut fi);
     }

@@ -115,6 +115,12 @@ pub struct World {
     /// spawn-point wiring. `None` between transitions.
     pub pending_named_scene_transition: Option<(String, u8, u8, u8)>,
 
+    /// A scene change parked behind the streaming actor's `0x46`-frame
+    /// countdown (`FUN_80021934`); the departing scene keeps ticking until
+    /// [`crate::scene::SceneHost::tick`] commits it. `None` between
+    /// transitions.
+    pub scene_transition_hold: Option<crate::scene_transition_actor::SceneTransitionHold>,
+
     /// Cutscene presentation state: narration, timeline, caption / card / balloon overlays, FMV handoff and the opening-chain latches.
     pub cutscene: CutsceneState,
 
@@ -353,6 +359,7 @@ impl World {
             field_vm: FieldVmState::new(),
             pending_scene_transition: None,
             pending_named_scene_transition: None,
+            scene_transition_hold: None,
             encounters: EncounterState::new(),
             pending_field_events: Vec::new(),
             pending_actor_spawns: Vec::new(),
@@ -537,6 +544,7 @@ impl World {
         self.party.inventory.clear();
         self.pending_scene_transition = None;
         self.pending_named_scene_transition = None;
+        self.scene_transition_hold = None;
         self.cutscene.pending_fmv_trigger = None;
         self.encounters.pending_scripted = None;
         self.encounters.scripted_armed = false;

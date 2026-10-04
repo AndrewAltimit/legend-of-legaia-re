@@ -105,6 +105,8 @@ So the descriptor table `FUN_80020224` walks at `_DAT_8007B85C` is the **raw `.L
 
 The field VM reaches this packet through **opcode `0x3F`** (named scene-change), which carries the destination name *inline in the bytecode* (`[0x3F][i16 index][u8 name_len][name][entry_x][entry_z][dir]`) and calls `FUN_8001FD44(name, index)`. So most in-game scene transitions - including overworld town/dungeon entry, which a scene's controller script lists as a table of `0x3F` ops - carry a recoverable destination name; see [`world-map.md` → scene destinations](world-map.md#scene-destinations) and [`script-vm.md`](script-vm.md). (`0x3F` is not a dialog opcode, despite an older mislabel.)
 
+The port keeps the actor's timing and drops its streaming. `SceneHost::tick` parks a named transition or an overworld-portal crossing in `scene_transition_actor::SceneTransitionHold`, ticks the state machine once per world tick while the departing scene keeps running (its player engaged, as the parked door record holds it), and commits the `Scene` load on the tick state 4 writes the mode-2 hand-off - 72 ticks at a frame step of 1. Most doors issue a `0x41`-frame exit fade (`34 05 FF FF FF 41 00`) just before their `0x3F`, and it lands inside that hold.
+
 ## Asset descriptor walker (`FUN_80020224`) - the slot→asset mapping
 
 Walks the [asset descriptor format](../formats/asset-descriptor.md) and calls the asset-type dispatcher per descriptor. Its sole runtime caller in retail is the town overlay's `FUN_801D6704` (MAIN_INIT) at `0x801D6B0C` with `a0 = 0`. The result is stored at `0x80087AF8`. So the walker IS exercised by retail gameplay, just not from a static call site inside `SCUS_942.54`.

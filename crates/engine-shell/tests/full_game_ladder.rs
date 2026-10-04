@@ -687,7 +687,9 @@ fn park_site(session: &BootSession) -> String {
 
 fn holder(session: &BootSession) -> &'static str {
     let w = &session.host.world;
-    if w.cutscene_timeline_active() {
+    if w.scene_transition_hold.is_some() {
+        "a scene change in flight"
+    } else if w.cutscene_timeline_active() {
         "cutscene timeline"
     } else if w.dialogue_owns_input() {
         "dialogue"
@@ -702,7 +704,10 @@ fn holder(session: &BootSession) -> &'static str {
 
 fn released(session: &BootSession) -> bool {
     let w = &session.host.world;
+    // A scene change parked behind the streaming actor's countdown has not
+    // released anything: the door is mid-flight.
     walking(session)
+        && w.scene_transition_hold.is_none()
         && !w.cutscene_timeline_active()
         && !w.dialogue_owns_input()
         && w.field_vm.helper_contexts.is_empty()

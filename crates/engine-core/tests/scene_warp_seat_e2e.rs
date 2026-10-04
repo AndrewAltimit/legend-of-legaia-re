@@ -62,7 +62,7 @@ fn named_warp_seats_player_at_entry_tile() {
     const ENTRY_DIR: u8 = 6; // compass sector 6 -> facing 0xC00
     host.world.pending_named_scene_transition =
         Some((DEST.to_string(), ENTRY_TILE.0, ENTRY_TILE.1, ENTRY_DIR));
-    let event = host.tick().expect("transition tick");
+    let event = tick_through_hold(&mut host);
     match event {
         SceneTickEvent::SceneEntered { ref name } => assert_eq!(name, DEST),
         other => panic!("expected SceneEntered, got {other:?}"),
@@ -93,7 +93,7 @@ fn named_warp_seats_player_at_entry_tile() {
     const WM_ENTRY: (u8, u8) = (0x60, 0x19);
     host.world.pending_named_scene_transition =
         Some(("map01".to_string(), WM_ENTRY.0, WM_ENTRY.1, 0));
-    let event = host.tick().expect("world-map transition tick");
+    let event = tick_through_hold(&mut host);
     match event {
         SceneTickEvent::SceneEntered { ref name } => assert_eq!(name, "map01"),
         other => panic!("expected SceneEntered(map01), got {other:?}"),
@@ -138,7 +138,7 @@ fn named_warp_preserves_story_flags_and_bag() {
     host.world.party.money = 777;
 
     host.world.pending_named_scene_transition = Some(("keikoku".to_string(), 10, 20, 2));
-    match host.tick().expect("transition tick") {
+    match tick_through_hold(&mut host) {
         SceneTickEvent::SceneEntered { ref name } => assert_eq!(name, "keikoku"),
         other => panic!("expected SceneEntered, got {other:?}"),
     }
@@ -166,4 +166,19 @@ fn named_warp_preserves_story_flags_and_bag() {
         host.world.party.money, 777,
         "purse must survive the door warp"
     );
+}
+
+/// Tick through the scene-transition hold: a named request parks behind the
+/// streaming actor's `0x46`-frame countdown (`FUN_80021934`) and the host
+/// commits it on the hand-off tick, so the entry is the first event other
+/// than `Stepped` within the hold's span.
+fn tick_through_hold(host: &mut SceneHost) -> legaia_engine_core::scene::SceneTickEvent {
+    use legaia_engine_core::scene::SceneTickEvent;
+    for _ in 0..200 {
+        match host.tick().expect("transition tick") {
+            SceneTickEvent::Stepped => {}
+            other => return other,
+        }
+    }
+    SceneTickEvent::Stepped
 }

@@ -150,7 +150,8 @@ fn drive_to_leg(dest: &str) -> Option<SceneHost> {
     host.world.seat_player_at_tile(tile.0, tile.1);
     host.world.set_pad(0);
     let mut entered = None;
-    for _ in 0..12 {
+    // + the scene-change hold (`FUN_80021934`'s countdown).
+    for _ in 0..12 + legaia_engine_core::scene_transition_actor::HOLD_TICKS {
         if let SceneTickEvent::SceneEntered { name } = host.tick().expect("tick") {
             entered = Some(name);
             break;

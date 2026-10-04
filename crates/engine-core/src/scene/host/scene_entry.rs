@@ -2276,6 +2276,67 @@ impl SceneHost {
         );
     }
 
+    /// Run the scene-transition hold for one tick. `true` while a transition
+    /// is parked (the caller skips every drain this tick); `false` when there
+    /// is none, or on the tick the hold releases - the parked request is then
+    /// back in its pending seat for the drains below to commit.
+    ///
+    /// A named request (`World::pending_named_scene_transition`) or an
+    /// overworld-portal crossing starts a hold. Requests raised while one is
+    /// parked are dropped: retail's first packet has already spawned the
+    /// actor and copied the destination, and the departing scene is held.
+    ///
+    /// REF: FUN_8001FD44 (the packet that spawns the actor), FUN_80021934
+    fn advance_scene_transition_hold(&mut self) -> bool {
+        use crate::scene_transition_actor::{HeldTransition, SceneTransitionHold};
+        if self.world.scene_transition_hold.is_none() {
+            let request =
+                if let Some((n, x, z, d)) = self.world.pending_named_scene_transition.take() {
+                    HeldTransition::Named(n, x, z, d)
+                } else if let Some((dest_index, slot)) = self.world.take_world_map_transition() {
+                    HeldTransition::Portal(dest_index, slot)
+                } else {
+                    return false;
+                };
+            log::info!("scene transition parked behind the streaming actor: {request:?}");
+            self.world.scene_transition_hold = Some(SceneTransitionHold::new(request));
+        }
+        self.world.pending_named_scene_transition = None;
+        while self.world.take_world_map_transition().is_some() {}
+        let dt = self
+            .world
+            .clock
+            .display_frame_step
+            .clamp(1, u16::from(u8::MAX)) as u8;
+        let Some(hold) = self.world.scene_transition_hold.as_mut() else {
+            return false;
+        };
+        if !hold.tick(dt) {
+            return true;
+        }
+        let hold = self
+            .world
+            .scene_transition_hold
+            .take()
+            .expect("checked above");
+        log::info!(
+            "scene transition committed after {} ticks: {:?}",
+            hold.ticks,
+            hold.request
+        );
+        match hold.request {
+            HeldTransition::Named(n, x, z, d) => {
+                self.world.pending_named_scene_transition = Some((n, x, z, d));
+            }
+            HeldTransition::Portal(dest_index, slot) => {
+                self.world
+                    .pending_field_events
+                    .push(crate::field_events::FieldEvent::WorldMapTransition { dest_index, slot });
+            }
+        }
+        false
+    }
+
     /// One frame: tick the world, materialize any actor-spawn requests
     /// queued by the field VM's `0x4C 0x80` opcode, then process any
     /// pending `scene_transition(map_id)` request. Returns the
@@ -2373,6 +2434,13 @@ impl SceneHost {
         // its tile - town exits + walk-on story beats. Runs after the world
         // stepped (player position is current) and before the transition
         // drains (a record installed this frame steps from the next tick).
+        // The scene-change packet does not load anything: it spawns the
+        // streaming actor `FUN_80021934` and returns, and the departing scene
+        // keeps running under the actor's `0x46`-frame countdown. Park every
+        // transition behind that hold and commit it on the hand-off tick.
+        if self.advance_scene_transition_hold() {
+            return Ok(SceneTickEvent::Stepped);
+        }
         self.dispatch_walk_on_trigger();
         // Named scene-change (field-VM op 0x3F) takes precedence over the
         // map-id door-warp: its destination name is carried inline by the op,

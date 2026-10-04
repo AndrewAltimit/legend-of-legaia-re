@@ -72,7 +72,7 @@ fn a_door_of_light_arrival_on_map01_refuses_the_menu_until_its_record_ends() {
     // What the Riremito resolve hands the scene host for cave01's return
     // triple `0x55 @ (37, 109)` (tests/door_item_retail_timeline.rs).
     host.world.pending_named_scene_transition = Some(("map01".to_string(), 37, 109, 0));
-    host.tick().expect("arrival tick");
+    let _ = tick_through_hold(&mut host);
     let [_, _, arrival_z] = host.world.fog_player_world_pos();
 
     let mut ran = 0usize;
@@ -120,4 +120,19 @@ fn a_door_of_light_arrival_on_map01_refuses_the_menu_until_its_record_ends() {
         "[ok] map01 P2[9] ran {ran} ticks (retail {RETAIL_VSYNCS}) with the menu refused, \
          then released it"
     );
+}
+
+/// Tick through the scene-transition hold: a named request parks behind the
+/// streaming actor's `0x46`-frame countdown (`FUN_80021934`) and the host
+/// commits it on the hand-off tick, so the entry is the first event other
+/// than `Stepped` within the hold's span.
+fn tick_through_hold(host: &mut SceneHost) -> legaia_engine_core::scene::SceneTickEvent {
+    use legaia_engine_core::scene::SceneTickEvent;
+    for _ in 0..200 {
+        match host.tick().expect("transition tick") {
+            SceneTickEvent::Stepped => {}
+            other => return other,
+        }
+    }
+    SceneTickEvent::Stepped
 }

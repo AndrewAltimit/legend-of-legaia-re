@@ -896,7 +896,12 @@ enum Drain {
 /// a scene change if the sequence performs one.
 fn drain_scripted(host: &mut SceneHost) -> Drain {
     for f in 0..INPUT_RELEASE_BUDGET {
-        if !host.world.cutscene_timeline_active() && !host.world.dialogue_owns_input() {
+        // A scene change parked behind the streaming actor's countdown is the
+        // sequence's own exit, still in flight - not a release.
+        if host.world.scene_transition_hold.is_none()
+            && !host.world.cutscene_timeline_active()
+            && !host.world.dialogue_owns_input()
+        {
             return Drain::Released;
         }
         // Page through it the way a player does. A neutral pad is enough for a
@@ -1397,7 +1402,10 @@ fn walk_to(
         // installs as a timeline and that timeline is what performs the scene
         // change - so the drain has to surface `SceneEntered` rather than
         // swallow it. (It did swallow it, which read as a stall at the gate.)
-        if host.world.cutscene_timeline_active() || host.world.dialogue_owns_input() {
+        if host.world.cutscene_timeline_active()
+            || host.world.dialogue_owns_input()
+            || host.world.scene_transition_hold.is_some()
+        {
             scripted += 1;
             match drain_scripted(host) {
                 Drain::Entered(name) => return Leg::Transitioned(name),

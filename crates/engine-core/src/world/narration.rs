@@ -319,6 +319,7 @@ impl World {
         self.cutscene.card = None;
         self.cutscene.timeline = None;
         self.pending_named_scene_transition = None;
+        self.scene_transition_hold = None;
         self.cutscene.opening_chain_active = false;
         self.cutscene.entering_town01_opening = false;
         was_live
@@ -734,7 +735,11 @@ impl World {
     /// REF: FUN_80039B7C (the raise and the clear), FUN_8003BC08 (`0x8003BD34`),
     /// FUN_8003BDE0 (the `0x100` install), FUN_801D1344 (`0x801D1694`)
     pub fn script_context_engages_player(&self) -> bool {
-        self.cutscene_timeline_active()
+        // A parked scene change holds the player too: the door record that
+        // issued it is parked (`26 FF FF` / `21`) for the whole countdown and
+        // keeps raising the engaged bit.
+        self.scene_transition_hold.is_some()
+            || self.cutscene_timeline_active()
             || self
                 .field_vm
                 .helper_contexts

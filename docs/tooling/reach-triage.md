@@ -831,7 +831,7 @@ listed so the bucket count is the whole of what no host reaches.
 | `card_flow.rs` | 1 | `801e13b8` | **`REPLACED-BY`** `legaia_save`'s synchronous card writer - out of the wiring denominator. |
 | `effect_ribbon.rs` | 1 | `801cfa48` | Since reached: the op-`0x42` carriers arm it and both battle hosts draw `World::active_effect_ribbons`. |
 | `field_save_screen_actor.rs` | 1 | `80024190` | **`REPLACED-BY`** the save screen as host screen state - out of the wiring denominator, not owed a host. |
-| `scene_transition_actor.rs` | 1 | `80021934` | Its one spawner, `FUN_8001FD44` (the template word at `0x8007073C` is the handler's only reference on the disc), is ported as `scene_transition_named`, whose destination `SceneHost::tick` loads on the same tick - so nothing runs the countdown. |
+| `scene_transition_actor.rs` | 1 | `80021934` | Since wired: `SceneHost::tick` parks every named transition and overworld-portal crossing in `SceneTransitionHold`, ticks the actor while the departing scene runs, and commits on its mode-2 hand-off, so any ladder that crosses a door enters it. |
 | `morph_weight_apply.rs` | 1 | `8002174c` | Since wired: `MorphWeightEnvelope::tick` steps from `World::tick_handler_actors` over every `4C D8` actor, and `apply_morph_weights` poses the mesh through `World::morph_weight_posed_tmd` on both hosts (see [the two-halves table](#a-wire-is-two-halves-and-a-refresh-can-enter-only-one-of-them)). |
 
 Two groups have left this table by being **entered**, and neither was wired to
@@ -855,7 +855,7 @@ a missing call. Recorded per row so the decision is not re-derived:
 | `shop.rs` `801db7f4` `801dbd94` | resolved | `MenuRuntime::quantity_session` installs the retail stepper when a list stages a stack and takes the pad for the screen; `ShopConfirm` is no longer reached from the shop flow. See [shop.md](../subsystems/shop.md#the-quantity-screen-is-a-stepper) |
 | `morph_weight_apply.rs` `8002174c` | resolved | the spawn site exists and is hosted: field-VM `4C D8` -> `FUN_801D77F4` -> descriptor `0x8007068C`, seated by `World::spawn_morph_weight_actor` |
 | `effect_ribbon.rs` `801cfa48` | resolved | the move VM's op-`0x42` carriers arm it and both battle hosts draw its mesh through `World::active_effect_ribbons` |
-| `scene_transition_actor.rs` `80021934` | keep `NOT WIRED` | a **deferred drain**: `SceneHost` holding the parked transition for the `0x46`-frame countdown with the departing scene still ticking. The `Scene` load already replaces the streaming; what it drops is the hold - 78 vsyncs from packet to entry stamp on a captured door - inside which the departing record's `0x41`-frame exit fade plays. It moves every door by `0x46` frames, so it lands with a re-bless of the pad fixtures, not as a call insertion |
+| `scene_transition_actor.rs` `80021934` | resolved | the deferred drain: `SceneTransitionHold` holds the parked request for the `0x46`-frame countdown with the departing scene ticking and the player engaged, so a door's exit fade lands before the switch. The streaming half stays with the `Scene` load |
 | `field_save_screen_actor.rs` `80024190` | **`REPLACED-BY`**, taken | see [the verdict below](#the-save-screen-actor-is-a-replacement-not-a-wire) |
 
 #### The five sub-screens were behind an entry context no host constructs
