@@ -52,8 +52,8 @@ pub const MESH_DIM: usize = 48;
 /// the mover's history restarts and it injects no velocity.
 const TELEPORT_UNITS: f32 = 96.0;
 /// Fraction of the remaining gap to an undisturbed bank refilled per tick:
-/// a cleared cell is back to ~90% about five seconds after it was carved.
-const REFILL: f32 = 0.007;
+/// a cleared cell is back to ~90% about seven seconds after it was carved.
+const REFILL: f32 = 0.005;
 /// Share of each cell's density / velocity mixed with its four neighbours'
 /// mean per tick - what softens a footprint into a wake.
 const DENSITY_DIFFUSE: f32 = 0.10;
@@ -65,7 +65,7 @@ const VELOCITY_MAX: f32 = 10.0;
 /// Carve rate for a mover standing still (it slowly opens a pocket) and the
 /// extra a full stride adds.
 const CARVE_IDLE: f32 = 0.02;
-const CARVE_MOVE: f32 = 0.5;
+const CARVE_MOVE: f32 = 0.8;
 /// How deep a standing mover's pocket gets at its centre (`0..=1`).
 const IDLE_POCKET: f32 = 0.35;
 /// A stride's speed (units per tick) at which the carve saturates.
@@ -117,7 +117,7 @@ impl FogSpace {
     /// The radius a mover parts the bank over, in world units.
     pub fn mover_radius(self) -> f32 {
         match self {
-            FogSpace::Field => 64.0,
+            FogSpace::Field => 84.0,
             FogSpace::Battle => 180.0,
         }
     }
@@ -299,6 +299,12 @@ pub struct FogVolume {
     /// The CDNAME label of the field scene the bank belongs to - a new
     /// label starts a new bank.
     pub scene: String,
+    /// The field scene's measured luminance ([`scene_luminance`]) and the
+    /// label it was measured for.
+    pub field_luma: Option<(String, f32)>,
+    /// The battle stage's measured luminance, set by the host that built the
+    /// stage at battle entry.
+    pub battle_luma: Option<f32>,
     /// Last tick's mover positions, by key.
     prev: Vec<FogMover>,
     /// Whether [`Self::sim_origin`] / [`Self::mesh_origin`] have been seated.
@@ -327,6 +333,8 @@ impl FogVolume {
             ticks: 0,
             drift: [0.0; 2],
             scene: String::new(),
+            field_luma: None,
+            battle_luma: None,
             prev: Vec::new(),
             seated: false,
         }
@@ -631,12 +639,20 @@ impl FogVolume {
     /// The render description of this tick's bank, scaled by `tint` (the
     /// scripted screen tint, so a fade to black takes the fog with it).
     /// `None` when nothing would draw.
-    pub fn frame(&self, tint: Option<[f32; 3]>) -> Option<FogVolumeFrame<'_>> {
+    ///
+    /// `light` is the brightness the bank must not outshine - the scene's
+    /// measured luminance ([`scene_luminance`], already scaled by any live
+    /// ambient): the style's colour keeps its hue and is dimmed until its
+    /// luma sits at [`FOG_LUMA_OVER_SCENE`] times it, so a night scene gets a
+    /// dim haze rather than glowing snow. A style already darker than that is
+    /// left alone; `None` (nothing measured) keeps the authored colour.
+    pub fn frame(&self, tint: Option<[f32; 3]>, light: Option<f32>) -> Option<FogVolumeFrame<'_>> {
         if !self.visible() || !self.seated {
             return None;
         }
         let style = self.last_style?;
-        let t = tint.unwrap_or([1.0; 3]);
+        let k = light.map_or(1.0, |l| luma_scale(style.color, l));
+        let t = tint.unwrap_or([1.0; 3]).map(|c| c * k);
         let sc = self.space.sim_cell();
         let mc = self.space.mesh_cell();
         Some(FogVolumeFrame {
@@ -669,6 +685,125 @@ impl FogVolume {
             ticks: self.ticks,
         })
     }
+}
+
+/// How bright the bank may be relative to the scene's measured luminance:
+/// a mist catches a little more light than the surfaces it lies on, never
+/// much more.
+pub const FOG_LUMA_OVER_SCENE: f32 = 1.6;
+
+/// Rec. 601 luma of a framebuffer-space colour.
+pub fn luma(c: [f32; 3]) -> f32 {
+    0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+}
+
+/// The factor (`<= 1`) that dims `color` to [`FOG_LUMA_OVER_SCENE`] times
+/// `scene_luma`.
+pub fn luma_scale(color: [f32; 3], scene_luma: f32) -> f32 {
+    let l = luma(color);
+    if l <= 1.0e-6 {
+        return 1.0;
+    }
+    ((scene_luma.max(0.0) * FOG_LUMA_OVER_SCENE) / l).min(1.0)
+}
+
+/// The scene's luminance as the player sees it, measured from its meshes:
+/// every textured triangle's texel at its UV centroid (through its CLUT),
+/// modulated by the prim's baked colour word (`texel * colour / 128`, the
+/// field shading), weighted by the triangle's world area and averaged.
+/// Transparent texels (the zero word) are skipped. `None` when nothing
+/// textured was found. Deterministic; both hosts call it on the same
+/// meshes (the field scene's pool at entry, the battle stage dome at
+/// battle entry).
+pub fn scene_luminance<'a>(
+    vram: &legaia_tim::Vram,
+    meshes: impl IntoIterator<Item = &'a legaia_tmd::mesh::VramMesh>,
+) -> Option<f32> {
+    let (mut sum, mut weight) = (0.0f64, 0.0f64);
+    for m in meshes {
+        for tri in m.indices.as_chunks::<3>().0 {
+            let [a, b, c] = tri.map(|i| i as usize);
+            if a >= m.positions.len() || b >= m.positions.len() || c >= m.positions.len() {
+                continue;
+            }
+            let (pa, pb, pc) = (m.positions[a], m.positions[b], m.positions[c]);
+            let e1 = [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]];
+            let e2 = [pc[0] - pa[0], pc[1] - pa[1], pc[2] - pa[2]];
+            let cr = [
+                e1[1] * e2[2] - e1[2] * e2[1],
+                e1[2] * e2[0] - e1[0] * e2[2],
+                e1[0] * e2[1] - e1[1] * e2[0],
+            ];
+            let area = 0.5 * ((cr[0] * cr[0] + cr[1] * cr[1] + cr[2] * cr[2]) as f64).sqrt();
+            if area <= 0.0 {
+                continue;
+            }
+            let u = (u32::from(m.uvs[a][0]) + u32::from(m.uvs[b][0]) + u32::from(m.uvs[c][0])) / 3;
+            let v = (u32::from(m.uvs[a][1]) + u32::from(m.uvs[b][1]) + u32::from(m.uvs[c][1])) / 3;
+            let [cba, tsb] = m.cba_tsb[a];
+            let Some(word) = texel_word(vram, cba, tsb, u as usize, v as usize) else {
+                continue;
+            };
+            let rgb = [
+                f32::from(word & 31) / 31.0,
+                f32::from((word >> 5) & 31) / 31.0,
+                f32::from((word >> 10) & 31) / 31.0,
+            ];
+            let col = m.colors.get(a).copied().unwrap_or([0x80; 3]);
+            let lit = [
+                (rgb[0] * f32::from(col[0]) / 128.0).min(1.0),
+                (rgb[1] * f32::from(col[1]) / 128.0).min(1.0),
+                (rgb[2] * f32::from(col[2]) / 128.0).min(1.0),
+            ];
+            sum += f64::from(luma(lit)) * area;
+            weight += area;
+        }
+    }
+    (weight > 0.0).then(|| (sum / weight) as f32)
+}
+
+/// [`scene_luminance`] of a battle stage shell as drawn: the backdrop TMD's
+/// drawn objects (`SceneHost::battle_stage_object_indices`), textured prims,
+/// over the battle VRAM. The one measurement both hosts take at battle entry
+/// and store in [`FogVolume::battle_luma`]; the shell's second copy repeats
+/// the first, so it is not measured twice.
+pub fn stage_luminance(
+    vram: &legaia_tim::Vram,
+    tmd: &legaia_tmd::Tmd,
+    raw: &[u8],
+    objects: &[usize],
+) -> Option<f32> {
+    let shell = legaia_asset::battle_backdrop::objects_tmd(tmd, objects);
+    let mesh = legaia_tmd::mesh::tmd_to_vram_mesh(&shell, raw);
+    scene_luminance(vram, [&mesh])
+}
+
+/// The 15-bit word a textured prim samples at `(u, v)`, through its CLUT
+/// for the indexed depths; `None` for the transparent zero word.
+fn texel_word(vram: &legaia_tim::Vram, cba: u16, tsb: u16, u: usize, v: usize) -> Option<u16> {
+    let cx = usize::from(cba & 0x3F) * 16;
+    let cy = usize::from((cba >> 6) & 0x1FF);
+    let tx = usize::from(tsb & 0xF) * 64;
+    let ty = usize::from((tsb >> 4) & 1) * 256;
+    let px = |x: usize, y: usize| -> u16 {
+        if x >= legaia_tim::VRAM_WIDTH || y >= legaia_tim::VRAM_HEIGHT {
+            0
+        } else {
+            vram.pixel(x, y)
+        }
+    };
+    let w = match (tsb >> 7) & 3 {
+        0 => {
+            let i = (px(tx + (u >> 2), ty + v) >> ((u & 3) * 4)) & 0xF;
+            px(cx + usize::from(i), cy)
+        }
+        1 => {
+            let i = (px(tx + (u >> 1), ty + v) >> ((u & 1) * 8)) & 0xFF;
+            px(cx + usize::from(i), cy)
+        }
+        _ => px(tx + u, ty + v),
+    };
+    (w != 0).then_some(w)
 }
 
 /// What a host draws for one frame: see [`FogVolume::frame`]. Positions are
@@ -829,8 +964,8 @@ mod tests {
         walk(&mut b, -600.0, 4.0, 200);
         assert_eq!(a.density, b.density);
         assert_eq!(a.velocity, b.velocity);
-        let fa = a.frame(None).unwrap();
-        let fb = b.frame(None).unwrap();
+        let fa = a.frame(None, None).unwrap();
+        let fb = b.frame(None, None).unwrap();
         assert_eq!(fa.density, fb.density);
         assert_eq!(fa.header(), fb.header());
     }
@@ -939,7 +1074,7 @@ mod tests {
         let mut f = FogVolume::new();
         f.set_style(None);
         f.step([0.0, 0.0], &[], flat);
-        assert!(f.frame(None).is_none());
+        assert!(f.frame(None, None).is_none());
         assert!(scene_style("town01", false).is_none());
         assert!(scene_style("town0b", false).is_some());
         assert_eq!(scene_style("anything", true), Some(POOL_STYLE));
@@ -966,10 +1101,46 @@ mod tests {
     }
 
     #[test]
+    fn a_dark_scene_dims_the_bank_and_a_bright_one_does_not() {
+        let f = raised();
+        let mut f = f;
+        f.recentre([0.0, 0.0], flat);
+        let bright = f.frame(None, Some(0.9)).unwrap().color;
+        let dark = f.frame(None, Some(0.12)).unwrap().color;
+        assert_eq!(bright, POOL_STYLE.color);
+        assert!(luma(dark) <= 0.12 * FOG_LUMA_OVER_SCENE + 1.0e-5);
+        // Hue kept: the channels scale together.
+        let r = dark[0] / POOL_STYLE.color[0];
+        assert!((dark[2] / POOL_STYLE.color[2] - r).abs() < 1.0e-5);
+    }
+
+    #[test]
+    fn scene_luminance_reads_lit_texels() {
+        let mut vram = legaia_tim::Vram::new();
+        // A 15-bit page at (0, 0): mid-grey 16/31 everywhere it is sampled.
+        let grey: u16 = 16 | (16 << 5) | (16 << 10);
+        let bytes: Vec<u8> = std::iter::repeat_n(grey.to_le_bytes(), 64 * 4)
+            .flatten()
+            .collect();
+        vram.write_block(0, 0, 64, 4, &bytes);
+        let mesh = legaia_tmd::mesh::VramMesh {
+            positions: vec![[0.0, 0.0, 0.0], [100.0, 0.0, 0.0], [0.0, 0.0, 100.0]],
+            uvs: vec![[0, 0], [2, 0], [0, 2]],
+            cba_tsb: vec![[0, 2 << 7]; 3],
+            indices: vec![0, 1, 2],
+            normals: vec![[0.0; 3]; 3],
+            colors: vec![[0x40; 3]; 3],
+        };
+        let l = scene_luminance(&vram, [&mesh]).unwrap();
+        // grey 16/31 at half modulation.
+        assert!((l - 16.0 / 31.0 * 0.5).abs() < 1.0e-3, "{l}");
+    }
+
+    #[test]
     fn mesh_follows_the_floor_heights() {
         let mut f = raised();
         f.recentre([1000.0, 2000.0], |x, z| -(x + z) * 0.01);
-        let fr = f.frame(None).unwrap();
+        let fr = f.frame(None, None).unwrap();
         let pos = fr.mesh_positions();
         assert_eq!(pos.len(), (MESH_DIM + 1) * (MESH_DIM + 1) * 3);
         for v in pos.chunks(3) {

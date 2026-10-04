@@ -2454,8 +2454,8 @@ after every actor has moved, each mover carves the density around its feet
 (harder with a full stride, a slow pocket standing still) and hands the cells
 its stride plus an outward shove; the grid is then advected semi-Lagrangian
 through that velocity plus the scene's drift, diffused, damped, and refilled
-toward the undisturbed bank, so a wake opens behind a walker and closes over a
-few seconds. The movers are the drop-shadow population - the player and every
+toward the undisturbed bank, so a wake opens behind a walker and closes over
+several seconds. The movers are the drop-shadow population - the player and every
 placed field channel with a position - and every active body in battle. The
 step uses only `f32` basic operations and `sqrt`, so it is deterministic across
 hosts, and it is tied to the tick, never to the frame rate. Unit tests pin the
@@ -2504,7 +2504,18 @@ lazily on the first staged frame); the page's is `site/js/webgl-fog-volume.js`,
 a GLSL transcription of the same recipe that reads its numbers from the frame
 header (`fog_volume::FogSpace::shader_constants`, `FogSpace::soft_distance`),
 not from constants of its own. A battle's bank is denser, deeper and drawn with
-a higher gain: its low, close framing looks through it at a grazing angle. The
+a higher gain: its low, close framing looks through it at a grazing angle.
+
+**Brightness follows the scene.** A mist must not outshine what it lies on, so
+the style's colour keeps its hue but is dimmed until its luma sits at most
+`FOG_LUMA_OVER_SCENE` times the scene's measured luminance
+(`fog_volume::scene_luminance`): every textured triangle's texel at its UV
+centroid, through its CLUT, times its baked colour word over `128`, averaged
+by world area. The field measurement is `SceneHost`'s, once per scene label;
+the battle one is taken by each host at battle entry over the stage shell it
+built (`fog_volume::stage_luminance`, pinned by a `SIM_PAIRS` row) and scaled
+by the live battle ambient, so a summon close-up dims the bank with the stage.
+A night stage gets a dim bluish haze, a daylit one the authored colour. The
 world map, the boot UI, the minigame venues and a VR session draw none.
 
 ### `set_semi_blend` - semi-transparency blend modes

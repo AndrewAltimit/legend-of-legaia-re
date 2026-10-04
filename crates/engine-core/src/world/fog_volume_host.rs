@@ -159,6 +159,33 @@ impl World {
         if self.fog_volume.space != want {
             return None;
         }
-        self.fog_volume.frame(self.scene_screen_tint())
+        self.fog_volume
+            .frame(self.scene_screen_tint(), self.fog_volume_light())
+    }
+
+    /// The brightness the bank may not outshine
+    /// ([`crate::fog_volume::FogVolume::frame`]): the field scene's measured
+    /// luminance, or in battle the stage's (falling back to the field's),
+    /// times the live battle ambient (`0x80` neutral; it dims through a
+    /// summon close-up).
+    pub fn fog_volume_light(&self) -> Option<f32> {
+        let field = self
+            .fog_volume
+            .field_luma
+            .as_ref()
+            .filter(|(label, _)| *label == self.active_scene_label)
+            .map(|(_, l)| *l);
+        match self.mode {
+            SceneMode::Battle => {
+                let base = self.battle_ambient_base();
+                let ambient =
+                    (f32::from(base[0]) + f32::from(base[1]) + f32::from(base[2])) / (3.0 * 128.0);
+                self.fog_volume
+                    .battle_luma
+                    .or(field)
+                    .map(|l| l * ambient.clamp(0.0, 2.0))
+            }
+            _ => field,
+        }
     }
 }

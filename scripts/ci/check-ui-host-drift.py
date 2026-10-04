@@ -556,6 +556,21 @@ NATIVE_TITLE_SAVE = (
 
 SIM_PAIRS: list[dict[str, object]] = [
     {
+        "what": "volumetric ground fog brightness, native vs play page - the "
+        "bank may not outshine the battle stage it lies on, so each host's "
+        "battle entry measures the stage shell it built through the one "
+        "kernel `fog_volume::stage_luminance` and stores it on the world",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/bin/legaia-engine/window/battle.rs",
+                "enter_battle_render",
+            ),
+            "web": ("crates/web-viewer/src/play_battle_render.rs", "enter_battle_render"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["stage_luminance", "battle_luma"],
+    },
+    {
         "what": "volumetric ground fog, native vs play page - the bank is "
         "simulated once per tick inside `World::tick` "
         "(`engine-core::fog_volume`); each host's draw site must take "
