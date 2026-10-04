@@ -126,6 +126,22 @@ it is a warp landing and re-centres the region box and the windowed
 static-object list on the seat), the zone camera's arrival snap is re-armed,
 and the session ticks a fixed settle window with no input.
 
+The snap composes from the state's own camera parameter block
+(`0x8007B607..0x8007B627`, `ZoneFollow::arm_arrival_over`; `play-window`
+takes it as `LEGAIA_SEAT_CAMERA_BLOCK`) rather than from a tile re-query.
+The block holds whichever camera-region record a script or a walk-on loader
+last installed, and that is walk history: `kor5`'s `P2[0]` / `P2[1]` are
+one-op loaders on the walk-on band at tile X `28` / `26`, and the room's
+camera (pitch `700`, `H` `400` against the re-query's `340` / `448`) is the
+one the player last crossed into. The composer, the edge clamp and the ease
+stay the engine's. The block is taken only when retail's camera has composed
+from it - a staging descriptor (`0x801F3580`, the follow ease's, or
+`0x801C6EA8`, op `0x45` APPLY's) carries its `H` - because a loader that runs
+after the last compose leaves the live camera on the previous block until
+the player moves: `kor5_field_card_boot` arrives on `P2[0]`'s tile, so its
+block already reads `700` while the camera still shows the `340` shot the
+re-query reproduces.
+
 The seat is a player **standing** on the tile, not one crossing onto it: the
 walk-on dispatcher's last-tile pair (`FUN_801D1EC4`) is stamped with the seat
 tile, because a retail capture of a player stood on a trigger tile holds that
@@ -238,7 +254,15 @@ started from:
   seat does not cross - is installed from its first opcode at the settle
   tick, ungated, as the modal timeline (a concurrent context when another
   timeline holds that slot). The record replays its own staging: its
-  `MoveTo`s, camera beats and pokes run from the top. A record the scene's
+  `MoveTo`s, camera beats and pokes run from the top. The system flags
+  the record set in the straight-line run that ends on the gate PC (from
+  its last jump, picker or flag test) are cleared first: retail executed
+  that run to stand where it was captured, so its latches are already in
+  the state, and a replay that tests them takes the other arm. `town0c`
+  `P1[21]` sets `0x5C1` at `+0x7A` and tests it at `+0x76`; replayed with it
+  up, the record went straight to the Queen Bee fight, past the shot
+  `rim_elm_queen_bee_battle` is captured on. Engagement clears the same
+  latches. A record the scene's
   own script **spawns** (op `0x44`) may be scored by the spawning arm rather
   than by itself: `rikuroa`'s `P1[0]` starts `2025` and spawns `44 5C`
   (`P2[50]`, the post-Caruban record) behind its `0x289` test, a marker
@@ -970,7 +994,7 @@ Shapes the corpus separates, each with what it indicates:
 | flags `+sys` bits only the engine has, on a gated state | a placement the record poked ran its talk body in the engine ([above](#mid-script-states)) |
 | flags `+sys` / `-sys` one bit apart inside `0x19B..0x1AA` | the entry script's one-hot region selector, re-evaluated at the seat ([below](#the-region-selector-band-and-the-entry-order)) |
 | `fog_gate` and flag `0x01F` up in the engine only (`rikuroa_post_genesis_tree`) | script progress a card load undoes ([below](#a-flag-the-entry-raises-on-every-load)) |
-| player seated exactly, camera focus thousands of units away (`kor5_post_43a_checkpoint`: player Z `5312`, focus Z `11840`) | script progress: a scene script aimed the retail camera at another part of the map; the engine's follow camera frames the player |
+| player seated exactly, angles / `H` / eye exact, camera focus thousands of units away (`kor5_post_43a_checkpoint`: player Z `5312`, focus Z `11840`) | a probe-poked capture: the focus stays where the player stood before the poke ([below](#a-poked-player-keeps-the-arrival-focus)) |
 | a town label over the overworld's `H`, word `2000` and fog gate | a door caught before the town's field init ran; scored as the overworld `0x80084540` names ([below](#arrival-states-are-captured-before-the-town-runs)) |
 | retail word held by a flag the entry script already consumed (`garmel`'s `0x196`) | script progress: the track was started by a beat that has since cleared its trigger flag, so a card load would not restart it |
 | camera depth and position off on an ending vignette (`ending_vignette_rimelm_walkaway`) | a residue of about a dozen frames of the credits walk against the camera glide ([below](#ending-vignettes-are-mid-script)) |
@@ -1040,7 +1064,10 @@ trio match while the frame looks at a different part of the room; only the
 arrival point instead, the engine frames the counter, the walkway and the void
 below it the way retail's frame does. The `image` miss on these two states is
 the capture method, not the camera; the innkeeper's box over the room is the
-[engagement](#mid-script-states) drive's.
+[engagement](#mid-script-states) drive's. `kor5_post_43a_checkpoint` is the
+same capture shape by its route: the player was poked onto `(32, 41)`, and
+the focus Z reads `11840` (tile `92`, near the room's south end the route
+started from) while the angles, `H` and eye trio match the seat's snap.
 
 ### Arrival states are captured before the town runs
 

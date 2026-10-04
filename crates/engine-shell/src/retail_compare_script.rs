@@ -253,11 +253,11 @@ pub struct ScriptGate {
     /// beat's `0x4A`) is met once the engine's glide has as little left.
     pub glide_left: Option<i32>,
     /// Kept by [`Self::met`]: `.0` while the engine's context for the record
-    /// still runs and the gate PC is the one right after a `0x3F` scene
-    /// change, `.1` once that context retired into a held transition. The
-    /// engine retires a record the tick it executes that op, so the park
-    /// retail is caught on is never a PC the engine holds.
-    pub scene_change_armed: std::cell::Cell<(bool, bool)>,
+    /// still runs and reaches the gate PC in straight-line code, `.1` once
+    /// that context retired. The engine retires a record the tick its tail
+    /// runs, so a park retail holds on that tail is never a PC the engine
+    /// holds.
+    pub retire_watch: std::cell::Cell<(bool, bool)>,
 }
 
 impl ScriptGate {
@@ -270,7 +270,7 @@ impl ScriptGate {
             wait: s.wait.max(0),
             op: s.op,
             glide_left: scripts.glide_left,
-            scene_change_armed: std::cell::Cell::new((false, false)),
+            retire_watch: std::cell::Cell::new((false, false)),
         })
     }
 
@@ -311,7 +311,7 @@ impl ScriptGate {
             wait,
             op,
             glide_left,
-            scene_change_armed: std::cell::Cell::new((false, false)),
+            retire_watch: std::cell::Cell::new((false, false)),
         })
     }
 
@@ -330,21 +330,23 @@ impl ScriptGate {
     /// across frames (a channel flag already up, a walk already at its
     /// tile), so the first tick past it is the nearest the engine comes.
     ///
-    /// A capture parked on the PC right after the record's `0x3F` scene
-    /// change - the departing scene held behind the streaming actor
-    /// (`FUN_8001FD44`), the record spinning on its `26 FF FF` tail - is met
-    /// on the tick the engine executes that `0x3F`: the engine retires the
-    /// record there, so its context is gone with the transition held
-    /// (`map03 P2[13]`, the `son` portal cutscene, ends this way, and
-    /// `son_arrival_from_doman` is caught inside its hold), and then held
-    /// while the glide still has more left than retail's.
+    /// A capture parked on the record's tail - the PC right after a `0x3F`
+    /// scene change (the departing scene held behind the streaming actor
+    /// `FUN_8001FD44`, the record spinning on its `26 FF FF`), or a fade op
+    /// before the record's terminal park - is a PC the engine runs through
+    /// in the slice that retires the record, dropping its context. Such a
+    /// gate is met once a context that reached the gate PC in straight-line
+    /// code (no jump between its PC and the gate's) has retired, and then
+    /// held while the camera glide still has more left than retail's.
+    /// `map03 P2[13]` (the `son` portal cutscene, `son_arrival_from_doman`)
+    /// and `kor5 P2[5]` (`kor5_post_436_organic`, on its `36` fades) end
+    /// this way.
     pub fn met(&self, world: &legaia_engine_core::world::World) -> bool {
-        let held =
-            world.scene_transition_hold.is_some() || world.pending_named_scene_transition.is_some();
-        let (armed, passed) = self.scene_change_armed.get();
-        let passed = held && (passed || (armed && self.context(world).is_none()));
-        self.scene_change_armed
-            .set((self.after_scene_change(world), passed));
+        let retired = self.context(world).is_none_or(|c| c.done);
+        let (armed, passed) = self.retire_watch.get();
+        let passed = passed || (armed && retired);
+        self.retire_watch
+            .set((self.straight_to_gate(world), passed));
         if passed
             && self
                 .glide_left
@@ -393,35 +395,55 @@ impl ScriptGate {
     }
 
     /// The engine runs the gate's record on the timeline or a concurrent
-    /// context, and the gate PC directly follows a `0x3F` scene change in it.
-    fn after_scene_change(&self, world: &legaia_engine_core::world::World) -> bool {
-        let follows_3f = |bc: &[u8]| {
-            head_of(bc) == self.head
-                && (self.pc.saturating_sub(64)..self.pc).any(|p| {
-                    bc.get(p) == Some(&0x3F)
-                        && legaia_asset::field_disasm::decode(bc, p).is_ok_and(|i| {
-                            matches!(
-                                i.info,
-                                legaia_asset::field_disasm::InsnInfo::SceneChange { .. }
-                            ) && p + i.size == self.pc
-                        })
-                })
+    /// context whose PC reaches the gate PC in straight-line code: every
+    /// instruction from it decodes, none is a jump or a text segment, and
+    /// one ends exactly on the gate PC.
+    fn straight_to_gate(&self, world: &legaia_engine_core::world::World) -> bool {
+        use legaia_asset::field_disasm::{InsnInfo, decode};
+        let reaches = |bc: &[u8], mut pc: usize| {
+            if head_of(bc) != self.head {
+                return false;
+            }
+            for _ in 0..128 {
+                if pc == self.pc {
+                    return true;
+                }
+                if pc > self.pc {
+                    return false;
+                }
+                let Ok(i) = decode(bc, pc) else {
+                    return false;
+                };
+                if i.size == 0
+                    || matches!(
+                        i.info,
+                        InsnInfo::JmpRel { .. }
+                            | InsnInfo::CondJmp { .. }
+                            | InsnInfo::TextSegment { .. }
+                            | InsnInfo::Picker { .. }
+                    )
+                {
+                    return false;
+                }
+                pc += i.size;
+            }
+            false
         };
         world
             .cutscene
             .timeline
             .iter()
             .filter(|tl| !tl.done)
-            .map(|tl| tl.bytecode.as_slice())
+            .map(|tl| (tl.bytecode.as_slice(), tl.pc))
             .chain(
                 world
                     .field_vm
                     .helper_contexts
                     .iter()
                     .filter(|h| !h.done)
-                    .map(|h| h.bytecode.as_slice()),
+                    .map(|h| (h.bytecode.as_slice(), h.pc)),
             )
-            .any(follows_3f)
+            .any(|(bc, pc)| reaches(bc, pc))
     }
 
     /// The pad word a gated seed holds on `tick`: from
@@ -547,6 +569,7 @@ pub fn resume_record(host: &mut legaia_engine_core::scene::SceneHost, gate: &Scr
     }
     // The arm that spawns the record may have scored it: replay that arm's
     // track words first, since the resume starts the record without it.
+    roll_back_run_latches(&mut host.world, &man[start..start + len], gate.pc);
     if let Some(score) = legaia_engine_core::man_field_scripts::walk_spawn_scores(&mf, &man)
         .into_iter()
         .find(|s| u16::from(s.global_index) == gate.flat_index)
@@ -590,13 +613,92 @@ fn engage_placement(world: &mut legaia_engine_core::world::World, gate: &ScriptG
     let Some(&slot) = slots.first() else {
         return false;
     };
+    if let Some(body) = world
+        .npcs
+        .dialog_prologue
+        .iter()
+        .find(|(s, _)| **s == slot)
+        .map(|(_, rec)| rec.body.to_vec())
+    {
+        roll_back_run_latches(world, &body, gate.pc);
+    }
     world.trigger_field_interact(0, slot);
     true
+}
+
+/// The system flags a record set on its way to `gate_pc`: every `0x5x` SET
+/// in the straight-line run that ends on the gate PC, from the last
+/// branching instruction before it (a jump, a picker, a system-flag test).
+/// Retail executed that run to stand where it was captured, so those
+/// latches are the record's own and are already in the state's flags. A
+/// replay from the first opcode tests them and takes the other arm:
+/// `town0c` P1[21] (Nene's "Bees!" beat before the Queen Bee ambush) sets
+/// `0x5C1` at `+0x7A`, and with it already up the replay branched at
+/// `+0x76` straight to the battle, past the shot `rim_elm_queen_bee_battle`
+/// is captured on. `body` is in the gate's frame (the record's script
+/// start at offset 0).
+pub fn run_latches(body: &[u8], gate_pc: usize) -> Vec<u16> {
+    use legaia_asset::field_disasm::{FlagKind, InsnInfo, decode};
+    for start in 0..gate_pc.min(64) {
+        let mut pc = start;
+        let mut run: Vec<u16> = Vec::new();
+        let mut ok = false;
+        while pc < gate_pc {
+            let Ok(i) = decode(body, pc) else { break };
+            if i.size == 0 {
+                break;
+            }
+            match i.info {
+                InsnInfo::JmpRel { .. }
+                | InsnInfo::CondJmp { .. }
+                | InsnInfo::Picker { .. }
+                | InsnInfo::SystemFlag {
+                    kind: FlagKind::Test,
+                    ..
+                } => run.clear(),
+                InsnInfo::SystemFlag {
+                    kind: FlagKind::Set,
+                    idx,
+                    ..
+                } => run.push(idx),
+                _ => {}
+            }
+            pc += i.size;
+            ok = pc == gate_pc;
+        }
+        if ok {
+            return run;
+        }
+    }
+    Vec::new()
+}
+
+/// Clear [`run_latches`] before a record is replayed toward the gate.
+fn roll_back_run_latches(
+    world: &mut legaia_engine_core::world::World,
+    body: &[u8],
+    gate_pc: usize,
+) {
+    for idx in run_latches(body, gate_pc) {
+        world.system_flag_clear(idx);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn run_latches_are_the_sets_after_the_last_branch() {
+        // 75 C1 05 00 (test 0x5C1 -> +5), 55 C2 (set 0x5C2, behind the
+        // test), 26 02 00 (jump), 55 C1 (set 0x5C1), 4A 10 00 (wait), gate.
+        let body = [
+            0x75, 0xC1, 0x05, 0x00, 0x55, 0xC2, 0x26, 0x02, 0x00, 0x55, 0xC1, 0x4A, 0x10, 0x00,
+        ];
+        assert_eq!(run_latches(&body, 14), vec![0x5C1]);
+        assert_eq!(run_latches(&body, 11), vec![0x5C1]);
+        assert!(run_latches(&body, 9).is_empty());
+    }
 
     #[test]
     fn a_script_gate_round_trips_through_its_env_form() {
@@ -607,7 +709,7 @@ mod tests {
             wait: 48,
             op: 0x4A,
             glide_left: None,
-            scene_change_armed: std::cell::Cell::new((false, false)),
+            retire_watch: std::cell::Cell::new((false, false)),
         };
         assert_eq!(ScriptGate::from_env(&g.to_env()), Some(g.clone()));
         let g = ScriptGate {

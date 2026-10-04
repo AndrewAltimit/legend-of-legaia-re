@@ -81,6 +81,9 @@ const FOG_GATE: u32 = 0x8007_B854;
 const PLAYER_SCRIPT_HEIGHT: u32 = 0x2000_0000;
 /// `_DAT_801F348C`, the field party HUD's idle countdown (`FUN_801D0D38`).
 const HUD_COUNTDOWN: u32 = 0x801F_348C;
+/// The field camera parameter block's base (`0x8007B600`; the block proper
+/// is `+6..+0x28`, [`legaia_engine_core::camera_zone::CameraZoneConfig::from_retail_block`]).
+const CAMERA_BLOCK: u32 = 0x8007_B600;
 /// `DAT_801E46A4`, the menu overlay's current sub-screen id
 /// (`docs/subsystems/save-screen.md`).
 const MENU_SUBSCREEN: u32 = 0x801E_46A4;
@@ -247,6 +250,13 @@ pub struct RetailObs {
     /// channel lands the engine's countdown on it at the capture tick, so
     /// the readout is up in the engine frame exactly when it is in retail's.
     pub hud_countdown: Option<i16>,
+    /// The field camera parameter block (`0x8007B607..0x8007B627`) on a
+    /// walkable state: the camera-region record a script or a walk-on
+    /// loader last installed. The seat composes its arrival snap from it
+    /// rather than from a tile re-query, because which loader ran last is
+    /// walk history the save does not carry (`kor5`'s tile-X 26 / 28 band
+    /// loads `P2[1]` / `P2[0]`).
+    pub camera_block: Option<legaia_engine_core::camera_zone::CameraZoneConfig>,
     /// The displayed frame, when the state carries VRAM + display registers.
     pub frame: Option<Frame>,
     /// Battle observables for a battle-class state; `Err` names why the
@@ -316,6 +326,54 @@ impl RetailMenu {
 /// pause-menu screen the seed can drive to.
 pub const MENU_NOT_SEEDABLE: &str = "menu not seedable: ";
 
+/// The two staging descriptors the composer `FUN_801DAB90` writes: the
+/// follow ease's (`FUN_801DB510`) and op `0x45` APPLY's.
+const CAMERA_STAGINGS: [u32; 2] = [0x801F_3580, 0x801C_6EA8];
+
+/// Whether retail's camera has composed from `block` since it was loaded:
+/// a staging descriptor carries the block's `H` (`+0x26`, copied in every
+/// mode). A loader that ran after the last compose - a walk-on band the
+/// player arrived on and has not moved from (`kor5_field_card_boot`
+/// stands on `P2[0]`'s tile) - leaves the live camera on the previous
+/// block, which the seat's tile re-query reproduces.
+fn camera_block_composed(
+    ram: &[u8],
+    block: &legaia_engine_core::camera_zone::CameraZoneConfig,
+) -> bool {
+    CAMERA_STAGINGS
+        .iter()
+        .any(|&st| i32::from(rd16(ram, st + 0x26)) == block.h)
+}
+
+/// The 40 bytes from [`CAMERA_BLOCK`].
+fn camera_block_bytes(ram: &[u8]) -> Option<Vec<u8>> {
+    let lo = (CAMERA_BLOCK & 0x1F_FFFF) as usize;
+    ram.get(lo..lo + 0x28).map(<[u8]>::to_vec)
+}
+
+/// `LEGAIA_SEAT_CAMERA_BLOCK` for `play-window`: the block's 40 bytes from
+/// [`CAMERA_BLOCK`], hex.
+pub fn camera_block_env(block: &legaia_engine_core::camera_zone::CameraZoneConfig) -> String {
+    block
+        .to_retail_block()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// Inverse of [`camera_block_env`].
+pub fn camera_block_from_env(s: &str) -> Option<legaia_engine_core::camera_zone::CameraZoneConfig> {
+    let s = s.trim();
+    if s.len() != 0x50 {
+        return None;
+    }
+    let bytes = (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok())
+        .collect::<Option<Vec<u8>>>()?;
+    legaia_engine_core::camera_zone::CameraZoneConfig::from_retail_block(&bytes)
+}
+
 fn rd16(ram: &[u8], va: u32) -> i16 {
     game_anchors::i16_at(ram, va)
 }
@@ -379,6 +437,13 @@ impl RetailObs {
             save,
             hud_countdown: matches!(class, StateClass::Field | StateClass::WorldMap)
                 .then(|| rd16(ram, HUD_COUNTDOWN)),
+            camera_block: matches!(class, StateClass::Field | StateClass::WorldMap)
+                .then(|| camera_block_bytes(ram))
+                .flatten()
+                .and_then(|b| {
+                    legaia_engine_core::camera_zone::CameraZoneConfig::from_retail_block(&b)
+                })
+                .filter(|b| camera_block_composed(ram, b)),
             frame,
             battle: (class == StateClass::Battle)
                 .then(|| crate::retail_compare_battle::RetailBattle::from_ram(ram)),
@@ -442,6 +507,7 @@ impl RetailObs {
         self.class = StateClass::classify(self.game_mode, &self.scene, self.player.is_some());
         if !matches!(self.class, StateClass::Field | StateClass::WorldMap) {
             self.hud_countdown = None;
+            self.camera_block = None;
         }
     }
 }
@@ -588,7 +654,10 @@ pub fn run_engine_with(
     if let Some([x, _, z]) = retail.player
         && session.host.debug_seat_standing(x, z)
     {
-        session.camera.zone.arm_arrival();
+        match retail.camera_block {
+            Some(block) => session.camera.zone.arm_arrival_over(block),
+            None => session.camera.zone.arm_arrival(),
+        }
     }
     // A capture inside a running script is compared at the script's phase,
     // not after a fixed window ([`crate::retail_compare_script::ScriptGate`]):
@@ -611,8 +680,8 @@ pub fn run_engine_with(
         && std::env::var_os("LEGAIA_RC_SCRIPT_TRACE").is_some()
     {
         eprintln!(
-            "script gate {}: flat index {} pc {} op {:#04x} wait {}",
-            retail.scene, g.flat_index, g.pc, g.op, g.wait
+            "script gate {}: flat index {} pc {} op {:#04x} wait {} glide left {:?}",
+            retail.scene, g.flat_index, g.pc, g.op, g.wait, g.glide_left
         );
     }
     for t in 1..=deadline {
@@ -624,10 +693,17 @@ pub fn run_engine_with(
         session.tick()?;
         session.host.route_bgm_events(&mut director)?;
         if let Some(g) = &gate {
-            if std::env::var_os("LEGAIA_RC_SCRIPT_TRACE").is_some() && (t % 25 == 0 || t < 5) {
+            if std::env::var_os("LEGAIA_RC_SCRIPT_TRACE").is_some()
+                && (t % 25 == 0
+                    || t < 5
+                    || std::env::var_os("LEGAIA_RC_SCRIPT_TRACE_ALL").is_some())
+            {
                 eprintln!("script gate t={t}: {}", g.trace(&session.host.world));
             }
             if g.met(&session.host.world) {
+                if std::env::var_os("LEGAIA_RC_SCRIPT_TRACE").is_some() {
+                    eprintln!("script gate met t={t}: {}", g.trace(&session.host.world));
+                }
                 met_at = Some(t);
                 break;
             }
@@ -1414,6 +1490,9 @@ fn run_one(
                     if let Some(n) = retail.hud_countdown {
                         env.push(("LEGAIA_HUD_COUNTDOWN", n.to_string()));
                     }
+                    if let Some(b) = &retail.camera_block {
+                        env.push(("LEGAIA_SEAT_CAMERA_BLOCK", camera_block_env(b)));
+                    }
                     crate::retail_compare_image::engine_frame_with(
                         exe,
                         opts.extracted,
@@ -1437,6 +1516,7 @@ fn run_one(
                     &entry.label,
                     save,
                     retail.hud_countdown,
+                    retail.camera_block.as_ref(),
                 ),
             };
             match frame {

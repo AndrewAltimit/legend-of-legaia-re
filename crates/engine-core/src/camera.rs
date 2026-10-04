@@ -486,6 +486,20 @@ impl ZoneFollow {
         self.snap_pending = true;
     }
 
+    /// [`Self::arm_arrival`] over a given parameter block instead of the
+    /// tile re-query: the snap composes from `config`. For a seat that
+    /// carries a retail state's own block (`0x8007B607..0x8007B627`): the
+    /// block holds whichever camera-region record a script or a walk-on
+    /// loader last ran (`kor5` P2[0] / P2[1], the band at tile X 26 / 28),
+    /// which is walk history a seat cannot replay.
+    pub fn arm_arrival_over(&mut self, config: crate::camera_zone::CameraZoneConfig) {
+        self.arm_arrival();
+        self.config = config;
+        self.loaded_record = None;
+        self.ramp_seen = crate::register_ramp::CameraRegisterFile::DEFAULTS;
+        self.reload_pending = false;
+    }
+
     /// Arm a scene-entry / arrival snap: re-query the tile and copy the
     /// composed target into the globals on the next tick.
     pub fn arm_arrival(&mut self) {

@@ -236,7 +236,9 @@ pub enum FrameEntry<'a> {
 /// resume - and captures at [`CAPTURE_TICK`]. `hud_countdown` is retail's
 /// field party HUD countdown in the state (`_DAT_801F348C`), handed to the
 /// child as `LEGAIA_HUD_COUNTDOWN` so the idle readout's phase matches the
-/// retail instant rather than the settle window's length.
+/// retail instant rather than the settle window's length. `camera_block` is
+/// the state's camera parameter block, handed over as
+/// `LEGAIA_SEAT_CAMERA_BLOCK` so the seat's snap composes from it.
 #[allow(clippy::too_many_arguments)]
 pub fn engine_frame(
     exe: &Path,
@@ -248,10 +250,17 @@ pub fn engine_frame(
     label: &str,
     save: &legaia_save::SaveFile,
     hud_countdown: Option<i16>,
+    camera_block: Option<&legaia_engine_core::camera_zone::CameraZoneConfig>,
 ) -> Result<Frame> {
     let env: Vec<(&str, String)> = hud_countdown
         .map(|n| ("LEGAIA_HUD_COUNTDOWN", n.to_string()))
         .into_iter()
+        .chain(camera_block.map(|b| {
+            (
+                "LEGAIA_SEAT_CAMERA_BLOCK",
+                crate::retail_compare::camera_block_env(b),
+            )
+        }))
         .collect();
     engine_frame_with(
         exe,

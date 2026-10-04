@@ -695,7 +695,16 @@ pub(super) fn cmd_play_window_with_record(
         if let [x, z] = xz[..]
             && session.host.debug_seat_standing(x, z)
         {
-            session.camera.zone.arm_arrival();
+            // `LEGAIA_SEAT_CAMERA_BLOCK` (the retail-compare image channel):
+            // the snap composes from the retail state's own camera
+            // parameter block instead of a tile re-query.
+            match std::env::var("LEGAIA_SEAT_CAMERA_BLOCK")
+                .ok()
+                .and_then(|b| legaia_engine_shell::retail_compare::camera_block_from_env(&b))
+            {
+                Some(block) => session.camera.zone.arm_arrival_over(block),
+                None => session.camera.zone.arm_arrival(),
+            }
             log::info!("play-window: LEGAIA_SEAT seated the player at ({x}, {z})");
         } else {
             log::warn!("play-window: LEGAIA_SEAT='{seat}' not applied (want X,Z and a player)");
