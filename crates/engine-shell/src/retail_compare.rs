@@ -559,6 +559,12 @@ pub fn run_engine_with(
         enable_audio: false,
     };
     let mut session = BootSession::open(extracted, &cfg).context("open boot session")?;
+    // Field talk runs on the inline field-VM runner, as it does in both play
+    // hosts (`play-window`'s default and the browser page) and in the image
+    // child: without it an engaged placement opens the plain typewriter panel
+    // and its record never advances, so a capture inside a conversation
+    // could not be reached headlessly while the child reached it.
+    session.host.world.toggles.use_vm_dialogue = true;
     let opts = FieldLiveOpts::default();
     let save = retail
         .save
@@ -600,6 +606,14 @@ pub fn run_engine_with(
     let mut at_settle = None;
     let mut met_at = None;
     let mut resumed = false;
+    if let Some(g) = &gate
+        && std::env::var_os("LEGAIA_RC_SCRIPT_TRACE").is_some()
+    {
+        eprintln!(
+            "script gate {}: flat index {} pc {} op {:#04x} wait {}",
+            retail.scene, g.flat_index, g.pc, g.op, g.wait
+        );
+    }
     for t in 1..=deadline {
         if let Some(g) = &gate {
             let pad = g.advance_pad(&session.host.world, t);

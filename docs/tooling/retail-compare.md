@@ -214,7 +214,7 @@ sampled the settle window instead. The run has a deadline of 9000 ticks; a gate 
 meets keeps the settle-window sample, and the `script` detail says which
 it was.
 
-Two drives get the engine there without changing the retail state it
+Three drives get the engine there without changing the retail state it
 started from:
 
 - **Resume.** A record the card-load entry does not start - its one-shot
@@ -230,6 +230,17 @@ started from:
   replays that arm's op-`0x35` words first
   (`man_field_scripts::walk_spawn_scores`: the last start within eight
   instructions of the `44`, through `World::replay_field_bgm_words`).
+- **Engagement.** A capture inside a conversation holds the talked-to
+  placement's own context, engaged. The engine keeps a placement's idle body
+  on a channel and runs a talk on its inline runner, so a record the engine
+  finds only on its idle channel is engaged at the settle tick through the
+  interaction probe's own dispatch (`World::trigger_field_interact`), on the
+  placement whose interaction record carries the capture's head bytes. The
+  runner holds its PC on a segment's start while the box is up - the PC
+  retail's `+0x9E` holds - and the gate reads it like a timeline. The
+  headless seed runs talks on the inline runner as both play hosts do
+  (`WorldToggles::use_vm_dialogue`); without it the record never left its
+  idle channel and the innkeeper states were sampled with no box on screen.
 - **Paging.** From the settle tick on, while the record sits in a dialog box
   short of the gate PC, `Cross` is pressed every other tick - the presses
   the player made to page the conversation to where it was captured.
@@ -835,6 +846,12 @@ directory whose options file pins `camera_distance = "retail"`. The window's
 interactive default frames the field further out than retail, and a frame
 compared at that distance scores the zoom rather than the scene.
 
+Every presentation enhancement the window defaults on is turned off in the
+child: enhanced lighting, the volumetric ground fog, the camera-occlusion
+fade (it dissolves the walls around a hidden player that retail draws
+opaque), the scene-entry VDF pulse, and the photosensitivity slew on the
+ambient CLUT cyclers (`reduce_flashing = false` in the options file).
+
 A `--screenshot` child is tick-locked - exactly one world tick per redraw,
 whatever the wall clock did - because the draw pass feeds the simulation (the
 fog step above). A wall-paced capture ran fogged scenes on a stream that
@@ -991,7 +1008,8 @@ trio match while the frame looks at a different part of the room; only the
 `camera` channel's focus part misses. Seated at the
 arrival point instead, the engine frames the counter, the walkway and the void
 below it the way retail's frame does. The `image` miss on these two states is
-the capture method, not the camera.
+the capture method, not the camera; the innkeeper's box over the room is the
+[engagement](#mid-script-states) drive's.
 
 ### Arrival states are captured before the town runs
 

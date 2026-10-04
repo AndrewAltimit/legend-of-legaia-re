@@ -141,6 +141,10 @@ pub enum EngineContextKind {
     Helper(usize),
     /// A placement channel (`FieldVmState::channels`).
     Channel(usize),
+    /// The talk runner (`DialogState::inline`): a placement's interaction
+    /// body the player engaged, the engine's twin of retail's engaged
+    /// placement context.
+    Inline,
 }
 
 /// One engine field context: where it lives, its record head and its PC.
@@ -181,6 +185,21 @@ pub fn engine_contexts(world: &legaia_engine_core::world::World) -> Vec<EngineCo
             wait: h.ctx.wait_accum,
             done: h.done,
             dialog_open: h.dialog.is_some(),
+        });
+    }
+    if let Some(id) = world
+        .dialog
+        .inline
+        .as_ref()
+        .filter(|id| id.prop_anchor.is_none())
+    {
+        out.push(EngineContext {
+            kind: EngineContextKind::Inline,
+            head: head_of(&id.bytecode),
+            pc: id.pc,
+            wait: id.ctx.wait_accum,
+            done: id.done,
+            dialog_open: id.panel.is_some(),
         });
     }
     if let Some(man) = world.field_vm.channels_man.as_deref() {
@@ -320,6 +339,20 @@ impl ScriptGate {
         {
             return true;
         }
+        // An engaged placement: the engine runs the talk on its inline
+        // runner, which holds the PC on a segment's start while its box is
+        // up - the same PC retail's `+0x9E` holds.
+        if world.dialog.inline.as_ref().is_some_and(|id| {
+            id.prop_anchor.is_none()
+                && !id.done
+                && head_of(&id.bytecode) == self.head
+                && ((id.pc == self.pc
+                    && id.ctx.wait_accum >= self.wait
+                    && (!text || id.panel.as_ref().is_some_and(Self::page_up)))
+                    || (id.pc != self.pc && id.visited.get(self.pc).copied().unwrap_or(false)))
+        }) {
+            return true;
+        }
         engine_contexts(world).iter().any(|c| {
             matches!(c.kind, EngineContextKind::Channel(_))
                 && c.head == self.head
@@ -368,17 +401,35 @@ impl ScriptGate {
             .player_actor_slot
             .and_then(|p| world.actors.get(usize::from(p)))
             .map(|a| (a.move_state.world_x, a.move_state.world_z));
+        let inline = world.dialog.inline.as_ref().map(|id| {
+            (
+                id.pc,
+                id.done,
+                id.panel.is_some(),
+                id.npc_slot,
+                head_of(&id.bytecode) == self.head,
+            )
+        });
         format!(
-            "{c:?} mode={:?} glide={} player={player:?} {parks:?}",
-            world.mode, world.camera.state.glide_frames
+            "{c:?} mode={:?} glide={} player={player:?} {parks:?} inline={inline:?} cur={}",
+            world.mode,
+            world.camera.state.glide_frames,
+            world.dialog.current.is_some()
         )
     }
 
-    /// The engine context running the gate's record, if one is live.
+    /// The engine context running the gate's record, if one is live. An
+    /// engaged talk (the inline runner) is preferred over the placement's
+    /// idle channel on the same record.
     pub fn context(&self, world: &legaia_engine_core::world::World) -> Option<EngineContext> {
-        engine_contexts(world)
-            .into_iter()
-            .find(|c| c.head == self.head)
+        let all = engine_contexts(world);
+        let inline = all
+            .iter()
+            .position(|c| c.kind == EngineContextKind::Inline && c.head == self.head);
+        match inline {
+            Some(i) => all.into_iter().nth(i),
+            None => all.into_iter().find(|c| c.head == self.head),
+        }
     }
 }
 
@@ -400,8 +451,11 @@ pub const SCRIPT_RESUME_TICK: u64 = crate::retail_compare::SETTLE_TICKS;
 /// ([`legaia_engine_core::man_field_scripts::walk_spawn_scores`]), are
 /// replayed first. Returns `true` when a context was installed.
 pub fn resume_record(host: &mut legaia_engine_core::scene::SceneHost, gate: &ScriptGate) -> bool {
-    if gate.context(&host.world).is_some() {
-        return false;
+    if let Some(c) = gate.context(&host.world) {
+        return match c.kind {
+            EngineContextKind::Channel(_) => engage_placement(&mut host.world, gate),
+            _ => false,
+        };
     }
     let Some(Ok(Some(man))) = host
         .scene
@@ -449,6 +503,33 @@ pub fn resume_record(host: &mut legaia_engine_core::scene::SceneHost, gate: &Scr
     } else {
         world.install_cutscene_timeline_record(&mf, &man, 2, idx, false)
     }
+}
+
+/// Engage the placement whose interaction record is the gate's: the talk
+/// the retail player opened. Retail's capture holds a placement context with
+/// the engaged bit up (`+0x10 & 0x100`, raised only by a touch); the engine
+/// keeps the placement's idle body on a channel and runs a talk on its
+/// inline runner, opened by the interaction probe's own dispatch
+/// ([`legaia_engine_core::world::World::trigger_field_interact`]). Without
+/// this the gate's record sits on its idle channel for the whole deadline
+/// and the frame shows the room with no conversation in it.
+fn engage_placement(world: &mut legaia_engine_core::world::World, gate: &ScriptGate) -> bool {
+    if world.dialog.inline.is_some() || world.dialog.current.is_some() {
+        return false;
+    }
+    let mut slots: Vec<u8> = world
+        .npcs
+        .dialog_prologue
+        .iter()
+        .filter(|(_, rec)| head_of(&rec.body) == gate.head)
+        .map(|(slot, _)| *slot)
+        .collect();
+    slots.sort_unstable();
+    let Some(&slot) = slots.first() else {
+        return false;
+    };
+    world.trigger_field_interact(0, slot);
+    true
 }
 
 #[cfg(test)]
