@@ -283,8 +283,10 @@ pub(super) fn focus_on(seat: ModuleSeat) -> [i16; 3] {
     [seat.x.wrapping_neg(), 0, seat.z.wrapping_neg()]
 }
 
+pub mod capture;
 pub mod creature;
 mod seru;
+pub use capture::*;
 pub use creature::*;
 pub use seru::*;
 

@@ -935,6 +935,12 @@ impl BattleCamera {
                 self.step_module_shot();
                 return;
             }
+            // `0x70` re-arms no framing: hold, or walk the module's shot.
+            if self.last_action_state == CAPTURE_MODULE_STATE {
+                self.glides.clear();
+                self.step_module_shot();
+                return;
+            }
         }
         // `FUN_801D71B8` hangs off `FUN_801D5854`'s **shared** tail, so it
         // runs after cases 7 and 8 exactly as after case 6: the strike loop
