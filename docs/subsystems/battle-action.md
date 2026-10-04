@@ -159,11 +159,19 @@ per-actor attack-script byte stream at `actor[+0x1DF + +0x15]`. The inner step w
 `+0x1DC` bit `0x2` being clear** (`0x801E370C`: `lbu +0x1DC; andi 0x2; bne -> skip`) -
 while the previous staged swing is still in flight the step does only the per-frame
 physics, so strikes pace one-per-clip, with the anim system's end-of-clip edge clearing
-the bit. Counter-attack handling: if
-`_DAT_801F6970 != 0` and the *target's* sub-state byte at `s8[+0x1DE] == 3` (was
-attacking), redirects active actor to the counterattacker - sets
-`s_Counterattack_successful_801CED18` text, fires effect `FUN_801D8DE8(0x66, 0)`, swaps
-`actor[+0x13]`. Per-frame physics: target/attacker drift along bearing scaled by
+the bit. Counter-attack handling (`0x801E35F0..0x801E36E0`, on the attacker's first
+frame, `+0x1DC == 0`): if the latch `_DAT_801F6970` (counterer seat + 1) is set and the
+*target's* committed category `s8[+0x1DE] == 3` (it chose Attack), the loop points
+record `0x66` at `s_Counterattack_successful_801CED18`, holds it `0x78` frames
+(`0x801F6964`) and raises it with `FUN_801D8DE8(0x66, 0)`, zeroes the attacker's staged
+id and bumps its `+0x1DC`, aims the counterer at the attacker, makes it the active actor,
+builds its queue (`FUN_801EED1C`), spends its initiative key (`+0x16C = 0`), clears the
+target plaque's string and width (record `0x51`) and steps `ctx[+0x1A]`; either way the
+latch drops. The latch is armed by the turn picker `FUN_801DABA4` after a monster's
+physical pick on a party seat (`0x801DAF74..0x801DB050`: a `rand & 1` coin, no `0x380`
+status on the monster, the target's key unspent, and the Counterattack passive, record
+`+0xF4` bit `0x8000`). Port: `battle_action`'s counter head and the engine's
+`world::battle::counterattack`. Per-frame physics: target/attacker drift along bearing scaled by
 `actor[+0x21D]` (impact-step magnitude) when ability flags `0x10/0x20` are set in the
 character record at `0x80084708 + (party_id-1)*0x414`. Reads `actor[+0x1DF + +0x15]`
 until the `0x00` terminator is hit (the magic band is the band that uses `-1`; the

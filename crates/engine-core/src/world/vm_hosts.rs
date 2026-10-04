@@ -3137,6 +3137,15 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         //
         // The two message elements keep their line on the world here.
         self.world.message_banner_ui_element(effect_id, mode);
+        // The actor / target plates the seed raises glide in from off
+        // screen.
+        self.world.note_action_plate_raise(effect_id, mode);
+    }
+    fn counter_ready(&self, slot: u8) -> bool {
+        self.world.committed_attack(slot)
+    }
+    fn begin_counterattack(&mut self, counterer: u8, attacker: u8) -> bool {
+        self.world.begin_counterattack(counterer, attacker)
     }
     fn camera_bounds(&mut self) {
         self.world

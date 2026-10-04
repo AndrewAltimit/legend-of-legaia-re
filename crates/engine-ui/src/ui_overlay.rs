@@ -689,6 +689,13 @@ pub struct BattleHudFrame<'a> {
     /// party member's action is aimed at and its element badge, on a blue
     /// plate whose right cap ends at `x = 312`, on the bar's row.
     pub target_plaque: Option<(&'a str, Option<u8>)>,
+    /// The actor-name plaque's offset below its rest seat while its raise
+    /// glide runs (`engine-core::battle_hud::battle_action_plaque_dy`):
+    /// negative from the seed's raise until it lands. `0` at rest.
+    pub plaque_dy: i32,
+    /// The target plaque's offset below its rest seat while its raise glide
+    /// runs (`engine-core::battle_hud::battle_target_plaque_dy`).
+    pub target_plaque_dy: i32,
     /// The **target-select** plaque (placement record `0x29`): the monster
     /// the open target cursor rests on, and its element badge, on the blue
     /// plate class at retail's seat - content box centred on `x = 0xE8`,
@@ -1569,7 +1576,8 @@ pub fn battle_hud_draws_for(
         // the party member on his turn, the monster through its attack - on
         // a carved gold plate whose interior is sized to the measured name.
         // Its live seat is `(8, 8)` and its parked seat `(8, -24)`: the
-        // plaque slides in from above. The port draws only the live seat.
+        // plaque slides in from above over the action seed's raise glide
+        // (`frame.plaque_dy`).
         //
         // An actor that carries an element wears its badge in front of the
         // name, and the interior grows by the badge plus a 5-px gap - the
@@ -1609,16 +1617,19 @@ pub fn battle_hud_draws_for(
         } else {
             PLAQUE_X
         };
+        // The action plaque glides in from its parked seat above the top
+        // edge; the ring's trail is a different record and rests.
+        let plaque_y = PLAQUE_Y + if frame.begin_tab { 0 } else { frame.plaque_dy };
         plate_run(
             &mut text,
             &mut sprites,
             plaque_x,
-            PLAQUE_Y,
+            plaque_y,
             lead + name_w,
             true,
         );
         let content_x = plaque_x + PLATE_CAP_W;
-        let content_y = PLAQUE_Y + PLAQUE_CONTENT_DY;
+        let content_y = plaque_y + PLAQUE_CONTENT_DY;
         if let Some(src) = badge {
             stage_sprite(&mut sprites, src, content_x, content_y);
         }
@@ -1684,9 +1695,11 @@ pub fn battle_hud_draws_for(
         };
         let interior = lead + name_w;
         let plate_x = TARGET_PLAQUE_RIGHT - (interior + 2 * PLATE_CAP_W);
-        plate_run(&mut text, &mut sprites, plate_x, BAR_Y, interior, false);
+        // Rising from below the bottom edge while its raise glide runs.
+        let plate_y = BAR_Y + frame.target_plaque_dy;
+        plate_run(&mut text, &mut sprites, plate_x, plate_y, interior, false);
         let content_x = plate_x + PLATE_CAP_W;
-        let content_y = BAR_Y + PLAQUE_CONTENT_DY;
+        let content_y = plate_y + PLAQUE_CONTENT_DY;
         if let Some(src) = badge {
             stage_sprite(&mut sprites, src, content_x, content_y);
         }

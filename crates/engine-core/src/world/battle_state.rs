@@ -417,6 +417,22 @@ pub struct BattleState {
     /// ([`legaia_engine_vm::battle_commit_log::LogLaunch`]). `None` while the
     /// log rests; cleared by a commit (the next member's row lands fresh).
     pub commit_log_launch: Option<legaia_engine_vm::battle_commit_log::LogLaunch>,
+    /// The action plates' raise glides: the actor-name plaque (record `0x44`)
+    /// and the target plaque (record `0x51`), each opened by the action
+    /// seed's `FUN_801E6D84` with `FUN_801D8DE8(id, 0)` - spawned at seat A
+    /// off screen and stepped onto seat B by `FUN_801D9BBC` over the same
+    /// `ctx[+0x1C]` frames as every tracked widget. `None` until the first
+    /// raise; a settled glide draws at rest
+    /// ([`crate::battle_hud::battle_action_plaque_dy`]).
+    pub action_plaque_glide: Option<legaia_engine_vm::battle_commit_log::LogLaunch>,
+    /// The target plaque's raise glide - see [`Self::action_plaque_glide`].
+    pub target_plaque_glide: Option<legaia_engine_vm::battle_commit_log::LogLaunch>,
+    /// The target plaque's content word was cleared: the strike loop's
+    /// counterattack swap zeroes record `0x51`'s string and width
+    /// (`sw zero,0x7AC(s1)` / `sh zero,0x79E(s1)` at `0x801E36C8` /
+    /// `0x801E36CC`, `s1 = 0x80076C10`), so the counterer's strikes carry no
+    /// target plaque. The next action seed's raise rewrites it.
+    pub target_plate_cleared: bool,
     /// The battle side-band's state ([`crate::battle_sideband`], retail
     /// `FUN_80056208`): the stage phase cursor `ctx[+0x289]` (the sparring
     /// intro's `0` waiting / `1` caption up / `2` prompt machine live, and
@@ -698,6 +714,9 @@ impl BattleState {
             forced_monster_cast: None,
             forced_monster_target: None,
             commit_log_launch: None,
+            action_plaque_glide: None,
+            target_plaque_glide: None,
+            target_plate_cleared: false,
             sideband: Default::default(),
             stage_id: 0,
             arrival: Default::default(),

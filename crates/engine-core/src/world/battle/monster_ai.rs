@@ -237,6 +237,9 @@ impl World {
                     a.battle.active_target = target;
                     a.battle.action_category = 3;
                 }
+                // The picker's counter roll follows the redirect
+                // (`0x801DAF74..0x801DB050`, `World::roll_counterattack`).
+                self.roll_counterattack(slot, target);
                 self.maybe_confuse_retarget(slot);
             }
             MonsterAction::Flee => {

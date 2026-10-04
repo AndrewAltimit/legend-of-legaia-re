@@ -977,6 +977,19 @@ pub struct BattleActionCtx {
     /// `0x801E5574`, after `+0x287` and `DAT_8007BD0D`). Cleared by the Done
     /// band's menu arm (`sb zero,0x288(v1)` at `0x801E6114`).
     pub counter_attack: u8,
+    /// The **counterattack latch** `0x801F6970` - the countering party
+    /// seat plus one, `0` for none. It is a battle-overlay global rather than
+    /// a `ctx` byte; the port keeps it here for the same reason as
+    /// [`Self::message_id`]'s follow-up latch.
+    ///
+    /// The turn picker `FUN_801DABA4` arms it right after a monster's pick
+    /// (`sw v1,0x6970(a0)` at `0x801DB050`): a physical strike (`+0x1DE == 3`)
+    /// on a party seat, a coin (`rand & 1`), a monster free of the `0x380`
+    /// status bits, a target still holding its initiative key (`+0x16C != 0`)
+    /// and wearing the Counterattack passive (character `+0xF4` bit
+    /// `0x8000`). The strike loop consumes it on the attacker's first frame
+    /// (`0x801E35F0..0x801E36E0`, [`crate::battle_action`]'s attack band).
+    pub counter_pending: u8,
     /// `[+0x290]` - the formation advantage the battle-setup roll
     /// (`FUN_80051D84`) wrote: `1` back attack, `2` pre-emptive strike. `Begin`
     /// **latches** it into [`Self::formation_latched`] and then clears it, so

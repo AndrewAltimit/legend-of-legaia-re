@@ -195,6 +195,13 @@ pub struct RetailBattle {
     /// Each pool slot's live `+0x34` / `+0x38` pair (party `0..=2`,
     /// monsters `3..=7`), `None` for an empty slot.
     pub ground: Vec<Option<[i16; 2]>>,
+    /// The timed message up in the capture (HUD element `0x66`): the
+    /// battle-overlay string its content word `0x800775B4` points at, and
+    /// the hold `0x801F6964` left on it. `None` when the hold is spent.
+    pub timed_message: Option<(u32, i16)>,
+    /// Record `0x51`'s content word `0x800773BC` is zero: the strike loop's
+    /// counter swap cleared the target plaque.
+    pub target_plate_cleared: bool,
 }
 
 /// The summon band's live full-screen flash in a capture: which of the two
@@ -872,9 +879,22 @@ impl RetailBattle {
                     })
                 })
                 .collect(),
+            timed_message: {
+                let hold = game_anchors::u32_at(ram, TIMED_MESSAGE_HOLD) as i32;
+                let va = game_anchors::u32_at(ram, TIMED_MESSAGE_WORD);
+                (hold > 0 && va != 0).then_some((va, hold.min(i32::from(i16::MAX)) as i16))
+            },
+            target_plate_cleared: game_anchors::u32_at(ram, TARGET_PLATE_WORD) == 0,
         })
     }
 }
+
+/// The timed message's hold `0x801F6964` (`FUN_80046A20` counts it down).
+const TIMED_MESSAGE_HOLD: u32 = 0x801F_6964;
+/// Record `0x66`'s content word, `0x80076C10 + 0x66 * 0x18 + 0x14`.
+const TIMED_MESSAGE_WORD: u32 = 0x8007_75B4;
+/// Record `0x51`'s content word, `0x80076C10 + 0x51 * 0x18 + 0x14`.
+const TARGET_PLATE_WORD: u32 = 0x8007_73BC;
 
 /// What the engine shows after the battle seed.
 pub struct EngineBattle {
@@ -1559,10 +1579,19 @@ pub enum BattleDrive {
 /// does not share, and the half-turn it picks is the side cases 6, 7 and 8
 /// film from. [`BattleDrive::steer`] keeps the engine's counter on retail's
 /// half while the seat's action runs - the twin of the style alignment.
+///
+/// `message` is the timed message (HUD element `0x66`) the capture holds -
+/// its battle-overlay string pointer and remaining hold - and `plate_cleared`
+/// the counter swap's cleared target plaque. Both are the HUD's half of a
+/// counterattack the replay's own monster turn does not roll (the drive
+/// reaches the counterer's strike loop through its own turn), raised on the
+/// engine when it holds the capture's state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ActionSteer {
     pub target: Option<u8>,
     pub yaw: Option<u16>,
+    pub message: Option<(u32, i16)>,
+    pub plate_cleared: bool,
 }
 
 /// Where inside a state that spans many frames a capture sits.
@@ -1802,6 +1831,12 @@ impl BattleDrive {
                 if let Some(y) = steer.yaw {
                     s.push_str(&format!(",y{y}"));
                 }
+                if let Some((va, hold)) = steer.message {
+                    s.push_str(&format!(",m{va:x}/{hold}"));
+                }
+                if steer.plate_cleared {
+                    s.push_str(",c");
+                }
                 s
             }
         }
@@ -1822,6 +1857,11 @@ impl BattleDrive {
                 steer.target = Some(t.parse().ok()?);
             } else if let Some(y) = last.strip_prefix('y') {
                 steer.yaw = Some(y.parse().ok()?);
+            } else if let Some(m) = last.strip_prefix('m') {
+                let (va, hold) = m.split_once('/')?;
+                steer.message = Some((u32::from_str_radix(va, 16).ok()?, hold.parse().ok()?));
+            } else if last == "c" {
+                steer.plate_cleared = true;
             } else {
                 break;
             }
@@ -2099,6 +2139,18 @@ impl BattleDrive {
         let ours = world.mode == SceneMode::Battle
             && world.battle_ctx.active_actor == engine_seat(seat, pc);
         let state = world.battle_ctx.action_state;
+        // The capture's counterattack HUD, on the frame the engine holds its
+        // state ([`ActionSteer::message`] / [`ActionSteer::plate_cleared`]).
+        if ours && state == want {
+            if let Some((va, hold)) = steer.message
+                && world.battle.message_banner.is_none()
+            {
+                world.raise_timed_message(va, i32::from(hold));
+            }
+            if steer.plate_cleared {
+                world.battle.target_plate_cleared = true;
+            }
+        }
         if let Some(style) = style
             && ours
             && (state == want || seat < 3 && (0x0C..=want).contains(&state))
@@ -2278,6 +2330,8 @@ impl RetailBattle {
                         || (seat >= 3 && self.queued_category == 2 && self.target_code < 3))
                         .then_some(self.target_code),
                     yaw: Some(self.walk_yaw_base),
+                    message: self.timed_message,
+                    plate_cleared: self.target_plate_cleared && seat < 3,
                 },
             }),
             SeedPlan::Opening => Some(BattleDrive::Opening {
@@ -2812,6 +2866,8 @@ mod tests {
                 steer: ActionSteer {
                     target: Some(4),
                     yaw: Some(0xA98),
+                    message: Some((0x801C_ED18, 25)),
+                    plate_cleared: true,
                 },
             },
         ] {

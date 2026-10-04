@@ -306,6 +306,7 @@ mod camera_offset_ease;
 mod cast_band;
 mod commit_confirm;
 mod core;
+mod counterattack;
 mod dialogue_runner_fx;
 mod effects_actors;
 mod encounters;

@@ -4150,6 +4150,19 @@ the screen, and the record's `+0x14` points at the name scratch buffer the
 string was measured out of (a party-name buffer for a member, a monster-name
 buffer for an enemy).
 
+**When it slides.** An action's plaque and its target plaque (record 81) are
+both opened by the action seed: every category arm of state `0x0C` ends at
+`jal 0x801E6D84` (`0x801E3028`), which measures the acting actor's name and
+raises `FUN_801D8DE8(0x44, 0)` - plus `(0x51, 0)` for a single monster target.
+Mode `0` spawns each at seat A and `FUN_801D9BBC` glides it to seat B over
+`ctx[+0x1C] = 0x10` frames, the same tracked-widget step as the commit log's
+launch. So a frame taken the step the seed ran shows neither plate: the
+`super_queue_replace_*` captures, saved on the seed's frame with `ctx[+0x07]`
+already `0x14`, hold record 68 at `(16, -24)` and record 81 at `y = 236`.
+Both hosts draw the two plates on that glide
+(`battle_hud::battle_action_plaque_dy` / `battle_target_plaque_dy`, raised from
+the seed's own `ui_element` calls).
+
 The per-member roster panel is the exception that proves the rule: it is a
 fixed 102x48 sprite rather than a plate run, so its own record (`w = 88`,
 `h = 50`) insets by `(-5, -6)` and widens by 14 instead.

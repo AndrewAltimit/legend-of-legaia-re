@@ -657,6 +657,15 @@ into the item / magic / arts windows ([battle](../subsystems/battle.md#how-the-e
   target at all, the auto-target picks the next standing monster, and the
   run held the right state against the wrong body; the search moves on to
   the `1`-HP re-run that makes the kill.
+- **A counterattack's HUD.** A capture whose timed message is up (HUD
+  element `0x66`, hold `0x801F6964` non-zero) carries the overlay string its
+  content word points at and the hold left; one whose target plaque's
+  content word is zero carries that too (the strike loop's counter swap
+  clears it). The drive reaches a counterer's strike loop through the
+  member's own turn, not through the monster's strike the counter answered,
+  so it raises both on the engine when it holds the capture's state
+  (`ActionSteer::message` / `plate_cleared`). The text itself is read off the
+  engine's own PROT 0898 image. `battle_vahn_tri_somersault_super` is one.
 - **Seat and timing.** A pick no seed reproduces (a monster's plain strike on
   a given seat) can run out of budget or end the fight first.
 

@@ -269,6 +269,7 @@ impl World {
         // The commit log's launch glide runs every battle frame, whichever
         // surface owns the pad (`FUN_801D9BBC` is not gated on the flow).
         self.step_commit_log_launch();
+        self.step_action_plate_glides();
         self.step_battle_intro_names();
 
         // A message box on screen parks the entire battle - retail's
@@ -1093,6 +1094,9 @@ impl World {
     /// `0x380` re-target for a delegated one)
     fn dispatch_battle_turn(&mut self, next: u8) {
         let party_count = self.party.party_count.max(1);
+        // The turn picker's head drops any counter latch the last pick left
+        // unconsumed (`sw zero,0x6970(v0)` at `0x801DABB4`).
+        self.battle_ctx.counter_pending = 0;
         // Start-of-turn: age this actor's buffs / debuffs, reverting any
         // that expire this turn.
         self.tick_battle_buffs_on_turn(next);

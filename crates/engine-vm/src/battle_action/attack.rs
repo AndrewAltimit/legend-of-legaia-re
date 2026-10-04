@@ -231,6 +231,7 @@ pub(super) fn attack_chain<H: BattleActionHost + ?Sized>(
     // (`engine-core`'s `World::tick_battle_hit_events`); a host that plays
     // no clips resolves the staged byte's hits as a zero-length clip
     // instead. Either way nothing in this arm touches HP.
+    counterattack_swap(host, ctx);
     let slot = ctx.active_actor;
     // Strike pacing gate: while ADVANCE_DONE is still set the previous
     // staged swing is in flight - skip the byte read and hold (the anim
@@ -294,6 +295,60 @@ pub(super) fn attack_chain<H: BattleActionHost + ?Sized>(
         return transition(ctx, ActionState::AttackRecovery);
     }
     stay(ctx)
+}
+
+/// The strike loop's **counterattack swap** - the head of state `0x1E`,
+/// `0x801E35F0..0x801E36E0`.
+///
+/// ```text
+/// if 0x801F6970 != 0 && attacker[+0x1DC] == 0:          ; the first frame
+///     if target[+0x1DE] == 3:                            ; it committed Attack
+///         rec[0x66].str = "Counterattack successful!"; 0x801F6964 = 0x78
+///         FUN_801D8DE8(0x66, 0)
+///         attacker[+0x1DA] = 0; attacker[+0x1DC] += 1
+///         counterer = 0x801F6970 - 1
+///         counterer[+0x1DD] = ctx[+0x13]                 ; aims at the attacker
+///         ctx[+0x13] = counterer
+///         FUN_801EED1C(counterer)                        ; its strike queue
+///         counterer[+0x16C] = 0                          ; its turn is spent
+///         rec[0x51].str = 0; rec[0x51].w = 0             ; no target plaque
+///         ctx[+0x1A] += 1
+///     0x801F6970 = 0
+/// ```
+///
+/// The latch is armed by the turn picker (`FUN_801DABA4`) for a monster's
+/// strike on a party member wearing the Counterattack passive, and the
+/// target is the counterer. With `+0x1DC` non-zero the head is skipped and
+/// the latch kept. After the swap the loop stages the **counterer's** first
+/// byte on the same frame - the monster never swings.
+///
+/// PORT: FUN_801E295C (`0x801E35F0..0x801E36E0`, the strike loop's counter head)
+fn counterattack_swap<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut BattleActionCtx) {
+    if ctx.counter_pending == 0 {
+        return;
+    }
+    let attacker = ctx.active_actor;
+    let Some(a) = host.actor(attacker) else {
+        return;
+    };
+    if a.flag_bits.0 != 0 {
+        return;
+    }
+    let target = a.active_target;
+    let counterer = ctx.counter_pending - 1;
+    if host.counter_ready(target) && host.begin_counterattack(counterer, attacker) {
+        if let Some(a) = host.actor_mut(attacker) {
+            a.queued_anim = 0;
+            a.flag_bits.0 = a.flag_bits.0.wrapping_add(1);
+        }
+        if let Some(c) = host.actor_mut(counterer) {
+            c.active_target = attacker;
+            c.init_key = 0;
+        }
+        ctx.active_actor = counterer;
+        ctx.turn_cursor = ctx.turn_cursor.wrapping_add(1);
+    }
+    ctx.counter_pending = 0;
 }
 
 /// The War God Icon's **per-stage pass bump** - `FUN_801E295C`

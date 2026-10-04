@@ -29,6 +29,31 @@ pub trait BattleActionHost {
     /// unloads. Default no-op.
     fn ui_element(&mut self, _effect_id: u8, _mode: u8) {}
 
+    /// Whether `slot` committed a **physical attack** this round - the
+    /// strike loop's counter gate reads the countering target's category
+    /// `+0x1DE == 3` (`0x801E3614..0x801E361C`), which retail's command
+    /// phase writes at the commit. The default reads the actor's own
+    /// category byte; a host that only stamps it at its own dispatch answers
+    /// from the committed command instead.
+    fn counter_ready(&self, slot: u8) -> bool {
+        self.actor(slot)
+            .is_some_and(|a| a.action_category == ActionCategory::Attack.as_byte())
+    }
+
+    /// The host half of the strike loop's **counterattack swap**
+    /// (`0x801E3620..0x801E36DC`): raise the timed message at
+    /// `s_Counterattack_successful_801CED18` with its `0x78`-frame hold
+    /// (`FUN_801D8DE8(0x66, 0)`), build `counterer`'s strike queue from its
+    /// committed command (`FUN_801EED1C(counterer)`, which also retires that
+    /// command - the counter **is** the counterer's turn), and clear the
+    /// target plaque's content (record `0x51`). The action SM makes every
+    /// actor / context write itself. `false` = the host cannot stage the
+    /// counter (no committed attack to build from), and the SM leaves the
+    /// attacker's swing alone. Default `false`.
+    fn begin_counterattack(&mut self, _counterer: u8, _attacker: u8) -> bool {
+        false
+    }
+
     /// Equivalent of `FUN_8004E2F0(actor, target)` - battle range / LOS
     /// check. Returns 0 = "in range," non-zero = distance metric. Default
     /// returns 0 (always in range - useful for unit tests).

@@ -64,6 +64,9 @@ struct RecHost {
     monster_tags: std::collections::HashMap<u8, Vec<u8>>,
     /// `_DAT_8007BAC0` as `special_battle_word` reports it.
     special_word: u32,
+    /// The strike queue `begin_counterattack` stages on the counterer
+    /// (`None` = the host cannot stage a counter).
+    counter_queue: Option<Vec<u8>>,
 }
 
 impl RecHost {
@@ -100,6 +103,18 @@ impl BattleActionHost for RecHost {
     }
     fn ui_element(&mut self, effect_id: u8, mode: u8) {
         self.record(Event::Ui(effect_id, mode));
+    }
+    fn begin_counterattack(&mut self, counterer: u8, _attacker: u8) -> bool {
+        let Some(q) = self.counter_queue.clone() else {
+            return false;
+        };
+        self.record(Event::Ui(0x66, 0));
+        let c = &mut self.actors[counterer as usize];
+        c.params = [0; ACTION_PARAM_BYTES];
+        c.params[..q.len()].copy_from_slice(&q);
+        c.strike_index = 0;
+        c.action_category = ActionCategory::Attack.as_byte();
+        true
     }
     fn range_check(&self, a: u8, t: u8) -> u16 {
         self.ranges.get(&(a, t)).copied().unwrap_or(0)
@@ -1064,6 +1079,52 @@ fn without_the_war_god_bit_the_stream_is_not_replayed() {
     assert_eq!(ctx.action_state, ActionState::AttackRecovery.as_byte());
     assert_eq!(ctx.attack_x2_pass, 0);
     assert_eq!(host.actors[1].params[0], 0x1A, "the queue is untouched");
+}
+
+/// The strike loop's counter head (`0x801E35F0..0x801E36E0`): a monster's
+/// first strike frame with the latch armed on a party target that committed
+/// an attack hands the loop to the counterer - it aims at the monster, its
+/// initiative key is spent, the turn cursor steps, and its own first byte is
+/// the one staged. The monster never swings.
+#[test]
+fn a_counter_latch_hands_the_strike_loop_to_the_counterer() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 3);
+    ctx.action_state = ActionState::AttackChain.as_byte();
+    host.actors[3].params[0] = 0x05;
+    host.actors[3].active_target = 0;
+    host.actors[0].action_category = ActionCategory::Attack.as_byte();
+    host.actors[0].init_key = 40;
+    host.counter_queue = Some(vec![0x0F, 0x0E, 0x00]);
+    ctx.counter_pending = 1;
+    let cursor = ctx.turn_cursor;
+
+    assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+    assert_eq!(ctx.active_actor, 0, "the counterer acts");
+    assert_eq!(ctx.counter_pending, 0, "the latch is consumed");
+    assert_eq!(ctx.turn_cursor, cursor.wrapping_add(1));
+    assert_eq!(host.actors[0].active_target, 3, "aimed back at the monster");
+    assert_eq!(host.actors[0].init_key, 0, "its turn is spent");
+    assert_eq!(host.actors[0].queued_anim, 0x0F, "its own first swing");
+    assert_eq!(host.actors[3].queued_anim, 0, "the monster never swings");
+    assert!(host.take().contains(&Event::Ui(0x66, 0)));
+}
+
+/// A target that did not commit an attack takes no counter: the latch drops
+/// and the monster swings.
+#[test]
+fn a_counter_latch_without_a_committed_attack_drops() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 3);
+    ctx.action_state = ActionState::AttackChain.as_byte();
+    host.actors[3].params[0] = 0x05;
+    host.actors[3].active_target = 0;
+    host.actors[0].action_category = ActionCategory::Magic.as_byte();
+    host.counter_queue = Some(vec![0x0F, 0x00]);
+    ctx.counter_pending = 1;
+
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.active_actor, 3);
+    assert_eq!(ctx.counter_pending, 0);
+    assert_eq!(host.actors[3].queued_anim, 0x05, "the monster swings");
 }
 
 #[test]

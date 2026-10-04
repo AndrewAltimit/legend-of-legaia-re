@@ -284,6 +284,10 @@ impl World {
         let mut host = BattleHostImpl { world: self };
         let out = vm::battle_action::step(&mut host, &mut ctx);
         self.battle_ctx = ctx;
+        // The frame driver counts the timed message's hold down straight
+        // after the SM step (`FUN_80046A20`, `jal 0x801E295C` then the
+        // `0x801F6964` block).
+        self.tick_timed_message();
         self.track_block_approach_terms(pre_state, &out);
         // The strike chain's exit re-arms the steal latch: the arm that
         // writes `0x1F` into the action state at `0x801E3A7C` clears

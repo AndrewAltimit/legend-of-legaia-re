@@ -45,6 +45,42 @@ impl World {
         }
     }
 
+    /// Note a HUD element raise for the two action plates that glide in:
+    /// `FUN_801D8DE8(0x44 | 0x51, 0)` from the action seed's banner plan
+    /// starts that plate's glide from seat A.
+    pub(in crate::world) fn note_action_plate_raise(&mut self, element: u8, mode: u8) {
+        use legaia_engine_vm::battle_commit_log::LogLaunch;
+        use legaia_engine_vm::battle_cue_group::{HUD_CASTER_BANNER, HUD_TARGET_BANNER};
+        if mode & 1 != 0 {
+            return;
+        }
+        if element == HUD_CASTER_BANNER {
+            // A new action's seed: whatever cleared the last target plate's
+            // content is behind it.
+            self.battle.action_plaque_glide = Some(LogLaunch::new(false));
+            self.battle.target_plate_cleared = false;
+        } else if element == HUD_TARGET_BANNER {
+            self.battle.target_plaque_glide = Some(LogLaunch::new(false));
+            self.battle.target_plate_cleared = false;
+        }
+    }
+
+    /// One frame of the two action-plate glides, on the frame step the
+    /// commit log's launch steps by (`FUN_801D9BBC` walks every tracked
+    /// widget in one pass).
+    pub(in crate::world) fn step_action_plate_glides(&mut self) {
+        let step = self.clock.frame_step.max(1);
+        for g in [
+            self.battle.action_plaque_glide.as_mut(),
+            self.battle.target_plaque_glide.as_mut(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            g.step(step);
+        }
+    }
+
     /// Raise the launch a command-session frame implies, from the phase it
     /// was on before the frame and the one it is on after.
     pub(in crate::world) fn launch_commit_log_for(

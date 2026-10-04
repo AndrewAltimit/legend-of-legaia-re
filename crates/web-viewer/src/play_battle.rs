@@ -691,6 +691,8 @@ impl LegaiaRuntime {
                 third_tab: third_tab.as_deref(),
                 move_name: move_name.as_deref(),
                 target_plaque: target_plaque.as_ref().map(|(n, b)| (n.as_str(), *b)),
+                plaque_dy: world.map(bh::battle_action_plaque_dy).unwrap_or(0),
+                target_plaque_dy: world.map(bh::battle_target_plaque_dy).unwrap_or(0),
                 target_select: target_select.as_ref().map(|(n, b)| (n.as_str(), *b)),
                 message_bar: message_bar.as_deref(),
                 ap_plate_value: world.and_then(bh::battle_ring_ap_plate_value),
