@@ -22,6 +22,13 @@ pub enum BattleCamPhase {
     /// The end-of-action band: `FUN_801D5854` case `8`, framed on the
     /// **target**. See [`action_end_framing`](super::action_end_framing).
     ActionEnd,
+    /// The target cursor on one enemy: `FUN_801D5854` case `1`, the shot
+    /// that turns the member toward the cursor's target. See
+    /// [`target_enemy_pose`](super::target_enemy_pose).
+    TargetEnemy,
+    /// The target cursor on one party member: `FUN_801D5854` case `3`. See
+    /// [`target_ally_pose`](super::target_ally_pose).
+    TargetAlly,
 }
 
 /// Retail's own test for "an action owns the framing", from the action state

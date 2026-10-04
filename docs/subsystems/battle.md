@@ -1497,7 +1497,28 @@ catalogued mednafen Tetsu battle states; one camera step spans **2 vsyncs**:
 | Begin/Run menu | 32 | free | `(0, 1280, z)` | idle orbit `-4` yaw/step |
 | command submenu | 32 | **2288** | `(-512, 1152, 2457)` | 6-step glide in, then held |
 | submenu exit | swings 32→256→32 | eases to 0 | via `(0, 1536, 3276)`, back to menu TR | 6-step swing + 7-step return |
+| target cursor (`Auto` / `Command` prompt, cursor `0x5A`) | 256 (one enemy) / 32 (one ally) | `0x800 − bearing(target → focus)` / `0x900 − ally[+0x46]` | `(0, 1536, 3276)` on the member / `(0, height, 2457)` on the ally | 6-step glide, re-armed per cursor move |
 | action executing | 0 (or floor-tilted) | `0x800 − facing`, or the drifting `ctx[+0x6DA] − facing` | `(0, height, 0x500)` party / `(0, 0x500, ctx[+0x6D0])` monster | 6-step glide in, 7-step out, then held |
+
+**The target cursor is cases 1 and 3, not the far framing.** The menu
+driver `FUN_801D388C` re-arms `FUN_801D5854` on every cursor step against the
+cursor's scope: the Attack command's steps `0x0C` / `0x2D` / `0x30` (the
+`Auto` / `Command` prompt and the cursor it opens) jump to `0x801D43C0`, case
+`1` on the commanding member; the item / magic cursor steps switch on their
+scope argument - one enemy case `1`, one party member case `3` on that member
+(`lbu a0,0x1dd` at `0x801D43F0`), a whole side cases `4` / `5`, whose
+jump-table slots (`0x801CEA00`) land on the case exit and leave the framing
+as it stands. Case 1 (`0x801D5A6C..0x801D5B04`) orbits the member at pitch
+`0x100`, `TR (0, 0x600, prescale(0x800))`, and turns the yaw to
+`0x800 - bearing(target -> live focus)`, the bearing taken from the cursor's
+target to the camera's current focus word `-_DAT_80089118/20`; with the
+target dead ahead on the seat axis that is yaw `0`, the "submenu exit" swing
+the solo-Tetsu trace above measures. Case 3 (`0x801D5BD4..0x801D5C54`) is
+case 0 turned onto the ally: `TR.x = 0`, yaw base `0x900`. Engine:
+`BattleCamPhase::TargetEnemy` / `TargetAlly` over
+`battle_cam_script::CursorFraming`, filled by `engine-core::battle_cam_inputs`
+from the live picker for both hosts. No library save state is parked on the
+cursor, so the framing rests on the disassembly and the trace's swing pose.
 
 The **step counts are retail's own** `FUN_801D829C` durations, not just trace
 readings: the framing cases pass `a3` in *display frames* and a camera step is

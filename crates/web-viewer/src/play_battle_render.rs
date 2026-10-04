@@ -1231,6 +1231,8 @@ impl LegaiaRuntime {
             Some(P::Action) => "action",
             Some(P::Recover) => "recover",
             Some(P::ActionEnd) => "action-end",
+            Some(P::TargetEnemy) => "target-enemy",
+            Some(P::TargetAlly) => "target-ally",
             Some(P::Menu) | None => "menu",
         }
     }

@@ -196,3 +196,74 @@ pub fn menu_framing(bbox: Option<FormationBox>, yaw: f32) -> BattleCamPose {
         focus,
     }
 }
+
+/// Case-3 ally-cursor yaw base: retail computes `0x900 - target_facing`
+/// (`li v0,0x900` / `subu` at `0x801D5BE4..0x801D5BE8`).
+pub(super) const TARGET_ALLY_YAW_BASE: i32 = 0x900;
+
+/// What the battle **target cursor** is resting on, as the menu driver
+/// `FUN_801D388C` hands it to `FUN_801D5854`. The cursor steps re-arm the
+/// framing on every move, against the cursor's scope:
+///
+/// | scope | case | `FUN_801D388C` call |
+/// |---|---|---|
+/// | one enemy | `1`, on the **member** | `jal 0x801d5854` / `li a1,0x1` at `0x801D43C4` |
+/// | one party member | `3`, on that member | `lbu a0,0x1dd(v0)` / `li a1,0x3` at `0x801D43F0..0x801D43F8` |
+/// | a whole side | `4` / `5` | jump-table slots that land on the case exit `0x801D7138` - the framing is left as it stands |
+///
+/// The Attack command's own steps (`0x0C` / `0x2D` / `0x30`, the `Auto` /
+/// `Command` prompt and the cursor it opens) take the enemy arm
+/// unconditionally (`j 0x801d43c0` at `0x801D3E30`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CursorFraming {
+    /// One enemy under the cursor: its world `(x, z)` (`actor[+0x34/+0x38]`).
+    Enemy { target: [f32; 2] },
+    /// One party member under the cursor.
+    Ally(BattleCamActor),
+}
+
+/// `FUN_801D5854` case `1` - the enemy-cursor shot. It orbits the **member**
+/// (focus `-actor[+0x34/+0x36/+0x38]`), pitched `0x100`, at
+/// `TR (0, 0x600, prescale(0x800))`, and turns the yaw to
+/// `0x800 - bearing(target -> live focus)` (`0x801D5A6C..0x801D5AD0`): the
+/// bearing runs from the cursor's target to the camera's **current** focus
+/// `-_DAT_80089118/20`, which by the time the cursor is up is the member the
+/// ring's close-up glided onto. With the target dead ahead on the seat axis
+/// that is yaw `0` - the "swing" pose the solo-Tetsu camera trace measures.
+pub fn target_enemy_pose(
+    member: BattleCamActor,
+    target: [f32; 2],
+    live_focus: [f32; 3],
+) -> BattleCamPose {
+    let clamp = |v: f32| v.clamp(i16::MIN as f32, i16::MAX as f32) as i16;
+    let bearing = crate::battle_action::bearing_12bit_approx(
+        clamp(target[1]),
+        clamp(target[0]),
+        clamp(live_focus[2]),
+        clamp(live_focus[0]),
+    );
+    BattleCamPose {
+        pitch: super::SWING_POSE.pitch,
+        yaw: (0x800 - i32::from(bearing)).rem_euclid(4096) as f32,
+        tr: super::SWING_POSE.tr,
+        focus: member.world,
+    }
+}
+
+/// `FUN_801D5854` case `3` - the ally-cursor shot (`0x801D5BD4..0x801D5C54`):
+/// case 0's over-the-shoulder close-up turned onto the targeted member, with
+/// `TR.x = 0` instead of `-0x200` and a yaw base of `0x900` instead of
+/// `0x8F0` - pitch `0x20`, `TR (0, height[char], prescale(0x600))`, focus on
+/// the member's own position.
+pub fn target_ally_pose(ally: BattleCamActor) -> BattleCamPose {
+    BattleCamPose {
+        pitch: SUBMENU_PITCH,
+        yaw: (TARGET_ALLY_YAW_BASE - ally.facing).rem_euclid(4096) as f32,
+        tr: [
+            0.0,
+            ally.height.unwrap_or(SUBMENU_HEIGHT_FALLBACK),
+            prescale_tr_z(SUBMENU_TR_Z_RAW),
+        ],
+        focus: ally.world,
+    }
+}

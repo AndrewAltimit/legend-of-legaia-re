@@ -29,7 +29,8 @@ impl BattleCamera {
         let yaw = entry_yaw.rem_euclid(4096.0);
         let pose = match phase {
             BattleCamPhase::Dialogue => dialogue_pose(formation),
-            BattleCamPhase::Submenu => actor.submenu_pose(),
+            BattleCamPhase::Submenu | BattleCamPhase::TargetEnemy => actor.submenu_pose(),
+            BattleCamPhase::TargetAlly => target_ally_pose(actor),
             BattleCamPhase::Action => action_framing(actor, action),
             BattleCamPhase::Recover => recover_framing(actor, None, action, yaw, false),
             BattleCamPhase::ActionEnd => action_end_framing(actor, None, action, yaw),
@@ -55,6 +56,7 @@ impl BattleCamera {
             rand_state: STANDALONE_RAND_SEED,
             module_glide: None,
             escape_shot: false,
+            cursor: None,
         }
     }
 
@@ -257,6 +259,41 @@ impl BattleCamera {
                 true,
             ));
             self.pose = from;
+        }
+    }
+
+    /// Install what the target cursor rests on. Every cursor move re-arms
+    /// the framing case in retail (the menu driver's cursor steps call
+    /// `FUN_801D5854` again with the new `+0x1DD`), so a change while a
+    /// cursor framing is live glides to the new pose over the case's own
+    /// `a3 = 0xC` - 6 camera steps.
+    pub fn set_cursor(&mut self, cursor: Option<CursorFraming>) {
+        let changed = cursor != self.cursor;
+        self.cursor = cursor;
+        if changed
+            && matches!(
+                self.phase,
+                BattleCamPhase::TargetEnemy | BattleCamPhase::TargetAlly
+            )
+            && let Some((target, raw_z)) = self.cursor_pose()
+        {
+            let mut from = self.pose;
+            self.glides.clear();
+            self.glides
+                .push_back(Glide::linear(&mut from, target, raw_z, CURSOR_STEPS, true));
+            self.pose = from;
+        }
+    }
+
+    /// The cursor framing's target pose and raw depth, off the live pose's
+    /// focus (case 1's bearing reads the camera's current focus word).
+    fn cursor_pose(&self) -> Option<(BattleCamPose, i32)> {
+        match self.cursor? {
+            CursorFraming::Enemy { target } => Some((
+                target_enemy_pose(self.actor, target, self.pose.focus),
+                SWING_TR_Z_RAW,
+            )),
+            CursorFraming::Ally(ally) => Some((target_ally_pose(ally), SUBMENU_TR_Z_RAW)),
         }
     }
 
@@ -495,10 +532,27 @@ impl BattleCamera {
                     true,
                 ));
             }
+            BattleCamPhase::TargetEnemy | BattleCamPhase::TargetAlly => {
+                // Cases 1 and 3 both hand `FUN_801D829C` `a3 = 0xC`
+                // (`0x801D5AF8`, `0x801D5C48`): 6 camera steps, yaw included.
+                if let Some((target, raw_z)) = self.cursor_pose() {
+                    self.glides.push_back(Glide::linear(
+                        &mut from,
+                        target,
+                        raw_z,
+                        CURSOR_STEPS,
+                        true,
+                    ));
+                }
+            }
             BattleCamPhase::Menu
                 if matches!(
                     self.phase,
-                    BattleCamPhase::Action | BattleCamPhase::Recover | BattleCamPhase::ActionEnd
+                    BattleCamPhase::Action
+                        | BattleCamPhase::Recover
+                        | BattleCamPhase::ActionEnd
+                        | BattleCamPhase::TargetEnemy
+                        | BattleCamPhase::TargetAlly
                 ) =>
             {
                 // End of action: case 9 re-arms the far framing over its own

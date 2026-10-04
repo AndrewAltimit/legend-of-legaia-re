@@ -27,6 +27,8 @@ pub(super) const DIALOGUE_EXIT_Z_RATE: f32 = 864.0;
 pub(super) const SUBMENU_ENTER_STEPS: u32 = 6;
 pub(super) const SUBMENU_SWING_STEPS: u32 = 6;
 pub(super) const SWING_RETURN_STEPS: u32 = 7;
+/// The target-cursor framings (cases `1` / `3`, `a3 = 0xC`).
+pub(super) const CURSOR_STEPS: u32 = 6;
 
 /// One glide segment: per-component per-step rates toward `target`, each
 /// component clamping independently. `yaw_glides` routes yaw through the
@@ -212,6 +214,9 @@ pub struct BattleCamera {
     /// before the camera steps and takes it back after, so those draws land
     /// on the world stream in the order the tick makes them.
     pub(super) rand_state: u32,
+    /// What the target cursor rests on, while one is up
+    /// ([`BattleCamera::set_cursor`]).
+    pub(super) cursor: Option<CursorFraming>,
 }
 
 /// [`BattleCamera`]'s per-art attack-camera state - retail's `ctx[+0x26D]` /
@@ -367,6 +372,10 @@ pub struct BattleCamInputs {
     /// (`FUN_801DC0A0` case `0x12`) focuses it, not the live pair. `None`
     /// falls back to [`BattleCamActor::world`].
     pub acting_body: Option<[f32; 2]>,
+    /// What the target cursor rests on while one is up - the input of the
+    /// [`BattleCamPhase::TargetEnemy`] / [`BattleCamPhase::TargetAlly`]
+    /// framings. `None` when no single-target cursor is live.
+    pub cursor: Option<CursorFraming>,
 }
 
 /// Drive one host's battle camera for a frame - the single shared entry both
@@ -438,6 +447,7 @@ pub fn drive_on_stream(
     cam.observe_active_commits(inputs.active_commits);
     cam.set_shake_amplitude(inputs.shake_amplitude);
     cam.set_attack_channels(inputs.attack, tracks);
+    cam.set_cursor(inputs.cursor);
     cam.set_phase(inputs.phase);
     cam.advance_to(frames);
     *rng = cam.rand_state;
