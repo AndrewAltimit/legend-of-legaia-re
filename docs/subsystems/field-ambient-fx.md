@@ -850,12 +850,16 @@ system script the way the field arm does, which is what runs `map01`'s
 `P1[0]`. The disc-gated oracle is
 `crates/engine-shell/tests/world_map_fog_oracle.rs`.
 
-On the overworld each half-sheet is also depth-tested against the
-continent the frame already drew (`FogQuad::depth`), because retail links
-the sheets into the same ordering table as the terrain; the field keeps its
-composite-over-the-frame draw. The depth is the sheet's ordering-table
-bucket's, not its particle's - see [closing the draw
-order](#closing-the-draw-order-flat-per-primitive-terrain-depth).
+Each half-sheet is also depth-tested against the scene the frame already
+drew (`FogQuad::depth`), because retail links the sheets into the same
+ordering table as the meshes. On the overworld the depth is the sheet's
+ordering-table bucket's, not its particle's - see [closing the draw
+order](#closing-the-draw-order-flat-per-primitive-terrain-depth). On the
+field it is the particle's own `SZ` (the sheet links at `SZ >> 5`): a
+particle whose fixed height puts it inside a raised ledge is covered by the
+ledge, as retail's table draws the nearer ledge after it. Drawn over the
+finished frame instead, `vell`'s buried sheets showed as a bright band under
+the party HUD that the retail frame (`vell_fog_field`) does not have.
 
 Frame-paired at `keikoku_chest_preload`'s seat, retail's haze shows mostly
 as the white band above the ridges while the port's sheets read denser and

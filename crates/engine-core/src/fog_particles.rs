@@ -359,10 +359,13 @@ pub struct FogQuad {
     /// ([`crate::overworld_draw_order::fog_flat_sz`]), so the continent -
     /// which draws at its own cells' bucket depths - covers it exactly where
     /// retail's ordering table draws a cell after it.
-    /// Set on the overworld arm only ([`FogPool::overworld`]), where the
-    /// sheets float over a continent whose ridges retail's ordering table
-    /// draws in front of the fog behind them; `None` keeps the field's
-    /// composite-over-the-frame draw.
+    /// That bucket depth is the overworld arm's ([`FogPool::overworld`]),
+    /// where the sheets float over a continent whose ridges retail's
+    /// ordering table draws in front of the fog behind them. On the field
+    /// it is the particle's own `SZ`: the sheet links at `SZ >> 5` in the
+    /// same table as the field meshes, so a ledge or trunk nearer than a
+    /// buried particle covers it (`vell`'s band under the party HUD). `None`
+    /// only when the depth does not project (`SZ <= 0`).
     pub depth: Option<f32>,
 }
 
@@ -893,14 +896,17 @@ fn emit_half(
             rgb,
             ot_index: (bucket_z.max(0.0) as u32) >> 5,
             sz,
-            // The bucket's flat depth, a quarter bucket behind the cells
-            // that link there (crate::overworld_draw_order).
+            // Overworld: the bucket's flat depth, a quarter bucket behind
+            // the cells that link there (crate::overworld_draw_order).
+            // Field: the particle's own depth - retail links the sheet at
+            // `SZ >> 5` in the ordering table the field meshes sort into,
+            // so a nearer ledge, trunk or prop draws over it.
             depth: if overworld {
                 view.ndc_at_sz(crate::overworld_draw_order::fog_flat_sz(
                     crate::overworld_draw_order::fog_ot_index(sz),
                 ))
             } else {
-                None
+                view.ndc_at_sz(sz)
             },
         }),
     )
@@ -1177,11 +1183,13 @@ mod tests {
         assert_eq!(pool.records[slot].age, 0x800 + 15);
     }
 
-    /// The overworld arm's sheets carry the particle's scene depth (the
-    /// billboard's one depth) for the hosts' depth test; the field's carry
-    /// none.
+    /// Both arms' sheets carry a scene depth for the hosts' depth test:
+    /// retail links a sheet into the ordering table the meshes sort into on
+    /// the field as on the overworld, so a field sheet buried behind a
+    /// nearer ledge must be covered by it. The field depth is the
+    /// particle's own (the billboard's one depth).
     #[test]
-    fn only_overworld_sheets_carry_a_scene_depth() {
+    fn field_and_overworld_sheets_carry_a_scene_depth() {
         let trig = lut();
         for overworld in [false, true] {
             let mut pool = FogPool::new();
@@ -1198,12 +1206,12 @@ mod tests {
             let quads = pool.render_step(&view, &env()).to_vec();
             assert_eq!(quads.len(), 2);
             for q in &quads {
-                if overworld {
-                    let d = q.depth.expect("an overworld sheet is depth-tested");
-                    assert_eq!(Some(d), view.ndc_depth([0, 0, 2000]));
-                } else {
-                    assert_eq!(q.depth, None);
-                }
+                let d = q.depth.expect("a fog sheet is depth-tested");
+                let want = view.ndc_depth([0, 0, 2000]).expect("in front of the eye");
+                assert!(
+                    (d - want).abs() < 1e-5,
+                    "overworld {overworld}: {d} vs {want}"
+                );
             }
         }
     }
