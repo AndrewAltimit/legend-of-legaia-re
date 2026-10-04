@@ -126,6 +126,12 @@ pub trait BattleActionHost {
     /// REF: FUN_801F0348
     fn camera_frame_height(&mut self, _height: i16) {}
 
+    /// The summon band's `0x37` exit clears `ctx[+0x278]`
+    /// (`sb zero,0x278(a0)` at `0x801E4E98`) - the byte the band shares with
+    /// the slot-B module, which keeps its own copy host-side. Default no-op:
+    /// a host with no module half holds nothing to clear.
+    fn clear_module_ctx_278(&mut self) {}
+
     /// Equivalent of `FUN_801EED1C` - party setup hook (called for actors
     /// with slot < 3). Default no-op.
     fn party_setup(&mut self, _actor_slot: u8) {}

@@ -1120,7 +1120,15 @@ colour the grid from `World::battle_ambient_base`: the native window
 re-uploads the grid mesh when the ambient moves and re-derives the cue's far
 colour every frame; the play page re-reads the packet colours and the cue on
 the `play_battle_ground_ambient_key` change key. The backdrop pair's `+0x78`
-ramp is not modelled - the port's backdrop draws uncued through a cast.
+ramp is `battle_ground_grid::backdrop_cue_step`, stepped beside the ambient in
+`World::tick_battle_ambient` over the same two bytes, with the stage's
+outdoor-table membership (`BattleState::stage_outdoor`, set by the host that
+resolved the stage) picking the ceiling. Both hosts read it through
+`World::battle_backdrop_cue`: a flat per-draw cue toward black on the stage
+draw, and no stage draw at all at full weight. A summon module drives it
+there by storing `2` or `3` into `ctx+0x278` - PROT 0903's arms 4 and 6, so
+Gimard's attack plays inside its fire tunnel with nothing of the stage behind
+it (`gimard_burning_attack` reads both records at `+0x78 = 0x1000`).
 
 `IR0` is `SZ >> 2` on the vertex's own screen depth, with no scale of the
 battle world folded in. The `map01` Gobu Gobu capture's grid packets

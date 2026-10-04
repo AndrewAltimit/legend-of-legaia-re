@@ -1821,7 +1821,23 @@ impl PlayWindowApp {
                     // from the ground cell it was supposed to be on. One
                     // scale for every battle draw class is what makes the
                     // arena a backdrop and the grid a floor.
-                    if let Some(stage_idx) = self.battle_stage_mesh
+                    // The backdrop pair's own depth cue (`FUN_80050120`'s
+                    // `+0x78` ramp): pulled toward black through a summon
+                    // close-up, and off the draw entirely at full weight -
+                    // a cast module that wants the stage gone (PROT 0903's
+                    // fire tunnel) drives it there.
+                    let backdrop_cue = self.session.host.world.battle_backdrop_cue();
+                    let stage_cue =
+                        backdrop_cue
+                            .filter(|&w| w > 0.0)
+                            .map(|w| legaia_engine_render::DrawCue {
+                                far: [0.0; 3],
+                                near_z: -1.0,
+                                far_z: 0.0,
+                                max_ir0: w,
+                            });
+                    if backdrop_cue.is_some()
+                        && let Some(stage_idx) = self.battle_stage_mesh
                         && let Some(mesh) = self.meshes.get(stage_idx)
                     {
                         let flip = Self::battle_stage_model();
@@ -1829,7 +1845,7 @@ impl PlayWindowApp {
                         draws.push(SceneDraw {
                             mesh,
                             mvp: cam * flip,
-                            cue: None,
+                            cue: stage_cue,
                         });
                     }
                     // ...and the shell's untextured `F*`/`G*` half on the
@@ -1837,13 +1853,14 @@ impl PlayWindowApp {
                     // walks one primitive list, so these panels (sky band,
                     // painted wall faces, flat water) belong to the same
                     // backdrop draw; without them the shell has holes.
-                    if let Some(cidx) = self.battle_stage_color_mesh
+                    if backdrop_cue.is_some()
+                        && let Some(cidx) = self.battle_stage_color_mesh
                         && let Some(cmesh) = self.color_meshes.get(cidx)
                     {
                         color_draws.push(ColorSceneDraw {
                             mesh: cmesh,
                             mvp: cam * Self::battle_stage_model(),
-                            cue: None,
+                            cue: stage_cue,
                         });
                     }
                 } else {

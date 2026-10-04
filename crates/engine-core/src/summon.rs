@@ -465,6 +465,15 @@ pub struct SummonScene {
     /// Defaults to [`RETAIL_CHANNEL_DELTA`]; the world re-stamps it from its
     /// live frame step before each tick.
     pub channel_delta: u16,
+    /// Whether the parts' wait timers drain at retail's own rate - the
+    /// [`Self::channel_delta`] product, which is what `FUN_80021DF4` takes
+    /// off `+0x54` every frame (`0x80021E2C..0x80021E4C`) - rather than at
+    /// `tick`'s `frame_delta`. Set for parts a cast module seats arm by arm
+    /// ([`Self::push_parts`]), whose programs have to outlive the module's
+    /// own countdown-paced arms: PROT 0903's fire tunnel, seated in arm 6,
+    /// is still mid-program when the creature walks in (arm 11), and drained
+    /// at `frame_delta` it would be gone within a few frames.
+    pub retail_wait_drain: bool,
 }
 
 /// `DAT_1F800393 * DAT_1F80037D` at one vsync per frame and the rate byte's
@@ -621,7 +630,32 @@ impl SummonScene {
             origin,
             frame: 0,
             channel_delta: RETAIL_CHANNEL_DELTA,
+            retail_wait_drain: false,
         }
+    }
+
+    /// Seat more parts into a running scene - one `FUN_80021B04(pos, rot,
+    /// record, 0x1000)` call per part, made on a later frame than the scene's
+    /// first. `pos` seeds `+0x14..+0x18` and `rot` the render banks
+    /// `+0x24..+0x28`, as the spawn copies its first two arguments. The
+    /// record bytes may come from another image than the scene's first parts
+    /// (a slot-B module spawning a battle-overlay prototype): each part keeps
+    /// its own buffer.
+    pub fn push_parts(
+        &mut self,
+        parts: &[SummonPart],
+        record_bytes: &[u8],
+        pos: [i16; 3],
+        rot: [i16; 3],
+    ) {
+        self.retail_wait_drain = true;
+        self.parts.extend(parts.iter().filter_map(|p| {
+            let mut part = seed_part(p, record_bytes, pos)?;
+            part.state.render_24 = rot[0];
+            part.state.render_26 = rot[1];
+            part.state.render_28 = rot[2];
+            Some(part)
+        }));
     }
 
     /// Advance every live part one frame through the move VM. `frame_delta` is
@@ -651,7 +685,12 @@ impl SummonScene {
             if part.finished {
                 continue;
             }
-            move_vm::decrement_wait_timer(&mut part.state, frame_delta);
+            let drain = if self.retail_wait_drain {
+                self.channel_delta
+            } else {
+                frame_delta
+            };
+            move_vm::decrement_wait_timer(&mut part.state, drain);
             // The mode-2/6 channel block runs next in retail's part tick,
             // ahead of the move-VM call (`0x80021E78` vs `jal 0x80023070` at
             // `0x80022BA4`); it is what grows a ribbon node's `+0xC8` total.

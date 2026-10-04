@@ -3180,6 +3180,9 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             .get(id)
             .map_or(0, |def| def.size_class)
     }
+    fn clear_module_ctx_278(&mut self) {
+        self.world.casting.module_ctx_278 = 0;
+    }
     fn camera_frame_height(&mut self, height: i16) {
         self.world.battle.camera_frame_height = height;
         self.world

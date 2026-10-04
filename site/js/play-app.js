@@ -2935,7 +2935,24 @@ void main() {
        * at raw battle world coordinates; actors compose the retail 4x world
        * scale (base matrix 0x8007BF10), pre-scaled here because the page's
        * per-draw `scale` only scales the mesh, not its translation. */
-      if (b.backdrop) draws.push({ meshId: b.backdrop, x: 0, y: 0, z: 0, rotY: 0, scale: 1.0 });
+      /* The backdrop pair's own depth cue (`FUN_80050120`'s `+0x78` ramp):
+       * pulled toward black through a summon close-up, off the draw at full
+       * weight (PROT 0903's fire tunnel). Guarded against a cached WASM
+       * without the export. */
+      let backdropCue = null;
+      let backdropHidden = false;
+      if (typeof rt.play_battle_backdrop_cue_json === 'function') {
+        try {
+          const c = JSON.parse(rt.play_battle_backdrop_cue_json());
+          if (c && c.hidden) backdropHidden = true;
+          else if (c && c.far) {
+            backdropCue = { far: c.far, nearZ: c.near_z, farZ: c.far_z, maxIr0: c.max_ir0 };
+          }
+        } catch (e) { /* draw uncued */ }
+      }
+      if (b.backdrop && !backdropHidden) {
+        draws.push({ meshId: b.backdrop, x: 0, y: 0, z: 0, rotY: 0, scale: 1.0, cue: backdropCue });
+      }
       /* The grid rides the stage's own GTE depth cue (`DAT_80078C1C` outdoor
        * table / indoor grey), as a PER-DRAW cue - nothing else in the frame
        * fogs. The engine resolved the far colour + ramp window at battle

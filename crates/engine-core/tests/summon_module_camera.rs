@@ -107,3 +107,80 @@ fn gimard_paces_the_band_and_frames_its_creature() {
     assert!(saw_creature_cut, "arm 4's low cut on the creature landed");
     assert!(world.casting.summon_stager.is_none(), "the stager retired");
 }
+
+/// PROT 0903 seats its records on the arms that make the spawn calls: three
+/// on the creature in arm 3, the camera-relative fire tunnel in arm 6, and
+/// the battle overlay's breath prototype in arm 8 - not the whole record set
+/// on the stager's first tick, where every program had run out long before
+/// the creature's attack.
+#[test]
+fn gimard_seats_its_tunnel_and_breath_on_their_arms() {
+    let Some(dir) = extracted_dir() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
+        return;
+    };
+    let mut world = battle_world(&dir);
+    let mut archive =
+        legaia_prot::archive::Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
+    let entry = archive.entries[898].clone();
+    let mut b898 = Vec::new();
+    archive.read_entry(&entry, &mut b898).expect("read 0898");
+    world.tables.move_power_overlay = Some(std::sync::Arc::from(b898.as_slice()));
+    world.arm_summon_stager(0, 0x81);
+    world.casting.summon_actor_slot = Some(SUMMON_SEAT);
+    world.battle_ctx.action_state = 0x35;
+
+    // On first entering each arm: (part count, any camera-relative part,
+    // any part on the breath's library mesh).
+    let mut at_arm = std::collections::BTreeMap::new();
+    for _ in 0..4000 {
+        let busy = world.summon_stager_tick();
+        world.tick_summon(legaia_engine_core::world::EFFECT_SCENE_GRAPH_STEP);
+        world.clock.display_frames += 1;
+        world.tick_battle_camera();
+        let seen = world
+            .casting
+            .active_summon
+            .as_ref()
+            .map_or((0, false, false), |s| {
+                (
+                    s.parts.len(),
+                    s.parts.iter().any(|p| p.state.field_52 & 0x780 != 0),
+                    s.parts
+                        .iter()
+                        .any(|p| p.model_sel == GIMARD_BREATH_MODEL_SEL),
+                )
+            });
+        at_arm.entry(world.casting.module_phase).or_insert(seen);
+        if !busy {
+            break;
+        }
+    }
+    eprintln!("[ran] (parts, camera-relative, breath) on entering each arm: {at_arm:?}");
+    assert_eq!(
+        at_arm.get(&3).map(|s| s.0),
+        Some(0),
+        "nothing seated before arm 3"
+    );
+    assert_eq!(at_arm.get(&4).map(|s| s.0), Some(3), "arm 3 seats three");
+    assert!(
+        !at_arm.get(&6).is_some_and(|s| s.1),
+        "no camera-relative part before arm 6"
+    );
+    assert!(
+        at_arm.get(&7).is_some_and(|s| s.1),
+        "arm 6 seats the tunnel"
+    );
+    assert!(
+        !at_arm.get(&8).is_some_and(|s| s.2),
+        "no breath before arm 8"
+    );
+    assert!(
+        at_arm.get(&9).is_some_and(|s| s.2),
+        "arm 8 seats the breath"
+    );
+}
+
+/// The library mesh selector of the effect prototype `*(0x801F63A8)` PROT
+/// 0903's arm 8 spawns (`record[+0] = 0x18`).
+const GIMARD_BREATH_MODEL_SEL: i16 = 0x18;

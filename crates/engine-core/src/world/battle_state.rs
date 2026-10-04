@@ -629,6 +629,16 @@ pub struct BattleState {
     /// `World::tick_battle_ambient`; hosts read it through
     /// `World::battle_ambient_base`.
     pub ambient_stored: [u8; 3],
+    /// The backdrop pair's depth-cue weight `+0x78` (`ctx + 0x106C` /
+    /// `+0x1070`, driven in lockstep), `0x1000` = full: ramped by
+    /// `World::tick_battle_ambient` through
+    /// `battle_ground_grid::backdrop_cue_step`; hosts read it through
+    /// `World::battle_backdrop_cue`.
+    pub backdrop_cue: u16,
+    /// Whether the stage is one of `DAT_80078C1C`'s outdoor stages - the
+    /// `0x8007BDA8` byte the backdrop ramp's ceiling reads. The host that
+    /// resolved the stage sets it when it enters battle rendering.
+    pub stage_outdoor: bool,
     /// The top-of-screen message line screen elements `0x59` (Seru absorbed)
     /// and `0x65` (magic level increased) carry, from the raise to the
     /// matching unload - see `world::battle::message_banner`.
@@ -744,6 +754,8 @@ impl BattleState {
             return_mode: SceneMode::Field,
             clip_ribbon: None,
             ambient_stored: legaia_engine_vm::battle_ground_grid::GRID_FAR_BASE_NEUTRAL,
+            backdrop_cue: 0,
+            stage_outdoor: false,
             message_banner: None,
             entry_serial: 0,
         }

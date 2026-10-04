@@ -622,6 +622,8 @@ impl LegaiaRuntime {
         ));
         if let Some(h) = self.scene_host.as_mut() {
             h.world.fog_volume.battle_luma = fog_stage_luma;
+            // The backdrop ramp's ceiling reads the same table byte.
+            h.world.battle.stage_outdoor = outdoor;
         }
         self.battle_render = Some(BattleRender {
             vram,
@@ -885,6 +887,26 @@ impl LegaiaRuntime {
             .as_ref()
             .map(|h| h.world.battle_ambient_base())
             .unwrap_or(legaia_engine_vm::battle_ground_grid::GRID_FAR_BASE_NEUTRAL)
+    }
+
+    /// The backdrop's per-draw depth cue this frame
+    /// (`World::battle_backdrop_cue`, `FUN_80050120`'s `+0x78` ramp on the
+    /// backdrop pair): `null` for an uncued draw, `{"hidden":true}` when the
+    /// ramp has taken the pair off the draw (full weight - PROT 0903's fire
+    /// tunnel), otherwise a flat pull toward black
+    /// `{"far":[0,0,0],"near_z":-1,"far_z":0,"max_ir0":W}` - the same cue
+    /// the native window attaches to its stage draw.
+    pub fn play_battle_backdrop_cue_json(&self) -> String {
+        let Some(host) = self.scene_host.as_ref() else {
+            return "null".to_string();
+        };
+        match host.world.battle_backdrop_cue() {
+            None => r#"{"hidden":true}"#.to_string(),
+            Some(w) if w > 0.0 => {
+                format!(r#"{{"far":[0,0,0],"near_z":-1.0,"far_z":0.0,"max_ir0":{w}}}"#)
+            }
+            Some(_) => "null".to_string(),
+        }
     }
 
     /// Ground-grid depth-cue parameters:

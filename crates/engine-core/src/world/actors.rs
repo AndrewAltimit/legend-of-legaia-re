@@ -796,9 +796,28 @@ impl World {
         // scratch copy from `0x35` on. The band's `1` is what freezes the
         // ambient once the base reaches the floor through `0x33` / `0x34`.
         let ctx_278 = ctx.summon_staging_a | self.casting.module_ctx_278;
+        // The backdrop pair's own ramp runs ahead of the ambient one in the
+        // same pass (`0x80050600..0x80050714`), on the same two bytes.
+        self.battle.backdrop_cue = grid::backdrop_cue_step(
+            self.battle.backdrop_cue,
+            ctx.gauge_rearm_latch,
+            ctx_278,
+            self.battle.stage_outdoor,
+            1,
+        );
         if !grid::ambient_store_skipped(rgb, ctx.gauge_rearm_latch, ctx_278) {
             self.battle.ambient_stored = rgb;
         }
+    }
+
+    /// The backdrop pair's depth-cue weight this frame, `1.0 = 0x1000`, or
+    /// `None` when `FUN_80050120` has taken the pair off the draw (a weight
+    /// of exactly `0x1000` switches `+0x56` to `0`, `0x80050850..0x80050880`).
+    /// The pull is toward black: the records' colour word `+0x74` is `0`.
+    /// Both battle hosts cue their backdrop draw with it.
+    pub fn battle_backdrop_cue(&self) -> Option<f32> {
+        let w = self.battle.backdrop_cue;
+        (w != vm::battle_ground_grid::BACKDROP_CUE_FULL).then(|| f32::from(w) / 4096.0)
     }
 
     /// The battle ambient base the ground grid is coloured from this frame,
@@ -2245,6 +2264,8 @@ impl World {
         self.battle_ctx.ambient_base = vm::battle_ground_grid::AMBIENT_BASE_FLOOR;
         self.battle.ambient_stored =
             vm::battle_ground_grid::ambient_base_rgb(vm::battle_ground_grid::AMBIENT_BASE_FLOOR);
+        // Battle init spawns the backdrop records fresh: `+0x78` starts at 0.
+        self.battle.backdrop_cue = 0;
         self.battle.end = None;
         // Effect pool is reused across scenes - reset to a fresh instance
         // (per-battle the head/free-list rebuilds from scratch). This is

@@ -776,6 +776,109 @@ impl World {
         true
     }
 
+    /// Seat the spawn calls one module arm made this pass, each on its own
+    /// anchor, into the cast's running scene - the per-arm form of
+    /// [`Self::spawn_cast_module_fx`] for a module whose director reports its
+    /// spawns ([`vm::cast_module_camera::ModuleProfile::stages_spawns`]).
+    ///
+    /// A record's program is bounded by the next record start, so each one
+    /// is parsed against the whole record set of its image: the module's own
+    /// recovered records for a [`SpawnRecord::Module`], the effect-prototype
+    /// table's for a [`SpawnRecord::BattleProto`].
+    ///
+    /// REF: FUN_80021B04 (the spawn calls), FUN_80058490 (the `MoveImage`)
+    ///
+    /// [`SpawnRecord::Module`]: vm::cast_module_camera::SpawnRecord::Module
+    /// [`SpawnRecord::BattleProto`]: vm::cast_module_camera::SpawnRecord::BattleProto
+    fn stage_module_arm_spawns(
+        &mut self,
+        prot_entry: u32,
+        spawns: &[vm::cast_module_camera::ModuleSpawn],
+        shot: Option<vm::cast_module_camera::ModuleShot>,
+    ) {
+        use legaia_asset::move_power::{self, BATTLE_OVERLAY_BASE};
+        use vm::cast_module_camera::{SpawnAnchor, SpawnRecord};
+        const LINK_BASE: u32 = legaia_asset::summon_overlay::SUMMON_OVERLAY_LINK_BASE;
+        let creature = self
+            .casting
+            .module_cam
+            .creature
+            .or(self.casting.module_cam.creature_live)
+            .map(|c| ([c.x, c.y, c.z], [0, c.facing as i16, 0]));
+        for spawn in spawns {
+            let (pos, rot) = match spawn.anchor {
+                SpawnAnchor::Creature => match creature {
+                    Some(c) => c,
+                    None => continue,
+                },
+                SpawnAnchor::ShotFocus => match shot {
+                    Some(s) => (s.focus, s.angles),
+                    None => continue,
+                },
+            };
+            let (bytes, parts, off): (std::sync::Arc<[u8]>, Vec<_>, usize) = match spawn.record {
+                SpawnRecord::Module(va) => {
+                    let Some(module) = self
+                        .casting
+                        .effect_pool
+                        .as_ref()
+                        .and_then(|p| p.module(prot_entry))
+                    else {
+                        continue;
+                    };
+                    let Some(off) = va.checked_sub(LINK_BASE).map(|o| o as usize) else {
+                        continue;
+                    };
+                    let mut offs: Vec<usize> = module.parts.iter().map(|p| p.record_off).collect();
+                    offs.push(off);
+                    let parts =
+                        legaia_asset::summon_overlay::parse_records_at(&module.bytes, &offs);
+                    (module.bytes.clone(), parts, off)
+                }
+                SpawnRecord::BattleProto(word_va) => {
+                    let Some(overlay) = self.tables.move_power_overlay.clone() else {
+                        continue;
+                    };
+                    let Some(ptr) = word_va
+                        .checked_sub(BATTLE_OVERLAY_BASE)
+                        .and_then(|o| overlay.get(o as usize..o as usize + 4))
+                        .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                    else {
+                        continue;
+                    };
+                    let Some(off) = ptr.checked_sub(BATTLE_OVERLAY_BASE).map(|o| o as usize) else {
+                        continue;
+                    };
+                    let mut offs: Vec<usize> = move_power::parse_effect_proto_records(&overlay)
+                        .unwrap_or_default()
+                        .iter()
+                        .map(|p| p.record_off)
+                        .collect();
+                    offs.push(off);
+                    let parts = legaia_asset::summon_overlay::parse_records_at(&overlay, &offs);
+                    (overlay, parts, off)
+                }
+            };
+            let picked: Vec<_> = parts.into_iter().filter(|p| p.record_off == off).collect();
+            if picked.is_empty() {
+                continue;
+            }
+            match self.casting.active_summon.as_mut() {
+                Some(scene) => scene.push_parts(&picked, &bytes, pos, rot),
+                None => {
+                    let mut scene = crate::summon::SummonScene::spawn_parts(
+                        &[],
+                        &bytes,
+                        crate::scene::EFFECT_MODEL_LIBRARY_BASE,
+                        pos,
+                    );
+                    scene.push_parts(&picked, &bytes, pos, rot);
+                    self.casting.active_summon = Some(scene);
+                }
+            }
+        }
+    }
+
     /// One stager tick - the engine body behind
     /// `BattleActionHost::summon_stager_tick`. Returns `true` while the
     /// choreography is still running (retail: the stager's non-zero return
@@ -826,6 +929,26 @@ impl World {
             .as_ref()
             .and_then(|r| vm::cast_module_camera::module_profile(r.prot_entry))
             .filter(|p| p.paces_band());
+        // A module whose director reports its spawn calls seats each record
+        // on the pass its arm makes the call, after the arm's own creature
+        // placement above (Gimard's arm 3 spawns on the seat it just set).
+        let stages_spawns = run
+            .as_ref()
+            .and_then(|r| vm::cast_module_camera::module_profile(r.prot_entry))
+            .is_some_and(|p| p.stages_spawns);
+        if let Some(r) = run.as_ref().filter(|_| stages_spawns) {
+            if let Some(m) = r.vram_move {
+                let i = |v: u16| v as i16;
+                self.battle.vram_moves.push(crate::world::ScriptVramMove {
+                    src: (i(m.src.0), i(m.src.1)),
+                    size: (i(m.size.0), i(m.size.1)),
+                    dst: (i(m.dst.0), i(m.dst.1)),
+                });
+            }
+            if !r.spawns.is_empty() {
+                self.stage_module_arm_spawns(r.prot_entry, r.spawns, r.camera_shot);
+            }
+        }
         let directed_hit = profile.and_then(|p| p.hit_arm);
         let module_busy =
             profile.is_some() && run.as_ref().is_some_and(|r| r.tick_ported && r.busy);
@@ -865,7 +988,9 @@ impl World {
                 // into the paged module, whose spawn records are the cast's
                 // particle layer. Seated where the creature is, since the
                 // records carry summon-local offsets.
-                self.spawn_cast_module_fx(st.spell_id, st.spawn);
+                if !stages_spawns {
+                    self.spawn_cast_module_fx(st.spell_id, st.spawn);
+                }
                 st.phase = SummonPhase::Approach;
                 st.frames = 0;
                 true
@@ -1134,6 +1259,11 @@ pub struct CastModuleCodeRun {
     /// A capture-class body's drift this frame
     /// ([`vm::cast_module_camera::capture_camera_director`]).
     pub capture_drift: Option<vm::cast_module_camera::CaptureDrift>,
+    /// The spawn calls the module's arm made this frame, for a director that
+    /// reports them ([`vm::cast_module_camera::ModuleProfile::stages_spawns`]).
+    pub spawns: &'static [vm::cast_module_camera::ModuleSpawn],
+    /// The `MoveImage` the module's arm issued this frame.
+    pub vram_move: Option<vm::cast_module_camera::ModuleVramMove>,
 }
 
 // --- W1-D: the fourteen trampoline arms ---
@@ -1743,6 +1873,8 @@ impl World {
         }
         run.camera_follow = direction.and_then(|d| d.follow);
         run.camera_nudge = direction.and_then(|d| d.nudge);
+        run.spawns = direction.map_or(&[], |d| d.spawns);
+        run.vram_move = direction.and_then(|d| d.vram_move);
         let held = direction.is_some_and(|d| d.hold) || capture_held;
         // A camera-only director owns the phase of a module whose tick body
         // is unported: its pass advances it, and it claims no tick.
@@ -2623,6 +2755,8 @@ impl World {
             camera_follow: None,
             camera_nudge: None,
             capture_drift: None,
+            spawns: &[],
+            vram_move: None,
         })
     }
 

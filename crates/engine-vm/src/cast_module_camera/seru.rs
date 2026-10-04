@@ -17,6 +17,60 @@ pub const GIMARD_WALK_YAW_BASE: i32 = 0x200;
 /// played until the range poll clears.
 pub const GIMARD_WALK_ARM: u8 = 11;
 
+/// PROT 0903 arm 3's three spawns, on the creature it has just seated
+/// (`a0 = creature + 0x34`, `a1 = creature + 0x44`; `jal 0x80021B04` at
+/// `0x801F6E04` / `0x801F6E1C` / `0x801F6E34`).
+pub const GIMARD_SEAT_SPAWNS: [ModuleSpawn; 3] = [
+    ModuleSpawn {
+        record: SpawnRecord::Module(0x801F_7820),
+        anchor: SpawnAnchor::Creature,
+    },
+    ModuleSpawn {
+        record: SpawnRecord::Module(0x801F_7870),
+        anchor: SpawnAnchor::Creature,
+    },
+    ModuleSpawn {
+        record: SpawnRecord::Module(0x801F_78C4),
+        anchor: SpawnAnchor::Creature,
+    },
+];
+
+/// PROT 0903 arm 6's three spawns, on the shot it has just armed
+/// (`a0 = sp+0x30`, `a1 = sp+0x20`; `jal 0x80021B04` at `0x801F716C` /
+/// `0x801F7184` / `0x801F719C`): the camera-relative fire tunnel the
+/// creature's attack plays inside.
+pub const GIMARD_TUNNEL_SPAWNS: [ModuleSpawn; 3] = [
+    ModuleSpawn {
+        record: SpawnRecord::Module(0x801F_7724),
+        anchor: SpawnAnchor::ShotFocus,
+    },
+    ModuleSpawn {
+        record: SpawnRecord::Module(0x801F_7794),
+        anchor: SpawnAnchor::ShotFocus,
+    },
+    ModuleSpawn {
+        record: SpawnRecord::Module(0x801F_7804),
+        anchor: SpawnAnchor::ShotFocus,
+    },
+];
+
+/// PROT 0903 arm 8's spawn: the battle overlay's effect prototype the pointer
+/// word `0x801F63A8` names (`lw a2,0x63A8(0x801F)` at `0x801F72B4`), on the
+/// creature - the breath.
+pub const GIMARD_BREATH_SPAWNS: [ModuleSpawn; 1] = [ModuleSpawn {
+    record: SpawnRecord::BattleProto(0x801F_63A8),
+    anchor: SpawnAnchor::Creature,
+}];
+
+/// PROT 0903 arm 8's `MoveImage`: the 16x1 CLUT at `(0xD0, 0x1DC)` onto
+/// `(0xE0, 0x1DC)` (`0x801F7270..0x801F72A0`), the palette the breath draws
+/// with.
+pub const GIMARD_BREATH_CLUT_MOVE: ModuleVramMove = ModuleVramMove {
+    src: (0xD0, 0x1DC),
+    size: (0x10, 1),
+    dst: (0xE0, 0x1DC),
+};
+
 /// PROT 0903 (Gimard) - the camera and countdown half of the tick
 /// `0x801F69D8`, one call per tick before the phase-chain body
 /// ([`crate::cast_seru_ticks_a::gimard_tick`]) runs.
@@ -29,12 +83,12 @@ pub const GIMARD_WALK_ARM: u8 = 11;
 /// | 0 | - | snap: pitch `0x400`, yaw `-(b + 0x800)`, TR `(0, -0x40, 0x2000)`, focus origin (`0x801F6B7C`) |
 /// | 1 | - | pitch `0x380`, yaw `0x800 - h`, TR `(0, 0x40, 0x400)`, focus the point half a unit past the victim along `h`, over `0x40` frames (`0x801F6C6C`); countdown `= scalar << 6` |
 /// | 2 | drain while positive, hold above `0` | the creature stream load (`FUN_8003EAE4(0, 7)`), taken as ready |
-/// | 3 | - | seats the creature half a unit from the victim toward the caster, facing `h`, `y = 0x200`; countdown `= scalar << 6` |
+/// | 3 | - | seats the creature half a unit from the victim toward the caster, facing `h`, `y = 0x200`; spawns [`GIMARD_SEAT_SPAWNS`] on it; countdown `= scalar << 6` |
 /// | 4 | creature sinks; hold above `scalar << 5` | snap: pitch `-0x1C0`, yaw `0x700 - facing`, TR `(0, 0x380, 0x1E0)`, focus the creature (`0x801F6F18`) |
 /// | 5 | creature sinks; hold above `0` | creature lands (`y = 0`), the spell caption; countdown `+= scalar * 180` |
-/// | 6 | hold above `0` | snap: pitch `0x80`, yaw `0x880 - facing`, TR `(0, 0x400, 0x400)`, focus the creature (`0x801F712C`); countdown `+= scalar * 192` |
+/// | 6 | hold above `0` | snap: pitch `0x80`, yaw `0x880 - facing`, TR `(0, 0x400, 0x400)`, focus the creature (`0x801F712C`); spawns the fire tunnel [`GIMARD_TUNNEL_SPAWNS`]; countdown `+= scalar * 192` |
 /// | 7 | one drain | pitch `0x140`, yaw `0x940 - facing`, TR `(0, 0x340, 0xA00)`, focus the creature, over `0xC0` frames (`0x801F721C`) |
-/// | 8 | hold above `scalar << 7` | - |
+/// | 8 | hold above `scalar << 7` | the CLUT move [`GIMARD_BREATH_CLUT_MOVE`], then the breath [`GIMARD_BREATH_SPAWNS`] on the creature |
 /// | 9 | hold above `scalar * 96` | - |
 /// | 10 | hold above `0` | - |
 ///
@@ -50,7 +104,7 @@ pub const GIMARD_WALK_ARM: u8 = 11;
 /// streamed creature record's load; the engine has it resident, so both read
 /// as ready.
 ///
-/// PORT: FUN_801F69D8 (PROT 0903; the camera arms 0/1/4/6/7, the countdown gates of arms 2/4/5/6/7/8/9/10 and arm 3's creature placement)
+/// PORT: FUN_801F69D8 (PROT 0903; the camera arms 0/1/4/6/7, the countdown gates of arms 2/4/5/6/7/8/9/10, arm 3's creature placement and the spawn / MoveImage calls of arms 3/6/8)
 pub fn gimard_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
     let b = heading(seats.victim, seats.caster);
     let h = (b.wrapping_add(0x800)) & 0xFFF;
@@ -95,7 +149,10 @@ pub fn gimard_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
                 facing: h,
             });
             st.countdown.arm(6);
-            ArmDirection::PASS
+            ArmDirection {
+                spawns: &GIMARD_SEAT_SPAWNS,
+                ..ArmDirection::PASS
+            }
         }
         4 => {
             if let Some(c) = st.creature.as_mut() {
@@ -129,12 +186,15 @@ pub fn gimard_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
                 return ArmDirection::HOLD;
             }
             st.countdown.add(192);
-            ArmDirection::shot(ModuleShot {
-                angles: [0x80, yaw_from(0x880, creature.facing), 0],
-                tr: [0, 0x400, 0x400],
-                focus: focus_on(creature),
-                frames: 1,
-            })
+            ArmDirection {
+                spawns: &GIMARD_TUNNEL_SPAWNS,
+                ..ArmDirection::shot(ModuleShot {
+                    angles: [0x80, yaw_from(0x880, creature.facing), 0],
+                    tr: [0, 0x400, 0x400],
+                    focus: focus_on(creature),
+                    frames: 1,
+                })
+            }
         }
         7 => {
             st.countdown.drain();
@@ -145,7 +205,16 @@ pub fn gimard_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
                 frames: 0xC0,
             })
         }
-        8 => gate(st.countdown.drain_above(SPEED_SCALAR << 7)),
+        8 => {
+            if st.countdown.drain_above(SPEED_SCALAR << 7) {
+                return ArmDirection::HOLD;
+            }
+            ArmDirection {
+                spawns: &GIMARD_BREATH_SPAWNS,
+                vram_move: Some(GIMARD_BREATH_CLUT_MOVE),
+                ..ArmDirection::PASS
+            }
+        }
         9 => gate(st.countdown.drain_above(SPEED_SCALAR * 96)),
         10 => {
             if st.countdown.drain_above(0) {
