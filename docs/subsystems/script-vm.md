@@ -1334,7 +1334,10 @@ The Armed park is the town01 name-entry hand-off (P2[3] `+0x02C6`); see
 
 ##### The name-entry screen (op-`0x49` `49 03 <char>`)
 
-The town01 hand-off's operand names the party slot (`_DAT_8007B450 + 1` -
+Retail's handler table maps sub `03` to the name-entry handler `FUN_801F03F0`
+with no test of how the record was reached, and the port opens the screen
+wherever the sub executes - the opening install and a replay of the record
+(a card load, the comparison corpus's resume) alike. The town01 hand-off's operand names the party slot (`_DAT_8007B450 + 1` -
 `03` sub, `00` = Vahn); the field overlay's SM runs the screen and writes
 the typed name **live** into the character record's name field at `+0x2A7`
 (record base `0x80084708 + n*0x414`). Renderer `FUN_801E6B34`

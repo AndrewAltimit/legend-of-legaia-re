@@ -973,6 +973,16 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         if sub_op == 5 {
             self.world.try_install_tile_board(instr);
         }
+        // Sub-3 is the name-entry hand-off wherever it executes: retail's
+        // handler table maps it to `FUN_801F03F0` unconditionally, with no
+        // test of how the record was reached. The opening install raises
+        // the pending flag up front; a record reached any other way (a card
+        // load replaying `town01` P2[3], the comparison corpus's resume)
+        // raises it here, so `op49_invoke_setup` opens the screen on the
+        // same Idle->arm edge.
+        if sub_op == 3 {
+            self.world.cutscene.prologue_naming_pending = true;
+        }
         // Sub-7 is the casino prize-exchange counter (menu-overlay
         // sub-screen 0x20); the byte after the sub-op selects the prize
         // block (koin1 = 0, balden = 1).
