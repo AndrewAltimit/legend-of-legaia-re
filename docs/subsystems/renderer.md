@@ -1968,7 +1968,12 @@ renderer and the site's WebGL viewers:
   + placed layers combined) and returns a per-draw world offset: the largest
   surface in a cluster stays put, each overlapping smaller/later draw lifts
   `DRAW_NUDGE` per rank toward the surface's visible side - the same "small
-  decal wins" outcome retail's mean-Z bucketing produces. All three hosts
+  decal wins" outcome retail's mean-Z bucketing produces. A lift never
+  points down: a plane visible from below (a fallen log's underside) moves
+  up instead, because a downward lift sank `vell`'s log past the ground
+  heightfield's `GROUND_SINK` and the ground drew through its end face. The
+  web's 24-bit depth buffer showed the hole and native's float buffer hid it,
+  but the geometry was wrong on both. All three hosts
   that assemble field scenes apply the same map: the native play-window in
   its placement/posed-prop resolvers, the browser play page and the
   field-scene viewer in their placement/terrain position exporters (the
