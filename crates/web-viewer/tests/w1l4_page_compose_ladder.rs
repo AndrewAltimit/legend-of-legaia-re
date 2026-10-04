@@ -13,6 +13,7 @@
 //! |---|---|---|
 //! | 1 | Load / Save over two **inserted** cards | `FUN_801E3AF0` directory scan + `FUN_801E3BA0` free-block budget, and `FUN_801E1208`'s class walk through the Save commit's filename pick |
 //! | 2 | the info panel's three modes | `FUN_801E3F74` - preview / free / foreign, told apart by what the panel draws |
+//! | 2b | a Load refused by a pulled card | the shared save-refusal notice (C12) on the top-level menu |
 //! | 3 | Items -> Use -> target select | `FUN_801D6A54` via `target_panel_view_model`, over a party hurt by a card load |
 //! | 4 | the dance page | `FUN_801D4098` clip-driver gate, `FUN_801D3D78` hit sting |
 //! | 5 | the Baka Fighter page | `FUN_801D5ED0` HUD widget quad |
@@ -428,6 +429,78 @@ fn rung2_the_save_panel_wears_all_three_info_modes() {
         "\"Not a Legend of Legaia save.\" is longer than \"Able to save.\" \
          - a panel that drew the same caption for both would tie here \
          (free={free} foreign={foreign})"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Rung 2b - a refused Load raises the shared refusal notice
+// ---------------------------------------------------------------------------
+
+/// The save-commit refusal (C12): a Load the card cannot satisfy drops the
+/// player back on the pause menu **with the notice on screen**, through the
+/// same `save_refusal_panel_draws_for` / `save_refusal_text_draws_for` pair the
+/// native window draws.
+///
+/// The refusal is reached the way a player reaches it on the page: the card
+/// is pulled from its port (the page's eject control) after the grid read it
+/// and before the Load commits, so `load_session_from_card` finds no card and
+/// the flow refuses with `CardReadFailed`. A card whose save the commit could
+/// not parse is not a fixture for this - the directory walk already prices
+/// such a block as empty, so the grid never offers it.
+///
+/// Scored on what reaches the draw list: the refused frame carries the
+/// notice's panel and text over the plain menu, and a pad edge dismisses it
+/// back to exactly the plain menu.
+#[test]
+fn rung2b_a_refused_load_raises_the_refusal_notice() {
+    let Some(mut rt) = loaded_in(SAVE_ALLOWED_SCENE) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    rt.insert_card(0, card_with_save(1, 3, "Vahn", 10, (50, 50)), "A".into())
+        .expect("insert port 1");
+
+    // The plain top-level menu, for reference.
+    rt.play_menu_close();
+    rt.play_menu_open();
+    let (plain_sprites, plain_texts) = menu_draws(&rt);
+
+    open_row(&mut rt, ROW_LOAD);
+    rt.play_menu_input(CROSS); // pick SLOT 1
+    settle_card_read(&mut rt);
+    rt.eject_card(0);
+    rt.play_menu_input(CROSS); // load cell 0 - no card to load from
+    assert!(
+        !rt.play_menu_take_load(),
+        "a Load off an ejected card must not park a save"
+    );
+    assert!(
+        rt.play_menu_is_open() && !rt.play_menu_sub_is_open(),
+        "the refusal lands back on the top-level menu"
+    );
+    let (sprites, texts) = menu_draws(&rt);
+    eprintln!(
+        "[w1l4] refusal: sprites {plain_sprites} -> {sprites}, texts {plain_texts} -> {texts}"
+    );
+    assert!(
+        sprites > plain_sprites,
+        "the notice draws its panel chrome over the menu ({plain_sprites} -> {sprites})"
+    );
+    assert!(
+        texts > plain_texts,
+        "the notice draws its message over the menu ({plain_texts} -> {texts})"
+    );
+
+    // A pad edge dismisses the notice and returns the plain menu.
+    rt.play_menu_input(CROSS);
+    assert_eq!(
+        menu_draws(&rt),
+        (plain_sprites, plain_texts),
+        "a dismissed notice leaves the plain menu"
+    );
+    assert!(
+        !rt.play_menu_sub_is_open(),
+        "the dismissing edge opens nothing"
     );
 }
 
