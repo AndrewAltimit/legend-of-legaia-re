@@ -245,6 +245,16 @@ impl PickerApp {
                     }
                 }
                 self.chosen = Some(info);
+                // Close the picker while the loop still runs. Dropped after
+                // `run_app` returns instead, the X11 destroy request is never
+                // flushed and the frozen picker stays on screen behind the
+                // game for the whole session (seen under Xvfb).
+                self.atlas = None;
+                if let Some(w) = self.win.window.as_deref() {
+                    w.set_visible(false);
+                }
+                self.win.renderer = None;
+                self.win.window = None;
                 evl.exit();
             }
             Err(p) => {
