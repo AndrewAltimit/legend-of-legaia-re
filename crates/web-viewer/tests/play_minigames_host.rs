@@ -423,3 +423,63 @@ fn quiet_field_has_no_minigame_payload() {
     assert!(rt.play_mg_slot_reel_pos().is_empty());
     assert_eq!(rt.play_mg_slot_state_json(), r#"{"live":false}"#);
 }
+
+/// The round-start cameo's eye blit (`FUN_801D65F8`, the duel overlay's
+/// VRAM-to-VRAM helper `BakaDuelAssets::apply_wink` ports) on the play page's
+/// duel surface.
+///
+/// The cameo spawns only when the round setup reads Triangle in the **held**
+/// pad word (`_DAT_8007B850 & 0x10`, `0x801D0190..0x801D01C4`), and from its
+/// first frame its pose names blit row 0 - a `MoveImage` of the stored eye
+/// cell into the live one. Nothing else in a duel asks for that edit, so a
+/// cabinet played with the pad up never reaches it.
+///
+/// Two runs of the same cabinet - Start off the attract card, Cross on the
+/// player select, then a stretch of the first round - differ only in whether
+/// Triangle is held throughout. The seated pair is the same in both, so the
+/// duel VRAM the page uploads can only differ by the blit.
+#[test]
+fn duel_round_setup_with_triangle_held_runs_the_cameo_eye_blit() {
+    const TRIANGLE: u16 = 0x1000;
+    let run = |held: u16| -> Option<(Vec<u8>, String)> {
+        let mut rt = loaded_in("koin1")?;
+        warp_into(&mut rt, SUB_BAKA, "BakaFighter", "baka");
+        for t in 0..360 {
+            // Start begins off the attract card; Cross confirms the select.
+            let edge = match t {
+                10 => START,
+                40 | 80 | 120 => CROSS,
+                _ => 0,
+            };
+            rt.set_pad(held | edge);
+            tick(&mut rt, 1);
+            rt.play_mg_baka_scene_frame();
+        }
+        rt.set_pad(0);
+        Some((rt.play_mg_baka_scene_vram(), rt.play_mg_baka_state_json()))
+    };
+    let Some((plain, plain_state)) = run(0) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let (held, held_state) = run(TRIANGLE).expect("the disc loaded for the first run");
+    assert_eq!(
+        plain.len(),
+        1024 * 512 * 2,
+        "no duel surface: {plain_state}"
+    );
+    assert_eq!(held.len(), 1024 * 512 * 2, "no duel surface: {held_state}");
+    let moved = plain
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .zip(held.as_chunks::<2>().0)
+        .filter(|(a, b)| a != b)
+        .count();
+    assert!(
+        moved > 0,
+        "holding Triangle over the round setup must run the cameo's eye blit\n\
+         plain: {plain_state}\nheld: {held_state}"
+    );
+    eprintln!("[ok] cameo eye blit: {moved} VRAM texels moved");
+}
