@@ -1039,10 +1039,12 @@ in vec2 a_uv;
 in vec4 a_color;
 out vec2 v_uv;
 out vec4 v_color;
+out float v_depth_w;
 void main() {
   gl_Position = u_mvp * vec4(a_position, 1.0);
   v_uv = a_uv;
   v_color = a_color;
+  v_depth_w = gl_Position.w;
 }
 `;
 
@@ -1050,8 +1052,17 @@ const GLOW_FS_SRC = `#version 300 es
 precision highp float;
 in vec2 v_uv;
 in vec4 v_color;
+in float v_depth_w;
 out vec4 o_color;
+/* The glow is depth-tested against the scene, so it must compare in the
+ * scene's depth space: the play page's mesh program writes log2(w)
+ * (LOG_DEPTH_GLSL) on its perspective frames, and a halo that wrote the
+ * rasterised gl_FragCoord.z (~0.99 at field distances) against a log
+ * buffer (~0.4) failed LEQUAL almost everywhere - the halos vanished. */
+uniform int u_log_depth_on;
+${LOG_DEPTH_GLSL}
 void main() {
+  gl_FragDepth = u_log_depth_on != 0 ? logDepthOfW(v_depth_w) : gl_FragCoord.z;
   float f;
   if (v_color.w > 0.5) {
     float x = clamp(1.0 - v_uv.x * v_uv.x, 0.0, 1.0);

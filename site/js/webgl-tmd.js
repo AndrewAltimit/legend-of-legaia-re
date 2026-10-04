@@ -166,6 +166,7 @@ class TmdRenderer {
     this.lightFrame = null;
     this.glowProgram = compileProgram(gl, GLOW_VS_SRC, GLOW_FS_SRC);
     this.locGlowMvp = gl.getUniformLocation(this.glowProgram, 'u_mvp');
+    this.locGlowLogDepth = gl.getUniformLocation(this.glowProgram, 'u_log_depth_on');
     this.glowVao = gl.createVertexArray();
     this.glowBuf = gl.createBuffer();
     gl.bindVertexArray(this.glowVao);
@@ -620,6 +621,8 @@ class TmdRenderer {
     const flipY = new Float32Array([1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
     gl.useProgram(this.glowProgram);
     gl.uniformMatrix4fv(this.locGlowMvp, false, mulMat4(vp, flipY));
+    /* Same depth space as the scene the halos are tested against. */
+    if (this.locGlowLogDepth) gl.uniform1i(this.locGlowLogDepth, this.lastLogDepth ? 1 : 0);
     gl.bindVertexArray(this.glowVao);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.glowBuf);
     gl.bufferData(gl.ARRAY_BUFFER, f.glow, gl.DYNAMIC_DRAW);
