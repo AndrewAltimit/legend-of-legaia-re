@@ -37,7 +37,8 @@ pub struct FogVolumeDraw<'a> {
     pub mesh_origin: [f32; 2],
     pub mesh_cell: f32,
     pub mesh_dim: u32,
-    /// `(mesh_dim + 1)²` vertices of `[x, floor_y, z]`, row-major - uploaded
+    /// `(mesh_dim + 1)²` vertices of `[x, floor_y, z, floor_weight]`,
+    /// row-major - uploaded
     /// only when `ground_gen` changes.
     pub mesh_positions: &'a [f32],
     pub ground_gen: u32,
@@ -96,10 +97,11 @@ struct VOut {
     @location(1) layer: f32,
     @location(2) clip_w: f32,
     @location(3) world: vec3<f32>,
+    @location(4) floor_w: f32,
 };
 
 @vertex
-fn vs_main(@location(0) p: vec3<f32>, @builtin(instance_index) inst: u32) -> VOut {
+fn vs_main(@location(0) p: vec4<f32>, @builtin(instance_index) inst: u32) -> VOut {
     let s = (f32(inst) + 0.5) / u.params.y;
     // Sheets packed toward the floor (quadratic spacing); retail Y-down,
     // so they stack upward from just above it.
@@ -111,6 +113,7 @@ fn vs_main(@location(0) p: vec3<f32>, @builtin(instance_index) inst: u32) -> VOu
     o.layer = t;
     o.clip_w = o.pos.w;
     o.world = vec3<f32>(p.x, y, p.z);
+    o.floor_w = p.w;
     return o;
 }
 
@@ -185,7 +188,7 @@ fn fs_main(in: VOut) -> @location(0) vec4<f32> {
     let nrm = cross(dpdx(in.world), dpdy(in.world));
     let flat_ = abs(nrm.y) / max(length(nrm), 1.0e-6);
     let level = smoothstep(0.55, 0.85, flat_);
-    let a = u.color.a * d * crest * profile * edge * soft * level * u.consts.z / u.params.y;
+    let a = u.color.a * d * crest * profile * edge * soft * level * in.floor_w * u.consts.z / u.params.y;
     let rgb = u.color.rgb * (0.75 + 0.5 * f);
     return vec4<f32>(rgb, clamp(a, 0.0, 1.0));
 }
@@ -330,7 +333,7 @@ impl FogVolumePass {
         let attrs = [wgpu::VertexAttribute {
             offset: 0,
             shader_location: 0,
-            format: wgpu::VertexFormat::Float32x3,
+            format: wgpu::VertexFormat::Float32x4,
         }];
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("fog volume pipeline"),
@@ -339,7 +342,7 @@ impl FogVolumePass {
                 module: &shader,
                 entry_point: Some("vs_main"),
                 buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: 12,
+                    array_stride: 16,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &attrs,
                 }],
@@ -388,7 +391,7 @@ impl FogVolumePass {
         let n = ((mesh_dim + 1) * (mesh_dim + 1)) as usize;
         let vbuf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("fog volume mesh"),
-            size: (n * 12) as u64,
+            size: (n * 16) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -491,7 +494,7 @@ impl Renderer {
             self.fog_volume_active.set(false);
             return;
         };
-        let n_mesh = ((d.mesh_dim + 1) * (d.mesh_dim + 1) * 3) as usize;
+        let n_mesh = ((d.mesh_dim + 1) * (d.mesh_dim + 1) * 4) as usize;
         if d.density.len() != (d.sim_dim * d.sim_dim) as usize || d.mesh_positions.len() != n_mesh {
             self.fog_volume_active.set(false);
             return;

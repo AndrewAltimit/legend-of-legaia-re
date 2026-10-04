@@ -27,13 +27,14 @@
 
   const VS = `#version 300 es
 precision highp float;
-layout(location = 0) in vec3 a_pos;
+layout(location = 0) in vec4 a_pos;
 uniform mat4 u_m;
 uniform vec4 u_params;
 out vec2 v_xz;
 out float v_layer;
 out float v_clip_w;
 out vec3 v_world;
+out float v_floor_w;
 void main() {
   float s = (float(gl_InstanceID) + 0.5) / u_params.y;
   /* Sheets packed toward the floor (quadratic spacing); retail Y-down, so
@@ -45,6 +46,7 @@ void main() {
   v_layer = t;
   v_clip_w = gl_Position.w;
   v_world = vec3(a_pos.x, y, a_pos.z);
+  v_floor_w = a_pos.w;
 }`;
 
   const FS = `#version 300 es
@@ -62,6 +64,7 @@ in vec2 v_xz;
 in float v_layer;
 in float v_clip_w;
 in vec3 v_world;
+in float v_floor_w;
 out vec4 o_color;
 
 float fog_hash(ivec2 i) {
@@ -127,7 +130,7 @@ void main() {
   vec3 nrm = cross(dFdx(v_world), dFdy(v_world));
   float flat_ = abs(nrm.y) / max(length(nrm), 1.0e-6);
   float level = smoothstep(0.55, 0.85, flat_);
-  float a = u_color.a * d * crest * profile * edge * soft * level * u_consts.z / u_params.y;
+  float a = u_color.a * d * crest * profile * edge * soft * level * v_floor_w * u_consts.z / u_params.y;
   vec3 rgb = u_color.rgb * (0.75 + 0.5 * f);
   o_color = vec4(rgb, clamp(a, 0.0, 1.0));
 }`;
@@ -272,7 +275,7 @@ void main() {
         gl.bindBuffer(gl.ARRAY_BUFFER, this.vbuf);
         gl.bufferData(gl.ARRAY_BUFFER, pos, gl.DYNAMIC_DRAW);
         gl.enableVertexAttribArray(0);
-        gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 12, 0);
+        gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 16, 0);
         gl.bindVertexArray(null);
         this.groundGen = h[H.GROUND_GEN];
       }

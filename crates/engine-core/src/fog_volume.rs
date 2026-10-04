@@ -48,6 +48,12 @@ pub const SIM_DIM: usize = 64;
 /// Sheet-mesh quads per side (the mesh has `MESH_DIM + 1` vertices a side).
 pub const MESH_DIM: usize = 48;
 
+/// Floor steps between neighbouring sheet-mesh vertices (world units) over
+/// which the bank fades out: below `LO` a slope or stair is still floor,
+/// past `HI` it is a cliff or wall between two tiers.
+pub const FLOOR_STEP_LO: f32 = 12.0;
+pub const FLOOR_STEP_HI: f32 = 40.0;
+
 /// Movement past this many units in one tick is a seat / warp, not a stride:
 /// the mover's history restarts and it injects no velocity.
 const TELEPORT_UNITS: f32 = 96.0;
@@ -135,7 +141,7 @@ impl FogSpace {
         // read as the thick layer the field shows from above.
         let gain = match self {
             FogSpace::Field => 1.0,
-            FogSpace::Battle => 1.8,
+            FogSpace::Battle => 2.6,
         };
         [c[0] / k, c[1] / k, c[2] * gain, c[3]]
     }
@@ -289,6 +295,11 @@ pub struct FogVolume {
     pub mesh_origin: [i32; 2],
     /// Floor height per sheet-mesh vertex (retail Y-down), row-major.
     pub ground: Vec<f32>,
+    /// Per sheet-mesh vertex, how much bank it may carry (`0..=1`): `0` where
+    /// the floor steps by more than [`FLOOR_STEP_HI`] to a neighbour, so the
+    /// sheets never stand up as fins down a cliff or wall between two floor
+    /// tiers - the bank lies on floors only.
+    pub ground_weight: Vec<f32>,
     /// Bumped whenever [`Self::ground`] changes, so a host re-uploads only
     /// then.
     pub ground_gen: u32,
@@ -329,6 +340,7 @@ impl FogVolume {
             velocity: vec![[0.0; 2]; SIM_DIM * SIM_DIM],
             mesh_origin: [0; 2],
             ground: vec![0.0; (MESH_DIM + 1) * (MESH_DIM + 1)],
+            ground_weight: vec![1.0; (MESH_DIM + 1) * (MESH_DIM + 1)],
             ground_gen: 0,
             ticks: 0,
             drift: [0.0; 2],
@@ -457,6 +469,23 @@ impl FogVolume {
                 let wx = (self.mesh_origin[0] + x as i32) as f32 * mc;
                 let wz = (self.mesh_origin[1] + z as i32) as f32 * mc;
                 self.ground[z * n + x] = floor(wx, wz);
+            }
+        }
+        for z in 0..n {
+            for x in 0..n {
+                let h = self.ground[z * n + x];
+                let mut step = 0.0f32;
+                for dz in -1i32..=1 {
+                    for dx in -1i32..=1 {
+                        let (nx, nz) = (x as i32 + dx, z as i32 + dz);
+                        if nx < 0 || nz < 0 || nx >= n as i32 || nz >= n as i32 {
+                            continue;
+                        }
+                        step = step.max((self.ground[nz as usize * n + nx as usize] - h).abs());
+                    }
+                }
+                let t = ((step - FLOOR_STEP_LO) / (FLOOR_STEP_HI - FLOOR_STEP_LO)).clamp(0.0, 1.0);
+                self.ground_weight[z * n + x] = 1.0 - t * t * (3.0 - 2.0 * t);
             }
         }
         self.ground_gen = self.ground_gen.wrapping_add(1);
@@ -642,9 +671,9 @@ impl FogVolume {
     ///
     /// `light` is the brightness the bank must not outshine - the scene's
     /// measured luminance ([`scene_luminance`], already scaled by any live
-    /// ambient): the style's colour keeps its hue and is dimmed until its
-    /// luma sits at [`FOG_LUMA_OVER_SCENE`] times it, so a night scene gets a
-    /// dim haze rather than glowing snow. A style already darker than that is
+    /// ambient): the style's colour keeps its hue and is dimmed to
+    /// [`luma_scale`]'s ceiling, so a night scene gets a moonlit haze rather
+    /// than glowing snow. A style already darker than that is
     /// left alone; `None` (nothing measured) keeps the authored colour.
     pub fn frame(&self, tint: Option<[f32; 3]>, light: Option<f32>) -> Option<FogVolumeFrame<'_>> {
         if !self.visible() || !self.seated {
@@ -673,13 +702,14 @@ impl FogVolume {
             ],
             mesh_cell: mc,
             ground: &self.ground,
+            ground_weight: &self.ground_weight,
             ground_gen: self.ground_gen,
             color: [
                 style.color[0] * t[0],
                 style.color[1] * t[1],
                 style.color[2] * t[2],
             ],
-            opacity: (style.density * self.space.density_scale()).min(0.95) * self.strength,
+            opacity: (style.density * self.space.density_scale()).min(1.0) * self.strength,
             height: style.height * self.space.height_scale(),
             drift: self.drift,
             ticks: self.ticks,
@@ -687,24 +717,28 @@ impl FogVolume {
     }
 }
 
-/// How bright the bank may be relative to the scene's measured luminance:
-/// a mist catches a little more light than the surfaces it lies on, never
-/// much more.
-pub const FOG_LUMA_OVER_SCENE: f32 = 1.6;
+/// How bright the bank may be relative to the scene's measured luminance
+/// `L`: at most `FOG_LUMA_FLOOR + FOG_LUMA_OVER_SCENE * L`. The floor keeps a
+/// night bank readable as a moonlit haze against a dark stage (a mist reads
+/// by contrast, it does not vanish); the slope keeps it below a lit scene's
+/// brightness.
+pub const FOG_LUMA_FLOOR: f32 = 0.17;
+pub const FOG_LUMA_OVER_SCENE: f32 = 1.8;
 
 /// Rec. 601 luma of a framebuffer-space colour.
 pub fn luma(c: [f32; 3]) -> f32 {
     0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
 }
 
-/// The factor (`<= 1`) that dims `color` to [`FOG_LUMA_OVER_SCENE`] times
-/// `scene_luma`.
+/// The factor (`<= 1`) that dims `color` to the brightness a scene of
+/// luminance `scene_luma` allows ([`FOG_LUMA_FLOOR`],
+/// [`FOG_LUMA_OVER_SCENE`]).
 pub fn luma_scale(color: [f32; 3], scene_luma: f32) -> f32 {
     let l = luma(color);
     if l <= 1.0e-6 {
         return 1.0;
     }
-    ((scene_luma.max(0.0) * FOG_LUMA_OVER_SCENE) / l).min(1.0)
+    ((FOG_LUMA_FLOOR + scene_luma.max(0.0) * FOG_LUMA_OVER_SCENE) / l).min(1.0)
 }
 
 /// The scene's luminance as the player sees it, measured from its meshes:
@@ -822,6 +856,8 @@ pub struct FogVolumeFrame<'a> {
     pub mesh_cell: f32,
     /// `(MESH_DIM + 1)²` floor heights, retail Y-down, row-major.
     pub ground: &'a [f32],
+    /// `(MESH_DIM + 1)²` per-vertex floor weights ([`FogVolume::ground_weight`]).
+    pub ground_weight: &'a [f32],
     pub ground_gen: u32,
     /// Framebuffer-space colour, tint applied.
     pub color: [f32; 3],
@@ -896,17 +932,18 @@ impl FogVolumeFrame<'_> {
         h
     }
 
-    /// The sheet mesh's vertex positions, `[x, floor_y, z]` per vertex in
-    /// row-major order (retail Y-down) - what both hosts upload when
+    /// The sheet mesh's vertices, `[x, floor_y, z, floor_weight]` per vertex
+    /// in row-major order (retail Y-down) - what both hosts upload when
     /// [`Self::ground_gen`] changes.
     pub fn mesh_positions(&self) -> Vec<f32> {
         let n = MESH_DIM + 1;
-        let mut out = Vec::with_capacity(n * n * 3);
+        let mut out = Vec::with_capacity(n * n * 4);
         for z in 0..n {
             for x in 0..n {
                 out.push(self.mesh_origin[0] + x as f32 * self.mesh_cell);
                 out.push(self.ground[z * n + x]);
                 out.push(self.mesh_origin[1] + z as f32 * self.mesh_cell);
+                out.push(self.ground_weight[z * n + x]);
             }
         }
         out
@@ -1106,9 +1143,10 @@ mod tests {
         let mut f = f;
         f.recentre([0.0, 0.0], flat);
         let bright = f.frame(None, Some(0.9)).unwrap().color;
-        let dark = f.frame(None, Some(0.12)).unwrap().color;
+        let dark = f.frame(None, Some(0.05)).unwrap().color;
         assert_eq!(bright, POOL_STYLE.color);
-        assert!(luma(dark) <= 0.12 * FOG_LUMA_OVER_SCENE + 1.0e-5);
+        assert!(luma(dark) <= FOG_LUMA_FLOOR + 0.05 * FOG_LUMA_OVER_SCENE + 1.0e-5);
+        assert!(luma(dark) < luma(bright));
         // Hue kept: the channels scale together.
         let r = dark[0] / POOL_STYLE.color[0];
         assert!((dark[2] / POOL_STYLE.color[2] - r).abs() < 1.0e-5);
@@ -1137,14 +1175,33 @@ mod tests {
     }
 
     #[test]
+    fn a_floor_step_clears_the_bank_off_the_cliff() {
+        let mut f = raised();
+        // A 200-unit cliff along x = 0: upper tier west of it.
+        f.recentre([0.0, 0.0], |x, _| if x < 0.0 { -200.0 } else { 0.0 });
+        let fr = f.frame(None, None).unwrap();
+        let pos = fr.mesh_positions();
+        for v in pos.chunks(4) {
+            let near_cliff = v[0] > -2.0 * fr.mesh_cell && v[0] < 2.0 * fr.mesh_cell;
+            if (v[0] + fr.mesh_cell / 2.0).abs() < fr.mesh_cell || v[0].abs() < 1.0 {
+                assert_eq!(v[3], 0.0, "vertex at x {} stands on the step", v[0]);
+            } else if !near_cliff {
+                assert_eq!(v[3], 1.0, "vertex at x {} is open floor", v[0]);
+            }
+        }
+    }
+
+    #[test]
     fn mesh_follows_the_floor_heights() {
         let mut f = raised();
         f.recentre([1000.0, 2000.0], |x, z| -(x + z) * 0.01);
         let fr = f.frame(None, None).unwrap();
         let pos = fr.mesh_positions();
-        assert_eq!(pos.len(), (MESH_DIM + 1) * (MESH_DIM + 1) * 3);
-        for v in pos.chunks(3) {
+        assert_eq!(pos.len(), (MESH_DIM + 1) * (MESH_DIM + 1) * 4);
+        for v in pos.chunks(4) {
             assert!((v[1] - (-(v[0] + v[2]) * 0.01)).abs() < 1.0e-3);
+            // A gentle slope (under 3 units per quad) is floor throughout.
+            assert_eq!(v[3], 1.0);
         }
         assert_eq!(mesh_indices().len(), MESH_DIM * MESH_DIM * 6);
     }

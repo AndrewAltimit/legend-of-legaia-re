@@ -2513,14 +2513,22 @@ a higher gain: its low, close framing looks through it at a grazing angle.
 
 **Brightness follows the scene.** A mist must not outshine what it lies on, so
 the style's colour keeps its hue but is dimmed until its luma sits at most
-`FOG_LUMA_OVER_SCENE` times the scene's measured luminance
+`FOG_LUMA_FLOOR + FOG_LUMA_OVER_SCENE * L`, `L` the scene's measured luminance
 (`fog_volume::scene_luminance`): every textured triangle's texel at its UV
 centroid, through its CLUT, times its baked colour word over `128`, averaged
 by world area. The field measurement is `SceneHost`'s, once per scene label;
 the battle one is taken by each host at battle entry over the stage shell it
 built (`fog_volume::stage_luminance`, pinned by a `SIM_PAIRS` row) and scaled
 by the live battle ambient, so a summon close-up dims the bank with the stage.
-A night stage gets a dim bluish haze, a daylit one the authored colour. The
+The floor keeps a night bank readable by contrast as a moonlit haze; a daylit
+stage gets the authored colour.
+
+**Floors only.** The sheet mesh follows the walk-ground floor, so where the
+floor steps between two tiers a sheet would stand up as a fin down the cliff.
+Each mesh vertex carries a floor weight that falls to zero when it steps more
+than `FLOOR_STEP_HI` to any neighbour (`FogVolume::ground_weight`), and the
+shaders multiply it in; a sheet left steep anyway fades by its screen-space
+slope. The
 world map, the boot UI, the minigame venues and a VR session draw none.
 
 ### `set_semi_blend` - semi-transparency blend modes

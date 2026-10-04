@@ -58,7 +58,8 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
-    /// The sheet mesh's `[x, floor_y, z]` vertices (retail Y-down), to
+    /// The sheet mesh's `[x, floor_y, z, floor_weight]` vertices (retail
+    /// Y-down), to
     /// re-upload whenever the header's ground generation changes; empty when
     /// there is no bank.
     pub fn play_fog_volume_mesh(&self) -> Vec<f32> {
