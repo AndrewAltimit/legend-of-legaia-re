@@ -164,6 +164,9 @@ pub struct CorpusEntry {
     /// The scenario's `resident_patch` - the patch family whose executable
     /// the state replays, when it was made on a patched disc.
     pub resident_patch: Option<String>,
+    /// The scenario's `ram_injected` - combatant fields its capture probe
+    /// wrote after battle init, which the battle channels do not score.
+    pub ram_injected: Vec<String>,
 }
 
 /// Enumerate every scenario with a library backup on disk, deduplicated by
@@ -187,6 +190,7 @@ pub fn enumerate_corpus(manifest: &ScenarioManifest, library: &Path) -> Vec<Corp
                     path,
                     fingerprint: fp.to_string(),
                     resident_patch: sc.resident_patch.clone(),
+                    ram_injected: sc.ram_injected.clone(),
                 });
             }
         }
@@ -1611,7 +1615,8 @@ fn run_battle(
         None => battle,
     };
     let image = battle_image(opts, entry, retail, battle, &engine, report);
-    let (mut ch, mut det) = crate::retail_compare_battle::compare_battle(retail, battle, &engine);
+    let (mut ch, mut det) =
+        crate::retail_compare_battle::compare_battle(retail, battle, &engine, &entry.ram_injected);
     if let Some(img) = &image {
         ch.insert("image".into(), round3(img.within));
         det.insert(

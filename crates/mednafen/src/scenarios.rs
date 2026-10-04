@@ -118,6 +118,12 @@ pub struct Scenario {
     /// anything the patch writes is not retail behaviour.
     #[serde(default)]
     pub resident_patch: Option<String>,
+    /// Battle combatant fields the capture probe wrote **after** battle init,
+    /// named the way the retail-compare corpus names them (`p0.mp_max`,
+    /// `m1.hp`). Such a field holds the probe's value, not anything the game
+    /// computed, so the corpus does not score it.
+    #[serde(default)]
+    pub ram_injected: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

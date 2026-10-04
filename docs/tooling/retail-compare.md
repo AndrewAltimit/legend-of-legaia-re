@@ -400,6 +400,15 @@ The three `shiny_refactor_gimard_*` states read `enemy_hp` `0.5` for exactly
 that reason: their monster's maxima are the shiny-Seru boost's `x135/100`
 (`133` over the disc's `99`, `27` over `20`).
 
+A state whose capture probe wrote into a combatant **after** battle init names
+those fields in the manifest's `ram_injected` (`p0.mp_max`), and the battle
+channels leave them unscored, with both values in the detail. Battle init
+copies each party record's maxima into its actor once (`FUN_80053CB8`), so a
+record poked later carries the probe's value while the actor keeps the copy:
+`evolved_0x90_midcast` / `_0x91_midcast` (`autorun_evolved_cast.lua`) grant
+`999` MP into Vahn's record (`+0x108` / `+0x10A` / `+0x11E`) over an actor whose
+`+0x152` still reads `27`, and the engine, seeded from the record, reads `999`.
+
 `scene`, `mode` (engine `Battle`), `camera`, `flags`, `inventory` and `image`
 keep their field meaning. HP / MP current values are seeded, so their misses
 are what the settle window changed; the max values are the real check

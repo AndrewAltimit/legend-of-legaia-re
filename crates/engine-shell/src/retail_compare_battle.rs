@@ -2318,9 +2318,17 @@ fn run_drive(
 }
 
 /// Fraction of equal `(hp, hp_max, mp, mp_max)` fields over the retail
-/// combatants; `mp_max` is left out where the engine has none (`0`).
-fn combatant_score(retail: &[Option<Combatant>], engine: &[Combatant], tag: &str) -> (f64, String) {
+/// combatants; `mp_max` is left out where the engine has none (`0`), and so
+/// is any field the manifest names as written by the capture probe after
+/// battle init (`injected`, e.g. `p0.mp_max`).
+fn combatant_score(
+    retail: &[Option<Combatant>],
+    engine: &[Combatant],
+    tag: &str,
+    injected: &[String],
+) -> (f64, String) {
     let mut total = 0usize;
+    let mut skipped = Vec::new();
     let mut equal = 0usize;
     let mut diffs = Vec::new();
     for (i, r) in retail.iter().enumerate() {
@@ -2334,6 +2342,11 @@ fn combatant_score(retail: &[Option<Combatant>], engine: &[Combatant], tag: &str
         ];
         for (name, want, got) in fields {
             if name == "mp_max" && got == Some(0) {
+                continue;
+            }
+            let key = format!("{tag}{i}.{name}");
+            if injected.contains(&key) {
+                skipped.push(format!("{key} retail={want} engine={got:?}"));
                 continue;
             }
             total += 1;
@@ -2354,6 +2367,12 @@ fn combatant_score(retail: &[Option<Combatant>], engine: &[Combatant], tag: &str
         d.push_str("; ");
         d.push_str(&diffs.iter().take(4).cloned().collect::<Vec<_>>().join(", "));
     }
+    if !skipped.is_empty() {
+        d.push_str(&format!(
+            "; not scored, written by the capture probe: {}",
+            skipped.join(", ")
+        ));
+    }
     (score, d)
 }
 
@@ -2362,6 +2381,7 @@ pub fn compare_battle(
     retail: &RetailObs,
     battle: &RetailBattle,
     engine: &EngineBattle,
+    injected: &[String],
 ) -> (BTreeMap<String, f64>, BTreeMap<String, String>) {
     use crate::retail_compare::{camera_score, flags_score, inventory_score, round3};
     let mut ch = BTreeMap::new();
@@ -2400,9 +2420,9 @@ pub fn compare_battle(
             battle.monster_ids, engine.monster_ids, engine.formation_source
         ),
     );
-    let (s, d) = combatant_score(&battle.monsters, &engine.monsters, "m");
+    let (s, d) = combatant_score(&battle.monsters, &engine.monsters, "m", injected);
     put("enemy_hp", s, d);
-    let (s, mut d) = combatant_score(&battle.party, &engine.party, "p");
+    let (s, mut d) = combatant_score(&battle.party, &engine.party, "p", injected);
     if battle.party.len() != engine.party.len() {
         d.push_str(&format!(
             "; retail seats {:?} vs engine party of {}",
@@ -2828,9 +2848,9 @@ mod tests {
             mp_max: 9,
         };
         let e = Combatant { mp_max: 0, ..r };
-        let (s, _) = combatant_score(&[Some(r)], &[e], "m");
+        let (s, _) = combatant_score(&[Some(r)], &[e], "m", &[]);
         assert_eq!(s, 1.0);
-        let (s, d) = combatant_score(&[Some(r)], &[], "p");
+        let (s, d) = combatant_score(&[Some(r)], &[], "p", &[]);
         assert_eq!(s, 0.0, "{d}");
     }
 }
