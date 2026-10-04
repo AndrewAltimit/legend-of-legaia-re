@@ -345,6 +345,21 @@ tick for tick, and three things used to put it on another one:
   bars it seeded reach the child on the same first battle tick
   (`LEGAIA_BATTLE_BARS`).
 
+**Where the combatants stand.** Retail walks nobody home after an action
+([battle-action.md](../subsystems/battle-action.md#where-an-action-leaves-its-combatants)),
+so a capture of a running fight stands its combatants wherever earlier rounds
+left them: `zora_glare_petrify_pre`'s Zora casts from `(649, -47)`, beside the
+party, and the Delilas duels' monsters stand at the party's row. Every framing
+case aims at those positions - case 6 on a caster, case 0 on a member, case
+9's formation box - so a seed on the authored seats framed the cast at the
+far end of the stage. The first battle tick therefore also places every
+combatant on its captured live pair `+0x34` / `+0x38`
+(`RetailBattle::seeded_ground`, carried as the `:x:z` tail of each
+`LEGAIA_BATTLE_BARS` entry), on every plan but an opening capture, which is
+sampled before any round ran. The acting seat is placed too, even on a
+captured Attack whose pair is a point on the walk the drive replays: the walk
+ends at its target whatever it starts from.
+
 A settled field also carries its script state into the fight. In `nilboa`
 the settle leaves the Nivora duel's dialogue parked on a text page when the
 encounter is forced. Retail cannot show that box over a fight: its pager

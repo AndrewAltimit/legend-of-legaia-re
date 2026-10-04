@@ -539,6 +539,33 @@ impl RetailBattle {
         out
     }
 
+    /// The ground pairs the seed puts on its first battle tick, by engine
+    /// slot ([`BarSeed::ground`]).
+    ///
+    /// Retail walks nobody home after an action
+    /// (`docs/subsystems/battle-action.md`, "Where an action leaves its
+    /// combatants"), so a capture of a running fight stands its combatants
+    /// wherever earlier rounds left them - a monster that struck earlier
+    /// casts from beside the party - and every case that frames an actor
+    /// (case 6 on a caster, case 0 on a member, case 9's formation box)
+    /// frames that ground. A fresh entry's authored seats frame it elsewhere.
+    /// The replayed cast carries the same pairs at its dispatch
+    /// ([`Self::inflight_cast`]).
+    ///
+    /// Not placed on an opening capture, which is sampled at the flip before
+    /// any round ran. The acting seat is placed too, even on a captured
+    /// Attack whose `+0x34` / `+0x38` is a point on the walk the drive is
+    /// about to replay: the walk ends at the target whatever it starts from,
+    /// and leaving that seat home measured worse over the corpus.
+    pub fn seeded_ground(
+        &self,
+    ) -> [Option<[i16; 2]>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS] {
+        if self.seed_plan() == SeedPlan::Opening {
+            return [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+        }
+        self.engine_ground()
+    }
+
     /// The phase the capture's **displayed frame** sits at: [`Self::phase_gate`]
     /// with the flash's age taken back by [`Self::display_lag`]. The RAM
     /// channels are sampled on the RAM's phase; the image is the frame the
@@ -926,12 +953,14 @@ fn matching_row(world: &legaia_engine_core::world::World, ids: &[u8]) -> Option<
 }
 
 /// One combatant's mid-fight bars as the capture read them: engine actor
-/// slot, HP, MP.
+/// slot, HP, MP - and, where the seed places it, the live ground pair
+/// `+0x34` / `+0x38` ([`RetailBattle::seeded_ground`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BarSeed {
     pub slot: u8,
     pub hp: u16,
     pub mp: u16,
+    pub ground: Option<[i16; 2]>,
 }
 
 /// Seed the capture's HP / MP onto the engine actors (the engine enters a
@@ -950,14 +979,24 @@ pub fn apply_bar_seeds(world: &mut legaia_engine_core::world::World, seeds: &[Ba
             a.battle.hp_display = Some(a.battle.hp);
         }
         a.battle.mp = s.mp;
+        if let Some([x, z]) = s.ground {
+            a.move_state.world_x = x;
+            a.move_state.world_z = z;
+            if a.battle.seat.is_some() {
+                a.battle.seat = Some((x, z));
+            }
+        }
     }
 }
 
-/// `slot:hp:mp,...` for `LEGAIA_BATTLE_BARS`.
+/// `slot:hp:mp[:x:z],...` for `LEGAIA_BATTLE_BARS`.
 pub fn bar_seeds_to_env(seeds: &[BarSeed]) -> String {
     seeds
         .iter()
-        .map(|s| format!("{}:{}:{}", s.slot, s.hp, s.mp))
+        .map(|s| match s.ground {
+            Some([x, z]) => format!("{}:{}:{}:{x}:{z}", s.slot, s.hp, s.mp),
+            None => format!("{}:{}:{}", s.slot, s.hp, s.mp),
+        })
         .collect::<Vec<_>>()
         .join(",")
 }
@@ -967,10 +1006,18 @@ pub fn bar_seeds_from_env(v: &str) -> Vec<BarSeed> {
     v.split(',')
         .filter_map(|e| {
             let mut it = e.trim().split(':');
+            let slot = it.next()?.parse().ok()?;
+            let hp = it.next()?.parse().ok()?;
+            let mp = it.next()?.parse().ok()?;
+            let ground = match (it.next(), it.next()) {
+                (Some(x), Some(z)) => Some([x.parse().ok()?, z.parse().ok()?]),
+                _ => None,
+            };
             Some(BarSeed {
-                slot: it.next()?.parse().ok()?,
-                hp: it.next()?.parse().ok()?,
-                mp: it.next()?.parse().ok()?,
+                slot,
+                hp,
+                mp,
+                ground,
             })
         })
         .collect()
@@ -1138,6 +1185,7 @@ pub fn run_engine_battle(
     } else {
         Vec::new()
     };
+    let ground = battle.seeded_ground();
     let hp_seed: Vec<BarSeed> = {
         let world = &session.host.world;
         let pc = world.party.party_count.clamp(1, 3) as usize;
@@ -1157,6 +1205,7 @@ pub fn run_engine_battle(
                     slot: u8::try_from(slot).ok()?,
                     hp,
                     mp: c.mp,
+                    ground: ground.get(slot).copied().flatten(),
                 })
             })
             .collect()
@@ -2678,11 +2727,13 @@ mod tests {
                 slot: 0,
                 hp: 412,
                 mp: 37,
+                ground: None,
             },
             BarSeed {
                 slot: 4,
                 hp: 1,
                 mp: 0,
+                ground: Some([-4, -707]),
             },
         ];
         assert_eq!(bar_seeds_from_env(&bar_seeds_to_env(&seeds)), seeds);
