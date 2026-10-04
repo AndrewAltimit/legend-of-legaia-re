@@ -934,14 +934,14 @@ vec3 apply_distance_fog(vec3 lit) {
 }
 
 void main() {
-  float depth = u_log_depth_on != 0 ? logDepthOfW(v_depth_w) : gl_FragCoord.z;
+  float far_bucket_depth = u_log_depth_on != 0 ? logDepthOfW(v_depth_w) : gl_FragCoord.z;
   /* A sloped far-bucket field ground cell draws under everything, as
    * retail's far bucket does: its depth goes into the thin slice in front of
    * the clear value, keeping its own per-pixel order inside the slice
    * (FIELD_FAR_BUCKET_DEPTH_SCALE in engine-render - same scale, mirrored for
    * this page's forward depth). */
-  if (v_far_bucket > 0.5) depth = 1.0 - (1.0 - depth) * 0.001;
-  gl_FragDepth = depth;
+  if (v_far_bucket > 0.5) far_bucket_depth = 1.0 - (1.0 - far_bucket_depth) * 0.001;
+  gl_FragDepth = far_bucket_depth;
   /* Facet normal for the dynamic light, taken before any discard so the
    * derivatives sit in uniform control flow. Its sign follows the
    * framebuffer's Y direction, which the light's abs() makes irrelevant. */
