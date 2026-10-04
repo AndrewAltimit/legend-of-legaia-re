@@ -483,3 +483,60 @@ fn duel_round_setup_with_triangle_held_runs_the_cameo_eye_blit() {
     );
     eprintln!("[ok] cameo eye blit: {moved} VRAM texels moved");
 }
+
+/// A closed chain on the play page's dance run: the human's sequence-clear
+/// banner, which the rules engine spawns as three sprite parts
+/// (`good_banner_spawn`, `FUN_801D40DC`, into `spawn_sprite_part`,
+/// `FUN_801D3FD0`).
+///
+/// Nothing but a **matched** note reaches it: a press on the chart's symbol
+/// inside the beat window, with the human's lane short enough that one match
+/// closes the chain (a fresh run's gauge puts it in lane 0, where it does).
+/// A blind button stream mostly misses, which is why the door-warp test
+/// above never scores. So this one reads the run's own judged symbol and
+/// presses it on the frame the beat clock wraps, the way a player keeps time
+/// with the music - Square for symbol 1, Circle for symbol 2 (the judge's
+/// `0x80` / `0x20` bits) - and requires the score to move. On lane 0 only a
+/// closed chain scores; a bare hit banks nothing.
+#[test]
+fn dance_on_beat_presses_close_a_chain_and_spawn_its_banner() {
+    const SQUARE: u16 = 0x8000;
+    const CIRCLE: u16 = 0x2000;
+    let Some(mut rt) = loaded_in("koin1") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    warp_into(&mut rt, SUB_DANCE, "Dance", "dance");
+    let state = |rt: &LegaiaRuntime| -> serde_json::Value {
+        serde_json::from_str(&rt.play_mg_dance_state_json()).expect("state json")
+    };
+    let mut prev_phase = u64::MAX;
+    let mut scored = None;
+    for _ in 0..3000 {
+        let st = state(&rt);
+        if st["score"].as_u64().unwrap_or(0) > 0 {
+            scored = Some(st);
+            break;
+        }
+        let phase = st["phase"].as_u64().unwrap_or(u64::MAX);
+        // The beat clock wrapped since the last frame: the next judge lands
+        // at the head of the window.
+        let wrapped = phase < prev_phase;
+        prev_phase = phase;
+        let button = match st["judged"].as_u64() {
+            Some(1) if wrapped => SQUARE,
+            Some(2) if wrapped => CIRCLE,
+            _ => 0,
+        };
+        rt.set_pad(button);
+        tick(&mut rt, 1);
+        rt.set_pad(0);
+    }
+    let st = scored.unwrap_or_else(|| {
+        panic!(
+            "on-beat presses of the judged symbol never closed a chain: {}",
+            state(&rt)
+        )
+    });
+    eprintln!("[ok] dance chain closed: {st}");
+}
