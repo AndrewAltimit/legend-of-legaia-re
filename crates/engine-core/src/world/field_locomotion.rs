@@ -260,6 +260,12 @@ pub struct FieldLocomotion {
     /// pokes onto the player without a host-owned clip player. Empty when the
     /// scene carries no bundle; `0` for a record with no frames.
     pub scene_clip_ticks: Vec<u32>,
+    /// `(frame count, blend gate, step divisor)` of every record of the same
+    /// bundle - header `b`, `a` high-byte bit 0, `flag` low byte - indexed
+    /// like [`Self::scene_clip_ticks`]: what the world binds an NPC's clip
+    /// cursor from when a script pokes a scene-bank clip onto it
+    /// (`World::bind_npc_scene_clip`).
+    pub scene_clip_meta: Vec<(u16, bool, u8)>,
     /// The clip base `_DAT_8007BDD8`: the 1-based slot inside the leader's
     /// seven-record locomotion bank the settle tail strides into the player's
     /// clip id. Written by the pad step (idle `2` / walk `1` / run `3`, or
@@ -331,6 +337,7 @@ impl FieldLocomotion {
             eased_mirror_y: None,
             player_move_cues: Vec::new(),
             scene_clip_ticks: Vec::new(),
+            scene_clip_meta: Vec::new(),
             clip_base: legaia_engine_vm::field_player_clip::BASE_IDLE,
             player_clip: legaia_engine_vm::field_player_clip::BASE_IDLE as i16,
             player_party_bank: true,

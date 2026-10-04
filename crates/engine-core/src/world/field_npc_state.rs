@@ -220,6 +220,13 @@ pub struct FieldNpcState {
     /// poses that way instead of looping. Bound by
     /// [`crate::world::World::bind_npc_clip_cursor`].
     pub clip_cursors: std::collections::BTreeMap<u8, crate::field_env::PropAnim>,
+    /// Slots whose [`Self::clip_cursors`] entry the world bound itself, from
+    /// the scene bundle's record header at the poke
+    /// ([`crate::world::World::bind_npc_scene_clip`]): their cursor keeps the
+    /// record's gate and divisor and takes its rate from the actor's live
+    /// `+0x6A` each tick, as retail's clip tick does. A host's bind (whose
+    /// step is already folded at the template rate) drops the slot.
+    pub clip_rate_live: std::collections::BTreeSet<u8>,
     /// The bone count each animated NPC's clip was first bound with, keyed
     /// by placement slot - the count the hosts cut its mesh to. A re-target
     /// to a clip of another count is refused
@@ -264,6 +271,7 @@ impl FieldNpcState {
             morph_dirty: std::collections::BTreeSet::new(),
             clip_current: std::collections::HashMap::new(),
             clip_cursors: std::collections::BTreeMap::new(),
+            clip_rate_live: std::collections::BTreeSet::new(),
             clip_bones: std::collections::HashMap::new(),
             glide_y: std::collections::HashMap::new(),
             cull_view: None,

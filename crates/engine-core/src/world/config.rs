@@ -678,6 +678,14 @@ pub(crate) const CHANNEL_WAIT_PARK_TIMEOUT: u32 = 30;
 /// the op target so the choreography stays coherent.
 pub(crate) const WALK_PARK_TIMEOUT: u32 = 2400;
 
+/// Spin bound for a cutscene record waiting on an NPC's clip end latch
+/// (`AD <id> 08`, [`crate::cutscene_timeline::CutsceneTimeline::npc_clip_spin_frames`]).
+/// A looping clip latches once per wrap and a clamped one on its last frame,
+/// so a live latch lands within one clip length (the scene banks' longest
+/// records run a few hundred frames); only a held clip never latches, and
+/// the record then steps past by width.
+pub const NPC_CLIP_SPIN_TIMEOUT: u32 = 600;
+
 /// Move `cur` toward `target` by at most `max_delta`, snapping exactly
 /// onto `target` when within range. Used by the tile-board interpolator.
 pub(crate) fn step_toward(cur: i32, target: i32, max_delta: i32) -> i32 {

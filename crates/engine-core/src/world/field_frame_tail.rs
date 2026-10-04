@@ -285,6 +285,64 @@ impl World {
             cursor.flags = flags;
         }
         self.npcs.clip_cursors.insert(slot, cursor);
+        self.npcs.clip_rate_live.remove(&slot);
+    }
+
+    /// Bind NPC `slot`'s world-owned clip cursor to scene-bank clip `anim_id`
+    /// at the moment a script pokes it (op `0x22`, `A2 <id> <clip>` or the
+    /// actor's own `22 <clip>`), from the scene bundle's own record metadata.
+    ///
+    /// Retail binds inside the poke: `FUN_80024E08` writes `+0x5C` and the
+    /// actor's next clip tick re-points `+0x4C` and zeroes `+0x68`, so a
+    /// record that pokes a clip and then spins on its end latch
+    /// (`AC <id> 08` / `AD <id> 08`) waits the clip's own length whichever
+    /// host is drawing. The hosts' own bind
+    /// ([`Self::bind_npc_clip_cursor`], from the clip player they build)
+    /// lands on the same id and frame count, and so is a no-op after this one.
+    ///
+    /// The cursor keeps the record's gate and divisor and steps at the
+    /// actor's own rate `rate` (`+0x6A`, which op `4C 41` rewrites - the
+    /// template's `8` unless a script slowed it), re-read each tick by
+    /// [`Self::tick_npc_clips`]. A party-bank actor (`party_bank`) is left to
+    /// the host: its clip lengths live in the locomotion bundle, which the
+    /// world does not hold.
+    ///
+    /// PORT: FUN_800204F8 (binder half, at the poke)
+    pub fn bind_npc_scene_clip(
+        &mut self,
+        slot: u8,
+        anim_id: u8,
+        party_bank: bool,
+        flags: u16,
+        rate: i16,
+    ) {
+        if party_bank || anim_id == 0 {
+            return;
+        }
+        let Some(&(frames, gated, div)) = self
+            .locomotion
+            .scene_clip_meta
+            .get(usize::from(anim_id) - 1)
+        else {
+            return;
+        };
+        if frames == 0 {
+            return;
+        }
+        if let Some(c) = self.npcs.clip_cursors.get(&slot)
+            && c.anim_id == anim_id
+        {
+            return;
+        }
+        let mut cursor = PropAnim::cross_context(anim_id, frames);
+        cursor.scaled_step = gated;
+        cursor.step_div = div;
+        if rate > 0 {
+            cursor.rate = rate;
+        }
+        cursor.flags = flags;
+        self.npcs.clip_cursors.insert(slot, cursor);
+        self.npcs.clip_rate_live.insert(slot);
     }
 
     /// Whether NPC `slot`'s actor carries the party-bank bit `0x01000000` -
@@ -328,6 +386,17 @@ impl World {
             .map(|c| c.ctx.local_flags)
     }
 
+    /// The clip rate `+0x6A` of NPC `slot`'s spawned context, when a
+    /// placement channel carries it and the word is live (non-zero).
+    fn npc_channel_clip_rate(&self, slot: u8) -> Option<i16> {
+        self.field_vm
+            .channels
+            .iter()
+            .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
+            .map(|c| c.ctx.field_6a)
+            .filter(|&r| r > 0)
+    }
+
     /// One field frame of the per-actor anim tick over every bound NPC clip
     /// cursor: the slot's channel `+0x62` goes in, the tick consumes a restart
     /// request, steps unless held, wraps or clamps, latches the end bit, and
@@ -343,11 +412,20 @@ impl World {
         let slots: Vec<u8> = self.npcs.clip_cursors.keys().copied().collect();
         for slot in slots {
             let flags = self.npc_channel_local_flags(slot);
+            let live_rate = self
+                .npcs
+                .clip_rate_live
+                .contains(&slot)
+                .then(|| self.npc_channel_clip_rate(slot))
+                .flatten();
             let Some(c) = self.npcs.clip_cursors.get_mut(&slot) else {
                 continue;
             };
             if let Some(f) = flags {
                 c.flags = f;
+            }
+            if let Some(rate) = live_rate {
+                c.rate = rate;
             }
             c.tick();
             let out = c.flags;

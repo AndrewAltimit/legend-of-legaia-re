@@ -167,22 +167,29 @@ impl SceneHost {
         // The scene ANM bundle's per-record end-latch lengths: how long any
         // scene-bank clip a cutscene record pokes onto the player plays, at
         // the record's own step (a gated record's scaled step included).
-        self.world.locomotion.scene_clip_ticks = crate::npc_catalog::scene_anm_bundle(&scene)
+        let scene_anm = crate::npc_catalog::scene_anm_bundle(&scene);
+        self.world.locomotion.scene_clip_meta = scene_anm
+            .as_ref()
             .map(|b| {
                 (0..b.record_count as usize)
                     .map(|i| {
-                        b.record(i).map_or(0, |r| {
-                            let step = crate::field_anim::clip_step(
-                                crate::field_anim::CLIP_RATE,
-                                r.blends(),
-                                (r.flag & 0xFF) as u8,
-                            );
-                            crate::field_anim::clip_end_ticks(r.frame_count, step)
+                        b.record(i).map_or((0, false, 0), |r| {
+                            (r.frame_count, r.blends(), (r.flag & 0xFF) as u8)
                         })
                     })
                     .collect()
             })
             .unwrap_or_default();
+        self.world.locomotion.scene_clip_ticks = self
+            .world
+            .locomotion
+            .scene_clip_meta
+            .iter()
+            .map(|&(frames, gated, div)| {
+                let step = crate::field_anim::clip_step(crate::field_anim::CLIP_RATE, gated, div);
+                crate::field_anim::clip_end_ticks(frames, step)
+            })
+            .collect();
         self.scene = Some(scene);
         self.assets = Some(assets);
         self.refresh_scene_destinations();

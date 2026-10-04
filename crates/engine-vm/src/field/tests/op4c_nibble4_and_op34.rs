@@ -485,7 +485,7 @@ fn op_4c_n4_sub_5_immediate_writes_actor_block() {
 }
 
 #[test]
-fn op_4c_n4_sub_5_ramp_yields_at_pc() {
+fn op_4c_n4_sub_5_ramp_advances_past_the_op() {
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     // ticks = 30 → ramp path
@@ -493,7 +493,7 @@ fn op_4c_n4_sub_5_ramp_yields_at_pc() {
         0x4C, 0x45, 0x40, 0x10, 0x00, 0x20, 0x00, 0x30, 0x00, 0x1E, 0x00,
     ];
     let r = step(&mut host, &mut ctx, &bytes, 0);
-    assert_eq!(r, StepResult::Yield { resume_pc: 11 });
+    assert_eq!(r, StepResult::Advance { next_pc: 11 });
     assert_eq!(
         host.n4_sub5_ramp,
         vec![(0x40, 0x0010, 0x0020, 0x0030, 30u16)]

@@ -291,11 +291,18 @@ pub(super) fn op_4c_n4<H: FieldHost>(
                     }
                 } else {
                     host.op4c_n4_sub5_ramp(ctx, b1, w94, w96, w98, sub5_ticks);
-                    // Ramp path falls through STATE_RESUME - yield
-                    // and let the host's resume layer signal when
-                    // to advance past the 11-byte instruction.
-                    StepResult::Yield {
-                        resume_pc: pc + header_size + 10,
+                    // The ramp is scheduled, not waited on: the arm adds
+                    // its extra 5 bytes (`addiu s8,s8,0x5` at 0x801E12A4)
+                    // over the nibble-4 head's 6, schedules one
+                    // `FUN_8003C5F0` ramp per changed field, and leaves
+                    // through the common exit 0x801E3624 or the shared
+                    // scheduler exit 0x801E2054 - the sub-9 shape. A
+                    // per-vsync capture of `opdeene` sees the record run a
+                    // block of eight `CC <id> 45 .. 28 00` ramps inside one
+                    // frame.
+                    // REF: FUN_801DE840 (0x801E12A4..0x801E138C)
+                    StepResult::Advance {
+                        next_pc: pc + header_size + 10,
                     }
                 }
             }

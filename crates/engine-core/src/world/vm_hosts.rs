@@ -2423,7 +2423,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
         })
     }
 
-    fn exec_move(&mut self, _ctx: &mut FieldCtx, move_id: u8) {
+    fn exec_move(&mut self, ctx: &mut FieldCtx, move_id: u8) {
         // A cross-context ExecMove against an NPC channel (`A2 <id>
         // <move_id>`): retail is `FUN_80024E08(actor, id)` - the id lands in
         // the actor's anim slot and the anim-clock (`FUN_800204F8`) plays the
@@ -2438,6 +2438,14 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                 .npcs
                 .anim_cues
                 .insert(slot, (1, move_id, Vec::new()));
+            let party_bank = ctx.flags & vm::field_player_clip::PARTY_BANK_FLAG != 0;
+            self.world.bind_npc_scene_clip(
+                slot,
+                move_id,
+                party_bank,
+                ctx.local_flags,
+                ctx.field_6a,
+            );
         }
         self.world
             .pending_field_events

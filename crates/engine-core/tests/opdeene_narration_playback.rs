@@ -15,8 +15,10 @@
 //! 3. the roller crawls on its own timer; the timeline reaches the second
 //!    block (8 pages), opens it the same non-blocking way (every crawl is a
 //!    child-context spawn - the record's own tail choreography plays under
-//!    the scroll), and the terminal SceneChange HOLDS while the pages still
-//!    scroll, so the scene stays `opdeene` until the roller drains;
+//!    the scroll); the record's own tail keeps the scene at `opdeene` for
+//!    most of the roller's life, and its terminal SceneChange does not wait
+//!    for the last pages (a retail capture flips the scene label with the
+//!    roller three pages short of retiring);
 //! 4. at any point after the timeline arms `GFLAG 26` (near its top), a
 //!    confirm press skips the WHOLE remaining opening to `town01` - the
 //!    retail `FUN_801D1344` intro-skip packet, available mid-narration.
@@ -145,20 +147,20 @@ fn opdeene_narration_is_script_driven_and_skippable() {
         "the second block opens non-blocking (child-context spawn)"
     );
     // Drive the FULL host (scene-transition drain included) through a
-    // window well inside the 8-page roller's life: the record's tail
-    // choreography runs under the scroll, and even once the timeline
-    // reaches its terminal SceneChange the hold keeps the scene at
-    // `opdeene` while the pages are still up.
-    for _ in 0..1200 {
+    // window inside the record's tail: the choreography after the block
+    // runs under the scroll for about 1100 frames in retail (block open to
+    // scene-label flip, per-vsync capture), so the scene is still `opdeene`
+    // 900 frames in, with the roller still up.
+    for _ in 0..900 {
         let _ = host.tick();
         assert_eq!(
             host.world.active_scene_label, "opdeene",
-            "the terminal SceneChange holds while the final pages scroll"
+            "the record's tail plays under the final crawl"
         );
     }
     assert!(
         host.world.cutscene_narration_active(),
-        "the 8-page roller outlives the hold window"
+        "the 8-page roller is still scrolling inside the tail"
     );
 
     // 4. Mid-narration intro skip: the hand-off bit was armed near the record
