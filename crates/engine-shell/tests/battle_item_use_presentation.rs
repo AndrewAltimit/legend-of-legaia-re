@@ -56,6 +56,8 @@ struct Trace {
     clips: Vec<u8>,
     sfx: Vec<u16>,
     xa: Vec<(u32, u32)>,
+    /// `(clip, channel, duration_sectors)` of every XA request, for decoding.
+    xa_full: Vec<(u32, u32, u32)>,
     shouts: usize,
 }
 
@@ -68,11 +70,10 @@ impl Trace {
         }
         self.sfx
             .extend(w.drain_battle_sfx_cues().into_iter().map(|c| c.kind));
-        self.xa.extend(
-            w.drain_battle_xa_cues()
-                .into_iter()
-                .map(|c| (c.clip, c.channel)),
-        );
+        for c in w.drain_battle_xa_cues() {
+            self.xa.push((c.clip, c.channel));
+            self.xa_full.push((c.clip, c.channel, c.duration_sectors));
+        }
         self.shouts += w.drain_battle_shout_cues().len();
     }
 }
@@ -295,6 +296,24 @@ fn an_item_turn_plays_the_item_clip_even_after_a_spirit_turn() {
         !spirit.xa.iter().any(|&(clip, _)| clip == VAHN_VOICE_SLOT),
         "a Spirit turn never reaches the cast-cue band (state 0x3D): {spirit:?}"
     );
+    // And the request is audible: the native director's lazy stager reads
+    // the same span off the disc and it decodes to real audio (the browser
+    // page's `play_xa` lazy tier cuts the same channel span).
+    let disc = PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN").expect("gated above"));
+    let &(slot, channel, dur) = first
+        .xa_full
+        .iter()
+        .find(|c| c.0 == VAHN_VOICE_SLOT)
+        .expect("asserted above");
+    let (clip, _) =
+        legaia_engine_shell::bgm::read_xa_channel_span(&disc, slot as u8, channel as u8, dur)
+            .expect("the item voice's channel decodes off the disc");
+    let peak = clip.pcm.iter().map(|s| s.unsigned_abs()).max().unwrap_or(0);
+    eprintln!(
+        "item voice: slot {slot:#x} ch {channel} span {dur} -> {} frames, peak {peak}",
+        clip.frames()
+    );
+    assert!(peak > 256, "the item voice is real audio (peak {peak})");
 }
 
 /// The CD-XA clip slot the cast-cue band's `0x108..0x10F` ids land on.
