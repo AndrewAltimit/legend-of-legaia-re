@@ -707,6 +707,9 @@ CANONICAL_LADDERS = [
     # kernel answers only at the retail camera preset - and both hosts start
     # on a wider one. The page's distance control takes it there.
     ("w9_view_window_crop_page", "legaia-web-viewer"),
+    # The passive-ability badge column (`801d095c`), behind a party that
+    # wears one of six passive bits: an accessory equipped by pad.
+    ("w9_passive_badge_page", "legaia-web-viewer"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 
