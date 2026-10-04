@@ -699,6 +699,10 @@ CANONICAL_LADDERS = [
     # play page's is the only one that exists without an audio device. The
     # overworld sub-list's confirm brings its cue due there.
     ("w9_world_map_sublist_sfx_page", "legaia-web-viewer"),
+    # The two ailment marks over the command chips - the Curse plate on the
+    # ring (`801dbec4`) and the Rot stamp on the arts entry (`801dbddc`) -
+    # with the ailment seeded the way an inflicting strike writes it.
+    ("w9_status_marks_page", "legaia-web-viewer"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 
