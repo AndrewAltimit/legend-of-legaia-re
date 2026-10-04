@@ -261,7 +261,7 @@ impl AmbientEmitter {
     /// port consumes exactly as many as retail does on the path it takes, so
     /// the RNG stream stays aligned.
     ///
-    /// PORT: FUN_801D6058
+    /// The collecting wrapper; the port tag sits on [`Self::step_with`].
     ///
     /// WIRED: [`crate::world::World::tick_cutscene_elements`] runs this every
     /// frame on both hosts, off the same master-driver gate the other
@@ -284,8 +284,8 @@ impl AmbientEmitter {
 
     /// [`Self::step`] with the spawn call in place: `sink` runs where retail
     /// calls `FUN_801D629C`, **between** the emitter's own random draws, and
-    /// is handed the same `rand` so the two routines interleave on one
-    /// stream the way retail's single `FUN_80056798` does.
+    /// is handed the same `rand` so the two routines interleave on one stream the way retail's single `FUN_80056798` does.
+    /// PORT: FUN_801D6058 (the body the world tick runs)
     pub fn step_with(
         &self,
         scene: &AmbientScene,
