@@ -2447,6 +2447,7 @@ DIAG_GATES: list[dict[str, object]] = [
     # --- subtractive / logging only ----------------------------------------
     {"env": "LEGAIA_DIAG_NOFX", "additive": False, "note": "suppress the effect layer"},
     {"env": "LEGAIA_DIAG_NO_GHOSTS", "additive": False, "note": "suppress the battle after-image ghost pass (A/B attribution)"},
+    {"env": "LEGAIA_DIAG_NO_PRIM_NEAR", "additive": False, "note": "disarm the per-primitive near reject (A/B attribution; the browser never disarms it)"},
     {"env": "LEGAIA_DIAG_NOSEMI", "additive": False, "note": "semi-transparent blend off"},
     {"env": "LEGAIA_DIAG_NO_DECO_CUE", "additive": False, "note": "drop the overworld decoration depth cue (before/after frames)"},
     {"env": "LEGAIA_DIAG_LAYERS", "additive": False, "note": "draw only the named layers"},

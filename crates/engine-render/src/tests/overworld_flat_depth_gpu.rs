@@ -69,6 +69,8 @@ fn render_cell(
         bytes.extend_from_slice(bytemuck::cast_slice(&[0.0f32; 3])); // normal
         bytes.extend_from_slice(&[0x80, 0x80, 0x80, 0]); // prim colour
         bytes.extend_from_slice(bytemuck::cast_slice(&flat));
+        // No primitive-corner record: the near reject never fires.
+        bytes.extend_from_slice(&[0u8; crate::renderer::PRIM_REF_BYTES as usize]);
     }
     assert_eq!(bytes.len(), 4 * VRAM_VERTEX_STRIDE as usize);
     let indices: [u32; 6] = [0, 1, 2, 1, 3, 2];
@@ -122,6 +124,10 @@ fn render_cell(
         (32, 4, wgpu::VertexFormat::Uint8x4),
         (36, 5, wgpu::VertexFormat::Float32x4),
         (52, 6, wgpu::VertexFormat::Float32x4),
+        (68, 7, wgpu::VertexFormat::Float32x4),
+        (84, 8, wgpu::VertexFormat::Float32x3),
+        (96, 9, wgpu::VertexFormat::Float32x3),
+        (108, 10, wgpu::VertexFormat::Float32x3),
     ]
     .map(|(offset, shader_location, format)| wgpu::VertexAttribute {
         offset,

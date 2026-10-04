@@ -172,6 +172,10 @@ pub(super) struct SceneLightsUniform {
     /// emissive_gain)` - the third word of
     /// [`crate::scene_lighting::LightingMood::uniforms`].
     pub(super) ambient: [f32; 4],
+    /// Retail's per-primitive near reject, read by the mesh vertex stages:
+    /// [`legaia_engine_ui::prim_near_reject::shader_params`]. All-zero (the
+    /// `Zeroable` default) never rejects.
+    pub(super) prim_near: [f32; 4],
     pub(super) lights: [ScenePointLightUniform; crate::scene_lights::MAX_SCENE_LIGHTS],
 }
 

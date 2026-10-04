@@ -568,6 +568,41 @@ pub fn nclip_cull_mode(cutscene_camera_active: bool, mode: SceneMode) -> u32 {
     u32::from(armed) * 2
 }
 
+/// The ordering-table shift byte `0x1F8003A4` on the field: `3` in every
+/// catalogued field state.
+pub const FIELD_OT_SHIFT: u32 = 3;
+
+/// The ordering-table shift byte `0x1F8003A4` in battle: `2` in every
+/// catalogued battle state.
+pub const BATTLE_OT_SHIFT: u32 = 2;
+
+/// Retail's per-primitive near reject for this frame, as `(sz_per_w,
+/// ot_shift)` for the renderer - or `None` when the pass does not run it.
+///
+/// Every TMD prim handler behind `FUN_80043390` drops a primitive whose
+/// `OTZ` (mean corner `SZ >> ot_shift`) is below the scratch floor
+/// `0x1F80037E = 0x10` (`sub s1,s2,t4` / `bltz s1` at `0x80043870` in
+/// `FUN_80043768`); see `legaia_engine_ui::prim_near_reject`. The field and
+/// battle cameras both put the GTE eye depth in clip `w`, so `sz_per_w` is
+/// `1`. The kingdom overworld composes a world scale onto its camera and
+/// draws through the overlay's own replacement handlers, so it stays off, as
+/// do the minigame venues; `retail_camera = false` (the debug orbit) frames
+/// from a vantage retail never had and draws everything.
+///
+/// Shared so the two hosts cannot arm it on different frames.
+///
+/// REF: FUN_80043390, FUN_80043768
+pub fn prim_near_cut(mode: SceneMode, retail_camera: bool) -> Option<(f32, u32)> {
+    if !retail_camera {
+        return None;
+    }
+    match mode {
+        SceneMode::Field => Some((1.0, FIELD_OT_SHIFT)),
+        SceneMode::Battle => Some((1.0, BATTLE_OT_SHIFT)),
+        _ => None,
+    }
+}
+
 /// Resolve this frame's camera from the live world.
 ///
 /// `cutscene` is the host's already-glided cutscene view (see

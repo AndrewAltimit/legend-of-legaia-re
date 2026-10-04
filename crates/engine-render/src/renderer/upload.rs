@@ -228,6 +228,7 @@ impl Renderer {
                 positions.len()
             );
         }
+        let prim_refs = legaia_engine_ui::prim_near_reject::prim_corner_refs(positions, indices);
         let mut bytes =
             Vec::with_capacity(positions.len() * crate::renderer::VRAM_VERTEX_STRIDE as usize);
         for (i, ((((pos, uv), ct), n), c)) in positions
@@ -254,6 +255,7 @@ impl Renderer {
             bytes.push(0);
             let flat = flat_refs.get(i).copied().unwrap_or([0.0; 8]);
             bytes.extend_from_slice(bytemuck::cast_slice(&flat));
+            bytes.extend_from_slice(bytemuck::cast_slice(&prim_refs[i]));
         }
         let vertex_buf = self
             .device
@@ -350,7 +352,9 @@ impl Renderer {
                 positions.len()
             );
         }
-        let mut bytes = Vec::with_capacity(positions.len() * 20);
+        let prim_refs = legaia_engine_ui::prim_near_reject::prim_corner_refs(positions, indices);
+        let mut bytes =
+            Vec::with_capacity(positions.len() * crate::renderer::COLOR_VERTEX_STRIDE as usize);
         for (i, (pos, c)) in positions.iter().zip(colors.iter()).enumerate() {
             bytes.extend_from_slice(bytemuck::cast_slice(pos));
             bytes.push(c[0]);
@@ -359,6 +363,7 @@ impl Renderer {
             bytes.push(0xFF); // opaque alpha (Unorm8x4)
             let word = blend.get(i).copied().unwrap_or(0) as u32;
             bytes.extend_from_slice(&word.to_le_bytes());
+            bytes.extend_from_slice(bytemuck::cast_slice(&prim_refs[i]));
         }
         let vertex_buf = self
             .device

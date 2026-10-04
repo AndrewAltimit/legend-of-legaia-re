@@ -175,6 +175,9 @@ pub struct Renderer {
     /// `MeshUniforms.flags[3]`: the `clip.w`-to-`SZ` factor, `0.0` (the
     /// default) = identity. Set with [`Renderer::set_overworld_curvature`].
     pub(super) overworld_curve: std::cell::Cell<f32>,
+    /// Retail's per-primitive near reject, staged into the scene-lights
+    /// block's `prim_near` word (see [`Renderer::set_prim_near_reject`]).
+    pub(super) prim_near: std::cell::Cell<[f32; 4]>,
     /// PSX semi-transparency (ABE) blending, staged into `MeshUniforms.flags[1]`.
     /// When `true` (the default), a semi-transparent prim's blended fragments
     /// are deferred out of the opaque pass and re-drawn by the per-ABR-mode
@@ -708,6 +711,18 @@ impl Renderer {
     /// overworld (retail's overworld bit `_DAT_1F800394 & 1`) keeps.
     pub fn set_overworld_curvature(&self, sz_scale: f32) {
         self.overworld_curve.set(sz_scale.max(0.0));
+    }
+
+    /// Arm retail's per-primitive near reject for the scene pass
+    /// ([`legaia_engine_ui::prim_near_reject`]): `Some((sz_per_w,
+    /// ot_shift))` drops every textured / colour mesh primitive whose mean
+    /// corner `SZ` (the frame's clip `w` times `sz_per_w`) falls under
+    /// `0x10 << ot_shift`; `None` (the default) never rejects. Hosts arm it
+    /// under the retail field and battle cameras and leave it off for
+    /// cameras retail never had (the debug orbit) and for the viewers.
+    pub fn set_prim_near_reject(&self, cut: Option<(f32, u32)>) {
+        self.prim_near
+            .set(legaia_engine_ui::prim_near_reject::shader_params(cut));
     }
 
     /// Read the current colour grade `(gold_r, gold_g, gold_b, strength)`.

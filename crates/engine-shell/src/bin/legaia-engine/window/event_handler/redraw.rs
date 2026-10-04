@@ -1005,6 +1005,19 @@ impl PlayWindowApp {
             // this frame's camera - the same kernel the browser play page
             // stages `u_curve` from.
             r.set_overworld_curvature(self.overworld_curve_scale(cutscene_cam));
+            // Retail's per-primitive near reject (`camera_view::prim_near_cut`):
+            // a primitive whose mean corner depth sits near or behind the eye
+            // is not drawn, where a per-pixel clip would paint it across the
+            // frame. Only under a retail camera - the field debug orbit and
+            // the stage-less battle framing are vantages retail never had.
+            let retail_camera = match self.session.host.world.mode {
+                SceneMode::Battle => self.battle_stage_mesh.is_some(),
+                _ => !self.field_debug_camera,
+            } && std::env::var_os("LEGAIA_DIAG_NO_PRIM_NEAR").is_none();
+            r.set_prim_near_reject(legaia_engine_core::camera_view::prim_near_cut(
+                self.session.host.world.mode,
+                retail_camera,
+            ));
             if std::env::var_os("LEGAIA_DIAG_NOSEMI").is_some() {
                 r.set_semi_blend(false);
             }
