@@ -592,8 +592,9 @@ impl World {
         // the step `tick_move_fx` takes for the effect-script scenes. PROT
         // 0903's breath (the PROT 0898 prototype `0x801F5B28`) arms three
         // lanes on its rest mesh, a 52-unit seed, and grows to the flame
-        // only through them.
-        let step = self.clock.frame_step.max(1);
+        // only through them. The step is the move-VM ramp ratio, as for the
+        // effect-script scenes below, not the field cadence `frame_step`.
+        let step = self.move_vm.ramp_ratio.max(1);
         for part in &mut scene.parts {
             if !part.finished
                 && part.state.flags & vm::move_buffer::STATUS_FLAG_ENVELOPE_ACTIVE != 0
