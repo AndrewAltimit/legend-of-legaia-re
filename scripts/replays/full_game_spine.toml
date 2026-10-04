@@ -86,12 +86,6 @@ reach = "scene"
 anchor = { kind = "state", label = "rimelm_wall_press_down", fingerprint = "5461e7a0f28d55f805b298f5c97185fdf25d7b9fc1cc6571f5d50bee97065813" }
 
 [[milestone]]
-id = "vidna"
-scene = "vell"
-reach = "scene"
-anchor = { kind = "state", label = "vell_fog_field", fingerprint = "bd407707f5aa6f437bc3c9a075416da1ac26fad3d7ea6a54cf1fd6450965775e" }
-
-[[milestone]]
 id = "ravine"
 scene = "keikoku"
 reach = "scene"
@@ -123,6 +117,20 @@ reach = "scene"
 anchor = { kind = "state", label = "dolk2_market_noa", fingerprint = "72c8fcfc1340720dcee78de5f5e1e562431fce08c09feee0b87bbc254a4f9e24" }
 
 # ---------------------------------------------------------------- chapter 2
+
+[[milestone]]
+id = "west_voz_forest"
+scene = "vell"
+reach = "scene"
+# West Voz Forest (the label `vell`; not Vidna, which is `balden`). Its entry
+# writes 0x489, clear in every anchor through dolk2_market_noa and set in
+# every card save from PRO-01 on, so the playthrough first enters it here.
+# The anchor is a door-tile poke from a Rim Elm-era state (its flags are that
+# state's plus vell's entry writes): it anchors the scene, not the order,
+# and the segment after it seeds from drake_castle_revisited's save.
+order_check = false
+seeds_next = false
+anchor = { kind = "state", label = "vell_fog_field", fingerprint = "bd407707f5aa6f437bc3c9a075416da1ac26fad3d7ea6a54cf1fd6450965775e" }
 
 [[milestone]]
 id = "voz_forest"

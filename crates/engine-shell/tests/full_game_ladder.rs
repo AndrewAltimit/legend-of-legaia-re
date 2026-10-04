@@ -195,6 +195,12 @@ struct Milestone {
     /// credits run): it anchors the scene but not the order.
     #[serde(default = "yes")]
     order_check: bool,
+    /// `false` for an anchor that names the scene but is not a save of the
+    /// playthrough at that point (a door-tile poke from an earlier state):
+    /// the segment after it seeds from the nearest earlier milestone whose
+    /// anchor does seed, so it starts from the story state the run had.
+    #[serde(default = "yes")]
+    seeds_next: bool,
 }
 
 fn yes() -> bool {
@@ -400,18 +406,23 @@ impl DiscGraph {
                 for d in scene_destinations(&mf, man) {
                     if d.scene_name != name {
                         set.insert(d.scene_name.clone());
-                        landings
-                            .entry((name.clone(), d.scene_name.clone()))
-                            .or_default()
-                            .insert((d.entry_x & 0x7F, d.entry_z & 0x7F));
                         doors.insert((name.clone(), d.scene_name));
                     }
                 }
-                // `scene_destinations` keeps one entry per destination; a
-                // scene with two exits to one map (a town's two gates) has
-                // two landings.
+                // Landings come from the partition-2 door records only - the
+                // records a walk-on band or a scripted beat runs, which are
+                // the exits the pad hand leaves a crossing by. A
+                // partition-1 talk record's `0x3F` is a conversation's own
+                // exit on its own story gate: `dolk2` P1[47]'s lands on
+                // `map01` `(65, 50)`, which made `dolk2` read as the way to
+                // `vell`'s side when neither of its gate bands goes there
+                // (retail's playthrough drains `suimon` instead: `0x27B` is
+                // set and P1[47]'s other write, `0x17D`, is not, in every
+                // card save from `PRO-01` on). `scene_destinations` keeps one
+                // entry per destination; a scene with two exits to one map
+                // (a town's two gates) has two landings.
                 for s in legaia_asset::man_edit::scene_change_sites(man) {
-                    if s.name != name && set.contains(&s.name) {
+                    if s.partition == 2 && s.name != name && set.contains(&s.name) {
                         landings
                             .entry((name.clone(), s.name.clone()))
                             .or_default()
@@ -6433,18 +6444,20 @@ fn part_b_full_game_ladder() {
 
     let mut reports: Vec<SegmentReport> = Vec::new();
     for i in 0..spine.len() - 1 {
-        let (from, to) = (&spine[i], &spine[i + 1]);
+        let to = &spine[i + 1];
         if let Some(only) = &only
             && !only.contains(&to.id)
         {
             continue;
         }
+        let seed_at = (0..=i).rev().find(|&j| spine[j].seeds_next).unwrap_or(i);
+        let from = &spine[seed_at];
         let t0 = std::time::Instant::now();
         let rep = run_segment(
             &inp,
             &graph,
             from,
-            anchors[i].as_ref(),
+            anchors[seed_at].as_ref(),
             to,
             anchors[i + 1].as_ref(),
             with_pad,

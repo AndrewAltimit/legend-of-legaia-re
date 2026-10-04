@@ -55,6 +55,16 @@ The order is the anchors' own:
   save a few optional ones, a subset of another's comes first.
 - The ending anchor is a debug credits run, so it anchors the scene and is
   excluded from the order check (`order_check = false`).
+- `west_voz_forest` (scene `vell`) is placed by the flag its entry writes,
+  not by its anchor. `0x489` (setters `vell` P1[0] and `map02` P2[13]) is
+  clear in every anchor through `dolk2_market_noa` and set in every card
+  save from `PRO-01` on, so the playthrough's first visit falls between
+  `drake_castle_revisited` and `voz_forest`. The anchor, `vell_fog_field`,
+  is a door-tile poke from a state standing outside Rim Elm, so its flags are
+  that state's plus `vell`'s three entry writes: it anchors the scene but
+  neither the order (`order_check = false`) nor the next segment's seed
+  (`seeds_next = false` - `voz_forest`'s segment seeds from
+  `dolk2_market_noa`, the last save the run made before it).
 
 Part A (`part_a_spine_is_anchored_ordered_and_routed`) re-derives all of it:
 every anchor loads and sits in the scene the spine names, the flag-inclusion
@@ -303,7 +313,15 @@ from, entered and left by its reachable door farthest from where the player
 came in. The crossing to take is read off the lattice first: with every door
 tile a boundary, the scene splits into walk components, and a crossing joins
 the component its door touches to the components holding the entry tiles of
-its own `0x3F`s back (a town with two gates has two landings). A
+its own `0x3F`s back (a town with two gates has two landings). Only the
+partition-2 door records' `0x3F`s count as landings: those are the exits a
+walk-on band or a played beat leaves by, and a talk record's `0x3F` is that
+conversation's own exit on its own story gate. `dolk2` P1[47], the castle's
+old machine, lands on `map01` `(65, 50)`; read as a landing, it made `dolk2`
+the way to `vell`'s side while both of `dolk2`'s gate bands land where the
+party came in, and the planner spent its crossings there. The playthrough
+drains `suimon` instead (`0x27B` is set, P1[47]'s other write `0x17D` is
+not, in every card save from `PRO-01` on). A
 breadth-first search over those joins names the first crossing of the
 shortest chain to the component of the wanted door, and the chain is walked
 one round trip at a time, re-planned from each landing. Leaving the crossing,
@@ -531,30 +549,13 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   canonical playthrough.
 - A card save whose scene lies off the route between two milestones (the
   endgame card's last save, on `deene`) anchors no milestone.
-- The `vidna` segment's pad tier has no walkable way from its seed. On
-  `map01` Rim Elm's side and Vidna's are separate walk components of the
-  static collision grid (the grid in a retail RAM image of the overworld
-  matches the disc `.MAP` except Rim Elm's gate paint), and every crossing
-  the seed's flags leave open lands elsewhere: `dolk` opens only the pocket
-  south of the castle, `suimon`'s two chambers join only once its water gate
-  is drained (the controller, P1[4], wants `0x26F`, the Water Gate key, whose
-  one clean setter is `dolk2` P2[7], after Caruban), and `rikuroa`'s first
-  arrival (P2[43]) turns the party back and `map01` P2[14] carries it to
-  `cave01`, a later milestone. From there the one crossing left is
-  `keikoku`'s west mouth, and its west lane is held: P2[7] at `(42, 89)`
-  walks the party back until `0x142`, the Caruban beat, is set. No walk
-  opened the way in the retail run either: the anchor, `vell_fog_field`, was
-  made by poking the `vell` door tile from a state standing outside Rim Elm
-  at `(96, 25)` (the scenario catalogue says so), and its flags over that
-  state are `vell`'s own entry script's. The milestone is a seated-tier
-  waypoint, not a place a pad can reach at that story point - and not the
-  story point the playthrough reached it at. `vell`'s entry writes `0x489`,
-  whose only other setter is `map02` P2[13]; the flag is clear in every
-  anchor through `dolk2_market_noa` and set in every card save from
-  `PRO-01` on, so the first visit falls between `drake_castle_revisited`
-  and `voz_forest`, after `0x142` and `0x26F`. Moved there, the seated tier
-  reaches it from `dolk2` and the segment before it, `rim_elm_restored` to
-  `ravine`, clears at the pad tier. The pad tier from `dolk2` still stalls:
-  the crossing lattice plans `dolk2` for a landing at `map01` `(65, 50)`,
-  but both of `dolk2`'s walk-on exits, `(48..50, 46)` and `(67..73, 72)`,
-  land on the side the party entered from.
+- From `rim_elm_restored`, `vell` has no walkable way: on `map01` Rim Elm's
+  side and `vell`'s are separate walk components of the static collision
+  grid (the grid in a retail RAM image of the overworld matches the disc
+  `.MAP` except Rim Elm's gate paint), and every crossing open at that story
+  point lands elsewhere - `suimon`'s two chambers join only once its water
+  gate is drained (the controller, P1[4], wants `0x26F`, the Water Gate key,
+  whose one clean setter is `dolk2` P2[7], after Caruban), and `keikoku`'s
+  west lane is held by P2[7] at `(42, 89)` until `0x142`, the Caruban beat.
+  That is why `west_voz_forest` sits after `drake_castle_revisited`, where
+  the pad hand drains `suimon` and crosses `bylon` to the `vell` door.

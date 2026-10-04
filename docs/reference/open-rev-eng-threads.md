@@ -771,14 +771,17 @@ a coincidence of the pad byte plus the mask table's first three entries
 |---|---|---|
 | Which save-state library entries still hold a patched executable? | open (narrowed) - audited and tagged; the rest need human play | A state made on a patched disc keeps that build's `SCUS_942.54` in RAM on every later load. `patch_taint_audit.py states` tags each library state's `resident_patch`; the S1..S5 anchors, `first_town_interactive` and `teien_field_run` are re-shot retail, and every capture-graded claim re-checked against its family stands ([`pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md#patched-disc-taint)). The `rikuroa_*`, `dolk2_market_noa`, `cort_evolved_*`, `minigame_*_pcsx`, `battle_gaza2_*` states and the mednafen `overworld_battle_bg_angle_*` states re-shot on an unpatched image close it. |
 
-**Where the ladder's `vidna` milestone belongs** closed by capture, and the
-milestone is out of story order rather than unreachable. Its scene is `vell`,
-West Voz Forest, whose entry writes `0x489` - a flag clear in every anchor
-through `dolk2_market_noa` and set in every card save from `PRO-01` on - so the
-playthrough first enters it between `drake_castle_revisited` and `voz_forest`;
-the anchor sits after `rim_elm_restored` only because it is a door-tile poke
-from a Rim Elm-era state ([settled](re-settled-threads.md#measurement--corpus),
-[`full-game-ladder.md`](../tooling/full-game-ladder.md#what-it-cannot-measure)).
+**Where the ladder's `vell` milestone belongs** closed by capture: it was out
+of story order rather than unreachable. `vell`, West Voz Forest, writes `0x489`
+on entry - a flag clear in every anchor through `dolk2_market_noa` and set in
+every card save from `PRO-01` on - so the playthrough first enters it between
+`drake_castle_revisited` and `voz_forest`, where the spine now holds it as
+`west_voz_forest`; its anchor is a door-tile poke from a Rim Elm-era state.
+From `dolk2` the pad hand reaches it by retail's route, draining `suimon` and
+crossing `bylon`, once the crossing planner stopped reading a talk record's
+`0x3F` (`dolk2` P1[47]) as a round-trip landing
+([settled](re-settled-threads.md#measurement--corpus),
+[`full-game-ladder.md`](../tooling/full-game-ladder.md#the-spine)).
 With it, **`rim_elm_restored`'s pad pass** stopped being a draw: its anchor is
 now the frame after Vahn's killing blow steals an Incense, the pad hand burns
 it, and no region rolls between `dolk` and Rim Elm. Doing so through the pause
