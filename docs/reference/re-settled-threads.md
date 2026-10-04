@@ -2530,6 +2530,60 @@ produced zero writes. Probe `autorun_w4d_cort_flow_writer.lua`; see
 | What is Baka Fighter's `FUN_801D49E8`? | resolved (the special attack's afterimage) | `disassembly` | Spawned on the special commit (`0x801D4538..0x801D4634`) with `+0x74 = 0x81000000` and `+0x78 = 0x800` (`0x801D4588..0x801D4594`); `+0x78` is a depth-cue level `FUN_8001B964` reads at `0x8001BC7C`, not a yaw. It draws two ghosts of the thrower, three and six frames behind, at cue `0x800` / `0xC00`, pushed `0x40` deeper ([`minigame-baka-fighter.md`](../subsystems/minigame-baka-fighter.md#impact-cue-and-afterimage)). |
 | Who is Baka Fighter's round-start cameo? | resolved (scene model 3, the ring girl, who winks) | `capture` + `disassembly` | `FUN_801D6310` spawns only with Triangle held at round setup (`0x801D0190..0x801D01C4`). The cabinet init stamps scene-bank base `+ 3` into its prototype (`0x801CF2C8..0x801CF2D8`) and the spawn store at `0x80020E70` writes `3`: the PROT 1203 stage pack's fourth TMD. Its cell blit swaps an open-eye patch for a closed one at the pose ([`minigame-baka-fighter.md`](../subsystems/minigame-baka-fighter.md#the-round-start-cameo)). |
 | Can a retail disc reach the Baka Fighter keyframe editor? | resolved (no) | `disassembly` | State `0x190` is written only from the developer-menu arm (`0x801D19DC`), and that menu (`0xC8`) is entered only while `_DAT_8007B868 != 0` (`0x801D08E8`); a disc-wide sweep finds two stores to that word, the constant `0` from `FUN_8002B92C` and a bit-clear ([`minigame-baka-fighter.md`](../subsystems/minigame-baka-fighter.md#the-developer-keyframe-editor)). |
+| Why does `opdeene` run long after its `apply 4800` camera move? | resolved (five record mechanisms, now within 2 % of retail) | `capture` + `disassembly` | NPC turns run on while the record advances, `AD <id> 08` waits on the poked clip's end latch, `B2 <id> 0A` ends the actor's leg, the `4C 45` ramp advances, and only `B3 F8 0A` waits for a crawl. [details ↓](#opdeene-runs-long-after-its-apply-4800-camera-move) |
+
+### `opdeene` runs long after its `apply 4800` camera move
+
+*Status:* resolved, evidence grade `capture` + `disassembly`.
+
+The ground truth is a per-vsync capture of the zero-input chain from the
+`s1_newgame_field` state
+([`autorun_opdeene_pacing.lua`](../../scripts/pcsx-redux/autorun_opdeene_pacing.lua)):
+the cutscene record's `ctx[+0x9E]` PC, the camera mover's progress, one
+vignette actor's flag word, clip ids, `+0x62` / `+0x68` / `+0x6A`, position
+and heading, and the crawl roller's retire count, every vsync. Aligned on the
+record's own PCs it separates five mechanisms, each now in the engine:
+
+- **NPC turns do not park the record.** The op-`0x38` budget arm advances by
+  3 for every target (`li s7,3` in the delay slot at `0x801DEEFC`) and parks
+  only for the player; the record reaches the op after a `B8 08 82 21` on the
+  same frame.
+- **`AD <id> 08` spins on the poked actor's clip end latch.** Each spin lasts
+  the clip's remaining length (clamped) or the time to the next wrap
+  (looping): actor `0x07`'s clip `0x18` holds `+0x4E4` for 90 frames, actor
+  `0x05`'s clips `8` / `9` for 27 / 57. The port binds the actor's clip cursor
+  at the `0x22` poke from the scene bundle's record header (gate and divisor)
+  and steps it at the actor's live `+0x6A` - which `CC <id> 41` halves, so a
+  clip at rate `4` runs twice as long.
+- **`B2 <id> 0A` ends the actor's leg.** The actor tick runs the walk kernel
+  only while `+0x10 & 0x400` is up (`FUN_8003BC08`), so the halt clear stops
+  a compass walk or turn where it stands. Two Seru legs the record cuts this
+  way had held every later op on both actors, about 300 frames in all.
+- **The `4C 45` ramp does not yield.** The arm adds its 5 bytes at
+  `0x801E12A4` and leaves through the common or the scheduler exit; the
+  capture runs eight `CC <id> 45 .. 28 00` ramps inside one frame.
+- **Only `B3 F8 0A` waits for a crawl.** The crawl spawn is a halt-acquire on
+  the player (`0x801E1F24`) and the roller clears the bit as it retires its
+  last page. `opurud`'s record tests it before its `3F` and changes scene
+  four vsyncs after the last page; `opdeene`'s does not, and its `3F` runs
+  with the 8-page roller three pages short of retiring
+  ([`cutscene.md`](../subsystems/cutscene.md#where-a-record-waits-for-its-crawl)).
+
+An NPC compass walk on an actor nothing had moved yet was also dropped (the
+leg had no start position); it now starts from the context's seat, so
+actor `0x05`'s `C1 05 00 C4` takes its 129 frames.
+
+Measured from the record's second opening wait (`+0x289`) to its `3F`, the engine
+runs 3773 frames where retail runs 3828; from the `apply 4800` beat to the `3F`, 2268
+against 2313. Before the change the same span ran about 2550. The residual
+is the frame step: the capture holds `DAT_1F800393` at `3`, so retail's
+waits and clip ticks land on three-frame boundaries the engine's one-frame
+step does not reproduce, and at `+0xB4D` that decides whether a looping
+clip's latch lands just before or just after the `AC 04 08` that clears it -
+one loop, 60 frames, of the remaining gap. The retail-compare state parked
+on `+0x6F6` keeps its exact camera, which the NPC-turn change alone had
+cost (`camera` 0.962). Pinned by `opdeene_record_pacing.rs` (3 % band).
+
 
 ### The field follow camera's pose chain
 
