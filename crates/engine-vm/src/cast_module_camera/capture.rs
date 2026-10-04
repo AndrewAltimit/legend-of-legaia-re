@@ -58,6 +58,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (940, MYSTIC_SHIELD_BODY) => Some(mystic_shield_camera),
         (944, GUILTY_CROSS_BODY) => Some(guilty_cross_camera),
         (962, ULTRA_CHARGE_BODY) => Some(ultra_charge_camera),
+        (938, MYSTIC_CIRCLE_BODY) => Some(mystic_circle_camera),
         _ => None,
     }
 }
@@ -70,6 +71,7 @@ pub fn capture_countdown_va(action: u8) -> Option<u32> {
         0xAC => Some(MYSTIC_SHIELD_COUNTDOWN),
         0x37 => Some(GUILTY_CROSS_COUNTDOWN),
         0xA5 => Some(ULTRA_CHARGE_COUNTDOWN),
+        0xB7 => Some(MYSTIC_CIRCLE_COUNTDOWN),
         _ => None,
     }
 }
@@ -300,5 +302,84 @@ pub fn ultra_charge_camera(
             next: Some(0xFF),
         },
         _ => CaptureCamArm::default(),
+    }
+}
+
+/// PROT 0938's `0xB7` body (Cort's Mystic Circle).
+pub const MYSTIC_CIRCLE_BODY: u32 = 0x801F_69EC;
+/// PROT 0938's `0xB7` countdown word (`lui 0x8020` / `-0x7FC0`).
+pub const MYSTIC_CIRCLE_COUNTDOWN: u32 = 0x801F_8040;
+
+/// Cort's **Mystic Circle** (PROT 0938, body `0x801F69EC`, five arms off the
+/// table at the image head). Unlike the other directed bodies its countdown
+/// `0x801F8040` is absolute, not scalar-scaled: arm 0 stores `0x800`, every
+/// later arm drains `8 * delta` (`8` a vsync) and holds while it stays
+/// positive, and arms 1 / 2 / 3 re-arm `+0x400` / `+0x400` / `+0x600`.
+///
+/// | arm | camera |
+/// |---|---|
+/// | 0 (`0x801F6AA4`) | turns the caster to its target, then a cut: pitch `-0x40`, yaw `0x800 - caster[+0x46]`, TR `(0, 0x600, 0x600)`, focus the caster |
+/// | 1, 2 (`0x801F6C00`, `0x801F6D88`) | drift: TR z `+4`, TR y `-1`; arm 2's exit cuts to pitch `0x180`, yaw `-caster[+0x46]`, TR `(0, 0x600, 0xC00)` |
+/// | 3 (`0x801F6F3C`) | drift: TR z `+96`, TR y `-29` |
+/// | 4 (`0x801F71F8`) | the last gate |
+///
+/// Arm 0's turn (toward the target, or the party's centre for the
+/// all-party target `8`) is the cast's own; the director frames off the
+/// caster's facing as the engine left it. The `cort_mystic_circle_mid_cast`
+/// capture sits in arm 1 with `96` of the word left: `244` vsyncs of drift,
+/// TR y `1292` of `0x600`.
+///
+/// PORT: FUN_801F69EC (PROT 0938 `0xB7`; the camera arms and the countdown)
+pub fn mystic_circle_camera(
+    st: &mut ModuleCamState,
+    phase: u8,
+    seats: ModuleCamSeats,
+) -> CaptureCamArm {
+    const DRAIN: i32 = 8;
+    let c = seats.caster;
+    if phase == 0 {
+        st.countdown.0 = 0x800;
+        return CaptureCamArm {
+            shot: Some(ModuleShot {
+                angles: [-0x40, yaw_from(0x800, c.facing), 0],
+                tr: [0, 0x600, 0x600],
+                focus: focus_on(c),
+                frames: 1,
+            }),
+            ..Default::default()
+        };
+    }
+    if !(1..=4).contains(&phase) {
+        return CaptureCamArm::default();
+    }
+    let drift = match phase {
+        1 | 2 => Some(drift(0, 0, -1, 4)),
+        3 => Some(drift(0, 0, -29, 96)),
+        _ => None,
+    };
+    st.countdown.0 -= DRAIN;
+    let hold = st.countdown.0 > 0;
+    let mut shot = None;
+    if !hold {
+        match phase {
+            1 => st.countdown.0 += 0x400,
+            2 => {
+                st.countdown.0 += 0x400;
+                shot = Some(ModuleShot {
+                    angles: [0x180, yaw_from(0, c.facing), 0],
+                    tr: [0, 0x600, 0xC00],
+                    focus: focus_on(c),
+                    frames: 1,
+                });
+            }
+            3 => st.countdown.0 += 0x600,
+            _ => {}
+        }
+    }
+    CaptureCamArm {
+        shot,
+        drift,
+        hold,
+        next: None,
     }
 }

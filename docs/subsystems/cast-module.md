@@ -2009,6 +2009,12 @@ run; a holding gate withholds the body's pass. The battle camera holds in
   this director also owns it (`0 -> 1 -> 0xFF`), the way a camera-only player
   director does.
 
+- **PROT 0938 `0xB7` (Cort's Mystic Circle, body `0x801F69EC`)** - arm 0's
+  cut behind the caster (pitch `-0x40`, TR `(0, 0x600, 0x600)`), arm 2's cut
+  to the front (pitch `0x180`, TR `(0, 0x600, 0xC00)`), the drifts of arms
+  1 / 2 (TR z `+4`, TR y `-1` a vsync) and 3 (`+96`, `-29`), and the countdown
+  `0x801F8040` - **absolute**, not scalar-scaled: `0x800`, drained `8 * delta`.
+
 A body with no director keeps the held pose.
 
 ### The band has eight stat-block writers, not one
