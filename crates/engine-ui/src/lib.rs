@@ -77,6 +77,7 @@ pub mod move_strip;
 pub mod other_game_hud;
 pub mod pause_menu;
 pub mod ringside_backdrop;
+pub mod scene_lighting;
 pub mod screen_prim;
 pub mod screen_prim_raster;
 pub mod streak_pass;

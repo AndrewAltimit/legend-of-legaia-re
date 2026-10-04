@@ -242,6 +242,19 @@ pub struct OptionsState {
     /// the frame without the feature, pixel for pixel. Presentation only -
     /// the bank reads the actors and never writes back.
     pub volumetric_fog: bool,
+    /// Enhanced lighting (engine-only, non-retail): the scene mood's ambient
+    /// and key light, the derived lamp point lights, emissive surfaces and
+    /// their glow (`legaia_engine_ui::scene_lighting`). Both windowed hosts
+    /// read it (`I` in `play-window`, the play page's checkbox). Off is the
+    /// faithful baked-shading render, pixel-identical to it. Pure
+    /// presentation: never feeds the simulation.
+    pub enhanced_lighting: bool,
+    /// The time of day enhanced lighting lights scenes under: `auto` (the
+    /// scene's own mood - daylight outdoors, dim interiors and caves),
+    /// `day`, `dusk` or `night` (`legaia_engine_ui::scene_lighting::TimeOfDay`
+    /// names; an unknown name reads as `auto`). `F8` in `play-window`, the
+    /// page's selector.
+    pub lighting_time_of_day: String,
 }
 
 impl Default for OptionsState {
@@ -266,6 +279,8 @@ impl Default for OptionsState {
             retail_static_window: true,
             retail_view_window: true,
             volumetric_fog: true,
+            enhanced_lighting: false,
+            lighting_time_of_day: "auto".to_string(),
         }
     }
 }

@@ -243,7 +243,10 @@ fn cue_ramp_ir0(cue_a: f32, ramp: vec4<f32>, frag_w: f32) -> f32 {
 // `light_dir.w`: when it is zero (the default) the input colour is returned
 // bit-unchanged, keeping the faithful path pixel-identical.
 //
-// Model:  out = baked * min(ambient + (diffuse*|N.L| + pool) * tint, MAX)
+// Model (the enhanced-lighting mood, `legaia_engine_ui::scene_lighting`):
+//   out = baked * min(min(ambient + (diffuse*|N.L| + pool_w*pool) * key, MAX)
+//                     + point_gain, TOTAL_MAX)
+//   emissive prims: out = baked * emissive_gain
 //   * |N.L| - a soft directional term off the smoothed per-vertex normals
 //     (the TMD-derived normals retail authors but never feeds to the GTE on
 //     the field path). abs() rather than max(,0) because the corpus' prim
@@ -262,7 +265,6 @@ fn cue_ramp_ir0(cue_a: f32, ramp: vec4<f32>, frag_w: f32) -> f32 {
 //
 // Tunables (kept in lockstep with the CPU mirror `crate::dyn_light`):
 const DYN_DIFFUSE: f32 = 0.55;   // weight of the orientation (|N.L|) term
-const DYN_POOL: f32 = 0.35;      // weight of the screen-space light pool
 const DYN_MAX_GAIN: f32 = 1.3;   // gain ceiling relative to baked colour
 const DYN_TOTAL_MAX_GAIN: f32 = 1.9; // ceiling with the point-light layer added
 const DYN_LAMBERT_FALLBACK: f32 = 0.6; // orientation term when no normal exists
@@ -297,9 +299,22 @@ fn dyn_light(
     light_dir: vec4<f32>,
     light_color: vec4<f32>,
     point_gain: vec3<f32>,
+    emissive: bool,
 ) -> vec3<f32> {
     if (light_dir.w < 0.5) {
         return rgb;
+    }
+    // The mood's ambient floor (rgb) + emissive gain (w): the scene
+    // pipelines read the per-frame lights block, the single-mesh pipelines
+    // a daylight constant (see `mood_ambient` in the scene-lights layer).
+    let amb = mood_ambient();
+    // Emissive prims (lamps, glow sheets, the Genesis Tree - TSB / blend
+    // bit 13, tagged by `scene_lighting::tag_emissive_*`) ignore the mood:
+    // they draw at the emissive gain, plus whatever light falls on them
+    // (their own light included).
+    if (emissive) {
+        let eg = min(vec3<f32>(amb.w) + point_gain, vec3<f32>(DYN_TOTAL_MAX_GAIN));
+        return clamp(rgb * eg, vec3<f32>(0.0), vec3<f32>(1.0));
     }
     // Orientation term. Prefer the smoothed per-vertex normal (continuous
     // shading across connected surfaces); fall back to the screen-space
@@ -314,13 +329,13 @@ fn dyn_light(
     if (n_len > 1e-6) {
         lambert = abs(dot(n / n_len, normalize(light_dir.xyz)));
     }
-    // Soft screen-space light pool.
+    // Soft screen-space light pool, weighted by the mood (`light_color.w`).
     var pool = 0.0;
     if (viewport.x > 0.0 && viewport.y > 0.0) {
         let d = distance(frag_px / viewport, DYN_POOL_CENTER);
         pool = 1.0 - smoothstep(DYN_POOL_INNER, DYN_POOL_OUTER, d);
     }
-    let base = light_color.w + (DYN_DIFFUSE * lambert + DYN_POOL * pool) * light_color.xyz;
+    let base = amb.rgb + (DYN_DIFFUSE * lambert + light_color.w * pool) * light_color.xyz;
     let gain = min(min(base, vec3<f32>(DYN_MAX_GAIN)) + point_gain, vec3<f32>(DYN_TOTAL_MAX_GAIN));
     return clamp(rgb * gain, vec3<f32>(0.0), vec3<f32>(1.0));
 }
@@ -372,10 +387,19 @@ struct SceneLightsU {
     // `dot(frag - feet, axis)` is 0 on the feet line and 1 where the fade
     // reaches full strength. A zero axis switches the rule off.
     occl_lift: vec4<f32>,
+    // The enhanced-lighting mood's ambient floor (rgb) + emissive gain (w)
+    // (`scene_lighting::LightingMood::uniforms`'s third word). Read only
+    // while the enhancement is on (`light_dir.w`).
+    ambient: vec4<f32>,
     lights: array<ScenePointLightU, 8u>,
 };
 
 @group(2) @binding(0) var<uniform> sl: SceneLightsU;
+
+// The mood's (ambient rgb, emissive gain) for `dyn_light`.
+fn mood_ambient() -> vec4<f32> {
+    return sl.ambient;
+}
 @group(2) @binding(1) var t_shadow: texture_depth_2d_array;
 @group(2) @binding(2) var s_shadow: sampler_comparison;
 
@@ -480,9 +504,10 @@ fn scene_point_gain(
         }
         var att = clamp(1.0 - (dist * dist) / (radius * radius), 0.0, 1.0);
         att = att * att;
+        // Half-Lambert wrap: a lamp grazing a wall still lifts it.
         var lam = DYN_LAMBERT_FALLBACK;
         if (n_len > 1e-6 && dist > 1e-3) {
-            lam = abs(dot(n / n_len, to_l / dist));
+            lam = abs(dot(n / n_len, to_l / dist)) * 0.5 + 0.5;
         }
         gain = gain + l.color.rgb * (att * lam * scene_light_shadow(i, world_pos));
     }
@@ -502,10 +527,62 @@ fn scene_point_gain(
     return vec3<f32>(0.0);
 }
 
+// Mood stub: the single-mesh pipelines carry no lights block, so they
+// light under the daylight mood (`scene_lighting::LightingMood::DAY`).
+fn mood_ambient() -> vec4<f32> {
+    return vec4<f32>(0.7, 0.7, 0.7, 1.15);
+}
+
 // Camera-occlusion fade stub: the single-mesh pipelines carry no scene
 // focus (group 2 is absent from their layouts), so every fragment keeps.
 fn occl_keep(frag_px: vec2<f32>, frag_w: f32) -> f32 {
     return 1.0;
+}
+"#;
+
+/// Glow-sprite shader for the enhanced-lighting enhancement (NON-RETAIL):
+/// the halos and soft light shafts `scene_lighting::glow_vertices` expands
+/// around the frame's lights. Camera-facing quads in world space, drawn
+/// additively with the depth test on and depth writes off, so a halo is
+/// hidden by the wall in front of it. Falloff twin:
+/// `scene_lighting::glow_falloff` (radial `(1 - r^2)^2` for a halo,
+/// `(1 - x^2)^2 * (1 - y)` for a shaft; the kind rides `color.w`).
+pub(crate) const GLOW_SHADER_SRC: &str = r#"
+struct GlowUniforms {
+    view_proj: mat4x4<f32>,
+};
+@group(0) @binding(0) var<uniform> g: GlowUniforms;
+
+struct GlowOut {
+    @builtin(position) clip_pos: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) color: vec4<f32>,
+};
+
+@vertex
+fn vs_main(
+    @location(0) position: vec3<f32>,
+    @location(1) uv: vec2<f32>,
+    @location(2) color: vec4<f32>,
+) -> GlowOut {
+    var out: GlowOut;
+    out.clip_pos = g.view_proj * vec4<f32>(position, 1.0);
+    out.uv = uv;
+    out.color = color;
+    return out;
+}
+
+@fragment
+fn fs_main(in: GlowOut) -> @location(0) vec4<f32> {
+    var f: f32;
+    if (in.color.w > 0.5) {
+        let x = clamp(1.0 - in.uv.x * in.uv.x, 0.0, 1.0);
+        f = x * x * clamp(1.0 - in.uv.y, 0.0, 1.0);
+    } else {
+        let x = clamp(1.0 - dot(in.uv, in.uv), 0.0, 1.0);
+        f = x * x;
+    }
+    return vec4<f32>(in.color.rgb * f, 1.0);
 }
 "#;
 
@@ -1071,6 +1148,7 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     let pg = scene_point_gain(in.world_w, in.normal, geo_n);
     let enhanced = dyn_light(
         lit, in.normal, geo_n, in.clip_pos.xy, u.psx_params.xy, u.light_dir, u.light_color, pg,
+        (tsb & 0x2000u) != 0u,
     );
     // Retail order: DPCS blends the PACKET COLOUR toward the far colour, then
     // the GPU multiplies the texel by the result - so the far term reaches the
@@ -1149,6 +1227,7 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
     let pg = scene_point_gain(in.world_w, in.normal, geo_n);
     let enhanced = dyn_light(
         lit, in.normal, geo_n, in.clip_pos.xy, u.psx_params.xy, u.light_dir, u.light_color, pg,
+        (tsb & 0x2000u) != 0u,
     );
     // Same grade-then-cue order as the opaque pass (see fs_main): the far
     // term is the texel-modulated far colour, un-tinted.
@@ -1300,7 +1379,7 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     let pg = scene_point_gain(in.world_w, vec3<f32>(0.0), geo_n);
     let enhanced = dyn_light(
         base, vec3<f32>(0.0), geo_n, in.clip_pos.xy, u.psx_params.xy,
-        u.light_dir, u.light_color, pg,
+        u.light_dir, u.light_color, pg, (in.blend & 0x2000u) != 0u,
     );
     // An untextured prim is filled with the packet colour, so its DPCS far
     // term is the far colour itself (no texel multiply). Grade-then-cue,
@@ -1353,7 +1432,7 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
     let pg = scene_point_gain(in.world_w, vec3<f32>(0.0), geo_n);
     let enhanced = dyn_light(
         base, vec3<f32>(0.0), geo_n, in.clip_pos.xy, u.psx_params.xy,
-        u.light_dir, u.light_color, pg,
+        u.light_dir, u.light_color, pg, (in.blend & 0x2000u) != 0u,
     );
     // Grade-then-cue, matching the opaque colour pass (far colour direct -
     // an untextured prim has no texel multiply).

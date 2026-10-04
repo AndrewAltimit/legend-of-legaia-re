@@ -200,6 +200,7 @@ const DYN_LIGHT_AMBIENT = 0.55;
 const DYN_DIFFUSE = 0.55;
 const DYN_POOL = 0.35;
 const DYN_MAX_GAIN = 1.3;
+const DYN_TOTAL_MAX_GAIN = 1.9;
 const DYN_LAMBERT_FALLBACK = 0.6;
 const DYN_POOL_CENTER = [0.5, 0.45];
 const DYN_POOL_INNER = 0.15;

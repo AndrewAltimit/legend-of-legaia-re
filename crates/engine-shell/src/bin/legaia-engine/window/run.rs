@@ -106,7 +106,7 @@ pub(crate) fn cmd_play_window(
     screenshot: Option<super::ScreenshotConfig>,
     seed_party: bool,
     battle: Option<&str>,
-    dynamic_lighting: bool,
+    dynamic_lighting: Option<bool>,
     dyn_shadows: bool,
     entry_pulse: bool,
     occlusion_fade: bool,
@@ -459,7 +459,7 @@ pub(super) fn cmd_play_window_with_record(
     screenshot: Option<super::ScreenshotConfig>,
     seed_party: bool,
     battle: Option<&str>,
-    dynamic_lighting: bool,
+    dynamic_lighting: Option<bool>,
     dyn_shadows: bool,
     entry_pulse: bool,
     occlusion_fade: bool,
@@ -1482,12 +1482,15 @@ pub(super) fn cmd_play_window_with_record(
         sim_stepper: legaia_engine_core::frame_step::SimStepper::new(),
         active_dialog: None,
         seru_names: None,
-        dynamic_lighting,
+        // Resolved against the persisted option right below, once the
+        // options file has loaded.
+        dynamic_lighting: false,
         dyn_shadows,
         occlusion_fade,
         field_occluders: Default::default(),
         occl_fade_strength: std::cell::Cell::new(0.0),
         scene_point_lights: Vec::new(),
+        scene_prop_lights: Vec::new(),
         orbit_drag_last_x: None,
         orbit_drag_last_y: None,
         last_left_press: None,
@@ -1522,6 +1525,11 @@ pub(super) fn cmd_play_window_with_record(
     // Push the loaded options into their live consumers (audio downmix)
     // before the loop starts.
     app.apply_options_side_effects();
+
+    // Enhanced lighting: the persisted option (default on) unless the
+    // command line forced it (`--dynamic-lighting` / `--no-dynamic-lighting`;
+    // replays force it off).
+    app.dynamic_lighting = dynamic_lighting.unwrap_or(app.options_state.enhanced_lighting);
 
     // Camera framing + movement toggles from the persisted options file:
     // the distance preset (default `far` - a bit more on screen than

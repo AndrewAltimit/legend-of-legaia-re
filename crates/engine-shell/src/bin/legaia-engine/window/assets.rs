@@ -175,6 +175,12 @@ impl PlayWindowApp {
                         );
                     }
                 }
+                // Enhanced lighting: tag the emissive prims (TSB / blend bit
+                // 13) - the shared `scene_lighting` rule the browser page's
+                // mesh build runs too. Inert unless the enhancement is on.
+                let curated = legaia_engine_render::scene_lighting::tag_emissive_meshes(
+                    &rtmd.raw, &mut vmesh, &mut cmesh, &res.vram,
+                );
                 if !cmesh.is_empty() {
                     tmd_color_emitters[src_i] =
                         legaia_engine_render::scene_lights::color_mesh_emitters(
@@ -284,7 +290,15 @@ impl PlayWindowApp {
                     &vmesh.cba_tsb,
                     &vmesh.colors,
                     &vmesh.indices,
+                    Some((&res.vram, &vmesh.uvs)),
                 );
+                // A curated emissive mesh (the Genesis Tree) casts one strong
+                // light from its centre.
+                if let Some(hit) = curated {
+                    tmd_vram_emitters[src_i].push(
+                        legaia_engine_render::scene_lighting::curated_mesh_sample(&hit),
+                    );
+                }
                 match r.upload_vram_mesh(
                     &vmesh.positions,
                     &vmesh.uvs,
@@ -359,6 +373,9 @@ impl PlayWindowApp {
                     // Same hybrid coplanar resolution as the static env
                     // meshes above (and the web `build_hybrid_env_mesh_posed`).
                     legaia_tmd::mesh::resolve_hybrid(&mut vmesh, &mut cmesh);
+                    legaia_engine_render::scene_lighting::tag_emissive_meshes(
+                        &rtmd.raw, &mut vmesh, &mut cmesh, &res.vram,
+                    );
                     // Retain the raw TMD so the draw pass can re-pose this prop
                     // at whatever frame its clip is on.
                     let mut slot = PosedMesh {
@@ -554,6 +571,7 @@ impl PlayWindowApp {
         // adds its own below, and the combined set clusters into at most
         // `MAX_SCENE_LIGHTS` lights at the end of this function.
         let mut light_samples: Vec<legaia_engine_render::scene_lights::EmitterSample> = Vec::new();
+        let mut prop_light_sets: Vec<legaia_engine_render::scene_lighting::PropLights> = Vec::new();
         {
             use legaia_engine_render::scene_lights as sl;
             for (mesh_idx, model) in field_placement_draws.iter().chain(&field_terrain_draws) {
@@ -1195,18 +1213,21 @@ impl PlayWindowApp {
                         })
                     }
                 };
-                let vmesh = match &pose {
+                let mut vmesh = match &pose {
                     Some(offsets) => {
                         legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(&tmd, &raw, offsets)
                     }
                     None => legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &raw),
                 };
-                let cmesh = match &pose {
+                let mut cmesh = match &pose {
                     Some(offsets) => {
                         legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(&tmd, &raw, offsets)
                     }
                     None => legaia_tmd::mesh::tmd_to_color_mesh(&tmd, &raw),
                 };
+                let prop_curated = legaia_engine_render::scene_lighting::tag_emissive_meshes(
+                    &raw, &mut vmesh, &mut cmesh, &res.vram,
+                );
                 let mesh_idx = if vmesh.indices.is_empty() {
                     None
                 } else {
@@ -1272,35 +1293,53 @@ impl PlayWindowApp {
                     self.npc_rest_srcs
                         .insert(p.index as u8, (tmd.clone(), raw.clone(), pose.clone()));
                 }
-                // Light-emitter samples from this prop's meshes at its
-                // spawn transform - the interior candle sconces / wall
-                // lamps are MAN scene-actor props, not `.MAP` placements,
-                // so this layer is where most of them surface. Hide-box
-                // parked conditional spawns don't emit (they aren't drawn).
+                // Light-emitter samples from this prop's meshes, clustered
+                // in the prop's own frame at its spawn anchor - the interior
+                // candle sconces / wall lamps are MAN scene-actor props, not
+                // `.MAP` placements, so this layer is where most of them
+                // surface. The set follows the actor's live position each
+                // frame (`scene_lighting::place_prop_lights`), so a prop a
+                // script walks keeps its light. Painted-lamplight texels are
+                // NOT read here: on a character they are skin and hair.
+                // A set whose actor is parked in the hide box doesn't emit.
                 {
                     use legaia_engine_render::scene_lights as sl;
-                    let hide = legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ;
-                    if p.world_x != hide || p.world_z != hide {
+                    // A prop spawned in the hide box (the Genesis Tree, moved
+                    // into the plaza by its spawn script) still derives its
+                    // set; `place_prop_lights` drops it while it is hidden.
+                    {
                         let y = world.sample_field_floor_height(p.world_x as i32, p.world_z as i32);
-                        let model = Mat4::from_translation(Vec3::new(
-                            p.world_x as f32,
-                            y as f32,
-                            p.world_z as f32,
-                        ));
-                        let em = sl::vram_mesh_emitters(
+                        let spawn = [p.world_x as f32, y as f32, p.world_z as f32];
+                        let model = Mat4::from_translation(Vec3::from(spawn));
+                        let mut samples = sl::vram_mesh_emitters(
                             &vmesh.positions,
                             &vmesh.cba_tsb,
                             &vmesh.colors,
                             &vmesh.indices,
+                            Some((&res.vram, &vmesh.uvs)),
                         );
-                        light_samples.extend(sl::transform_samples(&em, &model));
-                        let em = sl::color_mesh_emitters(
+                        samples.extend(sl::color_mesh_emitters(
                             &cmesh.positions,
                             &cmesh.colors,
                             &cmesh.blend,
                             &cmesh.indices,
-                        );
-                        light_samples.extend(sl::transform_samples(&em, &model));
+                        ));
+                        if let Some(hit) = prop_curated {
+                            samples.push(
+                                legaia_engine_render::scene_lighting::curated_mesh_sample(&hit),
+                            );
+                        }
+                        let lights =
+                            sl::cluster_all_scene_lights(&sl::transform_samples(&samples, &model));
+                        if !lights.is_empty() {
+                            prop_light_sets.push(
+                                legaia_engine_render::scene_lighting::PropLights {
+                                    slot: p.index as u8,
+                                    spawn,
+                                    lights,
+                                },
+                            );
+                        }
                     }
                 }
                 self.field_npc_draws.push(FieldNpcDraw {
@@ -1328,6 +1367,7 @@ impl PlayWindowApp {
         {
             use legaia_engine_render::scene_lights as sl;
             self.scene_point_lights = sl::cluster_all_scene_lights(&light_samples);
+            self.scene_prop_lights = std::mem::take(&mut prop_light_sets);
             if !self.scene_point_lights.is_empty() {
                 let w = &*world;
                 let ppos = w.player_actor_slot.and_then(|s| {

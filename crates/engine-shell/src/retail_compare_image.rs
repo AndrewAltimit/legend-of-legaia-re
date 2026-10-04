@@ -307,12 +307,13 @@ pub fn engine_frame_with(
     for (k, v) in env {
         cmd.env(k, v);
     }
-    // The comparison is against retail: the volumetric ground-fog
-    // enhancement (default on in the window) stays off.
+    // The comparison is against retail: the volumetric ground fog and
+    // enhanced lighting (both default on in the window) stay off.
     cmd.args([
         "play-window",
         "--no-audio",
         "--no-volumetric-fog",
+        "--no-dynamic-lighting",
         "--scene",
         scene,
     ])

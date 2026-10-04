@@ -552,13 +552,16 @@ impl PlayWindowApp {
             if !any {
                 continue;
             }
-            let vmesh =
+            let mut vmesh =
                 legaia_tmd::mesh::tmd_to_vram_mesh_filtered(&morphed, raw, |cba, tsb, uvs| {
                     vram.prim_has_texture_data(cba, tsb, uvs)
                 });
             if vmesh.indices.is_empty() {
                 continue;
             }
+            // Keep enhanced lighting's emissive tags through the morph
+            // (the Genesis Tree is a VDF-morphed terrain mesh).
+            legaia_engine_render::scene_lighting::tag_emissive_vram_mesh(raw, &mut vmesh, vram);
             rebuilds.push((mesh_idx, vmesh));
         }
         rebuilds
@@ -603,7 +606,7 @@ impl PlayWindowApp {
                 out.push((s, None));
                 continue;
             };
-            let (vmesh, cmesh) = match pose {
+            let (mut vmesh, mut cmesh) = match pose {
                 Some(p) => (
                     legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(&morphed, raw, p),
                     legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(&morphed, raw, p),
@@ -613,6 +616,11 @@ impl PlayWindowApp {
                     legaia_tmd::mesh::tmd_to_color_mesh(&morphed, raw),
                 ),
             };
+            if let Some(v) = self.cpu_vram_base.as_ref() {
+                legaia_engine_render::scene_lighting::tag_emissive_meshes(
+                    raw, &mut vmesh, &mut cmesh, v,
+                );
+            }
             out.push((s, Some((vmesh, cmesh))));
         }
         out
@@ -679,7 +687,12 @@ impl PlayWindowApp {
                 continue;
             };
             if p.baked.vram.is_some() {
-                let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(tmd, raw, &offsets);
+                let mut vmesh = legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(tmd, raw, &offsets);
+                if let Some(v) = self.cpu_vram_base.as_ref() {
+                    legaia_engine_render::scene_lighting::tag_emissive_vram_mesh(
+                        raw, &mut vmesh, v,
+                    );
+                }
                 if !vmesh.indices.is_empty()
                     && let Ok(m) = r.upload_vram_mesh(
                         &vmesh.positions,
@@ -694,7 +707,8 @@ impl PlayWindowApp {
                 }
             }
             if p.baked.color.is_some() {
-                let cmesh = legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(tmd, raw, &offsets);
+                let mut cmesh = legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(tmd, raw, &offsets);
+                legaia_engine_render::scene_lighting::tag_emissive_color_mesh(raw, &mut cmesh);
                 if !cmesh.is_empty()
                     && let Ok(m) = r.upload_color_mesh_blended(
                         &cmesh.positions,

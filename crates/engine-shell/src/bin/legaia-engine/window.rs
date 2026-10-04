@@ -1300,6 +1300,10 @@ struct PlayWindowApp {
     /// `upload_assets` at scene load and staged into the renderer each
     /// field frame together with the camera's view-projection.
     scene_point_lights: Vec<legaia_engine_render::scene_lights::ScenePointLight>,
+    /// The MAN scene-actor props' light sets (enhanced lighting), each in
+    /// world space at its spawn anchor; placed at the actor's live position
+    /// per frame by `scene_lighting::place_prop_lights`.
+    scene_prop_lights: Vec<legaia_engine_render::scene_lighting::PropLights>,
     /// Mouse drag-orbit state: the last cursor X (window pixels) while the
     /// left button is held, `None` when not dragging. A horizontal drag in
     /// field free-roam rotates `session.camera.manual_orbit`, which both

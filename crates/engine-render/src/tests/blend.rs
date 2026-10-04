@@ -84,6 +84,7 @@ fn psx_shaders_parse_and_validate() {
         ),
         // Depth-only shadow pass (vertex stage only).
         ("shadow", SHADOW_MESH_SHADER_SRC.to_string()),
+        ("glow", GLOW_SHADER_SRC.to_string()),
         // Screen-space 2D overlay pass (POLY_FT4 + flat quads). No dither
         // helper - it samples raw VRAM texels and modulates in NDC.
         ("screen_overlay", SCREEN_OVERLAY_SHADER_SRC.to_string()),

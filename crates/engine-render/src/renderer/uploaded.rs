@@ -70,17 +70,16 @@ pub(super) struct MeshUniforms {
     /// frame's `clip.w`-to-`SZ` factor, `0.0` (the default) the identity.
     /// Set with [`Renderer::set_overworld_curvature`].
     pub(super) flags: [f32; 4],
-    /// Opt-in dynamic-lighting enhancement (NON-RETAIL - the field path has
-    /// no light source; see the `dyn_light` WGSL helper). `[0..3]` = unit
-    /// direction TOWARD the light in mesh model space
-    /// ([`DYN_LIGHT_DIR`]), `[3]` = master enable: `0.0`
+    /// Enhanced-lighting enhancement (NON-RETAIL - the field path has no
+    /// light source; see the `dyn_light` WGSL helper). `[0..3]` = unit key
+    /// light direction of the staged mood, `[3]` = master enable: `0.0`
     /// (the default) is the identity, keeping the faithful path
     /// pixel-identical. Set with [`Renderer::set_dynamic_lighting`].
     pub(super) light_dir: [f32; 4],
-    /// Dynamic-light colour terms: `[0..3]` = warm tint applied to the
-    /// diffuse + pool terms ([`DYN_LIGHT_TINT`]), `[3]` =
-    /// ambient floor ([`DYN_LIGHT_AMBIENT`]). Only read when
-    /// `light_dir[3]` is set.
+    /// The mood's key light: `[0..3]` = key colour x strength, `[3]` = the
+    /// screen-pool weight. Only read when `light_dir[3]` is set. (The
+    /// ambient floor rides the per-frame scene-lights block, which keeps
+    /// this struct at one 256-byte slot.)
     pub(super) light_color: [f32; 4],
     /// View-depth IR0 ramp for the per-render-node depth cue -
     /// `(near_z, inv_range, max_ir0, enable)`, consumed by the `cue_ramp_ir0`
@@ -169,6 +168,10 @@ pub(super) struct SceneLightsUniform {
     /// Feet-line rule: `[0..2]` = the player's projected feet pixel,
     /// `[2..4]` = [`crate::occlusion_fade::lift_axis`]. Zero = rule off.
     pub(super) occl_lift: [f32; 4],
+    /// The enhanced-lighting mood's `(ambient_r, ambient_g, ambient_b,
+    /// emissive_gain)` - the third word of
+    /// [`crate::scene_lighting::LightingMood::uniforms`].
+    pub(super) ambient: [f32; 4],
     pub(super) lights: [ScenePointLightUniform; crate::scene_lights::MAX_SCENE_LIGHTS],
 }
 

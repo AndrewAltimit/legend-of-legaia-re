@@ -1022,6 +1022,24 @@ impl PlayWindowApp {
             // frame's Y negation) or the raw battle stage (the stage model's
             // scale + Y-flip). Staged every frame; `None` stages nothing.
             self.stage_fog_volume(r, cam, in_world_map);
+            // Enhanced lighting's mood: the persisted time of day over the
+            // loaded scene (`scene_lighting::TimeOfDay::mood` - the same call
+            // the browser play page makes). Cheap; staged every frame so a
+            // scene change or an `F8` cycle lands on the next frame.
+            let mood = {
+                use legaia_engine_render::scene_lighting::TimeOfDay;
+                let scene_name = self
+                    .session
+                    .host
+                    .scene
+                    .as_ref()
+                    .map(|s| s.name.as_str())
+                    .unwrap_or("");
+                TimeOfDay::from_name(&self.options_state.lighting_time_of_day)
+                    .unwrap_or_default()
+                    .mood(scene_name)
+            };
+            r.set_lighting_mood(mood);
             // Stage the derived scene point lights (the dynamic-lighting
             // enhancement's candle / wall-light layer) with this frame's
             // camera so the renderer can recover world space from the
@@ -1032,7 +1050,7 @@ impl PlayWindowApp {
             if !self.boot_ui.is_active()
                 && !in_world_map
                 && self.session.host.world.mode == SceneMode::Field
-                && !self.scene_point_lights.is_empty()
+                && !(self.scene_point_lights.is_empty() && self.scene_prop_lights.is_empty())
             {
                 // Per-frame selection: a scene can carry dozens of candle
                 // props but only 8 lights shade at once, so pick the ones
@@ -1050,13 +1068,23 @@ impl PlayWindowApp {
                         ]
                     })
                     .unwrap_or([0.0; 3]);
-                let picked = legaia_engine_render::scene_lights::nearest_lights(
-                    &self.scene_point_lights,
-                    focus,
-                );
+                // The static lights plus every prop's set at the actor's
+                // live position (the same anchor the NPC draw uses).
+                let mut all = self.scene_point_lights.clone();
+                all.extend(legaia_engine_render::scene_lighting::place_prop_lights(
+                    &self.scene_prop_lights,
+                    |slot, spawn| w.field_npc_live_anchor(slot, spawn),
+                ));
+                let picked = legaia_engine_render::scene_lights::nearest_lights(&all, focus);
                 r.set_scene_lights(&picked, cam);
+                // Halos + soft light shafts around the picked lights (the
+                // bloom stand-in), scaled by the mood's glow.
+                r.set_glow_sprites(&legaia_engine_render::scene_lighting::glow_sprites(
+                    &picked, &mood,
+                ));
             } else {
                 r.clear_scene_lights();
+                r.set_glow_sprites(&[]);
             }
             // Camera-occlusion fade (the see-through-walls enhancement),
             // two per-frame halves:
@@ -1387,6 +1415,7 @@ impl PlayWindowApp {
                 let verify_poses = &mut self.npc_pose_verify;
                 let srcs = &self.npc_anim_srcs;
                 let world = &self.session.host.world;
+                let tag_vram = self.cpu_vram_base.as_ref();
                 for (slot, player) in self.npc_clip_players.iter_mut() {
                     let Some((tmd, raw)) = srcs.get(slot) else {
                         continue;
@@ -1446,10 +1475,17 @@ impl PlayWindowApp {
                     } else {
                         tmd
                     };
-                    let vmesh =
+                    let mut vmesh =
                         legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(tmd, raw, &pose.bone_outputs);
-                    let cmesh =
+                    let mut cmesh =
                         legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(tmd, raw, &pose.bone_outputs);
+                    // Enhanced lighting's emissive tags, as the spawn build
+                    // set them (a re-pose would otherwise drop them).
+                    if let Some(v) = tag_vram {
+                        legaia_engine_render::scene_lighting::tag_emissive_meshes(
+                            raw, &mut vmesh, &mut cmesh, v,
+                        );
+                    }
                     let vm = if vmesh.indices.is_empty() {
                         None
                     } else {
