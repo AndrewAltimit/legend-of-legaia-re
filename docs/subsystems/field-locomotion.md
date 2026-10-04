@@ -1866,14 +1866,23 @@ this way, and every lift pair of the tower does the same. The landing is
 wedged between two walls and the platform, so without the bracket the first
 step off it re-fires the partner and rides straight back.
 
-The engine moves the player by the record's `MoveTo` and does not run the
-walk-off clip, so it keeps the bracket's effect instead:
-`World::arm_arrival_bracket` reads the partners off the teleporting record
-(`man_field_scripts::record_exempted_objects`) into
+A bracketed record also moves the player more than once: onto tile (0, 0)
+while the car travels, and on the rapid lift through each floor of a camera
+tour. Its landing is the last player `MoveTo` before the `B1`, so the resolver
+keeps walking a bracketed record to that point instead of stopping at its
+first move.
+
+The engine does not run the walk-off clips as motion, so it keeps the
+bracket's effect instead: `World::arm_arrival_bracket` reads the partners off
+the teleporting record (`man_field_scripts::record_exempted_objects`) into
 `FieldPropState::arrival_exempt`, the touch dispatch and the prop collision
 probe skip them, and an entry clears once no probe point of the player reaches
-its contact box. Disc-gated coverage:
-`crates/engine-shell/tests/tower_lift_arrival_disc.rs`.
+its contact box - never while the ride's own record is still running. A
+landing the walls seal on every side (the rapid lift down sets the player at
+(1856, 9280), in the wall niche behind its platform) is what the scripted
+walk-off exists for: `World::sealed_arrival_walk_off` carries the player
+straight through the platform to the first open spot past it. Disc-gated
+coverage: `crates/engine-shell/tests/tower_lift_arrival_disc.rs`.
 
 ### The pairing convention
 

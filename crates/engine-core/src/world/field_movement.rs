@@ -2310,6 +2310,9 @@ impl World {
         if slot >= self.actors.len() || !self.actors[slot].active {
             return;
         }
+        if !self.props.arrival_exempt.is_empty() && self.dialog.inline.is_none() {
+            self.walk_off_sealed_arrival(slot);
+        }
         let (px, pz) = {
             let ms = &self.actors[slot].move_state;
             (ms.world_x, ms.world_z)
@@ -2328,7 +2331,10 @@ impl World {
         }
         // The arrival bracket lifts once the player is off the platform: no
         // probe point in any direction reaches the partner's contact box.
-        if !self.props.arrival_exempt.is_empty() {
+        // Not while the ride's own record is still running it: a lift parks
+        // the player on tile (0, 0) and tours the floors before the arrival
+        // `MoveTo`, and retail's `B2` comes only after the walk-off.
+        if !self.props.arrival_exempt.is_empty() && self.dialog.inline.is_none() {
             let reach: Vec<(i32, i32)> =
                 std::iter::once((px as i32, pz as i32))
                     .chain(FIELD_ACTOR_PROBES.iter().flatten().map(|&(dx, dz)| {
@@ -2508,6 +2514,75 @@ impl World {
                 self.props.arrival_exempt.push(p);
             }
         }
+    }
+
+    /// The ride's walk-off, for an arrival the walls seal. A lift record's
+    /// tail turns the player (`B8 F8 80 00`) and plays the walk-off clips
+    /// (`A2 F8 01`, `A2 F8 02`) across the bracketed platform before its
+    /// `B2`; the engine runs neither clip as motion, so a landing set in the
+    /// wall niche behind a platform - `tower`'s rapid lift down arrives at
+    /// (1856, 9280), walled on every side but its own lift - would hold the
+    /// player for good. When every direction from the player reads wall and
+    /// the ride's own record has finished, carry the player straight through
+    /// the nearest bracketed platform to the first open spot past its reach,
+    /// which is where the scripted walk-off leaves it.
+    ///
+    /// REF: FUN_801DE840 (cross-context `0x22` ExecMove into the player)
+    fn walk_off_sealed_arrival(&mut self, slot: usize) {
+        let (px, pz) = {
+            let ms = &self.actors[slot].move_state;
+            (ms.world_x, ms.world_z)
+        };
+        let Some(&(_, platform)) = self
+            .props
+            .arrival_exempt
+            .iter()
+            .min_by_key(|&&(_, (x, z))| {
+                (i32::from(x) - i32::from(px)).abs() + (i32::from(z) - i32::from(pz)).abs()
+            })
+        else {
+            return;
+        };
+        let Some((x, z)) = self.sealed_arrival_walk_off((px, pz), platform) else {
+            return;
+        };
+        let y = self.sample_field_floor_height(i32::from(x), i32::from(z)) as i16;
+        let ms = &mut self.actors[slot].move_state;
+        ms.world_x = x;
+        ms.world_z = z;
+        ms.world_y = y;
+    }
+
+    /// Where [`Self::walk_off_sealed_arrival`] carries a player standing at
+    /// `from` across the bracketed platform centred on `platform`: `None`
+    /// when `from` has an open side (the player steps off by itself) or no
+    /// open spot lies within 384 units past the platform's centre.
+    pub fn sealed_arrival_walk_off(
+        &self,
+        from: (i16, i16),
+        platform: (i16, i16),
+    ) -> Option<(i16, i16)> {
+        let (px, pz) = from;
+        if !(0..4).all(|d| self.field_dir_blocked(px, pz, d)) {
+            return None;
+        }
+        let (dx, dz) = (
+            i32::from(platform.0) - i32::from(px),
+            i32::from(platform.1) - i32::from(pz),
+        );
+        let len = dx.abs().max(dz.abs());
+        if len == 0 {
+            return None;
+        }
+        // Past the platform's centre, in 16-unit steps, to the first spot
+        // the walls leave open on some side.
+        (1..=24).find_map(|k| {
+            let t = len + 16 * k;
+            let x = i16::try_from(i32::from(px) + dx * t / len).ok()?;
+            let z = i16::try_from(i32::from(pz) + dz * t / len).ok()?;
+            (!self.field_tile_is_wall(x, z) && (0..4).any(|d| !self.field_dir_blocked(x, z, d)))
+                .then_some((x, z))
+        })
     }
 
     /// Whether a prop collider is under the arrival bracket

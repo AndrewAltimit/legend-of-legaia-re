@@ -3188,7 +3188,25 @@ fn plan_search(
 ) -> Option<(Vec<Cell>, HashSet<Cell>, bool)> {
     let w = &session.host.world;
     let gw = tile_center(goal);
-    let gc = target.unwrap_or_else(|| cell_of(gw.0, gw.1));
+    // A goal tile whose centre is wall (a door band set in a wall strip)
+    // is aimed at through its open part: the dispatch fires on entering the
+    // tile, and the open corner says which side a player steps in from.
+    // `teien`'s way down, band (42..43, 29), is wall but for its upper-left
+    // sub-cell, so it is entered from the corridor above, never from below.
+    let gc = target.unwrap_or_else(|| {
+        let c = cell_of(gw.0, gw.1);
+        let open = |c: Cell| {
+            let (x, z) = cell_center(c);
+            !w.field_tile_is_wall(x, z)
+        };
+        if open(c) {
+            return c;
+        }
+        tile_cells(goal)
+            .filter(|&t| open(t))
+            .min_by_key(|t| (t.0 - c.0).abs() + (t.1 - c.1).abs())
+            .unwrap_or(c)
+    });
     let goal_tile = (i32::from(goal.0), i32::from(goal.1));
     let warps = teleports(session);
     let doors = object_doors(session);
@@ -3215,26 +3233,32 @@ fn plan_search(
             return vec![(land, 0)];
         }
         let inside = |c: Cell| plats.iter().any(|&p| in_reach(c, p));
-        let mut dist: HashMap<Cell, i32> = HashMap::from([(land, 0)]);
-        let mut q = VecDeque::from([land]);
+        // A ride's `MoveTo` sets the player on a tile centre, the low corner
+        // of its lattice cell. A landing the walls seal there is carried
+        // across the platform by the engine's walk-off
+        // (`World::sealed_arrival_walk_off`), and the pocket starts where
+        // that leaves the player.
+        let corner = (land.0 * SUBCELL, land.1 * SUBCELL);
+        let start = plats
+            .iter()
+            .find_map(|&p| w.sealed_arrival_walk_off(corner, p))
+            .map_or(land, |(x, z)| cell_of(x, z));
+        let mut dist: HashMap<Cell, i32> = HashMap::from([(start, 0)]);
+        let mut q = VecDeque::from([start]);
         let mut exits = Vec::new();
+        if !inside(start) {
+            exits.push((start, 0));
+            q.clear();
+        }
         while let Some(c) = q.pop_front() {
             let d = dist[&c];
             if dist.len() > 400 {
                 break;
             }
-            // The landing itself is not wall-tested: a ride's `MoveTo` sets
-            // the player on a tile centre, the low corner of its lattice
-            // cell, where the lattice reads the platform's rim as wall on
-            // every side, yet the locomotion steps off it (measured: `tower`
-            // P0[6]'s landing (960, 1856) walks onto P0[7]'s platform).
             let (ccx, ccz) = cell_center(c);
             for ((dx, dz), dir) in STEPS {
                 let n = (c.0 + dx, c.1 + dz);
-                if n.0 < 0
-                    || n.1 < 0
-                    || dist.contains_key(&n)
-                    || (c != land && w.field_dir_blocked(ccx, ccz, dir))
+                if n.0 < 0 || n.1 < 0 || dist.contains_key(&n) || w.field_dir_blocked(ccx, ccz, dir)
                 {
                     continue;
                 }
@@ -3253,7 +3277,7 @@ fn plan_search(
             );
         }
         if exits.is_empty() {
-            vec![(land, 0)]
+            vec![(start, 0)]
         } else {
             exits
         }

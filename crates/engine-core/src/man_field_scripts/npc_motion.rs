@@ -1070,18 +1070,47 @@ pub fn resolve_walk_touch_arm(
 ) -> Option<Option<WalkTouchEvent>> {
     let (start, pc0, len) = super::flat_record_span(man_file, man, flat)?;
     let body = man.get(start..start + len)?;
+    // A lift record moves the player more than once - onto tile (0, 0) while
+    // the car travels, through each floor of a non-stop ride's camera tour -
+    // and only the move before its arrival bracket (`B1 <partner> 00`, see
+    // [`record_exempted_objects`]) is where the player stays. `tower` P0[5],
+    // the rapid lift down, parks at (0, 0), tours, and arrives at (14, 72).
+    let bracketed = !record_exempted_objects(man_file, man, flat).is_empty();
+    let mut pending: Option<WalkTouchEvent> = None;
     let mut pc = pc0;
     let mut facing: Option<i16> = None;
     let mut seen = std::collections::HashSet::new();
     for _ in 0..DOOR_WALK_BUDGET {
         if !seen.insert(pc) {
-            return Some(None); // looped back: the record's idle loop
+            return Some(pending); // looped back: the record's idle loop
         }
         let insn = legaia_asset::field_disasm::decode(body, pc).ok()?;
         if insn.size == 0 {
             return None;
         }
         let player = insn.extended == Some(PLAYER_CHANNEL);
+        if bracketed {
+            match insn.info {
+                InsnInfo::MoveTo { xb, zb }
+                    if player && (xb & 0x7F, zb & 0x7F) != PARKED_SENTINEL_TILE =>
+                {
+                    pending = Some(WalkTouchEvent::PlayerMoveTo {
+                        world_x: grid_byte_to_world(xb),
+                        world_z: grid_byte_to_world(zb),
+                        facing,
+                    });
+                    pc += insn.size;
+                    continue;
+                }
+                InsnInfo::CFlag {
+                    kind: FlagKind::Set,
+                    bit: 0,
+                } if pending.is_some() && insn.extended.is_some_and(|t| t != PLAYER_CHANNEL) => {
+                    return Some(pending);
+                }
+                _ => {}
+            }
+        }
         match insn.info {
             InsnInfo::SystemFlag {
                 kind: FlagKind::Test,
@@ -1127,15 +1156,15 @@ pub fn resolve_walk_touch_arm(
                 }));
             }
             InsnInfo::SpawnRecord { global_index } => {
-                return Some(Some(WalkTouchEvent::SpawnRecord {
+                return Some(pending.or(Some(WalkTouchEvent::SpawnRecord {
                     flat_index: usize::from(global_index),
-                }));
+                })));
             }
             _ => {}
         }
         pc += insn.size;
     }
-    Some(None)
+    Some(pending)
 }
 
 /// The object actors a record makes **collision- and touch-exempt** by a
