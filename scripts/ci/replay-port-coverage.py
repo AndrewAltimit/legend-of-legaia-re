@@ -703,6 +703,10 @@ CANONICAL_LADDERS = [
     # ring (`801dbec4`) and the Rot stamp on the arts entry (`801dbddc`) -
     # with the ailment seeded the way an inflicting strike writes it.
     ("w9_status_marks_page", "legaia-web-viewer"),
+    # Retail's visible-tile crop (`801f7088` / `801f6d48`), which the shared
+    # kernel answers only at the retail camera preset - and both hosts start
+    # on a wider one. The page's distance control takes it there.
+    ("w9_view_window_crop_page", "legaia-web-viewer"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 
