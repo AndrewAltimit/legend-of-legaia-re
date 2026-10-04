@@ -1479,6 +1479,11 @@ impl World {
             victim: seat(victim_slot),
             band_timer: i32::from(self.battle_ctx.frame_timer),
             first_monster: self.battle_first_monster_byte(),
+            action: self
+                .actors
+                .get(caster_slot as usize)
+                .map_or(0, |a| a.battle.params[0]),
+            depth_raw: self.battle.camera_frame_height as i32,
         }
     }
 
@@ -1638,10 +1643,10 @@ impl World {
         let mut capture_arm = None;
         // A capture-class body's camera arms, on the phase it is about to
         // run (they make no gate of their own: the body's port does).
-        if has_trampoline
-            && let Some(direct) =
-                body.and_then(|b| vm::cast_module_camera::capture_camera_director(entry, b))
-        {
+        if let Some(direct) = vm::cast_module_camera::capture_camera_director(
+            entry,
+            body.unwrap_or(vm::cast_module_camera::SINGLE_BODY),
+        ) {
             let seats = self.module_cam_seats(caster_slot, victim_slot);
             let mut st = self.casting.module_cam;
             let arm = direct(&mut st, ctx.phase, seats);

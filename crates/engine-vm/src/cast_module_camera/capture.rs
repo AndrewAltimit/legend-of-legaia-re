@@ -51,14 +51,16 @@ pub type CaptureCamDirector = fn(&mut ModuleCamState, u8, ModuleCamSeats) -> Cap
 
 /// The camera director of a capture-class body, keyed on `(entry, body)` as
 /// the trampoline map is ([`crate::cast_module_ticks::capture_tick_body`]).
-/// `None` for a body whose camera arms are not ported: the camera then holds
-/// the pose `0x6F` left.
+/// A module with no trampoline has one tick body and is keyed on
+/// [`SINGLE_BODY`]. `None` for a body whose camera arms are not ported: the
+/// camera then holds the pose `0x6F` left.
 pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirector> {
     match (entry, body) {
         (940, MYSTIC_SHIELD_BODY) => Some(mystic_shield_camera),
         (944, GUILTY_CROSS_BODY) => Some(guilty_cross_camera),
         (962, ULTRA_CHARGE_BODY) => Some(ultra_charge_camera),
         (938, MYSTIC_CIRCLE_BODY) => Some(mystic_circle_camera),
+        (946, SINGLE_BODY) => Some(wave_camera),
         _ => None,
     }
 }
@@ -72,12 +74,17 @@ pub fn capture_countdown_va(action: u8) -> Option<u32> {
         0x37 => Some(GUILTY_CROSS_COUNTDOWN),
         0xA5 => Some(ULTRA_CHARGE_COUNTDOWN),
         0xB7 => Some(MYSTIC_CIRCLE_COUNTDOWN),
+        0x55 | 0x56 => Some(WAVE_COUNTDOWN),
         _ => None,
     }
 }
 
 /// PROT 0940's countdown word (`lui 0x8020` / `-0x79B4`).
 pub const MYSTIC_SHIELD_COUNTDOWN: u32 = 0x801F_864C;
+
+/// The key [`capture_camera_director`] takes for a module with no trampoline
+/// (one tick body, the module's own head-table dispatch).
+pub const SINGLE_BODY: u32 = 0;
 
 /// PROT 0940's `0xAC` body (Cort's Mystic Shield).
 pub const MYSTIC_SHIELD_BODY: u32 = 0x801F_7240;
@@ -381,5 +388,92 @@ pub fn mystic_circle_camera(
         drift,
         hold,
         next: None,
+    }
+}
+
+/// PROT 0946's countdown word (`lui 0x801F` / `+0x7F20`).
+pub const WAVE_COUNTDOWN: u32 = 0x801F_7F20;
+
+/// Zeto's **Call Wave** (`0x55`) and **Big Wave** (`0x56`), PROT 0946's one
+/// tick body `0x801F69FC` (nine arms off the image-head table). Retail picks
+/// the choreography at arm 0 off a per-seat word (`0x801CEFE0 + (seat+1)*4`)
+/// it toggles on every cast; the two library captures pin which branch each
+/// spell takes, so the port keys on the action id:
+///
+/// | arm | Call Wave | Big Wave |
+/// |---|---|---|
+/// | 0 (`0x801F6AD8`) | cut: pitch `0x100`, TR `(0, 0x600, 2z)`; to arm 1 | cut: pitch `0x20`, TR `(0, 0x600, z/2)`; to arm 4 |
+/// | 1 (`0x801F6D0C`) | pan: pitch `0`, TR `(0, 0x600, z/2)` over `0x100` frames; countdown `+= scalar << 8` | - |
+/// | 2 (`0x801F6D9C`) | gate; then pitch `0`, TR `(0, 0x600, z)` over `0x40`; `+= scalar * 0x60` | - |
+/// | 3 (`0x801F6E48`) | gate; the body finishes | - |
+/// | 4 (`0x801F6E90`) | - | pan: pitch `0x20`, TR `(0, 0x600, 2z)` over `0x100`; `+= scalar << 6` |
+/// | 5 (`0x801F6F30`) | - | gate; `+= scalar << 7` |
+///
+/// Every shot is behind the caster (yaw `0x800 - caster[+0x46]`, focus the
+/// caster) and `z` is `ctx[+0x6D0]`. Arms 6..8 of Big Wave are not ported; the
+/// body has no other port, so this director owns its phase and finishes the
+/// module there. The `zeto_call_wave_mid_cast` capture is in arm 2 on arm 1's
+/// pan, `zeto_big_wave_mid_cast` in arm 5 on arm 4's.
+///
+/// PORT: FUN_801F69FC (PROT 0946; the camera arms 0..5, their countdown and
+/// phase chain)
+pub fn wave_camera(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> CaptureCamArm {
+    let c = seats.caster;
+    let z = seats.depth_raw;
+    let shot = |pitch: i16, tr_z: i32, frames: u16| ModuleShot {
+        angles: [pitch, yaw_from(0x800, c.facing), 0],
+        tr: [0, 0x600, tr_z as i16],
+        focus: focus_on(c),
+        frames,
+    };
+    let pass = |shot: Option<ModuleShot>, next: Option<u8>| CaptureCamArm {
+        shot,
+        drift: None,
+        hold: false,
+        next,
+    };
+    let gate = |st: &mut ModuleCamState| st.countdown.drain_above(0);
+    let held = CaptureCamArm {
+        hold: true,
+        ..Default::default()
+    };
+    match phase {
+        0 => {
+            st.countdown.0 = 0;
+            if seats.action == 0x56 {
+                pass(Some(shot(0x20, z / 2, 1)), Some(4))
+            } else {
+                pass(Some(shot(0x100, z * 2, 1)), Some(1))
+            }
+        }
+        1 => {
+            st.countdown.add(1 << 8);
+            pass(Some(shot(0, z / 2, 0x100)), Some(2))
+        }
+        2 => {
+            if gate(st) {
+                return held;
+            }
+            st.countdown.add(0x60);
+            pass(Some(shot(0, z, 0x40)), Some(3))
+        }
+        3 => {
+            if gate(st) {
+                return held;
+            }
+            pass(None, None)
+        }
+        4 => {
+            st.countdown.add(1 << 6);
+            pass(Some(shot(0x20, z * 2, 0x100)), Some(5))
+        }
+        5 => {
+            if gate(st) {
+                return held;
+            }
+            st.countdown.add(1 << 7);
+            pass(None, None)
+        }
+        _ => pass(None, None),
     }
 }

@@ -2015,6 +2015,15 @@ run; a holding gate withholds the body's pass. The battle camera holds in
   1 / 2 (TR z `+4`, TR y `-1` a vsync) and 3 (`+96`, `-29`), and the countdown
   `0x801F8040` - **absolute**, not scalar-scaled: `0x800`, drained `8 * delta`.
 
+- **PROT 0946 (Zeto's Call Wave `0x55` / Big Wave `0x56`, one body
+  `0x801F69FC`, keyed on `SINGLE_BODY`)** - arm 0 forks the two
+  choreographies off a per-seat word retail toggles on every cast (the port
+  keys on the action id): Call Wave cuts to `(0, 0x600, 2z)` and pans to
+  `z/2` then `z` (arms 1..3), Big Wave cuts to `z/2` and pans to `2z` over
+  `0x100` frames (arms 4, 5), `z` being `ctx[+0x6D0]`; countdown
+  `0x801F7F20`. Arms 6..8 of Big Wave are not directed; the body has no other
+  port, so the director owns its phase and finishes the module there.
+
 A body with no director keeps the held pose.
 
 ### The band has eight stat-block writers, not one

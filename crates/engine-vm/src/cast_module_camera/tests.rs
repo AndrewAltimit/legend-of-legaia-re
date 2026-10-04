@@ -16,6 +16,8 @@ fn seats() -> ModuleCamSeats {
         },
         band_timer: 0,
         first_monster: 0,
+        action: 0,
+        depth_raw: 0,
     }
 }
 

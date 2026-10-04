@@ -125,6 +125,11 @@ pub struct ModuleCamSeats {
     /// The formation's first monster id `0x8007BD0C`, which a capture body
     /// can fork its framing on (PROT 0962's `0xA5` arm 0).
     pub first_monster: u8,
+    /// The caster's queued action id `+0x1DF` - which choreography a
+    /// two-spell module runs (PROT 0946's Call Wave / Big Wave).
+    pub action: u8,
+    /// `ctx[+0x6D0]`, the framing depth a capture shot can scale.
+    pub depth_raw: i32,
 }
 
 /// The module-resident state the camera arms carry between ticks: the
