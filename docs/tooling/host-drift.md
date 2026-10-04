@@ -1272,7 +1272,6 @@ about these is contested.
 | Gap | Shape |
 |---|---|
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
-| point-light shadow maps | Enhanced lighting reaches both hosts from one kernel; only its shadow maps are native. See [below](#enhanced-lightings-shadow-maps-are-native-only). |
 | battle body blend modes | Both hosts draw a whole battle body's semi-transparency; two residues differ in override keying and ordering. See [below](#a-battle-bodys-blend-mode-reaches-both-hosts-with-two-residues). |
 | save rack port 1 | The native rack's first port is an engine-format save directory; the page's two ports are both memory-card images. See [below](#the-save-racks-first-port-differs-per-host). |
 
@@ -1325,7 +1324,7 @@ only when a card is inserted. Closing it means giving the page a port backed
 by its stored sessions (the rack snapshot, the block read, the Save write and
 the export path), which is storage work rather than wiring.
 
-### Enhanced lighting's shadow maps are native-only
+### Enhanced lighting, shadow maps included, on both hosts
 
 Enhanced lighting is one engine-side source of truth,
 `legaia_engine_ui::scene_lighting`, on both hosts: the emissive tags are set
@@ -1338,12 +1337,25 @@ glow quads are the same `glow_vertices`. The page asks for all of it per
 frame through `play_lighting_frame`, against the camera basis of the VP it
 draws with; the moods are not constants on the page at all.
 
-What the page lacks is the PCF **shadow** term: native renders one depth layer
-per picked light, and the page's GLSL point lights attenuate and wrap
-identically but cast no shadow. Blocking capability: a depth-array render
-pass in [`site/js/webgl-tmd.js`](../../site/js/webgl-tmd.js). It buys no retail
-fidelity - this is the one row here where the *native* host runs the richer
-non-retail path - so it is a feature gap rather than a correctness gap.
+The PCF **shadow** term is per host by necessity - it is GPU work over each
+host's own draw list. Native renders one depth layer per picked light
+(`stage_scene_lights_and_shadows`); the page does the same in
+`TmdRenderer._renderLightShadows` ([`site/js/webgl-tmd.js`](../../site/js/webgl-tmd.js)):
+a `DEPTH_COMPONENT24` texture array, one downward cone per light rebuilt in
+the page's `(x, -y, z)` frame, the ground and every placement drawn depth-only
+through a position-only program bound at the main program's `a_position`
+slot, and a 3x3 hardware-compared PCF in the main shader. The cone uses a
+GL-style projection, whose window depth equals the native 0..1 depth for the
+same near and far, so the compare bias and the polygon offset carry over
+unchanged; the five constants are paired by `check-ui-host-drift.py`. The
+page's "Lamp shadows" box is the native `Y`. One residue: native's `Y` off
+drops the point lights with their shadows, the page's box drops only the
+shadows.
+
+The shadow array sits on its own texture unit for the program's life. A
+`sampler2DArrayShadow` left at the default unit 0 shares it with the VRAM
+`TEXTURE_2D`, which WebGL rejects at every draw of every page that builds a
+`TmdRenderer` - not only the play page.
 
 ### A battle body's blend mode reaches both hosts, with two residues
 
@@ -3702,8 +3714,8 @@ that could drift; none is gated.
   mesh drew (the native drained spawn slots, the page's player rig), and the
   native boot-panel gate has no page twin because no page boot panel draws
   over a world-map frame.
-- **The render toggles** - PSX rasterisation and enhanced lighting - reach
-  the page; only enhanced lighting's shadow maps stay native-only. See
+- **The render toggles** - PSX rasterisation and enhanced lighting, its
+  shadow maps included - reach the page. See
   [the render toggles on the page](#the-two-opt-in-render-toggles-on-the-page).
 - **The fishing wander readout (native only), left as a debug aid.** A
   dev-menu readout of `FUN_801d2050`'s tracked points, not a retail surface;
@@ -3766,8 +3778,8 @@ pixels against the pre-lighting shaders on the same bundle).
   engine per frame, in the retail frame, and the page flips Y into its own.
   The glow quads draw in a second small program, additive, depth-tested.
 
-What stays native-only is
-[enhanced lighting's shadow maps](#enhanced-lightings-shadow-maps-are-native-only).
+The point lights' shadow maps reach the page too - see
+[enhanced lighting on both hosts](#enhanced-lighting-shadow-maps-included-on-both-hosts).
 Native has no in-game PSX toggle - the `LEGAIA_PSX_RENDER` environment
 variable is its whole switch - so the page's checkbox is the one interactive
 control for it.

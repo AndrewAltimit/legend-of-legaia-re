@@ -556,13 +556,22 @@ uniform vec4 u_psx;
  * (ambient rgb, emissive gain). enable 0 - the GL default - is the identity.
  * The point lights are the engine's nearest-to-player pick, in this page's
  * world frame (x, -y, z): xyz = position, w = radius; colour rgb carries the
- * mood's lamp strength. No shadow maps on this host. */
+ * mood's lamp strength. */
 uniform vec4 u_dyn_dir;
 uniform vec4 u_dyn_color;
 uniform vec4 u_dyn_ambient;
 uniform int u_light_count;
 uniform vec4 u_light_pr[8];
 uniform vec4 u_light_col[8];
+/* The point lights' shadow maps (the GLSL twin of the native scene-lights
+ * group's t_shadow / s_shadow): one depth layer per picked light, rendered
+ * by TmdRenderer._renderLightShadows from a downward cone, compared through
+ * the hardware filter. u_light_vp[i] maps this page's world frame into
+ * light i's clip space; u_shadow = (on, texel size, compare bias, -). x = 0
+ * (the GL default) skips every lookup - unshadowed lights. */
+uniform highp sampler2DArrayShadow u_shadow_maps;
+uniform mat4 u_light_vp[8];
+uniform vec4 u_shadow;
 
 in vec2 v_uv;
 flat in uvec2 v_cba_tsb;
@@ -615,10 +624,34 @@ const vec2 DYN_POOL_CENTER = vec2(${glslFloat(DYN_POOL_CENTER[0])}, ${glslFloat(
 const float DYN_POOL_INNER = ${glslFloat(DYN_POOL_INNER)};
 const float DYN_POOL_OUTER = ${glslFloat(DYN_POOL_OUTER)};
 
-/* Twin of engine-render's scene_point_gain without the shadow term:
- * attenuation (1 - (d/r)^2)^2 and the half-Lambert wrap off the same normal
- * the native shader hands it (the smoothed vertex normal, else the facet
- * normal). */
+/* Twin of engine-render's scene_light_shadow: 3x3 PCF visibility of the
+ * fragment from light i (0 = fully shadowed, 1 = lit). Out-of-cone and
+ * behind-the-light fragments return 1.0 - distance attenuation still bounds
+ * them. GL window depth for a GL-style projection equals the native 0..1
+ * depth for the same near / far, so the compare bias carries over as is.
+ * textureGrad with zero gradients: the lookup sits in non-uniform control
+ * flow, and the depth layers carry one mip. */
+float light_shadow(int i, vec3 wp) {
+  if (u_shadow.x < 0.5) return 1.0;
+  vec4 clip = u_light_vp[i] * vec4(wp, 1.0);
+  if (clip.w <= 0.0) return 1.0;
+  vec3 ndc = clip.xyz / clip.w;
+  if (abs(ndc.x) > 1.0 || abs(ndc.y) > 1.0 || ndc.z <= -1.0 || ndc.z >= 1.0) return 1.0;
+  vec2 uv = ndc.xy * 0.5 + 0.5;
+  float ref = ndc.z * 0.5 + 0.5 - u_shadow.z;
+  float sum = 0.0;
+  for (int dy = -1; dy <= 1; dy++) {
+    for (int dx = -1; dx <= 1; dx++) {
+      vec2 o = vec2(float(dx), float(dy)) * u_shadow.y;
+      sum += textureGrad(u_shadow_maps, vec4(uv + o, float(i), ref), vec2(0.0), vec2(0.0));
+    }
+  }
+  return sum / 9.0;
+}
+
+/* Twin of engine-render's scene_point_gain: attenuation (1 - (d/r)^2)^2,
+ * the half-Lambert wrap off the same normal the native shader hands it (the
+ * smoothed vertex normal, else the facet normal) and the per-light shadow. */
 vec3 point_gain(vec3 n) {
   vec3 g = vec3(0.0);
   float n_len = length(n);
@@ -632,7 +665,7 @@ vec3 point_gain(vec3 n) {
     att = att * att;
     float lam = DYN_LAMBERT_FALLBACK;
     if (n_len > 1e-6 && d > 1e-3) lam = abs(dot(n / n_len, to_l / d)) * 0.5 + 0.5;
-    g += u_light_col[i].rgb * att * lam;
+    g += u_light_col[i].rgb * (att * lam * light_shadow(i, v_world));
   }
   return g;
 }
@@ -1073,4 +1106,25 @@ void main() {
   }
   o_color = vec4(v_color.rgb * f, 1.0);
 }
+`;
+
+/* Depth-only shadow pass for the enhanced-lighting point lights - the GLSL
+ * twin of engine-render's SHADOW_MESH_SHADER_SRC. Position only, bound at the
+ * main program's a_position location so every mesh VAO draws through it
+ * unchanged; u_mvp = light view-projection * the draw's model matrix. The
+ * fragment stage writes nothing: the target is the light's own depth layer,
+ * never the scene's buffer, and cutout texels shadow as solid (the native
+ * pass's accepted approximation too). */
+const SHADOW_VS_SRC = `#version 300 es
+precision highp float;
+uniform mat4 u_mvp;
+in vec3 a_position;
+void main() {
+  gl_Position = u_mvp * vec4(a_position, 1.0);
+}
+`;
+
+const SHADOW_FS_SRC = `#version 300 es
+precision highp float;
+void main() {}
 `;

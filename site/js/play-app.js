@@ -3112,6 +3112,7 @@ void main() {
        * checkbox state. Both off unless the player ticked them. */
       if (this.renderer.setPsxMode) this.renderer.setPsxMode(!!this.psxRender);
       if (this.renderer.setDynamicLighting) this.renderer.setDynamicLighting(!!this.dynLighting);
+      if (this.renderer.setDynShadows) this.renderer.setDynShadows(this.dynShadows !== false);
       /* Log-of-w depth on every branch's perspective frames (webgl-shaders.js
        * LOG_DEPTH_GLSL): the resolution the native float reversed-Z buffer
        * has and a 24-bit one lacks. */
@@ -3460,6 +3461,12 @@ void main() {
 
     setDynamicLighting(on) {
       this.dynLighting = !!on;
+    }
+
+    /* The point lights' shadow sub-layer (the native window's `Y`); on
+     * unless the "Lamp shadows" box is cleared. */
+    setDynShadows(on) {
+      this.dynShadows = !!on;
     }
 
     /* Stage this frame's camera.

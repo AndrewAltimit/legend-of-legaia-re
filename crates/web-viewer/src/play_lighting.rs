@@ -21,8 +21,10 @@
 //!   ([`crate::field_actors`]), instanced through the same
 //!   [`scene_lighting::placement_model`] / live-anchor kernels.
 //!
-//! Shadow maps are native-only: the page's GLSL point lights attenuate and
-//! wrap like native's but cast no shadow (see `docs/tooling/host-drift.md`).
+//! The point lights' shadow maps are GPU work over each host's own draw
+//! list: the page renders them in `site/js/webgl-tmd.js`
+//! (`_renderLightShadows`) from the light positions this packet carries (see
+//! `docs/tooling/host-drift.md`).
 //!
 //! [`OptionsState::lighting_time_of_day`]: legaia_engine_core::options::OptionsState::lighting_time_of_day
 

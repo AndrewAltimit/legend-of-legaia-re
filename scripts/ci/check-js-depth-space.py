@@ -45,6 +45,9 @@ WAIVED = {
     "`renderAssembled`, ahead of every log-depth write of the frame, and the "
     "page uses it only on the overworld, where every later surface is meant to "
     "win against it",
+    ("webgl-shaders.js", "SHADOW_FS_SRC"): "the point-light shadow pass draws "
+    "into each light's own depth layer, never the scene's buffer, and nothing "
+    "compares its depth against log2(w)",
     ("webgl-prim-replay.js", "FS_REPLAY"): "no page loads webgl-prim-replay.js; "
     "it draws into its own context",
 }

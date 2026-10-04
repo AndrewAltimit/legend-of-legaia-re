@@ -506,6 +506,22 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
         ("POOL_INNER", "DYN_POOL_INNER"),
         ("POOL_OUTER", "DYN_POOL_OUTER"),
     )
+] + [
+    # The point lights' shadow maps: the page's depth-array pass
+    # (webgl-tmd.js `_renderLightShadows`) rebuilds the native cone and
+    # compare from these literals, so each is the shadow model.
+    {
+        "what": f"point-light shadow constant {name}",
+        "native": (path, name),
+        "web": ("site/js/webgl-tmd.js", name),
+    }
+    for path, name in (
+        ("crates/engine-render/src/renderer/helpers.rs", "SHADOW_MAP_DIM"),
+        ("crates/engine-render/src/renderer/helpers.rs", "SHADOW_COMPARE_BIAS"),
+        ("crates/engine-render/src/scene_lights.rs", "SHADOW_FOV"),
+        ("crates/engine-render/src/scene_lights.rs", "SHADOW_NEAR_FRAC"),
+        ("crates/engine-render/src/scene_lights.rs", "SHADOW_NEAR_MIN"),
+    )
 ]
 
 # Simulation injection sites that must agree across hosts. See the module
