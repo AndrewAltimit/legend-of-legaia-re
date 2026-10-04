@@ -2844,7 +2844,8 @@ void main() {
           : null;
         if (!vp) return;
         if (!this._fogPass) this._fogPass = new window.LegaiaFogVolumePass(this.renderer.gl);
-        this._fogPass.draw(rt, vp, this._battle ? this._battle.scale : 4.0);
+        this._fogPass.draw(rt, vp, this._battle ? this._battle.scale : 4.0,
+          !!this.renderer.lastLogDepth);
       } catch (e) {
         this._fogBroken = true;
         try { console.warn('fog volume pass disabled:', e); } catch (_) { /* no console */ }

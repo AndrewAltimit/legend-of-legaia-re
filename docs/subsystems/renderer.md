@@ -2504,7 +2504,8 @@ target read-only and samples it as a texture (the target carries
 `TEXTURE_BINDING` and is stored only on frames with a bank). The page cannot
 sample its default framebuffer's depth, so it blits it into a depth texture
 each frame (the format is probed once; a driver that refuses the copy draws
-without the fade). The native pass is `renderer/fog_volume.rs` (WGSL, built
+without the fade); on frames the page drew with log-of-w depth the sheets write
+and test that encoding and the fade decodes it. The native pass is `renderer/fog_volume.rs` (WGSL, built
 lazily on the first staged frame); the page's is `site/js/webgl-fog-volume.js`,
 a GLSL transcription of the same recipe that reads its numbers from the frame
 header (`fog_volume::FogSpace::shader_constants`, `FogSpace::soft_distance`),

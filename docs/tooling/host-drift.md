@@ -1982,7 +1982,10 @@ after the 3D scene and before the screen-primitive layer, and neither draws
 over a minigame venue. The soft intersection is the one step that differs by
 construction: the native renderer samples its depth target in a pass split out
 of the scene pass, the page blits its default framebuffer's depth into a
-texture - same inversion of the frame matrix's depth mapping on both.
+texture. Where the page wrote log-of-w depth that frame (`renderer.lastLogDepth`,
+`LOG_DEPTH_GLSL`), its sheets write and test the same encoding and the fade
+decodes `w = 2^(depth * LOG_DEPTH_RANGE)`; otherwise both hosts invert the
+frame matrix's own depth mapping.
 
 #### A battle backdrop that changes with the last step, not with the host
 

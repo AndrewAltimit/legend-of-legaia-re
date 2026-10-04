@@ -49,9 +49,22 @@ void main() {
   v_floor_w = a_pos.w;
 }`;
 
+  /* The play page's log-of-w depth (webgl-shaders.js LOG_DEPTH_GLSL): when
+   * the frame's mesh program wrote it, the sheets must test in the same
+   * encoding and the soft intersection must decode it. A cached
+   * webgl-shaders.js without it falls back to the same formula. */
+  const LOG_GLSL = (typeof LOG_DEPTH_GLSL === 'string') ? LOG_DEPTH_GLSL : `
+float logDepthOfW(float w) {
+  return clamp(log2(max(w, 1.0)) / 24.0, 0.0, 1.0);
+}
+`;
+  const LOG_RANGE = (typeof LOG_DEPTH_RANGE === 'number') ? LOG_DEPTH_RANGE : 24.0;
+
   const FS = `#version 300 es
 precision highp float;
 precision highp int;
+uniform vec2 u_log_depth;
+${LOG_GLSL}
 uniform vec4 u_sim;
 uniform vec4 u_mesh;
 uniform vec4 u_color;
@@ -116,14 +129,20 @@ void main() {
   /* Soft intersection against the scene depth (window depth -> GL NDC ->
    * view w through ndc = A + B / w). u_depth.w = 0 when the page could not
    * copy its depth buffer: no fade. */
+  /* u_log_depth.x: the scene was written as log2(w) / u_log_depth.y. */
+  gl_FragDepth = u_log_depth.x > 0.5 ? logDepthOfW(v_clip_w) : gl_FragCoord.z;
   float soft = 1.0;
   if (u_depth.w > 0.5) {
-    float ds = texelFetch(u_scene_depth, ivec2(gl_FragCoord.xy), 0).r * 2.0 - 1.0;
-    float den = ds - u_depth.x;
+    float raw = texelFetch(u_scene_depth, ivec2(gl_FragCoord.xy), 0).r;
     float ws = 1.0e9;
-    if (abs(den) > 1.0e-7) {
-      float cand = u_depth.y / den;
-      if (cand > 0.0) ws = cand;
+    if (u_log_depth.x > 0.5) {
+      ws = raw >= 1.0 ? 1.0e9 : exp2(raw * u_log_depth.y);
+    } else {
+      float den = (raw * 2.0 - 1.0) - u_depth.x;
+      if (abs(den) > 1.0e-7) {
+        float cand = u_depth.y / den;
+        if (cand > 0.0) ws = cand;
+      }
     }
     soft = clamp((ws - v_clip_w) / u_depth.z, 0.0, 1.0);
   }
@@ -186,6 +205,7 @@ void main() {
         params: gl.getUniformLocation(prog, 'u_params'),
         consts: gl.getUniformLocation(prog, 'u_consts'),
         depth: gl.getUniformLocation(prog, 'u_depth'),
+        logDepth: gl.getUniformLocation(prog, 'u_log_depth'),
         dens: gl.getUniformLocation(prog, 'u_dens'),
         sceneDepth: gl.getUniformLocation(prog, 'u_scene_depth'),
       };
@@ -255,9 +275,10 @@ void main() {
 
     /* Draw one frame's bank. `rt` is the LegaiaRuntime, `vp` the matrix the
      * page drew the scene with (its Y-up draw frame), `battleScale` the
-     * battle stage's world scale (a battle bank lives in raw stage units).
+     * battle stage's world scale (a battle bank lives in raw stage units),
+     * `logDepth` whether the scene this frame was drawn with log-of-w depth.
      * Returns false when the engine has no bank this frame. */
-    draw(rt, vp, battleScale) {
+    draw(rt, vp, battleScale, logDepth) {
       const h = rt.play_fog_volume_header();
       if (!h || h.length < H.LEN || !vp) return false;
       const gl = this.gl;
@@ -325,6 +346,7 @@ void main() {
       gl.uniform4f(this.loc.params, h[H.HEIGHT], h[H.LAYERS], h[H.DRIFT_X], h[H.DRIFT_Z]);
       const c = H.SHADER_CONSTANTS;
       gl.uniform4f(this.loc.consts, h[c], h[c + 1], h[c + 2], h[c + 3]);
+      gl.uniform2f(this.loc.logDepth, logDepth ? 1 : 0, LOG_RANGE);
       gl.uniform4f(this.loc.depth, A, B, Math.max(h[H.SOFT_DISTANCE] || 0, 1e-3), depthTex ? 1 : 0);
       gl.uniform1i(this.loc.dens, 0);
       gl.activeTexture(gl.TEXTURE1);
