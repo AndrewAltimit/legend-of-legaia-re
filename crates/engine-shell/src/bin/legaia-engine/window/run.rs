@@ -1086,6 +1086,11 @@ pub(super) fn cmd_play_window_with_record(
     let font = Font::load_from_extracted(extracted_root)
         .map_err(|e| log::debug!("extracted/font not loaded ({e:#}); trying the disc"))
         .ok()
+        // The `0xCE` escape sprites ride the atlas whichever source won.
+        .map(|f| match session.escape_icons.as_ref() {
+            Some(icons) => f.with_escape_icons(icons),
+            None => f,
+        })
         .or_else(|| session.dialog_font.clone())
         .unwrap_or_else(|| {
             log::warn!("dialog font unavailable; falling back to the placeholder font");

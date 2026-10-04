@@ -192,6 +192,11 @@ pub struct BootSession {
     /// `--disc <image>` boot on the retail metrics. `None` when the source
     /// carries neither the font TIM nor the executable.
     pub dialog_font: Option<legaia_font::Font>,
+    /// The `0xCE` escape sprites (controller buttons, icons) off the boot
+    /// source, for a host font that did not come from [`Self::dialog_font`]
+    /// (an `extracted/font/` load) to attach
+    /// ([`legaia_font::Font::with_escape_icons`]). `None` when unreachable.
+    pub escape_icons: Option<legaia_font::escape_icons::EscapeIcons>,
     /// The session's **seat at the retail mode table**: the port's copy of
     /// `_DAT_8007B83C` ([`legaia_engine_core::mode::ModeSeat`]).
     ///
@@ -421,7 +426,24 @@ fn read_dialog_font(
         )
         .ok()?;
     let scus = read_scus(source)?;
-    legaia_font::Font::from_disc_tim_and_scus(&tim, &scus).ok()
+    let font = legaia_font::Font::from_disc_tim_and_scus(&tim, &scus).ok()?;
+    Some(attach_escape_icons(font, index, &scus))
+}
+
+/// Attach the `0xCE` escape sprites (controller buttons, icons) to `font`
+/// from the boot-resident TIMs at the head of `PROT.DAT` and the SCUS sprite
+/// records, so every shared text layout draws them
+/// ([`legaia_font::Font::with_escape_icons`]). Unchanged when unreachable.
+pub fn attach_escape_icons(
+    font: legaia_font::Font,
+    index: &legaia_engine_core::scene::ProtIndex,
+    scus: &[u8],
+) -> legaia_font::Font {
+    use legaia_font::escape_icons::{ICON_PROT_DAT_LEN, ICON_PROT_DAT_OFFSET};
+    match index.prot_dat_raw_bytes(ICON_PROT_DAT_OFFSET, ICON_PROT_DAT_LEN) {
+        Ok(head) => font.with_escape_icons_from_disc(&head, scus),
+        Err(_) => font,
+    }
 }
 
 /// Read + decode the sound-effect descriptor bank from a boot source's
@@ -769,6 +791,14 @@ impl BootSession {
         // Retail proportional dialog font off the disc (no save state). See
         // `BootSession::dialog_font`.
         let dialog_font = read_dialog_font(&host.index, &source);
+        let escape_icons = read_scus(&source).and_then(|scus| {
+            use legaia_font::escape_icons::{EscapeIcons, ICON_PROT_DAT_LEN, ICON_PROT_DAT_OFFSET};
+            let head = host
+                .index
+                .prot_dat_raw_bytes(ICON_PROT_DAT_OFFSET, ICON_PROT_DAT_LEN)
+                .ok()?;
+            EscapeIcons::from_disc(&head, &scus).ok()
+        });
         if dialog_font.is_none() {
             log::warn!(
                 "dialog font not decodable from the boot source; \
@@ -922,6 +952,7 @@ impl BootSession {
             spell_catalog,
             steal_table,
             dialog_font,
+            escape_icons,
             field_menu: None,
             field_menu_sub: None,
             options_state: OptionsState::default(),

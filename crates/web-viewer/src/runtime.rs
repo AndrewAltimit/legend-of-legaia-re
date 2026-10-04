@@ -573,6 +573,18 @@ impl LegaiaRuntime {
                 legaia_font::Font::from_disc_tim_and_scus(&tim, scus)
                     .map_err(|e| crate::console_log(&format!("dialog font decode failed: {e}")))
                     .ok()
+                    .map(|font| {
+                        // The `0xCE` escape sprites (buttons, icons), from
+                        // the boot-resident TIMs at the head of PROT.DAT.
+                        use legaia_font::escape_icons::{ICON_PROT_DAT_LEN, ICON_PROT_DAT_OFFSET};
+                        match host
+                            .index
+                            .prot_dat_raw_bytes(ICON_PROT_DAT_OFFSET, ICON_PROT_DAT_LEN)
+                        {
+                            Ok(head) => font.with_escape_icons_from_disc(&head, scus),
+                            Err(_) => font,
+                        }
+                    })
             });
         // Every cold entry on this page is a scene-picker entry (a New Game
         // seeds its own Vahn-alone roster before entering), so the cold seed

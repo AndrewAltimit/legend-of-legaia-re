@@ -522,7 +522,14 @@ impl LegaiaMinigames {
                     .min(self.prot.len()),
             )
             .zip(self.scus.as_deref())
-            .and_then(|(tim, scus)| legaia_font::Font::from_disc_tim_and_scus(tim, scus).ok());
+            .and_then(|(tim, scus)| {
+                let font = legaia_font::Font::from_disc_tim_and_scus(tim, scus).ok()?;
+                let head = legaia_font::escape_icons::ICON_PROT_DAT_OFFSET as usize;
+                Some(match self.prot.get(head..) {
+                    Some(h) => font.with_escape_icons_from_disc(h, scus),
+                    None => font,
+                })
+            });
 
         // --- slot SFX cue bank (descriptors PROT 1199 + samples PROT 1198) ---
         // The reel-stop click, payout tick and reach sting are all runtime-bank
