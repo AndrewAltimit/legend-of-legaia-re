@@ -373,8 +373,12 @@ signed (`lh v0,0x6d2(a0)` at `0x801ECED8`) and shifts the product logically
 (`srl v0,t0,0x10` at `0x801ECF14`) - a pairing that would explode on a negative
 value, and never sees one. So the magnitude is `angle * atk / 65536`, i.e. **0
 for a face-on hit and `atk / 32` (about +3%) for a strike from directly behind**,
-with the term reset to zero after the first hit of an action (`sh zero,0x6d2` at
-`0x801EC888`, the sibling of the distance reset one instruction later).
+with the term reset to zero after the first hit of an action - on the hit path
+after the damage roll has read it (`sh zero,0x6d2` at `0x801EE3C4`), on the
+block path before the skipped damage body (`0x801EC888`), each beside the
+distance reset one instruction later. The port seeds the pair in
+`World::track_block_approach_terms` and hands both to the block roll and to
+`battle_formulas::physical_predamage` before zeroing them.
 
 ### Physical attack damage - `overlay_battle_action_801ec3e4`
 
@@ -2040,7 +2044,7 @@ VA - base). Everything below is in `FUN_801EC3E4` unless a function is named.
 | `0x80047E1C..0x80047E54` | `FUN_80047430`: `actor[+0x1F7] = (cursor >> 4) < record[0x10 + FUN_80050E00(record+0x10)]` - the juggle window's only two writers (`0x80047E50` zero, `0x80047E54` one) |
 | `0x801CF4B4` | `PTR_801CF4B4`, the six-entry command jump table: `[801ECBC4, 801ECC0C, 801ECC54, 801ECC54, 801ECDE4, 801ECCD0]` |
 | `0x801EC588..0x801EC5C8` | power index `(record_byte - 0x0C) % 5` into the stack local the two table reads use |
-| `0x801EC888..0x801EC88C` | zeroing of `ctx[+0x6D2]` (angle) and `ctx[+0x6D4]` (distance) once the first hit has landed |
+| `0x801EC888..0x801EC88C` / `0x801EE3C4..0x801EE3C8` | zeroing of `ctx[+0x6D2]` (angle) and `ctx[+0x6D4]` (distance) by a blocked / landed first hit |
 | `0x801ECA20..0x801ECA80` | juggle counter `ctx[+0x0A]`: `+1` while the defender's `+0x1F7` timer runs, else `1` |
 | `0x801ECB80..0x801ECBBC` | party-slot gate, `lhu s0,0x158` base ATK, jump-table dispatch on `+0x1D9 - 0x0C` |
 | `0x801ECBC4` / `0x801ECC0C` / `0x801ECC54` | single-slot arms: record `+0x198` / `+0x199` / `+0x19A` → equipment attack byte `>> 1` |

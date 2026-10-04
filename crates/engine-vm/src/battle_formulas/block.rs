@@ -12,7 +12,7 @@
 //!
 //! ```text
 //! s0 = A.SPD + A.ATK*4/5 + ctx[+0x6D2]          ; attacker (+0x164, +0x158)
-//!                                               ; 0x6D2 <= 0, added unsigned
+//!                                               ; 0x6D2 in 0..=0x800
 //! s1 = D.SPD + D.ATK*4/5 + ctx[+0x6D4]          ; defender
 //! s0 = max(s0, s1)
 //! s0 += (rand() % s0) * BLOCK_SCALARS[(pb - 0x0C) % 5] >> 1
@@ -72,7 +72,8 @@ pub struct BlockSide {
 pub struct BlockRoll {
     pub attacker: BlockSide,
     pub defender: BlockSide,
-    /// `ctx[+0x6D2]` - the attack-angle term.
+    /// `ctx[+0x6D2]` - the attack-angle term, `0..=0x800` (distance from
+    /// face-on).
     pub attack_ramp: i16,
     /// `ctx[+0x6D4]` - the approach-distance term.
     pub guard_ramp: i16,

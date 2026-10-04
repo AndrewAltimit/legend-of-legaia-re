@@ -87,7 +87,8 @@ pub struct PhysicalHit {
     pub combo_scale: u8,
     /// `ctx[+0x6D2]` (i16) - the **attack angle** term, written by the
     /// approach state of `FUN_801E295C` (`0x801E3068..0x801E30C8`) as the
-    /// folded facing difference minus `0x800`: `0` for a face-on strike.
+    /// facing difference folded into `0x800..=0x1000`, minus `0x800`: `0` for
+    /// a face-on strike, `0x800` for one in the back.
     pub attack_ramp: i16,
     /// `ctx[+0x6D4]` (i16) - the **approach distance** accumulated while the
     /// attacker walks in (`0x801E35DC..0x801E35EC`); the kernel zeroes it once
