@@ -215,6 +215,19 @@ impl PlayWindowApp {
         let pad = legaia_engine_core::world_map_panel_host::packed_pad(world.input.pad());
         self.field_party_hud
             .tick(suppressed, view_mode, pad, player_pos, 1, projected_y);
+        // The overworld's idle (`0xA0`) outlasts the run before the capture
+        // tick, so the rearm hold above cannot reach a short retail
+        // countdown on its own: clamp the running countdown as well.
+        if let Some(sc) = self.screenshot.as_ref()
+            && let Some(n) = sc.hud_countdown
+            && let Some(cap) = legaia_engine_core::world_map_panel_host::hud_countdown_cap(
+                self.tick_no,
+                sc.capture_tick,
+                n,
+            )
+        {
+            self.field_party_hud.cap_countdown(cap);
+        }
     }
 
     /// The field party HUD's two draw halves for this frame, or empty when

@@ -1298,6 +1298,17 @@ impl FieldPartyHud {
         self.last = None;
     }
 
+    /// Clamp a running idle countdown to at most `max` frames. A no-op while
+    /// the kernel is rearming (no cached position): the capture harness's
+    /// phase alignment ([`hud_countdown_cap`]) uses it where the idle is longer
+    /// than the run before the capture, so a rearm hold alone cannot bring
+    /// the countdown down to the retail value in time.
+    pub fn cap_countdown(&mut self, max: i16) {
+        if self.cached.is_some() && self.timer > max {
+            self.timer = max.max(0);
+        }
+    }
+
     /// One frame.
     ///
     /// `hud_disabled` is retail's `_DAT_8007B868` - the "something else owns
@@ -1344,6 +1355,17 @@ impl FieldPartyHud {
         self.last = Some(decision);
         decision
     }
+}
+
+/// The other half of the phase alignment, for an idle longer than the run
+/// before the capture (the overworld's `0xA0` against a capture at tick
+/// `120`): the countdown the kernel may hold **after** host tick `tick` so
+/// that it still reads `retail_countdown` at `capture_tick`. `None` past the
+/// capture.
+pub fn hud_countdown_cap(tick: u64, capture_tick: u64, retail_countdown: i16) -> Option<i16> {
+    let left = capture_tick.checked_sub(tick)?;
+    let cap = i64::from(retail_countdown.max(0)) + i64::try_from(left).ok()?;
+    Some(i16::try_from(cap).unwrap_or(i16::MAX))
 }
 
 /// Phase-align the HUD's idle countdown to a retail frame: `true` on every
@@ -1441,6 +1463,36 @@ mod tests {
         }
         // The un-held run (no retail value to align to) draws long before.
         assert!(!hud_phase_hold(CAPTURE + 1, CAPTURE, 0, IDLE));
+    }
+
+    /// The overworld idle (`0xA0`) outlasts a capture at tick 120, so the
+    /// hold alone leaves the countdown above any short retail value; the cap
+    /// brings it down so the capture still reads retail's countdown.
+    #[test]
+    fn the_countdown_cap_lands_a_short_retail_value_under_a_long_idle() {
+        use legaia_engine_vm::world_map_panel_actors::hud_idle_frames;
+        const CAPTURE: u64 = 120;
+        let idle = hud_idle_frames(1, false);
+        assert!(i64::from(idle) > CAPTURE as i64);
+        for retail in [0i16, 3, 0x30] {
+            let mut hud = FieldPartyHud::new();
+            let mut last = None;
+            for tick in 1..=CAPTURE {
+                if hud_phase_hold(tick, CAPTURE, retail, idle) {
+                    hud.rearm();
+                }
+                last = Some(hud.tick(false, 1, 0, Some((100, 200)), 1, None));
+                if let Some(cap) = hud_countdown_cap(tick, CAPTURE, retail) {
+                    hud.cap_countdown(cap);
+                }
+            }
+            let want = match retail {
+                0 => HudDecision::Draw { y: HUD_Y_BOTTOM },
+                t => HudDecision::CountingDown { timer: t },
+            };
+            assert_eq!(last, Some(want), "retail countdown {retail}");
+        }
+        assert_eq!(hud_countdown_cap(CAPTURE + 1, CAPTURE, 0), None);
     }
 
     /// The player's engaged bit holds the HUD in its rearm arm: a host that

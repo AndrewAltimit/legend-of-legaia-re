@@ -377,7 +377,8 @@ impl RetailObs {
                 && game_anchors::u16_at(ram, BGM_SLOT + 6) != 0,
             fog_gate,
             save,
-            hud_countdown: (class == StateClass::Field).then(|| rd16(ram, HUD_COUNTDOWN)),
+            hud_countdown: matches!(class, StateClass::Field | StateClass::WorldMap)
+                .then(|| rd16(ram, HUD_COUNTDOWN)),
             frame,
             battle: (class == StateClass::Battle)
                 .then(|| crate::retail_compare_battle::RetailBattle::from_ram(ram)),
@@ -439,7 +440,7 @@ impl RetailObs {
         let pending = std::mem::replace(&mut self.scene, loaded.clone());
         self.pending_scene = Some(pending);
         self.class = StateClass::classify(self.game_mode, &self.scene, self.player.is_some());
-        if self.class != StateClass::Field {
+        if !matches!(self.class, StateClass::Field | StateClass::WorldMap) {
             self.hud_countdown = None;
         }
     }

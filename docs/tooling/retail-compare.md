@@ -179,7 +179,11 @@ engine verdict:
   `LEGAIA_HUD_COUNTDOWN`; the window rearms the HUD until the countdown lands
   on that value at the capture tick
   (`world_map_panel_host::hud_phase_hold`). A state whose countdown has
-  expired (`0`) scores the readout on both sides.
+  expired (`0`) scores the readout on both sides. The overworld runs the same
+  HUD on its far idle (`0xA0` frames), longer than the run before the capture,
+  so there the running countdown is also clamped to what it may still hold
+  (`hud_countdown_cap`); without the clamp no overworld capture drew the
+  readout retail's frame shows.
 
 `--flags-first` is a diagnostic arm for the headless side: hydrate, enter
 through `enter_scene_live` directly (no resume landing, no saved seat),
