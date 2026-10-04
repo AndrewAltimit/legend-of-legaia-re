@@ -338,6 +338,65 @@ impl FieldActors {
         Ok((tmd, raw))
     }
 
+    /// Enhanced lighting's light sets of the catalog's actors, each clustered
+    /// at its spawn anchor (the floor under its placement) from its rest
+    /// mesh - the native window's MAN-prop light pass. Painted lamplight is
+    /// not read here (on a character it is skin), so a set comes only from
+    /// glow prims and the curated emissive table.
+    pub fn prop_light_sets(
+        &self,
+        host: &SceneHost,
+        banks: ActorBanks<'_>,
+    ) -> Vec<legaia_engine_ui::scene_lighting::PropLights> {
+        use legaia_engine_ui::scene_lighting as sl;
+        let (Some(n), Some(res)) = (self.npcs.as_ref(), host.resources.as_ref()) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for (i, e) in n.pack.entries.iter().enumerate() {
+            let Ok((tmd, raw)) = self.entry_tmd(host, banks, i as u32) else {
+                continue;
+            };
+            let mut vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &raw);
+            let mut cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&tmd, &raw);
+            let hit = sl::tag_emissive_meshes(&raw, &mut vmesh, &mut cmesh, &res.vram);
+            let mut samples = sl::vram_mesh_emitters(
+                &vmesh.positions,
+                &vmesh.cba_tsb,
+                &vmesh.colors,
+                &vmesh.indices,
+                Some((&res.vram, &vmesh.uvs)),
+            );
+            samples.extend(sl::color_mesh_emitters(
+                &cmesh.positions,
+                &cmesh.colors,
+                &cmesh.blend,
+                &cmesh.indices,
+            ));
+            if let Some(h) = hit {
+                samples.push(sl::curated_mesh_sample(&h));
+            }
+            if samples.is_empty() {
+                continue;
+            }
+            let (x, z) = (e.placement.world_x, e.placement.world_z);
+            let y = host
+                .world
+                .sample_field_floor_height(i32::from(x), i32::from(z));
+            let spawn = [f32::from(x), y as f32, f32::from(z)];
+            let model = glam::Mat4::from_translation(glam::Vec3::from(spawn));
+            let lights = sl::cluster_all_scene_lights(&sl::transform_samples(&samples, &model));
+            if !lights.is_empty() {
+                out.push(sl::PropLights {
+                    slot: e.placement.index as u8,
+                    spawn,
+                    lights,
+                });
+            }
+        }
+        out
+    }
+
     /// Per catalog entry, its op-`0x4B` morph generation (`-1` = never armed).
     pub fn morph_states(&self) -> Vec<i32> {
         let Some(n) = self.npcs.as_ref() else {
@@ -388,9 +447,16 @@ impl FieldActors {
             return Ok(());
         }
         let (tmd, raw) = self.entry_tmd(host, banks, i)?;
-        let (mesh, object_ids, shading) =
+        let (mut mesh, object_ids, shading) =
             legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&tmd, &raw);
         let flat = crate::packet_color::hybrid(&mesh, &shading);
+        // Enhanced lighting's emissive tags - the same rule the native
+        // window's actor build runs (inert unless the enhancement is on).
+        if let Some(res) = host.resources.as_ref() {
+            legaia_engine_ui::scene_lighting::tag_emissive_hybrid(
+                &raw, &mut mesh, &flat, &res.vram,
+            );
+        }
         if let Some(n) = self.npcs.as_mut() {
             n.pack.cur = Some((idx, mesh, object_ids, flat));
         }

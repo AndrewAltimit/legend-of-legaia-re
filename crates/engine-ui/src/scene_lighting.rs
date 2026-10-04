@@ -1018,10 +1018,10 @@ impl LightingMood {
     pub const CAVE: Self = Self {
         name: "cave",
         key_dir: [0.20, -0.95, 0.20],
-        key_rgb: [0.55, 0.52, 0.50],
-        ambient_rgb: [0.42, 0.40, 0.40],
+        key_rgb: [0.42, 0.40, 0.38],
+        ambient_rgb: [0.62, 0.60, 0.60],
         pool: 0.30,
-        point_scale: 1.15,
+        point_scale: 1.2,
         emissive_gain: 1.35,
         glow: 0.8,
     };

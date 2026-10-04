@@ -98,10 +98,12 @@ In-window extras: left-mouse drag orbits the camera around your character
 double-click puts the framing back to retail - all three are locked while a
 cutscene has the camera. `T` cycles the coarse
 camera-distance preset, `R` toggles precise free-angle movement (an opt-in
-enhancement - retail-style movement is the default), `I` toggles dynamic
-lighting (also opt-in, `--dynamic-lighting` to start with it on), `Y` toggles
-that enhancement's shadow-casting point lights (`--no-dyn-shadows` starts with
-them off), `F1` shows
+enhancement - retail-style movement is the default), `I` toggles enhanced
+lighting (on by default and remembered: a time-of-day mood, real lights at the
+scene's lamps and glowing props, the Genesis Tree glowing; off is the game's
+own baked shading), `F8` cycles its time of day (auto, day, dusk, night), `Y`
+toggles its shadow-casting point lights (`--no-dyn-shadows` starts with them
+off), `F1` shows
 the engine's diagnostic text rows (off by default), `F2` mutes audio, `F3`
 swaps the field camera for the wide debug orbit, `F4` toggles the
 camera-occlusion fade (on by default: walls between the camera and your

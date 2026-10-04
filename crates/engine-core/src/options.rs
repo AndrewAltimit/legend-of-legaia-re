@@ -245,9 +245,11 @@ pub struct OptionsState {
     /// Enhanced lighting (engine-only, non-retail): the scene mood's ambient
     /// and key light, the derived lamp point lights, emissive surfaces and
     /// their glow (`legaia_engine_ui::scene_lighting`). Both windowed hosts
-    /// read it (`I` in `play-window`, the play page's checkbox). Off is the
-    /// faithful baked-shading render, pixel-identical to it. Pure
-    /// presentation: never feeds the simulation.
+    /// read it (`I` in `play-window`, the play page's checkbox). **Default
+    /// on** - the enhanced side is the better experience, and its daylight
+    /// mood stays close to the baked brightness; off is the faithful
+    /// baked-shading render, pixel-identical to it. Pure presentation: never
+    /// feeds the simulation (replays force it off).
     pub enhanced_lighting: bool,
     /// The time of day enhanced lighting lights scenes under: `auto` (the
     /// scene's own mood - daylight outdoors, dim interiors and caves),
@@ -279,7 +281,7 @@ impl Default for OptionsState {
             retail_static_window: true,
             retail_view_window: true,
             volumetric_fog: true,
-            enhanced_lighting: false,
+            enhanced_lighting: true,
             lighting_time_of_day: "auto".to_string(),
         }
     }
@@ -1143,6 +1145,19 @@ mod tests {
         assert!(!w.terrain.static_window.retail_windowing);
         opts.apply_to_world(&mut w);
         assert!(w.terrain.static_window.retail_windowing);
+    }
+
+    /// Enhanced lighting defaults on under the scene's own mood, and an
+    /// options file written before the knob existed reads the same default.
+    #[test]
+    fn enhanced_lighting_defaults_on_and_survives_old_files() {
+        let opts = OptionsState::default();
+        assert!(opts.enhanced_lighting);
+        assert_eq!(opts.lighting_time_of_day, "auto");
+        let old: OptionsState = toml::from_str("muted = true\n").unwrap();
+        assert!(old.enhanced_lighting && old.muted);
+        let back: OptionsState = toml::from_str(&toml::to_string(&opts).unwrap()).unwrap();
+        assert_eq!(back, opts);
     }
 
     #[test]

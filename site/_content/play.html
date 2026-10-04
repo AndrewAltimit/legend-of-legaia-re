@@ -353,8 +353,17 @@
             <input type="checkbox" id="play-psx-render"> PSX rasterisation
           </label>
           <label class="play-dev-menu"
-                 title="Dynamic lighting: a soft warm directional light and a screen-centred light pool over the baked shading (the native window's I toggle). Not retail - the game's own render has no light source. Presentation only.">
-            <input type="checkbox" id="play-dyn-light"> Dynamic lighting
+                 title="Enhanced lighting: a time-of-day mood over the baked shading, real point lights at the scene's lamps and glowing props, emissive surfaces (the Genesis Tree) and soft halos (the native window's I toggle, persisted). Not retail - the game's own render has no light source; untick for the faithful shading. Presentation only.">
+            <input type="checkbox" id="play-dyn-light"> Enhanced lighting
+          </label>
+          <label class="play-dev-menu"
+                 title="Time of day for enhanced lighting (the native window's F8): Auto follows the scene - daylight outdoors, dim caves and dungeons; Day, Dusk and Night force one mood everywhere. Persisted.">
+            <select id="play-time-of-day">
+              <option value="auto">Auto</option>
+              <option value="day">Day</option>
+              <option value="dusk">Dusk</option>
+              <option value="night">Night</option>
+            </select>
           </label>
           <label class="play-dev-menu"
                  title="Ground fog: a low drifting mist bank over the scenes that read as misty or night (Rim Elm under the Mist, Drake Castle, the Voz forests, the Ravine, and any scene whose own fog puffs are live), parted by every character walking through it; a battle inherits its scene's bank (the native window's F9, persisted like its other options). Not retail - the game draws only its fog puffs. Presentation only.">
@@ -790,6 +799,7 @@
        * the battle tools are session-only and start at the engine defaults. */
       if (typeof window.__playSyncPreciseMove === 'function') window.__playSyncPreciseMove();
       if (typeof window.__playSyncGroundFog === 'function') window.__playSyncGroundFog();
+      if (typeof window.__playSyncRenderToggles === 'function') window.__playSyncRenderToggles();
       if (typeof window.__playSyncCameraDistance === 'function') window.__playSyncCameraDistance();
       setSaveUi(true);
       /* The disc is up: re-render the save bar so it decodes the party
@@ -1897,19 +1907,40 @@
   seeThroughEl.addEventListener('change', () => { applySeeThrough(); canvas.focus(); });
   window.__playApplySeeThrough = applySeeThrough;
 
-  /* The native window's two opt-in render toggles, both off by default:
-   * PSX rasterisation (LEGAIA_PSX_RENDER) and dynamic lighting (`I`).
-   * Presentation only; re-applied on every view rebuild. */
+  /* The native window's render toggles: PSX rasterisation
+   * (LEGAIA_PSX_RENDER, session-only) and enhanced lighting (`I` + `F8`'s
+   * time of day, both persisted engine options - the boxes reflect the
+   * stored values once a runtime is up). Presentation only; re-applied on
+   * every view rebuild. */
   const psxRenderEl = document.getElementById('play-psx-render');
   const dynLightEl = document.getElementById('play-dyn-light');
+  const timeOfDayEl = document.getElementById('play-time-of-day');
   function applyRenderToggles() {
+    const rt = window.__playRuntime;
+    if (rt && typeof rt.set_enhanced_lighting === 'function') {
+      try {
+        rt.set_enhanced_lighting(!!dynLightEl.checked);
+        timeOfDayEl.value = rt.set_lighting_time_of_day(timeOfDayEl.value);
+      } catch (e) {}
+    }
     if (!view) return;
     view.setPsxRender(!!psxRenderEl.checked);
     view.setDynamicLighting(!!dynLightEl.checked);
   }
+  function syncRenderToggles() {
+    const rt = window.__playRuntime;
+    if (rt && typeof rt.enhanced_lighting === 'function') {
+      try {
+        dynLightEl.checked = !!rt.enhanced_lighting();
+        timeOfDayEl.value = rt.lighting_time_of_day();
+      } catch (e) {}
+    }
+  }
   psxRenderEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
   dynLightEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
+  timeOfDayEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
   window.__playApplyRenderToggles = applyRenderToggles;
+  window.__playSyncRenderToggles = syncRenderToggles;
 
   /* Precise (free-angle) movement - the native window's `R` toggle. The
    * engine persists it with the rest of the options, so the box reflects the

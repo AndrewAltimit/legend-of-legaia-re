@@ -449,10 +449,17 @@ impl LegaiaRuntime {
                 .tmds
                 .get(res_idx)
                 .ok_or_else(|| JsValue::from_str("field_mesh: tmd missing"))?;
-            match &offsets {
+            let (mut mesh, flat) = match &offsets {
                 Some(o) => crate::field_scene::build_hybrid_env_mesh_posed(rtmd, o),
                 None => crate::field_scene::build_hybrid_env_mesh(rtmd, &res.vram),
-            }
+            };
+            // Enhanced lighting's emissive tags (TSB bit 13) - the native
+            // window's env-mesh rule; the shaders read them only while the
+            // enhancement is on.
+            legaia_engine_ui::scene_lighting::tag_emissive_hybrid(
+                &rtmd.raw, &mut mesh, &flat, &res.vram,
+            );
+            (mesh, flat)
         };
         if let Some(f) = self.field.as_mut() {
             f.cur = Some(((s, anim), built.0, built.1));

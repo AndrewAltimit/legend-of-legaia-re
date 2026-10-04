@@ -3116,6 +3116,13 @@ void main() {
        * LOG_DEPTH_GLSL): the resolution the native float reversed-Z buffer
        * has and a 24-bit one lacks. */
       if (this.renderer.setLogDepth) this.renderer.setLogDepth(true);
+      /* Enhanced lighting's per-frame source: the engine's mood, picked
+       * point lights and glow quads (`play_lighting_frame`), asked by the
+       * renderer against the camera basis of the VP it draws with. */
+      this.renderer.lightingProvider = (this.dynLighting
+          && typeof rt.play_lighting_frame === 'function')
+        ? (r, u) => rt.play_lighting_frame(r[0], r[1], r[2], u[0], u[1], u[2])
+        : null;
       /* Retail GTE NCLIP winding rejection, from the shared engine kernel
        * (`camera_view::nclip_cull_mode`): armed for the whole field pass
        * (retail culls every field mesh's back faces - a sky dome's outer

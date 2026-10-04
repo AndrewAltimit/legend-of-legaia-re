@@ -47,6 +47,7 @@ pub mod play_fmv;
 pub mod play_fog_volume;
 pub mod play_frame_step;
 pub mod play_host_parity;
+pub mod play_lighting;
 pub mod play_menu;
 pub mod play_minigame_arena;
 pub mod play_minigame_slots;

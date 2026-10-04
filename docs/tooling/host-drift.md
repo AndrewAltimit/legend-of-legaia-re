@@ -1272,7 +1272,7 @@ about these is contested.
 | Gap | Shape |
 |---|---|
 | shading law on web | The two hosts express one law in two shading languages. See [below](#the-two-hosts-do-not-share-a-shading-law). |
-| derived scene lights | An enhancement the browser renderer cannot express. See [below](#derived-scene-point-lights-are-native-only). |
+| point-light shadow maps | Enhanced lighting reaches both hosts from one kernel; only its shadow maps are native. See [below](#enhanced-lightings-shadow-maps-are-native-only). |
 | battle body blend modes | Both hosts draw a whole battle body's semi-transparency; two residues differ in override keying and ordering. See [below](#a-battle-bodys-blend-mode-reaches-both-hosts-with-two-residues). |
 | save rack port 1 | The native rack's first port is an engine-format save directory; the page's two ports are both memory-card images. See [below](#the-save-racks-first-port-differs-per-host). |
 
@@ -1325,19 +1325,25 @@ only when a card is inserted. Closing it means giving the page a port backed
 by its stored sessions (the rack snapshot, the block read, the Save write and
 the export path), which is storage work rather than wiring.
 
-### Derived scene point lights are native-only
+### Enhanced lighting's shadow maps are native-only
 
-`--dynamic-lighting` stages per-scene derived point lights plus their PCF
-shadow maps into the wgpu renderer. It is the enhancement layer, not retail -
-the faithful path is pixel-identical with it off, which is the default - and
-the page's GLSL program has neither a light array nor a shadow sampler.
+Enhanced lighting is one engine-side source of truth,
+`legaia_engine_ui::scene_lighting`, on both hosts: the emissive tags are set
+by the same `tag_emissive_*` calls on every mesh build, the light list is
+derived by the same emitter + clustering kernels over each host's own scene
+assembly, the frame's lights are the same `nearest_lights` pick around the
+player (props placed through the same `World::field_npc_live_anchor`), the
+mood is the same `TimeOfDay::mood` over the same persisted option, and the
+glow quads are the same `glow_vertices`. The page asks for all of it per
+frame through `play_lighting_frame`, against the camera basis of the VP it
+draws with; the moods are not constants on the page at all.
 
-Blocking capability: a point-light + shadow layer in
-[`site/js/webgl-shaders.js`](../../site/js/webgl-shaders.js), and a per-frame
-export of the picked light set. Both are real work, and neither buys retail
-fidelity: this is the one row here where the *native* host is the one running
-a non-retail path, so the page being without it is a feature gap rather than
-a correctness gap.
+What the page lacks is the PCF **shadow** term: native renders one depth layer
+per picked light, and the page's GLSL point lights attenuate and wrap
+identically but cast no shadow. Blocking capability: a depth-array render
+pass in [`site/js/webgl-tmd.js`](../../site/js/webgl-tmd.js). It buys no retail
+fidelity - this is the one row here where the *native* host runs the richer
+non-retail path - so it is a feature gap rather than a correctness gap.
 
 ### A battle body's blend mode reaches both hosts, with two residues
 
@@ -3696,9 +3702,8 @@ that could drift; none is gated.
   mesh drew (the native drained spawn slots, the page's player rig), and the
   native boot-panel gate has no page twin because no page boot panel draws
   over a world-map frame.
-- **The two opt-in render toggles** - PSX rasterisation and the dynamic
-  light's directional term and pool - reach the page now; only the derived
-  point lights under them stay native-only. See
+- **The render toggles** - PSX rasterisation and enhanced lighting - reach
+  the page; only enhanced lighting's shadow maps stay native-only. See
   [the render toggles on the page](#the-two-opt-in-render-toggles-on-the-page).
 - **The fishing wander readout (native only), left as a debug aid.** A
   dev-menu readout of `FUN_801d2050`'s tracked points, not a retail surface;
@@ -3717,13 +3722,16 @@ that could drift; none is gated.
 
 ### The two opt-in render toggles on the page
 
-The play page carries both of the native window's opt-in render toggles as
-checkboxes, each off by default. Both land in
+The play page carries both of the native window's render toggles as
+checkboxes: PSX rasterisation (off by default, session-only) and enhanced
+lighting (the persisted option, on by default, with a time-of-day selector
+beside it). Both land in
 [`site/js/webgl-shaders.js`](../../site/js/webgl-shaders.js), the one GLSL
 program every 3D page shares, and both are the identity when off: the shader
 gates each on a uniform that stays zero unless the play page stages it, and an
 off frame of `town01` reads back byte-identical to the frame before the
-toggles existed.
+toggles existed (re-measured tick-locked for enhanced lighting: zero differing
+pixels against the pre-lighting shaders on the same bundle).
 
 - **PSX rasterisation** is the native `psx_params` word as one `u_psx` vector
   (framebuffer width and height, snap on, dither on), staged by
@@ -3740,25 +3748,29 @@ toggles existed.
   where native's colour-mesh vertex stage does not (the page draws both
   halves of a hybrid mesh in one program, and snapping one half would open
   cracks between them).
-- **Dynamic lighting** is the native `dyn_light` with the point-light gain at
-  zero: a warm directional `|N.L|` term and a screen-centred light pool,
-  capped at 1.3x over the baked shading, applied after the texel modulate and
-  before the grade and cue. Textured prims light off smoothed per-vertex
-  normals that `computeSmoothNormals` (`webgl-math.js`, the twin of
+- **Enhanced lighting** is the native `dyn_light` + `scene_point_gain` without
+  the shadow term: the mood's ambient floor, a `|N.L|` key light and a
+  screen-centred pool, capped at 1.3x over the baked shading, plus up to eight
+  point lights (half-Lambert wrap, `(1 - (d/r)^2)^2` attenuation) up to 1.9x,
+  applied after the texel modulate and before the grade and cue; an emissive
+  prim (TSB / blend bit 13) draws at the emissive gain plus its light.
+  Textured prims light off smoothed per-vertex normals that
+  `computeSmoothNormals` (`webgl-math.js`, the twin of
   `legaia_tmd::mesh::compute_smooth_normals`) derives on the CPU - only while
   the toggle is on, and again after a posed mesh's positions change, as
   native's posed mesh build does. Untextured prims and the ground light off
-  the facet normal, as native's colour mesh and heightfield do. The light's
+  the facet normal, as native's colour mesh and heightfield do. The law's
   constants are JS values interpolated into the GLSL, paired with their
-  native twins by `check-ui-host-drift.py`'s constant table (as is the dither
-  matrix).
+  native twins in `scene_lighting.rs` by `check-ui-host-drift.py`'s constant
+  table (as is the dither matrix); the mood and the lights come from the
+  engine per frame, in the retail frame, and the page flips Y into its own.
+  The glow quads draw in a second small program, additive, depth-tested.
 
-What stays native-only is the
-[derived point lights](#derived-scene-point-lights-are-native-only) and their
-PCF shadow maps, which need a per-frame export of the picked light set and a
-shadow-map pass the page does not have. Native has no in-game PSX toggle - the
-`LEGAIA_PSX_RENDER` environment variable is its whole switch - so the page's
-checkbox is the one interactive control for it.
+What stays native-only is
+[enhanced lighting's shadow maps](#enhanced-lightings-shadow-maps-are-native-only).
+Native has no in-game PSX toggle - the `LEGAIA_PSX_RENDER` environment
+variable is its whole switch - so the page's checkbox is the one interactive
+control for it.
 
 ## A tick-locked side-by-side pass
 

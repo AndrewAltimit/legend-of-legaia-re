@@ -79,6 +79,10 @@ pub struct LegaiaRuntime {
     /// CLUT fx) changed texels; drained by [`Self::field_vram_take_dirty`]
     /// so the page re-uploads the VRAM texture only on real changes.
     pub(crate) field_vram_dirty: bool,
+    /// Enhanced lighting's derived light sets for the running scene
+    /// ([`crate::play_lighting`]), built on the first lit frame after a
+    /// scene entry.
+    pub(crate) scene_lights: Option<crate::play_lighting::SceneLightCache>,
     /// The field-to-battle transition's per-frame emitter - the same
     /// `legaia_engine_ui::battle_intro::BattleIntro` the native window arms.
     /// `Some` only while the encounter session sits in its `Transition`
@@ -405,6 +409,7 @@ impl LegaiaRuntime {
             locomotion_anm: None,
             field_vram_anim: None,
             field_vram_dirty: false,
+            scene_lights: None,
             battle_intro: None,
             // The host framing bias the retail follow view is rendered with,
             // pushed in exactly where the native window pushes it
