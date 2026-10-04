@@ -1960,6 +1960,28 @@ script word on both hosts (`World::fog.gate`, written by
 `crates/engine-shell/tests/w1h_fog_gate_census.rs` (native) and
 `crates/web-viewer/tests/w1h_fog_page_prims.rs` (page).
 
+#### The volumetric ground fog is one bank, two shader transcriptions
+
+The ground-fog enhancement ([renderer](../subsystems/renderer.md#volumetric-ground-fog-enhancement))
+is simulated in exactly one place - `World::tick_fog_volume`, inside
+`World::tick` - and switched by exactly one setting,
+`OptionsState::volumetric_fog`, which both hosts push through
+`apply_to_world` (native `F9`, the page's "Ground fog" box). What each host
+owns is the draw, and the two draws differ only where the hosts' renderers do:
+
+| host | draw site | matrix of the bank's space |
+|---|---|---|
+| native window | `stage_fog_volume` in `window/event_handler/redraw_passes.rs` -> `Renderer::set_fog_volume` (WGSL, `renderer/fog_volume.rs`) | field: the scene camera (already Y-negated); battle: camera x `battle_stage_model()` |
+| play page | `_drawFogVolume` in `site/js/play-app.js` -> `webgl-fog-volume.js` (GLSL), fed by `play_fog_volume_header` / `_density` / `_mesh` | the frame's own VP x `diag(s, -s, s)`, `s = 1` field / the battle world scale |
+
+A `SIM_PAIRS` row pins both draw sites to `World::fog_volume_frame`. The
+recipe's numbers ride the frame (`FogSpace::shader_constants`, the header's
+tail), so the GLSL carries no constant of its own to drift; the shader *body*
+is the residue no gate reads - the two must be edited together. Both draw
+after the 3D scene and before the screen-primitive layer, and neither draws
+over a minigame venue. Neither can sample its depth buffer in that pass, so
+the sheets cut hard against walls on both alike.
+
 #### The field screen-effect wash had a producer and no consumer
 
 The field VM's op `0x34` sub-0 arm spawns a colour-tween actor

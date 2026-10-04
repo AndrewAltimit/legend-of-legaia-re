@@ -673,6 +673,11 @@ print, whose two numbers are the pool's live count and its cap.
 
 ### The fog pool: spawner, records, render pass
 
+The port also layers a non-retail **volumetric ground fog** over the scenes
+whose pool is live (and a few tuned mist / night scenes), a bank the walking
+characters part; it never reads or writes this pool - see
+[renderer](renderer.md#volumetric-ground-fog-enhancement).
+
 Three routines, one pool at `_DAT_8007B7E0` (see
 [`fog_particles`](../../crates/engine-core/src/fog_particles.rs) for the
 byte layout):
