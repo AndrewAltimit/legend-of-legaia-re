@@ -3004,7 +3004,27 @@ impl PlayWindowApp {
             // and projection - the segments both browser pages stroke.
             // The machine itself - cabinet, reels, furniture, dot matrix and
             // coin HUD - under the paylines (`ui_slot_cabinet`).
-            screen_prims.extend(slot_prims);
+            // A rules page is a full-screen panel its text prints on, so it
+            // rides the under-overlay slot: the composited tail draws over
+            // the glyph layer, which would bury the page's text.
+            let rules_page = self
+                .session
+                .host
+                .world
+                .minigames
+                .slot_machine
+                .as_ref()
+                .is_some_and(|m| {
+                    matches!(
+                        m.screen(),
+                        legaia_engine_core::slot_machine::SlotScreen::Instructions { .. }
+                    )
+                });
+            if rules_page {
+                light_prims.extend(slot_prims);
+            } else {
+                screen_prims.extend(slot_prims);
+            }
             screen_prims.extend(self.slot_payline_screen_prims());
             // The fishing line, latched above: the same kernel and builder
             // the browser play page uses.
