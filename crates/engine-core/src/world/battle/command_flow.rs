@@ -38,6 +38,16 @@ pub(crate) fn ring_arm_refused(status: u16, arm: crate::battle_input::BattleComm
 /// `li v0,0x10` at `0x801D16A8`); the item commit's is `9`.
 pub(crate) const SPIRIT_COMMIT_CLIP: u8 = 0x10;
 
+/// The clip the ring's **Item** and **Magic** arms stage behind the action
+/// (`+0x1E7`): `li v0,0x9` / `sb v0,0x1e7(v1)` at `0x801D13E4..0x801D13E8`
+/// (Item, beside `+0x1DE = 1`) and `0x801D14BC..0x801D14C0` (Magic, beside
+/// `+0x1DE = 2`). Action state `0x3C` stages whatever the byte holds as the
+/// queued clip (`lbu v0,0x1e7(s3)` / `sb v0,0x1da(s3)` at
+/// `0x801E3B4C..0x801E3B54`), and nothing between a Spirit turn and the next
+/// commit clears it - so an arm that does not write its own value inherits
+/// the Spirit clip and the Spirit clip's cue track.
+pub(crate) const CAST_COMMIT_CLIP: u8 = 9;
+
 /// The entry command a saved swing byte stands for: `0x0C..=0x0F` are Left,
 /// Right, Down, Up (`legaia_art::Command::as_action`), anything else ends
 /// the string.
@@ -282,6 +292,7 @@ impl World {
                 // pattern as Item). `tick_battle_spell_menu` drives until the
                 // player casts (turn cycles via EndOfAction) or backs out.
                 self.battle_ctx.active_actor = session.actor;
+                self.stamp_commit_clip(session.actor, CAST_COMMIT_CLIP);
                 match self.build_battle_spell_session(session.actor) {
                     Some(menu) => {
                         self.battle.spell_menu = Some(menu);
@@ -299,6 +310,7 @@ impl World {
                 // uses an item (turn cycles via EndOfAction) or backs out
                 // (the command menu reopens for the same actor).
                 self.battle_ctx.active_actor = session.actor;
+                self.stamp_commit_clip(session.actor, CAST_COMMIT_CLIP);
                 self.battle.item_menu = Some(self.build_battle_item_session());
                 self.sync_battle_flow(None);
             }
@@ -316,8 +328,8 @@ impl World {
                 // action SM's spirit band stages at `0x46`.
                 if let Some(a) = self.actors.get_mut(actor as usize) {
                     a.battle.action_category = 4;
-                    a.battle.queued_anim_b = SPIRIT_COMMIT_CLIP;
                 }
+                self.stamp_commit_clip(actor, SPIRIT_COMMIT_CLIP);
                 if let Some(guard) = self.battle.guarding.get_mut(actor as usize) {
                     *guard = true;
                 }
@@ -1715,6 +1727,10 @@ impl World {
                         a.battle.action_category =
                             vm::battle_action::ActionCategory::Item.as_byte();
                     }
+                    // The ring's Item arm wrote this already; restating it at
+                    // the window's commit keeps an item window reached by any
+                    // other door on the item clip rather than a stale one.
+                    self.stamp_commit_clip(actor, CAST_COMMIT_CLIP);
                     self.commit_party_command(
                         actor,
                         crate::battle_round::PendingPartyAction::Item {
@@ -1797,6 +1813,17 @@ impl World {
             if *qty == 0 {
                 self.party.inventory.remove(&item_id);
             }
+        }
+    }
+
+    /// Write the clip a ring commit stages behind the action
+    /// (`actor[+0x1E7]`): [`CAST_COMMIT_CLIP`] for Item / Magic,
+    /// [`SPIRIT_COMMIT_CLIP`] for Spirit.
+    ///
+    /// PORT: FUN_801D0748 (`sb v0,0x1e7(v1)` at `0x801D13E8` / `0x801D14C0` / `0x801D16B0`)
+    pub(in crate::world) fn stamp_commit_clip(&mut self, actor: u8, clip: u8) {
+        if let Some(a) = self.actors.get_mut(actor as usize) {
+            a.battle.queued_anim_b = clip;
         }
     }
 

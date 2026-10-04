@@ -61,6 +61,9 @@ fn a_committed_items_cue_group_reaches_the_world_spawn_and_sfx_sinks() {
     world.tables.move_power = Some(MovePowerCatalog::from_overlay_0898(&overlay).expect("catalog"));
     world.tables.move_power_overlay = Some(Arc::from(overlay.as_slice()));
     world.set_item_effects(items.clone());
+    // A synthetic CD-XA span table (the SCUS one is not read here) so the
+    // cast cue's voice leg has a span to admit.
+    world.audio.xa_cue_durations = Some(vec![10; 0x200]);
     // A 32-entry effect catalog so the actor-cue arm has a pool to spawn in
     // (the real efect.dat is not loaded here).
     {
@@ -181,18 +184,36 @@ fn a_committed_items_cue_group_reaches_the_world_spawn_and_sfx_sinks() {
         site.group
     );
 
-    // Two different sounds reached the host-drained SFX queue, in retail's
-    // order: the cast cue first (state `0x3D`, `FUN_8004FCC8`, seated on the
-    // *caster*), then the group's sounded effect cues (state `0x3F`,
-    // `FUN_80058490`, seated where the group was placed).
+    // The cast cue (state `0x3D`, `FUN_8004FCC8`, seated on the *caster*).
+    // On the party leg it is `roster_id * 0x10 + 0xF8..0xFC >= 0x108`, a
+    // CD-XA clip: it reaches the host-drained **XA** queue, and the SFX
+    // queue stays empty.
     let char_kind = world.party_roster_slot(1) as u8 + 1;
     let cast = legaia_engine_vm::battle_cast_cue::cast_audio_cue(
         1, char_kind, eff.class, item_id, eff.tier,
     );
     let mut want: Vec<u16> = Vec::new();
+    let mut want_xa: Vec<(u32, u32)> = Vec::new();
     if let legaia_engine_vm::battle_cast_cue::CastCueOutcome::Sfx(id) = cast {
-        want.push(id);
+        if id >= 0x100 {
+            let v = u32::from(id - 0x100);
+            let slot = match v >> 3 {
+                1 => 0x1A,
+                3 => 0x1B,
+                5 => 0x1C,
+                other => other,
+            };
+            want_xa.push((slot, v & 7));
+        } else {
+            want.push(id);
+        }
     }
+    let got_xa: Vec<(u32, u32)> = world
+        .drain_battle_xa_cues()
+        .into_iter()
+        .map(|c| (c.clip, c.channel))
+        .collect();
+    assert_eq!(got_xa, want_xa, "item {item_id:#04x}: the cast voice");
     // `0x801F6418`'s bytes are the **CLUT source x** of a 16x1 `MoveImage`
     // copy, not cue ids: they used to be pushed into `battle_sfx_cues`, which
     // fed the SFX scheduler the values `0xB0` / `0xC0` / `0xD0`. The queue now

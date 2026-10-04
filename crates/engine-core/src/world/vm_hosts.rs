@@ -3407,17 +3407,48 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             }
         }
     }
-    /// The cast-start one-shot (`FUN_8004FCC8`). Routed into the same
-    /// `battle_sfx_cues` queue both hosts drain.
+    /// The cast-start one-shot (`FUN_8004FCC8`), run through the
+    /// dispatcher's own split.
     ///
-    /// The two id spaces meet at that queue and the port does not reconcile
-    /// them: a cast cue is a *dispatch* id the host would have to push through
-    /// `legaia_engine_audio::classify_cue` first, and both hosts play the
-    /// queue's ids straight. Every cast cue is `>= 0xF8` and the per-character
-    /// band runs to `0x20E`, so in practice these miss the scene bank and are
-    /// silent rather than wrong - the id reaches the scheduler, the runtime
-    /// bank behind it has no engine model. See `docs/formats/sfx-table.md`.
+    /// Every id the cast-cue band produces on the party leg is
+    /// `roster_id * 0x10 + 0xF8..0xFC` with a 1-based roster id, so `>= 0x108`:
+    /// a **CD-XA** clip, not an SPU descriptor (`sltiu v0,s0,0x100` at the
+    /// dispatcher's head). It is the character's voice on an ordinary item
+    /// use - `0x0108` for Vahn's Healing Leaf - and was measured starting a
+    /// clip through `FUN_8003D53C` on every driven item action
+    /// (`docs/subsystems/battle-action.md`, "The one caller is state `0x3D`").
+    /// So the id goes through [`vm::battle_cast_cue::admit_voice_cue`] (the
+    /// busy-drive gate, the slot remap, the span table) onto
+    /// [`crate::world::AudioState::battle_xa_cues`], the `(clip, channel,
+    /// dur)` channel both hosts play through their XA lane. Pushing the raw id
+    /// onto the SFX queue instead had both hosts classify it as a voice and
+    /// decline it, so an item turn was silent apart from whatever clip it
+    /// staged.
+    ///
+    /// An id below `0x100` keeps the SFX queue.
     fn one_shot_sfx(&mut self, cue_id: u16) {
+        if cue_id >= 0x100 {
+            let raw = self
+                .world
+                .audio
+                .xa_cue_durations
+                .as_deref()
+                .and_then(|t| t.get(usize::from(cue_id - 0x100)).copied());
+            let gates = vm::battle_cast_cue::VoiceCueGates {
+                side_band_stage: 0,
+                clip_span_left: self.world.audio.battle_xa_busy_frames,
+            };
+            if let vm::battle_cast_cue::VoiceCueVerdict::Play(req) =
+                vm::battle_cast_cue::admit_voice_cue(cue_id, gates, raw)
+            {
+                self.world.push_battle_xa_cue(crate::sfx_cue::XaVoiceClip {
+                    clip: req.clip_slot,
+                    channel: req.channel,
+                    duration_sectors: req.duration_sectors,
+                });
+            }
+            return;
+        }
         let slot = self.world.battle_ctx.active_actor;
         self.world
             .audio

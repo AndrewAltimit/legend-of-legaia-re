@@ -456,12 +456,11 @@ pub(crate) enum CueRoute {
     Descriptor(u8),
     /// A streamed CD-XA voice trigger (`FUN_8003D53C`), not an SPU
     /// descriptor: `channel` is the clip slot after the `1/3/5` remap,
-    /// `submode` the channel inside the file. The one producer feeding this
-    /// queue such ids is the `FUN_801F3990` band, which the two measured
-    /// retail casts never raised (`docs/subsystems/cast-module.md`), so it
-    /// is declined on both hosts. The cast's own voice (the module head cue)
-    /// never comes through here: it rides the `(clip, channel, dur)` channel
-    /// into [`crate::play_xa`]'s lazy tier.
+    /// `submode` the channel inside the file. No producer feeds this queue
+    /// such ids: the `FUN_801F3990` cast-cue band (the item-use voice) and
+    /// the cast module's head cue both resolve at the world into the
+    /// `(clip, channel, dur)` channel [`crate::play_xa`] plays, so a voice id
+    /// here is a stray and is declined on both hosts.
     Voice { channel: u8, submode: u8 },
 }
 
