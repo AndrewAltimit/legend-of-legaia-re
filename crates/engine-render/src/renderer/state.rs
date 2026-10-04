@@ -396,13 +396,14 @@ impl Renderer {
         cur.extend_from_slice(sprites);
     }
 
-    /// Toggle the **shadow-casting point-light sub-layer** of the
-    /// dynamic-lighting enhancement (default on). Effective only while
+    /// Toggle the **point lights' shadows** (default on). Shadows only: with
+    /// this off the dynamic-lighting enhancement's point lights still shade
+    /// the scene, unshadowed, and no shadow-map pass runs - the same meaning
+    /// as the browser play page's "Lamp shadows" box. Effective only while
     /// [`Self::set_dynamic_lighting`] is on and the host has staged scene
-    /// lights via [`Self::set_scene_lights`]; when any of the three is
-    /// off, the point-light uniform stages a zero count and no shadow
-    /// pass runs, so the faithful path stays pixel-identical and pays
-    /// nothing.
+    /// lights via [`Self::set_scene_lights`]; without both the point-light
+    /// uniform stages a zero count, so the faithful path stays
+    /// pixel-identical and pays nothing.
     pub fn set_dyn_shadows(&self, enable: bool) {
         self.dyn_shadows.set(enable);
     }

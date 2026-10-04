@@ -406,7 +406,8 @@ const SCENE_LIGHT_MAX: u32 = 8u;
 struct ScenePointLightU {
     // xyz = world position, w = influence radius (attenuation reaches 0).
     pos_radius: vec4<f32>,
-    // rgb = gain colour, w unused.
+    // rgb = gain colour, w = shadows on (1) / off (0: the light still
+    // shades, unshadowed - the `Y` toggle).
     color: vec4<f32>,
     // The light's shadow view-projection (downward cone, 0..1 depth).
     viewproj: mat4x4<f32>,
@@ -465,6 +466,9 @@ fn mood_window() -> f32 {
 // 1 = fully lit. Out-of-cone / behind-the-light fragments return 1.0
 // (distance attenuation still bounds them).
 fn scene_light_shadow(idx: u32, world_pos: vec3<f32>) -> f32 {
+    if (sl.lights[idx].color.w < 0.5) {
+        return 1.0;
+    }
     let clip = sl.lights[idx].viewproj * vec4<f32>(world_pos, 1.0);
     if (clip.w <= 0.0) {
         return 1.0;

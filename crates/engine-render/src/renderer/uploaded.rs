@@ -139,7 +139,7 @@ pub(super) const MODEL_ROWS_IDENTITY: [[f32; 4]; 3] = [
 pub(super) struct ScenePointLightUniform {
     /// xyz = world position, w = influence radius.
     pub(super) pos_radius: [f32; 4],
-    /// rgb = gain colour, w unused.
+    /// rgb = gain colour, w = shadows on (1) / off (0, the `Y` toggle).
     pub(super) color: [f32; 4],
     /// The light's shadow view-projection ([`crate::scene_lights::light_view_proj`]).
     pub(super) viewproj: [[f32; 4]; 4],

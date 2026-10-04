@@ -2188,7 +2188,7 @@ different default:
 | `Renderer::set_psx_mode` | **off** | *on* is retail | vertex snap + 15-bit dither, and nothing else |
 | `Renderer::set_semi_blend` | **on** | *on* is retail | ABE semi-transparency. Independent of `psx_mode` |
 | `Renderer::set_dynamic_lighting` | **off** in the renderer, **on** in `play-window` + browser play page | *off* is retail, pixel-identical to the faithful render | enhanced lighting: mood, point lights, emissives, glow |
-| `Renderer::set_dyn_shadows` | **on** | inert while `set_dynamic_lighting` is off | the point-light shadow maps (native only) |
+| `Renderer::set_dyn_shadows` | **on** | inert while `set_dynamic_lighting` is off | the point-light shadow maps, shadows only - the lamps keep shading when it is off (both hosts; the page's "Lamp shadows" box) |
 | `Renderer::set_occlusion_fade` | **off** in the renderer, **on** in `play-window` | *off* is retail, pixel-identical to the faithful render | the see-through-walls camera-occlusion fade |
 | `Renderer::set_fog_volume` | nothing staged in the renderer; the engine's bank is **on** in `play-window` + the browser play page | nothing staged is retail, pixel-identical to the faithful render | the [volumetric ground fog](#volumetric-ground-fog-enhancement) |
 
@@ -2371,15 +2371,15 @@ prop a script moves or parks carries its light along or drops it. The
 the mood's lamp strength; attenuation is `(1 - (d/r)^2)^2` with a
 half-Lambert wrap.
 
-**Shadows (native only).** `Renderer::set_dyn_shadows` (default on;
+**Shadows.** `Renderer::set_dyn_shadows` (default on;
 `--no-dyn-shadows` / `Y`) renders one depth layer per picked light into an
 8-layer `Depth32Float` array (512x512) from a downward cone
 (`scene_lights::light_view_proj`, near plane clipping out the emitter itself)
 and the scene shaders take a 3x3 PCF comparison. Casters render opaque (cutout
 texels shadow solid) and the cone is a spot approximation - geometry above
-the light attenuates but is never shadowed. With the sub-toggle off the whole
-point-light layer stages a zero count. The browser page lights the same
-picked set without shadow maps.
+the light attenuates but is never shadowed. With the sub-toggle off the lamps keep
+shading unshadowed: each light's `color.w = 0` and no shadow pass. The browser page draws the same
+shadows into its own depth array, and its "Lamp shadows" box has the same meaning.
 
 **Glow sprites (the bloom stand-in).** Around each picked light the host draws
 an additive camera-facing halo and a soft vertical shaft falling from it

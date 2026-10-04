@@ -1348,9 +1348,11 @@ slot, and a 3x3 hardware-compared PCF in the main shader. The cone uses a
 GL-style projection, whose window depth equals the native 0..1 depth for the
 same near and far, so the compare bias and the polygon offset carry over
 unchanged; the five constants are paired by `check-ui-host-drift.py`. The
-page's "Lamp shadows" box is the native `Y`. One residue: native's `Y` off
-drops the point lights with their shadows, the page's box drops only the
-shadows.
+page's "Lamp shadows" box is the native `Y`, and both mean **shadows only**:
+off, the lamps keep lighting the scene unshadowed and no shadow map is drawn
+(native stages each light's `color.w = 0` and skips the pass; the page leaves `u_shadow.x`
+at 0). Turning the lamps themselves off is the enhanced-lighting toggle (`I`,
+the page's lighting box), which is the one knob both hosts read for that.
 
 The shadow array sits on its own texture unit for the program's life. A
 `sampler2DArrayShadow` left at the default unit 0 shares it with the VRAM

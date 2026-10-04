@@ -809,11 +809,12 @@ impl Renderer {
     }
 
     /// True when the per-scene point-light layer should shade this frame:
-    /// dynamic lighting on, the shadow sub-toggle on, lights staged, and a
-    /// scene camera registered.
+    /// dynamic lighting on, lights staged, and a scene camera registered.
+    /// The shadow sub-toggle is NOT part of this gate: with it off the lamps
+    /// still light the scene, they just cast no shadow (each light's `color.w = 0`, no
+    /// shadow pass) - the same meaning as the play page's "Lamp shadows" box.
     pub(super) fn scene_lights_active(&self) -> bool {
         self.dyn_lighting.get()
-            && self.dyn_shadows.get()
             && self.scene_view_proj.get().is_some()
             && !self.scene_lights.borrow().is_empty()
     }
@@ -894,14 +895,18 @@ impl Renderer {
                     l.color[0] * mood.point_scale,
                     l.color[1] * mood.point_scale,
                     l.color[2] * mood.point_scale,
-                    0.0,
+                    // Shadows on (1) / off (0): the `Y` toggle. Off, the
+                    // lamp still shades, unshadowed.
+                    if self.dyn_shadows.get() { 1.0 } else { 0.0 },
                 ],
                 viewproj: light_vps[i].to_cols_array_2d(),
             };
         }
         self.queue
             .write_buffer(&self.scene_lights_buf, 0, bytemuck::bytes_of(&u));
-        if n == 0 {
+        // Shadows off: the lamps shade unshadowed (`scene_light_shadow`
+        // answers 1.0 on a light's `color.w == 0`), so no shadow map is rendered.
+        if n == 0 || !self.dyn_shadows.get() {
             return;
         }
         // Per-(light, draw) light-space MVPs. `model = view_proj^-1 * mvp`
