@@ -143,3 +143,43 @@ fn every_block_walks_one_mesh_pack_and_every_member_parses() {
          `Model Version Err`) so dropping it here would shift every later index: {unparseable:?}"
     );
 }
+
+/// `taiku`'s bundle (block entry 372) is a count-4 `[TIM_LIST, TMD, ANM,
+/// Flag(0x14)]` table - outside the strict detector's count-6/7 allow-list,
+/// which retail's walker `FUN_80020224` does not have. Its mesh pack declares
+/// 126 members and opens with three one-triangle placeholder meshes. The TMD
+/// magic sweep the scene used to fall back to skips those three, so every
+/// later mesh slid three pack slots and the floating castle drew the wrong
+/// mesh at every cell. The field pool must be the walk's 126, in pack order,
+/// and the assembled environment pack must be that same list.
+#[test]
+fn taiku_count4_bundle_registers_its_whole_pack_in_order() {
+    let Some(index) = open_index() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    };
+    let scene = Scene::load(&index, "taiku").expect("load taiku");
+    let bundle = scene
+        .entries
+        .iter()
+        .find(|e| e.idx == 372)
+        .expect("taiku entry 372");
+    assert!(
+        legaia_asset::scene_asset_table::resolve(&bundle.bytes).is_none(),
+        "the count-4 table is outside the strict detector - the case this pins"
+    );
+    let pool = legaia_asset::scene_asset_table::mesh_pool(&bundle.bytes);
+    assert_eq!(pool.len(), 126, "the pack header's own member count");
+    // The three placeholders: tiny, identical, and the pool's first slots.
+    assert!(pool[..3].iter().all(|m| m.bytes.len() == 100));
+    assert!(pool[3].bytes.len() > 100);
+
+    let a = legaia_engine_core::scene_assembly::assemble_field_scene(&index, "taiku")
+        .expect("assemble taiku");
+    let env_offsets: Vec<usize> = a.env_tmds.iter().map(|&i| a.res.tmds[i].offset).collect();
+    let pool_offsets: Vec<usize> = pool.iter().map(|m| m.offset).collect();
+    assert_eq!(
+        env_offsets, pool_offsets,
+        "the env pack a placement's `pack_index` selects from is the walk's pool, slot for slot"
+    );
+}

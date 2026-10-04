@@ -661,6 +661,27 @@ fn is_known_type(b: u8) -> bool {
     !matches!(AssetType::from_byte(b), AssetType::Unknown(_))
 }
 
+/// The table the runtime walk `FUN_80020224` runs over, sliced from its base:
+/// the strict [`resolve`] (a bare count-6/7 table, or one behind a prescript),
+/// else a bare table at offset 0 that [`descriptor_bundle_walk`] accepts.
+///
+/// The second arm is the bundles the strict detector's count allow-list
+/// excludes - retail reads the count with no bound, so a count-4 `[TIM_LIST,
+/// TMD, ANM, Flag(0x14)]` table (`taiku`, `taiku2`, the v12-family dungeons)
+/// registers its mesh pack exactly like a count-6 one. Without it those
+/// scenes fell to the TMD magic sweep, which skips the pack's degenerate
+/// one-triangle placeholder members (`taiku` ships three at pack slots
+/// `0..=2`) and so moved every later mesh onto the wrong placement.
+///
+/// REF: FUN_80020224
+fn walk_table(entry_bytes: &[u8]) -> Option<&[u8]> {
+    if let Some(resolved) = resolve(entry_bytes) {
+        return entry_bytes.get(resolved.table_base..);
+    }
+    descriptor_bundle_walk(entry_bytes)?;
+    Some(entry_bytes)
+}
+
 /// One mesh a scene load registers into the runtime TMD pointer table
 /// `DAT_8007C018` (`FUN_80026B4C`, `tmd_register`).
 #[derive(Debug, Clone)]
@@ -718,10 +739,7 @@ pub struct PoolMesh {
 ///
 /// REF: FUN_80020224, FUN_8001F05C, FUN_80026B4C
 pub fn mesh_pool(entry_bytes: &[u8]) -> Vec<PoolMesh> {
-    let Some(resolved) = resolve(entry_bytes) else {
-        return Vec::new();
-    };
-    let Some(table) = entry_bytes.get(resolved.table_base..) else {
+    let Some(table) = walk_table(entry_bytes) else {
         return Vec::new();
     };
     let mut out = Vec::new();
@@ -787,10 +805,7 @@ pub fn mesh_pool(entry_bytes: &[u8]) -> Vec<PoolMesh> {
 ///
 /// REF: FUN_8001F05C, FUN_8002541C
 pub fn streams_scene_pac(entry_bytes: &[u8]) -> bool {
-    let Some(resolved) = resolve(entry_bytes) else {
-        return false;
-    };
-    let Some(table) = entry_bytes.get(resolved.table_base..) else {
+    let Some(table) = walk_table(entry_bytes) else {
         return false;
     };
     let mut hit = false;

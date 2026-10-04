@@ -136,7 +136,7 @@ Many character meshes reference CLUT rows that live in **different PROT entries*
 
 Engines that drive a from-scratch scene loop call [`SceneResources::build_targeted`](../../crates/engine-core/src/scene_resources.rs) once per scene transition. The builder:
 
-1. Builds the scene's mesh pool from the descriptor walk (above), and the shared blocks' contribution from the `player_data` character pack - the 5-mesh head. Blocks with no asset table (the v12-family dungeons' standalone `lzs_container`) fall back to a TMD-magic sweep of their entries.
+1. Builds the scene's mesh pool from the descriptor walk (above), and the shared blocks' contribution from the `player_data` character pack - the 5-mesh head. The walk accepts any descriptor count retail does, including the MAN-less count-4 tables of the v12-family and chapter-2 dungeons; only a block with no walkable table falls back to a TMD-magic sweep of its entries.
 2. Collects the union of all prim-target rectangles (CLUT rows + texture-page UV bboxes the meshes will sample).
 3. Walks every TIM and decides per-block whether to upload it, suppressing the image block when it would land on a CLUT row another mesh references and vice-versa.
 
