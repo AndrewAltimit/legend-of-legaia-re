@@ -1026,19 +1026,7 @@ impl PlayWindowApp {
             // loaded scene (`scene_lighting::TimeOfDay::mood` - the same call
             // the browser play page makes). Cheap; staged every frame so a
             // scene change or an `F8` cycle lands on the next frame.
-            let mood = {
-                use legaia_engine_render::scene_lighting::TimeOfDay;
-                let scene_name = self
-                    .session
-                    .host
-                    .scene
-                    .as_ref()
-                    .map(|s| s.name.as_str())
-                    .unwrap_or("");
-                TimeOfDay::from_name(&self.options_state.lighting_time_of_day)
-                    .unwrap_or_default()
-                    .mood(scene_name)
-            };
+            let mood = self.lighting_mood();
             r.set_lighting_mood(mood);
             // Stage the derived scene point lights (the dynamic-lighting
             // enhancement's candle / wall-light layer) with this frame's

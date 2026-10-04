@@ -27,6 +27,25 @@ impl PlayWindowApp {
     /// map and the in-world minigame venues (their own VRAM and camera) draw
     /// none; a scripted shot and the `F3` debug vantage do - the bank is world
     /// geometry, and `cam` is that frame's own matrix.
+    /// The mood enhanced lighting lights this frame under: the persisted
+    /// time of day over the loaded scene (`scene_lighting::TimeOfDay::mood` -
+    /// the same call the browser play page makes).
+    pub(in crate::window) fn lighting_mood(
+        &self,
+    ) -> legaia_engine_render::scene_lighting::LightingMood {
+        use legaia_engine_render::scene_lighting::TimeOfDay;
+        let scene_name = self
+            .session
+            .host
+            .scene
+            .as_ref()
+            .map(|s| s.name.as_str())
+            .unwrap_or("");
+        TimeOfDay::from_name(&self.options_state.lighting_time_of_day)
+            .unwrap_or_default()
+            .mood(scene_name)
+    }
+
     pub(in crate::window) fn stage_fog_volume(
         &self,
         r: &legaia_engine_render::Renderer,
@@ -65,7 +84,12 @@ impl PlayWindowApp {
             mesh_dim: MESH_DIM as u32,
             mesh_positions: &positions,
             ground_gen: f.ground_gen,
-            color: f.color,
+            // Enhanced lighting: the mist sits in the scene's mood light.
+            color: if self.dynamic_lighting {
+                legaia_engine_render::scene_lighting::fog_tint(f.color, &self.lighting_mood())
+            } else {
+                f.color
+            },
             opacity: f.opacity,
             height: f.height,
             layers: FOG_LAYERS,

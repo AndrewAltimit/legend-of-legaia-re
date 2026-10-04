@@ -290,6 +290,22 @@ fn occl_bayer(frag: vec2<f32>) -> f32 {
     return (bm[yi * 4u + xi] + 0.5) / 16.0;
 }
 
+// The depth cue's far term under the enhancement: the GTE DPCS pulls a
+// distant fragment toward a far colour, and a bright far colour (the outdoor
+// battle grid's near-white) would otherwise ignore the mood entirely and keep
+// a night stage's floor lit like noon. The far term takes the mood's flat
+// gain (ambient + half the key, capped) - the light a surface with no
+// orientation gets. Identity while the enhancement is off. CPU mirror:
+// `scene_lighting::far_gain`.
+fn dyn_far(far_rgb: vec3<f32>, light_dir: vec4<f32>, light_color: vec4<f32>) -> vec3<f32> {
+    if (light_dir.w < 0.5) {
+        return far_rgb;
+    }
+    let amb = mood_ambient();
+    let g = min(amb.rgb + 0.5 * DYN_DIFFUSE * light_color.xyz, vec3<f32>(DYN_MAX_GAIN));
+    return clamp(far_rgb * g, vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
 fn dyn_light(
     rgb: vec3<f32>,
     vert_normal: vec3<f32>,
@@ -1172,7 +1188,11 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
         graded = apply_grade(enhanced, u.grade);
         ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
     }
-    let cued = psx_depth_cue(graded, psx_modulate(color.rgb, u.depth_cue.rgb * 255.0), ir0);
+    let cued = psx_depth_cue(
+        graded,
+        dyn_far(psx_modulate(color.rgb, u.depth_cue.rgb * 255.0), u.light_dir, u.light_color),
+        ir0,
+    );
     let rgb = psx_dither(cued, in.clip_pos.xy, u.psx_params.w);
     return vec4<f32>(rgb, color.a);
 }
@@ -1240,7 +1260,11 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
         graded = apply_grade(enhanced, u.grade);
         ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
     }
-    let cued = psx_depth_cue(graded, psx_modulate(color.rgb, u.depth_cue.rgb * 255.0), ir0);
+    let cued = psx_depth_cue(
+        graded,
+        dyn_far(psx_modulate(color.rgb, u.depth_cue.rgb * 255.0), u.light_dir, u.light_color),
+        ir0,
+    );
     return vec4<f32>(cued * f_scale, 1.0);
 }
 
@@ -1395,7 +1419,7 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
         graded = apply_grade(enhanced, u.grade);
         ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
     }
-    let cued = psx_depth_cue(graded, u.depth_cue.rgb, ir0);
+    let cued = psx_depth_cue(graded, dyn_far(u.depth_cue.rgb, u.light_dir, u.light_color), ir0);
     let rgb = psx_dither(cued, in.clip_pos.xy, u.psx_params.w);
     return vec4<f32>(rgb, 1.0);
 }
@@ -1445,7 +1469,7 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
         graded = apply_grade(enhanced, u.grade);
         ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
     }
-    let cued = psx_depth_cue(graded, u.depth_cue.rgb, ir0);
+    let cued = psx_depth_cue(graded, dyn_far(u.depth_cue.rgb, u.light_dir, u.light_color), ir0);
     let rgb = psx_dither(cued, in.clip_pos.xy, u.psx_params.w);
     return vec4<f32>(rgb * f_scale, 1.0);
 }

@@ -45,9 +45,23 @@ impl LegaiaRuntime {
     /// order, or empty when there is no bank (toggle down, a mode without
     /// one, no style raised).
     pub fn play_fog_volume_header(&self) -> Vec<f32> {
-        self.fog_volume_frame()
+        let mut h = self
+            .fog_volume_frame()
             .map(|f| f.header())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        // Enhanced lighting: the mist sits in the scene's mood light (the
+        // native window's `stage_fog_volume` rule).
+        if self.options_state.enhanced_lighting && !h.is_empty() {
+            use legaia_engine_core::fog_volume::header as hd;
+            let c = legaia_engine_ui::scene_lighting::fog_tint(
+                [h[hd::COLOR_R], h[hd::COLOR_G], h[hd::COLOR_B]],
+                &self.lighting_mood(),
+            );
+            h[hd::COLOR_R] = c[0];
+            h[hd::COLOR_G] = c[1];
+            h[hd::COLOR_B] = c[2];
+        }
+        h
     }
 
     /// This frame's disturbance grid, `SIM_DIM`² bytes row-major `[z][x]`

@@ -60,6 +60,9 @@ mod tests {
         }
         assert!(src.contains("fn dyn_light"));
         assert!(src.contains(
+            "let g = min(amb.rgb + 0.5 * DYN_DIFFUSE * light_color.xyz, vec3<f32>(DYN_MAX_GAIN));"
+        ));
+        assert!(src.contains(
             "let eg = min(vec3<f32>(amb.w) + point_gain, vec3<f32>(DYN_TOTAL_MAX_GAIN));"
         ));
     }

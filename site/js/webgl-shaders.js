@@ -637,6 +637,15 @@ vec3 point_gain(vec3 n) {
   return g;
 }
 
+/* Twin of engine-render's dyn_far: the depth cue's far term under the
+ * enhancement takes the mood's flat gain (ambient + half the key, capped),
+ * so a bright far colour cannot keep a night frame lit. Identity off. */
+vec3 dyn_far(vec3 far_rgb) {
+  if (u_dyn_dir.w < 0.5) return far_rgb;
+  vec3 g = min(u_dyn_ambient.rgb + 0.5 * DYN_DIFFUSE * u_dyn_color.rgb, vec3(DYN_MAX_GAIN));
+  return clamp(far_rgb * g, vec3(0.0), vec3(1.0));
+}
+
 /* Twin of engine-render's dyn_light: the mood's ambient floor + a soft
  * |N.L| key light + a screen-centred pool, capped at DYN_MAX_GAIN over the
  * baked colour, plus the point lights up to DYN_TOTAL_MAX_GAIN. An emissive
@@ -888,7 +897,7 @@ void main() {
     flat_lit = grade_near(flat_lit);
     /* An untextured prim's colour is shading arithmetic in both passes, so
      * it dithers in both (native COLOR_MESH fs_main and blend_pass_color). */
-    o_color = vec4(psx_dither(mix(flat_lit, u_cue_far, cue_ir0(v_view_z))), 1.0);
+    o_color = vec4(psx_dither(mix(flat_lit, dyn_far(u_cue_far), cue_ir0(v_view_z))), 1.0);
     return;
   }
 
@@ -996,7 +1005,7 @@ void main() {
      * / 128 scale as the near term (native: psx_modulate(texel,
      * depth_cue.rgb * 255.0)) - u_cue_far is a display 0..1 colour, so it
      * needs the identical 255/128 that the packet word gets. */
-    vec3 far = clamp(color.rgb * u_cue_far * (255.0 / 128.0), vec3(0.0), vec3(1.0));
+    vec3 far = dyn_far(clamp(color.rgb * u_cue_far * (255.0 / 128.0), vec3(0.0), vec3(1.0)));
     lit = mix(grade_near(lit), far, ir0);
   }
 

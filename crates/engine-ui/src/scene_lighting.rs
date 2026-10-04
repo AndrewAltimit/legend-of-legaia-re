@@ -1199,6 +1199,17 @@ pub fn shade(
     out
 }
 
+/// CPU mirror of the shaders' `dyn_far`: the gain the depth cue's far term
+/// takes under the enhancement (`uniforms` as in [`shade`]) - the mood's
+/// ambient plus half its key, capped at [`MAX_GAIN`]; `[1; 3]` while off.
+pub fn far_gain(uniforms: [[f32; 4]; 3]) -> [f32; 3] {
+    let [dir, key, amb] = uniforms;
+    if dir[3] < 0.5 {
+        return [1.0; 3];
+    }
+    [0, 1, 2].map(|i| (amb[i] + 0.5 * DIFFUSE * key[i]).min(MAX_GAIN))
+}
+
 fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
     let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
@@ -1376,6 +1387,22 @@ pub fn frame_packet(
         out.extend_from_slice(&v.color);
     }
     out
+}
+
+/// The volumetric ground fog's colour under `mood`: the mist takes the
+/// mood ambient's hue (moonlit blue at night, amber-grey at dusk) and dims
+/// with its strength, so the bank sits in the same light as the scene it
+/// lies on. Daylight's neutral ambient leaves the colour unchanged. Both
+/// hosts apply it while enhanced lighting is on.
+pub fn fog_tint(color: [f32; 3], mood: &LightingMood) -> [f32; 3] {
+    let a = mood.ambient_rgb;
+    let m = a[0].max(a[1]).max(a[2]);
+    if m <= 0.0 {
+        return color;
+    }
+    // A neutral ambient at or above the daylight floor is the identity.
+    let k = (0.4 + m).min(1.0);
+    [0, 1, 2].map(|i| (color[i] * a[i] / m * k).clamp(0.0, 1.0))
 }
 
 /// CPU mirror of the glow sprites' fragment falloff (both shader twins).
@@ -1736,6 +1763,31 @@ mod tests {
         assert_eq!(TimeOfDay::Auto.mood("cave01").name, "cave");
         assert_eq!(TimeOfDay::Auto.mood("town01").name, "day");
         assert_eq!(TimeOfDay::Night.mood("cave01").name, "night");
+    }
+
+    /// The depth cue's far term darkens at night (the battle grid's
+    /// near-white far colour must not keep the floor lit) and is untouched
+    /// while the enhancement is off.
+    #[test]
+    fn far_gain_follows_the_mood() {
+        assert_eq!(far_gain(LightingMood::NIGHT.uniforms(false)), [1.0; 3]);
+        let n = far_gain(LightingMood::NIGHT.uniforms(true));
+        assert!(n.iter().all(|&g| g < 0.7) && n[0] < 0.4, "{n:?}");
+        let d = far_gain(LightingMood::DAY.uniforms(true));
+        assert!(d.iter().all(|&g| (0.75..=MAX_GAIN).contains(&g)), "{d:?}");
+    }
+
+    /// Daylight leaves the ground fog's colour alone; night turns it to a
+    /// darker moonlit blue.
+    #[test]
+    fn fog_tint_follows_the_mood() {
+        let c = [0.6, 0.62, 0.7];
+        assert_eq!(fog_tint(c, &LightingMood::DAY), c);
+        let n = fog_tint(c, &LightingMood::NIGHT);
+        assert!(
+            n[2] > n[0] && n.iter().zip(c).all(|(a, b)| *a <= b + 1e-6),
+            "{n:?}"
+        );
     }
 
     /// Halo falloff: 1 at the centre, 0 at the rim; shafts fade downward.

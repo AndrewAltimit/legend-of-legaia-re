@@ -53,7 +53,7 @@ impl LegaiaRuntime {
 
     /// The mood this frame is lit under: the persisted time of day over the
     /// running scene (the native redraw's call).
-    fn lighting_mood(&self) -> sl::LightingMood {
+    pub(crate) fn lighting_mood(&self) -> sl::LightingMood {
         TimeOfDay::from_name(&self.options_state.lighting_time_of_day)
             .unwrap_or_default()
             .mood(&self.scene_name())
