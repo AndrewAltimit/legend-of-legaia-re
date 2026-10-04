@@ -15,7 +15,10 @@
 //!    byte) onto the module the doc names for it.
 //! 3. **Output under a real session.** A pad-driven battle casts each player
 //!    Seru spell and the module's records are staged as an effect scene - the
-//!    thing that used to be the cast band's open half.
+//!    thing that used to be the cast band's open half. A module seated whole
+//!    stages its recovered record set on the stager's first tick; PROT 0903,
+//!    whose director reports its spawn calls, seats them on the arms that
+//!    make them (3 / 6 / 8), as its own disassembly does.
 //!
 //! Skips (and passes) without `LEGAIA_DISC_BIN` / `extracted/`.
 
@@ -26,6 +29,7 @@ use legaia_asset::cast_effect_pool::{
 use legaia_engine_core::input::{InputState, PadButton};
 use legaia_engine_core::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
 use legaia_engine_core::world::{Actor, SceneMode, World};
+use legaia_engine_vm::cast_module_camera as cmc;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -306,11 +310,24 @@ fn a_live_cast_stages_its_module_records() {
     }
     enter_battle(&mut w);
     w.install_cast_effect_pool(pool.clone());
+    // The battle overlay the scene host retains at battle load: PROT 0903's
+    // arm-8 breath is a PROT 0898 effect prototype (`*(0x801F63A8)`).
+    {
+        let mut archive =
+            legaia_prot::archive::Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
+        let entry = archive.entries[898].clone();
+        let mut b898 = Vec::new();
+        archive
+            .read_entry(&entry, &mut b898)
+            .expect("read PROT 0898");
+        w.tables.move_power_overlay = Some(Arc::from(b898.as_slice()));
+    }
     refill(&mut w);
     w.battle.magic[0] = 80;
 
     let mut cast = 0usize;
-    let mut staged: Vec<(u8, usize)> = Vec::new();
+    // (spell id, parts on the first staged frame, parts seated over the band)
+    let mut staged: Vec<(u8, usize, usize)> = Vec::new();
     for _ in 0..80 {
         if staged.len() == SERU_IDS.len() {
             break;
@@ -381,15 +398,28 @@ fn a_live_cast_stages_its_module_records() {
                 Some(_) => press(&mut w, PadButton::Down),
             }
         }
-        // Run the band out, watching for the frame the stager stages the
-        // module's records (`SummonPhase::Armed`, retail's `0x801E4B1C`).
+        // Run the band out, watching for the frame the module's records are
+        // first staged and counting every part seated over the whole band. A
+        // module seated whole stages everything on the stager's first tick
+        // (`SummonPhase::Armed`, retail's `0x801E4B1C`); one whose director
+        // reports its spawns seats each record on the arm that calls
+        // `FUN_80021B04`, and `tick_summon` may drain a scene whose parts have
+        // all finished before a later arm seats into a fresh one - so the
+        // total is summed over growth, restarting when the scene is replaced.
         let mut seen: Option<usize> = None;
+        let mut seated = 0usize;
+        let mut prev = 0usize;
         for _ in 0..0x400 {
-            if seen.is_none()
-                && let Some(scene) = w.casting.active_summon.as_ref()
-            {
-                seen = Some(scene.parts.len());
+            let now = w.casting.active_summon.as_ref().map(|s| s.parts.len());
+            if seen.is_none() {
+                seen = now;
             }
+            let len = now.unwrap_or(0);
+            if len < prev {
+                prev = 0;
+            }
+            seated += len - prev;
+            prev = len;
             if w.casting.pending_cast.is_none() {
                 break;
             }
@@ -403,7 +433,7 @@ fn a_live_cast_stages_its_module_records() {
         assert_eq!(id, SERU_IDS[row], "row {row} is this cast's spell");
         let parts = seen
             .unwrap_or_else(|| panic!("cast {cast} (spell {id:#04x}) staged no cast-module scene"));
-        staged.push((id, parts));
+        staged.push((id, parts, seated));
         // Clear the scene so the next cast's staging is its own.
         w.casting.active_summon = None;
     }
@@ -413,14 +443,63 @@ fn a_live_cast_stages_its_module_records() {
         SERU_IDS.len(),
         "every player Seru spell cast and staged"
     );
-    for (id, parts) in &staged {
+    for (id, parts, seated) in &staged {
         let entry = seru_module_prot(*id).unwrap();
-        let expect = pool.module(entry).unwrap().parts.len();
+        let module = pool.module(entry).unwrap();
+        let stages_spawns = cmc::module_profile(entry).is_some_and(|p| p.stages_spawns);
+        if !stages_spawns {
+            let expect = module.parts.len();
+            assert_eq!(
+                *parts, expect,
+                "spell {id:#04x} staged PROT {entry}'s whole record set"
+            );
+            assert!(*parts > 0);
+            println!("[ok] spell {id:#04x} -> PROT {entry}: {parts} records staged");
+            continue;
+        }
+        // A module whose director reports its spawns seats records the way
+        // its own arms call `FUN_80021B04`, not all at once: PROT 0903 makes
+        // three calls in arm 3 (`0x801F6E04..0x801F6E34`), three in arm 6
+        // (`0x801F716C..0x801F719C`) and one in arm 8 (`0x801F72B8`). The
+        // first staged frame holds arm 3's three, and the band seats all
+        // seven by the time it folds.
+        assert_eq!(entry, 903, "PROT 0903 is the one module seated per arm");
+        let arms: [&[cmc::ModuleSpawn]; 3] = [
+            &cmc::GIMARD_SEAT_SPAWNS,
+            &cmc::GIMARD_TUNNEL_SPAWNS,
+            &cmc::GIMARD_BREATH_SPAWNS,
+        ];
         assert_eq!(
-            *parts, expect,
-            "spell {id:#04x} staged PROT {entry}'s whole record set"
+            *parts,
+            arms[0].len(),
+            "spell {id:#04x}: PROT {entry}'s first staged frame is arm 3's calls"
         );
-        assert!(*parts > 0);
-        println!("[ok] spell {id:#04x} -> PROT {entry}: {parts} records staged");
+        let calls: usize = arms.iter().map(|a| a.len()).sum();
+        assert_eq!(
+            *seated, calls,
+            "spell {id:#04x}: PROT {entry} seats every arm's spawn call over the band"
+        );
+        // Per-arm seating drops none of the records the static spawn scan
+        // recovers: each one is some arm's call.
+        let called: Vec<u32> = arms
+            .iter()
+            .flat_map(|a| a.iter())
+            .filter_map(|s| match s.record {
+                cmc::SpawnRecord::Module(va) => Some(va),
+                cmc::SpawnRecord::BattleProto(_) => None,
+            })
+            .collect();
+        for p in &module.parts {
+            let va = legaia_asset::summon_overlay::SUMMON_OVERLAY_LINK_BASE + p.record_off as u32;
+            assert!(
+                called.contains(&va),
+                "PROT {entry} record {va:#010x} is staged by one of its arms"
+            );
+        }
+        println!(
+            "[ok] spell {id:#04x} -> PROT {entry}: {parts} records on arm 3, \
+             {seated} seated over arms 3/6/8 (static set {})",
+            module.parts.len()
+        );
     }
 }
