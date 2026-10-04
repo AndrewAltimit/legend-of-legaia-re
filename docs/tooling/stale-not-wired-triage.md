@@ -328,7 +328,7 @@ terms.
 
 | addr | site | verdict | fix |
 |---|---|---|---|
-| `801da6b4` | `engine-vm/src/battle_action/target_cursor.rs` | FALSE-EDGE, coarse module anchor | The `PORT:` / `REPLACED-BY:` pair sits on the module (`//!`), and the module is live through items that are not the port: the cursor constants the live `World::apply_target_cursor_tint` imports and `cursor_cue`, which both battle hosts call. The kernel itself, `target_cursor_highlight`, has no non-test caller, and the replacement verdict for it stands. The fix is the [granularity recipe](#anchor-granularity): move the `PORT:` and `REPLACED-BY:` lines onto `target_cursor_highlight`. Owned by the battle-targeting work, so recorded here rather than edited. |
+| *(none)* | | | |
 
 ## How the recorded rows were closed
 
@@ -337,6 +337,7 @@ so a recurrence is recognisable rather than re-derived.
 
 | addr | site | verdict | resolution |
 |---|---|---|---|
+| `801da6b4` | `engine-vm/src/battle_action/target_cursor.rs` | FALSE-EDGE | Module `PORT:` / `REPLACED-BY:` pair moved onto `target_cursor_highlight`; the module was live through the cursor constants and `cursor_cue`, which both battle hosts use and which are not the port. The replacement verdict stands. |
 | `80018db0` | `engine-audio/src/footstep.rs` | FALSE-EDGE | `FootstepCadence::tick` renamed `tick_cadence`; the crate's own `lib.rs` re-exports the type and calls `spu.tick()`, so the gate passed. |
 | `801e0080` | `engine-vm/src/battle_scatter.rs` (since deleted - the routine is the effect-VM walker) | FALSE-EDGE | `rotate_offset` renamed `scatter_rotate_offset`; the live `rotate_offset` is `engine-core::action_effect_script`'s same-named free function, which gained its first host caller when the effect-script walk was wired into the battle tick. |
 | `800198e0`, `80058298`, `80058490` | `engine-vm/src/title_prim.rs` | FALSE-EDGE | Module tag moved onto `exec_sprite_descriptor` / `exec_clear_image` / `exec_move_image`; the file was live through `Rect12::to_le_bytes`. |

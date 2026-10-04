@@ -1,6 +1,8 @@
 //! Target-select cursor highlight over the monster actor slots.
 //!
-//! PORT: FUN_801da6b4
+//! The retail kernel's anchor sits on [`target_cursor_highlight`], not on this
+//! module: the module is live through the cursor constants and [`cursor_cue`],
+//! which both battle hosts use, and none of that is the ported routine.
 //!
 //! While the player is choosing which monster an Attack / Art / spell should
 //! hit, the battle overlay tints the pointed-at monster bright and dims the
@@ -28,7 +30,8 @@
 //! different colour and skips that shared store. This module reproduces that
 //! exactly.
 //!
-//! REPLACED-BY: `engine_core::world::battle::command_flow::World::apply_target_cursor_tint`,
+//! The engine replaces the kernel with
+//! `engine_core::world::battle::command_flow::World::apply_target_cursor_tint`,
 //! which stamps the same render-flag / colour / blend triple over the engine's
 //! **compacted** monster window and is called every command tick from the
 //! battle loop both hosts drive.
@@ -87,6 +90,12 @@ pub fn cursor_cue(render_flag: u8, display_frames: u64) -> Option<([f32; 3], f32
 }
 
 /// Stamp (or clear) the target-select cursor tint across the monster slots.
+///
+/// PORT: FUN_801da6b4
+///
+/// REPLACED-BY: `engine_core::world::battle::command_flow::World::apply_target_cursor_tint`
+/// (the same triple over the engine's compacted monster window; see the
+/// module docs for why retail's fixed slot window leaves no work here).
 ///
 /// `enable` is retail's highlight-on case (`param_1 == 0`); `false` clears the
 /// tint on every live monster slot. Dead slots (`liveness == 0`) are skipped,
