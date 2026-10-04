@@ -113,6 +113,8 @@ There are 38 entries (table indices `0x00..=0x25`). An operand past `0x25` reads
 
 The sprites decode against the **system-UI sheet** at VRAM `(896, 256)`: its UVs land on the icons there and on accent-glyph cells in the font page. The sprite carries no texture page of its own, and the `DR_MODE` for the font page (tpage `0xE`) that `FUN_80036888` links at `0x800369B8` goes into the same OT slot *before* the sprite, which the slot's head insertion makes execute after it. Every texel and palette sits in the boot-resident TIMs at the head of `PROT.DAT` (the system-UI sheet at `0x018E0`, a one-palette TIM at `0x07B00` for CLUT byte `0x13`, and the four row-498..501 palette TIMs at `0x10178` / `0x100D0` / `0x10028` / `0x0FF80`). Decoder `legaia_font::escape_icons`.
 
+The port draws them through the shared layout: `Font::with_escape_icons` appends the decoded sprites below the glyph cells, `Font::layout` places a sprite escape at the pen `y_offset` down and advances by the table's width (no inter-glyph spacing, `0x80036A10`), and `text_draws_for` draws it untinted, since `FUN_8002C488` emits it at `0x808080` whatever the pen. Every host font attaches them (the native boot font, the play page, the minigames page), and the dialog panel keeps the escape pair in its page - one typewriter unit - so the reading box draws it too. The numeric escapes still lay out as nothing.
+
 | Index | Sprite id | Size | Advance | `y_offset` | Draws |
 |---|---|---|---|---|---|
 | `0x00..=0x07` | 55..62 | 16x16 | 16 | -2 | Controller buttons: X, Circle, Square, Triangle, R1, R2, L1, L2 |

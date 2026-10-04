@@ -74,8 +74,13 @@ The picker draws three things each frame:
 - the **box** - `FUN_8002C69C(0xDC, 0x68, 0xD2, 0x27)` with the skin record
   `gp+0x14C` holds, which the `minigame_slot_machine` capture reads as `0x44`
   (the dialog skin): the two semi-transparent gouraud fill passes and the
-  border tiles of the resident system-UI sheet. The port draws the fill; the
-  border tiles sample a sheet the machine's VRAM does not carry.
+  border tiles of the system-UI sheet the boot loads at `(896, 256)` (`PROT.DAT`
+  `0x018E0`) and never unloads. The tiles are framebuffer sprites, so in the
+  640-wide mode they come out half as wide. The port uploads the sheet beside
+  the art pack (`SlotCabinetAssets::with_system_ui`).
+
+The rules text's button glyphs are `0xCE` escapes, drawn as sprites by the
+line renderer - see [`dialog-font.md`](../formats/dialog-font.md#escape-table-0x80074050).
 
 The rules row (states `0x33..0x39`) fades to black `0x10` a frame
 (`FUN_80024EE4(0, 2, level * 0x10101)`), switches the display to 320 wide
