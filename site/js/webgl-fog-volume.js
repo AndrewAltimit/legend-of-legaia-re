@@ -260,9 +260,16 @@ void main() {
         c = this.depthCopy = n;
       }
       if (c) return blit(c) ? c.tex : null;
+      /* DEPTH24_STENCIL8 first: it is what the browsers back a WebGL2
+       * default depth buffer with, even for a context created without
+       * `stencil` (ANGLE reports the packed format to the blit check). Trying
+       * DEPTH_COMPONENT24 first failed on every context the page creates and
+       * logged a "glBlitFramebuffer: depth/stencil format" warning to the
+       * console each time a pass was built. The depth-only format stays as the
+       * fallback for a driver that really allocates one. */
       const candidates = [
-        [gl.DEPTH_COMPONENT24, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, gl.DEPTH_ATTACHMENT],
         [gl.DEPTH24_STENCIL8, gl.DEPTH_STENCIL, gl.UNSIGNED_INT_24_8, gl.DEPTH_STENCIL_ATTACHMENT],
+        [gl.DEPTH_COMPONENT24, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, gl.DEPTH_ATTACHMENT],
       ];
       for (const [internal, format, type, attach] of candidates) {
         const cand = tryFormat(internal, format, type, attach);
