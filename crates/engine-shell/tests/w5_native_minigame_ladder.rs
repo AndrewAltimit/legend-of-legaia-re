@@ -136,12 +136,22 @@ fn run_window_with(
     shot_tick: u64,
     extra: &[&std::ffi::OsStr],
 ) -> (String, String) {
-    run_window_env(disc, shot, key_script, pad_script, shot_tick, extra, &[])
+    run_window_env(
+        disc,
+        shot,
+        key_script,
+        pad_script,
+        shot_tick,
+        extra,
+        &[],
+        false,
+    )
 }
 
 /// [`run_window_with`] with extra environment variables on the child (the
 /// opt-in surfaces such as `LEGAIA_DEV_MENU` are switched by environment, not
-/// by flag).
+/// by flag). `audio` drops `--no-audio`, so the window opens its output device.
+#[allow(clippy::too_many_arguments)]
 fn run_window_env(
     disc: &Path,
     shot: &Path,
@@ -150,6 +160,7 @@ fn run_window_env(
     shot_tick: u64,
     extra: &[&std::ffi::OsStr],
     envs: &[(&str, &str)],
+    audio: bool,
 ) -> (String, String) {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_legaia-engine"));
     cmd.envs(envs.iter().copied());
@@ -158,11 +169,13 @@ fn run_window_env(
         .arg(SCENE)
         .arg("--disc")
         .arg(disc)
-        .arg("--no-audio")
         .arg("--screenshot")
         .arg(shot)
         .arg("--screenshot-tick")
         .arg(shot_tick.to_string());
+    if !audio {
+        cmd.arg("--no-audio");
+    }
     if !key_script.is_empty() {
         cmd.arg("--key-script").arg(key_script);
     }
@@ -522,7 +535,7 @@ fn rung8_fishing_developer_readout_needs_menu_and_modifier() {
         let shot = out.join(format!("{label}.png"));
         let _ = std::fs::remove_file(&shot);
         let (stdout, stderr) =
-            run_window_env(&disc, &shot, "40:L", Some(pad), SHOT_TICK, &[], &dev);
+            run_window_env(&disc, &shot, "40:L", Some(pad), SHOT_TICK, &[], &dev, false);
         assert!(
             stdout.contains("[ok] screenshot"),
             "{label}: no capture written\nstdout:\n{stdout}\nstderr:\n{stderr}"
@@ -569,4 +582,58 @@ fn rung8_fishing_developer_readout_needs_menu_and_modifier() {
         "[ok] fishing_dev_readout: {:.3}% of the frame differs from the unmodified capture",
         delta * 100.0
     );
+}
+
+/// The slot machine's reel motor: a directly keyed SPU voice
+/// (`World::take_sfx_voice_keys` -> `AudioBgmDirector::key_on_voice_attr` ->
+/// `legaia_engine_audio::key_on_voice_attr`), the one cue path that bypasses
+/// both the SFX ring and the descriptor bank.
+///
+/// Two things keep every other rung off it. A spin needs coins - rung 6
+/// meets the machine's state-1 gate on an empty bank - so a cheat file
+/// seeds the coin bank (`0x800845A4`) the way rung 2 seeds fishing points.
+/// And the key needs the audio director, which exists only with a live
+/// output device, so this is the one rung that runs without `--no-audio`.
+/// A machine with no device cannot run it: the rung skips when the window
+/// reports no audio device rather than passing on a run that keyed
+/// nothing.
+#[test]
+fn rung9_slot_reel_motor_keys_a_voice() {
+    let Some((disc, out)) = ladder_env() else {
+        return;
+    };
+    let shot = out.join("slots_audio.png");
+    let _ = std::fs::remove_file(&shot);
+    let cheat = out.join("slot_coins.gs.txt");
+    // 1000 coins (a u16 write into the bank word).
+    std::fs::write(&cheat, "R I 2 L 0 800845A4 03E8 Coin bank\n").expect("write cheat file");
+    let (stdout, stderr) = run_window_env(
+        &disc,
+        &shot,
+        "40:O",
+        Some("100:Cross,160:Cross,220:Cross,280:Cross"),
+        400,
+        &[std::ffi::OsStr::new("--cheat-file"), cheat.as_os_str()],
+        &[("RUST_LOG", "info,legaia_engine_shell=debug")],
+        true,
+    );
+    if !stderr.contains("audio: device=") {
+        eprintln!("[skip] no audio output device - the voice-key path needs the director");
+        return;
+    }
+    assert!(
+        stdout.contains("[ok] screenshot"),
+        "slots_audio: no capture written\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("minigame warp: entered slot_machine"),
+        "slots_audio: the machine never opened\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr
+            .lines()
+            .any(|l| l.contains("direct voice") && l.ends_with("keyed: true")),
+        "slots_audio: a spin with coins in the bank keyed no reel-motor voice\nstderr:\n{stderr}"
+    );
+    eprintln!("[ok] slots_audio: the reel motor keyed a voice");
 }
