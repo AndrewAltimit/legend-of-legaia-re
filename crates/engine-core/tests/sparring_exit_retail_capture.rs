@@ -280,15 +280,22 @@ fn play_every_lesson(w: &mut World) -> Vec<u8> {
         "the primed fight arms the machine"
     );
     // The stand-in formation's monster is no Tetsu: give it the spar's
-    // staying power so the lessons, not a knockout, end the fight.
-    for a in w.actors.iter_mut().skip(3) {
-        if a.battle.max_hp > 0 {
+    // staying power so the lessons, not a knockout, end the fight. The spar
+    // seats Vahn alone, so the monster is the seat right after him - pick it
+    // by its monster id, not by a fixed party width.
+    for a in w.actors.iter_mut() {
+        if a.battle_monster_id.is_some() && a.battle.max_hp > 0 {
             a.battle.max_hp = 9999;
-            a.battle.hp = 9999;
+            a.battle.set_hp_synced(9999);
         }
     }
-    // A wounded lead, so the leaf has a target to benefit.
-    w.actors[0].battle.hp = w.actors[0].battle.max_hp / 2;
+    // A wounded lead, so the leaf has a target to benefit - and, like the
+    // real spar's Vahn, one the stand-in's full-strength hits cannot fell
+    // across four lessons. Every write goes through the synced setter so the
+    // HP readout pair stays coherent (a bare `hp` write is the absorbing
+    // `0x51` bar-drain park, `BattleActor::set_hp_synced`).
+    w.actors[0].battle.max_hp = 999;
+    w.actors[0].battle.set_hp_synced(499);
     let mut seen = vec![0u8];
     let mut prev = 0u16;
     for _ in 0..40_000u32 {
