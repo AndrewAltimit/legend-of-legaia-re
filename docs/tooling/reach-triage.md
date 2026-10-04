@@ -38,8 +38,8 @@ script skips (exit 0) when no export is present.
 The report opens with three counts over the canonical union: the `// PORT:`
 anchors the static graph calls **live**, how many of those some run
 **entered**, and how many **no run entered** - the third being the set this
-page verdicts. Over the current union they are **859 live / 790 entered / 37
-never entered, across 84 ladders**, with both defect lists empty (and 39
+page verdicts. Over the current union they are **871 live / 815 entered / 26
+never entered, across 88 ladders**, with both defect lists empty (and 35
 addresses in the *not observable* bucket plus 2 const anchors, outside all
 three).
 
@@ -70,8 +70,12 @@ one - see
 [the partial-union note](#a-ladder-that-fails-and-a-ladder-nobody-exported-are-the-same-line).
 The export must also be **clean** of any source edit made while it ran: an
 export built partly before and partly after an edit to a file mixes two line
-maps for it, and the reader scores an anchor against both. Re-deriving with a
-bare `replay-port-coverage.py` is cheaper than trusting this line.
+maps for it, and the reader scores an anchor against both. An edit that
+keeps every line where it was (a tag moved between two adjacent doc blocks of
+the same length) is the one exception, and a member whose own test file
+changed can be re-exported alone - its test file holds no anchors. The
+figure above used both. Re-deriving with a bare `replay-port-coverage.py` is
+cheaper than trusting this line.
 
 ## Buckets
 
