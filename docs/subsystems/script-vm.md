@@ -779,7 +779,10 @@ also parks the caller (`0x801DF034..0x801DF044`), which then resumes when the
 player arrives. A record that walks an NPC runs on, and its next cross-context
 op on that NPC waits at the dispatcher's halted-target refusal until the leg
 lands - `opurud`'s Seru-tamer beat starts four channel walks back to back and
-they overlap. This is how a partition-2 beat
+they overlap. The refusal holds from the op right after the walk, in the same
+frame: `dolk2`'s market beat (`P2[11]`) runs `C7 1F 46 5B 32` and then the
+`B3 1F 0A` halt-bit verify, which keeps Noa's "Vahn..." line back until she
+has reached her tile beside Vahn. This is how a partition-2 beat
 choreographs its cast - the town01 post-naming Mei beat (`P2[4]`) drives
 `C7 46 11 1B 33` / `C7 46 11 1A 33` to walk Mei (channel `0x46`, placement 34)
 from her door seat to the conversation tile `(17,26)`, and `C7 F8 12 1A 33` to

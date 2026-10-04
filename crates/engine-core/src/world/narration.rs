@@ -1516,8 +1516,15 @@ impl World {
                     && !(opcode_byte & 0x7F == 0x32 && tl.bytecode.get(pc + 2) == Some(&0x0A));
                 // The NPC legs this context armed hold their actors the
                 // same way (the `s7 = 3` advance is taken for every target).
+                // That includes a walk-to-tile leg armed earlier in this same
+                // slice (`tl.npc_walks`): `dolk2` P2[11] runs `C7 1F 46 5B 32`
+                // then `B3 1F 0A` within one tick, and the halt-bit verify
+                // must hold until Noa lands - stepping past it opened the
+                // "Noa: Vahn..." box with Noa still walking through Vahn.
                 let own_npc_glide_target = opcode_byte & 0x80 != 0
-                    && (!tl.npc_glides.is_empty() || !npc_glide_hold.is_empty())
+                    && (!tl.npc_glides.is_empty()
+                        || !tl.npc_walks.is_empty()
+                        || !npc_glide_hold.is_empty())
                     && !(opcode_byte & 0x7F == 0x32 && tl.bytecode.get(pc + 2) == Some(&0x0A))
                     && vm::field::peek_extended(&tl.bytecode, pc)
                         .filter(|&t| t != 0xF8 && t != 0xFB)
@@ -1527,6 +1534,7 @@ impl World {
                             let slot = channels[ci].placement_index as u8;
                             npc_glide_hold.contains(&slot)
                                 || tl.npc_glides.iter().any(|g| g.slot == slot)
+                                || tl.npc_walks.contains(&slot)
                         });
                 if halted_target || own_glide_target || own_npc_glide_target {
                     tl.frames = tl.frames.saturating_sub(1);
