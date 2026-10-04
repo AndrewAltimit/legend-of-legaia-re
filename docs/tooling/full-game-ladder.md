@@ -217,10 +217,14 @@ map as its street:
   over the teleport when its box centre lies within the tile's half-tile
   margin or its anchor tile is one step from it - `dolk`'s inn stair door
   is anchored at (76, 121) in front of the (76, 122) teleport, its box
-  centre short of the margin. A touch-class door whose bind record runs
-  `31 00` opens itself wherever it stands, so it counts open too: `jiji`
-  P0[0], the door across the corridor to the `map02` mouth at (66, 96),
-  stands over no teleport.
+  centre short of the margin. A touch-class door whose touch reaches `31 00`
+  opens itself wherever it stands, so it counts open too: `jiji` P0[0], the
+  door across the corridor to the `map02` mouth at (66, 96), stands over no
+  teleport. The touch is read from the record's resume point (past its first
+  `21`) with story-flag tests followed against the live flags; a door whose
+  opening sits behind a box test of the player opens only from a cell inside
+  that box (`ropeway` P0[2], the Octam station door, opens for a player on
+  tiles (27..30, 33..34) and is a wall from the corridor south of it).
 - an **object door** - a walk-touch placement whose record, resolved against
   the live flags, moves the player - is an edge wherever the leading actor
   probe points reach its contact box, including through the wall the door is
@@ -249,6 +253,16 @@ with nothing to say) - leaves the route as it was rather than re-planning the
 walk component. Walks avoid the live
 walk-on bands (a band whose record's story gates shut it is walkable) unless
 one is the only way through.
+
+A door tile whose centre is wall is aimed at through its open sub-cell, which
+says the side a player steps in from (`teien`'s way down at (42..43, 29) is
+entered from the corridor above). A walk-on band whose record clears a C1
+latch of the target door's own record is the way in rather than a beat to
+step around, and the hand crosses it first (`ropeway` P2[25] clears `0x514`,
+the latch of the gate to `ropeway2`, and re-opens the door frame in front of
+it). Standing on a door band whose crossing was consumed - the dispatch drops
+a tile change made while a script holds the player - the hand steps off and
+back on from each side.
 
 The pad hand's beats are the seated tier's, played as a player plays them:
 
