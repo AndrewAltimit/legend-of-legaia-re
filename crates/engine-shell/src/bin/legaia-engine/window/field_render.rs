@@ -171,8 +171,7 @@ impl PlayWindowApp {
         src.lut_applied = Some(live);
         src.vmesh.positions =
             legaia_engine_core::field_ground::live_render_positions(&src.hf, &live);
-        src.flat_refs =
-            legaia_engine_core::overworld_draw_order::ground_flat_refs(&src.vmesh.positions);
+        src.flat_refs = legaia_engine_core::field_ground::flat_refs(&src.hf, &src.vmesh.positions);
         let Some(r) = self.win.renderer.as_ref() else {
             return;
         };

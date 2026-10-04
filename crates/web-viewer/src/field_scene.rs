@@ -959,6 +959,22 @@ impl LegaiaViewer {
             .collect()
     }
 
+    /// The ground's per-vertex flat-depth references, eight floats per vertex
+    /// in [`Self::field_scene_ground_positions`] order - the shared
+    /// [`legaia_engine_core::field_ground::flat_refs`] the play page and the
+    /// native window upload too, which marks each sloped far-bucket cell so
+    /// the shader draws it under everything, as retail's ground pass does.
+    pub fn field_scene_ground_flat_refs(&self) -> Vec<f32> {
+        let Some(hf) = self.field_scene.as_ref().and_then(|f| f.ground.as_ref()) else {
+            return Vec::new();
+        };
+        let positions = legaia_engine_core::field_ground::render_positions(hf);
+        legaia_engine_core::field_ground::flat_refs(hf, &positions)
+            .into_iter()
+            .flatten()
+            .collect()
+    }
+
     pub fn field_scene_ground_uvs(&self) -> Vec<u8> {
         let Some(hf) = self.field_scene.as_ref().and_then(|f| f.ground.as_ref()) else {
             return Vec::new();

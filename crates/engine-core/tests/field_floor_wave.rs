@@ -242,6 +242,7 @@ fn op_4c_90_deforms_the_ground_heightfield_per_vertex() {
         colors: vec![GROUND_PRIM_COLOR; 8],
         indices: vec![0, 1, 2, 1, 3, 2, 4, 5, 6, 5, 7, 6],
         corner_tiers: tiers.to_vec(),
+        far_bucket: Vec::new(),
     };
     let baked = legaia_engine_core::field_ground::render_positions(&hf);
     let mut world = world_on_ladder(man, arm_rung(4));

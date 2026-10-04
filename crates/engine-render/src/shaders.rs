@@ -1074,6 +1074,23 @@ fn overworld_flat_depth(clip: vec4<f32>, fa: vec4<f32>, fb: vec4<f32>, sz_scale:
     return vec4<f32>(clip.x, clip.y, ndc * clip.w, clip.w);
 }
 
+// The field ground pass's far bucket (`legaia_engine_core::field_ground::
+// flat_refs`): retail links a field ground cell without the object-grid sort
+// bit `0x8000` into the ordering table's fixed far bucket, so every other
+// primitive paints over it. A sloped such cell is marked by a swapped x pair
+// (`fa.x > fa.z`); its depth is pushed into the thin slice behind every other
+// draw - reversed-Z, so scaling `z` toward 0 moves it toward the far plane
+// while keeping the cell's own per-pixel order inside the slice. Off the
+// field (`sz_scale > 0`, the overworld's key) and on every unmarked vertex
+// nothing moves.
+const FIELD_FAR_BUCKET_DEPTH_SCALE: f32 = 0.001;
+fn field_far_bucket_depth(clip: vec4<f32>, fa: vec4<f32>, sz_scale: f32) -> vec4<f32> {
+    if (sz_scale > 0.0 || fa.x <= fa.z || clip.w <= 0.0) {
+        return clip;
+    }
+    return vec4<f32>(clip.x, clip.y, clip.z * FIELD_FAR_BUCKET_DEPTH_SCALE, clip.w);
+}
+
 // The overworld continent's depth cue
 // (`legaia_engine_core::overworld_ground_cue`): retail's ground emitter
 // (`FUN_801F89B8`) runs each cell's packet colour through `DPCS` with
@@ -1114,6 +1131,7 @@ fn vs_main(
     // ahead of the pixel snap - retail bends SY before the packet is written.
     var clip = overworld_curve_clip(u.mvp * vec4<f32>(position, 1.0), u.flags.w);
     clip = overworld_flat_depth(clip, flat_a, flat_b, u.flags.w);
+    clip = field_far_bucket_depth(clip, flat_a, u.flags.w);
     if u.psx_params.z >= 0.5 {
         clip = psx_snap_clip(clip, u.psx_params.x, u.psx_params.y);
     }

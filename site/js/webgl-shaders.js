@@ -366,6 +366,16 @@ float overworldFlatW(mat4 m, vec4 fa, vec4 fb) {
   return (float((sz >> 5) + 14) * 32.0 + 32.0) / u_curve;
 }
 
+/* The field ground pass's far bucket - the GLSL twin of engine-render's
+ * field_far_bucket_depth (legaia_engine_core::field_ground::flat_refs).
+ * Retail links a field ground cell without the object-grid sort bit 0x8000
+ * into the ordering table's fixed far bucket, so every other primitive
+ * paints over it; a sloped such cell carries a swapped x pair (fa.x > fa.z).
+ * Off the overworld only (u_curve 0); the FS moves the marked depth. */
+bool fieldFarBucket(vec4 fa) {
+  return u_curve <= 0.0 && fa.x > fa.z;
+}
+
 vec4 overworldFlatDepth(vec4 clip, mat4 m, vec4 fa, vec4 fb) {
   if (u_curve <= 0.0 || fa.z <= fa.x || clip.w <= 0.0) return clip;
   float w0 = (m * vec4(fa.x, fb.x, fa.y, 1.0)).w;
@@ -436,6 +446,8 @@ out float v_fog_t;     /* 0..1, fraction of u_fog_far_ref */
 out vec4 v_flat_rgba;
 out float v_view_z;    /* perspective view depth (clip w) for the depth cue */
 out float v_depth_w;   /* the w the log-depth write keys on */
+/* 1 on a sloped far-bucket field ground cell (fieldFarBucket), else 0. */
+flat out float v_far_bucket;
 out vec3 v_normal;     /* object-space smoothed normal (dynamic light only) */
 out vec3 v_obj_pos;    /* object-space position: the facet-normal fallback */
 out vec3 v_world;      /* page-frame world position (enhanced lighting's point lights) */
@@ -479,6 +491,7 @@ void main() {
    * Perspective interpolation of w is exact. */
   float flatW = overworldFlatW(u_mvp * u_model, a_ground_ref_xz, a_ground_ref_y);
   v_depth_w = flatW > 0.0 ? flatW : gl_Position.w;
+  v_far_bucket = fieldFarBucket(a_ground_ref_xz) ? 1.0 : 0.0;
   v_normal = a_normal;
   v_obj_pos = a_position;
 }
@@ -627,6 +640,7 @@ in float v_fog_t;
 in vec4 v_flat_rgba;
 in float v_view_z;
 in float v_depth_w;
+flat in float v_far_bucket;
 in vec3 v_normal;
 in vec3 v_obj_pos;
 in vec3 v_world;
@@ -920,7 +934,14 @@ vec3 apply_distance_fog(vec3 lit) {
 }
 
 void main() {
-  gl_FragDepth = u_log_depth_on != 0 ? logDepthOfW(v_depth_w) : gl_FragCoord.z;
+  float depth = u_log_depth_on != 0 ? logDepthOfW(v_depth_w) : gl_FragCoord.z;
+  /* A sloped far-bucket field ground cell draws under everything, as
+   * retail's far bucket does: its depth goes into the thin slice in front of
+   * the clear value, keeping its own per-pixel order inside the slice
+   * (FIELD_FAR_BUCKET_DEPTH_SCALE in engine-render - same scale, mirrored for
+   * this page's forward depth). */
+  if (v_far_bucket > 0.5) depth = 1.0 - (1.0 - depth) * 0.001;
+  gl_FragDepth = depth;
   /* Facet normal for the dynamic light, taken before any discard so the
    * derivatives sit in uniform control flow. Its sign follows the
    * framebuffer's Y direction, which the light's abs() makes irrelevant. */

@@ -176,6 +176,10 @@
           v.field_scene_ground_uvs(),
           v.field_scene_ground_cba_tsb(),
           v.field_scene_ground_indices(),
+          /* Each sloped far-bucket cell's marker: retail draws it under
+           * everything (field_ground::flat_refs). Absent on an older bundle. */
+          (typeof v.field_scene_ground_flat_refs === 'function')
+            ? v.field_scene_ground_flat_refs() : null,
         );
       } else {
         this.renderer.uploadGround(new Float32Array(0), null, null, new Uint32Array(0));

@@ -1019,7 +1019,7 @@ The remaining derived bits have one writer, the grid-prep refresh **`FUN_80017be
 
 One more cell bit belongs to the renderer rather than to locomotion:
 **`0x8000` is a per-tile depth-sort flag** on the ground quad. PROT 0900's
-ground pass buckets the tile by its own minimum projected `Z` when the bit is
+ground pass buckets the tile by its own farthest projected `Z` when the bit is
 set, and drops it into a fixed far bucket when it is clear (`0x801F6F94` /
 `0x801F6FEC`). In `teien` 297 of 451 non-zero cells carry it. The ground pass
 itself - and the fact that **no** draw channel anywhere reads cell bit

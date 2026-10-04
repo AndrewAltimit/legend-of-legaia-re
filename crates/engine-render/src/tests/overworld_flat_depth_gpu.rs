@@ -33,7 +33,7 @@ fn mvp() -> [f32; 16] {
 /// the frame's `clip.w`-to-`SZ` factor (`MeshUniforms.flags.w`), `refs`
 /// whether the vertices carry the cell's corners.
 fn draw_cell(device: &wgpu::Device, queue: &wgpu::Queue, sz_scale: f32, refs: bool) -> Vec<f32> {
-    render_cell(device, queue, sz_scale, refs, 0x7FFF).0
+    render_cell(device, queue, sz_scale, refs, 0x7FFF, false).0
 }
 
 /// [`draw_cell`] over a VRAM filled with the 15bpp `texel`, returning the
@@ -44,6 +44,7 @@ fn render_cell(
     sz_scale: f32,
     refs: bool,
     texel: u16,
+    far_bucket: bool,
 ) -> (Vec<f32>, Vec<[u8; 4]>) {
     // The cell: x in -100..100, z in 400..600, rising from y -80 at the near
     // edge to +80 at the far one, so it faces the eye.
@@ -55,7 +56,11 @@ fn render_cell(
         [x0, ys[2], z1],
         [x1, ys[3], z1],
     ];
-    let flat = if refs {
+    let flat = if far_bucket {
+        // `legaia_engine_core::field_ground::flat_refs`'s marker: the x pair
+        // swapped.
+        [x1, z0, x0, z1, ys[0], ys[1], ys[2], ys[3]]
+    } else if refs {
         [x0, z0, x1, z1, ys[0], ys[1], ys[2], ys[3]]
     } else {
         [0.0; 8]
@@ -438,8 +443,8 @@ fn a_distant_continent_cell_is_depth_cued_toward_white() {
     };
     // Corner (x1, z0) sits 400 deep: at 64 SZ per clip w, SZ1 = 25600,
     // IR0 = (25600 - 0x5000) >> 3 = 640, packet 128 + 640 / 32 = 148.
-    let cued = red(&render_cell(&device, &queue, 64.0, true, grey).1);
-    let plain = red(&render_cell(&device, &queue, 64.0, false, grey).1);
+    let cued = red(&render_cell(&device, &queue, 64.0, true, grey, false).1);
+    let plain = red(&render_cell(&device, &queue, 64.0, false, grey, false).1);
     assert!(
         cued.len() > 20 && plain.len() > 20,
         "the cell covers the target"
@@ -456,6 +461,37 @@ fn a_distant_continent_cell_is_depth_cued_toward_white() {
         c / p
     );
     // Nearer than SZ 0x5000 the cue is the identity.
-    let near = red(&render_cell(&device, &queue, 32.0, true, grey).1);
+    let near = red(&render_cell(&device, &queue, 32.0, true, grey, false).1);
     assert!(near.iter().all(|&v| v == plain[0]), "near cell unchanged");
+}
+
+/// The field ground's far bucket (`legaia_engine_core::field_ground::
+/// flat_refs`, retail `FUN_801F6D48`'s fixed far bucket): a sloped cell whose
+/// refs carry the swapped-x marker keeps its per-pixel depth order but is
+/// scaled into the thin slice at the far end of the renderer's reversed-Z
+/// range - here a plain scale of the same depths, since this harness projects
+/// forward-Z. Only off the overworld: on an overworld frame the swapped pair
+/// is no key at all and the cell keeps its per-pixel depth.
+#[test]
+fn a_sloped_far_bucket_field_cell_draws_in_the_far_slice() {
+    let Some((device, queue)) = headless_device() else {
+        eprintln!("[skip] no GPU adapter");
+        return;
+    };
+    let plain = render_cell(&device, &queue, 0.0, false, 0x7FFF, false).0;
+    let far = render_cell(&device, &queue, 0.0, false, 0x7FFF, true).0;
+    let mut n = 0;
+    for (p, f) in plain.iter().zip(&far) {
+        if *p < 1.0 {
+            n += 1;
+            assert!((f - p * 0.001).abs() < 1e-6, "far {f} vs plain {p}");
+        } else {
+            assert_eq!(*f, 1.0, "the marker moves depth, never coverage");
+        }
+    }
+    assert!(n > 20, "the cell covers the target");
+    // On the overworld the swapped pair fails both the flat-depth gate and
+    // the far-bucket gate: per-pixel depth.
+    let ow = render_cell(&device, &queue, 1.0, false, 0x7FFF, true).0;
+    assert_eq!(ow, draw_cell(&device, &queue, 1.0, false));
 }

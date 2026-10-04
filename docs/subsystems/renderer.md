@@ -467,8 +467,35 @@ The window bytes are relative tile offsets, so the double loop runs
   `+0x1C`/`+0x1D`, and OR-ing the semi-transparency bit when `+0x1A` is
   non-zero;
 - sorts on `cell & 0x8000`: set, the packet goes in the bucket its own
-  minimum vertex `Z` picks; clear, it goes in the fixed far bucket
-  `(0x3FF6 >> ot_shift) * 4`.
+  farthest vertex `Z` picks (`(max SZ >> 5) + 2`, the three
+  `sub` / `bgez` / `move` steps at `0x801F6FAC..0x801F6FD8` keep the larger);
+  clear, it goes in the fixed far bucket `(0x3FF6 >> ot_shift) * 4`.
+
+### The far bucket draws under everything
+
+The far bucket is the last ordering-table slot, which the GPU walks first, so a
+far-bucket ground cell is painted over by every other primitive in the frame -
+nearer or not. A depth buffer agrees for a **flat** cell (nothing can stand
+behind a floor and in front of it at once) but not for a **sloped** one. A cell
+whose corner tiers differ rises between them, and where the tiers are a cliff
+apart it is a near-vertical sheet of ground texture that retail never shows,
+because the cliff mesh in front of it paints over it. `town01`'s cell
+`(30, 38)` is the case that surfaced: three corners on the town floor, one on
+the plateau 384 units up, standing in front of the recessed overhang by the
+plateau's cave mouth - a long dark-green sliver on every host.
+
+The port keeps the bit as `WalkHeightfield::far_bucket`
+(`legaia_asset::field_objects::CELL_GROUND_DEPTH_SORTED`, field ground only;
+the overworld emitter keys every cell on its own corners). The shared kernel
+`legaia_engine_core::field_ground::flat_refs` marks each **sloped** far-bucket
+cell in the per-vertex flat-depth references both hosts already upload beside
+the ground (its `x0` / `x1` pair swapped), and the ground shaders -
+`field_far_bucket_depth` in `engine-render`, `fieldFarBucket` in
+`site/js/webgl-shaders.js` - scale the marked cell's depth into the thin slice
+at the far end of the range, keeping its own per-pixel order inside it. Flat
+far-bucket cells keep their real depth, so the post passes that read the depth
+buffer (the volumetric fog's soft edge, the lamp halos) see the floor where it
+is. Disc-gated pin `crates/engine-core/tests/field_ground_far_bucket_disc.rs`.
 
 ### No draw channel is gated on object-grid bit `0x0800`
 

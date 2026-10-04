@@ -130,6 +130,61 @@ pub fn render_indices(hf: &WalkHeightfield) -> Vec<u32> {
     out
 }
 
+/// The per-vertex flat-depth references both hosts upload beside the ground
+/// mesh: [`crate::overworld_draw_order::ground_flat_refs`] over the drawn
+/// `positions` (same vertex order as `hf`), plus the field ground pass's
+/// **far-bucket** marker.
+///
+/// Retail's field ground pass (`FUN_801F6D48`, PROT 0900) links a cell
+/// without the object-grid sort bit ([`WalkHeightfield::far_bucket`]) into
+/// the ordering table's fixed far bucket, which the GPU draws first: every
+/// other primitive in the frame paints over it, nearer or not. A depth buffer
+/// reproduces that for a **flat** cell - nothing can stand behind a floor and
+/// in front of it at once - but not for a **sloped** one. A far-bucket cell
+/// whose corners sit on different floor tiers rises between them, and where
+/// the tiers are a cliff apart it is a near-vertical sheet of ground texture
+/// that retail never shows: the cliff mesh in front of it paints over it. A
+/// depth buffer draws it in front of that cliff instead (`town01`'s cell
+/// `(30, 38)`, a 384-unit rise against the overhang by the plateau's cave
+/// mouth, read as a stray sliver on every host).
+///
+/// So a sloped far-bucket cell carries the marker - its `x0` / `x1` pair
+/// **swapped** (`x0 > x1`; the overworld key reads `x1 <= x0` as "no flat
+/// depth", so the two uses cannot collide) - and the hosts' ground shaders
+/// push the marked cell's depth into a thin slice behind every other draw
+/// (`FIELD_FAR_BUCKET_DEPTH_SCALE` in `engine-render`, the GLSL twin in
+/// `site/js/webgl-shaders.js`), keeping its own per-pixel order inside the
+/// slice. Flat far-bucket cells keep their real depth.
+///
+/// REF: FUN_801F6D48
+pub fn flat_refs(hf: &WalkHeightfield, positions: &[[f32; 3]]) -> Vec<[f32; 8]> {
+    let mut refs = crate::overworld_draw_order::ground_flat_refs(positions);
+    if hf.far_bucket.len() != positions.len() {
+        return refs;
+    }
+    for ((cell, far), out) in positions
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(hf.far_bucket.as_chunks::<4>().0)
+        .zip(refs.as_chunks_mut::<4>().0)
+    {
+        if !far[0] || cell.iter().all(|p| p[1] == cell[0][1]) {
+            continue;
+        }
+        for r in out.iter_mut() {
+            r.swap(0, 2);
+        }
+    }
+    refs
+}
+
+/// Whether [`flat_refs`] marked this vertex's cell as a sloped far-bucket
+/// cell (its `x0` / `x1` pair swapped).
+pub fn is_far_bucket_ref(r: &[f32; 8]) -> bool {
+    r[0] > r[2]
+}
+
 /// Crop an already-built ground index list to this frame's visible cells: keep
 /// each quad (six indices, as [`render_indices`] or the builder emits them)
 /// whose cell the ground emitters visit
@@ -184,6 +239,7 @@ mod tests {
             colors: vec![legaia_asset::field_objects::GROUND_PRIM_COLOR; 4],
             indices: vec![0, 1, 2, 1, 3, 2],
             corner_tiers: vec![0, 0, 1, 1],
+            far_bucket: Vec::new(),
         }
     }
 
@@ -253,5 +309,32 @@ mod tests {
             crop_indices(&positions, &indices, Some(&cells)),
             vec![4, 6, 5, 5, 6, 7]
         );
+    }
+
+    #[test]
+    fn only_sloped_far_bucket_cells_carry_the_marker() {
+        // `grid()` is one sloped cell (two corners 32 up).
+        let mut hf = grid();
+        let pos = render_positions(&hf);
+        let overworld = crate::overworld_draw_order::ground_flat_refs(&pos);
+        // No far-bucket data (an overworld / older build): the overworld refs.
+        assert_eq!(flat_refs(&hf, &pos), overworld);
+        // Depth-sorted cell: unmarked.
+        hf.far_bucket = vec![false; 4];
+        assert!(flat_refs(&hf, &pos).iter().all(|r| !is_far_bucket_ref(r)));
+        // Far-bucket and sloped: every vertex marked, x pair swapped.
+        hf.far_bucket = vec![true; 4];
+        let refs = flat_refs(&hf, &pos);
+        assert!(refs.iter().all(is_far_bucket_ref));
+        assert_eq!(refs[0][0], overworld[0][2]);
+        assert_eq!(refs[0][2], overworld[0][0]);
+        assert_eq!(refs[0][1..2], overworld[0][1..2]);
+        assert_eq!(refs[0][3..], overworld[0][3..]);
+        // Far-bucket but flat: a depth buffer already orders it - unmarked.
+        for p in &mut hf.positions {
+            p[1] = 0.0;
+        }
+        let pos = render_positions(&hf);
+        assert!(flat_refs(&hf, &pos).iter().all(|r| !is_far_bucket_ref(r)));
     }
 }
