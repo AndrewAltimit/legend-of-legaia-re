@@ -224,6 +224,21 @@ impl LegaiaRuntime {
             self.minigame_ui.art_failed = true;
             return false;
         }
+        // The compact image carries no pre-TOC head, so the slot machine's
+        // resident system-UI sheet (its submenu box border) comes off the
+        // real PROT.DAT.
+        if let Some(c) = art.slot_cabinet.take() {
+            use legaia_asset::title_pak as tp;
+            art.slot_cabinet = Some(
+                match host.index.prot_dat_raw_bytes(
+                    tp::OVERLAY_SYSTEM_UI_TIM_OFFSET as u64,
+                    tp::OVERLAY_SYSTEM_UI_TIM_SIZE,
+                ) {
+                    Ok(head) if !c.system_ui => c.with_system_ui(&head),
+                    _ => c,
+                },
+            );
+        }
         self.minigame_ui.art = Some(art);
         true
     }
