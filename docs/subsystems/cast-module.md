@@ -1949,7 +1949,14 @@ directors so far, each read off its own tick's disassembly:
   toward the caster, facing the victim), the cuts of arms 4 and 6, the
   `0xC0`-frame pan of arm 7, the gates of arms 2 and 4..10 and the walk-in of
   arm 11. It also reports the module's spawn calls arm by arm
-  ([below](#a-module-that-reports-its-spawns));
+  ([below](#a-module-that-reports-its-spawns)) and its two caption arms:
+  arm 5 prints the spell name and arm 6 replaces it with the actor record's
+  attack name (`FUN_8003541C(.., 0x96, ..)`, the move-name label's place),
+  which the port shows through `battle_hud::battle_move_name` until the
+  band's `0x37` exit. The walk-in is the creature clip's root motion; the
+  port steps it 32 units a frame along the heading onto the victim, the
+  speed `gimard_burning_attack` pins (670 units in the 20.5 frames its yaw
+  base says the walk has run);
 - **PROT 0905 (Vera)** - the whole choreography, including a third kernel the
   other two do not need: arms 8..10 write the camera globals directly every
   pass (pitch `0x8007B790`, TR y / z `0x800840BC` / `0x800840C0`), a drift on

@@ -1725,6 +1725,24 @@ impl LegaiaRuntime {
         host.world.force_encounter(id)
     }
 
+    /// Dispatch a cast the moment the next battle's first command prompt
+    /// opens - the browser twin of the native window's
+    /// `LEGAIA_BATTLE_INFLIGHT=caster,spell,target` debug seam (engine actor
+    /// indices; every seat keeps its ground). Pair with
+    /// [`Self::debug_force_battle`] to watch one cast from a cold page.
+    pub fn debug_seed_inflight_cast(&mut self, caster: u8, spell_id: u8, target: u8) -> bool {
+        let Some(host) = self.scene_host.as_mut() else {
+            return false;
+        };
+        host.world.battle.inflight_seed = Some(legaia_engine_core::world::InflightCastSeed {
+            caster,
+            spell_id,
+            target,
+            ground: [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+        });
+        true
+    }
+
     /// `true` while the party-wipe hand-off owns the frame. The page stops
     /// feeding the pad into the world and drives
     /// [`Self::game_over_input`] instead.
