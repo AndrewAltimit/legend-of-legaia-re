@@ -159,6 +159,10 @@ impl SceneHost {
         // in the move-FX / summon seats - rides into the next scene.
         // REF: FUN_8001E1B4
         self.world.teardown_battle_effects();
+        // The narration roller is a pool actor (`FUN_80037174`) and goes with
+        // the rest: a record's terminal SceneChange does not wait for it, so
+        // `opdeene`'s Seru-history crawl is still up when the scene ends.
+        self.world.cutscene.narration = None;
         let scene = Scene::load(&self.index, name)?;
         // `_DAT_80084540`: the scene's raw CDNAME define (the `block_range`
         // start, before the extraction-frame shift `Scene::start` carries).

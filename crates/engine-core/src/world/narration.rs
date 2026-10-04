@@ -1488,6 +1488,24 @@ impl World {
                 // with the 8-page Seru-history roller (`FUN_80037174`) three
                 // pages short of retiring; the departing scene tears the
                 // roller down with everything else.
+                // A crawl's roller holds the player's halt bit for its whole
+                // run: the `CC F8 80 N` spawn is a halt-acquire on its target
+                // (`ori v0,v0,0x400` into the player's `+0x10` at
+                // `0x801E1F24`), and the roller clears its parent's `0x400`
+                // as it retires the last page. So `B3 F8 0A` - the halt-bit
+                // test on the player - is how a record waits for its crawl:
+                // `opurud`'s record sits on one before its `3F` until the
+                // last page retires (per-vsync capture), while `opdeene`'s
+                // carries none and changes scene under its roller.
+                // REF: FUN_801DE840 (0x801E1ECC..0x801E1F58), FUN_80037174
+                if opcode_byte == 0xB3
+                    && tl.bytecode.get(pc + 1) == Some(&0xF8)
+                    && tl.bytecode.get(pc + 2) == Some(&0x0A)
+                    && host.world.cutscene_narration_active()
+                {
+                    tl.frames = tl.frames.saturating_sub(1);
+                    break;
+                }
                 // Halted-target refusal: a cross-context op aimed at an actor
                 // ANOTHER context holds in a walk / rotate / glide park waits
                 // at the op and retries next frame. The park holds the
