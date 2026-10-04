@@ -45,8 +45,9 @@
 //! "fade done" edge); monster seats `3..=6` with a non-zero record colour
 //! run the capture / no-escape bookkeeping and the sink (`+0x36 +=
 //! (monster[+0x1F] * dt) >> 2`). This kernel ports the fade and reports the
-//! party fade-done edge; the monster bookkeeping is the action SM's
-//! (`crate::battle_action`), not a colour law.
+//! party fade-done edge; the sink is the engine core's
+//! (`World::tick_battle_defeat_sink`), the bookkeeping the action SM's
+//! (`crate::battle_action`) - neither is a colour law.
 //!
 //! The frame delta `dt` is the scratchpad byte `DAT_1F800393`; the engine
 //! ticks one retail frame per tick, so callers pass `1`.

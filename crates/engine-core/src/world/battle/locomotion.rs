@@ -140,7 +140,7 @@ impl World {
     /// The monster record `+0x1F` size class seated in `slot`, `0` for a
     /// party slot / empty slot / unresolved catalog (the same resolution the
     /// battle host's `monster_size_class` performs).
-    fn battle_size_class_of(&self, slot: u8) -> u8 {
+    pub(in crate::world) fn battle_size_class_of(&self, slot: u8) -> u8 {
         let Some(id) = self
             .actors
             .get(slot as usize)
