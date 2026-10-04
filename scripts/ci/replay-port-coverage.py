@@ -694,6 +694,11 @@ CANONICAL_LADDERS = [
     # An all-target spell committed on the play page from a played-through
     # card, so the commit log copies the whole-row label (`801d57e8`).
     ("w8_commit_log_all_target_page", "legaia-web-viewer"),
+    # The SFX ring's replace-last (`80035bd0`): every headless member runs
+    # its producers, but the ring lives in a host's SFX scheduler and the
+    # play page's is the only one that exists without an audio device. The
+    # overworld sub-list's confirm brings its cue due there.
+    ("w9_world_map_sublist_sfx_page", "legaia-web-viewer"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 

@@ -394,6 +394,9 @@ pub struct PlaySfx {
     /// came due since the page loaded, whether or not a voice keyed - the
     /// producer-side count the off-wasm tests read.
     pub ring_due: u32,
+    /// The id of the last ring cue that came due (`ring_due`'s newest
+    /// member), whether or not a voice keyed.
+    pub last_ring_cue: Option<i16>,
     /// A track bank reaches into the SFX region - the ending theme's, laid
     /// across it as retail lays VAB 10 over the resident banks
     /// (`legaia_engine_audio::spu_layout`). While set the resident banks are
@@ -430,6 +433,7 @@ impl Default for PlaySfx {
             xa: Default::default(),
             runtime_bundle: Vec::new(),
             ring_due: 0,
+            last_ring_cue: None,
             sfx_evicted: false,
         }
     }
@@ -1243,6 +1247,9 @@ impl LegaiaRuntime {
             return;
         }
         self.sfx.ring_due += batch.ring.len() as u32;
+        if let Some(&id) = batch.ring.last() {
+            self.sfx.last_ring_cue = Some(id);
+        }
         #[cfg(target_arch = "wasm32")]
         if !batch.ring.is_empty() {
             self.fire_ring_cues(&batch.ring);
@@ -1592,6 +1599,8 @@ impl LegaiaRuntime {
             "duck_level": self.sfx.duck_level,
             "duck_target": self.sfx.duck_target,
             "reward_bank_staged": self.sfx.tail.reward().is_some(),
+            "ring_due": self.sfx.ring_due,
+            "last_ring_cue": self.sfx.last_ring_cue,
         })
         .to_string()
     }
