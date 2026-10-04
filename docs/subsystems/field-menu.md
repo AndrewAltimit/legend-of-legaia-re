@@ -1585,7 +1585,13 @@ back, whose retire drops the movement lock. See
 [script-vm.md](script-vm.md#which-screen-a-sub-op-opens-the-table-at-0x801f33a4),
 where the same handler is sub-op `0xB`'s.
 
-Engine: `PauseItemsSession` counts each committed Incense and
+The copy leaves the bag at the commit itself - `FUN_80042310(0x8A, 1)` at
+`0x801D8E68`, before the applier - so the Use list the route returns to shows
+one fewer and the last copy's row is gone; one Incense is one top-up.
+
+Engine: `PauseItemsSession` counts each committed Incense, takes the copy off
+its row on the spot (the window it greys the row by follows the screen's own
+confirms), and
 `field_menu_dispatch::apply_pause_items_outcome` tops
 `FieldLocomotion::walk_regen_window` up through
 `engine-vm::battle_helpers::top_up_cooldown` once per use; the screen greys
