@@ -222,7 +222,14 @@ started from:
   seat does not cross - is installed from its first opcode at the settle
   tick, ungated, as the modal timeline (a concurrent context when another
   timeline holds that slot). The record replays its own staging: its
-  `MoveTo`s, camera beats and pokes run from the top.
+  `MoveTo`s, camera beats and pokes run from the top. A record the scene's
+  own script **spawns** (op `0x44`) may be scored by the spawning arm rather
+  than by itself: `rikuroa`'s `P1[0]` starts `2025` and spawns `44 5C`
+  (`P2[50]`, the post-Caruban record) behind its `0x289` test, a marker
+  `P2[50]` clears, so a card load takes the entry's other arm. The resume
+  replays that arm's op-`0x35` words first
+  (`man_field_scripts::walk_spawn_scores`: the last start within eight
+  instructions of the `44`, through `World::replay_field_bgm_words`).
 - **Paging.** From the settle tick on, while the record sits in a dialog box
   short of the gate PC, `Cross` is pressed every other tick - the presses
   the player made to page the conversation to where it was captured.
@@ -917,7 +924,7 @@ Shapes the corpus separates, each with what it indicates:
 | `fog_gate` and flag `0x01F` up in the engine only (`rikuroa_post_genesis_tree`) | script progress a card load undoes ([below](#a-flag-the-entry-raises-on-every-load)) |
 | player seated exactly, camera focus thousands of units away (`kor5_post_43a_checkpoint`: player Z `5312`, focus Z `11840`) | script progress: a scene script aimed the retail camera at another part of the map; the engine's follow camera frames the player |
 | a town label over the overworld's `H`, word `2000` and fog gate | a door caught before the town's field init ran; scored as the overworld `0x80084540` names ([below](#arrival-states-are-captured-before-the-town-runs)) |
-| retail word held by a flag the entry script already consumed (`garmel`'s `0x196`, `rikuroa`'s `0x289`) | script progress: the track was started by a beat that has since cleared its trigger flag, so a card load would not restart it |
+| retail word held by a flag the entry script already consumed (`garmel`'s `0x196`) | script progress: the track was started by a beat that has since cleared its trigger flag, so a card load would not restart it |
 | camera depth and position off on an ending vignette (`ending_vignette_rimelm_walkaway`) | a residue of about a dozen frames of the credits walk against the camera glide ([below](#ending-vignettes-are-mid-script)) |
 | camera exact, frame aimed at another part of the room; retail focus `0x80089118/20` is not `-player` | a probe-poked capture ([below](#a-poked-player-keeps-the-arrival-focus)) |
 

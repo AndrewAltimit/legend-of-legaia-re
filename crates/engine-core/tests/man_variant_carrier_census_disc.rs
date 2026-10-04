@@ -272,6 +272,36 @@ fn rikuroa_carrier_p2_50_is_the_0x142_self_latch() {
     assert!(c2.is_empty(), "P2[50] has no requires-all gate");
 }
 
+/// `rikuroa`'s post-Caruban record `P2[50]` starts no track itself: the entry
+/// arm that spawns it (`P1[0]`, `44 5C` behind the `0x289` test) starts the
+/// one it plays over. The spawn-score walk finds that arm's start.
+#[test]
+fn rikuroa_p2_50_is_scored_by_its_spawning_arm() {
+    use legaia_engine_core::man_field_scripts::walk_spawn_scores;
+    let Some(index) = open_index() else { return };
+    let scene = Scene::load(&index, "rikuroa").expect("load rikuroa");
+    let man = scene
+        .field_man_payload(&index)
+        .expect("payload")
+        .expect("rikuroa MAN resolves");
+    let mf = legaia_asset::man_section::parse(&man).expect("parse");
+    let scores = walk_spawn_scores(&mf, &man);
+    let s = scores
+        .iter()
+        .find(|s| s.global_index == 0x5C)
+        .expect("a scored spawn of global record 0x5C = P2[50]");
+    assert_eq!(
+        (s.partition, s.record),
+        (1, 0),
+        "spawned by the entry script"
+    );
+    assert!(
+        matches!(s.words.first(), Some(&(2025, 1 | 9))),
+        "the arm starts track 2025: {:?}",
+        s.words
+    );
+}
+
 /// `geremi`'s Jeremi-arrival cutscene record P2[0] both SETS `0x1BE` (at its
 /// script head) and lists `0x1BE` as its own C1 one-shot gate - the same
 /// self-latching shape as rikuroa's `0x142`. This is the record whose C1

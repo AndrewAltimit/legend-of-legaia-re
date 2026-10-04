@@ -791,6 +791,87 @@ pub fn walk_battle_entry_scores(man_file: &ManFile, man: &[u8]) -> Vec<BattleEnt
     out
 }
 
+/// How many decoded instructions before an op-`0x44` spawn a track start may
+/// sit and still count as the spawning arm's own ([`walk_spawn_scores`]).
+pub const SPAWN_ARM_WINDOW: usize = 8;
+
+/// The op-`0x35` BGM words a record runs **on its way into an op-`0x44`
+/// spawn** of another record: the last track start (sub-op `1` / `9`) within
+/// [`SPAWN_ARM_WINDOW`] instructions before the `44 <global index>`, and the
+/// control words (`2` / `3` / `4` / `0xA`) between it and the spawn.
+///
+/// The beat a scene entry spawns is often scored by the entry, not by the
+/// spawned record: `rikuroa`'s system script `P1[0]` tests the post-battle
+/// marker `0x289` on the re-entry after Caruban and its taken arm fades,
+/// starts the track and spawns `44 5C` = `P2[50]`, the post-victory record,
+/// which itself starts none. A record started from its first opcode without
+/// that arm (the retail comparison's resume of a mid-record capture) runs
+/// over whatever track the entry's other arm chose; these are the words it
+/// replays first.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpawnScore {
+    /// Partition of the spawning record.
+    pub partition: usize,
+    /// Record index of the spawning record within its partition.
+    pub record: usize,
+    /// The flat (global) record index the spawn names.
+    pub global_index: u8,
+    /// The op-`0x35` words to replay, in record order: `(operand, sub_op)`.
+    pub words: Vec<(u16, u8)>,
+}
+
+/// Every [`SpawnScore`] in `man`: one per op-`0x44` spawn whose arm started a
+/// track within [`SPAWN_ARM_WINDOW`] instructions before it.
+pub fn walk_spawn_scores(man_file: &ManFile, man: &[u8]) -> Vec<SpawnScore> {
+    let mut out = Vec::new();
+    for partition in 0..3 {
+        let count = man_file
+            .header
+            .partition_counts
+            .get(partition)
+            .copied()
+            .unwrap_or(0)
+            .max(0) as usize;
+        for index in 0..count {
+            let Some((script_start, pc0, body_len)) =
+                partition_record_span(man_file, man, partition, index)
+            else {
+                continue;
+            };
+            let body = &man[script_start..script_start + body_len];
+            let mut start_run: Vec<(u16, u8)> = Vec::new();
+            let mut since_start = usize::MAX;
+            for insn in LinearWalker::new(body, pc0).flatten() {
+                since_start = since_start.saturating_add(1);
+                match insn.info {
+                    InsnInfo::Bgm { text_id, sub_op } => match sub_op {
+                        1 | 9 => {
+                            start_run = vec![(text_id, sub_op)];
+                            since_start = 0;
+                        }
+                        2 | 3 | 4 | 0xA if !start_run.is_empty() => {
+                            start_run.push((text_id, sub_op));
+                        }
+                        _ => {}
+                    },
+                    InsnInfo::SpawnRecord { global_index }
+                        if !start_run.is_empty() && since_start <= SPAWN_ARM_WINDOW =>
+                    {
+                        out.push(SpawnScore {
+                            partition,
+                            record: index,
+                            global_index,
+                            words: start_run.clone(),
+                        });
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    out
+}
+
 /// One walkable MAN payload resolved for a scene - either the scene's
 /// asset-table **bundle** MAN (what [`Scene::field_man_payload`] returns) or
 /// a **variant** MAN carried as a type-3 chunk of a standalone DATA_FIELD

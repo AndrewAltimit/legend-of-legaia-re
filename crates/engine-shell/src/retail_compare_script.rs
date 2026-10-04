@@ -395,8 +395,10 @@ pub const SCRIPT_RESUME_TICK: u64 = crate::retail_compare::SETTLE_TICKS;
 /// reaches the phase. The record is resolved by the flat index and checked
 /// against the capture's own head bytes, installed ungated (its gate flags
 /// are the ones it has already latched) as the modal cutscene timeline, or
-/// as a concurrent context when another timeline holds that slot. Returns
-/// `true` when a context was installed.
+/// as a concurrent context when another timeline holds that slot. The
+/// op-`0x35` words of the arm that spawns the record, when that arm scored it
+/// ([`legaia_engine_core::man_field_scripts::walk_spawn_scores`]), are
+/// replayed first. Returns `true` when a context was installed.
 pub fn resume_record(host: &mut legaia_engine_core::scene::SceneHost, gate: &ScriptGate) -> bool {
     if gate.context(&host.world).is_some() {
         return false;
@@ -426,6 +428,14 @@ pub fn resume_record(host: &mut legaia_engine_core::scene::SceneHost, gate: &Scr
         .is_some_and(|body| body.starts_with(&gate.head))
     {
         return false;
+    }
+    // The arm that spawns the record may have scored it: replay that arm's
+    // track words first, since the resume starts the record without it.
+    if let Some(score) = legaia_engine_core::man_field_scripts::walk_spawn_scores(&mf, &man)
+        .into_iter()
+        .find(|s| u16::from(s.global_index) == gate.flat_index)
+    {
+        host.world.replay_field_bgm_words(&score.words);
     }
     let world = &mut host.world;
     if world.cutscene_timeline_active() {
