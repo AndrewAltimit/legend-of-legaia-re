@@ -596,8 +596,17 @@ impl PlayWindowApp {
             // hosts print (`PondSession::status_rows`).
             let (line, hint) = s.status_rows("Circle", "Cross", "Square");
             out.extend(self.stage_status_row(&line, (8, 62), white, w, h));
-            let hint = format!("{hint}  (Triangle = menu, Start = quit, P = prizes)");
             out.extend(self.stage_status_row(&hint, (8, 80), dim, w, h));
+            // The session affordances on their own row - with the reel hint
+            // they overran the stage on one line. The browser play page
+            // prints the same three on the same row with its own keys.
+            out.extend(self.stage_status_row(
+                "Triangle = menu, Start = quit, P = prizes",
+                (8, 98),
+                dim,
+                w,
+                h,
+            ));
 
             // The overlay's developer readout (FUN_801d2050): the wander
             // actor's tile pair + settled height, shown only when the

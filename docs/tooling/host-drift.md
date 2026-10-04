@@ -863,6 +863,15 @@ Three traps, each of which cost a run:
   surfaces match: both hosts read the same
   `options_state.camera_distance` (`window/run.rs`, `runtime.rs`), so that
   knob is not the difference.
+- **The same knob is not the same value.** Each host *persists* the
+  camera-distance preset on its own: the window in `legaia-options.toml` in
+  its working directory (a `T` in one run's `--key-script` is still in force
+  in the next), the page in `localStorage`. Pin it on both before a pair -
+  on the overworld it decides how much of the far continent sits inside the
+  white haze. A "the page washes the castle and far mountains out, the
+  window draws them" report on `map01` dissolved this way: with the preset
+  and the tick pinned, the two hosts' frames match, haze included, through
+  hundreds of idle ticks while the haze builds.
 
 ### What the pairs showed
 

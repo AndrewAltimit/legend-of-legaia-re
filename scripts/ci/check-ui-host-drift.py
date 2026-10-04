@@ -565,6 +565,18 @@ NATIVE_TITLE_SAVE = (
 
 SIM_PAIRS: list[dict[str, object]] = [
     {
+        "what": "fishing session affordance row, native vs play page - each "
+        "host names the same three session actions (menu, quit, prizes) "
+        "with its own keys; the page once printed only the menu, so a "
+        "player there never learned how to leave or reach the exchange",
+        "sites": {
+            "native": (NATIVE_HUD, "build_hud"),
+            "web": ("crates/web-viewer/src/play_fishing.rs", "fishing_status_draws"),
+        },
+        "mode": "pattern_same",
+        "pattern": r"= (menu|quit|prizes)\b",
+    },
+    {
         "what": "effect-pool billboard TSB word, native vs play page (battle "
         "and field FX) - retail sends every effect child as the semi-"
         "transparent prim code 0x2E, which the atlas page byte cannot carry; "
