@@ -510,7 +510,17 @@ impl LegaiaMinigames {
         self.slot_cabinet = legaia_engine_ui::ui_slot_cabinet::SlotCabinetAssets::load(|i| {
             entry_bytes(&self.prot, &self.entries, i as u32).map(<[u8]>::to_vec)
         })
-        .ok();
+        .ok()
+        .map(|a| {
+            // The resident system-UI sheet the submenu box's border samples.
+            match self
+                .prot
+                .get(legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET..)
+            {
+                Some(head) => a.with_system_ui(head),
+                None => a,
+            }
+        });
 
         // The dialog font the machine's rules pages print in.
         let off = legaia_font::FONT_TIM_PROT_DAT_OFFSET as usize;

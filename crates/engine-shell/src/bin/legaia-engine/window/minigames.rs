@@ -883,7 +883,19 @@ impl PlayWindowApp {
             let read = |i: usize| index.entry_bytes(i as u32).ok().map(|b| b.to_vec());
             let loaded = legaia_engine_render::ui_slot_cabinet::SlotCabinetAssets::load(read)
                 .map_err(|e| log::warn!("slots: {e}"))
-                .ok();
+                .ok()
+                .map(|a| {
+                    // The resident system-UI sheet the submenu box's border
+                    // samples (the browser pages upload the same TIM).
+                    use legaia_asset::title_pak as tp;
+                    match index.prot_dat_raw_bytes(
+                        tp::OVERLAY_SYSTEM_UI_TIM_OFFSET as u64,
+                        tp::OVERLAY_SYSTEM_UI_TIM_SIZE,
+                    ) {
+                        Ok(head) => a.with_system_ui(&head),
+                        Err(_) => a,
+                    }
+                });
             self.slot_cabinet_assets = Some(loaded.map(std::sync::Arc::new));
         }
         if self.slot_gpu.is_some() {

@@ -82,6 +82,9 @@ pub struct SlotCabinetAssets {
     /// The per-symbol line payouts the second rules page charts
     /// (`DAT_801d3598`, [`legaia_asset::slot_payout`]).
     pub payouts: [u8; 10],
+    /// Whether the boot-resident system-UI sheet is in [`Self::vram`]
+    /// ([`Self::with_system_ui`]) - the menu box border's texels.
+    pub system_ui: bool,
 }
 
 impl SlotCabinetAssets {
@@ -117,7 +120,22 @@ impl SlotCabinetAssets {
             vram,
             rules,
             payouts,
+            system_ui: false,
         })
+    }
+
+    /// Upload the boot-resident system-UI sheet (the TIM at `PROT.DAT`
+    /// `0x018E0`: 256x192 4bpp at `(896, 256)`, its sixteen palettes on row
+    /// 511) beside the art pack. Retail never unloads it, so it is in VRAM
+    /// while the machine runs, and the submenu box `FUN_8002C69C` draws its
+    /// border tiles from it. `prot_head` is `PROT.DAT` from that offset; a
+    /// head that does not parse leaves the box borderless.
+    pub fn with_system_ui(mut self, prot_head: &[u8]) -> Self {
+        if let Ok(tim) = legaia_tim::parse(prot_head) {
+            self.vram.upload_tim(&tim);
+            self.system_ui = true;
+        }
+        self
     }
 }
 
@@ -540,6 +558,78 @@ fn box_fill(rect: (i32, i32, i32, i32), half_x: bool, ot: u32, out: &mut Vec<Scr
     }
 }
 
+/// The border of one `FUN_8002C69C` box under the dialog skin (record `0x44`,
+/// the value `gp+0x14C` holds while the machine runs): four 4x4 corners and
+/// edges tiled at their own size with the last tile clipped, around the centre
+/// rect inflated by 8, sampling the system-UI sheet (page `(896, 256)`) under
+/// palette 2 of row 511 - the tiles `title_pak::OVERLAY_SYSTEM_UI_PANEL_*`
+/// name. The sprites are framebuffer pixels, so in the 640-wide mode they
+/// come out half as wide. Linked before the fill in the same bucket, so the
+/// GPU draws them over it.
+fn box_border(rect: (i32, i32, i32, i32), mode_320: bool, ot: u32, out: &mut Vec<ScreenPrim>) {
+    use legaia_asset::title_pak as tp;
+    const TPAGE: u16 = 0x1E;
+    const CLUT: u16 = 0x7FC0 + tp::OVERLAY_SYSTEM_UI_PANEL_CLUT_ROW;
+    let (px, py, pw, ph) = (rect.0 - 8, rect.1 - 8, rect.2 + 16, rect.3 + 16);
+    let mut tile = |src: (u32, u32, u32, u32), x: i32, y: i32, w: i32, h: i32| {
+        if w <= 0 || h <= 0 {
+            return;
+        }
+        let (u, v) = (src.0 as u8, src.1 as u8);
+        out.push(ft4_at(
+            (x, y, w, h),
+            (u, v, w as u8, h as u8),
+            CLUT,
+            TPAGE,
+            mode_320,
+            ot,
+        ));
+    };
+    let c = tp::OVERLAY_SYSTEM_UI_PANEL_TL.2 as i32;
+    tile(tp::OVERLAY_SYSTEM_UI_PANEL_TL, px, py, c, c);
+    tile(tp::OVERLAY_SYSTEM_UI_PANEL_TR, px + pw - c, py, c, c);
+    tile(tp::OVERLAY_SYSTEM_UI_PANEL_BL, px, py + ph - c, c, c);
+    tile(
+        tp::OVERLAY_SYSTEM_UI_PANEL_BR,
+        px + pw - c,
+        py + ph - c,
+        c,
+        c,
+    );
+    let ew = tp::OVERLAY_SYSTEM_UI_PANEL_TOP.2 as i32;
+    let mut x = px + c;
+    while x < px + pw - c {
+        let w = ew.min(px + pw - c - x);
+        tile(tp::OVERLAY_SYSTEM_UI_PANEL_TOP, x, py, w, c);
+        tile(tp::OVERLAY_SYSTEM_UI_PANEL_BOT, x, py + ph - c, w, c);
+        x += ew;
+    }
+    let eh = tp::OVERLAY_SYSTEM_UI_PANEL_LEFT.3 as i32;
+    let mut y = py + c;
+    while y < py + ph - c {
+        let h = eh.min(py + ph - c - y);
+        tile(tp::OVERLAY_SYSTEM_UI_PANEL_LEFT, px, y, c, h);
+        tile(tp::OVERLAY_SYSTEM_UI_PANEL_RIGHT, px + pw - c, y, c, h);
+        y += eh;
+    }
+}
+
+/// [`ft4`] at an explicit ordering-table bucket.
+fn ft4_at(
+    xy: (i32, i32, i32, i32),
+    uv: (u8, u8, u8, u8),
+    clut: u16,
+    tpage: u16,
+    mode_320: bool,
+    ot: u32,
+) -> ScreenPrim {
+    let mut p = ft4(xy, uv, clut, tpage, mode_320);
+    if let ScreenPrim::Textured(q) = &mut p {
+        q.ot_index = ot;
+    }
+    p
+}
+
 /// A `0x2C` `POLY_FT4` at `(x, y)` sized `(w, h)` sampling `(u, v, uw, vh)` -
 /// the shape `FUN_801D317C` / `FUN_801D32C8` / `FUN_801D2AA4` emit. `mode_320`
 /// marks coordinates of the 320-wide mode (the rules pages); otherwise they
@@ -612,6 +702,9 @@ pub fn slot_menu_prims(
                     MENU_OT,
                 ));
             }
+            if assets.system_ui {
+                box_border((0xDC, 0x68, 0xD2, 0x27), false, MENU_BOX_OT, &mut out);
+            }
             box_fill((0xDC, 0x68, 0xD2, 0x27), true, MENU_BOX_OT, &mut out);
         }
         sc::SlotScreen::NoCoins => {
@@ -637,6 +730,9 @@ pub fn slot_menu_prims(
                 for col in 0..2usize {
                     chart_column(assets, col, &mut out);
                 }
+            }
+            if assets.system_ui {
+                box_border((0, 0, 0x140, 0xF0), true, MENU_BOX_OT, &mut out);
             }
             box_fill((0, 0, 0x140, 0xF0), false, MENU_BOX_OT, &mut out);
             out.push(ScreenPrim::Flat(FlatQuad {
@@ -912,6 +1008,7 @@ mod tests {
                 ..Default::default()
             }),
             payouts: [10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
+            system_ui: false,
         }
     }
 
