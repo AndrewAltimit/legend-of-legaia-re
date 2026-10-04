@@ -148,6 +148,10 @@ class TmdRenderer {
     this.locOcclLift   = gl.getUniformLocation(this.program, 'u_occl_lift');
     this.locPsx      = gl.getUniformLocation(this.program, 'u_psx');
     this.locDynDir   = gl.getUniformLocation(this.program, 'u_dyn_dir');
+    this.locLogDepthOn = gl.getUniformLocation(this.program, 'u_log_depth_on');
+    /* Opt-in log-depth write (setLogDepth); off on every page but play. */
+    this.logDepth = false;
+    this.lastLogDepth = false;
     this.locDynColor = gl.getUniformLocation(this.program, 'u_dyn_color');
     /* The two native-only render toggles, both OFF by default and both the
      * identity when off (see setPsxMode / setDynamicLighting). */
@@ -499,6 +503,13 @@ class TmdRenderer {
    * 1.3x over the baked shading. Off by default and the identity when off.
    * The native layer's derived per-scene point lights (and their shadow
    * maps) are not part of the page's toggle. */
+  /* Opt the perspective renderAssembled frames into the log-of-w depth write
+   * (webgl-shaders.js LOG_DEPTH_GLSL). Off by default, so every other page
+   * keeps the rasterised depth. */
+  setLogDepth(on) {
+    this.logDepth = !!on;
+  }
+
   setDynamicLighting(on) {
     this.dynLighting = !!on;
   }
@@ -920,6 +931,7 @@ class TmdRenderer {
     gl.useProgram(this.program);
     gl.uniformMatrix4fv(this.locMvp, false, mvp);
     gl.uniformMatrix4fv(this.locModel, false, IDENTITY4);
+    if (this.locLogDepthOn) gl.uniform1i(this.locLogDepthOn, 0);
     /* The single-mesh viewer never bends (the curve is an overworld
      * scene-pass term, staged by renderAssembled). */
     if (this.locCurve) gl.uniform1f(this.locCurve, 0);
@@ -1307,6 +1319,10 @@ class TmdRenderer {
     const vp = (cam && cam.yaw != null)
       ? buildWorldOrbitVp(w, h, worldExtent, cam)
       : buildTopDownVp(w, h, worldExtent, cam);
+    /* Log-depth write (webgl-shaders.js LOG_DEPTH_GLSL): opt-in by the play
+     * page, and only under a perspective camera - an ortho frame's w is
+     * constant. The screen-prim pass reads the flag back. */
+    this.lastLogDepth = !!(this.logDepth && cam && cam.yaw != null);
 
     /* Advance the water CLUT animation on wall-clock time, regardless
      * of whether the backdrop plane is enabled - the frame write also
@@ -1396,6 +1412,7 @@ class TmdRenderer {
 
     gl.useProgram(this.program);
     gl.uniformMatrix4fv(this.locMvp, false, vp);
+    if (this.locLogDepthOn) gl.uniform1i(this.locLogDepthOn, this.lastLogDepth ? 1 : 0);
     /* Assembled VPs add the retail screen-X mirror on top of the per-model
      * Y flip (two reflections), which inverts gl_FrontFacing - a pair's
      * visible copy is the back-facing one here (see u_pair_front). */

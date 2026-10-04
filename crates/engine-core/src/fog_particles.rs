@@ -437,6 +437,17 @@ impl FogView {
             .then(|| crate::overworld_draw_order::ndc_at_w(m, w * self.depth_scale))
     }
 
+    /// The `(a, b)` of `ndc = a + b / w` that [`Self::ndc_at_sz`] and
+    /// [`Self::ndc_depth`] evaluate, bit for bit
+    /// ([`crate::overworld_draw_order::depth_affine`] of this matrix).
+    /// A host that compares depths in `w` rather than in normalised depth
+    /// inverts a depth it was handed through exactly this pair: the browser
+    /// play page, whose 24-bit depth buffer cannot hold the quarter-bucket
+    /// margin between a fog sheet and the overworld cells of its bucket.
+    pub fn depth_affine(&self) -> (f32, f32) {
+        crate::overworld_draw_order::depth_affine(&self.vp)
+    }
+
     /// The mesh frame's normalised depth of a point at retail view depth
     /// `sz` (the base matrix's scaled space, `1x` eye depth times
     /// [`crate::camera_view::CUTSCENE_WORLD_SCALE`]); `None` for `sz <= 0`.

@@ -219,6 +219,28 @@ function glslFloat(x) {
   return Number.isInteger(x) ? x.toFixed(1) : String(x);
 }
 
+/* Play-page depth precision. The engine's projection puts the near plane a
+ * few units from the eye, so a scene point's normalised depth a + b / w
+ * sits within ~1e-3 of 1. WebGL maps that onto [0.5, 1] of a 24-bit
+ * fixed-point buffer, and the f32 depth row itself carries a few units of
+ * rounding at overworld distances (the walk matrix carries the 6x world
+ * scale) - together coarser than the quarter bucket that keeps an overworld
+ * fog sheet behind the continent cells of its bucket, so sheets won or lost
+ * per cell (polygon-shaped cut-outs in the mountains) and washed over the
+ * player. The native renderer keeps the margin with reversed-Z on a float
+ * buffer, which WebGL2 cannot select. So the play page's mesh program and
+ * its depth-tested screen primitives write log2(w) / LOG_DEPTH_RANGE
+ * instead: monotonic in w, so every comparison keeps its order, with a
+ * relative step near 1e-6. A continent cell writes its bucket's
+ * representative w and a screen corner the w its depth was projected from,
+ * so the bucket rule compares exact values. */
+const LOG_DEPTH_RANGE = 24.0;
+const LOG_DEPTH_GLSL = `
+float logDepthOfW(float w) {
+  return clamp(log2(max(w, 1.0)) / ${glslFloat(LOG_DEPTH_RANGE)}, 0.0, 1.0);
+}
+`;
+
 const VS_SRC = `#version 300 es
 precision highp float;
 precision highp int;
@@ -290,6 +312,19 @@ vec2 depthAffine(mat4 m) {
   return vec2(a, m[3].z - a * m[3].w);
 }
 
+/* The flat bucket's representative w for a continent cell (the w whose
+ * normalised depth overworldFlatDepth writes), or -1 where it keeps the
+ * per-pixel depth. Same gate and same key as overworldFlatDepth. */
+float overworldFlatW(mat4 m, vec4 fa, vec4 fb) {
+  if (u_curve <= 0.0 || fa.z <= fa.x) return -1.0;
+  float w0 = (m * vec4(fa.x, fb.x, fa.y, 1.0)).w;
+  float w1 = (m * vec4(fa.z, fb.y, fa.y, 1.0)).w;
+  float w2 = (m * vec4(fa.x, fb.z, fa.w, 1.0)).w;
+  float w3 = (m * vec4(fa.z, fb.w, fa.w, 1.0)).w;
+  int sz = clamp(int(floor(max(max(w0, w1), max(w2, w3)) * u_curve + 0.5)), 0, 0xFFFF);
+  return (float((sz >> 5) + 14) * 32.0 + 32.0) / u_curve;
+}
+
 vec4 overworldFlatDepth(vec4 clip, mat4 m, vec4 fa, vec4 fb) {
   if (u_curve <= 0.0 || fa.z <= fa.x || clip.w <= 0.0) return clip;
   float w0 = (m * vec4(fa.x, fb.x, fa.y, 1.0)).w;
@@ -359,6 +394,7 @@ flat out uvec2 v_cba_tsb;
 out float v_fog_t;     /* 0..1, fraction of u_fog_far_ref */
 out vec4 v_flat_rgba;
 out float v_view_z;    /* perspective view depth (clip w) for the depth cue */
+out float v_depth_w;   /* the w the log-depth write keys on */
 out vec3 v_normal;     /* object-space smoothed normal (dynamic light only) */
 out vec3 v_obj_pos;    /* object-space position: the facet-normal fallback */
 
@@ -392,6 +428,11 @@ void main() {
    * SY before the packet is written. Identity while u_psx.z is 0. */
   if (u_psx.z >= 0.5) gl_Position = psxSnapClip(gl_Position, u_psx.x, u_psx.y);
   v_view_z = gl_Position.w;
+  /* The log-depth write's w (LOG_DEPTH_GLSL): the flat bucket's
+   * representative w on a continent cell, the vertex's own clip w elsewhere.
+   * Perspective interpolation of w is exact. */
+  float flatW = overworldFlatW(u_mvp * u_model, a_ground_ref_xz, a_ground_ref_y);
+  v_depth_w = flatW > 0.0 ? flatW : gl_Position.w;
   v_normal = a_normal;
   v_obj_pos = a_position;
 }
@@ -520,10 +561,16 @@ flat in uvec2 v_cba_tsb;
 in float v_fog_t;
 in vec4 v_flat_rgba;
 in float v_view_z;
+in float v_depth_w;
 in vec3 v_normal;
 in vec3 v_obj_pos;
 
 out vec4 o_color;
+
+/* Log-depth write on (LOG_DEPTH_GLSL): 1 on the play page's perspective
+ * frames, 0 (the GL default) on every other surface. */
+uniform int u_log_depth_on;
+${LOG_DEPTH_GLSL}
 
 /* The fragment's pixel in the native renderer's frame (origin top-left):
  * gl_FragCoord counts from the bottom, wgpu's position builtin from the
@@ -728,6 +775,7 @@ vec3 apply_distance_fog(vec3 lit) {
 }
 
 void main() {
+  gl_FragDepth = u_log_depth_on != 0 ? logDepthOfW(v_depth_w) : gl_FragCoord.z;
   /* Facet normal for the dynamic light, taken before any discard so the
    * derivatives sit in uniform control flow. Its sign follows the
    * framebuffer's Y direction, which the light's abs() makes irrelevant. */

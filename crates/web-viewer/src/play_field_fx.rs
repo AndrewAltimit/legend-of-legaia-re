@@ -54,7 +54,7 @@ impl LegaiaRuntime {
             return Vec::new();
         };
         let world = &mut host.world;
-        if !legaia_engine_core::world::World::fog_mode(world.mode) || !world.fog.gate {
+        if !legaia_engine_core::world::World::fog_mode(world.mode) {
             return Vec::new();
         }
         let frame = resolve_field_camera(world, &self.camera, None, centre);
@@ -64,11 +64,37 @@ impl LegaiaRuntime {
         let Some(view) = frame.field_view() else {
             return Vec::new();
         };
-        world
+        // Recorded ahead of the fog gate: the drop shadows project through
+        // the same field-FX view whether or not any fog draws.
+        let depth_affine = world.field_fx_view(&view).depth_affine();
+        if !world.fog.gate {
+            self.fx_depth_affine = Some(depth_affine);
+            return Vec::new();
+        }
+        let prims = world
             .fog_render_step(&view)
             .iter()
             .map(|q| fog_puff_prim(q.xy, q.uv, q.clut, q.tpage, q.rgb, q.ot_index, q.depth))
-            .collect()
+            .collect();
+        self.fx_depth_affine = Some(depth_affine);
+        prims
+    }
+}
+
+#[wasm_bindgen]
+impl LegaiaRuntime {
+    /// `[a, b]` of `ndc = a + b / w` that this frame's depth-tested field
+    /// screen primitives (fog sheets, drop shadows) were projected through,
+    /// bit for bit (`FogView::depth_affine`); empty before any field-FX
+    /// projection. The page's screen-prim pass inverts a corner's depth
+    /// through it to recover the corner's `w`, and writes both its meshes and
+    /// those corners on one log-of-`w` scale: the normalised depths sit within
+    /// 1e-3 of 1, where a 24-bit buffer cannot hold the quarter-bucket margin
+    /// the overworld's fog sheets keep behind the cells of their bucket.
+    pub fn play_fx_depth_affine(&self) -> Vec<f32> {
+        self.fx_depth_affine
+            .map(|(a, b)| vec![a, b])
+            .unwrap_or_default()
     }
 }
 

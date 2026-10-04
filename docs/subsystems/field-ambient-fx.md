@@ -1007,6 +1007,19 @@ per-pixel test "hid almost nothing". `World::field_fx_view` now scales the
 depth onto the mesh frame on the overworld; the drop shadows, which take the
 same projection, get the same correction.
 
+**The browser keeps the margin in `w`, not in normalised depth.** The
+quarter bucket a sheet sits behind its cells is 8 units of `w`, and at
+overworld distances the normalised depth `a + b / w` lies within `1e-3` of
+1: a 24-bit fixed-point buffer steps several units there, and the `f32`
+depth row's own rounding is of the same order. The native float reversed-Z
+buffer holds the margin; on the play page sheets won or lost per cell, as
+polygon-shaped cut-outs in the mountains and a wash over the player. The page
+therefore writes `log2(w)` as its depth (`LOG_DEPTH_GLSL` in
+`site/js/webgl-shaders.js`): a continent cell writes its bucket's
+representative `w`, and a sheet corner the `w` recovered from its depth
+through the exact `(a, b)` the engine projected it with
+(`FogView::depth_affine`, exported as `play_fx_depth_affine`).
+
 **Measured on the same frame** (grey-weighted fog coverage over the 320 x 240
 stage, same test):
 

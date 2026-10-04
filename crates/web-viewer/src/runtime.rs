@@ -117,6 +117,11 @@ pub struct LegaiaRuntime {
     /// calls. Used only by the world map's top-view debug camera. Cleared on
     /// every scene rebuild.
     pub(crate) scene_aabb: Option<([f32; 3], [f32; 3])>,
+    /// The `(a, b)` of `ndc = a + b / w` the last field-FX projection
+    /// (fog sheets, drop shadows) handed its depths through
+    /// (`FogView::depth_affine`) - what the page inverts to put those
+    /// depths back into `w` ([`Self::play_fx_depth_affine`]).
+    pub(crate) fx_depth_affine: Option<(f32, f32)>,
     /// FMV (STR / MDEC) playback state ([`crate::play_fmv`]).
     pub(crate) fmv: crate::play_fmv::FmvState,
     /// In-world minigame presentation state ([`crate::play_minigames`]):
@@ -419,6 +424,7 @@ impl LegaiaRuntime {
             sim_stepper: Default::default(),
             camera_azimuth_override: None,
             scene_aabb: None,
+            fx_depth_affine: None,
             fmv: Default::default(),
             minigame_ui: Default::default(),
             battle_vram: Default::default(),

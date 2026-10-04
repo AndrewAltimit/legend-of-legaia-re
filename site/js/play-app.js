@@ -262,6 +262,14 @@ out vec2 v_uv;
 flat out uvec2 v_cba_tsb;
 out vec4 v_color;
 flat out uint v_flags;
+out float v_log_depth;
+
+/* Log depth (LOG_DEPTH_GLSL in webgl-shaders.js): x = on, yz = the (a, b)
+ * of ndc = a + b / w the engine projected these corners' depths through
+ * (play_fx_depth_affine), so a corner's depth goes back to its exact w and
+ * onto the scale the mesh program writes. x = 0 keeps the rasterised depth. */
+uniform vec3 u_log_depth;
+${LOG_DEPTH_GLSL}
 
 void main() {
   v_uv = a_uv;
@@ -275,6 +283,11 @@ void main() {
    * scene depth, which is how it composited before the channel existed. */
   float z = (a_flags & 2u) != 0u ? a_depth : -1.0;
   gl_Position = vec4(a_pos, z, 1.0);
+  v_log_depth = 0.0;
+  if (u_log_depth.x > 0.5 && (a_flags & 2u) != 0u) {
+    float den = a_depth - u_log_depth.y;
+    v_log_depth = abs(den) > 0.0 ? logDepthOfW(u_log_depth.z / den) : 1.0;
+  }
 }
 `;
 
@@ -289,8 +302,11 @@ in vec2 v_uv;
 flat in uvec2 v_cba_tsb;
 in vec4 v_color;
 flat in uint v_flags;
+in float v_log_depth;
 
 out vec4 o_color;
+
+uniform vec3 u_log_depth;
 
 vec4 bgr555_to_rgba(uint c) {
   float r = float(c & 31u) / 31.0;
@@ -343,6 +359,8 @@ vec3 psxTextureBlend(vec3 texel, vec3 factor) {
 }
 
 void main() {
+  gl_FragDepth = (u_log_depth.x > 0.5 && (v_flags & 2u) != 0u)
+    ? v_log_depth : gl_FragCoord.z;
   if ((v_flags & 1u) != 0u) {
     uint word = fetch_vram_word(v_uv, v_cba_tsb.x, v_cba_tsb.y);
     if (word == 0u) discard;
@@ -375,6 +393,7 @@ void main() {
       this.gl = gl;
       this.program = compileScreenPrimProgram(gl);
       this.locVram = gl.getUniformLocation(this.program, 'u_vram');
+      this.locLogDepth = gl.getUniformLocation(this.program, 'u_log_depth');
       this.vao = gl.createVertexArray();
       this.vbo = gl.createBuffer();
       this.ibo = gl.createBuffer();
@@ -411,7 +430,7 @@ void main() {
      * `indices` a Uint32Array, `runs` a Uint32Array of
      * `[class_code, index_start, index_count]` triples where class_code 0 is
      * opaque and `1 + abr` is semi-transparent. */
-    draw(vertexBytes, indices, runs) {
+    draw(vertexBytes, indices, runs, depthAffine) {
       const gl = this.gl;
       if (!indices.length || !runs.length) return;
       gl.bindVertexArray(this.vao);
@@ -423,6 +442,13 @@ void main() {
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, this.renderer.tex);
       gl.uniform1i(this.locVram, 0);
+      /* The log-depth scale the mesh program wrote this frame: a depth-tested
+       * corner goes back to its w through the engine's own (a, b). */
+      if (this.locLogDepth) {
+        const on = this.renderer.lastLogDepth && depthAffine && depthAffine.length === 2;
+        gl.uniform3f(this.locLogDepth, on ? 1 : 0,
+          on ? depthAffine[0] : 0, on ? depthAffine[1] : 0);
+      }
       /* Retail screen-space packets carry no depth: they composite in
        * ordering-table order over the finished scene, on the near plane, so
        * the test always passes for them. The test is armed (no write) for
@@ -2792,6 +2818,7 @@ void main() {
           rt.play_screen_prim_vertex_bytes(),
           rt.play_screen_prim_indices(),
           rt.play_screen_prim_runs(),
+          (typeof rt.play_fx_depth_affine === 'function') ? rt.play_fx_depth_affine() : null,
         );
       } catch (e) {
         this._screenPrimBroken = true;
@@ -3084,6 +3111,10 @@ void main() {
        * checkbox state. Both off unless the player ticked them. */
       if (this.renderer.setPsxMode) this.renderer.setPsxMode(!!this.psxRender);
       if (this.renderer.setDynamicLighting) this.renderer.setDynamicLighting(!!this.dynLighting);
+      /* Log-of-w depth on every branch's perspective frames (webgl-shaders.js
+       * LOG_DEPTH_GLSL): the resolution the native float reversed-Z buffer
+       * has and a 24-bit one lacks. */
+      if (this.renderer.setLogDepth) this.renderer.setLogDepth(true);
       /* Retail GTE NCLIP winding rejection, from the shared engine kernel
        * (`camera_view::nclip_cull_mode`): armed for the whole field pass
        * (retail culls every field mesh's back faces - a sky dome's outer
