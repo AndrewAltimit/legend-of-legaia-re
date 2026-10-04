@@ -666,9 +666,31 @@ fn span_gate(ram: &[u8], ctx: u32) -> SpanGate {
             return SpanGate::Landed;
         }
         if CAPTURE_FADE_STATES.contains(&game_anchors::u8_at(ram, ctx + 7)) {
+            // In the module tick `0x70`, a directed module's arm and the
+            // countdown word it gates on place the capture inside the run.
+            let arm = (game_anchors::u8_at(ram, ctx + 7) == 0x70)
+                .then(|| {
+                    let actor = game_anchors::u32_at(
+                        ram,
+                        ACTOR_TABLE + u32::from(game_anchors::u8_at(ram, ctx + 0x13).min(7)) * 4,
+                    );
+                    let action = if in_ram(actor) {
+                        game_anchors::u8_at(ram, actor + 0x1DF)
+                    } else {
+                        0
+                    };
+                    legaia_engine_vm::cast_module_camera::capture_countdown_va(action).map(|va| {
+                        (
+                            game_anchors::u8_at(ram, ctx + 0x279),
+                            game_anchors::u32_at(ram, va) as i32,
+                        )
+                    })
+                })
+                .flatten();
             return SpanGate::CaptureFade {
                 height: game_anchors::u16_at(ram, ctx + 0x6D0),
                 accum: game_anchors::u32_at(ram, ctx + 0x87C).min(u32::from(u16::MAX)) as u16,
+                arm,
             };
         }
         return SpanGate::Age {
@@ -1541,7 +1563,18 @@ pub enum SpanGate {
     /// the caster has landed in every such capture. The drive holds the
     /// engine's polls busy ([`BattleDrive::steer`]) until its own words
     /// have run as far.
-    CaptureFade { height: u16, accum: u16 },
+    ///
+    /// `arm` is `(ctx[+0x279], countdown)` for a `0x70` capture of a module
+    /// whose countdown the engine directs
+    /// ([`legaia_engine_vm::cast_module_camera::capture_countdown_va`]): the
+    /// phase is held until the engine's module sits in that arm with its
+    /// countdown run down at least as far - the module's own clock, which
+    /// places a camera shot or drift in flight.
+    CaptureFade {
+        height: u16,
+        accum: u16,
+        arm: Option<(u8, i32)>,
+    },
     /// Any other action-SM state, `accum` (`ctx[+0x87C]`) into it.
     ///
     /// The action SM's states span frames, and the drive reaches each on
@@ -1618,17 +1651,32 @@ impl SpanGate {
     /// hold.
     fn env_value(self) -> String {
         match self {
-            Self::CaptureFade { height, accum } => format!("{height}/{accum}"),
+            Self::CaptureFade {
+                height,
+                accum,
+                arm: None,
+            } => format!("{height}/{accum}"),
+            Self::CaptureFade {
+                height,
+                accum,
+                arm: Some((phase, countdown)),
+            } => format!("{height}/{accum}/{phase}/{countdown}"),
             _ => self.to_env().1.to_string(),
         }
     }
 
     fn from_env(kind: &str, value: &str) -> Option<Self> {
         if kind.trim() == "5" {
-            let (h, a) = value.trim().split_once('/')?;
+            let parts: Vec<&str> = value.trim().split('/').collect();
+            let arm = match parts.as_slice() {
+                [_, _] => None,
+                [_, _, p, c] => Some((p.parse().ok()?, c.parse().ok()?)),
+                _ => return None,
+            };
             return Some(Self::CaptureFade {
-                height: h.parse().ok()?,
-                accum: a.parse().ok()?,
+                height: parts[0].parse().ok()?,
+                accum: parts[1].parse().ok()?,
+                arm,
             });
         }
         let value: u16 = value.trim().parse().ok()?;
@@ -1913,7 +1961,15 @@ impl BattleDrive {
                     })
                     && match end {
                         SpanGate::DoneHold { timer } => world.battle_ctx.frame_timer <= timer,
-                        SpanGate::CaptureFade { height, accum } if state == 0x6E => {
+                        SpanGate::CaptureFade {
+                            arm: Some((phase, countdown)),
+                            ..
+                        } if state == 0x70 => {
+                            world.casting.module_phase > phase
+                                || world.casting.module_phase == phase
+                                    && world.casting.module_cam.countdown.0 <= countdown
+                        }
+                        SpanGate::CaptureFade { height, accum, .. } if state == 0x6E => {
                             capture_accum_done(world, height, accum)
                         }
                         SpanGate::CaptureFade { height, .. } if state == 0x6F => {
@@ -1993,7 +2049,7 @@ impl BattleDrive {
             world.battle.prev_action_cleared = !(ours && state == want && state == 0x0A && gliding);
             return;
         }
-        let SpanGate::CaptureFade { height, accum } = end else {
+        let SpanGate::CaptureFade { height, accum, .. } = end else {
             return;
         };
         world.audio.sound_bank_ready =
@@ -2652,6 +2708,7 @@ mod tests {
                 end: SpanGate::CaptureFade {
                     height: 0xFF40,
                     accum: 344,
+                    arm: Some((1, 496)),
                 },
                 style: None,
                 steer: ActionSteer::default(),

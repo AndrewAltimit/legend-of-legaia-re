@@ -136,3 +136,35 @@ fn barra_climbs_until_tr_y_reaches_0x800() {
     }
     assert_eq!(holds, (0x800 - 0x400) / MODULE_DRAIN_PER_TICK);
 }
+
+/// Mystic Shield's arm 0 frames the caster from behind and seeds the
+/// countdown; arm 1 holds on it and re-arms `scalar << 8` as it passes. The
+/// `cort_mystic_shield_mid_cast` capture's word (`496` left in arm 1) is
+/// `34` vsync drains past arm 0's `scalar * 0x60` seed.
+#[test]
+fn mystic_shield_arms_its_shot_and_gates_on_its_countdown() {
+    let mut st = ModuleCamState::default();
+    let seats = ModuleCamSeats {
+        caster: ModuleSeat {
+            x: 0,
+            y: 0,
+            z: 813,
+            facing: 0x800,
+        },
+        ..Default::default()
+    };
+    let arm0 = mystic_shield_camera(&mut st, 0, seats);
+    let shot = arm0.shot.expect("arm 0 shoots");
+    assert_eq!(shot.angles, [0x200, 0, 0]);
+    assert_eq!(shot.tr, [0, -0x100, 0x400]);
+    assert_eq!(shot.focus, [0, 0, -813]);
+    assert_eq!(shot.frames, 0x40);
+    assert!(!arm0.hold);
+    for _ in 0..34 {
+        assert!(mystic_shield_camera(&mut st, 1, seats).hold);
+    }
+    assert_eq!(st.countdown.0, 496);
+    let drift = mystic_shield_camera(&mut st, 4, seats).drift.unwrap();
+    assert_eq!((drift.yaw, drift.tr_z), (-16, -6));
+    assert_eq!(capture_countdown_va(0xAC), Some(MYSTIC_SHIELD_COUNTDOWN));
+}

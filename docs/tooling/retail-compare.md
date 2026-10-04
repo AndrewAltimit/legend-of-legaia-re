@@ -564,6 +564,11 @@ into the item / magic / arts windows ([battle](../subsystems/battle.md#how-the-e
   engine's wait until its own glide lands (`SpanGate::Landed`), and the yaw -
   which case 9 passes through and nothing in `0x0A` writes - is aligned as
   an orbit clock. `evil_medallion_rage_battle` is one.
+- **Inside a module's run.** A `0x70` capture of a module whose countdown
+  the engine directs carries the module arm `ctx[+0x279]` and the countdown
+  word ([`capture_countdown_va`](../subsystems/cast-module.md#a-capture-class-module-owns-the-camera-in-0x70));
+  the phase is held until the engine's module sits in that arm with its word
+  run down as far, which places the module's shot in flight.
 - **The killing blow's body.** On a killing-blow capture whose target is a
   victim, the phase is held only with the acting seat on that target
   (`ActionSteer::target`). Seeded at its read HP of `0`, the victim is no

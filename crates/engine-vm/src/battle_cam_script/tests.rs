@@ -2376,79 +2376,6 @@ fn drive_on_stream_draws_the_shake_off_the_lent_stream() {
     assert_eq!(rng, check, "one live step = two world draws");
 }
 
-/// Case 1 with the target dead ahead on the seat axis is the swing pose the
-/// solo-Tetsu camera trace measures: pitch `256`, yaw `0`,
-/// `TR (0, 1536, prescale(0x800))`, focused on the member.
-#[test]
-fn the_enemy_cursor_shot_on_the_seat_axis_is_the_traced_swing() {
-    let member = BattleCamActor {
-        facing: 0,
-        world: [0.0, 0.0, -800.0],
-        height: None,
-    };
-    let p = target_enemy_pose(member, [0.0, 800.0], member.world);
-    assert_eq!(p.pitch, 256.0);
-    assert_eq!(p.yaw, 0.0);
-    assert_eq!(p.tr, [0.0, 1536.0, prescale_tr_z(0x800)]);
-    assert_eq!(p.focus, member.world);
-}
-
-/// Case 3 is case 0 turned onto the targeted member: `TR.x = 0` and yaw base
-/// `0x900` (`0x801D5BD4..0x801D5C54`).
-#[test]
-fn the_ally_cursor_shot_is_the_close_up_on_the_target() {
-    let ally = BattleCamActor {
-        facing: 0x100,
-        world: [700.0, 0.0, -800.0],
-        height: Some(1000.0),
-    };
-    let p = target_ally_pose(ally);
-    assert_eq!(p.pitch, 32.0);
-    assert_eq!(p.yaw, (0x900 - 0x100) as f32);
-    assert_eq!(p.tr, [0.0, 1000.0, prescale_tr_z(0x600)]);
-    assert_eq!(p.focus, ally.world);
-}
-
-/// The cursor framings glide in over 6 camera steps and hand back to the
-/// far framing over case 9's 7 when the cursor commits.
-#[test]
-fn the_cursor_shot_glides_in_and_hands_back_to_the_far_framing() {
-    let member = BattleCamActor::default();
-    let cursor = Some(CursorFraming::Enemy {
-        target: [0.0, 800.0],
-    });
-    let mut slot = None;
-    let mut frames = 0u64;
-    let mut run = |slot: &mut Option<BattleCamera>, phase, cursor, n: u32| {
-        for _ in 0..n {
-            frames += 2;
-            drive(
-                slot,
-                true,
-                BattleCamInputs {
-                    phase,
-                    acting: Some(member),
-                    cursor,
-                    ..Default::default()
-                },
-                frames,
-                None,
-            );
-        }
-    };
-    run(&mut slot, BattleCamPhase::Submenu, None, 10);
-    run(&mut slot, BattleCamPhase::TargetEnemy, cursor, 6);
-    let cam = slot.as_ref().unwrap();
-    assert_eq!(cam.phase(), BattleCamPhase::TargetEnemy);
-    let want = target_enemy_pose(member, [0.0, 800.0], member.world);
-    let p = cam.pose();
-    assert_eq!((p.pitch, p.tr, p.focus), (want.pitch, want.tr, want.focus));
-    assert_eq!(p.yaw.rem_euclid(4096.0), want.yaw);
-    run(&mut slot, BattleCamPhase::Menu, None, 7);
-    let p = slot.as_ref().unwrap().pose();
-    assert_eq!(p.pitch, 32.0, "back on the far framing's pitch");
-}
-
 /// The strike loop `0x1E` arms case 7 on every pass with no fork
 /// (`0x801E36E4..0x801E36EC`); `0x1F` / `0x20` fork to case 8 when the
 /// target is on its knockdown / get-up, and `0x20` alone also when a party
@@ -2596,4 +2523,77 @@ fn a_kill_on_the_return_reads_the_steal_banner_capture() {
     assert_eq!(raw_z, 0xC00 - 0x320);
     assert_eq!(pose.focus, [957.0, 0.0, 857.0]);
     assert_eq!(cam.action_yaw, 0);
+}
+
+/// Case 1 with the target dead ahead on the seat axis is the swing pose the
+/// solo-Tetsu camera trace measures: pitch `256`, yaw `0`,
+/// `TR (0, 1536, prescale(0x800))`, focused on the member.
+#[test]
+fn the_enemy_cursor_shot_on_the_seat_axis_is_the_traced_swing() {
+    let member = BattleCamActor {
+        facing: 0,
+        world: [0.0, 0.0, -800.0],
+        height: None,
+    };
+    let p = target_enemy_pose(member, [0.0, 800.0], member.world);
+    assert_eq!(p.pitch, 256.0);
+    assert_eq!(p.yaw, 0.0);
+    assert_eq!(p.tr, [0.0, 1536.0, prescale_tr_z(0x800)]);
+    assert_eq!(p.focus, member.world);
+}
+
+/// Case 3 is case 0 turned onto the targeted member: `TR.x = 0` and yaw base
+/// `0x900` (`0x801D5BD4..0x801D5C54`).
+#[test]
+fn the_ally_cursor_shot_is_the_close_up_on_the_target() {
+    let ally = BattleCamActor {
+        facing: 0x100,
+        world: [700.0, 0.0, -800.0],
+        height: Some(1000.0),
+    };
+    let p = target_ally_pose(ally);
+    assert_eq!(p.pitch, 32.0);
+    assert_eq!(p.yaw, (0x900 - 0x100) as f32);
+    assert_eq!(p.tr, [0.0, 1000.0, prescale_tr_z(0x600)]);
+    assert_eq!(p.focus, ally.world);
+}
+
+/// The cursor framings glide in over 6 camera steps and hand back to the
+/// far framing over case 9's 7 when the cursor commits.
+#[test]
+fn the_cursor_shot_glides_in_and_hands_back_to_the_far_framing() {
+    let member = BattleCamActor::default();
+    let cursor = Some(CursorFraming::Enemy {
+        target: [0.0, 800.0],
+    });
+    let mut slot = None;
+    let mut frames = 0u64;
+    let mut run = |slot: &mut Option<BattleCamera>, phase, cursor, n: u32| {
+        for _ in 0..n {
+            frames += 2;
+            drive(
+                slot,
+                true,
+                BattleCamInputs {
+                    phase,
+                    acting: Some(member),
+                    cursor,
+                    ..Default::default()
+                },
+                frames,
+                None,
+            );
+        }
+    };
+    run(&mut slot, BattleCamPhase::Submenu, None, 10);
+    run(&mut slot, BattleCamPhase::TargetEnemy, cursor, 6);
+    let cam = slot.as_ref().unwrap();
+    assert_eq!(cam.phase(), BattleCamPhase::TargetEnemy);
+    let want = target_enemy_pose(member, [0.0, 800.0], member.world);
+    let p = cam.pose();
+    assert_eq!((p.pitch, p.tr, p.focus), (want.pitch, want.tr, want.focus));
+    assert_eq!(p.yaw.rem_euclid(4096.0), want.yaw);
+    run(&mut slot, BattleCamPhase::Menu, None, 7);
+    let p = slot.as_ref().unwrap().pose();
+    assert_eq!(p.pitch, 32.0, "back on the far framing's pitch");
 }

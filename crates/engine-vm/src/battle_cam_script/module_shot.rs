@@ -162,7 +162,8 @@ impl BattleCamera {
         if self.escape_shot {
             return;
         }
-        if !SUMMON_MODULE_STATES.contains(&state) && state != 0x34 && state != CAPTURE_MODULE_STATE {
+        if !SUMMON_MODULE_STATES.contains(&state) && state != 0x34 && state != CAPTURE_MODULE_STATE
+        {
             self.module_glide = None;
         }
     }

@@ -1964,6 +1964,30 @@ body in six more, which is the same reason the trampoline map has to be keyed
 on `(entry, body)`
 [above](#a-body-va-is-not-a-key---only-entry-body-is).
 
+### A capture-class module owns the camera in `0x70`
+
+The capture band's module tick `0x70` calls no framing case: it runs the
+module through `FUN_801F2160` and leaves for `0x71` when that returns zero
+(`0x801E50C8..0x801E50E8`). The camera therefore holds the pose `0x6F`'s
+last case-6 pass left, and moves only where the module moves it - with the
+same two kernels the player half uses (a `FUN_801D829C` shot, and drifts
+added straight into the pitch / yaw / TR globals every pass an arm runs),
+behind the same kind of module-resident countdown.
+
+Port: `legaia_engine_vm::cast_module_camera::capture_camera_director`, keyed on
+`(entry, body)` like the trampoline map, run on the phase the body is about to
+run; a holding gate withholds the body's pass. The battle camera holds in
+`0x70` and walks whatever shot a director arms. Directed so far:
+
+- **PROT 0940 `0xAC` (Cort's Mystic Shield, body `0x801F7240`)** - arm 0's
+  shot behind the caster (pitch `0x200`, TR `(0, -0x100, 0x400)`, `0x40`
+  frames), the drifts of arms 2, 4, 5 and 6, and the countdown `0x801F864C`
+  gating arms 1..7 (seeded `scalar * 0x60`, re-armed `scalar << 8` /
+  `<< 6` / `* 0xC0` as each gate passes). The `cort_mystic_shield_mid_cast`
+  capture sits in arm 1 with `496` of the word left, 34 vsyncs into the shot.
+
+A body with no director keeps the held pose.
+
 ### The band has eight stat-block writers, not one
 
 The four PROT 0955 bodies above were once read as the band's only writers of

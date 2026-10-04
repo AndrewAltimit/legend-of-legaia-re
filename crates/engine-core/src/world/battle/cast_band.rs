@@ -932,6 +932,7 @@ impl World {
         self.casting.module_phase = 0;
         self.casting.module_ctx_278 = 0;
         self.casting.module_swordie = Default::default();
+        self.casting.module_cam = Default::default();
         self.casting.capture_spell = Some(spell_id);
         self.emit_cast_module_voice(spell_id);
     }
@@ -1632,6 +1633,7 @@ impl World {
             })
         };
         run.camera_shot = direction.and_then(|d| d.shot);
+        let mut capture_held = false;
         // A capture-class body's camera arms, on the phase it is about to
         // run (they make no gate of their own: the body's port does).
         if has_trampoline
@@ -1639,13 +1641,16 @@ impl World {
                 body.and_then(|b| vm::cast_module_camera::capture_camera_director(entry, b))
         {
             let seats = self.module_cam_seats(caster_slot, victim_slot);
-            let arm = direct(ctx.phase, seats);
+            let mut st = self.casting.module_cam;
+            let arm = direct(&mut st, ctx.phase, seats);
+            self.casting.module_cam = st;
             run.camera_shot = arm.shot;
             run.capture_drift = arm.drift;
+            capture_held = arm.hold;
         }
         run.camera_follow = direction.and_then(|d| d.follow);
         run.camera_nudge = direction.and_then(|d| d.nudge);
-        let held = direction.is_some_and(|d| d.hold);
+        let held = direction.is_some_and(|d| d.hold) || capture_held;
         // A camera-only director owns the phase of a module whose tick body
         // is unported: its pass advances it, and it claims no tick.
         let camera_only = profile.is_some_and(|p| !p.paces_band());
