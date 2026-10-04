@@ -311,6 +311,20 @@ impl World {
                 // abandoned the record before its flag write.
                 // REF: FUN_800204F8, FUN_8003C83C
                 if player_target {
+                    // The player record's `+0x14` / `+0x16` / `+0x18` are
+                    // what an op on it reads: a `CD F8 ..` box test compares
+                    // the player's tile. A context seeded at the origin
+                    // failed every such test - `ropeway` P0[2], the station
+                    // door, opens only for a player inside tiles
+                    // (27..30, 33..34) and stayed shut for all of them.
+                    // REF: FUN_8003C83C, FUN_801DE840 (0x4D arm)
+                    if let Some(p) = host.world.player_actor_slot
+                        && let Some(a) = host.world.actors.get(p as usize)
+                    {
+                        player_ctx.world_x = a.move_state.world_x as u16;
+                        player_ctx.world_y = a.move_state.world_y as u16;
+                        player_ctx.world_z = a.move_state.world_z as u16;
+                    }
                     if b & 0x7F == 0x22
                         && let Some(&move_id) = id.bytecode.get(id.pc + 2)
                     {

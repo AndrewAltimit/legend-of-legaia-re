@@ -2437,35 +2437,130 @@ fn in_reach(c: Cell, at: (i16, i16)) -> bool {
 /// `FUN_801CF9F4` skip `flags & 3`), so the leaf stops blocking once the
 /// player's press into it has posted the touch - the press is the opening.
 fn self_opening_doors(session: &BootSession) -> HashSet<(u8, u8)> {
-    use legaia_asset::field_disasm::{OpKey, clean_hit_offsets};
+    door_openings(session)
+        .into_iter()
+        .filter(|(_, b)| b.is_none())
+        .map(|(a, _)| a)
+        .collect()
+}
+
+/// A door that opens only for a player standing in a tile box (the
+/// `BBoxTest` on the player channel ahead of its `31 00`): the box, with
+/// the collider centres of the door's leaves. `ropeway` P0[2], the station
+/// door, opens for a player inside on tiles (27..30, 33..34) and is a wall
+/// from the corridor south of it.
+type TileBox = (u8, u8, u8, u8);
+type BoxedDoor = (TileBox, Vec<(i16, i16)>);
+
+fn boxed_doors(session: &BootSession) -> Vec<BoxedDoor> {
+    let w = &session.host.world;
+    door_openings(session)
+        .into_iter()
+        .filter_map(|(a, b)| {
+            let b = b?;
+            let leaves = w
+                .props
+                .colliders
+                .iter()
+                .filter(|c| c.anchor == Some(a) && !c.moving_box)
+                .filter_map(|c| {
+                    Some((
+                        i16::try_from(c.center.0).ok()?,
+                        i16::try_from(c.center.1).ok()?,
+                    ))
+                })
+                .collect();
+            Some((b, leaves))
+        })
+        .collect()
+}
+
+/// Every placed prop whose touch opens it (`31 00` reached from the
+/// resume point): `None` when nothing can branch around the opening,
+/// `Some(box)` when only a player-channel box test (tiles `x_min, z_min,
+/// x_max, z_max`) stands before it.
+fn door_openings(session: &BootSession) -> HashMap<(u8, u8), Option<TileBox>> {
+    use legaia_asset::field_disasm::{InsnInfo, LinearWalker};
     use legaia_engine_core::man_field_scripts::partition_record_span;
     let w = &session.host.world;
     if w.mode != SceneMode::Field || w.props.bank.props.is_empty() {
-        return HashSet::new();
+        return HashMap::new();
     }
     let Some(man) = w.field_vm.channels_man.as_ref() else {
-        return HashSet::new();
+        return HashMap::new();
     };
     let Ok(mf) = legaia_asset::man_section::parse(man) else {
-        return HashSet::new();
+        return HashMap::new();
     };
-    let key = OpKey {
-        opcode: 0x31,
-        sub: None,
+    // The touch resumes the record past its spawn prologue (the first `21`);
+    // the door opens itself only when the `31 00` comes before anything
+    // that can branch around it, or behind one box test of the player.
+    // A story-flag test on the way is followed against the live flags, as
+    // the touch runs it: `ropeway2` P0[16], the elevator door, opens only
+    // once `0x1D5` (the power cut) is set.
+    let opens = |body: &[u8], pc0: usize| -> Option<Option<TileBox>> {
+        let mut pc = LinearWalker::new(body, pc0)
+            .map_while(Result::ok)
+            .find(|i| i.opcode == 0x21)
+            .map(|i| i.pc + i.size)?;
+        let mut boxed = None;
+        let mut seen = HashSet::new();
+        while seen.insert(pc) {
+            let insn = legaia_asset::field_disasm::decode(body, pc).ok()?;
+            if insn.size == 0 {
+                return None;
+            }
+            match insn.info {
+                InsnInfo::CFlag {
+                    kind: FlagKind::Set,
+                    bit: 0,
+                } if insn.extended.is_none() => return Some(boxed),
+                InsnInfo::BBoxTest {
+                    x_min,
+                    z_min,
+                    x_max,
+                    z_max,
+                    ..
+                } if boxed.is_none() && insn.extended == Some(0xF8) => {
+                    boxed = Some((x_min, z_min, x_max, z_max));
+                }
+                InsnInfo::SystemFlag {
+                    kind: FlagKind::Test,
+                    idx,
+                    target: Some(target),
+                    ..
+                } => {
+                    if w.system_flag_test(idx) {
+                        pc = target;
+                        continue;
+                    }
+                }
+                InsnInfo::JmpRel { target, .. } => {
+                    pc = target;
+                    continue;
+                }
+                InsnInfo::SystemFlag {
+                    kind: FlagKind::Test,
+                    ..
+                }
+                | InsnInfo::BBoxTest { .. }
+                | InsnInfo::Picker { .. }
+                | InsnInfo::SpawnRecord { .. } => return None,
+                _ if insn.opcode == 0x21 => return None,
+                _ => {}
+            }
+            pc += insn.size;
+        }
+        None
     };
     w.props
         .bank
         .props
         .iter()
-        .filter(|(_, p)| {
-            partition_record_span(&mf, man, 0, p.record).is_some_and(|(start, pc0, len)| {
-                let body = &man[start..start + len];
-                clean_hit_offsets(body, pc0, key)
-                    .iter()
-                    .any(|&pc| body.get(pc + 1) == Some(&0))
-            })
+        .filter_map(|(&a, p)| {
+            let (start, pc0, len) = partition_record_span(&mf, man, 0, p.record)?;
+            Some((a, opens(&man[start..start + len], pc0)?))
         })
-        .map(|(&a, _)| a)
         .collect()
 }
 
@@ -3214,6 +3309,9 @@ fn plan_search(
     // starts on one (a re-plan just after a ride) may walk off it.
     let platforms: Vec<(i16, i16)> = w.props.arrival_exempt.iter().map(|&(_, p)| p).collect();
     let partners = door_partners(session);
+    // Doors that open only for a player standing in their box: from a cell
+    // in the box their leaves do not block (the press opens them).
+    let boxed = boxed_doors(session);
     // Where a ride through the door at `contact` leaves the player able to
     // walk on: its landing, or - when the landing stands in reach of a
     // platform the record brackets - every cell just out of the platform's
@@ -3331,10 +3429,22 @@ fn plan_search(
             break;
         }
         let (cx, cz) = cell_center(cur);
+        let here = dispatch_tile(cx, cz);
         let skip: Vec<(i16, i16)> = platforms
             .iter()
             .copied()
             .filter(|&p| in_reach(cur, p))
+            .chain(
+                boxed
+                    .iter()
+                    // One tile of slack: the leaf's own tile, which the
+                    // player walks through once the press has opened it.
+                    .filter(|((x0, z0, x1, z1), _)| {
+                        (i32::from(*x0) - 1..=i32::from(*x1) + 1).contains(&here.0)
+                            && (i32::from(*z0) - 1..=i32::from(*z1) + 1).contains(&here.1)
+                    })
+                    .flat_map(|(_, leaves)| leaves.iter().copied()),
+            )
             .collect();
         for ((dx, dz), dir) in STEPS {
             let next = (cur.0 + dx, cur.1 + dz);
@@ -3518,11 +3628,48 @@ fn pad_hop(session: &mut BootSession, graph: &DiscGraph, dest: &str) -> Result<S
             session.host.world.set_pad(0);
             let _ = run_while_moving(session, 600);
             eprintln!(
-                "      [probe] {} {spec} from {from:?}: {trail:?} now {:?} exempt {:?}",
+                "      [probe] {} {spec} from {from:?}: {trail:?} now {:?} exempt {:?} walls {:?} npcs near {:?}",
                 scene_name(session),
                 player_xz(session),
-                session.host.world.props.arrival_exempt
+                session.host.world.props.arrival_exempt,
+                {
+                    let (x, z) = player_xz(session);
+                    (0..4)
+                        .map(|d| session.host.world.field_dir_blocked(x, z, d))
+                        .collect::<Vec<_>>()
+                },
+                {
+                    let (x, z) = player_xz(session);
+                    session
+                        .host
+                        .world
+                        .npcs
+                        .positions
+                        .iter()
+                        .filter(|(_, p)| {
+                            (i32::from(p.0) - i32::from(x)).abs() < 384
+                                && (i32::from(p.1) - i32::from(z)).abs() < 384
+                        })
+                        .map(|(s, p)| (*s, *p))
+                        .collect::<Vec<_>>()
+                },
             );
+            let (x, z) = player_xz(session);
+            let w = &session.host.world;
+            for c in w.props.colliders.iter().filter(|c| {
+                (c.center.0 - i32::from(x)).abs() < 384 && (c.center.1 - i32::from(z)).abs() < 384
+            }) {
+                eprintln!(
+                    "        [probe-prop] {:?} solid {} interact {} moving {} P0[{:?}]",
+                    c.center,
+                    c.solid,
+                    c.interact,
+                    c.moving_box,
+                    c.anchor
+                        .and_then(|a| w.props.bank.props.get(&a))
+                        .map(|p| p.record)
+                );
+            }
         }
         restore_player_xz(session, home);
     }
@@ -3667,6 +3814,50 @@ fn pad_hop(session: &mut BootSession, graph: &DiscGraph, dest: &str) -> Result<S
     for d in &doors {
         walk_avoid.remove(&(i32::from(d.tile.0), i32::from(d.tile.1)));
     }
+    // A band whose record clears the door record's own C1 latch is the way
+    // in, not a beat to step around: `ropeway`'s gate to `ropeway2`
+    // (P2[30], C1 `0x514`) is reached through the station door onto
+    // (29, 35), whose P2[25] clears `0x514`; the corridor band P2[24] at
+    // (27, 36) sets it, and stays avoided.
+    let unlatch = unlatching_bands(session, goal);
+    if std::env::var_os("LEGAIA_FGL_WALK_DEBUG").is_some() {
+        let mut near: Vec<_> = walk_avoid
+            .iter()
+            .filter(|t| (t.0 - i32::from(goal.0)).abs() + (t.1 - i32::from(goal.1)).abs() <= 6)
+            .collect();
+        near.sort();
+        eprintln!("      [hop] goal {goal:?} unlatching {unlatch:?}; avoided near {near:?}");
+        let mut av = walk_avoid.clone();
+        for t in &unlatch {
+            av.remove(t);
+        }
+        let probe_from = tile_center((goal.0, goal.1 - 3));
+        let p = plan_path(session, cell_of(probe_from.0, probe_from.1), goal, &av);
+        eprintln!(
+            "      [hop] plan from {:?}: {:?}",
+            (goal.0, goal.1 - 3),
+            p.map(|p| p
+                .iter()
+                .map(|&c| tile_of(cell_center(c).0, cell_center(c).1))
+                .collect::<Vec<_>>())
+        );
+    }
+    for t in &unlatch {
+        walk_avoid.remove(t);
+    }
+    // The unlatching band is crossed first, as a player crossing it on the
+    // way in does: P2[25] also re-opens the wall cells of the door frame at
+    // (29, 35) (`4C 70`), so the lattice sees no way to the gate until it
+    // has run.
+    if let Some(&(bx, bz)) = unlatch.iter().min_by_key(|t| {
+        let me = player_xz(session);
+        let me = tile_of(me.0, me.1);
+        (t.0 - i32::from(me.0)).abs() + (t.1 - i32::from(me.1)).abs()
+    }) && let (Ok(bx), Ok(bz)) = (u8::try_from(bx), u8::try_from(bz))
+        && let Ok(Walk::Entered(s)) = pad_step_onto(session, (bx, bz))
+    {
+        return Ok(s);
+    }
     match pad_walk(session, goal, &walk_avoid, 0)? {
         Walk::Entered(s) => Ok(s),
         Walk::Arrived => {
@@ -3676,10 +3867,40 @@ fn pad_hop(session: &mut BootSession, graph: &DiscGraph, dest: &str) -> Result<S
             if let Some(s) = pad_lean(session, move |_| Some(door), 30, |s| !released(s)) {
                 return Ok(s);
             }
-            match run_while_moving(session, DEEP_EXIT_TICKS) {
-                Run::Entered(s) => Ok(s),
-                other => Err(format!("on door {goal:?} to {dest}: {other:?}")),
+            let first = match run_while_moving(session, DEEP_EXIT_TICKS) {
+                Run::Entered(s) => return Ok(s),
+                other => other,
+            };
+            // Standing on the band and nothing left: the crossing was
+            // consumed. The dispatch drops a tile change made while a script
+            // holds the player (`0x801D214C`), and the step in can be the
+            // very press that touches a neighbouring prop: `ropeway`'s gate
+            // to `ropeway2` at (29, 36) sits beside the P0[2] door, whose
+            // touch from the west runs (and fails) its box test on the
+            // frame the player crosses. A player steps off and back on;
+            // so does the hand, from each side in turn.
+            if matches!(first, Run::Released) {
+                for side in beside(session, goal) {
+                    let off = pad_avoid(session, Some(goal));
+                    if let Ok(Walk::Entered(s)) = pad_walk(session, side, &off, 0) {
+                        return Ok(s);
+                    }
+                    if tile_of(player_xz(session).0, player_xz(session).1) != side {
+                        continue;
+                    }
+                    let onto = pad_avoid(session, Some(goal));
+                    match pad_walk(session, goal, &onto, 0) {
+                        Ok(Walk::Entered(s)) => return Ok(s),
+                        Ok(Walk::Arrived) => {
+                            if let Run::Entered(s) = run_while_moving(session, DEEP_EXIT_TICKS) {
+                                return Ok(s);
+                            }
+                        }
+                        Err(_) => {}
+                    }
+                }
             }
+            Err(format!("on door {goal:?} to {dest}: {first:?}"))
         }
     }
 }
@@ -3770,6 +3991,45 @@ fn pad_avoid(session: &BootSession, keep: Option<(i16, i16)>) -> HashSet<(i32, i
         out.remove(&(i32::from(k.0), i32::from(k.1)));
     }
     out
+}
+
+/// The gate-1 walk-on tiles of the loaded field scene whose partition-2
+/// record cleanly clears a C1 latch of the walk-on record on `door` - the
+/// bands that open the way to it.
+fn unlatching_bands(session: &BootSession, door: (i16, i16)) -> Vec<(i32, i32)> {
+    use legaia_engine_core::man_field_scripts::{
+        FlagBank, partition2_record_gates, walk_partition_gflag_sites,
+    };
+    if session.host.world.mode != SceneMode::Field {
+        return Vec::new();
+    }
+    let Some((mf, man, triggers)) = scene_man_and_triggers(session) else {
+        return Vec::new();
+    };
+    let latches: Vec<u16> = triggers
+        .iter()
+        .filter(|t| t.gate == 1 && (i16::from(t.tile_x), i16::from(t.tile_z)) == door)
+        .filter_map(|t| partition2_record_gates(&mf, &man, usize::from(t.record)))
+        .flat_map(|(c1, _)| c1)
+        .collect();
+    if latches.is_empty() {
+        return Vec::new();
+    }
+    let clears: HashSet<usize> = walk_partition_gflag_sites(&mf, &man, 2)
+        .iter()
+        .filter(|s| {
+            s.bank == FlagBank::System
+                && s.kind == FlagKind::Clear
+                && s.clean
+                && latches.contains(&s.flag)
+        })
+        .map(|s| s.record)
+        .collect();
+    triggers
+        .iter()
+        .filter(|t| t.gate == 1 && clears.contains(&usize::from(t.record)))
+        .map(|t| (i32::from(t.tile_x), i32::from(t.tile_z)))
+        .collect()
 }
 
 /// [`plan_path`] around `avoid`; when that cannot reach `goal`, around the
