@@ -587,6 +587,20 @@ impl World {
             scene.channel_delta = channel_delta;
             scene.tick(&mut host, frame_delta);
         }
+        // The morph-lane ramp envelope `FUN_80020740`, run by the part tick
+        // on every part whose `+0x10` carries the op-`0x0A` bit `0x1000` -
+        // the step `tick_move_fx` takes for the effect-script scenes. PROT
+        // 0903's breath (the PROT 0898 prototype `0x801F5B28`) arms three
+        // lanes on its rest mesh, a 52-unit seed, and grows to the flame
+        // only through them.
+        let step = self.clock.frame_step.max(1);
+        for part in &mut scene.parts {
+            if !part.finished
+                && part.state.flags & vm::move_buffer::STATUS_FLAG_ENVELOPE_ACTIVE != 0
+            {
+                vm::vdf_morph::envelope_tick_actor(&mut part.state, step);
+            }
+        }
         if !scene.finished() {
             self.casting.active_summon = Some(scene);
         }
@@ -763,6 +777,16 @@ impl World {
             .collect();
         let trail_texpage = fx.trail_texpage;
         let sound_cue_id = fx.sound_cue_id;
+
+        // A cast whose terminator is still ahead leaves both lists to the
+        // homing flight it seeds (`World::seed_homing_slots`): only the
+        // move's sound cue surfaces here (the trail texpage is scene-scoped).
+        if self.casting.homing_takes_lists {
+            if sound_cue_id != 0 {
+                self.casting.pending_move_fx_cue = Some(sound_cue_id);
+            }
+            return true;
+        }
 
         let mut staged_scene = false;
         if !wanted.is_empty() {

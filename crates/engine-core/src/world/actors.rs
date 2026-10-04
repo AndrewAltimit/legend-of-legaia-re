@@ -372,6 +372,7 @@ impl World {
         // `ctx[+0x6C6]` falls 4 per frame, shrinking the trail's half-width
         // and scheduling the afterimage -> ribbon emitter handoff.
         self.casting.move_fx_streak.tick_counter();
+        self.tick_homing_slots();
     }
 
     /// Walk actor `i`'s committed effect script for one frame and queue the
@@ -469,13 +470,19 @@ impl World {
         // record id the terminator resolves indexes the same table
         // `MovePowerCatalog` holds, so the `+0x6C6` word is that record's
         // `counter_init()`.
-        if step.homing_band.is_some() {
-            let counter = step
+        if let Some(band) = step.homing_band {
+            // `ctx[+0x1014]` is the table base plus `index * 26`: the
+            // record by table index, not by move id.
+            let record = step
                 .move_power_offset
-                .map(|off| (off / fx::MOVE_POWER_STRIDE) as u8)
-                .and_then(|id| self.tables.move_power.as_ref()?.record_for_move_id(id))
+                .map(|off| off / fx::MOVE_POWER_STRIDE);
+            let counter = record
+                .and_then(|idx| self.tables.move_power.as_ref()?.record_at_index(idx))
                 .map(|rec| rec.counter_init());
             self.casting.move_fx_streak.install(&step, counter);
+            if let Some(launch) = step.launch {
+                self.seed_homing_slots(i, band, record, launch);
+            }
         }
         if let Some(actor) = self.actors.get_mut(i) {
             actor.battle_effect_cursor = cursor;

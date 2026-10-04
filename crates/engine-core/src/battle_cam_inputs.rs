@@ -601,8 +601,14 @@ pub fn spell_cam_inputs(world: &World, slot: u8, case: u8) -> script::SpellCamIn
         })
     };
     let streak = &world.casting.move_fx_streak;
-    let fx_position = streak
-        .launch
+    // `ctx[+0x1144]` - homing slot `0`, which the flight moves off the
+    // launch point and lands on the target.
+    let fx_position = world
+        .casting
+        .homing
+        .lead()
+        .map(|[x, _, z]| (x, 0, z))
+        .or(streak.launch)
         .map_or([actor.world[0], actor.world[2]], |(x, _, z)| {
             [x as f32, z as f32]
         });
@@ -628,7 +634,12 @@ pub fn spell_cam_inputs(world: &World, slot: u8, case: u8) -> script::SpellCamIn
         live_yaw: 0.0,
         frame_step: script::SPELL_CAM_FRAME_STEP,
         fx_timer: streak.counter_word as i16,
-        fx_children: world.battle_ctx.magic_recovery_gate,
+        // `ctx[+0x24D]`: the census's count, which the engine's own census
+        // leaves at zero for want of the slots; the flown slots supply it.
+        fx_children: world
+            .battle_ctx
+            .magic_recovery_gate
+            .max(world.casting.homing.children()),
         fx_phase: streak.phase,
         accum: 0,
         depth_raw: world.battle.camera_frame_height as i32,

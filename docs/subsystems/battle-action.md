@@ -226,10 +226,11 @@ the live flame - and its camera reads case 8 exactly: pitch `0x40`,
 `ctx[+0x1144]`. Port: `legaia_engine_vm::battle_cam_script::spell_cam_case`
 (the nineteen non-summon cases), fed by `engine-core`'s
 `battle_cam_inputs::spell_cam_inputs` from the host's `spell_anim_sustain`.
-The engine flies no effect slot (`FUN_801E09F8`'s homing is render-track), so
-no flame child raises `ctx[+0x24D]` and the Tail Fire capture's engine camera
-stays on case 7's close-up, short of the hand-off; a projectile shot that does
-run frames the launch point rather than the flame in flight.
+The engine flies the effect slots (`action_effect_script::HomingSlots`, below),
+and the camera reads them: the seeded slot's child is what case 7 hands on at,
+and slot 0's position is the point case 8 frames. The engine's own census
+leaves `ctx[+0x24D]` at zero, so the camera takes the larger of the two counts;
+the magic band's exit gates still read the census alone.
 
 ## The summon cast close-up camera
 
@@ -3058,6 +3059,24 @@ they are documented here rather than lifted whole into `engine-vm`.
   slot fires - the `ctx[+0x24E]` phase byte, the `+0x252` target, the
   `+0x1144` position quad and the `+0x6C6` per-slot timer. Read off the 0898
   image at base `0x801CE818`; see `overlay_battle_action_801e09f8.txt`.
+
+  Those arms are ported as `engine-core::action_effect_script::HomingSlots`,
+  seeded by the terminator beside the streak (`World::seed_homing_slots`) and
+  stepped each battle frame (`World::tick_homing_slots`). Phase `1` waits out
+  the streak word; then every slot takes `2` when the record's `+0x12` list is
+  non-empty, else `3` (`0x801E0CF8..0x801E0D34`). Phase `2` turns onto the
+  child's live seat, steps `record[+0x08]` units along that heading, spawns
+  the `+0x12` list each time its counter is out and re-arms it to
+  `0x40 - record[+0x08]`, and lands inside `|dx| + |dz| <= 0x100`: phase `3`,
+  counter `record[+0x06]`, the slot on the seat raised by `record[+0x02]`, the
+  `+0x16` list spawned there (`0x801E0FB8..0x801E1430`). Phase `3` drains and
+  frees the slot. The transition falls straight into the per-slot pass in the
+  same call, so a zero landing counter frees the slot on the frame it lands.
+  The spawns are the move's own list bytes: for a cast, whose fold would
+  otherwise stage both lists at the target at once
+  (`World::request_move_fx_spawn`), the flight takes them over when the
+  caster's script still has its terminator ahead. The hit stays with the cast
+  fold, and the census is not fed from the slots.
 
   Two details of that arm a decompiled reading loses. The `+0x1DC` writes are
   bit **ORs** (`|= 4` on the reaction leg at `0x801E19D8`, `|= 1` on the face

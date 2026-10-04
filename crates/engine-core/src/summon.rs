@@ -441,6 +441,10 @@ pub struct SummonPartRuntime {
     pub state: ActorState,
     /// `true` once the part's program halted or ran off its buffer.
     pub finished: bool,
+    /// The point this part's translation glide is anchored on, when it is
+    /// not the scene's [`SummonScene::origin`] - a part seated later than
+    /// the scene's first, on its own spawn position ([`SummonScene::push_parts`]).
+    pub origin: Option<[i16; 3]>,
 }
 
 /// A running summon: every spawned part plus the model-library base the parts'
@@ -651,6 +655,7 @@ impl SummonScene {
         self.retail_wait_drain = true;
         self.parts.extend(parts.iter().filter_map(|p| {
             let mut part = seed_part(p, record_bytes, pos)?;
+            part.origin = Some(pos);
             part.state.render_24 = rot[0];
             part.state.render_26 = rot[1];
             part.state.render_28 = rot[2];
@@ -725,7 +730,11 @@ impl SummonScene {
                 crate::part_motion::clamp_levels(&mut part.state);
             } else {
                 crate::part_motion::clamp_levels(&mut part.state);
-                apply_translation_update(&mut part.state, self.origin, frame_delta);
+                apply_translation_update(
+                    &mut part.state,
+                    part.origin.unwrap_or(self.origin),
+                    frame_delta,
+                );
             }
         }
     }
@@ -887,6 +896,7 @@ fn seed_part(p: &SummonPart, record_bytes: &[u8], origin: [i16; 3]) -> Option<Su
         buf,
         state,
         finished: false,
+        origin: None,
     })
 }
 

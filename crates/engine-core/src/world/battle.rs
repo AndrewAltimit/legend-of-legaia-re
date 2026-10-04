@@ -22,6 +22,7 @@ mod counterattack;
 mod effect_route;
 mod effect_teardown;
 mod formation_span;
+mod homing;
 mod initiative;
 mod intro_names;
 mod locomotion;

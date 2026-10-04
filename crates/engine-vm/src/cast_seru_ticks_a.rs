@@ -449,6 +449,14 @@ pub const GIMARD_CUT_CTX_278: u8 = 3;
 pub const GIMARD_TUNNEL_CTX_278: u8 = 2;
 /// The render flag PROT 0903 poses the summon seat at in arm 9.
 pub const GIMARD_POSE_RENDER_FLAG: u8 = 3;
+/// The tint word PROT 0903 stamps on the summon seat in arm 9
+/// (`li v0,0x3ff; sw v0,0x4(s3)` at `0x801F7318..0x801F731C`): the red
+/// channel alone at full, which is what turns the creature red for its
+/// breath. `gimard_burning_attack` reads it easing at `0x3FC`.
+pub const GIMARD_POSE_PRESENT_WORD: u32 = 0x3FF;
+/// The `+0x21F` selector PROT 0903 sets beside it (`sb t3,0x21f(s3)` at
+/// `0x801F7324`, `t3 = 1` from the prologue).
+pub const GIMARD_POSE_21F: u8 = 1;
 /// The render flag PROT 0903 drops the summon seat to once the hit has
 /// landed (`li v0,0x2; sb v0,0x21c(s3)` at `0x801F75E4`).
 pub const GIMARD_DONE_RENDER_FLAG: u8 = 2;
@@ -477,7 +485,8 @@ pub const GIMARD_SETTLE_ANIM_RATE: u8 = ANIM_RATE_NORMAL >> 1;
 ///   backdrop pair's depth cue to full and off the draw
 ///   (`battle_ground_grid::backdrop_cue_ceiling`), so the creature's attack
 ///   plays inside the module's fire tunnel with no stage behind it;
-/// * arm `9` - the summon seat's render flag `= 3` (`0x801F7310`);
+/// * arm `9` - the summon seat's render flag `= 3` (`0x801F7310`), its tint
+///   word `+0x04 = 0x3FF` and `+0x21F = 1`;
 /// * arm `10` - the summon seat's `+0x1DA` and `+0x1DC` each `+= 1`
 ///   (`0x801F7360..0x801F7374`);
 /// * arm `11` - advances **first** (`0x801F7478`), then, unless the victim
@@ -522,6 +531,8 @@ pub fn gimard_tick(
         GIMARD_POSE_ARM => {
             if let Some(s) = seats.get_mut(who.summon as usize) {
                 s.render_flag = GIMARD_POSE_RENDER_FLAG;
+                s.present_04 = GIMARD_POSE_PRESENT_WORD;
+                s.render_21f = GIMARD_POSE_21F;
             }
             CastArmStep::Advance
         }
