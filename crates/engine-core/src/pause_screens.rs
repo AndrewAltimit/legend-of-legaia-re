@@ -702,6 +702,7 @@ impl PauseItemsSession {
     /// so the row the list returns to shows one fewer, and the last copy's
     /// row is gone. Without this the screen kept offering an Incense the bag
     /// no longer held, and one copy could be confirmed up to the window cap.
+    // REF: FUN_80042310 (the one-copy bag decrement the route calls)
     fn take_one_copy(&mut self, id: u8) {
         let at = if self.rows.get(self.cursor).is_some_and(|r| r.id == id) {
             Some(self.cursor)

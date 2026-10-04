@@ -61,7 +61,7 @@
 //! seated tier talks to the NPCs whose records reach a flag the next anchor
 //! carries or a destination the route needs, and the pad tier plays the same
 //! beats by walking to them; neither tier buys or equips (the pad tier opens
-//! the pause menu only to heal), so a story beat that waits on one reads as
+//! the pause menu only to heal or burn an Incense), so a story beat that waits on one reads as
 //! a stall at that beat. The route follows `0x3F` scene changes and FMV hand-offs; a
 //! transport an entry script spawns on arrival is a missing edge (see
 //! `docs/tooling/full-game-ladder.md`).
@@ -3699,8 +3699,10 @@ fn pad_walk(
         return Ok(Walk::Arrived);
     }
     // A player low on HP heals before setting out, not after the next
-    // encounter has already rolled.
+    // encounter has already rolled - or, with nothing to heal with, burns an
+    // Incense so the next encounter never rolls.
     pad_field_heal(session, 500);
+    pad_field_repel(session, 500);
     if std::env::var_os("LEGAIA_FGL_WALK_DEBUG").is_some() {
         let w = &session.host.world;
         eprintln!(
@@ -3861,6 +3863,7 @@ fn pad_walk(
                 return Err(format!("battle on the walk to {goal:?}: {r:?}"));
             }
             pad_field_heal(session, 500);
+            pad_field_repel(session, 500);
             planned_from = None;
             path.clear();
             since = 0;
@@ -4311,6 +4314,119 @@ fn pad_field_heal(session: &mut BootSession, threshold: u32) -> usize {
         );
     }
     used
+}
+
+/// Burn an Incense with the pad, as a player does who is too hurt to survive
+/// the next encounter and has nothing to heal with: when the weakest member
+/// is still below `threshold` per-mille after [`pad_field_heal`], the scene
+/// rolls encounters, the bag holds an Incense (`0x8A`) and its window
+/// (`_DAT_8007B600`) has run out, Start opens the pause menu and Items, Use,
+/// the Incense row and the confirm's Yes commit one. Retail's class-`0x82`
+/// applier skips the whole region roll while the window is open, so one use
+/// buys `0x40` walk-regen ticks (`0x800` walking vsyncs) with no encounter at
+/// all, whatever the rand stream deals (see `field-menu.md`, the Incense
+/// route `FUN_801D8D94`). Returns whether one was used.
+fn pad_field_repel(session: &mut BootSession, threshold: u32) -> bool {
+    use legaia_engine_core::field_menu::FieldMenuRow;
+    use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+    use legaia_engine_core::inventory_use::InventoryUseState;
+    use legaia_engine_core::pause_screens::{INCENSE_ITEM_ID, PauseItemsFocus};
+    let w = &session.host.world;
+    if !walking(session)
+        || !released(session)
+        || party_hp_permille(session) >= threshold
+        || !w.scene_can_roll_encounters()
+        || w.locomotion.walk_regen_window != 0
+        || !w
+            .party
+            .inventory
+            .iter()
+            .any(|(&id, &c)| id == INCENSE_ITEM_ID && c > 0)
+    {
+        return false;
+    }
+    tap_pad(session, PadButton::Start.mask());
+    if session.field_menu.is_none() {
+        return false;
+    }
+    let items_row = FieldMenuRow::Items.index();
+    let mut used = false;
+    for _ in 0..200 {
+        let Some(menu) = session.field_menu.as_ref() else {
+            break;
+        };
+        let pad = match session.field_menu_sub.as_ref() {
+            None => match menu.phase() {
+                legaia_engine_core::field_menu::FieldMenuPhase::Browsing { cursor } => {
+                    if used {
+                        PadButton::Circle.mask()
+                    } else if cursor != items_row {
+                        PadButton::Down.mask()
+                    } else {
+                        PadButton::Cross.mask()
+                    }
+                }
+                _ => 0,
+            },
+            Some(FieldMenuSubsession::Items(p)) => {
+                // The hand walks every bag row; an Incense row routes to its
+                // own confirm, not through the usable-in-context filter.
+                let want = p.rows.iter().position(|r| r.id == INCENSE_ITEM_ID);
+                if p.focus == PauseItemsFocus::SpecialRoute {
+                    // The confirm opens with its cursor on Yes.
+                    used = true;
+                    PadButton::Cross.mask()
+                } else {
+                    match (p.focus, &p.inner.state, want) {
+                        _ if used => PadButton::Circle.mask(),
+                        // The Use list's filter is built on entering it.
+                        (PauseItemsFocus::Command, _, _) => {
+                            if p.command_cursor == 0 {
+                                PadButton::Cross.mask()
+                            } else {
+                                PadButton::Up.mask()
+                            }
+                        }
+                        (PauseItemsFocus::List, InventoryUseState::Browsing { .. }, Some(k)) => {
+                            let cursor = p.list_cursor();
+                            if cursor < k {
+                                PadButton::Down.mask()
+                            } else if cursor > k {
+                                PadButton::Up.mask()
+                            } else {
+                                PadButton::Cross.mask()
+                            }
+                        }
+                        _ => PadButton::Circle.mask(),
+                    }
+                }
+            }
+            Some(_) => PadButton::Circle.mask(),
+        };
+        if pad == 0 {
+            let _ = session.tick();
+            continue;
+        }
+        tap_pad(session, pad);
+    }
+    for _ in 0..16 {
+        if session.field_menu.is_none() {
+            break;
+        }
+        tap_pad(session, PadButton::Circle.mask());
+    }
+    let window = session.host.world.locomotion.walk_regen_window;
+    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+        eprintln!(
+            "    [repel] incense committed {used}; window now {window}; menu {}",
+            if session.field_menu.is_some() {
+                "STILL OPEN"
+            } else {
+                "closed"
+            }
+        );
+    }
+    used && window > 0
 }
 
 thread_local! {

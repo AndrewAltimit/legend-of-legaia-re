@@ -77,7 +77,7 @@ anchor = { kind = "state", label = "chest_open_trace_pcsx", fingerprint = "08327
 id = "drake_castle"
 scene = "dolk"
 reach = "scene"
-anchor = { kind = "state", label = "player_steal_skeleton_pre", fingerprint = "4dda3e8b2b9099024785896db03425a53c98bb9204ee910400802d4063612b8d" }
+anchor = { kind = "state", label = "player_steal_skeleton_banner", fingerprint = "1acdd38d71671c6d3eaa5e68999dd558d8d58ce61e8876526f010aeed6e7ed00" }
 
 [[milestone]]
 id = "rim_elm_restored"

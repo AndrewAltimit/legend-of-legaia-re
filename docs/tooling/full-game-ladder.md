@@ -245,6 +245,11 @@ The pad hand's beats are the seated tier's, played as a player plays them:
 - before a boss, and whenever the weakest member is below half HP, the hand
   heals through the pause menu: Start, Items, Use, the first HP restorative,
   the weakest member, Circle back out;
+- still below half HP after that, in a scene that rolls encounters, with an
+  Incense (`0x8A`) in the bag and its window `_DAT_8007B600` run out, the
+  hand burns one: Start, Items, Use, the Incense row, Yes. The region roll
+  skips while the window is open, so one use is `0x40` walk-regen ticks
+  (`0x800` walking vsyncs) with no encounter, whatever the stream deals;
 - leaving a scene that rolls no encounters with the weakest member still
   below half HP and nothing in the bag to heal it, the hand **rests**: it
   walks onto a live walk-on band whose partition-2 record runs the `4C 82`
@@ -442,19 +447,21 @@ first command, and the fight's opening formation and HP read off the
 fragility, not a regression.
 
 `LEGAIA_FGL_RNG_SEED` measures that fragility directly: run the segment
-under a spread of seeds and count the wipes. `rim_elm_restored` is the
-standing case. Its seed, `player_steal_skeleton_pre`, is a mid-battle state
-whose SC block holds Vahn alone at 17 of 219 HP with an empty bag, in a
-mist-era `dolk` whose every region rolls (`0x142` clear). With 17 HP one
-caught Run against a pair is a wipe, and the escape roll weighs the enemy
-side's summed SPD against one member's, so a pair catches him often. Over
-the default stream and seeds 1..20, walking straight out clears the pad
-tier on 18 of 21 hands; the default one is among the three that wipe on the
-first `map01` pair. The one rest in reach, `dolk` P2[9] (the bed behind the
-inn's stair door), is the wrong answer: the walk to it crosses the castle's
-rolling regions at 17 HP and wiped on 14 of 21. Nothing on that route
-heals without a fight first, so the segment's pad tier is a draw on this
-anchor, not a defect to fix in the hand.
+under a spread of seeds and count the wipes. `rim_elm_restored` shows
+what such a fragility usually is: a property of the anchor rather than of
+the hand. The segment seeds from `player_steal_skeleton_banner`: Vahn alone
+at 17 of 219 HP, mid-battle in a mist-era `dolk` whose every region rolls
+(`0x142` clear), on the frame after his killing blow stole an **Incense**
+from the skeleton. Its sibling `player_steal_skeleton_pre`, the frame
+before the steal resolves, holds the same SC block without the Incense, and
+seeded from it the pad tier is a draw: a pair of `map01` monsters
+out-speeds a 17-HP fleer and deals more than 17 in one round whether the
+Run is caught or not. Walking straight out clears on 23 of 30 dealt
+streams, fighting every encounter instead on 13 of 21, and the one rest in
+reach, `dolk` P2[9] (the bed behind the inn's stair door), wipes on 14 of
+21 on the way there. From the post-steal frame the hand burns the Incense
+before it sets out, no region rolls between `dolk` and Rim Elm, and the
+pad tier clears on the default stream and on seeds 1..40 alike.
 
 ## Seeding
 
@@ -507,8 +514,9 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   alone never picks the controller. A crossing whose beat changed scene lets
   the landing's arrival run before the position is read.
 - The pad hand heals only with items it already carries and with a free
-  or affordable rest in a scene that rolls no encounters; it does not buy
-  items or use magic.
+  or affordable rest in a scene that rolls no encounters, and wards off
+  encounters only with an Incense it carries; it does not buy items or use
+  magic.
 - Routes follow `0x3F` names and FMV hand-offs, and prefer walk-on bands. A
   transport an entry script spawns on a story flag (`map01`'s P1[0] spawns
   the P2[31] / P2[32] flights on `0x2C3` / `0x2C5`; `station`'s spawns the
