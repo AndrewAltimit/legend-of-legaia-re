@@ -3880,6 +3880,19 @@ never meets the log buffer (the overworld sea backdrop, which draws first; a
 replay script no page loads). It runs in the pre-commit hook when `site/` is
 touched and in CI.
 
+### An effect billboard's semi-transparency enable
+
+Retail sends every effect-pool child as prim code `0x2E`, a textured quad
+with the GP0 semi-transparency bit set; the atlas entry stores only a
+one-byte page, so the port's prim-ABE enable (TSB bit 15) has to be forced on
+by whoever builds the quad. The native builder did; the page's battle and
+field FX builders pushed the bare page, so no billboard triangle reached the
+page's blend pass and every effect texel drew opaque - the battle's landing
+dust (ABR 3, `B + F/4` at the envelope's low brightness, a faint haze on the
+native window) sat on the floor as dark solid puffs. All three builders now
+take `EffectSprite::packet_tsb`, and a `SIM_PAIRS` row in
+`check-ui-host-drift.py` pins the call at each.
+
 ### The intro emitter stepped per draw
 
 The tile shatter ran about two ticks ahead on the page: on the tick the

@@ -217,6 +217,31 @@ pub struct EffectSprite {
     pub age01: f32,
 }
 
+impl EffectSprite {
+    /// The TSB vertex word every corner of this sprite's quad carries: the
+    /// atlas page byte with the port's prim semi-transparency enable (bit 15,
+    /// [`legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT`]) forced on.
+    ///
+    /// The enable is unconditional because retail's is: every effect child
+    /// goes out as prim code `0x2E`, a flat textured quad with the GP0
+    /// command's semi-transparency bit set, and nothing in the atlas entry
+    /// carries it - the page is one byte, so a host that pushes it verbatim
+    /// draws the whole effect system opaque (the battle's hit dust as dark
+    /// solid puffs on the floor, where retail's ABR-3 `B + F/4` at the
+    /// envelope's low brightness is a faint haze). Every host builds its
+    /// billboards through this one word.
+    ///
+    /// REF: FUN_801E0088
+    pub fn packet_tsb(&self) -> u16 {
+        effect_sprite_tsb(self.page)
+    }
+}
+
+/// [`EffectSprite::packet_tsb`] for a bare page byte.
+pub fn effect_sprite_tsb(page: u16) -> u16 {
+    legaia_tmd::mesh::pack_tsb_semi(page, true)
+}
+
 /// One dev-spawned synthetic effect ([`World::spawn_debug_effect`] /
 /// [`World::spawn_debug_effect_model`]) - an engine-side visualization aid,
 /// **not** a retail pool slot. Lives outside the effect pool so the faithful
@@ -1245,4 +1270,33 @@ pub struct CameraState {
     /// the mover inside the op and a `4C CD` later in the same slice already
     /// sees it.
     pub glide_frames: i32,
+}
+
+#[cfg(test)]
+mod effect_sprite_tests {
+    use super::EffectSprite;
+    use legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT;
+
+    /// Every host's billboard corner takes the prim-ABE enable whatever the
+    /// atlas page byte is, and keeps the page itself (ABR included) intact.
+    #[test]
+    fn packet_tsb_forces_the_prim_semi_enable() {
+        for page in [0x25u16, 0x66, 0x00, 0xFF] {
+            let s = EffectSprite {
+                world_pos: [0.0; 3],
+                size: [1.0; 2],
+                uv: [0; 2],
+                uv_size: [1; 2],
+                page,
+                clut: 0,
+                brightness: 0x80,
+                flip_h: false,
+                flip_v: false,
+                age01: 0.0,
+            };
+            let tsb = s.packet_tsb();
+            assert_ne!(tsb & TSB_SEMI_TRANSPARENT_BIT, 0, "page {page:#04x}");
+            assert_eq!(tsb & !TSB_SEMI_TRANSPARENT_BIT, page, "page {page:#04x}");
+        }
+    }
 }

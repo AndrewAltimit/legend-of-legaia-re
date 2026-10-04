@@ -16,20 +16,6 @@ pub(crate) type LineGeometry = (Vec<[f32; 3]>, Vec<[u8; 4]>, Vec<u32>);
 /// so the identity scale draws it faithfully.
 const EFFECT_TEXEL_WORLD: f32 = 1.0;
 
-/// The TSB vertex word one effect billboard corner carries: the sprite
-/// atlas's texture-page byte with the port's prim semi-transparency enable
-/// (bit 15) forced on.
-///
-/// The enable is unconditional because retail's is: every effect child goes
-/// out as prim code `0x2E`, a flat textured quad with the GP0 command's
-/// semi-transparency bit set. Nothing in the atlas entry carries it - the
-/// page byte is at most `0xFF` - so a builder that pushes the page verbatim
-/// silently draws the whole effect system opaque. See
-/// [`effect_billboard_mesh`] for what that looked like on screen.
-fn effect_sprite_tsb(page: u16) -> u16 {
-    legaia_tmd::mesh::pack_tsb_semi(page, true)
-}
-
 /// The four world-space corners of a camera-facing billboard for `sprite`,
 /// using the camera's world `right`/`up` basis. Order: TL, TR, BL, BR.
 ///
@@ -129,7 +115,7 @@ pub(crate) fn effect_billboard_mesh(
         for (corner, uv) in corners.iter().zip(corner_uv) {
             positions.push(corner.to_array());
             uvs.push(uv);
-            cba_tsb.push([s.clut, effect_sprite_tsb(s.page)]);
+            cba_tsb.push([s.clut, s.packet_tsb()]);
             normals.push(face);
             colors.push([s.brightness; 3]);
         }
@@ -298,7 +284,7 @@ pub(crate) fn scene_viewport_for(
 
 #[cfg(test)]
 mod effect_billboard_tests {
-    use super::effect_sprite_tsb;
+    use legaia_engine_core::world::effect_sprite_tsb;
     use legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT;
 
     /// Retail's per-child packet is prim code `0x2E` - textured **and**

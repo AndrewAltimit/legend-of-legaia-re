@@ -560,6 +560,23 @@ NATIVE_TITLE_SAVE = (
 
 SIM_PAIRS: list[dict[str, object]] = [
     {
+        "what": "effect-pool billboard TSB word, native vs play page (battle "
+        "and field FX) - retail sends every effect child as the semi-"
+        "transparent prim code 0x2E, which the atlas page byte cannot carry; "
+        "the page pushed the bare page, so every hit-dust / flame sprite drew "
+        "opaque. Each billboard builder must take `EffectSprite::packet_tsb`",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/bin/legaia-engine/window/geometry.rs",
+                "effect_billboard_mesh",
+            ),
+            "web_battle": ("crates/web-viewer/src/play_battle_fx.rs", "build_battle_fx"),
+            "web_field": ("crates/web-viewer/src/play_battle_fx.rs", "build_field_fx"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["packet_tsb"],
+    },
+    {
         "what": "volumetric ground fog brightness, native vs play page - the "
         "bank may not outshine the battle stage it lies on, so each host's "
         "battle entry measures the stage shell it built through the one "

@@ -401,7 +401,10 @@ impl LegaiaRuntime {
             }
             let corners = sprite_corners(&sprite, right, up);
             let corner_uv = [[u0, v0], [u1, v0], [u0, v1], [u1, v1]];
-            let ct = [sprite.clut, sprite.page];
+            // The prim-ABE enable rides bit 15 (`EffectSprite::packet_tsb`,
+            // retail's semi-transparent prim code `0x2E`); the bare page drew
+            // every effect texel opaque.
+            let ct = [sprite.clut, sprite.packet_tsb()];
             // The retail pass-2 brightness envelope writes `r = g = b =
             // brightness` on the GPU packet, and the page's textured branch
             // now applies retail's `texel * colour / 128`, so the envelope
@@ -709,7 +712,10 @@ impl LegaiaRuntime {
                 }
             }
             let corner_uv = [[u0, v0], [u1, v0], [u0, v1], [u1, v1]];
-            let ct = [sprite.clut, sprite.page];
+            // The prim-ABE enable rides bit 15 (`EffectSprite::packet_tsb`,
+            // retail's semi-transparent prim code `0x2E`); the bare page drew
+            // every effect texel opaque.
+            let ct = [sprite.clut, sprite.packet_tsb()];
             let base = (frame.positions.len() / 3) as u32;
             let b = sprite.brightness;
             for (corner, uv) in corners.iter().zip(corner_uv) {

@@ -89,9 +89,11 @@ system rasterises opaque. Flame CLUT row 474 is a fire ramp whose hot end (`0xC7
 `(248, 200, 136)`) is a pale tan; drawn additively those texels are a glow over a dark
 arena, and drawn opaque they are solid tan blobs. Index `0` is `0x0000` and discards
 either way, so the blobs keep a puff-shaped silhouette - which is what made them read as
-stray geometry rather than as mis-blended sprites. Port: `effect_sprite_tsb` in the
-native window's `geometry.rs`, pinned by
-`every_effect_billboard_corner_is_semi_transparent`.
+stray geometry rather than as mis-blended sprites. Port: `EffectSprite::packet_tsb` in
+`engine-core` (`world/types.rs`), which the native window's billboard builder and the
+play page's battle and field FX builders all call, pinned by
+`packet_tsb_forces_the_prim_semi_enable` and a `SIM_PAIRS` row in
+`check-ui-host-drift.py`.
 
 ### The three render-mode-4 emitters, and which one the disc uses
 
