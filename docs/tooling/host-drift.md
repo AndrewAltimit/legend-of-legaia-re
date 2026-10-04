@@ -1984,6 +1984,19 @@ construction: the native renderer samples its depth target in a pass split out
 of the scene pass, the page blits its default framebuffer's depth into a
 texture - same inversion of the frame matrix's depth mapping on both.
 
+#### A battle backdrop that changes with the last step, not with the host
+
+Both hosts pick the battle backdrop through one kernel,
+`SceneHost::battle_stage_entry`: the stage variant the region reader stored on
+the last field step (`_DAT_8007BD60`), else the scene's default stage stream.
+So a fight forced before the player has taken a step (`--battle`, the page's
+`debug_force_battle` at spawn) draws the default stream, and one forced after a
+walk draws the region's variant. In `town0b` entered directly (no story flags)
+those are a night stage (entry 15) and a daylit one (variant 3, entry 18): the
+page's "daytime backdrop" was a fight forced after a walk, and the native window
+draws the same daylit stage under `LEGAIA_BATTLE_STAGE=3`. Compare two hosts'
+battles only from the same region state.
+
 #### The field screen-effect wash had a producer and no consumer
 
 The field VM's op `0x34` sub-0 arm spawns a colour-tween actor
