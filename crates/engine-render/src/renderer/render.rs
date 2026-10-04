@@ -181,6 +181,12 @@ impl Renderer {
             // Mesh paths use the depth attachment; texture/clear paths skip it
             // (it would just sit unused, but keeping the depth-stencil-attachment
             // optional avoids needing wgpu to validate it for 2D-only frames).
+            // The volumetric ground fog splits the scene pass in two around a
+            // fog pass of its own (it samples the scene depth, which an open
+            // pass that writes depth cannot). With no bank staged the frame
+            // is the single pass it always was.
+            let fog_split =
+                self.fog_volume_active.get() && matches!(target, RenderTarget::Scene(_));
             let depth_attachment = matches!(
                 target,
                 RenderTarget::Mesh { .. }
@@ -196,7 +202,13 @@ impl Renderer {
                 depth_ops: Some(wgpu::Operations {
                     // Reversed-Z: 0.0 is the far plane (see `reverse_z`).
                     load: wgpu::LoadOp::Clear(DEPTH_CLEAR),
-                    store: wgpu::StoreOp::Discard,
+                    // Kept when the ground-fog pass will sample it after the
+                    // 3D draws; discarded otherwise, as it always was.
+                    store: if fog_split {
+                        wgpu::StoreOp::Store
+                    } else {
+                        wgpu::StoreOp::Discard
+                    },
                 }),
                 stencil_ops: None,
             });
@@ -486,7 +498,35 @@ impl Renderer {
                     // The volumetric ground-fog enhancement: after every 3D
                     // draw (depth-tested against them, writing none), before
                     // every screen-space layer and the HUD.
-                    self.draw_fog_volume(&mut rp);
+                    if fog_split {
+                        drop(rp);
+                        self.encode_fog_volume_pass(&mut enc, view, scene_vp);
+                        rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                            label: Some("legaia frame pass (after fog)"),
+                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                view,
+                                depth_slice: None,
+                                resolve_target: None,
+                                ops: wgpu::Operations {
+                                    load: wgpu::LoadOp::Load,
+                                    store: wgpu::StoreOp::Store,
+                                },
+                            })],
+                            depth_stencil_attachment: Some(
+                                wgpu::RenderPassDepthStencilAttachment {
+                                    view: &self.depth_view,
+                                    depth_ops: Some(wgpu::Operations {
+                                        load: wgpu::LoadOp::Load,
+                                        store: wgpu::StoreOp::Discard,
+                                    }),
+                                    stencil_ops: None,
+                                },
+                            ),
+                            occlusion_query_set: None,
+                            timestamp_writes: None,
+                        });
+                        set_scene_vp(&mut rp);
+                    }
                     // The composited prims that sit UNDER the 2D overlays
                     // (`SceneWithScreenPrims::under_overlay`): the field
                     // attached-light pools, which retail draws beneath the

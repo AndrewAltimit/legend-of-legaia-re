@@ -49,8 +49,12 @@ pub struct FogVolumeDraw<'a> {
     pub layers: u32,
     /// Accumulated drift, world units.
     pub drift: [f32; 2],
-    /// `FOG_SHADER_CONSTANTS`.
+    /// `FogSpace::shader_constants`.
     pub shader_constants: [f32; 4],
+    /// View-depth span (clip `w` units of `world_to_clip`) over which a
+    /// sheet fades into the scene surface behind it - the soft
+    /// intersection.
+    pub soft_distance: f32,
 }
 
 /// The sheet mesh's triangle list for `dim` quads a side.
@@ -79,26 +83,34 @@ struct FogU {
     color: vec4<f32>,
     params: vec4<f32>,
     consts: vec4<f32>,
+    depth: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: FogU;
 @group(0) @binding(1) var dens: texture_2d<f32>;
 @group(0) @binding(2) var samp: sampler;
+@group(1) @binding(0) var scene_depth: texture_depth_2d;
 
 struct VOut {
     @builtin(position) pos: vec4<f32>,
     @location(0) xz: vec2<f32>,
     @location(1) layer: f32,
+    @location(2) clip_w: f32,
+    @location(3) world: vec3<f32>,
 };
 
 @vertex
 fn vs_main(@location(0) p: vec3<f32>, @builtin(instance_index) inst: u32) -> VOut {
-    let t = (f32(inst) + 0.5) / u.params.y;
-    // Retail Y-down: the sheets stack upward from just above the floor.
-    let y = p.y - 4.0 - t * u.params.x;
+    let s = (f32(inst) + 0.5) / u.params.y;
+    // Sheets packed toward the floor (quadratic spacing); retail Y-down,
+    // so they stack upward from just above it.
+    let t = s * s;
+    let y = p.y - 2.0 - t * u.params.x;
     var o: VOut;
     o.pos = u.m * vec4<f32>(p.x, y, p.z, 1.0);
     o.xz = p.xz;
     o.layer = t;
+    o.clip_w = o.pos.w;
+    o.world = vec3<f32>(p.x, y, p.z);
     return o;
 }
 
@@ -125,18 +137,25 @@ fn fog_noise(p: vec2<f32>) -> f32 {
 
 @fragment
 fn fs_main(in: VOut) -> @location(0) vec4<f32> {
-    let drift = u.params.zw;
     let t = in.layer;
-    let fine = u.consts.x;
-    let bank = u.consts.y;
-    let n1 = fog_noise((in.xz - drift) * fine + vec2<f32>(t * 7.31, t * 3.17));
-    let n2 = fog_noise((in.xz - drift * 0.6) * (fine * 2.3) + vec2<f32>(11.7, 5.3));
-    let nb = fog_noise((in.xz - drift * 0.35) * bank + vec2<f32>(3.1, 8.9));
-    // The bank's top undulates with the slow noise; the profile thins it
-    // toward that top.
-    let top = 0.55 + 0.65 * nb;
-    let profile = pow(clamp(1.0 - t / top, 0.0, 1.0), u.consts.w);
-    let shape = clamp(0.35 + 0.9 * nb, 0.0, 1.0) * (0.35 + 0.65 * (0.65 * n1 + 0.35 * n2));
+    let q = in.xz * u.consts.x;
+    let dq = u.params.zw * u.consts.x;
+    // Domain-warped three-octave wisps, each octave drifting at its own rate.
+    let w = vec2<f32>(
+        fog_noise(q * 0.45 + vec2<f32>(1.7, 9.2) - dq * 0.3),
+        fog_noise(q * 0.45 + vec2<f32>(8.3, 2.8) + dq * 0.25),
+    ) - vec2<f32>(0.5);
+    let p = q + w * 1.8;
+    let f = 0.55 * fog_noise(p - dq)
+        + 0.30 * fog_noise(p * 2.07 - dq * 1.7 + vec2<f32>(t * 3.1, 0.0))
+        + 0.15 * fog_noise(p * 4.31 - dq * 2.6 + vec2<f32>(0.0, t * 5.7));
+    let nb = fog_noise((in.xz - u.params.zw * 0.4) * u.consts.y + vec2<f32>(3.1, 8.9));
+    // Banks: bright crests and clear gaps, not a uniform wash.
+    let crest = smoothstep(0.30, 0.72, f * 0.65 + nb * 0.55);
+    // Each crest has its own soft top; the profile thins hard toward it.
+    let top = 0.35 + 0.65 * crest;
+    let h = clamp(1.0 - t / top, 0.0, 1.0);
+    let profile = pow(h, u.consts.w);
     // Disturbance: the sim grid's density, undisturbed outside it.
     let uv = (in.xz - u.sim.xy) / (u.sim.z * u.sim.w);
     var d = 1.0;
@@ -148,8 +167,26 @@ fn fs_main(in: VOut) -> @location(0) vec4<f32> {
     let centre = u.mesh.xy + vec2<f32>(half_extent);
     let r = length(in.xz - centre) / half_extent;
     let edge = 1.0 - smoothstep(0.55, 0.95, r);
-    let a = u.color.a * d * profile * shape * edge * u.consts.z / u.params.y;
-    let rgb = u.color.rgb * (0.9 + 0.2 * n1);
+    // Soft intersection: fade a sheet as it nears the scene surface behind
+    // it, in view depth (the scene's NDC depth back through the camera's
+    // own depth mapping `ndc = A + B / w`).
+    let ds = textureLoad(scene_depth, vec2<i32>(in.pos.xy), 0);
+    let den = ds - u.depth.x;
+    var ws = 1.0e9;
+    if (abs(den) > 1.0e-7) {
+        let cand = u.depth.y / den;
+        if (cand > 0.0) {
+            ws = cand;
+        }
+    }
+    let soft = clamp((ws - in.clip_w) / u.depth.z, 0.0, 1.0);
+    // A sheet draped down a cliff between two floor tiers is not a bank: fade
+    // it by the surface's steepness (its screen-space normal).
+    let nrm = cross(dpdx(in.world), dpdy(in.world));
+    let flat_ = abs(nrm.y) / max(length(nrm), 1.0e-6);
+    let level = smoothstep(0.55, 0.85, flat_);
+    let a = u.color.a * d * crest * profile * edge * soft * level * u.consts.z / u.params.y;
+    let rgb = u.color.rgb * (0.75 + 0.5 * f);
     return vec4<f32>(rgb, clamp(a, 0.0, 1.0));
 }
 "#;
@@ -164,11 +201,13 @@ struct FogUniforms {
     color: [f32; 4],
     params: [f32; 4],
     consts: [f32; 4],
+    depth: [f32; 4],
 }
 
 /// The pass's GPU resources.
 pub(crate) struct FogVolumePass {
     pipeline: wgpu::RenderPipeline,
+    depth_bgl: wgpu::BindGroupLayout,
     ubuf: wgpu::Buffer,
     tex: wgpu::Texture,
     bg: wgpu::BindGroup,
@@ -270,9 +309,22 @@ impl FogVolumePass {
                 },
             ],
         });
+        let depth_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("fog volume scene depth bgl"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Depth,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            }],
+        });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("fog volume layout"),
-            bind_group_layouts: &[&bgl],
+            bind_group_layouts: &[&bgl, &depth_bgl],
             push_constant_ranges: &[],
         });
         let attrs = [wgpu::VertexAttribute {
@@ -348,6 +400,7 @@ impl FogVolumePass {
         });
         Self {
             pipeline,
+            depth_bgl,
             ubuf,
             tex,
             bg,
@@ -385,8 +438,10 @@ impl FogVolumePass {
                 depth_or_array_layers: 1,
             },
         );
+        let m = reverse_z(d.world_to_clip);
+        let (a, b) = depth_mapping(m);
         let u = FogUniforms {
-            m: reverse_z(d.world_to_clip).to_cols_array_2d(),
+            m: m.to_cols_array_2d(),
             sim: [
                 d.sim_origin[0],
                 d.sim_origin[1],
@@ -402,14 +457,16 @@ impl FogVolumePass {
             color: [d.color[0], d.color[1], d.color[2], d.opacity],
             params: [d.height, d.layers as f32, d.drift[0], d.drift[1]],
             consts: d.shader_constants,
+            depth: [a, b, d.soft_distance.max(1.0e-3), 0.0],
         };
         queue.write_buffer(&self.ubuf, 0, bytemuck::cast_slice(&[u]));
         self.layers = d.layers;
     }
 
-    pub(super) fn draw(&self, rp: &mut wgpu::RenderPass<'_>) {
+    pub(super) fn draw(&self, rp: &mut wgpu::RenderPass<'_>, depth_bg: &wgpu::BindGroup) {
         rp.set_pipeline(&self.pipeline);
         rp.set_bind_group(0, &self.bg, &[]);
+        rp.set_bind_group(1, depth_bg, &[]);
         rp.set_vertex_buffer(0, self.vbuf.slice(..));
         rp.set_index_buffer(self.ibuf.slice(..), wgpu::IndexFormat::Uint32);
         rp.draw_indexed(0..self.index_count, 0, 0..self.layers);
@@ -453,15 +510,70 @@ impl Renderer {
         self.fog_volume_active.set(true);
     }
 
-    /// Draw the staged bank into the open scene pass, if one is staged.
-    pub(super) fn draw_fog_volume(&self, rp: &mut wgpu::RenderPass<'_>) {
-        if !self.fog_volume_active.get() {
+    /// Encode the staged bank as a pass of its own between the two halves
+    /// of the scene pass: the colour target loaded, the scene depth attached
+    /// **read-only** (the sheets still depth-test against it) and bound as a
+    /// texture at the same time, which is what the soft intersection reads.
+    pub(super) fn encode_fog_volume_pass(
+        &self,
+        enc: &mut wgpu::CommandEncoder,
+        color: &wgpu::TextureView,
+        scene_vp: Option<(u32, u32, u32, u32)>,
+    ) {
+        let slot = self.fog_volume_pass.borrow();
+        let Some(pass) = slot.as_ref() else {
             return;
+        };
+        let depth_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("fog volume scene depth bg"),
+            layout: &pass.depth_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&self.depth_view),
+            }],
+        });
+        let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("fog volume pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: color,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &self.depth_view,
+                depth_ops: None,
+                stencil_ops: None,
+            }),
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        });
+        if let Some((x, y, w, h)) = scene_vp {
+            rp.set_viewport(x as f32, y as f32, w as f32, h as f32, 0.0, 1.0);
         }
-        if let Some(pass) = self.fog_volume_pass.borrow().as_ref() {
-            pass.draw(rp);
-        }
+        pass.draw(&mut rp, &depth_bg);
     }
+}
+
+/// The camera's depth mapping, `ndc_z = A + B / clip_w`, read off the
+/// matrix's third and fourth rows (`z = A * w + B` for a perspective
+/// projection: the z row is the w row scaled, plus a constant). The soft
+/// intersection inverts it to turn a stored scene depth back into view
+/// depth. A degenerate (non-perspective) matrix maps to `(A, 0)`, which the
+/// shader reads as "infinitely far" - no fade.
+fn depth_mapping(m: Mat4) -> (f32, f32) {
+    let r = m.transpose();
+    let z = r.z_axis;
+    let w = r.w_axis;
+    let ww = w.x * w.x + w.y * w.y + w.z * w.z;
+    if ww <= 1.0e-12 {
+        return (0.0, 0.0);
+    }
+    let a = (z.x * w.x + z.y * w.y + z.z * w.z) / ww;
+    (a, z.w - a * w.w)
 }
 
 #[cfg(test)]
@@ -484,10 +596,10 @@ mod tests {
     }
 
     /// The uniform block is the size the WGSL struct declares
-    /// (a mat4 and five vec4s).
+    /// (a mat4 and six vec4s).
     #[test]
     fn uniform_block_matches_the_wgsl_struct() {
-        assert_eq!(std::mem::size_of::<FogUniforms>(), 64 + 5 * 16);
+        assert_eq!(std::mem::size_of::<FogUniforms>(), 64 + 6 * 16);
     }
 
     #[test]
@@ -495,5 +607,31 @@ mod tests {
         let idx = mesh_indices(3);
         assert_eq!(idx.len(), 3 * 3 * 6);
         assert_eq!(*idx.iter().max().unwrap(), 15);
+    }
+}
+
+#[cfg(test)]
+mod depth_mapping_tests {
+    use super::*;
+
+    #[test]
+    fn inverts_a_reversed_perspective() {
+        let proj = reverse_z(Mat4::perspective_rh(1.0, 1.3, 8.0, 50_000.0));
+        let view = Mat4::look_at_rh(
+            glam::Vec3::new(100.0, -400.0, 900.0),
+            glam::Vec3::ZERO,
+            glam::Vec3::Y,
+        );
+        let m = proj * view;
+        let (a, b) = depth_mapping(m);
+        for p in [
+            glam::Vec4::new(0.0, 0.0, 0.0, 1.0),
+            glam::Vec4::new(300.0, 50.0, -2000.0, 1.0),
+        ] {
+            let c = m * p;
+            let ndc = c.z / c.w;
+            let w = b / (ndc - a);
+            assert!((w - c.w).abs() / c.w < 1.0e-3, "{w} vs {}", c.w);
+        }
     }
 }

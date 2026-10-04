@@ -58,7 +58,10 @@ pub(super) fn create_depth_view(
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: DEPTH_FORMAT,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        // Sampled by the volumetric ground-fog pass's soft intersection
+        // (`renderer/fog_volume.rs`), which reads the scene's depth in a
+        // pass of its own with the attachment held read-only.
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         view_formats: &[],
     });
     tex.create_view(&wgpu::TextureViewDescriptor::default())

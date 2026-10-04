@@ -88,7 +88,7 @@ const STRENGTH_STEP: f32 = 1.0 / 90.0;
 /// [2] per-sheet alpha gain (the summed opacity of all sheets at the floor)
 /// [3] vertical profile exponent
 /// ```
-pub const FOG_SHADER_CONSTANTS: [f32; 4] = [1.0 / 360.0, 1.0 / 1300.0, 5.0, 1.2];
+pub const FOG_SHADER_CONSTANTS: [f32; 4] = [1.0 / 380.0, 1.0 / 1400.0, 6.0, 2.2];
 
 /// The coordinate space a bank lives in: the field's world units, or the
 /// battle stage's raw units (the frame both battle hosts draw the stage
@@ -130,7 +130,34 @@ impl FogSpace {
     pub fn shader_constants(self) -> [f32; 4] {
         let k = self.height_scale();
         let c = FOG_SHADER_CONSTANTS;
-        [c[0] / k, c[1] / k, c[2], c[3]]
+        // A battle's low, close framing looks through the bank at a grazing
+        // angle across few sheets' worth of crest; it takes a larger gain to
+        // read as the thick layer the field shows from above.
+        let gain = match self {
+            FogSpace::Field => 1.0,
+            FogSpace::Battle => 1.8,
+        };
+        [c[0] / k, c[1] / k, c[2] * gain, c[3]]
+    }
+
+    /// Opacity relative to a style's: a battle is framed low and close on
+    /// the fighters' legs, where the concept is a thick swirling layer.
+    pub fn density_scale(self) -> f32 {
+        match self {
+            FogSpace::Field => 1.0,
+            FogSpace::Battle => 2.2,
+        }
+    }
+
+    /// View-depth span (clip `w` of the host's matrix for this space) over
+    /// which a sheet fades into the surface behind it - the soft
+    /// intersection that keeps walls, ledges and legs from cutting it with
+    /// a hard line. The battle matrix carries the stage's world scale.
+    pub fn soft_distance(self) -> f32 {
+        match self {
+            FogSpace::Field => 50.0,
+            FogSpace::Battle => 160.0,
+        }
     }
 
     pub fn height_scale(self) -> f32 {
@@ -167,8 +194,8 @@ const SCENE_STYLES: &[(&str, FogStyle)] = &[
         "town0b",
         FogStyle {
             color: [0.70, 0.74, 0.88],
-            density: 0.55,
-            height: 120.0,
+            density: 0.8,
+            height: 95.0,
             wind: [0.55, 0.22],
         },
     ),
@@ -176,8 +203,8 @@ const SCENE_STYLES: &[(&str, FogStyle)] = &[
         "dolk",
         FogStyle {
             color: [0.52, 0.49, 0.60],
-            density: 0.50,
-            height: 130.0,
+            density: 0.75,
+            height: 85.0,
             wind: [0.35, -0.45],
         },
     ),
@@ -185,8 +212,8 @@ const SCENE_STYLES: &[(&str, FogStyle)] = &[
         "vell",
         FogStyle {
             color: [0.56, 0.62, 0.58],
-            density: 0.42,
-            height: 100.0,
+            density: 0.62,
+            height: 85.0,
             wind: [0.40, 0.30],
         },
     ),
@@ -194,8 +221,8 @@ const SCENE_STYLES: &[(&str, FogStyle)] = &[
         "vozz",
         FogStyle {
             color: [0.56, 0.62, 0.58],
-            density: 0.42,
-            height: 100.0,
+            density: 0.62,
+            height: 85.0,
             wind: [-0.30, 0.40],
         },
     ),
@@ -203,8 +230,8 @@ const SCENE_STYLES: &[(&str, FogStyle)] = &[
         "keikoku",
         FogStyle {
             color: [0.62, 0.63, 0.70],
-            density: 0.50,
-            height: 140.0,
+            density: 0.72,
+            height: 110.0,
             wind: [0.60, 0.10],
         },
     ),
@@ -214,8 +241,8 @@ const SCENE_STYLES: &[(&str, FogStyle)] = &[
 /// raised and at least one region enabled) but which has no tuned entry.
 pub const POOL_STYLE: FogStyle = FogStyle {
     color: [0.58, 0.60, 0.68],
-    density: 0.34,
-    height: 100.0,
+    density: 0.5,
+    height: 85.0,
     wind: [0.45, 0.20],
 };
 
@@ -636,7 +663,7 @@ impl FogVolume {
                 style.color[1] * t[1],
                 style.color[2] * t[2],
             ],
-            opacity: style.density * self.strength,
+            opacity: (style.density * self.space.density_scale()).min(0.95) * self.strength,
             height: style.height * self.space.height_scale(),
             drift: self.drift,
             ticks: self.ticks,
@@ -695,7 +722,9 @@ pub mod header {
     pub const SPACE: usize = 17;
     /// [`super::FogSpace::shader_constants`] start here.
     pub const SHADER_CONSTANTS: usize = 18;
-    pub const LEN: usize = 22;
+    /// [`super::FogSpace::soft_distance`].
+    pub const SOFT_DISTANCE: usize = 22;
+    pub const LEN: usize = 23;
 }
 
 /// Horizontal sheets the bank is drawn as.
@@ -728,6 +757,7 @@ impl FogVolumeFrame<'_> {
         };
         h[header::SHADER_CONSTANTS..header::SHADER_CONSTANTS + 4]
             .copy_from_slice(&self.space.shader_constants());
+        h[header::SOFT_DISTANCE] = self.space.soft_distance();
         h
     }
 

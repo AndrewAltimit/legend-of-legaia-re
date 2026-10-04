@@ -71,6 +71,7 @@ impl PlayWindowApp {
             layers: FOG_LAYERS,
             drift: f.drift,
             shader_constants: f.space.shader_constants(),
+            soft_distance: f.space.soft_distance(),
         }));
     }
 
