@@ -1379,13 +1379,29 @@ impl World {
         // per-actor pause flag `+0x21C` on every non-acting, non-target
         // slot, has no engine field; the SpecialStarter's freeze covers the
         // visible case through the rate arm above.
-        // PORT: FUN_8004E13C (the `+0x243` store; the `+0x21C` sweep and the
-        // value-2 coin re-roll into `+0x6DA` are not modelled)
+        // The value-2 arm (`0x8004E254..0x8004E2B4`): when the byte is `2`,
+        // the previous `+0x243` was not, and the acting seat `ctx[+0x13]` is
+        // a party one, it re-seeds the camera's yaw counter `ctx[+0x6DA] =
+        // (rand() % 2) * 0x800 + 0x280` and zeroes the framing style
+        // `ctx[+0xD]` - the swing camera's per-swing side. The counter is the
+        // camera's (`BattleCamInputs::swing_reseed`); the style byte is the
+        // live one both hosts feed it from.
+        // PORT: FUN_8004E13C (the `+0x243` store and the value-2 re-seed;
+        // the `+0x21C` sweep is not modelled)
         if let Some(v) = clip
             .as_ref()
             .and_then(|c| c.entry_solo_flag())
             .filter(|&v| v != 0)
         {
+            if v == 2
+                && self.battle_ctx.gauge_rearm_latch != 2
+                && self.battle_ctx.active_actor < self.party.party_count
+            {
+                let coin = (vm::battle_formulas::world_rand(&mut self.rng_state) & 1) as u8;
+                self.battle_ctx.swing_yaw_seeds = self.battle_ctx.swing_yaw_seeds.wrapping_add(1);
+                self.battle_ctx.swing_yaw_coin = coin;
+                self.battle_ctx.camera_variant = 0;
+            }
             self.battle_ctx.gauge_rearm_latch = v;
         }
         let a = &mut self.actors[i];

@@ -1767,6 +1767,27 @@ by the `Recover` / `ActionEnd` phases (`post_strike_phase` runs the fork, on
 the Done-band note above; the port's residency there is unbounded where
 retail's is `ctx[+0x6D8] = 0x3C` frames.
 
+### The Battle Camera option calms the action shots
+
+The options screen's Battle Camera row (Close / Normal / Far, config word
+`_DAT_800846C0`, [field-menu](field-menu.md)) is not a distance. Retail reads
+it in four places, each making the action shots less dynamic as it rises:
+
+| Site | Close (`0`) | Normal (`1`) | Far (`2`) |
+|---|---|---|---|
+| action SM prologue `0x801E29D4`: `ctx[+0x6DA]` drift and the setup-band orbit | run | run | skipped |
+| case 7 pull-in `0x801D6724` | allowed | - | - |
+| case 8 `0x801D6958..0x801D69EC`: yaw | built | built | the live `_DAT_8007B792` |
+| case 8's dead- / live-target arms | run | skipped | skipped |
+| `FUN_801D71B8` call `0x801D7138` | run | run | skipped |
+
+Case 8 keeps its arms on Normal / Far in a scripted fight (`ctx[+0x287]`) once
+the results phase word `_DAT_8007BD2C` is non-zero; the port does not carry
+that exception, nor the skipped setup-band orbit store (the port runs one
+orbit for both of retail's writers). Engine: `World::toggles.battle_camera`, pushed by
+`OptionsState::apply_to_world` on both hosts, read through
+`BattleCamera::set_camera_option`.
+
 ### The round prompt is the far framing, a member's surfaces are the close-up
 
 "A battle menu is open" does not select the close-up. The battle menu driver

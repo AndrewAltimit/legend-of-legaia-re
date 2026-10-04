@@ -92,6 +92,11 @@ pub struct WorldToggles {
     /// `0x801D15E0..0x801D1650`. Hosts mirror their `OptionsState` onto this
     /// the way they mirror [`crate::world::FieldLocomotion::run_default`].
     pub select_attack: crate::options::SelectAttackOpt,
+    /// The options screen's **Battle Camera** row (config word
+    /// `0x800846C0`, Close / Normal / Far), which the battle camera's action
+    /// shots read (`BattleCamera::set_camera_option`). Hosts mirror their
+    /// `OptionsState` onto this through `OptionsState::apply_to_world`.
+    pub battle_camera: crate::options::BattleCameraOpt,
     /// Draw the overworld's per-placement **entity markers**
     /// ([`crate::world_map_markers`]: a cyan post at each portal, green at
     /// each NPC, red at each encounter zone). A port debug overlay, not a
@@ -114,6 +119,7 @@ impl WorldToggles {
             use_vm_dialogue: false,
             use_damage_finish: true,
             select_attack: crate::options::SelectAttackOpt::default(),
+            battle_camera: crate::options::BattleCameraOpt::default(),
             overworld_marker_overlay: false,
         }
     }

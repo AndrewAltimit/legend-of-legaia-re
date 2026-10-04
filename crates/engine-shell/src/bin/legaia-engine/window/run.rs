@@ -1450,9 +1450,20 @@ pub(super) fn cmd_play_window_with_record(
         save_dir: save_dir.to_path_buf(),
         card: mounted_card,
         save_flow: legaia_engine_core::save_screen::SaveScreenFlow::new(),
-        options_state: legaia_engine_core::options::OptionsState::load_or_default(
-            &std::path::PathBuf::from(OPTIONS_CONFIG_FILE),
-        ),
+        options_state: {
+            let mut o = legaia_engine_core::options::OptionsState::load_or_default(
+                &std::path::PathBuf::from(OPTIONS_CONFIG_FILE),
+            );
+            // `LEGAIA_BATTLE_CAMERA_OPTION=<0|1|2>`: the retail-compare image
+            // child plays the capture's own Battle Camera word (`0x800846C0`).
+            if let Some(v) = std::env::var("LEGAIA_BATTLE_CAMERA_OPTION")
+                .ok()
+                .and_then(|v| v.trim().parse::<u8>().ok())
+            {
+                o.battle_camera = legaia_engine_core::options::BattleCameraOpt::from_word(v);
+            }
+            o
+        },
         record_log: record_to.map(RecordLog::from_target),
         field_live_opts,
         // In-flow cutscene STR resolves from the extracted root (video only)

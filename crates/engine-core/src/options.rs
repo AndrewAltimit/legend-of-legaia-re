@@ -105,6 +105,19 @@ pub enum BattleCameraOpt {
     Far,
 }
 
+impl BattleCameraOpt {
+    /// The option from its config word `0x800846C0` (`0` Close, `2` Far;
+    /// the camera's arms test `!= 0` and `== 2`, so any other word reads
+    /// as Normal).
+    pub fn from_word(word: u8) -> Self {
+        match word {
+            0 => Self::Close,
+            2 => Self::Far,
+            _ => Self::Normal,
+        }
+    }
+}
+
 /// Battle attack-target picking (config word `0x800846C4`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum SelectAttackOpt {
@@ -272,6 +285,7 @@ impl OptionsState {
         world.locomotion.run_default = self.field_move == FieldMoveOpt::Run;
         world.toggles.reduce_flashing = self.reduce_flashing;
         world.toggles.select_attack = self.battle_select_attack;
+        world.toggles.battle_camera = self.battle_camera;
         world.terrain.static_window.retail_windowing = self.retail_static_window;
         world.toggles.view_window_crop = self.retail_view_window;
         world.toggles.volumetric_fog = self.volumetric_fog;

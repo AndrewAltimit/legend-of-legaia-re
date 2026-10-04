@@ -217,6 +217,8 @@ fn the_shared_camera_settles_on_the_per_art_framing() {
                     shake_amplitude: 0,
                     action_state: 0,
                     active_commits: 0,
+                    swing_reseed: (0, 0),
+                    camera_option: 0,
                     acting_body: None,
                     cursor: None,
                     attack: if phase { attack } else { None },
@@ -274,6 +276,8 @@ fn an_unarmed_art_id_leaves_case_six_standing() {
             shake_amplitude: 0,
             action_state: 0,
             active_commits: 0,
+            swing_reseed: (0, 0),
+            camera_option: 0,
             acting_body: None,
             cursor: None,
             attack: Some(AttackCamChannels {

@@ -770,8 +770,8 @@ fn a_party_melee_keeps_both_combatants_in_frame() {
 
 /// The yaw counter's per-action ladder, driven through the shared entry
 /// on the action-state edges: round begin `0`, seed `0x800`, Attack entry
-/// `0x200`, and a party attacker's strike loop `0x280` / `0xA80`. A
-/// monster attacker keeps the `0x200` base through its own strike loop.
+/// `0x200`, and a party swing's commit re-seed `0x280` / `0xA80`. The
+/// strike loop's own entry stores nothing.
 #[test]
 fn the_yaw_counter_is_reseeded_on_the_action_state_edges() {
     let mut slot: Option<BattleCamera> = None;
@@ -812,11 +812,18 @@ fn the_yaw_counter_is_reseeded_on_the_action_state_edges() {
         "no edge, drift only"
     );
     feed(&mut slot, 0x1E, true);
-    let seeded = slot.as_ref().unwrap().action_yaw_base() - 2;
-    assert!(
-        seeded == 0x280 || seeded == 0xA80,
-        "party strike loop seeds 0x280 or 0xA80, got {seeded:#x}"
+    assert_eq!(
+        slot.as_ref().unwrap().action_yaw_base(),
+        0x208,
+        "the strike loop's entry stores nothing"
     );
+    // The swing commit's re-seed (`FUN_8004E13C`'s value-2 arm) does.
+    let cam = slot.as_mut().unwrap();
+    cam.observe_swing_reseed((3, 1));
+    cam.observe_swing_reseed((4, 1));
+    assert_eq!(cam.action_yaw_base(), 0xA80);
+    cam.observe_swing_reseed((4, 0));
+    assert_eq!(cam.action_yaw_base(), 0xA80, "only a new re-seed applies");
     // A fresh camera, monster attacker: the strike loop leaves 0x200.
     let mut monster: Option<BattleCamera> = None;
     feed(&mut monster, 0x0C, false);
@@ -2026,6 +2033,8 @@ fn a_real_turn_films_its_done_tail_and_hands_back_at_end_of_action() {
                     attack: None,
                     action_state: state,
                     active_commits: 0,
+                    swing_reseed: (0, 0),
+                    camera_option: 0,
                     acting_body: None,
                     cursor: None,
                 };

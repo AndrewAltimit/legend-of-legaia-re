@@ -1694,6 +1694,10 @@ fn battle_image(
     if battle.orbit_owns_yaw() {
         env.push(("LEGAIA_BATTLE_ORBIT_YAW", retail.camera.yaw.to_string()));
     }
+    env.push((
+        "LEGAIA_BATTLE_CAMERA_OPTION",
+        battle.camera_option.to_string(),
+    ));
     // A capture taken mid-cast replays its cast and is captured on its phase
     // (the gate), with the fixed tick as the deadline.
     let mut tick = crate::retail_compare_battle::BATTLE_CAPTURE_TICK

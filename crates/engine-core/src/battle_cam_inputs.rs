@@ -132,6 +132,11 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
         // state edges (`BattleCamera::observe_action_state`).
         action_state: world.battle_ctx.action_state,
         active_commits: world.battle_ctx.active_clip_commits,
+        camera_option: world.toggles.battle_camera as u8,
+        swing_reseed: (
+            world.battle_ctx.swing_yaw_seeds,
+            world.battle_ctx.swing_yaw_coin,
+        ),
         acting_body,
         cursor,
     };

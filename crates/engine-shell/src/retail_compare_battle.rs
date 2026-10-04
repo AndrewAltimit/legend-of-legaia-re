@@ -62,6 +62,8 @@ const KEEP_BACKDROP_OBJECT_1: u32 = 0x8007_B64B;
 /// Present-party list: pool slot -> roster character id (1-based; `4` is
 /// the AI-companion seat).
 const SEAT_CHARS: u32 = 0x8007_BD10;
+/// The options screen's Battle Camera config word.
+const BATTLE_CAMERA_OPTION: u32 = 0x8008_46C0;
 /// Eight-slot battle actor pointer table.
 const ACTOR_TABLE: u32 = 0x801C_9370;
 /// Frames a forced encounter may take to reach battle mode (the intro
@@ -178,6 +180,11 @@ pub struct RetailBattle {
     pub walk_yaw_base: u16,
     /// `ctx[+0xD]` - the acting action's framing style.
     pub cam_style: u8,
+    /// The options screen's Battle Camera word `0x800846C0` (Close `0` /
+    /// Normal `1` / Far `2`), which the action shots read. It sits in the
+    /// saved game-state window, but the save lift does not carry options,
+    /// so the seed stamps it (`World::toggles.battle_camera`).
+    pub camera_option: u8,
     /// `ctx[+0x269]` - the Seru a killing blow absorbed this action, staged
     /// for the Done band's grant (`sb v0,0x269(a0)` at `0x801EE2E8`) and
     /// cleared when `0x52` leaves.
@@ -801,6 +808,7 @@ impl RetailBattle {
             caster_clip: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1D9)),
             walk_yaw_base: game_anchors::u16_at(ram, ctx + 0x6DA),
             cam_style: game_anchors::u8_at(ram, ctx + 0xD),
+            camera_option: game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION),
             absorbed_seru: game_anchors::u8_at(ram, ctx + 0x269),
             span_gate: span_gate(ram, ctx),
             module_phase: game_anchors::u8_at(ram, ctx + 0x279),
@@ -1053,6 +1061,8 @@ pub fn run_engine_battle(
         .host
         .world
         .seed_battle_backdrop_keep_object_1(battle.keep_backdrop_object_1);
+    session.host.world.toggles.battle_camera =
+        legaia_engine_core::options::BattleCameraOpt::from_word(battle.camera_option);
     // Hand any replayed BGM words to the director before reading the word.
     session.host.route_bgm_events(&mut director)?;
     let seats = retail_roster_slots(battle);
@@ -1973,7 +1983,7 @@ impl BattleDrive {
         let state = world.battle_ctx.action_state;
         if let Some(style) = style
             && ours
-            && state == want
+            && (state == want || seat < 3 && (0x0C..=want).contains(&state))
             && !CAPTURE_BAND.contains(&state)
         {
             world.battle_ctx.camera_variant = style;

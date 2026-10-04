@@ -1045,6 +1045,14 @@ pub struct BattleActionCtx {
     /// those counters whenever this moves
     /// (`BattleCamInputs::active_commits`).
     pub active_clip_commits: u32,
+    /// How many times `FUN_8004E13C`'s value-2 arm has re-seeded the camera
+    /// yaw counter `ctx[+0x6DA]` (`0x8004E288..0x8004E2B0`) - a counter the
+    /// port keeps so the battle camera, which owns its copy of the counter,
+    /// sees each re-seed (`BattleCamInputs::swing_reseed`). Not a retail byte.
+    pub swing_yaw_seeds: u32,
+    /// The last re-seed's coin, `rand() % 2`: the counter becomes
+    /// `coin * 0x800 + 0x280`.
+    pub swing_yaw_coin: u8,
     /// The display frame of the active actor's last clip commit - the
     /// origin the re-zeroed `ctx[+0x87C]` counts from (`8` per vsync), which
     /// the retail comparison corpus aligns a summon `0x33` capture on.

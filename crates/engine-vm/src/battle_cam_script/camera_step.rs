@@ -50,7 +50,8 @@ impl BattleCamera {
             last_action_state: 0,
             acting_body: None,
             last_active_commits: None,
-            strike_style_zeroed: false,
+            last_swing_seeds: None,
+            option: CAMERA_OPTION_CLOSE,
             shake: ShakeState::default(),
             attack: AttackChannel::default(),
             rand_state: STANDALONE_RAND_SEED,
@@ -121,14 +122,12 @@ impl BattleCamera {
     ///   entry inside one tick (the engine's does: `0x0A -> 0x14` for a party
     ///   attack, `0x00 -> 0x15` for a monster's), and the camera only sees
     ///   the state at the tick boundary.
-    /// - `0x1E` with a party attacker: `(rand() % 2) * 0x800 + 0x280` and
-    ///   `ctx[+0xD] = 0`, which is `FUN_8004E13C`'s seed at the first
-    ///   swing-clip commit (`0x8004E288..0x8004E2B4`, gated on the clip
-    ///   header byte `+0x87 == 2`, the previous commit's not, and
-    ///   `ctx[+0x13] < 3`). The engine's animation player does not expose
-    ///   that header byte, so the edge into the strike loop - the state that
-    ///   stages the swing - stands in for the commit; the value and the
-    ///   party-only gate are retail's.
+    /// - A party swing's clip commit re-seeds it to `(rand() % 2) * 0x800 +
+    ///   0x280` - `FUN_8004E13C`'s value-2 arm, which this observer does not
+    ///   see; [`Self::observe_swing_reseed`] applies it. Captures show the
+    ///   re-seed is not tied to the strike loop's entry:
+    ///   `player_steal_skeleton_pre` reads the Attack base `0x218` eight
+    ///   frames into `0x1E`.
     ///
     /// A monster's attack therefore frames from the `0x200` base and a party
     /// attack from `0x280` / `0xA80`, both drifting at the SM's rate
@@ -178,15 +177,35 @@ impl BattleCamera {
         } else if in_action(state) && !in_action(prev) {
             self.action_yaw = 0x800;
         }
-        if !in_action(state) {
-            // The next action's seed re-rolls `ctx[+0xD]`, so the commit's
-            // zero stops applying once the band is left.
-            self.strike_style_zeroed = false;
-        }
-        if state == STRIKE_LOOP_STATE && self.action.party_slot {
-            let coin = crate::battle_formulas::world_rand(&mut self.rand_state) & 1;
-            self.action_yaw = (coin as i32) * 0x800 + 0x280;
-            self.strike_style_zeroed = true;
+    }
+
+    /// `FUN_8004E13C`'s value-2 re-seed (`0x8004E288..0x8004E2B4`): a clip
+    /// commit whose `+0x87` byte is `2`, after one that was not, with a party
+    /// seat acting, sets the yaw counter to `(rand() % 2) * 0x800 + 0x280`.
+    /// The world draws the coin at the commit and counts the re-seeds; the
+    /// camera applies one whenever the count moves. (The same arm's
+    /// `ctx[+0xD] = 0` is the world's own write to the live style byte.)
+    /// Install the options screen's Battle Camera word `_DAT_800846C0`
+    /// (Close `0` / Normal `1` / Far `2`). Retail reads it in four places,
+    /// all of them making the action shots calmer as it rises:
+    ///
+    /// - the action SM's prologue (`0x801E29D4..0x801E29DC`) skips the
+    ///   per-frame `ctx[+0x6DA]` drift - and its idle-orbit store - on Far;
+    /// - case 7's pull-in (`0x801D6724..0x801D6730`) needs Close;
+    /// - case 8 (`0x801D6958..0x801D69EC`) holds the live yaw on Far and,
+    ///   on Normal or Far, skips its dead- and live-target arms for an
+    ///   ordinary fight (the `_DAT_8007BD2C` / `ctx[+0x287]` exception that
+    ///   keeps them in a scripted one is not carried);
+    /// - the per-art attack camera's call (`0x801D7138..0x801D7144`) is
+    ///   skipped on Far.
+    pub fn set_camera_option(&mut self, option: u8) {
+        self.option = option;
+    }
+
+    pub fn observe_swing_reseed(&mut self, (count, coin): (u32, u8)) {
+        let prev = self.last_swing_seeds.replace(count);
+        if prev.is_some_and(|p| p != count) {
+            self.action_yaw = i32::from(coin & 1) * 0x800 + 0x280;
         }
     }
 
@@ -351,7 +370,8 @@ impl BattleCamera {
     }
 
     pub(super) fn recover_pose(&self) -> BattleCamPose {
-        let pull_in = self.action.party_slot
+        let pull_in = self.option == CAMERA_OPTION_CLOSE
+            && self.action.party_slot
             && self
                 .attack
                 .actor
@@ -380,6 +400,13 @@ impl BattleCamera {
         let f = self.live_action_framing();
         let actor = self.body_actor();
         let mut pose = action_end_framing(actor, self.target, f, self.pose.yaw);
+        if self.option == CAMERA_OPTION_FAR {
+            // `sh a0,0x12(sp)` with the live `_DAT_8007B792` (`0x801D696C`).
+            pose.yaw = self.pose.yaw;
+        }
+        if self.option != CAMERA_OPTION_CLOSE {
+            return (pose, f.depth_raw);
+        }
         let Some(t) = self.target.filter(|t| !t.live) else {
             // A standing target takes the live-target arm. Only a real
             // target slot reaches it (`actor[+0x1DD] < 8`, `0x801D6BFC`).
@@ -486,11 +513,7 @@ impl BattleCamera {
             yaw_base: self.action_yaw,
             accum: self.attack.ctx.accum,
             ramp: self.attack.ctx.ramp,
-            style: if self.strike_style_zeroed {
-                0
-            } else {
-                self.action.style
-            },
+            style: self.action.style,
             ..self.action
         }
     }
@@ -681,7 +704,9 @@ impl BattleCamera {
         // The action SM advances `ctx[+0x6DA]` once per display frame,
         // outside its state switch, so the counter runs whether or not an
         // action is executing.
-        self.action_yaw = self.action_yaw.wrapping_add(elapsed as i32) & 0xFFFF;
+        if self.option != CAMERA_OPTION_FAR {
+            self.action_yaw = self.action_yaw.wrapping_add(elapsed as i32) & 0xFFFF;
+        }
         // `FUN_801D5854`'s prologue ramps `ctx[+0x26E]` / `ctx[+0x87C]` by
         // `8 * frame_step` on EVERY call, so they advance per display frame
         // for as long as any framing case is being re-armed - not per camera
@@ -916,10 +941,12 @@ impl BattleCamera {
         // `0x1E`, which arms case 7, is where most art swings are filmed.
         // Its own first test is the target's live HP (`0x801D7200`), so a
         // case-8 death re-frame is never overridden.
-        if matches!(
-            self.phase,
-            BattleCamPhase::Action | BattleCamPhase::Recover | BattleCamPhase::ActionEnd
-        ) && let Some(f) = self.attack_framing()
+        if self.option != CAMERA_OPTION_FAR
+            && matches!(
+                self.phase,
+                BattleCamPhase::Action | BattleCamPhase::Recover | BattleCamPhase::ActionEnd
+            )
+            && let Some(f) = self.attack_framing()
         {
             self.glides.clear();
             self.step_toward_attack_pose(f);
