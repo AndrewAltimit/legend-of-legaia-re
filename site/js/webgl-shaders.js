@@ -266,6 +266,40 @@ uniform int u_fog_enable;    /* 0 = no fog; mirrors gp-0x2D1 & 0x10 gate */
  * 0.0 - every page but the play page on an overworld - is the identity. */
 uniform float u_curve;
 
+/* Retail's per-primitive near reject - the GLSL twin of engine-render's
+ * PRIM_NEAR_WGSL (legaia_engine_ui::prim_near_reject). Every TMD prim
+ * handler behind FUN_80043390 drops a primitive whose OTZ (AVSZ3 / AVSZ4 of
+ * the corners' saturated SZ, ZSF = 0x555 / 0x400 >> the OT shift) is below
+ * the scratch floor 0x1F80037E; there is no near-plane clip on that path.
+ * u_prim_near = (enable, sz_per_w, ot_shift, near_otz) from the shared
+ * camera_view::prim_near_cut (play_render_prim_near -> setPrimNear); all
+ * zeros - the GL default, and every page but the play page - never rejects.
+ * a_prim_c0.w is the primitive's corner count (0 = no single owner, never
+ * rejected); unbound, the attributes read the generic default (0,0,0,1). */
+uniform vec4 u_prim_near;
+in vec4 a_prim_c0;
+in vec3 a_prim_c1;
+in vec3 a_prim_c2;
+in vec3 a_prim_c3;
+
+int primSz(mat4 m, vec3 c, float szPerW) {
+  float w = m[0].w * c.x + m[1].w * c.y + m[2].w * c.z + m[3].w;
+  return clamp(int(floor(w * szPerW)), 0, 0xFFFF);
+}
+
+bool primNearRejected(mat4 m) {
+  if (u_prim_near.x < 0.5 || a_prim_c0.w < 2.5) return false;
+  int shift = int(u_prim_near.z);
+  int sum = primSz(m, a_prim_c0.xyz, u_prim_near.y) + primSz(m, a_prim_c1, u_prim_near.y)
+    + primSz(m, a_prim_c2, u_prim_near.y);
+  int zsf = 0x555 >> shift;
+  if (a_prim_c0.w > 3.5) {
+    sum += primSz(m, a_prim_c3, u_prim_near.y);
+    zsf = 0x400 >> shift;
+  }
+  return ((zsf * sum) >> 12) < int(u_prim_near.w);
+}
+
 /* PSX rasterisation (opt-in, NON-default - the GLSL twin of the native
  * renderer's psx_params, Renderer::set_psx_mode / LEGAIA_PSX_RENDER):
  * x, y = framebuffer width and height in pixels (staged on every draw, since
@@ -428,6 +462,9 @@ void main() {
   /* After the overworld bend, as native snaps after its curve: retail bends
    * SY before the packet is written. Identity while u_psx.z is 0. */
   if (u_psx.z >= 0.5) gl_Position = psxSnapClip(gl_Position, u_psx.x, u_psx.y);
+  /* A rejected primitive parks every corner on one point outside the clip
+   * volume: no area, nothing rasterised. */
+  if (primNearRejected(u_mvp * u_model)) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
   v_view_z = gl_Position.w;
   /* The log-depth write's w (LOG_DEPTH_GLSL): the flat bucket's
    * representative w on a continent cell, the vertex's own clip w elsewhere.

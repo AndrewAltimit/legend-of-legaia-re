@@ -529,6 +529,11 @@ void main() {
       adoptPadBindings(runtime);
       this.canvas = canvas;
       this.renderer = new window.TmdRenderer(canvas);
+      /* Every scene mesh carries its primitives' corners for retail's
+       * per-primitive near reject, built by the engine's kernel (read
+       * through this.rt so a recovered runtime keeps serving it). */
+      this.renderer.primRefsFn = (p, i) => (this.rt && typeof this.rt.prim_corner_refs === 'function'
+        ? this.rt.prim_corner_refs(p, i) : null);
       this.opts = opts || {};
       this.raf = 0;
       this.paused = false;
@@ -3164,6 +3169,15 @@ void main() {
         let scale = 0;
         try { scale = rt.play_render_curve_scale(); } catch (_) { scale = 0; }
         this.renderer.setOverworldCurve(scale);
+      }
+      /* Retail's per-primitive near reject (camera_view::prim_near_cut): a
+       * primitive whose mean corner depth sits near or behind the eye is not
+       * drawn, where a per-pixel clip paints it across the frame. Only under
+       * the engine's retail camera - never the debug orbit. */
+      if (this.renderer.setPrimNear && typeof rt.play_render_prim_near === 'function') {
+        let p = null;
+        try { p = rt.play_render_prim_near(!this.debugCamera); } catch (_) { p = null; }
+        this.renderer.setPrimNear(p);
       }
     }
 

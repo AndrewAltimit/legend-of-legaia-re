@@ -1793,8 +1793,9 @@ ground heightfield, the posed props, the NPCs) are resolved once at scene load
 and submitted whole on every frame. A town is a few hundred draws of a few
 thousand triangles - the budget the port is not on is the PSX's.
 
-Two things can still remove geometry: retail's own near reject on placed
-objects ([below](#the-placed-object-near-reject)), and the projection's clip
+Three things can still remove geometry: retail's own near reject on placed
+objects ([below](#the-placed-object-near-reject)), its per-primitive near
+reject ([below](#the-per-primitive-near-reject)), and the projection's clip
 volume, whose planes are sized to hold an entire scene from any vantage
 rather than to frame the current view:
 
@@ -1898,9 +1899,40 @@ Both hosts ask `field_env::placed_origin_near_culled` per placed draw with the
 origin's clip `w` under the frame's retail camera - the native placed, colour
 and posed-prop passes, and the play page's placed draws through the
 `field_placed_near_culled` export. The `F3` debug orbit is exempt: it frames
-from a vantage retail never had. The per-prim handlers carry a second gate the
-port does not reproduce, an `OTZ` cut against the scratch halfword
-`0x1F80037E` (kind 15: `sub v1,s2,t4` / `bltz v1` at `0x80043D6C`).
+from a vantage retail never had.
+
+### The per-primitive near reject
+
+The per-prim handlers carry a second, finer gate: after `AVSZ3` / `AVSZ4`
+each one reads `OTZ` back and drops the primitive when it is below the
+scratch halfword `0x1F80037E` (kind 13, `FUN_80043768`: `mfc2 s2,$7` /
+`sub s1,s2,t4` / `bltz s1` at `0x80043868..0x80043874`; kind 15 at
+`0x80043D6C`). The dispatcher loads that floor into `t4` per group
+(`lhu t4,0x6A(t2)` at `0x8004359C`, `t2 = 0x1F800314`) and stages
+`ZSF3 = 0x555 >> s` / `ZSF4 = 0x400 >> s` from the ordering-table shift byte
+`0x1F8003A4` (`0x80043568..0x8004357C`), so `OTZ` is the mean corner `SZ`
+shifted by `s`. The scene init writes the floor as `0x10` (`FUN_8001D424` at
+`0x8001D4E8`, `FUN_8001DCF8` at `0x8001DD5C`); the scratchpad of the
+catalogued PCSX-Redux states holds `s = 3` on the field and `s = 2` in
+battle. A field primitive whose mean depth is under 128, or a battle one under
+64, is not drawn. `SZ` saturates at `0`, so a corner behind the eye pulls the
+mean toward zero rather than below it.
+
+There is no near-plane clip on this path. A port that projects such a
+primitive and clips it per pixel paints it across the frame instead: the
+evolved-Cort approach in `jouine` parks the camera against a root-wall body,
+and the port drew a huge stretched brown surface over the shot retail draws
+clean.
+
+Both hosts reproduce the cut in their mesh vertex stage through one kernel,
+`legaia_engine_ui::prim_near_reject`. Every vertex carries its primitive's
+corners (a split quad's two triangles share one record; a vertex two
+primitives weld is never rejected), and the stage computes the same integer
+`OTZ` from the draw's matrix and parks a rejected primitive's corners outside
+the clip volume. `camera_view::prim_near_cut` picks the shift per pass -
+field and battle only, and never under the debug orbit; the native renderer
+stages it with `Renderer::set_prim_near_reject`, the play page with
+`TmdRenderer.setPrimNear`.
 
 ## Coplanar surfaces: retail's ordering model, the port's depth policy
 

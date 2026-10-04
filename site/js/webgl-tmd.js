@@ -153,6 +153,7 @@ class TmdRenderer {
     this.locPairFront = gl.getUniformLocation(this.program, 'u_pair_front');
     this.locNclipCull = gl.getUniformLocation(this.program, 'u_nclip_cull');
     this.locCurve = gl.getUniformLocation(this.program, 'u_curve');
+    this.locPrimNear = gl.getUniformLocation(this.program, 'u_prim_near');
     this.locOcclFocus  = gl.getUniformLocation(this.program, 'u_occl_focus');
     this.locOcclParams = gl.getUniformLocation(this.program, 'u_occl_params');
     this.locOcclAllow  = gl.getUniformLocation(this.program, 'u_occl_allow');
@@ -269,6 +270,14 @@ class TmdRenderer {
      * sides, the default every other page keeps. */
     this.nclipCull = 0;
     this.overworldCurve = 0;
+    /* Retail's per-primitive near reject for the assembled scene pass:
+     * [enable, sz_per_w, ot_shift, near_otz] (setPrimNear), and the hook
+     * that builds a mesh's per-vertex primitive-corner stream
+     * (positions, indices) -> Float32Array of 13 floats per vertex - the
+     * play page points it at the engine's prim_corner_refs. Off / null on
+     * every other page. */
+    this.primNear = [0, 0, 0, 0];
+    this.primRefsFn = null;
     /* Camera-occlusion fade focus: the player's WORLD-space body centre
      * (draw frame, i.e. the Y-flipped coords every placement uses), staged
      * per frame by the play page via setOcclusionFocus / cleared with
@@ -288,6 +297,10 @@ class TmdRenderer {
     this.locGroundRefY  = gl.getAttribLocation(this.program, 'a_ground_ref_y');
     /* Smoothed normals for the dynamic light; -1 if the driver dropped it. */
     this.locNormal = gl.getAttribLocation(this.program, 'a_normal');
+    /* Retail's per-primitive near reject: each vertex's primitive corners
+     * (see primNearRejected in webgl-shaders.js); -1 where dropped. */
+    this.locPrimC = ['a_prim_c0', 'a_prim_c1', 'a_prim_c2', 'a_prim_c3']
+      .map(n => gl.getAttribLocation(this.program, n));
 
     /* Field-character hybrid mode: when set, draws bind the per-vertex
      * a_flat_rgba colours and the FS uses them for untextured prims. Off for
@@ -578,6 +591,45 @@ class TmdRenderer {
    * `set_overworld_curvature` word). 0 - every other page - is flat. */
   setOverworldCurve(scale) {
     this.overworldCurve = scale > 0 ? +scale : 0;
+  }
+
+  /* Retail's per-primitive near reject for the assembled scene pass: the
+   * [enable, sz_per_w, ot_shift, near_otz] word from the shared
+   * `camera_view::prim_near_cut` kernel (the native renderer's
+   * `set_prim_near_reject`). null / all-zero never rejects. */
+  setPrimNear(params) {
+    this.primNear = (params && params.length === 4)
+      ? [+params[0], +params[1], +params[2], +params[3]] : [0, 0, 0, 0];
+  }
+
+  /* (Re)build and bind a scene mesh's primitive-corner stream into its VAO
+   * (which must be bound). Without a hook, or when the hook declines, the
+   * attributes stay disabled and read the generic default - count 0, never
+   * rejected. */
+  _bindPrimRefs(m, positions, indices) {
+    const gl = this.gl;
+    const locs = this.locPrimC || [];
+    let refs = null;
+    if (this.primRefsFn && positions && indices && locs[0] >= 0) {
+      try { refs = this.primRefsFn(positions, indices); } catch (_) { refs = null; }
+      if (refs && refs.length !== (positions.length / 3) * 13) refs = null;
+    }
+    m.hasPrimRefs = !!refs;
+    if (!refs) {
+      for (const l of locs) if (l >= 0) gl.disableVertexAttribArray(l);
+      return;
+    }
+    if (!m.primRefBuf) m.primRefBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, m.primRefBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, refs instanceof Float32Array ? refs : new Float32Array(refs),
+      gl.DYNAMIC_DRAW);
+    const sizes = [4, 3, 3, 3];
+    const offs = [0, 16, 28, 40];
+    for (let k = 0; k < 4; k++) {
+      if (locs[k] < 0) continue;
+      gl.enableVertexAttribArray(locs[k]);
+      gl.vertexAttribPointer(locs[k], sizes[k], gl.FLOAT, false, 52, offs[k]);
+    }
   }
 
   /* PSX rasterisation (the native renderer's `set_psx_mode`, which the
@@ -1198,6 +1250,8 @@ class TmdRenderer {
     /* The single-mesh viewer never bends (the curve is an overworld
      * scene-pass term, staged by renderAssembled). */
     if (this.locCurve) gl.uniform1f(this.locCurve, 0);
+    /* Nor near-reject: another scene-pass word on the shared program. */
+    if (this.locPrimNear) gl.uniform4f(this.locPrimNear, 0, 0, 0, 0);
     /* Nor does it NCLIP-reject: `u_nclip_cull` is a scene-pass word too
      * (renderAssembled stages `nclipCull`), and the uniform persists on the
      * shared program. Left at the field's `2`, the play page's in-world
@@ -1368,6 +1422,7 @@ class TmdRenderer {
     m.indexCount = indices.length;
     /* Kept so a CBA/TSB re-upload can rebuild the semi tail. */
     m.baseIndices = indices;
+    this._bindPrimRefs(m, positions, indices);
     gl.bindVertexArray(null);
     /* The dynamic light's normal source (computed lazily, see
      * _ensureNormals); the semi tail repeats triangles, so the base list. */
@@ -1413,6 +1468,12 @@ class TmdRenderer {
     gl.bindBuffer(gl.ARRAY_BUFFER, m.posBuf);
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, positions);
     m.aabb = computeAabb(positions);
+    /* The primitive corners move with the pose. */
+    if (m.hasPrimRefs) {
+      gl.bindVertexArray(m.vao);
+      this._bindPrimRefs(m, positions, m.baseIndices);
+      gl.bindVertexArray(null);
+    }
     /* A posed mesh re-derives its normals, as native's posed VRAM mesh
      * build does - lazily, and only while dynamic lighting is on. */
     m.cpuPositions = positions;
@@ -1440,6 +1501,7 @@ class TmdRenderer {
       gl.deleteBuffer(m.uvBuf);
       gl.deleteBuffer(m.ctBuf);
       if (m.flatBuf) gl.deleteBuffer(m.flatBuf);
+      if (m.primRefBuf) gl.deleteBuffer(m.primRefBuf);
       gl.deleteBuffer(m.idxBuf);
       if (m.normBuf) gl.deleteBuffer(m.normBuf);
     }
@@ -1688,6 +1750,8 @@ class TmdRenderer {
     if (this.locNclipCull) gl.uniform1i(this.locNclipCull, this.nclipCull);
     /* Overworld curvature (0 = flat unless the play page staged a scale). */
     if (this.locCurve) gl.uniform1f(this.locCurve, this.overworldCurve);
+    /* Retail's per-primitive near reject (off unless the play page staged it). */
+    if (this.locPrimNear) gl.uniform4fv(this.locPrimNear, this.primNear);
     /* Prologue grade + depth cue (identity / off unless the play page
      * staged them this frame). */
     this._applyGradeCue();
