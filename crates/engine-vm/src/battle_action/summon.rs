@@ -324,7 +324,7 @@ pub(super) fn summon_verify_alive<H: BattleActionHost + ?Sized>(
     // floor, so the battle ambient climbs back from dark.
     ctx.gauge_rearm_latch = 0;
     ctx.summon_staging_a = 0;
-    host.clear_module_ctx_278();
+    host.summon_band_exit();
     ctx.ambient_base = crate::battle_ground_grid::AMBIENT_BASE_CAST_EXIT;
     // Every pass stores style `1` before its case-6 call (`sb v1,0xd(v0)` at
     // `0x801E4D5C`), and the exit sets the framing depth back to the near

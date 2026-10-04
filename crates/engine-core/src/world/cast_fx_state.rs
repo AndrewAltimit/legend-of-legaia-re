@@ -145,6 +145,10 @@ pub struct CastFxState {
     /// homing flight its caster's terminator is about to seed; taken by that
     /// seed (`World::seed_homing_slots`).
     pub homing_takes_lists: bool,
+    /// The text a directed summon module's arm last put up
+    /// ([`legaia_engine_vm::cast_module_camera::ModuleCaption`]), cleared at
+    /// the band's `0x37` exit. Read by `battle_hud::battle_move_name`.
+    pub module_caption: Option<legaia_engine_vm::cast_module_camera::ModuleCaption>,
     /// Pending move-FX sound cue id (`+0x0d`), set by [`crate::world::World::spawn_move_fx`]
     /// when the move carries a non-zero cue. The host drains it via
     /// [`crate::world::World::take_pending_move_fx_cue`] and routes it through
@@ -180,6 +184,7 @@ impl CastFxState {
             move_fx_streak: Default::default(),
             homing: Default::default(),
             homing_takes_lists: false,
+            module_caption: None,
             pending_move_fx_cue: None,
         }
     }

@@ -957,6 +957,9 @@ impl World {
             if !r.spawns.is_empty() {
                 self.stage_module_arm_spawns(r.prot_entry, r.spawns, r.camera_shot);
             }
+            if let Some(c) = r.caption {
+                self.casting.module_caption = Some(c);
+            }
         }
         let directed_hit = profile.and_then(|p| p.hit_arm);
         let module_busy =
@@ -1292,6 +1295,8 @@ pub struct CastModuleCodeRun {
     pub spawns: &'static [vm::cast_module_camera::ModuleSpawn],
     /// The `MoveImage` the module's arm issued this frame.
     pub vram_move: Option<vm::cast_module_camera::ModuleVramMove>,
+    /// The text the module's arm put up this frame.
+    pub caption: Option<vm::cast_module_camera::ModuleCaption>,
 }
 
 // --- W1-D: the fourteen trampoline arms ---
@@ -1903,6 +1908,7 @@ impl World {
         run.camera_nudge = direction.and_then(|d| d.nudge);
         run.spawns = direction.map_or(&[], |d| d.spawns);
         run.vram_move = direction.and_then(|d| d.vram_move);
+        run.caption = direction.and_then(|d| d.caption);
         let held = direction.is_some_and(|d| d.hold) || capture_held;
         // A camera-only director owns the phase of a module whose tick body
         // is unported: its pass advances it, and it claims no tick.
@@ -2785,6 +2791,7 @@ impl World {
             capture_drift: None,
             spawns: &[],
             vram_move: None,
+            caption: None,
         })
     }
 

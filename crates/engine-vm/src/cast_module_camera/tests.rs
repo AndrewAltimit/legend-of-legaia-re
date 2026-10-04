@@ -249,3 +249,36 @@ fn big_wave_arms_6_to_8_cut_spin_and_finish() {
     assert_eq!((a8.hold, a8.next), (false, None));
     assert!(a8.drift.is_some());
 }
+
+/// PROT 0903 reports its own calls on the arms that make them: the creature
+/// spawns in arm 3, the spell name in 5, the tunnel and the attack name in
+/// 6, the breath and its CLUT move in 8 - and nothing else anywhere.
+#[test]
+fn gimard_reports_its_spawns_and_captions_on_their_arms() {
+    let mut st = ModuleCamState::default();
+    let mut phase = 0u8;
+    let mut seen = Vec::new();
+    for _ in 0..4000u32 {
+        let d = gimard_direct(&mut st, phase, seats());
+        if !d.spawns.is_empty() || d.caption.is_some() || d.vram_move.is_some() {
+            seen.push((phase, d.spawns.len(), d.caption, d.vram_move.is_some()));
+        }
+        if !d.hold {
+            phase += 1;
+            if phase > 10 {
+                break;
+            }
+        }
+    }
+    assert_eq!(
+        seen,
+        vec![
+            (3, 3, None, false),
+            (5, 0, Some(ModuleCaption::SpellName), false),
+            (6, 3, Some(ModuleCaption::AttackName), false),
+            (8, 1, None, true),
+        ]
+    );
+    assert!(module_profile(903).is_some_and(|p| p.stages_spawns));
+    assert!(!module_profile(905).is_some_and(|p| p.stages_spawns));
+}

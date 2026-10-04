@@ -275,6 +275,21 @@ impl SceneHost {
         }
         self.world
             .install_cast_effect_pool(std::sync::Arc::new(pool));
+        // The attack names the summon modules' caption arms print: each
+        // player cast's `summon.dat` actor record `rec[0]` string.
+        if let Ok(summon_dat) = self
+            .index
+            .entry_bytes(u32::from(legaia_asset::summon_readef::SUMMON_PROT_INDEX))
+        {
+            let names: std::collections::BTreeMap<u8, String> =
+                legaia_asset::summon_readef::PLAYER_CAST_IDS
+                    .filter_map(|id| {
+                        let cast = legaia_asset::summon_readef::parse_cast(&summon_dat, id).ok()?;
+                        Some((id, cast.attack_name?))
+                    })
+                    .collect();
+            self.world.tables.summon_attack_names = std::sync::Arc::new(names);
+        }
     }
 
     /// Re-read the party's per-equipment battle inputs - the swing costs and

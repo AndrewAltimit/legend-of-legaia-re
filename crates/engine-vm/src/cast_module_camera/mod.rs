@@ -225,6 +225,22 @@ pub struct ArmDirection {
     pub spawns: &'static [ModuleSpawn],
     /// The `MoveImage` (`FUN_80058490`) the arm issued on this pass, if any.
     pub vram_move: Option<ModuleVramMove>,
+    /// The text the arm put up on this pass (`FUN_8003541C`), if any.
+    pub caption: Option<ModuleCaption>,
+}
+
+/// A line of text a module arm prints through `FUN_8003541C(0, 0, str, x,
+/// 0x96, 0, 0, 0)`: a frameless text actor at `y = 150`, centred by its
+/// measured width (`FUN_80035F04`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModuleCaption {
+    /// The cast's spell name, the spell table's `+8` pointer for the
+    /// caster's `+0x1DF`.
+    SpellName,
+    /// The cast's attack name, the streamed actor record's `rec[0]` string
+    /// (`*(0x801C9348 + 0x10)`), after `FUN_800319A8(0)` has cleared the
+    /// spell name.
+    AttackName,
 }
 
 /// Where one module spawn call seats its record (`a0` / `a1` of
@@ -289,6 +305,7 @@ impl ArmDirection {
         park: false,
         spawns: &[],
         vram_move: None,
+        caption: None,
     };
     pub(super) const PASS: Self = Self {
         hold: false,
@@ -298,6 +315,7 @@ impl ArmDirection {
         park: false,
         spawns: &[],
         vram_move: None,
+        caption: None,
     };
     pub(super) const PARK: Self = Self {
         hold: true,
@@ -307,6 +325,7 @@ impl ArmDirection {
         park: true,
         spawns: &[],
         vram_move: None,
+        caption: None,
     };
     pub(super) fn shot(shot: ModuleShot) -> Self {
         Self {

@@ -67,6 +67,11 @@ pub struct DiscTables {
     /// [`crate::scene::SceneHost`]; `None` in disc-free battles (move FX simply
     /// don't spawn). `Arc` so cloning `World` stays cheap.
     pub move_power_overlay: Option<Arc<[u8]>>,
+    /// Each player summon cast's attack name - the `rec[0]` string of its
+    /// `summon.dat` (PROT 0893) actor record, the text a summon module's
+    /// caption arm prints. Installed by [`crate::scene::SceneHost`] with the
+    /// cast-effect pool; empty disc-free.
+    pub summon_attack_names: Arc<std::collections::BTreeMap<u8, String>>,
     /// The battle **VDF** morph pack `vdf.dat` (PROT 0872, the
     /// `[u32 count][u32 offsets[count]][bodies]` layout of a scene's VDF).
     /// Battle init loads it through the asset dispatcher's VDF case and
@@ -212,6 +217,7 @@ impl DiscTables {
             monster_catalog: crate::monster_catalog::MonsterCatalog::new(),
             move_power: None,
             move_power_overlay: None,
+            summon_attack_names: Default::default(),
             battle_vdf: None,
             element_affinity: None,
             battle_camera_heights: None,

@@ -1667,9 +1667,22 @@ pub fn battle_move_name(world: &crate::world::World) -> Option<String> {
         // The `0x28` arm's spell-name write is gated on the caster's seat:
         // `lbu v0,0x2(s5); sltiu v0,v0,3; bne v0,zero,0x801E4460`
         // (`0x801E43D0..0x801E43DC`) skips it for a party caster, so a
-        // party cast - a Seru summon included - has no name label.
+        // party cast has no name label of the band's own.
         if a < pc {
-            return None;
+            // A summon module prints its own line at the label's place
+            // (`FUN_8003541C(.., 0x96, ..)`): the spell name, then the
+            // attack name, until the band's exit.
+            use legaia_engine_vm::cast_module_camera::ModuleCaption;
+            let id = actor.battle.params[0];
+            return match world.casting.module_caption? {
+                ModuleCaption::SpellName => world
+                    .menu
+                    .text
+                    .as_ref()
+                    .and_then(|t| t.spell_name(id))
+                    .map(str::to_string),
+                ModuleCaption::AttackName => world.tables.summon_attack_names.get(&id).cloned(),
+            };
         }
         let id = actor.battle.params[0];
         world

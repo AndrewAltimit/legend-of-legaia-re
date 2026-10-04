@@ -85,8 +85,8 @@ pub const GIMARD_BREATH_CLUT_MOVE: ModuleVramMove = ModuleVramMove {
 /// | 2 | drain while positive, hold above `0` | the creature stream load (`FUN_8003EAE4(0, 7)`), taken as ready |
 /// | 3 | - | seats the creature half a unit from the victim toward the caster, facing `h`, `y = 0x200`; spawns [`GIMARD_SEAT_SPAWNS`] on it; countdown `= scalar << 6` |
 /// | 4 | creature sinks; hold above `scalar << 5` | snap: pitch `-0x1C0`, yaw `0x700 - facing`, TR `(0, 0x380, 0x1E0)`, focus the creature (`0x801F6F18`) |
-/// | 5 | creature sinks; hold above `0` | creature lands (`y = 0`), the spell caption; countdown `+= scalar * 180` |
-/// | 6 | hold above `0` | snap: pitch `0x80`, yaw `0x880 - facing`, TR `(0, 0x400, 0x400)`, focus the creature (`0x801F712C`); spawns the fire tunnel [`GIMARD_TUNNEL_SPAWNS`]; countdown `+= scalar * 192` |
+/// | 5 | creature sinks; hold above `0` | creature lands (`y = 0`), the spell-name caption; countdown `+= scalar * 180` |
+/// | 6 | hold above `0` | snap: pitch `0x80`, yaw `0x880 - facing`, TR `(0, 0x400, 0x400)`, focus the creature (`0x801F712C`); spawns the fire tunnel [`GIMARD_TUNNEL_SPAWNS`]; the attack-name caption replaces the spell name; countdown `+= scalar * 192` |
 /// | 7 | one drain | pitch `0x140`, yaw `0x940 - facing`, TR `(0, 0x340, 0xA00)`, focus the creature, over `0xC0` frames (`0x801F721C`) |
 /// | 8 | hold above `scalar << 7` | the CLUT move [`GIMARD_BREATH_CLUT_MOVE`], then the breath [`GIMARD_BREATH_SPAWNS`] on the creature |
 /// | 9 | hold above `scalar * 96` | - |
@@ -179,15 +179,23 @@ pub fn gimard_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
                 c.y = 0;
             }
             st.countdown.add(180);
-            ArmDirection::PASS
+            // `FUN_8003541C(0, 0, name, 0xAC - w / 2, 0x96, ..)` at
+            // `0x801F700C`, the name off `DAT_800754C8[id * 12 + 8]`.
+            ArmDirection {
+                caption: Some(ModuleCaption::SpellName),
+                ..ArmDirection::PASS
+            }
         }
         6 => {
             if st.countdown.drain_above(0) {
                 return ArmDirection::HOLD;
             }
             st.countdown.add(192);
+            // `FUN_800319A8(0)` then `FUN_8003541C(0, 0, attack, 0xA0 - w /
+            // 2, 0x96, ..)` (`0x801F707C..0x801F70CC`).
             ArmDirection {
                 spawns: &GIMARD_TUNNEL_SPAWNS,
+                caption: Some(ModuleCaption::AttackName),
                 ..ArmDirection::shot(ModuleShot {
                     angles: [0x80, yaw_from(0x880, creature.facing), 0],
                     tr: [0, 0x400, 0x400],
