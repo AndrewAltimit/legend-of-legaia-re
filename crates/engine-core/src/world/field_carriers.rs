@@ -42,6 +42,7 @@ impl World {
         self.props.walk_touch.clear();
         self.props.boss_stagers.clear();
         self.props.active_walk_touch = None;
+        self.props.arrival_exempt.clear();
         self.dialog.stepping_inline_npc = None;
         self.dialog.active_inline_slot = None;
     }

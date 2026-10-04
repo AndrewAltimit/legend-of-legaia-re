@@ -62,6 +62,17 @@ pub struct FieldPropState {
     /// per-step post on the player's `+0x10 & 0x80000` engaged flag, cleared
     /// by the dialog SM teardown - the engine latches per contact instead).
     pub active_walk_touch: Option<u8>,
+    /// The **arrival bracket**: walk-touch binds a teleporting record made
+    /// collision- and touch-exempt for the player's arrival, each with its
+    /// contact centre. A lift record names its partner object with a
+    /// cross-context `B1 <obj> 00` (`+0x10 |= 1`, the `flags & 3` filter
+    /// `FUN_801CF754` / `FUN_801CF9F4` apply) before the walk-off and a
+    /// `B2 <obj> 00` after it (`tower` P0[2] brackets P0[3]); the landing
+    /// stands on the partner's platform, so without the bracket the first
+    /// step off it re-fires the partner and rides straight back. An entry
+    /// clears once no probe point of the player reaches its contact box -
+    /// the player is off the platform, as after retail's `B2`.
+    pub arrival_exempt: Vec<(u8, (i16, i16))>,
     /// The current scene's **field move-VM stager table** - the prescript
     /// records (`scene_event_scripts` / `scene_v12_table` offset `0x800`) parsed
     /// as summon-format move-VM stager records, the field-resident sibling of the
@@ -106,6 +117,7 @@ impl FieldPropState {
             walk_touch: std::collections::BTreeMap::new(),
             walk_touch_records: std::collections::BTreeMap::new(),
             active_walk_touch: None,
+            arrival_exempt: Vec::new(),
             stagers: Vec::new(),
             stager_bytes: Vec::new(),
             active_fx: Vec::new(),

@@ -1154,7 +1154,7 @@ impl World {
             return true;
         }
         self.props.colliders.iter().any(|c| {
-            if !c.solid {
+            if !c.solid || self.collider_arrival_exempt(c) {
                 return false;
             }
             let ((cx, cz), half) = if c.moving_box {
@@ -1211,7 +1211,7 @@ impl World {
             let px = x.saturating_add(dx) as i32;
             let pz = z.saturating_sub(dz) as i32;
             for c in &self.props.colliders {
-                if !c.solid {
+                if !c.solid || self.collider_arrival_exempt(c) {
                     continue;
                 }
                 let ((cx, cz), half) = if c.moving_box {
@@ -2326,10 +2326,28 @@ impl World {
                 points.push((px.saturating_add(dx) as i32, pz.saturating_sub(dz) as i32));
             }
         }
+        // The arrival bracket lifts once the player is off the platform: no
+        // probe point in any direction reaches the partner's contact box.
+        if !self.props.arrival_exempt.is_empty() {
+            let reach: Vec<(i32, i32)> =
+                std::iter::once((px as i32, pz as i32))
+                    .chain(FIELD_ACTOR_PROBES.iter().flatten().map(|&(dx, dz)| {
+                        (px.saturating_add(dx) as i32, pz.saturating_sub(dz) as i32)
+                    }))
+                    .collect();
+            self.props.arrival_exempt.retain(|&(_, (wx, wz))| {
+                reach.iter().any(|&(qx, qz)| {
+                    (qx - wx as i32).abs() < FIELD_PROP_BOX_HALF
+                        && (qz - wz as i32).abs() < FIELD_PROP_BOX_HALF
+                })
+            });
+        }
+        let exempt = &self.props.arrival_exempt;
         let hit = self
             .props
             .walk_touch
             .iter()
+            .filter(|(s, _)| !exempt.iter().any(|(e, _)| e == *s))
             .find(|(_, ((wx, wz), _))| {
                 points.iter().any(|&(qx, qz)| {
                     (qx - *wx as i32).abs() < FIELD_PROP_BOX_HALF
@@ -2350,9 +2368,12 @@ impl World {
         // interior vs. spawn the story beat). Retail resumes the record on
         // contact, so the arm is chosen against the *live* flags - re-resolve
         // here rather than reusing the load-time structural decode. Falls back
-        // to that decode when the record can't be re-walked.
+        // to that decode only when the record can't be re-walked: a record
+        // walked to its idle loop with no teleport on the taken arm (the
+        // `tower` rapid elevator while its switch `0x1C6` is off) moves
+        // nobody - its static first `MoveTo` belongs to the other arm.
         // REF: FUN_801d5b5c (contact resumes the object's script)
-        let event = self
+        let resolved = self
             .props
             .walk_touch_records
             .get(&touch_slot)
@@ -2365,11 +2386,14 @@ impl World {
                     let byte = usize::from(idx >> 3);
                     byte < flags.len() && flags[byte] & (0x80u8 >> (idx & 7)) != 0
                 };
-                crate::man_field_scripts::resolve_walk_touch_event(&man_file, &man, record, &test)
+                crate::man_field_scripts::resolve_walk_touch_arm(&man_file, &man, record, &test)
             })
-            .unwrap_or(event);
+            .unwrap_or(Some(event));
         // Post through the same dispatch path the button-gated interact uses.
         self.trigger_field_interact(0, touch_slot);
+        let Some(event) = resolved else {
+            return;
+        };
         match event {
             // A `Warp` event is, by construction, **only** ever a mode-24
             // minigame sub-id: `is_genuine_warp` gates the decoded `0x3E`'s
@@ -2427,6 +2451,7 @@ impl World {
                     world_z: world_z as u16,
                     is_player: true,
                 });
+                self.arm_arrival_bracket(touch_slot);
             }
             // Boss-stager contact: the `trigger_field_interact` call above
             // already ran the placement's record ([`crate::world::World::
@@ -2443,6 +2468,58 @@ impl World {
                 }
             }
         }
+    }
+
+    /// Arm the arrival bracket for a teleport the walk-touch bind `slot`'s
+    /// record just made: every bind whose record the teleporting record
+    /// names in a cross-context `B1 <obj> 00`
+    /// ([`crate::man_field_scripts::record_exempted_objects`]) is skipped by
+    /// the touch dispatch and the collision probe until the player is off
+    /// its contact box. The engine moves the player by the record's
+    /// `MoveTo` alone (the ride's `A2 F8` walk-off clip is not run), so the
+    /// player steps off the platform themselves; the bracket keeps that step
+    /// from re-firing the partner, as retail's exemption does across the
+    /// scripted walk-off.
+    ///
+    /// REF: FUN_801CF754, FUN_801CF9F4, FUN_801d5b5c
+    fn arm_arrival_bracket(&mut self, slot: u8) {
+        let Some(&record) = self.props.walk_touch_records.get(&slot) else {
+            return;
+        };
+        let Some(man) = self.field_vm.channels_man.clone() else {
+            return;
+        };
+        let Ok(man_file) = legaia_asset::man_section::parse(&man) else {
+            return;
+        };
+        let targets = crate::man_field_scripts::record_exempted_objects(&man_file, &man, record);
+        if targets.is_empty() {
+            return;
+        }
+        let partners: Vec<(u8, (i16, i16))> = self
+            .props
+            .walk_touch_records
+            .iter()
+            .filter(|&(&s, &r)| s != slot && targets.iter().any(|&t| usize::from(t) == r))
+            .filter_map(|(&s, _)| self.props.walk_touch.get(&s).map(|&(pos, _)| (s, pos)))
+            .collect();
+        for p in partners {
+            if !self.props.arrival_exempt.contains(&p) {
+                self.props.arrival_exempt.push(p);
+            }
+        }
+    }
+
+    /// Whether a prop collider is under the arrival bracket
+    /// ([`crate::world::FieldPropState::arrival_exempt`]): its static
+    /// contact centre is a bracketed bind's.
+    pub(crate) fn collider_arrival_exempt(&self, c: &FieldPropCollider) -> bool {
+        !c.moving_box
+            && self
+                .props
+                .arrival_exempt
+                .iter()
+                .any(|&(_, (x, z))| (i32::from(x), i32::from(z)) == c.center)
     }
 
     /// Post a player-NPC contact into the motion VM's one-slot touch mailbox

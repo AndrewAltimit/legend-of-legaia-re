@@ -1844,6 +1844,37 @@ the touch spawn that record as a field-VM context
 (`WalkTouchEvent::SpawnRecord`), which is how a door that leads into a cutscene
 works.
 
+A walk that reaches the idle park with neither is an answer too: the taken arm
+moves nobody, and the contact only runs the record. The record's *structural*
+decode (its first teleport, regardless of branch) stands in only when the
+record cannot be walked at all
+(`man_field_scripts::resolve_walk_touch_arm` tells the two apart). `tower`'s
+rapid lift (P0[4] / P0[5]) is the case that needs it: its first op tests the
+switch flag `0x1C6`; clear, the arm types "Out of service" and loops, set, it
+parks the player on tile (0, 0) for the ride (`A3 F8 00 00`) before the arrival
+`MoveTo`. Read through the structural fallback, the out-of-service arm dropped
+the player into the void corner of the map.
+
+### The arrival bracket
+
+A lift ride lands the player on the partner lift's platform, and the riding
+record brackets that arrival: a cross-context `B1 <obj> 00` sets bit 0 of the
+partner's `+0x10` (the `flags & 3` filter `FUN_801CF754` / `FUN_801CF9F4`
+apply, so it neither blocks nor posts a touch) before the scripted walk-off
+(`A2 F8 02`) and `B2 <obj> 00` clears it after. `tower` P0[2] brackets P0[3]
+this way, and every lift pair of the tower does the same. The landing is
+wedged between two walls and the platform, so without the bracket the first
+step off it re-fires the partner and rides straight back.
+
+The engine moves the player by the record's `MoveTo` and does not run the
+walk-off clip, so it keeps the bracket's effect instead:
+`World::arm_arrival_bracket` reads the partners off the teleporting record
+(`man_field_scripts::record_exempted_objects`) into
+`FieldPropState::arrival_exempt`, the touch dispatch and the prop collision
+probe skip them, and an entry clears once no probe point of the player reaches
+its contact box. Disc-gated coverage:
+`crates/engine-shell/tests/tower_lift_arrival_disc.rs`.
+
 ### The pairing convention
 
 Doorway records pair by their fullwidth SJIS record name: `…ＩＮ` / `…ＯＵＴ`
