@@ -351,6 +351,17 @@ The two gates are host-shaped, because a WASM module has no process environment 
 
 This is a worked example of the drift shape in [`tooling/host-drift.md`](../tooling/host-drift.md): the native gate landed on its own, the browser twin kept drawing, and a diff of the gating commit reads as complete because the file it touched is complete. The pairing to check is "does the other host reach the same builder under the same condition", not "was the builder edited".
 
+#### A battle billboard's centre is Y-flipped
+
+The pool integrates in raw PSX units, **Y down**: a spark climbing off the floor runs negative. The battle view-projection both hosts share (`battle_cam_script::battle_vp`) carries a trailing `scale(1, -1, 1)` that cancels the per-model Y-flip every mesh draw carries, so it consumes Y-up input. A billboard has no model matrix, so its centre is flipped before the corners are built (`engine-vm::effect_billboard::battle_billboard_centre`, called by both hosts). Fed the raw position, a spark rising past an actor's head projected the same height below its feet - the Spirit charge's sparkles drew entirely off the bottom of the frame. Dust at `y = 0` reads the same either way, which is how the inversion survived. The field cameras compose the world flip themselves and take the raw position.
+
+#### Battle effect parts morph through `vdf.dat`
+
+The effect-script **table form** (`0x801F6324` prototypes, `World::spawn_action_table_effect`) stages move-VM parts like any other scene-graph. Two things decide whether they show:
+
+- **Their wait timers drain at retail's per-frame rate.** `FUN_80021DF4` subtracts `DAT_1F800393 * DAT_1F80037D` from `+0x54` per frame, so `WAIT_SET v` holds `v` frames. The scene-graph step `0x400` the summon scenes tick with expired every wait under 128 frames in one tick, so a `0x4F`-frame hold lived three ticks. The table-form scenes tick their waits with the channel delta instead.
+- **A part with op `0x0A` lanes draws morphed.** The lanes index the battle VDF pack `vdf.dat` (PROT 0872): battle init rebuilds the sub-entry table `0x80083E58` from index 0 (a mid-Spirit capture reads the append counter `0x8007B7EC` at the pack's 32 entries and table entry 12 equal to the pack's entry 12). The engine runs the ramp envelope `FUN_80020740` on these parts and both hosts draw `World::morphed_part_tmd` - the Spirit charge's prototypes `0x07` / `0x08` are small rest meshes that entry 12 grows into the aura cone.
+
 #### The quad half-extent is a view-space quantity, so the battle camera scale must be divided back out
 
 `FUN_800195A8` transforms the sprite **centre** through the GTE camera matrix (`FUN_8003D344`, one `MVMVA`), then forms the four corners by adding the half-extents to that *already-transformed* view-space centre, then resets the rotation matrix to identity with `TRX/TRY/TRZ = 0` before the `RTPT`. The camera matrix therefore multiplies the centre and never touches the half-extents.

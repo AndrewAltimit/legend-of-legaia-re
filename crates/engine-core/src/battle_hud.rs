@@ -1555,8 +1555,10 @@ pub fn battle_panels_visible(world: &crate::world::World) -> bool {
 ///   record 7 for that member and stores it as `ctx[+0x18]` for the close.
 ///   Tail Fire and Glare on Vahn show `Vahn`; Vahn's Somersault on Gimard
 ///   shows nothing;
-/// * the Spirit / Item pre-arm `0x3C` (`0x801E3DA0..0x801E3DC0`) opens it
-///   for the acting member when that member is a party slot.
+/// * the Item pre-arm `0x3C` (`0x801E3DA0..0x801E3DC0`) opens it for the
+///   acting member when that member is a party slot. A Spirit action never
+///   reaches `0x3C` - its seed arm goes straight to `0x46` - and raises the
+///   AP bar + plate pair instead, so it has no readout bar.
 pub fn battle_readout_bar_slot(world: &crate::world::World) -> Option<u8> {
     use legaia_engine_vm::battle_action::ActionCategory;
     let pc = party_count(world) as u8;
@@ -1582,7 +1584,14 @@ pub fn battle_readout_bar_slot(world: &crate::world::World) -> Option<u8> {
                 (t < pc).then_some(t)
             };
             let cat = actor.battle.action_category;
-            if cat == ActionCategory::Item.as_byte() || cat == ActionCategory::Spirit.as_byte() {
+            if cat == ActionCategory::Spirit.as_byte() {
+                // The Spirit arm (`0x801E2F54..0x801E3024`) sends category
+                // `4` straight to `0x46` and jumps past both record-7 opens:
+                // it raises the AP bar (`0x0F`) and the AP plate (`0x52`)
+                // instead ([`crate::world::World::spirit_gauge_view`]). The
+                // retail Spirit captures carry no readout bar.
+                None
+            } else if cat == ActionCategory::Item.as_byte() {
                 if a < pc { Some(a) } else { party_target }
             } else {
                 party_target

@@ -3771,6 +3771,16 @@ The base AP grows by 1 each 10-level milestone (level 1..9 → 4 AP, 10..19 → 
 
 Implementation: [`crates/engine-core::ap_gauge`](../../crates/engine-core/src/ap_gauge.rs). The `World` carries a `[ApGauge; 3]` (one per party slot); engines call `World::reset_party_ap` at turn start.
 
+### What a Spirit turn does to the gauge, and what it draws
+
+The gauge the arts entry actually spends is the battle actor's action gauge `+0x154` / `+0x156` ([`arts-command-gauge.md`](arts-command-gauge.md#where-the-gauge-pool-comes-from)), seeded at battle setup from the character's live AGL. A Spirit turn extends it three ways, all read off `FUN_801E295C`:
+
+- **The seed arm** (`0x801E2F54..0x801E3024`) sends category `4` straight to `0x46` - never through the `0x3C` item pre-arm, so it raises no readout bar (record 7). It sizes placement record `0x0F` (the AP bar) to `+0x154 - 6` and raises it with the AP plate `0x52`, parking the plate's handle at `0x801F6968`.
+- **The band** (`0x46..0x48`): `0x46` writes the camera depth `ctx[+0x6D0] = 0x800` (the Spirit close-up), stages the extended gauge `min(+0x156 * 7 / 5 + 8, 0x120)` and the Spirit target `+0x170 + 0x20` (`+0x28` / `+0x23` under the `+0xF8` passives `0x200` / `0x100`); `0x47` grows the bar one frame step at a time to the extended gauge less 6 and climbs the plate; `0x48` finishes the plate. The `0x51` teardown unloads both.
+- **The Done band** pays the per-action accumulator `+0x224` into Spirit: `8` for every action, `0x20` for a Spirit turn, plus the two passives, capped at 100. The round boundary then restores a Spirit-charged actor's `+0x154` to the extended gauge, which is the pool the next arts entry opens on.
+
+Retail captures of the band agree (`ctx[+0x6D0] = 0x800`, a 188-wide bar under a 194 AGL, `+0x154` already extended on the following turn). The engine draws the pair through the arts-entry chrome builders on both hosts (`World::spirit_gauge_view`), so the bar is the arts bar: one pixel per AP between its end pieces. The aura the clip's effect script spawns (prototypes `0x07` / `0x08`) is a VDF-morphed mesh on `vdf.dat` entry 12 - see [`effect-vm.md`](effect-vm.md#battle-effect-parts-morph-through-vdfdat).
+
 ## Battle stat aggregator
 
 From-scratch port of `FUN_80042558`. Walks the 8 equipment slots, sums modifiers into the actor's resolved attack / UDF / LDF / accuracy / evasion, ORs equipment ability bits into the global 4×u32 mask, then folds in status-effect modifiers (Toxic reduces ATK + both defenses by ~12.5%, Confuse halves accuracy, Numb / Sleep / Stone / Faint zero evasion and block actions, Curse / Faint block Magic).

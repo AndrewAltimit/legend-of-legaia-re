@@ -236,6 +236,28 @@ pub(crate) fn seed_effect_model_library_from_etmd(
     Ok(())
 }
 
+/// PROT entry carrying `vdf.dat`, the battle VDF morph pack
+/// (`docs/formats/effect.md`: case `0xb` of `FUN_800520F0`).
+const PROT_BATTLE_VDF_ENTRY: u32 = 872;
+
+/// Load the battle VDF morph pack (PROT 0872, `vdf.dat`) into
+/// [`crate::world::DiscTables::battle_vdf`] - what a battle effect part's
+/// op-`0x0A` morph lanes index (the Spirit charge's aura cones are lanes on
+/// its entry 12). Retail loads it at battle init beside `etmd.dat`; the engine
+/// keeps it resident like the effect-model library. Soft-fails on a missing
+/// entry or a header that is not a VDF offset pack.
+pub(crate) fn seed_battle_vdf(index: &ProtIndex, world: &mut crate::world::World) -> Result<()> {
+    let raw = index
+        .entry_bytes(PROT_BATTLE_VDF_ENTRY)
+        .with_context(|| format!("read PROT entry {PROT_BATTLE_VDF_ENTRY} (vdf.dat)"))?;
+    anyhow::ensure!(
+        crate::world::vdf_entry(&raw, 0).is_some(),
+        "PROT {PROT_BATTLE_VDF_ENTRY} is not a VDF offset pack"
+    );
+    world.tables.battle_vdf = Some(std::sync::Arc::from(raw.as_slice()));
+    Ok(())
+}
+
 /// True when the PROT 0871 effect-model library is already resident in the
 /// pool (every slot in `[3..=32]` populated). Used to keep
 /// [`seed_effect_model_library_from_etmd`] idempotent across scene

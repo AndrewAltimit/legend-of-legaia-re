@@ -136,6 +136,43 @@ pub const GAUGE_EXTEND_CLASS: u8 = 5;
 /// `li v0,0x120` at `0x801E3F90..0x801E3F98`).
 pub const GAUGE_EXTEND_CEILING: i16 = 0x120;
 
+/// The **extended action gauge** `min(base * 7 / 5 + 8, 0x120)`, the one
+/// formula behind every "the AP gauge grows" retail draws: the Spirit
+/// dispatch arm's charged-bar seed (`0x801E2F88..0x801E2FCC`), the Spirit
+/// band's bar target (`0x801E52C0..0x801E5314`), the gauge-extension item's
+/// target (`0x801E3F60..0x801E3F98`) and the round-boundary restore of a
+/// Spirit-charged actor (`battle_formulas::round_reset_agility`). `base` is
+/// the actor's AGL base `+0x156`; the `0x66666667` reciprocal is `/ 5`
+/// applied to `base * 7`.
+pub fn extended_gauge(base: u16) -> i16 {
+    let v = i32::from(base) * 7 / 5 + 8;
+    (v as i16).min(GAUGE_EXTEND_CEILING)
+}
+
+/// Placement record of the AP bar the Spirit arm raises (`li a0,0xf` at
+/// `0x801E2FD0`).
+pub const SPIRIT_AP_BAR_ELEMENT: u8 = 0x0F;
+/// Placement record of the AP plate the Spirit arm raises (`li a0,0x52` at
+/// `0x801E2FDC`).
+pub const SPIRIT_AP_PLATE_ELEMENT: u8 = 0x52;
+/// The AP bar's drawn width is its gauge value less this (`addiu v0,v0,-0x6`
+/// at `0x801E2F70`, and the `-6` the sustain's bar target takes at
+/// `0x801E547C`) - the same bias the arts-entry gauge sizes its records with.
+pub const SPIRIT_BAR_WIDTH_BIAS: i16 = 6;
+/// The camera depth state `0x46` writes before anything else
+/// (`li v0,0x800` / `sh v0,0x6d0(v1)` at `0x801E52AC..0x801E52B0`): the
+/// Spirit close-up. Without it the in-fight framing keeps the seed's
+/// size-class depth, which sets the camera on the far side of the monsters.
+pub const SPIRIT_CAMERA_DEPTH: i16 = 0x800;
+/// The Spirit gauge a Spirit turn stages on top of the actor's `+0x170`
+/// (`addiu v0,a1,0x20` at `0x801E5320`), and the two passive overrides:
+/// `+0x28` with record `+0xF8 & 0x200`, `+0x23` with `& 0x100`
+/// (`0x801E5364..0x801E537C`). The same `+0x20` is what the Done band
+/// actually adds (`actor[+0x224] = 0x20` for category `4`).
+pub const SPIRIT_TURN_GAIN: u16 = 0x20;
+pub const SPIRIT_TURN_GAIN_BIT_200: u16 = 0x28;
+pub const SPIRIT_TURN_GAIN_BIT_100: u16 = 0x23;
+
 /// Ceiling of the spirit-gauge target the arm stages (`slti v0,v0,0x65` /
 /// `li v0,0x64` at `0x801E4004..0x801E4010`).
 pub const SPIRIT_TARGET_CEILING: i16 = 100;
@@ -175,12 +212,8 @@ fn gauge_extend_fire<H: BattleActionHost + ?Sized>(
     ctx.spirit_action_count = ctx.spirit_action_count.wrapping_add(1);
     ctx.camera_variant = ((host.rng() % 2) * 2) as u8;
     let target = host.actor(slot).map(|a| a.active_target).unwrap_or(0);
-    let base = host
-        .actor(target)
-        .map(|t| i32::from(t.agl_base))
-        .unwrap_or(0);
-    let extended = (base * 7 / 5 + 8) as i16;
-    ctx.damage_target = extended.min(GAUGE_EXTEND_CEILING);
+    let base = host.actor(target).map(|t| t.agl_base).unwrap_or(0);
+    ctx.damage_target = extended_gauge(base);
     let spirit = host.actor(slot).map(|a| a.spirit_gauge).unwrap_or(0) as i16;
     let bump = if host.character_ability_bits_high(slot) & SPIRIT_BUMP_PLUS_BIT != 0 {
         10
@@ -310,26 +343,32 @@ pub(super) fn spirit_post_damage<H: BattleActionHost + ?Sized>(
 // Retail's action seed sends category `4` here unconditionally (`li v0,0x46`
 // / `sb v0,0x7(v1)` at `0x801E2F5C`). The band stages the spirit clip the
 // commit left at `+0x1E7`, ramps the spirit gauge HUD element toward its
-// target and holds until both the clip and a timer have run out. The HUD
-// ramps (the gauge element at `*0x801F6968` `+0x10`, the bar at
-// `ctx[+0x1074]` `+0x0E`) are presentation the port draws elsewhere; the
-// timing below is the band's own.
+// target and holds until both the clip and a timer have run out. The two HUD
+// ramps - the AP plate's value (`*0x801F6968` `+0x10`,
+// [`BattleActionCtx::spirit_plate_value`]) and the AP bar's width
+// (`ctx[+0x1074]` `+0x0E`, [`BattleActionCtx::spirit_bar_width`]) - are part
+// of the band's own exit conditions, so they are stepped here and drawn by
+// the hosts off the context.
 
 /// `0x46`'s hold before the sustain reads its exit (`li v0,0x20` /
 /// `sh v0,0x2(s7)` at `0x801E539C..0x801E53A0`, `s7 = ctx + 0x6D6`).
 pub const SPIRIT_BAND_HOLD: i16 = 0x20;
 
-/// The framing depth `ctx[+0x6D0]` `0x46` stores on entry (`li v0,0x800` at
-/// `0x801E52AC`), below `FUN_801F0348`'s `0xC00` floor.
-pub const SPIRIT_BAND_FRAME_HEIGHT: i16 = 0x800;
 /// `0x47`'s exit re-arms the timer for the flush (`li v0,0x300` at
 /// `0x801E54E0`), which `0x48` drains eight units a frame step.
 pub const SPIRIT_FLUSH_HOLD: i16 = 0x300;
 /// `0x48`'s per-frame drain multiplier (`sll v1,v0,0x3` at `0x801E5748`).
 pub const SPIRIT_FLUSH_STEP: i16 = 8;
 
-/// State `0x46`: stage the committed spirit clip (`+0x1DA = +0x1E7`) with the
-/// clip-running flag `+0x1DC = 2`, and arm the `0x20` hold.
+/// State `0x46`: pull the camera in to the Spirit close-up (`ctx[+0x6D0] =
+/// 0x800`), stage the committed spirit clip (`+0x1DA = +0x1E7`) with the
+/// clip-running flag `+0x1DC = 2`, stage the two HUD ramp targets and arm the
+/// `0x20` hold.
+///
+/// The targets: the AP bar grows to the extended gauge
+/// [`extended_gauge`]`(+0x156)` into `ctx[+0x6DC]`, and the AP plate climbs to
+/// the actor's Spirit `+0x170` plus [`SPIRIT_TURN_GAIN`] (or one of its two
+/// passive overrides) capped at `100` into `ctx[+0x6DE]`.
 ///
 /// PORT: FUN_801E295C (state `0x46`, `0x801E52A4..0x801E53B4`)
 pub(super) fn spirit_arts_entry<H: BattleActionHost + ?Sized>(
@@ -342,13 +381,27 @@ pub(super) fn spirit_arts_entry<H: BattleActionHost + ?Sized>(
     // depth, whatever `FUN_801F0348` sized the seed to, and the Done band
     // that follows keeps it (`nivora_duel_pre_megaton_press` reads
     // `ctx[+0x6D0] = 0x800`, eye depth `prescale(0x800)`, in `0x51`).
-    ctx.camera_frame_height = SPIRIT_BAND_FRAME_HEIGHT;
-    host.camera_frame_height(SPIRIT_BAND_FRAME_HEIGHT);
+    ctx.camera_frame_height = SPIRIT_CAMERA_DEPTH;
+    host.camera_frame_height(SPIRIT_CAMERA_DEPTH);
     host.pose(slot, Pose::Idle);
+    let (base, spirit) = host
+        .actor(slot)
+        .map(|a| (a.agl_base, a.spirit_gauge))
+        .unwrap_or((0, 0));
     if let Some(actor) = host.actor_mut(slot) {
         actor.flag_bits = ActorFlags(ActorFlags::ADVANCE_DONE);
         actor.queued_anim = actor.queued_anim_b;
     }
+    ctx.damage_target = extended_gauge(base);
+    let bits = host.character_ability_bits_high(slot);
+    let gain = if bits & 0x200 != 0 {
+        SPIRIT_TURN_GAIN_BIT_200
+    } else if bits & 0x100 != 0 {
+        SPIRIT_TURN_GAIN_BIT_100
+    } else {
+        SPIRIT_TURN_GAIN
+    };
+    ctx.hp_bar_target = (spirit.wrapping_add(gain) as i16).min(SPIRIT_TARGET_CEILING);
     ctx.frame_timer = SPIRIT_BAND_HOLD;
     transition(ctx, ActionState::SpiritArtsSustain)
 }
@@ -356,8 +409,10 @@ pub(super) fn spirit_arts_entry<H: BattleActionHost + ?Sized>(
 /// State `0x47`: once the clip has committed (`+0x1D9 != 0`) the queued id is
 /// cleared so it plays once; the hold drains **level-triggered** (`lh` /
 /// `blez` at `0x801E53D8..0x801E53E0` - a positive timer steps and returns);
-/// then the band waits on the clip-running flag `+0x1DC` and leaves for the
-/// flush with the timer re-armed at `0x300`.
+/// then the AP plate steps toward its target, the AP bar grows toward the
+/// extended gauge (holding the band while it moves, unless the `+0x1F9`
+/// charge byte already sized it), and the band waits on the clip-running flag
+/// `+0x1DC` and leaves for the flush with the timer re-armed at `0x300`.
 ///
 /// PORT: FUN_801E295C (state `0x47`, `0x801E53B8..0x801E54E8`)
 pub(super) fn spirit_arts_sustain<H: BattleActionHost + ?Sized>(
@@ -377,6 +432,18 @@ pub(super) fn spirit_arts_sustain<H: BattleActionHost + ?Sized>(
         ctx.frame_timer = ctx.frame_timer.saturating_sub(host.frame_dt());
         return stay(ctx);
     }
+    let step = host.frame_dt();
+    step_spirit_plate(ctx, step);
+    // `0x801E5458..0x801E54A8`: with no charge byte, grow the bar one frame
+    // step toward `ctx[+0x6DC] - 6` and return while it moves.
+    let charged = host.actor(slot).is_some_and(|a| a.spirit_shield != 0);
+    if !charged {
+        let goal = ctx.damage_target.wrapping_sub(SPIRIT_BAR_WIDTH_BIAS);
+        if ctx.spirit_bar_width < goal {
+            ctx.spirit_bar_width = ctx.spirit_bar_width.wrapping_add(step);
+            return stay(ctx);
+        }
+    }
     let clip_running = host.actor(slot).is_some_and(|a| a.flag_bits.0 != 0);
     if clip_running {
         return stay(ctx);
@@ -385,9 +452,22 @@ pub(super) fn spirit_arts_sustain<H: BattleActionHost + ?Sized>(
     transition(ctx, ActionState::SpiritArtsFlush)
 }
 
-/// State `0x48`: drain the `0x300` hold eight units a frame step (clamped at
-/// zero), and hand the action to the Done band once the hold is out and the
-/// actor's anim pair has settled on idle (`+0x1DA == +0x1D9 == 0`).
+/// Step the AP plate's value one frame step toward `ctx[+0x6DE]`, landing
+/// exactly on it - the two-compare body states `0x47` and `0x48` share
+/// (`0x801E5400..0x801E5454` / `0x801E56D0..0x801E5728`).
+fn step_spirit_plate(ctx: &mut BattleActionCtx, step: i16) {
+    if ctx.spirit_plate_value < ctx.hp_bar_target {
+        ctx.spirit_plate_value = ctx.spirit_plate_value.wrapping_add(step);
+    }
+    if ctx.hp_bar_target < ctx.spirit_plate_value {
+        ctx.spirit_plate_value = ctx.hp_bar_target;
+    }
+}
+
+/// State `0x48`: finish the AP plate's climb, drain the `0x300` hold eight
+/// units a frame step (clamped at zero), and hand the action to the Done band
+/// once the hold is out, the actor's anim pair has settled on idle
+/// (`+0x1DA == +0x1D9 == 0`) and the plate sits on its target.
 ///
 /// PORT: FUN_801E295C (state `0x48`, `0x801E56D0..0x801E57C4`)
 pub(super) fn spirit_arts_flush<H: BattleActionHost + ?Sized>(
@@ -395,6 +475,7 @@ pub(super) fn spirit_arts_flush<H: BattleActionHost + ?Sized>(
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
     let slot = ctx.active_actor;
+    step_spirit_plate(ctx, host.frame_dt());
     if ctx.frame_timer > 0 {
         let step = host.frame_dt().saturating_mul(SPIRIT_FLUSH_STEP);
         ctx.frame_timer = if ctx.frame_timer < step {
@@ -407,7 +488,7 @@ pub(super) fn spirit_arts_flush<H: BattleActionHost + ?Sized>(
     let settled = host
         .actor(slot)
         .is_none_or(|a| a.queued_anim == a.current_anim && a.queued_anim == 0);
-    if !settled || ctx.frame_timer != 0 {
+    if !settled || ctx.frame_timer != 0 || ctx.spirit_plate_value != ctx.hp_bar_target {
         return stay(ctx);
     }
     transition(ctx, ActionState::DoneCleanup)

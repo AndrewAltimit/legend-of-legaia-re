@@ -3252,8 +3252,15 @@ impl PlayWindowApp {
                 );
             }
         }
+        let battle = self.session.host.world.mode == SceneMode::Battle;
         for s in sprites.iter().take(4) {
-            let p = cam * glam::Vec4::new(s.world_pos[0], s.world_pos[1], s.world_pos[2], 1.0);
+            // The same centre the billboard builder draws around.
+            let c = if battle {
+                legaia_engine_vm::effect_billboard::battle_billboard_centre(s.world_pos)
+            } else {
+                s.world_pos
+            };
+            let p = cam * glam::Vec4::new(c[0], c[1], c[2], 1.0);
             let ndc = if p.w.abs() > 1e-6 {
                 [p.x / p.w, p.y / p.w, p.z / p.w]
             } else {

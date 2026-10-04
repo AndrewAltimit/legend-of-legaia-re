@@ -340,6 +340,7 @@ mod shiny;
 mod slide;
 mod sound_stream_gates;
 mod sparring_solo;
+mod spirit_gauge;
 mod summon_final_heal;
 mod take_item;
 mod tile_board;

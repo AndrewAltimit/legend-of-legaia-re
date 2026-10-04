@@ -1915,7 +1915,14 @@ impl PlayWindowApp {
         {
             return Vec::new();
         }
-        let Some(view) = self.session.host.world.arts_input_view() else {
+        // A Spirit turn raises the same bar + plate pair (no chips, no
+        // pennants) and grows them - `World::spirit_gauge_view`; the browser
+        // play page takes the same fallback.
+        let world = &self.session.host.world;
+        let Some(view) = world
+            .arts_input_view()
+            .or_else(|| world.spirit_gauge_view())
+        else {
             return Vec::new();
         };
         let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);

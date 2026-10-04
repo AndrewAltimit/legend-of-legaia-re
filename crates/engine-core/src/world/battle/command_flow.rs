@@ -675,6 +675,65 @@ impl World {
         })
     }
 
+    /// The **Spirit turn's** AP bar + AP plate, as the same view the
+    /// arts-entry chrome draws from, or `None` outside a party member's
+    /// Spirit action.
+    ///
+    /// Retail's Spirit dispatch arm raises the arts screen's own two gauge
+    /// elements - placement records `0x0F` (the AP bar) and `0x52` (the AP
+    /// plate) - and the spirit band then grows the bar to the extended gauge
+    /// the next turn's entry pool will have, and climbs the plate by the
+    /// Spirit the turn earns (`legaia_engine_vm::battle_action`'s spirit
+    /// band, [`vm::battle_action::BattleActionCtx::spirit_bar_width`] /
+    /// `spirit_plate_value`). The Done band's tail unloads both. So the view
+    /// is up from the band's entry (`0x46`) until the `0x51` fade-down's
+    /// once-only UI teardown runs (the retail `0x51` captures of a Spirit turn
+    /// still carry both), with no pennants and no chips (the entry-only half), the bar sized by
+    /// the live width (`width + 6` is the gauge value the arts bar scales
+    /// off) and the plate reading the live ramp.
+    ///
+    /// Both hosts draw it through the arts-entry chrome builders when no
+    /// entry session is open ([`Self::arts_input_view`] takes precedence).
+    pub fn spirit_gauge_view(&self) -> Option<crate::arts_command_input::ArtsInputView<'static>> {
+        use crate::arts_command_input::{ArtsInputScreen, ArtsInputView};
+        if self.mode != crate::world::SceneMode::Battle || self.battle.arts_input.is_some() {
+            return None;
+        }
+        use vm::battle_action::ActionState as S;
+        let state = self.battle_ctx.action_state;
+        let up = (S::SpiritArtsEntry.as_byte()..=S::DoneCleanup.as_byte()).contains(&state)
+            || (state == S::DoneFadeDown.as_byte() && self.battle_ctx.done_ui_torn_down == 0);
+        if !up {
+            return None;
+        }
+        let slot = self.battle_ctx.active_actor;
+        if usize::from(slot) >= usize::from(self.party.party_count.max(1)) {
+            return None;
+        }
+        let actor = self.actors.get(usize::from(slot))?;
+        if actor.battle.action_category != vm::battle_action::ActionCategory::Spirit.as_byte() {
+            return None;
+        }
+        let width = self.battle_ctx.spirit_bar_width;
+        Some(ArtsInputView {
+            buffer: &[],
+            spent: &[],
+            pennants: &[],
+            pennant_spent: &[],
+            pool: 0,
+            pool_max: width
+                .saturating_add(vm::battle_action::SPIRIT_BAR_WIDTH_BIAS)
+                .max(0) as u16,
+            costs: [crate::arts_command_input::FAVORED_COST; 4],
+            chip_icons: [0x0F, 0x0E, 0x11, 0x10],
+            plate_value: self.battle_ctx.spirit_plate_value.clamp(0, 100) as u8,
+            list_page: None,
+            list_pages: 0,
+            phase: ArtsInputScreen::Review,
+            status: 0,
+        })
+    }
+
     /// The `+0x16E` status word of the member the command ring is open for,
     /// `None` without a command session. The ring's Rot / Curse marks read
     /// it (`crate::battle_hud::battle_ring_marks`), as its refusals do
@@ -689,13 +748,24 @@ impl World {
             ARTS_LIST_ROWS_PER_PAGE, ArtsCommandInputSession, DEFAULT_POOL, FAVORED_COST,
         };
         let char_slot = self.party_roster_slot(actor as usize) as u8;
+        // The pool is the battle actor's **live** gauge `+0x154`
+        // (`801d4e10 lhu v0,0x154(v0)`), not the record's AGL: after a Spirit
+        // turn the round boundary has extended it, and that longer gauge is
+        // the whole point of the command. A battle actor the setup never
+        // seeded (a synthetic fight) falls back to the record.
         let pool = self
-            .party
-            .roster
-            .members
-            .get(char_slot as usize)
-            .map(|r| r.live_stats().agl)
+            .actors
+            .get(actor as usize)
+            .map(|a| a.battle.agl)
             .filter(|&a| a > 0)
+            .or_else(|| {
+                self.party
+                    .roster
+                    .members
+                    .get(char_slot as usize)
+                    .map(|r| r.live_stats().agl)
+                    .filter(|&a| a > 0)
+            })
             .unwrap_or(DEFAULT_POOL);
         // Cost order = Command byte order (Left, Right, Down, Up) = the
         // runtime action slots `0xC..=0xF` the disc bytes are keyed by.

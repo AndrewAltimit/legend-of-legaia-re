@@ -1303,8 +1303,10 @@ fn done_cleanup_sets_recoil_per_category() {
     let (mut ctx, mut host) = fresh(ActionCategory::Spirit, 1);
     ctx.action_state = ActionState::DoneCleanup.as_byte();
     step(&mut host, &mut ctx);
-    // Spirit category → recoil = 0x20.
-    assert_eq!(host.actors[1].action_recoil, 0x20);
+    // Spirit category → the accumulator is `0x20`, paid into the Spirit
+    // gauge and then zeroed (`sb zero,0x224(s3)` at `0x801E5E70`).
+    assert_eq!(host.actors[1].spirit_gauge, 0x20);
+    assert_eq!(host.actors[1].action_recoil, 0);
     assert!(host.actors[1].flag_bits.has(ActorFlags::EXIT));
     assert_eq!(ctx.frame_timer, 0x3C);
 }
@@ -3570,6 +3572,90 @@ fn the_spirit_band_holds_its_clip_and_both_timers() {
         step(&mut host, &mut ctx);
     }
     assert_eq!(ctx.action_state, ActionState::DoneCleanup.as_byte());
+}
+
+/// A Spirit turn's whole presentation, seed to Done: the seed raises the AP
+/// bar (`0x0F`) and plate (`0x52`) sized off the live AGL, `0x46` pulls the
+/// camera in to `0x800` and stages the extended gauge and the `+0x20` Spirit
+/// target, the sustain grows the bar one step a frame to the extended gauge
+/// less 6, the plate climbs onto its target, and the Done band pays the
+/// `+0x20` into the gauge. The live values are a retail capture's: Noa at a
+/// 194 AGL reads a 188-wide bar under a `ctx[+0x6DC]` of 279.
+#[test]
+fn a_spirit_turn_grows_the_ap_bar_and_climbs_the_plate() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Spirit, 0);
+    host.actors[0].agl = 194;
+    host.actors[0].agl_base = 194;
+    host.actors[0].spirit_gauge = 40;
+    host.actors[0].queued_anim_b = 0x10;
+    ctx.action_state = ActionState::ActionSeed.as_byte();
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.action_state, ActionState::SpiritArtsEntry.as_byte());
+    let ui = host.take();
+    assert!(ui.contains(&Event::Ui(0x0F, 0)), "the AP bar is raised");
+    assert!(ui.contains(&Event::Ui(0x52, 0)), "the AP plate is raised");
+    assert_eq!(ctx.spirit_bar_width, 188, "AGL less 6");
+    assert_eq!(ctx.spirit_plate_value, 40, "the plate opens on the gauge");
+
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.camera_frame_height, 0x800, "the Spirit close-up");
+    assert_eq!(ctx.damage_target, 279, "194 * 7 / 5 + 8");
+    assert_eq!(ctx.hp_bar_target, 40 + 0x20);
+
+    host.actors[0].current_anim = 0x10;
+    let mut widths = vec![ctx.spirit_bar_width];
+    let mut steps = 0;
+    while ctx.action_state != ActionState::DoneCleanup.as_byte() && steps < 2000 {
+        if steps == 150 {
+            host.actors[0].flag_bits = ActorFlags(0);
+            host.actors[0].current_anim = 0;
+        }
+        step(&mut host, &mut ctx);
+        widths.push(ctx.spirit_bar_width);
+        steps += 1;
+    }
+    assert_eq!(ctx.action_state, ActionState::DoneCleanup.as_byte());
+    assert_eq!(ctx.spirit_bar_width, 279 - 6, "grown to the extended gauge");
+    assert!(
+        widths.windows(2).all(|w| w[1] >= w[0]),
+        "the bar only grows"
+    );
+    assert_eq!(
+        ctx.spirit_plate_value,
+        40 + 0x20,
+        "the plate sits on target"
+    );
+
+    step(&mut host, &mut ctx);
+    assert_eq!(
+        host.actors[0].spirit_gauge,
+        40 + 0x20,
+        "Done pays the +0x20"
+    );
+}
+
+/// Every action ends `+8` Spirit through the Done accumulator, with the two
+/// "spirit gain up" passives on top for a party seat, capped at 100.
+#[test]
+fn the_done_band_pays_the_accumulator_into_the_spirit_gauge() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
+    host.actors[0].spirit_gauge = 10;
+    ctx.action_state = ActionState::DoneCleanup.as_byte();
+    step(&mut host, &mut ctx);
+    assert_eq!(host.actors[0].spirit_gauge, 18);
+
+    let (mut ctx, mut host) = fresh(ActionCategory::Spirit, 0);
+    host.actors[0].spirit_gauge = 10;
+    host.ability_bits_high.insert(0, 0x300);
+    ctx.action_state = ActionState::DoneCleanup.as_byte();
+    step(&mut host, &mut ctx);
+    assert_eq!(host.actors[0].spirit_gauge, 10 + 8 + 3 + 0x20);
+
+    let (mut ctx, mut host) = fresh(ActionCategory::Spirit, 0);
+    host.actors[0].spirit_gauge = 90;
+    ctx.action_state = ActionState::DoneCleanup.as_byte();
+    step(&mut host, &mut ctx);
+    assert_eq!(host.actors[0].spirit_gauge, 100);
 }
 
 /// Nothing in the dispatcher clears `ctx[+0x19]`, so it is a per-battle latch

@@ -898,8 +898,14 @@ impl World {
     /// drains the scene once every part has finished.
     pub fn tick_move_fx(&mut self, frame_delta: u16) {
         let channel_delta = self.effect_channel_delta();
-        // Effect-script table-form scenes advance on the same clock. Take
-        // the list, tick each, keep the unfinished.
+        // Effect-script table-form scenes: take the list, tick each, keep the
+        // unfinished. Their wait timers drain at retail's own rate - the part
+        // tick subtracts `DAT_1F800393 * DAT_1F80037D` from `+0x54` per frame
+        // (`FUN_80021DF4`, `0x80021E40..0x80021E4C`), i.e. the channel delta,
+        // so a `WAIT_SET v` (`+0x54 = v << 3`) holds `v` frames. Under the
+        // scene-graph step `0x400` every wait under 128 frames expired in one
+        // tick: the Spirit charge's aura prototypes (`0x07` / `0x08`, a
+        // `0x4F`-frame hold each) lived three ticks and never showed.
         let mut action_fx = std::mem::take(&mut self.casting.active_action_fx);
         for scene in &mut action_fx {
             let mut host = MoveVmHostImpl {
@@ -910,7 +916,20 @@ impl World {
                 child_spawns: Vec::new(),
             };
             scene.channel_delta = channel_delta;
-            scene.tick(&mut host, frame_delta);
+            scene.tick(&mut host, channel_delta);
+            // The morph-lane ramp envelope `FUN_80020740`, which the part
+            // tick runs on a part whose `+0x10` word carries the op-`0x0A`
+            // bit `0x1000` - the same gate the field ambient tree takes. It
+            // is what moves the lane weights [`Self::morphed_part_tmd`]
+            // blends at.
+            let step = self.clock.frame_step.max(1);
+            for part in &mut scene.parts {
+                if !part.finished
+                    && part.state.flags & vm::move_buffer::STATUS_FLAG_ENVELOPE_ACTIVE != 0
+                {
+                    vm::vdf_morph::envelope_tick_actor(&mut part.state, step);
+                }
+            }
         }
         action_fx.retain(|s| !s.finished());
         self.casting.active_action_fx = action_fx;
@@ -954,6 +973,56 @@ impl World {
             out.extend(scene.part_draws());
         }
         out
+    }
+
+    /// The mesh a part draw renders: its pool TMD with the part's live VDF
+    /// morph lanes staged onto every group they name (`FUN_8001C604` +
+    /// `FUN_8005B038`, [`vm::vdf_morph::sum_group_deltas`]), or `None` when
+    /// the part carries no armed lane or no lane resolves (the host draws
+    /// the rest mesh from [`Self::global_tmd`]). In battle the lanes index
+    /// the battle pack `vdf.dat` ([`crate::world::DiscTables::battle_vdf`]);
+    /// elsewhere the scene's VDF.
+    ///
+    /// This is what gives the Spirit charge its aura: its two effect-script
+    /// prototypes are small rest meshes (pool `14` / `15`) that op `0x0A`
+    /// grows through `vdf.dat` entry 12 into the cone around the actor.
+    /// Both hosts resolve every move-FX part draw through it.
+    pub fn morphed_part_tmd(
+        &self,
+        draw: &crate::summon::SummonPartDraw,
+    ) -> Option<crate::world::GlobalTmd> {
+        let lanes = draw.morph.lanes();
+        if lanes.is_empty() {
+            return None;
+        }
+        let rest = self.global_tmd(draw.model_index as i16)?;
+        let resolve = |idx: u8| -> Option<&[u8]> {
+            if self.mode == crate::world::SceneMode::Battle {
+                crate::world::vdf_entry(self.tables.battle_vdf.as_deref()?, idx)
+            } else {
+                self.vdf_record_bytes(idx)
+            }
+        };
+        let slots: Vec<(&[u8], i16)> = lanes
+            .iter()
+            .filter_map(|&(idx, w)| Some((resolve(idx)?, w as i16)))
+            .collect();
+        if slots.is_empty() {
+            return None;
+        }
+        let mut tmd = rest.tmd.clone();
+        for (group, obj) in tmd.objects.iter_mut().enumerate() {
+            let deltas = vm::vdf_morph::sum_group_deltas(obj.vertices.len(), group as u32, &slots);
+            for (v, d) in obj.vertices.iter_mut().zip(deltas) {
+                v.x = v.x.wrapping_add(d[0]);
+                v.y = v.y.wrapping_add(d[1]);
+                v.z = v.z.wrapping_add(d[2]);
+            }
+        }
+        Some(crate::world::GlobalTmd {
+            tmd,
+            raw: rest.raw.clone(),
+        })
     }
 
     /// This frame's effect ribbons - every draw-kind-4 ribbon node (move-VM op

@@ -1374,6 +1374,14 @@ impl SceneHost {
         {
             eprintln!("[scene] effect-model library (PROT 0871) load skipped: {err:#}");
         }
+        // The battle VDF morph pack (PROT 0872, `vdf.dat`), loaded beside the
+        // effect-model library for the same reason: effect parts' morph lanes
+        // index it. Idempotent; soft-fails to rest meshes.
+        if self.world.tables.battle_vdf.is_none()
+            && let Err(err) = seed_battle_vdf(&self.index, &mut self.world)
+        {
+            eprintln!("[scene] battle VDF (PROT 0872) load skipped: {err:#}");
+        }
         // Load the runtime effect-script catalog from PROT 0873 (`efect.dat`)
         // so the battle-action SM's `ui_element` spawns resolve to real
         // effect scripts. Idempotent: only loads when the catalog is empty

@@ -377,7 +377,12 @@ impl LegaiaRuntime {
                 f.cba_tsb.extend_from_slice(&ct);
                 f.flat.extend_from_slice(&flat);
             };
-        for sprite in world.active_effect_sprites() {
+        for mut sprite in world.active_effect_sprites() {
+            // The battle camera consumes Y-up input; the pool is raw Y-down,
+            // and a billboard has no model matrix to carry the flip - the
+            // native window builds around the same flipped centre.
+            sprite.world_pos =
+                legaia_engine_vm::effect_billboard::battle_billboard_centre(sprite.world_pos);
             let [u0, v0] = sprite.uv;
             let u1 = u0
                 .saturating_add(sprite.uv_size[0].saturating_sub(1))
@@ -553,6 +558,29 @@ impl LegaiaRuntime {
                     ),
                 ),
             );
+            // A part with armed VDF morph lanes (the Spirit aura's cones)
+            // draws its morphed mesh, `World::morphed_part_tmd` - the mesh
+            // the native part pass uploads. The page's model list addresses
+            // pool meshes by index, so a per-frame shape is baked into the
+            // billboard stream instead, like the draw-kind-4 meshes below.
+            if let Some(g) = world.morphed_part_tmd(&sp) {
+                let m = legaia_tmd::mesh::tmd_to_vram_mesh(&g.tmd, &g.raw);
+                let base = (frame.positions.len() / 3) as u32;
+                for (i, p) in m.positions.iter().enumerate() {
+                    let w = [
+                        model[0] * p[0] + model[4] * p[1] + model[8] * p[2] + model[12],
+                        model[1] * p[0] + model[5] * p[1] + model[9] * p[2] + model[13],
+                        model[2] * p[0] + model[6] * p[1] + model[10] * p[2] + model[14],
+                    ];
+                    frame.positions.extend_from_slice(&w);
+                    frame.uvs.extend_from_slice(&m.uvs[i]);
+                    frame.cba_tsb.extend_from_slice(&m.cba_tsb[i]);
+                    let c = m.colors[i];
+                    frame.flat.extend_from_slice(&[c[0], c[1], c[2], 255]);
+                }
+                frame.indices.extend(m.indices.iter().map(|&ix| base + ix));
+                continue;
+            }
             frame.models.push(FxModelDraw {
                 tmd_index: sp.model_index,
                 source: FxModelSource::GlobalPool,

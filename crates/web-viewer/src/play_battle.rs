@@ -532,7 +532,10 @@ impl LegaiaRuntime {
         if bw.mode == SceneMode::MuscleDome && !self.dome_battle_chrome_up() {
             return empty;
         }
-        let Some(view) = bw.arts_input_view() else {
+        // A Spirit turn raises the same bar + plate pair (no chips, no
+        // pennants) and grows them - `World::spirit_gauge_view`; the native
+        // window takes the same fallback.
+        let Some(view) = bw.arts_input_view().or_else(|| bw.spirit_gauge_view()) else {
             return empty;
         };
         let frame = ai::ArtsInputFrame {

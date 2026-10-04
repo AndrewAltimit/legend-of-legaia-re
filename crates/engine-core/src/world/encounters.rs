@@ -618,6 +618,23 @@ impl World {
             if let Some(g) = self.battle.ap_gauges.get_mut(slot) {
                 g.set_base_ap(ap_base);
             }
+            // The action gauge pair `+0x154` / `+0x156` - the pool the arts
+            // entry seeds from (`0x801D4E10`) and the gauge a Spirit turn
+            // extends at the round boundary (`FUN_801D88CC`). Battle setup
+            // writes the base from the character's live AGL `+0x110` and
+            // copies it into the live half (`docs/subsystems/level-up.md`);
+            // without it every party actor read `0`, so the boundary's
+            // Spirit restore extended nothing and the arts entry fell back to
+            // the record. A mid-battle refresh moves the live half only when
+            // it still sits on the old base, so it never undoes a Spirit
+            // extension or a spent gauge.
+            if let Some(a) = self.actors.get_mut(slot) {
+                let old_base = a.battle.agl_base;
+                a.battle.agl_base = live.agl;
+                if a.battle.agl == old_base || a.battle.agl == 0 {
+                    a.battle.agl = live.agl;
+                }
+            }
             // Only when the record carries a real ceiling: a zeroed one would
             // clobber a value a synthetic battle set directly, the same reason
             // the `live.atk == 0` guard above skips the whole slot.

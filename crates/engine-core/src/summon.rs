@@ -486,6 +486,46 @@ pub struct SummonPartDraw {
     /// through retail's camera-relative rotation `FUN_8001CF50`; a host
     /// resolves them with `legaia_engine_ui::gte::camera_relative_model_prefix`.
     pub flags_52: u16,
+    /// The part's armed VDF morph lanes - `(sub_entry_index, weight)` per
+    /// lane op `0x0A` set up, while the envelope bit `0x1000` is raised.
+    /// Empty (`count == 0`) for a part that draws its rest mesh. A host
+    /// resolves the morphed mesh with
+    /// [`crate::world::World::morphed_part_tmd`].
+    pub morph: PartMorph,
+}
+
+/// A part's live morph lanes, carried by value on [`SummonPartDraw`] (the
+/// retail arrays op `0x0A` writes: `+0x6C` count, `+0xB0 + lane` index byte,
+/// `+0xA0 + lane*2` weight - [`legaia_engine_vm::vdf_morph::actor_morph_lanes`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct PartMorph {
+    pub lanes: [(u8, u16); legaia_engine_vm::vdf_morph::ACTOR_MORPH_LANES],
+    pub count: u8,
+}
+
+impl PartMorph {
+    /// The armed lanes of a part state, or the empty morph when its envelope
+    /// bit is clear.
+    pub fn of(state: &ActorState) -> Self {
+        let mut out = Self::default();
+        if state.flags & legaia_engine_vm::move_buffer::STATUS_FLAG_ENVELOPE_ACTIVE == 0 {
+            return out;
+        }
+        for (i, lane) in legaia_engine_vm::vdf_morph::actor_morph_lanes(state)
+            .into_iter()
+            .take(out.lanes.len())
+            .enumerate()
+        {
+            out.lanes[i] = lane;
+            out.count = i as u8 + 1;
+        }
+        out
+    }
+
+    /// The armed lanes.
+    pub fn lanes(&self) -> &[(u8, u16)] {
+        &self.lanes[..usize::from(self.count)]
+    }
 }
 
 impl SummonScene {
@@ -616,6 +656,7 @@ impl SummonScene {
                         (s.render_28 as f32) * A,
                     ],
                     flags_52: s.field_52,
+                    morph: PartMorph::of(s),
                 }
             })
             .collect()
