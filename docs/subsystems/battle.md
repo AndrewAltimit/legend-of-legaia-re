@@ -5523,7 +5523,7 @@ for the `0x100` hold; holding it needs the record's own loop window (`+0x85..+0x
 `MonsterAnimation` does not model yet. The hero's voice line (`monster.snd` tail clips) is not
 staged - no engine bank carries `monster.snd`.
 
-An **escape** runs the sequencer's `0x67` arm: no results, the phase halfword counts up from the fade the SM's `0x66` teardown spawned, same `0x43` gate. A **party wipe** runs the annihilated arm: the same `0x100` hold and fade, every member floored at 1 HP on the fade frame (`0x8004FB94..0x8004FBA4` - a scripted loss returns to the field standing), then the MAIN INIT game-over gate `finish_battle` folds.
+An **escape** runs the sequencer's `0x67` arm: no results, the phase halfword counts up from the fade the SM's `0x66` teardown spawned, same `0x43` gate. A **party wipe** runs the annihilated arm: the same `0x100` hold and fade, every seat below the party count floored at 1 HP on the fade frame, unconditionally (`0x8004FB94..0x8004FBA4`, with the roster record's HP / MP written beside it - a scripted loss returns to the field standing), then the MAIN INIT game-over gate `finish_battle` folds. The win arm's floor (`0x8004F390`) touches only a seat at 0 HP. After an unscripted wipe retail is in CARD INIT, so the port runs no further battle frame while it holds the frozen scene for the game-over hand-off.
 
 #### The victory camera
 

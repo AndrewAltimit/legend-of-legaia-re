@@ -385,7 +385,7 @@ impl World {
                         // on this frame (`0x8004FB94..0x8004FBA4`, one
                         // `sh 1,0x14c` per party seat) - a scripted loss
                         // returns to the field with the party standing.
-                        self.floor_downed_party_hp();
+                        self.floor_wiped_party_hp();
                     }
                     seq.phase = VictoryPhase::Exit {
                         phase: VICTORY_FADE_PHASE_SEED,
@@ -484,20 +484,44 @@ impl World {
         }
     }
 
-    /// `actor[+0x14C] = 1` for every party member at 0 (`0x8004F390` on a
-    /// win, `0x8004FBA4` on a wipe), mirrored onto the world liveness so the
-    /// field return sees a standing member.
+    /// The win arm's HP floor (`0x8004F224..0x8004F3B8`): a party seat whose
+    /// `actor[+0x14C]` reads `0` (`beq a1,zero,0x8004F390`) gets `1` there
+    /// and in its roster record's current HP (`+0x6CE`); a standing seat
+    /// keeps its HP. Mirrored onto the world liveness so the field return
+    /// sees a standing member.
     fn floor_downed_party_hp(&mut self) {
-        for slot in 0..(self.party.party_count as usize)
-            .min(3)
-            .min(self.actors.len())
-        {
+        for slot in self.party_floor_seats() {
             let b = &mut self.actors[slot].battle;
             if b.max_hp > 0 && b.hp == 0 {
-                b.hp = 1;
                 b.liveness = 1;
+                b.set_hp_synced(1);
             }
         }
+    }
+
+    /// The annihilated arm's HP floor (`0x8004FB94..0x8004FC30`): for
+    /// **every** seat below the party count `ctx[+0]`, unconditionally,
+    /// `sh 1,0x14c` (`0x8004FBA4`) and the roster record's current HP `+0x6CE
+    /// = 1`, MP `+0x6D2 = actor[+0x150]` and `+0x6D6 = actor[+0x170]` - the
+    /// last two are what [`Self::persist_battle_party_hp`] carries at the
+    /// teardown. A stone member is floored too: retail tests nothing.
+    ///
+    /// Retail leaves the readout `+0x172` alone because no battle frame runs
+    /// after this one; the port re-syncs it (`set_hp_synced`) so the pair a
+    /// later reader sees is never the absorbing `hp != shown` with a zero
+    /// accumulator that parks the `0x51` bar-drain gate.
+    fn floor_wiped_party_hp(&mut self) {
+        for slot in self.party_floor_seats() {
+            let b = &mut self.actors[slot].battle;
+            b.liveness = 1;
+            b.set_hp_synced(1);
+        }
+    }
+
+    fn party_floor_seats(&self) -> std::ops::Range<usize> {
+        0..(self.party.party_count as usize)
+            .min(3)
+            .min(self.actors.len())
     }
 }
 

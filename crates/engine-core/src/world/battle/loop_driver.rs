@@ -211,6 +211,18 @@ impl World {
     pub(in crate::world) fn live_battle_tick(&mut self) -> Option<StepOutcome> {
         use vm::battle_action::{ActionState, ActorFlags};
 
+        // A party wipe with the scripted-loss latch clear has left battle:
+        // MAIN INIT's back-from-battle arm stores `game_mode = 0x16` (CARD
+        // INIT, `FUN_8003AEB0` `0x8003B5D4..0x8003B5EC`), so no battle frame
+        // runs again. The port keeps the battle scene up only as the frozen
+        // frame the game-over hand-off draws over; ticking its state
+        // machines would start a fresh round on the members the wipe floor
+        // stood back up (`0x8004FB94..0x8004FBA4`).
+        // REF: FUN_8003AEB0
+        if self.game_over_hold {
+            return None;
+        }
+
         // The modelled CD drive: one clip read span elapses per frame.
         self.audio.battle_xa_busy_frames = self.audio.battle_xa_busy_frames.saturating_sub(1);
 
