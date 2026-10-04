@@ -1968,7 +1968,12 @@ renderer and the site's WebGL viewers:
   + placed layers combined) and returns a per-draw world offset: the largest
   surface in a cluster stays put, each overlapping smaller/later draw lifts
   `DRAW_NUDGE` per rank toward the surface's visible side - the same "small
-  decal wins" outcome retail's mean-Z bucketing produces. All three hosts
+  decal wins" outcome retail's mean-Z bucketing produces. A lift never
+  points down: a plane visible from below (a fallen log's underside) moves
+  up instead, because a downward lift sank `vell`'s log past the ground
+  heightfield's `GROUND_SINK` and the ground drew through its end face. The
+  web's 24-bit depth buffer showed the hole and native's float buffer hid it,
+  but the geometry was wrong on both. All three hosts
   that assemble field scenes apply the same map: the native play-window in
   its placement/posed-prop resolvers, the browser play page and the
   field-scene viewer in their placement/terrain position exporters (the
@@ -2084,7 +2089,7 @@ what follows is the shape of the answer it measures, not a status table.
 ### The structural split: what a browser surface *can* share
 
 `engine-render` links wgpu, so `web-viewer` cannot depend on it. Every kernel
-that lives there - `psx_dither`, `psx_blend`, `dyn_light`, `scene_lights`,
+that lives there - `psx_dither`, `psx_blend`, `dyn_light`, the shadow half of `scene_lights`,
 `occlusion_fade`, `billboard`, `streak_pass` - is native-only **as code**, and
 a browser twin has to be a second implementation in GLSL or JS. Kernels that
 live in `engine-core`, `engine-vm`, `engine-ui` or `legaia-tmd` are shared as
@@ -2107,8 +2112,9 @@ Not every asymmetry is a defect. Three are deliberate:
 - **`set_psx_mode`** (vertex snap + 15-bit dither) is opt-in and defaults off,
   so a browser with no toggle renders the same *default* the native window
   does. What the browser lacks is the switch, not the faithful output.
-- **`set_dynamic_lighting`** and its shadow sub-layer are an enhancement,
-  default off, pixel-identical when off.
+- **`set_dynamic_lighting`**'s shadow maps are an enhancement and
+  pixel-identical when off; the rest of enhanced lighting reaches the page
+  through the shared `scene_lighting` kernel.
 - **`LEGAIA_DIAG_*`** bisect gates are development instruments; the
   [tier 6](../tooling/host-drift.md#tier-6---diagnostics-is-a-debug-draw-off-on-both-hosts)
   rule is only that an *additive* one needs a default-off twin.
@@ -2149,9 +2155,10 @@ different default:
 |---|---|---|---|
 | `Renderer::set_psx_mode` | **off** | *on* is retail | vertex snap + 15-bit dither, and nothing else |
 | `Renderer::set_semi_blend` | **on** | *on* is retail | ABE semi-transparency. Independent of `psx_mode` |
-| `Renderer::set_dynamic_lighting` | **off** | *off* is retail, pixel-identical to the faithful render | the opt-in soft-light enhancement |
-| `Renderer::set_dyn_shadows` | **on** | inert while `set_dynamic_lighting` is off | the point-light + shadow sub-layer of dynamic lighting |
+| `Renderer::set_dynamic_lighting` | **off** in the renderer, **on** in `play-window` + browser play page | *off* is retail, pixel-identical to the faithful render | enhanced lighting: mood, point lights, emissives, glow |
+| `Renderer::set_dyn_shadows` | **on** | inert while `set_dynamic_lighting` is off | the point-light shadow maps (native only) |
 | `Renderer::set_occlusion_fade` | **off** in the renderer, **on** in `play-window` | *off* is retail, pixel-identical to the faithful render | the see-through-walls camera-occlusion fade |
+| `Renderer::set_fog_volume` | nothing staged in the renderer; the engine's bank is **on** in `play-window` + the browser play page | nothing staged is retail, pixel-identical to the faithful render | the [volumetric ground fog](#volumetric-ground-fog-enhancement) |
 
 Two things routinely get mis-stated about this table, so they are worth saying
 plainly:
@@ -2161,8 +2168,8 @@ game's field/town meshes go through the VRAM-mesh and vertex-colour pipelines,
 which draw the TMD's baked colour words with no light source at all - exactly
 what retail does (see [Lighting](#lighting)). There is no synthetic Lambert on
 those paths. The only non-retail light is
-[dynamic lighting](#dynamic-lighting-opt-in-enhancement), which is off by
-default.
+[enhanced lighting](#enhanced-lighting-enhancement-default-on), which the
+renderer defaults off and the interactive hosts turn on.
 
 **Affine UVs are not gated either - they are always on.** `@interpolate(linear)`
 is a static qualifier on the vertex-output struct, not a uniform-driven branch,
@@ -2217,64 +2224,103 @@ gouraud interpolation is affine in screen space too.
 
 Texture page (`tsb`) and CLUT base address (`cba`) stay `@interpolate(flat)` - they are per-primitive in retail because GP0(0x24) sets them once per draw call, not per vertex.
 
-### Dynamic lighting (opt-in enhancement)
+### Enhanced lighting (enhancement, default on)
 
 `Renderer::set_dynamic_lighting` is the one lighting knob, staged into
-`MeshUniforms.light_dir[3]`. It is **off by default, and off is retail**: the
-disabled path is pixel-identical to the faithful baked-shading render, so the
-parity oracles are unaffected.
+`MeshUniforms.light_dir[3]`. **Off is retail**: the disabled path returns the
+baked colour before reading any lighting state, so it is pixel-identical to
+the faithful baked-shading render and the parity oracles never see it. The
+renderer itself defaults off; `play-window` and the browser play page turn it
+on from the persisted `OptionsState::enhanced_lighting` option (default on),
+`I` / the page's "Enhanced lighting" checkbox toggle it at runtime, and
+replays and `retail-compare` captures force it off (`--no-dynamic-lighting`).
 
-Enabled, the VRAM / colour mesh shaders layer a soft warm directional light (off
-the smoothed per-vertex normals, with a screen-space-derivative fallback for the
-normal-less colour-mesh prims) plus a screen-centred light pool over the baked
-colours, with the global gain capped at ~1.3x (and ~1.9x once the point-light
-layer below adds on top). This is explicitly a non-retail enhancement - retail's
-field path has no light source. See `crates/engine-render/src/dyn_light.rs` and
-the `DYN_*` tunables in `renderer/state.rs`.
+The source of truth both hosts light from is
+`legaia_engine_ui::scene_lighting`: the light list, the emissive set, the
+mood and the glow sprites are derived there, and the two shader twins
+(`dyn_light` in `shaders.rs`, its GLSL copy in `site/js/webgl-shaders.js`) are
+mirrored on the CPU by `scene_lighting::shade`.
 
-### Per-scene point lights + shadows (sub-toggle)
+**The mood.** A frame is lit under one `LightingMood` - ambient floor, key
+light colour and direction, screen-pool weight, lamp strength, emissive gain,
+glow strength - picked by `TimeOfDay::mood`: `auto` (the default) follows the
+scene (daylight outdoors, a dim neutral mood for the enclosed scenes listed in
+`ENCLOSED_SCENE_PREFIXES`), and `day` / `dusk` / `night` force one preset
+(`F8` in `play-window`, the page's selector; persisted as
+`OptionsState::lighting_time_of_day`). The shading law:
 
-`Renderer::set_dyn_shadows` (default on; `--no-dyn-shadows` / the `Y` key in
-`play-window`) gates the enhancement's second layer: real point lights at the
-scene's own light-emitting props, each with a shadow map. It only acts while
-dynamic lighting is on and the host has staged lights, so the faithful path
-pays one uniform read and nothing else.
+```text
+base = ambient + (DIFFUSE * |N.L| + pool_w * pool(frag)) * key
+gain = min(min(base, MAX_GAIN) + point_gain, TOTAL_MAX_GAIN)
+out  = baked * gain                                  (ordinary prims)
+out  = baked * min(emissive_gain + point_gain, TOTAL_MAX_GAIN)   (emissive)
+```
 
-**Light derivation** (`crates/engine-render/src/scene_lights.rs`). What the
-player reads as candles and wall lights in retail interiors is emissive-looking
-geometry - small additive-blended (ABE, ABR mode 1) flame prims and
-bright-modulated lamp meshes. The derivation reads that authoring signal back
-out of the mesh data: a triangle is an emitter sample when it is an additive
-semi prim, or an ABE prim whose baked colour is bright and warm
-(`EMIT_MIN_BRIGHT`, red >= blue - excludes blue water/glass); triangles above
-`EMIT_MAX_TRI_AREA` are rejected as sheets. Every *placement instance* of an
-emitting mesh contributes its samples in world space; greedy clustering
-(`CLUSTER_MERGE_DIST`, wide clusters dropped at `CLUSTER_MAX_EXTENT`) yields at
-most `MAX_SCENE_LIGHTS` (8) lights, position/colour/radius weighted by
-`sqrt(area) * luminance`. The play-window derives lights from the field
-placement + terrain layers at scene load (`upload_assets`) and stages them per
-frame with the camera (`Renderer::set_scene_lights`) so the shaders can recover
-world space from each draw's MVP (`model = view_proj^-1 * mvp`, carried in
-`MeshUniforms.model`).
+`|N.L|` reads the smoothed per-vertex normals (a screen-space-derivative facet
+normal for the normal-less colour-mesh prims); `abs` because the corpus' prim
+winding is mixed. The daylight mood is tuned to sit close to the baked
+brightness on average, so the default look is retail's art with soft shape;
+night drops the ambient to a blue moonlight and lets the lamps carry the
+scene. The ambient word rides the per-frame scene-lights block, not
+`MeshUniforms`, which stays exactly one 256-byte dynamic-offset slot; the
+single-mesh pipelines' stub reads the daylight mood.
 
-**Shadows.** Per light, a depth-only pass renders the scene's draws into one
-layer of an 8-layer `Depth32Float` array (512x512 per light) from a downward
-cone (`scene_lights::light_view_proj` - fov ~120 deg, near plane clipping out
-the emitting flame quad itself so it never occludes its own light). The scene
-fragment shaders (`scene_point_gain` in the group-2-bound scene shader
-variants) apply distance attenuation `(1 - (d/r)^2)^2`, the same
-mixed-winding `|N.L|` term as the global light, and a 3x3 PCF comparison
-(`textureSampleCompareLevel`) for soft shadow edges; fragments outside a
-light's cone shade unshadowed. Known approximations, on purpose: casters
-render opaque in the shadow pass (cutout texels shadow as solid), and the
-downward cone is a spot approximation of a point source - geometry above the
-light attenuates but is never shadowed.
+**Emissive surfaces.** A prim that glows draws at the emissive gain, ignoring
+the mood's darkening, so a lamp stays lit at night while the wall around it
+falls into shadow. The tag is bit 13 of the per-vertex TSB word (textured
+prims) or blend word (untextured) - bits no retail word uses, masked out of
+every decode - set by `scene_lighting::tag_emissive_*` on every mesh build,
+including each per-frame rebuild (clip re-pose, op-`0x4B` morph, VDF terrain
+morph, posed props). Two rules set it:
 
-The single-mesh (non-scene) pipelines compile a zero-stub `scene_point_gain`,
-so only the scene pipelines carry the lights bind group; both shader variants
-are naga-validated by the engine-render test suite, and
-`scene_lights::point_gain` / `point_attenuation` are the CPU mirror of the
-analytic part, asserted in lockstep with the WGSL.
+- **The blend rule** reads the authoring signal: a semi-transparent prim in the
+  PSX additive mode (ABR 1, `B + F` - the glow blend), or a semi-transparent
+  prim whose baked colour is bright (`EMIT_MIN_BRIGHT`) and warm (red above
+  blue by `EMIT_MIN_WARMTH`, which excludes water, glass and grey sky
+  sheets).
+- **The curated table** (`EMISSIVE_MESHES`) lists what the art implies but no
+  blend mode carries, keyed by a content signature of the model (object
+  counts + parsed vertices, stable across scan slices, model-bank copies and
+  morphs). Today that is the Genesis Tree in its two models; an entry tags
+  every prim or only its green-drawn prims (`CuratedTexels`). A disc-gated
+  test (`crates/web-viewer/tests/scene_lighting_real.rs`) pins every entry
+  against the disc.
+
+**Point lights.** What the player reads as candles, lamps and the glowing tree
+is that same emissive geometry, so the lights come from it: each glowing
+triangle small enough to be a prop (`EMIT_MAX_TRI_AREA`) is a sample at its
+centroid, coloured by its modulation word - or, for a neutral-modulated glow
+prim, by its own mean texel through its CLUT, so a green glow casts green.
+A curated mesh adds one strong sample at the centre of its glowing prims.
+Samples are instanced into world space by each host's own draw list (the
+`.MAP` placement + terrain layers through `placement_model`, the MAN
+scene-actor props at their spawn anchor) and clustered greedily
+(`CLUSTER_MERGE_DIST`; clusters wider than `CLUSTER_MAX_EXTENT` are dropped as
+sheets); a light sits `LIGHT_LIFT` above its geometry so it pools onto the
+floor instead of grazing the surface it is painted on. A prop's set follows
+the actor's live anchor every frame (`World::field_npc_live_anchor`), so a
+prop a script moves or parks carries its light along or drops it. The
+`MAX_SCENE_LIGHTS` (8) lights nearest the player shade each frame, scaled by
+the mood's lamp strength; attenuation is `(1 - (d/r)^2)^2` with a
+half-Lambert wrap.
+
+**Shadows (native only).** `Renderer::set_dyn_shadows` (default on;
+`--no-dyn-shadows` / `Y`) renders one depth layer per picked light into an
+8-layer `Depth32Float` array (512x512) from a downward cone
+(`scene_lights::light_view_proj`, near plane clipping out the emitter itself)
+and the scene shaders take a 3x3 PCF comparison. Casters render opaque (cutout
+texels shadow solid) and the cone is a spot approximation - geometry above
+the light attenuates but is never shadowed. With the sub-toggle off the whole
+point-light layer stages a zero count. The browser page lights the same
+picked set without shadow maps.
+
+**Glow sprites (the bloom stand-in).** Around each picked light the host draws
+an additive camera-facing halo and a soft vertical shaft falling from it
+(`scene_lighting::glow_sprites` / `glow_vertices`; radial `(1 - r^2)^2` and
+`(1 - x^2)^2 * (1 - y)` falloffs, `glow_falloff` is the CPU mirror), depth
+tested against the scene with depth writes off, so a wall in front hides the
+halo. Their strength is the mood's `glow`: faint at noon, full at night. A
+glow pass costs one small vertex upload and one draw; no offscreen target.
 
 ### Camera-occlusion fade (see-through walls, opt-in enhancement)
 
@@ -2426,7 +2472,7 @@ The host stages the focus in **field free-roam only** - the player's floor
 tier (the same sampler the follow camera anchors to) lifted half a character
 height - and clears it for cutscenes (an occluded player there is a
 directorial choice), battle, world map and the boot UI. Replays force the
-fade off alongside dynamic lighting, keeping recorded sessions on the
+fade off alongside enhanced lighting, keeping recorded sessions on the
 faithful render.
 
 **The viewer-only exception, so nobody re-derives the wrong conclusion.** There
@@ -2435,6 +2481,96 @@ shader set - but it lives only in `MESH_SHADER_SRC`, the bare-geometry **preview
 pipeline behind the asset-viewer's raw-TMD view. Those meshes carry neither
 texture nor colour, so there is nothing of the game's own shading to show; the
 light is a viewer aid, not a claim about retail, and no game path uses it.
+
+### Volumetric ground fog (enhancement)
+
+Retail's only fog is the `fog_set` puff pool ([field fog sheets](#field-fog-sheets-fun_8003f348)),
+additive billboards that drift on fixed per-region headings and ignore every
+actor. The port layers a low mist bank over it on the scenes that read as misty
+or night, and lets the characters part it. Nothing in it is retail, and it
+never touches the puff pool.
+
+**Simulation** ([`engine-core::fog_volume`](../../crates/engine-core/src/fog_volume.rs),
+`World::tick_fog_volume`). A 64 x 64 disturbance grid, recentred on the player
+in whole-cell steps, holds a density multiplier (`1.0` = undisturbed bank) and
+a 2D velocity per cell; everything outside it reads as an undisturbed bank, so
+a recentre scrolls the field instead of restarting it. Once per sim tick,
+after every actor has moved, each mover carves the density around its feet
+(harder with a full stride, a slow pocket standing still) and hands the cells
+its stride plus an outward shove; the grid is then advected semi-Lagrangian
+through that velocity plus the scene's drift, diffused, damped, and refilled
+toward the undisturbed bank, so a wake opens behind a walker and closes over
+several seconds. The movers are the drop-shadow population - the player and every
+placed field channel with a position - and every active body in battle. The
+step uses only `f32` basic operations and `sqrt`, so it is deterministic across
+hosts, and it is tied to the tick, never to the frame rate. Unit tests pin the
+determinism, the wake, the refill, the teleport rule and the recentre.
+
+**Which scenes.** A tuned style per CDNAME label for the scenes whose own art
+reads as mist or night - `town0b` (Rim Elm under the Mist, a night scene),
+`dolk`, `vell`, `vozz`, `keikoku` - and a default style for any other field
+scene whose retail fog pool is live (gate `_DAT_8007B854` raised with an
+enabled section-4 region). A battle keeps the style of the field scene it was
+entered from and runs its own grid in raw battle-stage units, centred on the
+arena. A new scene label starts a new bank; a style eases in and out over about
+a second and a half.
+
+**Drawing.** The frame (`World::fog_volume_frame`) carries the density grid as
+bytes, the sheet mesh's floor heights (a 48 x 48 quad grid sampled from the
+live walk-ground floor, re-sent only when it moves), the colour (folded with
+the scripted screen tint, so a fade to black takes the fog with it), the
+opacity, the accumulated drift and the soft-intersection distance. Both hosts
+draw it as twelve instanced horizontal sheets packed toward the floor
+(quadratic spacing), alpha-blended, writing no depth - after every 3D draw and
+before the screen-primitive layer and the HUD. A fragment's opacity is:
+
+- **structure** - three domain-warped value-noise octaves, each drifting at
+  its own rate, plus a slow bank octave, gated through a smoothstep into bright
+  crests and clear gaps, so ground shows between banks;
+- **height** - each crest has its own soft top and a steep profile under it,
+  so the bank is thick at the ankles and gone by the knees;
+- **disturbance** - the density grid (bilinear), which is where the wakes show;
+- **soft intersection** - the sheet fades over a view-depth span as it nears
+  the scene surface behind it, so walls, ledges and legs blend into the bank
+  instead of cutting it. The scene's stored depth is turned back into view
+  depth through the frame matrix's own mapping `ndc = A + B / w`, read off its
+  third and fourth rows;
+- **slope** - a sheet draped down a cliff between two floor tiers fades by its
+  screen-space normal, and a radial fade hides the sheet mesh's rim.
+
+Reading the scene depth is the part the two hosts do differently. The native
+renderer splits its scene pass in two around a fog pass that attaches the depth
+target read-only and samples it as a texture (the target carries
+`TEXTURE_BINDING` and is stored only on frames with a bank). The page cannot
+sample its default framebuffer's depth, so it blits it into a depth texture
+each frame (the format is probed once; a driver that refuses the copy draws
+without the fade); on frames the page drew with log-of-w depth the sheets write
+and test that encoding and the fade decodes it. The native pass is `renderer/fog_volume.rs` (WGSL, built
+lazily on the first staged frame); the page's is `site/js/webgl-fog-volume.js`,
+a GLSL transcription of the same recipe that reads its numbers from the frame
+header (`fog_volume::FogSpace::shader_constants`, `FogSpace::soft_distance`),
+not from constants of its own. A battle's bank is denser, deeper and drawn with
+a higher gain: its low, close framing looks through it at a grazing angle.
+
+**Brightness follows the scene.** A mist must not outshine what it lies on, so
+the style's colour keeps its hue but is dimmed until its luma sits at most
+`FOG_LUMA_FLOOR + FOG_LUMA_OVER_SCENE * L`, `L` the scene's measured luminance
+(`fog_volume::scene_luminance`): every textured triangle's texel at its UV
+centroid, through its CLUT, times its baked colour word over `128`, averaged
+by world area. The field measurement is `SceneHost`'s, once per scene label;
+the battle one is taken by each host at battle entry over the stage shell it
+built (`fog_volume::stage_luminance`, pinned by a `SIM_PAIRS` row) and scaled
+by the live battle ambient, so a summon close-up dims the bank with the stage.
+The floor keeps a night bank readable by contrast as a moonlit haze; a daylit
+stage gets the authored colour.
+
+**Floors only.** The sheet mesh follows the walk-ground floor, so where the
+floor steps between two tiers a sheet would stand up as a fin down the cliff.
+Each mesh vertex carries a floor weight that falls to zero when it steps more
+than `FLOOR_STEP_HI` to any neighbour (`FogVolume::ground_weight`), and the
+shaders multiply it in; a sheet left steep anyway fades by its screen-space
+slope. The
+world map, the boot UI, the minigame venues and a VR session draw none.
 
 ### `set_semi_blend` - semi-transparency blend modes
 

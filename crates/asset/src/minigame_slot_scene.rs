@@ -45,9 +45,10 @@
 //! GTE's own, with the register file read out of the `minigame_slot_machine`
 //! mednafen state (its `GTE` section carries COP2) - rotation
 //! `diag(6, 3, 3)`, translation `(-1440, 20, 24480)`, `OFX 320`, `OFY 114`,
-//! `H 1024` ([`GTE_OFX`] and siblings). An earlier projection fitted to the
-//! same frame sat `3.6` rows low; its constants ([`PROJ_OFX`] and siblings)
-//! remain only for the exporters that still emit them.
+//! `H 1024` ([`GTE_OFX`] and siblings). The exporters' perspective-about-a-
+//! vanishing-point form ([`PROJ_Z0`] and siblings) is the same mapping
+//! rearranged, derived from those registers. An earlier projection fitted to
+//! the same frame sat `3.6` rows low and is gone.
 //!
 //! ## Provenance
 //!
@@ -463,17 +464,32 @@ pub const GTE_SCALE: [i32; 3] = [6, 3, 3];
 /// The translation vector `TR` - `(-1440, 20, 24480)`.
 pub const GTE_TR: [i32; 3] = [-1440, 20, 24480];
 
-/// The fitted screen x of the model origin the projection used before the
-/// GTE registers were read. Kept for the exporters that still emit the fitted
-/// parameters (`asset slot-art`, the VRChat kit); [`project`] does not use it.
-/// The fit reproduced x to a pixel but sat `3.6` rows low.
-pub const PROJ_OFX: f32 = 253.0;
-/// The fitted screen y of the model origin - see [`PROJ_OFX`].
-pub const PROJ_OFY: f32 = 118.5;
-/// The fitted view-depth offset - see [`PROJ_OFX`].
-pub const PROJ_Z0: f32 = 9324.0;
-/// The fitted x scale at `z = 0` - see [`PROJ_OFX`].
-pub const PROJ_SX0: f32 = 0.2547;
+/// The GTE projection rearranged into the form an exporter that has no GTE
+/// rebuilds (`asset slot-art`'s manifest, the VRChat kit, the minigames page):
+///
+/// ```text
+/// k(z)     = PROJ_Z0 / (PROJ_Z0 + z)
+/// screen_x = PROJ_OFX + PROJ_SX0 * k(z) * (x - PROJ_VANISH.0)
+/// screen_y = PROJ_OFY + PROJ_SX0 / PROJ_ASPECT * k(z) * (y - PROJ_VANISH.1)
+/// ```
+///
+/// which is [`project`] exactly: `vz = Sz * (z + TRz / Sz)`, so the depth
+/// offset is `TRz / Sz`, the scale at `z = 0` is `H * Sx / TRz`, and the
+/// translation's x / y halves move the vanishing point off the model origin to
+/// `(-TRx / Sx, -TRy / Sy)`. This is the view depth of model `z = 0`.
+pub const PROJ_Z0: f32 = GTE_TR[2] as f32 / GTE_SCALE[2] as f32;
+/// The screen x-scale at `z = 0` - see [`PROJ_Z0`].
+pub const PROJ_SX0: f32 = GTE_H * GTE_SCALE[0] as f32 / GTE_TR[2] as f32;
+/// The screen point the vanishing point lands on (`OFX`) - see [`PROJ_Z0`].
+pub const PROJ_OFX: f32 = GTE_OFX;
+/// The screen point the vanishing point lands on (`OFY`) - see [`PROJ_Z0`].
+pub const PROJ_OFY: f32 = GTE_OFY;
+/// The model-space `(x, y)` every depth scales about: `(240, -20/3)`, not the
+/// model origin - see [`PROJ_Z0`].
+pub const PROJ_VANISH: (f32, f32) = (
+    -(GTE_TR[0] as f32) / GTE_SCALE[0] as f32,
+    -(GTE_TR[1] as f32) / GTE_SCALE[1] as f32,
+);
 /// x:y scale ratio of [`GTE_SCALE`].
 pub const PROJ_ASPECT: f32 = 2.0;
 /// The camera matrix's x scale ([`GTE_SCALE`]`[0]`). A billboard's view-space
@@ -636,6 +652,99 @@ pub fn parse_paylines(overlay: &[u8]) -> Result<Vec<PayLine>> {
             }
         })
         .collect())
+}
+
+/// What the machine's screen shows this frame, for a host's draw pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SlotScreen {
+    /// The machine alone.
+    Machine,
+    /// The cash-out picker over the machine (state `0x32`), cursor on `row`.
+    Picker { row: u32 },
+    /// An instruction page (320-wide mode): `0` = the attract text
+    /// (state `0x35`), `1` = the symbol payout chart (states `0x36` / `0x38`).
+    Instructions { page: u8 },
+    /// The not-enough-coins prompt over the machine (state `0x5A`).
+    NoCoins,
+}
+
+/// Runtime VA of the attract-text pointer table `FUN_801D30F8` walks: 14
+/// pointers into the string block at the head of the overlay.
+pub const RULES_LINE_TABLE_VA: u32 = 0x801D_34B8;
+/// Lines in [`RULES_LINE_TABLE_VA`] (`sltiu v0,s2,0xe` at `0x801D3154`).
+pub const RULES_LINE_COUNT: usize = 14;
+/// The first rules page's footer string (`0x801CFB7C` loads it for state
+/// `0x35`).
+pub const RULES_NEXT_VA: u32 = 0x801C_EAAC;
+/// The second rules page's footer string (state `0x36` / `0x38`).
+pub const RULES_END_VA: u32 = 0x801C_EAB4;
+/// Runtime VA of the payout chart's symbol order `FUN_801D2AA4` reads: ten
+/// bytes, five rows per column.
+pub const RULES_CHART_VA: u32 = 0x801D_3784;
+
+/// The text and chart order of the machine's two rules pages - the strings
+/// are the overlay's own, read at runtime (never shipped).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SlotRules {
+    /// The fourteen attract-text lines, NUL stripped (MES bytes; a `0xCE`
+    /// escape is a button glyph).
+    pub lines: Vec<Vec<u8>>,
+    /// Page 0's footer.
+    pub next: Vec<u8>,
+    /// Page 1's footer.
+    pub end: Vec<u8>,
+    /// The payout chart's symbol ids, column-major: `chart[col * 5 + row]`.
+    pub chart: [u8; 10],
+}
+
+/// Read [`SlotRules`] out of the **raw** PROT 0975 image.
+pub fn parse_rules(overlay: &[u8]) -> Result<SlotRules> {
+    let off = |va: u32| va.checked_sub(OVERLAY_BASE_VA).map(|o| o as usize);
+    let cstr = |va: u32| -> Result<Vec<u8>> {
+        let o = off(va).filter(|&o| o < overlay.len());
+        let Some(o) = o else {
+            bail!("rules string 0x{va:08X} outside the overlay");
+        };
+        // A `0xCE` escape's argument byte may be zero; keep it with its escape.
+        let mut out = Vec::new();
+        let mut i = o;
+        while i < overlay.len() {
+            let b = overlay[i];
+            if b == 0xCE && i + 1 < overlay.len() {
+                out.extend_from_slice(&overlay[i..i + 2]);
+                i += 2;
+                continue;
+            }
+            if b == 0 {
+                break;
+            }
+            out.push(b);
+            i += 1;
+        }
+        Ok(out)
+    };
+    let table = off(RULES_LINE_TABLE_VA).unwrap_or(usize::MAX);
+    if table.saturating_add(RULES_LINE_COUNT * 4) > overlay.len() {
+        bail!("slot overlay too small for the rules line table");
+    }
+    let lines = (0..RULES_LINE_COUNT)
+        .map(|i| {
+            let o = table + i * 4;
+            cstr(u32::from_le_bytes(overlay[o..o + 4].try_into().unwrap()))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let c = off(RULES_CHART_VA).unwrap_or(usize::MAX);
+    if c.saturating_add(10) > overlay.len() {
+        bail!("slot overlay too small for the rules chart");
+    }
+    let mut chart = [0u8; 10];
+    chart.copy_from_slice(&overlay[c..c + 10]);
+    Ok(SlotRules {
+        lines,
+        next: cstr(RULES_NEXT_VA)?,
+        end: cstr(RULES_END_VA)?,
+        chart,
+    })
 }
 
 /// Parse the slot machine's 3D scene graph out of the **raw** PROT 0975 image.
@@ -1299,6 +1408,30 @@ mod tests {
         // -z is toward the viewer, so the glass (z = -800) is nearer than the
         // reel's payline face (z = -512) and therefore renders larger.
         assert!(view_scale(GLASS_Z) > view_scale(-512));
+    }
+
+    /// The exporters' vanishing-point form is `project` rearranged, not a
+    /// second fit: the two agree everywhere in the machine's depth range.
+    #[test]
+    fn the_exporter_form_is_the_gte_projection() {
+        for &(x, y, z) in &[
+            (0, 0, 0),
+            (-640, -192, -768),
+            (632, -192, -800),
+            (-512, 585, 0),
+            (256, -640, -800),
+        ] {
+            let k = PROJ_Z0 / (PROJ_Z0 + z as f32);
+            let ex = PROJ_OFX + PROJ_SX0 * k * (x as f32 - PROJ_VANISH.0);
+            let ey = PROJ_OFY + PROJ_SX0 / PROJ_ASPECT * k * (y as f32 - PROJ_VANISH.1);
+            let (px, py) = project(x, y, z);
+            assert!(
+                (ex - px).abs() < 1e-3 && (ey - py).abs() < 1e-3,
+                "{x},{y},{z}"
+            );
+        }
+        assert_eq!(PROJ_Z0, 8160.0);
+        assert_eq!(PROJ_VANISH.0, 240.0);
     }
 
     #[test]

@@ -373,7 +373,10 @@ NATIVE_OCCL = "crates/engine-render/src/occlusion_fade.rs"
 WEB_SHADERS = "site/js/webgl-shaders.js"
 NATIVE_PSX_DITHER = "crates/engine-render/src/psx_dither.rs"
 NATIVE_RENDER_STATE = "crates/engine-render/src/renderer/state.rs"
-NATIVE_DYN_LIGHT = "crates/engine-render/src/dyn_light.rs"
+# The enhanced-lighting model's constants live in the shared kernel; the
+# moods themselves reach the page from the engine (`play_lighting_frame`),
+# so only the shading-law constants have a hand-written JS twin.
+NATIVE_DYN_LIGHT = "crates/engine-ui/src/scene_lighting.rs"
 
 # Geometry constants that exist once per host and must agree. See the module
 # docstring for the scope of the claim: equal values, nothing about use.
@@ -488,21 +491,6 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
         "native": (NATIVE_PSX_DITHER, "DITHER_MATRIX"),
         "web": (WEB_SHADERS, "PSX_DITHER_MATRIX"),
     },
-    {
-        "what": "dynamic-light direction (object space, |N.L| term)",
-        "native": (NATIVE_RENDER_STATE, "DYN_LIGHT_DIR"),
-        "web": (WEB_SHADERS, "DYN_LIGHT_DIR"),
-    },
-    {
-        "what": "dynamic-light warm tint on the diffuse + pool terms",
-        "native": (NATIVE_RENDER_STATE, "DYN_LIGHT_TINT"),
-        "web": (WEB_SHADERS, "DYN_LIGHT_TINT"),
-    },
-    {
-        "what": "dynamic-light ambient floor",
-        "native": (NATIVE_RENDER_STATE, "DYN_LIGHT_AMBIENT"),
-        "web": (WEB_SHADERS, "DYN_LIGHT_AMBIENT"),
-    },
 ] + [
     {
         "what": f"dynamic-light model constant {native}",
@@ -511,7 +499,7 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
     }
     for native, web in (
         ("DIFFUSE", "DYN_DIFFUSE"),
-        ("POOL", "DYN_POOL"),
+        ("TOTAL_MAX_GAIN", "DYN_TOTAL_MAX_GAIN"),
         ("MAX_GAIN", "DYN_MAX_GAIN"),
         ("LAMBERT_FALLBACK", "DYN_LAMBERT_FALLBACK"),
         ("POOL_CENTER", "DYN_POOL_CENTER"),
@@ -555,6 +543,37 @@ NATIVE_TITLE_SAVE = (
 )
 
 SIM_PAIRS: list[dict[str, object]] = [
+    {
+        "what": "volumetric ground fog brightness, native vs play page - the "
+        "bank may not outshine the battle stage it lies on, so each host's "
+        "battle entry measures the stage shell it built through the one "
+        "kernel `fog_volume::stage_luminance` and stores it on the world",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/bin/legaia-engine/window/battle.rs",
+                "enter_battle_render",
+            ),
+            "web": ("crates/web-viewer/src/play_battle_render.rs", "enter_battle_render"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["stage_luminance", "battle_luma"],
+    },
+    {
+        "what": "volumetric ground fog, native vs play page - the bank is "
+        "simulated once per tick inside `World::tick` "
+        "(`engine-core::fog_volume`); each host's draw site must take "
+        "this frame's bank from `World::fog_volume_frame` rather than "
+        "keep a bank (or a scene table) of its own",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/bin/legaia-engine/window/event_handler/redraw_passes.rs",
+                "stage_fog_volume",
+            ),
+            "web": ("crates/web-viewer/src/play_fog_volume.rs", "fog_volume_frame"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["fog_volume_frame"],
+    },
     {
         "what": "shop blips, native vs play page - the shop's cursor / "
         "confirm / buzz / cancel cues and the quantity and recipient "

@@ -834,6 +834,44 @@ impl World {
     // `crate::battle_status_clut`)
     // REF: FUN_80050120 (the per-actor arms, ported as `tint_sm_step`; this is
     // the per-frame walk over the actor table that drives them)
+    /// The defeat fade's **sink** (`FUN_80050120` arm 2,
+    /// `0x80050360..0x800504A8`): a monster seat (`3..=6`) fading out on
+    /// render flag `2` sinks into the stage floor, `+0x36 += (size_class *
+    /// dt) >> 2` a battle frame - `size_class` the record's `+0x1F` - while
+    /// its node colour (`node[+0x74]`; the port reads its fading colour
+    /// word) is non-zero. Gated off by a Seru absorb staged for the action
+    /// (`ctx[+0x269]`, which raises the body for the absorb instead), a
+    /// captured actor (`+0x225`) and a scripted fight (`ctx[+0x287]`; retail
+    /// lets one through on `gp+0x9F5`, which the port does not carry).
+    ///
+    /// The post-strike death re-frame forks on the height this moves
+    /// (`target[+0x36] != 0` takes the ramped shot):
+    /// `player_steal_skeleton_banner` reads its killed skeleton `183` down.
+    ///
+    /// PORT: FUN_80050120 (arm 2's monster sink)
+    fn tick_battle_defeat_sink(&mut self) {
+        if self.battle_ctx.multi_cast_gate != 0 || self.battle.scripted_fight {
+            return;
+        }
+        let first = self.party.party_count as usize;
+        for slot in first..(first + 4).min(self.actors.len()) {
+            let a = &self.actors[slot];
+            if !a.active
+                || a.battle_monster_id.is_none()
+                || a.battle.render_flag != vm::battle_formulas::STATE_DEFEAT_FADE
+                || a.battle.capture_state != 0
+                || a.battle.render_color & 0x00FF_FFFF == 0
+            {
+                continue;
+            }
+            // `(size * dt) >> 2` a battle frame of `dt` vsyncs; the engine
+            // ticks once a vsync.
+            let sink = i16::from(self.battle_size_class_of(slot as u8)) >> 2;
+            let ms = &mut self.actors[slot].move_state;
+            ms.world_y = ms.world_y.wrapping_add(sink);
+        }
+    }
+
     fn tick_battle_impact_fx(&mut self) {
         use vm::battle_formulas::{FadeInputs, TintWords, tint_sm_step};
         use vm::battle_impact_fx as ifx;
@@ -892,6 +930,7 @@ impl World {
                     vm::battle_action::ActorFlags(vm::battle_action::ActorFlags::WINDUP_DONE);
             }
         }
+        self.tick_battle_defeat_sink();
         // The per-clip arms: the acting actor's committed record key + cursor
         // window select the writes onto it and its target.
         let acting = self.battle_ctx.active_actor as usize;
@@ -1379,13 +1418,29 @@ impl World {
         // per-actor pause flag `+0x21C` on every non-acting, non-target
         // slot, has no engine field; the SpecialStarter's freeze covers the
         // visible case through the rate arm above.
-        // PORT: FUN_8004E13C (the `+0x243` store; the `+0x21C` sweep and the
-        // value-2 coin re-roll into `+0x6DA` are not modelled)
+        // The value-2 arm (`0x8004E254..0x8004E2B4`): when the byte is `2`,
+        // the previous `+0x243` was not, and the acting seat `ctx[+0x13]` is
+        // a party one, it re-seeds the camera's yaw counter `ctx[+0x6DA] =
+        // (rand() % 2) * 0x800 + 0x280` and zeroes the framing style
+        // `ctx[+0xD]` - the swing camera's per-swing side. The counter is the
+        // camera's (`BattleCamInputs::swing_reseed`); the style byte is the
+        // live one both hosts feed it from.
+        // PORT: FUN_8004E13C (the `+0x243` store and the value-2 re-seed;
+        // the `+0x21C` sweep is not modelled)
         if let Some(v) = clip
             .as_ref()
             .and_then(|c| c.entry_solo_flag())
             .filter(|&v| v != 0)
         {
+            if v == 2
+                && self.battle_ctx.gauge_rearm_latch != 2
+                && self.battle_ctx.active_actor < self.party.party_count
+            {
+                let coin = (vm::battle_formulas::world_rand(&mut self.rng_state) & 1) as u8;
+                self.battle_ctx.swing_yaw_seeds = self.battle_ctx.swing_yaw_seeds.wrapping_add(1);
+                self.battle_ctx.swing_yaw_coin = coin;
+                self.battle_ctx.camera_variant = 0;
+            }
             self.battle_ctx.gauge_rearm_latch = v;
         }
         let a = &mut self.actors[i];

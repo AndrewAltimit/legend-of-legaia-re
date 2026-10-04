@@ -272,15 +272,18 @@ pub struct BattleState {
     /// `ctx[+0x6D2]` - the **attack-angle** term the melee kernel's block
     /// roll adds to the attacker's sum. Seeded by the attack band's state
     /// `0x14` (`0x801E3068..0x801E30C8`): the attacker's new facing minus the
-    /// target's, folded into `0..=0x800`, minus `0x800` - `0` face-on,
-    /// negative otherwise. Added unsigned, a term larger than the attacker's
-    /// sum wraps it past every defender sum, so an off-axis opening strike is
-    /// rarely blocked. Zeroed by the first hit that lands or is blocked
-    /// (`0x801EE3C4` / `0x801EC888`).
+    /// target's, folded into `0x800..=0x1000`, minus `0x800` - the angular
+    /// distance from face-on, `0` when the two face each other and `0x800`
+    /// for a strike in the back. The block roll adds it to the attacker's
+    /// sum, and the damage roll adds `(term * ATK) >> 16` - up to `ATK / 32`
+    /// (`0x801ECED8..0x801ECF18`). Zeroed by the first hit that lands or is
+    /// blocked (`0x801EE3C4` / `0x801EC888`).
     pub attack_ramp: i16,
     /// `ctx[+0x6D4]` - the **approach** term added to the defender's sum:
     /// the frame step accumulated each tick the attacker spends walking in
-    /// (state `0x19`, `0x801E35DC..0x801E35EC`). Zeroed with
+    /// (state `0x19`, `0x801E35DC..0x801E35EC`). The damage roll adds
+    /// `(DEF * term) >> 10` to the guard (`0x801ED1E0..0x801ED220`), so a
+    /// long walk-in hardens the opening hit. Zeroed with
     /// [`Self::attack_ramp`].
     pub guard_ramp: i16,
     /// Per-party-slot Fury Boost state for the current battle: `Some(delta)` is
@@ -403,6 +406,11 @@ pub struct BattleState {
     /// is credited back as it is taken. `None` on every ordinary fight;
     /// consumed (taken) by the monster pick.
     pub forced_monster_cast: Option<(u8, u8)>,
+    /// The same seed's target: the party seat the capture's caster had
+    /// aimed its cast at (`+0x1DD`). A single-target cast replayed off
+    /// [`Self::forced_monster_cast`] lands on it when it is standing,
+    /// instead of on a fresh roll. `None` on every ordinary fight.
+    pub forced_monster_target: Option<u8>,
     /// The commit log's launch glide - retail's `0x35 + i` clones gliding the
     /// log off the left edge when the member leaves the ring for a sub-screen
     /// and back when they return
@@ -683,6 +691,7 @@ impl BattleState {
             round_flow: crate::battle_round::RoundFlow::default(),
             inflight_seed: None,
             forced_monster_cast: None,
+            forced_monster_target: None,
             commit_log_launch: None,
             sideband: Default::default(),
             stage_id: 0,

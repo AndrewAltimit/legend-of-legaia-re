@@ -3,6 +3,30 @@
 //! Split out of the composite [`World`] so the state one subsystem owns
 //! reads as one unit. Fields keep their retail provenance notes.
 
+/// One frame of the floor-height ladder's oscillators (field-VM op `0x4C`
+/// nibble-9 sub-`0..2`, retail template `0x801F27EC` / tick `FUN_801DA930`):
+/// each record steps and writes its own rung of `lut` (scratchpad frame,
+/// `0x1F80035C`). A rung index past the LUT is retail writing off the end of
+/// a 16-entry array, which the port declines to do.
+///
+/// The world's frame runs it over [`FieldTerrain::floor_tier_bobs`]; a
+/// whole-map viewer runs it over the oscillators each room's own entry block
+/// spawned ([`crate::scene_live::LiveScene`]), so every room animates on the
+/// one kernel.
+pub fn step_floor_ladder(
+    bobs: &mut [legaia_engine_vm::field_actor_timers::FloorTierBob],
+    lut: &mut [i16; 16],
+    frame_delta: u8,
+) {
+    for bob in bobs.iter_mut() {
+        if let Some(height) = bob.step(frame_delta)
+            && let Some(rung) = lut.get_mut(bob.slot as usize)
+        {
+            *rung = height;
+        }
+    }
+}
+
 /// Per-scene field terrain: walkability grid, map-region block, zone table, floor-height LUT, object cells, elevation overrides and the region / tile trackers.
 pub struct FieldTerrain {
     /// Fixed map origin pair at `(_DAT_80089118, _DAT_80089120)` - used by ext

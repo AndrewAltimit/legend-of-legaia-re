@@ -61,6 +61,11 @@ pub struct World {
     /// spawns into and the render pass draws from - see
     /// [`crate::fog_particles`].
     pub fog: crate::fog_particles::FogPool,
+    /// The volumetric ground-fog **enhancement** (not retail): a drifting
+    /// mist bank the moving actors part, stepped once per tick while
+    /// [`WorldToggles::volumetric_fog`] is raised - see
+    /// [`crate::fog_volume`].
+    pub fog_volume: crate::fog_volume::FogVolume,
     /// Field script actors: op `0x43` scripted arcs and the NPC height
     /// channel they write, and op `0x34` sub-1 attached lights.
     pub script_actors: FieldScriptActorState,
@@ -109,6 +114,12 @@ pub struct World {
     /// entry_z)` - the entry-tile bytes are kept for future destination
     /// spawn-point wiring. `None` between transitions.
     pub pending_named_scene_transition: Option<(String, u8, u8, u8)>,
+
+    /// A scene change parked behind the streaming actor's `0x46`-frame
+    /// countdown (`FUN_80021934`); the departing scene keeps ticking until
+    /// [`crate::scene::SceneHost::tick`] commits it. `None` between
+    /// transitions.
+    pub scene_transition_hold: Option<crate::scene_transition_actor::SceneTransitionHold>,
 
     /// Cutscene presentation state: narration, timeline, caption / card / balloon overlays, FMV handoff and the opening-chain latches.
     pub cutscene: CutsceneState,
@@ -332,6 +343,7 @@ impl World {
             presentation: ScreenFxState::new(),
             flags: StoryFlagState::new(),
             fog: crate::fog_particles::FogPool::new(),
+            fog_volume: crate::fog_volume::FogVolume::new(),
             script_actors: FieldScriptActorState::default(),
             rng_state: 0x1234_5678,
             casting: CastFxState::new(),
@@ -347,6 +359,7 @@ impl World {
             field_vm: FieldVmState::new(),
             pending_scene_transition: None,
             pending_named_scene_transition: None,
+            scene_transition_hold: None,
             encounters: EncounterState::new(),
             pending_field_events: Vec::new(),
             pending_actor_spawns: Vec::new(),
@@ -531,6 +544,7 @@ impl World {
         self.party.inventory.clear();
         self.pending_scene_transition = None;
         self.pending_named_scene_transition = None;
+        self.scene_transition_hold = None;
         self.cutscene.pending_fmv_trigger = None;
         self.encounters.pending_scripted = None;
         self.encounters.scripted_armed = false;

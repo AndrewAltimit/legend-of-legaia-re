@@ -63,7 +63,7 @@ fn cur_man(host: &SceneHost) -> (ManFile, Vec<u8>) {
 /// assert the host entered the destination.
 fn hop(host: &mut SceneHost, dest: &str) {
     host.world.pending_named_scene_transition = Some((dest.to_string(), 10, 10, 0));
-    match host.tick().expect("transition tick") {
+    match tick_through_hold(host) {
         SceneTickEvent::SceneEntered { name } => assert_eq!(name, dest, "hop landed on {dest}"),
         other => panic!("expected SceneEntered({dest}), got {other:?}"),
     }
@@ -205,4 +205,19 @@ fn sebucus_hub_sweep_advances_the_gate_spine() {
         host.world.p2_record_gates_pass(&b18.0, &b18.1),
         "balden successor unlocked once P2[19] ran (0x5B3)"
     );
+}
+
+/// Tick through the scene-transition hold: a named request parks behind the
+/// streaming actor's `0x46`-frame countdown (`FUN_80021934`) and the host
+/// commits it on the hand-off tick, so the entry is the first event other
+/// than `Stepped` within the hold's span.
+fn tick_through_hold(host: &mut SceneHost) -> legaia_engine_core::scene::SceneTickEvent {
+    use legaia_engine_core::scene::SceneTickEvent;
+    for _ in 0..200 {
+        match host.tick().expect("transition tick") {
+            SceneTickEvent::Stepped => {}
+            other => return other,
+        }
+    }
+    SceneTickEvent::Stepped
 }

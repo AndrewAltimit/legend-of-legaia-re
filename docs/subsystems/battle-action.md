@@ -370,14 +370,16 @@ at `0x801E3224` (`attack_face`'s in-range arm) and the capture band's `= 1` at
 and `action_end_framing` each carry the two-bit fork of their own site - and
 both hosts feed it the live byte, so the four variants produce four framings.
 
-One writer stays a stand-in. `FUN_8004E13C` zeroes the byte at the first
-swing-clip commit (`sb zero,0xd(v1)` at `0x8004E2B4`, beside the
-`ctx[+0x6DA]` yaw seed, gated on `ctx[+0x13] < 3`); the engine's animation
-player does not expose the clip-header byte that gates it, so `BattleCamera`
-latches the zero on the edge into the strike loop instead. It is a latch and
-not a write because retail's is a write to the shared context byte, which
-stands until the next action seed - while the host re-supplies the framing
-inputs every frame.
+`FUN_8004E13C` zeroes the byte from a clip commit (`sb zero,0xd(v1)` at
+`0x8004E2B4`): the commit `FUN_8004AD80` hands it the new entry's `+0x87`
+byte when that is non-zero (`0x8004BE18..0x8004BE2C`), and its value-2 arm -
+byte `2`, the previous `ctx[+0x243]` not `2`, a party seat in `ctx[+0x13]` -
+re-seeds the yaw counter `ctx[+0x6DA] = (rand() % 2) * 0x800 + 0x280` beside
+the zero. It is not tied to a state edge: `player_steal_skeleton_pre` reads
+style `2` and the Attack base `0x218` eight frames into the strike loop
+`0x1E`. The engine runs it at its commit (`World`'s staged-anim commit, over
+the clip's `entry_solo_flag`), writing the live byte and handing the coin to
+the camera (`BattleCamera::observe_swing_reseed`).
 
 ### Magic in the port: which half of the cast the SM owns
 
@@ -2892,9 +2894,17 @@ seats at the origin, and the cursor falls back to a plain slot-order scan.
   brings a dead target into reach. The picker's monster arm calls it too,
   unconditionally, straight after the AI picker (`jal 0x801E9FD4` then
   `jal 0x801DB124` at `0x801DAF48..0x801DAF50`), which is what stops a monster
-  whose picked party member has since fallen from walking at the corpse. The
-  engine runs it at each party dispatch and on a monster's physical pick
-  (`World::redirect_dead_battle_target`, called from `take_monster_turn`).
+  whose picked party member has since fallen from walking at the corpse. That
+  arm has no category gate, so it reaches a monster's single-target **cast**
+  too (category `2`, spell id in `+0x1DF`). The Magic arm's "class byte" is
+  the spell record's cast class `+0` (`0x800754C8[id * 12]`), and every real
+  class (`0x14` / `0x32` / `0x63`) clears `0xA`, so a cast at a fallen hero
+  re-rolls onto a standing one; only the class-`0` records (the internal
+  `0x00..=0x24` tiers and the monster attacks `0x2E` / `0x2F`) keep a dead
+  party target. An all-side target code (`8` / `9`) fails the `< 8` test and
+  is left alone. The engine runs it at each party dispatch and on a
+  monster's strike and single-target cast (`World::redirect_dead_battle_target`,
+  called from `take_monster_turn`).
 
 ### Per-frame action-effect update helpers
 

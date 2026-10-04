@@ -79,6 +79,10 @@ pub struct LegaiaRuntime {
     /// CLUT fx) changed texels; drained by [`Self::field_vram_take_dirty`]
     /// so the page re-uploads the VRAM texture only on real changes.
     pub(crate) field_vram_dirty: bool,
+    /// Enhanced lighting's derived light sets for the running scene
+    /// ([`crate::play_lighting`]), built on the first lit frame after a
+    /// scene entry.
+    pub(crate) scene_lights: Option<crate::play_lighting::SceneLightCache>,
     /// The field-to-battle transition's per-frame emitter - the same
     /// `legaia_engine_ui::battle_intro::BattleIntro` the native window arms.
     /// `Some` only while the encounter session sits in its `Transition`
@@ -117,6 +121,11 @@ pub struct LegaiaRuntime {
     /// calls. Used only by the world map's top-view debug camera. Cleared on
     /// every scene rebuild.
     pub(crate) scene_aabb: Option<([f32; 3], [f32; 3])>,
+    /// The `(a, b)` of `ndc = a + b / w` the last field-FX projection
+    /// (fog sheets, drop shadows) handed its depths through
+    /// (`FogView::depth_affine`) - what the page inverts to put those
+    /// depths back into `w` ([`Self::play_fx_depth_affine`]).
+    pub(crate) fx_depth_affine: Option<(f32, f32)>,
     /// FMV (STR / MDEC) playback state ([`crate::play_fmv`]).
     pub(crate) fmv: crate::play_fmv::FmvState,
     /// In-world minigame presentation state ([`crate::play_minigames`]):
@@ -400,6 +409,7 @@ impl LegaiaRuntime {
             locomotion_anm: None,
             field_vram_anim: None,
             field_vram_dirty: false,
+            scene_lights: None,
             battle_intro: None,
             // The host framing bias the retail follow view is rendered with,
             // pushed in exactly where the native window pushes it
@@ -419,6 +429,7 @@ impl LegaiaRuntime {
             sim_stepper: Default::default(),
             camera_azimuth_override: None,
             scene_aabb: None,
+            fx_depth_affine: None,
             fmv: Default::default(),
             minigame_ui: Default::default(),
             battle_vram: Default::default(),
@@ -573,6 +584,18 @@ impl LegaiaRuntime {
                 legaia_font::Font::from_disc_tim_and_scus(&tim, scus)
                     .map_err(|e| crate::console_log(&format!("dialog font decode failed: {e}")))
                     .ok()
+                    .map(|font| {
+                        // The `0xCE` escape sprites (buttons, icons), from
+                        // the boot-resident TIMs at the head of PROT.DAT.
+                        use legaia_font::escape_icons::{ICON_PROT_DAT_LEN, ICON_PROT_DAT_OFFSET};
+                        match host
+                            .index
+                            .prot_dat_raw_bytes(ICON_PROT_DAT_OFFSET, ICON_PROT_DAT_LEN)
+                        {
+                            Ok(head) => font.with_escape_icons_from_disc(&head, scus),
+                            Err(_) => font,
+                        }
+                    })
             });
         // Every cold entry on this page is a scene-picker entry (a New Game
         // seeds its own Vahn-alone roster before entering), so the cold seed

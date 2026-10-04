@@ -454,6 +454,7 @@ impl LegaiaRuntime {
         let mut shell = None;
         let mut ground = None;
         let mut grid_far = None;
+        let mut fog_stage_luma = None;
         let outdoor = stage.as_ref().is_some_and(|st| st.outdoor);
         // REF: FUN_800513f0 - the backdrop registration whose object-list
         // edit + second-copy transform this host consumes through
@@ -475,6 +476,10 @@ impl LegaiaRuntime {
                 .unwrap_or_else(|| {
                     legaia_asset::battle_backdrop::drawn_object_indices(tmd.objects.len())
                 });
+            // The volumetric ground fog may not outshine the stage it lies
+            // on: the native window's measurement, same kernel, same shell.
+            fog_stage_luma =
+                legaia_engine_core::fog_volume::stage_luminance(&vram, tmd, raw, &objects);
             backdrop = stage_shell_mesh(tmd, raw, *second, &objects);
             shell = Some(WebStageShell {
                 tmd: tmd.clone(),
@@ -615,6 +620,9 @@ impl LegaiaRuntime {
             ground.is_some(),
             faces.len()
         ));
+        if let Some(h) = self.scene_host.as_mut() {
+            h.world.fog_volume.battle_luma = fog_stage_luma;
+        }
         self.battle_render = Some(BattleRender {
             vram,
             backdrop,
@@ -1231,6 +1239,8 @@ impl LegaiaRuntime {
             Some(P::Action) => "action",
             Some(P::Recover) => "recover",
             Some(P::ActionEnd) => "action-end",
+            Some(P::TargetEnemy) => "target-enemy",
+            Some(P::TargetAlly) => "target-ally",
             Some(P::Menu) | None => "menu",
         }
     }

@@ -1937,6 +1937,13 @@ directors so far, each read off its own tick's disassembly:
   module's countdown. The creature's clip-paced strike (arms 6..10) is not
   directed.
 
+- **PROT 0913 (Nova)** - **camera-beside**: Nova's tick body is ported, so
+  its director reads the phase the body is about to run and never holds it.
+  It covers arm 0's cut behind the caster (pitch `0x400`, yaw `0x900 -
+  caster[+0x46]`, TR `(0, 0, 0x400)`) and the `(scalar * delta) / 4` TR z
+  drift of the stream-request and CD-poll arms 1 and 2; the creature's
+  framings after the read are not directed.
+
 - **The summon creatures PROT 0914, 0915, 0917, 0920, 0923, 0928, 0930,
   0931** - their tick bodies are not ported, so their directors are
   **camera-only**: each covers the opening arms the sustain `0x35` runs (the
@@ -1963,6 +1970,61 @@ the eleven - PROT 0903, 0904, 0905, 0908, 0911 and 0912 - and a capture-class
 body in six more, which is the same reason the trampoline map has to be keyed
 on `(entry, body)`
 [above](#a-body-va-is-not-a-key---only-entry-body-is).
+
+### A capture-class module owns the camera in `0x70`
+
+The capture band's module tick `0x70` calls no framing case: it runs the
+module through `FUN_801F2160` and leaves for `0x71` when that returns zero
+(`0x801E50C8..0x801E50E8`). The camera therefore holds the pose `0x6F`'s
+last case-6 pass left, and moves only where the module moves it - with the
+same two kernels the player half uses (a `FUN_801D829C` shot, and drifts
+added straight into the pitch / yaw / TR globals every pass an arm runs),
+behind the same kind of module-resident countdown.
+
+Port: `legaia_engine_vm::cast_module_camera::capture_camera_director`, keyed on
+`(entry, body)` like the trampoline map, run on the phase the body is about to
+run; a holding gate withholds the body's pass. The battle camera holds in
+`0x70` and walks whatever shot a director arms. Directed so far:
+
+- **PROT 0940 `0xAC` (Cort's Mystic Shield, body `0x801F7240`)** - arm 0's
+  shot behind the caster (pitch `0x200`, TR `(0, -0x100, 0x400)`, `0x40`
+  frames), the drifts of arms 2, 4, 5 and 6, and the countdown `0x801F864C`
+  gating arms 1..7 (seeded `scalar * 0x60`, re-armed `scalar << 8` /
+  `<< 6` / `* 0xC0` as each gate passes). The `cort_mystic_shield_mid_cast`
+  capture sits in arm 1 with `496` of the word left, 34 vsyncs into the shot.
+
+- **PROT 0944 `0x37` (Cort's Guilty Cross, body `0x801F6A04`)** - arm 0's
+  `0x20`-frame shot behind the caster (TR `(0, 0x600, 0x800)`), arm 2's cut to
+  the victim (pitch `0x100`, TR `(0, 0x400, 0xA00)`), arm 4's cut back, the TR z
+  drift of arms 1 / 2 / 5 (`+4`) and 3 (`+32`), and the countdown `0x801F8360`
+  gating arms 1..5. Its framings turn on the caster's facing, which the cast
+  begin points at its target, so the replay is steered onto the capture's
+  target too ([retail-compare](../tooling/retail-compare.md#driving-to-the-phase)).
+
+- **PROT 0962 `0xA5` (evolved Cort's Ultra Charge, body `0x801F69D8`)** -
+  arm 0's `0xC`-frame shot behind the caster (TR y `0xC00` when the
+  formation's first monster is `0xB5`, `0x240` otherwise; TR z `0xC00`) and
+  arm 1's TR z drift of `scalar * delta` while the countdown `0x801F89AC`
+  (seeded `scalar * 0x180`) runs. The body's phase chain has no other port, so
+  this director also owns it (`0 -> 1 -> 0xFF`), the way a camera-only player
+  director does.
+
+- **PROT 0938 `0xB7` (Cort's Mystic Circle, body `0x801F69EC`)** - arm 0's
+  cut behind the caster (pitch `-0x40`, TR `(0, 0x600, 0x600)`), arm 2's cut
+  to the front (pitch `0x180`, TR `(0, 0x600, 0xC00)`), the drifts of arms
+  1 / 2 (TR z `+4`, TR y `-1` a vsync) and 3 (`+96`, `-29`), and the countdown
+  `0x801F8040` - **absolute**, not scalar-scaled: `0x800`, drained `8 * delta`.
+
+- **PROT 0946 (Zeto's Call Wave `0x55` / Big Wave `0x56`, one body
+  `0x801F69FC`, keyed on `SINGLE_BODY`)** - arm 0 forks the two
+  choreographies off a per-seat word retail toggles on every cast (the port
+  keys on the action id): Call Wave cuts to `(0, 0x600, 2z)` and pans to
+  `z/2` then `z` (arms 1..3), Big Wave cuts to `z/2` and pans to `2z` over
+  `0x100` frames (arms 4, 5), `z` being `ctx[+0x6D0]`; countdown
+  `0x801F7F20`. Arms 6..8 of Big Wave are not directed; the body has no other
+  port, so the director owns its phase and finishes the module there.
+
+A body with no director keeps the held pose.
 
 ### The band has eight stat-block writers, not one
 

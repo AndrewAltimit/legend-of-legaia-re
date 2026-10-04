@@ -158,47 +158,31 @@ undithered.
 In the `legaia-engine play-window` binary PSX mode (vertex snap + dither)
 is opt-in via the `LEGAIA_PSX_RENDER=1` environment variable.
 
-## Opt-in dynamic lighting (enhancement, NOT retail)
+## Enhanced lighting (enhancement, NOT retail)
 
-`Renderer::set_dynamic_lighting(true)` layers a soft, warm dynamic light
-over the baked shading on the VRAM-mesh and colour-mesh passes. **Off by
-default, and off IS retail**: the field path has no runtime light source
-(see `psx_light` above), so the disabled path is pixel-identical to the
-faithful render and the parity oracles are unaffected - the WGSL helper
-(`dyn_light`) early-returns the input colour when the uniform enable is
-zero.
+`Renderer::set_dynamic_lighting(true)` shades the VRAM-mesh and colour-mesh
+passes under a staged `LightingMood` (`set_lighting_mood`), adds the staged
+point lights (`set_scene_lights`), draws emissive-tagged prims (TSB / blend
+bit 13) at the mood's emissive gain, and composites the staged glow sprites
+(`set_glow_sprites` - additive halos + light shafts, the `glow_pipeline`).
+**Off by default in the renderer, and off IS retail**: the field path has no
+runtime light source (see `psx_light` above), so the WGSL helper
+(`dyn_light`) early-returns the input colour when the uniform enable is zero
+and the disabled path is pixel-identical to the faithful render.
+`play-window` turns it on from the persisted `enhanced_lighting` option
+(`I` toggles, `F8` cycles the time of day, `--no-dynamic-lighting` forces
+it off).
 
-When enabled, each fragment's post-`psx_modulate` colour is scaled by
-
-```text
-gain = ambient + (diffuse * |N.L| + pool) * warm_tint    (capped at ~1.3x)
-```
-
-- `N` is the smoothed per-vertex normal the VRAM-mesh vertex format
-  already carries (area-weighted face normals accumulated per shared
-  position by `legaia_tmd::mesh` - continuous across connected surfaces,
-  so lighting varies within primitives, not per-prim). The normal-less
-  colour-mesh prims and zero-normal singletons fall back to the
-  screen-space-derivative face normal. `|N.L|` (not `max(N.L, 0)`)
-  because prim winding in the corpus is mixed - walls shade with their
-  orientation while a Y-flip in the draw parity changes nothing.
-- `pool` is a soft screen-space "pool of light" centred slightly above
-  frame centre, fading toward the corners - the gentle
-  vignette-of-light gradient over the ground.
-- Texels stay crisp: the gain is a smooth per-pixel scale on the same
-  nearest-sampled PSX texel path, never a filter.
-
-Tunables: `DYN_LIGHT_DIR` / `DYN_LIGHT_TINT` / `DYN_LIGHT_AMBIENT`
-(renderer state) plus the `DYN_*` weights in the `dyn_light` WGSL helper;
-the CPU mirror + lockstep tests live in the `dyn_light` module. In
-`play-window` this is the `--dynamic-lighting` flag, toggled at runtime
-with the `I` key and reflected on the HUD status line.
-
-`scene_lights` is the sub-layer beneath it: it derives a small set of
-world-space point lights from a loaded field scene's light-emitting props
-(candle flames, wall torches, lamps) for the renderer to shade and shadow
-from. Inert while dynamic lighting is off; `--no-dyn-shadows` / the `Y` key
-turns the shadow half off on its own.
+The derivation - which prims glow, the light list, the moods, the glow
+geometry, and the CPU mirror of the shading law - lives in the shared
+`legaia_engine_ui::scene_lighting` kernel (re-exported here as
+`scene_lighting`), so the browser play page lights from the same values.
+This crate keeps the WGSL twin (`dyn_light` / `scene_point_gain` in
+`shaders.rs`, held to the mirror by the `dyn_light` module's tests) and the
+part only wgpu has: `scene_lights::light_view_proj` and the per-light PCF
+shadow pass (`set_dyn_shadows`, default on; `--no-dyn-shadows` / the `Y`
+key). The full model is on
+[renderer.md](../../docs/subsystems/renderer.md#enhanced-lighting-enhancement-default-on).
 
 ## Opt-in camera-occlusion fade (enhancement, NOT retail)
 

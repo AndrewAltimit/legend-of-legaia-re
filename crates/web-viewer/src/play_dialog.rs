@@ -86,7 +86,7 @@ fn from_panel(
     panel: &legaia_engine_core::dialog::OwnedDialogPanel,
     require_text: bool,
 ) -> Option<DialogSnapshot> {
-    let page = to_ascii(&panel.page_bytes());
+    let page = ui::dialog_page_string(&panel.page_bytes());
     if require_text && page.is_empty() {
         return None;
     }

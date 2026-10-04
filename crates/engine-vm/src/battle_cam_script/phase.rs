@@ -22,6 +22,13 @@ pub enum BattleCamPhase {
     /// The end-of-action band: `FUN_801D5854` case `8`, framed on the
     /// **target**. See [`action_end_framing`](super::action_end_framing).
     ActionEnd,
+    /// The target cursor on one enemy: `FUN_801D5854` case `1`, the shot
+    /// that turns the member toward the cursor's target. See
+    /// [`target_enemy_pose`](super::target_enemy_pose).
+    TargetEnemy,
+    /// The target cursor on one party member: `FUN_801D5854` case `3`. See
+    /// [`target_ally_pose`](super::target_ally_pose).
+    TargetAlly,
 }
 
 /// Retail's own test for "an action owns the framing", from the action state
@@ -145,20 +152,49 @@ pub fn phase_for(dialogue_up: bool, submenu_open: bool, action_executing: bool) 
 }
 
 /// `ctx[7]` values whose arm hands `FUN_801D5854` mode **`7`** - the
-/// attacker-target two-shot ([`recover_framing`](super::recover_framing)).
+/// attacker-target two-shot ([`recover_framing`](super::recover_framing)) -
+/// or, on a fork, mode `8` ([`post_strike_phase`]).
 ///
-/// `0x1F` (recovery wait) and `0x20` (return) share one arm, and mode `7` is
-/// its **default**: `0x801E5660..0x801E56C0` takes mode `8` only when the
-/// target's live anim id matches its counter-trigger bytes
-/// (`s8[+0x1F1]`/`+0x1F2`) or when a party slot faces a target already in a
-/// death clip (anim `7`/`8`); everything else falls to `li a1,0x7` at
-/// `0x801E56BC`. A retail `ctx[7] == 0x1F` save state corroborates the pose:
-/// with `ctx[+0xD] == 2` it reads pitch `0x80` and `TR.y = 0x400` - case 7's
-/// style-2 tweak - over `TR.z = prescale(ctx[+0x6D0])`.
+/// The strike loop `0x1E` (jump-table entry `0x801E35F0`) arms mode `7` on
+/// every pass with no fork: the block that commits the next strike falls
+/// through to `li a1,0x7` / `jal 0x801d5854` at `0x801E36E4..0x801E36EC`.
+/// The `player_steal_skeleton_pre` capture (`ctx[7] == 0x1E`, style `2`)
+/// reads that pose's tween targets - pitch `0x80`, `TR (0, 0x400,
+/// prescale(0xC00))`, yaw `(ctx[+0x6DA] - actor[+0x46] - 0x700) & 0xFFF` -
+/// not case 6's.
+///
+/// `0x1F` (recovery wait, `0x801E3A88`) and `0x20` (return, `0x801E54EC`)
+/// take mode `7` by **default** and mode `8` when the target's current anim
+/// `+0x1D9` is its knockdown `+0x1F1` or its non-zero get-up `+0x1F2`
+/// (`0x801E3A88..0x801E3AC4` / `0x801E5660..0x801E5684`); `0x20` alone also
+/// takes `8` when a party slot faces a target in a death clip (anim `7` /
+/// `8`, `0x801E568C..0x801E56A4`). A retail `ctx[7] == 0x1F` save state
+/// corroborates the default pose: with `ctx[+0xD] == 2` it reads pitch `0x80`
+/// and `TR.y = 0x400` - case 7's style-2 tweak - over `TR.z =
+/// prescale(ctx[+0x6D0])`; `battle_melee_hit_spark` and
+/// `player_steal_skeleton_banner` (`0x20`, target on its knockdown) read
+/// case 8.
 ///
 /// The Done band's `0x50` / `0x51` are not here: their arm forks per
 /// category ([`done_band_phase`]) and never reaches case `7`.
-pub const RECOVER_STATES: [u8; 2] = [0x1F, 0x20];
+pub const RECOVER_STATES: [u8; 3] = [0x1E, 0x1F, 0x20];
+
+/// The phase the post-strike band arms ([`RECOVER_STATES`]) for one frame:
+/// case `7`, or case `8` on the target-reaction fork the `0x1F` / `0x20`
+/// arms run. `None` outside the band.
+pub const fn post_strike_phase(action_state: u8, done: DoneBandInputs) -> Option<BattleCamPhase> {
+    let case8 = match action_state {
+        0x1E => false,
+        0x1F => done.target_knocked,
+        0x20 => done.target_knocked || (done.party_slot && done.target_death_clip),
+        _ => return None,
+    };
+    Some(if case8 {
+        BattleCamPhase::ActionEnd
+    } else {
+        BattleCamPhase::Recover
+    })
+}
 
 /// `ctx[7]` values whose arm hands `FUN_801D5854` mode **`8`**
 /// unconditionally ([`action_end_framing`](super::action_end_framing)): `0x52` (multi-cast
@@ -183,6 +219,13 @@ pub struct DoneBandInputs {
     pub party_slot: bool,
     /// The acting actor's target reads zero live HP (`s8[+0x14C] == 0`).
     pub target_dead: bool,
+    /// The target's current anim `+0x1D9` is its knockdown `+0x1F1`, or its
+    /// get-up `+0x1F2` when that is non-zero - the post-strike arms' case-`8`
+    /// test ([`post_strike_phase`]).
+    pub target_knocked: bool,
+    /// The target's current anim `+0x1D9` is `7` or `8`, a downed party
+    /// member's death chain ([`post_strike_phase`], `0x20` only).
+    pub target_death_clip: bool,
 }
 
 /// `actor[+0x1DE]` value the Done band runs the orbit for instead of a framing.
@@ -255,8 +298,8 @@ pub fn phase_for_state(
         BattleCamPhase::Dialogue
     } else if input_menu_open {
         BattleCamPhase::Submenu
-    } else if RECOVER_STATES.contains(&action_state) {
-        BattleCamPhase::Recover
+    } else if let Some(phase) = post_strike_phase(action_state, done) {
+        phase
     } else if DONE_STATES.contains(&action_state) {
         done_band_phase(done)
     } else if ACTION_END_STATES.contains(&action_state) {

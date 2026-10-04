@@ -605,23 +605,47 @@ impl PlayWindowApp {
             );
             return;
         }
-        // `I`: toggle the opt-in dynamic-lighting enhancement (the
-        // `--dynamic-lighting` flag's runtime twin). NON-RETAIL: the field
-        // path has no light source, so OFF (the default) is the faithful
-        // pixel-identical render; ON layers a soft warm directional light +
-        // screen-centred light pool over the baked shading (capped ~1.3x).
+        // `I`: toggle the enhanced-lighting enhancement (the persisted
+        // `enhanced_lighting` option, default on; `--dynamic-lighting` /
+        // `--no-dynamic-lighting` force it per session). NON-RETAIL: the
+        // field path has no light source, so OFF is the faithful
+        // pixel-identical render; ON shades under the scene mood with the
+        // derived lamp lights, emissive surfaces and their glow.
         // Pure renderer state - no world/sim effect, replays unaffected.
         if matches!(code, KeyCode::KeyI) && state == ElementState::Pressed {
             self.dynamic_lighting = !self.dynamic_lighting;
             if let Some(r) = self.win.renderer.as_ref() {
                 r.set_dynamic_lighting(self.dynamic_lighting);
             }
+            self.options_state.enhanced_lighting = self.dynamic_lighting;
+            self.persist_and_apply_options();
             log::info!(
-                "render: dynamic lighting {}",
+                "render: enhanced lighting {}",
                 if self.dynamic_lighting {
                     "ON (enhancement - not retail)"
                 } else {
                     "off (faithful baked shading)"
+                }
+            );
+            return;
+        }
+        // `F8`: cycle the time of day enhanced lighting lights scenes under
+        // (auto -> day -> dusk -> night). Persisted; inert while the
+        // enhancement is off.
+        if matches!(code, KeyCode::F8) && state == ElementState::Pressed {
+            use legaia_engine_render::scene_lighting::TimeOfDay;
+            let next = TimeOfDay::from_name(&self.options_state.lighting_time_of_day)
+                .unwrap_or_default()
+                .next();
+            self.options_state.lighting_time_of_day = next.name().to_string();
+            self.persist_and_apply_options();
+            log::info!(
+                "render: time of day {}{}",
+                next.name(),
+                if self.dynamic_lighting {
+                    ""
+                } else {
+                    " (inert until enhanced lighting is on - press I)"
                 }
             );
             return;
@@ -672,6 +696,28 @@ impl PlayWindowApp {
                     "ON (see-through walls - enhancement)"
                 } else {
                     "off (retail authored framing)"
+                }
+            );
+            return;
+        }
+        // `F9`: toggle the volumetric ground-fog enhancement (the
+        // `--no-volumetric-fog` flag's runtime twin, the play page's "Ground
+        // fog" box). Default ON: misty / night scenes carry a drifting mist
+        // bank the characters part. The setting is the engine's option
+        // (`OptionsState::volumetric_fog` -> `WorldToggles::volumetric_fog`),
+        // persisted like `R`; off resets the bank and draws the frame
+        // without it. Like `F4`, an F-key so no pad binding can shadow it.
+        if matches!(code, KeyCode::F9) && state == ElementState::Pressed {
+            let on = !self.options_state.volumetric_fog;
+            self.options_state.volumetric_fog = on;
+            self.session.host.world.toggles.volumetric_fog = on;
+            self.persist_and_apply_options();
+            log::info!(
+                "render: volumetric ground fog {}",
+                if on {
+                    "ON (enhancement - not retail)"
+                } else {
+                    "off (retail fog puffs only)"
                 }
             );
             return;

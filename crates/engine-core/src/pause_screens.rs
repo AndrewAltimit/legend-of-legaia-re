@@ -233,6 +233,10 @@ pub struct PauseItemsSession {
     /// The Use list's Incense row is greyed: the Incense window already
     /// holds `0xE0` or more walk ticks. See [`Self::with_incense_window`].
     incense_blocked: bool,
+    /// The Incense window as this screen sees it: the live word at open,
+    /// topped up by every confirm the screen commits, so the gate greys the
+    /// row on the use that reaches `0xE0` rather than only on the next open.
+    incense_window: i32,
 }
 
 impl PauseItemsSession {
@@ -255,6 +259,7 @@ impl PauseItemsSession {
             closed: false,
             incense_uses: 0,
             incense_blocked: false,
+            incense_window: 0,
         }
     }
 
@@ -274,6 +279,7 @@ impl PauseItemsSession {
     /// REF: FUN_80046898 (the gate; ported as
     /// `legaia_engine_vm::battle_action::item_count_gate`)
     pub fn with_incense_window(mut self, window: i32) -> Self {
+        self.incense_window = window;
         self.incense_blocked = !legaia_engine_vm::battle_action::item_count_gate(window);
         self
     }
@@ -563,7 +569,8 @@ impl PauseItemsSession {
                 // Every committing route hands `FUN_80042310(id, 1)` before
                 // it leaves - the one-copy bag decrement. `consumed_items`
                 // is what carries it to the world applier.
-                if let Some(id) = sp.consumed_item_id() {
+                let consumed = sp.consumed_item_id();
+                if let Some(id) = consumed {
                     self.inner.consumed_items.push(id);
                 }
                 match outcome {
@@ -590,6 +597,16 @@ impl PauseItemsSession {
                     }
                     SpecialUseOutcome::EncounterSuppress => {
                         self.incense_uses = self.incense_uses.saturating_add(1);
+                        // The applier's `+0x40` lands on the live window at
+                        // once, and the Use list the route returns to greys
+                        // the row off that word (`FUN_80046898`).
+                        self.incense_window =
+                            legaia_engine_vm::battle_helpers::top_up_cooldown(self.incense_window);
+                        self.incense_blocked =
+                            !legaia_engine_vm::battle_action::item_count_gate(self.incense_window);
+                        if let Some(id) = consumed {
+                            self.take_one_copy(id);
+                        }
                         self.focus = PauseItemsFocus::List;
                     }
                     SpecialUseOutcome::Cancelled => {
@@ -679,6 +696,31 @@ impl PauseItemsSession {
     /// (retail zeroes both bytes of the bag slot pair), step the hand
     /// back when it sat on the last row, and drop back to the command
     /// window when the bag scan comes up empty.
+    /// One copy of `id` leaves the bag the moment a special route commits:
+    /// retail's Incense Yes calls `FUN_80042310(0x8A, 1)` at `0x801D8E68`,
+    /// before the applier and before the route drops back to the Use list -
+    /// so the row the list returns to shows one fewer, and the last copy's
+    /// row is gone. Without this the screen kept offering an Incense the bag
+    /// no longer held, and one copy could be confirmed up to the window cap.
+    // REF: FUN_80042310 (the one-copy bag decrement the route calls)
+    fn take_one_copy(&mut self, id: u8) {
+        let at = if self.rows.get(self.cursor).is_some_and(|r| r.id == id) {
+            Some(self.cursor)
+        } else {
+            self.rows.iter().position(|r| r.id == id)
+        };
+        let Some(at) = at else {
+            return;
+        };
+        let row = &mut self.rows[at];
+        row.count = row.count.saturating_sub(1);
+        if row.count == 0 {
+            self.rows.remove(at);
+            self.inner.remove_item_at(at);
+            self.cursor = self.cursor.min(self.rows.len().saturating_sub(1));
+        }
+    }
+
     fn throw_out_selected(&mut self) {
         if self.cursor >= self.rows.len() {
             self.focus = PauseItemsFocus::ThrowOutList;
@@ -3260,6 +3302,46 @@ mod tests {
         );
         assert_eq!(s.consumed_item_id(), Some(INCENSE_ITEM_ID));
         assert_eq!(s.exit_code(), None, "Incense drops back to the Use list");
+    }
+
+    /// One Incense is one confirm: the route takes the copy off the row at
+    /// commit (`FUN_80042310(0x8A, 1)` at `0x801D8E68`), so the last copy's
+    /// row leaves the list and a second Cross cannot re-open its confirm.
+    #[test]
+    fn incense_last_copy_cannot_be_confirmed_twice() {
+        let mut s = items_session(&[(0x01, 1), (INCENSE_ITEM_ID, 1)]);
+        s.input_pad_edge(edge(PadButton::Cross)); // Use
+        s.input_pad_edge(edge(PadButton::Down)); // Incense row
+        s.input_pad_edge(edge(PadButton::Cross)); // open confirm
+        s.input_pad_edge(edge(PadButton::Cross)); // Yes
+        assert_eq!(s.incense_uses(), 1);
+        assert!(s.rows.iter().all(|r| r.id != INCENSE_ITEM_ID));
+        assert_eq!(s.inner.items, vec![0x01]);
+        // Cursor clamps onto the remaining row; a further Cross on it is an
+        // ordinary use, never another Incense.
+        s.input_pad_edge(edge(PadButton::Cross));
+        s.input_pad_edge(edge(PadButton::Cross));
+        assert_eq!(s.incense_uses(), 1);
+        assert_eq!(s.inner.consumed_items, vec![INCENSE_ITEM_ID]);
+    }
+
+    /// Two copies: the first confirm leaves the row at one, and the gate
+    /// follows the window the confirms built up inside the screen.
+    #[test]
+    fn incense_row_counts_down_and_gate_tracks_the_window() {
+        let mut s = items_session(&[(INCENSE_ITEM_ID, 5)]).with_incense_window(0x80);
+        s.input_pad_edge(edge(PadButton::Cross)); // Use
+        s.input_pad_edge(edge(PadButton::Cross)); // open confirm
+        s.input_pad_edge(edge(PadButton::Cross)); // Yes: window 0xC0
+        assert_eq!(s.rows[0].count, 4);
+        s.input_pad_edge(edge(PadButton::Cross));
+        s.input_pad_edge(edge(PadButton::Cross)); // Yes: window 0x100
+        assert_eq!(s.incense_uses(), 2);
+        assert_eq!(s.rows[0].count, 3);
+        // 0x100 >= 0xE0: the row is greyed, its Cross is a buzz.
+        s.input_pad_edge(edge(PadButton::Cross));
+        assert_eq!(s.focus, PauseItemsFocus::List);
+        assert_eq!(s.incense_uses(), 2);
     }
 
     /// Door of Wind (FUN_801D8B90): the destination list opens directly;

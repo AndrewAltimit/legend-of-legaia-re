@@ -105,6 +105,19 @@ pub enum BattleCameraOpt {
     Far,
 }
 
+impl BattleCameraOpt {
+    /// The option from its config word `0x800846C0` (`0` Close, `2` Far;
+    /// the camera's arms test `!= 0` and `== 2`, so any other word reads
+    /// as Normal).
+    pub fn from_word(word: u8) -> Self {
+        match word {
+            0 => Self::Close,
+            2 => Self::Far,
+            _ => Self::Normal,
+        }
+    }
+}
+
 /// Battle attack-target picking (config word `0x800846C4`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum SelectAttackOpt {
@@ -222,6 +235,28 @@ pub struct OptionsState {
     /// for retail's frustum, so a farther or re-aimed camera draws the whole
     /// map instead of opening black edges. Off draws the whole map always.
     pub retail_view_window: bool,
+    /// Volumetric ground fog (engine-only, non-retail): a low drifting mist
+    /// bank over the scenes that read as misty or night, parted by the
+    /// characters walking through it ([`crate::fog_volume`]). Mirrors into
+    /// [`crate::world::WorldToggles::volumetric_fog`]. **Default on**; off is
+    /// the frame without the feature, pixel for pixel. Presentation only -
+    /// the bank reads the actors and never writes back.
+    pub volumetric_fog: bool,
+    /// Enhanced lighting (engine-only, non-retail): the scene mood's ambient
+    /// and key light, the derived lamp point lights, emissive surfaces and
+    /// their glow (`legaia_engine_ui::scene_lighting`). Both windowed hosts
+    /// read it (`I` in `play-window`, the play page's checkbox). **Default
+    /// on** - the enhanced side is the better experience, and its daylight
+    /// mood stays close to the baked brightness; off is the faithful
+    /// baked-shading render, pixel-identical to it. Pure presentation: never
+    /// feeds the simulation (replays force it off).
+    pub enhanced_lighting: bool,
+    /// The time of day enhanced lighting lights scenes under: `auto` (the
+    /// scene's own mood - daylight outdoors, dim interiors and caves),
+    /// `day`, `dusk` or `night` (`legaia_engine_ui::scene_lighting::TimeOfDay`
+    /// names; an unknown name reads as `auto`). `F8` in `play-window`, the
+    /// page's selector.
+    pub lighting_time_of_day: String,
 }
 
 impl Default for OptionsState {
@@ -245,6 +280,9 @@ impl Default for OptionsState {
             reduce_flashing: true,
             retail_static_window: true,
             retail_view_window: true,
+            volumetric_fog: true,
+            enhanced_lighting: true,
+            lighting_time_of_day: "auto".to_string(),
         }
     }
 }
@@ -264,8 +302,10 @@ impl OptionsState {
         world.locomotion.run_default = self.field_move == FieldMoveOpt::Run;
         world.toggles.reduce_flashing = self.reduce_flashing;
         world.toggles.select_attack = self.battle_select_attack;
+        world.toggles.battle_camera = self.battle_camera;
         world.terrain.static_window.retail_windowing = self.retail_static_window;
         world.toggles.view_window_crop = self.retail_view_window;
+        world.toggles.volumetric_fog = self.volumetric_fog;
     }
 
     /// Step the follow-camera distance preset one place along its cycle and
@@ -1105,6 +1145,19 @@ mod tests {
         assert!(!w.terrain.static_window.retail_windowing);
         opts.apply_to_world(&mut w);
         assert!(w.terrain.static_window.retail_windowing);
+    }
+
+    /// Enhanced lighting defaults on under the scene's own mood, and an
+    /// options file written before the knob existed reads the same default.
+    #[test]
+    fn enhanced_lighting_defaults_on_and_survives_old_files() {
+        let opts = OptionsState::default();
+        assert!(opts.enhanced_lighting);
+        assert_eq!(opts.lighting_time_of_day, "auto");
+        let old: OptionsState = toml::from_str("muted = true\n").unwrap();
+        assert!(old.enhanced_lighting && old.muted);
+        let back: OptionsState = toml::from_str(&toml::to_string(&opts).unwrap()).unwrap();
+        assert_eq!(back, opts);
     }
 
     #[test]

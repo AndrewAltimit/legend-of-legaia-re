@@ -280,15 +280,22 @@ fn play_every_lesson(w: &mut World) -> Vec<u8> {
         "the primed fight arms the machine"
     );
     // The stand-in formation's monster is no Tetsu: give it the spar's
-    // staying power so the lessons, not a knockout, end the fight.
-    for a in w.actors.iter_mut().skip(3) {
-        if a.battle.max_hp > 0 {
+    // staying power so the lessons, not a knockout, end the fight. The spar
+    // seats Vahn alone, so the monster is the seat right after him - pick it
+    // by its monster id, not by a fixed party width.
+    for a in w.actors.iter_mut() {
+        if a.battle_monster_id.is_some() && a.battle.max_hp > 0 {
             a.battle.max_hp = 9999;
-            a.battle.hp = 9999;
+            a.battle.set_hp_synced(9999);
         }
     }
-    // A wounded lead, so the leaf has a target to benefit.
-    w.actors[0].battle.hp = w.actors[0].battle.max_hp / 2;
+    // A wounded lead, so the leaf has a target to benefit - and, like the
+    // real spar's Vahn, one the stand-in's full-strength hits cannot fell
+    // across four lessons. Every write goes through the synced setter so the
+    // HP readout pair stays coherent (a bare `hp` write is the absorbing
+    // `0x51` bar-drain park, `BattleActor::set_hp_synced`).
+    w.actors[0].battle.max_hp = 999;
+    w.actors[0].battle.set_hp_synced(499);
     let mut seen = vec![0u8];
     let mut prev = 0u16;
     for _ in 0..40_000u32 {
@@ -392,4 +399,85 @@ fn a_played_spar_leaves_the_flag_bank_as_retail_does() {
     );
     assert_eq!(&seen[..4], &[0, 1, 2, 3]);
     assert_eq!(got, post, "flag bank 0x80085758..5B after the played fight");
+}
+
+/// Play the spar with a stand-in that outlasts the lessons and a lead it
+/// fells, until the wipe's end sequence has run (the scene leaves battle, or
+/// the game-over hold is raised).
+fn play_to_a_knockout(w: &mut World) {
+    walk_into_battle(w);
+    for a in w.actors.iter_mut() {
+        if a.battle_monster_id.is_some() && a.battle.max_hp > 0 {
+            a.battle.max_hp = 9999;
+            a.battle.set_hp_synced(9999);
+        }
+    }
+    w.actors[0].battle.set_hp_synced(1);
+    let mut prev = 0u16;
+    for _ in 0..20_000u32 {
+        let want = lesson_pad(w);
+        let pad = if prev == 0 { want } else { 0 };
+        prev = pad;
+        w.set_pad(pad);
+        let _ = w.tick();
+        if w.mode != SceneMode::Battle || w.game_over_hold {
+            return;
+        }
+    }
+    panic!(
+        "the lead was never knocked out (lead hp {}, action state {:#x})",
+        w.actors[0].battle.hp, w.battle_ctx.action_state
+    );
+}
+
+/// A knockout in the spar ends the fight as retail's annihilated arm does.
+///
+/// With the scripted-loss latch the town01 record raises (flag 0, seeded from
+/// the retail in-fight bank) the wipe returns to the field with Vahn floored
+/// at 1 HP (`sh 1,0x14c` at `0x8004FBA4`). With the latch clear it is a game
+/// over: the scene is held for the hand-off and **no further battle frame
+/// runs** - retail has already switched to CARD INIT. The regression: the
+/// held world kept ticking the action SM, which started a fresh round on the
+/// floored lead and parked at the `0x51` bar-drain gate on a readout pair
+/// (`hp 1`, shown `0`) the floor had left absorbing.
+#[test]
+fn a_knockout_in_the_spar_ends_the_fight() {
+    // Latch set: back to the field, standing.
+    let mut w = primed_world(Some([0x81, 0x02, 0x80, 0x00]));
+    play_to_a_knockout(&mut w);
+    assert_eq!(
+        w.mode,
+        SceneMode::Field,
+        "a scripted loss returns to the field"
+    );
+    assert!(!w.game_over);
+    assert!(
+        !w.system_flag_test(1),
+        "story flag 1 clear = the lost outcome"
+    );
+
+    // Latch clear: the game-over hold, frozen.
+    let mut w = primed_world(None);
+    play_to_a_knockout(&mut w);
+    assert!(
+        w.game_over && w.game_over_hold,
+        "an unscripted wipe is a game over"
+    );
+    let b = &w.actors[0].battle;
+    assert_eq!(b.hp, 1, "the annihilated arm floors the lead at 1 HP");
+    assert!(
+        b.hp_display.is_none_or(|shown| shown == b.hp) && b.hp_bar_pending == 0,
+        "the floored lead's readout pair is settled, not absorbing"
+    );
+    let state = w.battle_ctx.action_state;
+    for frame in 0..600 {
+        w.set_pad(0);
+        let _ = w.tick();
+        assert_eq!(
+            w.battle_ctx.action_state, state,
+            "the held battle ran its action SM again {frame} frames into the hold"
+        );
+    }
+    w.resolve_game_over_hold();
+    assert_eq!(w.mode, SceneMode::Field);
 }

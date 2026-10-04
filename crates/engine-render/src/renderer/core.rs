@@ -257,12 +257,7 @@ impl Renderer {
                 flags: [0.0; 4],
                 // Dynamic lighting off (w = 0) = the retail-identical path.
                 light_dir: [0.0; 4],
-                light_color: [
-                    DYN_LIGHT_TINT[0],
-                    DYN_LIGHT_TINT[1],
-                    DYN_LIGHT_TINT[2],
-                    DYN_LIGHT_AMBIENT,
-                ],
+                light_color: crate::scene_lighting::LightingMood::DAY.uniforms(false)[1],
                 cue_ramp: [0.0; 4],
                 palette: [0.0; 4],
                 model_rows: MODEL_ROWS_IDENTITY,
@@ -807,6 +802,89 @@ impl Renderer {
             crate::renderer::VRAM_VERTEX_STRIDE,
         );
         let shadow_color_pipeline = make_shadow_pipeline("legaia shadow pipeline (color mesh)", 20);
+
+        // Glow sprites (enhanced lighting's halos + light shafts): position
+        // (12) + falloff uv (8) + additive colour/kind (16) = 36 bytes, one
+        // VP uniform, additive blend, depth-tested against the scene pass
+        // but never writing depth.
+        let glow_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("legaia glow shader"),
+            source: wgpu::ShaderSource::Wgsl(GLOW_SHADER_SRC.into()),
+        });
+        let (glow_uniforms_bgl, glow_uniforms_buf, glow_uniforms_bg) = make_uniform_bind_group(
+            &device,
+            "glow uniforms",
+            bytemuck::cast_slice(&[Mat4::IDENTITY.to_cols_array_2d()]),
+            wgpu::ShaderStages::VERTEX,
+        );
+        let glow_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("legaia glow pipeline layout"),
+            bind_group_layouts: &[&glow_uniforms_bgl],
+            push_constant_ranges: &[],
+        });
+        let additive = wgpu::BlendComponent {
+            src_factor: wgpu::BlendFactor::One,
+            dst_factor: wgpu::BlendFactor::One,
+            operation: wgpu::BlendOperation::Add,
+        };
+        let glow_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("legaia glow pipeline"),
+            layout: Some(&glow_layout),
+            vertex: wgpu::VertexState {
+                module: &glow_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: GLOW_VERTEX_STRIDE,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            offset: 0,
+                            shader_location: 0,
+                            format: wgpu::VertexFormat::Float32x3,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 12,
+                            shader_location: 1,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 20,
+                            shader_location: 2,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                    ],
+                }],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &glow_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: view_format,
+                    blend: Some(wgpu::BlendState {
+                        color: additive,
+                        alpha: additive,
+                    }),
+                    write_mask: wgpu::ColorWrites::COLOR,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::Greater,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
 
         // Scene shader variants: same WGSL bodies as the single-mesh
         // pipelines but with the REAL point-light layer (group 2 bindings)
@@ -1382,6 +1460,8 @@ impl Renderer {
         let depth_view = create_depth_view(&device, config.width, config.height);
 
         Ok(Self {
+            fog_volume_pass: std::cell::RefCell::new(None),
+            fog_volume_active: std::cell::Cell::new(false),
             surface,
             device,
             queue,
@@ -1439,6 +1519,8 @@ impl Renderer {
             // Shadow sub-toggle defaults ON - it only bites while dynamic
             // lighting is enabled and lights are staged.
             dyn_shadows: std::cell::Cell::new(true),
+            lighting_mood: std::cell::Cell::new(crate::scene_lighting::LightingMood::DAY),
+            glow_sprites: std::cell::RefCell::new(Vec::new()),
             // Camera-occlusion fade off by default: parity oracles and every
             // non-play-window consumer stay on the faithful render; the play
             // window opts in explicitly.
@@ -1452,6 +1534,9 @@ impl Renderer {
             shadow_layer_views,
             shadow_vram_pipeline,
             shadow_color_pipeline,
+            glow_pipeline,
+            glow_uniforms_buf,
+            glow_uniforms_bg,
             shadow_uniforms_bgl,
             shadow_uniforms_buf: std::cell::RefCell::new(shadow_uniforms_buf),
             shadow_uniforms_bg: std::cell::RefCell::new(shadow_uniforms_bg),

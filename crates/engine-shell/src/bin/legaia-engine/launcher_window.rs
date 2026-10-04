@@ -41,6 +41,7 @@ const SCREENSHOT_ENV: &str = "LEGAIA_LAUNCHER_SCREENSHOT";
 /// remembered disc is good), or `None` when the launcher already finished -
 /// the user quit, or the game ran in a child process.
 pub(crate) fn run() -> Result<Option<Vec<OsString>>> {
+    console::detach_if_double_clicked();
     let settings_file = launcher::settings_path();
     let settings = match settings_file.as_deref() {
         Some(f) => LauncherSettings::load(f),
@@ -91,11 +92,95 @@ fn enter_data_dir() {
 /// Start the game in a child process and exit with its status.
 fn relaunch(info: &DiscInfo) -> Result<()> {
     let exe = std::env::current_exe().context("locate the legaia-engine executable")?;
-    let status = std::process::Command::new(&exe)
-        .args(launcher::play_args(info))
+    let mut cmd = std::process::Command::new(&exe);
+    cmd.args(launcher::play_args(info));
+    console::no_window_if_detached(&mut cmd);
+    let status = cmd
         .status()
         .with_context(|| format!("start {}", exe.display()))?;
     std::process::exit(status.code().unwrap_or(1));
+}
+
+/// The console window a double-click on `legaia-engine.exe` brings with it.
+///
+/// The engine is a console program (its CLI subcommands need the ordinary
+/// terminal contract), so Explorer gives a double-clicked copy a console
+/// window of its own. When this process is that console's only user - no
+/// shell shares it - the launcher frees it, and starts the game child with
+/// `CREATE_NO_WINDOW` so it does not get a fresh one. Started from a
+/// terminal, the console is shared and stays, so the log still prints. The
+/// release archive's `Legend of Legaia.exe` (`legaia-launch`) avoids even the
+/// brief flash this leaves; docs/tooling/releases.md has the reasoning.
+mod console {
+    #[cfg(windows)]
+    static DETACHED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+    #[cfg(windows)]
+    pub(super) fn detach_if_double_clicked() {
+        #[link(name = "kernel32")]
+        unsafe extern "system" {
+            fn GetConsoleProcessList(list: *mut u32, count: u32) -> u32;
+            fn FreeConsole() -> i32;
+        }
+        if std::env::var_os("LEGAIA_KEEP_CONSOLE").is_some() {
+            return;
+        }
+        let mut pids = [0u32; 2];
+        // SAFETY: the buffer holds `pids.len()` entries; the call writes at
+        // most that many and returns the total attached-process count.
+        let attached = unsafe { GetConsoleProcessList(pids.as_mut_ptr(), pids.len() as u32) };
+        // SAFETY: plain Win32 call with no arguments.
+        if attached == 1 && unsafe { FreeConsole() } != 0 {
+            DETACHED.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    #[cfg(windows)]
+    pub(super) fn no_window_if_detached(cmd: &mut std::process::Command) {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        if DETACHED.load(std::sync::atomic::Ordering::Relaxed) {
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+    }
+
+    #[cfg(not(windows))]
+    pub(super) fn detach_if_double_clicked() {}
+
+    #[cfg(not(windows))]
+    pub(super) fn no_window_if_detached(_cmd: &mut std::process::Command) {}
+}
+
+/// Build the picker's event loop.
+///
+/// winit 0.30 delivers `DroppedFile` on X11, Windows and macOS but has no
+/// drag-and-drop on Wayland at all, so a disc dropped on a native Wayland
+/// window is silently ignored. The picker is one small window that needs
+/// nothing Wayland-specific, so on a Wayland session that also offers
+/// XWayland (`DISPLAY` set) it opens as an X11 client instead: the compositor
+/// bridges a drag from a Wayland file manager into XWayland, and the drop
+/// arrives. The game itself runs in a fresh process on the default backend.
+/// `LEGAIA_LAUNCHER_WAYLAND=1` keeps the picker native (no drop; the file
+/// dialog and the typed path still work).
+fn picker_event_loop() -> Result<EventLoop<()>> {
+    let mut builder = EventLoop::builder();
+    #[cfg(all(unix, not(target_os = "macos")))]
+    if prefer_x11_for_drop(
+        std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty()),
+        std::env::var_os("DISPLAY").is_some_and(|v| !v.is_empty()),
+        std::env::var_os("LEGAIA_LAUNCHER_WAYLAND").is_some(),
+    ) {
+        use winit::platform::x11::EventLoopBuilderExtX11;
+        log::info!("launcher: Wayland session - opening the picker through XWayland so drops work");
+        builder.with_x11();
+    }
+    builder.build().context("create event loop")
+}
+
+/// Whether the picker should open through XWayland (see `picker_event_loop`).
+#[cfg_attr(any(not(unix), target_os = "macos"), allow(dead_code))]
+fn prefer_x11_for_drop(wayland: bool, x11: bool, keep_wayland: bool) -> bool {
+    wayland && x11 && !keep_wayland
 }
 
 /// Open the picker window; returns the validated disc, or `None` on quit.
@@ -112,7 +197,7 @@ fn pick(problem: DiscProblem, settings_file: Option<PathBuf>) -> Result<Option<D
         settings_file,
         screenshot: std::env::var_os(SCREENSHOT_ENV).map(PathBuf::from),
     };
-    let event_loop = EventLoop::new().context("create event loop")?;
+    let event_loop = picker_event_loop()?;
     event_loop
         .run_app(&mut app)
         .context("launcher event loop")?;
@@ -160,6 +245,16 @@ impl PickerApp {
                     }
                 }
                 self.chosen = Some(info);
+                // Close the picker while the loop still runs. Dropped after
+                // `run_app` returns instead, the X11 destroy request is never
+                // flushed and the frozen picker stays on screen behind the
+                // game for the whole session (seen under Xvfb).
+                self.atlas = None;
+                if let Some(w) = self.win.window.as_deref() {
+                    w.set_visible(false);
+                }
+                self.win.renderer = None;
+                self.win.window = None;
                 evl.exit();
             }
             Err(p) => {
@@ -438,6 +533,17 @@ mod tests {
             }
             other => panic!("expected play-window, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn picker_uses_xwayland_only_on_a_wayland_session_with_x11() {
+        assert!(prefer_x11_for_drop(true, true, false));
+        assert!(!prefer_x11_for_drop(true, true, true), "opt-out honoured");
+        assert!(!prefer_x11_for_drop(true, false, false), "no XWayland");
+        assert!(
+            !prefer_x11_for_drop(false, true, false),
+            "plain X11 already drops"
+        );
     }
 
     #[test]

@@ -170,6 +170,13 @@ impl Renderer {
             RenderTarget::SceneWithScreenPrims { .. } => unreachable!("{NORMALISED}"),
         }
         crate::profile::mark("uniforms");
+        // Enhanced lighting's glow sprites: expanded to camera-facing quads
+        // against this frame's scene camera. `None` (the faithful path, any
+        // non-scene target, no staged sprites) draws nothing.
+        let glow = match &target {
+            RenderTarget::Scene(_) => self.stage_glow_sprites(),
+            _ => None,
+        };
 
         let view = color_view;
         let mut enc = self
@@ -181,6 +188,12 @@ impl Renderer {
             // Mesh paths use the depth attachment; texture/clear paths skip it
             // (it would just sit unused, but keeping the depth-stencil-attachment
             // optional avoids needing wgpu to validate it for 2D-only frames).
+            // The volumetric ground fog splits the scene pass in two around a
+            // fog pass of its own (it samples the scene depth, which an open
+            // pass that writes depth cannot). With no bank staged the frame
+            // is the single pass it always was.
+            let fog_split =
+                self.fog_volume_active.get() && matches!(target, RenderTarget::Scene(_));
             let depth_attachment = matches!(
                 target,
                 RenderTarget::Mesh { .. }
@@ -196,7 +209,13 @@ impl Renderer {
                 depth_ops: Some(wgpu::Operations {
                     // Reversed-Z: 0.0 is the far plane (see `reverse_z`).
                     load: wgpu::LoadOp::Clear(DEPTH_CLEAR),
-                    store: wgpu::StoreOp::Discard,
+                    // Kept when the ground-fog pass will sample it after the
+                    // 3D draws; discarded otherwise, as it always was.
+                    store: if fog_split {
+                        wgpu::StoreOp::Store
+                    } else {
+                        wgpu::StoreOp::Discard
+                    },
                 }),
                 stencil_ops: None,
             });
@@ -483,6 +502,47 @@ impl Renderer {
                             rp.draw_indexed(start..start + count, 0, 0..1);
                         });
                     }
+                    // Enhanced lighting's glow sprites (halos + light shafts):
+                    // additive, depth-tested, after every opaque and blended
+                    // 3D draw so they bloom over the lamps they surround.
+                    if let Some((buf, count)) = &glow {
+                        rp.set_pipeline(&self.glow_pipeline);
+                        rp.set_bind_group(0, &self.glow_uniforms_bg, &[]);
+                        rp.set_vertex_buffer(0, buf.slice(..));
+                        rp.draw(0..*count, 0..1);
+                    }
+                    // The volumetric ground-fog enhancement: after every 3D
+                    // draw (depth-tested against them, writing none), before
+                    // every screen-space layer and the HUD.
+                    if fog_split {
+                        drop(rp);
+                        self.encode_fog_volume_pass(&mut enc, view, scene_vp);
+                        rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                            label: Some("legaia frame pass (after fog)"),
+                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                view,
+                                depth_slice: None,
+                                resolve_target: None,
+                                ops: wgpu::Operations {
+                                    load: wgpu::LoadOp::Load,
+                                    store: wgpu::StoreOp::Store,
+                                },
+                            })],
+                            depth_stencil_attachment: Some(
+                                wgpu::RenderPassDepthStencilAttachment {
+                                    view: &self.depth_view,
+                                    depth_ops: Some(wgpu::Operations {
+                                        load: wgpu::LoadOp::Load,
+                                        store: wgpu::StoreOp::Discard,
+                                    }),
+                                    stencil_ops: None,
+                                },
+                            ),
+                            occlusion_query_set: None,
+                            timestamp_writes: None,
+                        });
+                        set_scene_vp(&mut rp);
+                    }
                     // The composited prims that sit UNDER the 2D overlays
                     // (`SceneWithScreenPrims::under_overlay`): the field
                     // attached-light pools, which retail draws beneath the
@@ -703,6 +763,51 @@ impl Renderer {
         })
     }
 
+    /// Expand the staged glow sprites against the registered scene camera
+    /// into a one-frame vertex buffer and stage the glow VP uniform.
+    /// `None` unless dynamic lighting is on, a scene camera is registered
+    /// and sprites are staged.
+    fn stage_glow_sprites(&self) -> Option<(wgpu::Buffer, u32)> {
+        if !self.dyn_lighting.get() {
+            return None;
+        }
+        let vp = self.scene_view_proj.get()?;
+        let sprites = self.glow_sprites.borrow();
+        if sprites.is_empty() {
+            return None;
+        }
+        // Camera basis in world space, recovered from the VP itself so every
+        // reflection the field frame folds into it is honoured.
+        let inv = vp.inverse();
+        let at = |x: f32, y: f32| inv.project_point3(glam::Vec3::new(x, y, 0.5));
+        let o = at(0.0, 0.0);
+        let right = (at(0.1, 0.0) - o).normalize_or_zero();
+        let up = (at(0.0, 0.1) - o).normalize_or_zero();
+        let verts = crate::scene_lighting::glow_vertices(&sprites, right.to_array(), up.to_array());
+        if verts.is_empty() {
+            return None;
+        }
+        let mut bytes: Vec<f32> = Vec::with_capacity(verts.len() * 9);
+        for v in &verts {
+            bytes.extend_from_slice(&v.pos);
+            bytes.extend_from_slice(&v.uv);
+            bytes.extend_from_slice(&v.color);
+        }
+        self.queue.write_buffer(
+            &self.glow_uniforms_buf,
+            0,
+            bytemuck::cast_slice(&[reverse_z(vp).to_cols_array_2d()]),
+        );
+        let buf = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("glow sprites"),
+                contents: bytemuck::cast_slice(&bytes),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+        Some((buf, verts.len() as u32))
+    }
+
     /// True when the per-scene point-light layer should shade this frame:
     /// dynamic lighting on, the shadow sub-toggle on, lights staged, and a
     /// scene camera registered.
@@ -734,6 +839,10 @@ impl Renderer {
             SHADOW_COMPARE_BIAS,
             0.0,
         ];
+        // The enhanced-lighting mood's ambient floor + emissive gain - read
+        // by `dyn_light` only while the enhancement is on.
+        let mood = self.lighting_mood.get();
+        u.ambient = mood.uniforms(true)[2];
         // Camera-occlusion fade focus: project the host-staged player clip
         // position to framebuffer pixels + view depth, carrying the host's
         // eased fade strength in `.w`. The zeroed default (strength 0) is
@@ -778,7 +887,13 @@ impl Renderer {
         for (i, l) in lights[..n].iter().enumerate() {
             u.lights[i] = ScenePointLightUniform {
                 pos_radius: [l.pos[0], l.pos[1], l.pos[2], l.radius],
-                color: [l.color[0], l.color[1], l.color[2], 0.0],
+                // The mood scales every lamp (stronger at night than noon).
+                color: [
+                    l.color[0] * mood.point_scale,
+                    l.color[1] * mood.point_scale,
+                    l.color[2] * mood.point_scale,
+                    0.0,
+                ],
                 viewproj: light_vps[i].to_cols_array_2d(),
             };
         }

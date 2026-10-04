@@ -504,17 +504,18 @@ fn run_chain_tick(
 ///   halfword `ctx[+0x6DA] = 0x780`, and clears the busy register, so the
 ///   body reports Done and the phase parks at `7`.
 ///
-/// Not ported: arms `0`..`3`, `5` and `6`, which are the sound cue
-/// `FUN_8004FCC8(0x1AA)`, the `FUN_801D829C` camera framings, the
-/// `FUN_80050ED4` / `FUN_80021B04` / `FUN_801DFDF0` pool spawns and the
-/// `0x800840BC`/`0x800840C0` camera walk, plus the module-resident countdown
-/// at `0x801F864C` that gates every arm.
+/// The camera arms (the `FUN_801D829C` shot and the `0x800840BC` /
+/// `0x800840C0` / `0x8007B790` walks) and the module-resident countdown at
+/// `0x801F864C` that gates every arm are ported beside this body, in
+/// `crate::cast_module_camera::mystic_shield_camera`. Not ported: the sound
+/// cue `FUN_8004FCC8(0x1AA)` and the `FUN_80050ED4` / `FUN_80021B04` /
+/// `FUN_801DFDF0` pool spawns.
 ///
 /// Wired: `World::run_cast_module_code`, the `(940, GLARE_DIVIDE_BLIND_TICK)`
 /// arm of the trampoline dispatch.
 ///
 /// PORT: FUN_801F7240 (PROT 0940 action 0xAC; phase machine + reaction-clip
-/// blank; packet / camera arms unported)
+/// blank; packet arms unported)
 pub fn glare_divide_blind_tick(
     ctx: &mut CastModuleCtx,
     first_monster: &mut CastActorState,

@@ -126,7 +126,30 @@ pub struct Font {
     atlas_rgba: Vec<u8>,
     atlas_w: u32,
     atlas_h: u32,
+    /// The `0xCE` escape sprites appended below the glyph cells
+    /// ([`Font::with_escape_icons`]), indexed by escape operand. Empty until
+    /// attached, in which case an escape lays out as nothing.
+    escapes: Vec<Option<EscapeCell>>,
 }
+
+/// Where one `0xCE` escape's sprite sits in the atlas, and how it draws.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EscapeCell {
+    pub atlas_x: u32,
+    pub atlas_y: u32,
+    pub w: u32,
+    pub h: u32,
+    /// Offset from the line's pen y (`FUN_80036888` adds it at `0x800369F0`).
+    pub y_offset: i8,
+    /// Pen advance after the sprite (the table's `+2` byte, added at
+    /// `0x80036A10` with no inter-glyph spacing).
+    pub advance: u8,
+}
+
+/// The escape operand byte a [`LaidGlyph`] for a `0xCE` sprite carries in
+/// [`LaidGlyph::byte`]: a sprite is drawn with its own colours, never tinted
+/// by the text pen (`FUN_8002C488` emits it at `0x808080`).
+pub const ESCAPE_GLYPH_BYTE: u8 = 0xCE;
 
 impl Font {
     /// Load the font from an `extracted/` root containing `font/` artifacts.
@@ -188,6 +211,7 @@ impl Font {
             atlas_rgba,
             atlas_w,
             atlas_h,
+            escapes: Vec::new(),
         })
     }
 
@@ -243,6 +267,7 @@ impl Font {
             atlas_rgba,
             atlas_w,
             atlas_h,
+            escapes: Vec::new(),
         }
     }
 
@@ -268,7 +293,78 @@ impl Font {
             atlas_rgba,
             atlas_w: COLS * GLYPH_W,
             atlas_h: ROWS * GLYPH_H,
+            escapes: Vec::new(),
         })
+    }
+
+    /// Append the `0xCE` escape sprites (controller buttons and icons,
+    /// [`escape_icons::EscapeIcons`]) to the atlas, so [`Font::layout`]
+    /// places them where retail's line renderer `FUN_80036888` draws them:
+    /// at the pen, `y_offset` down, advancing the pen by the escape table's
+    /// own width. The atlas grows downward; a host reads its size off
+    /// [`Font::atlas_dimensions`] as always.
+    // PORT: FUN_80036888 (0x80036968..0x80036A10, the sprite-escape arm)
+    pub fn with_escape_icons(mut self, icons: &escape_icons::EscapeIcons) -> Self {
+        let (aw, base_h) = (self.atlas_w, self.atlas_h);
+        let (mut x, mut y, mut row_h) = (0u32, base_h, 0u32);
+        let mut cells = Vec::with_capacity(icons.icons.len());
+        for icon in &icons.icons {
+            let Some(icon) = icon.as_ref().filter(|i| i.w > 0 && i.w <= aw) else {
+                cells.push(None);
+                continue;
+            };
+            if x + icon.w > aw {
+                x = 0;
+                y += row_h;
+                row_h = 0;
+            }
+            cells.push(Some((x, y, icon)));
+            x += icon.w;
+            row_h = row_h.max(icon.h);
+        }
+        let new_h = y + row_h;
+        self.atlas_rgba.resize((aw * new_h * 4) as usize, 0);
+        self.escapes = cells
+            .into_iter()
+            .map(|c| {
+                c.map(|(cx, cy, icon)| {
+                    for r in 0..icon.h {
+                        let src = (r * icon.w * 4) as usize;
+                        let dst = (((cy + r) * aw + cx) * 4) as usize;
+                        let n = (icon.w * 4) as usize;
+                        self.atlas_rgba[dst..dst + n].copy_from_slice(&icon.rgba[src..src + n]);
+                    }
+                    EscapeCell {
+                        atlas_x: cx,
+                        atlas_y: cy,
+                        w: icon.w,
+                        h: icon.h,
+                        y_offset: icon.y_offset,
+                        advance: icon.advance,
+                    }
+                })
+            })
+            .collect();
+        self.atlas_h = new_h;
+        self
+    }
+
+    /// [`Font::with_escape_icons`] straight off the disc: `prot_head` is
+    /// `PROT.DAT` from [`escape_icons::ICON_PROT_DAT_OFFSET`] (at least
+    /// [`escape_icons::ICON_PROT_DAT_LEN`] bytes), `scus` the executable. A
+    /// source that does not decode leaves the font as it was (escapes lay
+    /// out as nothing).
+    pub fn with_escape_icons_from_disc(self, prot_head: &[u8], scus: &[u8]) -> Self {
+        match escape_icons::EscapeIcons::from_disc(prot_head, scus) {
+            Ok(icons) => self.with_escape_icons(&icons),
+            Err(_) => self,
+        }
+    }
+
+    /// The atlas cell of escape operand `index`, when the sprites are
+    /// attached ([`Font::with_escape_icons`]).
+    pub fn escape_cell(&self, index: u8) -> Option<EscapeCell> {
+        self.escapes.get(index as usize).copied().flatten()
     }
 
     /// Try to load from `extracted/`, falling back to a placeholder font
@@ -381,7 +477,26 @@ impl Font {
                 // 0xCF = color-change. Both consume the next byte. The
                 // runtime substitution is host-side - we just skip the
                 // operand here so the pen doesn't pretend to render it.
-                0xCE | 0xCF if i < text.len() => {
+                // A sprite escape draws its icon at the pen and advances by
+                // the table's width (`FUN_80036888`); without the sprites
+                // attached, or for a numeric escape, it lays out as nothing.
+                0xCE if i < text.len() => {
+                    let op = text[i];
+                    i += 1;
+                    if let Some(c) = self.escape_cell(op) {
+                        glyphs.push(LaidGlyph {
+                            byte: ESCAPE_GLYPH_BYTE,
+                            dst_x: pen_x,
+                            dst_y: pen_y + i32::from(c.y_offset),
+                            width: c.w,
+                            height: c.h,
+                            atlas_x: c.atlas_x,
+                            atlas_y: c.atlas_y,
+                        });
+                        pen_x = pen_x.saturating_add(i32::from(c.advance));
+                    }
+                }
+                0xCF if i < text.len() => {
                     i += 1;
                 }
                 0xCE | 0xCF => {}
@@ -716,6 +831,7 @@ pub fn synthetic_for_tests() -> Font {
         atlas_rgba,
         atlas_w,
         atlas_h,
+        escapes: Vec::new(),
     }
 }
 
@@ -816,6 +932,40 @@ mod placeholder_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An attached escape sprite lays out at the pen, `y_offset` down, and
+    /// advances the pen by its own width; a numeric escape (no sprite) and a
+    /// font with nothing attached lay out as nothing.
+    #[test]
+    fn a_sprite_escape_lays_out_at_the_pen() {
+        use escape_icons::{EscapeIcon, EscapeIcons};
+        let icon = EscapeIcon {
+            index: 1,
+            w: 16,
+            h: 16,
+            y_offset: -2,
+            advance: 18,
+            rgba: vec![0xAB; 16 * 16 * 4],
+        };
+        let icons = EscapeIcons {
+            icons: vec![None, Some(icon)],
+        };
+        let base = synthetic_for_tests();
+        let (_, h0) = base.atlas_dimensions();
+        assert!(base.layout(&[b'A', 0xCE, 1, b'B']).glyphs.len() == 2);
+        let f = base.with_escape_icons(&icons);
+        let (w, h) = f.atlas_dimensions();
+        assert_eq!(h, h0 + 16, "the sprite rows sit below the glyph cells");
+        let l = f.layout(&[b'A', 0xCE, 1, b'B', 0xCE, 0, b'C']);
+        assert_eq!(l.glyphs.len(), 4);
+        let g = l.glyphs[1];
+        let a = f.advance_of(b'A') as i32;
+        assert_eq!((g.byte, g.dst_x, g.dst_y), (ESCAPE_GLYPH_BYTE, a, -2));
+        assert_eq!((g.atlas_x, g.atlas_y, g.width, g.height), (0, h0, 16, 16));
+        assert_eq!(l.glyphs[2].dst_x, a + 18);
+        let px = ((g.atlas_y * w) * 4) as usize;
+        assert_eq!(f.atlas_rgba()[px], 0xAB, "the sprite's own texels");
+    }
 
     #[test]
     fn glyph_origin_first_char() {

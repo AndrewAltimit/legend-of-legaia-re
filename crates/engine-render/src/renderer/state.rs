@@ -4,26 +4,6 @@
 
 use super::*;
 
-/// Dynamic-lighting tunables (the opt-in enhancement - see
-/// [`Renderer::set_dynamic_lighting`]). Kept as named constants so the look
-/// is easy to iterate on; the WGSL-side weights (`DYN_DIFFUSE` / `DYN_POOL` /
-/// `DYN_MAX_GAIN` / the pool geometry) live in the `dyn_light` helper in
-/// `shaders.rs`.
-///
-/// Unit direction TOWARD the light, in mesh model space: mostly "up"
-/// (TMD/PSX space is Y-down, so up is `-Y`) with a slight X/Z tilt so
-/// differently-facing wall planes read at different brightness. The
-/// orientation term is `|N.L|`, so the vertical component is sign-tolerant.
-pub const DYN_LIGHT_DIR: [f32; 3] = [0.32, -0.89, 0.31];
-/// Warm (slightly amber) light tint multiplied into the diffuse + pool
-/// terms. Red-heavy on purpose - the reference look is "PSX game + modern
-/// soft warm lighting", not a neutral studio light.
-pub const DYN_LIGHT_TINT: [f32; 3] = [1.0, 0.93, 0.80];
-/// Ambient floor: the gain a surface gets with no diffuse and no pool
-/// contribution at all (a wall facing exactly along the light at a screen
-/// corner). Keeps the enhancement a *shading*, not a blackout.
-pub const DYN_LIGHT_AMBIENT: f32 = 0.55;
-
 /// One frame's camera-occlusion fade focus, as staged by the host - see
 /// [`Renderer::set_occlusion_focus`] and [`crate::occlusion_fade`].
 ///
@@ -44,6 +24,12 @@ pub(super) struct OcclFocus {
 }
 
 pub struct Renderer {
+    /// The volumetric ground-fog enhancement pass, built on the first frame
+    /// a host stages a bank ([`Renderer::set_fog_volume`]); `None` until
+    /// then, so a renderer that never sees one builds nothing.
+    pub(super) fog_volume_pass: std::cell::RefCell<Option<fog_volume::FogVolumePass>>,
+    /// Whether this frame has a bank staged.
+    pub(super) fog_volume_active: std::cell::Cell<bool>,
     pub(super) surface: wgpu::Surface<'static>,
     pub(super) device: wgpu::Device,
     pub(super) queue: wgpu::Queue,
@@ -220,6 +206,16 @@ pub struct Renderer {
     /// the whole point-light layer (lights + shadows), leaving the global
     /// gain only. Irrelevant while dynamic lighting is off.
     pub(super) dyn_shadows: std::cell::Cell<bool>,
+    /// The mood the enhancement lights the frame under (ambient, key light,
+    /// lamp strength, emissive gain, glow) - see
+    /// [`crate::scene_lighting::LightingMood`]. Staged by the host per scene
+    /// / time-of-day change via [`Self::set_lighting_mood`]; defaults to
+    /// daylight. Irrelevant while dynamic lighting is off.
+    pub(super) lighting_mood: std::cell::Cell<crate::scene_lighting::LightingMood>,
+    /// This frame's glow sprites (halos + light shafts) in world space,
+    /// expanded to camera-facing quads at stage time. Empty unless dynamic
+    /// lighting is on and the host staged sprites.
+    pub(super) glow_sprites: std::cell::RefCell<Vec<crate::scene_lighting::GlowSprite>>,
     /// Camera-occlusion fade master toggle (the opt-in see-through-walls
     /// enhancement, NON-RETAIL - see [`crate::occlusion_fade`]). `false`
     /// (the default) keeps every mesh path bit-identical to the faithful
@@ -258,6 +254,12 @@ pub struct Renderer {
     /// vertex layout (position attribute only).
     pub(super) shadow_vram_pipeline: wgpu::RenderPipeline,
     pub(super) shadow_color_pipeline: wgpu::RenderPipeline,
+    /// Enhanced lighting's glow-sprite pipeline (additive camera-facing
+    /// halos + shafts, [`crate::scene_lighting::glow_vertices`]) and its
+    /// view-projection uniform.
+    pub(super) glow_pipeline: wgpu::RenderPipeline,
+    pub(super) glow_uniforms_buf: wgpu::Buffer,
+    pub(super) glow_uniforms_bg: wgpu::BindGroup,
     /// Dynamic-offset uniform buffer for the shadow passes: one
     /// [`ShadowUniforms`] slot per (light, draw), grown on demand.
     pub(super) shadow_uniforms_bgl: wgpu::BindGroupLayout,
@@ -352,16 +354,14 @@ impl Renderer {
     /// pixel-identical to the faithful render and the parity oracles are
     /// unaffected.
     ///
-    /// When enabled, each fragment's baked colour is scaled by
-    /// `ambient + (diffuse * |N.L| + pool) * warm_tint`, where `N` is the
-    /// smoothed per-vertex normal already carried by the VRAM-mesh vertex
-    /// format (with a screen-space-derivative fallback for the normal-less
-    /// colour-mesh prims), `L` is [`DYN_LIGHT_DIR`], and `pool` is a soft
-    /// screen-centred light pool - the "modern soft warm lighting over
-    /// crisp PSX texels" look. The gain is capped at ~1.3x the baked
-    /// brightness. Tunables: [`DYN_LIGHT_DIR`] / [`DYN_LIGHT_TINT`] /
-    /// [`DYN_LIGHT_AMBIENT`] plus the `DYN_*` consts in the `dyn_light`
-    /// WGSL helper.
+    /// Toggle the **enhanced-lighting** enhancement (NON-RETAIL; default
+    /// off, and off is the faithful baked-shading render, pixel-identical).
+    /// When on, the VRAM / colour mesh shaders shade the baked colours under
+    /// the staged [`crate::scene_lighting::LightingMood`] (ambient floor +
+    /// soft key light off the smoothed normals + a screen-centred pool),
+    /// add the per-scene point lights ([`Self::set_scene_lights`]), draw
+    /// emissive-tagged prims at the mood's emissive gain, and composite the
+    /// staged glow sprites ([`Self::set_glow_sprites`]).
     pub fn set_dynamic_lighting(&self, enable: bool) {
         self.dyn_lighting.set(enable);
     }
@@ -369,6 +369,28 @@ impl Renderer {
     /// Read the current dynamic-lighting flag.
     pub fn dynamic_lighting(&self) -> bool {
         self.dyn_lighting.get()
+    }
+
+    /// Stage the mood the enhancement lights frames under (see
+    /// [`crate::scene_lighting::LightingMood`] / `TimeOfDay`).
+    pub fn set_lighting_mood(&self, mood: crate::scene_lighting::LightingMood) {
+        self.lighting_mood.set(mood);
+    }
+
+    /// The staged lighting mood.
+    pub fn lighting_mood(&self) -> crate::scene_lighting::LightingMood {
+        self.lighting_mood.get()
+    }
+
+    /// Stage this frame's glow sprites (halos + light shafts, world space -
+    /// [`crate::scene_lighting::glow_sprites`]). Drawn additively, depth
+    /// tested, after the scene's blend pass, and only while dynamic
+    /// lighting is on and a scene camera is registered
+    /// ([`Self::set_scene_lights`]). Pass an empty slice to clear.
+    pub fn set_glow_sprites(&self, sprites: &[crate::scene_lighting::GlowSprite]) {
+        let mut cur = self.glow_sprites.borrow_mut();
+        cur.clear();
+        cur.extend_from_slice(sprites);
     }
 
     /// Toggle the **shadow-casting point-light sub-layer** of the
@@ -503,22 +525,16 @@ impl Renderer {
     }
 
     /// The `MeshUniforms.light_dir` word for the current frame:
-    /// `[dir_x, dir_y, dir_z, enable]`. All-zero `w` = the identity
-    /// (default off) path.
+    /// `[key_x, key_y, key_z, enable]` of the staged mood. Zero `w` = the
+    /// identity (default off) path.
     pub(super) fn dyn_light_dir_uniform(&self) -> [f32; 4] {
-        let on = if self.dyn_lighting.get() { 1.0 } else { 0.0 };
-        [DYN_LIGHT_DIR[0], DYN_LIGHT_DIR[1], DYN_LIGHT_DIR[2], on]
+        self.lighting_mood.get().uniforms(self.dyn_lighting.get())[0]
     }
 
-    /// The `MeshUniforms.light_color` word: `[tint_r, tint_g, tint_b,
-    /// ambient]`. Constant; only read by the shader when the enable is set.
+    /// The `MeshUniforms.light_color` word: `[key_r, key_g, key_b, pool]`
+    /// of the staged mood. Only read by the shader when the enable is set.
     pub(super) fn dyn_light_color_uniform(&self) -> [f32; 4] {
-        [
-            DYN_LIGHT_TINT[0],
-            DYN_LIGHT_TINT[1],
-            DYN_LIGHT_TINT[2],
-            DYN_LIGHT_AMBIENT,
-        ]
+        self.lighting_mood.get().uniforms(true)[1]
     }
 
     /// Set the GP0(0xE2) "Texture Window setting" register state used by

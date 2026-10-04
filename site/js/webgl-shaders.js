@@ -188,18 +188,17 @@ function occlLiftAxis(feetPx, centrePx) {
   return [ux * k, uy * k];
 }
 
-/* Dynamic-lighting enhancement (NON-RETAIL, default off) - the page twin of
- * the native renderer's opt-in `dyn_light` (crates/engine-render/src/
- * dyn_light.rs for the model constants, renderer/state.rs for the light
- * itself). Interpolated into FS_SRC below, and paired by name with their
- * native twins in scripts/ci/check-ui-host-drift.py, so the two hosts cannot
- * light the same frame differently without the gate saying so. */
-const DYN_LIGHT_DIR = [0.32, -0.89, 0.31];
-const DYN_LIGHT_TINT = [1.0, 0.93, 0.80];
-const DYN_LIGHT_AMBIENT = 0.55;
+/* Enhanced-lighting enhancement (NON-RETAIL) - the page twin of the native
+ * renderer's `dyn_light` + `scene_point_gain`. The shading-law constants
+ * below are interpolated into FS_SRC and paired by name with their native
+ * twins (crates/engine-ui/src/scene_lighting.rs) in
+ * scripts/ci/check-ui-host-drift.py. The MOOD (ambient, key light, pool
+ * weight, emissive gain) and the picked point lights are not constants on
+ * this side at all: the engine hands them over per frame
+ * (`play_lighting_frame`), the same values the native window stages. */
 const DYN_DIFFUSE = 0.55;
-const DYN_POOL = 0.35;
 const DYN_MAX_GAIN = 1.3;
+const DYN_TOTAL_MAX_GAIN = 1.9;
 const DYN_LAMBERT_FALLBACK = 0.6;
 const DYN_POOL_CENTER = [0.5, 0.45];
 const DYN_POOL_INNER = 0.15;
@@ -218,6 +217,28 @@ const PSX_DITHER_MATRIX = [
 function glslFloat(x) {
   return Number.isInteger(x) ? x.toFixed(1) : String(x);
 }
+
+/* Play-page depth precision. The engine's projection puts the near plane a
+ * few units from the eye, so a scene point's normalised depth a + b / w
+ * sits within ~1e-3 of 1. WebGL maps that onto [0.5, 1] of a 24-bit
+ * fixed-point buffer, and the f32 depth row itself carries a few units of
+ * rounding at overworld distances (the walk matrix carries the 6x world
+ * scale) - together coarser than the quarter bucket that keeps an overworld
+ * fog sheet behind the continent cells of its bucket, so sheets won or lost
+ * per cell (polygon-shaped cut-outs in the mountains) and washed over the
+ * player. The native renderer keeps the margin with reversed-Z on a float
+ * buffer, which WebGL2 cannot select. So the play page's mesh program and
+ * its depth-tested screen primitives write log2(w) / LOG_DEPTH_RANGE
+ * instead: monotonic in w, so every comparison keeps its order, with a
+ * relative step near 1e-6. A continent cell writes its bucket's
+ * representative w and a screen corner the w its depth was projected from,
+ * so the bucket rule compares exact values. */
+const LOG_DEPTH_RANGE = 24.0;
+const LOG_DEPTH_GLSL = `
+float logDepthOfW(float w) {
+  return clamp(log2(max(w, 1.0)) / ${glslFloat(LOG_DEPTH_RANGE)}, 0.0, 1.0);
+}
+`;
 
 const VS_SRC = `#version 300 es
 precision highp float;
@@ -290,6 +311,19 @@ vec2 depthAffine(mat4 m) {
   return vec2(a, m[3].z - a * m[3].w);
 }
 
+/* The flat bucket's representative w for a continent cell (the w whose
+ * normalised depth overworldFlatDepth writes), or -1 where it keeps the
+ * per-pixel depth. Same gate and same key as overworldFlatDepth. */
+float overworldFlatW(mat4 m, vec4 fa, vec4 fb) {
+  if (u_curve <= 0.0 || fa.z <= fa.x) return -1.0;
+  float w0 = (m * vec4(fa.x, fb.x, fa.y, 1.0)).w;
+  float w1 = (m * vec4(fa.z, fb.y, fa.y, 1.0)).w;
+  float w2 = (m * vec4(fa.x, fb.z, fa.w, 1.0)).w;
+  float w3 = (m * vec4(fa.z, fb.w, fa.w, 1.0)).w;
+  int sz = clamp(int(floor(max(max(w0, w1), max(w2, w3)) * u_curve + 0.5)), 0, 0xFFFF);
+  return (float((sz >> 5) + 14) * 32.0 + 32.0) / u_curve;
+}
+
 vec4 overworldFlatDepth(vec4 clip, mat4 m, vec4 fa, vec4 fb) {
   if (u_curve <= 0.0 || fa.z <= fa.x || clip.w <= 0.0) return clip;
   float w0 = (m * vec4(fa.x, fb.x, fa.y, 1.0)).w;
@@ -359,11 +393,14 @@ flat out uvec2 v_cba_tsb;
 out float v_fog_t;     /* 0..1, fraction of u_fog_far_ref */
 out vec4 v_flat_rgba;
 out float v_view_z;    /* perspective view depth (clip w) for the depth cue */
+out float v_depth_w;   /* the w the log-depth write keys on */
 out vec3 v_normal;     /* object-space smoothed normal (dynamic light only) */
 out vec3 v_obj_pos;    /* object-space position: the facet-normal fallback */
+out vec3 v_world;      /* page-frame world position (enhanced lighting's point lights) */
 
 void main() {
   vec4 world_pos = u_model * vec4(a_position, 1.0);
+  v_world = world_pos.xyz;
   v_uv = a_uv_byte;
   v_cba_tsb = a_cba_tsb;
   v_flat_rgba = vec4(overworldGroundCue(a_flat_rgba.rgb, u_mvp * u_model,
@@ -392,6 +429,11 @@ void main() {
    * SY before the packet is written. Identity while u_psx.z is 0. */
   if (u_psx.z >= 0.5) gl_Position = psxSnapClip(gl_Position, u_psx.x, u_psx.y);
   v_view_z = gl_Position.w;
+  /* The log-depth write's w (LOG_DEPTH_GLSL): the flat bucket's
+   * representative w on a continent cell, the vertex's own clip w elsewhere.
+   * Perspective interpolation of w is exact. */
+  float flatW = overworldFlatW(u_mvp * u_model, a_ground_ref_xz, a_ground_ref_y);
+  v_depth_w = flatW > 0.0 ? flatW : gl_Position.w;
   v_normal = a_normal;
   v_obj_pos = a_position;
 }
@@ -507,23 +549,37 @@ uniform int u_occl_allow;
 /* PSX rasterisation word, shared with the vertex stage (see there):
  * xy = framebuffer size, w = 15-bit dither on. */
 uniform vec4 u_psx;
-/* Dynamic lighting (opt-in enhancement, NON-RETAIL - the GLSL twin of the
- * native renderer's MeshUniforms.light_dir / light_color, staged from
- * DYN_LIGHT_DIR / DYN_LIGHT_TINT / DYN_LIGHT_AMBIENT below):
- * u_dyn_dir = (x, y, z, enable), u_dyn_color = (tint rgb, ambient).
- * enable 0 - the GL default - is the identity. */
+/* Enhanced lighting (NON-RETAIL - the GLSL twin of the native renderer's
+ * MeshUniforms.light_dir / light_color + the scene-lights block's ambient
+ * word, all three the engine's LightingMood::uniforms): u_dyn_dir = (key
+ * direction, enable), u_dyn_color = (key rgb, pool weight), u_dyn_ambient =
+ * (ambient rgb, emissive gain). enable 0 - the GL default - is the identity.
+ * The point lights are the engine's nearest-to-player pick, in this page's
+ * world frame (x, -y, z): xyz = position, w = radius; colour rgb carries the
+ * mood's lamp strength. No shadow maps on this host. */
 uniform vec4 u_dyn_dir;
 uniform vec4 u_dyn_color;
+uniform vec4 u_dyn_ambient;
+uniform int u_light_count;
+uniform vec4 u_light_pr[8];
+uniform vec4 u_light_col[8];
 
 in vec2 v_uv;
 flat in uvec2 v_cba_tsb;
 in float v_fog_t;
 in vec4 v_flat_rgba;
 in float v_view_z;
+in float v_depth_w;
 in vec3 v_normal;
 in vec3 v_obj_pos;
+in vec3 v_world;
 
 out vec4 o_color;
+
+/* Log-depth write on (LOG_DEPTH_GLSL): 1 on the play page's perspective
+ * frames, 0 (the GL default) on every other surface. */
+uniform int u_log_depth_on;
+${LOG_DEPTH_GLSL}
 
 /* The fragment's pixel in the native renderer's frame (origin top-left):
  * gl_FragCoord counts from the bottom, wgpu's position builtin from the
@@ -550,24 +606,61 @@ vec3 psx_dither(vec3 rgb) {
   return (c5 * 8.0 + floor(c5 / 4.0)) / 255.0;
 }
 
-/* Dynamic-lighting tunables, from the JS constants above the shader. */
+/* Enhanced-lighting tunables, from the JS constants above the shader. */
 const float DYN_DIFFUSE = ${glslFloat(DYN_DIFFUSE)};
-const float DYN_POOL = ${glslFloat(DYN_POOL)};
 const float DYN_MAX_GAIN = ${glslFloat(DYN_MAX_GAIN)};
+const float DYN_TOTAL_MAX_GAIN = ${glslFloat(DYN_TOTAL_MAX_GAIN)};
 const float DYN_LAMBERT_FALLBACK = ${glslFloat(DYN_LAMBERT_FALLBACK)};
 const vec2 DYN_POOL_CENTER = vec2(${glslFloat(DYN_POOL_CENTER[0])}, ${glslFloat(DYN_POOL_CENTER[1])});
 const float DYN_POOL_INNER = ${glslFloat(DYN_POOL_INNER)};
 const float DYN_POOL_OUTER = ${glslFloat(DYN_POOL_OUTER)};
 
-/* Twin of engine-render's dyn_light with the point-light gain at zero (the
- * derived candle lights and their shadow maps are native-only): a soft
- * |N.L| directional term plus a screen-centred pool, capped at
- * DYN_MAX_GAIN over the baked colour. vn = the smoothed vertex normal
- * (zero = none), gn = the facet normal. Identity while u_dyn_dir.w is 0. */
-vec3 dyn_light(vec3 rgb, vec3 vn, vec3 gn) {
+/* Twin of engine-render's scene_point_gain without the shadow term:
+ * attenuation (1 - (d/r)^2)^2 and the half-Lambert wrap off the same normal
+ * the native shader hands it (the smoothed vertex normal, else the facet
+ * normal). */
+vec3 point_gain(vec3 n) {
+  vec3 g = vec3(0.0);
+  float n_len = length(n);
+  for (int i = 0; i < 8; i++) {
+    if (i >= u_light_count) break;
+    vec3 to_l = u_light_pr[i].xyz - v_world;
+    float d = length(to_l);
+    float r = u_light_pr[i].w;
+    if (r <= 0.0 || d >= r) continue;
+    float att = clamp(1.0 - (d * d) / (r * r), 0.0, 1.0);
+    att = att * att;
+    float lam = DYN_LAMBERT_FALLBACK;
+    if (n_len > 1e-6 && d > 1e-3) lam = abs(dot(n / n_len, to_l / d)) * 0.5 + 0.5;
+    g += u_light_col[i].rgb * att * lam;
+  }
+  return g;
+}
+
+/* Twin of engine-render's dyn_far: the depth cue's far term under the
+ * enhancement takes the mood's flat gain (ambient + half the key, capped),
+ * so a bright far colour cannot keep a night frame lit. Identity off. */
+vec3 dyn_far(vec3 far_rgb) {
+  if (u_dyn_dir.w < 0.5) return far_rgb;
+  vec3 g = min(u_dyn_ambient.rgb + 0.5 * DYN_DIFFUSE * u_dyn_color.rgb, vec3(DYN_MAX_GAIN));
+  return clamp(far_rgb * g, vec3(0.0), vec3(1.0));
+}
+
+/* Twin of engine-render's dyn_light: the mood's ambient floor + a soft
+ * |N.L| key light + a screen-centred pool, capped at DYN_MAX_GAIN over the
+ * baked colour, plus the point lights up to DYN_TOTAL_MAX_GAIN. An emissive
+ * prim (TSB / blend bit 13) skips the mood and draws at the emissive gain
+ * plus the light falling on it. vn = the smoothed vertex normal (zero =
+ * none), gn = the facet normal. Identity while u_dyn_dir.w is 0. */
+vec3 dyn_light(vec3 rgb, vec3 vn, vec3 gn, bool emissive) {
   if (u_dyn_dir.w < 0.5) return rgb;
-  float lambert = DYN_LAMBERT_FALLBACK;
   vec3 n = dot(vn, vn) < 1e-8 ? gn : vn;
+  vec3 pg = point_gain(n);
+  if (emissive) {
+    return clamp(rgb * min(vec3(u_dyn_ambient.a) + pg, vec3(DYN_TOTAL_MAX_GAIN)),
+                 vec3(0.0), vec3(1.0));
+  }
+  float lambert = DYN_LAMBERT_FALLBACK;
   float n_len = length(n);
   if (n_len > 1e-6) lambert = abs(dot(n / n_len, normalize(u_dyn_dir.xyz)));
   float pool = 0.0;
@@ -575,8 +668,9 @@ vec3 dyn_light(vec3 rgb, vec3 vn, vec3 gn) {
     float d = distance(frag_top_px() / u_psx.xy, DYN_POOL_CENTER);
     pool = 1.0 - smoothstep(DYN_POOL_INNER, DYN_POOL_OUTER, d);
   }
-  vec3 base = u_dyn_color.w + (DYN_DIFFUSE * lambert + DYN_POOL * pool) * u_dyn_color.rgb;
-  return clamp(rgb * min(base, vec3(DYN_MAX_GAIN)), vec3(0.0), vec3(1.0));
+  vec3 base = u_dyn_ambient.rgb + (DYN_DIFFUSE * lambert + u_dyn_color.w * pool) * u_dyn_color.rgb;
+  return clamp(rgb * min(min(base, vec3(DYN_MAX_GAIN)) + pg, vec3(DYN_TOTAL_MAX_GAIN)),
+               vec3(0.0), vec3(1.0));
 }
 
 /* Decode BGR555 R/G/B in 0..1 linear. Used for VRAM texture samples. */
@@ -728,6 +822,7 @@ vec3 apply_distance_fog(vec3 lit) {
 }
 
 void main() {
+  gl_FragDepth = u_log_depth_on != 0 ? logDepthOfW(v_depth_w) : gl_FragCoord.z;
   /* Facet normal for the dynamic light, taken before any discard so the
    * derivatives sit in uniform control flow. Its sign follows the
    * framebuffer's Y direction, which the light's abs() makes irrelevant. */
@@ -793,7 +888,7 @@ void main() {
     }
     /* Native's colour-mesh format carries no normals, so its untextured
      * prims light off the facet normal alone - same here. */
-    flat_base = dyn_light(flat_base, vec3(0.0), geo_n);
+    flat_base = dyn_light(flat_base, vec3(0.0), geo_n, (tsb & 0x2000u) != 0u);
     vec3 flat_lit = apply_distance_fog(flat_base);
     if (flat_palette) {
       o_color = vec4(psx_dither(flat_lit * u_palette.rgb), 1.0);
@@ -802,7 +897,7 @@ void main() {
     flat_lit = grade_near(flat_lit);
     /* An untextured prim's colour is shading arithmetic in both passes, so
      * it dithers in both (native COLOR_MESH fs_main and blend_pass_color). */
-    o_color = vec4(psx_dither(mix(flat_lit, u_cue_far, cue_ir0(v_view_z))), 1.0);
+    o_color = vec4(psx_dither(mix(flat_lit, dyn_far(u_cue_far), cue_ir0(v_view_z))), 1.0);
     return;
   }
 
@@ -890,7 +985,7 @@ void main() {
                    vec3(0.0), vec3(1.0));
   /* Opt-in dynamic light over the baked shading (identity when off), at
    * native's point in the chain: after the modulate, before grade and cue. */
-  lit = dyn_light(lit, v_normal, geo_n);
+  lit = dyn_light(lit, v_normal, geo_n, (tsb & 0x2000u) != 0u);
 
   lit = apply_distance_fog(lit);
 
@@ -910,7 +1005,7 @@ void main() {
      * / 128 scale as the near term (native: psx_modulate(texel,
      * depth_cue.rgb * 255.0)) - u_cue_far is a display 0..1 colour, so it
      * needs the identical 255/128 that the packet word gets. */
-    vec3 far = clamp(color.rgb * u_cue_far * (255.0 / 128.0), vec3(0.0), vec3(1.0));
+    vec3 far = dyn_far(clamp(color.rgb * u_cue_far * (255.0 / 128.0), vec3(0.0), vec3(1.0)));
     lit = mix(grade_near(lit), far, ir0);
   }
 
@@ -927,5 +1022,44 @@ void main() {
   /* 15-bit dither on the opaque pass only: the textured blend pass's
    * foreground is a raw texel, which retail never dithers. */
   o_color = vec4(u_semi_pass == 1 ? lit : psx_dither(lit), 1.0);
+}
+`;
+
+/* Enhanced lighting's glow sprites (halos + soft light shafts) - the GLSL
+ * twin of engine-render's GLOW_SHADER_SRC. The quads arrive pre-expanded
+ * from the engine (`scene_lighting::glow_vertices`) in the retail Y-down
+ * frame, so u_mvp carries this page's Y flip. Drawn additively with the
+ * depth test on and depth writes off; the kind rides colour.w (0 = halo,
+ * 1 = shaft). */
+const GLOW_VS_SRC = `#version 300 es
+precision highp float;
+uniform mat4 u_mvp;
+in vec3 a_position;
+in vec2 a_uv;
+in vec4 a_color;
+out vec2 v_uv;
+out vec4 v_color;
+void main() {
+  gl_Position = u_mvp * vec4(a_position, 1.0);
+  v_uv = a_uv;
+  v_color = a_color;
+}
+`;
+
+const GLOW_FS_SRC = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+in vec4 v_color;
+out vec4 o_color;
+void main() {
+  float f;
+  if (v_color.w > 0.5) {
+    float x = clamp(1.0 - v_uv.x * v_uv.x, 0.0, 1.0);
+    f = x * x * clamp(1.0 - v_uv.y, 0.0, 1.0);
+  } else {
+    float x = clamp(1.0 - dot(v_uv, v_uv), 0.0, 1.0);
+    f = x * x;
+  }
+  o_color = vec4(v_color.rgb * f, 1.0);
 }
 `;

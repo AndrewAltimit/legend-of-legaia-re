@@ -176,6 +176,20 @@ impl World {
                 spell_id,
                 mut targets,
             } => {
+                // The turn picker's monster arm runs the dead-target redirect
+                // after the AI pick for every category, not just strikes
+                // (`jal 0x801DB124` at `0x801DAF50`, no gate in front of it).
+                // A cast is category `2` with the spell id in `+0x1DF`; the
+                // kernel re-rolls a fallen single target on its own side
+                // whenever the spell's class byte is `>= 0x0A`, which every
+                // monster-reachable record is. An all-side class (`8` / `9`)
+                // fails the kernel's `target < 8` test and is left alone -
+                // the engine's resolved list already holds only the living.
+                if let [single] = targets.as_mut_slice()
+                    && *single != slot
+                {
+                    *single = self.redirect_dead_battle_target(*single, 2, spell_id);
+                }
                 // A confused caster's spell lands on the opposite side.
                 self.confuse_retarget_cast(slot, &mut targets);
                 // The seed is spent by the cast it names.
@@ -872,7 +886,14 @@ impl World {
             && let Some(def) = self.monster_cast_def(spell_id)
         {
             let class = self.monster_cast_target_class(slot, &def);
-            let targets = self.resolve_class_to_slots(slot, class);
+            let mut targets = self.resolve_class_to_slots(slot, class);
+            if targets.len() == 1
+                && let Some(t) = self.battle.forced_monster_target.take()
+                && t < pc
+                && self.actors.get(t as usize).is_some_and(|a| a.battle.hp > 0)
+            {
+                targets = vec![t];
+            }
             if !targets.is_empty() {
                 if let Some(a) = self.actors.get_mut(slot as usize) {
                     a.battle.action_category = 2;

@@ -173,15 +173,17 @@ fn inline_dialogue_prologue_selects_segment_by_story_flag() {
 
 #[test]
 fn inline_dialogue_prologue_falls_back_when_it_cannot_reach_a_segment() {
-    // A prologue that can't proceed (here a `CFLAG_TST` on a clear ctx bit, which
-    // halts) must not silently drop the dialogue: the runner falls back to the
-    // first segment so the box still shows - never worse than the truncated path.
+    // A prologue that can't proceed (here a `CFLAG_TST` on a bit the prologue
+    // itself just set, which holds the PC) must not silently drop the
+    // dialogue: the runner falls back to the first segment so the box still
+    // shows - never worse than the truncated path.
     //
-    //   pc 0: 33 05         CFLAG_TST bit 5 (clear on a fresh ctx) -> Halt
-    //   pc 2: 1F 'X' 'X' 00 first segment (fallback target)
-    let body = vec![0x33, 0x05, 0x1F, b'X', b'X', 0x00];
+    //   pc 0: 31 05         CFLAG_SET bit 5
+    //   pc 2: 33 05         CFLAG_TST bit 5 (set) -> Halt
+    //   pc 4: 1F 'X' 'X' 00 first segment (fallback target)
+    let body = vec![0x31, 0x05, 0x33, 0x05, 0x1F, b'X', b'X', 0x00];
     let mut world = World::new();
-    world.start_inline_dialogue_with_prologue(body, 0, 2);
+    world.start_inline_dialogue_with_prologue(body, 0, 4);
     assert_eq!(run_inline_until_box(&mut world), b"XX");
 }
 

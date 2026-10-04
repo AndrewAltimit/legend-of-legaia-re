@@ -24,7 +24,7 @@
 use std::path::PathBuf;
 
 use legaia_engine_core::world::{
-    AMBIENT_EMITTER_SCENE_ARM, AMBIENT_EMITTER_TEMPLATE_VA, ElementLink, SceneMode, World,
+    AMBIENT_EMITTER_SCENE_ARM, AMBIENT_EMITTER_TEMPLATE_VA, SceneMode, World,
 };
 
 /// Load base of the field overlay (`crates/asset/data/static-overlays.toml`).
@@ -127,40 +127,40 @@ fn the_emitter_spawn_site_selects_the_scene_arm() {
 }
 
 /// The channel itself, driven by the world's own frame tick rather than by a
-/// direct call: a tween element installed on a real world advances and retires
-/// through `World::tick`, which is the tick both hosts run.
+/// direct call: the emitter a cold field entry installs runs through
+/// `World::tick`, which is the tick both hosts run, and starts spawning fog
+/// the moment the script-side gate rises.
 #[test]
 fn the_channel_advances_from_the_worlds_own_frame_tick() {
     // Disc-free on purpose - this asserts the wiring, not the data - but it
     // lives here because it is the other half of the claim above.
+    use legaia_engine_core::cutscene_script_elements::SceneSpan;
+    use legaia_engine_core::mode_entry_init::FieldEntryMode;
     let mut w = World::new();
     w.mode = SceneMode::Field;
     w.clock.display_frame_step = 1;
-    w.npcs.positions.insert(2, (0, 0));
-    w.spawn_element_position_tween(
-        ElementLink::Placement(2),
-        Default::default(),
-        legaia_engine_core::cutscene_script_elements::ElementVec {
-            x: 256,
-            y: 0,
-            z: 512,
-            w: 0,
+    w.install_field_scene_elements(
+        FieldEntryMode::Cold,
+        SceneSpan {
+            x_min: -8,
+            y_min: -6,
+            x_max: 6,
+            y_max: 10,
         },
-        0x400,
     );
-    for _ in 0..32 {
+    w.set_ambient_particles_enabled(true);
+    let mut particles = 0;
+    for _ in 0..64 {
         let _ = w.tick();
-        if w.cutscene.elements.is_empty() {
-            break;
-        }
+        particles += w.cutscene.element_frame.particles.len();
     }
-    assert!(
-        w.cutscene.elements.is_empty(),
-        "the world tick must run the channel, not just `tick_cutscene_elements`"
-    );
     assert_eq!(
-        w.npcs.positions.get(&2),
-        Some(&(256, 512)),
-        "and the tween must have written through its link"
+        w.cutscene.elements.len(),
+        1,
+        "the emitter is scene ambience - it never retires itself"
+    );
+    assert!(
+        particles > 0,
+        "the world tick must run the channel, not just `tick_cutscene_elements`"
     );
 }

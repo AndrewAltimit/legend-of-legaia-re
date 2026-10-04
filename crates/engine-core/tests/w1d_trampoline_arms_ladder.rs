@@ -39,10 +39,14 @@ const ROWS: [(u32, u8, u32); 15] = [
     (962, 0xA4, arms::BLADE_BREATH_C_TICK),
 ];
 
-/// Frames to drive one body before giving up. The longest arm map here is
-/// fourteen and two bodies hold on a clip gate, so this is comfortably past
-/// every terminal arm.
-const MAX_FRAMES: usize = 64;
+/// Frames to drive one body before giving up. Most bodies finish within a
+/// few ticks, but two gate every arm from 1 on a module-resident countdown
+/// drained one scalar a vsync (`bgtz` back to the busy return before the
+/// arm's writes): `0xAC` Mystic Shield (`0x801F864C`, `0x801F735C`) re-arms
+/// it to `0x60 + 0x100 + 4 * 0x40 + 0xC0` = 800 ticks, `0x37` Guilty Cross
+/// (`0x801F8360`, `0x801F6CC4`) to `3 * 0x80 + 0x100 + 0xC0` = 832. This is
+/// past both with margin.
+const MAX_FRAMES: usize = 1024;
 
 fn extracted_dir() -> Option<PathBuf> {
     std::env::var_os("LEGAIA_DISC_BIN")?;

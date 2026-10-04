@@ -307,6 +307,25 @@ fn planes_overlap_shifted(a: &WorldPlane, oa: [f32; 3], b: &WorldPlane, ob: [f32
     })
 }
 
+/// The direction a draw is lifted along for a plane whose visible side is
+/// `vis`: the visible side itself, except that a lift never points **down**
+/// (`+Y` in the retail Y-down frame). A plane seen from below - the
+/// underside of a fallen log, a prop's base - is separated toward its back
+/// side instead. Lifting it down, toward its visible side, sank the whole
+/// draw past [`GROUND_SINK`], so the walk-ground heightfield the sink exists
+/// to keep underneath drew over its floor (`vell`'s mound, env slot 5, whose
+/// end face showed the ground through it). Either side along the normal
+/// separates the coplanar pair; only the up side keeps every lifted draw
+/// above the sunk ground. The magnitude is unchanged, so the lift stays off
+/// the decal lattice ([`DRAW_NUDGE`]).
+fn lift_dir(vis: [f32; 3]) -> [f32; 3] {
+    if vis[1] > 0.0 {
+        [-vis[0], -vis[1], -vis[2]]
+    } else {
+        vis
+    }
+}
+
 /// Detect cross-draw coplanar overlap clusters and return the world-space
 /// offset each affected draw should add to its translation. Draws without a
 /// conflict are absent from the map.
@@ -539,7 +558,7 @@ pub fn coplanar_draw_offsets(
             }) else {
                 continue;
             };
-            let vis = world[pi].vis;
+            let vis = lift_dir(world[pi].vis);
             let shift = DRAW_NUDGE * r as f32;
             let e = &mut off_by_draw[d];
             e[0] += vis[0] * shift;
@@ -609,9 +628,9 @@ pub fn coplanar_draw_offsets(
                 abutment_fired[slot] = true;
             }
             let (mover, vis) = if a.area <= b.area {
-                (a.draw, a.vis)
+                (a.draw, lift_dir(a.vis))
             } else {
-                (b.draw, b.vis)
+                (b.draw, lift_dir(b.vis))
             };
             let e = &mut off_by_draw[mover];
             e[0] += vis[0] * DRAW_NUDGE;
@@ -710,6 +729,24 @@ mod tests {
         let (_, off) = offs.iter().next().unwrap();
         // Lift toward -Y (up in the retail frame), one nudge.
         assert!(off[0].abs() < 1e-4 && off[2].abs() < 1e-4);
+        assert!((off[1] + DRAW_NUDGE).abs() < 1e-4, "off={off:?}");
+    }
+
+    /// An underside plane (visible from below, `+Y` in the retail frame)
+    /// still separates, but upward: a downward lift would sink the draw
+    /// past the ground heightfield's `GROUND_SINK` (vell's log floor).
+    #[test]
+    fn underside_planes_lift_up_never_down() {
+        let (p, mut i) = floor_quad(128.0);
+        for tri in i.chunks_mut(3) {
+            tri.swap(1, 2);
+        }
+        let mut planes = HashMap::new();
+        planes.insert(7usize, mesh_planes(&p, &i));
+        let draws = vec![draw(7, 0, 0, 0), draw(7, 64, 0, 0)];
+        let offs = coplanar_draw_offsets(&draws, &planes);
+        assert_eq!(offs.len(), 1, "exactly one draw lifts: {offs:?}");
+        let (_, off) = offs.iter().next().unwrap();
         assert!((off[1] + DRAW_NUDGE).abs() < 1e-4, "off={off:?}");
     }
 

@@ -1691,9 +1691,13 @@ fn battle_image(
     // The idle orbit is a clock: phase-align it to the retail instant when
     // retail's own orbit owns the yaw (the battle tick's prologue store,
     // gated on these command-flow bytes - `0x801D07AC..0x801D07CC`).
-    if crate::retail_compare_battle::ORBIT_FLOWS.contains(&battle.flow) {
+    if battle.orbit_owns_yaw() {
         env.push(("LEGAIA_BATTLE_ORBIT_YAW", retail.camera.yaw.to_string()));
     }
+    env.push((
+        "LEGAIA_BATTLE_CAMERA_OPTION",
+        battle.camera_option.to_string(),
+    ));
     // A capture taken mid-cast replays its cast and is captured on its phase
     // (the gate), with the fixed tick as the deadline.
     let mut tick = crate::retail_compare_battle::BATTLE_CAPTURE_TICK

@@ -1015,6 +1015,19 @@ impl PlayWindowApp {
             // uses the orbit camera.
             let in_world_map = self.session.host.world.mode == SceneMode::WorldMap;
             let cam = self.compute_scene_camera(aspect, in_world_map, cutscene_cam);
+            // The volumetric ground-fog enhancement (`engine-core::fog_volume`,
+            // `F9` / `--no-volumetric-fog`): the engine's bank for this tick,
+            // drawn after the 3D scene and before the HUD. Its space is the
+            // field's retail Y-down world (`cam` already carries the field
+            // frame's Y negation) or the raw battle stage (the stage model's
+            // scale + Y-flip). Staged every frame; `None` stages nothing.
+            self.stage_fog_volume(r, cam, in_world_map);
+            // Enhanced lighting's mood: the persisted time of day over the
+            // loaded scene (`scene_lighting::TimeOfDay::mood` - the same call
+            // the browser play page makes). Cheap; staged every frame so a
+            // scene change or an `F8` cycle lands on the next frame.
+            let mood = self.lighting_mood();
+            r.set_lighting_mood(mood);
             // Stage the derived scene point lights (the dynamic-lighting
             // enhancement's candle / wall-light layer) with this frame's
             // camera so the renderer can recover world space from the
@@ -1025,7 +1038,7 @@ impl PlayWindowApp {
             if !self.boot_ui.is_active()
                 && !in_world_map
                 && self.session.host.world.mode == SceneMode::Field
-                && !self.scene_point_lights.is_empty()
+                && !(self.scene_point_lights.is_empty() && self.scene_prop_lights.is_empty())
             {
                 // Per-frame selection: a scene can carry dozens of candle
                 // props but only 8 lights shade at once, so pick the ones
@@ -1043,13 +1056,23 @@ impl PlayWindowApp {
                         ]
                     })
                     .unwrap_or([0.0; 3]);
-                let picked = legaia_engine_render::scene_lights::nearest_lights(
-                    &self.scene_point_lights,
-                    focus,
-                );
+                // The static lights plus every prop's set at the actor's
+                // live position (the same anchor the NPC draw uses).
+                let mut all = self.scene_point_lights.clone();
+                all.extend(legaia_engine_render::scene_lighting::place_prop_lights(
+                    &self.scene_prop_lights,
+                    |slot, spawn| w.field_npc_live_anchor(slot, spawn),
+                ));
+                let picked = legaia_engine_render::scene_lights::nearest_lights(&all, focus);
                 r.set_scene_lights(&picked, cam);
+                // Halos + soft light shafts around the picked lights (the
+                // bloom stand-in), scaled by the mood's glow.
+                r.set_glow_sprites(&legaia_engine_render::scene_lighting::glow_sprites(
+                    &picked, &mood,
+                ));
             } else {
                 r.clear_scene_lights();
+                r.set_glow_sprites(&[]);
             }
             // Camera-occlusion fade (the see-through-walls enhancement),
             // two per-frame halves:
@@ -1380,6 +1403,7 @@ impl PlayWindowApp {
                 let verify_poses = &mut self.npc_pose_verify;
                 let srcs = &self.npc_anim_srcs;
                 let world = &self.session.host.world;
+                let tag_vram = self.cpu_vram_base.as_ref();
                 for (slot, player) in self.npc_clip_players.iter_mut() {
                     let Some((tmd, raw)) = srcs.get(slot) else {
                         continue;
@@ -1439,10 +1463,17 @@ impl PlayWindowApp {
                     } else {
                         tmd
                     };
-                    let vmesh =
+                    let mut vmesh =
                         legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(tmd, raw, &pose.bone_outputs);
-                    let cmesh =
+                    let mut cmesh =
                         legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(tmd, raw, &pose.bone_outputs);
+                    // Enhanced lighting's emissive tags, as the spawn build
+                    // set them (a re-pose would otherwise drop them).
+                    if let Some(v) = tag_vram {
+                        legaia_engine_render::scene_lighting::tag_emissive_meshes(
+                            raw, &mut vmesh, &mut cmesh, v,
+                        );
+                    }
                     let vm = if vmesh.indices.is_empty() {
                         None
                     } else {
@@ -3004,7 +3035,27 @@ impl PlayWindowApp {
             // and projection - the segments both browser pages stroke.
             // The machine itself - cabinet, reels, furniture, dot matrix and
             // coin HUD - under the paylines (`ui_slot_cabinet`).
-            screen_prims.extend(slot_prims);
+            // A rules page is a full-screen panel its text prints on, so it
+            // rides the under-overlay slot: the composited tail draws over
+            // the glyph layer, which would bury the page's text.
+            let rules_page = self
+                .session
+                .host
+                .world
+                .minigames
+                .slot_machine
+                .as_ref()
+                .is_some_and(|m| {
+                    matches!(
+                        m.screen(),
+                        legaia_engine_core::slot_machine::SlotScreen::Instructions { .. }
+                    )
+                });
+            if rules_page {
+                light_prims.extend(slot_prims);
+            } else {
+                screen_prims.extend(slot_prims);
+            }
             screen_prims.extend(self.slot_payline_screen_prims());
             // The fishing line, latched above: the same kernel and builder
             // the browser play page uses.

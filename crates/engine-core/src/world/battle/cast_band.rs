@@ -903,6 +903,16 @@ impl World {
             self.casting.capture_spell = None;
             return false;
         };
+        // `0x70` frames nothing of its own: the camera is the module's.
+        if let Some(cam) = self.battle.camera.as_mut() {
+            if let Some(shot) = run.camera_shot {
+                let (pose, raw_z) = shot.pose();
+                cam.arm_module_shot(pose, raw_z, u32::from(shot.frames));
+            }
+            if let Some(d) = run.capture_drift {
+                cam.drift_module(d.pitch, d.yaw, d.tr_y, d.tr_z);
+            }
+        }
         if run.tick_ported && run.busy {
             return true;
         }
@@ -922,6 +932,7 @@ impl World {
         self.casting.module_phase = 0;
         self.casting.module_ctx_278 = 0;
         self.casting.module_swordie = Default::default();
+        self.casting.module_cam = Default::default();
         self.casting.capture_spell = Some(spell_id);
         self.emit_cast_module_voice(spell_id);
     }
@@ -1035,6 +1046,9 @@ pub struct CastModuleCodeRun {
     pub camera_follow: Option<vm::cast_module_camera::ModuleFollow>,
     /// The drift the module wrote into the camera globals this frame.
     pub camera_nudge: Option<vm::cast_module_camera::ModuleNudge>,
+    /// A capture-class body's drift this frame
+    /// ([`vm::cast_module_camera::capture_camera_director`]).
+    pub capture_drift: Option<vm::cast_module_camera::CaptureDrift>,
 }
 
 // --- W1-D: the fourteen trampoline arms ---
@@ -1464,6 +1478,12 @@ impl World {
             caster: seat(caster_slot),
             victim: seat(victim_slot),
             band_timer: i32::from(self.battle_ctx.frame_timer),
+            first_monster: self.battle_first_monster_byte(),
+            action: self
+                .actors
+                .get(caster_slot as usize)
+                .map_or(0, |a| a.battle.params[0]),
+            depth_raw: self.battle.camera_frame_height as i32,
         }
     }
 
@@ -1619,12 +1639,29 @@ impl World {
             })
         };
         run.camera_shot = direction.and_then(|d| d.shot);
+        let mut capture_held = false;
+        let mut capture_arm = None;
+        // A capture-class body's camera arms, on the phase it is about to
+        // run (they make no gate of their own: the body's port does).
+        if let Some(direct) = vm::cast_module_camera::capture_camera_director(
+            entry,
+            body.unwrap_or(vm::cast_module_camera::SINGLE_BODY),
+        ) {
+            let seats = self.module_cam_seats(caster_slot, victim_slot);
+            let mut st = self.casting.module_cam;
+            let arm = direct(&mut st, ctx.phase, seats);
+            self.casting.module_cam = st;
+            run.camera_shot = arm.shot;
+            run.capture_drift = arm.drift;
+            capture_held = arm.hold;
+            capture_arm = Some(arm);
+        }
         run.camera_follow = direction.and_then(|d| d.follow);
         run.camera_nudge = direction.and_then(|d| d.nudge);
-        let held = direction.is_some_and(|d| d.hold);
+        let held = direction.is_some_and(|d| d.hold) || capture_held;
         // A camera-only director owns the phase of a module whose tick body
         // is unported: its pass advances it, and it claims no tick.
-        let camera_only = profile.is_some_and(|p| !p.paces_band());
+        let camera_only = profile.is_some_and(|p| !p.paces_band() && p.owns_phase);
         if camera_only && !held {
             ctx.phase = ctx.phase.wrapping_add(1);
         }
@@ -2241,6 +2278,14 @@ impl World {
         if let Some(step) = step {
             run.busy = step == ticks::CastTickStep::Busy;
             run.tick_ported = true;
+        } else if let Some(arm) = capture_arm {
+            // A capture director over a body with no port (a ported body, or
+            // a holding arm, has already produced a step) owns its phase.
+            run.tick_ported = true;
+            run.busy = arm.next.is_some();
+            if let Some(next) = arm.next {
+                ctx.phase = next;
+            }
         }
 
         // Each view writes back only what the tick changed in it, folded onto
@@ -2492,6 +2537,7 @@ impl World {
             camera_shot: None,
             camera_follow: None,
             camera_nudge: None,
+            capture_drift: None,
         })
     }
 

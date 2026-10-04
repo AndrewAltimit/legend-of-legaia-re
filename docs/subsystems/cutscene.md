@@ -2085,8 +2085,8 @@ they are shared scripted-scene machinery rather than dialogue-only code.
 | Address | Role |
 |---|---|
 | `FUN_801D27E0` | **party-leader swap** SM (6 states, actor `+0x54`). See below - it *changes* `DAT_80084597`, it does not merely focus on it. |
-| `FUN_801D5C08` | per-frame position tween step: accumulates `+0x9c += (+0x9e) * DAT_1F800393`, lerps between the start (`+0x14`) and end (`+0x24`) vectors by `t = +0x9c / 0x1000` via `FUN_801E45BC`, writes the result onto the linked object (`+0x90`), and snaps to the end + sets done bit `8` at `t >= 0x1000` |
-| `FUN_801D5D60` | scripted-element teardown: restores the camera (`FUN_801DB510` + `FUN_801DAA50`) when armed, and once the linked object's done bit `8` is set clears the enable flags (mask `~(+0x74)`) on the `+0x94` and camera objects |
+| `FUN_801D5C08` | the hop-arc helper's tick: accumulates `+0x9c += (+0x9e) * DAT_1F800393`, evaluates the quadratic Bezier start (`+0x14`) / control (`+0x3C`, preloaded into `a0`) / end (`+0x24`) at `t = +0x9c` via `FUN_801E45BC`, writes the result onto the linked actor (`+0x90`) plus `-y` into its `+0x8E` unless it is the player context `_DAT_8007C364`, and snaps to the end + sets done bit `8` at `t >= 0x1000`. Ported once, as `field_ledge_hop_arc::advance_hop_arc` |
+| `FUN_801D5D60` | the hop-arc release watcher: eases the follow camera (`FUN_801DB510` + `FUN_801DAA50`) when armed, and once the arc helper's done bit `8` is set clears mask `+0x74` out of the `+0x94` context's flags and, with `+0x50` set, the player's. Ported once, as `field_ledge_hop_arc::release_watcher_tick` |
 | `FUN_801D6058` | ambient particle emitter (gated on `_DAT_8007B854`, optional `fog_set` trace): with actor `+0x1a == 0` occasionally spawns one particle at the actor position + random jitter via `FUN_801D629C`; otherwise loops 0x18 times spawning random bursts across the scene bounds (`DAT_1F8003E8..EB`) |
 
 `see ghidra/scripts/funcs/overlay_cutscene_dialogue_<addr>.txt` for each.
@@ -2116,11 +2116,14 @@ the whole scene and the script decides when it emits.
 
 Its two table neighbours, `FUN_801D5C08` and `FUN_801D5D60`, **are** spawned -
 the earlier "referenced by nothing across the 84 overlay images" reading was a
-scanner artifact. Nothing names those handler VAs; what the field overlay names
+scanner artifact - and every spawn site belongs to the ledge-hop / op-`0x43`
+arc family (`FUN_801D2404`, `FUN_801D25EC` and the unreferenced
+`FUN_801D5780`), so they are that family's two ticks rather than
+cutscene elements. Nothing names those handler VAs; what the field overlay names
 is their `0x18`-byte templates `0x801F227C` and `0x801F22AC`, as `lui 0x801F` +
-`addiu` pairs feeding `FUN_80020DE0(descriptor, *(0x8007C34C))`: the tween at
-`0x801D245C` (`addiu $a0,$a0,0x227c` in the delay slot), `0x801D2634` and
-`0x801D57C0`, the teardown at `0x801D2760` (`addiu $a0,$a0,0x22ac`). Both sites
+`addiu` pairs feeding `FUN_80020DE0(descriptor, *(0x8007C34C))`: the arc
+helper at `0x801D245C` (`addiu $a0,$a0,0x227c` in the delay slot), `0x801D2634`
+and `0x801D57C0`, the watcher at `0x801D2760` (`addiu $a0,$a0,0x22ac`). Both sites
 store the driven object into the returned actor's `+0x90` immediately
 afterwards, which is the linked-object back-link the handlers gate on. The
 word-form scan does find those two templates and classifies the hits as

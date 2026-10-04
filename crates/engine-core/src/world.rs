@@ -129,7 +129,7 @@ pub use field_prop_state::FieldPropState;
 pub use field_script_actor_state::{
     FieldAttachedLight, FieldScriptActorState, FieldScriptArc, ScriptActorRef,
 };
-pub use field_terrain::FieldTerrain;
+pub use field_terrain::{FieldTerrain, step_floor_ladder};
 pub use field_vm_state::FieldVmState;
 pub use frame_clock::FrameClock;
 pub use item_bag::{BagEntry, ItemBag};
@@ -154,9 +154,10 @@ mod field_script_actors;
 pub use field_script_actors::FieldLightDraw;
 mod drop_shadow_render;
 mod fog_render;
+mod fog_volume_host;
 pub use cutscene_elements::{
     AMBIENT_EMITTER_SCENE_ARM, AMBIENT_EMITTER_TEMPLATE_VA, CutsceneElement, ElementFrame,
-    ElementKind, ElementLink, WorldRng,
+    ElementKind, WorldRng,
 };
 mod assets_events;
 pub use assets_events::vdf_entry;

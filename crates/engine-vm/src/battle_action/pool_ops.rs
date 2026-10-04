@@ -274,10 +274,13 @@ pub struct RedirectQuery {
 /// (`!is_alive(target_slot)`) and the category qualifies:
 ///
 /// - Attack (`3`): always.
-/// - Magic (`2`): when the spell's table class byte `spell_tier(param0) >= 0xA`
-///   (a status/utility spell), or when the current target is an enemy slot
-///   (`target_slot >= 3`); an offensive spell already aimed at a party slot is
-///   left alone.
+/// - Magic (`2`): when the spell record's cast-class byte `+0`
+///   (`0x800754C8[param0 * 12]`, passed in as `spell_tier`) is `>= 0xA`, or
+///   when the current target is an enemy slot (`target_slot >= 3`). Every
+///   real cast class (`0x14` plain, `0x32` summon, `0x63` capture) clears
+///   `0xA`; only the low-class records (the internal `0x00..=0x24` tiers and
+///   the monster attacks `0x2E` / `0x2F`, class `0`) aimed at a party slot
+///   are left alone.
 /// - Item (`1`): only for item ids `0xFE` or `0x98`.
 ///
 /// The roll picks a **living** slot on the current target's side: party
@@ -300,8 +303,9 @@ pub struct RedirectQuery {
 /// the only band `engine-core` dispatches party turns from - so the engine
 /// drives it at each party dispatch (`World::redirect_dead_battle_target`,
 /// over its compacted seating). The monster arm follows the enemy-AI pick
-/// `FUN_801E9FD4`, whose engine counterpart already picks among living
-/// targets.
+/// `FUN_801E9FD4` with no gate at all, so it covers a monster's strike
+/// (category `3`) and its single-target cast (category `2`) alike - the
+/// engine drives it from `World::take_monster_turn` for both.
 ///
 /// PORT: FUN_801DB124
 /// REF: FUN_801F0450 (the call site this is driven from),

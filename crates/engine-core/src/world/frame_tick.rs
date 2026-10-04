@@ -276,13 +276,11 @@ impl World {
         // which the port declines to do.
         if !self.terrain.floor_tier_bobs.is_empty() {
             let mut bobs = std::mem::take(&mut self.terrain.floor_tier_bobs);
-            for bob in bobs.iter_mut() {
-                if let Some(height) = bob.step(frame_delta)
-                    && let Some(rung) = self.terrain.floor_height_lut.get_mut(bob.slot as usize)
-                {
-                    *rung = height;
-                }
-            }
+            crate::world::step_floor_ladder(
+                &mut bobs,
+                &mut self.terrain.floor_height_lut,
+                frame_delta,
+            );
             bobs.append(&mut self.terrain.floor_tier_bobs);
             self.terrain.floor_tier_bobs = bobs;
         }
@@ -1096,6 +1094,9 @@ impl World {
         // The near-camera ghost pass reads the pose this tick settled
         // (`FUN_80046A20` calls `FUN_8004DC68` after its camera update).
         self.tick_battle_camera_ghost();
+        // The volumetric ground-fog enhancement steps on the tick this frame
+        // settled, after every actor moved (`crate::fog_volume`).
+        self.tick_fog_volume();
         outcome
     }
 
@@ -1489,9 +1490,9 @@ impl World {
         if runs_master_driver {
             let delta = self.clock.display_frame_step.min(u16::from(u8::MAX)) as u8;
             self.tick_field_timer_actors(delta);
-            // The script-cutscene element channel rides the same gate for the
-            // same reason - its three handlers are `+0x0C` handlers on that one
-            // effect-actor list, and the ambient emitter's own template
+            // The element channel rides the same gate for the same reason -
+            // the ambient emitter is a `+0x0C` handler on that one
+            // effect-actor list, and its own template
             // (`0x801F271C`) sits in the very table the three above come from.
             // Self-gates to a no-op on an empty channel.
             let mut rng = crate::world::WorldRng::new(self.rng_state);
@@ -1781,6 +1782,11 @@ impl World {
                 // the ambient-particle gate (`4C 30`) that puts fog over the
                 // continent. Same frame slice as the field arm.
                 self.step_field_frame_slice();
+                // The per-actor anim tick: the overworld's MAN actors play
+                // the kingdom bundle's slot-4 clips through `FUN_800204F8`
+                // exactly as a town's do (a live `map01` actor list holds
+                // four clip-bound actors resolving into that bank).
+                self.tick_actor_anims();
                 // Clock a committed overworld encounter's field-to-battle
                 // transition (the intro overlay rides this phase) and open
                 // the fight when it elapses - the world-map twin of the
@@ -3172,10 +3178,26 @@ impl World {
         ]
         .iter()
         .any(|&b| self.input.just_pressed(b));
+        let packed = crate::slot_machine::packed_edges(self.input.pad(), self.input.pad_prev());
         let Some(m) = self.minigames.slot_machine.as_mut() else {
             return;
         };
         m.tick();
+        // The cash-out submenu, its rules pages, the not-enough-coins prompt
+        // and the leave fade own the pad when they are up; state 1 tests the
+        // submenu edge before any spin input.
+        if m.cash_out_input(packed) {
+            if m.phase() == SlotPhase::CashedOut {
+                // State 100's tail: the bank commit and the return warp
+                // (`FUN_80026018`), the same pair the Start escape runs.
+                self.route_slot_sounds();
+                self.exit_slot_machine();
+                self.close_minigame_round_trip();
+                return;
+            }
+            self.route_slot_sounds();
+            return;
+        }
         m.latch_spin_up(face_edge);
         match phase {
             SlotPhase::Idle => {
@@ -3201,6 +3223,8 @@ impl World {
                 // session out via [`World::exit_slot_machine`]).
                 self.mode = self.minigames.slot_return_mode;
             }
+            // Owned by `cash_out_input` above.
+            SlotPhase::Menu | SlotPhase::NoCoins | SlotPhase::Leaving => {}
         }
         self.route_slot_sounds();
     }

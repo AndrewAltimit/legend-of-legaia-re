@@ -10,6 +10,12 @@ use super::*;
 /// `0x34`'s last pass, the same one that leaves for `0x35`.
 pub const SUMMON_MODULE_STATES: [u8; 2] = [0x35, 0x36];
 
+/// The capture band's module tick `0x70`: like the summon band's sustain it
+/// calls no framing case (`0x801E50C8..0x801E50E8`), so the camera holds the
+/// pose `0x6F`'s last case-6 pass left and moves only as the module moves it
+/// ([`crate::cast_module_camera::capture_camera_director`]).
+pub const CAPTURE_MODULE_STATE: u8 = 0x70;
+
 /// The yaw the escape roll's success arm snaps the live camera to before it
 /// arms the flee shot (`li v0,0xf00 ; sh v0,0x2(a1)` at `0x801E7EE0`, into
 /// `0x8007B792`).
@@ -68,6 +74,22 @@ impl BattleCamera {
         self.pose.pitch += f32::from(pitch);
         self.pose.tr[1] += f32::from(tr_y);
         self.pose.tr[2] += f32::from(tr_z);
+    }
+
+    /// A capture-class arm's drift: [`Self::nudge_module`] plus the yaw
+    /// global `0x8007B792`, which the capture arms also walk. Retail's tween
+    /// walker adds increments to the globals rather than landing on its
+    /// endpoint, so a drift survives a shot in flight; the port folds it into
+    /// the armed shot's target, whose last step lands there.
+    pub fn drift_module(&mut self, pitch: i16, yaw: i16, tr_y: i16, tr_z: i16) {
+        self.nudge_module(pitch, tr_y, tr_z);
+        self.pose.yaw = (self.pose.yaw + f32::from(yaw)).rem_euclid(4096.0);
+        if let Some(g) = self.module_glide.as_mut() {
+            g.target.pitch += f32::from(pitch);
+            g.target.tr[1] += f32::from(tr_y);
+            g.target.tr[2] += f32::from(tr_z);
+            g.target.yaw = (g.target.yaw + f32::from(yaw)).rem_euclid(4096.0);
+        }
     }
 
     fn land(&mut self, g: &Glide) {
@@ -140,7 +162,8 @@ impl BattleCamera {
         if self.escape_shot {
             return;
         }
-        if !SUMMON_MODULE_STATES.contains(&state) && state != 0x34 {
+        if !SUMMON_MODULE_STATES.contains(&state) && state != 0x34 && state != CAPTURE_MODULE_STATE
+        {
             self.module_glide = None;
         }
     }

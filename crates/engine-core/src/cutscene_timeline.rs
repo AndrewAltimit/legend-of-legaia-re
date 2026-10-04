@@ -103,23 +103,24 @@ pub struct NarrationSite {
     pub kind: legaia_asset::cutscene_text::NarrationKind,
 }
 
-/// A cross-context channel-completion wait the timeline is PARKED on.
+/// A cross-context channel wait the timeline is PARKED on.
 ///
 /// The retail opdeene timeline halt-acquires its vignette channels (a `4C 85`
-/// freeze sweep), pokes each beat by beat, then waits on a per-channel
-/// completion flag via `B3 <id> <bit>` = op `0x33` (CFLAG_TST) with the
-/// cross-context (`0x80`) bit set, targeting the channel's `ctx[+0x50]` id and
-/// testing `ctx.flags & (1 << bit)`. When that bit is clear the caller HALTS at
-/// the flag-test PC - the halt-acquire / state-resume handshake - and only
-/// resumes once the poked channel raises the bit (its own placement script
-/// runs `0x31 CFLAG_SET` when its move/anim beat completes).
+/// freeze sweep), pokes each beat by beat, then waits on a per-channel flag
+/// via `B3 <id> <bit>` = op `0x33` (CFLAG_TST) with the cross-context (`0x80`)
+/// bit set, targeting the channel's `ctx[+0x50]` id and testing
+/// `ctx.flags & (1 << bit)`. The arm holds the caller at the flag-test PC
+/// **while the bit is SET** and advances once it is clear: it bumps `s8` by 2
+/// at `0x801DEE2C`, takes that advanced PC on a zero mask (`beq` at
+/// `0x801DEE44`) and otherwise restores the entry PC `s4` (`0x801DEE4C`). So
+/// the wait is on a busy bit dropping, not on a completion bit rising.
 ///
 /// [`crate::world::World::step_cutscene_timeline`] models that park with this
 /// record instead of stepping past the flag-test by instruction width: it
 /// leaves the PC on the op and, each subsequent tick, re-tests the awaited
-/// channel's flag, resuming past the op only once the completion bit is set
-/// (bounded by [`crate::world::CHANNEL_WAIT_PARK_TIMEOUT`] so a channel our
-/// port can't advance to its flag-set falls back to the by-width step-past).
+/// channel's flag, resuming past the op once the bit is clear (bounded by
+/// [`crate::world::CHANNEL_WAIT_PARK_TIMEOUT`] so a channel our port never
+/// clears falls back to the by-width step-past).
 ///
 /// Bit 10 (`0x400`, the halt/busy bit the acquire sweep toggles) is excluded -
 /// a `B3 <id> 0A` is a suspension *verify*, not a completion wait, and keeps
@@ -221,10 +222,10 @@ pub struct CutsceneTimeline {
     /// looping as a *parallel* context; the engine's modal timeline
     /// completes there instead so control returns to the player.
     pub visited: Vec<bool>,
-    /// `Some` while the timeline is PARKED on a cross-context channel-completion
+    /// `Some` while the timeline is PARKED on a cross-context channel
     /// handshake (`B3 <id> <bit>` CFLAG_TST); see [`ChannelWait`]. The stepper
-    /// leaves the PC on the flag-test op and resumes past it only once the
-    /// awaited channel raises the completion bit (or the park times out).
+    /// leaves the PC on the flag-test op and resumes past it once the awaited
+    /// channel's bit is clear (or the park times out).
     pub channel_wait: Option<ChannelWait>,
     /// Frames remaining on an in-flight **player-channel move**: armed when
     /// the timeline executes an ExecMove against the player-anchor target
@@ -309,6 +310,17 @@ pub struct CutsceneTimeline {
     /// speaks.
     // REF: FUN_801DE840 (0x801DEE90..0x801DEF1C), FUN_8003774C (the 0x37 / 0x41 arm)
     pub npc_glides: Vec<TimelineNpcGlide>,
+    /// Placement slots of the **NPC walk-to-tile legs** this context armed
+    /// (`C7 <id> <tx> <tz> <mode>` against a placement channel) and that are
+    /// still walking. Retail's op-`0x47` arm (`0x801DEFC0..0x801DF054`) seats
+    /// the op on the target's `+0x94`, raises its `0x400` and advances the
+    /// record past the op - `li s7,4` sits in the delay slot at `0x801DF030`,
+    /// so the advance is taken for every target, and only a **player**
+    /// target also parks the caller (`0x801DF034..0x801DF044`). The record
+    /// therefore runs on while the NPC walks; its next cross-context op on
+    /// that actor waits for the leg to land (the halted-target refusal).
+    // REF: FUN_801DE840 (0x801DEFC0..0x801DF054), FUN_8003774C (case 0x47)
+    pub npc_walks: Vec<u8>,
     /// Ticks left on the **scene-bank** clip the timeline last poked onto the
     /// player (`A2 F8 <move_id>` with the party-bank bit down): the clip's
     /// end-latch length at its own step ([`crate::field_anim::clip_end_ticks`]).
@@ -434,6 +446,7 @@ impl CutsceneTimeline {
             .into_iter()
             .flatten()
             .chain(self.npc_glides.iter().map(|g| Some(g.slot)))
+            .chain(self.npc_walks.iter().map(|&s| Some(s)))
             .filter(move |_| live)
     }
 
@@ -472,6 +485,7 @@ impl CutsceneTimeline {
             facing_wait: None,
             player_glide: None,
             npc_glides: Vec::new(),
+            npc_walks: Vec::new(),
             player_clip_ticks: 0,
             player_clip_wait: None,
             stepped: false,

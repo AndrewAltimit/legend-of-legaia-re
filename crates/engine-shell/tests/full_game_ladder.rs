@@ -61,7 +61,7 @@
 //! seated tier talks to the NPCs whose records reach a flag the next anchor
 //! carries or a destination the route needs, and the pad tier plays the same
 //! beats by walking to them; neither tier buys or equips (the pad tier opens
-//! the pause menu only to heal), so a story beat that waits on one reads as
+//! the pause menu only to heal or burn an Incense), so a story beat that waits on one reads as
 //! a stall at that beat. The route follows `0x3F` scene changes and FMV hand-offs; a
 //! transport an entry script spawns on arrival is a missing edge (see
 //! `docs/tooling/full-game-ladder.md`).
@@ -195,6 +195,12 @@ struct Milestone {
     /// credits run): it anchors the scene but not the order.
     #[serde(default = "yes")]
     order_check: bool,
+    /// `false` for an anchor that names the scene but is not a save of the
+    /// playthrough at that point (a door-tile poke from an earlier state):
+    /// the segment after it seeds from the nearest earlier milestone whose
+    /// anchor does seed, so it starts from the story state the run had.
+    #[serde(default = "yes")]
+    seeds_next: bool,
 }
 
 fn yes() -> bool {
@@ -400,18 +406,23 @@ impl DiscGraph {
                 for d in scene_destinations(&mf, man) {
                     if d.scene_name != name {
                         set.insert(d.scene_name.clone());
-                        landings
-                            .entry((name.clone(), d.scene_name.clone()))
-                            .or_default()
-                            .insert((d.entry_x & 0x7F, d.entry_z & 0x7F));
                         doors.insert((name.clone(), d.scene_name));
                     }
                 }
-                // `scene_destinations` keeps one entry per destination; a
-                // scene with two exits to one map (a town's two gates) has
-                // two landings.
+                // Landings come from the partition-2 door records only - the
+                // records a walk-on band or a scripted beat runs, which are
+                // the exits the pad hand leaves a crossing by. A
+                // partition-1 talk record's `0x3F` is a conversation's own
+                // exit on its own story gate: `dolk2` P1[47]'s lands on
+                // `map01` `(65, 50)`, which made `dolk2` read as the way to
+                // `vell`'s side when neither of its gate bands goes there
+                // (retail's playthrough drains `suimon` instead: `0x27B` is
+                // set and P1[47]'s other write, `0x17D`, is not, in every
+                // card save from `PRO-01` on). `scene_destinations` keeps one
+                // entry per destination; a scene with two exits to one map
+                // (a town's two gates) has two landings.
                 for s in legaia_asset::man_edit::scene_change_sites(man) {
-                    if s.name != name && set.contains(&s.name) {
+                    if s.partition == 2 && s.name != name && set.contains(&s.name) {
                         landings
                             .entry((name.clone(), s.name.clone()))
                             .or_default()
@@ -676,7 +687,9 @@ fn park_site(session: &BootSession) -> String {
 
 fn holder(session: &BootSession) -> &'static str {
     let w = &session.host.world;
-    if w.cutscene_timeline_active() {
+    if w.scene_transition_hold.is_some() {
+        "a scene change in flight"
+    } else if w.cutscene_timeline_active() {
         "cutscene timeline"
     } else if w.dialogue_owns_input() {
         "dialogue"
@@ -691,7 +704,10 @@ fn holder(session: &BootSession) -> &'static str {
 
 fn released(session: &BootSession) -> bool {
     let w = &session.host.world;
+    // A scene change parked behind the streaming actor's countdown has not
+    // released anything: the door is mid-flight.
     walking(session)
+        && w.scene_transition_hold.is_none()
         && !w.cutscene_timeline_active()
         && !w.dialogue_owns_input()
         && w.field_vm.helper_contexts.is_empty()
@@ -3699,8 +3715,10 @@ fn pad_walk(
         return Ok(Walk::Arrived);
     }
     // A player low on HP heals before setting out, not after the next
-    // encounter has already rolled.
+    // encounter has already rolled - or, with nothing to heal with, burns an
+    // Incense so the next encounter never rolls.
     pad_field_heal(session, 500);
+    pad_field_repel(session, 500);
     if std::env::var_os("LEGAIA_FGL_WALK_DEBUG").is_some() {
         let w = &session.host.world;
         eprintln!(
@@ -3861,6 +3879,7 @@ fn pad_walk(
                 return Err(format!("battle on the walk to {goal:?}: {r:?}"));
             }
             pad_field_heal(session, 500);
+            pad_field_repel(session, 500);
             planned_from = None;
             path.clear();
             since = 0;
@@ -4311,6 +4330,119 @@ fn pad_field_heal(session: &mut BootSession, threshold: u32) -> usize {
         );
     }
     used
+}
+
+/// Burn an Incense with the pad, as a player does who is too hurt to survive
+/// the next encounter and has nothing to heal with: when the weakest member
+/// is still below `threshold` per-mille after [`pad_field_heal`], the scene
+/// rolls encounters, the bag holds an Incense (`0x8A`) and its window
+/// (`_DAT_8007B600`) has run out, Start opens the pause menu and Items, Use,
+/// the Incense row and the confirm's Yes commit one. Retail's class-`0x82`
+/// applier skips the whole region roll while the window is open, so one use
+/// buys `0x40` walk-regen ticks (`0x800` walking vsyncs) with no encounter at
+/// all, whatever the rand stream deals (see `field-menu.md`, the Incense
+/// route `FUN_801D8D94`). Returns whether one was used.
+fn pad_field_repel(session: &mut BootSession, threshold: u32) -> bool {
+    use legaia_engine_core::field_menu::FieldMenuRow;
+    use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+    use legaia_engine_core::inventory_use::InventoryUseState;
+    use legaia_engine_core::pause_screens::{INCENSE_ITEM_ID, PauseItemsFocus};
+    let w = &session.host.world;
+    if !walking(session)
+        || !released(session)
+        || party_hp_permille(session) >= threshold
+        || !w.scene_can_roll_encounters()
+        || w.locomotion.walk_regen_window != 0
+        || !w
+            .party
+            .inventory
+            .iter()
+            .any(|(&id, &c)| id == INCENSE_ITEM_ID && c > 0)
+    {
+        return false;
+    }
+    tap_pad(session, PadButton::Start.mask());
+    if session.field_menu.is_none() {
+        return false;
+    }
+    let items_row = FieldMenuRow::Items.index();
+    let mut used = false;
+    for _ in 0..200 {
+        let Some(menu) = session.field_menu.as_ref() else {
+            break;
+        };
+        let pad = match session.field_menu_sub.as_ref() {
+            None => match menu.phase() {
+                legaia_engine_core::field_menu::FieldMenuPhase::Browsing { cursor } => {
+                    if used {
+                        PadButton::Circle.mask()
+                    } else if cursor != items_row {
+                        PadButton::Down.mask()
+                    } else {
+                        PadButton::Cross.mask()
+                    }
+                }
+                _ => 0,
+            },
+            Some(FieldMenuSubsession::Items(p)) => {
+                // The hand walks every bag row; an Incense row routes to its
+                // own confirm, not through the usable-in-context filter.
+                let want = p.rows.iter().position(|r| r.id == INCENSE_ITEM_ID);
+                if p.focus == PauseItemsFocus::SpecialRoute {
+                    // The confirm opens with its cursor on Yes.
+                    used = true;
+                    PadButton::Cross.mask()
+                } else {
+                    match (p.focus, &p.inner.state, want) {
+                        _ if used => PadButton::Circle.mask(),
+                        // The Use list's filter is built on entering it.
+                        (PauseItemsFocus::Command, _, _) => {
+                            if p.command_cursor == 0 {
+                                PadButton::Cross.mask()
+                            } else {
+                                PadButton::Up.mask()
+                            }
+                        }
+                        (PauseItemsFocus::List, InventoryUseState::Browsing { .. }, Some(k)) => {
+                            let cursor = p.list_cursor();
+                            if cursor < k {
+                                PadButton::Down.mask()
+                            } else if cursor > k {
+                                PadButton::Up.mask()
+                            } else {
+                                PadButton::Cross.mask()
+                            }
+                        }
+                        _ => PadButton::Circle.mask(),
+                    }
+                }
+            }
+            Some(_) => PadButton::Circle.mask(),
+        };
+        if pad == 0 {
+            let _ = session.tick();
+            continue;
+        }
+        tap_pad(session, pad);
+    }
+    for _ in 0..16 {
+        if session.field_menu.is_none() {
+            break;
+        }
+        tap_pad(session, PadButton::Circle.mask());
+    }
+    let window = session.host.world.locomotion.walk_regen_window;
+    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+        eprintln!(
+            "    [repel] incense committed {used}; window now {window}; menu {}",
+            if session.field_menu.is_some() {
+                "STILL OPEN"
+            } else {
+                "closed"
+            }
+        );
+    }
+    used && window > 0
 }
 
 thread_local! {
@@ -6317,18 +6449,20 @@ fn part_b_full_game_ladder() {
 
     let mut reports: Vec<SegmentReport> = Vec::new();
     for i in 0..spine.len() - 1 {
-        let (from, to) = (&spine[i], &spine[i + 1]);
+        let to = &spine[i + 1];
         if let Some(only) = &only
             && !only.contains(&to.id)
         {
             continue;
         }
+        let seed_at = (0..=i).rev().find(|&j| spine[j].seeds_next).unwrap_or(i);
+        let from = &spine[seed_at];
         let t0 = std::time::Instant::now();
         let rep = run_segment(
             &inp,
             &graph,
             from,
-            anchors[i].as_ref(),
+            anchors[seed_at].as_ref(),
             to,
             anchors[i + 1].as_ref(),
             with_pad,

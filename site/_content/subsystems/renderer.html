@@ -131,7 +131,7 @@
       <tr><td><code>set_psx_mode</code> (<code>LEGAIA_PSX_RENDER=1</code>)</td><td>off</td><td>on</td><td>sub-pixel vertex snap + 4&times;4 ordered 15-bit dither, nothing else</td></tr>
       <tr><td><code>set_semi_blend</code></td><td>on</td><td>on</td><td>ABE semi-transparency; off draws water and glows solid</td></tr>
       <tr><td>affine UVs</td><td>always</td><td>always</td><td><code>@interpolate(linear)</code> is a static qualifier, not a switch</td></tr>
-      <tr><td><code>set_dynamic_lighting</code> (<code>--dynamic-lighting</code>)</td><td>off</td><td>off, pixel-identical</td><td>soft warm directional + screen-centred pool, gain &le; 1.3&times;; sub-toggle: point lights + shadow maps at the scene's lamp props</td></tr>
+      <tr><td><code>set_dynamic_lighting</code> (enhanced lighting)</td><td>off in the renderer, on in both play hosts</td><td>off, pixel-identical</td><td>time-of-day mood (ambient + key + pool), point lights at the scene's glowing props, emissive prims (TSB bit 13) and additive halos; sub-toggle: shadow maps (native)</td></tr>
       <tr><td><code>set_occlusion_fade</code> (<code>F4</code>)</td><td>off in the renderer, on in <code>play-window</code></td><td>off, pixel-identical</td><td>screen-door dissolve of fragments between the follow camera and the player</td></tr>
     </tbody>
   </table>

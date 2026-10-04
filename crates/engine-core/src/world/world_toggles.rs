@@ -27,6 +27,14 @@ pub struct WorldToggles {
     /// [`crate::options::OptionsState::retail_view_window`]. Default on; it
     /// only takes effect at retail framing.
     pub view_window_crop: bool,
+    /// The volumetric ground-fog **enhancement**
+    /// ([`crate::fog_volume`], stepped by `World::tick`), from
+    /// [`crate::options::OptionsState::volumetric_fog`]. Default **off** here
+    /// so headless hosts (replays, oracles) carry no enhancement; the play
+    /// hosts push their option (default on) through
+    /// [`crate::options::OptionsState::apply_to_world`]. Off resets the bank,
+    /// so every host draws exactly what it drew without the feature.
+    pub volumetric_fog: bool,
     // --- live gameplay loop (Field <-> Battle round trip) -----------------
     /// Master opt-in for the **field side** of the in-`tick` Field <-> Battle
     /// round trip: the step-driven random-encounter roll.
@@ -84,6 +92,11 @@ pub struct WorldToggles {
     /// `0x801D15E0..0x801D1650`. Hosts mirror their `OptionsState` onto this
     /// the way they mirror [`crate::world::FieldLocomotion::run_default`].
     pub select_attack: crate::options::SelectAttackOpt,
+    /// The options screen's **Battle Camera** row (config word
+    /// `0x800846C0`, Close / Normal / Far), which the battle camera's action
+    /// shots read (`BattleCamera::set_camera_option`). Hosts mirror their
+    /// `OptionsState` onto this through `OptionsState::apply_to_world`.
+    pub battle_camera: crate::options::BattleCameraOpt,
     /// Draw the overworld's per-placement **entity markers**
     /// ([`crate::world_map_markers`]: a cyan post at each portal, green at
     /// each NPC, red at each encounter zone). A port debug overlay, not a
@@ -100,11 +113,13 @@ impl WorldToggles {
             entry_pulse_enabled: true,
             reduce_flashing: true,
             view_window_crop: true,
+            volumetric_fog: false,
             live_gameplay_loop: false,
             smarter_monster_targeting: false,
             use_vm_dialogue: false,
             use_damage_finish: true,
             select_attack: crate::options::SelectAttackOpt::default(),
+            battle_camera: crate::options::BattleCameraOpt::default(),
             overworld_marker_overlay: false,
         }
     }

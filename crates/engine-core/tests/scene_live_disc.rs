@@ -150,6 +150,107 @@ fn town01_windmill_turns() {
     );
 }
 
+/// `concnow`'s system script re-installs the ladder per room (region-type
+/// mask, op `0x42` mode 0 -> `4C 9F` / `4C 9E` / `4C 90`), so a full map
+/// must not draw every room on the entry room's ladder: the probe finds the
+/// other rooms' ladders, and at least one differs from the live one.
+#[test]
+fn concnow_rooms_keep_their_own_ladders() {
+    let Some((index, _)) = open_index() else {
+        return;
+    };
+    eprintln!("[ran] concnow rooms");
+    let a = assemble_field_scene(&index, "concnow").expect("assemble");
+    let mut live = LiveScene::enter(index, "concnow").expect("enter");
+    for _ in 0..60 {
+        live.tick();
+    }
+    let entry = live.live_floor_lut();
+    for r in live.rooms() {
+        eprintln!(
+            "  room mask {:#010x}: lut {:?} bobs {}",
+            r.mask,
+            r.lut,
+            r.bobs.len()
+        );
+    }
+    eprintln!(
+        "  entry mask {:#010x}: lut {entry:?}",
+        live.host.world.flags.extra_flags
+    );
+    assert!(
+        !live.rooms().is_empty(),
+        "concnow has rooms besides the entry one"
+    );
+    let distinct = live.rooms().iter().filter(|r| r.lut != entry).count();
+    assert!(
+        distinct > 0,
+        "some room installs a ladder unlike the entry room's"
+    );
+    // A terrain draw in such a room resolves through that room's ladder, not
+    // the live one.
+    let entry_wave = legaia_engine_core::field_env::FloorWave::from_scene_and_world(
+        live.scene_floor_lut(),
+        &entry,
+    );
+    let per_room = live
+        .floor_wave_offsets(&a.terrain)
+        .expect("concnow's ladder moved");
+    let differs = a
+        .terrain
+        .iter()
+        .zip(&per_room)
+        .filter(|(d, o)| entry_wave.map_or(0, |w| w.offset(&d.floor)) != **o)
+        .count();
+    eprintln!(
+        "  {differs} of {} terrain draws take a room ladder other than the entry room's",
+        a.terrain.len()
+    );
+    assert!(
+        differs > 0,
+        "some terrain draw sits on its own room's ladder"
+    );
+    // The walk ground too, per cell.
+    let hf = a.ground.as_ref().expect("concnow has a walk ground");
+    let cells = legaia_engine_core::field_ground::vertex_cells(hf);
+    let by_room = live.ground_positions(hf, &cells);
+    let entry_only = legaia_engine_core::field_ground::live_render_positions(hf, &entry);
+    assert_ne!(by_room, entry_only, "the ground takes each room's ladder");
+    // And a room with oscillators keeps moving on its own.
+    let before: Vec<_> = live.rooms().iter().map(|r| r.lut).collect();
+    for _ in 0..30 {
+        live.tick();
+    }
+    let after: Vec<_> = live.rooms().iter().map(|r| r.lut).collect();
+    if live.rooms().iter().any(|r| !r.bobs.is_empty()) {
+        assert_ne!(before, after, "a room with oscillators keeps moving");
+    }
+}
+
+/// The kingdom overworld runs live: entered as the play page enters it
+/// (`enter_world_map_scene`), it stays on the world map, ticks without
+/// leaving, and its actors' clips run there (retail's overworld is a
+/// field-run scene; `FUN_800204F8` steps every actor's clip).
+#[test]
+fn map01_runs_live() {
+    let Some((index, _)) = open_index() else {
+        return;
+    };
+    eprintln!("[ran] map01");
+    let mut live = LiveScene::enter(index, "map01").expect("enter map01");
+    assert!(live.is_world_map());
+    assert_eq!(
+        live.host.world.mode,
+        legaia_engine_core::world::SceneMode::WorldMap
+    );
+    assert!(live.rooms().is_empty(), "the overworld has no ladder rooms");
+    for _ in 0..240 {
+        assert!(live.tick(), "map01 keeps ticking");
+    }
+    assert_eq!(live.restarts(), 0, "map01 never leaves the scene headless");
+    assert!(live.host.world.field_npc_clips_advance());
+}
+
 #[test]
 fn survey_every_viewer_scene() {
     if std::env::var_os("LEGAIA_SCENE_LIVE_SURVEY").is_none() {
@@ -195,13 +296,18 @@ fn survey_every_viewer_scene() {
         let k1: Vec<_> = anim.iter().map(|d| live.prop_pose_key(d)).collect();
         let props_moving = k0.iter().zip(&k1).filter(|(a, b)| a != b).count();
         eprintln!(
-            "{name:10} enter {enter_ms:4}ms tick600 {:5}ms live={} restarts={} lut_changes={lut_changes} wave_terrain={wave_draws}/{} props_moving={props_moving}/{} ambient={}",
+            "{name:10} enter {enter_ms:4}ms tick600 {:5}ms live={} restarts={} lut_changes={lut_changes} wave_terrain={wave_draws}/{} props_moving={props_moving}/{} ambient={} rooms={} distinct_rooms={}",
             t1.elapsed().as_millis(),
             live.is_live(),
             live.restarts(),
             a.terrain.len(),
             anim.len(),
             live.host.world.ambient.fx.len(),
+            live.rooms().len(),
+            live.rooms()
+                .iter()
+                .filter(|r| r.lut != live.live_floor_lut())
+                .count(),
         );
     }
 }

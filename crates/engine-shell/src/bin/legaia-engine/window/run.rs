@@ -106,10 +106,11 @@ pub(crate) fn cmd_play_window(
     screenshot: Option<super::ScreenshotConfig>,
     seed_party: bool,
     battle: Option<&str>,
-    dynamic_lighting: bool,
+    dynamic_lighting: Option<bool>,
     dyn_shadows: bool,
     entry_pulse: bool,
     occlusion_fade: bool,
+    volumetric_fog: bool,
     debug_seeds: super::DebugSeeds,
 ) -> Result<()> {
     cmd_play_window_with_record(
@@ -142,6 +143,7 @@ pub(crate) fn cmd_play_window(
         dyn_shadows,
         entry_pulse,
         occlusion_fade,
+        volumetric_fog,
         debug_seeds,
         None,
     )
@@ -457,10 +459,11 @@ pub(super) fn cmd_play_window_with_record(
     screenshot: Option<super::ScreenshotConfig>,
     seed_party: bool,
     battle: Option<&str>,
-    dynamic_lighting: bool,
+    dynamic_lighting: Option<bool>,
     dyn_shadows: bool,
     entry_pulse: bool,
     occlusion_fade: bool,
+    volumetric_fog: bool,
     debug_seeds: super::DebugSeeds,
     record_to: Option<RecordTarget>,
 ) -> Result<()> {
@@ -484,22 +487,26 @@ pub(super) fn cmd_play_window_with_record(
     // the ISO and play it with its interleaved XA audio (read raw 2352-byte
     // sectors). Otherwise we fall back to the filesystem (video only).
     //
+    // winit allows one event loop per process, so the movie and the scene
+    // share this one: the movie runs on it on demand and hands it back, then
+    // the scene window runs on it to the end.
+    //
     // Screenshot mode skips the *auto-resolved* STR (an explicit `--str-file`
-    // is still honoured): winit event loops cannot be recreated in-process, so
-    // a phase-1 video window would make the scene window - and therefore the
-    // screenshot - impossible. The real boot flow enters the prologue 3D scene
-    // with no FMV anyway; the prepended STR is a preview-harness convenience.
+    // is still honoured) so a capture is not held behind a movie. The real
+    // boot flow enters the prologue 3D scene with no FMV anyway; the
+    // prepended STR is a preview-harness convenience.
+    let mut event_loop = EventLoop::new().context("create event loop")?;
     let skip_auto_str = screenshot.is_some() && str_file.is_none();
     if skip_auto_str {
         // No phase-1 window; fall through to the scene window.
     } else if let Some(str_path) = resolved_str {
-        cmd_play_str(str_path, None, 640, 480)?;
+        play_str_in(&mut event_loop, str_path, None, 640, 480)?;
     } else if let (Some(disc_path), None) = (disc, str_file) {
         // Disc mode, no explicit file: resolve the scene's MV*.STR via the
         // cutscene map / heuristic and play it from the disc with audio.
         if let Some(rel) = cutscene_map.resolve(scene) {
             let iso_path = Path::new(&rel);
-            match cmd_play_str(iso_path, Some(disc_path), 640, 480) {
+            match play_str_in(&mut event_loop, iso_path, Some(disc_path), 640, 480) {
                 Ok(()) => {}
                 Err(e) => {
                     eprintln!("info: scene '{scene}' STR '{rel}' not played from disc ({e:#})")
@@ -1079,6 +1086,11 @@ pub(super) fn cmd_play_window_with_record(
     let font = Font::load_from_extracted(extracted_root)
         .map_err(|e| log::debug!("extracted/font not loaded ({e:#}); trying the disc"))
         .ok()
+        // The `0xCE` escape sprites ride the atlas whichever source won.
+        .map(|f| match session.escape_icons.as_ref() {
+            Some(icons) => f.with_escape_icons(icons),
+            None => f,
+        })
         .or_else(|| session.dialog_font.clone())
         .unwrap_or_else(|| {
             log::warn!("dialog font unavailable; falling back to the placeholder font");
@@ -1443,9 +1455,20 @@ pub(super) fn cmd_play_window_with_record(
         save_dir: save_dir.to_path_buf(),
         card: mounted_card,
         save_flow: legaia_engine_core::save_screen::SaveScreenFlow::new(),
-        options_state: legaia_engine_core::options::OptionsState::load_or_default(
-            &std::path::PathBuf::from(OPTIONS_CONFIG_FILE),
-        ),
+        options_state: {
+            let mut o = legaia_engine_core::options::OptionsState::load_or_default(
+                &std::path::PathBuf::from(OPTIONS_CONFIG_FILE),
+            );
+            // `LEGAIA_BATTLE_CAMERA_OPTION=<0|1|2>`: the retail-compare image
+            // child plays the capture's own Battle Camera word (`0x800846C0`).
+            if let Some(v) = std::env::var("LEGAIA_BATTLE_CAMERA_OPTION")
+                .ok()
+                .and_then(|v| v.trim().parse::<u8>().ok())
+            {
+                o.battle_camera = legaia_engine_core::options::BattleCameraOpt::from_word(v);
+            }
+            o
+        },
         record_log: record_to.map(RecordLog::from_target),
         field_live_opts,
         // In-flow cutscene STR resolves from the extracted root (video only)
@@ -1459,12 +1482,15 @@ pub(super) fn cmd_play_window_with_record(
         sim_stepper: legaia_engine_core::frame_step::SimStepper::new(),
         active_dialog: None,
         seru_names: None,
-        dynamic_lighting,
+        // Resolved against the persisted option right below, once the
+        // options file has loaded.
+        dynamic_lighting: false,
         dyn_shadows,
         occlusion_fade,
         field_occluders: Default::default(),
         occl_fade_strength: std::cell::Cell::new(0.0),
         scene_point_lights: Vec::new(),
+        scene_prop_lights: Vec::new(),
         orbit_drag_last_x: None,
         orbit_drag_last_y: None,
         last_left_press: None,
@@ -1490,9 +1516,20 @@ pub(super) fn cmd_play_window_with_record(
         app.menu_runtime.retail_equipment_buy = true;
     }
 
+    // `--no-volumetric-fog` (and a recording, which stays on the faithful
+    // render) lowers the volumetric ground-fog option for this session only:
+    // the window never writes the override back unless `F9` is pressed.
+    if !volumetric_fog {
+        app.options_state.volumetric_fog = false;
+    }
     // Push the loaded options into their live consumers (audio downmix)
     // before the loop starts.
     app.apply_options_side_effects();
+
+    // Enhanced lighting: the persisted option (default on) unless the
+    // command line forced it (`--dynamic-lighting` / `--no-dynamic-lighting`;
+    // replays force it off).
+    app.dynamic_lighting = dynamic_lighting.unwrap_or(app.options_state.enhanced_lighting);
 
     // Camera framing + movement toggles from the persisted options file:
     // the distance preset (default `far` - a bit more on screen than
@@ -1528,8 +1565,15 @@ pub(super) fn cmd_play_window_with_record(
         }
     );
 
-    let event_loop = EventLoop::new().context("create event loop")?;
-    event_loop.run_app(&mut app).context("event loop")?;
+    // On demand, not `run_app`: only `run_app_on_demand` clears the exit
+    // request a phase-1 movie left on this loop. Through `run_app` the game
+    // would see that stale exit and quit on its first iteration.
+    {
+        use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
+        event_loop
+            .run_app_on_demand(&mut app)
+            .context("event loop")?;
+    }
     // After the event loop returns, flush any pending record log. The
     // Escape / CloseRequested handlers also flush proactively so a
     // mid-run crash still produces a partial replay file - the trailing

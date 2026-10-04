@@ -122,6 +122,14 @@ pub struct ModuleCamSeats {
     /// `ctx[+0x6D8]` - the summon band's own frame timer, which the actor
     /// freeze `0x34` arms and the sustain `0x35` counts down.
     pub band_timer: i32,
+    /// The formation's first monster id `0x8007BD0C`, which a capture body
+    /// can fork its framing on (PROT 0962's `0xA5` arm 0).
+    pub first_monster: u8,
+    /// The caster's queued action id `+0x1DF` - which choreography a
+    /// two-spell module runs (PROT 0946's Call Wave / Big Wave).
+    pub action: u8,
+    /// `ctx[+0x6D0]`, the framing depth a capture shot can scale.
+    pub depth_raw: i32,
 }
 
 /// The module-resident state the camera arms carry between ticks: the
@@ -283,8 +291,10 @@ pub(super) fn focus_on(seat: ModuleSeat) -> [i16; 3] {
     [seat.x.wrapping_neg(), 0, seat.z.wrapping_neg()]
 }
 
+pub mod capture;
 pub mod creature;
 mod seru;
+pub use capture::*;
 pub use creature::*;
 pub use seru::*;
 
@@ -317,6 +327,11 @@ pub struct ModuleProfile {
     /// through [`ModuleCamState::creature_arrived`]. A module with none keeps
     /// its creature where it seated it.
     pub walk_arm: Option<u8>,
+    /// Whether a camera-only director owns the module phase. `false` for a
+    /// director that runs **beside** a ported tick body
+    /// ([`ModuleProfile::camera_beside`]): it reads the phase the body is
+    /// about to run, never holds it, and only arms the camera.
+    pub owns_phase: bool,
 }
 
 /// The directed profile of a player-Seru module, by owning PROT entry.
@@ -328,16 +343,19 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
             direct: gimard_direct,
             hit_arm: Some(GIMARD_WALK_ARM),
             walk_arm: Some(GIMARD_WALK_ARM),
+            owns_phase: true,
         }),
         905 => Some(ModuleProfile {
             direct: vera_direct,
             hit_arm: Some(VERA_RESTORE_ARM),
             walk_arm: None,
+            owns_phase: true,
         }),
         908 => Some(ModuleProfile {
             direct: zenoir_direct,
             hit_arm: Some(ZENOIR_FINISH_ARM),
             walk_arm: None,
+            owns_phase: true,
         }),
         914 => Some(ModuleProfile::camera_only(gola_gola_direct)),
         915 => Some(ModuleProfile::camera_only(mushura_direct)),
@@ -347,6 +365,7 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
         928 => Some(ModuleProfile::camera_only(palma_direct)),
         930 => Some(ModuleProfile::camera_only(horn_direct)),
         931 => Some(ModuleProfile::camera_only(jedo_direct)),
+        913 => Some(ModuleProfile::camera_beside(nova_direct)),
         _ => None,
     }
 }
@@ -357,6 +376,16 @@ impl ModuleProfile {
             direct,
             hit_arm: None,
             walk_arm: None,
+            owns_phase: true,
+        }
+    }
+
+    const fn camera_beside(direct: ModuleDirector) -> Self {
+        Self {
+            direct,
+            hit_arm: None,
+            walk_arm: None,
+            owns_phase: false,
         }
     }
 

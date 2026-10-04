@@ -62,6 +62,8 @@ const KEEP_BACKDROP_OBJECT_1: u32 = 0x8007_B64B;
 /// Present-party list: pool slot -> roster character id (1-based; `4` is
 /// the AI-companion seat).
 const SEAT_CHARS: u32 = 0x8007_BD10;
+/// The options screen's Battle Camera config word.
+const BATTLE_CAMERA_OPTION: u32 = 0x8008_46C0;
 /// Eight-slot battle actor pointer table.
 const ACTOR_TABLE: u32 = 0x801C_9370;
 /// Frames a forced encounter may take to reach battle mode (the intro
@@ -152,7 +154,8 @@ pub struct RetailBattle {
     pub party: Vec<Option<Combatant>>,
     /// Monster seats (pool slots `3..3 + monster_count`).
     pub monsters: Vec<Option<Combatant>>,
-    /// `ctx[+0x13]` - the seat the action SM is running.
+    /// `ctx[+0x13]` - the seat the action SM is running; ahead of the seed
+    /// pass ([`PRE_SEED_STATES`]) the seat it is about to run, `ctx[+0x274]`.
     pub active_actor: u8,
     /// The active seat's queued action id `+0x1DF` (a spell id on a cast).
     pub queued_action: u8,
@@ -177,6 +180,11 @@ pub struct RetailBattle {
     pub walk_yaw_base: u16,
     /// `ctx[+0xD]` - the acting action's framing style.
     pub cam_style: u8,
+    /// The options screen's Battle Camera word `0x800846C0` (Close `0` /
+    /// Normal `1` / Far `2`), which the action shots read. It sits in the
+    /// saved game-state window, but the save lift does not carry options,
+    /// so the seed stamps it (`World::toggles.battle_camera`).
+    pub camera_option: u8,
     /// `ctx[+0x269]` - the Seru a killing blow absorbed this action, staged
     /// for the Done band's grant (`sb v0,0x269(a0)` at `0x801EE2E8`) and
     /// cleared when `0x52` leaves.
@@ -654,10 +662,35 @@ fn span_gate(ram: &[u8], ctx: u32) -> SpanGate {
                 timer: game_anchors::u16_at(ram, ctx + 0x6D8) as i16,
             };
         }
+        if PRE_SEED_STATES.contains(&game_anchors::u8_at(ram, ctx + 7)) && camera_landed(ram, ctx) {
+            return SpanGate::Landed;
+        }
         if CAPTURE_FADE_STATES.contains(&game_anchors::u8_at(ram, ctx + 7)) {
+            // In the module tick `0x70`, a directed module's arm and the
+            // countdown word it gates on place the capture inside the run.
+            let arm = (game_anchors::u8_at(ram, ctx + 7) == 0x70)
+                .then(|| {
+                    let actor = game_anchors::u32_at(
+                        ram,
+                        ACTOR_TABLE + u32::from(game_anchors::u8_at(ram, ctx + 0x13).min(7)) * 4,
+                    );
+                    let action = if in_ram(actor) {
+                        game_anchors::u8_at(ram, actor + 0x1DF)
+                    } else {
+                        0
+                    };
+                    legaia_engine_vm::cast_module_camera::capture_countdown_va(action).map(|va| {
+                        (
+                            game_anchors::u8_at(ram, ctx + 0x279),
+                            game_anchors::u32_at(ram, va) as i32,
+                        )
+                    })
+                })
+                .flatten();
             return SpanGate::CaptureFade {
                 height: game_anchors::u16_at(ram, ctx + 0x6D0),
                 accum: game_anchors::u32_at(ram, ctx + 0x87C).min(u32::from(u16::MAX)) as u16,
+                arm,
             };
         }
         return SpanGate::Age {
@@ -672,6 +705,46 @@ fn span_gate(ram: &[u8], ctx: u32) -> SpanGate {
         },
         _ => SpanGate::Loading,
     }
+}
+
+/// The action SM's states ahead of the seed pass `0x0C`: the round-begin
+/// `0x00`, the pre-action wait `0x0A` and the menu-queued hold `0x0B`. None of
+/// them has picked the next actor into `ctx[+0x13]` yet - the seed pass copies
+/// it there from `ctx[+0x274]` (`lbu v0,0x274(v1)` / `sb v0,0x2(s5)` at
+/// `0x801E2C50..0x801E2C5C`) - so a capture in one reads the **previous**
+/// actor (or the last ring member, at a round's start) in `ctx[+0x13]`.
+pub const PRE_SEED_STATES: [u8; 3] = [0x00, 0x0A, 0x0B];
+
+/// `ctx[+0x274]` - the next actor the initiative pick `FUN_801DABA4` chose.
+const NEXT_ACTOR: u32 = 0x274;
+
+/// The tween table `FUN_801D829C` builds (`ctx[+0x118C]`, nine
+/// `{u16 step, u16 endpoint}` records: pitch / yaw / roll, the translation
+/// trio, the focus trio).
+const TWEEN_TABLE: u32 = 0x118C;
+
+/// Whether retail's camera sits on its framing: every tweened component with
+/// a step reads its endpoint. The yaw is left out - the idle orbit writes it
+/// beside the walker. The rotation pair and the translation / focus words
+/// compare as the low halfwords the walker steps.
+fn camera_landed(ram: &[u8], ctx: u32) -> bool {
+    let live = [
+        game_anchors::u16_at(ram, 0x8007_B790),
+        0,
+        game_anchors::u16_at(ram, 0x8007_B794),
+        game_anchors::u16_at(ram, 0x8008_40B8),
+        game_anchors::u16_at(ram, 0x8008_40BC),
+        game_anchors::u16_at(ram, 0x8008_40C0),
+        game_anchors::u16_at(ram, 0x8008_9118),
+        game_anchors::u16_at(ram, 0x8008_911C),
+        game_anchors::u16_at(ram, 0x8008_9120),
+    ];
+    (0..9u32).filter(|&k| k != 1).all(|k| {
+        let rec = ctx + TWEEN_TABLE + k * 4;
+        let end = game_anchors::u16_at(ram, rec + 2);
+        let mask = if k < 3 { 0xFFF } else { 0xFFFF };
+        live[k as usize] & mask == end & mask
+    })
 }
 
 fn in_ram(p: u32) -> bool {
@@ -714,7 +787,14 @@ impl RetailBattle {
         if monster_ids.iter().all(|&id| id == 0) {
             return Err("formation cell empty".into());
         }
-        let active_actor = game_anchors::u8_at(ram, ctx + 0x13);
+        let action_state = game_anchors::u8_at(ram, ctx + 7);
+        let active_actor = if game_anchors::u8_at(ram, ctx + 6) == 0xFF
+            && PRE_SEED_STATES.contains(&action_state)
+        {
+            game_anchors::u8_at(ram, ctx + NEXT_ACTOR)
+        } else {
+            game_anchors::u8_at(ram, ctx + 0x13)
+        };
         let active = Some(game_anchors::u32_at(
             ram,
             ACTOR_TABLE + u32::from(active_actor.min(7)) * 4,
@@ -724,7 +804,7 @@ impl RetailBattle {
             party_count,
             monster_count,
             flow: game_anchors::u8_at(ram, ctx + 6),
-            action_state: game_anchors::u8_at(ram, ctx + 7),
+            action_state,
             run_state: game_anchors::u8_at(ram, RUN_STATE),
             stage_id: game_anchors::u8_at(ram, STAGE_ID),
             scripted: game_anchors::u32_at(ram, PER_BATTLE_FLAGS) & 0x80 != 0,
@@ -750,6 +830,7 @@ impl RetailBattle {
             caster_clip: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1D9)),
             walk_yaw_base: game_anchors::u16_at(ram, ctx + 0x6DA),
             cam_style: game_anchors::u8_at(ram, ctx + 0xD),
+            camera_option: game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION),
             absorbed_seru: game_anchors::u8_at(ram, ctx + 0x269),
             span_gate: span_gate(ram, ctx),
             module_phase: game_anchors::u8_at(ram, ctx + 0x279),
@@ -1002,6 +1083,8 @@ pub fn run_engine_battle(
         .host
         .world
         .seed_battle_backdrop_keep_object_1(battle.keep_backdrop_object_1);
+    session.host.world.toggles.battle_camera =
+        legaia_engine_core::options::BattleCameraOpt::from_word(battle.camera_option);
     // Hand any replayed BGM words to the director before reading the word.
     session.host.route_bgm_events(&mut director)?;
     let seats = retail_roster_slots(battle);
@@ -1179,7 +1262,7 @@ pub fn run_engine_battle(
     // does (`LEGAIA_BATTLE_ORBIT_YAW`), so the channel scores the framing
     // rather than the instant. `align_orbit_yaw` refuses unless the orbit
     // really owns the yaw (the far framing, no yaw glide in flight).
-    if ORBIT_FLOWS.contains(&battle.flow)
+    if battle.orbit_owns_yaw()
         && let Some(cam) = session.host.world.battle.camera.as_mut()
     {
         cam.align_orbit_yaw(f32::from(retail.camera.yaw));
@@ -1401,7 +1484,36 @@ pub enum BattleDrive {
         absorbed: u8,
         end: SpanGate,
         style: Option<u8>,
+        steer: ActionSteer,
     },
+}
+
+/// The two further capture facts an action drive steers by
+/// ([`BattleDrive::Action`]).
+///
+/// `target` is the capture's target seat `actor[+0x1DD]`, set only on a
+/// killing-blow capture whose target is one of its victims
+/// ([`RetailBattle::action_victims`]). The phase is then reached only with
+/// the acting seat on that target: with the victim seeded at its read HP of
+/// `0` the auto-target picks the next standing monster, and a run that held
+/// the right state against the wrong body scored the camera of a different
+/// shot (`player_steal_skeleton_banner` framed the live skeleton where
+/// retail's case 8 frames the falling one), so the search moves on to the
+/// `1`-HP re-run that makes the kill. On a monster's cast it is the party
+/// seat the cast aimed at, which the replayed cast is steered onto
+/// (`BattleState::forced_monster_target`): the caster turns to face its
+/// target as the cast begins, and the module's shots frame from that facing.
+///
+/// `yaw` is the capture's yaw counter `ctx[+0x6DA]`. A party attacker's
+/// first swing-clip commit re-seeds it to `(rand() % 2) * 0x800 + 0x280`
+/// (`FUN_8004E13C`, `0x8004E288..0x8004E2B4`) - a coin on a stream the replay
+/// does not share, and the half-turn it picks is the side cases 6, 7 and 8
+/// film from. [`BattleDrive::steer`] keeps the engine's counter on retail's
+/// half while the seat's action runs - the twin of the style alignment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ActionSteer {
+    pub target: Option<u8>,
+    pub yaw: Option<u16>,
 }
 
 /// Where inside a state that spans many frames a capture sits.
@@ -1454,7 +1566,18 @@ pub enum SpanGate {
     /// the caster has landed in every such capture. The drive holds the
     /// engine's polls busy ([`BattleDrive::steer`]) until its own words
     /// have run as far.
-    CaptureFade { height: u16, accum: u16 },
+    ///
+    /// `arm` is `(ctx[+0x279], countdown)` for a `0x70` capture of a module
+    /// whose countdown the engine directs
+    /// ([`legaia_engine_vm::cast_module_camera::capture_countdown_va`]): the
+    /// phase is held until the engine's module sits in that arm with its
+    /// countdown run down at least as far - the module's own clock, which
+    /// places a camera shot or drift in flight.
+    CaptureFade {
+        height: u16,
+        accum: u16,
+        arm: Option<(u8, i32)>,
+    },
     /// Any other action-SM state, `accum` (`ctx[+0x87C]`) into it.
     ///
     /// The action SM's states span frames, and the drive reaches each on
@@ -1467,6 +1590,14 @@ pub enum SpanGate {
     /// state the engine leaves sooner is re-run to its last tick
     /// ([`EngineBattle::age_short`]).
     Age { accum: u16 },
+    /// A capture ahead of the seed pass ([`PRE_SEED_STATES`]) whose camera
+    /// has landed on its framing ([`camera_landed`]). `0x0A` waits on the CD
+    /// (`FUN_8003F2B8(1)` at `0x801E2B78`) for as long as the next actor's
+    /// data takes, which the engine's always-ready poll does not; the
+    /// `evil_medallion_rage_battle` capture sits there with the commit
+    /// confirm's case-9 glide finished. The drive holds the engine's wait
+    /// until its own glide lands ([`BattleDrive::steer`]).
+    Landed,
 }
 
 /// The capture band `0x6E..=0x71`. `0x70` pins the style to `1`
@@ -1515,6 +1646,7 @@ impl SpanGate {
             Self::DoneHold { timer } => (4, timer as u16),
             Self::CaptureFade { .. } => (5, 0),
             Self::Age { accum } => (6, accum),
+            Self::Landed => (7, 0),
         }
     }
 
@@ -1522,17 +1654,32 @@ impl SpanGate {
     /// hold.
     fn env_value(self) -> String {
         match self {
-            Self::CaptureFade { height, accum } => format!("{height}/{accum}"),
+            Self::CaptureFade {
+                height,
+                accum,
+                arm: None,
+            } => format!("{height}/{accum}"),
+            Self::CaptureFade {
+                height,
+                accum,
+                arm: Some((phase, countdown)),
+            } => format!("{height}/{accum}/{phase}/{countdown}"),
             _ => self.to_env().1.to_string(),
         }
     }
 
     fn from_env(kind: &str, value: &str) -> Option<Self> {
         if kind.trim() == "5" {
-            let (h, a) = value.trim().split_once('/')?;
+            let parts: Vec<&str> = value.trim().split('/').collect();
+            let arm = match parts.as_slice() {
+                [_, _] => None,
+                [_, _, p, c] => Some((p.parse().ok()?, c.parse().ok()?)),
+                _ => return None,
+            };
             return Some(Self::CaptureFade {
-                height: h.parse().ok()?,
-                accum: a.parse().ok()?,
+                height: parts[0].parse().ok()?,
+                accum: parts[1].parse().ok()?,
+                arm,
             });
         }
         let value: u16 = value.trim().parse().ok()?;
@@ -1545,6 +1692,7 @@ impl SpanGate {
                 timer: value as i16,
             },
             "6" => Self::Age { accum: value },
+            "7" => Self::Landed,
             _ => return None,
         })
     }
@@ -1588,6 +1736,7 @@ impl BattleDrive {
                 absorbed,
                 end,
                 style,
+                steer,
             } => {
                 let (kind, _) = end.to_env();
                 let value = end.env_value();
@@ -1597,6 +1746,12 @@ impl BattleDrive {
                 );
                 if let Some(style) = style {
                     s.push_str(&format!(",{style}"));
+                }
+                if let Some(t) = steer.target {
+                    s.push_str(&format!(",t{t}"));
+                }
+                if let Some(y) = steer.yaw {
+                    s.push_str(&format!(",y{y}"));
                 }
                 s
             }
@@ -1609,7 +1764,27 @@ impl BattleDrive {
             "opening,1" => return Some(Self::Opening { swept: true }),
             _ => {}
         }
-        let fields: Vec<&str> = s.split(',').collect();
+        // The tagged steering tokens ride at the end (`t<seat>`, `y<yaw>`).
+        let mut steer = ActionSteer::default();
+        let mut fields: Vec<&str> = s.split(',').collect();
+        while fields.len() > 1 {
+            let last = fields[fields.len() - 1].trim();
+            if let Some(t) = last.strip_prefix('t') {
+                steer.target = Some(t.parse().ok()?);
+            } else if let Some(y) = last.strip_prefix('y') {
+                steer.yaw = Some(y.parse().ok()?);
+            } else {
+                break;
+            }
+            fields.pop();
+        }
+        if steer != ActionSteer::default() {
+            let mut d = Self::from_env(&fields.join(","))?;
+            if let Self::Action { steer: st, .. } = &mut d {
+                *st = steer;
+            }
+            return Some(d);
+        }
         if fields.len() == 10 && fields[0].trim() == "action" {
             let mut d = Self::from_env(&fields[..9].join(","))?;
             if let Self::Action { style, .. } = &mut d {
@@ -1643,6 +1818,7 @@ impl BattleDrive {
                 absorbed: 0,
                 end: SpanGate::None,
                 style: None,
+                steer: ActionSteer::default(),
             }),
             ("action", &[seat, state, category, queued, spare, absorbed]) => Some(Self::Action {
                 seat,
@@ -1653,7 +1829,16 @@ impl BattleDrive {
                 absorbed,
                 end: SpanGate::None,
                 style: None,
+                steer: ActionSteer::default(),
             }),
+            _ => None,
+        }
+    }
+
+    /// An action drive's steering facts.
+    fn steering(&self) -> Option<ActionSteer> {
+        match *self {
+            Self::Action { steer, .. } => Some(steer),
             _ => None,
         }
     }
@@ -1701,6 +1886,8 @@ impl BattleDrive {
             let seat = engine_seat(seat, pc);
             if seat >= pc {
                 world.battle.forced_monster_cast = Some((seat, queued));
+                world.battle.forced_monster_target =
+                    self.steering().and_then(|s| s.target).filter(|&t| t < 3);
             }
         }
     }
@@ -1769,19 +1956,40 @@ impl BattleDrive {
                         .is_some_and(|v| v.pose_actor == usize::from(engine_seat(seat, pc)))
             }
             Self::Action {
-                seat, state, end, ..
+                seat,
+                state,
+                end,
+                steer,
+                ..
             } => {
                 world.battle.flow == BattleFlowState::Idle
                     && world.battle.command.is_none()
                     && world.battle_ctx.active_actor == engine_seat(seat, pc)
                     && world.battle_ctx.action_state == state
+                    && steer.target.is_none_or(|t| {
+                        world
+                            .actors
+                            .get(usize::from(engine_seat(seat, pc)))
+                            .is_some_and(|a| a.battle.active_target == engine_seat(t, pc))
+                    })
                     && match end {
                         SpanGate::DoneHold { timer } => world.battle_ctx.frame_timer <= timer,
-                        SpanGate::CaptureFade { height, accum } if state == 0x6E => {
+                        SpanGate::CaptureFade {
+                            arm: Some((phase, countdown)),
+                            ..
+                        } if state == 0x70 => {
+                            world.casting.module_phase > phase
+                                || world.casting.module_phase == phase
+                                    && world.casting.module_cam.countdown.0 <= countdown
+                        }
+                        SpanGate::CaptureFade { height, accum, .. } if state == 0x6E => {
                             capture_accum_done(world, height, accum)
                         }
                         SpanGate::CaptureFade { height, .. } if state == 0x6F => {
                             capture_ramp_done(world, height)
+                        }
+                        SpanGate::Landed => {
+                            !world.battle.camera.as_ref().is_some_and(|c| c.is_gliding())
                         }
                         SpanGate::Age { accum } => world
                             .battle
@@ -1818,23 +2026,43 @@ impl BattleDrive {
             state: want,
             end,
             style,
+            steer,
             ..
         } = *self
         else {
             return;
         };
+        // The yaw counter's half-turn coin ([`ActionSteer::yaw`]): from the
+        // seat's seed pass to the capture's state.
+        {
+            let pc = world.party.party_count.clamp(1, 3);
+            let state = world.battle_ctx.action_state;
+            if let Some(yaw) = steer.yaw
+                && world.mode == SceneMode::Battle
+                && world.battle_ctx.active_actor == engine_seat(seat, pc)
+                && (0x0C..=want).contains(&state)
+                && let Some(cam) = world.battle.camera.as_mut()
+            {
+                cam.align_action_yaw_half(i32::from(yaw));
+            }
+        }
         let pc = world.party.party_count.clamp(1, 3);
         let ours = world.mode == SceneMode::Battle
             && world.battle_ctx.active_actor == engine_seat(seat, pc);
         let state = world.battle_ctx.action_state;
         if let Some(style) = style
             && ours
-            && state == want
+            && (state == want || seat < 3 && (0x0C..=want).contains(&state))
             && !CAPTURE_BAND.contains(&state)
         {
             world.battle_ctx.camera_variant = style;
         }
-        let SpanGate::CaptureFade { height, accum } = end else {
+        if end == SpanGate::Landed {
+            let gliding = world.battle.camera.as_ref().is_some_and(|c| c.is_gliding());
+            world.battle.prev_action_cleared = !(ours && state == want && state == 0x0A && gliding);
+            return;
+        }
+        let SpanGate::CaptureFade { height, accum, .. } = end else {
             return;
         };
         world.audio.sound_bank_ready =
@@ -1956,6 +2184,16 @@ impl RetailBattle {
     /// flight: the swing's victims, which [`run_engine_battle`] can seed at
     /// `1` HP so the replay makes the kill rather than ending the fight at
     /// its first wipe gate.
+    /// Whether the capture's yaw is an idle-orbit clock reading rather than a
+    /// framing: a flow byte the battle tick's orbit store runs on
+    /// ([`ORBIT_FLOWS`]), or a pre-seed capture whose far framing has landed
+    /// ([`SpanGate::Landed`]) - case 9 passes `_DAT_8007B792` straight
+    /// through and nothing in `0x0A` writes it, so it holds wherever the
+    /// orbit left it.
+    pub fn orbit_owns_yaw(&self) -> bool {
+        ORBIT_FLOWS.contains(&self.flow) || self.span_gate == SpanGate::Landed
+    }
+
     pub fn action_victims(&self) -> Vec<usize> {
         if !matches!(self.seed_plan(), SeedPlan::Action { seat, .. } if seat < 3) {
             return Vec::new();
@@ -1980,6 +2218,18 @@ impl RetailBattle {
                 absorbed: if seat < 3 { self.absorbed_seru } else { 0 },
                 end: self.span_gate,
                 style: Some(self.cam_style),
+                steer: ActionSteer {
+                    // A party killing blow on its victim, or a monster
+                    // cast on the party seat it aimed at.
+                    target: ((seat < 3
+                        && self.target_code >= 3
+                        && self
+                            .action_victims()
+                            .contains(&usize::from(self.target_code - 3)))
+                        || (seat >= 3 && self.queued_category == 2 && self.target_code < 3))
+                        .then_some(self.target_code),
+                    yaw: Some(self.walk_yaw_base),
+                },
             }),
             SeedPlan::Opening => Some(BattleDrive::Opening {
                 swept: matches!(self.flow, 0x0C | 0x14),
@@ -2440,6 +2690,7 @@ mod tests {
                 absorbed: 0,
                 end: SpanGate::Exit { phase: 3 },
                 style: None,
+                steer: ActionSteer::default(),
             },
             BattleDrive::Action {
                 seat: 0,
@@ -2450,6 +2701,7 @@ mod tests {
                 absorbed: 1,
                 end: SpanGate::DoneHold { timer: -1 },
                 style: None,
+                steer: ActionSteer::default(),
             },
             BattleDrive::Action {
                 seat: 0,
@@ -2460,6 +2712,7 @@ mod tests {
                 absorbed: 0,
                 end: SpanGate::Results { hold: 80 },
                 style: None,
+                steer: ActionSteer::default(),
             },
             BattleDrive::Action {
                 seat: 3,
@@ -2471,8 +2724,10 @@ mod tests {
                 end: SpanGate::CaptureFade {
                     height: 0xFF40,
                     accum: 344,
+                    arm: Some((1, 496)),
                 },
                 style: None,
+                steer: ActionSteer::default(),
             },
             BattleDrive::Action {
                 seat: 3,
@@ -2483,6 +2738,10 @@ mod tests {
                 absorbed: 0,
                 end: SpanGate::Age { accum: 552 },
                 style: Some(3),
+                steer: ActionSteer {
+                    target: Some(4),
+                    yaw: Some(0xA98),
+                },
             },
         ] {
             assert_eq!(BattleDrive::from_env(&d.to_env()), Some(d));

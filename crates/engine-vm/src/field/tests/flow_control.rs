@@ -200,10 +200,23 @@ fn cflag_clr_basic() {
     assert_eq!(ctx.flags, !(1u32 << 10));
 }
 
+/// `0x801DEE2C..0x801DEE54`: the arm advances on a clear bit and restores the
+/// entry PC on a set one - a busy-wait on the bit dropping.
 #[test]
-fn cflag_tst_halts_when_clear() {
+fn cflag_tst_advances_when_clear() {
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
+    let r = step(&mut host, &mut ctx, &[0x33, 0], 0);
+    assert_eq!(r, StepResult::Advance { next_pc: 2 });
+}
+
+#[test]
+fn cflag_tst_halts_while_set() {
+    let mut host = TestHost::default();
+    let mut ctx = FieldCtx {
+        flags: 1,
+        ..Default::default()
+    };
     let r = step(&mut host, &mut ctx, &[0x33, 0], 0);
     assert_eq!(r, StepResult::Halt { final_pc: 0 });
 }

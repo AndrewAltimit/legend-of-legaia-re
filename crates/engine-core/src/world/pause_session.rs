@@ -265,7 +265,9 @@ impl World {
                 self.menu.pause_session = Some(session);
             }
             PauseSessionStage::Arriving => {
-                if self.pending_named_scene_transition.is_some() {
+                if self.pending_named_scene_transition.is_some()
+                    || self.scene_transition_hold.is_some()
+                {
                     self.menu.pause_session = Some(session);
                     return;
                 }

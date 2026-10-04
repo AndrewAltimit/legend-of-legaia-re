@@ -113,6 +113,42 @@ cheapest place to look for a claim that is still wrong.
 
 | Thread | Status | What would close it |
 |---|---|---|
+| Why `opdeene` runs long after its `apply 4800` camera move | `partial` | Clip lengths and loop behaviour for timeline-poked NPC clips checked against retail, then the NPC-turn and clip-wait models landed together. [details ↓](#opdeene-runs-long-after-its-apply-4800-camera-move) |
+
+### `opdeene` runs long after its `apply 4800` camera move
+
+*Status:* `partial`, evidence grade `disassembly` + `capture`.
+
+Aligned against the frame-tagged recomp camera trace of the zero-input
+opening, the engine reaches `opdeene`'s `apply 4800` beat about on time and
+then takes roughly 2580 ticks to the scene change where retail takes about
+2345; the leg as a whole runs long. Two mechanisms are pinned, and neither is
+in the engine yet.
+
+- **NPC turns do not park the record.** The op-`0x38` budget arm advances by
+  3 for every target (`li s7,3` in the delay slot at `0x801DEEFC`) and parks
+  the caller only for the player (`0x801DEF04..0x801DEF14`), exactly as the
+  op-`0x47` walk arm does. The engine parks the timeline on every budgeted
+  NPC turn, about twenty of them in `opdeene`. Letting them run brings the
+  leg from 9.5 % to 2.8 % long - but it also makes the engine reach the
+  retail-captured PC `0x6F6` of `new_game_cutscene_intro_a` about 218 frames
+  early against the dolly, so the retail-compare state drops (camera 0.962,
+  flags 0.800), and the change is held back.
+- **NPC clip end-latch spins are stepped past.** `AD <ch> 08` after an
+  `A2 <ch> <clip>` waits on the clip's end latch (`FUN_800204F8`); the
+  timeline steps every `0x2D` past by width, so `0x68F`..`0x6D5` take no time
+  where retail waits. Binding the channel's clip cursor and holding the spin
+  closes most of the 218-frame gap at `0x6F6`, but on its own it lengthens
+  `opdeene` to 12 % and costs three full-game-ladder segments
+  (`bio_castle`, `noaru_valley`, `zeto_dungeon`) and four retail-compare
+  scores - so the cursor lengths or loop behaviour on this path are not
+  retail's yet.
+
+What closes it: pin the timeline-poked NPC clip lengths against retail (a
+per-frame capture of `+0x62` / `+0x68` on a vignette channel across one
+`A2` / `AD 08` pair), then land both changes together and re-measure the
+pacing oracle, the ladder and the retail-compare corpus.
+
 
 **Who sets a field NPC's moving-class bit** closed by disassembly and capture:
 the placement seater `FUN_8003A1E4` ORs `0x20000` into every partition-1
@@ -385,8 +421,10 @@ the actor's feet and `FUN_8001C394` links four textured quads over it, and the
 rebuilt packets match retail's 12 of 12 on `town01` and 4 of 4 on each of
 `map01` / `map03` ([settled](re-settled-threads.md#rendering--camera),
 [`renderer.md`](../subsystems/renderer.md#the-field-drop-shadow-fun_8001c394)).
-The port shadows every clip-bearing placement, where retail also skips an
-actor with `+0x10` bit `0x2` set.
+The gate's second test is the actor's `+0x10 & 0x200000` (`lui v1, 0x20` at
+`0x8001BE30`), the jump take-off / scripted-vanish bit, and the port reads the
+same bit off the player's move state and each placement's channel flags, so
+no shadow residual remains.
 
 Three more rows closed here. **The overworld camera** is the field zone
 camera: the overworld is a mode-`0x03` field-run scene, and on all three
@@ -769,6 +807,24 @@ a coincidence of the pad byte plus the mask table's first three entries
 |---|---|---|
 | Which save-state library entries still hold a patched executable? | open (narrowed) - audited and tagged; the rest need human play | A state made on a patched disc keeps that build's `SCUS_942.54` in RAM on every later load. `patch_taint_audit.py states` tags each library state's `resident_patch`; the S1..S5 anchors, `first_town_interactive` and `teien_field_run` are re-shot retail, and every capture-graded claim re-checked against its family stands ([`pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md#patched-disc-taint)). The `rikuroa_*`, `dolk2_market_noa`, `cort_evolved_*`, `minigame_*_pcsx`, `battle_gaza2_*` states and the mednafen `overworld_battle_bg_angle_*` states re-shot on an unpatched image close it. |
 
+**Where the ladder's `vell` milestone belongs** closed by capture: it was out
+of story order rather than unreachable. `vell`, West Voz Forest, writes `0x489`
+on entry - a flag clear in every anchor through `dolk2_market_noa` and set in
+every card save from `PRO-01` on - so the playthrough first enters it between
+`drake_castle_revisited` and `voz_forest`, where the spine now holds it as
+`west_voz_forest`; its anchor is a door-tile poke from a Rim Elm-era state.
+From `dolk2` the pad hand reaches it by retail's route, draining `suimon` and
+crossing `bylon`, once the crossing planner stopped reading a talk record's
+`0x3F` (`dolk2` P1[47]) as a round-trip landing
+([settled](re-settled-threads.md#measurement--corpus),
+[`full-game-ladder.md`](../tooling/full-game-ladder.md#the-spine)).
+With it, **`rim_elm_restored`'s pad pass** stopped being a draw: its anchor is
+now the frame after Vahn's killing blow steals an Incense, the pad hand burns
+it, and no region rolls between `dolk` and Rim Elm. Doing so through the pause
+menu found a port defect - one Incense could be confirmed up to the window cap
+in a single visit, where retail takes the copy at the confirm
+([settled](re-settled-threads.md#field--locomotion)).
+
 **Which live ports cover only part of their routine** closed: every residue
 the audit named as still changing behaviour is ported - the last three were
 Baka Fighter's display clip (all three hosts pose from it), the victory load
@@ -830,7 +886,9 @@ attached light's keyframe script, reached by a `jal` from `FUN_801E4470` and
 live in the port; `0x801E5338`'s only materialiser `FUN_801E5834` has no
 reference of any form, so it is filed `[unreferenced]` with no port
 ([settled](re-settled-threads.md#world-map--kingdom-bundles)); `0x801E4D8C` is
-unchanged.
+the CLUT blend fade field-VM `4C DB` spawns through `FUN_801E57F0` from
+descriptor `0x801F2930`, live in the port as `world::effects`' blend-fade arm
+([settled](re-settled-threads.md#field--locomotion)).
 
 **Do the camera-snap and ocean-only kernels run on any host** closed in two
 halves: `Camera::take_camera_snap_beats` was a ladder gap and is entered now

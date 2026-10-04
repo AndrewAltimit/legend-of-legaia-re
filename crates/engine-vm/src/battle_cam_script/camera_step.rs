@@ -29,7 +29,8 @@ impl BattleCamera {
         let yaw = entry_yaw.rem_euclid(4096.0);
         let pose = match phase {
             BattleCamPhase::Dialogue => dialogue_pose(formation),
-            BattleCamPhase::Submenu => actor.submenu_pose(),
+            BattleCamPhase::Submenu | BattleCamPhase::TargetEnemy => actor.submenu_pose(),
+            BattleCamPhase::TargetAlly => target_ally_pose(actor),
             BattleCamPhase::Action => action_framing(actor, action),
             BattleCamPhase::Recover => recover_framing(actor, None, action, yaw, false),
             BattleCamPhase::ActionEnd => action_end_framing(actor, None, action, yaw),
@@ -49,12 +50,14 @@ impl BattleCamera {
             last_action_state: 0,
             acting_body: None,
             last_active_commits: None,
-            strike_style_zeroed: false,
+            last_swing_seeds: None,
+            option: CAMERA_OPTION_CLOSE,
             shake: ShakeState::default(),
             attack: AttackChannel::default(),
             rand_state: STANDALONE_RAND_SEED,
             module_glide: None,
             escape_shot: false,
+            cursor: None,
         }
     }
 
@@ -119,14 +122,12 @@ impl BattleCamera {
     ///   entry inside one tick (the engine's does: `0x0A -> 0x14` for a party
     ///   attack, `0x00 -> 0x15` for a monster's), and the camera only sees
     ///   the state at the tick boundary.
-    /// - `0x1E` with a party attacker: `(rand() % 2) * 0x800 + 0x280` and
-    ///   `ctx[+0xD] = 0`, which is `FUN_8004E13C`'s seed at the first
-    ///   swing-clip commit (`0x8004E288..0x8004E2B4`, gated on the clip
-    ///   header byte `+0x87 == 2`, the previous commit's not, and
-    ///   `ctx[+0x13] < 3`). The engine's animation player does not expose
-    ///   that header byte, so the edge into the strike loop - the state that
-    ///   stages the swing - stands in for the commit; the value and the
-    ///   party-only gate are retail's.
+    /// - A party swing's clip commit re-seeds it to `(rand() % 2) * 0x800 +
+    ///   0x280` - `FUN_8004E13C`'s value-2 arm, which this observer does not
+    ///   see; [`Self::observe_swing_reseed`] applies it. Captures show the
+    ///   re-seed is not tied to the strike loop's entry:
+    ///   `player_steal_skeleton_pre` reads the Attack base `0x218` eight
+    ///   frames into `0x1E`.
     ///
     /// A monster's attack therefore frames from the `0x200` base and a party
     /// attack from `0x280` / `0xA80`, both drifting at the SM's rate
@@ -176,15 +177,35 @@ impl BattleCamera {
         } else if in_action(state) && !in_action(prev) {
             self.action_yaw = 0x800;
         }
-        if !in_action(state) {
-            // The next action's seed re-rolls `ctx[+0xD]`, so the commit's
-            // zero stops applying once the band is left.
-            self.strike_style_zeroed = false;
-        }
-        if state == STRIKE_LOOP_STATE && self.action.party_slot {
-            let coin = crate::battle_formulas::world_rand(&mut self.rand_state) & 1;
-            self.action_yaw = (coin as i32) * 0x800 + 0x280;
-            self.strike_style_zeroed = true;
+    }
+
+    /// `FUN_8004E13C`'s value-2 re-seed (`0x8004E288..0x8004E2B4`): a clip
+    /// commit whose `+0x87` byte is `2`, after one that was not, with a party
+    /// seat acting, sets the yaw counter to `(rand() % 2) * 0x800 + 0x280`.
+    /// The world draws the coin at the commit and counts the re-seeds; the
+    /// camera applies one whenever the count moves. (The same arm's
+    /// `ctx[+0xD] = 0` is the world's own write to the live style byte.)
+    /// Install the options screen's Battle Camera word `_DAT_800846C0`
+    /// (Close `0` / Normal `1` / Far `2`). Retail reads it in four places,
+    /// all of them making the action shots calmer as it rises:
+    ///
+    /// - the action SM's prologue (`0x801E29D4..0x801E29DC`) skips the
+    ///   per-frame `ctx[+0x6DA]` drift - and its idle-orbit store - on Far;
+    /// - case 7's pull-in (`0x801D6724..0x801D6730`) needs Close;
+    /// - case 8 (`0x801D6958..0x801D69EC`) holds the live yaw on Far and,
+    ///   on Normal or Far, skips its dead- and live-target arms for an
+    ///   ordinary fight (the `_DAT_8007BD2C` / `ctx[+0x287]` exception that
+    ///   keeps them in a scripted one is not carried);
+    /// - the per-art attack camera's call (`0x801D7138..0x801D7144`) is
+    ///   skipped on Far.
+    pub fn set_camera_option(&mut self, option: u8) {
+        self.option = option;
+    }
+
+    pub fn observe_swing_reseed(&mut self, (count, coin): (u32, u8)) {
+        let prev = self.last_swing_seeds.replace(count);
+        if prev.is_some_and(|p| p != count) {
+            self.action_yaw = i32::from(coin & 1) * 0x800 + 0x280;
         }
     }
 
@@ -192,6 +213,24 @@ impl BattleCamera {
     /// actor facing from (16-bit, free-running).
     pub fn action_yaw_base(&self) -> i32 {
         self.action_yaw
+    }
+
+    /// Put the yaw counter on the half-turn nearer `yaw`: keep it, or flip
+    /// its `0x800` bit, whichever lands closer (mod `0x1000`). The strike
+    /// loop's seed `(rand() % 2) * 0x800 + 0x280` is a coin on the shared
+    /// `rand()` stream; an instrument replaying a capture on another stream
+    /// aligns the coin with this, the way it aligns the idle orbit
+    /// ([`Self::align_orbit_yaw`]). The drift below the half-turn is left
+    /// to the engine.
+    pub fn align_action_yaw_half(&mut self, yaw: i32) {
+        let dist = |a: i32| {
+            let d = (a - yaw).rem_euclid(0x1000);
+            d.min(0x1000 - d)
+        };
+        let flipped = self.action_yaw ^ 0x800;
+        if dist(flipped) < dist(self.action_yaw) {
+            self.action_yaw = flipped;
+        }
     }
 
     /// Install `_DAT_8007B630`, the screen-shake amplitude.
@@ -260,6 +299,41 @@ impl BattleCamera {
         }
     }
 
+    /// Install what the target cursor rests on. Every cursor move re-arms
+    /// the framing case in retail (the menu driver's cursor steps call
+    /// `FUN_801D5854` again with the new `+0x1DD`), so a change while a
+    /// cursor framing is live glides to the new pose over the case's own
+    /// `a3 = 0xC` - 6 camera steps.
+    pub fn set_cursor(&mut self, cursor: Option<CursorFraming>) {
+        let changed = cursor != self.cursor;
+        self.cursor = cursor;
+        if changed
+            && matches!(
+                self.phase,
+                BattleCamPhase::TargetEnemy | BattleCamPhase::TargetAlly
+            )
+            && let Some((target, raw_z)) = self.cursor_pose()
+        {
+            let mut from = self.pose;
+            self.glides.clear();
+            self.glides
+                .push_back(Glide::linear(&mut from, target, raw_z, CURSOR_STEPS, true));
+            self.pose = from;
+        }
+    }
+
+    /// The cursor framing's target pose and raw depth, off the live pose's
+    /// focus (case 1's bearing reads the camera's current focus word).
+    fn cursor_pose(&self) -> Option<(BattleCamPose, i32)> {
+        match self.cursor? {
+            CursorFraming::Enemy { target } => Some((
+                target_enemy_pose(self.actor, target, self.pose.focus),
+                SWING_TR_Z_RAW,
+            )),
+            CursorFraming::Ally(ally) => Some((target_ally_pose(ally), SUBMENU_TR_Z_RAW)),
+        }
+    }
+
     /// Install the acting actor's target, which cases `7` and `8` frame
     /// against ([`PostActionTarget`]). Hosts call this every frame through
     /// [`drive`].
@@ -281,14 +355,29 @@ impl BattleCamera {
     /// the SpecialStarter or an art constant". A monster seat pulls in on
     /// `ctx[+0x243] != 0` - the last committed clip's header byte - which the
     /// engine does not carry, so a monster's two-shot never pulls in here.
+    /// The acting actor as cases 7 and 8 read it: X / Z from the body pair
+    /// `+0x3C` / `+0x40` (`lh v0,0x3c(s2)` at `0x801D661C`, `lhu v0,0x3c(s2)`
+    /// at `0x801D6870`), Y the live `+0x36`. Case 6 reads the live pair
+    /// `+0x34` / `+0x38` instead, which is [`Self::actor`] as the host
+    /// hands it.
+    pub(super) fn body_actor(&self) -> BattleCamActor {
+        let mut a = self.actor;
+        if let Some([x, z]) = self.acting_body {
+            a.world[0] = x;
+            a.world[2] = z;
+        }
+        a
+    }
+
     pub(super) fn recover_pose(&self) -> BattleCamPose {
-        let pull_in = self.action.party_slot
+        let pull_in = self.option == CAMERA_OPTION_CLOSE
+            && self.action.party_slot
             && self
                 .attack
                 .actor
                 .is_some_and(|c| c.art_id >= crate::battle_attack_camera::FIRST_ART);
         recover_framing(
-            self.actor,
+            self.body_actor(),
             self.target,
             self.live_action_framing(),
             self.pose.yaw,
@@ -309,8 +398,22 @@ impl BattleCamera {
     /// flag, which is the same conflation the focus fork already documents.
     pub(super) fn action_end_pose(&mut self) -> (BattleCamPose, i32) {
         let f = self.live_action_framing();
-        let mut pose = action_end_framing(self.actor, self.target, f, self.pose.yaw);
+        let actor = self.body_actor();
+        let mut pose = action_end_framing(actor, self.target, f, self.pose.yaw);
+        if self.option == CAMERA_OPTION_FAR {
+            // `sh a0,0x12(sp)` with the live `_DAT_8007B792` (`0x801D696C`).
+            pose.yaw = self.pose.yaw;
+        }
+        if self.option != CAMERA_OPTION_CLOSE {
+            return (pose, f.depth_raw);
+        }
         let Some(t) = self.target.filter(|t| !t.live) else {
+            // A standing target takes the live-target arm. Only a real
+            // target slot reaches it (`actor[+0x1DD] < 8`, `0x801D6BFC`).
+            if let Some(t) = self.target {
+                let raw_z = apply_live_target_reframe(&mut pose, t, f.depth_raw, self.pose);
+                return (pose, raw_z);
+            }
             return (pose, f.depth_raw);
         };
         // Both dead-target arms start from the target-facing yaw.
@@ -318,7 +421,7 @@ impl BattleCamera {
         if t.node_gone {
             // The stand-off arm adds the live ladder rather than zeroing it.
             let yaw = yaw + self.action_yaw;
-            let raw_z = apply_node_gone_reframe(&mut pose, self.actor, yaw, f.body_radius);
+            let raw_z = apply_node_gone_reframe(&mut pose, actor, yaw, f.body_radius);
             return (pose, raw_z);
         }
         // Stored straight over the unwrapped base (`sh v1,0x12(sp)`); the
@@ -410,11 +513,7 @@ impl BattleCamera {
             yaw_base: self.action_yaw,
             accum: self.attack.ctx.accum,
             ramp: self.attack.ctx.ramp,
-            style: if self.strike_style_zeroed {
-                0
-            } else {
-                self.action.style
-            },
+            style: self.action.style,
             ..self.action
         }
     }
@@ -495,10 +594,27 @@ impl BattleCamera {
                     true,
                 ));
             }
+            BattleCamPhase::TargetEnemy | BattleCamPhase::TargetAlly => {
+                // Cases 1 and 3 both hand `FUN_801D829C` `a3 = 0xC`
+                // (`0x801D5AF8`, `0x801D5C48`): 6 camera steps, yaw included.
+                if let Some((target, raw_z)) = self.cursor_pose() {
+                    self.glides.push_back(Glide::linear(
+                        &mut from,
+                        target,
+                        raw_z,
+                        CURSOR_STEPS,
+                        true,
+                    ));
+                }
+            }
             BattleCamPhase::Menu
                 if matches!(
                     self.phase,
-                    BattleCamPhase::Action | BattleCamPhase::Recover | BattleCamPhase::ActionEnd
+                    BattleCamPhase::Action
+                        | BattleCamPhase::Recover
+                        | BattleCamPhase::ActionEnd
+                        | BattleCamPhase::TargetEnemy
+                        | BattleCamPhase::TargetAlly
                 ) =>
             {
                 // End of action: case 9 re-arms the far framing over its own
@@ -588,7 +704,9 @@ impl BattleCamera {
         // The action SM advances `ctx[+0x6DA]` once per display frame,
         // outside its state switch, so the counter runs whether or not an
         // action is executing.
-        self.action_yaw = self.action_yaw.wrapping_add(elapsed as i32) & 0xFFFF;
+        if self.option != CAMERA_OPTION_FAR {
+            self.action_yaw = self.action_yaw.wrapping_add(elapsed as i32) & 0xFFFF;
+        }
         // `FUN_801D5854`'s prologue ramps `ctx[+0x26E]` / `ctx[+0x87C]` by
         // `8 * frame_step` on EVERY call, so they advance per display frame
         // for as long as any framing case is being re-armed - not per camera
@@ -817,11 +935,30 @@ impl BattleCamera {
                 self.step_module_shot();
                 return;
             }
-            if let Some(f) = self.attack_framing() {
+            // `0x70` re-arms no framing: hold, or walk the module's shot.
+            if self.last_action_state == CAPTURE_MODULE_STATE {
                 self.glides.clear();
-                self.step_toward_attack_pose(f);
+                self.step_module_shot();
                 return;
             }
+        }
+        // `FUN_801D71B8` hangs off `FUN_801D5854`'s **shared** tail, so it
+        // runs after cases 7 and 8 exactly as after case 6: the strike loop
+        // `0x1E`, which arms case 7, is where most art swings are filmed.
+        // Its own first test is the target's live HP (`0x801D7200`), so a
+        // case-8 death re-frame is never overridden.
+        if self.option != CAMERA_OPTION_FAR
+            && matches!(
+                self.phase,
+                BattleCamPhase::Action | BattleCamPhase::Recover | BattleCamPhase::ActionEnd
+            )
+            && let Some(f) = self.attack_framing()
+        {
+            self.glides.clear();
+            self.step_toward_attack_pose(f);
+            return;
+        }
+        if self.phase == BattleCamPhase::Action {
             self.retarget_action_glide();
         }
         // Cases 7 and 8 are re-armed by their own action-SM states on every

@@ -55,6 +55,16 @@ The order is the anchors' own:
   save a few optional ones, a subset of another's comes first.
 - The ending anchor is a debug credits run, so it anchors the scene and is
   excluded from the order check (`order_check = false`).
+- `west_voz_forest` (scene `vell`) is placed by the flag its entry writes,
+  not by its anchor. `0x489` (setters `vell` P1[0] and `map02` P2[13]) is
+  clear in every anchor through `dolk2_market_noa` and set in every card
+  save from `PRO-01` on, so the playthrough's first visit falls between
+  `drake_castle_revisited` and `voz_forest`. The anchor, `vell_fog_field`,
+  is a door-tile poke from a state standing outside Rim Elm, so its flags are
+  that state's plus `vell`'s three entry writes: it anchors the scene but
+  neither the order (`order_check = false`) nor the next segment's seed
+  (`seeds_next = false` - `voz_forest`'s segment seeds from
+  `dolk2_market_noa`, the last save the run made before it).
 
 Part A (`part_a_spine_is_anchored_ordered_and_routed`) re-derives all of it:
 every anchor loads and sits in the scene the spine names, the flag-inclusion
@@ -245,6 +255,11 @@ The pad hand's beats are the seated tier's, played as a player plays them:
 - before a boss, and whenever the weakest member is below half HP, the hand
   heals through the pause menu: Start, Items, Use, the first HP restorative,
   the weakest member, Circle back out;
+- still below half HP after that, in a scene that rolls encounters, with an
+  Incense (`0x8A`) in the bag and its window `_DAT_8007B600` run out, the
+  hand burns one: Start, Items, Use, the Incense row, Yes. The region roll
+  skips while the window is open, so one use is `0x40` walk-regen ticks
+  (`0x800` walking vsyncs) with no encounter, whatever the stream deals;
 - leaving a scene that rolls no encounters with the weakest member still
   below half HP and nothing in the bag to heal it, the hand **rests**: it
   walks onto a live walk-on band whose partition-2 record runs the `4C 82`
@@ -298,7 +313,15 @@ from, entered and left by its reachable door farthest from where the player
 came in. The crossing to take is read off the lattice first: with every door
 tile a boundary, the scene splits into walk components, and a crossing joins
 the component its door touches to the components holding the entry tiles of
-its own `0x3F`s back (a town with two gates has two landings). A
+its own `0x3F`s back (a town with two gates has two landings). Only the
+partition-2 door records' `0x3F`s count as landings: those are the exits a
+walk-on band or a played beat leaves by, and a talk record's `0x3F` is that
+conversation's own exit on its own story gate. `dolk2` P1[47], the castle's
+old machine, lands on `map01` `(65, 50)`; read as a landing, it made `dolk2`
+the way to `vell`'s side while both of `dolk2`'s gate bands land where the
+party came in, and the planner spent its crossings there. The playthrough
+drains `suimon` instead (`0x27B` is set, P1[47]'s other write `0x17D` is
+not, in every card save from `PRO-01` on). A
 breadth-first search over those joins names the first crossing of the
 shortest chain to the component of the wanted door, and the chain is walked
 one round trip at a time, re-planned from each landing. Leaving the crossing,
@@ -442,19 +465,21 @@ first command, and the fight's opening formation and HP read off the
 fragility, not a regression.
 
 `LEGAIA_FGL_RNG_SEED` measures that fragility directly: run the segment
-under a spread of seeds and count the wipes. `rim_elm_restored` is the
-standing case. Its seed, `player_steal_skeleton_pre`, is a mid-battle state
-whose SC block holds Vahn alone at 17 of 219 HP with an empty bag, in a
-mist-era `dolk` whose every region rolls (`0x142` clear). With 17 HP one
-caught Run against a pair is a wipe, and the escape roll weighs the enemy
-side's summed SPD against one member's, so a pair catches him often. Over
-the default stream and seeds 1..20, walking straight out clears the pad
-tier on 18 of 21 hands; the default one is among the three that wipe on the
-first `map01` pair. The one rest in reach, `dolk` P2[9] (the bed behind the
-inn's stair door), is the wrong answer: the walk to it crosses the castle's
-rolling regions at 17 HP and wiped on 14 of 21. Nothing on that route
-heals without a fight first, so the segment's pad tier is a draw on this
-anchor, not a defect to fix in the hand.
+under a spread of seeds and count the wipes. `rim_elm_restored` shows
+what such a fragility usually is: a property of the anchor rather than of
+the hand. The segment seeds from `player_steal_skeleton_banner`: Vahn alone
+at 17 of 219 HP, mid-battle in a mist-era `dolk` whose every region rolls
+(`0x142` clear), on the frame after his killing blow stole an **Incense**
+from the skeleton. Its sibling `player_steal_skeleton_pre`, the frame
+before the steal resolves, holds the same SC block without the Incense, and
+seeded from it the pad tier is a draw: a pair of `map01` monsters
+out-speeds a 17-HP fleer and deals more than 17 in one round whether the
+Run is caught or not. Walking straight out clears on 23 of 30 dealt
+streams, fighting every encounter instead on 13 of 21, and the one rest in
+reach, `dolk` P2[9] (the bed behind the inn's stair door), wipes on 14 of
+21 on the way there. From the post-steal frame the hand burns the Incense
+before it sets out, no region rolls between `dolk` and Rim Elm, and the
+pad tier clears on the default stream and on seeds 1..40 alike.
 
 ## Seeding
 
@@ -507,8 +532,9 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   alone never picks the controller. A crossing whose beat changed scene lets
   the landing's arrival run before the position is read.
 - The pad hand heals only with items it already carries and with a free
-  or affordable rest in a scene that rolls no encounters; it does not buy
-  items or use magic.
+  or affordable rest in a scene that rolls no encounters, and wards off
+  encounters only with an Incense it carries; it does not buy items or use
+  magic.
 - Routes follow `0x3F` names and FMV hand-offs, and prefer walk-on bands. A
   transport an entry script spawns on a story flag (`map01`'s P1[0] spawns
   the P2[31] / P2[32] flights on `0x2C3` / `0x2C5`; `station`'s spawns the
@@ -523,20 +549,13 @@ do, so a headless driver that only ticks crosses the opening's op `0x49`.
   canonical playthrough.
 - A card save whose scene lies off the route between two milestones (the
   endgame card's last save, on `deene`) anchors no milestone.
-- The `vidna` segment's pad tier has no walkable way from its seed. On
-  `map01` Rim Elm's side and Vidna's are separate walk components of the
-  static collision grid (the grid in a retail RAM image of the overworld
-  matches the disc `.MAP` except Rim Elm's gate paint), and every crossing
-  the seed's flags leave open lands elsewhere: `dolk` opens only the pocket
-  south of the castle, `suimon`'s two chambers join only once its water gate
-  is drained (the controller, P1[4], wants `0x26F`, the Water Gate key, whose
-  one clean setter is `dolk2` P2[7], after Caruban), and `rikuroa`'s first
-  arrival (P2[43]) turns the party back and `map01` P2[14] carries it to
-  `cave01`, a later milestone. From there the one crossing left is
-  `keikoku`'s west mouth, and its west lane is held: P2[7] at `(42, 89)`
-  walks the party back until `0x142`, the Caruban beat, is set. No walk
-  opened the way in the retail run either: the anchor, `vell_fog_field`, was
-  made by poking the `vell` door tile from a state standing outside Rim Elm
-  at `(96, 25)` (the scenario catalogue says so), and its flags over that
-  state are `vell`'s own entry script's. The milestone is a seated-tier
-  waypoint, not a place a pad can reach at that story point.
+- From `rim_elm_restored`, `vell` has no walkable way: on `map01` Rim Elm's
+  side and `vell`'s are separate walk components of the static collision
+  grid (the grid in a retail RAM image of the overworld matches the disc
+  `.MAP` except Rim Elm's gate paint), and every crossing open at that story
+  point lands elsewhere - `suimon`'s two chambers join only once its water
+  gate is drained (the controller, P1[4], wants `0x26F`, the Water Gate key,
+  whose one clean setter is `dolk2` P2[7], after Caruban), and `keikoku`'s
+  west lane is held by P2[7] at `(42, 89)` until `0x142`, the Caruban beat.
+  That is why `west_voz_forest` sits after `drake_castle_revisited`, where
+  the pad hand drains `suimon` and crosses `bylon` to the `vell` door.

@@ -211,6 +211,18 @@ impl World {
     pub(in crate::world) fn live_battle_tick(&mut self) -> Option<StepOutcome> {
         use vm::battle_action::{ActionState, ActorFlags};
 
+        // A party wipe with the scripted-loss latch clear has left battle:
+        // MAIN INIT's back-from-battle arm stores `game_mode = 0x16` (CARD
+        // INIT, `FUN_8003AEB0` `0x8003B5D4..0x8003B5EC`), so no battle frame
+        // runs again. The port keeps the battle scene up only as the frozen
+        // frame the game-over hand-off draws over; ticking its state
+        // machines would start a fresh round on the members the wipe floor
+        // stood back up (`0x8004FB94..0x8004FBA4`).
+        // REF: FUN_8003AEB0
+        if self.game_over_hold {
+            return None;
+        }
+
         // The modelled CD drive: one clip read span elapses per frame.
         self.audio.battle_xa_busy_frames = self.audio.battle_xa_busy_frames.saturating_sub(1);
 
@@ -1200,6 +1212,16 @@ impl World {
             (retail >= RETAIL_FIRST_MONSTER || retail < party_count)
                 && alive.get(usize::from(s)).copied().unwrap_or(false)
         };
+        // The Magic arm keys on the cast's spell-table class byte `+0`
+        // (`0x800754C8[param0 * 12]`, `sltiu v0,v0,0xa` at `0x801DB1C8`).
+        // Without the table (a disc-free fixture) the cast reads as a plain
+        // `0x14` cast: every record a monster can pick (`0x25..=0x7F` and the
+        // `'c'` capture class) carries a class at or above `0x0A`.
+        let cast_class = if category == 2 {
+            self.spell_table_class(param0).unwrap_or(0x14)
+        } else {
+            0
+        };
         let mut rng = || (self.next_rand() & 0x7FFF) as i32;
         vm::battle_action::redirect_dead_target(
             vm::battle_action::RedirectQuery {
@@ -1211,7 +1233,7 @@ impl World {
             monster_count,
             &mut rng,
             is_alive,
-            |_| 0,
+            |_| cast_class,
         )
         .map_or(target, to_engine)
     }
@@ -1783,6 +1805,11 @@ impl World {
         // 0x801EC878` before the `0x801ECB84` fold), and a blocked hit skips
         // the whole damage body: `bne s7,zero,0x801EE6D4` at `0x801ECB60`.
         let blocked = self.roll_block(attacker, target, power_byte);
+        // The damage roll below reads the same two terms (`lh 0x6d2` at
+        // `0x801ECED8`, `lh 0x6d4` at `0x801ED1E0`): the hit path zeroes them
+        // only after it (`0x801EE3C4`), the block path before it skips the
+        // damage body (`0x801EC888`).
+        let (attack_ramp, guard_ramp) = (self.battle.attack_ramp, self.battle.guard_ramp);
         // `0x801EC888` (block) / `0x801EE3C4` (hit): the first hit through
         // the kernel spends the approach terms.
         self.battle.attack_ramp = 0;
@@ -1817,6 +1844,8 @@ impl World {
             command_scalar: vm::battle_formulas::command_power_scalar(power_byte),
             staged_anim: committed,
             defender_guarding: target_guarding,
+            attack_ramp,
+            guard_ramp,
             ..Default::default()
         };
         let mut raw =
@@ -1933,8 +1962,8 @@ impl World {
     ///
     /// The approach terms `ctx[+0x6D2]` / `+0x6D4` are
     /// [`crate::world::BattleState::attack_ramp`] / `guard_ramp`
-    /// ([`Self::track_block_approach_terms`]); the damage roll still reads
-    /// them as zero.
+    /// ([`Self::track_block_approach_terms`]); the damage roll that follows
+    /// a hit reads the same pair before the kernel zeroes it.
     /// The Mystic Shield arm (`0x801ECA84..0x801ECAF8`, `s7 = 1` while
     /// `_DAT_8007BD84` is up) is not taken here.
     ///
@@ -2041,9 +2070,15 @@ impl World {
             let Some(t) = self.actors.get(target) else {
                 return;
             };
+            // `diff = attacker[+0x46] - target[+0x46]`, folded to `diff` when
+            // it is at least `0x800` and to `0x1000 - diff` below (the `sh`
+            // in the `beq` delay slot at `0x801E30A4` stores `diff`, the
+            // fall-through overwrites it), then `- 0x800`: the angular
+            // distance from face-on, `0..=0x800` - zero when the two face
+            // each other, `0x800` for a strike in the back.
             let diff = a.battle.facing_angle.wrapping_sub(t.battle.facing_angle) & 0xFFF;
-            let folded = if diff < 0x800 { diff } else { 0x1000 - diff };
-            self.battle.attack_ramp = folded as i16 - 0x800;
+            let folded = if diff < 0x800 { 0x1000 - diff } else { diff };
+            self.battle.attack_ramp = (folded - 0x800) as i16;
         } else if pre_state == ActionState::AttackShortStep.as_byte()
             && !matches!(out, StepOutcome::Transition { .. })
         {
@@ -2438,6 +2473,65 @@ mod melee_cue_tests {
         w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, false);
         w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, true);
         assert_eq!(w.battle_ctx.multi_cast_gate, 1, "Seru 1 staged");
+    }
+
+    /// The damage roll reads the approach pair before the hit path zeroes it
+    /// (`lh 0x6d4` at `0x801ED1E0`, `sh zero` at `0x801EE3C8`): a long
+    /// walk-in adds `(DEF * term) >> 10` to the guard, so on the same RNG
+    /// stream the opening hit lands softer - and the next hit pays nothing.
+    #[test]
+    fn the_opening_hit_pays_the_approach_terms() {
+        let hit = |atk: u16, guard_ramp: i16, attack_ramp: i16| {
+            let mut w = duel();
+            w.set_battle_attack(0, atk);
+            w.set_battle_defense(1, 60);
+            w.rng_state = 0x1234_5679;
+            w.battle.guard_ramp = guard_ramp;
+            w.battle.attack_ramp = attack_ramp;
+            w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, false);
+            assert_eq!(
+                (w.battle.attack_ramp, w.battle.guard_ramp),
+                (0, 0),
+                "the hit spends both terms"
+            );
+            w.actors[1].battle.damage_accum
+        };
+        let flat = hit(640, 0, 0);
+        // `0x400` doubles the guard term's DEF (`60 * 0x400 >> 10 = 60`).
+        let walked = hit(640, 0x400, 0);
+        assert!(walked < flat, "walk-in {walked} vs flat {flat}");
+        // `0x800` in the back adds `ATK * 0x800 >> 16 = ATK / 32`.
+        let face_on = hit(640, 0, 0);
+        let in_the_back = hit(640, 0, 0x800);
+        assert!(
+            in_the_back > face_on,
+            "back {in_the_back} vs face-on {face_on}"
+        );
+    }
+
+    /// State `0x14` seeds the attack-angle term as the distance from
+    /// face-on (`0x801E3094..0x801E30C8`): `0` when the two face each other,
+    /// `0x800` for a strike in the back, `0x400` from the side - never
+    /// negative, which is what every retail battle capture parked between
+    /// the seed and the first hit carries (`ctx[+0x6D2]` = 22, 212, 390).
+    #[test]
+    fn the_attack_angle_term_is_the_distance_from_face_on() {
+        use vm::battle_action::{ActionState, StepOutcome};
+        for (attacker, target, want) in [
+            (0x000u16, 0x800u16, 0i16),
+            (0x800, 0x000, 0),
+            (0x100, 0x100, 0x800),
+            (0x400, 0x000, 0x400),
+            (0x000, 0x400, 0x400),
+            (0x7F0, 0x000, 0x010),
+        ] {
+            let mut w = duel();
+            w.battle_ctx.active_actor = 0;
+            w.actors[0].battle.facing_angle = attacker;
+            w.actors[1].battle.facing_angle = target;
+            w.track_block_approach_terms(ActionState::AttackFace.as_byte(), &StepOutcome::Stay);
+            assert_eq!(w.battle.attack_ramp, want, "{attacker:#x} vs {target:#x}");
+        }
     }
 
     /// The `0x800788B8` duration table with the melee entry (`0x0C`) at its

@@ -319,6 +319,7 @@ impl World {
         self.cutscene.card = None;
         self.cutscene.timeline = None;
         self.pending_named_scene_transition = None;
+        self.scene_transition_hold = None;
         self.cutscene.opening_chain_active = false;
         self.cutscene.entering_town01_opening = false;
         was_live
@@ -734,7 +735,11 @@ impl World {
     /// REF: FUN_80039B7C (the raise and the clear), FUN_8003BC08 (`0x8003BD34`),
     /// FUN_8003BDE0 (the `0x100` install), FUN_801D1344 (`0x801D1694`)
     pub fn script_context_engages_player(&self) -> bool {
-        self.cutscene_timeline_active()
+        // A parked scene change holds the player too: the door record that
+        // issued it is parked (`26 FF FF` / `21`) for the whole countdown and
+        // keeps raising the engaged bit.
+        self.scene_transition_hold.is_some()
+            || self.cutscene_timeline_active()
             || self
                 .field_vm
                 .helper_contexts
@@ -1112,20 +1117,19 @@ impl World {
             .iter()
             .map(|c| (c.ctx.world_x, c.ctx.world_z))
             .collect();
-        // Cross-context channel-completion handshake (`B3 <id> <bit>` =
-        // CFLAG_TST against a spawned per-actor channel): the timeline PARKED
-        // here on a prior tick. Retail's halt-acquire / state-resume protocol
-        // resumes past the flag-test only once the poked channel raises the
-        // completion bit, so re-test it before stepping - rather than the
-        // pre-handshake behaviour of advancing past the wait by instruction
-        // width.
+        // Cross-context channel handshake (`B3 <id> <bit>` = CFLAG_TST
+        // against a spawned per-actor channel): the timeline PARKED here on a
+        // prior tick. Retail's op-`0x33` arm holds the PC while the target's
+        // bit is SET and advances once it is clear (`0x801DEE44`), so re-test
+        // it before stepping - rather than the pre-handshake behaviour of
+        // advancing past the wait by instruction width.
         if let Some(mut wait) = tl.channel_wait.take() {
             let flag_set = crate::field_channels::resolve_target(&channels, wait.target_id)
                 .map(|ci| channels[ci].ctx.flags & (1u32 << (wait.bit & 0x1F)) != 0);
             match flag_set {
-                // Still waiting (the channel has not signalled) and within the
+                // Still waiting (the channel's bit is still up) and within the
                 // park budget: hold the PC on the flag-test op another tick.
-                Some(false) if wait.frames < CHANNEL_WAIT_PARK_TIMEOUT => {
+                Some(true) if wait.frames < CHANNEL_WAIT_PARK_TIMEOUT => {
                     wait.frames += 1;
                     tl.channel_wait = Some(wait);
                     self.field_vm.channels = channels;
@@ -1134,7 +1138,7 @@ impl World {
                     self.field_vm.in_spawned_record_slice = false;
                     return false;
                 }
-                // The channel raised the flag (resume), the target is gone, or
+                // The channel dropped the flag (resume), the target is gone, or
                 // the park timed out: step past the flag-test op by its encoded
                 // width and let the timeline flow. (An extended flag-test is
                 // `header 2 + 1 operand` = 3 bytes.)
@@ -1285,6 +1289,16 @@ impl World {
             npc_glide_hold.push(glide.slot);
             if self.step_npc_glide(&mut glide) {
                 tl.npc_glides.push(glide);
+            }
+        }
+        // NPC walk-to-tile legs (`C7 <id> ..`) run on the motion VM
+        // (`tick_field_npc_motions` drops the leg on arrival); the actor stays
+        // held for the script while its leg is live and on the landing frame.
+        // REF: FUN_801DE840 (0x801DEFC0..0x801DF054)
+        for slot in std::mem::take(&mut tl.npc_walks) {
+            npc_glide_hold.push(slot);
+            if self.npcs.motions.contains_key(&slot) {
+                tl.npc_walks.push(slot);
             }
         }
         // Player end-latch spin (`AD F8 08`): held while the scene-bank clip
@@ -1502,8 +1516,15 @@ impl World {
                     && !(opcode_byte & 0x7F == 0x32 && tl.bytecode.get(pc + 2) == Some(&0x0A));
                 // The NPC legs this context armed hold their actors the
                 // same way (the `s7 = 3` advance is taken for every target).
+                // That includes a walk-to-tile leg armed earlier in this same
+                // slice (`tl.npc_walks`): `dolk2` P2[11] runs `C7 1F 46 5B 32`
+                // then `B3 1F 0A` within one tick, and the halt-bit verify
+                // must hold until Noa lands - stepping past it opened the
+                // "Noa: Vahn..." box with Noa still walking through Vahn.
                 let own_npc_glide_target = opcode_byte & 0x80 != 0
-                    && (!tl.npc_glides.is_empty() || !npc_glide_hold.is_empty())
+                    && (!tl.npc_glides.is_empty()
+                        || !tl.npc_walks.is_empty()
+                        || !npc_glide_hold.is_empty())
                     && !(opcode_byte & 0x7F == 0x32 && tl.bytecode.get(pc + 2) == Some(&0x0A))
                     && vm::field::peek_extended(&tl.bytecode, pc)
                         .filter(|&t| t != 0xF8 && t != 0xFB)
@@ -1513,6 +1534,7 @@ impl World {
                             let slot = channels[ci].placement_index as u8;
                             npc_glide_hold.contains(&slot)
                                 || tl.npc_glides.iter().any(|g| g.slot == slot)
+                                || tl.npc_walks.contains(&slot)
                         });
                 if halted_target || own_glide_target || own_npc_glide_target {
                     tl.frames = tl.frames.saturating_sub(1);
@@ -1636,6 +1658,13 @@ impl World {
                                     m.state.speed = speed;
                                     m.route_cursor = None;
                                 }
+                                // The record runs on past an NPC walk (`li
+                                // s7,4` in the delay slot at `0x801DF030`);
+                                // only a player target parks the caller.
+                                tl.npc_walks.retain(|&w| w != s);
+                                tl.npc_walks.push(s);
+                                tl.pc = pc + 5;
+                                continue;
                             } else {
                                 // No surfaced live position to glide from:
                                 // seat directly (the pre-park fallback).
@@ -2049,9 +2078,9 @@ impl World {
                     next_pc = pc + 2 + 4;
                     stop = false;
                 }
-                // Cross-context channel-completion wait (`B3 <id> <bit>`,
-                // CFLAG_TST against a spawned channel): PARK the timeline until
-                // the awaited channel raises the completion bit, rather than
+                // Cross-context channel wait (`B3 <id> <bit>`, CFLAG_TST against
+                // a spawned channel): PARK the timeline while the awaited
+                // channel's bit is set (`0x801DEE44`), rather than
                 // stepping past by width. The park persists across ticks and is
                 // resolved by the pre-step gate above. Bit 10 (0x400, the
                 // halt/busy bit the acquire sweep toggles) is a suspension
@@ -3899,11 +3928,14 @@ mod tests {
         w
     }
 
+    /// Retail's op-`0x33` arm holds the PC while the target's bit is SET and
+    /// advances once it is clear (`0x801DEE2C..0x801DEE54`): the timeline
+    /// waits on a channel's busy bit dropping, not on a completion bit rising.
     #[test]
-    fn cutscene_timeline_parks_on_channel_wait_until_flag_set() {
-        // The timeline reaches `B3 05 03` with the channel's bit 3 clear: it
+    fn cutscene_timeline_parks_on_channel_wait_until_flag_clears() {
+        // The timeline reaches `B3 05 03` with the channel's bit 3 up: it
         // PARKS on the cross-context CFLAG_TST rather than stepping past.
-        let mut w = timeline_with_channel_wait(false);
+        let mut w = timeline_with_channel_wait(true);
         w.step_cutscene_timeline();
         {
             let tl = w
@@ -3915,8 +3947,6 @@ mod tests {
             assert_eq!(tl.pc, 0, "PC held on the flag-test op while parked");
             assert!(!tl.is_done());
         }
-        // Repeated ticks with the flag still clear keep it parked (well within
-        // the park timeout).
         for _ in 0..5 {
             w.step_cutscene_timeline();
         }
@@ -3924,35 +3954,46 @@ mod tests {
             let tl = w.cutscene.timeline.as_ref().unwrap();
             assert!(
                 tl.channel_wait.is_some(),
-                "stays parked while the flag is clear"
+                "stays parked while the bit is up"
             );
             assert_eq!(tl.pc, 0);
         }
-        // The awaited channel raises the completion flag: the very next step
-        // resolves the park and resumes PAST the 3-byte flag-test op.
-        w.field_vm.channels[0].ctx.flags |= 1 << 3;
+        // The awaited channel drops the bit: the very next step resolves the
+        // park and resumes PAST the 3-byte flag-test op.
+        w.field_vm.channels[0].ctx.flags &= !(1 << 3);
         w.step_cutscene_timeline();
         let tl = w
             .cutscene
             .timeline
             .as_ref()
             .expect("timeline still installed");
-        assert!(
-            tl.channel_wait.is_none(),
-            "resumes only after the completion flag is set"
-        );
+        assert!(tl.channel_wait.is_none(), "resumes once the bit is clear");
         assert_eq!(
             tl.pc, 3,
             "PC advanced past the CFLAG_TST op onto WAIT_FRAMES"
         );
     }
 
+    /// A clear bit never parks: the arm takes the advanced PC at once.
+    #[test]
+    fn cutscene_timeline_channel_test_on_a_clear_bit_runs_straight_through() {
+        let mut w = timeline_with_channel_wait(false);
+        w.step_cutscene_timeline();
+        let tl = w
+            .cutscene
+            .timeline
+            .as_ref()
+            .expect("timeline still installed");
+        assert!(tl.channel_wait.is_none());
+        assert_eq!(tl.pc, 3);
+    }
+
     #[test]
     fn cutscene_timeline_channel_wait_times_out_to_step_past() {
-        // Safety net: a channel that never raises the flag must not stall the
+        // Safety net: a channel that never drops the bit must not stall the
         // timeline forever - after the park timeout it falls back to the
         // by-width step-past (the pre-handshake behaviour).
-        let mut w = timeline_with_channel_wait(false);
+        let mut w = timeline_with_channel_wait(true);
         // First step parks; then it stays parked for CHANNEL_WAIT_PARK_TIMEOUT
         // frames, then steps past on the frame the budget is exhausted.
         let cap = crate::world::CHANNEL_WAIT_PARK_TIMEOUT;

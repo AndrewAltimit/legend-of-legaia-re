@@ -39,13 +39,12 @@ pub struct CutsceneState {
     /// the transfer. Draining it is a `take`: the transfer runs once however
     /// many hosts poll.
     pub finished_fmv: Option<i16>,
-    /// Live **script-cutscene elements** - the pool the position tween
-    /// (`FUN_801D5C08`), the teardown (`FUN_801D5D60`) and the ambient emitter
-    /// (`FUN_801D6058`) run on, each carrying the linked object whose done bit
-    /// gates it. See [`crate::world::cutscene_elements`].
+    /// Live **element channel** - the field-overlay plain-template pool the
+    /// ambient emitter (`FUN_801D6058`) runs on. See
+    /// [`crate::world::cutscene_elements`].
     pub elements: Vec<crate::world::CutsceneElement>,
-    /// What the element channel produced on the last tick - the writes, the
-    /// teardown requests and the ambient particles a host reads back.
+    /// What the element channel produced on the last tick - the ambient
+    /// particles a host reads back, and how many elements retired.
     pub element_frame: crate::world::ElementFrame,
     /// Active opening-cutscene narration presenter, or `None` when no cutscene
     /// narration is playing. Installed by [`crate::world::World::open_cutscene_narration`]

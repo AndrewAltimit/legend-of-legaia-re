@@ -9,12 +9,29 @@ use super::*;
 pub(crate) fn cmd_play_str(
     str_file: &Path,
     disc: Option<&Path>,
+    win_width: u32,
+    win_height: u32,
+) -> Result<()> {
+    let mut event_loop = EventLoop::new().context("create event loop")?;
+    play_str_in(&mut event_loop, str_file, disc, win_width, win_height)
+}
+
+/// Play a movie on an event loop the caller owns, and hand the loop back when
+/// the movie ends (or on Esc / close). winit allows one event loop per
+/// process, so `play-window --str-file` plays its phase-1 movie through this
+/// and then runs the game on the same loop; the movie's window closes when
+/// the player app is dropped on return.
+pub(crate) fn play_str_in(
+    event_loop: &mut EventLoop<()>,
+    str_file: &Path,
+    disc: Option<&Path>,
     _win_width: u32,
     _win_height: u32,
 ) -> Result<()> {
     use legaia_engine_shell::cutscene_av::{
         CutsceneAudio, decode_str_av_from_disc, decode_str_video_only,
     };
+    use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 
     // With a disc image the STR is read as raw 2352-byte sectors so its
     // interleaved XA audio track comes along; without one we play the
@@ -76,8 +93,9 @@ pub(crate) fn cmd_play_str(
         audio_out,
         pending_audio: audio,
     };
-    let event_loop = EventLoop::new().context("create event loop")?;
-    event_loop.run_app(&mut app).context("event loop")?;
+    event_loop
+        .run_app_on_demand(&mut app)
+        .context("event loop")?;
     Ok(())
 }
 

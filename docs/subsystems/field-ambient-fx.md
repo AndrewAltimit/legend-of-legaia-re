@@ -673,6 +673,11 @@ print, whose two numbers are the pool's live count and its cap.
 
 ### The fog pool: spawner, records, render pass
 
+The port also layers a non-retail **volumetric ground fog** over the scenes
+whose pool is live (and a few tuned mist / night scenes), a bank the walking
+characters part; it never reads or writes this pool - see
+[renderer](renderer.md#volumetric-ground-fog-enhancement).
+
 Three routines, one pool at `_DAT_8007B7E0` (see
 [`fog_particles`](../../crates/engine-core/src/fog_particles.rs) for the
 byte layout):
@@ -850,12 +855,16 @@ system script the way the field arm does, which is what runs `map01`'s
 `P1[0]`. The disc-gated oracle is
 `crates/engine-shell/tests/world_map_fog_oracle.rs`.
 
-On the overworld each half-sheet is also depth-tested against the
-continent the frame already drew (`FogQuad::depth`), because retail links
-the sheets into the same ordering table as the terrain; the field keeps its
-composite-over-the-frame draw. The depth is the sheet's ordering-table
-bucket's, not its particle's - see [closing the draw
-order](#closing-the-draw-order-flat-per-primitive-terrain-depth).
+Each half-sheet is also depth-tested against the scene the frame already
+drew (`FogQuad::depth`), because retail links the sheets into the same
+ordering table as the meshes. On the overworld the depth is the sheet's
+ordering-table bucket's, not its particle's - see [closing the draw
+order](#closing-the-draw-order-flat-per-primitive-terrain-depth). On the
+field it is the particle's own `SZ` (the sheet links at `SZ >> 5`): a
+particle whose fixed height puts it inside a raised ledge is covered by the
+ledge, as retail's table draws the nearer ledge after it. Drawn over the
+finished frame instead, `vell`'s buried sheets showed as a bright band under
+the party HUD that the retail frame (`vell_fog_field`) does not have.
 
 Frame-paired at `keikoku_chest_preload`'s seat, retail's haze shows mostly
 as the white band above the ridges while the port's sheets read denser and
@@ -998,6 +1007,19 @@ per-pixel test "hid almost nothing". `World::field_fx_view` now scales the
 depth onto the mesh frame on the overworld; the drop shadows, which take the
 same projection, get the same correction.
 
+**The browser keeps the margin in `w`, not in normalised depth.** The
+quarter bucket a sheet sits behind its cells is 8 units of `w`, and at
+overworld distances the normalised depth `a + b / w` lies within `1e-3` of
+1: a 24-bit fixed-point buffer steps several units there, and the `f32`
+depth row's own rounding is of the same order. The native float reversed-Z
+buffer holds the margin; on the play page sheets won or lost per cell, as
+polygon-shaped cut-outs in the mountains and a wash over the player. The page
+therefore writes `log2(w)` as its depth (`LOG_DEPTH_GLSL` in
+`site/js/webgl-shaders.js`): a continent cell writes its bucket's
+representative `w`, and a sheet corner the `w` recovered from its depth
+through the exact `(a, b)` the engine projected it with
+(`FogView::depth_affine`, exported as `play_fx_depth_affine`).
+
 **Measured on the same frame** (grey-weighted fog coverage over the 320 x 240
 stage, same test):
 
@@ -1081,7 +1103,7 @@ disc-wide census of the gate-raising scripts and the two oracles are
 ## Related
 
 - [`cutscene.md`](cutscene.md) - the element channel the particle emitter
-  shares with the position tween and the teardown.
+  runs on, and why its two template-table neighbours are the hop-arc pair.
 - [`world-map.md`](world-map.md) - the kingdom walker table (ocean).
 - [`move-vm.md`](move-vm.md) / [`move-vm-overlay-ext.md`](move-vm-overlay-ext.md) -
   the opcode set the ambient records run on.

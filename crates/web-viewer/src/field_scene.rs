@@ -58,14 +58,19 @@ pub struct FieldScenePack {
     /// ([`legaia_engine_core::scene_live::LiveScene`]): its world drives the
     /// floor-height ladder, the placed-prop clips, the ambient move-VM tree
     /// and the scripted VRAM effects exactly as the play hosts' world does.
-    /// `None` until [`LegaiaViewer::field_scene_anim_init`] (and for the
-    /// overworld, which is not previewed live).
+    /// The overworld runs live too (its actors play the kingdom slot-4
+    /// clips). `None` until [`LegaiaViewer::field_scene_anim_init`], or when
+    /// the host refuses the scene.
     pub live: Option<Box<legaia_engine_core::scene_live::LiveScene>>,
     /// The scene's ANM bundle - the clips placed props pose from.
     pub scene_anm: Option<legaia_asset::player_anm::PlayerAnmBundle>,
-    /// The live ladder the ground's drawn positions were last re-resolved
-    /// against ([`LegaiaViewer::field_scene_ground_live_positions`]).
-    pub ground_lut_applied: Option<[i16; 16]>,
+    /// The live ladders (the live room's, then every other room's) the
+    /// ground's drawn positions were last re-resolved against
+    /// ([`LegaiaViewer::field_scene_ground_live_positions`]).
+    pub ground_lut_applied: Option<Vec<[i16; 16]>>,
+    /// Each ground vertex's cell ([`legaia_engine_core::field_ground::vertex_cells`]),
+    /// the key its room's ladder is looked up by.
+    pub ground_cells: Vec<Option<(i32, i32)>>,
     /// Per-placement windowed-list identity
     /// ([`legaia_engine_core::field_env::placed_window_key`]): which spawn
     /// sweep owns each placed object, and so which ladder it stands on.
@@ -135,6 +140,7 @@ pub fn build_field_scene(index: &ProtIndex, name: &str) -> Result<FieldScenePack
         live: None,
         scene_anm: None,
         ground_lut_applied: None,
+        ground_cells: Vec::new(),
         window_keys: Vec::new(),
         locomotion_anm: None,
         actors: Default::default(),
@@ -170,7 +176,8 @@ pub fn build_field_scene_anim(
 /// ([`legaia_engine_core::scene_live::LiveScene`]), resolve the pose banks its
 /// props and actors use, build the actor layer over the live world, and
 /// install the CLUT walker into the VRAM the page draws. The live scene is
-/// `None` for the overworld (not previewed live) or a scene the host refuses.
+/// `None` only for a scene the host refuses: a kingdom overworld map runs
+/// live as the play page runs it (`SceneHost::enter_world_map_scene`).
 pub fn build_field_scene_live(index: Arc<ProtIndex>, pack: &mut FieldScenePack) {
     let scene = Scene::load(&index, &pack.name).ok();
     pack.scene_anm = scene
@@ -185,6 +192,11 @@ pub fn build_field_scene_live(index: Arc<ProtIndex>, pack: &mut FieldScenePack) 
         .map(|d| legaia_engine_core::field_env::placed_window_key(d, binds.as_ref()))
         .collect();
     pack.ground_lut_applied = None;
+    pack.ground_cells = pack
+        .ground
+        .as_ref()
+        .map(legaia_engine_core::field_ground::vertex_cells)
+        .unwrap_or_default();
     pack.locomotion_anm = index
         .entry_bytes(legaia_asset::character_pack::PROT_ENTRY_INDEX)
         .ok()
@@ -252,41 +264,43 @@ impl FieldScenePack {
     ///
     /// The terrain / decoration cells follow the live rungs; a placed object
     /// stands on the ladder its actor was spawned against
-    /// (`World::placed_floor_offsets`) - the play page's split.
+    /// (`World::placed_floor_offsets`) - the play page's split. A full map
+    /// shows every room at once, so each draw takes the ladder of the room
+    /// its cell is in (`LiveScene`'s rooms), not only the live player's.
     pub fn floor_wave_offsets(&self) -> Vec<f32> {
         let Some(live) = self.live.as_ref() else {
             return Vec::new();
         };
-        let wave = live.floor_wave();
-        let placed = live.host.world.placed_floor_offsets(
-            live.scene_floor_lut(),
-            self.placements.iter().map(|d| &d.floor),
-            &self.window_keys,
-        );
-        if wave.is_none() && placed.iter().all(|&o| o == 0) {
+        let terrain = live.floor_wave_offsets(&self.terrain);
+        let placed = live.placed_wave_offsets(&self.placements, &self.window_keys);
+        if terrain.is_none() && placed.iter().all(|&o| o == 0) {
             return Vec::new();
         }
-        self.terrain
-            .iter()
-            .map(|d| wave.map_or(0, |w| w.offset(&d.floor)) as f32)
-            .chain(placed.into_iter().map(|o| o as f32))
+        let terrain = terrain.unwrap_or_else(|| vec![0; self.terrain.len()]);
+        terrain
+            .into_iter()
+            .chain(placed)
+            .map(|o| o as f32)
             .collect()
     }
 
-    /// The ground's drawn positions under the live ladder, flattened, when
-    /// it moved since the last call (empty otherwise).
+    /// The ground's drawn positions, each cell under its room's live ladder,
+    /// flattened, when any of those ladders moved since the last call (empty
+    /// otherwise, and always on the overworld, whose ground does not follow
+    /// the field ladder).
     pub fn ground_live_positions(&mut self) -> Vec<f32> {
-        let Some(live) = self.live.as_ref().map(|l| l.live_floor_lut()) else {
+        let Some(live) = self.live.as_ref().filter(|l| !l.is_world_map()) else {
             return Vec::new();
         };
         let Some(hf) = self.ground.as_ref() else {
             return Vec::new();
         };
-        if self.ground_lut_applied == Some(live) {
+        let key = live.ground_key();
+        if self.ground_lut_applied.as_ref() == Some(&key) {
             return Vec::new();
         }
-        self.ground_lut_applied = Some(live);
-        legaia_engine_core::field_ground::live_render_positions(hf, &live)
+        self.ground_lut_applied = Some(key);
+        live.ground_positions(hf, &self.ground_cells)
             .into_iter()
             .flatten()
             .collect()

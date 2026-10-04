@@ -137,7 +137,7 @@
   <table class="data-table">
     <thead><tr><th>Knob</th><th>Default</th><th>Effect</th></tr></thead>
     <tbody>
-      <tr><td>Dynamic lighting (<code>--dynamic-lighting</code>, <code>I</code>; a checkbox on the browser play page, without the point-light sub-layer)</td><td>off</td><td>soft directional light + screen-centred pool over the baked shading</td></tr>
+      <tr><td>Enhanced lighting (<code>I</code>, <code>F8</code> cycles the time of day; a checkbox and a time-of-day selector on the browser play page)</td><td><strong>on</strong></td><td>a time-of-day mood over the baked shading, real lights at the scene's lamps and glowing props, emissive surfaces (the Genesis Tree) and soft halos - one shared kernel on both hosts; shadow maps native-only</td></tr>
       <tr><td>Dynamic shadows (<code>--no-dyn-shadows</code>, <code>Y</code>)</td><td>on</td><td>per-scene candle / wall point lights with PCF shadow maps; inert while lighting is off (<a href="renderer.html">renderer</a>)</td></tr>
       <tr><td>Occlusion fade (<code>--no-occlusion-fade</code>, <code>F4</code>)</td><td><strong>on</strong></td><td>geometry that <em>completely</em> hides the player dissolves to a dither circle; presentation-only, replays force it off</td></tr>
       <tr><td>Precise movement (<code>R</code>)</td><td>off</td><td>free-angle locomotion instead of retail&rsquo;s 4 / 8-way quantisation (<a href="field-locomotion.html">locomotion</a>)</td></tr>
@@ -152,7 +152,7 @@
     </tbody>
   </table>
   <ul class="bullets">
-    <li><strong>Shading defaults to retail.</strong> Both retail mesh renderers issue one colour op on the GTE (the PS1&rsquo;s geometry coprocessor) - the depth cue - and no lighting op, so shading is baked into the mesh colour words as <code>texel &times; colour / 128</code>. The engine draws exactly that; the dynamic light is layered over it and is an identity when off.</li>
+    <li><strong>Shading defaults to retail.</strong> Both retail mesh renderers issue one colour op on the GTE (the PS1&rsquo;s geometry coprocessor) - the depth cue - and no lighting op, so shading is baked into the mesh colour words as <code>texel &times; colour / 128</code>. The engine draws exactly that; enhanced lighting is layered over it and is an identity when off (every parity capture turns it off).</li>
     <li><strong>Rasterisation defaults to clean.</strong> The default image is sharper than a PlayStation&rsquo;s; here faithfulness is opt-in.</li>
     <li><strong>Affine texturing is not gated.</strong> The PS1 has no perspective-correct texturing and neither does the mesh path; the swimming textures are the faithful behaviour on both hosts.</li>
   </ul>

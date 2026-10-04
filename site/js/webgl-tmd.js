@@ -148,7 +148,41 @@ class TmdRenderer {
     this.locOcclLift   = gl.getUniformLocation(this.program, 'u_occl_lift');
     this.locPsx      = gl.getUniformLocation(this.program, 'u_psx');
     this.locDynDir   = gl.getUniformLocation(this.program, 'u_dyn_dir');
+    this.locLogDepthOn = gl.getUniformLocation(this.program, 'u_log_depth_on');
+    /* Opt-in log-depth write (setLogDepth); off on every page but play. */
+    this.logDepth = false;
+    this.lastLogDepth = false;
     this.locDynColor = gl.getUniformLocation(this.program, 'u_dyn_color');
+    this.locDynAmbient = gl.getUniformLocation(this.program, 'u_dyn_ambient');
+    this.locLightCount = gl.getUniformLocation(this.program, 'u_light_count');
+    this.locLightPr  = gl.getUniformLocation(this.program, 'u_light_pr');
+    this.locLightCol = gl.getUniformLocation(this.program, 'u_light_col');
+    /* Enhanced lighting's per-frame state, staged by the play page through
+     * `lightingProvider(right, up)` (which asks the engine's
+     * `play_lighting_frame`): the mood's three shader words, the picked
+     * point lights in this page's frame, and the glow-sprite quads. null on
+     * every other page - and the enable word stays 0, the identity. */
+    this.lightingProvider = null;
+    this.lightFrame = null;
+    this.glowProgram = compileProgram(gl, GLOW_VS_SRC, GLOW_FS_SRC);
+    this.locGlowMvp = gl.getUniformLocation(this.glowProgram, 'u_mvp');
+    this.glowVao = gl.createVertexArray();
+    this.glowBuf = gl.createBuffer();
+    gl.bindVertexArray(this.glowVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.glowBuf);
+    {
+      const stride = 9 * 4;
+      const lp = gl.getAttribLocation(this.glowProgram, 'a_position');
+      const lu = gl.getAttribLocation(this.glowProgram, 'a_uv');
+      const lc = gl.getAttribLocation(this.glowProgram, 'a_color');
+      gl.enableVertexAttribArray(lp);
+      gl.vertexAttribPointer(lp, 3, gl.FLOAT, false, stride, 0);
+      gl.enableVertexAttribArray(lu);
+      gl.vertexAttribPointer(lu, 2, gl.FLOAT, false, stride, 12);
+      gl.enableVertexAttribArray(lc);
+      gl.vertexAttribPointer(lc, 4, gl.FLOAT, false, stride, 20);
+    }
+    gl.bindVertexArray(null);
     /* The two native-only render toggles, both OFF by default and both the
      * identity when off (see setPsxMode / setDynamicLighting). */
     this.psxMode = false;
@@ -499,6 +533,13 @@ class TmdRenderer {
    * 1.3x over the baked shading. Off by default and the identity when off.
    * The native layer's derived per-scene point lights (and their shadow
    * maps) are not part of the page's toggle. */
+  /* Opt the perspective renderAssembled frames into the log-of-w depth write
+   * (webgl-shaders.js LOG_DEPTH_GLSL). Off by default, so every other page
+   * keeps the rasterised depth. */
+  setLogDepth(on) {
+    this.logDepth = !!on;
+  }
+
   setDynamicLighting(on) {
     this.dynLighting = !!on;
   }
@@ -513,11 +554,84 @@ class TmdRenderer {
       gl.uniform4f(this.locPsx, w, h, on, on);
     }
     if (this.locDynDir) {
-      const d = DYN_LIGHT_DIR;
-      gl.uniform4f(this.locDynDir, d[0], d[1], d[2], this.dynLighting ? 1 : 0);
-      const t = DYN_LIGHT_TINT;
-      gl.uniform4f(this.locDynColor, t[0], t[1], t[2], DYN_LIGHT_AMBIENT);
+      /* The mood comes from the engine with this frame's lighting packet;
+       * without one (every page but the play page) the enable stays 0. */
+      const f = this.dynLighting ? this.lightFrame : null;
+      if (f) {
+        const m = f.mood;
+        gl.uniform4f(this.locDynDir, m[0], m[1], m[2], 1);
+        gl.uniform4f(this.locDynColor, m[4], m[5], m[6], m[7]);
+        gl.uniform4f(this.locDynAmbient, m[8], m[9], m[10], m[11]);
+        gl.uniform1i(this.locLightCount, f.count);
+        if (f.count > 0) {
+          gl.uniform4fv(this.locLightPr, f.pr);
+          gl.uniform4fv(this.locLightCol, f.col);
+        }
+      } else {
+        gl.uniform4f(this.locDynDir, 0, 0, 0, 0);
+        gl.uniform1i(this.locLightCount, 0);
+      }
     }
+  }
+
+  /* Enhanced lighting: ask the page's provider (the engine's
+   * `play_lighting_frame`) for this frame's mood, lights and glow quads
+   * against the camera basis of `vp`, and convert the engine's retail
+   * Y-down frame into this page's (x, -y, z). The basis is read off the VP
+   * rows (right ~ row 0, up ~ row 1 of the view), which is all a
+   * camera-facing quad needs - sign is irrelevant to a symmetric sprite. */
+  _stageLighting(vp) {
+    this.lightFrame = null;
+    if (!this.dynLighting || !this.lightingProvider) return;
+    const norm = (x, y, z) => {
+      const l = Math.hypot(x, y, z) || 1;
+      return [x / l, y / l, z / l];
+    };
+    const r = norm(vp[0], vp[4], vp[8]);
+    const u = norm(vp[1], vp[5], vp[9]);
+    /* Page frame -> retail frame: negate Y. */
+    let pkt;
+    try { pkt = this.lightingProvider([r[0], -r[1], r[2]], [u[0], -u[1], u[2]]); }
+    catch (_) { pkt = null; }
+    if (!pkt || pkt.length < 14) return;
+    const mood = pkt.slice(0, 12);
+    const n = pkt[12] | 0;
+    const nv = pkt[13] | 0;
+    const pr = new Float32Array(32);
+    const col = new Float32Array(32);
+    let o = 14;
+    for (let i = 0; i < n && i < 8; i++, o += 7) {
+      pr.set([pkt[o], -pkt[o + 1], pkt[o + 2], pkt[o + 3]], i * 4);
+      col.set([pkt[o + 4], pkt[o + 5], pkt[o + 6], 0], i * 4);
+    }
+    o = 14 + n * 7;
+    const glow = nv > 0 ? Float32Array.from(pkt.slice(o, o + nv * 9)) : null;
+    this.lightFrame = { mood, count: Math.min(n, 8), pr, col, glow, glowCount: nv };
+  }
+
+  /* Draw the staged glow quads: additive, depth-tested against the scene,
+   * no depth writes. `vp` is the frame's view-projection; the quads are in
+   * the retail frame, so the page's Y flip goes on the left of nothing -
+   * it is folded in as vp * diag(1, -1, 1). */
+  _drawGlow(vp) {
+    const f = this.lightFrame;
+    if (!this.dynLighting || !f || !f.glow || f.glowCount === 0) return;
+    const gl = this.gl;
+    const flipY = new Float32Array([1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    gl.useProgram(this.glowProgram);
+    gl.uniformMatrix4fv(this.locGlowMvp, false, mulMat4(vp, flipY));
+    gl.bindVertexArray(this.glowVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.glowBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, f.glow, gl.DYNAMIC_DRAW);
+    gl.enable(gl.BLEND);
+    gl.blendEquation(gl.FUNC_ADD);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    gl.depthMask(false);
+    gl.drawArrays(gl.TRIANGLES, 0, f.glowCount);
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+    gl.bindVertexArray(null);
+    gl.useProgram(this.program);
   }
 
   /* Bind (computing on first use or after a position update) the smoothed
@@ -920,6 +1034,7 @@ class TmdRenderer {
     gl.useProgram(this.program);
     gl.uniformMatrix4fv(this.locMvp, false, mvp);
     gl.uniformMatrix4fv(this.locModel, false, IDENTITY4);
+    if (this.locLogDepthOn) gl.uniform1i(this.locLogDepthOn, 0);
     /* The single-mesh viewer never bends (the curve is an overworld
      * scene-pass term, staged by renderAssembled). */
     if (this.locCurve) gl.uniform1f(this.locCurve, 0);
@@ -1307,6 +1422,12 @@ class TmdRenderer {
     const vp = (cam && cam.yaw != null)
       ? buildWorldOrbitVp(w, h, worldExtent, cam)
       : buildTopDownVp(w, h, worldExtent, cam);
+    /* Log-depth write (webgl-shaders.js LOG_DEPTH_GLSL): opt-in by the play
+     * page, and only under a perspective camera - an ortho frame's w is
+     * constant. The screen-prim pass reads the flag back. */
+    this.lastLogDepth = !!(this.logDepth && cam && cam.yaw != null);
+    /* Enhanced lighting (identity unless the play page opted in). */
+    this._stageLighting(vp);
 
     /* Advance the water CLUT animation on wall-clock time, regardless
      * of whether the backdrop plane is enabled - the frame write also
@@ -1396,6 +1517,7 @@ class TmdRenderer {
 
     gl.useProgram(this.program);
     gl.uniformMatrix4fv(this.locMvp, false, vp);
+    if (this.locLogDepthOn) gl.uniform1i(this.locLogDepthOn, this.lastLogDepth ? 1 : 0);
     /* Assembled VPs add the retail screen-X mirror on top of the per-model
      * Y flip (two reflections), which inverts gl_FrontFacing - a pair's
      * visible copy is the back-facing one here (see u_pair_front). */
@@ -1579,6 +1701,8 @@ class TmdRenderer {
     }
     if (strictOn) gl.depthFunc(gl.LEQUAL);
     gl.bindVertexArray(null);
+    /* Enhanced lighting's halos + light shafts over the finished scene. */
+    this._drawGlow(vp);
   }
 
   /* Model matrix for one renderAssembled placement (shared by the opaque

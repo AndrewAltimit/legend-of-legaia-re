@@ -15,6 +15,7 @@ legaia-asset = { path = "../asset" }
 legaia-engine-vm = { path = "../engine-vm" }
 legaia-font = { path = "../font" }
 legaia-tim = { path = "../tim" }
+legaia-tmd = { path = "../tmd" }
 serde.workspace = true
 serde_json.workspace = true
 

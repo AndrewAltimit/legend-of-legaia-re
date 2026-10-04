@@ -116,6 +116,13 @@ Several modules are not UI at all but live here for the same structural reason -
 they are wgpu-free draw kernels both hosts must share, and this crate is the
 shared leaf:
 
+- `scene_lighting` - enhanced lighting's source of truth, shared by the
+  native renderer and the browser play page: emissive tagging (TSB / blend
+  bit 13; the blend rule + the curated `EMISSIVE_MESHES` table), emitter
+  samples and light clustering, the nearest-to-player pick and prop light
+  sets that follow the actor, `LightingMood` / `TimeOfDay`, the glow
+  sprites, and `shade` - the CPU mirror of both shader twins. Not retail; see
+  [renderer.md](../../docs/subsystems/renderer.md#enhanced-lighting-enhancement-default-on).
 - `screen_prim` - screen-space PSX primitives (`ScreenPrim` / `ScreenQuad` /
   `FlatQuad`), the four ABR blend classes, and `build_geometry`, the one
   ordering-table walk either host consumes.

@@ -262,6 +262,14 @@ out vec2 v_uv;
 flat out uvec2 v_cba_tsb;
 out vec4 v_color;
 flat out uint v_flags;
+out float v_log_depth;
+
+/* Log depth (LOG_DEPTH_GLSL in webgl-shaders.js): x = on, yz = the (a, b)
+ * of ndc = a + b / w the engine projected these corners' depths through
+ * (play_fx_depth_affine), so a corner's depth goes back to its exact w and
+ * onto the scale the mesh program writes. x = 0 keeps the rasterised depth. */
+uniform vec3 u_log_depth;
+${LOG_DEPTH_GLSL}
 
 void main() {
   v_uv = a_uv;
@@ -275,6 +283,11 @@ void main() {
    * scene depth, which is how it composited before the channel existed. */
   float z = (a_flags & 2u) != 0u ? a_depth : -1.0;
   gl_Position = vec4(a_pos, z, 1.0);
+  v_log_depth = 0.0;
+  if (u_log_depth.x > 0.5 && (a_flags & 2u) != 0u) {
+    float den = a_depth - u_log_depth.y;
+    v_log_depth = abs(den) > 0.0 ? logDepthOfW(u_log_depth.z / den) : 1.0;
+  }
 }
 `;
 
@@ -289,8 +302,11 @@ in vec2 v_uv;
 flat in uvec2 v_cba_tsb;
 in vec4 v_color;
 flat in uint v_flags;
+in float v_log_depth;
 
 out vec4 o_color;
+
+uniform vec3 u_log_depth;
 
 vec4 bgr555_to_rgba(uint c) {
   float r = float(c & 31u) / 31.0;
@@ -343,6 +359,8 @@ vec3 psxTextureBlend(vec3 texel, vec3 factor) {
 }
 
 void main() {
+  gl_FragDepth = (u_log_depth.x > 0.5 && (v_flags & 2u) != 0u)
+    ? v_log_depth : gl_FragCoord.z;
   if ((v_flags & 1u) != 0u) {
     uint word = fetch_vram_word(v_uv, v_cba_tsb.x, v_cba_tsb.y);
     if (word == 0u) discard;
@@ -375,6 +393,7 @@ void main() {
       this.gl = gl;
       this.program = compileScreenPrimProgram(gl);
       this.locVram = gl.getUniformLocation(this.program, 'u_vram');
+      this.locLogDepth = gl.getUniformLocation(this.program, 'u_log_depth');
       this.vao = gl.createVertexArray();
       this.vbo = gl.createBuffer();
       this.ibo = gl.createBuffer();
@@ -411,7 +430,7 @@ void main() {
      * `indices` a Uint32Array, `runs` a Uint32Array of
      * `[class_code, index_start, index_count]` triples where class_code 0 is
      * opaque and `1 + abr` is semi-transparent. */
-    draw(vertexBytes, indices, runs) {
+    draw(vertexBytes, indices, runs, depthAffine) {
       const gl = this.gl;
       if (!indices.length || !runs.length) return;
       gl.bindVertexArray(this.vao);
@@ -423,6 +442,13 @@ void main() {
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, this.renderer.tex);
       gl.uniform1i(this.locVram, 0);
+      /* The log-depth scale the mesh program wrote this frame: a depth-tested
+       * corner goes back to its w through the engine's own (a, b). */
+      if (this.locLogDepth) {
+        const on = this.renderer.lastLogDepth && depthAffine && depthAffine.length === 2;
+        gl.uniform3f(this.locLogDepth, on ? 1 : 0,
+          on ? depthAffine[0] : 0, on ? depthAffine[1] : 0);
+      }
       /* Retail screen-space packets carry no depth: they composite in
        * ordering-table order over the finished scene, on the near plane, so
        * the test always passes for them. The test is armed (no write) for
@@ -993,15 +1019,21 @@ void main() {
           }
           /* Placed layer only: the index into the engine's per-placement
            * live mask (`_syncStaticWindow`). */
-          if (placed) draw.placeIdx = i;
-          /* Overworld decorations (the placed list past the landmarks):
-           * retail's decoration sweep hazes each one toward 0xD0 by its
-           * origin's camera depth - staged per draw by renderAssembled
-           * (`decoCue`, the native `world_map_deco_start` twin). */
-          if (placed && decoStart !== undefined && i >= decoStart) draw.decoCue = true;
-          /* Terrain layer only: the index into the engine's visible-tile
-           * crop mask (`_syncViewWindow`). */
-          else draw.terrainIdx = i;
+          if (placed) {
+            draw.placeIdx = i;
+            /* Overworld decorations (the placed list past the landmarks):
+             * retail's decoration sweep hazes each one toward 0xD0 by its
+             * origin's camera depth - staged per draw by renderAssembled
+             * (`decoCue`, the native `world_map_deco_start` twin). */
+            if (decoStart !== undefined && i >= decoStart) draw.decoCue = true;
+          } else {
+            /* Terrain layer only: the index into the engine's visible-tile
+             * crop mask (`_syncViewWindow`). This was the `else` of the
+             * decoration test, so every non-decoration PLACED draw took a
+             * terrain index too, and at retail framing the crop hid
+             * placements by the mask entry of an unrelated terrain tile. */
+            draw.terrainIdx = i;
+          }
           this.staticDraws.push(draw);
           if (animRec) this.animProps.push(animRec);
         }
@@ -2383,6 +2415,10 @@ void main() {
       /* The renderer's sticky per-frame state, staged ahead of EVERY draw
        * branch (see `_stageFrameState`). */
       this._stageFrameState(rt);
+      /* The volumetric ground fog draws over the field and battle frames
+       * only - never over a minigame venue, which owns its own VRAM and
+       * camera. Raised by the two branches below after their scene draw. */
+      this._fogFrameOk = false;
       if (window.LegaiaPlayMinigames && window.LegaiaPlayMinigames.frame(rt, this, skipDraw)) {
         /* An in-world minigame (casino slots, Muscle Dome, Baka Fighter,
          * dance hall) owns the 3D frame; HUD/overlay below still run. Runs
@@ -2697,6 +2733,7 @@ void main() {
       /* `skipDraw`: a VR session owns the framebuffer and re-issues this draw
        * once per eye with the XR view matrices. */
       if (!skipDraw) this.renderer.renderAssembled(this._draws, this._ext, this.cam);
+      this._fogFrameOk = true;
       }
       } catch (e) {
         this._onEngineTrap('engine draw', e);
@@ -2729,6 +2766,10 @@ void main() {
        * the shared `screen_prim` builder. Outside the try/catch above
        * only in the sense that it has its own: a shader link failure on some
        * driver must not take the whole play loop down with it. */
+      /* Volumetric ground fog (the engine's `fog_volume` bank, an
+       * enhancement - the native renderer's fog pass twin): over the
+       * finished 3D frame, under the screen-prim layer and the HUD canvas. */
+      if (!skipDraw && this._fogFrameOk) this._drawFogVolume(rt);
       if (!skipDraw) this._drawScreenPrims(rt);
 
       /* FPS + HUD, sampled twice a second. */
@@ -2777,10 +2818,37 @@ void main() {
           rt.play_screen_prim_vertex_bytes(),
           rt.play_screen_prim_indices(),
           rt.play_screen_prim_runs(),
+          (typeof rt.play_fx_depth_affine === 'function') ? rt.play_fx_depth_affine() : null,
         );
       } catch (e) {
         this._screenPrimBroken = true;
         try { console.warn('screen-prim pass disabled:', e); } catch (_) { /* no console */ }
+      }
+    }
+
+    /* One frame of the volumetric ground fog. The engine owns the bank and
+     * the toggle (`rt.set_volumetric_fog`, persisted with the options); an
+     * empty header is "no bank this frame". The matrix is the one
+     * `renderAssembled` just drew with (`buildWorldOrbitVp` hands back
+     * `cam.vp` when the engine camera is staged). Guarded against a cached
+     * WASM without the exports and a driver that cannot link the pass:
+     * either way the page keeps playing without fog for the session. */
+    _drawFogVolume(rt) {
+      if (this._fogBroken) return;
+      if (typeof rt.play_fog_volume_header !== 'function'
+          || typeof window.LegaiaFogVolumePass !== 'function') return;
+      try {
+        const c = this.renderer.canvas;
+        const vp = (this.cam && this.cam.yaw != null)
+          ? buildWorldOrbitVp(c.width, c.height, this._ext, this.cam)
+          : null;
+        if (!vp) return;
+        if (!this._fogPass) this._fogPass = new window.LegaiaFogVolumePass(this.renderer.gl);
+        this._fogPass.draw(rt, vp, this._battle ? this._battle.scale : 4.0,
+          !!this.renderer.lastLogDepth);
+      } catch (e) {
+        this._fogBroken = true;
+        try { console.warn('fog volume pass disabled:', e); } catch (_) { /* no console */ }
       }
     }
 
@@ -3019,6 +3087,7 @@ void main() {
       this._applySceneClear(rt);
       this._draws = draws;
       if (!skipDraw) this.renderer.renderAssembled(draws, this._ext, this.cam);
+      this._fogFrameOk = true;
       return true;
     }
 
@@ -3043,6 +3112,17 @@ void main() {
        * checkbox state. Both off unless the player ticked them. */
       if (this.renderer.setPsxMode) this.renderer.setPsxMode(!!this.psxRender);
       if (this.renderer.setDynamicLighting) this.renderer.setDynamicLighting(!!this.dynLighting);
+      /* Log-of-w depth on every branch's perspective frames (webgl-shaders.js
+       * LOG_DEPTH_GLSL): the resolution the native float reversed-Z buffer
+       * has and a 24-bit one lacks. */
+      if (this.renderer.setLogDepth) this.renderer.setLogDepth(true);
+      /* Enhanced lighting's per-frame source: the engine's mood, picked
+       * point lights and glow quads (`play_lighting_frame`), asked by the
+       * renderer against the camera basis of the VP it draws with. */
+      this.renderer.lightingProvider = (this.dynLighting
+          && typeof rt.play_lighting_frame === 'function')
+        ? (r, u) => rt.play_lighting_frame(r[0], r[1], r[2], u[0], u[1], u[2])
+        : null;
       /* Retail GTE NCLIP winding rejection, from the shared engine kernel
        * (`camera_view::nclip_cull_mode`): armed for the whole field pass
        * (retail culls every field mesh's back faces - a sky dome's outer
@@ -3423,6 +3503,7 @@ void main() {
       window.removeEventListener('keydown', this._onDebugCam);
       window.removeEventListener('blur', this._onBlur);
       if (this._screenPrims) { this._screenPrims.dispose(); this._screenPrims = null; }
+      if (this._fogPass) { this._fogPass.dispose(); this._fogPass = null; }
       if (this.renderer) { this.renderer.dispose(); this.renderer = null; }
     }
   }

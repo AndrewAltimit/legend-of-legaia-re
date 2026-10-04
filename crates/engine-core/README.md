@@ -599,6 +599,12 @@ presentation left to the host:
   `0x801F2B98` window system plus the six `ctx[+0x54]` panel actors and the
   travel arts, hosted on `WorldMapController::panels`. See
   [`docs/subsystems/world-map.md`](../../docs/subsystems/world-map.md#the-panel-actor-state-machines).
+- `anim_cue` - `walk_anim_cues` / `AnimCueState`, the per-frame walker
+  over a playing battle action's 8-slot `(frame, cue)` track
+  (`FUN_800508DC`): swing, hit, footstep and knockdown SFX, the party
+  `0xC8..=0xFF` band resolved into the arts-voice namespace, and the
+  CD-busy fallback ring cue. It emits `AnimCueEmit` decisions; the battle
+  actor tick in `world::actors` drains them into the SFX ring.
 - `EffectCatalog`, `input::Mapping`, `DefaultMapIdResolver` - effect
   lookup, host-agnostic input binding, and scene-name → map-id
   resolution.

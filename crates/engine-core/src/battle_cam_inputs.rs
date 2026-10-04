@@ -103,6 +103,17 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
         .get(usize::from(acting_seat))
         .and_then(|a| a.battle.seat)
         .map(|(x, z)| [f32::from(x), f32::from(z)]);
+    // The target cursor owns the framing while it is up (cases `1` / `3`,
+    // re-armed by every cursor step of the menu driver); a dialogue box
+    // still takes precedence, and an action never runs under a live cursor.
+    let cursor = battle_cursor_framing(world, &actor_at);
+    let phase = match (phase, cursor) {
+        (script::BattleCamPhase::Menu | script::BattleCamPhase::Submenu, Some(c)) => match c {
+            script::CursorFraming::Enemy { .. } => script::BattleCamPhase::TargetEnemy,
+            script::CursorFraming::Ally(_) => script::BattleCamPhase::TargetAlly,
+        },
+        (p, _) => p,
+    };
     let inputs = script::BattleCamInputs {
         phase,
         acting,
@@ -121,9 +132,78 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
         // state edges (`BattleCamera::observe_action_state`).
         action_state: world.battle_ctx.action_state,
         active_commits: world.battle_ctx.active_clip_commits,
+        camera_option: world.toggles.battle_camera as u8,
+        swing_reseed: (
+            world.battle_ctx.swing_yaw_seeds,
+            world.battle_ctx.swing_yaw_coin,
+        ),
         acting_body,
+        cursor,
     };
     battle_end_cam_inputs(world, inputs, actor_at)
+}
+
+/// What the battle target cursor rests on, as the camera frames it
+/// (`script::CursorFraming`), or `None` when no single-target cursor is up.
+///
+/// Retail's menu driver `FUN_801D388C` re-arms `FUN_801D5854` on every
+/// cursor step against the cursor's scope: one enemy takes case `1` on the
+/// commanding member (`0x801D43C0..0x801D43C8`), one party member case `3`
+/// on that member (`0x801D43D8..0x801D43F8`), and a whole side the no-op
+/// cases `4` / `5`. The Attack command's `Auto` / `Command` prompt and the
+/// cursor it opens (steps `0x0C` / `0x2D` / `0x30`) take the enemy arm on the
+/// member's current `+0x1DD` before the cursor has moved
+/// (`j 0x801d43c0` at `0x801D3E30`).
+///
+/// The ring's attack cursor and the spell picker's cursor are the two the
+/// engine raises; the item window's party picker draws its own pointer
+/// inside the window and is left on the close-up.
+fn battle_cursor_framing(
+    world: &World,
+    actor_at: &dyn Fn(u8, Option<u8>) -> Option<script::BattleCamActor>,
+) -> Option<script::CursorFraming> {
+    use crate::battle_input::CommandPhase;
+    use crate::target_picker::{CursorRow, PickerState};
+    let party_count = world.party.party_count.clamp(1, 3);
+    let enemy_at = |slot: u8| -> Option<script::CursorFraming> {
+        let a = world.actors.get(usize::from(slot))?;
+        (slot >= party_count && a.battle.liveness != 0).then_some(script::CursorFraming::Enemy {
+            target: [a.move_state.world_x as f32, a.move_state.world_z as f32],
+        })
+    };
+    let from_picker = |state: PickerState| match state {
+        PickerState::Cursor {
+            row: CursorRow::Enemy,
+            slot,
+        } => enemy_at(party_count.saturating_add(slot)),
+        PickerState::Cursor {
+            row: CursorRow::Ally,
+            slot,
+        } => actor_at(slot, Some(slot)).map(script::CursorFraming::Ally),
+        PickerState::Done(_) => None,
+    };
+    let b = &world.battle;
+    if let Some(c) = b.command.as_ref() {
+        return match &c.phase {
+            CommandPhase::Targeting { picker, .. } => from_picker(picker.state()),
+            CommandPhase::AttackMode { .. } => {
+                // The member's `+0x1DD` as the ring left it; a stale party
+                // or dead slot reads as the first standing monster, which is
+                // where the cursor opens.
+                let own = world
+                    .actors
+                    .get(usize::from(c.actor))
+                    .map(|a| a.battle.active_target)
+                    .and_then(enemy_at);
+                own.or_else(|| (party_count..world.actors.len() as u8).find_map(enemy_at))
+            }
+            _ => None,
+        };
+    }
+    b.spell_menu
+        .as_ref()
+        .and_then(|s| s.picker())
+        .and_then(|p| from_picker(p.state()))
 }
 
 /// Whether a per-member command surface is up - the surfaces retail films
@@ -264,6 +344,7 @@ fn battle_end_cam_inputs(
                     // its node (`noa_levelup_banner`: every dead seat's
                     // `+4` reads zero), so case 8 takes its stand-off arm.
                     node_gone: !live,
+                    ..script::PostActionTarget::default()
                 }
             });
             inputs.phase = script::BattleCamPhase::ActionEnd;
@@ -316,12 +397,33 @@ pub fn battle_post_action_target(
         return None;
     }
     let t = world.actors.get(usize::from(slot))?;
+    // Both cases read the body pair `+0x3C` / `+0x40` for X / Z and the
+    // live `+0x36` for Y; the live-target arm sizes TR.y off the display
+    // height `+0x3E`.
+    let (bx, bz) = t
+        .battle
+        .seat
+        .unwrap_or((t.move_state.world_x, t.move_state.world_z));
+    let display_y = world
+        .battle_display_trio(usize::from(slot))
+        .map_or(t.move_state.world_y as f32, |d| d[1]);
+    let party = usize::from(slot) < world.party.party_count as usize;
     Some(script::PostActionTarget {
-        world: [
-            t.move_state.world_x as f32,
-            t.move_state.world_y as f32,
-            t.move_state.world_z as f32,
-        ],
+        world: [f32::from(bx), t.move_state.world_y as f32, f32::from(bz)],
+        display_y,
+        party,
+        height: party
+            .then(|| {
+                world
+                    .tables
+                    .battle_camera_heights
+                    .as_ref()
+                    .and_then(|h| h.height_for_char_id(slot + 1))
+                    .map(|h| h as f32)
+            })
+            .flatten(),
+        monster_id: t.battle_monster_id.map_or(0, |id| id as u8),
+        animating: world.battle_current_anim(usize::from(slot)) != 0,
         live: t.active && t.battle.hp > 0,
         facing: i32::from(t.battle.facing_angle & 0xFFF),
         // Retail's node test reads the low 24 bits of the colour word `+0x4`
@@ -345,7 +447,21 @@ pub fn battle_done_band(world: &World, acting_slot: u8) -> script::DoneBandInput
             .map_or(0, |a| a.battle.action_category),
         party_slot: usize::from(acting_slot) < world.party.party_count as usize,
         target_dead: battle_post_action_target(world, acting_slot).is_some_and(|t| !t.live),
+        target_knocked: battle_target_slot(world, acting_slot)
+            .is_some_and(|t| world.battle_on_knockdown(t)),
+        target_death_clip: battle_target_slot(world, acting_slot)
+            .is_some_and(|t| matches!(world.battle_current_anim(t), 7 | 8)),
     }
+}
+
+/// The acting actor's target seat `actor[+0x1DD]`, when it names one.
+fn battle_target_slot(world: &World, acting_slot: u8) -> Option<usize> {
+    let slot = world
+        .actors
+        .get(usize::from(acting_slot))?
+        .battle
+        .active_target;
+    (usize::from(slot) < 8).then_some(usize::from(slot))
 }
 
 /// The per-art attack camera's track table, re-read from the battle-action
@@ -377,6 +493,17 @@ pub fn battle_attack_channels(world: &World, acting_slot: u8) -> Option<script::
         return None;
     }
     if !cam::outer_gate(0, a.battle.active_target) {
+        return None;
+    }
+    // `FUN_801D71B8`'s first test: the target's live HP `+0x14C`
+    // (`0x801D71E8..0x801D7208`). A swing that has killed its target hands
+    // the frame back to the case `FUN_801D5854` armed - case 8's death
+    // re-frame on the post-strike band.
+    if world
+        .actors
+        .get(usize::from(a.battle.active_target))
+        .is_none_or(|t| t.battle.hp == 0)
+    {
         return None;
     }
     let character = cam::character_arm(acting_slot + 1)?;
@@ -527,5 +654,92 @@ mod tests {
                 "member {member}'s ring frames member {member}"
             );
         }
+    }
+
+    /// The attack cursor (`ctx[+0x06]` `0x78` / `0x5A`) frames with case 1
+    /// on the commanding member, turned toward the monster under the cursor
+    /// (`FUN_801D388C` steps `0x0C` / `0x2D` / `0x30` -> `0x801D43C0`); the
+    /// shot follows the cursor across monsters and hands back to the ring's
+    /// close-up when the cursor closes. The engine used to read the cursor
+    /// as the far Begin / Run framing.
+    #[test]
+    fn the_attack_cursor_frames_the_member_toward_its_target() {
+        use crate::battle_input::{BattleCommand, CommandPhase};
+        use crate::target_picker::{SlotState, TargetKind, TargetPickerSession};
+        let mut world = World {
+            mode: SceneMode::Battle,
+            ..World::default()
+        };
+        world.party.party_count = 1;
+        if world.actors.len() < 3 {
+            world.actors.resize_with(3, Default::default);
+        }
+        world.actors[0].move_state.world_z = -800;
+        for (slot, x) in [(1usize, -600i16), (2, 600)] {
+            let a = &mut world.actors[slot];
+            a.move_state.world_x = x;
+            a.move_state.world_z = 800;
+            a.battle.liveness = 1;
+        }
+        let picker = |first: bool| {
+            let mut monsters = [SlotState::alive(false, false); 5];
+            monsters[0] = SlotState::alive(first, first);
+            monsters[1] = SlotState::alive(true, true);
+            TargetPickerSession::new(
+                TargetKind::SingleEnemy,
+                0,
+                [
+                    SlotState::alive(true, true),
+                    SlotState::alive(false, false),
+                    SlotState::alive(false, false),
+                ],
+                monsters,
+            )
+        };
+        let mut session = BattleCommandSession::new(0, 0);
+        session.phase = CommandPhase::Targeting {
+            command: BattleCommand::Attack,
+            picker: picker(true),
+        };
+        world.battle.command = Some(session);
+        let inputs = battle_cam_inputs(&world);
+        assert_eq!(inputs.phase, BattleCamPhase::TargetEnemy);
+        assert_eq!(
+            inputs.cursor,
+            Some(script::CursorFraming::Enemy {
+                target: [-600.0, 800.0]
+            })
+        );
+        let settle = |world: &mut World| {
+            for _ in 0..16 {
+                world.clock.display_frames += 2;
+                world.tick_battle_camera();
+            }
+            world.battle_cam_pose()
+        };
+        let left = settle(&mut world);
+        assert_eq!(left.pitch, 256.0, "case 1 pitch 0x100");
+        assert_eq!(left.tr[1], 1536.0, "case 1 TR.y 0x600");
+        assert_eq!(left.focus[2], -800.0, "focused on the member");
+        // The cursor moves to the other monster: the shot re-arms toward it,
+        // mirrored about the seat axis.
+        if let Some(c) = world.battle.command.as_mut() {
+            c.phase = CommandPhase::Targeting {
+                command: BattleCommand::Attack,
+                picker: picker(false),
+            };
+        }
+        let right = settle(&mut world);
+        assert_ne!(left.yaw, right.yaw, "the shot follows the cursor");
+        assert_eq!(
+            (left.yaw + right.yaw).rem_euclid(4096.0),
+            0.0,
+            "mirror targets, mirror yaws: {} / {}",
+            left.yaw,
+            right.yaw
+        );
+        // Cursor closed back onto the ring: the member's close-up again.
+        world.battle.command = Some(BattleCommandSession::new(0, 0));
+        assert_eq!(battle_cam_inputs(&world).phase, BattleCamPhase::Submenu);
     }
 }

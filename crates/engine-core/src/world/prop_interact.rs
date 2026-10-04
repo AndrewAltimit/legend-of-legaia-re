@@ -50,18 +50,28 @@ use super::*;
 const PROP_RUN_PARK_TIMEOUT: u32 = 1800;
 
 impl World {
-    /// Advance the placed-prop layer one field tick: step the clips, step an
-    /// in-flight prop record run, and start a run for a movement touch posted
-    /// by this tick's locomotion.
-    pub fn tick_prop_interactions(&mut self) {
-        // The per-actor anim tick runs unconditionally (`FUN_800204F8` from
-        // the actor tick) - the windmill turns during dialogs too.
+    /// One frame of the per-actor anim tick over every placed prop and MAN
+    /// actor. It runs unconditionally (`FUN_800204F8` from the actor tick) -
+    /// the windmill turns during dialogs too - and on the overworld as in a
+    /// town: a kingdom map is a field-run scene whose actors play the
+    /// bundle's slot-4 clips through the same tick
+    /// (`docs/formats/world-map-overlay.md`).
+    ///
+    /// REF: FUN_800204F8
+    pub fn tick_actor_anims(&mut self) {
         self.props.bank.tick_anims();
         // The same tick over the NPC actors: the morph envelope first
         // (`FUN_800204F8` runs `FUN_80020740` before its cursor step), then
         // the clip cursors (a treasure chest's lid, every NPC's idle loop).
         self.tick_npc_morphs();
         self.tick_npc_clips();
+    }
+
+    /// Advance the placed-prop layer one field tick: step the clips, step an
+    /// in-flight prop record run, and start a run for a movement touch posted
+    /// by this tick's locomotion.
+    pub fn tick_prop_interactions(&mut self) {
+        self.tick_actor_anims();
         self.step_prop_interaction();
         if let Some(anchor) = self.props.pending_touch.take() {
             self.start_prop_interaction(anchor);
@@ -459,8 +469,13 @@ impl World {
     /// Name-substitution table for a record's dialog escapes: every
     /// `0xC1`/`0xC2`/`0xC4` escape pair in `record` resolved against the
     /// engine's live tables (`0xC1 63` = the party leader, `0xC2 xx` = item
-    /// name - the same tables retail's dialog renderer consults). `None`
-    /// when the record carries no resolvable escape.
+    /// name - the same tables retail's dialog renderer consults), plus every
+    /// `0xCE 0x0B..=0x0E` number escape resolved against the script-counter
+    /// table. `None` when the record carries no resolvable escape.
+    ///
+    /// The counters are read when the box opens. Retail re-reads them each
+    /// frame it draws, which differs only if a script rewrites a counter
+    /// while its own box is still on screen.
     pub(crate) fn dialog_substitutions(
         &self,
         record: &[u8],
@@ -486,6 +501,17 @@ impl World {
                     if let Some(entry) = self.tables.item_catalog.get(arg) {
                         map.entry((2, arg))
                             .or_insert_with(|| entry.name.as_bytes().to_vec());
+                    }
+                }
+                // `0xCE 0x0B..=0x0E` - the number escapes. Retail's renderer
+                // reads the field VM's script-counter table `0x801C6460`
+                // (`lh` at `0x80036A8C`) - the same table `4C CA/CB/CC`
+                // write and op `0x4E` sub-`5..=8` compares.
+                0xCE => {
+                    if let Some(slot) = crate::dialog::script_counter_slot(arg) {
+                        let value = self.field_vm.slot_table[slot];
+                        map.entry((crate::dialog::SCRIPT_COUNTER_KEY, arg))
+                            .or_insert_with(|| crate::dialog::script_counter_digits(value));
                     }
                 }
                 _ => {}
@@ -535,6 +561,25 @@ mod tests {
             },
         );
         (w, anchor)
+    }
+
+    /// The number escapes resolve against the field VM's script-counter
+    /// table - the `0x801C6460` array `4C CA/CB/CC` write - by escape operand.
+    #[test]
+    fn number_escapes_resolve_against_the_script_counter_table() {
+        let mut w = World::new();
+        w.field_vm.slot_table[0] = 12;
+        w.field_vm.slot_table[3] = -4;
+        let record = [0x1F, 0xCE, 0x0B, b' ', 0xCE, 0x0E, 0xCE, 0x05, 0x00];
+        let subs = w.dialog_substitutions(&record).expect("two number escapes");
+        let key = crate::dialog::SCRIPT_COUNTER_KEY;
+        assert_eq!(subs.get(&(key, 0x0B)), Some(&b"12".to_vec()));
+        assert_eq!(subs.get(&(key, 0x0E)), Some(&b"0".to_vec()));
+        assert_eq!(
+            subs.get(&(key, 0x05)),
+            None,
+            "a sprite escape is not a number"
+        );
     }
 
     #[test]

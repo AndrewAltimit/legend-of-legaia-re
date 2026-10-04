@@ -597,9 +597,10 @@ pub fn advance_hop_arc(arc: &mut HopArc, step_scalar: u8) -> HopArcTick {
 ///
 /// # Why this routine is elsewhere called a lerp
 ///
-/// `FUN_801E45BC` is reached from three places, and the other two describe it
-/// as a **midpoint / linear blend** - the cutscene position tween and the
-/// move-VM's overlay ext sub-ops `0x0E` / `0x12`. Both readings are right,
+/// `FUN_801E45BC` is elsewhere described as a **midpoint / linear blend** -
+/// by the move-VM's overlay ext sub-ops `0x0E` / `0x12`, and by an earlier
+/// reading of this module's own `FUN_801D5C08` as a "cutscene position
+/// tween". Both readings are right,
 /// and they are the same routine's degenerate case: `a0` arrives holding the
 /// control point, so when the caller seeds it with the plain midpoint of the
 /// endpoints the quadratic collapses exactly to `(1-t)*P0 + t*P2`. The hop is

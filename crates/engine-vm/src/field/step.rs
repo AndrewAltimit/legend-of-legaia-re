@@ -229,13 +229,19 @@ pub fn step<H: FieldHost>(
             let Some(&b) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
             };
+            // Halt while the bit is SET, advance once it is clear: the arm
+            // advances `s8` by 2 first (`0x801DEE2C`), then `beq` on the
+            // masked word takes the advanced PC when the bit is 0
+            // (`0x801DEE44`) and otherwise restores the entry PC `s4`
+            // (`0x801DEE4C`) - a busy-wait on the target's flag clearing.
+            // REF: FUN_801DE840 (0x801DEE2C..0x801DEE54)
             let set = ctx.flags & (1u32 << (b & 0x1F)) != 0;
             if set {
+                StepResult::Halt { final_pc: pc }
+            } else {
                 StepResult::Advance {
                     next_pc: pc + header_size + 1,
                 }
-            } else {
-                StepResult::Halt { final_pc: pc }
             }
         }
 

@@ -511,6 +511,7 @@ fn settle(host: &mut SceneHost) -> Settle {
         // the field either, so the scene has not settled. `jouine` P2[5]
         // stages the Cort fight that way.
         if i >= 2
+            && host.world.scene_transition_hold.is_none()
             && !host.world.cutscene_timeline_active()
             && !host.world.dialogue_owns_input()
             && host.world.field_vm.helper_contexts.is_empty()
@@ -740,7 +741,10 @@ impl Fired {
 /// context, no dialogue and no FMV. A tile that fired nothing leaves the world
 /// here on the tick after the step.
 fn world_idle(host: &SceneHost) -> bool {
-    !host.world.cutscene_timeline_active()
+    // A scene change parked behind the streaming actor's countdown is a
+    // transition in flight, not a quiet tile.
+    host.world.scene_transition_hold.is_none()
+        && !host.world.cutscene_timeline_active()
         && host.world.field_vm.helper_contexts.is_empty()
         && !host.world.dialogue_owns_input()
         && host.world.active_fmv().is_none()

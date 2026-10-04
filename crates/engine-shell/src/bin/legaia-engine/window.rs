@@ -1300,6 +1300,10 @@ struct PlayWindowApp {
     /// `upload_assets` at scene load and staged into the renderer each
     /// field frame together with the camera's view-projection.
     scene_point_lights: Vec<legaia_engine_render::scene_lights::ScenePointLight>,
+    /// The MAN scene-actor props' light sets (enhanced lighting), each in
+    /// world space at its spawn anchor; placed at the actor's live position
+    /// per frame by `scene_lighting::place_prop_lights`.
+    scene_prop_lights: Vec<legaia_engine_render::scene_lighting::PropLights>,
     /// Mouse drag-orbit state: the last cursor X (window pixels) while the
     /// left button is held, `None` when not dragging. A horizontal drag in
     /// field free-roam rotates `session.camera.manual_orbit`, which both
@@ -1496,7 +1500,7 @@ pub(crate) use save_select_helpers::{
     MountedCard, disk_port_blocks_with_card, disk_save_rack_with_card, read_slot_save,
     scan_save_dir, write_slot_save,
 };
-pub(crate) use str_player::{cmd_play_str, resolve_iso_file};
+pub(crate) use str_player::{cmd_play_str, play_str_in, resolve_iso_file};
 
 impl PlayWindowApp {
     /// Maximum number of battle-event log lines kept in the HUD ring.

@@ -712,24 +712,35 @@ through the play page's own kernels, so there is no second animation path:
 | `field_scene_morph_slots` / `_positions` | `World::morphed_env_tmd` | VDF morphs |
 | `field_scene_npc_*` | `web-viewer::field_actors::FieldActors` | the MAN-placed actors (NPCs, chests, story actors): posed off the world's clip cursors, placed at its live positions, re-bound and re-cut as the scripts direct |
 
-A ladder is a property of the **camera region**, not of the map: `concnow`'s
-system script installs a different ladder in each region block (each opened
-by a `46 24` view-window write), and retail only ever draws the region the
-player stands in. A whole-map view applies the entry region's ladder to every
-room, so a room whose own region keeps its rungs low shows them raised here,
-over placed objects that stand at that room's own height.
+A ladder is a property of the **room**, not of the map: `concnow`'s system
+script tests the region-type mask (op `0x42` mode 0) and installs a different
+ladder in each region block (`4C 9F` / `4C 9E` / `4C 90`, each block opened
+by a `46 24` view-window write), and retail only ever draws the room the
+player stands in. `deene`, `retona`, `vozz`, `uru`, `rikuroa2`, the `conc*`,
+`jou*` and `tunnel*` scenes do the same. So `LiveScene` keeps one ladder per
+region mask: at entry a throwaway probe host seats a standing player in each
+room (from the entry room each time) and records what the scene's own script
+installed and the oscillators it spawned, which then step on
+`world::step_floor_ladder`, the world's own kernel. Terrain cells, the walk
+ground (`field_ground::live_render_positions_by_cell`, per cell) and
+window-owned placed objects take their room's ladder; the live player's room
+reads the live world, which is what the play page shows.
 
 The actor layer is the play page's own: `FieldActors` is the type
 `LegaiaRuntime` holds for its `play_npc_*` exports, and `site/js/field-actors.js`
 is the one JS draw path both pages run over the two export families. The
 game-world page's **actors** button hides it.
 
-The overworld is not run live (its ground does not follow the field ladder;
-its animation is the CLUT walker). The disc-gated
-`tests/field_scene_anim.rs` runs the viewer and the play runtime side by side
-on `concnow`, `jouina`, `town01` and `jou` and requires every one of these
-quantities - and every VRAM texel the animation writes - to agree tick for
-tick.
+The three kingdom overworld maps run live too, entered as the play page
+enters them (`SceneHost::enter_world_map_scene`): their MAN actors play the
+kingdom bundle's slot-4 clips
+([`world-map-overlay.md`](../../docs/formats/world-map-overlay.md)) through
+the same actor layer, and the ocean through the CLUT walker. Their ground
+does not follow the field ladder, so they report no floor wave and no rooms.
+The disc-gated `tests/field_scene_anim.rs` runs the viewer and the play
+runtime side by side on `concnow`, `jouina`, `town01`, `jou` and `map01` and
+requires every one of these quantities in the live room - and every VRAM
+texel the animation writes - to agree tick for tick.
 
 ## Field-NPC catalog (`field_npc`)
 

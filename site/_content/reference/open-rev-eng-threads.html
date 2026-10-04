@@ -305,6 +305,7 @@
   <table>
     <thead><tr><th>Thread</th><th>Status</th><th>What would close it</th></tr></thead>
     <tbody>
+      <tr data-row="why-opdeene-runs-long-after-its-apply-4800-camera-move"><td>Why does the opening scene <code>opdeene</code> run long after its long camera move?</td><td><span class="tag tag-partial">partial</span></td><td>Retail lets the script carry on while a non-player character turns or walks; the port now overlaps NPC walks but still waits out NPC turns, and skips the clip-end waits retail honours. Checking the timeline-poked NPC clip lengths against retail, then landing both models together, closes it.</td></tr>
       <tr data-row="which-save-state-library-entries-still-hold-a-patched-executable"><td>Which save-state library entries still hold a patched executable?</td><td><span class="tag tag-open">open</span> - narrowed: audited and tagged; the rest need human play</td><td>A save state made on a patched disc keeps that build's executable in memory forever. Every library state is now tagged with the patch family it carries, the playthrough anchors are re-shot on an unpatched disc, and every capture-graded claim re-checked against its family stands. Re-shooting the remaining boss, story and minigame states on an unpatched disc closes it.</td></tr>
 </tbody>
   </table>

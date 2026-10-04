@@ -113,6 +113,10 @@ pub struct LegaiaMinigames {
     slot_clock: legaia_engine_ui::ui_slot_cabinet::SlotMarqueeClock,
     slot_dots: Vec<u8>,
     slot_caption: Option<(i32, i32)>,
+    /// The retail dialog font (PROT.DAT font TIM + the SCUS width table), for
+    /// the slot machine's rules pages - the play hosts draw the same text
+    /// through their own copy.
+    slot_font: Option<legaia_font::Font>,
     /// The slot machine's own SFX cue bank (descriptors from PROT 1199, samples
     /// from the PROT 1198 VAB).
     slot_sfx: Option<SfxCueBank>,
@@ -300,6 +304,7 @@ impl LegaiaMinigames {
             slot_clock: Default::default(),
             slot_dots: Vec::new(),
             slot_caption: None,
+            slot_font: None,
             slot_sfx: None,
             baka_names: None,
             dance_pres: None,
@@ -505,7 +510,36 @@ impl LegaiaMinigames {
         self.slot_cabinet = legaia_engine_ui::ui_slot_cabinet::SlotCabinetAssets::load(|i| {
             entry_bytes(&self.prot, &self.entries, i as u32).map(<[u8]>::to_vec)
         })
-        .ok();
+        .ok()
+        .map(|a| {
+            // The resident system-UI sheet the submenu box's border samples.
+            match self
+                .prot
+                .get(legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET..)
+            {
+                Some(head) => a.with_system_ui(head),
+                None => a,
+            }
+        });
+
+        // The dialog font the machine's rules pages print in.
+        let off = legaia_font::FONT_TIM_PROT_DAT_OFFSET as usize;
+        self.slot_font = self
+            .prot
+            .get(
+                off..off
+                    .saturating_add(legaia_font::FONT_TIM_LEN)
+                    .min(self.prot.len()),
+            )
+            .zip(self.scus.as_deref())
+            .and_then(|(tim, scus)| {
+                let font = legaia_font::Font::from_disc_tim_and_scus(tim, scus).ok()?;
+                let head = legaia_font::escape_icons::ICON_PROT_DAT_OFFSET as usize;
+                Some(match self.prot.get(head..) {
+                    Some(h) => font.with_escape_icons_from_disc(h, scus),
+                    None => font,
+                })
+            });
 
         // --- slot SFX cue bank (descriptors PROT 1199 + samples PROT 1198) ---
         // The reel-stop click, payout tick and reach sting are all runtime-bank
@@ -1257,6 +1291,21 @@ impl LegaiaMinigames {
         let (Some(m), Some(c)) = (self.slot.as_ref(), self.slot_cabinet.as_ref()) else {
             return Vec::new();
         };
+        // The cash-out flow over the machine - or, on a rules page, in its
+        // place - and the rules text, as the play hosts compose them.
+        let menu = usc::slot_menu_prims(c, m.screen(), m.fade_level());
+        let text = match (self.slot_font.as_ref(), c.rules.as_ref()) {
+            (Some(f), Some(r)) => usc::slot_rules_text_draws_for(f, r, m.screen(), m.fade_level()),
+            _ => Vec::new(),
+        };
+        if matches!(m.screen(), slot_scene::SlotScreen::Instructions { .. }) {
+            let mut px =
+                legaia_engine_ui::screen_prim_raster::rasterize_rgba(&menu, c.vram.as_u16(), w, h);
+            if let Some(f) = self.slot_font.as_ref() {
+                blit_text(&mut px, w, h, f, &text);
+            }
+            return px;
+        }
         let strips = m.strips();
         let clear;
         let dots: &[u8] = if self.slot_dots.is_empty() {
@@ -1288,7 +1337,39 @@ impl LegaiaMinigames {
             })
             .collect();
         prims.extend(usp::payline_screen_prims(&segments));
+        prims.extend(menu);
         legaia_engine_ui::screen_prim_raster::rasterize_rgba(&prims, c.vram.as_u16(), w, h)
+    }
+
+    /// One frame of the machine's cash-out flow on the retail packed pad-edge
+    /// word (`SlotMachine::cash_out_input`): Triangle / Select open the
+    /// submenu, Up / Down move it, Cross / L1 take a row, Circle / L2 back out,
+    /// and under three coins the not-enough-coins prompt comes up instead of
+    /// a refused spin. The page calls it every frame before [`Self::slot_tick`];
+    /// `true` means the flow owns the frame (spin / stop presses do nothing).
+    /// A machine that has committed its cash-out reads `cashed_out` in
+    /// [`Self::slot_state_json`]; the page then banks it and racks a new one.
+    ///
+    /// The submenu's own cues (`0x20` / `0x21` / `0x37`) are static-table
+    /// ids, keyed here through [`Self::minigame_sfx_cue`]; the machine's
+    /// runtime-bank cues are this page's `slotPlay` path, so they are drained
+    /// and dropped.
+    pub fn slot_pad(&mut self, packed: u32) -> bool {
+        let Some(m) = self.slot.as_mut() else {
+            return false;
+        };
+        let owned = m.cash_out_input(packed);
+        let cues: Vec<i16> = m
+            .take_sounds()
+            .ring
+            .into_iter()
+            .map(|(_, id)| id)
+            .filter(|&id| (0..0x200).contains(&id))
+            .collect();
+        for id in cues {
+            self.minigame_sfx_cue(id as u16);
+        }
+        owned
     }
 
     /// Stop the leftmost still-spinning reel. `false` when stopping isn't
@@ -1363,7 +1444,9 @@ impl LegaiaMinigames {
                     "none"
                 }
             }
-            SlotPhase::CashedOut => "none",
+            SlotPhase::Menu | SlotPhase::NoCoins | SlotPhase::Leaving | SlotPhase::CashedOut => {
+                "none"
+            }
         };
         what.to_string()
     }
@@ -1390,6 +1473,9 @@ impl LegaiaMinigames {
             SlotPhase::Spinning => "spinning",
             SlotPhase::Stopping => "stopping",
             SlotPhase::Payout => "payout",
+            SlotPhase::Menu => "menu",
+            SlotPhase::NoCoins => "no_coins",
+            SlotPhase::Leaving => "leaving",
             SlotPhase::CashedOut => "cashed_out",
         };
         // The visible 3x3: each reel's payline row plus the row above / below,
@@ -1749,10 +1835,9 @@ impl LegaiaMinigames {
     ///
     /// `winning_line` is retail's `DAT_801d3c8c`, compared for equality, so
     /// any value outside `0..5` (the page passes `-1` before a win) lights
-    /// nothing. The endpoints stay model-space: the page RTPS-projects each
-    /// through the same fitted projection the rest of the cabinet uses, which
-    /// is the projection pass the prim builder leaves caller-side, and draws a
-    /// two-point line in `rgb` - half-blended over the scene when `semi`
+    /// nothing. `a` / `b` stay model-space for a consumer that projects
+    /// itself (`proj` in [`Self::slot_scene_json`]); a two-point line in
+    /// `rgb` - half-blended over the scene when `semi`
     /// (GP0 `0x43` carries the semi-transparency bit, and the lit colour
     /// rewrites only the three colour bytes). `[]` when the scene did not
     /// decode.
@@ -1795,8 +1880,9 @@ impl LegaiaMinigames {
     /// scene graph, in model space, so it can project it itself:
     ///
     /// ```json
-    /// { "proj": { "ofx": 253, "ofy": 118.5, "z0": 9324, "sx0": 0.2547,
-    ///             "aspect": 2, "xscale": 6, "w": 640, "h": 240 },
+    /// { "proj": { "ofx": 320, "ofy": 114, "z0": 8160, "sx0": 0.251,
+    ///             "vanish": [240, -6.667], "aspect": 2, "xscale": 6,
+    ///             "w": 640, "h": 240 },
     ///   "paylines":  [ { "a":[-640,-192,-768], "b":[640,-192,-768] }, ... ],
     ///   "row_offsets": [[1,1,1],[0,0,0],[-1,-1,-1],[-1,0,1],[1,0,-1]],
     ///   "medallions":[ { "pos":[-602,-192,-800], "art":1 }, ... ],
@@ -1894,6 +1980,7 @@ impl LegaiaMinigames {
             concat!(
                 r#"{{"ok":true,"#,
                 r#""proj":{{"ofx":{ofx},"ofy":{ofy},"z0":{z0},"sx0":{sx0},"#,
+                r#""vanish":[{vx},{vy}],"#,
                 r#""aspect":{aspect},"xscale":{xscale},"w":{sw},"h":{sh}}},"#,
                 r#""paylines":[{paylines}],"row_offsets":[{row_offsets}],"#,
                 r#""medallions":[{medallions}],"lamps":[{lamps}],"#,
@@ -1922,6 +2009,8 @@ impl LegaiaMinigames {
             ofy = slot_scene::PROJ_OFY,
             z0 = slot_scene::PROJ_Z0,
             sx0 = slot_scene::PROJ_SX0,
+            vx = slot_scene::PROJ_VANISH.0,
+            vy = slot_scene::PROJ_VANISH.1,
             aspect = slot_scene::PROJ_ASPECT,
             xscale = slot_scene::PROJ_X_SCALE,
             sw = slot_scene::SCREEN_W,
@@ -2702,5 +2791,48 @@ impl LegaiaMinigames {
             out.with_spu(|spu| legaia_engine_audio::VabBank::upload(spu, alloc, &report, &body));
         self.sfx_vabs.insert(slot, bank);
         true
+    }
+}
+
+/// Blit `draws` (320x240 stage pixels, [`legaia_engine_ui::TextDraw`]) onto a
+/// `w x h` RGBA8 frame through `font`'s atlas - the CPU twin of the play
+/// hosts' text pass, nearest-sampled and alpha-blended.
+fn blit_text(
+    px: &mut [u8],
+    w: u32,
+    h: u32,
+    font: &legaia_font::Font,
+    draws: &[legaia_engine_ui::TextDraw],
+) {
+    let (aw, ah) = font.atlas_dimensions();
+    let atlas = font.atlas_rgba();
+    let sx = w as f32 / 320.0;
+    let sy = h as f32 / 240.0;
+    for d in draws {
+        let (dx, dy, dw, dh) = d.dst;
+        let (u, v, uw, vh) = d.src;
+        let x0 = (dx as f32 * sx) as i32;
+        let x1 = ((dx + dw as i32) as f32 * sx) as i32;
+        let y0 = (dy as f32 * sy) as i32;
+        let y1 = ((dy + dh as i32) as f32 * sy) as i32;
+        for y in y0.max(0)..y1.min(h as i32) {
+            for x in x0.max(0)..x1.min(w as i32) {
+                let tu = u + ((x - x0) as u32 * uw) / (x1 - x0).max(1) as u32;
+                let tv = v + ((y - y0) as u32 * vh) / (y1 - y0).max(1) as u32;
+                if tu >= aw || tv >= ah {
+                    continue;
+                }
+                let a_i = ((tv * aw + tu) * 4) as usize;
+                let a = atlas[a_i + 3] as f32 / 255.0 * d.color[3];
+                if a <= 0.0 {
+                    continue;
+                }
+                let o = ((y as u32 * w + x as u32) * 4) as usize;
+                for k in 0..3 {
+                    let src = atlas[a_i + k] as f32 * d.color[k];
+                    px[o + k] = (px[o + k] as f32 * (1.0 - a) + src * a) as u8;
+                }
+            }
+        }
     }
 }

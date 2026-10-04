@@ -99,6 +99,7 @@ pub mod fishing_hub;
 pub mod fishing_scene;
 pub mod fishing_venue;
 pub mod fog_particles;
+pub mod fog_volume;
 pub mod frame_step;
 pub mod game_over;
 pub mod glb_export;

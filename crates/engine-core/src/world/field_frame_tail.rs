@@ -143,13 +143,22 @@ impl World {
     /// The clip players are host-side (each host keys its own pose cache or
     /// JSON on them), but *when* they run is a world decision: only while the
     /// field owns the frame. Field actors are not ticked under a battle, a
-    /// minigame, the world map or a movie - the field overlay that steps them
-    /// is not the one running - so an NPC walks back into the field on the
-    /// clip frame it left. The native window already held its players still
-    /// off the field while the page ran them in every mode, so an NPC came
-    /// back from a fight on a different frame per host.
+    /// minigame or a movie - the field overlay that steps them is not the one
+    /// running - so an NPC walks back into the field on the clip frame it
+    /// left. The native window already held its players still off the field
+    /// while the page ran them in every mode, so an NPC came back from a
+    /// fight on a different frame per host.
+    ///
+    /// The **overworld** is the field: a kingdom map is an ordinary
+    /// `game_mode 0x03` field-run scene whose frame pump is the town's
+    /// (`docs/subsystems/world-map.md`), and its MAN-placed actors play the
+    /// kingdom bundle's slot-4 clips through the same per-actor tick
+    /// `FUN_800204F8` (a live `map01` actor list resolves four clip-bound
+    /// actors into that bank, `docs/formats/world-map-overlay.md`). The
+    /// port's separate [`SceneMode::WorldMap`] is the camera / encounter
+    /// controller, not a different actor frame, so the clips run there too.
     pub fn field_npc_clips_advance(&self) -> bool {
-        self.mode == SceneMode::Field
+        matches!(self.mode, SceneMode::Field | SceneMode::WorldMap)
     }
 
     /// Drain this tick's ANIMATE cues, in every scene mode.
@@ -401,11 +410,13 @@ mod tests {
     #[test]
     fn npc_clips_run_on_the_field_only() {
         let mut w = World::new();
-        w.mode = SceneMode::Field;
-        assert!(w.field_npc_clips_advance());
+        // The overworld is a field-run scene: its actors' clips tick.
+        for mode in [SceneMode::Field, SceneMode::WorldMap] {
+            w.mode = mode;
+            assert!(w.field_npc_clips_advance(), "{mode:?}");
+        }
         for mode in [
             SceneMode::Battle,
-            SceneMode::WorldMap,
             SceneMode::Cutscene,
             SceneMode::Dance,
             SceneMode::Title,

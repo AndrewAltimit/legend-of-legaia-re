@@ -1204,7 +1204,7 @@ gap at the wrong size - three too large, one at the wrong subsystem entirely.
 | `spawn_arc_with_emitter` (`801d25ec`) | its callers are "the non-player arcs", which the world model has no actor-pool counterpart for | one named caller: field-VM op `0x43` sub-`0`/`1`/`0xA`/`0xB` at `0x801DF5AC`. What is missing is one keyed channel, not a pool |
 | `fade_ramp` (`80020c14` / `80025000`) | wiring needs the retail system-actor pool behind the fade spawn | `FadeRamp` *is* the `+0x7C` block and a world field can hold it; the pool is only what `spawn_fade` needs for concurrent fades |
 | `ease_camera_offset` (`801da390`) | the engine has no `_DAT_8007BCAC` accumulator, so wiring is a fidelity-mode decision | the **target** was the harder half - since closed, and the channel is a height, not a yaw; see the camera-ease block below |
-| `reset_pool` (`8003cda8`) | the host builds a fresh `RampScheduler` per scene | true, and it makes a call site provably unobservable - `new()` and `reset_pool()` leave byte-identical state |
+| `reset_pool` (`8003cda8`) | the host builds a fresh `RampScheduler` per scene | true of the per-placement schedulers; the player's `player_scale_ramps` outlives a scene, and `World::install_field_player` now resets it there, so the anchor is live - see the `REPLACE` row below |
 
 **Op `0x43` sub-`0`/`1`/`0xA`/`0xB` is halt *and* arc.** The port's arm stops at
 the halt-acquire, which is why `FUN_801D25EC` reads as caller-less. Retail runs
@@ -1728,7 +1728,7 @@ and the only thing that can be stale is a marker that exists.
 | Anchor | Verdict | `REPLACED-BY:` mechanism |
 |---|---|---|
 | `scus_leaf_kernels::text_line_count` (`8003CBA8`) | `REPLACE` | `str::lines()` over the decoded prompt - `battle_tutorial::TutorialPrompts` folds `0x7C` to `'\n'` at decode and `engine-ui::battle_tutorial_box` counts with it, live on both hosts. The one divergence, the `0xC0..=0xCF` escape lead, appears in no PROT 0967 prompt. |
-| `ambient_motion::reset_pool` (`8003CDA8`) | `REPLACE` | per-scene reconstruction in `World::seed_field_npc_ambient`, which drops and rebuilds each `AmbientMotion` on scene entry. `RampScheduler::new` and the reset leave byte-identical state, so a scene-entry call site would certify itself and measure nothing. |
+| `ambient_motion::reset_pool` (`8003CDA8`) | `REPLACE`, since superseded: live | the verdict held while every scheduler was rebuilt per scene. The world-owned `player_scale_ramps` is not, so `World::install_field_player` calls the reset and the tag came off. Retail has no reference to the address in any image, so the seat is the engine's own. |
 | `scus_battle_helpers::copy_nested_records` (`80055854`) | `REPLACE` | `legaia_asset::battle_char_palette`, the port of the one retail caller `FUN_80052FA0`, which parses to typed records; no engine type holds the `&mut [u32]` staging buffer this advances. |
 | `scus_battle_helpers::scale_rgb24` (`80046978`) | `REPLACE` | `engine-ui::battle_intro::wash_prim` and its two arm constants, the same ABR-2 full-screen quad, live on both hosts. The scale input is the adaptive frame-skip cadence `0x1F800393`; every host ticks at 1, where the function is the identity. |
 | `battle_party_panel::LabelState::opened` (`801DBB8C`) | `REPLACE` | `engine-ui::battle_hud_draws_for`'s immediate-mode rebuild - every battle `TextDraw` is built afresh per frame, so no handle exists to open or tear down. |

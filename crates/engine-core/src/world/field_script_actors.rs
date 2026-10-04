@@ -98,6 +98,22 @@ impl World {
         }
     }
 
+    /// Where a field NPC / scene-actor prop stands this frame, as both play
+    /// hosts draw it: its live `(x, z)` (the placement anchor `spawn` for one
+    /// that never moved), at [`Self::field_npc_render_y`]. `None` while it is
+    /// not drawn - render scale `0` ([`Self::field_npc_render_scale`]) or
+    /// parked in the off-map hide box. The anchor enhanced lighting moves a
+    /// prop's lamp set to (`legaia_engine_ui::scene_lighting::place_prop_lights`).
+    pub fn field_npc_live_anchor(&self, slot: u8, spawn: (i16, i16)) -> Option<[f32; 3]> {
+        let hide = crate::world::FIELD_OFFMAP_HIDE_XZ;
+        let (x, z) = self.npcs.positions.get(&slot).copied().unwrap_or(spawn);
+        if (x, z) == (hide, hide) || self.field_npc_render_scale(usize::from(slot)) == Some(0) {
+            return None;
+        }
+        let y = self.field_npc_render_y(slot, x, z);
+        Some([f32::from(x), y as f32, f32::from(z)])
+    }
+
     /// Start a scripted arc on `actor`: the op `0x43` sub-0/1/A/B arm's call
     /// to `FUN_801D25EC` (`0x801DF5AC`). The landing point is built from the
     /// operand ([`hop_arc::ScriptArcRequest::landing`], the floor under a tile

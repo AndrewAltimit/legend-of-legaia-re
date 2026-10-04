@@ -101,6 +101,15 @@ impl LegaiaRuntime {
         ) else {
             return Vec::new();
         };
+        // The cash-out flow over the machine (the picker, the prompt, the
+        // fade) - or, on a rules page, in its place.
+        let menu = usc::slot_menu_prims(c, m.screen(), m.fade_level());
+        if matches!(
+            m.screen(),
+            legaia_engine_core::slot_machine::SlotScreen::Instructions { .. }
+        ) {
+            return menu;
+        }
         let strips = m.strips();
         let clear;
         let dots: &[u8] = if self.minigame_ui.slot.dots.is_empty() {
@@ -138,6 +147,7 @@ impl LegaiaRuntime {
             })
             .collect();
         prims.extend(usp::payline_screen_prims(&segments));
+        prims.extend(menu);
         prims
     }
 
@@ -149,8 +159,22 @@ impl LegaiaRuntime {
         let Some(m) = self.slot_session() else {
             return Vec::new();
         };
-        if self.play_mg_slot_cabinet_ready() {
-            return Vec::new();
+        if let Some(c) = self.minigame_art().and_then(|a| a.slot_cabinet.as_ref()) {
+            // The machine draws itself; the rules pages' text is the one
+            // text draw it owes (`ui_slot_cabinet::slot_rules_text_draws_for`,
+            // the native window's twin).
+            return c
+                .rules
+                .as_ref()
+                .map(|r| {
+                    legaia_engine_ui::ui_slot_cabinet::slot_rules_text_draws_for(
+                        font,
+                        r,
+                        m.screen(),
+                        m.fade_level(),
+                    )
+                })
+                .unwrap_or_default();
         }
         let rows = legaia_engine_core::minigame_status::slot_status_rows(m);
         legaia_engine_ui::ui_text_lines::status_row_draws_for(
@@ -199,6 +223,9 @@ impl LegaiaRuntime {
             SlotPhase::Spinning => "spinning",
             SlotPhase::Stopping => "stopping",
             SlotPhase::Payout => "payout",
+            SlotPhase::Menu => "menu",
+            SlotPhase::NoCoins => "no_coins",
+            SlotPhase::Leaving => "leaving",
             SlotPhase::CashedOut => "cashed_out",
         };
         let strips = m.strips();

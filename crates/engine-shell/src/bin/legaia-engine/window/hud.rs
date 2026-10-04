@@ -366,10 +366,19 @@ impl PlayWindowApp {
                 .unwrap_or_default();
             // Dynamic-lighting enhancement state (opt-in, non-retail; `I`
             // toggles; `Y` toggles the point-light/shadow sub-layer).
-            let light_str = match (self.dynamic_lighting, self.dyn_shadows) {
-                (true, true) => "  light+shadows ON (I/Y)",
-                (true, false) => "  light ON (I) shadows off (Y)",
-                (false, _) => "",
+            let light_str = if self.dynamic_lighting {
+                format!(
+                    "  light {} {} (I/F8){}",
+                    self.options_state.lighting_time_of_day,
+                    if self.dyn_shadows { "+shadows" } else { "" },
+                    if self.dyn_shadows {
+                        ""
+                    } else {
+                        " shadows off (Y)"
+                    }
+                )
+            } else {
+                String::new()
             };
             // Camera-distance preset (`T` cycles) + precise-movement toggle
             // (`R`) - the compass/zoom state, appended to the status line.
@@ -386,15 +395,22 @@ impl PlayWindowApp {
             } else {
                 "  occl-fade off (F4)"
             };
+            // Volumetric ground fog is default-on too (`F9` toggles).
+            let fog_str = if self.options_state.volumetric_fog {
+                ""
+            } else {
+                "  ground-fog off (F9)"
+            };
             let line2 = format!(
-                "t {:.1}s  {}{}{}{}{}{}  arrows=dpad Z=X drag=orbit",
+                "t {:.1}s  {}{}{}{}{}{}{}  arrows=dpad Z=X drag=orbit",
                 self.win.elapsed_secs(),
                 audio_str,
                 bgm_str,
                 light_str,
                 cam_str,
                 precise_str,
-                occl_str
+                occl_str,
+                fog_str
             );
             let layout2 = self.font.layout_ascii(&line2);
             out.extend(text_draws_for(&layout2, (8, 26), dim));
@@ -767,6 +783,10 @@ impl PlayWindowApp {
                 w,
                 h,
             ));
+        }
+        // The machine's rules pages are its one text draw.
+        if self.slot_gpu.is_some() {
+            out.extend(self.slot_rules_text_draws(w, h));
         }
         // Baka Fighter minigame HUD: HP bars as numbers, round pips, the
         // last-exchange readout, and the input prompt.
@@ -1775,7 +1795,7 @@ impl PlayWindowApp {
         let from_panel = |panel: &legaia_engine_core::dialog::OwnedDialogPanel,
                           require_text: bool|
          -> Option<DialogSnapshot> {
-            let page = to_ascii(&panel.page_bytes());
+            let page = legaia_engine_render::dialog_page_string(&panel.page_bytes());
             if require_text && page.is_empty() {
                 return None;
             }

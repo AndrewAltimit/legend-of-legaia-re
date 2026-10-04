@@ -11,6 +11,7 @@ use std::sync::Arc;
 use wgpu::util::DeviceExt;
 
 mod core;
+mod fog_volume;
 mod helpers;
 mod render;
 mod state;
@@ -20,6 +21,7 @@ mod uploaded;
 /// Re-exported for `tests::color_space`; `new_async` calls it via `core`.
 #[cfg(test)]
 pub(crate) use core::choose_surface_format;
+pub use fog_volume::FogVolumeDraw;
 pub(crate) use helpers::*;
 pub use render::CaptureImage;
 pub use state::*;

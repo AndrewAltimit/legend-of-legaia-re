@@ -1,259 +1,59 @@
-//! Script-cutscene *element* handlers: the per-frame actor bodies a cutscene
-//! script installs at `actor+0x0C` alongside the camera controller.
+//! Field-overlay plain-template actor bodies that were first read as
+//! script-cutscene *elements*: the ambient particle emitter
+//! [`AmbientEmitter`] (`FUN_801D6058`), the save-screen hand-off
+//! [`save_screen_spawn`] (`FUN_801D841C`), the party-leader swap controller
+//! [`LeaderSwap`] (`FUN_801D27E0`) and the geometry colour grade
+//! [`shift_primitive_colours`] (`FUN_801D5E20`).
 //!
-//! Each element is an ordinary field actor whose handler runs once per frame
-//! and drives some **other** object - the "linked object" pointer at `+0x90`.
-//! The three handlers ported here are the position tween, the teardown, and
-//! the ambient particle emitter.
+//! Each `PORT` tag lives on the item that implements its address rather than
+//! on this module, so the liveness audit sees one anchor per port site.
 //!
-//! Two more of the same family sit at the end of the file: the party-leader
-//! swap controller [`LeaderSwap`] (`FUN_801D27E0`) - wired, hosted by
-//! `World::tick_three_actor_talk` for the three-actor-talk session, so its
-//! `step` doc opens a `WIRED:` line like [`save_screen_spawn`]'s - and the
-//! geometry colour grade [`shift_primitive_colours`] (`FUN_801D5E20`).
+//! # The ambient emitter is scene ambience, not a cutscene element
 //!
-//! The four `PORT` tags for the handlers above live on the items that
-//! implement them - [`PositionTween::step`], [`ElementTeardown::step`],
-//! [`AmbientEmitter::step`] and [`save_screen_spawn`] - rather than on this
-//! module. A module-level tag makes the whole file the reachability anchor, and
-//! the file's other items *are* reachable, which reports a wired port that is
-//! not one. [`save_screen_spawn`]'s own doc opens a `WIRED:` line, which is
-//! what opts that one item out of the module disclosure below.
-//!
-//! WIRED, with a content gap: the element-actor **channel** these three run on
-//! now exists -
-//! [`crate::world::cutscene_elements`], a pool of spawned elements each
-//! carrying a linked-object pointer, ticked once per frame off the world's
-//! master-driver gate with the linked object's done bit `+0x10 & 8` as the
-//! entry gate, exactly beside the three other plain-template families. What is
-//! still missing is a **spawner a script reaches**: nothing on the engine's
-//! side installs an element yet, so on a real playthrough the channel is empty
-//! and none of the three handlers runs.
-//!
-//! Where the spawns are is now partly answered from the bytes rather than
-//! open. The ambient emitter's descriptor is `0x801F271C` in the field
-//! overlay's own plain-template table - the `0x18`-byte
+//! Its descriptor is `0x801F271C` in the field overlay's own plain-template
+//! table - the `0x18`-byte
 //! `[u32 0][u16 0][u16 0xFFFF][u32 handler][u32 0][u32 0][u32 0]` shape the
 //! floor-ladder oscillator (`0x801F27EC`), the eased move (`0x801F2840`) and
 //! the shutter bars (`0x801F2858`) also use - and its one spawn site is
 //! `0x801D6FD8`, inside the field overlay's MAIN INIT `FUN_801D6704`, behind a
-//! `bnez` on `_DAT_8007B8B8`. So it is **scene ambience installed by the field
-//! main routine**, not a cutscene-script element at all. The tween and the
-//! teardown are placed too. `0x801D5C08` and `0x801D5D60` are the `+0x08`
-//! handler words of the same `0x18`-byte templates at `0x801F227C` and
-//! `0x801F22AC` (field-overlay file `0x23A64` / `0x23A94`, with
-//! `FUN_801D2298`'s at `0x801F2294` between them), and the field overlay
-//! spawns both through the actor allocator
-//! `FUN_80020DE0(descriptor, _DAT_8007C34C)`: the arc helper at `0x801D245C`,
-//! `0x801D2634` and `0x801D57C0`, the teardown at `0x801D2760`. Nothing names
-//! the handler VAs directly, so only the **word** form finds them - and
-//! `find-address-word-refs.py --tables-only` drops both hits as
-//! `incidental-code`, which is how "no reference exists" was concluded here.
+//! `bnez` on `_DAT_8007B8B8`. [`crate::world::cutscene_elements`] is its seat:
+//! `World::install_field_scene_elements` spawns it on every cold field entry
+//! and `World::tick_cutscene_elements` runs it each frame on both hosts.
 //!
-//! REF: FUN_801E45BC - the vector midpoint/lerp helper the tween calls.
+//! # The tween and the teardown are the hop-arc pair, ported once
+//!
+//! This file used to carry a second port of `FUN_801D5C08` (a "position
+//! tween") and `FUN_801D5D60` (a "teardown"), with a seat on the element
+//! channel that no producer ever filled. Both addresses are the `+0x08`
+//! handler words of the field overlay's templates `0x801F227C` and
+//! `0x801F22AC` (file `0x23A64` / `0x23A94`), and every site that allocates
+//! from those templates through `FUN_80020DE0` - `0x801D245C` in
+//! `FUN_801D2404`, `0x801D2634` / `0x801D2760` in `FUN_801D25EC`, and
+//! `0x801D57C0` in the unreferenced `FUN_801D5780` - is the ledge-hop / op
+//! `0x43` arc family. That family is ported and live in
+//! `legaia_engine_vm::field_ledge_hop_arc` (`advance_hop_arc` is
+//! `FUN_801D5C08`, `release_watcher_tick` is `FUN_801D5D60`), seated by
+//! `World::try_field_ledge_hop` and `World::start_field_script_arc`. So the
+//! duplicates had no work left, and they were also wrong about it: the
+//! `FUN_801E45BC` call is a quadratic Bezier evaluated with the control
+//! point preloaded in `a0` (`0x801D5CD8..0x801D5CF4`), not a linear blend,
+//! and the pointer the `+0x8E` mirror skips (`lw v0,-0x3c9c(v0)` =
+//! `_DAT_8007C364`, `0x801D5CA0`) is the scene control block's player
+//! context, not the camera. They were removed rather than tagged, so the
+//! one live port per address is the only one.
+//!
 //! REF: FUN_801D629C - the particle spawn primitive the emitter calls.
-//! REF: FUN_801DB510, FUN_801DAA50 - the camera restore pair the teardown calls.
 //! REF: FUN_80020DE0 - the descriptor spawner, hosted in
 //! [`crate::actor_alloc_host`].
 //!
-//! Read off `ghidra/scripts/funcs/overlay_cutscene_dialogue_801d5c08.txt`,
-//! `..._801d5d60.txt`, `..._801d6058.txt` and `..._801d841c.txt` -
-//! disassembly, not the C.
+//! Read off `ghidra/scripts/funcs/overlay_cutscene_dialogue_801d6058.txt` and
+//! `..._801d841c.txt` - disassembly, not the C.
 //!
 //! `0x801D841C` is **VA-aliased**: the root dump `801d841c.txt` resolves
 //! `entry=801D8308` in a different overlay image. The body ported here is the
 //! one the cutscene / field band holds, which is the 13-instruction spawner
 //! both `overlay_cutscene_dialogue_801d841c.txt` and
 //! `overlay_cutscene_mapview_801d841c.txt` attest.
-
-/// The 8-byte position blob these handlers move around.
-///
-/// The tween copies **eight bytes** at a time with `lwl`/`lwr` +
-/// `swl`/`swr` pairs (`0x801D5C7C..0x801D5C98`), so the unit of transfer is
-/// four halfwords, not three. Component 1 is the one the facing/sort write
-/// negates.
-///
-/// The `x`/`y`/`z` naming follows the actor position layout the field
-/// locomotion controller drives (`docs/subsystems/field-locomotion.md`); this
-/// function itself only distinguishes component 1 from the rest.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct ElementVec {
-    /// `+0x00` - X.
-    pub x: i16,
-    /// `+0x02` - Y. The component `+0x8E` is written the negation of.
-    pub y: i16,
-    /// `+0x04` - Z.
-    pub z: i16,
-    /// `+0x06` - the fourth halfword the 8-byte copy carries along.
-    pub w: i16,
-}
-
-impl ElementVec {
-    /// The linear reading of the `FUN_801E45BC` blend at parameter `t`
-    /// (`0..=0x1000`).
-    ///
-    /// The retail helper's exact rounding is **not** pinned from this
-    /// function's disassembly - `FUN_801E45BC` is only reached through a
-    /// `jal`, and the tween passes it `(out, start, end, t)` without looking
-    /// at what it does. This is the straight-line reading; treat it as the
-    /// engine's choice, not as a decoded retail formula.
-    pub fn blend(start: Self, end: Self, t: i16) -> Self {
-        let f = |a: i16, b: i16| -> i16 {
-            let a = i32::from(a);
-            let b = i32::from(b);
-            (a + ((b - a) * i32::from(t)) / 0x1000) as i16
-        };
-        Self {
-            x: f(start.x, end.x),
-            y: f(start.y, end.y),
-            z: f(start.z, end.z),
-            w: f(start.w, end.w),
-        }
-    }
-}
-
-/// The `FUN_801D5C08` element record, in the fields the handler touches.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct PositionTween {
-    /// `+0x14` - start vector.
-    pub start: ElementVec,
-    /// `+0x24` - end vector.
-    pub end: ElementVec,
-    /// `+0x9C` - the blend parameter accumulator, `0..=0x1000`.
-    pub t: i16,
-    /// `+0x9E` - per-frame increment of `t`, multiplied by the frame step.
-    pub rate: i16,
-    /// `+0x10` bit `8` - the element's own done bit.
-    pub done: bool,
-}
-
-/// What one [`PositionTween::step`] resolved to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TweenStep {
-    /// The **linked** object was already done (`linked[+0x10] & 8`), so the
-    /// handler skipped straight to setting its own done bit. Nothing was
-    /// written to the linked object.
-    LinkedAlreadyDone,
-    /// Still blending. `pos` goes to `linked+0x14..+0x1B`.
-    Blending { pos: ElementVec },
-    /// `t` reached `0x1000`: the end vector is written verbatim and the
-    /// element's own done bit is now set.
-    Snapped { pos: ElementVec },
-}
-
-impl PositionTween {
-    /// One frame of `FUN_801D5C08`.
-    ///
-    /// `frame_step` is `DAT_1F800393` (the adaptive vsync step);
-    /// `linked_done` is the linked object's `+0x10 & 8`.
-    ///
-    /// The accumulate is `t = (u16)t + (i16)rate * frame_step` **stored back
-    /// as a halfword** (`sh v0,0x9c(s0)`) and only then sign-extended for the
-    /// `< 0x1000` test, so the wrap is 16-bit.
-    ///
-    /// PORT: FUN_801D5C08
-    ///
-    /// WIRED: [`crate::world::World::tick_cutscene_elements`] runs this every
-    /// frame on both hosts, off the same master-driver gate the other
-    /// plain-template families ride. What no host yet does is **install** an
-    /// element for it to run on: retail installs it from the field overlay's
-    /// own template table (`0x801F227C` / `0x801F22AC`, spawned through
-    /// `FUN_80020DE0`; see the module note), a site the port does not yet
-    /// reach. That is a content-driven gap (nothing reaches the spawner), not
-    /// an unreached port.
-    pub fn step(&mut self, frame_step: u8, linked_done: bool) -> TweenStep {
-        if linked_done {
-            self.done = true;
-            return TweenStep::LinkedAlreadyDone;
-        }
-        let acc = (self.t as u16)
-            .wrapping_add((i32::from(self.rate) * i32::from(frame_step)) as u16)
-            as i16;
-        self.t = acc;
-        if acc < 0x1000 {
-            TweenStep::Blending {
-                pos: ElementVec::blend(self.start, self.end, acc),
-            }
-        } else {
-            self.t = 0x1000;
-            self.done = true;
-            TweenStep::Snapped { pos: self.end }
-        }
-    }
-
-    /// The `+0x8E` write that accompanies every position write.
-    ///
-    /// `0x801D5CA8` / `0x801D5D38`: when the linked object is **not** the
-    /// camera object `_DAT_8007C364`, the handler stores `-pos.y` into
-    /// `linked+0x8E`. The camera is the sole exception, and it is compared by
-    /// pointer identity, not by any flag.
-    pub fn linked_field_8e(pos: ElementVec, linked_is_camera: bool) -> Option<i16> {
-        if linked_is_camera {
-            None
-        } else {
-            Some(pos.y.wrapping_neg())
-        }
-    }
-}
-
-/// The `FUN_801D5D60` element record.
-///
-/// The handler has two independent halves: an unconditional camera restore
-/// (run every frame while armed) and a one-shot flag teardown that waits for
-/// the linked object's done bit. The decompiled C renders the first half as a
-/// single `&&` condition, which is exactly what the disassembly does
-/// (`0x801D5D78` / `0x801D5D88` both branch to the same skip label).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct ElementTeardown {
-    /// `+0x5C` - the "restore armed" halfword.
-    pub restore_armed: i16,
-    /// `+0x50` - the "owns the camera" halfword. Gates both the camera
-    /// restore and the second flag clear.
-    pub owns_camera: i16,
-    /// `+0x74` - the flag mask this element installed, cleared on teardown.
-    pub flag_mask: u32,
-    /// `+0x10` bit `8` - the element's own done bit.
-    pub done: bool,
-}
-
-/// What one [`ElementTeardown::step`] asks the host to do.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct TeardownActions {
-    /// Call the camera restore pair `FUN_801DB510(_DAT_8007C364)` then
-    /// `FUN_801DAA50()`.
-    pub restore_camera: bool,
-    /// Clear `flag_mask` out of the `+0x94` object's flag word `+0x10`.
-    pub clear_target_flags: bool,
-    /// Clear `flag_mask` out of the camera object's flag word as well.
-    pub clear_camera_flags: bool,
-}
-
-impl ElementTeardown {
-    /// One frame of `FUN_801D5D60`. `linked_done` is `linked[+0x10] & 8`.
-    ///
-    /// PORT: FUN_801D5D60
-    ///
-    /// WIRED: [`crate::world::World::tick_cutscene_elements`] runs this every
-    /// frame on both hosts, off the same master-driver gate the other
-    /// plain-template families ride. What no host yet does is **install** an
-    /// element for it to run on: retail installs it from the field overlay's
-    /// own template table (`0x801F227C` / `0x801F22AC`, spawned through
-    /// `FUN_80020DE0`; see the module note), a site the port does not yet
-    /// reach. That is a content-driven gap (nothing reaches the spawner), not
-    /// an unreached port.
-    pub fn step(&mut self, linked_done: bool) -> TeardownActions {
-        let mut out = TeardownActions {
-            restore_camera: self.restore_armed != 0 && self.owns_camera != 0,
-            ..Default::default()
-        };
-        if linked_done {
-            out.clear_target_flags = true;
-            out.clear_camera_flags = self.owns_camera != 0;
-            self.done = true;
-        }
-        out
-    }
-}
 
 /// The spawn descriptor `FUN_801D841C` hands to `FUN_80020DE0`.
 ///
@@ -985,101 +785,6 @@ pub fn shift_primitive_colours(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_done_linked_object_ends_the_tween_without_moving_anything() {
-        let mut t = PositionTween {
-            end: ElementVec {
-                x: 100,
-                ..Default::default()
-            },
-            rate: 0x100,
-            ..Default::default()
-        };
-        assert_eq!(t.step(1, true), TweenStep::LinkedAlreadyDone);
-        assert!(t.done, "0x801D5CC0 sets the element's own bit 8");
-        assert_eq!(t.t, 0, "the accumulator is never touched on that path");
-    }
-
-    #[test]
-    fn the_tween_snaps_to_the_end_vector_and_latches_done() {
-        let end = ElementVec {
-            x: 0x40,
-            y: 0x20,
-            z: 0x10,
-            w: 0,
-        };
-        let mut t = PositionTween {
-            start: ElementVec::default(),
-            end,
-            t: 0x0F00,
-            rate: 0x100,
-            done: false,
-        };
-        // 0x0F00 + 0x100 * 1 == 0x1000, which is NOT < 0x1000 -> snap.
-        assert_eq!(t.step(1, false), TweenStep::Snapped { pos: end });
-        assert_eq!(t.t, 0x1000);
-        assert!(t.done);
-    }
-
-    #[test]
-    fn the_frame_step_multiplies_the_rate() {
-        let mut t = PositionTween {
-            rate: 0x100,
-            ..Default::default()
-        };
-        assert!(matches!(t.step(3, false), TweenStep::Blending { .. }));
-        assert_eq!(t.t, 0x300, "rate * DAT_1F800393");
-    }
-
-    #[test]
-    fn only_the_camera_is_exempt_from_the_facing_write() {
-        let pos = ElementVec {
-            y: 0x123,
-            ..Default::default()
-        };
-        assert_eq!(PositionTween::linked_field_8e(pos, false), Some(-0x123));
-        assert_eq!(PositionTween::linked_field_8e(pos, true), None);
-    }
-
-    #[test]
-    fn the_camera_restore_needs_both_halfwords() {
-        for (armed, owns, want) in [(0, 0, false), (1, 0, false), (0, 1, false), (1, 1, true)] {
-            let mut e = ElementTeardown {
-                restore_armed: armed,
-                owns_camera: owns,
-                ..Default::default()
-            };
-            assert_eq!(e.step(false).restore_camera, want);
-        }
-    }
-
-    #[test]
-    fn the_flag_clear_waits_for_the_linked_done_bit() {
-        let mut e = ElementTeardown {
-            owns_camera: 1,
-            flag_mask: 0x40,
-            ..Default::default()
-        };
-        let idle = e.step(false);
-        assert!(!idle.clear_target_flags && !idle.clear_camera_flags);
-        assert!(!e.done);
-
-        let fire = e.step(true);
-        assert!(fire.clear_target_flags && fire.clear_camera_flags);
-        assert!(e.done);
-    }
-
-    #[test]
-    fn the_camera_flag_clear_is_gated_but_the_target_clear_is_not() {
-        let mut e = ElementTeardown {
-            flag_mask: 0x40,
-            ..Default::default()
-        };
-        let fire = e.step(true);
-        assert!(fire.clear_target_flags);
-        assert!(!fire.clear_camera_flags, "+0x50 == 0 skips 0x801D5DE8");
-    }
 
     #[test]
     fn the_master_gate_makes_the_emitter_a_no_op() {

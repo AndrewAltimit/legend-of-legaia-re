@@ -27,6 +27,8 @@ pub(super) const DIALOGUE_EXIT_Z_RATE: f32 = 864.0;
 pub(super) const SUBMENU_ENTER_STEPS: u32 = 6;
 pub(super) const SUBMENU_SWING_STEPS: u32 = 6;
 pub(super) const SWING_RETURN_STEPS: u32 = 7;
+/// The target-cursor framings (cases `1` / `3`, `a3 = 0xC`).
+pub(super) const CURSOR_STEPS: u32 = 6;
 
 /// One glide segment: per-component per-step rates toward `target`, each
 /// component clamping independently. `yaw_glides` routes yaw through the
@@ -139,8 +141,13 @@ pub(super) fn step_toward(v: f32, target: f32, rate: f32) -> f32 {
 pub(super) const ACTION_SEED_STATE: u8 = 0x0C;
 pub(super) const ATTACK_BAND_FIRST: u8 = 0x14;
 pub(super) const ATTACK_BAND_LAST: u8 = 0x20;
-pub(super) const STRIKE_LOOP_STATE: u8 = 0x1E;
 pub(super) const ACTION_DONE_STATE: u8 = 0x50;
+
+/// The Battle Camera option's Close value (`_DAT_800846C0 == 0`), the one
+/// every dynamic arm of the action shots runs under.
+pub const CAMERA_OPTION_CLOSE: u8 = 0;
+/// The Battle Camera option's Far value (`_DAT_800846C0 == 2`).
+pub const CAMERA_OPTION_FAR: u8 = 2;
 
 /// The phase-scripted battle camera state. Created on battle entry, stepped
 /// once per 2 retail display frames (`World::clock.display_frames`), dropped on exit.
@@ -176,18 +183,12 @@ pub struct BattleCamera {
     /// The acting actor's body pair `+0x3C` / `+0x40` (live pair plus the
     /// facing-rotated pose centroid), which the summon close-up focuses.
     pub(super) acting_body: Option<[f32; 2]>,
-    /// Latch for the swing-clip commit's `ctx[+0xD] = 0`
-    /// (`sb zero,0xd(v1)` at `0x8004E2B4`, in `FUN_8004E13C`'s party arm
-    /// beside the `ctx[+0x6DA]` seed).
-    ///
-    /// It is a **latch** rather than a write because retail's is a write to
-    /// the shared context byte, which then stands until the next action
-    /// seed re-rolls it - while the host re-supplies
-    /// [`Self::action`] every frame from the live byte. Setting
-    /// `self.action.style = 0` on the edge alone would be overwritten on the
-    /// very next frame; this survives instead, and clears on the edge out of
-    /// the action bands, which is where the next seed happens.
-    pub(super) strike_style_zeroed: bool,
+    /// The last [`BattleCamInputs::swing_reseed`] count seen; `None` until
+    /// the first drive.
+    pub(super) last_swing_seeds: Option<u32>,
+    /// The Battle Camera option word `_DAT_800846C0`
+    /// ([`BattleCamInputs::camera_option`]).
+    pub(super) option: u8,
     /// Live screen shake (`FUN_801D9D30`), held beside the pose.
     pub(super) shake: ShakeState,
     /// The per-art attack camera's channel: the disc track table, the battle
@@ -212,6 +213,9 @@ pub struct BattleCamera {
     /// before the camera steps and takes it back after, so those draws land
     /// on the world stream in the order the tick makes them.
     pub(super) rand_state: u32,
+    /// What the target cursor rests on, while one is up
+    /// ([`BattleCamera::set_cursor`]).
+    pub(super) cursor: Option<CursorFraming>,
 }
 
 /// [`BattleCamera`]'s per-art attack-camera state - retail's `ctx[+0x26D]` /
@@ -361,12 +365,25 @@ pub struct BattleCamInputs {
     /// (`BattleActionCtx::active_clip_commits`): a change re-zeroes the
     /// ramp / accumulator / latch the way the commit `FUN_8004AD80` does.
     pub active_commits: u32,
+    /// `(count, coin)` of `FUN_8004E13C`'s value-2 re-seeds
+    /// (`BattleActionCtx::swing_yaw_seeds` / `swing_yaw_coin`): a change in
+    /// the count sets the yaw counter `ctx[+0x6DA]` to
+    /// `coin * 0x800 + 0x280` ([`BattleCamera::observe_swing_reseed`]).
+    pub swing_reseed: (u32, u8),
+    /// The options screen's **Battle Camera** row, config word
+    /// `_DAT_800846C0`: [`CAMERA_OPTION_CLOSE`] (`0`), `1` Normal,
+    /// [`CAMERA_OPTION_FAR`] (`2`). See [`BattleCamera::set_camera_option`].
+    pub camera_option: u8,
     /// The acting actor's **body pair** `+0x3C` / `+0x40` - the live pair
     /// plus the facing-rotated pose centroid the pose decoder `FUN_8004998C`
     /// rewrites each drawn frame - as `(x, z)`. The summon close-up
     /// (`FUN_801DC0A0` case `0x12`) focuses it, not the live pair. `None`
     /// falls back to [`BattleCamActor::world`].
     pub acting_body: Option<[f32; 2]>,
+    /// What the target cursor rests on while one is up - the input of the
+    /// [`BattleCamPhase::TargetEnemy`] / [`BattleCamPhase::TargetAlly`]
+    /// framings. `None` when no single-target cursor is live.
+    pub cursor: Option<CursorFraming>,
 }
 
 /// Drive one host's battle camera for a frame - the single shared entry both
@@ -436,8 +453,11 @@ pub fn drive_on_stream(
     cam.set_action_framing(inputs.action);
     cam.observe_action_state(inputs.action_state);
     cam.observe_active_commits(inputs.active_commits);
+    cam.observe_swing_reseed(inputs.swing_reseed);
+    cam.set_camera_option(inputs.camera_option);
     cam.set_shake_amplitude(inputs.shake_amplitude);
     cam.set_attack_channels(inputs.attack, tracks);
+    cam.set_cursor(inputs.cursor);
     cam.set_phase(inputs.phase);
     cam.advance_to(frames);
     *rng = cam.rand_state;

@@ -102,6 +102,7 @@ fn the_map_viewer_animates_what_the_play_page_animates_or_skip() {
         ("jouina", 120),
         ("town01", 100),
         ("jou", 64),
+        ("map01", 120),
     ] {
         let mut rt = legaia_web_viewer::runtime::LegaiaRuntime::new();
         rt.load_disc(bytes.clone(), String::new())
@@ -126,17 +127,64 @@ fn the_map_viewer_animates_what_the_play_page_animates_or_skip() {
             !pack.actor_frame_state().0.is_empty() || scene == "jou",
             "{scene}: the viewer catalogues the scene's actors"
         );
+        // The play page shows the room its player stands in; the full map
+        // shows every room on its own ladder (`LiveScene`'s rooms). The two
+        // agree on the live room's draws and ground cells.
+        let live_draw = |pack: &legaia_web_viewer::field_scene::FieldScenePack| -> Vec<bool> {
+            let live = pack.live.as_ref().expect("live");
+            pack.terrain
+                .iter()
+                .chain(&pack.placements)
+                .map(|d| live.in_live_room((i32::from(d.cell.0), i32::from(d.cell.1))))
+                .collect()
+        };
+        let in_live = live_draw(&pack);
+        let live_vertex: Vec<bool> = pack
+            .ground_cells
+            .iter()
+            .map(|c| c.is_none_or(|t| pack.live.as_ref().unwrap().in_live_room(t)))
+            .collect();
         for t in 0..ticks {
             rt.tick_frame().expect("tick");
             tick_field_scene_vsync(&mut pack);
             let (wv, wp) = (pack.floor_wave_offsets(), rt.field_floor_wave_offsets());
-            assert_eq!(wv, wp, "{scene} t{t}: floor-wave offsets");
-            moved.0 |= wv.iter().any(|&o| o != 0.0);
-            let (gv, gp) = (
-                pack.ground_live_positions(),
-                rt.field_ground_live_positions(),
+            let pick = |w: &[f32]| -> Vec<f32> {
+                if w.is_empty() {
+                    return vec![0.0; in_live.len()];
+                }
+                w.iter()
+                    .zip(&in_live)
+                    .map(|(&o, &l)| if l { o } else { 0.0 })
+                    .collect()
+            };
+            assert_eq!(
+                pick(&wv),
+                pick(&wp),
+                "{scene} t{t}: floor-wave offsets (live room)"
             );
-            assert_eq!(gv, gp, "{scene} t{t}: ground under the live ladder");
+            moved.0 |= wv.iter().any(|&o| o != 0.0);
+            let gp = rt.field_ground_live_positions();
+            if !gp.is_empty() {
+                let hf = pack.ground.as_ref().expect("ground");
+                let gv: Vec<f32> = pack
+                    .live
+                    .as_ref()
+                    .unwrap()
+                    .ground_positions(hf, &pack.ground_cells)
+                    .into_iter()
+                    .flatten()
+                    .collect();
+                for (v, &l) in live_vertex.iter().enumerate() {
+                    if l {
+                        assert_eq!(
+                            gv[v * 3..v * 3 + 3],
+                            gp[v * 3..v * 3 + 3],
+                            "{scene} t{t}: ground vertex {v} under the live ladder"
+                        );
+                    }
+                }
+            }
+            let gv = pack.ground_live_positions();
             moved.1 += usize::from(!gv.is_empty());
             // The actor layer: positions / headings / heights and each clip's
             // pose key + re-target generation, entry by entry.
@@ -183,6 +231,7 @@ fn the_map_viewer_animates_what_the_play_page_animates_or_skip() {
         match scene {
             "concnow" => assert!(moved.0 && moved.1 > 1, "concnow's ladder moves"),
             "jouina" => assert!(moved.1 > 1, "jouina's ground pulses"),
+            "map01" => assert!(moved_actors, "the overworld's actors play their clips"),
             "town01" => assert!(
                 moved.2 && moved_actors,
                 "town01's windmill turns and its villagers animate"

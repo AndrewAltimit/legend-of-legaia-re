@@ -1060,14 +1060,21 @@ pub(crate) enum Cmd {
         /// ticks for the intro transition).
         #[arg(long, value_name = "ROW|first")]
         battle: Option<String>,
-        /// Opt-in dynamic-lighting ENHANCEMENT (non-retail): layer a soft
-        /// warm directional light (off the smoothed mesh normals) plus a
-        /// screen-centred light pool over the baked per-prim shading, capped
-        /// at ~1.3x. Retail's field path has no light source at all, so this
-        /// is default-off and the faithful render stays pixel-identical
-        /// without it. Toggle at runtime with the `I` key.
-        #[arg(long, default_value_t = false)]
+        /// Force the enhanced-lighting ENHANCEMENT (non-retail) on for this
+        /// session: the scene mood's ambient + key light over the baked
+        /// per-prim shading, the derived lamp / window point lights,
+        /// emissive surfaces and their glow. It is on by default anyway
+        /// (the persisted `enhanced_lighting` option); this overrides an
+        /// option saved off. Toggle at runtime with the `I` key, cycle the
+        /// time of day with `F8`.
+        #[arg(long, default_value_t = false, conflicts_with = "no_dynamic_lighting")]
         dynamic_lighting: bool,
+        /// Force the enhanced lighting off for this session: the faithful
+        /// baked-shading render, pixel-identical to retail's field shading
+        /// (retail has no field light source). Parity captures
+        /// (`retail-compare`) pass this.
+        #[arg(long, default_value_t = false)]
+        no_dynamic_lighting: bool,
         /// Disable the shadow-casting per-scene point-light sub-layer of
         /// `--dynamic-lighting` (candle / wall-light sources derived from the
         /// scene's emissive prims, each with a PCF-filtered shadow map). On
@@ -1160,6 +1167,16 @@ pub(crate) enum Cmd {
         /// the `F4` key.
         #[arg(long, default_value_t = false)]
         no_occlusion_fade: bool,
+        /// Disable the volumetric ground-fog ENHANCEMENT for this session.
+        /// By default, scenes that read as misty or night (Rim Elm under
+        /// the Mist, Drake Castle, the Voz forests, the Ravine, and any field
+        /// scene whose retail fog pool is live) carry a low drifting mist
+        /// bank that the characters part as they walk through it, and a
+        /// battle inherits its field scene's bank. Pure presentation - the
+        /// bank reads the actors and never writes back. Toggle (and persist)
+        /// at runtime with the `F9` key.
+        #[arg(long, default_value_t = false)]
+        no_volumetric_fog: bool,
     },
     /// Resolve XA voice-cue ids to the `(clip slot, filter channel, duration)`
     /// triple the retail dispatcher builds - the cutscene-audio census view.

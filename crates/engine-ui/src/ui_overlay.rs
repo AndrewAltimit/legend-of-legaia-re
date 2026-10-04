@@ -50,7 +50,13 @@ pub fn text_draws_for(
         .map(|g| TextDraw {
             dst: (pen.0 + g.dst_x, pen.1 + g.dst_y, g.width, g.height),
             src: (g.atlas_x, g.atlas_y, g.width, g.height),
-            color,
+            // A `0xCE` escape sprite keeps its own colours: `FUN_8002C488`
+            // emits it at the neutral `0x808080`, whatever the text pen.
+            color: if g.byte == legaia_font::ESCAPE_GLYPH_BYTE {
+                [1.0, 1.0, 1.0, color[3]]
+            } else {
+                color
+            },
         })
         .collect()
 }

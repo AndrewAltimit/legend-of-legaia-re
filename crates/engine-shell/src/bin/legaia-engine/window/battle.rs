@@ -514,6 +514,7 @@ impl PlayWindowApp {
         self.battle_stage_color_mesh = None;
         self.battle_stage_shell = None;
         self.battle_stage_outdoor = false;
+        self.session.host.world.fog_volume.battle_luma = None;
         // REF: FUN_800513f0 - the backdrop registration whose object-list edit
         // and second-copy transform this host consumes through
         // `legaia_asset::battle_backdrop`.
@@ -540,6 +541,11 @@ impl PlayWindowApp {
                 .session
                 .host
                 .battle_stage_object_indices(tmd.objects.len());
+            // The volumetric ground fog may not outshine the stage it lies
+            // on: measure the shell as drawn (the browser play page takes the
+            // same measurement in `enter_battle_render`).
+            self.session.host.world.fog_volume.battle_luma =
+                legaia_engine_core::fog_volume::stage_luminance(&vram, tmd, raw, &objects);
             let (vmesh, cmesh) = stage_shell_meshes(tmd, raw, *second, &objects);
             self.battle_stage_shell = Some((objects, *second));
             if !cmesh.is_empty()
