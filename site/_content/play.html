@@ -1129,8 +1129,11 @@
      * engine lands it (`play_resume_save`). */
     let handoff = '';
     let loaded = false;
+    const titleHeld = new Set();
     const frame = () => {
       bootTitleRAF = requestAnimationFrame(frame);
+      /* A gamepad's press edges reach the title card the way a key's do. */
+      if (window.legaiaPollGamepad) window.legaiaPollGamepad(titleHeld, pulse);
       const edge = padMaskOf(pulse);
       pulse.clear();
       /* Publisher-logo stage: owns the frame until the sequencer finishes or

@@ -1176,7 +1176,10 @@ void main() {
       window.addEventListener('keydown', this._onDebugCam);
       /* Blur drops every held key - otherwise tabbing away mid-walk leaves the
        * player marching into a wall forever. */
-      this._onBlur = () => { this.held.clear(); this.pulse.clear(); this.pad = 0; };
+      this._onBlur = () => {
+        this.held.clear(); this.pulse.clear(); this.pad = 0;
+        if (window.legaiaResetGamepad) window.legaiaResetGamepad();
+      };
       window.addEventListener('blur', this._onBlur);
       this.canvas.addEventListener('blur', this._onBlur);
 
@@ -2147,6 +2150,12 @@ void main() {
 
     _frame(skipDraw) {
       const rt = this.rt;
+      /* Gamepad buttons enter the same held / pulse sets the keyboard
+       * fills, so every reader below (menu, name entry, field tick) sees
+       * one pad word whichever device pressed it. */
+      if (window.legaiaPollGamepad && window.legaiaPollGamepad(this.held, this.pulse)) {
+        this._repack();
+      }
       const stepping = this.stepOnce;
       const advance = !this.paused || stepping;
       this.stepOnce = false;
