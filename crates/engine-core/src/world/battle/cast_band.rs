@@ -478,7 +478,20 @@ impl World {
             return;
         }
         // --- end W1-D ---
-        let Some(def) = self.tables.spell_catalog.get(pc.spell_id).cloned() else {
+        // A monster's capture-class special is not in the catalog (its record
+        // is the module's), so the fold resolves it the way the arm did -
+        // and only when the module has a damage site to seed it with; a
+        // status-only body (Glare) folds nothing here.
+        let def = self
+            .tables
+            .spell_catalog
+            .get(pc.spell_id)
+            .cloned()
+            .or_else(|| {
+                self.monster_capture_power(pc.caster, pc.spell_id)
+                    .and_then(|_| self.monster_cast_def(pc.spell_id))
+            });
+        let Some(def) = def else {
             return;
         };
         let hit_fx_start = self.battle.hit_fx.len();
@@ -514,7 +527,14 @@ impl World {
         let left_precast = from == ActionState::MagicPreCastWait.as_byte()
             && to != ActionState::MagicPreCastWait.as_byte()
             && to != ActionState::SummonInvoke.as_byte();
-        let band_over = to >= ActionState::DoneCleanup.as_byte();
+        // The capture band (`0x6E..=0x71`) sits above `0x50` in the state
+        // space but is not a door out: its module has not run yet, so its
+        // fold waits for the band's own exit into `0x50`, after the caster's
+        // stages and the module's arms - where retail's module lands its hit.
+        let capture_band = (ActionState::MagicCaptureBranch.as_byte()
+            ..=ActionState::MagicCaptureFinalize.as_byte())
+            .contains(&to);
+        let band_over = to >= ActionState::DoneCleanup.as_byte() && !capture_band;
         if left_precast || band_over {
             self.fold_pending_cast();
         }

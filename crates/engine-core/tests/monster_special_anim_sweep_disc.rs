@@ -65,6 +65,11 @@ struct CastTrace {
     /// The cast runs a capture-class body that stages no caster clip in
     /// retail either (`capture_body_idles_caster`).
     idles_in_retail: bool,
+    /// The cast's capture-class body has a damage site whose power the
+    /// engine seeds the fold with (`capture_site_power`).
+    deals_damage: bool,
+    /// Party HP lost while the monster acted.
+    party_hp_lost: u32,
 }
 
 fn scus() -> Option<Vec<u8>> {
@@ -111,7 +116,7 @@ fn setup(
         w.actors[i].battle.max_hp = 9999;
         w.actors[i].battle.liveness = 1;
         w.set_battle_attack(i as u8, 1);
-        w.set_battle_defense(i as u8, 999);
+        w.set_battle_defense(i as u8, 20);
     }
     let mut table = FormationTable::new();
     table.insert(FormationDef::new(1, vec![FormationSlot::new(id)]));
@@ -159,6 +164,11 @@ fn cast(
     // mid-action (armed before its clips were installed) when the sweep takes
     // over; that action is not the seeded one. Only an action that *starts*
     // under observation counts.
+    t.deals_damage = w.cast_module_for(spell).is_some_and(|entry| {
+        legaia_engine_vm::cast_module_ticks::capture_site_power(entry, spell).is_some()
+    });
+    let party_hp = |w: &World| -> u32 { (0..3).map(|i| u32::from(w.actors[i].battle.hp)).sum() };
+    let mut hp_at_start = party_hp(&w);
     let mut acting = usize::from(w.battle_ctx.active_actor) == seat;
     for _ in 0..8000 {
         w.tick();
@@ -169,10 +179,12 @@ fn cast(
         let now_acting =
             usize::from(w.battle_ctx.active_actor) == seat && w.battle_ctx.queued_action == 2;
         if now_acting && !acting {
+            hp_at_start = party_hp(&w);
             t.acted = true;
             t.staged_clip = Some(a.battle.params[1]);
         }
         if !now_acting && t.acted {
+            t.party_hp_lost = hp_at_start.saturating_sub(party_hp(&w));
             break;
         }
         acting = now_acting;
@@ -216,6 +228,7 @@ fn every_monster_special_attack_animates() {
     };
     let n = monster_archive::slot_count(&entry) as u16;
     let (mut total, mut animated, mut retail_idle) = (0usize, 0usize, Vec::new());
+    let mut damaged = 0usize;
     let mut broken = Vec::new();
     for id in 1..=n {
         if !matches!(monster_archive::record(&entry, id), Ok(Some(_))) {
@@ -234,6 +247,9 @@ fn every_monster_special_attack_animates() {
                         .iter()
                         .map(|c| c.as_ref().map_or(0xEE, |c| c.action_id))
                         .collect();
+                    if t.deals_damage && t.party_hp_lost > 0 {
+                        damaged += 1;
+                    }
                     if !t.acted {
                         Some(format!("never cast; tags {tags:02x?}"))
                     } else if t.band_ticks >= u32::from(CASTER_STAGE_TICK_LIMIT) {
@@ -241,6 +257,8 @@ fn every_monster_special_attack_animates() {
                             "the capture band held {} ticks (the stage guard, not a choreography)",
                             t.band_ticks
                         ))
+                    } else if t.deals_damage && t.party_hp_lost == 0 {
+                        Some("a damaging capture special dealt nothing".to_string())
                     } else if t.special_frames > 0 {
                         animated += 1;
                         None
@@ -263,7 +281,8 @@ fn every_monster_special_attack_animates() {
     }
     eprintln!(
         "[ran] [monster-special-anim-sweep] {total} (monster, spell) casts: {animated} animate, \
-         {} hold idle as retail does ({}), {} without special motion",
+         {} hold idle as retail does ({}), {} without special motion; \
+         {damaged} damaging capture specials landed their hit",
         retail_idle.len(),
         retail_idle.join(" "),
         broken.len()

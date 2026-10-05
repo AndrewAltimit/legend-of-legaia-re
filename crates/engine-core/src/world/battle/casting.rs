@@ -120,7 +120,9 @@ impl World {
         // seeded with that power instead of the MP-scaled placeholder
         // ([`Self::enemy_move_predamage`]). `None` keeps the placeholder path
         // (disc-free / synthetic battles never install the table).
-        let move_power = self.enemy_move_power(caster, def.id);
+        let move_power = self
+            .enemy_move_power(caster, def.id)
+            .or_else(|| self.monster_capture_power(caster, def.id));
 
         // A party member's Seru-magic cast trains the spell: each damaged
         // target contributes spell XP (the `FUN_801ddb30` accrual tail runs
@@ -641,7 +643,24 @@ impl World {
             return Some(i32::from(*power));
         }
         // --- end W1-D ---
-        vm::cast_module_ticks::baked_power_for(entry).map(i32::from)
+        vm::cast_module_ticks::baked_power_for(entry)
+            .or_else(|| vm::cast_module_ticks::capture_site_power(entry, move_id))
+            .map(i32::from)
+    }
+
+    /// The magnitude seed for a capture-class special a **monster** casts:
+    /// the module's baked `a0` ([`Self::baked_module_power`]). The move-power
+    /// table carries no record for most of these ids, and retail's module
+    /// never reads it, so without this the fold had nothing to roll with.
+    /// `None` for a party caster, a non-capture id, or a body with no damage
+    /// site (a status-only special such as Glare).
+    pub(in crate::world) fn monster_capture_power(&self, caster: u8, move_id: u8) -> Option<i32> {
+        if (caster as usize) < self.party.party_count as usize
+            || !self.is_capture_class_move(move_id)
+        {
+            return None;
+        }
+        self.baked_module_power(move_id)
     }
 
     fn capture_respect_predamage(&mut self, attacker: u8, target: u8, power: i32) -> Option<u16> {
@@ -1357,6 +1376,10 @@ mod capture_bypass_tests {
         use legaia_asset::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
         let mut entries = vec![SpellEntry::default(); 0x100];
         entries[id as usize].class = CAPTURE_CLASS;
+        // Sub-id 19 pages PROT 0954 (Fatal Decision), a body with no damage
+        // site, so no baked power stands in for the table's: these fixtures
+        // isolate the wrapper choice, not the power seed.
+        entries[id as usize].sub_class = 19;
         world.menu.text = Some(crate::pause_screens::MenuTextTables {
             spell_names: Some(SpellNameTable::from_entries(entries)),
             ..Default::default()

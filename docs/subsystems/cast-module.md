@@ -1047,6 +1047,17 @@ it, and neither are the five that stage nothing on the caster in retail
 a monster cast can take, are on
 [`monster-animation.md`](../formats/monster-animation.md#which-byte-a-cast-actually-plays).
 
+**The hit.** A capture-class record is not in the spell catalog (the module
+owns it), so the band's fold resolves the cast the way the arm did and seeds
+the wrapper roll with the module's own baked `a0`: the per-module damage
+shapes, and for the bodies without one `CAPTURE_SITE_POWERS` - the immediate
+ahead of each body's `jal 0x801DD4B0` / `0x801DD6B4` (PROT 0935 Earthquake
+`0x1AE` at `0x801F7AFC`, and so on). A body with no damage site (Glare,
+Fatal Decision) folds no damage. The fold runs at the band's exit into
+`0x50`, after the caster's stages and the module's arms - not at the
+`0x28 -> 0x6E` edge, which sits above `0x50` in the state space but is the
+door *into* the band.
+
 #### A module that reports its spawns
 
 Seating every record on the stager's first tick puts each program on the
