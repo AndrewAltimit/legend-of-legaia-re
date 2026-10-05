@@ -107,13 +107,26 @@ pub const INFLIGHT_DEADLINE: u64 = INFLIGHT_TICKS as u64;
 /// replayed cast never reaches the capture's phase, the next seed is tried,
 /// so the state is scored at the event retail showed under some stream rather
 /// than dropped for the one stream the corpus happened to hold.
-pub const BATTLE_RNG_SEEDS: [u32; 6] = [
+///
+/// The list only ever grows at its tail: a state keeps the first seed that
+/// reaches, so an appended seed moves no state an earlier one already
+/// reaches. The tail exists for captures whose round order is a tie a draw
+/// breaks (`FUN_801DABA4`'s pick): any change in how long an action holds
+/// shifts which draw breaks it, so a state can lose every early seed to a
+/// party wipe without anything in the battle being wrong.
+pub const BATTLE_RNG_SEEDS: [u32; 12] = [
     0x1234_5678,
     0x9E37_79B9,
     0x0BAD_F00D,
     0x7F4A_7C15,
     0xC0FF_EE01,
     0x2545_F491,
+    0x6A09_E667,
+    0xBB67_AE85,
+    0x3C6E_F372,
+    0xA54F_F53A,
+    0x510E_527F,
+    0x9B05_688C,
 ];
 /// The battle projection's `H` (`FUN_8003D254`; `battle_cam_script::GTE_H`).
 const BATTLE_H: i16 = 256;
