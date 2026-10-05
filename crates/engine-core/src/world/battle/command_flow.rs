@@ -788,8 +788,19 @@ impl World {
         // `sb 0x50` phase store in its delay slot); a bare confirm replays it.
         let preseed = self.preseed_arts_entry_string(actor);
         let loaded = preseed.len();
-        let session =
+        // The Triangle list pages over the character's learned arts
+        // (`record[+0x185]`), the count the retail pager reads.
+        let learned = self
+            .party
+            .roster
+            .members
+            .get(char_slot as usize)
+            .map(|r| r.displayed_skills().count);
+        let mut session =
             ArtsCommandInputSession::new(actor, actor, pool, costs, pages).with_preseed(preseed);
+        if let Some(n) = learned {
+            session = session.with_list_rows(n);
+        }
         // The gauge build cuts the window at the first command one full pool
         // cannot pay, zeroing that one byte (`sb zero,0x1df(a1)` at
         // `0x801D4DC4`).
