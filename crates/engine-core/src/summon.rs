@@ -672,6 +672,30 @@ impl SummonScene {
         }));
     }
 
+    /// Run the move VM once for every part no tick has run yet - the call
+    /// retail's seater makes before it returns (`FUN_80021B04`,
+    /// `li v0,0x1` / `jal 0x80023070` at `0x80021DBC..0x80021DC0`). A seated
+    /// part's program has therefore already set its colour word, scale and
+    /// first wait by the time the frame draws it; drawn unrun, a part shows
+    /// its bare mesh at full opacity for a frame (`freed_summon_mid_cast`
+    /// caught the cast close-up's additive ray burst on that frame, opaque).
+    /// Only the VM runs here: the part tick's channel and motion blocks are
+    /// the next frame's.
+    pub fn seat_run<H: MoveHost + ?Sized>(&mut self, host: &mut H) {
+        for part in &mut self.parts {
+            let unrun = !part.finished && part.state.pc == 2 && part.state.wait_timer == -1;
+            if !unrun {
+                continue;
+            }
+            match move_vm::actor_tick(host, &mut part.state, &part.buf, SUMMON_PART_BUDGET) {
+                ActorTickOutcome::Halted | ActorTickOutcome::EndOfBuffer { .. } => {
+                    part.finished = true;
+                }
+                _ => {}
+            }
+        }
+    }
+
     /// Advance every live part one frame through the move VM. `frame_delta` is
     /// the wait-timer drain (retail's per-actor anim-speed × frame-rate scalar
     /// product); a typical value keeps the parts on their authored timing.

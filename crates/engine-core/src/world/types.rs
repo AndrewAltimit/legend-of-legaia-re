@@ -762,9 +762,10 @@ pub struct Actor {
 
     /// Effect-script record cursor - the engine mirror of actor `+0x1F5`.
     /// Advanced by the per-frame walk, zeroed when a new anim record commits
-    /// (retail `FUN_8004AD80`, `0x8004B060`) and when a looping clip wraps
-    /// (engine cadence choice so a walk clip's footstep effects refire per
-    /// cycle).
+    /// (retail `FUN_8004AD80`, `0x8004B060`), and on a loop-window rewind only
+    /// for a party seat playing art slot `0x11` with latched id `>= 0x2B`
+    /// (`FUN_80047430`, `0x80047840..0x80047870`) - every other looping clip
+    /// fires its records once per commit.
     pub battle_effect_cursor: u8,
 
     /// Animation cue-track cursor - the engine mirror of actor `+0x1F6`, the

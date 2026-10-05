@@ -44,6 +44,10 @@ impl World {
                 table_staged,
             });
         }
+        // Both hosts route once a frame, after the world tick and before
+        // the draw: every part this frame seated - here, or in the tick's
+        // stager and module arms - gets the seater's VM run before it draws.
+        self.seat_run_battle_fx();
         out
     }
 }

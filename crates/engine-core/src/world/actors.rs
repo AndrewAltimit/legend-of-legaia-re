@@ -344,9 +344,20 @@ impl World {
                     .battle_pose_history
                     .truncate(crate::battle_afterimage::HISTORY_DEPTH);
                 actor.pose_frame = Some(pose);
-                if after < before {
-                    // Looping clip wrapped: refire the effect script next
-                    // cycle (engine cadence choice - see the cursor's docs).
+                // The loop-window rewind (`0x800477EC..0x80047878`) re-arms
+                // the effect script only for a party seat playing the art
+                // slot `0x11` whose latched id `+0x1DB` is `0x2B` or above
+                // (`sltiu v0,s1,0x3` / `li v0,0x11` / `sltiu v0,v0,0x2b`,
+                // then `sb zero,0x1f5` / `0x1f6` / `0x1f4`); any other clip
+                // fires its effect records once per commit. Re-arming every
+                // wrap re-spawned a looping cast clip's record every cycle:
+                // `freed_summon_mid_cast` drew six or seven overlapping ray
+                // bursts where retail holds one.
+                if after < before
+                    && i < 3
+                    && actor.battle.current_anim == 0x11
+                    && actor.battle.latched_anim >= 0x2B
+                {
                     actor.battle_effect_cursor = 0;
                 }
                 Some(after)

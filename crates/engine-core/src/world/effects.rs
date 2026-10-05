@@ -1048,6 +1048,39 @@ impl World {
         }
     }
 
+    /// The seater's own VM run for every battle FX part seated since the
+    /// last tick ([`crate::summon::SummonScene::seat_run`]), over the
+    /// summon, move-FX and effect-script scenes. Run after each batch of
+    /// seats so no part reaches a draw before its program has.
+    pub fn seat_run_battle_fx(&mut self) {
+        let mut scenes: Vec<crate::summon::SummonScene> = Vec::new();
+        scenes.extend(self.casting.active_summon.take());
+        let summon_n = scenes.len();
+        scenes.extend(self.casting.active_move_fx.take());
+        let move_n = scenes.len();
+        scenes.append(&mut self.casting.active_action_fx);
+        for scene in &mut scenes {
+            let mut host = MoveVmHostImpl {
+                world: self,
+                current_slot: None,
+                deferred_writes: std::collections::BTreeMap::new(),
+                field_record_words: None,
+                child_spawns: Vec::new(),
+            };
+            scene.seat_run(&mut host);
+        }
+        let mut it = scenes.into_iter();
+        if summon_n == 1 {
+            self.casting.active_summon = it.next();
+        }
+        if move_n > summon_n {
+            self.casting.active_move_fx = it.next();
+        }
+        // Any scene a seat run spawned lands behind the ones it ran.
+        let spawned = std::mem::take(&mut self.casting.active_action_fx);
+        self.casting.active_action_fx = it.chain(spawned).collect();
+    }
+
     /// Take the pending move-FX sound cue id, if [`Self::spawn_move_fx`] set one
     /// this step. The host routes it through `legaia_engine_audio::classify_cue`
     /// (the `FUN_8004fcc8` dispatch) → the SFX ring / voice trigger. Returns
