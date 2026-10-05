@@ -1198,6 +1198,9 @@ thread_local! {
     static NO_ITEM: std::cell::RefCell<HashSet<(u8, u32)>> = Default::default();
     /// Actors whose Magic window held no affordable damage spell this battle.
     static NO_MAGIC: std::cell::RefCell<HashSet<u8>> = Default::default();
+    /// The foe round a solo duel last chose Spirit in
+    /// ([`duel_wants_spirit`]): the round after it swings the gauge it built.
+    static DUEL_SPIRIT_ROUND: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
 }
 
 /// Percent of max HP below which the fighter heals a member.
@@ -1288,6 +1291,54 @@ fn wants_guard(w: &legaia_engine_core::world::World, actor: u8) -> bool {
     hp > 0 && threat * 5 >= max * 2 && hp > threat / 2 + threat / 8 && big_round_due()
 }
 
+/// A **solo duel**: one party member against a no-escape fight whose foe
+/// outweighs it several times over (the Nivora duels - `nilboa`'s Che
+/// Delilas against Gala, 12000 HP to 1446). Plain swings barely scratch such
+/// a foe (the underdog floor) and its three real swings a round take half the
+/// member's HP, so the fight is won the way a player wins it: Arts at a full
+/// gauge, Spirit between them.
+fn solo_duel(w: &legaia_engine_core::world::World) -> bool {
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    if n != 1 || !w.battle.no_escape {
+        return false;
+    }
+    let ours = u32::from(w.actors[0].battle.max_hp).max(1);
+    (n..w.actors.len()).any(|i| {
+        let a = &w.actors[i].battle;
+        a.hp > 0 && u32::from(a.max_hp) >= ours * 4
+    })
+}
+
+/// The duel's Spirit turn. The fighter alternates: a Spirit round, then an
+/// Arts round on the gauge it extended - the stance triples the member's
+/// guard for the foe's swings and halves its specials, so the rounds the foe
+/// spends against it cost little, and a Delilas special (Che's Megaton
+/// Press, Lu's Plasma Strike) lands on a guarded member far more often than
+/// not. Below three fifths of its HP the member holds the stance round after
+/// round until the heal arm ahead of this one has topped it up.
+fn duel_wants_spirit(w: &legaia_engine_core::world::World, actor: u8) -> bool {
+    if !solo_duel(w) {
+        return false;
+    }
+    let a = &w.actors[usize::from(actor)].battle;
+    // Held round after round below three fifths, or while one of the foe's
+    // heaviest rounds so far (a Delilas special lands most of a member's HP
+    // at once) would drop the member unguarded.
+    let threat = BIGGEST_HIT.with(std::cell::Cell::get);
+    let low = u32::from(a.hp) * 5 < u32::from(a.max_hp) * 3 || u32::from(a.hp) <= threat;
+    // The choice is latched per foe round: the fighter re-reads the menu on
+    // every pad poll until the press lands, and a choice that flipped under
+    // it would press something else.
+    let round = ROUND_HISTORY.with(|h| h.borrow().len());
+    match DUEL_SPIRIT_ROUND.with(std::cell::Cell::get) {
+        Some(r) if r == round => return true,
+        Some(r) if r + 1 == round && !low => return false,
+        _ => {}
+    }
+    DUEL_SPIRIT_ROUND.with(|d| d.set(Some(round)));
+    true
+}
+
 fn party_hp_key(w: &legaia_engine_core::world::World) -> u32 {
     let n = w.party.party_count.clamp(1, 3) as usize;
     (0..n).map(|i| u32::from(w.actors[i].battle.hp)).sum()
@@ -1351,10 +1402,17 @@ fn wanted_item(
     let hp = projected_hp(w);
     let threat = BIGGEST_HIT.with(std::cell::Cell::get);
     // The HP a member needs to hold to be out of danger.
+    // A solo duel's member tops up below three fifths: its foe can act twice
+    // across a round boundary, and two full rounds of Che's swings are most of
+    // Gala's HP.
+    let duel = solo_duel(w);
     let limit = |i: usize| {
         let max = u32::from(w.actors[i].battle.max_hp);
         let pct = max * HEAL_BELOW_PCT / 100;
         let hit = (threat + threat / 8).min(max * 95 / 100);
+        if duel {
+            return pct.max(hit).max(max * 3 / 5);
+        }
         pct.max(hit)
     };
     // A member a committed revive brings back is still down while the
@@ -1642,7 +1700,15 @@ fn fight_pad(session: &BootSession) -> u16 {
                 PadButton::Down.mask()
             }
             CommandPhase::Menu { .. } if lesson.is_none() && heal() => PadButton::Up.mask(),
-            CommandPhase::Menu { .. } if lesson.is_none() && magic() => PadButton::Right.mask(),
+            // A solo duel builds its gauge between Arts turns.
+            CommandPhase::Menu { .. } if lesson.is_none() && duel_wants_spirit(w, cmd.actor) => {
+                PadButton::Down.mask()
+            }
+            // A duel's damage is its Arts; a summon spends the turn and the
+            // MP for less.
+            CommandPhase::Menu { .. } if lesson.is_none() && magic() && !solo_duel(w) => {
+                PadButton::Right.mask()
+            }
             CommandPhase::AttackMode { .. } if lesson.is_none() => PadButton::Right.mask(),
             // A random encounter on a pad travel leg is fled: the prompt's
             // Right takes Run. A lone member worn down by a string of fights
@@ -1780,6 +1846,7 @@ fn party_dump(session: &BootSession) {
 fn drain_battle(session: &mut BootSession) -> Option<Run> {
     NO_ITEM.with(|n| n.borrow_mut().clear());
     NO_MAGIC.with(|n| n.borrow_mut().clear());
+    DUEL_SPIRIT_ROUND.with(|d| d.set(None));
     BIGGEST_HIT.with(|b| b.set(0));
     ROUND_LOSS.with(|r| r.set([0; 3]));
     ROUND_HISTORY.with(|h| h.borrow_mut().clear());
