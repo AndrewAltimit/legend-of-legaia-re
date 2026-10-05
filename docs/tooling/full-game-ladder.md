@@ -242,7 +242,11 @@ map as its street:
   record that hops more than once, or box-tests the player first, is left
   out: its landing is not one place.
 
-The follower presses a teleport waypoint until the jump lands, backs out of a
+The follower leaves a cross-axis offset of a few units alone while the
+other axis still has ground to cover: chasing its own overshoot flips the
+diagonal every frame, and along a terrace edge the side-step toward the
+drop is a ledge hop (`tunnela`'s corridor at (89, 79) drops the party to
+(89, 80), a one-way hop it cannot climb back). The follower presses a teleport waypoint until the jump lands, backs out of a
 diagonal-wall notch where all four lattice steps read blocked, and, held
 against something for a second, tries the action button. In a field the tap
 waits for a frame the player did not move: the stall counter also counts a run

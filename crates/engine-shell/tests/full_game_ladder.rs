@@ -2239,6 +2239,9 @@ const SUBCELL: i16 = 32;
 const TILE: i16 = 128;
 const PAD_LEG_FRAMES: u32 = 12_000;
 const PAD_STALL_FRAMES: u32 = 300;
+/// Cross-axis distance (world units) the pad walk does not correct while it
+/// still has ground to cover on the other axis.
+const WALK_DEADBAND: i16 = 8;
 const MAX_PLAN_NODES: usize = 120_000;
 /// Tiles short of a door the lattice may end before a pad hop is called
 /// unwalkable rather than attempted.
@@ -4568,7 +4571,20 @@ fn pad_walk(
             Some(&c) => cell_center(c),
             None => tile_center(goal),
         };
-        let mut pad = pad_for_step(session, (tx - wx).signum(), (tz - wz).signum());
+        // A cross-axis offset of a few units is the walk's own overshoot,
+        // not a step to take: chasing it flips the diagonal every frame, and
+        // along a terrace edge the side-step toward the drop is a ledge hop
+        // (`tunnela`'s corridor at (89, 79) hops the party down to (89, 80),
+        // a one-way drop the walk then cannot climb back).
+        let (dx, dz) = (tx - wx, tz - wz);
+        let lean = |d: i16, other: i16| {
+            if d.abs() <= WALK_DEADBAND && other.abs() > WALK_DEADBAND {
+                0
+            } else {
+                d.signum()
+            }
+        };
+        let mut pad = pad_for_step(session, lean(dx, dz), lean(dz, dx));
         if walking_mode == SceneMode::WorldMap && !corner_failed {
             let t = dispatch_tile(wx, wz);
             if corner_route.is_empty() && !corner_planned {
