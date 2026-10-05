@@ -3,13 +3,15 @@
 //! `menu_replay` opens every pause screen by pad, but it opens them on a
 //! cold new-game party: Vahn with no Seru magic and a starting bag. Three
 //! routines sit behind content that party does not have, so the reach report
-//! read them *live but never entered* however deep the menu ladder went:
+//! read them *live but never entered* however deep the menu ladder went
+//! (the fourth row is the Magic rung carried one confirm further):
 //!
 //! | rung | routine | the content it needs |
 //! |---|---|---|
 //! | Magic | `FUN_8003053C`, the spell-record broadcast the Magic list's build runs per learned spell (`0x80031210`) | a learned spell on the record |
 //! | Status -> reorder | `FUN_801DA2A0`, the list-reorder page's browse half | the same learned spell - `ListOrderSession::open` refuses an empty list, which is retail's buzz-and-stay |
 //! | Items -> Use | `FUN_801DCD58`, the "learned a new art" notice window's operand patch | a Hyper Art book in the bag |
+//! | Magic -> confirm | `FUN_801D9110`'s state-2 confirm dispatch (`0x801D9220..0x801D9260`), target picker vs group flow | a learned field heal, the MP to cast it, a hurt member |
 //!
 //! ## What is seeded, and why it is player state
 //!
@@ -337,4 +339,97 @@ fn using_an_art_book_patches_the_learned_art_notice() {
         "[items] book {book:#04X} taught art {tier:#04X}: {:?}",
         notice.lines.len()
     );
+}
+
+/// The Magic screen's state-2 confirm dispatch (`FUN_801D9110`,
+/// `0x801D9220..0x801D9260`): a confirmed field spell opens the per-member
+/// target picker or, when the spell's stats `+2` byte carries `0x20`, the
+/// no-pick group flow - and the cast that follows lands.
+///
+/// The rung the Magic test above stops short of. That one opens the list; a
+/// confirm needs a spell the field can use, a caster with the MP for it and
+/// a member it would affect, so this seeds all three as player state - a
+/// learned healing spell, a full MP bar, and a lead hurt to half HP - and
+/// then drives caster, spell and commit by pad. It scores the dispatch's
+/// product twice: the phase it opened is the one the spell's own flag
+/// selects, and the commit raised the hurt member's HP, which a confirm the
+/// dispatch refused could not do.
+#[test]
+fn a_confirmed_field_spell_routes_through_the_state_2_dispatch_and_heals() {
+    let Some(probe) = booted(&[], &[]) else {
+        return;
+    };
+    let catalog = probe.host.world.tables.spell_catalog.clone();
+    // Prefer the player Seru block; any field-usable heal the list can hold
+    // exercises the same dispatch.
+    let Some(spell) = (0x81u8..=0x8B).chain(0u8..=0xFF).find(|&id| {
+        catalog.get(id).is_some_and(|d| {
+            use legaia_engine_core::spells::SpellEffect;
+            // A heal, so the commit has an HP delta to score.
+            legaia_engine_core::spell_menu::is_field_usable(&d.effect)
+                && matches!(
+                    d.effect,
+                    SpellEffect::Heal { .. } | SpellEffect::HealAll { .. }
+                )
+        })
+    }) else {
+        panic!("the disc spell table carries no field-usable heal");
+    };
+    let group = legaia_engine_core::spell_menu::spell_targets_group(
+        catalog.get(spell).unwrap().target.retail_target_flag_bits(),
+    );
+    drop(probe);
+
+    let Some(mut s) = booted(&[spell], &[]) else {
+        return;
+    };
+    let slot = s.host.world.party_roster_slot(0);
+    {
+        let rec = &mut s.host.world.party.roster.members[slot];
+        let mut hms = rec.hp_mp_sp();
+        hms.hp_cur = (hms.hp_max / 2).max(1);
+        hms.mp_max = hms.mp_max.max(999);
+        hms.mp_cur = hms.mp_max;
+        rec.set_hp_mp_sp(hms);
+    }
+    let hp_before = s.host.world.party.roster.members[slot].hp_mp_sp().hp_cur;
+
+    open_row(&mut s, FieldMenuRow::Magic);
+    assert!(
+        matches!(s.field_menu_sub, Some(FieldMenuSubsession::Spells(_))),
+        "Magic did not open the spell screen"
+    );
+    // Caster (Vahn, row 0), then the spell (row 0).
+    tap(&mut s, PadButton::Cross);
+    tap(&mut s, PadButton::Cross);
+    let Some(FieldMenuSubsession::Spells(session)) = s.field_menu_sub.as_ref() else {
+        panic!("the spell screen closed on the confirm");
+    };
+    let phase = session.phase().clone();
+    use legaia_engine_core::spell_menu::SpellMenuPhase;
+    match (&phase, group) {
+        (SpellMenuPhase::GroupConfirm { spell_id, .. }, true)
+        | (SpellMenuPhase::TargetSelect { spell_id, .. }, false) => {
+            assert_eq!(*spell_id, spell, "the dispatch carried the wrong spell")
+        }
+        _ => panic!(
+            "spell {spell:#04X} (group flag {group}) opened {phase:?} - the state-2 dispatch \
+             did not route on the spell's own flag"
+        ),
+    }
+    // Commit: the group flow takes one Cross; the picker's cursor starts on
+    // row 0, the hurt lead.
+    for _ in 0..3 {
+        if s.host.world.party.roster.members[slot].hp_mp_sp().hp_cur > hp_before {
+            break;
+        }
+        tap(&mut s, PadButton::Cross);
+    }
+    let hp_after = s.host.world.party.roster.members[slot].hp_mp_sp().hp_cur;
+    assert!(
+        hp_after > hp_before,
+        "casting {spell:#04X} from the Magic screen left Vahn at {hp_after} HP (was {hp_before})"
+    );
+    eprintln!("[magic] spell {spell:#04X} group={group}: HP {hp_before} -> {hp_after}");
+    close_to_root(&mut s);
 }
