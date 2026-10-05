@@ -97,6 +97,12 @@ pub struct CastFxState {
     /// [`crate::world::World::capture_stager_tick`] reports "not busy" - which is what a
     /// disc-free host, or any cast that is not capture-class, sees.
     pub capture_spell: Option<u8>,
+    /// The caster's clip stages the resident capture-class body owes and its
+    /// port does not write ([`legaia_engine_vm::cast_module_ticks::CAPTURE_CASTER_STAGES`]),
+    /// replayed at the head of the band by
+    /// [`crate::world::World::capture_stager_tick`]. `None` once played out,
+    /// or for a body that stages nothing on its caster.
+    pub caster_stages: Option<crate::world::battle::CasterStageRun>,
     /// Production battle-FX request for a **non-summon** move: a spell cast or
     /// enemy special whose move-power record carries a spawnable effect list
     /// sets `(move_id, target world pos)` here (see [`crate::world::World::request_move_fx_spawn`]).
@@ -177,6 +183,7 @@ impl CastFxState {
             module_swordie: Default::default(),
             module_cam: Default::default(),
             capture_spell: None,
+            caster_stages: None,
             pending_move_fx_spawn: None,
             active_move_fx: None,
             active_action_fx: Vec::new(),

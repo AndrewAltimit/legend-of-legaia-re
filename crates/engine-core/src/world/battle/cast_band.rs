@@ -144,6 +144,78 @@ pub enum SummonPhase {
     Done,
 }
 
+/// Longest the band waits on the caster's stages before it gives up and lets
+/// the module run - a guard against a clip that never commits, not a timing.
+pub const CASTER_STAGE_TICK_LIMIT: u16 = 900;
+
+/// The caster's clip stages a capture-class body owes and its port does not
+/// write ([`legaia_engine_vm::cast_module_ticks::CAPTURE_CASTER_STAGES`]),
+/// in flight at the head of battle phase `0x70`.
+///
+/// Each stage is written into the caster's `+0x1DA` and the next one is
+/// written behind it as soon as it commits, so the commit's boundary rule
+/// plays every clip to its natural end; the last is followed by `0`, retail's
+/// closing `sb zero,0x1DA(<caster>)`, and the run ends when the caster is
+/// back on its idle entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CasterStageRun {
+    /// The casting seat.
+    pub slot: u8,
+    /// The clips to stage, in order.
+    pub clips: Vec<u8>,
+    /// Index of the clip being staged / waited on.
+    pub cursor: usize,
+    /// Where the run is.
+    pub phase: CasterStagePhase,
+    /// Ticks spent holding the band so far ([`CASTER_STAGE_TICK_LIMIT`]).
+    pub ticks: u16,
+}
+
+/// Whether the clip actor `a` has committed has run as far as it will on its
+/// own: played out, or reached its authored loop window (a park, or the start
+/// of a looping tail) with cycles still owed.
+fn caster_clip_settled(a: &crate::world::Actor) -> bool {
+    let Some(p) = a.battle_animation.as_ref() else {
+        return true;
+    };
+    if p.finished() {
+        return true;
+    }
+    let window_start = a
+        .battle_action_clips
+        .as_ref()
+        .and_then(|c| c.get(usize::from(a.battle.current_anim)))
+        .and_then(|c| c.as_ref())
+        .and_then(|c| c.entry_loop_window())
+        .map(|(_, start, _)| i16::from(start));
+    matches!(window_start, Some(w) if p.loop_cycles_remaining() > 0 && p.current_frame() >= w)
+}
+
+/// The three stretches of a [`CasterStageRun`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CasterStagePhase {
+    /// Staging the clips: each is held until it has committed and either
+    /// played out or reached its authored loop-window park.
+    Staging,
+    /// The caster sits on the last clip (parked, when it has a window) while
+    /// the module's own arms run.
+    Module,
+    /// The module is done: the park is released (`sh zero,0x176(<caster>)`)
+    /// and idle staged behind it (`sb zero,0x1DA(<caster>)`); the band holds
+    /// until the caster is back on its idle entry.
+    Closing,
+}
+
+/// What [`World::capture_stager_tick`] does with the module this tick.
+enum CasterStageGate {
+    /// The caster's stages hold the band; the module does not run.
+    Hold,
+    /// Run the module.
+    RunModule,
+    /// The run closed out: leave `0x70`.
+    Done,
+}
+
 /// One player summon in flight (see the module docs).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SummonStager {
@@ -284,6 +356,17 @@ impl World {
             a.battle.params[2] = shot;
             a.battle.params[3] = 0xFF;
             a.battle.sub_route = 0;
+            // The picker stores the same entry into `+0x1E7` one instruction
+            // ahead of `+0x1E0` (`sb s2,0x1e7(s4)` at `0x801EA53C`, and the
+            // `OneAlly` re-pick's `sb s5,0x1e7(s4)` at `0x801EA6C4`). That is
+            // the byte the action seed's **Spirit band** stages instead of
+            // `+0x1E0` (`lbu v0,0x1e7(s3); sb v0,0x1da(s3)` at
+            // `0x801E3B4C..0x801E3B54`), which every monster cast of a
+            // class-`< 0x14` record below id `0x65` - the heals and buffs -
+            // runs through. A walk that found no entry writes neither byte.
+            if clip != 0xFF {
+                a.battle.queued_anim_b = clip;
+            }
         }
         self.casting.pending_cast = Some(PendingCast {
             caster: slot,
@@ -1091,8 +1174,22 @@ impl World {
         let Some(spell_id) = self.casting.capture_spell else {
             return false;
         };
+        // The caster's own stages the body's port does not write: the
+        // wind-up plays first, the module's arms run with the caster on its
+        // park, and the close releases the park once they are done.
+        match self.step_caster_stages() {
+            CasterStageGate::Hold => return true,
+            CasterStageGate::Done => {
+                self.casting.capture_spell = None;
+                return false;
+            }
+            CasterStageGate::RunModule => {}
+        }
         let arm = self.casting.module_phase;
         let Some(run) = self.run_cast_module_code(spell_id, arm) else {
+            if self.close_caster_stages() {
+                return true;
+            }
             self.casting.capture_spell = None;
             return false;
         };
@@ -1107,6 +1204,9 @@ impl World {
             }
         }
         if run.tick_ported && run.busy {
+            return true;
+        }
+        if self.close_caster_stages() {
             return true;
         }
         // The band is leaving `0x70`; the module stops being re-entered.
@@ -1127,7 +1227,127 @@ impl World {
         self.casting.module_swordie = Default::default();
         self.casting.module_cam = Default::default();
         self.casting.capture_spell = Some(spell_id);
+        self.casting.caster_stages = self.caster_stage_run_for(spell_id);
         self.emit_cast_module_voice(spell_id);
+    }
+
+    /// The [`CasterStageRun`] a capture-class cast of `spell_id` by the
+    /// acting seat owes, when its body's port stages nothing on the caster
+    /// ([`vm::cast_module_ticks::capture_caster_stages`]). Only a monster seat
+    /// with installed clips plays one, and a stage naming an entry the
+    /// caster's record does not carry is dropped - retail would index past
+    /// the record's offset array there (the Gobu Gobu Curse fault on
+    /// `docs/subsystems/cast-module.md`).
+    fn caster_stage_run_for(&self, spell_id: u8) -> Option<CasterStageRun> {
+        let entry = self.cast_module_for(spell_id)?;
+        let slot = self.battle_ctx.active_actor;
+        let actor = self.actors.get(usize::from(slot))?;
+        let seat_monster = (actor.battle_monster_id? & 0xFF) as u8;
+        let installed = actor.battle_action_clips.as_ref()?;
+        let clips: Vec<u8> = vm::cast_module_ticks::capture_caster_stages(
+            entry,
+            spell_id,
+            seat_monster,
+            self.battle_first_monster_byte(),
+        )?
+        .into_iter()
+        .filter(|&c| {
+            installed
+                .get(usize::from(c))
+                .is_some_and(|c| c.as_ref().is_some_and(|c| c.frame_count > 0))
+        })
+        .collect();
+        (!clips.is_empty()).then_some(CasterStageRun {
+            slot,
+            clips,
+            cursor: 0,
+            phase: CasterStagePhase::Staging,
+            ticks: 0,
+        })
+    }
+
+    /// Advance the [`CasterStageRun`] by one band tick.
+    fn step_caster_stages(&mut self) -> CasterStageGate {
+        let Some(mut run) = self.casting.caster_stages.take() else {
+            return CasterStageGate::RunModule;
+        };
+        let Some(a) = self.actors.get_mut(usize::from(run.slot)) else {
+            return CasterStageGate::RunModule;
+        };
+        if run.phase != CasterStagePhase::Module {
+            run.ticks = run.ticks.saturating_add(1);
+            if run.ticks > CASTER_STAGE_TICK_LIMIT {
+                // A clip that never committed: hand the band back rather
+                // than hold it.
+                if let Some(p) = a.battle_animation.as_mut() {
+                    p.release_loop_window();
+                }
+                a.battle.queued_anim = 0;
+                return if run.phase == CasterStagePhase::Closing {
+                    CasterStageGate::Done
+                } else {
+                    CasterStageGate::RunModule
+                };
+            }
+        }
+        let gate = match run.phase {
+            CasterStagePhase::Staging => {
+                let want = run.clips[run.cursor];
+                if run.ticks == 1 {
+                    a.battle.queued_anim = want;
+                    CasterStageGate::Hold
+                } else if a.battle.current_anim == want && caster_clip_settled(a) {
+                    if run.cursor + 1 < run.clips.len() {
+                        // A wind-up's park is released for the stage that
+                        // follows it.
+                        if let Some(p) = a.battle_animation.as_mut() {
+                            p.release_loop_window();
+                        }
+                        run.cursor += 1;
+                        a.battle.queued_anim = run.clips[run.cursor];
+                        CasterStageGate::Hold
+                    } else {
+                        run.phase = CasterStagePhase::Module;
+                        CasterStageGate::RunModule
+                    }
+                } else {
+                    CasterStageGate::Hold
+                }
+            }
+            CasterStagePhase::Module => CasterStageGate::RunModule,
+            CasterStagePhase::Closing => {
+                if a.battle.current_anim == 0 {
+                    return CasterStageGate::Done;
+                }
+                CasterStageGate::Hold
+            }
+        };
+        self.casting.caster_stages = Some(run);
+        gate
+    }
+
+    /// The module reported done: release the caster's park and stage idle
+    /// behind it. `true` when a [`CasterStageRun`] is now closing (the band
+    /// holds until the caster is back on idle).
+    fn close_caster_stages(&mut self) -> bool {
+        let Some(run) = self.casting.caster_stages.as_mut() else {
+            return false;
+        };
+        if run.phase != CasterStagePhase::Module {
+            return false;
+        }
+        run.phase = CasterStagePhase::Closing;
+        if let Some(a) = self.actors.get_mut(usize::from(run.slot)) {
+            if let Some(p) = a.battle_animation.as_mut() {
+                p.release_loop_window();
+            }
+            a.battle.queued_anim = 0;
+            if a.battle.current_anim == 0 {
+                self.casting.caster_stages = None;
+                return false;
+            }
+        }
+        true
     }
 
     /// Stage the walk clip (id `1`, the looping approach - the capture's

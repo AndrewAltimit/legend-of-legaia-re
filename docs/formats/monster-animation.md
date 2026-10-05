@@ -121,6 +121,40 @@ therefore plays entry 8, his only tag-`0x23` entry (the
 `battle_gimard_tail_fire_a` capture reads `+0x1E0 = 8`); no entry carries tag
 `0x27`. Engine: `World::monster_cast_clip`.
 
+### Which byte a cast actually plays
+
+The picker writes the clip twice - `+0x1E7` one instruction ahead of
+`+0x1E0` (`sb s2,0x1e7(s4)` at `0x801EA53C`) - and the action seed then
+routes the cast into one of three bands, each of which takes the caster's
+clip from a different place:
+
+| Route | Taken when | Caster clip |
+|---|---|---|
+| `0x28` -> `0x29` | the spell record's class byte is `>= 0x14` (or the id `>= 0x65`) and not `0x63` | `+0x1E0`, staged by the `0x29` arm |
+| `0x3C` Spirit band | class `< 0x14` and id `< 0x65` - the heals and buffs (`0x801E2EEC..0x801E2EFC`) | `+0x1E7` (`lbu v0,0x1e7(s3); sb v0,0x1da(s3)` at `0x801E3B4C..0x801E3B54`), held until it commits and runs back to idle |
+| `0x28` -> `0x6E` capture band | class `0x63` | neither: the slot-B cast module stages literals of its own |
+
+The capture route is where most monster specials go, and its clips are code,
+not data. Each module body loads the caster from `actor_table[ctx[+0x13]]`
+and writes `sb <clip>,0x1DA(<caster>)` with a literal - usually one wind-up
+or cast entry at arm `0`, sometimes two in sequence (PROT 0937 Hyper Lightning
+stages `0x0D` then `0x0C`), occasionally chosen on a monster id (PROT 0940's
+`0x3C` stages `9` for monster `0xA9` and `8` for anyone else) - and closes
+with `sb zero,0x1DA`. The literal is an entry index into the caster's own
+record, so a module only lines up with the monsters that were built for it.
+Five bodies stage nothing on the caster at all - their only `+0x1DA` writes
+are the victim's reaction - so the caster holds its idle through those
+casts in retail too. The per-body table, with the stage sites, is
+`legaia_engine_vm::cast_module_ticks::CAPTURE_CASTER_STAGES` and
+`CAPTURE_BODIES_WITHOUT_CASTER_STAGE`; the engine replays the listed stages,
+each to its clip's natural end, at the head of battle phase `0x70`
+(`World::capture_stager_tick`). Melee bodies walk the caster into reach first
+(the walk entry, held on the range poll `FUN_8004E2F0`); the engine plays
+their strike in place. The disc-gated sweep
+`crates/engine-core/tests/monster_special_anim_sweep_disc.rs` casts every
+monster's every magic-slot spell and asserts the caster plays a moving
+special clip unless its body is one of the five.
+
 ## Anim selection (`actor +0x1D9/+0x1DA` → entry)
 
 The per-actor anim state is a pair of bytes: `+0x1DA` = queued anim id,

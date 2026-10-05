@@ -1034,6 +1034,19 @@ change. It fires at the two seams retail uses: the capture band's pager
 (`load_capture_archive`, the `0x6E` arm, ahead of the `0x801E50C8` tick loop)
 and the summon stager's first tick (`0x801E4B1C`).
 
+**The caster's clips.** Most capture-class body ports carry the phase walk,
+the damage and the victim's reaction but none of the body's
+`sb <literal>,0x1DA(<caster>)` sites, so without more a monster special plays
+its whole band on the idle loop. `CAPTURE_CASTER_STAGES`
+(`legaia_engine_vm::cast_module_ticks`) lists, per body the port leaves bare,
+the literals the caster is staged with and their sites; `World::capture_stager_tick`
+replays them at the head of phase `0x70`, each to its clip's end, before the
+module's arms run. The bodies whose ports already stage the caster are not in
+it, and neither are the five that stage nothing on the caster in retail
+(`CAPTURE_BODIES_WITHOUT_CASTER_STAGE`). The table, and the three clip routes
+a monster cast can take, are on
+[`monster-animation.md`](../formats/monster-animation.md#which-byte-a-cast-actually-plays).
+
 #### A module that reports its spawns
 
 Seating every record on the stager's first tick puts each program on the

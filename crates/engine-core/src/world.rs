@@ -174,6 +174,7 @@ pub use battle::{
     victory_pose_tier,
 };
 pub use battle::{AutoComboInputs, AutoComboState};
+pub use battle::{CASTER_STAGE_TICK_LIMIT, CasterStagePhase, CasterStageRun};
 mod effects;
 pub use effects::{
     ClutBlendFx, ClutCellFx, ClutCellFxPhase, DEBUG_EFFECT_LIFETIME_FRAMES, MAX_DEBUG_EFFECTS,

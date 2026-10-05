@@ -1743,6 +1743,20 @@ impl LegaiaRuntime {
         true
     }
 
+    /// Make the monster in engine battle `seat` cast `spell_id` on its next
+    /// turn instead of the AI's pick - the browser twin of the native
+    /// window's `LEGAIA_BATTLE_MONSTER_CAST=seat,spell` debug seam
+    /// (`BattleState::forced_monster_cast`). Pair with
+    /// [`Self::debug_force_battle`] to watch one enemy special from a cold
+    /// page.
+    pub fn debug_seed_monster_cast(&mut self, seat: u8, spell_id: u8) -> bool {
+        let Some(host) = self.scene_host.as_mut() else {
+            return false;
+        };
+        host.world.battle.forced_monster_cast = Some((seat, spell_id));
+        true
+    }
+
     /// `true` while the party-wipe hand-off owns the frame. The page stops
     /// feeding the pad into the world and drives
     /// [`Self::game_over_input`] instead.

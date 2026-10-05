@@ -93,6 +93,7 @@ use crate::battle_damage_wrappers::{
 mod arms;
 mod arms_0955;
 mod capture;
+mod caster_stages;
 mod idioms;
 mod power;
 mod stagers;
@@ -102,6 +103,7 @@ mod ticks;
 pub use arms::*;
 pub use arms_0955::*;
 pub use capture::*;
+pub use caster_stages::*;
 pub use idioms::*;
 pub use power::*;
 pub use stagers::*;

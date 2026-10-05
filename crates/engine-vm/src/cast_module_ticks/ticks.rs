@@ -151,7 +151,15 @@ pub const ASTRAL_SLASH_ARM2_CLIP: u8 = 0x0A;
 /// * arm `3` writes `+0x1DA = 0` **without** a `+0x1DC` bump (`0x801F6EA4`),
 ///   restores the caster to `+0x21D = 8`, and drops the victim to `2` when
 ///   `0x8007BD10[victim] == 2`;
-/// * arm `4` is terminal - it advances nothing, so the module parks there.
+/// * arm `4` is terminal - it advances nothing, and it is the arm that
+///   **ends** the module: it drains the module countdown `0x801F7BA8` by the
+///   scratchpad frame-step product and, once the word is `<= 0`
+///   (`bgtz v0,0x801F70F0` at `0x801F70CC`), clears the busy register
+///   (`clear s6` at `0x801F70DC`, returned by `move v0,s6` at `0x801F70EC`)
+///   and zeroes `ctx[+0x0D]`. The port does not model the countdown, so the
+///   arm reports [`CastTickStep::Done`] on its first tick - the convention
+///   every other unported countdown in the band follows. Holding it instead
+///   parked battle phase `0x70` on the boss's Astral Slash.
 ///
 /// `docs/subsystems/cast-module.md`'s verdict cell lists only "writes staged
 /// `+0x1DA`, restage `+0x1DC`"; the routine also advances the module phase
@@ -168,6 +176,10 @@ pub fn astral_slash_tick(
     caster: &mut CastActorState,
     victim: &mut CastActorState,
 ) -> CastTickStep {
+    if ctx.phase == ASTRAL_SLASH_TERMINAL_ARM {
+        ctx.ctx_0d = 0;
+        return CastTickStep::Done;
+    }
     run_tick(ctx, 5, |c| {
         match c.phase {
             0 => stage_clip(caster, caster.staged_anim.wrapping_add(1)),
@@ -184,8 +196,7 @@ pub fn astral_slash_tick(
             }
             _ => {}
         }
-        // Arm 4 is the terminal hold.
-        c.phase == ASTRAL_SLASH_TERMINAL_ARM
+        false
     })
 }
 
