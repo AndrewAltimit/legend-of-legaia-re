@@ -440,9 +440,11 @@ landing stages its reaction clip while the HP outcome stays the fold's.
 Those same two routines are the band's only row-wide appliers **among the
 stagers**, and they are `0x801F6734` stagers, not tick bodies - the move
 script drives them through move-VM opcode `0x20`, so the damage lands from the
-spawn stager and not from the `ctx+0x279` machine. Three *tick* bodies sweep a
-row too, and none of them shares the never-kill clamp -
-[below](#the-twelve-bodies-the-trampoline-map-names).
+spawn stager and not from the `ctx+0x279` machine. Four *tick* bodies sweep a
+row too, and none of them shares the never-kill clamp: the three
+[below](#the-twelve-bodies-the-trampoline-map-names), and PROT 0966's own
+tick, whose arm 26 hits the party a second time at power `0x327`
+([below](#prot-0966-evil-seru-magic-is-ported-whole)).
 
 | | PROT 0927 (Juggernaut) | PROT 0966 (Evil Seru Magic) |
 |---|---|---|
@@ -1113,7 +1115,9 @@ the wrapper is the module's own baked constant
 instead of the move-power table's scalar. PROT 0927 and PROT 0966 are the
 exception, because their damage is not a per-target fold at all: those two
 casts fold through `World::run_cast_module_aoe` and the generic path is
-skipped, so the seat range and the `HP - 1` clamp are the module's.
+skipped, so the seat range and the `HP - 1` clamp are the module's. PROT
+0966's tick adds its own party hit on top, through the band seam rather than
+the fold.
 
 PROT 0957 needs one more split: it carries **two** whole tick bodies, and its
 trampoline `0x801F9BA8` picks between them on the caster's queued action id -
@@ -2109,8 +2113,40 @@ run; a holding gate withholds the body's pass. The battle camera holds in
 
 A body with no director keeps the held pose.
 
-PROT 0966 (Evil Seru Magic) is a 29-arm camera body whose damage belongs to
-its stager, not to the band's fold; its arms are not directed.
+### PROT 0966 (Evil Seru Magic) is ported whole
+
+Cort's Evil Seru Magic (action `0xAD`) runs one tick body, `0x801F6A74`:
+8944 bytes, 29 arms behind `sltiu a1, 0x1D`, the longest choreography in
+the band. Arms 5..9 are the table default and are never entered - arm 4
+writes `ctx[+0x279] = 10` itself. The body returns `1` until arm 28's gate
+passes. Its countdown `0x801FA464` is armed in absolute vsyncs and drained by
+the frame delta alone, with no speed scalar; the whole cast runs `0xCC4`
+vsyncs, close to a minute.
+
+- **The camera** is
+  `legaia_engine_vm::cast_module_camera::evil_seru_magic_camera`: arm 0's
+  `0x30`-frame opening shot, eight cuts and arm 22's re-armed `0x24`-frame
+  shot, plus the drifts the arms add to
+  pitch, yaw and all three TR globals - this is the only body that walks TR x
+  `0x800840B8`.
+- **The seats** are `cast_module_ticks::evil_seru_magic_seat_writes`. The
+  party is hidden (`+0x04 = 0`, `+0x21C = 0xFF`) from arm 0, shown at arm 10,
+  hidden at 18 and shown at 21. The caster stages clip `6` at rate `2` on
+  arm 1's pass, hides at arm 10, comes back on clip `0` at arm 21, takes the
+  defeat-fade tint state `2` at arm 23 and is shown again at arm 27. Because
+  the body stages its own caster, it has no row in the caster-stage table.
+- **The hit.** Arm 26 walks `actor_table[0 .. ctx[+0]]`, skips a dead or
+  non-targetable seat, and calls `FUN_801DD4B0(0x327, ctx[+0x13], seat)` with
+  the shape-A clamp (`0x801F8610` / `0x801F863C`), so it can kill. It also
+  stages the seat's own knockdown at rate `2`. This is a second hit: the
+  module's stager `0x801F8D64` still lands its `0x100` never-kill sweep
+  through the band's fold.
+
+Not carried: arms 0 / 27 / 28 save the party's poses, re-seat them in a row
+of half-size models at `z = 0x190`, and restore them; arm 10 seats the
+creature at seat 7. The engine keeps every seat where the battle put it, so
+the cuts frame the stage rather than the moved seats. The effect records, the
+screen fades and the arm-20 spell-name banner are also left out.
 
 ### PROT 0954 (Fatal Decision) is ported whole
 
@@ -2163,14 +2199,18 @@ effect-list spawn (`FUN_800583C8`, `FUN_801E22C8`). Arm 12's wait for the
 victim's clip to settle has no bound in retail; the port lets go after
 `600` ticks rather than hold the band on a clip the engine never reports.
 
-**Where the icon art lives is open.** The icons sample texture page `0x8A`
-(8bpp at `(640, 0)`) through CLUT row `490` - the second side-band texture
-slot's upload targets. Action `0x5F`'s side-band group, by the case-`0x32`
-arithmetic, is `readef.DAT` slots 26 / 27, and those carry a "BACK READ"
-placeholder and a tiling sparkle page, not a sixteen-tile icon sheet; the
-capture band also has no case `0x32` of its own. Which loader puts the icon
-sheet there for a real Evil Shadow fight has not been traced, so the port
-draws the icons over whatever that page holds.
+**The icon art is the caster's own side-band page.** The icons sample texture
+page `0x8A` (8bpp at `(640, 0)`) through CLUT row `490` - the side-band
+applier's second texture target. A capture-class cast streams nothing of its
+own (the band has no case `0x32`), so what sits there is what the caster's
+turn streamed. The initiative scheduler `FUN_801DABA4` seeds the applier's base
+byte with `3 * monster_record[+0x1C]` on every monster turn. The roulette's
+casters (monster ids `119..=121`, Evil Shadow / Shade / Nightmare) all carry
+group `7`, so the turn streams `readef.DAT` slots 21 and 22, and slot 22 is the
+4x4 icon sheet. A retail capture of a Skeleton fight (group `7` too) holds
+exactly that page at `(640, 0)` with its CLUT on row 490. The engine streams
+nothing per turn; `engine-core::battle_sideband_textures` writes every
+formation group's pages into the battle-entry VRAM log both hosts replay.
 
 ### The band has eight stat-block writers, not one
 
