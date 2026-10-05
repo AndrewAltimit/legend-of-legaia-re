@@ -438,9 +438,10 @@ overlay data (a float/transform table, then the `data\battle\summon.DAT` / `read
 filename strings). Decoded record fields, each code-traced to a battle-action reader: `+0x00`
 `i16` power; `+0x04` `u16` an action-timing counter (seeded at `ctx+0x6c6`, decremented by
 the SM); `+0x0d` `u8` a sound / voice cue id (handed to the cue dispatcher `FUN_8004fcc8`).
-Still open: the `+0x02` u16, the `+0x08` flag halfword, the `+0x0a`/`+0x0b` field (the SM's
-most-read), the `+0x0c` category byte (`C`/`E`/`G`/`0x00`), and the `+0x0e`/`+0x12`/`+0x16`
-fields.
+The rest of the record - the `+0x02` strike Y offset, the `+0x08` homing speed, the `+0x0a`
+impact-effect selector, the `+0x0e` / `+0x12` / `+0x16` effect-id lists, and the `+0x0c`
+designer tag no instruction reads - is decoded field by field in
+[`move-power.md` § Record layout](move-power.md#record-layout-26-bytes).
 
 **What the records are.** Because the move id (`actor[+0x1df]`) is the *same id space* this
 spell table is indexed by, joining the two labels every record: power records `0x10..=0x2b`
