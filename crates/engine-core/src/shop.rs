@@ -1432,6 +1432,20 @@ pub fn shop_sell_detail_panel(
     panel
 }
 
+/// Rows on one page of the shop list a menu state browses, or `None` for a
+/// state that is not a shop list. The kind-4 kernel's
+/// `(content_h - 4) / 0xE` over the two descriptor rects: window 40 (the buy
+/// list, `h = 104`) pages 7, window 38 (the sell list, `h = 158`) pages 11 -
+/// the page lengths the Retock capture shows.
+pub fn shop_list_page_rows(state: crate::menu_runtime::MenuState) -> Option<usize> {
+    use crate::menu_runtime::MenuState;
+    match state {
+        MenuState::ShopBuy => Some(7),
+        MenuState::ShopSell => Some(11),
+        _ => None,
+    }
+}
+
 /// Which retail shop screen is up - the sub-screen family the menu
 /// overlay's shop dispatchers run, collapsed to what decides the window set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

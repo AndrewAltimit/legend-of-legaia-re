@@ -268,14 +268,22 @@ pub fn shop_marker_draws(
 ) -> ShopScreenDraws {
     let mut out = ShopScreenDraws::default();
     for m in marks {
+        // Kind 1 is the gold-ramp advance hand (the dialog pager's mark,
+        // [`crate::dialog_advance_hand_sprite`]): the same cell, tinted.
         let src = ctx.chrome.and_then(|r| match m.sprite {
-            0 => Some(r.cursor),
+            0 | 1 => Some(r.cursor),
             2 => Some(r.pager_left),
             3 => Some(r.pager_right),
             _ => None,
         });
         match src {
-            Some(src) => out.sprites.push(stage_sprite(ctx, src, (m.x, m.y))),
+            Some(src) => {
+                let mut s = stage_sprite(ctx, src, (m.x, m.y));
+                if m.sprite == 1 {
+                    s.color = [1.0, 0.82, 0.35, 1.0];
+                }
+                out.sprites.push(s);
+            }
             None => out.texts.extend(text_draws_for(
                 &ctx.font.layout_ascii(">"),
                 (m.x, m.y),

@@ -589,6 +589,34 @@ impl MenuRuntime {
         }
         let list_state_before = MenuState::from_byte(self.ctx.state);
         let list_cursor_before = self.ctx.cursor;
+        // The shop's two lists are kind-4 kernel pages: Up / Down wrap inside
+        // the page, Left / Right flip it. The menu VM's flat cursor would walk
+        // straight off the page instead, and has no page flip at all.
+        let mut input = input;
+        if let Some(rows) = list_state_before.and_then(crate::shop::shop_list_page_rows)
+            && (input.up || input.down || input.left || input.right)
+        {
+            let n = match list_state_before {
+                Some(MenuState::ShopBuy) => self
+                    .shop_session
+                    .as_ref()
+                    .map(|s| s.buy_item_count() as usize)
+                    .unwrap_or(0),
+                _ => Self::sell_list_rows(world).len(),
+            };
+            let pressed = menu_input_pad_word(input);
+            let c = crate::pause_screens::list_kernel_navigate_rows(
+                self.ctx.cursor as usize,
+                n,
+                pressed,
+                rows,
+            );
+            self.ctx.cursor = c.min(u8::MAX as usize) as u8;
+            input.up = false;
+            input.down = false;
+            input.left = false;
+            input.right = false;
+        }
         let mut refused = false;
         let mut host = MenuRuntimeHost {
             refused: &mut refused,
@@ -2475,6 +2503,40 @@ mod tests {
         world.party.money = 500;
         runtime.tick(&mut world, cross());
         assert_eq!(runtime.ctx.state, MenuState::ShopQuantity.as_byte());
+    }
+
+    #[test]
+    fn shop_buy_list_pages_seven_rows_like_the_kernel() {
+        use crate::shop::{ShopInventory, ShopItem, ShopSession};
+
+        let mut world = world_with_party(1);
+        world.party.money = 100_000;
+        let items = (0..10u8)
+            .map(|i| ShopItem {
+                item_id: 0x40 + i,
+                price: 10,
+            })
+            .collect();
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        runtime.open_shop(ShopSession::new(ShopInventory::new(1, items)));
+        runtime.ctx.state = MenuState::ShopBuy.as_byte();
+        let right = MenuInput {
+            right: true,
+            ..Default::default()
+        };
+        let up = MenuInput {
+            up: true,
+            ..Default::default()
+        };
+        // Up at the page top wraps to the page's last row, not the list's.
+        runtime.tick(&mut world, up);
+        assert_eq!(runtime.ctx.cursor, 6);
+        // Right flips to page 2, clamped to the last row.
+        runtime.tick(&mut world, right);
+        assert_eq!(runtime.ctx.cursor, 9);
+        // Down past the last row wraps to the page top.
+        runtime.tick(&mut world, down());
+        assert_eq!(runtime.ctx.cursor, 7);
     }
 
     #[test]

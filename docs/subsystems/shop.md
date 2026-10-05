@@ -128,14 +128,14 @@ sub-screen between them and the transaction.
   `sell_credit` / `apply_sale_gold` / `sell_list_fixup`).
 
 The scroll fix-up is the one piece of that flow the engine does not run.
-It repairs a paged list's persisted `(scroll_top, selected)` pair, and the
-engine's shop drives every list from a single flat cursor with no scroll
-window - the paged model (`engine-core::menu_list_rows`) is ported but
-unused. The engine also does not meet the condition the fix-up guards:
-its sell commit returns the hand to row `0`, where retail keeps it on the
-list and therefore has to pull it off the row the sale just deleted.
-Paging the shop lists through the list-node allocator is the prerequisite,
-not a missing call.
+It repairs a paged list's persisted `(scroll_top, selected)` pair. The
+engine's shop lists page the kernel's way (Up / Down wrap inside a page,
+Left / Right flip it - `pause_screens::list_kernel_navigate_rows` over
+`shop::shop_list_page_rows`), but from one flat cursor whose page is
+derived rather than stored, and the engine does not meet the condition the
+fix-up guards: its sell commit returns the hand to row `0`, where retail
+keeps it on the list and therefore has to pull it off the row the sale just
+deleted.
 
 Their sibling is the **buy recipient picker** (`FUN_801DB380`): before
 the quantity screen the buy flow asks who the purchase is for - row 0
@@ -492,7 +492,8 @@ Both lists are pages of the kind-4 kernel's geometry
 window 40 pages 7 rows (name `WX + 0x18`, a 5-digit price at `WX + 0x80`),
 window 38 pages 11 (name `WX + 0xC`, a 3-cell count at `WX + 0x6C`), each
 under a PAGE header, with the hand at `WX - 6` and the page triangles while
-the list has the pad. Window 39's price is a 5-digit field at `WX + 0x64`.
+the list has the pad; Up / Down wrap inside the page and Left / Right flip
+it. Window 39's price is a 5-digit field at `WX + 0x64`.
 
 A buy-list row whose stack is already at 99 is **refused at the list**: the
 kernel tests the row word's `0x800` bit on confirm and buzzes before the
@@ -690,7 +691,8 @@ transaction. `MenuState::ShopConfirm` is no longer reached from the shop's
 buy or sell flow at all - retail has no Yes/No screen between the number and
 the sale, and the port now has none either. The remaining engine shape is
 the sell-list scroll fix-up, which repairs a **paged** list's persisted
-`(scroll_top, selected)` pair and needs paged lists the engine does not run.
+`(scroll_top, selected)` pair; the engine derives the page from one cursor
+instead of storing it.
 
 Two earlier readings are worth keeping so they are not re-derived. The
 first had the shapes swapped - the "nine-row list whose cursor is the

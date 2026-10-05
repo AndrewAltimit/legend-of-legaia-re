@@ -449,17 +449,18 @@ pub fn notify_prompt_draws_for(
 /// descriptor windows, and both label it with [`POINT_CARD_HEADING`] /
 /// [`POINT_CARD_UNIT_LABEL`] below.
 /// Window 31's heading line. Retail's literal (`0x801CEA40`) opens with the
-/// character-substitution token the dialog codec resolves at draw time; the
-/// port stages an engine-authored line in the same slot.
+/// `0xC2 0xFE` substitution token - item `0xFE`'s name, the Point Card - so
+/// the line reads "Point Card has earned" on screen (Retock shop capture).
 ///
 /// Both hosts draw this window, so the label lives beside the builder rather
 /// than once per host - two host-local copies would be a divergence the
 /// drift gate could only catch by pairing them.
-pub const POINT_CARD_HEADING: &str = "Points earned";
+pub const POINT_CARD_HEADING: &str = "Point Card has earned";
 
 /// The unit label window 31 puts `0x40` right of its number field
-/// (`0x801CEA50`). Shared for the same reason as [`POINT_CARD_HEADING`].
-pub const POINT_CARD_UNIT_LABEL: &str = "point(s).";
+/// (`0x801CEA50`), leading space included. Shared for the same reason as
+/// [`POINT_CARD_HEADING`].
+pub const POINT_CARD_UNIT_LABEL: &str = " point(s).";
 
 pub fn amount_prompt_draws_for(
     font: &legaia_font::Font,
