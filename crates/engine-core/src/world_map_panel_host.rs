@@ -1156,6 +1156,23 @@ pub struct FieldHudMemberData {
 /// either host's menu runtime). Every other term is world state and is asked
 /// here, so the two hosts cannot drift apart on it again.
 ///
+/// The field party HUD's mode word `_DAT_800845C4`, which is the options
+/// screen's **Field HP Display** row - the menu overlay's option descriptor
+/// for row 6 names `0x800845C4` (PROT 0899 file `0x15CC0`). `0` Immediate
+/// (`0x28`-frame idle), `1` Gradual (`0xA0`), `2` Display Off (no HUD).
+/// Retail holds it at the player's choice everywhere, the overworld
+/// included: every library save state, `map01..03` walking states among
+/// them, reads `0`. Both hosts ask this one function.
+///
+/// PORT: FUN_801d0d38 (`lw a2,0x45c4(v0)` at `0x801D0D74`)
+pub fn field_hud_view_mode(world: &crate::world::World) -> i32 {
+    match world.toggles.field_hp_display {
+        crate::options::HpDisplayOpt::Immediate => 0,
+        crate::options::HpDisplayOpt::Gradual => 1,
+        crate::options::HpDisplayOpt::DisplayOff => 2,
+    }
+}
+
 /// PORT: FUN_801d0d38 (`0x801D0D38..0x801D0DBC` suppress gate)
 pub fn field_hud_suppressed(world: &crate::world::World, host_panel_owns_frame: bool) -> bool {
     use crate::world::SceneMode;
@@ -1313,9 +1330,9 @@ impl FieldPartyHud {
     ///
     /// `hud_disabled` is retail's `_DAT_8007B868` - the "something else owns
     /// the screen" gate; hosts raise it for a menu, a dialog box, a cutscene
-    /// or a battle. `view_mode` is `_DAT_800845C4`: `0` is the near field
-    /// camera (0x28-frame idle), `1` the far overworld one (0xA0), and `2`
-    /// suppresses outright. `pad_held` is the **packed** held word, because
+    /// or a battle. `view_mode` is `_DAT_800845C4`, the Field HP Display
+    /// option ([`field_hud_view_mode`]): `0` Immediate (0x28-frame idle), `1`
+    /// Gradual (0xA0), and `2` Display Off, which suppresses outright. `pad_held` is the **packed** held word, because
     /// the suppress mask is the packed D-pad - a raw word suppresses nothing.
     pub fn tick(
         &mut self,
@@ -1463,6 +1480,39 @@ mod tests {
         }
         // The un-held run (no retail value to align to) draws long before.
         assert!(!hud_phase_hold(CAPTURE + 1, CAPTURE, 0, IDLE));
+    }
+
+    /// The Field HP Display option is the HUD's mode word, on the overworld
+    /// as in a town: Immediate waits `0x28` frames, Gradual `0xA0`, Display
+    /// Off never draws - and the scene kind changes none of it.
+    #[test]
+    fn the_hp_display_option_drives_the_hud_idle_on_every_scene_kind() {
+        use crate::options::{HpDisplayOpt, OptionsState};
+        use crate::world::{SceneMode, World};
+        for (opt, mode, first_draw) in [
+            (HpDisplayOpt::Immediate, 0, Some(0x28u32)),
+            (HpDisplayOpt::Gradual, 1, Some(0xA0)),
+            (HpDisplayOpt::DisplayOff, 2, None),
+        ] {
+            for scene in [SceneMode::Field, SceneMode::WorldMap] {
+                let mut w = World::new();
+                w.mode = scene;
+                let o = OptionsState {
+                    field_hp_display: opt,
+                    ..OptionsState::default()
+                };
+                o.apply_to_world(&mut w);
+                assert_eq!(field_hud_view_mode(&w), mode, "{opt:?} on {scene:?}");
+                let mut hud = FieldPartyHud::new();
+                let drew = (0..=0x100u32).find(|_| {
+                    matches!(
+                        hud.tick(false, mode, 0, Some((1, 2)), 1, None),
+                        HudDecision::Draw { .. }
+                    )
+                });
+                assert_eq!(drew, first_draw, "{opt:?} on {scene:?}");
+            }
+        }
     }
 
     /// The overworld idle (`0xA0`) outlasts a capture at tick 120, so the

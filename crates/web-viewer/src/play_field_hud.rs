@@ -29,7 +29,6 @@
 //! projection answers on all but a handful of framings.
 
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_core::world::SceneMode;
 use legaia_engine_ui::{self as ui, SpriteDraw, TextDraw};
 
 impl LegaiaRuntime {
@@ -71,7 +70,9 @@ impl LegaiaRuntime {
             Some(h) => {
                 let w = &h.world;
                 (
-                    i32::from(w.mode == SceneMode::WorldMap),
+                    // The Field HP Display option (`_DAT_800845C4`), the
+                    // one engine read the native window shares.
+                    legaia_engine_core::world_map_panel_host::field_hud_view_mode(w),
                     legaia_engine_core::world_map_panel_host::packed_pad(w.input.pad()),
                     w.player_actor_slot
                         .map(usize::from)

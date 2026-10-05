@@ -97,6 +97,13 @@ pub struct WorldToggles {
     /// shots read (`BattleCamera::set_camera_option`). Hosts mirror their
     /// `OptionsState` onto this through `OptionsState::apply_to_world`.
     pub battle_camera: crate::options::BattleCameraOpt,
+    /// The options screen's **Field HP Display** row (config word
+    /// `0x800845C4`, Immediate / Gradual / Display Off). The field party
+    /// HUD (`FUN_801D0D38`) reads it as its idle delay - `0x28` frames,
+    /// `0xA0` frames, or never - so hosts mirror their `OptionsState` onto
+    /// this through `OptionsState::apply_to_world` and both ask
+    /// `world_map_panel_host::field_hud_view_mode`.
+    pub field_hp_display: crate::options::HpDisplayOpt,
     /// Draw the overworld's per-placement **entity markers**
     /// ([`crate::world_map_markers`]: a cyan post at each portal, green at
     /// each NPC, red at each encounter zone). A port debug overlay, not a
@@ -120,6 +127,7 @@ impl WorldToggles {
             use_damage_finish: true,
             select_attack: crate::options::SelectAttackOpt::default(),
             battle_camera: crate::options::BattleCameraOpt::default(),
+            field_hp_display: crate::options::HpDisplayOpt::Immediate,
             overworld_marker_overlay: false,
         }
     }

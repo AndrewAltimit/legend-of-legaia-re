@@ -180,8 +180,10 @@ impl PlayWindowApp {
         if let Some(sc) = self.screenshot.as_ref()
             && let Some(n) = sc.hud_countdown
         {
-            let near = i32::from(self.session.host.world.mode == SceneMode::WorldMap);
-            let idle = legaia_engine_vm::world_map_panel_actors::hud_idle_frames(near, false);
+            let mode = legaia_engine_core::world_map_panel_host::field_hud_view_mode(
+                &self.session.host.world,
+            );
+            let idle = legaia_engine_vm::world_map_panel_actors::hud_idle_frames(mode, false);
             if legaia_engine_core::world_map_panel_host::hud_phase_hold(
                 self.tick_no,
                 sc.capture_tick,
@@ -198,9 +200,10 @@ impl PlayWindowApp {
             self.field_hud_projected_player_y()
         };
         let world = &self.session.host.world;
-        // View mode `_DAT_800845C4`: `0` is the near field camera (0x28-frame
-        // idle before the HUD returns), `1` the far overworld one (0xA0).
-        let view_mode = i32::from(world.mode == SceneMode::WorldMap);
+        // `_DAT_800845C4` is the options screen's Field HP Display row
+        // (Immediate / Gradual / Display Off), not a camera mode - the one
+        // engine read both hosts share.
+        let view_mode = legaia_engine_core::world_map_panel_host::field_hud_view_mode(world);
         let player_pos = world
             .player_actor_slot
             .map(usize::from)

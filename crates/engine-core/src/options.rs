@@ -153,7 +153,9 @@ pub enum FieldMoveOpt {
     Run,
 }
 
-/// Field HP-restore display style (config word `0x800845C4`).
+/// The options screen's **Field HP Display** row (config word `0x800845C4`):
+/// how long the field party HUD waits after the player stops before it
+/// appears (`FUN_801D0D38`), or that it never does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum HpDisplayOpt {
     #[default]
@@ -173,6 +175,9 @@ pub struct OptionsState {
     pub battle_select_attack: SelectAttackOpt,
     pub battle_command: BattleCommandOpt,
     pub field_move: FieldMoveOpt,
+    /// `0x800845C4`: the field party HUD's idle delay (Immediate `0x28`
+    /// frames, Gradual `0xA0`, Display Off never). Mirrored onto
+    /// [`crate::world::WorldToggles::field_hp_display`].
     pub field_hp_display: HpDisplayOpt,
     pub audio: AudioMode,
     /// Dual Shock "Battles" vibration (`true` = Vibration On).
@@ -187,7 +192,11 @@ pub struct OptionsState {
     pub bgm_volume: u8,
     /// 0..=10. Engines convert to their per-channel scalar.
     pub sfx_volume: u8,
-    /// 1..=8 (1 = slowest). Wired to dialog auto-advance interval.
+    /// 1..=8 (1 = slowest). Reserved: **no host reads it**. Retail's options
+    /// screen has no message-speed row (the menu overlay's row descriptors at
+    /// `0x801E44B8` cover camera, select attack, command, move, HP display,
+    /// sound and vibration only), and the dialog reveal runs at the script's
+    /// own rate on both hosts. Kept so existing config files still parse.
     pub message_speed: u8,
     /// Master audio mute (`true` = silent). Engine-only: retail's options
     /// screen has Stereo/Monaural but no "off". Wired to the mixer's
@@ -303,6 +312,7 @@ impl OptionsState {
         world.toggles.reduce_flashing = self.reduce_flashing;
         world.toggles.select_attack = self.battle_select_attack;
         world.toggles.battle_camera = self.battle_camera;
+        world.toggles.field_hp_display = self.field_hp_display;
         world.terrain.static_window.retail_windowing = self.retail_static_window;
         world.toggles.view_window_crop = self.retail_view_window;
         world.toggles.volumetric_fog = self.volumetric_fog;

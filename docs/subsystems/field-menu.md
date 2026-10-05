@@ -1039,8 +1039,12 @@ bottom would pass y = `0xB0`). `FUN_801D2B44` lists the choices at a
 Engine port: `engine-core::options` (`OPTIONS_DISPLAY_ROWS`,
 `OptionsSession` Browsing→Editing SM, `options_popup_content_rect`) +
 `engine-ui::options_draws_for`; the Sound row drives the audio
-mixer's monaural downmix (`engine-audio AudioOut::set_mono`), the other
-settings persist in the engine's options config file.
+mixer's monaural downmix (`engine-audio AudioOut::set_mono`), Field HP
+Display sets the field party HUD's idle delay on both hosts
+(`WorldToggles::field_hp_display`, read through
+`world_map_panel_host::field_hud_view_mode`: `0x28` frames, `0xA0` frames, or
+no HUD - see [`world-map.md`](world-map.md#fun_801d0d38---the-field-party-hud)),
+and the other settings persist in the engine's options config file.
 
 ### Dev-menu EVENT FLAG editor (debug build only)
 
