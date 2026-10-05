@@ -161,6 +161,8 @@ class TmdRenderer {
     this.locOcclFocus  = gl.getUniformLocation(this.program, 'u_occl_focus');
     this.locOcclParams = gl.getUniformLocation(this.program, 'u_occl_params');
     this.locOcclAllow  = gl.getUniformLocation(this.program, 'u_occl_allow');
+    this.locEclipM     = gl.getUniformLocation(this.program, 'u_eclip_m');
+    this.locEclipB     = gl.getUniformLocation(this.program, 'u_eclip_b');
     this.locOcclLift   = gl.getUniformLocation(this.program, 'u_occl_lift');
     this.locPsx      = gl.getUniformLocation(this.program, 'u_psx');
     this.locDynDir   = gl.getUniformLocation(this.program, 'u_dyn_dir');
@@ -924,6 +926,21 @@ class TmdRenderer {
       gl.uniform4f(this.locCue, 0, 0, 0, 0);
       gl.uniform3f(this.locCueFar, 0, 0, 0);
     }
+  }
+
+  /* Stage one draw's object-effect clip (`[m0, m1, m2, lo, hi, 1]` from the
+   * engine's `play_effect_clip`, or none). `on` is whether one is staged
+   * now; returns the new state, so a frame with no clip writes nothing. */
+  _setEffectClip(c, on) {
+    const gl = this.gl;
+    if (!this.locEclipM) return false;
+    if (c && c.length >= 6) {
+      gl.uniform4f(this.locEclipM, c[0], c[1], c[2], 1);
+      gl.uniform2f(this.locEclipB, c[3], c[4]);
+      return true;
+    }
+    if (on) gl.uniform4f(this.locEclipM, 0, 0, 0, 0);
+    return false;
   }
 
   /* Camera-occlusion fade (see-through walls): stage the player's world
@@ -1882,6 +1899,8 @@ class TmdRenderer {
     /* Which cue record is currently staged, so a frame with no per-draw cues
      * costs no extra uniform writes. `undefined` = the frame-global one. */
     let cueOn;
+    /* Whether an object-effect clip is staged (`_setEffectClip`). */
+    let eclipOn = this._setEffectClip(null, true);
     for (const [meshId, list] of byMesh) {
       const m = this.sceneMeshes.get(meshId);
       if (m.indexCount === 0) continue;
@@ -1904,6 +1923,7 @@ class TmdRenderer {
         /* Actor draws (the player, NPCs - `noOccl` on the placement) must
          * never dissolve; environment placements may. */
         gl.uniform1i(this.locOcclAllow, p.noOccl ? 0 : 1);
+        eclipOn = this._setEffectClip(p.effectClip, eclipOn);
         gl.drawElements(gl.TRIANGLES, m.indexCount, gl.UNSIGNED_INT, 0);
       }
     }
@@ -1954,6 +1974,7 @@ class TmdRenderer {
         }
         gl.uniformMatrix4fv(this.locModel, false, model);
         gl.uniform1i(this.locOcclAllow, p.noOccl ? 0 : 1);
+        eclipOn = this._setEffectClip(p.effectClip, eclipOn);
         for (const r of m.semiRanges) {
           this._setSemiBlend(r.mode);
           gl.drawElements(gl.TRIANGLES, r.count, gl.UNSIGNED_INT, r.start * 4);
@@ -1971,6 +1992,7 @@ class TmdRenderer {
       gl.uniform1i(this.locSemiPass, 0);
     }
     if (strictOn) gl.depthFunc(gl.LEQUAL);
+    if (eclipOn) this._setEffectClip(null, true);
     gl.bindVertexArray(null);
     /* Enhanced lighting's halos + light shafts over the finished scene. */
     this._drawGlow(vp);

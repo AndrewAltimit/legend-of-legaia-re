@@ -621,6 +621,26 @@ fn prim_near_params() -> vec4<f32> {
 /// mean is over GTE `SZ` - each corner floored and saturated to
 /// `0..=0xFFFF`, a corner behind the eye counting as `0` - weighted by
 /// `ZSF3 = 0x555 >> s` / `ZSF4 = 0x400 >> s` exactly as `AVSZ3` / `AVSZ4`.
+/// The **object-effect clip** of an actor whose `+0x42` is raised: retail's
+/// `FUN_8002735C` clips each primitive against the slab its object-effect
+/// row stages (`FUN_8001C204` -> `0x1F800380`, `FUN_80027F00`), which the
+/// mesh shaders reproduce as a fragment discard on the mesh-space position.
+/// Lanes `tex_window.yzw` hold `(m0, m1)`, `(m2, enable)`, `(lo, hi)` as
+/// half floats ([`crate::renderer`]'s `pack_draw_clip`); enable `0` (every
+/// draw a host did not stage a clip for) keeps every fragment.
+pub(crate) const EFFECT_CLIP_WGSL: &str = r#"
+fn effect_clipped(p: vec3<f32>) -> bool {
+    let e = unpack2x16float(u.tex_window.z);
+    if (e.y < 0.5) {
+        return false;
+    }
+    let m = unpack2x16float(u.tex_window.y);
+    let b = unpack2x16float(u.tex_window.w);
+    let y = m.x * p.x + m.y * p.y + e.x * p.z;
+    return y < b.x || y > b.y;
+}
+"#;
+
 pub(crate) const PRIM_NEAR_WGSL: &str = r#"
 fn prim_sz(m: mat4x4<f32>, c: vec3<f32>, sz_per_w: f32) -> i32 {
     let w = m[0].w * c.x + m[1].w * c.y + m[2].w * c.z + m[3].w;
@@ -734,7 +754,7 @@ pub(crate) fn scene_lights_wgsl_for_tests() -> &'static str {
 /// stub.
 pub(crate) fn compose_psx_shader(base: &str) -> String {
     format!(
-        "{PSX_DITHER_WGSL}\n{OVERWORLD_CURVE_WGSL}\n{PRIM_NEAR_WGSL}\n{SCENE_LIGHTS_STUB_WGSL}\n{base}"
+        "{PSX_DITHER_WGSL}\n{OVERWORLD_CURVE_WGSL}\n{PRIM_NEAR_WGSL}\n{EFFECT_CLIP_WGSL}\n{SCENE_LIGHTS_STUB_WGSL}\n{base}"
     )
 }
 
@@ -743,7 +763,7 @@ pub(crate) fn compose_psx_shader(base: &str) -> String {
 /// lights uniform + shadow-map array at group 2) in place of the stub.
 pub(crate) fn compose_scene_lit_shader(base: &str) -> String {
     format!(
-        "{PSX_DITHER_WGSL}\n{OVERWORLD_CURVE_WGSL}\n{PRIM_NEAR_WGSL}\n{SCENE_LIGHTS_REAL_WGSL}\n{base}"
+        "{PSX_DITHER_WGSL}\n{OVERWORLD_CURVE_WGSL}\n{PRIM_NEAR_WGSL}\n{EFFECT_CLIP_WGSL}\n{SCENE_LIGHTS_REAL_WGSL}\n{base}"
     )
 }
 
@@ -1180,10 +1200,15 @@ fn fetch_vram_word(uv_affine: vec2<f32>, cba: u32, tsb: u32) -> u32 {
     // No-op when mask == 0 (the all-zero default) since the AND-NOT is
     // identity and the OR adds zero. Hardware reference: GPU command list
     // section "GP0(E2h) - Texture Window setting (Mask/Offset)".
-    let mask_x = u.tex_window.x * 8u;
-    let mask_y = u.tex_window.y * 8u;
-    let off_x = (u.tex_window.z & u.tex_window.x) * 8u;
-    let off_y = (u.tex_window.w & u.tex_window.y) * 8u;
+    // `tex_window.x` packs (mask_x, mask_y, off_x, off_y) one byte each;
+    // the other three lanes are the object-effect clip (`effect_clipped`).
+    let tw = u.tex_window.x;
+    let tw_mx = tw & 0xFFu;
+    let tw_my = (tw >> 8u) & 0xFFu;
+    let mask_x = tw_mx * 8u;
+    let mask_y = tw_my * 8u;
+    let off_x = (((tw >> 16u) & 0xFFu) & tw_mx) * 8u;
+    let off_y = (((tw >> 24u) & 0xFFu) & tw_my) * 8u;
     u_pix = (u_pix & (~mask_x & 0xFFu)) | (off_x & 0xFFu);
     v_pix = (v_pix & (~mask_y & 0xFFu)) | (off_y & 0xFFu);
 
@@ -1220,6 +1245,10 @@ fn fetch_vram_word(uv_affine: vec2<f32>, cba: u32, tsb: u32) -> u32 {
 
 @fragment
 fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
+    // Object-effect clip of a raised `+0x42` (see EFFECT_CLIP_WGSL).
+    if effect_clipped(in.world_pos) {
+        discard;
+    }
     // Retail GTE NCLIP winding rejection (see MeshUniforms.flags).
     if (u.flags.x >= 0.5 && u.flags.x < 1.5 && !front_facing)
         || (u.flags.x >= 1.5 && front_facing) {
@@ -1338,6 +1367,9 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
 // texels, and the 5-bit blend math itself is not dithered (PSX-SPX
 // "GPU - Dithering/Color-Depth").
 fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
+    if effect_clipped(in.world_pos) {
+        discard;
+    }
     // Double-sided pair copies: blend only the camera-facing one (see
     // fs_main - same rule so a flagged semi prim can't double-blend).
     if (in.cba_tsb.x & 0x8000u) != 0u && front_facing {
@@ -1499,6 +1531,10 @@ fn vs_main(
 
 @fragment
 fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
+    // Object-effect clip of a raised `+0x42` (see EFFECT_CLIP_WGSL).
+    if effect_clipped(in.world_pos) {
+        discard;
+    }
     // Retail GTE NCLIP winding rejection (see MeshUniforms.flags).
     if (u.flags.x >= 0.5 && u.flags.x < 1.5 && !front_facing)
         || (u.flags.x >= 1.5 && front_facing) {
@@ -1573,6 +1609,9 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
 // math - so the dither stage applies to F here, before mode 3's 0.25
 // pre-scale (retail folds that scale into the blend itself).
 fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
+    if effect_clipped(in.world_pos) {
+        discard;
+    }
     // Double-sided pair copies: same facing discard as the opaque entry
     // (mirrors the textured blend pass).
     if ((in.blend & 0x4000u) != 0u && front_facing) {

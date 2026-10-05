@@ -766,13 +766,33 @@ per-actor clip bound; the row itself is written by move-VM ext sub-ops
 `0x17..0x1A` ([`move-vm-overlay-ext.md`](move-vm-overlay-ext.md#0x170x1a-write-the-object-effect-parameter-table))
 and seeded at boot as angles `0` with clip words `(-100, -20)`.
 
-Every shipped `4C C2` writes `1`, so every field use selects row 0. **The
-port does not model this path**: `FieldCtx::field_42` and the move VM's
-`field_42` are written and never read by a renderer, and the table writes
-reach a no-op host on both play hosts. With row 0 at its boot seed the
-rotation half is the identity, so what the port omits on those beats is the
-clip bound - recorded as an open host gap in
-[`host-drift.md`](../tooling/host-drift.md#gaps-absent-from-both-hosts-overworld-curvature-ground-shadow).
+Every shipped `4C C2` writes `1`, so every field use selects row 0, and each
+of the nine scenes' prescripts writes row 0 through ext `0x17` / `0x18` /
+`0x1A`. What the clip keeps is the slab `lo <= y_eff <= hi`:
+`FUN_80027F00` drops a vertex below `[0x1F800314]+0x6C` (`lo`) or above
+`+0x6E` (`hi`) and synthesises the crossing on each edge, and the effect
+point is `s * Rrow * (Ractor * v + pos)` - world space turned by the row,
+because the base `FUN_8001ADA4` stores at `0x1F8002F4` is the identity
+(`FUN_8003D178`, `0x8001B230..0x8001B238`). A zero-angle row (`garmel`'s
+`0x17`, `lo = -4096`, `hi = 0`) keeps an actor above the floor plane; the
+`0x1A` yaw seat (`+4 = 0x400`) turns the slab into a vertical plane, so the
+actor appears as it steps through a doorway - `rugi` and `noaru` seat theirs
+a few units in front of the two NPCs their beat raises.
+
+**Port.** `engine-core::object_effect` holds the table (boot seed, battle
+re-seed, the four ext writes through the field `MoveHost`) and the clip
+math; `World::object_effect_clips` lists every raised context and
+`World::object_effect_mesh_clip` turns one into a mesh-space slab for a
+draw's model matrix. Both hosts discard outside that slab per draw: the
+native mesh shaders through `EFFECT_CLIP_WGSL` (three half-float lanes of
+the draw's uniform, staged by `Renderer::set_draw_clips`), the play page
+through `u_eclip_m` / `u_eclip_b` (`play_effect_clip`). A fragment discard
+keeps the same pixels as retail's per-edge clip. Two differences remain: an
+animated actor is clipped on its posed mesh, where `FUN_8001B964` runs the
+effect `MVMVA` on unposed object-local vertices, and a `4C C2` aimed at the
+player (`F8`, five of the 50 sites) reaches no player context in the port, so
+the player draws unclipped. Disc-gated test:
+`crates/engine-core/tests/object_effect_row_disc.rs`.
 
 ## The battle per-actor draw
 

@@ -259,6 +259,9 @@
         x: nt[base], y: -nt[base + 1], z: nt[base + 2],
         rotY: -(nt[base + 3] + 2048) * A2R,
         scale: 1.0,
+        /* The placement slot, for per-actor engine lookups (the
+         * object-effect clip, `play_effect_clip`). */
+        npcSlot: n.slot | 0,
       }, o.extra || {});
       const tk = n.i * 4;
       if (ntint && tk + 3 < ntint.length && ntint[tk + 3] > 0) {

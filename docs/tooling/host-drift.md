@@ -3208,13 +3208,14 @@ with the rest of that viewer (it never stages a scale).
 
 **The object-effect clip on a raised `+0x42`.** Field-VM `4C C2 1` sends a
 placed actor through `FUN_8001C204` and `FUN_8002735C`, which clip its
-polygons against the bound `0x1F800380` staged from object-effect row 0
-([`renderer.md`](../subsystems/renderer.md#what-a-raised-0x42-draws)). Nine
-scenes do so around scripted beats. Neither host reads `field_42`, and the move
-VM's ext `0x17..0x1A` table writes reach a no-op `MoveHost` on both, so both
-draw those actors unclipped. It stays open because the clip needs a per-draw
-plane in both mesh pipelines, and no library state sits inside one of those
-beats to pin the bound's space against.
+polygons to the slab its object-effect row stages
+([`renderer.md`](../subsystems/renderer.md#what-a-raised-0x42-draws)). Both
+hosts ask one kernel per placed / NPC draw (`World::object_effect_mesh_clip`)
+and discard outside the slab: the native mesh shaders through
+`EFFECT_CLIP_WGSL`, the page's field program through `u_eclip_m` /
+`u_eclip_b` (`play_effect_clip`, which negates the page model's row 1 back to
+retail's frame). Residual, the same on both hosts: a `4C C2` on the player
+(`F8`) is dropped.
 
 **The field drop shadow.** `FUN_8001C394` (called from the animated-actor
 renderer `FUN_8001B964`) is ported as `engine-core::drop_shadow` and walked by

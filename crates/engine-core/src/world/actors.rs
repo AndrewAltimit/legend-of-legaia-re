@@ -2325,6 +2325,10 @@ impl World {
         self.mode = SceneMode::Battle;
         self.battle.entry_serial = self.battle.entry_serial.wrapping_add(1);
         self.battle.monster_flee_attempted = false;
+        // The battle scene setup re-seeds object-effect row 0
+        // (`0x80055DDC..0x80055DF8`).
+        // REF: FUN_80055B6C
+        self.object_effect.reseed_for_battle();
         // The magic-level-up queue is a per-battle oracle record, not a host
         // hand-off: the banner the level-up raises is the battle message
         // banner (`raise_magic_level_banner`, screen element `0x65`), which

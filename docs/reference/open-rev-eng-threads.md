@@ -454,8 +454,8 @@ up ([settled](re-settled-threads.md#rendering--camera),
 whether a content-raised actor is ever drawn through a bracket - closed by
 disassembly and the field-op census: field-VM `4C C2 1` raises it on placed
 actors in nine scenes, and those are drawn by `FUN_8001ADA4` / `FUN_8001B964`.
-The far arm adds an object-effect transform and a clip bound the port does not
-model, which is now a recorded gap on both hosts
+The far arm clips the actor to the slab its object-effect row stages, which
+both hosts now draw
 ([`renderer.md`](../subsystems/renderer.md#what-a-raised-0x42-draws)).
 
 **Is `FUN_801D0748` entered by an ordinary, non-dome battle** closed on the

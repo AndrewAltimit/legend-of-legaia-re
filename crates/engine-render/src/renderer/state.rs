@@ -142,6 +142,11 @@ pub struct Renderer {
     /// retail Legaia's typical state - the register only gets non-zero
     /// values from a handful of effect / scene-init scripts.
     pub(super) tex_window: std::cell::Cell<[u32; 4]>,
+    /// Per-draw object-effect clips for the next scene render, parallel to
+    /// the scene's `draws` and `color_draws` ([`Renderer::set_draw_clips`]).
+    /// Held until the next [`Renderer::set_draw_clips`]; a host that stages
+    /// clips restages them (possibly empty) on every scene frame.
+    pub(super) draw_clips: std::cell::RefCell<DrawClipLists>,
     /// Full-scene colour grade `(gold_r, gold_g, gold_b, strength)` staged
     /// into every field `MeshUniforms` (see [`super::uploaded::MeshUniforms`]).
     /// Defaults to `(1, 1, 1, 0)` = identity (no grade). Set with
@@ -559,6 +564,14 @@ impl Renderer {
             (off_x as u32) & 0x1F,
             (off_y as u32) & 0x1F,
         ]);
+    }
+
+    /// Stage the object-effect clip ([`DrawClip`]) of each draw of the next
+    /// scene render: `textured[i]` for `Scene::draws[i]`, `color[i]` for
+    /// `Scene::color_draws[i]`; a missing or `None` entry draws unclipped.
+    /// Held until the next call.
+    pub fn set_draw_clips(&self, textured: Vec<Option<DrawClip>>, color: Vec<Option<DrawClip>>) {
+        *self.draw_clips.borrow_mut() = (textured, color);
     }
 
     /// Read the current `(mask_x, mask_y, off_x, off_y)` texture window

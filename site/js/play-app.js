@@ -2281,6 +2281,34 @@ void main() {
       this._objectTintsLive = t.length > 0;
     }
 
+    /* Object-effect clip (field-VM `4C C2` raises an actor's `+0x42`):
+     * retail clips that actor's mesh to the slab its object-effect row
+     * stages. Each placed object (`placeIdx`) and NPC (`npcSlot`) draw asks
+     * the engine's `play_effect_clip` for its mesh-space slab, handing the
+     * page model it will draw with; the native window stages the same
+     * kernel (`World::object_effect_mesh_clip`) on its draws. One cheap
+     * `play_effect_clip_live` call a frame while no actor has it raised. */
+    _applyEffectClips(rt, draws) {
+      if (typeof rt.play_effect_clip_live !== 'function') return;
+      let live = false;
+      try { live = rt.play_effect_clip_live(); } catch (e) { live = false; }
+      if (!live && !this._effectClipsLive) return;
+      for (const d of draws) {
+        let kind = -1, key = 0;
+        if (d.placeIdx !== undefined) { kind = 0; key = d.placeIdx; }
+        else if (d.npcSlot !== undefined) { kind = 1; key = d.npcSlot; }
+        if (kind < 0) continue;
+        if (!live) { delete d.effectClip; continue; }
+        const m = this.renderer.sceneMeshes && this.renderer.sceneMeshes.get(d.meshId);
+        if (!m) continue;
+        const model = this.renderer._placementModel(d, m);
+        let c = null;
+        try { c = rt.play_effect_clip(kind, key >>> 0, model); } catch (e) { c = null; }
+        if (c && c.length >= 6) d.effectClip = c; else delete d.effectClip;
+      }
+      this._effectClipsLive = live;
+    }
+
     /* Scripted mesh re-bind (the scripted-motion VM's op `0x0E`): the engine
      * records the actor's new model id per placement slot, and
      * `play_npc_live_model` reports it per catalog entry (`-1` = still the
@@ -2907,6 +2935,7 @@ void main() {
       if (fieldVp && typeof rt.play_field_fx_sync === 'function') {
         this._fieldFxDraws(rt, fieldVp, draws);
       }
+      this._applyEffectClips(rt, draws);
       this._applySceneClear(rt);
       this._draws = draws;
       /* `skipDraw`: a VR session owns the framebuffer and re-issues this draw

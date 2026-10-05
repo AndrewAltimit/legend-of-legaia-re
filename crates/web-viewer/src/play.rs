@@ -1507,6 +1507,62 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
+    /// Whether any field context has `+0x42` raised this frame (field-VM
+    /// `4C C2`) - the page asks [`Self::play_effect_clip`] per draw only
+    /// while this is `true`.
+    pub fn play_effect_clip_live(&self) -> bool {
+        self.scene_host
+            .as_ref()
+            .is_some_and(|h| !h.world.object_effect_clips().is_empty())
+    }
+
+    /// One draw's **object-effect clip** in mesh space,
+    /// `[m0, m1, m2, lo, hi, 1]` (keep `lo <= m . p <= hi`), or empty while
+    /// the draw's actor has no raised `+0x42`. `kind` `0` = a placed
+    /// object, `key` its placement draw index (the [`Self::field_placement_tints`]
+    /// index); `kind` `1` = a catalogued NPC, `key` its placement slot.
+    /// `model` is the draw's page model matrix (16 floats, column-major), in
+    /// the page's Y-flipped frame: its row 1 is negated back to retail's
+    /// before the shared kernel `World::object_effect_mesh_clip` - the one
+    /// the native window asks per placed / NPC draw.
+    pub fn play_effect_clip(&self, kind: u8, key: u32, model: Vec<f32>) -> Vec<f32> {
+        use legaia_engine_core::world::ActorTintKey;
+        let Some(h) = self.scene_host.as_ref() else {
+            return Vec::new();
+        };
+        if model.len() < 16 {
+            return Vec::new();
+        }
+        let tint_key = match kind {
+            0 => {
+                let Some(r) = self
+                    .field
+                    .as_ref()
+                    .and_then(|f| f.placement_records.get(key as usize).copied().flatten())
+                else {
+                    return Vec::new();
+                };
+                ActorTintKey::Object(r as u16)
+            }
+            1 => ActorTintKey::Npc(key as usize),
+            _ => return Vec::new(),
+        };
+        // Column-major `model[c * 4 + r]`; retail = diag(1, -1, 1) * page.
+        let row = |r: usize, sign: f32| {
+            [
+                sign * model[r],
+                sign * model[4 + r],
+                sign * model[8 + r],
+                sign * model[12 + r],
+            ]
+        };
+        let rows = [row(0, 1.0), row(1, -1.0), row(2, 1.0)];
+        h.world
+            .object_effect_mesh_clip(tint_key, rows)
+            .map(|c| c.shader_floats().to_vec())
+            .unwrap_or_default()
+    }
+
     /// The player's op-`4C 81` draw tint, `[r, g, b, ir0]`, or empty while
     /// the player draws untinted (`World::player_draw_tint`, the native
     /// window's player cue).

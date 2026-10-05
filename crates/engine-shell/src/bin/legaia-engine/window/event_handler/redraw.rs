@@ -1588,6 +1588,32 @@ impl PlayWindowApp {
                 .player_draw_tint()
                 .and_then(tint_draw_cue);
             let mut draws: Vec<SceneDraw<'_>> = Vec::new();
+            // Object-effect clips (a raised `+0x42`, field-VM `4C C2`): the
+            // draw indices that carry one, staged on the renderer below.
+            // Shared kernel `World::object_effect_mesh_clip`; the browser
+            // page asks the same one (`field_placement_effect_clips`).
+            let mut clip_marks: Vec<(usize, legaia_engine_render::DrawClip)> = Vec::new();
+            let mut color_clip_marks: Vec<(usize, legaia_engine_render::DrawClip)> = Vec::new();
+            let effect_clips = self.session.host.world.object_effect_clips();
+            let effect_clip = |key: legaia_engine_core::world::ActorTintKey,
+                               model: &Mat4|
+             -> Option<legaia_engine_render::DrawClip> {
+                let (_, clip, scale) = effect_clips.iter().find(|(k, _, _)| *k == key)?;
+                let rows = [
+                    model.row(0).to_array(),
+                    model.row(1).to_array(),
+                    model.row(2).to_array(),
+                ];
+                let mc = clip.in_mesh_space(rows, *scale);
+                Some(legaia_engine_render::DrawClip {
+                    m: mc.m,
+                    lo: mc.lo,
+                    hi: mc.hi,
+                })
+            };
+            let object_key = |record: Option<usize>| {
+                record.map(|r| legaia_engine_core::world::ActorTintKey::Object(r as u16))
+            };
             // Untextured (F*/G*) field props, drawn on the colour
             // pipeline alongside the textured `draws`.
             let mut color_draws: Vec<ColorSceneDraw<'_>> = Vec::new();
@@ -2121,6 +2147,11 @@ impl PlayWindowApp {
                                 continue;
                             }
                             if let Some(mesh) = mesh {
+                                if let Some(c) =
+                                    object_key(record).and_then(|k| effect_clip(k, model))
+                                {
+                                    clip_marks.push((draws.len(), c));
+                                }
                                 draws.push(SceneDraw {
                                     mesh,
                                     mvp,
@@ -2138,6 +2169,11 @@ impl PlayWindowApp {
                                 continue;
                             }
                             if let Some(mesh) = self.meshes.get(*mesh_idx) {
+                                if let Some(c) =
+                                    object_key(*record).and_then(|k| effect_clip(k, model))
+                                {
+                                    clip_marks.push((draws.len(), c));
+                                }
                                 draws.push(SceneDraw {
                                     mesh,
                                     mvp,
@@ -2149,6 +2185,10 @@ impl PlayWindowApp {
                             let mvp = cam * *model;
                             if place_near_culled(&mvp) {
                                 continue;
+                            }
+                            if let Some(c) = object_key(*record).and_then(|k| effect_clip(k, model))
+                            {
+                                clip_marks.push((draws.len(), c));
                             }
                             draws.push(SceneDraw {
                                 mesh,
@@ -2191,6 +2231,11 @@ impl PlayWindowApp {
                                 continue;
                             }
                             if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
+                                if let Some(c) =
+                                    object_key(record).and_then(|k| effect_clip(k, model))
+                                {
+                                    color_clip_marks.push((color_draws.len(), c));
+                                }
                                 color_draws.push(ColorSceneDraw {
                                     mesh,
                                     mvp,
@@ -2204,6 +2249,11 @@ impl PlayWindowApp {
                                 continue;
                             }
                             if let Some(mesh) = self.color_meshes.get(*mesh_idx) {
+                                if let Some(c) =
+                                    object_key(*record).and_then(|k| effect_clip(k, model))
+                                {
+                                    color_clip_marks.push((color_draws.len(), c));
+                                }
                                 color_draws.push(ColorSceneDraw {
                                     mesh,
                                     mvp,
@@ -2215,6 +2265,10 @@ impl PlayWindowApp {
                             let mvp = cam * *model;
                             if place_near_culled(&mvp) {
                                 continue;
+                            }
+                            if let Some(c) = object_key(*record).and_then(|k| effect_clip(k, model))
+                            {
+                                color_clip_marks.push((color_draws.len(), c));
                             }
                             color_draws.push(ColorSceneDraw {
                                 mesh,
@@ -2327,6 +2381,16 @@ impl PlayWindowApp {
                         let cue = w
                             .field_npc_draw_tint(d.slot as usize)
                             .and_then(tint_draw_cue);
+                        let npc_clip = effect_clip(
+                            legaia_engine_core::world::ActorTintKey::Npc(d.slot as usize),
+                            &model,
+                        );
+                        if let Some(c) = npc_clip {
+                            // Both mesh halves push below; mark the slot each
+                            // lands in.
+                            clip_marks.push((draws.len(), c));
+                            color_clip_marks.push((color_draws.len(), c));
+                        }
                         // A clip-less NPC's op-`0x4B` morph re-stages
                         // its static mesh (`npc_morph_static`).
                         let posed = npc_posed
@@ -3065,6 +3129,21 @@ impl PlayWindowApp {
             // the retail mechanism - the 3D scene darkens while the narration
             // overlay keeps scrolling bright.
             legaia_engine_render::profile::draw_counts(draws.len(), color_draws.len());
+            {
+                let mut tex = vec![None; draws.len()];
+                for (i, c) in clip_marks {
+                    if let Some(slot) = tex.get_mut(i) {
+                        *slot = Some(c);
+                    }
+                }
+                let mut col = vec![None; color_draws.len()];
+                for (i, c) in color_clip_marks {
+                    if let Some(slot) = col.get_mut(i) {
+                        *slot = Some(c);
+                    }
+                }
+                r.set_draw_clips(tex, col);
+            }
             let scene = RenderScene {
                 vram,
                 draws: &draws,

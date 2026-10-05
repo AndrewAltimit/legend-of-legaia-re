@@ -146,6 +146,7 @@ pub mod music_labels;
 pub mod name_entry;
 pub mod new_game;
 pub mod npc_catalog;
+pub mod object_effect;
 pub mod options;
 pub mod other_game_overlay;
 pub mod overlay_loader;

@@ -152,6 +152,18 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
             });
     }
 
+    /// Ext `0x17` / `0x18` / `0x1A` / `0x19`: the object-effect table
+    /// (`0x80083FF8`) a raised `+0x42` draws under.
+    fn ext_world_struct_init(&mut self, index: i16, values: [i16; 5]) {
+        self.world.object_effect.write(index, values);
+    }
+    fn ext_world_struct_write(&mut self, index: i16, values: [i16; 5]) {
+        self.world.object_effect.write(index, values);
+    }
+    fn ext_world_struct_add(&mut self, index: i16, deltas: [i16; 5]) {
+        self.world.object_effect.add(index, deltas);
+    }
+
     fn rotation_lut(&self, index: u16) -> (i16, i16) {
         let idx = index as usize % self.world.sin_lut.len().max(1);
         let s = self.world.sin_lut.get(idx).copied().unwrap_or(0);

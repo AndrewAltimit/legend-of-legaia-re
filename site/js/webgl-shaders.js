@@ -645,6 +645,15 @@ in vec3 v_normal;
 in vec3 v_obj_pos;
 in vec3 v_world;
 
+/* Object-effect clip of an actor whose +0x42 is raised (field-VM 4C C2):
+ * retail's FUN_8002735C clips each primitive against the slab its
+ * object-effect row stages (FUN_8001C204 -> 0x1F800380, FUN_80027F00).
+ * u_eclip_m = (m.xyz, enable), u_eclip_b = (lo, hi): keep lo <= m . p <= hi
+ * for mesh-space p. Same slab the native mesh shaders discard outside
+ * (EFFECT_CLIP_WGSL), handed per draw by the engine (play_effect_clip). */
+uniform vec4 u_eclip_m;
+uniform vec2 u_eclip_b;
+
 out vec4 o_color;
 
 /* Log-depth write on (LOG_DEPTH_GLSL): 1 on the play page's perspective
@@ -934,6 +943,10 @@ vec3 apply_distance_fog(vec3 lit) {
 }
 
 void main() {
+  if (u_eclip_m.w > 0.5) {
+    float ey = dot(u_eclip_m.xyz, v_obj_pos);
+    if (ey < u_eclip_b.x || ey > u_eclip_b.y) discard;
+  }
   float far_bucket_depth = u_log_depth_on != 0 ? logDepthOfW(v_depth_w) : gl_FragCoord.z;
   /* A sloped far-bucket field ground cell draws under everything, as
    * retail's far bucket does: its depth goes into the thin slice in front of

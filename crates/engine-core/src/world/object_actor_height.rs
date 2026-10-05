@@ -445,6 +445,53 @@ impl World {
         }
         out
     }
+
+    /// The object-effect clip ([`crate::object_effect`]) of every field
+    /// context whose `+0x42` is raised (field-VM `4C C2`), keyed the way the
+    /// hosts key their draws: [`ActorTintKey::Object`] for an object-bind
+    /// channel (its flat record), [`ActorTintKey::Npc`] for a placement. The
+    /// `f32` is the actor's render scale `+0x72` (`1.0 = 0x1000`; `0` reads
+    /// as `1.0`, the allocator's seed). Empty while no context raised it,
+    /// which is every scene but nine.
+    // REF: FUN_8001C204, FUN_80027F00
+    pub fn object_effect_clips(
+        &self,
+    ) -> Vec<(ActorTintKey, crate::object_effect::EffectClip, f32)> {
+        self.field_vm
+            .channels
+            .iter()
+            .filter(|c| c.ctx.field_42 != 0)
+            .filter_map(|c| {
+                let clip =
+                    self.object_effect
+                        .clip_for(c.ctx.field_42, &self.sin_lut, &self.cos_lut)?;
+                let key = if c.object_bind {
+                    ActorTintKey::Object(c.placement_index as u16)
+                } else {
+                    ActorTintKey::Npc(c.placement_index)
+                };
+                let scale = match c.ctx.field_72 {
+                    0 => 1.0,
+                    s => f32::from(s) / 4096.0,
+                };
+                Some((key, clip, scale))
+            })
+            .collect()
+    }
+
+    /// [`Self::object_effect_clips`] for one key, in mesh space for a draw
+    /// whose model matrix rows are `model_rows` - the one call both hosts
+    /// make per placed / NPC draw.
+    pub fn object_effect_mesh_clip(
+        &self,
+        key: ActorTintKey,
+        model_rows: [[f32; 4]; 3],
+    ) -> Option<crate::object_effect::MeshClip> {
+        self.object_effect_clips()
+            .into_iter()
+            .find(|(k, _, _)| *k == key)
+            .map(|(_, clip, scale)| clip.in_mesh_space(model_rows, scale))
+    }
 }
 
 /// A tint pair as a constant per-draw depth cue: `far` in display `0..1`
