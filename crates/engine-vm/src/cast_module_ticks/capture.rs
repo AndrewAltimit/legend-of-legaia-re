@@ -75,7 +75,7 @@ pub const WHITE_SHIELD_TRAMPOLINE_ARMS: [(u8, u32); 6] = [
 /// which is how the per-image port table tells this port from the unrelated
 /// routines at the same VA.
 ///
-/// PORT: FUN_801F7A40, FUN_801F7B1C, FUN_801F7B28, FUN_801F816C, FUN_801F8E60, FUN_801F92A4
+/// PORT: FUN_801F7A40, FUN_801F7B1C, FUN_801F7B28, FUN_801F816C, FUN_801F8E60, FUN_801F92A4 (the trampolines of PROT 0938 / PROT 0965 / PROT 0952 / PROT 0951 / PROT 0958 / PROT 0955, in that order)
 pub const CAPTURE_TRAMPOLINES: [CaptureTrampoline; 21] = [
     // `beq v1, 0x4e -> 0x801F726C` / `beq v1, 0xb7 -> 0x801F69EC`.
     CaptureTrampoline {

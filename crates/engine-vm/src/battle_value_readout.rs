@@ -404,7 +404,7 @@ pub const COMBO_SLIDE_FRAMES: u16 = 16;
 /// `FUN_801D9BBC`'s linear step from the start seat to the target, holding
 /// at `0` once the record has snapped.
 ///
-/// PORT: FUN_801D9BBC (the per-handle step, applied to record 80)
+/// PORT: FUN_801D9BBC (PROT 0898; the per-handle step, applied to record 80)
 pub fn combo_slide(age: u16) -> i32 {
     if age >= COMBO_SLIDE_FRAMES {
         return 0;

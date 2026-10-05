@@ -62,7 +62,7 @@ impl SpriteGlide {
 /// The round time meter's counter ceiling (`0xC` ticks = a full bar).
 pub const TIME_METER_MAX: u8 = 0xC;
 
-/// PORT: FUN_801d3444 (core ramp + bar mapping) - the round **time meter**:
+/// PORT: FUN_801d3444 (PROT 0898; core ramp + bar mapping) - the round **time meter**:
 /// while the phase tag is `'P'` (0x50, the selection phase) and the ramp
 /// flag is up, the 0..=0xC counter climbs by the frame delta (clamped at
 /// [`TIME_METER_MAX`]); otherwise it drains by the delta (floored at 0).

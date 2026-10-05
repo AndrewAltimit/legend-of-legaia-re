@@ -803,7 +803,7 @@ impl SlotMachine {
     /// [`Self::tick`], which raises the sting and the reach loop.
     ///
     /// [`PAYLINE_ROW_OFFSETS`]: legaia_asset::minigame_slot_scene::PAYLINE_ROW_OFFSETS
-    // PORT: FUN_801d1af4
+    // PORT: FUN_801d1af4 (PROT 0975)
     fn anticipation_scan(&self) -> i32 {
         use legaia_asset::slot_payout::{KICK_SYMBOL_ID, PUNCH_SYMBOL_ID};
         let landed: [bool; REEL_COUNT] = core::array::from_fn(|r| self.stopped[r].is_some());

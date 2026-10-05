@@ -780,7 +780,7 @@ pub fn swordie_tick(
 ///
 /// Returns the damage applied on a landing call, `None` otherwise.
 ///
-/// PORT: FUN_801F81DC (the whole routine: progress accumulator, hit counter, and the landing through `swordie_slash`)
+/// PORT: FUN_801F81DC (PROT 0910; the whole routine: progress accumulator, hit counter, and the landing through `swordie_slash`)
 pub fn swordie_slash_step(
     slashes: &mut SwordieSlashes,
     slash: u8,

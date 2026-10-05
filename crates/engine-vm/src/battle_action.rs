@@ -4,7 +4,7 @@
 //! finished swinging the sword and HP has been deducted."
 //!
 //! PORT: FUN_801E295C, FUN_8003F2B8, FUN_8004E2F0, FUN_801D5854, FUN_801D8DE8
-//! PORT: FUN_801DABA4, FUN_801DBF9C, FUN_801DC0A0, FUN_801E7320, FUN_801EED1C, FUN_801EFE44
+//! PORT: FUN_801DABA4, FUN_801DBF9C, FUN_801DC0A0, FUN_801E7320, FUN_801EED1C, FUN_801EFE44 (PROT 0898)
 //!
 //! See [`docs/subsystems/battle-action.md`](../../../docs/subsystems/battle-action.md)
 //! for the byte-level reference. This is **not** a bytecode VM. It's a

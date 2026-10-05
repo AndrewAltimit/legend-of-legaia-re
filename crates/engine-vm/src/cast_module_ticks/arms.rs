@@ -162,7 +162,7 @@ pub const FLAG_TOXIC: u16 = 0x0002;
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
-/// PORT: FUN_801F726C (phase chain + the whole-row damage/status sweep; packet arms unported)
+/// PORT: FUN_801F726C (PROT 0938; phase chain + the whole-row damage/status sweep; packet arms unported)
 pub fn chaos_breath_tick(
     ctx: &mut CastModuleCtx,
     caster: &mut CastActorState,
@@ -246,7 +246,7 @@ pub const MYSTIC_CIRCLE_HIT_ANIM_RATE: u8 = 4;
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
-/// PORT: FUN_801F69EC (phase table + the whole-row damage sweep; packet arms unported)
+/// PORT: FUN_801F69EC (PROT 0938; phase table + the whole-row damage sweep; packet arms unported)
 pub fn mystic_circle_tick(
     ctx: &mut CastModuleCtx,
     seats: &mut [CastActorState],
@@ -307,7 +307,7 @@ pub const CHAOS_FLARE_POWER: u16 = 0x3A0;
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
-/// PORT: FUN_801F6A20 (phase table + damage/staging; packet arms unported)
+/// PORT: FUN_801F6A20 (PROT 0951; phase table + damage/staging; packet arms unported)
 pub fn chaos_flare_tick(
     ctx: &mut CastModuleCtx,
     victim: &mut CastActorState,
@@ -467,7 +467,7 @@ pub const DOOMSDAY_POWER: u16 = 0x600;
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
-/// PORT: FUN_801F69D8 (phase chain + the whole-row damage sweep; packet arms unported)
+/// PORT: FUN_801F69D8 (PROT 0965; phase chain + the whole-row damage sweep; packet arms unported)
 pub fn doomsday_tick(
     ctx: &mut CastModuleCtx,
     seats: &mut [CastActorState],

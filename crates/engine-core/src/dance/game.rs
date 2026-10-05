@@ -1095,7 +1095,7 @@ impl DanceGame {
     /// **Triangle spends a groovy-move wildcard** (three per song, any beat,
     /// worth the big multiplier only on the 4-beat combo slot, and locking input
     /// out for the length of the spin it throws the dancer into).
-    // PORT: FUN_801d1af4 (score / groove-gauge award; pad-word branches)
+    // PORT: FUN_801d1af4 (PROT 0980; score / groove-gauge award; pad-word branches)
     pub fn press(&mut self, dir: DanceDir) -> DanceEvent {
         self.award(0, dir)
     }
@@ -1211,7 +1211,7 @@ impl DanceGame {
     /// (plus a full `+1000` gauge step, which promotes the lane) and only
     /// `(lane+1) * 3` when it does not, and throws the dancer into a `lane + 1`
     /// turn spin during which no press is judged.
-    // PORT: FUN_801d1af4 (the pad-0x10 groovy-move branch)
+    // PORT: FUN_801d1af4 (PROT 0980; the pad-0x10 groovy-move branch)
     pub(super) fn spend_triangle(&mut self, i: usize, beat: u32) -> DanceEvent {
         let rows = self.chart.rows.len();
         let landed = self.on_combo_slot();

@@ -161,7 +161,7 @@ impl CursorActor {
 /// index (which may be out of range), and `+0x1F` moves one step. Retail does
 /// not clamp any of them.
 ///
-/// PORT: FUN_801D32BC
+/// PORT: FUN_801D32BC (PROT 0898)
 ///
 /// WIRED: `legaia_engine_core` `World::step_back_battle_command` (the ring's
 /// cancel arm) and `World::reselect_battle_commands` (the commit confirm's

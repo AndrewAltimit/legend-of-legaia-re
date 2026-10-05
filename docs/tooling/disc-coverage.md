@@ -1344,7 +1344,20 @@ What one row counts:
   credits none of them; the tag credits an image only through a dump stem
   `overlay_<label>_<addr>` whose label names it - a four-digit PROT token
   (`overlay_field_0897_801db510`, `overlay_cast_steal_0941_801f7d38`) or, with
-  none, the image's own label.
+  none, the image's own label - or through a `PROT NNNN` token in the tag's
+  own text (`FUN_801F69D8 (PROT 0965; ...)`), which names that entry for
+  every address in the tag.
+- **Shared VAs** - an address counts as aliased in two ways: the ignore list
+  files it under a VA-aliasing section, or the floor itself places it in more
+  than one image. The attribution does the latter only when each image's own
+  bytes start a routine there - different code at one address - and no tag
+  announces it. Without that second form, one bare tag on the slot-B load base
+  `0x801F69D8` credited every image whose word 0 is a routine, and a
+  battle-overlay port credited the field image with the interior fragment its
+  own bytes hold at the same VA. At a shared VA the ignore list's bare-VA
+  category does not transfer either (its reason describes one image's
+  routine), so every other image needs an image-naming tag or a row in
+  `image-scoped-verdicts.toml`.
 - **Native / no behaviour** - ignore-list scope claims: PsyQ, BIOS, libgte, the
   GPU and CD plumbing the engine replaces wholesale, and routines with no retail
   behaviour (unreferenced, dev-gated, empty). The two VA-aliasing sections
