@@ -1022,7 +1022,10 @@ impl World {
     /// `"$2"`/`"$3"` higher-level enemy variants are excluded. `None` when the
     /// id isn't a summon or neither source carries the creature (disc-free /
     /// synthetic battles).
-    fn summon_creature_def(&self, spell_id: u8) -> Option<&crate::monster_catalog::MonsterDef> {
+    pub(in crate::world) fn summon_creature_def(
+        &self,
+        spell_id: u8,
+    ) -> Option<&crate::monster_catalog::MonsterDef> {
         // The evolved block (`0x8C..=0x95`) summons a `battle_data` creature
         // exactly as the base block does; gating on the base block alone sent
         // Aluru / Gilium & co. to the MP-scaled placeholder, which a boss's

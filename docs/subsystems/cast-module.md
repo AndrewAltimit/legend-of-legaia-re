@@ -1081,7 +1081,13 @@ runs at. PROT 0903 is the one such module:
 
 The `gimard_burning_attack` capture (arm 11) holds the two tunnel parts
 mid-program and `0x801F7804` and the breath record still allocated - the
-lifetimes the per-arm seating reproduces. Arm 3's `0x801F7820` is a record the
+lifetimes the per-arm seating reproduces. The same capture holds the creature
+(pool slot 7) red: `+0x21C = 3`, `+0x04 = 0x3FC`, `+0x0C = 0x1000` - arm 9's
+render flag and tint word, eased by the presentation SM's red arm. The disc
+palette of the Gimard record is grey; the red is the tint pass, which walks
+slot 7 like any combatant. The engine seats the creature in a high slot, and
+`World::battle_actor_draw_plan` hands that slot seat 7 so the tint reaches
+the pixel on both hosts. Arm 3's `0x801F7820` is a record the
 static spawn scan does not recover (its `lui` / `addiu` pair is split across
 the arm), which is why the director names the records itself.
 

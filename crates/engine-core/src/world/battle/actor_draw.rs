@@ -20,6 +20,10 @@ use legaia_engine_vm::battle_cam_script::BattleCamPose;
 /// seat's is its record size class `<< 5`.
 pub const PARTY_BODY_RADIUS: i16 = 640;
 
+/// The pool slot retail seats a summon creature in (`actor_table[7]`, the
+/// cast module's creature seat - `docs/subsystems/cast-module.md`).
+pub const SUMMON_CREATURE_SEAT: i16 = 7;
+
 /// How far above the floor (retail units, `-Y`) the port lays the battle
 /// ground shadow, so a host's depth test draws it over the stage floor it is
 /// coplanar with. Retail has no depth buffer to tie; clear of the other
@@ -178,6 +182,24 @@ impl World {
                 (3 + slot as i16, i16::from(size) << 5, id as u8)
             }
             None if actor_idx < party_count => (actor_idx as i16, PARTY_BODY_RADIUS, 0),
+            // The summon creature: retail seats it in pool slot 7, one of the
+            // eight bodies the tint pass and the presentation SM walk, so its
+            // `+0x21C` arm reaches the pixel like any combatant's - PROT
+            // 0903's arm 9 raises it to `3` and the creature breathes red.
+            // The engine seats the creature in a free high slot instead, and
+            // this arm hands that slot retail's seat.
+            None if self.casting.summon_actor_slot == Some(actor_idx as u8) => {
+                let creature = self
+                    .casting
+                    .summon_stager
+                    .as_ref()
+                    .and_then(|st| self.summon_creature_def(st.spell_id));
+                (
+                    SUMMON_CREATURE_SEAT,
+                    creature.map_or(PARTY_BODY_RADIUS, |d| i16::from(d.size_class) << 5),
+                    creature.map_or(0, |d| d.id as u8),
+                )
+            }
             None => return None,
         };
         let b = &actor.battle;
@@ -429,6 +451,36 @@ mod tests {
         assert!(!all.is_empty());
         world.actors[0].move_state.render_24 = 0x100;
         assert!(world.battle_ground_shadow(0, &plan).is_none());
+    }
+
+    /// The seated summon creature is a tinted body on retail's seat 7: PROT
+    /// 0903's arm-9 red (`+0x21C = 3`, `+0x04 = 0x3FF`) reaches its draw
+    /// colour, where a plan-less creature drew its disc palette (grey) in
+    /// `gimard_burning_attack`.
+    #[test]
+    fn the_summon_creature_takes_its_tint_on_seat_seven() {
+        let mut world = battle_world();
+        let slot = 9;
+        assert!(
+            world
+                .battle_actor_draw_plan(slot, None, 4.0, false)
+                .is_none()
+        );
+        world.actors[slot].active = true;
+        world.seat_summon_actor(slot);
+        world.actors[slot].battle.render_flag = 3;
+        world.actors[slot].battle.render_color = 0x3FF;
+        world.actors[slot].battle.render_blend = 0x1000;
+        let plan = world
+            .battle_actor_draw_plan(slot, None, 4.0, false)
+            .expect("the creature is a battle body");
+        assert!(plan.drawn);
+        let [r, g, b] = [
+            plan.draw_colour as u8,
+            (plan.draw_colour >> 8) as u8,
+            (plan.draw_colour >> 16) as u8,
+        ];
+        assert!(r > 0xF0 && g == 0 && b == 0, "{r:#x} {g:#x} {b:#x}");
     }
 
     /// The grid's ambient fades in from the battle-init floor, dims under a
