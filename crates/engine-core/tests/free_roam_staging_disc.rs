@@ -209,3 +209,60 @@ fn thawed_karisto_twins_stage_without_the_mist() {
         );
     }
 }
+
+/// `town0b` (Rim Elm under attack) is entered only through `MV2.STR`'s
+/// hand-off, after `town01`'s attack timeline raised `0x147` (its first
+/// instruction) with `0x141` still clear - the pair every retail `town0b`
+/// state carries, with `0x8007BAC8 = 2010`. A staged picker entry must come
+/// up the way that hand-off does: the entry script's attack arm
+/// (`P1[0]` `+0xF3`) swaps the Rim Elm theme (2016) for the attack theme
+/// (2010) and holds the subtractive night grade `34 01 30 30 00 14`, and the
+/// shared `0x147` gate seats the wall rubble and parks the intact wall.
+#[test]
+fn town0b_staging_is_the_night_attack() {
+    let Some(mut host) = open_host() else {
+        eprintln!("skip: LEGAIA_DISC_BIN unset");
+        return;
+    };
+    host.world.seed_free_roam_story_baseline("town0b");
+    assert!(host.world.system_flag_test(0x147));
+    assert!(!host.world.system_flag_test(0x141));
+    host.enter_field_scene("town0b", 0).expect("enter town0b");
+    let calls = run_bgm(&mut host, 120);
+    assert_eq!(
+        calls.last().map(String::as_str),
+        Some("start_owned_vab(2010)"),
+        "staged town0b ends on the attack theme: {calls:?}"
+    );
+    assert_eq!(
+        host.world.held_scene_grade(),
+        Some((2, [0x30, 0x30, 0x00])),
+        "staged town0b holds the subtractive night grade"
+    );
+    assert!(
+        !host.world.screen_tint_pushes().is_empty(),
+        "the night grade pushes every frame"
+    );
+    let hidden = host.world.hidden_object_records();
+    for rec in [9usize, 10, 15] {
+        assert!(
+            hidden.contains(&rec),
+            "staged town0b must park the intact wall P0[{rec}]; hidden = {hidden:?}"
+        );
+    }
+    for rec in [18usize, 19, 20, 21] {
+        assert!(
+            !hidden.contains(&rec),
+            "staged town0b must seat the wall rubble P0[{rec}]; hidden = {hidden:?}"
+        );
+    }
+    // The static evaluator (site viewer, exporters) agrees.
+    let scene = host.scene.as_ref().expect("scene");
+    assert_eq!(
+        legaia_engine_core::field_env::story_hidden_records_for_scene(scene, &host.index),
+        hidden
+    );
+    // A later town01 pick resets the staging: day, theme 2016, wall intact.
+    host.world.seed_free_roam_story_baseline("town01");
+    assert!(!host.world.system_flag_test(0x147));
+}

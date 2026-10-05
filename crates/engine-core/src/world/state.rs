@@ -320,6 +320,16 @@ pub struct World {
 /// the scene *is*, so a picker visit without it shows a world no playthrough
 /// can reach.
 ///
+/// - `town0b`: Rim Elm under attack, entered only through `MV2.STR`'s
+///   hand-off (`fmv_id 1`). `town01`'s attack timeline (`P2[25]`) raises
+///   `0x147` as its first instruction and ends on the FMV trigger, so the
+///   scene always arrives with the flag set and `0x141` still clear. Its
+///   entry script (`P1[0]` `+0xC7..+0xFE`) keys the attack presentation on
+///   exactly that pair: the subtractive night tint `34 01 30 30 00 14`, the
+///   attack theme `35 DA 07 01` (global 2010, replacing the Rim Elm theme the
+///   script opened with) - and the same `0x147` seats the gate rubble and
+///   parks the intact wall. Every retail `town0b` state carries `0x147` set,
+///   `0x141` clear and `0x8007BAC8 = 2010`.
 /// - `town0c`: post-Mist Rim Elm - `0x147` seats the blown-gate rubble and
 ///   `0x141` cuts the doorway open (the gate script tests both).
 /// - `bubu1` / `nilboa2`: thawed Buma and its Nilboa twin. `map03`'s doors
@@ -333,6 +343,7 @@ pub struct World {
 ///   so a cold entry drew the frozen town's Mist over the thawed one. Every
 ///   retail card save carries the two flags together.
 pub const FREE_ROAM_TWIN_SEEDS: &[(&str, &[u16])] = &[
+    ("town0b", &[0x147]),
     ("town0c", &[0x147, 0x141]),
     ("bubu1", &[0x378, 0x51F]),
     ("nilboa2", &[0x378, 0x51F]),

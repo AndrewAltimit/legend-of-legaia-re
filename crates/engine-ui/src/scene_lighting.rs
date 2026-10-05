@@ -1421,11 +1421,61 @@ impl TimeOfDay {
 
     /// The mood this setting lights `scene` under.
     pub fn mood(self, scene: &str) -> LightingMood {
+        self.mood_graded(scene, None)
+    }
+
+    /// [`Self::mood`] with the scene's live **scripted grade** - the held
+    /// op-`0x34` sub-0 screen-effect tween as `(blend, target_rgb)`
+    /// (`World::held_scene_grade`). Under [`Self::Auto`] a grade that reads
+    /// as a time of day ([`ScriptedSky::from_grade`]) picks the mood, so a
+    /// scene the script turns to night (Rim Elm under attack, `town0b`; the
+    /// night `town01`) is lit as night, never as daylight under retail's own
+    /// night wash. A forced time of day still wins.
+    ///
+    /// The one call both play hosts make per frame.
+    pub fn mood_graded(self, scene: &str, grade: Option<(i16, [i16; 3])>) -> LightingMood {
         match self {
-            Self::Auto => LightingMood::for_scene(scene),
+            Self::Auto => match grade.and_then(|(b, rgb)| ScriptedSky::from_grade(b, rgb)) {
+                Some(ScriptedSky::Night) => LightingMood::NIGHT,
+                Some(ScriptedSky::Dusk) => LightingMood::DUSK,
+                None => LightingMood::for_scene(scene),
+            },
             Self::Day => LightingMood::DAY,
             Self::Dusk => LightingMood::DUSK,
             Self::Night => LightingMood::NIGHT,
+        }
+    }
+}
+
+/// The time of day a field script's held screen grade reads as.
+///
+/// Retail has no time-of-day system: a scene goes to night by its entry
+/// script holding a **subtractive** full-screen tint - op `34 01 r g b dur`
+/// (sub-0 with `op0 & 1`, blend `2`, the `FUN_80024EE4` push held at `-1`).
+/// Subtracting a red/green-heavy colour leaves the frame darker and blue:
+/// `town0b` and the night `town01` (flag `0x146`) hold `30 30 00`. Subtracting
+/// a blue-heavy one leaves it warm: the evening `town01` (flag `0x22E`) holds
+/// `00 10 18`. Greys (a plain dim) and additive grades read as neither.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScriptedSky {
+    Dusk,
+    Night,
+}
+
+impl ScriptedSky {
+    /// Classify a held grade `(blend, target_rgb)`; `None` for every grade
+    /// that is not a subtractive colour cast.
+    pub fn from_grade(blend: i16, rgb: [i16; 3]) -> Option<Self> {
+        if blend != 2 {
+            return None;
+        }
+        let [r, g, b] = rgb;
+        if b < r.min(g) && r.max(g) >= 0x20 {
+            Some(Self::Night)
+        } else if b > r && b >= 0x10 {
+            Some(Self::Dusk)
+        } else {
+            None
         }
     }
 }
@@ -2044,6 +2094,26 @@ mod tests {
         assert_eq!(TimeOfDay::Auto.mood("cave01").name, "cave");
         assert_eq!(TimeOfDay::Auto.mood("town01").name, "day");
         assert_eq!(TimeOfDay::Night.mood("cave01").name, "night");
+    }
+
+    /// A scene the script grades to night is lit as night under `Auto`;
+    /// a forced time of day still wins, and non-sky grades fall through.
+    #[test]
+    fn scripted_grade_picks_the_auto_mood() {
+        let night = Some((2, [0x30, 0x30, 0x00]));
+        let dusk = Some((2, [0x00, 0x10, 0x18]));
+        assert_eq!(TimeOfDay::Auto.mood_graded("town0b", night).name, "night");
+        assert_eq!(TimeOfDay::Auto.mood_graded("town01", dusk).name, "dusk");
+        assert_eq!(TimeOfDay::Day.mood_graded("town0b", night).name, "day");
+        // Additive, grey and black grades are not a time of day.
+        for g in [
+            (1, [0x30, 0x30, 0x00]),
+            (2, [0x40, 0x40, 0x40]),
+            (2, [0, 0, 0]),
+        ] {
+            assert_eq!(TimeOfDay::Auto.mood_graded("town01", Some(g)).name, "day");
+        }
+        assert_eq!(TimeOfDay::Auto.mood_graded("cave01", None).name, "cave");
     }
 
     /// The depth cue's far term darkens at night (the battle grid's

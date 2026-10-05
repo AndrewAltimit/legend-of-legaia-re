@@ -158,6 +158,21 @@ impl World {
             .collect()
     }
 
+    /// The scene's held **scripted grade**: `(blend, target_rgb)` of the live
+    /// op-`0x34` sub-0 screen-effect tween (retail `_DAT_8007BCE0` and
+    /// `_DAT_8007BCCD..CF` while `_DAT_8007B62C` names a live slot), `None`
+    /// when no tween is installed. `town0b`'s entry script holds
+    /// `(2, [0x30, 0x30, 0x00])` - its night. The enhanced-lighting mood
+    /// reads it on both hosts
+    /// (`legaia_engine_ui::scene_lighting::TimeOfDay::mood_graded`).
+    pub fn held_scene_grade(&self) -> Option<(i16, [i16; 3])> {
+        self.presentation.effect_tween_slot?;
+        Some((
+            self.presentation.effect_blend,
+            self.presentation.effect_target_rgb,
+        ))
+    }
+
     /// The same frame's pushes as the `(layer, blend, packed)` argument
     /// triples retail's emitter takes, ready for
     /// `legaia_engine_ui::screen_prim::screen_effect_push_prims`.
