@@ -1090,7 +1090,7 @@ window.MgDance = (function () {
     }
 
     return {
-      loadAssets, startRun, stopRun, onPress, draw, introActive, setBgmTrack,
+      loadAssets, startRun, stopRun, onPress, draw, introActive, setBgmTrack, playId,
       get introGate() { return intro !== null && (intro.live || !intro.go); },
       sfxCount() { return sfxIds ? Object.keys(sfxIds).length : 0; },
       bgmOk() { return !!(bgmInfo && bgmInfo.ok); },

@@ -1233,12 +1233,15 @@ the disassembly puts them, the song's end
 ([`minigame-dance.md`](../subsystems/minigame-dance.md#the-count-in-state-by-state)).
 And the page's track per game (`GAME_BGM`) is read from the engine
 (`minigame_bgm_id`, over `MinigameSubId::standalone_bgm_id`) instead of
-spelled as literals beside it.
+spelled as literals beside it. The song-end `3 2 1 FINISH!` now runs on
+all three surfaces off the overlay's own part programs
+(`dance::FinishCountdown`), and the minigames page gained the how-to mode:
+`dance_start_mode(2, ..)` installs the engine's `DanceTutorial` beside the
+one-dancer run, stepped per frame as `World::step_dance_tutorial` does and
+drawn through the shared `ui_dance::dance_tutorial_draws_for`.
 
 Still open from that pass:
 
-- **Dance How-To mode** has no minigames-page entry (`DanceGame::from_overlay`
-  only, no `DanceTutorial`).
 - **The page refuses the pause menu while any dialog box is up**
   (`_hudState.dialog`), on top of the engine's `field_menu_open_allowed`
   the native window asks alone. No retail evidence decides it yet.

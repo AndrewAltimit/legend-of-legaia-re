@@ -73,6 +73,10 @@ pub struct LegaiaMinigames {
     /// `dance::CountIn` both play hosts run - armed by [`Self::dance_start`],
     /// stepped by [`Self::dance_countin_step`].
     dance_countin: Option<legaia_engine_core::dance::CountIn>,
+    /// A how-to run's Disco King tutorial actor ([`Self::dance_start_mode`]).
+    dance_tutorial: Option<legaia_engine_core::dance_tutorial::DanceTutorial>,
+    /// The tutorial's last frame, for [`Self::dance_tutorial_rgba`].
+    dance_tutorial_frame: Option<legaia_engine_core::dance_tutorial::TutorialFrame>,
     /// Live Baka Fighter duel.
     baka: Option<BakaFight>,
     /// Live Baka Fighter ladder run (the between-match cash-out bookkeeping;
@@ -311,6 +315,8 @@ impl LegaiaMinigames {
             entries: Vec::new(),
             dance: None,
             dance_countin: None,
+            dance_tutorial: None,
+            dance_tutorial_frame: None,
             baka: None,
             baka_run: None,
             baka_surface: Default::default(),
@@ -642,7 +648,117 @@ impl LegaiaMinigames {
         }
         self.dance = Some(game);
         self.dance_countin = Some(legaia_engine_core::dance::CountIn::new());
+        self.dance_tutorial = None;
+        self.dance_tutorial_frame = None;
         true
+    }
+
+    /// Start a run in one of the overlay's four modes (`DAT_801D514C`):
+    /// `0` qualifier, `1` finals, `2` the **how-to** (one dancer, short song,
+    /// and the Disco King tutorial actor `FUN_801D0750` beside it), `3` free
+    /// play - what the native window's `start_dance_minigame_mode` and the
+    /// play page's door-warp entry run. Returns `false` when the overlay
+    /// didn't decode.
+    pub fn dance_start_mode(&mut self, mode: u8, long_song: bool) -> bool {
+        use legaia_engine_core::dance::DanceMode as M;
+        let mode = match mode {
+            1 => M::Finals,
+            2 => M::HowTo,
+            3 => M::FreePlay,
+            _ => M::Qualifier,
+        };
+        let Some(img) = self.dance_overlay() else {
+            return false;
+        };
+        let Some(mut game) = DanceGame::from_overlay_for_mode(&img, mode, long_song) else {
+            return false;
+        };
+        if let Some(b) = self.dance_bodies.as_ref() {
+            game.attach_clip_bank(b.clip_bank());
+        }
+        self.dance = Some(game);
+        self.dance_countin = Some(legaia_engine_core::dance::CountIn::new());
+        self.dance_tutorial =
+            (mode == M::HowTo).then(legaia_engine_core::dance_tutorial::DanceTutorial::new);
+        self.dance_tutorial_frame = None;
+        true
+    }
+
+    /// Whether a how-to run's tutorial actor is live.
+    pub fn dance_tutorial_active(&self) -> bool {
+        self.dance_tutorial.is_some()
+    }
+
+    /// Step the Disco King tutorial one frame beside the run - the step
+    /// `World::step_dance_tutorial` runs on the play hosts, count-in
+    /// included. `buttons` is this frame's newly pressed set as bits: `1` a
+    /// face button (advance / confirm), `2` cursor back, `4` cursor on.
+    /// Returns the cue id the frame fires (`0` for none).
+    pub fn dance_tutorial_step(&mut self, buttons: u8) -> u32 {
+        use legaia_engine_core::dance_tutorial as dt;
+        let mut pad = 0u16;
+        if buttons & 1 != 0 {
+            pad |= dt::PAD_ADVANCE;
+        }
+        if buttons & 2 != 0 {
+            pad |= dt::PAD_CURSOR_PREV;
+        }
+        if buttons & 4 != 0 {
+            pad |= dt::PAD_CURSOR_NEXT;
+        }
+        let (score, feedback_frames, combo_hit) = self
+            .dance
+            .as_ref()
+            .map(|g| {
+                (
+                    g.score() as i32,
+                    g.feedback_frames() as i32,
+                    matches!(g.triangle_feedback(), Some(true)),
+                )
+            })
+            .unwrap_or((0, 0, false));
+        let Some(tut) = self.dance_tutorial.as_mut() else {
+            return 0;
+        };
+        let frame = tut.step(pad, score, feedback_frames, combo_hit, 1);
+        let cue = frame.cue.map_or(0, u32::from);
+        if frame.done {
+            self.dance_tutorial = None;
+            self.dance_tutorial_frame = None;
+        } else {
+            self.dance_tutorial_frame = Some(frame);
+        }
+        cue
+    }
+
+    /// The tutorial's captions / options / cursor / feedback for this frame
+    /// as a `w x h` RGBA8 overlay (transparent elsewhere), through the shared
+    /// `ui_dance::dance_tutorial_draws_for` both play hosts draw. Empty with
+    /// no live tutorial or no dialog font.
+    pub fn dance_tutorial_rgba(&self, w: u32, h: u32) -> Vec<u8> {
+        use legaia_engine_ui::ui_dance;
+        let (Some(tf), Some(font)) = (self.dance_tutorial_frame.as_ref(), self.slot_font.as_ref())
+        else {
+            return Vec::new();
+        };
+        let draws = ui_dance::dance_tutorial_draws_for(
+            font,
+            ui_dance::DanceTutorialView {
+                captions: &tf.captions,
+                options: tf.options,
+                cursor_pos: tf.cursor_pos,
+                feedback: tf.feedback,
+            },
+            (0, 0),
+            1,
+        );
+        let mut px = vec![0u8; (w * h * 4) as usize];
+        blit_text(&mut px, w, h, font, &draws);
+        // Alpha where the text landed, so the page can composite it.
+        for p in px.as_chunks_mut::<4>().0 {
+            p[3] = if p[0] | p[1] | p[2] != 0 { 0xFF } else { 0 };
+        }
+        px
     }
 
     /// The global BGM id the page plays for `game` (`"baka"`, `"slot"`,
