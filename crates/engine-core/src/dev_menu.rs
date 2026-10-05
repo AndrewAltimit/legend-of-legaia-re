@@ -45,11 +45,13 @@
 //! `PadButton::*.mask()` here.
 //!
 //! Wired: [`crate::dev_menu_host::DevMenuSession`]'s `EVENT_FLAG` page
-//! drives all three kernels. The **flag-list table** is still absent - it is
-//! an overlay-0897 debug asset (`DAT_801f2e94`, stride `0xA` with the `'X'`
-//! sentinel) that the engine never loads, so `DevMenuSession::flag_tags`
-//! starts empty and the list cursor has nothing to walk until a host
-//! supplies it. The raw value editor works without it.
+//! drives all three kernels. The **flag-list table** is the field overlay's
+//! own data (`DAT_801f2e94` in extraction entry `0897`, stride `0xA`: a
+//! `u16` flag id then an 8-byte NUL-padded name, ended by a record whose name
+//! starts `'X'`). Both hosts seed `DevMenuSession::flag_tags` from it
+//! through [`flag_list_tags`] when they open the screen
+//! (`SceneHost::dev_flag_list_tags`); a host that cannot read the entry
+//! leaves the list empty, and the raw value editor works without it.
 
 /// Packed-pad Triangle (`_DAT_8007b850 & 0x10` = the coarse-step modifier).
 pub const PACK_TRIANGLE: u16 = 0x0010;
@@ -103,6 +105,32 @@ pub const FLAG_VALUE_MAX: i32 = 0xFFF;
 pub const FLAG_ENTRY_STRIDE: usize = 0xA;
 /// End-of-list sentinel: byte `+2` of a table entry equals `'X'` (0x58).
 pub const FLAG_LIST_END_TAG: u8 = 0x58;
+/// Runtime VA of the flag-list table (`addiu a1,v0,0x2e94` under
+/// `lui v0,0x801f`, `0x801DB918..0x801DB91C`), in the field overlay's data
+/// segment.
+pub const FLAG_LIST_VA: u32 = 0x801F_2E94;
+
+/// The per-entry `+2` projection [`flag_list_prev`] / [`flag_list_next`]
+/// walk, read off the field overlay's image (`field_overlay` = extraction
+/// entry `0897`, loaded at [`crate::field_submode_flag_window::FIELD_OVERLAY_BASE`]).
+///
+/// The projection ends **with** the `'X'` sentinel, the shape both kernels
+/// expect. Empty when the table is out of range or no sentinel is found
+/// inside the image - an empty list is the host's "no table" state.
+pub fn flag_list_tags(field_overlay: &[u8]) -> Vec<u8> {
+    let base = crate::field_submode_flag_window::FIELD_OVERLAY_BASE;
+    let start = FLAG_LIST_VA.wrapping_sub(base) as usize;
+    let mut tags = Vec::new();
+    let mut off = start;
+    while let Some(entry) = field_overlay.get(off..off + FLAG_ENTRY_STRIDE) {
+        tags.push(entry[2]);
+        if entry[2] == FLAG_LIST_END_TAG {
+            return tags;
+        }
+        off += FLAG_ENTRY_STRIDE;
+    }
+    Vec::new()
+}
 
 /// Step the edited flag index/value `DAT_801f2aa0` by one pad edge.
 ///
@@ -231,6 +259,23 @@ impl EventFlagEditor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_flag_list_projection_ends_on_the_sentinel() {
+        let base = crate::field_submode_flag_window::FIELD_OVERLAY_BASE;
+        let start = (FLAG_LIST_VA - base) as usize;
+        let mut img = vec![0u8; start + 4 * FLAG_ENTRY_STRIDE];
+        for (i, name) in [b"M01", b"M02", b"XXX"].iter().enumerate() {
+            let at = start + i * FLAG_ENTRY_STRIDE;
+            img[at..at + 2].copy_from_slice(&(0x7D0u16 + i as u16).to_le_bytes());
+            img[at + 2..at + 5].copy_from_slice(*name);
+        }
+        assert_eq!(flag_list_tags(&img), vec![b'M', b'M', FLAG_LIST_END_TAG]);
+        // A table with no sentinel inside the image is the "no table" state.
+        img[start + 2 * FLAG_ENTRY_STRIDE + 2] = b'M';
+        assert!(flag_list_tags(&img).is_empty());
+        assert!(flag_list_tags(&[]).is_empty());
+    }
 
     #[test]
     fn fine_step_is_eight() {

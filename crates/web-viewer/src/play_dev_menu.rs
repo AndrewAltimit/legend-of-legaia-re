@@ -83,7 +83,11 @@ impl LegaiaRuntime {
         let Some(scene) = self.scene_host.as_mut() else {
             return;
         };
-        let session = self.dev_menu.get_or_insert_with(DevMenuSession::new);
+        // The EVENT FLAG page's list comes off the user's disc (the field
+        // overlay's data segment), as on the native window.
+        let session = self
+            .dev_menu
+            .get_or_insert_with(|| DevMenuSession::with_flag_tags(scene.dev_flag_list_tags()));
         let world = &mut scene.world;
         let (edge, held) = {
             let (now, prev) = (

@@ -96,6 +96,16 @@ impl SceneHost {
         crate::tile_board::prompt_strings(&bytes)
     }
 
+    /// The developer EVENT FLAG page's list projection, read off the field
+    /// overlay's image (extraction entry `0897`) at `DAT_801F2E94`. Empty
+    /// when the entry cannot be read. See [`crate::dev_menu::flag_list_tags`].
+    pub fn dev_flag_list_tags(&self) -> Vec<u8> {
+        self.index
+            .entry_bytes(crate::incense_notice::FIELD_OVERLAY_PROT_INDEX)
+            .map(|b| crate::dev_menu::flag_list_tags(&b))
+            .unwrap_or_default()
+    }
+
     /// The Incense wear-off notice's line while it is up: the field
     /// overlay's string at `0x801CF1A4` (extraction entry `0897`) with its
     /// `0xC2` item-name escape expanded through the live item names. `None`

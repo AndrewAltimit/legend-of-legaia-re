@@ -80,7 +80,10 @@ impl PlayWindowApp {
         if !Self::dev_menu_enabled() {
             return;
         }
-        let session = self.dev_menu.get_or_insert_with(DevMenuSession::new);
+        let host = &self.session.host;
+        let session = self
+            .dev_menu
+            .get_or_insert_with(|| DevMenuSession::with_flag_tags(host.dev_flag_list_tags()));
         let world = &mut self.session.host.world;
         let (edge, held) = {
             let (now, prev) = (
