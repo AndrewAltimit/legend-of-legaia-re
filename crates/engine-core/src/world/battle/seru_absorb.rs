@@ -69,29 +69,31 @@ pub(in crate::world) const MAGIC_BOOST_BONUS_PCT: u8 = 30;
 
 impl World {
     /// The killing-blow absorb roll for one hit (module doc, steps 2..5).
-    /// `kills` is step 1, decided by the caller's accumulate.
+    /// `kills` is step 1, decided by the caller's accumulate. Returns `true`
+    /// when this roll staged a Seru into `ctx[+0x269]` - the hit's reaction
+    /// pick reads that (`0x801EE2E8..0x801EE304`, see `melee_reaction_entry`).
     ///
     /// REF: FUN_801EC3E4 (`0x801EE1C0..0x801EE2E8`, the absorb block)
-    pub(in crate::world) fn roll_seru_absorb(&mut self, attacker: u8, target: u8) {
+    pub(in crate::world) fn roll_seru_absorb(&mut self, attacker: u8, target: u8) -> bool {
         let attacker_i = usize::from(attacker);
         let target_i = usize::from(target);
         // Party-ness is identity, not seat number, in the port's layout.
         let (Some(att), Some(tgt)) = (self.actors.get(attacker_i), self.actors.get(target_i))
         else {
-            return;
+            return false;
         };
         if att.battle_monster_id.is_some() {
-            return;
+            return false;
         }
         let Some(monster_id) = tgt.battle_monster_id else {
-            return;
+            return false;
         };
         let Some(def) = self.tables.monster_catalog.get(monster_id) else {
-            return;
+            return false;
         };
         let (seru, base_pct) = (def.absorb_seru, def.absorb_chance_pct);
         if seru == 0 {
-            return;
+            return false;
         }
         let roster = self.party_roster_slot(attacker_i);
         let boosted = self.party.roster.members.get(roster).is_some_and(|rec| {
@@ -105,7 +107,7 @@ impl World {
                 0
             };
         if self.next_rand() % 100 >= chance {
-            return;
+            return false;
         }
         // `FUN_801E91E8` keys its gates and its list off the ACTING slot
         // (`ctx[+0x13]`), which on the arts path is the attacker.
@@ -126,7 +128,9 @@ impl World {
             .unwrap_or(1);
         if known == 0 {
             self.battle_ctx.multi_cast_gate = seru;
+            return true;
         }
+        false
     }
 
     /// The Done band's grant (module doc, step 6): prepend spell

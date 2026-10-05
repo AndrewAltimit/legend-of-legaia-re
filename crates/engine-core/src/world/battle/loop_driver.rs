@@ -1926,9 +1926,7 @@ impl World {
         // caller has decided as `kill_check` (see `seru_absorb`'s module
         // note); the compare itself is the accumulated total against live
         // HP (`sltu v0,a0,a2` at `0x801EE1CC`).
-        if kill_check && !survives {
-            self.roll_seru_absorb(attacker, target);
-        }
+        let absorbed_now = kill_check && !survives && self.roll_seru_absorb(attacker, target);
         // Surface the strike for HUD damage popups.
         self.battle.hit_fx.push(BattleHitFx {
             target_slot: target,
@@ -1952,7 +1950,7 @@ impl World {
         // committed to the defender's `+0x1DA`); the grunt below compares it
         // against the defender's block entry.
         let committed_reaction = if dmg > 0 {
-            self.melee_reaction_entry(target_i, power_byte, kill_check)
+            self.melee_reaction_entry(attacker_i, target_i, power_byte, kill_check, absorbed_now)
         } else {
             None
         };
@@ -1976,18 +1974,40 @@ impl World {
     ///   (`0x801EDE18..0x801EDE78`), and a record carrying only one of the
     ///   two falls back to it (`0x801EDE98..0x801EDEBC`).
     /// * Only a hit that reaches the kill compare (`kill_check`, the per-hit
-    ///   gates `0x801EE128..0x801EE1A4`) can escalate. A defender the total
-    ///   kills takes the knockdown `+0x1F1` (`0x801EE340..0x801EE374`); a
-    ///   survivor with a get-up entry takes it when the combo total exceeds a
-    ///   quarter of its max HP or leaves it under a quarter
-    ///   (`0x801EE380..0x801EE3B4`); any other survivor keeps the flinch.
+    ///   gates `0x801EE128..0x801EE1A4`) can escalate. The War God Icon
+    ///   carry (apply mode `0xFF`) never does: its `beq v0,v1,0x801EE3B8` at
+    ///   `0x801EE12C` lands one instruction past the knockdown load at
+    ///   `0x801EE3B4`, so the carried hit keeps the flinch - its callers pass
+    ///   `kill_check = false`.
+    /// * A **killing** total takes the knockdown `+0x1F1` unless a Seru sits
+    ///   staged in `ctx[+0x269]` (`bne v0,zero,0x801EE3BC` at `0x801EE350`,
+    ///   which jumps over the load at `0x801EE374`). On a party blow on a
+    ///   monster, the absorb block runs first: a roll that stages the Seru
+    ///   this hit loads the knockdown itself when the record carries a
+    ///   get-up entry (`0x801EE2EC..0x801EE304`), and the first-monster-id
+    ///   `0xB3` arm (`0x801EE30C..0x801EE338`) forces entry `2`. So an
+    ///   absorbing kill on a monster with no get-up animation **flinches**,
+    ///   and one with a get-up knocks down (the clip ladder's death arm then
+    ///   swaps in the get-up so the fallen Seru rises for the absorb).
+    /// * A surviving defender with a get-up entry takes the knockdown when
+    ///   the combo total exceeds a quarter of its max HP or leaves it under
+    ///   a quarter (`0x801EE380..0x801EE3B4`); any other survivor keeps the
+    ///   flinch.
     ///
-    /// Not modelled: the War God Icon carry (apply mode `0xFF`), which
-    /// knocks down without the kill compare (`0x801EE12C` -> `0x801EE3B8`).
+    /// Not modelled: the `0xB3` arm's side write
+    /// (`sb 0x10` through monster record 0's `+0x54` -> `+0x88`, at
+    /// `0x801EE338`).
     ///
     /// PORT: FUN_801EC3E4 (`0x801EDE18..0x801EDEBC`, `0x801EE1C0..0x801EE3B8`,
     /// the reaction pick)
-    fn melee_reaction_entry(&self, target: usize, power_byte: u8, kill_check: bool) -> Option<u8> {
+    fn melee_reaction_entry(
+        &self,
+        attacker: usize,
+        target: usize,
+        power_byte: u8,
+        kill_check: bool,
+        absorbed_now: bool,
+    ) -> Option<u8> {
         let [high, low, knockdown, getup, _] = self.battle_reaction_map(target)?;
         let mut s7 = if vm::battle_formulas::physical_defense_is_udf(power_byte) {
             high
@@ -2005,7 +2025,23 @@ impl World {
             let accum = t.damage_accum;
             let hp = u32::from(t.hp);
             if accum >= hp {
-                s7 = knockdown;
+                // Seat classes by identity, as the absorb roll reads them.
+                let party_blow_on_monster = self.actors.get(target)?.battle_monster_id.is_some()
+                    && self
+                        .actors
+                        .get(attacker)
+                        .is_some_and(|a| a.battle_monster_id.is_none());
+                if party_blow_on_monster {
+                    if absorbed_now && getup != 0 {
+                        s7 = knockdown;
+                    }
+                    if self.battle_first_monster_byte() == 0xB3 {
+                        s7 = 2;
+                    }
+                }
+                if self.battle_ctx.multi_cast_gate == 0 {
+                    s7 = knockdown;
+                }
             } else if getup != 0 {
                 let quarter = u32::from(t.max_hp >> 2);
                 if quarter < accum || hp - accum < quarter {
@@ -2546,6 +2582,77 @@ mod melee_cue_tests {
         w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, false);
         w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, true);
         assert_eq!(w.battle_ctx.multi_cast_gate, 1, "Seru 1 staged");
+    }
+
+    /// Seat monster clips on slot 1: idle (tag 0), high flinch (tag 2) at
+    /// entry 1, knockdown (tag 4) at entry 2, and - with `getup` - a get-up
+    /// (tag 5) at entry 3.
+    fn seat_reaction_clips(w: &mut World, getup: bool) {
+        use legaia_asset::monster_archive::{MonsterAnimation, PartPose};
+        let clip = |action_id: u8| MonsterAnimation {
+            action_id,
+            rate: 2,
+            attach_key: 0,
+            solo_flag: 0,
+            impact_class: 0,
+            effect_script: Vec::new(),
+            part_count: 1,
+            frame_count: 2,
+            frames: vec![vec![PartPose::default()]; 2],
+        };
+        let mut clips = vec![Some(clip(0)), Some(clip(2)), Some(clip(4))];
+        if getup {
+            clips.push(Some(clip(5)));
+        }
+        w.set_actor_battle_action_clips(1, std::sync::Arc::new(clips));
+    }
+
+    /// `0x801EE350`: a killing total with a Seru staged in `ctx[+0x269]`
+    /// skips the knockdown load. A monster with no get-up entry keeps the
+    /// flinch; one with a get-up loads the knockdown inside the absorb block
+    /// (`0x801EE2F4..0x801EE304`); a kill with nothing staged knocks down.
+    #[test]
+    fn an_absorbing_kill_flinches_a_monster_without_a_get_up() {
+        const UDF: u8 = 0x16;
+        for (getup, absorbed, want) in [
+            (false, true, 1u8),
+            (true, true, 2),
+            (false, false, 2),
+            (true, false, 2),
+        ] {
+            let mut w = absorb_duel();
+            seat_reaction_clips(&mut w, getup);
+            w.actors[1].battle.damage_accum = 5;
+            if absorbed {
+                w.battle_ctx.multi_cast_gate = 1;
+            }
+            assert_eq!(
+                w.melee_reaction_entry(0, 1, UDF, true, absorbed),
+                Some(want),
+                "getup {getup} absorbed {absorbed}"
+            );
+        }
+        // End to end: the hit that lands the total rolls a certain absorb
+        // and the get-up-less monster commits its flinch.
+        let mut w = absorb_duel();
+        seat_reaction_clips(&mut w, false);
+        w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, true);
+        assert_eq!(w.battle_ctx.multi_cast_gate, 1, "Seru 1 staged");
+        assert_eq!(w.actors[1].battle_reaction_entry, Some(1), "flinch");
+    }
+
+    /// The War God Icon carry (apply mode `0xFF`) branches from `0x801EE12C`
+    /// to `0x801EE3B8`, one instruction past the knockdown load at
+    /// `0x801EE3B4`: the carried hit keeps its flinch even on a lethal
+    /// total. Its callers pass `kill_check = false`.
+    #[test]
+    fn the_war_god_carry_keeps_the_flinch() {
+        let mut w = absorb_duel();
+        seat_reaction_clips(&mut w, true);
+        w.actors[1].battle.damage_accum = 5;
+        assert_eq!(w.melee_reaction_entry(0, 1, 0x16, false, false), Some(1));
+        // The same lethal total on the kill compare knocks down.
+        assert_eq!(w.melee_reaction_entry(0, 1, 0x16, true, false), Some(2));
     }
 
     /// The damage roll reads the approach pair before the hit path zeroes it

@@ -106,7 +106,11 @@ Consumers:
   compare and either kills, or leaves a get-up-carrying survivor whose combo
   total exceeds a quarter of its max HP or whose HP it drops under a quarter
   (`0x801EE1C0..0x801EE3B4`). So most swings flinch, and a combo's closing
-  hit is what knocks down;
+  hit is what knocks down. Two exceptions keep the flinch: a kill with a Seru
+  staged in `ctx[+0x269]` skips the knockdown load (`0x801EE350`) unless the
+  absorb that staged it found a get-up entry (`0x801EE2F4..0x801EE304`), and
+  the War God Icon carry (apply mode `0xFF`) branches to `0x801EE3B8`, past
+  every knockdown load;
 - the anim commit `FUN_8004AD80` stages behind a committed knockdown
   (record tag 4) the get-up `+0x1F2` while the actor lives, or anim id 7 for a
   downed party member (whose own commit stages 8), and tests the queued id
