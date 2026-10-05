@@ -1157,6 +1157,115 @@ def build_progress_meter() -> str:
     )
 
 
+def build_image_port_status() -> str:
+    """Render the landing page's per-image port table from
+    `scripts/ci/image-port-status.json`.
+
+    The whole-project tiles above it sit at 100% and no longer move; this is
+    the figure that still does. One card per runtime code image (the main
+    executable and each overlay, the 64 slot-B cast modules folded into one
+    band), named by what the image does in the game.
+
+    Each card carries two numbers on purpose. The big one is the share of the
+    image's functions that are ported or excused natively; it is measured over
+    the functions the dump corpus places in the image, so it cannot see a
+    routine nobody dumped. The second, "code identified", is the share of the
+    image's code BYTES inside a placed dump - the companion that keeps a 100%
+    honest. "Fully ported" needs both (see `update-progress-metrics.py`).
+
+    Like the tiles, the JSON is a committed build input (the corpus and the
+    disc are absent at deploy time), so a missing file renders nothing.
+    """
+    src = ROOT.parent / "scripts" / "ci" / "image-port-status.json"
+    if not src.exists():
+        return ""
+    try:
+        images = json.loads(src.read_text(encoding="utf-8")).get("images", [])
+    except (ValueError, OSError):
+        return ""
+    if not images:
+        return ""
+
+    def pct(n: int, d: int) -> float:
+        return max(0.0, min(100.0, 100.0 * n / d)) if d else 0.0
+
+    def card(r: dict) -> str:
+        fn = int(r.get("functions", 0))
+        ported = int(r.get("ported", 0))
+        native = int(r.get("native", 0)) + int(r.get("no_behaviour", 0))
+        open_ = int(r.get("open", 0))
+        done = bool(r.get("fully_ported"))
+        acc = float(r.get("pct_accounted", 0.0))
+        ident = float(r.get("pct_identified", 0.0))
+        name = html.escape(str(r.get("name", r.get("key", ""))))
+        desc = html.escape(str(r.get("desc", "")))
+        prot = r.get("prot")
+        where = "SCUS_942.54" if prot is None else f"PROT {html.escape(str(prot))}"
+        if r.get("images"):
+            sub = (f'{int(r.get("images_complete", 0))} of '
+                   f'{int(r["images"]) - int(r.get("images_no_code", 0))} modules complete')
+        else:
+            sub = ""
+        tip = (
+            f"{fn} functions placed in this image by the dump corpus: {ported} ported "
+            f"(of which {int(r.get('replaced', 0))} replaced by an engine mechanism), "
+            f"{int(r.get('native', 0))} covered natively (PsyQ / BIOS / GPU / CD), "
+            f"{int(r.get('no_behaviour', 0))} with no retail behaviour, {open_} open. "
+            f"Code identified: {ident:.1f}% of the image's code bytes sit in a dump "
+            f"placed here; {int(r.get('undumped_code_bytes', 0)):,} code bytes are un-dumped. "
+            f"{int(r.get('unplaced', 0))} further dumps fall in its address span but "
+            f"the bytes could not place them."
+        )
+        badge = '<span class="ip-badge">Fully ported</span>' if done else ""
+        open_txt = (f'<b class="ip-open">{open_} open</b>' if open_ else "0 open")
+        return (
+            f'<div class="ip-card{" done" if done else ""}" title="{html.escape(tip)}" '
+            f'role="img" aria-label="{name}: {acc:.1f} percent of {fn} functions '
+            f'accounted for, {open_} open; code identified {ident:.1f} percent'
+            f'{", fully ported" if done else ""}">\n'
+            f'  <div class="ip-top"><span class="ip-name">{name}</span>{badge}</div>\n'
+            f'  <div class="ip-desc">{desc} <span class="ip-where">{where}</span></div>\n'
+            f'  <div class="ip-num">{acc:.1f}<small>%</small>'
+            f'<span class="ip-of">of {fn:,} functions</span></div>\n'
+            f'  <div class="ip-bar"><i class="p" style="width: {pct(ported, fn):.2f}%"></i>'
+            f'<i class="n" style="width: {pct(native, fn):.2f}%"></i></div>\n'
+            f'  <div class="ip-foot">{ported:,} ported · {native:,} native · {open_txt}'
+            f'{" · " + sub if sub else ""}<br>code identified {ident:.1f}%</div>\n'
+            f'</div>'
+        )
+
+    game = [r for r in images if r.get("kind", "game") == "game"]
+    other = [r for r in images if r.get("kind", "game") != "game"]
+    n_done = sum(1 for r in game if r.get("fully_ported"))
+    out = [
+        '<div class="ip-block">',
+        '<div class="ip-head"><h2>Port status by code image</h2>'
+        f'<span class="ip-count">{n_done} of {len(game)} game images fully ported</span></div>',
+        '<p class="ip-lede">The game\'s logic ships as one executable plus overlays the disc '
+        'swaps in per mode. Each card counts the functions the disc places in that image: '
+        '<span class="ip-key p"></span>ported to Rust, '
+        '<span class="ip-key n"></span>covered natively (PsyQ libraries, BIOS, GPU and CD '
+        'plumbing) or with no retail behaviour, and what is still open. '
+        '<em>Code identified</em> is the share of the image\'s code bytes inside an identified '
+        'function, so a 100% never hides code nobody has looked at.</p>',
+        '<div class="ip-grid">',
+        *(card(r) for r in game),
+        "</div>",
+    ]
+    if other:
+        out += [
+            '<details class="ip-more"><summary>Developer and unused images '
+            f"({len(other)})</summary>",
+            '<div class="ip-grid">',
+            *(card(r) for r in other),
+            "</div></details>",
+        ]
+    out.append('<div class="stats-foot"><a href="tooling/disc-coverage.html'
+               '#per-image-port-status">How this is measured →</a></div>')
+    out.append("</div>")
+    return "\n".join(out)
+
+
 def build_disc_patching_table() -> str:
     """Render the mod -> technique-tier master table for the disc-patching
     write-up index from `mods.toml`, grouped by tier in ladder order. Returns
@@ -1407,6 +1516,7 @@ def main() -> int:
     # into whichever page carries the placeholder.
     disc_patching_table = build_disc_patching_table()
     progress_meter = build_progress_meter()
+    image_port_status = build_image_port_status()
 
     for out_path, title, active, body_file in PAGES:
         depth = out_path.count("/")
@@ -1427,6 +1537,8 @@ def main() -> int:
             body = body.replace("<!--DISC_PATCHING_TABLE-->", disc_patching_table)
         if "<!--PROGRESS_METER-->" in body:
             body = body.replace("<!--PROGRESS_METER-->", progress_meter)
+        if "<!--IMAGE_PORT_STATUS-->" in body:
+            body = body.replace("<!--IMAGE_PORT_STATUS-->", image_port_status)
 
         # Build search index entries from body fragment (first entry carries
         # the page's lede paragraph, which doubles as the meta description).

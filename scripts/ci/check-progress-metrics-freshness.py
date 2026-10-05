@@ -26,6 +26,17 @@ The wiring track (`live` / `owed`) has no baselined counterpart, so it is
 checked only under `--live`. Its denominator is `live + inert - replaced`
 (see `update-progress-metrics.py`); a `REPLACED-BY:` port is in neither half.
 
+## The per-image table
+
+`scripts/ci/image-port-status.json` (the homepage's per-image port table) is the
+same kind of build input, and its counts need the dump corpus to recompute. So
+the check compares what it can without the corpus: the JSON records a digest of
+every COMMITTED input it was computed from - the `// PORT:` address set, the
+ignore list, the byte-attribution CSV and the overlay map - and this recomputes
+those digests from the tree. A mismatch means the table describes an older tree.
+The ported-address set is also counted directly, which is what catches a port
+tile that agrees with a baseline as stale as itself.
+
 ## What it deliberately does not do
 
 It never fails a commit, and it never rewrites the JSON. Refreshing is a
@@ -52,6 +63,23 @@ METRICS = os.path.join(REPO, "scripts", "ci", "progress-metrics.json")
 CATALOG_BASELINE = os.path.join(REPO, "scripts", "ci", "port-catalog-baseline.json")
 PORT_CATALOG = os.path.join(REPO, "scripts", "ci", "port-catalog.py")
 FUNCS = os.path.join(REPO, "ghidra", "scripts", "funcs")
+IMAGE_STATUS = os.path.join(REPO, "scripts", "ci", "image-port-status.json")
+UPDATER = os.path.join(REPO, "scripts", "ci", "update-progress-metrics.py")
+
+
+def tree_inputs():
+    """`(ported_count, digests)` recomputed from the tree, corpus-free.
+
+    Reuses the updater's own digest function and the catalog's own tag reader,
+    so the check and the refresh cannot disagree about what an input is.
+    """
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("update_progress", UPDATER)
+    upd = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(upd)
+    pc = upd.load_port_catalog()
+    ports = pc.collect_ports()
+    return len(ports), upd.image_status_inputs(set(ports), pc.load_ignore())
 
 
 def tracks(doc):
@@ -140,6 +168,20 @@ def main() -> int:
         bad.append("port worklist: tiles say %d, port-catalog-baseline.json "
                    "says %d" % (shown_worklist, base_worklist))
 
+    n_ported, digests = tree_inputs()
+    if shown_ported is not None and shown_ported != n_ported:
+        bad.append("ported: tiles say %d, this tree's // PORT: tags name %d"
+                   % (shown_ported, n_ported))
+    if os.path.exists(IMAGE_STATUS):
+        have = json.load(open(IMAGE_STATUS)).get("inputs", {})
+        moved = sorted(k for k in digests if have.get(k) != digests[k])
+        if moved:
+            bad.append("image-port-status.json: computed from a different %s"
+                       % ", ".join(moved))
+    else:
+        bad.append("image-port-status.json is missing - the homepage renders "
+                   "no per-image table")
+
     if args.live:
         if not os.path.isdir(FUNCS):
             print("[progress-freshness] --live needs ghidra/scripts/funcs/; "
@@ -169,12 +211,14 @@ def main() -> int:
 
     if not bad:
         print("[progress-freshness] OK - the landing-page tiles agree with "
-              "%s%s." % (os.path.relpath(CATALOG_BASELINE, REPO),
+              "this tree's PORT tags and %s, and image-port-status.json's "
+              "committed inputs are current%s." % (os.path.relpath(CATALOG_BASELINE, REPO),
                          " and with this tree's catalog" if args.live else ""))
         return 0
 
-    print("[progress-freshness] STALE - scripts/ci/progress-metrics.json is a "
-          "committed build input and it no longer matches this tree:")
+    print("[progress-freshness] STALE - progress-metrics.json / "
+          "image-port-status.json are committed build inputs and they no "
+          "longer match this tree:")
     for line in bad:
         print("   " + line)
     print("[progress-freshness] refresh it on a machine with the disc: "

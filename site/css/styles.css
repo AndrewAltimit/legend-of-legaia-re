@@ -3187,6 +3187,68 @@ kbd {
 @media (max-width: 1000px) { .stats { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 540px) { .stats { grid-template-columns: 1fr; } }
 
+/* ---------- Per-image port status (below the stat strip) ---------- */
+.ip-block { margin-top: 2rem; }
+.ip-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 0.9rem; }
+.ip-head h2 {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.ip-count { font-size: 0.8rem; color: var(--text-dim); }
+.ip-lede { margin: 0.5rem 0 0.9rem; font-size: 0.85rem; color: var(--text-muted); line-height: 1.55; max-width: 72ch; }
+.ip-key { display: inline-block; width: 0.7em; height: 0.7em; border-radius: 2px; margin: 0 0.3em 0 0.1em; vertical-align: baseline; }
+.ip-key.p, .ip-bar .p { background: var(--acc); }
+.ip-key.n, .ip-bar .n { background: var(--accent-line); }
+.ip-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 205px), 1fr));
+  gap: 0.6rem;
+}
+.ip-card {
+  min-width: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem 0.85rem 0.7rem;
+  display: flex;
+  flex-direction: column;
+}
+.ip-card.done { border-color: rgba(70, 201, 141, 0.35); }
+.ip-top { display: flex; align-items: center; gap: 0.5rem; justify-content: space-between; }
+.ip-name { font-weight: 700; font-size: 0.9rem; color: var(--text-bright); overflow-wrap: anywhere; }
+.ip-badge {
+  flex: none;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ok);
+  background: var(--ok-soft);
+  border: 1px solid rgba(70, 201, 141, 0.35);
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+}
+.ip-desc { margin-top: 0.2rem; font-size: 0.74rem; color: var(--text-muted); line-height: 1.4; }
+.ip-where { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.68rem; white-space: nowrap; }
+.ip-num { margin-top: 0.55rem; font-size: 1.35rem; font-weight: 800; color: var(--text-bright); line-height: 1; letter-spacing: -0.02em; }
+.ip-num small { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); }
+.ip-of { margin-left: 0.45rem; font-size: 0.72rem; font-weight: 500; letter-spacing: 0; color: var(--text-dim); }
+.ip-bar { display: flex; margin: 0.5rem 0 0.5rem; height: 4px; border-radius: 4px; background: var(--line-soft); overflow: hidden; }
+.ip-bar i { display: block; height: 100%; }
+.ip-foot { margin-top: auto; font-size: 0.72rem; color: var(--text-dim); line-height: 1.5; }
+.ip-open { color: var(--warn); font-weight: 600; }
+.ip-more { margin-top: 0.8rem; }
+@media (max-width: 540px) {
+  .ip-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.45rem; }
+  .ip-card { padding: 0.6rem 0.65rem; }
+  .ip-top { flex-direction: column; align-items: flex-start; gap: 0.25rem; }
+  .ip-of { display: block; margin: 0.2rem 0 0; }
+}
+.ip-more summary { cursor: pointer; font-size: 0.82rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.6rem; }
+
 /* ---------- Launcher tile grid ---------- */
 .group { margin-top: 2.2rem; }
 .group-head {

@@ -153,6 +153,18 @@ python3 scripts/ci/disc-coverage.py --update-baseline</code></pre>
   </ul>
 </section>
 
+<section class="doc-section" id="per-image-port-status">
+  <h2>Per-image port status</h2>
+  <p>The homepage's whole-project tiles saturate at 100% once the worklist is empty. The per-image table below them asks the question that still moves: for each runtime code image - the executable and every overlay - how much of <em>that image's</em> code is ported.</p>
+  <ul class="bullets">
+    <li><strong>Functions</strong> are the entries this instrument's byte attribution places in the image, with the inherited tail cut. Ignore-list rows that say "no routine begins here" (labels, interior fragments, phantom prints) are not functions and leave the count.</li>
+    <li><strong>Ported</strong> carries a <code>// PORT:</code> tag. <strong>Native</strong> is an ignore-list scope claim: PsyQ, BIOS, libgte, GPU and CD plumbing the engine replaces wholesale, or a routine with no retail behaviour. A VA-aliasing exemption excuses an address, not any one image's routine, so per image it excuses nothing.</li>
+    <li><strong>Code identified</strong> is the share of the image's code bytes inside a placed function. A function list cannot see a routine nobody dumped, so every card prints it beside the percentage.</li>
+    <li><strong>Fully ported</strong> means nothing open, no un-dumped code, and at least 99% of the code bytes identified. The 64 slot-B cast modules (PROT 0903-0966) render as one band with a modules-complete count.</li>
+  </ul>
+  <p>The table is committed JSON refreshed with the tiles; the freshness check recomputes digests of its committed inputs (port tags, ignore list, attribution, overlay map) and warns when they move. Full method: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/disc-coverage.md#per-image-port-status">disc-coverage.md</a>.</p>
+</section>
+
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
   <div class="see-also">
