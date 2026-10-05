@@ -542,6 +542,11 @@ base `+0x156` (a Spirit turn the replay does not play extended it), the drive
 restores it before the round: the extension selects the saved string's band
 and pays for its arrows (`player_steal_skeleton_banner`'s five-arrow
 `0F 0E 19 27 0E 19 27` needs the `153` gauge over the `104` base).
+A party attack capture's target byte `+0x1DD` is the monster the player
+picked, so the drive walks the target cursor (the command picker's, or the
+arts entry's) onto that row before confirming, rather than taking the
+picker's default: the strike shots look at the target, and the default row
+is whichever monster earlier turns left first in the ring.
 Monster seats are translated from retail's fixed pool slots
 `3..` onto the engine's seating straight after the party. A message box on
 screen takes Cross.
@@ -668,6 +673,13 @@ into the item / magic / arts windows ([battle](../subsystems/battle.md#how-the-e
   drive takes the first tick in the state whose engine accumulator has run
   as far (`SpanGate::Age`); a state the engine leaves sooner is re-run on
   the same stream and sampled on its last tick (`EngineBattle::age_short`).
+  The strike loop `0x1E` commits one clip per queued swing, so an age alone
+  names the first swing that runs as long: for a party seat on a swing clip
+  the drive also waits for the engine's current clip to equal retail's
+  committed clip `+0x1D9` (art clips on their dynamic slot `0x10` / `0x11`,
+  which both sides store). A party seat's idle `0` is not gated - between
+  the approach and the first strike retail commits it and the engine holds
+  the walk clip.
   While the engine holds the capture's state, the acting action's framing
   style `ctx[+0xD]` - a draw the action seed rolls, which the post-strike
   cases fork on - is set to retail's, the camera twin of the orbit-yaw

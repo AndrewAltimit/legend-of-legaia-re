@@ -1729,6 +1729,27 @@ pub enum BattleDrive {
 /// a Spirit turn the replay does not play had extended it: the extension is
 /// what selects the saved string's band and pays for its arrows, so
 /// [`BattleDrive::prime`] restores it.
+///
+/// `clip` is the acting party seat's committed clip `+0x1D9` on an
+/// [`SpanGate::Age`] capture, when that is a swing clip. The age is frames
+/// since the seat's **last** clip commit, and the strike loop `0x1E` spans
+/// one commit per queued swing, so an age alone matches the first swing
+/// that runs as long; the clip names which one retail sits in
+/// (`rim_elm_gimard_victory`: `0x1E` at `16` on `0x0E`, the second swing -
+/// the age alone took the first, `0x0F`). Art clips are compared on the
+/// dynamic slot (`0x10` / `0x11`) the anim commit remaps them onto, which
+/// both sides store. An idle `0` is not gated: a party seat's idle between
+/// the approach and its first strike has no engine twin (the engine holds
+/// the walk clip there).
+///
+/// `aim` is the monster row a party attack capture's target byte `+0x1DD`
+/// names: the player picked that monster, so the drive walks the target
+/// cursor onto it rather than confirming the picker's default. Which body
+/// the swing lands on moves the framing (the strike shots look at the
+/// target), and a default pick lands on whichever monster the earlier turns
+/// left first in the ring (`battle_vahn_tri_somersault_super`: retail row
+/// `1`, the default row `0`, which Noa's and Gala's swings had knocked far
+/// back).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ActionSteer {
     pub target: Option<u8>,
@@ -1737,6 +1758,8 @@ pub struct ActionSteer {
     pub plate_cleared: bool,
     pub arts: bool,
     pub gauge: Option<u16>,
+    pub clip: Option<u8>,
+    pub aim: Option<u8>,
 }
 
 /// Where inside a state that spans many frames a capture sits.
@@ -1996,6 +2019,12 @@ impl BattleDrive {
                 if steer.arts {
                     s.push_str(",a");
                 }
+                if let Some(k) = steer.clip {
+                    s.push_str(&format!(",k{k}"));
+                }
+                if let Some(p) = steer.aim {
+                    s.push_str(&format!(",p{p}"));
+                }
                 s
             }
         }
@@ -2025,6 +2054,10 @@ impl BattleDrive {
                 steer.arts = true;
             } else if let Some(g) = last.strip_prefix('g') {
                 steer.gauge = Some(g.parse().ok()?);
+            } else if let Some(k) = last.strip_prefix('k') {
+                steer.clip = Some(k.parse().ok()?);
+            } else if let Some(p) = last.strip_prefix('p') {
+                steer.aim = Some(p.parse().ok()?);
             } else {
                 break;
             }
@@ -2252,11 +2285,17 @@ impl BattleDrive {
                         SpanGate::Landed => {
                             !world.battle.camera.as_ref().is_some_and(|c| c.is_gliding())
                         }
-                        SpanGate::Age { accum } => world
-                            .battle
-                            .camera
-                            .as_ref()
-                            .is_none_or(|c| c.close_up_accum() >= u32::from(accum)),
+                        SpanGate::Age { accum } => {
+                            world
+                                .battle
+                                .camera
+                                .as_ref()
+                                .is_none_or(|c| c.close_up_accum() >= u32::from(accum))
+                                && steer.clip.is_none_or(|k| {
+                                    world.battle_current_anim(usize::from(engine_seat(seat, pc)))
+                                        == k
+                                })
+                        }
                         _ => true,
                     }
             }
@@ -2362,6 +2401,34 @@ impl BattleDrive {
         // The arts entry the capture seat opened to replay its saved
         // command string: a bare confirm takes the string, and the
         // confirms after it begin the turn and pick the target.
+        if let Self::Action { seat, steer, .. } = *self
+            && let Some(want) = steer.aim
+        {
+            let picker = world
+                .battle
+                .arts_input
+                .as_ref()
+                .filter(|a| a.party_slot == seat)
+                .and_then(|a| a.picker())
+                .or_else(|| {
+                    world
+                        .battle
+                        .command
+                        .as_ref()
+                        .filter(|c| c.actor == seat)
+                        .and_then(|c| c.picker())
+                });
+            if let Some(picker) = picker
+                && let legaia_engine_core::target_picker::PickerState::Cursor {
+                    row: legaia_engine_core::target_picker::CursorRow::Enemy,
+                    slot,
+                } = picker.state()
+                && slot != want
+                && aim_alive(world, want)
+            {
+                return Some(PadButton::Right);
+            }
+        }
         if matches!(self, Self::Action { steer, .. } if steer.arts)
             && world.battle.arts_input.is_some()
         {
@@ -2616,6 +2683,14 @@ impl RetailBattle {
                             seat < 3 && self.queued_category == 3 && self.arts_queue && live > base
                         })
                         .map(|(live, _)| live),
+                    clip: (seat < 3
+                        && self.caster_clip != 0
+                        && matches!(self.span_gate, SpanGate::Age { .. }))
+                    .then_some(self.caster_clip),
+                    aim: (seat < 3
+                        && self.queued_category == 3
+                        && (3..8).contains(&self.target_code))
+                    .then(|| self.target_code - 3),
                 },
             }),
             SeedPlan::Opening => Some(BattleDrive::Opening {
@@ -2624,6 +2699,16 @@ impl RetailBattle {
             _ => None,
         }
     }
+}
+
+/// Whether monster row `row` stands in the engine's pool (party count +
+/// `row`), so the target cursor can land on it.
+fn aim_alive(world: &legaia_engine_core::world::World, row: u8) -> bool {
+    let pc = usize::from(world.party.party_count.clamp(1, 3));
+    world
+        .actors
+        .get(pc + usize::from(row))
+        .is_some_and(|a| a.active && a.battle.hp > 0)
 }
 
 /// Run `drive` from the round prompt through the pad path. The ticks it took,
@@ -2702,8 +2787,19 @@ fn run_drive(
                 (p.pitch as i32, p.yaw as i32, p.tr.map(|v| v as i32))
             });
             eprintln!(
-                "[rc] t={t} anims={anims:?} pose={pose:?} mod={} cd={}",
-                world.casting.module_phase, world.casting.module_cam.countdown.0
+                "[rc] t={t} anims={anims:?} pose={pose:?} mod={} cd={} tgt={} pos={:?}",
+                world.casting.module_phase,
+                world.casting.module_cam.countdown.0,
+                world
+                    .actors
+                    .get(usize::from(world.battle_ctx.active_actor))
+                    .map_or(0, |a| a.battle.active_target),
+                world
+                    .actors
+                    .iter()
+                    .take(8)
+                    .map(|a| (a.move_state.world_x, a.move_state.world_z))
+                    .collect::<Vec<_>>()
             );
         }
         let pad = if reached.is_some() {
@@ -2876,13 +2972,14 @@ pub fn compare_battle(
         "phase",
         f64::from(u8::from(phase_ok)),
         format!(
-            "retail flow=0x{:02X} ({want:?}) action=0x{:02X} run=0x{:02X} seat={} cat={} queued=0x{:02X}; engine {:?} action=0x{:02X} seat={} (first prompt at +{:?}){inflight}{driven}",
+            "retail flow=0x{:02X} ({want:?}) action=0x{:02X} run=0x{:02X} seat={} cat={} queued=0x{:02X} clip=0x{:02X}; engine {:?} action=0x{:02X} seat={} (first prompt at +{:?}){inflight}{driven}",
             battle.flow,
             battle.action_state,
             battle.run_state,
             battle.active_actor,
             battle.queued_category,
             battle.queued_action,
+            battle.caster_clip,
             engine.flow,
             engine.action_state,
             engine.active_actor,
@@ -3189,6 +3286,8 @@ mod tests {
                     yaw: Some(0x280),
                     arts: true,
                     gauge: Some(153),
+                    clip: Some(0x11),
+                    aim: Some(1),
                     ..ActionSteer::default()
                 },
             },
