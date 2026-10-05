@@ -619,6 +619,13 @@ pub struct BattleState {
     /// as the retail per-frame call does. Hosts draw it through
     /// `legaia_engine_ui::streak_pass::clip_ribbon_quads`.
     pub clip_ribbon: Option<ClipRibbon>,
+    /// The part-emit accumulator `ctx[+0x328]`: the frame driver keeps its
+    /// low nibble and adds `DAT_1F800393 << 3` every battle frame
+    /// (`FUN_80046A20`, `0x8004713C..0x80047160`), and every body the anim
+    /// decode `FUN_8004998C` runs for with a non-zero `+0x21F` selector
+    /// emits one burning sprite per `0x10` of it
+    /// ([`crate::world::World::emit_battle_burn_sprites`]).
+    pub burn_emit_accum: u16,
     /// The battle ambient base as the last storing `FUN_80050120` pass left
     /// it, 8 bits a channel - what the ground grid's near colour
     /// `0x8007B7B0` (base `+ 0x404040`) and far colour `0x8007BB48`
@@ -753,6 +760,7 @@ impl BattleState {
             loot_applied: false,
             return_mode: SceneMode::Field,
             clip_ribbon: None,
+            burn_emit_accum: 0,
             ambient_stored: legaia_engine_vm::battle_ground_grid::GRID_FAR_BASE_NEUTRAL,
             backdrop_cue: 0,
             stage_outdoor: false,

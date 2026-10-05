@@ -447,6 +447,18 @@ pub fn run_block(
     req
 }
 
+/// The trigger record the effect spawner `FUN_801DFDF0` seats ahead of an
+/// effect id, if it seats one: id `4` -> `0x801F5D90` (the wide arm's
+/// trigger), id `0x13` -> `0x801F5CF8` (the narrow arm's)
+/// (`0x801DFE38..0x801DFE80`). Every other id spawns its effect alone.
+pub const fn trigger_for_effect(effect_id: u8) -> Option<u32> {
+    match effect_id {
+        4 => Some(BurstMode::Wide.trigger_addr()),
+        0x13 => Some(BurstMode::Narrow.trigger_addr()),
+        _ => None,
+    }
+}
+
 /// The whole burst (`FUN_801F30C4`).
 ///
 /// Returns the requests in the order they were issued, or an empty vector when

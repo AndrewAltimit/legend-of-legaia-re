@@ -116,7 +116,7 @@ pub use audio_state::{
 pub use battle_state::{BattleState, ClipRibbon, INFLIGHT_GROUND_SLOTS, InflightCastSeed};
 pub use camera_hooks::CameraZoneRequest;
 pub use camera_rig::CameraRig;
-pub use cast_fx_state::CastFxState;
+pub use cast_fx_state::{CastFxState, PendingBurst};
 pub use config::*;
 pub use cutscene_state::CutsceneState;
 pub use dialog_state::DialogState;

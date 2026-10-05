@@ -913,6 +913,83 @@ impl World {
         }
     }
 
+    /// The burning-body emitter at the tail of the anim decode
+    /// `FUN_8004998C` (`0x8004A5FC..0x8004A8D8`): every body with a non-zero
+    /// `+0x21F` selector spawns one effect-pool sprite per `0x10` of the
+    /// frame's accumulator `ctx[+0x328]`, at a random object of its current
+    /// pose jittered by its size - the fire a red selector-`1` body sheds
+    /// ([`vm::battle_impact_fx::burn_effect`]): PROT 0903's arm-9 Gimard
+    /// (`gimard_burning_attack` holds two of its effect-`0x0B` puffs at the
+    /// creature's mouth) and a Tail-Fire-struck party member.
+    ///
+    /// The accumulator is the frame driver's: low nibble kept, `+8` a frame
+    /// (`FUN_80046A20`, `0x8004713C..0x80047160`, `DAT_1F800393 << 3` at one
+    /// step a tick).
+    ///
+    /// Not ported: selector `2`'s screen-shake globals (`_DAT_8007B92C` /
+    /// `_DAT_8007B930`, `gp+0xA30..0xA34`, `0x8004A838..0x8004A8BC`).
+    ///
+    /// PORT: FUN_8004998C (`0x8004A5FC..0x8004A8D8`, the selector emit loop)
+    pub(in crate::world) fn emit_battle_burn_sprites(&mut self) {
+        use crate::action_effect_script::RotationLut;
+        use vm::battle_impact_fx as ifx;
+        let acc = (self.battle.burn_emit_accum & 0xF) + 8;
+        self.battle.burn_emit_accum = acc;
+        let emits = acc / ifx::BURN_EMIT_QUANTUM;
+        if emits == 0 {
+            return;
+        }
+        for i in 0..self.actors.len() {
+            let a = &self.actors[i];
+            let selector = a.battle.impact_state;
+            if !a.active || selector == 0 {
+                continue;
+            }
+            let Some(objects) = a
+                .pose_frame
+                .as_ref()
+                .map(|p| p.bone_outputs.iter().map(|(t, _)| *t).collect::<Vec<_>>())
+                .filter(|o| !o.is_empty())
+            else {
+                continue;
+            };
+            let Some(plan) = self.battle_actor_draw_plan(i, None, 4.0, false) else {
+                continue;
+            };
+            let a = &self.actors[i];
+            let base = [
+                a.move_state.world_x,
+                a.move_state.world_y,
+                a.move_state.world_z,
+            ];
+            let facing = a.battle.facing_angle;
+            let red = plan.tint.colour as u8;
+            let lut = crate::action_effect_script::retail_rotation_lut();
+            for _ in 0..emits {
+                let idx = self.next_rand() as usize % objects.len();
+                let rands = [
+                    self.next_rand() as i32,
+                    self.next_rand() as i32,
+                    self.next_rand() as i32,
+                ];
+                let p = ifx::burn_emit_point(
+                    base,
+                    facing,
+                    objects[idx],
+                    plan.radius,
+                    rands,
+                    |a| lut.b(i32::from(a)),
+                    |a| lut.a(i32::from(a)),
+                );
+                if p[1] <= 0
+                    && let Some(fx) = ifx::burn_effect(selector, red)
+                {
+                    self.try_spawn_effect(fx, p, facing & 0xFFF);
+                }
+            }
+        }
+    }
+
     fn tick_battle_impact_fx(&mut self) {
         use vm::battle_formulas::{FadeInputs, TintWords, tint_sm_step};
         use vm::battle_impact_fx as ifx;
@@ -972,6 +1049,7 @@ impl World {
             }
         }
         self.tick_battle_defeat_sink();
+        self.emit_battle_burn_sprites();
         // The per-clip arms: the acting actor's committed record key + cursor
         // window select the writes onto it and its target.
         let acting = self.battle_ctx.active_actor as usize;

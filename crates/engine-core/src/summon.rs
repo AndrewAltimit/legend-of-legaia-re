@@ -664,6 +664,10 @@ impl SummonScene {
             part.state.render_24 = rot[0];
             part.state.render_26 = rot[1];
             part.state.render_28 = rot[2];
+            // `andi v0,v0,0xfff` / `sh v0,0x16(a3)` at `0x80021D78`: the
+            // seater also takes `rot[1]` as the part's heading `+0x96`, the
+            // direction the motion block's `+0x98` speed runs along.
+            part.state.tween_scale_x = rot[1] & 0xFFF;
             Some(part)
         }));
     }

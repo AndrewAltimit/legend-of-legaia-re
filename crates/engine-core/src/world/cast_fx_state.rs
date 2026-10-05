@@ -172,6 +172,25 @@ pub struct CastFxState {
     /// (the retail `FUN_8004fcc8` dispatch). Same host-fulfilled-request shape
     /// as [`pending_summon_spawn`](crate::world::CastFxState::pending_summon_spawn).
     pub pending_move_fx_cue: Option<u8>,
+    /// The move-VM actors the effect spawner `FUN_801DFDF0` seats ahead of
+    /// effect ids `4` / `0x13` (`0x801DFE60..0x801DFE88`): the trigger record
+    /// VA (`0x801F5D90` / `0x801F5CF8`), the spawn position and the angle it
+    /// hands `FUN_80050ED4` as `rot[1]`. Queued by the effect host and seated
+    /// by [`crate::world::World::flush_battle_bursts`].
+    pub pending_burst_triggers: Vec<(u32, [i16; 3], u16)>,
+    /// Move-VM op `0x17` calls a part made this step - the battle-overlay
+    /// escape `FUN_801F30C4(actor, mode)`, with the parent's position, rotation
+    /// trio and `+0x72` scale - run by [`crate::world::World::flush_battle_bursts`].
+    pub pending_bursts: Vec<PendingBurst>,
+}
+
+/// One queued move-VM op-`0x17` call ([`CastFxState::pending_bursts`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PendingBurst {
+    pub mode: u32,
+    pub pos: [i16; 3],
+    pub rot: [i16; 3],
+    pub scale: u16,
 }
 
 impl CastFxState {
@@ -206,6 +225,8 @@ impl CastFxState {
             homing_takes_lists: false,
             module_caption: None,
             pending_move_fx_cue: None,
+            pending_burst_triggers: Vec::new(),
+            pending_bursts: Vec::new(),
         }
     }
 }

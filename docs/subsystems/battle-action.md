@@ -2163,7 +2163,28 @@ two arms are the same loop written twice, differing in nine constants that
 collapse to two exact relations. Byte-level decode, the two records, and the
 18-byte trigger programs that fire each arm:
 [`functions/battle.md`](../reference/functions/battle.md#801f30c4). Port:
-`engine-vm::battle_burst`.
+`engine-vm::battle_burst`, wired through the engine's move-VM host (op `0x17`
+queues the call) and the effect host (`FUN_801DFDF0`'s ids `4` / `0x13` seat
+the trigger), both seated by `World::flush_battle_bursts`.
+
+### The burning-body emitter at the tail of `FUN_8004998C`
+
+The per-body anim decode `FUN_8004998C` ends in a second spawn loop
+(`0x8004A5FC..0x8004A8D8`). The frame driver keeps an accumulator
+`ctx[+0x328]` - low nibble kept, `DAT_1F800393 << 3` added every battle frame
+(`FUN_80046A20`, `0x8004713C..0x80047160`) - and every body whose `+0x21F`
+impact selector is non-zero spends it `0x10` at a time. Each pass picks a
+random object of the body's current pose, turns its translation by the facing
+`+0x46`, jitters each axis by `(r >> 4) - rand % (r >> 3)` with `r` the node's
+`+0x58` size, and, when the point is at or above the floor (Y `<= 0`), hands
+it to `FUN_801DFDF0`: effect `0x0B` (fire) for selector `1` once the node
+colour's red lane reaches `0xB0`, effect `0x10` for selector `2` (which also
+sets screen-shake globals the port does not model). This is the fire
+`gimard_burning_attack` shows at the creature's mouth - two effect-`0x0B`
+masters live at `(127, -317, -1732)` / `(133, -404, -1730)` beside the red
+creature at `(143, -1606)` - and the fire a Tail-Fire-struck body sheds. Port:
+`World::emit_battle_burn_sprites` over `engine-vm::battle_impact_fx`'s
+`burn_effect` / `burn_emit_point`.
 
 This path is disjoint from the `FUN_801D8DE8` / `FUN_801DBF9C` family above -
 those spawn 2D billboard quads out of the effect pool, this seats full move-VM

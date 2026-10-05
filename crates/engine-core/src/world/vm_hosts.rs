@@ -133,6 +133,25 @@ pub(super) struct MoveVmHostImpl<'a> {
 }
 
 impl<'a> MoveHost for MoveVmHostImpl<'a> {
+    /// Op `0x17` - the battle-overlay escape `FUN_801F30C4(actor, mode)`,
+    /// queued with what the burst reads off the parent (its `+0x14` position,
+    /// `+0x24` rotation trio and `+0x72` scale) for
+    /// [`World::flush_battle_bursts`]. Battle-only, as the overlay is.
+    fn ext_17(&mut self, state: &mut vm::move_vm::ActorState, arg: i16) {
+        if self.world.mode != SceneMode::Battle {
+            return;
+        }
+        self.world
+            .casting
+            .pending_bursts
+            .push(crate::world::PendingBurst {
+                mode: arg as u16 as u32,
+                pos: [state.world_x, state.world_y, state.world_z],
+                rot: [state.render_24, state.render_26, state.render_28],
+                scale: state.field_72,
+            });
+    }
+
     fn rotation_lut(&self, index: u16) -> (i16, i16) {
         let idx = index as usize % self.world.sin_lut.len().max(1);
         let s = self.world.sin_lut.get(idx).copied().unwrap_or(0);
@@ -379,6 +398,26 @@ impl<'a> EffectHost for EffectHostImpl<'a> {
         // whose draws are `jal 0x80056798` (`0x801DFF64` / `0x801DFFCC`,
         // `0x801E01CC`): a shaped, never-negative `rand()`.
         self.world.next_rand() as i32
+    }
+
+    /// `FUN_801DFDF0`'s two special ids (`0x801DFE38..0x801DFE58`): `4` and
+    /// `0x13` first seat a move-VM trigger actor, then spawn the effect as
+    /// every other id does. The overlay is battle-resident, so the side call
+    /// only exists in battle.
+    fn is_summon_effect(&self, effect_id: u8) -> bool {
+        self.world.mode == SceneMode::Battle
+            && vm::battle_burst::trigger_for_effect(effect_id).is_some()
+    }
+
+    /// `FUN_80050ED4(world_pos, &{0, angle, 0}, trigger, 0x1000)`, queued for
+    /// [`World::flush_battle_bursts`].
+    fn handle_summon(&mut self, effect_id: u8, world_pos: [i16; 3], angle: u16) {
+        if let Some(trigger) = vm::battle_burst::trigger_for_effect(effect_id) {
+            self.world
+                .casting
+                .pending_burst_triggers
+                .push((trigger, world_pos, angle));
+        }
     }
 }
 

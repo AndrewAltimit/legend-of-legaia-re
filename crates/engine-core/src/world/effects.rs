@@ -919,6 +919,135 @@ impl World {
         true
     }
 
+    /// Seat what the effect spawner and move-VM op `0x17` queued this step
+    /// ([`crate::world::CastFxState::pending_burst_triggers`] /
+    /// [`crate::world::CastFxState::pending_bursts`]) into the effect-script
+    /// scene list.
+    ///
+    /// A trigger is the one-part program `FUN_801DFDF0` seats ahead of effect
+    /// ids `4` / `0x13` (`WAIT_SET 0 / 0x17 mode / WAIT_SET 0 / HALT`); its
+    /// `0x17` is the burst. A burst runs `FUN_801F30C4`'s twelve spawn blocks
+    /// ([`vm::battle_burst::run_burst`]) and seats each child on the arm's
+    /// stager record at the parent's position, with the parent's rotation
+    /// trio and the block's yaw as `rot[1]`, then writes the block's scale
+    /// `+0x72`, spread `+0x3E` and tail `+0x98` over it - the sprite-arm fire
+    /// puffs `gimard_burning_attack` holds eight of (record `0x801F5DA4`,
+    /// flags `0x380`, scales `0x800` / `0x1000`). No-op without the battle
+    /// overlay image (disc-free battles).
+    pub(crate) fn flush_battle_bursts(&mut self) {
+        let triggers = std::mem::take(&mut self.casting.pending_burst_triggers);
+        let bursts = std::mem::take(&mut self.casting.pending_bursts);
+        if triggers.is_empty() && bursts.is_empty() {
+            return;
+        }
+        let Some(overlay) = self.tables.move_power_overlay.clone() else {
+            return;
+        };
+        use legaia_asset::move_power::{self, BATTLE_OVERLAY_BASE};
+        let mut offs: Vec<usize> = move_power::parse_effect_proto_records(&overlay)
+            .unwrap_or_default()
+            .iter()
+            .map(|p| p.record_off)
+            .collect();
+        let record_at = |offs: &mut Vec<usize>, va: u32| {
+            let off = va.checked_sub(BATTLE_OVERLAY_BASE)? as usize;
+            offs.push(off);
+            legaia_asset::summon_overlay::parse_records_at(&overlay, offs)
+                .into_iter()
+                .find(|p| p.record_off == off)
+        };
+        for (va, pos, angle) in triggers {
+            let Some(part) = record_at(&mut offs, va) else {
+                continue;
+            };
+            if self.casting.active_action_fx.len() >= Self::ACTION_FX_CAP {
+                continue;
+            }
+            let mut scene = crate::summon::SummonScene::spawn_parts(
+                &[],
+                &overlay,
+                crate::scene::EFFECT_MODEL_LIBRARY_BASE,
+                pos,
+            );
+            scene.push_parts(
+                std::slice::from_ref(&part),
+                &overlay,
+                pos,
+                [0, angle as i16, 0],
+            );
+            self.casting.active_action_fx.push(scene);
+        }
+        struct Host<'w> {
+            world: &'w mut World,
+            yaw: i16,
+            scale: u16,
+            out: Vec<vm::battle_burst::SpawnRequest>,
+        }
+        impl vm::battle_burst::BurstHost for Host<'_> {
+            fn rand(&mut self) -> i32 {
+                self.world.next_rand() as i32
+            }
+            fn sin(&self, index: u32) -> i16 {
+                vm::battle_action::motion::trig12(index as u16).0
+            }
+            fn cos(&self, index: u32) -> i16 {
+                vm::battle_action::motion::trig12(index as u16).1
+            }
+            fn parent_yaw(&self) -> i16 {
+                self.yaw
+            }
+            fn parent_scale(&self) -> u16 {
+                self.scale
+            }
+            fn spawn(
+                &mut self,
+                _record_addr: u32,
+                request: vm::battle_burst::SpawnRequest,
+            ) -> Option<u32> {
+                self.out.push(request);
+                Some(self.out.len() as u32)
+            }
+        }
+        for b in bursts {
+            let Some(mode) = vm::battle_burst::BurstMode::from_arg(b.mode) else {
+                continue;
+            };
+            let Some(part) = record_at(&mut offs, mode.record_addr()) else {
+                continue;
+            };
+            let mut host = Host {
+                world: self,
+                yaw: b.rot[1],
+                scale: b.scale,
+                out: Vec::new(),
+            };
+            vm::battle_burst::run_burst(&mut host, b.mode);
+            let requests = host.out;
+            let mut scene = crate::summon::SummonScene::spawn_parts(
+                &[],
+                &overlay,
+                crate::scene::EFFECT_MODEL_LIBRARY_BASE,
+                b.pos,
+            );
+            for req in requests {
+                scene.push_parts(
+                    std::slice::from_ref(&part),
+                    &overlay,
+                    b.pos,
+                    [b.rot[0], req.yaw, b.rot[2]],
+                );
+                if let Some(child) = scene.parts.last_mut() {
+                    child.state.field_72 = req.scale as u16;
+                    child.state.anim_3e = req.spread;
+                    child.state.tween_scale_y = req.tail;
+                }
+            }
+            if self.casting.active_action_fx.len() < Self::ACTION_FX_CAP {
+                self.casting.active_action_fx.push(scene);
+            }
+        }
+    }
+
     /// Take the pending move-FX sound cue id, if [`Self::spawn_move_fx`] set one
     /// this step. The host routes it through `legaia_engine_audio::classify_cue`
     /// (the `FUN_8004fcc8` dispatch) → the SFX ring / voice trigger. Returns
@@ -938,6 +1067,10 @@ impl World {
     /// move-FX sibling of [`Self::tick_summon`]). No-op when none is playing;
     /// drains the scene once every part has finished.
     pub fn tick_move_fx(&mut self, frame_delta: u16) {
+        // What the effect spawner queued since the last tick seats first, so
+        // its trigger runs this tick as retail's does on the frame after the
+        // seat; what this tick's op `0x17`s queue seats at the end.
+        self.flush_battle_bursts();
         let channel_delta = self.effect_channel_delta();
         // Effect-script table-form scenes: take the list, tick each, keep the
         // unfinished. Their wait timers drain at retail's own rate - the part
@@ -988,6 +1121,7 @@ impl World {
         }
         action_fx.retain(|s| !s.finished());
         self.casting.active_action_fx = action_fx;
+        self.flush_battle_bursts();
 
         let Some(mut scene) = self.casting.active_move_fx.take() else {
             return;
