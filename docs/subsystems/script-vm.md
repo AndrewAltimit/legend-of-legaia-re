@@ -253,7 +253,27 @@ context it raises that player bit (`0x80039DB8..0x80039DD4`), which is what
 stops the pad while a script runs.
 
 So a placement's script is a sequence of **interactions**, each running
-from where the last one's `0x21` left the PC to the next executed `0x21`. A
+from where the last one's `0x21` left the PC to the next executed `0x21`.
+
+A touch is not the only way to engage a placement. Any script can raise the
+bit on another actor with a cross-context `CFLAG_SET` (`B1 <id> 08`): the
+write lands on the actor `FUN_8003C83C` resolves `<id>` to, and the per-actor
+tick `FUN_8003BC08` runs it through `FUN_80039B7C` from its own PC on the next
+frame (`0x8003BD10..0x8003BD38`). `tunnelc`'s Xain is the case: his record
+stages the fight with `3E FF 0A`, `21` (`+0xC41`), and on the post-battle pass
+the system script tests `0x361` and runs `B1 0C 08`, which resumes his record
+at `+0xC45` - the scene after the fight, where `0x1D5` is set. The engine
+plays the engagement as the touch-resumed interaction timeline
+(`World::drain_placement_engagements`), and a talk that ends on an executed
+`0x21` leaves the placement context's PC past it, as the shared retail context
+does.
+
+A mid-talk glide on the talker itself (`37` / `41` / `47` with no target
+byte) parks the record (`+0x10 |= 0x400`) until the walk kernel's terminal
+frame clears the bit (`FUN_8003774C`). The engine's talk runner plays no walk
+leg for the talker and takes the step as done; otherwise the bit stays up and
+the dispatcher's halted-target early-out ends the talk at the next
+cross-context op (Xain's second stage, `41 07 C1` then `AC 0C 08`). A
 spawned placement starts disengaged: the spawn pre-run clears `0x100` before
 it runs the `0x24`/`0x25` spawn section (`FUN_801D3F24`), and the talk body
 after that section's `0x21` waits for a touch. The Rim Elm bee beat

@@ -1634,6 +1634,9 @@ impl World {
                 if !scripts_held {
                     self.step_field_frame_slice();
                 }
+                // A placement the system script engaged (`B1 <id> 08`) runs
+                // its interaction once the frame is free.
+                self.drain_placement_engagements();
                 // Field script actors the VM just spawned or is running: the
                 // op-0x43 scripted arcs (arc helper `FUN_801D5C08` + release
                 // watcher `FUN_801D5D60`) and the op-0x34 sub-1 attached

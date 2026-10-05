@@ -88,6 +88,13 @@ pub struct FieldVmState {
     /// poke) - the object twin of [`Self::executing_channel`], which never
     /// names an object bind. `None` outside such a step.
     pub executing_object: Option<u16>,
+    /// Placement indices whose context a cross-context `CFLAG_SET` bit 8
+    /// (`B1 <id> 08`, `+0x10 |= 0x100`) engaged: retail's per-actor tick
+    /// `FUN_8003BC08` runs an engaged context through `FUN_80039B7C` from
+    /// its own parked PC on the next frame (`0x8003BD10..0x8003BD38`). The
+    /// engine plays that interaction as the touch-resumed timeline
+    /// ([`crate::world::World::drain_placement_engagements`]).
+    pub pending_engagements: Vec<usize>,
     /// `true` while [`crate::world::World::run_spawned_record_slice`] is stepping a spawned
     /// partition-2 record context (the modal cutscene timeline or a
     /// concurrent helper context). Host hooks use it to distinguish a
@@ -179,6 +186,7 @@ impl FieldVmState {
             channels_man: None,
             executing_channel: None,
             executing_object: None,
+            pending_engagements: Vec::new(),
             in_spawned_record_slice: false,
             halted_elsewhere: Vec::new(),
             dialog_claims: 0,

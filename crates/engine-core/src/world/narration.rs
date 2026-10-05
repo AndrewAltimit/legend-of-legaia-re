@@ -2524,6 +2524,9 @@ impl World {
             .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
         {
             c.pc = tl.pc;
+            // The interaction's `0x21` disengages the context
+            // (`0x80039E68..0x80039EE4` clears `+0x10 & 0x100`).
+            c.ctx.flags &= !0x100;
         }
     }
 
@@ -3131,6 +3134,7 @@ impl World {
         man_file: &legaia_asset::man_section::ManFile,
         man: &[u8],
     ) {
+        self.field_vm.pending_engagements.clear();
         self.field_vm.channels = crate::field_channels::spawn_channels(man_file, man);
         self.field_vm.channels_man = if man.is_empty() {
             None
@@ -3734,7 +3738,24 @@ impl World {
                         break;
                     }
                 }
-                FieldStepResult::Yield { resume_pc } => id.pc = resume_pc,
+                FieldStepResult::Yield { resume_pc } => {
+                    id.pc = resume_pc;
+                    // The talker's own glide-step (`37` / `41` / `47` with no
+                    // target byte) parks the record (`+0x10 |= 0x400`) and
+                    // hands the step to the walk kernel, whose terminal frame
+                    // clears the bit again (`FUN_8003774C`, the 0x37 / 0x41
+                    // arm). The runner plays no walk leg for the talker, so
+                    // the bit would never clear, and every later
+                    // cross-context op of the talk would take the dispatcher's
+                    // halted-target early-out and end the conversation:
+                    // Xain's second stage (`tunnelc` P1[4], `41 07 C1` then
+                    // `AC 0C 08`) ended there, before the picker that raises
+                    // `0x325` and the fight behind it. The step is taken as
+                    // done.
+                    if matches!(b, 0x37 | 0x41 | 0x47) {
+                        id.ctx.flags &= !0x400;
+                    }
+                }
                 // op-0x4A WAIT_FRAMES halts at its own PC every tick until its
                 // frame target elapses (`ctx.wait_accum` accumulates one
                 // `frame_delta` per `step`, and `id.ctx` persists across ticks).
@@ -3987,6 +4008,27 @@ impl World {
                 && let Some(rec) = self.npcs.dialog_prologue.get_mut(&slot)
             {
                 rec.entry_pc = pc;
+            }
+            // A talk that ended on an executed raw `0x21` leaves the actor's
+            // own context there too: the talk and the placement are one
+            // retail context (`actor[+0x9E]`), and an engagement of that
+            // context (`B1 <id> 08`) resumes past the `0x21`. Xain's fight
+            // (`tunnelc` P1[4]: `3E FF 0A`, `21`) is staged from a talk, and
+            // the system script's post-battle engagement runs the scene after
+            // it (`+0xC45`, which sets `0x1D5`).
+            if let Some(id) = self.dialog.inline.as_ref()
+                && id.parked_pc.is_none()
+                && let Some(slot) = id.npc_slot
+                && id.pc > 0
+                && id.bytecode.get(id.pc - 1) == Some(&0x21)
+                && id.visited.get(id.pc - 1).copied().unwrap_or(false)
+                && let Some(c) = self
+                    .field_vm
+                    .channels
+                    .iter_mut()
+                    .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
+            {
+                c.pc = id.pc;
             }
             self.dialog.inline = None;
             self.dialog.current = None;

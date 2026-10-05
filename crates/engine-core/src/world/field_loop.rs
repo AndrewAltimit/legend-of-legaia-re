@@ -665,6 +665,9 @@ impl World {
         if self.field_bytecode.is_empty() {
             return None;
         }
+        if let Some(res) = self.step_field_cross_context_cflag() {
+            return Some(res);
+        }
         let ctx_ptr: *mut FieldCtx = &mut self.field_ctx;
         let bc_ptr: *const Vec<u8> = &self.field_bytecode;
         let pc = self.field_pc;
@@ -689,6 +692,66 @@ impl World {
         // op 0x34 sub-2 forwarded-PC capture queued this step.
         self.drain_pending_scripted_encounter();
         Some(res)
+    }
+
+    /// A system-script `CFLAG_SET` / `CFLAG_CLR` aimed at another actor
+    /// (`B1 <id> <bit>` / `B2 <id> <bit>`): `FUN_8003C83C` resolves `<id>`
+    /// through the actor list and the write lands on **that** actor's
+    /// `+0x10`, not on the system context. Raising bit 8 (`0x100`) engages
+    /// the target: its per-actor tick then runs its script from where its
+    /// last interaction's `0x21` left the PC (`FUN_8003BC08`,
+    /// `0x8003BD10..0x8003BD38` -> `FUN_80039B7C`). `tunnelc`'s `P1[0]` is
+    /// the case: on the post-battle pass it tests `0x361` and runs
+    /// `B1 0C 08`, which restarts Xain's record past the `3E FF 0A` / `21`
+    /// that staged the fight - the post-fight scene that sets `0x1D5`.
+    ///
+    /// Only placement contexts resolve here; the player (`0xF8`) and the
+    /// system context (`0xFB`) take the ordinary step. The system context
+    /// bypasses the halted-target early-out, as retail's `+0x50 == 0xFB`
+    /// test does (`0x801DE90C..0x801DE940`).
+    ///
+    /// REF: FUN_801DE840 (cases 0x31 / 0x32), FUN_8003C83C, FUN_8003BC08
+    fn step_field_cross_context_cflag(&mut self) -> Option<FieldStepResult> {
+        let pc = self.field_pc;
+        let op = *self.field_bytecode.get(pc)?;
+        if op != 0xB1 && op != 0xB2 {
+            return None;
+        }
+        let target = *self.field_bytecode.get(pc + 1)?;
+        let bit = *self.field_bytecode.get(pc + 2)? & 0x1F;
+        if target == crate::field_env::PLAYER_ANCHOR_TARGET || target == 0xFB {
+            return None;
+        }
+        let ci = crate::field_channels::resolve_target(&self.field_vm.channels, target)?;
+        let ch = &mut self.field_vm.channels[ci];
+        if ch.object_bind {
+            return None;
+        }
+        let mask = 1u32 << bit;
+        if op == 0xB1 {
+            // The engine runs no placement channel on its own (the touch
+            // and this engagement play its interactions), so a stale `0x100`
+            // left by the spawn pre-run does not mean the context is already
+            // running: every bit-8 write queues the interaction.
+            let engaging = mask == 0x100;
+            ch.ctx.flags |= mask;
+            if mask == 0x100 {
+                ch.ctx.saved_26 = ch.ctx.field_26;
+            }
+            if engaging
+                && !self
+                    .field_vm
+                    .pending_engagements
+                    .contains(&ch.placement_index)
+            {
+                self.field_vm.pending_engagements.push(ch.placement_index);
+            }
+        } else {
+            ch.ctx.flags &= !mask;
+        }
+        let next_pc = pc + 3;
+        self.field_pc = next_pc;
+        Some(FieldStepResult::Advance { next_pc })
     }
 
     /// One retail **frame slice** of the loaded field-VM script: keep
@@ -922,5 +985,56 @@ impl World {
         if let Some(record) = self.encounters.pending_scripted.take() {
             self.install_scripted_encounter(&record);
         }
+    }
+}
+
+#[cfg(test)]
+mod cross_context_cflag_tests {
+    use crate::world::World;
+
+    fn channel(slot: usize, script_id: u16) -> crate::field_channels::FieldChannel {
+        crate::field_channels::FieldChannel {
+            placement_index: slot,
+            ctx: legaia_engine_vm::field::FieldCtx {
+                script_id,
+                ..Default::default()
+            },
+            record_offset: 0,
+            pc: 0,
+            done: false,
+            object_bind: false,
+        }
+    }
+
+    /// `tunnelc` `P1[0]`'s post-battle `B1 0C 08` lands on the actor whose
+    /// id is `0x0C` - Xain's placement - not on the system context, and
+    /// raising bit 8 queues that placement's interaction.
+    #[test]
+    fn system_script_bit8_engages_the_target_placement() {
+        let mut w = World::default();
+        w.field_vm.channels = vec![channel(3, 0x0B), channel(4, 0x0C)];
+        w.load_field_script_at(vec![0xB1, 0x0C, 0x08, 0xB2, 0x0C, 0x16, 0x21], 0);
+        w.step_field();
+        assert_eq!(w.field_vm.channels[1].ctx.flags & 0x100, 0x100);
+        assert_eq!(
+            w.field_ctx.flags & 0x100,
+            0,
+            "the system context stays disengaged"
+        );
+        assert_eq!(w.field_vm.pending_engagements, vec![4]);
+        w.field_vm.channels[1].ctx.flags |= 1 << 0x16;
+        w.step_field();
+        assert_eq!(w.field_vm.channels[1].ctx.flags & (1 << 0x16), 0);
+        assert_eq!(w.field_pc, 6);
+    }
+
+    /// The player anchor and an unresolved id take the ordinary step.
+    #[test]
+    fn unresolved_targets_fall_through() {
+        let mut w = World::default();
+        w.field_vm.channels = vec![channel(4, 0x0C)];
+        w.load_field_script_at(vec![0xB1, 0x0D, 0x08, 0x21], 0);
+        w.step_field();
+        assert!(w.field_vm.pending_engagements.is_empty());
     }
 }
