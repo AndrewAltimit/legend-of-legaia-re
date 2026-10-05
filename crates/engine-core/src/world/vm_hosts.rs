@@ -707,6 +707,15 @@ pub(super) fn is_player_scale_op(bytecode: &[u8], pc: usize) -> bool {
         && bytecode.get(pc + 2) == Some(&0x40)
 }
 
+/// `true` when the op at `pc` is `CC F8 C2`: op `4C` nibble-C sub-2 (the
+/// `+0x42` byte write, `0x801E26F0..0x801E26FC`) aimed at the player anchor.
+/// Five shipped sites raise or lower the player's object-effect gate this way.
+pub(super) fn is_player_effect_gate_op(bytecode: &[u8], pc: usize) -> bool {
+    bytecode.get(pc) == Some(&0xCC)
+        && bytecode.get(pc + 1) == Some(&crate::field_env::PLAYER_ANCHOR_TARGET)
+        && bytecode.get(pc + 2) == Some(&0xC2)
+}
+
 /// Step one field-VM op, landing a player-aimed `+0x72` write on the player.
 ///
 /// `FUN_8003C83C` resolves the extended target `0xF8` to the live player
@@ -729,6 +738,20 @@ pub(super) fn field_step_routed(
     bytecode: &[u8],
     pc: usize,
 ) -> vm::field::StepResult {
+    // `CC F8 C2 <b>`: the player's object-effect gate `+0x42`, on the same
+    // stand-in context the scale op uses, seeded from and written back to the
+    // world's player word.
+    if is_player_effect_gate_op(bytecode, pc) {
+        let mut player_ctx = FieldCtx {
+            script_id: u16::from(crate::field_env::PLAYER_ANCHOR_TARGET),
+            flags: 0x0100_0000,
+            field_42: host.world.field_vm.player_field_42,
+            ..Default::default()
+        };
+        let r = vm::field::step(host, &mut player_ctx, bytecode, pc);
+        host.world.field_vm.player_field_42 = player_ctx.field_42;
+        return r;
+    }
     let slot = host
         .world
         .player_actor_slot

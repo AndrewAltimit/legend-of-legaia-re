@@ -53,7 +53,17 @@ fn a_raising_beat_writes_row_zero_and_clips_its_actors() {
             }
         }
         let (row, clips) = seen.unwrap_or_else(|| panic!("{name}: P2[{record}] raised nothing"));
-        eprintln!("{name}: row0 {row:?}, {} clipped actor(s)", clips.len());
+        eprintln!(
+            "{name}: row0 {row:?}, clipped {:?}",
+            clips.iter().map(|c| c.0).collect::<Vec<_>>()
+        );
+        // The beat's `CC F8 C2 01` (record `+0x64`) raises the player too.
+        assert!(
+            clips
+                .iter()
+                .any(|c| c.0 == legaia_engine_core::world::ActorTintKey::Player),
+            "{name}: the player steps through the plane with the NPCs"
+        );
         // The raised actors stand just short of the plane at the beat's
         // start (rugi z 10560 against 10816, noaru 1472 against 1600): they
         // step out through it, which is what the slab draws.

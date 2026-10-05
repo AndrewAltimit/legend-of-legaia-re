@@ -457,25 +457,45 @@ impl World {
     pub fn object_effect_clips(
         &self,
     ) -> Vec<(ActorTintKey, crate::object_effect::EffectClip, f32)> {
-        self.field_vm
-            .channels
-            .iter()
-            .filter(|c| c.ctx.field_42 != 0)
-            .filter_map(|c| {
-                let clip =
-                    self.object_effect
-                        .clip_for(c.ctx.field_42, &self.sin_lut, &self.cos_lut)?;
-                let key = if c.object_bind {
-                    ActorTintKey::Object(c.placement_index as u16)
-                } else {
-                    ActorTintKey::Npc(c.placement_index)
-                };
-                let scale = match c.ctx.field_72 {
-                    0 => 1.0,
-                    s => f32::from(s) / 4096.0,
-                };
-                Some((key, clip, scale))
-            })
+        // The player (`CC F8 C2`), at its own render scale.
+        let player = self
+            .object_effect
+            .clip_for(self.field_vm.player_field_42, &self.sin_lut, &self.cos_lut)
+            .map(|clip| {
+                let scale = self
+                    .player_actor_slot
+                    .and_then(|s| self.actors.get(usize::from(s)))
+                    .map_or(1.0, |a| match a.move_state.field_72 {
+                        0 => 1.0,
+                        s => f32::from(s) / 4096.0,
+                    });
+                (ActorTintKey::Player, clip, scale)
+            });
+        player
+            .into_iter()
+            .chain(
+                self.field_vm
+                    .channels
+                    .iter()
+                    .filter(|c| c.ctx.field_42 != 0)
+                    .filter_map(|c| {
+                        let clip = self.object_effect.clip_for(
+                            c.ctx.field_42,
+                            &self.sin_lut,
+                            &self.cos_lut,
+                        )?;
+                        let key = if c.object_bind {
+                            ActorTintKey::Object(c.placement_index as u16)
+                        } else {
+                            ActorTintKey::Npc(c.placement_index)
+                        };
+                        let scale = match c.ctx.field_72 {
+                            0 => 1.0,
+                            s => f32::from(s) / 4096.0,
+                        };
+                        Some((key, clip, scale))
+                    }),
+            )
             .collect()
     }
 

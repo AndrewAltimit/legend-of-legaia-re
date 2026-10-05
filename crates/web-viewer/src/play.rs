@@ -1520,7 +1520,8 @@ impl LegaiaRuntime {
     /// `[m0, m1, m2, lo, hi, 1]` (keep `lo <= m . p <= hi`), or empty while
     /// the draw's actor has no raised `+0x42`. `kind` `0` = a placed
     /// object, `key` its placement draw index (the [`Self::field_placement_tints`]
-    /// index); `kind` `1` = a catalogued NPC, `key` its placement slot.
+    /// index); `kind` `1` = a catalogued NPC, `key` its placement slot;
+    /// `kind` `2` = the player (`key` ignored).
     /// `model` is the draw's page model matrix (16 floats, column-major), in
     /// the page's Y-flipped frame: its row 1 is negated back to retail's
     /// before the shared kernel `World::object_effect_mesh_clip` - the one
@@ -1545,6 +1546,7 @@ impl LegaiaRuntime {
                 ActorTintKey::Object(r as u16)
             }
             1 => ActorTintKey::Npc(key as usize),
+            2 => ActorTintKey::Player,
             _ => return Vec::new(),
         };
         // Column-major `model[c * 4 + r]`; retail = diag(1, -1, 1) * page.

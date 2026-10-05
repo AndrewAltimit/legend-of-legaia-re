@@ -1830,6 +1830,12 @@ impl PlayWindowApp {
                             .and_then(|o| o.as_ref())
                             .or_else(|| self.meshes.get(tmd_idx));
                         if let Some(mesh) = mesh {
+                            if let Some(c) = effect_clip(
+                                legaia_engine_core::world::ActorTintKey::Player,
+                                &self.actor_model(slot),
+                            ) {
+                                clip_marks.push((draws.len(), c));
+                            }
                             draws.push(SceneDraw {
                                 mesh,
                                 mvp: cam * self.actor_model(slot),
@@ -1843,6 +1849,12 @@ impl PlayWindowApp {
                                 .as_ref()
                                 .or_else(|| self.color_meshes.get(cidx))
                         {
+                            if let Some(c) = effect_clip(
+                                legaia_engine_core::world::ActorTintKey::Player,
+                                &self.actor_model(cslot),
+                            ) {
+                                color_clip_marks.push((color_draws.len(), c));
+                            }
                             color_draws.push(ColorSceneDraw {
                                 mesh: cmesh,
                                 mvp: cam * self.actor_model(cslot),
@@ -2295,6 +2307,12 @@ impl PlayWindowApp {
                             .as_ref()
                             .or_else(|| self.color_meshes.get(cidx))
                     {
+                        if let Some(c) = effect_clip(
+                            legaia_engine_core::world::ActorTintKey::Player,
+                            &self.actor_model(slot),
+                        ) {
+                            color_clip_marks.push((color_draws.len(), c));
+                        }
                         color_draws.push(ColorSceneDraw {
                             mesh,
                             mvp: cam * self.actor_model(slot),
@@ -2723,6 +2741,15 @@ impl PlayWindowApp {
                                     max_ir0: p.cue_ir0(),
                                 });
                             }
+                        }
+                        // The player's object-effect clip (`CC F8 C2`), off
+                        // the battle stage.
+                        if !in_battle
+                            && self.session.host.world.player_actor_slot == Some(i as u8)
+                            && let Some(c) =
+                                effect_clip(legaia_engine_core::world::ActorTintKey::Player, &model)
+                        {
+                            clip_marks.push((draws.len(), c));
                         }
                         draws.push(SceneDraw {
                             mesh,

@@ -787,11 +787,14 @@ draw's model matrix. Both hosts discard outside that slab per draw: the
 native mesh shaders through `EFFECT_CLIP_WGSL` (three half-float lanes of
 the draw's uniform, staged by `Renderer::set_draw_clips`), the play page
 through `u_eclip_m` / `u_eclip_b` (`play_effect_clip`). A fragment discard
-keeps the same pixels as retail's per-edge clip. Two differences remain: an
-animated actor is clipped on its posed mesh, where `FUN_8001B964` runs the
-effect `MVMVA` on unposed object-local vertices, and a `4C C2` aimed at the
-player (`F8`, five of the 50 sites) reaches no player context in the port, so
-the player draws unclipped. Disc-gated test:
+keeps the same pixels as retail's per-edge clip. A `4C C2` aimed at the
+player (`CC F8 C2`, five of the 50 sites, in `uru2`, `rugi` and `noaru`) runs
+on the same player stand-in context the `CC F8 40` scale op uses
+(`field_step_routed`) and lands in `FieldVmState::player_field_42`, so the
+player's draws clip on both hosts too - `rugi` and `noaru` raise it in the
+same beat as their two NPCs. One difference remains: an animated actor is
+clipped on its posed mesh, where `FUN_8001B964` runs the effect `MVMVA` on
+unposed object-local vertices. Disc-gated test:
 `crates/engine-core/tests/object_effect_row_disc.rs`.
 
 ## The battle per-actor draw

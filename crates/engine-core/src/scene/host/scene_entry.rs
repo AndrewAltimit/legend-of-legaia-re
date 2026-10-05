@@ -611,6 +611,7 @@ impl SceneHost {
         self.world.field_vm.channels.clear();
         self.world.field_vm.object_slot_ramps.clear();
         self.world.field_vm.actor_tints.clear();
+        self.world.field_vm.player_field_42 = 0;
         self.world.field_vm.stepping_view.clear();
         self.world.field_vm.channels_man = None;
         self.world.npcs.anim_cues.clear();

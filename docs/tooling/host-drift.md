@@ -3215,8 +3215,9 @@ hosts ask one kernel per placed / NPC draw (`World::object_effect_mesh_clip`)
 and discard outside the slab: the native mesh shaders through
 `EFFECT_CLIP_WGSL`, the page's field program through `u_eclip_m` /
 `u_eclip_b` (`play_effect_clip`, which negates the page model's row 1 back to
-retail's frame). Residual, the same on both hosts: a `4C C2` on the player
-(`F8`) is dropped.
+retail's frame). The player's draws ask the same kernel under
+`ActorTintKey::Player` - native at each player mesh push, the page through
+`play_effect_clip` kind `2`.
 
 **The field drop shadow.** `FUN_8001C394` (called from the animated-actor
 renderer `FUN_8001B964`) is ported as `engine-core::drop_shadow` and walked by

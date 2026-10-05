@@ -2297,6 +2297,7 @@ void main() {
         let kind = -1, key = 0;
         if (d.placeIdx !== undefined) { kind = 0; key = d.placeIdx; }
         else if (d.npcSlot !== undefined) { kind = 1; key = d.npcSlot; }
+        else if (d.effectPlayer) { kind = 2; key = 0; }
         if (kind < 0) continue;
         if (!live) { delete d.effectClip; continue; }
         const m = this.renderer.sceneMeshes && this.renderer.sceneMeshes.get(d.meshId);
@@ -2742,6 +2743,8 @@ void main() {
           scale: 1.0,
           /* Actor draw: the occlusion fade must never dissolve the player. */
           noOccl: true,
+          /* The player's object-effect clip (`CC F8 C2`, play_effect_clip). */
+          effectPlayer: true,
         };
         /* The player's op `4C 81` draw tint (a cutscene's fade to black, a
          * red flash) as a constant per-draw cue - the native window's

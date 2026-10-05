@@ -168,6 +168,11 @@ pub struct FieldVmState {
     /// copy. It therefore survives scene loads, and the engine keeps it on
     /// the world for the session.
     pub slot_table: [i16; 256],
+    /// The player object's `+0x42` (the object-effect gate), which
+    /// `CC F8 C2 <b>` writes through [`super::vm_hosts`]' player routing -
+    /// the player is no placement channel, so it needs its own home.
+    /// Cleared on scene entry with the actor tints.
+    pub player_field_42: u16,
 }
 
 impl FieldVmState {
@@ -196,6 +201,7 @@ impl FieldVmState {
             pending_record_spawns: Vec::new(),
             system_pass_open: true,
             slot_table: [0; 256],
+            player_field_42: 0,
         }
     }
 }
