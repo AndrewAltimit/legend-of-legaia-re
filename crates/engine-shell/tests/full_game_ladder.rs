@@ -3279,8 +3279,35 @@ fn door_in_reach(session: &BootSession, graph: &DiscGraph, dest: &str) -> bool {
             .and_then(|p| p.last().copied())
             .is_some_and(|c| {
                 let t = tile_of(cell_center(c).0, cell_center(c).1);
-                i32::from((t.0 - g.0).abs() + (t.1 - g.1).abs()) <= DOOR_APPROACH_SLACK
+                door_approachable(session, t, g)
             })
+    })
+}
+
+/// Can the follower press on from `end`, where the lattice stopped, to the
+/// door band `goal`? A door tile reads as a wall from inside, so the lattice
+/// routinely ends a few tiles short ([`DOOR_APPROACH_SLACK`]) - but not a
+/// gap with a teleport tile in it, which carries the player off before the
+/// band. `kor3`'s corridor from the west doorway (18..19, 39) lands at
+/// (115, 13); the door to `kor` is (115, 11), and (115, 12) between them
+/// teleports back to the doorway, so the door is reached from the north,
+/// out of `koin1` (its P2[4] lands at (116, 9)).
+fn door_approachable(session: &BootSession, end: (i16, i16), goal: (i16, i16)) -> bool {
+    let d = i32::from((end.0 - goal.0).abs() + (end.1 - goal.1).abs());
+    if d > DOOR_APPROACH_SLACK {
+        return false;
+    }
+    if d <= 1 {
+        return true;
+    }
+    let (lo_x, hi_x) = (i32::from(end.0.min(goal.0)), i32::from(end.0.max(goal.0)));
+    let (lo_z, hi_z) = (i32::from(end.1.min(goal.1)), i32::from(end.1.max(goal.1)));
+    let ends = [
+        (i32::from(end.0), i32::from(end.1)),
+        (i32::from(goal.0), i32::from(goal.1)),
+    ];
+    !teleports(session).keys().any(|&w| {
+        (lo_x..=hi_x).contains(&w.0) && (lo_z..=hi_z).contains(&w.1) && !ends.contains(&w)
     })
 }
 
@@ -4037,7 +4064,7 @@ fn pad_hop(session: &mut BootSession, graph: &DiscGraph, dest: &str) -> Result<S
     // band (the critical-path ladder's rule).
     if let Some(end) = plan_path(session, start, goal, &avoid).and_then(|p| p.last().copied()) {
         let t = tile_of(cell_center(end).0, cell_center(end).1);
-        if dist(t) > DOOR_APPROACH_SLACK {
+        if !door_approachable(session, t, goal) {
             return Err(format!(
                 "no walkable path: the start's walk component ends {} tiles short of door {goal:?} (closest tile {t:?})",
                 dist(t)
