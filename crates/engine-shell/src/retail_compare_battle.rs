@@ -189,6 +189,15 @@ pub struct RetailBattle {
     /// for the Done band's grant (`sb v0,0x269(a0)` at `0x801EE2E8`) and
     /// cleared when `0x52` leaves.
     pub absorbed_seru: u8,
+    /// Whether the active seat's committed queue `+0x1DF..+0x1EE` holds an
+    /// art starter (`0x19` / `0x1A`): the turn was entered through the
+    /// directional command entry, not the Auto swing.
+    pub arts_queue: bool,
+    /// The active seat's live action gauge `+0x154` and its base `+0x156`.
+    /// A Spirit turn's round boundary extends the live gauge
+    /// (`(base * 7) / 5 + 8`), and the extension decides both the arts
+    /// entry's AP pool and which saved command band it preseeds.
+    pub acting_gauge: Option<(u16, u16)>,
     /// The battle-end sequence's position, when the capture is past the end
     /// signal ([`SpanGate`]).
     pub span_gate: SpanGate,
@@ -922,6 +931,15 @@ impl RetailBattle {
             cam_style: game_anchors::u8_at(ram, ctx + 0xD),
             camera_option: game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION),
             absorbed_seru: game_anchors::u8_at(ram, ctx + 0x269),
+            arts_queue: active.is_some_and(|p| {
+                (0..0x10).any(|i| matches!(game_anchors::u8_at(ram, p + 0x1DF + i), 0x19 | 0x1A))
+            }),
+            acting_gauge: active.map(|p| {
+                (
+                    game_anchors::u16_at(ram, p + 0x154),
+                    game_anchors::u16_at(ram, p + 0x156),
+                )
+            }),
             span_gate: span_gate(ram, ctx),
             win_pose: span_gate(ram, ctx)
                 .is_end()
@@ -1701,12 +1719,24 @@ pub enum BattleDrive {
 /// counterattack the replay's own monster turn does not roll (the drive
 /// reaches the counterer's strike loop through its own turn), raised on the
 /// engine when it holds the capture's state.
+///
+/// `arts` marks a party capture whose committed queue holds an art starter
+/// ([`RetailBattle::arts_queue`]): the player entered that turn through
+/// `Command`, so the drive opens the arts entry and confirms the string it
+/// preseeds from the record (`FUN_801DA34C`) instead of taking `Auto`, which
+/// builds a different queue under the same state byte. `gauge` is that
+/// seat's live gauge over its base ([`RetailBattle::acting_gauge`]), set when
+/// a Spirit turn the replay does not play had extended it: the extension is
+/// what selects the saved string's band and pays for its arrows, so
+/// [`BattleDrive::prime`] restores it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ActionSteer {
     pub target: Option<u8>,
     pub yaw: Option<u16>,
     pub message: Option<(u32, i16)>,
     pub plate_cleared: bool,
+    pub arts: bool,
+    pub gauge: Option<u16>,
 }
 
 /// Where inside a state that spans many frames a capture sits.
@@ -1960,6 +1990,12 @@ impl BattleDrive {
                 if steer.plate_cleared {
                     s.push_str(",c");
                 }
+                if let Some(g) = steer.gauge {
+                    s.push_str(&format!(",g{g}"));
+                }
+                if steer.arts {
+                    s.push_str(",a");
+                }
                 s
             }
         }
@@ -1985,6 +2021,10 @@ impl BattleDrive {
                 steer.message = Some((u32::from_str_radix(va, 16).ok()?, hold.parse().ok()?));
             } else if last == "c" {
                 steer.plate_cleared = true;
+            } else if last == "a" {
+                steer.arts = true;
+            } else if let Some(g) = last.strip_prefix('g') {
+                steer.gauge = Some(g.parse().ok()?);
             } else {
                 break;
             }
@@ -2078,6 +2118,15 @@ impl BattleDrive {
     /// absorbed Seru to take back off the seat's spell list). Called once,
     /// on the first battle tick.
     pub fn prime(&self, world: &mut legaia_engine_core::world::World) {
+        if let Self::Action { seat, steer, .. } = *self
+            && let Some(live) = steer.gauge
+            && seat < 3
+        {
+            let pc = world.party.party_count.clamp(1, 3);
+            if let Some(a) = world.actors.get_mut(usize::from(engine_seat(seat, pc))) {
+                a.battle.agl = live;
+            }
+        }
         if let Self::Action { seat, absorbed, .. } = *self
             && absorbed != 0
             && seat < 3
@@ -2310,6 +2359,14 @@ impl BattleDrive {
         if !world.battle.tutorial_boxes.is_empty() {
             return Some(PadButton::Cross);
         }
+        // The arts entry the capture seat opened to replay its saved
+        // command string: a bare confirm takes the string, and the
+        // confirms after it begin the turn and pick the target.
+        if matches!(self, Self::Action { steer, .. } if steer.arts)
+            && world.battle.arts_input.is_some()
+        {
+            return Some(PadButton::Cross);
+        }
         let cmd = world.battle.command.as_ref()?;
         match *self {
             Self::Opening { .. } => None,
@@ -2340,6 +2397,7 @@ impl BattleDrive {
                 seat,
                 category,
                 spare,
+                steer,
                 ..
             } => Some(match cmd.phase {
                 CommandPhase::Menu { .. } if cmd.actor == seat && category == 4 => PadButton::Down,
@@ -2349,6 +2407,11 @@ impl BattleDrive {
                 // (a strong party otherwise kills it first, and the cast the
                 // seed names is never taken).
                 CommandPhase::Menu { .. } if seat >= 3 && category == 2 => PadButton::Down,
+                CommandPhase::AttackMode { .. }
+                    if cmd.actor == seat && steer.arts && saved_command_string(world, seat) =>
+                {
+                    PadButton::Right
+                }
                 CommandPhase::RoundPrompt { .. }
                 | CommandPhase::Menu { .. }
                 | CommandPhase::AttackMode { .. } => PadButton::Left,
@@ -2365,6 +2428,24 @@ impl BattleDrive {
         }
         self.press(world).map_or(0, |b| b.mask())
     }
+}
+
+/// Whether party seat `seat`'s character record carries a saved auto
+/// command string - the arrows the arts entry preseeds its window from
+/// (`FUN_801DA34C`) and a bare confirm replays.
+///
+/// A party capture's queue `+0x1DF` is the turn the player committed, and a
+/// record that holds a string is a player who entered (and so saved) one: a
+/// replay through `Command` rebuilds that queue, where `Auto` rebuilds the
+/// queue from the direction commands and learned arts and plays a different
+/// action under the same state byte.
+fn saved_command_string(world: &legaia_engine_core::world::World, seat: u8) -> bool {
+    use legaia_save::character::AutoCommandBand;
+    let slot = world.party_roster_slot(usize::from(seat));
+    world.party.roster.members.get(slot).is_some_and(|rec| {
+        rec.auto_command_string(AutoCommandBand::Primary)[0] != 0
+            || rec.auto_command_string(AutoCommandBand::Secondary)[0] != 0
+    })
 }
 
 /// The member's EXP share the results sequencer hands out, `gp+0xA04`
@@ -2528,6 +2609,13 @@ impl RetailBattle {
                     yaw: Some(self.walk_yaw_base),
                     message: self.timed_message,
                     plate_cleared: self.target_plate_cleared && seat < 3,
+                    arts: seat < 3 && self.queued_category == 3 && self.arts_queue,
+                    gauge: self
+                        .acting_gauge
+                        .filter(|&(live, base)| {
+                            seat < 3 && self.queued_category == 3 && self.arts_queue && live > base
+                        })
+                        .map(|(live, _)| live),
                 },
             }),
             SeedPlan::Opening => Some(BattleDrive::Opening {
@@ -3085,6 +3173,23 @@ mod tests {
                     yaw: Some(0xA98),
                     message: Some((0x801C_ED18, 25)),
                     plate_cleared: true,
+                    ..ActionSteer::default()
+                },
+            },
+            BattleDrive::Action {
+                seat: 0,
+                state: 0x20,
+                category: 3,
+                queued: 0x0F,
+                spare: false,
+                absorbed: 0,
+                end: SpanGate::Age { accum: 176 },
+                style: Some(0),
+                steer: ActionSteer {
+                    yaw: Some(0x280),
+                    arts: true,
+                    gauge: Some(153),
+                    ..ActionSteer::default()
                 },
             },
         ] {

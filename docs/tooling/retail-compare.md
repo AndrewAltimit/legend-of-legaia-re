@@ -533,6 +533,15 @@ credited back). On such a monster-cast drive the whole party commits Spirit
 instead of Attack, so the caster is still standing when its turn comes - a
 party that kills it first ends the fight with the seeded cast never taken
 (Zeto's two mid-cast captures sit in a party that does it in two swings).
+A party seat whose committed queue `+0x1DF..+0x1EE` holds an art starter
+(`0x19` / `0x1A`) entered its turn through `Command`, so its drive takes
+`Command` too and confirms the string the arts entry preseeds from the
+character record (`FUN_801DA34C`) - `Auto` builds a different queue under
+the same state byte. When that seat's live gauge `+0x154` stands above its
+base `+0x156` (a Spirit turn the replay does not play extended it), the drive
+restores it before the round: the extension selects the saved string's band
+and pays for its arrows (`player_steal_skeleton_banner`'s five-arrow
+`0F 0E 19 27 0E 19 27` needs the `153` gauge over the `104` base).
 Monster seats are translated from retail's fixed pool slots
 `3..` onto the engine's seating straight after the party. A message box on
 screen takes Cross.
