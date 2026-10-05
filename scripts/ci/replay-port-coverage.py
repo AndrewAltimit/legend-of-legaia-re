@@ -710,6 +710,10 @@ CANONICAL_LADDERS = [
     # The passive-ability badge column (`801d095c`), behind a party that
     # wears one of six passive bits: an accessory equipped by pad.
     ("w9_passive_badge_page", "legaia-web-viewer"),
+    # The end of the game: `edlast`'s credits, their press poll, and `49 0C`'s
+    # return-to-title soft reset (slot `0x33`, `FUN_801EDF00`) - the records
+    # screen over the field and the title hand-off.
+    ("soft_reset_records_page", "legaia-web-viewer"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 

@@ -1454,6 +1454,15 @@ impl LegaiaRuntime {
         gold_shop_sprites.extend(prize.sprites);
         windows.extend(prize.texts);
         windows.extend(self.coin_counter_window_draws(font));
+        // The end-of-game soft reset (op-0x49 sub-op 0xC, slot 0x33): the
+        // records screen at the engine's pen, as the native window draws it.
+        if let Some(pen) = self
+            .scene_host
+            .as_ref()
+            .and_then(|h| h.world.soft_reset_records_pen())
+        {
+            windows.extend(self.records_draws_at(font, pen));
+        }
         // The field floor window (op-0x49 sub-op 4, the Uru Mais warp pads), through
         // the engine layout + shared line composition the native window
         // draws (`SceneHost::flag_window_lines`).

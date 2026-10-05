@@ -138,6 +138,14 @@ impl PlayWindowApp {
     /// retail's 1/60 s tick. Everything past that (the display caps, the
     /// H:MM:SS split, the treasure percentage) is the ported model.
     fn build_dev_records_draws(&self) -> Vec<legaia_engine_render::TextDraw> {
+        self.records_draws_at(DEV_RECORDS_PEN)
+    }
+
+    /// The records screen (`FUN_801ED710`) at `pen`, retail stage pixels -
+    /// the dev Records page and the end-of-game soft reset
+    /// (`World::soft_reset_records_pen`) draw the same screen at different
+    /// origins.
+    pub(super) fn records_draws_at(&self, pen: (i32, i32)) -> Vec<legaia_engine_render::TextDraw> {
         let world = &self.session.host.world;
         let records: Vec<&[u8]> = world
             .party
@@ -148,11 +156,7 @@ impl PlayWindowApp {
             .map(|m| m.raw.as_slice())
             .collect();
         let model = dev_records_model(&records, world.clock.play_time_seconds);
-        legaia_engine_render::records_screen_draws_for(
-            &self.font,
-            &records_view(&model),
-            DEV_RECORDS_PEN,
-        )
+        legaia_engine_render::records_screen_draws_for(&self.font, &records_view(&model), pen)
     }
 
     /// Build the row list's draws through the ported list-body renderer.

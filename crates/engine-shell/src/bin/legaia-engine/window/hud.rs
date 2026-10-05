@@ -1510,6 +1510,11 @@ impl PlayWindowApp {
         // screen is open on the coin slot. Not a menu-runtime state - the
         // field VM owns the park.
         stage.extend(self.coin_counter_window_draws());
+        // The end-of-game soft reset (op-0x49 sub-op 0xC, handler slot 0x33,
+        // `FUN_801EDF00`): the records screen sliding in at the engine's pen.
+        if let Some(pen) = self.session.host.world.soft_reset_records_pen() {
+            stage.extend(self.records_draws_at(pen));
+        }
         // The field floor window (op-0x49 sub-op 4, handler slot 0x23 - the Uru Mais
         // warp pads): laid out by the engine off the live picker state, the
         // legend read off the field overlay, drawn through the shared line

@@ -2174,7 +2174,7 @@ The length is the VM's own bound (op `0x49` rejects `sub_op > 0xD`,
 | `9` | `0x28` | `FUN_801F1FDC` - the prompt |
 | `0xA` | `0x31` | `FUN_801ED590` |
 | `0xB` | `0x32` | `FUN_801F1E48` - the Incense wear-off notice (below) |
-| `0xC` | `0x33` | `FUN_801EDF00` |
+| `0xC` | `0x33` | `FUN_801EDF00` - the **return-to-title soft reset** `edlast` ends on ([`cutscene.md`](cutscene.md#the-ending-vignettes-refuse-the-pad)) |
 
 Rows `3` and `5` cross-validate the read: they name the name-entry screen and
 the tile-board walk, the two sub-ops identified independently elsewhere on

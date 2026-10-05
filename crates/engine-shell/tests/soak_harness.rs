@@ -823,6 +823,14 @@ fn trace_line(s: &BootSession, pad: u16) -> String {
             m.target.1
         );
     }
+    let sub = &w.field_vm.submode_screen;
+    if sub.open {
+        let _ = write!(
+            out,
+            " submode(slot {:#04x} soft-reset {:?})",
+            sub.actor.state, sub.soft_reset
+        );
+    }
     // `LEGAIA_SOAK_TRACE_NPC=<slot>`: that slot's position on every line,
     // walking or not - where a placement stood before its walk started.
     if let Some(slot) = env_u64("LEGAIA_SOAK_TRACE_NPC") {

@@ -1265,6 +1265,14 @@ The pad controller `FUN_801D1344` skips locomotion while the bit is up (`0x801D1
 
 The last one, `edlast` `P2[1]`, ends on a press, not a timer: `4A 08 00` then `42 01 08` / `42 01 09` (Circle / Cross held, [op `0x42` mode 1](script-vm.md)) and a `26` back to the wait. The timeline's natural-termination rule reads a backward jump onto an executed PC as a wrapped choreography; a loop whose body polls the held pad is exempt (`loop_polls_held_pad` in `narration.rs`), so the record keeps the pad until the press instead of being dropped after its credits. The record needs roughly 14100 vsyncs to reach that poll.
 
+After the press the record dims the scene and issues `49 0C`, whose handler slot `0x33` is `FUN_801EDF00`, the return-to-title soft reset:
+the play records (`FUN_801ED710` at `(0x20, y)`) slide up from `y = 0xE6` to `0xE` one step per game tick,
+a face button (`_DAT_8007B850 & 0x9F0`) then starts a `0x78`-frame white fade (`FUN_801D58F0(2, 0, 0xFFFFFF, 0, 0x78, -1)`), and when its counter reaches `0x78` the executable is reloaded (`FUN_80017714`).
+The screen never hands the frame back, so the op stays parked until the reboot.
+Port: slot `0x33` in `World::tick_submode_screen` (`SoftResetScreen`); both hosts draw the records at `World::soft_reset_records_pen`, and the reload raises the same title hand-off field-VM op `4C EA` does (`World::game_over`) -
+retail's reboot also replays the boot logos on the way, the port goes straight to the title.
+Before the slot was dispatched it closed on its first frame and left the party standing in `edlast`.
+
 ### Per-actor channels - the vignette actors
 
 The "characters doing things" during the narration are **per-actor script channels**.
