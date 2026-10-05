@@ -1364,7 +1364,7 @@ impl BootSession {
             legaia_engine_core::world::SceneMode::Field
                 | legaia_engine_core::world::SceneMode::WorldMap
         );
-        let side_band = field_family.then(|| world.side_band_bank()).flatten();
+        let side_band = world.tail_side_band_bank();
         let index = &self.host.index;
         // A slot-6 side-band bank is not a tail borrower: retail streams it
         // over the field bank in the shared region, and the residency below

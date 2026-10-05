@@ -266,6 +266,14 @@ impl SceneHost {
         /// The victory caption's Seru index. It names a *string*, not a prize.
         const CAPTION_SERU_INDEX: u8 = 1;
 
+        // The init's by-index load into the buffer `_DAT_8007B8D0` points at:
+        // the arena's runtime SFX descriptor bundle (the hub's tally cues).
+        self.world.minigames.muscle_sfx_bundle = self
+            .index
+            .entry_bytes_extended(legaia_asset::minigame_sfx::ARENA_SFX_BUNDLE_PROT_INDEX as u32)
+            .map(|b| b.to_vec())
+            .unwrap_or_default();
+
         let Some(rec) =
             static_overlay::overlay_map().by_prot_index(md::MUSCLE_OVERLAY_PROT_INDEX as u32)
         else {

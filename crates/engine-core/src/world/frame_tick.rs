@@ -3943,6 +3943,13 @@ impl World {
         if frame.next_leg {
             self.begin_next_muscle_leg();
         }
+        // The INTERVAL arm's tally cues go through the SFX ring like every
+        // other cue: the drainer resolves them against the arena bundle.
+        for &(slot, id, delay) in &frame.ring_cues {
+            self.audio
+                .sfx_ring_ops
+                .push(crate::world::SfxRingOp::ArmSlot(slot, id, delay));
+        }
         let sounds = &mut self.minigames.muscle_hub_sounds;
         if frame.xa.is_some() {
             sounds.xa = frame.xa;

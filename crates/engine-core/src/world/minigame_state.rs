@@ -88,6 +88,11 @@ pub struct MinigameState {
     /// extraction PROT 1199 the overlay init loads), staged by the scene host
     /// on the warp - see [`crate::world::World::runtime_sfx_bundle`].
     pub slot_sfx_bundle: Vec<u8>,
+    /// The Muscle Dome arena's runtime SFX descriptor bundle (extraction
+    /// PROT 542, which the arena init points `_DAT_8007B8D0` at), staged by
+    /// the scene host on the warp - see
+    /// [`crate::world::World::runtime_sfx_bundle`].
+    pub muscle_sfx_bundle: Vec<u8>,
     /// Baka Fighter duel state. `Some` while `mode ==
     /// SceneMode::BakaFighter`; the exchange / round / match state machine
     /// runs each tick. See [`crate::baka_fighter::BakaFight`] and
@@ -295,6 +300,7 @@ impl MinigameState {
             slot_machine: None,
             slot_return_mode: SceneMode::Field,
             slot_sfx_bundle: Vec::new(),
+            muscle_sfx_bundle: Vec::new(),
             baka_fighter: None,
             baka_return_mode: SceneMode::Field,
             muscle_dome: None,

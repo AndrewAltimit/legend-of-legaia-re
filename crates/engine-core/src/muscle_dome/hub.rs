@@ -141,6 +141,13 @@ pub const HUB_TALLY_ROLL_RESEED: i32 = 0x10;
 /// `0x801CFCAC..0x801CFCEC`.
 pub const HUB_TALLY_CUE_STAGGER: [u8; 4] = [0, 0x1E, 0x3C, 0x5A];
 
+/// The four ring ids the INTERVAL arm writes beside [`HUB_TALLY_CUE_STAGGER`]
+/// (`0x801CFCAC..0x801CFCC8`), one per ring slot. Both are runtime-bank ids:
+/// they resolve against the arena's own descriptor bundle
+/// (`legaia_asset::minigame_sfx::ARENA_SFX_BUNDLE_PROT_INDEX`), whose rows
+/// `0x202` / `0x203` key tones 3 and 4..5 of the arena's slot-3 side bank.
+pub const HUB_TALLY_CUES: [i16; 4] = [0x202, 0x202, 0x202, 0x203];
+
 /// Which stage of its envelope a hub screen is in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HubScreenStage {

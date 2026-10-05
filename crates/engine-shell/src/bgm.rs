@@ -886,6 +886,10 @@ impl AudioBgmDirector {
                 SfxRingOp::SetLastDelay(d) => self.sfx_sched.set_ring_cue_delay(d),
                 SfxRingOp::ReplaceLast(id) => self.sfx_sched.replace_ring_cue(id),
                 SfxRingOp::WriteSlot(slot, id) => self.sfx_sched.write_ring_slot(slot.into(), id),
+                SfxRingOp::ArmSlot(slot, id, delay) => {
+                    self.sfx_sched
+                        .arm_ring_slot(slot.into(), id, i32::from(delay))
+                }
             }
         }
     }
