@@ -47,6 +47,7 @@
 "801d0230" = ["worklist_interior", "Interior of FUN_801CF3BC (ported) in fishing: opens `lw a0,-0x6f10(s0)` on the parent's s0; no reference in this image."]
 "801d58f0" = ["worklist_interior", "Interior of the 2-D segment clipper FUN_801D56E4 (ported, 0x801D56E4..0x801D5C2C): opens `slt v0,v1,a3` mid-computation; no reference in this image."]
 "801d5a24" = ["worklist_interior", "Interior of FUN_801D56E4 (ported, 0x801D56E4..0x801D5C2C); no reference in this image."]
+"801d71c0" = ["subsumed_glue", "Tick of the floor-pass tile actors, 20 B: clears bit 0x2 of the actor flag word +0x10 (`lw; and ~2; sw`). Its one reference is the +0x08 tick slot of the tile template at 0x801D8118, which the floor pass FUN_801D6BBC spawns from (`lui/addiu` at 0x801D6C94) - and the same pass frees and respawns every tile actor each frame (0x801D6C34..0x801D6C68), so the tick runs once per actor lifetime. The pass is ported as engine-core minigame_floor::floor_tile_spawns, which re-derives the tile set every frame and keeps no per-actor flag word to clear; what bit 0x2 gates for these actors is not pinned."]
 
 [baka_fighter]
 "801d58f0" = ["worklist_interior", "Interior of the animation-slot remover FUN_801D58E0 (ported as engine-core baka_fighter_chrome, `jal` from 0x801D52A4): 0x10 bytes into its body, mid-way through the slot-address computation."]
