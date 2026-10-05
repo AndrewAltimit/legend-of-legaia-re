@@ -64,6 +64,10 @@ pub enum MenuTickEvent {
 /// after [`crate::world::World::tick`] when in
 /// [`crate::world::SceneMode::Menu`] (or whatever in-menu mode the engine
 /// uses).
+/// Ticks the field takes to fade to black when a shop opens - see
+/// [`MenuRuntime::shop_fade_level`].
+pub const SHOP_FADE_FRAMES: u32 = 14;
+
 pub struct MenuRuntime {
     pub ctx: MenuCtx,
     /// Save-slot directory. Created lazily on first save.
@@ -144,6 +148,17 @@ pub struct MenuRuntime {
     /// current screen's window set. Hosts draw from
     /// [`Self::shop_slides`].
     shop_slides: crate::shop::ShopSlides,
+    /// Free-running tick count, the engine's stand-in for retail's frame
+    /// word `0x80084570` that the list kernel blink-gates its page
+    /// triangles on ([`Self::ui_frame`]).
+    ui_frames: u32,
+    /// Ticks since the current shop / prize counter opened, saturating -
+    /// the clock of the field's fade to black ([`Self::shop_fade_level`]).
+    shop_age: u32,
+    /// The list row the hand was on when a quantity stepper opened over it.
+    /// The kind-4 list keeps its selection behind the stepper, so the hand
+    /// comes back to this row (clamped to the rebuilt list) when it closes.
+    quantity_list_row: u8,
     /// The UI cue this tick's shop step raised, if any, for the host to key
     /// ([`Self::take_ui_cue`]). Retail's shop screens key their own blips:
     /// the kind-4 list kernel `FUN_80032A44` (cursor `0x21` on a move,
@@ -282,6 +297,9 @@ impl MenuRuntime {
             stay_cursor: None,
             point_card_toast: None,
             shop_slides: crate::shop::ShopSlides::default(),
+            ui_frames: 0,
+            shop_age: 0,
+            quantity_list_row: 0,
             ui_cue: None,
             spell_level_notice: None,
             art_learned_notice: None,
@@ -396,6 +414,9 @@ impl MenuRuntime {
     pub fn open_shop(&mut self, session: ShopSession) {
         self.shop_session = Some(session);
         self.shop_slides.reset();
+        // A direct open (tooling / tests) skips the field fade; the merchant
+        // path (`open_shop_menu`) runs it.
+        self.shop_age = SHOP_FADE_FRAMES;
     }
 
     /// Open a shop into its **top-level Buy / Sell / Trade picker**
@@ -405,6 +426,7 @@ impl MenuRuntime {
     pub fn open_shop_menu(&mut self, session: ShopSession) {
         self.shop_session = Some(session);
         self.shop_slides.reset();
+        self.shop_age = 0;
         self.trade_session = None;
         self.recipient_session = None;
         self.ctx.state = MenuState::ShopMenu.as_byte();
@@ -419,6 +441,9 @@ impl MenuRuntime {
     pub fn open_shop_buy(&mut self, session: ShopSession) {
         self.shop_session = Some(session);
         self.shop_slides.reset();
+        // A direct open (tooling / tests) skips the field fade; the merchant
+        // path (`open_shop_menu`) runs it.
+        self.shop_age = SHOP_FADE_FRAMES;
         self.ctx.state = MenuState::ShopBuy.as_byte();
         self.ctx.cursor = 0;
     }
@@ -491,7 +516,25 @@ impl MenuRuntime {
     /// open, then every shop screen sits on black). Hosts skip the 3D pass
     /// and clear black while this holds.
     pub fn covers_field(&self) -> bool {
-        self.suspends_field()
+        self.suspends_field() && self.shop_fade_level().is_none()
+    }
+
+    /// While a shop or the prize counter is opening, how far the field has
+    /// faded toward black: `Some(level)` with `level` `0..=255` for the
+    /// first [`SHOP_FADE_FRAMES`] ticks, `None` once the fade is done (the
+    /// screen is then black - [`Self::covers_field`]) or with no shop up.
+    ///
+    /// Retail (Retock Items Shop, stepped per vsync) darkens the field
+    /// linearly from the last dialogue frame to black over fourteen frames
+    /// before the shop's windows appear. Hosts draw it as a subtractive
+    /// full-screen quad over the frozen field
+    /// (`screen_prim::fade_prim(level * 0x010101, 2, 0)`).
+    pub fn shop_fade_level(&self) -> Option<u8> {
+        if self.shop_session.is_none() && self.prize_session.is_none() {
+            return None;
+        }
+        (self.shop_age < SHOP_FADE_FRAMES)
+            .then(|| (255 * (self.shop_age + 1) / SHOP_FADE_FRAMES).min(255) as u8)
     }
 
     /// Open the casino prize-exchange screen (field-VM op-`0x49` sub-op 7) -
@@ -499,6 +542,7 @@ impl MenuRuntime {
     /// from `World::take_pending_prize_exchange`.
     pub fn open_prize_exchange(&mut self, session: crate::prize_exchange::PrizeExchangeSession) {
         self.prize_session = Some(session);
+        self.shop_age = 0;
     }
 
     /// Raw state byte of the underlying [`MenuCtx`].
@@ -565,8 +609,12 @@ impl MenuRuntime {
         // `ctx.state` directly, so the entry edge lands here on the first
         // tick; the post-`step` call below catches in-menu transitions.
         self.sync_widget_choreo(world);
+        self.ui_frames = self.ui_frames.wrapping_add(1);
         self.tick_shop_slides();
         self.ui_cue = None;
+        if self.shop_session.is_some() || self.prize_session.is_some() {
+            self.shop_age = self.shop_age.saturating_add(1);
+        }
         if self.prize_session.is_some() {
             self.tick_prize(world, input);
             return MenuTickEvent::Stepped;
@@ -665,6 +713,7 @@ impl MenuRuntime {
         if MenuState::from_byte(self.ctx.state) == Some(MenuState::ShopQuantity)
             && self.quantity_session.is_none()
         {
+            self.quantity_list_row = list_cursor_before;
             self.open_quantity_picker(world);
         }
         // In-menu state transitions (picker → Sell, teardown) drive the
@@ -840,6 +889,12 @@ impl MenuRuntime {
         }
     }
 
+    /// The free-running UI frame count (retail's `0x80084570` frame word, for
+    /// the list kernel's blink gates).
+    pub fn ui_frame(&self) -> u32 {
+        self.ui_frames
+    }
+
     /// The shop windows on screen this frame with their slide progress,
     /// `(window id, progress)` in draw order - see [`crate::shop::ShopSlides`].
     pub fn shop_slides(&self) -> Vec<(usize, u8)> {
@@ -853,6 +908,11 @@ impl MenuRuntime {
     /// set. A shop that is closing (the transient exit beat) slides every
     /// window out; no shop drops them.
     fn tick_shop_slides(&mut self) {
+        // The windows wait for the field's fade to finish.
+        if self.shop_fade_level().is_some() {
+            self.shop_slides.tick(&[]);
+            return;
+        }
         match self.shop_screen_phase() {
             Some(phase) => self
                 .shop_slides
@@ -939,7 +999,25 @@ impl MenuRuntime {
             (false, false) => MenuState::ShopSell,
         }
         .as_byte();
-        self.ctx.cursor = 0;
+        // The list kept its selection behind the stepper: the hand returns
+        // to its row. A sale that emptied the last row leaves the hand on
+        // the new last row - with the page derived from the cursor, that is
+        // also the sell commit's scroll fix-up (`0x801dbef0..0x801dbf4c`),
+        // which steps a lone last-page row back one page.
+        let rows = match MenuState::from_byte(self.ctx.state) {
+            Some(MenuState::ShopSell) => Self::sell_list_rows(world).len(),
+            Some(MenuState::ShopBuy) => self
+                .shop_session
+                .as_ref()
+                .map(|s| s.buy_item_count() as usize)
+                .unwrap_or(0),
+            _ => 0,
+        };
+        self.ctx.cursor = if rows == 0 {
+            0
+        } else {
+            (self.quantity_list_row as usize).min(rows - 1) as u8
+        };
         self.widget_state_seen = self.ctx.state;
     }
 

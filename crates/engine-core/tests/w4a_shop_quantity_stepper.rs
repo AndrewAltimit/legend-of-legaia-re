@@ -237,3 +237,52 @@ fn the_sell_list_installs_the_stepper_bounded_by_the_staged_stack() {
     assert_eq!(world.party.inventory.get(&POTION).copied(), Some(2));
     assert_eq!(runtime.ctx.state, MenuState::ShopSell.as_byte());
 }
+
+/// The kind-4 list keeps its selection behind the stepper: after a sale the
+/// hand is back on the row it sold from, not on row 0 - and when the sale
+/// emptied the last row, on the new last row.
+#[test]
+fn a_sale_returns_the_hand_to_its_row() {
+    const ETHER: u8 = 0x78;
+    let mut world = world_with_gold(0);
+    world.party.inventory.insert(POTION, 4);
+    world.party.inventory.insert(ETHER, 1);
+    let two = || {
+        ShopSession::new(ShopInventory::new(
+            1,
+            vec![
+                ShopItem {
+                    item_id: POTION,
+                    price: PRICE,
+                },
+                ShopItem {
+                    item_id: ETHER,
+                    price: PRICE,
+                },
+            ],
+        ))
+    };
+    let mut runtime = MenuRuntime::new("/tmp/legaia-w4a");
+    runtime.open_shop_menu(two());
+    runtime.tick(&mut world, down());
+    runtime.tick(&mut world, cross());
+    assert_eq!(runtime.ctx.state, MenuState::ShopSell.as_byte());
+    let rows = MenuRuntime::sell_list_rows(&world).len();
+    assert_eq!(rows, 2);
+    runtime.tick(&mut world, down());
+    assert_eq!(runtime.ctx.cursor, 1);
+    let sold = MenuRuntime::sell_list_rows(&world)[1].id;
+    // Sell one copy of row 1.
+    runtime.tick(&mut world, cross());
+    runtime.tick(&mut world, MenuInput::default());
+    runtime.tick(&mut world, cross());
+    runtime.tick(&mut world, MenuInput::default());
+    assert_eq!(runtime.ctx.state, MenuState::ShopSell.as_byte());
+    let after = MenuRuntime::sell_list_rows(&world);
+    let expected = if after.iter().any(|r| r.id == sold) {
+        1
+    } else {
+        after.len() - 1
+    };
+    assert_eq!(runtime.ctx.cursor as usize, expected);
+}

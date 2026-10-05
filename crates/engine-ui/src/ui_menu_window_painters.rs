@@ -198,8 +198,12 @@ fn digits_draws(
     let mut out = Vec::new();
     for (i, ch) in s.chars().enumerate() {
         let cell = (digits - len + i as i32).max(0);
-        let l = font.layout_ascii(&ch.to_string());
-        out.extend(text_draws_for(&l, (x + cell * NUM_CELL_W, y), color));
+        out.extend(crate::numeral_cell_draws(
+            font,
+            ch,
+            (x + cell * NUM_CELL_W, y),
+            color,
+        ));
     }
     out
 }

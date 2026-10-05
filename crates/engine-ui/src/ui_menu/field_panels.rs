@@ -372,8 +372,7 @@ fn zero_padded_field_draws(
     let mut out = Vec::new();
     for (i, ch) in s.chars().enumerate() {
         let cell_x = x + i as i32 * 8;
-        let l = font.layout_ascii(&ch.to_string());
-        out.extend(text_draws_for(&l, (cell_x, y), color));
+        out.extend(crate::numeral_cell_draws(font, ch, (cell_x, y), color));
     }
     out
 }
@@ -689,8 +688,12 @@ pub(crate) fn num_field_draws(
     let mut out = Vec::new();
     for (i, ch) in s.chars().enumerate() {
         let cell = (digits - len + i as i32).max(0);
-        let l = font.layout_ascii(&ch.to_string());
-        out.extend(text_draws_for(&l, (x + cell * NUM_CELL_W, y), color));
+        out.extend(crate::numeral_cell_draws(
+            font,
+            ch,
+            (x + cell * NUM_CELL_W, y),
+            color,
+        ));
     }
     out
 }

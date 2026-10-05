@@ -3053,6 +3053,17 @@ impl PlayWindowApp {
             // flashes, the escape white-out), drawn through the same kernel
             // the intro fades use so the ABR mode is honoured.
             screen_prims.extend(self.screen_fade_screen_prim());
+            // A shop opening: the field fades to black under the menu's
+            // subtractive full-screen quad before its windows slide in
+            // (`MenuRuntime::shop_fade_level`; the browser page draws the
+            // same quad).
+            if let Some(level) = self.menu_runtime.shop_fade_level() {
+                screen_prims.push(legaia_engine_render::screen_overlay::fade_prim(
+                    u32::from(level) * 0x01_01_01,
+                    2,
+                    0,
+                ));
+            }
             // The field overlay's **screen-effect** washes: the colour-tween
             // actors the field VM's op `0x34` sub-0 arm spawns, each emitting
             // one `FUN_80024EE4(layer, blend, packed)` push per frame. This is

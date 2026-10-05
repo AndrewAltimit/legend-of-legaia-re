@@ -297,18 +297,12 @@ pub fn apply_sale_gold(gold: i32, credit: i32) -> i32 {
 /// list node). Applied on every confirmed sale, whole-stack or not -
 /// the condition, not the stack size, is the gate.
 ///
-/// NOT WIRED: the fix-up repairs a **paged** list's persisted
-/// `(scroll_top, selected)` pair, and the engine's shop has no such pair to
-/// repair. [`crate::menu_runtime::MenuRuntime`] drives every shop list from
-/// one flat `u8` cursor with no scroll window - the paged model
-/// ([`crate::menu_list_rows::ListSelection`] and the list-node allocator
-/// beside it) is ported but has no production caller either. Nor does the
-/// engine currently hit the defect the fix-up exists to prevent: the sell
-/// commit takes the VM's ordinary transition reset back to row `0`, where
-/// retail keeps the hand on the list and so has to pull it back off a row
-/// that the sale just deleted. The prerequisite is therefore a real one -
-/// page the shop lists through the list-node allocator and persist their
-/// selection across a sale - not a missing call.
+/// The engine reaches the same rule without this helper: its shop lists run
+/// on one flat cursor whose page is derived from it, and
+/// [`crate::menu_runtime::MenuRuntime`] returns the hand to its row after a
+/// sale clamped to the rebuilt list - a lone last-page row that is sold away
+/// leaves the cursor on the new last row, one page back, which is exactly the
+/// `(selected, scroll_top)` step this function makes on the paged pair.
 pub fn sell_list_fixup(
     sel: &mut crate::menu_list_rows::ListSelection,
     row_count: i32,

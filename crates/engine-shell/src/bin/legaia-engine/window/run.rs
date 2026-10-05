@@ -1243,6 +1243,25 @@ pub(super) fn cmd_play_window_with_record(
         )
         .ok();
 
+    // The menus' bold fixed-width numerals and the list pager pieces ride
+    // the font atlas as sprite cells, so every menu number draws off the
+    // same texture as its labels (`save_menu_atlas::menu_font_cells`; the
+    // browser page attaches the same cells).
+    let font = match session.host.index.prot_dat_raw_bytes(
+        legaia_engine_core::save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET as u64,
+        legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET
+            + legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE
+            - legaia_engine_core::save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET,
+    ) {
+        Ok(system_ui) => {
+            font.with_sprite_cells(&legaia_engine_core::save_menu_atlas::menu_font_cells(
+                &system_ui,
+                menu_glyph_tim_bytes.as_deref(),
+            ))
+        }
+        Err(_) => font,
+    };
+
     // Try to decode the save-menu UI atlas. Needs TWO disc sources:
     //   1. PROT 0899's extended footprint @ `OVERLAY_SAVE_MENU_TIM_OFFSET`
     //      carries the SLOT 1 / SLOT 2 pill sprites (CLUT 7).

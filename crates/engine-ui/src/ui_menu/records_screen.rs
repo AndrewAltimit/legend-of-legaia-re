@@ -506,8 +506,9 @@ fn blank_number_draws(
     let mut out = Vec::new();
     for (i, ch) in s.chars().enumerate() {
         let cell = (digits as i32 - len + i as i32).max(0);
-        out.extend(text_draws_for(
-            &font.layout_ascii(&ch.to_string()),
+        out.extend(crate::numeral_cell_draws(
+            font,
+            ch,
             (x + cell * NUM_CELL_W, y),
             color,
         ));
@@ -533,8 +534,9 @@ fn zero_number_draws(
     let s = format!("{v:0width$}");
     let mut out = Vec::new();
     for (i, ch) in s.chars().enumerate() {
-        out.extend(text_draws_for(
-            &font.layout_ascii(&ch.to_string()),
+        out.extend(crate::numeral_cell_draws(
+            font,
+            ch,
             (x + i as i32 * NUM_CELL_W, y),
             color,
         ));

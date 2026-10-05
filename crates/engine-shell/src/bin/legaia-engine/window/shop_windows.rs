@@ -437,6 +437,9 @@ impl PlayWindowApp {
             coins: world.minigames.casino_coins,
             confirm_cursor: session.confirming().then(|| session.confirm_cursor()),
         };
+        if self.menu_runtime.shop_fade_level().is_some() {
+            return Default::default();
+        }
         let (text, marks, pict) = px::prize_exchange_draws_for(&self.font, table, &view);
         let (origin, scale) =
             legaia_engine_render::pause_menu::stage_transform(surface_w, surface_h);
@@ -726,6 +729,10 @@ impl PlayWindowApp {
     ) -> Option<legaia_engine_render::shop_screen::ShopScreenDraws> {
         use legaia_engine_render::shop_screen as ss;
         let phase = self.menu_runtime.shop_screen_phase()?;
+        // The field is still fading to black: no window is up yet.
+        if self.menu_runtime.shop_fade_level().is_some() {
+            return Some(Default::default());
+        }
         let shop = self.menu_runtime.shop_session.as_ref()?;
         let world = &self.session.host.world;
         let state = MenuState::from_byte(self.menu_runtime.ctx_state());
@@ -735,7 +742,7 @@ impl PlayWindowApp {
         // window still sliding out. The toast's frame is laid last by hand
         // below, after the markers of the windows it covers.
         let mut slides = self.menu_runtime.shop_slides();
-        if slides.is_empty() {
+        if slides.is_empty() && self.menu_runtime.shop_fade_level().is_none() {
             slides = legaia_engine_core::shop::shop_screen_windows(phase, false)
                 .into_iter()
                 .map(|id| (id, legaia_engine_core::shop::SHOP_SLIDE_FRAMES))
@@ -838,11 +845,16 @@ impl PlayWindowApp {
                 ink: *i,
             })
             .collect();
+        // The page triangles: only while the list itself has the pad, and
+        // through the kernel's blink gate.
+        let arrows = matches!(phase, P::BuyList | P::SellList)
+            && ss::page_arrows_blink_on(self.menu_runtime.ui_frame());
         let list = ss::ShopListView {
             kind,
             rows: &rows,
             cursor: list_cursor,
             browsing,
+            arrows,
         };
 
         // Window 41 - the party column for the staged item.

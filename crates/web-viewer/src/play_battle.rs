@@ -2180,6 +2180,15 @@ impl LegaiaRuntime {
         {
             prims.push(legaia_engine_ui::screen_prim::fade_prim(rgb, abr, ot));
         }
+        // A shop opening: the field fades to black before its windows slide
+        // in (`MenuRuntime::shop_fade_level`, the native window's quad too).
+        if let Some(level) = self.menu.shop_fade_level() {
+            prims.push(legaia_engine_ui::screen_prim::fade_prim(
+                u32::from(level) * 0x01_01_01,
+                2,
+                0,
+            ));
+        }
         // The field overlay's screen-effect washes (op `0x34` sub-0 ->
         // `FUN_80024EE4`): the scene-entry fade-from-black and the door
         // prologue's fade-to-black, through the same shared emitter the

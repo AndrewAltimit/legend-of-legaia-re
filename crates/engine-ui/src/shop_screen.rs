@@ -114,9 +114,19 @@ pub struct ShopListView<'a> {
     pub rows: &'a [ShopListRow<'a>],
     /// Selected row, absolute (the page is derived from it).
     pub cursor: usize,
-    /// The list has the pad (kernel mode 1): the hand and the page
-    /// triangles draw. A parked list (mode 4) draws neither.
+    /// The hand draws (kernel mode other than parked): the list has the pad,
+    /// or a quantity stepper sits over it.
     pub browsing: bool,
+    /// The page triangles draw: the list has the pad (mode 1) and the
+    /// kernel's blink gate is open this frame.
+    pub arrows: bool,
+}
+
+/// The list kernel's blink gate for the page triangles: drawn while
+/// `frame & 0x18` is non-zero (`0x80032FC0..0x80032FCC`, the frame word
+/// `0x80084570`) - three frames in four of every 32.
+pub fn page_arrows_blink_on(frame: u32) -> bool {
+    frame & 0x18 != 0
 }
 
 /// The Buy / Sell / Quit picker's content.
@@ -368,12 +378,88 @@ fn digit_field(
     let mut out = Vec::new();
     for (i, ch) in s.chars().enumerate() {
         let cell = (cells - len + i as i32).max(0);
-        out.extend(text_draws_for(
-            &font.layout_ascii(&ch.to_string()),
+        out.extend(crate::numeral_cell_draws(
+            font,
+            ch,
             (x + cell * DIGIT_CELL, y),
             color,
         ));
     }
+    out
+}
+
+/// The kind-4 list kernel's PAGE header over a list window `(WX, WY, W)`:
+/// the "PAGE" tag (UI-icon `0x76`) at `(WX + W - 0x38, WY - 2)`, the current
+/// page in two 6-px cells at `WX + W - 0x20` (tens left blank under 10), the
+/// slash (`0x79`) at `+0xD` and the total at `+0x14`. Drawn from the font's
+/// menu sprite cells when attached; otherwise dialog-font stand-ins hold the
+/// same columns.
+///
+/// REF: FUN_80032A44 (`0x80032E18..0x80032F20`)
+pub fn page_header_draws(
+    font: &legaia_font::Font,
+    (wx, wy, w): (i32, i32, i32),
+    page: usize,
+    pages: usize,
+) -> Vec<TextDraw> {
+    use legaia_font::sprite_cell_ids as ids;
+    let mut out = Vec::new();
+    let px = wx + w - 0x20;
+    let cell = |out: &mut Vec<TextDraw>, id: u16, at: (i32, i32)| -> bool {
+        match font.sprite_cell(id) {
+            Some(c) => {
+                out.push(TextDraw {
+                    dst: (at.0, at.1, c.w, c.h),
+                    src: (c.atlas_x, c.atlas_y, c.w, c.h),
+                    color: [1.0, 1.0, 1.0, 1.0],
+                });
+                true
+            }
+            None => false,
+        }
+    };
+    let hy = wy - 2;
+    if cell(&mut out, ids::PAGE_TAG, (wx + w - 0x38, hy)) {
+        let num = |out: &mut Vec<TextDraw>, value: usize, x: i32| {
+            let tens = value / 10 % 10;
+            if tens > 0 {
+                cell(out, ids::PAGE_DIGIT + tens as u16, (x, hy));
+            }
+            cell(out, ids::PAGE_DIGIT + (value % 10) as u16, (x + 6, hy));
+        };
+        num(&mut out, page, px);
+        cell(&mut out, ids::PAGE_SLASH, (px + 0x0D, hy));
+        num(&mut out, pages, px + 0x14);
+        return out;
+    }
+    // No sprite cells: the font's "PAGE" is wider than the 24-px tag, so it
+    // is right-aligned onto the edge the digits start at.
+    let hy = wy - 4;
+    let tag = font.layout_ascii("PAGE");
+    let hx = (px - 2 - tag.advance_x as i32).min(wx + w - 0x38);
+    out.extend(text_draws_for(&tag, (hx, hy), crate::MENU_TEXT_PAGE_TEAL));
+    let num = |out: &mut Vec<TextDraw>, value: usize, x: i32| {
+        let tens = value / 10 % 10;
+        if tens > 0 {
+            out.extend(text_draws_for(
+                &font.layout_ascii(&tens.to_string()),
+                (x, hy),
+                crate::MENU_TEXT_GOLD,
+            ));
+        }
+        out.extend(text_draws_for(
+            &font.layout_ascii(&(value % 10).to_string()),
+            (x + 6, hy),
+            crate::MENU_TEXT_GOLD,
+        ));
+    };
+    num(&mut out, page, px);
+    num(&mut out, pages, px + 0x14);
+    out.extend(text_draws_for(
+        &font.layout_ascii("/"),
+        (px + 0x0D, hy),
+        crate::MENU_TEXT_GOLD,
+    ));
     out
 }
 
@@ -395,37 +481,8 @@ pub fn shop_list_draws(ctx: &ShopScreenCtx<'_>, list: &ShopListView<'_>) -> Shop
     // in the two cells at `WX + W - 0x20`, the slash `+0xD`, the total at
     // `+0x14`. Retail draws these from small-cap UI-icon cells (ICO `0x76`,
     // `0x79`, `0x7A + digit`); the font glyphs hold their columns.
-    // The tag is 24 px wide in retail and ends where the digits start; the
-    // font's "PAGE" is wider, so it is right-aligned onto that edge.
-    let hy = wy - 4;
-    let px = wx + w - 0x20;
-    let tag = ctx.font.layout_ascii("PAGE");
-    let hx = (px - 2 - tag.advance_x as i32).min(wx + w - 0x38);
     out.texts
-        .extend(text_draws_for(&tag, (hx, hy), crate::MENU_TEXT_PAGE_TEAL));
-    // Two 6-px digit cells per number, the tens cell left blank under 10.
-    let mut cells = |value: usize, x: i32| {
-        let tens = value / 10 % 10;
-        if tens > 0 {
-            out.texts.extend(text_draws_for(
-                &ctx.font.layout_ascii(&tens.to_string()),
-                (x, hy),
-                crate::MENU_TEXT_GOLD,
-            ));
-        }
-        out.texts.extend(text_draws_for(
-            &ctx.font.layout_ascii(&(value % 10).to_string()),
-            (x + 6, hy),
-            crate::MENU_TEXT_GOLD,
-        ));
-    };
-    cells(page + 1, px);
-    cells(pages, px + 0x14);
-    out.texts.extend(text_draws_for(
-        &ctx.font.layout_ascii("/"),
-        (px + 0x0D, hy),
-        crate::MENU_TEXT_GOLD,
-    ));
+        .extend(page_header_draws(ctx.font, (wx, wy, w), page + 1, pages));
 
     for (i, row) in list.rows.iter().skip(top).take(visible).enumerate() {
         let y = row0 + i as i32 * SHOP_LIST_PITCH;
@@ -450,18 +507,41 @@ pub fn shop_list_draws(ctx: &ShopScreenCtx<'_>, list: &ShopListView<'_>) -> Shop
             (wx - 6, row0 + sel as i32 * SHOP_LIST_PITCH - 2),
             &mut out,
         );
+    }
+    // The page triangles: only while the list has the pad, and blink-gated
+    // by the kernel on the frame word (`0x80084570 & 0x18`, drawn while
+    // non-zero) - the host folds both into `arrows`.
+    if list.arrows {
         let ay = wy + h / 2 - 3;
-        if let Some(r) = ctx.chrome {
-            // The atlas pager cells are 16x16 with the triangle centred, so
-            // the cell sits 8 px left of / above the kernel's 8x8 spot.
-            if page + 1 < pages {
-                out.sprites
-                    .push(stage_sprite(ctx, r.pager_right, (wx + w + 4 - 4, ay - 4)));
-            }
-            if page > 0 {
-                out.sprites
-                    .push(stage_sprite(ctx, r.pager_left, (wx - 0x0C - 4, ay - 4)));
-            }
+        let mut tri =
+            |id: u16, at: (i32, i32), fallback: fn(&SaveMenuAtlasRects) -> (u32, u32, u32, u32)| {
+                if let Some(c) = ctx.font.sprite_cell(id) {
+                    out.texts.push(TextDraw {
+                        dst: (at.0, at.1, c.w, c.h),
+                        src: (c.atlas_x, c.atlas_y, c.w, c.h),
+                        color: [1.0, 1.0, 1.0, 1.0],
+                    });
+                } else if let Some(r) = ctx.chrome {
+                    // The atlas pager cells are 16x16 with the triangle
+                    // centred, so the cell sits 4 px left of / above the
+                    // kernel's 8x8 spot.
+                    out.sprites
+                        .push(stage_sprite(ctx, fallback(r), (at.0 - 4, at.1 - 4)));
+                }
+            };
+        if page + 1 < pages {
+            tri(
+                legaia_font::sprite_cell_ids::PAGE_NEXT,
+                (wx + w + 4, ay),
+                |r| r.pager_right,
+            );
+        }
+        if page > 0 {
+            tri(
+                legaia_font::sprite_cell_ids::PAGE_PREV,
+                (wx - 0x0C, ay),
+                |r| r.pager_left,
+            );
         }
     }
     out

@@ -127,15 +127,14 @@ sub-screen between them and the transaction.
   list. Port: `engine-core::shop::SellQuantitySession` (+
   `sell_credit` / `apply_sale_gold` / `sell_list_fixup`).
 
-The scroll fix-up is the one piece of that flow the engine does not run.
-It repairs a paged list's persisted `(scroll_top, selected)` pair. The
-engine's shop lists page the kernel's way (Up / Down wrap inside a page,
-Left / Right flip it - `pause_screens::list_kernel_navigate_rows` over
-`shop::shop_list_page_rows`), but from one flat cursor whose page is
-derived rather than stored, and the engine does not meet the condition the
-fix-up guards: its sell commit returns the hand to row `0`, where retail
-keeps it on the list and therefore has to pull it off the row the sale just
-deleted.
+The scroll fix-up repairs a paged list's persisted `(scroll_top, selected)`
+pair after a sale. The engine's shop lists page the kernel's way (Up / Down
+wrap inside a page, Left / Right flip it -
+`pause_screens::list_kernel_navigate_rows` over `shop::shop_list_page_rows`)
+from one flat cursor whose page is derived, and the hand returns to its row
+when a quantity stepper closes, clamped to the rebuilt list - the kind-4 list
+keeps its selection behind the stepper. Selling away a lone last-page row so
+leaves the hand on the new last row a page back, which is the fix-up's step.
 
 Their sibling is the **buy recipient picker** (`FUN_801DB380`): before
 the quantity screen the buy flow asks who the purchase is for - row 0
@@ -491,9 +490,24 @@ Both lists are pages of the kind-4 kernel's geometry
 ([field-menu.md](field-menu.md#the-kind-4-list-kernel-scus-fun_80032a44)):
 window 40 pages 7 rows (name `WX + 0x18`, a 5-digit price at `WX + 0x80`),
 window 38 pages 11 (name `WX + 0xC`, a 3-cell count at `WX + 0x6C`), each
-under a PAGE header, with the hand at `WX - 6` and the page triangles while
-the list has the pad; Up / Down wrap inside the page and Left / Right flip
-it. Window 39's price is a 5-digit field at `WX + 0x64`.
+under a PAGE header, with the hand at `WX - 6`; Up / Down wrap inside the
+page and Left / Right flip it. Window 39's price is a 5-digit field at
+`WX + 0x64`. The page triangles (UI-icons `0x27` / `0x28`, 8x8) draw only
+while the list itself has the pad - not on the root screen's parked list, not
+under a quantity stepper - and blink: the kernel tests its frame word
+`0x80084570 & 0x18` and draws them while it is non-zero (`0x80032FC0`), so
+they are off eight frames in every thirty-two.
+
+**Numbers.** Every price, count, stat, purse and page number is a sprite, not
+a dialog-font glyph. The fixed-width number primitive `FUN_80034B78` blits
+8x12 numerals off the menu-glyph page (`uv = (d * 8, 208)`, the cells the
+battle HUD reads) through the staged ink's palette; the PAGE header is the
+UI-icon tag `0x76` plus 6x8 digits `0x7A..=0x83` and slash `0x79` on the
+system-UI sheet. The pause menu's numbers go through the same primitive, so
+the port attaches all of these to the font atlas as sprite cells
+(`save_menu_atlas::menu_font_cells`, `legaia_font::Font::with_sprite_cells`)
+and every fixed-cell number builder in `engine-ui` draws them, tinted by the
+ink, on both hosts.
 
 A buy-list row whose stack is already at 99 is **refused at the list**: the
 kernel tests the row word's `0x800` bit on confirm and buzzes before the
@@ -520,10 +534,19 @@ off screen and lands home **eleven frames** later at a constant speed, all of
 a screen's new windows together; a window that leaves travels back out the
 same way. The port keeps the timing in `shop::ShopSlides` (stepped by the menu
 tick toward the screen's set) and moves each window's draws with it
-(`engine-ui::shop_screen::apply_shop_slides`). The field's fade to black
-before the first slide is not modelled - the shop opens on black - and the
-PAGE tag and page digits are dialog-font stand-ins for retail's small-cap icon
-cells.
+(`engine-ui::shop_screen::apply_shop_slides`).
+
+**Fade.** Before the first slide the field fades to black: linear, from the
+last dialogue frame to black in fourteen frames (the same per-vsync capture).
+The port runs it from the merchant open (`MenuRuntime::shop_fade_level`, a
+subtractive full-screen quad over the frozen field on both hosts) and starts
+the slides when it lands. Retail then holds black for about fifty frames while
+the menu overlay loads before the windows move; that load wait is not
+reproduced.
+
+**After a quantity screen** the hand returns to the list row it left - the
+kind-4 list keeps its selection behind the stepper - clamped to the rebuilt
+list after a sale.
 
 ## Mode-select panel (Buy / Sell / Quit)
 
@@ -703,10 +726,7 @@ Right / Left (by one) and Down / Up (by ten), each step gated so walking off
 either end is a silent no-op, and a confirm that commits straight into the
 transaction. `MenuState::ShopConfirm` is no longer reached from the shop's
 buy or sell flow at all - retail has no Yes/No screen between the number and
-the sale, and the port now has none either. The remaining engine shape is
-the sell-list scroll fix-up, which repairs a **paged** list's persisted
-`(scroll_top, selected)` pair; the engine derives the page from one cursor
-instead of storing it.
+the sale, and the port now has none either.
 
 Two earlier readings are worth keeping so they are not re-derived. The
 first had the shapes swapped - the "nine-row list whose cursor is the

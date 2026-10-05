@@ -130,6 +130,41 @@ pub struct Font {
     /// ([`Font::with_escape_icons`]), indexed by escape operand. Empty until
     /// attached, in which case an escape lays out as nothing.
     escapes: Vec<Option<EscapeCell>>,
+    /// Menu sprite cells appended below the glyphs
+    /// ([`Font::with_sprite_cells`]) - the fixed-width numerals and the list
+    /// pager pieces retail draws as sprites rather than as font glyphs - by
+    /// [`sprite_cell_ids`] id.
+    sprite_cells: std::collections::BTreeMap<u16, EscapeCell>,
+}
+
+/// Ids of the menu sprite cells a host can attach with
+/// [`Font::with_sprite_cells`].
+pub mod sprite_cell_ids {
+    /// The 8x12 menu numeral for digit `d` is `NUMERAL + d` - the cells the
+    /// fixed-width number primitive `FUN_80034B78` blits (menu-glyph page
+    /// `(960, 256)`, `uv = (d * 8, 208)`).
+    pub const NUMERAL: u16 = 0x100;
+    /// The list page header's "PAGE" tag (UI-icon `0x76`, 24x8).
+    pub const PAGE_TAG: u16 = 0x200;
+    /// The page header's 6x8 digit `d` is `PAGE_DIGIT + d` (icons
+    /// `0x7A..=0x83`).
+    pub const PAGE_DIGIT: u16 = 0x210;
+    /// The page header's slash (icon `0x79`).
+    pub const PAGE_SLASH: u16 = 0x220;
+    /// The list's previous-page triangle (icon `0x27`, 8x8).
+    pub const PAGE_PREV: u16 = 0x230;
+    /// The list's next-page triangle (icon `0x28`, 8x8).
+    pub const PAGE_NEXT: u16 = 0x231;
+}
+
+/// One sprite cell's pixels for [`Font::with_sprite_cells`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpriteCellSrc {
+    pub id: u16,
+    pub w: u32,
+    pub h: u32,
+    /// RGBA8, `w * h * 4` bytes.
+    pub rgba: Vec<u8>,
 }
 
 /// Where one `0xCE` escape's sprite sits in the atlas, and how it draws.
@@ -212,6 +247,7 @@ impl Font {
             atlas_w,
             atlas_h,
             escapes: Vec::new(),
+            sprite_cells: Default::default(),
         })
     }
 
@@ -268,6 +304,7 @@ impl Font {
             atlas_w,
             atlas_h,
             escapes: Vec::new(),
+            sprite_cells: Default::default(),
         }
     }
 
@@ -294,6 +331,7 @@ impl Font {
             atlas_w: COLS * GLYPH_W,
             atlas_h: ROWS * GLYPH_H,
             escapes: Vec::new(),
+            sprite_cells: Default::default(),
         })
     }
 
@@ -359,6 +397,58 @@ impl Font {
             Ok(icons) => self.with_escape_icons(&icons),
             Err(_) => self,
         }
+    }
+
+    /// Append menu sprite cells ([`sprite_cell_ids`]) below the atlas, the
+    /// way [`Font::with_escape_icons`] appends the escape sprites, so a menu
+    /// text pass can draw them off the same texture as its glyphs. A cell
+    /// wider than the atlas or with short pixels is skipped.
+    pub fn with_sprite_cells(mut self, cells: &[SpriteCellSrc]) -> Self {
+        let (aw, base_h) = (self.atlas_w, self.atlas_h);
+        let (mut x, mut y, mut row_h) = (0u32, base_h, 0u32);
+        let mut placed = Vec::new();
+        for c in cells {
+            if c.w == 0 || c.w > aw || c.rgba.len() < (c.w * c.h * 4) as usize {
+                continue;
+            }
+            if x + c.w > aw {
+                x = 0;
+                y += row_h;
+                row_h = 0;
+            }
+            placed.push((x, y, c));
+            x += c.w;
+            row_h = row_h.max(c.h);
+        }
+        let new_h = y + row_h;
+        self.atlas_rgba.resize((aw * new_h * 4) as usize, 0);
+        for (cx, cy, c) in placed {
+            for r in 0..c.h {
+                let src = (r * c.w * 4) as usize;
+                let dst = (((cy + r) * aw + cx) * 4) as usize;
+                let n = (c.w * 4) as usize;
+                self.atlas_rgba[dst..dst + n].copy_from_slice(&c.rgba[src..src + n]);
+            }
+            self.sprite_cells.insert(
+                c.id,
+                EscapeCell {
+                    atlas_x: cx,
+                    atlas_y: cy,
+                    w: c.w,
+                    h: c.h,
+                    y_offset: 0,
+                    advance: c.w as u8,
+                },
+            );
+        }
+        self.atlas_h = new_h;
+        self
+    }
+
+    /// The atlas cell of menu sprite `id` ([`sprite_cell_ids`]), when
+    /// attached ([`Font::with_sprite_cells`]).
+    pub fn sprite_cell(&self, id: u16) -> Option<EscapeCell> {
+        self.sprite_cells.get(&id).copied()
     }
 
     /// The atlas cell of escape operand `index`, when the sprites are
@@ -832,6 +922,7 @@ pub fn synthetic_for_tests() -> Font {
         atlas_w,
         atlas_h,
         escapes: Vec::new(),
+        sprite_cells: Default::default(),
     }
 }
 

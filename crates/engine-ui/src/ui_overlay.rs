@@ -61,6 +61,30 @@ pub fn text_draws_for(
         .collect()
 }
 
+/// One cell of a fixed-width number field (`FUN_80034B78` / `FUN_80034E4C`)
+/// at stage `pen`: the 8x12 menu numeral sprite when the font carries the
+/// cells ([`legaia_font::Font::with_sprite_cells`]), tinted by `color` the
+/// way retail stages the ink's CLUT, else the dialog-font glyph. Retail's
+/// menus draw every price, count, stat and purse through these cells - the
+/// bold fixed-width digits - and the dialog font only inside strings.
+pub fn numeral_cell_draws(
+    font: &legaia_font::Font,
+    ch: char,
+    pen: (i32, i32),
+    color: [f32; 4],
+) -> Vec<TextDraw> {
+    if let Some(d) = ch.to_digit(10)
+        && let Some(c) = font.sprite_cell(legaia_font::sprite_cell_ids::NUMERAL + d as u16)
+    {
+        return vec![TextDraw {
+            dst: (pen.0, pen.1, c.w, c.h),
+            src: (c.atlas_x, c.atlas_y, c.w, c.h),
+            color,
+        }];
+    }
+    text_draws_for(&font.layout_ascii(&ch.to_string()), pen, color)
+}
+
 /// Map a slice of [`TextDraw`]s whose `dst` coordinates are expressed in
 /// **stage pixels** (a virtual 320×240 PSX framebuffer) into surface
 /// coordinates: `dst = stage_origin + dst * stage_scale`, with the glyph

@@ -669,8 +669,9 @@ pub fn compare_panel_draws_for(
                 let color = compare_panel_ink(*ink);
                 for (i, ch) in s.chars().enumerate() {
                     let cell = (i32::from(*digits) - len + i as i32).max(0);
-                    out.extend(text_draws_for(
-                        &font.layout_ascii(&ch.to_string()),
+                    out.extend(crate::numeral_cell_draws(
+                        font,
+                        ch,
                         (*x + cell * NUM_CELL_W, *y),
                         color,
                     ));
