@@ -548,9 +548,17 @@ impl World {
         // would leave the total on the target with live HP never written,
         // the bar's display short of it, and the `0x51` settle gate
         // (`FUN_801E7250`) holding the band forever. Engine choice: land any
-        // such total as the band leaves `0x20`.
-        if let StepOutcome::Transition { from, to } = outcome
-            && from == ActionState::AttackReturn.as_byte()
+        // such total as the action enters `0x50`.
+        //
+        // Every door into `0x50`, not just the attack band's: a cast's clip
+        // runs the same kernel off its own hit events (`FUN_80047430` calls
+        // `FUN_801EC3E4` for every drawn actor while the battle phase is
+        // `0xFF`), and the cursor that would land its total is not parked in
+        // a cast band. PROT 0955's Terror Scream is the shape: a status-only
+        // capture body whose caster clip (`+0x1DA = 8`) carries power bytes,
+        // so a monster's cast accumulated 97 on Gala, left `0x71` for `0x50`
+        // with live HP never written, and parked `0x51` for good.
+        if let StepOutcome::Transition { to, .. } = outcome
             && to == ActionState::DoneCleanup.as_byte()
         {
             let stranded: Vec<u8> = (0..self.actors.len().min(8))
@@ -2573,6 +2581,36 @@ mod melee_cue_tests {
         w.actors[0].battle.active_target = 1;
         w.actors[1].battle.active_target = 0;
         w
+    }
+
+    /// A combo total a cast clip accumulated is landed as the capture band
+    /// leaves `0x71` for `0x50`, so the `0x51` settle gate has a written HP
+    /// to ramp the bar to - PROT 0955's Terror Scream left Gala's total
+    /// stranded and parked the band.
+    #[test]
+    fn a_cast_clip_total_lands_on_the_capture_band_exit() {
+        use vm::battle_action::ActionState;
+        let mut w = duel();
+        w.battle_ctx.active_actor = 1;
+        w.battle_ctx.action_state = ActionState::MagicCaptureFinalize.as_byte();
+        for a in w.actors.iter_mut() {
+            a.battle.current_anim = 0;
+        }
+        w.actors[0].battle.arm_hp_bar();
+        w.actors[0].battle.damage_accum = 97;
+        w.actors[0].battle.accumulate_hp_bar(97);
+        let mut reached = false;
+        for _ in 0..8 {
+            if let Some(StepOutcome::Transition { to, .. }) = w.live_battle_tick()
+                && to == ActionState::DoneCleanup.as_byte()
+            {
+                reached = true;
+                break;
+            }
+        }
+        assert!(reached, "the capture band exits into 0x50");
+        assert_eq!(w.actors[0].battle.damage_accum, 0);
+        assert_eq!(w.actors[0].battle.hp, 500 - 97, "the total is landed");
     }
 
     /// A Seru-carrying duel whose monster dies to one basic swing, with a
