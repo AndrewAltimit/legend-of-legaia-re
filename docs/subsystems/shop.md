@@ -459,6 +459,57 @@ why the port's mirror of the column is row-keyed.
 confirmed constants. The cost prompt and Yes/No cursor are rendered in
 `legaia-engine play-window` whenever `MenuState::ShopConfirm` is active.
 
+## Screen composition
+
+A retail shop screen is a set of menu-overlay windows on a **black**
+backdrop. The shop is a menu-overlay session (the field overlay is swapped
+out), so nothing draws the scene: on open the field fades to black and the
+windows slide in over it. Which windows are up is the widget scripts'
+business (see [window-script.md](../formats/window-script.md)); what each
+screen leaves on screen, in draw order, capture-confirmed on Retock's Items
+Shop (`scripts/pcsx-redux/autorun_talk_to_npc.lua` driving the merchant, pad
+steps scripted per screen):
+
+| Screen | Windows | Scripts |
+|---|---|---|
+| Buy / Sell / Quit | 33 vendor plate, 42 picker, 32 purse, 40 buy list (parked), 34 item info | `0x801E4E38` |
+| Buy list | 33, 32, 40, 34, 41 party compare | `0x801E4E64` |
+| Buy quantity | 33, 32, 34, 41, 35 | `0x801E4EB0` (moves 40 off screen) |
+| Buy recipient | 33, 32, 34, 41, 36 | `0x801E4E84` (moves 40 off screen) |
+| Sell list | 33, 32, 38 sell list, 39 detail (plus its widget box) | `0x801E4E54`, `0x801E4EE4` |
+| Sell quantity | 33, 32, 38, 39, 37 | `0x801E4F08` |
+
+The buy-list script never closes the picker: window 41's frame covers it.
+The Point Card toast (window 31) rides over whichever set is up. The root
+screen shows the buy list **parked** - no hand, no page triangles, every row
+in its pen - which is why its stock reads white there and greys only once the
+hand enters the list. Window 41 shows the hovered item's party compare for the
+whole buy flow, not only beside the recipient picker; an accessory the member
+already wears prints the "Equipped" note in the green pen (ink 4).
+
+Both lists are pages of the kind-4 kernel's geometry
+([field-menu.md](field-menu.md#the-kind-4-list-kernel-scus-fun_80032a44)):
+window 40 pages 7 rows (name `WX + 0x18`, a 5-digit price at `WX + 0x80`),
+window 38 pages 11 (name `WX + 0xC`, a 3-cell count at `WX + 0x6C`), each
+under a PAGE header, with the hand at `WX - 6` and the page triangles while
+the list has the pad. Window 39's price is a 5-digit field at `WX + 0x64`.
+
+A buy-list row whose stack is already at 99 is **refused at the list**: the
+kernel tests the row word's `0x800` bit on confirm and buzzes before the
+sub-screen's own state-2 dispatch runs, so the hand stays on the row
+(capture-confirmed: a 99-stack row neither opens the stepper nor buys).
+
+Port: `engine-core::shop::{ShopScreenPhase, shop_screen_windows,
+party_compare_members}` and `MenuRuntime::{shop_screen_phase,
+covers_field}`; `engine-ui::shop_screen` composes the frames (window 33
+wears the carved plaque), the picker, the paged list, window 41 and the
+painters' hand / currency-pictogram sprites, so the native window
+(`window/shop_windows.rs::gold_shop_screen`) and the browser play page
+(`web-viewer::play_shop::gold_shop_screen`) draw one screen. Both clear to
+black under a shop. The windows appear in place: the slide and the fade are
+not modelled, and the PAGE tag and page digits are dialog-font stand-ins for
+retail's small-cap icon cells.
+
 ## Mode-select panel (Buy / Sell / Quit)
 
 The mode selector is menu-overlay **window 0x2A** in the window-descriptor

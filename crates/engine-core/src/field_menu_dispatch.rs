@@ -1446,7 +1446,7 @@ fn build_equip_session(world: &World, char_slot: u8, equipment: &EquipmentTable)
     }
 }
 
-fn stat_record_from_character(c: &legaia_save::CharacterRecord) -> StatRecord {
+pub(crate) fn stat_record_from_character(c: &legaia_save::CharacterRecord) -> StatRecord {
     let eq_bytes = c.equipment().slots;
     let live = c.live_stats();
     StatRecord {

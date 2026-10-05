@@ -1815,9 +1815,10 @@ void main() {
       if (this._drawFishingHud(ctx, ov)) return;
 
       /* Field merchant panel + post-action banners (level-up, Seru capture).
-       * Same builders as the native window (`shop_draws_for`,
-       * `level_up_draws_for`, `capture_banner_draws_for`); like the dialog box
-       * they composite over the live field rather than blacking it. Sits above
+       * Same builders as the native window (`shop_screen_draws`,
+       * `level_up_draws_for`, `capture_banner_draws_for`). The banners
+       * composite over the live field like the dialog box; a shop asks for a
+       * black backdrop (`backdrop`), as retail's does. Sits above
        * the dialog check because a merchant's box closes before the shop
        * opens, and a banner should not be hidden by one. */
       let shop = null;
@@ -1836,6 +1837,14 @@ void main() {
       if (shop && shop.open) {
         this._ensureMenuBlitters();
         ctx.clearRect(0, 0, ov.width, ov.height);
+        /* A shop is a menu-overlay session: retail swaps the field overlay
+         * out and draws the shop's windows on black (`MenuRuntime::
+         * covers_field`), the same backdrop the native window clears to. */
+        if (shop.backdrop === 'black') {
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = '#000';
+          ctx.fillRect(0, 0, ov.width, ov.height);
+        }
         if (this._menuChrome) this._menuChrome.blit(ctx, shop.sprites);
         if (this._menuFont) this._menuFont.blit(ctx, shop.texts);
         this._overlayActive = true;

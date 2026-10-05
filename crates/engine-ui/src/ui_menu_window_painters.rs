@@ -1021,13 +1021,18 @@ pub fn sell_total(quantity: u32, unit_price: u32) -> u32 {
     quantity.saturating_mul(unit_price) / 2
 }
 
-/// Heading the sell quantity window prints at its content origin.
-pub const SELL_QUANTITY_HEADING: &str = "How many?";
-/// Label the buy quantity window prints after the held count.
-pub const BUY_QUANTITY_HELD_TAIL: &str = "held";
+/// Heading the sell quantity window prints at its content origin (overlay
+/// rodata `0x801CEC38`, loaded by `FUN_801D5944`).
+pub const SELL_QUANTITY_HEADING: &str = "How many will you sell?";
+/// Label the buy quantity window prints at its content origin, ahead of the
+/// held count (rodata `0x801CEBC8`, `FUN_801D5510`'s first string draw).
+pub const BUY_QUANTITY_HELD_HEAD: &str = "Have";
+/// Label the buy quantity window prints after the held count (`0x801CEBD0`,
+/// at `WX + 0x30`).
+pub const BUY_QUANTITY_HELD_TAIL: &str = ".";
 /// Label the buy quantity window prints in place of the held line when the
-/// bag scan returned retail's `0x100` "nothing held" sentinel.
-pub const BUY_QUANTITY_NONE_HELD: &str = "None held";
+/// bag scan returned retail's `0x100` "nothing held" sentinel (`0x801CEBD4`).
+pub const BUY_QUANTITY_NONE_HELD: &str = "None";
 /// Prompt the buy quantity window prints on its second line.
 pub const BUY_QUANTITY_PROMPT: &str = "How many will you buy?";
 
@@ -1066,6 +1071,11 @@ pub fn buy_quantity_draws_for(
     let mut out = Vec::new();
     match held {
         Some(count) => {
+            out.extend(text_draws_for(
+                &font.layout_ascii(BUY_QUANTITY_HELD_HEAD),
+                (rect.x, rect.y),
+                MENU_TEXT_WHITE,
+            ));
             out.extend(digits_draws(
                 font,
                 u64::from(count),

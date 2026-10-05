@@ -474,6 +474,17 @@ impl MenuRuntime {
         self.prize_session.is_some() || (self.is_open() && self.inn_session.is_none())
     }
 
+    /// `true` while the screen behind the menu is **black** rather than the
+    /// field: the same menu-overlay sessions as [`Self::suspends_field`].
+    /// With the field overlay swapped out nothing draws the scene, so retail
+    /// fades the field to black before the shop's windows slide in (Retock
+    /// Items Shop capture: the scene darkens over the first frames of the
+    /// open, then every shop screen sits on black). Hosts skip the 3D pass
+    /// and clear black while this holds.
+    pub fn covers_field(&self) -> bool {
+        self.suspends_field()
+    }
+
     /// Open the casino prize-exchange screen (field-VM op-`0x49` sub-op 7) -
     /// the counterpart of [`Self::open_shop_menu`] for the session drained
     /// from `World::take_pending_prize_exchange`.
@@ -758,6 +769,36 @@ impl MenuRuntime {
             self.quantity_session = Some(crate::shop::QuantityPicker::Sell(
                 crate::shop::SellQuantitySession::new(item_id, price, staged),
             ));
+        }
+    }
+
+    /// Which retail shop screen the open shop is showing, or `None` outside
+    /// the gold shop (inn, seru trade, the transient exit beat, no shop).
+    ///
+    /// The sub-sessions decide it before the state byte does: a quantity
+    /// stepper or the recipient picker owns the screen while the list state
+    /// it was opened from stays parked underneath. A host feeds the result
+    /// to [`crate::shop::shop_screen_windows`] for the window set.
+    pub fn shop_screen_phase(&self) -> Option<crate::shop::ShopScreenPhase> {
+        use crate::shop::ShopScreenPhase as P;
+        self.shop_session.as_ref()?;
+        if let Some(view) = self.quantity_view() {
+            return Some(if view.buying {
+                P::BuyQuantity
+            } else {
+                P::SellQuantity
+            });
+        }
+        if self.recipient_session.is_some() {
+            return Some(P::BuyRecipient);
+        }
+        match MenuState::from_byte(self.ctx.state)? {
+            MenuState::ShopMenu => Some(P::Root),
+            MenuState::ShopBuy | MenuState::ShopQuantity | MenuState::ShopConfirm => {
+                Some(P::BuyList)
+            }
+            MenuState::ShopSell => Some(P::SellList),
+            _ => None,
         }
     }
 
@@ -1215,7 +1256,10 @@ pub fn shop_root_labels(trading: bool, bag_has_sellable: bool) -> Vec<(&'static 
             MenuState::ShopBuy => ("Buy", ink[0].ink),
             MenuState::ShopSell => ("Sell", ink[1].ink),
             MenuState::ShopTrade => ("Trade Seru", ink[1].ink),
-            _ => ("Exit", ink[2].ink),
+            // Retail's third row reads "Quit" (overlay rodata `0x801CEBA4`,
+            // drawn by `FUN_801D4868`; capture-confirmed on Retock's Items
+            // Shop).
+            _ => ("Quit", ink[2].ink),
         })
         .collect()
 }
@@ -1343,6 +1387,24 @@ impl MenuRuntimeHost<'_> {
             },
         };
         let price = u16::try_from(item.price).unwrap_or(u16::MAX);
+        // The list kernel refuses a disabled row before the sub-screen's
+        // state-2 dispatch ever sees it: `FUN_80032A44` tests the row word's
+        // `0x800` bit on confirm (`80032d04`) and buzzes (`0x23`) without
+        // raising mode 2. The buy-row builder sets that bit for a purse short
+        // of the price *or* a stack already at 99 - the first half is the
+        // dispatch's own affordability test below, the second only the kernel
+        // runs. Retail capture (Retock Items Shop, a 99-stack row): the hand
+        // stays on the list.
+        let held = self
+            .world
+            .party
+            .inventory
+            .get(&item.item_id)
+            .copied()
+            .unwrap_or(0);
+        if held >= crate::shop::SHOP_HELD_CAP {
+            return Some(BuyListRoute::Refused);
+        }
         Some(crate::shop::buy_list_confirm_route(
             kind,
             self.world.party.money,
@@ -1780,12 +1842,12 @@ mod tests {
             vec![
                 ("Buy", SHOP_INK_NORMAL),
                 ("Sell", SHOP_INK_NORMAL),
-                ("Exit", SHOP_INK_NORMAL)
+                ("Quit", SHOP_INK_NORMAL)
             ]
         );
         let empty = shop_root_labels(true, false);
         let labels: Vec<_> = empty.iter().map(|r| r.0).collect();
-        assert_eq!(labels, ["Buy", "Sell", "Trade Seru", "Exit"]);
+        assert_eq!(labels, ["Buy", "Sell", "Trade Seru", "Quit"]);
         assert_eq!(empty[0].1, SHOP_INK_NORMAL);
         assert!(empty[1..].iter().all(|r| r.1 == SHOP_INK_GREY));
     }
@@ -2413,6 +2475,31 @@ mod tests {
         world.party.money = 500;
         runtime.tick(&mut world, cross());
         assert_eq!(runtime.ctx.state, MenuState::ShopQuantity.as_byte());
+    }
+
+    #[test]
+    fn shop_buy_full_stack_row_is_refused_at_the_list() {
+        use crate::shop::{ShopInventory, ShopItem, ShopSession};
+
+        // A stack already at 99 is a disabled row (`0x800`): the list
+        // kernel buzzes it before the state-2 dispatch - a purse that can
+        // afford it changes nothing, and no quantity / confirm screen opens.
+        let mut world = world_with_party(1);
+        world.party.money = 100_000;
+        world.party.inventory.insert(9, 99);
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        runtime.open_shop(ShopSession::new(ShopInventory::new(
+            1,
+            vec![ShopItem {
+                item_id: 9,
+                price: 10,
+            }],
+        )));
+        runtime.ctx.state = MenuState::ShopBuy.as_byte();
+        runtime.tick(&mut world, cross());
+        assert_eq!(runtime.ctx.state, MenuState::ShopBuy.as_byte());
+        assert!(runtime.quantity_view().is_none());
+        assert_eq!(world.party.inventory.get(&9), Some(&99));
     }
 
     /// The shop keys retail's list-kernel cues: a step only when the hand

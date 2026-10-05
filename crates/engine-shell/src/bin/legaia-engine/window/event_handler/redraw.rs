@@ -1547,7 +1547,9 @@ impl PlayWindowApp {
             // Untextured (F*/G*) field props, drawn on the colour
             // pipeline alongside the textured `draws`.
             let mut color_draws: Vec<ColorSceneDraw<'_>> = Vec::new();
-            if self.boot_ui.is_active() && !game_over_hold {
+            if (self.boot_ui.is_active() && !game_over_hold) || self.menu_runtime.covers_field() {
+                // A shop is a menu-overlay session: the field overlay is
+                // swapped out and the screen behind the windows is black.
                 // Boot UI is fullscreen - suppress 3D draws.
             } else if let Some(g) = self
                 .baka_gpu
@@ -2770,7 +2772,8 @@ impl PlayWindowApp {
             // does). Passing it only for the boot UI and a
             // stage battle left every other frame on the renderer's own
             // fallback navy, a colour neither retail nor the page draws.
-            let boot_ui_clear = self.boot_ui.is_active() && !game_over_hold;
+            let boot_ui_clear =
+                (self.boot_ui.is_active() && !game_over_hold) || self.menu_runtime.covers_field();
             let stage_battle = self.session.host.world.mode == SceneMode::Battle
                 && self.battle_stage_mesh.is_some();
             let scene_clear = Some(legaia_engine_render::battle_stage_clear::scene_clear(
@@ -3022,6 +3025,12 @@ impl PlayWindowApp {
             // The PROT-0900 screen-effect widgets sort in the same pass, by
             // their retail OT slots - the play page's single-list order.
             light_prims.extend(self.screen_fx_screen_prims());
+            // Under a shop the field is not drawn at all (the 3D pass above
+            // is skipped), so none of its screen-space effects may survive
+            // onto the black backdrop either.
+            if self.menu_runtime.covers_field() {
+                light_prims.clear();
+            }
             screen_prims.extend(self.weapon_trail_screen_prims());
             // The world's one live full-screen fade (the summon band's two
             // flashes, the escape white-out), drawn through the same kernel

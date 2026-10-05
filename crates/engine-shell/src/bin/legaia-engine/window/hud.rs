@@ -1563,7 +1563,16 @@ impl PlayWindowApp {
             if let Some(session) = &self.menu_runtime.prize_session {
                 stage.extend(self.prize_window_draws(session));
             }
-            if let Some(shop) = &self.menu_runtime.shop_session {
+            if let Some(screen) = self.gold_shop_screen(
+                legaia_engine_render::BOOT_UI_STAGE_W,
+                legaia_engine_render::BOOT_UI_STAGE_H,
+            ) {
+                // The gold shop's retail screen (window set, picker, paged
+                // list, party column, per-window painters) - the composition
+                // the browser page draws too. Only the stage texts land here;
+                // the sprite pass takes the frames.
+                stage.extend(screen.texts);
+            } else if let Some(shop) = &self.menu_runtime.shop_session {
                 let state = MenuState::from_byte(self.menu_runtime.ctx_state());
                 let cursor = self.menu_runtime.cursor() as usize;
                 let gold = self.session.host.world.party.money;
@@ -1681,18 +1690,19 @@ impl PlayWindowApp {
                 // (`window/shop_windows.rs`). Empty without a disc table.
                 // The purse window is the retail gold readout, so the
                 // engine panel below drops its own footer whenever it draws.
-                let retail_windows = self.shop_window_draws(shop, state, cursor);
-                let show_gold = if retail_windows.is_empty() {
+                let retail = self.shop_window_draws(shop, state, cursor);
+                let show_gold = if retail.texts.is_empty() {
                     show_gold
                 } else {
                     None
                 };
-                stage.extend(retail_windows);
-                // The equipment-buy recipient flow's windows (36 / 25 / 41)
-                // ride over the parked buy list while the picker owns the
-                // pad - the same compositing order the browser play page
-                // uses in `play_overlay_draws_json`.
-                stage.extend(self.recipient_window_draws());
+                stage.extend(retail.texts);
+                for m in retail.marks {
+                    stage.extend(self.painter_cursor_stand_in(m));
+                }
+                for p in retail.pictograms {
+                    stage.extend(self.painter_pictogram_stand_in(p));
+                }
                 if !rows_spec.is_empty() {
                     let rows: Vec<ShopRow<'_>> = rows_spec
                         .iter()
@@ -1773,6 +1783,10 @@ impl PlayWindowApp {
         let Some(menu) = self.save_menu.as_ref() else {
             return Vec::new();
         };
+        // The gold shop frames its own retail window set.
+        if let Some(screen) = self.gold_shop_screen(surface_w, surface_h) {
+            return screen.sprites;
+        }
         let draws = self.shop_overlay_stage_draws();
         if draws.is_empty() {
             return Vec::new();

@@ -619,13 +619,15 @@ pub fn party_compare_panel_fields(
 }
 
 /// Resolve a compare-panel ink-staging id to an RGBA tint. `7` / `6` / `1`
-/// are the same string-CLUT rows the records screen pins; `4` and `9` are
-/// the two note colours and fall back to white and orange respectively.
+/// are the same string-CLUT rows the records screen pins; `4` is the green
+/// pen (the "Equipped" note reads green on the retail shop capture - the
+/// same staging the skill-passive lines use) and `9` the orange one.
 pub fn compare_panel_ink(staging: u8) -> [f32; 4] {
     match staging {
         INK_DEFAULT => crate::MENU_TEXT_WHITE,
         INK_RISE => crate::MENU_TEXT_GOLD,
         INK_FALL => crate::MENU_TEXT_TEAL,
+        INK_EQUIPPED => crate::MENU_TEXT_GREEN,
         INK_CANNOT_EQUIP => crate::MENU_TEXT_ORANGE,
         _ => crate::MENU_TEXT_WHITE,
     }

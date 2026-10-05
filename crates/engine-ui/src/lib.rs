@@ -81,6 +81,7 @@ pub mod ringside_backdrop;
 pub mod scene_lighting;
 pub mod screen_prim;
 pub mod screen_prim_raster;
+pub mod shop_screen;
 pub mod streak_pass;
 mod text_balloon_box;
 mod tile_board_prompt;
