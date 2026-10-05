@@ -3455,6 +3455,8 @@ impl World {
         {
             crate::muscle_dome::apply_contest_start_restore(rec, restore);
         }
+        let mut session = session;
+        session.arm_intro();
         self.minigames.muscle_dome = Some(session);
         self.minigames.muscle_hub_between_legs = false;
         self.minigames.muscle_playback_frames = 0;
@@ -3786,6 +3788,15 @@ impl World {
             }
             return;
         };
+        // The battle-open hold runs once the hub's own screens (the first
+        // visit, the leg-open ROUND card) have handed the leg over - retail
+        // starts the battle only past the hub's arm `0x16`.
+        if !self.minigames.muscle_hub.covers_leg() {
+            let step = u16::from(self.clock.frame_step.max(1));
+            if let Some(s) = self.minigames.muscle_dome.as_mut() {
+                s.tick_intro(step);
+            }
+        }
         let confirm = self.input.just_pressed(input::PadButton::Cross);
         match phase {
             MusclePhase::Select => {

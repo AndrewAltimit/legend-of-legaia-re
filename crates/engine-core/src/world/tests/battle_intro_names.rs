@@ -86,3 +86,37 @@ fn the_labels_never_share_a_frame_with_a_command_surface() {
     world.battle.command = Some(BattleCommandSession::new_commit_confirm(0, 0));
     assert!(crate::battle_hud::battle_intro_names(&world, &font).is_empty());
 }
+
+/// A dome leg opens the same way: the opponent's name over its seat for the
+/// battle-open hold, then nothing - and no name while a hub screen still
+/// covers the leg.
+#[test]
+fn a_dome_leg_opens_on_the_opponents_name() {
+    use crate::muscle_dome::{MuscleCard, MuscleDomeSession};
+    let font = legaia_font::synthetic_for_tests();
+    let card = MuscleCard {
+        command_id: 0x0C,
+        cost: 0x1E,
+    };
+    let mut s = MuscleDomeSession::new([card; 4], [card; 4], [100, 100], [200, 200], 1);
+    s.set_opponent_name("Red Piura");
+    let mut world = World::new();
+    world.clock.frame_step = 1;
+    world.enter_muscle_dome(s);
+    let names = crate::battle_hud::battle_intro_names(&world, &font);
+    assert_eq!(names.len(), 1);
+    assert_eq!(names[0].0, "Red Piura");
+    assert_eq!(
+        crate::battle_hud::battle_hud_phase(&world),
+        crate::battle_hud::BattleHudPhase::Idle,
+        "no chips under the banner"
+    );
+    for _ in 0..0x5A {
+        let _ = world.tick();
+    }
+    assert!(crate::battle_hud::battle_intro_names(&world, &font).is_empty());
+    assert_eq!(
+        crate::battle_hud::battle_hud_phase(&world),
+        crate::battle_hud::BattleHudPhase::RoundPrompt
+    );
+}

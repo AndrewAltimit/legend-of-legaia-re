@@ -352,6 +352,9 @@ fn arm_door(host: &mut SceneHost, door: &DoorSite) -> (DoorPath, Option<u8>) {
 
 /// One pad edge: a release frame then a pressed frame, because `InputState`
 /// computes edges itself and a held mask is a single event.
+/// Commit rounds the dome leg gets to resolve its first turn.
+const DOME_COMMIT_ROUNDS: usize = 400;
+
 fn tap(host: &mut SceneHost, button: PadButton) {
     host.world.set_pad(0);
     let _ = host.tick();
@@ -540,8 +543,11 @@ fn play_minigame(host: &mut SceneHost, slot: MinigameSubId) -> Result<String, St
             // The selection is the battle's command flow (ring -> Attack ->
             // Command -> entry -> review -> Begin); the session names the
             // press that walks it.
+            // The leg opens behind the hub's first-visit screens and the
+            // battle-open hold (`ctx[+0x6D6] = 0x5A`), neither of which takes
+            // a command, so the budget covers those ticks too.
             let mut commits = 0usize;
-            for _ in 0..80 {
+            for _ in 0..DOME_COMMIT_ROUNDS {
                 commits += 1;
                 for _ in 0..24 {
                     let press = host
@@ -577,7 +583,7 @@ fn play_minigame(host: &mut SceneHost, slot: MinigameSubId) -> Result<String, St
             };
             if s.turn() == before {
                 Err(format!(
-                    "80 commit rounds left the dome on turn {before} (phase {:?})",
+                    "{DOME_COMMIT_ROUNDS} commit rounds left the dome on turn {before} (phase {:?})",
                     s.phase()
                 ))
             } else {

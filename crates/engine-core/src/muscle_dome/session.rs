@@ -73,6 +73,9 @@ pub struct MuscleDomeSession {
     /// The last resolved turn's first play is that closing approach
     /// ([`Self::last_turn_closes_in`]).
     pub(super) last_turn_closes_in: bool,
+    /// The battle-open intro hold still to run, in frames - retail's
+    /// `ctx[+0x6D6]` ([`Self::arm_intro`]).
+    pub(super) intro: u16,
 }
 
 impl MuscleDomeSession {
@@ -108,7 +111,28 @@ impl MuscleDomeSession {
             opponent_name: None,
             closed_in: false,
             last_turn_closes_in: false,
+            intro: 0,
         }
+    }
+
+    /// Arm the leg's battle-open hold: the round driver's flow `0x0A` seeds
+    /// `ctx[+0x6D6] = 0x5A` and composes the enemy-name banner
+    /// (`FUN_801D9D3C`), and `0x0B` drains it before the turn top raises the
+    /// round prompt (`0x801D0DE0..0x801D0EB8`). The host arms it when the leg
+    /// opens; no command surface takes the pad while it runs.
+    pub fn arm_intro(&mut self) {
+        self.intro = crate::battle_open::PLAIN_OPEN_FRAMES;
+    }
+
+    /// Drain the battle-open hold by `step` frames (`0x0B`'s
+    /// `ctx[+0x6D6] -= DAT_1F800393`).
+    pub fn tick_intro(&mut self, step: u16) {
+        self.intro = self.intro.saturating_sub(step);
+    }
+
+    /// Whether the battle-open hold (and its enemy-name banner) is up.
+    pub fn intro_up(&self) -> bool {
+        self.intro > 0
     }
 
     /// Name the opponent (its PROT 867 monster record's name) for the action

@@ -201,7 +201,7 @@ impl MuscleDomeSession {
     /// REF: FUN_801d0748 (the command flow; the per-screen step functions
     /// carry the port tags)
     pub fn select_input(&mut self, pad: DomeSelectPad) -> DomeMenuEvent {
-        if self.phase != MusclePhase::Select {
+        if self.phase != MusclePhase::Select || self.intro_up() {
             return DomeMenuEvent::Idle;
         }
         match std::mem::take(&mut self.menu) {
@@ -454,7 +454,7 @@ impl MuscleDomeSession {
     /// on its own.
     pub fn scripted_press(&self) -> Option<crate::input::PadButton> {
         use crate::input::PadButton;
-        if self.phase != MusclePhase::Select {
+        if self.phase != MusclePhase::Select || self.intro_up() {
             return None;
         }
         Some(match &self.menu {
@@ -525,7 +525,7 @@ impl MuscleDomeSession {
     ) -> Option<crate::battle_hud::BattleCommandChips> {
         use crate::battle_hud::{BattleCommandChips, CommandChipPhase};
         use crate::battle_input::AttackMode;
-        if self.phase != MusclePhase::Select {
+        if self.phase != MusclePhase::Select || self.intro_up() {
             return None;
         }
         let DomeMenu::Command(cmd) = &self.menu else {

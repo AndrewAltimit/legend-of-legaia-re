@@ -42,6 +42,29 @@ fn prompt_session() -> MuscleDomeSession {
     )
 }
 
+/// The battle-open hold (`ctx[+0x6D6] = 0x5A`) takes no input and draws no
+/// chips; once drained, the round prompt is up.
+#[test]
+fn the_battle_open_hold_parks_the_prompt() {
+    let mut s = prompt_session();
+    s.arm_intro();
+    assert!(s.intro_up());
+    assert_eq!(
+        s.select_input(pad(|p| p.confirm = true)),
+        DomeMenuEvent::Idle
+    );
+    assert!(s.command_chips("-", ["Begin", "Reselect"]).is_none());
+    assert_eq!(s.scripted_press(), None);
+    s.tick_intro(0x59);
+    assert!(s.intro_up());
+    s.tick_intro(1);
+    assert!(!s.intro_up());
+    assert_eq!(
+        s.select_input(pad(|p| p.confirm = true)),
+        DomeMenuEvent::Confirm
+    );
+}
+
 /// Every turn opens on `Begin | Run`; Begin opens the ring on its Attack
 /// arm, cancel on the ring steps back, and Run flees the leg.
 #[test]

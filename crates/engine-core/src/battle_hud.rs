@@ -1055,6 +1055,9 @@ pub fn battle_intro_names(
     world: &crate::world::World,
     font: &legaia_font::Font,
 ) -> Vec<(String, i32)> {
+    if world.mode == crate::world::SceneMode::MuscleDome {
+        return dome_intro_names(world, font);
+    }
     if world.mode != crate::world::SceneMode::Battle || world.battle.intro_names_frames == 0 {
         return Vec::new();
     }
@@ -1080,6 +1083,29 @@ pub fn battle_intro_names(
     rows.into_iter()
         .map(|r| (r.label, i32::from(r.x)))
         .collect()
+}
+
+/// The dome leg's battle-open banner: the composer `FUN_801D9D3C` over a
+/// one-monster formation is one label, the opponent's display name, laid out
+/// the way every group label is - `0xA0 + avg(+0x34) / 8 - width / 2` over
+/// the monster's battle X, which the lone monster seat puts at `0`
+/// (`crate::battle_seats`) - and clamped into `6 ..= 0x13A - width`. Up for
+/// the leg's battle-open hold ([`crate::muscle_dome::MuscleDomeSession::intro_up`])
+/// once no hub screen covers the leg.
+fn dome_intro_names(world: &crate::world::World, font: &legaia_font::Font) -> Vec<(String, i32)> {
+    let Some(s) = world.minigames.muscle_dome.as_ref() else {
+        return Vec::new();
+    };
+    if !s.intro_up() || world.minigames.muscle_hub.covers_leg() {
+        return Vec::new();
+    }
+    let Some(name) = s.opponent_name().filter(|n| !n.is_empty()) else {
+        return Vec::new();
+    };
+    let width = i32::from(font.layout_ascii(name).advance_x as i16);
+    let seat_x = i32::from(crate::battle_seats::monster_seat(1, 0, false).x);
+    let x = (0xA0 + (seat_x >> 3) - width / 2).clamp(6, (0x13A - width).max(6));
+    vec![(name.to_string(), x)]
 }
 
 /// The boss-name banner a battle-stage module has up this frame, as
@@ -1173,6 +1199,10 @@ pub fn battle_hud_phase(world: &crate::world::World) -> BattleHudPhase {
         // The resolved turn's play-out is that band's stand-in: while the
         // leg holds for it the frame is an action frame.
         let s = world.minigames.muscle_dome.as_ref();
+        if s.is_some_and(|s| s.intro_up()) {
+            // The battle-open hold: only the enemy-name banner is up.
+            return BattleHudPhase::Idle;
+        }
         if s.is_some_and(|s| {
             s.phase() == crate::muscle_dome::MusclePhase::Select
                 && matches!(

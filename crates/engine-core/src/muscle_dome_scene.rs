@@ -1172,6 +1172,11 @@ impl MuscleDomeSurface {
                     None,
                 ),
             },
+            // The battle-open hold: the far framing (retail's flow `0x0A` /
+            // `0x0B` arms no close-up).
+            (None, MusclePhase::Select) if session.intro_up() => {
+                (cam::BattleCamPhase::Menu, 0, None)
+            }
             (None, MusclePhase::Select) => match session.menu() {
                 DomeMenu::Command(c) => match c.phase {
                     // The round prompt and the Begin / Reselect confirm: the
