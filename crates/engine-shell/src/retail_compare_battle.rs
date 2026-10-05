@@ -2685,6 +2685,12 @@ impl RetailBattle {
                         .map(|(live, _)| live),
                     clip: (seat < 3
                         && self.caster_clip != 0
+                        // Gate on the direction swing clips 0x0C..=0x0F only:
+                        // retail can sit on the dynamic art slot 0x10 / 0x11
+                        // while the engine holds the swing's own clip, which
+                        // the gate could then never match
+                        // (battle_melee_hit_spark: retail 0x11, engine 0x0E).
+                        && (0x0C..=0x0F).contains(&self.caster_clip)
                         && matches!(self.span_gate, SpanGate::Age { .. }))
                     .then_some(self.caster_clip),
                     aim: (seat < 3
