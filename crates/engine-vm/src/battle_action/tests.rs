@@ -67,6 +67,9 @@ struct RecHost {
     /// The strike queue `begin_counterattack` stages on the counterer
     /// (`None` = the host cannot stage a counter).
     counter_queue: Option<Vec<u8>>,
+    /// Status bits a typed tracker would pack into `+0x16E` on top of the
+    /// actor view's `field_flags` (`status_word`).
+    packed_status: std::collections::HashMap<u8, u16>,
 }
 
 impl RecHost {
@@ -136,6 +139,10 @@ impl BattleActionHost for RecHost {
     }
     fn special_battle_word(&self) -> u32 {
         self.special_word
+    }
+    fn status_word(&self, slot: u8) -> u16 {
+        self.actor(slot).map_or(0, |a| a.field_flags)
+            | self.packed_status.get(&slot).copied().unwrap_or(0)
     }
     fn monster_action_tags(&self, slot: u8) -> Option<Vec<u8>> {
         self.monster_tags.get(&slot).cloned()
@@ -1723,6 +1730,23 @@ fn end_of_action_party_wipe_signals_battle_end() {
     host.actors[2].liveness = 0;
     let out = step(&mut host, &mut ctx);
     assert_eq!(out, StepOutcome::BattleComplete);
+    assert!(
+        host.take()
+            .contains(&Event::BattleEnd(BattleEndCause::PartyWipe))
+    );
+}
+
+/// A petrified party is a wipe even when the Stone bit lives only in the
+/// host's packed `+0x16E` (`status_word`), not in the actor view's
+/// `field_flags`: retail masks the whole word with `0x4`, Stone's own bit.
+#[test]
+fn end_of_action_counts_a_packed_stone_party_as_wiped() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
+    ctx.action_state = ActionState::EndOfAction.as_byte();
+    for s in 0..3u8 {
+        host.packed_status.insert(s, 0x4);
+    }
+    assert_eq!(step(&mut host, &mut ctx), StepOutcome::BattleComplete);
     assert!(
         host.take()
             .contains(&Event::BattleEnd(BattleEndCause::PartyWipe))
