@@ -195,6 +195,10 @@ pub struct RetailBattle {
     pub caster_clip: u8,
     /// `ctx[+0x6DA]` - the yaw base a module walk arm swings.
     pub walk_yaw_base: u16,
+    /// PROT 0903's countdown word
+    /// ([`legaia_engine_vm::cast_module_camera::GIMARD_COUNTDOWN_VA`]) - only
+    /// meaningful while that module is resident.
+    pub gimard_countdown: i32,
     /// `ctx[+0xD]` - the acting action's framing style.
     pub cam_style: u8,
     /// The frame driver's entry counter `gp+0x330` ([`ENTRY_COUNTER`]).
@@ -426,6 +430,15 @@ pub struct PhaseGate {
     /// alone places the frame at the hold's first vsync -
     /// `shiny_refactor_gimard_levelup` was taken 46 vsyncs in.
     pub done_hold: Option<i16>,
+    /// For a capture inside one of PROT 0903's countdown-paced arms
+    /// (`1..=10`): retail's module countdown
+    /// ([`legaia_engine_vm::cast_module_camera::GIMARD_COUNTDOWN_VA`]). The
+    /// arm alone places the frame at the arm's first pass - the
+    /// `shiny_refactor_gimard_plus35` frame was taken at arm 9's entry, 16
+    /// vsyncs before retail's (countdown `928` against the arm's opening
+    /// value) - so the engine frame is the first one whose own countdown
+    /// has drained as far.
+    pub module_countdown: Option<i32>,
 }
 
 /// How far a walk-arm yaw base has swung from its seat (`0x200`), in
@@ -450,6 +463,9 @@ impl PhaseGate {
         if let Some(d) = self.done_hold {
             s.push_str(&format!(",d{d}"));
         }
+        if let Some(c) = self.module_countdown {
+            s.push_str(&format!(",c{c}"));
+        }
         s
     }
 
@@ -467,6 +483,14 @@ impl PhaseGate {
 
     pub fn from_env(s: &str) -> Option<Self> {
         let mut parts: Vec<&str> = s.split(',').map(str::trim).collect();
+        let module_countdown = match parts.last() {
+            Some(t) if t.starts_with('c') => {
+                let c = t[1..].parse().ok()?;
+                parts.pop();
+                Some(c)
+            }
+            _ => None,
+        };
         let done_hold = match parts.last() {
             Some(t) if t.starts_with('d') => {
                 let d = t[1..].parse().ok()?;
@@ -515,6 +539,7 @@ impl PhaseGate {
             cam_accum,
             walk_yaw,
             done_hold,
+            module_countdown,
         })
     }
 
@@ -535,6 +560,14 @@ impl PhaseGate {
         if let Some(y) = self.walk_yaw
             && world.casting.module_phase <= GIMARD_WALK_ARM
             && walk_swing(world.casting.module_cam.yaw_base) < walk_swing(i32::from(y))
+        {
+            return false;
+        }
+        // Same arm, and the engine's countdown drained at least as far; a
+        // later arm has passed the frame and takes it at once.
+        if let Some(c) = self.module_countdown
+            && self.module_phase == Some(world.casting.module_phase)
+            && world.casting.module_cam.countdown.0 > c
         {
             return false;
         }
@@ -702,6 +735,12 @@ impl RetailBattle {
             // frame is that many vsyncs older, so its countdown was higher.
             *d = d.saturating_add(self.display_lag as i16);
         }
+        if let Some(c) = g.module_countdown.as_mut() {
+            // The countdown drains `scalar` a vsync; the displayed frame's
+            // word was that much higher.
+            *c += i32::from(self.display_lag)
+                * legaia_engine_vm::cast_module_camera::MODULE_DRAIN_PER_TICK;
+        }
         if let Some(y) = g.walk_yaw.as_mut() {
             // `6 * scalar` a vsync, taken back no further than the seat.
             let per_vsync = 6 * legaia_engine_vm::cast_module_camera::MODULE_DRAIN_PER_TICK;
@@ -735,6 +774,10 @@ impl RetailBattle {
             SpanGate::DoneHold { timer } => Some(timer),
             _ => None,
         };
+        // PROT 0903's countdown-paced arms: how far into the arm the frame is.
+        let module_countdown = (entry == GIMARD_MODULE
+            && module_phase.is_some_and(|p| (1..GIMARD_WALK_ARM).contains(&p)))
+        .then_some(self.gimard_countdown);
         Some(PhaseGate {
             action_state: self.action_state,
             fade: self.summon_fade,
@@ -742,6 +785,7 @@ impl RetailBattle {
             cam_accum,
             walk_yaw,
             done_hold,
+            module_countdown,
         })
     }
 }
@@ -1011,6 +1055,10 @@ impl RetailBattle {
             cam_accum: game_anchors::u32_at(ram, ctx + 0x87C),
             caster_clip: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1D9)),
             walk_yaw_base: game_anchors::u16_at(ram, ctx + 0x6DA),
+            gimard_countdown: game_anchors::u32_at(
+                ram,
+                legaia_engine_vm::cast_module_camera::GIMARD_COUNTDOWN_VA,
+            ) as i32,
             cam_style: game_anchors::u8_at(ram, ctx + 0xD),
             camera_option: game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION),
             entry_counter: game_anchors::u8_at(ram, ENTRY_COUNTER),
@@ -3382,6 +3430,7 @@ mod tests {
                 cam_accum: None,
                 walk_yaw: None,
                 done_hold: None,
+                module_countdown: None,
             },
             PhaseGate {
                 action_state: 0x35,
@@ -3393,6 +3442,7 @@ mod tests {
                 cam_accum: None,
                 walk_yaw: None,
                 done_hold: None,
+                module_countdown: None,
             },
             PhaseGate {
                 action_state: 0x36,
@@ -3401,6 +3451,7 @@ mod tests {
                 cam_accum: Some(72),
                 walk_yaw: Some(1497),
                 done_hold: None,
+                module_countdown: Some(-16),
             },
             PhaseGate {
                 action_state: 0x51,
@@ -3409,6 +3460,7 @@ mod tests {
                 cam_accum: None,
                 walk_yaw: None,
                 done_hold: Some(104),
+                module_countdown: None,
             },
         ] {
             assert_eq!(PhaseGate::from_env(&g.to_env()), Some(g));

@@ -809,6 +809,15 @@ tail): with no creature seated the walk arm passed on its first tick and
 folded the hit there, so a capture mid-walk (`gimard_burning_attack`, victim
 still at full HP) read the victim dead.
 
+A capture inside one of PROT 0903's countdown-paced arms (`1..=10`) is
+placed by the module's countdown word `0x801F7960` as well (the `c<count>`
+suffix): it drains `scalar` a vsync, and the arm byte alone placed the frame
+on the arm's first pass. `shiny_refactor_gimard_plus35` (arm 9, countdown
+`928`) was taken that way some 16 vsyncs before retail's frame, before the
+breath had grown; the engine frame is now the first one in the same arm whose
+own countdown (`ModuleCamState::countdown`) has drained as far, the display
+lag added back as for the other gates.
+
 A capture on the Done band the cast hands on to (`0x51` / `0x52`) is
 gated on that band's hold countdown `ctx[+0x6D8]` as well (the `d<timer>`
 suffix, the same countdown the pad-driven plan's `DoneHold` reads): the hold
