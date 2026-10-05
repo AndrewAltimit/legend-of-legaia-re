@@ -1252,6 +1252,17 @@ impl LegaiaRuntime {
         true
     }
 
+    /// Arm the casino prize counter exactly as a clerk's `49 07 <block>`
+    /// does (`World::try_arm_prize_exchange` on the instruction bytes), so
+    /// the page's own drain opens it on the next frame. `false` when the
+    /// scene carries no prize block `block` (the blocks are read off the
+    /// disc at boot) or a counter is already armed.
+    pub fn debug_arm_prize_exchange(&mut self, block: u8) -> bool {
+        self.scene_host
+            .as_mut()
+            .is_some_and(|h| h.world.try_arm_prize_exchange(&[0x49, 0x07, block]))
+    }
+
     /// Arm + open a shop stocked with **equipment** ids, the rows whose
     /// buy-list confirm takes the retail `RecipientPicker` route
     /// (`shop::buy_list_confirm_route` kind `1`) instead of the quantity

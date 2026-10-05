@@ -714,6 +714,9 @@ CANONICAL_LADDERS = [
     # return-to-title soft reset (slot `0x33`, `FUN_801EDF00`) - the records
     # screen over the field and the title hand-off.
     ("soft_reset_records_page", "legaia-web-viewer"),
+    # The casino prize counter's Yes/No confirm (window 46, `801d603c`):
+    # coins and the clerk's `49 07` arm seeded, the pad walks a prize to it.
+    ("prize_confirm_page", "legaia-web-viewer"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 
