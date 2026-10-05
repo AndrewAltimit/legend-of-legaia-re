@@ -172,11 +172,19 @@ fn summon_stagers_spawn_and_tick_through_the_move_vm() {
              move-VM state",
         );
 
+        // A halted part is killed by retail's list walk, so it draws no more.
         let draws = scene.part_draws();
+        let live_mesh = scene
+            .parts
+            .iter()
+            .filter(|p| {
+                !p.finished && (0..legaia_engine_core::summon::MAX_MESH_SEL).contains(&p.model_sel)
+            })
+            .count();
         assert_eq!(
             draws.len(),
-            scene.mesh_part_count(),
-            "{label} (PROT {idx:04}): one draw per mesh part",
+            live_mesh,
+            "{label} (PROT {idx:04}): one draw per live mesh part",
         );
         for d in &draws {
             assert!(

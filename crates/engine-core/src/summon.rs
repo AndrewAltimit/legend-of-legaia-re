@@ -808,9 +808,13 @@ impl SummonScene {
     pub fn part_draws(&self) -> Vec<SummonPartDraw> {
         // PSX 12-bit angle (4096 = 360°) → radians.
         const A: f32 = std::f32::consts::TAU / 4096.0;
+        // A halted part (`+0x10 |= 8`, op `0x08`) is killed by retail's list
+        // walk and never draws again: `gimard_burning_attack` holds no node
+        // for PROT 0903's breath once its program halts, where the engine
+        // kept drawing the fully grown flame until the tunnel parts ended.
         self.parts
             .iter()
-            .filter(|p| is_mesh_sel(p.model_sel))
+            .filter(|p| !p.finished && is_mesh_sel(p.model_sel))
             .map(|p| {
                 let s = &p.state;
                 SummonPartDraw {
@@ -840,6 +844,7 @@ impl SummonScene {
         const A: f32 = std::f32::consts::TAU / 4096.0;
         self.parts
             .iter()
+            .filter(|p| !p.finished)
             .filter_map(|p| {
                 let s = &p.state;
                 let mesh = crate::effect_ribbon::ribbon_mesh_for_actor(s)?;
