@@ -1097,23 +1097,30 @@ The retail SPU implements reverb as a same-side / different-side IIR reflection 
 
 The `engine-audio` from-scratch port reproduces that network register-for-register in [`spu::reverb`](../../crates/engine-audio/src/spu/reverb.rs): each [`ReverbMode`](../../crates/engine-audio/src/spu/reverb.rs) loads the standard libspu preset (public PSX hardware-reference constants - the same tables every open SPU emulator ships, not Sony game data) into a recirculating `i16` work buffer sized to that mode's work area. Address-type registers are in 8-byte units, taps wrap within the work area, and the reverb multiply is `(sample * coeff) / 0x8000` (signed Q15, so a `0x8000` coefficient inverts phase exactly as the hardware does).
 
-Per-voice routing is opt-in: `Voice::reverb_send = true` (libspu `SpuSetVoiceReverb` analogue) sums the voice's pre-master output into the reverb send bus; the wet output is mixed back into the master in `Spu::tick`.
+Per-voice routing follows the keyed tone: `Voice::reverb_send` (libspu `SpuSetVoiceReverb` analogue) sums the voice's pre-master output into the reverb send bus, and `VabBank`'s key-on sets it from the tone's `mode & 4` ([below](#per-voice-reverb-send-is-the-tones-mode-bit-2)); the wet output is mixed back into the master in `Spu::tick`.
 
 #### Retail reverb routing - Studio C, always on (capture-confirmed)
 
-A pure-Rust sweep of the save-state corpus (`mednafen-state spu <state>`, reading the SPU register shadow via [`PsxSpu::reverb_registers`](../../crates/mednafen/src/spu.rs) / `voice_reverb_mask` / `reverb_master_enabled`) pins what retail actually runs, and it falsifies the earlier "Spirit-Arts / echo cues selectively opt in, everything else dry" reading:
+A pure-Rust sweep of the save-state corpus (`mednafen-state spu <state>`, reading the SPU register shadow via [`PsxSpu::reverb_registers`](../../crates/mednafen/src/spu.rs) / `voice_reverb_mask` / `reverb_master_enabled` / `reverb_output_volume`) pins the global half of what retail runs:
 
 - **The reverb network is master-enabled in every captured state** (`SPUCNT` bit 7 set) - field, town, battle, summon, title, minigames. There is no scene or cue that toggles it on.
-- **The mode is `Studio C` everywhere.** The 32 reverb coefficient/address registers (`0x1F801DC0..0x1F801DFF`) are byte-identical across all 45 mednafen states and match the `StudioC` libspu preset exactly (`dAPF1=0x00E3`, `dAPF2=0x00A9`, work area `0x6FE0`). [`ReverbMode::identify`](../../crates/engine-audio/src/spu/reverb.rs) resolves the captured block to `StudioC`.
-- **Per-voice reverb-send (`EON`) is broad and always populated** - typically 15–22 of the 24 voices in a mednafen state, including BGM and SFX voices, not a handful of "echo" voices. A per-vsync PCSX-Redux capture of a town scene reads the whole register: `EON` = `0x00FFFFFF`, **all 24 voices**, on every one of its 90 frames. So reverb is the *default* routing - the membership varies with what a given moment has keyed, but the ceiling is the whole voice file, not a handful of "echo" voices.
-- **The output depth is `0x3264` on both sides of the same capture.** `vLOUT` / `vROUT` (SPU `0x1F801D84` / `0x86`) are what libspu's `SpuSetReverbDepth` writes, and they sit *outside* the 32-register preset block, so matching the Studio C coefficients says nothing about them. `mBASE` reads `0xF204`, i.e. a work area at `0x79020` of size `0x6FE0`, which is Studio C's own size - a second, independent confirmation of the preset.
+- **The mode is `Studio C` everywhere.** The 32 reverb coefficient/address registers (`0x1F801DC0..0x1F801DFF`) are byte-identical across the corpus and match the `StudioC` libspu preset exactly (`dAPF1=0x00E3`, `dAPF2=0x00A9`, work area `0x6FE0`). [`ReverbMode::identify`](../../crates/engine-audio/src/spu/reverb.rs) resolves the captured block to `StudioC`.
+- **The output depth is `0x3264` on both sides**, in battle and field states alike. `vLOUT` / `vROUT` (SPU `0x1F801D84` / `0x86`) are what libspu's `SpuSetReverbDepth` writes, and they sit *outside* the 32-register preset block, so matching the Studio C coefficients says nothing about them. `mBASE` reads `0xF204`, i.e. a work area at `0x79020` of size `0x6FE0`, which is Studio C's own size - a second, independent confirmation of the preset.
 
-So the C7-REVERB blocker dissolves: there is no per-cue reverb-enable source to trace. The live engine matches retail by calling [`Spu::set_retail_reverb`](../../crates/engine-audio/src/spu/mod.rs) once at SPU init (the `StreamResampler` in [`engine-audio`](../../crates/engine-audio/src/lib.rs) does this) - it selects `ReverbMode::StudioC`, routes every voice into the reverb send, and installs the measured depth `reverb::RETAIL_OUTPUT_VOL`. The earlier "the engine applies a fixed half-scale depth, a faithful approximation of the broad mask" caveat is retired on both halves: the mask is exactly all-voices and the depth is measured, not approximated.
+The engine installs that global half once at SPU init with [`Spu::set_retail_reverb`](../../crates/engine-audio/src/spu/mod.rs) (the `StreamResampler` in [`engine-audio`](../../crates/engine-audio/src/lib.rs) does this, for the native and browser hosts alike): `ReverbMode::StudioC` at the measured depth `reverb::RETAIL_OUTPUT_VOL`.
+
+#### Per-voice reverb send is the tone's mode bit 2
+
+Which voices feed the network is **not** global. The key-on volume chain `FUN_80067550` - run by the sequencer note-on and by the cue key-on `FUN_80065034` alike - ends by testing the keyed tone's `mode` byte (`lbu v0,-0x1ca4(v0)`; `andi v0,v0,0x4` at `0x80067944..0x8006794C`) and then either ORs the voice's bit into the staged reverb-enable mask at `0x801CDB4C/4E` or clears it (`0x80067958..0x800679B4`). That mask is what the per-frame flush writes to `EON`. So a voice is wet exactly when the tone it was last keyed from carries `mode & 4`.
+
+The corpus bears it out. Reading each voice's libsnd note-staging record (`0x801CDB50 + voice*0x36`: `+0x12` tone page, `+0x16` tone index, `+0x18` VAB slot) against that slot's live `VagAtr`, across the battle and minigame mednafen states, `EON` agrees with `mode & 4` on 1484 of 1520 sounding voices; the misses are records whose bank was swapped after the key-on. Restricted to cue voices (record `+0x10 == 0x21`), 251 of 255 agree, and **153 of those 255 are dry**. The shipped banks split the same way - PROT 0869, the class-2 battle bank, carries 61 dry tones to 13 reverb-flagged ones.
+
+So `EON` varies from moment to moment (`0x27DDFF` on a melee hit, `0x07FA7F` mid-cast) - it is whatever the last key-on on each voice left. Battle hit cues are mostly authored dry. Routing every voice through Studio C instead washes each strike in a reverb tail retail never gives it. Port: `VabBank::fire` sets `Voice::reverb_send` from `vab_bind::tone_reverb` at every key-on, both arms.
 
 Boundaries:
 - Mode selection via `Spu::write_reverb_mode_byte(raw)` matches the libspu byte API (1=Room, 2=StudioA, …, 9=Pipe). Out-of-range bytes fall back to `Off`. This is the engine half of `SpuSetReverbModeParam` (`FUN_8006B1B4`, the 30-attribute commit).
 - The hardware's 39-tap FIR input/output resampler (44.1 kHz ↔ 22.05 kHz) is approximated by decimation + zero-order hold; the tail's character comes from the network, the FIR only affects high-frequency detail.
-- Output volume (`vLOUT`/`vROUT`) isn't part of the mode preset on hardware (libspu sets it separately via `SpuSetReverbDepth`); the engine applies a fixed depth, overridable with `Reverb::set_output_volume`.
+- Output volume (`vLOUT`/`vROUT`) isn't part of the mode preset on hardware (libspu sets it separately via `SpuSetReverbDepth`); the engine installs the measured depth, overridable with `Reverb::set_output_volume`.
 
 ### Voice resampler - 4-point Gaussian interpolation (engine-audio)
 
@@ -2051,7 +2058,11 @@ PCM oracles built a bare `Spu` where the shipped cpal host builds one through
 `set_retail_reverb`, so the oracle was measuring an engine the port does not
 ship. With both fixed the engine reports `EON = 0x00FFFFFF`, depth
 `(0x3264, 0x3264)` and work area `0x79020` on every frame, which is what that
-capture reports on every frame of its own.
+capture reports on every frame of its own. The all-voices mask is a property
+of the track, not of the routing: every tone of track `2000`'s bank carries
+`mode & 4`, and the send is set per keyed tone
+([above](#per-voice-reverb-send-is-the-tones-mode-bit-2)), so a battle bank's
+dry hit tones leave their voices out of `EON`.
 
 **The voice-count gap was two different pieces of music.** An engine
 `--scene town01` trace plays the id that scene's own prescript selects with op

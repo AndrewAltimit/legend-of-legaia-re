@@ -220,7 +220,9 @@ mod tests {
         assert_eq!(spu.ram.write_at(SPU_ADDR, &block), block.len());
         let tone = legaia_vab::VagAtr {
             prior: 0,
-            mode: 0,
+            // Reverb-flagged (`mode & 4`): the key-on routes the voice into
+            // the Studio C send, as most retail BGM tones are.
+            mode: crate::vab_bind::TONE_MODE_REVERB,
             vol: 127,
             pan: 64,
             center: 60,
@@ -362,8 +364,8 @@ mod tests {
     /// envelope. The fixture's release is `adsr2 = 0x1F00` - linear, shift 0,
     /// two samples to zero (`spu::adsr`) - yet the default sink keeps
     /// signal for a good part of a second after the key-off, because every
-    /// `StreamResampler` boots with retail's Studio C reverb and every voice
-    /// routed into it. Render the same key-off through a **dry** SPU and the
+    /// `StreamResampler` boots with retail's Studio C reverb, and a
+    /// reverb-flagged tone's key-on routes its voice into it. Render the same key-off through a **dry** SPU and the
     /// output is exactly silent within a few frames. A reading that charged
     /// the second-long decay to the ADSR would have "fixed" a release that
     /// is already tick-exact.

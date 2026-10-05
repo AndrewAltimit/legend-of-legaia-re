@@ -50,8 +50,9 @@ pub struct Voice {
     pub adsr: AdsrState,
     /// Per-voice reverb routing flag. When `true` this voice's pre-master
     /// output is summed into the SPU's reverb send bus. libspu calls this
-    /// `SpuSetVoiceReverb`. Defaults to `false` - engines opt voices in
-    /// when starting a Spirit Art / echo-flagged sound effect.
+    /// `SpuSetVoiceReverb`. Defaults to `false`; `VabBank`'s key-on sets it
+    /// per keyed tone from the VAB tone's `mode & 4`, as retail's
+    /// `FUN_80067550` sets the voice's `EON` bit.
     pub reverb_send: bool,
 
     // --- runtime state --------------------------------------------------
