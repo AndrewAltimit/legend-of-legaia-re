@@ -75,7 +75,85 @@ struct CastTrace {
     approaches: bool,
     /// Farthest the caster got from where it stood when it began acting.
     moved: i32,
+    /// The body walks its caster in and stages nothing else on it.
+    walk_only: bool,
 }
+
+/// Every `(monster id, spell id)` the scripted per-monster AI switch can
+/// queue (`legaia_engine_core::monster_ai::decide`, the port of
+/// `FUN_801E9FD4`'s switch): the boss phases and the scripted casts that do
+/// not come out of a record's magic slots. Transcribed from the switch's
+/// `cast_*` literals; the generic slot casts are the archive's own.
+const SCRIPTED_AI_CASTS: &[(u16, u8)] = &[
+    (0x04, 0x51),
+    (0x05, 0x51),
+    (0x06, 0x51),
+    (0x06, 0x52),
+    (0x07, 0x50),
+    (0x08, 0x50),
+    (0x09, 0x50),
+    (0x09, 0x6F),
+    (0x0F, 0x53),
+    (0x39, 0x71),
+    (0x43, 0x51),
+    (0x44, 0x51),
+    (0x45, 0x51),
+    (0x47, 0x52),
+    (0x48, 0x52),
+    (0x4B, 0x55),
+    (0x4B, 0x56),
+    (0x4D, 0xB9),
+    (0x54, 0x60),
+    (0x55, 0x60),
+    (0x59, 0x60),
+    (0x59, 0x73),
+    (0x5A, 0x60),
+    (0x5A, 0x73),
+    (0x5B, 0x60),
+    (0x5B, 0x73),
+    (0x62, 0x5A),
+    (0x63, 0x5A),
+    (0x64, 0x5A),
+    (0x68, 0x52),
+    (0x69, 0x52),
+    (0x6A, 0x52),
+    (0x6B, 0x72),
+    (0x6C, 0x72),
+    (0x6D, 0x72),
+    (0x6F, 0x60),
+    (0x70, 0x60),
+    (0x89, 0xBA),
+    (0x8A, 0x4E),
+    (0x8B, 0x5D),
+    (0x8B, 0x5E),
+    (0x92, 0x51),
+    (0x93, 0x60),
+    (0x94, 0x60),
+    (0x95, 0x60),
+    (0x99, 0x75),
+    (0x9A, 0x75),
+    (0x9B, 0x75),
+    (0x9C, 0x76),
+    (0x9D, 0x76),
+    (0x9E, 0x76),
+    (0x9F, 0x77),
+    (0xA0, 0x77),
+    (0xA1, 0x77),
+    (0xA6, 0xA6),
+    (0xA7, 0xB5),
+    (0xA8, 0xAF),
+    (0xA9, 0xAE),
+    (0xAA, 0xAE),
+    (0xAD, 0xB9),
+    (0xAE, 0xB9),
+    (0xB3, 0xB3),
+    (0xB4, 0xAC),
+    (0xB4, 0xAD),
+    (0xB4, 0xB7),
+    (0xB5, 0xA5),
+    (0xB5, 0xB6),
+    (0xB6, 0xA1),
+];
 
 fn scus() -> Option<Vec<u8>> {
     use legaia_engine_core::Vfs;
@@ -172,6 +250,10 @@ fn cast(
     t.approaches = w.cast_module_for(spell).is_some_and(|entry| {
         legaia_engine_vm::cast_module_ticks::capture_body_approaches(entry, spell)
     });
+    t.walk_only = t.approaches
+        && w.cast_module_for(spell).is_some_and(|entry| {
+            legaia_engine_vm::cast_module_ticks::capture_caster_stages(entry, spell, 0, 0).is_none()
+        });
     let mut start = (0i32, 0i32);
     t.deals_damage = w.cast_module_for(spell).is_some_and(|entry| {
         legaia_engine_vm::cast_module_ticks::capture_site_power(entry, spell).is_some()
@@ -253,7 +335,19 @@ fn every_monster_special_attack_animates() {
         }
         let cat = catalog_from_monster_archive(&entry, &[id]);
         let Some(def) = cat.get(id) else { continue };
-        for spell in def.magic_attacks.clone() {
+        let mut spells = def.magic_attacks.clone();
+        for &(m, sp) in SCRIPTED_AI_CASTS {
+            if m == id && !spells.contains(&sp) {
+                spells.push(sp);
+            }
+        }
+        for spell in spells {
+            // A scripted cast's target is the switch's class, which the
+            // forced-cast seam does not replay (it resolves the spell
+            // record's shape, as the generic picker does), so its hit is not
+            // asserted - Genocidal Cannon's record reads ally-side while the
+            // switch aims it at the party.
+            let scripted = !def.magic_attacks.contains(&spell);
             let r = std::panic::catch_unwind(|| cast(&entry, &scus, id, spell));
             total += 1;
             let line = match r {
@@ -280,10 +374,16 @@ fn every_monster_special_attack_animates() {
                             "the capture band held {} ticks (the stage guard, not a choreography)",
                             t.band_ticks
                         ))
-                    } else if t.deals_damage && t.party_hp_lost == 0 {
+                    } else if t.deals_damage && !scripted && t.party_hp_lost == 0 {
                         Some("a damaging capture special dealt nothing".to_string())
                     } else if t.special_frames > 0 {
                         animated += 1;
+                        None
+                    } else if t.walk_only {
+                        // A body whose only caster stage is its walk (Steal):
+                        // it moves when it starts out of reach, and holds
+                        // its idle like retail when it does not.
+                        animated += usize::from(t.moved > 0);
                         None
                     } else if t.idles_in_retail && t.states.contains(&0x6E) {
                         retail_idle.push(format!("{id:#04x}/{spell:#04x}"));

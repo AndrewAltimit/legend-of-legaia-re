@@ -88,6 +88,14 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         rule: CasterClipRule::Fixed(&[0x0D, 0x0C]),
         approach: false,
     },
+    // PROT 0938 `0xB7` (`0x801F69EC`, Mystic Circle): `li v0,0x7;
+    // sb v0,0x1da(s4)` at `0x801F6CCC`.
+    CasterStageRow {
+        prot_entry: 938,
+        action_ids: &[0xB7],
+        rule: CasterClipRule::Fixed(&[0x07]),
+        approach: false,
+    },
     // PROT 0939 Spore Gas: `li v1,0xa; sb v1,0x1da(s2)` at `0x801F6C54`.
     CasterStageRow {
         prot_entry: 939,
@@ -171,6 +179,28 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         rule: CasterClipRule::Fixed(&[0x0A]),
         approach: false,
     },
+    // PROT 0957 `0x77` (`0x801F6A14`): `0x0A` at `0x801F6C50`.
+    CasterStageRow {
+        prot_entry: 957,
+        action_ids: &[0x77],
+        rule: CasterClipRule::Fixed(&[0x0A]),
+        approach: false,
+    },
+    // PROT 0957 `0x76` (`0x801F798C`): `9` at `0x801F7CF8`.
+    CasterStageRow {
+        prot_entry: 957,
+        action_ids: &[0x76],
+        rule: CasterClipRule::Fixed(&[0x09]),
+        approach: false,
+    },
+    // PROT 0960 `0xA6` (`0x801F69D8`, Neo Star Slash): `li v0,0xa;
+    // sb v0,0x1da(s4)` at `0x801F6B98`.
+    CasterStageRow {
+        prot_entry: 960,
+        action_ids: &[0xA6],
+        rule: CasterClipRule::Fixed(&[0x0A]),
+        approach: false,
+    },
     // PROT 0961 `0xA1` / `0xB4`: first monster `0xB5` stages `6`
     // (`0x801F6D58`), anything else `8` (`0x801F6DE8`).
     CasterStageRow {
@@ -232,12 +262,27 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
 ///   reaction run.
 /// * PROT 0955 `0x6E` Kiss of Death - `0x801F8DB4`, the victim's `+0x1F1` /
 ///   `+0x1EF`.
+///
+/// The same holds - no caster store; any `+0x1DA` write is a victim's
+/// reaction - for PROT 0940's
+/// `0x801F78B8` (`0x50` / `0xAE`) and `0x801F7240` (`0xAC`), PROT 0941's
+/// `0x801F6A04` (`0xB9`, whose one stage is the victim's), PROT 0942's
+/// `0x801F7D34` (`0x52`), PROT 0943's `0x801F6A04` (`0xB5`), PROT 0945's
+/// `0x801F69F8` (`0xBA`), PROT 0955's `0x801F8F0C` (`0x60`) and
+/// `0x801F6A28` (`0x73`), PROT 0956's `0x801F7298` (`0x71`) and
+/// `0x801F69D8` (`0x75`), and PROT 0964's `0x801F88EC` (`0xAF`).
 pub const CAPTURE_BODIES_WITHOUT_CASTER_STAGE: &[(u32, &[u8])] = &[
-    (945, &[0x54]),
+    (940, &[0x50, 0xAC, 0xAE]),
+    (941, &[0xB9]),
+    (942, &[0x52]),
+    (943, &[0xB5]),
+    (945, &[0x54, 0xBA]),
     (946, &[]),
     (949, &[]),
     (954, &[]),
-    (955, &[0x6E]),
+    (955, &[0x60, 0x6E, 0x73]),
+    (956, &[0x71, 0x75]),
+    (964, &[0xAF]),
 ];
 
 /// Whether the capture-class body PROT `prot_entry` runs for `action_id`
@@ -255,14 +300,23 @@ pub fn capture_body_idles_caster(prot_entry: u32, action_id: u8) -> bool {
 /// ids)`. Their approach is the band's, like the [`CAPTURE_CASTER_STAGES`]
 /// rows marked `approach`.
 ///
+/// * PROT 0941 `0x51` - the polls at `0x801F75E0` / `0x801F76D8`, the walk
+///   stage `0x801F756C`;
 /// * PROT 0950 `0x5A` - the poll at `0x801F7B54`, the walk stage `0x801F7BA4`;
 /// * PROT 0952 `0xB8` - the poll and the walk stage `0x801F6BBC` (the
 ///   stage's `li v1,0x1` sits in the poll branch's delay slot at
 ///   `0x801F6B7C`);
 /// * PROT 0962 `0xA2` / `0xA3` / `0xA4` - the polls at `0x801F7C04` /
 ///   `0x801F7D00` and their siblings in the other two bodies.
-pub const CAPTURE_APPROACH_BODIES: &[(u32, &[u8])] =
-    &[(950, &[0x5A]), (952, &[0xB8]), (962, &[0xA2, 0xA3, 0xA4])];
+pub const CAPTURE_APPROACH_BODIES: &[(u32, &[u8])] = &[
+    // PROT 0941 `0x51` (Steal): the polls at `0x801F75E0` / `0x801F76D8` and
+    // the walk stage `0x801F756C` (`FUN_80050E2C(table, 1, count)` - the
+    // record's walk entry by tag). It stages no other caster clip.
+    (941, &[0x51]),
+    (950, &[0x5A]),
+    (952, &[0xB8]),
+    (962, &[0xA2, 0xA3, 0xA4]),
+];
 
 /// Whether the capture-class body PROT `prot_entry` runs for `action_id`
 /// walks its caster into reach before it strikes.
