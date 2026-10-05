@@ -1384,7 +1384,6 @@
 "801d828c" = "only dump body is a 4-instruction stub; not a function boundary in any extracted overlay image at its mapped base."
 "801e0f40" = "PHANTOM: only dump body is a 3-instruction stub"
 "801e2640" = "PHANTOM: only dump body is a 4-instruction stub"
-"801e565c" = "PHANTOM: only dump body is a 0-instruction stub"
 "801e60a8" = "PHANTOM: only dump body is a 3-instruction stub"
 "801ffba4" = "PHANTOM: only dump body is a 0-instruction stub"
 "8020d05c" = "PHANTOM: only dump body is a 0-instruction stub"
@@ -1486,6 +1485,7 @@
 # `docs/tooling/address-reference-scan.md` for what the sweep can and cannot
 # see, and `[unreferenced]`'s own header for why this is a third kind of claim.
 [unreferenced_slot_a_orphans]
+"801cfd78" = "Halfword-load leaf in cutscene_str (0970), `lhu v0,0(a0); jr ra; nop` at 0x801CFD78..0x801CFD84, opening on the word after FUN_801CFCDC's `jr ra` + delay slot. No reference of any form names it (find-address-word-refs.py 801cfd78: no word, jal, j, branch or lui pair in any image). see ghidra/scripts/funcs/overlay_cutscene_str_0970_801cfd78.txt"
 "801cf7fc" = "Boot-logo pair drawer in boot_init_pak (0895): two 0x28-byte GP0 0x2C textured quads side by side (x 0xA0..0x140 then 0x140..0x1E0, y 0xB0..0x130, tpage 0x9A, CLUT 0x7A40), brightness a0 on all three channels, each linked into the ordering table through FUN_8003D2C4 - the shape of the ported FUN_801D0868 / FUN_801D08F0 at a different rect. No reference of any form names it (find-address-word-refs.py: no word, jal, j, branch or lui pair in any image)."
 "801cf934" = "Boot-logo pair drawer in boot_init_pak (0895), sibling of 801cf7fc: two GP0 0x2E semi-transparent textured quads (x 0x28..0xA0 then 0xA0..0x118, y 0x50..0xA0, tpage 0x3B, CLUT 0x7940), brightness a0. No reference of any form names it."
 "801ceb50" = "GAME OVER banner tick, PROT 0902 file +0x338. A real entry (`addiu sp,sp,-0x118` at the VA, own `jr ra`), and a tick, so its only expected reference is a static actor template's `+0x08` word - which is exactly what the sweep finds and where the chain then stops. The gameover image holds two 0x18-stride template records: 0x801CED08, whose tick word is 0x801CEB48 (a bare `jr ra; nop` - a null tick), and 0x801CED20, whose tick word is this routine. The image's init FUN_801CE844 - itself reached by `jal 0x801ce844` from SCUS 0x80025B4C - materialises only 0x801CED08 (`lui a0,0x801d / addiu a0,a0,-0x12f8` at 0x801CE8C4, straight into FUN_80020DE0). Nothing anywhere materialises 0x801CED20: find-address-word-refs.py finds one `lui`+`addiu` pair for it and that pair is in the menu overlay 0899 at a VA-aliased address, i.e. different bytes in a different image. So the GAME OVER mode spawns an actor that ticks nothing, and this banner never runs. Same shape as 80025054 in [unreferenced]; documented at docs/reference/functions/game-modes.md."

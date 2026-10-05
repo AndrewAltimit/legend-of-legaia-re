@@ -443,8 +443,16 @@ RANGES = {
     # closes at the `jr ra` 0x801EED14); and PROT 0897's 0x801DD9D4, whose only
     # dump names entry 0x801DD8F0 in its header, with an extent that stops 0x88
     # bytes short of the `jr ra` at 0x801DDC18.
-    "overlay_field_0897": [("801dd9d4", "801ddc20")],
-    "overlay_cutscene_str_0970": [("801d06dc", "801d070c")],
+    #
+    # Two three-word leaves join them, each opening on the word after the
+    # previous routine's `jr ra` + delay slot. PROT 0897's 0x801E565C
+    # (`lui v0,0x8008; jr ra; sw zero,-0x4A10(v0)`) clears the pad-rotation
+    # octant `0x8007B5F0`, and SCUS's MAN loader `FUN_8003AEB0` calls it at
+    # 0x8003B710; its only earlier dump was a zero-instruction stub. PROT
+    # 0970's 0x801CFD78 (`lhu v0,0(a0); jr ra; nop`) is a halfword load no
+    # reference of any form reaches.
+    "overlay_field_0897": [("801dd9d4", "801ddc20"), ("801e565c", "801e5668")],
+    "overlay_cutscene_str_0970": [("801d06dc", "801d070c"), ("801cfd78", "801cfd84")],
 }
 
 # {program label: [(start VA, end VA exclusive), ...]} for images that DO have

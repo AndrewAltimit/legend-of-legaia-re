@@ -501,8 +501,13 @@ decodes as `andi zero,...` followed by `tge` - a MIPS-II trap instruction.
 `0x801E60A8` decodes as `jalx` and `daddi` - MIPS-16 and 64-bit opcodes. The
 PSX CPU implements neither. Any window that disassembles to them is data being
 rendered as code, and the surrounding "function" is fiction. `0x801E45AC`
-(four `nop`s - alignment padding) and `0x801E565C` (`size=1 bytes, 0
-instructions`) are the degenerate cases of the same thing.
+(four `nop`s - alignment padding) is the degenerate case of the same thing.
+A zero-instruction stub is **not** by itself that case: the `overlay_0897`
+stub at `0x801E565C` (`size=1 bytes, 0 instructions`) sat over a real
+three-word field-overlay leaf - SCUS's MAN loader `FUN_8003AEB0` calls it at
+`0x8003B710` - which a base-attributed dump now covers
+(`overlay_field_0897_801e565c.txt`). A stub says the dumper found nothing, not
+that nothing is there.
 
 `0x801ECC00` is worth naming separately: three independent images
 (`overlay_battle_action`, `overlay_battle_action_0898`,
@@ -558,9 +563,11 @@ would.
 | `identical` | Several images hold byte-identical code here. | Credit each; the dump documents all of them. |
 | `divergent` | Dumps at this extent resolve to different images. | Genuinely several routines; leave ambiguous. |
 | `misbased` | No image holds these bytes here; they live elsewhere. | Credit no image - the extent is fiction. |
-| `unresolved` | The bytes are in no extracted image at any VA. | Leave ambiguous. |
+| `unresolved` | The bytes are in no extracted image at any VA. | Credit no measured image (every one was compared at the VA and disagrees). |
+| `no_holder` | A window too short to search for, that no image's own content reproduces at this VA. | Credit no measured image, for the same reason. |
 | `zero_window` | The window is zero fill - fewer than three non-`nop` instructions. | Credit no image; see below. |
-| `short` / `data` / `gapped` / `no_disassembly` | The window cannot sign. | Leave ambiguous; `data` and `gapped` credit nobody. |
+| `short` | Below the at-VA floor, reproduced by several images. | Leave ambiguous among the images the image column names. |
+| `data` / `gapped` / `no_disassembly` | The window cannot sign. | Credit nobody. |
 
 ### `nop` encodes zero, so a window of them signs for everybody
 

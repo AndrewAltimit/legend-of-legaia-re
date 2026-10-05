@@ -539,7 +539,24 @@ impl World {
                 scene_actor_initial_state(SCENE_ACTOR_REQUESTED_STATE, self.field_vm.mode_flags);
         }
         self.man_load_resume_programs();
+        self.man_load_clear_pad_octant();
         outcome
+    }
+
+    /// The MAN loader's pad-octant reset.
+    ///
+    /// PORT: FUN_801E565C, overlay_field_0897_801e565c
+    ///
+    /// A three-word field-overlay leaf, `lui v0,0x8008; jr ra;
+    /// sw zero,-0x4A10(v0)`: it zeroes the pad-rotation octant `gp+0x2D8`
+    /// (`0x8007B5F0`). `FUN_8003AEB0` calls it at `0x8003B710` on the arm its
+    /// `_DAT_8007B8B8 != 2` test takes (`0x8003B510`), i.e. on every ordinary
+    /// scene change, so a scene that never authors an octant (field-VM op
+    /// `4C 2x`) walks with the pad unrotated. The return-from-battle /
+    /// minigame / FMV arm (`== 2`) skips it. The engine reaches this only
+    /// through `SceneHost::load_scene`, which a battle return does not run.
+    pub(crate) fn man_load_clear_pad_octant(&mut self) {
+        self.locomotion.pad_octant = 0;
     }
 
     /// Re-spawn any scripted-scene program a scene change interrupted.
@@ -725,6 +742,16 @@ mod tests {
             w.field_vm.submode_context[0],
             crate::field_submode::SUBMODE_STATE_OPEN
         );
+    }
+
+    #[test]
+    fn the_man_load_reset_clears_the_pad_octant() {
+        // FUN_801E565C, called from FUN_8003AEB0 at 0x8003B710: a scene
+        // change leaves the pad unrotated until the new scene authors one.
+        let mut w = World::default();
+        w.locomotion.pad_octant = 5;
+        w.man_load_actor_reset();
+        assert_eq!(w.locomotion.pad_octant, 0);
     }
 
     #[test]

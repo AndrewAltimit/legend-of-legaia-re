@@ -409,7 +409,10 @@ header word to the MDEC command register (the pointer at `0x801D0E90` holds
 `0x1F801820`) and DMA-0s the `0x20`-word body (`MADR = pkt + 4`, `BCR = 0x20 | (len >> 5)
 << 16`, `CHCR = 0x01000201`). An earlier reading had it staging two double-buffered
 output rects into `0x801D0D5C` / `0x801D0D9C`; those addresses are the quant packet's
-two matrix halves, not rects, and nothing here touches the output side. The frame-poll wrapper `FUN_801CF740` is the logic sibling that stays
+two matrix halves, not rects, and nothing here touches the output side. The three
+words right after it, `0x801CFD78` (`lhu v0,0(a0); jr ra; nop`), are a halfword-load
+leaf that no reference of any form reaches - linked, never called
+(`overlay_cutscene_str_0970_801cfd78.txt`). The frame-poll wrapper `FUN_801CF740` is the logic sibling that stays
 *inside* the port: it loops `StGetNext` (`FUN_8005EF40`, up to 2000 spins), sets the
 inclusive end-frame latch `DAT_801E09F8` when the demuxed frame number reaches the slot's
 `+0x0C`, and re-programs the decode rects from the sector header's own dimensions - both

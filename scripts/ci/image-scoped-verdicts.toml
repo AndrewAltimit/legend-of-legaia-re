@@ -40,6 +40,7 @@
 
 [cutscene_str]
 "801cfc50" = ["unreferenced", "MDEC decode-environment copy (the libpress DecDCTGetEnv shape): copies 16 + 16 + 32 words of quantisation / IDCT tables from 0x801D0D5C / 0x801D0D9C / 0x801D0DE0 into a0 and returns it. No reference of any form in this image (find-address-word-refs.py: no word, jal, j, branch or lui pair)."]
+"801cfd78" = ["unreferenced", "Halfword load leaf, 12 B at 0x801CFD78..0x801CFD84: `lhu v0,0(a0); jr ra; nop` - returns *(u16 *)a0. Opens on the word after FUN_801CFCDC's `jr ra` + delay slot. No reference of any form names it (find-address-word-refs.py 801cfd78: no word, jal, j, branch or lui pair in any image). see ghidra/scripts/funcs/overlay_cutscene_str_0970_801cfd78.txt"]
 "801d0230" = ["render_pipeline_mdec", "MDEC status read: returns the word at *0x801D0E94 (the MDEC status register pointer). Its two callers (0x801CFE3C / 0x801CFE78) are the in / out idle waits around the ported FUN_801D0100 / FUN_801D0198, whose ports (engine-core mdec_dma_sync) take the status read as a closure; legaia-mdec decodes synchronously."]
 
 [fishing]
@@ -57,3 +58,4 @@
 
 [jp_options_status]
 "801d9414" = ["jp_options_status_overlay", "A function entry of PROT 0896 (jp_options_status), dumped but uncited: the foreign-build image this disc never loads (see this section's header), so the routine has no retail behaviour on this build to port."]
+"801dcbf8" = ["jp_options_status_overlay", "Empty leaf of PROT 0896 (jp_options_status), `jr ra; nop` at 0x801DCBF8: the foreign-build image this disc never loads, and the body does nothing in any case. Placed in this image once the byte attribution stopped reading a delay-slot `nop` as zero fill."]

@@ -681,7 +681,9 @@ the actor is counter-rotated by exactly the octant the pad gained.
 **The octant is scene-authored, not camera-derived.** Nothing anywhere computes
 it from a camera azimuth. Its complete write set disc-wide is six stores, all
 in the field overlay: this arm's `sw` at `0x801E0ED0`, a `sw zero` clear at
-`0x801E5664`, the tile-board walker's delay-slot clear and two banded stores at
+`0x801E5664` (the delay slot of the three-word leaf `FUN_801E565C`, which the
+SCUS MAN loader `FUN_8003AEB0` calls at `0x8003B710` on every ordinary scene
+change - the `_DAT_8007B8B8 != 2` arm - so a scene starts unrotated), the tile-board walker's delay-slot clear and two banded stores at
 `0x801EF8B0` / `0x801EF8B8` / `0x801EF8CC` (see
 [tile-board.md](tile-board.md#the-walkers-octant-store)), and the walker's
 restore at `0x801EFE7C`.

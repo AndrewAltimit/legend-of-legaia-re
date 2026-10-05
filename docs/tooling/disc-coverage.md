@@ -779,7 +779,9 @@ reads and applies:
 | `divergent` | several dumps at one extent, each placed in a different image | credit each of them - see below |
 | `misbased` | the bytes live at another VA entirely | credit nobody |
 | `gapped` / `data` | not a coherent function body at that VA | credit nobody |
-| `short` / `unresolved` / `no_disassembly` | the window cannot sign it | residue: stays ambiguous |
+| `no_holder` / `unresolved` | every measured image's own content was compared at that VA and none reproduces the window | credit nobody - see [a mismatch needs no length](#a-mismatch-needs-no-length) |
+| `no_disassembly` | the dump carries C and no instruction stream | credit nobody: nothing at its entry corroborates its base |
+| `short` | below the at-VA floor, and several images reproduce the window | residue, for the named candidates only |
 
 Most of what `identical` used to hold was the inherited tail rather than a real
 tie. Once the sweep cuts each image at its own content (see
@@ -831,13 +833,49 @@ Three shapes remain, and each needs a different move:
 
 | Shape | What would close it |
 |---|---|
-| a few-instruction window that no image's own content reproduces at that VA | nothing cheap. Too short to search for elsewhere without inviting a coincidental hit, so it stays residue rather than being called `misbased` on evidence that cannot support the call. |
+| a below-floor window that several images reproduce at that VA | a longer dump of the same routine, or nothing: the candidates are known, the owner is not. |
 | bytes in no extracted image at any VA | an **extraction**, not a dump. Most were dumped from live RAM captures of overlays never statically extracted, or from runtime-mutated memory. |
 | two dumps at one extent resolving to different images | already answered: several routines share the range. A real finding, not a gap. |
 
 The middle row is the one with a route forward, and it is the
 [static overlay pipeline](static-overlay-pipeline.md)'s job rather than this
-page's.
+page's. Neither of the first two rows is *residue* any more in the gate's
+sense - see the next section.
+
+#### A mismatch needs no length
+
+The window floors guard a **match** against coincidence. A **mismatch** at a
+fixed VA is not a coincidence of anything: "these words are not those words"
+is as strong over two instructions as over twenty-four. So when the at-VA test
+runs and no measured image's own content reproduces the window (`no_holder`
+for a short window, `unresolved` for a long one the relocation search also
+fails on), the extent is positively *not* any measured image's, and the gate
+credits nobody - where the bytes really live is a separate question the class
+does not answer.
+
+Counting those extents as residue was not merely loose. Residue joins the upper
+bound of every span containing it, and the code denominator is
+`covered + code_gap`, so each such extent inflated the **denominator** of every
+sibling with bytes that sibling's own content says are something else. One
+batch of mis-based field-overlay prints (`overlay_0897_xxx_dat_*`, 4-to-36-byte
+windows) lands across the data and zero fill above the FMV player's,
+`init.pak`'s and the dev modules' real code, and it held their code-identified
+figures near 79%, 79% and 85% with no un-dumped code run in any of them.
+Removing it moves no upper bound and raises those floors to 100%: the floor
+cannot fall, because the floor never counted residue.
+
+Below the floor the same logic splits by holder count. The control
+(`--validate-short-floor`, which reports every length down to one instruction)
+finds **no wrong answer** at one or two instructions either - the short test
+never names a different single image than the full window does; it only names
+several where the full window names one. So a below-floor window with a **sole**
+holder is named `unique`, and one with several keeps the holders in the CSV's
+image column as `short`: residue for those candidates, dropped for every other
+image.
+
+The extraction case below is what `unresolved` used to cost, and it still
+describes how an extraction resolves it; the difference is that the siblings no
+longer carry the bytes in the meantime.
 
 #### An un-imaged overlay is charged to every sibling that maps its bytes
 
@@ -846,10 +884,12 @@ why. An overlay with no extracted image is outside this measurement entirely -
 it has no row, so nothing here is short on its account. Its bytes are not
 outside it: a dump of them prints a VA that lands inside **every** sibling span
 mapping the same address, and with no image to reproduce the window the extent
-resolves to nobody. It stays residue, and residue is ambiguous for all of them
-at once. Every image `static-overlays.toml` maps onto `0x801CE818` carries such
-an extent in its ambiguous set, so one of them holds down the whole slot-A
-band's floors together.
+resolves to nobody. Read as residue, it was ambiguous for all of them at once:
+every image `static-overlays.toml` maps onto `0x801CE818` carried such an extent
+in its ambiguous set, so one of them held down the whole slot-A band's floors
+together. The gate now credits an `unresolved` extent to nobody (see
+[a mismatch needs no length](#a-mismatch-needs-no-length)), so it no longer
+lands in any sibling's figure while it waits for its image.
 
 Extracting the missing image resolves it in one step and every one of those
 floors rises together. The worked case is the 324-byte extent at
@@ -920,7 +960,15 @@ already resolves and re-runs the at-VA test at each short length. Over ~3000
 trials it produces **no wrong answer at any length down to one instruction**, and
 loses precision only in the honest direction - naming several images instead of
 one, which returns `identical` and credits all of them. Three instructions is
-where that curve flattens.
+where that curve flattens. Below it a window with exactly one holder is still
+named, since the imprecise outcome cannot occur there; several holders stay
+`short`.
+
+A delay-slot `nop` counts toward a window's length. Ghidra prints a delay-slot
+instruction with a leading `_`, and `lhu v0,0(a0); jr ra; _nop` is a whole
+three-word leaf, not two instructions padded with fill - the
+[zero-window guard](#a-nop-is-not-evidence-so-a-window-of-them-is-not-a-signature)
+counts only a plain `nop` as fill.
 
 The generalisable point: **a confidence floor belongs to a question, not to an
 instrument.** Sharing one across two questions makes it simultaneously too loose

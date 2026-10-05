@@ -210,7 +210,48 @@ def read_dump_extents(funcs_dir):
 # at any base, at any VA. Such an extent has been credited to an image whose
 # own content is shorter than the extent, and read as byte-identical across two
 # images that agreed about nothing but being empty.
-CREDIT_NOBODY = {"misbased", "data", "gapped", "zero_window"}
+#
+# `unresolved` and `no_holder` join them on evidence of their own: the sweep
+# compared every measured image's OWN content with the dump's window at the
+# printed VA and none of them reproduces it. That is a mismatch at a fixed
+# offset, which needs no window length to be believed - the length floors guard
+# a positive match against coincidence. Counted as residue instead, such an
+# extent joined the upper bound of every span containing it, and since the code
+# denominator is `covered + code_gap` it inflated each of those images'
+# denominators with bytes their own content says are something else. On the
+# slot-A band it was one batch of mis-based field-overlay prints landing in the
+# data and zero fill of the FMV player, the boot image and the dev modules. An
+# extent of an overlay with no extracted image lands here too, and is credited
+# to that image once an extraction gives the sweep something to match.
+#
+# `no_disassembly` is the same law at its limit: a dump that carries decompiled
+# C and no instruction stream has no bytes at its entry at all, so nothing
+# corroborates the base its header prints (the `zero_window_head` rule below,
+# with zero words of evidence instead of zero-valued ones).
+CREDIT_NOBODY = {"misbased", "data", "gapped", "zero_window", "unresolved",
+                 "no_holder", "no_disassembly"}
+
+
+class ResidueAmong(frozenset):
+    """A residue extent the bytes narrowed to a candidate set but could not
+    sign. A `short` window (below the at-VA floor) carries the images whose own
+    content reproduces it; every other image's content disagrees at that VA,
+    so the extent stays ambiguous for the candidates only."""
+
+
+def owners_exclude(owners, name):
+    """Does an attribution verdict take this extent away from image `name`?"""
+    if owners == "residue":
+        return False
+    if isinstance(owners, ResidueAmong):
+        return name not in owners
+    return owners is None or name not in owners
+
+
+def owners_name(owners, name):
+    """Does an attribution verdict NAME image `name` (floor credit)?"""
+    return (owners != "residue" and not isinstance(owners, ResidueAmong)
+            and owners is not None and name in owners)
 # Classes that name the owning image(s) by bytes. `identical` names several
 # because they hold byte-identical code there, and each of them really does
 # contain those bytes, so each is credited. `divergent` names several for the
@@ -252,6 +293,14 @@ def read_attribution(path=ATTRIBUTION):
                 out[(entry, entry + nbytes)] = {
                     n.split("(")[0] for n in (row.get("image") or "").split("|")
                     if n and n != "-"}
+            elif klass == "short":
+                cands = {n.split("(")[0]
+                         for n in (row.get("image") or "").split("|")
+                         if n and n != "-"}
+                # A `short` row with no candidates is a window with no tokens
+                # to compare: it stays full residue.
+                if cands:
+                    out[(entry, entry + nbytes)] = ResidueAmong(cands)
     return out
 
 
@@ -693,7 +742,7 @@ def cover_image(name, image, base_va, span, extents, attrib=None, unambiguous=()
         if not lo <= a < hi:
             continue
         owners = (attrib or {}).get((a, b), "residue")
-        if owners != "residue" and (owners is None or name not in owners):
+        if owners_exclude(owners, name):
             dropped += 1
             continue
         mine.append((a, min(b, hi)))
@@ -701,7 +750,7 @@ def cover_image(name, image, base_va, span, extents, attrib=None, unambiguous=()
         # ones no other measured span reaches. An unambiguous image
         # (`attrib is None`, i.e. SCUS) has nothing to attribute, so its floor
         # is its numerator.
-        if (attrib is None or (owners != "residue" and name in owners)
+        if (attrib is None or owners_name(owners, name)
                 or (a, b) in unambiguous):
             floor.append((a, min(b, hi)))
         else:
@@ -977,7 +1026,8 @@ def overlay_reports(extracted, extents, attrib=None):
     distinct = sorted(set(extents))
     ambiguous = [k for k in distinct
                  if sum(1 for lo, hi, _ in spans if lo <= k[0] < hi) > 1]
-    resolved = sum(1 for k in ambiguous if k in attrib)
+    resolved = sum(1 for k in ambiguous
+                   if k in attrib and not isinstance(attrib[k], ResidueAmong))
     totals = (len(ambiguous), resolved, len(ambiguous) - resolved)
 
     # Per-image share of this image's extents that the bytes could not place.
@@ -994,10 +1044,10 @@ def overlay_reports(extracted, extents, attrib=None):
             if sum(1 for l2, h2, _ in spans if l2 <= k[0] < h2) <= 1:
                 continue  # unambiguous by address; attribution has nothing to do
             owners = attrib.get(k, "residue")
-            if owners == "residue":
-                resid += 1
-            elif owners is None or row["name"] not in owners:
+            if owners_exclude(owners, row["name"]):
                 dropped += 1
+            elif owners == "residue" or isinstance(owners, ResidueAmong):
+                resid += 1
         kept = len(mine) - dropped
         row["ambiguous"] = resid
         row["ambiguous_pct"] = (100.0 * resid / kept) if kept else 0.0
