@@ -1769,9 +1769,25 @@ impl World {
                 player,
                 exempt: self.field_channel_flags(slot) & 3 != 0,
             };
+            let seat = self.npcs.positions.get(&slot).copied();
             let Some(chan) = self.npcs.ambient.get_mut(&slot) else {
                 continue;
             };
+            // Retail has one position: the walk ops read and write the live
+            // `+0x14` / `+0x18` that a script's `0x23` seat, a cross-context
+            // walk or a teleport also write. While the mirror is live the
+            // VM's copy equals the published seat unless some other writer
+            // moved the actor, so adopt the seat - otherwise the next walk
+            // step re-publishes the VM's stale coordinates and the actor
+            // snaps back to where it wandered before the script placed it
+            // (`conc3`'s cast, seated by `A3 2B 1A 1C`, was back in its
+            // off-stage wander box a few hundred frames later and walked the
+            // whole map to its mark). With the mirror off the two are
+            // allowed to drift (see above), so the seat is not adopted.
+            if live_walk && let Some((sx, sz)) = seat {
+                chan.vm.x = sx;
+                chan.vm.z = sz;
+            }
             // Split the borrow across the struct's fields so the bytecode can
             // be read while the VM is stepped - no per-frame clone.
             let FieldNpcAmbient {
