@@ -403,13 +403,7 @@ impl World {
         // falls back to 7 = non-elemental, which no resist bit matches, so
         // disc-free battles keep magnitude and RNG stream unchanged (a >= 1
         // roll never trips the floor draw without mitigation).
-        let attacker_element = self
-            .actors
-            .get(attacker as usize)
-            .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.tables.monster_catalog.get(id))
-            .map(|d| d.element)
-            .unwrap_or(7);
+        let attacker_element = self.monster_seat_element(attacker as usize).unwrap_or(7);
         let target_is_party = target < self.party.party_count;
         let finish = DamageFinish {
             predamage: atk.saturating_sub(def).clamp(1, 9999),
@@ -504,13 +498,7 @@ impl World {
             self.next_rand() as u16
         });
 
-        let attacker_element = self
-            .actors
-            .get(attacker as usize)
-            .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.tables.monster_catalog.get(id))
-            .map(|d| d.element)
-            .unwrap_or(7);
+        let attacker_element = self.monster_seat_element(attacker as usize).unwrap_or(7);
         let target_is_party = target < self.party.party_count;
         let finish = DamageFinish {
             predamage: atk.saturating_sub(def).clamp(1, 9999),
@@ -703,13 +691,7 @@ impl World {
             self.next_rand() as u16
         });
 
-        let attacker_element = self
-            .actors
-            .get(attacker as usize)
-            .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.tables.monster_catalog.get(id))
-            .map(|d| d.element)
-            .unwrap_or(7);
+        let attacker_element = self.monster_seat_element(attacker as usize).unwrap_or(7);
         let target_is_party = target < self.party.party_count;
         let finish = DamageFinish {
             predamage: atk.saturating_sub(def).clamp(1, 9999),
@@ -987,13 +969,7 @@ impl World {
         let Some(aff) = self.tables.element_affinity.as_ref() else {
             return 100;
         };
-        let Some(enemy_elem) = self
-            .actors
-            .get(attacker as usize)
-            .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.tables.monster_catalog.get(id))
-            .map(|d| d.element)
-        else {
+        let Some(enemy_elem) = self.monster_seat_element(attacker as usize) else {
             return 100;
         };
         let Some(party_elem) = aff.character_element(target + 1) else {
@@ -1014,9 +990,20 @@ impl World {
         if (slot as usize) < self.party.party_count as usize {
             aff.character_element(slot + 1)
         } else {
-            let id = self.actors.get(slot as usize)?.battle_monster_id?;
-            Some(self.tables.monster_catalog.get(id)?.element)
+            self.monster_seat_element(slot as usize)
         }
+    }
+
+    /// A monster seat's element this fight: the seat's own copy
+    /// ([`crate::world::Actor::battle_element`], which PROT 0964's Element
+    /// Change rewrites) ahead of its catalog record's `+0x1D`. `None` for a
+    /// seat with no monster id or no catalog record.
+    pub(in crate::world) fn monster_seat_element(&self, slot: usize) -> Option<u8> {
+        let actor = self.actors.get(slot)?;
+        let id = actor.battle_monster_id?;
+        actor
+            .battle_element
+            .or_else(|| Some(self.tables.monster_catalog.get(id)?.element))
     }
 
     /// Element id of the *summon creature* a player Seru-magic `spell_id` attacks

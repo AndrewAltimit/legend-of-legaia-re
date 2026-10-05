@@ -842,3 +842,51 @@ fn element_change_writes_the_ai_counter_it_rerolls_against() {
         "Rogue's attack id never moved: {seen:?}"
     );
 }
+
+/// PROT 0964's Element Change rewrites the record copy retail's battle
+/// loader made for the seat (`0x801C9348[0]`, `+0x1D`), not the archive: the
+/// changed element is this fight's only, and the next battle with the same
+/// monster starts on its disc element.
+#[test]
+fn element_change_stays_on_the_seat_and_ends_with_the_battle() {
+    use crate::monster_catalog::{FormationDef, FormationSlot, MonsterDef};
+    let mut party = legaia_save::Party::zeroed(3);
+    for member in &mut party.members {
+        let mut hms = member.hp_mp_sp();
+        hms.hp_cur = 100;
+        hms.hp_max = 100;
+        member.set_hp_mp_sp(hms);
+    }
+    let mut world = World::new();
+    world.load_party(party);
+    world.party.party_count = 3;
+    let mut def = MonsterDef::new(0x40, "Rogue", 500, 10);
+    def.element = 2;
+    world.tables.monster_catalog.insert(def);
+    let formation = FormationDef::new(7, vec![FormationSlot::new(0x40)]);
+    let enter = |world: &mut World| {
+        world.field_return = Some(crate::world::FieldReturnState {
+            actors: world.actors.clone(),
+            player_actor_slot: world.player_actor_slot,
+            party_count: world.party.party_count,
+        });
+        world.battle.return_mode = SceneMode::Field;
+        world.enter_battle_from_formation(&formation);
+    };
+    enter(&mut world);
+    assert_eq!(world.monster_seat_element(3), Some(2));
+    world.apply_cast_element_change(5);
+    assert_eq!(world.monster_seat_element(3), Some(5), "the seat changed");
+    assert_eq!(
+        world.tables.monster_catalog.get(0x40).map(|d| d.element),
+        Some(2),
+        "the catalog record is untouched"
+    );
+    world.finish_battle();
+    enter(&mut world);
+    assert_eq!(
+        world.monster_seat_element(3),
+        Some(2),
+        "the next fight starts on the disc element"
+    );
+}

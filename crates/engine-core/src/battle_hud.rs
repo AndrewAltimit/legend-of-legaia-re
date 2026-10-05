@@ -1927,12 +1927,12 @@ pub fn battle_target_select_plaque(world: &crate::world::World) -> Option<(Strin
 /// The element badge a monster slot's plaque wears (`None` for none).
 fn monster_element_badge(world: &crate::world::World, slot: u8) -> Option<u8> {
     let actor = world.actors.get(slot as usize)?;
-    let def = world
-        .tables
-        .monster_catalog
-        .get(actor.battle_monster_id?)
-        .filter(|d| (d.element as usize) < legaia_asset::element_affinity::ELEMENT_COUNT)?;
-    Some(def.element)
+    let id = actor.battle_monster_id?;
+    let element = match actor.battle_element {
+        Some(e) => e,
+        None => world.tables.monster_catalog.get(id)?.element,
+    };
+    ((element as usize) < legaia_asset::element_affinity::ELEMENT_COUNT).then_some(element)
 }
 
 /// Character record byte the magic chip's gate reads, as an index into the

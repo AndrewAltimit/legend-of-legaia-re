@@ -2260,6 +2260,7 @@ impl World {
         for actor in self.actors.iter_mut().take(8).skip(actor_count) {
             actor.battle = Default::default();
             actor.battle_monster_id = None;
+            actor.battle_element = None;
         }
         // Reset the battle ctx and seed at Begin via the public byte API to
         // avoid pulling battle_action::ActionState into world.rs imports.

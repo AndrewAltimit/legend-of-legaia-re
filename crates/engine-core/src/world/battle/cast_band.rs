@@ -1776,23 +1776,20 @@ impl World {
 
     /// Commit PROT 0964's new element onto the first monster seat.
     ///
-    /// Retail writes the loaded record at `0x801C9348[0]`; the engine's
-    /// equivalent store is the catalog entry that seat's `battle_monster_id`
-    /// names, which is what `World::battle_slot_element` reads back. The
-    /// difference from retail is scope: retail's write is per **seat**, so a
-    /// battle fielding two copies of the same monster id would see only one
-    /// of them change; here both do.
-    fn apply_cast_element_change(&mut self, element: u8) {
+    /// Retail writes the record copy the battle loader made for that seat
+    /// (`0x801C9348[0]`, record `+0x1D`) - per seat and per fight. The engine
+    /// keeps that copy as the seat's [`crate::world::Actor::battle_element`],
+    /// which `World::battle_slot_element` and the plaque badge read ahead of
+    /// the catalog; the shared catalog entry is never touched, so the next
+    /// battle with the same monster starts on its disc element.
+    pub(in crate::world) fn apply_cast_element_change(&mut self, element: u8) {
         use vm::cast_module_ticks::FIRST_MONSTER_SEAT;
-        let Some(id) = self
+        if let Some(a) = self
             .actors
-            .get(FIRST_MONSTER_SEAT as usize)
-            .and_then(|a| a.battle_monster_id)
-        else {
-            return;
-        };
-        if let Some(def) = self.tables.monster_catalog.by_id.get_mut(&id) {
-            def.element = element;
+            .get_mut(FIRST_MONSTER_SEAT as usize)
+            .filter(|a| a.battle_monster_id.is_some())
+        {
+            a.battle_element = Some(element);
         }
     }
 
@@ -3229,13 +3226,7 @@ impl World {
             CastWrapper::SharedSummon => return net,
         };
         let party_count = self.party.party_count;
-        let attacker_element = self
-            .actors
-            .get(attacker as usize)
-            .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.tables.monster_catalog.get(id))
-            .map(|d| d.element)
-            .unwrap_or(7);
+        let attacker_element = self.monster_seat_element(attacker as usize).unwrap_or(7);
         let finish = DamageFinish {
             predamage: net.max(0) as u32,
             attacker_slot: if attacker < party_count { 0 } else { 3 },
