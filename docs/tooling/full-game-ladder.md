@@ -253,7 +253,10 @@ The follower leaves a cross-axis offset of a few units alone while the
 other axis still has ground to cover: chasing its own overshoot flips the
 diagonal every frame, and along a terrace edge the side-step toward the
 drop is a ledge hop (`tunnela`'s corridor at (89, 79) drops the party to
-(89, 80), a one-way hop it cannot climb back). The follower presses a teleport waypoint until the jump lands, backs out of a
+(89, 80), a one-way hop it cannot climb back). A script that fires on the walk and changes no flag, more than a couple of
+dozen times on one walk, makes that walk a stall: `retock` P2[26], the Mt.
+Letona checkpoint, turns the party back every time it is crossed without
+Lord Saryu's key, and re-crossing it ate the segment's budget. The follower presses a teleport waypoint until the jump lands, backs out of a
 diagonal-wall notch where all four lattice steps read blocked, and, held
 against something for a second, tries the action button. In a field the tap
 waits for a frame the player did not move: the stall counter also counts a run
@@ -280,7 +283,11 @@ The pad hand's beats are the seated tier's, played as a player plays them:
 - a **talk** walks up to the NPC (re-reading a routed NPC's position),
   leans toward it until the retail interact probe lands on it, presses Cross,
   pages the conversation and steps away. Talks go nearest first;
-- a **walk-on** walks to an inert tile beside the band, then onto it;
+- a **walk-on** walks to an inert tile beside the band, then onto it. A band
+  is often several tiles wide and boxed in on some of them (`retockin`
+  P2[42], Lord Saryu's audience, spans (104..107, 50) and (107, 50) is walled
+  in): when the walk finds no path to its tile, or stalls at its edge, the
+  band's other tiles are tried, nearest first;
 - an **object door** or a **boss stager** is walked up to and leaned on. A
   stager's fight fires on the next field step, so the walk that step belongs
   to fights it instead of fleeing it;

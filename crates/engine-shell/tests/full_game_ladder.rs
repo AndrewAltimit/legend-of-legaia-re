@@ -2276,6 +2276,9 @@ const SUBCELL: i16 = 32;
 const TILE: i16 = 128;
 const PAD_LEG_FRAMES: u32 = 12_000;
 const PAD_STALL_FRAMES: u32 = 300;
+/// Times one walk-time script may fire on a single pad walk without changing
+/// a flag before the walk gives up on that way.
+const WALK_SCRIPT_REFIRES: u32 = 24;
 /// Cross-axis distance (world units) the pad walk does not correct while it
 /// still has ground to cover on the other axis.
 const WALK_DEADBAND: i16 = 8;
@@ -3769,13 +3772,17 @@ fn pad_hop(session: &mut BootSession, graph: &DiscGraph, dest: &str) -> Result<S
                 restore_player_xz(session, (x, z));
                 continue;
             }
-            let mask = match spec {
-                "U" => PadButton::Up.mask(),
-                "L" => PadButton::Left.mask(),
-                "D" => PadButton::Down.mask(),
-                "R" => PadButton::Right.mask(),
-                _ => 0,
-            };
+            // A direction or a diagonal pair (`UL`, `DR`, ...).
+            let mask = spec
+                .chars()
+                .map(|c| match c {
+                    'U' => PadButton::Up.mask(),
+                    'L' => PadButton::Left.mask(),
+                    'D' => PadButton::Down.mask(),
+                    'R' => PadButton::Right.mask(),
+                    _ => 0,
+                })
+                .fold(0, |a, b| a | b);
             let from = player_xz(session);
             let mut trail = Vec::new();
             for f in 0..40 {
@@ -4503,6 +4510,8 @@ fn pad_walk(
     // Where the player stood when the previous walk frame was pressed.
     let mut pressed_at: Option<(i16, i16)> = None;
     let mut tap_owed = false;
+    // Walk-time script firings per park site, with the flags they left.
+    let mut refires: HashMap<String, (u32, BTreeSet<u16>)> = HashMap::new();
     for _ in 0..PAD_LEG_FRAMES {
         pad_budget(session)?;
         // Per overworld tile: the encounter step counter it left behind.
@@ -4759,6 +4768,24 @@ fn pad_walk(
             if before != (flags_of_world(session), cell_of(px, pz)) {
                 planned_from = None;
                 path.clear();
+            }
+            // A band that turns the walk back every time it is crossed
+            // (`retock` P2[26], the Mt. Letona checkpoint: "Passage
+            // forbidden" without Lord Saryu's key, then a step back) is a
+            // wall to this walk; re-crossing it burns the segment budget.
+            let flags_now = flags_of_world(session);
+            let n = refires.entry(site).or_insert((0, flags_now.clone()));
+            if n.1 == flags_now {
+                n.0 += 1;
+            } else {
+                *n = (1, flags_now);
+            }
+            if n.0 > WALK_SCRIPT_REFIRES {
+                return Err(format!(
+                    "pad walk stalled at tile {:?}: a script on the walk fired {} times and changed nothing",
+                    here(session),
+                    n.0
+                ));
             }
         }
         let d = dist(here(session));
@@ -5424,12 +5451,15 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
     // (`FUN_801D5630`), so a fallback band shadowed by a primary entry on
     // the same tile never fires its own record.
     let mut first_tile: BTreeMap<u8, (u8, u8)> = BTreeMap::new();
+    // Every tile of each band, for a walk that cannot reach the first.
+    let mut band: BTreeMap<u8, Vec<(u8, u8)>> = BTreeMap::new();
     for t in triggers.iter().filter(|t| t.gate == 1) {
         let owner = triggers
             .iter()
             .find(|u| (u.tile_x, u.tile_z) == (t.tile_x, t.tile_z));
         if owner.is_some_and(|u| u.record == t.record && u.gate == 1) {
             first_tile.entry(t.record).or_insert((t.tile_x, t.tile_z));
+            band.entry(t.record).or_default().push((t.tile_x, t.tile_z));
         }
     }
     // Talk and walk-on beats unlock each other (a conversation sets the flag
@@ -5594,11 +5624,47 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
             let f0 = flags_of_world(session);
             ran += 1;
             let r = if pad_hand() {
-                match pad_step_onto(session, tile) {
-                    Ok(Walk::Entered(s)) => Run::Entered(s),
-                    Ok(Walk::Arrived) => run_while_moving(session, DEEP_EXIT_TICKS),
-                    Err(e) => Run::Parked(e),
+                // A band is often several tiles wide and walled on some of
+                // them (`retockin` P2[42], Lord Saryu's audience, spans
+                // (104..107, 50) and (107, 50) is boxed in): a walk that
+                // cannot reach its first tile tries the rest, nearest first.
+                let (px, pz) = player_xz(session);
+                let me = dispatch_tile(px, pz);
+                let mut tiles: Vec<(u8, u8)> = band
+                    .get(&rec)
+                    .map(|v| v.iter().copied().filter(|&t| t != tile).collect())
+                    .unwrap_or_default();
+                tiles.sort_by_key(|&(x, z)| {
+                    (i32::from(x) - me.0).abs() + (i32::from(z) - me.1).abs()
+                });
+                tiles.insert(0, tile);
+                let mut r = Run::Parked("band has no tile".into());
+                for t in tiles {
+                    pad_budget(session)?;
+                    r = match pad_step_onto(session, t) {
+                        Ok(Walk::Entered(s)) => Run::Entered(s),
+                        Ok(Walk::Arrived) => run_while_moving(session, DEEP_EXIT_TICKS),
+                        Err(e) => Run::Parked(e),
+                    };
+                    // Retried only when the tile itself is the obstacle: no
+                    // path to it at all, or a walk that stalled at its edge.
+                    // A walk that stalled far off is the route's problem, and
+                    // the next tile would only walk it again.
+                    let short = |e: &str| {
+                        e.split(" tiles short")
+                            .next()
+                            .and_then(|h| h.rsplit(' ').next().and_then(|n| n.parse::<u32>().ok()))
+                    };
+                    let unreached = matches!(&r, Run::Parked(e)
+                        if e.contains("no walkable path")
+                            || (e.contains("pad walk stalled") && short(e).is_some_and(|n| n <= 2)));
+                    // A room-marker band crossed on the way may raise a flag
+                    // (`0x52A`); only the record's own run ends the search.
+                    if !unreached {
+                        break;
+                    }
                 }
+                r
             } else {
                 step_onto(session, tile);
                 run_while_moving(session, DEEP_EXIT_TICKS)
