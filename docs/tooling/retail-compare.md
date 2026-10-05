@@ -1132,6 +1132,16 @@ bit is a seeding limit. The opening legs are pre-run already, and there the run
 stops where retail's does (`World::pre_run_entry_script`), so the two
 `opdeene` states carry retail's selector through the seed.
 
+The same pass picks the frame's clear colour. `town01`'s entry loop sets
+`4C 13` to the cave brown `(60, 40, 20)` while the player stands in its
+tile box `[0, 0 .. 44, 55]` and black elsewhere
+([script-vm-menuctrl](../subsystems/script-vm-menuctrl.md#0x4c-nibble-1-sub-3---the-field-clear-colour)).
+`rim_elm_zoom_intro` holds black with the player at `(3456, 5632)`, inside
+that box, because the opening record carried the player there after the
+loop's last pass; the seed's pass at the seat (the one that raises `0x19D`)
+picks brown, and the brown shows through the semi-transparent sea. It is the
+selector's seeding limit, on the clear colour.
+
 ### A flag the entry raises on every load
 
 `rikuroa`'s entry script raises the fog gate and sets flag `0x01F` on every

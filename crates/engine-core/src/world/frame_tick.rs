@@ -1317,6 +1317,14 @@ impl World {
                 self.presentation.tint = None;
             }
         }
+        // Step an op-`4C 13` clear-colour ramp (its `FUN_8003C5F0` slot jobs).
+        if let Some(r) = self.presentation.clear_ramp.as_mut() {
+            r.elapsed = r.elapsed.saturating_add(1);
+            self.presentation.clear_rgb = r.value();
+            if r.elapsed >= r.total {
+                self.presentation.clear_ramp = None;
+            }
+        }
         // Consume a pending FMV transition the field VM signalled last frame
         // (op `0x4C 0xE2`). Retail's main mode dispatcher reads the
         // next-game-mode global one frame after the op writes it, so the flip

@@ -2292,6 +2292,26 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
                 current, target, frames,
             ));
         }
+        // Sub-op 0x13: the field clear colour (both draw environments'
+        // `r0 / g0 / b0`), instant or ramped by `FUN_8003C5F0` over
+        // `LE_u16(payload[3..5])` frames - see `ClearColourRamp`.
+        // REF: FUN_8003C5F0
+        if op0 == 0x13 {
+            let end = [payload[0], payload[1], payload[2]];
+            let frames = u16::from_le_bytes([payload[3], payload[4]]);
+            let p = &mut self.world.presentation;
+            if frames == 0 {
+                p.clear_rgb = end;
+                p.clear_ramp = None;
+            } else {
+                p.clear_ramp = Some(crate::world::ClearColourRamp {
+                    start: p.clear_rgb,
+                    end,
+                    total: frames,
+                    elapsed: 0,
+                });
+            }
+        }
         self.world.pending_field_events.push(FieldEvent::MenuCtrl {
             op0,
             payload: *payload,

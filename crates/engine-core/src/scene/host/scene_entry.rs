@@ -656,6 +656,11 @@ impl SceneHost {
         self.world.presentation.effect_tween_slot = None;
         self.world
             .retire_actors_by_handler(crate::actor_handler::ActorHandler::ColourTween);
+        // The MAN loader zeroes the clear colour on every scene load
+        // (`FUN_8003AEB0`, `0x8003B470..0x8003B48C`); the scene's own
+        // `4C 13` sets it again.
+        self.world.presentation.clear_rgb = [0; 3];
+        self.world.presentation.clear_ramp = None;
         // Scripted CLUT-cell effects are scene-scoped (their cell operands
         // came from the previous scene's MAN); drop any in flight and re-pin
         // the frame-step factor `dt` (retail `DAT_1F800393`, the adaptive

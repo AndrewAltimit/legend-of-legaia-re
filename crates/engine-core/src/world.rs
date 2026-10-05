@@ -137,7 +137,7 @@ pub use menu_state::MenuState;
 pub use minigame_state::{FishingCaptionText, MinigameState};
 pub use move_vm_globals::{MOVE_STRIP_REQUEST_CAP, MoveVmGlobals};
 pub use party_state::PartyState;
-pub use screen_fx_state::ScreenFxState;
+pub use screen_fx_state::{ClearColourRamp, ScreenFxState};
 pub use seru_state::SeruState;
 pub use shop_state::ShopState;
 pub use state::*;

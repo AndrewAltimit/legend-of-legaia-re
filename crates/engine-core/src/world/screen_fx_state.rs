@@ -65,6 +65,47 @@ pub struct ScreenFxState {
     /// This frame's bar height in scanlines, republished every tick so a
     /// renderer reads a value rather than re-stepping the envelope.
     pub cinematic_bar: i16,
+    /// The field frame's **clear colour**: the `r0 / g0 / b0` bytes of both
+    /// draw environments (`0x8007BF5D..5F` and the `+0x74` mirror), which
+    /// `PutDrawEnv` fills the frame with wherever no primitive lands. The MAN
+    /// loader zeroes it on every scene load (`FUN_8003AEB0`,
+    /// `0x8003B470..0x8003B48C`); op `4C 13` sets it - see
+    /// [`ClearColourRamp`].
+    pub clear_rgb: [u8; 3],
+    /// A live op-`4C 13` ramp of [`Self::clear_rgb`].
+    pub clear_ramp: Option<ClearColourRamp>,
+}
+
+/// One op-`4C 13` ramp of the field clear colour.
+///
+/// The op (`0x801E0D6C..0x801E0EAC` in `FUN_801DE840`) stores its three
+/// colour bytes into `0x8007B636 / 35 / 34` and, with a zero frame count
+/// (`LE_u16` of operand bytes 4..5), straight into both draw environments'
+/// `r0 / g0 / b0`; otherwise it schedules one `FUN_8003C5F0` slot job per
+/// byte from the live value to the new one over that many frames. `teien`
+/// `P1[0]` sets `4C 13 14 30 6C` - the garden's sea blue behind the walls -
+/// and `town01` its cave brown `(60, 40, 20)` inside the cliff region.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClearColourRamp {
+    pub start: [u8; 3],
+    pub end: [u8; 3],
+    pub total: u16,
+    pub elapsed: u16,
+}
+
+impl ClearColourRamp {
+    /// The colour after [`Self::elapsed`] frames, landing exactly on `end`.
+    pub fn value(&self) -> [u8; 3] {
+        if self.elapsed >= self.total || self.total == 0 {
+            return self.end;
+        }
+        let mut out = [0u8; 3];
+        for (i, o) in out.iter_mut().enumerate() {
+            let (a, b) = (i32::from(self.start[i]), i32::from(self.end[i]));
+            *o = (a + (b - a) * i32::from(self.elapsed) / i32::from(self.total)) as u8;
+        }
+        out
+    }
 }
 
 impl ScreenFxState {
@@ -81,6 +122,8 @@ impl ScreenFxState {
             fx_frame: Default::default(),
             cinematic_bars: None,
             cinematic_bar: 0,
+            clear_rgb: [0; 3],
+            clear_ramp: None,
         }
     }
 }
@@ -88,5 +131,25 @@ impl ScreenFxState {
 impl Default for ScreenFxState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_clear_colour_ramp_lands_on_its_end() {
+        let mut r = ClearColourRamp {
+            start: [0, 0, 0],
+            end: [20, 48, 108],
+            total: 4,
+            elapsed: 0,
+        };
+        assert_eq!(r.value(), [0, 0, 0]);
+        r.elapsed = 2;
+        assert_eq!(r.value(), [10, 24, 54]);
+        r.elapsed = 4;
+        assert_eq!(r.value(), [20, 48, 108]);
     }
 }

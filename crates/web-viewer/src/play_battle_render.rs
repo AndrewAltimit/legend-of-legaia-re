@@ -745,7 +745,11 @@ impl LegaiaRuntime {
                 .battle_render
                 .as_ref()
                 .is_some_and(|b| b.stage_present());
-        legaia_engine_ui::battle_stage_clear::scene_clear(false, stage_battle).to_vec()
+        let field_rgb = self
+            .scene_host
+            .as_ref()
+            .map_or([0; 3], |h| h.world.presentation.clear_rgb);
+        legaia_engine_ui::battle_stage_clear::scene_clear(false, stage_battle, field_rgb).to_vec()
     }
 
     /// `true` while a battle 3D render is built and the world is in

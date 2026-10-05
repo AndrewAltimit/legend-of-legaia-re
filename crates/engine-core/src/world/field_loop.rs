@@ -781,8 +781,8 @@ impl World {
     /// 2016 at `+0x000C` and stops it 32 instructions later at `+0x0061` on a
     /// first visit: retail does both inside the load frame and nothing is
     /// heard, while one-op-per-tick plays half a second of it. The same loop
-    /// carries the player-position bbox tests that pick the scene's camera
-    /// parameters (`4C 13`), so those tracked the player at 3 Hz instead of
+    /// carries the player-position bbox tests that pick the scene's per-region
+    /// clear colour (`4C 13`), so those tracked the player at 3 Hz instead of
     /// per frame.
     ///
     /// Returns the last [`FieldStepResult`] the slice produced, or `None` when

@@ -465,6 +465,26 @@ queues each one into `World::pending_actor_spawns`, and emits a `FieldEvent::Act
 Materializing the queued records into actor slots is a separate engine-side step. [`World::materialize_actor_spawns(start_slot)`] drains `pending_actor_spawns`, allocates the first inactive slot from `actors[start_slot..MAX_ACTORS]`, populates `Actor::spawn_record` with the raw bytecode bytes, and emits one `FieldEvent::ActorSpawned { slot, kind, variant, record }` per allocation. The retail allocator for this opcode (`overlay_world_map_801de840.txt:7080-7123`, case `8 sub-0`) allocates from pool `0x801f28a0` and writes `actor[+0x90]` (bytecode start), `actor[+0x94]` (parent back-pointer) and `actor[+0x54] = 0`; it does **not** write `actor[+0x3C]` (kind) or `actor[+0x3E]` (variant), so the event's `kind = 0` / `variant = 0` match retail - this is a faithful zero, not a placeholder.
 The `0x4C 0xD8` path is the one that decodes explicit `(kind, variant)` u16 immediates and routes through `FUN_801D77F4`; the `0x4C 0x80` path is bytecode-only by design. When the slot range is exhausted, a `FieldEvent::ActorSpawnFailed { record }` event surfaces the dropped request instead.
 
+#### 0x4C nibble 1 sub-3 - the field clear colour
+
+`4C 13 r g b n_lo n_hi` (`0x801E0D6C..0x801E0EAC`) is the frame's
+**background**: it stores `r g b` into `0x8007B636 / 35 / 34` and, with a
+zero frame count, straight into the `r0 / g0 / b0` bytes of both draw
+environments (`0x8007BF5D..5F` and the `+0x74` mirror), which `PutDrawEnv`
+fills the frame with wherever no primitive lands; a non-zero count instead
+schedules one `FUN_8003C5F0` slot job per byte from the live value. The MAN
+loader `FUN_8003AEB0` zeroes the pair on every scene load
+(`0x8003B470..0x8003B48C`), so a scene that issues no `4C 13` clears to
+black. `teien` `P1[0]` sets `4C 13 14 30 6C`: the garden's sea is no mesh,
+it is this colour behind the walls, and `teien_field_run` reads exactly
+`(16, 49, 107)` there (the bytes through the 15-bit buffer) with no
+primitive covering it in either ordering table of the capture. `town01`'s
+entry loop sets the cave brown `(60, 40, 20)` inside its cliff region box
+and black outside it. The census finds the op in 38 carriers. Engine:
+`World::presentation.clear_rgb` / `ClearColourRamp`, rendered by both hosts
+through `battle_stage_clear::scene_clear`; the pause menu's tint capture
+(`FUN_801ED308`, [world-map.md](world-map.md)) is the same pair.
+
 #### 0x4C nibble 1 sub-4 - the actor clone
 
 `4C 14` is the field VM's after-image: it duplicates one actor's transform
