@@ -531,20 +531,42 @@ fn rung8_fishing_developer_readout_needs_menu_and_modifier() {
     };
     let dev = [("LEGAIA_DEV_MENU", "1")];
     let cast = "80:Circle,120:Circle";
+    // Every frame this window draws is opaque, so a capture holding a
+    // non-opaque pixel was damaged on its way out of the GPU, not drawn that
+    // way. The shared CI runner has twice returned one with a 16-pixel run of
+    // `(0, 0, 0, 0)` near the top edge, which then reads as a change outside
+    // the readout band. Such a capture is shot again instead of compared.
+    const ATTEMPTS: usize = 3;
     let shoot = |label: &str, pad: &str| {
         let shot = out.join(format!("{label}.png"));
-        let _ = std::fs::remove_file(&shot);
-        let (stdout, stderr) =
-            run_window_env(&disc, &shot, "40:L", Some(pad), SHOT_TICK, &[], &dev, false);
-        assert!(
-            stdout.contains("[ok] screenshot"),
-            "{label}: no capture written\nstdout:\n{stdout}\nstderr:\n{stderr}"
-        );
-        assert!(
-            stderr.contains("fishing: started"),
-            "{label}: fishing never opened\nstderr:\n{stderr}"
-        );
-        shot
+        for attempt in 1..=ATTEMPTS {
+            let _ = std::fs::remove_file(&shot);
+            let (stdout, stderr) =
+                run_window_env(&disc, &shot, "40:L", Some(pad), SHOT_TICK, &[], &dev, false);
+            assert!(
+                stdout.contains("[ok] screenshot"),
+                "{label}: no capture written\nstdout:\n{stdout}\nstderr:\n{stderr}"
+            );
+            assert!(
+                stderr.contains("fishing: started"),
+                "{label}: fishing never opened\nstderr:\n{stderr}"
+            );
+            let (_, _, rgba) = read_png(&shot);
+            let holes = rgba
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .filter(|px| px[3] != 255)
+                .count();
+            if holes == 0 {
+                return shot;
+            }
+            eprintln!(
+                "[warn] {label}: capture {attempt}/{ATTEMPTS} holds {holes} non-opaque \
+                 pixel(s) - damaged readback, shooting again"
+            );
+        }
+        panic!("{label}: every one of {ATTEMPTS} captures held non-opaque pixels");
     };
     let plain = shoot("fishing_dev_plain", cast);
     let readout = shoot(
