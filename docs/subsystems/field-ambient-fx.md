@@ -568,6 +568,16 @@ jou's fused-Juggernaut ground throbs at plain entry instead of only
 during its cutscene set pieces. Scenes with retail arming are untouched
 (the installer self-guards on any op-`0x0A` stager record).
 
+The pulse is **opt-in per scene** (`vdf_pulse::entry_pulse_slots`): the jou
+family, and Rim Elm's shoreline slots. A populated pack is not evidence of
+ambience - most scenes whose packs pass the exact-fit
+rule hold set-piece morphs that retail arms from a cutscene, a placed
+object's op `0x4B`, or an op-`0x4C 0xD8` morph-weight actor spawned at rest,
+and keeps still otherwise. Applied to all of them, the pulse throbbed
+`chitei2`'s rail and the walls of `balden` / `balden2`. Where a placed
+object's op-`0x4B` lanes own a slot (town01's shoreline objects run their own
+tide envelope), the pulse stands aside on that slot rather than adding to it.
+
 ## Engine + viewer wiring
 
 - `engine-core::man_field_scripts::scene_entry_ambient_installs` is the

@@ -347,7 +347,7 @@ fn bake_vdf_pulse_anim(
                 .collect()
         })
         .collect();
-    if !w.install_entry_vdf_pulse(&pack_objects) {
+    if !w.install_entry_vdf_pulse(&scene.name, &pack_objects) {
         return None;
     }
 

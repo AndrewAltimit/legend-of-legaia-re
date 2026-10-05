@@ -627,12 +627,19 @@ impl World {
                 lanes.extend(part.lanes);
             }
         }
-        if let Some(pulse) = self.ambient.entry_vdf_pulse.as_ref() {
-            lanes.extend(pulse.lanes_for(pack_slot, group));
-        }
         // Placed objects whose bind record armed lanes with op `0x4B`
         // (`crate::world::npc_morph`).
         lanes.extend(self.object_morph_lanes_for(pack_slot));
+        // The enhancement pulse stands aside wherever a retail carrier
+        // already drives the slot (town01's shoreline objects run their own
+        // tide envelope) - summing both doubled the swing.
+        // Keyed on an armed owner, not a live weight, so the pulse never
+        // fills in at the retail envelope's trough.
+        if !self.slot_has_object_morph_owner(pack_slot)
+            && let Some(pulse) = self.ambient.entry_vdf_pulse.as_ref()
+        {
+            lanes.extend(pulse.lanes_for(pack_slot, group));
+        }
         if lanes.is_empty() {
             return None;
         }
@@ -676,11 +683,28 @@ impl World {
     /// vertex_count`. No-ops (and returns `false`) when the entry-ambient
     /// tree already armed retail morph lanes - the pulse only stands in
     /// where retail's own entry ambience has no morph carrier (jou).
-    pub fn install_entry_vdf_pulse(&mut self, pack_objects: &[Vec<usize>]) -> bool {
+    ///
+    /// Opt-in per scene: `scene` must be one the pulse is authored for
+    /// ([`crate::vdf_pulse::entry_pulse_slots`]), and only that scene's
+    /// listed env slots are targeted. Every other populated pack keeps
+    /// retail's still geometry at entry.
+    pub fn install_entry_vdf_pulse(&mut self, scene: &str, pack_objects: &[Vec<usize>]) -> bool {
         self.ambient.entry_vdf_pulse = None;
         if !self.toggles.entry_pulse_enabled {
             return false;
         }
+        let Some(allowed) = crate::vdf_pulse::entry_pulse_slots(scene) else {
+            return false;
+        };
+        let pack_objects: Vec<Vec<usize>> = pack_objects
+            .iter()
+            .enumerate()
+            .map(|(slot, objs)| match allowed {
+                Some(slots) if !slots.contains(&slot) => Vec::new(),
+                _ => objs.clone(),
+            })
+            .collect();
+        let pack_objects = pack_objects.as_slice();
         if !self.ambient_morph_parts().is_empty() {
             return false;
         }

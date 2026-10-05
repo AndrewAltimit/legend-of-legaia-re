@@ -1506,7 +1506,7 @@ impl SceneHost {
                                 .collect()
                         })
                         .collect();
-                    if self.world.install_entry_vdf_pulse(&pack_objects) {
+                    if self.world.install_entry_vdf_pulse(name, &pack_objects) {
                         log::info!(
                             "scene '{name}': entry VDF pulse armed over {} pack meshes",
                             pack_objects.len()

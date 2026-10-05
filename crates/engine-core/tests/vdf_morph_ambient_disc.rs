@@ -118,7 +118,7 @@ fn rikuroa_flag_gated_entry_tree_arms_retail_morph_lanes_or_skip() {
     {
         let mut bare = bare;
         assert!(
-            !bare.install_entry_vdf_pulse(&pack_objects),
+            !bare.install_entry_vdf_pulse("rikuroa", &pack_objects),
             "entry pulse stands aside where any stager record arms morphs"
         );
     }
@@ -190,7 +190,7 @@ fn jou_entry_pulse_moves_the_flesh_ground_deltas_or_skip() {
     // The enhancement pulse installs over the 17-sub-entry pack and
     // targets drawn flesh-ground meshes (the v102 / v112 / v213 family).
     assert!(
-        world.install_entry_vdf_pulse(&pack_objects),
+        world.install_entry_vdf_pulse("jou", &pack_objects),
         "jou entry pulse installs"
     );
 
@@ -230,4 +230,76 @@ fn jou_entry_pulse_moves_the_flesh_ground_deltas_or_skip() {
         "a real flesh-ground mesh is targeted: {dirty_all:?}"
     );
     assert!(changed, "the tracked mesh's deltas move across ticks");
+}
+
+/// The pulse is opt-in per scene. Applied to every populated pack it
+/// throbbed geometry retail keeps still: `chitei2`'s rail and the
+/// boiler-room walls of `balden` / `balden2` (their packs hold set-piece
+/// morphs retail arms from cutscenes or spawns at rest). Entering those
+/// scenes through the real host and ticking leaves every env-pack mesh at
+/// its authored rest pose; Rim Elm's shoreline keeps its two slots only.
+#[test]
+fn entry_pulse_leaves_retail_static_geometry_still_or_skip() {
+    let Some(root) = extracted_root() else { return };
+    let mut host = legaia_engine_core::scene::SceneHost::open_extracted(&root).expect("host");
+    for scene in ["chitei2", "balden", "balden2"] {
+        host.enter_field_scene(scene, 0).expect("enter scene");
+        assert!(
+            host.world.ambient.entry_vdf_pulse.is_none(),
+            "{scene}: no entry pulse"
+        );
+        let _ = host.world.take_morph_dirty_slots();
+        for _ in 0..300 {
+            host.tick().expect("tick");
+            host.world.tick_ambient_fx();
+        }
+        let dirty = host.world.take_morph_dirty_slots();
+        // The pack slots a retail carrier owns: placed objects whose own
+        // bind prologue armed op-`0x4B` lanes (`balden`'s three slot-121
+        // draws, each its own record) and ambient move-VM parts. Those
+        // morph in retail too; every other env-pack mesh must stay still.
+        let world = &host.world;
+        let mut retail: std::collections::BTreeSet<usize> = world
+            .ambient_morph_parts()
+            .iter()
+            .map(|p| p.pack_slot)
+            .collect();
+        for (&rec, slots) in &world.npcs.object_pack_slots {
+            if world
+                .field_morph_lanes(legaia_engine_core::world::MorphOwner::Object(rec))
+                .is_some()
+            {
+                retail.extend(slots.iter().copied());
+            }
+        }
+        eprintln!("[ran] {scene}: dirty={dirty:?} retail-owned={retail:?}");
+        let stray: Vec<_> = dirty.iter().filter(|(s, _)| !retail.contains(s)).collect();
+        assert!(
+            stray.is_empty(),
+            "{scene}: env-pack meshes morphed with no retail carrier: {stray:?}"
+        );
+        for slot in (0..256).filter(|s| !retail.contains(s)) {
+            for group in 0..16u32 {
+                if let Some(d) = world.current_morph_deltas(slot, group, 512) {
+                    assert!(
+                        d.iter().all(|v| v == &[0, 0, 0]),
+                        "{scene}: slot {slot} group {group} carries live deltas"
+                    );
+                }
+            }
+        }
+    }
+
+    host.enter_field_scene("town01", 0).expect("enter town01");
+    let targets = host
+        .world
+        .ambient
+        .entry_vdf_pulse
+        .as_ref()
+        .expect("town01 keeps its shoreline pulse")
+        .all_targets();
+    assert!(
+        targets.iter().all(|&(s, _)| s == 82 || s == 88) && !targets.is_empty(),
+        "town01's pulse is the shoreline strip only: {targets:?}"
+    );
 }
