@@ -151,7 +151,7 @@ stages `0x0D` then `0x0C`), occasionally chosen on a monster id (PROT 0940's
 `0x3C` stages `9` for monster `0xA9` and `8` for anyone else) - and closes
 with `sb zero,0x1DA`. The literal is an entry index into the caster's own
 record, so a module only lines up with the monsters that were built for it.
-Five bodies stage nothing on the caster at all - their only `+0x1DA` writes
+Several bodies stage nothing on the caster at all - their only `+0x1DA` writes
 are the victim's reaction - so the caster holds its idle through those
 casts in retail too. The per-body table, with the stage sites, is
 `legaia_engine_vm::cast_module_ticks::CAPTURE_CASTER_STAGES` and
@@ -165,7 +165,8 @@ besides the table's `approach` rows); nothing walks it home afterwards. The
 disc-gated sweep
 `crates/engine-core/tests/monster_special_anim_sweep_disc.rs` casts every
 monster's every magic-slot spell and asserts the caster plays a moving
-special clip unless its body is one of the five.
+special clip unless its body is one of those, and fires the scripted
+per-monster AI's casts as well as the magic slots.
 
 ## Anim selection (`actor +0x1D9/+0x1DA` → entry)
 

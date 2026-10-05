@@ -1042,7 +1042,7 @@ its whole band on the idle loop. `CAPTURE_CASTER_STAGES`
 the literals the caster is staged with and their sites; `World::capture_stager_tick`
 replays them at the head of phase `0x70`, each to its clip's end, before the
 module's arms run. The bodies whose ports already stage the caster are not in
-it, and neither are the five that stage nothing on the caster in retail
+it, and neither are the bodies that stage nothing on the caster in retail
 (`CAPTURE_BODIES_WITHOUT_CASTER_STAGE`). The table, and the three clip routes
 a monster cast can take, are on
 [`monster-animation.md`](../formats/monster-animation.md#which-byte-a-cast-actually-plays).
