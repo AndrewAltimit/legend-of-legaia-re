@@ -1761,27 +1761,17 @@ impl World {
             })
     }
 
-    /// The stand-in for retail's `0x801C8FE4`: which of PROT 0964's three
-    /// elements the record currently carries, so the re-roll cannot land on
-    /// it again. `0xFF` when the record's element is none of the three, which
-    /// makes the first draw acceptable - the same thing a never-written
-    /// `0x801C8FE4` does.
+    /// Retail's `0x801C8FE4`, the word PROT 0964's re-roll compares its draw
+    /// against (`lw v1,4(a1)` with `a1 = 0x801C8FE0` at `0x801F8A20`, again
+    /// at `0x801F8A4C`) and then overwrites with the accepted one (`sw a3,
+    /// 4(v1)` at `0x801F8A90`). It is the AI's phase counter
+    /// ([`crate::monster_ai::MonsterAiState::counter`]): Rogue's picker reads
+    /// the same byte back as its next attack, `counter - 0x50` (`0xB0` Wind /
+    /// `0xB1` Thunder / `0xB2` Flame), so the roll that recolours the record
+    /// is also what makes the attacks cycle. Battle init zeroes it, so the
+    /// first Element Change cannot roll `0`.
     fn cast_element_change_last_roll(&self) -> u8 {
-        use vm::cast_module_ticks::{ELEMENT_CHANGE_ELEMENTS, FIRST_MONSTER_SEAT};
-        let Some(elem) = self
-            .actors
-            .get(FIRST_MONSTER_SEAT as usize)
-            .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.tables.monster_catalog.get(id))
-            .map(|d| d.element)
-        else {
-            return 0xFF;
-        };
-        ELEMENT_CHANGE_ELEMENTS
-            .iter()
-            .position(|e| *e == elem)
-            .map(|i| i as u8)
-            .unwrap_or(0xFF)
+        self.battle.monster_ai_state.counter() as u8
     }
 
     /// Commit PROT 0964's new element onto the first monster seat.
@@ -2467,6 +2457,9 @@ impl World {
                         self.write_cast_actor_state(slot as u8, st);
                     }
                     if let Some(out) = outcome {
+                        self.battle
+                            .monster_ai_state
+                            .set_counter(i32::from(out.roll));
                         self.apply_cast_element_change(out.element);
                         run.element_change = Some((out.element, out.group));
                     }

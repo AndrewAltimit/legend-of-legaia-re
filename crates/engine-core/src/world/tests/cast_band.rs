@@ -801,3 +801,44 @@ fn a_capture_charge_branch_folds_nothing() {
     assert!(world.casting.pending_cast.is_none());
     assert!(!world.casting.module_skips_fold);
 }
+
+/// PROT 0964's Element Change re-rolls against, and then rewrites, retail's
+/// `0x801C8FE4` (`0x801F8A20` / `0x801F8A4C` / `0x801F8A90`) - the AI
+/// counter Rogue's picker turns into its next attack (`counter - 0x50`). A
+/// cast that left the counter alone kept Rogue on `0xB0` for the whole fight.
+#[test]
+fn element_change_writes_the_ai_counter_it_rerolls_against() {
+    use legaia_asset::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
+    let mut world = module_code_world();
+    let mut entries = vec![SpellEntry::default(); 0x100];
+    entries[0xAF].class = CAPTURE_CLASS;
+    // Sub-id 29 pages PROT 0964 (`935 + 29`).
+    entries[0xAF].sub_class = 29;
+    world.menu.text = Some(crate::pause_screens::MenuTextTables {
+        spell_names: Some(SpellNameTable::from_entries(entries)),
+        ..Default::default()
+    });
+    assert_eq!(world.cast_module_for(0xAF), Some(964));
+    let mut seen = Vec::new();
+    for _ in 0..6 {
+        let before = world.battle.monster_ai_state.counter();
+        world.casting.module_phase = 0;
+        let mut done = false;
+        for _ in 0..200 {
+            let run = world.run_cast_module_code(0xAF, 3).expect("band entry");
+            if !run.busy {
+                done = true;
+                break;
+            }
+        }
+        assert!(done, "Element Change finishes");
+        let after = world.battle.monster_ai_state.counter();
+        assert!((0..3).contains(&after), "the counter holds the roll");
+        assert_ne!(after, before, "the re-roll never repeats the counter");
+        seen.push(after);
+    }
+    assert!(
+        seen.iter().any(|&c| c != seen[0]),
+        "Rogue's attack id never moved: {seen:?}"
+    );
+}
