@@ -403,6 +403,29 @@ sampled before any round ran. The acting seat is placed too, even on a
 captured Attack whose pair is a point on the walk the drive replays: the walk
 ends at its target whatever it starts from.
 
+Two more facts go with the pair. On a capture past the end signal each
+placed combatant takes its heading `+0x46` (a `:facing` field after `:x:z`):
+the attack band's recompute stores it every frame of a swing and nothing turns
+the actor back, so the member who struck last stands facing its target, and
+case 6's battle-over yaw is `0x800 - actor[+0x46]`. A capture of a running
+fight keeps the engine's own headings, which its replayed rounds set; seeding
+the captured ones there moved the corpus both ways. And a body whose tint state `+0x21C` is the defeat
+fade takes its colour lanes `+0x04` (a `:d<hex>` field): a monster killed
+earlier has stepped them to black and is no longer drawn, where a seed at
+`0` HP with resting lanes stood its body in the frame -
+`noa_levelup_banner`'s results camera sat inside the dead Gobu Gobu.
+
+**Rewards already granted.** A capture on the results frame or after it
+(`SpanGate::Results` / `Exit`) holds the party past the EXP grant and the
+level-up applier `FUN_801E9504`, and the seed replays the fight, which grants
+again. `RetailObs` takes them back first
+(`retail_compare_battle::ungrant_results_rewards`): every living member loses
+the share `gp+0xA04`, and a member the applier levelled - its record stat
+window `+0x11C..+0x12D` apart from the live window it is mirrored into one
+phase later - gets the live values back and its level byte one lower.
+Without it `noa_levelup_banner`'s Noa, already level 3, gained nothing the
+second time and the engine frame showed no "level increased" line.
+
 A settled field also carries its script state into the fight. In `nilboa`
 the settle leaves the Nivora duel's dialogue parked on a text page when the
 encounter is forced. Retail cannot show that box over a fight: its pager

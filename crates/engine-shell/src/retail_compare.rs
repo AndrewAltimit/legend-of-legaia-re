@@ -424,7 +424,7 @@ impl RetailObs {
         let bgm_id = game_anchors::u16_at(ram, BGM_ID);
         let fog_gate = game_anchors::u32_at(ram, FOG_GATE) != 0;
         let lo = (LIVE_STATE_VA & 0x1F_FFFF) as usize;
-        let save = ram.get(lo..lo + LIVE_STATE_LEN).and_then(|win| {
+        let mut save = ram.get(lo..lo + LIVE_STATE_LEN).and_then(|win| {
             let mut block = win.to_vec();
             block.resize(SC_BLOCK_LEN, 0);
             legaia_save::SaveFile::from_retail_sc_block(
@@ -433,6 +433,14 @@ impl RetailObs {
             )
             .ok()
         });
+        let battle = (class == StateClass::Battle)
+            .then(|| crate::retail_compare_battle::RetailBattle::from_ram(ram));
+        // A capture on the results frame or after it holds the party with
+        // the fight's rewards already applied; the seed replays the fight,
+        // which applies them again.
+        if let (Some(save), Some(Ok(b))) = (save.as_mut(), battle.as_ref()) {
+            crate::retail_compare_battle::ungrant_results_rewards(save, b, ram);
+        }
         Self {
             scene,
             loaded_define: game_anchors::u16_at(ram, LOADED_SCENE_DEFINE),
@@ -465,8 +473,7 @@ impl RetailObs {
                 _ => None,
             },
             frame,
-            battle: (class == StateClass::Battle)
-                .then(|| crate::retail_compare_battle::RetailBattle::from_ram(ram)),
+            battle,
             menu,
             scripts: crate::retail_compare_script::RetailScripts::from_ram(ram),
             slot_table: {

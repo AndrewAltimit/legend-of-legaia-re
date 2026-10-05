@@ -202,6 +202,18 @@ pub struct RetailBattle {
     /// Each pool slot's live `+0x34` / `+0x38` pair (party `0..=2`,
     /// monsters `3..=7`), `None` for an empty slot.
     pub ground: Vec<Option<[i16; 2]>>,
+    /// Each pool slot's heading `+0x46` (12-bit), beside [`Self::ground`]:
+    /// the attack band's facing recompute stores it every frame of a
+    /// swing and nothing turns the actor back, so a member stands facing
+    /// the last target it struck. The results framing reads it (case 6's
+    /// battle-over yaw is `0x800 - actor[+0x46]`).
+    pub facing: Vec<Option<u16>>,
+    /// Each pool slot's colour lanes `+0x04`, for a slot whose tint state
+    /// `+0x21C` is the defeat fade (`2`): a monster killed earlier has
+    /// stepped its lanes to black (`noa_levelup_banner`'s Gobu reads `0`)
+    /// and the per-actor draw skips it, so the seed lands it there rather
+    /// than standing a body retail no longer draws.
+    pub defeat_lanes: Vec<Option<u32>>,
     /// The timed message up in the capture (HUD element `0x66`): the
     /// battle-overlay string its content word `0x800775B4` points at, and
     /// the hold `0x801F6964` left on it. `None` when the hold is spent.
@@ -580,6 +592,43 @@ impl RetailBattle {
         self.engine_ground()
     }
 
+    /// [`Self::defeat_lanes`] re-keyed to engine battle slots.
+    pub fn engine_defeat_lanes(
+        &self,
+    ) -> [Option<u32>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS] {
+        let mut out = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+        let pc = usize::from(self.party_count);
+        for (s, o) in out.iter_mut().enumerate() {
+            let pool = if s < pc { s } else { 3 + (s - pc) };
+            *o = self.defeat_lanes.get(pool).copied().flatten();
+        }
+        out
+    }
+
+    /// [`Self::facing`] re-keyed to engine battle slots, placed where
+    /// [`Self::seeded_ground`] places a ground pair - on a capture past the
+    /// end signal only. There the sequencer has stopped the action SM, so
+    /// nothing recomputes a heading before the results framing reads it. A
+    /// capture of a running fight replays its rounds, whose own swings set
+    /// the headings; seeding the captured ones there moved the corpus both
+    /// ways (camera up on most, frames down on more than rose).
+    pub fn seeded_facing(&self) -> [Option<u16>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS] {
+        let mut out = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+        if !self.span_gate.is_end() {
+            return out;
+        }
+        let ground = self.seeded_ground();
+        let pc = usize::from(self.party_count);
+        for (s, o) in out.iter_mut().enumerate() {
+            if ground[s].is_none() {
+                continue;
+            }
+            let pool = if s < pc { s } else { 3 + (s - pc) };
+            *o = self.facing.get(pool).copied().flatten();
+        }
+        out
+    }
+
     /// The phase the capture's **displayed frame** sits at: [`Self::phase_gate`]
     /// with the flash's age taken back by [`Self::display_lag`]. The RAM
     /// channels are sampled on the RAM's phase; the image is the frame the
@@ -890,6 +939,21 @@ impl RetailBattle {
                     })
                 })
                 .collect(),
+            facing: (0..8u32)
+                .map(|slot| {
+                    let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
+                    in_ram(p).then(|| game_anchors::u16_at(ram, p + 0x46) & 0xFFF)
+                })
+                .collect(),
+            defeat_lanes: (0..8u32)
+                .map(|slot| {
+                    let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
+                    (in_ram(p)
+                        && game_anchors::u8_at(ram, p + 0x21C)
+                            == legaia_engine_vm::battle_formulas::STATE_DEFEAT_FADE)
+                        .then(|| game_anchors::u32_at(ram, p + 4))
+                })
+                .collect(),
             timed_message: {
                 let hold = game_anchors::u32_at(ram, TIMED_MESSAGE_HOLD) as i32;
                 let va = game_anchors::u32_at(ram, TIMED_MESSAGE_WORD);
@@ -994,6 +1058,11 @@ pub struct BarSeed {
     pub hp: u16,
     pub mp: u16,
     pub ground: Option<[i16; 2]>,
+    /// The heading `+0x46` that goes with [`Self::ground`].
+    pub facing: Option<u16>,
+    /// A body seeded inside (or past) its defeat fade: the colour lanes it
+    /// holds ([`RetailBattle::defeat_lanes`]).
+    pub defeat_lanes: Option<u32>,
 }
 
 /// Seed the capture's HP / MP onto the engine actors (the engine enters a
@@ -1019,6 +1088,15 @@ pub fn apply_bar_seeds(world: &mut legaia_engine_core::world::World, seeds: &[Ba
                 a.battle.seat = Some((x, z));
             }
         }
+        if let Some(f) = s.facing {
+            a.battle.facing_angle = f;
+        }
+        if let Some(lanes) = s.defeat_lanes
+            && a.battle.hp == 0
+        {
+            a.battle.render_flag = legaia_engine_vm::battle_formulas::STATE_DEFEAT_FADE;
+            a.battle.render_color = lanes;
+        }
     }
 }
 
@@ -1026,9 +1104,16 @@ pub fn apply_bar_seeds(world: &mut legaia_engine_core::world::World, seeds: &[Ba
 pub fn bar_seeds_to_env(seeds: &[BarSeed]) -> String {
     seeds
         .iter()
-        .map(|s| match s.ground {
-            Some([x, z]) => format!("{}:{}:{}:{x}:{z}", s.slot, s.hp, s.mp),
-            None => format!("{}:{}:{}", s.slot, s.hp, s.mp),
+        .map(|s| {
+            let head = match (s.ground, s.facing) {
+                (Some([x, z]), Some(f)) => format!("{}:{}:{}:{x}:{z}:{f}", s.slot, s.hp, s.mp),
+                (Some([x, z]), None) => format!("{}:{}:{}:{x}:{z}", s.slot, s.hp, s.mp),
+                _ => format!("{}:{}:{}", s.slot, s.hp, s.mp),
+            };
+            match s.defeat_lanes {
+                Some(l) => format!("{head}:d{l:x}"),
+                None => head,
+            }
         })
         .collect::<Vec<_>>()
         .join(",")
@@ -1038,7 +1123,11 @@ pub fn bar_seeds_to_env(seeds: &[BarSeed]) -> String {
 pub fn bar_seeds_from_env(v: &str) -> Vec<BarSeed> {
     v.split(',')
         .filter_map(|e| {
-            let mut it = e.trim().split(':');
+            let (e, defeat_lanes) = match e.trim().rsplit_once(":d") {
+                Some((head, l)) => (head, Some(u32::from_str_radix(l, 16).ok()?)),
+                None => (e.trim(), None),
+            };
+            let mut it = e.split(':');
             let slot = it.next()?.parse().ok()?;
             let hp = it.next()?.parse().ok()?;
             let mp = it.next()?.parse().ok()?;
@@ -1046,11 +1135,17 @@ pub fn bar_seeds_from_env(v: &str) -> Vec<BarSeed> {
                 (Some(x), Some(z)) => Some([x.parse().ok()?, z.parse().ok()?]),
                 _ => None,
             };
+            let facing = match it.next() {
+                Some(f) => Some(f.parse().ok()?),
+                None => None,
+            };
             Some(BarSeed {
                 slot,
                 hp,
                 mp,
                 ground,
+                facing,
+                defeat_lanes,
             })
         })
         .collect()
@@ -1219,6 +1314,8 @@ pub fn run_engine_battle(
         Vec::new()
     };
     let ground = battle.seeded_ground();
+    let facing = battle.seeded_facing();
+    let defeat_lanes = battle.engine_defeat_lanes();
     let hp_seed: Vec<BarSeed> = {
         let world = &session.host.world;
         let pc = world.party.party_count.clamp(1, 3) as usize;
@@ -1239,6 +1336,10 @@ pub fn run_engine_battle(
                     hp,
                     mp: c.mp,
                     ground: ground.get(slot).copied().flatten(),
+                    facing: facing.get(slot).copied().flatten(),
+                    defeat_lanes: (hp == 0)
+                        .then(|| defeat_lanes.get(slot).copied().flatten())
+                        .flatten(),
                 })
             })
             .collect()
@@ -2258,6 +2359,79 @@ impl BattleDrive {
     }
 }
 
+/// The member's EXP share the results sequencer hands out, `gp+0xA04`
+/// (`sw s6,0xA04(gp)` at `0x8004F684`).
+const END_XP_SHARE: u32 = 0x8007_BD1C;
+
+/// Take a results-frame capture's rewards back off the party it seeds.
+///
+/// The results sequencer `FUN_8004E568` grants the fight's EXP and runs the
+/// level-up applier `FUN_801E9504` when it opens the results frame, so a
+/// capture on that frame or after it (`SpanGate::Results` / `Exit`) holds the
+/// party past the grant. The seed replays the fight from that party, and the
+/// engine grants again on its own results frame: `noa_levelup_banner`'s Noa,
+/// already level 3 in the capture, gained nothing the second time, and the
+/// engine frame carried no "level increased" line.
+///
+/// Every living member (`+0x14C > 0` on its seat) loses the share. A member
+/// the applier levelled is recognised by its record stat window
+/// (`+0x11C` HP max, `+0x11E` MP max, `+0x122..+0x12D` the six stats)
+/// standing apart from the live window it is mirrored into one phase later
+/// (`+0x104`, `+0x108`, `+0x110..+0x11B` -
+/// `docs/subsystems/level-up.md#phase-split-multi-frame-writes`); that member
+/// gets the live values back in its record window and its level byte
+/// `+0x130` one lower. A capture past the live copy keeps the growth, which
+/// the engine's grant does not repeat because the level stays where it is.
+pub fn ungrant_results_rewards(
+    save: &mut legaia_save::SaveFile,
+    battle: &RetailBattle,
+    ram: &[u8],
+) {
+    if !matches!(
+        battle.span_gate,
+        SpanGate::Results { .. } | SpanGate::Exit { .. }
+    ) {
+        return;
+    }
+    let share = game_anchors::u32_at(ram, END_XP_SHARE);
+    for (seat, &char_id) in battle.seat_chars.iter().enumerate() {
+        let alive = battle
+            .party
+            .get(seat)
+            .and_then(|c| c.as_ref())
+            .is_some_and(|c| c.hp > 0);
+        let Some(rec) = usize::from(char_id)
+            .checked_sub(1)
+            .and_then(|i| save.party.members.get_mut(i))
+        else {
+            continue;
+        };
+        if alive {
+            rec.set_cumulative_xp(rec.cumulative_xp().saturating_sub(share));
+        }
+        // (record window, live window) halfword pairs.
+        const PAIRS: [(usize, usize); 8] = [
+            (0x11C, 0x104),
+            (0x11E, 0x108),
+            (0x122, 0x110),
+            (0x124, 0x112),
+            (0x126, 0x114),
+            (0x128, 0x116),
+            (0x12A, 0x118),
+            (0x12C, 0x11A),
+        ];
+        let raw = &mut rec.raw;
+        if raw.len() < 0x130 || PAIRS.iter().all(|&(r, l)| raw[r..r + 2] == raw[l..l + 2]) {
+            continue;
+        }
+        for (r, l) in PAIRS {
+            raw.copy_within(l..l + 2, r);
+        }
+        let level = rec.level();
+        rec.set_level(level.saturating_sub(1).max(1));
+    }
+}
+
 /// Take spell `spell_id` back off a record's list - the inverse of the
 /// Done band's prepend (`legaia_engine_core::magic_xp::learn_spell_prepend`):
 /// ids, levels and the parallel XP words above it shift down one. A list
@@ -2796,12 +2970,16 @@ mod tests {
                 hp: 412,
                 mp: 37,
                 ground: None,
+                facing: None,
+                defeat_lanes: None,
             },
             BarSeed {
                 slot: 4,
                 hp: 1,
                 mp: 0,
                 ground: Some([-4, -707]),
+                facing: Some(0x9F0),
+                defeat_lanes: Some(0),
             },
         ];
         assert_eq!(bar_seeds_from_env(&bar_seeds_to_env(&seeds)), seeds);
