@@ -705,6 +705,19 @@ pub(super) fn cmd_play_window_with_record(
                 Some(block) => session.camera.zone.arm_arrival_over(block),
                 None => session.camera.zone.arm_arrival(),
             }
+            // `LEGAIA_SEAT_FOCUS=FX,FZ` (stored form, X / Z negated): a
+            // retail state's focus pair when it is not on the player - the
+            // snap lands it instead of pinning the player, and the follow
+            // ease leaves it there until the player moves, as retail's does.
+            if let Some([fx, fz]) = std::env::var("LEGAIA_SEAT_FOCUS").ok().and_then(|f| {
+                let v: Vec<i32> = f
+                    .split(',')
+                    .filter_map(|v| v.trim().parse::<i32>().ok())
+                    .collect();
+                <[i32; 2]>::try_from(v).ok()
+            }) {
+                session.camera.zone.seat_focus_after_snap([fx, fz]);
+            }
             log::info!("play-window: LEGAIA_SEAT seated the player at ({x}, {z})");
         } else {
             log::warn!("play-window: LEGAIA_SEAT='{seat}' not applied (want X,Z and a player)");

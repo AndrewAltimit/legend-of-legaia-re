@@ -257,6 +257,18 @@ pub struct RetailObs {
     /// walk history the save does not carry (`kor5`'s tile-X 26 / 28 band
     /// loads `P2[1]` / `P2[0]`).
     pub camera_block: Option<legaia_engine_core::camera_zone::CameraZoneConfig>,
+    /// The focus pair (`0x80089118` / `0x80089120`, stored form) on a
+    /// walkable state whose focus is not on the player: history the seat
+    /// cannot replay. The follow ease writes the focus only on a frame it
+    /// runs and the player moved (`FUN_801DB510`'s stationary test at
+    /// `0x801DB578..0x801DB5A4`), and the player tick skips the ease
+    /// entirely while the player is movement-locked (`FUN_801D1344`,
+    /// branch at `0x801D17DC`), so a player that was poked, or carried by a
+    /// script while locked, stands away from a focus that stays where the
+    /// last eased frame left it. The image child takes it as
+    /// `LEGAIA_SEAT_FOCUS` so it frames what retail framed; the headless
+    /// `camera` channel does not, so it keeps reporting the focus miss.
+    pub seat_focus: Option<[i32; 2]>,
     /// The displayed frame, when the state carries VRAM + display registers.
     pub frame: Option<Frame>,
     /// Battle observables for a battle-class state; `Err` names why the
@@ -444,6 +456,14 @@ impl RetailObs {
                     legaia_engine_core::camera_zone::CameraZoneConfig::from_retail_block(&b)
                 })
                 .filter(|b| camera_block_composed(ram, b)),
+            seat_focus: match (class, player) {
+                (StateClass::Field | StateClass::WorldMap, Some([x, _, z]))
+                    if camera.focus != [-i32::from(x), -i32::from(z)] =>
+                {
+                    Some(camera.focus)
+                }
+                _ => None,
+            },
             frame,
             battle: (class == StateClass::Battle)
                 .then(|| crate::retail_compare_battle::RetailBattle::from_ram(ram)),
@@ -508,6 +528,7 @@ impl RetailObs {
         if !matches!(self.class, StateClass::Field | StateClass::WorldMap) {
             self.hud_countdown = None;
             self.camera_block = None;
+            self.seat_focus = None;
         }
     }
 }
@@ -1493,6 +1514,9 @@ fn run_one(
                     if let Some(b) = &retail.camera_block {
                         env.push(("LEGAIA_SEAT_CAMERA_BLOCK", camera_block_env(b)));
                     }
+                    if let Some([fx, fz]) = retail.seat_focus {
+                        env.push(("LEGAIA_SEAT_FOCUS", format!("{fx},{fz}")));
+                    }
                     crate::retail_compare_image::engine_frame_with(
                         exe,
                         opts.extracted,
@@ -1517,6 +1541,7 @@ fn run_one(
                     save,
                     retail.hud_countdown,
                     retail.camera_block.as_ref(),
+                    retail.seat_focus,
                 ),
             };
             match frame {

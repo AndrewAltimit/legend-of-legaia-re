@@ -729,6 +729,15 @@ pub const WALK_ON_REPOLL_FLAG: u32 = 0x0008_0000;
 /// mode entry clears it.
 pub const CAMERA_HOLD_FLAG: u32 = 0x0000_0400;
 
+/// Bit 16 of the scratchpad word `0x1F800394`: the player tick `FUN_801D1344`
+/// runs the follow ease even while the player is movement-locked. The tick
+/// calls the ease (`jal 0x801DB510` at `0x801D1834`) only when its local
+/// gate is up, and it raises the gate on this bit (`0x801D1634..0x801D1648`)
+/// or on a player with `+0x10 & 0x80000` clear and this word's `0x400` clear
+/// (`0x801D1694..0x801D16C0`); otherwise the frame runs only the shake
+/// (`FUN_801D9D30`, `0x801D184C`) and the camera holds.
+pub const CAMERA_LOCKED_EASE_FLAG: u32 = 0x0001_0000;
+
 /// Bit 18 of the scratchpad word `0x1F800394`: the follow ease composes and
 /// eases even on a frame the player did not move (`0x801DB578..0x801DB5A4`).
 /// Field-VM `2E 12` sets it and `2F 12` clears it (`conc`, `opurud`,

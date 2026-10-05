@@ -1003,11 +1003,10 @@ Shapes the corpus separates, each with what it indicates:
 | flags `+sys` bits only the engine has, on a gated state | a placement the record poked ran its talk body in the engine ([above](#mid-script-states)) |
 | flags `+sys` / `-sys` one bit apart inside `0x19B..0x1AA` | the entry script's one-hot region selector, re-evaluated at the seat ([below](#the-region-selector-band-and-the-entry-order)) |
 | `fog_gate` and flag `0x01F` up in the engine only (`rikuroa_post_genesis_tree`) | script progress a card load undoes ([below](#a-flag-the-entry-raises-on-every-load)) |
-| player seated exactly, angles / `H` / eye exact, camera focus thousands of units away (`kor5_post_43a_checkpoint`: player Z `5312`, focus Z `11840`) | a probe-poked capture: the focus stays where the player stood before the poke ([below](#a-poked-player-keeps-the-arrival-focus)) |
+| player seated exactly, angles / `H` / eye exact, camera focus thousands of units away (`kor5_post_43a_checkpoint`: player Z `5312`, focus Z `11840`) | a focus left behind - a probe poke, or a script carrying a movement-locked player; the image child lands retail's focus ([below](#a-poked-player-keeps-the-arrival-focus)) |
 | a town label over the overworld's `H`, word `2000` and fog gate | a door caught before the town's field init ran; scored as the overworld `0x80084540` names ([below](#arrival-states-are-captured-before-the-town-runs)) |
 | retail word held by a flag the entry script already consumed (`garmel`'s `0x196`) | script progress: the track was started by a beat that has since cleared its trigger flag, so a card load would not restart it |
 | camera depth and position off on an ending vignette (`ending_vignette_rimelm_walkaway`) | a residue of about a dozen frames of the credits walk against the camera glide ([below](#ending-vignettes-are-mid-script)) |
-| camera exact, frame aimed at another part of the room; retail focus `0x80089118/20` is not `-player` | a probe-poked capture ([below](#a-poked-player-keeps-the-arrival-focus)) |
 
 ### A script-held height is not a footing
 
@@ -1058,25 +1057,37 @@ the save does not carry.
 
 ### A poked player keeps the arrival focus
 
-`retock_innkeeper_talk_open` and `retock_inn_stay_prompt` were captured by
-warping into the inn at `(15168, 1280)` and then **poking** the player to
-`(14816, 1728)` (`LEGAIA_POKE_POS`). The states hold the player's position
-and its previous-position pair `+0x1C` / `+0x20` equal, so the ease's
-stationary test (`0x801DB578..0x801DB5A4` in `FUN_801DB510`) sees no move and
-the focus-writing legs never run: the focus stays at the arrival tile
-(`-15168`, `-1280` stored; the X is a tile centre, the Z the edge clamp) while
-the player stands elsewhere. Every retail writer of the focus pair takes the
-player as its anchor, so no script or region record accounts for the offset.
-The engine seats the player and frames on the seat, so its angles, `H` and eye
-trio match while the frame looks at a different part of the room; only the
-`camera` channel's focus part misses. Seated at the
-arrival point instead, the engine frames the counter, the walkway and the void
-below it the way retail's frame does. The `image` miss on these two states is
-the capture method, not the camera; the innkeeper's box over the room is the
-[engagement](#mid-script-states) drive's. `kor5_post_43a_checkpoint` is the
-same capture shape by its route: the player was poked onto `(32, 41)`, and
-the focus Z reads `11840` (tile `92`, near the room's south end the route
-started from) while the angles, `H` and eye trio match the seat's snap.
+Retail writes the camera focus `0x80089118` / `0x80089120` on two legs only:
+the snap, and the follow ease `FUN_801DB510` on a frame it runs **and** the
+player moved. The ease's stationary test (`0x801DB578..0x801DB5A4`) compares
+the player's position with its previous-position pair `+0x1C` / `+0x20` and
+branches past the pin leg `0x801DB820`; and the player tick `FUN_801D1344`
+does not call the ease at all while the player is movement-locked
+(`+0x10 & 0x80000`, the branch at `0x801D17DC` - only the shake
+`FUN_801D9D30` runs), unless scratchpad `0x1F800394 & 0x10000` lets it
+through. A player that moves without an eased frame leaves the focus
+behind:
+
+- `retock_innkeeper_talk_open` and `retock_inn_stay_prompt` were captured by
+  warping into the inn at `(15168, 1280)` and then **poking** the player to
+  `(14816, 1728)` (`LEGAIA_POKE_POS`); the states hold the position and its
+  previous pair equal, so the focus stays at the arrival tile (`-15168`,
+  `-1280` stored).
+- `kor5_post_43a_checkpoint` was poked onto `(32, 41)`; the focus Z reads
+  `11840` (tile `92`, near the room's south end the route started from).
+- `baka_fighter_entry_pretransition` is the organic shape: the sit script
+  carries the movement-locked player from X `2854` onto the chair at `2752`,
+  and the focus X stays `2854`.
+
+The engine follows the same rule (`ZoneFollow`'s gate in
+`Camera::zone_follow_tick`), but the seat is an arrival and its snap pins the
+focus on the seat. So the corpus reads retail's focus pair whenever it is not
+`-player` (`RetailObs::seat_focus`) and hands it to the image child as
+`LEGAIA_SEAT_FOCUS`, which the snap lands after its clamp; the ease then
+leaves it until the player moves, and the frame looks where retail's looked.
+The headless seed does not take it, so the `camera` channel's focus part
+keeps reporting the miss - it is history the seat cannot replay, not a
+compose the engine got wrong.
 
 ### Arrival states are captured before the town runs
 
