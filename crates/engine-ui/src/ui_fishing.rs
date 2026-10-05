@@ -59,9 +59,8 @@ pub const SPLASH_FRAMES: i32 = 0x98;
 // variant resolves into them rather than replacing them: FUN_801d1870 /
 // FUN_801d1a90 -> `bar_frame` / `power_bar_frame` (via
 // `HudDraw::resolve_bar`), and FUN_801d76e0 -> `number_digit_cells`.
-// FUN_801d63b0 is genuinely unported: it is a pure VRAM quad emitter with
-// no decision content, so the variant just carries its call-site
-// arguments and the host does the drawing.
+// FUN_801d63b0 itself is `crate::ui_fishing_sprite`: the variant carries
+// its call-site arguments and the sprite pass turns it into a quad.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HudDraw {
     /// A number via the digit blitter `FUN_801d76e0`.
@@ -850,10 +849,10 @@ impl FishingCaptions<'static> {
 
 /// Where the consumer samples its non-text quads from.
 ///
-/// The fishing sprite page itself is not ported - `FUN_801d63b0` is a bare
-/// VRAM quad emitter, and its glyph ids index a page the host uploads. So
-/// glyph ids resolve through `glyph_src`, and a glyph the host cannot place
-/// is dropped rather than guessed at.
+/// A host that draws the sprite half itself (`crate::ui_fishing_sprite`,
+/// `FUN_801d63b0`'s quads over the venue's HUD page) sets
+/// [`Self::sprites_drawn`]; otherwise glyph ids resolve through `glyph_src`,
+/// and a glyph the host cannot place is dropped rather than guessed at.
 pub struct FishingHudAtlas<'a> {
     /// Atlas rect of a fully opaque texel, stretched to fill gauge bars.
     /// `None` when the host has no such texel to sample - the bar frames
@@ -863,6 +862,12 @@ pub struct FishingHudAtlas<'a> {
     pub glyph_src: &'a dyn Fn(u32) -> Option<(u32, u32, u32, u32)>,
     /// Pixel thickness of a gauge bar's fill quad across its axis.
     pub bar_thickness: u32,
+    /// The host draws the sprite half of this list itself, as screen
+    /// primitives over the venue's HUD page
+    /// ([`crate::ui_fishing_sprite::fishing_hud_sprite_prims`]): numbers,
+    /// glyphs and bar frames are then left out here, and only the captions,
+    /// counts and bar fills come back as quads.
+    pub sprites_drawn: bool,
 }
 
 /// Map a retail brightness byte to a vertex tint.
@@ -892,6 +897,9 @@ fn bar_frame_draws(
 ) -> Vec<SpriteDraw> {
     let mut out = Vec::new();
     for (glyph, pos) in frame.glyphs.iter().zip(frame.positions.iter()) {
+        if atlas.sprites_drawn {
+            break;
+        }
         if let Some(src) = (atlas.glyph_src)(*glyph) {
             out.push(SpriteDraw {
                 dst: (origin.0 + pos.0, origin.1 + pos.1, src.2, src.3),
@@ -975,6 +983,7 @@ pub fn fishing_hud_draws_for(
 
     for item in items {
         match *item {
+            HudDraw::Number { .. } | HudDraw::Glyph { .. } if atlas.sprites_drawn => {}
             HudDraw::Number {
                 x,
                 y,
@@ -1493,6 +1502,7 @@ mod tests {
             solid_src: Some((0, 0, 1, 1)),
             glyph_src: &test_atlas_glyph,
             bar_thickness: 8,
+            sprites_drawn: false,
         }
     }
 
@@ -1592,6 +1602,7 @@ mod tests {
             solid_src: Some((0, 0, 1, 1)),
             glyph_src: &|_| None,
             bar_thickness: 8,
+            sprites_drawn: false,
         };
         let items = persistent_hud_draws(1234, 5678, 2, 7);
         let draws = fishing_hud_draws_for(&font, &items, &caps, &blind, (0, 0));

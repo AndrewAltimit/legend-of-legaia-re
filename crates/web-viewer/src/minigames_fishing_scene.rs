@@ -491,6 +491,19 @@ impl LegaiaMinigames {
     }
 }
 
+impl FishingScene {
+    /// The pond's VRAM as 16-bit words, the shape the screen-primitive
+    /// rasteriser samples.
+    pub(crate) fn vram_words(&self) -> Vec<u16> {
+        self.vram
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|b| u16::from_le_bytes(*b))
+            .collect()
+    }
+}
+
 #[wasm_bindgen]
 impl LegaiaMinigames {
     /// Whether the fishing venue scene decoded off this disc.

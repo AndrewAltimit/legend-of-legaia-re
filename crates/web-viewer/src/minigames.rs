@@ -147,6 +147,12 @@ pub struct LegaiaMinigames {
     fishing_exchange: Option<legaia_asset::fishing_exchange::FishingExchange>,
     /// The pond session's HUD banner timers (engine-ui's retail animators).
     fishing_banners: legaia_engine_ui::FishingBanners,
+    /// The fishing HUD's sprite table off PROT 0972
+    /// ([`legaia_asset::fishing_sprites`]).
+    fishing_sprites: Option<Vec<legaia_asset::fishing_sprites::FishingSprite>>,
+    /// The last frame's fishing HUD draw list, as `fishing_pond_hud_json`
+    /// built it - what `fishing_hud_rgba` rasterises.
+    fishing_hud_last: Vec<legaia_engine_ui::HudDraw>,
     /// This page's **effect-part pool** - the standalone twin of
     /// `World::minigames.fx`, which this page cannot use because it drives
     /// the session types directly and holds no `World`. Same model
@@ -319,6 +325,8 @@ impl LegaiaMinigames {
             fishing_cadence: None,
             fishing_exchange: None,
             fishing_banners: Default::default(),
+            fishing_sprites: None,
+            fishing_hud_last: Vec::new(),
             fx: Default::default(),
             fishing_prizes: Default::default(),
             fishing_scene: None,
@@ -407,6 +415,8 @@ impl LegaiaMinigames {
         self.fishing_cadence = None;
         self.fishing_exchange = None;
         self.fishing_banners = Default::default();
+        self.fishing_sprites = None;
+        self.fishing_hud_last.clear();
         self.fishing_prizes = Default::default();
         self.fishing_scene = None;
         self.muscle = None;

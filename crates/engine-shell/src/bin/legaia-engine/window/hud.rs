@@ -640,53 +640,17 @@ impl PlayWindowApp {
                 }
             }
 
-            // The retail persistent HUD rows (best-catch, capped point total,
-            // lure label, lures remaining) at their traced stage-pixel pens,
-            // through the ported layout + its draw-list consumer. The lure
-            // index is the session's - the entry's ownership gate already
-            // re-pointed it at an owned lure.
-            let inventory = &self.session.host.world.party.inventory;
-            let lure = s.lure;
-            let lures_left = *inventory
-                .get(&(legaia_engine_core::fishing::lure_item_id(lure) as u8))
-                .unwrap_or(&0) as i32;
-            let mut items = legaia_engine_render::persistent_hud_draws(
-                s.record.points,
-                s.record.best_points,
-                lure,
-                lures_left,
-            );
-            // The catch HUD, drawn over the persistent rows while a cast is
-            // out: the length / extent / cast-power readouts, plus the depth
-            // and tension gauge block once the fish is on - one engine
-            // derivation (`PondSession::catch_hud`). The cast line-projection
-            // term `DAT_801d9178` has no engine analogue and stays zero.
-            let c = s.catch_hud();
-            if c.visible {
-                items.extend(legaia_engine_render::catch_hud_draws(
-                    &legaia_engine_render::CatchHudState {
-                        record: c.record,
-                        line_extent: 0,
-                        cast_power: c.cast_power,
-                        depth: c.depth,
-                        tension: c.tension,
-                        gauges_visible: c.gauges_visible,
-                    },
-                ));
-            }
-            // This frame's live one-shot banners (hook / reel-in / miss /
-            // auxiliary / strike splash), serviced in the redraw handler.
-            items.extend(self.fishing_banner_draws.iter().copied());
-            // No fishing sprite page is uploaded, so the glyph ids resolve
-            // to nothing; the number / caption rows are font-atlas text and
-            // render as-is. The gauge fills (the cast-power and depth /
-            // tension bars) stretch the font atlas's solid texel - the page
-            // fills the same resolved frames from its `bars` payload, and a
-            // `None` here left the native gauges empty.
+            let items = self.fishing_hud_items();
+            // The sprite half (plates, digits, gauge caps, banners) is drawn
+            // as screen primitives over the venue's HUD page when the sprite
+            // table decoded (`fishing_hud_screen_prims`); this consumer then
+            // keeps only the captions, the lure count and the gauge fills.
+            let sprites_drawn = self.session.host.world.minigames.fishing_sprites.is_some();
             let hud_atlas = legaia_engine_render::FishingHudAtlas {
                 solid_src: self.battle_hud_solid_src(),
                 glyph_src: &|_| None,
                 bar_thickness: 8,
+                sprites_drawn,
             };
             let mut draws = legaia_engine_render::fishing_hud_draws_for(
                 &self.font,

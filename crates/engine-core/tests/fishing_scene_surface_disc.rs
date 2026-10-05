@@ -42,6 +42,36 @@ fn the_pond_surface_seats_the_party_under_the_venue_camera() {
         "the pond decodes"
     );
     assert!(surface.vram().is_some());
+    // The HUD's sprite table decoded on the same entry, and every record cuts
+    // a page the pond VRAM holds: the 4bpp page at (832, 0) with a palette of
+    // the (0, 503) strip, both non-empty in the surface's VRAM.
+    let sprites = host
+        .world
+        .minigames
+        .fishing_sprites
+        .as_ref()
+        .expect("sprite table");
+    assert_eq!(
+        sprites.len(),
+        legaia_asset::fishing_sprites::FISHING_SPRITE_COUNT
+    );
+    for r in sprites {
+        assert_eq!(r.tpage & 0x1F, 0x0D, "page (832, 0)");
+        assert_eq!(r.clut >> 6, 503, "a palette of the 503 strip");
+    }
+    let vram = surface.vram().unwrap().as_bytes();
+    let word = |x: usize, y: usize| {
+        u16::from_le_bytes([vram[(y * 1024 + x) * 2], vram[(y * 1024 + x) * 2 + 1]])
+    };
+    assert!((0..256).any(|x| word(x, 503) != 0), "CLUT row 503 resident");
+    let page_texels = (0..256)
+        .flat_map(|y| (832..896).map(move |x| (x, y)))
+        .filter(|&(x, y)| word(x, y) != 0)
+        .count();
+    assert!(
+        page_texels > 4096,
+        "HUD page resident ({page_texels} non-zero words)"
+    );
     let scene = surface.scene().unwrap();
     assert_eq!(scene.bases.len(), 3, "three seated bodies");
     assert!(scene.textured_indices.len() > 3000);

@@ -863,7 +863,9 @@ impl PlayWindowApp {
         // The fishing line (`FUN_801D26CC`'s packet, clipped by
         // `FUN_801D56E4`): latched here, outside the renderer borrow, through
         // the same follow camera - the session's yaw feedback is a write.
-        let fishing_line_prims = self.fishing_line_screen_prims();
+        let mut fishing_line_prims = self.fishing_line_screen_prims();
+        // The fishing HUD's sprites (`FUN_801D63B0`'s quads) over the pond.
+        fishing_line_prims.extend(self.fishing_hud_screen_prims());
         // The Baka duel's 3D surface: posed and uploaded here, outside the
         // renderer borrow (`window::minigames`).
         self.refresh_baka_duel_gpu();

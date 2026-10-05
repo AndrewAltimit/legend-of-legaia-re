@@ -76,6 +76,12 @@ pub struct MinigameState {
     /// the same entry as [`Self::fishing_prize_venues`]
     /// ([`crate::fishing_hub::FishingHubText::from_overlay`]).
     pub fishing_hub_text: Option<crate::fishing_hub::FishingHubText>,
+    /// The fishing HUD's sprite table off PROT 0972
+    /// ([`legaia_asset::fishing_sprites`]), decoded by the same entry as
+    /// [`Self::fishing_prize_venues`]. Every HUD glyph, digit and gauge cap
+    /// is one of its records drawn out of the venue's HUD page; `None` leaves
+    /// a host on its text fallback.
+    pub fishing_sprites: Option<Vec<legaia_asset::fishing_sprites::FishingSprite>>,
     /// Slot-machine minigame session. `Some` while
     /// `mode == SceneMode::SlotMachine`; the reel state machine runs each
     /// tick. See [`crate::slot_machine::SlotMachine`] and
@@ -297,6 +303,7 @@ impl MinigameState {
             fishing_exchange: None,
             fishing_prize_venues: None,
             fishing_hub_text: None,
+            fishing_sprites: None,
             slot_machine: None,
             slot_return_mode: SceneMode::Field,
             slot_sfx_bundle: Vec::new(),

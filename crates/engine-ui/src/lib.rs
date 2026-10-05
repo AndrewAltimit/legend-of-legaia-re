@@ -93,6 +93,7 @@ pub mod ui_fishing_exchange;
 pub mod ui_fishing_hub;
 pub mod ui_fishing_line;
 pub mod ui_fishing_rod;
+pub mod ui_fishing_sprite;
 mod ui_menu;
 pub mod ui_menu_window_dispatch;
 pub mod ui_menu_window_painters;

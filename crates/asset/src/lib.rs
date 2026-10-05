@@ -59,6 +59,7 @@ pub mod field_pack;
 pub mod field_probe_tables;
 pub mod fishing_exchange;
 pub mod fishing_species;
+pub mod fishing_sprites;
 pub mod fmv_dispatch;
 pub mod formation_census;
 pub mod gltf_color;

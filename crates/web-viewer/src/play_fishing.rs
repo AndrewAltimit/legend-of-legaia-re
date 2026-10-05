@@ -173,6 +173,30 @@ impl LegaiaRuntime {
         prims
     }
 
+    /// The fishing HUD's sprite half as screen primitives - the native
+    /// window's `fishing_hud_screen_prims` twin: every plate, digit, gauge
+    /// cap and banner cut from the overlay's sprite table (`FUN_801D63B0`,
+    /// the shared `ui_fishing_sprite` builder) out of the venue's HUD page,
+    /// which the pond VRAM this page takes for the session already holds.
+    /// Empty without a session or a decoded table.
+    pub(crate) fn fishing_hud_sprite_prims(
+        &self,
+    ) -> Vec<legaia_engine_ui::screen_prim::ScreenPrim> {
+        let Some(host) = self.scene_host.as_ref() else {
+            return Vec::new();
+        };
+        if host.world.mode != legaia_engine_core::world::SceneMode::Fishing {
+            return Vec::new();
+        }
+        let Some(table) = host.world.minigames.fishing_sprites.as_deref() else {
+            return Vec::new();
+        };
+        legaia_engine_ui::ui_fishing_sprite::fishing_hud_sprite_prims(
+            &self.fishing_hud_items(),
+            table,
+        )
+    }
+
     /// The live fishing session, when one is installed on the scene host's
     /// world.
     fn fishing_session(&self) -> Option<&PondSession> {
@@ -410,9 +434,9 @@ impl LegaiaRuntime {
     ///
     /// `texts` and `sprites` come from
     /// [`legaia_engine_ui::fishing_hud_draws_for`] - the shared consumer the
-    /// native window calls, with the same blind [`FishingHudAtlas`] (the
-    /// fishing sprite page is undecoded, so glyph ids resolve to nothing and
-    /// only the digit / caption rows survive). `bars` carries the resolved
+    /// native window calls. With the sprite table decoded the plates, digits
+    /// and gauge caps are screen primitives ([`Self::fishing_hud_sprite_prims`])
+    /// and this carries the captions and counts. `bars` carries the resolved
     /// gauge frames the blind atlas cannot fill; see the module note.
     pub fn play_fishing_hud_json(&mut self, surface_w: u32, surface_h: u32) -> String {
         if !self.play_fishing_active() {
@@ -427,16 +451,22 @@ impl LegaiaRuntime {
             return CLOSED.to_string();
         };
         let font = assets.font_ref();
-        // The retail persistent + catch rows through the shared consumer. No
-        // fishing sprite page is uploaded on either host, so the glyph ids
-        // resolve to nothing on both. The fills differ in carrier only: the
+        // The retail persistent + catch rows through the shared consumer.
+        // With the sprite table decoded, the plates, digits and gauge caps
+        // are screen primitives (`fishing_hud_sprite_prims`) and this keeps
+        // the captions and counts. The fills differ in carrier only: the
         // native window stretches its font's solid texel through
         // `solid_src`, this page leaves it `None` and fills the same resolved
         // frames from `bars` in JS.
+        let sprites_drawn = self
+            .scene_host
+            .as_ref()
+            .is_some_and(|h| h.world.minigames.fishing_sprites.is_some());
         let atlas = FishingHudAtlas {
             solid_src: None,
             glyph_src: &|_| None,
             bar_thickness: 8,
+            sprites_drawn,
         };
         let mut texts = ui::fishing_hud_draws_for(
             font,

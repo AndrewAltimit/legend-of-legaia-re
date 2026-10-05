@@ -146,6 +146,9 @@ impl SceneHost {
         // The hub menu's rows and help pages ride the same image.
         self.world.minigames.fishing_hub_text =
             crate::fishing_hub::FishingHubText::from_overlay(loaded);
+        // And the HUD sprite table every glyph, digit and gauge cap is cut
+        // from (`FUN_801D63B0`'s records).
+        self.world.minigames.fishing_sprites = legaia_asset::fishing_sprites::parse(loaded);
         true
     }
 

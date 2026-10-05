@@ -2137,6 +2137,8 @@ impl LegaiaRuntime {
         // `FUN_801D56E4`), the native window's `fishing_line_screen_prims`
         // twin ([`crate::play_fishing`]).
         prims.extend(self.fishing_line_prims());
+        // The fishing HUD's sprites, the native window's twin.
+        prims.extend(self.fishing_hud_sprite_prims());
         // The battle value readout - retail's 24x24 numeral cells and the
         // `N HIT` / `TOTAL` counter cluster - off the resident effect atlas,
         // through the same `battle_numerals` builder the native window emits.
