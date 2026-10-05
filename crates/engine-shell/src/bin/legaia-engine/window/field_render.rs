@@ -325,6 +325,7 @@ impl PlayWindowApp {
             &binds,
             &self.session.host.world.hidden_object_records(),
         );
+        self.follow_floor_placed_draws(&mut draws, &binds);
 
         let scales = field_env::placed_render_scales(
             &draws,
@@ -384,6 +385,25 @@ impl PlayWindowApp {
     /// placed objects; world-map scenes use the walk layers) - the shared
     /// input of the coplanar-lift pass and the occlusion-fade gate's
     /// occluder set.
+    /// Seat the placed draws whose bind record follows the floor on the
+    /// floor sample under them (`field_env::follow_floor_placed_draws` over
+    /// `World::object_floor_follow_y`) - the same pass the browser play page
+    /// runs in `build_field_render`.
+    fn follow_floor_placed_draws(
+        &self,
+        draws: &mut [legaia_engine_core::field_env::EnvDraw],
+        binds: &std::collections::HashMap<(u8, u8), legaia_engine_core::field_env::ObjectBind>,
+    ) {
+        let world = &self.session.host.world;
+        let follow = world.object_floor_follow_records();
+        if follow.is_empty() {
+            return;
+        }
+        legaia_engine_core::field_env::follow_floor_placed_draws(draws, binds, |r, x, z| {
+            world.object_floor_follow_y(&follow, r, x, z)
+        });
+    }
+
     pub(super) fn static_env_draws(
         &self,
         res: &SceneResources,
@@ -421,12 +441,15 @@ impl PlayWindowApp {
             }
             if let Ok(Some(placements)) = scene.field_object_placements(index) {
                 let binds = scene.field_object_binds(index).ok().flatten();
-                let (d, _) = field_env::resolve_placed_env_draws(
+                let (mut d, _) = field_env::resolve_placed_env_draws(
                     &env_tmds,
                     &placements,
                     floor_lut,
                     binds.as_ref(),
                 );
+                if let Some(binds) = binds.as_ref() {
+                    self.follow_floor_placed_draws(&mut d, binds);
+                }
                 draws.extend(d);
             }
         }
@@ -1094,6 +1117,7 @@ impl PlayWindowApp {
                 binds,
                 &self.session.host.world.hidden_object_records(),
             );
+            self.follow_floor_placed_draws(&mut env_draws, binds);
         }
         // Render scale: a bind record's prologue can leave the actor's
         // `+0x72` at a non-unit value (town01's horizon backdrop draws at a
@@ -1239,14 +1263,15 @@ impl PlayWindowApp {
             };
             if diag {
                 log::info!(
-                    "DIAG place keep: pack {} (res {} -> mesh {}) at ({}, {}, {}) rot {}",
+                    "DIAG place keep: pack {} (res {} -> mesh {}) at ({}, {}, {}) rot {} bind {:?}",
                     d.env_slot,
                     d.res_tmd,
                     mesh_idx,
                     d.world_x,
                     d.world_y,
                     d.world_z,
-                    d.rot_y & 0x0FFF
+                    d.rot_y & 0x0FFF,
+                    record
                 );
             }
             draws.push((mesh_idx, model));

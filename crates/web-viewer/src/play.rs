@@ -230,6 +230,7 @@ pub fn build_field_render(
     is_world_map: bool,
     hidden_records: &std::collections::HashSet<usize>,
     render_scales: &std::collections::HashMap<usize, u16>,
+    floor_follow: &dyn Fn(usize, i32, i32) -> Option<i32>,
 ) -> FieldRender {
     let env_tmds = field_env::env_pack_tmd_indices(scene, res);
     let floor_lut = scene.field_floor_height_lut(index).ok().flatten();
@@ -283,6 +284,10 @@ pub fn build_field_render(
     // `resolve_placement_draws`.
     if let Some(binds) = binds.as_ref() {
         field_env::retain_visible_placed_draws(&mut placements, binds, hidden_records);
+        // A bind record carrying the actor tick's floor-follow law draws on
+        // the floor sample under it, not at its `.MAP` lift - the same pass
+        // the native shell runs (`follow_floor_placed_draws`).
+        field_env::follow_floor_placed_draws(&mut placements, binds, floor_follow);
     }
     let placement_scales =
         field_env::placed_render_scales(&placements, binds.as_ref(), render_scales);

@@ -1660,6 +1660,21 @@ story-hidden gate's business. Like the hidden gate, the scale is baked with the
 scene's draw lists, so a script that ramps it mid-scene is not followed. Pinned
 by `crates/engine-core/tests/field_object_render_scale_disc.rs`.
 
+**A placed object can lose its `.MAP` lift.** The scene-init sweep seats a
+bound object at `lut[nibble] + y_off` (`FUN_8003A55C`, `0x8003A640`), but the
+field actor tick `FUN_8003BC08` then rewrites `+0x16` with the floor sample
+under the actor (`FUN_80019278`, `jal` at `0x8003BC98`) on every tick the
+visibility cull leaves it in view, whenever `+0x10 & 0x20200` is up and
+`0x20000000` is down. A bind prologue raises that class bit with `31 11`
+(`CFlag.Set` bit 17). `rikuroa`'s `P0[0]` does, and it binds most of the
+summit's props, the sky panorama among them: pack 37 carries `y_off = 2080`,
+and every retail capture holds its actor at the `-480` floor tier. Drawn at
+the record's lift instead, the panorama sinks 2080 units and the frame shows
+its cloud band where retail shows the cliff ring and the mist under it. Both
+hosts re-seat such draws through one kernel,
+`field_env::follow_floor_placed_draws` over
+`World::object_floor_follow_records`, when they bake the placed layer.
+
 #### CLUT-trace + VRAM-oracle diagnostics
 
 Two `legaia-engine` subcommands surface where the engine's loader still has gaps against a captured runtime VRAM:

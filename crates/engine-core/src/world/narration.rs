@@ -2769,6 +2769,51 @@ impl World {
             .collect()
     }
 
+    /// Flat partition-0 record indices whose **object-bind channel** carries
+    /// the actor tick's floor-follow law: `+0x10 & 0x20200` up and
+    /// `0x20000000` down. The field actor tick `FUN_8003BC08` rewrites such an
+    /// actor's Y `+0x16` with the floor sample under it (`FUN_80019278`, the
+    /// `jal` at `0x8003BC98`) on every tick the visibility cull leaves it in
+    /// view, so the record's own `y_off` - the lift the `.MAP` sweep
+    /// `FUN_8003A55C` seats it with (`lut[nibble] + y_off`, `0x8003A640`) -
+    /// lasts only until the actor is first seen. A prologue raises the class
+    /// bit with `31 11` (`CFlag.Set` bit 17): `rikuroa`'s `P0[0]`, bound to
+    /// most of the summit's props, does, and its sky panorama (pack 37,
+    /// `y_off` `2080`) draws at the `-480` floor tier in every retail capture,
+    /// which puts the cliff ring across the top of the frame.
+    ///
+    /// The `0x2000` glide variant converges on the same floor and is listed
+    /// too; the `0x20000000` law (`-(+0x8E)`) is
+    /// [`Self::object_draw_displacements`]' business.
+    // REF: FUN_8003BC08 (height arm, 0x8003BC44..0x8003BCF4), FUN_80019278
+    pub fn object_floor_follow_records(&self) -> std::collections::HashSet<usize> {
+        self.field_vm
+            .channels
+            .iter()
+            .filter(|c| {
+                c.object_bind && c.ctx.flags & 0x2000_0000 == 0 && c.ctx.flags & 0x0002_0200 != 0
+            })
+            .map(|c| c.placement_index)
+            .collect()
+    }
+
+    /// The draw Y a placed object bound to `record` takes at world `(x, z)`:
+    /// the floor sample under it when the record follows the floor
+    /// ([`Self::object_floor_follow_records`]), else `None` (the `.MAP`
+    /// sweep's `lut[nibble] + y_off` stands).
+    // REF: FUN_8003BC08, FUN_80019278
+    pub fn object_floor_follow_y(
+        &self,
+        follow: &std::collections::HashSet<usize>,
+        record: usize,
+        x: i32,
+        z: i32,
+    ) -> Option<i32> {
+        follow
+            .contains(&record)
+            .then(|| self.sample_field_floor_height(x, z))
+    }
+
     /// Flat partition-0 record index -> how far a script has moved that
     /// **object-bind channel's** actor from where its bind seated it, as
     /// `[dx, dy, dz]` in retail world units (Y-down). Retail draws a placed

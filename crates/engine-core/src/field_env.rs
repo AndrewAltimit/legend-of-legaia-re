@@ -627,6 +627,32 @@ pub fn placed_render_scales(
         .collect()
 }
 
+/// Re-seat every placed draw whose bind record follows the floor
+/// ([`World::object_floor_follow_records`]) on the floor sample under it - the
+/// Y the field actor tick writes over the `.MAP` sweep's `lut[nibble] + y_off`
+/// once the actor is in view. `floor_y(record, x, z)` is
+/// [`World::object_floor_follow_y`] over the scene's live world; it answers
+/// `None` for a record that keeps its seat. The one kernel both play hosts
+/// run on their placed layer before baking it.
+///
+/// [`World::object_floor_follow_records`]: crate::world::World::object_floor_follow_records
+/// [`World::object_floor_follow_y`]: crate::world::World::object_floor_follow_y
+// REF: FUN_8003BC08 (height arm), FUN_80019278
+pub fn follow_floor_placed_draws(
+    draws: &mut [EnvDraw],
+    binds: &HashMap<(u8, u8), ObjectBind>,
+    floor_y: impl Fn(usize, i32, i32) -> Option<i32>,
+) {
+    for d in draws.iter_mut() {
+        let Some(b) = binds.get(&d.anchor) else {
+            continue;
+        };
+        if let Some(y) = floor_y(b.record as usize, d.world_x, d.world_z) {
+            d.world_y = y;
+        }
+    }
+}
+
 /// The bind record each placed draw's actor runs (parallel to `draws`), or
 /// `None` for an unbound draw - the key hosts look a draw's live
 /// [`World::object_draw_displacements`] entry up by.
@@ -2141,6 +2167,47 @@ mod tests {
                 cell: (2, 3),
                 cull_radius: 0,
             }]
+        );
+    }
+
+    /// A bound draw whose record follows the floor takes the sampled floor Y,
+    /// dropping the record's `y_off` lift; an unbound draw and a bound draw
+    /// whose record keeps its seat stay where the sweep put them.
+    #[test]
+    fn floor_following_records_drop_their_lift() {
+        let env_tmds = vec![10, 11, 12];
+        let mut lut = [0i16; 16];
+        lut[15] = 480;
+        let mut follows = placement(Some(1), Some(15), 2080);
+        follows.anchor_col = 7;
+        let mut keeps = placement(Some(2), Some(15), -56);
+        keeps.anchor_col = 8;
+        let free = placement(Some(0), Some(15), 300);
+        let mut binds = HashMap::new();
+        binds.insert(
+            (7u8, 3u8),
+            ObjectBind {
+                record: 0,
+                anim_id: 0,
+            },
+        );
+        binds.insert(
+            (8u8, 3u8),
+            ObjectBind {
+                record: 4,
+                anim_id: 0,
+            },
+        );
+        let (mut draws, _) =
+            resolve_placed_env_draws(&env_tmds, &[follows, keeps, free], Some(lut), Some(&binds));
+        assert_eq!(
+            draws.iter().map(|d| d.world_y).collect::<Vec<_>>(),
+            [1600, -536, -180]
+        );
+        follow_floor_placed_draws(&mut draws, &binds, |r, _, _| (r == 0).then_some(-480));
+        assert_eq!(
+            draws.iter().map(|d| d.world_y).collect::<Vec<_>>(),
+            [-480, -536, -180]
         );
     }
 

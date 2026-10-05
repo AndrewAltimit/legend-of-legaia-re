@@ -1724,6 +1724,7 @@ impl LegaiaRuntime {
         };
         let name = scene.name.clone();
         let is_world_map = legaia_engine_core::scene::is_world_map_scene(&name);
+        let follow = host.world.object_floor_follow_records();
         self.field = Some(crate::play::build_field_render(
             &host.index,
             scene,
@@ -1731,6 +1732,7 @@ impl LegaiaRuntime {
             is_world_map,
             &host.world.hidden_object_records(),
             &host.world.object_render_scales(),
+            &|r, x, z| host.world.object_floor_follow_y(&follow, r, x, z),
         ));
         // Pose sources, through the one resolver the native window's
         // `find_scene_anm_bundle` calls too (`npc_catalog::scene_anm_bundle`).
