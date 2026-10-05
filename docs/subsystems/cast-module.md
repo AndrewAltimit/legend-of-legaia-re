@@ -2098,7 +2098,29 @@ run; a holding gate withholds the body's pass. The battle camera holds in
   through arms 7 and 8. The body has no other port, so the director owns its
   phase and finishes the module at arm 8.
 
+- **PROT 0953 (Terio Punch, body `0x801F69FC`, keyed on `SINGLE_BODY`)** -
+  arm 0 forks on the caster's battle-scoped latch word `0x801C8FE0 +
+  (ctx[+0x13] + 1) * 4` (the monster AI's cooldown `dat[m + 4]`). Zero takes
+  the **charge**: the body sets the latch and leaves without reaching its
+  `FUN_801DD6B4`, so the band's fold owes that cast nothing (the director
+  reports `skips_fold`). Non-zero takes the **punch** (arms 4..8): the latch is
+  cleared and the party sweep lands through the fold at power `0x274`. The two
+  branches hold different caster stages (`0x5E` charge, `0x5D` punch).
+
 A body with no director keeps the held pose.
+
+**Not yet directed.** PROT 0954 (Fatal Decision) is a roulette: arm 0 fills
+eight slots from the caster's monster id (`rand % 8`, `% 12` or `% 16`),
+clears slot 10 when the victim already carries status `0x38`, and forces at
+least one zero; the wheel stops on a pad press or when its countdown runs out,
+decelerates and snaps, and the slot at angle `0x800 - rot` is the outcome.
+Arm 9 shows that outcome's name banner (`0x801F8D50 + id * 0x28`); arm 10
+applies one of sixteen stat / status / gold / item effects to the victim
+(halved HP, MP or attack, status bits, a full heal, a stolen item, gold
+`-10%`), remapping four ids for a monster victim. None of it reaches the
+fold, so the port folds no damage and applies no outcome. PROT 0966 (Evil
+Seru Magic) is a 29-arm camera body whose damage belongs to its stager, not
+to the band's fold; its arms are not directed.
 
 ### The band has eight stat-block writers, not one
 
