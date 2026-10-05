@@ -1723,11 +1723,11 @@ and pushes in on the falling body, then snaps to the flat pose the frame the
 body lands. Engine side the ramp lives on
 `battle_attack_camera::AttackCamCtx::death_ramp`.
 
-What stays out of the port is the lone-monster defeat fork above it (`ctx[+0x287]` /
-`ctx[+0x288]` / `_DAT_8007BD0D` at `0x801D6AC8`; `+0x288` is the defeat-fade latch
+The lone-monster defeat fork above it (`ctx[+0x287]` / `ctx[+0x288]` /
+`_DAT_8007BD0D` at `0x801D6AC8..0x801D6AF0`; `+0x288` is the defeat-fade latch
 [`battle-action.md`](battle-action.md#ctx0x287-is-the-scripted-fight-flag-and-0x288-is-the-lone-monster-defeat-latch)
-documents, not a counter-attack byte); the action context carries the latch, but
-the camera port does not read it. Case 8's focus fork tests the target's
+documents) sends a scripted fight's lone monster, dying in place, to the same
+stand-off arm as a gone node (`PostActionTarget::lone_defeat`). Case 8's focus fork tests the target's
 node word `+0x4` (`0x801D682C`), not its HP, so a target killed but still drawn
 stays framed; both cases read the body pair `+0x3C` / `+0x40` for X / Z (the
 live `+0x36` for case 7's Y), not the live pair case 6 reads.

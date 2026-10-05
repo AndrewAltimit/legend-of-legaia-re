@@ -2324,6 +2324,31 @@ fn a_gone_target_takes_the_stand_off_arm() {
     assert_eq!(cam.action_yaw, 0x10, "the stand-off arm keeps the ladder");
 }
 
+/// The lone-monster defeat bypass (`0x801D6AC8..0x801D6AF0`) takes the same
+/// stand-off arm with the node still drawn.
+#[test]
+fn a_lone_scripted_monster_dying_in_place_takes_the_stand_off_arm() {
+    let mk = |node_gone: bool, lone_defeat: bool| {
+        let mut cam = BattleCamera::new(BattleCamPhase::ActionEnd, 0);
+        cam.set_actor(BattleCamActor {
+            facing: 562,
+            world: [78.0, -183.0, -15.0],
+            height: None,
+        });
+        cam.target = Some(PostActionTarget {
+            world: [600.0, 0.0, 800.0],
+            live: false,
+            facing: 7,
+            node_gone,
+            lone_defeat,
+            ..PostActionTarget::default()
+        });
+        cam.action_end_pose()
+    };
+    assert_eq!(mk(false, true), mk(true, false));
+    assert_ne!(mk(false, true), mk(false, false));
+}
+
 #[test]
 fn escape_shot_cuts_to_the_reverse_angle_and_holds_it() {
     let mut cam = traced_cam(BattleCamPhase::Menu);

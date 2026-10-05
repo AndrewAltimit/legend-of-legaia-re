@@ -419,7 +419,7 @@ impl BattleCamera {
         };
         // Both dead-target arms start from the target-facing yaw.
         let yaw = dead_target_yaw(t.facing, self.attack.ctx.phase_cursor, f);
-        if t.node_gone {
+        if t.node_gone || t.lone_defeat {
             // The stand-off arm adds the live ladder rather than zeroing it.
             let yaw = yaw + self.action_yaw;
             let raw_z = apply_node_gone_reframe(&mut pose, actor, yaw, f.body_radius);

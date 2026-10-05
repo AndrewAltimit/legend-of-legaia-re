@@ -433,6 +433,10 @@ pub fn battle_post_action_target(
         // the neutral colour, so only the fade's zero counts.
         node_gone: t.battle.render_flag == vm_formulas::STATE_DEFEAT_FADE
             && t.battle.render_color & 0x00FF_FFFF == 0,
+        // `0x8007BD0D == 0` is folded into the latch: its one writer raises
+        // it only for a lone-monster formation.
+        lone_defeat: world.battle_ctx.scripted_fight != 0
+            && world.battle_ctx.lone_defeat_latch != 0,
     })
 }
 
