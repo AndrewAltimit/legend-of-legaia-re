@@ -98,6 +98,15 @@ Consumers:
   map - a surviving target with no get-up entry queues `+0x1EF` (light
   flinch, with the exit-to-idle flag), any other hit queues `+0x1F1`
   (knockdown);
+- the melee / arts kernel `FUN_801EC3E4` picks its own reaction per
+  connecting hit rather than the primitive's: a flinch on the struck half -
+  `+0x1EF` when the power byte's `(byte - 0x0C) % 10 < 5`, else `+0x1F0`,
+  each falling back to the other when absent (`0x801EDE18..0x801EDEBC`) -
+  escalated to the knockdown `+0x1F1` only on a hit that reaches the kill
+  compare and either kills, or leaves a get-up-carrying survivor whose combo
+  total exceeds a quarter of its max HP or whose HP it drops under a quarter
+  (`0x801EE1C0..0x801EE3B4`). So most swings flinch, and a combo's closing
+  hit is what knocks down;
 - the anim commit `FUN_8004AD80` stages behind a committed knockdown
   (record tag 4) the get-up `+0x1F2` while the actor lives, or anim id 7 for a
   downed party member (whose own commit stages 8), and tests the queued id

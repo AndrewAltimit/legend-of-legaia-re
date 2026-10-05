@@ -1952,7 +1952,7 @@ impl World {
         // committed to the defender's `+0x1DA`); the grunt below compares it
         // against the defender's block entry.
         let committed_reaction = if dmg > 0 {
-            self.battle_reaction_entry_for(target_i, survives)
+            self.melee_reaction_entry(target_i, power_byte, kill_check)
         } else {
             None
         };
@@ -1964,6 +1964,56 @@ impl World {
             self.commit_battle_reaction_entry(target_i, entry);
         }
         dmg
+    }
+
+    /// The reaction one connecting melee hit commits on its defender -
+    /// `FUN_801EC3E4`'s `s7`, not the damage primitive `FUN_800402F4`'s rule
+    /// (which always knocks a survivor with a get-up entry down).
+    ///
+    /// * The default is a **flinch on the struck half**: the power byte's
+    ///   defence half (`(byte - 0x0C) % 10 < 5`, the test the damage roll
+    ///   uses) picks the high flinch `+0x1EF` or the low one `+0x1F0`
+    ///   (`0x801EDE18..0x801EDE78`), and a record carrying only one of the
+    ///   two falls back to it (`0x801EDE98..0x801EDEBC`).
+    /// * Only a hit that reaches the kill compare (`kill_check`, the per-hit
+    ///   gates `0x801EE128..0x801EE1A4`) can escalate. A defender the total
+    ///   kills takes the knockdown `+0x1F1` (`0x801EE340..0x801EE374`); a
+    ///   survivor with a get-up entry takes it when the combo total exceeds a
+    ///   quarter of its max HP or leaves it under a quarter
+    ///   (`0x801EE380..0x801EE3B4`); any other survivor keeps the flinch.
+    ///
+    /// Not modelled: the War God Icon carry (apply mode `0xFF`), which
+    /// knocks down without the kill compare (`0x801EE12C` -> `0x801EE3B8`).
+    ///
+    /// PORT: FUN_801EC3E4 (`0x801EDE18..0x801EDEBC`, `0x801EE1C0..0x801EE3B8`,
+    /// the reaction pick)
+    fn melee_reaction_entry(&self, target: usize, power_byte: u8, kill_check: bool) -> Option<u8> {
+        let [high, low, knockdown, getup, _] = self.battle_reaction_map(target)?;
+        let mut s7 = if vm::battle_formulas::physical_defense_is_udf(power_byte) {
+            high
+        } else {
+            low
+        };
+        if low == 0 {
+            s7 = high;
+        }
+        if high == 0 {
+            s7 = low;
+        }
+        if kill_check {
+            let t = &self.actors.get(target)?.battle;
+            let accum = t.damage_accum;
+            let hp = u32::from(t.hp);
+            if accum >= hp {
+                s7 = knockdown;
+            } else if getup != 0 {
+                let quarter = u32::from(t.max_hp >> 2);
+                if quarter < accum || hp - accum < quarter {
+                    s7 = knockdown;
+                }
+            }
+        }
+        (s7 != 0).then_some(s7)
     }
 
     /// The melee kernel's block decision for one hit: `Some(block entry)`
