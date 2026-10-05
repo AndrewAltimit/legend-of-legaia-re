@@ -124,6 +124,9 @@ impl LegaiaRuntime {
         if !wrote.ext_written {
             crate::console_log("play menu: engine ext too large for the card block; withheld");
         }
+        if let Some(w) = self.cards_written.get_mut(slot) {
+            *w = true;
+        }
         Ok(())
     }
 
@@ -223,6 +226,26 @@ impl LegaiaRuntime {
     /// exported yet.
     pub fn card_slot_dirty(&self, slot: u8) -> bool {
         self.card(slot as usize).map(|c| c.dirty).unwrap_or(false)
+    }
+
+    /// `true` once per in-game Save into the card in `slot`: the page polls
+    /// this and stores the card back over its browser session, so a save
+    /// survives a reload the way the native window's `card.persist()`
+    /// survives a restart. Clears the latch; leaves the export `dirty` bit.
+    pub fn card_take_written(&mut self, slot: u8) -> bool {
+        self.cards_written
+            .get_mut(slot as usize)
+            .map(std::mem::take)
+            .unwrap_or(false)
+    }
+
+    /// The card in `slot` as container bytes, without clearing its export
+    /// `dirty` bit - what [`Self::card_take_written`]'s store uses. Empty
+    /// when no card is in that slot.
+    pub fn card_bytes(&self, slot: u8) -> Vec<u8> {
+        self.card(slot as usize)
+            .map(|c| c.bytes.clone())
+            .unwrap_or_default()
     }
 
     /// The card in rack slot `slot`, as container bytes ready to download.
@@ -464,6 +487,12 @@ mod tests {
         });
         rt.write_session_into_card(0, 3).unwrap();
         assert!(rt.card_slot_dirty(0), "an in-game save dirties the card");
+        // The page's store latch fires once per save and leaves the export bit.
+        assert!(rt.card_take_written(0), "the save raises the store latch");
+        assert!(!rt.card_take_written(0), "the latch is taken once");
+        assert!(!rt.card_take_written(1), "the other port saw no save");
+        assert_eq!(rt.card_bytes(0).len(), original.len());
+        assert!(rt.card_slot_dirty(0), "storing does not count as an export");
 
         // Re-parse off the exported container: this is what an emulator sees.
         let exported = rt.export_card(0);
