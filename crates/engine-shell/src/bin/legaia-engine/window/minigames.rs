@@ -1212,7 +1212,8 @@ impl PlayWindowApp {
     /// engine's (`legaia_engine_core::muscle_dome_scene::MuscleDomeSurface::
     /// frame`, the call the browser play page makes too); this host uploads
     /// the dome VRAM on a generation change and the posed mesh every frame,
-    /// and the redraw draws them under `DomeCamera::vp_raw`. Drops the GPU
+    /// and the redraw draws them under `DomeCamera::vp_raw` (the battle
+    /// camera script's pose for the leg). Drops the GPU
     /// copy whenever no dome session is on screen.
     pub(super) fn refresh_muscle_dome_gpu(&mut self) {
         let world = &self.session.host.world;
@@ -1225,6 +1226,8 @@ impl PlayWindowApp {
             None
         };
         let contest = world.minigames.muscle_contest.as_ref();
+        self.muscle_surface
+            .set_camera_option(world.toggles.battle_camera as u8);
         let generation_before = self.muscle_surface.generation();
         if self
             .muscle_surface

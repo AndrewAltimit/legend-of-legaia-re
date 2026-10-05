@@ -22,19 +22,35 @@
 //! - The **ground** is the retail battle ground grid, sampling the arena's
 //!   `(832, 0)` page.
 //!
-//! The choreography is the port's: a resolved turn replays its plays as
-//! swings (the defender flinching twelve ticks into a connecting one, one
-//! play every [`PLAY_CADENCE_TICKS`]), and a settled leg holds the loser's
-//! knockdown. The camera is a framing orbit, not a retail track.
+//! A dome leg is an ordinary battle (`FUN_801D1510` hands the round to
+//! battle init through game mode `0x14`, and the round driver
+//! `FUN_801D0748` is the battle overlay's), so the two bodies stand on the
+//! battle formation seats - the lone party seat `(0, -800)` and the lone
+//! monster seat `(0, 800)` (`crate::battle_seats`) - at the battle world
+//! scale, and the frame is filmed by the **battle camera script**
+//! (`legaia_engine_vm::battle_cam_script`, `FUN_801D5854`), the same one an
+//! ordinary fight runs: the far framing with its idle orbit on the prompts,
+//! the case-0 over-the-shoulder close-up on the fighter's command surfaces,
+//! case 1 on the attack cursor, case 6 on the approach, case 7 on the
+//! strikes, case 8 on the done tail and the battle-over arm on a win.
+//!
+//! The choreography is the battle's shape on the port's clock: a leg's first
+//! acting play walks its attacker in from the seat ([`APPROACH_TICKS`],
+//! there is no walk home), each play swings for [`PLAY_CADENCE_TICKS`] (the
+//! defender flinching [`FLINCH_DELAY_TICKS`] into a connecting one, falling
+//! on the knockout), and each attacker's string closes on the done band's
+//! [`DONE_TAIL_TICKS`]. [`turn_timeline`] is that schedule, shared by the
+//! surface, the world's playback hold and its tally readout.
 
 use std::sync::Arc;
 
 use legaia_asset::battle_char_assembly as bca;
 use legaia_asset::monster_archive::{self, MonsterAnimation};
 use legaia_asset::scene_tmd_stream;
+use legaia_engine_vm::battle_cam_script as cam;
 use legaia_tmd::mesh::VramMesh;
 
-use crate::muscle_dome::{DomeContest, MuscleDomeSession, MusclePhase};
+use crate::muscle_dome::{DomeContest, DomePlay, MuscleDomeSession, MusclePhase};
 
 /// The monster archive (PROT 867).
 pub const MONSTER_ARCHIVE_PROT_INDEX: usize = 867;
@@ -42,24 +58,124 @@ pub const MONSTER_ARCHIVE_PROT_INDEX: usize = 867;
 pub const ARENA_OVERLAY_PROT_INDEX: usize = crate::muscle_dome::ARENA_OVERLAY_PROT_INDEX;
 /// The arena backdrop stream (PROT 1225).
 pub const ARENA_BACKDROP_PROT_INDEX: usize = 1225;
+/// The battle-action overlay (PROT 0898): the per-character camera height
+/// table `0x801F4D2C` the close-ups read.
+pub const BATTLE_ACTION_PROT_INDEX: usize = 898;
 
-/// Ticks between two replayed plays of a resolved turn.
+/// Ticks one swing of a resolved turn plays for.
 pub const PLAY_CADENCE_TICKS: u32 = 34;
 /// Ticks into a connecting swing at which the defender flinches.
 pub const FLINCH_DELAY_TICKS: u32 = 12;
+/// Ticks the leg's first acting play walks its attacker in from the seat.
+/// Retail's approach is walk-clip root motion at about twenty raw units a
+/// vsync (`engine-core::world::battle::locomotion`); the seats stand 1600
+/// apart, so the walk closes in a little under fifty frames.
+pub const APPROACH_TICKS: u32 = 48;
+/// Ticks the done band holds after an attacker's string: the action SM's
+/// `0x50` arm seeds the tail timer `ctx[+0x6D8] = 0x3C` and `0x51` counts it
+/// down under case 8 for an attack.
+pub const DONE_TAIL_TICKS: u32 = 0x3C;
+/// Retail's battle world scale (base matrix `0x8007BF10 = 16384*I`): every
+/// battle draw class - bodies, backdrop and ground - carries it, and the
+/// camera's translation trio is authored against it.
+pub const BATTLE_WORLD_SCALE: f32 = 4.0;
+/// The seat body `i` stands on at leg open, `(x, z)`: the lone party seat
+/// and the lone monster seat (`0x800775C8` / `0x80077608` row 0).
+pub fn seat_xz(i: usize) -> [f32; 2] {
+    let s = if i == 0 {
+        crate::battle_seats::party_seat(1, 0)
+    } else {
+        crate::battle_seats::monster_seat(1, 0, false)
+    };
+    [f32::from(s.x), f32::from(s.z)]
+}
+/// Battle headings `+0x46`: the fighter faces `+Z`, the monster `-Z`.
+pub const FACINGS: [i32; 2] = [0, 0x800];
 
-/// How long a resolved turn of `plays` plays out on the dome surface: one
-/// play every [`PLAY_CADENCE_TICKS`], the last given a full cadence to land
-/// its swing and the defender's flinch. A turn with no plays (an empty
-/// queue on both sides) has nothing to show and holds for nothing.
-pub fn playback_ticks(plays: usize) -> u32 {
-    (plays as u32).saturating_mul(PLAY_CADENCE_TICKS)
+/// What one stretch of a turn's playback is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BeatKind {
+    /// The leg's first acting play walking its attacker in.
+    Approach,
+    /// One play's swing.
+    Swing,
+    /// The done band closing an attacker's string.
+    Done,
+}
+
+/// One stretch of [`turn_timeline`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Beat {
+    pub kind: BeatKind,
+    /// The play it belongs to (the first play of the string for
+    /// [`BeatKind::Approach`], the last for [`BeatKind::Done`]).
+    pub play: usize,
+    /// The acting fighter slot.
+    pub attacker: usize,
+    /// Tick the beat starts at, from the start of the playback.
+    pub start: u32,
+    pub len: u32,
+}
+
+/// A resolved turn's playback schedule: an approach ahead of the first play
+/// when `closes_in` ([`MuscleDomeSession::last_turn_closes_in`]), one swing
+/// per play, and a done tail after each attacker's last play.
+pub fn turn_timeline(plays: &[DomePlay], closes_in: bool) -> Vec<Beat> {
+    let mut out = Vec::new();
+    let mut t = 0;
+    let mut push = |out: &mut Vec<Beat>, kind, play, attacker, len| {
+        out.push(Beat {
+            kind,
+            play,
+            attacker,
+            start: t,
+            len,
+        });
+        t += len;
+    };
+    if closes_in && let Some(first) = plays.first() {
+        push(
+            &mut out,
+            BeatKind::Approach,
+            0,
+            first.attacker.min(1),
+            APPROACH_TICKS,
+        );
+    }
+    for (i, p) in plays.iter().enumerate() {
+        let a = p.attacker.min(1);
+        push(&mut out, BeatKind::Swing, i, a, PLAY_CADENCE_TICKS);
+        let string_ends = plays.get(i + 1).is_none_or(|n| n.attacker.min(1) != a);
+        if string_ends {
+            push(&mut out, BeatKind::Done, i, a, DONE_TAIL_TICKS);
+        }
+    }
+    out
+}
+
+/// How long a resolved turn plays out ([`turn_timeline`]'s span). A turn with
+/// no plays (an empty queue on both sides) has nothing to show and holds for
+/// nothing.
+pub fn turn_playback_ticks(plays: &[DomePlay], closes_in: bool) -> u32 {
+    turn_timeline(plays, closes_in)
+        .last()
+        .map_or(0, |b| b.start + b.len)
+}
+
+/// The beat `elapsed` ticks into the playback, if any.
+pub fn beat_at(plays: &[DomePlay], closes_in: bool, elapsed: u32) -> Option<Beat> {
+    turn_timeline(plays, closes_in)
+        .into_iter()
+        .find(|b| (b.start..b.start + b.len).contains(&elapsed))
 }
 
 /// Player battle-form clip slots the dome plays.
 const P_IDLE: u32 = 0;
 const P_HIT: u32 = 2;
 const P_KO: u32 = 4;
+/// The walk / approach cycle - action tag `1` in both the player and the
+/// monster files (`docs/formats/monster-animation.md`).
+const WALK_TAG: u8 = 1;
 const P_SWINGS: [u32; 4] = [0xC, 0xD, 0xE, 0xF];
 
 /// One decoded clip: per (frame, part) `[tx, ty, tz, rx, ry, rz]`.
@@ -109,6 +225,8 @@ impl DomeClip {
 #[derive(Debug, Clone)]
 struct BodyClips {
     idle: DomeClip,
+    /// The walk / approach cycle (record tag `1`), idle when absent.
+    walk: DomeClip,
     hit: DomeClip,
     ko: DomeClip,
     /// The player's per-command swings (`0xC..=0xF`, index `cmd - 0xC`), or
@@ -139,6 +257,7 @@ struct DomeBody {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ClipKind {
     Idle,
+    Walk,
     Hit,
     Ko,
     Swing(u8),
@@ -163,84 +282,27 @@ impl Act {
     }
 }
 
-/// The dome's framing camera: an orbit about `center` at `distance` units
-/// of `radius`, the orbit the browser inspector frames a mesh with
-/// (`webgl-math.js` `buildMvp`), with a `[0, 1]` clip depth so both hosts'
-/// depth conventions take the one matrix.
+/// The dome's camera: one pose of the battle camera script, projected the
+/// way the battle hosts project a stage draw - [`cam::battle_vp`] at the
+/// battle world scale over the stage model `diag(4, -4, 4)` - so both hosts
+/// take the one matrix for raw Y-down world vertices, depth `[0, 1]`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DomeCamera {
-    pub yaw: f32,
-    pub pitch: f32,
-    pub distance: f32,
-    /// Orbit centre, raw retail Y-down world coordinates.
-    pub center: [f32; 3],
-    pub radius: f32,
-    /// Vertical field of view, radians.
-    pub fov_y: f32,
+    pub pose: cam::BattleCamPose,
 }
 
 impl DomeCamera {
     /// The column-major view-projection a host multiplies a raw (Y-down)
     /// world vertex by. Both hosts upload exactly this.
     pub fn vp_raw(&self, aspect: f32) -> [f32; 16] {
-        use legaia_engine_vm::psx_camera::mat4_mul;
-        let s = 1.0 / self.radius.max(1e-3);
-        let c = self.center;
-        let model: [f32; 16] = [
-            s,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            -s,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            s,
-            0.0,
-            -c[0] * s,
-            c[1] * s,
-            -c[2] * s,
-            1.0,
+        let k = BATTLE_WORLD_SCALE;
+        let stage: [f32; 16] = [
+            k, 0.0, 0.0, 0.0, //
+            0.0, -k, 0.0, 0.0, //
+            0.0, 0.0, k, 0.0, //
+            0.0, 0.0, 0.0, 1.0,
         ];
-        let (sy, cy) = self.yaw.sin_cos();
-        let ry: [f32; 16] = [
-            cy, 0.0, -sy, 0.0, 0.0, 1.0, 0.0, 0.0, sy, 0.0, cy, 0.0, 0.0, 0.0, 0.0, 1.0,
-        ];
-        let (sp, cp) = self.pitch.sin_cos();
-        let rx: [f32; 16] = [
-            1.0, 0.0, 0.0, 0.0, 0.0, cp, sp, 0.0, 0.0, -sp, cp, 0.0, 0.0, 0.0, 0.0, 1.0,
-        ];
-        let dist = self.distance.max(0.001);
-        let tv: [f32; 16] = [
-            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -dist, 1.0,
-        ];
-        let view = mat4_mul(&tv, &mat4_mul(&rx, &ry));
-        let near = (dist * 0.01).max(0.0005);
-        let far = 100.0f32;
-        let f = 1.0 / (self.fov_y * 0.5).tan();
-        let aspect = aspect.max(1e-3);
-        // Right-handed, depth `[0, 1]`.
-        let proj: [f32; 16] = [
-            f / aspect,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            f,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            far / (near - far),
-            -1.0,
-            0.0,
-            0.0,
-            far * near / (near - far),
-            0.0,
-        ];
-        mat4_mul(&proj, &mat4_mul(&view, &model))
+        cam::mat_mul(&cam::battle_vp(&self.pose, k, aspect), &stage)
     }
 }
 
@@ -255,6 +317,11 @@ pub struct MuscleDomeAssets {
     statics_flat: Vec<u8>,
     vram: legaia_tim::Vram,
     arena: bool,
+    /// The monster record's size class (`+0x1F`), which sizes the action
+    /// framing's depth (`FUN_801F0348`).
+    size_class: u8,
+    /// The per-character close-up heights (`0x801F4D2C`).
+    heights: Option<legaia_asset::battle_camera_table::BattleCameraHeights>,
 }
 
 impl std::fmt::Debug for MuscleDomeAssets {
@@ -524,10 +591,12 @@ impl MuscleDomeAssets {
         let p_idle = clip(P_IDLE)?;
         let p_hit = clip(P_HIT).unwrap_or_else(|| p_idle.clone());
         let p_ko = clip(P_KO).unwrap_or_else(|| p_hit.clone());
+        let p_walk = clip(u32::from(WALK_TAG)).unwrap_or_else(|| p_idle.clone());
         let fighter = DomeBody {
             mesh: fmesh,
             oids: foids,
             clips: BodyClips {
+                walk: p_walk,
                 idle: p_idle,
                 hit: p_hit,
                 ko: p_ko,
@@ -595,10 +664,20 @@ impl MuscleDomeAssets {
         let [mi, ma, mh, mk] = pick_monster_clips(&anims);
         let mclip = |i: usize| anims.get(i).and_then(DomeClip::from_anim);
         let m_idle = mclip(mi)?;
+        let m_walk = anims
+            .iter()
+            .find(|a| a.action_id == WALK_TAG)
+            .and_then(DomeClip::from_anim)
+            .unwrap_or_else(|| m_idle.clone());
+        let size_class = monster_archive::record(&archive, monster_id)
+            .ok()
+            .flatten()
+            .map_or(0, |r| r.size_class);
         let monster = DomeBody {
             mesh: mmesh,
             oids: moids,
             clips: BodyClips {
+                walk: m_walk,
                 hit: mclip(mh).unwrap_or_else(|| m_idle.clone()),
                 ko: mclip(mk).unwrap_or_else(|| m_idle.clone()),
                 swings: [mclip(ma), None, None, None],
@@ -626,6 +705,8 @@ impl MuscleDomeAssets {
             append(&mut statics, &mut statics_flat, &m, &flat);
             ground_grid(&mut statics, &mut statics_flat);
         }
+        let heights = read_prot(BATTLE_ACTION_PROT_INDEX)
+            .and_then(|raw| legaia_asset::battle_camera_table::parse(&raw));
         let mut assets = Self {
             key: (monster_id, char_slot),
             bodies: [fighter, monster],
@@ -633,10 +714,12 @@ impl MuscleDomeAssets {
             statics_flat,
             vram,
             arena: has_arena,
+            size_class,
+            heights,
         };
         if !has_arena {
-            let gap = assets.layout().gap;
-            checker_floor(&mut assets.statics, &mut assets.statics_flat, gap);
+            let reach = assets.reach();
+            checker_floor(&mut assets.statics, &mut assets.statics_flat, reach);
         }
         Some(assets)
     }
@@ -680,50 +763,14 @@ impl MuscleDomeAssets {
         )
     }
 
-    fn layout(&self) -> Layout {
-        let (hp, tp) = self.extent(0);
-        let (hm, tm) = self.extent(1);
-        let gap = (hp + hm) * 1.5 + 120.0;
-        let half_pi = std::f32::consts::FRAC_PI_2;
-        let (place, camera_yaw, distance, cx) = if self.arena {
-            (
-                [
-                    [0.0, 0.0, -gap / 2.0],
-                    [0.0, std::f32::consts::PI, gap / 2.0],
-                ],
-                half_pi,
-                2.1,
-                260.0,
-            )
-        } else {
-            (
-                [[-gap / 2.0, half_pi, 0.0], [gap / 2.0, -half_pi, 0.0]],
-                0.0,
-                1.75,
-                0.0,
-            )
-        };
-        Layout {
-            gap,
-            place,
-            camera: DomeCamera {
-                yaw: camera_yaw,
-                pitch: 0.14,
-                distance,
-                center: [cx, -tp.max(tm) * 0.42, 0.0],
-                radius: gap * 0.95 + hp.max(hm) * 0.6,
-                fov_y: 1.2,
-            },
-        }
+    /// The distance a closing approach stops at between the two bodies'
+    /// origins: both rest half-widths with a margin, which puts a swing's
+    /// reach on the defender.
+    fn reach(&self) -> f32 {
+        let (hp, _) = self.extent(0);
+        let (hm, _) = self.extent(1);
+        (hp + hm) * 1.5 + 120.0
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-struct Layout {
-    gap: f32,
-    /// Per body `[dx, yaw, dz]`.
-    place: [[f32; 3]; 2],
-    camera: DomeCamera,
 }
 
 /// Pose `base` into `out` from `clip` frame `frame`: per object `Rz Ry Rx v
@@ -810,9 +857,38 @@ pub struct MuscleDomeSurface {
     generation: u32,
     tick: u32,
     act: [Option<Act>; 2],
-    timers: Vec<(u32, usize, ClipKind)>,
     prev_phase: Option<MusclePhase>,
-    settled_phase: Option<MusclePhase>,
+    /// The resolved turn playing out, if any.
+    playback: Option<Playback>,
+    /// Each body's floor position `(x, z)`, raw battle units.
+    pos: [[f32; 2]; 2],
+    /// The session turn last seen, so a fresh leg re-seats the pair.
+    last_turn: Option<u32>,
+    /// The battle camera script's state for this leg.
+    camera: Option<cam::BattleCamera>,
+    /// The Battle Camera option word `0x800846C0`
+    /// ([`Self::set_camera_option`]).
+    camera_option: u8,
+}
+
+/// A resolved turn being played out on the surface.
+#[derive(Debug, Clone)]
+struct Playback {
+    start: u32,
+    plays: Vec<DomePlay>,
+    closes_in: bool,
+    /// The approach's start and stop points, fixed on its first tick.
+    walk: Option<([f32; 2], [f32; 2])>,
+}
+
+impl Playback {
+    fn elapsed(&self, tick: u32) -> u32 {
+        tick.wrapping_sub(self.start)
+    }
+
+    fn beat(&self, tick: u32) -> Option<Beat> {
+        beat_at(&self.plays, self.closes_in, self.elapsed(tick))
+    }
 }
 
 impl MuscleDomeSurface {
@@ -860,8 +936,7 @@ impl MuscleDomeSurface {
                     self.assets = Some(Arc::new(a));
                     self.failed = None;
                     self.generation = self.generation.wrapping_add(1);
-                    self.act = [None; 2];
-                    self.timers.clear();
+                    self.reseat();
                 }
                 None => {
                     self.failed = Some(key);
@@ -871,83 +946,121 @@ impl MuscleDomeSurface {
             }
         }
         let assets = self.assets.clone()?;
-        self.step(session);
+        if self.last_turn.is_some_and(|t| session.turn() < t) {
+            // A new leg against the same opponent: back to the seats.
+            self.reseat();
+        }
+        self.last_turn = Some(session.turn());
+        self.step(session, &assets);
         self.pose(&assets);
+        self.drive_camera(session, &assets);
         self.scene.as_ref()
+    }
+
+    /// The Battle Camera option the framings run under (`0x800846C0`:
+    /// `0` Close, `1` Normal, `2` Far) - the world's
+    /// `toggles.battle_camera`, which both hosts pass in.
+    pub fn set_camera_option(&mut self, option: u8) {
+        self.camera_option = option;
+    }
+
+    /// Back to leg open: both bodies on their seats, idling, the camera
+    /// re-created on its next drive.
+    fn reseat(&mut self) {
+        self.act = [None; 2];
+        self.playback = None;
+        self.prev_phase = None;
+        self.pos = [seat_xz(0), seat_xz(1)];
+        self.camera = None;
     }
 
     fn reset(&mut self) {
         if self.scene.take().is_some() {
             self.generation = self.generation.wrapping_add(1);
         }
-        self.act = [None; 2];
-        self.timers.clear();
-        self.prev_phase = None;
-        self.settled_phase = None;
+        self.reseat();
+        self.last_turn = None;
     }
 
     /// The choreography: a resolved turn (the session leaving `Resolve`)
-    /// queues its plays as swings, a connecting one also the defender's
-    /// flinch; a settled leg holds the loser's knockdown.
-    fn step(&mut self, session: &MuscleDomeSession) {
+    /// starts its [`turn_timeline`]; each tick plays the beat it is on - the
+    /// closing walk, a swing with the defender's flinch (its knockdown on
+    /// the play that ends the leg), the done tail.
+    fn step(&mut self, session: &MuscleDomeSession, assets: &MuscleDomeAssets) {
         self.tick = self.tick.wrapping_add(1);
+        let tick = self.tick;
         let phase = session.phase();
         if self.prev_phase == Some(MusclePhase::Resolve) && phase != MusclePhase::Resolve {
-            let mut at = 0;
-            for play in session.last_turn_plays() {
-                let attacker = play.attacker.min(1);
-                let defender = attacker ^ 1;
-                self.timers
-                    .push((self.tick + at, attacker, ClipKind::Swing(play.cmd)));
-                if play.damage > 0 {
-                    self.timers.push((
-                        self.tick + at + FLINCH_DELAY_TICKS,
-                        defender,
-                        ClipKind::Hit,
-                    ));
-                }
-                at += PLAY_CADENCE_TICKS;
-            }
+            self.playback = Some(Playback {
+                start: tick,
+                plays: session.last_turn_plays().to_vec(),
+                closes_in: session.last_turn_closes_in(),
+                walk: None,
+            });
         }
         self.prev_phase = Some(phase);
-        if self.settled_phase != Some(phase) {
-            self.settled_phase = Some(phase);
-            let loser = match phase {
-                MusclePhase::Won => Some(1),
-                MusclePhase::Lost => Some(0),
-                _ => None,
-            };
-            if let Some(i) = loser {
-                self.act[i] = Some(Act {
-                    kind: ClipKind::Ko,
-                    start: self.tick,
-                    looped: false,
-                    hold: true,
+        let Some(pb) = self.playback.as_mut() else {
+            return;
+        };
+        let Some(beat) = pb.beat(tick) else {
+            self.playback = None;
+            return;
+        };
+        let at = pb.elapsed(tick) - beat.start;
+        let a = beat.attacker;
+        let d = a ^ 1;
+        match beat.kind {
+            BeatKind::Approach => {
+                let pos = self.pos;
+                let (from, to) = *pb.walk.get_or_insert_with(|| {
+                    let from = pos[a];
+                    let (dx, dz) = (pos[d][0] - from[0], pos[d][1] - from[1]);
+                    let len = (dx * dx + dz * dz).sqrt().max(1e-3);
+                    let stop = (len - assets.reach()).max(0.0) / len;
+                    (from, [from[0] + dx * stop, from[1] + dz * stop])
                 });
+                let t = (at + 1) as f32 / beat.len.max(1) as f32;
+                self.pos[a] = [
+                    from[0] + (to[0] - from[0]) * t,
+                    from[1] + (to[1] - from[1]) * t,
+                ];
+                if at == 0 {
+                    self.act[a] = Some(Act {
+                        kind: ClipKind::Walk,
+                        start: tick,
+                        looped: true,
+                        hold: false,
+                    });
+                }
+                if at + 1 == beat.len {
+                    self.act[a] = Some(Act::idle(tick));
+                }
             }
-        }
-        let tick = self.tick;
-        let mut due = Vec::new();
-        self.timers.retain(|&(at, body, kind)| {
-            if at <= tick {
-                due.push((body, kind));
-                false
-            } else {
-                true
+            BeatKind::Swing => {
+                let play = pb.plays[beat.play];
+                if at == 0 {
+                    self.act[a] = Some(Act {
+                        kind: ClipKind::Swing(play.cmd),
+                        start: tick,
+                        looped: false,
+                        hold: false,
+                    });
+                }
+                if at == FLINCH_DELAY_TICKS && play.damage > 0 {
+                    let down = play.hp_after.get(d).is_some_and(|&hp| hp <= 0);
+                    self.act[d] = Some(Act {
+                        kind: if down { ClipKind::Ko } else { ClipKind::Hit },
+                        start: tick,
+                        looped: false,
+                        hold: down,
+                    });
+                }
             }
-        });
-        for (body, kind) in due {
-            self.act[body] = Some(Act {
-                kind,
-                start: tick,
-                looped: false,
-                hold: false,
-            });
+            BeatKind::Done => {}
         }
     }
 
     fn pose(&mut self, assets: &MuscleDomeAssets) {
-        let layout = assets.layout();
         let scene = self.scene.get_or_insert_with(|| {
             let mut m = empty_mesh();
             let mut flat = Vec::new();
@@ -975,13 +1088,13 @@ impl MuscleDomeSurface {
                 indices: m.indices,
                 textured_indices: tex,
                 untextured_indices: untex,
-                camera: layout.camera,
+                camera: DomeCamera {
+                    pose: cam::BOOT_POSE,
+                },
                 bases,
             }
         });
-        scene.camera = layout.camera;
-        for i in 0..2 {
-            let body = &assets.bodies[i];
+        for (i, (body, facing)) in assets.bodies.iter().zip(FACINGS).enumerate() {
             let mut act = self.act[i].unwrap_or(Act::idle(self.tick));
             let elapsed = self.tick.wrapping_sub(act.start);
             let mut clip = clip_for(&body.clips, act.kind);
@@ -1000,14 +1113,145 @@ impl MuscleDomeSurface {
             self.act[i] = Some(act);
             let base = scene.bases[i];
             let n = body.mesh.positions.len();
+            let yaw = facing as f32 / 4096.0 * std::f32::consts::TAU;
             pose_into(
                 &mut scene.positions[base..base + n],
                 &body.mesh.positions,
                 &body.oids,
                 clip,
                 frame,
-                layout.place[i],
+                [self.pos[i][0], yaw, self.pos[i][1]],
             );
+        }
+    }
+
+    /// One battle-camera actor record for body `i`.
+    fn cam_actor(&self, i: usize, assets: &MuscleDomeAssets) -> cam::BattleCamActor {
+        let char_id = assets.key.1 as u8 + 1;
+        cam::BattleCamActor {
+            facing: FACINGS[i],
+            world: [self.pos[i][0], 0.0, self.pos[i][1]],
+            height: (i == 0)
+                .then(|| {
+                    assets
+                        .heights
+                        .as_ref()
+                        .and_then(|h| h.height_for_char_id(char_id))
+                        .map(f32::from)
+                })
+                .flatten(),
+        }
+    }
+
+    /// Drive the battle camera script one frame over the dome's state - the
+    /// phase each moment of a leg is in a battle, the acting body, its
+    /// target and the formation - and store the pose on the scene.
+    fn drive_camera(&mut self, session: &MuscleDomeSession, assets: &MuscleDomeAssets) {
+        use crate::battle_input::CommandPhase;
+        use crate::muscle_dome::DomeMenu;
+        let beat = self.playback.as_ref().and_then(|p| p.beat(self.tick));
+        let acting = beat.map_or(0, |b| b.attacker);
+        let target = acting ^ 1;
+        let monster_pos = self.pos[1];
+        // (phase, the action-SM state its arm sits in, the cursor)
+        let (phase, action_state, cursor) = match (beat, session.phase()) {
+            (Some(b), _) => match b.kind {
+                // The approach: case 6 from the seed on (`0x14`).
+                BeatKind::Approach => (cam::BattleCamPhase::Action, 0x14, None),
+                // The strike loop arms case 7 on every pass (`0x1E`).
+                BeatKind::Swing => (cam::BattleCamPhase::Recover, 0x1E, None),
+                // The done band: case 8 for an attack (`0x50`).
+                BeatKind::Done => (
+                    cam::done_band_phase(cam::DoneBandInputs {
+                        category: cam::DONE_CATEGORY_ATTACK,
+                        party_slot: acting == 0,
+                        target_dead: session.hp(target) <= 0,
+                        ..Default::default()
+                    }),
+                    0x50,
+                    None,
+                ),
+            },
+            (None, MusclePhase::Select) => match session.menu() {
+                DomeMenu::Command(c) => match c.phase {
+                    // The round prompt and the Begin / Reselect confirm: the
+                    // far framing with its idle orbit (case 9).
+                    CommandPhase::RoundPrompt { .. }
+                    | CommandPhase::CommitConfirm { .. }
+                    | CommandPhase::BeginRound => (cam::BattleCamPhase::Menu, 0, None),
+                    // The Attack chip's Auto | Command prompt and its cursor
+                    // turn the member toward the opponent (case 1).
+                    CommandPhase::AttackMode { .. } | CommandPhase::Targeting { .. } => (
+                        cam::BattleCamPhase::TargetEnemy,
+                        0,
+                        Some(cam::CursorFraming::Enemy {
+                            target: monster_pos,
+                        }),
+                    ),
+                    // The ring: the member's close-up (case 0).
+                    _ => (cam::BattleCamPhase::Submenu, 0, None),
+                },
+                // The direction entry, its review and the Ra-Seru list are
+                // the member's own surfaces (case 0).
+                DomeMenu::Input(_) | DomeMenu::Magic => (cam::BattleCamPhase::Submenu, 0, None),
+            },
+            // A won leg ends on case 6's battle-over arm behind the fighter.
+            (None, MusclePhase::Won) => (cam::BattleCamPhase::Action, 0, None),
+            // Between turns and on a lost leg the far framing holds.
+            (None, _) => (cam::BattleCamPhase::Menu, 0, None),
+        };
+        let won = beat.is_none() && session.phase() == MusclePhase::Won;
+        let slot_of = |i: usize| if i == 0 { 0u8 } else { 3 };
+        let depth = legaia_engine_vm::battle_formulas::camera_height_for_frame(
+            slot_of(acting),
+            slot_of(target),
+            legaia_engine_vm::battle_formulas::RETAIL_MONSTER_SLOT_BASE,
+            |_| assets.size_class,
+        );
+        let mut formation = None;
+        for p in &self.pos {
+            cam::FormationBox::extend(&mut formation, p[0], p[1]);
+        }
+        let t = self.cam_actor(target, assets);
+        let inputs = cam::BattleCamInputs {
+            phase,
+            acting: Some(self.cam_actor(acting, assets)),
+            target: Some(cam::PostActionTarget {
+                world: t.world,
+                display_y: 0.0,
+                party: target == 0,
+                height: t.height,
+                monster_id: if target == 1 {
+                    assets.key.0.min(0xFF) as u8
+                } else {
+                    0
+                },
+                animating: false,
+                live: session.hp(target) > 0,
+                facing: t.facing,
+                node_gone: false,
+            }),
+            formation,
+            action: cam::ActionFraming {
+                party_slot: acting == 0,
+                battle_over: won,
+                depth_raw: i32::from(depth),
+                char_id: if acting == 0 {
+                    assets.key.1 as u8 + 1
+                } else {
+                    0
+                },
+                ..Default::default()
+            },
+            entry_yaw: cam::battle_entry_yaw(0),
+            action_state,
+            camera_option: self.camera_option,
+            cursor,
+            ..Default::default()
+        };
+        cam::drive(&mut self.camera, true, inputs, u64::from(self.tick), None);
+        if let (Some(scene), Some(c)) = (self.scene.as_mut(), self.camera.as_ref()) {
+            scene.camera = DomeCamera { pose: c.pose() };
         }
     }
 
@@ -1031,6 +1275,7 @@ impl MuscleDomeSurface {
 fn clip_for(c: &BodyClips, kind: ClipKind) -> &DomeClip {
     match kind {
         ClipKind::Idle => &c.idle,
+        ClipKind::Walk => &c.walk,
         ClipKind::Hit => &c.hit,
         ClipKind::Ko => &c.ko,
         ClipKind::Swing(cmd) => c.swing(cmd),
@@ -1088,31 +1333,106 @@ mod tests {
     }
 
     #[test]
-    fn the_camera_looks_at_its_centre() {
+    fn the_camera_looks_at_its_focus() {
         let cam = DomeCamera {
-            yaw: 0.3,
-            pitch: 0.14,
-            distance: 2.1,
-            center: [260.0, -200.0, 0.0],
-            radius: 900.0,
-            fov_y: 1.2,
+            pose: cam::BattleCamPose {
+                pitch: 32.0,
+                yaw: 700.0,
+                tr: [0.0, 0.0, 5000.0],
+                focus: [260.0, 0.0, -300.0],
+            },
         };
         let m = cam.vp_raw(4.0 / 3.0);
-        let p = [260.0f32, -200.0, 0.0, 1.0];
+        let p = [260.0f32, 0.0, -300.0, 1.0];
         let mut clip = [0.0f32; 4];
         for (r, o) in clip.iter_mut().enumerate() {
             *o = (0..4).map(|c| m[c * 4 + r] * p[c]).sum();
         }
         assert!(clip[3] > 0.0);
-        assert!((clip[0] / clip[3]).abs() < 1e-4 && (clip[1] / clip[3]).abs() < 1e-4);
+        assert!(
+            (clip[0] / clip[3]).abs() < 1e-4,
+            "the focus is centred in X"
+        );
         let z = clip[2] / clip[3];
         assert!((0.0..=1.0).contains(&z), "depth {z} in [0, 1]");
+    }
+
+    fn play(attacker: usize) -> DomePlay {
+        DomePlay {
+            attacker,
+            cmd: 0xC,
+            power: 1,
+            damage: 1,
+            hp_after: [10, 10],
+        }
+    }
+
+    #[test]
+    fn a_turn_walks_in_once_swings_each_play_and_closes_each_string() {
+        let plays = [play(0), play(0), play(1)];
+        let beats = turn_timeline(&plays, true);
+        let kinds: Vec<_> = beats.iter().map(|b| (b.kind, b.attacker)).collect();
+        use BeatKind::*;
+        assert_eq!(
+            kinds,
+            [
+                (Approach, 0),
+                (Swing, 0),
+                (Swing, 0),
+                (Done, 0),
+                (Swing, 1),
+                (Done, 1)
+            ]
+        );
+        let total = APPROACH_TICKS + 3 * PLAY_CADENCE_TICKS + 2 * DONE_TAIL_TICKS;
+        assert_eq!(turn_playback_ticks(&plays, true), total);
+        assert_eq!(
+            turn_playback_ticks(&plays, false),
+            total - APPROACH_TICKS,
+            "a later turn swings from where the pair stands"
+        );
+        assert_eq!(turn_playback_ticks(&[], true), 0);
+        // Beats tile the span with no gap.
+        for w in beats.windows(2) {
+            assert_eq!(w[0].start + w[0].len, w[1].start);
+        }
+        assert_eq!(beat_at(&plays, true, 0).map(|b| b.kind), Some(Approach));
+        assert_eq!(beat_at(&plays, true, total), None);
+    }
+
+    #[test]
+    fn the_dome_camera_projects_the_seats_through_the_battle_frame() {
+        // The far framing over the two seats: both on screen, apart in X.
+        let mut formation = None;
+        for i in 0..2 {
+            let [x, z] = seat_xz(i);
+            cam::FormationBox::extend(&mut formation, x, z);
+        }
+        let pose = cam::menu_framing(formation, 1024.0);
+        let m = DomeCamera { pose }.vp_raw(4.0 / 3.0);
+        let ndc = |p: [f32; 3]| {
+            let c: Vec<f32> = (0..4)
+                .map(|r| m[r] * p[0] + m[4 + r] * p[1] + m[8 + r] * p[2] + m[12 + r])
+                .collect();
+            assert!(c[3] > 0.0, "in front of the eye");
+            [c[0] / c[3], c[1] / c[3], c[2] / c[3]]
+        };
+        let [fx, fz] = seat_xz(0);
+        let [mx, mz] = seat_xz(1);
+        let f = ndc([fx, -200.0, fz]);
+        let g = ndc([mx, -200.0, mz]);
+        for p in [f, g] {
+            assert!(p[0].abs() < 1.0 && p[1].abs() < 1.0, "on screen: {p:?}");
+            assert!((0.0..=1.0).contains(&p[2]), "depth in [0, 1]: {p:?}");
+        }
+        assert!((f[0] - g[0]).abs() > 0.1, "apart: {f:?} {g:?}");
     }
 
     #[test]
     fn a_swing_plays_out_then_idles() {
         let clips = BodyClips {
             idle: clip(4, 2),
+            walk: clip(5, 2),
             hit: clip(3, 2),
             ko: clip(3, 2),
             swings: [Some(clip(2, 16)), None, None, None],

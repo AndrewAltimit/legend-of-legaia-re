@@ -758,6 +758,9 @@ impl LegaiaRuntime {
         let read = |i: usize| host.and_then(|h| h.index.entry_bytes(i as u32).ok());
         let char_slot = self.minigame_ui.muscle.char_slot;
         let surface = &mut self.minigame_ui.muscle_surface;
+        if let Some(w) = world {
+            surface.set_camera_option(w.toggles.battle_camera as u8);
+        }
         match surface.frame(read, session, contest, char_slot) {
             Some(_) => surface.generation() as i32,
             None => -1,
@@ -821,8 +824,9 @@ impl LegaiaRuntime {
     }
 
     /// The dome camera's view-projection for a raw (Y-down) world vertex,
-    /// column-major (`DomeCamera::vp_raw`, the matrix the native window
-    /// draws the dome with). Empty with no scene.
+    /// column-major (`DomeCamera::vp_raw`, the battle camera script's pose
+    /// for the leg - the matrix the native window draws the dome with).
+    /// Empty with no scene.
     pub fn play_mg_muscle_scene_vp(&self, aspect: f32) -> Vec<f32> {
         self.minigame_ui
             .muscle_surface

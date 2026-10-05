@@ -65,6 +65,14 @@ pub struct MuscleDomeSession {
     /// ([`Self::set_opponent_name`]). `None` when the host staged a
     /// stand-in.
     pub(super) opponent_name: Option<String>,
+    /// Some play has already acted this leg, so the two bodies stand within
+    /// reach of each other: battle locomotion has no walk-home leg
+    /// (`engine-core::world::battle::locomotion`), so only a leg's **first**
+    /// acting play closes the gap from the seats.
+    pub(super) closed_in: bool,
+    /// The last resolved turn's first play is that closing approach
+    /// ([`Self::last_turn_closes_in`]).
+    pub(super) last_turn_closes_in: bool,
 }
 
 impl MuscleDomeSession {
@@ -98,6 +106,8 @@ impl MuscleDomeSession {
             special: 0,
             menu: DomeMenu::default(),
             opponent_name: None,
+            closed_in: false,
+            last_turn_closes_in: false,
         }
     }
 
@@ -815,8 +825,21 @@ impl MuscleDomeSession {
         };
         model.begin_turn([self.f[0].hp, self.f[1].hp]);
         self.resolve_turn(|attacker, cmd| model.damage(attacker, cmd));
+        let played = !model.plays().is_empty();
+        self.last_turn_closes_in = played && !self.closed_in;
+        self.closed_in |= played;
         self.damage = Some(model);
         true
+    }
+
+    /// Whether the last resolved turn's first play opened by walking its
+    /// attacker in from the formation seat - true exactly once per leg, on
+    /// the first turn that plays anything. Retail's approach is the
+    /// attacker's walk-clip root motion toward its target
+    /// (`FUN_80047430`), and nothing walks a combatant home afterwards, so
+    /// every later play swings from where the last one left the pair.
+    pub fn last_turn_closes_in(&self) -> bool {
+        self.last_turn_closes_in
     }
 
     /// Resolve the turn the way **both** hosts must: through the retail
