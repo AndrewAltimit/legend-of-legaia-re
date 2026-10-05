@@ -970,7 +970,7 @@ pub(crate) enum Cmd {
         /// Hold field NPCs on their seats. By default each villager's
         /// ambient MAN tail-section-1 stream publishes its wander like
         /// retail, and a moving NPC's collision box follows its live
-        /// position. An interaction prologue's own walk runs either way.
+        /// position. Scripted walks run either way.
         #[arg(long, default_value_t = false)]
         no_live_npcs: bool,
         /// Skip the retail damage finisher (`FUN_801ddb30`) on live

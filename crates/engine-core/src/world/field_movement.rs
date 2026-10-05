@@ -2155,11 +2155,11 @@ impl World {
     /// position, exactly as retail probes the live `+0x14`/`+0x18` rather
     /// than the spawn anchor.
     ///
-    /// Every leg here is **scripted**: an interaction prologue's `0x4C 0x51`,
-    /// a cutscene timeline's cross-context walk, or an actor-VM
-    /// `start_motion`. Each one ends where it lands, and none is gated by
+    /// Every leg here is **scripted**: a cutscene timeline's cross-context
+    /// walk or an actor-VM `start_motion`. Each one ends where it lands, and none is gated by
     /// [`crate::world::FieldNpcState::animate`] - a script started it. There
-    /// is no autonomous leg: a placement's own `0x4C 0x51` ops are instant
+    /// is no `0x4C 0x51` leg: that op is an instant seat wherever it runs,
+    /// and a placement's own `0x4C 0x51` ops are instant
     /// story-branch **seats** that the scene-entry pre-run already applied,
     /// and a villager's ambient wandering is its tail-section-1 stream
     /// (`World::tick_field_npc_ambient`), so nothing walks between seats.

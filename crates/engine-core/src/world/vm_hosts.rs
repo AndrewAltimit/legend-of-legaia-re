@@ -2688,15 +2688,6 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             .push(FieldEvent::ActorAllocate { records });
     }
 
-    /// Op `0x4C 0x51` - NPC / player move-to-tile with run dispatch. The NPC
-    /// arm walks the executing actor to the decoded tile; the engine routes
-    /// it to the interacted NPC's placement slot (the inline-dialogue runner
-    /// exposes it while stepping that record) and starts a motion-VM walk
-    /// leg, so an interaction prologue's authored NPC run actually moves the
-    /// actor. The player arm (retail: the move-table consumer
-    /// `func_0x800204f8` with the run animation) is not modelled here.
-    ///
-    /// REF: FUN_800358c0, FUN_8003774C
     /// Op `0x4C` nibble-5 sub-1 - the retail "NPC run" primitive, which is a
     /// **teleport plus a move-anim start** (`FUN_80024E08` writes the target
     /// position outright and kicks the walk animation), not a glide.
@@ -2818,27 +2809,30 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             });
             return;
         }
-        if let Some(slot) = self.world.dialog.stepping_inline_npc {
-            self.world
-                .start_field_npc_motion(slot, world_x as i16, world_z as i16);
-            self.world.carry_npc_run_anim(slot, move_id);
-            return;
-        }
-        // A live channel stepping its OWN script (the spawn pre-run
-        // slice, retail `FUN_80039B7C`):
-        // walk the placement there as a scripted glide leg (the faithful
-        // `4C 51` run dispatch plays a move clip toward the tile). Falls
-        // back to a direct ctx seat when the slot has no surfaced position
-        // yet (the glide needs a start point).
-        if let Some(slot) = self.world.field_vm.executing_channel {
-            if self
-                .world
-                .start_field_npc_motion(slot, world_x as i16, world_z as i16)
-            {
+        // The talker's interaction prologue (the inline dialogue runner) or a
+        // live channel stepping its own script: the same SEAT as above. The
+        // case-5 sub-1 body stores the tile straight into the actor
+        // (`sh v0,0x14(s5)` at `0x801E1880`, `sh v0,0x18(s5)` at
+        // `0x801E1898`) and its LUT heading into `+0x26` (`0x801E1900`); no
+        // walk kernel is armed, so the NPC appears on the tile rather than
+        // gliding to it. Byte `+4` still picks the move clip.
+        if let Some(slot) = self
+            .world
+            .dialog
+            .stepping_inline_npc
+            .or(self.world.field_vm.executing_channel)
+        {
+            ctx.world_x = world_x;
+            ctx.world_z = world_z;
+            if let Some(pos) = self.world.npcs.positions.get_mut(&slot) {
+                *pos = (world_x as i16, world_z as i16);
+                self.world.npcs.motions.remove(&slot);
+                if let Some(heading) =
+                    crate::man_field_scripts::facing_index_to_engine_heading(depth_byte & 0xF)
+                {
+                    self.world.npcs.headings.insert(slot, heading);
+                }
                 self.world.carry_npc_run_anim(slot, move_id);
-            } else {
-                ctx.world_x = world_x;
-                ctx.world_z = world_z;
             }
         }
     }

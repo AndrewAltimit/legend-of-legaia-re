@@ -135,7 +135,7 @@ pub struct FieldNpcState {
     /// per field tick through the ported motion VM; each step writes the new
     /// position back into [`crate::world::FieldNpcState::positions`], so the moving NPC
     /// keeps its ±40-unit collision box and its interact box at the live
-    /// position. Script-started legs (interaction-prologue `0x4C 0x51`, actor
+    /// position. Script-started legs (cutscene walk-to-tile pokes, actor
     /// VM `start_motion`) run regardless of [`crate::world::FieldNpcState::animate`].
     pub motions: std::collections::BTreeMap<u8, FieldNpcMotion>,
     /// **Live per-slot model id**, keyed by placement `slot`: what the

@@ -227,8 +227,7 @@ impl World {
                 // (`FUN_8003774C` `numerator / (4 << bits)`), then the
                 // facing-nibble heuristic as a last resort; absent = the
                 // leg falls back to `FIELD_NPC_MOTION_SPEED`. Scripted legs
-                // (interaction-prologue `4C 51` runs, cutscene walk pokes)
-                // look the pace up.
+                // (cutscene walk pokes) look the pace up.
                 if let Some(speed) =
                     crate::man_field_scripts::placement_glide_speed(man_file, man, &placement)
                 {

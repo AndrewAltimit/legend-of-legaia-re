@@ -286,15 +286,16 @@ fn walk_touch_player_moveto_teleports_player() {
 }
 
 #[test]
-fn interaction_prologue_npc_run_walks_the_interacted_npc() {
+fn interaction_prologue_npc_run_seats_the_interacted_npc() {
     // A synthetic interaction record: prologue = one `0x4C 0x51` NPC run to
-    // tile (12, 10), then a text segment. Driving the interact through the
-    // opt-in field-VM runner must start the NPC's walk leg (the host hook
-    // routing the op to the interacted placement slot) and the field ticks
-    // must converge the NPC on the decoded tile-centre world position.
+    // tile (12, 10), facing index 2, then a text segment. Retail's case-5
+    // sub-1 body stores the tile straight into `+0x14`/`+0x18`
+    // (`0x801E1880` / `0x801E1898`) and arms no walk kernel, so the
+    // interacted NPC is SEATED on the tile on the frame the op runs - it
+    // never glides there.
     let target_x = 12i16 * 0x80 + 0x40;
     let target_z = 10i16 * 0x80 + 0x40;
-    let mut body = vec![0x4C, 0x51, 12, 10, 0, 5];
+    let mut body = vec![0x4C, 0x51, 12, 10, 2, 5];
     let first_segment = body.len();
     body.extend_from_slice(&[0x1F, b'h', b'i', 0x00, 0x00]);
 
@@ -313,10 +314,24 @@ fn interaction_prologue_npc_run_walks_the_interacted_npc() {
     );
 
     world.trigger_field_interact(0, 3);
-    tick_retail_frames(&mut world, 15);
+    let start = (target_x - 80, target_z);
+    let mut seen = vec![start];
+    for _ in 0..15 {
+        tick_retail_frames(&mut world, 1);
+        let p = *world.npcs.positions.get(&3).unwrap();
+        if seen.last() != Some(&p) {
+            seen.push(p);
+        }
+    }
     assert_eq!(
-        world.npcs.positions.get(&3),
-        Some(&(target_x, target_z)),
-        "the prologue's 0x4C 0x51 walked the interacted NPC to its tile"
+        seen,
+        vec![start, (target_x, target_z)],
+        "the prologue's 0x4C 0x51 seats the NPC in one jump, no intermediate glide frames"
+    );
+    assert!(world.npcs.motions.is_empty(), "no walk leg is armed");
+    assert_eq!(
+        world.npcs.headings.get(&3).copied(),
+        crate::man_field_scripts::facing_index_to_engine_heading(2),
+        "operand byte +3's low nibble is the LUT facing"
     );
 }
