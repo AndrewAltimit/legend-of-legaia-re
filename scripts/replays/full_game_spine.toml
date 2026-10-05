@@ -192,6 +192,15 @@ anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-
 id = "dohati_castle"
 scene = "dohaty"
 reach = "scene"
+# Ratayu's west gate (retock P2[27], a checkpoint record) turns the
+# party back unless 0x33E is set, and the gate's map02 side is the one
+# Dohati Castle stands on. jagaroom's entry script (P1[0]) raises 0x33E
+# once 0x34F is set, at the end of a chain: Eliza's stand-in retock P1[32]
+# spawns P2[33] (0x33C, 0x502), which seats jagaroom P1[8]; its talk raises
+# 0x351, the gate of the door cutscene P2[8] (0x33B, back to retock); back
+# in jagaroom P2[9] raises 0x34F and the scene re-entry raises 0x33E. The
+# start scene is a waypoint so its beats play before the party leaves.
+via = ["retock", "jagaroom", "retock", "jagaroom"]
 anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-08" }
 
 # ---------------------------------------------------------------- chapter 3

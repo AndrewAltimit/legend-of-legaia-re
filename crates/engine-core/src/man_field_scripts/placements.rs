@@ -358,8 +358,18 @@ pub fn placement_interaction_record(
 /// The record qualifies when its interaction section - from the spawn
 /// terminator to the next raw `0x21` - decodes cleanly and holds an op `0x49`
 /// whose sub-op is a scripted press
-/// ([`crate::field_submode_screen::OP49_PARK_PRESERVING_SUB_OPS`]). The
-/// returned `first_segment` is the body length: there is no text to page.
+/// ([`crate::field_submode_screen::OP49_PARK_PRESERVING_SUB_OPS`]), or an op
+/// `0x44` record spawn. The returned `first_segment` is the body length:
+/// there is no text to page.
+///
+/// The spawn arm is a touch that starts a cutscene. Retail's touch post
+/// (`FUN_801D5B5C`) engages whatever placement the probe hits and the dialog
+/// SM runs its interaction section from the PC, text or none. `retock`
+/// `P1[32]` (the stand-in at `(121, 14)` while `0x357` is set and `0x33B`
+/// clear) is `25 31 02 .. 38 81 00 21` then `76 3C 08 00 44 65 21`: touched,
+/// it spawns `P2[16]`, or with `0x63C` set `P2[33]` - Eliza's Seru-bride
+/// scene, which raises `0x33C` and opens Lord Saryu's room. Without the arm
+/// the press found the stand-in and ran nothing, and the story stopped.
 ///
 /// REF: FUN_80039B7C (the dialog SM's run loop and its `0x21` stop)
 pub fn placement_scripted_menu_record(
@@ -389,10 +399,14 @@ pub fn placement_scripted_menu_record(
         if body.get(insn.pc).copied() == Some(0x21) {
             break;
         }
-        if let InsnInfo::StateResume { sub_op, .. } = insn.info
-            && crate::field_submode_screen::OP49_PARK_PRESERVING_SUB_OPS.contains(&sub_op)
-        {
-            presses = true;
+        match insn.info {
+            InsnInfo::StateResume { sub_op, .. }
+                if crate::field_submode_screen::OP49_PARK_PRESERVING_SUB_OPS.contains(&sub_op) =>
+            {
+                presses = true;
+            }
+            InsnInfo::SpawnRecord { .. } => presses = true,
+            _ => {}
         }
     }
     presses.then(|| InlineDialogPrologue {

@@ -282,6 +282,18 @@ after that section's `0x21` waits for a touch. The Rim Elm bee beat
 flag dispatch. The `21` ends the interaction in the fight's own frame, so
 the fight does not fire again until the player touches Nene again.
 
+A touch engages a placement whether or not its interaction carries text.
+`retock` `P1[32]` is the case the story stops on: a stand-in seated at
+`(121, 14)` while `0x357` is set and `0x33B` clear, whose whole interaction
+section is `76 3C 08 00 44 65 21` - a spawn of `P2[16]`, or with `0x63C` set
+of `P2[33]`, Eliza's Seru-bride scene (it raises `0x33C`, the flag that seats
+`jagaroom` P1[8] where the party can reach it). The port installs a text-free placement's
+interaction when that section (spawn terminator to the next raw `0x21`)
+decodes cleanly and holds either a scripted menu press (a save point's
+`49 01`) or an op-`0x44` spawn
+(`man_field_scripts::placement_scripted_menu_record`); the disc-wide set is
+printed by `crates/engine-core/tests/field_text_free_spawn_touch_disc.rs`.
+
 The **scene system script** (ctx `0xFB`, MAN `P1[0]`) is an ordinary context
 too. `FUN_8003AB2C` binds it to an actor whose tick is the SYSTEM entity SM
 `FUN_801DA51C` (actor descriptor `0x80073EA0`), and that SM's tail

@@ -105,7 +105,12 @@ scene `chitei2` (whose chain ends on the `0x4C8` that opens the `map03` portal
 to `concend`), then `concend`, `jou` and `retockin` (the way back from Drake
 was by land and cart, not the Uru Mais warp), and Sol Tower back through its own
 start scene `dohaty` (whose P2[13] sets the `0x1D4` every `station`
-placement, the ticket seller among them, waits on). A waypoint whose own
+placement, the ticket seller among them, waits on), and Dohati Castle back
+through its own start scene `retock` and then `jagaroom` twice: Ratayu's
+west gate (`retock` P2[27]) turns the party back until `0x33E` is set, which
+`jagaroom`'s entry script raises only once Eliza's scene (`retock` P2[33],
+`0x33C`), the talk `jagaroom` P1[8] (`0x351`), the door cutscene `jagaroom` P2[8] (`0x33B`) and the return
+`jagaroom` P2[9] (`0x34F`) have played in that order. A waypoint whose own
 arrival script carries the party on counts as visited: `concend`'s P2[0] is
 its beat, and it ends in the hop to `town0d`. Part A checks every waypoint is
 a disc scene.
