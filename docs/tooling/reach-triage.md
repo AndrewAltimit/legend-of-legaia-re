@@ -38,10 +38,12 @@ script skips (exit 0) when no export is present.
 The report opens with three counts over the canonical union: the `// PORT:`
 anchors the static graph calls **live**, how many of those some run
 **entered**, and how many **no run entered** - the third being the set this
-page verdicts. Over the current union they are **871 live / 814 entered / 28
-never entered, across 88 ladders**, with both defect lists empty (and 35
+page verdicts. Over the current union they are **895 live / 840 entered / 26
+never entered, across 90 ladders**, with both defect lists empty (and 34
 addresses in the *not observable* bucket plus 2 const anchors, outside all
-three).
+three). Of the 26, 14 are [disclosed and receiver-gated
+dead](#a-live-row-its-own-tag-and-the-strict-graph-both-call-dead) and 12 are
+the reach worklist.
 
 The ladder count belongs in the same breath as the other three, because none
 of them is a property of the port: every ladder that lands moves all three,
@@ -1604,7 +1606,7 @@ rule](#a-row-can-leave-this-page-without-a-ladder-reaching-it) allows.
 | module | n | bucket | reach | addresses |
 |---|---|---|---|---|
 | `battle_trail.rs` | 1 | (b) | the weapon-trail gate, the same one `801e1ab0` names: a move-FX scene whose move-power record carries a non-zero trail texture page (`+0x0b`). `weapon_trail_prims` is called on **both** hosts' battle render passes (`redraw_passes.rs`, `play_battle.rs`), so this is content, not a host gap. Read it with the [module-anchor caveat](#a-tag-between-two-functions-is-scored-by-the-next-function-that-has-regions) - the tag is a `//!` block |  `800485bc` |
-| `ui_menu_window_painters.rs` | 1 | (a) | the casino prize-exchange Yes/No confirm (window 46). No longer disclosed: both hosts draw it through `ui_prize_exchange::prize_exchange_draws_for` (`window/shop_windows.rs`, `play_shop.rs`) whenever the session's confirm phase is up, so what enters it is a ladder that walks a prize past the coin and held-cap gates on the `koin1` counter. Its sibling `801d5510` (window 35, see below) is entered by the promoted `w4a_shop_quantity_compose` | `801d603c` |
+| `ui_menu_window_painters.rs` | 1 | (a), **converted** by `prize_confirm_page` | the casino prize-exchange Yes/No confirm (window 46). No longer disclosed: both hosts draw it through `ui_prize_exchange::prize_exchange_draws_for` (`window/shop_windows.rs`, `play_shop.rs`) whenever the session's confirm phase is up, so what enters it is a ladder that walks a prize past the coin and held-cap gates on the `koin1` counter. Its sibling `801d5510` (window 35, see below) is entered by the promoted `w4a_shop_quantity_compose` | `801d603c` |
 | `gte/math.rs` | 1 | (b) | wired, not disclosed: `GteMat3::rot_y` runs inside `camera_view_rotation` (the `FUN_8001CF50` port) on both hosts' part passes, but only for a part whose `+0x52` skips pitch or roll and **keeps** yaw. The flag kinds the library's flagged nodes carry are `0x380`, `0x100` / `0x180` and `0x400` ([`renderer.md`](../subsystems/renderer.md#camera-relative-nodes-fun_8001cf50)) - each skips yaw or takes the saved-matrix arm first - so no captured part reaches the yaw factor. Content, not a host gap | `8004629c` |
 
 The crate used to be the largest one-reason cluster on this page: with no
@@ -2186,10 +2188,19 @@ when someone guesses.
 
 | address | crate | anchor |
 |---|---|---|
-| *(none)* | | |
+| `801cf5d0` | engine-ui | `from_character_record` (`ui_menu_window_painters_large.rs`) |
+| `801d3748` | engine-core | `arts_list_pager` (`arts_command_input.rs`) |
 
-The set is empty because the four it last held have verdicts - see the table
-after the next one, and the correction under it.
+Both arrived with ports that landed after the previous export. The four this
+section held before them have verdicts - see the table after the next one, and
+the correction under it.
+
+The same refresh converted four rows: the dev menu's EVENT FLAG pair
+`801dbd04` / `801db8f4` (the flag list now seeded from the field overlay, see
+[NOT-PLAYTHROUGH](#not-playthrough)), the prize counter's Yes/No confirm
+`801d603c` (`prize_confirm_page`: coins and the clerk's `49 07` arm seeded, the
+pad walks a prize to the confirm), and `8004c650`, whose live anchor
+`banner_x` (the battle move-name label's placement) is now entered by the union.
 
 The set this section held before them is bucketed, and where each went is the
 part worth keeping rather than the fact that it emptied:

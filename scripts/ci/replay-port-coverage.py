@@ -1520,7 +1520,7 @@ def main() -> int:
     live_unentered_all = joined["live_unentered"]
     live_unentered = [(a, x) for a, x in live_unentered_all if a.lower() not in dead]
     unentered_disclosed = [
-        (a, {**x, "symbol": f"{x['symbol']}` ({dead[a.lower()]})`"})
+        (a, {**x, "crate": f"{x['crate']} ({dead[a.lower()]})"})
         for a, x in live_unentered_all
         if a.lower() in dead
     ]
