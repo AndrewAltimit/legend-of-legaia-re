@@ -1239,8 +1239,6 @@ Still open from that pass:
 
 - **Dance How-To mode** has no minigames-page entry (`DanceGame::from_overlay`
   only, no `DanceTutorial`).
-- **The song-end `3 2 1 FINISH!`** (state `0xB`'s four move-program sprite
-  parts) is drawn on no surface.
 - **The page refuses the pause menu while any dialog box is up**
   (`_hudState.dialog`), on top of the engine's `field_menu_open_allowed`
   the native window asks alone. No retail evidence decides it yet.

@@ -1106,9 +1106,24 @@ with `0x206` - a closing `3 2 1 FINISH!` while the pad is still read at the
 Port: `dance::CountIn` runs states 3 to 5 (`COUNTIN_READY_EXIT`,
 `COUNTIN_GO_STEP`, `COUNTIN_START_CUE`), so all three surfaces - the native
 window, the play page and the minigames page (`dance_countin_step`) - draw
-READY, then `GO!`, and fire `0x200` then `0x201` off one kernel. The state
-`0xB` countdown is not modelled on any of them yet: the port has no
-move-program runner for the dance's sprite parts.
+READY, then `GO!`, and fire `0x200` then `0x201` off one kernel.
+
+States `0xB` / `0xC` are `dance::FinishCountdown`, run from
+`DanceGame::advance` once the song is over: the four programs are read out of
+the overlay and stepped by the port's move VM under `FUN_80021DF4`'s own tick
+around them - the `+0x78` rate step before the VM (`0x80022B4C..0x80022B7C`),
+the wait-timer decrement, and the clamp after it (`0x80022BC0..0x80022BEC`).
+Op `0x20 2` is the overlay's sprite hook `FUN_801D387C` (installed at
+`gp+0x714` by the hall init, `0x801CF07C`), whose case 2 emits the part, so a
+part draws exactly on the ticks its program calls the hook; op `0x1D` is the
+cue. The countdown's parts join `DanceGame::sprite_part_emits`, which all
+three surfaces already draw, and its cues leave through the same drains as
+the others. `DanceGame::finished` - the song over and the state `0xC` wipe
+past `0x489` - is when the world restores the interrupted mode and a page
+reports the run over; the disc-gated `dance_minigame_real` test pins
+`3, 2, 1, FINISH!` with cues `0x209, 0x208, 0x207, 0x206` and the wipe at
+384 vsyncs. Not yet modelled: the `x 0x22` award the judge gives in states
+`0xB` / `0xC`.
 
 ### Where the HUD's texels come from
 

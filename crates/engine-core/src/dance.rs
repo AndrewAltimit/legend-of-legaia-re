@@ -41,6 +41,7 @@
 use legaia_asset::dance_chart::{BEATS_PER_ROW, DanceChart, DanceScoreTables};
 
 mod bodies;
+mod finish;
 mod game;
 mod hud;
 mod hud_kernels;
@@ -48,6 +49,7 @@ mod stage;
 mod types;
 
 pub use bodies::*;
+pub use finish::*;
 pub use game::*;
 pub use hud::*;
 pub use hud_kernels::*;

@@ -812,7 +812,7 @@ impl LegaiaMinigames {
             rivals,
             g.song_timer(),
             g.song_len(),
-            g.song_over(),
+            g.finished(),
             g.passed(),
             g.beating_rivals(),
         )

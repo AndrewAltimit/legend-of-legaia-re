@@ -1403,14 +1403,28 @@ impl LegaiaMinigames {
     /// stings, the run-start and intro cues.
     pub fn dance_sfx_cue_ids(&self) -> String {
         format!(
-            r#"{{"miss":{},"cool":{},"great":{},"fever":{},"start":{},"intro":{}}}"#,
+            r#"{{"miss":{},"cool":{},"great":{},"fever":{},"start":{},"intro":{},"finish":{},"count1":{},"count2":{},"count3":{}}}"#,
             dance_art::CUE_DANCE_MISS,
             dance_art::CUE_DANCE_COOL,
             dance_art::CUE_DANCE_GREAT,
             dance_art::CUE_DANCE_FEVER,
             dance_art::CUE_DANCE_START,
             dance_art::CUE_DANCE_INTRO,
+            0x206,
+            0x207,
+            0x208,
+            0x209,
         )
+    }
+
+    /// The song-end countdown's cues since the last call (`3 2 1 FINISH!`,
+    /// `0x209..=0x206`, written by the overlay's own part programs) - the
+    /// page plays them by id through [`Self::dance_sfx_cue_ids`]' names.
+    pub fn dance_take_finish_cues(&mut self) -> Vec<u16> {
+        self.dance
+            .as_mut()
+            .map(|g| g.take_finish_cues())
+            .unwrap_or_default()
     }
 
     /// One layer of a good-step **hit sting**. Retail keys these directly

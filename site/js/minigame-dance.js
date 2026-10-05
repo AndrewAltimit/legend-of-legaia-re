@@ -583,6 +583,14 @@ window.MgDance = (function () {
       src.start();
     }
 
+    /* A cue by its retail id, through the names `dance_sfx_cue_ids` gives. */
+    function playId(id) {
+      if (!sfxIds) return;
+      for (const [name, v] of Object.entries(sfxIds)) {
+        if (v === id) { play(name, 0.5); return; }
+      }
+    }
+
     function playSting() {
       const a = audioReady();
       if (!a || !a.stings.length) return;
@@ -1060,9 +1068,18 @@ window.MgDance = (function () {
         if (t >= 145) intro && (intro.go = true);
       }
 
+      /* The song end: the engine runs the overlay's own 3 2 1 FINISH!
+       * programs (drawn with the other engine sprite parts) and their cues;
+       * `over` is the results state after them. A cached WASM without the
+       * countdown keeps the page's own FINISH! banner. */
+      if (typeof api.dance_take_finish_cues === 'function') {
+        for (const id of api.dance_take_finish_cues()) playId(id);
+      }
       if (st && st.over && !finished) {
         finished = true;
-        spawnBanner(W.FINISH, L.banners.centre[0], L.banners.centre[1], 120);
+        if (typeof api.dance_take_finish_cues !== 'function') {
+          spawnBanner(W.FINISH, L.banners.centre[0], L.banners.centre[1], 120);
+        }
         stopBgm();
       }
 

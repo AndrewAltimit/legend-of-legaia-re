@@ -59,6 +59,15 @@ pub struct DanceGame {
     /// choreography bank is attached ([`DanceGame::attach_clip_bank`]).
     /// `None` on a chart-only run, which falls back to the note latch.
     pub(super) clip_ticks: Option<std::collections::HashMap<(u16, u16), u32>>,
+    /// The song-end countdown's four move programs, off the overlay
+    /// ([`super::finish_programs`]); empty on a chart-only run.
+    pub(super) finish_programs: Vec<(u16, Vec<u16>)>,
+    /// States `0xB` / `0xC` while they run ([`super::FinishCountdown`]).
+    pub(super) finish: Option<super::FinishCountdown>,
+    /// State `0x14` reached: the countdown and the wipe are over.
+    pub(super) finished: bool,
+    /// Cues the countdown wrote, for the host to drain.
+    pub(super) finish_cues: Vec<u16>,
 }
 
 impl DanceGame {
@@ -104,6 +113,10 @@ impl DanceGame {
             camera: None,
             demo: None,
             clip_ticks: None,
+            finish_programs: Vec::new(),
+            finish: None,
+            finished: false,
+            finish_cues: Vec::new(),
         };
         // A chart-only run still spawns its floor - the actors just stand at
         // the origin and bind no clip, because both of those come off the
@@ -181,6 +194,7 @@ impl DanceGame {
             m.class = class as u16;
         }
         game.camera = crate::dance_venue::DanceCameraTrack::from_overlay(overlay);
+        game.finish_programs = super::finish_programs(overlay);
         game.spawn_dancer_actors(&spawns);
         // PORT: FUN_801d0190 (the mode-2 Disco King spawn, 0x801D0338..0x801D0390)
         if mode == DanceMode::HowTo {
@@ -656,6 +670,41 @@ impl DanceGame {
         self.song_timer >= self.song_len
     }
 
+    /// `true` once the song is over **and** states `0xB` / `0xC` have run -
+    /// the `3 2 1 FINISH!` countdown and the wipe under it - which is when
+    /// retail reaches its results state `0x14`. A chart-only run (no
+    /// overlay programs) finishes with the song.
+    pub fn finished(&self) -> bool {
+        self.song_over() && (self.finished || self.finish_programs.is_empty())
+    }
+
+    /// The countdown's cues since the last call (`0x206..=0x209`).
+    pub fn take_finish_cues(&mut self) -> Vec<u16> {
+        std::mem::take(&mut self.finish_cues)
+    }
+
+    /// Step states `0xB` / `0xC` `frame_delta` vsyncs once the song is over.
+    // PORT: FUN_801cf470 (states 0xB / 0xC: the countdown spawns and the wipe)
+    fn advance_finish(&mut self, frame_delta: u32) {
+        if !self.song_over() || self.finished || self.finish_programs.is_empty() {
+            return;
+        }
+        let fc = self
+            .finish
+            .get_or_insert_with(|| super::FinishCountdown::new(&self.finish_programs));
+        for _ in 0..frame_delta {
+            let s = fc.step();
+            self.finish_cues.extend(s.cues);
+            if s.done {
+                self.finished = true;
+                break;
+            }
+        }
+        if self.finished {
+            self.finish = None;
+        }
+    }
+
     // --------------------------------------------------------------- actors
 
     /// The dancer actor pool - one record per floor slot, live every frame.
@@ -699,7 +748,9 @@ impl DanceGame {
     /// quads (the shadowed arm is two of them per part) at
     /// [`SpritePartEmit`]'s screen pair, modulated by `fade`.
     pub fn sprite_part_emits(&self) -> Vec<SpritePartFrame> {
-        self.parts
+        let n = self.parts.actors().len();
+        let mut out: Vec<SpritePartFrame> = self
+            .parts
             .actors()
             .iter()
             .enumerate()
@@ -709,7 +760,28 @@ impl DanceGame {
                 fade: sprite_part_fade_weight(a.beat),
                 sprite: a.sprite,
             })
-            .collect()
+            .collect();
+        // The song-end countdown's parts, on the ticks their programs call
+        // the sprite hook - the same case-2 emit (`FUN_801D387C`).
+        if let Some(fc) = self.finish.as_ref() {
+            out.extend(
+                fc.draws()
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, d)| SpritePartFrame {
+                        index: n + i,
+                        emit: sprite_part_emit(
+                            PART_DRAW_MODE,
+                            super::FINISH_SEAT.0,
+                            super::FINISH_SEAT.1,
+                            d.sprite,
+                        ),
+                        fade: d.fade,
+                        sprite: d.sprite,
+                    }),
+            );
+        }
+        out
     }
 
     // ---------------------------------------------------------------- state
@@ -874,6 +946,7 @@ impl DanceGame {
         // The song timer saturates at the length limit (the retail clock keeps
         // counting but the run ends; clamping keeps `song_over` monotone).
         self.song_timer = self.song_timer.saturating_add(step).min(self.song_len);
+        self.advance_finish(frame_delta);
         self.feedback = self.feedback.saturating_sub(frame_delta);
 
         let beat = self.beat_index();

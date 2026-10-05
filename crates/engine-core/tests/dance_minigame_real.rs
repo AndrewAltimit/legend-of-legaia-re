@@ -572,3 +572,37 @@ fn real_step_marker_flipbook_cycles_every_class() {
         "the four classes must not be in lockstep: {now:?}"
     );
 }
+
+/// The song end runs the overlay's own countdown programs (states `0xB` /
+/// `0xC`): `3`, `2`, `1`, `FINISH!` come up in that order, each with its own
+/// cue, and the run reaches its results only after the wipe.
+#[test]
+fn the_song_end_counts_down_3_2_1_finish() {
+    let Some(overlay) = dance_overlay() else {
+        eprintln!("[skip] dance overlay unavailable (disc-gated)");
+        return;
+    };
+    eprintln!("[ran] dance song-end countdown");
+    let mut game = DanceGame::from_overlay(&overlay, false).expect("real chart loads");
+    while !game.song_over() {
+        game.advance(1);
+    }
+    assert!(!game.finished(), "the countdown runs after the song");
+    let mut first_seen: Vec<u16> = Vec::new();
+    let mut cues = Vec::new();
+    let mut vsyncs = 0;
+    while !game.finished() {
+        game.advance(1);
+        vsyncs += 1;
+        cues.extend(game.take_finish_cues());
+        for f in game.sprite_part_emits() {
+            if (0x17..=0x1A).contains(&f.sprite) && !first_seen.contains(&f.sprite) && f.fade > 0 {
+                first_seen.push(f.sprite);
+            }
+        }
+        assert!(vsyncs < 2000, "the wipe never reached the results");
+    }
+    eprintln!("countdown: {first_seen:x?}, cues {cues:x?}, {vsyncs} vsyncs");
+    assert_eq!(first_seen, vec![0x1A, 0x19, 0x18, 0x17], "3, 2, 1, FINISH!");
+    assert_eq!(cues, vec![0x209, 0x208, 0x207, 0x206]);
+}

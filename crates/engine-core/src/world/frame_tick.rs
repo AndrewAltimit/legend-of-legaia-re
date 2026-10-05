@@ -2625,7 +2625,9 @@ impl World {
         if let Some(dir) = dir {
             self.minigames.dance_last_judge = Some(game.judge_press(dir));
         }
-        if game.song_over() {
+        let finish_cues = game.take_finish_cues();
+        self.minigames.pending_sfx.extend(finish_cues);
+        if game.finished() {
             // Song finished: the results state grades the run into the pass
             // flag, then the interrupted mode is restored, leaving `dance` in
             // place so the host can read the final score before clearing.
