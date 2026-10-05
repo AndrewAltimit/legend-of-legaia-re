@@ -36,3 +36,19 @@
 "801f8638" = ["worklist_interior", "Interior of FUN_801F849C (0x801F849C..0x801F88FC) in PROT 0900."]
 "801f87f4" = ["worklist_interior", "Interior of FUN_801F849C (0x801F849C..0x801F88FC) in PROT 0900."]
 "801f8e3c" = ["worklist_interior", "Interior of FUN_801F8D4C (0x801F8D4C..0x801F8E6C) in PROT 0900."]
+
+[cutscene_str]
+"801cfc50" = ["unreferenced", "MDEC decode-environment copy (the libpress DecDCTGetEnv shape): copies 16 + 16 + 32 words of quantisation / IDCT tables from 0x801D0D5C / 0x801D0D9C / 0x801D0DE0 into a0 and returns it. No reference of any form in this image (find-address-word-refs.py: no word, jal, j, branch or lui pair)."]
+"801d0230" = ["render_pipeline_mdec", "MDEC status read: returns the word at *0x801D0E94 (the MDEC status register pointer). Its two callers (0x801CFE3C / 0x801CFE78) are the in / out idle waits around the ported FUN_801D0100 / FUN_801D0198, whose ports (engine-core mdec_dma_sync) take the status read as a closure; legaia-mdec decodes synchronously."]
+
+[fishing]
+"801d0100" = ["worklist_interior", "Interior of the fishing state machine FUN_801CF3BC (ported): no `jr ra` or prologue between 0x801CF3BC and this VA, and no reference of any form names it in this image. The cutscene_str image holds the MDEC in-wait here."]
+"801d0198" = ["worklist_interior", "Interior of FUN_801CF3BC (ported) in fishing: no `jr ra` or prologue between its entry and this VA, no reference in this image."]
+"801d0230" = ["worklist_interior", "Interior of FUN_801CF3BC (ported) in fishing: opens `lw a0,-0x6f10(s0)` on the parent's s0; no reference in this image."]
+"801d58f0" = ["worklist_interior", "Interior of the 2-D segment clipper FUN_801D56E4 (ported, 0x801D56E4..0x801D5C2C): opens `slt v0,v1,a3` mid-computation; no reference in this image."]
+"801d5a24" = ["worklist_interior", "Interior of FUN_801D56E4 (ported, 0x801D56E4..0x801D5C2C); no reference in this image."]
+
+[baka_fighter]
+"801d58f0" = ["worklist_interior", "Interior of the animation-slot remover FUN_801D58E0 (ported as engine-core baka_fighter_chrome, `jal` from 0x801D52A4): 0x10 bytes into its body, mid-way through the slot-address computation."]
+"801d5a24" = ["worklist_interior", "Interior of FUN_801D59D4 (ported, 0x801D59D4..0x801D5C7C); no reference in this image."]
+"801d63b0" = ["worklist_interior", "Interior of the cameo walk-on animator FUN_801D6310 (ported, 0x801D6310..0x801D6480): opens `jal 0x801D65F8` on the parent's frame; no reference in this image (the 28 `jal`s to this VA are all fishing's)."]

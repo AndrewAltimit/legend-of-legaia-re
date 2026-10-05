@@ -111,6 +111,9 @@
 # math directly in `crates/engine-render`; the retail wrappers are not
 # carried over.
 [libgte]
+"8005b778" = "libgte register-load leaf: three mtc2 into GTE data registers 12..14 (SXY0..SXY2)."
+"8005b78c" = "libgte register-load leaf: three cop2 moves (control-register form) and return."
+"8005b7a0" = "libgte register-load leaf: three mtc2 into GTE data registers 25..27 (MAC1..MAC3)."
 "8001b73c" = "GTE RTPT perspective transform (cop2 0x280030, lwc2/swc2) + on-screen bounds clip test"
 "8001c204" = "GTE matrix/rotation setup + object camera transform (RotMatrix-style helpers)"
 "8005ba38" = "libgte RotTransPers: lwc2 VXY0/VZ0 from a0, cop2 0x0180001 (RTPS), swc2 SXY2 -> a1 and IR0 -> a2, cfc2 FLAG -> a3, returns SZ3>>2 (otz). Eleven instructions ending jr ra. Engine projects in the wgpu pipeline. see ghidra/scripts/funcs/8005ba38.txt"
@@ -171,6 +174,16 @@
 "8005acf8" = "GTE depth-cue coefficient setter: computes `(-a0 * 64) / a1` and loads it into COP2 control register 27 (DQA) via FUN_8005B7C0 (`ctc2 a0,0xd800`), then the fixed literal 0x1400000 into control register 28 (DQB) via FUN_8005B7CC (`ctc2 a0,0xe000`). Pure libgte register setup; the port programs its own depth cue. see ghidra/scripts/funcs/8005acf8.txt"
 "8005ad54" = "Sibling of 8005ACF8 with the screen-height constant baked as 320 rather than 64 (`a0*5 << 6`, negated, divided by a1): the same DQA / DQB control-register pair via FUN_8005B7C0 / FUN_8005B7CC and the same 0x1400000 DQB literal. see ghidra/scripts/funcs/8005ad54.txt"
 [libcd]
+"8005bd60" = "libcd status accessor: returns byte 0x800793CD (the last CD status / mode byte)."
+"8005be24" = "libcd CdComstr: name string of CD command a0 (< 0x1C) from the table at 0x800793D0, else the 'none' string."
+"8005be58" = "libcd CdIntstr: name string of CD interrupt a0 (< 7) from the table at 0x80079450, else the 'none' string."
+"8005c2a4" = "libcd thunk: calls the attenuation writer FUN_8005D39C and returns 1 (CdMix)."
+"8005c308" = "libcd thunk into FUN_8005D834."
+"8005d39c" = "libcd attenuation write: selects CD register banks 2 and 3 through the index register and stores the four volume bytes of a0, then 0x20 to apply - the CD-to-SPU mix (CdMix)."
+"8005daa0" = "libcd setter: stores a0 at 0x80079654."
+"8005e954" = "libcd stream stop: clears 0x800796D8, restores the two saved callbacks (FUN_8005BECC / FUN_8005BEE4) and issues CdlPause (FUN_8005BEFC(9, 0, 0))."
+"8005fe4c" = "libapi/libcd device vtable call: *(*0x80078860 + 0x14)()."
+"8005feec" = "Hardware register read: returns the halfword at *0x80078868."
 "8005bc28" = "CdInit-equivalent: 5x-retry FUN_8005bd80(1), registers 3 callbacks; string 'CdInit: Init failed'"
 "8005bd80" = "CD reset/open dispatch: branches on mode to FUN_8005d5f8/d648/d504"
 "8005c2e4" = "thin CD-command wrapper: tail-call FUN_8005fde8(3,param)"
@@ -232,6 +245,14 @@
 "8005dab0" = "libcd response dispatcher: loops on the interrupt-cause read 8005c4ac until it returns 0, dispatching cause bit 0x4 to the data-ready callback DAT_800793B0 and bit 0x2 to the completion callback DAT_800793AC, then restores the saved command byte at 0x80079689. Its entire body is drive-interrupt p..."
 "8005eb50" = "libstr destination-callback swap-setter: 6 instructions, `v0 = DAT_800796C0; DAT_800796C0 = a0; jr ra`. Same get-and-set idiom as 8005be0c, on the streaming path's callback slot; the engine feeds legaia-mdec / legaia-xa from its own sector reader with no callback vector. see ghidra/scripts/funcs/..."
 [libgs]
+"80057f40" = "libgpu SetGraphDebug: prints the new level when debug >= 2, and on a change calls the GPU vtable's +0x34 entry and FUN_8005FDE8(2, 0) before storing it at 0x80078D55."
+"80057ffc" = "libgpu GetGraphDebug: returns byte 0x80078D56."
+"800586a4" = "libgpu DrawPrim: GPU vtable +0x3C (sync) then +0x14(prim + 4, len)."
+"80058998" = "libgpu GetDrawEnv: copies the 0x5C-byte current DRAWENV at 0x80078D64 to a0."
+"80058e78" = "libgpu GetDispEnv: copies the 0x14-byte current DISPENV at 0x80078DC0 to a0."
+"80058eb0" = "libgpu GetODE: GPU vtable +0x38 (status read), returning bit 31 - the odd/even line flag."
+"80058ee0" = "libgpu two-word environment packet initialiser: len 2, word 1 from FUN_80059744(a1), word 2 zero."
+"80058fe4" = "libgpu GP0(E6h) mask-bit packet: len 2, 0xE6000000 | (a1 ? 2 : 0) | (a2 ? 1 : 0)."
 "8002035c" = "graphics teardown: frees double-buffer env handles gp+0x6d8.. + FntClose-style"
 "8003d2c4" = "addPrim / linkPrim (OT-linker primitive; swap low-24 preserve high-8). Inlined function, not a PsyQ library entry."
 "80059010" = "SetDrawMode primitive constructor: fills a DR_MODE primitive (GP0 0xE1 texture-page word via 80059510, GP0 0xE2 texture-window word via 80059744). 1:1 PsyQ libgpu shape; engine-render emits its own GP0 draw-mode / tpage state"
@@ -402,6 +423,7 @@
 # libapi file API + device-vtable trampoline. These back the dev branch's
 # fopen / fseek / fread / fclose path; the engine uses std::fs.
 [libapi]
+"800608c8" = "libapi callback setter: swaps a0 into 0x800788C4 and returns the previous value."
 "80017714" = "main mode teardown + LoadExec (CdStop/pad_stop/ss_end/FntClose then LoadExec); port has own boot"
 "8002b790" = "heap free-list scan: walks doubly-linked list at gp+0x840, returns max free block"
 "800608e0" = "libapi fopen (kernel-call wrapper around BIOS A0 table)"
@@ -416,6 +438,22 @@
 # replaces this cluster end-to-end; see `docs/subsystems/audio.md`.
 "8005fde8" = "libapi device-vtable trampoline (slot +0x4 of PTR_PTR_8007A860): the whole body is `lw v0,-0x57a0(0x8008); lw v0,0x4(v0); jalr v0`, forwarding its arguments untouched. Direct sibling of the already-listed 8005fd88 (slot +0xC). see ghidra/scripts/funcs/8005fde8.txt"
 [libsnd]
+"80061eb8" = "libsnd argument-narrowing wrapper: sign-extends a0 to 16 bits and tail-calls FUN_80061D18."
+"80062038" = "libsnd argument-narrowing wrapper: sign-extends a0..a2 and calls FUN_80061EDC."
+"80062854" = "libsnd argument-narrowing wrapper: sign-extends a0 / a1 and calls FUN_8006275C."
+"800628b8" = "libsnd argument-narrowing wrapper: sign-extends a0 / a1 / a3, masks a2 to a byte and calls FUN_800628F0."
+"80062d78" = "libsnd thunk: FUN_80062AF0(0)."
+"80062ec4" = "libsnd per-channel table read: the halfword at entry a0 (< 3, 16-byte stride) of *0x8007A920, else 0."
+"80062efc" = "libsnd channel-bit set: ORs the mask word 0x8007A928[a0] into (*0x8007A920)[+4]."
+"80062f2c" = "libsnd channel-bit clear: clears the mask word 0x8007A928[a0] from (*0x8007A920)[+4] and returns 1."
+"80064398" = "libsnd argument-narrowing wrapper: sign-extends a0 / a1 and calls FUN_800641EC."
+"80064804" = "libsnd per-track volume set: on the sequence slot (a0, a1) of the table at 0x801CD2C0 either stores a2 / a3 at +0x58 / +0x5A or, when its +0x98 mode is 1, routes through FUN_80067E9C."
+"8006557c" = "libsnd accessor: returns the halfword 0x801CE254."
+"80065794" = "libsnd range-checked wrapper: id a0 < 0x18 -> FUN_8006C948(id) and 0, else -1."
+"8006843c" = "libsnd sequence volume read (left): latches a0 at 0x801CE35E and returns +0x58 of the sequence slot (table 0x801CD2C0[a0 & 0xFF], stride 0xB0 by a0 >> 8)."
+"80068484" = "libsnd sequence volume read (right): as 8006843c, returning +0x5A."
+"80068d04" = "libsnd wrapper: FUN_80068D94(a0, (i16)a1, 0, 0), result narrowed to 16 bits."
+"80068d64" = "libsnd wrapper into FUN_80068D94, the sibling of 80068d04."
 "80062164" = "SsAPI sequencer tick driver: enter/leave-crit FUN_80056678/88 + tick-callback (un)register over tempo state DAT_8007a914/918"
 "80062af0" = "seq start/tempo setup: tempo div DAT_8007a908, registers tick callbacks via FUN_8005fdb8, SEQ cmd words 0xf2000002/3"
 "80062d98" = "seq tick callback: invokes DAT_8007a914 + PTR_FUN_8007a910 handler chain"
@@ -552,6 +590,12 @@
 # libspu primitives + SPU DMA transfer engine. Replaced by the port's
 # software SPU in `engine-audio`.
 [libspu]
+"80069a6c" = "libspu register-programming routine: two FUN_8006A078 transfers and FUN_8006A04C over the 0x8008.... SPU state."
+"80069e30" = "libspu routine issuing three FUN_80069B18 calls."
+"80069f84" = "libspu address conversion: the halfword *0x8007AF40[a0], shifted left by *0x8007AF68 unless a1 == -1."
+"80069fc0" = "libspu address / size packing leaf (0xFFF8 alignment mask)."
+"8006abb0" = "libspu attribute-mask builder (0x80000000 / 0x40000000 / 0x0FFF... masks)."
+"8006c654" = "libspu pitch interpolation: steps a0 by the 0x103B (2^(1/48)) factor a1 >> 5 times, then lerps the last step by the 1/32 fraction a1 & 0x1F."
 "800694d0" = "SPU init: SpuMalloc-like FUN_80056638(0xf0000009,..), register callback FUN_8006a0e0"
 "8006a104" = "SPU DMA descriptor build: cmd word 0x40001010 + mask, stores DAT_8007af9c/a0/a4"
 "8006aae0" = "toggles SPU reverb-enable bit 0x80 at (DAT_8007af40+0x1aa), state DAT_8007aae0"
@@ -624,6 +668,14 @@
 # input behind the platform layer and replaces memory-card I/O with LGSF disk
 # saves, so there is no port site for a byte-level SIO protocol.
 [joy_serial]
+"8006c9c4" = "Controller-driver thunk into FUN_8006D1CC."
+"8006d1cc" = "Controller-driver read-and-clear of 0x8007B2D4, the word beside the transfer-state table 0x8007B2E8."
+"8006ca24" = "Controller-driver status test: through the hook *0x801CE564, returns whether the port record's +0xE8 byte is 8."
+"8006cde8" = "Controller-driver dispatch: the port record from the hook *0x801CE564, then FUN_8006DF14(record, a1 & 0xFF, a2 & 0xFF)."
+"8006d7c0" = "Controller-driver transfer setup: command byte +0x36, buffer pointer +0x2C and length +0x35 on the transfer record - the three fields the transmit-byte source 8006e544 reads."
+"8006e404" = "Controller-driver port-record reset: when +0x49 is raised, clears it and the state words, and fills the six bytes at +0x5D with 0xFF."
+"8006e87c" = "Controller-driver port index: matches a0 against the two 0xF0-stride port buffers at 0x801CE628, returning 0x10 / 0x20, or 0xFF for neither."
+"8006e8b4" = "Controller-driver port buffer: 0x801CE628, or the second buffer +0xF0 when a0 & 0xF0 is set."
 "8006d358" = "serial-port open: JOY_CTRL reset pulse (0x40 then 0), JOY_MODE=0x0D, JOY_BAUD=0x88, arms the Timer-2 timeout via 8006ed34(0x91), raises TXEN with the port-select bit (0x1003 port 1 / 0x3003 port 2). see ghidra/scripts/funcs/8006d358.txt"
 "8006d470" = "serial-transfer state pump: calls the current handler from the 5-entry table at 0x8007B2E8, advances/wraps the state index at 0x8007B2B8, fires an error callback on a negative return. see ghidra/scripts/funcs/8006d470.txt"
 "8006d4f4" = "serial byte exchange: spins on JOY_STAT bit 0x1 (TX ready), writes the byte to JOY_DATA, waits /ACK assert (8006d684) then clear (8006d6d8), per-byte Timer-2 timeouts 0x3C or 0x05 chosen on the driver state at 0x8007B2B8. see ghidra/scripts/funcs/8006d4f4.txt"
@@ -716,6 +768,12 @@
 # behavior to port. (The 8002b9xx cluster is the stripped per-tile sprite-emit
 # leaf family; cf. FUN_8002B96C, also `jr ra; nop`.)
 [noop_stubs]
+"80017b84" = "Empty body (`jr ra; nop`) between the render-pipeline and libc bands. No reference of any form reaches it on the disc (find-address-word-refs.py --prot: no word, jal, j, branch or lui pair in SCUS, any overlay or any PROT entry)."
+"8002b95c" = "Empty body (`jr ra; nop`) between two listed no-op stubs (8002b954 / 8002b96c)."
+"8003c42c" = "Empty body (`jr ra; nop`). No reference of any form reaches it on the disc (find-address-word-refs.py --prot: no word, jal, j, branch or lui pair in SCUS, any overlay or any PROT entry)."
+"8003d0e4" = "Empty body (`jr ra; nop`); its one reference is the template word at 0x8007433C, an actor template's tick slot - a do-nothing tick."
+"8003f118" = "Empty body (`jr ra; nop`). No reference of any form reaches it on the disc (find-address-word-refs.py --prot: no word, jal, j, branch or lui pair in SCUS, any overlay or any PROT entry)."
+"8003f290" = "Empty body (`jr ra; nop`). No reference of any form reaches it on the disc (find-address-word-refs.py --prot: no word, jal, j, branch or lui pair in SCUS, any overlay or any PROT entry)."
 "80055b20" = "party-order table init: DAT_8007bd10/11/12 = 1,2,3 (trivial 3-byte global init)"
 "80026c20" = "no-op stub (jr ra; nop)"
 "8002b934" = "no-op stub (jr ra; nop)"
@@ -887,6 +945,8 @@
 # epilogue, so `jr ra` in the stream is not evidence of a callable entry.
 # See `docs/tooling/worklist-classification.md`.
 [worklist_interior]
+"80035a1c" = "INTERIOR: a branch target inside FUN_80035978 (ported), reached by the branch at 0x80035A00; it stores -1 / 0 to a1[+0x20] / a1[+0x1E] and returns on the parent's frame-less path."
+"80035a2c" = "INTERIOR: a branch target inside FUN_80035978 (ported), reached by the branch at 0x80035A0C; its first instruction stores a v0 the parent computed."
 # 801ce9c0 is NOT interior, and the row that said so is deleted rather than
 # edited, because its whole evidence base was an image set that did not yet
 # contain PROT 0895. The old reading - "the only image whose bytes cover it is
@@ -1130,6 +1190,7 @@
 "801d2784" = "INTERIOR, and in the WRONG IMAGE: the bytes are baka_fighter (PROT 0976), not field_battle_intro (0979). It reads 0x801DBED8 / 0x801DBEDC / 0x801DBEE4 / 0x801DBEF0 and calls 0x801D6710, all past 0979's own 0x4000 and inside 0976's 0xE000, whose documented emitters 801D6480 / 801D6770 bracket that jal target. 0979's tail from 0x3C68 is byte-identical to 0976's at the same offsets. In 0976 the enclosing body starts 0x801D239C and nothing in that image references it (the two branch hits reported are in PROT 0970 / 0972, different images at the same base)"
 "801dba28" = "INTERIOR: two instructions into FUN_801DBA20 in field (0897), the zone-record query ported as engine-core field_regions::zone_query. 0x801DBA20 loads `v0 = *(0x801C6EA4)` (`lui v0,0x801c; lw v0,0x6ea4(v0)`) and the frame opens at 0x801DBA28 on that live v0 - which is why the dump that starts here reads `in_v0`. The corpus's 801dba20.txt is a different image's function (its header says entry=801db7f4)."
 "801e3f30" = "INTERIOR: a case block inside FUN_801E3E00 in field (0897), the attached-sprite script tick ported as engine-vm field_actor_billboard (0x801E3E00..0x801E446C). It opens `lbu a0,0xc(a0)` continuing the record unpack that starts at 0x801E3F00, on the parent's s2/s3 - no prologue, and no reference of any form names the VA."
+"801d60a4" = "INTERIOR: inside FUN_801D5ED0 in baka_fighter (0976), ported as engine-core baka_fighter (0x801D5ED0..0x801D6300): opens `lbu v0,0x11(a2)` on the parent's a2; no reference of any form names the VA."
 "801ea034" = "INTERIOR: a jump-table arm of FUN_801E9F64 in field (0897), the dev-menu row input dispatcher - the switch table at 0x801CF294 holds this VA as a literal word (0x801CF2B0, slot 7). It is the [1, 255] clamp arm engine-vm world_map_dev_menu ports (`clamp1_255_step`, tagged FUN_801e9f64 0x801EA034..0x801EA0AC)."
 
 [worklist_shared_tail]
@@ -1654,6 +1715,7 @@
 
 # Added by the port-wiring wave.
 [render_pipeline_mdec]
+"801d06dc" = "MDEC timeout setter in cutscene_str (0970): stores a0 * 2 (or 0xFFFFFF for a0 <= 1) into the watchdog word at 0x801D06D8 and returns the previous value. No reference of any form names it; the watchdog FUN_801CFAD4 it would arm is itself replaced (legaia-mdec decodes synchronously)."
 "801cfad4" = "MDEC decode watchdog: spins up to 0x800000 iterations on the MDEC status word waiting for the decode to retire, printing a dev diagnostic through the BIOS printf thunk 800567a8 on timeout. Hardware poll; legaia-mdec decodes synchronously in software. see ghidra/scripts/funcs/overlay_str_fmv_0x801..."
 "801cfb94" = "STR seek + read start: CdControl CdlSetloc then CdlSetmode 0x80 through the libcd wrapper 8005befc, one VSync (8005fb84), a call into the already-listed libstr read start 8005eb68, and a `time out in strNext` dev print. Drive transport only. see ghidra/scripts/funcs/overlay_str_fmv_0x801CFB94.txt"
 "801cfc18" = "MDEC reset thunk: masks through the libapi device trampoline 8005fd88 and calls the already-ignored MDEC reset 801cfee0. Fourteen instructions of register reset. see ghidra/scripts/funcs/overlay_str_fmv_0x801CFC18.txt"
@@ -1739,6 +1801,26 @@
 # whole dump corpus carries a `jal` to any address in the 0x80057358..0x80057B98
 # macro band, which is what link residue looks like.
 [libgpu]
+"800575c4" = "libgpu AddPrim: links primitive a2 into ordering-table entry a0 (24-bit address halves swapped between *a2 and *a0)."
+"800576a0" = "libgpu SetPolyFT3: len 7, GP0 code 0x24."
+"800576b4" = "libgpu SetPolyG3: len 6, GP0 code 0x30."
+"800576c8" = "libgpu SetPolyGT3: len 9, GP0 code 0x34."
+"800576dc" = "libgpu SetPolyF4: len 5, GP0 code 0x28."
+"800576f0" = "libgpu SetPolyFT4: len 9, GP0 code 0x2C."
+"80057704" = "libgpu SetPolyG4: len 8, GP0 code 0x38."
+"80057718" = "libgpu SetPolyGT4: len 12, GP0 code 0x3C."
+"8005772c" = "libgpu SetSprt8: len 3, GP0 code 0x74."
+"80057740" = "libgpu SetSprt16: len 3, GP0 code 0x7C."
+"80057754" = "libgpu SetSprt: len 4, GP0 code 0x64."
+"80057768" = "libgpu SetTile1: len 2, GP0 code 0x68."
+"8005777c" = "libgpu SetTile8: len 2, GP0 code 0x70."
+"80057790" = "libgpu SetTile16: len 2, GP0 code 0x78."
+"800577a4" = "libgpu SetTile: len 3, GP0 code 0x60."
+"800577b8" = "libgpu SetLineF2: len 3, GP0 code 0x40."
+"80057974" = "libgpu SetDrawLoad: a GP0(A0h) CPU-to-VRAM header for rect a1, inline length (w*h+1)/2 + 4 when it fits in 12 words, terminated by GP0(01h)."
+"800579e0" = "libgpu MargePrim: appends primitive a1 to a0 when the combined length stays within 16 words, returning -1 otherwise."
+"80057a18" = "libgpu DumpDrawEnv: prints a DRAWENV's clip, offset, texture window, dtd / dfe and tpage fields through the GPU printf hook *0x80078D50."
+"8005a0bc" = "libgpu byte-table accessor: returns byte a0 of the table at 0x801C948C."
 "80057358" = "GetTPage(tp, abr, x, y) tpage-word packer. Two arms selected by the cached GPU version through jal 0x80057fec: version 1/2 returns (tp&3)<<9 | (abr&3)<<7 | (y&0x300)>>3 | (x&0x3ff)>>6, otherwise the tp/abr fields sit two bits lower (<<7 / <<5), y bit 0x100 lands at bit 4 and y bit 0x200 at bit 11. The port reads tpage/CLUT fields out of TMD primitive words instead of packing them. see ghidra/scripts/funcs/80057358.txt"
 "80057428" = "GetClut(x, y) CLUT-word packer, six instructions with no branch: sll v0,a1,0x6 / sra a0,a0,0x4 / andi a0,a0,0x3f / or / andi 0xffff, i.e. (y<<6) | ((x>>4)&0x3f). NB the decompiled C renders a phantom (y & 0x3ff) mask the instruction stream does not contain. engine-render decodes the CBA field, never builds it. see ghidra/scripts/funcs/80057428.txt"
 "80057440" = "libgpu tpage-word diagnostic dumper: re-splits a packed tpage per GPU version and reports the four fields through the installed printf hook *0x80078D50 with format string 0x800154D0. Retail leaves the hook unused; the port logs through tracing. see ghidra/scripts/funcs/80057440.txt"
@@ -1852,6 +1934,17 @@
 # pair the scan can see. Re-run the address - and, for a row whose subject is a
 # table record, the table base too - before re-opening one.
 [unreferenced]
+"80020aa4" = "Actor part-mask initialiser: for i < a0[+0x6C] sets bit i of a0[+0x7C] and the per-part scale halfword a0[+0xA0 + 2i] = 0x1000, then raises bit 31. No reference of any form reaches it on the disc (find-address-word-refs.py --prot: no word, jal, j, branch or lui pair in SCUS, any overlay or any PROT entry)."
+"80025b10" = "Bare thunk: frame, `jal 0x8002B688`, epilogue. No reference of any form reaches it on the disc (find-address-word-refs.py --prot: no word, jal, j, branch or lui pair in SCUS, any overlay or any PROT entry)."
+"80035130" = "Two-digit glyph draw: splits a0 into tens and ones by repeated subtraction and draws each through the glyph cell emitter FUN_8002C488 at (a1, a2) / (a1 + a3, a2), glyph base the fifth argument; the tens digit only when non-zero. No reference of any form reaches it on the disc (find-address-word-refs.py --prot: no word, jal, j, branch or lui pair in SCUS, any overlay or any PROT entry)."
+"80035764" = "Text-actor buffer release by id: walks the circular list at gp+0x148 for the node whose +0x08 halfword equals a0, frees its +0x2C buffer through FUN_80017B94 and clears +0x2C / +0x30. No reference of any form reaches it on the disc (find-address-word-refs.py --prot: no word, jal, j, branch or lui pair in SCUS, any overlay or any PROT entry)."
+"80035c24" = "Pad auto-repeat sampler: masks the held word 0x8007B850 (0xF000, or 0xF00F in game mode 0x15), counts frames by the scratchpad delta 0x1F800393 while it is unchanged and, past 0x14, re-arms at 0x11 and ORs the mask into gp+0x86C; any change zeroes the count. No reference of any form reaches it on the disc (find-address-word-refs.py --prot: no word, jal, j, branch or lui pair in SCUS, any overlay or any PROT entry)."
+"8003c100" = "One store: byte 0x80073F20 = 0x10. Its one 'reference' is an unaligned incidental byte match inside PROT 0912. No reference of any form reaches it on the disc (find-address-word-refs.py --prot: no word, jal, j, branch or lui pair in SCUS, any overlay or any PROT entry)."
+"8003d0ec" = "Actor spawn helper: FUN_80020DE0(template 0x80074334, list *0x8007C34C) and on success seeds +0x54 / +0x9E = 0, +0x50 = a0, +0x80..+0x8C = a1, a2, a3 and the fifth argument. No reference of any form reaches it on the disc (find-address-word-refs.py --prot: no word, jal, j, branch or lui pair in SCUS, any overlay or any PROT entry)."
+"8003d260" = "Two-instruction leaf returning a0 + a1 (`add`). No reference of any form reaches it on the disc (find-address-word-refs.py --prot: no word, jal, j, branch or lui pair in SCUS, any overlay or any PROT entry)."
+"8003eeb8" = "Keyed lookup over gp+0x1A8 (8-byte rows, count gp+0x8BC): on a row whose first word equals a0 stores its second word into 0x8007B7D0 and returns 1, else leaves 0x8007B7D0 = -1 and returns 0. No reference of any form reaches it on the disc (find-address-word-refs.py --prot: no word, jal, j, branch or lui pair in SCUS, any overlay or any PROT entry)."
+"8003f298" = "Bare thunk into the CD read-wait poll FUN_8003DE7C(0). No reference of any form reaches it on the disc (find-address-word-refs.py --prot: no word, jal, j, branch or lui pair in SCUS, any overlay or any PROT entry)."
+"80055974" = "Read-start helper: latches 0x8007BD08 into 0x8007BD38 with a 0xB4 countdown, then either the libapi call 0x80060944 (dev branch, 0x8007B8C2 == 0) or FUN_8003E800(a1, a2 >> 11, 1) plus the read-wait FUN_8003DE7C(0). No reference of any form reaches it on the disc (find-address-word-refs.py --prot: no word, jal, j, branch or lui pair in SCUS, any overlay or any PROT entry)."
 "80025054" = "Actor-template tick, reachable only as the +0x08 word of the static template record at 0x80070614 (docs/reference/functions/runtime-libs.md). Each spawn site names its own record with its own lui+addiu pair - no dispatcher walks the 0x18 grid - so the whole table was swept, not just the record: 0x800705FC is materialised in the field overlay at 0x801D6D6C and passed straight to the allocator FUN_80020DE0, 0x8007062C at SCUS 0x80021B74, and 0x80070614 by nothing anywhere. The tick itself is a real entry (own `addiu sp,sp,-0x30` frame, `jr ra` + nop above it); it is unreachable one level up, because nothing spawns the actor that would run it. see ghidra/scripts/funcs/80025054.txt"
 "80035274" = "Item / equipment passive-NAME draw. Real entry - `addiu sp,sp,-0x20` frame under a clean `jr ra` / `addiu sp,sp,0x18` epilogue - with zero references of any form. The two routines that survive into retail menus, FUN_80034250 and the menu overlay's window-34 renderer FUN_801D4A80, walk the same item -> passive chain to the accessory-passive record's +0x08 description; only this one takes the +0x04 name. Worth reading rather than porting: it is the sole decoded witness to the item table's leading class / sub-index byte pair (docs/reference/functions/menus.md). see ghidra/scripts/funcs/80035274.txt"
 "80050d40" = "12-bit angle tween, (from, to, weight, slot), with zero references of any form. A frameless leaf - it opens no frame at all - and an entry rather than an interior label because the word above it is the `addiu sp,sp,0x20` delay slot of the previous function's `jr ra`, so nothing falls through into it. Its near-twin FUN_8001D088 is the ANM interpolator every live angle blend uses; the two differ in the short-arc comparison, `srl` vs `sra` on the scaled delta, and a stride-4 slot table at 0x801C9060 against a stride-8 one at 0x800891A8, so a port treating them as one function inherits the wrong sign behaviour on a negative delta. see ghidra/scripts/funcs/80050d40.txt"
