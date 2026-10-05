@@ -45,8 +45,11 @@ const ROWS: [(u32, u8, u32); 15] = [
 /// arm's writes): `0xAC` Mystic Shield (`0x801F864C`, `0x801F735C`) re-arms
 /// it to `0x60 + 0x100 + 4 * 0x40 + 0xC0` = 800 ticks, `0x37` Guilty Cross
 /// (`0x801F8360`, `0x801F6CC4`) to `3 * 0x80 + 0x100 + 0xC0` = 832. This is
-/// past both with margin.
-const MAX_FRAMES: usize = 1024;
+/// past both with margin. The bodies with no camera director gate on the
+/// same word (`cast_module_camera::capture_countdown`), and the longest of
+/// them, PROT 0950's fourteen-arm `0xAB`, re-arms `0x100 + 0x40 + 0x100 +
+/// 0x20 + 0xA0 + 0x40 + 0x20 + 0x18 + 5 * 0x40` scalars = 1208 ticks.
+const MAX_FRAMES: usize = 4096;
 
 fn extracted_dir() -> Option<PathBuf> {
     std::env::var_os("LEGAIA_DISC_BIN")?;
@@ -177,7 +180,9 @@ fn every_trampoline_arm_enters_its_body_and_reaches_a_terminal_step() {
         let before = fingerprint(&w);
         let mut saw_port = false;
         let mut saw_done = false;
+        let mut frames = 0usize;
         for _ in 0..MAX_FRAMES {
+            frames += 1;
             let Some(run) = w.run_cast_module_code(id, 0) else {
                 break;
             };
@@ -199,6 +204,32 @@ fn every_trampoline_arm_enters_its_body_and_reaches_a_terminal_step() {
         entered += 1;
         if saw_done {
             finished += 1;
+        }
+        // A body with a countdown table holds at least the sum of its
+        // gated arms' seeds over their drains (`capture_countdown`): the
+        // gate is live on the band, not just in the table.
+        if let Some(table) =
+            legaia_engine_vm::cast_module_camera::capture_arm_countdowns(entry, body)
+        {
+            let mut floor = 0i32;
+            let mut cd = 0i32;
+            for a in table {
+                if let Some(d) = a.drain {
+                    let held = (cd.max(0) + d - 1) / d;
+                    floor += held.max(1);
+                    cd -= held * d;
+                }
+                match a.write {
+                    Some(legaia_engine_vm::cast_module_camera::CountdownWrite::Set(v)) => cd = v,
+                    Some(legaia_engine_vm::cast_module_camera::CountdownWrite::Add(v)) => cd += v,
+                    None => {}
+                }
+            }
+            assert!(
+                frames >= floor as usize,
+                "PROT {entry} id {id:#04X}: finished in {frames} frames, its countdown \
+                 holds {floor}"
+            );
         }
         if fingerprint(&w) != before {
             changed += 1;

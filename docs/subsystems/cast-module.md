@@ -1680,6 +1680,25 @@ all three of its bodies' walks, and PROT 0950's `0x801F86B0` goes **negative**
 (`0xFFFFFF80`) inside `0x5A`'s last arm, so whatever ends those arms is a
 different word or a different test.
 
+##### What the port gates
+
+The engine runs each of these bodies' phase chains only on the tick its arm's
+gate lets through. Seven bodies carry the gate with their camera arms
+(`cast_module_camera::capture_camera_director`); the rest of the measured set -
+PROT 0940's `0x50` / `0xAE`, PROT 0941's `0x51` and `0xB9`, PROT 0943's `0x40`
+and `0xB5`, PROT 0944's `0x53`, PROT 0950's `0x5A` and `0xAB`, and PROT 0956's `0x71` - carry it as a
+countdown table read off their disassembly
+(`cast_module_camera::capture_countdown`): per arm, the drain form and the
+re-arm store. Dividing each seed by the capture's own per-tick drain
+reproduces the dwells above arm for arm, so the table is checked against
+retail rather than fitted to it. At the engine's one-vsync tick the same seeds
+give the same wall time, which is several seconds per special rather than the
+handful of frames an ungated chain took.
+
+PROT 0962's three bodies stay ungated: no arm of theirs drains a module word
+on the shape above (PROT 0962's `0xA3` counts one **up**
+to `0x41`, and the others wait on the scene).
+
 ##### The two Curse arms fault on a caster with too few spell entries
 
 Driving PROT 0943's `0x40` (Curse) or PROT 0944's `0x53` (Curse All) from the

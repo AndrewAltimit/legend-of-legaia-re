@@ -370,10 +370,12 @@ pub(super) fn focus_on(seat: ModuleSeat) -> [i16; 3] {
 }
 
 pub mod capture;
+pub mod capture_countdown;
 pub mod creature;
 mod evil_seru_magic;
 mod seru;
 pub use capture::*;
+pub use capture_countdown::{ArmCountdown, CountdownWrite, arm_countdown, capture_arm_countdowns};
 pub use creature::*;
 pub use evil_seru_magic::*;
 pub use seru::*;

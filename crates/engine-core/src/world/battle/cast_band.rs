@@ -2259,6 +2259,7 @@ impl World {
         run.camera_shot = direction.and_then(|d| d.shot);
         let mut capture_held = false;
         let mut capture_arm = None;
+        let phase_in = ctx.phase;
         // A capture-class body's camera arms, on the phase it is about to
         // run (they make no gate of their own: the body's port does).
         if let Some(direct) = vm::cast_module_camera::capture_camera_director(
@@ -2352,6 +2353,23 @@ impl World {
                 seat: h.seat,
                 applied: h.applied as i32,
             }));
+        }
+        // A capture body with no camera director still gates its arms on
+        // the module countdown: the arm's phase chain runs only on the tick
+        // the gate lets through (`cast_module_camera::capture_countdown`).
+        let arm_countdown = if capture_arm.is_none() {
+            vm::cast_module_camera::capture_arm_countdowns(
+                entry,
+                body.unwrap_or(vm::cast_module_camera::SINGLE_BODY),
+            )
+            .and_then(|t| vm::cast_module_camera::arm_countdown(t, phase_in))
+        } else {
+            None
+        };
+        if let Some(a) = arm_countdown
+            && a.holds(&mut self.casting.module_cam.countdown)
+        {
+            capture_held = true;
         }
         run.camera_follow = direction.and_then(|d| d.follow);
         run.camera_nudge = direction.and_then(|d| d.nudge);
@@ -3003,6 +3021,13 @@ impl World {
             let mut live = self.cast_actor_state(slot);
             live.fold_writes(orig, view);
             self.write_cast_actor_state(slot, &live);
+        }
+        // The arm passed: its re-arm of the countdown word.
+        if let Some(a) = arm_countdown
+            && !capture_held
+            && ctx.phase != phase_in
+        {
+            a.pass(&mut self.casting.module_cam.countdown);
         }
         self.casting.module_ctx_278 = ctx.ctx_278;
         self.casting.module_phase = ctx.phase;
