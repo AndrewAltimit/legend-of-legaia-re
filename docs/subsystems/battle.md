@@ -2759,7 +2759,10 @@ index→palette lookup the PSX GPU does in VRAM.
 The from-scratch engine renders the decoded monster directly through its standard
 PSX-VRAM texture path rather than the site's index→palette shortcut.
 `MonsterMesh::battle_render_mesh(slot, &mut vram)` reproduces the loader's
-per-slot relocation: it writes the CLUT region to VRAM row `484 + slot` and the
+per-slot relocation: it writes the CLUT region to VRAM row `484 + slot` - with
+the loader's STP bit on every non-zero entry (`battle_clut_region`), without
+which the near-camera ghost and the defeat fade, both semi-transparent draws,
+blend nothing and draw the body solid - and the
 4bpp page to `((5 + slot) * 64, 256)`, then rewrites every prim's CBA/TSB to
 point at those regions (`relocate_cba` / `relocate_tsb`), keeping the
 page-local UVs untouched. Because the on-disc CBA/TSB are nominal defaults the
