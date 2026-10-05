@@ -397,6 +397,13 @@ commands, the length of each character's Miracle Art. A random encounter that
 interrupts a pad-tier walk is fled instead (the round prompt's Run), unless
 the fight forbids running.
 
+A foe that winds up is guarded against the turn its blow lands: a
+capture-class charge body (Xain's Bull Charge, PROT 0953) sets its caster's
+ability latch (`0x801C8FE0`) and deals nothing, and the next cast through the
+body is the party-wide Terio Punch (power `0x274`), which reaches about 900
+on each member of a party in the 800s. A talk whose record, or a record it
+spawns, stages a fight is walked into at full strength, as a stager is.
+
 The fighter also reads a boss's cadence the way a player does. It keeps each
 round's total party HP loss, and when the last four rounds went heavy, quiet,
 heavy, quiet (no two heavy rounds back to back all battle), the coming round

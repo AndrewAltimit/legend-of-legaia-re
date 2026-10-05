@@ -1262,6 +1262,29 @@ fn wants_guard(w: &legaia_engine_core::world::World, actor: u8) -> bool {
     };
     let max = u32::from(a.battle.max_hp);
     let threat = BIGGEST_HIT.with(std::cell::Cell::get);
+    // A foe winding up shows it: a capture-class charge body (Xain's Bull
+    // Charge, PROT 0953 arm 0) sets its caster's ability latch
+    // (`0x801C8FE0 + (seat - 3 + 1) * 4`) and deals nothing, and the next
+    // cast through the same body is the party-wide punch. A player who sees
+    // the charge guards the turn it lands, before any heavy round is on
+    // record.
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    let charged = (n..w.actors.len()).any(|i| {
+        w.actors[i].battle.hp > 0
+            && w.battle
+                .monster_ai_state
+                .dat
+                .get(i - n + 4)
+                .is_some_and(|&v| v != 0)
+    });
+    // The charge round itself is quiet; a latch the foe holds while it
+    // keeps hitting (an AI ability cooldown such as ids `0x97` / `0x98`
+    // re-arm every turn) is not a wind-up, and guarding through it starves
+    // the fight (`nilboa`'s lone-Vahn F30).
+    let quiet_last = ROUND_HISTORY.with(|h| h.borrow().last() == Some(&0));
+    if hp > 0 && charged && quiet_last && u32::from(a.battle.hp) * 4 >= max {
+        return true;
+    }
     hp > 0 && threat * 5 >= max * 2 && hp > threat / 2 + threat / 8 && big_round_due()
 }
 
@@ -5531,6 +5554,12 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
             if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
                 eprintln!("    [talk] {name} P1[{slot}] ...");
             }
+            // A talk that stages a fight (Xain, `tunnelc` P1[4]: his
+            // second stage's option 0 runs `3E FF 0A`) is a boss approach:
+            // a player walks into it at full strength, as into a stager.
+            if pad_hand() && record_stages_fight(&mf, &man, 1, usize::from(slot)) {
+                pad_field_heal(session, 900);
+            }
             let r = talk_to(session, slot);
             let r = fight_committed(session, r);
             trace_beat(session, &f0, || format!("{name} talk P1[{slot}] -> {r:?}"));
@@ -6109,6 +6138,31 @@ fn talk_beats(
         });
     }
     slots
+}
+
+/// Whether record `(part, rec)`, or a partition-2 record it spawns, installs
+/// a scripted battle (op `0x3E` with `op0 == 0xFF` or `< 100`).
+fn record_stages_fight(
+    mf: &legaia_asset::man_section::ManFile,
+    man: &[u8],
+    part: usize,
+    rec: usize,
+) -> bool {
+    use legaia_asset::field_disasm::{InsnInfo, LinearWalker};
+    use legaia_engine_core::man_field_scripts::partition_record_span;
+    let fights = |part: usize, rec: usize| {
+        partition_record_span(mf, man, part, rec).is_some_and(|(start, pc0, len)| {
+            LinearWalker::new(&man[start..start + len], pc0)
+                .flatten()
+                .any(|i| matches!(i.info, InsnInfo::WarpOrInteract { is_warp: false, .. }))
+        })
+    };
+    let n0 = mf.partitions.first().map_or(0, Vec::len);
+    let n1 = mf.partitions.get(1).map_or(0, Vec::len);
+    fights(part, rec)
+        || spawned_p2(mf, man, part, rec, n0 + n1, 3)
+            .into_iter()
+            .any(|r| fights(2, r))
 }
 
 /// Whether record `(part, rec)` runs the mode-24 minigame door-warp
