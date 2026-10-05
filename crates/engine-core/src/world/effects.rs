@@ -1104,15 +1104,30 @@ impl World {
         scenes.extend(self.casting.active_move_fx.take());
         let move_n = scenes.len();
         scenes.append(&mut self.casting.active_action_fx);
+        let channel_delta = self.effect_channel_delta();
+        let step = self.move_vm.ramp_ratio.max(1);
         for scene in &mut scenes {
-            let mut host = MoveVmHostImpl {
-                world: self,
-                current_slot: None,
-                deferred_writes: std::collections::BTreeMap::new(),
-                field_record_words: None,
-                child_spawns: Vec::new(),
+            scene.channel_delta = channel_delta;
+            let seated = {
+                let mut host = MoveVmHostImpl {
+                    world: self,
+                    current_slot: None,
+                    deferred_writes: std::collections::BTreeMap::new(),
+                    field_record_words: None,
+                    child_spawns: Vec::new(),
+                };
+                scene.seat_run(&mut host)
             };
-            scene.seat_run(&mut host);
+            // The seat frame's part tick carries the envelope tail
+            // `FUN_800204F8` (`jal` at `0x80022EF4`) like any other.
+            for i in seated {
+                let part = &mut scene.parts[i];
+                if !part.finished
+                    && part.state.flags & vm::move_buffer::STATUS_FLAG_ENVELOPE_ACTIVE != 0
+                {
+                    vm::vdf_morph::envelope_tick_actor(&mut part.state, step);
+                }
+            }
         }
         let mut it = scenes.into_iter();
         if summon_n == 1 {
@@ -1188,8 +1203,7 @@ impl World {
             // step - grows nothing: the captures read `0x66 * N` at wait
             // `0x278 - 8 * N`.
             let step = self.move_vm.ramp_ratio.max(1);
-            let spawn_tick = scene.frame <= 1;
-            for part in scene.parts.iter_mut().filter(|_| !spawn_tick) {
+            for part in &mut scene.parts {
                 if !part.finished
                     && part.state.flags & vm::move_buffer::STATUS_FLAG_ENVELOPE_ACTIVE != 0
                 {
