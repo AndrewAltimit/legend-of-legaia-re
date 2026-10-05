@@ -607,19 +607,69 @@ pub(super) fn attack_return<H: BattleActionHost + ?Sized>(
     if host.actor(slot).is_some_and(|a| a.current_anim != 0) {
         return stay(ctx);
     }
-    // The counter window's gate, retail's order (`0x801E5554..0x801E557C`):
-    // the scripted-fight flag `+0x287` first, then the counter byte `+0x288`.
-    // (Retail's middle term, `DAT_8007BD0D`, has no port field.)
-    if ctx.scripted_fight != 0 && ctx.counter_attack != 0 {
-        // Counter-attack swap: advance the turn cursor past the counterer and
-        // route back into AttackChain (retail `0x801E36D0`). Engines drive the
-        // actual swap.
-        ctx.turn_cursor = ctx.turn_cursor.saturating_add(1);
-        return transition(ctx, ActionState::AttackChain);
+    if target_reaction_holds(host, ctx, slot) {
+        return stay(ctx);
     }
     stage_ko_taunt(host, slot);
     transition(ctx, ActionState::DoneCleanup)
 }
+
+/// State `0x20`'s **target-reaction hold** (`0x801E54FC..0x801E5580`), run
+/// once the attacker's own last clip has ended: the band also waits out the
+/// target's reaction, so a flinch, a knockdown and its get-up, or a death and
+/// its fade all play before the Done band's countdown starts.
+///
+/// The target (`s8`, the actor at the attacker's `+0x1DD`) holds the band
+/// while all three read true:
+///
+/// - its committed anim `+0x1D9` is non-zero - it is not back on idle;
+/// - it is not a party seat parked on entry `8`, the downed loop
+///   (`sltiu v0,t2,0x3` / `beq v1,v0` with `v0 = 8` at `0x801E5504..0x801E5518`);
+///   a party member's knockdown chain `4 -> 7 -> 8` holds until it lands there;
+/// - its render node still draws (`node[+0x74] & 0xFFFFFF` at
+///   `0x801E5530..0x801E5544`) - a dead monster holds its knockdown frame
+///   while the defeat fade walks it to black, and the band leaves when it is
+///   gone.
+///
+/// One bypass lets the band out with the target still reacting: a scripted
+/// fight (`ctx[+0x287]`) with no second formation monster (`0x8007BD0D`)
+/// whose lone monster's defeat fade has raised [`BattleActionCtx::lone_defeat_latch`]
+/// (`ctx[+0x288]`) - `0x801E554C..0x801E557C`. Every other exit, the bypass
+/// included, takes the same `0x50` store at `0x801E5588`: there is no
+/// counter-attack route out of this state.
+///
+/// A target slot outside the table (`+0x1DD >= 8`) leaves `s8` unloaded at
+/// `0x801E29BC`; the port reads it as no hold.
+///
+/// PORT: FUN_801E295C (`0x801E54FC..0x801E5580`, the state-0x20 reaction hold)
+fn target_reaction_holds<H: BattleActionHost + ?Sized>(
+    host: &H,
+    ctx: &BattleActionCtx,
+    slot: u8,
+) -> bool {
+    let Some(target) = host.actor(slot).map(|a| a.active_target) else {
+        return false;
+    };
+    if usize::from(target) >= ACTOR_SLOTS {
+        return false;
+    }
+    let Some((anim, drawn)) = host.reaction_hold_view(target) else {
+        return false;
+    };
+    if target < host.party_count() && anim == PARTY_DOWNED_LOOP_ANIM {
+        return false;
+    }
+    if anim == 0 || !drawn {
+        return false;
+    }
+    // `+0x287`, then `0x8007BD0D` (implied: the latch's one writer raises it
+    // only for a lone-monster formation), then `+0x288`.
+    !(ctx.scripted_fight != 0 && ctx.lone_defeat_latch != 0)
+}
+
+/// The party downed loop's entry id - the `li v0,0x8` the reaction hold
+/// compares a party target's committed anim against (`0x801E550C`).
+const PARTY_DOWNED_LOOP_ANIM: u8 = 8;
 
 /// The monster's **KO taunt** (`0x801E5594..0x801E5658`), run on the way into
 /// the Done band: when a monster's attack has left its target at zero HP,

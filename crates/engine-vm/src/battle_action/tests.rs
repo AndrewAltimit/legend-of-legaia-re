@@ -1225,22 +1225,84 @@ fn attack_recovery_holds_until_advance_done_clears() {
     ));
 }
 
+/// The bypass bytes `+0x287` / `+0x288` let the band out with the target
+/// still reacting, through the same `0x50` store as every other exit
+/// (`0x801E5584..0x801E5590`) - no counter swap, no turn-cursor bump.
 #[test]
-fn attack_return_with_counter_attack_loops_back_to_chain() {
+fn attack_return_lone_defeat_bypass_routes_to_done_cleanup() {
     let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
     ctx.action_state = ActionState::AttackReturn.as_byte();
-    ctx.scripted_fight = 1;
-    ctx.counter_attack = 1;
+    host.actors[1].active_target = 4;
+    host.actors[4].current_anim = 4;
+    ctx.scripted_fight = 4;
+    ctx.lone_defeat_latch = 1;
     let out = step(&mut host, &mut ctx);
     assert!(matches!(
         out,
         StepOutcome::Transition {
             to,
             ..
-        } if to == ActionState::AttackChain.as_byte()
+        } if to == ActionState::DoneCleanup.as_byte()
     ));
-    // Bumped turn cursor (the "swap" signal, retail `0x801E36D0`).
-    assert_eq!(ctx.turn_cursor, 1);
+    assert_eq!(ctx.turn_cursor, 0);
+}
+
+/// Once the attacker's own clip is done, `0x20` waits out the target's
+/// reaction (`0x801E54FC..0x801E5580`): a reacting monster holds the band
+/// until it is back on idle.
+#[test]
+fn attack_return_holds_while_the_target_reacts() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    ctx.action_state = ActionState::AttackReturn.as_byte();
+    host.actors[1].active_target = 4;
+    host.actors[4].current_anim = 5;
+    for _ in 0..4 {
+        assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+    }
+    // The scripted-fight byte alone is not the bypass.
+    ctx.scripted_fight = 4;
+    assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+    host.actors[4].current_anim = 0;
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.action_state, ActionState::DoneCleanup.as_byte());
+}
+
+/// A dead monster holds its knockdown frame while the defeat fade walks its
+/// colour word to black; the band leaves when the node stops drawing.
+#[test]
+fn attack_return_holds_until_a_fading_target_is_gone() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    ctx.action_state = ActionState::AttackReturn.as_byte();
+    host.actors[1].active_target = 4;
+    host.actors[4].current_anim = 4;
+    host.actors[4].render_flag = crate::battle_formulas::STATE_DEFEAT_FADE;
+    host.actors[4].render_color = 0x0010_0401;
+    assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+    host.actors[4].render_color = 0;
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.action_state, ActionState::DoneCleanup.as_byte());
+}
+
+/// A party target parked on the downed loop (entry `8`) releases the band;
+/// a monster on the same id does not (`0x801E5504..0x801E5518`).
+#[test]
+fn attack_return_releases_on_a_downed_party_target() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 4);
+    host.party_count = 3;
+    ctx.action_state = ActionState::AttackReturn.as_byte();
+    host.actors[4].active_target = 1;
+    host.actors[1].current_anim = 7;
+    assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+    host.actors[1].current_anim = 8;
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.action_state, ActionState::DoneCleanup.as_byte());
+
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    host.party_count = 3;
+    ctx.action_state = ActionState::AttackReturn.as_byte();
+    host.actors[1].active_target = 5;
+    host.actors[5].current_anim = 8;
+    assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
 }
 
 #[test]

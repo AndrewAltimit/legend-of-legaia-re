@@ -867,18 +867,27 @@ impl World {
     /// its node colour (`node[+0x74]`; the port reads its fading colour
     /// word) is non-zero. Gated off by a Seru absorb staged for the action
     /// (`ctx[+0x269]`, which raises the body for the absorb instead), a
-    /// captured actor (`+0x225`) and a scripted fight (`ctx[+0x287]`; retail
-    /// lets one through on `gp+0x9F5`, which the port does not carry).
+    /// captured actor (`+0x225`) and a scripted fight (`ctx[+0x287]`) whose
+    /// formation carries no second monster (`gp+0x9F5` = `0x8007BD0D` zero;
+    /// the port reads "more than one monster seated").
+    ///
+    /// That last gate is also the one that raises the **lone-monster defeat
+    /// latch** `ctx[+0x288]` (`sb s4,0x288(v1)`, `s4 = 1`, at `0x800504E8`):
+    /// the scripted lone monster dies in place instead of sinking, and the
+    /// latch is what lets the action SM's state-`0x20` reaction hold out
+    /// without waiting for its fade (`BattleActionCtx::lone_defeat_latch`).
     ///
     /// The post-strike death re-frame forks on the height this moves
     /// (`target[+0x36] != 0` takes the ramped shot):
     /// `player_steal_skeleton_banner` reads its killed skeleton `183` down.
     ///
-    /// PORT: FUN_80050120 (arm 2's monster sink)
+    /// PORT: FUN_80050120 (arm 2's monster sink and its `ctx[+0x288]` latch)
     fn tick_battle_defeat_sink(&mut self) {
-        if self.battle_ctx.multi_cast_gate != 0 || self.battle.scripted_fight {
+        if self.battle_ctx.multi_cast_gate != 0 {
             return;
         }
+        let lone_scripted =
+            self.battle_ctx.scripted_fight != 0 && self.battle_monster_slots().len() <= 1;
         let first = self.party.party_count as usize;
         for slot in first..(first + 4).min(self.actors.len()) {
             let a = &self.actors[slot];
@@ -888,6 +897,12 @@ impl World {
                 || a.battle.capture_state != 0
                 || a.battle.render_color & 0x00FF_FFFF == 0
             {
+                continue;
+            }
+            if lone_scripted {
+                // `0x80050454..0x8005045C` skips the sink; `0x800504BC..
+                // 0x800504E8` raises the latch.
+                self.battle_ctx.lone_defeat_latch = 1;
                 continue;
             }
             // `(size * dt) >> 2` a battle frame of `dt` vsyncs; the engine

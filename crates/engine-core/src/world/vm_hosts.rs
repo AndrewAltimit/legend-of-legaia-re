@@ -2971,6 +2971,19 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             .get_mut(slot as usize)
             .map(|a| &mut a.battle)
     }
+    /// The engine plays hit reactions on a side channel beside the action
+    /// channel's `current_anim`; retail commits both through `+0x1D9`, so
+    /// the hold reads the merged id ([`World::battle_current_anim`]). The
+    /// node test is the camera's (`battle_cam_inputs`'s `node_gone`).
+    fn reaction_hold_view(&self, slot: u8) -> Option<(u8, bool)> {
+        let a = self.world.actors.get(usize::from(slot))?;
+        if !a.active {
+            return Some((0, false));
+        }
+        let gone = a.battle.render_flag == vm::battle_formulas::STATE_DEFEAT_FADE
+            && a.battle.render_color & 0x00FF_FFFF == 0;
+        Some((self.world.battle_current_anim(usize::from(slot)), !gone))
+    }
     fn rng(&mut self) -> u32 {
         // Every draw the state machine takes is a retail `jal 0x80056798`.
         self.world.next_rand()

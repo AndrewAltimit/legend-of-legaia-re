@@ -370,10 +370,10 @@ pub(super) fn done_fade_down<H: BattleActionHost + ?Sized>(
     let outcome = if ctx.frame_timer >= 0 || ctx.menu_open != 0 {
         stay(ctx)
     } else {
-        // `sb zero,0x288(v1)` at `0x801E6114` - the second counter-attack
-        // trigger flag is cleared on the way out, so a counter armed during
-        // this action cannot leak into the next one.
-        ctx.counter_attack = 0;
+        // `sb zero,0x288(v1)` at `0x801E6114` - the lone-monster defeat
+        // latch is cleared on the way out (the fade arm re-raises it every
+        // frame the body still draws).
+        ctx.lone_defeat_latch = 0;
         if ctx.multi_cast_gate == 0 {
             transition(ctx, ActionState::EndOfAction)
         } else {

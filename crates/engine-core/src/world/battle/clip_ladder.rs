@@ -310,11 +310,18 @@ impl World {
             // the defeat fade, whose lanes step to black while the actor holds
             // its knockdown (or idle) frame - after the get-up, when a Seru is
             // staged. The engine's resting colour word is `0` for neutral, so
-            // the fade starts from the neutral word it stands for.
-            a.battle.render_flag = vm::battle_formulas::STATE_DEFEAT_FADE;
-            if a.battle.render_color == 0 {
+            // the fade starts from the neutral word it stands for - on
+            // **entry** only. The arm re-runs on every pass the finished
+            // knockdown holds, and a body the fade has already walked to
+            // black reads the same `0`: re-stamping it there restarted the
+            // fade, so the body never went and state `0x20`'s reaction hold
+            // never let go.
+            if a.battle.render_flag != vm::battle_formulas::STATE_DEFEAT_FADE
+                && a.battle.render_color == 0
+            {
                 a.battle.render_color = vm::battle_formulas::TINT_NEUTRAL;
             }
+            a.battle.render_flag = vm::battle_formulas::STATE_DEFEAT_FADE;
             if slot >= party {
                 self.resolve_monster_death_spoils(slot);
             }
@@ -465,6 +472,29 @@ mod tests {
         world.actors[1].battle.hp = 5;
         world.finish_battle_reaction(1, 4);
         assert_eq!(world.actors[1].battle.render_flag, 0);
+    }
+
+    /// The arm re-runs on every pass a finished knockdown holds; a body the
+    /// fade has walked to black stays black instead of re-entering at
+    /// neutral (which restarted the fade forever).
+    #[test]
+    fn a_faded_monster_is_not_restamped_neutral() {
+        let mut world = World {
+            party: crate::world::PartyState {
+                party_count: 1,
+                ..Default::default()
+            },
+            ..World::default()
+        };
+        let m = &mut world.actors[1];
+        m.active = true;
+        m.battle_monster_id = Some(10);
+        m.battle_action_clips = Some(std::sync::Arc::new(vec![None; 8]));
+        m.battle.hp = 0;
+        world.finish_battle_reaction(1, 4);
+        world.actors[1].battle.render_color = 0;
+        world.finish_battle_reaction(1, 4);
+        assert_eq!(world.actors[1].battle.render_color, 0);
     }
 
     #[test]

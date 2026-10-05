@@ -963,20 +963,28 @@ pub struct BattleActionCtx {
     /// `(DAT_8007BD60 >> 5) & 4`, so the live value is `4`, not `1`), and the
     /// field-VM's scripted-battle op reaches the same byte. All three of
     /// `FUN_801E295C`'s reads are gates on it: the two capture-band audio
-    /// ducks (`0x801E4F94`, `0x801E5058`) and the `AttackReturn` counter
-    /// window (`0x801E5554`).
+    /// ducks (`0x801E4F94`, `0x801E5058`) and the `AttackReturn` reaction
+    /// hold's bypass (`0x801E5554`).
     ///
-    /// It is **not** a counter-attack flag - that is [`Self::counter_attack`]
-    /// one byte up. Reading it as one left the ducks and the counter window
-    /// gated on a byte nothing wrote.
+    /// It is **not** a counter-attack flag, and neither is
+    /// [`Self::lone_defeat_latch`] one byte up.
     ///
     /// REF: FUN_800513F0, FUN_801E295C
     pub scripted_fight: u8,
-    /// `[+0x288]` - the **counter-attack** byte, the second half of the
-    /// `AttackReturn` window's three-way gate (`lbu v0,0x288(v1)` at
-    /// `0x801E5574`, after `+0x287` and `DAT_8007BD0D`). Cleared by the Done
-    /// band's menu arm (`sb zero,0x288(v1)` at `0x801E6114`).
-    pub counter_attack: u8,
+    /// `[+0x288]` - the **lone-monster defeat latch**. Its one writer is the
+    /// tint SM's defeat-fade arm `FUN_80050120` (`sb s4,0x288(v1)` with `s4 =
+    /// 1` at `0x800504E8`): a monster seat fading out on render flag `2`,
+    /// still drawn, not captured, no Seru absorb staged (`ctx[+0x269]`), in
+    /// a scripted fight (`ctx[+0x287]`) whose formation carries no second
+    /// monster (`gp+0x9F5` = `0x8007BD0D` zero). The same predicate is what
+    /// skips that arm's floor sink, so the latch marks "the lone scripted
+    /// monster is dying in place". Its one reader is the `AttackReturn`
+    /// reaction hold (`lbu v0,0x288(v1)` at `0x801E5574`, after `+0x287` and
+    /// `0x8007BD0D`), which it lets out at once instead of waiting out the
+    /// body's fade; the Done band's menu arm clears it (`sb zero,0x288(v1)`
+    /// at `0x801E6114`). Reading it as a counter-attack byte routed the hold's
+    /// bypass into a counter swap the bytes do not have.
+    pub lone_defeat_latch: u8,
     /// The **counterattack latch** `0x801F6970` - the countering party
     /// seat plus one, `0` for none. It is a battle-overlay global rather than
     /// a `ctx` byte; the port keeps it here for the same reason as

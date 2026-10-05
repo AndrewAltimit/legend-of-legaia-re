@@ -61,7 +61,7 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x19` | Attack - short-step (party attackers, and walk-less monsters via the `0x14` fallback) | Idle pose + facing + range recheck. While range > 0 → stays (no movement code, no timeout - see the park section below). Range == 0 → bumps `actor[+0x1DC] |= 1` (windup-done flag) and `actor[+0x16] = 0`. | `0x1E`. |
 | `0x1E` | **Attack chain - strike loop** | Per-strike counters (`+0x15`/`+0x16`) advancing the attack-script byte stream at `actor[+0x1DF + +0x15]`, with counter-attack redirect and ability-flag impact-step physics. Full step body: [Attack chain - strike loop (`0x1E`)](#attack-chain---strike-loop-0x1e). | `0x1F` once the strike-script terminator is hit. |
 | `0x1F` | Attack - recovery wait | `FUN_801D5854(actor, 7 or 8)` (recover-pose; pose 8 if target's anim matched a counter trigger at `s8[+0x1F1]/+0x1F2`). Waits for `actor[+0x1DC] & 2 == 0`. | `0x20`. |
-| `0x20` | Attack - return | Opens on the **attacker's** committed id: while `actor[+0x1D9] != 0` (`0x801E54EC`) it only re-poses and holds - the wait for the last swing's clip to end, since `0x1F`'s gate opens when that clip *commits* and its hit events (and the combo-total apply) all land after. Then decides if combat continues by inspecting target liveness (`s8[+0x14C] != 0` for monster-slot, plus `s8[+0x1D9]` == `0` or `8`, plus `actor[*0x22C][+0x74] & 0xFFFFFF`), and counter-attack trigger flags (`ctx[+0x287] != 0 && DAT_8007BD0D == 0 && ctx[+0x288] != 0`). If combat ended → `0x50`. Else loops `FUN_801D5854(actor, 7 or 8)` per liveness. | `0x50` (done) or stays. |
+| `0x20` | Attack - return | Two holds, then `0x50`. First the **attacker's** committed id: while `actor[+0x1D9] != 0` (`0x801E54EC`) it only re-poses and holds - the wait for the last swing's clip to end, since `0x1F`'s gate opens when that clip *commits* and its hit events (and the combo-total apply) all land after. Then the **target's reaction**: see [the reaction hold](#the-state-0x20-reaction-hold). Each held pass re-poses `FUN_801D5854(actor, 7 or 8)`. Every exit is the one `0x50` store at `0x801E5588`; there is no counter-attack route out. | `0x50` (done) or stays. |
 | `0x28` | **Magic / Item - cast begin** | Resolves bearing + facing, sets the cast timer, looks up the spell-name HUD label, and deducts the (ability-bit-scaled) MP cost; capture-class spells route to `0x6E`. Full step body: [Magic / Item - cast begin (`0x28`)](#magic--item---cast-begin-0x28). | `0x29` (or `0x6E` for capture). |
 | `0x29` | Magic - pre-cast wait | Decrements `ctx[+0x6D8]` by the frame dt. When negative: party_id < 3 → `FUN_801DBF9C(party, spell_id)` ([the cast trigger](#the-party-cast-trigger-fun_801dbf9c) - anim stream, not outcome). `actor[+0x1E0] == 9` → `0x32` (summon). Then **bumps the stream cursor before reading** (`0x801E4644..0x801E4650`) and stages the byte at `+0x1DA` (`0x801E4664`) - the first anim byte is `+0x1E0`, behind the spell id; a `-1` there clears the stage → `0x50`. Else if spell_id < 0x81: a second bump, `FUN_801DC0A0(party, byte)` (the cast-effect driver), and the id-keyed cues (`0x14C / 0x144 / 0x15E` for ids `0x3F / 0x2C / 0x6A`). | `0x2A`, or `0x32` (summon), or `0x50` (done). |
 | `0x2A` | Magic - animation chain | Looks one byte **past** the cursor, `actor[+0x1DF + ctx[+0x15] + 1]` (the queue is `(clip, shot)` pairs). Not the terminator: while the clip latch `+0x1FA` is clear, steps the cursor onto the clip, stages it at `+0x1DA`, steps onto its shot and raises the latch; then calls `FUN_801DC0A0` with the byte two behind the cursor and holds. Terminator (`-1`): if the cursor is `2`, raises `+0x1FA` and `+0x1DC |= 4`. | `0x2B`. |
@@ -2435,8 +2435,8 @@ store at `0x801E7A14`); `World::roll_battle_escape` folds it the same way, and t
 no escape counter.
 
 **Both ctx inputs are written at battle setup, not by the roll.** `ctx[+0x287]` (the
-[scripted-fight flag](#ctx0x287-is-the-scripted-fight-flag-and-0x288-is-the-counter-attack-byte),
-also read by the state-`0x20` counter-attack gate) is latched by the SCUS
+[scripted-fight flag](#ctx0x287-is-the-scripted-fight-flag-and-0x288-is-the-lone-monster-defeat-latch),
+also read by the state-`0x20` reaction hold's bypass) is latched by the SCUS
 battle-setup routine `FUN_800513F0` in its first instructions: `ctx[+0x287] = (DAT_8007BD60 >> 5)
 & 4` - it carries bit `0x80` of the battle-flags byte `DAT_8007BD60` (the same byte state `0x5A`
 masks with `&= 0x7F`), so a scripted "can't run" fight sets it to `4` at load (`0x801E5058` reads
@@ -2476,21 +2476,59 @@ when the command menu resolves Run; the staging is `World::stage_party_flee` and
 `BattleCamera::arm_escape_shot`. The port stages only the members still standing - a downed
 one stays where it fell.
 
-### `ctx[+0x287]` is the scripted-fight flag, and `+0x288` is the counter-attack byte
+### The state-`0x20` reaction hold
+
+Once the attacker's own last clip has ended, `0x20` also waits out the
+**target's** reaction (`0x801E54FC..0x801E5580`), so a flinch, a knockdown and
+its get-up, or a death and its fade all play before the Done band's countdown
+starts. The target is `s8`, the actor at the attacker's `+0x1DD` (loaded at
+`0x801E29CC`, and left unloaded for a group target code `>= 8`). The band holds
+while all three read true:
+
+| test | instructions | releases when |
+|---|---|---|
+| target committed anim `+0x1D9 != 0` | `lbu v0,0x1d9(s8)` / `beq v0,zero` at `0x801E5520..0x801E5528` | the target is back on idle |
+| not a party target on entry `8` | `sltiu v0,t2,0x3`, `beq v1,v0` with `v0 = 8` at `0x801E5504..0x801E5518` | a downed party member reaches its downed loop (`4 -> 7 -> 8`) |
+| render node still drawn | `lw v0,0x74(*(s8+0x22C))`, `& 0xFFFFFF` at `0x801E5530..0x801E5544` | a dead monster's defeat fade has walked it to black |
+
+A dead monster holds its knockdown frame through the fade, so the third test is
+what ends a killing blow's hold. One bypass lets the band out with the target
+still reacting: `ctx[+0x287] != 0 && 0x8007BD0D == 0 && ctx[+0x288] != 0`
+(`0x801E554C..0x801E557C`) - a scripted lone monster whose defeat fade has
+raised the [latch](#ctx0x287-is-the-scripted-fight-flag-and-0x288-is-the-lone-monster-defeat-latch).
+Both exits, and the target-idle one, take the same `0x50` store at
+`0x801E5588`, which falls into the monster's KO taunt (tag `0x22`). The
+`player_steal_skeleton_banner` capture is this hold seen from outside: `ctx[7]
+== 0x20` with the attacker's clip already `0` and the killed skeleton on its
+knockdown.
+
+Port: `battle_action::attack`'s `target_reaction_holds`, reading the target
+through `BattleActionHost::reaction_hold_view` (the engine plays reactions on a
+side channel, so its host merges that channel into the committed id); the latch
+is raised by `World::tick_battle_defeat_sink`.
+
+### `ctx[+0x287]` is the scripted-fight flag, and `+0x288` is the lone-monster defeat latch
 
 The two bytes are adjacent and they are read together at the state-`0x20`
-gate, which is how they came to be described as one thing. They are not:
+reaction hold, which is how they came to be described as one counter-attack
+thing. Neither is one:
 
 - **`ctx[+0x287]`** is a per-**battle** property, derived once at battle init
   and never written again during the fight - `(DAT_8007BD60 >> 5) & 4`, i.e.
   bit `0x80` of the formation's per-battle flags byte. Everything it gates is
   "is this a scripted fight": the escape roll above, the two magic-capture
-  audio-duck arms (states `0x6F` / `0x70`), and the attack-return arm's
-  counter-attack precondition. Calling it a counter-attack flag makes all four
-  reads look like one feature.
-- **`ctx[+0x288]`** is the counter-attack byte proper - the second term of the
-  state-`0x20` gate (`ctx[+0x287] != 0 && DAT_8007BD0D == 0 && ctx[+0x288] != 0`),
-  and the one a counter actually consumes.
+  audio-duck arms (states `0x6F` / `0x70`), the defeat fade's floor sink and
+  the reaction hold's bypass.
+- **`ctx[+0x288]`** has one writer, the tint SM's defeat-fade arm
+  `FUN_80050120` (`sb s4,0x288(v1)` with `s4 = 1` at `0x800504E8`): a monster
+  seat fading out on render flag `2`, still drawn (`node[+0x74] & 0xFFFFFF`),
+  not captured (`+0x225`), no Seru absorb staged (`ctx[+0x269]`), in a scripted
+  fight whose formation has no second monster (`gp+0x9F5` = `0x8007BD0D`
+  zero). That same predicate skips the arm's floor sink
+  (`0x80050444..0x8005045C`), so the latch reads "the lone scripted monster is
+  dying in place". Its readers are the reaction hold (`0x801E5574`) and the
+  battle camera's case 8 (`0x801D6AC8`); the Done band's menu arm clears it
+  (`0x801E6114`).
 
 The distinction is load-bearing for the port rather than cosmetic. An engine
 that seeds `+0x287` per *action* leaves the two duck arms and the attack-return
