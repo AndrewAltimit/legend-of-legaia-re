@@ -402,6 +402,7 @@ impl LegaiaViewer {
             byte_ends,
             cur_slot: None,
             ocean,
+            clut_anim: None,
         })
     }
 

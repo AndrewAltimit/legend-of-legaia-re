@@ -1107,7 +1107,12 @@ class TmdRenderer {
       gl.RED_INTEGER, gl.UNSIGNED_SHORT,
       slice,
     );
-    /* Retail-parity path: overwrite the first 16 entries of the ocean
+    p.currentFrame = idx;
+    /* The slot-5 walker owns the VRAM row when it runs (setOceanWalkerDriven):
+     * the fallback frames carry a transparent entry 0 where retail's walked
+     * row holds 0x8000, so they must not land on it. */
+    if (p.walkerDriven) return;
+    /* Legacy fallback: overwrite the first 16 entries of the ocean
      * CLUT row inside VRAM so terrain-embedded water shimmers too. */
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
     gl.texSubImage2D(
@@ -1115,7 +1120,33 @@ class TmdRenderer {
       gl.RED_INTEGER, gl.UNSIGNED_SHORT,
       slice,
     );
-    p.currentFrame = idx;
+  }
+
+  /* Hand the ocean head to the kingdom's slot-5 CLUT walker
+   * (`viewer.kingdom_clut_tick`, the engine's `ClutWalkAnim`): the page
+   * re-uploads the walked VRAM and feeds the backdrop plane the same row
+   * through `setOceanClutFromVram`, and the wall-clock fallback cycle stops
+   * writing. `false` restores the fallback (a kingdom with no walker). */
+  setOceanWalkerDriven(on) {
+    this.oceanParams.walkerDriven = !!on;
+  }
+
+  /* Copy the ocean head `(0, 506)` - 16 BGR555 entries - out of a full VRAM
+   * image (the bytes `uploadVram` takes) into the backdrop plane's CLUT, so
+   * the open sea past the continent grid shimmers in lockstep with the
+   * heightfield's own water cells. */
+  setOceanClutFromVram(bytes) {
+    if (!bytes || bytes.byteLength !== VRAM_W * VRAM_H * 2) return;
+    const u16 = new Uint16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
+    const row = u16.slice(506 * VRAM_W, 506 * VRAM_W + 16);
+    const gl = this.gl;
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.bindTexture(gl.TEXTURE_2D, this.oceanClutTex);
+    gl.texSubImage2D(
+      gl.TEXTURE_2D, 0, 0, 0, 16, 1,
+      gl.RED_INTEGER, gl.UNSIGNED_SHORT,
+      row,
+    );
   }
 
   /* Return the AABB this renderer computed for an uploaded scene mesh.
@@ -1665,7 +1696,7 @@ class TmdRenderer {
      * even when the backdrop pass is toggled off. */
     {
       const p = this.oceanParams;
-      if (p.textured && p.frameCount > 0) {
+      if (p.textured && p.frameCount > 0 && !p.walkerDriven) {
         const now = performance.now() / 1000;
         if (p.lastFrameAdvanceTs === 0) p.lastFrameAdvanceTs = now;
         if (now - p.lastFrameAdvanceTs >= p.frameDurationSec) {
@@ -1734,7 +1765,16 @@ class TmdRenderer {
       gl.bindTexture(gl.TEXTURE_2D, this.oceanClutTex);
       gl.uniform1i(this.locOceanClut, 1);
       gl.bindVertexArray(this.oceanVao);
+      /* No depth write: the plane is a backdrop fill, not geometry. Retail
+       * has no sea plane - the open sea inside the kingdom is the ground
+       * heightfield's own water cells, and its rivers / lakes sit only
+       * GROUND_SINK-adjusted 0.6 units above y = 0. A depth-writing plane
+       * z-fights those cells at any oblique angle (the depth step at range
+       * exceeds the gap), so the sea showed through the rivers and coast as
+       * the camera tilted. Everything drawn after simply covers it. */
+      gl.depthMask(false);
       gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+      gl.depthMask(true);
       gl.bindVertexArray(null);
     }
 

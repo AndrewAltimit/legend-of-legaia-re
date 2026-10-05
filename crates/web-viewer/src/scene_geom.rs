@@ -40,6 +40,7 @@ impl LegaiaViewer {
             pack.pack.len()
         ));
         self.kingdom = Some(pack);
+        self.install_kingdom_clut_walk(prot_base);
         // Sweep nearby entries (+8..+12) for a second 7-asset table holding
         // the bulk continent terrain TMDs. Drake's is at +8 (entry 0093, 70
         // TMDs); Sebucus's at +9 (entry 0253, 43 TMDs); Karisto's not yet
@@ -352,6 +353,30 @@ impl LegaiaViewer {
             .as_ref()
             .map(|k| k.vram.as_bytes().to_vec())
             .unwrap_or_default()
+    }
+
+    /// Number of slot-5 CLUT-walk entries the kingdom installed (`0` when
+    /// none resolved - the page then falls back to the legacy 13-frame ocean
+    /// cycle).
+    pub fn kingdom_clut_walker_entries(&self) -> u32 {
+        self.kingdom
+            .as_ref()
+            .and_then(|k| k.clut_anim.as_ref())
+            .map_or(0, |a| a.walker_entries() as u32)
+    }
+
+    /// Advance the kingdom's CLUT-walk shimmer by `vsyncs` retail vsyncs
+    /// (pass the wall-clock vsyncs elapsed; capped at 64) on the overworld
+    /// game-tick clock. Returns `true` when VRAM texels changed - re-upload
+    /// [`Self::pack_vram_bytes`] then.
+    pub fn kingdom_clut_tick(&mut self, vsyncs: u32) -> bool {
+        let Some(k) = self.kingdom.as_mut() else {
+            return false;
+        };
+        let Some(anim) = k.clut_anim.as_mut() else {
+            return false;
+        };
+        anim.tick(vsyncs, &mut k.vram)
     }
 
     /// Ocean tile pixel data (4bpp indexed), 64 halfwords × 256 rows =
@@ -718,6 +743,47 @@ impl LegaiaViewer {
             Some(menu) => serde_json::to_string(menu)
                 .unwrap_or_else(|e| format!("{{\"error\":\"serialize failed: {e}\"}}")),
             None => "null".to_string(),
+        }
+    }
+}
+
+impl LegaiaViewer {
+    /// Resolve the loaded kingdom's CDNAME scene (`map01..03`, the block
+    /// holding `prot_base`) and install its slot-5 CLUT-walk shimmer into the
+    /// kingdom VRAM: park the slot-0 source strips (plus the Drake complement
+    /// for map02 / map03) and seed the eight walkers - the retail
+    /// `FUN_8001ada4` case-0xB actors. Without this the page's VRAM holds only
+    /// the slot-0 TIMs, so every walker destination cell (the river and
+    /// shoreline CLUTs beside the ocean head on row 506, and row 508's) samples
+    /// another TIM's palette or zeros - and a zero entry is a transparent
+    /// texel the ocean backdrop plane shows through.
+    pub(crate) fn install_kingdom_clut_walk(&mut self, prot_base: u32) {
+        let Ok(index) = self.ensure_prot_index() else {
+            return;
+        };
+        let Some(k) = self.kingdom.as_mut() else {
+            return;
+        };
+        k.clut_anim = None;
+        for name in ["map01", "map02", "map03"] {
+            let Ok(scene) = legaia_engine_core::scene::Scene::load(&index, name) else {
+                continue;
+            };
+            if !(scene.start..scene.end).contains(&prot_base) {
+                continue;
+            }
+            if let Some(install) = legaia_engine_core::clut_walk_anim::ClutWalkAnim::install(
+                &scene,
+                &index,
+                &mut k.vram,
+            ) {
+                // Overworld game tick = 3 vsyncs (`DAT_1F800393`).
+                k.clut_anim = Some(crate::field_scene::FieldSceneAnim::clut_only(
+                    install.anim,
+                    3,
+                ));
+            }
+            break;
         }
     }
 }
