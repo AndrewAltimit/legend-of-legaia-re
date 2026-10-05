@@ -766,6 +766,13 @@ const EXIT_IDLE_TICKS: usize = 4;
 /// A battle's tick budget under the pad fighter. A boss the fighter wears
 /// down with summons, arts and heals runs well past 30 000 ticks.
 const BATTLE_TICKS: usize = 60_000;
+/// Past [`BATTLE_TICKS`] a fight goes on while the foes are still losing HP:
+/// it ends unresolved only after this long without a foe's HP dropping, or at
+/// [`BATTLE_TICKS_CAP`]. A boss whose specials land (Cort's Guilty Cross in
+/// `chitei2`) costs the party turns on heals, and a fight it is winning
+/// outlasts the flat budget - a player keeps fighting it.
+const BATTLE_STALL_TICKS: usize = 12_000;
+const BATTLE_TICKS_CAP: usize = 240_000;
 /// The most a scripted sequence may run while its park site keeps moving.
 const SCRIPT_CEILING: usize = 60_000;
 /// Hops a segment may take before it is called lost.
@@ -1173,6 +1180,52 @@ thread_local! {
     /// Per acting slot, the ally its last committed item was aimed at, so a
     /// later member of the same round counts that heal as already coming.
     static ITEM_TARGET: std::cell::RefCell<[Option<u8>; 3]> = const { std::cell::RefCell::new([None; 3]) };
+    /// The party's total HP loss in each finished round of this battle, in
+    /// order - the record [`big_round_due`] reads a foe's cadence off.
+    static ROUND_HISTORY: std::cell::RefCell<Vec<u32>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Whether the coming round is the foe's heavy one, read off its cadence the
+/// way a player does: a boss that has so far hit hard only every other round
+/// (Rogue: Element Change, then a party-wide Wind / Thunder / Flame, from the
+/// round counter's parity in its picker arm) and whose last round was the
+/// quiet one is about to hit again. The last four rounds must read heavy,
+/// quiet, heavy, quiet, with no two heavy rounds back to back anywhere: a foe
+/// on a longer cycle (a lone Vahn's `nilboa` fight hits hard every third
+/// round) is not this pattern, and guarding its quiet rounds only costs the
+/// party its attacks.
+fn big_round_due() -> bool {
+    ROUND_HISTORY.with(|h| {
+        let h = h.borrow();
+        let peak = h.iter().copied().max().unwrap_or(0);
+        if peak == 0 || h.len() < 4 {
+            return false;
+        }
+        // A third of the peak, not half: a heavy round the party guarded
+        // through lands halved and still has to read as heavy.
+        let big = |x: u32| x * 3 >= peak;
+        let back_to_back = h.windows(2).any(|w| big(w[0]) && big(w[1]));
+        let last: Vec<bool> = h[h.len() - 4..].iter().map(|&x| big(x)).collect();
+        !back_to_back && last == [true, false, true, false]
+    })
+}
+
+/// Whether `actor` should take the Spirit stance this round: the foe's heavy
+/// round is due ([`big_round_due`]), its hit is a large share of the
+/// member's HP, and the guard's halving is what lets the member live through
+/// it. Spirit is up from the commit for the whole round
+/// (`World::battle.guarding`), so it covers a foe that acts first.
+fn wants_guard(w: &legaia_engine_core::world::World, actor: u8) -> bool {
+    let Some(a) = w.actors.get(usize::from(actor)) else {
+        return false;
+    };
+    // The HP the member will hold once the round's committed heals land.
+    let Some(&hp) = projected_hp(w).get(usize::from(actor)) else {
+        return false;
+    };
+    let max = u32::from(a.battle.max_hp);
+    let threat = BIGGEST_HIT.with(std::cell::Cell::get);
+    hp > 0 && threat * 5 >= max * 2 && hp > threat / 2 + threat / 8 && big_round_due()
 }
 
 fn party_hp_key(w: &legaia_engine_core::world::World) -> u32 {
@@ -1332,7 +1385,10 @@ fn arts_plan(
     s: &legaia_engine_core::arts_command_input::ArtsCommandInputSession,
 ) -> Vec<u8> {
     use legaia_art::queue::Command;
-    const MAX_ENTRY: usize = 8;
+    // Nine: each character's Miracle Art is a nine-command string
+    // (`art-data.md`), and a cap below it kept the hand from ever entering
+    // one. The pool still decides what fits; this only stops the plan.
+    const MAX_ENTRY: usize = 9;
     // The occupying character's table: the actor's `character` key is only
     // written by the first arts commit, so before it every member reads
     // Vahn's.
@@ -1518,6 +1574,10 @@ fn fight_pad(session: &BootSession) -> u16 {
             CommandPhase::Menu { .. } if lesson == Some(TutorialLesson::Spirit) => {
                 PadButton::Down.mask()
             }
+            // The foe's heavy round is due: the Spirit stance halves it.
+            CommandPhase::Menu { .. } if lesson.is_none() && wants_guard(w, cmd.actor) => {
+                PadButton::Down.mask()
+            }
             CommandPhase::Menu { .. } if lesson.is_none() && heal() => PadButton::Up.mask(),
             CommandPhase::Menu { .. } if lesson.is_none() && magic() => PadButton::Right.mask(),
             CommandPhase::AttackMode { .. } if lesson.is_none() => PadButton::Right.mask(),
@@ -1656,6 +1716,8 @@ fn drain_battle(session: &mut BootSession) -> Option<Run> {
     NO_MAGIC.with(|n| n.borrow_mut().clear());
     BIGGEST_HIT.with(|b| b.set(0));
     ROUND_LOSS.with(|r| r.set([0; 3]));
+    ROUND_HISTORY.with(|h| h.borrow_mut().clear());
+    let mut was_window = false;
     ITEM_TARGET.with(|t| *t.borrow_mut() = [None; 3]);
     let party_hp = |s: &BootSession| -> Vec<u16> {
         let w = &s.host.world;
@@ -1674,7 +1736,23 @@ fn drain_battle(session: &mut BootSession) -> Option<Run> {
         |s: &BootSession| -> Vec<u16> { s.host.world.actors.iter().map(|a| a.battle.hp).collect() };
     let mut last_cmd: [String; 3] = Default::default();
     let mut hp_prev = hp_all(session);
-    for t in 0..BATTLE_TICKS {
+    let foe_hp = |s: &BootSession| -> u32 {
+        let w = &s.host.world;
+        let n = w.party.party_count.clamp(1, 3) as usize;
+        w.actors
+            .iter()
+            .skip(n)
+            .map(|a| u32::from(a.battle.hp))
+            .sum()
+    };
+    let mut foe_prev = foe_hp(session);
+    let mut foe_dropped_at = 0usize;
+    let mut spent = 0usize;
+    for t in 0..BATTLE_TICKS_CAP {
+        spent = t;
+        if t >= BATTLE_TICKS && t - foe_dropped_at > BATTLE_STALL_TICKS {
+            break;
+        }
         if pad_budget(session).is_err() {
             break;
         }
@@ -1686,6 +1764,11 @@ fn drain_battle(session: &mut BootSession) -> Option<Run> {
         if let Err(e) = session.tick() {
             return Some(Run::Error(format!("{e:#}")));
         }
+        let foe_now = foe_hp(session);
+        if foe_now < foe_prev {
+            foe_dropped_at = t;
+        }
+        foe_prev = foe_now;
         let party_now = party_hp(session);
         // A command window opening ends the stretch the foes had.
         let window = session.host.world.battle.command.as_ref().is_some_and(|c| {
@@ -1695,6 +1778,17 @@ fn drain_battle(session: &mut BootSession) -> Option<Run> {
             )
         });
         let mut run = ROUND_LOSS.with(std::cell::Cell::get);
+        if window && !was_window {
+            ROUND_HISTORY.with(|h| h.borrow_mut().push(run.iter().sum()));
+            if trace_hits {
+                eprintln!(
+                    "    [round] t={t} history {:?} due {}",
+                    ROUND_HISTORY.with(|h| h.borrow().clone()),
+                    big_round_due()
+                );
+            }
+        }
+        was_window = window;
         if window {
             run = [0; 3];
         }
@@ -1754,7 +1848,7 @@ fn drain_battle(session: &mut BootSession) -> Option<Run> {
         }
     }
     Some(Run::Battle(format!(
-        "battle unresolved after {BATTLE_TICKS} ticks: {}",
+        "battle unresolved after {spent} ticks: {}",
         battle_snapshot(session)
     )))
 }
