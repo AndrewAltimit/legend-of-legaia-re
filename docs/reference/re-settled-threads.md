@@ -5041,8 +5041,7 @@ coverage, not a caller
 
 ### SCUS recomp gap - render/GTE + boot/init clusters
 
-*Status:* resolved (behavior-read + dumped); the general-game band remains the
-open remainder
+*Status:* resolved (behavior-read + dumped), the general-game band included
 
 The psxrecomp static recompilation's function inventory surfaced a set of SCUS
 entries with no dump / doc / port-tag on our side, clustered by VA band. The
@@ -5086,19 +5085,26 @@ Recorded so the same entries aren't re-flagged:
   function - the per-frame battle actor maintenance pass
   ([`battle.md` § Per-frame actor maintenance](../subsystems/battle.md#per-frame-actor-maintenance-fun_8004ce2c)),
   **not** a mode dispatcher.
-- **Still open from the same inventory:** the general-game band (never
-  per-address catalogued), headed by `0x8002A9F8` (2.2 KB table-driven logic,
-  no static caller), `0x80025DA4`. Next step:
-  behavior-read each against its `0x8007xxxx`/`gp` globals the way this
-  thread's entries were closed. Five former members are now closed:
+- **The general-game band closes the same way - its two named heads are not
+  new functions.** `0x8002A9F8` is the branch target past the header test of
+  `FUN_8002A9CC`, the `"ME"` channel-delta codec: `beq v0,v1,0x8002a9f8` at
+  `0x8002A9E8` takes it when `(b0 & 0xC0) == 0x40`, and the fall-through is the
+  `jr ra; clear v0` reject - a block split, which is why it has "no static
+  caller" ([`functions.md` § battle](functions/battle.md)). `0x80025DA4` is
+  `FUN_80025DA0` + 4, the Mode 12 `MAPDSIP INIT` handler, split after its
+  leading `lw v0,0x798(gp)` - the same +4 skew as `0x80046498` and the
+  boot-band entries above ([`boot.md`](../subsystems/boot.md)). With both read, no member of
+  the inventory is left un-attributed, and `disc-coverage.py` puts every
+  `SCUS_942.54` code byte inside a dumped body, so the band holds no
+  undumped routine either. Five former members closed earlier:
   `0x8004DC68` is the near-camera ghost pass (Battle, above); `0x80036D80` is
   the ambient ramp pool's own actor template (Animation, above);
   `0x80056208` is **not** a libgpu-band bridge - it is a battle side-band tick
   (three submodes off `DAT_8007B64A`) that merely sits at a PsyQ-adjacent
   address, ported to `engine-render`; and `0x8002149C` / `0x80059E10` both now
   carry full disassembly, so their grade is `disassembly` rather than the
-  weaker evidence this line assumed. The PsyQ sound-driver
-  cluster is tracked separately under Audio.
+  weaker evidence this line assumed. The PsyQ sound-driver cluster is tracked
+  separately under Audio.
 
 ### Full-window item-add OOB reachability
 
