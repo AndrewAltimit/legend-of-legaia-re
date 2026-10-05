@@ -1328,6 +1328,10 @@ thread_local! {
     /// The party's total HP loss in each finished round of this battle, in
     /// order - the record [`big_round_due`] reads a foe's cadence off.
     static ROUND_HISTORY: std::cell::RefCell<Vec<u32>> = const { std::cell::RefCell::new(Vec::new()) };
+    /// The largest per-member loss of a finished round in which two or more
+    /// members lost HP: the size of the foe's party-wide hit (Van Saryu's
+    /// Earthquake). See [`wanted_item`]'s backup heal.
+    static AOE_HIT: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
 }
 
 /// Whether the coming round is the foe's heavy one, read off its cadence the
@@ -1504,7 +1508,34 @@ fn wanted_item(
     ids: impl Iterator<Item = u8>,
 ) -> Option<(u8, u8)> {
     let n = w.party.party_count.clamp(1, 3) as usize;
-    let hp = projected_hp(w);
+    let mut hp = projected_hp(w);
+    // The backup heal. Turn order is drawn per round, so the member who
+    // committed this round's heal may act after the foe. Against a
+    // party-wide hitter that is the wipe: a member the next hit kills dies
+    // before the heal lands (`jagaroom`'s Van Saryu, two Earthquakes of ~600
+    // on consecutive rounds through a 1104-HP Vahn, the round's heal still
+    // queued behind it). So while some member stands within one such hit of
+    // death, one committed heal is not counted as landed and a second member
+    // commits one too - whichever acts ahead of the foe saves the party, and
+    // the other tops it up after the hit. A third member never does.
+    let aoe = AOE_HIT.with(std::cell::Cell::get);
+    let committed = w
+        .battle
+        .round_flow
+        .pending
+        .iter()
+        .take(n)
+        .filter(|p| {
+            matches!(
+                p,
+                Some(legaia_engine_core::battle_round::PendingPartyAction::Item { .. })
+            )
+        })
+        .count();
+    let raw: Vec<u32> = (0..n).map(|i| u32::from(w.actors[i].battle.hp)).collect();
+    if committed == 1 && aoe > 0 && raw.iter().any(|&h| h > 0 && h <= aoe + aoe / 8) {
+        hp = raw;
+    }
     let threat = BIGGEST_HIT.with(std::cell::Cell::get);
     // The HP a member needs to hold to be out of danger.
     // A solo duel's member tops up below three fifths: its foe can act twice
@@ -1561,7 +1592,22 @@ fn wanted_item(
                 (total > 0).then_some((total, id))
             })
             .max();
-        if let Some((_, id)) = party {
+        // A party item only when it restores more than the best single
+        // heal would on the worst-off member: three Healing Blooms' 200
+        // apiece lose to one Healing Flower's 800, and spending the turn on
+        // the smaller sum is how a party-wide hitter out-damages the heals.
+        let worst = *hurt
+            .iter()
+            .min_by_key(|&&i| hp[i] * 1000 / u32::from(w.actors[i].battle.max_hp).max(1))?;
+        let best_single = ids
+            .iter()
+            .filter(|&&id| !w.tables.item_catalog.is_all_party(id))
+            .filter_map(|&id| item_restore(w, id, worst, hp[worst]))
+            .max()
+            .unwrap_or(0);
+        if let Some((total, id)) = party
+            && total > best_single
+        {
             return Some((id, hurt[0] as u8));
         }
     }
@@ -1955,6 +2001,7 @@ fn drain_battle(session: &mut BootSession) -> Option<Run> {
     BIGGEST_HIT.with(|b| b.set(0));
     ROUND_LOSS.with(|r| r.set([0; 3]));
     ROUND_HISTORY.with(|h| h.borrow_mut().clear());
+    AOE_HIT.with(|a| a.set(0));
     let mut was_window = false;
     ITEM_TARGET.with(|t| *t.borrow_mut() = [None; 3]);
     let party_hp = |s: &BootSession| -> Vec<u16> {
@@ -2018,6 +2065,10 @@ fn drain_battle(session: &mut BootSession) -> Option<Run> {
         let mut run = ROUND_LOSS.with(std::cell::Cell::get);
         if window && !was_window {
             ROUND_HISTORY.with(|h| h.borrow_mut().push(run.iter().sum()));
+            if run.iter().filter(|&&l| l > 0).count() >= 2 {
+                let peak = run.iter().copied().max().unwrap_or(0);
+                AOE_HIT.with(|a| a.set(a.get().max(peak)));
+            }
             if trace_hits {
                 eprintln!(
                     "    [round] t={t} history {:?} due {}",
