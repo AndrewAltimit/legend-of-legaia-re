@@ -295,7 +295,8 @@ impl World {
                 // it also tests has no store in the dump corpus and is taken
                 // as clear).
                 // PORT: FUN_80047430 (`0x80047A68..0x80047B2C`)
-                if player.take_natural_end() {
+                let natural_end = player.take_natural_end();
+                if natural_end {
                     let step = player.end_root_step();
                     let latched = actor
                         .battle
@@ -353,11 +354,18 @@ impl World {
                 // wrap re-spawned a looping cast clip's record every cycle:
                 // `freed_summon_mid_cast` drew six or seven overlapping ray
                 // bursts where retail holds one.
-                if after < before
+                //
+                // A looping clip's *natural end* is a different path: retail
+                // has no loop counter there and re-commits the still-queued
+                // `+0x1DA` (`FUN_80047430` -> `FUN_8004AD80`), and every
+                // commit zeroes the cursor (`sb zero,0x1f5` at `0x8004B060`),
+                // so a walk re-fires its footfall records every cycle.
+                let rearm_window = after < before
                     && i < 3
                     && actor.battle.current_anim == 0x11
-                    && actor.battle.latched_anim >= 0x2B
-                {
+                    && actor.battle.latched_anim >= 0x2B;
+                let recommit = natural_end && player.is_looping();
+                if rearm_window || recommit {
                     actor.battle_effect_cursor = 0;
                 }
                 Some(after)
