@@ -502,18 +502,28 @@ impl LegaiaRuntime {
     }
 
     /// The casino **prize-exchange** windows (43 / 44 / 45 / 46) while a
-    /// session owns the pad, in stage pixels - the shared `engine-ui`
-    /// composition, sprite/pictogram requests rendered through the same
-    /// ASCII stand-ins the shop windows use. Empty without the window table.
-    fn prize_window_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
+    /// session owns the pad - the shared `engine-ui` composition, framed, with
+    /// its hand / coin pictogram resolved to atlas sprites
+    /// (`shop_screen::prize_screen_draws`, the native window's call too).
+    /// Texts in stage pixels, sprites in surface pixels. Empty without the
+    /// window table.
+    fn prize_window_draws(
+        &self,
+        font: &legaia_font::Font,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> ui::shop_screen::ShopScreenDraws {
         let Some(session) = self.menu.prize_session.as_ref() else {
-            return Vec::new();
+            return Default::default();
         };
-        let Some(table) = self.menu_assets.as_ref().and_then(|a| a.window_table()) else {
-            return Vec::new();
+        let Some(assets) = self.menu_assets.as_ref() else {
+            return Default::default();
+        };
+        let Some(table) = assets.window_table() else {
+            return Default::default();
         };
         let Some(world) = self.scene_host.as_ref().map(|h| &h.world) else {
-            return Vec::new();
+            return Default::default();
         };
         use legaia_engine_ui::ui_prize_exchange as px;
         let view = px::PrizeExchangeView {
@@ -539,14 +549,16 @@ impl LegaiaRuntime {
             coins: world.minigames.casino_coins,
             confirm_cursor: session.confirming().then(|| session.confirm_cursor()),
         };
-        let (mut out, sprites, pict) = px::prize_exchange_draws_for(font, table, &view);
-        for s in sprites {
-            out.extend(self.painter_glyph_stand_in(font, ">", (s.x, s.y)));
-        }
-        if let Some(p) = pict {
-            out.extend(self.painter_glyph_stand_in(font, "C", (p.x, p.y)));
-        }
-        out
+        let (text, marks, pict) = px::prize_exchange_draws_for(font, table, &view);
+        let (origin, scale) = crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
+        let ctx = ui::shop_screen::ShopScreenCtx {
+            font,
+            rects: ui::pause_menu::MenuRects::new(Some(table)),
+            chrome: assets.chrome_rects(),
+            origin,
+            scale,
+        };
+        ui::shop_screen::prize_screen_draws(&ctx, session.confirming(), text, &marks, pict)
     }
 
     /// The casino **coin counter** (op-0x49 sub-6): the field overlay's entry
@@ -1420,7 +1432,9 @@ impl LegaiaRuntime {
         };
         // Casino prize exchange (windows 43/44/45/46) + the coin counter's
         // digit entry, both shared engine-ui compositions.
-        windows.extend(self.prize_window_draws(font));
+        let prize = self.prize_window_draws(font, surface_w, surface_h);
+        gold_shop_sprites.extend(prize.sprites);
+        windows.extend(prize.texts);
         windows.extend(self.coin_counter_window_draws(font));
         // The field floor window (op-0x49 sub-op 4, the Uru Mais warp pads), through
         // the engine layout + shared line composition the native window

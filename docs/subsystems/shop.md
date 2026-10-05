@@ -509,6 +509,11 @@ painters' hand / currency-pictogram sprites, so the native window
 (`web-viewer::play_shop::gold_shop_screen`) draw one screen. Both clear to
 black under a shop.
 
+The casino prize counter is the same stack: on black, the "Exchange" plaque
+(window 43, kind 2), the framed prize list (44) and coin counter (45), and the
+purchase confirm (46) while it is up (the `casino_prize_shop` library state).
+Both hosts frame it through `engine-ui::shop_screen::prize_screen_draws`.
+
 **Slides.** Stepped one vsync at a time, every window that joins a screen
 leaves its descriptor's park edge (`+0x1`: bottom, left, top, right) from just
 off screen and lands home **eleven frames** later at a constant speed, all of

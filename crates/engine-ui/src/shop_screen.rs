@@ -203,7 +203,15 @@ pub fn shop_window_frames(ctx: &ShopScreenCtx<'_>, windows: &[usize]) -> Vec<Spr
     };
     let mut out = Vec::new();
     for &id in windows {
-        if id == WIN_SHOP_VENDOR {
+        // A kind-2 descriptor (the vendor plate, the prize counter's
+        // "Exchange" tab) is a title tab and wears the carved plaque.
+        let tab = ctx
+            .rects
+            .table()
+            .and_then(|t| t.window(id))
+            .map(|d| d.kind == 2)
+            .unwrap_or(id == WIN_SHOP_VENDOR);
+        if tab {
             let (x, y, w, _) = ctx.rects.rect(id);
             out.extend(crate::tab_banner_draws(
                 rects,
@@ -540,6 +548,37 @@ pub fn shop_screen_draws(ctx: &ShopScreenCtx<'_>, view: &ShopScreenView<'_>) -> 
         out.texts
             .extend(crate::compare_panel_draws_for(ctx.font, &fields));
     }
+    out
+}
+
+/// The casino prize counter's screen - the gold shop's sibling on the same
+/// window stack: the frames of windows 43 ("Exchange" plaque), 44 (the prize
+/// list), 45 (the coin counter) and, while the purchase confirm is up, 46,
+/// under the texts and sprite requests `ui_prize_exchange::prize_exchange_draws_for`
+/// returns. Retail (the `casino_prize_shop` library state) draws it framed on
+/// black, like the shop.
+pub fn prize_screen_draws(
+    ctx: &ShopScreenCtx<'_>,
+    confirming: bool,
+    texts: Vec<TextDraw>,
+    marks: &[PainterSprite],
+    pictogram: Option<PainterPictogram>,
+) -> ShopScreenDraws {
+    use crate::ui_prize_exchange::{
+        WIN_COIN_COUNTER, WIN_CONFIRM, WIN_EXCHANGE_TAB, WIN_PRIZE_LIST,
+    };
+    let mut windows = vec![WIN_EXCHANGE_TAB, WIN_PRIZE_LIST, WIN_COIN_COUNTER];
+    if confirming {
+        windows.push(WIN_CONFIRM);
+    }
+    let mut out = ShopScreenDraws {
+        texts,
+        sprites: shop_window_frames(ctx, &windows),
+    };
+    let pics: Vec<PainterPictogram> = pictogram.into_iter().collect();
+    let m = shop_marker_draws(ctx, marks, &pics);
+    out.texts.extend(m.texts);
+    out.sprites.extend(m.sprites);
     out
 }
 

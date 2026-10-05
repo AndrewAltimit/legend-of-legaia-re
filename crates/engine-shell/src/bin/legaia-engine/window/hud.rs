@@ -1561,7 +1561,14 @@ impl PlayWindowApp {
             // graph, so it is checked before the shop states. Windows
             // 43/44/45/46 through the shared engine-ui composition.
             if let Some(session) = &self.menu_runtime.prize_session {
-                stage.extend(self.prize_window_draws(session));
+                stage.extend(
+                    self.prize_window_draws(
+                        session,
+                        legaia_engine_render::BOOT_UI_STAGE_W,
+                        legaia_engine_render::BOOT_UI_STAGE_H,
+                    )
+                    .texts,
+                );
             }
             if let Some(screen) = self.gold_shop_screen(
                 legaia_engine_render::BOOT_UI_STAGE_W,
@@ -1783,9 +1790,15 @@ impl PlayWindowApp {
         let Some(menu) = self.save_menu.as_ref() else {
             return Vec::new();
         };
-        // The gold shop frames its own retail window set.
+        // The gold shop and the prize counter frame their own retail window
+        // sets.
         if let Some(screen) = self.gold_shop_screen(surface_w, surface_h) {
             return screen.sprites;
+        }
+        if let Some(session) = &self.menu_runtime.prize_session {
+            return self
+                .prize_window_draws(session, surface_w, surface_h)
+                .sprites;
         }
         let draws = self.shop_overlay_stage_draws();
         if draws.is_empty() {

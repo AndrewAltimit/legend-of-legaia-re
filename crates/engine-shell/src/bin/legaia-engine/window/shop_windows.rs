@@ -398,15 +398,19 @@ impl PlayWindowApp {
     /// are unavailable.
     /// Paint the casino prize-exchange screen (windows 43 / 44 / 45 / 46)
     /// while a [`legaia_engine_core::prize_exchange::PrizeExchangeSession`]
-    /// owns the pad - the shared `engine-ui` composition, sprites and
-    /// pictogram rendered through the same ASCII stand-ins the shop windows
-    /// use. Empty without the disc window table.
+    /// owns the pad - the shared `engine-ui` composition, framed and with its
+    /// hand / coin pictogram resolved to atlas sprites through
+    /// `shop_screen::prize_screen_draws`, the browser page's call too. Texts
+    /// in stage pixels, sprites in surface pixels. Empty without the disc
+    /// window table.
     pub(super) fn prize_window_draws(
         &self,
         session: &legaia_engine_core::prize_exchange::PrizeExchangeSession,
-    ) -> Vec<TextDraw> {
+        surface_w: u32,
+        surface_h: u32,
+    ) -> legaia_engine_render::shop_screen::ShopScreenDraws {
         let Some(table) = self.menu_window_table.as_ref() else {
-            return Vec::new();
+            return Default::default();
         };
         let world = &self.session.host.world;
         use legaia_engine_render::ui_prize_exchange as px;
@@ -433,14 +437,23 @@ impl PlayWindowApp {
             coins: world.minigames.casino_coins,
             confirm_cursor: session.confirming().then(|| session.confirm_cursor()),
         };
-        let (mut out, sprites, pict) = px::prize_exchange_draws_for(&self.font, table, &view);
-        for s in sprites {
-            out.extend(self.painter_cursor_stand_in(s));
-        }
-        if let Some(p) = pict {
-            out.extend(self.painter_pictogram_stand_in(p));
-        }
-        out
+        let (text, marks, pict) = px::prize_exchange_draws_for(&self.font, table, &view);
+        let (origin, scale) =
+            legaia_engine_render::pause_menu::stage_transform(surface_w, surface_h);
+        let ctx = legaia_engine_render::shop_screen::ShopScreenCtx {
+            font: &self.font,
+            rects: legaia_engine_render::pause_menu::MenuRects::new(Some(table)),
+            chrome: self.save_menu.as_ref().map(|m| &m.rects),
+            origin,
+            scale,
+        };
+        legaia_engine_render::shop_screen::prize_screen_draws(
+            &ctx,
+            session.confirming(),
+            text,
+            &marks,
+            pict,
+        )
     }
 
     /// Paint the casino **coin counter** (op-`0x49` sub-op 6): the field
