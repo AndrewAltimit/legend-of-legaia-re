@@ -641,11 +641,16 @@ impl PlayWindowApp {
         &self,
         r: &legaia_engine_render::Renderer,
     ) -> (
-        Vec<(usize, Mat4)>,
-        Vec<(usize, Mat4)>,
-        Vec<(UploadedVramMesh, Mat4)>,
-        Vec<(UploadedColorMesh, Mat4)>,
+        Vec<(usize, Mat4, Option<usize>)>,
+        Vec<(usize, Mat4, Option<usize>)>,
+        Vec<(UploadedVramMesh, Mat4, Option<usize>)>,
+        Vec<(UploadedColorMesh, Mat4, Option<usize>)>,
     ) {
+        // A script can move a posed prop's actor (`A3` seat, a `4C 42` lift)
+        // like any placed object's; retail draws it at the actor
+        // (`World::object_draw_displacements`). The bind record also keys
+        // the prop's draw tint for the caller.
+        let moves = self.session.host.world.object_draw_displacements();
         let mut baked_v = Vec::new();
         let mut baked_c = Vec::new();
         let mut live_v = Vec::new();
@@ -654,6 +659,22 @@ impl PlayWindowApp {
             return (baked_v, baked_c, live_v, live_c);
         };
         for p in &self.field_posed_props {
+            let record = self
+                .session
+                .host
+                .world
+                .props
+                .bank
+                .props
+                .get(&p.anchor)
+                .map(|s| s.record);
+            let model = match record.and_then(|r| moves.get(&r)) {
+                Some(d) => {
+                    Mat4::from_translation(Vec3::new(d[0] as f32, d[1] as f32, d[2] as f32))
+                        * p.model
+                }
+                None => p.model,
+            };
             let key = self
                 .session
                 .host
@@ -664,10 +685,10 @@ impl PlayWindowApp {
                 .unwrap_or_default();
             if key.is_rest() {
                 if let Some(i) = p.baked.vram {
-                    baked_v.push((i, p.model));
+                    baked_v.push((i, model, record));
                 }
                 if let Some(i) = p.baked.color {
-                    baked_c.push((i, p.model));
+                    baked_c.push((i, model, record));
                 }
                 continue;
             }
@@ -705,7 +726,7 @@ impl PlayWindowApp {
                         &vmesh.indices,
                     )
                 {
-                    live_v.push((m, p.model));
+                    live_v.push((m, model, record));
                 }
             }
             if p.baked.color.is_some() {
@@ -719,7 +740,7 @@ impl PlayWindowApp {
                         &cmesh.blend,
                     )
                 {
-                    live_c.push((m, p.model));
+                    live_c.push((m, model, record));
                 }
             }
         }

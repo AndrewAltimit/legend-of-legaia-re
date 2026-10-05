@@ -2061,7 +2061,7 @@ impl PlayWindowApp {
                         // the ones resting on frame 0 replay their baked rest
                         // mesh; the ones whose clip is running were re-posed
                         // above, so the door draws mid-swing.
-                        for (mesh_idx, model) in &posed_prop_baked_v {
+                        for (mesh_idx, model, record) in &posed_prop_baked_v {
                             let mvp = cam * *model;
                             if place_near_culled(&mvp) {
                                 continue;
@@ -2070,11 +2070,11 @@ impl PlayWindowApp {
                                 draws.push(SceneDraw {
                                     mesh,
                                     mvp,
-                                    cue: None,
+                                    cue: object_cue(*record),
                                 });
                             }
                         }
-                        for (mesh, model) in &posed_prop_live_v {
+                        for (mesh, model, record) in &posed_prop_live_v {
                             let mvp = cam * *model;
                             if place_near_culled(&mvp) {
                                 continue;
@@ -2082,7 +2082,7 @@ impl PlayWindowApp {
                             draws.push(SceneDraw {
                                 mesh,
                                 mvp,
-                                cue: None,
+                                cue: object_cue(*record),
                             });
                         }
                     }
@@ -2119,7 +2119,7 @@ impl PlayWindowApp {
                                 });
                             }
                         }
-                        for (mesh_idx, model) in &posed_prop_baked_c {
+                        for (mesh_idx, model, record) in &posed_prop_baked_c {
                             let mvp = cam * *model;
                             if place_near_culled(&mvp) {
                                 continue;
@@ -2128,11 +2128,11 @@ impl PlayWindowApp {
                                 color_draws.push(ColorSceneDraw {
                                     mesh,
                                     mvp,
-                                    cue: None,
+                                    cue: object_cue(*record),
                                 });
                             }
                         }
-                        for (mesh, model) in &posed_prop_live_c {
+                        for (mesh, model, record) in &posed_prop_live_c {
                             let mvp = cam * *model;
                             if place_near_culled(&mvp) {
                                 continue;
@@ -2140,7 +2140,7 @@ impl PlayWindowApp {
                             color_draws.push(ColorSceneDraw {
                                 mesh,
                                 mvp,
-                                cue: None,
+                                cue: object_cue(*record),
                             });
                         }
                     }
