@@ -735,6 +735,13 @@ impl PlayWindowApp {
             let world = &mut self.session.host.world;
             let on = !world.toggles.live_gameplay_loop;
             world.cheat_set_random_encounters(on);
+            // The choice outlives this scene: the live-loop arming a card
+            // Load / New Game / door entry runs (`World::arm_live_loop`
+            // through `field_live_opts`) re-raised the roll, so `F7` off
+            // lasted only until the next Load. The play page's "No
+            // encounters" is a session flag its every entry reads
+            // (`LegaiaRuntime::live_battles`); this is the same flag here.
+            self.field_live_opts.live_loop = on;
             log::info!("cheat: random encounters {}", if on { "ON" } else { "off" });
             return;
         }

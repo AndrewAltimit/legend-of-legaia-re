@@ -1565,10 +1565,23 @@ impl PlayWindowApp {
     /// session closes.
     pub(super) fn persist_and_apply_options(&self) {
         self.apply_options_side_effects();
+        if self.scripted_run() {
+            return;
+        }
         let path = std::path::PathBuf::from(OPTIONS_CONFIG_FILE);
         if let Err(e) = self.options_state.save(&path) {
             log::warn!("options: save to {} failed: {e:#}", path.display());
         }
+    }
+
+    /// A `--screenshot` / `--screenshot-every` / `--key-script` run: a capture,
+    /// not a play session, so nothing it toggles is written to the player's
+    /// config files. A scripted `F8` used to leave `legaia-options.toml` at
+    /// night, and every later launch - scripted or not - started there. The
+    /// browser play page's equivalent, a fresh headless context, has no
+    /// stored state to leak into.
+    pub(super) fn scripted_run(&self) -> bool {
+        self.screenshot.is_some()
     }
 
     /// Push the current options into their live consumers without touching

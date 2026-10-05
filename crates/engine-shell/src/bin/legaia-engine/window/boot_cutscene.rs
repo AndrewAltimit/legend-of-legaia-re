@@ -808,6 +808,9 @@ impl PlayWindowApp {
     /// command line. The pause menu's Key Config screen is a third editor of
     /// the same file, not a second store.
     pub(super) fn persist_bindings(&self) {
+        if self.scripted_run() {
+            return;
+        }
         let path = std::path::PathBuf::from(INPUT_CONFIG_FILE);
         if let Err(e) = self.mapping.save(&path) {
             log::warn!("bindings: save to {} failed: {e:#}", path.display());
