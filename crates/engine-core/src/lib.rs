@@ -35,6 +35,7 @@ pub mod battle_runner;
 pub mod battle_seats;
 pub mod battle_session;
 pub mod battle_sideband;
+pub mod battle_sideband_textures;
 pub mod battle_stage_module;
 pub mod battle_stats;
 pub mod battle_status_clut;
