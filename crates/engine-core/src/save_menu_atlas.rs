@@ -49,13 +49,19 @@ pub const ATLAS_RECT_LABEL_HP: (u32, u32, u32, u32) = (60, 232, 16, 10);
 pub const ATLAS_RECT_LABEL_MP: (u32, u32, u32, u32) = (80, 232, 16, 10);
 
 /// Atlas placement of the **raw** (un-gradient-baked) marbled-blue
-/// filigree interior tile (32x29). Copied verbatim from CLUT row 2 of
+/// filigree interior tile (32x32). Copied verbatim from CLUT row 2 of
 /// the system-UI TIM so the field-menu chrome can tile it in 2D as the
 /// window interior (the pause menu fills every window with this navy
 /// damask, darkened by a per-draw colour, rather than the save screen's
 /// gouraud-gradient variant at [`ATLAS_RECT_FILIGREE`]'s baked sibling).
 /// Sits in a free atlas region below the portraits.
-pub const ATLAS_RECT_FILIGREE: (u32, u32, u32, u32) = (0, 200, 32, 29);
+pub const ATLAS_RECT_FILIGREE: (u32, u32, u32, u32) = (0, 200, 32, 32);
+
+/// The whole marbled patch the class-0 fill samples: texels `(128, 0)` of
+/// CLUT row 2, 32 x 32 (`FUN_8002BDC4`'s `u 128..160, v 0..32` - the
+/// `menu_status_town` display list's fill quads). The save screen's baked
+/// interior keeps its 29-row slice ([`title_pak::OVERLAY_SYSTEM_UI_PANEL_INTERIOR`]).
+const FILIGREE_SRC: (u32, u32, u32, u32) = (128, 0, 32, 32);
 
 /// Atlas placement of the status-page **AP gauge** pieces, copied from
 /// CLUT row 4 of the system-UI TIM (the status gauge palette - purple
@@ -419,7 +425,7 @@ impl SaveMenuAtlas {
     pub fn band_panel_interior(&self) -> (u32, u32, u32, u32) {
         title_pak::OVERLAY_SYSTEM_UI_PANEL_INTERIOR
     }
-    /// Raw marbled-blue filigree interior tile (32x29), un-baked. The
+    /// Raw marbled-blue filigree interior tile (32x32), un-baked. The
     /// pause-menu windows tile this in 2D as their navy damask interior.
     pub fn band_panel_filigree(&self) -> (u32, u32, u32, u32) {
         ATLAS_RECT_FILIGREE
@@ -840,7 +846,7 @@ pub fn build_atlas(
         ATLAS_WIDTH,
         &panel_rgba,
         panel_src_w,
-        title_pak::OVERLAY_SYSTEM_UI_PANEL_INTERIOR,
+        FILIGREE_SRC,
         ATLAS_RECT_FILIGREE,
     );
 

@@ -148,9 +148,8 @@ pub fn message_banner_chrome_draws_for(
 /// one band whose grey runs `0x40 -> 0x88` over its height, which is the
 /// ramp `rects.panel_interior` is baked with - so it draws as whole-height
 /// column sprites of that tile. A taller frame draws one-row strips of the
-/// raw `rects.panel_filigree` tile, each tinted to its row's grey. The atlas
-/// carries 29 of the patch's 32 texel rows, so rows `29..32` of a full band
-/// wrap to the top of the tile.
+/// raw `rects.panel_filigree` tile, each tinted to its row's grey (the atlas
+/// carries the patch's full 32 texel rows; a shorter tile wraps).
 pub fn class0_fill_draws_at(
     rects: &SaveMenuAtlasRects,
     frame: (i32, i32, i32, i32),
