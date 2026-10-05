@@ -113,6 +113,30 @@ comment lines dropped and `#[cfg(test)]` bodies excluded - "the only caller is a
 unit test" is the finding, and it is not visible to a scan that counts doc
 comments as references.
 
+### A live row its own tag and the strict graph both call dead
+
+The catalog's `live` is the **permissive** graph, where a name-matched call
+edge is enough, and the receiver-gated sibling graph feeds only the
+stale-disclosure test (`port-catalog.py --live-audit`). So an address can be
+`live` on an edge the strict graph refuses while its own `PORT:` block says no
+host is owed a call - and then neither audit owns it: `--live-audit` skips it
+because it is live, and the stale test stays quiet because the strict graph
+agrees with the disclosure. It used to land here, as never-entered reach work
+that no ladder could ever convert: the memory-card I/O machines
+(`card_bu_io.rs`, `card_flow.rs`), the in-field save actor `80024190`, the
+stream-file reader, `scene_name_sync.rs` and the disclosed battle helpers all
+had that shape, and together they were half the never-entered set.
+
+The report now splits them out. A never-entered address whose permissively
+live anchors **all** carry `NOT WIRED:` or `REPLACED-BY:`, and none of whose
+anchors the strict graph reaches, is listed under *disclosed and
+receiver-gated dead* (`disclosed_dead_addresses` in the script). Three
+instruments agree on it - the disclosure, the strict graph and the coverage -
+so it is not a reach row. The never-entered **total** is unchanged and the
+worklist line beside it is what this page verdicts; a row in the dead table
+that a ladder later enters surfaces as *disclosed executed*, the loudest
+bucket, so the split cannot hide a stale disclosure.
+
 ### A `--release` export cannot tell "never called" from "inlined"
 
 `-C instrument-coverage` emits one counter per function. An optimised build
@@ -1169,15 +1193,14 @@ no shipped scene reaches that arm through the field VM's own bytecode**, which
 moves a row out of `(a)` NO-LADDER and towards `(d)` NOT-PLAYTHROUGH - there is
 no fixture to write. A non-zero count names the scene to write one against.
 
-A third row is in that position and is left at `(a)` deliberately. The
-field-actor timers ask for a script issuing `0x43 0C` or `0x43 09`, and the
-census finds **zero** coherent occurrences of either - but 31 incoherent ones
-across six carriers, every one inside a record the walk had already desynced
-in. Both sub-ops are sized by the decoder, so the census is not structurally
-blind to them; what it cannot rule out is an occurrence hidden behind an
-earlier desync in its own record. Reading those 31 is what would settle the
-bucket, and until then the row's premise has no evidence behind it and its
-fixture cannot be specified.
+A third row settled the other way. The field-actor timers ask for a script
+issuing `0x43 0C` or `0x43 09`, and an earlier census found no coherent
+occurrence of either, only incoherent ones inside records its walk had already
+desynced in. With the partition record spans corrected, `0x43 0C` has 35 clean
+occurrences across five scenes (`town0c`, `balden` and its `balden2` variant,
+`deroa`, `station3`) and the cinematic wipe it spawns is entered; `0x43 09` has
+**zero**, clean or total. The tween row is therefore `(d)`: there is no
+shipped carrier to write a fixture against.
 
 #### The fishing pair: a precondition is not a screen, and the row was owed both
 
@@ -1361,7 +1384,6 @@ cross and the level-up banner.
 
 | group | n | addresses | why |
 |---|---|---|---|
-| `dev_menu.rs` | 2 | `801dbd04` `801db8f4` | the overlay-0897 developer EVENT FLAG editor |
 | `new_game.rs` | 1 | `8001ffa4` | `GAME_STATE_COLD_RESET` is a `const`, read in production by `scene/host/lifecycle` and `world/frame_tick` - wired; the reach report resolves an item anchor through its executed references (the const-anchor note above), so the row reports off those readers' own coverage |
 | `baka_cabinet.rs` | 1 | `801d553c` | the developer action-table dump retail writes as `ot5stat.txt` |
 | `cutscene_script_elements.rs` | 1 | `801d841c` | reached only from the dev world-map panel's fade/flash actor |
@@ -1369,7 +1391,15 @@ cross and the level-up banner.
 The character-parameter editor (`801d6e18`) left this bucket: the play page's
 dev-menu opt-in is itself pad-driven library code, so the composition ladder
 walks its rows and the "not playthrough-shaped" reading no longer holds for
-the browser host.
+the browser host. The EVENT FLAG editor (`801dbd04` value edit, `801db8f4`
+list cursor) followed it the same way, once the list had something to walk:
+the cursor kernels walk the field overlay's own flag table (`DAT_801F2E94`,
+72 records ending on an `'X'` name), which neither host loaded, so Up / Down
+fell through to the value editor and the list cursor could not move. Both
+hosts now seed the list from extraction entry `0897`
+(`SceneHost::dev_flag_list_tags`), and `w1d_dev_menu_equip_ladder` opens the
+page by pad, steps the value and walks the list - checked by contrast against
+an unseeded session, where the list press edits the value instead.
 
 <!-- END engine-core -->
 
@@ -1389,7 +1419,7 @@ blocks a (b) row, or the disclosure state of a (c) row.
 | `battle_burst.rs` | 1 | (c) | disclosed | `801f30c4` |
 | `battle_helpers.rs` | 1 | (c) | disclosed | `80046870` |
 | `battle_stream_slot.rs` | 2 | (c) | disclosed | `80055b4c` `801f17f8` |
-| `field_actor_timers.rs` | 2 | (a) | a scene script issuing the field-VM op that **spawns** the timer - `0x43 0C` for the cinematic wipe (`op43_alloc_scripted_actor`) and `0x43 09` for the three-axis tween (`op43_sub9_tween`). Both `step` bodies already run from the production world tick (`world/frame_tick.rs`), and the in-crate oracle that drives them (`world/tests/field_timer_actors.rs`) can never be a union member. The [op census](#the-op-census-names-both-carriers) finds **no coherent carrier for either op**, so this row is close to `(d)` - see the note under that section | `801dd4c4` `801dd784` |
+| `field_actor_timers.rs` | 1 | (d), no carrier | the three-axis tween `EasedMove::step`, whose only spawn is field-VM `0x43 09` (`op43_sub9_tween`, retail `FUN_801DE698`'s one caller). The [op census](#the-op-census-names-both-carriers) counts **zero** `43 09` occurrences disc-wide, clean or total, so no shipped script reaches it. Its sibling, the cinematic wipe `801dd784` (`0x43 0C`), has carriers and is entered | `801dd4c4` |
 | `field_subsystem_enter.rs` | 1 | (c) | disclosed | `801f1278` |
 | `field_passive_hud.rs` | 1 | (b), **converted** | `w9_passive_badge_page` equips a badge-bit accessory through the Equip screen by pad and requires the badge against the same menu walk with nothing seeded. The gate it closes: a party member holding one of the six HUD-badge ability bits. `hud_anchor_offsets` is reached only through `World::passive_hud_points`, itself behind `World::passive_hud_active()`, and a cold-start party holds none of the six - so the badge column never anchors and the offsets never resolve. A card load now re-derives the mask from the loaded equipment (it used to stay empty until a battle entry), so a library save whose party wears one of the six converts the row; the played-through card the page ladders use wears none | `801d095c` |
 | `scus_battle_helpers.rs` | 2 | (c) | disclosed | `80046978` `80055854` |
