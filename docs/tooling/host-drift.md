@@ -1197,6 +1197,51 @@ kernels and the native window asks each for its own layer; only the page's
 tagging crossed them. The shape to look for is a mask whose index is
 assigned by a branch that was written for a different property.
 
+**A cue fired before the filter that swallows its edge.** Both hosts ask
+`menu_cues::menu_edge_blip` for the pause menu's blip, and both run the save
+screen's refusal box and block grid over the pad edge. The native window
+fires the cue after those filters; the page fired it off the raw press before
+`play_menu_input` ran them, so the press that dismissed a save error, or a
+blocked Load on an empty block, blipped on the page only. `play_menu_input`
+now fires the cue on the filtered edge. The shape to look for is a side
+effect a host derives from an input before the shared kernel has decided
+whether that input counts.
+
+**A write that is durable on one host only.** A Save on the native window
+writes the card file in the same commit (`card.persist()`); the page changed
+the card in wasm memory and stored it back only from the Export button, so a
+reload before Export lost the save. The runtime raises a per-port store latch
+(`card_take_written`) on every in-game Save and the page stores the card over
+its browser session when the latch fires. The same pass found the opposite
+direction on the native window: a failed save-folder Load or Save only logged
+and closed, where the card port and the page raise the shared refusal box.
+
+**A stateless replay standing in for a stateful kernel.** The minigames page
+drew the Muscle Dome first visit by replaying `FirstVisitHub` with no input
+to a JS tick count. Every row it drew was the kernel's, so nothing looked
+wrong in a still, but a replay cannot take a press or hand back the CD-XA
+lines a tick started: the page skipped the whole visit on any key and played
+no announcer, where both play hosts tick the hub live. It now resets and
+steps a live hub (`muscle_first_visit_reset` / `_step`), and the hub's two
+lines stage on the announcer lane.
+
+Found by the same pass and still open:
+
+- **Dance count-in on the minigames page.** `site/js/minigame-dance.js` runs
+  its own READY / 1 / 2 / 3 / GO timeline on fixed frame counts, and
+  `dance_start` builds no `dance::CountIn`, so the page neither shares the
+  play hosts' 120-vsync banner nor plays `COUNTIN_INTRO_CUE` (a runtime-bank
+  id the page's cue path refuses). Which pre-song numerals retail shows
+  belongs to the sprite spawner `FUN_801D3FD0`, not the banner, and needs
+  pinning before the page's numerals are replaced.
+- **Dance How-To mode** has no minigames-page entry (`DanceGame::from_overlay`
+  only, no `DanceTutorial`).
+- **Minigame BGM ids** are page literals (`GAME_BGM` in `minigames.html`)
+  that equal `MinigameSubId::bgm_id()` today but do not read it.
+- **The page refuses the pause menu while any dialog box is up**
+  (`_hudState.dialog`), on top of the engine's `field_menu_open_allowed`
+  the native window asks alone.
+
 ## A rule spelled beside the shared predicate
 
 A second side-by-side pass, with the first pass's rows closed, found a shape
